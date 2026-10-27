@@ -10,6 +10,8 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.wire.AnthropicRequest
@@ -35,17 +37,22 @@ internal data class BuiltBody(
     val toolsDeferred: Int?,
 )
 
-/** The pieces [ResponsesRequestBuilder.build] computes before the DTO is assembled, bundled as one
- *  argument — the INPUT-side sibling of [BuiltBody], and for the same reason: `partition` was the
- *  6th parameter that tripped LongParameterList (review 2026-07-25). Bundling, not dropping: every
- *  field is still read verbatim by buildRequestObject. */
+/** The declared tool surface and its current call restrictions belong to the same source timeline. */
+internal data class RequestToolSurface(
+    val partition: ToolPartition?,
+    /** Null preserves ordinary choice handling. A value constrains the public direct-function surface. */
+    val currentAllowedTools: List<String>? = null,
+)
+
+/** Input, output settings, and tool availability computed before the closed request DTO is assembled. */
 internal data class RequestParts(
     val input: JsonArray,
     val instructions: String,
     val reasoning: JsonObject?,
-    val partition: ToolPartition?,
+    val tools: RequestToolSurface,
     val conversationKey: String?,
     val outputFormat: JsonObject? = null,
+    val controls: ResponsesWireRequestControls = ResponsesWireRequestControls(),
 )
 
 internal class ResponsesRequestAssembler(
@@ -64,9 +71,9 @@ internal class ResponsesRequestAssembler(
         // knob (stream_options.include_usage — the codex-breaking incident) cannot be added without a
         // field on ResponsesRequest, a reviewable type change. Byte-identical to the old put() set
         // (ResponsesRequestBuilderTest pins it): fields in declaration order, null optionals omitted.
-        val tools = parts.partition?.let {
+        val tools = parts.tools.partition?.let { partition ->
             toolWire.toolsSection(
-                it,
+                partition,
                 quirks.tools.emitStrict,
                 quirks.tools.forceStrictFalse,
                 quirks.tools.normalizeToolSchemas,
@@ -79,7 +86,9 @@ internal class ResponsesRequestAssembler(
         // then improvises tool calls in text — stuck/looping turns). codex-rs sends tool_choice:"auto"
         // for implicit choice (core/src/client.rs:896). Explicit caller choices are preserved below;
         // a provider that cannot honor them refuses before assembly.
-        val emitToolChoice = body.toolChoice != null || tools != null && (quirks.tools.emitToolChoice || lite)
+        val restrictedTools = parts.tools.currentAllowedTools
+        val emitToolChoice = restrictedTools != null || body.toolChoice != null ||
+            tools != null && (quirks.tools.emitToolChoice || lite)
         val include = if (opts.handoff.includeEncrypted.v) listOf(ENCRYPTED_CONTENT_INCLUDE) else null
         val shape = liteShape.wireShape(lite, parts.input, parts.instructions, tools)
         val cacheKey = cacheKey(opts, parts.conversationKey)
@@ -93,7 +102,7 @@ internal class ResponsesRequestAssembler(
             promptCacheRetention = quirks.backend.promptCache.retention,
             instructions = shape.instructions,
             tools = shape.tools,
-            toolChoice = toolChoiceFor(emitToolChoice, lite, body),
+            toolChoice = toolChoiceFor(emitToolChoice, lite, body, restrictedTools),
             parallelToolCalls = parallelToolCallsFor(emitToolChoice, body, opts),
             reasoning = parts.reasoning,
             text = parts.outputFormat?.let { format ->
@@ -101,36 +110,74 @@ internal class ResponsesRequestAssembler(
             } ?: hints.liteTextBlock(quirks, lite),
             clientMetadata = hints.clientMetadataBlock(quirks, lite, opts, cacheKey),
             streamOptions = knobs.summaryDeliveryOptions(parts.reasoning),
+            maxOutputTokens = body.maxTokens.takeIf { quirks.request.emitMaxOutputTokens },
+            temperature = parts.controls.temperature,
+            topP = parts.controls.topP,
+            serviceTier = parts.controls.serviceTier,
         )
         val req = responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), dto) as JsonObject
         // Stamped only when a policy is actually CONFIGURED for this provider (quirks.tools.toolSurface
         // != null) — never for every provider globally just because tools rode this turn. A
         // configured-but-not-triggering turn (wrong model, latch closed, below the floor) still
         // stamps 0, which is the real "why no deferral happened" signal the perf JSONL needs.
-        val surfaceInPlay = parts.partition?.takeIf { quirks.tools.toolSurface != null }
+        val surfaceInPlay = parts.tools.partition?.takeIf { quirks.tools.toolSurface != null }
         return BuiltBody(
             req = req,
-            toolSearch = toolPlan.toolSearchControllerFor(parts.partition, opts),
+            toolSearch = toolPlan.toolSearchControllerFor(parts.tools.partition, opts),
             toolsEager = surfaceInPlay?.eager?.size,
             toolsDeferred = surfaceInPlay?.deferred?.size,
         )
     }
 
     /** Explicit caller choices win on every turn shape. Responses named choices are flat, not Chat's function object. */
-    internal fun toolChoiceFor(emitToolChoice: Boolean, lite: Boolean, body: AnthropicRequest): JsonElement? {
+    internal fun toolChoiceFor(
+        emitToolChoice: Boolean,
+        lite: Boolean,
+        body: AnthropicRequest,
+        currentAllowedTools: List<String>? = null,
+    ): JsonElement? {
+        currentAllowedTools?.let { allowed -> return restrictedChoice(body, allowed) }
         val choice = body.toolChoice ?: return implicitChoice(emitToolChoice, lite, body)
         return when (choice.type) {
             "none" -> JsonPrimitive("none")
-            "any", "required" -> JsonPrimitive("required")
-            "tool" -> choice.name?.let { name ->
-                buildJsonObject {
-                    put("type", "function")
-                    put("name", toolNames.shorten(name))
-                }
-            }
+            "any", REQUIRED_TOOL_CHOICE -> JsonPrimitive(REQUIRED_TOOL_CHOICE)
+            "tool" -> choice.name?.let(::functionChoice)
             "auto" -> JsonPrimitive("auto")
             else -> null // Unknown choices are refused before building, never rewritten to auto.
         }
+    }
+
+    /** allowed_tools limits the public direct surface without changing the stable top-level declarations. */
+    private fun restrictedChoice(
+        body: AnthropicRequest,
+        allowed: List<String>,
+    ): JsonElement? = when (body.toolChoice?.type) {
+        null, "auto" -> allowedToolsChoice("auto", allowed)
+        "any", REQUIRED_TOOL_CHOICE -> allowedToolsChoice(REQUIRED_TOOL_CHOICE, allowed)
+        "none" -> JsonPrimitive("none")
+        "tool" -> body.toolChoice?.name?.takeIf { it in allowed }?.let(::functionChoice) ?: JsonPrimitive("none")
+        else -> null
+    }
+
+    private fun allowedToolsChoice(mode: String, allowed: List<String>): JsonElement =
+        if (allowed.isEmpty()) {
+            JsonPrimitive("none")
+        } else {
+            buildJsonObject {
+                put("type", "allowed_tools")
+                put("mode", mode)
+                put(
+                    "tools",
+                    buildJsonArray {
+                        allowed.forEach { name -> add(functionChoice(name)) }
+                    },
+                )
+            }
+        }
+
+    private fun functionChoice(name: String): JsonObject = buildJsonObject {
+        put("type", "function")
+        put("name", toolNames.shorten(name))
     }
 
     private fun implicitChoice(emit: Boolean, lite: Boolean, body: AnthropicRequest): JsonElement? {
@@ -177,3 +224,5 @@ internal class ResponsesRequestAssembler(
             CacheKeyStrategy.FIRST_MESSAGE_HASH -> conversationKey
         }
 }
+
+private const val REQUIRED_TOOL_CHOICE = "required"

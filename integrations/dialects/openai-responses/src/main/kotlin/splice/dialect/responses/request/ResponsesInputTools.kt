@@ -6,11 +6,13 @@
 package splice.dialect.responses.request
 
 import kotlinx.serialization.json.JsonArrayBuilder
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
-import splice.core.wire.TextBlock
 import splice.core.wire.ToolDefinition
 import splice.core.wire.ToolResultBlock
 import splice.core.wire.ToolUseBlock
@@ -18,6 +20,7 @@ import splice.core.wire.UnknownBlock
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.ResponsesReasoningInject
 import splice.dialect.responses.tools.ToolSearchOutput
+import splice.dialect.responses.tools.ToolWireObjects
 import splice.upstream.ToolNameShortener
 
 internal class ResponsesInputTools(
@@ -28,7 +31,10 @@ internal class ResponsesInputTools(
 
     private val ids = ResponsesStableIds()
     private val toolSearchOutput = ToolSearchOutput(names)
-    private val media = ResponsesToolResultMedia(quirks)
+    private val parts = ResponsesInputParts(quirks.request.minImageEdgePx)
+    private val resultRenderer =
+        ResponsesToolResultRenderer(quirks, loopGuardDirectives, ToolResultOmission(::omission))
+    private val toolWire = ToolWireObjects(names)
     private val inject = ResponsesReasoningInject()
 
     internal fun appendToolUse(
@@ -101,20 +107,77 @@ internal class ResponsesInputTools(
     internal fun omission(block: UnknownBlock): String =
         block.omissionMarker(quirks.providerTag, toolsCallable = quirks.tools.toolSurface == null)
 
-    internal fun appendToolResult(sink: JsonArrayBuilder, block: ToolResultBlock) {
-        val omitted = block.content.filterIsInstance<UnknownBlock>().map { omission(it) }
-        val text = (listOf(block.content.filterIsInstance<TextBlock>().joinToString("") { it.text }) + omitted)
-            .filter { it.isNotEmpty() }.joinToString("\n")
+    internal fun appendToolAddition(
+        sink: JsonArrayBuilder,
+        block: UnknownBlock,
+        knownTools: MutableMap<String, ToolDefinition>,
+    ) {
+        val tool = ResponsesSourceToolDefinitions.fromAddition(block, knownTools)
+        if (tool == null) {
+            val name = changedToolName(block) ?: "unknown"
+            sink.add(
+                parts.roleText(
+                    ResponsesContextMessage.CLIENT_ROLE,
+                    "[tool addition $name omitted by ${quirks.providerTag} proxy: schema unavailable]",
+                ),
+            )
+            return
+        }
+        // A later reference must carry the schema that this exact addition made current, not the
+        // request's original catalog entry. This is source provenance, not a Responses-side rewrite.
+        appendToolDefinition(sink, tool, knownTools)
+    }
+
+    /** A tool search result's validated bare reference makes a known source-deferred schema callable. */
+    internal fun appendLoadedTool(
+        sink: JsonArrayBuilder,
+        block: UnknownBlock,
+        knownTools: MutableMap<String, ToolDefinition>,
+    ) {
+        val tool = block.loadedTool?.let(knownTools::get) ?: return
+        appendToolDefinition(sink, tool, knownTools)
+    }
+
+    private fun appendToolDefinition(
+        sink: JsonArrayBuilder,
+        tool: ToolDefinition,
+        knownTools: MutableMap<String, ToolDefinition>,
+    ) {
+        knownTools[tool.name] = tool
         sink.add(
             buildJsonObject {
-                put("type", "function_call_output")
-                put("call_id", block.toolUseId)
-                put("output", loopGuardDirectives[block.toolUseId]?.let { "$it\n\n$text" } ?: text)
+                put("type", ADDITIONAL_TOOLS)
+                put("role", "developer")
+                put(
+                    "tools",
+                    buildJsonArray {
+                        add(
+                            toolWire.functionToolObject(
+                                tool,
+                                quirks.tools.emitStrict,
+                                quirks.tools.forceStrictFalse,
+                                quirks.tools.normalizeToolSchemas,
+                            ),
+                        )
+                    },
+                )
             },
         )
-        // v25: images inside tool_result (Read on a PNG, screenshots) used to vanish —
-        // function_call_output.output is string-only, so ride them in a follow-up user message.
-        // V4-179: rendered by ResponsesToolResultMedia, the one renderer code mode shares.
-        media.followUps(block).items.forEach(sink::add)
+    }
+
+    private fun changedToolName(block: UnknownBlock): String? {
+        val tool = block.raw[SOURCE_TOOL_FIELD_TOOL] as? JsonObject ?: return null
+        return when (JsonScalars.str(tool, SOURCE_TOOL_FIELD_TYPE)) {
+            SOURCE_TOOL_REFERENCE -> JsonScalars.str(tool, SOURCE_TOOL_FIELD_NAME)
+            SOURCE_TOOL_DEFINITION ->
+                JsonScalars.str(tool[SOURCE_TOOL_FIELD_DEFINITION] as? JsonObject, SOURCE_TOOL_FIELD_NAME)
+            else -> null
+        }
+    }
+
+    internal fun appendToolResult(sink: JsonArrayBuilder, block: ToolResultBlock) {
+        resultRenderer.append(sink, block)
     }
 }
+
+private const val ADDITIONAL_TOOLS = "additional_tools"

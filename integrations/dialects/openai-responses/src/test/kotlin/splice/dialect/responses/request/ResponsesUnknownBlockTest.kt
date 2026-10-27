@@ -52,7 +52,8 @@ class ResponsesUnknownBlockTest {
             .build(parsed.typed, parsed.raw, options()).req
 
         val output = built.getValue("input").jsonArray.map { it.jsonObject }
-            .single { it["type"]?.jsonPrimitive?.content == "function_call_output" }["output"]?.jsonPrimitive?.content
+            .single { it["type"]?.jsonPrimitive?.content == "function_call_output" }["output"]!!.jsonArray
+            .joinToString("\n") { it.jsonObject["text"]?.jsonPrimitive?.content.orEmpty() }
         assertTrue(output.orEmpty().contains("web_search_result block omitted by claudex proxy")) { output.orEmpty() }
         assertFalse(output.orEmpty().contains("SECRET-RESULT-TITLE"))
     }
@@ -78,8 +79,8 @@ class ResponsesUnknownBlockTest {
         val parsed = AnthropicParse.parseAnthropicBody(body)
         val built = ResponsesRequestBuilder(quirks).build(parsed.typed, parsed.raw, options()).req
         return built.getValue("input").jsonArray.map { it.jsonObject }
-            .single { it["type"]?.jsonPrimitive?.content == "function_call_output" }["output"]?.jsonPrimitive?.content
-            .orEmpty()
+            .single { it["type"]?.jsonPrimitive?.content == "function_call_output" }["output"]!!.jsonArray
+            .joinToString("\n") { it.jsonObject["text"]?.jsonPrimitive?.content.orEmpty() }
     }
 
     private fun options() = BuildOptions(

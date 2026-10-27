@@ -105,6 +105,18 @@ private fun build(json: String, quirks: ResponsesQuirks = CODEX, options: BuildO
 class ResponsesRequestBuilderTest {
 
     @Test
+    fun `client max_tokens becomes the Responses output limit`() {
+        val req = build(
+            """{"model":"m","max_tokens":73,"messages":[{"role":"user","content":"x"}]}""",
+            quirks = OPENAI,
+            options = opts(model = "gpt-4.1"),
+        )
+
+        assertEquals("73", req["max_output_tokens"]?.jsonPrimitive?.content)
+        assertFalse(req.containsKey("max_tokens"))
+    }
+
+    @Test
     fun `effort precedence - body beats budget beats config, ultracode maps to max`() {
         val budgetBody = """{"model":"m","thinking":{"type":"enabled","budget_tokens":32000},
             "messages":[{"role":"user","content":"x"}]}"""
@@ -379,7 +391,7 @@ class ResponsesRequestBuilderTest {
     }
 
     @Test
-    fun `tool_use and tool_result map to function_call items - images ride follow-up`() {
+    fun `tool_use and tool_result map to function_call items with inline image parts`() {
         val req = build(
             """{"model":"m","messages":[
                 {"role":"assistant","content":[{"type":"tool_use","id":"t9","name":"run","input":{"c":1}}]},
@@ -394,10 +406,15 @@ class ResponsesRequestBuilderTest {
         assertEquals("t9", call["call_id"]?.jsonPrimitive?.content)
         assertEquals("""{"c":1}""", call["arguments"]?.jsonPrimitive?.content)
         val output = inputs.first { it["type"]?.jsonPrimitive?.content == "function_call_output" }
-        assertEquals("out", output["output"]?.jsonPrimitive?.content)
-        val follower = inputs.last()
-        assertTrue(follower.toString().contains("images from tool_result t9"))
-        assertTrue(follower.toString().contains("data:image/png;base64,aGk="))
+        val parts = output["output"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(listOf("input_text", "input_image"), parts.map { it["type"]?.jsonPrimitive?.content })
+        assertEquals("out", parts[0]["text"]?.jsonPrimitive?.content)
+        assertEquals("data:image/png;base64,aGk=", parts[1]["image_url"]?.jsonPrimitive?.content)
+        assertEquals(
+            listOf("developer", "function_call", "function_call_output"),
+            inputs.map { it["type"]?.jsonPrimitive?.content ?: it["role"]?.jsonPrimitive?.content },
+            "tool-result media stays in its result after the Lite instructions item",
+        )
     }
 
     @Test

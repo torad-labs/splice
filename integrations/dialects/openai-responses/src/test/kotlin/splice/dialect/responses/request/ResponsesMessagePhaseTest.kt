@@ -4,7 +4,7 @@
 // and codex-rs keeps phase on every replayed message (protocol/src/models.rs:1021-1036). Claude Code
 // keeps no phase, so the replay reads it off the message's shape: text a tool_use follows in the same
 // message was said on the way to that call (commentary), text nothing follows is the answer
-// (final_answer). Lite turns only; the non-lite shape stays byte-for-byte what it was.
+// (final_answer). Every standard Responses head gets the same phases; an original phase wins.
 package splice.dialect.responses.request
 
 import kotlinx.serialization.json.JsonObject
@@ -104,14 +104,36 @@ class ResponsesMessagePhaseTest {
     }
 
     @Test
-    fun `a non-lite turn replays assistant text exactly as before, with no phase`() {
+    fun `a standard Responses turn infers phases without the Lite marker`() {
         val assistant = input(HISTORY, "gpt-4.1").filter { it["role"]?.jsonPrimitive?.content == "assistant" }
+
         assertEquals(
             listOf(
-                """{"role":"assistant","content":"I'll read the file first."}""",
-                """{"role":"assistant","content":"Line 1 is fine; the bug is elsewhere."}""",
+                "assistant|commentary|I'll read the file first.",
+                "assistant|final_answer|Line 1 is fine; the bug is elsewhere.",
             ),
-            assistant.map { it.toString() },
+            messages(assistant),
+        )
+    }
+
+    @Test
+    fun `assistant preamble stays commentary when the following assistant message calls a tool`() {
+        val body = """{"model":"m","messages":[
+            {"role":"user","content":"Go."},
+            {"role":"assistant","content":"I'll check that."},
+            {"role":"assistant","content":[
+                {"type":"tool_use","id":"call_1","name":"Read","input":{}}
+            ]},
+            {"role":"user","content":[
+                {"type":"tool_result","tool_use_id":"call_1","content":"found it"}
+            ]}
+        ]}"""
+
+        val assistant = input(body, "gpt-4.1").filter { it["role"]?.jsonPrimitive?.content == "assistant" }
+
+        assertEquals(
+            listOf("assistant|commentary|I'll check that."),
+            messages(assistant),
         )
     }
 }

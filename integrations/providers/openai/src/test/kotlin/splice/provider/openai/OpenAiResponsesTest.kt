@@ -12,6 +12,10 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -93,12 +97,31 @@ class OpenAiResponsesTest {
             val sse = client.post("http://127.0.0.1:$port/v1/messages") {
                 header("Content-Type", "application/json")
                 setBody(
-                    """{"model":"claude-openai--gpt-5-pro","stream":true,
-                    "system":"You are a test. SCENARIO:basic","messages":[{"role":"user","content":"go"}]}""",
+                    """{"model":"claude-openai--gpt-5-pro","stream":true,"max_tokens":96,
+                    "system":"You are a test. SCENARIO:basic",
+                    "tools":[{"name":"lookup","description":"Look up a record","strict":true,
+                    "input_schema":{"type":"object","properties":{"id":{"type":"string"}},
+                    "required":["id"],"additionalProperties":false}}],
+                    "tool_choice":{"type":"tool","name":"lookup","disable_parallel_tool_use":true},
+                    "messages":[{"role":"user","content":"go"}]}""",
                 )
             }.bodyAsText()
             assertTrue(sse.contains("ok after auth"))
             assertTrue(sse.contains("event: message_stop"))
+            val upstream = Json.parseToJsonElement(mock.upstreamBodies.last().second).jsonObject
+            val tool = upstream["tools"]!!.jsonArray.single().jsonObject
+            assertEquals("true", tool["strict"]?.jsonPrimitive?.content)
+            assertEquals("96", upstream["max_output_tokens"]?.jsonPrimitive?.content)
+            assertEquals("function", tool["type"]?.jsonPrimitive?.content)
+            val choice = upstream["tool_choice"]!!.jsonObject
+            assertEquals("function", choice["type"]?.jsonPrimitive?.content)
+            assertEquals("lookup", choice["name"]?.jsonPrimitive?.content)
+            assertEquals("false", upstream["parallel_tool_calls"]?.jsonPrimitive?.content)
+            assertTrue(
+                upstream["input"]!!.jsonArray.none {
+                    it.jsonObject["type"]?.jsonPrimitive?.content == "additional_tools"
+                },
+            )
             // api key rode as the bearer; NO ChatGPT-Account-ID header (openai platform, not ChatGPT)
             assertTrue(mock.upstreamAuths.any { it.second == "Bearer sk-openai-key-abcdef" })
             assertEquals("basic" to null, mock.upstreamAccountIds.last())

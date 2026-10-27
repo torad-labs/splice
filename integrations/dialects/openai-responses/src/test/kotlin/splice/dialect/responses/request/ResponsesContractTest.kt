@@ -18,6 +18,8 @@ import splice.dialect.responses.ResponsesBackendQuirks
 import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesReasoningQuirks
+import splice.dialect.responses.ResponsesRequestControlQuirks
+import splice.dialect.responses.ResponsesServiceTierSupport
 import splice.dialect.responses.ResponsesToolQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
@@ -42,6 +44,10 @@ private fun codexProfileQuirks(toolSurface: ToolDeferralPolicy? = null) = Respon
         forceStrictFalse = true,
         normalizeToolSchemas = true,
         toolSurface = toolSurface,
+    ),
+    request = ResponsesRequestControlQuirks(
+        serviceTier = ResponsesServiceTierSupport.UNSUPPORTED,
+        emitMaxOutputTokens = false,
     ),
     backend = ResponsesBackendQuirks(
         sendClientMetadata = true,
@@ -108,6 +114,7 @@ class ResponsesContractTest {
             .build(parsed.typed, parsed.raw, canonicalOpts())
             .req
         assertFalse("instructions" in req, "current codex-rs omits the empty field")
+        assertFalse("max_output_tokens" in req, "the mirrored endpoint profile retains uncapped generation")
         assertGoldenContract("responses-codex-profile", req) { ResponsesContractTest::class.java }
     }
 
@@ -125,6 +132,7 @@ class ResponsesContractTest {
         val req = ResponsesRequestBuilder(quirks)
             .build(parsed.typed, parsed.raw, canonicalOpts())
             .req
+        assertFalse("max_output_tokens" in req, "tool search does not change the endpoint output-cap policy")
         assertGoldenContract("responses-tool-search", req) { ResponsesContractTest::class.java }
     }
 }

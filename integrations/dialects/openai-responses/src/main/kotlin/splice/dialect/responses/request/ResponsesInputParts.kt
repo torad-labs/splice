@@ -1,8 +1,8 @@
-// NEW: the pure item factories shared by the message walk and the tool round-trip family, split out
-// of ResponsesRequestBuilder.kt (2026-08-17, concentration campaign). appendToolResult
-// (ResponsesInputTools.kt) needs toolResultImageMessage and imagePart, so without this shared type
-// the tool family and the walk (ResponsesInputBuilder.kt) would point at each other — extracting these is
-// what keeps the split ACYCLIC. Every relocated member kept its identical name and argument list.
+// Pure input-item factories shared by the Responses message walk, tool-result conversion, and media
+// follow-ups. Split from ResponsesRequestBuilder.kt (2026-08-17) so the message builder, tool-result
+// converter, and replay renderer share image/file parts without depending on one another. Profiles
+// with structured function output embed ordered media parts; text-only fallbacks and Codex code mode
+// use toolResultImageMessage to keep function and script output textual.
 package splice.dialect.responses.request
 
 import kotlinx.serialization.json.JsonObject
@@ -43,6 +43,29 @@ internal class ResponsesInputParts(minImageEdgePx: Int? = null) {
                 },
             )
         }
+
+    internal fun filePart(source: MediaSource?): JsonObject? {
+        val data = source?.data
+        return when {
+            source == null -> null
+            source.type == "base64" && !data.isNullOrEmpty() -> {
+                val mime = source.mediaType?.takeIf { it.isNotEmpty() } ?: DEFAULT_DOCUMENT_MEDIA_TYPE
+                val size = DATA_URL_PREFIX.length + mime.length + BASE64_SEPARATOR.length + data.length
+                val url = StringBuilder(size)
+                    .append(DATA_URL_PREFIX).append(mime).append(BASE64_SEPARATOR).append(data)
+                    .toString()
+                buildJsonObject {
+                    put("type", "input_file")
+                    put("file_data", url)
+                }
+            }
+            source.type == "url" && !source.url.isNullOrEmpty() -> buildJsonObject {
+                put("type", "input_file")
+                put("file_url", source.url)
+            }
+            else -> null
+        }
+    }
 
     internal fun imagePart(source: MediaSource?): JsonObject? {
         // Bound to a local BEFORE the branch so `isNullOrEmpty`'s contract narrows the type the
@@ -94,3 +117,7 @@ internal class ResponsesInputParts(minImageEdgePx: Int? = null) {
 private const val FIELD_CONTENT = "content"
 private const val DATA_URL_PREFIX = "data:"
 private const val BASE64_SEPARATOR = ";base64,"
+private const val DEFAULT_DOCUMENT_MEDIA_TYPE = "application/octet-stream"
+
+/** Common disposition for unreadable source media in ordinary input and either result renderer. */
+internal const val UNSUPPORTED_SOURCE = "unsupported source"

@@ -52,6 +52,9 @@ internal class ResponsesTurnState {
 
     var emittedText = false
 
+    /** Terminal-only text remains a promotion candidate. A terminal suffix after live text is emitted separately. */
+    var terminalTextSuffix: String? = null
+
     /** codex-parity active-item tracking (sequential_cutoff, 2026-08-26; codex-rs
      *  session/turn.rs: `active_item` is set by every OutputItemAdded and taken by
      *  OutputItemDone). A reasoning summary_text.done belonging to any OTHER item is a stale

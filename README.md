@@ -961,6 +961,7 @@ What 0.4.x keeps stable, and the check that holds it:
 | where state and credentials live | the `StatePaths` header; a pre-0.4 install keeps `~/.claude-codex/state` |
 | the `splice` verbs | a build test checks that every shipped verb still parses |
 | the Anthropic `/v1` surface every head serves | saved request and reply fixtures checked byte for byte |
+| [shared Responses conversion and executor isolation](docs/architecture/responses-conversion.md) | `SharedResponsesContractTest` and the behavioral checks named in that contract |
 | `splice doctor --json` | its `schema_version` (1); a breaking change bumps it |
 | the `/api/*` payload fields | build tests pin each payload's fields |
 

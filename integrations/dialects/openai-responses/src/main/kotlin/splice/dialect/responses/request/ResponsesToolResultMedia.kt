@@ -1,18 +1,12 @@
-// NEW: V4-179 — the ONE renderer for the images a tool_result carries, shared by the ordinary walk
-// (ResponsesInputTools.appendToolResult) and the code-mode bridge (CodexCodeModeTurnBuilder).
+// V4-179: one renderer for tool-result follow-ups used by text-only output profiles and Codex code mode.
 //
-// function_call_output.output is string-only, so a screenshot inside a tool_result rides as a
-// follow-up user message of input_image parts, and every image that cannot ride is ANNOUNCED — the
-// v25 marker doctrine, with DR-164's "unsupported source" and DR-155's floor reason. Since 2026-08-17
-// that logic lived inline in appendToolResult. Code mode needs the same items for a tool_result the
-// bridge owns: it persists them beside the script's bounded output and replays them from the record
-// (CodexCodeModeHistory), and the bridge recognises its own follow-ups in the client's history by
-// byte-equality with what THIS renderer produced. Two renderers would be two readings of one
-// tool_result that drift apart silently, so there is one, and it is pure: a ToolResultBlock in, the
-// ordered items out, nothing else consulted.
+// Public Responses profiles with structured tool output emit ordered parts directly. A profile without
+// that capability keeps function_call_output textual and uses follow-up user items for supported images;
+// code-mode script results are text-only too. Unsupported and below-floor images receive explicit markers.
+// Codex persists these items and recognizes replayed history by byte equality with its prior output.
+// This stays pure: a ToolResultBlock in, ordered items and image dispositions out.
 //
-// PUBLIC because :providers-codex is its second consumer; the rest of the tool round-trip family stays
-// internal — this is the narrow surface, not the builder.
+// PUBLIC for :providers-codex; the ordinary Responses builder also consumes it as a profile fallback.
 package splice.dialect.responses.request
 
 import kotlinx.serialization.json.JsonObject
@@ -22,12 +16,11 @@ import splice.dialect.responses.ResponsesQuirks
 
 public class ResponsesToolResultMedia(private val quirks: ResponsesQuirks) {
 
-    private val parts = ResponsesInputParts(quirks.minImageEdgePx)
+    private val parts = ResponsesInputParts(quirks.request.minImageEdgePx)
 
-    /** The follow-up items for [block]'s images, in the order the wire has carried them since v25:
-     *  the image message (readable, above-floor images), then the unsupported-source marker, then
-     *  the floor marker — each only when it has something to say. [ToolResultFollowUps.dispositions]
-     *  answers, per image in content order, what happened to it, so a caller can tell the model. */
+    /** The follow-up items for [block]'s images when tool output must stay textual: readable,
+     *  above-floor images ride in an image message, and unsupported-source or floor markers name
+     *  omissions. [ToolResultFollowUps.dispositions] preserves one verdict per image in content order. */
     public fun followUps(block: ToolResultBlock): ToolResultFollowUps {
         val images = block.content.filterIsInstance<ImageBlock>()
         val dispositions = images.map { image ->
@@ -70,6 +63,3 @@ public data class ToolResultFollowUps(
 
 /** One image's fate: delivered as an input_image part, or omitted for [reason] (the marker's words). */
 public data class ImageDisposition(val delivered: Boolean, val reason: String?)
-
-/** DR-164's wording, which ResponsesImageFloorTest pins as the non-floor drop's story. */
-private const val UNSUPPORTED_SOURCE = "unsupported source"

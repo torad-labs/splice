@@ -13,7 +13,8 @@
   and a hosted vendor's requests are unchanged.
 - **Tool callbacks progress as results arrive.** Code-mode cells can issue up to 32 callbacks while encoded frames remain bounded. A partial result batch settles its ready promises, retains unfinished callbacks and terminal errors for recovery, and continues without waiting on a paused source stream.
 - **Deferred tool history stays attached to its callback.** Canonical history preserves generated declarations beside their relocated function calls, preventing a returned batch from abandoning its running script.
-- **Optional WebSocket prefix preparation.** When the Responses WebSocket transport is explicitly enabled, the Codex profile can prepare the instruction/tool prefix before generation. Continuation state rejects stale responses. WebSockets remain off by default.
+- **Responses heads retain richer conversations.** Mixed tool results keep their ordered text, images and files. Assistant phases survive history resends. Deferred tool definitions and withdrawals retain their original boundaries. Public request controls and non-strict function schemas no longer depend on Codex mode. The JavaScript executor, authentication and internal Codex routing stay provider-owned.
+- **Optional WebSocket prefix preparation.** Explicitly enabled Responses WebSockets can prepare reusable instruction and function-tool prefixes without generating an answer. Codex retains its own negotiation and narrower prefix policy. Continuation state rejects stale responses. WebSockets remain off by default.
 - **Less code-mode registry bookkeeping.** Membership and expiry lookups use indexes, and journal appends reserve for their selected operation before a full checkpoint is encoded. Live response-time and memory effects remain to be measured.
 - **Sessions can run turns without the key that controls splice.** In 0.3.x, sessions other than
   `claude-splice` held that management key. Upgrade, rotate the key, then relaunch your sessions ([Security](#security), [Upgrading from 0.3.x](#upgrading-from-03x)).
@@ -143,6 +144,7 @@ that boundary: transcripts sent to providers, argv other accounts can read, and 
 origin.
 
 ### Known limitations
+- **Some source requirements have no Responses equivalent.** Enabled document citations, programmatic-only tools and unsupported account or geographic requirements are refused before sending. Valid cache hints use automatic upstream caching without promising source breakpoints or retention. Foreign file identifiers are not reused across vendors.
 - **`splice install --all` leaves the MCP hub off.** It writes the hub's systemd units and enables nothing; `splice setup` turns the hub on only over units it recorded writing.
   Until setup turns it on, or you run `systemctl --user enable --now splice-mcp-front.socket`, which `splice doctor`
   names, each session starts its own MCP servers, as in 0.3.x.

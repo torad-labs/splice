@@ -22,10 +22,11 @@ import splice.upstream.TurnSignals
 internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
     // The controller is stateless — one cached instance serves every turn (a per-call
     // allocation here also ran per ROUND via the collectReasoningEnvelopes null-check).
-    // V4-339: one per wire shape. A lite turn's replayed partial prose is commentary (V4-335's rule).
+    // One per wire shape. Partial prose replays as commentary unless native history supplies a phase.
     private val defaultReanchorPolicy: ReanchorPolicy by lazy {
         ResponsesReanchorPolicy(
             decodeReasoningEnvelope = { ReasoningReplay.decodeReasoningEnvelope(it) },
+            prosePhase = AssistantPhase.COMMENTARY,
             continueReasoningOnly = deps.quirks.roundTrip.continueReasoningOnly,
         )
     }
@@ -101,6 +102,14 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
             override fun compacted() {
                 deps.continuity.cache.dropConversation(conversation)
                 deps.continuity.cache.dropConversation(positioned)
+                deps.continuity.phases.dropConversation(positioned)
+            }
+
+            override fun assistantPhases(records: Map<String, String>) {
+                if (positioned == null || meta.compact) return
+                records.forEach { (index, record) ->
+                    deps.continuity.phases.put(positioned, listOf(index), listOf(record))
+                }
             }
 
             override fun positioned(position: String, envelope: String, order: ReasoningItemOrder?) {

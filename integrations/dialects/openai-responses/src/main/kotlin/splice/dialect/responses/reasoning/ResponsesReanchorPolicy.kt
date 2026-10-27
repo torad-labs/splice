@@ -28,13 +28,14 @@ import splice.upstream.LiveRound
 import splice.upstream.ReanchorPolicy
 import splice.upstream.ReanchorRound
 
-/** [prosePhase] is the phase the replayed partial prose carries: commentary on a lite turn, null (the
- *  bare item it always had) on any other. [continueReasoningOnly] is the vendor's quirk of the same name: a
- *  round that completed with reasoning alone is carried on from that reasoning instead of re-sent identically. */
+/** [prosePhase] is the phase the replayed partial prose carries. Public Responses turns use commentary
+ *  unless native history supplies its known original phase. Null is a provider-owned exception. [continueReasoningOnly]
+ *  is the vendor's quirk of the same name: a round that completed with reasoning alone is carried on from that
+ *  reasoning instead of re-sent identically. */
 internal class ResponsesReanchorPolicy(
     private val decodeReasoningEnvelope: ReasoningEnvelopeDecoder,
     private val maxContinuations: Int = DEFAULT_MAX_CONTINUATIONS,
-    private val prosePhase: AssistantPhase? = null,
+    private val prosePhase: AssistantPhase? = AssistantPhase.COMMENTARY,
     private val continueReasoningOnly: Boolean = false,
 ) : ReanchorPolicy {
 
@@ -118,7 +119,7 @@ internal class ResponsesReanchorPolicy(
                     val model = messageText(item)
                     val text = deliveredPrefix(model, delivered, offset)
                     offset += text.length
-                    if (text.isNotEmpty()) add(assistantText(text))
+                    if (text.isNotEmpty()) add(assistantText(text, replayPhase(item)))
                     if (text.length != model.length) break
                 } else {
                     add(item)
@@ -141,7 +142,14 @@ internal class ResponsesReanchorPolicy(
     private fun messageText(item: JsonObject): String = ResponsesMessageText.text(item)
 
     /** The partial prose the client already saw, replayed as context so the model resumes it. */
-    private fun assistantText(text: String): JsonObject = ResponsesAssistantText.item(text, prosePhase)
+    private fun assistantText(text: String, phase: AssistantPhase? = prosePhase): JsonObject =
+        ResponsesAssistantText.item(text, phase)
+
+    private fun replayPhase(item: JsonObject): AssistantPhase? = when (JsonScalars.str(item, "phase")) {
+        "commentary" -> AssistantPhase.COMMENTARY
+        "final_answer" -> AssistantPhase.FINAL_ANSWER
+        else -> prosePhase
+    }
 
     // phase:commentary keeps the marker out of the visible transcript (the fold marker trick) and
     // satisfies the Responses "reasoning item needs a following item" constraint.

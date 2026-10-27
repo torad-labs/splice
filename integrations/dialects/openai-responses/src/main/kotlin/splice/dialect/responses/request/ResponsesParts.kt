@@ -49,10 +49,16 @@ internal class ResponsesParts(
     private val reasoningWrites = ReasoningCacheWrites(reasoningFiles.takeIf { quirks.roundTrip.reasoningCache })
     private val reasoningCache = ReasoningCache(log = log, writes = reasoningWrites)
 
+    // Native phases remain meaningful when encrypted-reasoning replay is off.
+    private val phaseWrites = ReasoningCacheWrites(
+        tuning.locations.stateDir?.let { ReasoningCacheFiles(it.resolve("assistant-phases"), log = log) },
+    )
+    private val phaseCache = ReasoningCache(log = log, writes = phaseWrites)
+
     init {
         if (!quirks.roundTrip.reasoningCache) reasoningFiles?.purge()
     }
-    private val continuity = ReasoningContinuity(reasoningCache, cachePolicy, ids)
+    private val continuity = ReasoningContinuity(reasoningCache, cachePolicy, ids, phaseCache)
     private val summaryParts = ConversationSummaryParts()
     private val toolSurfaceLatch = ToolSurfaceLatch()
     val turnOptions = ResponsesTurnOptions(
@@ -91,7 +97,10 @@ internal class ResponsesParts(
      *  stop that did not wait could end the process with the last ones still queued. A disk that did not keep up is
      *  said in daemon.log; the records it had not taken still land if the process lives on. */
     fun onHeadStop() {
-        if (!reasoningWrites.drain(STOP_WRITES_MS)) {
+        val deadline = splice.core.util.MonoClock.nowMs() + STOP_WRITES_MS
+        val reasoningDrained = reasoningWrites.drain(STOP_WRITES_MS)
+        val phasesDrained = phaseWrites.drain((deadline - splice.core.util.MonoClock.nowMs()).coerceAtLeast(0L))
+        if (!reasoningDrained || !phasesDrained) {
             log(
                 "[reasoning-cache] stop: the disk had not taken every queued record after ${STOP_WRITES_MS}ms; " +
                     "the rest are lost if the daemon exits now",

@@ -32,6 +32,7 @@ import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.TurnSignals
 import splice.upstream.sse.WireSink
+import kotlin.random.Random
 import kotlin.time.Duration.Companion.seconds
 
 class CodexProviderTest {
@@ -84,6 +85,30 @@ class CodexProviderTest {
         accountIdHeader = accountIdHeader,
         log = log,
     )
+
+    // Goal: sharing public output limits must not change Codex's non-enforcement policy.
+    @Test
+    fun `positive source output caps never become Codex generation limits`() {
+        val random = Random(2601)
+        val caps = listOf(1L, 128L, Long.MAX_VALUE) + List(32) { random.nextLong(1L, Long.MAX_VALUE) }
+        val codex = provider(accountIdHeader = false)
+        try {
+            for (cap in caps) {
+                val request = AnthropicParse.parseAnthropicBody(
+                    """
+                    {"model":"claude-codex--gpt-5.6-sol","max_tokens":$cap,
+                     "messages":[{"role":"user","content":"Hello"}]}
+                    """.trimIndent(),
+                )
+                for (compact in listOf(false, true)) {
+                    val built = codex.buildTurn(request, compact, "output-cap")
+                    assertFalse("max_output_tokens" in built.requestBody, "cap=$cap compact=$compact")
+                }
+            }
+        } finally {
+            codex.onHeadStop()
+        }
+    }
 
     @Test
     fun `account id header present when the flag is on`() = runBlocking {

@@ -46,6 +46,7 @@ private class LiveReasoningProvider(reasoning: ReasoningSettings) : ResponsesPro
     reasoning = reasoning,
     quirks = ResponsesQuirks(providerTag = "claudex", lite = ResponsesLiteQuirks()),
 ) {
+    override val replies = splice.upstream.failure.Replies(splice.dialect.responses.failure.ResponsesReplies)
     override fun extraHeaders(creds: Credentials): Map<String, String> = emptyMap()
 }
 

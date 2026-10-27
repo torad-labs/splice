@@ -68,6 +68,7 @@ private class SparseOrderProvider(state: Path, cache: Boolean = true, replay: Bo
     ),
     log = {},
 ) {
+    override val replies = splice.upstream.failure.Replies(splice.dialect.responses.failure.ResponsesReplies)
     override fun extraHeaders(creds: Credentials): Map<String, String> = emptyMap()
 }
 

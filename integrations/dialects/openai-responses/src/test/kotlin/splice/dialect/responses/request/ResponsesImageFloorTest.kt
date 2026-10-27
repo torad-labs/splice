@@ -26,6 +26,7 @@ import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
 import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.ResponsesRequestControlQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
 import java.util.Base64
@@ -85,10 +86,14 @@ class ResponsesImageFloorTest {
                 ]}]}
             ]}""",
         )
-        val marker = items.last().textContent()
-        assertEquals("[1 image(s) from tool_result t3 omitted by claude-grok proxy: $FLOOR_REASON]", marker)
-        assertFalse(items.toString().contains("images from tool_result"), "no follow-up for a dropped image")
-        assertTrue(items.any { it["output"]?.jsonPrimitive?.content == "out" }, "the text output is untouched")
+        val output = items.last().getValue("output").jsonArray.map { it.jsonObject }
+        val texts = output.mapNotNull { it["text"]?.jsonPrimitive?.content }
+        assertEquals(
+            listOf("out", "[1 image(s) from tool_result t3 omitted by claude-grok proxy: $FLOOR_REASON]"),
+            texts,
+        )
+        assertFalse(output.any { it["type"]?.jsonPrimitive?.content == "input_image" })
+        assertEquals(2, items.size, "the omitted image is described on its matching function result")
     }
 
     // DR-164 — this arm WAS the DR-155 scope pin asserting the silence, written so "a future repair
@@ -106,12 +111,14 @@ class ResponsesImageFloorTest {
                 ]}]}
             ]}""",
         )
+        val output = items.last().getValue("output").jsonArray.map { it.jsonObject }
+        val texts = output.mapNotNull { it["text"]?.jsonPrimitive?.content }
         assertEquals(
-            "[1 image(s) from tool_result t7 omitted by claude-grok proxy: unsupported source]",
-            items.last().textContent(),
+            listOf("out", "[1 image(s) from tool_result t7 omitted by claude-grok proxy: unsupported source]"),
+            texts,
         )
-        assertTrue(items.any { it["output"]?.jsonPrimitive?.content == "out" }, "the text output is untouched")
-        assertFalse(items.toString().contains("images from tool_result"), "no follow-up for a dropped image")
+        assertFalse(output.any { it["type"]?.jsonPrimitive?.content == "input_image" })
+        assertEquals(2, items.size, "the omitted image is described on its matching function result")
     }
 
     // DR-164 + DR-155 together: the realistic mixed tool_result. TWO markers with their OWN counts
@@ -128,14 +135,16 @@ class ResponsesImageFloorTest {
                 ]}]}
             ]}""",
         )
-        val markers = items.mapNotNull { it.textContent().takeIf { t -> t.contains("omitted by") } }
+        val output = items.last().getValue("output").jsonArray.map { it.jsonObject }
+        val markers = output.mapNotNull { it["text"]?.jsonPrimitive?.content }
+            .filter { it.contains("omitted by") }
         assertEquals(
             listOf(
                 "[1 image(s) from tool_result t8 omitted by claude-grok proxy: unsupported source]",
                 "[1 image(s) from tool_result t8 omitted by claude-grok proxy: $FLOOR_REASON]",
             ),
             markers,
-            "unreadable first, then the floor — the order the chat sibling emits them in",
+            "unreadable first, then the floor in tool-result order",
         )
     }
 
@@ -151,8 +160,16 @@ class ResponsesImageFloorTest {
                 ]}]}
             ]}""",
         )
-        assertFalse(items.toString().contains("omitted by"), "a readable image must not be marked: $items")
-        assertTrue(items.toString().contains("images from tool_result t10"), "it rides the follow-up message")
+        val output = items.last().getValue("output").jsonArray.map { it.jsonObject }
+        assertFalse(output.any { it["text"]?.jsonPrimitive?.content?.contains("omitted by") == true })
+        assertTrue(
+            output.any {
+                it["type"]?.jsonPrimitive?.content == "input_image" &&
+                    it["image_url"]?.jsonPrimitive?.content == "data:image/png;base64,${png(8, 8)}"
+            },
+            "the readable image stays in the function output",
+        )
+        assertEquals(2, items.size, "tool-result images are not detached follow-up messages")
     }
 
     // An image splice cannot read is not an image splice may delete. "aGk=" is base64 of the word
@@ -180,8 +197,11 @@ class ResponsesImageFloorTest {
     }
 }
 
-private val FLOORED =
-    ResponsesQuirks(providerTag = "claude-grok", minImageEdgePx = XAI_FLOOR, lite = ResponsesLiteQuirks())
+private val FLOORED = ResponsesQuirks(
+    providerTag = "claude-grok",
+    lite = ResponsesLiteQuirks(),
+    request = ResponsesRequestControlQuirks(minImageEdgePx = XAI_FLOOR),
+)
 private val CODEX = ResponsesQuirks(providerTag = "claudex", lite = ResponsesLiteQuirks())
 
 private fun opts(compact: Boolean = false) = BuildOptions(

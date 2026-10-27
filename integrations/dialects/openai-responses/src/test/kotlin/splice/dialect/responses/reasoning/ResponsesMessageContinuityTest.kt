@@ -96,7 +96,7 @@ class ResponsesMessageContinuityTest(@param:TempDir private val state: Path) {
             ).asFlow(),
             sink,
         )
-        assertTrue(outcome is TurnOutcome.Success)
+        assertTrue(outcome is TurnOutcome.Success, "$outcome")
         assertEquals("Hello", sink.text)
         assertEquals(1, sink.textBlocks.size)
         assertEquals(0, sink.opaqueBlocks)

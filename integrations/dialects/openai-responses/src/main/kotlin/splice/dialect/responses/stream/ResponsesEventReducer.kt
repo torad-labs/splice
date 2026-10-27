@@ -51,7 +51,7 @@ internal class ResponsesEventReducer(
             "response.reasoning_summary_text.done",
             -> reasoningFold.onReasoningEvent(evt, sink)
             "response.custom_tool_call_input.delta" -> itemFold.execProgress.delta(evt, sink)
-            "response.output_text.delta" -> itemFold.onTextDelta(evt, sink)
+            "response.output_text.delta", "response.output_text.done" -> onTextEvent(evt, sink)
             "response.function_call_arguments.delta", "response.function_call_arguments.done" ->
                 itemFold.onArgs(evt, sink)
             // W4-A (L3): the streamed refusal carriers. Both used to fall into the `else` below
@@ -62,6 +62,14 @@ internal class ResponsesEventReducer(
             "response.refusal.delta", "response.refusal.done" -> state.addRefusal(evt)
             // *_text.done / *_part.done fire PER PART — closing here was the v24 truncation bug
             else -> Unit
+        }
+    }
+
+    private suspend fun onTextEvent(evt: JsonObject, sink: WireSink) {
+        if (JsonScalars.str(evt, "type") == "response.output_text.done") {
+            itemFold.onTextDone(evt, sink)
+        } else {
+            itemFold.onTextDelta(evt, sink)
         }
     }
 

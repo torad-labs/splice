@@ -45,7 +45,7 @@ internal class ResponsesItemFold(
             frames.intOr(evt[OUTPUT_INDEX]) ?: frames.intOr(item["index"]),
         ) ?: state.blocks.size
         messages.added(item, oi)
-        state.nativePrefix?.delivered?.added(oi)
+        state.nativePrefix?.delivered?.added(oi, item)
         execProgress.added(item, oi, sink)
         // codex parity: EVERY added item (reasoning, message, function_call, search) becomes the
         // active item; summary done-events are rendered only while their item is active.
@@ -217,6 +217,25 @@ internal class ResponsesItemFold(
         } else {
             emitText(key, delta, existing, sink)
             replay.textDelta(key, delta)
+        }
+    }
+
+    suspend fun onTextDone(evt: JsonObject, sink: WireSink) {
+        val offered = JsonScalars.strOrEmpty(evt["text"])
+        if (offered.isEmpty()) return
+        val key = messages.index(JsonScalars.str(evt, "item_id"), frames.intOr(evt[OUTPUT_INDEX])) ?: 0
+        val existing = state.blocks[key]
+        if (existing?.tool == true) return
+        val contentIndex = frames.intOr(evt["content_index"]) ?: 0
+        val suffix = messages.completedPart(evt, key, contentIndex, offered)
+        if (suffix.isEmpty()) return
+        if (outputToolName != null) {
+            state.textBuf.append(suffix)
+            state.nativePrefix?.bufferedDelta(key, suffix)
+            replay.messageUndelivered()
+        } else {
+            emitText(key, suffix, existing, sink)
+            replay.textDelta(key, suffix)
         }
     }
 

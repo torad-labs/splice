@@ -8,6 +8,7 @@ package splice.dialect.responses.reasoning
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.util.JsonScalars
 import splice.core.wire.AnthropicRequest
 import splice.dialect.responses.ResponsesLiteShape
 import splice.dialect.responses.ResponsesQuirks
@@ -73,20 +74,31 @@ internal class ResponsesReasoningKnobs(private val quirks: ResponsesQuirks) {
         return buildJsonObject { put("reasoning_summary_delivery", delivery) }
     }
 
-    internal fun reasoningBlock(effort: String?, summary: String?, opts: BuildOptions): JsonObject? {
+    internal fun reasoningBlock(effort: String?, summary: String?, raw: JsonObject, opts: BuildOptions): JsonObject? {
         if (effort == null) return null
         val dropSummary = quirks.reasoning.summaryRejectModelRegex?.containsMatchIn(opts.models.upstream) == true ||
             summary == null || summary == "none"
+        val context = reasoningContext(raw, opts)
         return buildJsonObject {
             put(FIELD_EFFORT, effort)
             if (!dropSummary) put(FIELD_SUMMARY, summary)
-            // codex-rs lite parity: reasoning context spans the session, not just the current turn.
-            if (liteShape.isLite(opts)) put("context", "all_turns")
+            if (context != null) put(FIELD_CONTEXT, context)
         }
     }
+
+    private fun reasoningContext(raw: JsonObject, opts: BuildOptions): String? =
+        if (liteShape.isLite(opts)) {
+            CONTEXT_ALL_TURNS
+        } else {
+            JsonScalars.str(raw[FIELD_REASONING] as? JsonObject, FIELD_CONTEXT)
+                ?.takeIf { it in SUPPORTED_CONTEXTS }
+        }
 }
 
 // Wire field names shared by the reasoning-block builder and ResponsesLooseFields' raw-JSON reads.
 internal const val FIELD_EFFORT = "effort"
 internal const val FIELD_SUMMARY = "summary"
 internal const val FIELD_REASONING = "reasoning"
+private const val FIELD_CONTEXT = "context"
+private const val CONTEXT_ALL_TURNS = "all_turns"
+private val SUPPORTED_CONTEXTS = setOf("auto", "current_turn", CONTEXT_ALL_TURNS)

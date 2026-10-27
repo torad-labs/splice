@@ -213,6 +213,7 @@ internal class ResponsesStreamTranslator(
     ): TurnOutcome {
         latchSweptToolBlocks(state)
         sink.closeAll()
+        state.terminalTextSuffix?.let { sink.addTextBlock(it) }
         ResponsesSchemaOutput(outputToolName).emit(state, sink)
         val outcome = billedOutcome(state)
         state.ending?.let { log("upstream round ended on $it") }

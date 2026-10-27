@@ -23,7 +23,10 @@ public class OpenAiResponsesProvider(
     /** Daemon log sink — forwarded to ResponsesProvider so its diagnostics reach
      *  /mgmt/logs and not stderr alone (wall kt-no-println, 2026-07-27). */
     log: LogSink = LogSink(DaemonLog::write),
-) : ResponsesProvider(tuning, reasoning, quirks, log = log)
+) : ResponsesProvider(tuning, reasoning, quirks, log = log) {
+    /** The public Responses API supports WebSocket mode; the provider quirk keeps it default-off. */
+    override val supportsWebSocket: Boolean = true
+}
 
 /** Holder for the openai-platform quirk profile. A class rather than a static namespace so the
  *  profile is constructed by whoever needs it (the daemon overlays TOML on top of it), and so the

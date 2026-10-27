@@ -17,7 +17,15 @@ public sealed class ContentBlock {
     public data class ImageBlock(val source: MediaSource? = null) : ContentBlock()
 
     @Serializable
-    public data class DocumentBlock(val source: MediaSource? = null) : ContentBlock()
+    public data class DocumentBlock(
+        val source: MediaSource? = null,
+        val title: String? = null,
+        val context: String? = null,
+        /** Source citation configuration stays available for destination admission. */
+        val citations: JsonObject? = null,
+        /** Anthropic's block-local cache breakpoint, not a destination content field. */
+        @SerialName("cache_control") val cacheControl: JsonObject? = null,
+    ) : ContentBlock()
 
     /** [signature] is what the client round-trips beside the text: a vendor's, or one splice minted
      *  ([splice.core.turn.SpliceSignatures]), which is how a dialect that sends thinking back tells splice's own wait

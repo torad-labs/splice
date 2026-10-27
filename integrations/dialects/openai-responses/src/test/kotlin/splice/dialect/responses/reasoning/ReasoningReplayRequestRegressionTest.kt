@@ -79,6 +79,7 @@ private class ReplayRequestProvider(state: Path, cache: Boolean) : ResponsesProv
     ),
     log = {},
 ) {
+    override val replies = splice.upstream.failure.Replies(splice.dialect.responses.failure.ResponsesReplies)
     override fun extraHeaders(creds: Credentials): Map<String, String> = emptyMap()
 }
 

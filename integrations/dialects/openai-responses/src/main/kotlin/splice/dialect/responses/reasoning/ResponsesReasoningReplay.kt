@@ -67,6 +67,9 @@ internal class ResponsesReasoningReplay(
     /** Terminal-only backends carry the same ordered output array. Revisit it from the request cursor;
      * already captured ids are skipped, and streamed positions never depend on the terminal arriving. */
     fun finish() {
+        ResponsesAssistantPhaseRecords().capture(initial, state, names)?.let {
+            ctx.reasoningCapture.onTurn.assistantPhases(it)
+        }
         val output = state.finalResponse?.get("output") as? JsonArray ?: return
         state.nativePrefix?.finish(output)
         if (output.isEmpty()) return

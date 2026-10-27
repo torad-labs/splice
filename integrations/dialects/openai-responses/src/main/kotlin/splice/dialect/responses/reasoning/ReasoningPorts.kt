@@ -96,4 +96,7 @@ internal fun interface TurnReasoningSink {
 
     /** A completed reasoning item at an exact visible-history position, including prose-only rounds. */
     public fun positioned(position: String, envelope: String, order: ReasoningItemOrder? = null): Unit = Unit
+
+    /** Exact native message phases, independently of encrypted-reasoning replay. */
+    public fun assistantPhases(records: Map<String, String>): Unit = Unit
 }

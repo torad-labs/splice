@@ -395,6 +395,54 @@ class ResponsesStreamTranslatorTest {
     }
 
     @Test
+    fun `terminal text completes a sparse streamed prefix exactly once`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"The answer starts"}"""),
+                ev("""{"type":"response.output_text.done","output_index":0,"text":"The answer starts here."}"""),
+                ev(
+                    """{"type":"response.completed","response":{"id":"r1","output":[
+                        {"type":"message","role":"assistant","content":[
+                            {"type":"output_text","text":"The answer starts here."}
+                        ]}
+                    ]}}""",
+                ),
+            ).asFlow(),
+            sink,
+        )
+
+        val success = outcome as TurnOutcome.Success
+        assertEquals("The answer starts here.", success.text.bodyText)
+        assertEquals(
+            listOf("openText#0", "text#0:The answer starts", "text#0: here.", "closeAll"),
+            sink.calls,
+        )
+    }
+
+    @Test
+    fun `terminal text cannot retract a visible stream`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_text.delta","output_index":0,
+                        "delta":"no model text returned"}""",
+                ),
+                ev(
+                    """{"type":"response.completed","response":{"id":"r1","output":[
+                        {"type":"message","content":[{"type":"output_text","text":"replacement"}]}
+                    ]}}""",
+                ),
+            ).asFlow(),
+            sink,
+        )
+
+        assertEquals("no model text returned", (outcome as TurnOutcome.Success).text.bodyText)
+        assertEquals(listOf("openText#0", "text#0:no model text returned", "closeAll"), sink.calls)
+    }
+
+    @Test
     fun `replay stays off the visible wire while the complete summary precedes its tool`() = runTest {
         val sink = RecordingSink()
         val outcome = ResponsesStreamTranslator(ctx(emit = true)).driveTurn(
@@ -506,6 +554,123 @@ class ResponsesStreamTranslatorTest {
             sink,
         )
         assertTrue(sink.calls.none { it.startsWith("redacted:") })
+    }
+}
+
+class ResponsesTextCompletionTest {
+    @Test
+    fun `generated text partitions reconcile optional done and terminal suffixes once`() = runTest {
+        for (case in completionCases()) {
+            val sink = RecordingSink()
+            val outcome = ResponsesStreamTranslator(ctx()).driveTurn(events(case).asFlow(), sink)
+            assertCompletion(case, outcome, sink.calls)
+        }
+    }
+
+    private fun completionCases(): List<TextCompletionCase> =
+        listOf("done", "é\"\\\n").flatMap { answer ->
+            (0..answer.length).flatMap { prefixLength -> casesForPrefix(answer, prefixLength) }
+        }
+
+    private fun casesForPrefix(answer: String, prefixLength: Int): List<TextCompletionCase> {
+        val doneLengths = listOf<Int?>(null) + (prefixLength..answer.length).toList()
+        val terminalTypes = listOf("response.completed", "response.done", "response.incomplete")
+        return partitions(answer.take(prefixLength)).flatMap { chunks ->
+            doneLengths.flatMap { doneLength ->
+                terminalTypes.map { terminalType ->
+                    TextCompletionCase(answer, prefixLength, chunks, doneLength, terminalType)
+                }
+            }
+        }
+    }
+
+    private fun partitions(prefix: String): List<List<String>> {
+        if (prefix.isEmpty()) return listOf(emptyList())
+        return (0 until (1 shl (prefix.length - 1))).map { cuts ->
+            buildList {
+                var start = 0
+                for (index in 1 until prefix.length) {
+                    if ((cuts and (1 shl (index - 1))) != 0) {
+                        add(prefix.substring(start, index))
+                        start = index
+                    }
+                }
+                add(prefix.substring(start))
+            }
+        }
+    }
+
+    private fun events(case: TextCompletionCase): List<JsonObject> = buildList {
+        case.chunks.forEach { chunk ->
+            val delta = JsonPrimitive(chunk)
+            add(ev("""{"type":"response.output_text.delta","output_index":0,"delta":$delta}"""))
+        }
+        case.doneLength?.let { doneLength ->
+            val doneText = JsonPrimitive(case.answer.take(doneLength))
+            // Repeated snapshots must not repeat either the prefix or the recovered suffix.
+            repeat(2) {
+                add(ev("""{"type":"response.output_text.done","output_index":0,"text":$doneText}"""))
+            }
+        }
+        val text = JsonPrimitive(case.answer)
+        val terminalType = case.terminalType
+        add(
+            ev(
+                """{"type":"$terminalType","response":{"id":"r1","output":[
+                    {"type":"message","content":[{"type":"output_text","text":$text}]}
+                ],"incomplete_details":{"reason":"max_output_tokens"}}}""",
+            ),
+        )
+    }
+
+    private fun assertCompletion(case: TextCompletionCase, outcome: TurnOutcome, calls: List<String>) {
+        val expectedStreamPieces = case.chunks + listOfNotNull(case.doneSuffix.takeIf(String::isNotEmpty))
+        val terminalSuffix = case.terminalSuffix
+        val expectedClientPieces =
+            expectedStreamPieces + listOfNotNull(terminalSuffix.takeIf(String::isNotEmpty))
+        val textPieces = calls.filter { it.startsWith("text#") }.map { it.substringAfter(':') }
+        val clientPieces = clientPieces(calls)
+        val label = case.label
+
+        assertEquals(case.answer, (outcome as TurnOutcome.Success).text.bodyText, label)
+        assertEquals(expectedStreamPieces, textPieces, label)
+        assertEquals(expectedClientPieces, clientPieces, label)
+        if (expectedClientPieces.isNotEmpty()) {
+            assertEquals(case.answer, clientPieces.joinToString(""), label)
+        }
+        if (terminalSuffix.isEmpty()) {
+            assertEquals("closeAll", calls.last(), label)
+        } else {
+            val suffixIndex = calls.indexOf("addText:$terminalSuffix")
+            assertEquals("closeAll", calls[suffixIndex - 1], label)
+        }
+    }
+
+    private fun clientPieces(calls: List<String>): List<String> = calls.mapNotNull { call ->
+        when {
+            call.startsWith("text#") -> call.substringAfter(':')
+            call.startsWith("addText:") -> call.substringAfter(':')
+            else -> null
+        }
+    }
+
+    private data class TextCompletionCase(
+        val answer: String,
+        val prefixLength: Int,
+        val chunks: List<String>,
+        val doneLength: Int?,
+        val terminalType: String,
+    ) {
+        val doneSuffix: String
+            get() = doneLength?.let { answer.substring(prefixLength, it) }.orEmpty()
+
+        val terminalSuffix: String
+            get() {
+                val deliveredLength = doneLength ?: prefixLength
+                return if (deliveredLength in 1 until answer.length) answer.substring(deliveredLength) else ""
+            }
+
+        val label: String get() = "terminal=$terminalType done=$doneLength chunks=$chunks"
     }
 }
 

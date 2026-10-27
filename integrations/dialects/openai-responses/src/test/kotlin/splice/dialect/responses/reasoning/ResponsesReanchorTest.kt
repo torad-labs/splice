@@ -88,7 +88,7 @@ private object ReanchorProbeAuth : RefreshableAuthProvider {
 }
 
 /** V4-339: a claudex-shaped provider on gpt-5.6-sol, served responses-lite when [lite]. */
-private class ReanchorProbe(lite: Boolean) : ResponsesProvider(
+private class ReanchorProbe(lite: Boolean, state: java.nio.file.Path? = null) : ResponsesProvider(
     tuning = ProviderTuning(
         name = ProviderName(key = "probe", label = "probe"),
         catalog = ModelCatalog(
@@ -98,7 +98,7 @@ private class ReanchorProbe(lite: Boolean) : ResponsesProvider(
         ),
         pinnedModel = "gpt-5.6-sol",
         auth = ReanchorProbeAuth,
-        locations = ProviderLocations(baseUrl = "https://chatgpt.com/backend-api/codex"),
+        locations = ProviderLocations(baseUrl = "https://chatgpt.com/backend-api/codex", stateDir = state),
         watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
     ),
     reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, null, null),
@@ -109,6 +109,7 @@ private class ReanchorProbe(lite: Boolean) : ResponsesProvider(
         ),
     ),
 ) {
+    override val replies = splice.upstream.failure.Replies(splice.dialect.responses.failure.ResponsesReplies)
     override fun extraHeaders(creds: Credentials): Map<String, String> = emptyMap()
 }
 
@@ -128,7 +129,190 @@ private fun replayedProse(provider: ResponsesProvider): JsonObject {
         .single { (it["content"] as? JsonPrimitive)?.content == "The fix is to" }
 }
 
+private data class PhaseRoundTripSample(
+    val texts: List<String>,
+    val phases: List<String>,
+    val streamed: Boolean,
+    val text: String,
+)
+
+/** Keeps generated input, head lifecycle, and assertions separate without changing the property. */
+private class PhaseRoundTripCases(private val state: java.nio.file.Path) {
+    private val random = kotlin.random.Random(430)
+
+    suspend fun verify() {
+        repeat(16) { case -> verifyCase(case) }
+    }
+
+    private suspend fun verifyCase(case: Int) {
+        val directory = state.resolve(case.toString())
+        var provider = ReanchorProbe(lite = false, state = directory)
+        try {
+            val sample = capture(provider, case)
+            val resend = resend(sample.text, case)
+            repeat(2) { restart ->
+                if (restart != 0) {
+                    provider.onHeadStop()
+                    provider = ReanchorProbe(lite = false, state = directory)
+                }
+                val context = "case=$case streamed=${sample.streamed} restart=$restart"
+                verifyResend(provider, sample, resend, context)
+            }
+        } finally {
+            provider.onHeadStop()
+        }
+    }
+
+    private suspend fun capture(provider: ReanchorProbe, case: Int): PhaseRoundTripSample {
+        val opening = """{"model":"gpt-5.6-sol","messages":[{"role":"user","content":"Check this."}]}"""
+        val built = provider.buildTurn(AnthropicParse.parseAnthropicBody(opening), false, "session")
+        val texts = List(2) { "phase-$case-${random.nextLong().toString(36)}🙂 " }
+        val phases = if (case % 3 == 0) {
+            listOf("final_answer", "commentary")
+        } else {
+            listOf("commentary", "final_answer")
+        }
+        val messages = texts.mapIndexed { index, text ->
+            JsonObject(DeliveryFrames.message("msg_$index", text) + ("phase" to JsonPrimitive(phases[index])))
+        }
+        val native = listOf(DeliveryFrames.reasoning("rs_phase_$case")) + messages
+        val streamed = case % 2 == 0
+        val frames = if (streamed) {
+            native.mapIndexed { index, item -> DeliveryFrames.done(item, index) }
+        } else {
+            emptyList()
+        }
+        val sink = DeliverySink()
+        val outcome = provider.streamTranslator(
+            built.meta,
+            TurnSignals(watchdogFired = { null }, clientGone = { false }),
+        ).driveTurn((frames + DeliveryFrames.terminal(*native.toTypedArray())).asFlow(), sink)
+        val success = checkNotNull(outcome as? TurnOutcome.Success)
+        val text = success.text.bodyText
+        assertEquals(texts.joinToString(""), text)
+        if (streamed) assertEquals(text, sink.text.toString())
+        assertEquals(0, sink.opaqueBlocks)
+        return PhaseRoundTripSample(texts, phases, streamed, text)
+    }
+
+    private fun resend(text: String, case: Int): splice.core.parse.AnthropicTurnBody {
+        val clientHistory = clientHistory(text, case)
+        return AnthropicParse.parseAnthropicBody(
+            """{"model":"gpt-5.6-sol","messages":[{"role":"user","content":"Check this."},
+                $clientHistory,{"role":"user","content":"Continue."}]}""",
+        )
+    }
+
+    private fun clientHistory(text: String, case: Int): String {
+        val candidate = random.nextInt(1, text.length)
+        val split = if (text[candidate - 1].isHighSurrogate() && text[candidate].isLowSurrogate()) {
+            candidate + 1
+        } else {
+            candidate
+        }
+        val pieces = listOf(text.take(split), text.drop(split))
+        return when (case % 3) {
+            0 -> """{"role":"assistant","content":${JsonPrimitive(text)}}"""
+            1 -> """{"role":"assistant","content":[${pieces.joinToString(",") {
+                """{"type":"text","text":${JsonPrimitive(it)}}"""
+            }}]}"""
+            else -> pieces.joinToString(",") { """{"role":"assistant","content":${JsonPrimitive(it)}}""" }
+        }
+    }
+
+    private fun verifyResend(
+        provider: ReanchorProbe,
+        sample: PhaseRoundTripSample,
+        resend: splice.core.parse.AnthropicTurnBody,
+        context: String,
+    ) {
+        val input = input(provider, resend)
+        assertEquals(sample.phases.zip(sample.texts), phaseText(input), context)
+        assertFalse(input.any { it["type"]?.jsonPrimitive?.content == "reasoning" }, "replay stays off")
+        val unrelated = input(provider, resend, "another-session")
+        assertEquals(listOf("final_answer" to sample.text), phaseText(unrelated))
+        val changed = "!" + sample.text.drop(1)
+        val branch = AnthropicParse.parseAnthropicBody(
+            """{"model":"gpt-5.6-sol","messages":[{"role":"user","content":"Check this."},
+                {"role":"assistant","content":${JsonPrimitive(changed)}},
+                {"role":"user","content":"Continue."}]}""",
+        )
+        val branched = input(provider, branch)
+        assertEquals(listOf("final_answer" to changed), phaseText(branched), "changed history is a miss")
+    }
+
+    private fun input(
+        provider: ReanchorProbe,
+        body: splice.core.parse.AnthropicTurnBody,
+        session: String = "session",
+    ): List<JsonObject> =
+        provider.buildTurn(body, false, session).requestBody.getValue("input").jsonArray.map { it.jsonObject }
+
+    private fun phaseText(items: List<JsonObject>): List<Pair<String?, String>> = buildList {
+        for (item in items.filter { it["role"]?.jsonPrimitive?.content == "assistant" }) {
+            val phase = item["phase"]?.jsonPrimitive?.content
+            val text = item.getValue("content").jsonPrimitive.content
+            if (isNotEmpty() && last().first == phase) {
+                val previous = removeAt(lastIndex)
+                add(phase to previous.second + text)
+            } else {
+                add(phase to text)
+            }
+        }
+    }
+}
+
 class ResponsesReanchorPolicyTest {
+
+    // Standard HTTP turns retain model-owned phases although Anthropic history has no phase field.
+    @Test
+    fun `HTTP phase provenance survives a phase-less client resend and cache restart`(
+        @org.junit.jupiter.api.io.TempDir state: java.nio.file.Path,
+    ) = runTest {
+        PhaseRoundTripCases(state).verify()
+    }
+
+    @Test
+    fun `native re-anchor retains final_answer announced before an interrupted text delta`() = runTest {
+        val provider = ReanchorProbe(lite = false)
+        try {
+            val built = provider.buildTurn(
+                AnthropicParse.parseAnthropicBody(
+                    """{"model":"gpt-5.6-sol","messages":[{"role":"user","content":"Continue."}]}""",
+                ),
+                false,
+                "session",
+            )
+            val outcome = provider.streamTranslator(
+                built.meta,
+                TurnSignals(watchdogFired = { null }, clientGone = { false }),
+            ).driveTurn(
+                listOf(
+                    ev(
+                        """{"type":"response.output_item.added","output_index":0,
+                            "item":{"type":"message","id":"msg_final","role":"assistant",
+                                "phase":"final_answer","content":[]}}""",
+                    ),
+                    ev(
+                        """{"type":"response.output_text.delta","output_index":0,
+                            "item_id":"msg_final","delta":"The fix is to"}""",
+                    ),
+                    failedEv(),
+                ).asFlow(),
+                DeliverySink(),
+            )
+            val next = checkNotNull(provider.reanchorPolicy(built.meta)).continuationForFailure(
+                ReanchorRound(built.requestBody, outcome as TurnOutcome.Failure, 0),
+            )
+            val added = checkNotNull(next).getValue("input").jsonArray
+                .drop(built.requestBody.getValue("input").jsonArray.size).map { it.jsonObject }
+            assertEquals("The fix is to", added.first().getValue("content").jsonPrimitive.content)
+            assertEquals("final_answer", added.first()["phase"]?.jsonPrimitive?.content)
+            assertEquals("commentary", added.last()["phase"]?.jsonPrimitive?.content)
+        } finally {
+            provider.onHeadStop()
+        }
+    }
 
     @Test
     fun `a lite recovery posts ordered native reasoning and unfinished prose before its marker`() = runTest {
@@ -186,17 +370,45 @@ class ResponsesReanchorPolicyTest {
     }
 
     @Test
-    fun `a non-lite turn replays the partial prose exactly as before`() {
+    fun `a standard Responses turn replays partial prose as commentary without Lite`() {
         val prose = replayedProse(ReanchorProbe(lite = false))
 
-        assertEquals(listOf("role", "content"), prose.keys.toList(), "$prose")
+        assertEquals(listOf("role", "phase", "content"), prose.keys.toList(), "$prose")
         assertEquals("assistant", prose.getValue("role").jsonPrimitive.content)
+        assertEquals("commentary", prose.getValue("phase").jsonPrimitive.content)
     }
 
     // SSE is a FALLBACK, and reaching it costs the socket's cache key plus a full re-upload, so
     // the socket gets the reference client's number of attempts before we abandon it: codex-rs
     // retries a retryable stream 5 times (DEFAULT_STREAM_MAX_RETRIES) before switching transport.
     // Pinned so the budget cannot quietly drift back down to a freehand value.
+    @Test
+    fun `re-anchor preserves an original phase when native message history supplies it`() {
+        val provider = ReanchorProbe(lite = false)
+        val built = provider.buildTurn(
+            AnthropicParse.parseAnthropicBody(
+                """{"model":"gpt-5.6-sol","messages":[{"role":"user","content":"hi"}]}""",
+            ),
+            compact = false,
+            sessionId = "session",
+        )
+        val native = Json.parseToJsonElement(
+            """{"type":"message","id":"msg_1","role":"assistant","phase":"final_answer",
+                "content":[{"type":"output_text","text":"The fix is to continue"}]}""",
+        ).jsonObject
+        val partial = TurnOutcome.PartialRound(
+            text = RoundText(bodyText = "The fix is to"),
+            nativePrefix = listOf(native),
+        )
+        val next = checkNotNull(provider.reanchorPolicy(built.meta))
+            .continuationForFailure(ReanchorRound(built.requestBody, failureWith(partial = partial), 0))
+        val prose = checkNotNull(next).getValue("input").jsonArray
+            .map { it.jsonObject }
+            .single { it["content"]?.jsonPrimitive?.content == "The fix is to" }
+
+        assertEquals("final_answer", prose["phase"]?.jsonPrimitive?.content)
+    }
+
     @Test
     fun `the socket gets five attempts before the fallback, matching the reference client`() {
         repeat(5) { attempt ->

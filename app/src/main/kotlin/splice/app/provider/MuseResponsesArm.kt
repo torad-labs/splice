@@ -11,7 +11,9 @@ import splice.dialect.responses.ResponsesBackendQuirks
 import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesReasoningQuirks
+import splice.dialect.responses.ResponsesRequestControlQuirks
 import splice.dialect.responses.ResponsesRoundTripQuirks
+import splice.dialect.responses.ResponsesServiceTierSupport
 import splice.dialect.responses.ResponsesToolQuirks
 import splice.dialect.responses.tools.ToolDeferralPolicy
 import splice.dialect.responses.tools.ToolSearchMode
@@ -88,6 +90,9 @@ internal class MuseResponsesArm(
             tools = ResponsesToolQuirks(
                 emitToolChoice = true,
                 toolSurface = ToolDeferralPolicy(mode = ToolSearchMode.HOSTED),
+            ),
+            request = ResponsesRequestControlQuirks(
+                serviceTier = ResponsesServiceTierSupport.UNSUPPORTED,
             ),
             roundTrip = ResponsesRoundTripQuirks(continueReasoningOnly = MUSE_CONTINUES_REASONING_ONLY),
         ),

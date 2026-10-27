@@ -9,6 +9,7 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.util.JsonWire
 import splice.core.wire.ToolDefinition
 import splice.upstream.ToolNameShortener
 
@@ -22,33 +23,31 @@ internal class ToolWireObjects(private val names: ToolNameShortener = ToolNameSh
     private val normalizer = ToolSchemaNormalizer()
 
     /** [forceStrictFalse] (codex-rs parity: hard-sets `strict:false` on every function tool,
-     *  responses_api.rs:29-32) and [emitStrict] (pass through a tool's own strict==true) are
-     *  DISTINCT quirks, not one flag with two meanings (review 2026-07-24 round 2/3): GrokProvider's
-     *  pre-existing `emitStrict = true` predates this feature and was never consequential (Claude
-     *  Code's ToolDefinition.strict is always null), so folding the codex-only forced-false behavior
-     *  into `emitStrict` silently changed grok's live wire bytes too — a head this feature must not
-     *  touch. forceStrictFalse defaults false and only CodexProvider sets it. */
+     *  responses_api.rs:29-32) and [emitStrict] (write source strictness explicitly, including
+     *  false for an omitted source value) are DISTINCT quirks. Public Responses otherwise attempts
+     *  strict normalization for an omitted value. forceStrictFalse defaults false and only
+     *  CodexProvider sets it. */
     fun functionToolObject(
         t: ToolDefinition,
         emitStrict: Boolean,
         forceStrictFalse: Boolean,
         normalizeSchemas: Boolean,
     ): JsonObject {
-        val strictPassthrough = emitStrict && t.strict == true
+        val strict = if (emitStrict) t.strict == true else null
         return buildJsonObject {
             put(FIELD_TYPE, TYPE_FUNCTION)
             put(FIELD_NAME, names.shorten(t.name))
-            put(FIELD_DESCRIPTION, t.description ?: "")
+            put(FIELD_DESCRIPTION, descriptionFor(t))
             // forceStrictFalse is a HARD SET (codex-rs parity, responses_api.rs:29-32): every
             // function tool gets strict:false regardless of the tool's OWN value — passing
             // t.strict through here (review 2026-07-25) would send strict:true for a tool that
             // arrives with strict==true, breaking the exact parity this quirk exists for. It rides
             // BEFORE parameters on this path — ResponsesApiTool's serde order (tools byte-parity
-            // 2026-08-26); the non-codex path keeps splice's historical order so grok's wire
-            // bytes never move.
+            // 2026-08-26); the non-codex path keeps splice's historical field order while
+            // making source non-strictness explicit.
             if (forceStrictFalse) put(FIELD_STRICT, false)
             put(FIELD_PARAMETERS, parametersFor(t, normalizeSchemas))
-            if (!forceStrictFalse && strictPassthrough) put(FIELD_STRICT, true)
+            if (!forceStrictFalse) strict?.let { put(FIELD_STRICT, it) }
         }
     }
 
@@ -63,18 +62,30 @@ internal class ToolWireObjects(private val names: ToolNameShortener = ToolNameSh
         forceStrictFalse: Boolean,
         normalizeSchemas: Boolean,
     ): JsonObject {
-        val strictPassthrough = emitStrict && t.strict == true
+        val strict = if (emitStrict) t.strict == true else null
         return buildJsonObject {
             put(FIELD_TYPE, TYPE_FUNCTION)
             put(FIELD_NAME, names.shorten(t.name))
-            put(FIELD_DESCRIPTION, t.description ?: "")
+            put(FIELD_DESCRIPTION, descriptionFor(t))
             // Same hard-set law as functionToolObject's identical branch (review 2026-07-25) — a
             // deferred tool answered through tool_search gets forced strict:false too, never a
             // pass-through of its own strict==true.
             if (forceStrictFalse) put(FIELD_STRICT, false)
             put(FIELD_DEFER_LOADING, true)
             put(FIELD_PARAMETERS, parametersFor(t, normalizeSchemas))
-            if (!forceStrictFalse && strictPassthrough) put(FIELD_STRICT, true)
+            if (!forceStrictFalse) strict?.let { put(FIELD_STRICT, it) }
+        }
+    }
+
+    /** Examples stay model-visible without adding unsupported wire fields or changing input validation. */
+    private fun descriptionFor(tool: ToolDefinition): String {
+        val description = tool.description.orEmpty()
+        val examples = tool.inputExamples?.takeIf { it.isNotEmpty() } ?: return description
+        return buildString {
+            append(description)
+            if (isNotEmpty()) append("\n\n")
+            append("Input examples:\n")
+            append(JsonWire.string(examples))
         }
     }
 

@@ -32,6 +32,7 @@ internal class ReasoningContinuity(
     val cache: ReasoningCache,
     val policy: ReasoningCachePolicy,
     private val ids: ResponsesStableIds,
+    val phases: ReasoningCache = ReasoningCache(),
 ) {
     /** The lookup for [body], keyed within [sessionId] as the capture keys it (ResponsesTurnSeams). Lazy, so a
      *  build with no tool_use blocks never touches the cache at all. */
@@ -60,10 +61,18 @@ internal class ReasoningContinuity(
         }
     }
 
+    fun phaseSnapshotFor(body: AnthropicTurnBody, sessionId: String?): Lazy<ReasoningCacheView> = lazy {
+        if (sessionId.isNullOrEmpty()) return@lazy ReasoningCacheView(emptyMap())
+        val key = policy.conversationKey(sessionId, ids.reasoningStorageKey(body.typed))
+            ?: return@lazy ReasoningCacheView(emptyMap())
+        phases.view(key)
+    }
+
     fun alias(body: AnthropicTurnBody, sessionId: String?, update: ReasoningHistoryUpdate) {
         if (sessionId.isNullOrEmpty()) return
         val key = policy.conversationKey(sessionId, ids.reasoningStorageKey(body.typed)) ?: return
         cache.updateHistory(key, update)
+        phases.updateHistory(key, update)
     }
 }
 
@@ -88,6 +97,7 @@ internal class ResponsesTurnOptions(
         // var, not an instance field, since the provider itself is long-lived across many turns.
         var reasoningEnvelopeDropLogged = false
         val cached = cachedHistory(body, sessionId, now.replay)
+        val nativePhases = continuity.phaseSnapshotFor(body, sessionId)
         return BuildOptions(
             compact = compact,
             models = ModelIds(
@@ -127,22 +137,33 @@ internal class ResponsesTurnOptions(
                 // a compaction built without them shares no prefix with them (2026-09-05).
                 lookup = ReasoningLookup { cached.value.rounds[it] },
                 history = ReasoningHistoryLookup {
-                    if (sessionId.isNullOrEmpty()) {
+                    val positions = if (sessionId.isNullOrEmpty()) {
                         emptyMap()
                     } else {
-                        ReasoningPositionIndex().positions(
-                            cached.value.rounds,
-                        )
+                        ReasoningPositionIndex().positions(cached.value.rounds)
                     }
+                    splice.dialect.responses.reasoning.ResponsesAssistantPhaseRecords()
+                        .history(positions, nativePhases.value.rounds)
                 },
                 historyAlias = ReasoningHistoryAlias { update -> continuity.alias(body, sessionId, update) },
-                resultProofs = ReasoningResultProofLookup { cached.value.proofs },
+                resultProofs = resultProofs(cached, nativePhases),
             ),
             sessionId = sessionId,
             // The provider's capability latch, read at build time: false = a shape-400 already
             // closed it this daemon lifetime; build the full status-quo request instead.
             toolSurfaceOpen = toolSurfaceLatch.open,
         )
+    }
+
+    private fun resultProofs(
+        cached: Lazy<ReasoningCacheView>,
+        nativePhases: Lazy<ReasoningCacheView>,
+    ): ReasoningResultProofLookup = ReasoningResultProofLookup {
+        cached.value.proofs.toMutableMap().apply {
+            nativePhases.value.proofs.forEach { (key, digest) ->
+                this[key] = if (containsKey(key) && this[key] != digest) null else digest
+            }
+        }
     }
 
     private fun cachedHistory(body: AnthropicTurnBody, sessionId: String?, replay: Boolean): Lazy<ReasoningCacheView> =

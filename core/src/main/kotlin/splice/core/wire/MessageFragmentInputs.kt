@@ -29,24 +29,29 @@ public object MessageFragmentInputs {
     }
 
     public fun same(left: AnthropicMessage, right: AnthropicMessage): Boolean =
-        left.role == right.role && sameBlocks(left.content, right.content)
+        left.role == right.role && left.phase == right.phase && sameBlocks(left.content, right.content)
 
     private fun sameBlocks(left: List<ContentBlock>, right: List<ContentBlock>): Boolean =
         left.size == right.size && left.indices.all { sameBlock(left[it], right[it]) }
 
     private fun sameBlock(before: ContentBlock, after: ContentBlock): Boolean = when (before) {
-        is ToolUseBlock -> after is ToolUseBlock && sameToolUse(before, after)
-        is ToolResultBlock -> after is ToolResultBlock && sameToolResult(before, after)
-        is UnknownBlock -> after is UnknownBlock && same(before.raw, after.raw)
-        is TextBlock, is ThinkingBlock, is RedactedThinkingBlock, is ImageBlock, is DocumentBlock -> before == after
+        is ToolUseBlock -> sameToolUse(before, after)
+        is ToolResultBlock -> sameToolResult(before, after)
+        is UnknownBlock -> sameUnknown(before, after)
+        is ImageBlock -> MessageFragmentMedia.sameImage(before, after)
+        is DocumentBlock -> MessageFragmentMedia.sameDocument(before, after)
+        is TextBlock, is ThinkingBlock, is RedactedThinkingBlock -> before == after
     }
 
-    private fun sameToolUse(before: ToolUseBlock, after: ToolUseBlock): Boolean =
-        before.id == after.id && before.name == after.name && same(before.input, after.input)
+    private fun sameToolUse(before: ToolUseBlock, after: ContentBlock): Boolean =
+        after is ToolUseBlock && before.id == after.id && before.name == after.name && same(before.input, after.input)
 
-    private fun sameToolResult(before: ToolResultBlock, after: ToolResultBlock): Boolean =
-        before.toolUseId == after.toolUseId && before.isError == after.isError &&
+    private fun sameToolResult(before: ToolResultBlock, after: ContentBlock): Boolean =
+        after is ToolResultBlock && before.toolUseId == after.toolUseId && before.isError == after.isError &&
             sameBlocks(before.content, after.content)
+
+    private fun sameUnknown(before: UnknownBlock, after: ContentBlock): Boolean =
+        after is UnknownBlock && same(before.raw, after.raw)
 
     public fun freeze(value: JsonElement): JsonElement = when (value) {
         is JsonPrimitive -> value
@@ -64,11 +69,16 @@ public object MessageFragmentInputs {
         is ToolUseBlock -> block.copy(input = freeze(block.input) as JsonObject)
         is ToolResultBlock -> block.copy(content = Collections.unmodifiableList(block.content.map(::freezeBlock)))
         is UnknownBlock -> block.copy(raw = freeze(block.raw) as JsonObject)
-        is TextBlock, is ThinkingBlock, is RedactedThinkingBlock, is ImageBlock, is DocumentBlock -> block
+        is ImageBlock -> MessageFragmentMedia.freeze(block)
+        is DocumentBlock -> MessageFragmentMedia.freeze(block)
+        is TextBlock, is ThinkingBlock, is RedactedThinkingBlock -> block
     }
 
     /** Conservative retained graph weight; never serializes the complete typed message to select a hit. */
-    public fun bytes(input: AnthropicMessage): Long = HeapJson.add(HeapJson.text(input.role), blockBytes(input.content))
+    public fun bytes(input: AnthropicMessage): Long = HeapJson.add(
+        HeapJson.add(HeapJson.text(input.role), input.phase?.let(HeapJson::text) ?: 0L),
+        blockBytes(input.content),
+    )
 
     private fun blockBytes(blocks: List<ContentBlock>): Long =
         blocks.fold(MESSAGE_FRAGMENT_OWNER_BYTES) { total, block ->
@@ -82,18 +92,11 @@ public object MessageFragmentInputs {
                 is TextBlock -> HeapJson.text(block.text)
                 is ThinkingBlock -> HeapJson.text(block.thinking)
                 is RedactedThinkingBlock -> HeapJson.text(block.data)
-                is ImageBlock -> mediaBytes(block.source)
-                is DocumentBlock -> mediaBytes(block.source)
+                is ImageBlock -> MessageFragmentMedia.bytes(block.source)
+                is DocumentBlock -> MessageFragmentMedia.bytes(block)
             }
             HeapJson.add(total, HeapJson.add(MESSAGE_FRAGMENT_OWNER_BYTES, bytes))
         }
-
-    private fun mediaBytes(source: MediaSource?): Long {
-        val fields = listOf(source?.type, source?.mediaType, source?.data, source?.url)
-        return fields.fold(MESSAGE_FRAGMENT_OWNER_BYTES) { total, text ->
-            HeapJson.add(total, text?.let(HeapJson::text) ?: 0L)
-        }
-    }
 }
 
 // why: Conservatively charges container and content-block ownership overhead alongside their retained fields.

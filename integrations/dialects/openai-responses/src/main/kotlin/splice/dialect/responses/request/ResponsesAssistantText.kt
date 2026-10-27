@@ -1,7 +1,7 @@
-// NEW: V4-335 — the one author of the assistant text item a lite turn replays. The request builder
-// and code mode's continuity record each built it, and code mode compares the two by value: the day
-// the builder's gained a phase, every finished script's preface stopped matching its record, was
-// placed twice, and read as new client content that stopped the next script (CI run 36279360319).
+// NEW: V4-335 — the one author of the assistant text item a Responses turn replays. The request
+// builder and code mode's continuity record each built it, and code mode compares the two by value:
+// the day the builder's gained a phase, every finished script's preface stopped matching its record,
+// was placed twice, and read as new client content that stopped the next script (CI run 36279360319).
 package splice.dialect.responses.request
 
 import kotlinx.serialization.json.JsonObject
@@ -21,7 +21,8 @@ public enum class AssistantPhase(public val wire: String) {
 
 public object ResponsesAssistantText {
     /** role, then [phase] when there is one, then content. The key order is part of the item: code
-     *  mode digests what it records. A non-lite turn passes null and gets the item it always had. */
+     *  mode digests what it records. A caller without an applicable phase passes null and gets the
+     *  prior item shape. */
     public fun item(text: String, phase: AssistantPhase?): JsonObject = buildJsonObject {
         put("role", ROLE_ASSISTANT)
         if (phase != null) put("phase", phase.wire)

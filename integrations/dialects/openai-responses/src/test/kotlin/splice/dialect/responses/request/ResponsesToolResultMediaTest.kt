@@ -72,8 +72,11 @@ class ResponsesToolResultMediaTest {
     }
 }
 
-private val FLOORED =
-    ResponsesQuirks(providerTag = "claude-grok", minImageEdgePx = XAI_FLOOR, lite = ResponsesLiteQuirks())
+private val FLOORED = ResponsesQuirks(
+    providerTag = "claude-grok",
+    lite = ResponsesLiteQuirks(),
+    request = splice.dialect.responses.ResponsesRequestControlQuirks(minImageEdgePx = XAI_FLOOR),
+)
 private val CODEX = ResponsesQuirks(providerTag = "claudex", lite = ResponsesLiteQuirks())
 
 private fun png(w: Int, h: Int): String {

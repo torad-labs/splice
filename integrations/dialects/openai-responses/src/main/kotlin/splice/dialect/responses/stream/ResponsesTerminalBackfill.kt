@@ -17,9 +17,17 @@ internal class ResponsesTerminalBackfill {
         val resp = state.finalResponse ?: return
         harvestRefusalParts(state, resp)
         val harvested = harvest.harvestResponsesOutput(resp)
-        // CharSequence checks avoid an intermediate toString() when the streamed buffer is large
-        // and the harvest path is a no-op (the common case once deltas have been flowing).
-        if (frames.shouldPreferHarvestedText(state.textBuf, harvested.text)) {
+        // The terminal object is a complete snapshot after sparse deltas. Extend a matching live
+        // prefix, but never replace text already sent to the client with a different terminal copy.
+        val current = state.textBuf
+        val suffixStart = current.length
+        if (harvested.text.length > suffixStart &&
+            harvested.text.regionMatches(0, current, 0, suffixStart)
+        ) {
+            val suffix = harvested.text.substring(suffixStart)
+            current.append(suffix)
+            if (state.emittedText) state.terminalTextSuffix = suffix
+        } else if (!state.emittedText && frames.shouldPreferHarvestedText(current, harvested.text)) {
             state.textBuf = StringBuilder(harvested.text)
         }
         if (harvested.thinking.length > state.thinkingBuf.length) {

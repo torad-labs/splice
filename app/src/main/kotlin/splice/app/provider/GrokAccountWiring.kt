@@ -60,7 +60,7 @@ internal class GrokChatQuirks {
         sessionCacheKeyPrefix = label,
         emitUsageInStream = true,
         capabilities = ChatCapabilityQuirks(
-            minImageEdgePx = GrokQuirks().defaultQuirks().minImageEdgePx,
+            minImageEdgePx = GrokQuirks().defaultQuirks().request.minImageEdgePx,
         ),
         reasoning = ChatReasoningQuirks(
             xhighModels = GrokQuirks().xhighModels(),

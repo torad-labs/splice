@@ -28,6 +28,33 @@ public data class ResponsesBackendQuirks(
     val webSocketPrefill: Boolean = false,
 )
 
+/** Request controls whose wire meaning is a property of the upstream, not of Responses itself. */
+public data class ResponsesRequestControlQuirks(
+    /** Anthropic's `auto` and `standard_only` tiers map to public Responses `auto` and `default`.
+     *  A vendor whose endpoint has no proven equivalent refuses the source request rather than
+     *  forwarding a name that happens to look familiar. */
+    val serviceTier: ResponsesServiceTierSupport = ResponsesServiceTierSupport.OPENAI,
+    /** Whether positive source output caps become the public max_output_tokens control. */
+    val emitMaxOutputTokens: Boolean = true,
+    /**
+     * DR-155: the vendor's minimum image edge in pixels, or null for "this backend has no stated
+     * minimum". NULL IS THE DEFAULT AND THE DEFAULT MATTERS: with it, no outbound image is ever
+     * decoded and every non-opted provider's request bytes are identical to before this knob
+     * existed. Set only where a vendor documents and ENFORCES a floor — xAI 400s the whole turn
+     * with code=invalid_image on anything under 8px per edge, which cost six live turns in the
+     * DR-152 soak. Deliberately NOT a TOML overlay: it is a fact about a backend, not an operator
+     * preference, and a wrong value here silently deletes images. See
+     * [splice.core.media.ImageFloor] for why every unknown forwards.
+     */
+    val minImageEdgePx: Int? = null,
+    /** Public Responses input_file support; provider profiles can opt out when their endpoint lacks it. */
+    val supportsInputFiles: Boolean = true,
+    /** Array-valued function_call_output.output parts from the public Responses contract. */
+    val supportsStructuredToolOutput: Boolean = true,
+)
+
+public enum class ResponsesServiceTierSupport { OPENAI, UNSUPPORTED }
+
 /** The responses-lite wire shape: which models speak it and the measured bytes that ride its turns. */
 public data class ResponsesLiteQuirks(
     /** codex-rs parity (read from source 2026-07-19; models.json re-read 2026-09-04 for gpt-6-astra,
@@ -81,15 +108,15 @@ public data class ResponsesReasoningQuirks(
 /** How the backend takes the tool surface: choice, strictness, schemas and deferral. */
 public data class ResponsesToolQuirks(
     val emitToolChoice: Boolean = false,
-    /** Passes through a tool's own `strict == true` as `"strict": true`; false (the default,
-     *  and the only value that has ever mattered — Claude Code's ToolDefinition.strict is always
-     *  null) omits the field entirely. Distinct from [forceStrictFalse] below (review 2026-07-24:
-     *  conflating the two silently changed grok's live wire bytes when this feature landed). */
-    val emitStrict: Boolean = false,
+    /** Public Responses function tools write the source strictness explicitly: omitted and false both
+     *  become `strict:false`, so the API cannot attempt strict normalization. False means this
+     *  provider cannot carry `strict:true`; admission declines that source requirement. Distinct
+     *  from [forceStrictFalse] below, which is a provider-owned override. */
+    val emitStrict: Boolean = true,
     /** codex-rs parity: hard-sets `strict:false` on EVERY function tool object regardless of the
      *  tool's own value (responses_api.rs:29-32; OpenCode does the same, marked "Codex parity").
-     *  false (the default) leaves [emitStrict]'s pass-through behavior as the only effect, exactly
-     *  today's behavior. Only CodexProvider sets this true. */
+     *  False leaves [emitStrict]'s source-semantics behavior as the only effect. Only CodexProvider
+     *  sets this true. */
     val forceStrictFalse: Boolean = false,
     /** codex-rs parity (tools byte-parity 2026-08-26): run every function tool's input_schema
      *  through the ToolSchemaNormalize.kt pipeline — sanitize, prune unreachable $defs, compact
@@ -129,17 +156,8 @@ public data class ResponsesQuirks(
     val reasoning: ResponsesReasoningQuirks = ResponsesReasoningQuirks(),
     val tools: ResponsesToolQuirks = ResponsesToolQuirks(),
     val roundTrip: ResponsesRoundTripQuirks = ResponsesRoundTripQuirks(),
-    /**
-     * DR-155: the vendor's minimum image edge in pixels, or null for "this backend has no stated
-     * minimum". NULL IS THE DEFAULT AND THE DEFAULT MATTERS: with it, no outbound image is ever
-     * decoded and every non-opted provider's request bytes are identical to before this knob
-     * existed. Set only where a vendor documents and ENFORCES a floor — xAI 400s the whole turn
-     * with code=invalid_image on anything under 8px per edge, which cost six live turns in the
-     * DR-152 soak. Deliberately NOT a TOML overlay: it is a fact about a backend, not an operator
-     * preference, and a wrong value here silently deletes images. See
-     * [splice.core.media.ImageFloor] for why every unknown forwards.
-     */
-    val minImageEdgePx: Int? = null,
+    /** Request-control semantics that only an upstream profile can state. */
+    val request: ResponsesRequestControlQuirks = ResponsesRequestControlQuirks(),
 ) {
     // ── TOML overlays ────────────────────────────────────────────────────────
     // All five were file-level extensions on this type, spread across three files because

@@ -53,6 +53,7 @@ private class LatchProbeProvider(logs: MutableList<String>) : ResponsesProvider(
     quirks = ResponsesQuirks(providerTag = "claudex", lite = ResponsesLiteQuirks()),
     log = { logs.add(it) },
 ) {
+    override val replies = splice.upstream.failure.Replies(splice.dialect.responses.failure.ResponsesReplies)
     override fun extraHeaders(creds: Credentials): Map<String, String> = emptyMap()
 }
 

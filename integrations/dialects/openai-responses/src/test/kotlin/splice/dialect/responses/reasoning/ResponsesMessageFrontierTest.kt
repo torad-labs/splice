@@ -114,7 +114,7 @@ class ResponsesMessageFrontierTest(@param:TempDir private val state: Path) {
             ).asFlow(),
             sink,
         )
-        val success = checkNotNull(outcome as? TurnOutcome.Success)
+        val success = checkNotNull(outcome as? TurnOutcome.Success) { "$outcome" }
         assertEquals("HelloWorld", sink.text)
         assertEquals(2, sink.textBlocks.size)
         assertEquals(listOf(first, second, reason), success.handoffs.nativePrefix)

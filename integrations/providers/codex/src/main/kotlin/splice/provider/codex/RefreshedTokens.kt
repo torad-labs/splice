@@ -7,6 +7,8 @@ import splice.dialect.responses.ResponsesBackendQuirks
 import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesReasoningQuirks
+import splice.dialect.responses.ResponsesRequestControlQuirks
+import splice.dialect.responses.ResponsesServiceTierSupport
 import splice.dialect.responses.ResponsesToolQuirks
 
 /** Same shape as splice.upstream.credentials.RefreshedTokens; kept so in-module call sites do not move this row. */
@@ -45,8 +47,8 @@ public class CodexQuirks {
             // codex-rs parity: hard-sets strict:false on every function tool (responses_api.rs:29-32);
             // OpenCode does the same, marked "Codex parity". Omitting it lets the backend attempt
             // strict auto-normalisation of ~87 MCP schemas and silently report whatever it settled on.
-            // forceStrictFalse, NOT emitStrict (review 2026-07-24): emitStrict is grok's pre-existing,
-            // never-consequential pass-through flag — reusing it here silently changed grok's bytes too.
+            // forceStrictFalse, NOT emitStrict: emitStrict preserves a standard provider's source
+            // strictness, while this is Codex's explicit policy regardless of the source declaration.
             forceStrictFalse = true,
             // codex parity (tools byte-parity 2026-08-26): the codex CLI never sends a client schema
             // verbatim — every tool's input_schema is sanitized/pruned/compacted/keyword-subset before
@@ -54,12 +56,17 @@ public class CodexQuirks {
             // its expectations against normalized shapes. Splice mirrors that on this head only.
             normalizeToolSchemas = true,
         ),
+        request = ResponsesRequestControlQuirks(
+            serviceTier = ResponsesServiceTierSupport.UNSUPPORTED,
+            // Preserve this endpoint's existing non-enforcement of positive source caps.
+            emitMaxOutputTokens = false,
+        ),
         backend = ResponsesBackendQuirks(
             // client_metadata identifies splice on lite turns (session_id, thread_id). Byte-identical
             // to the old dialect default; only this profile carries it.
             sendClientMetadata = true,
             // Native Codex sends a no-generation prefill on its code-mode WebSocket path. The
-            // Responses runner additionally gates this on code-mode request shape; WS stays opt-in.
+            // Its explicit WebSocket policy admits only additional-tools prefixes; WS stays opt-in.
             webSocketPrefill = true,
         ),
     )

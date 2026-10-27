@@ -31,6 +31,9 @@ public data class AnthropicMessage(
     val role: String,
     @Serializable(with = ContentSerializer::class)
     val content: List<ContentBlock> = emptyList(),
+    /** Public Responses input provenance. Unknown values stay lossless in the canonical request;
+     *  a Responses builder recognizes only the schema's assistant phases before sending upstream. */
+    val phase: String? = null,
 )
 
 @Serializable

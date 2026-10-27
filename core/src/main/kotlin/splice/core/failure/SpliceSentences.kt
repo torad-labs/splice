@@ -2,9 +2,9 @@
 // refused a request before any provider saw it (final-design.md section 10, one example line per kind). How a line
 // says a time, a size or a count is Spoken's; a provider's leaves are ProviderSentences', the path's PathSentences'.
 //
-// detekt holds a function under ten branches, so a group's leaves are worded by two whens that each name every leaf
-// with no else: the first words its own and hands the rest to the second. A new leaf compiles in neither until it has
-// a sentence.
+// detekt holds a function under ten branches, so grouped leaves use small exhaustive whens: each words its own
+// leaves and delegates the others. Every when names all leaves without an else, so a new leaf needs explicit coverage
+// in every dispatch.
 package splice.core.failure
 
 /** The leaves splice decides itself. */
@@ -161,12 +161,104 @@ internal class DeclineSentences(private val spoken: Spoken) {
         next = Next.Then("Its model holds ${spoken.tokens(why.windowTokens)} tokens."),
     )
 
+    /** Output contracts and timeline semantics, with all other features delegated explicitly. */
     private fun untranslatable(what: RequestFeature, head: String): String = when (what) {
         RequestFeature.OUTPUT_FORMAT ->
             "$head cannot carry the output format this request asks for, so the turn was not sent"
         RequestFeature.STRUCTURED_OUTPUT ->
             "$head cannot carry the structured output this request asks for, so the turn was not sent"
+        RequestFeature.DOCUMENT_CITATIONS ->
+            "$head cannot translate the requested document citations, so the turn was not sent"
         RequestFeature.TOOL_CHOICE ->
             "$head cannot guarantee the tool choice this request asks for, so the turn was not sent"
+        RequestFeature.DYNAMIC_TOOL_REMOVAL ->
+            "$head cannot enforce a mid-conversation tool removal for this request, so the turn was not sent"
+        RequestFeature.TOP_K, RequestFeature.STOP_SEQUENCES,
+        RequestFeature.SERVICE_TIER, RequestFeature.SPEED,
+        RequestFeature.CONTAINER, RequestFeature.DIAGNOSTICS,
+        RequestFeature.INFERENCE_GEO, RequestFeature.USER_PROFILE_ID,
+        RequestFeature.WORKSPACE_ID, RequestFeature.CACHE_CONTROL,
+        RequestFeature.CACHE_ONLY_WARMUP, RequestFeature.TOOL_STRICTNESS,
+        RequestFeature.TOOL_ALLOWED_CALLERS, RequestFeature.TOOL_TYPE,
+        RequestFeature.TOOL_INPUT_EXAMPLES, RequestFeature.TOOL_EAGER_INPUT_STREAMING,
+        RequestFeature.TOOL_CACHE_CONTROL, RequestFeature.REASONING_CONTEXT,
+        -> untranslatableControls(what, head)
+    }
+
+    /** Sampling, reasoning, and request-policy controls retain their own existing sentences. */
+    private fun untranslatableControls(what: RequestFeature, head: String): String = when (what) {
+        RequestFeature.TOP_K ->
+            "$head cannot carry top_k sampling for this request, so the turn was not sent"
+        RequestFeature.STOP_SEQUENCES ->
+            "$head cannot carry the stop sequences this request asks for, so the turn was not sent"
+        RequestFeature.SERVICE_TIER ->
+            "$head cannot carry the service tier this request asks for, so the turn was not sent"
+        RequestFeature.SPEED ->
+            "$head cannot carry the speed setting this request asks for, so the turn was not sent"
+        RequestFeature.CACHE_CONTROL ->
+            "$head cannot carry this request's cache-control breakpoint, so the turn was not sent"
+        RequestFeature.CACHE_ONLY_WARMUP ->
+            "$head cannot carry a cache-only warmup request, so the turn was not sent"
+        RequestFeature.REASONING_CONTEXT ->
+            "$head cannot carry this reasoning context, so the turn was not sent"
+        RequestFeature.OUTPUT_FORMAT, RequestFeature.STRUCTURED_OUTPUT,
+        RequestFeature.DOCUMENT_CITATIONS, RequestFeature.TOOL_CHOICE,
+        RequestFeature.CONTAINER, RequestFeature.DIAGNOSTICS,
+        RequestFeature.INFERENCE_GEO, RequestFeature.USER_PROFILE_ID,
+        RequestFeature.WORKSPACE_ID, RequestFeature.TOOL_STRICTNESS,
+        RequestFeature.TOOL_ALLOWED_CALLERS, RequestFeature.TOOL_TYPE,
+        RequestFeature.TOOL_INPUT_EXAMPLES, RequestFeature.TOOL_EAGER_INPUT_STREAMING,
+        RequestFeature.TOOL_CACHE_CONTROL, RequestFeature.DYNAMIC_TOOL_REMOVAL,
+        -> untranslatableMetadata(what, head)
+    }
+
+    /** Provider-specific request metadata does not acquire a substitute or a silent default. */
+    private fun untranslatableMetadata(what: RequestFeature, head: String): String = when (what) {
+        RequestFeature.CONTAINER ->
+            "$head cannot carry the container this request asks for, so the turn was not sent"
+        RequestFeature.DIAGNOSTICS ->
+            "$head cannot carry the diagnostics this request asks for, so the turn was not sent"
+        RequestFeature.INFERENCE_GEO ->
+            "$head cannot carry the inference region this request asks for, so the turn was not sent"
+        RequestFeature.USER_PROFILE_ID ->
+            "$head cannot carry the user profile this request asks for, so the turn was not sent"
+        RequestFeature.WORKSPACE_ID ->
+            "$head cannot carry the workspace this request asks for, so the turn was not sent"
+        RequestFeature.OUTPUT_FORMAT, RequestFeature.STRUCTURED_OUTPUT,
+        RequestFeature.DOCUMENT_CITATIONS, RequestFeature.TOOL_CHOICE,
+        RequestFeature.TOP_K, RequestFeature.STOP_SEQUENCES,
+        RequestFeature.SERVICE_TIER, RequestFeature.SPEED,
+        RequestFeature.CACHE_CONTROL, RequestFeature.CACHE_ONLY_WARMUP,
+        RequestFeature.TOOL_STRICTNESS, RequestFeature.TOOL_ALLOWED_CALLERS,
+        RequestFeature.TOOL_TYPE, RequestFeature.TOOL_INPUT_EXAMPLES,
+        RequestFeature.TOOL_EAGER_INPUT_STREAMING, RequestFeature.TOOL_CACHE_CONTROL,
+        RequestFeature.REASONING_CONTEXT, RequestFeature.DYNAMIC_TOOL_REMOVAL,
+        -> untranslatableTools(what, head)
+    }
+
+    /** Every tool feature is named explicitly, as are the leaves owned by the other groups. */
+    private fun untranslatableTools(what: RequestFeature, head: String): String = when (what) {
+        RequestFeature.TOOL_STRICTNESS ->
+            "$head cannot guarantee strict tool calling for this request, so the turn was not sent"
+        RequestFeature.TOOL_ALLOWED_CALLERS ->
+            "$head cannot carry this tool's caller restriction, so the turn was not sent"
+        RequestFeature.TOOL_TYPE ->
+            "$head cannot carry this native tool type, so the turn was not sent"
+        RequestFeature.TOOL_INPUT_EXAMPLES ->
+            "$head cannot carry this tool's input examples, so the turn was not sent"
+        RequestFeature.TOOL_EAGER_INPUT_STREAMING ->
+            "$head cannot carry eager tool-input streaming for this request, so the turn was not sent"
+        RequestFeature.TOOL_CACHE_CONTROL ->
+            "$head cannot carry this tool's cache-control breakpoint, so the turn was not sent"
+        RequestFeature.OUTPUT_FORMAT, RequestFeature.STRUCTURED_OUTPUT,
+        RequestFeature.DOCUMENT_CITATIONS, RequestFeature.TOOL_CHOICE,
+        RequestFeature.TOP_K, RequestFeature.STOP_SEQUENCES,
+        RequestFeature.SERVICE_TIER, RequestFeature.SPEED,
+        RequestFeature.CONTAINER, RequestFeature.DIAGNOSTICS,
+        RequestFeature.INFERENCE_GEO, RequestFeature.USER_PROFILE_ID,
+        RequestFeature.WORKSPACE_ID, RequestFeature.CACHE_CONTROL,
+        RequestFeature.CACHE_ONLY_WARMUP, RequestFeature.REASONING_CONTEXT,
+        RequestFeature.DYNAMIC_TOOL_REMOVAL,
+        -> untranslatable(what, head)
     }
 }

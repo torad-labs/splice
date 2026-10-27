@@ -35,9 +35,12 @@ internal class ResponsesInputBuilder(
     private val quirks: ResponsesQuirks,
     private val loopGuardDirectives: Map<String, String> = emptyMap(),
     names: ToolNameShortener = ToolNameShortener(),
+    private val declareByName: Map<String, ToolDefinition> = emptyMap(),
+    private val knownTools: MutableMap<String, ToolDefinition> = mutableMapOf(),
 ) {
 
-    private val parts = ResponsesInputParts(quirks.minImageEdgePx)
+    private val parts = ResponsesInputParts(quirks.request.minImageEdgePx)
+    private val documents = ResponsesDocumentParts(quirks)
     private val tools = ResponsesInputTools(quirks, loopGuardDirectives, names)
     private val inject = ResponsesReasoningInject()
     private val liteShape = ResponsesLiteShape(quirks)
@@ -46,8 +49,8 @@ internal class ResponsesInputBuilder(
         sink: JsonArrayBuilder,
         msg: AnthropicMessage,
         opts: BuildOptions,
-        declareByName: Map<String, ToolDefinition>,
         history: ResponsesHistoryInput? = null,
+        futureAssistantToolUse: Boolean = false,
     ) {
         val context = msg.role == ResponsesContextMessage.CLIENT_ROLE && liteShape.isLite(opts)
         msg.content.forEachIndexed { at, block ->
@@ -58,13 +61,13 @@ internal class ResponsesInputBuilder(
                         if (context) {
                             ResponsesContextMessage.item(text)
                         } else {
-                            parts.roleText(msg.role, text, phaseOf(msg, at, opts))
+                            parts.roleText(msg.role, text, phaseOf(msg, at, futureAssistantToolUse))
                         },
                     )
                 }
                 if (history == null) emit(block.text) else history.text(sink, msg.role, block.text, emit)
             } else {
-                appendBlock(sink, block, opts, declareByName)
+                appendBlock(sink, msg.role, block, opts)
                 history?.cursor?.append(msg.role, block)
             }
             history?.inject(sink)
@@ -72,25 +75,30 @@ internal class ResponsesInputBuilder(
     }
 
     /**
-     * V4-335: the phase of the text at [at] in [msg]. OpenAI's reasoning guide: "If you replay
-     * assistant history manually, preserve each original phase value. Missing or dropped phase can
-     * cause preambles to be treated as final answers". Claude Code keeps no phase, so it is read off
-     * the message: text a tool call follows in the same message was said on the way to that call
-     * (commentary), and text no call follows is the answer (final_answer). An assistant message on
-     * a lite turn only: never a user's, and the non-lite shape stays as it was. [ROLE_ASSISTANT] is
-     * the Responses role's own const: the comparison is where the Anthropic role becomes it.
+     * The standard Responses phase for historical assistant text. A public Responses input item's
+     * known original phase wins over inference. Claude Code retains no phase, so text before a later
+     * function call is commentary and text with no later call is the final answer. The call may be
+     * in a later assistant message when the client split one turn.
      */
-    private fun phaseOf(msg: AnthropicMessage, at: Int, opts: BuildOptions): AssistantPhase? = when {
-        msg.role != ROLE_ASSISTANT || !liteShape.isLite(opts) -> null
-        msg.content.subList(at + 1, msg.content.size).any { it is ToolUseBlock } -> AssistantPhase.COMMENTARY
-        else -> AssistantPhase.FINAL_ANSWER
+    private fun phaseOf(
+        msg: AnthropicMessage,
+        at: Int,
+        futureAssistantToolUse: Boolean,
+    ): AssistantPhase? {
+        if (msg.role != ROLE_ASSISTANT) return null
+        AssistantPhase.entries.firstOrNull { it.wire == msg.phase }?.let { return it }
+        return if (futureAssistantToolUse || msg.content.subList(at + 1, msg.content.size).any { it is ToolUseBlock }) {
+            AssistantPhase.COMMENTARY
+        } else {
+            AssistantPhase.FINAL_ANSWER
+        }
     }
 
     private fun appendBlock(
         sink: JsonArrayBuilder,
+        role: String,
         block: ContentBlock,
         opts: BuildOptions,
-        declareByName: Map<String, ToolDefinition>,
     ) {
         when (block) {
             is TextBlock -> Unit // appendMessage writes text, with its phase
@@ -98,26 +106,58 @@ internal class ResponsesInputBuilder(
             is DocumentBlock -> appendDocument(sink, block)
             is RedactedThinkingBlock -> inject.appendRedactedThinking(sink, block, opts)
             is ToolUseBlock -> tools.appendToolUse(sink, block, opts, declareByName)
-            is ToolResultBlock -> tools.appendToolResult(sink, block)
+            is ToolResultBlock -> appendToolResult(sink, block, opts)
             is ThinkingBlock -> Unit // visible thinking never rides back upstream
-            is UnknownBlock -> appendUnknown(sink, block)
+            is UnknownBlock -> appendUnknown(sink, role, block)
+        }
+    }
+
+    private fun appendToolResult(sink: JsonArrayBuilder, block: ToolResultBlock, opts: BuildOptions) {
+        tools.appendToolResult(sink, block)
+        // A source tool search loads its referenced schema only after this result. Lite's
+        // outer executor owns its nested catalog, so it must not receive a direct function.
+        if (!liteShape.isLite(opts)) {
+            block.content.filterIsInstance<UnknownBlock>().forEach { loaded ->
+                tools.appendLoadedTool(sink, loaded, knownTools)
+            }
         }
     }
 
     /** A block kind splice does not enumerate (search results, server tool results from a session that began on
-     *  another head) cannot ride this wire; it leaves an honest marker, so the model knows content was omitted. */
-    private fun appendUnknown(sink: JsonArrayBuilder, block: UnknownBlock) {
-        sink.add(parts.roleText("user", tools.omission(block)))
+     *  another head) cannot ride this wire; it leaves an honest marker, except source removals whose
+     *  current callable surface rides request-level allowed_tools instead. */
+    private fun appendUnknown(
+        sink: JsonArrayBuilder,
+        role: String,
+        block: UnknownBlock,
+    ) {
+        when {
+            role == ResponsesContextMessage.CLIENT_ROLE && block.type == SOURCE_TOOL_ADDITION ->
+                tools.appendToolAddition(sink, block, knownTools)
+            role == ResponsesContextMessage.CLIENT_ROLE && block.type == SOURCE_TOOL_REMOVAL ->
+                Unit // request-level allowed_tools preserves the current direct-function surface
+            else -> sink.add(parts.roleText("user", tools.omission(block)))
+        }
     }
 
     private fun appendDocument(sink: JsonArrayBuilder, block: DocumentBlock) {
-        sink.add(
-            parts.roleText(
-                "user",
-                "[document omitted by ${quirks.providerTag} proxy: " +
-                    "${block.source?.mediaType ?: "unknown type"}]",
-            ),
-        )
+        val content = documents.message(block)
+        if (content == null) {
+            sink.add(
+                parts.roleText(
+                    "user",
+                    "[document omitted by ${quirks.providerTag} proxy: " +
+                        "${block.source?.mediaType ?: "unknown type"}]",
+                ),
+            )
+        } else if (content.isNotEmpty()) {
+            sink.add(
+                buildJsonObject {
+                    put("role", "user")
+                    put(FIELD_CONTENT, buildJsonArray { content.forEach { add(it) } })
+                },
+            )
+        }
     }
 
     private fun appendImage(sink: JsonArrayBuilder, block: ImageBlock) {

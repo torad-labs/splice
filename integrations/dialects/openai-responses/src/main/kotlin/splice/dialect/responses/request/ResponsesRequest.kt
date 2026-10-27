@@ -41,6 +41,11 @@ internal data class ResponsesRequest(
      *  NOT the Chat-only stream_options.include_usage that broke codex 2026-07-18 — this named
      *  field is exactly the reviewable type change the closed DTO exists to force. */
     @SerialName("stream_options") val streamOptions: JsonObject? = null,
+    @SerialName("max_output_tokens") val maxOutputTokens: Long? = null,
+    /** Public Responses sampling controls come from the raw Anthropic request because its DTO omits them. */
+    val temperature: JsonElement? = null,
+    @SerialName("top_p") val topP: JsonElement? = null,
+    @SerialName("service_tier") val serviceTier: String? = null,
 )
 
 // explicitNulls=false: a null optional field is OMITTED, exactly matching the builder's conditional

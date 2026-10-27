@@ -1,5 +1,6 @@
 package splice.dialect.responses.reasoning
 
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
 
@@ -23,18 +24,27 @@ internal class ResponsesMessageDelivery {
 
     fun delta(event: JsonObject, index: Int, text: String): String {
         val id = JsonScalars.str(event, "item_id")
+        var frontier = messageFrontier(event, index)
+        if (id == null && frontier.finished) frontier = MessageFrontier(null).also { current[index] = it }
+        val contentIndex = JsonScalars.str(event, "content_index")?.toIntOrNull() ?: 0
+        return frontier.observe(contentIndex, text)
+    }
+
+    fun completedPart(event: JsonObject, index: Int, contentIndex: Int, text: String): String =
+        messageFrontier(event, index).completePart(contentIndex, text)
+
+    private fun messageFrontier(event: JsonObject, index: Int): MessageFrontier {
+        val id = JsonScalars.str(event, "item_id")
         var frontier = current[index]
         if (id != null) frontier = identified[id]?.value ?: frontier?.takeIf { it.id == id }
-        if (frontier == null) {
-            frontier = MessageFrontier(id).also { current[index] = it }
-            if (id != null) identified[id] = IndexedValue(index, frontier)
+        return frontier ?: MessageFrontier(id).also {
+            current[index] = it
+            if (id != null) identified[id] = IndexedValue(index, it)
         }
-        if (id == null && frontier.finished) frontier = MessageFrontier(null).also { current[index] = it }
-        return frontier.observe(text)
     }
 
     fun completed(item: JsonObject, index: Int) {
-        val parts = ResponsesMessageText.parts(item)
+        val parts = indexedParts(item)
         if (parts.isEmpty()) {
             current.remove(index)
             return
@@ -45,48 +55,64 @@ internal class ResponsesMessageDelivery {
         current[index] = frontier
         if (id != null) identified.putIfAbsent(id, IndexedValue(index, frontier))
     }
+
+    private fun indexedParts(item: JsonObject): List<Pair<Int, String>> {
+        val content = item["content"] as? JsonArray
+        return content?.mapIndexedNotNull { index, part ->
+            JsonScalars.str(part as? JsonObject, "text")
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { index to it }
+        } ?: ResponsesMessageText.parts(item).mapIndexed { index, text -> index to text }
+    }
 }
 
 private class MessageFrontier(val id: String?) {
-    private var observed = 0
-    private var expected: List<String>? = null
-    private var part = 0
-    private var offset = 0
-    val finished: Boolean get() = expected != null && part == expected?.size
+    private val parts = mutableMapOf<Int, TextPartFrontier>()
+    private var completed = false
+    val finished: Boolean get() = completed && parts.values.all { it.finished }
 
-    fun complete(parts: List<String>) {
-        expected = parts
-        part = 0
-        offset = observed
-        while (part < parts.size && offset >= parts[part].length) {
-            offset -= parts[part++].length
-        }
+    fun complete(parts: List<Pair<Int, String>>) {
+        parts.forEach { (index, text) -> this.parts.getOrPut(index, ::TextPartFrontier).seal(text) }
+        completed = true
     }
 
-    fun observe(text: String): String {
-        val parts = expected ?: run {
-            observed += text.length
-            return text
+    fun completePart(index: Int, text: String): String =
+        parts.getOrPut(index, ::TextPartFrontier).complete(text)
+
+    fun observe(index: Int, text: String): String =
+        parts.getOrPut(index, ::TextPartFrontier).observe(text)
+
+    private class TextPartFrontier {
+        private var deliveredLength = 0
+        private var expected: String? = null
+        private var offset = 0
+        val finished: Boolean get() = expected?.length == offset
+
+        fun complete(text: String): String {
+            require(text.length >= deliveredLength) { "upstream: text done is shorter than streamed deltas" }
+            val suffix = text.substring(deliveredLength)
+            seal(text)
+            return suffix
         }
-        if (finished) {
-            part = 0
-            offset = 0
+
+        fun seal(text: String) {
+            require(text.length >= offset) { "upstream: completed message is shorter than streamed deltas" }
+            expected = text
+            deliveredLength = text.length
         }
-        var at = 0
-        while (at < text.length) {
-            require(part < parts.size) { "upstream: text delta exceeds its completed message" }
-            val source = parts[part]
-            val count = minOf(source.length - offset, text.length - at)
-            require(source.regionMatches(offset, text, at, count)) {
+
+        fun observe(text: String): String {
+            val complete = expected ?: run {
+                offset += text.length
+                deliveredLength = offset
+                return text
+            }
+            if (offset == complete.length) offset = 0
+            require(complete.regionMatches(offset, text, 0, text.length)) {
                 "upstream: text delta disagrees with its completed message"
             }
-            at += count
-            offset += count
-            if (offset == source.length) {
-                part++
-                offset = 0
-            }
+            offset += text.length
+            return ""
         }
-        return ""
     }
 }

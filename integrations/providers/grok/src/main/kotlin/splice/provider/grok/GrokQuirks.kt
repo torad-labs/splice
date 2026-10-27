@@ -10,7 +10,9 @@ import splice.dialect.responses.ResponsesBackendQuirks
 import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesReasoningQuirks
+import splice.dialect.responses.ResponsesRequestControlQuirks
 import splice.dialect.responses.ResponsesRoundTripQuirks
+import splice.dialect.responses.ResponsesServiceTierSupport
 import splice.dialect.responses.ResponsesToolQuirks
 
 /** Holder for the grok quirk profile. Constructed by the daemon so TOML overlays a real table. */
@@ -31,12 +33,15 @@ public class GrokQuirks {
             emitToolChoice = true,
             emitStrict = true,
         ),
+        request = ResponsesRequestControlQuirks(
+            serviceTier = ResponsesServiceTierSupport.UNSUPPORTED,
+            // DR-155: xAI's documented and ENFORCED minimum image edge. Its verbatim HTTP 400 body is
+            // Image dimensions 1x1 are too small. Both width and height must be at least 8 pixels.
+            minImageEdgePx = XAI_MIN_IMAGE_EDGE_PX,
+        ),
         roundTrip = ResponsesRoundTripQuirks(
             reasoningCache = false,
         ),
-        // DR-155: xAI's documented and ENFORCED minimum image edge. Its verbatim HTTP 400 body is
-        // Image dimensions 1x1 are too small. Both width and height must be at least 8 pixels.
-        minImageEdgePx = XAI_MIN_IMAGE_EDGE_PX,
     )
 
     public fun xhighModels(): Regex = XHIGH_MODELS

@@ -13,9 +13,9 @@
 //     the most expensive turn class there is, read the whole transcript cold (perf rows: compact
 //     cached_tokens=0 on every model). `opts.compact` is therefore NOT consulted here; it only
 //     reaches TurnMeta for the response side (watchdog budget, empty-compaction gate, telemetry).
-//   - images ride as input_image (base64 data URL or url); documents become honest markers;
-//     images inside tool_result ride in a follow-up user message (function_call_output is
-//     string-only on these backends — v25: screenshots silently vanished);
+//   - images ride as input_image and documents as input_file where the backend supports them;
+//     mixed function outputs use ordered public content parts where supported, with profile-specific
+//     fallbacks for endpoints that only accept text;
 //   - include vs replay are SEPARATE (Grok Build / Node measured lesson):
 //       includeEncryptedReasoning → ask the server to RETURN encrypted_content (opaque handle)
 //       replayReasoning → inject prior redacted_thinking into the NEXT input
@@ -28,8 +28,8 @@
 //     a deliberate none pick; it floors minimal -> low and folds summary to detailed;
 //   - spark rejects reasoning.summary (openai/codex#31846) — omitted via quirk regex;
 //   - gpt-5.4-mini caps effort at xhigh — the backend 400s effort=max, clamped via quirk regex;
-//   - max_tokens remains caller metadata, not a forwarded generation limit. Backend guarantees
-//     and limitations belong to each provider, not to the shared Responses dialect.
+//   - max_tokens maps to the public output limit when the endpoint profile enables it. A provider's
+//     non-enforcement policy and limitations remain explicit rather than a dialect-wide default.
 //
 // Decomposed 2026-08-17 (concentration campaign) into sibling files in this same package —
 // ResponsesQuirks.kt, ResponsesBuildContract.kt, ResponsesRequestAssembler.kt, ResponsesToolPlan.kt,
@@ -48,6 +48,7 @@ import splice.core.turn.TurnRoute
 import splice.core.turn.TurnScope
 import splice.core.turn.TurnToolSurface
 import splice.core.wire.AnthropicRequest
+import splice.dialect.responses.ResponsesLiteShape
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.ResponsesReasoningKnobs
 import splice.dialect.responses.stream.ResponsesLooseFields
@@ -68,17 +69,24 @@ internal class ResponsesRequestBuilder(
     private val assembler = ResponsesRequestAssembler(quirks, toolNames)
     private val priorReasoning = ResponsesPriorReasoning()
     private val messages = ResponsesMessageFragments(quirks, toolNames)
+    private val controls = ResponsesRequestControls(quirks)
+    private val liteShape = ResponsesLiteShape(quirks)
 
     public fun build(body: AnthropicRequest, raw: JsonObject, opts: BuildOptions): BuiltRequest {
-        // Partition FIRST, before the message walk: it is a pure function of (body.tools, policy)
-        // ONLY (ToolSurface.kt header) and the declaration-replay injection below needs to know,
-        // per ToolUseBlock, whether that tool is THIS request's deferred set — moving it earlier
-        // costs nothing (buildRequestObject no longer recomputes it) and keeps position 0 of the
-        // wire input untouched by anything the walk discovers.
+        // Standard Responses holds its initial direct-function surface in tools and appends later
+        // declarations at their source boundaries. A source-deferred definition stays in the catalog
+        // for a future tool_reference but must not be offered before that addition.
         val outputFormat = ResponsesOutputSchema.format(body, raw)
+        val rawControls = controls.wire(raw)
         val wireBody = ResponsesOutputSchema.wireBody(body, outputFormat)
-        val partition = toolPlan.partition(wireBody, opts)
-        val declareByName = toolPlan.declarationCandidates(wireBody, partition)
+        val dynamicTools = ResponsesDynamicToolChanges.availability(wireBody)
+        val initiallyAvailableBody = wireBody.copy(tools = dynamicTools.initiallyAvailable)
+        // Responses-lite is the Codex synthetic outer executor's own tool shape. Its full catalog
+        // remains provider-owned rather than being subjected to a direct-function availability rule.
+        val lite = liteShape.isLite(opts)
+        val surfaceBody = if (lite) wireBody else initiallyAvailableBody
+        val partition = toolPlan.partition(surfaceBody, opts)
+        val declareByName = toolPlan.declarationCandidates(surfaceBody, partition)
         val effort = knobs.resolveEffort(body, raw, opts)
         val summary = knobs.resolveSummary(raw, opts, effort)
         val walked = messages.walk(body, raw, opts, declareByName, effort)
@@ -90,16 +98,36 @@ internal class ResponsesRequestBuilder(
             JsonArray(priorReasoning.withoutPriorTurns(walked))
         }
         val instructions = body.system.orEmpty().ifEmpty { DEFAULT_INSTRUCTIONS }
-        val reasoning = knobs.reasoningBlock(effort, summary, opts)
+        val reasoning = knobs.reasoningBlock(effort, summary, raw, opts)
 
         val conversationKey = ids.stablePromptCacheKey(body)
-        val parts = RequestParts(input, instructions, reasoning, partition, conversationKey, outputFormat)
-        val built = assembler.buildRequestObject(wireBody, opts, parts)
+        val parts = RequestParts(
+            input = input,
+            instructions = instructions,
+            reasoning = reasoning,
+            tools = RequestToolSurface(
+                partition = partition,
+                currentAllowedTools = dynamicTools.currentNames.takeIf { !lite && dynamicTools.requiresRestriction },
+            ),
+            conversationKey = conversationKey,
+            outputFormat = outputFormat,
+            controls = rawControls,
+        )
+        val built = assembler.buildRequestObject(surfaceBody, opts, parts)
+        return BuiltRequest(built.req, turnMeta(body, opts, parts, built, effort), built.toolSearch)
+    }
+
+    private fun turnMeta(
+        body: AnthropicRequest,
+        opts: BuildOptions,
+        parts: RequestParts,
+        built: BuiltBody,
+        effort: String?,
+    ): TurnMeta {
         // meta.summary reflects what was ACTUALLY sent (spark drops it → "none"), like Node's
         // `req.reasoning?.summary ?? 'none'` — not the computed-but-maybe-dropped value.
-        val sentSummary = looseFields.sentSummary(reasoning)
-
-        val meta = TurnMeta(
+        val sentSummary = looseFields.sentSummary(parts.reasoning)
+        return TurnMeta(
             compact = opts.compact,
             reasoning = TurnReasoning(
                 showReasoning = opts.reasoning.display,
@@ -116,7 +144,7 @@ internal class ResponsesRequestBuilder(
             scope = TurnScope(
                 // The reasoning cache's conversation scope — the SAME derivation the provider's
                 // lookup closure uses, so capture (which only sees TurnMeta) and injection agree.
-                conversationKey = conversationKey,
+                conversationKey = parts.conversationKey,
                 sessionId = opts.sessionId,
                 reasoningHistory = opts.reasoningHistory.copy(),
                 reasoningStorageKey = ids.reasoningStorageKey(body),
@@ -124,9 +152,8 @@ internal class ResponsesRequestBuilder(
                 // Every continuation round reuses this meta object (continuationRequest bypasses
                 // build()), so the dedup state it carries is genuinely turn-scoped.
             ),
-            tools = toolSurface(built, body, outputFormat),
+            tools = toolSurface(built, body, parts.outputFormat),
         )
-        return BuiltRequest(built.req, meta, built.toolSearch)
     }
 
     private fun toolSurface(built: BuiltBody, body: AnthropicRequest, format: JsonObject?): TurnToolSurface =

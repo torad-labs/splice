@@ -4,12 +4,15 @@
 // relocated member kept its identical name and argument list.
 package splice.dialect.responses.stream
 
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.FIELD_EFFORT
 import splice.dialect.responses.reasoning.FIELD_REASONING
 import splice.dialect.responses.reasoning.FIELD_SUMMARY
+import splice.dialect.responses.request.ResponsesContextMessage
 import splice.dialect.responses.request.ResponsesEffort
 
 /**
@@ -24,15 +27,32 @@ internal class ResponsesLooseFields(private val quirks: ResponsesQuirks) {
 
     // NB: `as? JsonObject` NOT `?.jsonObject` — the latter THROWS on a non-object (e.g. a client
     // sending `"reasoning":"high"` as a bare string); Node's optional chaining degrades to default.
-    internal fun looseEffort(raw: JsonObject): String? = sequenceOf(
-        raw[FIELD_EFFORT],
-        raw["reasoning_effort"],
-        (raw["output_config"] as? JsonObject)?.get(FIELD_EFFORT),
-        (raw["metadata"] as? JsonObject)?.get(FIELD_EFFORT),
-        (raw[FIELD_REASONING] as? JsonObject)?.get(FIELD_EFFORT),
-    ).mapNotNull { JsonScalars.str(it) }
+    internal fun looseEffort(raw: JsonObject): String? = (
+        // Preserve existing head aliases first. A source system marker then supersedes the source
+        // request's initial output_config for the current turn.
+        sequenceOf(
+            raw[FIELD_EFFORT],
+            raw["reasoning_effort"],
+        ) + systemOutputConfigEfforts(raw) + sequenceOf(
+            (raw["output_config"] as? JsonObject)?.get(FIELD_EFFORT),
+            (raw["metadata"] as? JsonObject)?.get(FIELD_EFFORT),
+            (raw[FIELD_REASONING] as? JsonObject)?.get(FIELD_EFFORT),
+        )
+        ).mapNotNull { JsonScalars.str(it) }
         .mapNotNull { effortRules.normalizeEffort(it, quirks.reasoning.effortVocabulary) }
         .firstOrNull()
+
+    /** The latest system output_config changes the effort for the current upstream turn. */
+    private fun systemOutputConfigEfforts(raw: JsonObject): Sequence<JsonElement?> =
+        (
+            (raw["messages"] as? JsonArray)
+                ?.asReversed()
+                ?.asSequence()
+                ?.mapNotNull { it as? JsonObject }
+                ?.filter { JsonScalars.str(it, "role") == ResponsesContextMessage.CLIENT_ROLE }
+                ?.map { (it["output_config"] as? JsonObject)?.get(FIELD_EFFORT) }
+            )
+            ?: emptySequence()
 
     /** The client-requested summary sequence [ResponsesReasoningKnobs.resolveSummary] folds against
      *  the v27 visibility floor — extracted verbatim from that function's body. */

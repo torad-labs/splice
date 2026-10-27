@@ -132,6 +132,10 @@ internal class TurnPreparation(
     private val messageEdges = MessageEdges(deps.seams.events)
     private val providerTurns = ProviderTurnBuild(provider, deps, replay)
 
+    /** Fix 4 of the Oct 27 Responses fixes: which earlier request of the same Claude Code turn each request
+     *  continues, so the turn state its backend returned rides every request of that turn (ToolLoopTurns). */
+    private val toolLoop = ToolLoopTurns()
+
     /** [Materialized.TooLarge] rather than a [Preparation] case: the 413 belongs to the admission
      *  gate, which writes it while the lease is still held, exactly where the thrown refusal used
      *  to unwind to. A Preparation case would render it after the lease returned, which is a
@@ -264,6 +268,7 @@ internal class TurnPreparation(
             it.copy(sessionId = it.sessionId ?: sessionId, messagesHash = messagesHash)
         }
         val prepared = fromProvider.copy(meta = fromProvider.meta.copy(scope = scope))
+        toolLoop.join(prepared.meta, parsed)
         // Per-turn headers already outrank the provider's own in TurnDriver's merge, so a forwarded
         // value REPLACES a configured default (e.g. the caller's anthropic-version wins over the
         // provider's), and UpstreamClient folds the casing.

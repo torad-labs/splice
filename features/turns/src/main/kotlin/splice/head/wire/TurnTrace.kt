@@ -10,7 +10,9 @@
 //     ending goes through): the client's inbound request, everything streamed back to it (every
 //     frame through ClientChannel, the pinger's included) or the collected JSON body, the outcome
 //     tag, the round and attempt counts, and the perf marks and counters.
-// Bodies past the store's maxBodyChars are cut and the record says `truncated: true`.
+// Bodies past the store's maxBodyChars are cut and the record says `truncated: true`. A header a body or a stream
+// carries as a JSON member keeps its name and loses a secret value (HeaderRedaction.redactText), as the headers
+// themselves do: the ChatGPT backend's response.metadata event names its turn state, and a websocket frame echoes it.
 package splice.head.wire
 
 import kotlinx.serialization.json.JsonObject
@@ -29,6 +31,7 @@ import splice.core.util.ERR_SNIPPET
 import splice.core.util.WallClock
 import splice.upstream.sse.WireAttempt
 import splice.upstream.sse.WireObserver
+import splice.upstream.transport.HeaderRedaction
 
 /** What a collect turn answered: the collect path registers it before driving, and the turn record
  *  reads it at the end, because the buffered JSON body exists only once the terminal has closed. */
@@ -94,7 +97,7 @@ public class TurnTrace internal constructor(
     public fun wsAttempt(body: String, headers: Map<String, String>, failure: String?) {
         val record = synchronized(lock) {
             val (text, truncated) = response.take()
-            val (requestBody, requestTruncated) = store.bounded(body)
+            val (requestBody, requestTruncated) = store.bounded(HeaderRedaction.redactText(body))
             buildJsonObject {
                 stamp(this, TraceKinds.ATTEMPT)
                 put("round", rounds)
@@ -106,7 +109,7 @@ public class TurnTrace internal constructor(
                     put(TRUNCATED, requestTruncated)
                 }
                 putJsonObject(RESPONSE) {
-                    put(RAW_TEXT, text)
+                    put(RAW_TEXT, HeaderRedaction.redactText(text))
                     put(TRUNCATED, truncated)
                 }
                 failure?.let { put("failure", it) }
@@ -166,7 +169,7 @@ public class TurnTrace internal constructor(
                 putJsonObject(RESPONSE) {
                     put("status", status)
                     headersOf(this, attempt.response.headers)
-                    put(RAW_TEXT, attempt.response.errorText ?: responseText)
+                    put(RAW_TEXT, HeaderRedaction.redactText(attempt.response.errorText ?: responseText))
                     put(TRUNCATED, attempt.response.errorText == null && responseTruncated)
                 }
             }

@@ -6,14 +6,26 @@
 // host, without ever seeing what it was. Values that are not secrets ride whole: content-type,
 // anthropic-version, retry-after, the rate-limit family, x-request-id — the headers an incident
 // is diagnosed from.
+//
+// Fix 4 of the Oct 27 Responses fixes: a turn state (the ChatGPT backend's x-codex-turn-state routing token) and an
+// account id (ChatGPT-Account-ID, which every ChatGPT sign-in head now sends) are kept out the same way, and so are
+// such headers where a body or a stream carries them as JSON members: the backend's response.metadata event names
+// its turn state, and a websocket frame's client_metadata echoes it.
 package splice.upstream.transport
 
 public object HeaderRedaction {
     public const val REDACTED: String = "[redacted]"
 
     private val secretName = Regex(
-        "auth|key|token|secret|cookie|session|credential|signature|password",
+        "auth|key|token|secret|cookie|session|credential|signature|password|turn-state|account",
         RegexOption.IGNORE_CASE,
+    )
+
+    /** A JSON member named like a header (words joined by '-'), with a string value (one the text's cut may have cut
+     *  short) or an array of them. A member named with '_' is a JSON field, not a header (input_tokens,
+     *  prompt_cache_key), and is never matched. Possessive throughout, so a long value is scanned once. */
+    private val headerMember = Regex(
+        """"((?:[A-Za-z0-9_.]++-)++[A-Za-z0-9_.]++)"(\s*+:\s*+)("(?:[^"\\]++|\\.)*+(?:"|\z)|\[[^\]]*+(?:]|\z))""",
     )
 
     /** True when a header of this name may carry a credential. */
@@ -22,4 +34,11 @@ public object HeaderRedaction {
     /** The same map, every secret-named value replaced by [REDACTED]. Names and order are kept. */
     public fun redact(headers: Map<String, String>): Map<String, String> =
         headers.mapValues { (name, value) -> if (isSecret(name)) REDACTED else value }
+
+    /** [text], a body or a stream as it went over the wire, with the value of every JSON member named like a secret
+     *  header replaced by [REDACTED]. The member's name is kept, and everything else in the text is untouched. */
+    public fun redactText(text: String): String = headerMember.replace(text) { member ->
+        val (name, colon) = member.destructured
+        if (isSecret(name)) "\"$name\"$colon\"$REDACTED\"" else member.value
+    }
 }

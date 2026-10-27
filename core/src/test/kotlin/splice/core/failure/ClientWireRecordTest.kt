@@ -251,7 +251,13 @@ private val ANSWERED: List<Answered> = CAUSES.flatMap { cause ->
 private val LOGIN_STATUSES = setOf(HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN)
 private val LOGIN_TYPES = setOf(ErrorType.AUTHENTICATION, ErrorType.PERMISSION)
 
-/** Whether this answer breaks its family's promise, said in one line, or null when it keeps it. */
+/** The record's case for an in-band answer given once model content reached the client, or null where the record
+ *  holds none for its type. */
+private fun afterContentCase(answer: WireAnswer): RecordCase? =
+    ReactionRecord.case("inband-${typeId(answer.type)}-after-content")
+
+/** Whether this answer breaks its family's promise, said in one line, or null when it keeps it. After content an
+ *  answer keeps no promise the record cannot show: its type must be a row of the record, whatever that row says. */
 private fun familyMiss(case: Answered): String? {
     val resent = recordResent(case.answer, case.at)
     val after = case.at.moment == Moment.MID_CONTENT
@@ -263,6 +269,21 @@ private fun familyMiss(case: Answered): String? {
         null -> null
     }
 }
+
+/** An R, P or T answer given in band after content whose type the record holds no row for, said in one line, or
+ *  null. */
+private fun unrecorded(case: Answered): String? {
+    val inBandAfter = case.at.moment == Moment.MID_CONTENT && case.answer.status == null
+    val needsRow = case.family in RECORDED && inBandAfter
+    return if (needsRow && afterContentCase(case.answer) == null) {
+        "${case.family} after content has no record row: $case"
+    } else {
+        null
+    }
+}
+
+/** The families whose every answer must be a row of the record. */
+private val RECORDED = setOf(Fam.R, Fam.P, Fam.T)
 
 /** Whether a P or T answer stopped the turn. After content the record's own verdict is mixed for overloaded_error
  *  ("1 after thinking alone; none after text"), and the design leaves the type alone there, so the only breach after
@@ -285,7 +306,7 @@ class ClientWireRecordTest {
     fun `R, P and T answers are rows of the 2_1_310 record that keep their family's promise`() {
         assertTrue(ReactionRecord.cases.size >= 40, "the record was read: ${ReactionRecord.cases.keys}")
         val misses = ANSWERED.filter { it.family != null }
-            .flatMap { listOfNotNull(familyMiss(it), labelMiss(it)) }
+            .flatMap { listOfNotNull(unrecorded(it), familyMiss(it), labelMiss(it)) }
         assertEquals(emptyList<String>(), misses, "${misses.size} answers break their family's promise")
     }
 

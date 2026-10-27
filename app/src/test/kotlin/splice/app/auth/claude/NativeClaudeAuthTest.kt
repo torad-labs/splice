@@ -10,9 +10,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.accounts.claude.ClaudeLoginPlaceId
-import splice.client.ClaudeHead
-import splice.client.ClaudeLoginTarget
 import splice.client.wrap.ClaudeToRun
 import splice.client.wrap.WrapStateRead
 import splice.upstream.codemode.ProcessDispatchers
@@ -22,11 +19,6 @@ import java.util.concurrent.CopyOnWriteArrayList
 class NativeClaudeAuthTest {
     @TempDir
     lateinit var home: Path
-
-    private fun location(id: ClaudeLoginPlaceId): ClaudeLoginLocation {
-        val directory = home.resolve(id.wire)
-        return ClaudeLoginLocation(id, ClaudeLoginTarget(ClaudeHead("claude-splice", directory), directory), home)
-    }
 
     @Test
     fun `the real executable authenticates the requested folder without inherited auth selectors`() {
@@ -48,17 +40,15 @@ class NativeClaudeAuthTest {
                 NativeLoginTestProcess()
             },
         )
-        (auth.begin(location(ClaudeLoginPlaceId.NATIVE)) as NativeSignIn.Running).run.use { }
-        (auth.begin(location(ClaudeLoginPlaceId.SPLICE)) as NativeSignIn.Running).run.use { }
-        assertEquals(listOf("/synthetic/real-claude", "auth", "login", "--claudeai"), builders[0].command())
-        assertFalse(builders[0].environment().containsKey("CLAUDE_CONFIG_DIR"))
-        assertEquals(home.resolve("claude-splice").toString(), builders[1].environment()["CLAUDE_CONFIG_DIR"])
-        for (builder in builders) {
-            assertFalse(builder.environment().containsKey("ANTHROPIC_AUTH_TOKEN"))
-            assertFalse(builder.environment().containsKey("CLAUDE_CODE_OAUTH_TOKEN"))
-            assertFalse(builder.environment().containsKey("CLAUDE_CODE_USE_BEDROCK"))
-            assertEquals("http://proxy.invalid", builder.environment()["HTTPS_PROXY"])
-        }
+        val pending = home.resolve("pending")
+        (auth.begin(pending) as NativeSignIn.Running).run.use { }
+        val builder = builders.single()
+        assertEquals(listOf("/synthetic/real-claude", "auth", "login", "--claudeai"), builder.command())
+        assertEquals(pending.toString(), builder.environment()["CLAUDE_CONFIG_DIR"])
+        assertFalse(builder.environment().containsKey("ANTHROPIC_AUTH_TOKEN"))
+        assertFalse(builder.environment().containsKey("CLAUDE_CODE_OAUTH_TOKEN"))
+        assertFalse(builder.environment().containsKey("CLAUDE_CODE_USE_BEDROCK"))
+        assertEquals("http://proxy.invalid", builder.environment()["HTTPS_PROXY"])
     }
 
     @Test
@@ -74,7 +64,7 @@ class NativeClaudeAuthTest {
             ProcessDispatchers().io(),
             NativeAuthStart { process },
         )
-        (auth.begin(location(ClaudeLoginPlaceId.NATIVE)) as NativeSignIn.Running).run.use { child ->
+        (auth.begin(home.resolve("pending")) as NativeSignIn.Running).run.use { child ->
             assertTrue(child.await { announced += it })
         }
         assertEquals(listOf(good), announced.toList())
@@ -99,7 +89,7 @@ class NativeClaudeAuthTest {
                 ProcessDispatchers().io(),
                 NativeAuthStart { process },
             )
-            (auth.begin(location(ClaudeLoginPlaceId.NATIVE)) as NativeSignIn.Running).run.use { child ->
+            (auth.begin(home.resolve("pending")) as NativeSignIn.Running).run.use { child ->
                 assertTrue(child.await { announced += it })
             }
             assertEquals(listOf(good), announced.toList())
@@ -114,7 +104,7 @@ class NativeClaudeAuthTest {
             ProcessDispatchers().io(),
             NativeAuthStart { process },
         )
-        (auth.begin(location(ClaudeLoginPlaceId.NATIVE)) as NativeSignIn.Running).run.use { child ->
+        (auth.begin(home.resolve("pending")) as NativeSignIn.Running).run.use { child ->
             assertTrue(child.submit("synthetic-code"))
             assertFalse(child.submit("two\nlines"))
             assertEquals("synthetic-code\n", process.stdin.toString(Charsets.UTF_8))

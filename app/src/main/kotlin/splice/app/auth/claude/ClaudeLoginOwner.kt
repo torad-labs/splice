@@ -1,11 +1,9 @@
-// NEW: destination-scoped native login attempts share the daemon lifecycle and preserve save-back policy.
+// NEW: a command's own Claude Code login places, read for Accounts and edited in place. Signing in on a place's card
+// adds an account to the place's command ([ClaudeAccountSignIn]) and never writes the place (Marcos, Oct 27, 2026:
+// "SPlice console login ADDs an account, it doesn't replace it"), so a sign-in neither waits for the command's sessions
+// nor holds its launches. Only an edit of a place does.
 package splice.app.auth.claude
 
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeout
 import splice.accounts.claude.ClaudeAccountIdentity
 import splice.accounts.claude.ClaudeCarrying
 import splice.accounts.claude.ClaudeLoginPlaceId
@@ -15,50 +13,22 @@ import splice.accounts.signin.AccountMutation
 import splice.accounts.signin.LoginFailure
 import splice.accounts.signin.LoginState
 import splice.accounts.signin.LoginStatus
-import splice.client.ClaudeLoginResult
 import splice.client.ClaudeLogins
-import splice.client.ClaudeNativeLoginPreparation
-import splice.core.util.Cancellables
 import splice.launch.recipe.LaunchLoginGuard
 import java.nio.file.Path
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicReference
-
-// why: two destinations can run concurrently; 32 statuses retain recent completed clicks without an unbounded map.
-private const val NATIVE_LOGIN_HISTORY = 32
-
-// Browser authentication cannot hold a destination or daemon child indefinitely.
-private const val NATIVE_LOGIN_TIMEOUT_MS = 10L * 60L * 1000L
-
-private class NativeAttempt(
-    val location: ClaudeLoginLocation,
-    val logins: ClaudeLogins,
-    val prepared: ClaudeNativeLoginPreparation.Ready,
-    val status: AtomicReference<LoginStatus>,
-) {
-    @Volatile
-    var child: NativeClaudeAuthRun? = null
-
-    fun fail(kind: LoginFailure, reason: String): LoginStatus =
-        status.updateAndGet { it.failed(kind, reason) }
-}
 
 internal class ClaudeLoginOwner(
     private val locations: List<ClaudeLoginLocation>,
     private val reads: ClaudeLoginRead,
-    private val sessions: ClaudeLoginSessions,
-    auth: NativeClaudeAuth,
-    private val scope: CoroutineScope,
+    private val signIn: ClaudeAccountSignIn,
     private val changes: ClaudePoolChanges? = null,
     private val carried: ClaudeCarryingPlaces = ClaudeCarryingPlaces(locations, reads),
 ) : ClaudeLoginPlaces, LaunchLoginGuard, ClaudeCarrying by carried {
     private val lock = Any()
     private val logins = locations.associate { it.id to ClaudeLogins(it.storeDir) }
-    private val active = mutableMapOf<ClaudeLoginPlaceId, NativeAttempt>()
-    private val history = LinkedHashMap<String, AtomicReference<LoginStatus>>()
     private val mutating = mutableSetOf<ClaudeLoginPlaceId>()
     private val edits = ClaudeLoginEdits(reads)
-    private val runner = NativeLoginRunner(auth, sessions, changes)
     private val dirs = ConfigDirs()
 
     private val names = ClaudeLoginNames { place, key -> logins[place]?.labelForCredential(key) }
@@ -71,59 +41,24 @@ internal class ClaudeLoginOwner(
      *  that head, and which carries that session. */
     internal fun sent(head: String, session: String?, key: String) = carried.sent(head, session, key)
 
-    override fun poll(id: String): LoginStatus? = synchronized(lock) { history[id]?.get() }
+    override fun poll(id: String): LoginStatus? = signIn.poll(id)
 
+    /** A launch waits only while one of its command's own logins is being edited. A sign-in writes no login a session
+     *  reads, so it holds no launch. */
     override fun refusal(configDir: Path): String? = synchronized(lock) {
-        if (locations.any { it.id in mutating && dirs.same(it.target.head.configDir, configDir) }) {
-            return@synchronized "this native login is being edited; launch after it finishes"
+        "this native login is being edited; launch after it finishes".takeIf {
+            locations.any { it.id in mutating && dirs.same(it.target.head.configDir, configDir) }
         }
-        active.values.firstOrNull { dirs.same(it.location.target.head.configDir, configDir) }
-            ?.let { "native login is replacing this command's credential; launch after it finishes" }
     }
 
+    /** Sign in and Sign in again on [place]'s card: one more account for the place's own command, under [label] or the
+     *  next free one, exactly as + Add account. The place's login, and the account its sessions run on, stay as they
+     *  are. The status names the place's OWN head, so the console draws it on that command's card. */
     override suspend fun login(place: ClaudeLoginPlaceId, label: String?): LoginStatus {
-        // The status names the login's OWN head. A fixed string here made every card's "Sign in again" report
-        // claude-splice's head, so the console drew one command's running sign-in on another command's card.
-        val head = locations.firstOrNull { it.id == place }?.target?.head?.key ?: place.command
-        val cell = AtomicReference(LoginStatus(UUID.randomUUID().toString(), head, LoginState.STARTING))
-        val attempt = synchronized(lock) {
-            remember(cell)
-            prepare(place, label, cell)
-        } ?: return cell.get()
-        val job = scope.launch { runner.run(attempt) }
-        job.invokeOnCompletion { releaseQuietly(attempt) }
-        return cell.get()
-    }
-
-    private fun prepare(
-        place: ClaudeLoginPlaceId,
-        label: String?,
-        cell: AtomicReference<LoginStatus>,
-    ): NativeAttempt? {
-        val location = locations.singleOrNull { it.id == place }
-        if (location == null) {
-            runner.failed(cell, LoginFailure.CONFIG, "native login place is not configured")
-            return null
-        }
-        val dir = location.target.head.configDir
-        val busy = refusal(dir)
-        if (busy != null) {
-            // [refusal] names an edit before a running sign-in: an edit holds the login In use, while a sign-in
-            // already running is In progress.
-            val editing = locations.any { it.id in mutating && dirs.same(it.target.head.configDir, dir) }
-            runner.failed(cell, if (editing) LoginFailure.IN_USE else LoginFailure.IN_PROGRESS, busy)
-            return null
-        }
-        val store = logins.getValue(place)
-        return when (val prepared = store.prepareNative(location.target, label, sessions.read(location))) {
-            is ClaudeNativeLoginPreparation.Refused -> {
-                val kind = if (prepared.inUse) LoginFailure.IN_USE else LoginFailure.NOT_COMPLETED
-                runner.failed(cell, kind, prepared.reason)
-                null
-            }
-            is ClaudeNativeLoginPreparation.Ready -> NativeAttempt(location, store, prepared, cell)
-                .also { active[place] = it }
-        }
+        val head = locations.firstOrNull { it.id == place }?.target?.head?.key
+            ?: return LoginStatus(UUID.randomUUID().toString(), place.command, LoginState.FAILED)
+                .failed(LoginFailure.CONFIG, "this command's Claude Code login is not configured on this machine")
+        return signIn.start(head, label)
     }
 
     override suspend fun remove(place: ClaudeLoginPlaceId): AccountMutation = edit(place, null)
@@ -153,97 +88,7 @@ internal class ClaudeLoginOwner(
         }
     }
 
-    override suspend fun submit(id: String, code: String): Boolean {
-        val child = synchronized(lock) { active.values.firstOrNull { it.status.get().id == id }?.child } ?: return false
-        return Cancellables.runCatchingCancellable { child.submit(code) }
-            .onFailure { /* Closed stdin refuses submission; neither code nor child text enters diagnostics. */ }
-            .getOrDefault(false)
-    }
-
-    private fun remember(cell: AtomicReference<LoginStatus>) {
-        while (history.size >= NATIVE_LOGIN_HISTORY) {
-            val removable = history.entries.firstOrNull { entry -> active.values.none { it.status === entry.value } }
-                ?: break
-            history.remove(removable.key)
-        }
-        history[cell.get().id] = cell
-    }
-
-    private fun releaseQuietly(attempt: NativeAttempt) {
-        synchronized(lock) {
-            if (attempt.status.get().state == LoginState.STARTING || attempt.status.get().state == LoginState.WAITING) {
-                runner.failed(attempt.status, LoginFailure.CANCELLED, "native Claude login was cancelled")
-            }
-            if (active[attempt.location.id] === attempt && attempt.child?.stopped != false) {
-                active.remove(attempt.location.id)
-            }
-        }
-    }
-}
-
-/** Drives one native login attempt from the CLI's browser step to a landed account, split out of the owner. */
-private class NativeLoginRunner(
-    private val auth: NativeClaudeAuth,
-    private val sessions: ClaudeLoginSessions,
-    private val changes: ClaudePoolChanges?,
-) {
-    suspend fun run(attempt: NativeAttempt) {
-        try {
-            val outcome = Cancellables.runCatchingCancellable {
-                withTimeout(NATIVE_LOGIN_TIMEOUT_MS) { authenticate(attempt) }
-            }.onFailure { attempt.fail(LoginFailure.STOPPED, "native Claude login stopped (${it::class.simpleName})") }
-            Cancellables.discard(outcome, "the attempt status records classified native process failure")
-        } catch (_: TimeoutCancellationException) {
-            attempt.fail(LoginFailure.EXPIRED, "native Claude login expired")
-        } catch (cancelled: CancellationException) {
-            attempt.fail(LoginFailure.CANCELLED, "native Claude login was cancelled")
-            throw cancelled
-        }
-    }
-
-    private suspend fun authenticate(attempt: NativeAttempt) {
-        val child: NativeClaudeAuthRun = when (val begun = auth.begin(attempt.location)) {
-            is NativeSignIn.Refused -> {
-                attempt.fail(LoginFailure.CONFIG, begun.reason)
-                return
-            }
-            is NativeSignIn.Running -> begun.run
-        }
-        attempt.child = child
-        try {
-            val completed = child.await { url ->
-                attempt.status.updateAndGet {
-                    it.copy(state = LoginState.WAITING, prompt = it.prompt.copy(browserUrl = url))
-                }
-            }
-            if (completed) {
-                land(attempt)
-            } else {
-                attempt.fail(LoginFailure.NOT_COMPLETED, "native Claude login did not complete")
-            }
-        } finally {
-            child.close()
-        }
-    }
-
-    private fun land(attempt: NativeAttempt) {
-        val target = attempt.location.target
-        when (val result = attempt.logins.completeNative(target, attempt.prepared, sessions.read(attempt.location))) {
-            is ClaudeLoginResult.Refused -> {
-                val kind = if (result.inUse) LoginFailure.IN_USE else LoginFailure.NOT_COMPLETED
-                failed(attempt.status, kind, result.reason)
-            }
-            is ClaudeLoginResult.Done -> {
-                changes?.publish(target.head.key)
-                attempt.status.updateAndGet { it.copy(state = LoginState.SIGNED_IN, label = attempt.logins.selected()) }
-            }
-            ClaudeLoginResult.Ok ->
-                failed(attempt.status, LoginFailure.NOT_COMPLETED, "native login did not record a completed account")
-        }
-    }
-
-    fun failed(cell: AtomicReference<LoginStatus>, kind: LoginFailure, reason: String): LoginStatus =
-        cell.updateAndGet { it.failed(kind, reason) }
+    override suspend fun submit(id: String, code: String): Boolean = signIn.submit(id, code)
 }
 
 /** Whether two config folders are one directory, following links. */

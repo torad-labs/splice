@@ -107,12 +107,20 @@ internal sealed class ClaudeAccountRemoval {
     data object Failed : ClaudeAccountRemoval()
 }
 
+/** Which of a head's own Claude Code logins holds an account now, beside the accounts added here: the label its card
+ *  answers to, or null. Only a login that can still send for that account, or that its command renews on its next run,
+ *  holds it; one that is signed out holds nothing a turn can use, so signing that account in adds it. */
+internal fun interface ClaudeHeldLogins {
+    fun label(head: String, account: String): String?
+}
+
 /** What [ClaudeAccountFolders.land] did with a finished sign-in. */
 internal sealed class ClaudeAccountLanding {
     /** The account is this head's now, under [label]. */
     data class Added(val label: String, val membershipPublished: Boolean = false) : ClaudeAccountLanding()
 
-    /** This head's pool already holds that account, under [label]; nothing was written. */
+    /** This head already holds that account, under [label]: an added account, or one of its own logins
+     *  ([ClaudeHeldLogins]). Nothing was written. */
     data class AlreadyAdded(val label: String) : ClaudeAccountLanding()
 
     /** [label] already holds another readable account on this head; nothing was written over it. */
@@ -128,6 +136,7 @@ internal class ClaudeAccountFolders(
     private val profileRefresh: ClaudeIdentityRefresh? = null,
     private val changes: ClaudePoolChanges? = null,
     private val log: LogSink = LogSink { },
+    private val held: ClaudeHeldLogins = ClaudeHeldLogins { _, _ -> null },
 ) {
     private val facts = ClaudeLoginFactsReader(
         ClaudeCredentialProfiles(stateDir, LogSink { }),
@@ -159,7 +168,9 @@ internal class ClaudeAccountFolders(
         if (paths.label(label) && paths.names(head)) facts.token(paths.account(head, label)) else null
 
     /** Where Claude Code should write a sign-in for [label] on [head]. The caller creates it; this reads nothing of
-     *  the existing folder, so a sign-in in flight cannot damage an account already added. */
+     *  any added account's folder, so a sign-in in flight cannot damage an account already added. Whatever an earlier
+     *  sign-in for this label left there (a daemon stopped mid-sign-in) is cleared first, so a sign-in never files a
+     *  credential it did not write. */
     fun pending(head: String, label: String): ClaudePendingAccount {
         require(paths.label(label)) {
             "'$label' is not a valid account label (lowercase letters, digits, '.', '-' or '_', up to 48, " +
@@ -167,7 +178,7 @@ internal class ClaudeAccountFolders(
         }
         require(label != OWN_SIGN_IN_LABEL) { "'$label' names your own Claude Code sign-in; choose another label" }
         require(paths.names(head)) { "'$head' is not a valid command name" }
-        return ClaudePendingAccount(head, label, paths.pending(head, label))
+        return ClaudePendingAccount(head, label, paths.pending(head, label)).also { discard(it.directory) }
     }
 
     /** Proves a completed native sign-in with that pending folder's own captured credential. */
@@ -221,18 +232,25 @@ internal class ClaudeAccountFolders(
         }
     }
 
-    /** The proven half of [land]: this head's pool either already holds [identity] under another label, or the
-     *  label already holds another readable account, which a sign-in never writes over (sessions' README read, Oct 13:
-     *  "never replacing another login"), or the sign-in becomes [ClaudePendingAccount.label]'s own folder. A label
-     *  signed in again keeps its original time, and one whose folder is unreadable is signed in again over it. */
+    /** The proven half of [land]: this head either already holds [identity], as an account added under another label
+     *  or as one of its own logins ([ClaudeHeldLogins]), or the label already holds another readable account, which a
+     *  sign-in never writes over (sessions' README read, Oct 13: "never replacing another login"), or the sign-in
+     *  becomes [ClaudePendingAccount.label]'s own folder. A label signed in again keeps its original time, and one
+     *  whose folder is unreadable is signed in again over it. */
     private fun file(pending: ClaudePendingAccount, identity: ClaudeAccountIdentity): ClaudeAccountLanding {
         val added = accounts(pending.head)
-        val held = added.firstOrNull { it.identity?.uuid == identity.uuid }
-        if (held != null && held.label != pending.label) return ClaudeAccountLanding.AlreadyAdded(held.label)
+        val same = added.firstOrNull { it.identity?.uuid == identity.uuid }
         val other = added.firstOrNull { it.label == pending.label }?.identity
-        if (other != null && other.uuid != identity.uuid) return ClaudeAccountLanding.LabelTaken(pending.label)
-        move(pending, addedAt = held?.addedAtEpochMillis?.takeIf { it != Long.MAX_VALUE } ?: filedAt(added))
-        return ClaudeAccountLanding.Added(pending.label, changes?.publish(pending.head) == true)
+        val login = if (same == null) held.label(pending.head, identity.uuid) else null
+        return when {
+            same != null && same.label != pending.label -> ClaudeAccountLanding.AlreadyAdded(same.label)
+            login != null -> ClaudeAccountLanding.AlreadyAdded(login)
+            other != null && other.uuid != identity.uuid -> ClaudeAccountLanding.LabelTaken(pending.label)
+            else -> {
+                move(pending, addedAt = same?.addedAtEpochMillis?.takeIf { it != Long.MAX_VALUE } ?: filedAt(added))
+                ClaudeAccountLanding.Added(pending.label, changes?.publish(pending.head) == true)
+            }
+        }
     }
 
     /** When splice files a new account: the clock, carried past the newest account this command already holds so two
@@ -293,7 +311,9 @@ internal class ClaudeAccountFolders(
         )
     }
 
-    private fun discard(directory: Path) {
+    /** Deletes [directory] and everything in it: a sign-in's pending folder once the attempt ends, or a removed
+     *  account's folder. Best effort; what cannot be deleted is left for the next sign-in of that label to clear. */
+    fun discard(directory: Path) {
         Cancellables.discard(
             Cancellables.runCatchingBestEffort {
                 if (!Files.isDirectory(directory)) return@runCatchingBestEffort

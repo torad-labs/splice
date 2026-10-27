@@ -35,21 +35,6 @@ public class ClaudeLogins(
     storeDir: Path = StatePaths().stateDir.resolve(LOGINS_DIR),
 ) {
     private val store = LoginStore(storeDir)
-    private val native = ClaudeNativeLogins(store)
-
-    /** Preserve outgoing live bytes before the native CLI begins a fresh browser login. */
-    public fun prepareNative(
-        target: ClaudeLoginTarget,
-        label: String?,
-        sessions: HeadSessions,
-    ): ClaudeNativeLoginPreparation = native.prepare(target, label, sessions)
-
-    /** File only the newly live account after native completion, without restoring any stored copy. */
-    public fun completeNative(
-        target: ClaudeLoginTarget,
-        prepared: ClaudeNativeLoginPreparation.Ready,
-        sessions: HeadSessions,
-    ): ClaudeLoginResult = native.complete(target, prepared, sessions)
 
     /** Every stored label, sorted, legacy copies included. An absent store dir reads as none. */
     public fun labels(): List<String> = store.labels()

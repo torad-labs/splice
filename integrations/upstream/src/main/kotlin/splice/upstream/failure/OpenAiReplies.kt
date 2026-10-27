@@ -18,10 +18,12 @@ import splice.core.failure.ServerFault
 import splice.core.wire.HttpStatus
 import java.time.Duration
 
-/** Reads an OpenAI-shaped failure by its status, refined by its error object's code. */
-public object OpenAiReplies {
+/** Reads an OpenAI-shaped failure by its status, refined by its error object's code: the rows OpenAI's two APIs
+ *  share, which each of their standards reads before adding its own, and the reading a provider that declared none of
+ *  its own gets ([splice.upstream.Provider.replies]). */
+public object OpenAiReplies : ReplyReader {
     /** An HTTP reply, by its status and the error object its body carries (a body that is no JSON is its message). */
-    public fun http(reply: FailedReply): FailureCause.Provider {
+    override fun http(reply: FailedReply): FailureCause.Provider {
         val error = OpenAiErrorEnvelope.of(reply.body) ?: OpenAiError("", "", reply.body)
         return row(reply.status, error, reply.owner, Stated(reply))
     }
@@ -35,6 +37,10 @@ public object OpenAiReplies {
             ?: return FailureCause.Provider.Unrecognized(clientError = false, said(error))
         return row(status, error, owner, Stated(null))
     }
+
+    /** An in-band failure, by the error object the event carries, wherever the event keeps it. */
+    override fun event(event: FailedEvent): FailureCause.Provider =
+        inBand(OpenAiErrorEnvelope.of(event.payload), event.owner)
 
     /** The status [error] stands for: llama-server's own status written as a numeric code, else the status OpenAI
      *  answers its code (or, where it gave none, its type) with; null for an error no table names. A vendor's own

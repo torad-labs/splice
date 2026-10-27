@@ -28,12 +28,17 @@ public object KnobWords {
     /** How much of a model's reasoning it summarises back. */
     public val SUMMARY: List<String> = listOf("detailed", "concise", "auto", "none")
 
+    /** How long a Responses head's answers run: the three text.verbosity values the Responses API and Codex take.
+     *  Unset is what the head sends with no setting. */
+    public val VERBOSITY: List<String> = listOf("low", "medium", "high")
+
     private val BY_KNOB: Map<Knob, List<String>> = mapOf(
         Knob.QUOTA_POLL to QUOTA_POLL,
         Knob.SHOW_REASONING to SHOW_REASONING,
         Knob.BUDGET_DEFAULT_ACTION to BUDGET_ACTIONS,
         Knob.EFFORT to EFFORT,
         Knob.SUMMARY to SUMMARY,
+        Knob.VERBOSITY to VERBOSITY,
     )
 
     /** The list [knob] takes, or null when it takes any text. */

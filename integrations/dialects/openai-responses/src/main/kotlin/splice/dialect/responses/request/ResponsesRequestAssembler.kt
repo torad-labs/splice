@@ -131,8 +131,8 @@ internal class ResponsesRequestAssembler(
     }
 
     private fun outputText(format: JsonObject?, lite: Boolean): JsonObject? = format?.let {
-        JsonObject(hints.liteTextBlock(quirks, lite).orEmpty() + ("format" to it))
-    } ?: hints.liteTextBlock(quirks, lite)
+        JsonObject(hints.textBlock(quirks, lite).orEmpty() + ("format" to it))
+    } ?: hints.textBlock(quirks, lite)
 
     /** Explicit caller choices win on every turn shape. Responses named choices are flat, not Chat's function object. */
     internal fun toolChoiceFor(

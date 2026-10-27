@@ -67,6 +67,7 @@ public class SpliceConfig internal constructor(
     public val codexAuthPath: String get() = string(Knob.CODEX_AUTH_PATH).orEmpty()
     public val pinnedModel: String get() = string(Knob.PINNED_MODEL).orEmpty()
     public val effort: String? get() = string(Knob.EFFORT)
+    public val verbosity: String? get() = string(Knob.VERBOSITY)
     public val summary: String? get() = string(Knob.SUMMARY)
     public val showReasoning: ReasoningDisplay get() = ReasoningDisplayParser.from(string(Knob.SHOW_REASONING))
     public val replayReasoning: Boolean get() = bool(Knob.REPLAY_REASONING)

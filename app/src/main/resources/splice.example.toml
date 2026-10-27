@@ -851,6 +851,15 @@ command = "claude-splice"
 #     own a codex answer whose reasoning the backend cut short, on the models that cut it; boot refuses these keys,
 #     their [daemon] fold_* spellings, their CLAUDEX_FOLD_* variables and a saved value of any of them
 # toolSurface = "auto"                                      # "auto" lets splice arm tool_search per backend
+# verbosity = "medium"                                      # "low" | "medium" | "high"; unset by default. How long a
+#                                                           #     Responses head's answers run, sent as text.verbosity
+#                                                           #     on each of its turns, as Codex's model_verbosity.
+#                                                           #     Unset, a head sends what it always has: low on a
+#                                                           #     ChatGPT model that speaks responses-lite, as its
+#                                                           #     backend's list marks it or, with no list, as its name
+#                                                           #     reads, and nothing elsewhere. Set it per head in
+#                                                           #     [heads.<key>.overrides]: a backend or model that does
+#                                                           #     not take it may refuse the request.
 # quotaPoll = "auto"                                        # "off" stops every plan-usage poller
 # quotaPollIntervalMs = "300000"                            # ms; how often a subscription head re-polls usage (HOT, per wait)
 # maxInflight = "0"                                         # requests; concurrent turns per head, 0 = unlimited (HOT, per admission)

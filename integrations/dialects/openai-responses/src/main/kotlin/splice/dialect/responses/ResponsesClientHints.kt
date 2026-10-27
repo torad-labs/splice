@@ -5,7 +5,9 @@
 // Both are LITE-ONLY, and that gating is load-bearing twice over: lite is where the real client was
 // observed sending them, AND every migration-oracle fixture is a non-lite gpt-5-codex scenario, so
 // lite-gating is what keeps those 11 byte-exact recordings green. Leaving client_metadata ungated
-// dropped the oracle to 3/11 — it caught the mistake before it shipped.
+// dropped the oracle to 3/11 — it caught the mistake before it shipped. The one exception is a
+// verbosity the person set for the head (fix 5, Oct 27): it rides every turn, as Codex's
+// model_verbosity does, and a head with no setting keeps the lite-only bytes.
 //
 // They live in their own file because ResponsesRequestBuilder.kt is at detekt's 15-function ceiling
 // for the builder class; they ride a type of their own because Kotlin main sources carry no
@@ -20,9 +22,12 @@ import splice.dialect.responses.request.BuildOptions
 
 internal class ResponsesClientHints {
 
-    fun liteTextBlock(quirks: ResponsesQuirks, lite: Boolean): JsonObject? {
-        val verbosity = quirks.lite.liteTextVerbosity ?: return null
-        return if (lite) buildJsonObject { put("verbosity", verbosity) } else null
+    /** text.verbosity: the head's own setting on every turn, as Codex sends model_verbosity before a model's default
+     *  (fix 5 of the Oct 27 Responses fixes). With no setting, the vendor's lite verbosity on a lite turn and nothing
+     *  otherwise, so a head nobody set sends the bytes it sent before the setting existed. */
+    fun textBlock(quirks: ResponsesQuirks, lite: Boolean): JsonObject? {
+        val verbosity = quirks.request.textVerbosity ?: quirks.lite.liteTextVerbosity?.takeIf { lite } ?: return null
+        return buildJsonObject { put("verbosity", verbosity) }
     }
 
     /** SPLICE's identifiers, not codex's. codex sends installation/window ids from its own install;

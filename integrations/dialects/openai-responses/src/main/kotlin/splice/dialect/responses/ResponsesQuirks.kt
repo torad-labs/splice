@@ -58,6 +58,10 @@ public data class ResponsesRequestControlQuirks(
     val supportsInputFiles: Boolean = true,
     /** Array-valued function_call_output.output parts from the public Responses contract. */
     val supportsStructuredToolOutput: Boolean = true,
+    /** The person's `verbosity` for this head, sent as `text.verbosity` on every turn, as Codex sends its
+     *  model_verbosity. Null sends what the head sent before the setting existed: its lite verbosity on a lite turn,
+     *  and nothing otherwise. */
+    val textVerbosity: String? = null,
 )
 
 public enum class ResponsesServiceTierSupport { OPENAI, UNSUPPORTED }
@@ -92,7 +96,18 @@ public data class ResponsesLiteQuirks(
      *  sends "low") belongs on that vendor's profile — a dialect default would ride to every
      *  backend that later opts into the lite pair (V4-31). */
     val liteTextVerbosity: String? = null,
+    /** What the backend's own model list says of a model's shape. When it answers, it decides, and
+     *  [responsesLiteModelRegex] decides only a model it answers null for: no list is known (fix 5 of
+     *  the Oct 27 Responses fixes). Null, the default, leaves the pattern alone, as before. */
+    val listedModels: ResponsesListedLite? = null,
 )
+
+/** The backend's model list, asked whether a model speaks responses-lite: true or false for a model a known list
+ *  decides, null when no list is known, so the name pattern decides. Read on every ask, so a list refreshed while the
+ *  daemon runs reaches the next turn. */
+public fun interface ResponsesListedLite {
+    public fun marks(model: String): Boolean?
+}
 
 /** How the backend takes reasoning effort and summaries. */
 public data class ResponsesReasoningQuirks(
@@ -238,6 +253,14 @@ public data class ResponsesQuirks(
      *  a dialect does not import the topology (HD-9). */
     public fun withSummaryDelivery(wire: String?): ResponsesQuirks =
         copy(reasoning = reasoning.copy(summaryDelivery = wire))
+
+    /** The head's `verbosity` setting, read by the app overlay. Null keeps the provider's own (none). */
+    public fun withTextVerbosity(verbosity: String?): ResponsesQuirks =
+        copy(request = request.copy(textVerbosity = verbosity ?: request.textVerbosity))
+
+    /** The backend's model list, wired by the provider that owns one: see [ResponsesLiteQuirks.listedModels]. */
+    public fun withListedLite(listed: ResponsesListedLite): ResponsesQuirks =
+        copy(lite = lite.copy(listedModels = listed))
 }
 
 /** One provider's prompt-cache routing and retention contract, without mutable tool-name state. */

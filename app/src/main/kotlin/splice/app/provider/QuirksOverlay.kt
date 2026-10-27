@@ -51,6 +51,7 @@ internal class QuirksOverlay {
         .withToolSurfaceToml(
             toolDeferralPolicy(providerCfg.quirks.toolSurface, cfg.toolSurfaceOff, base.tools.toolSurface),
         )
+        .withTextVerbosity(cfg.verbosity)
 
     /** summary_delivery: absent keeps the provider default, `off` omits the field, a mode is sent as
      *  written. Exhaustive, so a mode added to [SummaryDelivery] cannot reach the wire unmapped. */

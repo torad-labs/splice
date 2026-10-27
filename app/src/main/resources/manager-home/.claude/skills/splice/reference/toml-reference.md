@@ -139,6 +139,7 @@ PATCH reaches the running daemon at its next use. Env aliases: the example file,
 | `progressLine` | `true` | yes | splice's status line on a quiet wire |
 | `showReasoning` / `summary` / `replayReasoning` | as `[daemon]` | yes | reasoning display |
 | `effort` | none | no | default effort |
+| `verbosity` | none | no | `low`, `medium` or `high`: how long a Responses head's answers run, sent as `text.verbosity` on each turn, as Codex's `model_verbosity`. Unset sends what the head always has: `low` on a ChatGPT model that speaks responses-lite, as its backend's list marks it or, with no list, as its name reads, and nothing elsewhere. Best set per head in `[heads.<key>.overrides]`, since a backend or model that does not take it may refuse the request |
 | `toolSurface` | `auto` | no | `auto` lets splice arm tool_search per backend |
 | `quotaPoll` | `auto` | no | `off` stops every plan-usage poller |
 | `quotaPollIntervalMs` | `300000` | yes | plan-usage poll interval |

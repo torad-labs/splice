@@ -86,6 +86,16 @@ public enum class Knob(
         restartRequired = true,
     ),
 
+    // How long a Responses head's answers run, sent as text.verbosity on each of its turns, as Codex's model_verbosity
+    // (fix 5 of the Oct 27 Responses fixes). Unset keeps what each head sent before: low on a ChatGPT lite turn,
+    // nothing elsewhere. Read as the head's quirks are built, like effort, so it takes a restart.
+    VERBOSITY(
+        "verbosity",
+        listOf(),
+        KnobDefault.None,
+        restartRequired = true,
+    ),
+
     // Default detailed: the fullest public reasoning text the Responses backends expose.
     SUMMARY(
         "summary",

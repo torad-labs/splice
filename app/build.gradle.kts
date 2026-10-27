@@ -87,6 +87,8 @@ dependencies {
     testImplementation(libs.ktor.client.mock)
     // The engine under every head's upstream client: a test plays an upstream's waits inside the head's own transport.
     testImplementation(libs.ktor.client.okhttp)
+    // A loopback ChatGPT backend reads the codex head's turns as the real one does: their bodies are zstd.
+    testImplementation(libs.zstd.jni)
     testImplementation(libs.ktor.server.test.host) {
         exclude(group = "io.ktor", module = "ktor-client-apache5")
     }

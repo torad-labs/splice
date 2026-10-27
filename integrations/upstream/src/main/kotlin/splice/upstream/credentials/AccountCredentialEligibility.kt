@@ -2,6 +2,7 @@
 package splice.upstream.credentials
 
 import splice.core.auth.CredentialFileIdentity
+import splice.core.failure.AccountBlock
 import splice.core.util.WallClock
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -21,13 +22,18 @@ internal class AccountCredentialEligibility(
     private val evidence = CredentialEvidence(identitySource, configuredCredentialPresent)
     private val state = AtomicReference(evidence.initialState())
 
+    /** A lease to send on this login, or null while it may not: no credential, a hold, or a probe already in flight.
+     *  A login its provider blocked until its owner acts ([AccountBlock]) is held from the turns another login can
+     *  take, which never ask it ([status] names it unselectable), yet a turn left with no other login may ask it
+     *  through its hold: the provider's answer is the only way splice learns that the owner acted. */
     fun acquire(at: Long, now: WallClock): Lease? {
         while (true) {
             val current = reconcile()
-            val holdActive = current.excludedUntilEpochMillis?.let { it > at } == true
-            val excluded = !current.credentialPresent || holdActive
+            // A hold with no block shuts the login out until it lapses; a block lets a turn with no other login ask.
+            val shutOut = current.hold?.takeIf { it.untilEpochMillis > at && it.block == null } != null
+            val excluded = !current.credentialPresent || shutOut
             if (excluded || current.probeToken != null) return null
-            val recoveryProbe = current.excludedUntilEpochMillis != null
+            val recoveryProbe = current.hold != null
             if (!recoveryProbe) return Lease(current.identity, current.generation, null, now)
             val token = nextProbeToken.incrementAndGet()
             val updated = current.copy(probeToken = token, generation = current.generation + 1L)
@@ -39,7 +45,7 @@ internal class AccountCredentialEligibility(
 
     fun status(at: Long): Status {
         val current = reconcile()
-        val holdActive = current.excludedUntilEpochMillis?.let { it > at } == true
+        val holdActive = current.hold?.let { it.untilEpochMillis > at } == true
         val reason = when {
             !current.credentialPresent -> CREDENTIAL_MISSING
             holdActive -> TERMINAL_401
@@ -49,14 +55,16 @@ internal class AccountCredentialEligibility(
         return Status(
             credentialPresent = current.credentialPresent,
             selectable = current.credentialPresent && !holdActive && current.probeToken == null,
-            excludedUntilEpochMillis = current.excludedUntilEpochMillis.takeIf { holdActive },
+            excludedUntilEpochMillis = current.hold?.untilEpochMillis.takeIf { holdActive },
             reason = reason,
             renewable = !current.credentialPresent && current.renewable,
+            block = current.hold?.block.takeIf { holdActive },
         )
     }
 
-    fun reject(lease: Lease) {
-        scheduleFailure(lease)
+    /** The provider refused this login: held from later turns, and with [block], until its owner acts. */
+    fun reject(lease: Lease, block: AccountBlock? = null) {
+        scheduleFailure(lease, block)
     }
 
     fun missing(lease: Lease) {
@@ -106,14 +114,14 @@ internal class AccountCredentialEligibility(
         }
     }
 
-    private fun scheduleFailure(lease: Lease) {
+    private fun scheduleFailure(lease: Lease, block: AccountBlock? = null) {
         while (true) {
             val current = reconcile()
             if (current.generation != lease.generation) return
             val failureCount = nextFailureCount(current, lease)
             val updated = current.copy(
                 failureCount = failureCount,
-                excludedUntilEpochMillis = lease.now() + holdMs(failureCount),
+                hold = Hold(lease.now() + holdMs(failureCount), block),
                 probeToken = null,
                 generation = current.generation + 1L,
             )
@@ -163,6 +171,9 @@ internal class AccountCredentialEligibility(
         val reason: String?,
         /** Not present, and its own command renews it (CredentialEvidence.renewable): no sign-in is needed. */
         val renewable: Boolean = false,
+        /** While held: the provider refused the account itself until its owner takes this step, which no sign-in
+         *  changes. Null for every other hold. */
+        val block: AccountBlock? = null,
     )
 
     private class CredentialEvidence(
@@ -220,7 +231,7 @@ internal class AccountCredentialEligibility(
         val identity: CredentialFileIdentity?,
         val credentialPresent: Boolean,
         val failureCount: Int,
-        val excludedUntilEpochMillis: Long?,
+        val hold: Hold?,
         val probeToken: Long?,
         val generation: Long,
         val renewable: Boolean = false,
@@ -241,7 +252,7 @@ internal class AccountCredentialEligibility(
                 identity = null,
                 credentialPresent = false,
                 failureCount = 0,
-                excludedUntilEpochMillis = null,
+                hold = null,
                 probeToken = null,
                 generation = generation + 1L,
             )
@@ -252,16 +263,20 @@ internal class AccountCredentialEligibility(
             credentialPresent = true,
             renewable = false,
             failureCount = 0,
-            excludedUntilEpochMillis = null,
+            hold = null,
             probeToken = null,
             generation = generation + 1L,
         )
 
         fun resetRuntime(): State = copy(
             failureCount = 0,
-            excludedUntilEpochMillis = null,
+            hold = null,
             probeToken = null,
             generation = generation + 1L,
         )
     }
+
+    /** A hold on this login after its provider refused it, until [untilEpochMillis]. With [block], the provider refused
+     *  the account itself until its owner takes that step, which only a turn served on the login again shows. */
+    private data class Hold(val untilEpochMillis: Long, val block: AccountBlock? = null)
 }

@@ -83,6 +83,8 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     ":integrations-dialects-openai-responses" to ADAPTER_BASE,
     ":integrations-dialects-openai-chat" to ADAPTER_BASE,
     // a provider speaks its own dialect(s) — never another provider, never the transport.
+    // Anthropic's own answers to a Claude login are a reading only, so the adapter base alone.
+    ":integrations-providers-anthropic" to ADAPTER_BASE,
     ":integrations-providers-codex" to ADAPTER_BASE + ":integrations-dialects-openai-responses",
     ":integrations-providers-grok" to ADAPTER_BASE + ":integrations-dialects-openai-responses",
     ":integrations-providers-kimi" to ADAPTER_BASE + ":integrations-dialects-anthropic",

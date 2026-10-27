@@ -37,7 +37,7 @@ internal class SealedDrive(
                 .onSuccess { ended ->
                     if (ended != null) {
                         recordCredentialFailure(drive, ended)
-                        ending.emitEnding(drive, ended)
+                        ending.emitEnding(drive, named(drive, ended))
                     }
                 }
                 .onFailure { e -> ending.emitFailure(drive, e) }
@@ -57,13 +57,28 @@ internal class SealedDrive(
 
     private fun recordCredentialFailure(drive: TurnDrive, failure: UpstreamEnding) {
         val account = drive.account ?: return
+        val cause = (failure as? UpstreamFailed)?.cause
         when {
             failure is UpstreamAuthMissing -> account.markCredentialMissing()
             // The provider refused this account's own login. A 401 naming a credential the account did not send was
             // read as the provider's own fault where it arrived (Replies' foreign-key rule, V4-242: the upstream's
             // 2026-09-25 outage shape), so the account's own stays usable and this reads only the cause.
-            failure is UpstreamFailed && failure.cause is FailureCause.Provider.AuthRejected ->
-                account.markCredentialUnavailable()
+            cause is FailureCause.Provider.AuthRejected -> account.markCredentialUnavailable()
+            // The provider refused the account itself until its owner acts: held until a turn on it is served again.
+            // A login the round marked before it looked for another is not marked twice: that mark retired the lease.
+            cause is FailureCause.Provider.Forbidden -> cause.block?.let(account::markCredentialUnavailable)
         }
+    }
+
+    /** [ended], naming the login of a pooled turn whose account its provider refused until its owner acts: the line
+     *  says which login's owner takes the step. A head that holds no pool names its account instead. */
+    private fun named(drive: TurnDrive, ended: UpstreamEnding): UpstreamEnding {
+        val failed = ended as? UpstreamFailed ?: return ended
+        val forbidden = failed.cause as? FailureCause.Provider.Forbidden ?: return ended
+        val login = drive.account?.account?.label
+        return forbidden.block?.takeIf { login != null }?.let { block ->
+            val cause = forbidden.copy(block = block.copy(login = login))
+            UpstreamFailed(cause, failed.evidence, failed.layers, failed.planLimit, failed.native)
+        } ?: ended
     }
 }

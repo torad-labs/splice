@@ -27,7 +27,7 @@ internal class ProviderSentences(private val spoken: Spoken) {
     private fun verdict(cause: FailureCause.Provider, at: Position, facts: LineFacts, ongoing: Boolean): Said {
         val head = facts.head
         return when (cause) {
-            is FailureCause.Provider.Forbidden -> Said("$head's account may not use this model", cause.said)
+            is FailureCause.Provider.Forbidden -> AccountSentences.forbidden(cause, facts)
             is FailureCause.Provider.Rejected -> Said(rejected(cause.staleReasoning, head), cause.said)
             is FailureCause.Provider.Refused -> Said(refused(cause.by, head), cause.said)
             is FailureCause.Provider.Unrecognized -> unrecognized(cause, head)

@@ -412,7 +412,11 @@ class AccountPoolTest {
 
     @Test
     fun `an authentication-held backup cannot hide the selector's next opening`() {
-        for (reject in listOf(AccountSelection::markCredentialUnavailable, AccountSelection::markCredentialMissing)) {
+        val rejections = listOf<(AccountSelection) -> Unit>(
+            { it.markCredentialUnavailable() },
+            { it.markCredentialMissing() },
+        )
+        for (reject in rejections) {
             val fixture = Fixture()
             val primary = fixture.account(
                 "primary",

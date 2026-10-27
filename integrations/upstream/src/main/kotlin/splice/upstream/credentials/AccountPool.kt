@@ -5,6 +5,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.runInterruptible
 import splice.core.auth.ClientAuthProvider
+import splice.core.failure.AccountBlock
 import splice.core.util.LruSizing
 import splice.core.util.WallClock
 import java.util.concurrent.TimeUnit
@@ -29,8 +30,12 @@ public sealed class Selection {
     public class Chosen(public val account: AccountSelection) : Selection()
 
     /** No account could start the turn; [earliestResetEpochSeconds] is the soonest any account
-     *  resets, null when no account reported a reset. The line a person reads is written from it. */
-    public class Exhausted(public val earliestResetEpochSeconds: Long?) : Selection()
+     *  resets, null when no account reported a reset. The line a person reads is written from it, or from [blocked]:
+     *  a login its provider refused until its owner acts, whose step that line names instead. */
+    public class Exhausted(
+        public val earliestResetEpochSeconds: Long?,
+        public val blocked: AccountBlock? = null,
+    ) : Selection()
 }
 
 /** A head-local OAuth account pool. Each selection owns one immutable login choice and its probe lease. */
@@ -210,8 +215,10 @@ public class AccountPool(
         current: AccountMembership,
         caller: CallerLogin,
     ): Pair<Selection, SessionAccount?> {
-        val chosen = choose(previous, at, excluded, current, caller)
-            ?: return Selection.Exhausted(AccountAvailability.earliestReset(current.accounts, at)) to null
+        val chosen = choose(previous, at, excluded, current, caller) ?: return Selection.Exhausted(
+            AccountAvailability.earliestReset(current.accounts, at),
+            OwnerBlocks.named(current.accounts, at),
+        ) to null
         // A new session starts relative to primary even when its credential is missing: choosing
         // a backup is cache-cold on that first turn, and the session's own last switch says so.
         val prior = previous ?: SessionAccount(current.primary.label, null)
@@ -413,7 +420,10 @@ public class AccountPool(
                     .ifEmpty { held.filter { it.cooldown.remainingMs() <= 0L } }
             }
         }
-        return eligible.distinctBy(PoolAccount::label).firstNotNullOfOrNull { account ->
+        // A login its provider blocked until its owner acts is asked last, and only by a turn that no other login took
+        // from: a turn that moved off a login asks only a free one.
+        val lastResort = OwnerBlocks.lastResort(order, at).takeIf { excluded.isEmpty() }.orEmpty()
+        return (eligible + lastResort).distinctBy(PoolAccount::label).firstNotNullOfOrNull { account ->
             account.acquireCredential(at, now)?.let { lease -> ChosenAccount(account, lease) }
         }
     }

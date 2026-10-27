@@ -75,7 +75,12 @@ public sealed class FailureCause {
             override val permanent: Boolean get() = true
         }
 
-        public data class Forbidden(override val said: ProviderWords? = null) : Provider() {
+        /** The provider refuses this account the request: a model its plan leaves out, or, with [block], the account
+         *  itself until its owner acts, which moves the turn to another login and holds the one that met it. */
+        public data class Forbidden(
+            override val said: ProviderWords? = null,
+            val block: AccountBlock? = null,
+        ) : Provider() {
             override val persisted: PersistedCause get() = PersistedCause.UPSTREAM_STATUS_4XX
             override val permanent: Boolean get() = true
         }

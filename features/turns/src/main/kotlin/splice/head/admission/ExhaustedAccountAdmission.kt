@@ -3,7 +3,10 @@ package splice.head.admission
 
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.header
+import splice.core.failure.AccountBlock
+import splice.core.failure.FailureCause
 import splice.core.perf.OutcomeTag
+import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfKeys
 import splice.core.util.WallClock
 import splice.head.HeadDeps
@@ -29,6 +32,8 @@ internal class ExhaustedAccountAdmission(
         exhausted: Selection.Exhausted,
         trace: TurnTrace?,
     ) {
+        val blocked = exhausted.blocked
+        if (blocked != null) return refuseBlocked(call, prepared, admitted, blocked, trace)
         exhausted.earliestResetEpochSeconds?.let { reset ->
             admitted.perf.setCount(PerfKeys.EARLIEST_RESET_EPOCH_SECONDS, reset)
         }
@@ -53,5 +58,26 @@ internal class ExhaustedAccountAdmission(
         // Why no standby login can take over names other logins and their remedies: the operator's to read, in the log.
         deps.turnQuota.standbyRefusal(null)?.let { deps.log("[accounts] every login is at its limit; $it\n") }
         responses.respondRateLimited(call, exhausted.earliestResetEpochSeconds, retryEpochSeconds)
+    }
+
+    /** No login could take the turn, and one is held because its provider refused the account until its owner acts,
+     *  which another turn is asking about right now (OwnerBlocks): this turn is told the step, as that turn will be if
+     *  the owner has not acted, with no reset and no recheck, since no wait changes it. */
+    private suspend fun refuseBlocked(
+        call: ApplicationCall,
+        prepared: Preparation.Ready,
+        admitted: AdmittedTurn,
+        blocked: AccountBlock,
+        trace: TurnTrace?,
+    ) {
+        val cause = FailureCause.Provider.Forbidden(block = blocked)
+        driver.recordLocalRefusal(
+            prepared.built.meta,
+            admitted.perf,
+            admitted.t0,
+            LocalRefusal(OutcomeTags.failure(cause), "owner_step=${blocked.step}", trace, blocked.login),
+        )
+        admitted.close()
+        responses.respondRefusal(call, cause)
     }
 }

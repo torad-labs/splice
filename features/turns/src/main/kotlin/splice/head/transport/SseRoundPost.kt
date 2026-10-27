@@ -82,11 +82,17 @@ internal class SseRoundPost(
     }
 
     /** Null once the account handoff moved the turn to another account, which the round is posted on again. A login
-     *  its provider refused after its renewal leaves the pool first, as a turn ending on it would (SealedDrive), so
-     *  the turns after this one do not start on it; marked while its lease is the current one, since a lease the
-     *  handoff released marks nothing. Where no account is free, the round ends on [failure]. */
+     *  its provider refused after its renewal, or refused until its owner acts (an AccountBlock), leaves the pool
+     *  first, as a turn ending on it would (SealedDrive), so the turns after this one do not start on it; marked while
+     *  its lease is the current one, since a lease the handoff released marks nothing. Where no account is free, the
+     *  round ends on [failure]. */
     private suspend fun moved(inputs: WsRoundInputs, failure: UpstreamFailed): RoundResult? {
-        if (failure.cause is FailureCause.Provider.AuthRejected) inputs.drive.account?.markCredentialUnavailable()
+        val account = inputs.drive.account
+        val cause = failure.cause
+        when {
+            cause is FailureCause.Provider.AuthRejected -> account?.markCredentialUnavailable()
+            cause is FailureCause.Provider.Forbidden -> cause.block?.let { account?.markCredentialUnavailable(it) }
+        }
         val moved = inputs.drive.accountHandoff?.moveAwaitingEvidence(inputs.drive) == true
         return if (moved) null else RoundResult.Ended(failure)
     }

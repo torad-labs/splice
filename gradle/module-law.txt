@@ -37,6 +37,8 @@
 :integrations-dialects-anthropic -> :core :integrations-upstream
 :integrations-dialects-openai-responses -> :core :integrations-upstream
 :integrations-dialects-openai-chat -> :core :integrations-upstream
+# Anthropic's own answers to a Claude login (an account its owner must act on): a reading only, so core and upstream.
+:integrations-providers-anthropic -> :core :integrations-upstream
 :integrations-providers-codex -> :core :integrations-upstream :integrations-dialects-openai-responses
 :integrations-providers-grok -> :core :integrations-upstream :integrations-dialects-openai-responses
 :integrations-providers-kimi -> :core :integrations-upstream :integrations-dialects-anthropic

@@ -7,6 +7,7 @@ package splice.app.provider
 import splice.dialect.anthropic.failure.AnthropicReplies
 import splice.dialect.chat.failure.ChatReplies
 import splice.dialect.responses.failure.ResponsesReplies
+import splice.provider.anthropic.ClaudeReplies
 import splice.provider.codex.failure.CodexReplies
 import splice.provider.grok.GrokReplies
 import splice.provider.kimi.KimiReplies
@@ -18,6 +19,9 @@ import splice.upstream.failure.Replies
 internal object HeadReplies {
     /** A generic Anthropic Messages vendor: the standard alone. */
     val anthropic: Replies = Replies(AnthropicReplies)
+
+    /** Claude, on its subscription logins: an account Anthropic blocks until its owner accepts updated terms. */
+    val claude: Replies = Replies(AnthropicReplies, ClaudeReplies)
 
     /** Kimi: its plan-tier answer is a plan rather than a dead login, and its 5-hour limit names that window. */
     val kimi: Replies = Replies(AnthropicReplies, KimiReplies)

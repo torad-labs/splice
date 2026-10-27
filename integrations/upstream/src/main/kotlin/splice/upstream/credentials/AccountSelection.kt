@@ -5,6 +5,7 @@ package splice.upstream.credentials
 
 import kotlinx.coroutines.runInterruptible
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.AccountBlock
 import splice.core.usage.QuotaSnapshot
 import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
@@ -93,8 +94,8 @@ public data class PoolAccount(
 
     internal fun credentialStatus(at: Long): AccountCredentialEligibility.Status = credentialEligibility.status(at)
 
-    internal fun markCredentialUnavailable(lease: AccountCredentialEligibility.Lease) {
-        credentialEligibility.reject(lease)
+    internal fun markCredentialUnavailable(lease: AccountCredentialEligibility.Lease, block: AccountBlock? = null) {
+        credentialEligibility.reject(lease, block)
     }
 
     internal fun markCredentialMissing(lease: AccountCredentialEligibility.Lease) {
@@ -151,9 +152,10 @@ public class AccountSelection internal constructor(
 
     public val cacheCold: Boolean get() = switch != null
 
-    /** Excludes this account from future selections without changing this turn's immutable choice. */
-    public fun markCredentialUnavailable() {
-        account.markCredentialUnavailable(credentialLease.get())
+    /** Excludes this account from future selections without changing this turn's immutable choice. [block]: the
+     *  provider refused the account itself until its owner acts, which the account's status names until then. */
+    public fun markCredentialUnavailable(block: AccountBlock? = null) {
+        account.markCredentialUnavailable(credentialLease.get(), block)
     }
 
     /** Records missing credential evidence, or a failed refresh while the credential file remains. */

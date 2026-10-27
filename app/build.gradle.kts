@@ -55,6 +55,7 @@ dependencies {
     implementation(project(":integrations-dialects-openai-responses"))
     implementation(project(":integrations-dialects-openai-chat"))
     implementation(project(":integrations-dialects-anthropic"))
+    implementation(project(":integrations-providers-anthropic"))
     implementation(project(":integrations-providers-codex"))
     implementation(project(":integrations-providers-grok"))
     implementation(project(":integrations-providers-kimi"))

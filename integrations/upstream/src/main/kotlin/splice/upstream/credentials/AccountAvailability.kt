@@ -1,6 +1,8 @@
 // NEW: Pure per-account availability and quota math, split out of AccountPool.kt: it takes a PoolAccount and the time and touches no pool state.
+// Also the owner-block reads of a pool (OwnerBlocks, failure-handling slice 4).
 package splice.upstream.credentials
 
+import splice.core.failure.AccountBlock
 import splice.core.usage.QuotaWindow
 import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
 import java.util.concurrent.TimeUnit
@@ -85,8 +87,10 @@ internal object AccountAvailability {
         }
     }
 
-    /** The credential's half of [limitReason], or null when the credential can send. */
+    /** The credential's half of [limitReason], or null when the credential can send. A login its provider blocked
+     *  until its owner acts names the step, which no sign-in takes. */
     private fun credentialReason(credential: AccountCredentialEligibility.Status): String? = when {
+        credential.block != null -> AccountSwitchReason.ownerStep(credential.block.step)
         credential.excludedUntilEpochMillis != null -> AccountSwitchReason.SIGN_IN_NEEDED
         credential.renewable -> AccountSwitchReason.TOKEN_EXPIRED
         !credential.credentialPresent -> AccountSwitchReason.SIGN_IN_NEEDED
@@ -162,4 +166,21 @@ internal object AccountAvailability {
         }
         return listOfNotNull(quotaReset, cooldownReset.takeIf { remaining > 0L }, authReset).maxOrNull()
     }
+}
+
+/**
+ * Failure-handling slice 4 (2026-10-27): the logins of a pool that their provider refused until their owner acts
+ * (AccountBlock), as selection asks them and names them. Such a login is held from every turn another login can take.
+ * Splice can learn that the owner acted only from the provider's next answer, so a turn no other login can take asks a
+ * blocked login once more, one turn at a time (its recovery probe), and a turn that finds that ask already running is
+ * told the step.
+ */
+internal object OwnerBlocks {
+    /** The logins in [order] held on such a block at [at]: the last a turn may ask, after every other. */
+    fun lastResort(order: List<PoolAccount>, at: Long): List<PoolAccount> =
+        order.filter { it.credentialStatus(at).block != null }
+
+    /** The block a turn no login could take is told, naming the login that met it, or null when none did. */
+    fun named(accounts: List<PoolAccount>, at: Long): AccountBlock? =
+        accounts.firstNotNullOfOrNull { account -> account.credentialStatus(at).block?.copy(login = account.label) }
 }

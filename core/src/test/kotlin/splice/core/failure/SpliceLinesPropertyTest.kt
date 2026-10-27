@@ -48,6 +48,10 @@ private val ZONES = listOf(
 ).map(ZoneId::of)
 private val STATUSES = listOf(null, 400, 401, 403, 404, 408, 413, 429, 502, 503, 529)
 
+/** Where a provider tells an account's owner to act, and the logins a pool names such an account by. */
+private val OWNER_PLACES = listOf("claude.ai", "console.anthropic.com", "platform.openai.com")
+private val BLOCKED_LOGINS = listOf(null, "kestrel", "work", "marcos-max")
+
 /** Budget limits as splice spells an amount (ApiCostText.limit), which is what a Decline.Budget carries. */
 private val DOLLARS = listOf("$20.00", "$1.50", "$1,234.56")
 
@@ -159,11 +163,15 @@ private fun Random.providerCause(now: Instant, said: ProviderWords?): FailureCau
     1 -> FailureCause.Provider.Overloaded(lift(now), nextBoolean(), said)
     2 -> FailureCause.Provider.ServerError(pick(ServerFault.entries), said)
     3 -> FailureCause.Provider.NeedsPayment(lift(now), nextBoolean(), said)
-    4 -> FailureCause.Provider.Forbidden(said)
+    4 -> FailureCause.Provider.Forbidden(said, block().takeIf { nextBoolean() })
     5 -> FailureCause.Provider.AuthRejected(pick(LoginOwner.entries), said)
     6 -> FailureCause.Provider.TooLong(pick(listOf(null, 131_072L, 262_144L)), nextBoolean(), said)
     else -> providerVerdict(nextInt(6), said)
 }
+
+/** An account its provider refuses until its owner acts: the step, where the owner takes it, and the login it met. */
+private fun Random.block(): AccountBlock =
+    AccountBlock(pick(OwnerStep.entries), pick(OWNER_PLACES), pick(BLOCKED_LOGINS))
 
 /** The leaves a provider reports about the request itself, and its empty answers. */
 private fun Random.providerVerdict(which: Int, said: ProviderWords?): FailureCause.Provider = when (which) {
@@ -308,8 +316,16 @@ private fun compacts(cause: FailureCause, request: RequestFacts): Boolean =
 
 /** The one-line, one-or-two-sentence, nothing-unusable properties every line keeps, whatever wrote it. A sentence's
  *  subject is a capital, the head's command, splice, or the provider as the provider spells itself: "xAI did not accept
- *  this session's login" opens with a name, not with our words (section 10, subject and provider). */
-private fun assertReadable(line: SpliceLine, facts: LineFacts, secrets: List<String>, about: String) {
+ *  this session's login" opens with a name, not with our words (section 10, subject and provider). [place] is the one
+ *  host a line may hold: where its provider told an account's owner to act, which the person goes to (Oct 27, the
+ *  updated terms a Claude account accepts in claude.ai). */
+private fun assertReadable(
+    line: SpliceLine,
+    facts: LineFacts,
+    secrets: List<String>,
+    about: String,
+    place: String? = null,
+) {
     val text = line.text
     assertTrue(text.startsWith(SPLICE_PREFIX), "opens with the prefix: $about -> $text")
     assertTrue(text.length <= MAX_CHARS, "${text.length} characters: $about -> $text")
@@ -323,19 +339,24 @@ private fun assertReadable(line: SpliceLine, facts: LineFacts, secrets: List<Str
         assertTrue(opens, "a sentence opens with a capital, the head, splice or the provider: $about -> $text")
     }
     assertTrue(Regex(": ").findAll(text).count() <= 1, "at most one colon: $about -> $text")
-    NEVER.forEach { (what, rule) -> assertFalse(rule.containsMatchIn(text), "holds $what: $about -> $text") }
+    val shown = place?.let { text.replace(it, "") } ?: text
+    NEVER.forEach { (what, rule) -> assertFalse(rule.containsMatchIn(shown), "holds $what: $about -> $text") }
     secrets.forEach { assertFalse(it in text, "holds a fragment of a key, $it: $about -> $text") }
 }
 
 class SpliceLinesPropertyTest {
     @Test
     fun `every line is one splice line of one or two sentences within 240 characters`() {
-        forEveryLine(seed = 1) { line, facts, _, about -> assertReadable(line, facts, emptyList(), about) }
+        forEveryLine(seed = 1) { line, facts, _, about, place ->
+            assertReadable(line, facts, emptyList(), about, place)
+        }
     }
 
     @Test
     fun `no line holds a code, a count of tries, a host, a URL, an instant, a path, an id, a key or a stop phrase`() {
-        forEveryLine(seed = 2) { line, facts, secrets, about -> assertReadable(line, facts, secrets, about) }
+        forEveryLine(seed = 2) { line, facts, secrets, about, place ->
+            assertReadable(line, facts, secrets, about, place)
+        }
     }
 
     @Test
@@ -391,12 +412,38 @@ class SpliceLinesPropertyTest {
 
             val line = lines.ending(case.cause, case.at, case.answer, case.facts)
 
-            val quotes = case.cause::class in QUOTED
+            // A block's line says its step in splice's words, so it quotes nobody either.
+            val blocked = (case.cause as? FailureCause.Provider.Forbidden)?.block != null
+            val quotes = case.cause::class in QUOTED && !blocked
             if (!quotes) assertFalse(spoken in line.text, "quoted by a ${case.cause}: ${line.text}")
             val subscription = (case.cause as? FailureCause.Provider.NeedsPayment)?.subscription == true
             if (quotes && !subscription) assertTrue(spoken in line.text, "${case.cause} quotes its words: ${line.text}")
             val wait = lines.waiting(WaitLine(case.cause, random.recovery()), case.facts)
             assertFalse(spoken in wait.text, "a wait line quotes nobody: ${wait.text}")
+        }
+    }
+
+    @Test
+    fun `a line about an account its owner must act on names whose it is, the step and where it is taken`() {
+        val random = Random(12)
+        val lines = SpliceLines(LocalTimeText(ZoneId.of("America/Chicago")))
+        repeat(RUNS) {
+            val block = random.block()
+            val cause = FailureCause.Provider.Forbidden(ProviderWordsFilter.of("${random.pick(PLAIN)}."), block)
+            val at = Position(random.pick(Moment.entries), random.nextBoolean())
+            val facts = random.facts(random.instant())
+
+            val line = lines.ending(cause, at, ClientWire.answer(cause, at), facts).text
+
+            // Oct 27: Anthropic refused a Claude account until its owner accepted updated terms, and every line said
+            // the request was rejected as sent, which no one could act on.
+            val whose = block.login?.let { "${facts.head}'s login $it" } ?: "${facts.head}'s account"
+            assertTrue(whose in line, "names whose account: $line")
+            val terms = facts.providerName?.let { "$it's updated terms" } ?: "updated terms"
+            assertTrue("accepts $terms" in line, "names the step its owner takes: $line")
+            assertTrue("in ${block.where} " in line, "names where its owner takes it: $line")
+            assertFalse("rejected" in line, "the request is not what the provider refused: $line")
+            assertFalse(SAYS_RESEND in line, "no re-send changes the account: $line")
         }
     }
 
@@ -516,8 +563,9 @@ class SpliceLinesPropertyTest {
 
     private fun inBytes(n: Long): String = if (n == 1L) "1 byte" else "$n bytes"
 
-    /** Runs [check] over endings, wait lines, quiet lines and notes built from generated inputs. */
-    private fun forEveryLine(seed: Int, check: (SpliceLine, LineFacts, List<String>, String) -> Unit) {
+    /** Runs [check] over endings, wait lines, quiet lines and notes built from generated inputs, with the place a line
+     *  about an account its owner must act on names (assertReadable). */
+    private fun forEveryLine(seed: Int, check: (SpliceLine, LineFacts, List<String>, String, String?) -> Unit) {
         val random = Random(seed)
         repeat(RUNS) {
             val lines = SpliceLines(LocalTimeText(random.pick(ZONES)))
@@ -526,12 +574,13 @@ class SpliceLinesPropertyTest {
             val case = random.case(now, ProviderWordsFilter.of(raw.text))
             val facts = case.facts
             val about = "${case.cause} at ${case.at}, ${case.answer}, $facts"
-            check(lines.ending(case.cause, case.at, case.answer, facts), facts, raw.secrets, about)
+            val place = (case.cause as? FailureCause.Provider.Forbidden)?.block?.where
+            check(lines.ending(case.cause, case.at, case.answer, facts), facts, raw.secrets, about, place)
             val wait = WaitLine(case.cause, random.recovery())
-            check(lines.waiting(wait, facts), facts, raw.secrets, "$wait, $facts")
+            check(lines.waiting(wait, facts), facts, raw.secrets, "$wait, $facts", place)
             val quiet = QuietTurn(random.nextLong(7_200_000L), random.nextBoolean(), random.nextBoolean())
-            check(lines.quiet(quiet, facts), facts, raw.secrets, "$quiet")
-            check(lines.note(SessionNote.NEW_LOGIN, facts), facts, raw.secrets, "a note")
+            check(lines.quiet(quiet, facts), facts, raw.secrets, "$quiet", null)
+            check(lines.note(SessionNote.NEW_LOGIN, facts), facts, raw.secrets, "a note", null)
         }
     }
 }

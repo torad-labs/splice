@@ -1,6 +1,8 @@
 // NEW: Pool-produced switch reasons, split out of AccountPool.kt: the wording the pool stamps on an account switch.
 package splice.upstream.credentials
 
+import splice.core.failure.OwnerStep
+
 /** Pool-produced switch reasons, including named provider windows and legacy persisted wording. */
 public object AccountSwitchReason {
     internal const val PINNED = "operator pinned this account"
@@ -21,6 +23,9 @@ public object AccountSwitchReason {
     /** The session's own client signed in to another account, and the session follows it. */
     internal const val CALLER_LOGIN = "session signed in to this account"
 
+    /** The provider refused the account itself until its owner accepts its updated terms, which no sign-in changes. */
+    internal const val TERMS_NOT_ACCEPTED = "previous login's owner must accept the provider's updated terms"
+
     private val reasons = setOf(
         CALLER_LOGIN,
         PINNED,
@@ -35,6 +40,7 @@ public object AccountSwitchReason {
         ACCOUNT_UNAVAILABLE_REASON,
         SIGN_IN_NEEDED,
         TOKEN_EXPIRED,
+        TERMS_NOT_ACCEPTED,
         planLimit("5-hour"),
         planLimit("7-day"),
         "7d window exhausted",
@@ -42,6 +48,11 @@ public object AccountSwitchReason {
     private val planWindow = Regex("7-day [A-Za-z0-9][A-Za-z0-9 -]{0,63} plan limit reached")
 
     internal fun planLimit(windowWords: String): String = "$windowWords plan limit reached"
+
+    /** Why a login its provider blocked until its owner acts stopped serving: the step its owner takes. */
+    internal fun ownerStep(step: OwnerStep): String = when (step) {
+        OwnerStep.ACCEPT_TERMS -> TERMS_NOT_ACCEPTED
+    }
 
     /** Why a login moved from [previous] to [chosen]. What stopped the previous login is named before any order, a
      *  full reading included. The 47 moves the Oct 19 journal read as the operator's [ordered] list left a login with

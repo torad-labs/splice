@@ -36,6 +36,7 @@ include(
     ":integrations-dialects-anthropic",
     ":integrations-dialects-openai-responses",
     ":integrations-dialects-openai-chat",
+    ":integrations-providers-anthropic",
     ":integrations-providers-codex",
     ":integrations-providers-grok",
     ":integrations-providers-kimi",
@@ -75,6 +76,8 @@ project(":integrations-upstream").projectDir = file("integrations/upstream")
 project(":integrations-dialects-anthropic").projectDir = file("integrations/dialects/anthropic")
 project(":integrations-dialects-openai-responses").projectDir = file("integrations/dialects/openai-responses")
 project(":integrations-dialects-openai-chat").projectDir = file("integrations/dialects/openai-chat")
+// Anthropic's own answers to a Claude subscription login, beside the Messages dialect every Anthropic head speaks.
+project(":integrations-providers-anthropic").projectDir = file("integrations/providers/anthropic")
 project(":integrations-providers-codex").projectDir = file("integrations/providers/codex")
 project(":integrations-providers-grok").projectDir = file("integrations/providers/grok")
 project(":integrations-providers-kimi").projectDir = file("integrations/providers/kimi")

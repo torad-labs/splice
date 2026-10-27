@@ -16,6 +16,9 @@ internal class PassthroughArm(
     private val claudeAccounts: ClaudeAccountWiring,
     private val changes: splice.app.auth.claude.ClaudePoolChanges = splice.app.auth.claude.ClaudePoolChanges(),
 ) {
+    // Claude's own logins read Anthropic's answers to them (HeadReplies.claude); an API-key vendor reads the standard.
+    private val claudeAssembly = PassthroughAssembly(HeadReplies.claude)
+
     // CLIENT uses Anthropic's signature verification and eager custom-tool input streaming.
     // It has no Moonshot deformations, headers, or device identity. Unregistered API-key/custom
     // vendors start neutral and declare facts in TOML.
@@ -26,7 +29,7 @@ internal class PassthroughArm(
             val auth = ClientAuthProvider(key)
             val accounts = claudeAccounts.accounts(key, auth)
             return Wired(
-                passthroughAssembly.passthroughProviderFor(
+                claudeAssembly.passthroughProviderFor(
                     ctx,
                     label,
                     auth,

@@ -34,14 +34,17 @@ const SYSTEM_PATH = ((): string => {
   return `${bin}:/usr/bin:/bin`;
 })();
 
-/** A build root whose `gradlew` records how it was called — and what the holder file said. */
+/** A build root whose `gradlew` records how it was called — and what the holder file said. `$DIR` is this
+ *  root, spelled out: a fake build that computes it with `$(dirname "$0")` INSIDE a trap body makes bash
+ *  parse that substitution at the moment the signal lands, and bash loses that parse (see the signalled
+ *  build below). */
 function fakeBuildRoot(script = 'echo "ARGS:$*"\ncat "$LOCK.holder"\nexit 0\n') {
   const dir = mkdtempSync(join(tmpdir(), "gate-slot-"));
   workspaces.push(dir);
   const receipt = join(dir, "receipt.txt");
   writeFileSync(
     join(dir, "gradlew"),
-    `#!/usr/bin/env bash\nLOCK="${join(dir, ".gradle-slot.lock")}"\n{ ${script} } >"${receipt}" 2>&1\n`,
+    `#!/usr/bin/env bash\nLOCK="${join(dir, ".gradle-slot.lock")}"\nDIR="${dir}"\n{ ${script} } >"${receipt}" 2>&1\n`,
   );
   chmodSync(join(dir, "gradlew"), 0o755);
   // The same branch CI takes: no buildgate on PATH. The buildgate branch has a test of its own below.
@@ -524,10 +527,19 @@ try {
     expect(alive(child), "a build that ignores SIGTERM is killed when the grace ends").toBe(false);
   }, 15_000);
 
+  // The shutdown is a FUNCTION, parsed when the script loads, and the trap is the single word that names
+  // it. bash parses whatever a trap holds at the moment the signal arrives, and this build hears the
+  // signal TWICE within the same millisecond — signalGroup's `kill(-pgid)` reaches it as a member of the
+  // build's group, and the buildgate above it forwards the same signal to its pid (the fake one at :292,
+  // the real one for the same reason). Under that pair bash lost the parse of a trap body holding
+  // `$(dirname "$0")`: the receipt read `trap: line 1: unexpected EOF while looking for matching ')'`,
+  // the body never ran, no `stopping` was ever written, and this test failed on a random push after
+  // waiting out its 10 s (2026-10-26, e5e512d66's pre-push; 2 of 150 reruns of it failed before this
+  // line, 0 of 200 after).
   test("a signalled joint build keeps its host lock until Gradle actually exits (V4-426)", async () => {
     const fake = fakeBuildRoot(
-      'trap \'touch "$(dirname "$0")/stopping"; while [[ ! -e "$(dirname "$0")/release-stop" ]]; do sleep 0.01; done; exit 143\' TERM\n' +
-      'touch "$(dirname "$0")/started"\nwhile true; do sleep 0.01; done\n',
+      'stop() { touch "$DIR/stopping"; while [[ ! -e "$DIR/release-stop" ]]; do sleep 0.01; done; exit 143; }\ntrap stop TERM\n' +
+      'touch "$DIR/started"\nwhile true; do sleep 0.01; done\n',
     );
     const gate = admissionGate(fake, true);
     const lock = join(fake.dir, ".gradle-slot.lock");
@@ -638,10 +650,18 @@ try {
     return Bun.spawn([process.execPath, runner], { stdio: ["ignore", "ignore", "ignore"], env: { ...process.env } });
   }
 
+  /** The timeout carries what the fake build itself said: fakeBuildRoot sends its stdout and stderr to a
+   *  receipt beside the file waited for, and without it a signal the slot lost, a build that never heard
+   *  one and a build whose shell could not run its handler all read the same — the push that found the
+   *  last of those (2026-10-26) reported only "no .../stopping after 10000ms". */
   async function waitForFile(path: string, what: string, ms = 10_000): Promise<void> {
     const deadline = Date.now() + ms;
     while (!existsSync(path)) {
-      if (Date.now() > deadline) throw new Error(`the fake gradle never ${what} — no ${path} after ${ms}ms`);
+      if (Date.now() > deadline) {
+        const receipt = join(dirname(path), "receipt.txt");
+        const said = existsSync(receipt) ? readFileSync(receipt, "utf8").trim() : "";
+        throw new Error(`the fake gradle never ${what} — no ${path} after ${ms}ms${said ? `; it said: ${said}` : ""}`);
+      }
       await Bun.sleep(5);
     }
   }
@@ -772,9 +792,11 @@ try {
     // The obvious wrong fix — drop the holder and release the lock inside the signal handler, then
     // die — frees the slot while the JVM is still running its shutdown hooks. A contender that
     // starts there is the second gradle in one project dir this file exists to prevent.
+    // Its shutdown is a function for the reason the signalled build above gives: nothing this fake build
+    // does on a signal may depend on bash parsing a command substitution at that moment.
     const fake = fakeBuildRoot(
-      'trap \'touch "$(dirname "$0")/terminating"; sleep 1; exit 143\' TERM\n' +
-        'touch "$(dirname "$0")/started"\nsleep 5 &\nwait $!\n',
+      'terminating() { touch "$DIR/terminating"; sleep 1; exit 143; }\ntrap terminating TERM\n' +
+        'touch "$DIR/started"\nsleep 5 &\nwait $!\n',
     );
     const lock = join(fake.dir, ".gradle-slot.lock");
     const wrapper = wrapperProcess(fake, "shutting-down");

@@ -362,7 +362,9 @@ private fun refusedAsSent(cause: FailureCause): Boolean =
 private fun protocolFault(cause: FailureCause): Boolean =
     (cause as? FailureCause.Splice.Protocol)?.fault.let { it != null && it != ProtocolFault.CODE_MODE_START }
 
-private fun spendOf(taken: Taken): Spend? {
+/** The budget a step of [run] spent, by the table's own reading of its kind: [overloads] is how many overload waits
+ *  the run took before this step, since the table waits a still-loading model only once those five are spent. */
+private fun spendOf(taken: Taken, overloads: Int = 0): Spend? {
     val step = taken.step as? RetryStep.Again ?: return null
     return when (step.how) {
         How.REANCHOR ->
@@ -370,7 +372,50 @@ private fun spendOf(taken: Taken): Spend? {
         How.FOLD_CONTINUE -> Spend.FOLD
         How.AMEND_REASONING -> Spend.AMEND
         How.CONTINUE_REASONING -> Spend.CONTINUE_REASONING
-        How.REFRESH_LOGIN, How.SAME -> null
+        How.REFRESH_LOGIN -> null
+        How.SAME -> sameSpend(taken.met.cause, step.afterMs, overloads)
+    }
+}
+
+/** What a plain re-send spent, by the row its cause is read on. A wait on a lift stated past the floor is a warm
+ *  session's wait on its own login, which its own budget bounds and no count does. Past the five overload waits only
+ *  a still-loading model's minute is a loading wait; any other wait there is one overload wait too many. */
+private fun sameSpend(cause: FailureCause, afterMs: Long, overloads: Int): Spend? {
+    val limit = (cause as? FailureCause.Provider.Limited)?.lift ?: (cause as? FailureCause.Provider.NeedsPayment)?.lift
+    return when {
+        limit != null -> if (pastFloor(limit)) null else Spend.BURST
+        cause is FailureCause.Provider.Overloaded -> overloadSpend(cause, afterMs, overloads)
+        else -> SAME_SPENDS[cause::class]
+    }
+}
+
+private fun overloadSpend(cause: FailureCause.Provider.Overloaded, afterMs: Long, overloads: Int): Spend? = when {
+    pastFloor(cause.lift) -> null
+    overloads >= OVERLOAD_WAITS && cause.loading && afterMs == LOADING_WAIT_MS -> Spend.LOADING
+    else -> Spend.OVERLOAD
+}
+
+/** The kinds whose plain re-send spends one count of its own; every other kind's re-send spends none. */
+private val SAME_SPENDS: Map<KClass<out FailureCause>, Spend> = mapOf(
+    FailureCause.Provider.ServerError::class to Spend.SERVER_RESEND,
+    FailureCause.Provider.Empty::class to Spend.EMPTY,
+    FailureCause.Provider.Unrecognized::class to Spend.UNRECOGNIZED,
+    FailureCause.Path.Torn::class to Spend.FRESH_REISSUE,
+    FailureCause.Path.Stalled::class to Spend.FRESH_REISSUE,
+    FailureCause.Path.Unreachable::class to Spend.UNREACHABLE,
+    FailureCause.Splice.Protocol::class to Spend.CODE_MODE,
+)
+
+/** A lift stated further away than the floor, which a warm session waits out on its own login. */
+private fun pastFloor(lift: Lift): Boolean =
+    (lift as? Lift.At)?.let { it.at.toEpochMilli() - NOW.toEpochMilli() > HOLD_FLOOR_MS } == true
+
+/** Each step's spend in [run], in order, with the overload waits counted as the run takes them. */
+private fun spends(run: List<Taken>): List<Pair<Spend, Long>> {
+    var overloads = 0
+    return run.mapNotNull { taken ->
+        spendOf(taken, overloads)?.also { if (it == Spend.OVERLOAD) overloads += 1 }
+            ?.let { it to ((taken.step as RetryStep.Again).afterMs) }
     }
 }
 
@@ -393,15 +438,44 @@ class RetryEngineModelTest {
             Spend.STREAM_RECOVERY to MAX_STREAM_RECOVERIES,
             Spend.FOLD to MAX_FOLD_CONTINUES,
             Spend.AMEND to MAX_AMENDS,
-            Spend.CONTINUE_REASONING to 1,
+            Spend.CONTINUE_REASONING to MAX_EMPTY_RETRIES,
+            Spend.BURST to BURST_WAITS,
+            Spend.OVERLOAD to OVERLOAD_WAITS,
+            Spend.SERVER_RESEND to SERVER_RESENDS,
+            Spend.FRESH_REISSUE to MAX_FRESH_REISSUES,
+            Spend.EMPTY to MAX_EMPTY_RETRIES,
+            Spend.UNRECOGNIZED to MAX_UNRECOGNIZED_RETRIES,
+            Spend.CODE_MODE to MAX_CODE_MODE_STARTS,
+            Spend.UNREACHABLE to UNREACHABLE_WAITS,
         )
+        val reached = mutableSetOf<Spend>()
         runs.forEach { run ->
-            val spent = run.mapNotNull(::spendOf).groupingBy { it }.eachCount()
+            val spent = spends(run)
+            reached += spent.map { it.first }
+            val counts = spent.groupingBy { it.first }.eachCount()
             budgets.forEach { (spend, budget) ->
-                assertTrue((spent[spend] ?: 0) <= budget, "$spend over $budget: $run")
+                assertTrue((counts[spend] ?: 0) <= budget, "$spend over $budget: $run")
             }
-            val unreachable = run.count { it.step is RetryStep.Again && it.met.cause is FailureCause.Path.Unreachable }
-            assertTrue(unreachable <= UNREACHABLE_WAITS, "unreachable waits: $run")
+            // A model still loading is asked every minute only while the overload waits and those minutes stay
+            // inside five minutes in all.
+            val loading = spent.filter { it.first == Spend.OVERLOAD || it.first == Spend.LOADING }.sumOf { it.second }
+            val loadingWaits = counts[Spend.LOADING] ?: 0
+            assertTrue(loadingWaits == 0 || loading <= LOADING_PATIENCE_MS, "loading waited ${loading}ms: $run")
+        }
+        assertEquals(budgets.keys + Spend.LOADING, reached, "the sequences spent every budget")
+    }
+
+    @Test
+    fun `two heads of one API type take the same steps for the same replies`() {
+        // Two heads read the same replies into the same causes, and each turn carries its own ledger: the engine
+        // keeps nothing between turns, so the second head's turn takes the first one's steps, one for one, even
+        // with the first head's turns run in between.
+        val random = Random(41)
+        val sequences = List(SEQUENCES / 4) { Failures(random).sequence() to random.nextInt() }
+        val first = sequences.map { (sequence, seed) -> run(sequence, Random(seed)) }
+        val second = sequences.map { (sequence, seed) -> run(sequence, Random(seed)) }
+        first.zip(second).forEach { (one, other) ->
+            assertEquals(one.map { it.step }, other.map { it.step }, "the same replies, the same steps")
         }
     }
 

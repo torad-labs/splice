@@ -120,12 +120,17 @@ class NativeCodeModeRuntimeTest {
         NativeCodeModeRuntime().use { runtime ->
             val cell = runtime.startNativeSession(
                 "terminate",
-                "text('started'); await new Promise(() => {});",
+                "text('started'); yield_control(); await new Promise(() => {});",
                 emptySet(),
                 emptyMap(),
-                NativeCodeModeOptions(yieldTimeMs = 1),
+                NativeCodeModeOptions(),
             )
-            assertEquals("started", (cell.advance() as CodeModeStep.Yielded).output)
+            val started = cell.advance() as CodeModeStep.Yielded
+            assertEquals("started", started.output)
+            assertEquals(cell.cellId, started.cellId)
+            val timed = cell.observe(1) as CodeModeStep.Yielded
+            assertEquals(cell.cellId, timed.cellId)
+            assertEquals("", timed.output)
             assertTrue((cell.terminate() as CodeModeStep.Completed).terminated)
             val sibling = runtime.startSession("terminate", "text('sibling');", emptySet()).advance()
             assertEquals("sibling", (sibling as CodeModeStep.Completed).output)

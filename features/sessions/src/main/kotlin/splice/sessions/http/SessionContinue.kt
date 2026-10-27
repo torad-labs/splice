@@ -88,14 +88,6 @@ private const val MOVE_BACKGROUND =
 private const val RUNNING_SHELLS = "shell"
 private const val RELAUNCH_NO_HEAD = "it runs on no splice command, so there is none to relaunch it on"
 private const val RELAUNCH_NONE = "this Continue on relaunches nothing; relaunch it from Sessions"
-private const val RELAUNCH_UNHELD =
-    "its pane could not be kept open, so it would not come back where it runs; nothing was ended"
-
-/** The handover a relaunch makes while the pane it comes back in is kept: the client ended with its own exit, and the
- *  session started again in that pane. */
-private fun interface HandOverHeld {
-    suspend operator fun invoke(): JsonReply
-}
 
 /** A Continue on that only moves sessions, such as the manager's: it relaunches none. */
 private object NoRelaunches : SessionRelaunches {
@@ -123,7 +115,9 @@ public class SessionContinue(
     private val arrival = MoveArrival(commands, handover, ledger, registry)
 
     /** Where a relaunch happens: in the pane the session already runs in. */
-    private val inPlace = InPlace()
+    private val inPlace = SessionInPlaceRelaunch(arrival, ::refusedByTerminal) { move, beside ->
+        openNew(move, beside)
+    }
 
     private val plans = Plans()
 
@@ -419,42 +413,6 @@ public class SessionContinue(
         }.getOrElse { return refusedByTerminal(it) }
         driving.panes.remember(move.session, pane)
         return arrival.await(driving, Attempt(pane, Ran.OPENED), move)
-    }
-
-    /** A relaunch in the pane the session runs in (Oct 26, 2026): the pane kept so it outlives the client that leaves,
-     *  and the session started again there, in the same terminal session, window and pane its starter and the person
-     *  find it by. The relaunch of Oct 26 opened a new terminal for every seat it brought back, and nobody could find
-     *  them again. */
-    private inner class InPlace {
-        /** [then] with [pane] kept, so the client's own exit does not take the pane with it, and the pane given back
-         *  its own end however [then] ends. A pane the terminal cannot keep refuses the relaunch before its client is
-         *  told to leave: the session would come back in a terminal nobody is looking at, which is the whole of what
-         *  the relaunch is for. */
-        suspend fun held(driving: SessionDriver, pane: SessionPane, then: HandOverHeld): JsonReply {
-            val kept = Cancellables.runCatchingCleanup { driving.terminal.hold(pane) }
-                .getOrElse { return refusedByTerminal(it) }
-            if (!kept) return Refusals.reply(HttpStatusCode.BadGateway, RELAUNCH_UNHELD, Refusal.REFUSED)
-            try {
-                return then()
-            } finally {
-                Cancellables.discard(
-                    Cancellables.runCatchingCleanup { driving.terminal.release(pane) },
-                    "the relaunch has already answered, and a pane that could not be given back is still his own: " +
-                        "it keeps the end it was held with until it is closed",
-                )
-            }
-        }
-
-        /** The session started again in [pane], where it ran, and the wait for it to come back there. Null while
-         *  something still runs in the pane, his own shell among them, so the resume is typed there instead; a new
-         *  terminal beside it when the pane itself is gone, since a session with no terminal has no agent. */
-        suspend fun restartIn(driving: SessionDriver, pane: SessionPane, move: Move): JsonReply? {
-            val restarted = Cancellables.runCatchingCleanup {
-                driving.terminal.restart(pane, move.argv, move.folder)
-            }.getOrElse { return openNew(move, beside = pane) } ?: return null
-            driving.panes.remember(move.session, restarted)
-            return arrival.await(driving, Attempt(restarted, Ran.RESTARTED), move)
-        }
     }
 
     private fun unwired(): JsonReply =

@@ -68,6 +68,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.ThreadPoolExecutor
@@ -118,6 +119,8 @@ private const val HOLD_MS = 6_000L
 /** V4-116: the armed mid-output stall-re-anchor tier the stall arms run under. A reply inside a
  *  few multiples of this can only have come from the tier — the heads' streamIdle is 120_000ms. */
 private const val STALL_TIER_MS = 1_000L
+private const val SCENARIO_PREFIX = "tear-scenario-"
+private val SCENARIO_MARKER = Regex("${SCENARIO_PREFIX}\\d+")
 
 // The perf row is JSON, so the tag is asserted as its own FIELD — and the tag itself comes from
 // the one definition in core, never a second spelling here. A test that re-spells the string it
@@ -130,19 +133,28 @@ private const val QUOTE = "\""
 private const val REANCHORS_FIELD = "\"reanchors\":"
 private const val FROM_SCRATCH_FIELD = "\"reanchors_from_scratch\":"
 
-/** An Anthropic-shaped upstream that can die mid-response. [acts] is consumed by request index, the
- *  last entry repeating, so a test states the whole conversation up front. Request BODIES are
- *  recorded because what the upstream RECEIVED is an observation about the wire, not about splice's
+/** An Anthropic-shaped upstream that can die mid-response. [acts] is consumed by request index within
+ *  the scenario marker carried by that turn, the last entry repeating, so an authorized retry from an
+ *  earlier arm cannot consume a later arm's reply. Request BODIES are recorded because what the upstream
+ *  RECEIVED is an observation about the wire, not about splice's
  *  internals — it is how "the continuation APPENDED rather than replayed" is checked. */
 private class TearingAnthropicUpstream {
     private val server = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
     val baseUrl: String = "http://127.0.0.1:${server.localPort}"
-    val requestBodies = CopyOnWriteArrayList<String>()
+    private val scenarios = ConcurrentHashMap<String, Scenario>()
+    private val scenarioNumbers = AtomicInteger()
+    private val connections = AtomicInteger()
 
-    /** V4-307: connections accepted since the arm's reset, and every connection this upstream could not
-     *  serve with the reason, so a request that never arrived names the side that starved. */
-    val accepted = AtomicInteger()
-    val faults = CopyOnWriteArrayList<String>()
+    /** The active arm's observations. Each request selects its arm from its own prompt marker, so an
+     *  authorized retry that arrives after the next arm starts cannot consume that arm's reply. */
+    @Volatile
+    private var currentScenario = Scenario(scenarioNumbers.incrementAndGet(), listOf(Act.FULL)).also {
+        scenarios[it.marker] = it
+    }
+
+    val requestBodies: List<String> get() = currentScenario.requestBodies
+    val accepted: AtomicInteger get() = currentScenario.accepted
+    val faults: List<String> get() = currentScenario.faults
 
     // V4-307: every thread this upstream serves on is started here, before the first arm, never one per
     // connection. A local build scope can cap its tasks (512 here) across every JVM of a
@@ -159,21 +171,18 @@ private class TearingAnthropicUpstream {
         { task -> Thread(task, "tearing-upstream-serve").apply { isDaemon = true } },
     ).apply { val _ = prestartAllCoreThreads() }
 
-    @Volatile
-    var acts: List<Act> = listOf(Act.FULL)
-
     fun start() {
         Thread {
             while (!server.isClosed) {
                 val socket = runCatching { server.accept() }.getOrElse { why ->
-                    if (!server.isClosed) faults.add("accept loop ended: $why")
+                    if (!server.isClosed) currentScenario.faults.add("accept loop ended: $why")
                     return@Thread
                 }
-                val connection = accepted.incrementAndGet()
+                val connection = connections.incrementAndGet()
                 // A full pool refuses the connection by name rather than queueing it behind a HOLD serve.
                 val dispatched = runCatching { pool.execute { serveRecorded(socket, connection) } }
                 dispatched.exceptionOrNull()?.let { why ->
-                    faults.add("connection $connection refused: $why")
+                    currentScenario.faults.add("connection $connection refused: $why")
                     val _ = runCatching { socket.close() }
                 }
             }
@@ -185,18 +194,32 @@ private class TearingAnthropicUpstream {
         val _ = pool.shutdownNow()
     }
 
-    /** Never throws: a pool thread that ended on a failure would be replaced by a newly started one. */
-    private fun serveRecorded(socket: Socket, connection: Int) {
-        val served = runCatching { socket.use { serve(it) } }
-        served.exceptionOrNull()?.let { why -> faults.add("connection $connection not served: $why") }
+    fun reset(acts: List<Act>) {
+        require(acts.isNotEmpty()) { "a tearing scenario needs an upstream action" }
+        val next = Scenario(scenarioNumbers.incrementAndGet(), acts.toList())
+        scenarios[next.marker] = next
+        currentScenario = next
     }
 
-    private fun serve(socket: Socket) {
+    fun scenarioMarker(): String = currentScenario.marker
+
+    /** Never throws: a pool thread that ended on a failure would be replaced by a newly started one. */
+    private fun serveRecorded(socket: Socket, connection: Int) {
+        val served = runCatching { socket.use { serve(it, connection) } }
+        served.exceptionOrNull()?.let { why -> currentScenario.faults.add("connection $connection not served: $why") }
+    }
+
+    private fun serve(socket: Socket, connection: Int) {
         socket.tcpNoDelay = true
         val body = readRequest(socket.getInputStream())
-        val index = requestBodies.size
-        requestBodies.add(body)
-        val act = acts.getOrElse(index) { acts.last() }
+        val scenario = scenarioFor(body)
+        if (scenario == null) {
+            currentScenario.faults.add("connection $connection carried no known scenario marker")
+            return
+        }
+        scenario.accepted.incrementAndGet()
+        scenario.requestBodies.add(body)
+        val act = scenario.nextAct()
         val out = socket.getOutputStream()
         // A client that hung up mid-response is the case under test; the socket closes regardless.
         val _ = runCatching { respond(socket, out, act) }
@@ -269,6 +292,19 @@ private class TearingAnthropicUpstream {
             off += n
         }
         return String(bytes, Charsets.UTF_8)
+    }
+
+    private fun scenarioFor(body: String): Scenario? =
+        SCENARIO_MARKER.find(body)?.value?.let(scenarios::get)
+
+    private class Scenario(id: Int, private val acts: List<Act>) {
+        val marker = "$SCENARIO_PREFIX$id"
+        val requestBodies = CopyOnWriteArrayList<String>()
+        val accepted = AtomicInteger()
+        val faults = CopyOnWriteArrayList<String>()
+        private val actionIndex = AtomicInteger()
+
+        fun nextAct(): Act = acts.getOrElse(actionIndex.getAndIncrement()) { acts.last() }
     }
 }
 
@@ -417,7 +453,7 @@ class MidStreamTearContinuesTest {
      *  close() with no HTTP-client pool or cancellation semantics in between. */
     private fun openTurn(port: Int): Socket {
         val body = """{"model":"claude-splice--claude-fable-5","stream":true,"max_tokens":64,""" +
-            """"messages":[{"role":"user","content":"what is the answer"}]}"""
+            """"messages":[{"role":"user","content":"what is the answer ${upstream.scenarioMarker()}"}]}"""
         val socket = Socket("127.0.0.1", port)
         socket.soTimeout = 60_000
         val request = "POST /v1/messages HTTP/1.1\r\n" +
@@ -470,10 +506,8 @@ class MidStreamTearContinuesTest {
     }
 
     private fun reset(vararg acts: Act) {
-        upstream.requestBodies.clear()
-        upstream.accepted.set(0)
+        upstream.reset(acts.toList())
         journal.clear()
-        upstream.acts = acts.toList()
     }
 
     private fun occurrences(haystack: String, needle: String): Int =

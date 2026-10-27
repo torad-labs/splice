@@ -64,7 +64,11 @@ internal class CodeModeCanonicalSources(
         CodeModeReasoningIdentity.key(item) in copies[segment.logicalOffset].orEmpty()
 
     private fun afterExec(record: CodeModeRecord, prefix: IntRange): List<JsonElement>? {
-        val source = record.carry.nativeAfterExec ?: return null
+        // A record stored before Oct 27 holds the call that sealed its round here too: the fold reported it twice.
+        // That call is the record's own. A placed script emits it once itself, a record the rebuild cannot place
+        // emits none, so this copy only ever went out a second time or with no result.
+        val source = record.carry.nativeAfterExec?.filterNot { codec.callId(it) == record.origin.outerCallId }
+            ?: return null
         val keys = source.filter {
             CodeModeReasoningIdentity.id(
                 it,

@@ -1,8 +1,8 @@
 // PORT-OF: splice/spi/UpstreamClient.kt (planRetry, statusPlan, RetryRules, the G5 interlock) @ 3879c4c — invariants unchanged: these DECIDE and never COUNT; not one of the loop's four budgets is mutated here.
 //
 // WHETHER to retry a failed attempt, and on what terms (HD-25). Was UpstreamClient.planRetry /
-// statusPlan / RetryRules and the G5 interlock; only the receiver moved. The failure PREDICATES
-// they consult are FailureRules.kt, which is separate because ResponsesProvider shares one of them.
+// statusPlan / RetryRules and the G5 interlock; only the receiver moved. What a failure IS comes from
+// the head's own reader (Replies), read once where the reply arrived; this file decides by that cause.
 //
 // This file decides; it does not COUNT. Every one of the loop's four budgets (attempt,
 // refreshedOnce, streamReissues, amendedOnce) is still mutated inside UpstreamClient and nowhere

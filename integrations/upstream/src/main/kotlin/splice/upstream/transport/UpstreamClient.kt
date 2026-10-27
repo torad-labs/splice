@@ -18,8 +18,8 @@
 //
 // WHERE THE REST WENT: client construction and the backoff curves → UpstreamTransport.kt;
 // throwable classification, transport backoff, catchCancellable → TransportFailures.kt; the retry
-// DECISION and the G5 re-issue interlock → RetryPolicy.kt; the failure predicates →
-// FailureRules.kt; the Retry-After parse → RetryAfter.kt; the shared 429 horizon →
+// DECISION and the G5 re-issue interlock → RetryPolicy.kt; the reading of a failed reply → the
+// head's Replies, asked once in UpstreamRequest.kt; the Retry-After parse → RetryAfter.kt; the shared 429 horizon →
 // RateLimitCooldown.kt; request assembly and the execute round-trip → UpstreamRequest.kt; one
 // attempt's inputs, outcome, and the perf/auth marks → UpstreamAttempt.kt; the role declarations
 // → UpstreamPorts.kt; the thrown vocabulary → UpstreamErrors.kt; the clock adapter →

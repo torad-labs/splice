@@ -3,8 +3,8 @@
 // and the conversation's prompt cache lives there. A request sent to that place while a generation is still running
 // there waits behind it: on Oct 26 a re-send after Meta's gateway gave up on a generation, and the four requests after
 // it, waited 18 minutes. The transport and the head only report what each request met and send what the vendor routes
-// by, and the vendor decides when its conversation leaves that place, the way VendorRefusals keeps a vendor's
-// refusals in its own module.
+// by, and the vendor decides when its conversation leaves that place, the way a vendor's reading of its own
+// replies lives in its own module (ProviderDeviation).
 package splice.upstream
 
 import splice.core.turn.Usage

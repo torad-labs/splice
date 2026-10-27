@@ -70,3 +70,11 @@ public object MuseReplies : ProviderDeviation {
     private fun heldMs(retryAfterMs: Long?): Long =
         (retryAfterMs ?: DEFAULT_RATE_HOLD_MS).coerceIn(DEFAULT_RATE_HOLD_MS, MAX_MINT_HOLD_MS)
 }
+
+/** Muse completes rounds that hold one encrypted reasoning item and nothing else
+ *  (status=completed items=[reasoning(summary=0,enc=~1400)]): 418 of 3,538 turns on 2026-10-13, in runs of up to 25 in
+ *  one session. The same bytes give the same empty, so the identical re-send healed 39 of 451; carrying on from that
+ *  reasoning with a request for the answer changes the input. Muse accepts the shape: its mid-stream re-anchor already
+ *  sends reasoning plus a commentary marker and was answered. The app sets the Responses dialect's
+ *  continue_reasoning_only quirk from this, so the fact stays in this module. */
+public const val MUSE_CONTINUES_REASONING_ONLY: Boolean = true

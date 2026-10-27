@@ -4,7 +4,7 @@
 //
 // THE LINE KINDS ARE THE DAEMON'S OWN, found by a sweep of every log call in main source on Oct 13. Each marker below
 // ends where one kind's payload begins:
-//   upstream error bodies   RetryPolicy (encrypted_content, attempt n/m), FailureRules (rejected body, missing model)
+//   upstream error bodies   RetryPolicy (encrypted_content, attempt n/m); older daemons' FailureRules (no retry: …)
 //   failure text            TurnKnownEnd and TurnFinish (msg=), TurnEnding (unexpected), DriveSignals, ReanchorRunner
 //   raw upstream bytes      TearAwareEvents (malformed SSE frame), ZeroEventFailure (snippet=)
 //   websocket close text    WsRoundDriver (failed before any client frame), InboxListener (closed by the peer)

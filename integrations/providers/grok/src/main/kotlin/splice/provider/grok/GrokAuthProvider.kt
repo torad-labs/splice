@@ -49,7 +49,6 @@ import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialFil
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialPresence
 import splice.upstream.credentials.BackgroundCredentialRefresh
 import splice.upstream.credentials.CredentialLock
-import splice.upstream.failure.VendorRefusals
 import splice.upstream.retry.SingleFlight
 import java.nio.file.Files
 import java.nio.file.Path
@@ -91,7 +90,7 @@ public class GrokAuthProvider(
      *  kt-no-println, 2026-07-27). Defaults to a no-op so tests need not thread it; the daemon
      *  always injects the real sink. */
     private val log: LogSink = LogSink(DaemonLog::write),
-) : RefreshableAuthProvider, AccountCredentialIdentitySource, VendorRefusals by GrokRefusals() {
+) : RefreshableAuthProvider, AccountCredentialIdentitySource {
 
     private val json = Json { ignoreUnknownKeys = true }
     private val singleFlight = SingleFlight<Credentials?>()

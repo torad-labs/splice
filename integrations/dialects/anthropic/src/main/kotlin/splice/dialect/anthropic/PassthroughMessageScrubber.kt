@@ -69,6 +69,10 @@ private const val DATA = "data"
  *  Extra inputs are not permitted` (44-row burst, 2026-10-11; the same history came back on every retry). */
 private const val ESTIMATED_TOKENS = "estimated_tokens"
 
+// Blocks whose change the tool list carries where the allowlist drops them.
+private const val TYPE_TOOL_ADDITION = "tool_addition"
+private const val TYPE_TOOL_REMOVAL = "tool_removal"
+
 internal class PassthroughMessageScrubber(
     private val quirks: PassthroughQuirks,
     private val cache: PassthroughCacheControl,
@@ -207,9 +211,15 @@ internal class PassthroughMessageScrubber(
             }
         }
         if (droppedLogged.add(type)) {
+            // A system message's tool change rides in the tool list instead (PassthroughToolTimeline).
+            val fate = if (type == TYPE_TOOL_ADDITION || type == TYPE_TOOL_REMOVAL) {
+                "the tool list carries the tool change a system message makes with it"
+            } else {
+                "so the upstream never sees it"
+            }
             log(
-                "[${quirks.providerTag}] content block '$type' is absent from this head's " +
-                    "block_allowlist; dropped from the request, so the upstream never sees it\n",
+                "[${quirks.providerTag}] content block '$type' is absent from this head's block_allowlist; dropped " +
+                    "from the request, $fate\n",
             )
         }
         return null

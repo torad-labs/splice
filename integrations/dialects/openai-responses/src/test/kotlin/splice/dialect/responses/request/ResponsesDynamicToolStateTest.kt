@@ -24,6 +24,7 @@ import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.ResponsesToolQuirks
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
@@ -57,11 +58,13 @@ private class DynamicToolTestProvider(
     quirks = ResponsesQuirks(
         providerTag = "test",
         lite = ResponsesLiteQuirks(responsesLiteModelRegex = if (lite) Regex("test-model") else null),
+        tools = ResponsesToolQuirks(acceptsInlineToolChanges = true),
     ),
 )
 
 /**
- * Goal: a standard Responses head sees the same tool timeline the Anthropic request declares.
+ * Goal: a Responses head that takes tool changes inline, as Codex's does, sees the same tool timeline the
+ * Anthropic request declares.
  * A top-level deferred tool stays absent until a source addition, and every declaration carries
  * the schema active at that exact source boundary.
  */

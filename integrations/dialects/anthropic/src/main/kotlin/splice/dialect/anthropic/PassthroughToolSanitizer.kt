@@ -14,6 +14,11 @@
 // the conversation names rides without `defer_loading`, and every other deferred tool stays deferred. The list
 // changes on the turn the tool loads, which misses Kimi's prompt cache once; later turns send the same list for as
 // long as the conversation holds the reference.
+//
+// Later the same day: the tool_addition and tool_removal blocks are carried the same way. Kimi's allowlist drops both,
+// so the tools Claude Code added never reached the model and the ones it removed stayed offered. Where the upstream
+// cannot read them, an added tool rides in the list and a removed one leaves it (PassthroughToolTimeline), at one
+// cache miss per change.
 package splice.dialect.anthropic
 
 import kotlinx.serialization.json.JsonArray
@@ -24,7 +29,6 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.util.JsonScalars
-import splice.core.wire.UnknownBlock
 import splice.upstream.ToolNameShortener
 
 internal class PassthroughToolSanitizer(
@@ -42,23 +46,33 @@ internal class PassthroughToolSanitizer(
     /** What a tool the conversation loaded drops: the same keys, and the deferral its reference lifted. */
     private val loadedToolKeys: Set<String> = droppedToolKeys + DEFER_LOADING
 
-    /** This head's upstream never reads the `tool_reference` that loads a deferred tool, so the list loads it. */
-    private val listLoadsTools: Boolean = quirks.request.blockAllowlist?.let { TOOL_REFERENCE !in it } == true
+    /** The tool changes this head's upstream cannot read from the conversation, so its list carries them. */
+    private val timeline = PassthroughToolTimeline(quirks.request.blockAllowlist)
 
-    /** [conversation] is the request's `messages`. It is read only where [listLoadsTools]: there a deferred tool a
-     *  reference in it names rides without `defer_loading`, since the model is told that tool is loaded. */
-    fun sanitizeTools(tools: JsonElement, clientStreams: Boolean, conversation: JsonElement? = null): JsonArray {
-        val arr = tools as? JsonArray ?: return buildJsonArray { }
-        val loaded = if (listLoadsTools) loadedTools(conversation) else emptySet()
+    /** The list this head sends for the client's [tools], or null when the client sent none and the conversation
+     *  added none. [conversation] is the request's `messages`: where the upstream cannot read a block that changed the
+     *  tools ([PassthroughToolTimeline]), a tool it added rides with the definition it last gave, a tool it removed
+     *  leaves, and a deferred tool a reference loaded rides without `defer_loading`, since the model is told it is
+     *  loaded. A conversation that changes nothing sends the client's tools as this head shapes them. */
+    fun sanitizeTools(tools: JsonElement?, clientStreams: Boolean, conversation: JsonElement? = null): JsonArray? {
+        val sent = (tools as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+        val changes = timeline.changes(sent.map { JsonScalars.strOrEmpty(it[NAME]) }, conversation)
+        if (tools == null && changes.added.isEmpty()) return null
+        // A change holds the client's name, so each tool is matched before V4-32 shortens it.
+        val offered = sent.map { tool ->
+            val name = JsonScalars.strOrEmpty(tool[NAME])
+            name to (changes.definitions[name] ?: tool)
+        } + changes.added.map { name -> name to changes.definitions.getValue(name) }
         return buildJsonArray {
-            arr.forEach { tool -> (tool as? JsonObject)?.let { add(sanitizeTool(it, clientStreams, loaded)) } }
+            offered.filterNot { (name, _) -> name in changes.withdrawn }.forEach { (name, tool) ->
+                add(sanitizeTool(tool, clientStreams, loaded = name in changes.loaded))
+            }
         }
     }
 
-    private fun sanitizeTool(tool: JsonObject, clientStreams: Boolean, loaded: Set<String>): JsonObject =
+    private fun sanitizeTool(tool: JsonObject, clientStreams: Boolean, loaded: Boolean): JsonObject =
         buildJsonObject {
-            // A reference holds the client's name, so a loaded tool is found before V4-32 shortens it.
-            val dropped = if (JsonScalars.strOrEmpty(tool[NAME]) in loaded) loadedToolKeys else droppedToolKeys
+            val dropped = if (loaded) loadedToolKeys else droppedToolKeys
             for ((key, value) in tool) {
                 if (key in dropped) continue
                 put(key, sanitizedValue(key, value))
@@ -68,23 +82,6 @@ internal class PassthroughToolSanitizer(
             if (quirks.request.mfjsSanitize && DESCRIPTION !in tool) put(DESCRIPTION, "")
             if (eagerInputDefault(tool, clientStreams)) put(EAGER_INPUT_STREAMING, true)
         }
-
-    /** The client's names of the tools [conversation] loaded: each `tool_reference` whose name is a plain tool name
-     *  ([UnknownBlock.loadedTool]), among a message's blocks or inside a tool_result, which is everywhere the scrubber
-     *  turns one into "[tool loaded: X ...]". A worklist, not recursion: the client chooses how deep results nest. */
-    private fun loadedTools(conversation: JsonElement?): Set<String> {
-        val pending = ArrayDeque<JsonElement?>()
-        (conversation as? JsonArray)?.forEach { message -> pending.add((message as? JsonObject)?.get(CONTENT)) }
-        return buildSet {
-            while (pending.isNotEmpty()) {
-                (pending.removeLast() as? JsonArray)?.forEach { element ->
-                    val block = element as? JsonObject ?: return@forEach
-                    UnknownBlock(block).loadedTool?.let { add(it) }
-                    if (JsonScalars.strOrEmpty(block[TYPE]) == TYPE_TOOL_RESULT) pending.add(block[CONTENT])
-                }
-            }
-        }
-    }
 
     private fun eagerInputDefault(tool: JsonObject, clientStreams: Boolean): Boolean {
         val enabled = clientStreams && quirks.request.eagerToolInputs
@@ -110,7 +107,6 @@ private const val INPUT_SCHEMA = "input_schema"
 private const val DESCRIPTION = "description"
 private const val EAGER_INPUT_STREAMING = "eager_input_streaming"
 private const val DEFER_LOADING = "defer_loading"
-private const val TOOL_REFERENCE = "tool_reference"
 
 // FILE SCOPE ON PURPOSE: one shared empty object read on the tool-sanitizing path; as a member it
 // would be rebuilt per builder instance.

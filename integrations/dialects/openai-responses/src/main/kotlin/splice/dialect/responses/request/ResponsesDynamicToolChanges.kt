@@ -18,14 +18,19 @@ public object ResponsesDynamicToolChanges {
     public data class Availability(
         public val initiallyAvailable: List<ToolDefinition>,
         public val currentNames: List<String>,
-        public val requiresRestriction: Boolean,
         public val hasUnrepresentableRemoval: Boolean,
         public val knownDefinitions: List<ToolDefinition>,
         public val withdrawnNames: Set<String>,
         public val loadedDefinitions: List<LoadedDefinition>,
+        /** The tools the model may call now, each with the schema the conversation last gave it: the initial ones
+         *  first, then each later one in the order it first became callable, so the list grows at its end. */
+        public val currentDefinitions: List<ToolDefinition>,
     ) {
         /** A native provider may expose deferred definitions, but never a withdrawn one. */
         public val currentCatalog: List<ToolDefinition> = knownDefinitions.filterNot { it.name in withdrawnNames }
+
+        /** The tools callable now are not the ones offered at the start. */
+        public val requiresRestriction: Boolean = initiallyAvailable.map { it.name } != currentNames
     }
 
     /** The exact source block pins the schema at that boundary, even when identical references recur. */
@@ -109,11 +114,11 @@ public object ResponsesDynamicToolChanges {
             return Availability(
                 initiallyAvailable = initial,
                 currentNames = currentNames,
-                requiresRestriction = initial.map { it.name } != currentNames,
                 hasUnrepresentableRemoval = hasUnrepresentableRemoval,
                 knownDefinitions = known.values.toList(),
                 withdrawnNames = withdrawn.toSet(),
                 loadedDefinitions = loaded.toList(),
+                currentDefinitions = current.mapNotNull(known::get),
             )
         }
     }

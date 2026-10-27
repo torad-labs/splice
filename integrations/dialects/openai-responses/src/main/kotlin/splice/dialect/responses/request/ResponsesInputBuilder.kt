@@ -124,8 +124,8 @@ internal class ResponsesInputBuilder(
     }
 
     /** A block kind splice does not enumerate (search results, server tool results from a session that began on
-     *  another head) cannot ride this wire; it leaves an honest marker, except source removals whose
-     *  current callable surface rides request-level allowed_tools instead. */
+     *  another head) cannot ride this wire; it leaves an honest marker, except source removals, whose current
+     *  callable surface rides the request's tool list, or its allowed_tools on a head that takes changes inline. */
     private fun appendUnknown(
         sink: JsonArrayBuilder,
         role: String,
@@ -135,7 +135,7 @@ internal class ResponsesInputBuilder(
             role == ResponsesContextMessage.CLIENT_ROLE && block.type == SOURCE_TOOL_ADDITION ->
                 tools.appendToolAddition(sink, block, knownTools)
             role == ResponsesContextMessage.CLIENT_ROLE && block.type == SOURCE_TOOL_REMOVAL ->
-                Unit // request-level allowed_tools preserves the current direct-function surface
+                Unit // the tool list, or request-level allowed_tools, preserves the current direct-function surface
             else -> sink.add(parts.roleText("user", tools.omission(block)))
         }
     }

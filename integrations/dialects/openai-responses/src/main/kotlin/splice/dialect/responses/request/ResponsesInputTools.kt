@@ -144,6 +144,9 @@ internal class ResponsesInputTools(
         knownTools: MutableMap<String, ToolDefinition>,
     ) {
         knownTools[tool.name] = tool
+        // A backend that does not read the item refuses the whole request; its tool list carries the tool instead
+        // (ResponsesRequestBuilder).
+        if (!quirks.tools.acceptsInlineToolChanges) return
         sink.add(
             buildJsonObject {
                 put("type", ADDITIONAL_TOOLS)

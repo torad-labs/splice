@@ -204,7 +204,7 @@ class SharedResponsesContractTest {
     }
 
     @Test
-    fun `a non-Codex head withdraws a tool without rewriting its initial declarations`(@TempDir tmp: Path) = runTest {
+    fun `a non-Codex head withdraws a tool by dropping it from its tool list`(@TempDir tmp: Path) = runTest {
         val request = AnthropicParse.parseAnthropicBody(
             """
             {"model":"claude-shared--gpt-6.1-sol","max_tokens":128,"tools":[
@@ -219,25 +219,19 @@ class SharedResponsesContractTest {
         )
         val wired = assembly(tmp, backgroundScope).buildProvider(context(tmp, "custom"))
         try {
-            assertNull(wired.provider.requestRefusal(request), "a supported public restriction must not be declined")
+            assertNull(wired.provider.requestRefusal(request), "a withdrawal this head can carry must not be declined")
             val built = wired.provider.buildTurn(request, false, "withdrawn")
             val body = built.requestBody
             assertEquals(
-                listOf("lookup_record", "record_status"),
+                listOf("record_status"),
                 body.getValue("tools").jsonArray.map { it.jsonObject.getValue("name").jsonPrimitive.content },
             )
-            val choice = body.getValue("tool_choice").jsonObject
-            assertEquals("allowed_tools", choice.getValue("type").jsonPrimitive.content)
-            assertEquals("auto", choice.getValue("mode").jsonPrimitive.content)
-            assertEquals(
-                listOf("record_status"),
-                choice.getValue("tools").jsonArray.map { it.jsonObject.getValue("name").jsonPrimitive.content },
-            )
             assertFalse(
-                body.getValue("input").jsonArray.any {
-                    it.jsonObject["type"]?.jsonPrimitive?.content == "remove_tools"
-                },
+                (body["tool_choice"] as? JsonObject)?.get("type")?.jsonPrimitive?.content == "allowed_tools",
+                "the list itself is the current surface: ${body["tool_choice"]}",
             )
+            val items = body.getValue("input").jsonArray.mapNotNull { it.jsonObject["type"]?.jsonPrimitive?.content }
+            assertFalse("remove_tools" in items || "additional_tools" in items, "no tool change item: $items")
             assertNull(built.roundInterceptor)
             assertFalse("client_metadata" in body)
         } finally {
@@ -306,51 +300,46 @@ class SharedResponsesContractTest {
         }
 
     @Test
-    fun `a non-Codex head declares an inline tool definition at its original message boundary`(@TempDir tmp: Path) =
-        runTest {
-            val wired = assembly(tmp, backgroundScope).buildProvider(context(tmp, "custom"))
-            try {
-                val request = AnthropicParse.parseAnthropicBody(
-                    """
-                    {"model":"claude-shared--gpt-6.1-sol","max_tokens":128,
-                     "tools":[{"name":"lookup_record","input_schema":{"type":"object","properties":{}}}],
-                     "messages":[
-                       {"role":"user","content":"Start"},
-                       {"role":"system","content":[{
-                         "type":"tool_addition",
-                         "tool":{"type":"tool_definition","definition":{
-                           "name":"db_query","description":"Query the database",
-                           "input_schema":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}
-                         }}
-                       }]},
-                       {"role":"user","content":"Run the database query"}
-                     ]}
-                    """.trimIndent(),
-                )
-                val body = wired.provider.buildTurn(request, false, "dynamic").requestBody
-                val input = body.getValue("input").jsonArray.map { it.jsonObject }
-                assertEquals("user", input[0]["role"]?.jsonPrimitive?.content)
-                assertEquals(
-                    "additional_tools",
-                    input[1]["type"]?.jsonPrimitive?.content,
-                    "dynamic tool item: ${input[1]}",
-                )
-                assertEquals("developer", input[1]["role"]?.jsonPrimitive?.content)
-                val tool = input[1].getValue("tools").jsonArray.single().jsonObject
-                assertEquals("db_query", tool["name"]?.jsonPrimitive?.content)
-                assertEquals(
-                    "string",
-                    tool.getValue("parameters").jsonObject.getValue("properties").jsonObject
-                        .getValue("query").jsonObject["type"]?.jsonPrimitive?.content,
-                )
-                assertEquals(
-                    listOf("lookup_record"),
-                    body.getValue("tools").jsonArray.map { it.jsonObject["name"]?.jsonPrimitive?.content },
-                )
-            } finally {
-                wired.provider.onHeadStop()
-            }
+    fun `a non-Codex head lists a tool the conversation adds, with the schema the addition gave it`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val wired = assembly(tmp, backgroundScope).buildProvider(context(tmp, "custom"))
+        try {
+            val request = AnthropicParse.parseAnthropicBody(
+                """
+                {"model":"claude-shared--gpt-6.1-sol","max_tokens":128,
+                 "tools":[{"name":"lookup_record","input_schema":{"type":"object","properties":{}}}],
+                 "messages":[
+                   {"role":"user","content":"Start"},
+                   {"role":"system","content":[{
+                     "type":"tool_addition",
+                     "tool":{"type":"tool_definition","definition":{
+                       "name":"db_query","description":"Query the database",
+                       "input_schema":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}
+                     }}
+                   }]},
+                   {"role":"user","content":"Run the database query"}
+                 ]}
+                """.trimIndent(),
+            )
+            val body = wired.provider.buildTurn(request, false, "dynamic").requestBody
+            val input = body.getValue("input").jsonArray.map { it.jsonObject }
+            assertEquals(listOf("user", "user"), input.map { it["role"]?.jsonPrimitive?.content }, "input: $input")
+            assertFalse(
+                input.any { it["type"]?.jsonPrimitive?.content == "additional_tools" },
+                "no tool change item rides the input: $input",
+            )
+            val tools = body.getValue("tools").jsonArray.map { it.jsonObject }
+            assertEquals(listOf("lookup_record", "db_query"), tools.map { it["name"]?.jsonPrimitive?.content })
+            assertEquals(
+                "string",
+                tools[1].getValue("parameters").jsonObject.getValue("properties").jsonObject
+                    .getValue("query").jsonObject["type"]?.jsonPrimitive?.content,
+            )
+        } finally {
+            wired.provider.onHeadStop()
         }
+    }
 
     @Test
     fun `ordinary Responses heads preserve non-strict function schemas instead of opting into normalization`(

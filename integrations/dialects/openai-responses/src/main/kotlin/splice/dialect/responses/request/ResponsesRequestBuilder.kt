@@ -48,6 +48,7 @@ import splice.core.turn.TurnRoute
 import splice.core.turn.TurnScope
 import splice.core.turn.TurnToolSurface
 import splice.core.wire.AnthropicRequest
+import splice.core.wire.ToolDefinition
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.admission.ResponsesRequestControls
 import splice.dialect.responses.reasoning.ResponsesReasoningKnobs
@@ -73,16 +74,18 @@ internal class ResponsesRequestBuilder(
     private val controls = ResponsesRequestControls(quirks)
 
     public fun build(body: AnthropicRequest, raw: JsonObject, opts: BuildOptions): BuiltRequest {
-        // Standard Responses holds its initial direct-function surface in tools and appends later
-        // declarations at their source boundaries. A source-deferred definition stays in the catalog
-        // for a future tool_reference but must not be offered before that addition.
+        // A head that takes tool changes inline holds its initial direct-function surface in tools and appends later
+        // declarations at their source boundaries; any other head lists the tools the conversation holds now. A
+        // source-deferred definition stays in the catalog for a future tool_reference but is not offered before it.
         val outputFormat = ResponsesOutputSchema.format(body, raw)
         val rawControls = controls.wire(raw)
         val wireBody = ResponsesOutputSchema.wireBody(body, outputFormat)
         val dynamicTools = ResponsesDynamicToolChanges.availability(wireBody)
+        val inline = quirks.tools.acceptsInlineToolChanges
         // Lite is a wire shape, not an executor strategy. Providers that replace this direct
         // surface own their nested catalog and outer tool choice after shared conversion.
-        val surfaceBody = wireBody.copy(tools = dynamicTools.initiallyAvailable)
+        val forcedSchema = outputFormat != null && ResponsesOutputSchema.forcesTool(body)
+        val surfaceBody = wireBody.copy(tools = directTools(inline, forcedSchema, dynamicTools))
         val partition = toolPlan.partition(surfaceBody, opts)
         val declareByName = toolPlan.declarationCandidates(surfaceBody, partition)
         val effort = knobs.resolveEffort(body, raw, opts)
@@ -108,7 +111,7 @@ internal class ResponsesRequestBuilder(
             reasoning = reasoning,
             tools = RequestToolSurface(
                 partition = partition,
-                currentAllowedTools = dynamicTools.currentNames.takeIf { dynamicTools.requiresRestriction },
+                currentAllowedTools = dynamicTools.currentNames.takeIf { inline && dynamicTools.requiresRestriction },
             ),
             conversationKey = conversationKey,
             outputFormat = outputFormat,
@@ -116,6 +119,20 @@ internal class ResponsesRequestBuilder(
         )
         val built = assembler.buildRequestObject(surfaceBody, opts, parts)
         return BuiltRequest(built.req, turnMeta(body, opts, parts, built, effort), built.toolSearch)
+    }
+
+    /** The function tools this request lists. A head that takes tool changes inline lists the initial ones and hears
+     *  each change where the conversation made it ([ResponsesInputTools]); any other head lists the tools the
+     *  conversation holds now, with the schema it last gave each. A turn that must answer in the caller's schema
+     *  ([forcedSchema]) lists none, whatever the conversation added. */
+    private fun directTools(
+        inline: Boolean,
+        forcedSchema: Boolean,
+        tools: ResponsesDynamicToolChanges.Availability,
+    ): List<ToolDefinition> = when {
+        inline -> tools.initiallyAvailable
+        forcedSchema -> emptyList()
+        else -> tools.currentDefinitions
     }
 
     private fun turnMeta(

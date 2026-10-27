@@ -150,6 +150,12 @@ public data class ResponsesToolQuirks(
     /** Deferred tool surface. Null keeps non-Muse providers off; Muse supplies a hosted base.
      *  CLIENT is responses-lite-only, HOSTED uses Meta's Responses tool search on normal turns. */
     val toolSurface: ToolDeferralPolicy? = null,
+    /** Whether this backend takes a tool change at its place in the conversation: an `additional_tools` input item for
+     *  a tool the conversation added or ToolSearch loaded, and `allowed_tools` for one it removed. False, the default,
+     *  sends the tools the conversation holds now as the request's tool list instead, since a backend that does not
+     *  know the item refuses the whole request (Muse, 2026-10-27: 400 "`input[8]` did not match any supported type").
+     *  The provider that knows its backend takes the item sets it. */
+    val acceptsInlineToolChanges: Boolean = false,
 )
 
 /** The gateway's own help across tool round-trips: held reasoning and the loop breaker. */

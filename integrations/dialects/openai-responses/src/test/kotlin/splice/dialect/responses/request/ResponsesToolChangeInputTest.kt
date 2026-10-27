@@ -13,10 +13,16 @@ import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
 import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.ResponsesToolQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 
 class ResponsesToolChangeInputTest {
-    private val quirks = ResponsesQuirks(providerTag = "openai", lite = ResponsesLiteQuirks())
+    /** A profile that takes tool changes inline, as Codex's does. */
+    private val quirks = ResponsesQuirks(
+        providerTag = "openai",
+        lite = ResponsesLiteQuirks(),
+        tools = ResponsesToolQuirks(acceptsInlineToolChanges = true),
+    )
 
     private fun propertyType(tool: JsonObject, property: String): String? =
         tool.getValue("parameters").jsonObject.getValue("properties").jsonObject

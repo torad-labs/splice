@@ -32,6 +32,8 @@ public class GrokQuirks {
         tools = ResponsesToolQuirks(
             emitToolChoice = true,
             emitStrict = true,
+            // xAI is not known to read the `additional_tools` input item, so the tool list carries each tool change.
+            acceptsInlineToolChanges = false,
         ),
         request = ResponsesRequestControlQuirks(
             serviceTier = ResponsesServiceTierSupport.UNSUPPORTED,

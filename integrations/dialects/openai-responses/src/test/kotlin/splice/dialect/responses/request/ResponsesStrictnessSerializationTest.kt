@@ -48,7 +48,7 @@ class ResponsesStrictnessSerializationTest {
 
     @Test
     fun `additional function declarations explicitly preserve every strictness choice`() {
-        val request = build(
+        val body =
             """
             {
               "model":"m",
@@ -64,15 +64,19 @@ class ResponsesStrictnessSerializationTest {
                 {"role":"user","content":"Use a tool."}
               ]
             }
-            """.trimIndent(),
-        )
-
-        val tools = request.getValue("input").jsonArray
+            """.trimIndent()
+        // A profile that takes tool changes inline declares each added tool where the conversation added it; any other
+        // profile lists it. Both write every strictness choice explicitly.
+        val inline = quirks.copy(tools = quirks.tools.copy(acceptsInlineToolChanges = true))
+        val declared = build(body, inline).getValue("input").jsonArray
             .map { it.jsonObject }
             .filter { it["type"]?.jsonPrimitive?.content == "additional_tools" }
             .map { it.getValue("tools").jsonArray.single().jsonObject }
+        val listed = build(body).getValue("tools").jsonArray.map { it.jsonObject }
 
-        assertEquals(listOf("false", "false", "true"), tools.map { it["strict"]?.jsonPrimitive?.content })
+        for (tools in listOf(declared, listed)) {
+            assertEquals(listOf("false", "false", "true"), tools.map { it["strict"]?.jsonPrimitive?.content })
+        }
     }
 
     @Test
@@ -143,9 +147,9 @@ class ResponsesStrictnessSerializationTest {
         assertEquals("TOOL_STRICTNESS", (cause?.why as? Decline.Untranslatable)?.what?.name)
     }
 
-    private fun build(body: String): JsonObject {
+    private fun build(body: String, profile: ResponsesQuirks = quirks): JsonObject {
         val parsed = AnthropicParse.parseAnthropicBody(body)
-        return ResponsesRequestBuilder(quirks).build(parsed.typed, parsed.raw, options()).req
+        return ResponsesRequestBuilder(profile).build(parsed.typed, parsed.raw, options()).req
     }
 
     private fun options(): BuildOptions = BuildOptions(

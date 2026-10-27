@@ -60,6 +60,10 @@ public class CodexQuirks {
             // riding the wire (json_schema.rs parse_tool_input_schema), so gpt-5.6 only ever trains
             // its expectations against normalized shapes. Splice mirrors that on this head only.
             normalizeToolSchemas = true,
+            // The ChatGPT backend reads a tool change where the conversation made it: codex-rs itself declares tools
+            // with the `additional_tools` input item, so a tool Claude Code adds or loads rides that item and the tool
+            // list, the head of this head's prompt cache, stays as the client first sent it.
+            acceptsInlineToolChanges = true,
         ),
         request = ResponsesRequestControlQuirks(
             serviceTier = ResponsesServiceTierSupport.UNSUPPORTED,

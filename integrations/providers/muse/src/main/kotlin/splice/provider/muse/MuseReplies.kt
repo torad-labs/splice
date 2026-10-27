@@ -101,3 +101,10 @@ public object MuseReplies : ProviderDeviation {
  *  sends reasoning plus a commentary marker and was answered. The app sets the Responses dialect's
  *  continue_reasoning_only quirk from this, so the fact stays in this module. */
 public const val MUSE_CONTINUES_REASONING_ONLY: Boolean = true
+
+/** Muse refuses the `additional_tools` input item. On 2026-10-27 at 13:59 CT, once Claude Code added three tools in a
+ *  system message, Muse answered 400 "`input[8]` did not match any supported type", and input[8] was the item splice
+ *  sent for them. So a tool the conversation adds or ToolSearch loads rides in the request's tool list, and a removed
+ *  one leaves it. The app sets the Responses dialect's accepts_inline_tool_changes quirk from this, so the fact stays
+ *  in this module. */
+public const val MUSE_TAKES_INLINE_TOOL_CHANGES: Boolean = false

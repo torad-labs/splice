@@ -22,11 +22,15 @@ import splice.app.provider.HeadReplies
 import splice.head.scripted.ClientAnswer
 import splice.head.scripted.ClientRequest
 import splice.head.scripted.HeadSays
+import splice.head.scripted.ScriptedLogin
 import splice.head.scripted.VirtualTime
 import splice.head.scripted.reply
 import splice.head.scripted.withScriptedHeads
 import java.nio.file.Path
 import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 /** The prefix every line a person reads opens with. */
 private const val PREFIX = "[splice] "
@@ -48,9 +52,10 @@ private const val ANTHROPIC_MESSAGE_START =
 /** A websocket's normal close; on HTTP the scripted answer simply ends there. */
 private const val NORMAL_CLOSURE = 1000
 
-/** Kimi's plan-tier answer, which it spells as a 401 (KimiOAuth.isPlanTierRejection). */
-private const val KIMI_PLAN_TIER =
-    "Your current subscription does not have access to kimi-k3-thinking. Upgrade your plan to use it."
+/** Kimi's plan-tier answer, which it spells as a 401 (KimiOAuth.isPlanTierRejection), opening with its own sentence
+ *  about the plan: the words a forbidden line quotes. */
+private const val KIMI_PLAN_SENTENCE = "Your current subscription does not have access to kimi-k3-thinking."
+private const val KIMI_PLAN_TIER = "$KIMI_PLAN_SENTENCE Upgrade your plan to use it."
 
 /** xAI's words for an expired OAuth token, which it answers with a 403 (the grok-dead-head incident). */
 private const val XAI_DEAD_TOKEN = "The OAuth2 access token could not be validated. unauthenticated:bad-credentials"
@@ -60,11 +65,19 @@ private const val MUSE_LIMIT_BODY =
     """{"error":{"code":"rate_limit_exceeded","message":"Subscription quota exhausted. Your usage window resets """ +
         """at 2026-10-26T05:25:35Z.","resets_at":1792992335}}"""
 
+/** The Retry-After that 429 carried, in seconds: 2 h 8 min 48 s, a firm wait to a head that reads only the header. */
+private const val MUSE_RETRY_AFTER_S = 7728L
+
 /** The reset that body names, as a line says it in Chicago. */
 private const val MUSE_RESET_LINE = "Oct 26, 12:25 AM"
 
 /** Muse's own reset is 2 hours out, so the clock starts before it: the window of Oct 25, 10 PM CT. */
 private val MUSE_WINDOW_START: Instant = Instant.parse("2026-10-26T03:00:00Z")
+
+/** How a line says a time, without its zone's abbreviation: month, day and clock time in Chicago, every scripted
+ *  head's zone (ScriptedHeads' LINE_ZONE). */
+private val LINE_TIME: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("MMM d, h:mm a", Locale.US).withZone(ZoneId.of("America/Chicago"))
 
 /** codex's spent weekly window: its 429 names the reset and the window's own length (V4-377). */
 private const val CODEX_WEEKLY_LIMIT =
@@ -133,6 +146,8 @@ class ReadOnceThroughHeadsTest {
             val answer = kimi.client.send()
 
             assertLine(answer, "account may not use this model")
+            // The person reads why in Kimi's own words: the forbidden line quotes what the provider said.
+            assertLine(answer, KIMI_PLAN_SENTENCE)
             assertEquals(1, provider.requests.size, "a plan a refresh cannot fix is asked once")
             // The same reply on a head that declared no deviation is the dead login its status spells.
             val sent = provider.requests.size
@@ -156,7 +171,12 @@ class ReadOnceThroughHeadsTest {
             val answer = grok.client.send()
 
             assertEquals("the answer after the renewal", answer.text, answer.describe())
-            assertEquals(2, provider.requests.size, "one renewal, then the same turn again")
+            // The renewal as the provider sees it: the expired login, then the same turn on the token one renewal minted.
+            assertEquals(
+                listOf(ScriptedLogin.FIRST, ScriptedLogin.renewed(1)).map { "Bearer $it" },
+                provider.requests.map { it.headers["authorization"] },
+                "one renewal, then the same turn again on the renewed login",
+            )
             // The same 403 on a head that declared no deviation is a permission the login cannot change.
             provider.script(reply { status(403); openAiErrorBody("invalid_request_error", XAI_DEAD_TOKEN, "x") })
             val sent = provider.requests.size
@@ -170,14 +190,19 @@ class ReadOnceThroughHeadsTest {
         @TempDir tmp: Path,
     ) = runTest {
         withScriptedHeads(tmp, VirtualTime(autoAdvance = true, startWall = MUSE_WINDOW_START)) {
-            provider.script(reply { status(429); header("retry-after", "7728"); body(MUSE_LIMIT_BODY) })
+            provider.script(
+                reply { status(429); header("retry-after", "$MUSE_RETRY_AFTER_S"); body(MUSE_LIMIT_BODY) },
+            )
             val muse = responses(replies = HeadReplies.muse)
 
             val answer = muse.client.send()
 
             assertLine(answer, MUSE_RESET_LINE)
-            val sibling = lineOf(responses().client.send())
-            assertFalse(MUSE_RESET_LINE in sibling, "a standard head reads the firm Retry-After instead: $sibling")
+            // A standard head reads the same 429 as firm from its Retry-After: the reset is that long after the answer
+            // it ended on came, whatever the body says.
+            val sibling = responses().client.send()
+            val answered = MUSE_WINDOW_START.plusMillis(provider.requests.last().at.inWholeMilliseconds)
+            assertLine(sibling, LINE_TIME.format(answered.plusSeconds(MUSE_RETRY_AFTER_S)))
         }
     }
 

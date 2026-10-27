@@ -60,9 +60,18 @@ private val LINE_ZONE: ZoneId = ZoneId.of("America/Chicago")
 /** The kind of the one scripted head whose model server runs on this machine. */
 private const val LOCAL_KIND = "local"
 
-/** The credential every head sends the scripted provider. Not a real one: the provider reads none. */
-private const val PROVIDER_TOKEN = "scripted-provider-token"
+/** The account the scripted login names. Not a real one: the provider reads none. */
 private const val PROVIDER_ACCOUNT = "scripted-account"
+
+/** The tokens a head's own scripted login signs its requests with: [FIRST] until a renewal, then the one each renewal
+ *  mints, a new token per exchange as a provider's token endpoint mints one. A test reads on the wire which of them a
+ *  request carried, so a renewal is seen where the provider sees it. Not real credentials: the provider reads none. */
+public object ScriptedLogin {
+    public const val FIRST: String = "scripted-provider-token"
+
+    /** The token the [exchange]th renewal of a head's login mints, counting from 1. */
+    public fun renewed(exchange: Int): String = "$FIRST-renewed-$exchange"
+}
 
 /**
  * The knobs a test may set on a head. [maxInflight] and [maxQueued] are the gate's limits, 0 for no limit, so a
@@ -169,11 +178,19 @@ public class ScriptedHead internal constructor(
 /** Where a head's records go and the relay it reaches the provider through, when it has one. */
 internal data class HeadWiring(val perfFile: Path, val relay: PathRelay?)
 
-/** The scripted provider's credential: always there, never refused. */
+/** The scripted provider's credential: always there, never refused. Each renewal mints the next token
+ *  ([ScriptedLogin.renewed]), as a provider's token exchange does, and the requests after it carry that one. */
 private class ScriptedAuth : RefreshableAuthProvider {
-    override suspend fun credentials(): Credentials = Credentials.Bearer(PROVIDER_TOKEN, PROVIDER_ACCOUNT)
+    private val exchanges = AtomicInteger()
 
-    override suspend fun refresh(): Credentials = credentials()
+    @Volatile private var token: String = ScriptedLogin.FIRST
+
+    override suspend fun credentials(): Credentials = Credentials.Bearer(token, PROVIDER_ACCOUNT)
+
+    override suspend fun refresh(): Credentials {
+        token = ScriptedLogin.renewed(exchanges.incrementAndGet())
+        return credentials()
+    }
 
     override suspend fun describe(): AuthDescription = AuthDescription(present = true, kind = "scripted")
 }

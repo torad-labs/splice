@@ -331,7 +331,7 @@ class ReadOnceStandardThroughHeadsTest {
                 ),
             )
 
-            assertTrue(lineOf(answer).isNotEmpty(), answer.describe())
+            assertLine(answer, "cannot guarantee the tool choice this request asks for")
             assertEquals(0, provider.requests.size, "a request splice refuses never reaches the provider")
         }
     }

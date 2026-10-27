@@ -35,7 +35,8 @@ internal class CodeModeUpstreamLedger(
 
     fun newest(key: String): Long? = entries(key).firstOrNull()?.id
 
-    fun record(key: String, entry: CodeModeLedgerEntry, baseId: Long? = null) =
+    /** Records [entry] as [key]'s newest post and returns its id, which the request that posted it keeps. */
+    fun record(key: String, entry: CodeModeLedgerEntry, baseId: Long? = null): Long =
         synchronized(keyLocks.computeIfAbsent(key) { Any() }) {
             val prior = state(key)
             val id = prior?.nextId ?: 1L
@@ -46,6 +47,7 @@ internal class CodeModeUpstreamLedger(
             val prepared = CodeModeHistoryDeltas.prepare(state, entry.copy(id = id), base)
             val posts = listOf(prepared.entry) + prior?.posts.orEmpty()
             publish(state.copy(posts = posts), prepared, prior?.memoryBytes ?: 0L)
+            id
         }
 
     fun output(key: String, id: Long, output: List<JsonElement>, echoes: List<JsonElement>) =

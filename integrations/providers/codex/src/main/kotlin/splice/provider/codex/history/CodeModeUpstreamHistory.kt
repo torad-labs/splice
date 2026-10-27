@@ -135,6 +135,7 @@ internal class CodeModeUpstreamHistory(
         val posted = body.request?.second
         if (client == null || posted == null) {
             ledger.forget(context.key)
+            context.postId = null
             return
         }
         val observed = client.subList(clientStep.preambleCount(client), client.size)
@@ -143,7 +144,7 @@ internal class CodeModeUpstreamHistory(
         val covered = prior?.let { clientDelta.normalized(it, observed, proof) } ?: observed
         val conversation = posted.subList(clientStep.preambleCount(posted), posted.size)
         val callbacks = CodeModeCallbackReceipts.capture(context, covered, prior?.callbacks.orEmpty())
-        ledger.record(
+        context.postId = ledger.record(
             context.key,
             CodeModeLedgerEntry(covered, conversation, body.echoes, callbacks = callbacks),
             prior?.id,
@@ -158,8 +159,10 @@ internal class CodeModeUpstreamHistory(
         durableClears.acknowledge(context, client.drop(clientStep.preambleCount(client)), records)
     }
 
-    /** The newest kept post of a script started now: what [CodeModeRecord.postedOn] holds. */
-    fun newest(key: String): Long? = ledger.newest(key)
+    /** The post a script started now sits on: what [CodeModeRecord.postedOn] holds. It is the post [context] made
+     *  itself, since a sibling branch of its conversation may have posted since; the conversation's newest only when
+     *  this request kept none. */
+    fun newest(context: CodeModeRunContext): Long? = context.postId ?: ledger.newest(context.key)
 
     /** Ordinary response items extend the prepared input verbatim. Exec responses are committed by their durable
      * script record with its output, so a pending exec can never look like an already completed placement. */
@@ -167,7 +170,7 @@ internal class CodeModeUpstreamHistory(
         val success = outcome as? TurnOutcome.Success ?: return outcome
         if (success.handoffs.customCalls.isEmpty()) {
             val output = success.handoffs.nativeOutput
-            val id = ledger.newest(context.key)
+            val id = newest(context)
             if (output != null && id != null) {
                 ledger.output(context.key, id, output, CodeModeOutputDelivery.items(output))
             } else if (output == null) {

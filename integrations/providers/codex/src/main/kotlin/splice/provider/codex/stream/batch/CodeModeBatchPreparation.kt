@@ -46,7 +46,7 @@ internal class CodeModeBatchPreparation(
                 val record = checkNotNull(factory.create(context, call, body, item, sent.clientStart(context)))
                 record.phase = CodeModePhase.STARTING
                 record.sourceState = CodeModeSourceState(itemComplete = false)
-                record.postedOn = sent.newest(context.key)
+                record.postedOn = sent.newest(context)
                 check(registry.add(record)) { "code-mode registry capacity reached" }
                 records += record
                 record

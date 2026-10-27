@@ -2,12 +2,20 @@
 package splice.provider.codex.state
 
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import splice.core.perf.InputDigest
+import splice.core.util.JsonScalars
+import splice.provider.codex.CODE_MODE_FIELD_ROLE
+import splice.provider.codex.CODE_MODE_ROLE_USER
 import splice.provider.codex.CodexCodeModeBridge
 import splice.upstream.RoundBody
 import java.security.MessageDigest
 
-/** Full upstream drives share a mutex only when their conversation keys are equal. */
+/** Full upstream drives share a mutex only when they are the same branch of one conversation, the way codex runs
+ *  a forked thread beside its parent: two branches of a conversation never wait on each other. Each drive counts
+ *  in its conversation while it is queued or running, so a step that would trim the conversation's records can
+ *  tell whether a sibling branch still stands on them. */
 internal class CodeModeTurnLocks {
     class Entry {
         val mutex = Mutex()
@@ -16,10 +24,12 @@ internal class CodeModeTurnLocks {
 
     private val monitor = Any()
     private val keys = mutableMapOf<String, Entry>()
+    private val drives = mutableMapOf<String, Int>()
 
-    suspend fun acquire(key: String): Entry {
+    suspend fun acquire(branch: String, conversation: String): Entry {
         val entry = synchronized(monitor) {
-            keys.getOrPut(key) { Entry() }.also { it.users++ }
+            drives[conversation] = (drives[conversation] ?: 0) + 1
+            keys.getOrPut(branch) { Entry() }.also { it.users++ }
         }
         var acquired = false
         return try {
@@ -27,18 +37,23 @@ internal class CodeModeTurnLocks {
             acquired = true
             entry
         } finally {
-            if (!acquired) unreference(key, entry)
+            if (!acquired) unreference(branch, conversation, entry)
         }
     }
 
-    fun release(key: String, entry: Entry) {
+    fun release(branch: String, conversation: String, entry: Entry) {
         entry.mutex.unlock()
-        unreference(key, entry)
+        unreference(branch, conversation, entry)
     }
 
-    private fun unreference(key: String, entry: Entry) = synchronized(monitor) {
+    /** True while no other drive of [conversation] is queued or running. */
+    fun alone(conversation: String): Boolean = synchronized(monitor) { (drives[conversation] ?: 0) <= 1 }
+
+    private fun unreference(branch: String, conversation: String, entry: Entry) = synchronized(monitor) {
         entry.users--
-        if (entry.users == 0) keys.remove(key)
+        if (entry.users == 0) keys.remove(branch)
+        val left = (drives[conversation] ?: 1) - 1
+        if (left == 0) drives.remove(conversation) else drives[conversation] = left
     }
 }
 
@@ -59,6 +74,17 @@ internal class CodeModeTurnIdentity {
      *  agent, so the records it persisted are still found; the opening and the subagent otherwise. */
     fun conversationKey(opening: String, agentId: String?): String =
         if (agentId.isNullOrEmpty()) opening else "$opening${0.toChar()}agent${0.toChar()}$agentId"
+
+    /** The branch of conversation [turnKey] that [input] continues, named by the newest user message in it. A
+     *  message Claude Code delivers to a running agent rides beside a tool result on one branch while another branch
+     *  goes on without it, so the two name different branches. Retries and the steps of one branch carry the same
+     *  newest user message, so they still take turns. */
+    fun branchKey(turnKey: String, input: JsonArray?): String {
+        val newest = input?.lastOrNull { item ->
+            (item as? JsonObject)?.let { JsonScalars.str(it, CODE_MODE_FIELD_ROLE) } == CODE_MODE_ROLE_USER
+        }
+        return digest("$turnKey${0.toChar()}${newest ?: ""}")
+    }
 
     fun digest(value: String): String = MessageDigest.getInstance("SHA-256")
         .digest(value.toByteArray())

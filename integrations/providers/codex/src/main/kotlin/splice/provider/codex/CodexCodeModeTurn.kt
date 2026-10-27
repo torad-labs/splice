@@ -47,6 +47,10 @@ internal data class CodeModeRunContext(
 
     /** Records whose accepted result this request changed (a fork): their calls stay the client's. */
     var conflicts: Set<String> = emptySet()
+
+    /** The upstream post this request last kept. A sibling branch of the conversation can post while this one is
+     *  answered, so a script and its output follow this post, never the conversation's newest. */
+    var postId: Long? = null
 }
 
 /** The client-facing [sink] a round streams to, the [post] that sends its request upstream, and the request the
@@ -93,19 +97,14 @@ internal class CodexCodeModeTurn(
             currentCoroutineContext()[HeadStopKey],
             input.recovery,
         )
-        val held = input.post.perf?.timed(PerfKeys.CODE_MODE_TURN_LOCK_WAIT_MS) { locks.acquire(key) }
-            ?: locks.acquire(key)
+        val branchKey = identity.branchKey(key, input.body.request?.second)
+        val held = input.post.perf?.timed(PerfKeys.CODE_MODE_TURN_LOCK_WAIT_MS) { locks.acquire(branchKey, key) }
+            ?: locks.acquire(branchKey, key)
         val watched = driver.streams.watchCuts(key)
         return try {
             val outcome = try {
                 // An identical request is served before retention can trim its recorded step.
-                val replay = branch.replay(context)
-                if (replay != null) {
-                    replay
-                } else {
-                    registry.turnStart.begin(context.key)
-                    runLocked(context, input.initialOuter, input.body)
-                }
+                branch.replay(context) ?: started(context, input)
             } catch (error: CodeModePersistenceException) {
                 error.outcome()
             }
@@ -120,9 +119,16 @@ internal class CodexCodeModeTurn(
                 val cuts = driver.streams.takeCuts(watched, context.postedSources)
                 input.post.perf?.add(PerfKeys.CUT_SOURCE_ROUNDS, cuts)
             } finally {
-                locks.release(key, held)
+                locks.release(branchKey, key, held)
             }
         }
+    }
+
+    /** A new step of the conversation. A sibling branch's script is measured on the records a trim would let go,
+     *  so the trim waits until no sibling drive is queued or running. */
+    private suspend fun started(context: CodeModeRunContext, input: CodeModeRunInput): TurnOutcome {
+        if (locks.alone(context.key)) registry.turnStart.begin(context.key)
+        return runLocked(context, input.initialOuter, input.body)
     }
 
     private suspend fun runLocked(

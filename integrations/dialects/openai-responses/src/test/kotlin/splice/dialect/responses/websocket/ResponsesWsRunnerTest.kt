@@ -66,7 +66,11 @@ private fun meta(session: String? = "sess-1", conversation: String? = "splice-ab
 )
 
 /** A scripted socket: every send replies with the frames the script returns for that round. */
-private class Rig(private val webSocketPrefill: Boolean = false, private val script: (Int) -> List<String>) {
+private class Rig(
+    private val webSocketPrefill: Boolean = false,
+    private val webSocketPolicy: ResponsesWebSocketPolicy = ResponsesWebSocketPolicy(),
+    private val script: (Int) -> List<String>,
+) {
     var rounds = 0
     var socket: WebSocket? = null
     var sendFuture: (WebSocket) -> CompletableFuture<WebSocket> = { CompletableFuture.completedFuture(it) }
@@ -88,6 +92,7 @@ private class Rig(private val webSocketPrefill: Boolean = false, private val scr
         wssUrl = "wss://example.invalid/responses",
         handshakeHeaders = { emptyMap() },
         webSocketPrefill = webSocketPrefill,
+        webSocketPolicy = webSocketPolicy,
         log = LogSink { logs += it },
     )
 
@@ -254,8 +259,71 @@ class ResponsesWsTimingTest {
 
 class ResponsesWsPrefillRunnerTest {
     @Test
-    fun `warmup is consumed internally and generation chains from only the remaining input`() = runBlocking {
+    fun `an endpoint may keep additional-tools-only warmup without warming ordinary requests`() = runBlocking {
+        val bodies = listOf(
+            """{"model":"ordinary","instructions":"guide","input":[{"role":"user","content":"task"}]}""",
+            """{"model":"ordinary","tools":[{"type":"function","name":"lookup"}],
+                "input":[{"role":"developer","content":"guide"},{"role":"user","content":"task"}]}""",
+            """{"model":"ordinary","tools":[{"type":"function","name":"lookup"}],
+                "input":[{"type":"additional_tools","tools":[{"type":"function","name":"other"}]},
+                {"role":"user","content":"task"}]}""",
+        )
+        bodies.forEach { body ->
+            val rig = Rig(
+                webSocketPrefill = true,
+                webSocketPolicy = ResponsesWebSocketPolicy(additionalToolsPrefillOnly = true),
+            ) { listOf(completed("public_answer")) }
+
+            val events = requireNotNull(rig.round(body = body))
+            assertEquals("public_answer", events.last()["response"]!!.jsonObject["id"]!!.jsonPrimitive.content)
+            val generated = responsesRequestJson.parseToJsonElement(rig.sent.first()).jsonObject
+            val original = responsesRequestJson.parseToJsonElement(body).jsonObject
+            assertEquals(original["input"], generated["input"])
+            assertFalse("generate" in generated)
+            assertFalse("previous_response_id" in generated)
+        }
+    }
+
+    @Test
+    fun `ordinary public function requests can warm up and chain without an executor`() = runBlocking {
         val rig = Rig(webSocketPrefill = true) { round ->
+            if (round == 0) {
+                listOf(
+                    """{"type":"response.completed","response":{"id":"public_warm",
+                        "status":"completed","output":[]}}""",
+                )
+            } else {
+                listOf(completed("public_answer"))
+            }
+        }
+        val body = """{"model":"ordinary","instructions":"guide","tools":[
+            {"type":"function","name":"lookup","parameters":{"type":"object"},"strict":false}],
+            "input":[{"role":"user","content":"task"}]}"""
+
+        val events = requireNotNull(rig.round(body = body))
+        assertEquals("public_answer", events.last()["response"]!!.jsonObject["id"]!!.jsonPrimitive.content)
+        val warm = responsesRequestJson.parseToJsonElement(rig.sent.first()).jsonObject
+        val generated = responsesRequestJson.parseToJsonElement(rig.sent.last()).jsonObject
+        assertEquals("false", warm["generate"]?.jsonPrimitive?.content)
+        assertTrue(warm.getValue("input").jsonArray.isEmpty())
+        assertEquals("lookup", warm.getValue("tools").jsonArray.single().jsonObject["name"]?.jsonPrimitive?.content)
+        assertEquals("public_warm", generated["previous_response_id"]?.jsonPrimitive?.content)
+        assertEquals(
+            "task",
+            generated.getValue("input").jsonArray.single().jsonObject["content"]?.jsonPrimitive?.content,
+        )
+        assertFalse("generate" in generated)
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun `warmup is consumed internally and generation chains from only the remaining input`(
+        additionalToolsOnly: Boolean,
+    ) = runBlocking {
+        val rig = Rig(
+            webSocketPrefill = true,
+            webSocketPolicy = ResponsesWebSocketPolicy(additionalToolsPrefillOnly = additionalToolsOnly),
+        ) { round ->
             when (round) {
                 0 -> listOf(
                     """{"type":"response.created","response":{"id":"resp_warm","status":"in_progress"}}""",

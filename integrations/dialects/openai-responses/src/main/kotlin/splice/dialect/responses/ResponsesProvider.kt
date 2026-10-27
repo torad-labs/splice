@@ -13,10 +13,12 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
+import splice.dialect.responses.failure.ResponsesReplies
 import splice.dialect.responses.request.ResponsesCompactionTail
 import splice.dialect.responses.request.ResponsesParts
 import splice.dialect.responses.request.ResponsesSystemPrompt
 import splice.dialect.responses.stream.LiveFoldConfig
+import splice.dialect.responses.websocket.ResponsesWebSocketPolicy
 import splice.dialect.responses.websocket.ResponsesWsSupport
 import splice.dialect.responses.websocket.WsExtraHeaders
 import splice.upstream.BuiltTurn
@@ -30,6 +32,7 @@ import splice.upstream.StreamTranslator
 import splice.upstream.ToolNameShortener
 import splice.upstream.TurnSignals
 import splice.upstream.WsRoundRunner
+import splice.upstream.failure.Replies
 
 public abstract class ResponsesProvider(
     tuning: ProviderTuning,
@@ -46,6 +49,9 @@ public abstract class ResponsesProvider(
     private val log: LogSink = LogSink(DaemonLog::write),
     /** One head's reversible tool aliases, shared between requests and every stream round. */
     private val toolNames: ToolNameShortener = ToolNameShortener(),
+    /** This head's reading of its own failures: the Responses standard, and the deviation its own vendor declared
+     *  (codex's spent plan window and its policy refusals, xAI's expired token, Muse's soft reset). */
+    override val replies: Replies = Replies(ResponsesReplies),
 ) : Provider, ProviderIdentity by tuning {
 
     final override val showReasoning: ReasoningDisplay get() = reasoning.now().display
@@ -64,7 +70,7 @@ public abstract class ResponsesProvider(
     protected open fun perTurnHeaders(meta: TurnMeta): Map<String, String> = emptyMap()
 
     override fun requestRefusal(body: AnthropicTurnBody): RequestRefusal? =
-        splice.dialect.responses.request.ResponsesOutputSchema.refusal(body.typed, body.raw)
+        splice.dialect.responses.request.ResponsesOutputSchema.refusal(body.typed, body.raw, quirks)
 
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
         val built = parts.builder.build(body.typed, body.raw, parts.turnOptions.build(body, compact, sessionId))
@@ -108,6 +114,9 @@ public abstract class ResponsesProvider(
      *  provider that has PROVEN the protocol against its own upstream overrides this. */
     protected open val supportsWebSocket: Boolean = false
 
+    /** Endpoint-owned handshake negotiation and prefix admission, never executor selection. */
+    protected open val webSocketPolicy: ResponsesWebSocketPolicy = ResponsesWebSocketPolicy()
+
     /** ws-transport WS-3: non-null ONLY when the operator opted in AND this provider's upstream
      *  was actually probed. With the quirk off no WsUpstream is constructed and the request path is
      *  byte-identical to before the overlay landed — the property that makes it safe to ship.
@@ -117,7 +126,7 @@ public abstract class ResponsesProvider(
      *  override before it existed, so EVERY provider got null and the overlay could never arm —
      *  caught by WsQuirkWiringTest, and it would have silently disabled the feature in production. */
     final override val wsRunner: WsRoundRunner? by lazy {
-        ResponsesWsSupport(log, extraHeaders = WsExtraHeaders { extraHeaders(it) })
+        ResponsesWsSupport(log, extraHeaders = WsExtraHeaders { extraHeaders(it) }, policy = webSocketPolicy)
             .runner(quirks.backend.webSocket, supportsWebSocket, upstreamUrl, quirks.backend.webSocketPrefill)
     }
 

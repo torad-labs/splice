@@ -92,7 +92,7 @@ internal class ResponsesWsPrefiller(
                 connection.generation,
                 built.epoch,
             )
-            log("[ws] ${identity.logKey(context.key)} prefill send code=native_code_mode_prefix\n")
+            log("[ws] ${identity.logKey(context.key)} prefill send code=reusable_instruction_tool_prefix\n")
             built.frame.json
         }
         return PrefillRound(flow, commit)

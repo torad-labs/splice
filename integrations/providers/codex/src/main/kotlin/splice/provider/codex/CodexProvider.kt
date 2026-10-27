@@ -13,13 +13,17 @@ import splice.core.util.LogSink
 import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.failure.ResponsesReplies
 import splice.dialect.responses.request.ResponsesToolResultMedia
 import splice.dialect.responses.stream.LiveFoldConfig
 import splice.dialect.responses.websocket.CODEX_TURN_STATE_HEADER
+import splice.dialect.responses.websocket.ResponsesWebSocketPolicy
+import splice.provider.codex.failure.CodexReplies
 import splice.provider.codex.request.CodexRequestConstraints
 import splice.upstream.BuiltTurn
 import splice.upstream.ProviderTuning
 import splice.upstream.RequestRefusal
+import splice.upstream.failure.Replies
 import splice.upstream.transport.UpstreamResponse
 
 public class CodexProvider(
@@ -33,7 +37,15 @@ public class CodexProvider(
      *  /mgmt/logs and not stderr alone (wall kt-no-println, 2026-07-27). */
     log: LogSink = LogSink(DaemonLog::write),
     private val codeMode: CodexCodeModeWiring = CodexCodeModeWiring(),
-) : ResponsesProvider(tuning, reasoning, quirks, foldConfig, log) {
+) : ResponsesProvider(
+    tuning,
+    reasoning,
+    quirks,
+    foldConfig,
+    log,
+    // Install this head's reading before the base initializes its Responses terminal handling.
+    replies = Replies(ResponsesReplies, CodexReplies),
+) {
 
     private val codeModeTurns = codeMode.turnBuilder(ResponsesToolResultMedia(quirks))
 
@@ -63,6 +75,12 @@ public class CodexProvider(
     override fun observeResponseHeaders(meta: TurnMeta, response: UpstreamResponse) {
         meta.upstreamHeaders.capture(CODEX_TURN_STATE_HEADER, response.header(CODEX_TURN_STATE_HEADER))
     }
+
+    /** Keep this route's measured negotiation and warmup surface out of ordinary Responses heads. */
+    protected override val webSocketPolicy: ResponsesWebSocketPolicy = ResponsesWebSocketPolicy(
+        negotiationHeaders = mapOf("OpenAI-Beta" to "responses_websockets=2026-02-06"),
+        additionalToolsPrefillOnly = true,
+    )
 
     override fun extraHeaders(creds: Credentials): Map<String, String> = buildMap {
         put("Accept", "text/event-stream")

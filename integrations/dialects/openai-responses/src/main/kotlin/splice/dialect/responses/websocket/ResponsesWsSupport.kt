@@ -8,10 +8,6 @@ import splice.core.auth.Credentials
 import splice.core.util.LogSink
 import splice.upstream.WsRoundRunner
 
-/** The v2 Responses-WebSocket beta value codex-rs sends (codex-rs/core/src/client.rs:155),
- *  confirmed accepted by the live backend in the WS-0 spike. */
-private const val WS_BETA_HEADER = "responses_websockets=2026-02-06"
-
 /** Per-handshake extra headers beyond the WS Authorization set — the same role
  *  Provider.extraHeaders plays on the SSE path. */
 internal fun interface WsExtraHeaders {
@@ -21,6 +17,7 @@ internal fun interface WsExtraHeaders {
 internal class ResponsesWsSupport(
     private val log: LogSink,
     private val extraHeaders: WsExtraHeaders,
+    private val policy: ResponsesWebSocketPolicy = ResponsesWebSocketPolicy(),
 ) {
     /** Non-null ONLY when the operator opted in AND this provider's upstream was actually
      *  probed. With the quirk off no WsUpstream is constructed. */
@@ -44,13 +41,14 @@ internal class ResponsesWsSupport(
                 val auth = when (creds) {
                     is Credentials.Bearer -> mapOf("Authorization" to "Bearer ${creds.token}")
                     is Credentials.ApiKey -> mapOf(creds.header to "${creds.prefix}${creds.key}")
-                    // Forward mode is an anthropic-passthrough concept; this WS overlay is
-                    // codex-only and never sees it. Emit nothing rather than invent a header.
+                    // Forward mode is an anthropic-passthrough concept. Emit nothing rather
+                    // than invent a header if a Responses provider receives it.
                     Credentials.ClientForwarded -> emptyMap()
                 }
-                auth + extraHeaders(creds) + mapOf("OpenAI-Beta" to WS_BETA_HEADER)
+                auth + extraHeaders(creds) + policy.negotiationHeaders
             },
             webSocketPrefill = webSocketPrefill,
+            webSocketPolicy = policy,
             log = log,
         )
     }

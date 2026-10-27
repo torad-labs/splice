@@ -49,6 +49,7 @@ internal class ResponsesWsRunner(
     private val wssUrl: String,
     private val handshakeHeaders: HandshakeHeaders,
     private val webSocketPrefill: Boolean = false,
+    private val webSocketPolicy: ResponsesWebSocketPolicy = ResponsesWebSocketPolicy(),
     private val log: LogSink = LogSink {},
 ) : WsRoundRunner {
 
@@ -86,7 +87,7 @@ internal class ResponsesWsRunner(
         val headers = handshakeHeaders(creds) + turnHeaders + handshakeOnlyHeaders(turnHeaders)
         val key = identity.connectionKey(chain, meta, headers)
         val seed = ResponsesWsPrefiller.PrefillSeed(request, chain, key, headers, meta, perf)
-        val prefillContext = prefiller.context(seed)
+        val prefillContext = if (webSocketPolicy.acceptsPrefill(request)) prefiller.context(seed) else null
         return if (prefillContext == null || prefiller.run(prefillContext)) serve(seed, turnHeaders) else null
     }
 

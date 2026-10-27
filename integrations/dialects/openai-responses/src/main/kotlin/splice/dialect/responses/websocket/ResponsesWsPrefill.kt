@@ -6,25 +6,24 @@ import kotlinx.serialization.json.JsonPrimitive
 import splice.core.util.JsonScalars
 import splice.dialect.responses.LITE_ADDITIONAL_TOOLS_TYPE
 
-/** Native Codex's first Responses-WebSocket frame: warm only the ordered instruction/tool prefix. */
+/** Public Responses-WebSocket warmup: retain declarations and only the leading instruction/tool items. */
 internal object ResponsesWsPrefill {
     fun request(full: JsonObject): JsonObject? {
-        val input = if (isCodeModeRequest(full)) full[FIELD_INPUT] as? JsonArray else null
-        val prefix = input?.takeWhile(::isPrefixItem)
-        // An empty prefix can still be a valid tool-surface warmup, but an empty frame with no
-        // reusable instructions or tools is not useful and must not become a fabricated input.
-        return prefix?.takeIf { it.isNotEmpty() && it.any(::isAdditionalTools) }?.let {
-            JsonObject(
-                full.toMutableMap().apply {
-                    this[FIELD_INPUT] = JsonArray(it)
-                    this["generate"] = JsonPrimitive(false)
-                    remove("previous_response_id")
-                },
-            )
-        }
+        val prefix = (full[FIELD_INPUT] as? JsonArray)?.takeWhile(::isPrefixItem).orEmpty()
+        val reusable = prefix.isNotEmpty() || JsonScalars.str(full["instructions"])?.isNotBlank() == true ||
+            (full["tools"] as? JsonArray)?.isNotEmpty() == true
+        if (!reusable) return null
+        return JsonObject(
+            full.toMutableMap().apply {
+                this[FIELD_INPUT] = JsonArray(prefix)
+                this["generate"] = JsonPrimitive(false)
+                remove("previous_response_id")
+            },
+        )
     }
 
-    fun isCodeModeRequest(request: JsonObject): Boolean {
+    /** An endpoint may admit only its measured additional-tools surface, without selecting a runtime. */
+    fun hasAdditionalToolsPrefix(request: JsonObject): Boolean {
         if (request["tools"] != null) return false
         val input = request[FIELD_INPUT] as? JsonArray ?: return false
         return input.takeWhile(::isPrefixItem).any(::isAdditionalTools)

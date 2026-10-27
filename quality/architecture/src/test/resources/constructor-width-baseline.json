@@ -33,9 +33,9 @@
       "subsystems": 0
     },
     "features/sessions/src/main/kotlin/splice/sessions/peer/helper/PeerRegistryShapes.kt RegistryRecordFile": {
-      "params": 18,
+      "params": 19,
       "subsystems": 0,
-      "reason": "peer messaging package B, 2026-10-19: @Serializable mirror of Claude Code's ~/.claude/sessions/<pid>.json registry record, field by field (spec 2.2), the outside-format exception Marcos set for LongParameterList on 2026-10-09"
+      "reason": "peer messaging package B, 2026-10-19: @Serializable mirror of Claude Code's ~/.claude/sessions/<pid>.json registry record, field by field (spec 2.2), the outside-format exception Marcos set for LongParameterList on 2026-10-09; 2026-10-27: codex peers add the record's lifecycleBinding, the field Fence verifies a Codex thread's owner by"
     },
     "core/src/main/kotlin/splice/core/turn/Turn.kt TurnMeta": {
       "params": 19,

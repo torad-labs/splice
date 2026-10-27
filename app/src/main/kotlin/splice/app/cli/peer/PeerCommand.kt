@@ -29,6 +29,7 @@ internal class PeerCommand(
         val code = when (verb) {
             "register", "list", "revoke", "rotate", "webhook" -> manage(verb, rest)
             "send", "inbox", "status" -> asPeer(verb, rest)
+            "codex" -> PeerCodexCommand(call, out, env).run(rest)
             else -> null
         }
         if (code == null) err.line("usage: splice peer $PEER_USAGE")

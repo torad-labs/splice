@@ -1,6 +1,7 @@
 // NEW: peer messaging, package B (docs/specs/peer-messaging.md 4.1 and 4.2) — what a started peer helper runs, moved
 // verbatim out of PeerHelperMain.kt: the inbox socket, the registry heartbeat every 30 s, the look at peer.json every
-// 10 s, and the webhook pusher, started again on a changed peer.json or a SIGHUP.
+// 10 s, and the webhook pusher, started again on a changed peer.json or a SIGHUP. A codex peer's helper (Oct 27, 2026)
+// also hands its messages to its Codex thread, and stops once the thread can no longer be reached.
 package splice.app.peer
 
 import kotlinx.coroutines.CompletableDeferred
@@ -9,12 +10,18 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import splice.app.peer.codex.CodexPeerParts
+import splice.app.peer.codex.CodexPeerRun
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.sessions.note.PeerNoteSocket
 import splice.sessions.note.PeerTargets
 import splice.sessions.peer.PeerConfig
 import splice.sessions.peer.PeerSender
+import splice.sessions.peer.codex.CodexBinding
+import splice.sessions.peer.codex.CodexLedger
+import splice.sessions.peer.codex.CodexReturns
 import splice.sessions.peer.helper.HelperSetup
 import splice.sessions.peer.helper.PeerFileState
 import splice.sessions.peer.helper.RunningHelper
@@ -80,8 +87,23 @@ internal class HelperLoops(
         scope.launch { while (ticker.awaitTick(HEARTBEAT_MS)) helper.heartbeat() }
         scope.launch { while (ticker.awaitTick(LOOK_MS)) look() }
         scope.launch { pushes() }
+        PeerStore(setup.settingsDir).codexThreads[setup.name]?.let { binding ->
+            scope.launch { codex(binding, CodexReturns(outbox, sender)) }
+        }
         listenForHangup()
         helper.heartbeat()
+    }
+
+    /** A codex peer hands its messages to its thread until the thread can no longer be reached, then the helper
+     *  journals that the thread ended and stops, and the daemon revokes the peer (docs/peers.md). */
+    private suspend fun codex(binding: CodexBinding, returns: CodexReturns) {
+        val parts = CodexPeerParts(helper, journal, returns, sink)
+        val ran = Cancellables.runCatchingCancellable { CodexPeerRun(binding, parts).run(io) }
+        ran.exceptionOrNull()?.let { log.error("codex", it) }
+        val why = ran.getOrElse { "the codex peer failed: ${SafeFailureText.render(it)}" }
+        log.note("codex thread ended", why)
+        CodexLedger(journal).ended(why)
+        stop.complete(Unit)
     }
 
     private fun look() {

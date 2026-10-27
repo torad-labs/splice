@@ -94,6 +94,21 @@ internal class JournalScan(private val live: Path, private val rolled: Path) {
         return null
     }
 
+    /** The newest codex record in the tail of either file, or null when there is none; with [handOver], the newest
+     *  one that names a message (`ref`), past the records of the thread's start and end. */
+    fun lastCodex(handOver: Boolean = false): JsonObject? {
+        for (file in listOf(live, rolled)) {
+            val record = JournalLines.tail(file).asReversed().firstNotNullOfOrNull { line ->
+                JournalLines.parse(line)?.takeIf { codex(it, handOver) }
+            }
+            if (record != null) return record
+        }
+        return null
+    }
+
+    private fun codex(record: JsonObject, handOver: Boolean): Boolean =
+        JournalLines.isKind(record, PEER_KIND_CODEX) && (!handOver || record.containsKey("ref"))
+
     /** The highest seq and the newest message ids, from the rolled file to the live one. */
     fun load(): Loaded {
         var last = 0L

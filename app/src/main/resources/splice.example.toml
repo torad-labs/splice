@@ -1023,6 +1023,9 @@ command = "claude-splice"
 #   SPLICE_PEER_KEY_FILE    the peer key file `splice peer send|inbox|status` presents, in place of
 #                           <settings dir>/peers/<--as>/peer.key; a path, never the key itself, so the
 #                           key stays out of argv and the environment's own dumps
+#   CODEX_THREAD_ID / CODEX_SESSION_ID  set by Codex inside a conversation, never by an operator: the thread
+#                           `splice peer codex attach|detach` names when given none, and, for CODEX_THREAD_ID,
+#                           the codex peer `splice peer send|inbox|status` act as when no --as is given
 #   XDG_RUNTIME_DIR         set by the login session, never by an operator: the runtime folder whose
 #                           cc-socks/ holds a peer helper's inbox socket, as Claude Code's sockets are
 #   LISTEN_PID / LISTEN_FDS / LISTEN_FDNAMES  set by a socket manager (systemd socket activation), never by an

@@ -29,7 +29,7 @@ private const val DEFAULT_INBOX_LIMIT = 50
 // why: spec 3.3, 200 records of at most 32 KiB text each is the most one inbox read may return.
 private const val MAX_INBOX_LIMIT = 200
 
-private val INBOX_KINDS = setOf("message", "receipt", "webhook")
+private val INBOX_KINDS = setOf("message", "receipt", "webhook", "codex")
 
 /** A valid inbox query (spec 3.3). */
 private data class InboxQuery(val after: Long, val limit: Int, val kinds: Set<String>)
@@ -52,7 +52,7 @@ internal class PeerSelfRoutes(private val parts: PeerParts, private val rate: Pe
         val answer = when {
             query == null -> PeerReplies.refuse(
                 HttpStatusCode.BadRequest,
-                "after is a seq, limit 1 to $MAX_INBOX_LIMIT, and kinds of message, receipt and webhook",
+                "after is a seq, limit 1 to $MAX_INBOX_LIMIT, and kinds of message, receipt, webhook and codex",
             )
             mail == null -> PeerReplies.refuse(HttpStatusCode.ServiceUnavailable, PEER_MAIL_UNWIRED)
             else -> {

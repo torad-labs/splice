@@ -13,6 +13,7 @@ import splice.daemonclient.ControlPlaneClient
 import splice.daemonclient.ControlReply
 import splice.daemonclient.MgmtKeyRead
 import splice.daemonclient.PostReading
+import splice.sessions.peer.codex.CodexNames
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
@@ -34,6 +35,7 @@ internal class PeerCall(
     private val err: TerminalOutput,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+    private val codexNames = CodexNames()
 
     /** The management key, or null with the reason printed. */
     fun managementKey(): String? = when (val read = AdminSupport.readMgmtKey(env)) {
@@ -42,18 +44,19 @@ internal class PeerCall(
         is MgmtKeyRead.Unreadable -> fail("the management key is unreadable: ${read.reason}")
     }
 
-    /** The peer key: `SPLICE_PEER_KEY_FILE` when set, else `<settings dir>/peers/<as>/peer.key`. Null once printed. */
-    fun peerKey(asName: String?): String? {
+    /** The peer key: `SPLICE_PEER_KEY_FILE` when set, else `<settings dir>/peers/<as>/peer.key`, where `--as` defaults,
+     *  inside a Codex conversation, to that thread's codex peer. Null once printed. */
+    fun peerKey(asOption: String?): String? {
         val named = env(PEER_KEY_FILE_ENV)?.let { Path.of(it) }
-        val path = named
-            ?: asName?.let { settingsDir().resolve("peers").resolve(it).resolve("peer.key") }
-            ?: return fail("--as <name> or $PEER_KEY_FILE_ENV names the peer to act as")
+        val path = named ?: keyFileOf(asOption)
+            ?: return fail("--as <name>, $PEER_KEY_FILE_ENV or a Codex conversation names the peer to act as")
         return try {
             Files.readString(path).trim().takeIf { it.isNotEmpty() } ?: fail("the peer key file $path is empty")
         } catch (_: NoSuchFileException) {
             fail(
                 if (named == null) {
-                    "$asName is not a registered peer: there is no key file at $path (splice peer list shows them)"
+                    "${path.parent?.fileName} is not a registered peer: there is no key file at $path " +
+                        "(splice peer list shows them)"
                 } else {
                     "no registered peer has the key file $path: it was never registered, or it was revoked"
                 },
@@ -62,6 +65,12 @@ internal class PeerCall(
             fail("cannot read the peer key file $path: ${SafeFailureText.render(unreadable)}")
         }
     }
+
+    /** `<settings dir>/peers/<as>/peer.key`, where `--as` defaults, inside a Codex conversation, to that thread's codex
+     *  peer (docs/peers.md); null when neither names one. */
+    private fun keyFileOf(asOption: String?): Path? =
+        (asOption ?: env(CODEX_THREAD_ENV)?.let(codexNames::thread)?.let(codexNames::peer))
+            ?.let { settingsDir().resolve("peers").resolve(it).resolve("peer.key") }
 
     /** `<settings dir>`: the folder holding splice.toml, where `peers/` lives. */
     fun settingsDir(): Path = KeyStorePath.defaultPath(env).toAbsolutePath().parent

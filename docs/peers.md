@@ -126,6 +126,53 @@ registry record, socket and key. The journal stays unless you pass `--purge`.
 
 The peer's process outlives a Splice restart. It runs as `splice-peer` and holds about 48 MB.
 
+## A Codex thread as a peer
+
+A native Codex conversation can be a peer too. Every Claude Code session then sees it in ListAgents as
+`codex-<thread id>`, with the thread's id as its session id, and a message sent to it arrives in the conversation
+as a turn.
+
+```
+splice peer codex attach
+splice peer codex attach 019a2f6c-4b1e-7c3d-9e8f-0a1b2c3d4e5f --codex-home ~/.codex --cwd ~/work
+splice peer codex detach
+```
+
+Inside a Codex conversation the thread is `$CODEX_THREAD_ID`, the Codex home is `$CODEX_HOME` (else `~/.codex`) and
+the working directory is the command's own, so `attach` needs no argument. A Codex hook runs it on each event: an
+attach that finds the peer as asked changes nothing and answers once its helper runs. Attach is refused when no
+Codex app-server listens on the home's `app-server-control/app-server-control.sock` (or the daemon its
+`app-server-daemon/daemon.pid` names), because no message could reach the thread then.
+
+Attach looks up its own ancestry for the nearest process running `codex`. When it finds one, the peer's registry
+record carries a `lifecycleBinding` (version 1) naming that process as the thread's native owner and the peer's
+helper as the process that receives for it, which is how Fence tells which conversation a Codex hook belongs to. The
+binding is written only while that process is still the one named.
+
+The helper hands each message it receives to the thread with the app-server's `turn/start`, one at a time and in
+order, in Claude Code's own envelope (`<cross-session-message from="…" from-name="…">`), with the message's id as
+the input's client id. The thread answers with `splice peer send`, which inside the conversation acts as its codex
+peer without `--as`:
+
+```
+splice peer send gary "the gate is green"
+splice peer inbox
+```
+
+Each hand-over is journaled as a `codex` record: `issuing` before the request goes out, then `started` with the turn
+Codex named, `refused` with Codex's reason, or `unconfirmed` when the request went out and no answer came. Nothing is
+handed over twice. A helper that stops between `issuing` and its outcome leaves the next helper to read the thread's
+history: `started` when the history holds the message, `unconfirmed` otherwise, never a second send. A message Codex
+refused gets a `dropped` receipt, so its sender learns the thread never saw it. The record's status is `busy` while
+the thread runs a turn and `idle` otherwise.
+
+When the thread closes or unloads, or its app-server closes the connection, the helper journals `ended` and stops,
+and the daemon revokes the peer; its journal stays. A thread that loads again attaches again from its next hook. The
+helper answers no request the app-server makes of it, such as an approval, and grants the thread no tool.
+
+A codex peer does not count against the 16 peers a user registers by hand; at most 64 Codex threads are peers at
+once. `splice peer codex detach` revokes one at once, and `--purge` deletes its journal too.
+
 ## Exit codes
 
 | Code | Meaning |
@@ -147,6 +194,7 @@ The peer's process outlives a Splice restart. It runs as `splice-peer` and holds
 | `<settings dir>/peers/<name>/webhook.bearer` | the optional webhook bearer |
 | `<state dir>/peers/<name>/journal.jsonl` | what the peer received, rotated at 50 MiB |
 | `<state dir>/peers/<name>/outbox.jsonl` | one line per send, with the size and never the text |
+| `<state dir>/peers/<name>/codex.cursor` | a codex peer's last message handed to its thread |
 | `~/.claude/sessions/<pid>.json` and its `.key` | the registry record that makes the peer visible to Claude Code |
 
 Folders are mode 0700 and files 0600, except the registry record, which is 0644 as Claude Code writes its own.

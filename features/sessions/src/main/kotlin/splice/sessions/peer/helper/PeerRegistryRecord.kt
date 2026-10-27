@@ -3,7 +3,9 @@
 // key file `<pid>.<sha256hex(socket path)>.key`, which holds the `peerToken` a sender writes on its auth line. They are the
 // fields grokbot-mailbox writes, with Splice's values. The key file goes first and the record second, so a session never
 // reads a record whose token is not yet on disk; withdrawal runs the other way. The record carries no secret and is 0644,
-// as Claude Code writes its own; the key file is 0600.
+// as Claude Code writes its own; the key file is 0600. A codex peer's record (Oct 27, 2026) also says whether its
+// thread is busy, and carries the lifecycle binding Fence reads: the Codex process that hosts the thread, and the
+// helper that receives for it.
 package splice.sessions.peer.helper
 
 import kotlinx.serialization.json.Json
@@ -21,6 +23,10 @@ import java.util.HexFormat
 
 /** The registry record, readable by every process of this user as Claude Code's own are. */
 private const val RECORD_MODE = "rw-r--r--"
+
+/** The status a codex peer's record shows while its thread runs a turn, as Claude Code spells a working session. The
+ *  record's own default is the idle one. */
+private const val BUSY_STATUS = "busy"
 
 /** The record and key file names in each registry directory, and whether a record there is a given peer's. */
 public class PeerRegistryFiles(internal val directories: List<Path>) {
@@ -78,6 +84,32 @@ public class PeerRegistryRecord(
     private val socket: Path,
     private val clock: WallClock,
 ) {
+    /** Whether the record says the peer is `busy`, as a codex peer's is while its thread runs a turn; else `idle`. */
+    @Volatile
+    private var busy: Boolean = false
+
+    /** The lifecycle binding, for a codex peer whose thread's Codex process attached it; written in every record. */
+    private val binding: RegistryBinding? = peer.owner?.let { owner ->
+        val procStart = identity.procStart
+        val domain = identity.pidDomain
+        if (procStart == null || domain == null) {
+            null
+        } else {
+            RegistryBinding(
+                sessionId = peer.sessionId,
+                nativeOwner = RegistryProcess(owner.pid, owner.procStart, owner.pidDomain),
+                peer = RegistryProcess(identity.pid, procStart, domain),
+            )
+        }
+    }
+
+    /** Rewrites every record as `busy` or `idle` when that changed; the reason when one failed. */
+    public fun busy(value: Boolean): String? {
+        if (value == busy) return null
+        busy = value
+        return heartbeat()
+    }
+
     /** Writes the key file holding [token], then the record, into each directory; the reason when one failed. */
     public fun publish(token: String): String? {
         val key = files.encode(RegistryKeyFile(token, identity.procStart, identity.pidDomain))
@@ -115,9 +147,10 @@ public class PeerRegistryRecord(
             nameSince = identity.startedAt,
             updatedAt = now,
             statusUpdatedAt = now,
+            lifecycleBinding = binding,
         )
         val path = files.record(dir, identity.pid)
-        SecureFile.writeAtomic0600(path, files.encode(record))
+        SecureFile.writeAtomic0600(path, files.encode(if (busy) record.copy(status = BUSY_STATUS) else record))
         Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(RECORD_MODE))
     }
 }

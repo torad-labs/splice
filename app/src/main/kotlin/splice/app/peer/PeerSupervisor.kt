@@ -10,12 +10,14 @@
 // record, key file and socket are removed only when the record is this peer's or gone. Revoke deletes the peer's folder
 // before it stops the helper, so the supervisor keeps each peer's session id from the last time it saw peer.json; a
 // dead helper's leftovers are cleared before its restart, so a later revoke never meets a socket no helper.json names.
+// A codex peer whose helper journaled that its thread ended (Oct 27, 2026) is revoked instead of started again.
 package splice.app.peer
 
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.runInterruptible
 import splice.app.control.peer.PeerHelpers
 import splice.app.control.peer.RunningHelper
+import splice.app.peer.codex.CodexEnds
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.LogSafe
@@ -81,6 +83,7 @@ internal class PeerSupervisor(
     private val helpers = HelperFiles()
     private val build = PeerBuild()
     private val restarts = ConcurrentHashMap<String, Restarts>()
+    private val ends = CodexEnds(store, places.stateDir, log)
 
     /** Each peer's session id as last read from peer.json, for the leftovers of a peer whose folder is gone. */
     private val sessions = ConcurrentHashMap<String, String>()
@@ -161,7 +164,7 @@ internal class PeerSupervisor(
         }
     }
 
-    private fun reconcile() {
+    private suspend fun reconcile() {
         held.retainAll { store.get(it) != null }
         for (peer in store.list()) {
             sessions[peer.name] = peer.sessionId
@@ -169,7 +172,7 @@ internal class PeerSupervisor(
         }
     }
 
-    private fun reconcile(name: String, sessionId: String) {
+    private suspend fun reconcile(name: String, sessionId: String) {
         val files = PeerStateFiles(places.stateDir, name)
         val helper = helpers.read(files)
         val now = clock()
@@ -180,10 +183,17 @@ internal class PeerSupervisor(
         val last = restarts[name]
         if (last != null && now - last.lastStart < HELPER_START_GRACE_MS + backoff(last.failures)) return
         helper?.let { leftovers(name, it, files, sessionId) }
-        launch(name, failures = (last?.failures ?: 0) + 1)
+        launch(name, failures = (last?.failures ?: 0) + 1, since = last?.lastStart ?: 0L)
     }
 
-    private fun launch(name: String, failures: Int) {
+    /** Starts [name]'s helper, unless it is a codex peer whose helper journaled, since [since], that its thread ended:
+     *  that peer is revoked instead, and nothing starts for it until its thread attaches again. */
+    private suspend fun launch(name: String, failures: Int, since: Long = 0L) {
+        if (ends.retired(name, since)) {
+            restarts.remove(name)
+            sessions.remove(name)
+            return
+        }
         restarts[name] = Restarts(failures, clock())
         val refused = launcher.launch(name)
         when {

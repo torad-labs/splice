@@ -14,6 +14,9 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
+private const val OUTCOME = "outcome"
+private const val DETAIL = "detail"
+
 /** `--after` and `--limit`, read. */
 internal data class InboxWindow(val after: Long, val limit: Long)
 
@@ -38,21 +41,21 @@ internal class PeerLines(private val out: TerminalOutput) {
     }
 
     fun status(body: JsonObject) {
-        out.line(JsonScalars.str(body, "outcome") ?: "unknown")
+        out.line(JsonScalars.str(body, OUTCOME) ?: "unknown")
         val receipt = body["receipt"] as? JsonObject
         if (receipt == null) {
             out.line("no problem reported")
             return
         }
         val at = JsonScalars.long(receipt, "at")?.let { time.format(Instant.ofEpochMilli(it)) } ?: "?"
-        val detail = JsonScalars.str(receipt, "detail")?.let { " ($it)" }.orEmpty()
+        val detail = JsonScalars.str(receipt, DETAIL)?.let { " ($it)" }.orEmpty()
         out.line("${JsonScalars.str(receipt, "status")}$detail at $at")
     }
 
     fun webhookTest(body: JsonObject): String {
         val status = JsonScalars.long(body, "httpStatus")?.let { "HTTP $it" } ?: "no HTTP answer"
-        val detail = JsonScalars.str(body, "detail")?.let { ": $it" }.orEmpty()
-        return "${JsonScalars.str(body, "outcome")}, $status$detail"
+        val detail = JsonScalars.str(body, DETAIL)?.let { ": $it" }.orEmpty()
+        return "${JsonScalars.str(body, OUTCOME)}, $status$detail"
     }
 
     private fun peer(peer: JsonObject): String {
@@ -70,19 +73,29 @@ internal class PeerLines(private val out: TerminalOutput) {
             "message" -> "message from ${sender(from)}, auth ${JsonScalars.str(record, "auth") ?: "none"}"
             "receipt" -> receipt(record, from)
             "webhook" -> webhook(record)
+            "codex" -> codex(record)
             else -> JsonScalars.str(record, "kind") ?: "record"
         }
     }
 
+    /** A codex peer's hand-over of message #ref to its thread, or the thread's end when it names no message. */
+    private fun codex(record: JsonObject): String {
+        val outcome = JsonScalars.str(record, OUTCOME)
+        val ref = JsonScalars.long(record, "ref")?.let { " for #$it" }.orEmpty()
+        val turn = JsonScalars.str(record, "turn")?.let { ", turn $it" }.orEmpty()
+        val detail = JsonScalars.str(record, DETAIL)?.let { " ($it)" }.orEmpty()
+        return if (ref.isEmpty()) "codex thread $outcome$detail" else "codex $outcome$ref$turn$detail"
+    }
+
     private fun receipt(record: JsonObject, from: JsonObject?): String {
-        val detail = JsonScalars.str(record, "detail")?.let { " ($it)" }.orEmpty()
+        val detail = JsonScalars.str(record, DETAIL)?.let { " ($it)" }.orEmpty()
         return "receipt ${JsonScalars.str(record, "status")}$detail for ${JsonScalars.str(record, "origMsgId")}" +
             " from ${sender(from)}"
     }
 
     private fun webhook(record: JsonObject): String {
         val status = JsonScalars.long(record, "httpStatus")?.let { "HTTP $it" } ?: "no HTTP answer"
-        return "webhook ${JsonScalars.str(record, "outcome")} for #${JsonScalars.long(record, "ref")} " +
+        return "webhook ${JsonScalars.str(record, OUTCOME)} for #${JsonScalars.long(record, "ref")} " +
             "($status, ${JsonScalars.long(record, "attempts")} tries)"
     }
 

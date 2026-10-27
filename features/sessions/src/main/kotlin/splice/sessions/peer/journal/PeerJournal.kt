@@ -51,6 +51,9 @@ public class PeerJournal(
     private val ioLock = Any()
     private val recent = LinkedHashSet<String>()
     private val wake = Channel<Unit>(Channel.CONFLATED)
+
+    /** The codex peer's own wake: a conflated channel wakes one receiver, and the webhook pusher holds [wake]. */
+    private val codexWake = Channel<Unit>(Channel.CONFLATED)
     private var nextSeq: Long = 0L
     private var prepared: Boolean = false
 
@@ -94,8 +97,6 @@ public class PeerJournal(
         if (cursors.resetWebhook()) log("[peers] ${LogSafe.str(name)}: the webhook cursor was reset")
     }
 
-    internal fun lastSeq(): Long = scan.lastSeq()
-
     /** The new message's seq, or null when its id is among the last 1,000 messages and nothing is written. */
     internal fun appendMessage(entry: JournalRecords.MessageEntry): Long? = synchronized(ioLock) {
         loadOnce()
@@ -105,6 +106,7 @@ public class PeerJournal(
             val seq = commit(RecordLine { n, now -> JournalRecords.message(n, now, entry) })
             if (recent.add(entry.id) && recent.size > PEER_JOURNAL_RECENT_IDS) recent.remove(recent.first())
             wake.trySend(Unit)
+            codexWake.trySend(Unit)
             seq
         }
     }
@@ -119,10 +121,19 @@ public class PeerJournal(
         commit(RecordLine { n, now -> JournalRecords.webhook(n, now, entry) })
     }
 
-    /** Suspends until a message has been appended since the last call returned. */
-    internal suspend fun awaitMessage() {
-        wake.receive()
+    /** Suspends until a message has been appended since the last call returned. The webhook pusher and a codex peer's
+     *  hand-over ([forCodex]) each wait on their own signal. */
+    internal suspend fun awaitMessage(forCodex: Boolean = false) {
+        (if (forCodex) codexWake else wake).receive()
     }
+
+    internal fun appendCodex(entry: JournalRecords.CodexEntry): Long = synchronized(ioLock) {
+        loadOnce()
+        commit(RecordLine { n, now -> JournalRecords.codex(n, now, entry) })
+    }
+
+    /** The reads over the journal's files, for a reader that needs one [PeerJournal] does not offer. */
+    internal val scanner: JournalScan get() = scan
 
     /** Writes the next record, rolling the journal first when it would pass the size; the record's seq. */
     private fun commit(line: RecordLine): Long {

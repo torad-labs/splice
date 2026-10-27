@@ -8,7 +8,8 @@ internal const val PEER_USAGE =
     "register <name> [--cwd DIR] [--send-to A,B] | list [--json] | revoke <name> [--purge] | rotate <name> | " +
         "webhook set <name> <url> [--bearer-file F] | webhook clear <name> | webhook test <name> | " +
         "send --as <name> <to> <text|-> | " +
-        "inbox --as <name> [--after N] [--limit N] [--ack] [--json] [--follow] | status --as <name> <msgId>"
+        "inbox --as <name> [--after N] [--limit N] [--ack] [--json] [--follow] | status --as <name> <msgId> | " +
+        "codex attach [<thread>] [--cwd DIR] [--codex-home DIR] [--json] | codex detach [<thread>] [--purge]"
 
 /** One verb's words: the positionals in order, the flags that take a value, and the switches that stand alone. */
 internal data class PeerArgs(val words: List<String>, val values: Map<String, String>, val switches: Set<String>)

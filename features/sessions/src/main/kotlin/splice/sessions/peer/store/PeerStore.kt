@@ -2,7 +2,6 @@ package splice.sessions.peer.store
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import splice.core.auth.BearerScheme
 import splice.core.util.Cancellables
@@ -12,6 +11,9 @@ import splice.sessions.peer.PeerConfig
 import splice.sessions.peer.PeerKeyRef
 import splice.sessions.peer.PeerPrincipal
 import splice.sessions.peer.PeerWebhook
+import splice.sessions.peer.codex.CodexBinding
+import splice.sessions.peer.codex.CodexNames
+import splice.sessions.peer.codex.CodexRequest
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
@@ -20,16 +22,7 @@ import java.time.Clock
 import java.util.Base64
 import java.util.HexFormat
 import java.util.UUID
-
-// why: docs/specs/peer-messaging.md 2.1 caps a name at 32 characters, lowercase, starting with a letter, so it is a
-// safe file name, a safe envelope attribute and a safe registry name.
-private const val NAME_PATTERN = "^[a-z][a-z0-9-]{1,31}$"
-
-// why: a sendTo entry is a name or a session id (a uuid); both fit this, and it keeps quotes and brackets out.
-private const val SEND_TO_ENTRY_PATTERN = "^[A-Za-z0-9-]{1,64}$"
-
-// why: the spec's peers-per-user limit (3.4); each peer is a resident JVM of about 48 MB.
-private const val MAX_PEERS = 16
+import java.util.concurrent.ConcurrentHashMap
 
 // why: 32 random bytes for the peer key (2.1), base64url without padding, which is 43 characters.
 private const val PEER_KEY_BYTES = 32
@@ -38,10 +31,6 @@ private const val PEER_KEY_BYTES = 32
 private const val SECRET_BYTES = 32
 
 private const val KEY_PREFIX = "splp_"
-private const val ANY_TARGET = "*"
-
-// why: peer.json's layout version (spec 2.1); a reader meeting a later one knows the file is not its shape.
-private const val PEER_FILE_VERSION = 1
 
 private const val PEERS_DIR = "peers"
 internal const val PEER_JSON = "peer.json"
@@ -49,33 +38,6 @@ private const val PEER_KEY = "peer.key"
 internal const val WEBHOOK_SECRET = "webhook.secret"
 private const val WEBHOOK_BEARER = "webhook.bearer"
 private const val FIRST_KEY_ID = "k1"
-
-/** peer.json as it sits on disk (spec 2.1). */
-@Serializable
-internal data class PeerFile(
-    val v: Int = PEER_FILE_VERSION,
-    val name: String,
-    val sessionId: String,
-    val createdAt: Long,
-    val cwd: String,
-    val key: PeerFileKey,
-    val scope: PeerFileScope,
-    val webhook: PeerFileWebhook? = null,
-)
-
-@Serializable
-internal data class PeerFileKey(val id: String, val sha256: String, val rotatedAt: Long)
-
-@Serializable
-internal data class PeerFileScope(val sendTo: List<String>)
-
-@Serializable
-internal data class PeerFileWebhook(
-    val url: String,
-    val enabled: Boolean,
-    val secretFile: String,
-    val bearerFile: String?,
-)
 
 /** What a register asks for. [cwd] is absolute; [sendTo] is `["*"]` or names and session ids. */
 public data class PeerRequest(val name: String, val cwd: String, val sendTo: List<String>)
@@ -110,6 +72,7 @@ public class PeerStore(
     private val folder = PeerFolder(settingsDir.resolve(PEERS_DIR))
     private val keys = PeerKeys(random)
     private val rules = PeerRules()
+    private val codexPeers = CodexPeers()
     private val mutation = Mutex()
 
     public val root: Path get() = folder.root
@@ -117,11 +80,21 @@ public class PeerStore(
     /** Why `peers/` could not be read at boot, or null. The store then admits no peer key until a register. */
     public val loadFailure: String? get() = folder.loadFailure
 
+    private val booted: List<PeerFile> = folder.load()
+
     @Volatile
-    private var peers: Map<String, PeerConfig> = folder.load().associate { it.name to folder.config(it) }
+    private var peers: Map<String, PeerConfig> = booted.associate { it.name to folder.config(it) }
+
+    /** Each codex peer's thread, by the peer's name (docs/peers.md). */
+    @Volatile
+    private var codexes: Map<String, CodexBinding> =
+        booted.mapNotNull { file -> codexPeers.binding(file)?.let { file.name to it } }.toMap()
 
     @Volatile
     private var byKeyHash: Map<String, String> = peers.values.associate { it.keySha256 to it.name }
+
+    /** When each codex peer last attached since this store loaded: a thread's end before it does not revoke it. */
+    private val attachedAt = ConcurrentHashMap<String, Long>()
 
     /** Every registered peer, by name. */
     public fun list(): List<PeerConfig> = peers.values.sortedBy { it.name }
@@ -133,8 +106,37 @@ public class PeerStore(
 
     public fun keyFile(name: String): Path = folder.keyFile(name)
 
-    /** Whether [name] matches the name pattern; a path segment from a request is checked with this before use. */
-    public fun wellFormed(name: String): Boolean = rules.wellFormed(name)
+    /** Whether [name] matches the name pattern, or is a codex peer's; a path segment from a request is checked with
+     *  this before use. */
+    public fun wellFormed(name: String): Boolean = rules.wellFormed(name) || codexPeers.isPeer(name)
+
+    /** The thread each codex peer stands for, by the peer's name. */
+    public val codexThreads: Map<String, CodexBinding> get() = codexes
+
+    /**
+     * Registers [request]'s thread as the codex peer `codex-<thread>`, or brings the one there up to date: peer.key
+     * and peer.json for a new one, peer.json alone for a changed one, and nothing when nothing changed.
+     */
+    public suspend fun attachCodex(request: CodexRequest): CodexAttach = mutation.withLock {
+        val name = codexPeers.name(request)
+        val key = keys.mint()
+        val now = clock.millis()
+        attachedAt[name] = now
+        val fresh = PeerFileKey(FIRST_KEY_ID, keys.hash(key), rotatedAt = now)
+        val keyFile = folder.keyFile(name)
+        when (val plan = codexPeers.plan(request, folder.read(name), peers.keys, fresh)) {
+            is CodexPlan.Refused -> CodexAttach.Refused(plan.why, plan.reason)
+            is CodexPlan.Same -> CodexAttach.Attached(peers[name] ?: publish(plan.file), keyFile, fresh = false)
+            is CodexPlan.Update -> {
+                folder.write(plan.file)
+                CodexAttach.Attached(publish(plan.file), keyFile, fresh = true)
+            }
+            is CodexPlan.Create -> {
+                folder.create(plan.file, key)
+                CodexAttach.Attached(publish(plan.file), keyFile, fresh = true)
+            }
+        }
+    }
 
     /**
      * The peer whose key is the bearer in [authorization], or null. The bearer is hashed first and the hash looked
@@ -157,7 +159,8 @@ public class PeerStore(
      */
     public suspend fun register(request: PeerRequest, liveNames: Set<String>): PeerRegistration =
         mutation.withLock {
-            val refused = rules.malformed(request) ?: rules.taken(request, liveNames, peers.keys, folder)
+            val handNamed = peers.keys.filterNot(codexPeers::isPeer).toSet()
+            val refused = rules.malformed(request) ?: rules.taken(request, liveNames, handNamed, folder)
             if (refused != null) return@withLock refused
             val key = keys.mint()
             val now = clock.millis()
@@ -175,11 +178,15 @@ public class PeerStore(
 
     /**
      * Revokes [name]: drops its hash first, so its key fails before anything else happens, then deletes
-     * `<settings dir>/peers/<name>/`. False when there is no such peer.
+     * `<settings dir>/peers/<name>/`. False when there is no such peer. With [threadEndedAt], it revokes only a codex
+     * peer whose thread ended then and that did not attach again since: a thread that loaded again keeps its peer.
      */
-    public suspend fun revoke(name: String): Boolean = mutation.withLock {
-        if (name !in peers) return@withLock false
+    public suspend fun revoke(name: String, threadEndedAt: Long? = null): Boolean = mutation.withLock {
+        val ended = threadEndedAt == null || (codexes[name] != null && (attachedAt[name] ?: 0L) <= threadEndedAt)
+        if (name !in peers || !ended) return@withLock false
         peers = peers - name
+        codexes = codexes - name
+        attachedAt.remove(name)
         byKeyHash = byKeyHash.filterValues { it != name }
         folder.deleteTree(folder.dir(name))
         true
@@ -231,6 +238,7 @@ public class PeerStore(
     private fun publish(file: PeerFile): PeerConfig {
         val config = folder.config(file)
         peers = peers + (file.name to config)
+        codexes = codexPeers.binding(file)?.let { codexes + (file.name to it) } ?: (codexes - file.name)
         byKeyHash = byKeyHash.filterValues { it != file.name } + (config.keySha256 to file.name)
         return config
     }
@@ -243,6 +251,7 @@ internal class PeerFolder(val root: Path) {
         encodeDefaults = true
     }
     private val namePattern = Regex(NAME_PATTERN)
+    private val codexNames = CodexNames()
 
     /** Why [load] could not list `peers/`, or null. */
     var loadFailure: String? = null
@@ -307,7 +316,7 @@ internal class PeerFolder(val root: Path) {
         val names = Cancellables.runCatchingBestEffort {
             Files.list(root).use { stream -> stream.map { it.fileName.toString() }.toList() }
         }.onFailure { loadFailure = "$root: ${SafeFailureText.render(it)}" }.getOrNull().orEmpty()
-        return names.filter { namePattern.matches(it) }.mapNotNull { read(it) }
+        return names.filter { namePattern.matches(it) || codexNames.isPeer(it) }.mapNotNull { read(it) }
     }
 
     fun config(file: PeerFile): PeerConfig = PeerConfig(
@@ -344,53 +353,4 @@ internal class PeerKeys(private val random: SecureRandom) {
     fun nextId(current: String): String = "k${(current.removePrefix("k").toIntOrNull() ?: 0) + 1}"
 
     private fun bytes(count: Int): ByteArray = ByteArray(count).also { random.nextBytes(it) }
-}
-
-/** What a register may ask for (2.1): the name, the cwd and the send scope, then whether the name is free. */
-internal class PeerRules {
-    private val namePattern = Regex(NAME_PATTERN)
-    private val sendToPattern = Regex(SEND_TO_ENTRY_PATTERN)
-
-    fun wellFormed(name: String): Boolean = namePattern.matches(name)
-
-    /** Why [request] can never succeed, or null. */
-    fun malformed(request: PeerRequest): PeerRegistration.Refused? {
-        val cwd = Path.of(request.cwd)
-        val reason = when {
-            !namePattern.matches(request.name) -> "a peer name is a lowercase letter, then 1 to 31 of a-z, 0-9 or -"
-            !cwd.isAbsolute || !Files.isDirectory(cwd) -> "cwd must be an absolute path to a directory"
-            !validSendTo(request.sendTo) -> "sendTo is [\"*\"] or a list of names and session ids"
-            else -> null
-        }
-        return reason?.let { PeerRegistration.Refused(PeerRefusal.INVALID, it) }
-    }
-
-    /** Why [request]'s name is not free: reserved, registered, a running session's, or over the peer limit. */
-    fun taken(
-        request: PeerRequest,
-        liveNames: Set<String>,
-        registered: Set<String>,
-        folder: PeerFolder,
-    ): PeerRegistration.Refused? {
-        val name = request.name
-        val reason = when {
-            name in RESERVED.names -> "'$name' is reserved"
-            name in registered || Files.exists(folder.dir(name)) -> "a peer named '$name' already exists"
-            name in liveNames -> "a running session is named '$name'"
-            registered.size >= MAX_PEERS -> "a user may have at most $MAX_PEERS peers"
-            else -> null
-        }
-        return reason?.let { PeerRegistration.Refused(PeerRefusal.TAKEN, it) }
-    }
-
-    private fun validSendTo(sendTo: List<String>): Boolean =
-        sendTo.isNotEmpty() && (sendTo == listOf(ANY_TARGET) || sendTo.all { sendToPattern.matches(it) })
-
-    /** The names no peer may take (2.1): roles a reader could mistake for a person or for Splice itself. */
-    private object RESERVED {
-        val names: Set<String> = setOf(
-            "system", "user", "operator", "human", "assistant", "claude", "anthropic", "splice", "splice-console",
-            "telegram", "president", "marcos", "dispatch",
-        )
-    }
 }

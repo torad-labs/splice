@@ -59,9 +59,11 @@ internal class PeersMount(parts: PeerParts, private val guard: ControlGuard) {
     private val manage = PeerManagementRoutes(parts, rate)
     private val webhooks = PeerWebhookRoutes(parts)
     private val self = PeerSelfRoutes(parts, rate)
+    private val codex = PeerCodexRoutes(parts)
 
     fun register(route: Route) {
         route.post("/api/peers") { guard.guarded(call) { manage.register(call) } }
+        route.post("/api/peers/codex") { guard.guarded(call) { codex.attach(call) } }
         route.get("/api/peers") { guard.guarded(call) { manage.list(call) } }
         route.delete("/api/peers/{name}") { guard.guarded(call) { manage.revoke(call) } }
         route.post("/api/peers/{name}/rotate") { guard.guarded(call) { manage.rotate(call) } }

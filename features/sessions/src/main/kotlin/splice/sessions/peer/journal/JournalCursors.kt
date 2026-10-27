@@ -1,6 +1,7 @@
-// NEW: Oct 19, 2026 (docs/specs/peer-messaging.md 2): the two cursors beside a peer's journal. read.cursor is the
+// NEW: Oct 19, 2026 (docs/specs/peer-messaging.md 2): the cursors beside a peer's journal. read.cursor is the
 // last seq the reader acknowledged, written by the daemon; webhook.cursor is the last seq the webhook finished,
-// written by the helper. Each file holds one decimal number.
+// written by the helper; codex.cursor (Oct 27, 2026) is the last message a codex peer's helper finished handing to its
+// thread. Each file holds one decimal number.
 package splice.sessions.peer.journal
 
 import java.nio.file.Files
@@ -9,10 +10,19 @@ import java.nio.file.Path
 
 private const val PEER_READ_CURSOR_FILE = "read.cursor"
 private const val PEER_WEBHOOK_CURSOR_FILE = "webhook.cursor"
+private const val PEER_CODEX_CURSOR_FILE = "codex.cursor"
 
 internal class JournalCursors(dir: Path, private val files: PeerJournalFiles) {
     private val readFile: Path = dir.resolve(PEER_READ_CURSOR_FILE)
     private val webhookFile: Path = dir.resolve(PEER_WEBHOOK_CURSOR_FILE)
+    private val codexFile: Path = dir.resolve(PEER_CODEX_CURSOR_FILE)
+
+    /** The seq of the last message a codex peer finished handing to its thread, or 0 before the first. */
+    fun codex(): Long = numberIn(codexFile) ?: 0L
+
+    fun advanceCodex(to: Long) {
+        files.writeNumber(codexFile, to)
+    }
 
     /** The last seq the reader acknowledged, or 0. */
     fun read(): Long = numberIn(readFile) ?: 0L

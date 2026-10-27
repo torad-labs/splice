@@ -14,6 +14,7 @@ private const val PEER_JOURNAL_LAYOUT = 1
 internal const val PEER_KIND_MESSAGE: String = "message"
 internal const val PEER_KIND_RECEIPT: String = "receipt"
 internal const val PEER_KIND_WEBHOOK: String = "webhook"
+internal const val PEER_KIND_CODEX: String = "codex"
 internal const val PEER_OUTCOME_PUSHED: String = "pushed"
 internal const val PEER_OUTCOME_FAILED: String = "failed"
 private const val PEER_CHECK_REGISTERED = "registered"
@@ -73,6 +74,29 @@ internal object JournalRecords {
         val httpStatus: Int? = null,
         val attempts: Int,
         val detail: String? = null,
+    )
+
+    /** A codex peer's hand-over of the message at seq [ref] to its thread, or the end of the thread (no [ref]). */
+    @Serializable
+    data class Codex(
+        val v: Int = PEER_JOURNAL_LAYOUT,
+        val seq: Long,
+        val at: Long,
+        val kind: String = PEER_KIND_CODEX,
+        val ref: Long? = null,
+        val id: String? = null,
+        val outcome: String,
+        val turn: String? = null,
+        val detail: String? = null,
+    )
+
+    /** One step of a hand-over: the message's seq and id, how it went, the turn Codex named, and why. */
+    data class CodexEntry(
+        val ref: Long?,
+        val id: String?,
+        val outcome: String,
+        val turn: String?,
+        val detail: String?,
     )
 
     /** A message to journal: what the sender claimed, how the connection was authenticated, and the text. */
@@ -135,6 +159,19 @@ internal object JournalRecords {
             status = entry.status.wire,
             detail = entry.detail,
             from = sender(entry.from),
+        ),
+    )
+
+    fun codex(seq: Long, at: Long, entry: CodexEntry): String = codec.encodeToString(
+        Codex.serializer(),
+        Codex(
+            seq = seq,
+            at = at,
+            ref = entry.ref,
+            id = entry.id,
+            outcome = entry.outcome,
+            turn = entry.turn,
+            detail = entry.detail,
         ),
     )
 

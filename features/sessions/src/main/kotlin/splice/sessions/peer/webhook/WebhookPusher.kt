@@ -120,7 +120,7 @@ public class WebhookPusher(
     }
 
     private fun startCursor(): Long {
-        val end = journal.lastSeq()
+        val end = journal.scanner.lastSeq()
         journal.cursors.advanceWebhook(end)
         return end
     }

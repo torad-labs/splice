@@ -24,6 +24,7 @@ import splice.dialect.responses.request.ModelIds
 import splice.dialect.responses.request.ReasoningHandoff
 import splice.dialect.responses.request.RequestedReasoning
 import splice.dialect.responses.request.ResponsesStableIds
+import splice.dialect.responses.request.ResultProofLookups
 import splice.dialect.responses.tools.ToolSurfaceLatch
 
 /** The gateway-held reasoning of one head: the cache, the key a conversation is filed under, and the opening
@@ -146,24 +147,19 @@ internal class ResponsesTurnOptions(
                         .history(positions, nativePhases.value.rounds)
                 },
                 historyAlias = ReasoningHistoryAlias { update -> continuity.alias(body, sessionId, update) },
-                resultProofs = resultProofs(cached, nativePhases),
+                // A phase cache may retain proof metadata after reasoning admission rejects it.
+                // Its proof can restore native phase provenance, but must not revive a rejected
+                // reasoning position past a cleared result.
+                resultProofs = ResultProofLookups(
+                    reasoning = ReasoningResultProofLookup { cached.value.proofs },
+                    nativePhase = ReasoningResultProofLookup { nativePhases.value.proofs },
+                ),
             ),
             sessionId = sessionId,
             // The provider's capability latch, read at build time: false = a shape-400 already
             // closed it this daemon lifetime; build the full status-quo request instead.
             toolSurfaceOpen = toolSurfaceLatch.open,
         )
-    }
-
-    private fun resultProofs(
-        cached: Lazy<ReasoningCacheView>,
-        nativePhases: Lazy<ReasoningCacheView>,
-    ): ReasoningResultProofLookup = ReasoningResultProofLookup {
-        cached.value.proofs.toMutableMap().apply {
-            nativePhases.value.proofs.forEach { (key, digest) ->
-                this[key] = if (containsKey(key) && this[key] != digest) null else digest
-            }
-        }
     }
 
     private fun cachedHistory(body: AnthropicTurnBody, sessionId: String?, replay: Boolean): Lazy<ReasoningCacheView> =

@@ -32,6 +32,13 @@ internal data class RequestedReasoning(
     public val display: ReasoningDisplay,
 )
 
+/** Result evidence is kept separate by the history role it is allowed to validate. */
+internal data class ResultProofLookups(
+    public val reasoning: ReasoningResultProofLookup = ReasoningResultProofLookup { emptyMap() },
+    /** Native phase provenance can retain evidence independently of reasoning admission. */
+    public val nativePhase: ReasoningResultProofLookup = reasoning,
+)
+
 /** How prior reasoning rides into this request and how the opaque handle comes back out. */
 internal data class ReasoningHandoff(
     /**
@@ -55,7 +62,7 @@ internal data class ReasoningHandoff(
     public val history: ReasoningHistoryLookup = ReasoningHistoryLookup { emptyMap() },
     /** Verified legacy positions acquire stable indexes together after the request history walk finishes. */
     public val historyAlias: ReasoningHistoryAlias = ReasoningHistoryAlias { _ -> },
-    public val resultProofs: ReasoningResultProofLookup = ReasoningResultProofLookup { emptyMap() },
+    public val resultProofs: ResultProofLookups = ResultProofLookups(),
 )
 
 internal data class BuildOptions(

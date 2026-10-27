@@ -22,10 +22,12 @@ internal class ResponsesHistoryInput(
     private val opts: BuildOptions,
     messages: List<AnthropicMessage> = emptyList(),
 ) {
-    val cursor = ResponsesHistoryCursor(opts.reasoningHistory, opts.handoff.resultProofs())
+    private val reasoningProofs = opts.handoff.resultProofs.reasoning()
+    private val nativePhaseProofs = opts.handoff.resultProofs.nativePhase()
+    val cursor = ResponsesHistoryCursor(opts.reasoningHistory, reasoningProofs)
     private val saved = opts.handoff.history()
     private val records = ResponsesAssistantPhaseRecords()
-    private val phases = ResponsesAssistantPhaseHistory(messages, records.read(saved), opts.handoff.resultProofs())
+    private val phases = ResponsesAssistantPhaseHistory(messages, records.read(saved), nativePhaseProofs)
     private val positions = records.reasoningOnly(saved).toMutableMap()
     private val offsets = (
         positions.keys.mapNotNull {

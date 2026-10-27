@@ -379,66 +379,129 @@ class SharedResponsesContractTest {
     }
 
     private fun type(item: JsonObject): String = item.getValue("type").jsonPrimitive.content
-
-    private fun assembly(root: Path, scope: CoroutineScope): ProviderAssembly = ProviderAssembly(
-        statePaths = StatePaths(baseOverride = root),
-        probeScope = scope,
-        log = {},
-        refreshCall = TokenUrlRefreshCall { _, _ -> RefreshAttempt.Denied("test-denied") },
-    )
-
-    private fun context(root: Path, provider: String): ProviderBuild {
-        val state = StatePaths(baseOverride = root.resolve(provider))
-        val config = ConfigService(state, envReader = { null })
-        return ProviderBuild(
-            key = provider,
-            head = HeadConfig(
-                provider = provider,
-                port = 0,
-                discoveryPrefix = "claude-shared--",
-                pinnedModel = "gpt-6.1-sol",
-            ),
-            providerCfg = ProviderConfig(
-                dialect = Dialect.OPENAI_RESPONSES,
-                baseUrl = "https://example.invalid/v1",
-                auth = AuthConfig(kind = "api-key"),
-            ),
-            catalog = ModelCatalog(
-                discoveryPrefix = "claude-shared--",
-                models = listOf(ModelEntry(id = "gpt-6.1-sol", contextWindow = 200_000)),
-                defaultContextWindow = 200_000,
-            ),
-            faultPlan = UpstreamFaultPlan(
-                watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
-                loginCommand = "test login",
-            ),
-            cfg = config.getConfig(provider),
-            roster = PublishedRoster(
-                discovered = HeadDiscoveredModels {
-                    listOf(
-                        DiscoveredModel(
-                            "gpt-6.1-sol",
-                            runtimeMetadata = ModelRuntimeMetadata(toolMode = "code_mode_only"),
-                        ),
-                    )
-                },
-            ),
-        )
-    }
-
-    private val mixedResult = """
-        {
-          "model":"claude-shared--gpt-6.1-sol","max_tokens":128,
-          "tools":[{"name":"lookup_record","description":"Look up a record","input_schema":{"type":"object","properties":{}}}],
-          "messages":[
-            {"role":"user","content":"Look up the record."},
-            {"role":"assistant","content":[{"type":"tool_use","id":"call_record","name":"lookup_record","input":{}}]},
-            {"role":"user","content":[{"type":"tool_result","tool_use_id":"call_record","content":[
-              {"type":"text","text":"before image"},
-              {"type":"image","source":{"type":"url","url":"https://example.invalid/record.png"}},
-              {"type":"text","text":"after image"}
-            ]}]}
-          ]
-        }
-    """.trimIndent()
 }
+
+private const val USERS = 8 // why: enough distinct users that a digest which collapsed them would show
+private const val SESSIONS = 3 // why: a user's identifier must hold across more than one change of session
+private const val DEVICE_HEX = 64 // why: Claude Code's device_id is a 64-character hex digest
+private const val HEX = 16 // why: the digits a hex device id is drawn from
+
+/** Every Responses head names a Claude Code user by one safety identifier, whatever session it is in. */
+class ResponsesSafetyIdentifierTest {
+    // OpenAI asks for a safety identifier that names one end user and stays put, so abuse can be traced to a person.
+    // Claude Code's metadata.user_id names the device, the account AND the session, so a digest of all of it named
+    // a new "user" every session. Both shapes Claude Code has sent are covered: the JSON envelope and the older
+    // user_<device>_account_<uuid>_session_<uuid> string.
+    @Test
+    fun `one Claude Code user keeps one safety identifier across sessions on every Responses head`(@TempDir tmp: Path) =
+        runTest {
+            val source = AnthropicParse.parseAnthropicBody(mixedResult)
+            val random = Random(271027)
+            for (provider in listOf("openai", "codex", "xai", "custom")) {
+                val wired = assembly(tmp.resolve(provider), backgroundScope).buildProvider(context(tmp, provider))
+                try {
+                    val identifierOf = { userId: String ->
+                        val metadata = JsonObject(mapOf("user_id" to JsonPrimitive(userId)))
+                        val raw = JsonObject(source.raw + ("metadata" to metadata))
+                        val request = AnthropicParse.parseAnthropicBody(raw.toString())
+                        checkNotNull(
+                            wired.provider.buildTurn(request, false, "attribution")
+                                .requestBody["safety_identifier"]?.jsonPrimitive?.content,
+                        ) { "$provider sent no safety identifier for $userId" }
+                    }
+                    val users = mutableSetOf<String>()
+                    repeat(USERS) {
+                        val device = (1..DEVICE_HEX).map { "0123456789abcdef"[random.nextInt(HEX)] }.joinToString("")
+                        val account = uuidOf(random)
+                        val sessions = List(SESSIONS) { uuidOf(random) }
+                        val signedIn = sessions
+                            .flatMap { listOf(envelope(device, account, it), legacy(device, account, it)) }
+                            .map(identifierOf).toSet()
+                        assertEquals(1, signedIn.size, "$provider: one account across sessions and shapes is one user")
+                        val keyOnly = sessions.flatMap { listOf(envelope(device, "", it), legacy(device, "", it)) }
+                            .map(identifierOf).toSet()
+                        assertEquals(1, keyOnly.size, "$provider: with no account, one device is one user")
+                        users += signedIn + keyOnly
+                    }
+                    assertEquals(USERS * 2, users.size, "$provider: distinct accounts and devices stay distinct users")
+                } finally {
+                    wired.provider.onHeadStop()
+                }
+            }
+        }
+
+    private fun uuidOf(random: Random): String = java.util.UUID(random.nextLong(), random.nextLong()).toString()
+
+    private fun envelope(device: String, account: String, session: String): String = JsonObject(
+        mapOf(
+            "device_id" to JsonPrimitive(device),
+            "account_uuid" to JsonPrimitive(account),
+            "session_id" to JsonPrimitive(session),
+        ),
+    ).toString()
+
+    private fun legacy(device: String, account: String, session: String): String =
+        "user_${device}_account_${account}_session_$session"
+}
+
+private fun assembly(root: Path, scope: CoroutineScope): ProviderAssembly = ProviderAssembly(
+    statePaths = StatePaths(baseOverride = root),
+    probeScope = scope,
+    log = {},
+    refreshCall = TokenUrlRefreshCall { _, _ -> RefreshAttempt.Denied("test-denied") },
+)
+
+private fun context(root: Path, provider: String): ProviderBuild {
+    val state = StatePaths(baseOverride = root.resolve(provider))
+    val config = ConfigService(state, envReader = { null })
+    return ProviderBuild(
+        key = provider,
+        head = HeadConfig(
+            provider = provider,
+            port = 0,
+            discoveryPrefix = "claude-shared--",
+            pinnedModel = "gpt-6.1-sol",
+        ),
+        providerCfg = ProviderConfig(
+            dialect = Dialect.OPENAI_RESPONSES,
+            baseUrl = "https://example.invalid/v1",
+            auth = AuthConfig(kind = "api-key"),
+        ),
+        catalog = ModelCatalog(
+            discoveryPrefix = "claude-shared--",
+            models = listOf(ModelEntry(id = "gpt-6.1-sol", contextWindow = 200_000)),
+            defaultContextWindow = 200_000,
+        ),
+        faultPlan = UpstreamFaultPlan(
+            watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
+            loginCommand = "test login",
+        ),
+        cfg = config.getConfig(provider),
+        roster = PublishedRoster(
+            discovered = HeadDiscoveredModels {
+                listOf(
+                    DiscoveredModel(
+                        "gpt-6.1-sol",
+                        runtimeMetadata = ModelRuntimeMetadata(toolMode = "code_mode_only"),
+                    ),
+                )
+            },
+        ),
+    )
+}
+
+private val mixedResult = """
+    {
+      "model":"claude-shared--gpt-6.1-sol","max_tokens":128,
+      "tools":[{"name":"lookup_record","description":"Look up a record","input_schema":{"type":"object","properties":{}}}],
+      "messages":[
+        {"role":"user","content":"Look up the record."},
+        {"role":"assistant","content":[{"type":"tool_use","id":"call_record","name":"lookup_record","input":{}}]},
+        {"role":"user","content":[{"type":"tool_result","tool_use_id":"call_record","content":[
+          {"type":"text","text":"before image"},
+          {"type":"image","source":{"type":"url","url":"https://example.invalid/record.png"}},
+          {"type":"text","text":"after image"}
+        ]}]}
+      ]
+    }
+""".trimIndent()

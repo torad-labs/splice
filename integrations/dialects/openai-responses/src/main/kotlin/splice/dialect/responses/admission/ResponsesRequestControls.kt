@@ -1,5 +1,6 @@
 package splice.dialect.responses.admission
 
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -8,7 +9,9 @@ import kotlinx.serialization.json.JsonPrimitive
 import splice.core.failure.Decline
 import splice.core.failure.FailureCause
 import splice.core.failure.RequestFeature
+import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.core.util.JsonWire
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesServiceTierSupport
 import splice.dialect.responses.request.ResponsesCacheHints
@@ -53,8 +56,26 @@ internal class ResponsesRequestControls(private val quirks: ResponsesQuirks) {
         if (!quirks.request.emitSafetyIdentifier) return null
         val sourceId = ((raw["metadata"] as? JsonObject)?.get("user_id") as? JsonPrimitive)
             ?.takeIf(JsonPrimitive::isString)?.content ?: return null
-        val digest = MessageDigest.getInstance("SHA-256").digest(sourceId.toByteArray(Charsets.UTF_8))
+        val digest = MessageDigest.getInstance("SHA-256").digest(personOf(sourceId).toByteArray(Charsets.UTF_8))
         return HexFormat.of().formatHex(digest)
+    }
+
+    /** The part of Claude Code's user_id that names the person: its account, else its device. Its session id changes
+     *  every session, so it never enters the digest; an id in any other shape is taken whole. */
+    private fun personOf(sourceId: String): String {
+        val parts = LEGACY_USER_ID.matchEntire(sourceId)?.let { it.groupValues[1] to it.groupValues[2] }
+            ?: envelopeOf(sourceId)
+        return parts?.let { (device, account) -> account.ifEmpty { device } }?.ifEmpty { null } ?: sourceId
+    }
+
+    /** The device and account of Claude Code's JSON user_id, or null when [sourceId] is not one. */
+    private fun envelopeOf(sourceId: String): Pair<String, String>? {
+        if (!sourceId.startsWith("{") || sourceId.length > MAX_ENVELOPE_CHARS) return null
+        val envelope = Cancellables.runCatchingBestEffort {
+            JsonWire.requireRequestNesting(sourceId)
+            Json.parseToJsonElement(sourceId)
+        }.getOrNull() as? JsonObject ?: return null
+        return JsonScalars.str(envelope["device_id"]).orEmpty() to JsonScalars.str(envelope["account_uuid"]).orEmpty()
     }
 
     private fun refusedFeature(raw: JsonObject): RequestFeature? =
@@ -114,3 +135,9 @@ private const val SOURCE_REQUEST_MAX_TOKENS = "max_tokens"
 private const val SOURCE_REQUEST_REASONING = "reasoning"
 private const val SOURCE_REQUEST_CONTEXT = "context"
 private val SUPPORTED_CONTEXTS = setOf("auto", "current_turn", "all_turns")
+
+// Claude Code's user_id before its JSON envelope: user_<device digest>_account_<account uuid, or empty>_session_<uuid>.
+private val LEGACY_USER_ID = Regex("user_([0-9a-f]+)_account_([0-9a-f-]*)_session_[0-9a-f-]+")
+
+// why: Claude Code's envelope is three ids, far under this; an id past it is hashed whole.
+private const val MAX_ENVELOPE_CHARS = 4_096

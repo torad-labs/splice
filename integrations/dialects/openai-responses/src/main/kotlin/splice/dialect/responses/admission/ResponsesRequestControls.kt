@@ -4,6 +4,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import splice.core.failure.Decline
 import splice.core.failure.FailureCause
 import splice.core.failure.RequestFeature
@@ -18,6 +19,7 @@ internal data class ResponsesWireRequestControls(
     val temperature: JsonElement? = null,
     val topP: JsonElement? = null,
     val serviceTier: String? = null,
+    val safetyIdentifier: String? = null,
 )
 
 private val sourceOnlyControls = mapOf(
@@ -42,7 +44,14 @@ internal class ResponsesRequestControls(private val quirks: ResponsesQuirks) {
         temperature = value(raw, SOURCE_REQUEST_TEMPERATURE),
         topP = value(raw, SOURCE_REQUEST_TOP_P),
         serviceTier = serviceTier(raw),
+        safetyIdentifier = safetyIdentifier(raw),
     )
+
+    private fun safetyIdentifier(raw: JsonObject): String? {
+        if (!quirks.request.emitSafetyIdentifier) return null
+        val metadata = raw["metadata"] as? JsonObject
+        return (metadata?.get("user_id") as? JsonPrimitive)?.takeIf(JsonPrimitive::isString)?.content
+    }
 
     private fun refusedFeature(raw: JsonObject): RequestFeature? =
         sourceOnlyControls.entries.firstOrNull { unsupportedSourceControl(raw, it.key) }?.value ?: refusedPolicy(raw)
@@ -60,8 +69,8 @@ internal class ResponsesRequestControls(private val quirks: ResponsesQuirks) {
         // so its similarly named fast mode is not an equivalent control.
         value(raw, SOURCE_REQUEST_SPEED) != null -> RequestFeature.SPEED
         unsupportedReasoningContext(raw) -> RequestFeature.REASONING_CONTEXT
-        // Source metadata remains opaque caller annotation. It does not become a Responses resource
-        // metadata field, splice session identity, or a prompt-cache key.
+        // Only explicit source user attribution is projected, separately from resource metadata.
+        // Other caller annotation becomes neither splice session identity nor a prompt-cache key.
         else -> null
     }
 

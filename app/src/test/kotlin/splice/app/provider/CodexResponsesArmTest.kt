@@ -126,6 +126,7 @@ class CodexResponsesArmTest {
         val before = wired.provider.buildTurn(body, false, "session-1")
         assertFalse(before.requestBody.toString().contains("\"name\":\"exec\""), "no mark known: direct tools")
         assertFalse("max_output_tokens" in before.requestBody, "direct Codex turns retain uncapped generation")
+        assertFalse("safety_identifier" in before.requestBody, "direct Codex turns retain their attribution contract")
         assertEquals(1, logged.count { it.contains("[code-mode] no model is marked code_mode_only") }, "$logged")
         assertTrue(logged.single { it.contains("[code-mode]") }.startsWith("[codex]"), "$logged")
 
@@ -183,6 +184,10 @@ class CodexResponsesArmTest {
         // f6a29a77f: current codex-rs omits empty lite instructions (codex-api/src/common.rs:286-287).
         assertFalse("instructions" in built.requestBody, "current codex-rs omits the empty field")
         assertFalse("max_output_tokens" in built.requestBody, "Codex retains uncapped generation")
+        assertFalse(
+            "safety_identifier" in built.requestBody,
+            "Codex retains its endpoint-specific attribution contract",
+        )
         assertEquals("true", built.requestBody["store"]?.jsonPrimitive?.content)
         assertNotNull(built.roundInterceptor)
         assertTrue(wire.contains("\"name\":\"exec\""))
@@ -232,6 +237,7 @@ class CodexResponsesArmTest {
 
 private const val TOOL_BODY =
     """{"model":"gpt-6-astra","stream":true,"max_tokens":1024,""" +
+        """"metadata":{"user_id":"opaque-source-user"},""" +
         """"tools":[{"name":"Read","input_schema":{"type":"object"}},""" +
         """{"name":"Bash","input_schema":{"type":"object"},"strict":true}],""" +
         """"messages":[{"role":"user","content":"Ping."}]}"""

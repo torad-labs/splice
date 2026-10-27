@@ -4,6 +4,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -30,6 +31,7 @@ import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.turn.WatchdogBudget
 import java.nio.file.Path
+import kotlin.random.Random
 import kotlin.time.Duration.Companion.seconds
 
 // Goal: every Responses head retains typed tool results, without acquiring Codex's executor or routing policy.
@@ -111,6 +113,40 @@ class SharedResponsesContractTest {
                 )
             } finally {
                 wired.provider.onHeadStop()
+            }
+        }
+
+    @Test
+    fun `source attribution changes only the public safety identifier across Responses heads`(@TempDir tmp: Path) =
+        runTest {
+            val random = Random(261027)
+            val alphabet = "abczAZ019-_:é\"\\"
+            val identifiers = listOf<String?>(null) + List(48) {
+                buildString {
+                    repeat(random.nextInt(1, 97)) { append(alphabet[random.nextInt(alphabet.length)]) }
+                }
+            }
+            val source = AnthropicParse.parseAnthropicBody(mixedResult)
+            for (provider in listOf("openai", "codex", "xai", "custom")) {
+                val wired = assembly(tmp.resolve(provider), backgroundScope).buildProvider(context(tmp, provider))
+                try {
+                    val baseline = wired.provider.buildTurn(source, false, "attribution").requestBody
+                    assertFalse("safety_identifier" in baseline, "attribution is not inferred from session identity")
+                    for (identifier in identifiers) {
+                        val metadata = JsonObject(mapOf("user_id" to JsonPrimitive(identifier)))
+                        val raw = JsonObject(source.raw + ("metadata" to metadata))
+                        val request = AnthropicParse.parseAnthropicBody(raw.toString())
+                        assertNull(wired.provider.requestRefusal(request), provider)
+                        val built = wired.provider.buildTurn(request, false, "attribution")
+                        val expected = identifier?.let {
+                            JsonObject(baseline + ("safety_identifier" to JsonPrimitive(it)))
+                        } ?: baseline
+                        assertEquals(expected, built.requestBody, provider)
+                        assertNull(built.roundInterceptor, "attribution must not select execution for $provider")
+                    }
+                } finally {
+                    wired.provider.onHeadStop()
+                }
             }
         }
 

@@ -43,7 +43,11 @@ The synthetic code-mode execution and waiting functions are not ordinary nested 
 | Endpoint negotiation | Ordinary Responses uses public authentication. Codex explicitly retains its own negotiation and narrower warmup admission. | `ResponsesWebSocketHeaderBoundaryTest` |
 | Runtime isolation | Provider names, URLs, GPT-looking model names and discovery hints alone never select the JavaScript executor or its host. | `SharedResponsesContractTest` |
 
-Source-only account, workspace and geographic requirements are not cross-vendor identifiers to copy blindly. Request metadata remains source-side, apart from the existing explicit effort alias. Upstream SSE does not change whether the source client receives a streaming response. Cache-only requests must not silently become generation. Unknown raw fields do not trigger a blanket reject-unknown policy.
+Source-only account, workspace and geographic requirements are not cross-vendor identifiers to copy blindly. Explicit opaque `metadata.user_id` maps to the public `safety_identifier` control on supporting endpoint profiles. It never becomes resource metadata, prompt content, splice session identity or a prompt-cache key. No identifier is inferred when the source omits it. Codex explicitly preserves its existing attribution bytes. Other request annotation stays source-side, apart from the existing effort alias.
+
+Upstream SSE does not change whether the source client receives a streaming response. Cache-only requests must not silently become generation. Unknown raw fields do not trigger a blanket reject-unknown policy.
+
+Attribution follows the [source user-id contract](https://raw.githubusercontent.com/anthropics/anthropic-sdk-python/main/src/anthropic/types/metadata_param.py) and the [public Responses safety-identifier contract](https://developers.openai.com/api/docs/guides/safety-checks). The generated production-provider property in `SharedResponsesContractTest` requires every other request field to stay unchanged. `CodexResponsesArmTest` preserves the native endpoint exception.
 
 Provider-specific checks live in their provider module. Production assembly contracts live under `app/src/test/kotlin/splice/app/provider`. The remaining named checks live in the Responses dialect test package. Generated cases cover conversion and timeline properties where a finite list of examples would be insufficient. Local acceptance is not a live-provider receipt or a benchmark claim.
 

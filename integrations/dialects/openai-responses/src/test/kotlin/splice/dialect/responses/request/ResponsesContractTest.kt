@@ -48,6 +48,7 @@ private fun codexProfileQuirks(toolSurface: ToolDeferralPolicy? = null) = Respon
     request = ResponsesRequestControlQuirks(
         serviceTier = ResponsesServiceTierSupport.UNSUPPORTED,
         emitMaxOutputTokens = false,
+        emitSafetyIdentifier = false,
     ),
     backend = ResponsesBackendQuirks(
         sendClientMetadata = true,

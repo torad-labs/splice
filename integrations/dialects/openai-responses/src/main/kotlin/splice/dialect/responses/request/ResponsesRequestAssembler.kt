@@ -113,6 +113,7 @@ internal class ResponsesRequestAssembler(
                 temperature = parts.controls.temperature,
                 topP = parts.controls.topP,
                 serviceTier = parts.controls.serviceTier,
+                safetyIdentifier = parts.controls.safetyIdentifier,
             ),
         )
         val req = responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), dto) as JsonObject

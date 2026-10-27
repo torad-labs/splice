@@ -77,6 +77,7 @@ internal data class ResponsesRequestSerializationControls(
     val temperature: JsonElement? = null,
     val topP: JsonElement? = null,
     val serviceTier: String? = null,
+    val safetyIdentifier: String? = null,
 )
 
 /** The closed DTO keeps every legal wire field visible while related controls share one constructor input. */
@@ -128,6 +129,7 @@ internal object ResponsesRequestCodec : KSerializer<ResponsesRequest> {
         controls.temperature?.let { target.put("temperature", it) }
         controls.topP?.let { target.put("top_p", it) }
         controls.serviceTier?.let { target.put("service_tier", it) }
+        controls.safetyIdentifier?.let { target.put("safety_identifier", it) }
     }
 
     /** Reads the same closed fields without coupling decoding helpers to the wire writer. */
@@ -153,6 +155,7 @@ internal object ResponsesRequestCodec : KSerializer<ResponsesRequest> {
                 temperature = element("temperature"),
                 topP = element("top_p"),
                 serviceTier = string("service_tier"),
+                safetyIdentifier = string("safety_identifier"),
             ),
         )
 

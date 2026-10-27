@@ -65,6 +65,8 @@ public class CodexQuirks {
             serviceTier = ResponsesServiceTierSupport.UNSUPPORTED,
             // Preserve this endpoint's existing non-enforcement of positive source caps.
             emitMaxOutputTokens = false,
+            // Preserve this endpoint's existing attribution bytes independently of the public API.
+            emitSafetyIdentifier = false,
         ),
         backend = ResponsesBackendQuirks(
             // client_metadata identifies splice on lite turns (session_id, thread_id). Byte-identical

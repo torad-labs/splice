@@ -8,23 +8,38 @@ import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import splice.core.failure.FailureEvidence
+import splice.core.failure.LoginOwner
+import splice.dialect.responses.failure.ResponsesReplies
+import splice.provider.codex.failure.CodexReplies
 import splice.upstream.RedirectableRoundPost
 import splice.upstream.RoundResult
-import splice.upstream.failure.FailureSource
-import splice.upstream.failure.UpstreamFailureClassifier
+import splice.upstream.failure.ErrorMessage
+import splice.upstream.failure.FailedReply
+import splice.upstream.failure.Replies
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.UpstreamFailed
+import java.time.Instant
 
 private const val REFUSAL_STATUS = 400
 private const val REFUSAL_LAYERS = 4
 private const val REFUSAL_BODY = """{"detail":"Bad Request"}"""
 
+/** The upstream's refusal of the post as it arrived: no stream, a 400, and a body that names nothing. */
+private val REFUSED = FailedReply(
+    status = REFUSAL_STATUS,
+    headers = emptyMap(),
+    body = REFUSAL_BODY,
+    owner = LoginOwner.SPLICE,
+    sent = { _, _ -> false },
+    answeredAt = Instant.EPOCH,
+)
+
 /**
  * Oct 4, 6:31 AM CT: a code-mode source post the upstream refused with HTTP 400 reached Claude Code as
  * overloaded_error, "upstream source failed". The refusal escaped the source reader as a throwable none of its
  * catches named, so the reader's death handler ended the round as an internal fault, and Claude Code retried the
- * same request as an overload for 36 minutes. A plain turn ends that refusal through its classifier, which can
- * tell the client to compact; a code-mode round now hands the refusal to the same ending.
+ * same request as an overload for 36 minutes. A plain turn ends that refusal as claudex's own reader reads it; a
+ * code-mode round now hands the refusal to the same ending.
  */
 class CodeModeUpstreamRefusalTest : CodeModeStatementStreamSupport() {
     @Test
@@ -69,11 +84,13 @@ class CodeModeUpstreamRefusalTest : CodeModeStatementStreamSupport() {
     }
 
     /** Posts through [first] until post number [refuseFrom], which the upstream refuses as the retry loop does once
-     *  it gives up: an UpstreamFailed with the status and the attempts it spent. */
+     *  it gives up: an UpstreamFailed with the cause claudex's reader read, the status and the attempts it spent. */
     private class Refusing(private val first: GatedPost, private val refuseFrom: Int) : RedirectableRoundPost {
-        val refusal = UpstreamFailureClassifier.classify(FailureSource.HTTP, REFUSAL_BODY, REFUSAL_STATUS).let {
-            UpstreamFailed(it.cause, FailureEvidence(it.message, REFUSAL_STATUS, body = REFUSAL_BODY), REFUSAL_LAYERS)
-        }
+        val refusal = UpstreamFailed(
+            Replies(ResponsesReplies, CodexReplies).http(REFUSED),
+            FailureEvidence(ErrorMessage.of(REFUSAL_BODY) ?: REFUSAL_BODY, REFUSAL_STATUS, body = REFUSAL_BODY),
+            REFUSAL_LAYERS,
+        )
         var refused = 0
         private var posts = 0
 

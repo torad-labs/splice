@@ -26,6 +26,7 @@ import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import splice.core.failure.FailureCause
 import splice.core.failure.FailureEvidence
+import splice.core.failure.LoginOwner
 import splice.core.failure.Moment
 import splice.core.failure.Position
 import splice.core.index.WireBlockIndex
@@ -73,8 +74,8 @@ import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountQuotaSource
 import splice.upstream.credentials.PoolAccount
 import splice.upstream.credentials.Selection
-import splice.upstream.failure.FailureSource
-import splice.upstream.failure.UpstreamFailureClassifier
+import splice.upstream.failure.ErrorMessage
+import splice.upstream.failure.FailedReply
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
 import splice.upstream.retry.RateLimitCooldown
@@ -87,6 +88,7 @@ import splice.upstream.transport.UpstreamFailed
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
 
@@ -774,10 +776,14 @@ private fun emitExpectingDeadClient(rig: EndingRig, e: Throwable, clientGone: Bo
     }
 }
 
-/** The ending the retry loop gives up with on [body] at [status], read the way it reads its last failure. */
+/** The ending the retry loop gives up with on [body] at [status], read the way it reads its last failure: once, by
+ *  the head's own reader, with the provider's message for the journal (UpstreamRequest). */
 private fun upstreamFailed(body: String, status: Int): UpstreamFailed {
-    val read = UpstreamFailureClassifier.classify(FailureSource.HTTP, body, status)
-    return UpstreamFailed(read.cause, FailureEvidence(read.message, status, body = body))
+    val reply = FailedReply(status, emptyMap(), body, LoginOwner.SPLICE, sent = { _, _ -> false }, Instant.EPOCH)
+    return UpstreamFailed(
+        accountingProvider().replies.http(reply),
+        FailureEvidence(ErrorMessage.of(body) ?: body, status, body = body),
+    )
 }
 
 private fun rowCount(row: String, key: String): Long? =

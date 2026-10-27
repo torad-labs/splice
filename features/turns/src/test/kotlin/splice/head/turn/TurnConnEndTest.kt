@@ -41,6 +41,7 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.failure.ClientWire
 import splice.core.failure.FailureCause
 import splice.core.failure.FailureEvidence
+import splice.core.failure.LoginOwner
 import splice.core.failure.Moment
 import splice.core.failure.Position
 import splice.core.failure.Tear
@@ -83,8 +84,8 @@ import splice.upstream.Provider
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
-import splice.upstream.failure.FailureSource
-import splice.upstream.failure.UpstreamFailureClassifier
+import splice.upstream.failure.ErrorMessage
+import splice.upstream.failure.FailedReply
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
 import splice.upstream.retry.TurnWatchdog
@@ -92,6 +93,7 @@ import splice.upstream.transport.SseFrameTooLarge
 import splice.upstream.transport.StreamTornBeforeClient
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
@@ -414,10 +416,10 @@ class TurnConnEndTest {
         val p = provider()
         val ending = TurnKnownEnd(p, rig.log, rig.telemetry, rig.health)
         val body = """{"error":{"type":"rate_limit_error","message":"synthetic rate limit"}}"""
-        val read = UpstreamFailureClassifier.classify(FailureSource.HTTP, body, 429)
+        val reply = FailedReply(429, emptyMap(), body, LoginOwner.SPLICE, sent = { _, _ -> false }, Instant.EPOCH)
         val failure = splice.upstream.transport.UpstreamFailed(
-            read.cause,
-            FailureEvidence(read.message, 429, body = body),
+            p.replies.http(reply),
+            FailureEvidence(ErrorMessage.of(body) ?: body, 429, body = body),
             planLimit = if (plan) splice.core.usage.PlanLimit("five_hour", 1000) else null,
         )
         try {

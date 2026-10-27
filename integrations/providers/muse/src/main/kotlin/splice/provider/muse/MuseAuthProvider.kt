@@ -15,6 +15,7 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.Credentials
 import splice.core.auth.InvalidGrantLatch
+import splice.core.auth.LoginAnswer
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
@@ -50,7 +51,7 @@ public class MuseAuthProvider(
     private val invalidAccountLatch = InvalidGrantLatch()
     private val holds = MuseMintHolds(clock)
     private val oauth = MuseOAuth()
-    private val verdict = MuseMintVerdict(holds, oauth, store, log)
+    private val verdict = MuseMintVerdict(holds, oauth, store, log, clock)
     private val mintPersistence = MuseMintPersistence()
     private val lockPathText = authPath.resolveSibling("${authPath.fileName}.lock").toString()
     private val lockLog = LogSink { message ->
@@ -71,6 +72,18 @@ public class MuseAuthProvider(
         } else {
             snapshot.apiKey?.let { Credentials.Bearer(it) }
         }
+    }
+
+    /** Muse's key mint can refuse this login, and its reason is the turn's ending (failure-handling slice 3): an
+     *  inactive subscription says to renew it, a rate-limited mint is a soft limit until its hold ends, and a denied
+     *  mint is forbidden. Before this the turn ended as NoLogin and told a signed-in person to sign in. */
+    override suspend fun answer(): LoginAnswer {
+        val snapshot = store.read(authCacheMs) ?: return LoginAnswer.Missing
+        holds.refusal(snapshot)?.let { return LoginAnswer.Refused(it) }
+        return snapshot.apiKey
+            ?.takeUnless { holds.blocksCredentials(snapshot) }
+            ?.let { LoginAnswer.Granted(Credentials.Bearer(it)) }
+            ?: LoginAnswer.Missing
     }
 
     override suspend fun refresh(): Credentials? = singleFlight.run {
@@ -104,9 +117,26 @@ public class MuseAuthProvider(
      */
     public suspend fun usageFields(): JsonObject? {
         val snapshot = store.read() ?: return null
-        val held = invalidAccountLatch.isLatched(snapshot.identity) || holds.suppresses(snapshot)
-        if (held) return null
-        return snapshot.accessToken?.let { probeUsage(it, snapshot) }
+        // The probe and its reading are one function since slice 3: this class gained answer(), and splitting the
+        // two halves of one poll is what pushed it over the function ceiling, so the holds read as one line here.
+        val accessToken = snapshot.accessToken?.takeUnless {
+            invalidAccountLatch.isLatched(snapshot.identity) || holds.suppresses(snapshot)
+        } ?: return null
+        return when (val attempt = attemptFor(accessToken, snapshot)) {
+            null -> null
+            is MuseMintAttempt.Granted -> attempt.key.fields["subs_usage"] as? JsonObject ?: JsonObject(emptyMap())
+            is MuseMintAttempt.InvalidAccountToken -> {
+                invalidAccountToken(accessToken, allowChangedTokenRetry = false)
+                null
+            }
+            is MuseMintAttempt.SubscriptionRequired,
+            is MuseMintAttempt.RateLimited,
+            is MuseMintAttempt.Denied,
+            -> {
+                verdict.hold(snapshot, attempt)
+                null
+            }
+        }
     }
 
     override fun allowRefreshAfterFailure(status: Int, body: String): Boolean =
@@ -146,27 +176,6 @@ public class MuseAuthProvider(
             is MuseMintAttempt.RateLimited,
             is MuseMintAttempt.Denied,
             -> verdict.hold(snapshot, attempt)
-        }
-    }
-
-    private suspend fun probeUsage(
-        accessToken: String,
-        snapshot: MuseCredentialSnapshot,
-    ): JsonObject? {
-        val attempt = attemptFor(accessToken, snapshot) ?: return null
-        return when (attempt) {
-            is MuseMintAttempt.Granted -> attempt.key.fields["subs_usage"] as? JsonObject ?: JsonObject(emptyMap())
-            is MuseMintAttempt.InvalidAccountToken -> {
-                invalidAccountToken(accessToken, allowChangedTokenRetry = false)
-                null
-            }
-            is MuseMintAttempt.SubscriptionRequired,
-            is MuseMintAttempt.RateLimited,
-            is MuseMintAttempt.Denied,
-            -> {
-                verdict.hold(snapshot, attempt)
-                null
-            }
         }
     }
 

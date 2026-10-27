@@ -2,6 +2,7 @@
 // unmasked — introspection surfaces (/mgmt/auth, /api/auth) consume AuthDescription only.
 package splice.core.auth
 
+import splice.core.failure.LoginOwner
 import splice.core.usage.PlanLimit
 import splice.core.usage.QuotaHeaderRead
 
@@ -56,6 +57,15 @@ public const val REFUSAL_FIELD: String = "refusal"
 /** Provider auth SPI: resolve credentials (cached) + masked introspection. */
 public interface AuthProvider {
     public suspend fun credentials(): Credentials?
+
+    /** What a login lookup answers: the credential to send, none, or a provider's refusal to grant one, with its
+     *  cause. A provider whose lookup can refuse says why here (Muse's key mint); every other one answers from
+     *  [credentials]. */
+    public suspend fun answer(): LoginAnswer = credentials()?.let(LoginAnswer::Granted) ?: LoginAnswer.Missing
+
+    /** Whose login this provider sends: splice's own, which splice renews, or the client's, which only the client can
+     *  fix ([ClientAuthProvider]). A failure reader names a rejected login's owner from it. */
+    public val owner: LoginOwner get() = LoginOwner.SPLICE
 
     public suspend fun describe(): AuthDescription
 

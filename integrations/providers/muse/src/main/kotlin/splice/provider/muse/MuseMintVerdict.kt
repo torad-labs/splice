@@ -4,15 +4,21 @@ package splice.provider.muse
 
 import splice.core.auth.Credentials
 import splice.core.util.LogSink
+import splice.core.util.WallClock
 
 internal class MuseMintVerdict(
     private val holds: MuseMintHolds,
     private val oauth: MuseOAuth,
     private val store: MuseCredentialStore,
     private val log: LogSink,
+    private val clock: WallClock,
 ) {
-    /** Records the hold [attempt] earns for [snapshot]; a mint that granted nothing never yields credentials. */
+    /** Records the hold [attempt] earns for [snapshot]; a mint that granted nothing never yields credentials. Since
+     *  slice 3 it also records the cause the login is refused with while that hold stands, read once here, where the
+     *  verdict is known (MuseReplies.mintRefusal), so a turn that meets it ends with the mint own reason instead of
+     *  telling a signed-in person to sign in. */
     fun hold(snapshot: MuseCredentialSnapshot, attempt: MuseMintAttempt): Credentials? {
+        MuseReplies.mintRefusal(attempt, clock())?.let { holds.recordRefusal(snapshot, it) }
         when (attempt) {
             is MuseMintAttempt.SubscriptionRequired -> {
                 val actionUrl = oauth.safeActionOrigin(attempt.actionUrl)

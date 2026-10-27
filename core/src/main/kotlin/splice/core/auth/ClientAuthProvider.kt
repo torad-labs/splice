@@ -14,6 +14,7 @@
 // forwarded turn is answered, then accepted or rejected with the time of the last answer.
 package splice.core.auth
 
+import splice.core.failure.LoginOwner
 import splice.core.topology.AuthKind
 import splice.core.usage.PlanLimit
 import splice.core.usage.PlanLimits
@@ -40,6 +41,9 @@ public class ClientAuthProvider(
     /** Never null: a null would make the transport raise auth-missing before the request, and
      *  there IS no missing credential here — the one that matters rides on the inbound call. */
     override suspend fun credentials(): Credentials = Credentials.ClientForwarded
+
+    /** The login is the caller's: a provider that rejects it rejects the client's own, which splice never renews. */
+    override val owner: LoginOwner get() = LoginOwner.CLIENT
 
     /** [AuthDescription.present] is false only once upstream REJECTED the forwarded login: an
      *  unverified one is not known to be missing, and the verdict field says which it is. */

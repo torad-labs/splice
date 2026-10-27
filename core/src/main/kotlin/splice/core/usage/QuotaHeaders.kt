@@ -114,9 +114,12 @@ public data class PlanLimit(
  *
  *  The reset is BOUNDED by the claim's own window: an instant further out than one whole window
  *  from `nowEpochSeconds` is not one this claim can name, and a malformed one must not hold a head
- *  past it. A reset already passed names nothing. */
-internal object PlanLimits {
-    fun of(header: QuotaHeaderRead, nowEpochSeconds: Long): PlanLimit? {
+ *  past it. A reset already passed names nothing.
+ *
+ *  Public since failure-handling slice 3: the Anthropic Messages reader (AnthropicReplies) reads a 429's plan window
+ *  here for every head of that API type, where the login providers used to answer it one by one. */
+public object PlanLimits {
+    public fun of(header: QuotaHeaderRead, nowEpochSeconds: Long): PlanLimit? {
         val claim = header("$UNIFIED-representative-claim")
             ?.takeIf { header("$UNIFIED-status") == QuotaStatus.REJECTED.wire }
             ?: return null

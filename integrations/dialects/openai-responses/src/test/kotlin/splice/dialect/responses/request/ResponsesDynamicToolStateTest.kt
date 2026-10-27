@@ -85,7 +85,7 @@ class ResponsesDynamicToolStateTest {
     }
 
     @Test
-    fun `a lite executor keeps deferred source tools in its provider-owned catalog`() {
+    fun `a direct lite request withholds source deferred declarations without selecting an executor`() {
         val request = buildLite(
             tools = listOf(
                 tool("eager", "eager_schema"),
@@ -102,11 +102,11 @@ class ResponsesDynamicToolStateTest {
         assertFalse("tools" in request)
         assertEquals("namespace", type(namespace))
         assertEquals("functions", namespace.getValue("name").jsonPrimitive.content)
-        assertEquals(listOf("eager", "withheld"), names)
+        assertEquals(listOf("eager"), names)
     }
 
     @Test
-    fun `a lite executor leaves source removal selection to its nested catalog`() {
+    fun `a direct lite request enforces source removal through allowed tools`() {
         val body = AnthropicParse.parseAnthropicBody(
             requestJson(
                 tools = listOf(
@@ -121,7 +121,10 @@ class ResponsesDynamicToolStateTest {
         val request = liteProvider.buildTurn(body, false, "lite-withdrawn").requestBody
 
         assertFalse("tools" in request)
-        assertEquals("auto", request.getValue("tool_choice").jsonPrimitive.content)
+        val choice = request.getValue("tool_choice").jsonObject
+        assertEquals("allowed_tools", choice.getValue("type").jsonPrimitive.content)
+        assertEquals("auto", choice.getValue("mode").jsonPrimitive.content)
+        assertEquals(listOf("retained"), allowedToolNames(choice))
     }
 
     @Test

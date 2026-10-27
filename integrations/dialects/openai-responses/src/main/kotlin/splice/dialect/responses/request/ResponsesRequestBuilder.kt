@@ -48,8 +48,8 @@ import splice.core.turn.TurnRoute
 import splice.core.turn.TurnScope
 import splice.core.turn.TurnToolSurface
 import splice.core.wire.AnthropicRequest
-import splice.dialect.responses.ResponsesLiteShape
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.admission.ResponsesRequestControls
 import splice.dialect.responses.reasoning.ResponsesReasoningKnobs
 import splice.dialect.responses.stream.ResponsesLooseFields
 import splice.dialect.responses.tools.ResponsesToolPlan
@@ -70,7 +70,6 @@ internal class ResponsesRequestBuilder(
     private val priorReasoning = ResponsesPriorReasoning()
     private val messages = ResponsesMessageFragments(quirks, toolNames)
     private val controls = ResponsesRequestControls(quirks)
-    private val liteShape = ResponsesLiteShape(quirks)
 
     public fun build(body: AnthropicRequest, raw: JsonObject, opts: BuildOptions): BuiltRequest {
         // Standard Responses holds its initial direct-function surface in tools and appends later
@@ -80,11 +79,9 @@ internal class ResponsesRequestBuilder(
         val rawControls = controls.wire(raw)
         val wireBody = ResponsesOutputSchema.wireBody(body, outputFormat)
         val dynamicTools = ResponsesDynamicToolChanges.availability(wireBody)
-        val initiallyAvailableBody = wireBody.copy(tools = dynamicTools.initiallyAvailable)
-        // Responses-lite is the Codex synthetic outer executor's own tool shape. Its full catalog
-        // remains provider-owned rather than being subjected to a direct-function availability rule.
-        val lite = liteShape.isLite(opts)
-        val surfaceBody = if (lite) wireBody else initiallyAvailableBody
+        // Lite is a wire shape, not an executor strategy. Providers that replace this direct
+        // surface own their nested catalog and outer tool choice after shared conversion.
+        val surfaceBody = wireBody.copy(tools = dynamicTools.initiallyAvailable)
         val partition = toolPlan.partition(surfaceBody, opts)
         val declareByName = toolPlan.declarationCandidates(surfaceBody, partition)
         val effort = knobs.resolveEffort(body, raw, opts)
@@ -107,7 +104,7 @@ internal class ResponsesRequestBuilder(
             reasoning = reasoning,
             tools = RequestToolSurface(
                 partition = partition,
-                currentAllowedTools = dynamicTools.currentNames.takeIf { !lite && dynamicTools.requiresRestriction },
+                currentAllowedTools = dynamicTools.currentNames.takeIf { dynamicTools.requiresRestriction },
             ),
             conversationKey = conversationKey,
             outputFormat = outputFormat,

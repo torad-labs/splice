@@ -4,6 +4,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import splice.core.parse.AnthropicTurnBody
 import splice.core.util.JsonScalars
+import splice.dialect.responses.request.ResponsesDynamicToolChanges
 import splice.provider.codex.CODE_MODE_FIELD_INPUT
 import splice.provider.codex.CODE_MODE_FIELD_TYPE
 import splice.provider.codex.CodeModeOriginalImageModels
@@ -22,20 +23,27 @@ internal class CodeModeTurnCatalogs(
     private val settings: CodexCodeModeSettings,
     private val originalImageModels: CodeModeOriginalImageModels,
 ) {
-    fun definitions(body: AnthropicTurnBody, request: JsonObject): List<CodeModeManual.NestedTool> {
+    fun definitions(
+        body: AnthropicTurnBody,
+        request: JsonObject,
+        availability: ResponsesDynamicToolChanges.Availability = ResponsesDynamicToolChanges.availability(body.typed),
+    ): List<CodeModeManual.NestedTool> {
         val additional = (request[CODE_MODE_FIELD_INPUT] as? JsonArray).orEmpty()
             .mapNotNull { it as? JsonObject }
             .firstOrNull { JsonScalars.str(it, CODE_MODE_FIELD_TYPE) == TYPE_ADDITIONAL_TOOLS }
         val projected = CodeModeToolDefinitions.collect((additional?.get(FIELD_TOOLS) as? JsonArray).orEmpty())
-        val raw = body.typed.tools.map { tool ->
-            projected.firstOrNull { it.codeModeName == tool.name } ?: CodeModeManual.NestedTool(
-                tool.name,
-                tool.description.orEmpty(),
-                CodeModeToolDefinitions.parameters(tool.inputSchema ?: CodeModeToolDefinitions.emptyInputSchema),
-            )
+        val initial = body.typed.tools.associateBy { it.name }
+        val current = availability.currentCatalog.map { tool ->
+            projected.firstOrNull { it.codeModeName == tool.name }
+                ?.takeIf { initial[tool.name] == tool }
+                ?: CodeModeManual.NestedTool(
+                    tool.name,
+                    tool.description.orEmpty(),
+                    CodeModeToolDefinitions.parameters(tool.inputSchema ?: CodeModeToolDefinitions.emptyInputSchema),
+                )
         }
         val search = projected.filter { it.codeModeName == CodeModeToolSearch.FUNCTION_NAME }
-        return (raw + search).map {
+        return (current + search).map {
             it.copy(
                 metadata = it.metadata.copy(
                     codeModeInputSchemaMaxBytes = settings.toolInputSchemaMaxBytes,
@@ -44,7 +52,11 @@ internal class CodeModeTurnCatalogs(
         }
     }
 
-    fun policy(body: AnthropicTurnBody, built: BuiltTurn): CodeModeToolPolicy {
+    fun policy(
+        body: AnthropicTurnBody,
+        built: BuiltTurn,
+        availability: ResponsesDynamicToolChanges.Availability = ResponsesDynamicToolChanges.availability(body.typed),
+    ): CodeModeToolPolicy {
         val request = built.requestBody
         val input = (request[CODE_MODE_FIELD_INPUT] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
         val additional = input.firstOrNull { JsonScalars.str(it, CODE_MODE_FIELD_TYPE) == TYPE_ADDITIONAL_TOOLS }
@@ -59,7 +71,7 @@ internal class CodeModeTurnCatalogs(
         )
         val unifiedImageBudget = settings.unifiedImageBudget && (metadata?.useResponsesLite == true || supportsOriginal)
         return CodeModeToolPolicy(
-            deferredNames = body.typed.tools.map { it.name }.toSet() - eager,
+            deferredNames = availability.currentCatalog.map { it.name }.toSet() - eager,
             supportsOriginal = supportsOriginal,
             toolDescriptionFirst = settings.toolDescriptionFirst,
             showCellOverhead = settings.showCellOverhead,

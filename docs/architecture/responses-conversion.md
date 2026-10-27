@@ -24,7 +24,9 @@ This is a conversion contract, not a claim that every provider implements every 
 | Deferred declarations and additions | Offer real schemas at their source boundary. Bare tool-search references load the current known deferred schema instead of a marker alone. | `ResponsesDynamicToolStateTest` |
 | Withdrawals and re-offering | Preserve original declarations and schema history. Restrict current direct-function availability with public allowed_tools, without fabricating remove_tools. | `ResponsesDynamicToolStateTest`, `SharedResponsesContractTest` |
 
-The synthetic code-mode execution and waiting functions are not ordinary nested client tools. Generic availability conversion must not turn those outer functions into a restricted nested catalog or enable their runtime.
+Lite is a wire shape, not an executor selector. Direct lite requests apply the same source deferral and allowed_tools restrictions as other direct requests.
+
+The synthetic code-mode execution and waiting functions are not ordinary nested client tools. The Codex provider replaces direct selection with its outer executor choice and consumes the shared source timeline for nested membership, current schemas and boundary-local loaded-tool descriptions. Unwithdrawn native deferred tools remain reachable through tools and ALL_TOOLS even when omitted from the manual. Source withdrawal does not rewrite the initial executor declaration. Later source schemas remain visible in nested executor manuals at their original boundaries, without advertising direct client functions outside the executor. `CodeModeDynamicToolsTest` covers this provider-owned integration. Generic conversion never enables that runtime.
 
 ## Controls and transport
 

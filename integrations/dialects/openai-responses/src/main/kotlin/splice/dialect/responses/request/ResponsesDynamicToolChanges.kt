@@ -12,26 +12,35 @@ import splice.core.wire.ToolResultBlock
 import splice.core.wire.ToolUseBlock
 import splice.core.wire.UnknownBlock
 
-/** The Anthropic dynamic-tool state that changes the Responses request surface. */
-internal object ResponsesDynamicToolChanges {
-    internal data class Availability(
-        val initiallyAvailable: List<ToolDefinition>,
-        val currentNames: List<String>,
-        val requiresRestriction: Boolean,
-        val hasUnrepresentableRemoval: Boolean,
-    )
+/** Pure source-tool state shared by direct conversion and provider-owned nested catalogs. */
+public object ResponsesDynamicToolChanges {
+    /** Direct availability and catalog knowledge are separate: source deferral is not native withdrawal. */
+    public data class Availability(
+        public val initiallyAvailable: List<ToolDefinition>,
+        public val currentNames: List<String>,
+        public val requiresRestriction: Boolean,
+        public val hasUnrepresentableRemoval: Boolean,
+        public val knownDefinitions: List<ToolDefinition>,
+        public val withdrawnNames: Set<String>,
+        public val loadedDefinitions: List<LoadedDefinition>,
+    ) {
+        /** A native provider may expose deferred definitions, but never a withdrawn one. */
+        public val currentCatalog: List<ToolDefinition> = knownDefinitions.filterNot { it.name in withdrawnNames }
+    }
 
-    /** Source-deferred definitions stay known for later references but are not offered at the first boundary. */
-    fun initiallyAvailable(tools: List<ToolDefinition>): List<ToolDefinition> =
+    /** The exact source block pins the schema at that boundary, even when identical references recur. */
+    public data class LoadedDefinition(public val reference: UnknownBlock, public val definition: ToolDefinition)
+
+    /** Source-deferred definitions stay known for later references but are not initially offered directly. */
+    public fun initiallyAvailable(tools: List<ToolDefinition>): List<ToolDefinition> =
         tools.filterNot { it.deferLoading }
 
     /**
-     * The public Responses request keeps its initial declarations stable, then constrains the next
-     * response with allowed_tools when source history changed what is callable. Ordered source
-     * additions update the known schema catalog, while bare result references use UnknownBlock's
-     * validated loadedTool recognizer instead of interpreting result text.
+     * Keep initial declarations stable and fold current direct availability in source order. Catalog
+     * knowledge retains native deferred definitions separately, and reference snapshots never acquire
+     * a schema from a later addition. This state selects no transport, executor or provider strategy.
      */
-    fun availability(body: AnthropicRequest): Availability {
+    public fun availability(body: AnthropicRequest): Availability {
         val state = SourceState(body.tools)
         body.messages.forEach { message ->
             message.content.forEach { block -> state.accept(message.role, block) }
@@ -39,11 +48,13 @@ internal object ResponsesDynamicToolChanges {
         return state.availability()
     }
 
-    /** One source-ordered walk owns the known definitions and the currently callable names. */
+    /** One source-ordered walk owns schemas, direct offers, withdrawals and loaded-reference provenance. */
     private class SourceState(tools: List<ToolDefinition>) {
         private val known = tools.associateByTo(linkedMapOf()) { it.name }
         private val initial = initiallyAvailable(tools)
         private val current = initial.mapTo(linkedSetOf()) { it.name }
+        private val withdrawn = linkedSetOf<String>()
+        private val loaded = mutableListOf<LoadedDefinition>()
         private var hasUnrepresentableRemoval = false
 
         fun accept(role: String, block: ContentBlock) {
@@ -64,7 +75,7 @@ internal object ResponsesDynamicToolChanges {
             when (block.type) {
                 SOURCE_TOOL_ADDITION -> ResponsesSourceToolDefinitions.fromAddition(block, known)?.let { tool ->
                     known[tool.name] = tool
-                    current.add(tool.name)
+                    offer(tool)
                 }
                 SOURCE_TOOL_REMOVAL -> remove(block)
             }
@@ -76,15 +87,21 @@ internal object ResponsesDynamicToolChanges {
                 hasUnrepresentableRemoval = true
             } else {
                 current.remove(tool.name)
+                withdrawn.add(tool.name)
             }
         }
 
+        private fun offer(tool: ToolDefinition) {
+            current.add(tool.name)
+            withdrawn.remove(tool.name)
+        }
+
         private fun loadReferences(block: ToolResultBlock) {
-            block.content.asSequence()
-                .filterIsInstance<UnknownBlock>()
-                .mapNotNull { it.loadedTool }
-                .mapNotNull(known::get)
-                .forEach { tool -> current.add(tool.name) }
+            block.content.filterIsInstance<UnknownBlock>().forEach { reference ->
+                val tool = reference.loadedTool?.let(known::get) ?: return@forEach
+                loaded.add(LoadedDefinition(reference, tool))
+                offer(tool)
+            }
         }
 
         fun availability(): Availability {
@@ -94,6 +111,9 @@ internal object ResponsesDynamicToolChanges {
                 currentNames = currentNames,
                 requiresRestriction = initial.map { it.name } != currentNames,
                 hasUnrepresentableRemoval = hasUnrepresentableRemoval,
+                knownDefinitions = known.values.toList(),
+                withdrawnNames = withdrawn.toSet(),
+                loadedDefinitions = loaded.toList(),
             )
         }
     }

@@ -9,13 +9,25 @@ import splice.core.parse.AnthropicTurnBody
 import splice.core.wire.ToolDefinition
 import splice.core.wire.ToolResultBlock
 import splice.core.wire.UnknownBlock
+import splice.dialect.responses.request.ResponsesDynamicToolChanges
 import splice.upstream.codemode.CodeModeManual
 import splice.upstream.codemode.CodeModeToolDefinitions
+import java.util.IdentityHashMap
 
-/** The tools [body]'s client sends, as code mode describes them, and the ones a cell's search loaded. */
-internal class CodeModeLoadedTools(private val body: AnthropicTurnBody) {
-    /** V4-388: [tool]'s `ALL_TOOLS` description as codex's augment_tool_definition writes it, with its TypeScript
-     *  declaration, so a tool the manual defers still shows the cell its arguments. */
+/** Current native catalog descriptions and the original schema at each historical source load. */
+internal class CodeModeLoadedTools(
+    body: AnthropicTurnBody,
+    private val availability: ResponsesDynamicToolChanges.Availability =
+        ResponsesDynamicToolChanges.availability(body.typed),
+) {
+    private val loaded: Map<UnknownBlock, ToolDefinition> = IdentityHashMap<UnknownBlock, ToolDefinition>().apply {
+        availability.loadedDefinitions.forEach { put(it.reference, it.definition) }
+    }
+
+    /** V4-388: `ALL_TOOLS` descriptions include the declaration even for tools omitted from the manual. */
+    fun descriptions(): Map<String, String> = availability.currentCatalog.associate { it.name to described(it) }
+
+    /** V4-388: [tool]'s description and TypeScript declaration as the cell's `ALL_TOOLS` carries them. */
     fun described(tool: ToolDefinition): String = CodeModeManual.augmented(
         CodeModeManual.NestedTool(
             tool.name,
@@ -24,23 +36,16 @@ internal class CodeModeLoadedTools(private val body: AnthropicTurnBody) {
         ),
     )
 
-    /** The catalog tools a cell's search loaded: each `tool_reference` in [results] whose tool the client now sends.
-     *  These are exactly the ones [text] describes, so no tool leaves exec's manual unless the model reads it in the
-     *  search's result. A tool that was already in the manual and is loaded again leaves it once. */
-    fun names(results: List<ToolResultBlock>): Set<String> {
-        val catalog = body.typed.tools.map { it.name }.toSet()
-        return results.flatMap { it.content }
-            .mapNotNull { (it as? UnknownBlock)?.loadedTool }
-            .filterTo(mutableSetOf()) { it in catalog }
-    }
+    /** Only references with a real definition at their source boundary may leave the initial manual. */
+    fun names(results: List<ToolResultBlock>): Set<String> = results.flatMap { it.content }
+        .filterIsInstance<UnknownBlock>()
+        .mapNotNull { loaded[it]?.name }
+        .toSet()
 
-    /** What a cell reads for [part] when it names a tool the client just loaded: how a cell calls it, then its
-     *  description and declaration as `ALL_TOOLS` carries them. Null for any other block, and for a tool the client's
-     *  catalog does not hold, which keeps the omission marker. */
+    /** Repeated identical references retain their own schema instead of reading the latest revision. */
     fun text(part: UnknownBlock): String? {
-        val name = part.loadedTool ?: return null
-        val tool = body.typed.tools.firstOrNull { it.name == name } ?: return null
-        val call = "tools.${CodeModeManual.identifier(name)}"
-        return "[tool loaded: $name. A cell calls it as $call.]\n${described(tool)}\n"
+        val tool = loaded[part] ?: return null
+        val call = "tools.${CodeModeManual.identifier(tool.name)}"
+        return "[tool loaded: ${tool.name}. A cell calls it as $call.]\n${described(tool)}\n"
     }
 }

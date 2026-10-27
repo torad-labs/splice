@@ -18,6 +18,7 @@ import splice.core.wire.ToolResultBlock
 import splice.core.wire.ToolUseBlock
 import splice.core.wire.UnknownBlock
 import splice.dialect.responses.request.ImageDisposition
+import splice.dialect.responses.request.ResponsesDynamicToolChanges
 import splice.dialect.responses.request.ResponsesToolResultMedia
 import splice.provider.codex.branch.CodeModeClearedCandidates
 import splice.provider.codex.callbacks.CodeModeClientToolValues
@@ -51,37 +52,42 @@ internal class CodexCodeModeTurnBuilder(
         built: BuiltTurn,
     ): BuiltTurn {
         val manager = bridge ?: return built
-        if (!eligible(body, built)) return built
-        require(body.typed.tools.none { it.name == CODE_MODE_TOOL_NAME }) {
+        val availability = ResponsesDynamicToolChanges.availability(body.typed)
+        if (!eligible(body, built, availability)) return built
+        require(availability.knownDefinitions.none { it.name == CODE_MODE_TOOL_NAME }) {
             "client tool name '$CODE_MODE_TOOL_NAME' collides with splice's code-mode bridge"
         }
         require(!sessionId.isNullOrBlank()) { "code mode requires a client session id" }
         val cleared = CodeModeClearedCandidates.read(body)
-        val loaded = CodeModeLoadedTools(body).names(bridgeResults(body))
-        val toolPolicy = catalogs.policy(body, built).copy(loadedNames = loaded)
+        val loaded = CodeModeLoadedTools(body, availability)
+        val toolPolicy = catalogs.policy(body, built, availability)
+            .copy(loadedNames = loaded.names(bridgeResults(body)))
         val messages = CodeModeCatalogMessages(toolPolicy.modelMessages)
         val turn = CodexCodeModeBridge.Turn(
             sessionId = sessionId,
             conversationKey = built.meta.scope.conversationKey.orEmpty(),
             model = built.meta.route.upstreamModel,
-            tools = body.typed.tools.map { it.name }.toSet(),
-            toolResults = toolResults(body),
+            tools = availability.currentCatalog.map { it.name }.toSet(),
+            toolResults = toolResults(body, loaded),
             rendering = CodeModeResultRendering(
                 toolMedia(body).filterKeys { it !in cleared },
                 legacyResults(body),
                 cleared,
             ),
             catalog = splice.provider.codex.catalog.CodeModeTurnCatalog(
-                messages.functions(catalogs.definitions(body, built.requestBody)),
+                messages.functions(catalogs.definitions(body, built.requestBody, availability)),
                 toolPolicy,
-                descriptions(body),
+                loaded.descriptions(),
             ),
         )
         val disableParallel = body.typed.toolChoice?.disableParallelToolUse == true
-        val surface = manager.injectTool(built.requestBody, turn.tools, turn.toolPolicy)
+        // Initial declarations remain historical. Current nested membership is enforced by turn.tools.
+        val surface = manager.injectTool(built.requestBody, body.typed.tools.map { it.name }.toSet(), turn.toolPolicy)
+        val choice = JsonPrimitive(if (body.typed.toolChoice?.type == "any") "required" else "auto")
+        val native = JsonObject(surface + ("tool_choice" to choice))
         return built.copy(
             meta = built.meta.copy(tools = built.meta.tools.copy(codeMode = true)),
-            requestBody = CodexCodeModeInstructions.append(surface, disableParallel),
+            requestBody = CodexCodeModeInstructions.append(native, disableParallel),
             roundInterceptor = manager.interceptor(turn = turn, disableParallel = disableParallel),
         )
     }
@@ -96,10 +102,14 @@ internal class CodexCodeModeTurnBuilder(
     // calls anyway takes the ordinary code-mode path (a completed local cell continues upstream, a
     // cell that reaches for client tools surfaces them as ordinary tool calls — astra, PR #169),
     // which is exactly what an ordinary tool call on a compaction already did before this change.
-    private fun eligible(body: AnthropicTurnBody, built: BuiltTurn): Boolean {
+    private fun eligible(
+        body: AnthropicTurnBody,
+        built: BuiltTurn,
+        availability: ResponsesDynamicToolChanges.Availability,
+    ): Boolean {
         val choice = body.typed.toolChoice
         val choiceAllowsBridge = choice == null || (choice.name == null && choice.type in setOf("auto", "any"))
-        return body.typed.tools.isNotEmpty() &&
+        return availability.knownDefinitions.isNotEmpty() &&
             choiceAllowsBridge &&
             runsCodeMode(built.meta.route.upstreamModel) &&
             isLiteRequest(built.requestBody)
@@ -113,16 +123,23 @@ internal class CodexCodeModeTurnBuilder(
     private fun isLiteRequest(request: JsonObject): Boolean {
         val input = request[FIELD_INPUT] as? JsonArray ?: return false
         val first = input.firstOrNull() as? JsonObject ?: return false
-        return request[FIELD_TOOLS] == null &&
-            JsonScalars.str(first, FIELD_TYPE) == TYPE_ADDITIONAL_TOOLS &&
-            first[FIELD_TOOLS] is JsonArray
+        return when {
+            request[FIELD_TOOLS] != null -> false
+            JsonScalars.str(first, FIELD_TYPE) == TYPE_ADDITIONAL_TOOLS -> first[FIELD_TOOLS] is JsonArray
+            // Source deferral can leave no initial direct declarations in an otherwise lite request.
+            else -> JsonScalars.str(first, "role") == "developer" &&
+                JsonScalars.str(request, "instructions").isNullOrEmpty()
+        }
     }
 
     /** Internal, not private: V4-178 pins the marker on the parsed result, and the interceptor the
      *  turn rides in is an opaque lambda a test cannot look inside. */
-    internal fun toolResults(body: AnthropicTurnBody): List<CodeModeResult> = bridgeResults(body).map { block ->
+    internal fun toolResults(
+        body: AnthropicTurnBody,
+        loaded: CodeModeLoadedTools = CodeModeLoadedTools(body),
+    ): List<CodeModeResult> = bridgeResults(body).map { block ->
         val dispositions = media.followUps(block).dispositions.iterator()
-        val output = block.content.joinToString("") { part -> resultText(body, block.toolUseId, part, dispositions) }
+        val output = block.content.joinToString("") { part -> resultText(loaded, block.toolUseId, part, dispositions) }
         val value = CodeModeClientToolValues.value(block)
         CodeModeResult(
             id = block.toolUseId,
@@ -135,8 +152,7 @@ internal class CodexCodeModeTurnBuilder(
 
     /** V4-388: each client tool's `ALL_TOOLS` description as codex's augment_tool_definition writes it —
      *  with its TypeScript declaration, so a tool the manual defers still shows the cell its arguments. */
-    internal fun descriptions(body: AnthropicTurnBody): Map<String, String> =
-        CodeModeLoadedTools(body).let { tools -> body.typed.tools.associate { it.name to tools.described(it) } }
+    internal fun descriptions(body: AnthropicTurnBody): Map<String, String> = CodeModeLoadedTools(body).descriptions()
 
     /** V4-179: each bridge result's follow-up items, rendered once here and nowhere else. */
     internal fun toolMedia(body: AnthropicTurnBody): Map<String, List<JsonElement>> =
@@ -175,7 +191,7 @@ internal class CodexCodeModeTurnBuilder(
      *  script itself reads text only — function_call_output.output is string-only and a script
      *  return is a string. */
     private fun resultText(
-        body: AnthropicTurnBody,
+        loaded: CodeModeLoadedTools,
         toolUseId: String,
         part: ContentBlock,
         dispositions: Iterator<ImageDisposition>,
@@ -183,7 +199,7 @@ internal class CodexCodeModeTurnBuilder(
         is TextBlock -> part.text
         is ImageBlock -> imageMarker(toolUseId, part.source, dispositions.next())
         is DocumentBlock -> omitted(toolUseId, "document", part.source, DOCUMENT_REASON)
-        is UnknownBlock -> CodeModeLoadedTools(body).text(part)
+        is UnknownBlock -> loaded.text(part)
             ?: omitted(toolUseId, "non-text content", null, DOCUMENT_REASON)
         is RedactedThinkingBlock, is ThinkingBlock, is ToolResultBlock, is ToolUseBlock ->
             omitted(toolUseId, "non-text content", null, DOCUMENT_REASON)

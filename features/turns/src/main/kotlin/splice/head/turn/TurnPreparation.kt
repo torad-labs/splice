@@ -36,6 +36,7 @@ import io.ktor.server.request.httpMethod
 import io.ktor.server.request.uri
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.serialization.json.JsonObject
+import splice.core.client.AGENT_HEADER
 import splice.core.client.SESSION_HEADER
 import splice.core.failure.Decline
 import splice.core.failure.FailureCause
@@ -239,10 +240,13 @@ internal class TurnPreparation(
 
     private fun build(
         call: ApplicationCall,
-        parsed: AnthropicTurnBody,
+        received: AnthropicTurnBody,
         arrival: Arrival,
         perf: TurnPerf,
     ): Preparation {
+        // The subagent travels with the body, so a provider that keys a conversation can tell two subagents of one
+        // session apart even when they open with identical words (code mode's turn key, Oct 27).
+        val parsed = received.copy(agentId = call.request.headers[AGENT_HEADER]?.takeIf(String::isNotBlank))
         // One scan of system + last-user text: classification and shadow instrumentation share it.
         val compactProbe = compactClassifier.classifyCompact(parsed.typed)
         deps.stores.shadow.record(parsed.typed, compactProbe)
@@ -268,7 +272,9 @@ internal class TurnPreparation(
             it.copy(sessionId = it.sessionId ?: sessionId, messagesHash = messagesHash)
         }
         val prepared = fromProvider.copy(meta = fromProvider.meta.copy(scope = scope))
-        toolLoop.join(prepared.meta, parsed)
+        // The subagent the request comes from belongs to the turn it joins: two subagents of one session can open
+        // with identical words, which their shared conversation key cannot tell apart (fix 4, Oct 27).
+        toolLoop.join(prepared.meta, parsed, call.request.headers[AGENT_HEADER]?.takeIf(String::isNotBlank))
         // Per-turn headers already outrank the provider's own in TurnDriver's merge, so a forwarded
         // value REPLACES a configured default (e.g. the caller's anthropic-version wins over the
         // provider's), and UpstreamClient folds the casing.

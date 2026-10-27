@@ -43,6 +43,7 @@ internal class CodexCodeModeTurnBuilder(
 ) {
     private val catalogs = splice.provider.codex.catalog.CodeModeTurnCatalogs(settings, originalImageModels)
     private val operatorModels: Set<String> = CodexCodeModeModels.normalize(models.orEmpty())
+    private val identity = splice.provider.codex.state.CodeModeTurnIdentity()
 
     /** The provider's compaction flag is deliberately absent: the bridge rides a compaction exactly as it rides a
      *  turn, so a preparation that could read the flag could also diverge on it (see [eligible]). */
@@ -65,7 +66,7 @@ internal class CodexCodeModeTurnBuilder(
         val messages = CodeModeCatalogMessages(toolPolicy.modelMessages)
         val turn = CodexCodeModeBridge.Turn(
             sessionId = sessionId,
-            conversationKey = built.meta.scope.conversationKey.orEmpty(),
+            conversationKey = identity.conversationKey(built.meta.scope.conversationKey.orEmpty(), body.agentId),
             model = built.meta.route.upstreamModel,
             tools = availability.currentCatalog.map { it.name }.toSet(),
             toolResults = toolResults(body, loaded),

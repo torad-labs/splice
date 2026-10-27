@@ -20,6 +20,9 @@ public val lenientJson: Json = Json {
 public data class AnthropicTurnBody(
     val raw: JsonObject,
     val typed: AnthropicRequest,
+    /** The Claude Code subagent that sent the request (its x-claude-code-agent-id header), set by the head that
+     *  received it; null on the main thread and wherever no head read one. */
+    val agentId: String? = null,
 ) {
     /** The session the body names: `metadata.user_id` is itself a JSON string holding `device_id`,
      *  `account_uuid` and `session_id`. Null when the body carries none or the string is not that. */

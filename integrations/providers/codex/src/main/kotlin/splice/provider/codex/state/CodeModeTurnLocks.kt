@@ -42,7 +42,9 @@ internal class CodeModeTurnLocks {
     }
 }
 
-/** The exact conversation key and request digest that acquire the coroutine turn lock. */
+/** The exact conversation key and request digest that acquire the coroutine turn lock. A subagent is its own
+ *  conversation, the way codex keeps one thread per conversation: two subagents of one session that open with
+ *  identical words never wait on each other's turn or share a script, because [conversationKey] tells them apart. */
 internal class CodeModeTurnIdentity {
     fun turnKey(turn: CodexCodeModeBridge.Turn): String = digest(
         "${turn.sessionId}${0.toChar()}${turn.conversationKey}${0.toChar()}${turn.model}",
@@ -52,6 +54,11 @@ internal class CodeModeTurnIdentity {
     fun conversationId(turn: CodexCodeModeBridge.Turn): String = digest(
         "${turn.sessionId}${0.toChar()}${turn.conversationKey}",
     )
+
+    /** The conversation key a turn of [agentId] carries: the opening's own key on the main thread, which names no
+     *  agent, so the records it persisted are still found; the opening and the subagent otherwise. */
+    fun conversationKey(opening: String, agentId: String?): String =
+        if (agentId.isNullOrEmpty()) opening else "$opening${0.toChar()}agent${0.toChar()}$agentId"
 
     fun digest(value: String): String = MessageDigest.getInstance("SHA-256")
         .digest(value.toByteArray())

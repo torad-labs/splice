@@ -1768,7 +1768,8 @@ export function mockHandler(state: MockState): Methods {
         return;
       }
       const data = Buffer.from(JSON.stringify({
-        models: [{ slug: "gpt-6-astra", display_name: "Astra (mock)", context_window: 400000, tool_mode: "code_mode_only" }],
+        models: [{ slug: "gpt-6-astra", display_name: "Astra (mock)", context_window: 400000,
+          tool_mode: "code_mode_only", use_responses_lite: true }],
       }), "utf8");
       h.sendResponse(200);
       h.sendHeader("Content-Type", "application/json");

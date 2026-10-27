@@ -220,7 +220,9 @@ internal class CodexCodeModeDriver(
         body: CodeModeBody,
     ): CodeModeRewrite {
         val records = (registry.recordsFor(context.key) + context.completed).distinctBy(CodeModeRecord::id)
-        sent.extend(context, records)?.let { return CodeModeRewrite(it) }
+        // In a recovery the round's partial already went up before the marker, so a script it finished goes on from
+        // what followed the marker, never with the partial sent again.
+        sent.extend(context, context.recovery?.upstream(records) ?: records)?.let { return CodeModeRewrite(it) }
         val posted = context.recovery?.upstream(context.completed) ?: context.completed
         val capture = posted.lastOrNull { it.id == record.id }
         return context.link.post.canonicalize(body, posted, context.turn.rendering.media, capture)

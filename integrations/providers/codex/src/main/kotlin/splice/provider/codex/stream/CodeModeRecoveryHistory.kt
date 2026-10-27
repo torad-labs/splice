@@ -239,6 +239,7 @@ internal class CodeModeRecoveryHistory(baseline: CodeModeBody) {
             it.sessionId = state.sessionId
             it.conversationId = state.conversationId
             it.nativeBaseId = history.native.parent?.id
+            it.postedOn = state.postedOn
             it.nativeBatch = state.nativeBatch
             it.nativeCellId = state.nativeCellId
             it.nativeCompleted = state.nativeCompleted

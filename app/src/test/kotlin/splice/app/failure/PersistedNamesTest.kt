@@ -38,11 +38,21 @@ import splice.head.scripted.ScriptedHeads
 import splice.head.scripted.reply
 import splice.head.scripted.withScriptedHeads
 import java.nio.file.Path
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
 
 /** A first-output tier short enough to pass in one virtual step, and the step that passes it. */
 private val FIRST_OUTPUT = 1.seconds
 private val PAST_FIRST_OUTPUT = 2.seconds
+
+/** A mid-output tier, and the step that passes it. It is the head's budget, which also bounds each blocked socket read
+ *  in real time, so it is far longer than the watchdog's real-time poll that a one-second first-output tier paces. */
+private val MID_OUTPUT = 30.seconds
+private val PAST_MID_OUTPUT = 31.seconds
+
+/** A no-progress limit no test here reaches, for a head whose budget is short. */
+private val NO_PROGRESS_LIMIT = 1.hours
 
 /** Longer than the watchdog's real-time poll for a one-second tier (a third of the tier, Watchdog.pollInterval). */
 private const val WATCHDOG_POLL_MS = 400L
@@ -57,7 +67,7 @@ class PersistedNamesTest {
     fun `a turn cut off mid-answer writes UPSTREAM_TRUNCATED and counts in Cut off`(@TempDir tmp: Path) = runTest {
         withScriptedHeads(tmp) {
             // ChatStreamTranslator.unfinishedOutcome: a read that ends without a finish_reason is a truncation, and
-            // ChatResendOnce re-sends only an error no table names, so the tear ends the turn.
+            // ChatResendOnce carries a chat round on only while nothing reached the client, so the tear ends the turn.
             provider.script(reply { chatText("partial words"); hold(); cut() })
             val head = chat()
             val stream = head.client.open()
@@ -78,15 +88,25 @@ class PersistedNamesTest {
     fun `a turn that stalled writes UPSTREAM_STALLED and counts in Given up`(@TempDir tmp: Path) = runTest {
         withScriptedHeads(tmp) {
             // A silent round is reaped only on a path that cannot answer (Watchdog.launchIn, PathLiveness.agrees): the
-            // provider's address refuses a connect while the round's own connection stays open. ChatStreamTranslator
-            // then ends the turn as stalled, and ChatResendOnce does not re-send it. The head holds its status until
-            // content or a failure (PendingSse), so the request reaching the provider is the sign the round is open.
-            provider.script(reply { event(ROLE_ONLY_CHUNK); hold(); chatEnd() })
-            val head = chat(HeadShape(firstOutput = FIRST_OUTPUT, relayed = true))
+            // provider's address refuses a connect while the round's own connection stays open. The silence comes
+            // after the answer's first words reached the client, because that is the stall a chat turn ends on: since
+            // failure-handling slice 4 a round silent before its first output is sent fresh twice (RetryEngine's
+            // Stalled(FIRST_BYTE) row), and on a path that refuses connects that re-send ends the turn unreachable.
+            // ChatResendOnce carries a chat round on only while nothing reached the client, so ChatStreamTranslator's
+            // stall ends the turn. The short first-output tier only paces the watchdog's poll; the mid-output tier
+            // is the one that fires.
+            provider.script(reply { chatText("partial words"); hold(); chatEnd() })
+            val shape = HeadShape(
+                budget = MID_OUTPUT,
+                firstOutput = FIRST_OUTPUT,
+                progressCap = NO_PROGRESS_LIMIT,
+                relayed = true,
+            )
+            val head = chat(shape)
             val stream = head.client.open()
-            provider.awaitRequests(1)
+            stream.awaitText("partial words")
             head.relay.stopListening()
-            advanceUntilEnded(head, stream)
+            advanceUntilEnded(head, stream, PAST_MID_OUTPUT)
 
             val records = HeadRecords(head)
             val ended = records.ended()
@@ -434,14 +454,18 @@ class PersistedNamesTest {
             HeadRecords(head).ended()
         }
 
-    /** Moves the head's clock past the first-output tier until the answer ends. The watchdog samples that clock on a
-     *  real-time poll, and a byte still in flight when the clock moves starts the silence again, so one step may not
-     *  be the last. */
-    private suspend fun ScriptedHeads.advanceUntilEnded(head: ScriptedHead, stream: ClientStream) {
+    /** Moves the head's clock by [step], past the tier that fires, until the answer ends. The watchdog samples that
+     *  clock on a real-time poll, and a byte still in flight when the clock moves starts the silence again, so one
+     *  step may not be the last. */
+    private suspend fun ScriptedHeads.advanceUntilEnded(
+        head: ScriptedHead,
+        stream: ClientStream,
+        step: Duration = PAST_FIRST_OUTPUT,
+    ) {
         withContext(Dispatchers.Default) {
             repeat(MAX_STEPS) {
                 if (stream.finished) return@withContext
-                time.advanceBy(PAST_FIRST_OUTPUT)
+                time.advanceBy(step)
                 delay(WATCHDOG_POLL_MS)
             }
             fail<Unit>("the turn did not end: ${stream.soFar().describe()}\n${head.log.joinToString("\n")}")

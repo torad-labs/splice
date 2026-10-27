@@ -2,8 +2,9 @@
 // an openai-responses head never has a turn refused because splice sent a tool call without its result, and GPT never
 // reads its own reasoning twice. After an interruption (an overload mid-stream, a re-anchor, a websocket round that
 // falls back to HTTP, a compaction), the next request carries each call once, followed by its result, and each
-// reasoning item once. Where a call's result was sent (the client's tool result, or a script's output), that result
-// goes out again, never a stand-in; a call whose result never existed is answered the way Codex answers it.
+// reasoning item once, in the order GPT wrote them. Where a call's result was sent (the client's tool result, or a
+// script's output), that result goes out again, never a stand-in; a call whose result never existed is answered the way
+// Codex answers it.
 //
 // The shapes are the two refusals of Oct 26 and 27. At 04:55 CT an overload mid-stream re-anchored a code-mode turn,
 // continuing from partial output; the rebuild kept 198 records as ordinary tool calls, and the next request carried
@@ -77,6 +78,14 @@ private const val SUMMARY = "synthetic summary of the conversation"
 /** The words a head's re-anchor asks GPT to carry an interrupted answer on with, instead of starting it again. */
 private const val REANCHOR_MARKER = "Your previous stream was interrupted mid-answer."
 
+/** What the head logs when a re-anchor carries the round on from what arrived, as the 04:55 turn's did. */
+private const val CONTINUED = "continuing from partial output"
+
+/** What the head logs for each script its rebuild of the history cannot place, as it did for 198 at 04:55 CT. */
+private const val UNPLACED = "its client calls stay in the history as ordinary tool calls"
+private const val FIRST_ANSWER = "synthetic first answer"
+private const val NEXT_PROMPT = "Go on with the synthetic task."
+
 /** Claude Code's summarizer prompt and instruction, which mark a request as a compaction. */
 private const val SUMMARIZER = "You are a helpful AI assistant tasked with summarizing conversations."
 private const val SUMMARY_ASK =
@@ -98,6 +107,9 @@ private val ANSWERS = mapOf(
     "custom_tool_call" to "custom_tool_call_output",
     "tool_search_call" to "tool_search_output",
 )
+
+/** The ids GPT's numbered responses give their reasoning, scripts and waits; the number names the response. */
+private val AUTHORED = Regex("(rs_synthetic|call_exec|call_wait)_\\d+")
 
 private val TOOLS = buildJsonArray {
     addJsonObject {
@@ -128,6 +140,26 @@ class CodeModeCallPairingTest {
     fun `a compaction in the middle of a code-mode tool loop sends every call with its result over the websocket`(
         @TempDir tmp: Path,
     ) = runBlocking { compactionMidLoop(tmp, webSocket = true) }
+
+    @Test
+    fun `an overload mid-stream past scripts the rebuild cannot place goes on over HTTP with every call answered`(
+        @TempDir tmp: Path,
+    ) = runBlocking { overloadPastUnplacedScripts(tmp, webSocket = false) }
+
+    @Test
+    fun `an overload mid-stream past scripts the rebuild cannot place goes on over the websocket, answered`(
+        @TempDir tmp: Path,
+    ) = runBlocking { overloadPastUnplacedScripts(tmp, webSocket = true) }
+
+    @Test
+    fun `a compaction whose stream drops, past scripts the rebuild cannot place, sends each call's result over HTTP`(
+        @TempDir tmp: Path,
+    ) = runBlocking { droppedCompactionPastUnplacedScripts(tmp, webSocket = false) }
+
+    @Test
+    fun `a compaction whose stream drops, past scripts the rebuild cannot place, sends each result on the socket`(
+        @TempDir tmp: Path,
+    ) = runBlocking { droppedCompactionPastUnplacedScripts(tmp, webSocket = true) }
 
     @Test
     fun `every request a code-mode head sends pairs each call with one result and each reasoning id once`(
@@ -196,6 +228,78 @@ class CodeModeCallPairingTest {
         assertTrue(SUMMARY in summary.text, "the compaction was answered: ${summary.describe()}")
         assertTrue(ledger.reads().any { SUMMARY_ASK in it.body }, "the compaction reached the backend")
         ledger.assertPaired("the 23:23 shape over ${if (webSocket) "the websocket" else "HTTP"}", rig)
+    }
+
+    /** The 04:55 shape whole: GPT answered one prompt after a script and a wait, the next prompt ran a script and a
+     *  wait that asked the client to Read, and the backend overloads mid-stream, after GPT's reasoning. The head
+     *  carries the round on from what arrived, over a rebuild of the history that cannot place every script.
+     *  On the websocket the first overload sends the round over HTTP, where the second one re-anchors it, and the
+     *  round carried on goes out on the websocket again, as rounds 2 to 4 of the 04:55 turn went. (An overload while
+     *  the script itself streams fails the turn on this head, a decision of the failure-handling work this fix leaves
+     *  alone.) */
+    private suspend fun overloadPastUnplacedScripts(tmp: Path, webSocket: Boolean) = withScriptedHeads(tmp) {
+        val gpt = Gpt()
+        val ledger = Ledger(this, gpt)
+        val rig = CodeModeRig.start(this, tmp, ledger, webSocket)
+        val talk = Conversation("synthetic-unplaced-overload", "Start the synthetic code-mode task.")
+        twoPrompts(rig, ledger, gpt, talk)
+
+        val answers = listOfNotNull(
+            gpt.overloadAfterReasoning().takeIf { webSocket },
+            gpt.overloadAfterReasoning(),
+            gpt.answer(REST),
+        )
+        val overloaded = ledger.requestCount()
+        val last = rig.turn(talk, *answers.toTypedArray())
+
+        val context = "the 04:55 shape over ${if (webSocket) "the websocket" else "HTTP"}"
+        assertTrue(REST in last.text, "the turn went on after the overload: ${last.describe()}\n${ledger.summary(rig)}")
+        ledger.assertLogged(rig, CONTINUED, context)
+        ledger.assertLogged(rig, UNPLACED, context)
+        val carried = ledger.reads().drop(overloaded).filter { REANCHOR_MARKER in it.body }.map { it.transport }
+        assertEquals(
+            listOf(if (webSocket) Transport.WEBSOCKET else Transport.HTTP),
+            carried,
+            "$context: the request that carried the round on\n${ledger.summary(rig)}",
+        )
+        ledger.assertPaired(context, rig)
+    }
+
+    /** The 23:23 shape whole: past the same two prompts, Claude Code compacts between a tool call and its run, and the
+     *  compaction's stream drops once its summary began, with no close frame on the websocket. The head takes the
+     *  round up again over a rebuild of the history that cannot place every script. */
+    private suspend fun droppedCompactionPastUnplacedScripts(tmp: Path, webSocket: Boolean) = withScriptedHeads(tmp) {
+        val gpt = Gpt()
+        val ledger = Ledger(this, gpt)
+        val rig = CodeModeRig.start(this, tmp, ledger, webSocket)
+        val talk = Conversation("synthetic-unplaced-compaction", "Start the synthetic compaction task.")
+        twoPrompts(rig, ledger, gpt, talk)
+        val dropped = rig.turn(talk, gpt.exec("cell:c3 read"))
+        assertEquals(1, Conversation.toolUses(Conversation.content(dropped)).size, ledger.summary(rig))
+
+        talk.compact()
+        val summary = rig.turn(talk, gpt.cutMidAnswer(PARTIAL), gpt.answer(SUMMARY))
+
+        val context = "the 23:23 shape over ${if (webSocket) "the websocket" else "HTTP"}"
+        assertTrue(SUMMARY in summary.text) {
+            "the compaction was answered: ${summary.describe()}\n${ledger.summary(rig)}"
+        }
+        ledger.assertLogged(rig, UNPLACED, context)
+        ledger.assertPaired(context, rig)
+    }
+
+    /** One prompt GPT answered after a script and a wait on it, then a second prompt whose script and wait asked the
+     *  client to Read, with the client's result sent. */
+    private suspend fun twoPrompts(rig: CodeModeRig, ledger: Ledger, gpt: Gpt, talk: Conversation) {
+        val first = rig.turn(talk, gpt.exec("cell:c1 yield read"), gpt.waitOn("c1"))
+        talk.result(ledger.toolCall(talk, first, rig), CLIENT_RESULT)
+        val answered = rig.turn(talk, gpt.answer(FIRST_ANSWER))
+        assertEquals(emptyList<String>(), talk.answered(answered)) {
+            "the first prompt was answered: ${answered.describe()}"
+        }
+        talk.user(NEXT_PROMPT)
+        val second = rig.turn(talk, gpt.exec("cell:c2 yield read"), gpt.waitOn("c2"))
+        talk.result(ledger.toolCall(talk, second, rig), CLIENT_RESULT)
     }
 }
 
@@ -351,6 +455,23 @@ private class Gpt {
 
     /** A websocket round the backend closes before any output; the head answers it again over HTTP. */
     fun closeBeforeOutput(): Answer = Answer(reply { close(SERVER_ERROR_CLOSE, "synthetic server error") }, null)
+
+    /** Reasoning and the first words of an answer, then the connection drops with no close frame before the answer
+     *  completes, as the 23:23 compaction's websocket did after its stream had begun. */
+    fun cutMidAnswer(text: String): Answer {
+        val n = ++serial
+        val id = "resp_synthetic_$n"
+        val output = listOf(reasoning(n), message(n, text))
+        outputs[id] = output.take(1)
+        return Answer(
+            reply {
+                event(created(id))
+                output.forEachIndexed { at, item -> stream(this, at, item, done = at == 0) }
+                cut()
+            },
+            id,
+        )
+    }
 
     private fun respond(items: (Int) -> List<JsonObject>): Answer {
         val n = ++serial
@@ -547,16 +668,23 @@ private class Ledger(private val heads: ScriptedHeads, private val gpt: Gpt) {
     }
 
     /** Each request sends every call once with a result after it, sends no result without its call, carries each
-     *  reasoning id once, and never answers with a stand-in a call whose result was sent before. */
+     *  reasoning id once, keeps GPT's reasoning and calls in the order GPT wrote them, and never answers with a
+     *  stand-in a call whose result was sent before. */
     fun assertPaired(context: String, vararg rigs: CodeModeRig) {
         val sent = HashSet<String>()
+        val written = buildMap { answeredBy.forEachIndexed { at, id -> if (id != null) putIfAbsent(id, at) } }
         val problems = reads().mapNotNull { read ->
-            problems(read, sent).takeIf { it.isNotEmpty() }
+            (problems(read, sent) + orderProblems(read.input, written)).takeIf { it.isNotEmpty() }
                 ?.let { "request ${read.at} (${read.transport}): ${it.joinToString("; ")}\n  ${shape(read.input)}" }
         }
         assertTrue(problems.isEmpty()) {
             "$context\n${problems.joinToString("\n")}\n${rigs.joinToString("\n") { summary(it) }}"
         }
+    }
+
+    /** Fails unless the head logged [words], so a test that names a shape knows the shape happened. */
+    fun assertLogged(rig: CodeModeRig, words: String, context: String) {
+        assertTrue(rig.head.log.any { words in it }) { "$context: the head never logged \"$words\"\n${summary(rig)}" }
     }
 
     fun summary(rig: CodeModeRig): String {
@@ -596,6 +724,30 @@ private class Ledger(private val heads: ScriptedHeads, private val gpt: Gpt) {
             val owner = items.any { ANSWERS[type(it)] == type(result) && callId(it) == callId(result) }
             "result ${callId(result)} goes out without its call".takeUnless { owner }
         }
+
+    /** GPT's reasoning and calls go out in the order GPT wrote them: [written] is when the backend first gave each
+     *  response, so an item may not follow one from a response GPT wrote after its own. */
+    private fun orderProblems(items: List<JsonObject>, written: Map<String, Int>): List<String> {
+        var latest: Pair<String, Int>? = null
+        return items.mapNotNull { item ->
+            val id = authored(item) ?: return@mapNotNull null
+            val at = written["resp_synthetic_${id.substringAfterLast('_')}"] ?: return@mapNotNull null
+            val before = latest
+            if (before != null && at < before.second) {
+                "$id goes out after ${before.first}, which GPT wrote later"
+            } else {
+                latest = id to at
+                null
+            }
+        }
+    }
+
+    /** The id of an item GPT wrote in one of its numbered responses: its reasoning, its script or its wait. */
+    private fun authored(item: JsonObject): String? = when (type(item)) {
+        "reasoning" -> JsonScalars.str(item, "id")
+        "function_call", "custom_tool_call" -> callId(item)
+        else -> null
+    }?.takeIf { AUTHORED.matches(it) }
 
     private fun reasoningProblems(items: List<JsonObject>): List<String> =
         items.filter { type(it) == "reasoning" }.mapNotNull { JsonScalars.str(it, "id") }

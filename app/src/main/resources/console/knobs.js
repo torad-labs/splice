@@ -92,7 +92,6 @@ const createKnobs = (scope) => {
     // admission per command (Knob.kt:186-194); attempts, the first included
     K("maxInflight", "Requests at once", { k: "count", opts: [4, 8, 12, 16, 24, 32, 100, 0], none: "Unlimited" }, 12, { cmd: true, also: "concurrent parallel per command" }),
     K("maxQueued", "Requests waiting in line", { k: "count", opts: [128, 256, 512, 1024, 0], none: "Unlimited" }, 512, { cmd: true, also: "queue full" }),
-    K("upstreamRetries", "Tries before a request fails", { k: "count", opts: [1, 2, 3, 4, 6, 8, 10], unit: "tries" }, 4, { cmd: true, home: "busy", also: "retry retries attempts" }),
     K("quotaPoll", "Read plan limits", { k: "pick", names: { auto: "On", off: "Off" } }, "auto", { home: "plan", also: "quota" }),
     K("quotaPollIntervalMs", "Check plan usage every", { k: "dur", opts: [MIN, 2 * MIN, 5 * MIN, 10 * MIN, 15 * MIN], unit: "min" }, 5 * MIN,
       { home: "plan", also: "read plan limits every quota poll" }),
@@ -116,24 +115,18 @@ const createKnobs = (scope) => {
     K("replayReasoning", "Send earlier reasoning back", { k: "flag" }, true, { also: "thinking replay" }),
     K("progressLine", "Waiting line in the terminal", { k: "flag" }, true,
       { home: "reasoning", also: "progress line while it thinks waiting status" }),
-    // two rows that read as one decision: the models splice asks to keep thinking, and how many times it asks. Each
-    // stands on the section's grid under its own name, so "Continue at most" says what its count limits.
-    K("foldReasoningModels", "When thinking stops short, continue", { k: "models" }, "gpt-5.6-luna,gpt-5.6-terra,gpt-5.5",
-      { home: "reasoning", also: "keep thinking on continue fold" }),
-    K("foldMaxContinue", "Continue at most", { k: "count", opts: [1, 2, 3, 5, 8], unit: "times" }, 3,
-      { home: "reasoning", also: "keep thinking at most continue up to" }),
+    // foldReasoningModels and foldMaxContinue retired in 0.4.0 (failure-handling slice 4): splice continues a codex
+    // answer whose reasoning the backend cut on its own, so there is no setting to draw, and the daemon refuses the keys.
     // a request too large for splice gets a 413 before any turn exists (AdmissionResponses.kt:34)
     K("maxRequestBytes", "Largest request", { k: "count", opts: [8 * MB, 16 * MB, 32 * MB, 64 * MB], unit: "MB", per: MB }, 32 * MB, { home: "busy", also: "too large image size 413" }),
     // how long the daemon waits for a client to send a request body (RequestReadBudgetMs)
     K("requestReadTimeoutMs", "Drop a request still arriving after", { k: "dur", opts: [10 * SEC, 30 * SEC, 60 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 30 * SEC, { adv: "busy", also: "slow client body timeout longest wait for a request to arrive" }),
     // 0 is the daemon working the budget out from its own heap (Knob.kt:434-444), as maxInflight's 0 is Unlimited
     K("materializationHeapBytes", "Memory for reading requests", { k: "count", opts: [0, 256 * MB, 512 * MB, 1024 * MB, 2048 * MB], none: "Automatic", unit: "MB", per: MB }, 0, { adv: "busy", also: "heap memory large requests" }),
-    // the curve for a failure with no known cause: a 429 keeps its Retry-After and DNS its own plan (Knob.kt:231-234).
-    // ON THE PAGE BESIDE THE TRIES THEY SPACE (Oct 27): behind Advanced, the waits a failing request goes through were
-    // three rows away from the count of tries they make; Settings draws the four as one curve under Retries.
-    K("retryBackoffBaseMs", "First wait between tries", { k: "dur", opts: [100, 200, 500, SEC, 2 * SEC], unit: "s" }, 200, { home: "busy", also: "retry backoff" }),
-    K("retryBackoffCapMs", "Longest wait between tries", { k: "dur", opts: [5 * SEC, 10 * SEC, 30 * SEC, MIN], unit: "s" }, 10 * SEC, { home: "busy", also: "retry backoff ceiling" }),
-    K("retryBackoffJitterPct", "Each wait varies by", { k: "count", opts: [0, 10, 25, 50], unit: "%", pre: "±" }, 10, { home: "busy", also: "retry backoff jitter random" }),
+    // upstreamRetries and the three retryBackoff* waits retired in 0.4.0 (failure-handling slice 4): splice decides how
+    // often and how soon a failed request is sent again from what failed, and the daemon refuses the keys. The
+    // per-command test in tools/console/settings-per-command.test.ts used upstreamRetries as its second row; it moves to
+    // another per-command row on the same page.
     K("traceRetentionDays", "Keep prompts and answers for", { k: "count", opts: [1, 3, 7, 14, 30], unit: "days" }, 7, { home: "data" }),
     K("traceMaxBodyChars", "Longest saved prompt", { k: "count", opts: [4 * MB, 8 * MB, 16 * MB, 32 * MB], unit: "M characters", per: MB }, 16 * MB, { home: "data" }),
     // one setting for the usage and request history (the hourly totals and the request records), what Usage and
@@ -634,7 +627,7 @@ const createKnobs = (scope) => {
   // kept in KNOB from first sight, so a change saves like any other row's and the page's search finds it.
   const ADV_HOME = {
     ingressReadIdleMs: "silent", authCacheMs: "busy",
-    mirrorReasoning: "reasoning", foldMarkerText: "reasoning", foldMaxTier: "reasoning",
+    mirrorReasoning: "reasoning",
     usageWarnTokens5h: "plan", mcpSlice: "mcp", toolSurface: "mcp", statuslineGitRoots: "projects",
     activityStoreHeads: "data", debug: "data", trace: "data", wireTap: "data", perfArchiveRetentionDays: "data",
   };
@@ -647,8 +640,6 @@ const createKnobs = (scope) => {
   const NAMES = {
     ingressReadIdleMs: ["Drop a request that stops arriving for", { k: "dur", unit: "s" }, "longest pause while a request arrives"],
     authCacheMs: ["Read the sign-in files again after", { k: "dur", unit: "s" }],
-    foldMarkerText: ["Words that ask it to keep thinking", { k: "text" }],
-    foldMaxTier: ["Longest thinking it continues", { k: "count", unit: "steps" }, "counts as stopped short up to"],
     mirrorReasoning: ["Write a reasoning summary into the conversation", { k: "flag" }],
     // MCP servers (Knob.kt MCP_SLICE, TOOL_SURFACE): the system group a hosted server starts in, whose memory ceiling
     // keeps one server from eating the machine, and the one-way switch back to every tool on every request

@@ -164,15 +164,6 @@ mark { color: inherit; background: color-mix(in oklab, var(--key-light) 38%, tra
 .dmark:hover { color: var(--text); }
 .dmark:hover b { text-decoration: underline; }
 .dline { position: absolute; top: calc(-1.5 * var(--u) - .04rem); bottom: calc(-1.5 * var(--u)); width: .08rem; margin-left: -.04rem; background: color-mix(in oklab, var(--text) 34%, transparent); }
-/* THE TRIES, AS THE WAITS BETWEEN THEM: each wait a dot on the same axis, its jitter the band it can land in, so a
-   count of tries is read as where its waits fall against the first wait and the longest. A wait some command's own
-   values make is a ring. */
-.dtrk.tries { height: 1.5rem; background: none; overflow: visible; }
-.dtrk.tries::before { content: ""; position: absolute; inset: auto 0 .44rem; height: .08rem; background: color-mix(in oklab, var(--text) 20%, transparent); }
-.wband { position: absolute; bottom: .18rem; height: .6rem; min-width: .12rem; border-radius: .3rem; background: color-mix(in oklab, var(--text) 10%, transparent); }
-.wdot { position: absolute; bottom: .22rem; width: .52rem; height: .52rem; margin-left: -.26rem; border-radius: 50%; background: color-mix(in oklab, var(--text) 62%, transparent); }
-.wdot b { position: absolute; left: 50%; bottom: .72rem; transform: translateX(-50%); font: 500 .74rem/1 var(--font-data); color: var(--text-body); font-variant-numeric: tabular-nums; }
-.wdot.own { background: transparent; box-shadow: inset 0 0 0 .12rem var(--text-mute); }
 
 /* ---------- Stalled answers: what splice did this week when a model went quiet ----------
    ONE TABLE ON ONE SCALE (Oct 27): the two ways a request ended early and the three ways it kept going, each a bar as

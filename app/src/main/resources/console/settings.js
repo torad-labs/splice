@@ -31,7 +31,7 @@ const DAY = 864e5;
 // mock's, with no description line under them (fin).
 const TOPICS = [
   { id: "silent", name: "Stalled answers", also: "stall stuck wedged hang quiet resume timeout" },
-  { id: "busy", name: "Many agents at once", keys: ["maxInflight", "maxQueued"], also: "overloaded busy queue waiting 429 failed errors retry" },
+  { id: "busy", name: "Many agents at once", keys: ["maxInflight", "maxQueued"], also: "overloaded busy queue waiting 429 failed errors" },
   { id: "reasoning", name: "Reasoning", also: "thinking summary show hide progress line replay" },
   { id: "plan", name: "Plan limits", also: "quota usage warning budget spend limit" },
   { id: "mcp", name: "MCP servers", also: "tools servers model context protocol" },
@@ -772,7 +772,8 @@ const silentHtml = () => pair(DRAW.section("This week", `${silentHero()}${stallT
 // TODAY, ONE ROW PER COMMAND ON SHARED SCALES (Oct 27): the most requests it held at once against its own limit, when
 // in the day that was, how many requests it sent and how many waited in line, each figure a door to those requests.
 // The settings that make those limits stand beside the table. What splice did when a provider pushed back stands under
-// it, beside the retries that answer a failure.
+// it, with no setting beside it: since 0.4.0 splice decides how often and how soon a failed request goes again from
+// what failed, and the daemon refuses the four retry settings it used to take.
 const LIMITS = ["maxInflight", "maxQueued", "maxRequestBytes"];
 /** Where a moment of today falls on the day's track, in percent. */
 const dayAt = (ms) => Math.max(0, Math.min(100, ((ms - startOfToday()) / DAY) * 100));
@@ -847,40 +848,9 @@ function pushback() {
   }
   return parts.join("") + (quiet.length ? `<p class="zeros">${quiet.join('<span class="dot">·</span>')}</p>` : "");
 }
-// THE TRIES, AS THE WAITS BETWEEN THEM (Oct 27): a request that keeps failing for no known reason waits the first wait,
-// then twice that, and so on up to the longest wait, give or take the jitter, between one try and the next (a 429's
-// own Retry-After and a DNS failure's plan are not this curve). They are drawn on the waits' axis, each wait a dot with
-// its jitter as a band, so a count of tries is read as where its waits land against the first and the longest wait
-// under it. A command whose own values make other waits draws those as rings, its commands in their title.
-const RETRY = ["upstreamRetries", "retryBackoffBaseMs", "retryBackoffCapMs"];
-const waitsOf = (tries, base, cap) => Array.from({ length: Math.max(0, Math.min(Number(tries) || 0, 20) - 1) }, (_, i) => Math.min(base * 2 ** i, cap));
-const ownOr = (key, c) => { const v = KNOBS.ownValue(key, c); return Number(v === undefined ? val(key) : v); };
-const jitterOf = () => Math.max(0, Math.min(100, Number(val("retryBackoffJitterPct")) || 0)) / 100;
-function retryWaits() {
-  const shared = waitsOf(...RETRY.map((key) => Number(val(key)))), extra = new Map();
-  for (const c of new Set(RETRY.flatMap((key) => KNOBS.ownersOf(key)))) {
-    for (const w of new Set(waitsOf(...RETRY.map((key) => ownOr(key, c))))) if (!shared.includes(w)) extra.set(w, [...(extra.get(w) ?? []), c]);
-  }
-  return { shared, extra };
-}
-function triesDraw(key, ax) {
-  const { shared, extra } = retryWaits(), jit = jitterOf(), times = new Map();
-  shared.forEach((w) => times.set(w, (times.get(w) ?? 0) + 1));
-  const band = (w) => (jit ? `<i class="wband" style="left:${ax.at(w * (1 - jit)).toFixed(2)}%;width:${(ax.at(w * (1 + jit)) - ax.at(w * (1 - jit))).toFixed(2)}%"></i>` : "");
-  const dots = [...times].map(([w, n]) => `${band(w)}<i class="wdot" style="left:${ax.at(w).toFixed(2)}%" title="${esc(`${n > 1 ? `${n} waits of` : "A wait of"} ${DRAW.ms(w)}${jit ? `, ±${Math.round(jit * 100)}%` : ""}`)}">${n > 1 ? `<b>×${n}</b>` : ""}</i>`).join("");
-  const rings = [...extra].map(([w, cs]) => `<i class="wdot own" style="left:${ax.at(w).toFixed(2)}%" title="${esc(`${cs.map((c) => ks.commandOf[c] || c).join(", ")} · ${DRAW.ms(w)}`)}"></i>`).join("");
-  const all = shared.reduce((s, w) => s + w, 0);
-  const said = shared.length ? `${shared.length} ${shared.length === 1 ? "wait" : "waits"} between ${shared.length + 1} tries, about ${DRAW.ms(all)} in all` : "One try, no wait";
-  return `<span class="dtrk tries" role="img" aria-label="${esc(said)}">${dots}${rings}</span>`;
-}
-function retries() {
-  const { shared, extra } = retryWaits(), jit = jitterOf(), waits = [...shared, ...extra.keys()];
-  const ax = durAxis([...msOf(["retryBackoffBaseMs", "retryBackoffCapMs"]), ...waits.flatMap((w) => [w * (1 - jit), w * (1 + jit)])], "Wait between tries, log scale");
-  return knobSec("Retries", keysOf("busy", LIMITS), { ax, draw: { upstreamRetries: triesDraw, retryBackoffBaseMs: durDraw, retryBackoffCapMs: durDraw } });
-}
 const busyHtml = () => pair(DRAW.section("Today", `${busyHero()}${peaksTable()}`, { aside: queuedAside() }),
   knobSec("splice's limits", LIMITS.filter((key) => keysOf("busy").includes(key))), "lead")
-  + pair(DRAW.section("Providers today", pushback()), retries());
+  + DRAW.section("Providers today", pushback());
 
 // ---------- Reasoning ----------
 // REASONING HAS NO FIGURE, SO IT OPENS ON THE THING ITSELF (Oct 26): nothing on the wire counts what a reasoning setting
@@ -916,7 +886,7 @@ function terminal() {
 const termGhost = () => `<div class="term" aria-busy="true"><div class="tbar" aria-hidden="true"><i></i><i></i><i></i></div>`
   + [24, 40, 62, 44, 30, 70].map((w) => `<div class="tl" aria-hidden="true"><span class="tx">${GHOST.bar(w / 4)}</span><span></span></div>`).join("") + `</div>`;
 const reasoningHtml = () => pair(DRAW.section("In your terminal", terminal()),
-  knobSec("How reasoning shows", SHOWS.filter((key) => keysOf("reasoning").includes(key))) + knobSec("Keep thinking", keysOf("reasoning", SHOWS)));
+  knobSec("How reasoning shows", SHOWS.filter((key) => keysOf("reasoning").includes(key))));
 
 // ---------- Plan limits ----------
 // WHERE EACH LOGIN STANDS, IN ACCOUNTS' OWN WINDOW ROWS (Oct 27): the meter for how much is used, the percent, and the
@@ -1968,9 +1938,9 @@ const ghostRows = (keys) => `<div class="krows flat">${keys.filter((key) => KNOB
 const PANE_GHOST = {
   silent: () => pair(ghostSec(heroGhost() + stallGhost(), "This week"), ghostSec(ghostRows(keysOf("silent")), "How long splice waits")),
   busy: () => pair(ghostSec(heroGhost() + peaksGhost(), "Today"), ghostSec(ghostRows(LIMITS.filter((key) => keysOf("busy").includes(key))), "splice's limits"), "lead")
-    + pair(ghostSec(`${GHOST.focal(16)}${GHOST.row([GHOST.chip(), GHOST.cell()])}`, "Providers today"), ghostSec(ghostRows(keysOf("busy", LIMITS)), "Retries")),
+    + ghostSec(`${GHOST.focal(16)}${GHOST.row([GHOST.chip(), GHOST.cell()])}`, "Providers today"),
   reasoning: () => pair(ghostSec(termGhost(), "In your terminal"),
-    ghostSec(ghostRows(SHOWS.filter((key) => keysOf("reasoning").includes(key))), "How reasoning shows") + ghostSec(ghostRows(keysOf("reasoning", SHOWS)), "Keep thinking")),
+    ghostSec(ghostRows(SHOWS.filter((key) => keysOf("reasoning").includes(key))), "How reasoning shows")),
   plan: () => pair(ghostSec(heroGhost() + planGhost(), "Right now"), ghostSec(ghostRows(keysOf("plan")), "When splice warns")),
   mcp: () => ghostSec(heroGhost() + GHOST.stack()) + ghostSec(`<div class="ghost-rows">${[0, 1, 2].map(() => GHOST.row([GHOST.tile(), GHOST.bar(9), GHOST.bar(15), GHOST.bar(5), GHOST.bar(8)])).join("")}</div>`) + ghostSec(mcardsGhost()),
   projects: () => ghostSec(heroGhost() + GHOST.row([GHOST.bar(7), GHOST.bar(8), GHOST.bar(6), GHOST.bar(7)])) + ghostSec(GHOST.row([GHOST.bar(9), GHOST.tile()])),

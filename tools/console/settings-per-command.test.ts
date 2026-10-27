@@ -39,7 +39,7 @@ const server = Bun.serve({
         restart_required: restart ? [key] : [], live: restart ? [] : [key], persisted: "splice.toml",
       });
     }
-    if (path === "/api/config") return Response.json({ layers: { perHead }, knobs: { maxInflight: { value: 12, scope: "default" }, upstreamRetries: { value: 4, scope: "default" } } });
+    if (path === "/api/config") return Response.json({ layers: { perHead }, knobs: { maxInflight: { value: 12, scope: "default" }, maxQueued: { value: 512, scope: "default" } } });
     if (path === "/api/daemon/restart") {
       if (req.method === "POST") { restarts++; return Response.json({ status: "draining" }, { status: 202 }); }
       return Response.json({ status: "idle" });
@@ -129,12 +129,12 @@ test("a value refused by splice reads Not saved, and the reason goes to the cons
   const warned: string[] = [];
   page.on("console", (m) => { if (m.type() === "warning") warned.push(m.text()); });
   try {
-    refuse = "must be at most 8";
-    const line = await setFor(page, "upstreamRetries", "alpha");
-    await line.locator(".menu [role=menuitem]", { hasText: "10 tries" }).click(); // the menu holds 10
+    refuse = "must be at least 256";
+    const line = await setFor(page, "maxQueued", "alpha");
+    await line.locator(".menu [role=menuitem]", { hasText: "128" }).click(); // the menu holds 128
     await expect(line).toContainText("Not saved");
-    await expect(line).not.toContainText("must be at most 8");
-    expect(warned.some((w) => w.includes("must be at most 8"))).toBe(true);
+    await expect(line).not.toContainText("must be at least 256");
+    expect(warned.some((w) => w.includes("must be at least 256"))).toBe(true);
   } finally {
     await page.close();
   }
@@ -157,12 +157,12 @@ test("a value splice reads at start reads Saved with Restart splice beside it, t
 }, 40_000);
 
 test("a command that holds its own value reads as a chip with that value, its door to the setting on Models", async () => {
-  const page = await busy({ alpha: { upstreamRetries: 6 } });
+  const page = await busy({ alpha: { maxQueued: 256 } });
   try {
-    const row = ctl(page, "upstreamRetries");
+    const row = ctl(page, "maxQueued");
     const chip = row.locator(".owners .chip.own");
-    await expect(chip).toHaveText("alpha 6 tries");
-    await expect(chip).toHaveAttribute("href", "models.html?cmd=alpha&setting=upstreamRetries");
+    await expect(chip).toHaveText("alpha 256");
+    await expect(chip).toHaveAttribute("href", "models.html?cmd=alpha&setting=maxQueued");
     await expect(row.locator(".over")).toHaveCount(0);
   } finally {
     await page.close();

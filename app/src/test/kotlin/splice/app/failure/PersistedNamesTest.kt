@@ -57,7 +57,7 @@ class PersistedNamesTest {
     fun `a turn cut off mid-answer writes UPSTREAM_TRUNCATED and counts in Cut off`(@TempDir tmp: Path) = runTest {
         withScriptedHeads(tmp) {
             // ChatStreamTranslator.unfinishedOutcome: a read that ends without a finish_reason is a truncation, and
-            // ChatResendOnce re-sends only a permanent failure, so the tear ends the turn.
+            // ChatResendOnce re-sends only an error no table names, so the tear ends the turn.
             provider.script(reply { chatText("partial words"); hold(); cut() })
             val head = chat()
             val stream = head.client.open()

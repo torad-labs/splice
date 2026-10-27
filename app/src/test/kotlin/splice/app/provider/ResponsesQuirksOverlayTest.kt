@@ -66,4 +66,23 @@ class ResponsesQuirksOverlayTest {
         assertEquals(true, prefill("", tmp))
         assertEquals(false, prefill("""quirks = { websocket_prefill = false }""", tmp))
     }
+
+    private fun lifetime(env: Map<String, String>, tmp: Path): Pair<Long?, Long?> = QuirksOverlay().responsesQuirks(
+        TopologyLoader.parse(toml("")).providers.getValue("codex"),
+        CodexQuirks().defaultQuirks(),
+        ConfigService(StatePaths(baseOverride = tmp), envReader = { env[it] }).getConfig(),
+    ).backend.let { it.webSocketIdleCloseMs to it.webSocketMaxAgeMs }
+
+    // Marcos, 2026-10-27: the idle close (about ten minutes) and the max socket age (35 minutes today) are settings,
+    // not constants. They are [defaults] knobs, and a max age at or past the backend's 60-minute limit is held under it.
+    @Test
+    fun `websocket idle close and max age come from the defaults knobs`(@TempDir tmp: Path) {
+        assertEquals(600_000L to 2_100_000L, lifetime(emptyMap(), tmp))
+        assertEquals(
+            120_000L to 1_200_000L,
+            lifetime(mapOf("SPLICE_WS_IDLE_CLOSE_MS" to "120000", "SPLICE_WS_MAX_AGE_MS" to "1200000"), tmp),
+        )
+        val (_, held) = lifetime(mapOf("SPLICE_WS_MAX_AGE_MS" to "3600000"), tmp)
+        assertEquals(true, held != null && held < 3_600_000L, "a max age of 60 minutes is held under the limit: $held")
+    }
 }

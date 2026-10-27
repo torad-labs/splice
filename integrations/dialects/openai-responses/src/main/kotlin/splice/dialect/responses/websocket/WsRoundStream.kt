@@ -21,7 +21,6 @@ import java.io.IOException
  */
 internal class WsRoundStream(
     private val log: LogSink,
-    private val logKeys: WsLogKeys,
     private val pool: WsConnectionPool,
 ) {
     internal fun roundFlow(
@@ -68,9 +67,9 @@ internal class WsRoundStream(
         if (poolable && drained) {
             pool.release(key, conn)
         } else {
-            if (poolable) {
+            if (poolable && !conn.dead.get()) {
                 log(
-                    "[ws] ${logKeys.logKey(key)} frames arrived after the round terminal; " +
+                    "[ws] ${conn.label} frames arrived after the round terminal; " +
                         "killing rather than pooling\n",
                 )
             }

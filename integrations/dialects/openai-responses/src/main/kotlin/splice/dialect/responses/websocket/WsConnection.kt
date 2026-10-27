@@ -22,6 +22,8 @@ public class WsConnection internal constructor(
     private val log: LogSink,
     /** Stamped by the listener (frames, pings) and the pool (round start/end); read on the close line. */
     internal val pulse: WsPulse,
+    /** The key's digest and the client session, the form every log line about this socket names. */
+    internal val label: String,
 ) {
     internal val busy = AtomicBoolean(false)
     internal val dead = AtomicBoolean(false)

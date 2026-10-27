@@ -31,6 +31,12 @@ private const val MIN_STREAM_IDLE_MS = 30_000L
 private const val TEST_IDLE_FLOOR_MS = 250L
 private const val MIN_AUTH_CACHE_MS = 5_000L
 
+// why: an idle-close below one second would close a socket between a tool result and the next round
+private const val MIN_WS_IDLE_CLOSE_MS = 1_000L
+
+// why: the backend ends every socket at 60 minutes, so a pooled socket retires one minute before that
+private const val MAX_WS_MAX_AGE_MS = 3_540_000L
+
 // why: a poll faster than the five-minute cadence would hammer the provider's usage endpoint
 private const val MIN_QUOTA_POLL_INTERVAL_MS = 30_000L
 private const val MAX_PORT = 65_535L
@@ -126,6 +132,9 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
         val idleFloor = if (testIdleFloor) TEST_IDLE_FLOOR_MS else MIN_STREAM_IDLE_MS
         out[Knob.STREAM_IDLE_MS.key] = clampLong(out, Knob.STREAM_IDLE_MS, floor = idleFloor)
         out[Knob.AUTH_CACHE_MS.key] = clampLong(out, Knob.AUTH_CACHE_MS, floor = MIN_AUTH_CACHE_MS)
+        out[Knob.WS_IDLE_CLOSE_MS.key] = clampLong(out, Knob.WS_IDLE_CLOSE_MS, floor = MIN_WS_IDLE_CLOSE_MS)
+        out[Knob.WS_MAX_AGE_MS.key] =
+            clampLong(out, Knob.WS_MAX_AGE_MS, floor = MIN_WS_IDLE_CLOSE_MS, ceiling = MAX_WS_MAX_AGE_MS)
         out[Knob.MIRROR_REASONING.key] = false
         // Summary is operator-controlled (TOML [daemon].summary / env / state). Empty/absent
         // falls through to Knob.SUMMARY default ("detailed"). Do not rewrite concise/auto —

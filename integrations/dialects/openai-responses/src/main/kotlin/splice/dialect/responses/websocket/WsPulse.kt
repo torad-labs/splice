@@ -20,7 +20,8 @@ import java.util.concurrent.atomic.AtomicReference
 
 /** Timestamps a socket's listener and pool stamp as they see the wire; [describe] reads them. */
 internal class WsPulse(
-    private val label: String,
+    /** The key's digest and the client session, which every anomaly line names. */
+    internal val label: String,
     private val openSockets: OpenSockets,
     private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
 ) {
@@ -33,6 +34,7 @@ internal class WsPulse(
     private val rounds = AtomicLong(0)
     private val timing = AtomicReference<WsAttemptTiming?>(null)
     private val demandAt = AtomicLong(NEVER)
+    private val idleAt = AtomicLong(openedAt)
 
     internal fun bindTiming(attempt: WsAttemptTiming?) {
         timing.set(attempt)
@@ -66,6 +68,9 @@ internal class WsPulse(
         lastPingAt.set(clock())
     }
 
+    /** When the socket last became idle: its last round's end, or its opening before any round. */
+    internal val idleSince: Long get() = idleAt.get()
+
     /** Milliseconds since the last server ping, [Long.MAX_VALUE] before the first — the idle
      *  watchdog's liveness reading (WsPathPulse). */
     internal fun pingAgoMs(): Long {
@@ -94,6 +99,7 @@ internal class WsPulse(
     }
 
     internal fun roundEnded() {
+        idleAt.set(clock())
         timing.set(null)
         roundStartedAt.set(NEVER)
         roundEvents.clear()

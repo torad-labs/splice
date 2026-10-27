@@ -48,6 +48,11 @@ private val CALL_2_EVIDENCE = WsServerEvidence(
     reasoning = mapOf("rs_env-call_2" to "env-call_2"),
 )
 
+/** codex-rs's output for a call that never ran (context_manager/normalize.rs, ensure_call_outputs_present). */
+private val ABORTED_CALL_2: JsonObject = responsesRequestJson.parseToJsonElement(
+    """{"type":"function_call_output","call_id":"call_2","output":"aborted"}""",
+).jsonObject
+
 private fun opts(effort: String? = null) = BuildOptions(
     compact = false,
     models = ModelIds(
@@ -148,9 +153,10 @@ class ResponsesWsSessionTest {
      *  emitted, and Claude Code's auto-compaction fires BEFORE that call runs — its body ends at
      *  the previous tool result plus the compaction prompt, so no delta can answer the call. The
      *  server refused every chained one ("No tool output found for function call …") and the round
-     *  fell back to a cold SSE send. It must full-send on this socket instead, and say why. */
+     *  fell back to a cold SSE send. Since 2026-10-27 (Marcos: "unanswered tool calls are closed as aborted and
+     *  chaining continues") the turn closes the call with codex-rs's "aborted" output and chains. */
     @Test
-    fun `a turn that never answers the call the server holds full-sends and names the call`() {
+    fun `a turn that never answers the call the server holds chains with that call closed as aborted`() {
         val s = ResponsesWsSession()
         s.completed(
             KEY,
@@ -160,10 +166,10 @@ class ResponsesWsSessionTest {
             evidence = CALL_2_EVIDENCE,
         )
         val f = s.frameFor(KEY, build(convo(1, trailingUserText = "summarize this session")), GEN)
-        assertFalse(f.chained, "the delta would be [message] with call_2 unanswered — the server refuses that")
-        assertTrue(f.frameObj()["previous_response_id"] == null)
-        assertEquals(build(convo(1, trailingUserText = "summarize this session")).items().size, f.frameItems().size)
-        assertTrue(f.fullSendReason?.contains("call_2") == true, "the reason names the call: ${f.fullSendReason}")
+        assertTrue(f.chained, "the open call is closed, so the server accepts the continuation")
+        assertEquals("resp_1", f.frameObj()["previous_response_id"]?.jsonPrimitive?.content)
+        assertEquals(listOf("function_call_output", "message:user"), typesOf(f.frameItems()))
+        assertEquals(ABORTED_CALL_2, f.frameItems().first(), "codex-rs's output for a call that never ran")
     }
 
     /** The same held call, ANSWERED: a normal tool round still chains, with or without a user
@@ -196,27 +202,30 @@ class ResponsesWsSessionTest {
     }
 
     /** The client's ECHO of the held call — the assistant tool_use rebuilt as a function_call with
-     *  the same call_id — is not an answer: a body carrying it with no result still full-sends,
-     *  and the reason line still names the call (review 2026-09-05: the reason read the echo as an
-     *  answer and the full send went unlogged). */
+     *  the same call_id — is not an answer (review 2026-09-05): a body carrying it with no result
+     *  still leaves the call open, so it is closed as aborted, and the echo is not sent again. */
     @Test
-    fun `the echoed call itself is not an answer, so the reason still names it`() {
-        val s = ResponsesWsSession()
-        s.completed(
-            KEY,
-            PendingCommit(build(convo(1)), GEN, s.epochOf(KEY)),
-            "resp_1",
-            pendingCalls = setOf("call_2"),
-            evidence = CALL_2_EVIDENCE,
-        )
+    fun `the echoed call itself is not an answer, so the call is closed as aborted`() {
         val echoed = """{"model":"m","messages":[{"role":"user","content":"start"},""" +
             """{"role":"assistant","content":[{"type":"tool_use","id":"call_1","name":"read","input":{"p":"1"}}]},""" +
             """{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_1","content":"out1"}]},""" +
             """{"role":"assistant","content":[{"type":"tool_use","id":"call_2","name":"read","input":{"p":"2"}}]},""" +
             """{"role":"user","content":"summarize this session"}]}"""
-        val f = s.frameFor(KEY, build(echoed), GEN)
-        assertFalse(f.chained, "call_2 has no output in this body")
-        assertTrue(f.fullSendReason?.contains("call_2") == true, "the echo is not an answer: ${f.fullSendReason}")
+        val next = build(echoed)
+        // The history the server answered is this body's own first three items, as the builder renders them here.
+        val answered = JsonObject(next + ("input" to JsonArray(next["input"]!!.jsonArray.take(3))))
+        val s = ResponsesWsSession()
+        s.completed(
+            KEY,
+            PendingCommit(answered, GEN, s.epochOf(KEY)),
+            "resp_1",
+            pendingCalls = setOf("call_2"),
+            evidence = CALL_2_EVIDENCE,
+        )
+        val f = s.frameFor(KEY, next, GEN)
+        assertTrue(f.chained, "call_2 has no output in this body, so it is closed")
+        val sent = listOf(ABORTED_CALL_2, build(echoed).items().last())
+        assertEquals(sent, f.frameItems(), "the echo is the server's own, so only the closure and the new item go")
     }
 
     /** A matching observed assistant TEXT block is already server-held and may be dropped. */
@@ -464,19 +473,26 @@ class ResponsesWsSessionTest {
         )
     }
 
+    /** Marcos, 2026-10-27: "it has throttle". The chains kept every conversation's whole input as text under a 64 MiB
+     *  cap and a 256-conversation cap, so about forty long conversations fit and every one past that was forgotten
+     *  and sent whole. Three hundred conversations of 300 KB each must all still chain. */
     @Test
-    fun `count pressure evicts the least recently used chain`() {
-        val s = ResponsesWsSession(maxConversations = 1)
-        s.completed("old", PendingCommit(build(convo(1)), GEN, s.epochOf("old")), "resp_old")
-        s.completed(
-            "new",
-            PendingCommit(build(convo(1)), GEN, s.epochOf("new")),
-            "resp_new",
-            evidence = CALL_2_EVIDENCE,
-        )
-
-        assertFalse(s.frameFor("old", build(convo(2)), GEN).chained)
-        assertTrue(s.frameFor("new", build(convo(2)), GEN).chained)
+    fun `three hundred long conversations at once all keep their chains`() {
+        val s = ResponsesWsSession()
+        val pad = "x".repeat(300_000)
+        val keys = (1..300).map { "conv-$it" }
+        keys.forEach { key ->
+            s.completed(
+                key,
+                PendingCommit(build(convo(1).replace("\"start\"", "\"$key $pad\"")), GEN, s.epochOf(key)),
+                "resp_$key",
+                evidence = CALL_2_EVIDENCE,
+            )
+        }
+        val forgotten = keys.filterNot { key ->
+            s.frameFor(key, build(convo(2).replace("\"start\"", "\"$key $pad\"")), GEN).chained
+        }
+        assertEquals(emptyList<String>(), forgotten, "every conversation still chains")
     }
 
     @Test

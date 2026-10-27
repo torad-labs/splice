@@ -48,7 +48,42 @@ internal class WsRoundDriver(
         val runner = provider.wsRunner ?: return null
         val drive = inputs.drive
         clearAccountBoundary(runner, drive)
-        return driveRound(runner, drive, inputs)
+        val first = driveRound(runner, drive, inputs)
+        // Marcos, 2026-10-27: a socket that failed before any output (the 60-minute limit, a close, a drop) is
+        // replaced at once on the same login, with no backoff, the way codex-rs reconnects. HTTP is for a second
+        // failure. The first round already reported its bypass, so the chain is clear and the new socket full-sends.
+        val result = if (first is WsRoundResult.NeedsSse && first.freshSocket) {
+            drive.perf.add(PerfKeys.WS_FRESH_SOCKET_RETRIES, 1)
+            log(
+                "[${provider.key}] websocket ${first.reasonCode} before any output (${first.detail}); " +
+                    "sending again on a fresh socket, ${who(drive)}\n",
+            )
+            driveRound(runner, drive, inputs)
+        } else {
+            first
+        }
+        return when (result) {
+            null -> null
+            is WsRoundResult.Streamed -> result.outcome
+            is WsRoundResult.NeedsSse -> bypassToSse(drive, result)
+        }
+    }
+
+    /** Every round HTTP serves is a fallback, so it warns and counts. A socket that could not take the round failed
+     *  before any output, like a tear, so it gets a fresh socket first. A frame the peer refused as too large would be
+     *  refused again, and any other bypass has no socket fault to replace, so those go straight on. */
+    private fun bypassOf(drive: TurnDrive, declines: Long, refusals: Long): WsRoundResult.NeedsSse = when {
+        drive.perf.count(PerfKeys.WS_REFUSED_TOO_LARGE) > refusals ->
+            WsRoundResult.NeedsSse(TOO_LARGE, "frame_too_large")
+        drive.perf.count(PerfKeys.WS_TRANSPORT_DECLINES) > declines ->
+            WsRoundResult.NeedsSse(DECLINED, "transport_declined", freshSocket = true)
+        else -> WsRoundResult.NeedsSse(BYPASSED, "socket_bypassed")
+    }
+
+    /** The session and login a fallback line names, so one conversation's lines can be found on one login. */
+    private fun who(drive: TurnDrive): String {
+        val login = drive.accountLabel.of(drive.account?.account?.label) ?: "-"
+        return "session=${drive.meta.scope.sessionId ?: "-"} login=$login"
     }
 
     /** The round body, extracted (V4-114 continuation) so [run] stays inside detekt's
@@ -58,7 +93,7 @@ internal class WsRoundDriver(
         runner: WsRoundRunner,
         drive: TurnDrive,
         inputs: WsRoundInputs,
-    ): TurnOutcome? {
+    ): WsRoundResult? {
         // CON-003 + DR-91: every exit below reports the round exactly once, INCLUDING a
         // cancellation that lands while credentials()/attempt() are in flight — the WS send may
         // already have advanced the runner's chaining state, and an unreported unwind left the
@@ -78,12 +113,14 @@ internal class WsRoundDriver(
             // Credentials come from the provider's auth surface, NOT from a WS-side refresh: L5
             // keeps the single-flight 401 refresh in UpstreamClient, so a missing/expired
             // credential here simply rides SSE and gets refreshed there.
+            val declines = drive.perf.count(PerfKeys.WS_TRANSPORT_DECLINES)
+            val refusals = drive.perf.count(PerfKeys.WS_REFUSED_TOO_LARGE)
             val acquired = acquireCounted(runner, drive, inputs.body)
             if (acquired == null) {
                 // SSE is about to serve this round, so the conversation advances outside any chain.
                 runner.roundBypassed(drive.meta)
                 reported = true
-                return null
+                return bypassOf(drive, declines, refusals)
             }
             val accepted = acquired.round
             drive.slot.touch()
@@ -146,19 +183,16 @@ internal class WsRoundDriver(
             // a name. Both arms report the round (Streamed via roundEnded inside drive, NeedsSse
             // via roundBypassed), so `reported` is set once after the when returns — after the
             // report, so an exception still leaves it false and the finally clears the chain.
-            val outcome = when (val result = roundDrive.drive(inputs, runner, events)) {
-                is WsRoundResult.Streamed -> result.outcome
-                is WsRoundResult.NeedsSse -> {
-                    ending = result.detail
-                    drive.perf.add(PerfKeys.WS_PRE_OUTPUT_FALLBACKS, 1)
-                    // The round's buffered draft belongs to a round the client never saw; SSE answers the turn on
-                    // this same sink, so what the websocket round buffered must not be flushed beside that answer.
-                    inputs.sink.discard()
-                    bypassToSse(runner, drive, result.detail, result.reasonCode)
-                }
+            val result = roundDrive.drive(inputs, runner, events)
+            if (result is WsRoundResult.NeedsSse) {
+                ending = result.detail
+                // The round's buffered draft belongs to a round the client never saw; the next round answers the
+                // turn on this same sink, so what this one buffered must not be flushed beside that answer.
+                inputs.sink.discard()
+                runner.roundBypassed(drive.meta)
             }
             reported = true
-            return outcome
+            return result
         } finally {
             if (!reported) runner.roundEnded(drive.meta, ok = false)
             if (traced) closeTrace(drive, inputs, ending, reported)
@@ -210,17 +244,12 @@ internal class WsRoundDriver(
      *  The line names the server's failure terminal (type, code, message): a chained turn the server
      *  refuses re-reads the whole transcript cold over SSE, and which turns it refuses is the
      *  finding. Always returns null — the caller's `run` falls through to the SSE path. */
-    private fun bypassToSse(
-        runner: WsRoundRunner,
-        drive: TurnDrive,
-        detail: String,
-        reasonCode: String,
-    ): TurnOutcome? {
+    private fun bypassToSse(drive: TurnDrive, result: WsRoundResult.NeedsSse): TurnOutcome? {
+        drive.perf.add(PerfKeys.WS_PRE_OUTPUT_FALLBACKS, 1)
         log(
-            "[${provider.key}] websocket pre-output fallback code=$reasonCode " +
-                "($detail); serving over SSE\n",
+            "[${provider.key}] warning: websocket fallback to HTTP code=${result.reasonCode} ${who(drive)} " +
+                "(${result.detail}); serving over SSE\n",
         )
-        runner.roundBypassed(drive.meta)
         return null
     }
 
@@ -228,3 +257,13 @@ internal class WsRoundDriver(
         if (drive.account?.cacheCold == true && drive.claimAccountBoundary()) runner.roundBypassed(drive.meta)
     }
 }
+
+// The detail of a round the socket could not take; the transport's own line before it names the step that failed.
+private const val DECLINED = "the socket could not take the round; the [ws] line before this names why"
+
+// The detail of a round the socket path did not take; the [ws] line before it names why (no key, no credentials,
+// a prefill that did not finish).
+private const val BYPASSED = "the socket path did not take the round; the [ws] line before this names why"
+
+// The detail of a frame the peer closed with 1009; a fresh socket would refuse the same frame.
+private const val TOO_LARGE = "the peer refused the frame as too large, so a fresh socket would refuse it too"

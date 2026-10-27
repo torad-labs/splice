@@ -80,6 +80,7 @@ public class CodexProvider(
     protected override val webSocketPolicy: ResponsesWebSocketPolicy = ResponsesWebSocketPolicy(
         negotiationHeaders = mapOf("OpenAI-Beta" to "responses_websockets=2026-02-06"),
         additionalToolsPrefillOnly = true,
+        runtimeCalls = setOf(CODE_MODE_TOOL_NAME, CODE_MODE_WAIT_TOOL_NAME),
     )
 
     override fun extraHeaders(creds: Credentials): Map<String, String> = buildMap {

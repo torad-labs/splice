@@ -76,8 +76,14 @@ public object PerfKeys {
     /** WebSocket attempts whose peer refused the request frame as too large: a 1009 close before any event. */
     public const val WS_REFUSED_TOO_LARGE: String = "ws_refused_too_large"
 
-    /** WebSocket rounds accepted by the peer then re-served over HTTP/SSE before any client bytes. */
+    /** WebSocket rounds re-served over HTTP/SSE before any client bytes, after the fresh-socket retry failed too. */
     public const val WS_PRE_OUTPUT_FALLBACKS: String = "ws_pre_output_fallbacks"
+
+    /** WebSocket rounds that failed before client bytes on a socket fault and were sent again at once on a fresh socket. */
+    public const val WS_FRESH_SOCKET_RETRIES: String = "ws_fresh_socket_retries"
+
+    /** WebSocket rounds the socket could not take at all: its connect, its send or its first event failed. */
+    public const val WS_TRANSPORT_DECLINES: String = "ws_transport_declines"
     public const val WS_PREFILL_ROUNDS: String = "ws_prefill_rounds"
     public const val WS_PREFILL_BYPASSES: String = "ws_prefill_bypasses"
 

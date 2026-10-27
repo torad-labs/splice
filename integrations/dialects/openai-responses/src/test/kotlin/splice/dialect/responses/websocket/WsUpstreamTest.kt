@@ -58,10 +58,19 @@ private const val SEND_BUDGET = 3_000L
 private const val CREATED = """{"type":"response.created"}"""
 private const val DELTA = """{"type":"response.output_text.delta","delta":"hi"}"""
 private const val DONE = """{"type":"response.completed"}"""
-private const val CAP = 2
+private const val SESSION = "sess-7f3a"
+
+// A two-event inbox: overflow is a three-frame test instead of a 1025-frame one.
+private const val SMALL_INBOX = 2
+
+// Marcos runs many agents at once; a thousand is past any day's count, and the pool must not care.
+private const val CONVERSATIONS = 1_000
 
 // The fixture's socket age limit: an hour of virtual clock would read the same, a small number reads plainer.
 private const val AGE_LIMIT = 1_000L
+
+// The fixture's idle limit, below the age limit so the two closes are told apart.
+private const val IDLE_LIMIT = 400L
 
 // 5 MB of frame: the shape of a real compaction body on the wire (7.7 MB is the day's largest).
 private const val BIG_FRAME_CHARS = 5_000_000
@@ -152,6 +161,12 @@ private class Fixture {
     var sendFuture: (FakeSocket) -> CompletableFuture<WebSocket> =
         { CompletableFuture.completedFuture(it) }
 
+    /** A log line containing this throws once, the way a failing log sink would. */
+    var logThrowsOn: String? = null
+
+    /** Runs on every clock read, so a test can land a peer close at a chosen moment of the pool's work. */
+    var onClockRead: (() -> Unit)? = null
+
     lateinit var up: WsUpstream
 
     private val connector: suspend (URI, Map<String, String>, WebSocket.Listener) -> WebSocket =
@@ -172,25 +187,41 @@ private class Fixture {
     /** The socket clock's reading, moved by the age tests; every socket opens at the value it holds. */
     var now = 0L
 
+    /** The background sweep the transport scheduled; the tests run it when they choose. */
+    var sweep: Runnable? = null
+
     fun start(
         firstEventTimeoutMs: Long = BUDGET,
-        maxConnections: Int = 32,
         sendTimeoutMs: Long = SEND_BUDGET,
     ): Fixture {
         up = WsUpstream(
             firstEventTimeoutMs = firstEventTimeoutMs,
-            maxConnections = maxConnections,
             sendTimeoutMs = sendTimeoutMs,
-            log = { log += it },
+            log = { line ->
+                logThrowsOn?.takeIf(line::contains)?.let {
+                    logThrowsOn = null
+                    error("the log sink failed")
+                }
+                log += line
+            },
             connector = connector,
-            maxSocketAgeMs = AGE_LIMIT,
-            clock = ElapsedClock { now },
+            lifetime = WsLifetime(
+                maxAgeMs = AGE_LIMIT,
+                idleCloseMs = IDLE_LIMIT,
+                clock = ElapsedClock {
+                    onClockRead?.invoke()
+                    now
+                },
+                sweeps = WsSweeps { _, task -> sweep = task },
+            ),
         )
         return this
     }
 
+    fun sweepNow() = checkNotNull(sweep) { "the transport scheduled no background sweep" }.run()
+
     suspend fun go(key: String = KEY, frame: String = FRAME): Flow<JsonObject>? =
-        up.round(key, HEADERS, WSS_URL, TERMINAL) { conn ->
+        up.round(key, WsHandshake(WSS_URL, HEADERS), TERMINAL, SESSION) { conn ->
             handed += conn
             frame
         }
@@ -240,7 +271,7 @@ class WsUpstreamTest {
     @Test
     fun `a malformed wss url falls back instead of throwing`() = runTest {
         val fx = Fixture().start()
-        val flow = fx.up.round("k", HEADERS, "wss://host/ path", TERMINAL) { _ -> FRAME }
+        val flow = fx.up.round("k", WsHandshake("wss://host/ path", HEADERS), TERMINAL) { _ -> FRAME }
         assertNull(flow, "URI.create's IllegalArgumentException must degrade to SSE")
         assertEquals(0, fx.connects, "the URL is rejected before the connector is reached")
     }
@@ -336,22 +367,10 @@ class WsUpstreamTest {
         )
     }
 
+    // Rewritten 2026-10-27 (Marcos: a busy socket opens another socket instead of going to HTTP). The loser of a
+    // cold race used to ride SSE; now each round keeps its own socket, and still neither tears the other.
     @Test
-    fun `a second round on a key whose round is still in flight returns null`() = runTest {
-        val fx = Fixture().apply { reply = replyWith(CREATED) }.start()
-        assertNotNull(fx.go(), "the first round commits")
-        assertNull(fx.go(), "never two response-create frames on one socket")
-        assertEquals(1, fx.connects)
-        assertEquals(1, fx.opened.single().sent.size, "the rejected round must not have sent a frame")
-        assertTrue(fx.logged("busy"))
-    }
-
-    @Test
-    fun `concurrent COLD rounds on one key share ONE connection - the loser never tears the winner`() = runTest {
-        // WAS "KNOWN GAP": both callers missed the acquire() lookup, both connected, and the second
-        // registration killed the first — aborting a LIVE round mid-stream. The implementer pinned
-        // that gap as a test; the review of #72 independently filed it as a blocker. connect() now
-        // re-checks under the lock, so a live predecessor wins and the redundant socket is discarded.
+    fun `concurrent COLD rounds on one key each get a socket - neither tears the other`() = runTest {
         val fx = Fixture().apply {
             connectGate = CompletableDeferred()
             reply = replyWith(CREATED, DONE)
@@ -363,18 +382,13 @@ class WsUpstreamTest {
         val flowA = first.await()
         val flowB = second.await()
 
-        assertNotNull(flowA, "the winner commits")
-        assertNull(flowB, "the loser finds the winner BUSY and rides SSE — it must not open a second round")
-        assertEquals(2, fx.connects, "both raced into connect()...")
-        assertEquals(
-            1,
-            fx.opened.count { it.aborts == 0 },
-            "...but exactly ONE socket survives: the loser's is closed, the winner's is untouched",
-        )
-
-        val (seen, torn) = collectTorn(flowA ?: error("no flow"))
-        assertEquals(listOf("response.created", "response.completed"), seen, "the winner streams to its terminal")
-        assertNull(torn, "the winner must NOT be torn by the loser's arrival")
+        assertEquals(2, fx.connects, "each round opened its own socket")
+        assertEquals(0, fx.opened.sumOf { it.aborts }, "and neither socket was closed under the other's round")
+        listOf(flowA, flowB).forEach { flow ->
+            val (seen, torn) = collectTorn(flow ?: error("a round rode SSE"))
+            assertEquals(listOf("response.created", "response.completed"), seen, "each round streams to its terminal")
+            assertNull(torn, "no round is torn by the other's arrival")
+        }
     }
 
     // ================================================================================ sendFrame ===
@@ -393,18 +407,15 @@ class WsUpstreamTest {
     }
 
     @Test
-    fun `a poisoned connection is DEREGISTERED, not left occupying a registry slot`() = runTest {
-        val fx = Fixture().apply { reply = replyWith(DONE) }.start(maxConnections = CAP)
-        assertEquals(1, fx.types("a").size) // registry: [a]
+    fun `a poisoned connection is DEREGISTERED, and its conversation reconnects`() = runTest {
+        val fx = Fixture().apply { reply = replyWith(DONE) }.start()
+        assertEquals(1, fx.types("a").size)
         fx.sendThrows = IOException("output closed")
-        assertNull(fx.go("b"), "b's send fails") // registry: [a] iff failRound deregisters
+        assertNull(fx.go("b"), "b's send fails")
         fx.sendThrows = null
-        assertEquals(1, fx.types("c").size) // registry: [a, c] — still at cap, no eviction
-        assertEquals(
-            0,
-            fx.opened[0].aborts,
-            "a must survive: had the dead b kept its slot, adding c would have evicted a",
-        )
+        assertEquals(1, fx.types("b").size, "b opens a fresh socket, not the dead one")
+        assertEquals(3, fx.connects)
+        assertEquals(0, fx.opened[0].aborts, "another conversation's socket is untouched")
     }
 
     @Test
@@ -547,56 +558,140 @@ class WsUpstreamTest {
         assertEquals(2, fx.connects, "the poisoned socket must not be reused")
     }
 
-    // ========================================================================= bounded registry ===
+    // ========================================================================== no throttle ===
 
     @Test
-    fun `the registry evicts and closes the least-recently-used connection past its cap`() = runTest {
-        val fx = Fixture().apply { reply = replyWith(DONE) }.start(maxConnections = CAP)
-        assertEquals(1, fx.types("a").size)
-        assertEquals(1, fx.types("b").size)
-        assertEquals(0, fx.opened[0].aborts, "nothing is evicted below the cap")
-        assertEquals(1, fx.types("c").size)
-        assertEquals(3, fx.connects)
-        assertEquals(1, fx.opened[0].aborts, "the oldest connection is evicted AND closed at the cap")
-        assertEquals(0, fx.opened[1].aborts)
-        assertEquals(0, fx.opened[2].aborts)
-        assertEquals(1, fx.types("a").size, "an evicted key reconnects — eviction costs a full send, never an error")
-        assertEquals(4, fx.connects)
+    fun `a thousand conversations each keep their own socket, and none is evicted`() = runTest {
+        val fx = Fixture().apply { reply = replyWith(DONE) }.start()
+        val keys = (0 until CONVERSATIONS).map { "conversation-$it" }
+        keys.forEach { assertEquals(listOf("response.completed"), fx.types(it), it) }
+        assertEquals(CONVERSATIONS, fx.connects, "one socket per conversation")
+        assertTrue(fx.opened.all { it.aborts == 0 }, "opening conversation 1,000 closed nobody's socket")
+        keys.forEach { assertEquals(listOf("response.completed"), fx.types(it), it) }
+        assertEquals(CONVERSATIONS, fx.connects, "every conversation's next round reuses its own socket")
     }
 
     @Test
-    fun `an all-busy overshoot trims back to the cap when a connection is released`() = runTest {
-        val fx = Fixture().apply { reply = replyWith(CREATED) }.start(maxConnections = CAP)
-        assertNotNull(fx.go("a"), "a remains in flight")
-        assertNotNull(fx.go("b"), "b remains in flight")
+    fun `a thousand conversations in flight at once each get a socket`() = runTest {
+        val fx = Fixture().apply { reply = replyWith(CREATED) }.start()
+        val flows = (0 until CONVERSATIONS).map { fx.go("conversation-$it") }
+        assertTrue(flows.all { it != null }, "no round is turned away to SSE for want of a socket")
+        fx.opened.forEach { it.push(DONE) }
+        val round = listOf("response.created", "response.completed")
+        flows.forEach { assertEquals(round, it!!.toList().map { e -> e.type() }) }
+        assertTrue(fx.opened.all { it.aborts == 0 }, "no socket was evicted to make room")
+    }
+
+    @Test
+    fun `a second round of a busy conversation gets its own socket instead of HTTP`() = runTest {
+        val fx = Fixture().apply { reply = replyWith(CREATED) }.start()
+        val first = checkNotNull(fx.go())
+        val second = checkNotNull(fx.go()) { "the concurrent round rides the websocket, never SSE" }
+        assertEquals(2, fx.connects)
+        assertTrue(fx.handed[0] !== fx.handed[1], "two frames never interleave on one socket")
+        fx.opened[0].push(DONE)
+        fx.opened[1].push(DONE)
+        assertEquals(2, first.toList().size)
+        assertEquals(2, second.toList().size)
 
         fx.reply = replyWith(DONE)
-        val flow = fx.go("c")
+        assertEquals(1, fx.types().size)
+        assertEquals(2, fx.connects, "the next round reuses an idle socket of the conversation")
+        assertFalse(fx.logged("declines the round"), "no round was declined: ${fx.log}")
+    }
 
-        assertNotNull(flow, "the fresh connection must survive insertion while every predecessor is busy")
-        assertEquals(0, fx.opened[2].aborts, "the in-flight fresh socket cannot be the insertion-time victim")
-        assertEquals(listOf("response.completed"), flow?.toList()?.map { it.type() })
-        assertEquals(3, fx.connects)
-        assertEquals(1, fx.opened[2].aborts, "release makes c idle, so the soft overshoot must be trimmed")
-        assertTrue(
-            fx.handed.last().busy.get(),
-            "eviction must reserve c before removal so a concurrent acquire cannot win it before kill()",
-        )
+    // ========================================================================= idle sweep ===
+
+    @Test
+    fun `the background sweep closes a socket idle past the idle limit`() = runTest {
+        val fx = Fixture().apply { reply = replyWith(DONE) }.start()
+        assertEquals(1, fx.types().size)
+        fx.now = IDLE_LIMIT - 1
+        fx.sweepNow()
+        assertEquals(0, fx.opened[0].aborts, "a socket idle under the limit stays open")
+
+        fx.now = IDLE_LIMIT
+        fx.sweepNow()
+        assertEquals(1, fx.opened[0].aborts, "the sweep closed it with no request arriving")
+        assertTrue(fx.logged("idle"), "the close is said in daemon.log")
+        assertEquals(1, fx.types().size, "the conversation's next round opens a fresh socket")
+        assertEquals(2, fx.connects)
     }
 
     @Test
-    fun `a completed round moves its connection to MRU so eviction takes the truly-oldest`() = runTest {
-        val fx = Fixture().apply { reply = replyWith(DONE) }.start(maxConnections = CAP)
-        assertEquals(1, fx.types("a").size)
-        assertEquals(1, fx.types("b").size)
-        assertEquals(1, fx.types("a").size)
-        assertEquals(2, fx.connects, "a was reused, not reconnected")
-        assertEquals(1, fx.types("c").size)
-        assertEquals(0, fx.opened[0].aborts, "a was touched to MRU by its second round and must survive")
-        assertEquals(1, fx.opened[1].aborts, "b is the true LRU")
+    fun `the background sweep retires a socket at its age limit even when it is never idle long`() = runTest {
+        val fx = Fixture().apply { reply = replyWith(DONE) }.start()
+        var at = 0L
+        while (at < AGE_LIMIT) {
+            fx.now = at
+            assertEquals(1, fx.types().size)
+            at += IDLE_LIMIT - 1
+        }
+        assertEquals(1, fx.connects, "rounds spaced under the idle limit keep one socket")
+        fx.now = AGE_LIMIT
+        fx.sweepNow()
+        assertEquals(1, fx.opened[0].aborts, "the sweep retired it before the backend's limit")
+        assertTrue(fx.logged("retired"))
     }
 
-    // ============================================================================ InboxListener ===
+    @Test
+    fun `the sweep never closes a socket with a round in flight`() = runTest {
+        val fx = Fixture().apply { reply = replyWith(CREATED) }.start()
+        val inFlight = checkNotNull(fx.go())
+        fx.now = AGE_LIMIT * 2
+        fx.sweepNow()
+        assertEquals(0, fx.opened[0].aborts, "the live round is not torn by the sweep")
+        fx.opened[0].push(DONE)
+        assertEquals(2, inFlight.toList().size)
+        fx.sweepNow()
+        assertEquals(1, fx.opened[0].aborts, "once released, the aged socket is retired by the next sweep")
+    }
+
+    @Test
+    fun `a sweep that fails partway still closes every socket it took and says so`() = runTest {
+        val fx = Fixture().apply { reply = replyWith(DONE) }.start()
+        assertEquals(1, fx.types(KEY).size)
+        assertEquals(1, fx.types("conv-other").size)
+        fx.now = IDLE_LIMIT
+        fx.logThrowsOn = "idle minutes"
+        // A throw out of the task would end the scheduled sweep for good, and the pool has no cap to fall back on.
+        fx.sweepNow()
+        assertEquals(listOf(1, 1), fx.opened.map { it.aborts }, "both idle sockets are closed")
+        assertTrue(fx.logged("warning: the idle sweep failed"), fx.log.joinToString(""))
+    }
+
+    @Test
+    fun `a socket the peer closes as its round takes it is replaced by a fresh socket, not HTTP`() = runTest {
+        val fx = Fixture().apply { reply = replyWith(DONE) }.start()
+        assertEquals(1, fx.types().size)
+        val pooled = fx.handed.single()
+        val reaped = fx.opened.single()
+        // The peer reaps idle sockets, and a round arriving after a long idle is when that close lands: here it lands
+        // after the round has claimed the pooled socket and before the round starts on it.
+        fx.onClockRead = {
+            if (pooled.busy.get()) {
+                fx.onClockRead = null
+                reaped.closeClean()
+            }
+        }
+        assertEquals(listOf("response.completed"), fx.types(), "the round is served on a socket, never sent to HTTP")
+        assertEquals(2, fx.connects, "a fresh socket replaced the one the peer closed")
+    }
+
+    @Test
+    fun `socket log lines name the session`() = runTest {
+        val fx = Fixture().apply { reply = replyWith(DONE) }.start()
+        assertEquals(1, fx.types().size)
+        fx.now = IDLE_LIMIT
+        fx.sweepNow()
+        assertTrue(fx.log.isNotEmpty())
+        fx.log.filter { it.startsWith("[ws]") }.forEach { assertTrue("session=$SESSION" in it, it) }
+    }
+}
+
+/** The listener under the transport: how frames off the wire become events, and which frames poison a socket. */
+@OptIn(ExperimentalCoroutinesApi::class)
+class WsUpstreamInboxTest {
 
     @Test
     fun `fragmented text frames assemble into ONE event`() = runTest {
@@ -719,15 +814,17 @@ class WsUpstreamSocketAgeTest {
         val inFlight = fx.go() ?: error("the first round fell back to SSE")
         fx.now = AGE_LIMIT * 2
 
-        assertNull(fx.go(), "a concurrent round on the same key rides SSE, as before")
+        val concurrent = checkNotNull(fx.go()) { "a concurrent round on the same key gets its own socket" }
         assertEquals(0, fx.opened[0].aborts, "the socket carrying a live round is not retired under it")
         fx.opened[0].push(DONE)
+        fx.opened[1].push(DONE)
         assertEquals(listOf("response.created", "response.completed"), inFlight.toList().map { it.type() })
+        assertEquals(2, concurrent.toList().size)
 
         fx.reply = replyWith(DONE)
         assertEquals(1, fx.types().size)
-        assertEquals(2, fx.connects, "once the round released it, the aged socket is retired on the next acquire")
-        assertEquals(1, fx.opened[0].aborts)
+        assertEquals(2, fx.connects, "the young socket carries the next round")
+        assertEquals(1, fx.opened[0].aborts, "once released, the aged socket is retired on the next acquire")
     }
 }
 
@@ -873,7 +970,7 @@ class WsUpstreamInboxListenerTest {
 
     @Test
     fun `an inbox that overflows is an anomaly, never a silently dropped frame`() {
-        val inbox = Channel<JsonObject>(CAP)
+        val inbox = Channel<JsonObject>(SMALL_INBOX)
         var anomalies = 0
         val socket = FakeSocket(Fixture())
         val listener = InboxListener(
@@ -882,13 +979,13 @@ class WsUpstreamInboxListenerTest {
             terminalSeen = { false },
             onAnomaly = { anomalies += 1 },
         )
-        repeat(CAP + 1) { listener.onText(socket, """{"type":"e$it"}""", true) }
+        repeat(SMALL_INBOX + 1) { listener.onText(socket, """{"type":"e$it"}""", true) }
         assertEquals(1, anomalies, "the frame past the buffer poisons the connection")
     }
 
     @Test
     fun `a frame arriving on a closed inbox is an anomaly`() {
-        val inbox = Channel<JsonObject>(CAP)
+        val inbox = Channel<JsonObject>(SMALL_INBOX)
         var anomalies = 0
         val socket = FakeSocket(Fixture())
         val listener = InboxListener(
@@ -958,17 +1055,16 @@ class WsUpstreamLogHygieneTest {
     }
 
     @Test
-    fun `connect and busy-decline log only the digest`() = runTest {
+    fun `connect and a concurrent second socket log only the digest`() = runTest {
         val key = rawKey("A")
         val fx = Fixture().apply { reply = replyWith(CREATED) }.start()
-        val flow = fx.up.round(key, HEADERS, WSS_URL, TERMINAL) { FRAME }
+        val flow = fx.up.round(key, WsHandshake(WSS_URL, HEADERS), TERMINAL) { FRAME }
         assertTrue(flow != null, "first round should acquire")
-        val gate = Channel<Unit>(1)
-        val collector = launch { flow!!.collect { gate.trySend(Unit) } }
-        gate.receive() // non-terminal first event: the round is live, the socket busy
-        assertTrue(fx.up.round(key, HEADERS, WSS_URL, TERMINAL) { FRAME } == null, "second declines busy")
-        fx.opened.last().push(DONE)
-        collector.join()
+        val second = fx.up.round(key, WsHandshake(WSS_URL, HEADERS), TERMINAL) { FRAME }
+        assertTrue(second != null, "the concurrent round opens its own socket")
+        fx.opened.forEach { it.push(DONE) }
+        flow!!.toList()
+        second!!.toList()
         assertSafeLogs(fx, key)
     }
 
@@ -976,7 +1072,7 @@ class WsUpstreamLogHygieneTest {
     fun `connect failure logs only the digest`() = runTest {
         val key = rawKey("B")
         val fx = Fixture().apply { connectFailure = IOException("refused") }.start()
-        assertNull(fx.up.round(key, HEADERS, WSS_URL, TERMINAL) { FRAME })
+        assertNull(fx.up.round(key, WsHandshake(WSS_URL, HEADERS), TERMINAL) { FRAME })
         assertSafeLogs(fx, key)
     }
 
@@ -984,7 +1080,7 @@ class WsUpstreamLogHygieneTest {
     fun `synchronous send failure logs only the digest`() = runTest {
         val key = rawKey("C")
         val fx = Fixture().apply { sendThrows = IllegalStateException("send pending") }.start()
-        assertNull(fx.up.round(key, HEADERS, WSS_URL, TERMINAL) { FRAME })
+        assertNull(fx.up.round(key, WsHandshake(WSS_URL, HEADERS), TERMINAL) { FRAME })
         assertSafeLogs(fx, key)
     }
 
@@ -992,7 +1088,7 @@ class WsUpstreamLogHygieneTest {
     fun `first-event timeout logs only the digest`() = runTest {
         val key = rawKey("D")
         val fx = Fixture().start(firstEventTimeoutMs = BUDGET) // no reply configured: silence
-        assertNull(fx.up.round(key, HEADERS, WSS_URL, TERMINAL) { FRAME })
+        assertNull(fx.up.round(key, WsHandshake(WSS_URL, HEADERS), TERMINAL) { FRAME })
         assertSafeLogs(fx, key)
     }
 
@@ -1000,7 +1096,7 @@ class WsUpstreamLogHygieneTest {
     fun `inbox closed before the first event logs only the digest`() = runTest {
         val key = rawKey("E")
         val fx = Fixture().apply { onHandshake = { it.closeClean() } }.start()
-        assertNull(fx.up.round(key, HEADERS, WSS_URL, TERMINAL) { FRAME })
+        assertNull(fx.up.round(key, WsHandshake(WSS_URL, HEADERS), TERMINAL) { FRAME })
         assertSafeLogs(fx, key)
     }
 
@@ -1008,7 +1104,7 @@ class WsUpstreamLogHygieneTest {
     fun `frames after the round terminal log only the digest`() = runTest {
         val key = rawKey("F")
         val fx = Fixture().apply { reply = replyWith(DONE, DELTA) }.start()
-        val flow = fx.up.round(key, HEADERS, WSS_URL, TERMINAL) { FRAME }
+        val flow = fx.up.round(key, WsHandshake(WSS_URL, HEADERS), TERMINAL) { FRAME }
         assertTrue(flow != null, "round should acquire")
         flow!!.collect { }
         assertSafeLogs(fx, key)

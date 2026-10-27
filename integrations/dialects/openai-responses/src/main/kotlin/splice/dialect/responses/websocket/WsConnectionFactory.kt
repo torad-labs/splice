@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicReference
 private const val INBOX_CAPACITY = 1024
 
 /** Opens ONE upstream socket for a key: mint its generation, wire the inbox and its listener, and
- *  call the connector. The registry dance (race re-check, LRU register, idle eviction) is
+ *  call the connector. The registry (per-key sockets, the sweep) is
  *  [WsConnectionPool]'s job — this is only ever the socket-opening half of "connect". */
 internal class WsConnectionFactory(
     private val connector: WsConnector,
@@ -30,14 +30,20 @@ internal class WsConnectionFactory(
 ) {
     private val generations = AtomicLong(0)
 
-    internal suspend fun connect(key: String, headers: Map<String, String>, wssUrl: String): WsConnection? {
+    internal suspend fun connect(
+        key: String,
+        session: String?,
+        headers: Map<String, String>,
+        wssUrl: String,
+    ): WsConnection? {
+        val label = logKeys.logKey(key) + (session?.let { " session=$it" } ?: "")
         val generation = generations.incrementAndGet()
         val inbox = Channel<JsonObject>(INBOX_CAPACITY)
         val holder = AtomicReference<WsConnection?>(null)
         val anomalyObserved = AtomicBoolean(false)
         // Born with the socket, before the listener: the first server ping can land during the
         // handshake, and a close line must be able to name the socket that never got registered.
-        val pulse = WsPulse(logKeys.logKey(key), openSockets, clock)
+        val pulse = WsPulse(label, openSockets, clock)
         val listener = InboxListener(
             inbox,
             log,
@@ -53,16 +59,16 @@ internal class WsConnectionFactory(
             connector(URI.create(wssUrl), headers, listener)
         }.getOrElse { e ->
             log(
-                "[ws] ${logKeys.logKey(key)} connect failed (${e::class.simpleName}: " +
-                    "${e.message?.take(ERR_SNIPPET)}); the round rides SSE\n",
+                "[ws] $label connect failed (${e::class.simpleName}: " +
+                    "${e.message?.take(ERR_SNIPPET)}); the socket declines the round\n",
             )
             return null
         }
-        val conn = WsConnection(socket, inbox, generation, log, pulse)
+        val conn = WsConnection(socket, inbox, generation, log, pulse, label)
         holder.set(conn)
         if (anomalyObserved.get()) {
             conn.kill()
-            log("[ws] ${logKeys.logKey(key)} handshake protocol anomaly; the round rides SSE\n")
+            log("[ws] $label handshake protocol anomaly; the socket declines the round\n")
             return null
         }
         return conn

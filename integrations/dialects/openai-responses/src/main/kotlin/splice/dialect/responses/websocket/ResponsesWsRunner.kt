@@ -27,6 +27,7 @@ package splice.dialect.responses.websocket
 import kotlinx.coroutines.flow.onEach
 import kotlinx.serialization.json.JsonObject
 import splice.core.auth.Credentials
+import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.perf.WsAttemptTiming
 import splice.core.turn.TurnMeta
@@ -111,9 +112,9 @@ internal class ResponsesWsRunner(
         var pulse: WsPulse? = null
         val flow = transport.round(
             key = seed.key,
-            headers = seed.headers,
-            wssUrl = wssUrl,
+            handshake = WsHandshake(wssUrl, seed.headers),
             isTerminal = { JsonScalars.str(it[FIELD_TYPE]) in ResponsesRoundEnd.ALL },
+            session = seed.meta.scope.sessionId,
         ) { conn ->
             conn.pulse.bindTiming(timing)
             // Armed HERE because this is the only place the transport hands the connection out and
@@ -129,30 +130,41 @@ internal class ResponsesWsRunner(
             val metadata = requestMetadata.forTurn(seed.request, turnHeaders, seed.meta.upstreamHeaders.snapshot())
             val built = session.frameAndEpoch(seed.chain, seed.request, conn.generation, metadata, seed.meta.compact)
             pending = ResponsesWsIdentity.PendingCommit(built.committed ?: seed.request, conn.generation, built.epoch)
-            if (built.frame.chained) {
-                val closed = if (built.committed != null) ", its open tool calls closed as aborted" else ""
-                log("[ws] ${identity.logKey(seed.key)} chained onto the previous response$closed\n")
-            }
-            built.frame.fullSendCode?.let { log("[ws] ${identity.logKey(seed.key)} full send code=$it\n") }
-            built.frame.fullSendReason?.let { log("[ws] ${identity.logKey(seed.key)} full send: $it\n") }
+            logFrame(conn.label, built)
             built.frame.json
         }
         // No clear here: the transport declining (busy / connect failure) is a BYPASS, and the head
         // calls roundBypassed for exactly that. Clearing in both places bumped the epoch twice for
         // one logical event and, on the busy path, threw away a concurrent round's valid state
         // before its terminal could even be observed (review of #72).
-        if (flow == null) return null
+        if (flow == null) {
+            // Counted on the turn so the head can tell a socket that failed this round from one never offered it.
+            seed.perf?.add(PerfKeys.WS_TRANSPORT_DECLINES, 1)
+            return null
+        }
         // Terminal observation lives HERE, not in the caller: the runner is the only party that
         // knows which events are terminal AND owns the chaining state they commit.
         return WsRound(
             events = flow.onEach { event ->
                 requestMetadata.captureEvent(seed.meta, event)
                 identity.observeTerminal(seed.chain, pending, event)
+                // The error ends the round cleanly, so the transport would pool the socket the server just retired.
+                if (isSocketFault(event)) abort.abort()
                 pulse?.let { identity.observeEnding(seed.key, event, it) }
             },
             abort = abort,
             pathPulse = pathPulse,
         )
+    }
+
+    /** Says whether [built] chained, and when it sent its whole input, why, on the socket [label] names. */
+    private fun logFrame(label: String, built: WsFrameAndEpoch) {
+        if (built.frame.chained) {
+            val closed = if (built.committed != null) ", its open tool calls closed as aborted" else ""
+            log("[ws] $label chained onto the previous response$closed\n")
+        }
+        built.frame.fullSendCode?.let { log("[ws] $label full send code=$it\n") }
+        built.frame.fullSendReason?.let { log("[ws] $label full send: $it\n") }
     }
 
     /** codex-rs names its thread a second time on the WS handshake, as `x-client-request-id` — on
@@ -164,6 +176,17 @@ internal class ResponsesWsRunner(
 
     override fun isFailureTerminal(event: JsonObject): Boolean =
         JsonScalars.str(event[FIELD_TYPE]) in ResponsesRoundEnd.FAILED
+
+    /** The backend ends every websocket at 60 minutes with websocket_connection_limit_reached, and a socket that lost
+     *  its in-memory chain answers previous_response_not_found; codex-rs retries both on a new connection. */
+    override fun isSocketFault(event: JsonObject): Boolean =
+        isFailureTerminal(event) && faultCode(event) in SOCKET_FAULT_CODES
+
+    /** The error code an `error` event carries at error.code and a `response.failed` at response.error.code. */
+    private fun faultCode(event: JsonObject): String? {
+        val error = event["error"] as? JsonObject ?: (event["response"] as? JsonObject)?.get("error") as? JsonObject
+        return error?.let { JsonScalars.str(it["code"]) }
+    }
 
     override fun roundEnded(meta: TurnMeta, ok: Boolean) {
         if (!ok) identity.chainKey(meta)?.let { session.cleared(it) }
@@ -179,5 +202,6 @@ internal class ResponsesWsRunner(
 }
 
 private const val FIELD_TYPE = "type"
+private val SOCKET_FAULT_CODES = setOf("websocket_connection_limit_reached", "previous_response_not_found")
 private const val HEADER_THREAD_ID = "thread-id"
 private const val HEADER_CLIENT_REQUEST_ID = "x-client-request-id"

@@ -26,6 +26,11 @@ public data class ResponsesBackendQuirks(
     /** Native Codex's no-generation prefix warmup. Independent of [webSocket]: false providers
      *  never inherit this behavior merely by using the Responses dialect. */
     val webSocketPrefill: Boolean = false,
+    /** Milliseconds a socket may sit idle before the background sweep closes it; null keeps the transport default. */
+    val webSocketIdleCloseMs: Long? = null,
+    /** The age in milliseconds at which an idle socket is retired before the backend's 60-minute limit; null keeps
+     *  the transport default. */
+    val webSocketMaxAgeMs: Long? = null,
 )
 
 /** Request controls whose wire meaning is a property of the upstream, not of Responses itself. */
@@ -223,6 +228,10 @@ public data class ResponsesQuirks(
 
     public fun withWebSocketPrefillToml(webSocketPrefill: Boolean?): ResponsesQuirks =
         copy(backend = backend.copy(webSocketPrefill = webSocketPrefill ?: backend.webSocketPrefill))
+
+    /** The [defaults] knobs wsIdleCloseMs and wsMaxAgeMs, read by the app overlay. */
+    public fun withWebSocketLifetime(idleCloseMs: Long, maxAgeMs: Long): ResponsesQuirks =
+        copy(backend = backend.copy(webSocketIdleCloseMs = idleCloseMs, webSocketMaxAgeMs = maxAgeMs))
 
     /** The delivery mode sent as stream_options.reasoning_summary_delivery; null omits the field.
      *  The TOML reading (absent keeps the provider default, `off` omits) is the app overlay's, because

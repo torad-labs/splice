@@ -52,8 +52,8 @@ class ResponsesWsSessionConcurrencyTest {
             pool.submit {
                 try {
                     for (i in 0 until opsPerThread) {
-                        // Far more distinct keys than MAX_CONVERSATIONS, so trim runs constantly —
-                        // eviction under concurrency is exactly what corrupted the map in prod.
+                        // Many distinct keys at once, each a live conversation: concurrent access to the map is exactly what
+                        // corrupted it in prod.
                         val key = "conv-${(t * opsPerThread + i) % 512}"
                         val req = request(i)
                         session.frameFor(key, req, generation = 1L)

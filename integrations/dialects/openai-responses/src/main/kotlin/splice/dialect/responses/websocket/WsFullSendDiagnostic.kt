@@ -4,6 +4,8 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
+import java.security.MessageDigest
+import java.util.Base64
 
 /** Immutable facts needed to explain a full send, without exposing request content. */
 internal data class WsSendExpectation(
@@ -19,6 +21,18 @@ internal fun interface WsSuffixCheck {
 
 /** Diagnostics share the prefix and answer checks used by the actual delta classifier. */
 internal object WsFullSendDiagnostic {
+    /** Why a round with a held chain sends its whole input with calls still open, or null when none are open. Code
+     *  mode's own calls ([runtime]) stay open on an ordinary turn; any other [unanswered] call would be refused. */
+    fun reason(runtime: List<String>, unanswered: List<String>, compaction: Boolean): String? = when {
+        runtime.isNotEmpty() && !compaction ->
+            "the server holds code mode's open call(s) (${runtime.joinToString(", ")}); code mode runs them " +
+                "itself, so they are left open and the round sends its whole input"
+        unanswered.isEmpty() -> null
+        else ->
+            "the server holds ${unanswered.size} unanswered tool call(s) this turn never answers " +
+                "(${unanswered.joinToString(", ")}); a chained send would be refused"
+    }
+
     fun code(
         expected: WsSendExpectation,
         request: JsonObject,
@@ -55,9 +69,14 @@ internal object WsFullSendDiagnostic {
 }
 
 internal object WsChainingChecks {
+    /** [previous] holds the [digest] of each item the chain committed. */
     fun extendsPrefix(previous: List<String>, current: List<JsonObject>): Boolean =
         current.size >= previous.size &&
-            previous.indices.all { previous[it] == JsonWire.string(current[it]) }
+            previous.indices.all { previous[it] == digest(JsonWire.string(current[it])) }
+
+    /** SHA-256 of an item's canonical text: what a chain keeps instead of the text. */
+    fun digest(text: String): String =
+        Base64.getEncoder().encodeToString(MessageDigest.getInstance("SHA-256").digest(text.toByteArray()))
 
     /** Echoing a call is not answering it; only a same-ID non-call item settles the held call. */
     fun unansweredCalls(pendingCalls: Set<String>, items: List<JsonObject>): List<String> =

@@ -106,6 +106,9 @@ summary_field = true
 # grows linearly — 92.5% less at round 12. It is an OVERLAY: any failure — handshake, busy socket,
 # send, first-event timeout, or a round that fails before the client sees content — falls back to
 # the normal SSE path, which keeps sole ownership of retry, the 401 refresh and the 429 cooldown.
+# Every conversation keeps its own socket, with no cap; a second concurrent round opens another one.
+# A socket that fails before any output (the 60-minute limit, a close) is replaced once, at once, on
+# the same login before HTTP, and every HTTP fallback logs a warning naming session, login and code.
 # With the key false or absent no WebSocket is ever constructed and the request path is
 # byte-identical to a build without the feature.
 websocket = false   # ships off (project law): turning it on is your one-line change here
@@ -114,6 +117,7 @@ websocket = false   # ships off (project law): turning it on is your one-line ch
 # Responses dialect default is false; the Codex profile enables it. Custom profiles should opt in
 # only when their backend accepts `generate = false`. This setting is inert while websocket is off.
 websocket_prefill = true
+# How long an idle socket lives is set in [defaults], by wsIdleCloseMs and wsMaxAgeMs.
 # zstd_request_body (default false): compress request bodies the way codex-cli 0.145.0 does to
 # this endpoint (2.7x measured). Codex ONLY — xAI 400s on a compressed body; never set it elsewhere.
 zstd_request_body = true
@@ -897,6 +901,12 @@ command = "claude-splice"
 #                                                           #     past this is a PROBE, like streamIdleMs below.
 #                                                           #     Not a socket timeout: a read waits up to
 #                                                           #     upstreamTimeoutMs
+# wsIdleCloseMs = "600000"                                  # ms; (RESTART) a Responses websocket idle this long is closed
+#                                                           #     in the background, so a finished conversation frees it
+# wsMaxAgeMs = "2100000"                                    # ms; (RESTART) an idle Responses websocket this old is retired
+#                                                           #     before the backend ends every socket at 60 minutes;
+#                                                           #     held at 3540000 or less. The conversation's next round
+#                                                           #     opens a new socket and sends its whole input
 # streamIdleMs = "90000"                                    # ms; (HOT, per turn) stream silence before the stall watchdog ASKS.
 #                                                           #     A breach is a PROBE, not a verdict:
 #                                                           #     the round's path is asked whether it is alive, a live
@@ -979,6 +989,7 @@ command = "claude-splice"
 # retired: SPLICE_TRACE — trace writes whole conversations to disk, so it is set per head in [heads.KEY.overrides] only
 #   CLAUDEX_FIRST_BYTE_TIMEOUT_MS firstByteTimeoutMs    CLAUDEX_STREAM_IDLE_MS streamIdleMs
 #   CLAUDEX_STALL_REANCHOR_MS stallReanchorMs
+#   SPLICE_WS_IDLE_CLOSE_MS wsIdleCloseMs    SPLICE_WS_MAX_AGE_MS wsMaxAgeMs
 #   CLAUDEX_AUTH_CACHE_MS authCacheMs        CLAUDEX_DEBUG / CODEX_PROXY_DEBUG debug
 #   CODEX_PROXY_PORT port                    CONTROL_PROXY_PORT / SPLICE_CONTROL_PORT controlPort
 #   GROK_PROXY_PORT grokPort                 XAI_API_BASE xaiApiBase   GROK_AUTH_PATH grokAuthPath

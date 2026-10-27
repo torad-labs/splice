@@ -4,8 +4,12 @@
 package splice.dialect.responses.websocket
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.util.ElapsedClock
+import splice.core.util.MonoClock
 import java.net.URI
 import java.net.http.WebSocket
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * Opens one upstream WebSocket to [java.net.URI] with the handshake headers, wiring the given
@@ -76,4 +80,42 @@ public fun interface ProtocolAnomaly {
  */
 public fun interface OpenSockets {
     public operator fun invoke(): Int
+}
+
+/**
+ * Runs the pool's sweep every [periodMs] in the background, so an idle or aged socket is closed
+ * without waiting for a request of its conversation to arrive.
+ *
+ * A seam because a test must not wait on wall time: production wires [WsDaemonSweeps], and a test
+ * keeps the task and runs it after moving its clock.
+ */
+public fun interface WsSweeps {
+    /** Schedules [sweep] to run every [periodMs] milliseconds for the life of the transport. */
+    public fun every(periodMs: Long, sweep: Runnable)
+}
+
+/** The production sweep: one named virtual thread per transport, the shape RequestWriteBound's ticker uses. */
+internal class WsDaemonSweeps : WsSweeps {
+    override fun every(periodMs: Long, sweep: Runnable) {
+        Executors.newSingleThreadScheduledExecutor(Thread.ofVirtual().name("splice-ws-sweep").factory())
+            .scheduleWithFixedDelay(sweep, periodMs, periodMs, TimeUnit.MILLISECONDS)
+    }
+}
+
+/**
+ * How long a socket lives: the idle close and the max age the [defaults] knobs wsIdleCloseMs and wsMaxAgeMs set, the
+ * clock that reads both, and where the background sweep that enforces them is scheduled. Tests pass a clock they move
+ * and run the sweep themselves.
+ */
+public data class WsLifetime(
+    internal val maxAgeMs: Long = MAX_SOCKET_AGE_MS,
+    internal val idleCloseMs: Long = SOCKET_IDLE_CLOSE_MS,
+    internal val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
+    internal val sweeps: WsSweeps = WsDaemonSweeps(),
+)
+
+/** Where a round's socket connects, and the headers its handshake sends. */
+public data class WsHandshake(internal val wssUrl: String, internal val headers: Map<String, String>) {
+    /** The url alone: the headers carry the login's credential, which no log line may print. */
+    override fun toString(): String = "WsHandshake($wssUrl)"
 }

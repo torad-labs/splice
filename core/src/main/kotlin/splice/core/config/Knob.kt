@@ -301,6 +301,24 @@ public enum class Knob(
         typedDefault = KnobDefault.Count(90_000L),
     ),
 
+    // The Responses websocket pool closes a socket idle this long, so a finished conversation frees it. codex-rs
+    // keeps one socket per conversation with no cap; ten minutes outlasts a slow tool call between turns.
+    WS_IDLE_CLOSE_MS(
+        "wsIdleCloseMs",
+        listOf("SPLICE_WS_IDLE_CLOSE_MS"),
+        typedDefault = KnobDefault.Count(600_000L),
+        restartRequired = true,
+    ),
+
+    // The pool retires an idle socket this old. The backend ends every socket at 60 minutes with
+    // websocket_connection_limit_reached; 35 minutes retires it between turns, well before that.
+    WS_MAX_AGE_MS(
+        "wsMaxAgeMs",
+        listOf("SPLICE_WS_MAX_AGE_MS"),
+        typedDefault = KnobDefault.Count(2_100_000L),
+        restartRequired = true,
+    ),
+
     // The mid-output stall detector, and the one timer the reference client also keeps. codex-rs
     // (@63fe5a6, model-provider-info/src/lib.rs:26) sets DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
     // and applies it ONLY to the receive side, as timeout(idle_timeout, ws_stream.next()). We ran

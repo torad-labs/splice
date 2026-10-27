@@ -15,7 +15,9 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -150,6 +152,13 @@ private class Rig(
 
     fun lastSentChained(): Boolean =
         (responsesRequestJson.parseToJsonElement(sent.last()) as JsonObject)["previous_response_id"] != null
+
+    /** The call ids the last sent frame answers with an output item. */
+    fun lastSentOutputIds(): List<String> =
+        ((responsesRequestJson.parseToJsonElement(sent.last()) as JsonObject)["input"] as JsonArray)
+            .map { it as JsonObject }
+            .filter { (it["type"] as? JsonPrimitive)?.content.orEmpty().endsWith("_output") }
+            .map { (it["call_id"] as JsonPrimitive).content }
 }
 
 private fun completed(id: String) = """{"type":"response.completed","response":{"id":"$id"}}"""
@@ -578,8 +587,25 @@ class ResponsesWsRunnerTest {
         assertFalse(rig.handshakes.last().containsKey("x-client-request-id"), rig.handshakes.last().toString())
     }
 
-    /** The terminal's output is read for the calls it leaves open: a next turn that answers none
-     *  of them full-sends (the 2026-09-05 compaction class), one that answers them chains. */
+    // Goal 8 (Marcos, 2026-10-27): socket log lines carry the session id. These lines say why a chain held or broke,
+    // so they are the ones read when a turn is slow.
+    @Test
+    fun `the lines that say why a round chained or sent its whole input name the session`() = runTest {
+        val rig = Rig { round ->
+            when (round) {
+                0 -> listOf("""{"type":"response.created"}""", itemDoneCall("call_9"), completedEmptyOutput("r1"))
+                else -> listOf("""{"type":"response.created"}""", completed("r${round + 1}"))
+            }
+        }
+        rig.round()
+        rig.round(body = BODY_ANSWERED)
+        val lines = rig.logs.filter { "full send" in it || "chained onto" in it }
+        assertEquals(2, lines.size, rig.logs.joinToString(""))
+        lines.forEach { assertTrue("session=sess-1" in it, it) }
+    }
+
+    /** The terminal's output is read for the calls it leaves open: a next turn that answers none of them
+     *  closes each as aborted and chains on (Marcos, 2026-10-27), one that answers them chains as sent. */
     @Test
     fun `a held tool call from the terminal gates the next round's chaining`() = runTest {
         val rig = Rig { round ->
@@ -590,7 +616,8 @@ class ResponsesWsRunnerTest {
         }
         rig.round()
         rig.round(body = BODY_COMPACT)
-        assertFalse(rig.lastSentChained(), "call_9 is unanswered by a compaction body — must full-send")
+        assertTrue(rig.lastSentChained(), "call_9 is unanswered, so it is closed and the chain goes on")
+        assertEquals(listOf("call_9"), rig.lastSentOutputIds(), "the held call_9 is the one closed as aborted")
         val answered = Rig { round ->
             when (round) {
                 0 -> listOf("""{"type":"response.created"}""", itemDoneCall("call_9"), completedEmptyOutput("r1"))
@@ -639,7 +666,8 @@ class ResponsesWsRunnerTest {
         }
         unanswered.round()
         unanswered.round(body = BODY_COMPACT)
-        assertFalse(unanswered.lastSentChained(), "fc_9 is still a held call a compaction never answers")
+        assertTrue(unanswered.lastSentChained(), "fc_9 is unanswered, so it is closed and the chain goes on")
+        assertEquals(listOf("fc_9"), unanswered.lastSentOutputIds(), "the call is held, and closed, under fc_9")
     }
 
     /** Every SUCCESS variant must END the round — otherwise the flow never completes, the
@@ -786,3 +814,52 @@ class ResponsesWsRunnerTest {
 }
 
 private fun created(id: String) = """{"type":"response.created","response":{"id":"$id"}}"""
+
+/** The in-band error the backend sends on a websocket at its 60-minute limit (OpenAI websocket mode guide). */
+private const val CONNECTION_LIMIT =
+    """{"type":"error","status":400,"error":{"type":"invalid_request_error",""" +
+        """"code":"websocket_connection_limit_reached","message":"Responses websocket connection limit reached."}}"""
+
+private fun event(json: String): JsonObject = responsesRequestJson.parseToJsonElement(json) as JsonObject
+
+// Marcos, 2026-10-27: a live limit reconnects at once on the same login. The head sends the round again on a fresh
+// socket, so the socket the backend retired must never be handed back out.
+class ResponsesWsSocketFaultTest {
+    @Test
+    fun `the socket the backend retired at its limit is not reused by the next round`() = runBlocking {
+        val rig = Rig { round -> if (round == 0) listOf(CONNECTION_LIMIT) else listOf(completed("r2")) }
+        rig.round()
+        rig.round()
+        assertEquals(2, rig.handshakes.size, "the second round opened its own socket")
+    }
+
+    @Test
+    fun `the connection limit and a lost chain are socket faults, a server error is not`() {
+        val runner = Rig { emptyList() }.runner
+        assertTrue(runner.isSocketFault(event(CONNECTION_LIMIT)))
+        assertTrue(
+            runner.isSocketFault(
+                event(
+                    """{"type":"response.failed","response":{"id":"r1",""" +
+                        """"error":{"code":"previous_response_not_found","message":"gone"}}}""",
+                ),
+            ),
+        )
+        assertFalse(
+            runner.isSocketFault(
+                event("""{"type":"response.failed","response":{"id":"r1","error":{"code":"server_error"}}}"""),
+            ),
+        )
+    }
+
+    // Marcos, 2026-10-27: "every fallback logs a warning and a counter". A socket that cannot take the round at all is
+    // counted on the turn, so the head can tell it from a round that was never the websocket's to take.
+    @Test
+    fun `a round the socket could not send is counted as a transport decline`() = runBlocking {
+        val rig = Rig { emptyList() }
+        rig.sendFuture = { CompletableFuture.failedFuture(java.io.IOException("broken pipe")) }
+        val perf = TurnPerf { 0L }
+        assertNull(rig.runner.attempt(BODY, meta(), emptyMap(), Credentials.Bearer("tok", "acct"), perf))
+        assertEquals(1L, perf.count(PerfKeys.WS_TRANSPORT_DECLINES))
+    }
+}

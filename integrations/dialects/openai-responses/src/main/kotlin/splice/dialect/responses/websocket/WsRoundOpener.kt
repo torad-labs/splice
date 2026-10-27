@@ -18,7 +18,6 @@ import java.io.IOException
  */
 internal class WsRoundOpener(
     private val log: LogSink,
-    private val logKeys: WsLogKeys,
     private val firstEventTimeoutMs: Long,
     private val pool: WsConnectionPool,
     /** No default: the transport's budgets all live at WsUpstream's file scope, where SEND_TIMEOUT_MS
@@ -78,7 +77,7 @@ internal class WsRoundOpener(
             } else {
                 "${error::class.simpleName}: ${error.message?.take(ERR_SNIPPET)}"
             }
-            log("[ws] ${logKeys.logKey(key)} send failed $kind ($detail); killing connection, round rides SSE\n")
+            log("[ws] ${conn.label} send failed $kind ($detail); killing connection, the socket declines the round\n")
             pool.failRound(conn, key)
         }
         return failure == null
@@ -102,7 +101,7 @@ internal class WsRoundOpener(
             } else {
                 "inbox closed before first event (${received.exceptionOrNull()?.message?.take(ERR_SNIPPET) ?: "clean"})"
             }
-            log("[ws] ${logKeys.logKey(key)} $why; killing connection, round rides SSE\n")
+            log("[ws] ${conn.label} $why; killing connection, the socket declines the round\n")
             pool.failRound(conn, key)
         }
         return first

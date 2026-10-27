@@ -13,6 +13,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
@@ -57,6 +58,7 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.client.SESSION_HEADER
 import splice.core.failure.FailureCause
 import splice.core.failure.FailureEvidence
 import splice.core.failure.Moment
@@ -193,6 +195,24 @@ private val TEXT_ROUND = listOf(
     """{"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"late text"}""",
 )
 
+/** The in-band error the backend sends on a socket at its 60-minute limit (OpenAI websocket mode guide). */
+private const val CONNECTION_LIMIT =
+    """{"type":"error","status":400,"error":{"type":"invalid_request_error",""" +
+        """"code":"websocket_connection_limit_reached","message":"Responses websocket connection limit reached."}}"""
+
+/** A whole answer over the websocket: the text round, then the completed response. */
+private val WS_ANSWER = listOf(
+    """{"type":"response.created","response":{"id":"r2"}}""",
+    """{"type":"response.output_item.added","output_index":0,"item":{"id":"msg-r2",""" +
+        """"type":"message","role":"assistant","content":[],"summary":[]}}""",
+    """{"type":"response.content_part.added","item_id":"msg-r2","output_index":0,""" +
+        """"content_index":0,"part":{"type":"output_text","text":""}}""",
+    """{"type":"response.output_text.delta","item_id":"msg-r2","output_index":0,"content_index":0,""" +
+        """"delta":"late text"}""",
+    """{"type":"response.completed","response":{"status":"completed",""" +
+        """"usage":{"input_tokens":10,"output_tokens":3}}}""",
+)
+
 private const val LATE_ERROR_SENTENCE = "Synthetic access check failed. Please try again."
 
 private const val LATE_ERROR_LINE =
@@ -261,6 +281,9 @@ private class ScriptedRunner(
 
     override fun isFailureTerminal(event: JsonObject): Boolean =
         event["type"].toString().trim('"') in setOf("response.failed", "response.error", "error")
+
+    // The real runner's socket-fault codes are pinned in ResponsesWsSocketFaultTest; this reports the one sent here.
+    override fun isSocketFault(event: JsonObject): Boolean = "websocket_connection_limit_reached" in event.toString()
 
     override fun roundEnded(meta: TurnMeta, ok: Boolean) {
         if (ok) endedOk += 1 else endedNotOk += 1
@@ -926,7 +949,7 @@ class WsRoundReserveTest {
     private fun provider(runner: WsRoundRunner): Provider = WsDriverFixture(tmp, mock.baseUrl).provider(runner)
 
     private fun head(
-        runner: ScriptedRunner,
+        runner: WsRoundRunner,
         bridge: CodexCodeModeBridge? = null,
         log: (String) -> Unit = {},
     ): HeadServer = HeadServer(
@@ -1033,6 +1056,207 @@ class WsRoundReserveTest {
                 row.getValue(PerfKeys.WS_PRE_OUTPUT_FALLBACKS).toString(),
                 "the accepted WS failure before client output is counted as a real SSE fallback",
             )
+        } finally {
+            runBlocking { h.stop() }
+        }
+    }
+
+    private fun turnInSession(port: Int, session: String): String = runBlocking {
+        client.post("http://127.0.0.1:$port/v1/messages") {
+            header(SESSION_HEADER, session)
+            setBody(
+                """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":100,
+                    "messages":[{"role":"user","content":"hi"}]}""",
+            )
+        }.bodyAsText()
+    }
+
+    // Marcos, 2026-10-27: a live limit or a drop before any output reconnects at once on the same login, with no
+    // backoff. HTTP is for a socket that fails again. The backend ends every websocket at 60 minutes with this error.
+    @Test
+    fun `a connection limit before any client frame is answered on a fresh socket, not over HTTP`() {
+        val runner = ScriptedRunner(listOf(CONNECTION_LIMIT), continuationEvents = WS_ANSWER)
+        val h = head(runner)
+        runBlocking { h.start() }
+        try {
+            val before = mock.upstreamBodies.size
+            val answer = turn(h.port)
+            assertTrue(answer.contains("late text"), "the fresh socket's answer reached the client: $answer")
+            assertTrue(answer.contains("event: message_stop"), "and the turn completed: $answer")
+            assertEquals(before, mock.upstreamBodies.size, "no HTTP request was sent")
+            assertEquals(2, runner.attempts, "the round was sent twice over the websocket")
+            assertEquals(1, runner.endedOk, "the second round is a clean terminal")
+            assertTrue(AsyncFileIo.drain(), "the counters reached the perf row")
+            val row = ev(Files.readString(tmp.resolve("perf-$built.jsonl")).trim())
+            assertEquals("1", row[PerfKeys.WS_FRESH_SOCKET_RETRIES]?.toString(), "the fresh-socket retry is counted")
+            assertFalse(PerfKeys.WS_PRE_OUTPUT_FALLBACKS in row, "nothing fell back to HTTP")
+        } finally {
+            runBlocking { h.stop() }
+        }
+    }
+
+    @Test
+    fun `a socket torn before any client frame is answered on a fresh socket, not over HTTP`() {
+        val scripted = ScriptedRunner(WS_ANSWER)
+        var tore = false
+        val runner = object : WsRoundRunner by scripted {
+            override suspend fun attempt(
+                bodyJson: String,
+                meta: TurnMeta,
+                turnHeaders: Map<String, String>,
+                creds: Credentials,
+                perf: TurnPerf?,
+            ): WsRound? {
+                if (tore) return scripted.attempt(bodyJson, meta, turnHeaders, creds, perf)
+                tore = true
+                return WsRound(flow { throw IOException("websocket closed 1006 before any event") }, WsRoundAbort {})
+            }
+        }
+        val h = head(runner)
+        runBlocking { h.start() }
+        try {
+            val before = mock.upstreamBodies.size
+            val answer = turn(h.port)
+            assertTrue(answer.contains("late text"), "the fresh socket's answer reached the client: $answer")
+            assertEquals(before, mock.upstreamBodies.size, "no HTTP request was sent")
+            assertEquals(1, scripted.endedOk, "the fresh socket's round is a clean terminal: $answer")
+        } finally {
+            runBlocking { h.stop() }
+        }
+    }
+
+    @Test
+    fun `a socket that fails twice before output goes to HTTP with a warning naming session, login and reason`() {
+        val lines = ConcurrentLinkedQueue<String>()
+        val runner = ScriptedRunner(listOf(CONNECTION_LIMIT))
+        val h = head(runner, log = { lines += it })
+        runBlocking { h.start() }
+        try {
+            val before = mock.upstreamBodies.size
+            assertTrue(turnInSession(h.port, "sess-ws-retry").contains("event: message_stop"), "HTTP answered the turn")
+            assertEquals(2, runner.attempts, "one fresh-socket retry, then HTTP")
+            assertEquals(before + 1, mock.upstreamBodies.size, "exactly one HTTP request")
+            val warning = lines.single { "websocket fallback to HTTP" in it }
+            assertTrue("warning:" in warning, warning)
+            assertTrue("session=sess-ws-retry" in warning, warning)
+            assertTrue("login=" in warning, warning)
+            assertTrue("code=websocket_connection_limit_reached" in warning, warning)
+            assertTrue(AsyncFileIo.drain(), "the counters reached the perf row")
+            val row = ev(Files.readString(tmp.resolve("perf-$built.jsonl")).trim())
+            assertEquals("1", row[PerfKeys.WS_FRESH_SOCKET_RETRIES]?.toString())
+            assertEquals("1", row[PerfKeys.WS_PRE_OUTPUT_FALLBACKS]?.toString())
+        } finally {
+            runBlocking { h.stop() }
+        }
+    }
+
+    /** A runner whose transport cannot take the first [declines] rounds (connect, send or first event failed). The
+     *  real runner counts each one on the turn's perf row, as here, before it hands the round back. */
+    private class SocketDecliningRunner(
+        private val scripted: ScriptedRunner,
+        private val declines: Int,
+        private val tooLarge: Boolean = false,
+    ) : WsRoundRunner by scripted {
+        var tries = 0
+
+        override suspend fun attempt(
+            bodyJson: String,
+            meta: TurnMeta,
+            turnHeaders: Map<String, String>,
+            creds: Credentials,
+            perf: TurnPerf?,
+        ): WsRound? {
+            if (++tries > declines) return scripted.attempt(bodyJson, meta, turnHeaders, creds, perf)
+            perf?.add(PerfKeys.WS_TRANSPORT_DECLINES, 1)
+            if (tooLarge) perf?.add(PerfKeys.WS_REFUSED_TOO_LARGE, 1)
+            return null
+        }
+    }
+
+    // Marcos, 2026-10-27: "every fallback logs a warning and a counter with session, account and reason". A socket
+    // that cannot take the round at all fails before any output too, so it gets the same fresh socket first.
+    @Test
+    fun `a socket that cannot take the round is answered on a fresh socket the second time`() {
+        val scripted = ScriptedRunner(WS_ANSWER)
+        val runner = SocketDecliningRunner(scripted, declines = 1)
+        val h = head(runner)
+        runBlocking { h.start() }
+        try {
+            val before = mock.upstreamBodies.size
+            val answer = turn(h.port)
+            assertTrue(answer.contains("late text"), "the fresh socket's answer reached the client: $answer")
+            assertEquals(before, mock.upstreamBodies.size, "no HTTP request was sent")
+            assertEquals(2, runner.tries, "the round was offered to the websocket twice")
+        } finally {
+            runBlocking { h.stop() }
+        }
+    }
+
+    @Test
+    fun `a socket that cannot take the round twice goes to HTTP with a warning naming session, login and reason`() {
+        val lines = ConcurrentLinkedQueue<String>()
+        val runner = SocketDecliningRunner(ScriptedRunner(WS_ANSWER), declines = 2)
+        val h = head(runner, log = { lines += it })
+        runBlocking { h.start() }
+        try {
+            val before = mock.upstreamBodies.size
+            assertTrue(turnInSession(h.port, "sess-ws-decline").contains("event: message_stop"), "HTTP answered")
+            assertEquals(2, runner.tries, "one fresh-socket retry, then HTTP")
+            assertEquals(before + 1, mock.upstreamBodies.size, "exactly one HTTP request")
+            val warning = lines.single { "websocket fallback to HTTP" in it }
+            assertTrue("warning:" in warning, warning)
+            assertTrue("session=sess-ws-decline" in warning, warning)
+            assertTrue("login=" in warning, warning)
+            assertTrue("code=transport_declined" in warning, warning)
+            assertTrue(AsyncFileIo.drain(), "the counters reached the perf row")
+            val row = ev(Files.readString(tmp.resolve("perf-$built.jsonl")).trim())
+            assertEquals("2", row[PerfKeys.WS_TRANSPORT_DECLINES]?.toString())
+            assertEquals("1", row[PerfKeys.WS_FRESH_SOCKET_RETRIES]?.toString())
+            assertEquals("1", row[PerfKeys.WS_PRE_OUTPUT_FALLBACKS]?.toString())
+        } finally {
+            runBlocking { h.stop() }
+        }
+    }
+
+    // A peer that refuses the frame as too large (close 1009) would refuse it again on a fresh socket, so that round
+    // goes to HTTP at once instead of uploading the same frame twice.
+    @Test
+    fun `a frame the socket refused as too large goes straight to HTTP`() {
+        val lines = ConcurrentLinkedQueue<String>()
+        val runner = SocketDecliningRunner(ScriptedRunner(WS_ANSWER), declines = 1, tooLarge = true)
+        val h = head(runner, log = { lines += it })
+        runBlocking { h.start() }
+        try {
+            val before = mock.upstreamBodies.size
+            assertTrue(turnInSession(h.port, "sess-ws-big").contains("event: message_stop"), "HTTP answered")
+            assertEquals(1, runner.tries, "no fresh socket for a frame the peer refused by size")
+            assertEquals(before + 1, mock.upstreamBodies.size, "exactly one HTTP request")
+            val warning = lines.single { "websocket fallback to HTTP" in it }
+            assertTrue("code=frame_too_large" in warning, warning)
+            assertTrue("session=sess-ws-big" in warning, warning)
+        } finally {
+            runBlocking { h.stop() }
+        }
+    }
+
+    // The same law reaches a round the socket path does not take for any other reason (no conversation key, no
+    // credentials, a prefill that did not finish): it is a fallback too, so it warns, counts, and names who.
+    @Test
+    fun `a round the socket path does not take goes to HTTP with a warning naming session, login and reason`() {
+        val lines = ConcurrentLinkedQueue<String>()
+        val h = head(DecliningRunner(), log = { lines += it })
+        runBlocking { h.start() }
+        try {
+            assertTrue(turnInSession(h.port, "sess-ws-bypass").contains("event: message_stop"), "HTTP answered")
+            val warning = lines.single { "websocket fallback to HTTP" in it }
+            assertTrue("warning:" in warning, warning)
+            assertTrue("session=sess-ws-bypass" in warning, warning)
+            assertTrue("login=" in warning, warning)
+            assertTrue("code=socket_bypassed" in warning, warning)
+            assertTrue(lines.none { "fresh socket" in it }, "a bypass is not a socket fault, so no fresh socket")
+            assertTrue(AsyncFileIo.drain(), "the counter reached the perf row")
+            val row = ev(Files.readString(tmp.resolve("perf-$built.jsonl")).trim())
+            assertEquals("1", row[PerfKeys.WS_PRE_OUTPUT_FALLBACKS]?.toString())
         } finally {
             runBlocking { h.stop() }
         }

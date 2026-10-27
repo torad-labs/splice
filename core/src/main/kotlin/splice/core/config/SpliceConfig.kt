@@ -140,6 +140,12 @@ public class SpliceConfig internal constructor(
     public val upstreamRetries: Int get() = long(Knob.UPSTREAM_RETRIES).toInt()
     public val upstreamTimeoutMs: Long get() = long(Knob.UPSTREAM_TIMEOUT_MS)
     public val firstByteTimeoutMs: Long get() = long(Knob.FIRST_BYTE_TIMEOUT_MS)
+
+    /** How long a pooled Responses websocket may sit idle before the pool closes it. */
+    public val wsIdleCloseMs: Long get() = long(Knob.WS_IDLE_CLOSE_MS)
+
+    /** How old an idle pooled Responses websocket may grow before the pool retires it. */
+    public val wsMaxAgeMs: Long get() = long(Knob.WS_MAX_AGE_MS)
     public val streamIdleMs: Long get() = long(Knob.STREAM_IDLE_MS)
     public val stallReanchorMs: Long get() = long(Knob.STALL_REANCHOR_MS)
     public val authCacheMs: Long get() = long(Knob.AUTH_CACHE_MS)

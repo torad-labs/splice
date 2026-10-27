@@ -129,7 +129,13 @@ public abstract class ResponsesProvider(
      *  caught by WsQuirkWiringTest, and it would have silently disabled the feature in production. */
     final override val wsRunner: WsRoundRunner? by lazy {
         ResponsesWsSupport(log, extraHeaders = WsExtraHeaders { extraHeaders(it) }, policy = webSocketPolicy)
-            .runner(quirks.backend.webSocket, supportsWebSocket, upstreamUrl, quirks.backend.webSocketPrefill)
+            .runner(
+                quirks.backend.webSocket,
+                supportsWebSocket,
+                upstreamUrl,
+                quirks.backend.webSocketPrefill,
+                quirks.backend.webSocketIdleCloseMs to quirks.backend.webSocketMaxAgeMs,
+            )
     }
 
     final override fun amendBodyOnFailure(status: Int, responseText: String, bodyJson: String): String? =

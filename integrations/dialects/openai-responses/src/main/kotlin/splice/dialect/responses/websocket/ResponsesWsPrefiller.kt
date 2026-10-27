@@ -57,7 +57,7 @@ internal class ResponsesWsPrefiller(
                 }
             }
             if (finalResult.clean) {
-                log("[ws] ${identity.logKey(context.key)} prefill complete code=clean_no_output\n")
+                log("[ws] ${who(context.key, context.meta)} prefill complete code=clean_no_output\n")
             } else {
                 bypass(context, finalResult.reason)
             }
@@ -67,9 +67,13 @@ internal class ResponsesWsPrefiller(
         }
     }
 
+    /** The key's digest and the client session, the form every socket line names. */
+    private fun who(key: String, meta: TurnMeta): String =
+        "${identity.logKey(key)} session=${meta.scope.sessionId ?: "-"}"
+
     private fun bypass(context: PrefillContext, reason: String): Boolean {
         context.perf?.add(PerfKeys.WS_PREFILL_BYPASSES, 1)
-        log("[ws] ${identity.logKey(context.key)} prefill bypass code=$reason; round rides SSE\n")
+        log("[ws] ${who(context.key, context.meta)} prefill bypass code=$reason; the round goes to HTTP\n")
         return false
     }
 
@@ -77,9 +81,9 @@ internal class ResponsesWsPrefiller(
         var commit: ResponsesWsIdentity.PendingCommit? = null
         val flow = transport.round(
             key = context.key,
-            headers = context.headers,
-            wssUrl = wssUrl,
+            handshake = WsHandshake(wssUrl, context.headers),
             isTerminal = { event -> JsonScalars.str(event["type"]) in ResponsesRoundEnd.ALL },
+            session = context.meta.scope.sessionId,
         ) { connection ->
             val built = session.frameAndEpoch(
                 context.chain,
@@ -92,7 +96,7 @@ internal class ResponsesWsPrefiller(
                 connection.generation,
                 built.epoch,
             )
-            log("[ws] ${identity.logKey(context.key)} prefill send code=reusable_instruction_tool_prefix\n")
+            log("[ws] ${who(context.key, context.meta)} prefill send code=reusable_instruction_tool_prefix\n")
             built.frame.json
         }
         return PrefillRound(flow, commit)

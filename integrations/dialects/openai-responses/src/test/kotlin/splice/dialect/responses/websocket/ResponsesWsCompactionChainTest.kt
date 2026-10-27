@@ -4,8 +4,13 @@
 // the cache far more often than a chained turn (0 of 14 chained compactions missed; 17 of 228 warm ones did).
 // So a COMPACTION that leaves the answer's calls open chains onto that answer: each open call is closed with the
 // output codex-rs itself writes for a call that has none ("aborted", context_manager/normalize.rs
-// ensure_call_outputs_present), then the compaction's new items follow. A turn that is not a compaction keeps
-// today's full send, and a compaction that rewrote its history still full-sends.
+// ensure_call_outputs_present), then the compaction's new items follow. A compaction that rewrote its history still
+// full-sends.
+//
+// Since Marcos, 2026-10-27 ("unanswered tool calls are closed as aborted and chaining continues"), an ordinary turn
+// that leaves a call open chains the same way, as codex-rs does for every request. A code-mode call on an ordinary turn
+// is the one exception ("a code-mode dangling call is flagged and left alone"): code mode runs it itself, so the turn
+// full-sends as before and the log says so.
 package splice.dialect.responses.websocket
 
 import kotlinx.coroutines.test.runTest
@@ -71,13 +76,16 @@ private const val CREATED = """{"type":"response.created"}"""
 private fun completed(id: String) = """{"type":"response.completed","response":{"id":"$id","output":[]}}"""
 
 /** The real runner and websocket transport over a scripted socket: each send answers with that round's frames. */
-private class CompactionRig(private val script: (Int) -> List<String>) {
+private class CompactionRig(
+    private val policy: ResponsesWebSocketPolicy = ResponsesWebSocketPolicy(),
+    private val script: (Int) -> List<String>,
+) {
     val sent = mutableListOf<JsonObject>()
     val logs = mutableListOf<String>()
     private var rounds = 0
     val runner = ResponsesWsRunner(
         transport = WsUpstream(connector = ::connect),
-        session = ResponsesWsSession(),
+        session = ResponsesWsSession(policy = policy),
         wssUrl = "wss://example.invalid/responses",
         handshakeHeaders = { emptyMap() },
         webSocketPrefill = false,
@@ -163,16 +171,33 @@ class ResponsesWsCompactionChainTest {
         }
 
     @Test
-    fun `a turn that is not a compaction still full-sends when it leaves the call open`() = runTest {
-        val call = item("type" to "function_call", "call_id" to "call_9", "name" to "read", "arguments" to "{}")
-        val rig = CompactionRig { round ->
-            if (round == 0) listOf(CREATED, itemDone(call), completed("r1")) else listOf(CREATED, completed("r2"))
+    fun `an ordinary turn that leaves the answer's function call open chains onto that answer with the call aborted`() =
+        runTest {
+            val call = item("type" to "function_call", "call_id" to "call_9", "name" to "read", "arguments" to "{}")
+            val rig = CompactionRig { round ->
+                if (round == 0) listOf(CREATED, itemDone(call), completed("r1")) else listOf(CREATED, completed("r2"))
+            }
+            rig.round(listOf(HI))
+            val next = item("role" to "user", "content" to "never mind, do this instead")
+            rig.round(listOf(HI, next), compact = false)
+
+            assertEquals("r1", rig.lastPrevious(), "the turn continues the answer whose call the client dropped")
+            assertEquals(listOf(aborted("function_call_output", "call_9"), next), rig.lastInput())
+        }
+
+    @Test
+    fun `an ordinary turn that leaves a code-mode exec call open is left alone and the log says so`() = runTest {
+        val exec = item("type" to "custom_tool_call", "call_id" to "call_1", "name" to "exec", "input" to "1")
+        val rig = CompactionRig(ResponsesWebSocketPolicy(runtimeCalls = setOf("exec", "wait"))) { round ->
+            if (round == 0) listOf(CREATED, itemDone(exec), completed("r1")) else listOf(CREATED, completed("r2"))
         }
         rig.round(listOf(HI))
-        rig.round(listOf(HI, SUMMARIZE), compact = false)
+        val next = item("role" to "user", "content" to "next")
+        rig.round(listOf(HI, next), compact = false)
 
-        assertNull(rig.lastPrevious(), "only a compaction may close a call the client never answered")
-        assertEquals(listOf(HI, SUMMARIZE), rig.lastInput())
+        assertNull(rig.lastPrevious(), "code mode's own call is never closed for it")
+        assertEquals(listOf(HI, next), rig.lastInput())
+        assertTrue(rig.logs.any { "code mode" in it && "call_1" in it }, "the full send is flagged: ${rig.logs}")
     }
 
     @Test
@@ -223,7 +248,7 @@ class ResponsesWsCompactionChainTest {
                 item("type" to "reasoning", "id" to "rs_$n", "encrypted_content" to "e$n")
             }
             val callItems = calls.map { (custom, id) -> if (custom) execCall(id) else functionCall(id) }
-            val session = ResponsesWsSession()
+            val session = ResponsesWsSession(policy = ResponsesWebSocketPolicy(runtimeCalls = setOf("exec", "wait")))
             val first = request(listOf(HI))
             session.completed(
                 KEY,
@@ -247,7 +272,14 @@ class ResponsesWsCompactionChainTest {
                 aborted(if (custom) "custom_tool_call_output" else "function_call_output", id)
             } + SUMMARIZE
             val sent = responsesRequestJson.parseToJsonElement(frame.json).jsonObject
-            assertEquals(false, plain.chained, "seed $seed: an ordinary turn keeps the full send")
+            // An ordinary turn closes plain calls as aborted and chains; one that leaves code mode's exec open is left
+            // alone and full-sends (Marcos, 2026-10-27). A compaction closes every call either way.
+            val codeModeOpen = calls.any { (custom, _) -> custom }
+            assertEquals(!codeModeOpen, plain.chained, "seed $seed: an ordinary turn chains unless code mode holds one")
+            if (!codeModeOpen) {
+                val plainInput = responsesRequestJson.parseToJsonElement(plain.json).jsonObject["input"]!!.jsonArray
+                assertEquals(expected, plainInput.map { it.jsonObject }, "seed $seed: ordinary turn closes them")
+            }
             assertEquals(true, frame.chained, "seed $seed")
             assertEquals("r1", sent["previous_response_id"]?.jsonPrimitive?.content, "seed $seed")
             assertEquals(expected, sent["input"]!!.jsonArray.map { it.jsonObject }, "seed $seed")

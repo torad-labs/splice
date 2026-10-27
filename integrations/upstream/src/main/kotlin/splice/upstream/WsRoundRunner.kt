@@ -51,6 +51,11 @@ public interface WsRoundRunner {
      *  rather than being served raw over the WebSocket. */
     public fun isFailureTerminal(event: JsonObject): Boolean
 
+    /** True when [event] is a failure of the SOCKET rather than of the request, so the same request can succeed on a
+     *  new socket. The head then sends the round again at once on a fresh socket of the same login, with no backoff,
+     *  before any HTTP fallback (Marcos, 2026-10-27). False for every event by default. */
+    public fun isSocketFault(event: JsonObject): Boolean = false
+
     /** Called once the round is over: [ok] true only for a clean, fully-consumed terminal.
      *  Anything else must clear the chaining state — a response id that was never completed would
      *  anchor the next turn onto context the server never finished building. */

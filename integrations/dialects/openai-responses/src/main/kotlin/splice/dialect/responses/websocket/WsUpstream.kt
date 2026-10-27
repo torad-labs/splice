@@ -28,12 +28,12 @@ package splice.dialect.responses.websocket
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.JsonObject
-import splice.core.util.ElapsedClock
+import splice.core.util.Cancellables
+import splice.core.util.ERR_SNIPPET
 import splice.core.util.LogSink
-import splice.core.util.MonoClock
 
 /**
- * The WebSocket upstream: a bounded per-key connection registry plus the one operation the head
+ * The WebSocket upstream: every conversation's sockets, with no cap, plus the one operation the head
  * needs — [round]: send ONE request frame, get the round's events as a Flow, or `null` meaning
  * "use the SSE path for this round" (connect failed / connection busy / first event never came).
  *
@@ -44,30 +44,37 @@ import splice.core.util.MonoClock
  */
 public class WsUpstream(
     private val firstEventTimeoutMs: Long = FIRST_EVENT_TIMEOUT_MS,
-    private val maxConnections: Int = MAX_CONNECTIONS,
     /** DR-182: the send half of the pre-commit window, which had no budget at all. */
     private val sendTimeoutMs: Long = SEND_TIMEOUT_MS,
     private val log: LogSink = LogSink {},
     /** Injectable socket factory — tests script a fake WebSocket without a live server. Receives
      *  the wss URI, the handshake headers, and the listener the socket must feed. */
-    private val connector: WsConnector = WsConnector { uri, headers, listener ->
-        JdkWebSocketConnector().jdkConnect(uri, headers, listener, CONNECT_TIMEOUT_MS)
-    },
-    /** The age past which an idle pooled connection is retired; see MAX_SOCKET_AGE_MS. */
-    maxSocketAgeMs: Long = MAX_SOCKET_AGE_MS,
-    /** Where socket ages are read; tests pass a clock they move. */
-    clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
+    private val connector: WsConnector = JDK_CONNECTOR,
+    /** How long a socket lives: its idle close, its max age, the clock that reads both, and the sweep. */
+    lifetime: WsLifetime = WsLifetime(),
 ) {
+
     private val logKeys = WsLogKeys()
-    private val pool = WsConnectionPool(maxConnections, log, logKeys, connector, maxSocketAgeMs, clock)
-    private val opener = WsRoundOpener(log, logKeys, firstEventTimeoutMs, pool, sendTimeoutMs)
-    private val stream = WsRoundStream(log, logKeys, pool)
+    private val pool =
+        WsConnectionPool(log, logKeys, connector, lifetime.maxAgeMs, lifetime.idleCloseMs, lifetime.clock)
+    private val opener = WsRoundOpener(log, firstEventTimeoutMs, pool, sendTimeoutMs)
+    private val stream = WsRoundStream(log, pool)
+
+    init {
+        lifetime.sweeps.every(SWEEP_PERIOD_MS) {
+            // A throw out of a scheduled task ends every later run, and nothing else closes an idle socket.
+            Cancellables.runCatchingBestEffort(pool::sweep).onFailure {
+                val why = "${it::class.simpleName}: ${it.message?.take(ERR_SNIPPET)}"
+                log("[ws] warning: the idle sweep failed ($why); it runs again\n")
+            }
+        }
+    }
 
     /**
      * Run one request/response round over the key's WebSocket.
      *
      * Returns `null` — meaning "this round rides SSE instead" — when the connection could not be
-     * established, is mid-round (busy), the frame could not be sent, or the first event did not
+     * established, the frame could not be sent, or the first event did not
      * arrive within [firstEventTimeoutMs]. Once the first event HAS arrived, the returned flow is
      * committed: it replays that event and then relays the connection's inbox until [isTerminal]
      * matches (connection returns to the pool) or the stream tears (IOException out of the flow,
@@ -78,12 +85,14 @@ public class WsUpstream(
      */
     public suspend fun round(
         key: String,
-        headers: Map<String, String>,
-        wssUrl: String,
+        /** Where the socket connects and the headers its handshake sends. */
+        handshake: WsHandshake,
         isTerminal: TerminalEvent,
+        /** The client session this round serves, named on every socket log line. */
+        session: String? = null,
         frameFor: RoundFrame,
     ): Flow<JsonObject>? {
-        val conn = pool.acquire(key, headers, wssUrl) ?: return null
+        val conn = pool.acquire(key, session, handshake.headers, handshake.wssUrl) ?: return null
         // Between winning the busy flag and handing back a flow there are two suspension points,
         // and a cancellation at either one used to propagate BEFORE any flow existed — so
         // onCompletion never ran, the busy flag stayed set, and every later round for this key lost
@@ -114,7 +123,10 @@ private const val FIRST_EVENT_TIMEOUT_MS = 15_000L
 // This is the FLOOR: WsRoundOpener adds the frame's own transfer time on top (2026-09-02 — "~1.5 MB,
 // the largest frame observed" was true when this was written and 7.7 MB frames are routine now).
 private const val SEND_TIMEOUT_MS = 10_000L
-private const val MAX_CONNECTIONS = 32
+
+// why: a socket past its idle or age limit lingers at most half a minute before the sweep closes it.
+private const val SWEEP_PERIOD_MS = 30_000L
+internal const val SOCKET_IDLE_CLOSE_MS = 600_000L // why: ten idle minutes, then the socket is closed
 
 // OpenAI's websocket mode ends a connection at 60 minutes and answers the next request on it with
 // websocket_connection_limit_reached (developers.openai.com/api/docs/guides/websocket-mode). Six
@@ -125,4 +137,9 @@ private const val MAX_CONNECTIONS = 32
 // The age is checked when a round acquires an idle socket, which is retired past 35 minutes: no round
 // starts on an older one, and each still has the full upstream timeout (Knob.UPSTREAM_TIMEOUT_MS, 900
 // seconds) before the 60-minute limit. Each retirement costs one reconnect full-send.
-private const val MAX_SOCKET_AGE_MS = 2_100_000L
+internal const val MAX_SOCKET_AGE_MS = 2_100_000L
+
+/** The real socket factory. */
+private val JDK_CONNECTOR = WsConnector { uri, headers, listener ->
+    JdkWebSocketConnector().jdkConnect(uri, headers, listener, CONNECT_TIMEOUT_MS)
+}

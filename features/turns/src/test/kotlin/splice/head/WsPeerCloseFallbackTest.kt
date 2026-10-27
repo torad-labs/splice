@@ -39,6 +39,7 @@ import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.websocket.RoundFrame
 import splice.dialect.responses.websocket.TerminalEvent
 import splice.dialect.responses.websocket.WsConnector
+import splice.dialect.responses.websocket.WsHandshake
 import splice.dialect.responses.websocket.WsUpstream
 import splice.head.admission.RequestMaterializationGate
 import splice.upstream.NEVER_PINGED_MS
@@ -107,8 +108,7 @@ private class ClosingRunner(events: List<String>, log: LogSink) : WsRoundRunner 
     ): WsRound? {
         val flow = transport.round(
             key = "round-${attempts.incrementAndGet()}",
-            headers = emptyMap(),
-            wssUrl = "wss://chatgpt.test/backend-api/codex/responses",
+            handshake = WsHandshake("wss://chatgpt.test/backend-api/codex/responses", emptyMap()),
             isTerminal = TerminalEvent { type(it) in ROUND_ENDS },
             frameFor = RoundFrame { bodyJson },
         ) ?: return null
@@ -198,22 +198,28 @@ class WsPeerCloseFallbackTest(@param:TempDir private val tmp: Path) {
         reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
     )
 
+    // Since 2026-10-27 a socket that closes before any output is replaced once at once on the same login, then HTTP
+    // (Marcos: "a limit error or close mid-request reconnects at once"). Every socket here closes the same way.
     @Test
-    fun `a peer close before any output is served over HTTP once, and the bypass line names the close`() {
+    fun `a peer close before any output is tried on one fresh socket, then served over HTTP once`() {
         val run = turnAgainst(CODEX_PREAMBLE)
 
         assertTrue("ok after auth" in run.sse, "the HTTP answer reaches the client: ${run.sse}")
         assertTrue("message_stop" in run.sse, "as a completed turn: ${run.sse}")
-        assertEquals(1, run.runner.attempts.get(), "the websocket is tried once, never re-anchored on")
-        assertEquals(1, run.runner.bypassed.get(), "the round is reported bypassed, so its chain is dropped")
+        assertEquals(2, run.runner.attempts.get(), "one fresh-socket retry, never a re-anchor")
+        assertEquals(2, run.runner.bypassed.get(), "each round is reported bypassed, so its chain is dropped")
         assertEquals(1, run.httpPosts, "the next attempt went over HTTP, once")
         assertFalse(run.logs.any { "re-anchor" in it }, "no re-anchor: ${run.logs.filter { "re-anchor" in it }}")
-        val bypass = run.logs.single { "websocket pre-output fallback" in it }
+        val bypass = run.logs.single { "websocket fallback to HTTP" in it }
         assertTrue("code=pre_output_transport_tear" in bypass, "the bypass line names the fallback reason: $bypass")
         assertTrue("status=1011" in bypass, "the retained detail names the peer close: $bypass")
         assertTrue("codex.rate_limits, codex.response.metadata" in bypass, "and what came before it: $bypass")
-        val close = run.logs.single { it.startsWith(CLOSE_LINE) }
-        assertTrue("codex.rate_limits, codex.response.metadata" in close, "the close line lists them: $close")
+        val closes = run.logs.filter { it.startsWith(CLOSE_LINE) }
+        assertEquals(2, closes.size, "both sockets closed: $closes")
+        assertTrue(
+            closes.all { "codex.rate_limits, codex.response.metadata" in it },
+            "each close line lists them: $closes",
+        )
     }
 
     @Test

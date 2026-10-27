@@ -42,10 +42,11 @@ import splice.core.util.MonoClock
  * while a stale one would chain onto context the server never finished building.
  */
 internal class ResponsesWsSession(
-    private val maxConversations: Int = MAX_CONVERSATIONS,
     private val maxTotalBytes: Long = MAX_TOTAL_BYTES,
     private val ttlMs: Long = TTL_MS,
     private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
+    /** Which open calls belong to the provider's own runtime, so an ordinary turn leaves them alone. */
+    private val policy: ResponsesWebSocketPolicy = ResponsesWebSocketPolicy(),
 ) {
 
     private data class Chain(
@@ -68,6 +69,11 @@ internal class ResponsesWsSession(
     ) {
         /** Assistant text and calls observed on the committed server response. */
         var evidence: WsServerEvidence = WsServerEvidence()
+
+        /** The open calls [items] leaves unanswered that [policy]'s runtime runs itself (code mode's exec and wait). */
+        fun runtimeOpen(items: List<JsonObject>, policy: ResponsesWebSocketPolicy): List<String> =
+            WsChainingChecks.unansweredCalls(pendingCalls, items)
+                .filter { id -> evidence.calls[id]?.let(policy::runsItself) == true }
     }
 
     // LRU + idle bounded. Chains retain the full logical input and request properties, so count
@@ -140,30 +146,7 @@ internal class ResponsesWsSession(
         }
         val chained = if (chain == null) null else chainableDelta(chain, request, generation, compaction)
         val frame = if (chain == null || chained == null) {
-            // Claude Code's auto-compaction was the live case for this reason (2026-09-05): it
-            // fires between a tool call and its execution, so the compaction body ends at the
-            // PREVIOUS tool result and the call the server just emitted is never answered.
-            // Chained as it was, the server refused every one ("No tool output found for function
-            // call …"). Since 2026-10-25 a compaction closes those calls and chains
-            // (WsCompactionClose); an ordinary turn that leaves one open still full-sends here.
-            val items = (request[FIELD_INPUT] as? JsonArray)?.filterIsInstance<JsonObject>().orEmpty()
-            val unanswered = chain?.let { WsChainingChecks.unansweredCalls(it.pendingCalls, items) }.orEmpty()
-            WsFrame(
-                frame(request, previousResponseId = null, input = null, clientMetadata),
-                chained = false,
-                fullSendCode = chain?.let { held ->
-                    WsFullSendDiagnostic.code(
-                        WsSendExpectation(held.input, held.generation, held.props, held.pendingCalls),
-                        request,
-                        generation,
-                        propsOf(request),
-                    ) { current -> deltaOf(held.input, current, held.evidence) }
-                } ?: "no_prior_chain",
-                fullSendReason = unanswered.takeIf { it.isNotEmpty() }?.let {
-                    "the server holds ${it.size} unanswered tool call(s) this turn never answers " +
-                        "(${it.joinToString(", ")}); a chained send would be refused"
-                },
-            )
+            fullSend(chain, request, generation, clientMetadata, compaction)
         } else {
             WsFrame(
                 frame(request, previousResponseId = chain.responseId, input = JsonArray(chained.send), clientMetadata),
@@ -176,6 +159,43 @@ internal class ResponsesWsSession(
             frame,
             epochs.getOrPut(key) { ++seq },
             committed = chained?.committed(request),
+        )
+    }
+
+    /** The whole input for a round that cannot chain, with the code and reason its full-send lines give. */
+    private fun fullSend(
+        chain: Chain?,
+        request: JsonObject,
+        generation: Long,
+        clientMetadata: JsonObject?,
+        compaction: Boolean,
+    ): WsFrame {
+        // Claude Code's auto-compaction was the live case for this reason (2026-09-05): it
+        // fires between a tool call and its execution, so the compaction body ends at the
+        // PREVIOUS tool result and the call the server just emitted is never answered.
+        // Chained as it was, the server refused every one ("No tool output found for function
+        // call …"). Since 2026-10-25 a compaction closes those calls and chains (WsCompactionClose), and since
+        // 2026-10-27 every turn does. A full send here with calls left open is code mode's own call on an
+        // ordinary turn, or a turn whose history the server never held.
+        val items = (request[FIELD_INPUT] as? JsonArray)?.filterIsInstance<JsonObject>().orEmpty()
+        return WsFrame(
+            frame(request, previousResponseId = null, input = null, clientMetadata),
+            chained = false,
+            fullSendCode = chain?.let { held ->
+                WsFullSendDiagnostic.code(
+                    WsSendExpectation(held.input, held.generation, held.props, held.pendingCalls),
+                    request,
+                    generation,
+                    propsOf(request),
+                ) { current -> deltaOf(held.input, current, held.evidence) }
+            } ?: "no_prior_chain",
+            fullSendReason = chain?.let {
+                WsFullSendDiagnostic.reason(
+                    it.runtimeOpen(items, policy),
+                    WsChainingChecks.unansweredCalls(it.pendingCalls, items),
+                    compaction,
+                )
+            },
         )
     }
 
@@ -200,7 +220,10 @@ internal class ResponsesWsSession(
             ?.takeIf { WsChainingChecks.unansweredCalls(chain.pendingCalls, it).isEmpty() }
         return when {
             delta != null -> WsChainedSend(delta)
-            compaction -> WsCompactionClose.close(chain.input, items, chain.pendingCalls, chain.evidence)
+            // codex-rs closes every call with no output (ensure_call_outputs_present). Code mode's own calls are
+            // the exception on an ordinary turn: its runtime runs them, so they stay open and the turn full-sends.
+            compaction || chain.runtimeOpen(items, policy).isEmpty() ->
+                WsCompactionClose.close(chain.input, items, chain.pendingCalls, chain.evidence)
             else -> null
         }
     }
@@ -229,7 +252,8 @@ internal class ResponsesWsSession(
             epochs[key] = ++seq
             return
         }
-        val logicalInput = input.map(JsonWire::string)
+        // Digests, not text: the chain only ever asks whether a later input starts with these items.
+        val logicalInput = input.map { WsChainingChecks.digest(JsonWire.string(it)) }
         val props = propsOf(request)
         val bytes = logicalInput.sumOf(JsonWire::byteSize) +
             JsonWire.byteSize(props) +
@@ -283,18 +307,18 @@ internal class ResponsesWsSession(
             stale.remove()
         }
         val bounded = chains.entries.iterator()
-        var overBound = chains.size > maxConversations || totalBytes > maxTotalBytes
+        var overBound = totalBytes > maxTotalBytes
         while (overBound && bounded.hasNext()) {
             val entry = bounded.next()
             totalBytes -= entry.value.bytes
             bounded.remove()
-            overBound = chains.size > maxConversations || totalBytes > maxTotalBytes
+            overBound = totalBytes > maxTotalBytes
         }
         evictOldest(epochs.keys.iterator(), epochs.size)
     }
 
     private fun evictOldest(keys: MutableIterator<String>, size: Int) {
-        var over = size - maxConversations
+        var over = size - MAX_TRACKED_EPOCHS
         while (over > 0 && keys.hasNext()) {
             keys.next().run { keys.remove() }
             over--
@@ -317,6 +341,7 @@ internal class ResponsesWsSession(
 
     private fun propsOf(request: JsonObject): String =
         JsonObject(request.filterKeys { it != FIELD_INPUT && it != FIELD_GENERATE }).let(JsonWire::string)
+            .let(WsChainingChecks::digest)
 
     /**
      * The suffix beyond [previous] that must be sent, or null to bail.
@@ -387,10 +412,12 @@ internal object WsSuffixDisposition {
     }
 }
 
-/** Far more than any real concurrent-session count; an eviction costs only a full send. */
-private const val MAX_CONVERSATIONS = 256
+/** Conversations whose commit epoch is remembered. An epoch is a key and a number, so this costs a few MiB at most;
+ *  forgetting a live conversation's epoch would drop its next commit, so it sits far past any real session count. */
+private const val MAX_TRACKED_EPOCHS = 65_536
 
-/** Retained logical-input + property UTF-8 bytes across all chains on one head. */
+/** Retained bytes across all chains on one head: input and property digests plus the last answer's evidence. The
+ *  input itself is never kept (2026-10-27): as text, 64 MiB held about forty long conversations. */
 private const val MAX_TOTAL_BYTES = 64L * 1024 * 1024
 
 /** Idle, not absolute: frame construction and clean completion both refresh the chain. */

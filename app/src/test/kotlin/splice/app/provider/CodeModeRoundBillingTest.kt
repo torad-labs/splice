@@ -46,6 +46,7 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.websocket.WsConnector
+import splice.dialect.responses.websocket.WsHandshake
 import splice.dialect.responses.websocket.WsUpstream
 import splice.head.HeadServer
 import splice.head.headDeps
@@ -667,8 +668,7 @@ private class BillingWsRunner(
         requests += bodyJson
         return transport.round(
             key = "synthetic-billing-socket",
-            headers = emptyMap(),
-            wssUrl = "wss://example.invalid/responses",
+            handshake = WsHandshake("wss://example.invalid/responses", emptyMap()),
             isTerminal = { it["type"]?.jsonPrimitive?.content == "response.completed" },
             frameFor = { bodyJson },
         )?.let { events ->

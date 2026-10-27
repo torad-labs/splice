@@ -23,6 +23,7 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.failure.FailureCause
 import splice.core.failure.Lift
 import splice.upstream.ClientFrameEmitted
+import splice.upstream.Waiter
 import splice.upstream.transport.PostContext
 import splice.upstream.transport.PostObservers
 import splice.upstream.transport.PostRecovery
@@ -66,9 +67,8 @@ class NeedsPaymentHoldsTheLoginTest {
 
     private fun clientOver(status: Int) = UpstreamClient(
         totalTimeoutMs = 5_000,
-        maxRetries = 1,
         client = HttpClient(MockEngine { respond(SPENDING_LIMIT_BODY, HttpStatusCode.fromValue(status), headersOf()) }),
-        pacing = RetryPacing(backoff = { _, _ -> }, dnsBackoff = { _ -> }),
+        pacing = RetryPacing(waiter = Waiter { }),
     )
 
     @Test

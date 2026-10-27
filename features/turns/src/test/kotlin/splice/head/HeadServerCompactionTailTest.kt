@@ -107,7 +107,7 @@ class HeadServerCompactionTailTest(@param:TempDir private val root: Path) {
             listenPort = 0,
             deps = headDeps(
                 tmp = dir,
-                upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 1),
+                upstream = UpstreamClient(totalTimeoutMs = 30_000),
                 seams = HeadDeps.HeadSeams(session = HeadDeps.SessionSeams(compactionTail = tail)),
             ),
         )

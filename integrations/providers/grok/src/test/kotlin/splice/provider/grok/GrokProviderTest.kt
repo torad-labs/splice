@@ -252,7 +252,7 @@ class GrokProviderTest {
  *  exactly one head shape, so there is nothing here to share with a second rig. */
 private fun testDeps(tmp: java.nio.file.Path): HeadDeps = HeadDeps(
     traffic = HeadDeps.HeadTraffic(
-        upstream = UpstreamClient(30_000, 2),
+        upstream = UpstreamClient(30_000),
         gate = InflightGate({ 0 }),
         liveTurns = LiveTurns(),
     ),

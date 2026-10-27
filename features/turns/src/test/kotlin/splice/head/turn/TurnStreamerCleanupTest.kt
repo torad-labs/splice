@@ -301,7 +301,7 @@ class TurnStreamerCleanupTest {
         val key = "synthetic-cleanup-retry"
         val replay = CompactionReplay(recordings, clock = ElapsedClock { 0L })
         private val scope = LifecycleScope(ProcessDispatchers().background())
-        private val upstream = UpstreamClient(totalTimeoutMs = 1_000, maxRetries = 0)
+        private val upstream = UpstreamClient(totalTimeoutMs = 1_000)
         private val clock = ElapsedClock { 0L }
         private val provider = TestResponsesProvider(
             ProviderTuning(

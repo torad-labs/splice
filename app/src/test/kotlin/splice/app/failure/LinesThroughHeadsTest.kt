@@ -261,6 +261,9 @@ class LinesThroughHeadsTest {
 
             val answer = head.client.send()
 
+            // Ends at once: a spent account with no stated reset is a hold, which until slice 5 ends the turn on its
+            // first answer, so the person reads the credit line after one provider request, not after a wait.
+            assertEquals(1, provider.requests.size, "the first send asked the provider once")
             assertLine(answer, "DeepSeek account cannot pay for this turn")
             assertLine(answer, "Insufficient Balance")
             assertLine(answer, RESENDS)

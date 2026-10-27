@@ -24,10 +24,12 @@ import splice.core.failure.Position
 import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
 import splice.core.util.LocalTimeText
+import splice.upstream.Waiter
 import splice.upstream.failure.FailedReply
 import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.ProviderDeviation
 import splice.upstream.failure.Replies
+import splice.upstream.retry.BURST_WAITS
 import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
@@ -81,9 +83,8 @@ class UpstreamClientBodyPlanLimitTest {
 
     private fun client(engine: MockEngine, clock: ElapsedClock = ElapsedClock { 0L }) = UpstreamClient(
         totalTimeoutMs = 900_000L,
-        maxRetries = 4,
         client = HttpClient(engine),
-        pacing = RetryPacing(backoff = { _, _ -> }),
+        pacing = RetryPacing(waiter = Waiter { }),
         clock = clock,
     )
 
@@ -132,7 +133,7 @@ class UpstreamClientBodyPlanLimitTest {
             client.posted(ctx(bodyReader, mutableListOf()), "{}") { "unreachable" }
         }
 
-        assertEquals(4, calls.get(), "V4-61: every attempt in the budget is spent")
+        assertEquals(1 + BURST_WAITS, calls.get(), "section 8: a burst is waited out at 2, 4, 8 and 15 s, then ends")
         assertEquals(burst, failure.evidence.body)
         assertEquals(0L, client.planHoldForMs)
         assertNull(client.planHold)

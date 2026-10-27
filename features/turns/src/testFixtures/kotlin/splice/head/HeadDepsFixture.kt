@@ -85,7 +85,7 @@ public fun quotaFor(
  */
 public fun headDeps(
     tmp: Path,
-    upstream: UpstreamClient = UpstreamClient(totalTimeoutMs = 30_000L, maxRetries = 2),
+    upstream: UpstreamClient = UpstreamClient(totalTimeoutMs = 30_000L),
     log: LogSink = { },
     gate: InflightGate = InflightGate({ 0 }),
     seams: HeadDeps.HeadSeams = HeadDeps.HeadSeams(),

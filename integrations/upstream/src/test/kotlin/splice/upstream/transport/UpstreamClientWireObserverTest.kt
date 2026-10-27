@@ -17,12 +17,20 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import splice.core.util.ElapsedClock
 import splice.upstream.BodyAmendment
+import splice.upstream.Waiter
 import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
 import splice.upstream.sse.WireAttempt
 import splice.upstream.sse.WireObserver
 import java.io.IOException
+
+/** Holds the unreachable schedule's first wait (1 s) and not its second (2 s): two sends. */
+private const val ONE_UNREACHABLE_WAIT_MS = 1_500L
+
+/** Holds the overload schedule's first wait (2 s) and not its second (4 s): two sends. */
+private const val ONE_OVERLOAD_WAIT_MS = 3_000L
 
 class UpstreamClientWireObserverTest {
 
@@ -33,11 +41,12 @@ class UpstreamClientWireObserverTest {
         }
     }
 
-    private fun client(engine: MockEngine, maxRetries: Int = 3) = UpstreamClient(
-        totalTimeoutMs = 5_000,
-        maxRetries = maxRetries,
+    /** A client whose time stands still, so [totalMs] alone says how many of the engine's waits a post can hold. */
+    private fun client(engine: MockEngine, totalMs: Long = 5_000) = UpstreamClient(
+        totalTimeoutMs = totalMs,
         client = HttpClient(engine),
-        pacing = RetryPacing(backoff = { _, _ -> }),
+        pacing = RetryPacing(waiter = Waiter { }),
+        clock = ElapsedClock { 0L },
     )
 
     private fun context(wire: WireObserver, amend: BodyAmendment = BodyAmendment { _, _, _ -> null }) = PostContext(
@@ -113,7 +122,7 @@ class UpstreamClientWireObserverTest {
         val wire = Recording()
 
         assertThrows<IOException> {
-            runBlocking { client(engine, maxRetries = 2).posted(context(wire), "{}") { "never" } }
+            runBlocking { client(engine, ONE_UNREACHABLE_WAIT_MS).posted(context(wire), "{}") { "never" } }
         }
 
         assertEquals(listOf(1, 2), wire.attempts.map { it.attempt }, "every send, the retried one included")
@@ -130,7 +139,7 @@ class UpstreamClientWireObserverTest {
         val wire = Recording()
 
         assertEnds<UpstreamFailed> {
-            runBlocking { client(engine, maxRetries = 2).posted(context(wire), "{}") { "never" } }
+            runBlocking { client(engine, ONE_OVERLOAD_WAIT_MS).posted(context(wire), "{}") { "never" } }
         }
 
         assertEquals(listOf(503, 503), wire.attempts.map { it.response.status })

@@ -18,11 +18,8 @@ import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
-import splice.upstream.RetryNotice
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialPresence
 import splice.upstream.retry.RateLimitCooldown
-import splice.upstream.retry.RateLimitTurn
-import splice.upstream.retry.RetryDecision
 import java.util.concurrent.atomic.AtomicReference
 
 class AccountPoolTest {
@@ -109,33 +106,6 @@ class AccountPoolTest {
         assertSame(primary, next.account)
         assertEquals(null, next.switch)
         assertTrue(pool.view("session").accounts.single { it.label == "primary" }.available)
-    }
-
-    @Test
-    fun `a short 429 backs off and still keeps the next selection warm`() {
-        val fixture = Fixture()
-        val primary = fixture.account("primary", primary = true)
-        val pool = fixture.pool(primary, fixture.account("plus-a"))
-        assertSame(primary, pool.chosen("session").account)
-
-        val plan = primary.cooldown.rateLimitedPlan(
-            pushbackMs = 1_000L,
-            turn = RateLimitTurn(primary.cooldown, pooledAccount = true),
-            canRetry = true,
-            onRetry = RetryNotice {},
-            nextRefreshed = false,
-        )
-        val next = pool.chosen("session")
-
-        // V4-48: a short pushback now takes the BACKOFF branch — it is waited out, not surrendered —
-        // and a waited-out 429 arms NOTHING, so no follower is failed fast for that interval.
-        assertEquals(RetryDecision.BACKOFF, plan.decision)
-        assertEquals(0L, primary.cooldown.unavailableForMs())
-        assertEquals(0L, primary.cooldown.remainingMs(), "the wait path leaves the head unarmed")
-        assertSame(primary, next.account)
-        assertFalse(next.cacheCold)
-        assertEquals(null, next.switch)
-        assertEquals(null, pool.view("session").lastSwitch)
     }
 
     @Test

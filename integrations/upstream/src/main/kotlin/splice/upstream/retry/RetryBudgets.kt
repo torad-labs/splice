@@ -12,7 +12,7 @@ internal const val MAX_HOLD_MS: Long = 604_800_000L
 
 /** A wait this long or longer is told when it starts; a shorter one is waited in silence (section 8, "Lines from
  *  waits"). */
-internal const val VISIBLE_WAIT_MS: Long = 10_000L
+public const val VISIBLE_WAIT_MS: Long = 10_000L
 
 /** A burst limit with no time stated, or one stated at 15 s or less: waited 2, 4, 8 and 15 s, then held. Four waits
  *  cover the 30 s window a provider's burst counter keeps. */
@@ -73,4 +73,4 @@ internal const val MAX_FOLD_CONTINUES: Int = 3
 internal const val MAX_ATTEMPTS_OUTSIDE_HOLDS: Int = 24
 
 /** How long the ResendLedger remembers a request that ended R: past an hour a re-send is the person's own. */
-internal const val RESEND_TTL_MS: Long = 3_600_000L
+public const val RESEND_TTL_MS: Long = 3_600_000L

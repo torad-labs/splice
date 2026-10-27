@@ -31,8 +31,9 @@ public class HeadVoice(
 ) {
     private val lines = SpliceLines(LocalTimeText(facts.zone))
 
-    /** The voice of a turn carrying [request]. */
-    public fun turn(request: RequestFacts): TurnVoice = TurnVoice(lines, this, request)
+    /** The voice of a turn carrying [request]; [heard] hears each ending it composes (EndingHeard). */
+    public fun turn(request: RequestFacts, heard: EndingHeard = EndingHeard {}): TurnVoice =
+        TurnVoice(lines, this, request, heard)
 
     /** The voice of a line about no particular request: an admission refusal, a quiet stretch, a session note. */
     public val anyTurn: TurnVoice get() = turn(RequestFacts(compaction = false, firstExchange = false))
@@ -47,15 +48,24 @@ public class HeadVoice(
     )
 }
 
+/** Hears the answer each ending of a turn is told with (failure-handling slice 4): the head remembers a request whose
+ *  turn ended with one Claude Code sends again (its ResendLedger), so the identical request after it is told as one. */
+public fun interface EndingHeard {
+    public fun heard(answer: WireAnswer)
+}
+
 /** The voice of one turn: every line about it, composed by [SpliceLines] from the turn's own facts. */
 public class TurnVoice internal constructor(
     private val lines: SpliceLines,
     private val voice: HeadVoice,
     private val request: RequestFacts,
+    private val heard: EndingHeard,
 ) {
     /** The line this turn ends with, told as the client is told it ([answer]). */
-    public fun ending(cause: FailureCause, at: Position, answer: WireAnswer): SpliceLine =
-        lines.ending(cause, at, answer, voice.lineFacts(request))
+    public fun ending(cause: FailureCause, at: Position, answer: WireAnswer): SpliceLine {
+        heard.heard(answer)
+        return lines.ending(cause, at, answer, voice.lineFacts(request))
+    }
 
     /** What the client is told about [cause] at [at] on this turn's request: a request whose identical predecessor
      *  already ended R is told as P (ClientWire). */

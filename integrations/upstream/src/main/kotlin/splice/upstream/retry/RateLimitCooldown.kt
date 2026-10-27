@@ -36,6 +36,7 @@ package splice.upstream.retry
 
 import splice.core.failure.Lift
 import splice.core.failure.LiftSource
+import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
 import splice.core.wire.NativeReply
@@ -194,107 +195,38 @@ public class RateLimitCooldown public constructor(
         rateLimitedUntilMs.accumulateAndGet(until) { current, candidate -> maxOf(current, candidate) }
     }
 
-    /** Every 429 with retry budget left is WAITED OUT and retried here in splice — a short
-     *  Retry-After honored as the floor, anything longer or absent at the 15s ceiling (V4-61). Two
-     *  cases terminate instead: an exhausted budget, and a POOLED account facing a wait past the
-     *  ceiling, which is evicted so the client's own retry lands on a healthy backup at once. Both
-     *  mark the login limited, which steers account selection away from it. A
-     *  short or missing wait never evicts an account and never invents a provider reset. */
-    internal fun rateLimitedPlan(
-        pushbackMs: Long?,
-        turn: RateLimitTurn,
-        canRetry: Boolean,
-        onRetry: RetryNotice,
-        nextRefreshed: Boolean,
-    ): RetryPlan {
-        // V4-47: capture BEFORE the plan is built, and NOT gated on pooledAccount. markUnavailable
-        // below is the only other writer and it fires only for pooled turns over the 15s ceiling,
-        // so on a single-account head — every head the operator runs — the provider reset was never
-        // recorded at all.
-        // Kept as ONE call rather than inlined: rateLimitedPlan is at detekt's complexity ceiling, and
-        // this class is near its function budget, so the capture shares the parser rather than
-        // adding a second member.
-        captureProviderReset(turn.lift)
-
-        // V4-61: a pooled account facing a wait past the interactive ceiling is EVICTED rather than
-        // retried — a healthy backup beats three more attempts on a spent account, and the client's
-        // own retry lands on that backup at once. Everything else with budget left backs off and
-        // retries HERE, in splice, whatever the header said.
-        val providerWaitExceeded = pushbackMs != null && pushbackMs > turn.sameLoginWaitMs
-        val evictInstead = turn.pooledAccount && providerWaitExceeded
-        if (!canRetry || evictInstead) return giveUpAndArm(pushbackMs, turn, nextRefreshed, onRetry)
-        return backoffPlan(pushbackMs?.coerceAtMost(turn.sameLoginWaitMs), pushbackMs, nextRefreshed, onRetry)
-    }
-
-    // V4-61: EVERY 429 WITH BUDGET LEFT BACKS OFF AND RETRIES IN SPLICE. V4-48 restored this for a
-    // Retry-After at or under the 15s ceiling; an ABSENT or LONG header still gave up, and that is
-    // the case the operator actually hits. muse stamps its 5h-window reset on a burst 429 — the
-    // live episode carried Retry-After 5301000ms — and his own re-send moments later SUCCEEDED.
-    // The long number is the window, not this 429's retry-after, and trusting it as a deadline was
-    // wrong in both directions: splice gave up here, then (V4-50) told the client to sleep 88
-    // minutes for a limit that cleared in seconds. This is the "retry every 15 seconds" layer the
-    // operator remembers: a short header is honored as the floor, anything else waits the ceiling.
-    // The fixed 15s dominates the 200ms-doubling curve (capped 10s) that applyBackoff maxes it
-    // against, so the schedule reads 15s, 15s, 15s across the default 4-attempt budget — 45s of
-    // patience before the client ever sees a 429, against a 900s turn timeout.
-    //
-    // WHY THE HERD ARGUMENT DOES NOT BLOCK THIS. The give-up was built against a synchronized
-    // wave amplifying one 429 into N x maxRetries requests. The 5xx path has ALWAYS carried the
-    // identical exposure and it has been accepted since before v0.3.0; the client's own
-    // concurrency is the real ceiling on N, and the operator has chosen the wave over the dead
-    // turn, with the evidence on his side. What is NOT bounded away, and is worth naming: a 429 is
-    // likelier than a 5xx to hit every concurrent turn at once, so this trade is at its worst on a
-    // busy head.
-    //
-    // ARMING IS DELIBERATELY NOT DONE ON THIS PATH. Arming on the first 429 would steer every
-    // cold session away from this login for the whole interval this turn waits out — clamped to 120s on
-    // an 88-minute header — while this turn may well succeed at 15s. The horizon is armed once,
-    // on exhaustion, by giveUpAndArm.
-    // A warm session waits a pushback out up to its own wait left ([RateLimitTurn.sameLoginWaitMs]); an absent header
-    // still waits the 15s ceiling, never the warm session's whole wait.
-    private fun backoffPlan(
-        waitMs: Long?,
-        pushbackMs: Long?,
-        nextRefreshed: Boolean,
-        onRetry: RetryNotice,
-    ): RetryPlan {
-        val floor = waitMs ?: RETRY_AFTER_GIVE_UP_MS
-        val header = pushbackMs?.let { "${it}ms" } ?: "ABSENT"
-        onRetry("429 rate limit: Retry-After header $header; budget remaining, retrying in ${floor}ms")
-        return RetryPlan(RetryDecision.BACKOFF, nextRefreshed, minDelayMs = floor)
-    }
-
-    /** The give-up half: the V4-46 instrument line and the clamp notice, an optional
-     *  pooled-account eviction, the arm, and the terminal plan. Reached only on an exhausted budget
-     *  or a pooled eviction (V4-61). Extracted from rateLimitedPlan so each half stays under
-     *  detekt's complexity ceiling. */
-    private fun giveUpAndArm(
-        pushbackMs: Long?,
-        turn: RateLimitTurn,
-        nextRefreshed: Boolean,
-        onRetry: RetryNotice,
-    ): RetryPlan {
-        val pushback = pushbackMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS
-        val header = pushbackMs?.let { "${it}ms" } ?: "ABSENT"
-        onRetry(
-            "429 rate limit: Retry-After header $header, " +
-                "arming ${minOf(pushback, MAX_RATE_LIMIT_COOLDOWN_MS)}ms on this login",
-        )
-        if (pushback > MAX_RATE_LIMIT_COOLDOWN_MS) {
-            onRetry(
-                "429 Retry-After ${pushback}ms exceeds the cooldown ceiling; " +
-                    "arming ${MAX_RATE_LIMIT_COOLDOWN_MS}ms on this login",
-            )
-        }
-        val providerWaitExceeded = pushbackMs != null && pushback > RETRY_AFTER_GIVE_UP_MS
-        if (turn.pooledAccount && providerWaitExceeded) {
+    /** A turn left this login on a limit: it moved to another login, or it ended or held (failure-handling slice 4,
+     *  where RetryEngine decides which; until slice 5 a hold ends the turn). The provider's own reset is captured, a
+     *  plan window it named spent is held until that reset, the native reply is kept for a client that reads it, and
+     *  the login is marked limited for steering and status. A pooled login facing a pushback past the floor is also
+     *  marked unavailable, so selection moves the next turn at once. Returns the hold the plan window armed, or null.
+     *  Re-arming an armed horizon is a max() and costs nothing. */
+    internal fun limitLeft(left: LimitLeft, onRetry: RetryNotice): Long? {
+        captureProviderReset(left.lift)
+        rateLimitReply = left.native
+        val planned = left.planLimit?.let { planHold.hold(it, onRetry) }
+        val pushback = planned ?: left.pushbackMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS
+        val header = left.pushbackMs?.let { "${it}ms" } ?: "ABSENT"
+        val armed = minOf(pushback, MAX_RATE_LIMIT_COOLDOWN_MS)
+        onRetry("429 rate limit: Retry-After header $header, arming ${armed}ms on this login")
+        if (left.pooled && (left.pushbackMs ?: 0L) > HOLD_FLOOR_MS) {
             markUnavailable(pushback)
             onRetry("429 Retry-After ${pushback}ms exceeds the same-account wait ceiling; account unavailable")
         }
         arm(pushback)
-        return RetryPlan(RetryDecision.GIVE_UP, nextRefreshed)
+        return planned
     }
 }
+
+/** What a turn that left a login on a limit knew of it: the reset the provider stated ([lift]), the pushback its
+ *  Retry-After asked for, the plan window it named spent, its native reply, and whether the login is one of a pool. */
+internal data class LimitLeft(
+    val lift: Lift,
+    val pushbackMs: Long?,
+    val planLimit: PlanLimit?,
+    val native: NativeReply?,
+    val pooled: Boolean,
+)
 
 // How long a 429 that carries no Retry-After (the ChatGPT backend's bare
 // {"detail":"Rate limit exceeded"}) marks its login limited for steering and status. Short

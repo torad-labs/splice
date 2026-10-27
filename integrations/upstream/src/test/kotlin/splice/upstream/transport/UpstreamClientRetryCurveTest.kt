@@ -10,7 +10,6 @@ class UpstreamClientRetryCurveTest {
 
     private fun client(curve: BackoffCurve) = UpstreamClient(
         totalTimeoutMs = 900_000L,
-        maxRetries = 4,
         pacing = RetryPacing(curve, waiter = Waiter { slept += it }),
     )
 
@@ -29,7 +28,7 @@ class UpstreamClientRetryCurveTest {
     fun `a curve widened after the client was built changes the next sleep and not the one already taken`() = runTest {
         var curve = BackoffCurve(baseMs = 40, capMs = 100, jitterPct = 0)
         val live = RetryPacing(live = LiveRetryCurve { curve }, waiter = Waiter { slept += it })
-        val backoff = UpstreamClient(totalTimeoutMs = 900_000L, maxRetries = 4, pacing = live).retryBackoff
+        val backoff = UpstreamClient(totalTimeoutMs = 900_000L, pacing = live).retryBackoff
 
         backoff(0, 0L)
         curve = BackoffCurve(baseMs = 300, capMs = 1_000, jitterPct = 0)

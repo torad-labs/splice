@@ -353,7 +353,7 @@ private class FailoverRig(
         listenPort = 0,
         deps = headDeps(
             tmp = directory,
-            upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 4, client = providerClient),
+            upstream = UpstreamClient(totalTimeoutMs = 30_000, client = providerClient),
             gate = InflightGate(maxInflight = { 4 }, maxQueued = { 4 }),
         ).copy(
             quotaBundle = quotaFor(null, if (pooled) pool else null),

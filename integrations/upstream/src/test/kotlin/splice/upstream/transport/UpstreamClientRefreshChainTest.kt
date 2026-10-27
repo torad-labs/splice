@@ -1,14 +1,14 @@
 // NEW: the 401 -> single-flight refresh -> reissue chain as a COMPOSITION. Every piece already had
 // a test of its own — the refresh-trigger predicate (UpstreamClientAuthTest), SingleFlight,
 // CredentialLock, and each provider's refresh (CodexAuthTest/KimiAuthProviderTest) — and nothing
-// fed a real 401 from an upstream through planRetry into auth.refresh() and out the other side as a
+// fed a real 401 from an upstream through RetryEngine into auth.refresh() and out the other side as a
 // reissued request. That composition runs on every head at token expiry, and its live probe is
 // blind by construction: `e2e heads` SKIPs a head that reports "not logged in", so a permanently
 // broken refresh path reads as a clean skip forever.
 //
 // The invariants pinned here, none of which any single-piece test can see:
-//   - the reissue does NOT spend a retry attempt (maxRetries = 1 and the turn still succeeds — if
-//     the RETRY plan incremented `attempt`, the loop guard would eat the reissue and give up)
+//   - the reissue spends no retry of its own: RetryEngine's REFRESH_LOGIN step spends nothing and waits
+//     nothing, so the renewed request goes out at once and the perf row counts no retry
 //   - the SECOND request carries the credential the refresh produced, not the stale one
 //   - the perf row counts it honestly: attempts=2, retries=0, refreshes=1 (UP-004's counter block,
 //     which the harness never reads, so this is its only oracle)
@@ -29,6 +29,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.upstream.Waiter
 import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
 import java.util.concurrent.CopyOnWriteArrayList
@@ -73,13 +74,11 @@ class UpstreamClientRefreshChainTest {
         }
     }
 
-    // maxRetries = 1 IS the assertion: exactly one normal attempt is budgeted, so a second request
-    // can only go out if the refresh reissue costs nothing from that budget.
+    // No wait IS the assertion: the renewed request goes out at once, so any wait fails the test.
     private fun clientOver(engine: MockEngine) = UpstreamClient(
         totalTimeoutMs = 5_000,
-        maxRetries = 1,
         client = HttpClient(engine),
-        pacing = RetryPacing(backoff = { _, _ -> error("the refresh path must never reach the backoff curve") }),
+        pacing = RetryPacing(waiter = Waiter { error("the refresh path must never wait") }),
     )
 
     private suspend fun postOnce(client: UpstreamClient, auth: RefreshableAuthProvider, perf: TurnPerf): String =
@@ -120,7 +119,7 @@ class UpstreamClientRefreshChainTest {
 
         assertEquals(401, failure.evidence.status)
         assertEquals(listOf("Bearer tok-old", "Bearer tok-new"), seenAuth.toList())
-        assertEquals(1, auth.refreshCalls.get(), "the refreshedOnce budget bounds the loop at one")
+        assertEquals(1, auth.refreshCalls.get(), "one renewal per login per turn bounds the loop at one")
         assertEquals(1L, perf.snapshot().counters[PerfKeys.REFRESHES])
     }
 

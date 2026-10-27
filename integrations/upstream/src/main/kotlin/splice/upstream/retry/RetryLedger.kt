@@ -15,7 +15,7 @@ internal enum class Spend {
 }
 
 /** What one turn has spent on its failures. Not thread-safe: a turn's posts and rounds run one at a time. */
-internal class RetryLedger {
+public class RetryLedger {
     private val spent = IntArray(Spend.entries.size)
     private val waitedMs = LongArray(Spend.entries.size)
     private val exchanges = mutableMapOf<String, Int>()
@@ -24,29 +24,29 @@ internal class RetryLedger {
     private val logins = linkedSetOf<String>()
 
     /** Sends made outside holds, the first send included. */
-    public var attempts: Int = 0
+    internal var attempts: Int = 0
         private set
 
     /** The login the turn's sends go out on now: the credential key the attempt loop names, empty for one login. */
-    public var login: String = ""
+    internal var login: String = ""
         private set
 
     /** The logins this turn was sent on, in order. */
-    public val loginsTried: List<String> get() = logins.toList()
+    internal val loginsTried: List<String> get() = logins.toList()
 
     /** One send left for the provider. */
-    public fun sent() {
+    internal fun sent() {
         attempts += 1
         logins += login
     }
 
     /** The sends go out on [key] from now on. */
-    public fun onLogin(key: String) {
+    internal fun onLogin(key: String) {
         login = key
     }
 
     /** [step] was taken for [cause]: its budget is spent once, and its wait counted. */
-    public fun took(step: RetryStep, cause: FailureCause) {
+    internal fun took(step: RetryStep, cause: FailureCause) {
         val spend = RetryEngine.spendOf(step, cause, this)
         spent[spend.ordinal] += 1
         if (step is RetryStep.Again) waitedMs[spend.ordinal] += step.afterMs
@@ -54,7 +54,7 @@ internal class RetryLedger {
     }
 
     /** One token exchange for the current login ended as [outcome]. */
-    public fun exchanged(outcome: Exchange) {
+    internal fun exchanged(outcome: Exchange) {
         exchanges[login] = (exchanges[login] ?: 0) + 1
         lastExchange[login] = outcome
     }

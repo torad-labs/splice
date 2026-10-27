@@ -57,7 +57,7 @@ class ModelMissingNotRetriedTest {
 
         assertEquals("gpt-x", (answered.cause as? FailureCause.Provider.ModelMissing)?.model, "${answered.cause}")
         assertEquals(1, answered.sends, "a model the runtime does not hold is not there on the next attempt either")
-        assertTrue(answered.log.any { "does not have the model gpt-x" in it }, "${answered.log}")
+        assertTrue(answered.log.any { "no retry" in it && "gpt-x" in it }, "${answered.log}")
     }
 
     // V4-62 stands for everything else: a 404 that names no missing model is not called one.

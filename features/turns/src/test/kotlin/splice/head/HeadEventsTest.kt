@@ -218,7 +218,7 @@ private class Rig(root: Path) {
         listenPort = 0,
         deps = headDeps(
             tmp = tmp,
-            upstream = UpstreamClient(totalTimeoutMs = 30_000L, maxRetries = 2),
+            upstream = UpstreamClient(totalTimeoutMs = 30_000L),
             seams = HeadDeps.HeadSeams(events = events),
         ).copy(
             quotaBundle = quotaFor(primaryQuota, pool, mapOf("primary" to primaryQuota, "backup" to backupQuota)),

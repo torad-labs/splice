@@ -6,8 +6,9 @@ import splice.core.perf.TurnPerf
 import splice.upstream.BodyAmendment
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.RetryNotice
+import splice.upstream.TurnRetry
 import splice.upstream.VendorRoute
-import splice.upstream.retry.RETRY_AFTER_GIVE_UP_MS
+import splice.upstream.retry.HOLD_FLOOR_MS
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.retry.WarmLoginWait
 import splice.upstream.sse.WireObserver
@@ -41,16 +42,21 @@ public data class PostRecovery(
     val route: VendorRoute? = null,
 )
 
-/** What bounds a post beyond its own retry rules: the selected account's cooldown and the outer turn's wait. */
+/** What bounds a post beyond its own retry rules: the selected account's cooldown, the outer turn's wait, and the turn's
+ *  one retry ledger. */
 public data class PostLimits(
     /** Selected account's cooldown; null preserves the client's legacy single-account cooldown. */
     val rateLimitCooldown: RateLimitCooldown? = null,
     /** Null preserves the legacy per-post deadline for callers without an outer turn budget. */
     val remainingTurnWait: RemainingTurnWait? = null,
     /** A warm turn's total wait for rate limits on its own login before it moves (Marcos, Oct 19), one budget shared
-     *  with admission and with every other post of the turn; null for a cold turn, which waits at most
-     *  [RETRY_AFTER_GIVE_UP_MS] per 429 as before. */
+     *  with admission and with every other post of the turn; null for a cold turn, which waits out on its login only a
+     *  lift stated within [HOLD_FLOOR_MS]. */
     val warmWait: WarmLoginWait? = null,
+    /** The turn's one ledger and its waits (failure-handling slice 4), so a budget this post spends is spent for the
+     *  turn's every other post and round. Null for a post with no turn around it, which gets a ledger of its own and
+     *  waits on its client's pacing. */
+    val retry: TurnRetry? = null,
 )
 
 /** What listens to a post without changing it: the turn's timing row, the wire recorder, the refresh observer and

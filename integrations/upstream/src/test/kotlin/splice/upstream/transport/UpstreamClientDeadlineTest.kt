@@ -1,9 +1,9 @@
 // NEW (G4d): cross-attempt wall-clock deadline pins. The retry loop reuses totalTimeoutMs as the
-// route-timeout analog (HttpTimeout caps each try's call with the same value) — a
-// deadline check runs before every new attempt AND before every backoff sleep, on both the
-// HTTP-status BACKOFF path and the transport-error retry path, so a pathological run of
-// repeated-slow-failing-attempts cannot spin past the budget even with maxRetries left on the
-// clock. MockEngine — no network; a fake stepping clock stands in for real sleeps.
+// route-timeout analog (HttpTimeout caps each try's call with the same value). A deadline check runs before every
+// new attempt, and RetryEngine ends a post whose next wait the time left cannot hold (failure-handling slice 4), on
+// both the HTTP-status path and the transport-error path, so a run of slow failing attempts cannot spin past the
+// budget while the engine's schedule still has waits left. MockEngine, no network; a fake stepping clock stands in
+// for real sleeps.
 package splice.upstream.transport
 
 import io.ktor.client.HttpClient
@@ -27,6 +27,7 @@ import splice.upstream.StreamRead
 import splice.upstream.Waiter
 import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
+import splice.upstream.retry.OVERLOAD_FIRST_WAIT_MS
 import java.net.ConnectException
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -41,13 +42,11 @@ class UpstreamClientDeadlineTest {
     private fun clientOver(
         engine: MockEngine,
         totalTimeoutMs: Long,
-        maxRetries: Int,
         clock: () -> Long,
     ) = UpstreamClient(
         totalTimeoutMs = totalTimeoutMs,
-        maxRetries = maxRetries,
         client = HttpClient(engine),
-        pacing = RetryPacing(backoff = { _, _ -> }),
+        pacing = RetryPacing(waiter = Waiter { }),
         clock = clock,
     )
 
@@ -62,7 +61,7 @@ class UpstreamClientDeadlineTest {
     ) { "ok" }
 
     @Test
-    fun `an HTTP backoff rejected by the remaining budget records no retry`() = runTest {
+    fun `an HTTP wait the remaining budget cannot hold records no retry`() = runTest {
         val calls = AtomicInteger()
         val waits = mutableListOf<Long>()
         val perf = TurnPerf { 0L }
@@ -72,7 +71,7 @@ class UpstreamClientDeadlineTest {
             now = 900L
             respond("busy", HttpStatusCode.ServiceUnavailable, headersOf())
         }
-        val client = budgetBackoffClient(engine, ElapsedClock { now }, Waiter { waits.add(it) })
+        val client = budgetClient(engine, 1_000, ElapsedClock { now }, Waiter { waits.add(it) })
 
         val failure = assertEnds<UpstreamFailed> {
             client.posted(
@@ -89,13 +88,13 @@ class UpstreamClientDeadlineTest {
 
         assertEquals(503, failure.evidence.status)
         assertEquals(1, calls.get())
-        assertTrue(waits.isEmpty(), "800 ms cannot fit the remaining 100 ms")
+        assertTrue(waits.isEmpty(), "the overload schedule's first 2 s cannot fit the remaining 100 ms")
         assertEquals(1L, perf.snapshot().counters[PerfKeys.ATTEMPTS])
         assertNull(perf.snapshot().counters[PerfKeys.RETRIES])
     }
 
     @Test
-    fun `a retry whose deadline expires during backoff records no resend`() = runTest {
+    fun `a retry whose deadline expires during its wait records no resend`() = runTest {
         val calls = AtomicInteger()
         val waits = mutableListOf<Long>()
         val perf = TurnPerf { 0L }
@@ -105,12 +104,14 @@ class UpstreamClientDeadlineTest {
             now = 100L
             respond("busy", HttpStatusCode.ServiceUnavailable, headersOf())
         }
-        val client = budgetBackoffClient(
+        val client = budgetClient(
             engine,
+            3_000,
             ElapsedClock { now },
             Waiter { ms ->
                 waits.add(ms)
-                now += ms + 100L
+                // the wait overruns the deadline
+                now += ms + 1_000L
             },
         )
 
@@ -127,23 +128,22 @@ class UpstreamClientDeadlineTest {
             ) { "ok" }
         }
 
-        assertEquals(listOf(800L), waits)
+        assertEquals(listOf(OVERLOAD_FIRST_WAIT_MS), waits)
         assertEquals(1, calls.get())
         assertEquals(1L, perf.snapshot().counters[PerfKeys.ATTEMPTS])
         assertNull(perf.snapshot().counters[PerfKeys.RETRIES])
     }
 
-    private fun budgetBackoffClient(engine: MockEngine, clock: ElapsedClock, waiter: Waiter): UpstreamClient =
+    private fun budgetClient(engine: MockEngine, totalMs: Long, clock: ElapsedClock, waiter: Waiter): UpstreamClient =
         UpstreamClient(
-            totalTimeoutMs = 1_000,
-            maxRetries = 3,
+            totalTimeoutMs = totalMs,
             client = HttpClient(engine),
             clock = clock,
-            pacing = RetryPacing(curve = BackoffCurve(baseMs = 800, capMs = 800, jitterPct = 0), waiter = waiter),
+            pacing = RetryPacing(waiter = waiter),
         )
 
     @Test
-    fun `deadline exceeded gives up before exhausting maxRetries on repeated 5xx failures`() = runTest {
+    fun `the deadline cuts repeated 5xx failures short of the overload schedule`() = runTest {
         val calls = AtomicInteger()
         var now = 0L
         val engine = MockEngine {
@@ -151,13 +151,14 @@ class UpstreamClientDeadlineTest {
             now += 3_000
             respond("boom", HttpStatusCode.ServiceUnavailable, headersOf())
         }
-        val client = clientOver(engine, totalTimeoutMs = 5_000, maxRetries = 10) { now }
+        val client = clientOver(engine, totalTimeoutMs = 5_000) { now }
         assertEnds<UpstreamFailed> { postOnce(client) }
-        assertTrue(calls.get() < 10, "deadline should cut the loop short, not exhaust attempts (${calls.get()})")
+        // 3 s spent by the first send leaves 2 s, which holds the first 2 s wait; the second send spends the rest.
+        assertEquals(2, calls.get(), "the deadline cuts the loop short, not the schedule")
     }
 
     @Test
-    fun `deadline exceeded gives up before exhausting maxRetries on repeated transport failures`() = runTest {
+    fun `the deadline cuts repeated transport failures short of the unreachable schedule`() = runTest {
         val calls = AtomicInteger()
         var now = 0L
         val engine = MockEngine {
@@ -165,9 +166,10 @@ class UpstreamClientDeadlineTest {
             now += 3_000
             throw ConnectException("refused")
         }
-        val client = clientOver(engine, totalTimeoutMs = 5_000, maxRetries = 10) { now }
+        val client = clientOver(engine, totalTimeoutMs = 5_000) { now }
         assertThrows<ConnectException> { postOnce(client) }
-        assertTrue(calls.get() < 10, "deadline should cut the loop short, not exhaust attempts (${calls.get()})")
+        // 3 s spent by the first send leaves 2 s, which holds the first 1 s wait; the second send spends the rest.
+        assertEquals(2, calls.get(), "the deadline cuts the loop short, not the schedule")
     }
 
     @Test
@@ -178,7 +180,7 @@ class UpstreamClientDeadlineTest {
             calls.incrementAndGet()
             respond("fine", HttpStatusCode.OK, headersOf())
         }
-        val client = clientOver(engine, totalTimeoutMs = 1_000, maxRetries = 3) { now }
+        val client = clientOver(engine, totalTimeoutMs = 1_000) { now }
         val context = PostContext(
             url = "https://api.example.test/v1",
             auth = fakeAuth,
@@ -210,7 +212,7 @@ class UpstreamClientDeadlineTest {
                 respond("fine", HttpStatusCode.OK, headersOf())
             }
         }
-        val client = clientOver(engine, totalTimeoutMs = 60_000, maxRetries = 3, clock = System::currentTimeMillis)
+        val client = clientOver(engine, totalTimeoutMs = 60_000, clock = System::currentTimeMillis)
         assertEquals("ok", postOnce(client))
         assertEquals(2, calls.get())
     }
@@ -222,7 +224,7 @@ class UpstreamClientDeadlineTest {
             calls.incrementAndGet()
             respond("fine", HttpStatusCode.OK, headersOf())
         }
-        val client = clientOver(engine, totalTimeoutMs = 0, maxRetries = 3) { 0L }
+        val client = clientOver(engine, totalTimeoutMs = 0) { 0L }
         assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(0, calls.get())
     }

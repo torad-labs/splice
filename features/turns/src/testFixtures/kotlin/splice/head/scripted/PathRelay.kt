@@ -8,6 +8,7 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.CopyOnWriteArrayList
@@ -21,14 +22,15 @@ private const val CHUNK_BYTES = 8_192
 /** Relays every connection made to [port] to the provider on [targetPort], byte for byte, until either side ends. */
 public class PathRelay(private val targetPort: Int) : AutoCloseable {
     private val loopback = InetAddress.getLoopbackAddress()
-    private val listener = ServerSocket(0, BACKLOG, loopback)
+
+    @Volatile private var listener = ServerSocket(0, BACKLOG, loopback)
     private val sockets = CopyOnWriteArrayList<Socket>()
 
     /** The port a head dials instead of the provider's. */
     public val port: Int = listener.localPort
 
     init {
-        spawn("path-relay-$port") { accept() }
+        listen(listener)
     }
 
     /** Stops answering new connections: a connect to [port] is refused from now on, while every connection already
@@ -37,14 +39,27 @@ public class PathRelay(private val targetPort: Int) : AutoCloseable {
         listener.close()
     }
 
+    /** Answers new connections on [port] again, as a model server that came back up does. */
+    public fun resumeListening() {
+        val reopened = ServerSocket()
+        reopened.reuseAddress = true
+        reopened.bind(InetSocketAddress(loopback, port), BACKLOG)
+        listener = reopened
+        listen(reopened)
+    }
+
     override fun close() {
         listener.close()
         sockets.forEach(Socket::close)
     }
 
-    private fun accept() {
+    private fun listen(socket: ServerSocket) {
+        spawn("path-relay-$port") { accept(socket) }
+    }
+
+    private fun accept(listener: ServerSocket) {
         while (!listener.isClosed) {
-            val inbound = acceptOne() ?: return
+            val inbound = acceptOne(listener) ?: return
             val outbound = Socket(loopback, targetPort)
             sockets += inbound
             sockets += outbound
@@ -54,7 +69,7 @@ public class PathRelay(private val targetPort: Int) : AutoCloseable {
     }
 
     /** The next connection, or null once the listener is closed. */
-    private fun acceptOne(): Socket? = if (listener.isClosed) {
+    private fun acceptOne(listener: ServerSocket): Socket? = if (listener.isClosed) {
         null
     } else {
         try {

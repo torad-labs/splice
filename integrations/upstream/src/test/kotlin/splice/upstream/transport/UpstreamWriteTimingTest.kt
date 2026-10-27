@@ -27,6 +27,7 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
+import splice.upstream.Waiter
 import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
 import java.net.InetSocketAddress
@@ -61,9 +62,8 @@ class UpstreamWriteTimingTest {
         try {
             val upstream = UpstreamClient(
                 10_000,
-                maxRetries = 2,
                 client = client,
-                pacing = RetryPacing(backoff = { _, _ -> now.addAndGet(500) }),
+                pacing = RetryPacing(waiter = Waiter { now.addAndGet(500) }),
             )
             val context = PostContext(
                 "http://127.0.0.1:${server.address.port}/",
@@ -103,7 +103,7 @@ class UpstreamWriteTimingTest {
                 observers = PostObservers(perf = perf),
             )
             val answer = runBlocking {
-                UpstreamClient(10_000, maxRetries = 1, client = client).posted(context, "{}") {
+                UpstreamClient(10_000, client = client).posted(context, "{}") {
                     val body = it.bodyTextLimited(100)
                     now.addAndGet(5_000)
                     body
@@ -134,7 +134,7 @@ class UpstreamWriteTimingTest {
         check(config is OkHttpConfig)
         config.addInterceptor(KtorReceiptHop(now))
         try {
-            val upstream = UpstreamClient(10_000, maxRetries = 1, client = client)
+            val upstream = UpstreamClient(10_000, client = client)
             val context = PostContext(
                 "http://127.0.0.1:${server.address.port}/",
                 TimingAuth(),

@@ -29,6 +29,7 @@ import splice.upstream.failure.Replies
 import splice.upstream.transport.PostContext
 import splice.upstream.transport.PostLimits
 import splice.upstream.transport.PostObservers
+import splice.upstream.transport.PostRecovery
 import splice.upstream.transport.RecordingWaiter
 import splice.upstream.transport.RemainingTurnWait
 import splice.upstream.transport.RetryPacing
@@ -42,133 +43,30 @@ import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 
 class RateLimitCooldownTest {
-    @Test
-    fun `pooled 429 at the interactive ceiling terminates the observed request wave`() {
-        var elapsed = 1_000L
-        val notices = mutableListOf<String>()
-        val cooldown = RateLimitCooldown(ElapsedClock { elapsed })
+    // Failure-handling slice 4: whether a 429 is waited out, held or handed to another login is RetryEngine's
+    // (RetryEngineModelTest, RetryEngineThroughClientTest). What a turn leaves on the login once it leaves it on a
+    // limit is this file's: the arm, the eviction of a pooled login, the provider's reset and its log line.
 
-        val plan = cooldown.rateLimitedPlan(
-            pushbackMs = 15_000L,
-            turn = RateLimitTurn(cooldown, pooledAccount = true),
-            canRetry = true,
-            onRetry = RetryNotice(notices::add),
-            nextRefreshed = false,
-        )
-
-        // V4-48 REVERSED THIS ROW'S ORIGINAL POLICY, deliberately: at the ceiling, and with budget
-        // left, a 429 now takes the same BACKOFF branch a 408 or 5xx pushback has always taken.
-        assertEquals(RetryDecision.BACKOFF, plan.decision)
-        assertEquals(15_000L, plan.minDelayMs, "the wait is the provider's own pushback, not a curve")
-        assertEquals(0L, cooldown.remainingMs(), "waiting it out must NOT mark the login limited")
-        assertEquals(0L, cooldown.unavailableForMs())
-        assertEquals(
-            listOf("429 rate limit: Retry-After header 15000ms; budget remaining, retrying in 15000ms"),
-            notices,
-        )
-    }
+    /** The login a turn left on a limit: [pushbackMs] is what its Retry-After asked for, [lift] what the reader read. */
+    private fun left(pushbackMs: Long?, pooled: Boolean, lift: Lift = Lift.Unstated): LimitLeft =
+        LimitLeft(lift, pushbackMs, planLimit = null, native = null, pooled = pooled)
 
     @Test
-    fun `a dying turn gives up a short 429 without evicting the account`() {
-        val cooldown = RateLimitCooldown(ElapsedClock { 0L })
-        val notices = mutableListOf<String>()
-
-        val plan = cooldown.rateLimitedPlan(
-            pushbackMs = 1_000L,
-            turn = RateLimitTurn(cooldown, pooledAccount = true),
-            canRetry = true,
-            onRetry = RetryNotice(notices::add),
-            nextRefreshed = false,
-        )
-
-        assertEquals(RetryDecision.BACKOFF, plan.decision)
-        assertEquals(1_000L, plan.minDelayMs)
-        assertEquals(0L, cooldown.unavailableForMs())
-        assertEquals(0L, cooldown.providerUnavailableForMs())
-        assertEquals(0L, cooldown.remainingMs(), "the wait path leaves the head unarmed")
-        assertTrue(notices.none { it.contains("account unavailable") })
-    }
-
-    // V4-61: THE OPERATOR'S CASE. muse answers a burst 429 with its 5h-window reset as Retry-After
-    // (5301000ms live), and his own re-send moments later succeeds — so the long number is not this
-    // 429's retry-after, and giving up on it (V4-48 waited out only a header at or under 15s) left
-    // every muse rate limit dead on the first attempt. An unpooled head has no backup to rotate to;
-    // waiting the 15s floor and retrying HERE is the whole recovery.
-    @Test
-    fun `a long retry-after on a non-pooled 429 backs off at the 15s floor instead of giving up`() {
-        val cooldown = RateLimitCooldown(ElapsedClock { 0L })
-        val notices = mutableListOf<String>()
-
-        val plan = cooldown.rateLimitedPlan(
-            pushbackMs = 5_301_000L,
-            turn = RateLimitTurn(cooldown, pooledAccount = false),
-            canRetry = true,
-            onRetry = RetryNotice(notices::add),
-            nextRefreshed = false,
-        )
-
-        assertEquals(RetryDecision.BACKOFF, plan.decision)
-        assertEquals(15_000L, plan.minDelayMs, "the floor is the ceiling, never the provider's window")
-        assertEquals(0L, cooldown.remainingMs(), "a retrying turn leaves the head unarmed")
-        assertEquals(0L, cooldown.unavailableForMs(), "an unpooled head has no account to evict")
-        assertEquals(
-            listOf("429 rate limit: Retry-After header 5301000ms; budget remaining, retrying in 15000ms"),
-            notices,
-        )
-    }
-
-    // V4-61: a bare 429 — the ChatGPT backend's {"detail":"Rate limit exceeded"} with no header at
-    // all — used to fall past V4-48's short-wait branch (which required a header) straight to
-    // give-up. The absent header is the COMMON case, not the edge.
-    @Test
-    fun `an absent retry-after on a 429 with budget left backs off at the 15s floor`() {
+    fun `a limit with no time stated marks its login limited for the default cooldown`() {
         val cooldown = RateLimitCooldown(ElapsedClock { 0L })
 
-        val plan = cooldown.rateLimitedPlan(
-            pushbackMs = null,
-            turn = RateLimitTurn(cooldown, pooledAccount = false),
-            canRetry = true,
-            onRetry = RetryNotice {},
-            nextRefreshed = false,
-        )
+        cooldown.limitLeft(left(pushbackMs = null, pooled = false), RetryNotice {})
 
-        assertEquals(RetryDecision.BACKOFF, plan.decision)
-        assertEquals(15_000L, plan.minDelayMs)
-        assertEquals(0L, cooldown.remainingMs(), "a retrying turn leaves the head unarmed")
-    }
-
-    // V4-61 partner assertion (green before the change too): the horizon is armed ONCE, on
-    // exhaustion, never on the retries that precede it.
-    @Test
-    fun `a 429 with no budget left gives up and marks its login limited`() {
-        val cooldown = RateLimitCooldown(ElapsedClock { 0L })
-
-        val plan = cooldown.rateLimitedPlan(
-            pushbackMs = null,
-            turn = RateLimitTurn(cooldown, pooledAccount = false),
-            canRetry = false,
-            onRetry = RetryNotice {},
-            nextRefreshed = false,
-        )
-
-        assertEquals(RetryDecision.GIVE_UP, plan.decision)
-        assertEquals(20_000L, cooldown.remainingMs(), "a bare 429 arms the default cooldown on exhaustion")
+        assertEquals(20_000L, cooldown.remainingMs(), "a bare 429 arms the default cooldown")
     }
 
     @Test
-    fun `pooled 429 above the interactive ceiling removes only this account`() {
+    fun `a pooled login left past the floor is removed from selection for that long`() {
         var elapsed = 10L
         val cooldown = RateLimitCooldown(ElapsedClock { elapsed })
 
-        val plan = cooldown.rateLimitedPlan(
-            pushbackMs = 15_001L,
-            turn = RateLimitTurn(cooldown, pooledAccount = true),
-            canRetry = true,
-            onRetry = RetryNotice {},
-            nextRefreshed = false,
-        )
+        cooldown.limitLeft(left(pushbackMs = 15_001L, pooled = true), RetryNotice {})
 
-        assertEquals(RetryDecision.GIVE_UP, plan.decision)
         assertEquals(15_001L, cooldown.unavailableForMs())
         assertEquals(15_001L, cooldown.remainingMs())
         elapsed += 15_001L
@@ -209,13 +107,7 @@ class RateLimitCooldownTest {
         val cooldown = RateLimitCooldown(ElapsedClock { 0L })
         val notices = mutableListOf<String>()
 
-        cooldown.rateLimitedPlan(
-            pushbackMs = 86_400_000L,
-            turn = RateLimitTurn(cooldown, pooledAccount = true),
-            canRetry = true,
-            onRetry = RetryNotice(notices::add),
-            nextRefreshed = false,
-        )
+        cooldown.limitLeft(left(pushbackMs = 86_400_000L, pooled = true), RetryNotice(notices::add))
 
         assertTrue(notices.any { it.contains("arming 120000ms on this login") })
         assertEquals(MAX_RATE_LIMIT_COOLDOWN_MS, cooldown.remainingMs())
@@ -227,40 +119,21 @@ class RateLimitCooldownTest {
     fun `bare 429 does not invent an account-unavailable reset`() {
         val cooldown = RateLimitCooldown(ElapsedClock { 0L })
 
-        cooldown.rateLimitedPlan(
-            pushbackMs = null,
-            turn = RateLimitTurn(cooldown, pooledAccount = true),
-            canRetry = false,
-            onRetry = RetryNotice {},
-            nextRefreshed = false,
-        )
+        cooldown.limitLeft(left(pushbackMs = null, pooled = true), RetryNotice {})
 
         assertEquals(0L, cooldown.unavailableForMs())
         assertEquals(20_000L, cooldown.remainingMs())
     }
 
-    // V4-46: the INSTRUMENT. It fires on every 429, so a short armed cooldown can be attributed to a
-    // short Retry-After or to the 20s default — the distinction the clamp-only line lost, and the one
-    // that decides whether the fix honours a short Retry-After or stops arming by default.
+    // V4-46: the INSTRUMENT. It fires on every 429 a turn leaves its login on, so a short armed cooldown can be
+    // attributed to a short Retry-After or to the 20s default.
     @Test
     fun `the arming line names the Retry-After header and distinguishes absent from present`() {
         val notices = mutableListOf<String>()
         val cooldown = RateLimitCooldown(ElapsedClock { 0L })
 
-        cooldown.rateLimitedPlan(
-            pushbackMs = null,
-            turn = RateLimitTurn(cooldown, pooledAccount = false),
-            canRetry = false,
-            onRetry = RetryNotice(notices::add),
-            nextRefreshed = false,
-        )
-        cooldown.rateLimitedPlan(
-            pushbackMs = 19_000L,
-            turn = RateLimitTurn(cooldown, pooledAccount = false),
-            canRetry = false,
-            onRetry = RetryNotice(notices::add),
-            nextRefreshed = false,
-        )
+        cooldown.limitLeft(left(pushbackMs = null, pooled = false), RetryNotice(notices::add))
+        cooldown.limitLeft(left(pushbackMs = 19_000L, pooled = false), RetryNotice(notices::add))
 
         assertTrue(
             notices.any { it == "429 rate limit: Retry-After header ABSENT, arming 20000ms on this login" },
@@ -272,26 +145,16 @@ class RateLimitCooldownTest {
         )
     }
 
-    // V4-47's defect: markUnavailable was the ONLY writer of the provider reset and it fires only for
-    // POOLED turns over the 15s ceiling — so on a single-account head, which is every head the
-    // operator runs, the reset was never recorded at all.
+    // V4-47's defect: markUnavailable fires only for POOLED logins past the floor, so on a single-account head the
+    // provider reset must be recorded by the capture itself.
     @Test
     fun `a single-account head records the provider reset where markUnavailable never fired`() {
         val wall = Instant.parse("2026-09-16T13:34:32Z").toEpochMilli()
         val cooldown = RateLimitCooldown(ElapsedClock { 0L }, WallClock { wall })
+        // "resets at 2026-09-16T20:02:52Z", as the reply's reader read it from the body.
+        val lift = Lift.At(Instant.parse("2026-09-16T20:02:52Z"), firm = true, LiftSource.BODY)
 
-        cooldown.rateLimitedPlan(
-            pushbackMs = 5_301_000L,
-            turn = RateLimitTurn(
-                cooldown,
-                pooledAccount = false,
-                // "resets at 2026-09-16T20:02:52Z", as the reply's reader read it from the body.
-                lift = Lift.At(Instant.parse("2026-09-16T20:02:52Z"), firm = true, LiftSource.BODY),
-            ),
-            canRetry = false,
-            onRetry = RetryNotice {},
-            nextRefreshed = false,
-        )
+        cooldown.limitLeft(left(pushbackMs = 5_301_000L, pooled = false, lift = lift), RetryNotice {})
 
         assertEquals(0L, cooldown.unavailableForMs(), "a single-account head is never evicted")
         assertEquals(23_300_000L, cooldown.providerUnavailableForMs(), "but its reset IS recorded")
@@ -323,7 +186,6 @@ class RateLimitCooldownBudgetTest {
         }
         val client = UpstreamClient(
             totalTimeoutMs = 60_000L,
-            maxRetries = 3,
             client = HttpClient(engine),
             clock = ElapsedClock { 0L },
         )
@@ -345,13 +207,14 @@ class RateLimitCooldownBudgetTest {
 
         assertEquals(0, calls.get())
         // The operator-visible line is unchanged; the class that used to carry it is gone.
-        assertEquals(listOf("upstream turn wait budget exhausted before attempt 1/3"), notices)
+        assertEquals(listOf("upstream turn wait budget exhausted before attempt 1/24"), notices)
     }
 
+    // Failure-handling slice 4: RetryEngine ends a turn whose next wait the turn cannot hold, so no wait starts and no
+    // retry is counted.
     @Test
-    fun `a backoff refused by the remaining budget records the refusal but no retry`() = runTest {
+    fun `a wait the remaining turn budget cannot hold ends the post with no retry`() = runTest {
         val calls = AtomicInteger()
-        val notices = mutableListOf<String>()
         val waiter = RecordingWaiter()
         val perf = TurnPerf { 0L }
         val engine = MockEngine {
@@ -360,7 +223,6 @@ class RateLimitCooldownBudgetTest {
         }
         val client = UpstreamClient(
             totalTimeoutMs = 60_000L,
-            maxRetries = 3,
             client = HttpClient(engine),
             pacing = RetryPacing(waiter = waiter),
             clock = ElapsedClock { 0L },
@@ -370,7 +232,7 @@ class RateLimitCooldownBudgetTest {
             auth = fakeAuth,
             extraHeaders = { emptyMap() },
             replies = Replies(OpenAiReplies),
-            observers = PostObservers(perf = perf, onRetry = RetryNotice(notices::add)),
+            observers = PostObservers(perf = perf),
             limits = PostLimits(remainingTurnWait = RemainingTurnWait { 100L }),
         )
 
@@ -379,54 +241,43 @@ class RateLimitCooldownBudgetTest {
         assertEquals(1, calls.get())
         assertTrue(waiter.waits.isEmpty())
         assertEquals(null, perf.snapshot().counters[PerfKeys.RETRIES])
-        assertTrue(notices.contains("upstream backoff up to 220ms does not fit the remaining 100ms budget"))
     }
 
-    // V4-61 end to end through the SHIPPED backoff: three attempts, two 15s waits, then the honest
-    // give-up and the arm — "retry every 15 seconds" measured, not asserted on a plan object. The
-    // header says 5301s; the schedule must not.
+    // V4-61's case under section 8: a reset stated past the 15 s floor is not waited out on a cold turn's login. Until
+    // slice 5 holds a turn it ends at once, and the login is marked limited, clamped.
     @Test
-    fun `a non-pooled 429 with a long retry-after is retried on the 15s schedule until the budget is spent`() =
-        runTest {
-            val calls = AtomicInteger()
-            val waiter = RecordingWaiter()
-            val engine = MockEngine {
-                calls.incrementAndGet()
-                respond("slow down", HttpStatusCode.TooManyRequests, headersOf("Retry-After", "5301"))
-            }
-            val client = UpstreamClient(
-                totalTimeoutMs = 60_000L,
-                maxRetries = 3,
-                client = HttpClient(engine),
-                pacing = RetryPacing(waiter = waiter),
-                clock = ElapsedClock { 0L },
-            )
-            val context = PostContext(
-                url = "https://api.example.test/v1",
-                auth = fakeAuth,
-                extraHeaders = { emptyMap() },
-                replies = Replies(OpenAiReplies),
-                limits = PostLimits(remainingTurnWait = RemainingTurnWait { 60_000L }),
-            )
-
-            assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
-
-            assertEquals(3, calls.get(), "every attempt in the budget is spent before the client sees a 429")
-            assertEquals(listOf(15_000L, 15_000L), waiter.waits, "the schedule is the 15s floor, not the 5301s header")
-            assertEquals(
-                MAX_RATE_LIMIT_COOLDOWN_MS,
-                client.rateLimitedForMs,
-                "exhaustion marks the login limited, clamped",
-            )
+    fun `a non-pooled 429 whose reset is past the floor ends at once and marks its login limited`() = runTest {
+        val calls = AtomicInteger()
+        val waiter = RecordingWaiter()
+        val engine = MockEngine {
+            calls.incrementAndGet()
+            respond("slow down", HttpStatusCode.TooManyRequests, headersOf("Retry-After", "5301"))
         }
+        val client = UpstreamClient(
+            totalTimeoutMs = 60_000L,
+            client = HttpClient(engine),
+            pacing = RetryPacing(waiter = waiter),
+            clock = ElapsedClock { 0L },
+        )
+        val context = PostContext(
+            url = "https://api.example.test/v1",
+            auth = fakeAuth,
+            extraHeaders = { emptyMap() },
+            replies = Replies(OpenAiReplies),
+            limits = PostLimits(remainingTurnWait = RemainingTurnWait { 60_000L }),
+        )
 
-    // V4-48 REVERSED THIS. It used to assert that a short pooled 429 never enters retry backoff —
-    // 1 call, no wait, the cooldown armed. A short pushback now takes the same BACKOFF branch a 408
-    // or 5xx has always taken, so it WAITS and RETRIES instead of giving up, and it does NOT arm the
-    // login's horizon (arming would steer every cold session away from the login while this one is
-    // waiting out). The name moved with the assertion so it cannot keep claiming the old policy.
+        assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
+
+        assertEquals(1, calls.get(), "a reset past the floor is never waited out on the login")
+        assertTrue(waiter.waits.isEmpty(), waiter.waits.toString())
+        assertEquals(MAX_RATE_LIMIT_COOLDOWN_MS, client.rateLimitedForMs, "the login is marked limited, clamped")
+    }
+
+    // Section 8's burst row: a 429 stated inside the floor is waited out on its login at 2, 4, 8 and 15 s, never under
+    // the time it stated, and then a pooled turn moves to another login. Only that last answer arms the login.
     @Test
-    fun `a short pooled 429 now waits and retries instead of giving up`() = runTest {
+    fun `a short pooled 429 is waited out on the burst schedule, then handed to another login`() = runTest {
         val calls = AtomicInteger()
         val waiter = RecordingWaiter()
         val cooldown = RateLimitCooldown(ElapsedClock { 0L })
@@ -436,7 +287,6 @@ class RateLimitCooldownBudgetTest {
         }
         val client = UpstreamClient(
             totalTimeoutMs = 60_000L,
-            maxRetries = 3,
             client = HttpClient(engine),
             pacing = RetryPacing(waiter = waiter),
             clock = ElapsedClock { 0L },
@@ -450,20 +300,24 @@ class RateLimitCooldownBudgetTest {
                 rateLimitCooldown = cooldown,
                 remainingTurnWait = RemainingTurnWait { 20_000L },
             ),
+            // No byte reached the client: a login switches only before content (section 8).
+            recovery = PostRecovery(clientFrameEmitted = { false }),
         )
 
-        assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
+        val posted = client.post(context, RoundBody.Text("{}")) { StreamRead.Read("unreachable") }
 
-        assertEquals(3, calls.get(), "a short 429 now spends the retry budget it always had")
-        // The WAITS do not arm; the FINAL give-up does, exactly as the 5xx branch arms only in its
-        // give-up case. So the horizon is the last pushback, not the sum of the waits.
-        assertEquals(1_000L, cooldown.remainingMs(), "the final give-up arms; the waits in between do not")
+        assertTrue(posted is UpstreamPost.Refused, "the pooled turn is handed to another login: $posted")
+        assertEquals(5, calls.get())
+        assertEquals(listOf(2_000L, 4_000L, 8_000L, 15_000L), waiter.waits)
+        assertEquals(1_000L, cooldown.remainingMs(), "the last answer arms; the waits in between do not")
         assertEquals(0L, cooldown.unavailableForMs())
     }
 
+    // A 408 is no row of a reader's table since slice 3: an unknown 4xx, sent once more and never marked
+    // (OneEngineThroughHeadsTest).
     @Test
-    fun `a retryable 503 with a long retry-after marks its login limited without excluding it`() = runTest {
-        for (status in listOf(HttpStatusCode.ServiceUnavailable, HttpStatusCode.RequestTimeout)) {
+    fun `a 503 with a long retry-after marks its login limited without excluding it`() = runTest {
+        for (status in listOf(HttpStatusCode.ServiceUnavailable)) {
             val calls = AtomicInteger()
             val cooldown = RateLimitCooldown(ElapsedClock { 0L })
             val engine = MockEngine {
@@ -472,7 +326,6 @@ class RateLimitCooldownBudgetTest {
             }
             val client = UpstreamClient(
                 totalTimeoutMs = 60_000L,
-                maxRetries = 3,
                 client = HttpClient(engine),
                 clock = ElapsedClock { 0L },
             )
@@ -506,7 +359,6 @@ class RateLimitCooldownBudgetTest {
             val cooldown = RateLimitCooldown(ElapsedClock { 0L })
             val client = UpstreamClient(
                 totalTimeoutMs = 60_000L,
-                maxRetries = 3,
                 client = HttpClient(engine),
                 pacing = RetryPacing(waiter = waiter),
                 clock = ElapsedClock { 0L },
@@ -608,9 +460,8 @@ class RateLimitCooldownOuterTurnTest {
         }
         val client = UpstreamClient(
             totalTimeoutMs = 60_000L,
-            maxRetries = 3,
             client = HttpClient(engine),
-            pacing = RetryPacing(backoff = { _, _ -> remaining = 0L }),
+            pacing = RetryPacing(waiter = { remaining = 0L }),
             clock = ElapsedClock { 0L },
         )
         val context = PostContext(
@@ -627,7 +478,7 @@ class RateLimitCooldownOuterTurnTest {
         assertEquals(503, failure.evidence.status)
         assertEquals("provider-specific failure", failure.evidence.message)
         assertEquals(1, calls.get())
-        assertTrue(notices.contains("upstream turn wait budget exhausted before attempt 2/3"))
+        assertTrue(notices.contains("upstream turn wait budget exhausted before attempt 2/24"), notices.toString())
     }
 
     @Test
@@ -645,7 +496,6 @@ class RateLimitCooldownOuterTurnTest {
             }
             val client = UpstreamClient(
                 totalTimeoutMs = 5_000L,
-                maxRetries = 3,
                 client = HttpClient(engine),
                 clock = ElapsedClock { elapsed },
             )

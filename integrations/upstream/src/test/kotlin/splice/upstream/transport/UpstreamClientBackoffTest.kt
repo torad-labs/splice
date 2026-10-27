@@ -1,6 +1,8 @@
-// NEW: V4-63 split of UpstreamClientRetryPolicyTest.kt, the backoff family. Pure move: every
-// test below is byte-identical to its original, same name, no assertion changes. Helpers shared with
-// the sibling classes live in UpstreamClientRetryFixture.kt.
+// V4-63 split of UpstreamClientRetryPolicyTest.kt, the backoff family. Failure-handling slice 4 rewrote it: the waits
+// are RetryEngine's (final-design.md section 8), so a 503 with no time stated waits the overload schedule, a path that
+// did not answer waits the unreachable schedule, and a stream torn before the client saw a frame is sent fresh at once.
+// The jitter ceilings and the "backoff does not fit" notices the old curve pinned went with it. Helpers shared with the
+// sibling classes live in UpstreamClientRetryFixture.kt.
 package splice.upstream.transport
 
 import io.ktor.client.HttpClient
@@ -20,23 +22,30 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
+import splice.core.util.WallClock
 import splice.upstream.RoundBody
 import splice.upstream.StreamRead
 import splice.upstream.Waiter
 import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
+import splice.upstream.retry.MAX_ATTEMPTS_OUTSIDE_HOLDS
+import splice.upstream.retry.OVERLOAD_FIRST_WAIT_MS
 import splice.upstream.retry.RateLimitCooldown
+import splice.upstream.retry.UNREACHABLE_FIRST_WAIT_MS
 import java.io.IOException
 import java.net.ConnectException
 import java.net.SocketException
 import java.net.UnknownHostException
 import java.nio.channels.UnresolvedAddressException
+import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
+
+private val NOW_MS = Instant.parse("2026-10-27T15:00:00Z").toEpochMilli()
 
 class UpstreamClientBackoffTest {
 
     @Test
-    fun `an HTTP-date outside epoch milliseconds falls back to the production retry curve`() = runTest {
+    fun `an HTTP-date outside epoch milliseconds states no time, so a 503 waits the overload schedule`() = runTest {
         val calls = AtomicInteger()
         val capture = Capture()
         val engine = MockEngine {
@@ -53,13 +62,11 @@ class UpstreamClientBackoffTest {
 
         assertEquals("ok", postOnce(clientOver(engine, capture)))
         assertEquals(2, calls.get())
-        assertEquals(listOf(0L), capture.minDelays, "unrepresentable date must fall back to the curve")
+        assertEquals(listOf(OVERLOAD_FIRST_WAIT_MS), capture.waits, "an unrepresentable date is no stated time")
     }
 
     @Test
-    fun `garbage retry-after falls back to the curve`() = runTest {
-        // NF-04 REWRITE: the old fixture used an HTTP-date as its "malformed" header — that form
-        // is now PARSED (RFC 7231), so genuine garbage carries the null-means-curve contract.
+    fun `a garbage Retry-After states no time, so a 503 waits the overload schedule`() = runTest {
         val calls = AtomicInteger()
         val capture = Capture()
         val engine = MockEngine {
@@ -70,13 +77,12 @@ class UpstreamClientBackoffTest {
             }
         }
         assertEquals("ok", postOnce(clientOver(engine, capture)))
-        assertEquals(listOf(0L), capture.minDelays) // no parseable floor — curve alone decides
+        assertEquals(listOf(OVERLOAD_FIRST_WAIT_MS), capture.waits)
     }
 
     @Test
-    fun `a parseable Retry-After is a FLOOR the curve cannot undercut`() = runTest {
-        // G3: minDelayMs rides in as a floor. 3s dwarfs attempt 0's ~200ms, so the floor must win
-        // exactly — the shipped lambda's `maxOf(jittered, minDelayMs)`, observed rather than restated.
+    fun `a parseable Retry-After is a FLOOR the schedule cannot undercut`() = runTest {
+        // 3 s dwarfs the overload schedule's first 2 s, so the provider's own time wins, exactly.
         val calls = AtomicInteger()
         val waiter = RecordingWaiter()
         val engine = MockEngine {
@@ -86,14 +92,14 @@ class UpstreamClientBackoffTest {
                 respond("fine", HttpStatusCode.OK, headersOf())
             }
         }
-        assertEquals("ok", postOnce(realCurveClientOver(engine, waiter)))
+        assertEquals("ok", postOnce(realScheduleClientOver(engine, waiter)))
         assertEquals(listOf(3_000L), waiter.waits)
     }
 
     @Test
-    fun `transport waits must fit the owning budget including the worst case jitter`() = runTest {
+    fun `a transport failure whose next wait the remaining budget cannot hold ends with that failure`() = runTest {
         for (kind in FailureKind.entries) {
-            for (remaining in listOf(100L, kind.ceilingMs)) {
+            for (remaining in listOf(100L, UNREACHABLE_FIRST_WAIT_MS - 1)) {
                 for (postLimited in listOf(false, true)) {
                     val fixture = Fixture(
                         kind,
@@ -109,11 +115,6 @@ class UpstreamClientBackoffTest {
                     assertTrue(fixture.waits.isEmpty())
                     assertNull(fixture.perf.snapshot().counters[PerfKeys.RETRIES])
                     assertNull(fixture.perf.snapshot().counters[PerfKeys.POST_SEND_RETRIES])
-                    assertTrue(fixture.notices.first().startsWith(kind.noticeLabel))
-                    assertEquals(
-                        "upstream backoff up to ${kind.ceilingMs}ms does not fit the remaining ${remaining}ms budget",
-                        fixture.notices.last(),
-                    )
                 }
             }
         }
@@ -131,25 +132,21 @@ class UpstreamClientBackoffTest {
                 fixture.consumeOnAttemptMs = 0L
 
                 if (remaining == 0L) {
-                    // V4-114 PIN: a spent turn-wait budget THROWS NOTHING now — it answers
-                    // UpstreamPost.TurnWaitExhausted. Against the old shape this arm's
-                    // assertEquals does not compile (post returned String and threw), which is
-                    // what makes it a pin and not a restatement.
+                    // V4-114: a spent turn-wait budget throws nothing; it answers UpstreamPost.TurnWaitExhausted.
                     assertEquals(UpstreamPost.TurnWaitExhausted, fixture.postRaw())
                     assertTrue(fixture.waits.isEmpty())
                     assertEquals(1, fixture.calls.get(), "the second round must not reach upstream")
                     assertNull(fixture.perf.snapshot().counters[PerfKeys.RETRIES])
-                    assertEquals("upstream turn wait budget exhausted before attempt 1/3", fixture.notices.single())
+                    assertEquals(
+                        "upstream turn wait budget exhausted before attempt 1/$MAX_ATTEMPTS_OUTSIDE_HOLDS",
+                        fixture.notices.single(),
+                    )
                 } else {
                     val failure = assertThrows<Exception> { fixture.post() }
                     assertTrue(fixture.waits.isEmpty())
                     fixture.assertFailure(failure)
                     assertEquals(2, fixture.calls.get(), "the second round may try once but must not retry")
                     assertNull(fixture.perf.snapshot().counters[PerfKeys.RETRIES])
-                    assertEquals(
-                        "upstream backoff up to ${kind.ceilingMs}ms does not fit the remaining 100ms budget",
-                        fixture.notices.last(),
-                    )
                 }
             }
         }
@@ -172,24 +169,20 @@ class UpstreamClientBackoffTest {
                 assertEquals(1, fixture.calls.get())
                 assertTrue(fixture.waits.isEmpty())
                 assertNull(fixture.perf.snapshot().counters[PerfKeys.RETRIES])
-                assertEquals(
-                    "upstream backoff up to ${kind.ceilingMs}ms does not fit the remaining 0ms budget",
-                    fixture.notices.last(),
-                )
             }
         }
     }
 
     @Test
-    fun `transport retries still succeed when the entire jitter band fits`() = runTest {
+    fun `a transport retry goes out once the unreachable schedule's first wait fits`() = runTest {
         for (kind in FailureKind.entries) {
             val fixture = Fixture(kind)
-            fixture.elapsed = 5_000L - kind.ceilingMs - 1L
+            fixture.elapsed = 5_000L - UNREACHABLE_FIRST_WAIT_MS - 1L
 
             assertEquals("ok", fixture.post())
 
             assertEquals(2, fixture.calls.get())
-            assertTrue(fixture.waits.single() in 1L..kind.ceilingMs)
+            assertEquals(listOf(UNREACHABLE_FIRST_WAIT_MS), fixture.waits)
             assertEquals(1L, fixture.perf.snapshot().counters[PerfKeys.RETRIES])
             assertEquals(
                 if (kind == FailureKind.POST_SEND) 1L else null,
@@ -200,62 +193,39 @@ class UpstreamClientBackoffTest {
     }
 
     @Test
-    fun `stream reissues refuse an unfitting wait and preserve the original failure`() = runTest {
+    fun `a stream torn before the client saw a frame is sent fresh at once, with no wait`() = runTest {
         for (kind in FailureKind.entries) {
             val fixture = Fixture(kind)
             fixture.elapsed = 4_900L
             fixture.failuresLeft = 0
 
-            val failure = assertThrows<Exception> { fixture.postWithTornStream() }
+            assertEquals("ok", fixture.postWithTornStream())
 
-            fixture.assertFailure(failure)
-            assertEquals(1, fixture.calls.get())
+            assertEquals(2, fixture.calls.get())
             assertTrue(fixture.waits.isEmpty())
-            assertNull(fixture.perf.snapshot().counters[PerfKeys.RETRIES])
+            assertEquals(1L, fixture.perf.snapshot().counters[PerfKeys.RETRIES])
             assertNull(fixture.perf.snapshot().counters[PerfKeys.POST_SEND_RETRIES])
-            assertTrue(fixture.notices.first().startsWith("stream torn before first client frame, reissue 1/2:"))
-            assertEquals(
-                "upstream backoff up to ${kind.ceilingMs}ms does not fit the remaining 100ms budget",
-                fixture.notices.last(),
+            assertTrue(
+                fixture.notices.single()
+                    .startsWith("stream torn before first client frame, reissue 1/$MAX_ATTEMPTS_OUTSIDE_HOLDS:"),
             )
         }
     }
 
     @Test
-    fun `stream reissues still succeed when the wait fits`() = runTest {
+    fun `a transport retry whose budget expires during its wait records no resend`() = runTest {
         for (kind in FailureKind.entries) {
             val fixture = Fixture(kind)
-            fixture.elapsed = 5_000L - kind.ceilingMs - 1L
-            fixture.failuresLeft = 0
+            fixture.afterWait = { fixture.elapsed = 5_000L }
 
-            assertEquals("ok", fixture.postWithTornStream())
+            val failure = assertThrows<Exception> { fixture.post() }
 
-            assertEquals(2, fixture.calls.get())
-            assertTrue(fixture.waits.single() in 1L..kind.ceilingMs)
-            assertEquals(1L, fixture.perf.snapshot().counters[PerfKeys.RETRIES])
+            fixture.assertFailure(failure)
+            assertEquals(1, fixture.calls.get())
+            assertEquals(1, fixture.waits.size)
+            assertEquals(1L, fixture.perf.snapshot().counters[PerfKeys.ATTEMPTS])
+            assertNull(fixture.perf.snapshot().counters[PerfKeys.RETRIES])
             assertNull(fixture.perf.snapshot().counters[PerfKeys.POST_SEND_RETRIES])
-            assertTrue(fixture.notices.single().startsWith("stream torn before first client frame, reissue 1/2:"))
-        }
-    }
-
-    @Test
-    fun `a transport or stream retry whose budget expires during backoff records no resend`() = runTest {
-        for (kind in FailureKind.entries) {
-            for (stream in listOf(false, true)) {
-                val fixture = Fixture(kind)
-                fixture.failuresLeft = if (stream) 0 else 1
-                fixture.afterWait = { fixture.elapsed = 5_000L }
-
-                assertThrows<Exception> {
-                    if (stream) fixture.postWithTornStream() else fixture.post()
-                }
-
-                assertEquals(1, fixture.calls.get())
-                assertEquals(1, fixture.waits.size)
-                assertEquals(1L, fixture.perf.snapshot().counters[PerfKeys.ATTEMPTS])
-                assertNull(fixture.perf.snapshot().counters[PerfKeys.RETRIES])
-                assertNull(fixture.perf.snapshot().counters[PerfKeys.POST_SEND_RETRIES])
-            }
         }
     }
 
@@ -288,18 +258,17 @@ class UpstreamClientBackoffTest {
         }
     }
 
-    private fun realCurveClientOver(engine: MockEngine, waiter: RecordingWaiter) = UpstreamClient(
+    private fun realScheduleClientOver(engine: MockEngine, waiter: RecordingWaiter) = UpstreamClient(
         totalTimeoutMs = 60_000,
-        maxRetries = 3,
         client = HttpClient(engine),
-        pacing = RetryPacing(waiter = waiter),
+        pacing = RetryPacing(waiter = waiter, wall = WallClock { NOW_MS }),
     )
 
-    private enum class FailureKind(val ceilingMs: Long, val noticeLabel: String = "transport ") {
-        DNS(1_100L),
-        WRAPPED_DNS(1_100L),
-        CONNECT(220L),
-        POST_SEND(220L, "transport-possible-duplicate "),
+    private enum class FailureKind(val noticeLabel: String = "transport ") {
+        DNS,
+        WRAPPED_DNS,
+        CONNECT,
+        POST_SEND("transport-possible-duplicate "),
         ;
 
         fun error(): Exception = when (this) {
@@ -342,7 +311,6 @@ class UpstreamClientBackoffTest {
         }
         private val client = UpstreamClient(
             totalTimeoutMs = totalTimeoutMs,
-            maxRetries = 3,
             client = HttpClient(engine),
             pacing = RetryPacing(
                 waiter = Waiter { ms ->

@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.RefreshableAuthProvider
+import splice.upstream.Waiter
 import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
 
@@ -27,7 +28,6 @@ class ClientAuthVerdictTest {
     /** Answers every request with [status]; the body is Anthropic's error shape for a non-2xx. */
     private fun answering(status: HttpStatusCode): UpstreamClient = UpstreamClient(
         totalTimeoutMs = 5_000,
-        maxRetries = 1,
         client = HttpClient(
             MockEngine {
                 if (status == HttpStatusCode.OK) {
@@ -37,7 +37,7 @@ class ClientAuthVerdictTest {
                 }
             },
         ),
-        pacing = RetryPacing(backoff = { _, _ -> error("a client head's auth answer is never retried") }),
+        pacing = RetryPacing(waiter = Waiter { error("a client head's auth answer is never retried") }),
     )
 
     private suspend fun forward(client: UpstreamClient, auth: RefreshableAuthProvider): String =

@@ -87,7 +87,7 @@ class BuiltTurnEndTest {
     private fun prepare(tmp: Path, provider: Provider): Any? {
         val deps = headDeps(
             tmp = tmp,
-            upstream = UpstreamClient(totalTimeoutMs = 1_000, maxRetries = 1),
+            upstream = UpstreamClient(totalTimeoutMs = 1_000),
             gate = InflightGate({ 1 }),
         ).copy(
             policy = HeadDeps.HeadPolicy(

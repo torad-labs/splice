@@ -80,9 +80,6 @@ private const val MODEL = "muse-wonder-full-1.0-contributor"
 private const val CONVERSATION = "sess-flashing-lenovo"
 private const val CALM = "sess-calm"
 
-// The daemon's own default for upstreamRetries.
-private const val TRIES = 4
-
 // One upstream post's whole budget. Meta's holds below pass on the clock the route reads, never in real time.
 private const val UPSTREAM_TIMEOUT_MS = 60_000L
 
@@ -420,7 +417,6 @@ class MuseGatewayRouteTest {
             tmp = root,
             upstream = UpstreamClient(
                 totalTimeoutMs = UPSTREAM_TIMEOUT_MS,
-                maxRetries = TRIES,
                 client = transport,
                 pacing = RetryPacing(waiter = Waiter { gateway.listen() }),
             ),

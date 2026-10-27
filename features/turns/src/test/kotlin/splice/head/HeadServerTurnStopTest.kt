@@ -112,7 +112,7 @@ class HeadServerTurnStopTest {
             listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
-                upstream = UpstreamClient(totalTimeoutMs = 60_000, maxRetries = 1),
+                upstream = UpstreamClient(totalTimeoutMs = 60_000),
                 gate = gate,
                 log = { journal.add(it) },
             ).let { base ->

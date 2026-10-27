@@ -3,35 +3,28 @@
 // firstByteTimeout (V4-272, RequestWriteBound: a request the upstream acknowledges no more of for that
 // long is cut, named RequestWriteStalled and retried here on a new connection, V4-289), while the wait
 // for headers after a whole request is bounded only by the turn cap (a near-window prompt / compaction prefills
-// for minutes); the body phase is governed by the stream watchdog, NOT here; retry on 502/503/529/429 with exponential
-// backoff; a 401 triggers a SINGLE single-flight refresh that does not consume a normal attempt;
-// abort() is the only lock-safe kill (Ktor: cancel the calling coroutine → channel closes).
+// for minutes); the body phase is governed by the stream watchdog, NOT here; abort() is the only lock-safe kill
+// (Ktor: cancel the calling coroutine → channel closes).
 //
-// WHAT IS LEFT HERE, after HD-25: the retry LOOP and nothing else. The loop's four budgets share
-// one [RetryState] and every rule about them is a rule about which counter must NOT move, so they
-// stay in one object mutated from one file — `attempt` (connect-phase backoff), `refreshedOnce`
-// (the 401 single-flight refresh, which must not consume an attempt), `streamReissues` (G5, spans
-// the whole turn) and `amendedOnce` (RC-4, budgeted alone; review 2026-07-24 found an `attempt +=
-// 1` here ate a valid amended resend at the budget boundary). The t0 deadline and its four checks
-// are here for the same reason: ONE clock authority, same base as TurnWatchdog/InflightGate
+// WHAT IS LEFT HERE: the attempt LOOP and nothing else. Failure-handling slice 4: the loop decides no retry of its
+// own. Each failure an attempt meets is asked of RetryEngine, with where the turn stood and the turn's one
+// RetryLedger, and RetrySteps takes the step it answers: a wait, one token exchange, a move to another login, or the
+// post's ending. The t0 deadline and its checks stay here: ONE clock authority, same base as TurnWatchdog/InflightGate
 // (review 2026-07-22).
 //
-// WHERE THE REST WENT: client construction and the backoff curves → UpstreamTransport.kt;
-// throwable classification, transport backoff, catchCancellable → TransportFailures.kt; the retry
-// DECISION and the G5 re-issue interlock → RetryPolicy.kt; the reading of a failed reply → the
-// head's Replies, asked once in UpstreamRequest.kt; the Retry-After parse → RetryAfter.kt; the shared 429 horizon →
-// RateLimitCooldown.kt; request assembly and the execute round-trip → UpstreamRequest.kt; one
-// attempt's inputs, outcome, and the perf/auth marks → UpstreamAttempt.kt; the role declarations
-// → UpstreamPorts.kt; the thrown vocabulary → UpstreamErrors.kt; the clock adapter →
-// ProcessRuntime.kt; the transport-error half of an attempt → TransportSteps.kt; what post answers → UpstreamPost.kt.
+// WHERE THE REST WENT: client construction → UpstreamTransport.kt; throwable classification and catchCancellable →
+// TransportFailures.kt; the retry DECISION → RetryEngine.kt, its budgets → RetryBudgets.kt, the steps it answers →
+// RetrySteps.kt and the post's endings → RetryEndings.kt; the reading of a failed reply → the head's Replies, asked
+// once in UpstreamRequest.kt; the Retry-After parse → RetryAfter.kt; the shared 429 horizon → RateLimitCooldown.kt;
+// request assembly and the execute round-trip → UpstreamRequest.kt; one attempt's inputs, outcome, and the perf/auth
+// marks → UpstreamAttempt.kt; the role declarations → UpstreamPorts.kt; the thrown vocabulary → UpstreamErrors.kt;
+// the clock adapter → ProcessRuntime.kt; what post answers → UpstreamPost.kt.
 //
 // Transport lessons from Grok Build / Codex CLI that still bind this file:
-//   - encrypted_content decrypt 400s are NOT retried (Grok Build)
-//   - DNS-class transport failures (UnresolvedAddressException/UnknownHostException) back off on
-//     their own 1s/2s/4s schedule (dnsBackoff), not the generic 200/400/800ms curve (G14)
+//   - encrypted_content decrypt 400s are NOT retried (Grok Build): read as stale reasoning, which the dialect amends
+//     once and the engine ends after
 //   - 429s arm a SHARED per-client (= per-account) cooldown: one turn's rate-limit discovery
-//     teaches every concurrent turn, which fails fast with 429 instead of independently burning
-//     its own attempts (2026-07-19 storm: ~650 turns x 4 attempts against one limited account)
+//     teaches every concurrent turn (2026-07-19 storm: ~650 turns x 4 attempts against one limited account)
 package splice.upstream.transport
 
 import io.ktor.client.HttpClient
@@ -42,25 +35,26 @@ import splice.core.util.ElapsedClock
 import splice.upstream.RetryBackoff
 import splice.upstream.RoundBody
 import splice.upstream.StreamRead
+import splice.upstream.TurnRetry
+import splice.upstream.TurnWaits
 import splice.upstream.UpstreamHandler
+import splice.upstream.Waiter
 import splice.upstream.codemode.ProcessElapsedNow
 import splice.upstream.retry.CredentialCooldowns
+import splice.upstream.retry.MAX_ATTEMPTS_OUTSIDE_HOLDS
 import splice.upstream.retry.ProviderHoldStore
 import splice.upstream.retry.RateLimitCooldown
-import splice.upstream.retry.RateLimitTurn
-import splice.upstream.retry.RetryDecision
-import splice.upstream.retry.RetryPlan
+import splice.upstream.retry.RetryLedger
 
 public class UpstreamClient(
     private val totalTimeoutMs: Long,
-    private val maxRetries: Int,
     /** zstd-compress the request body (CX-03). DEFAULT OFF and set PER PROVIDER: measured on
      *  codex-cli 0.145.0 against ChatGPT (2.7x), unproven anywhere else, and the sibling gzip ban
      *  exists because xAI 400d on a compressed body and broke grok live on 2026-07-18. */
     zstdRequestBody: Boolean = false,
     client: HttpClient = UpstreamTransport().defaultClient(totalTimeoutMs),
-    /** How attempts are spaced: the curve this client budgets against and the two sleeps that follow it
-     *  (HD-19, V4-110; [RetryPacing] has the reasoning). */
+    /** How this client waits and dates: the wait a post with no turn around it sleeps through, the curve the head's
+     *  round runners still pause on, and the wall clock a failed answer is dated by ([RetryPacing]). */
     private val pacing: RetryPacing = RetryPacing(),
     // Default is monotonic — a wall-clock jump must not abort a healthy retry loop (forward) or
     // extend its deadline (backward). Same base as TurnWatchdog/InflightGate: two authorities
@@ -69,8 +63,9 @@ public class UpstreamClient(
     /** V4-412: where this head's provider hold (its reset, the plan window it named spent) survives a
      *  restart; null keeps it in memory only. Pool accounts each carry their own. */
     holdStore: ProviderHoldStore? = null,
-    /** The tries a request gets, asked once as the request begins so it keeps one bound to its end; null keeps
-     *  [maxRetries], the number the client was built with. */
+    /** Ignored since failure-handling slice 4: RetryEngine plans every retry from the cause and the position.
+     *  Kept so the round-driver tests that still name a retry count compile; it goes with their last use. */
+    public val maxRetries: Int = 0,
 ) {
     // The stateless collaborators the loop delegates to. Constructed once per client (not per call)
     // so the transport/request/failure/retry rules cost nothing per attempt. [cooldown] is the one
@@ -80,8 +75,12 @@ public class UpstreamClient(
     private val request = UpstreamRequest(client, zstdRequestBody, pacing.wall)
 
     /** The head's configured retry curve as a sleep, for the runners that restart a round (fold continuation,
-     *  mid-stream re-anchor): one curve per head, the one an ordinary retry here already follows. */
+     *  mid-stream re-anchor) until they take RetryEngine's steps too. */
     public val retryBackoff: RetryBackoff = RetryBackoff { attempt, minDelayMs -> pacing.pause(attempt, minDelayMs) }
+
+    /** Where a wait RetryEngine names sleeps ([RetryPacing]'s waiter): a turn's waits at its head sleep here too, so a
+     *  test that replaces this client's wait replaces every wait a retry of its turns makes (HD-19). */
+    public val retryWaiter: Waiter = Waiter { ms -> pacing.wait(ms) }
 
     // Legacy files have no proved credential owner. Keep them untouched, never attribute their hold to a caller.
     private val cooldown = RateLimitCooldown(clock, pacing.wall)
@@ -91,7 +90,7 @@ public class UpstreamClient(
     public fun credentialCooldown(headers: Map<String, String>, declaredCarrier: String? = null): RateLimitCooldown? =
         credentialCooldowns.forHeaders(headers, declaredCarrier)
     private val budget = RetryBudget(totalTimeoutMs, clock)
-    private val steps = TransportSteps(transportFailures, budget, pacing, totalTimeoutMs)
+    private val steps = RetrySteps(budget, pacing.wall, transportFailures)
 
     /** NF-01: head restart is a real escape hatch — HeadServer.startLocked() clears the armed
      *  horizon alongside driver.resetHealth(), instead of the cooldown outliving the restart. */
@@ -122,8 +121,8 @@ public class UpstreamClient(
             .maxByOrNull(PlanLimit::resetEpochSeconds)
 
     /**
-     * Prepare an upstream POST and run [block] with the streaming response. Handles retries
-     * and one single-flight 401 refresh. The credentials [ctx] supplies are written onto the
+     * Prepare an upstream POST and run [block] with the streaming response. Every failure an attempt meets is asked
+     * of RetryEngine on the turn's ledger ([PostLimits.retry]). The credentials [ctx] supplies are written onto the
      * request by [UpstreamRequest]. Cancelling the calling coroutine aborts the in-flight body
      * (the lock-safe kill). When [PostContext.perf] is wired it records the auth/refresh/backoff
      * durations, the attempt counters, and the headers-arrival mark (TTFB — re-marked per attempt
@@ -152,10 +151,15 @@ public class UpstreamClient(
         // The size on the turn's perf row is the length forClient just wrote, the JSON before any zstd, so reading it
         // walks nothing. An amended resend keeps this first stamp.
         ctx.observers.perf?.setCount(splice.core.perf.PerfKeys.UPSTREAM_REQ_BYTES, body.body.byteSize())
-        val t0 = clock()
-        val state = RetryState(ctx.limits.rateLimitCooldown ?: cooldown, t0, pacing.triesFor(maxRetries))
-        while (state.attempt < state.maxRetries) {
-            when (val step = runAttempt(ctx, body, state, t0, block)) {
+        // A post with no turn around it keeps a ledger of its own and waits on this client's pacing, telling no one.
+        val retry = ctx.limits.retry ?: TurnRetry(
+            RetryLedger(),
+            TurnWaits { afterMs, _, _ -> retryWaiter.wait(afterMs) },
+        )
+        val state = RetryState(ctx.limits.rateLimitCooldown ?: cooldown, clock(), retry)
+        // RetryEngine ends every turn within its budgets, so the loop runs until a step ends it.
+        while (true) {
+            when (val step = runAttempt(ctx, body, state, block)) {
                 is LoopStep.Done -> return step.result
                 is LoopStep.Amend -> {
                     body = prepared.amended(body, step.bodyJson, ctx.observers.perf)
@@ -164,31 +168,24 @@ public class UpstreamClient(
                 LoopStep.TurnWaitExhausted -> return UpstreamPost.TurnWaitExhausted
             }
         }
-        return UpstreamPost.Ended(
-            state.rules.giveUp(state.lastErr, state.cooldown, state.attempt, ctx.onRetry, state.refreshedOnce),
-        )
     }
 
-    /** One retry-loop iteration: the deadline and turn-wait checks, then credentials, the hold they
-     *  pick ([RetryState.held]), and the attempt's retry/backoff decision. Each ending is a returned
-     *  [LoopStep.Done], never a throw. Body preparation remains outside these attempt budgets. */
+    /** One loop iteration: the deadline and turn-wait checks, then credentials, the hold they pick, and the attempt.
+     *  Each ending is a returned [LoopStep.Done], never a throw. Body preparation remains outside these budgets. */
     private suspend fun <T> runAttempt(
         ctx: PostContext,
         body: RequestBody,
         state: RetryState,
-        t0: Long,
         block: UpstreamHandler<T>,
     ): LoopStep<T> {
-        if (budget.deadlineExceeded(ctx, t0)) {
-            ctx.onRetry(
-                "upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before attempt " +
-                    "${state.attempt + 1}/${state.maxRetries}",
-            )
-            return state.gaveUp(ctx, state.rules)
+        val next = "attempt ${state.ledger.attempts + 1}/$MAX_ATTEMPTS_OUTSIDE_HOLDS"
+        if (budget.deadlineExceeded(ctx, state.t0)) {
+            ctx.onRetry("upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before $next")
+            return steps.gaveUp(ctx, state)
         }
         if (budget.turnWaitExhausted(ctx)) {
-            ctx.onRetry("upstream turn wait budget exhausted before attempt ${state.attempt + 1}/${state.maxRetries}")
-            return if (state.lastErr != null) state.gaveUp(ctx, state.rules) else LoopStep.TurnWaitExhausted
+            ctx.onRetry("upstream turn wait budget exhausted before $next")
+            return if (state.failedYet) steps.gaveUp(ctx, state) else LoopStep.TurnWaitExhausted
         }
         // No hold another turn armed stops this attempt: each turn asks the provider itself (Marcos, Oct 26). The login
         // lookup answers once per attempt: none is the head's NoLogin, and a provider's refusal to grant one ends the
@@ -202,7 +199,7 @@ public class UpstreamClient(
             LoginAnswer.Missing -> LoopStep.Done(UpstreamPost.Ended(UpstreamAuthMissing()))
             is LoginAnswer.Refused -> {
                 val evidence = FailureEvidence(LOGIN_REFUSED, said = answer.cause.said?.text)
-                LoopStep.Done(UpstreamPost.Ended(UpstreamFailed(answer.cause, evidence, state.attempt)))
+                LoopStep.Done(UpstreamPost.Ended(UpstreamFailed(answer.cause, evidence, state.ledger.attempts)))
             }
         }
     }
@@ -214,17 +211,12 @@ public class UpstreamClient(
         block: UpstreamHandler<T>,
         auth: AttemptCredentials,
     ): LoopStep<T> {
-        val t0 = state.t0
         ctx.markAttempt()
         val recorder = state.recorderFor(ctx, body, clock)
         var streamHandedOff = false
-        // catchCancellable rethrows CancellationException (a cancelled turn aborts cleanly);
-        // a failure here is a TRANSPORT error thrown BEFORE stream handoff — retryable on the
-        // backoff budget (a 2s DNS blip costs one silent retry, not a turn failure: the kimi
-        // 07:00 burst, 37 UnresolvedAddressException turns, attempts=1 on every one).
-        // V4-66: "a TRANSPORT error" means every failure this seam can carry, not only the six
-        // types the classifier names — a bare IOException from the JDK parser used to escape
-        // with attempts=1 and end a turn a retry would have completed.
+        // catchCancellable rethrows CancellationException (a cancelled turn aborts cleanly); a failure here is a
+        // TRANSPORT error, which the engine reads as a path that did not answer, or a stream torn before the client saw
+        // a frame (V4-66: every failure this seam can carry, not only the types the classifier names).
         val attempted = transportFailures.catchCancellable {
             state.markResend(ctx)
             request.execute(
@@ -244,92 +236,28 @@ public class UpstreamClient(
         }
         // Exhaustively dispatch the attempt's delivered value, HTTP failure, or transport error.
         return when (outcome) {
-            null -> steps.failed(checkNotNull(transportError), ctx, streamHandedOff, state, t0)
-            is RetryOutcome.Done -> readStep(outcome.read, ctx, state, t0)
-            is RetryOutcome.Failed -> failedStep(ctx, outcome, body, state, t0)
+            null -> steps.thrown(checkNotNull(transportError), ctx, streamHandedOff, state)
+            is RetryOutcome.Done -> readStep(outcome.read, ctx, state)
+            is RetryOutcome.Failed -> failedStep(ctx, outcome, body, state)
         }
     }
 
-    /** What the handler made of the stream: a delivered value, a tear the loop may re-issue, or an oversized frame. */
-    private suspend fun <T> readStep(read: StreamRead<T>, ctx: PostContext, state: RetryState, t0: Long): LoopStep<T> =
+    /** What the handler made of the stream: a delivered value, a tear the engine may send fresh, or an oversized
+     *  frame. */
+    private suspend fun <T> readStep(read: StreamRead<T>, ctx: PostContext, state: RetryState): LoopStep<T> =
         when (read) {
             is StreamRead.Read -> LoopStep.Done(UpstreamPost.Delivered(read.value))
-            is StreamRead.Torn -> steps.reissue(read.cause, ctx, true, state, t0)
-                ?: LoopStep.Done(UpstreamPost.Ended(StreamTornBeforeClient(read.cause)))
+            is StreamRead.Torn -> steps.torn(read.cause, ctx, state)
             is StreamRead.Oversized -> LoopStep.Done(UpstreamPost.Ended(read.ending))
         }
 
-    /** A native pooled refusal that waiting cannot fix leaves as a value before any consume callback, so the account
-     *  handoff moves the request to the next login: a named plan window, or a pushback past the 15s ceiling. A burst
-     *  429 keeps V4-61 like every other failure: it waits the floor on the same login, and relays once spent. A
-     *  translated pool takes V4-61's plan first, which evicts the login, and the give-up hands it back
-     *  ([RetryState.gaveUp]). */
+    /** A failed answer, as the head's reader read it: the engine says what follows. */
     private suspend fun failedStep(
         ctx: PostContext,
         failed: RetryOutcome.Failed,
         body: RequestBody,
         state: RetryState,
-        t0: Long,
-    ): LoopStep<Nothing> {
-        state.lastErr = failed
-        val nativeRefusal = ctx.nativePool && failed.native != null
-        return if (nativeRefusal && failed.waitCannotHelp(state.sameLoginWaitMs(ctx))) {
-            val failure = state.rules.rateLimitFailure(failed, state.cooldown, state.sent, ctx.onRetry)
-            LoopStep.Done(UpstreamPost.Refused(failure))
-        } else {
-            state.amendStep(ctx, failed, body.json) ?: planStep(ctx, failed, state, t0)
-        }
-    }
-
-    /** The BACKOFF half of the retry decision: re-checks the deadline (G4d) before the sleep so a
-     *  budget that expired mid-curve doesn't pay for one more real delay it can't use. */
-    private suspend fun applyBackoff(
-        ctx: PostContext,
-        plan: RetryPlan,
-        state: RetryState,
-        t0: Long,
-    ): LoopStep<Nothing> {
-        if (budget.deadlineExceeded(ctx, t0)) {
-            ctx.onRetry(
-                "upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before backoff, " +
-                    "attempt ${state.attempt + 1}/${state.maxRetries}",
-            )
-            return state.gaveUp(ctx, state.rules)
-        }
-        val plannedDelayMs = pacing.ordinaryDelayMs(state.attempt, plan.minDelayMs)
-        if (!budget.backoffFits(ctx, t0, plannedDelayMs)) return state.gaveUp(ctx, state.rules)
-        ctx.timedBackoff { pacing.pause(state.attempt, plan.minDelayMs) }
-        state.pendingRetry = RetryKind.ORDINARY
-        state.attempt += 1
-        return LoopStep.Continue
-    }
-
-    /** RC-4 companion move (function-budget): the retry-plan tail of a failed attempt. */
-    private suspend fun <T> planStep(
-        ctx: PostContext,
-        outcome: RetryOutcome.Failed,
-        state: RetryState,
-        t0: Long,
-    ): LoopStep<T> {
-        val plan = state.rules.planRetry(
-            ctx,
-            outcome,
-            state.attempt,
-            state.refreshedOnce,
-            RateLimitTurn(
-                cooldown = state.cooldown,
-                pooledAccount = ctx.limits.rateLimitCooldown != null,
-                sameLoginWaitMs = state.sameLoginWaitMs(ctx),
-            ),
-        )
-        state.refreshedOnce = plan.refreshedOnce
-        state.countWait(ctx, outcome, plan)
-        return when (plan.decision) {
-            RetryDecision.RETRY -> LoopStep.Continue // refresh succeeded; no attempt spent
-            RetryDecision.BACKOFF -> applyBackoff(ctx, plan, state, t0)
-            RetryDecision.GIVE_UP -> state.gaveUp(ctx, state.rules)
-        }
-    }
+    ): LoopStep<Nothing> = steps.failed(ctx, failed, body.json, state)
 }
 
 /** The journal's words for a login the provider refused to grant; the line a person reads is the cause's. */

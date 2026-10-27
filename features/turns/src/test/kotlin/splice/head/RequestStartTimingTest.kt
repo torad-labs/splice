@@ -191,7 +191,7 @@ private class TimingRig(
         0,
         headDeps(
             root,
-            upstream = write?.upstream ?: UpstreamClient(totalTimeoutMs = 30_000L, maxRetries = 2),
+            upstream = write?.upstream ?: UpstreamClient(totalTimeoutMs = 30_000L),
             gate = gate,
             log = {},
             seams = HeadDeps.HeadSeams(
@@ -220,7 +220,7 @@ private class DelayedUpstreamWrite : AutoCloseable {
     val entered = CountDownLatch(1)
     val release = CountDownLatch(1)
     private val client = UpstreamTransport().defaultClient(TIMING_TIMEOUT_MS)
-    val upstream = UpstreamClient(totalTimeoutMs = TIMING_TIMEOUT_MS, maxRetries = 1, client = client)
+    val upstream = UpstreamClient(totalTimeoutMs = TIMING_TIMEOUT_MS, client = client)
 
     init {
         val config = client.engine.config

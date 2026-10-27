@@ -88,7 +88,7 @@ class HeadServerEndingsTest {
         head = HeadServer(
             provider = provider,
             listenPort = 0,
-            deps = headDeps(tmp = tmp, upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2))
+            deps = headDeps(tmp = tmp, upstream = UpstreamClient(totalTimeoutMs = 30_000))
                 .copy(stores = headStores(tmp)),
         )
         head.start()

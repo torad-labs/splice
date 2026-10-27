@@ -30,6 +30,7 @@ import kotlinx.serialization.json.buildJsonObject
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -277,7 +278,7 @@ class SseRoundConsumeTest {
                 return emptyMap()
             }
         }
-        val upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 1, client = client)
+        val upstream = UpstreamClient(totalTimeoutMs = 30_000, client = client)
         val post = SseRoundPost(
             timedProvider,
             upstream,
@@ -347,7 +348,6 @@ class SseRoundConsumeTest {
         }
         val upstream = UpstreamClient(
             totalTimeoutMs = 30_000,
-            maxRetries = 1,
             client = client,
             pacing = RetryPacing(backoff = RetryBackoff { _, _ -> now += 200 }),
             clock = ElapsedClock { now },
@@ -378,7 +378,8 @@ class SseRoundConsumeTest {
         try {
             assertTrue((post.post(inputs) as RoundResult.Outcome).outcome is TurnOutcome.Success)
             assertEquals(2, consumes)
-            assertEquals(200L, perf.snapshot().counters[PerfKeys.BACKOFF_MS])
+            // Section 8 sends a stream that carried no event fresh at once: no wait is taken before the reissue.
+            assertNull(perf.snapshot().counters[PerfKeys.BACKOFF_MS])
             assertEquals(1_000L, perf.snapshot().counters[PerfKeys.UP_GAP_MAX_MS])
             assertEquals(0L, perf.snapshot().counters[PerfKeys.UP_GAPS_2S])
         } finally {

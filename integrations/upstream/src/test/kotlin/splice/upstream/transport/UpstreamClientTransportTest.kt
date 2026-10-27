@@ -13,6 +13,10 @@
 // body now retries (the row's best consequence) and a bad base_url spends the whole ~1.5s budget
 // before failing (its trade). An IllegalState, an NPE, any other RuntimeException is never
 // captured and still fails on attempt one: retrying our own bugs was never the law.
+//
+// Failure-handling slice 4: every path that did not answer waits RetryEngine's unreachable schedule (1, 2, 4, 8, 16, 30,
+// 30 and 30 s), a name that does not resolve the same as a refused connection, so the separate DNS schedule and its
+// predicate went, and a stream torn before the client saw a frame is sent fresh at once, twice at most.
 package splice.upstream.transport
 
 import com.github.luben.zstd.Zstd
@@ -39,6 +43,7 @@ import splice.core.perf.TurnPerf
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.RetryNotice
 import splice.upstream.StreamRead
+import splice.upstream.Waiter
 import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
 import java.io.IOException
@@ -49,6 +54,12 @@ import java.net.UnknownHostException
 import java.nio.channels.UnresolvedAddressException
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.cancellation.CancellationException
+
+/** Long enough for the whole unreachable schedule: its eight waits come to 121 s. */
+private const val WHOLE_SCHEDULE_MS = 600_000L
+
+/** One send, then one after each of the unreachable schedule's eight waits. */
+private const val UNREACHABLE_SENDS = 9
 
 class UpstreamClientTransportTest {
 
@@ -73,10 +84,10 @@ class UpstreamClientTransportTest {
     private fun clientOver(
         engine: MockEngine,
         // no real sleep in tests by default
-        pacing: RetryPacing = RetryPacing(backoff = { _, _ -> }, dnsBackoff = { _ -> }),
+        pacing: RetryPacing = RetryPacing(waiter = Waiter { }),
+        totalTimeoutMs: Long = 5_000,
     ) = UpstreamClient(
-        totalTimeoutMs = 5_000,
-        maxRetries = 3,
+        totalTimeoutMs = totalTimeoutMs,
         client = HttpClient(engine),
         pacing = pacing,
     )
@@ -100,91 +111,53 @@ class UpstreamClientTransportTest {
     }
 
     @Test
-    fun `DNS-class failure uses the dnsBackoff schedule, not the generic backoff`() = runTest {
-        val calls = AtomicInteger()
-        val engine = MockEngine {
-            if (calls.incrementAndGet() <= 2) throw UnresolvedAddressException()
-            respond("ok-body", HttpStatusCode.OK, headersOf())
+    fun `a name that does not resolve waits the unreachable schedule`() = runTest {
+        for (failure in listOf(UnresolvedAddressException(), UnknownHostException("dns blip"))) {
+            val calls = AtomicInteger()
+            val engine = MockEngine {
+                if (calls.incrementAndGet() <= 2) throw failure
+                respond("ok-body", HttpStatusCode.OK, headersOf())
+            }
+            val waits = mutableListOf<Long>()
+            val out = clientOver(engine, pacing = RetryPacing(waiter = Waiter { waits.add(it) })).posted(
+                ctx(),
+                "{}",
+            ) { "reached-block" }
+            assertEquals("reached-block", out)
+            assertEquals(listOf(1_000L, 2_000L), waits, "${failure::class.simpleName}")
         }
-        val genericAttempts = mutableListOf<Int>()
-        val dnsAttempts = mutableListOf<Int>()
-        val out = clientOver(
-            engine,
-            pacing = RetryPacing(
-                backoff = { a, _ -> genericAttempts.add(a) },
-                dnsBackoff = { a -> dnsAttempts.add(a) },
-            ),
-        ).posted(
-            ctx(),
-            "{}",
-        ) { "reached-block" }
-        assertEquals("reached-block", out)
-        assertEquals(listOf(0, 1), dnsAttempts)
-        assertTrue(genericAttempts.isEmpty())
     }
 
     @Test
-    fun `UnknownHostException classifies as DNS same as UnresolvedAddressException`() = runTest {
-        val calls = AtomicInteger()
-        val engine = MockEngine {
-            if (calls.incrementAndGet() == 1) throw UnknownHostException("dns blip")
-            respond("ok-body", HttpStatusCode.OK, headersOf())
-        }
-        val genericAttempts = mutableListOf<Int>()
-        val dnsAttempts = mutableListOf<Int>()
-        val out = clientOver(
-            engine,
-            pacing = RetryPacing(
-                backoff = { a, _ -> genericAttempts.add(a) },
-                dnsBackoff = { a -> dnsAttempts.add(a) },
-            ),
-        ).posted(
-            ctx(),
-            "{}",
-        ) { "reached-block" }
-        assertEquals("reached-block", out)
-        assertEquals(listOf(0), dnsAttempts)
-        assertTrue(genericAttempts.isEmpty())
-    }
-
-    @Test
-    fun `non-DNS transport failure keeps the generic backoff, not dnsBackoff`() = runTest {
+    fun `a refused connection waits the same unreachable schedule as a name that does not resolve`() = runTest {
         val calls = AtomicInteger()
         val engine = MockEngine {
             if (calls.incrementAndGet() <= 2) throw ConnectException("refused")
             respond("ok-body", HttpStatusCode.OK, headersOf())
         }
-        val genericAttempts = mutableListOf<Int>()
-        val dnsAttempts = mutableListOf<Int>()
-        val out = clientOver(
-            engine,
-            pacing = RetryPacing(
-                backoff = { a, _ -> genericAttempts.add(a) },
-                dnsBackoff = { a -> dnsAttempts.add(a) },
-            ),
-        ).posted(
+        val waits = mutableListOf<Long>()
+        val out = clientOver(engine, pacing = RetryPacing(waiter = Waiter { waits.add(it) })).posted(
             ctx(),
             "{}",
         ) { "reached-block" }
         assertEquals("reached-block", out)
-        assertEquals(listOf(0, 1), genericAttempts)
-        assertTrue(dnsAttempts.isEmpty())
+        assertEquals(listOf(1_000L, 2_000L), waits)
     }
 
     @Test
-    fun `persistent transport failure rethrows after the attempt budget`() = runTest {
+    fun `a path that never answers is waited out for about two minutes, then its own failure surfaces`() = runTest {
         val calls = AtomicInteger()
         val engine = MockEngine {
             calls.incrementAndGet()
             throw ConnectException("refused")
         }
+        val waits = mutableListOf<Long>()
         assertThrows<ConnectException> {
-            clientOver(engine).posted(
-                ctx(),
-                "{}",
-            ) { "unreachable" }
+            clientOver(engine, RetryPacing(waiter = Waiter { waits.add(it) }), totalTimeoutMs = WHOLE_SCHEDULE_MS)
+                .posted(ctx(), "{}") { "unreachable" }
         }
-        assertEquals(3, calls.get()) // maxRetries attempts, then the real exception surfaces
+        assertEquals(listOf(1_000L, 2_000L, 4_000L, 8_000L, 16_000L, 30_000L, 30_000L, 30_000L), waits)
+        assertEquals(waits.size + 1, calls.get(), "one send after each wait, then the real exception surfaces")
     }
 
     @Test
@@ -289,13 +262,11 @@ class UpstreamClientTransportTest {
     }
 
     @Test
-    fun `stream reissue does not sleep once the deadline has already expired`() = runTest {
-        // G4d follow-up: the reissue branch must re-check the deadline before its backoff sleep,
-        // same as the sibling applyBackoff path already does — an expired budget must not pay for
-        // one more real delay it can't use.
+    fun `stream reissue does not go out once the deadline has already expired`() = runTest {
+        // G4d follow-up: an expired budget must not pay for one more send it cannot use.
         var now = 0L
         val engineCalls = AtomicInteger()
-        val backoffCalls = AtomicInteger()
+        val waitCalls = AtomicInteger()
         val retries = mutableListOf<String>()
         val engine = MockEngine {
             engineCalls.incrementAndGet()
@@ -303,9 +274,8 @@ class UpstreamClientTransportTest {
         }
         val client = UpstreamClient(
             totalTimeoutMs = 1_000,
-            maxRetries = 3,
             client = HttpClient(engine),
-            pacing = RetryPacing(backoff = { _, _ -> backoffCalls.incrementAndGet() }),
+            pacing = RetryPacing(waiter = Waiter { waitCalls.incrementAndGet() }),
             clock = { now },
         )
         assertThrows<ConnectException> {
@@ -318,8 +288,8 @@ class UpstreamClientTransportTest {
             }
         }
         assertEquals(1, engineCalls.get(), "an expired deadline must not pay for a reissue POST")
-        assertEquals(0, backoffCalls.get(), "an expired deadline must not pay for the reissue backoff sleep")
-        assertTrue(retries.any { it.contains("deadline exceeded") && it.contains("stream reissue") })
+        assertEquals(0, waitCalls.get(), "an expired deadline must not pay for a wait")
+        assertTrue(retries.any { it.contains("deadline exceeded") })
     }
 
     @Test
@@ -432,15 +402,6 @@ class UpstreamClientTransportTest {
     }
 
     @Test
-    fun `dns predicate matches only name-resolution failures`() {
-        assertTrue(TransportFailures().isDnsFailureTransport(UnresolvedAddressException()))
-        assertTrue(TransportFailures().isDnsFailureTransport(UnknownHostException()))
-        assertFalse(TransportFailures().isDnsFailureTransport(ConnectException("refused")))
-        assertFalse(TransportFailures().isDnsFailureTransport(SocketException("reset")))
-        assertTrue(TransportFailures().isDnsFailureTransport(RuntimeException(UnknownHostException())))
-    }
-
-    @Test
     fun `an unclassified IOException retries to the budget as a possible duplicate`() = runTest {
         // V4-66, the measured case: the JDK's header parser ("HTTP/1.1 header parser received no
         // bytes") arrives as a BARE IOException, which no entry in the classifier's allowlist
@@ -455,11 +416,16 @@ class UpstreamClientTransportTest {
         }
         val retries = mutableListOf<String>()
         val thrown = assertThrows<IOException> {
-            clientOver(engine).posted(ctx(onRetry = { retries.add(it) }), "{}") { "unreachable" }
+            clientOver(engine, totalTimeoutMs = WHOLE_SCHEDULE_MS)
+                .posted(ctx(onRetry = { retries.add(it) }), "{}") { "unreachable" }
         }
         assertEquals("HTTP/1.1 header parser received no bytes", thrown.message)
-        assertEquals(3, calls.get(), "the whole attempt budget is spent before the real failure surfaces")
-        assertEquals(2, retries.size)
+        assertEquals(
+            UNREACHABLE_SENDS,
+            calls.get(),
+            "the whole unreachable schedule is spent before the failure surfaces",
+        )
+        assertEquals(UNREACHABLE_SENDS - 1, retries.size)
         assertTrue(
             retries.all { it.startsWith("transport-possible-duplicate IOException") },
             "an unnamed failure must claim the conservative half: $retries",
@@ -480,11 +446,7 @@ class UnclassifiedTransportFailureTest {
         // CancellationException is none of them, so it propagates before this seam. The guard
         // V4-66 added is therefore proven where it lives rather than assumed from the call site.
         assertThrows<CancellationException> {
-            TransportFailures().rethrowUnlessRetryableTransport(
-                CancellationException("cancelled mid-attempt"),
-                deadlineHit = false,
-                lastAttempt = false,
-            )
+            TransportFailures().phaseOf(CancellationException("cancelled mid-attempt"))
         }
     }
 
@@ -508,11 +470,7 @@ class UnclassifiedTransportFailureTest {
         // The seam is where the decision moved: same throwable, a phase instead of a rethrow.
         assertEquals(
             TransportFailurePhase.POST_SEND,
-            failures.rethrowUnlessRetryableTransport(
-                IOException("parser"),
-                deadlineHit = false,
-                lastAttempt = false,
-            ),
+            failures.phaseOf(IOException("parser")),
         )
     }
 }
@@ -541,10 +499,9 @@ class UpstreamRequestBytesStampTest {
         val perf = TurnPerf()
         val client = UpstreamClient(
             totalTimeoutMs = 5_000,
-            maxRetries = 3,
             zstdRequestBody = zstd,
             client = HttpClient(engine),
-            pacing = RetryPacing(backoff = { _, _ -> }, dnsBackoff = { _ -> }),
+            pacing = RetryPacing(waiter = Waiter { }),
         )
         val context = PostContext(
             url = "https://api.example.test/v1",

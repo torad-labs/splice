@@ -90,7 +90,7 @@ class LiveTurnWillResumeTest {
             listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
-                upstream = UpstreamClient(totalTimeoutMs = 60_000, maxRetries = 1),
+                upstream = UpstreamClient(totalTimeoutMs = 60_000),
                 gate = InflightGate(maxInflight = { 4 }, maxQueued = { 4 }),
             ).let { base -> base.copy(traffic = base.traffic.copy(liveTurns = turns)) },
         )

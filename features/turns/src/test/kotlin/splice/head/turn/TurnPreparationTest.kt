@@ -140,7 +140,7 @@ class TurnPreparationTest {
     private fun preparedTurn(tmp: Path, layers: SystemPromptLayers, cwd: Path? = Paths.get(ROOT, "src")): BuiltTurn {
         val deps = headDeps(
             tmp = tmp,
-            upstream = UpstreamClient(totalTimeoutMs = 1_000, maxRetries = 1),
+            upstream = UpstreamClient(totalTimeoutMs = 1_000),
             gate = InflightGate({ 1 }),
             seams = HeadDeps.HeadSeams(
                 session = HeadDeps.SessionSeams(
@@ -188,7 +188,7 @@ class TurnPreparationTest {
     fun `an absent declared tier receives a named invalid request without building a turn`(@TempDir tmp: Path) {
         val deps = headDeps(
             tmp = tmp,
-            upstream = UpstreamClient(totalTimeoutMs = 1_000, maxRetries = 1),
+            upstream = UpstreamClient(totalTimeoutMs = 1_000),
             gate = InflightGate({ 1 }),
         )
         val responses = AdmissionResponses(HeadVoice("scripted", loginCommand = null))

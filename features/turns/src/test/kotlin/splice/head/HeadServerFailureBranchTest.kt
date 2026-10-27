@@ -169,7 +169,7 @@ class HeadServerFailureBranchTest {
             listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
-                upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2),
+                upstream = UpstreamClient(totalTimeoutMs = 30_000),
                 log = { logs.add(it) },
             ).copy(
                 policy = HeadDeps.HeadPolicy(requestReadTimeoutMs = { readTimeoutMs }),

@@ -30,6 +30,7 @@ import splice.core.util.LogSink
 import splice.upstream.RetryNotice
 import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
+import splice.upstream.retry.UNREACHABLE_FIRST_WAIT_MS
 import java.io.BufferedInputStream
 import java.io.InputStream
 import java.net.InetAddress
@@ -95,6 +96,9 @@ private const val SLOW_SEND_BUFFER = 64 * 1024
 
 /** A turn cap short enough to wait out, for the request the watch must not guess at. */
 private const val SHORT_TOTAL_MS = 4 * WRITE_TIMEOUT_MS
+
+/** A turn's wait that holds RetryEngine's first wait for a path that broke (1 s) and not its second (2 s): two sends. */
+private const val ONE_WAIT_MS = 1_500L
 
 class UpstreamClientWriteStallTest(@TempDir tmp: Path) {
 
@@ -177,13 +181,14 @@ class UpstreamClientWriteStallTest(@TempDir tmp: Path) {
     fun `a TLS write the upstream never takes is cut, and holds up no other connection's cut`() {
         val tlsUpstream = upstream(then = Serving.Reads(0), tls = true)
         val plainUpstream = upstream(then = Serving.Reads(0))
-        val tls = client(attempts = 1, sockets = UpstreamSockets(trust = loopback.trust))
-        val plain = client(attempts = 1)
+        val tls = client(sockets = UpstreamSockets(trust = loopback.trust))
+        val plain = client()
 
         val (tlsCut, plainCut) = runBlocking(Dispatchers.IO) {
-            val first = async { timedFailure { tls.posted(context(tlsUpstream, tls = true), BIG_BODY) { "ok" } } }
+            val first =
+                async { timedFailure { tls.posted(context(tlsUpstream, tls = true, sends = 1), BIG_BODY) { "ok" } } }
             delay(HOLD_MS)
-            val second = async { timedFailure { plain.posted(context(plainUpstream), BIG_BODY) { "ok" } } }
+            val second = async { timedFailure { plain.posted(context(plainUpstream, sends = 1), BIG_BODY) { "ok" } } }
             awaitAll(first, second)
         }
 
@@ -235,11 +240,13 @@ class UpstreamClientWriteStallTest(@TempDir tmp: Path) {
         val missing = SendQueues { null }
         val tlsUpstream = upstream(then = Serving.Reads(0), tls = true)
         val plainUpstream = upstream(then = Serving.Reads(0))
-        val tls = client(attempts = 1, sockets = UpstreamSockets(trust = loopback.trust, queues = missing))
-        val plain = client(attempts = 1, totalMs = SHORT_TOTAL_MS, sockets = UpstreamSockets(queues = missing))
+        val tls = client(sockets = UpstreamSockets(trust = loopback.trust, queues = missing))
+        val plain = client(totalMs = SHORT_TOTAL_MS, sockets = UpstreamSockets(queues = missing))
 
-        val waiting = runBlocking { timedFailure { tls.posted(context(tlsUpstream, tls = true), BIG_BODY) { "ok" } } }
-        val buffered = runBlocking { timedFailure { plain.posted(context(plainUpstream), BUFFERED_BODY) { "ok" } } }
+        val waiting =
+            runBlocking { timedFailure { tls.posted(context(tlsUpstream, tls = true, sends = 1), BIG_BODY) { "ok" } } }
+        val buffered =
+            runBlocking { timedFailure { plain.posted(context(plainUpstream, sends = 1), BUFFERED_BODY) { "ok" } } }
 
         assertTrue(waiting.stalled && waiting.ms < HANG_BOUND_MS, "a waiting TLS write is cut: $waiting")
         assertTrue(!buffered.stalled && buffered.ms >= SHORT_TOTAL_MS, "no cut on a guess: $buffered")
@@ -286,7 +293,6 @@ class UpstreamClientWriteStallTest(@TempDir tmp: Path) {
     private data class Cut(val ms: Long, val stalled: Boolean, val thrown: String)
 
     private fun client(
-        attempts: Int = 2,
         totalMs: Long = TOTAL_MS,
         writeTimeoutMs: Long = WRITE_TIMEOUT_MS,
         sockets: UpstreamSockets = UpstreamSockets(),
@@ -294,19 +300,27 @@ class UpstreamClientWriteStallTest(@TempDir tmp: Path) {
     ) =
         UpstreamClient(
             totalTimeoutMs = totalMs,
-            maxRetries = attempts,
             client = UpstreamTransport().client(totalMs, LogSink {}, AtomicBoolean(true), writeBound, sockets),
             pacing = RetryPacing(waiter = RecordingWaiter()),
         )
 
-    private fun context(upstream: Upstream, retries: MutableList<String> = mutableListOf(), tls: Boolean = false) =
-        PostContext(
-            url = "${if (tls) "https" else "http"}://127.0.0.1:${upstream.port}/v1/messages",
-            auth = fakeAuth,
-            extraHeaders = { emptyMap() },
-            replies = Replies(OpenAiReplies),
-            observers = PostObservers(onRetry = RetryNotice { retries += it }),
-        )
+    /** A post that may make [sends] sends: the turn's wait holds RetryEngine's first 1 s wait for a stalled write when
+     *  two are allowed, and no wait at all when one is. */
+    private fun context(
+        upstream: Upstream,
+        retries: MutableList<String> = mutableListOf(),
+        tls: Boolean = false,
+        sends: Int = 2,
+    ) = PostContext(
+        url = "${if (tls) "https" else "http"}://127.0.0.1:${upstream.port}/v1/messages",
+        auth = fakeAuth,
+        extraHeaders = { emptyMap() },
+        replies = Replies(OpenAiReplies),
+        observers = PostObservers(onRetry = RetryNotice { retries += it }),
+        limits = PostLimits(
+            remainingTurnWait = RemainingTurnWait { if (sends == 1) UNREACHABLE_FIRST_WAIT_MS - 1 else ONE_WAIT_MS },
+        ),
+    )
 }
 
 /** What the upstream does on one connection. */

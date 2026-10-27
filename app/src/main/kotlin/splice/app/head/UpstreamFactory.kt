@@ -20,7 +20,6 @@ internal class UpstreamFactory {
         providerHold: ProviderHoldStore?,
     ): UpstreamClient = UpstreamClient(
         cfg.upstreamTimeoutMs,
-        cfg.upstreamRetries,
         // CX-03: zstd request bodies — a TOML quirk, absent = plaintext. A quirk and
         // not a hardcoded provider check for two reasons: the operator opts in per
         // provider (proven only for ChatGPT, by codex-cli itself; xAI 400d on a
@@ -36,9 +35,10 @@ internal class UpstreamFactory {
             requestWriteTimeoutMs = cfg.firstByteTimeoutMs,
             requestWriteBound = WriteBoundMs { ctx.faultPlan.liveWatchdog().firstByteTimeout.inWholeMilliseconds },
         ),
-        // V4-110 retry curve: read per head, at every retry, from the merged+normalized map (seeded with the Knob
-        // defaults, so absent config keeps the generic 200ms/10s/±10% curve).
-        pacing = RetryPacing(live = ctx.faultPlan.liveRetryCurve, liveRetries = ctx.faultPlan.liveRetries),
+        // V4-110 retry curve: read per head, at every pause of a round runner, from the merged+normalized map (seeded
+        // with the Knob defaults, so absent config keeps the generic 200ms/10s/±10% curve). The attempt loop's waits
+        // are RetryEngine's own (failure-handling slice 4).
+        pacing = RetryPacing(live = ctx.faultPlan.liveRetryCurve),
         holdStore = providerHold,
     )
 }

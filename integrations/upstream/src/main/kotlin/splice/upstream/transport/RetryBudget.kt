@@ -12,19 +12,9 @@ internal class RetryBudget(private val totalTimeoutMs: Long, private val clock: 
     fun turnWaitExhausted(ctx: PostContext): Boolean =
         ctx.limits.remainingTurnWait?.invoke()?.coerceAtLeast(0L) == 0L
 
-    /** Whether a backoff of [plannedDelayMs] fits what is left; false is said to the retry notice. */
-    fun backoffFits(ctx: PostContext, t0: Long, plannedDelayMs: Long): Boolean {
-        val remainingMs = remainingMs(ctx, t0)
-        val fits = plannedDelayMs < remainingMs
-        if (!fits) {
-            ctx.onRetry(
-                "upstream backoff up to ${plannedDelayMs}ms does not fit the remaining ${remainingMs}ms budget",
-            )
-        }
-        return fits
-    }
-
-    private fun remainingMs(ctx: PostContext, t0: Long): Long =
+    /** What a wait may still take: the turn's wait where a turn owns the post, else the client's own budget, never less
+     *  than nothing. RetryEngine ends a turn whose next wait does not fit it. */
+    fun leftMs(ctx: PostContext, t0: Long): Long =
         ctx.limits.remainingTurnWait?.invoke()?.coerceAtLeast(0L)
             ?: (totalTimeoutMs - (clock() - t0)).coerceAtLeast(0L)
 }

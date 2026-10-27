@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.upstream.Waiter
 import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
 
@@ -31,11 +32,10 @@ class UpstreamClientAmendTest {
         override suspend fun describe(): AuthDescription = AuthDescription(true, "fake", emptyMap())
     }
 
-    private fun clientOver(engine: MockEngine, maxRetries: Int = 3) = UpstreamClient(
+    private fun clientOver(engine: MockEngine) = UpstreamClient(
         totalTimeoutMs = 5_000,
-        maxRetries = maxRetries,
         client = HttpClient(engine),
-        pacing = RetryPacing(backoff = { _, _ -> }),
+        pacing = RetryPacing(waiter = Waiter { }),
     )
 
     private fun bodyOf(request: HttpRequestData): String =
@@ -56,14 +56,14 @@ class UpstreamClientAmendTest {
     ) { "ok" }
 
     @Test
-    fun `an amend on the LAST permitted attempt still sends the amended body`() = runTest {
+    fun `an amend after the turn already waited out two failures still sends the amended body`() = runTest {
         val bodies = mutableListOf<String>()
         val engine = MockEngine { request ->
             bodies += bodyOf(request)
             when {
-                // two retryable failures spend the attempt budget down to its last slot
+                // two overloads the turn waits out first
                 bodies.size <= 2 -> respond("overloaded", HttpStatusCode.ServiceUnavailable, headersOf())
-                // the deterministic content 400 lands exactly on attempt == maxRetries - 1
+                // then the deterministic content 400 the dialect amends
                 bodies.size == 3 -> respond(
                     """{"error":{"message":"invalid_encrypted_content"}}""",
                     HttpStatusCode.BadRequest,
@@ -72,13 +72,13 @@ class UpstreamClientAmendTest {
                 else -> respond("{}", HttpStatusCode.OK, headersOf())
             }
         }
-        val result = post(clientOver(engine, maxRetries = 3)) { status, text, _ ->
+        val result = post(clientOver(engine)) { status, text, _ ->
             // gate like the real provider hook: the 503s also flow through the amender
             val stale = status == HttpStatusCode.BadRequest.value && "encrypted_content" in text
             if (stale) """{"input":"amended"}""" else null
         }
         assertEquals("ok", result)
-        assertEquals(4, bodies.size, "the amended resend must go out even at the budget boundary")
+        assertEquals(4, bodies.size, "the amended resend goes out after the waits")
         assertEquals("""{"input":"amended"}""", bodies[3], "the resend carries the amended bytes")
         assertEquals(List(3) { """{"input":"original"}""" }, bodies.take(3))
     }

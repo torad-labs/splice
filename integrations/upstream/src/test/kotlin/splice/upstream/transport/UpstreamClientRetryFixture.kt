@@ -19,7 +19,8 @@ internal val fakeAuth = object : RefreshableAuthProvider {
 }
 
 internal class Capture {
-    val minDelays = mutableListOf<Long>()
+    /** Every wait the turn's retry steps asked for, in order (failure-handling slice 4: RetryEngine names each one). */
+    val waits = mutableListOf<Long>()
 }
 
 /** HD-19: the Waiter seam as a recorder. It captures what the PRODUCTION backoff lambda asked
@@ -34,7 +35,7 @@ internal class RecordingWaiter : Waiter {
     }
 }
 
-/** A client whose backoff lambdas are the SHIPPED defaults — only the wait is faked. */
+/** A client that takes RetryEngine's steps as shipped: only the wait is faked, and recorded. */
 
 internal fun clientOver(
     engine: MockEngine,
@@ -42,9 +43,8 @@ internal fun clientOver(
     clock: () -> Long = System::currentTimeMillis,
 ) = UpstreamClient(
     totalTimeoutMs = 5_000,
-    maxRetries = 3,
     client = HttpClient(engine),
-    pacing = RetryPacing(backoff = { _, minDelayMs -> capture.minDelays.add(minDelayMs) }),
+    pacing = RetryPacing(waiter = Waiter { ms -> capture.waits.add(ms) }),
     clock = clock,
 )
 

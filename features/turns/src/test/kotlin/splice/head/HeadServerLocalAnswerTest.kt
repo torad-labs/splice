@@ -82,7 +82,7 @@ class HeadServerLocalAnswerTest {
             listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
-                upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 1),
+                upstream = UpstreamClient(totalTimeoutMs = 30_000),
                 log = { lines += it },
             ),
         )

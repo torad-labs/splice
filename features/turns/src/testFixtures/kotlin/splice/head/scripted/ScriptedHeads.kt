@@ -75,8 +75,8 @@ public object ScriptedLogin {
 
 /**
  * The knobs a test may set on a head. [maxInflight] and [maxQueued] are the gate's limits, 0 for no limit, so a
- * head that refuses a third request is `HeadShape(maxInflight = 1, maxQueued = 1)`. [retries] is the upstream
- * client's attempt budget. [budget] is every watchdog tier and the upstream deadline: far longer than any test's
+ * head that refuses a third request is `HeadShape(maxInflight = 1, maxQueued = 1)`. How often a failure is sent again
+ * is RetryEngine's alone. [budget] is every watchdog tier and the upstream deadline: far longer than any test's
  * virtual wait, so no watchdog fires unless a test shortens it. [firstOutput] shortens only the tier a round is held
  * to before the client saw content, and [progressCap] only the whole turn's no-progress limit, so a test can make
  * one of them fire and not the other. [relayed] puts a [PathRelay] between the head and the provider.
@@ -84,7 +84,6 @@ public object ScriptedLogin {
 public data class HeadShape(
     val maxInflight: Int = 0,
     val maxQueued: Int = 0,
-    val retries: Int = 2,
     val budget: Duration = BUDGET_HOURS.hours,
     val firstOutput: Duration = budget,
     val progressCap: Duration = budget,
@@ -359,7 +358,6 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
         val liveTurns = LiveTurns(time.elapsed)
         val upstream = UpstreamClient(
             totalTimeoutMs = shape.budget.inWholeMilliseconds,
-            maxRetries = shape.retries,
             // The virtual wall clock dates each failed answer, so a recorded reset reads as its provider meant it.
             pacing = RetryPacing(waiter = time.waiter, wall = time.wall),
             clock = time.elapsed,

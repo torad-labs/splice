@@ -16,11 +16,16 @@ import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.auth.LoginAnswer
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.FailureCause
+import splice.core.failure.Lift
+import splice.core.failure.LiftSource
+import splice.core.failure.LimitWindow
 import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.core.wire.NativeReply
+import splice.upstream.Waiter
 import splice.upstream.failure.FailedReply
 import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.ProviderDeviation
@@ -30,6 +35,7 @@ import splice.upstream.retry.ProviderHold
 import splice.upstream.retry.RateLimitCooldown
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 
 private const val MS = 1_000L
@@ -44,21 +50,26 @@ class UpstreamClientProviderHoldRestartTest {
     }
 
     /** A provider whose 429 body names its spent plan window, as the ChatGPT backend's does (CodexReplies); its reader
-     *  reads it where the reply arrives, since failure-handling slice 3 (the login provider did until then). */
+     *  reads it where the reply arrives, since failure-handling slice 3 (the login provider did until then), and reads
+     *  the reply as the limit of that window, lifting at the reset it named, as CodexReplies.usageLimit does. */
     private val bodyPlan = Replies(
         OpenAiReplies,
         object : ProviderDeviation {
             override fun planLimit(reply: FailedReply): PlanLimit? =
                 Regex(""""resets_at":(\d+)""").find(reply.body)?.groupValues?.get(1)?.toLong()
                     ?.let { PlanLimit("seven_day", it) }
+
+            override fun http(reply: FailedReply): FailureCause.Provider? = planLimit(reply)?.let { plan ->
+                val lift = Lift.At(Instant.ofEpochSecond(plan.resetEpochSeconds), true, LiftSource.BODY)
+                FailureCause.Provider.Limited(lift, LimitWindow.WEEKLY)
+            }
         },
     )
 
     private fun client(dir: Path, engine: MockEngine, clock: ElapsedClock = ElapsedClock { 0L }) = UpstreamClient(
         totalTimeoutMs = 900_000L,
-        maxRetries = 4,
         client = HttpClient(engine),
-        pacing = RetryPacing(backoff = { _, _ -> }),
+        pacing = RetryPacing(waiter = Waiter { }),
         clock = clock,
         holdStore = FileProviderHoldStore(dir.resolve("hold.json"), LogSink { }),
     )

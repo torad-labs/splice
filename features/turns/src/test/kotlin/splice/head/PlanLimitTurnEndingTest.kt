@@ -146,7 +146,7 @@ private class LimitedHead(tmp: Path, upstreamBody: String, retryAfterSeconds: In
         listenPort = 0,
         deps = headDeps(
             tmp = tmp,
-            upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 1),
+            upstream = UpstreamClient(totalTimeoutMs = 30_000),
             gate = InflightGate(maxInflight = { 1 }, maxQueued = { 1 }),
             log = {},
         ).let { it.copy(stores = headStores(tmp, trace = trace)) },

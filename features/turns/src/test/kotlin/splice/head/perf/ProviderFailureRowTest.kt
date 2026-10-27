@@ -53,6 +53,8 @@ import splice.head.syntheticTraceStore
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
+import splice.upstream.Waiter
+import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
 import java.net.InetSocketAddress
 import java.nio.file.Files
@@ -140,7 +142,8 @@ private class FailingHead(tmp: Path, status: Int, body: String, keepsCapture: Bo
         listenPort = 0,
         deps = headDeps(
             tmp = tmp,
-            upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 1),
+            // The engine's waits are taken at once: a row is written for the ending a spent schedule leaves.
+            upstream = UpstreamClient(totalTimeoutMs = 30_000, pacing = RetryPacing(waiter = Waiter { })),
             log = {},
         ).let { it.copy(stores = headStores(tmp, trace = trace).copy(perfStats = PerfStats(perfFile))) },
     )

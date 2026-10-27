@@ -124,28 +124,31 @@ class AccountTurnSelectionTest(@param:TempDir private val root: Path) {
         }
     }
 
+    // Section 8: a login its provider refuses again after its renewal moves the turn to a free login before any byte.
+    // Here every login is refused, so the turn ends once each was renewed once, and each leaves the pool: the next turn
+    // finds no free login and is answered as an exhausted pool is.
     @Test
-    fun `terminal 401 keeps the current turn on one account and evicts it from the next turn`() = runTest {
+    fun `a 401 its renewal cannot cure moves the turn to the backup before any byte`() = runTest {
         val rig = AccountTurnRig(root)
         try {
             rig.start()
             rig.messages(scenario = "authfail").also { it.bodyAsText() }
             val next = rig.messages(scenario = "basic").also { it.bodyAsText() }
 
-            assertEquals(HttpStatusCode.OK, next.status)
             assertEquals(
-                listOf("Bearer primary-token", "Bearer primary-token", "Bearer backup-token"),
+                listOf("Bearer primary-token", "Bearer primary-token", "Bearer backup-token", "Bearer backup-token"),
                 rig.authHeaders(),
             )
-            assertEquals(listOf("primary-id", "primary-id", "backup-id"), rig.accountHeaders())
-            assertEquals("backup", rig.poolView().selectedLabel)
+            assertEquals(listOf("primary-id", "primary-id", "backup-id", "backup-id"), rig.accountHeaders())
+            assertEquals(HttpStatusCode.TooManyRequests, next.status, "no login is left free for the next turn")
         } finally {
             rig.close()
         }
     }
 
+    // Section 8: a renewal the token endpoint refuses moves the turn to a free login at once, before any byte.
     @Test
-    fun `failed refresh evicts the selected account only after its turn fails`() = runTest {
+    fun `a failed renewal moves the turn to the backup before any byte`() = runTest {
         val rig = AccountTurnRig(root)
         try {
             rig.start()
@@ -153,10 +156,12 @@ class AccountTurnSelectionTest(@param:TempDir private val root: Path) {
             rig.messages(scenario = "authfail").also { it.bodyAsText() }
             val next = rig.messages().also { it.bodyAsText() }
 
-            assertEquals(HttpStatusCode.OK, next.status)
-            assertEquals(listOf("Bearer primary-token", "Bearer backup-token"), rig.authHeaders())
-            assertEquals(listOf("primary-id", "backup-id"), rig.accountHeaders())
-            assertEquals("backup", rig.poolView().selectedLabel)
+            assertEquals(
+                listOf("Bearer primary-token", "Bearer backup-token", "Bearer backup-token"),
+                rig.authHeaders(),
+            )
+            assertEquals(listOf("primary-id", "backup-id", "backup-id"), rig.accountHeaders())
+            assertEquals(HttpStatusCode.TooManyRequests, next.status, "the backup was refused too: no login is free")
         } finally {
             rig.close()
         }
@@ -407,7 +412,7 @@ internal class AccountTurnRig(root: Path, private val credentialPresent: Boolean
         // or the swap stays invisible.
         deps = headDeps(
             tmp = tmp,
-            upstream = UpstreamClient(totalTimeoutMs = 30_000L, maxRetries = 2),
+            upstream = UpstreamClient(totalTimeoutMs = 30_000L),
             log = logs::add,
         ).copy(
             policy = HeadDeps.HeadPolicy(maxRequestBytes = { 2_048 }),

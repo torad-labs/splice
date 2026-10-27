@@ -118,7 +118,7 @@ class SessionFromMetadataTest {
 
     private fun dependencies(tmp: Path, versions: ClientVersionTracker) = headDeps(
         tmp = tmp,
-        upstream = UpstreamClient(totalTimeoutMs = 1_000, maxRetries = 1),
+        upstream = UpstreamClient(totalTimeoutMs = 1_000),
         gate = InflightGate({ 1 }),
         log = {},
         seams = HeadDeps.HeadSeams(clientVersions = versions),

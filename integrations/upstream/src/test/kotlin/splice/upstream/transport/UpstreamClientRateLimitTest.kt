@@ -19,8 +19,10 @@ import splice.core.auth.LoginAnswer
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.util.ElapsedClock
 import splice.upstream.StreamStart
+import splice.upstream.Waiter
 import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
+import splice.upstream.retry.BURST_WAITS
 import splice.upstream.retry.RateLimitCooldown
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -46,7 +48,6 @@ class NativeRateLimitHeadersTest {
             val http = HttpClient(engine)
             val client = UpstreamClient(
                 totalTimeoutMs = 30_000L,
-                maxRetries = 1,
                 client = http,
                 clock = ElapsedClock { elapsed },
             )
@@ -82,7 +83,7 @@ class NativeRateLimitHeadersTest {
     }
 
     @Test
-    fun `a native refusal waits out V4-61's floor, then relays its rate-limit headers verbatim`() = runTest {
+    fun `a native refusal past the floor ends at once and relays its rate-limit headers verbatim`() = runTest {
         val native = """{"type":"error","error":{"type":"rate_limit_error","message":"synthetic refusal"}}"""
         val retained = linkedMapOf(
             "Anthropic-Ratelimit-Requests-Limit" to listOf("50"),
@@ -97,7 +98,7 @@ class NativeRateLimitHeadersTest {
             "X-Should-Retry" to listOf("true", "false"),
         )
         var attempts = 0
-        val floors = mutableListOf<Long>()
+        val waiter = RecordingWaiter()
         val engine = MockEngine {
             attempts++
             respond(
@@ -108,9 +109,8 @@ class NativeRateLimitHeadersTest {
         }
         val client = UpstreamClient(
             totalTimeoutMs = 30_000L,
-            maxRetries = 4,
             client = HttpClient(engine),
-            pacing = RetryPacing(backoff = { _, floor -> floors += floor }),
+            pacing = RetryPacing(waiter = waiter),
             clock = ElapsedClock { 0L },
         )
         fun context() = PostContext(
@@ -123,8 +123,9 @@ class NativeRateLimitHeadersTest {
         assertEquals(429, failure.evidence.status)
         assertEquals(native, failure.evidence.body)
         assertEquals(retained, failure.native?.headers)
-        assertEquals(listOf(15_000L, 15_000L, 15_000L), floors, "a long Retry-After waits the 15s ceiling (V4-61)")
-        assertEquals(4, attempts, "the budget's four attempts")
+        // 60 s is past the 15 s floor: the turn is held to the stated reset, which ends it at once until slice 5 holds it.
+        assertEquals(emptyList<Long>(), waiter.waits, "a stated reset past the floor is not waited out on the turn")
+        assertEquals(1, attempts, "one send")
     }
 }
 
@@ -142,7 +143,7 @@ class UpstreamClientRateLimitTest {
                 HttpStatusCode.Forbidden,
             )
         }
-        val client = UpstreamClient(totalTimeoutMs = 30_000L, maxRetries = 1, client = HttpClient(engine))
+        val client = UpstreamClient(totalTimeoutMs = 30_000L, client = HttpClient(engine))
         val context = PostContext(
             "https://api.example.test/v1",
             fakeAuth,
@@ -172,8 +173,9 @@ class UpstreamClientRateLimitTest {
         }
         val client = UpstreamClient(
             totalTimeoutMs = 30_000L,
-            maxRetries = 1,
             client = HttpClient(engine),
+            // A bare 429 is waited out on the burst schedule (section 8); the waits are taken at once here.
+            pacing = RetryPacing(waiter = Waiter { }),
             clock = ElapsedClock { 0L },
         )
         fun context() = PostContext(
@@ -198,7 +200,11 @@ class UpstreamClientRateLimitTest {
         assertEnds<UpstreamFailed> { client.posted(observedContext(), "{}") { "unreachable" } }
         release.complete(Unit)
         assertEquals("ok", older.await())
-        assertEquals(listOf(200, 429), answers.map { it.first }, "completion is not a provider answer")
+        assertEquals(
+            listOf(200) + List(1 + BURST_WAITS) { 429 },
+            answers.map { it.first },
+            "every send of the refused post is an answer, and completion is not one",
+        )
         assertTrue(answers.all { it.second > 0L })
         assertTrue(answers[1].second >= answers[0].second)
         val kept = client.credentialCooldown(mapOf("x-api-key" to "k"))?.rateLimitReply
@@ -223,8 +229,8 @@ class UpstreamClientRateLimitTest {
         }
         val client = UpstreamClient(
             totalTimeoutMs = 30_000L,
-            maxRetries = 1,
             client = HttpClient(engine),
+            pacing = RetryPacing(waiter = Waiter { }),
             clock = ElapsedClock { 0L },
         )
         fun context(key: String) = PostContext(
@@ -253,42 +259,21 @@ class UpstreamClientRateLimitTest {
             again.evidence.body,
             "the refused credential's next turn hears the provider itself",
         )
-        assertEquals(listOf("synthetic-refused", "synthetic-healthy", "synthetic-new", "synthetic-refused"), sent)
+        // Each refused post is sent on the burst schedule (section 8) before it ends.
+        val refused = List(1 + BURST_WAITS) { "synthetic-refused" }
+        assertEquals(refused + listOf("synthetic-healthy", "synthetic-new") + refused, sent)
         assertEquals(
             listOf("synthetic-healthy", "synthetic-new"),
             accepted,
             "refusals never permit early stream progress",
         )
-        assertEquals(4, snapshots, "each attempt resolves headers once, and sends that snapshot")
+        assertEquals(sent.size, snapshots, "each attempt resolves headers once, and sends that snapshot")
     }
 
     @Test
-    fun `a long non-429 pushback does not block the observer's own retry`() = runTest {
+    fun `a non-429 with a wait past the floor ends at once, keeps its status and marks its login limited`() = runTest {
         var elapsed = 0L
-        val calls = AtomicInteger()
-        val engine = MockEngine {
-            if (calls.incrementAndGet() == 1) {
-                respond("server busy", HttpStatusCode.ServiceUnavailable, headersOf("Retry-After", "60"))
-            } else {
-                respond("recovered", HttpStatusCode.OK, headersOf())
-            }
-        }
-        val client = UpstreamClient(
-            totalTimeoutMs = 90_000L,
-            maxRetries = 2,
-            client = HttpClient(engine),
-            pacing = RetryPacing(backoff = { _, delay -> elapsed += delay }),
-            clock = ElapsedClock { elapsed },
-        )
-        assertEquals("ok", postOnce(client))
-        assertEquals(2, calls.get(), "the observer retries upstream, not a synthetic local 429")
-        assertEquals(15_000L, elapsed)
-        assertEquals(0L, client.rateLimitedForMs, "a recovered request leaves its login unlimited")
-    }
-
-    @Test
-    fun `an exhausted non-429 pushback preserves its status and marks its login limited`() = runTest {
-        var elapsed = 0L
+        val waits = mutableListOf<Long>()
         val calls = AtomicInteger()
         val engine = MockEngine {
             calls.incrementAndGet()
@@ -296,20 +281,25 @@ class UpstreamClientRateLimitTest {
         }
         val client = UpstreamClient(
             totalTimeoutMs = 90_000L,
-            maxRetries = 2,
             client = HttpClient(engine),
-            pacing = RetryPacing(backoff = { _, delay -> elapsed += delay }),
+            pacing = RetryPacing(
+                waiter = Waiter { ms ->
+                    waits += ms
+                    elapsed += ms
+                },
+            ),
             clock = ElapsedClock { elapsed },
         )
         val observer = assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(503, observer.evidence.status)
         assertEquals("server busy", observer.evidence.body)
-        assertEquals(2, calls.get())
+        assertEquals(1, calls.get(), "60 s is past the 15 s floor: held to it, which ends the turn at once")
+        assertEquals(emptyList<Long>(), waits)
         assertEquals(60_000L, client.rateLimitedForMs)
     }
 
     @Test
-    fun `non-pooled bare 429 retries every 15 seconds inside a 900 second budget, then arms`() = runTest {
+    fun `a non-pooled bare 429 is waited out on the burst schedule, then ends and arms`() = runTest {
         val calls = AtomicInteger()
         val capture = Capture()
         val engine = MockEngine {
@@ -318,14 +308,13 @@ class UpstreamClientRateLimitTest {
         }
         val client = UpstreamClient(
             totalTimeoutMs = 900_000L,
-            maxRetries = 3,
             client = HttpClient(engine),
-            pacing = RetryPacing(backoff = { _, minDelayMs -> capture.minDelays.add(minDelayMs) }),
+            pacing = RetryPacing(waiter = Waiter { ms -> capture.waits.add(ms) }),
             clock = ElapsedClock { 0L },
         )
         assertEnds<UpstreamFailed> { postOnce(client) }
-        assertEquals(3, calls.get(), "every attempt in the budget is spent before the turn fails")
-        assertEquals(listOf(15_000L, 15_000L), capture.minDelays, "the floor is 15s on every retry of a bare 429")
+        assertEquals(5, calls.get(), "one send, then one after each burst wait")
+        assertEquals(listOf(2_000L, 4_000L, 8_000L, 15_000L), capture.waits, "the burst schedule: 2, 4, 8 and 15 s")
         assertTrue(client.rateLimitedForMs > 0L, "exhaustion arms the horizon")
     }
 
@@ -341,7 +330,6 @@ class UpstreamClientRateLimitTest {
         val cooldown = RateLimitCooldown(ElapsedClock { 0L })
         val client = UpstreamClient(
             totalTimeoutMs = 5_000L,
-            maxRetries = 3,
             client = HttpClient(engine),
             pacing = RetryPacing(waiter = waiter),
             clock = ElapsedClock { 0L },
@@ -395,7 +383,7 @@ class UpstreamClientRateLimitTest {
         val client = clientOver(engine, capture, clock = { elapsed })
         assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(1, calls.get(), "saturated pushback must give up, not retry on a wrapped-negative floor")
-        assertTrue(capture.minDelays.isEmpty())
+        assertTrue(capture.waits.isEmpty())
         assertEquals(120_000L, client.rateLimitedForMs)
         elapsed += 121_000L
         assertEquals(0L, client.rateLimitedForMs, "the saturated horizon is bounded and expires")
@@ -415,7 +403,7 @@ class UpstreamClientRateLimitTest {
         }
         val client = clientOver(engine, clock = { now })
         assertEnds<UpstreamFailed> { postOnce(client) }
-        assertEquals(1, calls.get()) // V4-61: 15s retry does not fit the 5s harness budget; gives up armed
+        assertEquals(1, calls.get()) // 30 s is past the 15 s floor: held to it, which ends the turn at once, armed
         now += 20_000 // past the 20s no-header default but inside the served ~30s
         assertTrue(client.rateLimitedForMs > 0L, "a date-form pushback must arm its horizon, not the 20s guess")
         now += 20_000 // comfortably past the served horizon (margin for test wall-clock drift)
@@ -459,12 +447,12 @@ class UpstreamClientRateLimitTest {
             respond("""{"detail":"Rate limit exceeded"}""", HttpStatusCode.TooManyRequests, headersOf())
         }
         val client = clientOver(engine, clock = { now })
-        // V4-61: a 15s retry cannot fit the 5s harness budget, so the first post exits at once, ARMED
+        // The burst schedule's 2 s and 4 s fit the 5 s harness budget and its 8 s does not: three sends, then ARMED.
         assertEnds<UpstreamFailed> { postOnce(client) }
-        assertEquals(1, calls.get())
+        assertEquals(3, calls.get())
         assertEquals(20_000L, client.rateLimitedForMs, "no Retry-After: the 20s default")
         val next = assertEnds<UpstreamFailed> { postOnce(client) }
-        assertEquals(2, calls.get(), "the next post reaches the provider, held by nothing another post armed")
+        assertEquals(6, calls.get(), "the next post reaches the provider, held by nothing another post armed")
         assertEquals(429, next.evidence.status)
         assertEquals(
             """{"detail":"Rate limit exceeded"}""",
@@ -487,7 +475,7 @@ class UpstreamClientRateLimitTest {
         }
         val client = clientOver(engine, clock = { now })
         assertEnds<UpstreamFailed> { postOnce(client) }
-        assertEquals(1, calls.get()) // V4-61: 15s retry does not fit the 5s harness budget; gives up ARMED
+        assertEquals(1, calls.get()) // 30 s is past the 15 s floor: held to it, which ends the turn at once, ARMED
         assertEquals(30_000L, client.rateLimitedForMs, "the served 30s, verbatim")
         now += 25_000 // past the 20s default but inside the served 30s
         assertEquals(5_000L, client.rateLimitedForMs)

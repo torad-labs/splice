@@ -36,7 +36,11 @@ public class VirtualTime(
     private var passedMs = 0L
     private var closed = false
     private val sleepers = mutableListOf<Sleeper>()
+    private val alarms = mutableListOf<Alarm>()
     private val parked = MutableStateFlow(0)
+
+    /** Something a test does once the clock reads [dueMs]. */
+    private data class Alarm(val dueMs: Long, val action: () -> Unit)
 
     /** One parked wait: woken with true when the clock reaches its due time, with false when the clock closes. */
     private class Sleeper(private val dueMs: Long) {
@@ -65,6 +69,18 @@ public class VirtualTime(
 
     /** How far the clock has moved since it was made. */
     public fun passed(): Duration = read().milliseconds
+
+    /** Runs [action] once the clock reads [passed] since it was made, before any wait due then wakes, so a test changes
+     *  the world at a moment of virtual time: a server that comes back 43 s into a turn. Runs at once when the clock
+     *  is already there. */
+    public fun at(passed: Duration, action: () -> Unit) {
+        val now = synchronized(lock) {
+            (passedMs >= passed.inWholeMilliseconds).also { due ->
+                if (!due) alarms += Alarm(passed.inWholeMilliseconds, action)
+            }
+        }
+        if (now) action()
+    }
 
     /** Moves the clock forward and wakes every wait that is due. */
     public fun advanceBy(by: Duration) {
@@ -126,10 +142,12 @@ public class VirtualTime(
     }
 
     private fun advanceTo(targetMs: Long) {
-        val due = synchronized(lock) {
+        val (rung, due) = synchronized(lock) {
             if (targetMs > passedMs) passedMs = targetMs
-            sleepers.filter { it.isDue(passedMs) }.also { sleepers.removeAll(it) }
+            val rung = alarms.filter { it.dueMs <= passedMs }.also { alarms.removeAll(it) }
+            rung to sleepers.filter { it.isDue(passedMs) }.also { sleepers.removeAll(it) }
         }
+        rung.forEach { it.action() }
         due.forEach { it.wake(reached = true) }
     }
 }

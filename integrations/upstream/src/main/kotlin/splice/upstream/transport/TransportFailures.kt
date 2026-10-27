@@ -3,41 +3,22 @@
 // Throwable -> verdict, and nothing else: no state, no budgets, no clock (HD-25). Was the
 // classification half of UpstreamClient.Transport; only the receiver moved.
 //
-// What deliberately did NOT come along: `canReissueStream`. It reads three LOOP-BUDGET facts
-// (handoff, first-frame, re-issue count) and only ever sat here because its one helper
-// (isRetryableTransport) did — it now lives in RetryPolicy.kt with the rest of the loop's
-// decisions. The client CONSTRUCTION half is UpstreamTransport.kt.
+// What deliberately did NOT come along: `canReissueStream`, which read three LOOP-BUDGET facts. Failure-handling
+// slice 4: whether a failure is sent again is RetryEngine's alone, and this file only says which side of the write it
+// failed on ([TransportFailures.phaseOf]) and whether it is a tear ([TransportFailures.isRetryableTransport]). The
+// client CONSTRUCTION half is UpstreamTransport.kt.
 //
-// V4-66 (2026-09-16) — the ALLOWLIST still classifies; it no longer GATES the connect-phase
-// retry. [isRetryableTransport] and [classifyTransport] are unchanged, because stream REISSUE
-// (G5) and the DNS backoff schedule still ask them and a widened set there would re-issue a
-// stream on a failure nobody characterised. What changed is [rethrowUnlessRetryableTransport]:
-// an unclassified throwable used to rethrow on the first attempt with the whole budget unspent,
-// which is how a BARE java.io.IOException from the JDK header parser ("HTTP/1.1 header parser
-// received no bytes", measured live 2026-09-16 on claude-deepseek, attempts=1, 234ms) ended a
-// turn that a retry would have completed. The operator law is retry on any error with different
-// levels of retry and escalation plus backoff — V4-62 deleted the equivalent gate on the STATUS
-// side; this row deletes it here. The give-up gates are unchanged and still decide.
+// V4-66 (2026-09-16) — the ALLOWLIST still classifies; it never GATES a retry of a failure before the stream's
+// handoff. A BARE java.io.IOException from the JDK header parser ("HTTP/1.1 header parser received no bytes", measured
+// live 2026-09-16 on claude-deepseek, attempts=1, 234ms) used to end a turn that a retry would have completed.
 package splice.upstream.transport
 
 import splice.core.util.Cancellables
 import splice.core.util.WallClock
-import splice.upstream.DnsBackoff
 import splice.upstream.RetryBackoff
 import splice.upstream.Waiter
 import splice.upstream.codemode.ProcessWaiter
 import kotlin.coroutines.cancellation.CancellationException
-
-/**
- * A test applied to each link of a Throwable's cause chain — Ktor wraps engine exceptions, so the
- * class that decides "retryable transport" or "DNS" is never the one thrown.
- *
- * Shared so the retryable-transport and DNS-only rules do not each re-walk the chain, and so the
- * MAX_CAUSE_DEPTH bound is written once rather than trusted twice.
- */
-public fun interface CausePredicate {
-    public operator fun invoke(cause: Throwable): Boolean
-}
 
 /** G16: which side of the request write the transport failure happened on — CONNECT never
  *  got a byte onto the wire (DNS/refused/connect-timeout), or (V4-272) stalled before the body's
@@ -66,12 +47,6 @@ internal class TransportFailures {
      *  that decides "retryable transport" or "DNS" is never the one thrown. Every rule below reads the
      *  links through this one, lazily, so the phase and DNS rules cannot drift apart. */
     private fun causeChain(e: Throwable): Sequence<Throwable> = FailureChain.links(e)
-
-    /** Does any link of the chain satisfy [predicate]? The boolean special case of the same
-     *  walk [classifyTransport] maps over — the loop used to be written out twice, and the
-     *  copy drifted no further than luck. */
-    private fun causeChainMatches(e: Throwable, predicate: CausePredicate): Boolean =
-        causeChain(e).any { predicate(it) }
 
     /** Per-node classification, split out of [classifyTransport] so the loop shape and the
      *  allowlist `when` each stay under detekt's CyclomaticComplexMethod ceiling. */
@@ -111,49 +86,13 @@ internal class TransportFailures {
      */
     internal fun isRetryableTransport(e: Throwable): Boolean = classifyTransport(e) != null
 
-    /** DNS-class only (name resolution never got an address) — a real resolver blip runs
-     *  closer to 1-4s than a TCP refusal, so it gets its own schedule instead of racing the
-     *  generic curve (G14; Envoy dns_failure_refresh_rate shape). */
-    internal fun isDnsFailureTransport(e: Throwable): Boolean = causeChainMatches(e) { t ->
-        t is java.nio.channels.UnresolvedAddressException || t is java.net.UnknownHostException
-    }
-
-    /** A transport error thrown BEFORE stream handoff retries; once handed off, past the
-     *  deadline, or on the last attempt, rethrow. [deadlineHit] folds stream-handoff and the
-     *  loop's own deadlineExceeded — this file does not own the clock, and that fold is what
-     *  keeps a torn stream AFTER the client saw bytes from ever being re-POSTed here (duplicate
-     *  output is the one failure a retry must not manufacture). Returns the surviving phase so
-     *  the caller can label POST_SEND (G16 possible-duplicate).
-     *
-     *  V4-66: THE CLASS NO LONGER DECIDES. Every throwable that reaches this seam is retryable
-     *  once the two give-up gates above have declined, and an UNCLASSIFIED one is POST_SEND —
-     *  the conservative half, because this seam cannot see whether the request reached the
-     *  wire, so the honest label is "this retry may double-burn". The alternative that shipped
-     *  until today — `classifyTransport(e) ?: throw e` — made a six-name allowlist the gate on a
-     *  budget it was never meant to gate: the set answers "which failures may be RE-ISSUED as a
-     *  stream", and a bare IOException is not evidence about that question at all.
-     *
-     *  Cancellation is not weather. It is checked FIRST, so a cancelled turn aborts even with a
-     *  full budget and can never become a retry — the transport path cannot currently deliver one
-     *  (Cancellables.runCatchingCancellable captures IOException, SerializationException and
-     *  IllegalArgumentException only, so a CancellationException propagates before this seam),
-     *  which is exactly why the guard is written here rather than assumed from the call site.
-     *
-     *  WHAT ACTUALLY REACHES THIS SEAM, read from that catch list rather than assumed: an
-     *  IOException, a SerializationException (a truncated or malformed upstream body — weather,
-     *  and now retried, which is the point), and an IllegalArgumentException (a bad base_url
-     *  parse — permanent, and the whole default budget costs about 1.5s on the 200ms doubling
-     *  curve to discover, which is V4-62's own trade). Everything else — an IllegalState, an NPE,
-     *  any other RuntimeException — is never captured at all and still fails the turn on attempt
-     *  one, unchanged: retrying our own defects three times was never the law's intent. */
-    internal fun rethrowUnlessRetryableTransport(
-        e: Throwable,
-        deadlineHit: Boolean,
-        lastAttempt: Boolean,
-    ): TransportFailurePhase {
+    /** Which side of the write [e] failed on, for the log's label (G16). V4-66: an UNCLASSIFIED failure is POST_SEND,
+     *  the conservative half, because this seam cannot see whether the request reached the wire, so the honest label
+     *  is "this retry may double-burn". Cancellation is not weather: it is rethrown, so a cancelled turn can never
+     *  become a retry. Whether the failure is sent again is RetryEngine's, which reads it as a path that did not
+     *  answer (TransportFaults). */
+    internal fun phaseOf(e: Throwable): TransportFailurePhase {
         if (e is CancellationException) throw e
-        val giveUp = deadlineHit || lastAttempt
-        if (giveUp) throw e
         return classifyTransport(e) ?: TransportFailurePhase.POST_SEND
     }
 
@@ -164,78 +103,46 @@ internal class TransportFailures {
 }
 
 internal const val MAX_CAUSE_DEPTH = 8
-// How a client paces its retries (default-parameter width flip, 2026-10-09): the curve its deadline check
-// budgets against and the two sleeps that follow it. It sits with the transport failures it paces, and
-// it answers the two questions the client asks: how long may this wait run, and sleep it.
+// How a client waits (default-parameter width flip, 2026-10-09). Failure-handling slice 4: RetryEngine says how long
+// each wait is; this is where a post with no turn around it sleeps it, and the curve the head's round runners still
+// pause on until they take the engine's steps too.
 
 /** The generic retry curve: a doubling delay from [baseMs] capped at [capMs], widened by [jitterPct]. The defaults READ
- *  UpstreamTransport's public curve constants, so the ceiling a client budgets against and the schedule
- *  [UpstreamTransport.defaultBackoff] sleeps cannot drift. */
+ *  UpstreamTransport's public curve constants, so the curve a runner pauses on and
+ *  [UpstreamTransport.defaultBackoff]'s cannot drift. */
 public data class BackoffCurve(
     val baseMs: Long = defaultBackoffBaseMs,
     val capMs: Long = defaultBackoffCapMs,
     val jitterPct: Int = defaultJitterPct,
-) {
-    /** Conservative ceiling of the shipped generic or DNS jittered curve after [attempt] doublings. */
-    internal fun ceilingMs(attempt: Int, fromMs: Long = baseMs, toMs: Long = capMs): Long {
-        var currentMs = fromMs
-        repeat(attempt.coerceAtLeast(0)) {
-            currentMs = if (currentMs > toMs / 2) toMs else currentMs * 2
-        }
-        return currentMs * (100 + jitterPct) / 100
-    }
-}
+)
 
 /** The retry curve as the operator's knobs (retryBackoffBaseMs, retryBackoffCapMs, retryBackoffJitterPct) say it is now,
- *  asked at each sleep and each deadline check, so a PATCH governs the next retry and not only the next restart. */
+ *  asked at each sleep, so a PATCH governs the next retry and not only the next restart. */
 public fun interface LiveRetryCurve {
     public operator fun invoke(): BackoffCurve
 }
 
-/** The tries a request gets (upstreamRetries) as the operator's knob says it is now, asked once as each request
- *  begins, so a PATCH governs the next request and a request in flight keeps the bound it started with. */
-public fun interface LiveRetries {
-    public operator fun invoke(): Int
-}
-
-/** How one client sleeps between attempts: the [curve] its deadline check budgets against, and the two sleeps that
- *  follow it. HD-19: both sleeps go through [waiter], so a test replaces the WAIT without re-authoring the CURVE it
- *  is measuring, and a recording waiter turns the 200/400/800ms schedule into an assertion on a list. Known errors
- *  keep their specific plans (DNS 1s/2s/4s, 429 Retry-After); this is the bounded floor everything
- *  unpredicted falls on. */
+/** How one client sleeps. HD-19: every sleep goes through [waiter], so a test replaces the WAIT without re-authoring
+ *  what decides it, and a recording waiter turns a schedule into an assertion on a list. */
 public class RetryPacing(
     curve: BackoffCurve = BackoffCurve(),
-    waiter: Waiter = ProcessWaiter(),
+    private val waiter: Waiter = ProcessWaiter(),
     /** The curve read at every use; the fixed [curve] when no knob is live. */
     private val live: LiveRetryCurve = LiveRetryCurve { curve },
     private val backoff: RetryBackoff = UpstreamTransport().liveBackoff(waiter, live),
-    private val dnsBackoff: DnsBackoff = UpstreamTransport().liveDnsBackoff(waiter, live),
-    /** The tries a request gets, read once as it begins; null keeps the client's own fixed bound. */
-    private val liveRetries: LiveRetries? = null,
     /** The wall clock this client dates a failed answer by (failure-handling slice 3): a Retry-After date or a reset a
      *  provider names is read against the instant the answer came, and so is the hold it arms. One clock, so a head
      *  on a test's virtual time reads a recorded reset as the provider meant it. */
     internal val wall: WallClock = WallClock(System::currentTimeMillis),
 ) {
-    /** The bound a request that begins now runs under: the live knob, else the client's [fixed] one. */
-    internal fun triesFor(fixed: Int): Int = liveRetries?.invoke() ?: fixed
-
-    /** The longest an ordinary retry can sleep: the curve ceiling, or the server minimum when that is larger. */
-    internal fun ordinaryDelayMs(attempt: Int, serverMinMs: Long): Long = maxOf(serverMinMs, live().ceilingMs(attempt))
-
-    /** The longest a transport failure can sleep: DNS failures follow their own 1s/2s/4s plan, the rest the curve. */
-    internal fun transportDelayMs(attempt: Int, dns: Boolean): Long =
-        live().let { now ->
-            if (dns) now.ceilingMs(attempt, DNS_BACKOFF_BASE_MS, DNS_MAX_BACKOFF_MS) else now.ceilingMs(attempt)
-        }
-
-    /** Sleeps the ordinary retry delay: the curve for [attempt], or the server's own minimum when it asks for more. */
-    internal suspend fun pause(attempt: Int, serverMinMs: Long) {
-        backoff(attempt, serverMinMs)
+    /** Sleeps a wait RetryEngine named, for a post with no turn around it. */
+    internal suspend fun wait(ms: Long) {
+        waiter.wait(ms)
     }
 
-    /** Sleeps after a transport failure (G14): DNS-class failures run the dedicated 1s/2s/4s schedule, the rest the curve. */
-    internal suspend fun pauseAfterTransportError(attempt: Int, dns: Boolean) {
-        if (dns) dnsBackoff(attempt) else backoff(attempt, 0L)
+    /** Sleeps the curve's delay for [attempt], or the server's own minimum when it asks for more: the round runners'
+     *  pause until they take RetryEngine's steps. */
+    internal suspend fun pause(attempt: Int, serverMinMs: Long) {
+        backoff(attempt, serverMinMs)
     }
 }

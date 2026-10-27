@@ -218,7 +218,7 @@ class HeadServerPacedReleaseTest {
                 quirks = PassthroughQuirks(providerTag = "neutral"),
             ),
             listenPort = 0,
-            deps = headDeps(tmp, upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 1)),
+            deps = headDeps(tmp, upstream = UpstreamClient(totalTimeoutMs = 30_000)),
         )
         runBlocking { head.start() }
     }

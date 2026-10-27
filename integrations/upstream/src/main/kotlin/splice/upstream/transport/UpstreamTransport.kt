@@ -37,7 +37,6 @@ import okhttp3.Dispatcher
 import okhttp3.Protocol
 import splice.core.config.Knob
 import splice.core.util.LogSink
-import splice.upstream.DnsBackoff
 import splice.upstream.ProviderProbe
 import splice.upstream.RetryBackoff
 import splice.upstream.Waiter
@@ -212,12 +211,6 @@ public class UpstreamTransport {
         waiter.wait(maxOf((base * jitterMultiplier(now.jitterPct)).toLong(), minDelayMs))
     }
 
-    /** [defaultDnsBackoff] with the jitter read at every sleep. */
-    public fun liveDnsBackoff(waiter: Waiter, curve: LiveRetryCurve): DnsBackoff = DnsBackoff { attempt ->
-        val base = cappedExponentialBase(DNS_BACKOFF_BASE_MS, DNS_MAX_BACKOFF_MS, attempt)
-        waiter.wait((base * jitterMultiplier(curve().jitterPct)).toLong())
-    }
-
     /**
      * V4-125 fallback: an OUT-OF-BAND reachability probe for [Watchdog], used when a round has sat
      * past its idle tier and the socket itself cannot say whether anyone is still there.
@@ -270,19 +263,7 @@ public class UpstreamTransport {
         return InetSocketAddress(host, port)
     }
 
-    /** DNS-class transport failures (G14) get their own 1s/2s/4s schedule — a real resolver
-     *  blip (kimi 07:00 burst: 37 UnresolvedAddressException turns) runs longer than the
-     *  generic 200/400/800ms curve undershoots. No minDelayMs — transport errors never carry
-     *  a Retry-After header (no response was received). Shares the jitter knob with the generic
-     *  curve so the budget check and the sleep cannot drift apart. */
-    public fun defaultDnsBackoff(waiter: Waiter, jitterPct: Int = defaultJitterPct): DnsBackoff =
-        DnsBackoff { attempt ->
-            val base = cappedExponentialBase(DNS_BACKOFF_BASE_MS, DNS_MAX_BACKOFF_MS, attempt)
-            val jittered = (base * jitterMultiplier(jitterPct)).toLong()
-            waiter.wait(jittered)
-        }
-
-    /** A multiplier in [1 - pct/100, 1 + pct/100) — the shared jitter range for both curves. Zero
+    /** A multiplier in [1 - pct/100, 1 + pct/100) — the jitter range of the curve. Zero
      *  jitter is the exact multiplier, never a zero-width Random range (which would throw). */
     private fun jitterMultiplier(pct: Int): Double =
         if (pct == 0) 1.0 else Random.nextDouble((100 - pct) / 100.0, (100 + pct) / 100.0)
@@ -342,12 +323,10 @@ private const val DEFAULT_HTTP_PORT = 80
 // V4-210: the generic curve's three READ the Knob. Knob.RETRY_BACKOFF_* is what an operator sets and
 // what UpstreamFactory hands every production head, so a const re-typing its default was a second
 // source for the same 200ms / 10s / ±10% — const-single-source's KNOB-SHADOW names the base once it
-// reads a default written by name. The two DNS numbers have no knob and stay the one source they were.
+// reads a default written by name.
 internal val defaultBackoffBaseMs: Long = Knob.RETRY_BACKOFF_BASE_MS.count()
 internal val defaultBackoffCapMs: Long = Knob.RETRY_BACKOFF_CAP_MS.count()
 internal val defaultJitterPct: Int = Knob.RETRY_BACKOFF_JITTER_PCT.count().toInt()
-internal const val DNS_BACKOFF_BASE_MS: Long = 1_000L
-internal const val DNS_MAX_BACKOFF_MS: Long = 4_000L
 
 // V4-141: the in-flight ceiling for OkHttp's Dispatcher, total and per host — the same number the
 // load test drives (1000 streams against one mock host), with headroom. It replaces a default of 5

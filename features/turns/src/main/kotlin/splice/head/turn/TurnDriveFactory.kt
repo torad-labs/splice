@@ -12,10 +12,13 @@ import splice.core.perf.PerfKeys
 import splice.head.HeadDeps
 import splice.head.HeadHealthCounters
 import splice.head.admission.KeyNaming
+import splice.head.hold.TurnWaitsAtHead
 import splice.head.transport.TurnAccountHandoff
 import splice.head.wire.ClientChannel
 import splice.head.wire.TurnTerminal
 import splice.upstream.Provider
+import splice.upstream.TurnRetry
+import splice.upstream.retry.RetryLedger
 import splice.upstream.retry.TurnWatchdog
 import splice.upstream.transport.RemainingTurnWait
 
@@ -74,6 +77,9 @@ internal class TurnDriveFactory(
             drive.accountLabel.names = deps.quotaBundle.credentialAccountNames
             drive.accountHandoff = deps.quotaBundle.activePool?.let { TurnAccountHandoff(it, deps.turnQuota) }
             drive.route = provider.route(meta)
+            // One ledger for the turn's every post, its waits where the head's client sleeps a retry, told on the turn's
+            // own wire.
+            drive.retry = TurnRetry(RetryLedger(), TurnWaitsAtHead(deps.traffic.upstream.retryWaiter, emitter))
             drive.sourceRoundStarted =
                 TurnDrive.SourceRoundStarted { job -> deps.traffic.liveTurns.driving(inputs.slot.held, job) }
         }

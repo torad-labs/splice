@@ -20,6 +20,10 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.FailureCause
+import splice.core.failure.Lift
+import splice.core.failure.LiftSource
+import splice.core.failure.LimitWindow
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
@@ -31,13 +35,16 @@ import splice.dialect.responses.failure.ResponsesReplies
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
+import splice.upstream.Waiter
 import splice.upstream.failure.FailedReply
 import splice.upstream.failure.ProviderDeviation
 import splice.upstream.failure.Replies
+import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.time.Duration.Companion.seconds
 
@@ -51,10 +58,16 @@ private class SyntheticAuth : RefreshableAuthProvider {
     override suspend fun describe(): AuthDescription = AuthDescription(true, "synthetic")
 }
 
-/** The head's reader names the plan body's spent window, as a body-reading provider's does (CodexReplies). */
+/** The head's reader names the plan body's spent window, as a body-reading provider's does (CodexReplies), and reads
+ *  the reply as the limit of that window, lifting at the reset it named. */
 private object PlanBodyReader : ProviderDeviation {
     override fun planLimit(reply: FailedReply): PlanLimit? =
         if (reply.body == PLAN_BODY) PlanLimit("seven_day", reply.answeredAt.epochSecond + 86_400) else null
+
+    override fun http(reply: FailedReply): FailureCause.Provider? = planLimit(reply)?.let { plan ->
+        val lift = Lift.At(Instant.ofEpochSecond(plan.resetEpochSeconds), true, LiftSource.BODY)
+        FailureCause.Provider.Limited(lift, LimitWindow.WEEKLY)
+    }
 }
 
 private class FailedHead(tmp: Path, status: Int, body: String) {
@@ -91,7 +104,8 @@ private class FailedHead(tmp: Path, status: Int, body: String) {
         listenPort = 0,
         deps = headDeps(
             tmp = tmp,
-            upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 1),
+            // The engine's waits are taken at once: this case is about the ending a spent schedule records.
+            upstream = UpstreamClient(totalTimeoutMs = 30_000, pacing = RetryPacing(waiter = Waiter { })),
             log = { logs.add(it) },
         ),
     )

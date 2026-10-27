@@ -188,7 +188,7 @@ class RetryReasonDeliveryTest {
 
     private suspend fun messages(
         scenario: String,
-        upstream: UpstreamClient = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2),
+        upstream: UpstreamClient = UpstreamClient(totalTimeoutMs = 30_000),
         baseUrl: String? = null,
         expectedStatus: Int? = null,
         laterTurn: Boolean = false,

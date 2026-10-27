@@ -6,6 +6,7 @@ package splice.head.transport
 import kotlinx.coroutines.flow.emptyFlow
 import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
+import splice.core.failure.FailureCause
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
@@ -24,6 +25,7 @@ import splice.upstream.transport.PostObservers
 import splice.upstream.transport.PostRecovery
 import splice.upstream.transport.PreparedPost
 import splice.upstream.transport.UpstreamClient
+import splice.upstream.transport.UpstreamFailed
 import splice.upstream.transport.UpstreamPost
 
 internal class SseRoundPost(
@@ -71,17 +73,22 @@ internal class SseRoundPost(
             val result = when (val posted = postAccount(inputs, prepared)) {
                 is UpstreamPost.Delivered -> RoundResult.Outcome(posted.value)
                 // A refusal the account handoff can answer posts again, on the account it moved to.
-                is UpstreamPost.Refused ->
-                    if (inputs.drive.accountHandoff?.moveAwaitingEvidence(inputs.drive) == true) {
-                        null
-                    } else {
-                        RoundResult.Ended(posted.failure)
-                    }
+                is UpstreamPost.Refused -> moved(inputs, posted.failure)
                 is UpstreamPost.Ended -> RoundResult.Ended(posted.ending)
                 UpstreamPost.TurnWaitExhausted -> RoundResult.Outcome(waitExhausted(inputs))
             }
             if (result != null) return result
         }
+    }
+
+    /** Null once the account handoff moved the turn to another account, which the round is posted on again. A login
+     *  its provider refused after its renewal leaves the pool first, as a turn ending on it would (SealedDrive), so
+     *  the turns after this one do not start on it; marked while its lease is the current one, since a lease the
+     *  handoff released marks nothing. Where no account is free, the round ends on [failure]. */
+    private suspend fun moved(inputs: WsRoundInputs, failure: UpstreamFailed): RoundResult? {
+        if (failure.cause is FailureCause.Provider.AuthRejected) inputs.drive.account?.markCredentialUnavailable()
+        val moved = inputs.drive.accountHandoff?.moveAwaitingEvidence(inputs.drive) == true
+        return if (moved) null else RoundResult.Ended(failure)
     }
 
     private suspend fun postAccount(inputs: WsRoundInputs, prepared: PreparedPost): UpstreamPost<TurnOutcome> {
@@ -115,6 +122,8 @@ internal class SseRoundPost(
                     // A warm session waits a rate limit out on its login rather than rebuild its cache elsewhere, in
                     // one budget the turn shares with admission and its other posts.
                     warmWait = selection?.warmWait,
+                    // The turn's one ledger, which every post of the turn spends, and its waits at the head.
+                    retry = drive.retry,
                 ),
             ).also { context ->
                 context.providerAnswerObserver = answers

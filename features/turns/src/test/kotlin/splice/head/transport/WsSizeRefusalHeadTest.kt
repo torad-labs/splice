@@ -48,7 +48,6 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.seconds
 
 private const val BAD_REQUEST = 400
-private const val RETRIES = 3
 
 /** The Responses runner's contract, and nothing else: an attempt whose peer closed 1009 before any event counts
  *  the refusal on the turn and rides SSE (WsSizeRefusalCountTest pins the real runner to it). [refuses] false is a
@@ -125,7 +124,7 @@ class WsSizeRefusalHeadTest(@param:TempDir private val tmp: Path) {
             listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
-                upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = RETRIES),
+                upstream = UpstreamClient(totalTimeoutMs = 30_000),
                 seams = HeadDeps.HeadSeams(requestMaterializationGate = RequestMaterializationGate()),
             ).copy(stores = headStores(tmp, suffix = "-${++built}")),
         )

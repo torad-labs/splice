@@ -128,7 +128,7 @@ class SlotPromptTurnTest {
     private fun turn(headMode: SystemPromptMode): Pair<BuiltTurn, Map<String, Long>> {
         val deps = headDeps(
             tmp = tmp,
-            upstream = UpstreamClient(totalTimeoutMs = 1_000, maxRetries = 1),
+            upstream = UpstreamClient(totalTimeoutMs = 1_000),
             gate = InflightGate({ 1 }),
             seams = HeadDeps.HeadSeams(session = HeadDeps.SessionSeams(slotInstructions = slots)),
         ).copy(

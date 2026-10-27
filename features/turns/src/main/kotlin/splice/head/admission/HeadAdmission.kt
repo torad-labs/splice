@@ -8,10 +8,12 @@ package splice.head.admission
 
 import io.ktor.server.application.ApplicationCall
 import splice.core.auth.CredentialKey
+import splice.core.failure.EndingHeard
 import splice.core.failure.RequestFacts
 import splice.core.turn.LiveWatchdogBudget
 import splice.core.util.WallClock
 import splice.head.HeadDeps
+import splice.head.hold.ResendLedger
 import splice.head.turn.Preparation
 import splice.head.turn.SESSION_TAG_CHARS
 import splice.head.turn.TurnAccountQuota
@@ -38,6 +40,10 @@ internal class HeadAdmission(
     private val keyAccounts = KeyAccount(preparation.provider.auth, deps.quotaBundle)
     private val exhaustedAccounts = ExhaustedAccountAdmission(deps, responses, driver, wallClock)
     private val refusals = PreDriveRefusals(deps, admission, responses, driver)
+
+    // Failure-handling slice 4: the requests whose turn ended with an answer Claude Code sends again, so the identical
+    // request after one is told as its re-send (RequestFacts.repeated) and ends for good if it fails the same way.
+    private val resends = ResendLedger(deps.seams.clock)
 
     fun arrivalTime(): Long = telemetry.arrivalTime()
 
@@ -194,6 +200,15 @@ internal class HeadAdmission(
         }
         if (oversized) return
         admitted.retainRequest()
+        val scope = prepared.built.meta.scope
+        val facts = RequestFacts(
+            compaction = prepared.built.meta.compact,
+            firstExchange = !prepared.hasPriorExchange,
+            repeated = resends.repeated(scope.sessionId, scope.messagesHash),
+        )
+        val heard = EndingHeard { answer ->
+            if (answer.clientResends) resends.endedForResend(scope.sessionId, scope.messagesHash)
+        }
         val inputs = TurnInputs(
             prepared.built,
             TurnSlot(admitted.slot) { admitted.markHandedOff() },
@@ -201,9 +216,7 @@ internal class HeadAdmission(
             admitted.perf,
             trace = trace,
             accountQuota = running,
-            voice = driver.voice.turn(
-                RequestFacts(compaction = prepared.built.meta.compact, firstExchange = !prepared.hasPriorExchange),
-            ),
+            voice = driver.voice.turn(facts, heard),
         )
         if (prepared.stream) driver.stream(call, inputs) else driver.collect(call, inputs)
     }

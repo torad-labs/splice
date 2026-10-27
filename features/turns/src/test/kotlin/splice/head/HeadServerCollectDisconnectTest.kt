@@ -83,7 +83,6 @@ class HeadServerCollectDisconnectTest {
                 tmp = tmp,
                 upstream = UpstreamClient(
                     totalTimeoutMs = 900_000,
-                    maxRetries = 2,
                 ),
                 gate = gate,
                 log = {},

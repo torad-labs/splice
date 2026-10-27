@@ -1,17 +1,17 @@
 // NEW: the retry loop's own vocabulary: one post's mutable state across attempts, and the step each attempt
 // returns. Split from UpstreamClient.kt, which runs the loop; private there, internal here so the loop can read it.
+// Failure-handling slice 4: the state keeps no budget of its own. Every count a retry spends is the turn's one
+// RetryLedger, which RetryEngine reads, so a post and a round of the same turn spend one budget.
 package splice.upstream.transport
 
 import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.util.ElapsedClock
 import splice.upstream.RoundBody
+import splice.upstream.TurnRetry
 import splice.upstream.retry.CredentialCooldowns
-import splice.upstream.retry.RETRY_AFTER_GIVE_UP_MS
 import splice.upstream.retry.RateLimitCooldown
-import splice.upstream.retry.RetryDecision
-import splice.upstream.retry.RetryPlan
-import splice.upstream.retry.RetryRules
+import splice.upstream.retry.RetryLedger
 import splice.upstream.sse.AttemptRecorder
 
 internal enum class RetryKind { ORDINARY, POST_SEND }
@@ -22,41 +22,24 @@ internal fun interface RequestBodyFromRound {
     operator fun invoke(round: RoundBody): RequestBody
 }
 
-/** Mutable loop state threaded through UpstreamClient.runAttempt — extracted (with it) so `post()` stays
- *  under detekt's LongMethod/CyclomaticComplexMethod ceilings (G4d follow-up to bb8553f). [t0] is when the
- *  post began, the start of its deadline. */
-internal class RetryState(var cooldown: RateLimitCooldown, val t0: Long, val maxRetries: Int) {
-    /** The rules for THIS request's bound. */
-    val rules = RetryRules(maxRetries)
+/** One post's state across its attempts. [t0] is when the post began, the start of its deadline; [retry] is the turn's
+ *  ledger and waits. */
+internal class RetryState(var cooldown: RateLimitCooldown, val t0: Long, val retry: TurnRetry) {
+    val ledger: RetryLedger get() = retry.ledger
 
-    /** The loop's own give-up: the last failure it saw, with the login marked limited. A pooled login's 429 that
-     *  waiting cannot fix is handed back, so the account handoff moves the turn to another login before any byte
-     *  reaches the client (§11's Oct deviation), for a translated pool as for the native one. */
-    fun gaveUp(ctx: PostContext, rules: RetryRules): LoopStep<Nothing> {
-        val failure = rules.giveUp(lastErr, cooldown, attempt, ctx.onRetry, refreshedOnce)
-        val refused = ctx.pooled && lastErr?.waitCannotHelp() == true
-        return LoopStep.Done(if (refused) UpstreamPost.Refused(failure) else UpstreamPost.Ended(failure))
-    }
-
-    /** What is left of the turn's one wait on a warm session's login, whatever the turn's earlier posts already spent
-     *  of it; 0 for a cold session. */
-    fun warmWaitLeftMs(ctx: PostContext): Long = ctx.limits.warmWait?.leftMs() ?: 0L
-
-    /** The longest one 429's pushback is waited out on this login: the 15s ceiling, or a warm session's wait left. */
-    fun sameLoginWaitMs(ctx: PostContext): Long = maxOf(warmWaitLeftMs(ctx), RETRY_AFTER_GIVE_UP_MS)
-
-    /** A 429 backoff spends the warm session's wait on its login. */
-    fun countWait(ctx: PostContext, failed: RetryOutcome.Failed, plan: RetryPlan) {
-        if (failed.limited && plan.decision == RetryDecision.BACKOFF) {
-            ctx.limits.warmWait?.spend(plan.minDelayMs)
-        }
-    }
-
-    var attempt: Int = 0
-    var refreshedOnce: Boolean = false
+    /** The last answer a send of this post failed with, which the post ends with when it gives up. */
     var lastErr: RetryOutcome.Failed? = null
 
-    // A retry plan counts only when dispatch survives the next attempt's budget, auth and hold checks.
+    /** The last failure a send met before any answer when it is the newest: a transport error [lastThrown], or a
+     *  stream torn before the client saw a frame [lastTear]. A post whose time runs out after it ends with that
+     *  failure, as one the engine ended would. */
+    var lastThrown: Throwable? = null
+    var lastTear: StreamTornBeforeClient? = null
+
+    /** Whether a send of this post failed yet, by any of the three. */
+    val failedYet: Boolean get() = lastErr != null || lastThrown != null || lastTear != null
+
+    // A retry counts only once its send goes out, past the next attempt's budget, auth and hold checks.
     var pendingRetry: RetryKind? = null
 
     fun markResend(ctx: PostContext) {
@@ -66,30 +49,18 @@ internal class RetryState(var cooldown: RateLimitCooldown, val t0: Long, val max
         if (retry == RetryKind.POST_SEND) ctx.markPostSendRetry()
     }
 
-    // V4-174: every SEND, whichever budget paid for it (a backoff attempt, the refresh's free
-    // retry, a G5 reissue, the RC-4 amended resend) — the ordinal the wire observer sees.
+    // V4-174: every SEND of this post — the ordinal the wire observer sees.
     var sent: Int = 0
 
-    // G5: a small budget for re-issuing a stream torn BEFORE the client saw a byte. Spans the
-    // whole turn (declared once here, never reset per handoff) and is deliberately smaller than
-    // and independent of `maxRetries` — re-POSTing after a 2xx is a costlier, riskier act.
-    var streamReissues: Int = 0
+    /** What is left of the turn's one wait on a warm session's login, whatever the turn's earlier posts already spent
+     *  of it; 0 for a cold session. */
+    fun warmWaitLeftMs(ctx: PostContext): Long = ctx.limits.warmWait?.leftMs() ?: 0L
 
-    // RC-4: the one-shot body-amendment budget (a deterministic 400 amended twice is a loop).
-    var amendedOnce: Boolean = false
-
-    /** RC-4: the one-shot amendment decision — lives here because it is pure retry-state
-     *  bookkeeping. Budgeted by [amendedOnce] ALONE, never the attempt counter: the amended
-     *  resend replays the failed attempt's slot, so it is guaranteed to go out even when the
-     *  400 lands on the last permitted attempt (review 2026-07-24: an `attempt += 1` here made
-     *  the loop guard eat the resend at the budget boundary — the amend computed a valid body
-     *  and then gave up on the stale pre-amendment error). */
-
-    /** V4-174: one send's recorder, built only when the context carries an observer; [sent]
-     *  counts every send whatever budget paid for it. Here, with [report], because both are
-     *  bookkeeping on this state and [runAttempt] has no complexity to spare. */
+    /** V4-174: one send's recorder, built only when the context carries an observer. Each send is one of the turn's
+     *  attempts too, which the ledger counts on the login the send goes out on. */
     fun recorderFor(ctx: PostContext, body: RequestBody, clock: ElapsedClock): AttemptRecorder? {
         sent += 1
+        ledger.sent()
         return ctx.observers.wire?.let { AttemptRecorder(sent, ctx.url, body.json, body.encoding, clock) }
     }
 
@@ -99,7 +70,9 @@ internal class RetryState(var cooldown: RateLimitCooldown, val t0: Long, val max
         if (recorder != null) ctx.observers.wire?.attempted(recorder.finish(failure))
     }
 
-    /** Captures one attempt's auth once, so its hold identity and wire headers cannot diverge. */
+    /** Captures one attempt's auth once, so its hold identity and wire headers cannot diverge. The ledger's login is
+     *  the login provider itself, which keeps its identity across the token renewals it makes, so a renewal spent on
+     *  it stays spent; another login of the pool is another provider. */
     suspend fun credentials(
         ctx: PostContext,
         credentials: Credentials,
@@ -115,6 +88,7 @@ internal class RetryState(var cooldown: RateLimitCooldown, val t0: Long, val max
             (credentials as? Credentials.ApiKey)?.header,
         ) ?: fallback
         cooldown = selected
+        ledger.onLogin(LOGIN_PREFIX + System.identityHashCode(ctx.auth).toString(LOGIN_RADIX))
         return AttemptCredentials(credentials, headers, postedAtMs, selected)
     }
 
@@ -123,14 +97,6 @@ internal class RetryState(var cooldown: RateLimitCooldown, val t0: Long, val max
      *  what it sends never depends on what an earlier attempt sent. */
     fun routedBody(ctx: PostContext, body: RequestBody, encode: RequestBodyFromRound): RequestBody =
         ctx.recovery.route?.body(body.body)?.let(encode::invoke) ?: body
-
-    fun amendStep(ctx: PostContext, outcome: RetryOutcome.Failed, bodyJson: String): LoopStep.Amend? {
-        val status = outcome.evidence.status.takeUnless { amendedOnce } ?: return null
-        val amended = ctx.recovery.amendBodyOnFailure(status, outcome.evidence.body.orEmpty(), bodyJson) ?: return null
-        amendedOnce = true
-        ctx.onRetry("amending request body after $status and retrying once")
-        return LoopStep.Amend(amended)
-    }
 }
 
 internal sealed class LoopStep<out T> {
@@ -142,3 +108,7 @@ internal sealed class LoopStep<out T> {
      *  response exists to classify. [UpstreamClient.post] lifts this to [UpstreamPost.TurnWaitExhausted]. */
     data object TurnWaitExhausted : LoopStep<Nothing>()
 }
+
+/** How the ledger names a login: the identity of its provider, never anything its credential holds. */
+private const val LOGIN_PREFIX = "login-"
+private const val LOGIN_RADIX = 16

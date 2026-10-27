@@ -144,7 +144,7 @@ class HeadServerProjectPromptAnthropicTest {
             listenPort = 0,
             deps = headDeps(
                 tmp = Files.createDirectories(tmp),
-                upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 1),
+                upstream = UpstreamClient(totalTimeoutMs = 30_000),
                 seams = HeadDeps.HeadSeams(
                     session = HeadDeps.SessionSeams(
                         sessionProject = SessionProjectLookup { project.resolve("src") },

@@ -103,7 +103,7 @@ class HeadServerCompactionReplayTest(@param:TempDir private val tmp: Path) {
             listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
-                upstream = UpstreamClient(totalTimeoutMs = 900_000, maxRetries = 2),
+                upstream = UpstreamClient(totalTimeoutMs = 900_000),
                 gate = gate,
                 log = { lines += it },
                 seams = HeadDeps.HeadSeams(requestMaterializationGate = RequestMaterializationGate(heap = heap)),

@@ -92,7 +92,7 @@ private class KeyHead(tmp: Path, val auth: KeyAuth) {
         listenPort = 0,
         deps = headDeps(
             tmp = tmp,
-            upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 1),
+            upstream = UpstreamClient(totalTimeoutMs = 30_000),
             log = {},
         ).let { it.copy(stores = headStores(tmp).copy(perfStats = PerfStats(perfFile))) },
     )

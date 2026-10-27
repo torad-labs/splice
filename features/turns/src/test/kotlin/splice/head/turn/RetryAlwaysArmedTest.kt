@@ -74,7 +74,9 @@ import splice.head.headDeps
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
+import splice.upstream.Waiter
 import splice.upstream.retry.InflightGate
+import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
@@ -125,10 +127,10 @@ class RetryAlwaysArmedTest {
 
     private lateinit var head: HeadServer
 
-    // maxRetries = 1 (V4-61): a 429 with budget left now waits the 15s floor in REAL time before
-    // retrying, which outlived this test client's request timeout. The sweep needs the ARM that
-    // follows exhaustion (:upstream pins the schedule), so the budget is a single attempt.
-    private val upstreamClient = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 1)
+    // The engine waits a burst 429 out at 2, 4, 8 and 15 s (section 8), in REAL time on a process waiter, which
+    // outlived this test client's request timeout. The sweep needs the ending that follows the spent schedule
+    // (:upstream pins the schedule), so the waits are taken at once.
+    private val upstreamClient = UpstreamClient(totalTimeoutMs = 30_000, pacing = RetryPacing(waiter = Waiter { }))
     private lateinit var tmp: java.nio.file.Path
 
     private val catalog = ModelCatalog(

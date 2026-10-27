@@ -39,12 +39,10 @@ class ProviderHoldRestartTest {
     /** A weekly limit whose reset the reply's reader read from its body ("resets_at", the ChatGPT backend). */
     private fun weeklyLift(resetAt: Long): Lift = Lift.At(Instant.ofEpochSecond(resetAt), firm = true, LiftSource.BODY)
 
-    private fun RateLimitCooldown.refused(lift: Lift) = rateLimitedPlan(
-        pushbackMs = null,
-        turn = RateLimitTurn(this, pooledAccount = false, lift = lift),
-        canRetry = false,
-        onRetry = RetryNotice {},
-        nextRefreshed = false,
+    /** The limit a turn ended on, as the post's ending records it on the login (RetryEndings). */
+    private fun RateLimitCooldown.refused(lift: Lift) = limitLeft(
+        LimitLeft(lift = lift, pushbackMs = null, planLimit = null, native = null, pooled = false),
+        RetryNotice {},
     )
 
     @Test

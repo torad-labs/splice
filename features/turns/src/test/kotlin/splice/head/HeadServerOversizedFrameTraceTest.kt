@@ -67,7 +67,7 @@ class HeadServerOversizedFrameTraceTest {
         val head = HeadServer(
             provider(mock),
             0,
-            headDeps(tmp, upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2), log = { logged.add(it) })
+            headDeps(tmp, upstream = UpstreamClient(totalTimeoutMs = 30_000), log = { logged.add(it) })
                 .copy(stores = headStores(tmp, trace = trace)),
         )
         head.start()

@@ -41,8 +41,10 @@ import splice.head.noQuota
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
+import splice.upstream.Waiter
 import splice.upstream.retry.FileProviderHoldStore
 import splice.upstream.retry.InflightGate
+import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
 import java.net.InetSocketAddress
 import java.nio.file.Files
@@ -190,8 +192,8 @@ class ForwardedRateLimitTest {
         }
     }
 
-    // The turn that meets a headerless 429 gets it natively once its budget is spent (V4-61 backs off first while
-    // budget is left). A later turn asks the provider itself: no turn waits on another's hold (Marcos, Oct 26).
+    // The turn that meets a headerless 429 gets it natively once its burst schedule is spent (section 8). A later turn
+    // asks the provider itself: no turn waits on another's hold (Marcos, Oct 26).
     @Test
     fun `headerless 429 reaches the client natively once spent, holding no other login`() = runBlocking {
         val rig = LimitRig(directory, limits = false)
@@ -203,7 +205,7 @@ class ForwardedRateLimitTest {
             assertEquals("true", headers["x-should-retry"])
             assertEquals(null, headers["retry-after"])
             assertEquals(null, headers["anthropic-ratelimit-unified-status"])
-            assertEquals(1, rig.refused.size, "a one-attempt budget sends the refusal once")
+            assertEquals(BURST_SENDS, rig.refused.size, "the burst schedule is spent before the client hears it")
         } finally {
             rig.close()
         }
@@ -335,10 +337,10 @@ private class LimitRig(
     private val providerClient = HttpClient(CIO)
     val upstream = UpstreamClient(
         totalTimeoutMs = 30_000,
-        // One attempt: these cases pin what the client receives once the budget is spent. With budget left, a burst
-        // 429 waits out V4-61's 15s floor first, which this real-socket rig would sit through.
-        maxRetries = 1,
+        // These cases pin what the client receives once the schedule is spent. A burst 429 is waited out at 2, 4, 8
+        // and 15 s first (section 8), which this real-socket rig takes at once.
         client = providerClient,
+        pacing = RetryPacing(waiter = Waiter { }),
         clock = clock,
         holdStore = FileProviderHoldStore(directory.resolve("provider-hold.json"), LogSink {}),
     )
@@ -433,3 +435,6 @@ private val SUCCESS_WIRE = listOf(
     val kind = event.substringAfter("\"type\":\"").substringBefore('"')
     "event: $kind\ndata: $event"
 }
+
+/** A burst 429 is sent once and again after each of the 2, 4, 8 and 15 s waits (final-design.md section 8). */
+private const val BURST_SENDS = 5

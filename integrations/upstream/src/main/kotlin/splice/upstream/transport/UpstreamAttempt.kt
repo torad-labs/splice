@@ -3,14 +3,12 @@
 // ONE ATTEMPT, as data (HD-25): what every attempt is handed, and what it hands back.
 //
 // Both were nested inside UpstreamClient. They are top-level here because THREE files now read
-// them — the loop (UpstreamClient.kt), the decision (RetryPolicy.kt) and, through [RetryOutcome],
-// the give-up exit — and a nested type read from outside its owner is the published-nested-type
+// them — the loop (UpstreamClient.kt), the steps it takes (RetrySteps.kt) and, through [RetryOutcome],
+// the give-up exit (RetryEndings.kt) — and a nested type read from outside its owner is the published-nested-type
 // coupling this campaign exists to remove. Nothing about their content changed. The groups the context carries
 // (PostRecovery, PostLimits, PostObservers) and the three seams they hold live in PostGroups.kt.
 //
-// What did NOT come with them: [UpstreamClient.RetryState], which holds the loop's four mutually
-// independent budgets, and the LoopStep control flow. Those are mutated, and mutation stays in one
-// file.
+// What did NOT come with them: [RetryState], one post's state on the turn's ledger, and the LoopStep control flow.
 package splice.upstream.transport
 
 import splice.core.auth.Credentials
@@ -28,7 +26,6 @@ import splice.upstream.CredentialHeaders
 import splice.upstream.RetryNotice
 import splice.upstream.StreamRead
 import splice.upstream.failure.Replies
-import splice.upstream.retry.RETRY_AFTER_GIVE_UP_MS
 import splice.upstream.retry.RateLimitCooldown
 
 /** The per-post collaborators threaded through every attempt (grouped: one cohesive argument).
@@ -139,10 +136,5 @@ internal sealed class RetryOutcome<out T> {
          *  V4-73 made every layer see as the 429 it dressed its quota exhaustion in. */
         val limited: Boolean
             get() = cause is FailureCause.Provider.Limited || cause is FailureCause.Provider.NeedsPayment
-
-        /** A limit the same login cannot outwait: a named plan window, or a pushback past [ceilingMs], the 15s
-         *  ceiling unless a warm session has more of its wait left (V4-61). */
-        fun waitCannotHelp(ceilingMs: Long = RETRY_AFTER_GIVE_UP_MS): Boolean =
-            limited && (planLimit != null || (evidence.retryAfterMs ?: 0L) > ceilingMs)
     }
 }

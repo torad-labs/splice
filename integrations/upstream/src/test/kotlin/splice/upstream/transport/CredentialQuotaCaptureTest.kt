@@ -41,7 +41,7 @@ class CredentialQuotaCaptureTest {
         )
         var observed: String? = null
         HttpClient(engine).use { http ->
-            val client = UpstreamClient(totalTimeoutMs = 5_000, maxRetries = 1, client = http)
+            val client = UpstreamClient(totalTimeoutMs = 5_000, client = http)
             client.posted(context, "{}") { response ->
                 response.observeQuota { key, headers ->
                     observed = key

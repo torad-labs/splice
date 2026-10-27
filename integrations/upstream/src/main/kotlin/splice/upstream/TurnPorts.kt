@@ -31,6 +31,9 @@
 package splice.upstream
 
 import splice.core.auth.Credentials
+import splice.core.failure.FailureCause
+import splice.core.failure.Position
+import splice.upstream.retry.RetryLedger
 import splice.upstream.retry.WatchdogFired
 import splice.upstream.transport.UpstreamResponse
 
@@ -122,3 +125,16 @@ public fun interface UpstreamHandler<T> {
 public fun interface CredentialHeaders {
     public suspend operator fun invoke(credentials: Credentials): Map<String, String>
 }
+
+/**
+ * Where a turn waits before it sends again (failure-handling slice 4, final-design.md section 8). The head's own
+ * waits the step out on its clock and tells the person about a wait long enough to notice (TurnWaitsAtHead); a post
+ * with no turn around it waits on its client's pacing and tells no one.
+ */
+public fun interface TurnWaits {
+    /** Waits [afterMs] out, the wait of a step taken for [cause], met where the turn stood at [at]. */
+    public suspend fun wait(afterMs: Long, cause: FailureCause, at: Position)
+}
+
+/** One turn's retries: the [ledger] every post and round of the turn spends, and where its [waits] happen. */
+public data class TurnRetry(public val ledger: RetryLedger, public val waits: TurnWaits)

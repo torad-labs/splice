@@ -49,7 +49,7 @@ private class OneLoginAuth : RefreshableAuthProvider {
  *  holds the login, the way a turn that ran out of retries does. */
 private class OneLoginHead(tmp: Path) {
     val provider = MockChatGptUpstream()
-    val upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 1)
+    val upstream = UpstreamClient(totalTimeoutMs = 30_000)
     private val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
     private val head = HeadServer(
         provider = TestResponsesProvider(

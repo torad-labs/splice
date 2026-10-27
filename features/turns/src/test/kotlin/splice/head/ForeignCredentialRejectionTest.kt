@@ -54,16 +54,18 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
 
-/** An upstream that answers every request 401 with [body], and records which credential each carried. */
-private class RejectingUpstream(private val body: String) {
+/** An upstream that answers every request 401 with the [body] for the credential it carried, and records which
+ *  credential each carried. */
+private class RejectingUpstream(private val body: (String?) -> String) {
     val authorizations = CopyOnWriteArrayList<String?>()
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
 
     init {
         server.createContext("/") { ex ->
             ex.requestBody.use { it.transferTo(OutputStream.nullOutputStream()) }
-            authorizations += ex.requestHeaders.getFirst("Authorization")
-            val bytes = body.toByteArray()
+            val authorization = ex.requestHeaders.getFirst("Authorization")
+            authorizations += authorization
+            val bytes = body(authorization).toByteArray()
             ex.responseHeaders.add("Content-Type", "application/json")
             ex.sendResponseHeaders(UNAUTHORIZED, bytes.size.toLong())
             ex.responseBody.use { it.write(bytes) }
@@ -100,7 +102,7 @@ private class PoolRig(root: Path, val upstream: RejectingUpstream) {
         listenPort = 0,
         deps = headDeps(
             tmp = tmp,
-            upstream = UpstreamClient(totalTimeoutMs = 30_000L, maxRetries = 2),
+            upstream = UpstreamClient(totalTimeoutMs = 30_000L),
         ).copy(
             quotaBundle = quotaFor(primaryQuota, pool, mapOf("primary" to primaryQuota, "backup" to backupQuota)),
         ),
@@ -171,7 +173,7 @@ private class PoolRig(root: Path, val upstream: RejectingUpstream) {
 class ForeignCredentialRejectionTest(@param:TempDir private val root: Path) {
     @Test
     fun `a 401 naming a key the account never sent is reported as the upstream's failure`() {
-        val rig = PoolRig(root, RejectingUpstream(rejection(FOREIGN_MASKED_KEY)))
+        val rig = PoolRig(root, RejectingUpstream { rejection(FOREIGN_MASKED_KEY) })
         try {
             val first = rig.turn()
             // Failure-handling slice 2: the person reads the head's line for the provider's fault, and the
@@ -187,7 +189,7 @@ class ForeignCredentialRejectionTest(@param:TempDir private val root: Path) {
 
     @Test
     fun `a 401 naming a key the account never sent leaves the account's credential usable`() {
-        val rig = PoolRig(root, RejectingUpstream(rejection(FOREIGN_MASKED_KEY)))
+        val rig = PoolRig(root, RejectingUpstream { rejection(FOREIGN_MASKED_KEY) })
         try {
             rig.turn()
             rig.turn()
@@ -203,7 +205,11 @@ class ForeignCredentialRejectionTest(@param:TempDir private val root: Path) {
 
     @Test
     fun `a 401 naming the account's own key is still its sign-in failing`() {
-        val rig = PoolRig(root, RejectingUpstream(rejection(OWN_MASKED_KEY)))
+        // Each login's own key is named in its refusal, so neither is the provider's fault.
+        val own = RejectingUpstream { sent ->
+            rejection(if (sent == "Bearer $BACKUP_TOKEN") BACKUP_MASKED_KEY else OWN_MASKED_KEY)
+        }
+        val rig = PoolRig(root, own)
         try {
             val first = rig.turn()
             // Failure-handling slice 4: a login splice holds takes the held-login status, 403 permission_error,
@@ -212,11 +218,10 @@ class ForeignCredentialRejectionTest(@param:TempDir private val root: Path) {
             assertTrue("permission_error" in first, "the credential this account sent was refused: $first")
             assertTrue("claudex login" in first, "and the remedy is to sign in again: $first")
 
-            rig.turn()
             assertEquals(
-                "Bearer $BACKUP_TOKEN",
-                rig.upstream.authorizations.last(),
-                "the refused credential is marked unavailable, so the next turn moves to the backup",
+                listOf(PRIMARY_TOKEN, PRIMARY_TOKEN, BACKUP_TOKEN, BACKUP_TOKEN).map { "Bearer $it" },
+                rig.upstream.authorizations,
+                "each login is renewed once, then the turn moves to the next one before any byte (section 8)",
             )
         } finally {
             rig.close()
@@ -239,6 +244,7 @@ private const val BACKUP_TOKEN = "backup-token"
 // The first is no key this test holds; the second masks the primary account's own token.
 private val FOREIGN_MASKED_KEY = "sk-test0" + "*".repeat(40) + "Zq9x"
 private val OWN_MASKED_KEY = "prima" + "*".repeat(12) + "oken"
+private val BACKUP_MASKED_KEY = "backu" + "*".repeat(12) + "oken"
 
 private const val MS_PER_S = 1_000L
 private const val HOUR_S = 3_600L

@@ -120,7 +120,7 @@ class CollectCompactionRetryTest {
             listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
-                upstream = UpstreamClient(totalTimeoutMs = 900_000, maxRetries = 1),
+                upstream = UpstreamClient(totalTimeoutMs = 900_000),
                 gate = gate,
                 log = { lines += it },
                 seams = HeadDeps.HeadSeams(waiter = waiter),

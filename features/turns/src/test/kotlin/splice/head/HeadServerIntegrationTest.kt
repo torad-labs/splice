@@ -99,7 +99,7 @@ class HeadServerIntegrationTest {
             listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
-                upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2),
+                upstream = UpstreamClient(totalTimeoutMs = 30_000),
                 log = { synchronized(logs) { logs.add(it) } },
             ).copy(
                 policy = HeadDeps.HeadPolicy(maxRequestBytes = { 1_024 }),

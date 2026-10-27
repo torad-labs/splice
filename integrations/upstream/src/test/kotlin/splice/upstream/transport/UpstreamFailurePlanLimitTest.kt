@@ -21,10 +21,12 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.usage.PlanLimit
 import splice.core.usage.PlanLimits
 import splice.core.util.ElapsedClock
+import splice.upstream.Waiter
 import splice.upstream.failure.FailedReply
 import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.ProviderDeviation
 import splice.upstream.failure.Replies
+import splice.upstream.retry.BURST_WAITS
 import java.util.concurrent.atomic.AtomicInteger
 
 private const val MS = 1_000L
@@ -77,9 +79,8 @@ class UpstreamFailurePlanLimitTest {
 
     private fun client(engine: MockEngine) = UpstreamClient(
         totalTimeoutMs = 900_000L,
-        maxRetries = 4,
         client = HttpClient(engine),
-        pacing = RetryPacing(backoff = { _, _ -> }),
+        pacing = RetryPacing(waiter = Waiter { }),
         clock = ElapsedClock { 0L },
     )
 
@@ -128,7 +129,7 @@ class UpstreamFailurePlanLimitTest {
 
         val failure = assertEnds<UpstreamFailed> { client(engine).posted(ctx(bodyReader), "{}") { "unreachable" } }
 
-        assertEquals(4, calls.get(), "V4-61's schedule is untouched")
+        assertEquals(1 + BURST_WAITS, calls.get(), "the burst schedule is untouched")
         assertEquals(429, failure.evidence.status)
         assertNull(failure.planLimit)
     }

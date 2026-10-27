@@ -38,6 +38,7 @@ import splice.upstream.RetryNotice
 import splice.upstream.codemode.ProcessElapsedNow
 import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
+import splice.upstream.retry.MAX_ATTEMPTS_OUTSIDE_HOLDS
 import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
@@ -85,7 +86,6 @@ class UpstreamClientThreadRefusalTest {
 
     private fun clientOver(engine: MockEngine) = UpstreamClient(
         totalTimeoutMs = 5_000,
-        maxRetries = 3,
         client = HttpClient(engine),
         pacing = RetryPacing(waiter = RecordingWaiter()),
     )
@@ -108,7 +108,7 @@ class UpstreamClientThreadRefusalTest {
     fun `a thread refused after the request was written whole is a possible duplicate`() {
         val failures = TransportFailures()
 
-        val phase = failures.rethrowUnlessRetryableTransport(refused, deadlineHit = false, lastAttempt = false)
+        val phase = failures.phaseOf(refused)
 
         assertEquals(TransportFailurePhase.POST_SEND, phase)
         assertEquals(null, failures.classifyTransport(refused), "no phase of its own: the default's")
@@ -136,7 +136,7 @@ class UpstreamClientThreadRefusalTest {
         val answer = clientOver(engine).posted(ctx(retries), "{}") { "ok" }
 
         assertEquals("ok", answer)
-        assertEquals(listOf("transport IOException attempt 1/3: $REFUSED"), retries)
+        assertEquals(listOf("transport IOException attempt 1/$MAX_ATTEMPTS_OUTSIDE_HOLDS: $REFUSED"), retries)
     }
 
     @Test
@@ -158,7 +158,6 @@ class UpstreamClientThreadRefusalTest {
             val retries = CopyOnWriteArrayList<String>()
             val client = UpstreamClient(
                 totalTimeoutMs = REFUSAL_TOTAL_MS,
-                maxRetries = 2,
                 client = UpstreamTransport().client(
                     REFUSAL_TOTAL_MS,
                     log = LogSink {},
@@ -172,7 +171,13 @@ class UpstreamClientThreadRefusalTest {
             val answer = runBlocking { client.posted(upstream.context(retries), "{}") { "ok" } }
 
             assertEquals("ok", answer)
-            assertEquals(listOf("transport-possible-duplicate IOException attempt 1/2: $OKIO_REFUSED_REASON"), retries)
+            assertEquals(
+                listOf(
+                    "transport-possible-duplicate IOException attempt 1/$MAX_ATTEMPTS_OUTSIDE_HOLDS: " +
+                        OKIO_REFUSED_REASON,
+                ),
+                retries,
+            )
             assertEquals(2, upstream.requests.get(), "the upstream took the refused attempt's request whole")
         }
     }
@@ -196,7 +201,10 @@ class RefusedThreadStartPostTest {
                 restore()
             }
 
-            assertEquals(listOf("transport IOException attempt 1/2: $REFUSED_REASON"), retries)
+            assertEquals(
+                listOf("transport IOException attempt 1/$MAX_ATTEMPTS_OUTSIDE_HOLDS: $REFUSED_REASON"),
+                retries,
+            )
             assertEquals("ok", answer.getOrThrow())
             assertEquals(1, upstream.accepted.get(), "the retry reused the connection the refused attempt made")
         }
@@ -213,7 +221,6 @@ class RefusedConnectionReuseMutationTest {
             val sockets = CapturedRefusalSockets()
             val client = UpstreamClient(
                 totalTimeoutMs = REFUSAL_TOTAL_MS,
-                maxRetries = 2,
                 client = UpstreamTransport().client(
                     REFUSAL_TOTAL_MS,
                     log = LogSink {},
@@ -229,7 +236,7 @@ class RefusedConnectionReuseMutationTest {
                 observers = PostObservers(
                     onRetry = RetryNotice { reason ->
                         retries += reason
-                        check(reason == "transport IOException attempt 1/2: $REFUSED_REASON")
+                        check(reason == "transport IOException attempt 1/$MAX_ATTEMPTS_OUTSIDE_HOLDS: $REFUSED_REASON")
                         sockets.closeRefusedConnection()
                     },
                 ),
@@ -241,7 +248,10 @@ class RefusedConnectionReuseMutationTest {
                 restore()
             }
 
-            assertEquals(listOf("transport IOException attempt 1/2: $REFUSED_REASON"), retries)
+            assertEquals(
+                listOf("transport IOException attempt 1/$MAX_ATTEMPTS_OUTSIDE_HOLDS: $REFUSED_REASON"),
+                retries,
+            )
             assertEquals("ok", answer.getOrThrow())
             assertEquals(2, sockets.created.get(), "the retry really connected again")
             assertEquals(1, upstream.requests.get(), "the refused attempt still sent no request")
@@ -307,7 +317,6 @@ class AfterRefusedThreadStartTest {
 
 private fun refusalClient(clock: ElapsedClock = ProcessElapsedNow()) = UpstreamClient(
     totalTimeoutMs = REFUSAL_TOTAL_MS,
-    maxRetries = 2,
     client = UpstreamTransport().defaultClient(REFUSAL_TOTAL_MS),
     pacing = RetryPacing(waiter = RecordingWaiter()),
     clock = clock,

@@ -107,7 +107,7 @@ class CodexTurnStateSseTest {
             listenPort = 0,
             deps = headDeps(
                 tempDir,
-                upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2),
+                upstream = UpstreamClient(totalTimeoutMs = 30_000),
                 log = { logs += it },
             ),
         )

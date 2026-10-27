@@ -30,6 +30,7 @@ import splice.core.failure.Lift
 import splice.core.failure.PersistedCause
 import splice.core.failure.ProviderWordsFilter
 import splice.core.util.ElapsedClock
+import splice.upstream.Waiter
 import splice.upstream.failure.ErrorMessage
 import splice.upstream.failure.FailedReply
 import splice.upstream.failure.OpenAiReplies
@@ -40,7 +41,9 @@ import java.util.concurrent.atomic.AtomicInteger
 private const val TOO_MANY_REQUESTS = 429
 private const val PAYMENT_REQUIRED = 402
 private const val FORBIDDEN = 403
-private const val ATTEMPTS = 3
+
+/** A 429 with no reset stated: one send, then one after each of the burst schedule's four waits (2, 4, 8 and 15 s). */
+private const val ATTEMPTS = 5
 
 /** DeepSeek's 402 of Oct 24, 11:08:11 PM CT, in the shape the journal holds, with its request id. */
 private const val DEEPSEEK_402 =
@@ -79,9 +82,8 @@ class HttpFailureCauseTest {
 
     private fun client(engine: MockEngine) = UpstreamClient(
         totalTimeoutMs = 900_000L,
-        maxRetries = ATTEMPTS,
         client = HttpClient(engine),
-        pacing = RetryPacing(backoff = { _, _ -> }, dnsBackoff = { _ -> }),
+        pacing = RetryPacing(waiter = Waiter { }),
         clock = ElapsedClock { 0L },
     )
 
@@ -126,13 +128,13 @@ class HttpFailureCauseTest {
     }
 
     @Test
-    fun `a 402 is held as a 429 is, and keeps the status the provider sent`() = runTest {
+    fun `a 402 ends at once, marks its login limited and keeps the status the provider sent`() = runTest {
         val payment = end(PAYMENT_REQUIRED, DEEPSEEK_402)
-        val limit = end(TOO_MANY_REQUESTS, DEEPSEEK_402)
 
-        assertEquals(limit.calls, payment.calls, "the same attempts as a 429")
+        // Section 8: a spent account with no time stated holds for credit (V4-73), and until slice 5 that hold ends
+        // the post at once with today's retryable wire, where a bare 429 is first waited out on the burst schedule.
+        assertEquals(1, payment.calls, "a spent account is not sent again on its login")
         assertTrue(payment.limitedForMs > 0L, "the login is marked limited as a 429 marks it")
-        assertEquals(limit.failure.layers, payment.failure.layers)
         assertEquals(PAYMENT_REQUIRED, payment.failure.evidence.status, "no layer rewrites the status it came with")
     }
 

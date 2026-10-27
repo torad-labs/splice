@@ -106,7 +106,7 @@ private class AdmissionTestAuth : RefreshableAuthProvider {
 // bundles instead, which is all the fixture does anyway.
 private fun headDeps(tmp: Path, mirrorReasoning: Boolean = false) = HeadDeps(
     traffic = HeadDeps.HeadTraffic(
-        upstream = UpstreamClient(totalTimeoutMs = 1_000, maxRetries = 1),
+        upstream = UpstreamClient(totalTimeoutMs = 1_000),
         gate = InflightGate({ 1 }),
         liveTurns = LiveTurns(),
     ),

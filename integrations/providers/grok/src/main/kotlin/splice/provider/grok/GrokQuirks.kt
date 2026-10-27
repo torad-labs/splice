@@ -8,12 +8,14 @@ import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.PromptCachePolicy
 import splice.dialect.responses.ResponsesBackendQuirks
 import splice.dialect.responses.ResponsesLiteQuirks
+import splice.dialect.responses.ResponsesOutputSchemaPolicy
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesReasoningQuirks
 import splice.dialect.responses.ResponsesRequestControlQuirks
 import splice.dialect.responses.ResponsesRoundTripQuirks
 import splice.dialect.responses.ResponsesServiceTierSupport
 import splice.dialect.responses.ResponsesToolQuirks
+import splice.dialect.responses.StrictSchemaSubset
 
 /** Holder for the grok quirk profile. Constructed by the daemon so TOML overlays a real table. */
 public class GrokQuirks {
@@ -34,6 +36,7 @@ public class GrokQuirks {
             emitStrict = true,
             // xAI is not known to read the `additional_tools` input item, so the tool list carries each tool change.
             acceptsInlineToolChanges = false,
+            outputSchema = ResponsesOutputSchemaPolicy.StrictWithin(strictOutput()),
         ),
         request = ResponsesRequestControlQuirks(
             serviceTier = ResponsesServiceTierSupport.UNSUPPORTED,
@@ -47,6 +50,53 @@ public class GrokQuirks {
     )
 
     public fun xhighModels(): Regex = XHIGH_MODELS
+
+    /** The strict subset xAI holds a caller's output schema to, as its Structured Outputs guide states it
+     *  (https://docs.x.ai/docs/guides/structured-outputs): objects close by default and unlisted fields stay optional,
+     *  so nothing is rewritten; a $ref must not be circular; maxContains, minContains and array-form items are
+     *  refused; not, if/then/else and allOf beyond one schema are not enforced; formats past these are not enforced.
+     *  A schema outside it goes as written with strict false. */
+    private fun strictOutput(): StrictSchemaSubset = StrictSchemaSubset(
+        closedObjects = false,
+        everyKeyRequired = false,
+        keywords = setOf(
+            "type",
+            "properties",
+            "required",
+            "additionalProperties",
+            "items",
+            "enum",
+            "const",
+            "anyOf",
+            "oneOf",
+            "\$ref",
+            "\$defs",
+            "definitions",
+            "description",
+            "title",
+            "pattern",
+            "format",
+            "multipleOf",
+            "maximum",
+            "exclusiveMaximum",
+            "minimum",
+            "exclusiveMinimum",
+            "minLength",
+            "maxLength",
+            "minItems",
+            "maxItems",
+            "minProperties",
+            "maxProperties",
+            "\$schema",
+            "\$id",
+            "\$comment",
+            "default",
+            "examples",
+        ),
+        formats = setOf("date", "time", "date-time", "email", "uuid", "ipv4", "ipv6", "uri"),
+        recursion = false,
+        objectRoot = false,
+    )
 }
 
 private const val XAI_MIN_IMAGE_EDGE_PX = 8

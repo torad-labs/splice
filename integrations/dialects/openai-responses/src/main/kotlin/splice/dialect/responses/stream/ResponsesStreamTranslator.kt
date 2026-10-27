@@ -59,6 +59,8 @@ internal class ResponsesStreamTranslator(
      *  default drops it for tests that do not read it. */
     private val log: LogSink = LogSink { },
     private val outputToolName: String? = null,
+    /** The caller's schema the structured answer is brought back to, when the backend held a stricter form of it. */
+    private val answerSchema: JsonObject? = null,
     /** The head's own reading of a failure event its backend sends (ResponsesTerminalDecision). */
     private val reading: FailureReading = FailureReading(),
 ) : StreamTranslator {
@@ -200,7 +202,7 @@ internal class ResponsesStreamTranslator(
         latchSweptToolBlocks(state)
         ResponsesTerminalBackfill().harvestFallback(state)
         bufferBudget.within(state, heldChars = 0)
-        ResponsesSchemaOutput(outputToolName).latchUndelivered(state)
+        ResponsesSchemaOutput(outputToolName, answerSchema).latchUndelivered(state)
         val payload = ResponsesOutcomePayload(ctx)
         val outcome = ResponsesTerminalDecision(ctx, payload, reading)
             .terminalOutcome(state, bufferBudget.failure, tear)
@@ -218,7 +220,7 @@ internal class ResponsesStreamTranslator(
         latchSweptToolBlocks(state)
         sink.closeAll()
         state.terminalTextSuffix?.let { sink.addTextBlock(it) }
-        ResponsesSchemaOutput(outputToolName).emit(state, sink)
+        ResponsesSchemaOutput(outputToolName, answerSchema).emit(state, sink)
         val outcome = billedOutcome(state)
         state.ending?.let { log("upstream round ended on $it") }
         captureTurnReasoning(state, outcome)

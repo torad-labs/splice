@@ -12,6 +12,7 @@ import splice.core.failure.RequestFeature
 import splice.core.util.JsonScalars
 import splice.core.wire.AnthropicRequest
 import splice.dialect.responses.ResponsesLiteQuirks
+import splice.dialect.responses.ResponsesOutputSchemaPolicy
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.admission.ResponsesRequestControls
 import splice.upstream.RequestRefusal
@@ -22,7 +23,12 @@ internal const val STRUCTURED_OUTPUT_TOOL = "StructuredOutput"
 // why: the same schema field is validated, compared with the tool contract, and forwarded unchanged.
 private const val SCHEMA_KEY = "schema"
 
-/** The caller's output schema, forwarded unchanged so the caller's own validation retains its meaning. */
+/** The json_schema text format a head sends, if the caller asked for one, and the caller's schema an answer to a
+ *  stricter form of it is brought back to ([ResponsesStrictSchema]). */
+internal data class ResponsesOutputPlan(val format: JsonObject? = null, val answerSchema: JsonObject? = null)
+
+/** The caller's output schema, sent as written or in the strict form the head's vendor holds, so an answer to it stays
+ *  valid against the caller's own schema. */
 internal object ResponsesOutputSchema {
     private val choices = setOf("auto", "none", "any", "required", "tool")
 
@@ -108,18 +114,42 @@ internal object ResponsesOutputSchema {
         }
     }
 
-    /** The caller's schema as a json_schema text format. [strict] asks the backend to check the schema against its
-     *  strict subset; a backend that holds every answer to the schema without that check is sent false, so a schema
-     *  outside the subset is answered instead of refused. */
-    fun format(body: AnthropicRequest, raw: JsonObject, strict: Boolean = true): JsonObject? {
+    /** The caller's schema as a json_schema text format, strict over it as written. */
+    fun format(body: AnthropicRequest, raw: JsonObject): JsonObject? =
+        plan(body, raw, ResponsesOutputSchemaPolicy.StrictAsGiven).format
+
+    /** The text format for the caller's schema under [policy]. A rewrite into the vendor's strict subset goes strict.
+     *  One that made an optional field nullable goes only when the answer reaches the caller as a tool's input, which
+     *  is brought back to the caller's schema whole; streamed text cannot be. Otherwise the schema goes as written
+     *  with strict false. */
+    fun plan(body: AnthropicRequest, raw: JsonObject, policy: ResponsesOutputSchemaPolicy): ResponsesOutputPlan {
         val native = nativeFormat(raw) as? JsonObject
         val tool = body.tools.firstOrNull { it.name == STRUCTURED_OUTPUT_TOOL }
-        val schema = (native?.get(SCHEMA_KEY) as? JsonObject) ?: tool?.inputSchema ?: return null
-        return buildJsonObject {
-            put("type", "json_schema")
-            put("name", JsonScalars.str(native, "name") ?: "structured_output")
-            put(SCHEMA_KEY, schema)
-            put("strict", strict)
+        val schema = (native?.get(SCHEMA_KEY) as? JsonObject) ?: tool?.inputSchema ?: return ResponsesOutputPlan()
+        val name = JsonScalars.str(native, "name") ?: "structured_output"
+        return when (policy) {
+            ResponsesOutputSchemaPolicy.StrictAsGiven -> ResponsesOutputPlan(textFormat(name, schema, strict = true))
+            ResponsesOutputSchemaPolicy.ConstrainedWithoutStrict ->
+                ResponsesOutputPlan(textFormat(name, schema, strict = false))
+            is ResponsesOutputSchemaPolicy.StrictWithin -> {
+                val rewritten = ResponsesStrictSchema.rewrite(schema, policy.subset)
+                    ?.takeIf { !it.nullable || toolName(body) != null }
+                if (rewritten == null) {
+                    ResponsesOutputPlan(textFormat(name, schema, strict = false))
+                } else {
+                    ResponsesOutputPlan(
+                        textFormat(name, rewritten.schema, strict = true),
+                        answerSchema = schema.takeIf { rewritten.nullable },
+                    )
+                }
+            }
         }
+    }
+
+    private fun textFormat(name: String, schema: JsonObject, strict: Boolean): JsonObject = buildJsonObject {
+        put("type", "json_schema")
+        put("name", name)
+        put(SCHEMA_KEY, schema)
+        put("strict", strict)
     }
 }

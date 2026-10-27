@@ -52,7 +52,7 @@ internal data class RequestParts(
     val reasoning: JsonObject?,
     val tools: RequestToolSurface,
     val conversationKey: String?,
-    val outputFormat: JsonObject? = null,
+    val output: ResponsesOutputPlan = ResponsesOutputPlan(),
     val controls: ResponsesWireRequestControls = ResponsesWireRequestControls(),
 )
 
@@ -105,7 +105,7 @@ internal class ResponsesRequestAssembler(
             toolChoice = toolChoiceFor(emitToolChoice, lite, body, restrictedTools),
             parallelToolCalls = parallelToolCallsFor(emitToolChoice, body, opts),
             reasoning = parts.reasoning,
-            text = outputText(parts.outputFormat, lite),
+            text = outputText(parts.output.format, lite),
             serializationControls = ResponsesRequestSerializationControls(
                 clientMetadata = hints.clientMetadataBlock(quirks, lite, opts, cacheKey),
                 streamOptions = knobs.summaryDeliveryOptions(parts.reasoning),

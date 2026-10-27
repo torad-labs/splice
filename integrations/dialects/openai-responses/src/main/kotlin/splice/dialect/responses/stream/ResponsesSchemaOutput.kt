@@ -4,11 +4,16 @@ package splice.dialect.responses.stream
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import splice.dialect.responses.ResponsesTurnState
+import splice.dialect.responses.request.ResponsesStrictSchema
 import splice.upstream.sse.WireSink
 import java.util.UUID
 
 /** Relays only the upstream's real, completed JSON. The client's schema validator still receives the tool input. */
-internal class ResponsesSchemaOutput(private val toolName: String?) {
+internal class ResponsesSchemaOutput(
+    private val toolName: String?,
+    /** The caller's schema, when the backend answered a stricter form of it ([ResponsesStrictSchema]). */
+    private val answerSchema: JsonObject? = null,
+) {
     private val customCalls = ResponsesCustomCallParse()
 
     suspend fun emit(state: ResponsesTurnState, sink: WireSink) {
@@ -25,11 +30,17 @@ internal class ResponsesSchemaOutput(private val toolName: String?) {
         } else {
             // A wire id identifies this translated tool call, never an invented upstream call or cache key.
             val block = sink.openTool("toolu_schema_${UUID.randomUUID()}", toolName)
-            sink.inputJsonDelta(block, text)
+            sink.inputJsonDelta(block, input(text))
             sink.closeBlock(block)
             state.hasToolUse = true
             state.schemaToolEmitted = true
         }
+    }
+
+    /** The tool input for [text]: brought back to the caller's schema when the backend answered a stricter form. */
+    private fun input(text: String): String {
+        val schema = answerSchema ?: return text
+        return ResponsesStrictSchema.restore(Json.parseToJsonElement(text), schema).toString()
     }
 
     /** A cancelled/failed sink cannot turn buffered schema text into a clean completion without delivering its tool. */

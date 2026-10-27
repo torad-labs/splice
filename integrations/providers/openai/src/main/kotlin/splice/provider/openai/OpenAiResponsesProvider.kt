@@ -11,10 +11,13 @@ import splice.dialect.responses.PromptCachePolicy
 import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesBackendQuirks
 import splice.dialect.responses.ResponsesLiteQuirks
+import splice.dialect.responses.ResponsesOutputSchemaPolicy
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesReasoningQuirks
 import splice.dialect.responses.ResponsesToolQuirks
+import splice.dialect.responses.StrictSchemaLimits
+import splice.dialect.responses.StrictSchemaSubset
 import splice.upstream.ProviderTuning
 
 public class OpenAiResponsesProvider(
@@ -50,6 +53,50 @@ public class OpenAiQuirks {
             // the `additional_tools` input item, but OpenRouter's Responses beta refuses it (gakonst/nanocode#981), so
             // the tool list carries each tool change: one prompt-cache miss per change, and no refused request.
             acceptsInlineToolChanges = false,
+            outputSchema = ResponsesOutputSchemaPolicy.StrictWithin(strictOutput()),
         ),
     )
+
+    /** The strict subset OpenAI holds a caller's output schema to, as its Structured Outputs guide states it
+     *  (https://developers.openai.com/api/docs/guides/structured-outputs, "Supported schemas"): the root an object,
+     *  every object closed with every key required, an optional field a union with null, recursion through `#` or
+     *  $defs, and these keywords, formats and sizes only. A strict schema outside it is refused with a 400. */
+    private fun strictOutput(): StrictSchemaSubset =
+        StrictSchemaSubset(
+            closedObjects = true,
+            everyKeyRequired = true,
+            keywords = setOf(
+                "type",
+                "properties",
+                "required",
+                "additionalProperties",
+                "items",
+                "enum",
+                "const",
+                "anyOf",
+                "\$ref",
+                "\$defs",
+                "definitions",
+                "description",
+                "title",
+                "pattern",
+                "format",
+                "multipleOf",
+                "maximum",
+                "exclusiveMaximum",
+                "minimum",
+                "exclusiveMinimum",
+                "minItems",
+                "maxItems",
+            ),
+            formats = setOf("date-time", "time", "date", "duration", "email", "hostname", "ipv4", "ipv6", "uuid"),
+            recursion = true,
+            objectRoot = true,
+            limits = StrictSchemaLimits(
+                nestingLevels = 10,
+                properties = 5000,
+                enumValues = 1000,
+                stringChars = 120_000,
+            ),
+        )
 }

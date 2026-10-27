@@ -3,6 +3,7 @@
 // (tool_use > max_tokens > end_turn) is sealed inside the gateway's SseEmitter (L3-as-types).
 package splice.core.turn
 
+import kotlinx.serialization.json.JsonObject
 import kotlin.time.Duration
 
 // ErrorType / ToolSearchCall* / TurnOutcome live in TurnOutcome.kt, Usage in Usage.kt
@@ -81,6 +82,9 @@ public data class TurnToolSurface(
     val deferred: Int? = null,
     /** Schema-constrained response text is this caller tool's JSON input, not ordinary prose. */
     val outputToolName: String? = null,
+    /** The caller's own schema, set when the backend was asked for a stricter form of it: the tool input is brought
+     *  back to it before the client reads it. */
+    val answerSchema: JsonObject? = null,
     /** Gateway owns exec/wait only when this turn explicitly armed its code-mode interceptor. */
     val codeMode: Boolean = false,
 )

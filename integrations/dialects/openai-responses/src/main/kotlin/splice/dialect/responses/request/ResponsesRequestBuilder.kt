@@ -77,8 +77,8 @@ internal class ResponsesRequestBuilder(
         // A head that takes tool changes inline holds its initial direct-function surface in tools and appends later
         // declarations at their source boundaries; any other head lists the tools the conversation holds now. A
         // source-deferred definition stays in the catalog for a future tool_reference but is not offered before it.
-        val outputFormat =
-            ResponsesOutputSchema.format(body, raw, strict = !quirks.tools.constrainsOutputWithoutStrict)
+        val output = ResponsesOutputSchema.plan(body, raw, quirks.tools.outputSchema)
+        val outputFormat = output.format
         val rawControls = controls.wire(raw)
         val wireBody = ResponsesOutputSchema.wireBody(body, outputFormat)
         val dynamicTools = ResponsesDynamicToolChanges.availability(wireBody)
@@ -115,7 +115,7 @@ internal class ResponsesRequestBuilder(
                 currentAllowedTools = dynamicTools.currentNames.takeIf { inline && dynamicTools.requiresRestriction },
             ),
             conversationKey = conversationKey,
-            outputFormat = outputFormat,
+            output = output,
             controls = rawControls,
         )
         val built = assembler.buildRequestObject(surfaceBody, opts, parts)
@@ -171,15 +171,16 @@ internal class ResponsesRequestBuilder(
                 // Every continuation round reuses this meta object (continuationRequest bypasses
                 // build()), so the dedup state it carries is genuinely turn-scoped.
             ),
-            tools = toolSurface(built, body, parts.outputFormat),
+            tools = toolSurface(built, body, parts.output),
         )
     }
 
-    private fun toolSurface(built: BuiltBody, body: AnthropicRequest, format: JsonObject?): TurnToolSurface =
+    private fun toolSurface(built: BuiltBody, body: AnthropicRequest, output: ResponsesOutputPlan): TurnToolSurface =
         TurnToolSurface(
             eager = built.toolsEager,
             deferred = built.toolsDeferred,
-            outputToolName = format?.let { ResponsesOutputSchema.toolName(body) },
+            outputToolName = output.format?.let { ResponsesOutputSchema.toolName(body) },
+            answerSchema = output.answerSchema,
         )
 }
 

@@ -5,12 +5,15 @@ package splice.provider.codex
 
 import splice.dialect.responses.ResponsesBackendQuirks
 import splice.dialect.responses.ResponsesLiteQuirks
+import splice.dialect.responses.ResponsesOutputSchemaPolicy
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesReasoningQuirks
 import splice.dialect.responses.ResponsesRequestControlQuirks
 import splice.dialect.responses.ResponsesRoundTripQuirks
 import splice.dialect.responses.ResponsesServiceTierSupport
 import splice.dialect.responses.ResponsesToolQuirks
+import splice.dialect.responses.StrictSchemaLimits
+import splice.dialect.responses.StrictSchemaSubset
 
 /** Same shape as splice.upstream.credentials.RefreshedTokens; kept so in-module call sites do not move this row. */
 public typealias RefreshedTokens = splice.upstream.credentials.RefreshedTokens
@@ -18,6 +21,50 @@ public typealias RefreshedTokens = splice.upstream.credentials.RefreshedTokens
 /** Holder for the codex quirk profile. Split from CodexProvider.kt (concentration, 2026-08-19)
  *  so the provider is not billed for a second column-0 type. Same-package. */
 public class CodexQuirks {
+    /** The strict subset the ChatGPT backend holds a caller's output schema to: OpenAI's, as its Structured Outputs
+     *  guide states it (https://developers.openai.com/api/docs/guides/structured-outputs, "Supported schemas"). On
+     *  2026-10-27 at 14:01 CT claudex answered 400 "Invalid schema for response_format 'structured_output' ...
+     *  'additionalProperties' is required to be supplied and to be false" twice, to a strict schema whose objects
+     *  did not close, the error OpenAI's own validator words. */
+    private fun strictOutput(): StrictSchemaSubset =
+        StrictSchemaSubset(
+            closedObjects = true,
+            everyKeyRequired = true,
+            keywords = setOf(
+                "type",
+                "properties",
+                "required",
+                "additionalProperties",
+                "items",
+                "enum",
+                "const",
+                "anyOf",
+                "\$ref",
+                "\$defs",
+                "definitions",
+                "description",
+                "title",
+                "pattern",
+                "format",
+                "multipleOf",
+                "maximum",
+                "exclusiveMaximum",
+                "minimum",
+                "exclusiveMinimum",
+                "minItems",
+                "maxItems",
+            ),
+            formats = setOf("date-time", "time", "date", "duration", "email", "hostname", "ipv4", "ipv6", "uuid"),
+            recursion = true,
+            objectRoot = true,
+            limits = StrictSchemaLimits(
+                nestingLevels = 10,
+                properties = 5000,
+                enumValues = 1000,
+                stringChars = 120_000,
+            ),
+        )
+
     /** The codex quirk profile — injectable so the TOML [providers.*.quirks] table is REAL. */
     public fun defaultQuirks(): ResponsesQuirks = ResponsesQuirks(
         providerTag = "claudex",
@@ -64,6 +111,7 @@ public class CodexQuirks {
             // with the `additional_tools` input item, so a tool Claude Code adds or loads rides that item and the tool
             // list, the head of this head's prompt cache, stays as the client first sent it.
             acceptsInlineToolChanges = true,
+            outputSchema = ResponsesOutputSchemaPolicy.StrictWithin(strictOutput()),
         ),
         request = ResponsesRequestControlQuirks(
             serviceTier = ResponsesServiceTierSupport.UNSUPPORTED,

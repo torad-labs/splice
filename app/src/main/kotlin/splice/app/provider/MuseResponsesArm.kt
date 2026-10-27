@@ -9,6 +9,7 @@ import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.PromptCachePolicy
 import splice.dialect.responses.ResponsesBackendQuirks
 import splice.dialect.responses.ResponsesLiteQuirks
+import splice.dialect.responses.ResponsesOutputSchemaPolicy
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesReasoningQuirks
 import splice.dialect.responses.ResponsesRequestControlQuirks
@@ -93,7 +94,8 @@ internal class MuseResponsesArm(
                 emitToolChoice = true,
                 toolSurface = ToolDeferralPolicy(mode = ToolSearchMode.HOSTED),
                 acceptsInlineToolChanges = MUSE_TAKES_INLINE_TOOL_CHANGES,
-                constrainsOutputWithoutStrict = MUSE_CONSTRAINS_OUTPUT_WITHOUT_STRICT,
+                outputSchema = ResponsesOutputSchemaPolicy.ConstrainedWithoutStrict
+                    .takeIf { MUSE_CONSTRAINS_OUTPUT_WITHOUT_STRICT } ?: ResponsesOutputSchemaPolicy.StrictAsGiven,
             ),
             request = ResponsesRequestControlQuirks(
                 serviceTier = ResponsesServiceTierSupport.UNSUPPORTED,

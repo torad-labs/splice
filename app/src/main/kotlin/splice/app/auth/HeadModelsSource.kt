@@ -22,9 +22,10 @@ internal fun interface HeadModelsSource {
 }
 
 /** Production [HeadModelsSource]: the models feature's discovery, presenting the credential a head's turns present
- *  (StoredCredential.bearer, the same one `splice models` uses): an api-key head's key from the environment or the
- *  key store, else the token a sign-in left in the head's credential file. Both read through one
- *  [StoredCredential], so a key store that cannot be read is said once per version however often it is reread. */
+ *  (StoredCredential.bearer, the same one `splice models` uses): an api-key head's key from the environment, its key
+ *  file or the key store, in the head's own order, else the token a sign-in left in the head's credential file. Both
+ *  read through one [StoredCredential], so a key store that cannot be read is said once per version however often it
+ *  is reread. */
 internal class EndpointModels(
     private val env: EnvReader = EnvReader(System::getenv),
     log: LogSink = LogSink(DaemonLog::write),

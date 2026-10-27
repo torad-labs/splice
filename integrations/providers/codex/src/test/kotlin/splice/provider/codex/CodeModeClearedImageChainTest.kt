@@ -8,7 +8,6 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
-import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.params.ParameterizedTest
@@ -31,24 +30,29 @@ class CodeModeClearedImageChainTest : CodeModeBridgeTestSupport() {
         val canonical: List<JsonObject>,
     )
 
+    /** Fix 2, goal item 3: a result Claude Code cleared, as its context management clears old tool results, is a part
+     *  of the history Claude Code changed, so it goes out as Claude Code sent it: the client's tool call with the
+     *  cleared text, never GPT's script with the content Claude Code cleared. Replaces the Oct 2026 rule that kept
+     *  GPT's canonical script for a verified clear. */
     @ParameterizedTest
     @ValueSource(booleans = [false, true])
-    fun `a newly captured cleared image callback preserves the later canonical chain`(restart: Boolean) = runTest {
+    fun `cleared image callbacks go out as the client's tool calls with the cleared text`(restart: Boolean) = runTest {
         val chain = acceptedChain()
         val manager = if (restart) bridge(QueuedRuntime(ArrayDeque())) else chain.manager
         val history = history(chain, text(IMAGE_CHAIN_CLEAR), text(IMAGE_CHAIN_CLEAR))
         val next = message("Inspect next.")
         val request = prepare(manager, history + next)
-        val peer = request.requestBody.getValue("input").jsonArray.last().jsonObject
         val sent = post(request, completedOutcome()).second
-        assertEquals(
-            listOf("rs_image_chain_1", "rs_image_chain_2"),
-            chain.canonical.mapNotNull { JsonScalars.str(it, "id") },
-        )
-        assertTrue(chain.canonical.any { "AA==" in it.toString() })
-        assertEquals(chain.canonical + peer, sent)
-        assertFalse(sent.any { IMAGE_CHAIN_CLEAR in it.toString() })
-        assertFalse(sent.any { JsonScalars.str(it, "call_id") in chain.ids })
+        chain.ids.forEach { id ->
+            val result = sent.single {
+                JsonScalars.str(it, "type") == "function_call_output" && JsonScalars.str(it, "call_id") == id
+            }
+            assertTrue(IMAGE_CHAIN_CLEAR in result.toString(), "$id goes out cleared: $result")
+        }
+        assertFalse(sent.any { "AA==" in it.toString() })
+        val calls = chain.canonical.filter { JsonScalars.str(it, "type") == "custom_tool_call" }
+        val gpts = calls.mapNotNull { JsonScalars.str(it, "call_id") }.toSet()
+        assertFalse(sent.any { JsonScalars.str(it, "call_id") in gpts })
     }
 
     @ParameterizedTest

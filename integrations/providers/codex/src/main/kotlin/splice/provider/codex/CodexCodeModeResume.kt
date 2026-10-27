@@ -64,6 +64,8 @@ internal class CodexCodeModeResume(
         }
         val attached = context.copy(link = context.link.copy(sink = driver.streams.attach(record, context.link.sink)))
         attached.completed += context.completed
+        // The records whose results this request changed stay the client's when the resumed script's output goes up.
+        attached.conflicts = context.conflicts
         return try {
             if (record.progress.lastDigest == context.digest && record.progress.pending.isNotEmpty()) {
                 val pending = record.visiblePending().filter { it.clientId !in record.results }

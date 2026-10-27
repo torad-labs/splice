@@ -1,9 +1,11 @@
 // NEW: where a script started in the client's own history, and whether a later history still starts with it.
 package splice.provider.codex.history
 
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import splice.core.perf.InputDigest
 import splice.core.perf.InputItemDigests
+import splice.dialect.responses.request.ResponsesCodeModeProjection
 import splice.provider.codex.CodeModeClientStart
 import java.security.MessageDigest
 import java.util.HexFormat
@@ -20,6 +22,7 @@ internal class CodeModeClientPrefix(
     private val prefixes = HashMap<Int, String>()
     private val running = MessageDigest.getInstance(PREFIX_DIGEST)
     private var fed = 0
+    private val projected by lazy { ResponsesCodeModeProjection().project(JsonArray(conversation)) }
 
     /** Where a script started now: after all of [conversation]. */
     fun start(): CodeModeClientStart = CodeModeClientStart(
@@ -29,9 +32,16 @@ internal class CodeModeClientPrefix(
     )
 
     /** How many of [conversation]'s items the history [start] names is, or null when [conversation] does not start
-     *  with it: the client cut or edited that history away. */
+     *  with it: the client cut or edited that history away. A tool result Claude Code changed in place, cleared or
+     *  edited, leaves the history it stands in: the items [start] acknowledged still lead [conversation], each
+     *  changed result standing for itself, and GPT's reasoning the client replays among them counts before the end. */
     fun at(start: CodeModeClientStart): Int? =
-        start.count.takeIf { it in 0..conversation.size && digest(it) == start.digest }
+        start.count.takeIf { it in 0..conversation.size && digest(it) == start.digest } ?: changed(start)
+
+    private fun changed(start: CodeModeClientStart): Int? {
+        val boundary = start.acknowledgement?.boundary(projected) ?: return null
+        return boundary + projected.replayItems.filter { it.logicalOffset < boundary }.sumOf { it.items.size }
+    }
 
     /** [InputDigest.hex] of the first [count] item hexes joined, the digest a kept start holds. */
     private fun digest(count: Int): String = prefixes.getOrPut(count) {

@@ -10,6 +10,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import splice.core.parse.AnthropicParse
@@ -27,20 +28,31 @@ class CodeModeClearedCallbackChainTest : CodeModeBridgeTestSupport() {
         val canonical: List<JsonObject>,
     )
 
+    /** Fix 2, goal item 3: a result Claude Code cleared, as its context management clears old tool results, is a part
+     *  of the history Claude Code changed, so it goes out as Claude Code sent it: the client's tool call with the
+     *  cleared text, never GPT's script with the content Claude Code cleared. Replaces the Oct 2026 rule that kept
+     *  GPT's canonical script for a verified clear. */
     @ParameterizedTest
     @ValueSource(booleans = [false, true])
-    fun `several cleared accepted callbacks retain their verified canonical chain`(restart: Boolean) = runTest {
-        val chain = acceptedChain()
-        val manager = if (restart) bridge(QueuedRuntime(ArrayDeque())) else chain.manager
-        val cleared = chain.history.map { item ->
-            if (JsonScalars.str(item, "type") == "function_call_output") output(item, CHAIN_CLEAR_MARKER) else item
+    fun `several cleared accepted callbacks go out as the client's tool calls with the cleared text`(restart: Boolean) =
+        runTest {
+            val chain = acceptedChain()
+            val manager = if (restart) bridge(QueuedRuntime(ArrayDeque())) else chain.manager
+            val cleared = chain.history.map { item ->
+                if (JsonScalars.str(item, "type") == "function_call_output") output(item, CHAIN_CLEAR_MARKER) else item
+            }
+            val next = message("Inspect next.")
+            val sent = exchange(manager, cleared + next, completedOutcome()).second
+            val results = cleared.filter { JsonScalars.str(it, "type") == "function_call_output" }
+            assertTrue(results.isNotEmpty())
+            results.forEach { result ->
+                assertTrue(result in sent, "${JsonScalars.str(result, "call_id")} goes out cleared")
+            }
+            val calls = chain.canonical.filter { JsonScalars.str(it, "type") == "custom_tool_call" }
+            val gpts = calls.mapNotNull { JsonScalars.str(it, "call_id") }.toSet()
+            assertFalse(sent.any { JsonScalars.str(it, "call_id") in gpts })
+            assertEquals(next, sent.last())
         }
-        val next = message("Inspect next.")
-        val sent = exchange(manager, cleared + next, completedOutcome()).second
-        assertEquals(listOf("rs_chain_1", "rs_chain_2"), chain.canonical.mapNotNull { JsonScalars.str(it, "id") })
-        assertEquals(chain.canonical + next, sent)
-        assertFalse(sent.any { CHAIN_CLEAR_MARKER in it.toString() })
-    }
 
     @ParameterizedTest
     @ValueSource(strings = ["changed", "duplicate"])

@@ -125,15 +125,6 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
             assertTrue(failures.isEmpty(), "${failures.size} conversations broke:\n" + failures.joinToString("\n"))
         }
 
-    @Test
-    fun `a conversation whose old tool results are cleared keeps every script and only extends what GPT was sent`() =
-        runTest(timeout = SWEEP_TIMEOUT) {
-            val failures = (0 until RUNS).mapNotNull { seed ->
-                Conversation(seed, seed % 2 == 1, Store.entries[seed % Store.entries.size], trims = true).broke()
-            }
-            assertTrue(failures.isEmpty(), "${failures.size} conversations broke:\n" + failures.joinToString("\n"))
-        }
-
     /** Which build saved the state each restart starts on. */
     private enum class Store {
         /** At the first restart that cut no reply, a release's: its records kept no client start. */

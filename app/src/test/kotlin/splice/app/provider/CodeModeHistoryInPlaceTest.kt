@@ -157,6 +157,16 @@ class CodeModeHistoryInPlaceTest {
     }
 
     @Test
+    fun `a result Claude Code edits as a waiting script's result arrives falls back, and the script finishes`(
+        @TempDir tmp: Path,
+    ) = runBlocking { changedWithWaitingScript(tmp, CHANGED_TEXT) }
+
+    @Test
+    fun `a result Claude Code clears as a waiting script's result arrives falls back, and the script finishes`(
+        @TempDir tmp: Path,
+    ) = runBlocking { changedWithWaitingScript(tmp, CLEARED) }
+
+    @Test
     fun `generated conversations keep every script GPT wrote in place unless Claude Code changed its part`(
         @TempDir tmp: Path,
     ) = runBlocking {
@@ -180,6 +190,20 @@ class CodeModeHistoryInPlaceTest {
                 "${problems.joinToString("\n")}\n${stories.joinToString("\n")}\n${ledger.summary(http)}"
             }
         }
+    }
+
+    /** Past the two prompts, the second script waits on the client's Read. Claude Code changes the first script's
+     *  result to [text] in the request that carries the Read's result. The first script falls back to its plain tool
+     *  call with [text], and the waiting script finishes on its result and stays as GPT wrote it. */
+    private suspend fun changedWithWaitingScript(tmp: Path, text: String) = withScriptedHeads(tmp) {
+        val session = InPlaceSession.start(this, tmp, webSocket = false, "synthetic-in-place-changed-waiting")
+        val (first, second) = session.twoPrompts()
+        session.talk.changeResult(first.toolUse, text)
+        val changed = session.requests()
+        session.answer(GOING_ON)
+
+        val context = "a result changed as a waiting script's result arrives"
+        session.assertInPlace(context, changed, listOf(second), mapOf(first to text))
     }
 
     /** The 04:55 shape: GPT answered one prompt after a script and a wait on it, the next prompt ran a script and a

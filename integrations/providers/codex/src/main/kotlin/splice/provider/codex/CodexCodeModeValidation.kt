@@ -96,9 +96,14 @@ internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig)
      *  same client blocks rendered that way ([CodeModeResultRendering.legacy]) are the same
      *  result, so an upgrade under a parked script does not turn every replay into a conflict. */
 
-    /** A fork altered an already accepted callback; it is not the running cell's next result. */
+    /** A fork altered an already accepted callback, or Claude Code cleared it, as its context management clears old
+     *  tool results: either way that part of the history is the client's now, and not the running cell's next result.
+     *  Its record is not folded, so its client calls go out as Claude Code sent them (fix 2, goal item 3). */
     fun conflicts(record: CodeModeRecord, turn: CodexCodeModeBridge.Turn): Boolean =
-        turn.toolResults.any { conflicts(record, turn, it) }
+        turn.toolResults.any { conflicts(record, turn, it) || cleared(record, turn, it) }
+
+    private fun cleared(record: CodeModeRecord, turn: CodexCodeModeBridge.Turn, prior: CodeModeResult): Boolean =
+        prior.id in record.results && turn.rendering.verifiedCleared[record.id]?.contains(prior.id) == true
 
     private fun conflicts(record: CodeModeRecord, turn: CodexCodeModeBridge.Turn, prior: CodeModeResult): Boolean {
         val accepted = record.results[prior.id] ?: return false

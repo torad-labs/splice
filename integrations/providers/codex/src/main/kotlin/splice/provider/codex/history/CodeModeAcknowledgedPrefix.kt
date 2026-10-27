@@ -27,16 +27,15 @@ internal class CodeModeAcknowledgedPrefix(
             return CodeModeClientCursor(cursor.item + consumed)
         }
         if (actual == null) return null
-        val matched = cleared(item, actual as? JsonObject) || InputDigest.hex(actual) == item.digest
+        val matched = changed(item, actual as? JsonObject) || InputDigest.hex(actual) == item.digest
         return CodeModeClientCursor(cursor.item + 1).takeIf { matched }
     }
 
-    private fun cleared(item: CodeModeAcknowledgedItem, actual: JsonObject?): Boolean {
-        val authorized = item.callbackId != null && item.callbackId in clearedCallbacks
-        val identity = JsonScalars.str(actual, "type") == "function_call_output" &&
+    /** A tool result Claude Code changed in place, cleared or edited, is still that result: the history around it is
+     *  the one acknowledged, and the change is that part's alone, never a rewind or another branch. */
+    private fun changed(item: CodeModeAcknowledgedItem, actual: JsonObject?): Boolean =
+        item.callbackId != null && JsonScalars.str(actual, "type") == "function_call_output" &&
             JsonScalars.str(actual, "call_id") == item.callbackId
-        return authorized && identity && JsonScalars.str(actual, "output") == "[Old tool result content cleared]"
-    }
 
     private fun text(item: CodeModeAcknowledgedItem, last: Boolean): CodeModeClientCursor? {
         val count = checkNotNull(item.characters)

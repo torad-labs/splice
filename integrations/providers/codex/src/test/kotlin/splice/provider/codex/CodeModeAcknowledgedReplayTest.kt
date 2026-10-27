@@ -39,21 +39,29 @@ class CodeModeAcknowledgedReplayTest {
     }
 
     @Test
-    fun `acknowledged replay still distinguishes a new user message and an edited old result`() {
+    fun `acknowledged replay still distinguishes a new user message`() {
         val record = record()
         val callbacks = callback("one") + callback("two")
         assertEquals(CodeModeExtra.STEERING, extras.of(JsonArray(baseline + callbacks + user), record, emptyMap()))
-        val edited = baseline.map {
-            if (it == callback(
-                    "old",
-                )[1]
-            ) {
-                item("""{"type":"function_call_output","call_id":"old","output":"edited"}""")
-            } else {
-                it
+    }
+
+    /** Fix 2, goal item 3: an old result Claude Code edited or cleared is that part of the history changed, not a
+     *  rewind, so the script waiting on its own results goes on, and the changed part goes out as the client sent
+     *  it. */
+    @Test
+    fun `an old result Claude Code edited or cleared does not steer the waiting script`() {
+        val record = record()
+        val callbacks = callback("one") + callback("two")
+        listOf("edited", "[Old tool result content cleared]").forEach { output ->
+            val changed = baseline.map {
+                if (it == callback("old")[1]) {
+                    item("""{"type":"function_call_output","call_id":"old","output":"$output"}""")
+                } else {
+                    it
+                }
             }
+            assertEquals(CodeModeExtra.NONE, extras.of(JsonArray(changed + callbacks), record, emptyMap()), output)
         }
-        assertEquals(CodeModeExtra.STEERING, extras.of(JsonArray(edited + callbacks), record, emptyMap()))
     }
 
     @Test

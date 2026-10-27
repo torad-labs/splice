@@ -272,7 +272,7 @@ internal class TurnPreparation(
             it.copy(sessionId = it.sessionId ?: sessionId, messagesHash = messagesHash)
         }
         val prepared = fromProvider.copy(meta = fromProvider.meta.copy(scope = scope))
-        toolLoop.join(prepared.meta, parsed)
+        toolLoop.join(prepared.meta, parsed, parsed.agentId)
         // Per-turn headers already outrank the provider's own in TurnDriver's merge, so a forwarded
         // value REPLACES a configured default (e.g. the caller's anthropic-version wins over the
         // provider's), and UpstreamClient folds the casing.

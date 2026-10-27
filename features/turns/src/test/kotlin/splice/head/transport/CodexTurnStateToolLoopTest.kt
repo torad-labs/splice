@@ -34,6 +34,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.client.AGENT_HEADER
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.storage.ActivityDays
@@ -120,6 +121,13 @@ private val LOOP = listOf(
  *  nothing on the subagent's own prompt. */
 private val ECHOED = listOf(null, FIRST_STATE, null, FIRST_STATE, null, SECOND_STATE)
 
+/** The answer a request of [LOOP] gets: [state] as a response header and in a response.metadata event, then text. */
+private fun stateReply(state: String, n: Int) = reply {
+    header(TURN_STATE, state)
+    event("""{"type":"response.metadata","headers":{"$TURN_STATE":"$state"}}""")
+    responsesAnswer("synthetic answer $n")
+}
+
 private fun user(content: String) = """{"role":"user","content":$content}"""
 
 private fun toolUse(id: String, path: String) =
@@ -173,13 +181,35 @@ class CodexTurnStateToolLoopTest {
         }
     }
 
+    @Test
+    fun `two subagents of one session whose first messages are identical each keep their own turn state`() =
+        runBlocking {
+            val rig = start("subagents", webSocket = false, traced = false)
+            try {
+                // Byte-identical requests, each headed with its own subagent: the same session, the same words.
+                rig.backend.script(stateReply(FIRST_STATE, 1))
+                rig.post(listOf(SUBAGENT_PROMPT), agent = "synthetic-agent-one")
+                rig.backend.script(stateReply(SIDE_STATE, 2))
+                rig.post(listOf(SUBAGENT_PROMPT), agent = "synthetic-agent-two")
+                rig.backend.script(stateReply(SIDE_STATE, 3))
+                rig.post(listOf(SUBAGENT_PROMPT, CALL_ONE, RESULT_ONE), agent = "synthetic-agent-two")
+                rig.backend.awaitRequests(3)
+
+                val echoed = rig.run().requests.map { it.headers[TURN_STATE] }
+                assertEquals(listOf(null, null, SIDE_STATE), echoed, "each subagent's own turn, and no leak")
+            } finally {
+                rig.stop()
+            }
+        }
+
     private fun frameState(request: ProviderRequest): String? =
         (Json.parseToJsonElement(request.body).jsonObject["client_metadata"] as? JsonObject)
             ?.get(TURN_STATE)?.jsonPrimitive?.content
 
-    /** What one run of [LOOP] left behind: what the backend received, the head's log, and its trace directory. */
-    private class Run(val requests: List<ProviderRequest>, val logs: List<String>, private val traceDir: Path) {
+    /** What a run left behind: what the backend received, the head's log, and what the head wrote under [dir]. */
+    private class Run(val requests: List<ProviderRequest>, val logs: List<String>, private val dir: Path) {
         private val json = Json { ignoreUnknownKeys = true }
+        private val traceDir: Path = dir.resolve("trace")
 
         /** Every record the head's trace wrote, bodies read back from where the store keeps them. */
         fun records(): List<JsonObject> {
@@ -203,7 +233,24 @@ class CodexTurnStateToolLoopTest {
     }
 
     private suspend fun toolLoop(webSocket: Boolean, traced: Boolean): Run {
-        val dir = Files.createDirectories(tmp.resolve(if (webSocket) "ws" else "http"))
+        val rig = start(if (webSocket) "ws" else "http", webSocket, traced)
+        try {
+            LOOP.forEachIndexed { n, step ->
+                rig.backend.script(stateReply(step.backendState, n + 1))
+                val answer = rig.post(step.messages)
+                assertTrue(answer.contains("synthetic answer ${n + 1}"), "request ${n + 1} was answered")
+            }
+            rig.backend.awaitRequests(LOOP.size)
+            return rig.run()
+        } finally {
+            rig.stop()
+        }
+    }
+
+    /** A codex head on a scripted backend, started, with its log, its perf rows and (when [traced]) its trace under
+     *  [name]. */
+    private suspend fun start(name: String, webSocket: Boolean, traced: Boolean): Rig {
+        val dir = Files.createDirectories(tmp.resolve(name))
         val traceDir = dir.resolve("trace")
         val logs = CopyOnWriteArrayList<String>()
         val backend = ScriptedProvider(VirtualTime())
@@ -219,31 +266,38 @@ class CodexTurnStateToolLoopTest {
             deps = headDeps(dir, upstream = UpstreamClient(totalTimeoutMs = 30_000), log = { logs += it })
                 .copy(stores = headStores(dir, trace = trace)),
         )
-        val client = HttpClient(CIO)
-        try {
-            head.start()
-            LOOP.forEachIndexed { n, step ->
-                backend.script(
-                    reply {
-                        header(TURN_STATE, step.backendState)
-                        event("""{"type":"response.metadata","headers":{"$TURN_STATE":"${step.backendState}"}}""")
-                        responsesAnswer("synthetic answer ${n + 1}")
-                    },
+        head.start()
+        return Rig(backend, head, logs, dir)
+    }
+
+    /** A started head, its backend, and a client that posts to it as Claude Code does in [SESSION]. */
+    private class Rig(
+        val backend: ScriptedProvider,
+        private val head: HeadServer,
+        private val logs: List<String>,
+        private val dir: Path,
+    ) {
+        private val client = HttpClient(CIO)
+
+        /** One request carrying [messages], from the subagent [agent] names when one does; what the client read. */
+        suspend fun post(messages: List<String>, agent: String? = null): String =
+            client.post("http://127.0.0.1:${head.port}/v1/messages") {
+                bearerAuth("test-inference-token")
+                header("Content-Type", "application/json")
+                header("x-claude-code-session-id", SESSION)
+                agent?.let { header(AGENT_HEADER, it) }
+                setBody(
+                    """{"model":"claude-codex--$MODEL","stream":true,"max_tokens":1024,""" +
+                        """"tools":[{"name":"Read","input_schema":{"type":"object"}}],""" +
+                        """"messages":[${messages.joinToString(",")}]}""",
                 )
-                val answer = client.post("http://127.0.0.1:${head.port}/v1/messages") {
-                    bearerAuth("test-inference-token")
-                    header("Content-Type", "application/json")
-                    header("x-claude-code-session-id", SESSION)
-                    setBody(
-                        """{"model":"claude-codex--$MODEL","stream":true,"max_tokens":1024,""" +
-                            """"tools":[{"name":"Read","input_schema":{"type":"object"}}],""" +
-                            """"messages":[${step.messages.joinToString(",")}]}""",
-                    )
-                }.bodyAsText()
-                assertTrue(answer.contains("synthetic answer ${n + 1}"), "request ${n + 1} was answered")
-            }
-            return Run(backend.awaitRequests(LOOP.size), logs.toList(), traceDir)
-        } finally {
+            }.bodyAsText()
+
+        /** What the run left: every request the backend received so far, the log as it grows (a turn's last lines are
+         *  written as it ends), and the head's folder. */
+        fun run(): Run = Run(backend.requests, logs, dir)
+
+        suspend fun stop() {
             head.stop()
             client.close()
             backend.stop()

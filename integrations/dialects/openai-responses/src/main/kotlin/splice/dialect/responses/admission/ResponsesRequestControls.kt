@@ -13,6 +13,8 @@ import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesServiceTierSupport
 import splice.dialect.responses.request.ResponsesCacheHints
 import splice.upstream.RequestRefusal
+import java.security.MessageDigest
+import java.util.HexFormat
 
 /** The raw request controls AnthropicRequest intentionally does not model but Responses can carry. */
 internal data class ResponsesWireRequestControls(
@@ -49,8 +51,10 @@ internal class ResponsesRequestControls(private val quirks: ResponsesQuirks) {
 
     private fun safetyIdentifier(raw: JsonObject): String? {
         if (!quirks.request.emitSafetyIdentifier) return null
-        val metadata = raw["metadata"] as? JsonObject
-        return (metadata?.get("user_id") as? JsonPrimitive)?.takeIf(JsonPrimitive::isString)?.content
+        val sourceId = ((raw["metadata"] as? JsonObject)?.get("user_id") as? JsonPrimitive)
+            ?.takeIf(JsonPrimitive::isString)?.content ?: return null
+        val digest = MessageDigest.getInstance("SHA-256").digest(sourceId.toByteArray(Charsets.UTF_8))
+        return HexFormat.of().formatHex(digest)
     }
 
     private fun refusedFeature(raw: JsonObject): RequestFeature? =

@@ -117,38 +117,73 @@ class SharedResponsesContractTest {
         }
 
     @Test
-    fun `source attribution changes only the public safety identifier across Responses heads`(@TempDir tmp: Path) =
-        runTest {
-            val random = Random(261027)
-            val alphabet = "abczAZ019-_:é\"\\"
-            val identifiers = listOf<String?>(null) + List(48) {
-                buildString {
-                    repeat(random.nextInt(1, 97)) { append(alphabet[random.nextInt(alphabet.length)]) }
-                }
-            }
-            val source = AnthropicParse.parseAnthropicBody(mixedResult)
-            for (provider in listOf("openai", "codex", "xai", "custom")) {
-                val wired = assembly(tmp.resolve(provider), backgroundScope).buildProvider(context(tmp, provider))
-                try {
-                    val baseline = wired.provider.buildTurn(source, false, "attribution").requestBody
-                    assertFalse("safety_identifier" in baseline, "attribution is not inferred from session identity")
-                    for (identifier in identifiers) {
-                        val metadata = JsonObject(mapOf("user_id" to JsonPrimitive(identifier)))
-                        val raw = JsonObject(source.raw + ("metadata" to metadata))
-                        val request = AnthropicParse.parseAnthropicBody(raw.toString())
-                        assertNull(wired.provider.requestRefusal(request), provider)
-                        val built = wired.provider.buildTurn(request, false, "attribution")
-                        val expected = identifier?.let {
-                            JsonObject(baseline + ("safety_identifier" to JsonPrimitive(it)))
-                        } ?: baseline
-                        assertEquals(expected, built.requestBody, provider)
-                        assertNull(built.roundInterceptor, "attribution must not select execution for $provider")
+    fun `source attribution uses bounded stable hashes across Responses heads`(@TempDir tmp: Path) = runTest {
+        val source = AnthropicParse.parseAnthropicBody(mixedResult)
+        for (provider in listOf("openai", "codex", "xai", "custom")) {
+            val wired = assembly(tmp.resolve(provider), backgroundScope).buildProvider(context(tmp, provider))
+            try {
+                val baseline = wired.provider.buildTurn(source, false, "attribution").requestBody
+                assertFalse("safety_identifier" in baseline, "attribution is not inferred from session identity")
+                val seen = linkedMapOf<String, String>()
+                for (identifier in sourceIdentifiers()) {
+                    val metadata = JsonObject(mapOf("user_id" to JsonPrimitive(identifier)))
+                    val raw = JsonObject(source.raw + ("metadata" to metadata))
+                    val request = AnthropicParse.parseAnthropicBody(raw.toString())
+                    assertNull(wired.provider.requestRefusal(request), provider)
+                    val built = wired.provider.buildTurn(request, false, "attribution")
+                    val digest = assertSafetyAttribution(baseline, built.requestBody, identifier, provider)
+                    assertNull(built.roundInterceptor, "attribution must not select execution for $provider")
+                    if (identifier != null) {
+                        val encoded = checkNotNull(digest)
+                        seen[identifier]?.let { assertEquals(it, encoded, "the same source id stays stable") }
+                        seen[identifier] = encoded
                     }
-                } finally {
-                    wired.provider.onHeadStop()
                 }
+                assertEquals(seen.size, seen.values.toSet().size, "distinct source users must not all collapse")
+            } finally {
+                wired.provider.onHeadStop()
             }
         }
+    }
+
+    private fun sourceIdentifiers(): List<String?> {
+        val random = Random(261027)
+        val alphabet = "abczAZ019-_:é\"\\"
+        val envelope = JsonObject(
+            mapOf(
+                "device_id" to JsonPrimitive("d".repeat(64)),
+                "account_uuid" to JsonPrimitive("00000000-0000-4000-8000-000000000001"),
+                "session_id" to JsonPrimitive("00000000-0000-4000-8000-000000000002"),
+            ),
+        ).toString()
+        val identifiers = listOf(envelope, "abc") + List(48) {
+            "opaque-" + buildString {
+                repeat(random.nextInt(1, 250)) { append(alphabet[random.nextInt(alphabet.length)]) }
+            }
+        }
+        return listOf(null) + identifiers + identifiers.shuffled(random)
+    }
+
+    private fun assertSafetyAttribution(
+        baseline: JsonObject,
+        actual: JsonObject,
+        sourceId: String?,
+        provider: String,
+    ): String? {
+        if (sourceId == null) {
+            assertEquals(baseline, actual, provider)
+            return null
+        }
+        val digest = checkNotNull(actual["safety_identifier"]?.jsonPrimitive?.content)
+        assertTrue(Regex("[0-9a-f]{64}").matches(digest), "$provider must emit a bounded opaque digest")
+        assertFalse(digest == sourceId, "the raw source identifier must not be forwarded")
+        assertEquals(baseline, JsonObject(actual - "safety_identifier"), provider)
+        if (sourceId == "abc") {
+            // RFC 6234's SHA-256 test vector, not a value copied from this converter.
+            assertEquals("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", digest, provider)
+        }
+        return digest
+    }
 
     @Test
     fun `an empty stop list does not reject an ordinary Responses request`(@TempDir tmp: Path) = runTest {

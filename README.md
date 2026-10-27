@@ -227,6 +227,7 @@ splice add-model      # put more of the curated OpenRouter models on an OpenRout
 splice models         # what each provider ACTUALLY serves, against your declared rows (--all, or one provider)
 splice upgrade        # verified upgrade to the latest release (--to vX, --now, --rollback)
 splice sessions       # the Claude Code sessions on this machine, joined to their heads
+splice sessions --json  # the same sessions as one JSON document, for a program to read
 splice sessions relaunch  # relaunch each session that still holds one of splice's keys, in its environment or its hosted MCP servers, on its own head, resumed
 splice perf           # per-head latency, failure and cache summary (--window 1h|24h|7d)
 splice wire <head>    # the request bodies a head sent upstream; only once you opt that head in

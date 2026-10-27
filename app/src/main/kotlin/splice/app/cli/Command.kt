@@ -29,7 +29,9 @@ import splice.diagnostics.wire.WireCommand
 import splice.launch.install.InstallResult
 import splice.lifecycle.upgrade.UpgradeVerb
 import splice.lifecycle.upgrade.VersionedRestart
+import splice.sessions.list.LocalSessions
 import splice.sessions.list.SessionsCommand
+import splice.sessions.list.SessionsJson
 import splice.topology.TopologyLoader
 
 /** The splice CLI verbs as a closed, exhaustively-dispatched hierarchy: argv is parsed into a typed
@@ -201,6 +203,14 @@ public sealed class Command {
      *  turn key on its own head, resumed (SessionsRelaunchCommand). */
     internal data object SessionsRelaunch : Command() {
         override suspend fun run(): Int = SessionsRelaunchCommand().run()
+    }
+
+    /** Oct 27, 2026: `splice sessions --json`, the same sessions as one JSON document, for a program to read. */
+    internal data object SessionsAsJson : Command() {
+        override suspend fun run(): Int {
+            val registry = LocalSessions(TerminalOutput(System.err::println)).joined(EnvReader(System::getenv))
+            return outcomeExitCode(SessionsJson(TerminalOutput(::println)).print(registry))
+        }
     }
     public data class Perf(val args: List<String>) : Command() {
         override suspend fun run(): Int = outcomeExitCode(PerfWiring.command().perf(args, EnvReader(System::getenv)))

@@ -169,12 +169,14 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
         CommandFactory { a -> Command.Logs(a.drop(1)) },
     ),
     // Oct 26, 2026: `sessions relaunch` relaunches each session holding a planted turn key (SessionsRelaunchCommand).
+    // Oct 27, 2026: `sessions --json` prints the same sessions as one JSON document (SessionsJson).
     "sessions" to CommandRegistration(
-        "[relaunch]",
+        "[relaunch | --json]",
         CommandFactory { a ->
             when {
                 a.size == 1 -> Command.Sessions
                 a.size == 2 && a[1] == "relaunch" -> Command.SessionsRelaunch
+                a.size == 2 && a[1] == "--json" -> Command.SessionsAsJson
                 else -> null
             }
         },

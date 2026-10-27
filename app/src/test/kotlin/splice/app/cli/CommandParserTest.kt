@@ -131,6 +131,8 @@ class CommandParserTest {
     fun `sessions names one word, relaunch`() {
         assertEquals(Command.Sessions, parser.parse(arrayOf("sessions")))
         assertEquals(Command.SessionsRelaunch, parser.parse(arrayOf("sessions", "relaunch")))
+        assertEquals(Command.SessionsAsJson, parser.parse(arrayOf("sessions", "--json")))
+        assertEquals(null, parser.parse(arrayOf("sessions", "--json", "x")))
         assertEquals(null, parser.parse(arrayOf("sessions", "relaunch", "x")))
         assertEquals(null, parser.parse(arrayOf("sessions", "relaunch", "--help")))
     }

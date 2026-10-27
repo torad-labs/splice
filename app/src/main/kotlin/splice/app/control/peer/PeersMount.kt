@@ -29,6 +29,7 @@ import splice.http.JsonBody
 import splice.http.JsonReply
 import splice.sessions.peer.PeerConfig
 import splice.sessions.peer.PeerOutbox
+import splice.sessions.peer.store.PeerLimits
 import splice.sessions.peer.store.PeerRefusal
 import splice.sessions.peer.store.PeerRegistration
 import splice.sessions.peer.store.PeerRequest
@@ -56,9 +57,12 @@ internal data class PeerParts(
 
 internal class PeersMount(parts: PeerParts, private val guard: ControlGuard) {
     private val rate = PeerSendRate()
-    private val manage = PeerManagementRoutes(parts, rate)
+    private val limits = PeerLimits(parts.store)
+    private val manage = PeerManagementRoutes(parts, rate, limits)
     private val webhooks = PeerWebhookRoutes(parts)
-    private val self = PeerSelfRoutes(parts, rate)
+    private val self = PeerSelfRoutes(parts)
+    private val sending = PeerSendRoute(parts, rate, limits)
+    private val limit = PeerLimitRoute(parts, limits)
     private val codex = PeerCodexRoutes(parts)
 
     fun register(route: Route) {
@@ -67,10 +71,11 @@ internal class PeersMount(parts: PeerParts, private val guard: ControlGuard) {
         route.get("/api/peers") { guard.guarded(call) { manage.list(call) } }
         route.delete("/api/peers/{name}") { guard.guarded(call) { manage.revoke(call) } }
         route.post("/api/peers/{name}/rotate") { guard.guarded(call) { manage.rotate(call) } }
+        route.put("/api/peers/{name}/limit") { guard.guarded(call) { limit.set(call) } }
         route.put("/api/peers/{name}/webhook") { guard.guarded(call) { webhooks.set(call) } }
         route.delete("/api/peers/{name}/webhook") { guard.guarded(call) { webhooks.clear(call) } }
         route.post("/api/peers/{name}/webhook/test") { guard.guarded(call) { webhooks.test(call) } }
-        route.post("/api/peers/self/send") { guard.peer.guarded(call) { peer -> self.send(call, peer) } }
+        route.post("/api/peers/self/send") { guard.peer.guarded(call) { peer -> sending.send(call, peer) } }
         route.get("/api/peers/self/inbox") { guard.peer.guarded(call) { peer -> self.inbox(call, peer) } }
         route.post("/api/peers/self/inbox/ack") { guard.peer.guarded(call) { peer -> self.ack(call, peer) } }
         route.get("/api/peers/self/sent/{msgId}") { guard.peer.guarded(call) { peer -> self.sent(call, peer) } }
@@ -97,7 +102,11 @@ internal object PeerReplies {
 }
 
 /** The management-key routes that make, list, revoke and rotate peers (spec 3.2). */
-internal class PeerManagementRoutes(private val parts: PeerParts, private val rate: PeerSendRate) {
+internal class PeerManagementRoutes(
+    private val parts: PeerParts,
+    private val rate: PeerSendRate,
+    private val limits: PeerLimits,
+) {
     private val store = parts.store
     private val jsonBody = JsonBody()
 
@@ -167,6 +176,7 @@ internal class PeerManagementRoutes(private val parts: PeerParts, private val ra
     private suspend fun revoked(name: String, purge: Boolean): PeerAnswer {
         if (!store.wellFormed(name) || !store.revoke(name)) return PeerReplies.refuse(HttpStatusCode.NotFound, NO_PEER)
         rate.forget(name)
+        limits.forget(name)
         parts.helpers?.stop(name)
         val mail = parts.mail
         val purged = purge && mail != null
@@ -192,6 +202,11 @@ internal class PeerManagementRoutes(private val parts: PeerParts, private val ra
             put("alive", helper != null)
             put("socket", helper?.socket)
             putJsonArray("sendTo") { config.sendTo.forEach { add(JsonPrimitive(it)) } }
+            val limit = limits.of(config.name)
+            putJsonObject("limit") {
+                put("perMinute", limit.perMinute)
+                put("burst", limit.burst)
+            }
             if (webhook == null) {
                 put("webhook", JsonNull)
             } else {

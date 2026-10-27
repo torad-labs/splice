@@ -36,8 +36,15 @@ internal data class InboxCounts(val total: Long, val unread: Long)
 /** What `webhook test` came to: pushed or failed, the receiver's status, and the redacted detail (spec 4.4). */
 internal data class WebhookTestResult(val pushed: Boolean, val httpStatus: Int?, val detail: String?)
 
-/** One send as the outbox records it: never the text, only its size (spec 2.3). */
-internal data class SentRecord(val msgId: String?, val to: SessionRecord, val bytes: Int, val outcome: SendOutcome)
+/** One send as the outbox records it: never the text, only its size and SHA-256 (spec 2.3). [msgId] is the id it
+ *  carried: the caller's when there was one, else the one it was given, else null for a send that never left. */
+internal data class SentRecord(
+    val msgId: String?,
+    val to: SessionRecord,
+    val bytes: Int,
+    val outcome: SendOutcome,
+    val digest: String? = null,
+)
 
 /** C's journal, outbox log and webhook client, per peer, as the routes use them. */
 internal interface PeerMail {
@@ -54,6 +61,9 @@ internal interface PeerMail {
 
     /** Appends one outbox record. */
     fun recordSend(name: String, sent: SentRecord)
+
+    /** The newest send [name] made under [msgId], or null when it made none. */
+    fun prior(name: String, msgId: String): PriorSend?
 
     /** The outcome of the last finished push, `pushed` or `failed`, or null when none finished. */
     fun lastWebhookOutcome(name: String): String?

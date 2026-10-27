@@ -2,7 +2,8 @@
 // A message within the limits is journaled, flushed, and answered with `delivered`. One past a limit, or one the
 // journal could not keep, is answered `refused` or `dropped` and not journaled. A frame behind a bad token is
 // answered `denied`. A receipt for one of this peer's sends is journaled. This handler sends every receipt; its
-// caller sends none.
+// caller sends none. Oct 27, 2026: the same message again under its msg_id, from the same sender, is answered
+// `delivered` as the first was and journaled once; another message under an id the journal holds is `refused`.
 package splice.sessions.peer.journal
 
 import splice.core.util.Cancellables
@@ -31,6 +32,7 @@ private const val PEER_DETAIL_RATE = "rate limit"
 private const val PEER_DETAIL_SIZE = "too large"
 private const val PEER_DETAIL_JOURNAL = "journal write failed"
 private const val PEER_DETAIL_TOKEN = "bad peer token"
+private const val PEER_DETAIL_ID_TAKEN = "another message already came under this msg_id"
 
 /**
  * The inbox of one peer's helper. [onMessage] returns the status it answered with: [DeliveryStatus.DELIVERED] for a
@@ -113,9 +115,17 @@ public class PeerInbox(
         }
     }
 
+    /** A message, or the same one again under its id, is `delivered`, as the first was; another message under an id
+     *  already taken is `refused` and not journaled. */
     private fun journaled(entry: JournalRecords.MessageEntry): Verdict =
         Cancellables.runCatchingCancellable { journal.appendMessage(entry) }.fold(
-            onSuccess = { Verdict(DeliveryStatus.DELIVERED, null) },
+            onSuccess = { admission ->
+                if (admission == JournalAdmission.Conflict) {
+                    Verdict(DeliveryStatus.REFUSED, PEER_DETAIL_ID_TAKEN)
+                } else {
+                    Verdict(DeliveryStatus.DELIVERED, null)
+                }
+            },
             onFailure = { failure ->
                 note("a message could not be journaled (${LogSafe.str(SafeFailureText.render(failure))})")
                 Verdict(DeliveryStatus.DROPPED, PEER_DETAIL_JOURNAL)

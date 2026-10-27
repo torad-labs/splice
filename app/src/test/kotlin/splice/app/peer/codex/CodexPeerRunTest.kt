@@ -51,7 +51,12 @@ class CodexPeerRunTest {
 
     /** No receipt in this test reaches a socket: the senders' side is not what it checks. */
     private class Senders : PeerOutbox {
-        override suspend fun send(target: SessionRecord, text: String, sender: PeerSender): SendOutcome =
+        override suspend fun send(
+            target: SessionRecord,
+            text: String,
+            sender: PeerSender,
+            msgId: String?,
+        ): SendOutcome =
             SendOutcome.Submitted("unused")
 
         override suspend fun receipt(

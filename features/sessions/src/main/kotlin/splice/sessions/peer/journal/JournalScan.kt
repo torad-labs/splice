@@ -13,13 +13,10 @@ import java.util.TreeMap
 // why: the most records one read returns, so one inbox answer stays a few hundred KB at most.
 internal const val PEER_JOURNAL_READ_MAX = 200
 
-// why: spec 4.3, a message whose msg_id is among the last 1,000 journaled messages is a repeat.
-internal const val PEER_JOURNAL_RECENT_IDS = 1000
-
 internal class JournalScan(private val live: Path, private val rolled: Path) {
 
-    /** The highest seq on disk, and the ids of the newest messages, oldest first. */
-    data class Loaded(val lastSeq: Long, val recentIds: List<String>)
+    /** The highest seq on disk, and the mark of each message id the files hold, the first message under it. */
+    data class Loaded(val lastSeq: Long, val marks: Map<String, MessageMark>)
 
     private fun interface Visit {
         fun on(seq: Long, record: JsonObject)
@@ -109,18 +106,19 @@ internal class JournalScan(private val live: Path, private val rolled: Path) {
     private fun codex(record: JsonObject, handOver: Boolean): Boolean =
         JournalLines.isKind(record, PEER_KIND_CODEX) && (!handOver || record.containsKey("ref"))
 
-    /** The highest seq and the newest message ids, from the rolled file to the live one. */
+    /** The highest seq and every message id's mark, from the rolled file to the live one. */
     fun load(): Loaded {
         var last = 0L
-        val ids = ArrayDeque<String>()
+        val marks = HashMap<String, MessageMark>()
         for (file in listOf(rolled, live)) {
             each(file) { seq, record ->
                 last = maxOf(last, seq)
                 val id = JsonScalars.str(record, PEER_KEY_ID)
-                if (id != null && JournalLines.isKind(record, PEER_KIND_MESSAGE)) remember(ids, id)
+                val mark = if (JournalLines.isKind(record, PEER_KIND_MESSAGE)) MessageMarks.of(record) else null
+                if (id != null && mark != null) marks.putIfAbsent(id, mark)
             }
         }
-        return Loaded(last, ids.toList())
+        return Loaded(last, marks)
     }
 
     /** A cheap reading of both files' size and age, to tell whether anything was appended since the last one. */
@@ -145,11 +143,6 @@ internal class JournalScan(private val live: Path, private val rolled: Path) {
         while (found.size > wanted) {
             found.pollLastEntry()
         }
-    }
-
-    private fun remember(ids: ArrayDeque<String>, id: String) {
-        ids.addLast(id)
-        if (ids.size > PEER_JOURNAL_RECENT_IDS) ids.removeFirst()
     }
 
     private fun matches(record: JsonObject, origMsgId: String): Boolean =

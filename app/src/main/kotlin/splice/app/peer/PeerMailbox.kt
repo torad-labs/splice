@@ -11,6 +11,7 @@ import kotlinx.serialization.json.putJsonObject
 import splice.app.control.peer.InboxCounts
 import splice.app.control.peer.InboxPage
 import splice.app.control.peer.PeerMail
+import splice.app.control.peer.PriorSend
 import splice.app.control.peer.SentRecord
 import splice.app.control.peer.WebhookTestResult
 import splice.core.util.LogSink
@@ -83,7 +84,7 @@ internal class PeerMailbox(
             sessionId = sent.to.sessionId,
             address = sent.to.process.messagingSocketPath?.let { "uds:$it" },
         )
-        // A refused or failed send carried no msg_id; it still gets an id of its own, so the record has one.
+        // A refused or failed send under no caller's id carried no msg_id; it still gets an id of its own.
         val id = sent.msgId ?: UUID.randomUUID().toString()
         PeerOutboxLog(dir(name)).append(
             PeerOutboxLog.Record(
@@ -93,8 +94,13 @@ internal class PeerMailbox(
                 bytes = sent.bytes,
                 outcome = word,
                 detail = detail,
+                digest = sent.digest,
             ),
         )
+    }
+
+    override fun prior(name: String, msgId: String): PriorSend? = PeerOutboxLog(dir(name)).find(msgId)?.let {
+        PriorSend(it.outcome, it.digest, it.to.sessionId, it.to.name, it.to.address)
     }
 
     override fun lastWebhookOutcome(name: String): String? = journal(name).lastWebhookOutcome()

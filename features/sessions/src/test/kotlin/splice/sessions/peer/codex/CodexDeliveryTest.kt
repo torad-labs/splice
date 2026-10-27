@@ -50,7 +50,12 @@ class CodexDeliveryTest {
     private class Senders : PeerOutbox {
         val receipts = mutableListOf<Triple<String, String, DeliveryStatus>>()
 
-        override suspend fun send(target: SessionRecord, text: String, sender: PeerSender): SendOutcome =
+        override suspend fun send(
+            target: SessionRecord,
+            text: String,
+            sender: PeerSender,
+            msgId: String?,
+        ): SendOutcome =
             SendOutcome.Submitted("unused")
 
         override suspend fun receipt(

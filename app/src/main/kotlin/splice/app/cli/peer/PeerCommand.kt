@@ -30,6 +30,7 @@ internal class PeerCommand(
             "register", "list", "revoke", "rotate", "webhook" -> manage(verb, rest)
             "send", "inbox", "status" -> asPeer(verb, rest)
             "codex" -> PeerCodexCommand(call, out, env).run(rest)
+            "limit" -> PeerLimitCommand(call, out).run(rest)
             else -> null
         }
         if (code == null) err.line("usage: splice peer $PEER_USAGE")
@@ -139,15 +140,14 @@ internal class PeerCommand(
         }
     }
 
+    /** `send --as <name> [--id ID] [--pid P [--proc-start S]] <to> <text|->`: an id makes the send idempotent, and a
+     *  pid pins it to the process its target was resolved to. */
     private fun send(args: List<String>): Int? {
-        val parsed = PeerArgsParser(setOf("--as"), emptySet()).parse(args)
-        val words = parsed?.words?.takeIf { it.size == 2 } ?: return null
+        val parsed = PeerArgsParser(PeerSendFlags.VALUED, emptySet()).parse(args)
+        val words = parsed?.words?.takeIf { it.size == 2 && PeerSendFlags.valid(parsed.values) } ?: return null
         val text = if (words[1] == "-") stdin.read() else words[1]
         val key = call.peerKey(parsed.values["--as"]) ?: return PeerExit.REFUSED
-        val body = buildJsonObject {
-            put("to", words[0])
-            put("text", JsonPrimitive(text))
-        }
+        val body = PeerSendFlags.body(words[0], text, parsed.values)
         return finish(call.call("POST", "/api/peers/self/send", key, body)) { JsonScalars.str(it, "msgId") }
     }
 

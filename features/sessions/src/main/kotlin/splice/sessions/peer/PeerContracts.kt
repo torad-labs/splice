@@ -75,7 +75,8 @@ public data class PeerPrincipal(val name: String)
 
 /** A's: frames on the wire. */
 public interface PeerOutbox {
-    public suspend fun send(target: SessionRecord, text: String, sender: PeerSender): SendOutcome
+    /** Writes [text] to [target] as [sender], under [msgId] when the caller names one, else under a fresh id. */
+    public suspend fun send(target: SessionRecord, text: String, sender: PeerSender, msgId: String? = null): SendOutcome
 
     public suspend fun receipt(
         toAddress: String,

@@ -90,13 +90,13 @@ public class PeerNoteSocket(
         return write(socket, frame) ?: NoteOutcome.Failed("the session's inbox did not take the note in time")
     }
 
-    override suspend fun send(target: SessionRecord, text: String, sender: PeerSender): SendOutcome {
+    override suspend fun send(target: SessionRecord, text: String, sender: PeerSender, msgId: String?): SendOutcome {
         val socket = target.process.messagingSocketPath?.let(PathProbe::spelled)
         val refused = refusal(target, socket, text, sender)
         if (refused != null || socket == null) {
             return refused ?: SendOutcome.Refused(HttpStatusCode.Conflict.value, NO_SOCKET)
         }
-        val id = newId.next()
+        val id = msgId ?: newId.next()
         val frame = keys.auth(target) + PeerWire.encodeMessage(id, target.sessionId, text, sender)
         return when (val outcome = write(socket, frame)) {
             NoteOutcome.Submitted -> SendOutcome.Submitted(id)

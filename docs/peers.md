@@ -44,6 +44,11 @@ shows its sender as Splice checked it:
 
 `--ack` marks everything shown as read. `--follow` keeps polling every 2 seconds.
 
+A sender may send the same message again under the same `msg_id`, as one does when it never heard whether the first
+arrived. The peer keeps one record of it, and answers the repeat with `delivered`, as it answered the first. Another
+message under an id the journal already holds, from another sender or with other text, is answered `refused` and not
+kept. Every id the journal's two files hold counts.
+
 ## Send as the peer
 
 ```
@@ -59,7 +64,27 @@ reply. Nothing in the request can change them.
 `splice peer status` shows the send's outcome, then a receipt if one came back. A Claude Code recipient sends a
 receipt only when it holds, expires or drops a message, so the usual answer is `no problem reported`.
 
-A text is at most 32,768 bytes. A peer may send 20 messages a minute, in bursts of up to 5.
+A text is at most 32,768 bytes. A peer may send 20 messages at once and 60 a minute after that, enough for a program
+that tells a whole team at once. `splice peer limit <name> <per-minute> <burst>` gives one peer its own limit, from 1
+to 600 a minute and a burst of 1 to 100, and `splice peer limit <name> --default` gives it the default back.
+`splice peer list` shows each peer's limit.
+
+`--id <id>` sends the message under your own id, a letter or digit then up to 127 more of letters, digits and
+`._:-`, and makes the send safe to repeat:
+
+- Sending the same text to the same target under an id that already went answers that send again and sends nothing.
+- Another text, or another target, under an id that already went is refused.
+- An id whose send was refused before it left may be sent again.
+- An id whose send failed part way may have arrived, so it goes again only to a Splice peer, whose inbox keeps one
+  copy of each id. A Claude Code session keeps no ids, so to one it is refused: look it up with `splice peer status`
+  or send under a new id.
+
+`splice peer status --as gary <id>` looks a send up by your id too.
+
+`--pid <pid> --proc-start <start>` pins the send to the process its target was when you resolved it, as
+`splice sessions --json` shows them. When another process now answers to the name or session id (a session that was
+restarted, or a pid the kernel gave to someone else), the send is refused rather than reaching it. `--pid` alone
+checks the pid only.
 
 For scripts, `SPLICE_PEER_KEY_FILE=<path>` replaces `--as`. The key is sent as a bearer header and never appears
 in the command line or the output.
@@ -189,11 +214,12 @@ once. `splice peer codex detach` revokes one at once, and `--purge` deletes its 
 | Path | What |
 |---|---|
 | `<settings dir>/peers/<name>/peer.json` | the registration |
+| `<settings dir>/peers/<name>/limit.json` | the peer's own send limit, when it has one |
 | `<settings dir>/peers/<name>/peer.key` | the peer's key, the only copy |
 | `<settings dir>/peers/<name>/webhook.secret` | the webhook signing secret |
 | `<settings dir>/peers/<name>/webhook.bearer` | the optional webhook bearer |
 | `<state dir>/peers/<name>/journal.jsonl` | what the peer received, rotated at 50 MiB |
-| `<state dir>/peers/<name>/outbox.jsonl` | one line per send, with the size and never the text |
+| `<state dir>/peers/<name>/outbox.jsonl` | one line per send, with its id, the size and the SHA-256 of the text, never the text |
 | `<state dir>/peers/<name>/codex.cursor` | a codex peer's last message handed to its thread |
 | `~/.claude/sessions/<pid>.json` and its `.key` | the registry record that makes the peer visible to Claude Code |
 

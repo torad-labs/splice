@@ -49,7 +49,7 @@ public class PeerJournal(
     private val files = PeerJournalFiles(dir)
     private val scan = JournalScan(live, rolled)
     private val ioLock = Any()
-    private val recent = LinkedHashSet<String>()
+    private val marks = HashMap<String, MessageMark>()
     private val wake = Channel<Unit>(Channel.CONFLATED)
 
     /** The codex peer's own wake: a conflated channel wakes one receiver, and the webhook pusher holds [wake]. */
@@ -97,17 +97,17 @@ public class PeerJournal(
         if (cursors.resetWebhook()) log("[peers] ${LogSafe.str(name)}: the webhook cursor was reset")
     }
 
-    /** The new message's seq, or null when its id is among the last 1,000 messages and nothing is written. */
-    internal fun appendMessage(entry: JournalRecords.MessageEntry): Long? = synchronized(ioLock) {
+    /** Writes the message, unless its id is taken: by the same message from the same sender (a repeat, nothing
+     *  written) or by another one (a conflict, nothing written). Every id the journal's files hold is known. */
+    internal fun appendMessage(entry: JournalRecords.MessageEntry): JournalAdmission = synchronized(ioLock) {
         loadOnce()
-        if (entry.id in recent) {
-            null
-        } else {
+        val mark = MessageMarks.of(entry)
+        MessageMarks.admission(marks[entry.id], mark) ?: run {
             val seq = commit(RecordLine { n, now -> JournalRecords.message(n, now, entry) })
-            if (recent.add(entry.id) && recent.size > PEER_JOURNAL_RECENT_IDS) recent.remove(recent.first())
+            marks[entry.id] = mark
             wake.trySend(Unit)
             codexWake.trySend(Unit)
-            seq
+            JournalAdmission.Journaled(seq)
         }
     }
 
@@ -158,6 +158,6 @@ public class PeerJournal(
         if (nextSeq > 0L) return
         val loaded = scan.load()
         nextSeq = loaded.lastSeq + 1
-        recent += loaded.recentIds
+        marks.putAll(loaded.marks)
     }
 }

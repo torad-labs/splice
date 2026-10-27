@@ -333,7 +333,7 @@ suspend fun peerGuarded(call: ApplicationCall, block: suspend (PeerPrincipal) ->
 
 | What | Limit | Over the limit |
 |---|---|---|
-| Send rate, per peer | 20 per minute, token bucket, burst of 5 | 429 |
+| Send rate, per peer | 60 per minute, token bucket, burst of 20 (Oct 27, 2026; was 20 and 5). `splice peer limit` sets one peer's own, 1 to 600 a minute and a burst of 1 to 100 | 429 |
 | Text size | 32,768 bytes | 413 |
 | Inbound rate, per claimed address, and per helper overall | 60 per minute with a burst of 20; 300 per minute overall | `refused` receipt with detail `"rate limit"`, not journaled |
 | Inbound text size | 32,768 bytes | `refused` receipt with detail `"too large"`, not journaled |
@@ -383,7 +383,8 @@ C's `InboxHandler`. Connections are handled on a bounded pool of 4. A connection
 | Case | Journal | Receipt to `from` | Webhook |
 |---|---|---|---|
 | Valid, under the limits | `message` record, flushed | `delivered` | queued |
-| Same `msg_id` as one in the last 1,000 records | nothing new | `delivered` again | not queued again |
+| Same `msg_id`, same sender and same text as a message the journal holds (Oct 27, 2026: any it holds, not only the last 1,000) | nothing new | `delivered` again | not queued again |
+| Same `msg_id` as a message the journal holds, from another sender or with other text | nothing | `refused`, "another message already came under this msg_id" | none |
 | Over the inbound rate | nothing | `refused`, "rate limit" | none |
 | Text over the cap | nothing | `refused`, "too large" | none |
 | Journal write failed | nothing | `dropped`, "journal write failed" | none |

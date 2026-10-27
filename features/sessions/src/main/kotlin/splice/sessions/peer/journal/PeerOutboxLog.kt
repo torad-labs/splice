@@ -20,7 +20,8 @@ public class PeerOutboxLog(dir: Path) {
     @Serializable
     public data class Target(val name: String? = null, val sessionId: String? = null, val address: String? = null)
 
-    /** One send. [outcome] is `submitted`, `refused` or `failed`; [id] is the msg_id the send carried. */
+    /** One send. [outcome] is `submitted`, `refused` or `failed`; [id] is the msg_id the send carried. [digest] is the
+     *  SHA-256 of the text (never the text), so a repeat of a caller's id can be told from another message under it. */
     @Serializable
     public data class Record(
         val v: Int = PEER_OUTBOX_LAYOUT,
@@ -30,6 +31,7 @@ public class PeerOutboxLog(dir: Path) {
         val bytes: Int,
         val outcome: String,
         val detail: String? = null,
+        val digest: String? = null,
     )
 
     private val files = PeerJournalFiles(dir)
@@ -42,7 +44,8 @@ public class PeerOutboxLog(dir: Path) {
         files.append(file, line, JsonlSink.DEFAULT_MAX_BYTES)
     }
 
-    /** The send that carried [msgId], or null when this peer sent no such id. */
+    /** The newest send that carried [msgId], or null when this peer sent no such id. A caller's id can be sent again
+     *  after a send that never left, so the newest attempt is the one that counts. */
     public fun find(msgId: String): Record? {
         for (candidate in listOf(file, rolled)) {
             val hit = scan(candidate, msgId)
@@ -58,7 +61,7 @@ public class PeerOutboxLog(dir: Path) {
             return null
         }
         return input.bufferedReader(Charsets.UTF_8).use { reader ->
-            reader.lineSequence().mapNotNull { line -> decode(line) }.firstOrNull { it.id == msgId }
+            reader.lineSequence().mapNotNull { line -> decode(line) }.lastOrNull { it.id == msgId }
         }
     }
 

@@ -1,8 +1,10 @@
 // MCP hub calls stay available when the machine falls back to in-process hosting.
 package splice.control.mcp.hub
 
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.client.mcp.McpServerSpec
 import splice.core.util.JsonWire
 import splice.core.wire.HttpStatus
 
@@ -55,6 +57,9 @@ public interface HubMaintenanceCalls {
 
     /** Each hub-served server, by the name its holder's record writes, to the launch ids of front-bound sessions. */
     public fun attached(): Map<String, Set<String>>
+
+    /** Observes complete retained listings only for the caller's current explicitly shared declarations. */
+    public fun sharedTools(specs: Map<String, McpServerSpec>): Map<String, JsonObject>
 }
 
 public interface McpHubCalls : HubRequestCalls, HubReplacementCalls, HubMaintenanceCalls
@@ -115,4 +120,6 @@ private object HubOffMaintenance : HubMaintenanceCalls {
     }
 
     override fun attached(): Map<String, Set<String>> = emptyMap()
+
+    override fun sharedTools(specs: Map<String, McpServerSpec>): Map<String, JsonObject> = emptyMap()
 }

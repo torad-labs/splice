@@ -1,6 +1,8 @@
 package splice.control.mcp.hub
 
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.serialization.json.JsonObject
+import splice.client.mcp.McpServerSpec
 import splice.client.mcp.McpSharing
 import splice.control.mcp.JsonRpcCodec
 import splice.control.mcp.McpHandshakeBudget
@@ -39,7 +41,7 @@ private class HubAssembly(
     val calls: McpHubCalls = HubMcpCalls(
         HubRequestDelegates(requests),
         HubReplacementDelegates(replacements, pins),
-        HubMaintenanceDelegates(requests, front),
+        HubMaintenanceDelegates(requests, front, HubSharedCatalog(listings, tuple)),
     )
 }
 
@@ -89,8 +91,11 @@ private class HubReplacementDelegates(
 private class HubMaintenanceDelegates(
     private val requests: HubRequests,
     private val front: HubFront,
+    private val catalogs: HubSharedCatalog,
 ) : HubMaintenanceCalls {
     override fun sweep(now: Long, idleMs: Long) = requests.sweep(now, idleMs)
 
     override fun attached(): Map<String, Set<String>> = requests.attached(front)
+
+    override fun sharedTools(specs: Map<String, McpServerSpec>): Map<String, JsonObject> = catalogs.read(specs)
 }

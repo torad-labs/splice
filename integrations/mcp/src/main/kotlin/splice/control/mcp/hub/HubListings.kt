@@ -10,6 +10,7 @@ package splice.control.mcp.hub
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import splice.control.mcp.JsonRpcCodec
+import splice.control.mcp.catalog.McpCatalogSnapshots
 import splice.core.util.JsonWire
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
@@ -28,6 +29,11 @@ private const val SERVER_INFO = "serverInfo"
 internal class HubListings(private val dir: Path, private val log: LogSink) {
     /** Where [digest]'s listing is kept, or null when nothing is kept for it yet. */
     fun kept(digest: String): Path? = file(digest).takeIf { Files.isRegularFile(it) }
+
+    /** Observes an entire retained tools/list result; pages and malformed catalogs cannot supply shared metadata. */
+    @Synchronized
+    fun tools(digest: String): JsonObject? =
+        (read(digest)[HUB_LISTING_TOOLS] as? JsonObject)?.takeIf(McpCatalogSnapshots::complete)
 
     /** What a fresh holder answered. [tools] null keeps the kept tools only under the same serverInfo. */
     @Synchronized

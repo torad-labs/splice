@@ -23,6 +23,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import splice.client.mcp.McpInventory
 import splice.client.mcp.McpServerInput
 import splice.client.mcp.McpSharing
+import splice.control.mcp.catalog.McpCatalogSnapshots
 import splice.control.mcp.hub.McpHubCalls
 import splice.core.util.Cancellables
 import splice.core.util.LogSafe
@@ -168,8 +169,10 @@ public class McpHost(
     public fun statusJson(): String = status.json()
 
     /** Exact cached listings for this head's currently shared declarations; per-session servers never enter it. */
-    public fun sharedTools(headKey: String): Map<String, JsonObject> =
-        servers.catalogs.read(sharing.plan(global.inputs(), headKey).hosted)
+    public fun sharedTools(headKey: String): Map<String, JsonObject> {
+        val specs = sharing.plan(global.inputs(), headKey).hosted
+        return McpCatalogSnapshots.combine(specs.keys, servers.catalogs.read(specs), hub?.sharedTools(specs).orEmpty())
+    }
 }
 
 /** Keeps admission, initialization, and session routing below McpHost's lifecycle surface. */

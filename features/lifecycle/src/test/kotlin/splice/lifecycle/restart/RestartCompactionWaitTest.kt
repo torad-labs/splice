@@ -10,7 +10,9 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
+import splice.core.config.Knob
 import splice.core.config.RunningJar
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
@@ -23,6 +25,7 @@ import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 
+@Timeout(30)
 class RestartCompactionWaitTest {
 
     /** A daemon whose first [compactReads] /api/heads answers list one in-flight turn that is a
@@ -118,8 +121,8 @@ class RestartCompactionWaitTest {
     }
 
     @Test
-    fun `a compaction past the daemon's 900 s turn cap is not waited for`(@TempDir tmp: Path) {
-        val daemon = FakeDaemon(compactReads = Int.MAX_VALUE, compact = true, ageMs = 900_000)
+    fun `a compaction at the daemon's default turn cap is not waited for`(@TempDir tmp: Path) {
+        val daemon = FakeDaemon(compactReads = Int.MAX_VALUE, compact = true, ageMs = Knob.UPSTREAM_TIMEOUT_MS.count())
         val stopped = try {
             restart(tmp).stopIfRunning(daemon.port, emptyList())
         } finally {

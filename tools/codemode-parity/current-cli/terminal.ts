@@ -2,8 +2,9 @@ import { createHash } from "node:crypto";
 import { closeSync, mkdirSync, openSync, readFileSync, readlinkSync, readdirSync, writeFileSync, writeSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import xterm from "@xterm/headless";
-import { nativeCompletion } from "./native-events";
+import { nativeCompletion, nativeInterruption } from "./native-events";
 import type { CliProcess, NativeCompletion } from "./types";
+import { fileIdentity } from "./file-identity";
 
 interface TerminalOptions {
   argv: string[];
@@ -14,6 +15,7 @@ interface TerminalOptions {
   expectedCliSha256: string;
   timeoutMs: number;
   sourceProfilePattern?: string;
+  interruption?: { notification: string; resumePrompt: string; callId: string; ready(): boolean };
 }
 
 function descendants(pid: number): number[] {
@@ -66,6 +68,7 @@ export async function runTerminal(options: TerminalOptions): Promise<{
   let completion: NativeCompletion | null = null;
   let completedAt: number | undefined;
   let sentExit = false, confirmedExit = false;
+  let interrupted = false, resumed = false;
   const hosts = new Map<number, string>();
   const started = Date.now();
   const screen = () => {
@@ -76,7 +79,7 @@ export async function runTerminal(options: TerminalOptions): Promise<{
     child = Bun.spawn(options.argv, { cwd: options.cwd, env: environment, terminal });
     const stat = readFileSync(`/proc/${child.pid}/stat`, "utf8");
     const startTicks = stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19];
-    const sha256 = createHash("sha256").update(readFileSync(`/proc/${child.pid}/exe`)).digest("hex");
+    const sha256 = (await fileIdentity(`/proc/${child.pid}/exe`)).sha256;
     if (!startTicks || !/^[0-9]+$/.test(startTicks) || sha256 !== options.expectedCliSha256) throw Error("Actual interactive CLI process identity differs");
     cliIdentity = { pid: child.pid, sha256, startTicks };
     while (child.exitCode === null) {
@@ -87,6 +90,18 @@ export async function runTerminal(options: TerminalOptions): Promise<{
           const sha256 = createHash("sha256").update(readFileSync(`/proc/${pid}/exe`)).digest("hex");
           if (sha256 === options.expectedHostSha256) hosts.set(pid, sha256);
         } catch { /* Observation is retried while the controlled client owns its child. */ }
+      }
+      if (options.interruption && !completedAt) {
+        const state = nativeInterruption(options.home, options.interruption.callId, options.interruption.notification);
+        if (!interrupted && state?.notified && hosts.size && options.interruption.ready()) {
+          record("interrupt_after_native_notification", "\x03"); terminal.write("\x03"); interrupted = true;
+        } else if (interrupted && !resumed && state?.aborted) {
+          record("resume_after_native_abort", options.interruption.resumePrompt);
+          terminal.write(options.interruption.resumePrompt);
+          // Let the real terminal's paste detector finish before sending its submit key.
+          await Bun.sleep(250);
+          record("submit_resume_after_native_abort", "\r"); terminal.write("\r"); resumed = true;
+        }
       }
       if (!completedAt) {
         completion = nativeCompletion(options.home);
@@ -105,6 +120,7 @@ export async function runTerminal(options: TerminalOptions): Promise<{
     }
     const exit = await child.exited;
     if (!completion || exit !== 0) throw Error(`Client exit ${exit} without a successful native turn`);
+    if (options.interruption && (!interrupted || !resumed)) throw Error("The PTY did not interrupt and resume the owned native turn");
     if (!hosts.size) throw Error("The actual client did not expose a child executing the pinned native host bytes");
     await new Promise<void>(resolve => emulator.write("", resolve));
     writeFileSync(join(options.directory, "terminal-screen.txt"), screen() + "\n", { mode: 0o600 });

@@ -1,9 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { startScriptedUpstream } from "./scripted-upstream";
+import { expectedTaskRequests, startScriptedUpstream } from "./scripted-upstream";
 import { runTerminal } from "./terminal";
 import type { CliReference, CliRun, CliScenario } from "./types";
+import { fileIdentity, verifyArtifact } from "./file-identity";
+import type { FreeformTool } from "./freeform-contract";
 
 const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 
@@ -16,12 +18,14 @@ function validateScenario(scenario: CliScenario): void {
     if (action.kind === "wait" && action.yieldTimeMs !== undefined && (!Number.isSafeInteger(action.yieldTimeMs) || action.yieldTimeMs < 0)) throw Error("Invalid wait budget");
   }
   if (scenario.completionHoldMs !== undefined && (!Number.isSafeInteger(scenario.completionHoldMs) || scenario.completionHoldMs < 0 || scenario.completionHoldMs > 10000)) throw Error("Invalid controlled completion hold");
+  if (scenario.interruption && (!scenario.interruption.notification || !scenario.interruption.resumePrompt || scenario.actions[0]?.kind !== "exec" || scenario.actions.length < 2)) throw Error("Invalid owned interruption boundary");
 }
 
 /** Runs the signed reference's actual interactive client against only a deterministic loopback model. */
 export async function runCliScenario(options: {
   reference: CliReference; scenario: CliScenario; directory: string; catalog: Uint8Array; model?: string; timeoutMs?: number;
   sourceProfilePattern?: string;
+  freeformTool?: FreeformTool;
 }): Promise<CliRun> {
   const scenario = structuredClone(options.scenario);
   validateScenario(scenario);
@@ -29,8 +33,12 @@ export async function runCliScenario(options: {
   const catalog = Buffer.from(options.catalog);
   if (!/^[a-f0-9]{40}$/.test(reference.sourceRevision)) throw Error("Expected a pinned source revision");
   for (const item of [reference.cli, reference.host]) {
-    if (!/^[a-f0-9]{64}$/.test(item.sha256) || digest(await readFile(item.path)) !== item.sha256) throw Error("Current CLI/reference binary identity differs");
+    if (!/^[a-f0-9]{64}$/.test(item.sha256) || (await fileIdentity(item.path)).sha256 !== item.sha256) throw Error("Current CLI/reference binary identity differs");
   }
+  const freeformTool = options.freeformTool && structuredClone(options.freeformTool);
+  if (scenario.applyPatch && !freeformTool) throw Error("Freeform execution requires its explicit source-built tool proof");
+  if (!scenario.applyPatch && freeformTool) throw Error("A generic scenario cannot carry a freeform executable");
+  if (freeformTool) { await verifyArtifact(freeformTool.binary); await verifyArtifact(freeformTool.proof); }
   if (dirname(resolve(reference.cli.path)) !== dirname(resolve(reference.host.path))) throw Error("Pinned CLI and host must share the frozen reference directory");
   const directory = resolve(options.directory);
   const sourceProfilePattern = options.sourceProfilePattern;
@@ -60,15 +68,17 @@ export async function runCliScenario(options: {
     ].join("\n");
     await writeFile(resolve(cliHome, "config.toml"), config, { mode: 0o600 });
     const argv = [resolve(reference.cli.path), "--no-daemon", "--no-alt-screen", "-C", workspace, "--", "Run the fixed local CodeMode qualification probe in this disposable workspace."];
-    await writeFile(resolve(directory, "launch.json"), JSON.stringify({ argv, nonce, inputSha256, reference, catalogSha256: digest(catalog), modelBackend: "deterministic-loopback-no-inference", terminal: { implementation: "Bun.Terminal", emulator: "@xterm/headless@5.5.0" }, ...(sourceProfilePattern ? { sourceProfilePattern } : {}) }, null, 2) + "\n", { mode: 0o600 });
-    const terminal = await runTerminal({ argv, cwd: workspace, home: cliHome, directory: resolve(directory, "terminal"), expectedHostSha256: reference.host.sha256, expectedCliSha256: reference.cli.sha256, timeoutMs: options.timeoutMs ?? 45000, sourceProfilePattern });
+    await writeFile(resolve(directory, "launch.json"), JSON.stringify({ argv, nonce, inputSha256, reference, catalogSha256: digest(catalog), modelBackend: "deterministic-loopback-no-inference", terminal: { implementation: "Bun.Terminal", emulator: "@xterm/headless@5.5.0" }, ...(sourceProfilePattern ? { sourceProfilePattern } : {}), ...(freeformTool ? { freeformTool } : {}) }, null, 2) + "\n", { mode: 0o600 });
+    const terminal = await runTerminal({ argv, cwd: workspace, home: cliHome, directory: resolve(directory, "terminal"), expectedHostSha256: reference.host.sha256, expectedCliSha256: reference.cli.sha256, timeoutMs: options.timeoutMs ?? 45000, sourceProfilePattern,
+      ...(scenario.interruption ? { interruption: { ...scenario.interruption, callId: `probe-${scenario.id}-0`, ready: upstream.interruptionReady } } : {}) });
     const counts = upstream.counts();
     if (counts.failure) throw Error(counts.failure);
-    if (counts.taskRequests !== scenario.actions.length + 1) throw Error("The actual client did not consume every scripted action exactly once");
+    if (counts.taskRequests !== expectedTaskRequests(scenario)) throw Error("The actual client did not consume every scripted action exactly once");
     if (terminal.completion.finalText !== upstream.finalText) throw Error("Native completion does not belong to this fresh mock run");
-    for (const item of [reference.cli, reference.host]) if (digest(await readFile(item.path)) !== item.sha256) throw Error("Reference binary changed during execution");
+    for (const item of [reference.cli, reference.host]) if ((await fileIdentity(item.path)).sha256 !== item.sha256) throw Error("Reference binary changed during execution");
+    if (freeformTool) { await verifyArtifact(freeformTool.binary); await verifyArtifact(freeformTool.proof); }
     await writeFile(resolve(directory, "native-events.jsonl"), await readFile(terminal.completion.sourceFile), { mode: 0o600 });
-    const result: CliRun = { schema: 1, scenarioId: scenario.id, scenario, nonce, inputSha256, reference, directory, completion: terminal.completion, observations: upstream.observations, taskRequests: counts.taskRequests, auxiliaryRequests: counts.auxiliaryRequests, cliProcess: terminal.cliProcess, hostProcesses: terminal.hostProcesses };
+    const result: CliRun = { schema: 1, scenarioId: scenario.id, scenario, nonce, inputSha256, reference, directory, completion: terminal.completion, observations: upstream.observations, taskRequests: counts.taskRequests, auxiliaryRequests: counts.auxiliaryRequests, cliProcess: terminal.cliProcess, hostProcesses: terminal.hostProcesses, ...(freeformTool ? { freeformTool } : {}) };
     await writeFile(resolve(directory, "result.json"), JSON.stringify(result, null, 2) + "\n", { mode: 0o600 });
     return result;
   } catch (error) {

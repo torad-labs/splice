@@ -43,11 +43,16 @@ export function actionItems(scenario: CliScenario, index: number, input: ObjectV
   return [{ type: "function_call", id: `item-${callId(scenario, index)}`, call_id: callId(scenario, index), name: "wait", arguments: JSON.stringify(args) }];
 }
 
+export function expectedTaskRequests(scenario: CliScenario): number {
+  return scenario.actions.length + 1 + (scenario.interruption ? 1 : 0);
+}
+
 export function startScriptedUpstream(scenario: CliScenario, directory: string, nonce: string) {
   const requests: ObjectValue[] = [], frames: ObjectValue[] = [], observations: CliObservation[] = [];
   let taskRequests = 0, auxiliaryRequests = 0;
   let lastExecId: string | undefined;
   let failure: string | undefined;
+  let interruptionHeld = false;
   let persistence = Promise.resolve();
   const finalText = `CODEMODE_CURRENT_${nonce}`;
   const event = (type: string, value: ObjectValue): string => {
@@ -80,8 +85,22 @@ export function startScriptedUpstream(scenario: CliScenario, directory: string, 
         const input = (Array.isArray(body.input) ? body.input.map(object).filter(Boolean) : []) as ObjectValue[];
         if (!title) observations.push({ request: sequence, input });
         let stream = event("response.created", { response: { id, status: "in_progress", output: [] } });
-        const items = title ? [] : actionItems(scenario, sequence - 1, input, lastExecId);
-        if (!title && scenario.actions[sequence - 1]?.kind === "exec") {
+        if (!title && scenario.interruption && sequence === 2) {
+          const cellId = yieldedCell(input, callId(scenario, 0));
+          const receipt = { schema: 1, request: sequence, cellId, startedAt: Date.now(), abortedAt: undefined as number | undefined };
+          const save = () => writeFile(resolve(directory, "interruption-hold.json"), JSON.stringify(receipt) + "\n");
+          await persist(); await save();
+          const aborted = () => { if (!receipt.abortedAt) { receipt.abortedAt = Date.now(); void save(); } };
+          request.signal.addEventListener("abort", aborted, { once: true });
+          interruptionHeld = true;
+          return new Response(new ReadableStream({
+            start(controller) { controller.enqueue(new TextEncoder().encode(stream)); },
+            cancel() { aborted(); },
+          }), { headers: { "content-type": "text/event-stream", "x-request-id": id } });
+        }
+        const actionIndex = sequence - 1 - (scenario.interruption && sequence > 2 ? 1 : 0);
+        const items = title ? [] : actionItems(scenario, actionIndex, input, lastExecId);
+        if (!title && scenario.actions[actionIndex]?.kind === "exec") {
           lastExecId = String(items.at(-1)!.call_id);
         }
         if (!items.length) {
@@ -123,5 +142,6 @@ export function startScriptedUpstream(scenario: CliScenario, directory: string, 
       }
     },
   });
-  return { server, finalText, observations, flush: persist, counts: () => ({ taskRequests, auxiliaryRequests, failure }) };
+  return { server, finalText, observations, flush: persist, interruptionReady: () => interruptionHeld,
+    counts: () => ({ taskRequests, auxiliaryRequests, failure }) };
 }

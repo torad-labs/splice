@@ -31,7 +31,7 @@ for (let i = 0; i < args.length; i += 2) {
   if (!name?.startsWith("--") || !value || value.startsWith("--") || options.has(name)) throw new Error("arguments must be unique --name VALUE pairs");
   options.set(name, value);
 }
-const known = ["--candidate-jar", "--candidate-host", "--reference-host", "--baseline-jar", "--java", "--evidence", "--installed-pid", "--host-pid", "--jar-fd", "--source-repo", "--source-cli-build"];
+const known = ["--candidate-jar", "--candidate-host", "--reference-host", "--baseline-jar", "--java", "--evidence", "--installed-pid", "--host-pid", "--jar-fd", "--source-repo", "--source-cli-build", "--apply-patch-build"];
 for (const option of options.keys()) if (!known.includes(option)) throw new Error(`unknown option ${option}`);
 let evidence = resolve(options.get("--evidence") ?? defaultEvidence);
 let evidenceSelected = false;

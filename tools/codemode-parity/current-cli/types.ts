@@ -12,6 +12,8 @@ export interface CliScenario {
   rankedSearch?: boolean;
   mcp?: boolean;
   completionHoldMs?: number;
+  applyPatch?: true;
+  interruption?: { notification: string; resumePrompt: string };
 }
 
 export interface CliReference {
@@ -52,4 +54,5 @@ export interface CliRun {
   auxiliaryRequests: number;
   cliProcess: CliProcess;
   hostProcesses: Array<{ pid: number; sha256: string }>;
+  freeformTool?: { binary: { path: string; sha256: string; bytes: number }; proof: { path: string; sha256: string; bytes: number } };
 }

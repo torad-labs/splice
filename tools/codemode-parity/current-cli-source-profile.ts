@@ -9,13 +9,15 @@ import { controlScenarios, mcpScenarios } from "./current-cli/cases";
 import { runCliScenario } from "./current-cli/run";
 import { compareGatewayScenario } from "./current-cli/gateway";
 import { compareControlPackets, sourceGatewayInputBytes } from "./current-cli/compare";
-import { isTitleRequest } from "./current-cli/scripted-upstream";
+import { expectedTaskRequests, isTitleRequest } from "./current-cli/scripted-upstream";
 import { nativeCompletion } from "./current-cli/native-events";
 import { candidateCommand } from "./candidate-command";
 import type { CliRun } from "./current-cli/types";
 import type { CurrentInventory } from "./current-inventory";
 import type { CurrentReference } from "./current-readiness";
 import type { FunctionWitness } from "./current-witness";
+import { assertApplyPatchBuild, freeformFile, freeformScenario, type FreeformTool } from "./current-cli/freeform-contract";
+import { verifyArtifact } from "./current-cli/file-identity";
 
 export const sourceCliFlags = ["-Cinstrument-coverage", "-Cdebuginfo=1", "-Copt-level=0", "-Cdebug-assertions=no", "-Coverflow-checks=no"];
 export type CliSourceBuildProof = {
@@ -28,17 +30,28 @@ export type CliSourceCaseWitness = {
   producer: "core-cli-llvm"; caseId: string; inputSha256: string; productionEntrypoint: string;
   referenceFunctions: FunctionWitness[]; input: Artifact; reference: Artifact; candidate: Artifact; build: Artifact; profile: Artifact;
   sourceFiles: Artifact[]; candidateFiles: Artifact[];
+  freeformTool?: FreeformTool;
 };
 type Metadata = { workspace_root: string; packages: Array<{ name: string; version: string; source: string | null; manifest_path: string }> };
 const sourceNames = ["case-input.json", "catalog.json", "launch.json", "requests.json", "frames.json", "observations.json", "native-events.jsonl", "client-state/config.toml", "terminal/terminal.raw", "terminal/terminal-events.jsonl", "terminal/terminal-screen.txt", "terminal/process.json"];
 const candidateNames = ["scenario.json", "launch.json", "process.json", "stderr.txt", "comparison.json"];
+function sourceFileNames(source: Pick<CliRun, "scenario">): string[] {
+  return [...sourceNames, ...(source.scenario.mcp ? ["mcp-peer.jsonl"] : []), ...(source.scenario.applyPatch ? [`workspace/${freeformFile}`] : [])];
+}
+function candidateFileNames(source: CliRun, candidate: any): string[] {
+  if (!source.scenario.applyPatch) return candidateNames;
+  assert.ok(Array.isArray(candidate.freeformEffects) && candidate.freeformEffects.length === 1);
+  const pid = candidate.freeformEffects[0]?.pid; assert.ok(Number.isSafeInteger(pid) && pid > 0);
+  return [...candidateNames, `workspace/${freeformFile}`, "freeform-tool-stdout.txt", "freeform-tool-stderr.txt", `freeform-tool-profile/${pid}.profraw`];
+}
 
 export function sourceCliPlans() {
-  return [...controlScenarios, ...mcpScenarios].map(scenario => ({ caseId: `cli-source/${scenario.id}`, inputSha256: sha256(JSON.stringify(scenario)),
+  return [...controlScenarios, ...mcpScenarios, freeformScenario].map(scenario => ({ caseId: `cli-source/${scenario.id}`, inputSha256: sha256(JSON.stringify(scenario)),
     productionEntrypoint: "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run", scenario }));
 }
 export function sourceCliCaseArtifacts(witness: CliSourceCaseWitness): Artifact[] {
-  return [witness.input, witness.reference, witness.candidate, witness.build, witness.profile, ...witness.sourceFiles, ...witness.candidateFiles];
+  return [witness.input, witness.reference, witness.candidate, witness.build, witness.profile, ...witness.sourceFiles, ...witness.candidateFiles,
+    ...(witness.freeformTool ? [witness.freeformTool.binary, witness.freeformTool.proof] : [])];
 }
 /** Export every inventoried Rust source file, including context and native files.
  * This avoids external-library expansion without selecting a named function/crate. */
@@ -83,7 +96,7 @@ export function reconcileSourceCliLock(original: string, metadata: Metadata, off
 export async function assertSourceCliBuild(build: CliSourceBuildProof, inventory: CurrentInventory): Promise<void> {
   assert.equal(build.schema, 1); assert.equal(build.sourceRevision, inventory.sourceRevision); assert.equal(build.sourceTree, inventory.sourceTree);
   assert.match(build.compiler, /commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\b/); assert.deepEqual(build.flags, sourceCliFlags);
-  for (const proof of [build.binary, build.command, build.tools.cov, build.tools.profdata, build.cleanBefore, build.cleanAfter, build.sourceIdentity, ...Object.values(build.overlay)]) await checked(proof);
+  for (const proof of [build.binary, build.command, build.tools.cov, build.tools.profdata, build.cleanBefore, build.cleanAfter, build.sourceIdentity, ...Object.values(build.overlay)]) await verifyArtifact(proof);
   const command = JSON.parse((await checked(build.command)).toString());
   assert.equal(command.exitCode, 0); assert.ok(Number.isSafeInteger(command.pid) && command.pid > 0);
   assert.ok(command.argv.includes("build") && command.argv.includes("--locked") && command.argv.includes("codex-cli") && command.argv.includes("codex"), "source CLI must be built as the locked official application");
@@ -130,8 +143,11 @@ export async function exportSourceProfile(source: CliRun, build: CliSourceBuildP
 }
 
 /** Additional actual-source runs; signed release CLI controls remain mandatory. */
-export async function executeSourceCliWitnesses(options: { java: string; jar: Identity; nativeHost: Identity; lock: CurrentReference; inventory: CurrentInventory; build: Artifact; evidence: string; runId: string }): Promise<CliSourceCaseWitness[]> {
+export async function executeSourceCliWitnesses(options: { java: string; jar: Identity; nativeHost: Identity; lock: CurrentReference; inventory: CurrentInventory; build: Artifact; applyPatchBuild: Artifact; evidence: string; runId: string }): Promise<CliSourceCaseWitness[]> {
   const build: CliSourceBuildProof = JSON.parse((await checked(options.build)).toString()); await assertSourceCliBuild(build, options.inventory);
+  const patchProof = JSON.parse((await checked(options.applyPatchBuild)).toString());
+  const freeformTool: FreeformTool = { binary: patchProof.binary, proof: options.applyPatchBuild };
+  await assertApplyPatchBuild(freeformTool, options.inventory);
   assert.equal(sha256(await readFile(options.nativeHost.path)), options.lock.nativeHostSha256);
   assert.equal(dirname(build.binary.path), dirname(options.nativeHost.path), "instrumented CLI and verified official host must be frozen siblings");
   const catalog = Buffer.from(await git(build.sourceRepository, "show", `${options.inventory.sourceRevision}:codex-rs/models-manager/models.json`));
@@ -140,13 +156,13 @@ export async function executeSourceCliWitnesses(options: { java: string; jar: Id
     const directory = resolve(options.evidence, `${options.runId}.${plan.scenario.id}.source-cli`); await mkdir(directory);
     const sourceDirectory = resolve(directory, "reference"), candidateDirectory = resolve(directory, "candidate");
     const source = await runCliScenario({ reference: { cli: { path: build.binary.path, sha256: build.binary.sha256 }, host: options.nativeHost, sourceRevision: build.sourceRevision }, scenario: plan.scenario,
-      directory: sourceDirectory, catalog, sourceProfilePattern: resolve(sourceDirectory, "source-profile/%p.profraw") });
-    await compareGatewayScenario({ java: options.java, jar: options.jar, source, directory: candidateDirectory });
+      directory: sourceDirectory, catalog, sourceProfilePattern: resolve(sourceDirectory, "source-profile/%p.profraw"), ...(plan.scenario.applyPatch ? { freeformTool } : {}) });
+    const { candidate } = await compareGatewayScenario({ java: options.java, jar: options.jar, source, directory: candidateDirectory });
     const profile = await exportSourceProfile(source, build, options.inventory, directory);
-    const names = [...sourceNames, ...(plan.scenario.mcp ? ["mcp-peer.jsonl"] : [])];
     const witness: CliSourceCaseWitness = { producer: "core-cli-llvm", caseId: plan.caseId, inputSha256: plan.inputSha256, productionEntrypoint: plan.productionEntrypoint,
       referenceFunctions: profile.functions, input: await artifact(resolve(sourceDirectory, "case-input.json")), reference: await artifact(resolve(sourceDirectory, "result.json")), candidate: await artifact(resolve(candidateDirectory, "stdout.json")),
-      build: options.build, profile: profile.proof, sourceFiles: await Promise.all(names.map(name => artifact(resolve(sourceDirectory, name)))), candidateFiles: await Promise.all(candidateNames.map(name => artifact(resolve(candidateDirectory, name)))) };
+      build: options.build, profile: profile.proof, sourceFiles: await Promise.all(sourceFileNames(source).map(name => artifact(resolve(sourceDirectory, name)))), candidateFiles: await Promise.all(candidateFileNames(source, candidate).map(name => artifact(resolve(candidateDirectory, name)))),
+      ...(source.freeformTool ? { freeformTool: source.freeformTool } : {}) };
     const path = resolve(directory, "case-witness.json"); await writeFile(path, JSON.stringify(witness, null, 2) + "\n"); witnesses.push(witness);
   }
   return witnesses;
@@ -158,11 +174,14 @@ export async function sourceCliWitnessFindings(cases: CliSourceCaseWitness[], in
     const plan = sourceCliPlans().find(plan => plan.caseId === witness.caseId); assert.ok(plan, "unrecognized actual-source CLI case");
     assert.ok(!seen.has(witness.caseId), "duplicate actual-source CLI case"); seen.add(witness.caseId);
     assert.equal(witness.producer, "core-cli-llvm"); assert.equal(witness.inputSha256, plan.inputSha256); assert.equal(witness.productionEntrypoint, plan.productionEntrypoint);
-    for (const proof of sourceCliCaseArtifacts(witness)) await checked(proof);
+    for (const proof of sourceCliCaseArtifacts(witness)) await verifyArtifact(proof);
     let build = builds.get(witness.build.sha256);
     if (!build) { build = JSON.parse((await checked(witness.build)).toString()); await assertSourceCliBuild(build!, inventory); builds.set(witness.build.sha256, build!); }
     assert.ok(build);
     const source: CliRun = JSON.parse((await checked(witness.reference)).toString()), candidate = JSON.parse((await checked(witness.candidate)).toString());
+    assert.deepEqual(witness.freeformTool, source.freeformTool);
+    if (plan.scenario.applyPatch) { assert.ok(source.freeformTool); await assertApplyPatchBuild(source.freeformTool, inventory); }
+    else assert.equal(source.freeformTool, undefined, "Generic source case supplied an unbound freeform executable");
     assert.deepEqual(source.scenario, plan.scenario); assert.equal(source.inputSha256, plan.inputSha256); assert.match(source.nonce, /^[a-f0-9]{32}$/);
     assert.equal((await checked(witness.input)).toString(), JSON.stringify(plan.scenario) + "\n");
     assert.equal(basename(dirname(source.directory)), `${runId}.${plan.scenario.id}.source-cli`, "source CLI witness belongs to a different qualification run");
@@ -171,13 +190,14 @@ export async function sourceCliWitnessFindings(cases: CliSourceCaseWitness[], in
     assert.equal(source.reference.host.sha256, lock.nativeHostSha256); assert.equal(dirname(source.reference.host.path), dirname(build.binary.path));
     assert.equal(sha256(await readFile(source.reference.host.path)), lock.nativeHostSha256);
     const sourceFile = async (name: string) => { const files = witness.sourceFiles.filter(file => file.path === resolve(source.directory, name)); assert.equal(files.length, 1, `missing or duplicated source CLI raw artifact ${name}`); return checked(files[0]!); };
-    const names = [...sourceNames, ...(plan.scenario.mcp ? ["mcp-peer.jsonl"] : [])]; assert.equal(witness.sourceFiles.length, names.length); for (const name of names) await sourceFile(name);
+    const names = sourceFileNames(source); assert.equal(witness.sourceFiles.length, names.length); for (const name of names) await sourceFile(name);
     const launch = JSON.parse((await sourceFile("launch.json")).toString());
     assert.equal(launch.argv[0], build.binary.path); assert.ok(launch.argv.includes("--no-daemon") && launch.argv.includes("--no-alt-screen") && !launch.argv.includes("exec") && !launch.argv.includes("app-server"), "source proof requires the real interactive PTY entrypoint");
     assert.equal(launch.modelBackend, "deterministic-loopback-no-inference"); assert.deepEqual(launch.terminal, { implementation: "Bun.Terminal", emulator: "@xterm/headless@5.5.0" });
     assert.equal(launch.nonce, source.nonce); assert.equal(launch.inputSha256, plan.inputSha256); assert.equal(launch.catalogSha256, sha256(await sourceFile("catalog.json")));
     assert.equal((await sourceFile("catalog.json")).toString(), await git(build.sourceRepository, "show", `${inventory.sourceRevision}:codex-rs/models-manager/models.json`));
     assert.equal(launch.sourceProfilePattern, resolve(source.directory, "source-profile/%p.profraw"));
+    assert.deepEqual(launch.freeformTool, source.freeformTool);
     const config = (await sourceFile("client-state/config.toml")).toString(); assert.match(config, /base_url = "http:\/\/127\.0\.0\.1:\d+\/v1"/); assert.ok(config.includes("requires_openai_auth = false"));
     const processProof = JSON.parse((await sourceFile("terminal/process.json")).toString());
     assert.ok(Number.isSafeInteger(source.cliProcess.pid) && source.cliProcess.pid > 0); assert.equal(source.cliProcess.exit, 0); assert.match(source.cliProcess.startTicks, /^\d+$/); assert.equal(source.cliProcess.sha256, build.binary.sha256);
@@ -186,10 +206,11 @@ export async function sourceCliWitnessFindings(cases: CliSourceCaseWitness[], in
     assert.deepEqual(nativeCompletion(resolve(source.directory, "client-state")), source.completion); assert.equal(source.completion.finalText, `CODEMODE_CURRENT_${source.nonce}`);
     assert.ok((await sourceFile("native-events.jsonl")).equals(await readFile(source.completion.sourceFile)));
     const requests = JSON.parse((await sourceFile("requests.json")).toString()), tasks = requests.filter((body: any) => !isTitleRequest(body));
-    assert.equal(tasks.length, plan.scenario.actions.length + 1); assert.equal(source.taskRequests, tasks.length); assert.equal(source.auxiliaryRequests, requests.length - tasks.length);
+    assert.equal(tasks.length, expectedTaskRequests(plan.scenario)); assert.equal(source.taskRequests, tasks.length); assert.equal(source.auxiliaryRequests, requests.length - tasks.length);
     assert.deepEqual(source.observations, tasks.map((body: any, index: number) => ({ request: index + 1, input: body.input }))); assert.deepEqual(JSON.parse((await sourceFile("observations.json")).toString()), source.observations);
     const candidateDirectory = dirname(witness.candidate.path), candidateFile = async (name: string) => { const files = witness.candidateFiles.filter(file => file.path === resolve(candidateDirectory, name)); assert.equal(files.length, 1); return checked(files[0]!); };
-    assert.equal(witness.candidateFiles.length, candidateNames.length); for (const name of candidateNames) await candidateFile(name);
+    const candidateRawNames = candidateFileNames(source, candidate);
+    assert.equal(witness.candidateFiles.length, candidateRawNames.length); for (const name of candidateRawNames) await candidateFile(name);
     assert.equal((await candidateFile("scenario.json")).toString(), sourceGatewayInputBytes(source));
     const candidateLaunch = JSON.parse((await candidateFile("launch.json")).toString()), candidateProcess = JSON.parse((await candidateFile("process.json")).toString());
     assert.deepEqual(candidateLaunch.jar, candidateJar); assert.equal(sha256(await readFile(candidateJar.path)), candidateJar.sha256); assert.equal(candidateLaunch.nonce, source.nonce);
@@ -197,7 +218,7 @@ export async function sourceCliWitnessFindings(cases: CliSourceCaseWitness[], in
     assert.equal(candidateProcess.exitCode, 0); assert.equal(candidateProcess.failure, undefined); assert.ok(Number.isSafeInteger(candidateProcess.pid) && candidateProcess.pid > 0); assert.equal(candidate.pid, candidateProcess.pid);
     assert.equal(candidate.caseId, "runtime.current-scenario"); assert.equal(candidate.scope, "real-native-runtime-through-production-gateway"); assert.ok(candidate.outcomes.length && candidate.outcomes.every((outcome: string) => outcome === "Success"));
     const stderr = (await candidateFile("stderr.txt")).toString(); assert.ok(stderr.split("\n").some(line => { try { const event = JSON.parse(line); return event.type === "parity/identity" && Number.isSafeInteger(event.nativeHostPid) && event.nativeHostPid > 0; } catch { return false; } }));
-    compareControlPackets(source, candidate);
+    compareControlPackets(source, candidate, candidateDirectory);
     const profile: ClientProfileProof = JSON.parse((await checked(witness.profile)).toString()); assert.equal(profile.schema, 1);
     assert.equal(profile.profraw.path, resolve(source.directory, `source-profile/${source.cliProcess.pid}.profraw`));
     for (const proof of [profile.profraw, profile.profdata, profile.mappings, profile.exported]) await checked(proof);

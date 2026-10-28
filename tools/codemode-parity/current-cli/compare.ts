@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import type { CliRun, CliScenario, Json, ObjectValue } from "./types";
 import { compareMcpBoundary, mcpGatewayFields, sourceMcpTranscript, type McpTranscript } from "./mcp-contract";
+import { compareFreeformBoundary, freeformGatewayFields, sourceFreeformTranscript, type FreeformTranscript } from "./freeform-contract";
 
 const callTypes = new Set(["function_call", "custom_tool_call", "function_call_output", "custom_tool_call_output"]);
 const status = /^(Script (?:completed|failed|terminated|running with cell ID [^\n]+)\n)Wall time [0-9]+\.[0-9] seconds\nOutput:\n$/;
@@ -22,7 +23,7 @@ export function protocolSequence(input: ObjectValue[]): ObjectValue[] {
   ));
 }
 
-export function compareControlPackets(source: CliRun, candidate: ObjectValue): void {
+export function compareControlPackets(source: CliRun, candidate: ObjectValue, candidateDirectory?: string): void {
   const hash = (value: string) => createHash("sha256").update(value).digest("hex");
   assert.equal(source.inputSha256, hash(JSON.stringify(source.scenario)), "Reference scenario identity differs");
   assert.equal(candidate.nonce, source.nonce, "Gateway result belongs to a different run");
@@ -33,12 +34,18 @@ export function compareControlPackets(source: CliRun, candidate: ObjectValue): v
   if (!Array.isArray(input) || input.some(item => item === null || typeof item !== "object" || Array.isArray(item))) throw Error("Invalid candidate model input");
   assert.deepStrictEqual(protocolSequence(input as ObjectValue[]), protocolSequence(source.observations.at(-1)!.input), "Actual source and gateway calls/results/history order differ");
   if (source.scenario.mcp) compareMcpBoundary(sourceMcpTranscript(source), candidate);
+  if (source.scenario.applyPatch) {
+    assert.ok(candidateDirectory, "Freeform comparison requires the actual candidate directory");
+    compareFreeformBoundary(sourceFreeformTranscript(source), candidate, candidateDirectory);
+  }
 }
 
 /** The real gateway fixture accepts exactly the same resolved outer scripts and wait operations. */
-export function gatewayInput(scenario: CliScenario, mcp?: McpTranscript): ObjectValue {
+export function gatewayInput(scenario: CliScenario, mcp?: McpTranscript, freeform?: FreeformTranscript): ObjectValue {
   if (scenario.mcp && !mcp) throw Error("MCP result envelopes require the actual reference peer transcript");
   if (!scenario.mcp && mcp) throw Error("A generic scenario cannot claim MCP origin");
+  if (scenario.applyPatch && !freeform) throw Error("Freeform effects require the actual reference transcript and tool build");
+  if (!scenario.applyPatch && freeform) throw Error("A generic scenario cannot claim builtin freeform effects");
   const actions = scenario.actions.map((action, index): ObjectValue => {
     const id = `probe-${scenario.id}-${index}`;
     if (action.kind === "wait") return { type: "function_call", name: "wait", call_id: id, arguments: {
@@ -55,13 +62,15 @@ export function gatewayInput(scenario: CliScenario, mcp?: McpTranscript): Object
     declarations: [{ type: "function", name: "Ping", description: "Unused control-case catalog entry", parameters: { type: "object", properties: {} } }],
     actions, callbacks: [],
     ...(mcp ? mcpGatewayFields(mcp) : {}),
+    ...(freeform ? freeformGatewayFields(freeform) : {}),
     ...(scenario.rankedSearch ? { rankedSearch: true } : {}),
   };
 }
 
-export function gatewayInputBytes(scenario: CliScenario, mcp?: McpTranscript): string { return JSON.stringify(gatewayInput(scenario, mcp)) + "\n"; }
+export function gatewayInputBytes(scenario: CliScenario, mcp?: McpTranscript, freeform?: FreeformTranscript): string { return JSON.stringify(gatewayInput(scenario, mcp, freeform)) + "\n"; }
 
 /** MCP candidate inputs are derived from measured source exchanges, never invented from a case label. */
 export function sourceGatewayInputBytes(source: CliRun): string {
-  return gatewayInputBytes(source.scenario, source.scenario.mcp ? sourceMcpTranscript(source) : undefined);
+  return gatewayInputBytes(source.scenario, source.scenario.mcp ? sourceMcpTranscript(source) : undefined,
+    source.scenario.applyPatch ? sourceFreeformTranscript(source) : undefined);
 }

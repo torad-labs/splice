@@ -10,7 +10,6 @@ import kotlinx.serialization.json.put
 import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
-import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodexCodeModeBridge
@@ -32,17 +31,12 @@ internal class CodeModeGatewayScenarioProbe(
         val specification = fixture.json.parseToJsonElement(bytes.decodeToString()).jsonObject
         val plan = CodeModeGatewayScenarioPlan(specification, fixture.json)
         val manager = CodexCodeModeBridge(CodeModeBridgeConfig({ runtime }, fixture.location, log = fixture.log))
-        val requests = CodeModeGatewayScenarioRequests(fixture, specification)
-        val mcp = if (JsonScalars.str(specification, "boundary") == "typed-mcp-delegate") {
-            CodeModeGatewayMcpRequests(fixture, specification)
-        } else {
-            null
-        }
+        val requests = CodeModeGatewayScenarioAdapter(fixture, specification, directory)
         val trace = Trace()
         try {
             while (!plan.finished) {
                 check(trace.outcomes.size < plan.stageLimit) { "Scenario exceeded its bound client stages" }
-                val request = mcp?.prepare(manager, plan.callbacks) ?: requests.prepare(manager, plan.callbacks)
+                val request = requests.prepare(manager, plan.callbacks)
                 trace.declarations += request.requestBody
                 val sink = CodeModeGatewayBridgeSink()
                 val result = checkNotNull(
@@ -69,7 +63,7 @@ internal class CodeModeGatewayScenarioProbe(
             }
             plan.checkComplete()
             val report = report(bytes, plan.callbacks, trace)
-            return mcp?.report(manager, report) ?: report
+            return requests.report(manager, report)
         } finally {
             manager.onProviderStop()
         }

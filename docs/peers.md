@@ -163,9 +163,53 @@ splice peer codex attach 019a2f6c-4b1e-7c3d-9e8f-0a1b2c3d4e5f --codex-home ~/.co
 splice peer codex detach
 ```
 
-Inside a Codex conversation the thread is `$CODEX_THREAD_ID`, the Codex home is `$CODEX_HOME` (else `~/.codex`) and
-the working directory is the command's own, so `attach` needs no argument. A Codex hook runs it on each event: an
-attach that finds the peer as asked changes nothing and answers once its helper runs. Attach is refused when no
+Codex does not set `$CODEX_THREAD_ID` or `$CODEX_SESSION_ID` in a hook's environment (codex-cli 0.159). It writes one
+JSON object to the command's stdin. The thread id is `session_id` and the working directory, when the object carries
+it, is `cwd`. Those are the fields on `SessionStart`, `UserPromptSubmit` and `SessionEnd`
+(`codex-rs/hooks/src/schema.rs`). `$CODEX_HOME` (else `~/.codex`) is still the Codex home. An argument or either
+environment variable, when a caller did set one, names the thread instead of stdin.
+
+`~/.codex/hooks.json` runs attach when a thread starts and on each prompt, and detach when it ends:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "splice peer codex attach", "timeout": 30 }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "splice peer codex attach", "timeout": 30 }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          { "type": "command", "command": "splice peer codex detach", "timeout": 3 }
+        ]
+      }
+    ]
+  }
+}
+```
+
+SessionEnd's timeout is 3 seconds because that is as long as Codex lets that event run. Omit `matcher` on all three:
+SessionStart then runs for `startup`, `resume`, `clear`, `compact` and `fork`. `--hook` forces the same hook contract
+when you are the one running the command at a terminal.
+
+A hook writes nothing to stdout. Codex would add that text to the model's context, and a JSON object there is a
+decision (`continue`, `decision`, `hookSpecificOutput`). A missing thread id leaves the session alone: exit 0, one
+line on stderr. A daemon that is down, or that answers 404 or any other refusal, is reported on stderr and exits with
+that command's usual code. Exit 2 is the usage code at a terminal; Codex and Claude Code both treat it as "block this
+turn", so a hook never exits 2.
+
+An attach that finds the peer as asked changes nothing and answers once its helper runs. Attach is refused when no
 Codex app-server listens on the home's `app-server-control/app-server-control.sock` (or the daemon its
 `app-server-daemon/daemon.pid` names), because no message could reach the thread then.
 

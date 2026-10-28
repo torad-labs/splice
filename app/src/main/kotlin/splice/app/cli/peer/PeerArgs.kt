@@ -13,7 +13,8 @@ internal const val PEER_USAGE =
         "limit <name> <per-minute> <burst> | limit <name> --default | " +
         "send --as <name> [--id ID] [--pid P [--proc-start S]] <to> <text|-> | " +
         "inbox --as <name> [--after N] [--limit N] [--ack] [--json] [--follow] | status --as <name> <msgId> | " +
-        "codex attach [<thread>] [--cwd DIR] [--codex-home DIR] [--json] | codex detach [<thread>] [--purge]"
+        "codex attach [<thread>] [--cwd DIR] [--codex-home DIR] [--json] [--hook] | " +
+        "codex detach [<thread>] [--purge] [--hook]"
 
 /** One verb's words: the positionals in order, the flags that take a value, and the switches that stand alone. */
 internal data class PeerArgs(val words: List<String>, val values: Map<String, String>, val switches: Set<String>)

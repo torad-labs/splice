@@ -156,8 +156,8 @@ internal class CodeModeUpstreamHistory(
             context.key,
             CodeModeLedgerEntry(
                 covered,
-                conversation + pending,
-                body.echoes + CodeModeNotificationInputs.echoes(pending),
+                if (pending.isEmpty()) conversation else conversation + pending,
+                if (pending.isEmpty()) body.echoes else body.echoes + CodeModeNotificationInputs.echoes(pending),
                 callbacks = callbacks,
             ),
             prior?.id,

@@ -10,6 +10,7 @@ import splice.provider.codex.CodeModeRecord
 /** Only counted, accepted progress after an existing primary result can extend authoritative model input. */
 internal object CodeModeNotificationInputs {
     fun missing(input: List<JsonElement>, records: List<CodeModeRecord>): List<JsonElement> {
+        if (records.none { it.progress.nativeNotifications.isNotEmpty() }) return emptyList()
         val primary = input.mapNotNull { value ->
             val item = value as? JsonObject
             val result = JsonScalars.str(item, "type") == "custom_tool_call_output" &&

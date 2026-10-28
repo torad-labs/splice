@@ -8,6 +8,8 @@ import { fileIdentity, verifyArtifact } from "./file-identity";
 import type { FreeformTool } from "./freeform-contract";
 import { availabilityCatalog, availabilityFindings } from "./availability-contract";
 import { assertTerminalWarnings } from "./terminal-warning-proof";
+import { assertReviewProviderRun, prepareReviewWorkspace, reviewAttestation, reviewProviderScenario } from "./review-contract";
+import { nativeReviewCompletion } from "./review-native-events";
 
 const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 
@@ -30,6 +32,7 @@ function validateScenario(scenario: CliScenario): void {
       Object.keys(input).some(key => !["host", "toolMode"].includes(key)) ||
       scenario.applyPatch || scenario.interruption || scenario.mcp || scenario.rankedSearch) throw Error("Invalid controlled unavailable-host scenario");
   }
+  if (scenario.review && JSON.stringify(scenario) !== JSON.stringify(reviewProviderScenario())) throw Error("Review requires its exact declared inherited-provider plan");
 }
 
 /** Runs the signed reference's actual interactive client against only a deterministic loopback model. */
@@ -59,13 +62,15 @@ export async function runCliScenario(options: {
   if (sourceProfilePattern) await mkdir(dirname(sourceProfilePattern), { recursive: true, mode: 0o700 });
   const cliHome = resolve(directory, "client-state"), workspace = resolve(directory, "workspace");
   await Promise.all([mkdir(cliHome, { mode: 0o700 }), mkdir(workspace, { mode: 0o700 })]);
+  if (scenario.review) await prepareReviewWorkspace(directory);
   const nonce = randomBytes(16).toString("hex");
   const input = JSON.stringify(scenario);
   const inputSha256 = digest(Buffer.from(input));
   await writeFile(resolve(directory, "case-input.json"), input + "\n", { mode: 0o600 });
   await writeFile(resolve(directory, "catalog.json"), catalog, { mode: 0o600 });
   if (negativeCatalog) await writeFile(resolve(directory, "availability-catalog-projection.json"), JSON.stringify(negativeCatalog.projection, null, 2) + "\n", { mode: 0o600 });
-  const upstream = startScriptedUpstream(scenario, directory, nonce);
+  const reviewGates = scenario.review ? reviewAttestation() : undefined;
+  const upstream = startScriptedUpstream(scenario, directory, nonce, reviewGates);
   try {
     const config = [
     `model = ${JSON.stringify(options.model ?? "gpt-6.1-sol")}`, 'model_provider = "codemode_witness"',
@@ -80,15 +85,23 @@ export async function runCliScenario(options: {
     ...(scenario.mcp ? ['[mcp_servers.parity]', 'command = "bun"', `args = ${JSON.stringify([resolve(import.meta.dir, "mcp-peer.ts"), resolve(directory, "mcp-peer.jsonl")])}`, 'startup_timeout_sec = 15', 'tool_timeout_sec = 15'] : []),
     ].join("\n");
     await writeFile(resolve(cliHome, "config.toml"), config, { mode: 0o600 });
-    const argv = [resolve(reference.cli.path), "--no-daemon", "--no-alt-screen", "-C", workspace, "--", "Run the fixed local CodeMode qualification probe in this disposable workspace."];
+    const argv = scenario.review ? [resolve(reference.cli.path), "--no-daemon", "-C", workspace, "review", "--uncommitted"] :
+      [resolve(reference.cli.path), "--no-daemon", "--no-alt-screen", "-C", workspace, "--", "Run the fixed local CodeMode qualification probe in this disposable workspace."];
     await writeFile(resolve(directory, "launch.json"), JSON.stringify({ argv, nonce, inputSha256, reference, catalogSha256: digest(catalog), modelBackend: "deterministic-loopback-no-inference", terminal: { implementation: "Bun.Terminal", emulator: "@xterm/headless@5.5.0" }, ...(sourceProfilePattern ? { sourceProfilePattern } : {}), ...(freeformTool ? { freeformTool } : {}) }, null, 2) + "\n", { mode: 0o600 });
     const terminal = await runTerminal({ argv, cwd: workspace, home: cliHome, directory: resolve(directory, "terminal"), expectedHostSha256: reference.host.sha256, expectedCliSha256: reference.cli.sha256, timeoutMs: options.timeoutMs ?? 45000, sourceProfilePattern,
       hostExpectation: scenario.availability ? { kind: "disabled", feature: "code_mode_host" } : { kind: "required" },
+      ...(reviewGates ? { onAttested: reviewGates.cliAttested, onHostAttested: reviewGates.hostAttested,
+        review: { expectedFinalText: upstream.finalText } } : {}),
       ...(scenario.interruption ? { interruption: { ...scenario.interruption, callId: `probe-${scenario.id}-${scenario.interruption.actionIndex ?? 0}`, ready: upstream.interruptionReady } } : {}) });
     const counts = upstream.counts();
     if (counts.failure) throw Error(counts.failure);
     if (counts.taskRequests !== expectedTaskRequests(scenario)) throw Error("The actual client did not consume every scripted action exactly once");
-    if (terminal.completion.finalText !== upstream.finalText) throw Error("Native completion does not belong to this fresh mock run");
+    if (scenario.review) {
+      const completed = nativeReviewCompletion(cliHome, workspace, upstream.finalText);
+      if (!completed || JSON.stringify(terminal.completion) !== JSON.stringify(completed)) throw Error("Native review completion does not belong to this fresh mock run");
+      await writeFile(resolve(directory, "native-review-events.jsonl"), await readFile(completed.review.sourceFile), { mode: 0o600 });
+      await writeFile(resolve(directory, "review-attestation.json"), JSON.stringify(reviewGates!.snapshot(), null, 2) + "\n", { mode: 0o600 });
+    } else if (terminal.completion.finalText !== upstream.finalText) throw Error("Native completion does not belong to this fresh mock run");
     for (const item of [reference.cli, reference.host]) if ((await fileIdentity(item.path)).sha256 !== item.sha256) throw Error("Reference binary changed during execution");
     if (freeformTool) { await verifyArtifact(freeformTool.binary); await verifyArtifact(freeformTool.proof); }
     await writeFile(resolve(directory, "native-events.jsonl"), await readFile(terminal.completion.sourceFile), { mode: 0o600 });
@@ -99,10 +112,11 @@ export async function runCliScenario(options: {
       const findings = availabilityFindings(result, capture);
       if (findings.length) throw Error(findings.join("; "));
     }
+    if (scenario.review) await assertReviewProviderRun(result);
     await writeFile(resolve(directory, "result.json"), JSON.stringify(result, null, 2) + "\n", { mode: 0o600 });
     return result;
   } catch (error) {
     await writeFile(resolve(directory, "failure.json"), JSON.stringify({ nonce, inputSha256, reference, ...upstream.counts(), error: error instanceof Error ? error.message : String(error) }, null, 2) + "\n", { mode: 0o600 });
     throw error;
-  } finally { upstream.server.stop(true); await upstream.flush(); }
+  } finally { reviewGates?.cancel(); upstream.server.stop(true); await upstream.flush(); }
 }

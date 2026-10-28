@@ -1,6 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { CliObservation, CliScenario, Json, ObjectValue } from "./types";
+import { reviewFinalText } from "./review-contract";
 
 const object = (value: Json | undefined): ObjectValue | undefined => value !== null && typeof value === "object" && !Array.isArray(value) ? value : undefined;
 
@@ -47,14 +48,16 @@ export function expectedTaskRequests(scenario: CliScenario): number {
   return scenario.actions.length + 1 + (scenario.interruption ? 1 : 0);
 }
 
-export function startScriptedUpstream(scenario: CliScenario, directory: string, nonce: string) {
+export function startScriptedUpstream(scenario: CliScenario, directory: string, nonce: string,
+  reviewControl?: { beforeTask(): Promise<void>; beforeFinal(): Promise<void> }) {
+  if (Boolean(scenario.review) !== Boolean(reviewControl)) throw Error("Review requires its explicit process-attestation gates");
   const requests: ObjectValue[] = [], frames: ObjectValue[] = [], observations: CliObservation[] = [];
   let taskRequests = 0, auxiliaryRequests = 0;
   let lastExecId: string | undefined;
   let failure: string | undefined;
   let interruptionHeld = false;
   let persistence = Promise.resolve();
-  const finalText = `CODEMODE_CURRENT_${nonce}`;
+  const finalText = scenario.review ? reviewFinalText(nonce) : `CODEMODE_CURRENT_${nonce}`;
   const event = (type: string, value: ObjectValue): string => {
     const frame = { type, ...value };
     frames.push(frame);
@@ -80,6 +83,7 @@ export function startScriptedUpstream(scenario: CliScenario, directory: string, 
         const body = await request.json() as ObjectValue;
         requests.push(body);
         const title = isTitleRequest(body);
+        if (!title) await reviewControl?.beforeTask();
         const sequence = title ? ++auxiliaryRequests : ++taskRequests;
         const id = `${title ? "title" : "response"}-${sequence}`;
         const input = (Array.isArray(body.input) ? body.input.map(object).filter(Boolean) : []) as ObjectValue[];
@@ -105,6 +109,7 @@ export function startScriptedUpstream(scenario: CliScenario, directory: string, 
           lastExecId = String(items.at(-1)!.call_id);
         }
         if (!items.length) {
+          if (!title) await reviewControl?.beforeFinal();
           const text = title ? JSON.stringify({ title: "CodeMode reference check" }) : finalText;
           const item = { type: "message", id: `item-final-${sequence}`, role: "assistant", status: "completed", channel: "final", content: [{ type: "output_text", text, annotations: [] }] };
           items.push(item);

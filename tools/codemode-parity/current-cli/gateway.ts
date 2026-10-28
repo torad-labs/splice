@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { candidateCommand } from "../candidate-command";
 import { candidateOutcomesMatch, compareControlPackets, sourceGatewayInputBytes } from "./compare";
 import type { CliRun, ObjectValue } from "./types";
+import { assertReviewProviderRun } from "./review-contract";
 
 const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 
@@ -12,6 +13,7 @@ const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest(
 export async function compareGatewayScenario(options: {
   java: string; jar: { path: string; sha256: string }; source: CliRun; directory: string; timeoutMs?: number;
 }): Promise<{ candidate: ObjectValue; directory: string }> {
+  if (options.source.scenario.review) await assertReviewProviderRun(options.source);
   const directory = resolve(options.directory);
   if (!/^[a-f0-9]{64}$/.test(options.jar.sha256) || digest(await readFile(options.jar.path)) !== options.jar.sha256) throw Error("Candidate JAR identity differs");
   if (digest(await readFile(options.source.reference.host.path)) !== options.source.reference.host.sha256) throw Error("Reference host identity differs");

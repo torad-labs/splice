@@ -55,7 +55,8 @@ test("mandatory source cases retain exact action bytes and typed MCP routes", ()
   expect(plans.filter(plan => plan.scenario.availability).map(plan => plan.scenario.availability)).toEqual([
     { host: "disabled", toolMode: "direct" }, { host: "disabled", toolMode: "code_mode" }, { host: "disabled", toolMode: "code_mode_only" },
   ]);
-  expect(plans.filter(plan => !plan.scenario.availability).length).toBe(11);
+  expect(plans.filter(plan => !plan.scenario.availability && !plan.scenario.review).length).toBe(11);
+  expect(plans.filter(plan => plan.scenario.review).map(plan => plan.caseId)).toEqual(["cli-source/review-inherited-provider"]);
   expect(new Set(plans.map(plan => plan.caseId)).size).toBe(plans.length);
   for (const plan of plans) {
     expect(plan.inputSha256).toBe(sha256(JSON.stringify(plan.scenario)));

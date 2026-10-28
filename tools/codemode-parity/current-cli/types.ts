@@ -17,6 +17,7 @@ export interface CliScenario {
   applyPatch?: true;
   interruption?: { notification: string; resumePrompt: string; actionIndex?: number };
   availability?: { host: "disabled"; toolMode: AvailabilityToolMode };
+  review?: { kind: "uncommitted" };
 }
 
 export interface CliReference {

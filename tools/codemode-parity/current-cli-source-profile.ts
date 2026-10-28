@@ -24,6 +24,8 @@ import { interruptionScenario } from "./current-cli/interruption-contract";
 import { cliResponseMemberValues } from "./current-cli-response-values";
 import { cliSearchMemberValues } from "./current-cli-search-values";
 import type { CoreValueWitness } from "./current-core-values";
+import { assertReviewProviderRun, reviewFinalText, reviewProviderScenario, reviewProbeFile } from "./current-cli/review-contract";
+import { nativeReviewCompletion } from "./current-cli/review-native-events";
 
 export const sourceCliFlags = ["-Cinstrument-coverage", "-Cdebuginfo=1", "-Copt-level=0", "-Cdebug-assertions=no", "-Coverflow-checks=no"];
 export type CliSourceBuildProof = {
@@ -43,7 +45,8 @@ type Metadata = { workspace_root: string; packages: Array<{ name: string; versio
 const sourceNames = ["case-input.json", "catalog.json", "launch.json", "requests.json", "frames.json", "observations.json", "native-events.jsonl", "client-state/config.toml", "terminal/terminal.raw", "terminal/terminal-events.jsonl", "terminal/terminal-screen.txt", "terminal/process.json"];
 const candidateNames = ["scenario.json", "launch.json", "process.json", "stderr.txt", "comparison.json"];
 function sourceFileNames(source: Pick<CliRun, "scenario">): string[] {
-  return [...sourceNames, ...(source.scenario.mcp ? ["mcp-peer.jsonl"] : []), ...(source.scenario.applyPatch ? [`workspace/${freeformFile}`] : []), ...(source.scenario.interruption ? ["interruption-hold.json"] : []), ...(source.scenario.availability ? ["availability-catalog-projection.json", "terminal/availability-warning-view.json", "terminal/terminal-rows.json"] : [])];
+  return [...sourceNames, ...(source.scenario.mcp ? ["mcp-peer.jsonl"] : []), ...(source.scenario.applyPatch ? [`workspace/${freeformFile}`] : []), ...(source.scenario.interruption ? ["interruption-hold.json"] : []), ...(source.scenario.availability ? ["availability-catalog-projection.json", "terminal/availability-warning-view.json", "terminal/terminal-rows.json"] : []),
+    ...(source.scenario.review ? ["native-review-events.jsonl", "review-workspace.json", "review-attestation.json", `workspace/${reviewProbeFile}`] : [])];
 }
 function candidateFileNames(source: CliRun, candidate: any): string[] {
   if (!source.scenario.applyPatch) return candidateNames;
@@ -54,7 +57,7 @@ function candidateFileNames(source: CliRun, candidate: any): string[] {
 
 export function sourceCliPlans() {
   return [...controlScenarios, ...mcpScenarios, freeformScenario, interruptionScenario,
-    ...(["direct", "code_mode", "code_mode_only"] as const).map(availabilityScenario)].map(scenario => ({ caseId: `cli-source/${scenario.id}`, inputSha256: sha256(JSON.stringify(scenario)),
+    ...(["direct", "code_mode", "code_mode_only"] as const).map(availabilityScenario), reviewProviderScenario()].map(scenario => ({ caseId: `cli-source/${scenario.id}`, inputSha256: sha256(JSON.stringify(scenario)),
     productionEntrypoint: "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run", scenario }));
 }
 export function sourceCliCaseArtifacts(witness: CliSourceCaseWitness): Artifact[] {
@@ -201,7 +204,10 @@ export async function sourceCliWitnessFindings(cases: CliSourceCaseWitness[], in
     const sourceFile = async (name: string) => { const files = witness.sourceFiles.filter(file => file.path === resolve(source.directory, name)); assert.equal(files.length, 1, `missing or duplicated source CLI raw artifact ${name}`); return checked(files[0]!); };
     const names = sourceFileNames(source); assert.equal(witness.sourceFiles.length, names.length); for (const name of names) await sourceFile(name);
     const launch = JSON.parse((await sourceFile("launch.json")).toString());
-    assert.equal(launch.argv[0], build.binary.path); assert.ok(launch.argv.includes("--no-daemon") && launch.argv.includes("--no-alt-screen") && !launch.argv.includes("exec") && !launch.argv.includes("app-server"), "source proof requires the real interactive PTY entrypoint");
+    assert.equal(launch.argv[0], build.binary.path);
+    if (source.scenario.review) {
+      assert.deepEqual(launch.argv, [build.binary.path, "--no-daemon", "-C", resolve(source.directory, "workspace"), "review", "--uncommitted"], "source review requires the actual one-shot review entrypoint");
+    } else assert.ok(launch.argv.includes("--no-daemon") && launch.argv.includes("--no-alt-screen") && !launch.argv.includes("exec") && !launch.argv.includes("app-server"), "source proof requires the real interactive PTY entrypoint");
     assert.equal(launch.modelBackend, "deterministic-loopback-no-inference"); assert.deepEqual(launch.terminal, { implementation: "Bun.Terminal", emulator: "@xterm/headless@5.5.0" });
     assert.equal(launch.nonce, source.nonce); assert.equal(launch.inputSha256, plan.inputSha256); assert.equal(launch.catalogSha256, sha256(await sourceFile("catalog.json")));
     const officialCatalog = Buffer.from(await git(build.sourceRepository, "show", `${inventory.sourceRevision}:codex-rs/models-manager/models.json`));
@@ -220,7 +226,18 @@ export async function sourceCliWitnessFindings(cases: CliSourceCaseWitness[], in
     if (source.scenario.availability) assert.deepEqual(source.hostProcesses, [], "unavailable source launched a native host");
     else assert.ok(source.hostProcesses.length && source.hostProcesses.every(host => host.pid > 0 && host.sha256 === lock.nativeHostSha256));
     if (source.scenario.availability) await assertTerminalWarnings(resolve(source.directory, "terminal"), JSON.parse((await sourceFile("terminal/availability-warning-view.json")).toString()));
-    assert.deepEqual(nativeCompletion(resolve(source.directory, "client-state")), source.completion); assert.equal(source.completion.finalText, `CODEMODE_CURRENT_${source.nonce}`);
+    if (source.scenario.review) {
+      await assertReviewProviderRun(source);
+      const completed = nativeReviewCompletion(resolve(source.directory, "client-state"), resolve(source.directory, "workspace"), reviewFinalText(source.nonce));
+      assert.ok(completed);
+      assert.ok((await sourceFile("native-review-events.jsonl")).equals(await readFile(completed.review.sourceFile)));
+      const getters = inventory.units.filter(unit => unit.file === "codex-rs/core/src/tools/code_mode/mod.rs" && unit.kind === "function_item" && unit.label === "session_provider");
+      assert.equal(getters.length, 1);
+      assert.equal(witness.referenceFunctions.filter(fn => fn.id === getters[0]!.id).length, 1, "actual review did not enter its source provider getter");
+    } else {
+      assert.deepEqual(nativeCompletion(resolve(source.directory, "client-state")), source.completion);
+      assert.equal(source.completion.finalText, `CODEMODE_CURRENT_${source.nonce}`);
+    }
     assert.ok((await sourceFile("native-events.jsonl")).equals(await readFile(source.completion.sourceFile)));
     const requests = JSON.parse((await sourceFile("requests.json")).toString()), tasks = requests.filter((body: any) => !isTitleRequest(body));
     assert.equal(tasks.length, expectedTaskRequests(plan.scenario)); assert.equal(source.taskRequests, tasks.length); assert.equal(source.auxiliaryRequests, requests.length - tasks.length);

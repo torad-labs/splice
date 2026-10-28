@@ -167,17 +167,25 @@ html { scroll-padding-top: calc(var(--bar-h) + 1rem); }
 .mark .lockup.day { display: none; }
 [data-theme="day"] .mark .lockup.night { display: none; }
 [data-theme="day"] .mark .lockup.day { display: block; }
-.nav { flex: none; display: flex; align-self: stretch; gap: .15rem; position: relative; }
+/* THE LINKS LEAD THE BAR (Oct 28): they were body text at 1rem under a page title twice their size, in the left third of a
+   bar that stood otherwise empty. They are one step up the ladder now (names run 14 to 17 px), each with its page's own
+   glyph, and --nav-pad is the one inset the line under the current link and its hover line share. */
+.nav { --nav-pad: 1rem; flex: none; display: flex; align-self: stretch; gap: .2rem; position: relative; }
 .nav a {
-  display: flex; align-items: center; gap: .55rem; padding: 0 .75rem; position: relative; white-space: nowrap;
-  font: 400 1rem/1 var(--font-name); color: var(--text-body); text-decoration: none;
+  display: flex; align-items: center; gap: .6rem; padding: 0 var(--nav-pad); position: relative; white-space: nowrap;
+  font: 500 1.1rem/1 var(--font-name); color: var(--text-body); text-decoration: none;
   transition: color var(--t-hover) var(--e-out);
 }
+.nav a > svg:first-child { flex: none; width: 1.2rem; height: 1.2rem; color: var(--text-mute); transition: color var(--t-hover) var(--e-out); }
+.nav a:hover > svg:first-child, .nav a[aria-current="page"] > svg:first-child { color: var(--text); }
+/* a page that did not open marks its own link (console.js routeFailed): the bang in the failure's red, arriving once */
+.nav a .nfail { display: inline-flex; color: var(--limit); animation: pop var(--t-pop) var(--e-out) 1; }
+.nav a .nfail svg { width: 1.05rem; height: 1.05rem; }
 /* the page he is on: its name in full ink and a line of the same ink under it; hover draws the line in the track's ink,
    so the bar says where a press goes before it goes. A SELECTED VIEW IS NEUTRAL, never the key light: the page he is on
    is not where he should look next (the colour pass, Oct 26). */
 .nav a::before {
-  content: ""; position: absolute; left: .75rem; right: .75rem; bottom: -.1rem; height: .22rem; border-radius: .2rem .2rem 0 0;
+  content: ""; position: absolute; left: var(--nav-pad); right: var(--nav-pad); bottom: -.1rem; height: .22rem; border-radius: .2rem .2rem 0 0;
   background: var(--track-line); opacity: 0; transform: scaleX(.5);
   transition: opacity var(--t-hover) var(--e-out), transform var(--t-hover) var(--e-out);
 }
@@ -189,7 +197,7 @@ html { scroll-padding-top: calc(var(--bar-h) + 1rem); }
    moves it to the next link's over --t-move, so a page change reads as one move along the bar, not a blink. */
 .nav-line {
   position: absolute; left: 0; bottom: -.1rem; height: .22rem; border-radius: .2rem .2rem 0 0; pointer-events: none;
-  background: var(--text); transform-origin: left; clip-path: inset(0 .75rem);
+  background: var(--text); transform-origin: left; clip-path: inset(0 var(--nav-pad));
   transition: transform var(--t-move) var(--e-io), width var(--t-move) var(--e-io), opacity var(--t-hover) var(--e-out);
 }
 .nav-line.still { transition: none; }
@@ -210,24 +218,32 @@ html { scroll-padding-top: calc(var(--bar-h) + 1rem); }
    the links' body ink, which made the one count of a limit the only neutral figure in the bar */
 .nav .pc.limit b { color: var(--limit); }
 /* a locked console reads nothing, so the bar draws nothing it read before: the counts come back with the key */
-body.locked .nav .nmarks { display: none; }
+body.locked .nav .nmarks, body.locked .nav > .stale { display: none; }
 .side .foot { flex: 0 1 auto; min-width: 0; margin-left: auto; display: flex; align-items: center; gap: .9rem; }
-/* the stale mark (kit.js markStale): the fact in the needs-you ink, in the links' own type and as a door to the
-   settings it is about, and ON IT the act that applies them, the console's one small act. One line where the bar has
-   room, wrapping rather than running under the pages where it has not. */
-.side .foot .stale { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .4rem calc(1.5 * var(--u)); font: 400 1rem/1.2 var(--font-name); text-align: right; }
-.side .foot .stale-door { display: inline-flex; align-items: center; gap: .45rem; color: var(--needs); text-decoration: none; white-space: nowrap; }
-.side .foot .stale-door:hover span { text-decoration: underline; text-underline-offset: .2rem; }
-/* the retries glyph is a bare path: drawn as a line in the mark's own ink, never the black fill an svg takes by default */
-.side .foot .stale svg { flex: none; width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-/* what the press did, said in the bar: the kit's own result word, at the bar's size */
-.side .foot .stale .result { font-size: .88rem; }
-.side .foot .stale.shook, .side .foot .stale .shook { animation: shake 300ms var(--e-out) 1; }
-/* the way out when splice cannot bring itself back: the reason, the command that can, and Copy beside it */
-.side .foot .stale-way { display: inline-flex; align-items: center; gap: .6rem; white-space: nowrap; }
-.side .foot .stale-way .said { color: var(--text-body); font-size: .88rem; }
-.side .foot .stale-way code { font: 500 .88rem/1 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .1rem solid var(--track-line); border-radius: .3rem; padding: .3rem .5rem; }
 .side .foot > .icon { flex: none; }
+/* THE SETTINGS MARK (kit.js drawStale): the Needs-you lamp rides the Settings link, and the one act that applies the change
+   stands right after that link, the console's small act. What the act has to say beyond itself hangs under the link in a
+   panel of its own (the sessions a restart would cut, the command that restarts splice when it cannot): nothing in the bar
+   moves for it. */
+.nav > .stale { position: relative; align-self: stretch; display: inline-flex; align-items: center; gap: .6rem; margin-left: .3rem; font: 500 .95rem/1.2 var(--font-name); white-space: nowrap; }
+.nav > .stale .result { font-size: .95rem; }
+.nav > .stale.shook, .nav > .stale .shook { animation: shake 300ms var(--e-out) 1; }
+.stale-panel {
+  position: absolute; top: calc(100% + 2 * var(--u)); left: 0; z-index: 2; width: max-content; max-width: min(46rem, 90vw);
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(2 * var(--u)); white-space: normal;
+  padding: calc(1.5 * var(--u)) calc(2.5 * var(--u)); border-radius: var(--r-in); background: var(--obj-high);
+  border: .12rem solid var(--ink); box-shadow: .2rem .2rem 0 var(--ink); animation: hung-in var(--t-snap) var(--e-out) 1;
+}
+@keyframes hung-in { from { opacity: 0; transform: translateY(-.4rem); } }
+.stale-panel .said { color: var(--text-body); }
+.stale-panel code { font: 500 .95rem/1 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .1rem solid var(--track-line); border-radius: .3rem; padding: .3rem .5rem; }
+/* THE WAIT FOR SPLICE IS A RING THAT FILLS (kit.js waitRing): its arc is the share of the poll's whole time already spent, in the
+   Needs-you ink while splice may still come back and in the limit red once the time is out */
+.stale-ring { --c: var(--needs); display: inline-flex; flex: none; }
+.stale-ring.over { --c: var(--limit); }
+.stale-ring .ring { width: var(--ring-sz); height: var(--ring-sz); }
+.stale-ring:not(.over) .ring .arc { animation: stale-wait var(--span) linear forwards; animation-delay: var(--late, 0s); }
+@keyframes stale-wait { from { stroke-dasharray: 0 94.25; } to { stroke-dasharray: 94.25 94.25; } }
 /* THE THEME SWITCH IS A SWITCH (Oct 26): both themes drawn, the one in use on the raised knob and the other waiting on
    the sunk track — the same two-state shape as Usage's window switch (.switch above), so the bar's one odd control now
    reads like the rest of the console. Two bare glyphs with no track read as two buttons that happen to sit together. */
@@ -828,20 +844,27 @@ body.locked main.page > :not(.head):not(.lockedby), body.locked main.page > .hea
    the command land where the eye goes at 1440 and at 3822 alike. */
 /* AND IT KEEPS ITS PRESENCE AS THE SCREEN GROWS (Oct 27): a 26rem plate is 394 px of a 3822 px screen holding nothing
    else, so the one thing left to read was a speck. Its width grows with the window between those bounds. */
+/* THE LOCK IS THE ONE FOCAL MARK (Oct 28): the plate was a 667 x 240 px speck on a blank 3822 x 1860 screen with the lock
+   drawn as a word's glyph. The lock stands in a focal ring beside the state at the page title's size, the command under
+   it is read at the size a command is typed, and the plate keeps the rhythm of any plate: 4u round it, 2u from kicker
+   to content. Its width grows with the window, and it stands a seventh of the window's height down. */
 .lockedby {
   display: flex; flex-direction: column; align-items: center; text-align: center; gap: calc(2 * var(--u));
-  width: min(100%, clamp(26rem, 30vw, 44rem)); margin: clamp(calc(4 * var(--u)), 12vh, 12rem) auto 0;
-  padding: calc(5 * var(--u)) calc(4 * var(--u)); border-radius: var(--r-in);
+  width: min(100%, clamp(30rem, 36vw, 78rem)); margin: clamp(calc(4 * var(--u)), 14vh, 16rem) auto 0;
+  padding: calc(4 * var(--u)) calc(4 * var(--u)); border-radius: var(--r-in);
   background: color-mix(in oklab, var(--text) 4%, transparent);
 }
-/* the state is the plate's title, at a group title's size, and the command and its Copy stand one control tall side by side */
-.lockedby .state.limit { font: 400 1.4rem/1.1 var(--font-lead); gap: .7rem; }
-.lockedby .state.limit .lockico svg { width: 1.5rem; height: 1.5rem; }
-.lockedby .word { margin: 0; font: 400 1.4rem/1.1 var(--font-lead); color: var(--limit); }
-.lockedby .kicker { margin: calc(2 * var(--u)) 0 0; }
-.lockedby .way { display: flex; align-items: center; gap: .75rem; }
+.lockedby .state.limit { align-items: center; margin-bottom: var(--u); font: 400 clamp(2.6rem, 2.3vw, 3.8rem)/1.05 var(--font-lead); gap: calc(2 * var(--u)); }
+.lockedby .state.limit .lockico {
+  width: clamp(4.4rem, 3.6vw, 6.2rem); height: clamp(4.4rem, 3.6vw, 6.2rem); flex: none; display: grid; place-items: center; border-radius: 50%;
+  box-shadow: inset 0 0 0 .3rem color-mix(in oklab, var(--limit) 40%, transparent);
+}
+.lockedby .state.limit .lockico svg { width: clamp(2rem, 1.6vw, 2.8rem); height: clamp(2rem, 1.6vw, 2.8rem); }
+.lockedby .word { margin: 0; font: 400 clamp(2.6rem, 2.3vw, 3.8rem)/1.05 var(--font-lead); color: var(--limit); }
+.lockedby .kicker { margin: 0; }
+.lockedby .way { display: flex; align-items: center; gap: calc(1.5 * var(--u)); }
 .lockedby code {
-  display: inline-flex; align-items: center; height: var(--ctl-h); padding: 0 .9rem; font: 500 1.05rem/1 var(--font-data);
+  display: inline-flex; align-items: center; height: var(--ctl-h); padding: 0 calc(1.5 * var(--u)); font: 500 clamp(1.25rem, 1.1vw, 1.7rem)/1 var(--font-data);
   color: var(--text); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in);
 }
 .lockedby .way .act { height: var(--ctl-h); }

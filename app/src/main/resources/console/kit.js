@@ -1321,6 +1321,19 @@ function toggleTheme() {
 // WITH ONE PAGE THE NAV DRAWS NOTHING (hitstop, Oct 10): a lone link repeats the page's own title, and a single
 // selected box reads as a strip with its other tabs torn off. The top bar keeps its height, its wordmark and its
 // theme toggle either way, so nothing moves when the links arrive.
+// A PAGE IS FOUND BY ITS SHAPE BEFORE ITS WORD IS READ: each link carries one line glyph of what its page holds, in the
+// same stroke every glyph of the console uses, so eight words in one size are not the only way to tell the links apart.
+// The first-run card draws the same glyphs for the pages the manager reads.
+const NAV_GLYPH = {
+  "accounts.html": G('<circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c.8-4 3.6-6 7-6s6.2 2 7 6"/>', 'aria-hidden="true"'),
+  "sessions.html": G('<rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M7.5 10l3 2.5-3 2.5M13 15h3.5"/>', 'aria-hidden="true"'),
+  "teams.html": ICON.team,
+  "requests.html": G('<path d="M5 8h13M14 4l4 4-4 4M19 16H6M10 12l-4 4 4 4"/>', 'aria-hidden="true"'),
+  "usage.html": G('<path d="M5 20v-8M12 20V4M19 20v-5"/>', 'aria-hidden="true"'),
+  "models.html": G('<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/>', 'aria-hidden="true"'),
+  "compare.html": G('<rect x="4" y="5" width="7" height="14" rx="1.5"/><rect x="13" y="5" width="7" height="14" rx="1.5"/>', 'aria-hidden="true"'),
+  "settings.html": G('<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>', 'aria-hidden="true"'),
+};
 function drawNav() {
   const side = document.querySelector(".side");
   if (!side || PAGES.length < 2 || side.querySelector(".nav")) return;
@@ -1329,7 +1342,7 @@ function drawNav() {
   const own = document.title.split(" · ")[0], file = location.pathname.split("/").pop();
   const here = PAGES.find(([f, name]) => name === own || f === file)?.[0];
   const links = PAGES.map(([file, name]) =>
-    `<a href="${file}"${file === here ? ' aria-current="page"' : ""}><span class="nname">${esc(name)}</span></a>`).join("");
+    `<a href="${file}"${file === here ? ' aria-current="page"' : ""}>${NAV_GLYPH[file] ?? ""}<span class="nname">${esc(name)}</span></a>`).join("");
   const nav = document.createElement("nav");
   nav.className = "nav";
   nav.setAttribute("aria-label", "Pages");
@@ -1464,7 +1477,7 @@ document.querySelector('.side [data-act="theme"]')?.addEventListener("click", to
 
 // THE STALE MARK (web-console.md:385, :397; gap 460): splice.toml on disk no longer matches what the daemon booted with,
 // so a change written there, by this console or by hand, waits on a restart. /health says so as topologyStale; the
-// mark sits at the top bar's right end, beside the theme toggle, on every page and is absent while the two match. Read once the page's scripts have
+// mark sits on the Settings link of the top bar, on every page, and is absent while the two match. Read once the page's scripts have
 // loaded (API comes after this file), then every 15 s; an unanswered read leaves the mark as it was.
 //
 // AND THE ACT IS ON THE MARK (Oct 26). The words were the user's already, but the only way to act on them was to go to
@@ -1475,24 +1488,54 @@ document.querySelector('.side [data-act="theme"]')?.addEventListener("click", to
 const STALE_READ_MS = 15_000, RESTART_POLL_MS = 2_000, RESTART_TRIES = 60, SAID_MS = 4_000;
 // what the restart press is doing right now: armed with the sessions it would cut, out, or done with a word to say
 let restarting = null;
+// WHAT CHANGED IS MARKED WHERE IT CHANGED (Oct 28). The mark stood at the bar's far end, 2,400 px from the Settings link it
+// is about, as two words and an act. It is the Needs-you lamp now, on the Settings link itself, and the one act that
+// applies the change stands right beside that link. What the act needs to say beyond itself (the sessions a restart
+// would cut, the command that restarts splice when it cannot do it itself) hangs under the link, as a page that did not
+// open hangs its line, so nothing in the bar is pushed along.
+const staleLink = () => document.querySelector('.side .nav a[href="settings.html"]');
+const staleMark = () => document.querySelector(".side .nav > .stale");
+function clearStale() {
+  staleMark()?.remove();
+  const link = staleLink(), lamp = link?.querySelector(".nstale");
+  if (!lamp) return;
+  lamp.remove(); link.removeAttribute("aria-label"); link.removeAttribute("title");
+  navLine(false);
+}
 async function markStale() {
-  const foot = document.querySelector(".side .foot");
-  const res = foot ? await API.get("/health") : null;
+  const res = document.querySelector(".side .nav") ? await API.get("/health") : null;
   if (!res?.ok) return;
   // the mark stays while a restart of its own is in flight or has a word to say, so the act never vanishes mid-press;
   // a way out he was handed (the command) has done its work once splice runs the saved settings
   if (res.body?.topologyStale !== true && restarting?.manual) restarting = null;
-  if (res.body?.topologyStale !== true && !restarting) { foot.querySelector(".stale")?.remove(); return; }
+  if (res.body?.topologyStale !== true && !restarting) { clearStale(); return; }
   drawStale();
 }
+// THE WAIT FOR SPLICE TO COME BACK IS A RING THAT FILLS (Oct 28): it was a spinner and then the words "Not back yet". The
+// arc is the share of the wait spent, over the whole time the poll below gives splice, so it reads as progress and, full
+// and in the failure's red, as the end of it. The page's own animation carries it between redraws, from where it was.
+const RESTART_WINDOW_MS = RESTART_TRIES * RESTART_POLL_MS;
+function waitRing(over = false) {
+  const spent = over ? 1 : Math.min(1, (Date.now() - (restarting?.since ?? Date.now())) / RESTART_WINDOW_MS);
+  return `<span class="stale-ring${over ? " over" : ""}" style="--span:${RESTART_WINDOW_MS / 1000}s;--late:-${(spent * RESTART_WINDOW_MS / 1000).toFixed(1)}s" role="img" aria-label="${over ? "Not back yet" : "Waiting for splice"}">${DRAW.ring(spent)}</span>`;
+}
 function drawStale() {
-  const foot = document.querySelector(".side .foot");
-  if (!foot) return;
-  let mark = foot.querySelector(".stale");
+  const link = staleLink();
+  if (!link) return;
+  if (!link.querySelector(".nstale")) {
+    const lamp = document.createElement("span");
+    lamp.className = "nmarks nstale pop";
+    lamp.innerHTML = `<span class="tlamp needs" aria-hidden="true">${ICON.retries}</span>`;
+    link.append(lamp);
+    link.setAttribute("aria-label", "Settings, changed since splice started");
+    link.title = "Settings changed since splice started";
+    navLine(false);
+  }
+  let mark = staleMark();
   if (!mark) {
     mark = document.createElement("span");
     mark.className = "stale";
-    foot.prepend(mark);
+    link.after(mark);
     mark.addEventListener("click", async (e) => {
       const act = e.target.closest("[data-act]")?.dataset.act;
       if (act === "restart") pressRestart();
@@ -1507,24 +1550,30 @@ function drawStale() {
       }
     });
   }
-  // THE USER'S WORDS, NOT THE FILE'S (Oct 26), AND THE DOOR TO THEM (Oct 27). It read "splice.toml changed · restart to
-  // apply", then "Settings changed since splice started" at 12.9 px beside a 26 px act. The fact is two words in the
-  // links' own type, and a door to the page that holds those settings; the act that applies them stands beside it.
-  const words = `<a class="stale-door" href="settings.html">${ICON.retries}<span>Settings changed</span></a>`;
-  const act = restarting?.manual
-    // SPLICE CANNOT BRING ITSELF BACK HERE, SO THE WAY OUT IS THE COMMAND THAT CAN (Oct 27): a refusal that said
-    // "Nothing is set to start it again" left nothing to press. `splice restart` stops it and starts it from a terminal.
-    ? `<span class="stale-way"><span class="said">${esc(restarting.manual)}</span><code>${RESTART_LINE}</code>`
-      + (restarting.copied ? DRAW.result(restarting.copied, restarting.copied === "Copied" ? "good" : "bad")
-        : `<button class="act quiet small" type="button" data-act="copy-restart">Copy</button>`) + `</span>`
-    : restarting?.said
-      ? DRAW.result(restarting.said, restarting.tone)
-      : restarting?.armed
-        ? armedAsk("Mid-request", restarting.armed, `<button class="act danger small" type="button" data-act="restart-now">Restart splice</button>`,
-          `<button class="act quiet small" type="button" data-act="keep">Keep running</button>`)
-        : DRAW.act({ word: restarting?.out ? "Restarting" : "Restart splice", act: "restart", cls: "quiet small",
-          busy: Boolean(restarting?.out || restarting?.reading) });
-  mark.innerHTML = words + act;
+  // THE ACT IS ON THE MARK. What it does to others, or the way out where splice cannot restart itself, hangs under it.
+  // SPLICE CANNOT BRING ITSELF BACK HERE, SO THE WAY OUT IS THE COMMAND THAT CAN (Oct 27): a refusal that said "Nothing is
+  // set to start it again" left nothing to press. `splice restart` stops it and starts it from a terminal.
+  const copied = restarting?.copied ? DRAW.result(restarting.copied, restarting.copied === "Copied" ? "good" : "bad")
+    : `<button class="act quiet small" type="button" data-act="copy-restart">Copy</button>`;
+  const hung = restarting?.manual
+    ? `<span class="stale-panel stale-way">${restarting.waited ? waitRing(true) : ""}<span class="said">${esc(restarting.manual)}</span><code>${RESTART_LINE}</code>${copied}</span>`
+    : restarting?.armed
+      ? `<span class="stale-panel">${armedAsk("Mid-request", restarting.armed, `<button class="act danger small" type="button" data-act="restart-now">Restart splice</button>`,
+        `<button class="act quiet small" type="button" data-act="keep">Keep running</button>`)}</span>`
+      : "";
+  const inline = hung ? "" : restarting?.said
+    ? DRAW.result(restarting.said, restarting.tone)
+    : DRAW.act({ word: restarting?.out ? "Restarting" : "Restart splice", act: "restart", cls: "quiet small",
+      busy: Boolean(restarting?.out || restarting?.reading), data: ` title="Settings changed since splice started"` })
+      + (restarting?.out ? waitRing() : "");
+  mark.innerHTML = inline + hung;
+  mark.classList.toggle("hang", Boolean(hung));
+  // the panel hangs from the mark's left and slides back along the bar only as far as it needs to stay inside the window
+  const panel = mark.querySelector(".stale-panel");
+  if (panel) {
+    const over = panel.getBoundingClientRect().right - (document.documentElement.clientWidth - 16);
+    if (over > 0) panel.style.left = `${-Math.min(over, mark.getBoundingClientRect().left - 16)}px`;
+  }
   // a refusal shakes what the press was on; the press is gone by then (its word stands in its place), so the mark shakes
   if (restarting?.shook) { (mark.querySelector(".act") || mark).classList.add("shook"); restarting.shook = false; }
 }
@@ -1540,7 +1589,7 @@ async function pressRestart() {
   drawStale();
 }
 async function restartSplice() {
-  restarting = { out: true };
+  restarting = { out: true, since: Date.now() };
   drawStale();
   const res = await API.post("/api/daemon/restart", {});
   if (res.body?.error) console.warn(`restart: ${res.body.error}`);
@@ -1567,7 +1616,7 @@ function pollRestart(tries) {
       setTimeout(() => { restarting = null; markStale(); }, SAID_MS);
       return;
     }
-    if (tries === RESTART_TRIES) { restarting = { manual: "Not back yet", shook: true }; drawStale(); }
+    if (tries === RESTART_TRIES) { restarting = { manual: "Not back yet", waited: true, shook: true }; drawStale(); }
     if (tries >= RESTART_TRIES) { setTimeout(() => pollRestart(tries + 1), STALE_READ_MS - RESTART_POLL_MS); return; }
     pollRestart(tries + 1);
   }, RESTART_POLL_MS);

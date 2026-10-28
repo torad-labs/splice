@@ -214,9 +214,11 @@ const CONSOLE = (() => {
    *  words, and Try again beside them, which reads the page again from scratch because load() drops what failed from its
    *  caches. The line stood over the page he was still on, as its first row, so that page's title dropped 63 px the
    *  moment it landed and "Teams didn't open" read as a fact about Accounts. It hangs under the link he pressed, over
-   *  the page, so nothing on the page moves; the next page that opens takes it away. A failure with no link (an address
-   *  typed by hand) keeps the place at the top of the page. The class is kept: it is what the manager's eyes read to
-   *  see that a page did not open (pilot.js). */
+   *  the page, so nothing on the page moves; the next page that opens takes it away. The link he pressed carries the
+   *  failure on itself too, a red mark after its name, so the bar shows which page it was while the line says what
+   *  happened. A failure with no link of its own still hangs from the bar's left, never as a row at the top of the page,
+   *  which pushed the title and everything under it down. The class is kept: it is what the manager's eyes read to see
+   *  that a page did not open (pilot.js). */
   function routeFailed(file, error, address, options) {
     clearRouteError();
     const nav = document.querySelector(".side .nav"), link = nav?.querySelector(`a[href="${CSS.escape(file)}"]`);
@@ -229,12 +231,14 @@ const CONSOLE = (() => {
       clearRouteError();
       navigate(address, options);
     });
-    if (!link) { document.querySelector("main.page")?.prepend(note); return; }
+    // a page with no bar at all has nowhere to hang it from: the top of the page, as before
+    if (!nav) { document.querySelector("main.page")?.prepend(note); return; }
+    if (link) link.insertAdjacentHTML("beforeend", `<span class="nfail" aria-hidden="true">${ICON.bang}</span>`);
     nav.append(note);
     placeNote = () => {
       // under the link's own name, held inside the window when the link stands near its right edge
       const room = document.documentElement.clientWidth - nav.getBoundingClientRect().left - note.offsetWidth - 16;
-      note.style.left = `${Math.max(0, Math.min(link.offsetLeft, room))}px`;
+      note.style.left = `${Math.max(0, Math.min(link?.offsetLeft ?? 0, room))}px`;
     };
     placeNote();
     addEventListener("resize", placeNote);
@@ -242,6 +246,7 @@ const CONSOLE = (() => {
   let placeNote = null;
   function clearRouteError() {
     document.querySelector(".route-error")?.remove();
+    for (const mark of document.querySelectorAll(".nav a .nfail")) mark.remove();
     if (placeNote) { removeEventListener("resize", placeNote); placeNote = null; }
   }
   window.addEventListener("click", (event) => {

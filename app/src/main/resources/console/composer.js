@@ -41,8 +41,12 @@
   // (ManagerWiring.why). Each state is said once, over the commands in it, never under every one of them.
   const HEAD_STATES = [[/^not installed/i, "Not installed"], [/quota/i, "At limit"], [/not answering/i, "Not answering"], [/stopped/i, "Stopped"]];
   const headState = (x) => HEAD_STATES.find(([re]) => re.test(x.why || ""))?.[1] ?? "Not ready";
-  // what a change of model or effort costs, said once at the foot of the menu that makes it
-  const REREAD = `<p class="cmp-menuline">A change re-reads the whole conversation once</p>`;
+  // WHAT A CHANGE OF MODEL OR EFFORT COSTS, DRAWN AS THE FIGURE IT RE-READS (Oct 28): said once at the foot of the menu
+  // that makes it, with the size of the conversation the manager's own status line reports, never a guess at one
+  const rereadLine = (ctx) => `<p class="cmp-menuline cmp-reread">${ICON.retries}`
+    + (ctx?.used > 0 ? `<span>Re-reads <b>${DRAW.big(ctx.used)}</b> tokens once</span>` : `<span>Re-reads the conversation once</span>`) + `</p>`;
+  // the command that installs every command splice runs on, which a "Not installed" group carries beside it
+  const INSTALL_LINE = "splice install --all";
   // what the field is for, and the short form for a bar standing in a column too narrow for it (fitBar)
   const HINT = "Message the splice manager", SHORT_HINT = "Message the manager";
   const X = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>`;
@@ -62,6 +66,8 @@
     sessions: { word: "Listed sessions", many: "listed", icon: ICON.team },
     helper: { word: "Asked a helper", many: "asked", icon: glyph('<circle cx="12" cy="8" r="3.2"/><path d="M5.5 19.5c1-3.6 3.4-5.5 6.5-5.5s5.5 1.9 6.5 5.5"/>') },
     note: { word: "Noted", many: "noted", icon: glyph('<path d="M5.5 4.5h13v15h-13z"/><path d="M8.5 9h7M8.5 12.5h7M8.5 16h4"/>') },
+    // not a kind of call: the folder a file chip and the first-run card's first tile stand on
+    folder: { icon: glyph('<path d="M3.5 7h6l2 2.2h9v9.8h-17z"/>') },
     step: { word: "Step", many: "done", icon: glyph('<circle cx="12" cy="12" r="3"/>') },
   };
   const TOOL_KIND = {
@@ -101,6 +107,9 @@
     names: null, namesOut: false, // the sessions a message was sent to, by address and by name { byAddr, byName, at }
     wantNames: false,           // the drawn log holds a recipient or a sender whose session is not named yet
     unread: 0,                  // replies that landed while he was reading further up
+    still: false,               // the next drawing of the log is older messages opening above: nothing in it eases in
+    older: false,               // Earlier messages was pressed and the page before the oldest one is being read
+    slow: false,                // the first read of the manager has been out longer than a read should take
     flash: null,                // { what, cls, at } the one place a press landed or was refused, for one turn
     compacting: null,           // { at, was } Compact was pressed: the context meter is pending until the reading drops
     busy: false, line: null, reading: false, retrying: false, timer: 0, opened: new Set(),
@@ -238,7 +247,7 @@
       if (!kept) st.log = { sid: id, messages: res.status === 404 ? [] : null, error: res.status === 404 ? null : "Not read" };
       return;
     }
-    st.log = { sid: id, messages: res.body.messages, earlier: Boolean(res.body.earlier), moves: res.body.moves || [] };
+    st.log = { sid: id, messages: res.body.messages, earlier: res.body.earlier || null, moves: res.body.moves || [] };
     st.fresh = false;
     settleTyped();
   }
@@ -375,12 +384,15 @@
     // sentence and the only button was a Send that could not send. Words he had typed keep the field, and the open
     // sheet's header says the state instead.
     const down = st.gone === "down" && !first;
-    const dead = first || door1 ? null : down ? "splice is not answering" : !m ? "This splice has no manager" : null;
+    // a first read out longer than a read takes says so once beside its stripes, as a page's header does
+    const dead = first ? (st.slow ? "Slow to read" : null) : door1 ? null : down ? "splice is not answering" : !m ? "This splice has no manager" : null;
     const label = Boolean(dead) && !words && !st.open;
     door.hidden = !door1; field.hidden = door1 || first || label;
     said.hidden = !label;
     if (label) said.textContent = dead;
     pill.querySelector(".cmp-wait").hidden = !first;
+    // the card says what the door says, so the door is not drawn under it: the title is read once
+    pill.classList.toggle("beneath", st.card && door1);
     // the door's verb is the card's: Resume over a card that resumes, Start over one that starts
     door.querySelector("span").textContent = `${m?.state === "resumable" ? "Resume" : "Start"} the splice manager`;
     lamp.className = `cmp-lamp ${lampOf()}`;
@@ -418,8 +430,12 @@
     }
     return {
       ready: list.filter((x) => x.ready).map((x) => headChip(x, x.key === on, role)).join(""),
+      // a command that is not installed carries the command that installs it, with Copy, beside its group, so the way
+      // out is where the reason is
       off: [...off].map(([s, xs]) => `<div class="cmp-offgroup"><p class="kicker">${h(s)}</p>`
-        + `<div class="cmp-offrow">${xs.map((x) => headChip(x, x.key === on, role)).join("")}</div></div>`).join(""),
+        + `<div class="cmp-offrow">${xs.map((x) => headChip(x, x.key === on, role)).join("")}</div>`
+        + (s === "Not installed" ? `<div class="cmp-install"><code>${INSTALL_LINE}</code><button type="button" class="act quiet small" data-act="copyinstall">Copy</button></div>` : "")
+        + `</div>`).join(""),
     };
   }
   /** THREE LABELLED FACTS WHERE A PARAGRAPH STOOD (Oct 26, Oct 27). The card opened with about 45 words naming a Claude
@@ -434,19 +450,23 @@
     const list = heads(), ready = list.filter((x) => x.ready);
     if (!ready.some((x) => x.key === st.pick)) st.pick = ready.find((x) => x.key === st.m?.head)?.key ?? ready[0]?.key ?? null;
     const verb = st.m?.state === "resumable" ? "Resume" : "Start";
-    const fact = (icon, label, words) => `<div class="cmp-fact"><dt>${icon}${label}</dt><dd>${words}</dd></div>`;
+    // THREE GLYPH TILES WHERE THREE LABELLED FACTS STOOD (Oct 28): a folder for where it works, the pages it reads drawn as
+    // the top bar's own glyphs, a pencil for what it changes. The label is the tile's name for a reader that cannot see
+    // the glyph, and the title says it on hover; the words beside the glyph are the fact's own.
+    const fact = (name, glyphs, words) => `<div class="cmp-fact" title="${name}"><dt>${name}</dt><dd><span class="cmp-fg" aria-hidden="true">${glyphs}</span><span>${words}</span></dd></div>`;
     const parts = headsHtml(st.pick, "radio");
-    const html = `<h2 id="cmp-card-h">${verb} the splice manager</h2>`
+    const html = `<div class="cmp-top"><span class="cmp-lamp ${lampOf()}" aria-hidden="true"><i></i></span>`
+      + `<h2 id="cmp-card-h">${verb} the splice manager</h2>`
+      + `<button type="button" class="act quiet small" data-act="later">Not now</button></div>`
       + `<dl class="cmp-facts">`
-      + fact(KIND.read.icon, "Works in", "splice's settings folder")
-      + fact(ICON.team, "Reads", "commands, accounts and sessions")
-      + fact(ICON.lock, "Changes", "settings, once you approve")
+      + fact("Works in", KIND.folder.icon, "splice's settings folder")
+      + fact("Reads", ["models.html", "accounts.html", "sessions.html"].map((f) => NAV_GLYPH[f]).join(""), "commands, accounts, sessions")
+      + fact("Changes", KIND.write.icon, "settings, once you approve")
       + `</dl>`
       + `<p class="kicker" id="cmp-heads-l">${ready.length ? "Runs on" : "No command can run it"}</p>`
       + `<div class="cmp-heads" role="radiogroup" aria-labelledby="cmp-heads-l">${parts.ready}</div>`
       + (parts.off ? `<div class="cmp-off">${parts.off}</div>` : "")
-      + `<div class="cmp-go"><button type="button" class="act primary" data-act="start"${st.pick ? "" : " disabled"}>${verb}</button>`
-      + `<button type="button" class="act quiet" data-act="later">Not now</button></div>`;
+      + `<div class="cmp-go"><button type="button" class="act primary" data-act="start"${st.pick ? "" : " disabled"}>${verb}</button></div>`;
     if (html !== drawn.card) { card.innerHTML = html; drawn.card = html; }
   }
   /** The sheet's own header: the lamp, the name, and the ONE state word. It read "splice manager" beside the folder
@@ -480,19 +500,21 @@
    *  said on the figure's baseline ("44% of 272K"); [word] what the share is when it is not "used"; [even] a share
    *  where more is better, drawn in a neutral fill so it never reads as one more limit being spent; [lead] the share
    *  the strip is here for, whose figure is the focal one the eye lands on, where every figure stood at body size. */
-  function meterRow({ name, pct, of = "", word = "used", reset = null, len = 0, act = "", pending = false, limit = true, even = false, lead = false }) {
+  function meterRow({ name, pct, of = "", word = "used", reset = null, len = 0, act = "", pending = false, limit = true, even = false, lead = false, after = "" }) {
     const known = typeof pct === "number" && isFinite(pct);
     const p = known ? Math.min(100, Math.max(0, Math.round(pct))) : null;
     // the limit red marks a limit being reached and nothing else: a cache that serves 92% is not a limit, it is good
     const hot = known && limit && p >= CRITICAL_PCT;
-    const bar = known ? DRAW.meter(p, `${hot ? "full" : ""}${pending ? " reading" : ""}`.trim()) : GHOST.track();
+    // a share not reported yet is the dashed empty track the console draws for "no reading here", never the stripes of a read
+    // still out, which this was: those say "coming", and for the manager this only comes after its next turn
+    const bar = known ? DRAW.meter(p, `${hot ? "full" : ""}${pending ? " reading" : ""}`.trim()) : DRAW.meter(null);
     const back = reset ? resetWord(reset) : "";
     const ring = reset && len > 0 ? DRAW.ring(Math.max(0, Math.min(1, (reset * 1000 - Date.now()) / len))) : "";
     const tail = of ? `<span class="cmp-of">${h(of)}</span>` : word ? `<span class="cmp-of">${h(word)}</span>` : "";
     return `<div class="cmp-mrow${hot ? " hot" : ""}${even ? " even" : ""}${lead ? " lead" : ""}" data-meter="${h(name)}">`
       + `<span class="cmp-mname">${h(name)}</span>`
       + `<span class="cmp-mbar">${bar}</span>`
-      + `<span class="cmp-mnum">${known ? `<b>${p}%</b>${tail}` : DRAW.dash}</span>`
+      + `<span class="cmp-mnum">${known ? `<b>${p}%</b>${tail}` : after ? `<span class="cmp-of">${h(after)}</span>` : DRAW.dash}</span>`
       + `<span class="cmp-mreset">${ring}${back ? `<span>${h(back)}</span>` : ""}</span>`
       + `<span class="cmp-mact">${act}</span></div>`;
   }
@@ -515,7 +537,7 @@
       // THE SHARE IS READ AGAINST ITS ROOM (Oct 27): "44% of 272K", the window the status line itself reports, so it
       // holds for a model splice's catalog has never listed; the row read "44% used" with the room drawn nowhere.
       const room = ctx?.window > 0 ? ctx.window : null;
-      rows.push(meterRow({ name: "Context", pct: room ? ctx.percent : null, of: room ? `of ${DRAW.big(room)}` : "", act: compact, pending, lead: true }));
+      rows.push(meterRow({ name: "Context", pct: room ? ctx.percent : null, of: room ? `of ${DRAW.big(room)}` : "", act: compact, pending, lead: true, after: "After its next turn" }));
       // the share of the newest input served from the cache: more is better, so it is drawn neutral, not as a limit
       if (ctx?.cache != null) rows.push(meterRow({ name: "From cache", pct: ctx.cache, word: "", limit: false, even: true }));
       const row = st.limits?.row, who = [row?.display_name, row?.plan].filter(Boolean).join(" · ");
@@ -571,7 +593,7 @@
         : `<p class="cmp-menuline">${DRAW.nothing("No models listed")}</p>`;
     }
     const efforts = `<div class="cmp-effort"><p class="kicker">Effort</p>${DRAW.switcher(EFFORTS, ln?.effort ?? null, "effort", "Effort", { disabled: !steer })}</div>`;
-    return models + efforts + REREAD;
+    return models + efforts + rereadLine(ln?.context);
   }
   /** The foot is what the manager IS and what he can do to it: the command it runs on, what it answers with, Stop while
    *  a turn runs, and the door to its own page. The state word left for the header, where it is said once. */
@@ -580,7 +602,7 @@
     const steer = canSteer();
     const parts = headsHtml(key, "menuitemradio");
     const head = key ? wrap("head", `<button type="button" class="cmp-hd" data-act="menu" data-menu="head" aria-haspopup="menu" aria-expanded="${st.menu === "head"}" style="--c:${tint(key)}"`
-      + ` aria-label="The command the manager runs on: ${h(labelOf(key))}"${st.phase || !heads().length ? " disabled" : ""}>`
+      + ` aria-label="The command the manager runs on: ${h(labelOf(key))}"${st.phase || !heads().length ? " disabled" : ""}${st.phase?.kind === "move" ? ' aria-busy="true"' : ""}>`
       + `<span class="cmp-blot" aria-hidden="true"></span><span>${h(labelOf(key))}</span>${CARET}</button>`,
       `<p class="kicker">Continue on</p>${parts.ready}${parts.off}`) : "";
     const model = live ? wrap("steer", steerChip(ln, w, steer), steerItems(ln, steer)) : "";
@@ -671,7 +693,7 @@
     const out = [];
     let para = [], list = null, code = null, table = null;
     const endPara = () => { if (para.length) out.push(para.length === 1 && PATH_ONLY.test(para[0].trim())
-      ? `<p class="cmp-path"><code>${h(para[0].trim())}</code></p>` : `<p>${para.map(inline).join("<br>")}</p>`); para = []; };
+      ? `<p class="cmp-path">${fileChip(para[0].trim())}</p>` : `<p>${para.map(inline).join("<br>")}</p>`); para = []; };
     const endList = () => { if (list) out.push(`<${list.tag}>${list.items.map((x) => `<li>${inline(x)}</li>`).join("")}</${list.tag}>`); list = null; };
     const endTable = () => {
       if (!table) return;
@@ -785,20 +807,44 @@
   /** What a call was about, from its input as the transcript keeps it (Sessions' callSummary); a path in the manager's
    *  own folder reads from there. A message's own summary is what it was about; who it went to is drawn as that
    *  session's own chip, so no row has to spell a socket path. */
-  function callSummary(m) {
+  /** WHAT A CALL WAS ABOUT IS SAID IN WORDS, AND THE RAW INPUT WAITS ONE PRESS UNDER IT (Oct 28). The row printed the
+   *  command line, the whole path or the address as it was sent, so a row read as a shell history. [say] is what the row
+   *  shows: the call's own description of itself when it wrote one, the file's name for a file, the pattern for a
+   *  search, the host for an address; [raw] is the command, the whole path or the whole address, drawn under the row
+   *  when it has more to tell than [say] does. A call that wrote no description keeps its command in the row, since a
+   *  stand-in for it would be a guess. */
+  function callAbout(m) {
     let input;
-    try { input = JSON.parse(m.text); } catch { return oneLine(m.text); }
-    if (!input || typeof input !== "object") return oneLine(m.text);
+    try { input = JSON.parse(m.text); } catch { return { say: oneLine(m.text), raw: null }; }
+    if (!input || typeof input !== "object") return { say: oneLine(m.text), raw: null };
     const folder = st.m?.folder ? `${String(st.m.folder).replace(/\/$/, "")}/` : null;
     const file = (p) => (folder && p.startsWith(folder) ? p.slice(folder.length) : home(p));
-    if (input.summary) return oneLine(input.summary);
-    if (input.command) return oneLine(input.command);
-    if (input.file_path || input.notebook_path) return file(input.file_path || input.notebook_path);
-    if (input.pattern) return input.path ? `${input.pattern} in ${file(input.path)}` : input.pattern;
-    if (input.questions?.[0]?.question) return input.questions[0].question;
-    if (input.url) return input.url;
-    if (input.to && input.message) return oneLine(input.message);
-    return oneLine(Object.values(input).find((v) => typeof v === "string" && v.trim()) ?? "");
+    const name = (p) => String(p).replace(/\/+$/, "").split("/").pop() || String(p);
+    // a summary that is only a place is read as the place it is: its name in the row, the whole path under it
+    const said = (text) => (PATH_ONLY.test(text) ? { say: name(text), raw: { path: file(text) } } : { say: text, raw: null });
+    if (input.summary) return said(oneLine(input.summary));
+    if (input.command) {
+      const raw = String(input.command).trim();
+      return input.description ? { say: oneLine(input.description), raw } : { say: oneLine(raw), raw: null };
+    }
+    if (input.file_path || input.notebook_path) {
+      const path = input.file_path || input.notebook_path;
+      return { say: name(path), raw: { path: file(path) } };
+    }
+    if (input.pattern) return { say: input.path ? `${input.pattern} in ${name(input.path)}` : String(input.pattern), raw: input.path ? { path: file(input.path) } : null };
+    if (input.questions?.[0]?.question) return { say: input.questions[0].question, raw: null };
+    if (input.url) {
+      let host = input.url;
+      try { host = new URL(input.url).host; } catch { /* a malformed address is shown as it came */ }
+      return { say: host, raw: input.url === host ? null : String(input.url) };
+    }
+    if (input.to && input.message) return said(oneLine(input.message));
+    return { say: oneLine(Object.values(input).find((v) => typeof v === "string" && v.trim()) ?? ""), raw: null };
+  }
+  /** A place the way a file chip draws it: its name first, in full ink, and the folder it is in beside it, muted. */
+  function fileChip(path) {
+    const text = String(path).trim(), cut = text.lastIndexOf("/"), dir = cut > 0 ? home(text.slice(0, cut)) : "", name = cut >= 0 ? text.slice(cut + 1) : text;
+    return `<span class="cmp-file" title="${h(home(text))}">${KIND.read.icon}<b>${h(name || text)}</b>${dir ? `<span>${h(dir)}</span>` : ""}</span>`;
   }
   /** Who a call reached, when splice knows that session: its name, as a door to its own page. */
   function callTo(m) {
@@ -812,14 +858,17 @@
     const kind = TOOL_KIND[m.tool] ?? "step";
     const k = KIND[kind], open = st.opened.has(key);
     const bad = failedResult(result), out = result != null;
-    const who = callTo(m), sum = callSummary(m);
-    const mark = bad ? `<span class="cmp-mk bad">Failed</span>`
+    const who = callTo(m), about = callAbout(m);
+    // a failure is red once, on its own mark: the word and the glyph keep the ink every other row has
+    const mark = bad ? `<span class="cmp-mk bad">${ICON.bang}Failed</span>`
       : !out && live ? `<span class="cmp-mk live" role="img" aria-label="Still going"><i></i></span>` : "";
     const word = kind === "step" ? (m.tool || k.word) : k.word;
+    // what was sent, whole, one press under the words: a command in the code face, a place as its file chip
+    const raw = !about.raw ? "" : typeof about.raw === "string" ? `<pre class="cmp-raw">${h(about.raw)}</pre>` : `<p class="cmp-rawpath">${fileChip(about.raw.path)}</p>`;
     return `<div class="cmp-call${bad ? " bad" : ""}" data-k="${h(key)}">`
       + `<button class="disc cmp-cb" type="button" aria-expanded="${open}" aria-controls="cmp-r-${h(key)}" data-act="call" data-k="${h(key)}">`
-      + `${DRAW.chev}${k.icon}<b>${h(word)}</b><span class="cmp-sum">${h(sum)}</span>${who ? chipOfWho(who) : ""}${mark}</button>`
-      + `<div class="cmp-drop" id="cmp-r-${h(key)}" data-open="${open}"><div class="cmp-dropin">${resultHtml(key, result)}</div></div></div>`;
+      + `${DRAW.chev}${k.icon}<b>${h(word)}</b><span class="cmp-sum">${h(about.say)}</span>${who ? chipOfWho(who) : ""}${mark}</button>`
+      + `<div class="cmp-drop" id="cmp-r-${h(key)}" data-open="${open}"><div class="cmp-dropin">${raw}${resultHtml(key, result)}</div></div></div>`;
   }
   /** A result, bounded to its first lines with the rest behind a count: left whole, an opened result was a scroller of
    *  its own inside the log that hid most of a long result. */
@@ -856,10 +905,12 @@
   /** The relay a note came through, and who wrote it: "[eli-dispatch e801f85a from eli] …" is plumbing in the middle of
    *  a conversation, so the tag comes off, the writer takes the label, and the relay is said once beside it. */
   const ENVELOPE = /^\s*\[([a-z0-9][a-z0-9-]*)\s+[0-9a-f]{6,}\s+from\s+([^\]]{1,60})]\s*/i;
+  // the same tag in the middle of a note (a relay that wrote its own tag after the first paragraph) is plumbing too
+  const TAG_ANYWHERE = /\[[a-z0-9][a-z0-9-]*\s+[0-9a-f]{6,}\s+from\s+[^\]]{1,60}]\s*/gi;
   function peerRow(key, m) {
     const raw = String(m.text);
     const seal = ENVELOPE.exec(raw);
-    const said = seal ? raw.slice(seal[0].length) : raw;
+    const said = (seal ? raw.slice(seal[0].length) : raw).replace(TAG_ANYWHERE, "");
     const wrote = (seal ? seal[2] : m.from) || "another session";
     const relay = seal && m.from && oneLine(m.from) !== oneLine(wrote) ? oneLine(m.from) : "";
     const who = whoIs(wrote);
@@ -882,8 +933,10 @@
     const held = st.log, msgs = held?.messages || [], out = [];
     const live = st.m?.state === "live";
     st.wantNames = false;
+    // EARLIER MESSAGES OPEN WHERE THEY ARE (Oct 28): the pill was a door to Sessions, so reading further back left the
+    // sheet he was in. It reads the page before the oldest one drawn and puts it above, with the view held where it was.
     if (held?.earlier && st.sid) {
-      out.push({ key: "earlier", html: `<a class="cmp-older morepill pill" href="sessions.html#${encodeURIComponent(st.sid)}" data-act="go">Earlier messages${DRAW.go}</a>` });
+      out.push({ key: "earlier", html: `<button class="cmp-older morepill pill" type="button" data-act="older"${st.older ? ' aria-busy="true"' : ""}>Earlier messages${CARET}</button>` });
     }
     const results = new Map(msgs.filter((m) => m.role === "tool" && m.tool_use_id).map((m) => [m.tool_use_id, m.text]));
     const moves = (held?.moves || []).slice().sort((a, b) => a.moved_at - b.moved_at);
@@ -960,11 +1013,46 @@
     const top = log.scrollTop;
     while (log.children.length > i) log.lastElementChild.remove();
     log.insertAdjacentHTML("beforeend", next.slice(i).map((r) => r.html).join(""));
+    // A ROW THAT ARRIVES EASES IN (Oct 28), as every other thing that lands on the console does: only rows the log did not
+    // have, so a row redrawn for a new count stays still, and never the page of older messages that opens above
+    if (old.length && !st.older && !st.still) {
+      const had = new Set(old.map((r) => r.key));
+      [...log.children].slice(i).forEach((el, j) => { if (!had.has(next[i + j]?.key)) el.classList.add("rise"); });
+    }
     const grew = next.length > old.length && old.length > 0;
     drawn.rows = next;
     countLines();
     if (follow) { log.scrollTop = log.scrollHeight; st.unread = 0; } else { log.scrollTop = top; if (grew) st.unread += next.length - old.length; }
     drawUnread();
+    edge();
+  }
+  /** The page of the conversation before the oldest message drawn, put above it with the view held on what he was reading.
+   *  A cursor the daemon did not give, or a read that fails, says so once, with the act that tries again. */
+  async function older() {
+    const held = st.log, id = st.sid, cursor = typeof held?.earlier === "string" ? held.earlier : null;
+    if (st.older || !held?.earlier || !id) return;
+    st.older = true; drawLog();
+    const res = cursor ? await API.get(`${route(id, "transcript")}?before=${encodeURIComponent(cursor)}&limit=${PAGE}`) : null;
+    st.older = false;
+    // the polls hand the log on as a new object each time, so what matters is that it is still this conversation's, read
+    // from the same oldest message: a log that was read again from the end has an oldest of its own
+    const cur = st.log;
+    if (id !== st.sid || cur?.sid !== id || cur.earlier !== held.earlier) { drawLog(); return; }
+    if (!res?.ok || !Array.isArray(res.body?.messages)) {
+      drawLog();
+      say({ tone: "refused", text: "Earlier messages not read", acts: [{ word: "Try again", primary: true, run: () => { say(null); older(); } }] });
+      return;
+    }
+    const first = cur.messages[0]?.index ?? Infinity, before = log.scrollHeight, top = log.scrollTop;
+    st.log = { ...cur, messages: [...res.body.messages.filter((m) => m.index < first), ...cur.messages], earlier: res.body.earlier || null };
+    // rows that open above what he reads are older ones, never new ones: the count of what landed while he was up here stays
+    const unread = st.unread;
+    st.still = true;
+    drawLog();
+    st.still = false;
+    st.unread = unread;
+    drawUnread();
+    log.scrollTop = top + (log.scrollHeight - before);
     edge();
   }
   /** More of the conversation past either edge fades out at that edge, so a cut line reads as a scroll and never as
@@ -1031,8 +1119,17 @@
     drawLog();
     log.scrollTop = top;
     if (shown) grow(key.slice(1), shown);
+    if (opening) setTimeout(() => reveal(key), 260);
   }
   const bodyOf = (k) => log.querySelector(`.cmp-m[data-k="${CSS.escape(k)}"] > .cmp-md`);
+  /** WHAT HE OPENED IS WHAT HE READS (Oct 28): a call opened near the log's foot grew below the edge and left him to scroll for it.
+   *  Once it has grown, the log moves just far enough to show its end, and not at all when it already shows. */
+  function reveal(key) {
+    const row = log.querySelector(`[data-k="${CSS.escape(key)}"]`);
+    if (!row || sheet.hidden) return;
+    const over = row.getBoundingClientRect().bottom - log.getBoundingClientRect().bottom + 16;
+    if (over > 0) log.scrollBy({ top: over, behavior: "smooth" });
+  }
   /** A LONG MESSAGE OPENS OVER --t-snap (Oct 27): it jumped from six lines to its whole height in one frame. It grows
    *  from the lines it showed [from] to its full height, in the console's own time and easing for a change in place. */
   function grow(k, from) {
@@ -1096,26 +1193,26 @@
     const plain = (text, acts = [again]) => say({ tone: "refused", text, title: why || text, acts });
     switch (res.body?.reason) {
       case "not_installed": installLine(label, why, [other, again]); return;
-      case "head_unknown": plain(`splice has no command called ${head || "that"}`, [{ ...other, primary: true }]); return;
-      case "launch_failed": plain(`Did not start on ${label}`, [other, again]); return;
-      case "folder_missing": plain("splice could not open its settings folder"); return;
+      case "head_unknown": plain(`Not started · no command called ${head || "that"}`, [{ ...other, primary: true }]); return;
+      case "launch_failed": plain(`Not started on ${label}`, [other, again]); return;
+      case "folder_missing": plain("Not started · No settings folder"); return;
       default:
-        if (res.status === 503) plain("No tmux terminal to run it in");
+        if (res.status === 503) plain("Not started · No terminal");
         else if (res.status === 404) plain("This splice has no manager", []);
         else if (res.status === 0) plain("splice is not answering");
-        else plain("The manager did not start");
+        else plain("Not started");
     }
   }
   /** A command that is not installed: the command that installs every one, and Copy beside it. */
   function installLine(label, why, acts) {
-    const line = "splice install --all";
-    const copy = { word: "Copy", run: async () => {
-      let ok = true;
-      try { await navigator.clipboard.writeText(line); } catch { ok = false; }
-      say({ tone: ok ? "ok" : "refused", text: ok ? "Copied" : "Could not copy" });
-    } };
+    const copy = { word: "Copy", run: copyInstall };
     say({ tone: "refused", wrap: true, text: `${label} is not installed`, title: why,
-      html: `${h(label)} is not installed. Run <code>${line}</code>`, acts: [copy, ...acts] });
+      html: `${h(label)} is not installed. Run <code>${INSTALL_LINE}</code>`, acts: [copy, ...acts] });
+  }
+  async function copyInstall() {
+    let ok = true;
+    try { await navigator.clipboard.writeText(INSTALL_LINE); } catch { ok = false; }
+    say({ tone: ok ? "ok" : "refused", text: ok ? "Copied" : "Could not copy" });
   }
   /** The head chip's menu: Continue on. The conversation stays on screen through the move and goes on where it was. */
   async function move(key) {
@@ -1248,9 +1345,11 @@
     field.setSelectionRange(field.value.length, field.value.length);
     return true;
   }
+  // HIS WORDS WAIT WHILE THE MANAGER ASKS (Oct 28): the sheet opens on the question, whose lamp and choices say it is asking,
+  // and the choices shake once where his eye lands; the sentence that said it again is gone
   function asking() {
     openSheet();
-    say({ tone: "held", text: "It is asking you something first" });
+    mark(".cmp-choices", "shook");
   }
   /** Why /say did not type, in plain words, with the way out it offers (SessionDrive's refusals, by their reason). */
   function refused(res) {
@@ -1266,14 +1365,14 @@
       case "pane_gone":
         // its terminal is gone: the manager is resumable, and the act on the line resumes it, his words still in the field
         st.m = { ...st.m, state: "resumable", status: null };
-        plain("Its terminal closed. Nothing was typed", [{ word: "Resume", primary: true, run: () => submit() }]);
+        plain("Not sent · Terminal closed", [{ word: "Resume", primary: true, run: () => submit() }]);
         setTimeout(tick, 400);
         return;
-      case "not_ours": plain("Not typed: splice did not open its terminal", [look]); return;
-      case "pane_taken": plain("Not typed: its terminal runs something else", [look]); return;
-      case "no_terminal": plain("Not typed: it has no terminal yet", [look]); return;
-      case "refused": plain("Not typed: its terminal refused it", [look]); return;
-      default: plain(res.status === 0 ? "splice is not answering. Nothing was typed" : "Not typed", [look]);
+      case "not_ours": plain("Not sent · Not splice's terminal", [look]); return;
+      case "pane_taken": plain("Not sent · Terminal reused", [look]); return;
+      case "no_terminal": plain("Not sent · No terminal", [look]); return;
+      case "refused": plain("Not sent · Terminal refused it", [look]); return;
+      default: plain(res.status === 0 ? "splice is not answering · Not sent" : "Not sent", [look]);
     }
   }
   /** Press the numbered choice he picked, as Sessions' needs-you card does; the label guards against a menu that moved. */
@@ -1285,11 +1384,10 @@
     if (res.ok) st.ask = null;
     else if (res.body?.reason === "screen_moved") {
       // THE CHOICES THEMSELVES SAY IT CHANGED (Oct 26): the console reads the screen again and redraws them, so the
-      // shake belongs on the new choices, where his eye already is, and the line is a hold rather than a failure.
+      // shake belongs on the new choices, where his eye already is, and nothing else needs saying.
       await readScreen();
       draw();
       mark(".cmp-choices", "shook");
-      say({ tone: "held", text: "Its question changed. Nothing was pressed." });
     } else {
       draw();
       mark(`.cmp-ask [data-choice="${choice}"]`, "shook");
@@ -1462,6 +1560,8 @@
         case "close": closeSheet(); field.focus(); return;
         case "said": say(null); return;                                   // a line he has read goes away where it stands
         case "newest": log.scrollTop = log.scrollHeight; st.unread = 0; drawUnread(); return;
+        case "older": older(); return;
+        case "copyinstall": copyInstall(); return;
         // a call, a burst, a long body and a long result each open and close in place, and stay as he left them
         case "call": toggle(act.dataset.k); return;
         case "more": toggle(`b${act.dataset.k}`); return;
@@ -1523,6 +1623,8 @@
     dock.addEventListener("transitionend", sizing(false));
     dock.addEventListener("transitioncancel", sizing(false));
     document.fonts?.ready.then(() => countLines(true));
+    // the first read of the manager has six seconds, the same a page's read has before it says it is slow (kit.js watchGhosts)
+    setTimeout(() => { if (!st.m && !st.gone) { st.slow = true; drawPill(); } }, 6_000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) tick(); });
     draw();
     place();

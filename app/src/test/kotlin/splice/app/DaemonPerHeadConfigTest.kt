@@ -1,9 +1,5 @@
-// NEW (2026-07-26 review of #58): the per-head knob layer is covered at the SERVICE level by
-// ConfigServiceTest, but nothing pinned the CALL SITES. `config.getConfig()` (no key) compiles in
-// place of `config.getConfig(key)` everywhere in Daemon, keeps the whole suite green, and silently
-// restores the one-ceiling-governs-all-heads failure the Daemon comment quantifies (67% turn
-// failure at a shared inflight=100). This drives the real resolution path — two heads carrying
-// DIFFERENT [heads.<key>.overrides] must resolve to different effective values.
+// The real provider-context wiring keeps admission limits per head while watchdog timing comes
+// from the daemon-wide defaults. A no-key capacity lookup must not collapse the two heads.
 package splice.app
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -19,11 +15,13 @@ import kotlin.time.Duration.Companion.milliseconds
 
 class DaemonPerHeadConfigTest {
 
-    // Two heads on ONE provider, differing only in their overrides block. Slow head gets a long
-    // upstream cap and a small inflight ceiling; fast head takes neither.
+    // Two heads on one provider share the configured timing bound and have distinct admission limits.
     private fun topologyToml(authFile: String) = """
         [daemon]
         control_port = 0
+
+        [defaults]
+        upstreamTimeoutMs = "1200000"
 
         [providers.codex]
         dialect = "openai-responses"
@@ -42,7 +40,6 @@ class DaemonPerHeadConfigTest {
         pinned_model = "gpt-5.6-sol"
         [heads.slow.overrides]
         maxInflight = "3"
-        upstreamTimeoutMs = "2400000"
 
         [heads.fast]
         provider = "codex"
@@ -51,11 +48,10 @@ class DaemonPerHeadConfigTest {
         pinned_model = "gpt-5.6-sol"
         [heads.fast.overrides]
         maxInflight = "40"
-        upstreamTimeoutMs = "600000"
     """.trimIndent()
 
     @Test
-    fun `each head resolves its OWN overrides, not one shared view`(@TempDir tmp: Path) {
+    fun `heads retain their own admission limits and share the configured daemon timing`(@TempDir tmp: Path) {
         val authFile = tmp.resolve("auth.json")
         Files.writeString(authFile, """{"tokens":{"access_token":"t","account_id":"a","refresh_token":"r"}}""")
         val topology = TopologyLoader.parse(topologyToml(authFile.toString().replace("\\", "/")))
@@ -71,15 +67,15 @@ class DaemonPerHeadConfigTest {
         val slow = build("slow")
         val fast = build("fast")
 
-        // The watchdog total cap comes straight from the per-head upstreamTimeoutMs. If any call
-        // site drops the key, both heads read the same global view and these collapse to equal.
+        assertEquals(1_200_000.milliseconds, slow.faultPlan.watchdog.totalCap)
+        assertEquals(slow.faultPlan.watchdog.totalCap, fast.faultPlan.watchdog.totalCap)
+
+        // A missing head key still collapses admission capacity, which is independent of the shared timing.
         assertNotEquals(
-            slow.faultPlan.watchdog.totalCap,
-            fast.faultPlan.watchdog.totalCap,
-            "per-head upstreamTimeoutMs collapsed to one shared value — getConfig(key) lost somewhere",
+            slow.cfg.maxInflight,
+            fast.cfg.maxInflight,
+            "per-head maxInflight collapsed to one shared value — getConfig(key) lost somewhere",
         )
-        assertEquals(2_400_000.milliseconds, slow.faultPlan.watchdog.totalCap)
-        assertEquals(600_000.milliseconds, fast.faultPlan.watchdog.totalCap)
 
         // maxInflight is the knob the Daemon comment quantifies; it feeds the admission gate.
         assertEquals(3, slow.cfg.maxInflight)

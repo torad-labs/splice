@@ -4,6 +4,7 @@
   "programs": [
     "tools/gate/tsconfig.json",
     "tools/codemode-parity/tsconfig.json",
+    "tools/codemode-parity/pre-dispatch/tsconfig.json",
     "tools/release/tsconfig.json",
     "tools/e2e/tsconfig.json",
     ".github/scripts/tsconfig.json",

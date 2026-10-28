@@ -25,7 +25,7 @@
 // NEW site (`splice models`) had no way to name 200 except by making the group eleven, and
 // ConstSingleSourceLawTest fails a group that GROWS. So the member exists for new code to reach
 // for, the ten stay where they are, and the group stops growing. The non-status magnitudes that
-// merely look like statuses (499/599 range ends, 501, 202) are still not codes any site answers
+// merely look like statuses (499/599 range ends, 501) are still not codes any site answers
 // with, so they stay local until something makes them a second site.
 //
 // WALL: quality/rules/kotlin/kt-http-status-single-source.yml names THIS path in its `ignores:` —
@@ -47,6 +47,9 @@ public object HttpStatus {
 
     /** The endpoint answered, and answered successfully. */
     public const val OK: Int = 200
+
+    /** The MCP transport accepted a notification or response and sends no JSON-RPC reply body. */
+    public const val ACCEPTED: Int = 202
 
     /** The client sent something the head cannot parse, or a model it does not proxy. */
     public const val BAD_REQUEST: Int = 400

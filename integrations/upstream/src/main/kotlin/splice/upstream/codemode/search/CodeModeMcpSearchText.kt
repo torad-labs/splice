@@ -3,7 +3,7 @@ package splice.upstream.codemode.search
 import splice.upstream.codemode.CodeModeText
 
 /** PORT-OF: immutable Codex 0.165 core/tools/handlers/mcp.rs::build_mcp_search_text. */
-public object CodeModeMcpSearchText {
+internal object CodeModeMcpSearchText {
     public fun build(info: CodeModeMcpSearchInfo): String {
         val identity = info.identity
         val parts = mutableListOf(identity.flatName, identity.callableName, identity.rawToolName, identity.serverName)
@@ -37,4 +37,6 @@ private const val MCP_PLUGIN_NAMESPACE_BYTES = 1_000
 
 // why: UTF-8 continuation bytes start with binary 10, so a byte prefix cannot end inside a scalar value.
 private const val MCP_UTF8_CONTINUATION_MASK = 0xc0
+
+// why: masking a continuation byte's leading bits yields binary 10, the UTF-8 continuation tag.
 private const val MCP_UTF8_CONTINUATION_TAG = 0x80

@@ -29,12 +29,6 @@ private const val RPC_INVALID = -32600
 // why: the host's existing unknown-session error identifies an unavailable client session.
 private const val RPC_UNKNOWN_SESSION = -32001
 
-// why: an MCP request carries its complete response in an HTTP 200 body.
-private const val HTTP_OK = 200
-
-// why: an accepted notification or client response has no JSON-RPC reply body.
-private const val HTTP_ACCEPTED = 202
-
 /** Keeps admission, initialization, and session routing below McpHost's lifecycle surface. */
 internal class McpPostHandler(
     private val codec: JsonRpcCodec,
@@ -114,7 +108,7 @@ internal class McpPostHandler(
         val id = msg.getValue("id")
         val minted = minting.mint(name, null, head, admission)
         val code = if (minted.timedOut) RPC_TIMED_OUT else RPC_SERVER_ERROR
-        return minted.session?.let { McpReply(HTTP_OK, codec.encode(codec.result(id, it.initResult)), it.id) }
+        return minted.session?.let { McpReply(HttpStatus.OK, codec.encode(codec.result(id, it.initResult)), it.id) }
             ?: bad(HttpStatus.SERVICE_UNAVAILABLE, id, code, minted.failure)
     }
 
@@ -140,7 +134,7 @@ internal class McpPostHandler(
                 when (kind) {
                     RpcKind.REQUEST -> forward(server, session, msg)
                     RpcKind.NOTIFICATION -> notification(name, server, session, msg)
-                    RpcKind.RESPONSE, RpcKind.INVALID -> McpReply(HTTP_ACCEPTED, null)
+                    RpcKind.RESPONSE, RpcKind.INVALID -> McpReply(HttpStatus.ACCEPTED, null)
                 }
             }
         } finally {
@@ -164,7 +158,7 @@ internal class McpPostHandler(
             }
         }
         return if (delivered) {
-            McpReply(HTTP_ACCEPTED, null)
+            McpReply(HttpStatus.ACCEPTED, null)
         } else {
             bad(
                 HttpStatus.SERVICE_UNAVAILABLE,
@@ -179,7 +173,7 @@ internal class McpPostHandler(
         val id = msg.getValue("id")
         val answer = server.call(session.id, id, msg)
         sessions.touch(session)
-        return McpReply(HTTP_OK, codec.encode(answer), session.id)
+        return McpReply(HttpStatus.OK, codec.encode(answer), session.id)
     }
 
     private fun bad(status: Int, id: JsonElement, code: Int, message: String) =

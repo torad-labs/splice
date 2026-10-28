@@ -55,4 +55,14 @@ export function compareInterruption(source: CliRun, candidate: ObjectValue): voi
   assert.deepEqual(candidate.interruption, { ...expected, cancelled: true, resumed: true });
   assert.deepEqual(candidate.outcomes, ["Cancelled", "Success"]);
   assert.ok(Array.isArray(candidate.posted) && candidate.posted.length === 5, "Candidate must cancel its actual post-yield request then continue the same conversation");
+  const held = candidate.posted[2];
+  assert.ok(Array.isArray(held) && held.every(item => item !== null && typeof item === "object" && !Array.isArray(item)), "Candidate interruption needs its own actual held model input");
+  const cellId = yieldedCell(held as ObjectValue[], String(expected.callId));
+  const session = `session-${source.nonce}`, conversation = `parity-${source.nonce}`, head = "native-interrupt-probe";
+  assert.deepEqual(candidate.interruptControl, {
+    boundary: "authenticated-production-control-http", method: "POST",
+    path: `/api/heads/${head}/sessions/${encodeURIComponent(session)}/interrupt`,
+    request: { conversation_key: conversation }, anonymousStatus: 401, sessionKeyStatus: 401, status: 200,
+    response: { head, session, conversation_key: conversation, cells: [{ cell_id: cellId, terminated: true, failure: null }] },
+  }, "Interruption requires the authenticated production HTTP route to terminate exactly the bound owned native cell");
 }

@@ -15,6 +15,7 @@ import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.diagnostics.CodeModeGatewayBridgeSink
 import splice.provider.codex.diagnostics.CodeModeGatewayProbeSupport
+import splice.provider.codex.diagnostics.CodeModeInterruptControl
 import splice.upstream.RoundResult
 import splice.upstream.codemode.NativeCodeModeLifecycle
 import java.nio.file.Files
@@ -25,12 +26,16 @@ import java.security.MessageDigest
 internal class CodeModeGatewayScenarioProbe(
     private val fixture: CodeModeGatewayProbeSupport,
     private val runtime: NativeCodeModeLifecycle,
+    private val interruptControl: CodeModeInterruptControl? = null,
 ) {
     suspend fun run(directory: Path): JsonObject {
         val bytes = Files.readAllBytes(directory.resolve("scenario.json"))
         val specification = fixture.json.parseToJsonElement(bytes.decodeToString()).jsonObject
         if (specification.containsKey("interruption")) {
-            return CodeModeGatewayInterruptedProbe(fixture, runtime).run(bytes, specification)
+            val control = checkNotNull(interruptControl) {
+                "Interruption qualification requires the actual authenticated application control route"
+            }
+            return CodeModeGatewayInterruptedProbe(fixture, runtime, control).run(bytes, specification)
         }
         val plan = CodeModeGatewayScenarioPlan(specification, fixture.json)
         val manager = CodexCodeModeBridge(CodeModeBridgeConfig({ runtime }, fixture.location, log = fixture.log))

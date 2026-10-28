@@ -17,6 +17,7 @@ import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.diagnostics.CodeModeGatewayBridgeSink
 import splice.provider.codex.diagnostics.CodeModeGatewayProbeSupport
+import splice.provider.codex.diagnostics.CodeModeInterruptControl
 import splice.upstream.BuiltTurn
 import splice.upstream.RoundResult
 import splice.upstream.codemode.NativeCodeModeLifecycle
@@ -29,6 +30,7 @@ private const val INTERRUPTED_PROBE_READY_MS = 15_000L
 internal class CodeModeGatewayInterruptedProbe(
     private val fixture: CodeModeGatewayProbeSupport,
     private val runtime: NativeCodeModeLifecycle,
+    private val interruptControl: CodeModeInterruptControl,
 ) {
     suspend fun run(bytes: ByteArray, specification: JsonObject): JsonObject = coroutineScope {
         val manager = CodexCodeModeBridge(CodeModeBridgeConfig({ runtime }, fixture.location, log = fixture.log))
@@ -42,11 +44,12 @@ internal class CodeModeGatewayInterruptedProbe(
             withTimeout(INTERRUPTED_PROBE_READY_MS) { post.held.await() }
             interrupted.cancelAndJoin()
             check(interrupted.isCancelled) { "The owned request did not actually cancel" }
+            val controlled = interruptControl.interrupt(manager, "session-${fixture.nonce}", fixture.key)
             val prompt = checkNotNull(JsonScalars.str(interruption, "resumePrompt"))
             val resumed = requests.prepare(manager, emptyList(), prompt)
             val result = intercept(resumed, post)
             plan.checkComplete()
-            report(bytes, interruption, post, result)
+            JsonObject(report(bytes, interruption, post, result) + ("interruptControl" to controlled))
         } finally {
             manager.onProviderStop()
         }

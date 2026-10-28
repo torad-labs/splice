@@ -20,6 +20,15 @@ import splice.upstream.RoundResult
 import splice.upstream.codemode.NativeCodeModeLifecycle
 import java.nio.file.Path
 
+/** An application-owned diagnostic must invoke the real authenticated production interrupt route. */
+public fun interface CodeModeInterruptControl {
+    public suspend fun interrupt(
+        bridge: CodexCodeModeBridge,
+        sessionId: String,
+        conversationKey: String,
+    ): JsonObject
+}
+
 /** Real native engines through production gateway history, wait ownership and record retention. */
 public object CodeModeGatewayNativeProbe {
     public suspend fun run(
@@ -27,11 +36,16 @@ public object CodeModeGatewayNativeProbe {
         nonce: String,
         stateDirectory: Path,
         runtime: NativeCodeModeLifecycle,
+        interruptControl: CodeModeInterruptControl? = null,
     ): JsonObject {
         require(Regex("[a-f0-9]{32}").matches(nonce)) { "Expected a fresh 128-bit probe nonce" }
         val fixture = CodeModeGatewayProbeSupport(nonce, stateDirectory)
         return when (id) {
-            "runtime.current-scenario" -> CodeModeGatewayScenarioProbe(fixture, runtime).run(stateDirectory)
+            "runtime.current-scenario" -> CodeModeGatewayScenarioProbe(
+                fixture,
+                runtime,
+                interruptControl,
+            ).run(stateDirectory)
             "runtime.deferred-search" -> CodeModeGatewaySearchProbe(fixture, runtime).run()
             "runtime.head-settings" -> CodeModeGatewaySettingsProbe(fixture, runtime).run()
             "runtime.failed-tool-output-write", "runtime.failed-tool-output-read" ->

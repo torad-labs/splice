@@ -46,10 +46,37 @@ test("a user-interrupt plan requires the actual owned PTY abort and resumed user
     expect(sourceInterruption(owned.source)).toEqual({ ...interruptionScenario.interruption!, callId: "probe-user-interrupt-1" });
     expect(JSON.parse(sourceGatewayInputBytes(owned.source)).interruption).toEqual(sourceInterruption(owned.source));
     expect(() => gatewayInput(interruptionScenario)).toThrow("PTY");
-    const candidate: ObjectValue = { outcomes: ["Cancelled", "Success"], posted: [[], [], [], [], []],
-      interruption: { ...sourceInterruption(owned.source), cancelled: true, resumed: true } };
+    const session = `session-${owned.source.nonce}`, conversation = `parity-${owned.source.nonce}`;
+    const candidate: ObjectValue = { outcomes: ["Cancelled", "Success"], posted: owned.source.observations.map(value => value.input),
+      interruption: { ...sourceInterruption(owned.source), cancelled: true, resumed: true },
+      interruptControl: { boundary: "authenticated-production-control-http", method: "POST",
+        path: `/api/heads/native-interrupt-probe/sessions/${session}/interrupt`, request: { conversation_key: conversation },
+        anonymousStatus: 401, sessionKeyStatus: 401, status: 200,
+        response: { head: "native-interrupt-probe", session, conversation_key: conversation,
+          cells: [{ cell_id: "7", terminated: true, failure: null }] } } };
     expect(candidateOutcomesMatch(owned.source, candidate)).toBe(true);
     expect(() => compareInterruption(owned.source, candidate)).not.toThrow();
+    const receipt = candidate.interruptControl as ObjectValue, response = receipt.response as ObjectValue;
+    for (const forged of [
+      undefined,
+      { ...receipt, boundary: "direct-bridge" },
+      { ...receipt, method: "GET" },
+      { ...receipt, path: `${receipt.path}/another` },
+      { ...receipt, request: { conversation_key: "another" } },
+      { ...receipt, anonymousStatus: 200 },
+      { ...receipt, sessionKeyStatus: 200 },
+      { ...receipt, status: 409 },
+      { ...receipt, response: { ...response, head: "another" } },
+      { ...receipt, response: { ...response, session: "another" } },
+      { ...receipt, response: { ...response, conversation_key: "another" } },
+      { ...receipt, response: { ...response, cells: [] } },
+      { ...receipt, response: { ...response, cells: [{ cell_id: "another", terminated: true, failure: null }] } },
+      { ...receipt, response: { ...response, cells: [{ cell_id: "7", terminated: false, failure: null }] } },
+      { ...receipt, response: { ...response, cells: [{ cell_id: "7", terminated: true, failure: "termination failed" }] } },
+    ]) {
+      const changed = { ...candidate, interruptControl: forged };
+      expect(() => compareInterruption(owned.source, changed as ObjectValue)).toThrow("authenticated production HTTP route");
+    }
     candidate.outcomes = ["Success"]; expect(() => compareInterruption(owned.source, candidate)).toThrow();
     expect(candidateOutcomesMatch({ ...owned.source, scenario: { ...owned.source.scenario, interruption: undefined } }, { outcomes: ["Cancelled", "Success"] })).toBe(false);
   } finally { owned.close(); }

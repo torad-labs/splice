@@ -100,29 +100,30 @@ class PassthroughRequestBuilderTest {
     }
 
     @Test
-    fun `disallowed block types are dropped at message and tool_result levels`() {
+    fun `disallowed blocks are dropped while native references survive at both content levels`() {
         val req = build(
             """{"model":"m","messages":[
                 {"role":"user","content":[
                     {"type":"text","text":"keep"},
                     {"type":"document","source":{"type":"base64","data":"x"}},
-                    {"type":"tool_reference","name":"z"},
+                    {"type":"tool_reference","tool_name":"z"},
                     {"type":"redacted_thinking","data":"r"},
                     {"type":"mystery_block","foo":1}
                 ]},
                 {"role":"user","content":[
                     {"type":"tool_result","tool_use_id":"t1","content":[
                         {"type":"text","text":"ok"},
+                        {"type":"tool_reference","tool_name":"z"},
                         {"type":"document","source":{"type":"base64","data":"x"}},
                         {"type":"weird","foo":1}
                     ]}
                 ]}
             ]}""",
         )
-        assertEquals(listOf("text"), req.blockTypes(0))
+        assertEquals(listOf("text", "tool_reference"), req.blockTypes(0))
         val toolResult = req.blocks(1).single()
         val inner = toolResult["content"]!!.jsonArray.map { it.jsonObject["type"]?.jsonPrimitive?.content }
-        assertEquals(listOf("text"), inner)
+        assertEquals(listOf("text", "tool_reference"), inner)
     }
 
     // --- thinking -> adaptive + output_config effort ladder --------------------------------------

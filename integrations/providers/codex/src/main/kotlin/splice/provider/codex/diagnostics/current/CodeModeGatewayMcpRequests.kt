@@ -16,6 +16,7 @@ import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.provider.codex.CodeModeToolPolicy
 import splice.provider.codex.CodexCodeModeBridge
+import splice.provider.codex.callbacks.mcp.CodeModeMcpRpcErrors
 import splice.provider.codex.catalog.CodeModeTurnCatalog
 import splice.provider.codex.diagnostics.CodeModeGatewayProbeSupport
 import splice.upstream.BuiltTurn
@@ -61,7 +62,7 @@ internal class CodeModeGatewayMcpRequests(
                     },
                     buildJsonObject {
                         put("type", "function_call_output"); put("call_id", id)
-                        put("output", JsonWire.string(callback.getValue("result")))
+                        put("output", results.first { it.id == id }.output)
                     },
                 )
             },
@@ -90,9 +91,8 @@ internal class CodeModeGatewayMcpRequests(
     }
 
     private fun result(callback: JsonObject): CodeModeResult {
-        check(JsonScalars.str(callback, "origin") == "MCP") { "MCP callback must retain its explicit origin" }
         check(JsonScalars.str(callback, "name") in names) { "MCP result has no advertised permission tool" }
-        val value = callback.getValue("result").jsonObject
+        val value = value(callback)
         check(value["content"] is JsonArray) { "MCP result omitted CallToolResult.content" }
         return CodeModeResult(
             checkNotNull(JsonScalars.str(callback, "id")),
@@ -102,6 +102,19 @@ internal class CodeModeGatewayMcpRequests(
             disposition = CodeModeResultDisposition.TOOL_OUTPUT,
             origin = CodeModeResultOrigin.MCP,
         )
+    }
+
+    private fun value(callback: JsonObject): JsonObject {
+        if (JsonScalars.str(callback, "origin") == "MCP") {
+            check(callback["rpcError"] == null) { "A successful MCP result cannot also claim an RPC failure" }
+            return callback.getValue("result").jsonObject
+        }
+        check(JsonScalars.str(callback, "origin") == "MCP_RPC_ERROR") { "MCP callback has no typed origin" }
+        check(callback["result"] == null) { "An RPC failure cannot also claim a successful MCP result" }
+        val server = checkNotNull(JsonScalars.str(callback, "server"))
+        val tool = checkNotNull(JsonScalars.str(callback, "tool"))
+        check(server == "parity" && JsonScalars.str(callback, "name") == "mcp__${server}__$tool")
+        return checkNotNull(CodeModeMcpRpcErrors.result(server, tool, callback.getValue("rpcError").jsonObject))
     }
 
     /** Observe actual accepted gateway values, independently of the callback plan's expected payloads. */

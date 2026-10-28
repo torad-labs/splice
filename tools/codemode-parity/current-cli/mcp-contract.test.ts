@@ -1,19 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gatewayInput } from "./compare";
-import { compareMcpBoundary, mcpFixtureCall, mcpFixtureTools, mcpGatewayFields, parseMcpTranscript, type McpExchange } from "./mcp-contract";
-import type { CliScenario, ObjectValue } from "./types";
+import { compareMcpBoundary, mcpFixtureCall, mcpFixtureTools, mcpGatewayFields, parseMcpTranscript, sourceMcpTranscript, type McpCall, type McpExchange, type McpRpcExchange } from "./mcp-contract";
+import { mcpRpcErrorVectors } from "./mcp-rpc-cases";
+import type { CliRun, CliScenario, ObjectValue } from "./types";
 
-function transcript(calls: McpExchange[]): string {
+function transcript(calls: McpCall[]): string {
   const rows: ObjectValue[] = [
     { direction: "received", request: { jsonrpc: "2.0", id: 1, method: "tools/list" } },
     { direction: "sent", response: { jsonrpc: "2.0", id: 1, result: { tools: mcpFixtureTools() } } },
   ];
   calls.forEach((call, index) => {
-    rows.push({ direction: "received", request: { jsonrpc: "2.0", id: index + 2, method: "tools/call", params: { name: call.name, arguments: call.arguments } } });
-    rows.push({ direction: "sent", response: { jsonrpc: "2.0", id: index + 2, result: call.result } });
+    rows.push({ direction: "received", request: { jsonrpc: "2.0", id: index + 2, method: "tools/call", params: { name: call.name, arguments: call.arguments, ...(call.sourceContext ? { _meta: call.sourceContext } : {}) } } });
+    rows.push({ direction: "sent", response: { jsonrpc: "2.0", id: index + 2, ...("error" in call ? { error: call.error } : { result: call.result }) } });
   });
   return rows.map(row => JSON.stringify(row)).join("\n") + "\n";
 }
@@ -98,5 +99,57 @@ describe("typed MCP delegation evidence", () => {
       const forged = structuredClone(candidate(calls)); change(forged);
       expect(() => compareMcpBoundary(actual, forged)).toThrow();
     }
+  });
+
+  test("the actual peer sends a bound JSON-RPC failure with no successful result", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "codemode-mcp-rpc-")), log = join(directory, "peer.jsonl");
+    const child = Bun.spawn([process.execPath, join(import.meta.dir, "mcp-peer.ts"), log], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+    try {
+      child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) + "\n" + JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "echo", arguments: { value: "rpc-error-probe/object" } } }) + "\n"); child.stdin.end();
+      const stdout = await new Response(child.stdout).text(); expect(await child.exited).toBe(0);
+      const response = JSON.parse(stdout.trimEnd().split("\n")[1]!);
+      expect(response.error).toEqual(mcpRpcErrorVectors[0]!.error); expect(response.result).toBeUndefined();
+      const actual = parseMcpTranscript(readFileSync(log, "utf8"));
+      const callbacks = mcpGatewayFields(actual).callbacks as ObjectValue[];
+      expect(callbacks[0]!.origin).toBe("MCP_RPC_ERROR"); expect(callbacks[0]!.rpcError).toEqual(response.error); expect(callbacks[0]!.result).toBeUndefined();
+      const forged = readFileSync(log, "utf8").trimEnd().split("\n").map(line => JSON.parse(line));
+      forged.at(-1).response.result = { content: [] };
+      expect(() => parseMcpTranscript(forged.map(row => JSON.stringify(row)).join("\n") + "\n")).toThrow("cannot also claim");
+    } finally { child.kill(); await child.exited; rmSync(directory, { recursive: true, force: true }); }
+  });
+
+  test("RPC values require the actual source-resolved envelope and cannot become rejection or fabricated raw output", () => {
+    const proof = JSON.parse(readFileSync(join(import.meta.dir, "../../../integrations/providers/codex/src/test/resources/codemode/mcp-rpc-errors-0.165.json"), "utf8"));
+    const vector = proof.vectors[0], call: McpRpcExchange = { name: "echo", arguments: { value: "rpc-error-probe/object" }, error: vector.error };
+    const actual = parseMcpTranscript(transcript([call]));
+    const callback = { ...(mcpGatewayFields(actual).callbacks as ObjectValue[])[0]!, id: "permission-rpc" };
+    const value: ObjectValue = { boundary: "typed-mcp-delegate", callbacks: [callback], toolResults: [{ id: callback.id, origin: "MCP", disposition: "TOOL_OUTPUT", isError: true, payload: vector.result, value: vector.result }] };
+    expect(() => compareMcpBoundary(actual, value)).toThrow("actual source output");
+    (actual.calls[0] as McpRpcExchange).codeModeValue = vector.result;
+    expect(() => compareMcpBoundary(actual, value)).not.toThrow();
+    for (const mutate of [
+      (forged: ObjectValue) => { (forged.toolResults as ObjectValue[])[0]!.disposition = "REJECT"; },
+      (forged: ObjectValue) => { (forged.toolResults as ObjectValue[])[0]!.payload = { content: [], isError: true }; },
+      (forged: ObjectValue) => { (forged.callbacks as ObjectValue[])[0]!.origin = "MCP"; },
+      (forged: ObjectValue) => { (forged.callbacks as ObjectValue[])[0]!.result = vector.result; },
+    ]) { const forged = structuredClone(value); mutate(forged); expect(() => compareMcpBoundary(actual, forged)).toThrow(); }
+  });
+
+  test("the RPC projection binds a complete source script output to its actual originating MCP call", () => {
+    const directory = mkdtempSync(join(tmpdir(), "codemode-rpc-source-"));
+    const proof = JSON.parse(readFileSync(join(import.meta.dir, "../../../integrations/providers/codex/src/test/resources/codemode/mcp-rpc-errors-0.165.json"), "utf8")), vector = proof.vectors[0];
+    const call: McpRpcExchange = { name: "echo", arguments: { value: "rpc-error-probe/object" }, error: vector.error, sourceContext: { callId: "exec-00000000-0000-0000-0000-000000000000", sessionId: "fixed-session", threadId: "fixed-session", itemId: "item-probe-rpc" } };
+    writeFileSync(join(directory, "mcp-peer.jsonl"), transcript([call]));
+    const source = { directory, scenario: { mcp: true }, completion: { sessionId: "fixed-session" }, observations: [{ input: [
+      { type: "custom_tool_call", name: "exec", call_id: "probe-rpc" },
+      { type: "custom_tool_call_output", call_id: "probe-rpc", output: [{ type: "input_text", text: "Script completed\nWall time 0.0 seconds\nOutput:\n" }, { type: "input_text", text: JSON.stringify({ tag: "object", resolved: vector.result }) }] },
+    ] }] } as unknown as CliRun;
+    try {
+      expect((sourceMcpTranscript(source).calls[0] as McpRpcExchange).codeModeValue).toEqual(vector.result);
+      const wrong = structuredClone(source); ((wrong.observations[0]!.input[1]!.output as ObjectValue[])[1]!).text = JSON.stringify({ tag: "another-call", resolved: vector.result });
+      expect(() => sourceMcpTranscript(wrong)).toThrow();
+      const rejected = structuredClone(source); ((rejected.observations[0]!.input[1]!.output as ObjectValue[])[1]!).text = JSON.stringify({ tag: "object", rejected: "failure" });
+      expect(() => sourceMcpTranscript(rejected)).toThrow("rejected");
+    } finally { rmSync(directory, { recursive: true, force: true }); }
   });
 });

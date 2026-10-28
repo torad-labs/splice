@@ -25,6 +25,7 @@ export type CurrentInventory = {
   compilerBindings?: CompilerScopeIdentity;
   compilerScopeResolutions?: CompilerScopeTrace[];
   compilerScopeFallbacks?: CompilerScopeFallback[];
+  ownershipPolicy?: OwnershipPolicy;
 };
 const marker = /code[_-]mode|CodeMode|codeMode/;
 const testPath = /(?:^|\/)(?:tests?|benches|examples)(?:\/|\.)|(?:_tests|_test|_test_support|test_support)\.rs$/;
@@ -184,16 +185,30 @@ function nativeOwnership(file: string): boolean {
   return /^codex-rs\/code-mode-(?:host|runtime)\//.test(file) ||
     /^codex-rs\/code-mode-protocol\//.test(file) && !/\/(?:description|json_schema_types)\.rs$/.test(file);
 }
+const sharedSessionModule="codex-rs/code-mode-protocol/src/session.rs";
+const sharedHostWireModules=["message","payload","types"].map(name=>`codex-rs/code-mode-protocol/src/host/${name}.rs`);
+export type OwnershipPolicy={algorithm:"frontend-contract-over-native-reachability-v1";selectorsSha256:string;boundaryFiles:Array<{path:string;sha256:string;gitBlob:string}>};
+export function protocolOwnershipPolicy(files:readonly {path:string;source:string;blob:string}[]):OwnershipPolicy{
+  const selectors={sharedHostWireModules,sharedSessionModule,publicTraitSignaturesOnly:true,wireFacadeIncludesValidationAndConversionHelpers:true};
+  const boundaryFiles=[...sharedHostWireModules,sharedSessionModule].flatMap(path=>files.filter(file=>file.path===path).map(file=>({path,sha256:sha256(file.source),gitBlob:file.blob}))).sort((a,b)=>a.path.localeCompare(b.path));
+  return{algorithm:"frontend-contract-over-native-reachability-v1",selectorsSha256:sha256(JSON.stringify({selectors,boundaryFiles})),boundaryFiles};
+}
 /** The public session/delegate facade is shared with the ported frontend, even when a native backend calls it. */
 export function requiresPortedSessionContract(unit: Pick<SourceUnit,"file"|"kind"|"start"|"end">,
   declarations: readonly Pick<Match,"ruleId"|"text"|"range">[]): boolean {
-  return unit.file==="codex-rs/code-mode-protocol/src/session.rs"&&unit.kind==="function_signature_item"&&declarations.some(owner=>
+  return unit.file===sharedSessionModule&&unit.kind==="function_signature_item"&&declarations.some(owner=>
     owner.ruleId==="trait_item"&&/^\s*pub\s+(?:unsafe\s+)?trait\b/.test(owner.text)&&owner.range.byteOffset.start<=unit.start&&owner.range.byteOffset.end>=unit.end);
 }
-export function inventoryDigest(inventory: Pick<CurrentInventory, "sourceRevision" | "sourceTree" | "files" | "units" | "grpcMethods" | "globalHelpers" | "foreignScopeDiagnostics" | "generatedScopeResolutions" | "compilerBindings" | "compilerScopeResolutions" | "compilerScopeFallbacks">): string {
+export function requiresPortedProtocolContract(unit: Pick<SourceUnit,"file"|"kind"|"start"|"end">,
+  declarations: readonly Pick<Match,"ruleId"|"text"|"range">[]): boolean {
+  // These modules are the shared serialization/validation facade, including the private helpers that implement it.
+  return sharedHostWireModules.includes(unit.file)||requiresPortedSessionContract(unit,declarations);
+}
+export function inventoryDigest(inventory: Pick<CurrentInventory, "sourceRevision" | "sourceTree" | "files" | "units" | "grpcMethods" | "globalHelpers" | "foreignScopeDiagnostics" | "generatedScopeResolutions" | "compilerBindings" | "compilerScopeResolutions" | "compilerScopeFallbacks" | "ownershipPolicy">): string {
   return sha256(JSON.stringify({ sourceRevision: inventory.sourceRevision, sourceTree: inventory.sourceTree, files: inventory.files,
     units: inventory.units, grpcMethods: inventory.grpcMethods, globalHelpers: inventory.globalHelpers, foreignScopeDiagnostics: inventory.foreignScopeDiagnostics ?? [], generatedScopeResolutions: inventory.generatedScopeResolutions ?? [],
-    ...(inventory.compilerBindings ? { compilerBindings: inventory.compilerBindings, compilerScopeResolutions: inventory.compilerScopeResolutions ?? [], compilerScopeFallbacks: inventory.compilerScopeFallbacks ?? [] } : {}) }));
+    ...(inventory.compilerBindings ? { compilerBindings: inventory.compilerBindings, compilerScopeResolutions: inventory.compilerScopeResolutions ?? [], compilerScopeFallbacks: inventory.compilerScopeFallbacks ?? [] } : {}),
+    ...(inventory.ownershipPolicy?{ownershipPolicy:inventory.ownershipPolicy}:{}) }));
 }
 
 export type InventoryOptions = { compilerBindings?: string; expectedCompilerProofSha256?: string };
@@ -303,7 +318,7 @@ export async function generateCurrentInventory(sourceRepo: string, revision: str
       };
       const emit = (kind: string, text: string, start: number, end: number, line: number) => units.push({
         id: `${file.path}#${kind}@${start}`, file: file.path, kind, label: unitLabel(kind, text), line, start, end,
-        sha256: sha256(text), ownership: !requiresPortedSessionContract({file:file.path,kind,start,end},scoped)&&((nativeOwnership(file.path) && (!/^codex-rs\/code-mode-protocol\/src\/.*\.rs$/.test(file.path) || nativeSelection.selections.get(`${file.path}#${kind}@${start}`)?.state === "required")) || discovery === "dependency" && dependencies.get(file.path)?.owners.size === 1 && dependencies.get(file.path)?.owners.has("native-host") && nativeSelection.selections.get(`${file.path}#${kind}@${start}`)?.state === "required") ? "native-host" : "ported",
+        sha256: sha256(text), ownership: !requiresPortedProtocolContract({file:file.path,kind,start,end},scoped)&&((nativeOwnership(file.path) && (!/^codex-rs\/code-mode-protocol\/src\/.*\.rs$/.test(file.path) || nativeSelection.selections.get(`${file.path}#${kind}@${start}`)?.state === "required")) || discovery === "dependency" && dependencies.get(file.path)?.owners.size === 1 && dependencies.get(file.path)?.owners.has("native-host") && nativeSelection.selections.get(`${file.path}#${kind}@${start}`)?.state === "required") ? "native-host" : "ported",
         ...(discovery === "dependency" ? { requiredBy: [...dependencies.get(file.path)!.roots].sort() } : {}),
         ...(["dependency", "consumer"].includes(discovery) && foreignScopes.has(`${file.path}#${kind}@${start}`) ? { foreignScope: foreignScopes.get(`${file.path}#${kind}@${start}`)! } : {}),
         ...(foreignSelection.representations.has(`${file.path}#${kind}@${start}`) ? { representation: foreignSelection.representations.get(`${file.path}#${kind}@${start}`)! } : {}),
@@ -340,10 +355,10 @@ export async function generateCurrentInventory(sourceRepo: string, revision: str
       files.push({ path: file.path, gitBlob: file.blob, sha256: sha256(file.source), discovery, units: units.length - before });
     }
     units.sort((left, right) => left.id.localeCompare(right.id));
-    const base = { sourceRevision: revision, sourceTree: tree.toString().trim(), files, units, foreignScopeDiagnostics: foreignSelection.unresolved, generatedScopeResolutions: foreignSelection.generated,
+    const base = { sourceRevision: revision, sourceTree: tree.toString().trim(), files, units, foreignScopeDiagnostics: foreignSelection.unresolved, generatedScopeResolutions: foreignSelection.generated,ownershipPolicy:protocolOwnershipPolicy(blobs),
       ...(compiler ? { compilerBindings: { algorithm: compiler.algorithm, proofSha256: compiler.proofSha256, semanticDigest: compiler.semanticDigest }, compilerScopeResolutions: foreignSelection.compiler, compilerScopeFallbacks: foreignSelection.compilerFallbacks } : {}),
       grpcMethods: [...new Set(grpcMethods)].sort(), globalHelpers: [...new Set(globalHelpers)].sort() };
-    return { schema: 2, generator: "git-object-tree+ast-grep-declarations+import-member-closure-v11", sourceCargoLockSha256: sourceIdentity.sourceCargoLockSha256,
+    return { schema: 2, generator: "git-object-tree+ast-grep-declarations+import-member-closure-v12", sourceCargoLockSha256: sourceIdentity.sourceCargoLockSha256,
       astGrepVersion: astVersion.toString().trim(), discoveredCrates: crates, ...base, denominatorSha256: inventoryDigest(base) };
   } finally { await rm(temporary, { recursive: true, force: true }); }
 }
@@ -360,6 +375,7 @@ export function inventoryFindings(generated: CurrentInventory, committed: Curren
   if (generated.astGrepVersion !== committed.astGrepVersion || generated.generator !== committed.generator) findings.push("reference inventory generator identity changed");
   if (generated.sourceCargoLockSha256 !== committed.sourceCargoLockSha256 || JSON.stringify(generated.discoveredCrates) !== JSON.stringify(committed.discoveredCrates)) findings.push("reference dependency lock or discovered crate inventory changed");
   if (JSON.stringify(generated.compilerBindings) !== JSON.stringify(committed.compilerBindings)) findings.push("explicit compiler binding proof or semantic source decisions changed");
+  if(JSON.stringify(generated.ownershipPolicy)!==JSON.stringify(committed.ownershipPolicy))findings.push("shared frontend/native ownership boundary selectors or source hashes changed");
   return findings;
 }
 

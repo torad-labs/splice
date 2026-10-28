@@ -38,6 +38,6 @@ internal object McpCatalogSnapshots {
     private fun optionalText(tool: JsonObject, field: String): Boolean = when (val value = tool[field]) {
         null, JsonNull -> true
         is JsonPrimitive -> value.isString
-        else -> false
+        is JsonArray, is JsonObject -> false
     }
 }

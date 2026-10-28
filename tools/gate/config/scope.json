@@ -1,0 +1,46 @@
+{
+  "about": "What a changed path does to the pre-push scope. prepush-scope.ts and test-impact.ts read this file and nothing else decides a full run. full: the path is an input of every module's build, so every module's check runs and the test selection does not narrow. docs: prose no law reads, so no module is checked. laws: a law suite reads the path, so pre-push requests lawSuites and gradle's up-to-date check runs the suite whose inputs changed. A path in none of these selects the module that owns it, plus the modules that depend on it. A ladder row runs when a changed path matches one of its inputs. A pattern that is only ** matches every path and selects nothing.",
+  "full": [
+    { "glob": "gradle/libs.versions.toml", "why": "is the version catalog every module resolves" },
+    { "glob": "build.gradle.kts", "why": "is the root build logic applied to every project" },
+    { "glob": "settings.gradle.kts", "why": "is the project set and plugin management every project is included through" },
+    { "glob": "gradle.properties", "why": "sets gradle properties every project reads" },
+    { "glob": "gradle/wrapper/**", "why": "is the gradle wrapper every project runs" },
+    { "glob": "build-logic/build.gradle.kts", "why": "is the build that compiles the convention plugins modules apply" },
+    { "glob": "build-logic/settings.gradle.kts", "why": "is the build-logic project set those plugins are built from" },
+    { "glob": "build-logic/src/main/kotlin/splice.kotlin-common.gradle.kts", "why": "is the convention plugin every kotlin module applies" },
+    { "glob": "build-logic/src/main/kotlin/splice.module-law.gradle.kts", "why": "is the module-law plugin every module's configuration applies" },
+    { "glob": "build-logic/src/main/kotlin/splice/hygiene/CatalogReader.kt", "why": "is the catalog reader the convention plugin uses for every module" },
+    { "glob": "build-logic/src/main/kotlin/splice/modulelaw/**", "why": "is the module-law table every module's configuration reads" },
+    { "glob": "build-logic/src/main/kotlin/splice/testing/**", "why": "is the test-task wiring the convention plugin applies to every module" },
+    { "glob": "quality/compiler-plugin/src/main/**", "why": "is the compiler plugin every module compiles with" },
+    { "glob": "quality/detekt/detekt.yml", "why": "is the detekt config every kotlin module's check reads" },
+    { "glob": ".editorconfig", "why": "is the ktlint rule list every module's check reads" }
+  ],
+  "docs": [
+    { "glob": "docs/**", "except": ["docs/PROVENANCE.md"], "why": "is prose no law reads" },
+    { "glob": ".dev/research/**", "why": "is research notes no law reads" }
+  ],
+  "laws": [
+    { "glob": "README.md", "why": "a law reads the readme" },
+    { "glob": "CHANGELOG.md", "why": "a law reads the changelog" },
+    { "glob": "THIRD_PARTY_NOTICES.md", "why": "a law reads the notices" },
+    { "glob": "docs/PROVENANCE.md", "why": "a law reads provenance" },
+    { "glob": "app/**", "why": "the public-source law reads app" },
+    { "glob": "core/**", "why": "the public-source law reads core" },
+    { "glob": "features/**", "why": "the public-source law reads features" },
+    { "glob": "integrations/**", "why": "the public-source law reads integrations" },
+    { "glob": "quality/architecture/**", "why": "the architecture laws read this module" },
+    { "glob": "quality/compiler-plugin/**", "why": "the public-source law reads the compiler plugin" },
+    { "glob": "quality/detekt/**", "why": "the public-source law reads the detekt config" },
+    { "glob": "build-logic/**", "why": "the public-source law reads build-logic" },
+    { "glob": "gradle/**", "why": "the public-source law reads gradle/" },
+    { "glob": "settings.gradle.kts", "why": "the public-source law reads settings" },
+    { "glob": "build.gradle.kts", "why": "the public-source law reads the root build" },
+    { "glob": "gradle.properties", "why": "the public-source law reads gradle properties" },
+    { "glob": "gradlew", "why": "the public-source law reads the wrapper script" },
+    { "glob": "gradlew.bat", "why": "the public-source law reads the wrapper script" },
+    { "glob": "install.sh", "why": "the public-source law reads install.sh" },
+    { "glob": ".gitignore", "why": "the public-source law reads gitignore" }
+  ]
+}

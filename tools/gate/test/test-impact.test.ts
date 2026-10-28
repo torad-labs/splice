@@ -1,6 +1,6 @@
 // The pre-push runs only the unit test classes a push can affect (test-impact.ts). Simon asked for it on Oct 26 2026, with Marcos's
-// approval: map the changed sources to their tests, include the tests of anything that depends on a changed module, fall back to
-// the full suite when a build file, gradle/, a version catalog or a shared test fixture changes, and print which mode ran and why.
+// approval: map the changed sources to their tests, include the tests of anything that depends on a changed module, run the
+// full suite only for a path tools/gate/config/scope.json marks full, and print which mode ran and why.
 // splice-lead settled the reach the same day: a test in any module that reaches a changed file through references is selected, and
 // whatever the reference analysis cannot see selects every test of the module that owns it, plus the tests in other modules that
 // reach that module. This pre-push is the only check while CI is locked, and a wrongly skipped test reaches main, so where the
@@ -492,35 +492,55 @@ describe("the classes a filter names must run a test, or the module runs whole",
 const TRIGGERS: readonly string[] = [
   "build.gradle.kts",
   "settings.gradle.kts",
+  "gradle/libs.versions.toml",
+  "gradle/wrapper/gradle-wrapper.properties",
+  "gradle.properties",
+  "build-logic/build.gradle.kts",
+  "build-logic/settings.gradle.kts",
+  "build-logic/src/main/kotlin/splice.kotlin-common.gradle.kts",
+  "build-logic/src/main/kotlin/splice.module-law.gradle.kts",
+  "build-logic/src/main/kotlin/splice/hygiene/CatalogReader.kt",
+  "build-logic/src/main/kotlin/splice/modulelaw/ModuleLawTable.kt",
+  "build-logic/src/main/kotlin/splice/testing/MachineLocalProperties.kt",
+  "quality/compiler-plugin/src/main/kotlin/splice/plugin/Rewrite.kt",
+  "quality/detekt/detekt.yml",
+  ".editorconfig",
+];
+
+/** Paths the old full-suite fallback treated as every module's concern, which are one module's or nobody's. */
+const NOT_FULL: readonly string[] = [
   "core/build.gradle.kts",
   "features/turns/build.gradle",
   "settings.gradle",
-  "gradle/libs.versions.toml",
-  "gradle/wrapper/gradle-wrapper.properties",
   "gradle/module-law.txt",
   "app/gradle/fork-home/bin/java",
   "catalogs/tools.versions.toml",
-  "gradle.properties",
   "core/gradle.properties",
   "gradlew",
   "gradlew.bat",
-  "build-logic/src/main/kotlin/splice.kotlin-common.gradle.kts",
   "build-logic/src/main/kotlin/splice/ladder/LadderTable.kt",
+  "build-logic/src/test/kotlin/splice/ladder/LadderTableTest.kt",
   "buildSrc/src/main/kotlin/Versions.kt",
-  "quality/compiler-plugin/src/main/kotlin/splice/plugin/Rewrite.kt",
   "package.json",
+  "quality/rules/kotlin/kt-no-println.yml",
   "core/src/testFixtures/kotlin/splice/core/FakeClock.kt",
   "core/src/testFixtures/resources/META-INF/services/org.junit.jupiter.api.extension.Extension",
   "app/src/lawFixtures/kotlin/splice/app/LawKit.kt",
 ];
 
-describe("the full suite runs when the build or a shared fixture changes, and only then", () => {
-  test("each trigger runs the full suite and names itself as the reason", () => {
+describe("the full suite runs when a scope.json full path changes, and only then", () => {
+  test("each full path runs the full suite and names itself as the reason", () => {
     for (const path of TRIGGERS) {
       expect({ path, reason: fullSuiteReason(path) !== undefined }).toEqual({ path, reason: true });
       const impact = testImpact(pushOf({ [path]: "changed\n", [MONEY]: kt("splice.core", "class Money(val cents: Int)") }));
       expect({ path, mode: impact.mode }).toEqual({ path, mode: "full" });
       if (impact.mode === "full") expect(impact.why).toContain(path);
+    }
+  });
+
+  test("a module build file, a fixture, package.json and a build-logic file the modules do not all apply are not the full suite", () => {
+    for (const path of NOT_FULL) {
+      expect({ path, reason: fullSuiteReason(path) }).toEqual({ path, reason: undefined });
     }
   });
 
@@ -1365,41 +1385,41 @@ describe("the selection skips no test the change can affect", () => {
     expect(narrowed).toBeGreaterThan(100);
   });
 
-  test("a push that holds a fallback trigger runs the full suite, whatever else it changes", () => {
-    const triggers: readonly ((m: GenModule) => string)[] = [
-      (m) => `${m.dir}/build.gradle.kts`,
+  test("a path the scope file marks full runs the full suite, and a module build file or a fixture does not widen past the scope", () => {
+    const full: readonly ((m: GenModule) => string)[] = [
       () => "build.gradle.kts",
       () => "settings.gradle.kts",
-      (m) => `${m.dir}/build.gradle`,
-      () => "settings.gradle",
       () => "gradle/libs.versions.toml",
       () => "gradle/wrapper/gradle-wrapper.properties",
-      (m) => `${m.dir}/gradle/extra.txt`,
       () => "gradle.properties",
-      (m) => `${m.dir}/gradle.properties`,
-      () => "gradlew",
-      () => "gradlew.bat",
-      () => "catalogs/tools.versions.toml",
-      () => "build-logic/src/main/kotlin/splice.x.gradle.kts",
       () => "build-logic/build.gradle.kts",
-      () => "buildSrc/src/main/kotlin/X.kt",
+      () => "build-logic/src/main/kotlin/splice.kotlin-common.gradle.kts",
       () => "quality/compiler-plugin/src/main/kotlin/splice/plugin/X.kt",
-      () => "package.json",
-      (m) => `${m.dir}/src/testFixtures/kotlin/p/Fx.kt`,
-      (m) => `${m.dir}/src/lawFixtures/kotlin/p/Lx.kt`,
-      (m) => `${m.dir}/src/testFixtures/resources/x.json`,
     ];
-    for (let seed = 1; seed <= 200; seed++) {
+    const narrow: readonly ((m: GenModule) => string)[] = [
+      (m) => `${m.dir}/build.gradle.kts`,
+      (m) => `${m.dir}/gradle.properties`,
+      () => "package.json",
+      () => "build-logic/src/main/kotlin/splice.ladder/LadderTable.kt",
+      (m) => `${m.dir}/src/testFixtures/kotlin/p/Fx.kt`,
+    ];
+    for (let seed = 1; seed <= 40; seed++) {
       const r = rand(seed * 104729);
       const repo = generateRepo(r);
       const push = generatePush(r, repo);
-      const trigger = r.pick(triggers)(r.pick(GEN_MODULES));
-      const edits = { ...push.edits, [trigger]: r.chance(0.2) ? null : "changed\n" };
+      const trigger = r.pick(full)(r.pick(GEN_MODULES));
+      const edits = { ...push.edits, [trigger]: "changed\n" };
       const impact = testImpact(inputOf(repo, { edits, added: push.added }));
       const checked = GEN_MODULES.filter(() => r.chance(0.5)).map((m) => m.path);
       const args = testArgs(impact, checked, GEN_MODULES.map((m) => m.path));
       const unchecked = GEN_MODULES.map((m) => m.path).filter((m) => !checked.includes(m));
       expect({ seed, trigger, mode: impact.mode, args }).toEqual({ seed, trigger, mode: "full", args: { tasks: unchecked.map((m) => `${m}:check`), options: [] } });
+    }
+    for (const maker of narrow) {
+      const repo = generateRepo(rand(7));
+      const trigger = maker(GEN_MODULES[0]!);
+      const impact = testImpact(inputOf(repo, { edits: { [trigger]: "changed\n" }, added: [] }));
+      expect({ trigger, mode: impact.mode }).toEqual({ trigger, mode: "selected" });
     }
   });
 });

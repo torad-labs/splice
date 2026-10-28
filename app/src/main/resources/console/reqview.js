@@ -499,8 +499,11 @@ const REQVIEW = (() => {
       const rec = record ? DRAW.section("Record", `<div class="bodies">${record}</div>`, { aside: tabs + racts + (timing || usage ? "" : ride), cls: "rqrec" }) : "";
       // no section to ride: the acts keep their own line
       const top = line ? (ride && (timing || usage || rec) ? "" : lineHtml(h)) : h.head === false ? "" : headerHtml(r, h);
+      // OPENED UNDER ITS ROW the request is held near the width its time rail and figures need (the kit's detail rule), with
+      // the Record, which reads best wide, taking the rest of the row beside them
+      const sections = line && rec && (timing || usage) ? DRAW.drill(`${timing}${usage}`, { beside: rec }) : `${timing}${usage}${rec}`;
       return `<section class="pane rqpane${line ? " inrow" : ""}" style="--c:${colorOf(r.provider)}" aria-label="Request at ${clockS(r.ts)}">${top}`
-        + `<div class="scroll pdetail">${h.said && !line ? `<div class="upmsgs">${h.said}</div>` : ""}${timing}${usage}${rec}</div></section>`;
+        + `<div class="scroll pdetail">${h.said && !line ? `<div class="upmsgs">${h.said}</div>` : ""}${sections}</div></section>`;
     }
     // its controls: a tab, a fold of a body, a send's frames. True when the click was one of them; the page draws again.
     function click(el) {

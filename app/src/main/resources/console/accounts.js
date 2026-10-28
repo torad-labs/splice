@@ -931,10 +931,18 @@ function menuHtml(p, a, spot) {
   }).join("")}${refused ? `<div class="menu-state">${refusalHtml(ui.removeErr, key)}${reasonHtml(ui.removeErr, key)}</div>` : ""}</div>`;
 }
 const keyDayWord = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" }); // a key card's day, "Oct 12"
+/** What a login is called on its card: the name he gave it, else the console's one rule (kit DRAW.name), its provider and plan,
+ *  with two that read alike told apart by a number. A default name carries an id fragment in the daemon's spelling, and an id
+ *  is never a title. */
+function shownName(p, a) {
+  if (p.kind !== "plan") return a.name;
+  const named = DRAW.names("login", p.accounts.map((x) => ({ name: x.name, provider: p.name ?? p.id, plan: x.plan })));
+  return named[p.accounts.indexOf(a)]?.text ?? a.name;
+}
 function nameHtml(p, a, spot) {
   // a key is named by its variable and, when it replaced another, the day splice first saw it
   if (p.kind === "key") return `<span class="name"><span class="var">${esc(a.env)}</span>${a.tail ? ` <span class="tail">${esc(a.tail)}</span>` : ""}${a.has && a.seen && a.twins ? ` · ${keyDayWord(a.seen)}` : ""}</span>`;
-  if (ui.rename !== spot) return `<span class="name">${esc(a.name)}</span>`;
+  if (ui.rename !== spot) return `<span class="name">${esc(shownName(p, a))}</span>`;
   const err = ui.renameErr;
   // one visible way to finish and one to leave, as the key field's Save and Cancel: both walkers had to guess Enter
   // (p153, p154). A refusal reads under it (cardHtml).
@@ -1047,10 +1055,10 @@ function cardHtml(p, c, a, i, serves) {
   const cls = ["card", live ? "serving" : "", a.out || (p.kind === "key" && !a.has) ? "out" : "", held(a) ? "held" : ""].join(" ");
   const canMove = c && laneAccts(p, c).length > 1 && c.orderable?.has(labelOn(a, c.head)) && !ui.orderSaving && !ui.removing;
   // a grip that cannot move promises nothing on hover: only one that drags says how
-  const grip = p.kind === "plan" ? `<button class="grip" data-grip="${p.id}" data-c="${esc(c.cmd)}" data-a="${a.id}" aria-label="Move ${esc(a.name)}"${canMove ? ' title="Drag to reorder, or use the up and down arrow keys"' : " disabled"}>${GLYPH.grip}</button>` : "";
+  const grip = p.kind === "plan" ? `<button class="grip" data-grip="${p.id}" data-c="${esc(c.cmd)}" data-a="${a.id}" aria-label="Move ${esc(shownName(p, a))}"${canMove ? ' title="Drag to reorder, or use the up and down arrow keys"' : " disabled"}>${GLYPH.grip}</button>` : "";
   // a default name starts with its plan word ("Max", "Max · 1a2b3c4d", later "Max 2"): the tag beside it shows only
   // when it says more than that word, such as a tier "Max 5x" (fin, Oct 12)
-  const said = a.row?.label_default && String(a.name ?? "").split(/[\s·]/)[0].toLowerCase() === String(a.plan ?? "").trim().toLowerCase();
+  const said = a.row?.label_default && Boolean(a.plan) && shownName(p, a).toLowerCase().includes(String(a.plan).trim().toLowerCase());
   const sub = a.plan && ui.rename !== spot && !said ? `<span class="plan">${esc(a.plan)}</span>` : "";
   // labels only (Oct 12): a login splice named itself offers its one naming here, beside the name, and never blocks
   const nameIt = a.row?.label_default && a.row?.can_rename && ui.rename !== spot

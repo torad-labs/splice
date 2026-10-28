@@ -83,10 +83,10 @@ test("a session opens in place under the rows before it, across its block, and t
 }, 30_000);
 
 // His project tiles at 3394 (splice-lead, Oct 12; marlin, Oct 13): the tiles stand in equal columns that fill the row,
-// each carrying its unit and its bar of states on the scale every tile shares, and a name is cut only when its own column
+// each carrying its bar of states on the scale every tile shares, the unit said once on Every project (the whole), and a name is cut only when its own column
 // cannot hold it, with the whole name in the tile's title. A tile on a wrapped line is the width of the tiles above it, and
 // every line starts at the row's left edge.
-test("in a crowded tile row the tiles are equal columns that fill the row, each with its unit and its bar, a cut name whole in its title", async () => {
+test("in a crowded tile row the tiles are equal columns that fill the row, each with its bar and the unit said once on Every project, a cut name whole in its title", async () => {
   const twelve = ["temple", "splice", "grailseeker-backend", "Splice-CPO", "hostshield", "assistant", "Splice-Animator",
     "Splice-Writer", "twork", "qgre-engine-labs", "grailseeker-console"];
   const names = [...twelve, ...twelve.map((p) => `${p}-two`)];
@@ -117,7 +117,7 @@ test("in a crowded tile row the tiles are equal columns that fill the row, each 
     expect(lines.length).toBeGreaterThan(1); // the row is crowded enough to wrap
     expect(tiles.filter((t) => Math.abs(t.width - tiles[0]!.width) > 1).map((t) => t.name)).toEqual([]); // equal columns on every line
     expect(Math.max(...tiles.filter((t) => t.top === lines[0]).map((t) => t.right))).toBeGreaterThan(rowBox.right - tiles[0]!.width * 0.1); // the first line fills the row
-    expect(tiles.filter((t) => !t.unit).map((t) => t.name)).toEqual([]);
+    expect(tiles.filter((t) => t.unit).map((t) => t.name)).toEqual(["Every project"]); // what the row counts is said once, on the whole
     expect(tiles.filter((t) => !t.bar).map((t) => t.name)).toEqual([]);
     expect(tiles.filter((t) => t.title !== t.name).map((t) => t.name)).toEqual([]); // the whole name is in the title
     expect(tiles.filter((t) => t.own <= t.width + 1 && t.cut).map((t) => t.name)).toEqual([]); // cut only when its column cannot hold it

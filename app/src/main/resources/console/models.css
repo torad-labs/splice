@@ -133,9 +133,10 @@
 
 /* ---------- the open command: the body, in columns of plates ---------- */
 .pane .body { padding: calc(3 * var(--u)) calc(3 * var(--u)) calc(4 * var(--u)); display: flex; flex-direction: column; gap: var(--gap-col); }
-/* as many columns as kit colsFit finds room for in the pane's own width (models.js PANE_COL_REM), each a plate; the
-   plates are as tall as the tallest, so the pane's block ends on one edge */
-.pcols { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); gap: var(--gap-col); align-items: stretch; }
+/* as many columns as kit colsFit finds room for in the pane's own width (models.js PANE_COL_REM), each section a plate that
+   goes where the board is shortest (kit DRAW.masonry), so every plate is as tall as what it holds and no column stands
+   tinted and empty beside a longer one */
+.pcols { min-width: 0; }
 .plate.pcol { gap: 0; }
 /* a section with nothing in it draws nothing, so no plate carries an empty hairline */
 .psec:empty, .plate.pcol:empty { display: none; }

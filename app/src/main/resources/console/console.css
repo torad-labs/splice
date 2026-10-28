@@ -450,7 +450,7 @@ mark { color: var(--text); background: color-mix(in oklab, var(--text) 18%, tran
 .windows .next .state svg { width: .95rem; height: .95rem; }
 .bar { position: relative; height: 1.1rem; border-radius: .3rem; background: var(--track); box-shadow: inset 0 0 0 .1rem var(--track-line); overflow: hidden; }
 .bar.sub { height: .62rem; }
-.bar > b { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--c); border-right: .12rem solid var(--ink); border-radius: .3rem 0 0 .3rem; }
+.bar > b { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--c); border-right: .12rem solid var(--ink); border-radius: .3rem 0 0 .3rem; transition: width var(--t-snap) var(--e-out); }
 .bar.grow > b { transform-origin: left; transition: transform var(--t-snap) var(--e-out); }
 .bar.full > b { background: var(--limit); border-right: 0; border-radius: .3rem; }
 .bar.stale > b { background: transparent; box-shadow: inset 0 0 0 .12rem var(--c); border-right: 0; }
@@ -726,8 +726,16 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 /* THE TILES FILL THE ROW IN EQUAL COLUMNS (Oct 27). Sized by their names they left 831 to 2,949 px of the row empty
    (79% on Teams), no two shared an edge, and each share bar's 100% was its own tile's width, so equal shares drew
    different lengths. Every tile is now one column of the row: the same width, the same track, so the shares compare
-   by eye, and the row is full at 3822 and at 1440 alike. */
-.ptiles { width: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: var(--gap-card); }
+   by eye, and the row is full at 3822 and at 1440 alike.
+   A PROJECT WITH NOTHING IN THE WINDOW TAKES NO COLUMN (Oct 28): in a grid of equal columns three empty projects took
+   three of nine columns, half the row on Teams. The projects with something to count are the equal columns (auto-fit,
+   so a few of them still fill the row and a wrapped line has the same columns as the first); the empty ones stand
+   together on a line after them, each as wide as its own name and 0 (.pzeros, .ptile.zero below). */
+.ptiles { width: 100%; display: flex; flex-direction: column; gap: var(--gap-card); }
+.ptgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); align-items: stretch; gap: var(--gap-card); }
+.ptgrid:empty { display: none; }
+.ptiles > .pzeros { display: flex; flex-wrap: wrap; gap: var(--gap-card); }
+.ptiles > .pzeros > .ptile { flex: 0 0 auto; }
 /* a removed command's name in a menu, with its one muted word (kit REMOVED_TAG) */
 .rtag { margin-left: .6rem; font: 500 .85rem/1 var(--font-data); color: var(--text-mute); }
 /* a name longer than its column is cut with an ellipsis, and the tile keeps the whole name as its title */
@@ -746,20 +754,28 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
    was a kicker over the row, which under the page's own title read as the title again ("TEAMS" under "Teams"). */
 .ptile .pfigs { flex: none; white-space: nowrap; }
 .ptile .punit { color: var(--text-mute); font: 500 .88rem/1 var(--font-name); white-space: nowrap; }
-/* each tile draws its share of every project's total on the one track every tile has, so a row compares by eye. Every
-   project is the whole, so it draws no share of itself. */
-.ptile .pshare { height: .4rem; border-radius: .2rem; background: color-mix(in oklab, var(--text) 10%, transparent); overflow: hidden; }
-.ptile .pshare > i { display: block; height: 100%; border-radius: .2rem; background: color-mix(in oklab, var(--text) 38%, transparent); transition: width var(--t-snap) var(--e-out); }
-.ptile.on .pshare > i { background: color-mix(in oklab, var(--text) 55%, transparent); }
+/* each tile draws its share of every project's total on the one track every tile has, so a row compares by eye. THE TRACK
+   IS THE KIT'S OWN, 16.7 PX AT 3822 (--meter-h, as a meter's and a stage's): a 6 px share hairline read as decoration
+   beside a figure at the tile's size. Every project is the whole and draws it full, the length every other bar is read
+   against; a count that could not be read is the dashed empty track. */
+.ptile .pshare { display: block; height: var(--meter-h); border-radius: .3rem; background: var(--track); box-shadow: inset 0 0 0 .1rem var(--track-line); overflow: hidden; }
+.ptile .pshare > i { display: block; height: 100%; border-radius: .3rem 0 0 .3rem; background: color-mix(in oklab, var(--text) 42%, transparent); transition: width var(--t-snap) var(--e-out); }
+.ptile .pshare.whole > i { border-radius: .3rem; background: color-mix(in oklab, var(--text) 62%, transparent); }
+.ptile.on .pshare > i { background: color-mix(in oklab, var(--text) 58%, transparent); }
+.ptile.on .pshare.whole > i { background: color-mix(in oklab, var(--text) 72%, transparent); }
+.ptile .pshare.unread { background: none; box-shadow: none; outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }
 .plamps { display: flex; flex-wrap: wrap; align-items: center; gap: .55rem calc(2 * var(--u)); min-height: 2rem; margin-top: auto; }  /* a project with nothing live keeps the row, empty */
 .ptile .pc.big { gap: .3rem; font: 600 1rem/1 var(--font-data); }
 /* each lamp's count says what it counts, in the muted words the lamp stands for ("1 needs you", "3 working") */
 .ptile .pc .pw { margin-left: .1rem; font: 500 .88rem/1 var(--font-name); color: var(--text-body); }
 /* A PROJECT WITH NOTHING IN THIS WINDOW keeps its tile, because the tile is how he picks it, but says so as a quiet
    object: the name and its 0 muted, no share to draw, a dashed rim, as an add tile says "nothing here yet". */
-.ptile.zero { color: var(--text-mute); border-style: dashed; background: transparent; }
+.ptile.zero { color: var(--text-mute); border-style: dashed; background: transparent; flex-direction: row; align-items: center; gap: calc(2 * var(--u)); padding: .55rem .95rem; }
 .ptile.zero .ptotal { color: var(--text-mute); }
 .ptile.zero.on { background: var(--obj); border-style: solid; }
+.ptile.zero .plamps:empty { display: none; }
+/* the tile while its project is read: the tile's own parts, hollow, so the row stands the height it will (GHOST.tiles) */
+.ptile.ghosted-tile { cursor: default; pointer-events: none; animation: ghost-in var(--t-move) var(--e-out) both; }
 /* a card's lamp, standing in the line: the socket, its ink ring and its glyph in the state's colour (sessions.css .lamp) */
 .tlamp { flex: none; width: 2rem; height: 2rem; border-radius: 50%; display: grid; place-items: center; color: var(--socket-ink);
   background: var(--socket); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .15rem var(--rail); }
@@ -1065,7 +1081,9 @@ a.pd-lb:hover { color: var(--text); text-decoration: underline; }
 .pd-ends b { font: 500 .92rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
 
 /* ---------- bounded lists: the top few at full size, the rest behind one pill; never a column that runs past the fold ---------- */
-.plink, .morepill { align-self: flex-start; display: inline-flex; align-items: center; gap: .4rem; padding: 0; border: 0; background: none; color: var(--text-mute); font: 500 .88rem/1.2 var(--font-name); cursor: pointer; }
+/* A DOOR IS A TARGET (Oct 28): a fold door was a 13 px line of text, the only way to open a folded list at 3822. It keeps its
+   words and takes a 1.9rem hit area (28.8 px at 3822, 22.8 at 1440). */
+.plink, .morepill { align-self: flex-start; display: inline-flex; align-items: center; gap: .4rem; min-height: 1.9rem; padding: 0; border: 0; background: none; color: var(--text-mute); font: 500 .88rem/1.2 var(--font-name); cursor: pointer; }
 /* the kit's arrow is an svg with no size of its own: inside a link it took its intrinsic box and squeezed the words
    onto three lines (Models' "Projects in Settings" at 3822). The arrow is the link's own size, and the words stay on
    one line, as they do in a caption (.cap .go above). */
@@ -1078,7 +1096,7 @@ a.pd-lb:hover { color: var(--text); text-decoration: underline; }
 .morepill b { font: 500 .88rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; }
 
 /* ---------- a disclosure: its chevron turns over 240 ms and its detail opens in place, under the row ---------- */
-.disc { display: inline-flex; align-items: center; gap: .65rem; min-width: 0; max-width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.disc { display: inline-flex; align-items: center; gap: .65rem; min-width: 0; max-width: 100%; padding: .45rem 0; margin-block: -.45rem; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .disc:focus-visible { outline: .14rem solid var(--text); outline-offset: .25rem; border-radius: .3rem; }
 .chev { flex: none; width: .8rem; height: .8rem; fill: none; stroke: var(--text-mute); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; transition: transform var(--t-snap) var(--e-out); }
 [aria-expanded="true"] > .chev, .open > .disc > .chev, .pitem.open .chev { transform: rotate(90deg); }
@@ -1160,3 +1178,51 @@ a.pd-lb:hover { color: var(--text); text-decoration: underline; }
 .cols > .full { grid-column: 1 / -1; }
 .stack-cards { display: flex; flex-direction: column; gap: var(--gap-card); min-width: 0; }   /* cards down one column, 15 px apart */
 .groups { display: flex; flex-direction: column; gap: 2.4rem; min-width: 0; }                 /* titled groups, 36 px apart */
+
+/* ---------- the balanced board: blocks of any height, each into the shortest column (kit DRAW.masonry, layMason) ----------
+   A grid of 1 px rows: the kit measures each block and sets --rows to its height plus the gap under it, and the grid's own
+   auto-placement (dense) puts the next block in the topmost free place, which is the shortest column. data-cols="k" makes
+   a block k columns wide (clamped to the columns the board holds, --span-eff), "all" the whole row. The first block of
+   every column carries .mtop, so a rule above the others starts after the gap. No block's height is guessed. */
+@property --mason-gap { syntax: "<length>"; inherits: false; initial-value: 2.4rem; }   /* a registered length, so the kit reads it as pixels whatever it was written in */
+.mason { --mason-gap: 2.4rem; min-width: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--col-min, 26rem)), 1fr)); column-gap: var(--gap-col); grid-auto-rows: 1px; grid-auto-flow: dense; align-items: start; margin-bottom: calc(-1 * var(--mason-gap)); }  /* the last block of a column carries the gap under it: taken back, so the board ends at its tallest block */
+.mason > * { min-width: 0; grid-column: span var(--span-eff, 1); grid-row-end: span var(--rows, 1); }
+/* A TOPIC IN BALANCED COLUMNS (kit DRAW.topic): one column below 110rem of plate, two above, 4u between blocks down a column
+   and 4u + a hairline + 4u between one block and the next, the plate's rhythm. A block marked col 1 or col 2 keeps that side. */
+.topic { --mason-gap: 2.668rem;  /* 4u, written in rem because the kit reads it as a number */  grid-template-columns: minmax(0, 1fr); column-gap: calc(4 * var(--u)); }
+.topic > [data-side] { grid-column: 1; }
+.topic > .pcol:not(.mtop) { padding-top: calc(4 * var(--u)); border-top: .08rem solid var(--hair); }
+@container plate (min-width: 110rem) {
+  .topic { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .topic.lead { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+  .topic > [data-side="2"] { grid-column: 2; }
+}
+
+/* ---------- a detail opened in place, held near the width its content needs (kit DRAW.drill) ----------
+   The open row's detail is as wide as 56rem and no wider, the way the Usage Results panel stands; what belongs beside it
+   takes the rest of the row, or goes under it, with the plate's hairline between, where the row is too narrow for both. A
+   rail drawn at the full row width for a six-second request was 3,600 px long. Any open detail takes the width by putting
+   .detailbox-main on its own element. */
+.detailbox { --drill-w: 56rem; container: detail / inline-size; min-width: 0; display: flex; flex-wrap: wrap; align-items: stretch; gap: calc(4 * var(--u)); }
+.detailbox-main { min-width: min(100%, 28rem); max-width: min(100%, var(--drill-w, 56rem)); }
+.detailbox > .detailbox-main { flex: 0 1 var(--drill-w); }
+.detailbox > .detailbox-side { flex: 1 1 24rem; min-width: 0; padding-left: calc(4 * var(--u)); border-left: .08rem solid var(--hair); }
+.detailbox-main > .psec + .psec, .detailbox-side > .psec + .psec { margin-top: calc(4 * var(--u)); padding-top: calc(4 * var(--u)); border-top: .08rem solid var(--hair); }
+@container detail (max-width: 83rem) {
+  .detailbox > .detailbox-main, .detailbox > .detailbox-side { flex-basis: 100%; }
+  .detailbox > .detailbox-side { padding: calc(4 * var(--u)) 0 0; border-left: 0; border-top: .08rem solid var(--hair); }
+}
+
+/* ---------- a read that is slow says so, once (kit watchGhosts): one muted line in the header's own row ---------- */
+.head > .slowread { align-self: center; margin-right: auto; padding: .3rem .75rem; border-radius: var(--r-in); outline: .1rem dashed var(--track-line); outline-offset: -.1rem;
+  font: 500 .88rem/1 var(--font-name); color: var(--text-mute); animation: pop var(--t-pop) var(--e-out) 1; }
+
+/* ---------- absence as a shape (kit DRAW.unread, DRAW.nothing) ---------- */
+.nothing.slot { display: inline-flex; align-items: center; padding: .3rem .8rem; border-radius: var(--r-in); outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }
+.vbar.unread { background: none; outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }
+.barcell.unread > .v { color: var(--text-mute); }
+
+/* ---------- a view's legend, said once (kit DRAW.legend; the knob marks' legend is the same row) ---------- */
+.legend { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0 1.1rem; }
+.legend .lg { display: inline-flex; align-items: center; gap: .4rem; font: 500 .85rem/1.4 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.legend .lg svg { flex: none; width: 1rem; height: 1rem; }

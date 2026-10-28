@@ -1439,7 +1439,7 @@ function composerHtml() {
  *  striped, as the kit's ghosts are, so nothing moves when the data arrives. */
 /** THE FIRST FRAME HOLDS THE SHAPE THIS BROWSER LAST LANDED ON: the team list is known only when its read answers, and the
  *  project tiles are drawn from the sessions, which land with it. Until then the frame is a team's page with as many
- *  tiles as the last page drew (six on a first visit), or the empty page's own shape where the last read found no team;
+ *  tiles as the last page drew (none on a first visit), or the empty page's own shape where the last read found no team;
  *  the moment the team list answers, the frame follows it. So the page under it stays where it is when the data lands. */
 const SHAPE_STORE = "splice-teams-shape";
 function shapeGuess() {
@@ -1447,8 +1447,8 @@ function shapeGuess() {
     const v = localStorage.getItem(SHAPE_STORE);
     if (v === "none") return { none: true, tiles: 0 };
     if (v != null) return { none: false, tiles: Math.max(0, parseInt(v, 10) || 0) };
-  } catch { /* storage off: the first-visit guess */ }
-  return { none: false, tiles: 6 };
+  } catch { /* storage off: nothing remembered */ }
+  return { none: false, tiles: 0 };  // a first visit has drawn no tiles yet, so the frame draws none
 }
 function rememberShape(v) {
   try { if (localStorage.getItem(SHAPE_STORE) !== String(v)) localStorage.setItem(SHAPE_STORE, String(v)); } catch { /* storage off */ }

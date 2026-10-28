@@ -274,7 +274,19 @@ const planRowOf = (head, label) => S.accounts.find((a) => (a.heads || []).includ
   // the pool slot a login sits in (edit_target.id) is one of its names too: a sole login on a command reaches splice
   // as "primary", and three rows read that word where the account's own name belongs
   && (a.ref ? a.ref === label : [a.account_labels?.[head], a.selector_key, a.label, a.display_name, a.edit_target?.id].some((x) => x && String(x).toLowerCase() === String(label).toLowerCase())));
-const planName = (row, fallback) => (row.ref ? row.display_name : row.display_name || fallback || "");
+/** What a login is called, by the console's one rule (kit DRAW.name): the name he gave it, else its provider and plan, with
+ *  two that read alike told apart by a number in the roster's order. A word the daemon uses where it has no name ("Account", an
+ *  address, an id) is not a name, so it is not drawn as one. */
+let nameBook = null;
+const loginFacts = (a, fallback) => ({ name: a.ref ? a.display_name : a.display_name || fallback, provider: providerOfHead((a.heads || [])[0]),
+  plan: a.plan ? a.plan.charAt(0).toUpperCase() + a.plan.slice(1) : "" });
+function planName(row, fallback) {
+  if (nameBook?.src !== S.accounts) {
+    const plans = S.accounts.filter((a) => a.kind !== "api-key"), named = DRAW.names("login", plans.map((a) => loginFacts(a)));
+    nameBook = { src: S.accounts, by: new Map(plans.map((a, i) => [a, named[i].text])) };
+  }
+  return nameBook.by.get(row) ?? DRAW.name("login", loginFacts(row, fallback)).text;
+}
 /** An account in a row, a chip or a detail: a plan by its name, a key by its whole variable. The day splice first saw
  *  the key is drawn once, on the key's own card, where it belongs. */
 function acctLabel(head, label, name) {
@@ -282,11 +294,8 @@ function acctLabel(head, label, name) {
   if (plan) return esc(planName(plan, label));
   const key = keyRecord(label);
   if (key) return `<span class="var">${esc(key.name)}</span>`;
-  return esc(outName(name ?? label));
+  return esc(DRAW.name("login", { name: name ?? label, provider: providerOfHead(head) }).text);
 }
-/** A login the roster no longer holds keeps the number the daemon gave it while signed in. The daemon words that
- *  number two ways ("Account 3", "Signed-out account 8"); the page says one: "Account 8", with its state beside it. */
-const outName = (s) => String(s ?? "").replace(/^signed-out account (\d+)$/i, "Account $1");
 
 // ---------- plans and keys: one board of cards, grouped under each provider, as the Accounts page draws it ----------
 function windowOf(pct, resetSec, lenSec, slot, current) {
@@ -415,7 +424,7 @@ function planCard(row, mx) {
     rows: lines, h: cardH("plan", lines, out, (held ? 1 : 0) + (ranOut ? 1 : 0) + (unread && row.no_usage_at_epoch_seconds ? 1 : 0)),
     make: (withChips) => `<article class="card pcard${held ? " held" : ""}${out ? " out" : ""}${picked ? " picked" : ""}${ui.landed === idx ? " landed" : ""}" data-a="plan-${idx}" style="--c:${colorOf(providerOfHead(heads[0]))}"${door}>`
       + `<header>${canName(row) ? nameSlot(row, idx, "card") : `<span class="nm">${esc(planName(row))}</span>`}`
-      + `${row.plan ? `<span class="pv">${esc(row.plan.charAt(0).toUpperCase() + row.plan.slice(1))}</span>` : ""}`
+      + `${row.plan && !planName(row).toLowerCase().includes(row.plan.toLowerCase()) ? `<span class="pv">${esc(row.plan.charAt(0).toUpperCase() + row.plan.slice(1))}</span>` : ""}`
       + `${withChips ? `<span class="cmds">${heads.map(chip).join("")}</span>` : ""}</header>`
       + (held ? `<p class="heldline">${DRAW.lock(until?.resetMs ? `Limit reached until ${backWord(new Date(until.resetMs))}` : "Limit reached")}</p>` : "")
       + body
@@ -444,7 +453,7 @@ function keyCard(k, print, seen, replaced, mx) {
 function moneyHtml() {
   if (!S.stood) return boardHead() + ghostBoard();
   if (!S.accounts.length && !S.keys.length) {
-    return boardHead() + `<div class="board" style="--n:${boardCols()}"><a class="add" href="accounts.html"><span class="plus" aria-hidden="true">+</span><span>Sign in to a plan or add a key on Accounts</span></a></div>`;
+    return boardHead() + DRAW.masonry([`<a class="add" href="accounts.html"><span class="plus" aria-hidden="true">+</span><span>Sign in to a plan or add a key on Accounts</span></a>`], 38, { cls: "plans" });
   }
   const plans = S.accounts.filter((row) => (row.heads || []).some(isPlanHead) && !(row.login_place && !row.credential_present && !row.observed_at_epoch_seconds));
   const keyRows = [];
@@ -472,14 +481,10 @@ function moneyHtml() {
     g.chips = shared ? chipsOf(g.cards[0].heads) : "";
     for (const c of g.cards) c.html = c.make(!shared);
   }
-  const cols = boardCols();
-  const stacks = packBoard(ordered, cols);
   keepShape(ordered);
-  return boardHead() + `<div class="board" style="--n:${cols}">`
-    + stacks.map((st) => `<div class="pstack" style="--span:${st.span}">${st.items.map(groupHtml).join("")}</div>`).join("")
-    + `</div>`;
+  return boardHead() + DRAW.masonry(planBoard(ordered, boardCols()).map(groupHtml), 38, { cls: "plans" });
 }
-const groupHtml = (it) => `<section class="ugroup" style="--c:${colorOf(it.g.prov)}"><h3><i class="blot" aria-hidden="true"></i>${esc(it.g.name)}${it.g.chips ? `<span class="cmds">${it.g.chips}</span>` : ""}</h3>`
+const groupHtml = (it) => `<section class="ugroup" data-cols="${it.cols.length}" style="--c:${colorOf(it.g.prov)}"><h3><i class="blot" aria-hidden="true"></i>${esc(it.g.name)}${it.g.chips ? `<span class="cmds">${it.g.chips}</span>` : ""}</h3>`
   + `<div class="gcards" style="--k:${it.cols.length}">${it.cols.map((c) => `<div class="gcol">${c.map((card) => card.html).join("")}</div>`).join("")}</div></section>`;
 /** A card draws two kinds of bar, and whose count each one is belongs to the band, not to every card: the window meters
  *  are each provider's limits, the bars under the rule are what splice itself sent, in the window and the project read. */
@@ -496,40 +501,19 @@ function boardCols() {
   const w = (p.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)) / rem;
   return Math.max(1, Math.min(6, Math.floor((w + 2) / 40)));
 }
-/** The board's columns, filled as a board is: the provider with the most logins splits its cards down k columns, in
- *  order, column by column, and the others go into the columns left, each into the shortest. Where it takes the whole
- *  width, the rest form a row under it. k is the one that leaves the shortest board with the least empty screen under
- *  its columns, judged from each card's structure (cardH), so the providers keep their places from one read to the next. */
-function packBoard(gs, n) {
-  const HEAD = 3.7, GAP_G = 2.4, GAP_C = 1;
-  const colH = (cards) => cards.reduce((a, c) => a + c.h, 0) + GAP_C * Math.max(0, cards.length - 1);
-  const whole = (g) => ({ g, cols: [g.cards], h: HEAD + colH(g.cards) });
-  const fill = (items, m) => {
-    const st = Array.from({ length: m }, () => ({ span: 1, items: [], h: 0 }));
-    for (const it of items.slice().sort((a, b) => b.h - a.h)) {
-      const s = st.reduce((x, y) => (y.h < x.h ? y : x));
-      s.h += (s.items.length ? GAP_G : 0) + it.h; s.items.push(it);
-    }
-    return st;
-  };
+/** The board's groups placed as the kit's balanced board lays them (DRAW.masonry): the provider with the most logins
+ *  splits its cards down k columns, in order, column by column, taking k columns of the board, and every other group is
+ *  one column wide. Which column a group lands in is measured, not guessed: each goes where the shortest column is, and
+ *  a short group fills the space under a tall one. k is half the big group's cards, so it stands two rows tall, and
+ *  never more than the board's columns. */
+function planBoard(gs, n) {
   if (!gs.length) return [];
-  if (n < 2) return [{ span: 1, items: gs.map(whole) }];
-  const big = gs[0].cards.length >= 2 ? gs[0] : null;
-  if (!big) return fill(gs.map(whole), n).filter((s) => s.items.length);
-  const rest = gs.slice(1).map(whole);
-  let best = null;
-  for (let k = 1; k <= Math.min(n, big.cards.length); k++) {
-    const per = Math.ceil(big.cards.length / k);
-    const cols = Array.from({ length: k }, (_, i) => big.cards.slice(i * per, (i + 1) * per));
-    if (cols.some((c) => !c.length)) continue;
-    const inner = cols.map((c) => HEAD + colH(c)), bigH = Math.max(...inner);
-    const st = fill(rest, k < n ? n - k : n);
-    const heights = k < n ? [...inner, ...st.map((s) => s.h)] : inner.map((h, i) => (st[i].items.length ? bigH + GAP_G + st[i].h : h));
-    const max = Math.max(...heights), holes = heights.reduce((a, h) => a + (max - h), 0);
-    const score = max + holes / (2 * n);
-    if (!best || score < best.score - 1e-6) best = { score, stacks: [{ span: k, items: [{ g: big, cols, h: bigH }] }, ...st.filter((s) => s.items.length)] };
-  }
-  return best.stacks;
+  const whole = (g) => ({ g, cols: [g.cards] });
+  const big = n > 1 && gs[0].cards.length >= 2 ? gs[0] : null;
+  if (!big) return gs.map(whole);
+  const k = Math.min(n, big.cards.length, Math.ceil(big.cards.length / 2)), per = Math.ceil(big.cards.length / k);
+  const cols = Array.from({ length: k }, (_, i) => big.cards.slice(i * per, (i + 1) * per)).filter((c) => c.length);
+  return [{ g: big, cols }, ...gs.slice(1).map(whole)];
 }
 /** A card before splice has answered at all: the card's own shape in striped bars, at the height the card itself will
  *  stand, so nothing under the board moves when it lands. [rows] is the window lines the card drew last time (-1 is a
@@ -560,12 +544,10 @@ const lastShape = () => {
   return TYPICAL;
 };
 /** And the board they land in: the same groups packed into the same columns, so nothing jumps when the read lands. */
-const ghostBoard = () => { const cols = boardCols(); let i = 0;
+const ghostBoard = () => { let i = 0;
   const groups = lastShape().map((cards) => ({ cards: cards.map(([rows, h]) => ({ rows, h })) }));
-  return `<div class="board" style="--n:${cols}">` + packBoard(groups, cols).map((st) =>
-    `<div class="pstack" style="--span:${st.span}">` + st.items.map((it) =>
-      `<section class="ugroup"><h3>${GHOST.bar(5)}</h3><div class="gcards" style="--k:${it.cols.length}">${it.cols.map((c) => `<div class="gcol">${c.map((card) => ghostCard(i++, card.rows, card.h)).join("")}</div>`).join("")}</div></section>`).join("")
-    + `</div>`).join("") + `</div>`;
+  return DRAW.masonry(planBoard(groups, boardCols()).map((it) =>
+    `<section class="ugroup" data-cols="${it.cols.length}"><h3>${GHOST.bar(5)}</h3><div class="gcards" style="--k:${it.cols.length}">${it.cols.map((c) => `<div class="gcol">${c.map((card) => ghostCard(i++, card.rows, card.h)).join("")}</div>`).join("")}</div></section>`), 38, { cls: "plans" });
 };
 
 // ---------- what a value can be grouped by; opening one goes a step down with its filter added ----------

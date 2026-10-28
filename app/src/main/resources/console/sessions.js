@@ -46,7 +46,7 @@ const ui = { ending: new Map(), armedEnd: new Map(), armedStop: new Set(), open:
   // said Copied, and the ended namesakes folded under each row
   logOpen: new Set(), sys: new Set(), lines: new Set(), namesakes: new Set(), allModels: new Set(), copied: new Map(), earlier: new Map(),
   // the session whose plate just opened (it unfolds once), whether to bring it on screen, and the board's columns
-  unfold: null, reveal: false, cols: 1, colOf: null, focusSay: false };
+  unfold: null, reveal: false, cols: 1, blockAt: null, focusSay: false };
 const remember = (key, set) => sessionStorage.setItem(key, JSON.stringify([...set]));
 const root = document.getElementById("sessions");
 
@@ -272,8 +272,10 @@ async function readNewerNow(s) {
 // daemon read it (SessionsRoutes `title`), then its worktree, then its tag. Flat, the folder still titles it, which
 // is the page as it was before projects. Reading off leaves both name and title null, and a group falls to the
 // worktree or the tag rather than to a folder the header would repeat.
-const title = (s) => (ui.grouped ? s.name || s.first || s.wt || `Session ${s.id.slice(0, 8)}`
-  : s.name || s.repo || `Session ${s.id.slice(0, 8)}`);
+// With none of those, the console's one name rule (kit DRAW.name): its command and project, never the first eight characters
+// of its id.
+const title = (s) => DRAW.ownName(s.name) || (ui.grouped ? s.first || s.wt : s.repo)
+  || DRAW.name("session", { command: s.cmd, project: projName(s) }).text;
 const color = (s) => colorOf(s.provider);
 
 const FOLDER = G('<path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>');
@@ -675,7 +677,7 @@ function groupBlock([key, g], ended, { loose = false } = {}) {
   const pieces = shut ? g.filter((s) => RANK(s) === 0 || holdsOpen(s)).map(rowPiece) : loose ? pagePieces(`l:${key}`, ended, HANDFUL) : rowPieces(key, g, ended);
   const why = key === NO_PROJECT && ui.by === "project" ? noProjectWhy([...g, ...ended]) : "";
   const open = pieces.some((p) => p.plate);
-  const section = (body, wide = 0) => `<section class="pgroup${shut ? " shut" : ""}${loose ? " loose" : ""}${wide ? " opened" : ""}" data-key="g:${esc(key)}${loose ? ":l" : ""}" aria-label="${esc(`${name}, ${countWords(counts, total, "session")}`)}">`
+  const section = (body, wide = 0) => `<section class="pgroup${shut ? " shut" : ""}${loose ? " loose" : ""}${wide ? " opened" : ""}"${wide ? ` data-cols="${wide}"` : ""} data-key="g:${esc(key)}${loose ? ":l" : ""}" aria-label="${esc(`${name}, ${countWords(counts, total, "session")}`)}">`
     + `<header class="phead"><button class="pfold" data-act="fold" data-p="${esc(key)}" aria-expanded="${!shut}">${ICON.caret}<span class="pname">${esc(name)}</span></button>`
     + `${loose ? "" : `<span class="pcounts">${counts.map((c) => bigCount(c, key)).join("")}</span>${mixHtml(g, ui.maxLive)}`}${tot}${go}</header>${why}${body}</section>`;
   return {
@@ -793,11 +795,12 @@ function sessionTiles() {
     const words = `${n} live, ${countWords(counts, total, "session")}`;
     return `<button class="ptile${on ? " on" : ""}" data-key="t:${esc(k)}" data-act="pickproj" data-p="${esc(k)}" aria-pressed="${on}" aria-label="${esc(`${label}, ${words}`)}" title="${esc(label)}">`
       + `<span class="ptop"><span class="tname">${esc(label)}</span></span>`
-      + `<span class="plead"><b class="plive" data-f="l:${esc(k)}">${DRAW.n(n)}</b><span class="pw">live</span><span class="pof">of <b class="ptotal" data-f="tt:${esc(k)}">${DRAW.n(total)}</b> <span class="punit">${total === 1 ? "session" : "sessions"}</span></span></span>`
+      + `<span class="plead"><b class="plive" data-f="l:${esc(k)}">${DRAW.n(n)}</b><span class="pw">live</span><span class="pof">of <b class="ptotal" data-f="tt:${esc(k)}">${DRAW.n(total)}</b>${k === "" ? ` <span class="punit">${total === 1 ? "session" : "sessions"}</span>` : ""}</span></span>`
       + mixHtml(g, live.length)
       + `<span class="plamps">${counts.map((c) => tlampHtml(c, true)).join("")}</span></button>`;
   };
-  return `<nav class="ptiles" aria-label="Projects">${tile("", "Every project", live, all)}${groupsOf(live).map(([k, g]) => tile(k, projName(g[0]), g, projTotal(k, g))).join("")}</nav>`;
+  GHOST.remember("tiles", groupsOf(live).length + 1);
+  return `<nav class="ptiles" aria-label="Projects"><div class="ptgrid">${tile("", "Every project", live, all)}${groupsOf(live).map(([k, g]) => tile(k, projName(g[0]), g, projTotal(k, g))).join("")}</div></nav>`;
 }
 // WHAT IS NOT IN THE LIST, WITHIN REACH AND NOT UNDER EVERY LIST (gap: a standing method footnote under 2,536 px of
 // rows, in the CLI's flag). Headless runs never register, so the fact lives behind one disclosure on the list's foot
@@ -821,48 +824,34 @@ const ghostRow = ([name, chip, last], i) => `<article class="card s ghosted" sty
   + `<span class="lamp"></span><div class="top"><span class="who">${GHOST.bar(name, "nm")}</span>`
   + `<span class="last">${GHOST.bar(last)}</span><span class="barcell age">${GHOST.track()}</span>`
   + `<span class="cmd">${GHOST.bar(chip, "chip")}</span><span class="doing"></span></div></article>`;
+// The blocks and the tiles it draws are the count and size the page last drew (GHOST.count), so the first frame stands as
+// tall as the list that lands; a first visit, with nothing drawn yet, shows one block a column and no tiles.
 function ghostListHtml() {
-  const n = ui.cols;
+  const n = ui.cols, blocks = Math.max(1, GHOST.count("blocks", n)), rows = Math.max(1, GHOST.count("rows", 3));
   const block = (j) => `<section class="pgroup ghosted" aria-hidden="true"><header class="phead">${GHOST.bar(9 + (j % 3) * 2, "nm")}</header>`
-    + GHOST_CARDS.slice(0, 5 - (j % 2)).map(ghostRow).join("") + `</section>`;
-  const tiles = tilesWide() ? `<div class="lhead wide"><div class="gtiles">${Array.from({ length: 6 }, () => `<span class="gtile">${GHOST.bar(8)}${GHOST.fig(4)}${GHOST.track()}</span>`).join("")}</div></div>` : "";
-  return `<div class="list ghosts" aria-busy="true" aria-label="Reading sessions">${tiles}`
-    + `<div class="board sboard">${Array.from({ length: n }, (_, j) => `<div class="col">${block(j)}${n === 1 ? "" : ""}</div>`).join("")}</div></div>`;
+    + Array.from({ length: rows }, (_, i) => GHOST_CARDS[i % GHOST_CARDS.length]).map(ghostRow).join("") + `</section>`;
+  const tiles = tilesWide() ? GHOST.tiles() : "";
+  return `<div class="list ghosts" aria-busy="true" aria-label="Reading sessions">${tiles ? `<div class="lhead wide">${tiles}</div>` : ""}`
+    + `<div class="board sboard">${Array.from({ length: n }, (_, c) => `<div class="col">${Array.from({ length: blocks }, (_, j) => j).filter((j) => j % n === c).map(block).join("")}</div>`).join("")}</div></div>`;
 }
-/** THE BLOCKS IN EQUAL COLUMNS (DRAW.packCols): each into the shortest column so far, by the rows it draws, so no column
- *  stands as a tall wall beside empty ones and the groups' order runs across the top. While his pointer is in the list
- *  each block keeps the column it was drawn in, as the rows keep their order. */
+/** THE BLOCKS ON THE KIT'S BALANCED BOARD (DRAW.masonry): each block goes where the board is shortest at that point,
+ *  measured on what is drawn, so no column stands as a tall wall beside empty ones and the groups' order runs across the
+ *  top. The board holds as many columns as a row's words need (colCount). While his pointer is in the list the blocks keep
+ *  the order they were drawn in, as the rows keep theirs, so no block moves to another column under it.
+ *
+ *  THE OPEN SESSION TAKES THE BOARD'S WIDTH (Marcos, Oct 26: "we're wasting a lot of horizontal space"): its block spans
+ *  all but one column where three or more fit and blocks follow it, so the list stays in sight beside the session he
+ *  reads, and the whole row where it does not. Its rows keep a column's width and run down the columns it spans. */
 function boardHtml(blocks, cls = "") {
   if (!blocks.length) return "";
   const n = Math.max(1, Math.min(ui.cols, blocks.length));
-  const at = n >= 2 ? blocks.findIndex((b) => b.open) : -1;
-  if (at < 0) return colsHtml(blocks, n, cls);
-  // THE OPEN SESSION TAKES THE BOARD'S WIDTH (Marcos, Oct 26: "we're wasting a lot of horizontal space"): the blocks
-  // before its block keep their columns above it, its block spans the board, and the blocks after it continue below.
-  // Where three or more columns fit, its block takes all but one, and the blocks after it run down that one beside the
-  // session, on the side its block stood, so the list stays in sight while he reads.
-  const before = blocks.slice(0, at), open = blocks[at], after = blocks.slice(at + 1);
-  if (n < 3 || !after.length) return colsHtml(before, n, cls, "a") + `<div class="board sboard opened${cls ? ` ${cls}` : ""}">${open.wide(n)}</div>` + colsHtml(after, n, cls, "b");
-  const stood = DRAW.packCols(blocks, n, (b) => b.w).findIndex((c) => c.items.includes(open));
-  const wide = { body: open.wide(n - 1), span: n - 1 }, side = { body: after.map((b) => b.html).join("") };
-  return colsHtml(before, n, cls, "a")
-    + `<div class="board sboard opened${cls ? ` ${cls}` : ""}">${DRAW.boardCols(stood === n - 1 ? [side, wide] : [wide, side])}</div>`;
-}
-/** Blocks packed down [n] columns. While his pointer is in the list each block keeps the column it was drawn in, as the
- *  rows keep their order; [part] tells apart the columns above and below an open session. */
-function colsHtml(blocks, n, cls = "", part = "") {
-  if (!blocks.length) return "";
-  ui.colOf ??= new Map();
-  const spot = (b) => `${cls}|${part}|${n}|${b.key}`;
-  let cols;
-  if (ui.hold && blocks.every((b) => ui.colOf.get(spot(b)) < n)) {
-    cols = Array.from({ length: n }, () => ({ items: [] }));
-    for (const b of blocks) cols[ui.colOf.get(spot(b))].items.push(b);
-  } else {
-    cols = DRAW.packCols(blocks, n, (b) => b.w);
-    cols.forEach((c, i) => c.items.forEach((b) => ui.colOf.set(spot(b), i)));
-  }
-  return `<div class="board sboard${cls ? ` ${cls}` : ""}">${DRAW.boardCols(cols.map((c) => ({ body: c.items.map((b) => b.html).join("") })))}</div>`;
+  ui.blockAt ??= new Map();
+  const spot = (b) => `${cls}|${b.key}`;
+  const list = ui.hold && blocks.every((b) => ui.blockAt.has(spot(b))) ? [...blocks].sort((a, b) => ui.blockAt.get(spot(a)) - ui.blockAt.get(spot(b))) : blocks;
+  list.forEach((b, i) => ui.blockAt.set(spot(b), i));
+  const at = n >= 2 ? list.findIndex((b) => b.open) : -1;
+  const span = n < 3 || at === list.length - 1 ? n : n - 1;
+  return `<div class="sboard mason${cls ? ` ${cls}` : ""}" style="--n:${n}">${list.map((b, i) => (i === at ? b.wide(span) : b.html)).join("")}</div>`;
 }
 /** One block of rows with no header (one project alone, or the one he picked), split down the columns the width holds
  *  when it has more rows than one column reads well, row by row and in order. A column is as wide as the board's
@@ -912,6 +901,8 @@ function listHtml() {
     const keys = new Set(ui.gorder);
     ui.maxLive = Math.max(1, ...groups.map(([, g]) => liveOf(g)));
     board = boardHtml(groups.map(([k, g]) => groupBlock([k, g], ended.filter((s) => groupKey(s) === k))));
+    GHOST.remember("blocks", groups.length);
+    GHOST.remember("rows", Math.max(1, Math.round(groups.reduce((a, [, g]) => a + Math.min(g.length, HANDFUL), 0) / groups.length)));
     loose = ended.filter((s) => !keys.has(groupKey(s))); // a project with nothing open today keeps its ended at the foot
   }
   return `<div class="list${dim}">${fail}${missing}${head}${board}${looseHtml(loose)}${headlessHtml()}</div>`;
@@ -1438,7 +1429,9 @@ function morphChildren(from, to) {
   while (cur) { const n = cur.nextSibling; cur.remove(); cur = n; }
 }
 // a painted meter's width is the kit's (DRAW.paint), set after the markup lands: a draw leaves it be
-const painted = (el) => el.tagName === "B" && el.hasAttribute("data-v") && el.parentElement?.classList.contains("bar");
+const painted = (el) => (el.tagName === "B" && el.hasAttribute("data-v") && el.parentElement?.classList.contains("bar"))
+  // a block on the balanced board keeps the place the kit measured for it (its rows and columns), which a draw cannot know
+  || el.parentElement?.classList.contains("mason");
 function morphNode(a, b) {
   if (a.nodeType !== 1) { if (a.nodeValue !== b.nodeValue) a.nodeValue = b.nodeValue; return; }
   // a split the kit fitted after it landed is kept whole while it would draw the same, and replaced when it would not
@@ -1481,6 +1474,9 @@ function render(opts = {}) {
   const seen = [...new Set([...root.querySelectorAll(".list .nocmd.mark")].map((el) => el.dataset.q))].sort().join("");
   if (seen !== (ui.quietSeen || "")) { ui.quietSeen = seen; morph(root, listHtml()); }
   fitTracks(); // the rows' tracks as wide as what they hold, before anything is measured
+  // the blocks' places on the balanced board are measured now, so the places the motion below starts from and ends at are the
+  // real ones and not the ones before the kit's own observer has laid the board
+  for (const box of root.querySelectorAll(".mason")) layMason(box);
   paintBand();
   if (named && !root.contains(active)) root.querySelector(`button.name[data-open="${CSS.escape(named)}"]`)?.focus({ preventScroll: true });
   const field = root.querySelector("#say");

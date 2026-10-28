@@ -110,7 +110,8 @@ const keyNameOf = (account) => { const s = String(account ?? ""), at = s.lastInd
 // A key reads as its provider, the heading Accounts draws over it and the name Continue on uses; its variable joins
 // only when two keys of that provider feed the same command, so the line says which one it sent (fin).
 const acctHtml = (r) => {
-  if (r.acctLabel) return esc(r.acctLabel); // a login reads the label the daemon names it by, never an email or id (Oct 12)
+  // a login reads the name he gave it, else the console's one rule (kit DRAW.name): never an email, an id or the bare word Account
+  if (r.acctLabel) return esc(DRAW.name("login", { name: r.acctLabel, provider: r.provider }).text);
   const key = state.keySeen[r.account], name = key?.name ?? keyNameOf(r.account), provider = PROVIDER_NAME[r.provider];
   const isKey = Boolean(key) || /^[A-Z0-9_]+$/.test(name);
   if (!isKey || !provider) return key ? `<span class="var">${esc(key.name)}</span> · ${dayWord(key.seen)}${key.replaced ? `<span class="detail">Replaced</span>` : ""}` : esc(state.soleAccount?.[r.head] ?? (name || r.account));

@@ -123,10 +123,10 @@ test("the key in use shows its masked tail, a date only where its variable has h
 test("a window whose reset went by reads Ended, and a card with no reading reads Not read", () => onPage(async (page) => {
   await expect(card(page, "work")).toContainText("Ended");
   await expect(card(page, "work")).not.toContainText(/\bReset\b/);
-  await expect(card(page, "Account")).toContainText("Not read");
-  await expect(card(page, "Account")).not.toContainText("No limits reported");
-  await expect(card(page, "Account").locator(".name-it")).toHaveCount(0);
-  await expect(card(page, "Account")).toContainText("Use now");
+  await expect(card(page, "Claude")).toContainText("Not read");
+  await expect(card(page, "Claude")).not.toContainText("No limits reported");
+  await expect(card(page, "Claude").locator(".name-it")).toHaveCount(0);
+  await expect(card(page, "Claude")).toContainText("Use now");
   await expect(card(page, "quiet")).toContainText("No limits reported");
 }), 30_000);
 

@@ -34,7 +34,8 @@ const answers: Record<string, unknown> = {
   "/api/accounts": { accounts: [
     // an account added to claude-splice, signed in
     login("work", { ...windows, label: "account-2", selector_key: "account-2" }),
-    // the plain claude command's own login: it proved its account, then its token went
+    // the plain claude command's own login: it proved its account, then its token went. Its name is its address, which
+    // the console never uses as a title, so its card reads by provider ("Claude")
     login("me@example.invalid", { ...windows, label: "claude", selector_key: "native:claude", email: "me@example.invalid",
       refusal: noToken("claude"), login_place: { id: "claude" }, edit_target: { kind: "native", id: "claude" } }),
     // claude-splice's own login: its file is there with no token in it, and no profile ever proved an account
@@ -92,14 +93,14 @@ async function onPage(check: (page: Page) => Promise<void>, width = 1440) {
 const card = (page: Page, name: string) => page.locator("article.card").filter({ has: page.locator(".name", { hasText: new RegExp(`^${name}$`) }) });
 
 test("a command's own login that is signed out and never proved an account draws no card; one that proved its account keeps its card", () => onPage(async (page) => {
-  await expect(card(page, "me@example.invalid")).toContainText("Signed out");
-  await expect(card(page, "me@example.invalid").getByRole("button", { name: "Sign in" })).toBeVisible();
+  await expect(card(page, "Claude")).toContainText("Signed out");
+  await expect(card(page, "Claude").getByRole("button", { name: "Sign in" })).toBeVisible();
   await expect(card(page, "Account")).toHaveCount(0);
   await expect(page.locator("article.card", { hasText: "Signed out" })).toHaveCount(1);
 }), 30_000);
 
 test("a Sign in splice refuses on a login's card says its word there, and splice's reason opens under it", () => onPage(async (page) => {
-  const there = card(page, "me@example.invalid");
+  const there = card(page, "Claude");
   await there.getByRole("button", { name: "Sign in" }).click();
   const word = there.getByRole("button", { name: "Config error" });
   await expect(word).toBeVisible({ timeout: 10_000 });

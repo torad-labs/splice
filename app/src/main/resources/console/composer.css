@@ -24,10 +24,10 @@
 /* THE TAB: the manager's lamp over its name, set upright down the window's right margin, which the page keeps clear on
    every page (console.css .page), so nothing it shows is covered. The lamp is the bar's own, in the state's colour. */
 .cmp-tab {
-  position: fixed; right: .15rem; bottom: 1.5rem; z-index: 30; width: 1.5rem; padding: .75rem 0 .85rem;
+  position: fixed; right: .15rem; bottom: 1.5rem; z-index: 30; width: 2.2rem; padding: .9rem 0 1rem;
   display: flex; flex-direction: column; align-items: center; gap: .65rem; cursor: pointer;
   background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: 0 .25rem 0 var(--ink);
-  color: var(--text-body); font: 500 .88rem/1 var(--font-name);
+  color: var(--text-body); font: 500 .95rem/1 var(--font-name);
   opacity: 0; visibility: hidden; pointer-events: none; translate: .6rem 0;
   transition: opacity var(--t-snap) var(--e-out), translate var(--t-snap) var(--e-out), color var(--t-hover) var(--e-out),
     background-color var(--t-hover) var(--e-out), visibility 0s linear var(--t-snap);

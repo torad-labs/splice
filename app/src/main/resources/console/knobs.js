@@ -35,12 +35,14 @@ const createKnobs = (scope) => {
     changed: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5" fill="currentColor"/></svg>',
     unsaved: G('<circle cx="12" cy="12" r="6" stroke-dasharray="3 3"/>'),
     lock: LOCK,
+    // the dashed slot with its plus: where a value for ONE command is set, at the end of a row (rowHtml's add)
+    one: G('<rect x="3" y="3" width="18" height="18" rx="4.5" stroke-dasharray="3.4 2.8"/><path d="M12 8v8M8 12h8"/>'),
   };
   const MARK_WORD = {
     changed: "Changed from the default", restart: "Takes a restart", toml: "Set in splice.toml",
-    shell: "Set in your shell", unsaved: "Gone at the next start", lock: "Locked",
+    shell: "Set in your shell", unsaved: "Gone at the next start", lock: "Locked", one: "A value for one command",
   };
-  const MARK_ORDER = ["changed", "restart", "toml", "shell", "unsaved", "lock"];
+  const MARK_ORDER = ["one", "changed", "restart", "toml", "shell", "unsaved", "lock"];
   const markHtml = (kind, word = MARK_WORD[kind]) =>
     `<span class="mk ${kind}" role="img" aria-label="${esc(word)}" title="${esc(word)}">${MARK[kind]}</span>`;
   /** The marks on one setting's value, as the daemon's answer makes them: what a reader could not guess from the row. */
@@ -57,17 +59,27 @@ const createKnobs = (scope) => {
     if (needsRestart(key)) out.push("restart");
     return out;
   }
-  /** Every mark [keys] carry, each said once in words: a page draws this where its section names itself.
+  /** Whether a setting can hold a value of its own for one command, as its row's add slot offers it. */
+  const perCmdOf = (key) => Boolean(st.perCommand && (st.cfg?.knobs?.[key]?.per_command ?? KNOB[key]?.cmd) && st.cfg?.knobs?.[key]?.editable !== false);
+  /** Every mark [keys] carry, each said once in words: a page draws this where its VIEW names itself, ONCE.
+   *  A VIEW SAYS EACH MARK ONCE (Oct 28): the legend was built per call and pages called it per group and per topic, so
+   *  "Takes a restart" stood on eight kickers of one list. A page now calls it once for every key its view draws, or
+   *  passes the same [said] set to every call of one view: a kind already in the set is not drawn again, and each kind
+   *  drawn goes into it. The first call of a view names everything; a later one names only what is new.
+   *  The ring with its plus is the row's slot for ONE COMMAND's own value: the rows draw it as the bare slot and say
+   *  its words here, once, so no row repeats "One command".
    *  [bare] gives the items alone, for a page putting its own words in the same line. */
-  function legendHtml(keys, { bare = false } = {}) {
+  function legendHtml(keys, { bare = false, said = null, one = true } = {}) {
     const kinds = new Set();
     for (const key of keys) {
       if (st.cfg?.knobs?.[key]?.editable === false) kinds.add("lock");
       if (valueOf(KNOB[key] ?? { key }).src === "env") kinds.add("shell");
+      if (one && perCmdOf(key)) kinds.add("one");
       for (const m of marksOf(key)) kinds.add(m);
     }
-    const shown = MARK_ORDER.filter((m) => kinds.has(m));
-    const items = shown.map((m) => `<span class="lg">${MARK[m]}${esc(MARK_WORD[m])}</span>`).join("");
+    const shown = MARK_ORDER.filter((m) => kinds.has(m) && !said?.has(m));
+    shown.forEach((m) => said?.add(m));
+    const items = shown.map((m) => `<span class="lg ${m}">${MARK[m]}${esc(MARK_WORD[m])}</span>`).join("");
     return !items || bare ? items : `<span class="legend">${items}</span>`;
   }
 
@@ -457,7 +469,11 @@ const createKnobs = (scope) => {
       const head = v === null ? ["Every command", word(k, s.v)] : ["Their own", v];
       return `<div class="mgroup" role="group" aria-label="${esc(`${head[0]} ${head[1]}`)}"><span class="mgh" aria-hidden="true">${esc(head[0])}<b>${esc(head[1])}</b></span>${cs.map(item).join("")}</div>`;
     };
-    const add = st.perCommand && perCmd && left.length ? `<span class="menuwrap"><button class="chip add one" data-kmenu="over:${k.key}" aria-expanded="${open}" aria-label="Set for one command">${PLUS}One command</button>`
+    // THE ACT STAYS ON EVERY ROW THAT TAKES IT AND IS SAID ONCE (Oct 28): at rest the slot is the legend's dashed ring with
+    // its plus, no word, so a list of nineteen settings no longer prints "One command" nineteen times; under the pointer or
+    // the keyboard (and while its menu is down) the ring opens to its words (knobs.css .oc). A row that already holds a
+    // command's own value shows it drawn, as its chips, and keeps the slot after them.
+    const add = st.perCommand && perCmd && left.length ? `<span class="menuwrap"><button class="chip add one" data-kmenu="over:${k.key}" aria-expanded="${open}" aria-label="Set for one command" title="Set for one command">${PLUS}<span class="oc">One command</span></button>`
       + (open ? `${menuTag("cmdmenu")}${picks.map(pickGroup).join("")}</div>` : "") + "</span>" : "";
     // the commands a setting acts on at all, which no chip on the row would say. The rows that act on every command say
     // nothing: their section's head says it once (Settings' scope line), so 45 rows no longer repeat it.

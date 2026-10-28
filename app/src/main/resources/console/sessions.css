@@ -309,17 +309,17 @@
 .sessions { display: block; }
 /* the lamp stands in the row's own first column here, so the list needs no rail beside it */
 .sessions .list { gap: calc(4 * var(--u)); padding-left: 0; }
-/* THE BLOCKS IN EQUAL COLUMNS (sessions.js boardHtml, DRAW.packCols): each into the shortest column so far, so no column
-   stands as a tall wall beside empty ones and the groups' order runs across the top. A row's column needs about 72rem
-   for the session's own words to read: three at 3822, two at 2548, one at 1440. */
+/* THE BLOCKS ON THE KIT'S BALANCED BOARD (sessions.js boardHtml, DRAW.masonry): each into the place that is shortest where
+   it lands, so no column stands as a tall wall beside empty ones and the groups' order runs across the top. The board holds
+   as many columns as a row's words need, about 72rem each: three at 3822, two at 2548, one at 1440. */
 .sessions .sboard { align-items: flex-start; }
+.sessions .sboard.mason { --mason-gap: 2.668rem; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); column-gap: var(--gap-col); }
 .sessions .sboard > .col { gap: calc(4 * var(--u)); }
-.sessions .board.loose { margin-top: calc(2 * var(--u)); }
-/* THE OPEN SESSION TAKES THE BOARD'S WIDTH (sessions.js boardHtml): the blocks before its block keep their columns above
-   it, its block spans the board (all but one column where three or more fit, the blocks after it running down that one),
-   and the blocks after it continue below. Its rows keep a column's width and run down the board's columns, and the
-   session's plate spans them all, under its row. */
-.sessions .board.opened > .pgroup, .sessions .board.opened > .rows { flex: 1 1 auto; min-width: 0; }
+.sessions .sboard.loose, .sessions .board.loose { margin-top: calc(2 * var(--u)); }
+/* THE OPEN SESSION TAKES THE BOARD'S WIDTH (sessions.js boardHtml): its block spans all but one column where three or more
+   fit, the blocks after it running down the column left, and the whole row where they do not. Its rows keep a column's
+   width and run down the columns it spans, and the session's plate spans them all, under its row. */
+.sessions .board.opened > .rows { flex: 1 1 auto; min-width: 0; }
 .sessions .prows { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); }
 .sessions .prows > .pcol { display: flex; flex-direction: column; min-width: 0; }
 .sessions .prows > .pcol + .pcol { box-shadow: inset .08rem 0 0 var(--track-line); }

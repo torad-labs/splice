@@ -109,7 +109,7 @@ async function board(page: Page) {
   return { list, plate, head, blocks, beside };
 }
 
-test("at his width the open session spans the board under its row, and the blocks after it continue below it", async () => {
+test("at his width the open session spans the board under its row, the space beside the first block is filled, and the rest continue below it", async () => {
   const page = await opened(2548, 1240, 1.5, "b-1");
   try {
     const { list, plate, head, blocks, beside } = await board(page);
@@ -117,21 +117,23 @@ test("at his width the open session spans the board under its row, and the block
     bunExpect(plate.right).toBeGreaterThanOrEqual(list.right - 2);
     bunExpect(head.bottom).toBeLessThanOrEqual(plate.top + 1); // its own block's header stands over it: it opened in place
     bunExpect(beside.map((b) => b.name)).toEqual([]);
-    bunExpect(blocks.filter((b) => b.top >= plate.bottom - 1).map((b) => b.name).sort()).toEqual(["cobalt", "dune", "elm"]);
-    bunExpect(blocks.filter((b) => b.bottom <= plate.top + 1).map((b) => b.name)).toEqual(["atlas"]);
+    // the plate takes both columns, so it waits for the taller of the blocks above it; the next block stands in the column the
+    // first leaves free, not under the plate, and the rest continue below it
+    bunExpect(blocks.filter((b) => b.top >= plate.bottom - 1).map((b) => b.name).sort()).toEqual(["dune", "elm"]);
+    bunExpect(blocks.filter((b) => b.bottom <= plate.top + 1).map((b) => b.name).sort()).toEqual(["atlas", "cobalt"]);
   } finally {
     await page.close();
   }
 }, 40_000);
 
-test("at 3822 the open session takes every column but one, and the blocks after it run down that one beside it", async () => {
+test("at 3822 the open session takes every column but one, and the other blocks run down that one beside it", async () => {
   const page = await opened(3822, 1860, 1, "b-1");
   try {
     const { list, plate, head, beside } = await board(page);
     bunExpect(plate.right - plate.left).toBeGreaterThanOrEqual(0.6 * (list.right - list.left));
     bunExpect(head.bottom).toBeLessThanOrEqual(plate.top + 1);
-    // what stands beside it is the blocks after its own, in one column clear of it
-    bunExpect(beside.map((b) => b.name).sort()).toEqual(["cobalt", "dune", "elm"]);
+    // what stands beside it is every other block, in the one column clear of it
+    bunExpect(beside.map((b) => b.name).sort()).toEqual(["atlas", "cobalt", "dune", "elm"]);
     bunExpect(beside.filter((b) => b.right > plate.left + 1 && b.left < plate.right - 1).map((b) => b.name)).toEqual([]);
     bunExpect(new Set(beside.map((b) => Math.round(b.left))).size).toBe(1);
   } finally {

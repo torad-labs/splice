@@ -115,23 +115,12 @@
 
 /* ---------- TWO PARTS OF A TOPIC SIDE BY SIDE (Marcos, Oct 25: "proper spacing, avoid cramping") ----------
    What happened and the settings that decide it are one thought, so they are read together: the figures at the left,
-   the settings that act on them at the right. Stacked, the settings of a topic sat two screens under its table at
-   3822 and the plate's right half was wash. They stack again below 110rem, which is the width the pair needs for a
-   table and a row of settings to both stay whole (at 1440 the plate is about 80rem). */
-.pair { min-width: 0; display: flex; flex-direction: column; }
+   the settings that act on them at the right. They stack below 110rem of plate. THE LAYOUT IS THE KIT'S (Oct 28,
+   console.css .topic, DRAW.topic): balanced columns, a section that belongs to neither side under the shorter one. What
+   stays here is the page's own: a column is a stack of sections with the plate's rhythm between them, and the rules
+   below that tie the two halves (.pair:has) keep working on the class the kit's topic carries. */
 .pcol { min-width: 0; display: flex; flex-direction: column; }
-.pair > .pcol + .pcol { margin-top: calc(4 * var(--u)); padding-top: calc(4 * var(--u)); border-top: .08rem solid var(--hair); }
 .pcol > .psec + .psec { margin-top: calc(4 * var(--u)); padding-top: calc(4 * var(--u)); border-top: .08rem solid var(--hair); }
-@container plate (min-width: 110rem) {
-  .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: calc(4 * var(--u)); align-items: start; }
-  /* a table of rows beside a short list of settings takes the larger share: an even split gave five columns of figures
-     the same width as three dropdowns */
-  .pair.lead { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
-  .pair > .pcol + .pcol { margin-top: 0; padding-top: 0; border-top: 0; padding-left: calc(4 * var(--u)); border-left: .08rem solid var(--hair); }
-  /* the settings ride beside a longer half as the page scrolls (a list of nine logins runs to two screens at his width),
-     the way the rail rides, so the setting that acts on a figure is never a screen away from it */
-  .pair > .pcol + .pcol { position: sticky; top: 4.6rem; }
-}
 
 /* ---------- a setting is a row, and what it does is drawn on it ----------
    (Oct 27, from Marcos's "show don't tell".) One grid a section: the name, the control, and the drawing of what the

@@ -337,17 +337,12 @@ function krowsHtml(keys, { ax = null, draw = {}, mark = null } = {}) {
   const cols = flat ? ` flat${keys.length >= 3 ? " n3" : keys.length === 2 ? " n2" : ""}` : "";
   return `<div class="krows${cols}">${head}${rows.join("")}${foot}</div>`;
 }
-// THE MARKS ARE NAMED ONCE A PANE (Marcos, Oct 25: "show don't tell"): a row names a command only where that command
-// holds its own value, so the scope every other row follows is said once, on the first section it applies to; and the
-// first section carrying a mark names it on its kicker line, a later one naming only the marks above it did not.
-const perCommandIn = (keys) => keys.some((key) => ks.cfg?.knobs?.[key]?.per_command ?? Boolean(KNOB[key]?.cmd));
+// THE MARKS ARE NAMED ONCE A PANE (Marcos, Oct 25: "show don't tell"): the first section carrying a mark names it on its
+// kicker line, a later one naming only the marks above it did not. The knob kit owns the rule (KNOBS.legendHtml's
+// [said] set, which every view shares): that includes the ring-and-plus slot where a value for one command is set, so
+// no row says "One command" and no topic repeats a scope sentence.
 function paneLegend(keys) {
-  const said = ui.legendSaid;
-  const scope = !said.has("scope") && perCommandIn(keys) ? `<span class="lg sc">Every command, unless one is named</span>` : "";
-  if (scope) said.add("scope");
-  const items = KNOBS.legendHtml(keys, { bare: true }).split('<span class="lg">').filter(Boolean).map((s) => `<span class="lg">${s}`).filter((s) => !said.has(s));
-  items.forEach((s) => said.add(s));
-  return scope || items.length ? `<span class="legend">${scope}${items.join("")}</span>` : "";
+  return KNOBS.legendHtml(keys, { said: ui.legendSaid });
 }
 /** A section of settings: its kicker, what its rows' marks mean, and the rows. */
 const knobSec = (kicker, keys, opts = {}) => (keys.length ? DRAW.section(kicker, krowsHtml(keys, opts), { aside: paneLegend(keys) }) : "");
@@ -743,10 +738,11 @@ const weekTotal = (why) => { const per = ui.week[why]; return per && per.every((
 const limitOf = (head) => Number(ks.cfg?.layers?.perHead?.[head]?.maxInflight ?? val("maxInflight")) || 0;
 /** How loud a share is: the limit red from [bad], the key light from [watch], the text's own ink below. */
 const levelOf = (share, watch, bad) => (share >= bad ? "bad" : share >= watch ? "watch" : "ok");
-/** Two parts of a topic side by side once the plate holds both whole, one over the other below that (settings.css
- *  .pair). "lead" gives the first part the larger share, for a table beside a short list of settings. */
-const pair = (left, right, cls = "") => (left && right
-  ? `<div class="pair${cls ? ` ${cls}` : ""}"><div class="pcol">${left}</div><div class="pcol">${right}</div></div>` : left || right);
+/** Two parts of a topic side by side once the plate holds both whole, one over the other below that. The layout is the
+ *  kit's balanced topic (DRAW.topic: console.css .topic): the figures keep the left column and the settings that act on
+ *  them the right, and a section that belongs to neither goes to the shorter side. "lead" gives the first column the
+ *  larger share, for a table beside a short list of settings. */
+const pair = (left, right, cls = "") => DRAW.topic([{ html: left, col: 1 }, { html: right, col: 2 }], { lead: cls === "lead" });
 const today = () => String(startOfToday());
 /** One request's own row on Requests, in the week it lies in. */
 const rowUrl = (head, row) => `requests.html?win=7d#${encodeURIComponent(rowId(head, row))}`;
@@ -952,8 +948,13 @@ function pushback() {
 // WHAT HAPPENED TODAY STANDS IN ONE COLUMN, THE LIMITS THAT SHAPED IT IN THE OTHER (Oct 27): what the providers pushed
 // back with is part of today, so it sits under today's table, and a full-width section of two bars no longer ran a
 // 6-request bar 1,700 px long across the plate at 3822.
-const busyHtml = () => pair(DRAW.section("Today", `${busyHero()}${peaksTable()}`, { aside: queuedAside() }) + DRAW.section("Providers today", pushback()),
-  knobSec("splice's limits", LIMITS.filter((key) => keysOf("busy").includes(key))), "lead");
+// WHAT THE PROVIDERS PUSHED BACK WITH belongs to neither side, so it goes under whichever of the two is shorter (the kit's
+// balanced topic); the limits are pinned to the right, in the DOM before it, so they take their side before it takes its.
+const busyHtml = () => DRAW.topic([
+  { html: DRAW.section("Today", `${busyHero()}${peaksTable()}`, { aside: queuedAside() }), col: 1 },
+  { html: knobSec("splice's limits", LIMITS.filter((key) => keysOf("busy").includes(key))), col: 2 },
+  DRAW.section("Providers today", pushback()),
+], { lead: true });
 
 // ---------- Reasoning ----------
 // REASONING HAS NO FIGURE, SO IT OPENS ON THE THING ITSELF (Oct 26): nothing on the wire counts what a reasoning setting

@@ -565,32 +565,16 @@ async function tryLive(key) {
   render();
 }
 /** THE OPEN COMMAND IS THE OBJECT OPENED UP. Its header says what it is and what can be done to it; its body is its
- *  sections in columns, each column one plate with its sections under two-word kickers, 4u, a hairline and 4u apart,
- *  and each section that holds a change ends in its own Save. The page is the one scroll: the pane is in its flow,
- *  with no height and no scroll of its own (console.css, ONE SCROLL PER PAGE).
+ *  sections as plates on the kit's balanced board (DRAW.masonry), each plate one section under its two-word kicker, and
+ *  each section that holds a change ends in its own Save. The page is the one scroll: the pane is in its flow, with no
+ *  height and no scroll of its own (console.css, ONE SCROLL PER PAGE).
  *  HOW MANY COLUMNS is the pane's own measured width over PANE_COL_REM a column (kit colsFit, the rule Accounts' board
- *  uses), never the viewport: three where the pane is about 180rem wide, two at about 120rem, one below. Which section
- *  stands where is fixed for each count, so no section jumps column on a redraw; the log stays high in the first
- *  column, under Right now. Only the tail (Instructions with its project layers, then Settings) goes down whichever
- *  column is shortest for this command, decided once when the command opens, so a command with little to run does not
- *  leave one column long beside an empty one. The plates stand as tall as the tallest, and only Every setting, when
- *  opened, goes on under them in the same columns. */
+ *  uses), never the viewport: three where the pane is about 180rem wide, two at about 120rem, one below. The sections
+ *  keep the order they are read in and each goes where the board is shortest, measured on what is drawn, so no column
+ *  stands as a tall plate beside empty ones and a command with little to run does not leave one column long beside an
+ *  empty one. Only Every setting, when opened, goes on under them in the same columns. */
 const PANE_COL_REM = 58;
-const PANE_BASE = {
-  1: [["added", "now", "log", "models", "client", "prices", "where", "signin", "running", "settings", "prompt", "projects"]],
-  2: [["added", "now", "log", "where", "signin"], ["models", "client", "prices", "running"]],
-  3: [["added", "now", "log", "where", "signin"], ["models", "client", "prices"], ["running"]],
-};
-const PANE_TAILS = [["prompt", "projects"], ["settings"]];
-// where the tails stand until the command's own heights are known
-const TAILS_AT = { 2: [0, 0], 3: [1, 2] };
-function paneCols(n) {
-  if (n < 2) return PANE_BASE[1];
-  const at = ui.tails?.key === ui.open && ui.tails.n === n ? ui.tails.at : TAILS_AT[n];
-  const cols = PANE_BASE[n].map((ids) => [...ids]);
-  PANE_TAILS.forEach((ids, i) => cols[at[i]].push(...ids));
-  return cols;
-}
+const PANE_ORDER = ["added", "now", "log", "models", "client", "prices", "where", "signin", "running", "settings", "prompt", "projects"];
 // a section's own name rides its element, so an edit knows which section's Save it fills and #log lands on the log
 const tagSec = (id, html) => (html ? html.replace(/^<section /, `<section data-sec="${id}" `) : "");
 const SECTION_DRAW = {
@@ -615,12 +599,13 @@ function paneHtml() {
   if (!ui.draft) takeDraft(c);
   const d = ui.draft, st = draftState(c);
   const n = Math.min(3, Math.max(1, ui.cols || 1));
-  const cols = paneCols(n).map((ids) => DRAW.plate(ids.map((id) => tagSec(id, SECTION_DRAW[id](c, d, st))).join(""), "pcol"));
+  // a section with nothing in it draws nothing, so no plate stands empty
+  const plates = PANE_ORDER.map((id) => tagSec(id, SECTION_DRAW[id](c, d, st))).filter((html) => html.trim()).map((html) => DRAW.plate(html, "pcol"));
   // every setting, opened from Settings' disclosure, takes the pane's own columns under the sections: forty-odd rows in
   // one column would stand beside two that end far above it
   const every = ui.effOpen && !data.knobsErr && !pending("knobs") ? `<div class="everywrap${ui.fx?.eff ? " unfold" : ""}" id="every-settings">${everySetHtml(c, n)}</div>` : "";
   return `<div class="pane${ui.grow ? " unfold" : ""}" style="--c:${colorOf(c.family)}">${paneHead(c)}`
-    + `<div class="body"><div class="pcols" style="--n:${n}">${cols.join("")}</div>${every}</div></div>`;
+    + `<div class="body">${DRAW.masonry(plates, 0, { cls: "pcols", gap: "var(--gap-col)", n })}${every}</div></div>`;
 }
 /** How many columns the open pane's body holds now, and how wide each is in rem; true when the count, or whether a
  *  column has room for the settings two to a row, changed since the last draw. */
@@ -636,23 +621,7 @@ function fitCols() {
   ui.cols = n; ui.colW = colW;
   return moved;
 }
-/** Where the pane's tail sections stand for this command at this column count: each goes down the shortest column by the
- *  height its sections were drawn at, decided once, when what they hold has been read (the settings and the log), so a
- *  later poll never moves a section under the hand that is editing it. True when that moved a tail from where it stood. */
-function settleTails() {
-  const n = ui.cols || 1;
-  if (n < 2 || !ui.open || !root.querySelector(".pane .pcols") || (ui.tails?.key === ui.open && ui.tails.n === n)) return false;
-  if (pending("knobs") || (ui.logs[ui.open] === undefined && !ui.logWhy[ui.open])) return false;
-  const foot = (id) => {
-    const el = root.querySelector(`.pane [data-sec="${id}"]`);
-    return el ? el.offsetHeight + (parseFloat(getComputedStyle(el).marginTop) || 0) : 0;
-  };
-  const sum = (ids) => ids.reduce((a, id) => a + foot(id), 0);
-  const h = PANE_BASE[n].map(sum);
-  const at = PANE_TAILS.map((ids) => { const i = h.indexOf(Math.min(...h)); h[i] += sum(ids); return i; });
-  ui.tails = { key: ui.open, n, at };
-  return at.some((v, i) => v !== TAILS_AT[n][i]);
-}
+
 function paneHead(c) {
   const k = look(c), s = stateOf(c);
   const fix = s?.fix && !ui.fixing[c.key] && ui.sign?.key !== c.key && ui.keyin?.key !== c.key
@@ -1293,7 +1262,7 @@ function everySetHtml(c, n = 1) {
     const axis = timed ? `<span></span><span></span><div class="eaxis">${DRAW.axisRow(ax, "")}</div>` : "";
     // its height in rows: the head, each setting, the axis when it draws one
     return { w: 2 + list.length + (timed ? 2 : 0), html: `<div class="egroup"><div class="sechead sub"><h4 class="kicker">${esc(TOPIC_NAME[t] ?? "More")}</h4>`
-      + `<span class="pd-count"><b>${DRAW.n(list.length)}</b></span>${K.legendHtml(list)}</div>`
+      + `<span class="pd-count"><b>${DRAW.n(list.length)}</b></span></div>`
       + `<div class="effgrid${timed ? " timed" : ""}">${list.map(row).join("")}${axis}</div></div>` };
   });
   // the groups go down as many plates as the sections above stand in, each into the shortest so far, so the plates line
@@ -1301,7 +1270,9 @@ function everySetHtml(c, n = 1) {
   const plates = DRAW.packCols(blocks, n, (b) => b.w).map((col) => (col.items.length
     ? DRAW.plate(`<div class="kn everycol">${col.items.map((b) => b.html).join("")}</div>`, "pcol") : ""));
   const head = `<div class="everyhead"><p class="kicker on-wall">Every setting as this command runs it</p>`
-    + `<span class="pd-count"><b>${DRAW.n(keys.length)}</b></span>${DRAW.act({ word: "Hide", act: "eff", cls: "quiet small" })}</div>`;
+    // THE MARKS ARE SAID ONCE, FOR THE WHOLE VIEW (Oct 28): they were said on every group's kicker ("Takes a restart" on eight
+    // of them), so the one legend of every mark any group draws stands here, over the groups
+    + `<span class="pd-count"><b>${DRAW.n(keys.length)}</b></span>${K.legendHtml(keys, { one: false })}${DRAW.act({ word: "Hide", act: "eff", cls: "quiet small" })}</div>`;
   return `${head}<div class="ecols" style="--n:${n}">${plates.join("")}</div>`;
 }
 
@@ -2849,8 +2820,6 @@ function render() {
   // the open pane's columns, and the board's, come from their own width, read once they are in the page: a count that
   // changed draws once more
   if (ui.view === "commands" && fitCols()) draw();
-  // and once the sections stand in that many columns, where the tail goes is read from their heights
-  if (ui.view === "commands" && settleTails()) draw();
   if (ui.view === "every" && fitEvery()) draw();
   // the meters and bars take their widths once the markup is in; they grow from nothing only when the pane just opened
   DRAW.paint(root, { grow: ui.grow ? "all" : null });

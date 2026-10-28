@@ -71,14 +71,22 @@
 .kn code { font: 500 .88rem/1 var(--font-data); color: var(--text-body); background: var(--obj-sunk); border-radius: .3rem; padding: .2rem .4rem; }
 /* the empty slot that makes an exception: dashed, like every "add" on the console, at a chip's own size, and quiet
    until the row is under the eye (console.css sizes .add as a full-width tile, which a row's end is not) */
+/* THE SLOT IS JUST ITS PLUS AT REST AND SAYS ITS WORDS UNDER THE POINTER (Oct 28): the same dashed slot the legend names
+   once ("A value for one command"), so a list of settings repeats a shape and not a phrase. The row under the pointer, the
+   focused slot and an open menu open it to "One command"; a row that already holds a command's own value shows that value
+   drawn as its chip, and its slot is the plus after them. */
 .kn .chip.add.one {
-  width: auto; min-height: 0; gap: .4rem; padding: .32rem .6rem .32rem .45rem; opacity: .72; cursor: pointer;
-  font: 500 .9rem/1 var(--font-name); color: var(--text-body); box-shadow: none;
-  transition: opacity var(--t-hover) var(--e-out), color var(--t-hover) var(--e-out), border-color var(--t-hover) var(--e-out);
+  width: auto; min-height: 0; gap: 0; padding: .32rem; opacity: .72; cursor: pointer;
+  font: 500 .9rem/1 var(--font-name); color: var(--text-body); box-shadow: none; border-radius: var(--r-in);
+  transition: opacity var(--t-hover) var(--e-out), color var(--t-hover) var(--e-out), border-color var(--t-hover) var(--e-out), padding var(--t-hover) var(--e-out), gap var(--t-hover) var(--e-out);
 }
-.kn .ctl:hover .chip.add.one, .kn .chip.add.one[aria-expanded="true"] { opacity: 1; }
+.kn .chip.add.one .oc { display: inline-block; max-width: 0; overflow: hidden; opacity: 0; white-space: nowrap; transition: max-width var(--t-hover) var(--e-out), opacity var(--t-hover) var(--e-out); }
+.kn .ctl:hover .chip.add.one, .kn .krow:hover .chip.add.one, .kn .chip.add.one:focus-visible, .kn .chip.add.one[aria-expanded="true"] { opacity: 1; gap: .4rem; padding-right: .6rem; }
+.kn .ctl:hover .chip.add.one .oc, .kn .krow:hover .chip.add.one .oc, .kn .chip.add.one:focus-visible .oc, .kn .chip.add.one[aria-expanded="true"] .oc { max-width: 9rem; opacity: 1; }
 .kn .chip.add.one:hover { border-style: solid; border-color: var(--text-mute); color: var(--text); background: transparent; }
-.kn .chip.add.one svg { width: .95rem; height: .95rem; }
+.kn .chip.add.one svg { width: 1.1rem; height: 1.1rem; }
+/* the legend's own item for it, its ring dashed like the slot */
+.kn .legend .lg.one svg { color: var(--text-mute); }
 /* commands that agree read as one group: the value once, its commands under it */
 .kn .ogrp { display: inline-flex; align-items: center; flex-wrap: wrap; gap: .4rem; padding: .2rem .5rem .2rem .2rem; border: .12rem solid var(--track-line); border-radius: var(--r-in); }
 .kn .ogrp > .v { font: 600 .9rem/1 var(--font-data); color: var(--text); margin: 0 .3rem 0 .35rem; }

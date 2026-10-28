@@ -105,6 +105,45 @@ function modelName(labels, id) {
   return words.map((w) => MODEL_WORD[w] ?? w[0].toUpperCase() + w.slice(1)).join(" ");
 }
 
+// ---------- what to call a thing nobody named (Oct 28): ONE RULE FOR EVERY PAGE ----------
+// Nine of twenty-six live sessions were titled by a UUID, the serving login by his own address, and three logins by the
+// bare word "Account" — each page fell back to whatever identity it held. The rule: the user's own name if he set one;
+// otherwise a short readable name drawn from what the thing IS (a session: its command and project; a login: its provider
+// and plan; a key: the variable that holds it), never an id, a hex run, an address as a title or the bare word "Account";
+// and where two unnamed things would read the same, an ordinal in the order they are drawn. The ACT to name it
+// (DRAW.nameIt) stands beside the name, so a placeholder is always one press from being his.
+const ID_LIKE = /^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}|[0-9a-f]{6,}|[a-z]+[_-][0-9a-f]{6,}|\S+@\S+)$/i;
+const PLACEHOLDER = /^(?:signed-out\s+)?(?:account|login|session|unnamed)(?:\s+\d+)?$/i;
+/** The name a person gave, or "" where there is none: an id, a hex run, an address or a placeholder is not a name. */
+// an id fragment the daemon appends to tell two default names apart ("Max · 1a2b3c4d") is not part of the name
+const ownName = (s) => { const t = String(s ?? "").replace(/\s*[·(]\s*[0-9a-f]{6,}\)?\s*$/i, "").trim(); return t && !ID_LIKE.test(t) && !PLACEHOLDER.test(t) ? t : ""; };
+/** What to call [o], of [kind] "session", "login" or "key". Returns { text, own }: [own] is true when the user named it, so
+ *  a page knows whether to draw the act that names it. A session reads { name, command, project }, a login { name,
+ *  provider (a PROVIDER_NAME key), plan }, a key { name, variable }. */
+function displayName(kind, o = {}) {
+  const own = ownName(o.name);
+  if (own) return { text: own, own: true };
+  if (kind === "session") return { text: [o.command, o.project].filter(Boolean).join(" · ") || ownName(o.title) || "Session", own: false };
+  if (kind === "key") return { text: o.variable || "Key", own: false };
+  const provider = o.provider ? (PROVIDER_NAME[o.provider] ?? o.provider) : "";
+  // the number the daemon gave a login it could not name stays, so two of them are still two
+  const num = /^(?:signed-out\s+)?(?:account|login)\s+(\d+)$/i.exec(String(o.name ?? "").trim())?.[1] ?? "";
+  return { text: [provider, o.plan, num].filter(Boolean).join(" ") || "Login", own: false };
+}
+/** [list] named by displayName in the order given, with two unnamed things that would read alike told apart by an ordinal
+ *  in that order ("Claude Max", "Claude Max 2"): a name he gave is never changed. Returns [{ text, own }]. */
+function displayNames(kind, list) {
+  const named = list.map((o) => displayName(kind, o)), seen = new Map();
+  const count = new Map();
+  for (const n of named) if (!n.own) count.set(n.text, (count.get(n.text) ?? 0) + 1);
+  return named.map((n) => {
+    if (n.own || count.get(n.text) < 2) return n;
+    const at = (seen.get(n.text) ?? 0) + 1;
+    seen.set(n.text, at);
+    return at === 1 ? n : { ...n, text: `${n.text} ${at}` };
+  });
+}
+
 // ---------- fin's words for how a request ended (OutcomeTag.kt's tags) ----------
 // A clean request and a spent window have no word: the window shows its own lock and reset time. A stop is not
 // a failure (isStopped, OutcomeTag.kt:75-76).
@@ -285,12 +324,31 @@ const GHOST = {
   range: () => `<i class="ghost range" aria-hidden="true"></i>`,
   /** THE PROJECT TILES WHILE THE PROJECTS ARE READ (Oct 27): the tiles land only once the transcripts are listed, the
    *  last read on a page, so a line that drew nothing jumped the page down by the tiles' height when they came. [n]
-   *  tiles on the tiles' own equal columns at a wide page (tilesWide), else the picker's chip; a page with no count
-   *  to go by passes 0 and draws nothing. Requests and Usage both draw it. */
-  tiles: (n) => (!(n > 0) ? ""
-    : tilesWide() ? `<nav class="ptiles" aria-hidden="true">${Array.from({ length: n }, () => `<i class="ghost ptg"></i>`).join("")}</nav>`
-      : `<div class="lhead" aria-hidden="true">${GHOST.chip(13)}</div>`),
+   *  tiles on the tiles' own equal columns at a wide page (tilesWide), else the picker's chip. WITH NO [n] THE COUNT IS
+   *  THE ONE LAST DRAWN ON THIS PAGE (GHOST.count), never a guess: a page that has never drawn tiles draws nothing.
+   *  Each ghost is the tile's own parts (name, share, lamp row), so it stands the height the tile will. */
+  tiles(n = GHOST.count("tiles")) {
+    if (!(n > 0)) return "";
+    if (!tilesWide()) return `<div class="lhead" aria-hidden="true">${GHOST.chip(13)}</div>`;
+    const one = () => `<span class="ptile ghosted-tile"><span class="ptop">${GHOST.bar(7)}${GHOST.fig(3)}</span><i class="ghost pshare"></i><span class="plamps"></span></span>`;
+    return `<nav class="ptiles" aria-hidden="true"><div class="ptgrid">${Array.from({ length: n }, one).join("")}</div></nav>`;
+  },
+  /** HOW MUCH LANDS IS HOW MUCH LANDED LAST (Oct 28). A ghost is the size and count of what it waits for, so a page asks
+   *  what it last drew before it guesses: [key] names a kind of thing on this page ("tiles", "rows:ended", "cards") and
+   *  [count] answers with the last count drawn, else [fallback] (0 draws nothing, which is right for a first visit with no
+   *  response shape to go by). [remember] is called by the draw that lands, so the next first frame is this one's size.
+   *  Kept per page in localStorage; a browser with storage off simply never remembers. */
+  count(key, fallback = 0) {
+    try { return Number(JSON.parse(localStorage.getItem(GHOST_STORE) || "{}")[`${location.pathname}:${key}`]) || fallback; } catch { return fallback; }
+  },
+  remember(key, n) {
+    try {
+      const all = JSON.parse(localStorage.getItem(GHOST_STORE) || "{}"), at = `${location.pathname}:${key}`;
+      if (all[at] !== n) { all[at] = n; localStorage.setItem(GHOST_STORE, JSON.stringify(all)); }
+    } catch { /* storage off: nothing to remember */ }
+  },
 };
+const GHOST_STORE = "splice-console-ghosts";
 const clock = (d) => {
   const h = d.getHours() % 12 || 12, m = d.getMinutes(), ap = d.getHours() < 12 ? "AM" : "PM";
   return `${h}:${String(m).padStart(2, "0")} ${ap}`;
@@ -455,8 +513,31 @@ const DRAW = {
     if (words.length < 2) return raw;
     return words.map((w, i) => (i ? w.toLowerCase() : w)).join(" ");
   },
-  /** An object with nothing to report keeps its own shape and says so once, on itself, in one muted line. */
-  nothing: (word) => `<span class="nothing">${esc(word)}</span>`,
+  /** An object with nothing to report keeps its own shape and says so once, on itself, in one muted line. { slot } draws it
+   *  as the empty slot it is: a dashed rim round the one word, the line's own height, so an object with nothing in it is
+   *  a shape and not a sentence among the data (a plate of 575 x 130 px for "No memory" was a word on a wall). */
+  nothing: (word, { slot = false } = {}) => `<span class="nothing${slot ? " slot" : ""}">${esc(word)}</span>`,
+  /** ABSENCE HAS FOUR SHAPES, AND A CELL IS NEVER ONE OF THEM IN WORDS (Oct 28, the kit's one answer; every page used to
+   *  write its own word for it). Pick by what is missing:
+   *   · a FIGURE not read: DRAW.unread.fig, the dash, in the figure's own cell. Never a word, never a zero.
+   *   · a TRACK not read, or a window with nothing in it: DRAW.unread.track(), the meter's empty track, dashed.
+   *   · a BAR CELL not read: DRAW.unread.cell(), its dashed track and the dash on the column's right edge, so the
+   *     column's figures still end on one edge.
+   *   · a WHOLE OBJECT with nothing to report: DRAW.unread.object(word), said ONCE on the object, in one muted line,
+   *     never once per cell.
+   *  What is still being read is a ghost (GHOST), which moves; these stand still. */
+  unread: {
+    fig: `<i class="nr" title="Not reported">—</i>`,
+    track: (cls = "") => `<div class="bar unread${cls ? ` ${cls}` : ""}"></div>`,
+    cell: ({ cls = "", role = "" } = {}) => `<span class="barcell unread${cls ? ` ${cls}` : ""}"${role ? ` role="${role}"` : ""}><span class="vbar unread" aria-hidden="true"></span><b class="v"><i class="nr" title="Not reported">—</i></b></span>`,
+    object: (word, opts) => DRAW.nothing(word, { slot: true, ...opts }),
+  },
+  /** ONE LEGEND PER VIEW, for every mark or dot a view draws without a word on it (Oct 28). [items] is [{ mark, word }]:
+   *  the mark is the drawing itself (a lamp, a dot, a glyph, DRAW.unread.fig), the word what it means. A view draws this
+   *  ONCE, at the head of what it explains, so a dot's meaning is on the screen and never only in a hover title. A title
+   *  may repeat the word on the mark; it never carries it alone. */
+  legend: (items) => (items.length
+    ? `<span class="legend">${items.map(({ mark, word }) => `<span class="lg">${mark}${esc(word)}</span>`).join("")}</span>` : ""),
   /** A dollar figure in a table's cell: the kit's money spelling (dollars) without its "≈". A column of estimates says
    *  so ONCE, in its header ("Cost, estimated"), never on every row; a figure splice has no price for is the dash.
    *  dollars() keeps the mark for a figure that stands alone, away from any header. */
@@ -480,17 +561,19 @@ const DRAW = {
    *  [under] is the object the figure belongs to, on its own line under the figure — the login, the command, the
    *  window — and [tail] the state that goes with it, such as a DRAW.lock with its reset. A page that led with a
    *  figure and then had to say which thing it was about wrote that line itself (settings.css's .herocap). */
-  hero({ figure, level = "ok", count = null, word = "", of = "", href = null, under = "", tail = "" }) {
-    const inner = count == null ? `<span>${esc(of)}</span>` : `<b>${DRAW.n(count)}</b> ${esc(word)}<span>${esc(of)}</span>`;
+  hero({ figure, level = "ok", count = null, word = "", of = "", href = null, under = "", tail = "", key = "" }) {
+    // the figure and its count move from the last value to the new one when a re-read changes them (the kit's tween, below);
+    // [key] names the hero where the page has more than one of the same kind, else it is known by the section it leads
+    const inner = count == null ? `<span>${esc(of)}</span>` : `<b data-tn="${key ? `${esc(key)}:c` : ""}">${DRAW.n(count)}</b> ${esc(word)}<span>${esc(of)}</span>`;
     const cap = !of && count == null ? ""
       : href ? `<a class="pd-failed" href="${href}">${inner}${GO}</a>` : `<span class="pd-failed">${inner}</span>`;
     const line = under || tail ? `<p class="pd-under">${esc(under)}${tail}</p>` : "";
-    return `<div class="pd-top"><b class="pd-rate lv-${level}">${esc(figure)}</b>${cap}</div>${line}`;
+    return `<div class="pd-top"><b class="pd-rate lv-${level}" data-tn="${esc(key)}">${esc(figure)}</b>${cap}</div>${line}`;
   },
   /** A figure that leads a part of a section, 1.7rem, with its words on its baseline: "587 ended, last 7 days". */
-  focal: (figure, words) => `<div class="pd-sub"><b>${esc(figure)}</b>${esc(words)}</div>`,
+  focal: (figure, words, key = "") => `<div class="pd-sub"><b data-tn="${esc(key)}">${esc(figure)}</b>${esc(words)}</div>`,
   /** A count in a kicker line, as a door to exactly those items: "9 in 24 hours ↗". */
-  countDoor: (count, words, href) => `<a class="pd-count" href="${href}"><b>${DRAW.n(count)}</b> ${esc(words)}${GO}</a>`,
+  countDoor: (count, words, href) => `<a class="pd-count" href="${href}"><b data-tn="">${DRAW.n(count)}</b> ${esc(words)}${GO}</a>`,
 
   // ---------- a share of a limit or of a whole ----------
   /** THE METER (every window row on Accounts): 16.7 px tall at 3822, a sunk track with a rim, the fill in the provider's
@@ -517,6 +600,11 @@ const DRAW = {
         b.style.transform = "scaleX(0)";
         b.parentElement.classList.add("grow");
         requestAnimationFrame(() => requestAnimationFrame(() => (b.style.transform = "scaleX(1)")));
+      } else {
+        // a re-read that changes the share moves the fill from the old width to the new over 240 ms (the kit's tween)
+        b.dataset.tw = "";
+        b.dataset.w = b.dataset.v;
+        tweenBar(b);
       }
     }
   },
@@ -526,7 +614,7 @@ const DRAW = {
     const f = Math.max(0, Math.min(1, frac || 0));
     if (size === "focal") {
       return `<svg class="pd-ring" viewBox="0 0 44 44" ${label ? `role="img" aria-label="${esc(label)}"` : `aria-hidden="true"`}><circle class="rt" cx="22" cy="22" r="${RING_R}"/>`
-        + `<circle class="rv" cx="22" cy="22" r="${RING_R}" transform="rotate(-90 22 22)" stroke-dasharray="${(RING_C * f).toFixed(2)} ${RING_C.toFixed(2)}"/></svg>`;
+        + `<circle class="rv" data-tw="" data-ring="${f.toFixed(4)}" cx="22" cy="22" r="${RING_R}" transform="rotate(-90 22 22)" stroke-dasharray="${(RING_C * f).toFixed(2)} ${RING_C.toFixed(2)}"/></svg>`;
     }
     return `<svg class="ring" viewBox="0 0 40 40" aria-hidden="true"><circle class="trk" cx="20" cy="20" r="15"/><circle class="arc" cx="20" cy="20" r="15" stroke-dasharray="${(RESET_C * f).toFixed(1)} ${RESET_C.toFixed(1)}"/></svg>`;
   },
@@ -591,10 +679,13 @@ const DRAW = {
   /** A bar on its column's shared scale with its figure after it, so every row's figure ends on ONE right edge and the
    *  biggest and the worst are found before a digit is read. [w] is this row's percent of the column's largest.
    *  [label] is the column's own word, drawn only where the table is too narrow for its header. */
-  vbar: (w) => `<span class="vbar" aria-hidden="true"><b style="width:${Math.round(Math.max(0, Math.min(100, w)) * 10) / 10}%"></b></span>`,
-  /** [role] "cell" when the bar cell is a cell of a role="table" (the Usage Results rows). */
-  barCell: ({ w, text, label = "", cls = "", level = "", role = "" }) =>
-    `<span class="barcell${cls ? ` ${cls}` : ""}${level ? ` lv-${level}` : ""}"${role ? ` role="${role}"` : ""}>${label ? `<em>${esc(label)}</em>` : ""}${DRAW.vbar(w)}<b class="v">${text}</b></span>`,
+  vbar: (w, key = "") => { const v = Math.round(Math.max(0, Math.min(100, w)) * 10) / 10; return `<span class="vbar" aria-hidden="true"><b data-tw="${esc(key)}" data-w="${v}" style="width:${v}%"></b></span>`; },
+  /** [role] "cell" when the bar cell is a cell of a role="table" (the Usage Results rows). [key] names this cell for the value
+   *  helper (the kit's tween, below), so a re-read that changes the bar and its figure moves them from the old value to
+   *  the new over 240 ms; without one the cell is known by where it stands in the row that holds it. A figure that is
+   *  a plain number moves with its bar (the helper reads its digits). */
+  barCell: ({ w, text, label = "", cls = "", level = "", role = "", key = "" }) =>
+    `<span class="barcell${cls ? ` ${cls}` : ""}${level ? ` lv-${level}` : ""}"${role ? ` role="${role}"` : ""}>${label ? `<em>${esc(label)}</em>` : ""}${DRAW.vbar(w, key)}<b class="v" data-tn="${esc(key)}">${text}</b></span>`,
 
   // ---------- times: range bars on ONE log axis ----------
   /** The axis every range bar on a page shares, from a round figure under the smallest typical to one over the largest
@@ -659,9 +750,10 @@ const DRAW = {
     const parts = String(cls).split(" ").filter(Boolean);
     const row = parts.includes("row") ? " row" : "", mini = parts.filter((c) => c !== "row").join(" ");
     const pin = mark == null ? "" : `<i class="pd-mk" style="left:${Math.max(0, Math.min(100, mark)).toFixed(2)}%"></i>`;
-    return `<div class="pd-q${row}"><span class="k">${esc(label)}</span><b${level ? ` class="lv-${level}"` : ""}>${figure}</b>`
+    const share = Math.max(0, Math.min(100, w)).toFixed(2);
+    return `<div class="pd-q${row}"><span class="k">${esc(label)}</span><b${level ? ` class="lv-${level}"` : ""} data-tn="">${figure}</b>`
       + `<span class="pd-mini${mini ? ` ${mini}` : ""}${level ? ` lv-${level}` : ""}"${markTitle ? ` title="${esc(markTitle)}"` : ""}>`
-      + `<i style="width:${Math.max(0, Math.min(100, w)).toFixed(2)}%"></i>${pin}</span></div>`;
+      + `<i data-tw="" data-w="${share}" style="width:${share}%"></i>${pin}</span></div>`;
   },
 
   // ---------- the objects ----------
@@ -709,6 +801,36 @@ const DRAW = {
   cols: (items, min = 26, cls = "") => `<div class="cols${cls ? ` ${cls}` : ""}" style="--col-min:${min}rem">${items.join("")}</div>`,
   /** Groups of different heights flowed down columns at least [min] rem wide, the order running down each (.flow-cols). */
   flow: (items, min = 26) => `<div class="flow-cols" style="--col-min:${min}rem">${items.join("")}</div>`,
+  /** THE BALANCED BOARD (Oct 28): plates or groups of any height laid in as many columns of at least [min] rem as the width
+   *  holds, each into the column that is shortest at that point, MEASURED on what is drawn (kit masonry below), so no column
+   *  stands as a tall wall beside blocks of empty screen. The order runs across the top and then down. An item of
+   *  `data-cols="k"` is k columns wide (a provider with many cards), `data-cols="all"` the whole row. It needs no weights and
+   *  no estimate of a card's height, which is what Usage's packBoard, Sessions' column fill and Models' pane columns each
+   *  guessed at. [gap] is the space between blocks down a column, 36.4 px (2.4rem) by default, as groups stand on a board;
+   *  it may be any length, calc() and var() included. [n] fixes the number of columns where the page has already decided
+   *  it from its own rule (Sessions' 72rem a column, Models' pane); without it the width decides, [min] rem a column. */
+  masonry: (items, min = 26, { cls = "", gap = "", n = 0 } = {}) =>
+    `<div class="mason${cls ? ` ${cls}` : ""}" style="--col-min:${min}rem${gap ? `;--mason-gap:${gap}` : ""}${n ? `;grid-template-columns:repeat(${n},minmax(0,1fr))` : ""}">${items.join("")}</div>`,
+  /** A TOPIC IN BALANCED COLUMNS (Oct 28): the sections of one topic (a figure's section, the settings that act on it, the
+   *  next section) in two columns once the plate holds both whole (a plate 110rem wide; below that one column, in order),
+   *  laid by the measured rule of DRAW.masonry, so a section that belongs to neither side goes to the shorter one and no
+   *  column leaves a block of empty viewport under it. [parts] is a list of sections, each a string or { html, col }: a
+   *  part with `col` 1 or 2 keeps that side (the figures at the left, the settings that act on them at the right), a part
+   *  without goes to whichever side is shorter at that point. { lead } gives the first column the larger share (3 : 2), for
+   *  a table beside a short list of settings. This is the settings page's `.pair`, lifted: it keeps that class for the
+   *  rules that tie its halves (the terminal's lines and the settings that decide them). */
+  topic(parts, { lead = false, cls = "" } = {}) {
+    const items = parts.filter(Boolean).map((p) => (typeof p === "string" ? { html: p } : p)).filter((p) => p.html);
+    if (items.length < 2) return items[0]?.html ?? "";
+    return `<div class="topic pair mason${lead ? " lead" : ""}${cls ? ` ${cls}` : ""}">${items.map((p) => `<div class="pcol"${p.col ? ` data-side="${p.col}"` : ""}>${p.html}</div>`).join("")}</div>`;
+  },
+  /** A DETAIL OPENED IN PLACE IS HELD NEAR THE WIDTH ITS CONTENT NEEDS (Oct 28), 56rem unless [rem] says another: the rest
+   *  of the row is left to what belongs BESIDE it, never to a rail drawn 3,600 px long for a six-second request.
+   *  [body] is the detail; [beside] is the neighbour that takes the rest of the row (a summary, the figures the detail is
+   *  about), drawn first on a narrow page and under the detail below 2 x [rem]. Without [beside] the detail is held to
+   *  [rem] and the rest of the row is the page's. */
+  drill: (body, { beside = "", rem = 56, cls = "" } = {}) =>
+    `<div class="detailbox${beside ? " beside" : ""}${cls ? ` ${cls}` : ""}" style="--drill-w:${rem}rem"><div class="detailbox-main">${body}</div>${beside ? `<div class="detailbox-side">${beside}</div>` : ""}</div>`,
   /** How many columns [rem] wide [el]'s width holds, with its own column gap between them: a board's rule at every
    *  width (Accounts: 40rem a column, five at 3822 and two at 1440). */
   colsFit(el, rem) {
@@ -744,6 +866,12 @@ const DRAW = {
     `<button class="act${cls ? ` ${cls}` : ""}" type="button" data-act="${esc(act)}"${data}${busy ? ` aria-busy="true"` : ""}${disabled ? " disabled" : ""}>${esc(word)}</button>`,
   /** What an act did, in place and in plain words: nothing to hunt for in a console or a banner. */
   result: (word, tone = "") => `<span class="result${tone ? ` ${tone}` : ""}" role="status">${esc(word)}</span>`,
+  /** WHAT TO CALL A THING NOBODY NAMED: displayName(kind, o) → { text, own }, displayNames(kind, list) for a list that tells
+   *  two alike apart, and ownName(s) for the name a person gave or "". The rule is above, with its reasons. */
+  name: displayName, names: displayNames, ownName,
+  /** The act that names it, beside the placeholder name: "Name it", the console's small quiet act. A page that draws a
+   *  name where { own } is false draws this beside it, whatever the object. */
+  nameIt: ({ act = "rename", data = "", word = "Name it" } = {}) => DRAW.act({ word, act, cls: "quiet small", data }),
   /** A lamp: a dark socket with an ink ring, lit in the state's own colour. "working" draws the live trace, "needs"
    *  the Needs-you ring, "stalled" the flat line in the limit red, and anything else an unlit dot. */
   lamp: (kind) => `<span class="tlamp${kind ? ` ${kind}` : ""}" aria-hidden="true">${TLAMP[kind] ?? "<i></i>"}</span>`,
@@ -751,6 +879,9 @@ const DRAW = {
    *  session, then the act and the way out. The second press acts. (kit armedAsk) */
   armed: (said, cut, act, keep, tail = "") => armedAsk(said, cut, act, keep, tail),
   go: GO,
+  /** The attribute that lets an object (a row, a tile, a card) travel to its new place when a re-read reorders it, over
+   *  --t-move: put it in the object's opening tag, with the key that is the same on every read ("row:<id>"). */
+  flip: (key) => ` data-flip="${esc(key)}"`,
 };
 
 // ---------- the stacked bar's labels, fitted to the bar as it is drawn (Oct 27) ----------
@@ -802,13 +933,161 @@ function fitStack(pop) {
 }
 const fitStacks = (root = document) => { for (const pop of root.querySelectorAll(".pd-pop")) fitStack(pop); };
 new MutationObserver((records) => {
-  for (const r of records) for (const n of r.addedNodes) {
-    if (n.nodeType !== 1) continue;
-    if (n.matches(".pd-pop")) fitStack(n); else if (n.firstElementChild) fitStacks(n);
+  const boards = new Set();
+  for (const r of records) {
+    // a block added to a balanced board, or one that grew inside it, lays the board again
+    const box = r.target.nodeType === 1 ? r.target.closest(".mason") : r.target.parentElement?.closest(".mason");
+    if (box) boards.add(box);
+    for (const n of r.addedNodes) {
+      if (n.nodeType !== 1) continue;
+      if (n.matches(".pd-pop")) fitStack(n); else if (n.firstElementChild) fitStacks(n);
+      settle(n);
+    }
   }
+  for (const box of boards) layMason(box);
+  watchGhosts();
 }).observe(document.documentElement, { childList: true, subtree: true });
-addEventListener("resize", () => fitStacks());
-document.fonts?.ready.then(() => { fitRound++; fitStacks(); });
+addEventListener("resize", () => { fitStacks(); measureFlips(); for (const box of document.querySelectorAll(".mason")) layMason(box); });
+document.fonts?.ready.then(() => { fitRound++; fitStacks(); for (const box of document.querySelectorAll(".mason")) layMason(box); });
+
+// ---------- a value that changed moves to its new place (Oct 28) ----------
+// Pages draw by replacing markup, so a re-read that changes a bar or a figure used to swap it in one frame, and a row that
+// reorders jumped. The kit now remembers the last value it drew at each place and, when a new drawing lands there with
+// another, moves from the old to the new over --t-snap (a bar's width, a figure's number) or --t-move (a row's position):
+//   data-tw="key" data-w="percent"   a bar's fill (DRAW.vbar, DRAW.meter's paint, the tiles' shares, DRAW.miniPair)
+//   data-tn="key"                    a figure whose text is one number with its unit (DRAW.hero, DRAW.focal, DRAW.barCell)
+//   data-flip="key"                  an object that may change places (the project tiles, a page's rows: DRAW.flip(key))
+// [key] is optional: without one a value is known by the closest element with an identity of its own (data-key,
+// data-open, data-p, data-a, an id) and the way down from it, and a value with no such place is drawn, not moved. The first
+// drawing at a place has nothing to move from and just draws; reduced motion draws every value at once.
+const TW = new Map();   // place → the last value drawn there
+const TWF = new Map();  // place → where a movable object last stood (page coordinates)
+const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const TW_HOST = "[data-key],[data-open],[data-p],[data-a],[data-meter],[data-grow],[data-f],[id]";
+function twKey(el, kind) {
+  const own = el.getAttribute(kind === "n" ? "data-tn" : "data-tw");
+  if (own) return `${location.pathname}|${own}|${kind}`;
+  const host = el.parentElement?.closest(TW_HOST);
+  if (!host) return null;
+  const id = host.getAttribute("data-key") || host.getAttribute("data-open") || host.getAttribute("data-p") || host.dataset.a || host.dataset.meter || host.dataset.grow || host.dataset.f || host.id;
+  const path = [];
+  for (let n = el; n && n !== host; n = n.parentElement) {
+    const same = [...(n.parentElement?.children ?? [])].filter((x) => x.tagName === n.tagName && x.className === n.className);
+    path.push(`${n.tagName}.${n.className}:${same.indexOf(n)}`);
+  }
+  return path.length > 7 ? null : `${location.pathname}|${id}|${path.join("/")}|${kind}`;
+}
+/** A bar's fill, or a ring's arc, from the width (or share) last drawn there to the one now drawn. */
+function tweenBar(b) {
+  const key = twKey(b, "w"), ring = b.dataset.ring != null, cur = parseFloat(ring ? b.dataset.ring : b.dataset.w);
+  if (key == null || !Number.isFinite(cur)) return;
+  const prev = TW.get(key);
+  TW.set(key, cur);
+  if (prev == null || Math.abs(prev - cur) < (ring ? 0.0005 : 0.05) || reducedMotion()) return;
+  if (ring) { b.style.strokeDasharray = `${(RING_C * prev).toFixed(2)} ${RING_C.toFixed(2)}`; b.getBoundingClientRect(); b.style.strokeDasharray = `${(RING_C * cur).toFixed(2)} ${RING_C.toFixed(2)}`; return; }
+  b.style.width = `${prev}%`;
+  b.getBoundingClientRect();   // the old width is what the transition starts from
+  b.style.width = `${cur}%`;
+}
+const TW_NUM = /^([^\d-]*)(-?[\d,]*\.?\d+)([^\d]*)$/;
+/** A figure that is one number with its unit counts from the last number drawn there to this one, in the same spelling:
+ *  digits, grouping and unit stay, only the number runs. A figure with markup in it, or whose unit changed, just swaps. */
+function tweenFigure(el) {
+  if (el.children.length) return;
+  const key = twKey(el, "n"), text = el.textContent, m = TW_NUM.exec(text);
+  if (key == null) return;
+  if (!m) { TW.delete(key); return; }
+  const cur = parseFloat(m[2].replace(/,/g, "")), prev = TW.get(key);
+  TW.set(key, { v: cur, pre: m[1], suf: m[3] });
+  if (!prev || prev.pre !== m[1] || prev.suf !== m[3] || prev.v === cur || reducedMotion()) return;
+  const dec = (m[2].split(".")[1] || "").length, group = m[2].includes(","), from = prev.v, t0 = performance.now();
+  const write = (x) => `${m[1]}${x.toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec, useGrouping: group })}${m[3]}`;
+  el.textContent = write(from);
+  const step = (t) => {
+    if (!el.isConnected) return;
+    const p = Math.min(1, (t - t0) / 240);
+    el.textContent = p >= 1 ? text : write(from + (cur - from) * (1 - (1 - p) ** 3));
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+const pageAt = (el) => { const r = el.getBoundingClientRect(); return { x: r.left + scrollX, y: r.top + scrollY }; };
+/** An object that stood somewhere else when it was last drawn travels from there to where it stands now (FLIP). */
+function flipMove(el) {
+  const key = `${location.pathname}|${el.dataset.flip}`, now = pageAt(el), was = TWF.get(key);
+  TWF.set(key, now);
+  if (!was || reducedMotion()) return;
+  const dx = was.x - now.x, dy = was.y - now.y;
+  if (Math.abs(dx) + Math.abs(dy) < 2 || Math.abs(dx) + Math.abs(dy) > 2400) return;
+  el.style.transition = "none";
+  el.style.transform = `translate(${dx}px, ${dy}px)`;
+  el.getBoundingClientRect();
+  el.style.transition = "transform var(--t-move) var(--e-io)";
+  el.style.transform = "";
+  el.addEventListener("transitionend", () => { el.style.transition = ""; }, { once: true });
+}
+/** Where every movable object stands, kept fresh so a re-read has its old place to move from. */
+function measureFlips() { for (const el of document.querySelectorAll("[data-flip]")) TWF.set(`${location.pathname}|${el.dataset.flip}`, pageAt(el)); }
+setInterval(() => { if (!document.hidden) measureFlips(); }, 400);
+/** The values and places in a subtree that has just landed. */
+function settle(root) {
+  const find = (sel) => (root.matches(sel) ? [root] : []).concat([...root.querySelectorAll(sel)]);
+  for (const b of find("[data-tw]")) if (b.dataset.w != null || b.dataset.ring != null) tweenBar(b);
+  for (const f of find("[data-tn]")) tweenFigure(f);
+  for (const m of find(".mason")) layMason(m);
+  for (const el of find("[data-flip]")) flipMove(el);
+}
+
+// ---------- the balanced board: blocks of any height into the shortest column, measured (Oct 28) ----------
+// DRAW.masonry and DRAW.topic lay a grid of 1 px rows; each block spans as many rows as it is tall plus the gap under it,
+// and the grid's own auto-placement puts the next block in the topmost free place, which is the shortest column. A block
+// that cannot fit a narrow board's columns takes the board's whole width instead. Blocks are measured again whenever one
+// changes size, so a card that opens or a column that wraps relays the board, and the first block of every column is
+// marked (.mtop) so a rule above each other block starts after the gap, not at the column's head.
+const MASON_RO = new ResizeObserver((entries) => { for (const e of entries) { const box = e.target.parentElement; if (box) layMason(box); } });
+function layMason(box) {
+  if (!box.isConnected) return;
+  const cs = getComputedStyle(box), rootPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  const gapRaw = cs.getPropertyValue("--mason-gap").trim() || "2.4rem";   // a registered length: computed in pixels
+  const gap = gapRaw.endsWith("px") ? parseFloat(gapRaw) : parseFloat(gapRaw) * rootPx;
+  const cols = Math.max(1, cs.gridTemplateColumns.split(" ").filter(Boolean).length);
+  const items = [...box.children];
+  for (const it of items) {
+    if (!MASON_SEEN.has(it)) { MASON_SEEN.add(it); MASON_RO.observe(it); }
+    const want = it.dataset.cols === "all" ? cols : Math.max(1, Number(it.dataset.cols) || 1);
+    it.style.setProperty("--span-eff", String(Math.min(want, cols)));
+    it.style.setProperty("--rows", String(Math.max(1, Math.ceil(it.getBoundingClientRect().height + gap))));
+  }
+  const top = box.getBoundingClientRect().top;
+  for (const it of items) it.classList.toggle("mtop", it.getBoundingClientRect().top - top < 1);
+}
+const MASON_SEEN = new WeakSet();
+
+// ---------- a read that is slow says so, once (Oct 28) ----------
+// A page that waits draws ghosts, which move at one stripe cycle a second whether the read is a moment old or has been
+// stuck for a minute, so a stuck read looked like a fresh one. When a ghost has stood on the page for SLOW_READ_MS without
+// the read landing, the page's header says it ONCE, in one muted line in the header's own row, and takes it back when
+// the first ghost goes. The words say the fact and nothing else.
+const SLOW_READ_MS = 6000;
+let ghostSince = 0;
+function watchGhosts() {
+  const page = document.querySelector("main.page");
+  if (!page) return;
+  const waiting = Boolean(page.querySelector(".ghost, .ghosted"));
+  const note = page.querySelector(".head > .slowread");
+  if (!waiting) { ghostSince = 0; note?.remove(); return; }
+  if (!ghostSince) ghostSince = Date.now();
+  if (note || Date.now() - ghostSince < SLOW_READ_MS) return;
+  const head = page.querySelector(".head");
+  if (!head) return;
+  const el = document.createElement("span");
+  el.className = "slowread";
+  el.setAttribute("role", "status");
+  el.textContent = "Slow to read";
+  const title = head.querySelector("h1, .titles");
+  if (title) title.after(el); else head.prepend(el);
+}
+setInterval(watchGhosts, 1000);
 
 // ---------- what a page says about a session: fin's states, element first and the word small ----------
 //
@@ -1366,13 +1645,19 @@ const sumCounts = (lists) => ["needs", "stalled", "working"].map((k) => [k, list
  *  truncates before its total does (the total sits beside the name, never at the lamps' end, where "4" and "1,300"
  *  would read as one number).
  *
- *  EACH TILE SAYS WHAT IT COUNTS AND DRAWS ITS SHARE (Oct 27). The figure carries its unit on its own baseline,
- *  "2,127 requests", once per tile: a bare "2,127" changed meaning with the page, and the unit said once over the row
- *  read as the page's title again ("TEAMS" under "Teams"). Every tile but Every project, which is the whole, draws its
- *  total on one track as a share of Every project's, and the tiles stand in equal columns (console.css .ptiles), so
- *  the shares compare by eye. A project with nothing in the window keeps its tile, since the tile is how it is
- *  picked, drawn quiet: a dashed rim, its 0 muted and an empty track. */
+ *  A ROW OF TILES SAYS WHAT IT COUNTS ONCE, AND DRAWS EVERY SHARE AS A BAR (Oct 28). The unit stands once, on the one tile
+ *  that is the whole, beside its figure ("60B tokens"); every other tile is a bare figure under it, in its own column, so
+ *  "tokens" is not printed on nine tiles over a hairline. (Oct 27 had put the unit on each tile because said once over
+ *  the row it read as the page's title again, "TEAMS" under "Teams"; on the first tile it sits on a figure's baseline
+ *  and cannot read as a title.) Every tile draws its total as a share of Every project's on the kit's own track
+ *  (--meter-h, 16.7 px at 3822, a bar a reader reads at that width, not a hairline), the tiles stand in equal columns
+ *  (console.css .ptiles) so the shares compare by eye, and Every project's own track is the whole, full, the length
+ *  every other bar is read against. A project with nothing in the window is a small quiet tile, since the tile is how it
+ *  is picked: a dashed rim, its name and a muted 0, no track and no equal share of the row, so three empty projects no
+ *  longer take half of it. Every tile may travel when the order changes (data-flip), and its figure and bar move from the
+ *  last value to the new one (data-tw, data-tn). */
 function tilesHtml(items, pick, show = showCount, unit = "") {
+  GHOST.remember("tiles", items.length);
   const all = items.find(([k]) => k === "")?.[3];
   const tiles = items.map(([k, label, counts, total, words]) => {
     const on = (pick ?? "") === k, every = k === "", zero = total === 0 && !every;
@@ -1380,19 +1665,25 @@ function tilesHtml(items, pick, show = showCount, unit = "") {
     // total has not landed draws the figure and the share as the shapes that will land there, and the page under
     // the row stays where it is. It used to lose both, which left a 10 px stripe and moved the page by ~100 px.
     // A COUNT THAT COULD NOT BE READ IS NOT A COUNT ON ITS WAY: null is being read (stripes, which move), false is a read
-    // that answered with a failure (a muted dash and an empty track, which stand still), so a tile whose figure will
+    // that answered with a failure (a muted dash and a dashed empty track, which stand still), so a tile whose figure will
     // never come is told from one whose figure is coming.
     const figure = total == null ? GHOST.bar(2.6) : total === false ? NOT_READ : show(total);
-    const what = unit ? `<span class="punit">${esc(total === 1 ? unit : `${unit}s`)}</span>` : "";
-    const share = every ? "" : total == null ? `<span class="pshare ghost" aria-hidden="true"></span>`
-      : `<span class="pshare" aria-hidden="true"><i style="width:${total !== false && all > 0 ? Math.min(100, (total / all) * 100).toFixed(1) : 0}%"></i></span>`;
-    return `<button class="ptile${on ? " on" : ""}${zero ? " zero" : ""}" data-act="pickproj" data-p="${esc(k)}" aria-pressed="${on}" aria-label="${esc(`${label}, ${words}`)}" title="${esc(label)}">`
-      // the figure and its unit are one run of words with a real space between them, so the tile reads "2,262 sessions"
-      // as text and aloud, never "2,262sessions"; the run keeps together on the name's baseline
-      + `<span class="ptop"><span class="tname">${esc(label)}</span><span class="pfigs"><span class="ptotal">${figure}</span>${what ? ` ${what}` : ""}</span></span>${share}`
-      + `<span class="plamps">${counts.filter(([, n]) => n).map((c) => tlampHtml(c, true)).join("")}</span></button>`;
-  }).join("");
-  return `<nav class="ptiles" aria-label="Projects">${tiles}</nav>`;
+    const what = every && unit ? `<span class="punit">${esc(total === 1 ? unit : `${unit}s`)}</span>` : "";
+    const part = every ? (all > 0 ? 100 : null) : total != null && total !== false && all > 0 ? Math.min(100, (total / all) * 100) : null;
+    const share = total == null ? `<span class="pshare ghost" aria-hidden="true"></span>`
+      : zero ? ""
+        : part == null ? `<span class="pshare unread" aria-hidden="true"></span>`
+          : `<span class="pshare${every ? " whole" : ""}" aria-hidden="true"><i data-tw="" data-w="${part.toFixed(1)}" style="width:${part.toFixed(1)}%"></i></span>`;
+    return [zero, `<button class="ptile${on ? " on" : ""}${zero ? " zero" : ""}${every ? " every" : ""}" data-act="pickproj" data-p="${esc(k)}"${DRAW.flip(`tile:${k}`)} aria-pressed="${on}" aria-label="${esc(`${label}, ${words}`)}" title="${esc(label)}">`
+      // the figure and its unit are one run of words with a real space between them, so the tile reads "60B tokens"
+      // as text and aloud, never "60Btokens"; the run keeps together on the name's baseline
+      + `<span class="ptop"><span class="tname">${esc(label)}</span><span class="pfigs"><span class="ptotal" data-tn="">${figure}</span>${what ? ` ${what}` : ""}</span></span>${share}`
+      + `<span class="plamps">${counts.filter(([, n]) => n).map((c) => tlampHtml(c, true)).join("")}</span></button>`];
+  });
+  // the tiles with something to count stand in equal columns that fill the row; those with nothing stand together after
+  // them, each as wide as its own words, so a project with no requests never takes a full column
+  const some = tiles.filter(([zero]) => !zero).map(([, html]) => html).join(""), none = tiles.filter(([zero]) => zero).map(([, html]) => html).join("");
+  return `<nav class="ptiles" aria-label="Projects"><div class="ptgrid">${some}</div>${none ? `<span class="pzeros">${none}</span>` : ""}</nav>`;
 }
 
 // ---------- the projects as Teams and Requests see them: off /api/sessions rows, in Sessions' group order ----------

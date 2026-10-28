@@ -54,10 +54,10 @@
 .rdset.bad .why { color: var(--text-body); }
 
 /* ---------- the board: every plan and key a card, grouped under its provider, on the board's own columns ---------- */
-/* usage.js packs the groups (boardCols, packBoard): the provider with the most logins splits its cards down k of the
-   columns, the others fill the columns left, each into the shortest, so no column ends in a hole beside a tall one. */
-.usage .board { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); gap: 2.4rem var(--gap-col); align-items: start; }
-.pstack { grid-column: span var(--span, 1); min-width: 0; display: flex; flex-direction: column; gap: 2.4rem; }
+/* the groups lie on the kit's balanced board (DRAW.masonry): the provider with the most logins takes k columns and splits
+   its cards down them, every other group is one column wide and goes where the board is shortest, so no column ends in a
+   hole beside a tall one. */
+.usage .plans > .add { text-decoration: none; }
 .ugroup { min-width: 0; }
 /* a provider's name heads its set of cards: a 1.4rem title beside its colour dot, every head one height, so the first
    cards of side-by-side groups start on one line */
@@ -114,8 +114,6 @@
 .namebox { display: inline-flex; align-items: center; flex-wrap: wrap; gap: .5rem; min-width: 0; flex: 1 1 14rem; }
 .namebox .nmfield { flex: 1 1 9rem; min-width: 7rem; }
 .pcard .act.small, .brow .act.small { flex: none; }
-/* the empty board: the dashed tile where the first plan or key will land, one column of the board wide */
-.usage .board > .add { grid-column: span 1; text-decoration: none; }
 
 /* ---------- the scope a drill narrowed the page to: drawn once, over the bands it narrows ---------- */
 .scopeline:empty { display: none; }

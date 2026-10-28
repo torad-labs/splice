@@ -87,10 +87,14 @@ test("availability comparison requires the real warning capture and concrete can
   const directory = mkdtempSync(join(tmpdir(), "availability-contract-"));
   try {
     const source = run(); source.directory = directory;
+    const tools: ObjectValue[] = [{ type: "custom", name: "exec", format: { type: "grammar", syntax: "lark", definition: "actual source grammar" } },
+      { type: "function", name: "wait", strict: false, parameters: { type: "object", properties: {} } }];
+    const declared: ObjectValue[] = [{ type: "namespace", name: "functions", tools }];
+    source.observations[0]!.input.unshift({ type: "additional_tools", tools: declared });
     mkdirSync(join(directory, "terminal"));
     writeFileSync(join(directory, "terminal/availability-warning-view.json"), JSON.stringify(capture()));
     const candidate: ObjectValue = { callbacks: [], clientText: [""], declarations: [{ input: [{ type: "additional_tools",
-      tools: [{ name: "exec" }, { name: "wait" }] }] }], availability: { host: "disabled", toolMode: "code_mode_only",
+      tools: declared }] }], availability: { host: "disabled", toolMode: "code_mode_only",
       reason: "code-mode host is disabled", noticeChannel: "head-log", notices: [`[code-mode] ${availabilityWarning("code_mode_only")}`] } };
     expect(() => compareAvailabilityBoundary(source, candidate)).not.toThrow();
     const changes: ObjectValue[] = [{ clientText: ["Invented assistant warning"] }, { callbacks: [{ name: "Ping" }] },

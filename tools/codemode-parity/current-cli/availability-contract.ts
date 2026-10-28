@@ -104,11 +104,29 @@ export function compareAvailabilityBoundary(source: CliRun, candidate: ObjectVal
     assert.ok(body && typeof body === "object" && !Array.isArray(body) && Array.isArray(body.input));
     const first = body.input[0];
     assert.ok(first && typeof first === "object" && !Array.isArray(first) && first.type === "additional_tools" && Array.isArray(first.tools));
-    const names = first.tools.map(tool => tool && typeof tool === "object" && !Array.isArray(tool) ? tool.name : null);
-    if (mode === "code_mode_only") assert.deepEqual(names, ["exec", "wait"], "Only mode must retain its fail-closed surface");
+    if (mode === "code_mode_only") compareOnlyDeclarations(source, first.tools);
     else assert.deepEqual(first.tools, [{ type: "function", name: "Ping", description: "Unused control-case catalog entry",
       parameters: { type: "object", properties: {} } }], "Direct fallback changed the actual advertised direct tool");
   }
+}
+
+function compareOnlyDeclarations(source: CliRun, actual: unknown[]): void {
+  const object = (value: unknown): ObjectValue => { assert.ok(value && typeof value === "object" && !Array.isArray(value)); return value as ObjectValue; };
+  assert.equal(actual.length, 1, "Only mode requires its single functions namespace");
+  const namespace = object(actual[0]); assert.equal(namespace.type, "namespace"); assert.equal(namespace.name, "functions");
+  assert.ok(Array.isArray(namespace.tools));
+  const tools = namespace.tools.map(object);
+  assert.deepEqual(tools.map(tool => [tool.type, tool.name]), [["custom", "exec"], ["function", "wait"]], "Only mode must retain its fail-closed surface");
+  const declarations = source.observations[0]!.input.find(item => item.type === "additional_tools")?.tools;
+  assert.ok(Array.isArray(declarations), "Source Only mode supplied no actual declaration surface");
+  const functions = declarations.map(object).filter(item => item.type === "namespace" && item.name === "functions");
+  assert.equal(functions.length, 1); assert.ok(Array.isArray(functions[0]!.tools));
+  const native = functions[0]!.tools.map(object);
+  const exec = native.filter(tool => tool.type === "custom" && tool.name === "exec"), wait = native.filter(tool => tool.type === "function" && tool.name === "wait");
+  assert.equal(exec.length, 1); assert.equal(wait.length, 1);
+  assert.equal(JSON.stringify(tools[0]!.format), JSON.stringify(exec[0]!.format), "Only exec grammar differs from actual source");
+  assert.equal(tools[1]!.strict, wait[0]!.strict, "Only wait strictness differs from actual source");
+  assert.equal(JSON.stringify(tools[1]!.parameters), JSON.stringify(wait[0]!.parameters), "Only wait schema differs from actual source");
 }
 
 /** Xterm's wrap flag distinguishes a display wrap from an actual newline in the warning. */

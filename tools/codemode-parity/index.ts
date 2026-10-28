@@ -31,14 +31,14 @@ for (let i = 0; i < args.length; i += 2) {
   if (!name?.startsWith("--") || !value || value.startsWith("--") || options.has(name)) throw new Error("arguments must be unique --name VALUE pairs");
   options.set(name, value);
 }
-const known = ["--candidate-jar", "--candidate-host", "--reference-host", "--baseline-jar", "--java", "--evidence", "--installed-pid", "--host-pid", "--jar-fd", "--source-repo", "--source-cli-build", "--apply-patch-build"];
+const known = ["--candidate-jar", "--candidate-host", "--reference-host", "--baseline-jar", "--java", "--evidence", "--installed-pid", "--host-pid", "--jar-fd", "--source-repo", "--source-cli-build", "--apply-patch-build", "--compiler-bindings"];
 for (const option of options.keys()) if (!known.includes(option)) throw new Error(`unknown option ${option}`);
 let evidence = resolve(options.get("--evidence") ?? defaultEvidence);
 let evidenceSelected = false;
 const progressPath = resolve(directory, "progress.json");
 const lock = await Bun.file(resolve(directory, "reference-lock.json")).json();
 const currentFloor = command === "qualify-floor-current";
-const currentInputs = currentFloor ? await loadCurrentInputs(options.get("--source-repo")) : undefined;
+const currentInputs = currentFloor ? await loadCurrentInputs(options.get("--source-repo"), options.get("--compiler-bindings")) : undefined;
 if (currentInputs?.findings.length) throw new Error(currentInputs.findings.join("; "));
 const activeReferenceHash = currentInputs?.lock.nativeHostSha256 ?? lock.nativeExecutableSha256;
 const contractBytes = await readFile(resolve(directory, "contract.json"));
@@ -244,7 +244,7 @@ try {
   else if (command === "qualify-current") { const { qualifyCurrent } = await import("./current-qualify"); await qualifyCurrent(options); }
   else if (command === "attest-install-current") { const { attestCurrentInstallation } = await import("./current-qualify"); await attestCurrentInstallation(options); }
   else if (command === "inventory-check") {
-    const inputs = await loadCurrentInputs(options.get("--source-repo"));
+    const inputs = await loadCurrentInputs(options.get("--source-repo"), options.get("--compiler-bindings"));
     console.log(`${inputs.findings.length ? "FAIL" : "INVENTORY_CURRENT"}: ${inputs.inventory.units.length} source units; ${inputs.findings.length} finding(s). Inventory validity is not product parity.`);
     if (inputs.findings.length) console.log(inputs.findings.join("\n")); process.exitCode = inputs.findings.length ? 1 : 0;
   }

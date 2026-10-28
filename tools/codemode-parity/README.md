@@ -75,6 +75,18 @@ bun tools/codemode-parity qualify-current \
   --evidence /absolute/current-artifacts
 ```
 
+Compiler-backed source selection is explicit: add
+`--compiler-bindings /absolute/reviewed-proof-manifest.json` to inventory generation,
+`inventory-check`, `qualify-current`, `attest-install-current`, and `readiness`.
+An inventory that records a compiler proof requires that argument for reproduction.
+The manifest's exact hash and canonical source-binding digest are recorded in the
+inventory and current receipt; paths only locate the hash-checked proof artifacts.
+Missing or changed proof, compiler, source, lock, input, or fact bytes fail validation.
+There is no implicit compiler cache. Exact positive source bindings can refine an
+AST guess and discover an immutable target file. Missing, generated, dynamic, and
+generic facts retain conservative AST selection with explicit debt. These bindings
+select obligations and never grant behavioral coverage.
+
 The current qualifier reruns the frozen regression floor against the current
 reference and adds source-based core/schema/description/BM25 comparisons and
 current protocol discriminators. The historical formatter remains an explicit

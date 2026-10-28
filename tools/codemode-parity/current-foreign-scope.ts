@@ -1,6 +1,7 @@
 import { dirname, relative } from "node:path";
 import { sha256 } from "./qualification";
 import { generatedProtoSymbols } from "./current-proto-scope";
+import type { CompilerScope, CompilerScopeQuery, CompilerScopeResolution } from "./current-compiler-scope";
 
 export type AstMatch = { ruleId: string; file: string; text: string; range: { byteOffset: { start: number; end: number }; start: { line: number } } };
 export type ScopeFile = { path: string; source: string };
@@ -8,6 +9,8 @@ export type ForeignScopeIssue = { from: string; file: string; expression: string
 export type GeneratedScopeResolution = { from: string; expression: string; path: string; kind: "tonic-prost-schema"; selectors: Array<{ path: string; sha256: string }>; schema: string[] };
 export type RepresentationScope = { algorithm: "private-nonwire-layout-v1"; owner: { id: string; sha256: string }; methods: Array<{ id: string; sha256: string }>; predicate: string };
 export type ForeignScope = { state: "required" | "foreign-context"; algorithm: "ast-import-member-closure-v1"; selectorsSha256: string; incoming: Array<{ from: string; relation: string }>; route: string[]; rootBoundary?: { kind: "application-entrypoint-not-codemode-root"; fileSha256: string; predicate: string } };
+export type CompilerScopeTrace = { query: CompilerScopeQuery; resolution: CompilerScopeResolution };
+export type CompilerScopeFallback = { from: string; file: string; start: number; end: number; expression: string; reason: "no-complete-exact-compiler-binding"; astTargets: string[]; paths: string[] };
 type Declaration = { id: string; file: string; kind: string; name: string; start: number; end: number; text: string; module?: string; owner?: Declaration; implType?: string; implTypePath?: string; implTrait?: string };
 const declarationKinds = new Set(["function_item", "const_item", "static_item", "type_item", "struct_item", "enum_item", "trait_item", "field_declaration", "ordered_field_declaration_list", "enum_variant", "function_signature_item", "impl_item", "mod_item", "macro_definition"]);
 const aggregates = new Set(["struct_item", "enum_item", "trait_item"]);
@@ -43,7 +46,7 @@ export function rustUseImports(text: string, prefix = ""): Array<{ path: string;
  * Every decision retains the complete selector/file digest; unknown imports are
  * conservative and keep matching-module declarations required.
  */
-export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporary: string, crates: string[], manifests: Array<{ path: string; source: string }>, explicitRoots?: string[], progress?: (event: Record<string,number|string>)=>void): { selections: Map<string, ForeignScope>; unresolved: ForeignScopeIssue[]; generated: GeneratedScopeResolution[]; representations: Map<string, RepresentationScope> } {
+export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporary: string, crates: string[], manifests: Array<{ path: string; source: string }>, explicitRoots?: string[], progress?: (event: Record<string,number|string>)=>void, compiler?: CompilerScope): { selections: Map<string, ForeignScope>; unresolved: ForeignScopeIssue[]; generated: GeneratedScopeResolution[]; representations: Map<string, RepresentationScope>; compiler: CompilerScopeTrace[]; compilerFallbacks: CompilerScopeFallback[] } {
   const ast = raw.map(item => ({ ruleId: item.ruleId, file: relative(temporary, item.file), range: item.range, get text() { return item.text; } })).filter(item => item.file.endsWith(".rs"))
     .sort((a,b)=>a.file.localeCompare(b.file)||a.range.byteOffset.start-b.range.byteOffset.start||a.range.byteOffset.end-b.range.byteOffset.end||a.ruleId.localeCompare(b.ruleId));
   const crateRoots = manifests.map(file => ({ root: dirname(file.path), name: file.source.match(/\bname\s*=\s*"([^"]+)"/)?.[1]?.replaceAll("-", "_") })).filter(item => item.name);
@@ -77,6 +80,9 @@ export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporar
   }
   const declarations: Declaration[] = ast.filter(item => declarationKinds.has(item.ruleId)).map(item => ({ id: `${item.file}#${item.ruleId}@${item.range.byteOffset.start}`, file: item.file, kind: item.ruleId,
     name: label(item.ruleId, item.text), start: item.range.byteOffset.start, end: item.range.byteOffset.end, text: item.text }));
+  const declarationsById = new Map(declarations.map(item => [item.id, item]));
+  const compilerTraces: CompilerScopeTrace[] = [];
+  const compilerFallbacks = new Map<string, CompilerScopeFallback>();
   let enclosingFile = "";
   const parents: Declaration[] = [], inlineModules = new Map<string,Declaration[]>();
   for (const item of [...declarations].sort((left,right)=>left.file.localeCompare(right.file)||left.start-right.start||right.end-left.end||left.kind.localeCompare(right.kind))) {
@@ -364,15 +370,44 @@ export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporar
     if (["impl_item", "mod_item"].includes(item.kind)) continue;
     const nestedFunctions=(byFile.get(item.file) ?? []).filter(child=>child.owner===item&&child.kind==="function_item");
     const itemNodes = nodesWithin(item.file,item.start,item.end).filter(node=>!nestedFunctions.some(child=>child.start<=node.range.byteOffset.start&&child.end>=node.range.byteOffset.end));
+    const compiled = new Map<string, CompilerScopeResolution[]>();
+    for (const query of compiler?.sites(item.id) ?? []) {
+      const resolution = compiler!.resolve(query); compilerTraces.push({ query, resolution });
+      const at = JSON.stringify([query.start, query.end]), values = compiled.get(at) ?? []; values.push(resolution); compiled.set(at, values);
+      if (resolution.status === "bound") {
+        const target = declarationsById.get(resolution.target.id);
+        if (target) mark(target, item.id, `rustc exact ${query.namespace}/${query.kind} at ${query.start}..${query.end}`);
+      } else if (resolution.status !== "unstaged" && resolution.declarations.some(declaration => declaration.range && declaration.sourceSha256)) {
+        const paths = resolution.declarations.flatMap(declaration => declaration.range && declaration.sourceSha256 ?
+          [`compiler-source:${declaration.range.file}@${declaration.range.start}..${declaration.range.end}`] : []);
+        unresolved.set(`${item.id}:rustc:${query.start}:${query.end}:${query.namespace}:${query.kind}`, {
+          from: item.id, file: item.file, expression: `rustc ${query.namespace}/${query.kind}: ${resolution.reason}`, paths: [...new Set(paths)].sort(),
+        });
+      }
+    }
+    const compilerTargets = (node: AstMatch): Declaration[] | undefined => {
+      const values = compiled.get(JSON.stringify([node.range.byteOffset.start, node.range.byteOffset.end]));
+      if (!values?.length || values.some(value => value.status !== "bound")) return;
+      return [...new Set(values.flatMap(value => value.status === "bound" ? [declarationsById.get(value.target.id)].filter((value): value is Declaration => value !== undefined) : []))];
+    };
+    const fallback = (node: AstMatch, targets: Declaration[], paths: string[] = []) => {
+      if (!compiler || !targets.length && !paths.length) return;
+      const { start, end } = node.range.byteOffset, key = `${item.id}:${start}:${end}`;
+      const before = compilerFallbacks.get(key);
+      compilerFallbacks.set(key, { from: item.id, file: item.file, start, end, expression: node.text,
+        reason: "no-complete-exact-compiler-binding", astTargets: [...new Set([...(before?.astTargets ?? []), ...targets.map(target => target.id)])].sort(),
+        paths: [...new Set([...(before?.paths ?? []), ...paths])].sort() });
+    };
     const refs = itemNodes.filter(node => ["identifier", "type_identifier", "scoped_identifier", "scoped_type_identifier", "field_expression"].includes(node.ruleId));
     const ownerType = item.implType ?? (item.owner && aggregates.has(item.owner.kind) ? item.owner.name : undefined);
     const types = new Set<Declaration>();
     for (const ref of refs.filter(ref => ref.ruleId !== "field_expression")) {
       const name = ref.text.replace(/::<[^>]*>/g, "");
       if (!/^[A-Za-z_]\w*(?:::[A-Za-z_]\w*)*$/.test(name)) continue;
-      const targets = contextualName(name,item,ownerType);
+      const exact = compilerTargets(ref), targets = exact ?? contextualName(name,item,ownerType);
       const local=localTargets(name,item);
       const paths = targets.length ? [] : local ? [`local:${item.id}::${name}`] : projectPaths(name, item.file, ownerType, item.module);
+      if (!exact) fallback(ref,targets,paths);
       if (paths.length && !refs.some(parent => parent !== ref && parent.ruleId.startsWith("scoped_") && parent.range.byteOffset.start <= ref.range.byteOffset.start && parent.range.byteOffset.end >= ref.range.byteOffset.end)) {
         const unknown: string[] = [];
         for (const path of paths) {
@@ -383,7 +418,7 @@ export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporar
         if (unknown.length) unresolved.set(`${item.id}:${name}`, { from: item.id, file: item.file, expression: name, paths: unknown });
       }
       for (const target of targets) {
-        if (target.kind === "function_item" && !name.includes("::") && target.implType) continue;
+        if (!exact && target.kind === "function_item" && !name.includes("::") && target.implType) continue;
         mark(target, item.id, `AST ${ref.ruleId}: ${name}`); if (aggregates.has(target.kind)) types.add(target);
         if (target.kind === "enum_variant") for (const member of nodesWithin(target.file,target.start,target.end).filter(node => node.ruleId === "type_identifier")) for (const type of resolveName(member.text, target.file, undefined, undefined, target.module)) if (aggregates.has(type.kind)) types.add(type);
       }
@@ -426,8 +461,11 @@ export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporar
     while (previousSize !== types.size) {
       previousSize = types.size;
       for (const ref of refs.filter(ref => ref.ruleId === "field_expression")) {
+        const exact = compilerTargets(ref);
+        if (exact) { for (const target of exact) mark(target,item.id,"exact compiler receiver reference"); continue; }
         const member = ref.text.match(/\.\s*([A-Za-z_]\w*)\s*$/)?.[1]; if (!member) continue;
         const receiver = ref.text.slice(0, ref.text.lastIndexOf(".")), candidates = receiverTypes(receiver) ?? [...types];
+        fallback(ref,candidates.flatMap(type=>memberTargets(type,member)));
         if (["sort", "sort_unstable", "binary_search"].includes(member)) for (const type of candidates)
           implicitMethods(type, ["Ord"], item.id, `implicit Ord dispatch of the actual ${member} receiver payload`);
         if (["into", "try_into"].includes(member)) for (const type of types)
@@ -473,7 +511,7 @@ export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporar
     }
   }
   progress?.({phase:"scope-closed",required:queue.length,unresolved:unresolved.size});
-  const selectorsSha256 = sha256(JSON.stringify({ rootPolicy: "codemode-api-entrypoints-v3", bindingPolicy: "rust-lexical-project-members-v1", applicationNonRoots: files.filter(file => applicationRootBoundary(file.path)).map(file => ({ path: file.path, sha256: sha256(file.source) })).sort((a,b)=>a.path.localeCompare(b.path)), roots: [...required].filter(id => incoming.get(id)?.some(link => link.relation.includes("census") || link.relation.includes("explicit CodeMode"))).sort(), files: files.map(file => ({ path: file.path, sha256: sha256(file.source) })).sort((a, b) => a.path.localeCompare(b.path)) }));
+  const selectorsSha256 = sha256(JSON.stringify({ rootPolicy: "codemode-api-entrypoints-v3", bindingPolicy: "rust-lexical-project-members-v1", ...(compiler ? { compiler: { algorithm: compiler.algorithm, proofSha256: compiler.proofSha256, semanticDigest: compiler.semanticDigest } } : {}), applicationNonRoots: files.filter(file => applicationRootBoundary(file.path)).map(file => ({ path: file.path, sha256: sha256(file.source) })).sort((a,b)=>a.path.localeCompare(b.path)), roots: [...required].filter(id => incoming.get(id)?.some(link => link.relation.includes("census") || link.relation.includes("explicit CodeMode"))).sort(), files: files.map(file => ({ path: file.path, sha256: sha256(file.source) })).sort((a, b) => a.path.localeCompare(b.path)) }));
   const result = new Map<string, ForeignScope>();
   for (const item of declarations) result.set(item.id, { state: required.has(item.id) ? "required" : "foreign-context", algorithm: "ast-import-member-closure-v1", selectorsSha256,
     incoming: (incoming.get(item.id) ?? []).sort((a, b) => a.from.localeCompare(b.from) || a.relation.localeCompare(b.relation)), route: routes.get(item.id) ?? [],
@@ -497,5 +535,7 @@ export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporar
     for (const member of members) representations.set(member.id, proof);
   }
   return { selections: result, unresolved: [...unresolved.values()].sort((a, b) => a.from.localeCompare(b.from) || a.expression.localeCompare(b.expression)),
-    generated: [...generated.values()].sort((a,b)=>a.from.localeCompare(b.from)||a.path.localeCompare(b.path)), representations };
+    generated: [...generated.values()].sort((a,b)=>a.from.localeCompare(b.from)||a.path.localeCompare(b.path)), representations,
+    compiler: compilerTraces.sort((a,b)=>JSON.stringify(a.query).localeCompare(JSON.stringify(b.query))),
+    compilerFallbacks: [...compilerFallbacks.values()].sort((a,b)=>a.from.localeCompare(b.from)||a.start-b.start||a.end-b.end) };
 }

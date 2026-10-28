@@ -3,8 +3,9 @@ import { dirname, relative, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { sha256 } from "./qualification";
 import { resolveCurrentSource } from "./current-source";
-import { foreignMemberScope, type ForeignScope, type ForeignScopeIssue, type GeneratedScopeResolution, type RepresentationScope } from "./current-foreign-scope";
+import { foreignMemberScope, type ForeignScope, type ForeignScopeIssue, type GeneratedScopeResolution, type RepresentationScope, type CompilerScopeTrace, type CompilerScopeFallback } from "./current-foreign-scope";
 import { projectReferenceTargets } from "./current-project-references";
+import { compilerScope, loadCompilerScopeIndex, unstagedCompilerFiles, type CompilerScope, type CompilerScopeIdentity } from "./current-compiler-scope";
 
 export type SourceUnit = {
   id: string; file: string; kind: string; label: string; line: number;
@@ -21,6 +22,9 @@ export type CurrentInventory = {
   grpcMethods: string[]; globalHelpers: string[]; denominatorSha256: string;
   foreignScopeDiagnostics?: ForeignScopeIssue[];
   generatedScopeResolutions?: GeneratedScopeResolution[];
+  compilerBindings?: CompilerScopeIdentity;
+  compilerScopeResolutions?: CompilerScopeTrace[];
+  compilerScopeFallbacks?: CompilerScopeFallback[];
 };
 const marker = /code[_-]mode|CodeMode|codeMode/;
 const testPath = /(?:^|\/)(?:tests?|benches|examples)(?:\/|\.)|(?:_tests|_test|_test_support|test_support)\.rs$/;
@@ -180,18 +184,27 @@ function nativeOwnership(file: string): boolean {
   return /^codex-rs\/code-mode-(?:host|runtime)\//.test(file) ||
     /^codex-rs\/code-mode-protocol\//.test(file) && !/\/(?:description|json_schema_types)\.rs$/.test(file);
 }
-export function inventoryDigest(inventory: Pick<CurrentInventory, "sourceRevision" | "sourceTree" | "files" | "units" | "grpcMethods" | "globalHelpers" | "foreignScopeDiagnostics" | "generatedScopeResolutions">): string {
+export function inventoryDigest(inventory: Pick<CurrentInventory, "sourceRevision" | "sourceTree" | "files" | "units" | "grpcMethods" | "globalHelpers" | "foreignScopeDiagnostics" | "generatedScopeResolutions" | "compilerBindings" | "compilerScopeResolutions" | "compilerScopeFallbacks">): string {
   return sha256(JSON.stringify({ sourceRevision: inventory.sourceRevision, sourceTree: inventory.sourceTree, files: inventory.files,
-    units: inventory.units, grpcMethods: inventory.grpcMethods, globalHelpers: inventory.globalHelpers, foreignScopeDiagnostics: inventory.foreignScopeDiagnostics ?? [], generatedScopeResolutions: inventory.generatedScopeResolutions ?? [] }));
+    units: inventory.units, grpcMethods: inventory.grpcMethods, globalHelpers: inventory.globalHelpers, foreignScopeDiagnostics: inventory.foreignScopeDiagnostics ?? [], generatedScopeResolutions: inventory.generatedScopeResolutions ?? [],
+    ...(inventory.compilerBindings ? { compilerBindings: inventory.compilerBindings, compilerScopeResolutions: inventory.compilerScopeResolutions ?? [], compilerScopeFallbacks: inventory.compilerScopeFallbacks ?? [] } : {}) }));
 }
 
+export type InventoryOptions = { compilerBindings?: string; expectedCompilerProofSha256?: string };
+
 /** Scope is discovered from the entire reference object tree, not a hand maintained module list. */
-export async function generateCurrentInventory(sourceRepo: string, revision: string, repo = resolve(import.meta.dir, "../.."), progress?: (event: Record<string, number | string>) => void): Promise<CurrentInventory> {
+export async function generateCurrentInventory(sourceRepo: string, revision: string, repo = resolve(import.meta.dir, "../.."), progress?: (event: Record<string, number | string>) => void, options: InventoryOptions = {}): Promise<CurrentInventory> {
   if (!/^[a-f0-9]{40}$/.test(revision)) throw new Error("current inventory requires an exact source commit");
+  if (options.expectedCompilerProofSha256 && !options.compilerBindings) throw new Error("inventory reproduction requires explicit --compiler-bindings <proof-manifest>");
   const [tree, blobs, astVersion] = await Promise.all([
     command(["git", "rev-parse", `${revision}^{tree}`], sourceRepo), sourceFiles(sourceRepo, revision),
     command([resolve(repo, "node_modules/.bin/ast-grep"), "--version"], repo),
   ]);
+  const sourceIdentity = { sourceRevision: revision, sourceTree: tree.toString().trim(),
+    sourceCargoLockSha256: sha256(blobs.find(file => file.path === "codex-rs/Cargo.lock")?.source ?? "") };
+  const immutable = new Map(blobs.filter(file => file.path.endsWith(".rs")).map(file => [file.path, { source: file.source, sha256: sha256(file.source) }]));
+  progress?.({ phase: "compiler-proof", enabled: options.compilerBindings ? 1 : 0 });
+  const compilerIndex = options.compilerBindings ? await loadCompilerScopeIndex(options.compilerBindings, sourceIdentity, immutable, options.expectedCompilerProofSha256) : undefined;
   const crates = blobs.filter(file => /\/Cargo\.toml$/.test(file.path) && /name\s*=\s*"[^"]*code-mode[^"]*"/.test(file.source))
     .map(file => dirname(file.path)).sort();
   if (!crates.length) throw new Error("reference has no discovered CodeMode crates");
@@ -207,6 +220,7 @@ export async function generateCurrentInventory(sourceRepo: string, revision: str
     const matches: Match[] = [], matchesByFile = new Map<string, Match[]>();
     let semanticMatches: Match[] = [];
     let foreignSelection: ReturnType<typeof foreignMemberScope>;
+    let compiler: CompilerScope | undefined, compilerPhase = false;
     for (;;) {
     Bun.gc(true);
     progress?.({phase:"extract",files:selected.length,temporary});
@@ -229,9 +243,23 @@ export async function generateCurrentInventory(sourceRepo: string, revision: str
     const testRanges = matches.filter(item => item.ruleId === "mod_item" && (/^\s*(?:pub\s+)?mod\s+(?:tests|test)\b/.test(item.text) ||
       /#\[cfg\(test\)\]\s*$/.test(Buffer.from(selected.find(file => file.path === relative(temporary, item.file))?.source ?? "").subarray(Math.max(0, item.range.byteOffset.start - 100), item.range.byteOffset.start).toString())));
     semanticMatches = matches.filter(item => !testRanges.some(test => test.file === item.file && test.range.byteOffset.start <= item.range.byteOffset.start && test.range.byteOffset.end >= item.range.byteOffset.end));
-    foreignSelection = foreignMemberScope(selected, semanticMatches, temporary, crates, manifests, undefined, progress);
+    if (compilerPhase && compilerIndex) compiler = compilerScope(compilerIndex, sourceIdentity, immutable, [
+      ...selected.filter(file => file.path.endsWith(".rs")).map(file => ({ id: `${file.path}#source-file@0`, file: file.path, kind: "source-file", start: 0, end: Buffer.byteLength(file.source), sha256: sha256(file.source) })),
+      ...semanticMatches.filter(item => item.file.endsWith(".rs") && kinds.includes(item.ruleId)).map(item => ({ id: `${relative(temporary,item.file)}#${item.ruleId}@${item.range.byteOffset.start}`,
+        file: relative(temporary,item.file), kind: item.ruleId, start: item.range.byteOffset.start, end: item.range.byteOffset.end, sha256: sha256(item.text) })),
+    ]);
+    foreignSelection = foreignMemberScope(selected, semanticMatches, temporary, crates, manifests, undefined, progress, compiler);
     const targets = projectReferenceTargets(blobs, foreignSelection.unresolved).filter(target => !staged.has(target.file.path));
+    for (const target of unstagedCompilerFiles(foreignSelection.compiler, immutable)) {
+      if (staged.has(target.file)) continue;
+      const file = blobs.find(file => file.path === target.file)!;
+      const existing = targets.find(target => target.file.path === file.path);
+      if (existing) existing.requiredBy = [...new Set([...existing.requiredBy, ...target.requiredBy])].sort();
+      else targets.push({ file, symbols: [], requiredBy: target.requiredBy });
+    }
     progress?.({phase:"discover",files:selected.length,unresolved:foreignSelection.unresolved.length,additionalFiles:targets.length});
+    // Complete and retain the original AST file census before more precise compiler choices replace guesses.
+    if (!targets.length && compilerIndex && !compilerPhase) { compilerPhase = true; continue; }
     if (!targets.length) break;
     for (const target of targets) {
       const file = blobs.find(file => file.path === target.file.path)!;
@@ -240,7 +268,7 @@ export async function generateCurrentInventory(sourceRepo: string, revision: str
     }
     semanticMatches = [];
     }
-    const nativeSelection = foreignMemberScope(selected, semanticMatches, temporary, crates, manifests, crates.filter(crate => /code-mode-(?:host|runtime)$/.test(crate)));
+    const nativeSelection = foreignMemberScope(selected, semanticMatches, temporary, crates, manifests, crates.filter(crate => /code-mode-(?:host|runtime)$/.test(crate)), undefined, compiler);
     const foreignScopes = foreignSelection.selections;
     for (const file of selected.sort((left, right) => left.path.localeCompare(right.path))) {
       const sourceBytes = Buffer.from(file.source);
@@ -307,8 +335,9 @@ export async function generateCurrentInventory(sourceRepo: string, revision: str
     }
     units.sort((left, right) => left.id.localeCompare(right.id));
     const base = { sourceRevision: revision, sourceTree: tree.toString().trim(), files, units, foreignScopeDiagnostics: foreignSelection.unresolved, generatedScopeResolutions: foreignSelection.generated,
+      ...(compiler ? { compilerBindings: { algorithm: compiler.algorithm, proofSha256: compiler.proofSha256, semanticDigest: compiler.semanticDigest }, compilerScopeResolutions: foreignSelection.compiler, compilerScopeFallbacks: foreignSelection.compilerFallbacks } : {}),
       grpcMethods: [...new Set(grpcMethods)].sort(), globalHelpers: [...new Set(globalHelpers)].sort() };
-    return { schema: 2, generator: "git-object-tree+ast-grep-declarations+import-member-closure-v10", sourceCargoLockSha256: sha256(blobs.find(file => file.path === "codex-rs/Cargo.lock")?.source ?? ""),
+    return { schema: 2, generator: "git-object-tree+ast-grep-declarations+import-member-closure-v11", sourceCargoLockSha256: sourceIdentity.sourceCargoLockSha256,
       astGrepVersion: astVersion.toString().trim(), discoveredCrates: crates, ...base, denominatorSha256: inventoryDigest(base) };
   } finally { await rm(temporary, { recursive: true, force: true }); }
 }
@@ -324,13 +353,20 @@ export function inventoryFindings(generated: CurrentInventory, committed: Curren
   if (generated.denominatorSha256 !== committed.denominatorSha256 || inventoryDigest(committed) !== committed.denominatorSha256) findings.push("reference denominator or source hashes changed; hand edited/shrunken inventories are forbidden");
   if (generated.astGrepVersion !== committed.astGrepVersion || generated.generator !== committed.generator) findings.push("reference inventory generator identity changed");
   if (generated.sourceCargoLockSha256 !== committed.sourceCargoLockSha256 || JSON.stringify(generated.discoveredCrates) !== JSON.stringify(committed.discoveredCrates)) findings.push("reference dependency lock or discovered crate inventory changed");
+  if (JSON.stringify(generated.compilerBindings) !== JSON.stringify(committed.compilerBindings)) findings.push("explicit compiler binding proof or semantic source decisions changed");
   return findings;
 }
 
 if (import.meta.main) {
-  const [sourceRepo, destination = resolve(import.meta.dir, "current-inventory.json")] = process.argv.slice(2);
+  const args = process.argv.slice(2), positional: string[] = []; let compilerBindings: string | undefined;
+  for (let at = 0; at < args.length; at++) {
+    if (args[at] === "--compiler-bindings") { if (compilerBindings || !args[at + 1] || args[at + 1]!.startsWith("--")) throw new Error("--compiler-bindings requires one explicit proof manifest"); compilerBindings = args[++at]; }
+    else { if (args[at]!.startsWith("--")) throw new Error(`unknown inventory option ${args[at]}`); positional.push(args[at]!); }
+  }
+  if (positional.length > 2) throw new Error("usage: current-inventory.ts [source-repo] [destination] [--compiler-bindings <proof-manifest>]");
+  const [sourceRepo, destination = resolve(import.meta.dir, "current-inventory.json")] = positional;
   const lock = JSON.parse(await readFile(resolve(import.meta.dir, "current-reference.json"), "utf8"));
-  const inventory = await generateCurrentInventory(await resolveCurrentSource(lock, sourceRepo), lock.sourceRevision, undefined, event => console.error(JSON.stringify(event)));
+  const inventory = await generateCurrentInventory(await resolveCurrentSource(lock, sourceRepo), lock.sourceRevision, undefined, event => console.error(JSON.stringify(event)), { compilerBindings });
   await writeFile(destination, JSON.stringify(inventory, null, 2) + "\n");
   console.log(`Generated ${inventory.units.length} units in ${inventory.files.length} files from ${inventory.discoveredCrates.length} discovered CodeMode crates; ${inventory.grpcMethods.length} RPCs; ${inventory.denominatorSha256}`);
 }

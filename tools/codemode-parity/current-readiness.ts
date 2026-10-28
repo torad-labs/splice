@@ -15,6 +15,7 @@ import { apiWitnessFindings, type ApiCaseWitness } from "./current-core-api-witn
 import { cliControlFindings } from "./current-cli-proof";
 import { currentHistoryFindings } from "./current-history";
 import { sourceCliWitnessFindings, type CliSourceCaseWitness } from "./current-cli-source-profile";
+import type { CompilerScopeIdentity } from "./current-compiler-scope";
 
 const directory = import.meta.dir, repo = resolve(directory, "../..");
 export type CurrentReference = {
@@ -28,6 +29,7 @@ export type CurrentReceipt = {
   reference: { release: string; cli: Identity; nativeHost: Identity }; candidateJar: Identity; candidateNativeHost: Identity;
   nativeProvenance: Artifact; regressionFloor: Artifact; executions: ExecutedVerifier[]; installed?: CurrentInstalledIdentity;
   java: string; candidateConformant: boolean; qualified: boolean; seal: string; known_soft_spots: string[];
+  compilerBindings?: CompilerScopeIdentity;
 };
 export function sealCurrentReceipt(receipt: CurrentReceipt, key: Uint8Array): string {
   return createHmac("sha256", key).update(JSON.stringify({ ...receipt, seal: undefined })).digest("hex");
@@ -35,11 +37,13 @@ export function sealCurrentReceipt(receipt: CurrentReceipt, key: Uint8Array): st
 export function currentReceiptFindings(receipt: any, expected: {
   sourceRevision: string; inventorySha256: string; dispositionsSha256: string; referenceLockSha256: string; harnessSha256: string;
   referenceRelease: string; referenceCliSha256: string; nativeHostSha256: string; provenanceSha256: string; now?: number; requireInstalled?: boolean;
+  compilerBindings?: CompilerScopeIdentity;
 }, key: Uint8Array): string[] {
   if (!receipt || receipt.schema !== 2 || receipt.claim !== "current-complete-CodeMode") return ["historical bounded receipt cannot establish current complete CodeMode parity; current schema-2 execution receipt is required"];
   const findings: string[] = [];
   if (typeof receipt.runId !== "string" || !/^[a-f0-9]{32}$/.test(receipt.runId)) findings.push("malformed current run identity");
   for (const name of ["sourceRevision", "inventorySha256", "dispositionsSha256", "referenceLockSha256", "harnessSha256"] as const) if (receipt[name] !== expected[name]) findings.push(`current ${name} changed`);
+  if (JSON.stringify(receipt.compilerBindings) !== JSON.stringify(expected.compilerBindings)) findings.push("current explicit compiler binding proof or semantic source decisions changed");
   if (receipt.reference?.release !== expected.referenceRelease || receipt.reference?.cli?.sha256 !== expected.referenceCliSha256 || receipt.reference?.nativeHost?.sha256 !== expected.nativeHostSha256) findings.push("current reference version or executable identity drifted");
   if (receipt.candidateNativeHost?.sha256 !== expected.nativeHostSha256) findings.push("candidate native host is not the verified current reference engine");
   if (receipt.nativeProvenance?.sha256 !== expected.provenanceSha256) findings.push("current reference source provenance changed");
@@ -53,7 +57,7 @@ export function currentReceiptFindings(receipt: any, expected: {
   if (["pass", "status", "skipped"].some(name => name in receipt)) findings.push("manually asserted current result fields are forbidden");
   return findings;
 }
-export async function loadCurrentInputs(sourceRepo?: string): Promise<{
+export async function loadCurrentInputs(sourceRepo?: string, compilerBindings?: string): Promise<{
   lock: CurrentReference; inventory: CurrentInventory; dispositions: Dispositions; provenance?: NativeProvenance;
   findings: string[]; hashes: { referenceLockSha256: string; dispositionsSha256: string; harnessSha256: string };
 }> {
@@ -66,7 +70,9 @@ export async function loadCurrentInputs(sourceRepo?: string): Promise<{
   if (lock.schema !== 2 || !/^[a-f0-9]{40}$/.test(lock.sourceRevision) || !/^\d+\.\d+\.\d+$/.test(lock.release) || lock.tag !== `rust-v${lock.release}`) findings.push("malformed current reference lock");
   if (sha256(contractBytes) !== lock.historicalContractSha256) findings.push("frozen 24-family historical contract was changed");
   lock.sourceRepositoryDefault = await resolveCurrentSource(lock, sourceRepo);
-  const generated = await generateCurrentInventory(lock.sourceRepositoryDefault, lock.sourceRevision);
+  const generated = await generateCurrentInventory(lock.sourceRepositoryDefault, lock.sourceRevision, undefined, undefined, {
+    compilerBindings, expectedCompilerProofSha256: inventory.compilerBindings?.proofSha256,
+  });
   findings.push(...inventoryFindings(generated, inventory), ...dispositionFindings(inventory, dispositions), ...await currentHistoryFindings());
   let provenance: NativeProvenance | undefined;
   try {
@@ -107,7 +113,8 @@ export async function inspectCurrentReceipt(receipt: CurrentReceipt | undefined,
   const findings = [...inputs.findings];
   try { await observeCurrentReference(lock); } catch (error) { findings.push(error instanceof Error ? error.message : String(error)); }
   findings.push(...currentReceiptFindings(receipt, { ...hashes, sourceRevision: lock.sourceRevision, inventorySha256: inventory.denominatorSha256,
-    referenceRelease: lock.release, referenceCliSha256: lock.cliSha256, nativeHostSha256: lock.nativeHostSha256, provenanceSha256: lock.nativeProvenanceSha256, requireInstalled: phase === "installed" }, key));
+    referenceRelease: lock.release, referenceCliSha256: lock.cliSha256, nativeHostSha256: lock.nativeHostSha256, provenanceSha256: lock.nativeProvenanceSha256,
+    ...(inventory.compilerBindings ? { compilerBindings: inventory.compilerBindings } : {}), requireInstalled: phase === "installed" }, key));
   if (!receipt || receipt.schema !== 2) return findings;
   findings.push(...executionFindings(inventory, dispositions, receipt.executions, { runId: receipt.runId, candidateJarSha256: receipt.candidateJar.sha256, nativeHostSha256: lock.nativeHostSha256 }));
   const caseWitnesses = (receipt.executions ?? []).flatMap(execution => execution.cases ?? []);
@@ -161,7 +168,7 @@ export async function currentReadiness(options: Map<string, string>): Promise<vo
         evidence = resolve(progress.receiptPath, "..");
       } catch (error: any) { if (error.code !== "ENOENT") { locationValid = false; throw error; } }
     }
-    inputs = await loadCurrentInputs(options.get("--source-repo"));
+    inputs = await loadCurrentInputs(options.get("--source-repo"), options.get("--compiler-bindings"));
     try { receipt = JSON.parse(await readFile(resolve(evidence, "receipt-current.json"), "utf8")); }
     catch (error: any) { if (error.code === "ENOENT") findings.push("no current execution receipt; the historical 24-family receipt is only a bounded regression floor"); else throw error; }
     let key: Uint8Array;

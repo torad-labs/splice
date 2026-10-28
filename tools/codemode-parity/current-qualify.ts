@@ -17,7 +17,7 @@ import { runCurrentSourceCli } from "./current-core-cli";
 /** Explicit qualification runs real production drivers; readiness only validates their sealed raw evidence. */
 export async function qualifyCurrent(options: Map<string, string>): Promise<void> {
   const required = (key: string) => { const value = options.get(key); if (!value) throw new Error(`qualify-current requires ${key}`); return value; };
-  const inputs = await loadCurrentInputs(options.get("--source-repo"));
+  const inputs = await loadCurrentInputs(options.get("--source-repo"), options.get("--compiler-bindings"));
   if (inputs.findings.length) throw new Error(inputs.findings.join("; "));
   const { lock, inventory } = inputs;
   const [candidateJar, candidateNativeHost, reference, key] = await Promise.all([
@@ -56,6 +56,7 @@ export async function qualifyCurrent(options: Map<string, string>): Promise<void
   await appendCurrentCli(java, candidateJar, reference, evidence, runId, lock, executions.find(item => item.id === "current.gateway-history")!);
   const receipt: CurrentReceipt = { schema: 2, claim: "current-complete-CodeMode", runId, startedAt: floor.startedAt, finishedAt: new Date().toISOString(),
     sourceRevision: lock.sourceRevision, inventorySha256: inventory.denominatorSha256, ...inputs.hashes, reference, candidateJar, candidateNativeHost,
+    ...(inventory.compilerBindings ? { compilerBindings: inventory.compilerBindings } : {}),
     nativeProvenance: await artifact(resolve(import.meta.dir, "../..", lock.nativeProvenanceDefault)), regressionFloor: await artifact(resolve(floorDirectory, "receipt.json")),
     executions, java, candidateConformant: true, qualified: false, seal: "", known_soft_spots: [
       "Deployment and interactive client execution are Linux only. Other packaged platforms are proven by source-linked native executable identity, not interactive deployment evidence.",
@@ -75,7 +76,7 @@ export async function qualifyCurrent(options: Map<string, string>): Promise<void
 
 export async function attestCurrentInstallation(options: Map<string, string>): Promise<void> {
   const selected = options.get("--evidence"); if (!selected) throw new Error("attest-install-current requires --evidence from the successful candidate conformance run");
-  const evidence = resolve(selected), inputs = await loadCurrentInputs(options.get("--source-repo")), key = await currentSealKey(false);
+  const evidence = resolve(selected), inputs = await loadCurrentInputs(options.get("--source-repo"), options.get("--compiler-bindings")), key = await currentSealKey(false);
   const receipt: CurrentReceipt = JSON.parse(await readFile(resolve(evidence, "receipt-current.json"), "utf8"));
   const conformance = await inspectCurrentReceipt(receipt, inputs, options, key, "candidate");
   if (conformance.length) throw new Error(`Current candidate conformance cannot be finalized: ${conformance.join("; ")}`);

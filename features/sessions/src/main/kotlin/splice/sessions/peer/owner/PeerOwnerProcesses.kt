@@ -29,9 +29,16 @@ public class PeerOwnerProcesses(
     /** All three parts must still identify this live process, including after a pid has been reused. */
     public fun live(owner: NativeProcess): Boolean = capture(owner.pid) == owner
 
+    /** The executable's name. Claude Code's native installer runs `.../claude/versions/<version>`, whose own name is a
+     *  version number, so that layout reads as `claude`; an update that replaced it leaves ` (deleted)` on the link. */
     private fun program(pid: Long): String? = try {
-        Files.readSymbolicLink(proc.resolve(pid.toString()).resolve("exe")).fileName?.toString()
-            ?.removeSuffix(" (deleted)")
+        val exe = Files.readSymbolicLink(proc.resolve(pid.toString()).resolve("exe"))
+        val versions = exe.parent
+        if (versions?.fileName?.toString() == "versions" && versions.parent?.fileName?.toString() == "claude") {
+            "claude"
+        } else {
+            exe.fileName?.toString()?.removeSuffix(" (deleted)")
+        }
     } catch (_: IOException) {
         null
     } catch (_: SecurityException) {

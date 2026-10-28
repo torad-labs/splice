@@ -6,24 +6,17 @@
 // the row's "the state reads signed in, live after restart until then". DELETE/PATCH
 // /api/auth/{head}/accounts/{label} are plain OAuthAccountFiles calls, no off-request state.
 //
-// This file is also the :app SIDE of the splice.accounts.signin.ConsoleAccounts port: :features-accounts
-// sits below :app, and the flows + OAuthAccountFiles both live here, so the port is how an accounts route
-// reaches them (ConsoleWiring assigns ConsolePorts.accounts, the same shape as its other nine).
+// ConsoleAccountsImpl owns account mutations and delegates asynchronous sign-in to this store.
 package splice.app.auth
 
 import kotlinx.coroutines.launch
-import splice.accounts.signin.AccountMutation
-import splice.accounts.signin.ConsoleAccounts
 import splice.accounts.signin.HeadRestart
 import splice.accounts.signin.LoginFailure
 import splice.accounts.signin.LoginPrompt
-import splice.accounts.signin.LoginStart
 import splice.accounts.signin.LoginState
 import splice.accounts.signin.LoginStatus
 import splice.app.cli.auth.LoginCommand
 import splice.configuration.add.AddSignIn
-import splice.core.topology.AuthKind
-import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
@@ -31,13 +24,8 @@ import splice.core.util.LruSizing
 import splice.core.util.SafeFailureText
 import splice.oauth.LoginAnnouncement
 import splice.oauth.LoginObserver
-import splice.oauth.OAuthAccountFiles
-import splice.oauth.OAuthAccountRefused
-import splice.oauth.OAuthPrimaryAccount
-import splice.topology.TopologyLoader
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
-import java.nio.file.Path
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicReference
 
@@ -45,9 +33,6 @@ import java.util.concurrent.atomic.AtomicReference
 // 256 is far above any plausible burst of concurrent logins across every head, and the map is
 // access-ordered so the cap only ever evicts attempts nobody has polled in a long time.
 private const val MAX_TRACKED_LOGINS = 256
-
-// why: the label the console and the CLI name the first account by; OAuthAccountFiles reserves it for that file.
-private const val PRIMARY_LABEL = "primary"
 
 /** Off-request orchestration for one head's login attempts. A daemon-lifetime singleton (held by
  *  [ConsoleAccountsImpl]), so every login this daemon starts shares one bounded id space. */
@@ -156,11 +141,6 @@ private fun interface LoginStatusUpdate {
     operator fun invoke(status: LoginStatus): LoginStatus
 }
 
-/** One OAuth head's pool target: the typed kind [OAuthAccountFiles] needs, and the primary
- *  credential file its pool is keyed by — [LoginCommand.oauthAuthPath]'s own resolution, reused
- *  rather than re-derived (the file/default-file precedence is single-sourced there). */
-private data class OAuthTarget(val kind: AuthKind.OAuth, val primaryFile: Path)
-
 /** [LoginSessions.start]'s four flow-identifying args, bundled so [LoginSessions.runAndLand]
  *  stays under detekt's 6-param LongParameterList wall (functionThreshold: 6) alongside its own
  *  observer/restart/cell. */
@@ -170,83 +150,6 @@ private data class LoginAttempt(
     val topology: Topology,
     val label: String?,
 )
-
-/** Where this port reads the configured heads and providers. The daemon's own answer is the topology file, and a
- *  test hands over a synthetic one: a port whose refusals depend on a head's auth kind cannot be checked at all
- *  while the only source is a path outside the test. */
-internal fun interface ConsoleAccountsTopology {
-    fun read(): Topology
-}
-
-/** The :app implementation of [ConsoleAccounts] — see this file's header for why it lives here. */
-internal class ConsoleAccountsImpl(
-    private val sessions: LoginSessions = LoginSessions(),
-    private val files: OAuthAccountFiles = OAuthAccountFiles(),
-    private val first: OAuthPrimaryAccount = OAuthPrimaryAccount(files),
-    private val topologies: ConsoleAccountsTopology = ConsoleAccountsTopology {
-        TopologyLoader.loadOrMaterialize(TopologyLoader.configPath())
-    },
-) : ConsoleAccounts {
-
-    override suspend fun startLogin(headKey: String, label: String?, restart: HeadRestart): LoginStart {
-        val topology = topologies.read()
-        val provider = provider(headKey, topology) ?: return LoginStart.UnknownHead
-        if (!AuthKindRegistry.isOAuth(provider.auth.kind)) {
-            return LoginStart.UnsupportedAuthKind(provider.auth.kind)
-        }
-        return LoginStart.Started(sessions.start(headKey, provider, topology, label, restart))
-    }
-
-    override fun pollLogin(id: String): LoginStatus? = sessions.poll(id)
-
-    override suspend fun removeAccount(headKey: String, label: String): AccountMutation =
-        onOAuthHead(headKey) { target ->
-            val removed = if (label == PRIMARY_LABEL) {
-                first.remove(target.kind, target.primaryFile)
-            } else {
-                files.remove(target.kind, target.primaryFile, label)
-            }
-            if (!removed) throw OAuthAccountRefused("no OAuth account labeled '$label'")
-        }
-
-    override suspend fun relabelAccount(headKey: String, label: String, newLabel: String): AccountMutation =
-        onOAuthHead(headKey) { target ->
-            if (label == PRIMARY_LABEL) {
-                first.rename(target.kind, target.primaryFile, newLabel)
-            } else {
-                files.relabel(target.kind, target.primaryFile, label, newLabel)
-            }
-        }
-
-    /** Runs [block] on [headKey]'s OAuth account file, or names why it cannot. A head that is not configured is
-     *  [AccountMutation.UnknownHead]; a head that IS configured and keeps its accounts somewhere else answers with
-     *  its own auth kind, so the arm for that kind can serve it (a Claude head's added accounts are folders splice
-     *  owns). Both refusals came back as UnknownHead before, which read as 404 on a head the console had drawn.
-     *
-     *  inline (kt-no-lambda-seam exemption): the same exemption [mutate] carries, for the same reason — a named fun
-     *  interface for one two-call-site wrapper would be the only consumer of the type. */
-    private inline fun onOAuthHead(headKey: String, block: (OAuthTarget) -> Unit): AccountMutation {
-        val provider = provider(headKey, topologies.read()) ?: return AccountMutation.UnknownHead
-        val kind = AuthKindRegistry.from(provider.auth.kind) as? AuthKind.OAuth
-            ?: return AccountMutation.UnsupportedAuthKind(provider.auth.kind)
-        return mutate { block(OAuthTarget(kind, LoginCommand().oauthAuthPath(provider))) }
-    }
-
-    // inline (kt-no-lambda-seam exemption): a raw () -> Unit here would need a named fun interface
-    // for one two-call-site try/catch wrapper — inlining is the same exemption Cancellables' own
-    // higher-order helpers use.
-    private inline fun mutate(block: () -> Unit): AccountMutation = try {
-        block()
-        AccountMutation.Ok
-    } catch (e: OAuthAccountRefused) {
-        AccountMutation.Refused(e.reason)
-    }
-
-    private fun provider(headKey: String, topology: Topology): ProviderConfig? {
-        val providerKey = topology.heads[headKey]?.provider ?: return null
-        return topology.providers[providerKey]
-    }
-}
 
 /** V4-220 item 3: the add's sign-in over this file's flows, for a head that is not in splice.toml yet.
  *  Its own [LoginSessions]: an add polls through GET /api/add/{id}, never /api/auth/{head}/login/{id},

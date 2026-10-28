@@ -32,7 +32,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
@@ -40,7 +39,9 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.perf.OutcomeTags
 import splice.core.session.ActivityAction
+import splice.core.turn.ErrorType
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.usage.QuotaSnapshot
@@ -144,7 +145,11 @@ class HeadEventsTest(@param:TempDir private val root: Path) {
                 ).jsonObject.getValue("error").jsonObject.getValue("type").jsonPrimitive.content,
             )
             val row = rig.perfRows(1).single()
-            assertTrue(row.second.startsWith("error:"), "the rig must reach a LOCAL refusal row, got ${row.second}")
+            assertEquals(
+                OutcomeTags.failure(ErrorType.AUTHENTICATION),
+                row.second,
+                "a missing held login records its authentication cause before the admission wire maps it to permission",
+            )
             assertEquals(listOf("start $SESSION", "end ${row.first} ${row.second} $SESSION"), rig.events.turnCalls())
             assertEquals(0, rig.upstreamCalls, "missing credentials refuse the turn before any provider request")
         } finally {

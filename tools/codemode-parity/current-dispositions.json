@@ -59998,10 +59998,19 @@
       "id": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@10244",
       "sha256": "5a50ea85135952375bc5a20bdcbd0ee76f7e9422d7b51585aa22fe00d2b05212",
       "scopeSha256": "ad92406754a56dc358d1fd6fea313de7e677f4b9953c2e0b78d4792f1f011c83",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/mcp",
+          "inputSha256": "ba7e77ae2530e3f9f07208b269076c08edb04bc229e165d583f0ae8e68591a6f",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@10244"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual CodeModeCellDelegate queues the runtime callback to its broker/turn worker and submit_nested_tool; mandatory MCP peer calls/results are captured and compared at the candidate’s typed MCP boundary. The current source-only LLVM discovery entered this exact declaration for cli-source/mcp; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@10757",
@@ -60016,100 +60025,199 @@
       "id": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@11070",
       "sha256": "d34c2ee0614e4d9f951cfd54bb526b75266d2341d05d5a8140a14300150ed64d",
       "scopeSha256": "827be6896700bb54a6511eca92631ffeca7fda6a47995343e89b41f8ef58298d",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/mcp",
+          "inputSha256": "ba7e77ae2530e3f9f07208b269076c08edb04bc229e165d583f0ae8e68591a6f",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@11070"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual CodeModeCellDelegate queues the runtime callback to its broker/turn worker and submit_nested_tool; mandatory MCP peer calls/results are captured and compared at the candidate’s typed MCP boundary. The current source-only LLVM discovery entered this exact declaration for cli-source/mcp; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@12264",
       "sha256": "4cd8827b6e3f532dd48a8b0e6d7917a6187ddea7cdf2cc39a8207cfd67c8df5c",
       "scopeSha256": "29b711134b628e5c05bcf41d9f7b2532c7154534e3a935859e793b33ff323e15",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/mcp",
+          "inputSha256": "ba7e77ae2530e3f9f07208b269076c08edb04bc229e165d583f0ae8e68591a6f",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@12264"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual CodeModeCellDelegate queues the runtime callback to its broker/turn worker and submit_nested_tool; mandatory MCP peer calls/results are captured and compared at the candidate’s typed MCP boundary. The current source-only LLVM discovery entered this exact declaration for cli-source/mcp; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@14279",
       "sha256": "31bca19872d76d025d35c9673c8846a0a5cfd0d83acdc9f8eff85d436d635b3c",
       "scopeSha256": "1e40d73c4e1bd4d2252466e0728ae2f9f9a67ac146aa2642716ac914732430e6",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/notify",
+          "inputSha256": "fc0fbfcdf7215f55c164402bd9444480dcd5493577a189edf473013c01bce357",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@14279"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: notify() executes in the actual native runtime, reaches CodeModeCellDelegate/worker notification delivery, and is compared against the real gateway’s notification/history packets. The current source-only LLVM discovery entered this exact declaration for cli-source/notify; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@15811",
       "sha256": "c8ba14ce6d42a4c76bf78d87f0565b6f886d5df75068950920e2ae963045f7bd",
       "scopeSha256": "047e880950e44f33b842982e3e02133f299fa9a6b2e53ffc93a042820569463e",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@15811"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: The actual CodeMode broker/worker owns callback readiness, turn ownership and cell closure around mandatory exec/notification/MCP runs. Runtime LLVM entry, not this expected route, decides whether the exact function was entered. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@16665",
       "sha256": "ada1d7a0e82d7cd0131c1974a33c18f1c791cc0361374992fa89acdcd18e2dd2",
       "scopeSha256": "e10640b0fdbf4afc5c839bc6b59907da4f8f1bb63cb83936a1834646a58e5c8b",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@16665"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: The actual CodeMode broker/worker owns callback readiness, turn ownership and cell closure around mandatory exec/notification/MCP runs. Runtime LLVM entry, not this expected route, decides whether the exact function was entered. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@16919",
       "sha256": "67b893632ed3ed3d68d3d1fc0d8202ce3c5d8596054887f551ae755200737892",
       "scopeSha256": "28a08b7c8728e160de06377b27bbd03dc6a3366ccf6e1aec6fc63b314f811987",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/mcp",
+          "inputSha256": "ba7e77ae2530e3f9f07208b269076c08edb04bc229e165d583f0ae8e68591a6f",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@16919"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual CodeModeCellDelegate queues the runtime callback to its broker/turn worker and submit_nested_tool; mandatory MCP peer calls/results are captured and compared at the candidate’s typed MCP boundary. The current source-only LLVM discovery entered this exact declaration for cli-source/mcp; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@17563",
       "sha256": "6a9ef1ceecd51152c9f3f3c6bf7adc19b28379495806259a32df5d7d8d3721be",
       "scopeSha256": "1e40d73c4e1bd4d2252466e0728ae2f9f9a67ac146aa2642716ac914732430e6",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/notify",
+          "inputSha256": "fc0fbfcdf7215f55c164402bd9444480dcd5493577a189edf473013c01bce357",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@17563"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: notify() executes in the actual native runtime, reaches CodeModeCellDelegate/worker notification delivery, and is compared against the real gateway’s notification/history packets. The current source-only LLVM discovery entered this exact declaration for cli-source/notify; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@2092",
       "sha256": "e705f626eb14971cc1e9c4ff48df029bc63f3281c89061c27af687a4187d47a1",
       "scopeSha256": "3da6c00660c55ee0096b4122664805fa7bffed97a33aba27107c94fb5d8b11fb",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@2092"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: The actual CodeMode broker/worker owns callback readiness, turn ownership and cell closure around mandatory exec/notification/MCP runs. Runtime LLVM entry, not this expected route, decides whether the exact function was entered. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@2458",
       "sha256": "3e2f836403ac81074a23906341a1c6fedbbc88f5175216b88edcb957a2a12965",
       "scopeSha256": "d5fa75717f055fb52a45fe9bcee6832d2a31ebc5afdcc74802d7db05773fe98b",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@2458"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: The actual CodeMode broker/worker owns callback readiness, turn ownership and cell closure around mandatory exec/notification/MCP runs. Runtime LLVM entry, not this expected route, decides whether the exact function was entered. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@3179",
       "sha256": "8342ae013c5d76bf3ca0465591de845973989336493f95da0d8914e813c9deaf",
       "scopeSha256": "78a44f016e55bd897cb9c050d46dccf997160283e420f993d3b8faad365cac66",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/mcp",
+          "inputSha256": "ba7e77ae2530e3f9f07208b269076c08edb04bc229e165d583f0ae8e68591a6f",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@3179"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual CodeModeCellDelegate queues the runtime callback to its broker/turn worker and submit_nested_tool; mandatory MCP peer calls/results are captured and compared at the candidate’s typed MCP boundary. The current source-only LLVM discovery entered this exact declaration for cli-source/mcp; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@3477",
       "sha256": "a8ba65c0d4d4d6f08cb8e9e0a91184be41ee7536b2a25fbeb3cfd11708510191",
       "scopeSha256": "2bc2c77b4a2e85279f6f9b7f17b8536c874b2bf4c45e80cbbeb610d94a723faa",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@3477"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: The actual CodeMode broker/worker owns callback readiness, turn ownership and cell closure around mandatory exec/notification/MCP runs. Runtime LLVM entry, not this expected route, decides whether the exact function was entered. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@3796",
@@ -60124,10 +60232,19 @@
       "id": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@4038",
       "sha256": "c951985b681b13dc6479480cf63fcbed6aa0acbfc23378a86a6c45f9e4ab884b",
       "scopeSha256": "f8d07ca9d001a79663d0ba6825a60461ac6fc797238cd4a4f6876938d9ee8f34",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/delegate.rs#function_item@4038"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: The actual CodeMode broker/worker owns callback readiness, turn ownership and cell closure around mandatory exec/notification/MCP runs. Runtime LLVM entry, not this expected route, decides whether the exact function was entered. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/delegate.rs#impl_item@11749",
@@ -60241,64 +60358,127 @@
       "id": "codex-rs/core/src/tools/code_mode/execute_handler.rs#function_item@1148",
       "sha256": "0d5f782b70ffe63baef48f5af7290f85ad21668be2fb42269e7bbd3a7c395a37",
       "scopeSha256": "db3c7b1441824c5e2c77ad3c54262c9bb55e5e28c6d51124746158f937b45e3b",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/execute_handler.rs#function_item@1148"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual interactive CLI outer exec: CodeModeExecuteHandler→CodeModeService.execute→native gRPC session; the candidate executes the same script through its production CodeModeGatewayScenarioProbe/gateway/native runtime. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/execute_handler.rs#function_item@7199",
       "sha256": "fa8e39e821138fce20aee62a2efa17500f6e3cecee3007abd4377579ebaaf482",
       "scopeSha256": "29afc0dc885ed8e3ce3d39b637fcf1beb19f564cfce0c5e69f10f3514861b8eb",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/execute_handler.rs#function_item@7199"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual interactive CLI outer exec: CodeModeExecuteHandler→CodeModeService.execute→native gRPC session; the candidate executes the same script through its production CodeModeGatewayScenarioProbe/gateway/native runtime. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/execute_handler.rs#function_item@7286",
       "sha256": "9b45b732b5c6763794d5ba1aafe3cf044ff5c515161b38417732224c6c03208a",
       "scopeSha256": "04e1449b12dc2d588686efa99c420a0121c2247005a31c80dd978194008d66ae",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/execute_handler.rs#function_item@7286"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual interactive CLI outer exec: CodeModeExecuteHandler→CodeModeService.execute→native gRPC session; the candidate executes the same script through its production CodeModeGatewayScenarioProbe/gateway/native runtime. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/execute_handler.rs#function_item@7352",
       "sha256": "8e5c76e07b67c8818e43b9e291eaa4bce2eabf7b120a8880c426e4910db09afc",
       "scopeSha256": "548b8a168bd330fb4ba5bc3398f49c851fc0194d75fb3691c42f8498290f110e",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/execute_handler.rs#function_item@7352"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual interactive CLI outer exec: CodeModeExecuteHandler→CodeModeService.execute→native gRPC session; the candidate executes the same script through its production CodeModeGatewayScenarioProbe/gateway/native runtime. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/execute_handler.rs#function_item@8151",
       "sha256": "38f793cb25f3d60150936da08ca6ba878ef4deea59ccb868b7124bc1ce889c48",
       "scopeSha256": "7131f31116cde8f5bf74a25586d84b4322699a085abab4f9cc3ba858b87c5139",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/execute_handler.rs#function_item@8151"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual interactive CLI outer exec: CodeModeExecuteHandler→CodeModeService.execute→native gRPC session; the candidate executes the same script through its production CodeModeGatewayScenarioProbe/gateway/native runtime. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/execute_handler.rs#function_item@9690",
       "sha256": "a94bf8ef11050065dfc2cc07236dea5f323d016403e45eb3939afd13a32e0a50",
       "scopeSha256": "172135e0ec22e69739d17cffdb3cad6293ba952c0122238198e5fece3a237f32",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/execute_handler.rs#function_item@9690"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual interactive CLI outer exec: CodeModeExecuteHandler→CodeModeService.execute→native gRPC session; the candidate executes the same script through its production CodeModeGatewayScenarioProbe/gateway/native runtime. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/execute_handler.rs#function_item@975",
       "sha256": "a293f291087b86d2cbf6f4aa88fd55b8a59482b3c3350740d67d7e87ea9b4086",
       "scopeSha256": "83bd91f33e5bef15c17cf405e6581f805aa4102e53a2b86abe7cd8478587d73f",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/execute_handler.rs#function_item@975"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual interactive CLI outer exec: CodeModeExecuteHandler→CodeModeService.execute→native gRPC session; the candidate executes the same script through its production CodeModeGatewayScenarioProbe/gateway/native runtime. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/execute_handler.rs#impl_item@7132",
@@ -60538,73 +60718,145 @@
       "id": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@11998",
       "sha256": "58a5eb4681eba2d9da70befef56d2d12de932de2b2351f7b6c7e18db7c0051fc",
       "scopeSha256": "60c3986eac5e28ad8757e79b2a4900ffab1ee415e7d6696db80dae76870b7768",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/mcp",
+          "inputSha256": "ba7e77ae2530e3f9f07208b269076c08edb04bc229e165d583f0ae8e68591a6f",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@11998"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual runtime MCP tool callback→CodeModeCellDelegate→broker worker→submit_nested_tool→typed function payload→real ToolRegistry/MCP handler. Source and candidate typed peer-visible inputs/results remain material. The current source-only LLVM discovery entered this exact declaration for cli-source/mcp; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@14618",
       "sha256": "4a9607fedfcc53803fb699c324e74b30b1f861a66242ce2671afa906a6c6aeb5",
       "scopeSha256": "dfd26c9244b0f1ab1f4b03d7f9574f6bda242bce9755f6a49aff5d84d8b8596c",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/mcp",
+          "inputSha256": "ba7e77ae2530e3f9f07208b269076c08edb04bc229e165d583f0ae8e68591a6f",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@14618"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual runtime MCP tool callback→CodeModeCellDelegate→broker worker→submit_nested_tool→typed function payload→real ToolRegistry/MCP handler. Source and candidate typed peer-visible inputs/results remain material. The current source-only LLVM discovery entered this exact declaration for cli-source/mcp; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@14973",
       "sha256": "8b04b50684de418e90e3ec929f03f6bd13dd4434a999c0c60d4ad10cb60adaf1",
       "scopeSha256": "b0410063305a32deb0729f1dd656589d3b88847ce9602fde1fec44de19fe44d1",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/mcp",
+          "inputSha256": "ba7e77ae2530e3f9f07208b269076c08edb04bc229e165d583f0ae8e68591a6f",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@14973"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual runtime MCP tool callback→CodeModeCellDelegate→broker worker→submit_nested_tool→typed function payload→real ToolRegistry/MCP handler. Source and candidate typed peer-visible inputs/results remain material. The current source-only LLVM discovery entered this exact declaration for cli-source/mcp; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@15217",
       "sha256": "fb0a3ec1da007c02c062f65217770d144f81003ddad13552dd59b60c8da52fa7",
       "scopeSha256": "7e08688b525a6c6440254a5790e6ad57ea80238b3ee18443b41edfc7b49b15ed",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/mcp",
+          "inputSha256": "ba7e77ae2530e3f9f07208b269076c08edb04bc229e165d583f0ae8e68591a6f",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@15217"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual runtime MCP tool callback→CodeModeCellDelegate→broker worker→submit_nested_tool→typed function payload→real ToolRegistry/MCP handler. Source and candidate typed peer-visible inputs/results remain material. The current source-only LLVM discovery entered this exact declaration for cli-source/mcp; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@15702",
       "sha256": "3531b8406416369f6104fba576252d0703f582cf713e8fda06afdabd67078c24",
       "scopeSha256": "738ea6910c704ca7bba0913968ce3d2bb851b5e0d7a3be93c8ecc90806381c4f",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/freeform-patch",
+          "inputSha256": "c6df12910d862d63cd26f9907269fc9e194bb2a86725cd460b618fc500bd2a9b",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@15702"
+        }
+      ],
+      "reason": "Actual source-built interactive CLI invokes this exact freeform payload builder for the bound apply_patch script. The mandatory matching candidate gateway must advertise the same FREEFORM catalog, emit the checked permission callback, execute the audited official standalone tool in its own disposable workspace, and compare actual file bytes, process output/profile and the observed guest value. Source-only observation is a plan prerequisite, never qualification PASS."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@2549",
       "sha256": "57a2d3152da639548cb69521afcc3b10401eca1d2c1e9033437597c5bd132adb",
       "scopeSha256": "b99908f54eafb6f7999c64438eeeb5f656295585732f76227fdae717a71c6a8a",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@2549"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual CodeMode service availability/session initialization/readiness/cleanup or output conversion around mandatory interactive runs; candidate packets come from its production gateway and native host. Each exact body must still have a positive validated LLVM entry. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@3200",
       "sha256": "3e0dc886ef3ebcd866e8a17db048697d0842ad3f2058767e69df0df86f5b4363",
       "scopeSha256": "51bcb54b7229e50f063b74a46ccd3e5dbfb62e54b0db8d00d470cfbbe42380b0",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@3200"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual CodeMode service availability/session initialization/readiness/cleanup or output conversion around mandatory interactive runs; candidate packets come from its production gateway and native host. Each exact body must still have a positive validated LLVM entry. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@3919",
       "sha256": "d7e8efb2f0759c96ce1c92a587345df50fa22eb21fafb327e75ca9e0a6e8f9e8",
       "scopeSha256": "98689746061316be5b858297c082900b274370dbd5205e5fb2e048e95fd0edda",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@3919"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual CodeMode service availability/session initialization/readiness/cleanup or output conversion around mandatory interactive runs; candidate packets come from its production gateway and native host. Each exact body must still have a positive validated LLVM entry. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@4008",
@@ -60628,28 +60880,55 @@
       "id": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@4802",
       "sha256": "df97e82cd3cedecff414f62af5a6047cc4006130d1d1e993896edeef72679357",
       "scopeSha256": "8e8e5d29f5da9a1b06c02b42cdc7bad52c7218cc8f0d9d383f578b99b2ebd428",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@4802"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual CodeMode service availability/session initialization/readiness/cleanup or output conversion around mandatory interactive runs; candidate packets come from its production gateway and native host. Each exact body must still have a positive validated LLVM entry. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@5422",
       "sha256": "1129257931b8c7f8cffcbf736f6a2dbe17142719521c5b8738e7bf7c311dff79",
       "scopeSha256": "e76fff2a30aa017ddd65304ad2c169fd3c61580c7233946be99d2f9054658ef0",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@5422"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: The actual wait handler calls CodeModeService.wait, preserving the running cell; control and empty-yield compare foreground/suffix history while terminate covers explicit termination. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@5680",
       "sha256": "33d5c576ea6e12296cc4b19bfa78e4ef36414a9e925d4f693c3ecc0d0fc47f2b",
       "scopeSha256": "7ce749c2971043fd5227004f6c0c1293633081f10fefab0d4c11dc40ecb49365",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/terminate",
+          "inputSha256": "e7ff337122eafd09b2aa248e01f1de1823e620290119430e3e185fdb823f3904",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@5680"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual wait handler’s terminate=true branch calls CodeModeService.terminate and compares termination plus a healthy later cell through the production gateway. The current source-only LLVM discovery entered this exact declaration for cli-source/terminate; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@5873",
@@ -60664,55 +60943,109 @@
       "id": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@6439",
       "sha256": "08b6cefede3b3799773dec9b45609913ff9da3417c274c3b858d689c1168f5cb",
       "scopeSha256": "5447d65ec6e831aeedda9f96022c6542d2ab853650b2e309a887c7d6e90d297a",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@6439"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual CodeMode service availability/session initialization/readiness/cleanup or output conversion around mandatory interactive runs; candidate packets come from its production gateway and native host. Each exact body must still have a positive validated LLVM entry. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@7005",
       "sha256": "99124c1717f0693982e03b0e839023f35b7f3c6a62a8df65d76cd9007ef8f0db",
       "scopeSha256": "75fc82d899811db8687a4ad9192611da72880a072f571c1bf5ebc4c0dbb60784",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@7005"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual CodeMode service availability/session initialization/readiness/cleanup or output conversion around mandatory interactive runs; candidate packets come from its production gateway and native host. Each exact body must still have a positive validated LLVM entry. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@7298",
       "sha256": "fa4c346a3299853b4cc599f99dc9d2601d0a4d09cdc95ad0ed65c0f54b4c8ef4",
       "scopeSha256": "1d90bd5226538441092b6a696985b8eda5beb045e38dd941b6a98df97f884129",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/mcp",
+          "inputSha256": "ba7e77ae2530e3f9f07208b269076c08edb04bc229e165d583f0ae8e68591a6f",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@7298"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual runtime MCP tool callback→CodeModeCellDelegate→broker worker→submit_nested_tool→typed function payload→real ToolRegistry/MCP handler. Source and candidate typed peer-visible inputs/results remain material. The current source-only LLVM discovery entered this exact declaration for cli-source/mcp; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@7521",
       "sha256": "c2c7efd4c6e985a503367596c4efc6ee27c8b2bbc5f5bb266475d0cc2b1a4cf2",
       "scopeSha256": "58bae169a8a877199bb9a6253795dd9153a5b234f44dd743078293172680ef35",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@7521"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual CodeMode service availability/session initialization/readiness/cleanup or output conversion around mandatory interactive runs; candidate packets come from its production gateway and native host. Each exact body must still have a positive validated LLVM entry. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@7644",
       "sha256": "9016f1ae6e0b5396642ca5acf071475b2d3e7dd03e90840cca8ea8b09cc5086d",
       "scopeSha256": "b0edc2c697f0d87b6042abf83432b1d81a3ea47b645ba3cb0c0b393c5538be0c",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@7644"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual CodeMode service availability/session initialization/readiness/cleanup or output conversion around mandatory interactive runs; candidate packets come from its production gateway and native host. Each exact body must still have a positive validated LLVM entry. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@8097",
       "sha256": "d9132624cc6edd2236e7b14af0844c6e42b4af33b8d9dfebbd084052503263a2",
       "scopeSha256": "e2143f59c87e7c84878ffe00b21ba7ff4a7706daf3917b1c9a7c80b823642c50",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@8097"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual CodeMode service availability/session initialization/readiness/cleanup or output conversion around mandatory interactive runs; candidate packets come from its production gateway and native host. Each exact body must still have a positive validated LLVM entry. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/mod.rs#function_item@9232",
@@ -61546,64 +61879,127 @@
       "id": "codex-rs/core/src/tools/code_mode/wait_handler.rs#function_item@1517",
       "sha256": "53dd1368dfe86e3b71581a7533a1e9aa32d7512f446db266751125e51bd91ee1",
       "scopeSha256": "b7e6c64fc5bf921d775910703e24700ff158c5233b0e4de5755d0adbbd71013e",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/wait_handler.rs#function_item@1517"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual interactive wait/terminate handler consumes the yielded cell ID emitted by the preceding exec. Candidate history compares the same wait arguments and output sequence through the real gateway. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/wait_handler.rs#function_item@1602",
       "sha256": "9b45b732b5c6763794d5ba1aafe3cf044ff5c515161b38417732224c6c03208a",
       "scopeSha256": "e1ea3c53d781d69d23e3a86b6c7bf10ac3ea0bfb036342cbcaea146fd0e62f16",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/wait_handler.rs#function_item@1602"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual interactive wait/terminate handler consumes the yielded cell ID emitted by the preceding exec. Candidate history compares the same wait arguments and output sequence through the real gateway. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/wait_handler.rs#function_item@1668",
       "sha256": "8e5c76e07b67c8818e43b9e291eaa4bce2eabf7b120a8880c426e4910db09afc",
       "scopeSha256": "7f2df871878775c766332ea255eb95aa832609636eb1fa1337fd4ad1b2ceca85",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/wait_handler.rs#function_item@1668"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual interactive wait/terminate handler consumes the yielded cell ID emitted by the preceding exec. Candidate history compares the same wait arguments and output sequence through the real gateway. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/wait_handler.rs#function_item@1890",
       "sha256": "13ef61d4c26ea2713d6537091e5ac9d9329447b63310aaa3942c19bf556dda15",
       "scopeSha256": "601c4d73849043fc90ba42a0c8db6d4e07e873208c8bfce6d2442418da8adf12",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/wait_handler.rs#function_item@1890"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual interactive wait/terminate handler consumes the yielded cell ID emitted by the preceding exec. Candidate history compares the same wait arguments and output sequence through the real gateway. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/wait_handler.rs#function_item@2722",
       "sha256": "fa6936f82cbbef3e2e997cab968c73d78f0f25a38fcc61149739f68908a4d4cc",
       "scopeSha256": "50dacb0bca5795bda2ebc2e0768223581c9253b995877da8a9b74d61fdf2f676",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/wait_handler.rs#function_item@2722"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual interactive wait/terminate handler consumes the yielded cell ID emitted by the preceding exec. Candidate history compares the same wait arguments and output sequence through the real gateway. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/wait_handler.rs#function_item@8632",
       "sha256": "2c889a299a59a880bb96b6aaf0128543a16154e494c056eb95e5e23852fdb4c4",
       "scopeSha256": "405bbc2d1f705506065e95ab6f621b8af3337bb620dc85cf3bff2408b00fdf78",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/wait_handler.rs#function_item@8632"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual interactive wait/terminate handler consumes the yielded cell ID emitted by the preceding exec. Candidate history compares the same wait arguments and output sequence through the real gateway. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/wait_handler.rs#function_item@9012",
       "sha256": "ad5b8438ef8c9c5b52b378147c67d35473d6149b6a1c0d7fb3c5a1fd7ae65e2f",
       "scopeSha256": "dab9fcfb0c7467a6998556762b8dc71bda11ac5d9bc6982e1a62d44e257d2616",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/wait_handler.rs#function_item@9012"
+        }
+      ],
+      "reason": "Exact reviewed live CodeMode route: Actual interactive wait/terminate handler consumes the yielded cell ID emitted by the preceding exec. Candidate history compares the same wait arguments and output sequence through the real gateway. The current source-only LLVM discovery entered this exact declaration for cli-source/control; the mandatory fresh source CLI and candidate gateway comparison must independently reproduce that entry and equal observed values/effects. This is an execution plan, not a qualification PASS; incidental frontend/MCP transport entries grant no coverage."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/wait_handler.rs#impl_item@1453",

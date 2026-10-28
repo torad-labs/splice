@@ -4,6 +4,7 @@ package splice.provider.codex.state
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import splice.core.client.AgentConversationKey
 import splice.core.perf.InputDigest
 import splice.core.util.JsonScalars
 import splice.provider.codex.CODE_MODE_FIELD_ROLE
@@ -72,8 +73,7 @@ internal class CodeModeTurnIdentity {
 
     /** The conversation key a turn of [agentId] carries: the opening's own key on the main thread, which names no
      *  agent, so the records it persisted are still found; the opening and the subagent otherwise. */
-    fun conversationKey(opening: String, agentId: String?): String =
-        if (agentId.isNullOrEmpty()) opening else "$opening${0.toChar()}agent${0.toChar()}$agentId"
+    fun conversationKey(opening: String, agentId: String?): String = AgentConversationKey.of(opening, agentId)
 
     /** The branch of conversation [turnKey] that [input] continues, named by the newest user message in it. A
      *  message Claude Code delivers to a running agent rides beside a tool result on one branch while another branch

@@ -42,6 +42,7 @@ package splice.dialect.responses.request
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import splice.core.client.AgentConversationKey
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnReasoning
 import splice.core.turn.TurnRoute
@@ -163,10 +164,10 @@ internal class ResponsesRequestBuilder(
             scope = TurnScope(
                 // The reasoning cache's conversation scope — the SAME derivation the provider's
                 // lookup closure uses, so capture (which only sees TurnMeta) and injection agree.
-                conversationKey = parts.conversationKey,
+                conversationKey = parts.conversationKey?.let { AgentConversationKey.of(it, opts.agentId) },
                 sessionId = opts.sessionId,
                 reasoningHistory = opts.reasoningHistory.copy(),
-                reasoningStorageKey = ids.reasoningStorageKey(body),
+                reasoningStorageKey = ids.reasoningStorageKey(body)?.let { AgentConversationKey.of(it, opts.agentId) },
                 // summaryParts is NOT passed: TurnScope's default constructs the turn's one instance.
                 // Every continuation round reuses this meta object (continuationRequest bypasses
                 // build()), so the dedup state it carries is genuinely turn-scoped.

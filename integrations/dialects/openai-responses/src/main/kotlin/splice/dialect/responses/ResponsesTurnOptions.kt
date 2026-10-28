@@ -3,6 +3,7 @@
 // clot (concentration, 2026-08-19).
 package splice.dialect.responses
 
+import splice.core.client.AgentConversationKey
 import splice.core.model.ModelCatalog
 import splice.core.parse.AnthropicTurnBody
 import splice.core.reasoning.HISTORY_POSITION_PREFIX
@@ -42,8 +43,8 @@ internal class ReasoningContinuity(
         sessionId: String?,
         includeLegacy: Boolean = true,
     ): Lazy<ReasoningCacheView> = lazy {
-        val canonical = policy.conversationKey(sessionId, ids.reasoningStorageKey(body.typed))
-        val legacy = if (includeLegacy) {
+        val canonical = policy.conversationKey(sessionId, storageKey(body))
+        val legacy = if (includeLegacy && body.agentId.isNullOrEmpty()) {
             policy.conversationKey(
                 sessionId,
                 ids.stablePromptCacheKey(body.typed),
@@ -64,17 +65,19 @@ internal class ReasoningContinuity(
 
     fun phaseSnapshotFor(body: AnthropicTurnBody, sessionId: String?): Lazy<ReasoningCacheView> = lazy {
         if (sessionId.isNullOrEmpty()) return@lazy ReasoningCacheView(emptyMap())
-        val key = policy.conversationKey(sessionId, ids.reasoningStorageKey(body.typed))
-            ?: return@lazy ReasoningCacheView(emptyMap())
+        val key = policy.conversationKey(sessionId, storageKey(body)) ?: return@lazy ReasoningCacheView(emptyMap())
         phases.view(key)
     }
 
     fun alias(body: AnthropicTurnBody, sessionId: String?, update: ReasoningHistoryUpdate) {
         if (sessionId.isNullOrEmpty()) return
-        val key = policy.conversationKey(sessionId, ids.reasoningStorageKey(body.typed)) ?: return
+        val key = policy.conversationKey(sessionId, storageKey(body)) ?: return
         cache.updateHistory(key, update)
         phases.updateHistory(key, update)
     }
+
+    private fun storageKey(body: AnthropicTurnBody): String? =
+        ids.reasoningStorageKey(body.typed)?.let { AgentConversationKey.of(it, body.agentId) }
 }
 
 internal class ResponsesTurnOptions(
@@ -156,6 +159,7 @@ internal class ResponsesTurnOptions(
                 ),
             ),
             sessionId = sessionId,
+            agentId = body.agentId,
             // The provider's capability latch, read at build time: false = a shape-400 already
             // closed it this daemon lifetime; build the full status-quo request instead.
             toolSurfaceOpen = toolSurfaceLatch.open,

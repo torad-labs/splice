@@ -138,6 +138,29 @@ private fun stateReply(state: String, n: Int) = reply {
     responsesAnswer("synthetic answer $n")
 }
 
+private fun responseReply(responseId: String, n: Int) = reply {
+    event("""{"type":"response.created","response":{"id":"$responseId","status":"in_progress","output":[]}}""")
+    event("""{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")
+    event("""{"type":"response.output_text.delta","output_index":0,"delta":"synthetic answer $n"}""")
+    event("""{"type":"response.output_item.done","output_index":0}""")
+    event(
+        """{"type":"response.completed","response":{"id":"$responseId","status":"completed","output":[],""" +
+            """"usage":{"input_tokens":12,"output_tokens":5}}}""",
+    )
+}
+
+private fun callReply(responseId: String) = reply {
+    val call = """{"type":"function_call","call_id":"toolu_probe_1","name":"Read",""" +
+        """"arguments":"{\"file_path\":\"/tmp/one\"}"}"""
+    event("""{"type":"response.created","response":{"id":"$responseId","status":"in_progress","output":[]}}""")
+    event("""{"type":"response.output_item.added","output_index":0,"item":$call}""")
+    event("""{"type":"response.output_item.done","output_index":0,"item":$call}""")
+    event(
+        """{"type":"response.completed","response":{"id":"$responseId","status":"completed","output":[],""" +
+            """"usage":{"input_tokens":12,"output_tokens":5}}}""",
+    )
+}
+
 /** One way a backend refuses the person's prompt in words that quote the request's turn state: [replies] in the order
  *  the head meets them, on the websocket when [webSocket]. Each reaches the head's lines by its own path. */
 private data class Refusal(val name: String, val webSocket: Boolean, val replies: List<ScriptedReply>)
@@ -266,6 +289,45 @@ class CodexTurnStateToolLoopTest {
         }
 
     @Test
+    fun `same-opening websocket subagents continue their own response chains`() = runBlocking {
+        val rig = start("subagent-ws-chains", webSocket = true, traced = false, replay = true)
+        try {
+            rig.backend.script(callReply("resp_agent_one_open"))
+            val first = rig.post(listOf(SUBAGENT_PROMPT), agent = "synthetic-agent-one")
+            assertTrue("toolu_probe_1" in first) { "$first\n${rig.run().logs.joinToString("\n")}" }
+            rig.backend.script(callReply("resp_agent_two_open"))
+            val second = rig.post(listOf(SUBAGENT_PROMPT), agent = "synthetic-agent-two")
+            assertTrue("toolu_probe_1" in second) { "$second\n${rig.run().logs.joinToString("\n")}" }
+            rig.backend.script(responseReply("resp_agent_one_next", 3))
+            val third = rig.post(listOf(SUBAGENT_PROMPT, CALL_ONE, RESULT_ONE), agent = "synthetic-agent-one")
+            assertTrue("synthetic answer 3" in third, third)
+            rig.backend.script(responseReply("resp_agent_two_next", 4))
+            val fourth = rig.post(listOf(SUBAGENT_PROMPT, CALL_ONE, RESULT_ONE), agent = "synthetic-agent-two")
+            assertTrue("synthetic answer 4" in fourth, fourth)
+            val requests = rig.backend.awaitRequests(4)
+            assertEquals(4, requests.size, rig.run().logs.joinToString("\n"))
+
+            val previous = requests.map {
+                Json.parseToJsonElement(it.body).jsonObject["previous_response_id"]?.jsonPrimitive?.content
+            }
+            assertEquals(
+                listOf(null, null, "resp_agent_one_open", "resp_agent_two_open"),
+                previous,
+                "neither subagent may inherit the other's server-side context",
+            )
+            assertEquals(listOf(Transport.WEBSOCKET), requests.map { it.transport }.distinct())
+            assertEquals(1, requests.map { it.headers["session-id"] }.distinct().size)
+            assertEquals(
+                1,
+                requests.map { Json.parseToJsonElement(it.body).jsonObject["prompt_cache_key"] }.distinct().size,
+                "isolating continuity must not split the upstream prompt cache",
+            )
+        } finally {
+            rig.stop()
+        }
+    }
+
+    @Test
     fun `a turn state an error quotes inside its message appears in no trace record, log line or console answer`() =
         runBlocking {
             val leaks = REFUSALS.flatMap { refusal ->
@@ -361,7 +423,7 @@ class CodexTurnStateToolLoopTest {
 
     /** A codex head on a scripted backend, started, with its log, its perf rows and (when [traced]) its trace under
      *  [name]. */
-    private suspend fun start(name: String, webSocket: Boolean, traced: Boolean): Rig {
+    private suspend fun start(name: String, webSocket: Boolean, traced: Boolean, replay: Boolean = false): Rig {
         val dir = Files.createDirectories(tmp.resolve(name))
         val traceDir = dir.resolve("trace")
         val logs = CopyOnWriteArrayList<String>()
@@ -373,7 +435,7 @@ class CodexTurnStateToolLoopTest {
             null
         }
         val head = HeadServer(
-            provider = provider(backend.baseUrl, webSocket, LogSink { logs += it }),
+            provider = provider(backend.baseUrl, webSocket, LogSink { logs += it }, replay),
             listenPort = 0,
             deps = headDeps(dir, upstream = UpstreamClient(totalTimeoutMs = 30_000), log = { logs += it })
                 .copy(stores = headStores(dir, trace = trace)),
@@ -416,7 +478,7 @@ class CodexTurnStateToolLoopTest {
         }
     }
 
-    private fun provider(baseUrl: String, webSocket: Boolean, log: LogSink): CodexProvider {
+    private fun provider(baseUrl: String, webSocket: Boolean, log: LogSink, replay: Boolean): CodexProvider {
         val auth = object : RefreshableAuthProvider {
             override suspend fun credentials(): Credentials = Credentials.Bearer("synthetic-token", "synthetic-account")
             override suspend fun refresh(): Credentials = credentials()
@@ -435,7 +497,7 @@ class CodexTurnStateToolLoopTest {
                 locations = ProviderLocations(baseUrl = baseUrl),
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
             ),
-            reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
+            reasoning = ReasoningSettings(ReasoningDisplay.TEXT, replay, "high", "detailed"),
             // No prefill round: this backend answers every frame with its step's answer, and a prefill frame must be
             // answered with none. A prefill frame carries the same client_metadata as the round after it
             // (ResponsesWsPrefiller.run reads the same turn snapshot), so leaving it out hides nothing here.

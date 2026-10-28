@@ -146,6 +146,45 @@ class ReasoningReplayRequestRegressionTest(@param:TempDir private val state: Pat
     }
 
     @Test
+    fun `same-opening main thread and subagents write and replay only their own reasoning`() = runTest {
+        val provider = start()
+        val main = request(opening)
+        val first = request(opening).copy(agentId = "agent-one")
+        val second = request(opening).copy(agentId = "agent-two")
+        drive(provider, main, reasoning("rs_main") + prose("Inspecting.") + call("call_1", 2))
+        drive(provider, first, reasoning("rs_agent_one") + prose("Inspecting.") + call("call_1", 2))
+        drive(provider, second, reasoning("rs_agent_two") + prose("Inspecting.") + call("call_1", 2))
+
+        val history = "$opening,${assistant("${text("Inspecting.")},${tool("call_1")}")}," +
+            result("call_1", "file contents")
+        val mainInput = input(provider, request(history))
+        val firstInput = input(provider, request(history).copy(agentId = "agent-one"))
+        val secondInput = input(provider, request(history).copy(agentId = "agent-two"))
+        val freshInput = input(provider, request(history).copy(agentId = "agent-three"))
+
+        assertEquals(listOf("rs_main"), reasoningIds(mainInput))
+        assertEquals(listOf("rs_agent_one"), reasoningIds(firstInput))
+        assertEquals(listOf("rs_agent_two"), reasoningIds(secondInput))
+        assertTrue(reasoningIds(freshInput).isEmpty(), "a new subagent cannot read unscoped main-thread reasoning")
+    }
+
+    @Test
+    fun `legacy unscoped reasoning remains available only to the main thread`() {
+        val history = "$opening,${assistant(tool("call_1"))},${result("call_1", "file contents")}"
+        val prefix = request("$history,${assistant(text("Reviewed. "))}")
+        persistLegacyReasoning(prefix, ResponsesStableIds().stablePromptCacheKey(prefix.typed))
+        val next = request(
+            "$history,${assistant(text("Reviewed. More."))}," +
+                """{"role":"user","content":"Continue the inspection."}""",
+        )
+        val provider = start()
+
+        assertTrue(reasoningIds(input(provider, next.copy(agentId = "agent-one"))).isEmpty())
+        assertEquals(listOf("rs_legacy"), reasoningIds(input(provider, next)))
+        assertTrue(reasoningIds(input(provider, next.copy(agentId = "agent-two"))).isEmpty())
+    }
+
+    @Test
     fun `sessionless replay retains tool round reasoning with persistence disabled`() = runTest {
         for (session in listOf(null, "")) {
             val directory = state.resolve(if (session == null) "absent" else "empty")
@@ -371,7 +410,10 @@ class ReasoningReplayRequestRegressionTest(@param:TempDir private val state: Pat
     }
 
     /** Persist the pre-upgrade format with the complete tool-result payload in its history digest. */
-    private fun persistLegacyReasoning(prefix: AnthropicTurnBody) {
+    private fun persistLegacyReasoning(
+        prefix: AnthropicTurnBody,
+        openingKey: String? = ResponsesStableIds().reasoningStorageKey(prefix.typed),
+    ) {
         val item = event(
             """{"type":"reasoning","id":"rs_legacy","encrypted_content":"fixture-legacy","summary":[]}""",
         )
@@ -379,7 +421,7 @@ class ReasoningReplayRequestRegressionTest(@param:TempDir private val state: Pat
         val key = checkNotNull(
             ReasoningCachePolicy().conversationKey(
                 "fixture-session",
-                ResponsesStableIds().reasoningStorageKey(prefix.typed),
+                openingKey,
             ),
         )
         val index = ReasoningPositionIndex().index(

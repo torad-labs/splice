@@ -14,6 +14,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.auth.AuthDescription
@@ -140,6 +141,25 @@ class CodexProviderTest {
         val compact = codex.buildTurn(deferrableTurnBody(), compact = true, sessionId = "s1")
         assertEquals(built.extraHeaders["thread-id"], compact.extraHeaders["thread-id"])
         assertEquals("true", compact.extraHeaders["x-openai-internal-codex-responses-lite"])
+    }
+
+    @Test
+    fun `identical openings from different subagents isolate continuity without splitting the upstream session`() {
+        val codex = provider(accountIdHeader = false)
+        val body = deferrableTurnBody()
+        val main = codex.buildTurn(body, compact = false, sessionId = "s1")
+        val first = codex.buildTurn(body.copy(agentId = "agent-one"), compact = false, sessionId = "s1")
+        val second = codex.buildTurn(body.copy(agentId = "agent-two"), compact = false, sessionId = "s1")
+
+        assertNotEquals(main.meta.scope.conversationKey, first.meta.scope.conversationKey)
+        assertNotEquals(main.meta.scope.reasoningStorageKey, first.meta.scope.reasoningStorageKey)
+        assertNotEquals(first.meta.scope.conversationKey, second.meta.scope.conversationKey)
+        assertNotEquals(first.meta.scope.reasoningStorageKey, second.meta.scope.reasoningStorageKey)
+        assertEquals(main.requestBody["prompt_cache_key"], first.requestBody["prompt_cache_key"])
+        assertEquals(first.requestBody["prompt_cache_key"], second.requestBody["prompt_cache_key"])
+        assertEquals("s1", first.extraHeaders["session-id"])
+        assertEquals(main.extraHeaders, first.extraHeaders)
+        assertEquals(first.extraHeaders, second.extraHeaders)
     }
 
     @Test

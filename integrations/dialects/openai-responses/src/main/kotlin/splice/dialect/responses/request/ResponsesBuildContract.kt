@@ -71,6 +71,7 @@ internal data class BuildOptions(
     public val reasoning: RequestedReasoning,
     public val handoff: ReasoningHandoff,
     public val sessionId: String? = null,
+    public val agentId: String? = null,
     /** The provider's tool-surface capability latch, read at build time. False = the backend
      *  rejected the shape on this daemon lifetime; build the full status-quo request. */
     public val toolSurfaceOpen: Boolean = true,

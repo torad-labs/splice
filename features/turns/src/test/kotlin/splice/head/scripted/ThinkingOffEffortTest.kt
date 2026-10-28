@@ -1,7 +1,8 @@
 // NEW: thinking off never costs a turn its reasoning (Marcos, 2026-10-27: "thinking being off should never be a
 // thing"). A Claude Code request whose thinking is disabled reaches the provider with the reasoning any other request
-// gets, through a real head: on a Responses head the effort it asked for with the head's summary, on a Chat head the
-// effort. Every assertion reads the request the provider received.
+// gets, through a real head: on a Responses head the head's own effort and summary (splice authors a Responses head's
+// effort, Marcos 2026-10-28), on a Chat head the effort it asked for. Every assertion reads the request the provider
+// received.
 package splice.head.scripted
 
 import kotlinx.coroutines.test.runTest
@@ -17,24 +18,24 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 
-/** The summary the scripted Responses head is configured with (its ReasoningSettings in HeadProviders.kt). */
+/** The effort and summary the scripted Responses head is configured with (ReasoningSettings in HeadProviders.kt). */
+private const val HEAD_EFFORT = "high"
 private const val HEAD_SUMMARY = "detailed"
 
 class ThinkingOffEffortTest {
     @Test
-    fun `a Responses head sends the asked effort and its summary when thinking is off`(@TempDir tmp: Path) = runTest {
+    fun `a Responses head sends its own effort and summary when thinking is off`(@TempDir tmp: Path) = runTest {
         withScriptedHeads(tmp) {
             provider.script(reply { responsesAnswer("answered") })
             val head = responses()
 
-            // high is what Claude Code asks for by default. low differs from the effort the head is configured with,
-            // so the effort sent is the one the request asked for.
+            // low differs from the effort the head is configured with, so the head's own effort is what rides.
             for (asked in listOf("high", "low")) {
                 val answer = head.client.send(thinkingOff(asked))
 
                 val reasoning = sentTo("/responses")["reasoning"] as? JsonObject
                 val seen = "asked $asked, sent reasoning $reasoning: ${answer.describe()}"
-                assertEquals(asked, reasoning?.get("effort")?.jsonPrimitive?.content, seen)
+                assertEquals(HEAD_EFFORT, reasoning?.get("effort")?.jsonPrimitive?.content, seen)
                 assertEquals(HEAD_SUMMARY, reasoning?.get("summary")?.jsonPrimitive?.content, seen)
             }
         }

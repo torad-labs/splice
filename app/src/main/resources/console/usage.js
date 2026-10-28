@@ -22,7 +22,7 @@
 // rings, what splice sent through each login is bar cells on scales the whole board shares, the window is columns whose
 // parts carry their command where they have room, with each column's failed share under it, and every table row is one
 // line of bars ending on one column. A qualifier is said once, on the band's head or in its legend. Each band is
-// re-drawn on its own, so a hover moves nothing but the chart, and a value that changes grows into its new length.
+// re-drawn on its own, and a value that changes moves from its last length to its new one.
 CONSOLE.page("usage.html", (scope) => {
   "use strict";
   const { document, window, API, setTimeout, clearTimeout, setInterval, clearInterval, requestAnimationFrame, cancelAnimationFrame, addEventListener, removeEventListener } = scope;
@@ -46,7 +46,7 @@ const EYE = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke=
 const OPEN = DRAW.go;
 const UP = G('<path d="M12 19V5M6 11l6-6 6 6"/>', 'class="go" aria-hidden="true"');
 const DOWN = G('<path d="M12 5v14M6 13l6 6 6-6"/>', 'class="go" aria-hidden="true"');
-const CUT = 12;       // the rows a list shows before its tail folds into one row
+const CUT = 15;       // the rows a list shows before its tail folds into one row
 const MORE_STEP = 36;      // the rows one press of the tail adds: a list of 2,700 agents opens a screen at a time, never whole
 const FIND_AT = 14;   // from this many rows the list carries a Find field
 // the daemon's id for a login (AccountRef): a group keyed by one that no roster row holds is a login splice no longer has
@@ -58,7 +58,7 @@ const WHY_NOT = { 500: "splice failed to send it", 502: "splice is not ready", 5
 // commands this read has not counted: still being read, or not read at all
 const uncounted = () => (D.reading?.size ?? 0) + D.errors.length > 0;
 
-const ui = { win: "7d", measure: "tokens", hover: null, by: "account", rank: "tokens", f: {}, shown: CUT, from: null, project: PICK.get(), pmenu: false,
+const ui = { win: "7d", measure: "tokens", by: "account", rank: "tokens", f: {}, shown: CUT, from: null, project: PICK.get(), pmenu: false,
   find: "", cold: new Set(), coldNew: null, naming: null, nameAt: "card", nameErr: null, nameDraft: "", nameBusy: false, landed: null, shook: null };
 const root = document.getElementById("usage");
 
@@ -74,6 +74,8 @@ const sessTitle = (tag, fallback) => {
   const s = S.sessions[tag];
   return s?.name || s?.title || fallback || `Session ${tag}`;
 };
+/** The window (and the project) a band reads, beside its title: every band but Results reads the page's pick. */
+const hwin = () => `<span class="hwin">${projectWord() ? `${esc(projectWord())} · ` : ""}${WINDOWS[ui.win].word}</span>`;
 const hasFilter = () => Object.keys(ui.f).length > 0;
 const projectWord = () => (ui.project == null ? null : ui.project === NO_PROJECT_KEY ? "No project" : S.groups.find((g) => g.key === ui.project)?.label ?? ui.project);
 
@@ -287,14 +289,40 @@ function planName(row, fallback) {
   }
   return nameBook.by.get(row) ?? DRAW.name("login", loginFacts(row, fallback)).text;
 }
-/** An account in a row, a chip or a detail: a plan by its name, a key by its whole variable. The day splice first saw
- *  the key is drawn once, on the key's own card, where it belongs. */
+/** A key by its variable and the day splice first saw it, in the same words on its card, its rows, its filter chip and
+ *  its cold plate: a key that replaced another carries the same variable, and the day is what tells the two apart. */
+const keyWord = (name, seen) => `<span class="var">${esc(name)}</span>${seen ? ` · ${dayWord(new Date(seen * 1000))}` : ""}`;
+/** An account in a row, a chip or a detail: a plan by its name, a key by its variable and day. A login the roster no
+ *  longer holds reads by the number the daemon kept for it, and by the one name wherever it stands: its card on the board,
+ *  its row, the filter it sets. */
 function acctLabel(head, label, name) {
   const plan = planRowOf(head, label);
   if (plan) return esc(planName(plan, label));
   const key = keyRecord(label);
-  if (key) return `<span class="var">${esc(key.name)}</span>`;
-  return esc(DRAW.name("login", { name: name ?? label, provider: providerOfHead(head) }).text);
+  if (key) return keyWord(key.name, key.seen);
+  return esc(goneName(head, label, name));
+}
+/** What a login splice carried requests for but the roster no longer holds is called: the daemon's number for it under
+ *  the provider's name, and never a name a login on the roster already has. */
+function goneName(head, label, name) {
+  const text = DRAW.name("login", { name: name ?? label, provider: providerOfHead(head) }).text;
+  const held = S.accounts.some((a) => a.kind !== "api-key" && planName(a) === text);
+  return held ? `${text} (signed out)` : text;
+}
+/** The logins the daemon read requests for that no roster row holds (an 8-hex id with no login), in the window's order,
+ *  and as last seen while a window is being read, so the board keeps their cards between reads. */
+const GONE_KEY = "splice-usage-gone";
+function goneLogins() {
+  if (D.all) {
+    const now = [...D.all.accounts.values()].filter((e) => isPlanHead(e.head) && REF_SHAPE.test(String(e.label)) && !planRowOf(e.head, e.label))
+      .map((e) => ({ head: e.head, label: e.label, name: e.name }));
+    try { localStorage.setItem(GONE_KEY, JSON.stringify(now)); } catch { /* a blocked store costs the next first paint one jump */ }
+    return now;
+  }
+  try {
+    const kept = JSON.parse(localStorage.getItem(GONE_KEY) || "[]");
+    return Array.isArray(kept) ? kept.filter((g) => g && typeof g.head === "string" && S.heads.some((h) => h.key === g.head)) : [];
+  } catch { return []; }
 }
 
 // ---------- plans and keys: one board of cards, grouped under each provider, as the Accounts page draws it ----------
@@ -334,9 +362,7 @@ function fold2(t, e) {
   if (e.planValue != null) t.planValue = (t.planValue ?? 0) + e.planValue;
   return t;
 }
-// "No limits reported" only when the provider answered with none (Oct 12). Any other card with no windows is Not read:
-// its meters stay as dashed empty tracks (.bar.gone), so the card keeps the shape of its neighbours.
-const limitsWord = (row) => row.no_usage_at_epoch_seconds ? "No limits reported" : NOT_READ;
+// A card with no window read keeps its meters as dashed empty tracks (.bar.gone), so it keeps the shape of its neighbours.
 const signedOut = (row) => !row.credential_present || row.auth_exclusion_reason === "credential_missing" || !!row.refusal;
 /** A login with no name of its own, that splice can name here: "Account" and the act beside it (the Accounts page's Name it). */
 const canName = (row) => Boolean(row.label_default && row.can_rename);
@@ -356,24 +382,33 @@ function winRow(w) {
  *  dash in its figure's place, so the card keeps its rows instead of collapsing to one word (console.css .bar.gone). */
 const unreadRow = (label) => `<span class="label">${esc(label)}</span><div class="bar gone"></div><span class="pct">${DRAW.dash}</span><span></span>`;
 
-/** What splice itself sent through a login in the window: three bar cells on scales the whole board shares, so the
- *  busiest login is found before a digit is read. While the window reads, each cell keeps its track, striped; a login
- *  with nothing in the window keeps the footer's height, so the board holds its shape from one window to the next. A
- *  figure nobody reported is a dashed track and a dash; a key with no price says why in the bar's place. */
-function thruCells(s, mx, isKey) {
-  if (reading()) return `<footer class="thru">${[0, 1, 2].map(() => GHOST.row([GHOST.bar(4.2), GHOST.track(), GHOST.bar(3.2)])).join("")}</footer>`;
-  if (!s.requests) return `<footer class="thru none">${DRAW.nothing("No requests")}</footer>`;
-  const missing = (label) => `<span class="barcell gone"><em>${label}</em><span class="vbar" aria-hidden="true"></span><b class="v">${DRAW.dash}</b></span>`;
+/** What splice itself sent through a login in the window: bars on scales the whole board shares, so the busiest login is
+ *  found before a digit is read. Tokens is one bar whose lighter part is what was read from the cache, so a cache that
+ *  saves little shows as a bar that is mostly dark, and the share is drawn instead of repeated as a row of its own that
+ *  read 97% on every card. While the window reads each cell keeps its track, striped. A login with nothing in the window
+ *  keeps one slot that says so once, a signed-out one none at all. A figure nobody reported is a dashed track and a dash;
+ *  a key whose money has no figure says why in the row's label, never inside the figure's cell. */
+function thruCells(s, mx, isKey, out = false, has = true) {
+  const rows = isKey ? 3 : 2;
+  if (reading()) return out && !has ? "" : `<footer class="thru">${Array.from({ length: rows }, () => GHOST.row([GHOST.bar(4.2), GHOST.track(), GHOST.bar(3.2)])).join("")}</footer>`;
+  if (!s.requests) return out ? "" : `<footer class="thru none${isKey ? " key" : ""}">${DRAW.nothing("No requests")}</footer>`;
+  const missing = (label) => `<span class="barcell gone"><em>${label}</em><span class="vbar gone" aria-hidden="true"></span><b class="v">${DRAW.dash}</b></span>`;
   const cells = [];
   if (isKey) {
-    const spent = spentOf(s);
+    const spent = spentOf(s), why = noCostWhy(s);
     cells.push(spent == null
-      ? `<span class="barcell why"><em>Spent</em><span class="whyw">${esc(noCostWhy(s))}</span><b class="v">${BARE_DASH}</b></span>`
+      ? `<span class="barcell gone"><em>${esc(why === "Not reported" ? "Spent" : why)}</em><span class="vbar gone" aria-hidden="true"></span><b class="v">${BARE_DASH}</b></span>`
       : DRAW.barCell({ w: barW(spent, mx.spend), text: usd(spent), label: "Spent" }));
   }
-  cells.push(noTokens(s) ? missing("Tokens") : DRAW.barCell({ w: barW(tokensOf(s), mx.tok), text: tok(tokensOf(s)), label: "Tokens" }));
+  if (noTokens(s)) cells.push(missing("Tokens"));
+  else {
+    const total = tokensOf(s), w = barW(total, mx.tok).toFixed(1);
+    const cached = s.noIn < s.requests && total > 0 ? Math.min(100, (s.cached / total) * 100) : 0;
+    if (cached) splitDrawn = true;
+    cells.push(`<span class="barcell"${cached ? ` title="${esc(`${tok(s.cached)} of ${tok(total)} read from the cache`)}"` : ""}><em>Tokens</em>`
+      + `<span class="vbar split" aria-hidden="true"><b data-tw="" data-w="${w}" style="width:${w}%"><i style="width:${cached.toFixed(1)}%"></i></b></span><b class="v" data-tn="">${tok(total)}</b></span>`);
+  }
   cells.push(DRAW.barCell({ w: barW(s.requests, mx.req), text: n0(s.requests), label: "Requests" }));
-  if (!isKey) cells.push(s.noIn < s.requests && s.in > 0 ? DRAW.barCell({ w: barW(s.cached, s.in), text: DRAW.pct(s.cached / s.in), label: "Cached" }) : missing("Cached"));
   return `<footer class="thru">${cells.join("")}</footer>`;
 }
 /** The name of a login with no name: "Account", and the act that gives it one, in place, wherever it was pressed (its
@@ -393,7 +428,11 @@ function nameSlot(row, idx, at) {
  *  same way whatever the window says: its name, its window lines (or the one line that stands for them), the lines it
  *  carries over them (a limit, the request that spent the window) and its footer of bars, which is one height whether
  *  the login sent anything or not. The numbers are this card as it draws (measured at 2548 and 1440). */
-const cardH = (kind, rows, out, lines = 0) => 11.9 + (kind === "key" ? 1.85 : out ? 2.4 : 2.35 * rows) + 1.9 * lines;
+const cardH = (kind, rows, out, lines = 0, s = null) => {
+  const foot = kind === "key" ? 7 : out && !s?.requests ? 0 : 5.14;
+  const body = kind === "key" ? 1.9 : out ? 3.35 : rows > 0 ? 2.345 * rows : 1.9;
+  return 4.9 + body + foot + 1.9 * lines;
+};
 
 function planCard(row, mx) {
   const windows = [windowOf(row.five_hour_used_percent, row.five_hour_reset_epoch_seconds, row.five_hour_window_seconds, "short", row.five_hour_current),
@@ -407,29 +446,50 @@ function planCard(row, mx) {
   }
   const stale = windows.some((w) => w.stale) && row.observed_at_epoch_seconds ? row.observed_at_epoch_seconds * 1000 : null;
   if (stale) rows.push(`<span class="stale-at">${EYE}Last read ${backWord(new Date(stale))}</span>`);
-  // a held login says so once, with the lock, over the bars it holds; a signed-out one offers the way back in their place
+  // a held login says so once, with the lock, over the bars it holds
   const until = held ? windows.filter((w) => w.used >= 100 && w.resetMs).sort((a, b) => b.resetMs - a.resetMs)[0] : null;
-  const body = out
-    ? `<div class="outbox"><span class="state">Signed out</span><a class="act" href="accounts.html?head=${encodeURIComponent(heads[0] ?? "")}">Sign in${OPEN}</a></div>`
+  // a provider that answered with no limits says so once, in one muted line with no track beside it; a login with no
+  // window read at all is two dashed tracks and their dashes, which say it without a word
+  const body = out ? signInBox(heads[0])
     : rows.length ? `<div class="windows">${rows.join("")}</div>`
-      : row.no_usage_at_epoch_seconds ? `<div class="windows">${unreadRow("Limits")}</div><p class="nolimit">${limitsWord(row)}</p>`
+      : row.no_usage_at_epoch_seconds ? `<p class="nolimit">No limits reported</p>`
         : `<div class="windows">${unreadRow("5 hours")}${unreadRow("Week")}</div>`;
   const ranOut = reading() ? null : D.rows.filter((r) => r.outcome === "error:plan-limit" && r.reset && r.reset - r.ts > 5 * HOUR && mine.some((e) => e.head === r.head && e.label === r.account)).sort((a, b) => a.ts - b.ts)[0];
   const lead = mine.length ? mine[0] : null;
   const door = lead ? ` data-act="pick" data-d="account" data-v="${esc(acctKeyOfAll(mine))}" role="button" tabindex="0" aria-label="${esc(`${planName(row) || "Account"}: where its requests went`)}"` : "";
   const pk = pickedAccount(), picked = Boolean(pk && heads.includes(pk.head) && pk.labels.some((l) => planRowOf(pk.head, l) === row));
-  // a login with no window read still draws its unread rows (two, or one "Limits" row and its "No limits reported" line)
-  const unread = !out && !rows.length, lines = out ? 0 : rows.length || (row.no_usage_at_epoch_seconds ? 1 : 2);
+  // a login with no window read still draws its unread rows (two, or the one line that says it has no limits)
+  const lines = out ? 0 : rows.length || (row.no_usage_at_epoch_seconds ? 0 : 2);
+  const ran = ranOut ? `<a class="ranout" href="requests.html?win=7d#${encodeURIComponent(ranOut.id)}">Ran out ${dayClock(new Date(ranOut.ts))}${OPEN}</a>` : "";
   return { prov: providerOfHead(heads[0]), kind: "plan", name: planName(row) || "Account", used: Math.max(0, ...windows.map((w) => w.used)), s, heads: new Set(heads),
-    rows: lines, h: cardH("plan", lines, out, (held ? 1 : 0) + (ranOut ? 1 : 0) + (unread && row.no_usage_at_epoch_seconds ? 1 : 0)),
+    rows: lines, h: cardH("plan", lines, out, held || ran ? 1 : 0, s),
     make: (withChips) => `<article class="card pcard${held ? " held" : ""}${out ? " out" : ""}${picked ? " picked" : ""}${ui.landed === idx ? " landed" : ""}" data-a="plan-${idx}" style="--c:${colorOf(providerOfHead(heads[0]))}"${door}>`
       + `<header>${canName(row) ? nameSlot(row, idx, "card") : `<span class="nm">${esc(planName(row))}</span>`}`
       + `${row.plan && !planName(row).toLowerCase().includes(row.plan.toLowerCase()) ? `<span class="pv">${esc(row.plan.charAt(0).toUpperCase() + row.plan.slice(1))}</span>` : ""}`
-      + `${withChips ? `<span class="cmds">${heads.map(chip).join("")}</span>` : ""}</header>`
-      + (held ? `<p class="heldline">${DRAW.lock(until?.resetMs ? `Limit reached until ${backWord(new Date(until.resetMs))}` : "Limit reached")}</p>` : "")
+      + headEnd(withChips ? heads : [], out) + `</header>`
+      + (held ? `<p class="heldline">${DRAW.lock(until?.resetMs ? `Limit reached until ${backWord(new Date(until.resetMs))}` : "Limit reached")}${ran}</p>` : ran ? `<p class="heldline">${ran}</p>` : "")
       + body
-      + (ranOut ? `<p class="since"><a href="requests.html?win=7d#${encodeURIComponent(ranOut.id)}">Week ran out ${dayClock(new Date(ranOut.ts))}${OPEN}</a></p>` : "")
-      + thruCells(s, mx, false) + (lead ? `<span class="drill" aria-hidden="true">${DOWN}</span>` : "") + `</article>` };
+      + thruCells(s, mx, false, out, false) + (lead ? `<span class="drill" aria-hidden="true">${DOWN}</span>` : "") + `</article>` };
+}
+/** Where a signed-out login's bars would be: the one way back in, as the card's own button. */
+const signInBox = (head) => `<div class="outbox"><a class="act primary" href="accounts.html?head=${encodeURIComponent(head ?? "")}">Sign in${OPEN}</a></div>`;
+/** The end of a card's header: the commands that reach it where the group does not say them once, and a signed-out
+ *  login's state, as Accounts puts it, at the right. */
+const headEnd = (heads, out) => (heads.length || out
+  ? `<span class="hend">${heads.length ? `<span class="cmds">${heads.map(chip).join("")}</span>` : ""}${out ? `<span class="state mute">Signed out</span>` : ""}</span>` : "");
+
+/** A login splice carried requests for that the roster no longer holds: its card stands on the board under the name its row
+ *  in Where it went has, so a row finds its card. It has no windows to draw, so its card is its name, the way back in and
+ *  what splice sent through it. */
+function goneCard(g, mx) {
+  const label = acctLabel(g.head, g.label, g.name), key = acctKeyOf(g.head, g.label);
+  const mine = D.all ? [D.all.accounts.get(key)].filter(Boolean) : [], s = sumOf(mine);
+  const door = mine.length ? ` data-act="pick" data-d="account" data-v="${esc(key)}" role="button" tabindex="0" aria-label="${esc(`${plain(label)}: where its requests went`)}"` : "";
+  const pk = pickedAccount(), picked = Boolean(pk && pk.head === g.head && pk.labels.includes(g.label));
+  return { prov: providerOfHead(g.head), kind: "plan", name: plain(label), used: -1, s, heads: new Set([g.head]), rows: 0, h: cardH("plan", 0, true, 0, s),
+    make: (withChips) => `<article class="card pcard out gone${picked ? " picked" : ""}" data-a="gone-${esc(key)}" style="--c:${colorOf(providerOfHead(g.head))}"${door}>`
+      + `<header><span class="nm">${label}</span>${headEnd(withChips ? [g.head] : [], true)}</header>`
+      + signInBox(g.head) + thruCells(s, mx, false, true) + (mine.length ? `<span class="drill" aria-hidden="true">${DOWN}</span>` : "") + `</article>` };
 }
 
 function keyCard(k, print, seen, replaced, mx) {
@@ -438,10 +498,10 @@ function keyCard(k, print, seen, replaced, mx) {
   const mine = !D.all ? [] : [...D.all.accounts.values()].filter((e) => heads.includes(e.head) && e.label === label), s = sumOf(mine), lead = mine[0];
   const door = s.requests && !reading() ? ` data-act="pick" data-d="account" data-v="${esc(acctKeyOf(lead.head, lead.label))}" role="button" tabindex="0" aria-label="${esc(`${k.name}: where its requests went`)}"` : "";
   const pk = pickedAccount(), picked = Boolean(pk && heads.includes(pk.head) && pk.labels.includes(label));
-  return { prov: providerOfHead(heads[0]), kind: "key", name: k.name, used: -1, s, heads: new Set(heads), rows: -1, h: cardH("key"),
+  return { prov: providerOfHead(heads[0]), kind: "key", name: k.name, used: -1, s, heads: new Set(heads), rows: -1, h: cardH("key", 0, false, 0, s),
     make: (withChips) => `<article class="card kcard${picked ? " picked" : ""}" data-a="key-${esc(label)}" style="--c:${colorOf(providerOfHead(heads[0]))}"${door}>`
-      + `<header><span class="nm"><span class="var">${esc(k.name)}</span>${seen ? ` · ${dayWord(new Date(seen * 1000))}` : ""}</span>`
-      + `${replaced ? `<span class="pv">Replaced</span>` : ""}${withChips ? `<span class="cmds">${[...new Set(heads)].map(chip).join("")}</span>` : ""}</header>`
+      + `<header><span class="nm">${keyWord(k.name, seen)}</span>`
+      + `${replaced ? `<span class="pv">Replaced</span>` : ""}${headEnd(withChips ? [...new Set(heads)] : [], false)}</header>`
       // a key's provider sends no plan window: its limits read as not reported, never a zero (spec section 11)
       + `<p class="nolimit">Limits not reported by provider</p>`
       + thruCells(s, mx, true) + (door ? `<span class="drill" aria-hidden="true">${DOWN}</span>` : "") + `</article>` };
@@ -453,7 +513,7 @@ function keyCard(k, print, seen, replaced, mx) {
 function moneyHtml() {
   if (!S.stood) return boardHead() + ghostBoard();
   if (!S.accounts.length && !S.keys.length) {
-    return boardHead() + DRAW.masonry([`<a class="add" href="accounts.html"><span class="plus" aria-hidden="true">+</span><span>Sign in to a plan or add a key on Accounts</span></a>`], 38, { cls: "plans" });
+    return boardHead() + DRAW.masonry([`<a class="add" href="accounts.html"><span class="plus" aria-hidden="true">+</span><span>Add account</span></a>`], 38, { cls: "plans" });
   }
   const plans = S.accounts.filter((row) => (row.heads || []).some(isPlanHead) && !(row.login_place && !row.credential_present && !row.observed_at_epoch_seconds));
   const keyRows = [];
@@ -461,10 +521,13 @@ function moneyHtml() {
     if (!(k.heads || []).map((x) => x.head).filter(isKeyHead).length) continue;
     for (const [print, seen, replaced] of [[k.fingerprint, k.first_seen_epoch_seconds, false], ...(k.replaced || []).map((r) => [r.fingerprint, r.first_seen_epoch_seconds, true])]) keyRows.push({ k, print, seen, replaced });
   }
+  const gone = goneLogins();
   const sums = [...plans.map((row) => sumOf(usageOfPlan(row))),
-    ...keyRows.map(({ k, print }) => sumOf(!D.all ? [] : [...D.all.accounts.values()].filter((e) => (k.heads || []).map((x) => x.head).includes(e.head) && e.label === `${k.name}:${print}`)))];
+    ...keyRows.map(({ k, print }) => sumOf(!D.all ? [] : [...D.all.accounts.values()].filter((e) => (k.heads || []).map((x) => x.head).includes(e.head) && e.label === `${k.name}:${print}`))),
+    ...gone.map((g) => sumOf(!D.all ? [] : [D.all.accounts.get(acctKeyOf(g.head, g.label))].filter(Boolean)))];
   const mx = { tok: Math.max(1, ...sums.map(tokensOf)), req: Math.max(1, ...sums.map((s) => s.requests)), spend: Math.max(1e-9, ...sums.map((s) => spentOf(s) ?? 0)) };
-  const cards = [...plans.map((row) => planCard(row, mx)), ...keyRows.map(({ k, print, seen, replaced }) => keyCard(k, print, seen, replaced, mx))];
+  if (!reading()) splitDrawn = false;
+  const cards = [...plans.map((row) => planCard(row, mx)), ...gone.map((g) => goneCard(g, mx)), ...keyRows.map(({ k, print, seen, replaced }) => keyCard(k, print, seen, replaced, mx))];
   const groups = new Map();
   for (const c of cards) {
     const key = c.prov ?? "other";
@@ -484,13 +547,21 @@ function moneyHtml() {
   keepShape(ordered);
   return boardHead() + DRAW.masonry(planBoard(ordered, boardCols()).map(groupHtml), 38, { cls: "plans" });
 }
-const groupHtml = (it) => `<section class="ugroup" data-cols="${it.cols.length}" style="--c:${colorOf(it.g.prov)}"><h3><i class="blot" aria-hidden="true"></i>${esc(it.g.name)}${it.g.chips ? `<span class="cmds">${it.g.chips}</span>` : ""}</h3>`
-  + `<div class="gcards" style="--k:${it.cols.length}">${it.cols.map((c) => `<div class="gcol">${c.map((card) => card.html).join("")}</div>`).join("")}</div></section>`;
+/** One column of a provider's cards, as a block of the balanced board: the first column of a provider carries its name, the
+ *  ones after it a space of the same height, so the cards of one provider start on one line wherever the board puts the
+ *  groups that come after them. */
+const groupHtml = (it) => `<section class="ugroup" data-cols="1" style="--c:${colorOf(it.g.prov)}">${it.first
+  ? `<h3><i class="blot" aria-hidden="true"></i>${esc(it.g.name)}${it.g.chips ? `<span class="cmds">${it.g.chips}</span>` : ""}</h3>` : `<div class="hspace" aria-hidden="true"></div>`}`
+  + `<div class="gcol">${it.col.map((card) => card.html).join("")}</div></section>`;
+// whether the last read drew a cache share inside a card's tokens bar, so the legend names the lighter part only then
+let splitDrawn = false;
 /** A card draws two kinds of bar, and whose count each one is belongs to the band, not to every card: the window meters
- *  are each provider's limits, the bars under the rule are what splice itself sent, in the window and the project read. */
+ *  are each provider's limits, the bars under the rule are what splice itself sent, in the window and the project read,
+ *  and the lighter part of a tokens bar is what was read from the cache. */
 const boardHead = () => `<div class="bandhead"><h2>Plans and keys</h2>`
   + `<span class="pd-leg"><i class="sw lim"></i>Limits`
-  + `<i class="sw cnt"></i>Counted by splice · ${projectWord() ? `${esc(projectWord())} · ` : ""}${WINDOWS[ui.win].word}</span></div>`;
+  + `<i class="sw cnt"></i>Counted by splice · ${projectWord() ? `${esc(projectWord())} · ` : ""}${WINDOWS[ui.win].word}`
+  + `${splitDrawn ? `<i class="sw cached"></i>Cached` : ""}</span></div>`;
 /** How many columns of cards the board can hold at this width: a card wants 38rem, the gap between columns 2rem, and
  *  the board never runs past six. Measured on the page's own content box, as the project tiles measure theirs, so every
  *  width is the page's and never the window's. */
@@ -501,19 +572,41 @@ function boardCols() {
   const w = (p.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)) / rem;
   return Math.max(1, Math.min(6, Math.floor((w + 2) / 40)));
 }
-/** The board's groups placed as the kit's balanced board lays them (DRAW.masonry): the provider with the most logins
- *  splits its cards down k columns, in order, column by column, taking k columns of the board, and every other group is
- *  one column wide. Which column a group lands in is measured, not guessed: each goes where the shortest column is, and
- *  a short group fills the space under a tall one. k is half the big group's cards, so it stands two rows tall, and
- *  never more than the board's columns. */
+/** The board's blocks, in the order the kit's balanced board (DRAW.masonry) places them: the provider with the most logins
+ *  splits its cards, in order, down k columns, each column a block of its own, and every other provider is one block that
+ *  goes where the board is shortest, so a short provider fills the room under a tall column. k is the one that leaves the
+ *  whole board shortest, worked out as the board places them: from what the cards are built of and never from their
+ *  figures, so the board keeps its places when the window or a figure changes. */
 function planBoard(gs, n) {
   if (!gs.length) return [];
-  const whole = (g) => ({ g, cols: [g.cards] });
+  const GAP = 1, HEAD = 3.73, BETWEEN = 2.4; // rem: between cards, a provider's head, between blocks in a column
+  const whole = (g) => ({ g, col: g.cards, first: true });
+  const heightOf = (cards) => HEAD + cards.reduce((t, c) => t + c.h + GAP, -GAP);
   const big = n > 1 && gs[0].cards.length >= 2 ? gs[0] : null;
   if (!big) return gs.map(whole);
-  const k = Math.min(n, big.cards.length, Math.ceil(big.cards.length / 2)), per = Math.ceil(big.cards.length / k);
-  const cols = Array.from({ length: k }, (_, i) => big.cards.slice(i * per, (i + 1) * per)).filter((c) => c.length);
-  return [{ g: big, cols }, ...gs.slice(1).map(whole)];
+  const rest = gs.slice(1);
+  const cards = big.cards, m = cards.length, kMax = Math.min(n, m);
+  const pre = [0];
+  for (const c of cards) pre.push(pre[pre.length - 1] + c.h + GAP);
+  const seg = (a, b) => pre[b] - pre[a] - GAP;
+  // the first i cards split in order down j columns at the least tallest column: cut[j][i] is where the last column starts
+  const best = Array.from({ length: kMax + 1 }, () => Array(m + 1).fill(Infinity)), cut = best.map((r) => r.slice());
+  best[0][0] = 0;
+  for (let j = 1; j <= kMax; j++) for (let i = j; i <= m; i++) for (let p = j - 1; p < i; p++) {
+    const v = Math.max(best[j - 1][p], seg(p, i));
+    if (v < best[j][i]) { best[j][i] = v; cut[j][i] = p; }
+  }
+  const split = (j) => { const cols = []; for (let c = j, i = m; c > 0; i = cut[c][i], c--) cols.unshift(cards.slice(cut[c][i], i)); return cols; };
+  // the board as the grid fills it: the provider's columns side by side at the top, then each other provider under the shortest column
+  const tallest = (cols) => {
+    const h = Array(n).fill(0);
+    cols.forEach((c, i) => { h[i] = heightOf(c); });
+    for (const g of rest) { const i = h.indexOf(Math.min(...h)); h[i] += (h[i] ? BETWEEN : 0) + heightOf(g.cards); }
+    return Math.max(...h);
+  };
+  let cols = split(1), least = Infinity;
+  for (let j = 1; j <= kMax; j++) { const c = split(j), t = tallest(c); if (t <= least + 1e-6) { least = t; cols = c; } }
+  return [...cols.map((col, i) => ({ g: big, col, first: i === 0 })), ...rest.map(whole)];
 }
 /** A card before splice has answered at all: the card's own shape in striped bars, at the height the card itself will
  *  stand, so nothing under the board moves when it lands. [rows] is the window lines the card drew last time (-1 is a
@@ -521,7 +614,7 @@ function planBoard(gs, n) {
 const ghostCard = (i, rows = 2, h = 0) => `<article class="card pcard ghosted" style="--i:${i}${h ? `;min-height:${h}rem` : ""}"><header>${GHOST.bar(7)}${GHOST.bar(2.6)}</header>`
   + (rows > 0 ? `<div class="windows">${Array.from({ length: rows }, () => `${GHOST.bar(3.2)}${GHOST.track()}${GHOST.bar(3)}${GHOST.bar(6)}`).join("")}</div>`
     : `<p class="nolimit">${GHOST.bar(12)}</p>`)
-  + `<footer class="thru">${[0, 1, 2].map(() => GHOST.row([GHOST.bar(4.2), GHOST.track(), GHOST.bar(3.2)])).join("")}</footer></article>`;
+  + `<footer class="thru">${Array.from({ length: rows < 0 ? 3 : 2 }, () => GHOST.row([GHOST.bar(4.2), GHOST.track(), GHOST.bar(3.2)])).join("")}</footer></article>`;
 // The board's own shape, kept from the last read: each provider's group, in the board's order, with every card's window
 // lines and height. The columns they fall in are worked out again for the width at hand, so a window of another width
 // still opens on the board it will land as. Shapes only: no figure is kept and none is drawn.
@@ -535,7 +628,7 @@ const okCard = (c) => Array.isArray(c) && c.length === 2 && c.every((v) => typeo
 // and the model's own slice under the week), one login under each of three more and a key under each of two, the shape
 // the ghost holds until the first read has landed
 const TYPICAL = [Array.from({ length: 8 }, () => [3, cardH("plan", 3, false)]), [[2, cardH("plan", 2, false)]], [[1, cardH("plan", 1, false)]], [[1, cardH("plan", 1, false)]],
-  [[-1, cardH("key")]], [[-1, cardH("key")]]];
+  [[-1, cardH("key", 0, false)]], [[-1, cardH("key", 0, false)]]];
 const lastShape = () => {
   try {
     const s = JSON.parse(localStorage.getItem(SHAPE_KEY) || "null");
@@ -547,7 +640,7 @@ const lastShape = () => {
 const ghostBoard = () => { let i = 0;
   const groups = lastShape().map((cards) => ({ cards: cards.map(([rows, h]) => ({ rows, h })) }));
   return DRAW.masonry(planBoard(groups, boardCols()).map((it) =>
-    `<section class="ugroup" data-cols="${it.cols.length}"><h3>${GHOST.bar(5)}</h3><div class="gcards" style="--k:${it.cols.length}">${it.cols.map((c) => `<div class="gcol">${c.map((card) => ghostCard(i++, card.rows, card.h)).join("")}</div>`).join("")}</div></section>`), 38, { cls: "plans" });
+    `<section class="ugroup" data-cols="1">${it.first ? `<h3>${GHOST.bar(5)}</h3>` : `<div class="hspace" aria-hidden="true"></div>`}<div class="gcol">${it.col.map((card) => ghostCard(i++, card.rows, card.h)).join("")}</div></section>`), 38, { cls: "plans" });
 };
 
 // ---------- what a value can be grouped by; opening one goes a step down with its filter added ----------
@@ -661,16 +754,19 @@ function chartHtml() {
   } else {
     const value = planValueOf(all), spent = spentOf(all);
     lead = `<div class="figline">`
-      + (value != null || spent == null ? `<b class="fig-hero">${value != null ? usd(value) : DRAW.dash}</b><span class="cap"><i class="sw plan" aria-hidden="true"></i>on your plan</span>` : "")
+      + (value != null || spent == null ? `<b class="fig-hero">${value != null ? usd(value) : DRAW.dash}</b><span class="cap"><i class="sw plan" aria-hidden="true"></i>on your plan, at API prices</span>` : "")
       + (spent != null ? `${value != null ? `<span class="fsep" aria-hidden="true"></span>` : ""}<b class="${value != null ? "fig-focal" : "fig-hero"}">${usd(spent)}</b><span class="cap"><i class="sw money" aria-hidden="true"></i>spent on keys</span>` : "")
       + failPart + `</div>`;
   }
   const peak = Math.max(0, ...sl.map((x) => Math.max(0, ...kinds.map((k) => sumParts(x[k])))));
-  const flane = `<div class="flane" style="--n:${n}"><span class="fl-k">Failed</span>${sl.map((x) => (x.failed
-    ? `<a class="cfl${x.failed / x.n >= 0.05 ? " lv-bad" : ""}" href="${reqUrl({ from: x.from, to: x.to, outcome: "fail" })}" aria-label="${esc(failWords(x))}"><span class="ftrk"><i style="width:${barW(x.failed, x.n).toFixed(2)}%"></i></span><b>${rateWord(x.failed / x.n)}</b></a>`
+  // the lane's bars share one scale of their own, from nothing to the worst column's rate, so the column that differs
+  // reads first and a small rate is not a hairline beside a scale that runs to 100%
+  const laneTop = niceTop(Math.max(0.01, ...sl.map((x) => (x.n ? x.failed / x.n : 0))));
+  const flane = `<div class="flane" style="--n:${n}"><span class="fl-k" title="${esc(`Bars run from 0 to ${rateWord(laneTop)}`)}">Failed</span>${sl.map((x) => (x.failed
+    ? `<a class="cfl${x.failed / x.n >= 0.05 ? " lv-bad" : ""}" href="${reqUrl({ from: x.from, to: x.to, outcome: "fail" })}" aria-label="${esc(failWords(x))}"><span class="ftrk"><i style="width:${barW(x.failed / x.n, laneTop).toFixed(2)}%"></i></span><b>${rateWord(x.failed / x.n)}</b></a>`
     : `<span></span>`)).join("")}</div>`;
   const keys = shown.map((h) => `<span class="key">${swatch(h)}${esc(cmdOf(h))}</span>`).join("")
-    + (money && kinds.includes("val") ? `<span class="key kind"><i class="hatch" style="--c:var(--text-mute)"></i>On your plan, at API prices</span>` : "")
+    + (money && kinds.includes("val") ? `<span class="key kind"><i class="hatch" style="--c:var(--text-mute)"></i>On your plan</span>` : "")
     + (money && kinds.includes("mon") ? `<span class="key kind"><i style="--c:var(--text-mute)"></i>Spent on keys</span>` : "")
     // the last column is the one still filling: its top edge is open and its parts lighter, and the legend says so once
     + `<span class="key part"><i aria-hidden="true"></i>${ui.win === "7d" ? "Today, so far" : "This quarter hour, so far"}</span>`;
@@ -688,11 +784,12 @@ function chartHtml() {
       + parts.map(([h, v]) => `<a class="${k === "val" ? "hatch" : alt.has(h) ? "alt" : ""}" href="${reqUrl({ cmd: cmdOf(h), from: x.from, to: x.to })}" style="--c:${colorOf(providerOfHead(h))};flex:${((v / total) * 1000).toFixed(2)} 1 0" aria-label="${esc(`${cmdOf(h)} ${fmt(v)}`)}">`
         + `<span class="sl"><span class="nm">${esc(cmdOf(h))}</span> <b>${fmt(v)}</b></span></a>`).join("") + `</div>`;
   };
-  const bars = sl.map((x, i) => `<div class="cbar${kinds.length > 1 ? " pair" : ""}${ui.hover === i ? " on" : ""}${x.now ? " part" : ""}" data-i="${i}">${kinds.map((k) => stackOf(x, k)).join("")}</div>`).join("");
+  // a column carries its own tip, drawn with it and shown by hover or focus, so the pointer moving across the chart
+  // redraws nothing and a keyboard reaches every column
+  const bars = sl.map((x, i) => `<div class="cbar${kinds.length > 1 ? " pair" : ""}${x.now ? " part" : ""}" data-i="${i}" tabindex="0" role="group" aria-label="${esc(`${tipWhen(x)}: ${kinds.map((k) => fmt(sumParts(x[k]))).join(", ")}`)}">${kinds.map((k) => stackOf(x, k)).join("")}${tipHtml(x, i, sl.length, kinds, fmt)}</div>`).join("");
   // the axis is drawn at round values, so its money reads in whole dollars: cents of zero on a gridline say nothing
   const grid = [1, .5].map((f) => `<div class="gl" style="bottom:${f * 100}%"><span>${money ? fmt(top * f).replace(/\.00$/, "") : fmt(top * f)}</span></div>`).join("");
-  const tip = ui.hover != null ? tipHtml(sl[ui.hover], sl.length, kinds, fmt) : "";
-  return head + lead + `<div class="plot">${grid}<div class="cbars" style="--n:${n}">${bars}</div>${tip}</div>${xrow(sl)}${flane}<div class="legend">${keys}</div>`;
+  return head + lead + `<div class="plot">${grid}<div class="cbars" style="--n:${n}">${bars}</div></div>${xrow(sl)}${flane}<div class="legend">${keys}</div>`;
 }
 /** A part's name and figure stay inside it only where they fit as drawn: the name goes first, then the figure. The tip,
  *  the legend and each part's own label for assistive tech still carry both. The figures over the columns stay only
@@ -744,9 +841,9 @@ function fitChips(el) {
 }
 // a slice's failed requests, and the rate-limited ones among them, in words: what a door to them reads aloud
 const failWords = (x) => `${n0(x.failed)} failed of ${n0(x.n)} requests${x.limited ? `, ${n0(x.limited)} of them rate-limited` : ""}`;
-function tipHtml(x, n, kinds, fmt) {
-  const span = ui.win === "5h" ? `${clock(new Date(x.from))} to ${clock(new Date(x.to))}` : x.label === "Today" ? "Today, so far" : `${x.label} ${new Date(x.from).getDate()}`;
-  const left = ((ui.hover + .5) / n) * 100;
+const tipWhen = (x) => (ui.win === "5h" ? `${clock(new Date(x.from))} to ${clock(new Date(x.to))}` : x.label === "Today" ? "Today, so far" : `${x.label} ${new Date(x.from).getDate()}`);
+function tipHtml(x, i, n, kinds, fmt) {
+  const span = tipWhen(x);
   const part = (k) => {
     const total = sumParts(x[k]);
     const lines = x[k].slice().sort((a, b) => b[1] - a[1]).map(([h, v]) => `<p>${swatch(h, k === "val")}<span>${esc(cmdOf(h))}</span><i class="tbar" style="width:${share(v, total).toFixed(1)}%"></i><b>${fmt(v)}</b></p>`).join("");
@@ -756,7 +853,7 @@ function tipHtml(x, n, kinds, fmt) {
   const body = kinds.map(part).join("");
   const fail = x.failed ? `<p class="sum fail"><span>Failed</span><i class="tbar f" style="width:${barW(x.failed, x.n).toFixed(1)}%"></i><b>${rateWord(x.failed / x.n)}</b></p>`
     + `<p class="sub"><b>${n0(x.failed)}</b> of <b>${n0(x.n)}</b>${x.limited ? `<span class="dot"></span><b>${n0(x.limited)}</b> rate-limited` : ""}</p>` : "";
-  return `<div class="tip${left > 60 ? " lefty" : ""}" style="left:${left.toFixed(2)}%"><p class="tw">${span}</p>${body || `<p class="none">No requests</p>`}${fail}</div>`;
+  return `<div class="tip${(i + .5) / n > .6 ? " lefty" : ""}" aria-hidden="true"><p class="tw">${span}</p>${body || `<p class="none">No requests</p>`}${fail}</div>`;
 }
 
 // ---------- the filters a drill set: drawn once, over the bands they shape ----------
@@ -787,15 +884,15 @@ const plain = (html) => String(html).replace(/<[^>]*>/g, "");
  *  all. The two marks and the estimate are named once, in the band's head. */
 function costCell(s, max) {
   const cost = spentOf(s), value = planValueOf(s);
-  if (cost == null && value == null) return `<span class="cell cost none"><span class="whyw">${esc(noCostWhy(s))}</span><b class="v">${BARE_DASH}</b></span>`;
-  const line = (v, plan) => `<span class="cline"><span class="vbar" aria-hidden="true"><b${plan ? ` class="plan"` : ""} style="width:${barW(v, max).toFixed(1)}%"></b></span>`
-    + `<b class="v ${plan ? "val" : "money"}">${usd(v)}</b></span>`;
+  if (cost == null && value == null) return `<span class="cell cost none" title="${esc(noCostWhy(s))}" aria-label="${esc(`Not priced: ${noCostWhy(s)}`)}"><span class="vbar gone" aria-hidden="true"></span><b class="v">${BARE_DASH}</b></span>`;
+  const line = (v, plan) => `<span class="cline"><span class="vbar" aria-hidden="true"><b${plan ? ` class="plan"` : ""} data-tw="${plan ? "v" : "m"}" data-w="${barW(v, max).toFixed(1)}" style="width:${barW(v, max).toFixed(1)}%"></b></span>`
+    + `<b class="v ${plan ? "val" : "money"}" data-tn="${plan ? "v" : "m"}">${usd(v)}</b></span>`;
   return `<span class="cell cost${cost != null && value != null ? " two" : ""}">${cost != null ? line(cost, false) : ""}${value != null ? line(value, true) : ""}</span>`;
 }
 /** The tokens cell: one bar on the column's scale and its figure; a group no request reported tokens for is a dashed
  *  track and a dash, never 0. */
 const tokCell = (s, max) => (noTokens(s) ? `<span class="cell tok"><span class="vbar gone" aria-hidden="true"></span><b class="v num">${DRAW.dash}</b></span>`
-  : `<span class="cell tok">${DRAW.vbar(barW(tokensOf(s), max))}<b class="v num">${tok(tokensOf(s))}</b></span>`);
+  : `<span class="cell tok">${DRAW.vbar(barW(tokensOf(s), max))}<b class="v num" data-tn="">${tok(tokensOf(s))}</b></span>`);
 const ROWS_KEY = "splice-usage-rows";
 const lastRows = (k, fallback) => { try { return JSON.parse(localStorage.getItem(ROWS_KEY) || "{}")[k] ?? fallback; } catch { return fallback; } };
 const keepRows = (k, n) => { try { const all = JSON.parse(localStorage.getItem(ROWS_KEY) || "{}"); all[k] = n; localStorage.setItem(ROWS_KEY, JSON.stringify(all)); } catch { /* the ghost keeps its default size */ } };
@@ -803,38 +900,36 @@ const RANKS = [["tokens", "Tokens"], ["requests", "Requests"], ["cost", "Cost, e
 const rankBy = (e) => (ui.rank === "cost" ? Math.max(spentOf(e.s) ?? 0, planValueOf(e.s) ?? 0) : ui.rank === "requests" ? e.s.requests : tokensOf(e.s));
 function byHtml() {
   // the legend names the marks the rows draw: a window where no row has key money draws no solid mark, so it names none
-  const headOf = (money, plan) => `<div class="bandhead"><h2>Where it went</h2>`
-    + (money || plan ? `<span class="pd-leg">${money ? `<i class="sw money"></i>Spent` : ""}${plan ? `<i class="sw plan"></i>On your plan, at API prices` : ""}</span>` : "") + `</div>`;
-  const tools = (extra = "") => `<div class="byhead">${DRAW.switcher(Object.entries(DIMS).map(([k, v]) => [k, v.word]), ui.by, "by", "Group by")}${extra}</div>`;
+  // the head carries what the list is grouped by and, from 14 rows, its Find, so the list starts right under it
+  const headOf = (money, plan, unpriced, extra = "") => `<div class="bandhead"><h2>Where it went</h2>${hwin()}`
+    + (money || plan || unpriced ? `<span class="pd-leg">${money ? `<i class="sw money"></i>Spent` : ""}${plan ? `<i class="sw plan"></i>On your plan, at API prices` : ""}${unpriced ? `<i class="sw gone"></i>Not priced` : ""}</span>` : "")
+    + extra + DRAW.switcher(Object.entries(DIMS).map(([k, v]) => [k, v.word]), ui.by, "by", "Group by") + `</div>`;
   // the head row's columns are doors that rank the rows; the column the rows are ranked by carries the arrow
   const colsOf = (cls) => `<div class="${cls} bhead"><span>${DIMS[ui.by].one}</span>`
     + RANKS.map(([k, word]) => `<button class="cell rank${ui.rank === k ? " on" : ""}" type="button" data-act="rank" data-v="${k}" aria-pressed="${ui.rank === k}">${esc(word)}${ui.rank === k ? DOWN : ""}</button>`).join("")
     + `</div>`;
   // reading: the columns' names are already known, so the table reads as itself and the rows that land take the place
   // the stripes held. Its rows are .gbrow, never .brow: a .brow is a row of this window's figures.
-  const waiting = () => headOf(true, true) + `<div class="figline sub">${GHOST.fig(2.6)}${GHOST.bar(8)}</div>` + tools() + ghostRows(lastRows(`by-${ui.by}`, CUT + 2), 4, colsOf("gbrow"));
+  const waiting = () => headOf(true, true, false) + `<div class="figline sub">${GHOST.fig(2.6)}${GHOST.bar(8)}</div>` + ghostRows(lastRows(`by-${ui.by}`, CUT + 2), 4, colsOf("gbrow"));
   if (reading()) return waiting();
   if ((ui.by === "project" || ui.by === "agent") && S.sessionsPending) return waiting();
   const every = groupsOf(ui.by).sort((a, b) => rankBy(b) - rankBy(a) || b.s.requests - a.s.requests || tokensOf(b.s) - tokensOf(a.s));
   const find = ui.find.trim().toLowerCase();
   const list = find ? every.filter((e) => plain(e.label).toLowerCase().includes(find) || plain(e.sub).toLowerCase().includes(find)) : every;
-  // Rows next to each other that ran on the same commands share one line of chips over them, said once; a row with no
-  // neighbour on its commands keeps its chips on itself. The rows keep their rank: a run is only ever consecutive rows.
+  // Rows that ran on the same commands stand together under one line of chips, said once, whatever the ranking: the groups
+  // stand in the order of their best row and the rows inside each keep their rank. A row with no neighbour on its commands
+  // keeps its chips on itself.
+  const sets = new Map();
+  for (const e of list) { const k = [...e.heads].sort().join(" "); (sets.get(k) ?? sets.set(k, []).get(k)).push(e); }
   const order = [];
-  for (let i = 0; i < list.length;) {
-    const k = [...list[i].heads].sort().join(" ");
-    let j = i + 1;
-    while (j < list.length && [...list[j].heads].sort().join(" ") === k) j++;
-    for (let x = i; x < j; x++) order.push({ e: list[x], first: x === i, size: j - i });
-    i = j;
-  }
+  for (const rows of sets.values()) rows.forEach((e, i) => order.push({ e, first: i === 0, size: rows.length }));
   const mx = { tok: Math.max(1, ...list.map((e) => tokensOf(e.s))), req: Math.max(1, ...list.map((e) => e.s.requests)),
     cost: Math.max(1e-9, ...list.map((e) => Math.max(spentOf(e.s) ?? 0, planValueOf(e.s) ?? 0))) };
   const cut = order.length <= ui.shown + 1 ? order.length : ui.shown;
   const shown = order.slice(0, cut), tail = order.slice(cut).map((o) => o.e);
   const row = ({ e, first, size }) => {
     const f = ui.by === "project" ? ui.f : { ...ui.f, [ui.by]: e.k }, extra = ui.by === "project" ? { project: e.k } : {};
-    const reqFig = `<span class="vbar" aria-hidden="true"><b style="width:${barW(e.s.requests, mx.req).toFixed(1)}%"></b></span><b class="v">${n0(e.s.requests)}</b>`;
+    const reqFig = `<span class="vbar" aria-hidden="true"><b data-tw="" data-w="${barW(e.s.requests, mx.req).toFixed(1)}" style="width:${barW(e.s.requests, mx.req).toFixed(1)}%"></b></span><b class="v" data-tn="">${n0(e.s.requests)}</b>`;
     const naming = e.nameIdx != null && e.row;
     const name = naming ? nameSlot(e.row, e.nameIdx, "row") : `<span class="nm">${e.label}</span>`;
     const line = first && size > 1 ? `<div class="bgrp"><span class="cmds">${chipsOf(e.heads)}</span></div>` : "";
@@ -843,7 +938,7 @@ function byHtml() {
     // and the way back in beside it, as its card would offer it: signing in again happens on Accounts
     const outWord = (e.gone && !/signed.out/i.test(plain(e.label)) ? `<span class="state">Signed out</span>` : "")
       + (e.gone ? `<a class="act small signin" href="accounts.html?head=${encodeURIComponent([...e.heads][0] ?? "")}">Sign in${OPEN}</a>` : "");
-    return line + `<div class="brow${e.gone ? " gone" : ""}" data-act="pick" data-d="${ui.by}" data-v="${esc(e.k)}" style="--c:${colorOf(providerOfHead([...e.heads][0]))}" role="button" tabindex="0">`
+    return line + `<div class="brow${e.gone ? " gone" : ""}" data-key="by-${ui.by}-${esc(e.k)}" data-act="pick" data-d="${ui.by}" data-v="${esc(e.k)}" style="--c:${colorOf(providerOfHead([...e.heads][0]))}" role="button" tabindex="0">`
       + `<span class="who">${dot}${name}${e.sub ? `<span class="sb">${e.sub}</span>` : ""}${outWord}`
       + `${size === 1 ? `<span class="cmds">${rowChipsOf(e.heads)}</span>` : ""}</span>`
       + tokCell(e.s, mx.tok)
@@ -880,8 +975,8 @@ function byHtml() {
   // a list still being counted, or narrowed by Find, is not the size the next read lands at: its ghost keeps the last
   // whole count
   if (!find && (list.length || !uncounted())) keepRows(`by-${ui.by}`, list.length ? shown.length + (tail.length ? 1 : 0) + shown.filter((o) => o.first && o.size > 1).length * .6 : 1);
-  const head = headOf(every.some((e) => spentOf(e.s) != null), every.some((e) => planValueOf(e.s) != null));
-  return head + lead + tools(finder) + `<div class="card btable">${colsOf("brow")}${rowsHtml}</div>${fewer}`;
+  const head = headOf(every.some((e) => spentOf(e.s) != null), every.some((e) => planValueOf(e.s) != null), every.some((e) => spentOf(e.s) == null && planValueOf(e.s) == null), finder);
+  return head + lead + `<div class="card btable">${colsOf("brow")}${rowsHtml}</div>${fewer}`;
 }
 /** Rows the size of the rows that will land, so the column keeps its height while the window reads. They are not
  *  .brow: a reading row is a shape, never a row of figures, and nothing on the page may read the two as one. */
@@ -894,8 +989,8 @@ const ghostRows = (n, cells, head = "") => `<div class="card btable ghosted">${h
 // request, so a window of input with no write at all is that silence, and Written reads as a dash.
 function tokensHtml() {
   const legend = `<span class="pd-leg tk"><i class="sw s1"></i>Cached<i class="sw s2"></i>Written<i class="sw s3"></i>Fresh</span>`;
-  const head = (body, lead = "") => `<div class="bandhead"><h2>Tokens by command</h2>${legend}</div>${lead}${body}`;
-  const cols = `<div class="trow thead"><span>Command</span><span class="cell">Input</span><span class="cell">Written</span><span class="cell">Output</span><span class="cell">Reported</span><span class="cell">Cold turns</span></div>`;
+  const head = (body, lead = "") => `<div class="bandhead"><h2>Tokens by command</h2>${hwin()}${legend}</div>${lead}${body}`;
+  const cols = `<div class="trow thead"><span>Command</span><span class="cell">Input</span><span class="cell">Written</span><span class="cell">Output</span><span class="cell">No count</span><span class="cell">Cold turns</span></div>`;
   // the table is kept while the window reads, every row a striped bar the size its figures land at, its columns named
   if (reading()) return head(`<div class="card ttable ghosted">${cols}${Array.from({ length: Math.max(3, lastRows("tok", 7)) }, (_, i) =>
     `<div class="gtrow" style="--i:${i}"><span class="who">${GHOST.bar(7, "chip")}</span>${[0, 1, 2, 3, 4].map(() => `<span class="cell">${GHOST.track()}</span>`).join("")}</div>`).join("")}</div>`,
@@ -905,8 +1000,10 @@ function tokensHtml() {
   const list = headsOrder().map((h) => [h, w.byHead.get(h)]).filter(([h, s]) => rd.has(h) || s?.requests > 0)
     .sort((a, b) => (rd.has(a[0]) - rd.has(b[0])) || (b[1]?.in ?? 0) - (a[1]?.in ?? 0));
   if (list.length || !uncounted()) keepRows("tok", list.length || 1);
-  if (!list.length) return head(`<div class="card ttable">${cols}<div class="bnone">${DRAW.nothing(uncounted() ? "Nothing counted yet" : "No requests")}</div></div>`, `<div class="figline sub cachelead">${DRAW.ring(0, { size: "focal" })}<b class="fig-focal">${DRAW.dash}</b><span class="cap">input read from cache</span></div>`);
-  const mx = { in: Math.max(1, ...list.map(([, s]) => s?.in ?? 0)), out: Math.max(1, ...list.map(([, s]) => s?.out ?? 0)), write: Math.max(1, ...list.map(([, s]) => s?.write ?? 0)), cold: Math.max(1, ...list.map(([, s]) => s?.cold ?? 0)) };
+  if (!list.length) return head(`<div class="card ttable"><div class="bnone">${DRAW.nothing(uncounted() ? "Nothing counted yet" : "No requests")}</div></div>`);
+  const mx = { in: Math.max(1, ...list.map(([, s]) => s?.in ?? 0)), out: Math.max(1, ...list.map(([, s]) => s?.out ?? 0)), write: Math.max(1, ...list.map(([, s]) => s?.write ?? 0)), cold: Math.max(1, ...list.map(([, s]) => s?.cold ?? 0)),
+    // the share of a command's requests that carried no count, on one scale across the commands, so the one that differs reads first
+    miss: Math.max(1, ...list.map(([, s]) => (s && s.requests ? share(Math.max(s.noIn, s.noOut), s.requests) : 0))) };
   const tin = list.reduce((a, [, s]) => a + (s?.in ?? 0), 0), tcached = list.reduce((a, [, s]) => a + (s?.cached ?? 0), 0);
   // the share of the input read from the cache is drawn first, as the ring Results' Cache hit draws, then written
   const lead = `<div class="figline sub cachelead">${tin > 0 ? `${DRAW.ring(tcached / tin, { size: "focal", label: `${DRAW.pct(tcached / tin)} of input read from cache` })}<b class="fig-focal">${DRAW.pct(tcached / tin)}</b><span class="cap">of <b>${tok(tin)}</b> input read from cache</span>` : `${DRAW.ring(0, { size: "focal" })}<b class="fig-focal">${DRAW.dash}</b><span class="cap">input read from cache</span>`}</div>`;
@@ -918,7 +1015,7 @@ function tokensHtml() {
     const stackW = barW(s.in, mx.in);
     const inCell = noIn ? `<span class="cell inp"><span class="ttrack empty"></span><b class="v">${DRAW.dash}</b></span>`
       : `<span class="cell inp"><span class="ttrack"><span class="tstack" style="width:${stackW.toFixed(1)}%">`
-        + segs.map(([cls, word, v]) => (v > 0 ? `<i class="${cls}" style="width:${((v / s.in) * 100).toFixed(2)}%" title="${esc(`${word} ${tok(v)} · ${DRAW.pct(v / s.in)} of input`)}"><b><span class="w">${esc(word)} </span>${tok(v)}</b></i>` : "")).join("")
+        + segs.map(([cls, word, v]) => (v > 0 ? `<i class="${cls}" style="width:${((v / s.in) * 100).toFixed(2)}%" title="${esc(`${word} ${tok(v)} · ${DRAW.pct(v / s.in)} of input`)}"><b>${tok(v)}</b></i>` : "")).join("")
         + `</span></span><b class="v">${tok(s.in)}</b></span>`;
     // a provider that reports no cache write sends none on any request: the dash says it was not reported, never that
     // nothing was written
@@ -926,7 +1023,8 @@ function tokensHtml() {
       : `<span class="cell wr"><span class="vbar gone" aria-hidden="true"></span><b class="v"><i class="nr" title="Its provider reports no cache writes">—</i></b></span>`;
     const outCell = s.noOut >= s.requests ? `<span class="cell"><span class="vbar gone" aria-hidden="true"></span><b class="v">${DRAW.dash}</b></span>`
       : `<span class="cell">${DRAW.vbar(barW(s.out, mx.out))}<b class="v">${tok(s.out)}</b></span>`;
-    const countCell = `<span class="cell rep" title="${esc(`${n0(counted)} of ${n0(s.requests)} requests carried a count`)}">${DRAW.vbar(share(counted, s.requests))}<b class="v">${DRAW.pct(counted / s.requests)}</b></span>`;
+    const missing = s.requests - counted;
+    const countCell = `<span class="cell rep" title="${esc(`${n0(missing)} of ${n0(s.requests)} requests carried no count`)}">${DRAW.vbar(share(missing, s.requests) > 0 ? Math.max(1.1, share(missing, s.requests) / mx.miss * 100) : 0)}<b class="v" data-tn="">${DRAW.pct(missing / s.requests)}</b></span>`;
     const accts = [...w.accounts.values()].filter((a) => a.head === h && (a.cold > 0 || a.coldUn > 0)).sort((a, b) => b.cold - a.cold || b.coldUn - a.coldUn);
     const open = ui.cold.has(h) && accts.length > 0;
     const unmarked = s.coldUn > 0 ? `<small class="um">${n0(s.coldUn)} not marked</small>` : "";
@@ -934,7 +1032,7 @@ function tokensHtml() {
     const coldCell = accts.length
       ? `<button class="cell cold disc" type="button" data-act="cold" data-k="${esc(h)}" aria-expanded="${open}" aria-controls="cold-${esc(h)}">${DRAW.chev}${coldBar}${unmarked}</button>`
       : `<span class="cell cold">${coldBar}${unmarked}</span>`;
-    return `<div class="trow${open ? " open" : ""}" style="--c:${colorOf(providerOfHead(h))}"><span class="who">${chip(h)}</span>${inCell}${wrCell}${outCell}${countCell}${coldCell}</div>`
+    return `<div class="trow${open ? " open" : ""}" data-key="tok-${esc(h)}" style="--c:${colorOf(providerOfHead(h))}"><span class="who">${chip(h)}</span>${inCell}${wrCell}${outCell}${countCell}${coldCell}</div>`
       + (open ? coldPlate(h, s, accts) : "");
   }).join("");
   return head(`<div class="card ttable">${cols}${rows}</div>`, lead);
@@ -1035,21 +1133,11 @@ function renderBand(name, grow = false) {
 // The project tiles are known only once the transcripts have been listed. Until then the line holds the shape it last
 // landed in, hollow: a tile's own box per tile at a wide page, the picker's chip at a narrow one. It drew nothing, and
 // the whole page jumped down by the tiles' height when they arrived.
-const TILES_KEY = "splice-usage-tiles";
-// A visit that has remembered nothing holds a row of six: a console with a few projects, the shape most have. What is
-// remembered is how many tiles the projects make, not how many this width drew, so a window of another width keeps it.
-const lastTiles = () => {
-  let raw = null;
-  try { raw = localStorage.getItem(TILES_KEY); } catch { /* a blocked store remembers nothing */ }
-  if (raw == null) return 6;
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? Math.min(n, 12) : 0;
-};
 function renderPick() {
   const line = document.getElementById("pickline");
-  line.innerHTML = S.sessionsPending ? GHOST.tiles(lastTiles()) : pickLineHtml(S.groups, ui.project, ui.pmenu, projectFigures());
+  line.innerHTML = S.sessionsPending ? GHOST.tiles(GHOST.count("tiles", 6)) : pickLineHtml(S.groups, ui.project, ui.pmenu, projectFigures());
   if (!S.sessionsPending) {
-    try { localStorage.setItem(TILES_KEY, String(S.groups.length >= 2 ? S.groups.length + 1 : 0)); } catch { /* a blocked store costs the ghost its shape and nothing else */ }
+    GHOST.remember("tiles", S.groups.length >= 2 ? S.groups.length + 1 : 0);
   }
   document.getElementById("win").innerHTML = DRAW.switcher(Object.entries(WINDOWS).map(([k, v]) => [k, v.label]), ui.win, "win", "Window");
 }
@@ -1057,7 +1145,11 @@ function renderScope() {
   const el = document.getElementById("scope");
   if (el) el.innerHTML = scopeHtml();
 }
+// only the first landing of a window's figures grows from nothing; every later read moves each bar and figure from the
+// length it had (the kit's tween keys), so a re-read is not a redraw
+let landedOnce = false;
 function render(grow = false) {
+  if (grow && !reading()) { grow = !landedOnce; landedOnce = true; } else if (grow) grow = false;
   tick();
   renderPick();
   if (S.error) {
@@ -1133,8 +1225,8 @@ document.addEventListener("click", (e) => {
     case "reread": S.error = null; boot(); break;
     case "projmenu": ui.pmenu = !ui.pmenu; renderPick(); break;
     case "pickproj": ui.project = el.dataset.p || null; ui.pmenu = false; PICK.set(ui.project); ui.by = nextBy("project") === "project" ? "account" : ui.by; ui.shown = CUT; again(); break;
-    case "win": if (v === ui.win) break; ui.win = v; ui.hover = null; ui.shown = CUT; again(); break;
-    case "measure": if (v === ui.measure) break; ui.measure = v; ui.hover = null; renderBand("chart", true); break;
+    case "win": if (v === ui.win) break; ui.win = v; ui.shown = CUT; again(); break;
+    case "measure": if (v === ui.measure) break; ui.measure = v; renderBand("chart", true); break;
     case "by": if (v === ui.by) break; ui.by = v; ui.shown = CUT; ui.find = ""; renderBand("by", true); break;
     case "rank": if (v === ui.rank) break; ui.rank = v; ui.shown = CUT; renderBand("by", true); break;
     case "more": { // only the rows the tail let go of arrive; the rows already on screen stay still
@@ -1169,6 +1261,7 @@ document.addEventListener("click", (e) => {
 // a row that is a door answers the keyboard too, since it is a button to everything but the mouse; a button, a link or a
 // field inside it answers for itself
 document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && ui.pmenu) { ui.pmenu = false; renderPick(); return; }
   if (e.target.matches?.(".nmfield")) {
     if (e.key === "Enter") { e.preventDefault(); saveName(ui.naming); }
     if (e.key === "Escape") stopNaming();
@@ -1188,14 +1281,6 @@ root.addEventListener("input", (e) => {
   const f = root.querySelector(".bfind");
   if (f) { f.focus(); try { f.setSelectionRange(at, at); } catch { /* a search field may refuse a range */ } }
 });
-// the pointer over a column opens its tip; anywhere else but the tip closes it
-root.addEventListener("mouseover", (e) => {
-  if (e.target.closest?.("#band-chart .tip")) return;
-  const c = e.target.closest?.("#band-chart .cbar[data-i]"), i = c ? Number(c.dataset.i) : null;
-  if (i === ui.hover) return;
-  ui.hover = i; renderBand("chart");
-});
-root.addEventListener("mouseleave", () => { if (ui.hover != null) { ui.hover = null; renderBand("chart"); } });
 // the board's columns, the project tiles, which labels fit inside their bars and how many of a row's chips fit beside
 // its name are the page's own width, so a resized window is drawn again for it; a name being typed or a search being
 // typed keeps its field

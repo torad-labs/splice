@@ -27,8 +27,13 @@
 /* every band is headed the same way: a 1.4rem title, what its marks mean beside it, and its own switch at the end */
 .bandhead h2 { font: 400 1.4rem/1.1 var(--font-lead); letter-spacing: normal; margin: 0; }
 .bandhead > .switch { margin-left: auto; }
+/* a band's Find rides its head at the end, and its switch follows it */
+.bandhead > .findbox { margin-left: auto; }
+.bandhead > .findbox + .switch { margin-left: 0; }
+/* the window a band reads, beside its title in the mute type of its legend */
+.bandhead .hwin { font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); }
 /* what a band's marks mean, beside its name: across 3,749 px the right edge is another part of the screen */
-.bandhead .pd-leg { gap: .45rem; }
+.bandhead .pd-leg { gap: .45rem; font-size: .9rem; }
 .pd-leg .sw ~ .sw { margin-left: calc(1.5 * var(--u)); }
 .figline { margin-bottom: calc(2 * var(--u)); }
 .figline.sub { margin-bottom: calc(2 * var(--u)); }
@@ -45,6 +50,8 @@
 /* the board's two kinds of bar, in the shape each takes on a card: the window meter, and the thin bar under the rule */
 .usage .sw.lim { height: var(--meter-h); border-radius: .3rem; background: var(--track); box-shadow: inset 0 0 0 .08rem var(--track-line); }
 .usage .sw.cnt { height: .4rem; border-radius: .2rem; background: color-mix(in oklab, var(--text) 38%, transparent); }
+.usage .sw.gone { height: .4rem; border-radius: .2rem; background: none; outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }
+.usage .sw.cached { height: .4rem; border-radius: .2rem; background: color-mix(in oklab, var(--text) 18%, var(--obj)); box-shadow: inset 0 0 0 .08rem var(--track-line); }
 
 /* each command still being read, and apart from them the ones that could not be read, each by its chip */
 .rdg { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(3 * var(--u)); }
@@ -64,8 +71,9 @@
 .ugroup > h3 { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem; min-height: var(--ctl-h); margin: 0 0 calc(2 * var(--u)); font: 400 1.4rem/1.1 var(--font-lead); color: var(--text); }
 .ugroup > h3 .blot { flex: none; width: .8rem; height: .8rem; border-radius: 50%; background: var(--c, var(--text-mute)); box-shadow: 0 0 0 .14rem var(--ink); }
 .ugroup > h3 .cmds { display: inline-flex; flex-wrap: wrap; gap: .45rem; margin-left: calc(2 * var(--u)); }
-/* a group given k columns lays its cards down exactly those, so a card is one board column wide in every group */
-.gcards { display: grid; grid-template-columns: repeat(var(--k, 1), minmax(0, 1fr)); column-gap: var(--gap-col); align-items: start; }
+/* a provider's column of cards is one block of the board; the columns after the first leave the head's room empty, so the
+   cards of one provider start on one line */
+.ugroup > .hspace { min-height: var(--ctl-h); margin: 0 0 calc(2 * var(--u)); }
 .gcol { min-width: 0; display: flex; flex-direction: column; gap: var(--gap-card); }
 
 .pcard, .kcard { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); }
@@ -82,14 +90,23 @@
 .kcard .nm .var { font: 500 .95rem/1.15 var(--font-data); letter-spacing: .01em; }
 .pcard .pv, .kcard .pv { font: 500 .9rem/1 var(--font-name); color: var(--text-mute); }
 .pcard > header .cmds, .kcard > header .cmds { display: inline-flex; flex-wrap: wrap; gap: .45rem; margin-left: auto; }
-.pcard .windows, .pcard .outbox { margin-top: 0; }
-.pcard .outbox .act { display: inline-flex; align-items: center; gap: .45rem; }
-.pcard .heldline { margin: 0; }
+/* the reset column has a width of its own, so every card's meter tracks end on one x whatever its reset words say */
+.pcard .windows { margin-top: 0; grid-template-columns: 5.2rem minmax(0, 1fr) 5.2rem 13.2rem; }
+.pcard .windows .when { white-space: nowrap; }
+/* a header's right end: the commands that reach the login, and a signed-out login's state, as Accounts puts it */
+.pcard > header .hend, .kcard > header .hend { display: inline-flex; align-items: center; flex-wrap: wrap; gap: .45rem .9rem; margin-left: auto; }
+.pcard > header .hend .cmds, .kcard > header .hend .cmds { margin-left: 0; }
+.pcard > header .hend .state { font-size: .9rem; }
+/* a signed-out login: the one way back in stands where the bars would be */
+.pcard .outbox { display: flex; align-items: center; margin-top: 0; min-height: 2.6rem; }
+.pcard .outbox .act { display: inline-flex; align-items: center; gap: .45rem; text-decoration: none; }
+/* a login at its limit says so once, with the lock; the request that spent the week is a door on the same line */
+.pcard .heldline { display: flex; align-items: center; flex-wrap: wrap; gap: .3rem 1.2rem; margin: 0; }
 .pcard .heldline .state { font-size: .95rem; white-space: normal; }
+.pcard .heldline .ranout { display: inline-flex; align-items: center; gap: .4rem; font: 500 .9rem/1.2 var(--font-data); color: var(--limit); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--limit) 45%, transparent); text-underline-offset: .22rem; }
+.pcard .heldline .ranout:hover { text-decoration-color: var(--limit); }
+.pcard .heldline .ranout svg { width: .9rem; height: .9rem; flex: none; }
 .pcard .nolimit, .kcard .nolimit { margin: 0; font: 400 .9rem/1.3 var(--font-name); color: var(--text-mute); }
-.pcard .since { margin: 0; font: 500 .9rem/1 var(--font-data); color: var(--limit); }
-.pcard .since a { display: inline-flex; align-items: center; gap: .4rem; color: inherit; text-decoration-color: color-mix(in srgb, var(--limit) 50%, transparent); text-underline-offset: .22rem; }
-.pcard .since a:hover { text-decoration-color: var(--limit); }
 /* what splice itself sent through the login, on scales the whole board shares: its bars start where the meters above
    start, and every figure ends on one edge. What they count is said once, over the board. */
 .thru { display: flex; flex-direction: column; gap: var(--u); margin-top: auto; padding-top: calc(1.5 * var(--u)); border-top: .08rem solid var(--hair); }
@@ -100,7 +117,11 @@
 .thru .ghost-row > .ghost.track { flex: 1 1 auto; height: .4rem; }
 /* a login with nothing in the window keeps the footer's height, so the board holds its shape from one window to the next */
 /* (its content box holds three rows as they draw, 1.25rem each, and their two gaps; padding and rule sit outside it) */
-.thru.none { justify-content: center; box-sizing: content-box; min-height: calc(3 * 1.25rem + 2 * var(--u)); }
+.thru.none { justify-content: center; box-sizing: content-box; min-height: calc(2 * 1.25rem + var(--u)); }
+.thru.none.key { min-height: calc(3 * 1.25rem + 2 * var(--u)); }
+/* a bar with its cached share inside it: the lighter part, at the bar's end, is what was read from the cache */
+.vbar.split > b { position: relative; }
+.vbar.split > b > i { position: absolute; top: 0; right: 0; bottom: 0; background: color-mix(in oklab, var(--text) 18%, var(--obj)); }
 /* a figure nobody reported: its track dashed and empty, and the dash where the figure goes */
 .barcell.gone .vbar, .cell .vbar.gone { background: none; outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }
 /* a figure with no price: the reason in words in the bar's place, on a dashed empty track, and the dash */
@@ -135,8 +156,8 @@
 /* ---------- the window, column by column ---------- */
 /* a column is as wide as most of its slot, up to 24rem: seven days across 3,822 px would draw 516 px slabs, which
    read as panels and not as a chart. The slot keeps the day's place, so the plot still spans the width. */
-.chart { --colw: min(86%, 24rem); }
-.plot { position: relative; height: 22rem; margin: calc(3 * var(--u)) 0 0 4.6rem; border-bottom: .14rem solid var(--track-line); }
+.chart { --colw: min(88%, 26rem); }
+.plot { position: relative; height: 26rem; margin: calc(3 * var(--u)) 0 0 4.6rem; border-bottom: .14rem solid var(--track-line); }
 .gl { position: absolute; left: 0; right: 0; border-top: .1rem dashed var(--track); }
 .gl span { position: absolute; right: calc(100% + .8rem); top: 0; transform: translateY(-50%); font: 500 .85rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); white-space: nowrap; }
 .cbars { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: .55rem; align-items: end; }
@@ -153,15 +174,19 @@
 .cstack > a { transition: filter var(--t-hover) var(--e-out); }
 .cstack > a:hover { filter: brightness(1.15); }
 /* a part with room carries its command and its figure inside it (usage.js fitParts keeps only what fits) */
-.cstack > a > .sl { flex: none; padding: .15rem .4rem; font: 600 .8rem/1.15 var(--font-name); white-space: nowrap; color: var(--on-cable); }
-.cstack > a > .sl b { font: 600 .8rem/1.15 var(--font-data); font-variant-numeric: tabular-nums; }
+.cstack > a > .sl { flex: none; padding: .15rem .4rem; font: 600 .95rem/1.15 var(--font-name); white-space: nowrap; color: var(--on-cable); }
+.cstack > a > .sl b { font: 600 .95rem/1.15 var(--font-data); font-variant-numeric: tabular-nums; }
 /* a second command of one provider is striped in that provider's colour; a plan's value is hatched over the wall */
 .cstack > a.alt, .legend .key i.alt, .tip p i.alt { background: repeating-linear-gradient(135deg, var(--c) 0 .5rem, color-mix(in srgb, var(--c) 68%, var(--ink)) .5rem .75rem); }
 .cstack > a.hatch, .legend .key i.hatch, .tip p i.hatch { background: repeating-linear-gradient(135deg, var(--c) 0 .32rem, color-mix(in srgb, var(--c) 30%, var(--obj)) .32rem .64rem); }
 .cstack > a.alt > .sl, .cstack > a.hatch > .sl { margin: 0 .2rem; border-radius: .2rem; background: var(--c); }
 /* the column still filling: its top edge is open, and the legend names it once */
 .cbar.part > .cstack { border-style: dashed; border-bottom: 0; }
-.cbar.on > .cstack { box-shadow: 0 0 0 .2rem var(--text); }   /* a hover is neutral ink */
+/* a hover or focus is neutral ink, and opens the column's own tip */
+.cbar:hover > .cstack, .cbar:focus-visible > .cstack { box-shadow: 0 0 0 .2rem var(--text); }
+.cbar:focus-visible { outline: none; }
+.cbar:hover { z-index: 6; }
+.cbar:focus-within { z-index: 6; }
 .cfig { position: absolute; bottom: calc(100% + .4rem); left: 50%; transform: translateX(-50%); font: 500 .85rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); white-space: nowrap; pointer-events: none; }
 .xrow { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: .55rem; margin: .7rem 0 0 4.6rem; }
 .cx { text-align: center; font: 500 .85rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
@@ -185,10 +210,11 @@
 .plotnone { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; pointer-events: none; }
 .plotnone .nothing { padding: .35rem .8rem; border-radius: var(--r-in); background: var(--wall); }
 .tip {
-  position: absolute; top: 0; z-index: 5; min-width: 17rem; padding: calc(1.5 * var(--u)); transform: translateX(1.1rem); pointer-events: none;
+  display: none; position: absolute; top: 0; left: calc(50% + var(--colw) / 2 + 1.1rem); z-index: 5; min-width: 19rem; padding: calc(1.5 * var(--u)); pointer-events: none;
   background: var(--obj-high); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: .35rem .35rem 0 var(--ink);
 }
-.tip.lefty { transform: translateX(calc(-100% - 1.1rem)); }
+.tip.lefty { left: auto; right: calc(50% + var(--colw) / 2 + 1.1rem); }
+.cbar:hover > .tip, .cbar:focus-within > .tip { display: block; }
 .tip p { margin: 0; display: flex; align-items: center; gap: .6rem; font: 500 .88rem/1.7 var(--font-data); color: var(--text-body); }
 .tip p > span { flex: none; }
 .tip p .tbar { height: .3rem; min-width: .15rem; margin-left: auto; border-radius: .15rem; background: color-mix(in oklab, var(--text) 32%, transparent); }
@@ -198,7 +224,7 @@
 .tip .sum { margin-top: var(--u); padding-top: var(--u); border-top: .1rem solid var(--track-line); }
 .tip .sum span { margin-right: auto; }
 .tip .sum.fail span { color: var(--limit); }
-.tip .sub { justify-content: flex-end; color: var(--text-mute); }
+.tip .sub { justify-content: flex-end; flex-wrap: wrap; row-gap: 0; color: var(--text-mute); white-space: nowrap; }
 .tip .sub b { padding-left: .3rem; font-weight: 500; color: var(--text-body); }
 .tip .none { color: var(--text-mute); }
 /* reading: the columns are the shape of what lands, in the stripes that mean "still working" */
@@ -295,10 +321,10 @@
 .tstack > i + i { box-shadow: inset .12rem 0 0 var(--obj); }
 .tstack > i > b { flex: none; padding-inline: .5rem; font: 600 .78rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--obj); white-space: nowrap; }
 .tstack > i > b .w { font-family: var(--font-name); }
-.tstack > i.s1, .pd-leg.tk .sw.s1 { background: color-mix(in oklab, var(--text) 66%, transparent); }
-.tstack > i.s2, .pd-leg.tk .sw.s2 { background: color-mix(in oklab, var(--text) 44%, transparent); }
-.tstack > i.s3, .pd-leg.tk .sw.s3 { background: color-mix(in oklab, var(--text) 26%, transparent); }
-.tstack > i.s3 > b { color: var(--text); }
+.tstack > i.s1, .pd-leg.tk .sw.s1 { background: var(--splice-chart-2); }
+.tstack > i.s2, .pd-leg.tk .sw.s2 { background: var(--splice-chart-1); }
+.tstack > i.s3, .pd-leg.tk .sw.s3 { background: var(--splice-chart-5); }
+.tstack > i > b { color: var(--on-cable); }
 .pd-leg.tk .sw { height: .7rem; }
 /* turns that ran cache-cold after an account switch: the row opens its accounts in place */
 /* the band's answer: the share of the input read from the cache as the drill-down's 50 px ring, then its figure */
@@ -338,8 +364,8 @@
 @media (prefers-reduced-motion: no-preference) {
   .grow .vbar > b, .grow .tstack, .grow .ftrk > i { transform-origin: left; animation: ubar-grow var(--t-snap) var(--e-out) both; }
   .grow .cstack { transform-origin: bottom; animation: ucol-grow var(--t-snap) var(--e-out) both; }
-  /* the column under the pointer is drawn anew with its ring and its tip, so both ease in rather than snap */
-  .cbar.on > .cstack { animation: uring-in var(--t-hover) var(--e-out) both; }
+  /* the column under the pointer eases its ring and its tip in rather than snapping them */
+  .cbar:hover > .cstack, .cbar:focus-visible > .cstack { animation: uring-in var(--t-hover) var(--e-out) both; }
   .tip { animation: utip-in var(--t-hover) var(--e-out) both; }
   /* the rows a list's tail lets go of arrive one after another and grow their bars; the rows above them stay still */
   .brow.arrive { animation: utip-in var(--t-pop) var(--e-out) both; animation-delay: calc(var(--i, 0) * 30ms); }
@@ -364,11 +390,6 @@
 @container (min-width: 125rem) {
   .lower { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .lower > .lcol { margin-top: 0; padding-top: 0; border-top: 0; }
-}
-@container (min-width: 200rem) {
-  .lower { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .lcol { display: contents; }
-  .lcol > .band + .band { margin-top: 0; padding-top: 0; border-top: 0; }
 }
 /* a table too narrow for its columns: the name leads its row and the figures pair under it */
 @container (max-width: 46rem) {

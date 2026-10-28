@@ -20,7 +20,7 @@ async function scope(sources: Record<string, string>, reverse = false) {
     { path: "codex-rs/code-mode/Cargo.toml", source: '[package]\nname="codex-code-mode"\n[dependencies]\nserde_json="1"\n' },
     { path: "codex-rs/protocol/Cargo.toml", source: '[package]\nname="codex-protocol"\n' },
   ]);
-  const selected = (file: string, text: string) => raw.filter(node => node.file === resolve(root, file) && node.text.includes(text) && node.ruleId === "function_item")
+  const selected = (file: string, text: string) => raw.filter(node => node.file === resolve(root, file) && node.text.slice(0,node.text.indexOf("{")).includes(text) && node.ruleId === "function_item")
     .map(node => result.selections.get(`${file}#function_item@${node.range.byteOffset.start}`)?.state);
   return { ...result, selected };
 }
@@ -34,6 +34,47 @@ test("associated helpers remain required through crate-root reexports and aliase
   expect(result.selected("codex-rs/protocol/src/tool_name.rs", "fn new")).toEqual(["required"]);
   expect(result.selected("codex-rs/protocol/src/tool_name.rs", "fn unused")).toEqual(["foreign-context"]);
   expect(result.unresolved).toEqual([]);
+});
+
+test("tuple enum variants retain their own name when their payload contains a static lifetime", async () => {
+  const result = await scope({
+    "codex-rs/code-mode/src/lib.rs": "use codex_protocol::ToolEnvironments; pub fn exec() { ToolEnvironments::single(); }",
+    "codex-rs/protocol/src/lib.rs": "pub enum ToolEnvironments { Arguments(Vec<(&'static str, String)>), All } impl ToolEnvironments { pub fn single() -> Self { Self::Arguments(vec![]) } }",
+  });
+  expect(result.unresolved).toEqual([]);
+  const variant = [...result.selections].find(([id]) => id.includes("#enum_variant@"));
+  expect(variant?.[1].state).toBe("required");
+});
+
+test("inline module reexports bind the exact helper without importing a same-named sibling", async () => {
+  const result = await scope({
+    "codex-rs/code-mode/src/lib.rs": "use codex_protocol::outer::Payload; pub fn exec() { Payload::make(); }",
+    "codex-rs/protocol/src/lib.rs": "pub mod outer { pub use self::inner::Payload; mod inner { pub struct Payload; impl Payload { pub fn make() { helper(); } } fn helper() {} } } mod unrelated { pub struct Payload; impl Payload { pub fn make() {} } }",
+  });
+  expect(result.unresolved).toEqual([]);
+  expect(result.selected("codex-rs/protocol/src/lib.rs", "fn make")).toEqual(["required", "foreign-context"]);
+  expect(result.selected("codex-rs/protocol/src/lib.rs", "fn helper")).toEqual(["required"]);
+});
+
+test("an imported source macro remains a required dependency", async () => {
+  const result = await scope({
+    "codex-rs/code-mode/src/lib.rs": "use codex_protocol::report_error; pub fn exec() { report_error!(\"failure\"); }",
+    "codex-rs/protocol/src/lib.rs": "macro_rules! report_error { ($message:expr) => { panic!(\"{}\", $message) }; } pub(crate) use report_error;",
+  });
+  expect(result.unresolved).toEqual([]);
+  expect([...result.selections].filter(([id]) => id.includes("#macro_definition@")).map(([,selection])=>selection.state)).toEqual(["required"]);
+});
+
+test("a called local helper shadows the global helper while an uncalled local body stays outside the closure", async () => {
+  const result=await scope({
+    "codex-rs/code-mode/src/lib.rs":"pub fn exec() { codex_protocol::active(); }",
+    "codex-rs/protocol/src/lib.rs":"pub fn active() { fn needed() { leaf(); } fn unused() { unrelated(); } needed(); } fn needed() {} fn leaf() {} fn unrelated() {}",
+  });
+  expect(result.unresolved).toEqual([]);
+  expect(result.selected("codex-rs/protocol/src/lib.rs","fn needed")).toEqual(["required","foreign-context"]);
+  expect(result.selected("codex-rs/protocol/src/lib.rs","fn leaf")).toEqual(["required"]);
+  expect(result.selected("codex-rs/protocol/src/lib.rs","fn unused")).toEqual(["foreign-context"]);
+  expect(result.selected("codex-rs/protocol/src/lib.rs","fn unrelated")).toEqual(["foreign-context"]);
 });
 
 test("reexport cycle resolution is independent of declaration and file order", async () => {

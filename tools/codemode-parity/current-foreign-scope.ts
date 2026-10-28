@@ -8,8 +8,8 @@ export type ForeignScopeIssue = { from: string; file: string; expression: string
 export type GeneratedScopeResolution = { from: string; expression: string; path: string; kind: "tonic-prost-schema"; selectors: Array<{ path: string; sha256: string }>; schema: string[] };
 export type RepresentationScope = { algorithm: "private-nonwire-layout-v1"; owner: { id: string; sha256: string }; methods: Array<{ id: string; sha256: string }>; predicate: string };
 export type ForeignScope = { state: "required" | "foreign-context"; algorithm: "ast-import-member-closure-v1"; selectorsSha256: string; incoming: Array<{ from: string; relation: string }>; route: string[]; rootBoundary?: { kind: "application-entrypoint-not-codemode-root"; fileSha256: string; predicate: string } };
-type Declaration = { id: string; file: string; kind: string; name: string; start: number; end: number; text: string; owner?: Declaration; implType?: string; implTypePath?: string; implTrait?: string };
-const declarationKinds = new Set(["function_item", "const_item", "static_item", "type_item", "struct_item", "enum_item", "trait_item", "field_declaration", "ordered_field_declaration_list", "enum_variant", "function_signature_item", "impl_item", "mod_item"]);
+type Declaration = { id: string; file: string; kind: string; name: string; start: number; end: number; text: string; module?: string; owner?: Declaration; implType?: string; implTypePath?: string; implTrait?: string };
+const declarationKinds = new Set(["function_item", "const_item", "static_item", "type_item", "struct_item", "enum_item", "trait_item", "field_declaration", "ordered_field_declaration_list", "enum_variant", "function_signature_item", "impl_item", "mod_item", "macro_definition"]);
 const aggregates = new Set(["struct_item", "enum_item", "trait_item"]);
 const marker = /code[_-]mode|CodeMode|codeMode/;
 // This controls seeding only: an actual active CodeMode call/import into an
@@ -18,19 +18,20 @@ const applicationRootBoundary = (file: string) => /^codex-rs\/(?:tui|cli|app-ser
 const identifiers = (text: string) => [...new Set(text.match(/[A-Za-z_][A-Za-z_0-9]*/g) ?? [])];
 function label(kind: string, text: string): string {
   if (["function_item", "function_signature_item"].includes(kind)) return text.match(/\bfn\s+(\w+)/)?.[1] ?? "";
-  return text.match(/\b(?:fn|struct|enum|type|const|static|trait|mod)\s+(\w+)/)?.[1] ??
-    (kind === "field_declaration" ? text.match(/^(?:pub(?:\([^)]*\))?\s+)?(\w+)\s*:/)?.[1] : text.match(/^\s*(\w+)/)?.[1]) ?? "";
+  if (kind === "enum_variant") return text.match(/^\s*(\w+)/)?.[1] ?? "";
+  if (kind === "field_declaration") return text.match(/^(?:pub(?:\([^)]*\))?\s+)?(\w+)\s*:/)?.[1] ?? "";
+  return text.match(/\b(?:fn|struct|enum|type|const|static|trait|mod|macro_rules!)\s+(\w+)/)?.[1] ?? text.match(/^\s*(\w+)/)?.[1] ?? "";
 }
 function splitItems(text: string): string[] {
   const items: string[] = []; let depth = 0, start = 0;
   for (let index = 0; index < text.length; index++) { if (text[index] === "{") depth++; if (text[index] === "}") depth--; if (text[index] === "," && depth === 0) { items.push(text.slice(start, index).trim()); start = index + 1; } }
   items.push(text.slice(start).trim()); return items.filter(Boolean);
 }
-function imports(text: string, prefix = ""): Array<{ path: string; alias: string }> {
+export function rustUseImports(text: string, prefix = ""): Array<{ path: string; alias: string }> {
   const result: Array<{ path: string; alias: string }> = [];
   for (const item of splitItems(text)) {
     const brace = item.indexOf("{");
-    if (brace >= 0) { result.push(...imports(item.slice(brace + 1, item.lastIndexOf("}")), prefix + item.slice(0, brace))); continue; }
+    if (brace >= 0) { result.push(...rustUseImports(item.slice(brace + 1, item.lastIndexOf("}")), prefix + item.slice(0, brace))); continue; }
     const [path, alias] = item.split(/\s+as\s+/), full = prefix + path;
     result.push({ path: full.replace(/::self$/, ""), alias: alias ?? full.split("::").at(-1)! });
   }
@@ -42,8 +43,8 @@ function imports(text: string, prefix = ""): Array<{ path: string; alias: string
  * Every decision retains the complete selector/file digest; unknown imports are
  * conservative and keep matching-module declarations required.
  */
-export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporary: string, crates: string[], manifests: Array<{ path: string; source: string }>, explicitRoots?: string[]): { selections: Map<string, ForeignScope>; unresolved: ForeignScopeIssue[]; generated: GeneratedScopeResolution[]; representations: Map<string, RepresentationScope> } {
-  const ast = raw.map(item => ({ ...item, file: relative(temporary, item.file) })).filter(item => item.file.endsWith(".rs"))
+export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporary: string, crates: string[], manifests: Array<{ path: string; source: string }>, explicitRoots?: string[], progress?: (event: Record<string,number|string>)=>void): { selections: Map<string, ForeignScope>; unresolved: ForeignScopeIssue[]; generated: GeneratedScopeResolution[]; representations: Map<string, RepresentationScope> } {
+  const ast = raw.map(item => ({ ruleId: item.ruleId, file: relative(temporary, item.file), range: item.range, get text() { return item.text; } })).filter(item => item.file.endsWith(".rs"))
     .sort((a,b)=>a.file.localeCompare(b.file)||a.range.byteOffset.start-b.range.byteOffset.start||a.range.byteOffset.end-b.range.byteOffset.end||a.ruleId.localeCompare(b.ruleId));
   const crateRoots = manifests.map(file => ({ root: dirname(file.path), name: file.source.match(/\bname\s*=\s*"([^"]+)"/)?.[1]?.replaceAll("-", "_") })).filter(item => item.name);
   const externalCrates = new Set(["std", "core", "alloc"]);
@@ -62,9 +63,11 @@ export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporar
     }
   }
   for (const crate of crateRoots) externalCrates.delete(crate.name!);
+  const libraryRoots = new Set(files.filter(file=>file.path.endsWith("/src/lib.rs")).map(file=>file.path.slice(0,-"/src/lib.rs".length)));
   const crateCache = new Map<string, typeof crateRoots[number] | undefined>(), moduleCache = new Map<string, string | undefined>();
   const crateFor = (file: string) => { if (!crateCache.has(file)) crateCache.set(file, crateRoots.filter(crate => file.startsWith(crate.root + "/")).sort((a, b) => b.root.length - a.root.length)[0]); return crateCache.get(file); };
-  const moduleFor = (file: string) => { if (!moduleCache.has(file)) { const crate = crateFor(file); moduleCache.set(file, crate ? [crate.name, file.slice(crate.root.length + 5).replace(/\/(?:mod|lib|main)\.rs$|^(?:lib|main)\.rs$|\.rs$/g, "").replaceAll("/", "::")].filter(Boolean).join("::") : undefined); } return moduleCache.get(file); };
+  const crateNamespace = (file: string) => { const crate=crateFor(file); return crate && file === `${crate.root}/src/main.rs` && libraryRoots.has(crate.root) ? `${crate.name}::__binary_main` : crate?.name; };
+  const moduleFor = (file: string) => { if (!moduleCache.has(file)) { const crate = crateFor(file); moduleCache.set(file, crate ? [crateNamespace(file), file.slice(crate.root.length + 5).replace(/\/(?:mod|lib|main)\.rs$|^(?:lib|main)\.rs$|\.rs$/g, "").replaceAll("/", "::")].filter(Boolean).join("::") : undefined); } return moduleCache.get(file); };
   // A Cargo package can contain both a library and a binary crate root. Public
   // package paths resolve through lib.rs; main.rs must not overwrite that route.
   const moduleFiles = new Map<string | undefined, ScopeFile>();
@@ -74,10 +77,15 @@ export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporar
   }
   const declarations: Declaration[] = ast.filter(item => declarationKinds.has(item.ruleId)).map(item => ({ id: `${item.file}#${item.ruleId}@${item.range.byteOffset.start}`, file: item.file, kind: item.ruleId,
     name: label(item.ruleId, item.text), start: item.range.byteOffset.start, end: item.range.byteOffset.end, text: item.text }));
-  for (const item of declarations) {
-    const enclosing = declarations.filter(parent => parent.file === item.file && parent !== item && parent.start <= item.start && parent.end >= item.end).sort((a, b) => (a.end - a.start) - (b.end - b.start));
+  let enclosingFile = "";
+  const parents: Declaration[] = [], inlineModules = new Map<string,Declaration[]>();
+  for (const item of [...declarations].sort((left,right)=>left.file.localeCompare(right.file)||left.start-right.start||right.end-left.end||left.kind.localeCompare(right.kind))) {
+    if (item.file !== enclosingFile) { parents.length = 0; enclosingFile = item.file; }
+    while (parents.length && !(parents.at(-1)!.start <= item.start && parents.at(-1)!.end >= item.end)) parents.pop();
+    const enclosing = [...parents].reverse();
     item.owner = enclosing[0];
-    const impl = item.kind === "impl_item" ? item : enclosing.find(parent => parent.kind === "impl_item");
+    item.module = [moduleFor(item.file), ...enclosing.filter(parent => parent.kind === "mod_item").reverse().map(parent => parent.name)].filter(Boolean).join("::");
+    const impl = item.kind === "impl_item" ? item : item.owner?.kind === "impl_item" ? item.owner : undefined;
     if (impl) {
       let header = impl.text.slice(0, impl.text.indexOf("{")).replace(/^\s*(?:unsafe\s+)?impl\s*/, "");
       if (header.startsWith("<")) { let depth = 0, end = 0; for (; end < header.length; end++) { if (header[end] === "<") depth++; if (header[end] === ">" && --depth === 0) { end++; break; } } header = header.slice(end).trim(); }
@@ -85,21 +93,33 @@ export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporar
       item.implTypePath = header.match(/^((?:\w+::)*\w+)/)?.[1];
       item.implType = header.match(/^(?:\w+::)*(\w+)/)?.[1];
     }
+    parents.push(item);
+    if (item.kind === "mod_item") { const modules = inlineModules.get(item.file) ?? []; modules.push(item); inlineModules.set(item.file,modules); }
   }
-  const definitions = new Map<string, Declaration[]>(), byFile = new Map<string, Declaration[]>();
+  progress?.({phase:"scope-index",nodes:ast.length,declarations:declarations.length});
+  const lexicalModule = (node: AstMatch): string | undefined => {
+    const modules = (inlineModules.get(node.file) ?? []).filter(parent => parent.start <= node.range.byteOffset.start && parent.end >= node.range.byteOffset.end)
+      .sort((left, right) => right.end - right.start - (left.end - left.start));
+    return [moduleFor(node.file), ...modules.map(parent => parent.name)].filter(Boolean).join("::") || undefined;
+  };
+  for (const item of declarations.filter(item => item.kind === "mod_item" && item.text.includes("{"))) {
+    moduleFiles.set(`${item.module}::${item.name}`, files.find(file => file.path === item.file)!);
+  }
+  const definitions = new Map<string, Declaration[]>(), byFile = new Map<string, Declaration[]>(), byName = new Map<string, Declaration[]>(), localDefinitions = new Map<string,Declaration[]>();
   const put = (key: string, item: Declaration) => { const found = definitions.get(key) ?? []; if (!found.includes(item)) found.push(item); definitions.set(key, found); };
   for (const item of declarations) {
     const list = byFile.get(item.file) ?? []; list.push(item); byFile.set(item.file, list);
+    const named = byName.get(item.name) ?? []; named.push(item); byName.set(item.name, named);
+    if (item.owner?.kind === "function_item") { const key=`${item.owner.id}:${item.name}`, found=localDefinitions.get(key) ?? []; found.push(item); localDefinitions.set(key,found); }
     if (!item.name || item.kind === "impl_item") continue;
-    const module = moduleFor(item.file); if (!module) continue;
-    if (item.owner && aggregates.has(item.owner.kind)) put(`${module}::${item.owner.name}::${item.name}`, item);
-    else if (item.implType) put(`${module}::${item.implType}::${item.name}`, item);
-    else if (!item.owner || item.owner.kind === "impl_item") put(`${module}::${item.name}`, item);
+    const module = item.module; if (!module) continue;
+    if (item.owner && aggregates.has(item.owner.kind) || item.implType) continue; // Associated items bind through the resolved owner, never its lexical module or last name.
+    else if (!item.owner || ["impl_item", "mod_item"].includes(item.owner.kind)) put(`${module}::${item.name}`, item);
   }
   const importMap = new Map<string, Map<string, string[]>>();
-  const absolute = (path: string, file: string) => {
-    const module = moduleFor(file), crate = crateFor(file); if (!module || !crate) return path;
-    if (path.startsWith("crate::")) return crate.name + path.slice(5);
+  const absolute = (path: string, file: string, module = moduleFor(file)) => {
+    const crate = crateFor(file); if (!module || !crate) return path;
+    if (path.startsWith("crate::")) return crateNamespace(file) + path.slice(5);
     if (path.startsWith("self::")) return module + path.slice(4);
     if (path.startsWith("super::")) { let parent = module, rest = path; while (rest.startsWith("super::")) { parent = parent.split("::").slice(0, -1).join("::"); rest = rest.slice(7); } return parent + "::" + rest; }
     if (crateRoots.some(root => path === root.name || path.startsWith(root.name + "::"))) return path;
@@ -107,94 +127,209 @@ export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporar
     return `${module}::${path}`;
   };
   for (const item of ast.filter(item => item.ruleId === "use_declaration")) {
-    const map = importMap.get(item.file) ?? new Map<string, string[]>();
-    for (const entry of imports(item.text.replace(/^\s*(?:pub(?:\([^)]*\))?\s+)?use\s+/, "").replace(/;\s*$/, ""))) {
-      const values = map.get(entry.alias) ?? []; values.push(absolute(entry.path, item.file)); map.set(entry.alias, values);
+    const module = lexicalModule(item), scope = `${item.file}:${module}`;
+    const map = importMap.get(scope) ?? new Map<string, string[]>();
+    for (const entry of rustUseImports(item.text.replace(/^\s*(?:pub(?:\([^)]*\))?\s+)?use\s+/, "").replace(/;\s*$/, ""))) {
+      const values = map.get(entry.alias) ?? []; values.push(absolute(entry.path, item.file, module)); map.set(entry.alias, values);
     }
-    importMap.set(item.file, map);
+    importMap.set(scope, map);
   }
-  const resolvedNames = new Map<string, Declaration[]>();
-  const projectPaths = (name: string, file: string, implType?: string): string[] => {
+  type NameQuery = { key: string; name: string; file: string; implType?: string; module?: string; targets: Declaration[]; choices: string[]; dependencies: Set<string>; complete: boolean };
+  const nameQueries = new Map<string,NameQuery>();
+  const unresolvedPaths = new Map<string,string[]>();
+  const lookupKey = (name: string, file: string, implType?: string, module = moduleFor(file)) => `${file}:${module}:${name}:${implType ?? ""}`;
+  const isProjectPath = (path: string) => crateRoots.some(crate => path.startsWith(crate.name + "::"));
+  const projectPaths = (name: string, file: string, implType?: string, module = moduleFor(file)): string[] => {
+    const key = lookupKey(name,file,implType,module);
     if (name.startsWith("Self::") && implType) name = implType + name.slice(4);
-    const [head, ...tail] = name.split("::"), imported = importMap.get(file)?.get(head!);
-    // Locals and ordinary prelude identifiers are not unresolved project imports.
+    const [head, ...tail] = name.split("::"), imported = importMap.get(`${file}:${module}`)?.get(head!);
     const paths = imported?.map(path => [path, ...tail].join("::")) ??
-      (/^(?:crate|self|super)::/.test(name) || crateRoots.some(crate => name.startsWith(crate.name + "::")) || definitions.has(absolute(head!, file)) ? [absolute(name, file)] : []);
-    return paths.filter(path => crateRoots.some(crate => path.startsWith(crate.name + "::")));
+      (/^(?:crate|self|super)::/.test(name) || crateRoots.some(crate => name.startsWith(crate.name + "::")) || definitions.has(absolute(head!, file, module)) ? [absolute(name, file, module)] : []);
+    const project = paths.filter(isProjectPath);
+    return project.length ? [...new Set([...project,...(unresolvedPaths.get(key) ?? [])])].sort() : [];
   };
-  const resolveName = (name: string, file: string, implType?: string, seen = new Set<string>()): Declaration[] => {
-    const key = `${file}:${name}:${implType ?? ""}`; if (seen.has(key)) return [];
-    // A failed branch of a reexport cycle must not poison another branch or a
-    // later top-level lookup. Only context-free lookups may enter the cache.
-    const visited = new Set(seen); visited.add(key);
-    if (resolvedNames.has(key)) return resolvedNames.get(key)!;
+  let activeQueries: Map<string,NameQuery> | undefined, currentQuery: NameQuery | undefined;
+  let roundTargets = new Map<string,Declaration[]>();
+  let clearDerivedNames = () => {};
+  const evaluateName = (query: NameQuery): Declaration[] => {
+    let {name} = query;
+    const {file,implType,module} = query;
     if (name.startsWith("Self::") && implType) name = implType + name.slice(4);
-    const [head, ...tail] = name.split("::"), imported = importMap.get(file)?.get(head!);
-    const wildcard = importMap.get(file)?.get("*") ?? [];
+    const [head, ...tail] = name.split("::"), imported = importMap.get(`${file}:${module}`)?.get(head!);
+    const wildcard = importMap.get(`${file}:${module}`)?.get("*") ?? [];
     const choices = [...(imported?.map(path => [path, ...tail].join("::")) ?? []),
-      ...wildcard.map(path => path.replace(/\*$/, name)), absolute(name, file)];
+      ...wildcard.map(path => path.replace(/\*$/, name)), absolute(name, file, module)];
+    query.choices = choices.filter(isProjectPath);
     const results: Declaration[] = [];
     for (const path of choices) {
       results.push(...(definitions.get(path) ?? []));
-      // Reexports are resolved through the actual target module's use declarations.
-      const parts = path.split("::"), member = parts.pop()!, module = parts.join("::");
-      const moduleFile = moduleFiles.get(module);
-      if (moduleFile && (importMap.get(moduleFile.path)?.has(member) || importMap.get(moduleFile.path)?.has("*"))) results.push(...resolveName(member, moduleFile.path, undefined, visited));
+      const parts = path.split("::"), member = parts.pop()!, targetModule = parts.join("::");
+      const moduleFile = moduleFiles.get(targetModule), targetImports = moduleFile && importMap.get(`${moduleFile.path}:${targetModule}`);
+      if (moduleFile && (targetImports?.has(member) || targetImports?.has("*"))) {
+        results.push(...resolveName(member, moduleFile.path, undefined, undefined, targetModule));
+      }
       if (!definitions.has(path) && parts.length > 1) {
         const ownerName = parts.pop()!, ownerModule = parts.join("::"), ownerFile = moduleFiles.get(ownerModule);
-        if (ownerFile) for (const owner of resolveName(ownerName, ownerFile.path, undefined, visited)) {
-          results.push(...memberTargets(owner, member));
+        const owners = ownerFile ? resolveName(ownerName, ownerFile.path, undefined, undefined, ownerModule) : [];
+        for (const owner of owners) {
+          if (owner.kind === "mod_item") {
+            results.push(...resolveName(`${owner.module}::${owner.name}::${member}`, owner.file, undefined, undefined, owner.module));
+          } else results.push(...memberTargets(owner, member));
         }
       }
     }
-    const answer = [...new Set(results)]; if (!seen.size) resolvedNames.set(key, answer); return answer;
+    return [...new Set(results)];
+  };
+  const resolveName = (name: string, file: string, implType?: string, _seen?: Set<string>, module = moduleFor(file)): Declaration[] => {
+    const key = lookupKey(name,file,implType,module);
+    let query = nameQueries.get(key);
+    if (!query) {
+      query = {key,name,file,implType,module,targets:[],choices:[],dependencies:new Set(),complete:false};
+      nameQueries.set(key,query);
+    }
+    currentQuery?.dependencies.add(key);
+    if (query.complete) return query.targets;
+    if (activeQueries) {
+      activeQueries.set(key,query);
+      return roundTargets.get(key) ?? [];
+    }
+    // Resolve the whole reachable name graph to a fixed point. Reexport cycles
+    // share one node per exact lexical lookup; no branch-order permutations or
+    // incomplete negative answers enter the cache.
+    activeQueries = new Map([[key,query]]);
+    try {
+      let changed = true, round = 0;
+      while (changed) {
+        changed = false;
+        roundTargets = new Map([...activeQueries].map(([id,node])=>[id,node.targets]));
+        clearDerivedNames();
+        const pending = [...activeQueries.values()], previousSize = activeQueries.size;
+        for (const node of pending) {
+          currentQuery = node;
+          const targets = [...new Set([...node.targets,...evaluateName(node)])];
+          if (targets.length !== node.targets.length) changed = true;
+          node.targets = targets;
+        }
+        currentQuery = undefined;
+        if (activeQueries.size !== previousSize) changed = true;
+        if (++round % 10 === 0 && activeQueries.size > 500) progress?.({phase:"scope-name-fixed-point",round,queries:activeQueries.size});
+      }
+      for (const node of activeQueries.values()) {
+        const frontier = new Set<string>(), visited = new Set<string>(), queue = [node];
+        for (let at = 0; at < queue.length; at++) {
+          const next = queue[at]!;
+          if (visited.has(next.key) || next.targets.length) continue;
+          visited.add(next.key);
+          next.choices.forEach(path=>frontier.add(path));
+          for (const dependency of next.dependencies) {
+            const target = nameQueries.get(dependency);
+            if (target) queue.push(target);
+          }
+        }
+        unresolvedPaths.set(node.key,[...frontier].sort());
+        node.complete = true;
+      }
+      return query.targets;
+    } finally {
+      activeQueries = undefined;
+      currentQuery = undefined;
+      roundTargets.clear();
+      clearDerivedNames();
+    }
   };
   const required = new Set<string>(), incoming = new Map<string, ForeignScope["incoming"]>(), routes = new Map<string, string[]>(), queue: Declaration[] = [];
   const unresolved = new Map<string, ForeignScopeIssue>();
   const generatedSymbols = generatedProtoSymbols(files, moduleFor), generated = new Map<string, GeneratedScopeResolution>();
-  const astByFile = new Map(files.map(file => [file.path, ast.filter(item => item.file === file.path)]));
-  const implementsType = (item: Declaration, type: Declaration) => item.implType === type.name &&
-    (item.file === type.file || resolveName(item.implTypePath ?? item.implType, item.file).includes(type));
+  const astByFile = new Map<string, AstMatch[]>();
+  for (const node of ast) { const nodes = astByFile.get(node.file) ?? []; nodes.push(node); astByFile.set(node.file,nodes); }
+  const nodesWithin = (file: string, start: number, end: number): AstMatch[] => {
+    const nodes = astByFile.get(file) ?? []; let left = 0, right = nodes.length;
+    while (left < right) { const middle = (left + right) >>> 1; if (nodes[middle]!.range.byteOffset.start < start) left = middle + 1; else right = middle; }
+    const selected: AstMatch[] = [];
+    for (let index = left; index < nodes.length && nodes[index]!.range.byteOffset.start <= end; index++) if (nodes[index]!.range.byteOffset.end <= end) selected.push(nodes[index]!);
+    return selected;
+  };
+  const localTargets = (name: string, context: Declaration): Declaration[] | undefined => {
+    const [head,...tail]=name.split("::");
+    for (let owner: Declaration | undefined=context; owner && owner.module===context.module; owner=owner.owner) {
+      if (owner.kind !== "function_item") continue;
+      const found=localDefinitions.get(`${owner.id}:${head}`); if (!found?.length) continue;
+      let targets=found;
+      for (const member of tail) targets=[...new Set(targets.flatMap(type=>memberTargets(type,member)))];
+      return targets;
+    }
+    return undefined;
+  };
+  const contextualName = (name: string, context: Declaration, implType?: string): Declaration[] => {
+    if (implType && (name === "Self" || name.startsWith("Self::"))) name=implType+name.slice(4);
+    return localTargets(name,context) ?? resolveName(name,context.file,implType,undefined,context.module);
+  };
+  const underlyingCache = new Map<string,Declaration[]>();
+  const underlyingTypes = (type: Declaration, seen=new Set<string>()): Declaration[] => {
+    if (seen.has(type.id)) return []; const visited=new Set(seen); visited.add(type.id);
+    if (!seen.size && underlyingCache.has(type.id)) return underlyingCache.get(type.id)!;
+    const targets=[type];
+    if (type.kind === "type_item") for (const ref of nodesWithin(type.file,type.start,type.end).filter(node=>["type_identifier","scoped_type_identifier"].includes(node.ruleId))) {
+      for (const target of contextualName(ref.text,type)) if (target!==type) targets.push(...underlyingTypes(target,visited));
+    }
+    const answer=[...new Set(targets)]; if (!seen.size) underlyingCache.set(type.id,answer); return answer;
+  };
+  const implOwnerCache = new Map<string,Declaration[]>();
+  const implementsType = (item: Declaration, type: Declaration): boolean => {
+    if (!item.implType) return false;
+    const owner=item.kind === "impl_item" ? item : item.owner!;
+    if (!implOwnerCache.has(owner.id)) implOwnerCache.set(owner.id,[...new Set(contextualName(item.implTypePath ?? item.implType,item).flatMap(target=>underlyingTypes(target)))]);
+    return implOwnerCache.get(owner.id)!.includes(type);
+  };
+  const implemented = declarations.filter(item=>item.implType), implementationCache = new Map<string,Declaration[]>();
+  const implementations = (type: Declaration): Declaration[] => {
+    if (!implementationCache.has(type.id)) implementationCache.set(type.id,implemented.filter(item=>implementsType(item,type)));
+    return implementationCache.get(type.id)!;
+  };
+  const resolvedMembers = new Map<string, Declaration[]>();
   const memberTargets = (type: Declaration, name: string, seen = new Set<string>()): Declaration[] => {
-    if (seen.has(type.id)) return []; seen.add(type.id);
-    const members = declarations.filter(item => item.name === name && (item.owner === type || implementsType(item, type)));
+    if (seen.has(type.id)) return [];
+    const key = `${type.id}:${name}`; if (!seen.size && resolvedMembers.has(key)) return resolvedMembers.get(key)!;
+    const visited = new Set(seen); visited.add(type.id);
+    const members = (byName.get(name) ?? []).filter(item => item.owner === type || implementsType(item, type));
     // Aliases can expose constructors/methods of another project type. Retain
     // every matching local candidate instead of silently excluding the target.
-    if (type.kind === "type_item") for (const ref of (astByFile.get(type.file) ?? []).filter(node => ["type_identifier", "scoped_type_identifier"].includes(node.ruleId) && node.range.byteOffset.start >= type.start && node.range.byteOffset.end <= type.end)) {
-      for (const target of resolveName(ref.text, type.file)) if (target !== type) members.push(...memberTargets(target, name, seen));
+    if (type.kind === "type_item") for (const ref of nodesWithin(type.file,type.start,type.end).filter(node => ["type_identifier", "scoped_type_identifier"].includes(node.ruleId))) {
+      for (const target of contextualName(ref.text,type)) if (target !== type) members.push(...memberTargets(target, name, visited));
     }
     if (!members.length && name === "default") {
       const source = files.find(file => file.path === type.file)?.source ?? "", prefix = Buffer.from(source).subarray(Math.max(0, type.start - 1200), type.start).toString().split(/\n\s*\n/).at(-1) ?? "";
       if (/#\[derive\([^\]]*\bDefault\b[^\]]*\)\]/.test(prefix)) members.push(type);
     }
     const headers = type.kind === "trait_item" ? [type] :
-      declarations.filter(item => item.kind === "impl_item" && implementsType(item, type) && /\sfor\s/.test(item.text.slice(0, item.text.indexOf("{"))));
+      implementations(type).filter(item => item.kind === "impl_item" && /\sfor\s/.test(item.text.slice(0, item.text.indexOf("{"))));
     for (const owner of headers) {
       const headerEnd = owner.start + Buffer.byteLength(owner.text.slice(0, owner.text.indexOf("{")));
-      for (const ref of (astByFile.get(owner.file) ?? []).filter(node => ["type_identifier", "scoped_type_identifier"].includes(node.ruleId) && node.range.byteOffset.start >= owner.start && node.range.byteOffset.end <= headerEnd)) {
-        for (const base of resolveName(ref.text, owner.file)) if (base.kind === "trait_item" && base !== type) members.push(...memberTargets(base, name, seen));
+      for (const ref of nodesWithin(owner.file,owner.start,headerEnd).filter(node => ["type_identifier", "scoped_type_identifier"].includes(node.ruleId))) {
+        for (const base of contextualName(ref.text,owner)) if (base.kind === "trait_item" && base !== type) members.push(...memberTargets(base, name, visited));
       }
     }
-    return [...new Set(members)];
+    const answer = [...new Set(members)]; if (!seen.size) resolvedMembers.set(key, answer); return answer;
   };
+  clearDerivedNames = () => { underlyingCache.clear(); implOwnerCache.clear(); implementationCache.clear(); resolvedMembers.clear(); };
   const mark = (item: Declaration, from: string, relation: string) => {
     const links = incoming.get(item.id) ?? []; if (!links.some(link => link.from === from && link.relation === relation)) links.push({ from, relation }); incoming.set(item.id, links);
     if (!required.has(item.id)) { required.add(item.id); routes.set(item.id, [...(routes.get(from) ?? [from]), item.id]); queue.push(item); }
   };
   const serialized = new Set<string>();
   const implicitMethods = (type: Declaration, traits: string[], from: string, relation: string) => {
-    for (const method of declarations) if (method.kind === "function_item" && method.implTrait && traits.includes(method.implTrait) && implementsType(method, type)) mark(method, from, relation);
+    for (const method of implementations(type)) if (method.kind === "function_item" && method.implTrait && traits.includes(method.implTrait)) mark(method, from, relation);
   };
   const serdeHelpers = (item: Declaration) => {
     const previousEnd = Math.max(item.owner?.start ?? 0, ...(byFile.get(item.file) ?? []).filter(previous => previous !== item && previous.owner === item.owner && previous.end <= item.start).map(previous => previous.end));
-    const attributes = (astByFile.get(item.file) ?? []).filter(node => node.ruleId === "attribute_item" && node.range.byteOffset.start >= previousEnd && node.range.byteOffset.end <= item.start && /^#\[\s*serde\s*\(/.test(node.text));
+    const attributes = nodesWithin(item.file,previousEnd,item.start).filter(node => node.ruleId === "attribute_item" && /^#\[\s*serde\s*\(/.test(node.text));
     for (const attribute of attributes) for (const match of attribute.text.matchAll(/\b(deserialize_with|serialize_with|skip_serializing_if|default|with)\s*=\s*"([A-Za-z_]\w*(?:::[A-Za-z_]\w*)*)"/g)) {
       const names = match[1] === "with" ? [match[2] + "::serialize", match[2] + "::deserialize"] : [match[2]!];
       for (const name of names) {
-        const targets = resolveName(name, item.file);
+        const targets = resolveName(name, item.file, undefined, undefined, item.module);
         for (const target of targets) mark(target, item.id, `exact serde ${match[1]} attribute helper: ${name}`);
         if (!targets.length) {
-          const paths = projectPaths(name, item.file);
+          const paths = projectPaths(name, item.file, undefined, item.module);
           if (paths.length) unresolved.set(`${item.id}:serde:${name}`, { from: item.id, file: item.file, expression: `serde ${match[1]}=${name}`, paths });
         }
       }
@@ -206,7 +341,7 @@ export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporar
     implicitMethods(type, ["Serialize", "Deserialize"], from, "implicit handwritten serde dispatch for actual typed schema");
     for (const member of byFile.get(type.file) ?? []) if (member.owner === type) {
       mark(member, type.id, "member of serialized/deserialized typed schema");
-      for (const ref of (astByFile.get(member.file) ?? []).filter(node => ["type_identifier", "scoped_type_identifier"].includes(node.ruleId) && node.range.byteOffset.start >= member.start && node.range.byteOffset.end <= member.end)) for (const nested of resolveName(ref.text, member.file)) if (aggregates.has(nested.kind)) serializeType(nested, member.id);
+      for (const ref of nodesWithin(member.file,member.start,member.end).filter(node => ["type_identifier", "scoped_type_identifier"].includes(node.ruleId))) for (const nested of resolveName(ref.text, member.file, undefined, undefined, member.module)) if (aggregates.has(nested.kind)) serializeType(nested, member.id);
     }
   };
   for (const item of declarations) {
@@ -218,22 +353,26 @@ export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporar
     // remain in the census; only an actual call/import from one of the roots above can make them required.
     // The closure below follows those calls, including generic helper names, and retains unresolved imports.
   }
+  progress?.({phase:"scope-roots",required:queue.length});
   for (let index = 0; index < queue.length; index++) {
+    if (index % 500 === 0) progress?.({phase:"scope-closure",visited:index,required:queue.length});
     const item = queue[index]!;
     serdeHelpers(item);
     if (item.kind === "enum_variant") for (const child of byFile.get(item.file) ?? []) if (child.owner === item) mark(child, item.id, "schema member of an explicitly used enum variant");
     // Reaching a foreign aggregate's type name does not select all of its independent members.
     if (aggregates.has(item.kind)) continue;
     if (["impl_item", "mod_item"].includes(item.kind)) continue;
-    const refs = (astByFile.get(item.file) ?? []).filter(node => node.range.byteOffset.start >= item.start && node.range.byteOffset.end <= item.end &&
-      ["identifier", "type_identifier", "scoped_identifier", "scoped_type_identifier", "field_expression"].includes(node.ruleId));
+    const nestedFunctions=(byFile.get(item.file) ?? []).filter(child=>child.owner===item&&child.kind==="function_item");
+    const itemNodes = nodesWithin(item.file,item.start,item.end).filter(node=>!nestedFunctions.some(child=>child.start<=node.range.byteOffset.start&&child.end>=node.range.byteOffset.end));
+    const refs = itemNodes.filter(node => ["identifier", "type_identifier", "scoped_identifier", "scoped_type_identifier", "field_expression"].includes(node.ruleId));
     const ownerType = item.implType ?? (item.owner && aggregates.has(item.owner.kind) ? item.owner.name : undefined);
     const types = new Set<Declaration>();
     for (const ref of refs.filter(ref => ref.ruleId !== "field_expression")) {
       const name = ref.text.replace(/::<[^>]*>/g, "");
       if (!/^[A-Za-z_]\w*(?:::[A-Za-z_]\w*)*$/.test(name)) continue;
-      const targets = resolveName(name, item.file, ownerType);
-      const paths = targets.length ? [] : projectPaths(name, item.file, ownerType);
+      const targets = contextualName(name,item,ownerType);
+      const local=localTargets(name,item);
+      const paths = targets.length ? [] : local ? [`local:${item.id}::${name}`] : projectPaths(name, item.file, ownerType, item.module);
       if (paths.length && !refs.some(parent => parent !== ref && parent.ruleId.startsWith("scoped_") && parent.range.byteOffset.start <= ref.range.byteOffset.start && parent.range.byteOffset.end >= ref.range.byteOffset.end)) {
         const unknown: string[] = [];
         for (const path of paths) {
@@ -246,16 +385,16 @@ export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporar
       for (const target of targets) {
         if (target.kind === "function_item" && !name.includes("::") && target.implType) continue;
         mark(target, item.id, `AST ${ref.ruleId}: ${name}`); if (aggregates.has(target.kind)) types.add(target);
-        if (target.kind === "enum_variant") for (const member of (astByFile.get(target.file) ?? []).filter(node => node.ruleId === "type_identifier" && node.range.byteOffset.start >= target.start && node.range.byteOffset.end <= target.end)) for (const type of resolveName(member.text, target.file)) if (aggregates.has(type.kind)) types.add(type);
+        if (target.kind === "enum_variant") for (const member of nodesWithin(target.file,target.start,target.end).filter(node => node.ruleId === "type_identifier")) for (const type of resolveName(member.text, target.file, undefined, undefined, target.module)) if (aggregates.has(type.kind)) types.add(type);
       }
     }
     // Imported types in the selected signature/receiver scope are the conservative candidate set.
-    for (const name of identifiers(item.text.slice(0, item.text.indexOf("{")))) for (const type of resolveName(name, item.file, ownerType)) if (aggregates.has(type.kind)) types.add(type);
-    if (ownerType) for (const type of resolveName(ownerType, item.file)) if (aggregates.has(type.kind)) types.add(type);
-    const signatureTypes = (source: string, file: string) => [...new Set(identifiers(source).flatMap(name => resolveName(name, file, ownerType)).filter(type => aggregates.has(type.kind)))];
+    for (const name of identifiers(item.text.slice(0, item.text.indexOf("{")))) for (const type of contextualName(name,item,ownerType)) if (aggregates.has(type.kind)) types.add(type);
+    if (ownerType) for (const type of contextualName(ownerType,item)) if (aggregates.has(type.kind)) types.add(type);
+    const signatureTypes = (source: string, file: string, module = item.module) => [...new Set(identifiers(source).flatMap(name => resolveName(name, file, ownerType, undefined, module)).filter(type => aggregates.has(type.kind)))];
     const bindings = new Map<string, Declaration[]>();
     if (ownerType) bindings.set("self", signatureTypes(ownerType, item.file));
-    for (const parameter of (astByFile.get(item.file) ?? []).filter(node => node.ruleId === "parameter" && node.range.byteOffset.start >= item.start && node.range.byteOffset.end <= item.end)) {
+    for (const parameter of itemNodes.filter(node => node.ruleId === "parameter")) {
       const match = parameter.text.match(/^\s*(?:mut\s+)?([A-Za-z_]\w*)\s*:\s*([\s\S]*)/);
       if (match) bindings.set(match[1]!, [...new Set([...(bindings.get(match[1]!) ?? []), ...signatureTypes(match[2]!, item.file)])]);
     }
@@ -274,11 +413,11 @@ export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporar
         if (name === "await") continue;
         const members = found.flatMap(type => memberTargets(type, name)).filter(member => method ? ["function_item", "function_signature_item"].includes(member.kind) && /\([^)]*\bself\b/.test(member.text.slice(0, member.text.indexOf("{") < 0 ? undefined : member.text.indexOf("{"))) : member.kind === "field_declaration");
         if (method && !members.length) continue; // Mutex/Arc/Future wrappers retain their known generic payload.
-        found = [...new Set(members.flatMap(member => signatureTypes(method ? member.text.slice(0, member.text.indexOf("{")).split("->")[1] ?? "" : member.text.slice(member.text.indexOf(":") + 1), member.file)))];
+        found = [...new Set(members.flatMap(member => signatureTypes(method ? member.text.slice(0, member.text.indexOf("{")).split("->")[1] ?? "" : member.text.slice(member.text.indexOf(":") + 1), member.file, member.module)))];
       }
       return found;
     };
-    for (let pass = 0; pass < 3; pass++) for (const local of (astByFile.get(item.file) ?? []).filter(node => node.ruleId === "let_declaration" && node.range.byteOffset.start >= item.start && node.range.byteOffset.end <= item.end)) {
+    for (let pass = 0; pass < 3; pass++) for (const local of itemNodes.filter(node => node.ruleId === "let_declaration")) {
       const match = local.text.match(/^\s*let\s+(?:mut\s+)?([A-Za-z_]\w*)\s*(?::\s*([^=]+))?=\s*([\s\S]*);\s*$/); if (!match) continue;
       const inferred = match[2] ? signatureTypes(match[2], item.file) : receiverTypes(match[3]!);
       if (inferred) bindings.set(match[1]!, [...new Set([...(bindings.get(match[1]!) ?? []), ...inferred])]);
@@ -296,7 +435,7 @@ export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporar
         for (const type of candidates) for (const target of memberTargets(type, member)) {
           if (["function_item", "function_signature_item"].includes(target.kind) && !/\([^)]*\bself\b/.test(target.text.slice(0, target.text.indexOf("{") < 0 ? undefined : target.text.indexOf("{")))) continue;
           mark(target, item.id, `AST receiver member ${type.name}.${member}`);
-          if (target.kind === "field_declaration") for (const nested of (astByFile.get(target.file) ?? []).filter(node => node.ruleId === "type_identifier" && node.range.byteOffset.start >= target.start && node.range.byteOffset.end <= target.end)) for (const type of resolveName(nested.text, target.file)) if (aggregates.has(type.kind)) types.add(type);
+          if (target.kind === "field_declaration") for (const nested of nodesWithin(target.file,target.start,target.end).filter(node => node.ruleId === "type_identifier")) for (const type of resolveName(nested.text, target.file, undefined, undefined, target.module)) if (aggregates.has(type.kind)) types.add(type);
         }
       }
     }
@@ -306,34 +445,35 @@ export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporar
       if (method.name === "fmt" && /(?:Display|Debug)\s+for\b/.test(header) && /\b(?:format|format_args|write|writeln|println|debug|trace|warn|error)\s*!|\.to_string\s*\(/.test(item.text)) mark(method, item.id, "formatting dispatch of referenced receiver type");
       if (["clone", "cmp", "partial_cmp", "hash", "eq"].includes(method.name) && new RegExp(`\\.${method.name}\\s*\\(`).test(item.text)) mark(method, item.id, "explicit trait method of referenced receiver type");
     }
-    for (const literal of (astByFile.get(item.file) ?? []).filter(node => node.ruleId === "struct_expression" && node.range.byteOffset.start >= item.start && node.range.byteOffset.end <= item.end)) {
+    for (const literal of itemNodes.filter(node => node.ruleId === "struct_expression")) {
       const name = literal.text.slice(0,literal.text.indexOf("{")).trim().replace(/::<[^>]*>/g, "");
-      for (const target of resolveName(name,item.file,ownerType)) for (const field of (astByFile.get(item.file) ?? []).filter(node => ["field_initializer", "shorthand_field_initializer"].includes(node.ruleId) && node.range.byteOffset.start >= literal.range.byteOffset.start && node.range.byteOffset.end <= literal.range.byteOffset.end)) {
+      for (const target of resolveName(name,item.file,ownerType,undefined,item.module)) for (const field of nodesWithin(item.file,literal.range.byteOffset.start,literal.range.byteOffset.end).filter(node => ["field_initializer", "shorthand_field_initializer"].includes(node.ruleId))) {
         const member = field.text.match(/^\s*(\w+)/)?.[1]; if (!member) continue;
         for (const declaration of memberTargets(target,member)) if (declaration.kind === "field_declaration") mark(declaration,item.id, `AST constructed field ${name}.${member}`);
       }
     }
-    for (const call of (astByFile.get(item.file) ?? []).filter(node => node.ruleId === "call_expression" && node.range.byteOffset.start >= item.start && node.range.byteOffset.end <= item.end)) {
+    for (const call of itemNodes.filter(node => node.ruleId === "call_expression")) {
       if (/\.\s*(?:into|try_into)\s*\(/.test(call.text)) {
         const name = call.text.match(/^\s*((?:[A-Za-z_]\w*::)*[A-Za-z_]\w*)\s*\(/)?.[1];
-        for (const target of name ? resolveName(name, item.file, ownerType) : []) if (target.kind === "function_item") {
-          for (const type of signatureTypes(target.text.slice(0,target.text.indexOf("{")), target.file)) implicitMethods(type, ["From", "Into", "TryFrom", "TryInto"], item.id, "implicit conversion of an actual called function's typed argument");
+        for (const target of name ? resolveName(name, item.file, ownerType, undefined, item.module) : []) if (target.kind === "function_item") {
+          for (const type of signatureTypes(target.text.slice(0,target.text.indexOf("{")), target.file, target.module)) implicitMethods(type, ["From", "Into", "TryFrom", "TryInto"], item.id, "implicit conversion of an actual called function's typed argument");
         }
       }
       const serde = call.text.match(/^serde_json\s*::\s*(?:to_value|to_string|from_value|from_str)(?:\s*::\s*<([\s\S]+)>)?\s*\(([\s\S]*)\)$/); if (!serde) continue;
-      if (serde[1]) for (const name of identifiers(serde[1])) for (const type of resolveName(name, item.file, ownerType)) serializeType(type, item.id);
+      if (serde[1]) for (const name of identifiers(serde[1])) for (const type of resolveName(name, item.file, ownerType, undefined, item.module)) serializeType(type, item.id);
       const argument = serde[2]!.trim().replace(/^&\s*(?:mut\s+)?/, ""), field = argument.match(/\.\s*([A-Za-z_]\w*)$/)?.[1];
       if (field) for (const type of types) for (const member of byFile.get(type.file) ?? []) if (member.owner === type && member.kind === "field_declaration" && member.name === field) {
-        for (const ref of (astByFile.get(member.file) ?? []).filter(node => ["type_identifier", "scoped_type_identifier"].includes(node.ruleId) && node.range.byteOffset.start >= member.start && node.range.byteOffset.end <= member.end)) for (const target of resolveName(ref.text, member.file)) serializeType(target, item.id);
+        for (const ref of nodesWithin(member.file,member.start,member.end).filter(node => ["type_identifier", "scoped_type_identifier"].includes(node.ruleId))) for (const target of resolveName(ref.text, member.file, undefined, undefined, member.module)) serializeType(target, item.id);
       }
       if (/^[A-Za-z_]\w*$/.test(argument)) {
-        if (argument === "self" && ownerType) for (const type of resolveName(ownerType, item.file)) serializeType(type, item.id);
+        if (argument === "self" && ownerType) for (const type of resolveName(ownerType, item.file, undefined, undefined, item.module)) serializeType(type, item.id);
         const signature = item.text.slice(0, item.text.indexOf("{")), parameterType = signature.match(new RegExp(`\\b${argument}\\s*:\\s*([^,)]*)`))?.[1];
-        if (parameterType) for (const name of identifiers(parameterType)) for (const type of resolveName(name, item.file, ownerType)) serializeType(type, item.id);
+        if (parameterType) for (const name of identifiers(parameterType)) for (const type of resolveName(name, item.file, ownerType, undefined, item.module)) serializeType(type, item.id);
       }
     }
   }
-  const selectorsSha256 = sha256(JSON.stringify({ rootPolicy: "codemode-api-entrypoints-v3", applicationNonRoots: files.filter(file => applicationRootBoundary(file.path)).map(file => ({ path: file.path, sha256: sha256(file.source) })).sort((a,b)=>a.path.localeCompare(b.path)), roots: [...required].filter(id => incoming.get(id)?.some(link => link.relation.includes("census") || link.relation.includes("explicit CodeMode"))).sort(), files: files.map(file => ({ path: file.path, sha256: sha256(file.source) })).sort((a, b) => a.path.localeCompare(b.path)) }));
+  progress?.({phase:"scope-closed",required:queue.length,unresolved:unresolved.size});
+  const selectorsSha256 = sha256(JSON.stringify({ rootPolicy: "codemode-api-entrypoints-v3", bindingPolicy: "rust-lexical-project-members-v1", applicationNonRoots: files.filter(file => applicationRootBoundary(file.path)).map(file => ({ path: file.path, sha256: sha256(file.source) })).sort((a,b)=>a.path.localeCompare(b.path)), roots: [...required].filter(id => incoming.get(id)?.some(link => link.relation.includes("census") || link.relation.includes("explicit CodeMode"))).sort(), files: files.map(file => ({ path: file.path, sha256: sha256(file.source) })).sort((a, b) => a.path.localeCompare(b.path)) }));
   const result = new Map<string, ForeignScope>();
   for (const item of declarations) result.set(item.id, { state: required.has(item.id) ? "required" : "foreign-context", algorithm: "ast-import-member-closure-v1", selectorsSha256,
     incoming: (incoming.get(item.id) ?? []).sort((a, b) => a.from.localeCompare(b.from) || a.relation.localeCompare(b.relation)), route: routes.get(item.id) ?? [],
@@ -344,12 +484,12 @@ export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporar
     const source = Buffer.from(files.find(file => file.path === owner.file)!.source);
     const previous = declarations.filter(item => item.file === owner.file && item.end <= owner.start).sort((a,b)=>b.end-a.end)[0];
     const attributes = source.subarray(Math.max(previous?.end ?? 0, owner.start-8000), owner.start).toString();
-    const impls = declarations.filter(item => item.kind === "impl_item" && item.implType === owner.name);
+    const impls = implementations(owner).filter(item => item.kind === "impl_item");
     if (/\b(?:Serialize|Deserialize|JsonSchema|ToV8|FromV8|IntoV8)\b|#\[serde\b|#\[repr\s*\(/.test(attributes) || impls.some(item => /\b(?:Serialize|Deserialize|ToV8|FromV8|IntoV8)\b/.test(item.text.slice(0,item.text.indexOf("{")))) || /extern\s+"C"/.test(source.toString())) continue;
     const members = declarations.filter(item => item.file === owner.file && owner.start <= item.start && item.end <= owner.end &&
       ["struct_item", "enum_item", "type_item", "field_declaration", "enum_variant", "ordered_field_declaration_list"].includes(item.kind));
     const methods = declarations.filter(item => item.kind === "function_item" && required.has(item.id) &&
-      (item.implType === owner.name || item.file === owner.file && (new RegExp(`\\b${owner.name}\\b`).test(item.text) || members.some(member => member.name && new RegExp(`\\.\\s*${member.name}\\b`).test(item.text)))));
+      (implementsType(item, owner) || item.file === owner.file && item.module === owner.module && (new RegExp(`\\b${owner.name}\\b`).test(item.text) || members.some(member => member.name && new RegExp(`\\.\\s*${member.name}\\b`).test(item.text)))));
     if (!methods.length) continue;
     const proof: RepresentationScope = { algorithm: "private-nonwire-layout-v1", owner: { id: owner.id, sha256: sha256(owner.text) },
       methods: methods.map(method => ({ id: method.id, sha256: sha256(method.text) })).sort((a,b)=>a.id.localeCompare(b.id)),

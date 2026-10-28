@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { sha256 } from "./qualification";
 import { resolveCurrentSource } from "./current-source";
 import { foreignMemberScope, type ForeignScope, type ForeignScopeIssue, type GeneratedScopeResolution, type RepresentationScope } from "./current-foreign-scope";
+import { projectReferenceTargets } from "./current-project-references";
 
 export type SourceUnit = {
   id: string; file: string; kind: string; label: string; line: number;
@@ -29,6 +30,50 @@ const jsKinds = ["function_declaration", "function_expression", "method_definiti
 const tsKinds = ["interface_declaration", "type_alias_declaration", "property_signature", "method_signature", "function_signature", "enum_declaration"];
 type GitFile = { path: string; blob: string; source: string };
 type Match = { ruleId: string; file: string; text: string; range: { byteOffset: { start: number; end: number }; start: { line: number } } };
+
+/** Keep one immutable byte buffer per scanned file instead of repeated text for every nested AST node. */
+class SourceMatch implements Match {
+  readonly range: Match["range"];
+  constructor(readonly ruleId: string, readonly file: string, private readonly source: Buffer, start: number, end: number, line: number) {
+    this.range = { byteOffset: { start, end }, start: { line } };
+  }
+  get text(): string { return this.source.subarray(this.range.byteOffset.start, this.range.byteOffset.end).toString("utf8"); }
+}
+
+/** JSONL bounds parsing memory by one match; every row is checked against its exact immutable source bytes. */
+async function extractMatches(repo: string, sources: Map<string, Buffer>): Promise<Match[]> {
+  if (!sources.size) return [];
+  const scan = Bun.spawn([resolve(repo, "node_modules/.bin/ast-grep"), "scan", "--inline-rules", astRules(), "--json=stream", "--no-ignore", "hidden", ...sources.keys()], { cwd: repo, stdout: "pipe", stderr: "pipe" });
+  const matches: Match[] = [], ruleIds = new Map<string, string>();
+  const accept = (line: string) => {
+    if (!line.trim()) return;
+    const raw: Match = JSON.parse(line), source = sources.get(raw.file);
+    if (!source) throw new Error(`AST extraction returned an unstaged source: ${raw.file}`);
+    const { start, end } = raw.range.byteOffset;
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || end > source.length ||
+      !Number.isSafeInteger(raw.range.start.line) || raw.range.start.line < 0 ||
+      source.subarray(start, end).toString("utf8") !== raw.text) throw new Error(`AST extraction changed immutable bytes: ${raw.file}@${start}`);
+    const ruleId = ruleIds.get(raw.ruleId) ?? raw.ruleId; ruleIds.set(ruleId, ruleId);
+    matches.push(new SourceMatch(ruleId, raw.file, source, start, end, raw.range.start.line));
+  };
+  const consume = async () => {
+    const reader = scan.stdout.getReader(), decoder = new TextDecoder(); let pending = "";
+    try {
+      for (;;) {
+        const chunk = await reader.read(); if (chunk.done) break;
+        const text = pending + decoder.decode(chunk.value, { stream: true }); let start = 0, newline: number;
+        while ((newline = text.indexOf("\n", start)) >= 0) { accept(text.slice(start, newline)); start = newline + 1; }
+        pending = text.slice(start);
+      }
+      pending += decoder.decode(); if (pending) accept(pending);
+    } finally { reader.releaseLock(); }
+  };
+  try {
+    const [, stderr, exit] = await Promise.all([consume(), new Response(scan.stderr).text(), scan.exited]);
+    if (exit !== 0) throw new Error(`reference AST extraction failed: ${stderr}`);
+    return matches;
+  } finally { if (scan.exitCode === null) { scan.kill(); await scan.exited; } }
+}
 /** Imported source helpers can carry CodeMode behavior without mentioning CodeMode in their own names. */
 function dependencyClosure(blobs: GitFile[], primary: GitFile[]): Map<string, { names: Set<string>; owners: Set<"native-host" | "ported">; roots: Set<string> }> {
   const manifests = blobs.filter(file => /\/Cargo\.toml$/.test(file.path)).map(file => ({ root: dirname(file.path), name: file.source.match(/\bname\s*=\s*"([^"]+)"/)?.[1]?.replaceAll("-", "_") }));
@@ -78,7 +123,9 @@ function dependencyClosure(blobs: GitFile[], primary: GitFile[]): Map<string, { 
           item.names.add(name); item.owners.add(ownership); item.roots.add(root); found.set(moduleFile.path, item); queue.push({ file: moduleFile, ownership, root, onlyImport: name });
         }
         for (const declaration of declarations) {
-          // Stateful application framework types are the adapter boundary, not all of Codex itself.
+          // Keep this initial file-wide lexical pass narrow. The AST fixed point
+          // below discovers every actually referenced project type regardless
+          // of crate; this heuristic cannot excuse an unresolved reference.
           if (declaration.kind !== "fn" && !/^codex_(?:code_mode|protocol|tools|utils_)/.test(crate.name ?? "")) continue;
           if (primary.some(item => item.path === declaration.file.path)) continue;
           const item = found.get(declaration.file.path) ?? { names: new Set<string>(), owners: new Set<"native-host" | "ported">(), roots: new Set<string>() };
@@ -120,6 +167,7 @@ async function sourceFiles(sourceRepo: string, revision: string): Promise<GitFil
 function unitLabel(kind: string, text: string): string {
   if (["function_item", "function_signature_item"].includes(kind)) return text.match(/\bfn\s+([\w$]+)/)?.[1] ?? "";
   if (kind === "field_declaration") return text.match(/^(?:pub(?:\([^)]*\))?\s+)?([\w$]+)\s*:/)?.[1] ?? text.trim().split("\n")[0]!;
+  if (kind === "enum_variant") return text.match(/^\s*([\w$]+)/)?.[1] ?? "";
   const declared = text.match(/\b(?:fn|struct|enum|type|const|static|trait|mod|macro_rules!|function|class)\s+([\w$]+)/)?.[1];
   return declared ?? text.trim().split(/\n|\{|=>/)[0]!.trim().slice(0, 140);
 }
@@ -138,7 +186,7 @@ export function inventoryDigest(inventory: Pick<CurrentInventory, "sourceRevisio
 }
 
 /** Scope is discovered from the entire reference object tree, not a hand maintained module list. */
-export async function generateCurrentInventory(sourceRepo: string, revision: string, repo = resolve(import.meta.dir, "../..")): Promise<CurrentInventory> {
+export async function generateCurrentInventory(sourceRepo: string, revision: string, repo = resolve(import.meta.dir, "../.."), progress?: (event: Record<string, number | string>) => void): Promise<CurrentInventory> {
   if (!/^[a-f0-9]{40}$/.test(revision)) throw new Error("current inventory requires an exact source commit");
   const [tree, blobs, astVersion] = await Promise.all([
     command(["git", "rev-parse", `${revision}^{tree}`], sourceRepo), sourceFiles(sourceRepo, revision),
@@ -155,31 +203,50 @@ export async function generateCurrentInventory(sourceRepo: string, revision: str
   const embedded: Array<{ file: string; path: string; offset: number }> = [];
   const files: SourceFile[] = [], units: SourceUnit[] = [], grpcMethods: string[] = [], globalHelpers: string[] = [];
   try {
-    for (const file of selected) {
+    const manifests = blobs.filter(file => /\/Cargo\.toml$/.test(file.path)), staged = new Set<string>();
+    const matches: Match[] = [], matchesByFile = new Map<string, Match[]>();
+    let semanticMatches: Match[] = [];
+    let foreignSelection: ReturnType<typeof foreignMemberScope>;
+    for (;;) {
+    Bun.gc(true);
+    progress?.({phase:"extract",files:selected.length,temporary});
+    const scanSources = new Map<string, Buffer>();
+    for (const file of selected.filter(file => !staged.has(file.path))) {
+      staged.add(file.path);
       const destination = resolve(temporary, file.path); await mkdir(dirname(destination), { recursive: true }); await writeFile(destination, file.source);
+      if (/\.(?:rs|js)$/.test(file.path)) scanSources.set(destination, Buffer.from(file.source));
       if (file.path.endsWith(".rs")) for (const literal of file.source.matchAll(/r(#{0,16})"([\s\S]*?)"\1/g)) {
         if (!/\b(?:type|interface|declare)\s+\w/.test(literal[2]!)) continue;
         const offset = Buffer.byteLength(file.source.slice(0, literal.index! + 2 + literal[1]!.length));
         const path = resolve(temporary, `${file.path}.embedded-${offset}.ts`);
-        await writeFile(path, literal[2]!); embedded.push({ file: file.path, path, offset });
+        await writeFile(path, literal[2]!); embedded.push({ file: file.path, path, offset }); scanSources.set(path, Buffer.from(literal[2]!));
       }
     }
-    const scan = Bun.spawn([resolve(repo, "node_modules/.bin/ast-grep"), "scan", "--inline-rules", astRules(), "--json=compact", "--no-ignore", "hidden", temporary], { cwd: repo, stdout: "pipe", stderr: "pipe" });
-    const [stdout, stderr, exit] = await Promise.all([new Response(scan.stdout).text(), new Response(scan.stderr).text(), scan.exited]);
-    if (exit !== 0) throw new Error(`reference AST extraction failed: ${stderr}`);
-    const matches: Match[] = JSON.parse(stdout);
+    for (const item of await extractMatches(repo, scanSources)) {
+      matches.push(item); const found = matchesByFile.get(item.file) ?? []; found.push(item); matchesByFile.set(item.file, found);
+    }
+    progress?.({phase:"resolve",files:selected.length,astNodes:matches.length,newFiles:scanSources.size,rss:process.memoryUsage().rss});
     const testRanges = matches.filter(item => item.ruleId === "mod_item" && (/^\s*(?:pub\s+)?mod\s+(?:tests|test)\b/.test(item.text) ||
       /#\[cfg\(test\)\]\s*$/.test(Buffer.from(selected.find(file => file.path === relative(temporary, item.file))?.source ?? "").subarray(Math.max(0, item.range.byteOffset.start - 100), item.range.byteOffset.start).toString())));
-    const semanticMatches = matches.filter(item => !testRanges.some(test => test.file === item.file && test.range.byteOffset.start <= item.range.byteOffset.start && test.range.byteOffset.end >= item.range.byteOffset.end));
-    const manifests = blobs.filter(file => /\/Cargo\.toml$/.test(file.path));
-    const foreignSelection = foreignMemberScope(selected, semanticMatches, temporary, crates, manifests);
+    semanticMatches = matches.filter(item => !testRanges.some(test => test.file === item.file && test.range.byteOffset.start <= item.range.byteOffset.start && test.range.byteOffset.end >= item.range.byteOffset.end));
+    foreignSelection = foreignMemberScope(selected, semanticMatches, temporary, crates, manifests, undefined, progress);
+    const targets = projectReferenceTargets(blobs, foreignSelection.unresolved).filter(target => !staged.has(target.file.path));
+    progress?.({phase:"discover",files:selected.length,unresolved:foreignSelection.unresolved.length,additionalFiles:targets.length});
+    if (!targets.length) break;
+    for (const target of targets) {
+      const file = blobs.find(file => file.path === target.file.path)!;
+      selected.push(file);
+      dependencies.set(file.path, { names: new Set(target.symbols), owners: new Set(target.requiredBy.map(path => nativeOwnership(path) ? "native-host" as const : "ported" as const)), roots: new Set(target.requiredBy) });
+    }
+    semanticMatches = [];
+    }
     const nativeSelection = foreignMemberScope(selected, semanticMatches, temporary, crates, manifests, crates.filter(crate => /code-mode-(?:host|runtime)$/.test(crate)));
     const foreignScopes = foreignSelection.selections;
     for (const file of selected.sort((left, right) => left.path.localeCompare(right.path))) {
       const sourceBytes = Buffer.from(file.source);
       const discovery = crates.some(crate => file.path.startsWith(crate + "/")) ? "crate" : marker.test(file.path) ? "module" : dependencies.has(file.path) ? "dependency" : "consumer";
       const before = units.length;
-      const found = matches.filter(item => relative(temporary, item.file) === file.path);
+      const found = matchesByFile.get(resolve(temporary, file.path)) ?? [];
       const tests = found.filter(item => item.ruleId === "mod_item" && (/^\s*(?:pub\s+)?mod\s+(?:tests|test)\b/.test(item.text) ||
         /#\[cfg\(test\)\]\s*$/.test(sourceBytes.subarray(Math.max(0, item.range.byteOffset.start - 100), item.range.byteOffset.start).toString())));
       const scoped = found.filter(item => (kinds.includes(item.ruleId) || jsKinds.includes(item.ruleId)) && !tests.some(test => test.range.byteOffset.start <= item.range.byteOffset.start && test.range.byteOffset.end >= item.range.byteOffset.end));
@@ -218,7 +285,7 @@ export async function generateCurrentInventory(sourceRepo: string, revision: str
           foreignScopes.get(`${file.path}#${item.ruleId}@${item.range.byteOffset.start}`)?.state !== "required") continue;
         emit(item.ruleId, item.text, item.range.byteOffset.start, item.range.byteOffset.end, item.range.start.line + 1);
       }
-      for (const literal of embedded.filter(item => item.file === file.path)) for (const item of matches.filter(match => match.file === literal.path)) {
+      for (const literal of embedded.filter(item => item.file === file.path)) for (const item of matchesByFile.get(literal.path) ?? []) {
         const start = literal.offset + item.range.byteOffset.start;
         emit(`typescript-${item.ruleId}`, item.text, start, literal.offset + item.range.byteOffset.end, sourceBytes.subarray(0, start).toString().split("\n").length);
       }
@@ -241,7 +308,7 @@ export async function generateCurrentInventory(sourceRepo: string, revision: str
     units.sort((left, right) => left.id.localeCompare(right.id));
     const base = { sourceRevision: revision, sourceTree: tree.toString().trim(), files, units, foreignScopeDiagnostics: foreignSelection.unresolved, generatedScopeResolutions: foreignSelection.generated,
       grpcMethods: [...new Set(grpcMethods)].sort(), globalHelpers: [...new Set(globalHelpers)].sort() };
-    return { schema: 2, generator: "git-object-tree+ast-grep-declarations+import-member-closure-v9", sourceCargoLockSha256: sha256(blobs.find(file => file.path === "codex-rs/Cargo.lock")?.source ?? ""),
+    return { schema: 2, generator: "git-object-tree+ast-grep-declarations+import-member-closure-v10", sourceCargoLockSha256: sha256(blobs.find(file => file.path === "codex-rs/Cargo.lock")?.source ?? ""),
       astGrepVersion: astVersion.toString().trim(), discoveredCrates: crates, ...base, denominatorSha256: inventoryDigest(base) };
   } finally { await rm(temporary, { recursive: true, force: true }); }
 }
@@ -263,7 +330,7 @@ export function inventoryFindings(generated: CurrentInventory, committed: Curren
 if (import.meta.main) {
   const [sourceRepo, destination = resolve(import.meta.dir, "current-inventory.json")] = process.argv.slice(2);
   const lock = JSON.parse(await readFile(resolve(import.meta.dir, "current-reference.json"), "utf8"));
-  const inventory = await generateCurrentInventory(await resolveCurrentSource(lock, sourceRepo), lock.sourceRevision);
+  const inventory = await generateCurrentInventory(await resolveCurrentSource(lock, sourceRepo), lock.sourceRevision, undefined, event => console.error(JSON.stringify(event)));
   await writeFile(destination, JSON.stringify(inventory, null, 2) + "\n");
   console.log(`Generated ${inventory.units.length} units in ${inventory.files.length} files from ${inventory.discoveredCrates.length} discovered CodeMode crates; ${inventory.grpcMethods.length} RPCs; ${inventory.denominatorSha256}`);
 }

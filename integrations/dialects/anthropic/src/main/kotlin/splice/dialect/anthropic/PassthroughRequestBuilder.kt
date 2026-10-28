@@ -58,7 +58,7 @@ internal class PassthroughRequestBuilder(
     ): BuiltPassthroughRequest {
         val raw = body.raw
         val typed = body.typed
-        val effort = thinking.effortLadder(typed)
+        val effort = thinking.effortLadder(typed, raw)
         val context = if (names.active) {
             null
         } else {

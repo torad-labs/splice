@@ -108,7 +108,7 @@ Marcos's standing rulings for splice, one per line.
 - The architecture rules pack (`quality/rules/kotlin`) is wanted: a rule that contradicts the architecture means the architecture is wrong.
 - Adding a head is one of three moves: reuse a schema (pure TOML), declare a new one (dialect and auth grammar), or reuse one but reshape it (quirks).
 - mirror_reasoning stays false on every head: never re-enable it for parity, continuity or any agent theory; ask Marcos and wait.
-- Kimi's built requests and its goldens stay byte-identical.
+- Kimi's built requests and its goldens stay byte-identical, except its effort, which follows Claude Code's pick and the head's setting like every head's, high by default (Marcos, 2026-10-28: "why are we running it on max by default and not letteint it be changed").
 - The Responses websocket transport ships default off; turning it on is Marcos's one-line TOML change, never a code default.
 - A cross-head fallback for a hard-down primary head is Marcos's decision to make.
 - A refused claim, a blocked file or an unanswered question is never a stopping point: take the next open work and say in one line what you took and what you are still waiting on.

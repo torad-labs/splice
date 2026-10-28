@@ -15,10 +15,41 @@ private const val EFFORT_MAX = "max"
 private const val HIGH_BUDGET_FLOOR = 8_192L
 private const val MAX_BUDGET_FLOOR = 24_576L
 
+/** splice's effort when nothing names one (Marcos, Oct 28: "effort at high by default"). */
+private const val EFFORT_DEFAULT = EFFORT_HIGH
+
 internal class PassthroughEffortLadder {
 
-    /** The budget-to-rung mapping. A null budget (thinking present, no budget_tokens) is the
-     *  wire-frozen EFFORT_MAX case KIMI BYTE-IDENTITY requires — see effortLadder's KDoc. */
+    /** splice's effort words, cheapest first: a vendor rung is placed among them by its position here. */
+    private val order = listOf("none", "minimal", EFFORT_LOW, "medium", EFFORT_HIGH, "xhigh", EFFORT_MAX)
+
+    /** [word] on the vendor's [rungs]: the highest rung not above it, so no turn costs more than was asked (Marcos,
+     *  Oct 28: "We should never make configuration that might be expensive for the user without them knowing"),
+     *  else the cheapest. The word itself where there are no rungs; null for a word that is not an effort. */
+    fun onRungs(word: String?, rungs: List<String>?): String? {
+        val asked = word?.trim()?.lowercase()
+        val rank = asked?.let(order::indexOf) ?: -1
+        return when {
+            asked == null || rank < 0 -> null
+            rungs == null -> asked
+            else -> rungs.filter { order.indexOf(it) in 0..rank }.maxByOrNull(order::indexOf) ?: rungs.firstOrNull()
+        }
+    }
+
+    /** The configured effort on [rungs] for a turn whose request names none, splice's default high when nothing is
+     *  configured, and SCH-006's cheapest rung for a word that is no effort at all. */
+    fun configuredEffort(
+        configEffort: String?,
+        providerTag: String,
+        warned: AtomicBoolean,
+        log: LogSink,
+        rungs: List<String>?,
+    ): String {
+        if (configEffort == null) return onRungs(EFFORT_DEFAULT, rungs) ?: EFFORT_DEFAULT
+        return onRungs(configEffort, rungs) ?: fallbackEffort(configEffort, providerTag, warned, log, rungs)
+    }
+
+    /** The budget-to-rung mapping, for a turn whose request names no effort of its own. */
     fun budgetEffort(budget: Long?): String = when {
         budget == null -> EFFORT_MAX
         budget >= MAX_BUDGET_FLOOR -> EFFORT_MAX

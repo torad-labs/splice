@@ -154,21 +154,22 @@ class PassthroughRequestBuilderTest {
         assertEquals("high", thinkingReq("20000").effort())
         assertEquals("low", thinkingReq("1").effort()) // > 0
         assertEquals("low", thinkingReq("8191").effort())
-        assertEquals("max", thinkingReq(null).effort()) // absent -> native default
+        // Oct 28, Marcos: "why are we running it on max by default and not letteint it be changed". A turn with no
+        // budget, no effort of Claude Code's and no setting gets splice's default, high (it was max).
+        assertEquals("high", thinkingReq(null).effort())
     }
 
-    // Review finding PT-002 (KIMI BYTE-IDENTITY): a configured daemon effort must never move
-    // kimi's wire bytes for a request shape the pre-diff builder produced identically. Guards the
-    // exact hole the review found — a non-null configEffort silently replacing EFFORT_MAX in
-    // output_config.effort whenever `thinking` carried no budget_tokens.
+    // Oct 28 (Marcos: "We should never make configuration that might be expensive for the user without them knowing or
+    // without giving them an oiption to change"): a configured effort reaches kimi's wire when Claude Code names none.
+    // Rewritten from PT-002's "a configured effort never moves the wire bytes", which froze max there.
     @Test
-    fun `a configured effort never moves the wire bytes for thinking-present-without-budget`() {
+    fun `a configured effort reaches the wire for thinking-present-without-budget`() {
         val built = buildFull(
             """{"model":"m","messages":[{"role":"user","content":"hi"}],
                 "thinking":{"type":"enabled"}}""",
             configEffort = "low",
         )
-        assertEquals("max", built.req.effort())
+        assertEquals("low", built.req.effort())
     }
 
     // The companion case: configEffort is not dead code — it DOES inform TurnMeta.effort, but only

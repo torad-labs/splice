@@ -112,7 +112,7 @@ class McpHostTest : McpHostFixture() {
         val status = McpHost(
             off,
             { JsonObject(emptyMap()) },
-            McpHostConfig(clock = clock),
+            McpHostConfig(runtime = McpHostConfig.Runtime(clock = clock)),
             log = LogSink { },
         ).statusJson()
         assertEquals("false", json.parseToJsonElement(status).jsonObject["hosting"]!!.jsonPrimitive.content)

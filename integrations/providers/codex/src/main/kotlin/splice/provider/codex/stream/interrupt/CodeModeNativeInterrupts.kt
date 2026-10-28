@@ -59,7 +59,9 @@ internal class CodeModeNativeInterrupts {
                 CodeModeInterruptedCell(owner.cell.cellId, step.terminated, step.error),
                 completed = true,
             )
-            else -> failure(owner, "Native termination did not finish the cell")
+            is CodeModeStep.Calls, is CodeModeStep.WaitingForResults, is CodeModeStep.Notified,
+            is CodeModeStep.Yielded,
+            -> failure(owner, "Native termination did not finish the cell")
         }
     } catch (cancelled: CancellationException) {
         throw cancelled

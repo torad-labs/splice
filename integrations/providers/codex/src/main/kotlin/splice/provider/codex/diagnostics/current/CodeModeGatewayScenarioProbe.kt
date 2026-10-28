@@ -29,6 +29,9 @@ internal class CodeModeGatewayScenarioProbe(
     suspend fun run(directory: Path): JsonObject {
         val bytes = Files.readAllBytes(directory.resolve("scenario.json"))
         val specification = fixture.json.parseToJsonElement(bytes.decodeToString()).jsonObject
+        if (specification.containsKey("interruption")) {
+            return CodeModeGatewayInterruptedProbe(fixture, runtime).run(bytes, specification)
+        }
         val plan = CodeModeGatewayScenarioPlan(specification, fixture.json)
         val manager = CodexCodeModeBridge(CodeModeBridgeConfig({ runtime }, fixture.location, log = fixture.log))
         val requests = CodeModeGatewayScenarioAdapter(fixture, specification, directory)

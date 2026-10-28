@@ -30,8 +30,9 @@ internal class CodeModeGatewayScenarioRequests(
 ) {
     private val model = "fixture-current-scenario-model"
 
-    fun prepare(manager: CodexCodeModeBridge, callbacks: List<JsonObject>): BuiltTurn {
-        val client = listOf(fixture.user("begin-${fixture.nonce}")) + callbacks.flatMap(::client)
+    fun prepare(manager: CodexCodeModeBridge, callbacks: List<JsonObject>, resumePrompt: String? = null): BuiltTurn {
+        val resumed = resumePrompt?.let { listOf(fixture.user(it)) }.orEmpty()
+        val client = listOf(fixture.user("begin-${fixture.nonce}")) + callbacks.flatMap(::client) + resumed
         val body = AnthropicParse.parseAnthropicBody(
             JsonWire.string(
                 buildJsonObject {
@@ -50,7 +51,7 @@ internal class CodeModeGatewayScenarioRequests(
             body,
             "session-${fixture.nonce}",
             BuiltTurn(
-                buildJsonObject { put("input", input(callbacks, results)) },
+                buildJsonObject { put("input", JsonArray(input(callbacks, results) + resumed)) },
                 TurnMeta(
                     false,
                     reasoning = TurnReasoning(ReasoningDisplay.OFF, "high", null, null),

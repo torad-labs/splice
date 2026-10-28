@@ -8,7 +8,7 @@ import { llvmSourceEntries, type ClientProfileProof } from "./current-client-pro
 import { controlScenarios, mcpScenarios } from "./current-cli/cases";
 import { runCliScenario } from "./current-cli/run";
 import { compareGatewayScenario } from "./current-cli/gateway";
-import { compareControlPackets, sourceGatewayInputBytes } from "./current-cli/compare";
+import { candidateOutcomesMatch, compareControlPackets, sourceGatewayInputBytes } from "./current-cli/compare";
 import { expectedTaskRequests, isTitleRequest } from "./current-cli/scripted-upstream";
 import { nativeCompletion } from "./current-cli/native-events";
 import { candidateCommand } from "./candidate-command";
@@ -18,6 +18,7 @@ import type { CurrentReference } from "./current-readiness";
 import type { FunctionWitness } from "./current-witness";
 import { assertApplyPatchBuild, freeformFile, freeformScenario, type FreeformTool } from "./current-cli/freeform-contract";
 import { verifyArtifact } from "./current-cli/file-identity";
+import { interruptionScenario } from "./current-cli/interruption-contract";
 
 export const sourceCliFlags = ["-Cinstrument-coverage", "-Cdebuginfo=1", "-Copt-level=0", "-Cdebug-assertions=no", "-Coverflow-checks=no"];
 export type CliSourceBuildProof = {
@@ -36,7 +37,7 @@ type Metadata = { workspace_root: string; packages: Array<{ name: string; versio
 const sourceNames = ["case-input.json", "catalog.json", "launch.json", "requests.json", "frames.json", "observations.json", "native-events.jsonl", "client-state/config.toml", "terminal/terminal.raw", "terminal/terminal-events.jsonl", "terminal/terminal-screen.txt", "terminal/process.json"];
 const candidateNames = ["scenario.json", "launch.json", "process.json", "stderr.txt", "comparison.json"];
 function sourceFileNames(source: Pick<CliRun, "scenario">): string[] {
-  return [...sourceNames, ...(source.scenario.mcp ? ["mcp-peer.jsonl"] : []), ...(source.scenario.applyPatch ? [`workspace/${freeformFile}`] : [])];
+  return [...sourceNames, ...(source.scenario.mcp ? ["mcp-peer.jsonl"] : []), ...(source.scenario.applyPatch ? [`workspace/${freeformFile}`] : []), ...(source.scenario.interruption ? ["interruption-hold.json"] : [])];
 }
 function candidateFileNames(source: CliRun, candidate: any): string[] {
   if (!source.scenario.applyPatch) return candidateNames;
@@ -46,7 +47,7 @@ function candidateFileNames(source: CliRun, candidate: any): string[] {
 }
 
 export function sourceCliPlans() {
-  return [...controlScenarios, ...mcpScenarios, freeformScenario].map(scenario => ({ caseId: `cli-source/${scenario.id}`, inputSha256: sha256(JSON.stringify(scenario)),
+  return [...controlScenarios, ...mcpScenarios, freeformScenario, interruptionScenario].map(scenario => ({ caseId: `cli-source/${scenario.id}`, inputSha256: sha256(JSON.stringify(scenario)),
     productionEntrypoint: "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run", scenario }));
 }
 export function sourceCliCaseArtifacts(witness: CliSourceCaseWitness): Artifact[] {
@@ -216,7 +217,7 @@ export async function sourceCliWitnessFindings(cases: CliSourceCaseWitness[], in
     assert.deepEqual(candidateLaunch.jar, candidateJar); assert.equal(sha256(await readFile(candidateJar.path)), candidateJar.sha256); assert.equal(candidateLaunch.nonce, source.nonce);
     assert.deepEqual(candidateLaunch.argv.slice(1), candidateCommand("java", candidateJar.path, "--native-gateway-fixture", "runtime.current-scenario", source.nonce, candidateDirectory, source.reference.host.path).slice(1));
     assert.equal(candidateProcess.exitCode, 0); assert.equal(candidateProcess.failure, undefined); assert.ok(Number.isSafeInteger(candidateProcess.pid) && candidateProcess.pid > 0); assert.equal(candidate.pid, candidateProcess.pid);
-    assert.equal(candidate.caseId, "runtime.current-scenario"); assert.equal(candidate.scope, "real-native-runtime-through-production-gateway"); assert.ok(candidate.outcomes.length && candidate.outcomes.every((outcome: string) => outcome === "Success"));
+    assert.equal(candidate.caseId, "runtime.current-scenario"); assert.equal(candidate.scope, "real-native-runtime-through-production-gateway"); assert.ok(candidateOutcomesMatch(source, candidate));
     const stderr = (await candidateFile("stderr.txt")).toString(); assert.ok(stderr.split("\n").some(line => { try { const event = JSON.parse(line); return event.type === "parity/identity" && Number.isSafeInteger(event.nativeHostPid) && event.nativeHostPid > 0; } catch { return false; } }));
     compareControlPackets(source, candidate, candidateDirectory);
     const profile: ClientProfileProof = JSON.parse((await checked(witness.profile)).toString()); assert.equal(profile.schema, 1);

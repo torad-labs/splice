@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { candidateCommand } from "../candidate-command";
-import { compareControlPackets, sourceGatewayInputBytes } from "./compare";
+import { candidateOutcomesMatch, compareControlPackets, sourceGatewayInputBytes } from "./compare";
 import type { CliRun, ObjectValue } from "./types";
 
 const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
@@ -49,7 +49,7 @@ export async function compareGatewayScenario(options: {
   if (failure || exitCode !== 0) throw Error(failure ?? `Gateway exited ${exitCode}: ${stderr}`);
   const candidate = JSON.parse(stdout) as ObjectValue;
   if (candidate.pid !== child.pid || candidate.caseId !== "runtime.current-scenario" || candidate.scope !== "real-native-runtime-through-production-gateway") throw Error("Gateway observation is not bound to the actual packaged process");
-  if (!Array.isArray(candidate.outcomes) || !candidate.outcomes.length || candidate.outcomes.some(value => value !== "Success")) throw Error("Gateway scenario did not complete through successful production rounds");
+  if (!candidateOutcomesMatch(options.source, candidate)) throw Error("Gateway scenario did not complete through its required production outcomes");
   const identities = stderr.split("\n").filter(line => line.startsWith("{")).flatMap(line => {
     try { const value = JSON.parse(line) as ObjectValue; return value.type === "parity/identity" ? [value] : []; } catch { return []; }
   });

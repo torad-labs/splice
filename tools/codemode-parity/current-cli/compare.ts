@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import type { CliRun, CliScenario, Json, ObjectValue } from "./types";
 import { compareMcpBoundary, mcpGatewayFields, sourceMcpTranscript, type McpTranscript } from "./mcp-contract";
 import { compareFreeformBoundary, freeformGatewayFields, sourceFreeformTranscript, type FreeformTranscript } from "./freeform-contract";
+import { compareInterruption, sourceInterruption } from "./interruption-contract";
 
 const callTypes = new Set(["function_call", "custom_tool_call", "function_call_output", "custom_tool_call_output"]);
 const status = /^(Script (?:completed|failed|terminated|running with cell ID [^\n]+)\n)Wall time [0-9]+\.[0-9] seconds\nOutput:\n$/;
@@ -38,14 +39,22 @@ export function compareControlPackets(source: CliRun, candidate: ObjectValue, ca
     assert.ok(candidateDirectory, "Freeform comparison requires the actual candidate directory");
     compareFreeformBoundary(sourceFreeformTranscript(source), candidate, candidateDirectory);
   }
+  if (source.scenario.interruption) compareInterruption(source, candidate);
+}
+
+export function candidateOutcomesMatch(source: CliRun, candidate: ObjectValue): boolean {
+  if (source.scenario.interruption) return JSON.stringify(candidate.outcomes) === JSON.stringify(["Cancelled", "Success"]);
+  return Array.isArray(candidate.outcomes) && candidate.outcomes.length > 0 && candidate.outcomes.every(value => value === "Success");
 }
 
 /** The real gateway fixture accepts exactly the same resolved outer scripts and wait operations. */
-export function gatewayInput(scenario: CliScenario, mcp?: McpTranscript, freeform?: FreeformTranscript): ObjectValue {
+export function gatewayInput(scenario: CliScenario, mcp?: McpTranscript, freeform?: FreeformTranscript, interruption?: ObjectValue): ObjectValue {
   if (scenario.mcp && !mcp) throw Error("MCP result envelopes require the actual reference peer transcript");
   if (!scenario.mcp && mcp) throw Error("A generic scenario cannot claim MCP origin");
   if (scenario.applyPatch && !freeform) throw Error("Freeform effects require the actual reference transcript and tool build");
   if (!scenario.applyPatch && freeform) throw Error("A generic scenario cannot claim builtin freeform effects");
+  if (scenario.interruption && !interruption) throw Error("User interruption requires the actual PTY and native aborted-turn evidence");
+  if (!scenario.interruption && interruption) throw Error("A generic scenario cannot claim user interruption");
   const actions = scenario.actions.map((action, index): ObjectValue => {
     const id = `probe-${scenario.id}-${index}`;
     if (action.kind === "wait") return { type: "function_call", name: "wait", call_id: id, arguments: {
@@ -63,14 +72,15 @@ export function gatewayInput(scenario: CliScenario, mcp?: McpTranscript, freefor
     actions, callbacks: [],
     ...(mcp ? mcpGatewayFields(mcp) : {}),
     ...(freeform ? freeformGatewayFields(freeform) : {}),
+    ...(interruption ? { interruption } : {}),
     ...(scenario.rankedSearch ? { rankedSearch: true } : {}),
   };
 }
 
-export function gatewayInputBytes(scenario: CliScenario, mcp?: McpTranscript, freeform?: FreeformTranscript): string { return JSON.stringify(gatewayInput(scenario, mcp, freeform)) + "\n"; }
+export function gatewayInputBytes(scenario: CliScenario, mcp?: McpTranscript, freeform?: FreeformTranscript, interruption?: ObjectValue): string { return JSON.stringify(gatewayInput(scenario, mcp, freeform, interruption)) + "\n"; }
 
 /** MCP candidate inputs are derived from measured source exchanges, never invented from a case label. */
 export function sourceGatewayInputBytes(source: CliRun): string {
   return gatewayInputBytes(source.scenario, source.scenario.mcp ? sourceMcpTranscript(source) : undefined,
-    source.scenario.applyPatch ? sourceFreeformTranscript(source) : undefined);
+    source.scenario.applyPatch ? sourceFreeformTranscript(source) : undefined, source.scenario.interruption ? sourceInterruption(source) : undefined);
 }

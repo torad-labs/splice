@@ -12,7 +12,7 @@ use rustc_middle::hir::nested_filter;
 use rustc_middle::thir::ExprKind;
 use rustc_middle::ty::{self, TyCtxt, TypeVisitableExt};
 use rustc_span::{FileName, Span, Pos};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
@@ -30,6 +30,22 @@ fn quote(value: &str) -> String {
 
 struct Facts<'tcx> {
     tcx: TyCtxt<'tcx>, project: PathBuf, output: BufWriter<File>, emitted: HashSet<DefId>, bytes: usize, references: usize,
+    selection: Option<Selection>, filtered: BTreeMap<(String, String), usize>, observed_references: usize,
+}
+struct Selection { raw: String, files: HashMap<PathBuf, String> }
+impl Selection {
+    fn read(path: &str, project: &PathBuf) -> Self {
+        let raw = std::fs::read_to_string(path).expect("read pinned source selector");
+        assert!(raw.len() <= 1024 * 1024, "source selector exceeds 1 MiB");
+        let mut files = HashMap::new();
+        for line in raw.lines() {
+            let (path, hash) = line.split_once('\t').expect("selector requires exact path and compiler source hash");
+            let path = PathBuf::from(path).canonicalize().expect("selected source file exists");
+            assert!(path.starts_with(project) && files.insert(path, hash.to_string()).is_none(), "source selector escapes root or repeats a file");
+        }
+        assert!(!files.is_empty() && files.len() <= 10000, "source selector has an invalid file count");
+        Self { raw, files }
+    }
 }
 impl<'tcx> Facts<'tcx> {
     fn row(&mut self, row: String) {
@@ -65,9 +81,34 @@ impl<'tcx> Facts<'tcx> {
     fn reference(&mut self, owner: DefId, span: Span, kind: &str, namespace: &str, target: Option<DefId>, resolution: &str) {
         self.declaration(owner);
         if let Some(id) = target { self.declaration(id); }
+        self.observed_references += 1;
+        if let Some(reason) = self.omission(span) {
+            let category = match resolution {
+                "Def" | "FnDef" | "dynamic-call" | "generic-call" | "trait-contract-call" | "indirect-call" => resolution,
+                "Err" => "unresolved", _ => "non-definition-resolution",
+            };
+            *self.filtered.entry((reason.to_string(), category.to_string())).or_default() += 1;
+            return;
+        }
         self.references += 1;
         self.row(format!("{{\"tag\":\"reference\",\"owner\":{},\"span\":{},\"kind\":{},\"namespace\":{},\"target\":{},\"resolution\":{}}}",
             self.identity(owner), self.span(span), quote(kind), quote(namespace), target.map(|id| self.identity(id)).unwrap_or_else(|| "null".into()), quote(resolution)));
+    }
+    fn omission(&self, span: Span) -> Option<&'static str> {
+        let Some(selection) = &self.selection else { return None; };
+        if span.is_dummy() { return Some("dummy-source-span"); }
+        if !span.ctxt().is_root() { return Some("non-root-source-context"); }
+        let map = self.tcx.sess.source_map();
+        let lo = map.lookup_byte_offset(span.lo()); let hi = map.lookup_byte_offset(span.hi());
+        if lo.sf.start_pos != hi.sf.start_pos { return Some("different-source-files"); }
+        let FileName::Real(ref name) = lo.sf.name else { return Some("generated-source-file"); };
+        let Some(path) = name.local_path() else { return Some("remapped-source-file"); };
+        let path = if path.is_absolute() { path.to_path_buf() } else { std::env::current_dir().unwrap().join(path) };
+        let path = path.canonicalize().unwrap_or(path);
+        let Some(expected) = selection.files.get(&path) else { return Some("outside-selected-source-files"); };
+        assert_eq!(&format!("{:?}", lo.sf.src_hash), expected, "compiler source differs from selected immutable bytes");
+        if map.span_to_snippet(span).is_err() { return Some("selected-source-unavailable"); }
+        None
     }
     fn resolved(&mut self, owner: DefId, span: Span, kind: &str, namespace: Option<&str>, resolution: Res) {
         let (target, ns, label) = match resolution {
@@ -109,9 +150,11 @@ struct Capture;
 impl rustc_driver::Callbacks for Capture {
     fn after_analysis<'tcx>(&mut self, _: &rustc_interface::interface::Compiler, tcx: TyCtxt<'tcx>) -> rustc_driver::Compilation {
         let project = PathBuf::from(std::env::var("SPLICE_COMPILER_PROJECT_ROOT").expect("explicit project root")).canonicalize().unwrap();
+        let selection = std::env::var("SPLICE_COMPILER_SOURCE_SELECTION").ok().map(|path| Selection::read(&path, &project));
         let output = File::create(std::env::var("SPLICE_COMPILER_FACTS").expect("explicit artifact output")).unwrap();
-        let mut facts = Facts { tcx, project, output: BufWriter::new(output), emitted: HashSet::new(), bytes: 0, references: 0 };
-        facts.row(format!("{{\"tag\":\"session\",\"schema\":1,\"root\":{},\"behavioralCoverage\":false}}", facts.identity(rustc_hir::def_id::CRATE_DEF_ID.to_def_id())));
+        let mut facts = Facts { tcx, project, output: BufWriter::new(output), emitted: HashSet::new(), bytes: 0, references: 0, selection, filtered: BTreeMap::new(), observed_references: 0 };
+        let selected = facts.selection.as_ref().map(|value| format!("{{\"content\":{},\"files\":{},\"rootContextOnly\":true}}", quote(&value.raw), value.files.len())).unwrap_or_else(|| "null".into());
+        facts.row(format!("{{\"tag\":\"session\",\"schema\":1,\"root\":{},\"selection\":{selected},\"behavioralCoverage\":false}}", facts.identity(rustc_hir::def_id::CRATE_DEF_ID.to_def_id())));
         for id in tcx.iter_local_def_id() { facts.declaration(id.to_def_id()); }
         tcx.hir_walk_toplevel_module(&mut facts);
         for owner in tcx.hir_body_owners() {
@@ -131,7 +174,8 @@ impl rustc_driver::Callbacks for Capture {
                 }
             }
         }
-        facts.row(format!("{{\"tag\":\"complete\",\"declarations\":{},\"references\":{},\"behavioralCoverage\":false}}", facts.emitted.len(), facts.references));
+        let filtered = facts.filtered.iter().map(|((reason, resolution), count)| format!("{{\"reason\":{},\"resolution\":{},\"count\":{count}}}", quote(reason), quote(resolution))).collect::<Vec<_>>().join(",");
+        facts.row(format!("{{\"tag\":\"complete\",\"declarations\":{},\"references\":{},\"observedReferences\":{},\"filteredReferences\":[{filtered}],\"behavioralCoverage\":false}}", facts.emitted.len(), facts.references, facts.observed_references));
         facts.output.flush().expect("flush complete fact proof");
         rustc_driver::Compilation::Stop
     }

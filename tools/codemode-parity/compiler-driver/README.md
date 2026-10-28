@@ -12,6 +12,15 @@ The emitter requires `SPLICE_COMPILER_PROJECT_ROOT` and
 must also enforce its memory and time limits; those are recorded in the pinned
 analysis receipt rather than imposed on unrelated compiler processes.
 
+An optional `SPLICE_COMPILER_SOURCE_SELECTION` pins exact source paths and
+compiler source hashes. The session records the selector's actual bytes; its
+manifest also pins the originating inventory and selector file. Only selected
+references in the original source context are emitted, while every declaration
+and referenced external definition remains available. The final record counts
+all observed references and records omitted references by reason and compiler
+resolution category, including dynamic, generic and missing resolutions. The
+index exposes these counts as `omissions`; filtered absence remains unresolved.
+
 `loadCompilerBindings` accepts the `rustc-driver-v1` proof format declared in
 `current-compiler-driver.ts`. The caller supplies the exact proof hash, source
 commit/tree, original and derived Cargo lock hashes, compiler hash/version and

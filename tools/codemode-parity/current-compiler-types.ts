@@ -28,4 +28,5 @@ export type CompilerImmutableFile = { source: string; sha256: string };
 export type CompilerExpectation = CompilerSourceIdentity & { compilerSha256: string; compilerVersion: string; proofSha256: string };
 export type CompilerBindingIndex = CompilerRawIndex & {
   schema: 1; source: CompilerSourceIdentity; proofSha256: string; behavioralCoverage: false;
+  omissions?: Array<{ scope: string; reason: string; resolution: string; count: number }>;
 };

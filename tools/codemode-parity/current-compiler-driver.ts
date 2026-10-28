@@ -1,17 +1,20 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { isAbsolute, posix, relative } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { compilerArray as array, compilerArtifact as artifact, compilerHash as hash, compilerObject as object, compilerString as string, compilerStrings as strings, freezeCompilerFacts, verifyCompilerArtifact } from "./current-compiler-evidence";
 import type { CompilerDef } from "./current-compiler-format";
 import type { CompilerArtifact, CompilerBindingIndex, CompilerDeclaration, CompilerExpectation, CompilerImmutableFile, CompilerNamespace, CompilerRange, CompilerReference, CompilerSourceIdentity } from "./current-compiler-types";
 
+type CompilerDriverSelection = {
+  algorithm: "exact-source-file-hash-v1"; inventory: CompilerArtifact; files: CompilerArtifact; fileCount: number; rootContextOnly: true;
+};
 export type CompilerDriverProof = {
   schema: 1; format: "rustc-driver-v1"; source: CompilerSourceIdentity; sourceRoot: string; sourcePrefix: string;
   compiler: CompilerArtifact & { version: string }; originalCargoLock: CompilerArtifact; buildCargoLock: CompilerArtifact;
   driver: { binary: CompilerArtifact; source: CompilerArtifact }; components: CompilerArtifact[];
-  crates: Array<{ crate: string; cwd: string; args: string[]; features: string[]; cfgs: string[]; externs: CompilerArtifact[]; inputs: CompilerArtifact[]; facts: CompilerArtifact }>;
+  crates: Array<{ crate: string; cwd: string; args: string[]; features: string[]; cfgs: string[]; externs: CompilerArtifact[]; inputs: CompilerArtifact[]; facts: CompilerArtifact; selection?: CompilerDriverSelection }>;
 };
 type Identity = CompilerDef & { stableCrateId: string; kind: string };
 const MAX_FACT_BYTES = 256 * 1024 * 1024;
@@ -26,6 +29,12 @@ function identity(value: unknown, scope: string): Identity {
   const key = `${scope}:${crate}:${stableCrateId}:${crateHash}:${index}`;
   return { key, raw: JSON.stringify(row), crate, crateHash, crateNumber, index, path, stableCrateId, kind };
 }
+function selection(value: unknown): CompilerDriverSelection | undefined {
+  if (value === undefined) return;
+  const row = object(value), fileCount = integer(row.fileCount);
+  if (row.algorithm !== "exact-source-file-hash-v1" || row.rootContextOnly !== true || fileCount < 1 || fileCount > 10000) throw new Error("unsupported compiler source selection");
+  return { algorithm: row.algorithm, rootContextOnly: true, fileCount, inventory: artifact(row.inventory), files: artifact(row.files) };
+}
 function manifest(value: unknown, expected: CompilerExpectation): CompilerDriverProof {
   const row = object(value), source = object(row.source), compiler = object(row.compiler), driver = object(row.driver);
   if (row.schema !== 1 || row.format !== "rustc-driver-v1") throw new Error("unsupported compiler driver proof");
@@ -36,7 +45,7 @@ function manifest(value: unknown, expected: CompilerExpectation): CompilerDriver
   const crates = array(row.crates).map(value => {
     const crate = object(value);
     return { crate: string(crate.crate), cwd: string(crate.cwd), args: strings(crate.args), cfgs: strings(crate.cfgs), features: strings(crate.features),
-      externs: array(crate.externs).map(artifact), inputs: array(crate.inputs).map(artifact), facts: artifact(crate.facts) };
+      externs: array(crate.externs).map(artifact), inputs: array(crate.inputs).map(artifact), facts: artifact(crate.facts), selection: selection(crate.selection) };
   });
   if (!crates.length || new Set(crates.map(crate => crate.crate)).size !== crates.length) throw new Error("compiler driver crate set is not unique");
   return { schema: 1, format: "rustc-driver-v1", source: sourceIdentity, sourceRoot, sourcePrefix, compiler: { ...artifact(compiler), version: string(compiler.version) },
@@ -95,6 +104,21 @@ function sourceRange(value: unknown, proof: CompilerDriverProof, files: Readonly
 }
 const namespaces = new Set<CompilerNamespace>(["type", "value", "macro", "unknown"]);
 const kinds = new Set<CompilerReference["kind"]>(["path", "import", "typed-value", "call", "callee"]);
+async function selectedSources(selected: CompilerDriverSelection, proof: CompilerDriverProof, files: ReadonlyMap<string, CompilerImmutableFile>, checked: Map<string, string>): Promise<string> {
+  if (selected.files.bytes > 1024 * 1024) throw new Error("compiler source selector exceeds its bound");
+  await verifyCompilerArtifact(selected.inventory); await verifyCompilerArtifact(selected.files);
+  const bytes = await readFile(selected.files.path);
+  if (hash(bytes) !== selected.files.sha256) throw new Error("compiler source selector changed");
+  const content = bytes.toString("utf8"), lines = content.trimEnd().split("\n"), paths = new Set<string>();
+  if (!content.endsWith("\n") || lines.length !== selected.fileCount) throw new Error("compiler source selector file count differs");
+  for (const line of lines) {
+    const fields = line.split("\t");
+    if (fields.length !== 2 || paths.has(fields[0]!)) throw new Error("compiler source selector has invalid or duplicate paths");
+    paths.add(fields[0]!);
+    sourceRange({ state: "source", rootContext: true, file: fields[0], compilerSourceHash: fields[1], start: 0, end: 0 }, proof, files, checked);
+  }
+  return content;
+}
 
 /** Exact external source spans come from tcx.def_span, never from matching a name against another crate's text. */
 export async function loadCompilerDriverBindings(value: unknown, expected: CompilerExpectation, files: ReadonlyMap<string, CompilerImmutableFile>, proofSha256: string): Promise<CompilerBindingIndex> {
@@ -109,6 +133,7 @@ export async function loadCompilerDriverBindings(value: unknown, expected: Compi
   for (const crate of proof.crates) {
     argsMatch(crate);
     for (const input of [...crate.externs, ...crate.inputs]) await verifyCompilerArtifact(input);
+    const selected = crate.selection ? await selectedSources(crate.selection, proof, files, checkedSources) : undefined;
     const scope = `${proofSha256}:${crate.crate}:driver`, definitions = new Map<string, Identity>(), declarations: CompilerDeclaration[] = [], references: CompilerReference[] = [];
     let began = false, complete = false, countedReferences = 0, session: Identity | undefined;
     for await (const row of rows(crate.facts)) {
@@ -116,6 +141,10 @@ export async function loadCompilerDriverBindings(value: unknown, expected: Compi
       if (!began) {
         const root = identity(row.root, scope);
         if (row.tag !== "session" || row.schema !== 1 || root.crate !== crate.crate || root.crateNumber !== 0 || root.index !== 0 || row.behavioralCoverage !== false) throw new Error("compiler fact session differs");
+        if (selected !== undefined) {
+          const actual = object(row.selection);
+          if (actual.content !== selected || actual.files !== crate.selection!.fileCount || actual.rootContextOnly !== true) throw new Error("compiler fact source selection differs");
+        } else if (row.selection !== undefined && row.selection !== null) throw new Error("compiler fact selection has no pinned manifest");
         session = root; began = true; continue;
       }
       if (row.tag === "declaration") {
@@ -132,9 +161,20 @@ export async function loadCompilerDriverBindings(value: unknown, expected: Compi
         references.push({ owner: owner.key, target: target?.key, namespace, kind, resolution: string(row.resolution), range: sourceRange(row.span, proof, files, checkedSources) }); countedReferences++;
       } else if (row.tag === "debt") {
         const owner = identity(row.owner, scope);
+        if (definitions.get(owner.key)?.raw !== owner.raw) throw new Error("compiler debt has no exact declared owner");
         references.push({ owner: owner.key, namespace: "unknown", kind: "call", resolution: string(row.reason) });
       } else if (row.tag === "complete") {
         if (integer(row.declarations) !== declarations.length || integer(row.references) !== countedReferences || row.behavioralCoverage !== false) throw new Error("compiler fact completion counts differ");
+        if (row.filteredReferences !== undefined || crate.selection) {
+          let filtered = 0; const seen = new Set<string>();
+          for (const value of array(row.filteredReferences)) {
+            const omitted = object(value), reason = string(omitted.reason), resolution = string(omitted.resolution), count = integer(omitted.count), key = `${reason}\0${resolution}`;
+            if (!crate.selection || count < 1 || seen.has(key)) throw new Error("compiler omission has no unique pinned selection");
+            seen.add(key); filtered += count;
+            (index.omissions ??= []).push({ scope, reason, resolution, count });
+          }
+          if (integer(row.observedReferences) !== countedReferences + filtered) throw new Error("compiler observed reference count differs");
+        }
         complete = true;
       } else throw new Error("unknown compiler fact record");
     }

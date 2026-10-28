@@ -7,7 +7,8 @@
 // permissions when the launch asked for it (kept, since the session was started with it); the --settings overlay of a
 // launch through the wrapped `claude`, or splice's own mark on macOS (LaunchMarker); then the MCP hub's file for the
 // launch, or a wrapped launch's own file, as one --mcp-config in splice's state, with a --plugin-dir-no-mcp for each
-// plugin the hub runs. Everything after that is the person's.
+// plugin the hub runs. Everything after that is the person's, and so is the --effort a launch adds there (Oct 28): a
+// relaunch starts at the effort its session started at, and adds none of its own beside it.
 package splice.launch.recipe
 
 import splice.client.mcp.HUB_PLUGIN_FLAG

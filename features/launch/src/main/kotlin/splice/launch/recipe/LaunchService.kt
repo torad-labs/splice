@@ -40,6 +40,9 @@ import java.nio.file.Path
 
 // LaunchSpec + LaunchRecipe live in LaunchTypes.kt (concentration, 2026-08-19).
 
+/** Claude Code's flag for the effort a session starts at. */
+private const val EFFORT_FLAG = "--effort"
+
 public class LaunchService(
     private val materializer: ClaudeConfigMaterializer,
     private val claudeBinary: String = "claude",
@@ -79,6 +82,14 @@ public class LaunchService(
     /** LAN share: the commands another machine serves, launched when a name no head here carries is asked for.
      *  Assigned by the daemon before routes serve requests; null launches heads only. */
     public var remotes: RemoteCommands? = null
+
+    /** Oct 28: the session starts at its head's effort as Claude Code's own --effort, so it shows there and /effort
+     *  changes it. `--effort <level>` for the effort [spec] starts its session at, or nothing when it names none or the person's own
+     *  [extraArgs] name one, spaced or as `--effort=<level>`. */
+    private fun effortArgs(spec: LaunchSpec, extraArgs: List<String>): List<String> {
+        if (extraArgs.any { it == EFFORT_FLAG || it.startsWith("$EFFORT_FLAG=") }) return emptyList()
+        return spec.effort?.current()?.let { listOf(EFFORT_FLAG, it) }.orEmpty()
+    }
 
     /** V4-183 and V4-115: what a launch resumes, and what the operator is told about it. */
     private val resume = LaunchResume(resumeAcrossHeads, moving)
@@ -172,7 +183,7 @@ public class LaunchService(
             // arguments keep there (LaunchMarker); elsewhere the arguments are as they were
             val overlay = overlayOf(wrapped, roster, held.gateway, keyed)
             addAll(LaunchMarker.settingsArgs(overlay))
-            addAll(hub.args)
+            addAll(hub.args + effortArgs(held, extraArgs)) // the effort after the hub's: a relaunch reads it as its own
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
             // picker (populated by the materialized bare-id roster) can freely switch. Forcing it locked the row.
             // V4-169 (the President, Oct 13): a session another head wrote goes on as the copy the client resumes.

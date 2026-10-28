@@ -11,12 +11,14 @@ import splice.client.ClaudePolicy
 import splice.client.login.LoginOutcomeFile
 import splice.client.login.SignInWay
 import splice.core.config.MgmtKey
+import splice.core.config.SpliceConfig
 import splice.core.config.StatePaths
 import splice.core.config.TurnKey
 import splice.core.config.UserHome
 import splice.core.topology.Topology
 import splice.launch.GatewayBearer
 import splice.launch.HeadTrees
+import splice.launch.LaunchEffort
 import splice.launch.LaunchGateway
 import splice.launch.LaunchModels
 import splice.launch.LaunchSignIn
@@ -26,6 +28,9 @@ import splice.upstream.retry.CLIENT_WALL_GRACE_MS
 import splice.upstream.retry.MAX_HOLD_MS
 import java.nio.file.Path
 import java.nio.file.Paths
+
+/** A session starts at high when nothing sets its head's effort (Marcos, Oct 28: "effort at high by default"). */
+private const val DEFAULT_LAUNCH_EFFORT = "high"
 
 internal class LaunchSpecFactory(
     private val topology: Topology,
@@ -37,6 +42,9 @@ internal class LaunchSpecFactory(
     // whole control plane, and a session's environment and settings.json are readable by every tool
     // the model runs there, so neither may carry it (see [TurnKey]).
     private val turnKey = TurnKey(mgmtKey)
+
+    /** The words Claude Code's --effort takes (`claude --help`, 2.1.312). */
+    private val clientEfforts = setOf("low", "medium", "high", "xhigh", "max")
 
     /**
      * [forwardClientAuth] is [ManagedHeadFactory]'s own `forwardClientAuth` — the STRUCTURAL read of
@@ -71,24 +79,7 @@ internal class LaunchSpecFactory(
                 siblingTrees,
                 UserHome.claudeDir().takeUnless { it == configDir || it in siblingTrees },
             ),
-            models = LaunchModels(
-                pinnedModel = head.pinnedModel,
-                discoveryPrefix = head.discoveryPrefix,
-                availableModelIds = ctx.catalog.availableModelIds(),
-                modelLabels = ctx.catalog.models.associate { it.id to it.label.ifEmpty { it.id } },
-                tiers = ModelTiers(
-                    byTier = head.tierModels(),
-                    candidates = ctx.catalog.tierModelIds(),
-                    // V4-232: the rows the client resolves as a Claude model it knows (their `client_model`).
-                    modelOverrides = ctx.catalog.presented.overrides,
-                ),
-                // The pinned row's declared window (ModelCatalog.clientLaunchWindow): exact numbers on
-                // the row a session starts on; every other row, and a window edited later in the TOML,
-                // is applied by usage scaling on the wire against the window the session really runs
-                // with (learned from its status-line posts).
-                contextWindow = ctx.catalog.clientLaunchWindow,
-                modelOptionsCache = buildInputs.modelOptionsCache(ctx.catalog),
-            ),
+            models = modelsOf(ctx),
             signIn = LaunchSignIn(
                 // The installed wrapper (`<command> login`) runs this head's provider sign-in; the
                 // materialized /login command + UserPromptSubmit hook route the user here. api-key
@@ -129,7 +120,38 @@ internal class LaunchSpecFactory(
                 bearer = keyHelper(),
             ),
             policy = ClaudePolicy(share = topology.claude.share.toSet(), isolate = head.claude.isolate.toSet()),
+            effort = launchEffort(ctx.cfg),
         )
+    }
+
+    /** What the head's session may run on: its pinned row, roster, labels, tier slots and launch window. */
+    private fun modelsOf(ctx: ProviderBuild): LaunchModels = LaunchModels(
+        pinnedModel = ctx.head.pinnedModel,
+        discoveryPrefix = ctx.head.discoveryPrefix,
+        availableModelIds = ctx.catalog.availableModelIds(),
+        modelLabels = ctx.catalog.models.associate { it.id to it.label.ifEmpty { it.id } },
+        tiers = ModelTiers(
+            byTier = ctx.head.tierModels(),
+            candidates = ctx.catalog.tierModelIds(),
+            // V4-232: the rows the client resolves as a Claude model it knows (their `client_model`).
+            modelOverrides = ctx.catalog.presented.overrides,
+        ),
+        // The pinned row's declared window (ModelCatalog.clientLaunchWindow): exact numbers on
+        // the row a session starts on; every other row, and a window edited later in the TOML,
+        // is applied by usage scaling on the wire against the window the session really runs
+        // with (learned from its status-line posts).
+        contextWindow = ctx.catalog.clientLaunchWindow,
+        modelOptionsCache = buildInputs.modelOptionsCache(ctx.catalog),
+    )
+
+    /** Oct 28: the head's configured effort as of each launch (splice.toml, or the console's Settings), else high. A
+     *  word Claude Code's --effort does not take (none, minimal) starts nothing of splice's: the session keeps its own. */
+    private fun launchEffort(cfg: SpliceConfig): LaunchEffort = LaunchEffort {
+        when (val configured = cfg.current().effort?.lowercase()) {
+            null -> DEFAULT_LAUNCH_EFFORT
+            in clientEfforts -> configured
+            else -> null
+        }
     }
 
     /** Oct 26 (key rotation): the session reads its turn key through Claude Code's apiKeyHelper, which prints the

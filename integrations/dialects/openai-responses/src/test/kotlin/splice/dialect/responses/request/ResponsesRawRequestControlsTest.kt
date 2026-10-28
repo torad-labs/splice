@@ -1,6 +1,7 @@
 package splice.dialect.responses.request
 
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -18,15 +19,46 @@ class ResponsesRawRequestControlsTest {
     private val quirks = ResponsesQuirks(providerTag = "openai", lite = ResponsesLiteQuirks())
 
     @Test
-    fun `raw sampling controls survive alongside token controls`() {
+    fun `raw sampling controls survive alongside token and effort controls`() {
         val request = build(
-            ""","max_tokens":73,"temperature":0.35,"top_p":0.8""",
+            ""","max_tokens":73,"temperature":0.35,"top_p":0.8,"output_config":{"effort":"low"}""",
         )
 
         assertEquals("0.35", request["temperature"]?.jsonPrimitive?.content)
         assertEquals("0.8", request["top_p"]?.jsonPrimitive?.content)
         assertEquals("73", request["max_output_tokens"]?.jsonPrimitive?.content)
         assertNull(request["max_tokens"])
+        assertEquals("low", request["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `a mid-conversation system effort controls the current Responses turn`() {
+        val parsed = AnthropicParse.parseAnthropicBody(
+            """{"model":"m","output_config":{"effort":"high"},"messages":[
+                {"role":"user","content":"before"},
+                {"role":"assistant","content":"done"},
+                {"role":"system","content":[],"output_config":{"effort":"low"}},
+                {"role":"user","content":"after"}]}""",
+        )
+
+        val request = ResponsesRequestBuilder(quirks).build(parsed.typed, parsed.raw, options()).req
+
+        assertEquals("low", request["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `an explicit request effort keeps its established precedence over a system effort change`() {
+        val parsed = AnthropicParse.parseAnthropicBody(
+            """{"model":"m","effort":"max","output_config":{"effort":"high"},"messages":[
+                {"role":"user","content":"before"},
+                {"role":"assistant","content":"done"},
+                {"role":"system","content":[],"output_config":{"effort":"low"}},
+                {"role":"user","content":"after"}]}""",
+        )
+
+        val request = ResponsesRequestBuilder(quirks).build(parsed.typed, parsed.raw, options()).req
+
+        assertEquals("max", request["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
     }
 
     @Test

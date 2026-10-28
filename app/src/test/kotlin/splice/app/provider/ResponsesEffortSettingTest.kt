@@ -1,11 +1,13 @@
 // Marcos, Oct 28: "summary detailed always by default, effort at high by default, but these should be configurable
-// by users in the console and in the toml file." splice authors a Responses head's reasoning effort: a head with no
-// setting sends high whatever effort Claude Code picked, and a setting in splice.toml (or the console, which writes
-// the same layers) is what the head sends. Summary is detailed unless a setting says otherwise.
+// by users in the console and in the toml file", then: "claude code picks should also be considered, for all heads and
+// all adapters we do. Always. WHy one or the other, why can't it be both?" So a Responses head sends the effort Claude
+// Code picked when its request names one (/effort, --effort, its settings), and only a request that names none falls
+// to the setting in splice.toml (or the console, which writes the same layers), else high. Summary is detailed unless
+// a setting says otherwise.
 //
 // These build the hand-written API-key OpenAI Responses head from splice.toml the way the daemon builds it, its knobs
 // read through the same layers (TopologyKnobLayer for [defaults], [heads.<key>.overrides] per head), point it at a
-// scripted backend, and send it a request the way Claude Code does, with Claude Code's own effort picked at max.
+// scripted backend, and send it a request the way Claude Code does, with or without an effort of its own.
 package splice.app.provider
 
 import io.ktor.client.HttpClient
@@ -51,40 +53,51 @@ import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
 private const val HEAD = "synthetic-openai"
+private const val HEAD_MEDIUM = "[heads.$HEAD.overrides]\neffort = \"medium\""
+private const val DEFAULTS_LOW_CONCISE = "[defaults]\neffort = \"low\"\nsummary = \"concise\""
 
 class ResponsesEffortSettingTest {
 
     @Test
-    fun `a Responses head with no setting sends high effort and a detailed summary whatever Claude Code picked`(
+    fun `a Responses head sends the effort Claude Code picked, over the head's own setting`(@TempDir root: Path) =
+        runBlocking {
+            val reasoning = EffortRig.reasoningSent(root, HEAD_MEDIUM, picked = "low")
+            assertEquals("low", reasoning?.str("effort"), "Claude Code's own pick rides over splice.toml's")
+        }
+
+    @Test
+    fun `a Responses head with no setting sends high effort and a detailed summary when Claude Code picked none`(
         @TempDir root: Path,
     ) = runBlocking {
-        val reasoning = EffortRig.reasoningSent(root, "")
-        assertEquals("high", reasoning?.str("effort"), "splice's default effort is high, not Claude Code's max")
+        val reasoning = EffortRig.reasoningSent(root, "", picked = null)
+        assertEquals("high", reasoning?.str("effort"), "splice's default effort is high")
         assertEquals("detailed", reasoning?.str("summary"), "splice's default summary is detailed")
     }
 
     @Test
-    fun `a Responses head sends the effort its own overrides set, over Claude Code's pick`(@TempDir root: Path) =
+    fun `a Responses head sends the effort its own overrides set when Claude Code picked none`(@TempDir root: Path) =
         runBlocking {
-            val reasoning = EffortRig.reasoningSent(root, "[heads.$HEAD.overrides]\neffort = \"medium\"")
+            val reasoning = EffortRig.reasoningSent(root, HEAD_MEDIUM, picked = null)
             assertEquals("medium", reasoning?.str("effort"), "the head's own [heads.$HEAD.overrides] effort rides")
         }
 
     @Test
-    fun `a Responses head sends the effort and summary splice toml's defaults set`(@TempDir root: Path) =
-        runBlocking {
-            val reasoning = EffortRig.reasoningSent(root, "[defaults]\neffort = \"low\"\nsummary = \"concise\"")
-            assertEquals("low", reasoning?.str("effort"), "[defaults] effort reaches a head with none of its own")
-            assertEquals("concise", reasoning?.str("summary"), "[defaults] summary reaches every head")
-        }
+    fun `a Responses head sends the effort and summary splice toml's defaults set when Claude Code picked none`(
+        @TempDir root: Path,
+    ) = runBlocking {
+        val reasoning = EffortRig.reasoningSent(root, DEFAULTS_LOW_CONCISE, picked = null)
+        assertEquals("low", reasoning?.str("effort"), "[defaults] effort reaches a head with none of its own")
+        assertEquals("concise", reasoning?.str("summary"), "[defaults] summary reaches every head")
+    }
 
     private fun JsonObject.str(key: String): String? = (this[key] as? JsonPrimitive)?.content
 }
 
 /** One API-key OpenAI Responses head built from splice.toml as the daemon builds it, over a scripted backend. */
 private object EffortRig {
-    /** The reasoning block the head's one request carried, with [settings] written into its splice.toml. */
-    suspend fun reasoningSent(root: Path, settings: String): JsonObject? {
+    /** The reasoning block the head's one request carried, with [settings] written into its splice.toml and Claude
+     *  Code's own effort [picked], or none. */
+    suspend fun reasoningSent(root: Path, settings: String, picked: String?): JsonObject? {
         Files.createDirectories(root)
         val backend = ScriptedProvider(VirtualTime())
         backend.start()
@@ -99,7 +112,7 @@ private object EffortRig {
             head.start()
             awaitListening(head.port)
             backend.script(reply { responsesAnswer("synthetic effort answer") })
-            assertTrue(ask(head.port).contains("synthetic effort answer"), "the head answered")
+            assertTrue(ask(head.port, picked).contains("synthetic effort answer"), "the head answered")
             val body = Json.parseToJsonElement(backend.requests.single().body).jsonObject
             return body["reasoning"] as? JsonObject
         } finally {
@@ -162,8 +175,9 @@ private object EffortRig {
         ).provider
     }
 
-    /** One request to the head on [port], as Claude Code sends it with its own effort picked at max, and the answer. */
-    private suspend fun ask(port: Int): String {
+    /** One request to the head on [port], as Claude Code sends it with its own effort [picked] or none; the answer. */
+    private suspend fun ask(port: Int, picked: String?): String {
+        val outputConfig = picked?.let { """"output_config":{"effort":"$it"},""" }.orEmpty()
         val client = HttpClient(CIO)
         try {
             return client.post("http://127.0.0.1:$port/v1/messages") {
@@ -172,7 +186,7 @@ private object EffortRig {
                 header("x-claude-code-session-id", "synthetic-effort-session")
                 setBody(
                     """{"model":"claude-synthetic--gpt-synthetic","stream":true,"max_tokens":1024,""" +
-                        """"thinking":{"type":"adaptive","display":"summarized"},"output_config":{"effort":"max"},""" +
+                        """"thinking":{"type":"adaptive","display":"summarized"},""" + outputConfig +
                         """"messages":[{"role":"user","content":"Send the synthetic effort probe."}]}""",
                 )
             }.bodyAsText()

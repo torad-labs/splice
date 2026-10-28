@@ -36,6 +36,9 @@ private val BLOCK_TYPES: Set<String> = setOf(
     "thinking",
     "tool_use",
     "tool_result",
+    // The coding API accepts native references. Dropping one forces the compatibility layer to
+    // lift defer_loading in tools, invalidating the whole conversation's prompt cache on each load.
+    "tool_reference",
     "server_tool_use",
     "web_search_tool_result",
 )

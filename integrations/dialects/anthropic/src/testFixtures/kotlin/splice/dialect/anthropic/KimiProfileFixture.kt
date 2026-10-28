@@ -18,6 +18,7 @@ public class KimiProfileFixture {
                 "thinking",
                 "tool_use",
                 "tool_result",
+                "tool_reference",
                 "server_tool_use",
                 "web_search_tool_result",
             ),

@@ -1,11 +1,8 @@
 // A tool ToolSearch loaded is callable on a passthrough head that cannot carry the block that loads it (2026-10-27).
 // Claude Code sends each deferred tool's definition with `defer_loading: true` and loads one by answering ToolSearch
-// with a `tool_reference` naming it. Kimi's allowlist excludes that block, so the model reads
-// "[tool loaded: X. It can be called directly.]" in its place, and Kimi, like Anthropic, keeps a `defer_loading` tool
-// out of the model's view until a reference loads it: the model was told SendMessage was loaded and never saw its
-// schema. On such a head the built request offers each tool the conversation loaded without `defer_loading`, and every
-// other deferred tool stays deferred. A head that takes tool_reference, or has no allowlist, gets the client's tools
-// as sent. The properties hold over generated conversations, and each expected deferral is written from that rule.
+// with a `tool_reference` naming it. A head that excludes that block must offer the loaded tool without
+// `defer_loading`. Kimi accepts native references: they must survive, and loading a tool must leave its definition
+// unchanged, or hundreds of thousands of conversation tokens become uncached. The properties cover both contracts.
 package splice.dialect.anthropic
 
 import kotlinx.serialization.json.JsonArray
@@ -231,15 +228,24 @@ class PassthroughLoadedToolTest {
 
     private val kimi = KimiProfileFixture().kimi("claude-kimi")
 
-    /** Kimi's allowlist on a head that shortens tool names, so a reference holds the client's name and the model was
+    private val unsupportedReferences = kimi.copy(
+        providerTag = "claude-no-references",
+        request = kimi.request.copy(blockAllowlist = kimi.request.blockAllowlist.orEmpty() - "tool_reference"),
+    )
+
+    /** An upstream without references that shortens tool names, so a reference holds the client's name and the model was
      *  offered a shorter one. */
     private val capped = PassthroughQuirks(
         providerTag = "claude-capped",
-        request = PassthroughRequestQuirks(blockAllowlist = kimi.request.blockAllowlist, toolNameCap = CAP),
+        request = PassthroughRequestQuirks(
+            blockAllowlist = unsupportedReferences.request.blockAllowlist,
+            toolNameCap = CAP,
+        ),
     )
 
     /** Heads whose upstream reads tool_reference itself: no allowlist, and an allowlist that names it. */
     private val readsReferences = listOf(
+        kimi,
         PassthroughQuirks(providerTag = "claude-splice"),
         PassthroughQuirks(
             providerTag = "claude-deepseek",
@@ -254,7 +260,7 @@ class PassthroughLoadedToolTest {
         val random = Random(1027)
         repeat(RUNS) {
             val case = case(random)
-            for (quirks in listOf(kimi, capped)) {
+            for (quirks in listOf(unsupportedReferences, capped)) {
                 val built = toolsOf(build(quirks, case.request))
                 val unloaded = toolsOf(build(quirks, case.unloaded()))
                 case.tools.forEachIndexed { i, sent ->
@@ -273,7 +279,7 @@ class PassthroughLoadedToolTest {
         val random = Random(2610)
         repeat(RUNS) {
             val case = case(random)
-            for (quirks in listOf(kimi, capped)) {
+            for (quirks in listOf(unsupportedReferences, capped)) {
                 val request = build(quirks, case.request)
                 val offered = toolsOf(request).associateBy { nameOf(it) }
                 for (name in markedLoaded(request)) {
@@ -287,19 +293,19 @@ class PassthroughLoadedToolTest {
     }
 
     @Test
-    fun `a head whose upstream reads tool_reference gets the client's tools as sent`() {
+    fun `native tool references leave the upstream tool definitions unchanged`() {
         val random = Random(2027)
         repeat(RUNS) {
             val case = case(random)
             for (quirks in readsReferences) {
                 val sent = toolsOf(build(quirks, case.request))
-                assertEquals(case.tools, sent) { "${quirks.providerTag}: ${case.request}" }
+                assertEquals(toolsOf(build(quirks, case.unloaded())), sent) { "${quirks.providerTag}: ${case.request}" }
             }
         }
     }
 
     @Test
-    fun `kimi's head offers SendMessage from the turn ToolSearch loads it and keeps the placeholder deferred`() {
+    fun `kimi loads SendMessage through its native reference without invalidating the tool prefix`() {
         val head = kimiHead()
         val turn = { searched: Boolean ->
             head.buildTurn(AnthropicParse.parseAnthropicBody(liveTurn(searched)), compact = false, sessionId = null)
@@ -307,31 +313,31 @@ class PassthroughLoadedToolTest {
         }
         val before = turn(false)
         val after = turn(true)
-        val deferral = { request: JsonObject -> toolsOf(request).associate { nameOf(it) to deferred(it) } }
-
+        assertTrue(deferred(toolsOf(before).single { nameOf(it) == "SendMessage" }))
+        assertTrue(deferred(toolsOf(before).single { nameOf(it) == "DeferredToolPlaceholder" }))
+        assertEquals(before["tools"], after["tools"], "loading a tool must preserve the cached tool prefix")
+        assertEquals(before["system"], after["system"])
         assertEquals(
-            mapOf(
-                "ToolSearch" to false,
-                "SendFeedback" to false,
-                "SendMessage" to true,
-                "TaskStop" to true,
-                "DeferredToolPlaceholder" to true,
-            ),
-            deferral(before),
-            "before the search, every tool the client deferred stays deferred",
+            emptyList<String>(),
+            markedLoaded(after),
+            "the native reference must not become an omission marker",
         )
+        val result = after.getValue("messages").jsonArray.last().jsonObject
+            .getValue("content").jsonArray.single().jsonObject
+        val reference = buildJsonObject {
+            put("type", "tool_reference")
+            put("tool_name", "SendMessage")
+        }
         assertEquals(
-            mapOf(
-                "ToolSearch" to false,
-                "SendFeedback" to false,
-                "SendMessage" to false,
-                "TaskStop" to true,
-                "DeferredToolPlaceholder" to true,
-            ),
-            deferral(after),
-            "the search loaded SendMessage and nothing else",
+            JsonArray(listOf(reference)),
+            result["content"],
+            "Kimi needs the actual reference to make the deferred tool callable",
         )
-        assertEquals(listOf("SendMessage"), markedLoaded(after))
-        assertTrue(DEFER !in toolsOf(after).single { nameOf(it) == "SendMessage" })
+        val compact = head.buildTurn(
+            AnthropicParse.parseAnthropicBody(liveTurn(true)),
+            compact = true,
+            sessionId = null,
+        )
+        assertEquals(after, compact.requestBody, "compaction must retain the same references and cached prefix")
     }
 }

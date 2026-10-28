@@ -65,7 +65,7 @@ private val MODELS = mapOf(
 private val NO_INLINE_CHANGES = setOf(MUSE, OPENAI, XAI)
 
 /** Blocks Kimi's upstream refuses, which its head must never send. */
-private val KIMI_REFUSES = setOf("tool_addition", "tool_removal", "tool_reference")
+private val KIMI_REFUSES = setOf("tool_addition", "tool_removal")
 
 /** Claude Code's own tools. ToolSearch and Bash are always offered, since the conversation calls them. */
 private val BUILT_IN =
@@ -279,17 +279,28 @@ private fun allowedNames(choice: JsonElement?): Set<String>? =
     (choice as? JsonObject)?.takeIf { typeOf(it) == "allowed_tools" }
         ?.getValue("tools")?.jsonArray?.map { nameOf(it.jsonObject) }?.toSet()
 
-/** The tools an Anthropic-wire request lets its model call: every listed tool not held back by `defer_loading`. */
-private fun anthropicCallable(body: JsonObject): Map<String, Set<String>> =
-    (body["tools"] as? JsonArray).orEmpty().map { it.jsonObject }
-        .filter { it["defer_loading"] != JsonPrimitive(true) }
+/** Native tool references load deferred definitions without changing the cached tool list. */
+private fun anthropicCallable(body: JsonObject): Map<String, Set<String>> {
+    val loaded = body.getValue("messages").jsonArray.flatMap { referencedTools(it.jsonObject["content"]) }.toSet()
+    return (body["tools"] as? JsonArray).orEmpty().map { it.jsonObject }
+        .filter { it["defer_loading"] != JsonPrimitive(true) || nameOf(it) in loaded }
         .associate { nameOf(it) to propsOf(it["input_schema"]) }
+}
+
+private fun referencedTools(content: JsonElement?): List<String> = (content as? JsonArray).orEmpty().flatMap { block ->
+    val reference = if (typeOf(block) == "tool_reference") {
+        listOfNotNull((block.jsonObject["tool_name"] as? JsonPrimitive)?.content)
+    } else {
+        emptyList()
+    }
+    reference + if (typeOf(block) == "tool_result") referencedTools(block.jsonObject["content"]) else emptyList()
+}
 
 private fun callable(head: String, body: JsonObject): Map<String, Set<String>> =
     if (head == KIMI) anthropicCallable(body) else responsesCallable(body)
 
 /** What in [body] its [head]'s backend refuses: an `additional_tools` item on a head that takes no inline change, and
- *  on Kimi's head a tool change or reference block anywhere in a message, a tool_result's content included. */
+ *  on Kimi's head a tool change block anywhere in a message, a tool_result's content included. */
 private fun refused(head: String, body: JsonObject): List<String> = when (head) {
     KIMI -> body.getValue("messages").jsonArray.flatMap { blockTypes(it.jsonObject["content"]) }
         .filter { it in KIMI_REFUSES }

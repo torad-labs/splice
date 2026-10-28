@@ -247,7 +247,10 @@ class PassthroughToolChangeTest {
     /** Kimi's allowlist on a head that shortens tool names. */
     private val capped = PassthroughQuirks(
         providerTag = "claude-capped",
-        request = PassthroughRequestQuirks(blockAllowlist = kimi.request.blockAllowlist, toolNameCap = CAP),
+        request = PassthroughRequestQuirks(
+            blockAllowlist = kimi.request.blockAllowlist.orEmpty() - "tool_reference",
+            toolNameCap = CAP,
+        ),
     )
 
     /** DeepSeek's endpoint as its deserializer listed it on 2026-09-16: it reads tool_reference, not the change blocks. */

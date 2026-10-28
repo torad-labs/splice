@@ -8,12 +8,14 @@
 // 2026-10-27: on a head that cannot carry the block that loads a deferred tool, the tool list loads it. Claude Code
 // sends each deferred tool's definition with `defer_loading: true` and loads one by answering ToolSearch with a
 // `tool_reference` that names it. Kimi, like Anthropic, keeps a deferred tool out of the model's view until such a
-// reference loads it, but Kimi's allowlist excludes the block, so PassthroughMessageScrubber writes
+// reference loads it. Kimi's old allowlist excluded the block, so PassthroughMessageScrubber wrote
 // "[tool loaded: X. It can be called directly.]" in its place and the tool stayed hidden: across 400 claude-kimi
 // turns, 40 ToolSearch calls and not one call to a tool they loaded. So on such a head a tool that a reference in
 // the conversation names rides without `defer_loading`, and every other deferred tool stays deferred. The list
 // changes on the turn the tool loads, which misses Kimi's prompt cache once; later turns send the same list for as
 // long as the conversation holds the reference.
+// Kimi now carries its native references and avoids that cache miss. This fallback is only for upstreams whose
+// allowlist still excludes references; never drop a supported reference just to load its tool through the list.
 //
 // Later the same day: the tool_addition and tool_removal blocks are carried the same way. Kimi's allowlist drops both,
 // so the tools Claude Code added never reached the model and the ones it removed stayed offered. Where the upstream

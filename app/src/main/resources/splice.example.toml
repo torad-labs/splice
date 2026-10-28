@@ -1034,9 +1034,18 @@ command = "claude-splice"
 #   SPLICE_PEER_KEY_FILE    the peer key file `splice peer send|inbox|status` presents, in place of
 #                           <settings dir>/peers/<--as>/peer.key; a path, never the key itself, so the
 #                           key stays out of argv and the environment's own dumps
-#   CODEX_THREAD_ID / CODEX_SESSION_ID  set by Codex inside a conversation, never by an operator: the thread
-#                           `splice peer codex attach|detach` names when given none, and, for CODEX_THREAD_ID,
-#                           the codex peer `splice peer send|inbox|status` act as when no --as is given
+#   CODEX_THREAD_ID / CODEX_SESSION_ID  optional. Codex does not set either in a hook's environment (codex-cli 0.159):
+#                           the hook's stdin is one JSON object, and `splice peer codex attach|detach` reads its
+#                           session_id as the thread and its cwd, when present, as the working directory. An
+#                           argument or either variable, when a caller set one, names the thread instead. When
+#                           CODEX_THREAD_ID is set, it is also the codex peer `splice peer send|inbox|status` act
+#                           as when no --as is given. The hook lines for ~/.codex/hooks.json, one command each
+#                           (SessionEnd's timeout is 3 because that is Codex's cap for that event):
+#                             SessionStart:       splice peer codex attach     (timeout 30)
+#                             UserPromptSubmit:   splice peer codex attach     (timeout 30)
+#                             SessionEnd:         splice peer codex detach     (timeout 3)
+#                           A hook writes nothing to stdout and never exits 2. A missing session_id leaves the
+#                           session alone (exit 0, the reason on stderr). See docs/peers.md.
 #   XDG_RUNTIME_DIR         set by the login session, never by an operator: the runtime folder whose
 #                           cc-socks/ holds a peer helper's inbox socket, as Claude Code's sockets are
 #   LISTEN_PID / LISTEN_FDS / LISTEN_FDNAMES  set by a socket manager (systemd socket activation), never by an

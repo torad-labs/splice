@@ -18,7 +18,7 @@ async function scope(sources: Record<string, string>, reverse = false) {
   const raw: AstMatch[] = JSON.parse(out); if (reverse) raw.reverse();
   const result = foreignMemberScope(files, raw, root, ["codex-rs/code-mode"], [
     { path: "codex-rs/code-mode/Cargo.toml", source: '[package]\nname="codex-code-mode"\n[dependencies]\nserde_json="1"\n' },
-    { path: "codex-rs/protocol/Cargo.toml", source: '[package]\nname="codex-protocol"\n' },
+    { path: "codex-rs/protocol/Cargo.toml", source: '[package]\nname="codex-protocol"\n[dependencies]\nserde="1"\n' },
   ]);
   const selected = (file: string, text: string) => raw.filter(node => node.file === resolve(root, file) && node.text.slice(0,node.text.indexOf("{")).includes(text) && node.ruleId === "function_item")
     .map(node => result.selections.get(`${file}#function_item@${node.range.byteOffset.start}`)?.state);
@@ -34,6 +34,32 @@ test("associated helpers remain required through crate-root reexports and aliase
   expect(result.selected("codex-rs/protocol/src/tool_name.rs", "fn new")).toEqual(["required"]);
   expect(result.selected("codex-rs/protocol/src/tool_name.rs", "fn unused")).toEqual(["foreign-context"]);
   expect(result.unresolved).toEqual([]);
+});
+
+test("serializing an inferred local DTO retains its complete wire fields and exact local serde helper", async () => {
+  const file="codex-rs/protocol/src/lib.rs",source=`use serde::Serialize;
+pub fn active() {
+    #[derive(Default, Serialize)]
+    struct WireReply {
+        #[serde(serialize_with = "write_chunk")]
+        chunk_id: Option<String>,
+        exit_code: Option<i32>,
+        state: WireState,
+    }
+    #[derive(Default, Serialize)]
+    enum WireState { #[default] Ready, Other }
+    fn write_chunk<S: serde::Serializer>(value: &Option<String>, serializer: S) -> Result<S::Ok, S::Error> { value.serialize(serializer) }
+    let result = WireReply { state: WireState::Ready, ..Default::default() };
+    let _ = serde_json::to_value(result);
+}
+pub struct OtherReply { chunk_id: bool, exit_code: bool }
+`;
+  const result=await scope({"codex-rs/code-mode/src/lib.rs":"pub fn exec() { codex_protocol::active(); }",[file]:source});
+  const state=(kind:string,text:string)=>result.selections.get(`${file}#${kind}@${Buffer.byteLength(source.slice(0,source.indexOf(text)))}`)?.state;
+  for(const field of["chunk_id: Option<String>","exit_code: Option<i32>","state: WireState"])expect(state("field_declaration",field)).toBe("required");
+  expect(state("enum_variant","Other }")).toBe("required");
+  expect(result.selected(file,"fn write_chunk")).toEqual(["required"]);
+  for(const field of["chunk_id: bool","exit_code: bool"])expect(state("field_declaration",field)).toBe("foreign-context");
 });
 
 test("tuple enum variants retain their own name when their payload contains a static lifetime", async () => {

@@ -332,7 +332,7 @@ export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporar
     for (const attribute of attributes) for (const match of attribute.text.matchAll(/\b(deserialize_with|serialize_with|skip_serializing_if|default|with)\s*=\s*"([A-Za-z_]\w*(?:::[A-Za-z_]\w*)*)"/g)) {
       const names = match[1] === "with" ? [match[2] + "::serialize", match[2] + "::deserialize"] : [match[2]!];
       for (const name of names) {
-        const targets = resolveName(name, item.file, undefined, undefined, item.module);
+        const targets = contextualName(name,item);
         for (const target of targets) mark(target, item.id, `exact serde ${match[1]} attribute helper: ${name}`);
         if (!targets.length) {
           const paths = projectPaths(name, item.file, undefined, item.module);
@@ -347,7 +347,7 @@ export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporar
     implicitMethods(type, ["Serialize", "Deserialize"], from, "implicit handwritten serde dispatch for actual typed schema");
     for (const member of byFile.get(type.file) ?? []) if (member.owner === type) {
       mark(member, type.id, "member of serialized/deserialized typed schema");
-      for (const ref of nodesWithin(member.file,member.start,member.end).filter(node => ["type_identifier", "scoped_type_identifier"].includes(node.ruleId))) for (const nested of resolveName(ref.text, member.file, undefined, undefined, member.module)) if (aggregates.has(nested.kind)) serializeType(nested, member.id);
+      for (const ref of nodesWithin(member.file,member.start,member.end).filter(node => ["type_identifier", "scoped_type_identifier"].includes(node.ruleId))) for (const nested of contextualName(ref.text,member)) if (aggregates.has(nested.kind)) serializeType(nested, member.id);
     }
   };
   for (const item of declarations) {
@@ -426,7 +426,11 @@ export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporar
     // Imported types in the selected signature/receiver scope are the conservative candidate set.
     for (const name of identifiers(item.text.slice(0, item.text.indexOf("{")))) for (const type of contextualName(name,item,ownerType)) if (aggregates.has(type.kind)) types.add(type);
     if (ownerType) for (const type of contextualName(ownerType,item)) if (aggregates.has(type.kind)) types.add(type);
-    const signatureTypes = (source: string, file: string, module = item.module) => [...new Set(identifiers(source).flatMap(name => resolveName(name, file, ownerType, undefined, module)).filter(type => aggregates.has(type.kind)))];
+    const signatureTypes = (source: string, file: string, module = item.module, context = item) => {
+      const contextType=context.implType??(context.owner&&aggregates.has(context.owner.kind)?context.owner.name:context===item?ownerType:undefined);
+      return [...new Set(identifiers(source).flatMap(name => context.file===file&&context.module===module ?
+        contextualName(name,context,contextType) : resolveName(name, file, contextType, undefined, module)).filter(type => aggregates.has(type.kind)))];
+    };
     const bindings = new Map<string, Declaration[]>();
     if (ownerType) bindings.set("self", signatureTypes(ownerType, item.file));
     for (const parameter of itemNodes.filter(node => node.ruleId === "parameter")) {
@@ -448,13 +452,16 @@ export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporar
         if (name === "await") continue;
         const members = found.flatMap(type => memberTargets(type, name)).filter(member => method ? ["function_item", "function_signature_item"].includes(member.kind) && /\([^)]*\bself\b/.test(member.text.slice(0, member.text.indexOf("{") < 0 ? undefined : member.text.indexOf("{"))) : member.kind === "field_declaration");
         if (method && !members.length) continue; // Mutex/Arc/Future wrappers retain their known generic payload.
-        found = [...new Set(members.flatMap(member => signatureTypes(method ? member.text.slice(0, member.text.indexOf("{")).split("->")[1] ?? "" : member.text.slice(member.text.indexOf(":") + 1), member.file, member.module)))];
+        found = [...new Set(members.flatMap(member => signatureTypes(method ? member.text.slice(0, member.text.indexOf("{")).split("->")[1] ?? "" : member.text.slice(member.text.indexOf(":") + 1), member.file, member.module, member)))];
       }
       return found;
     };
     for (let pass = 0; pass < 3; pass++) for (const local of itemNodes.filter(node => node.ruleId === "let_declaration")) {
       const match = local.text.match(/^\s*let\s+(?:mut\s+)?([A-Za-z_]\w*)\s*(?::\s*([^=]+))?=\s*([\s\S]*);\s*$/); if (!match) continue;
-      const inferred = match[2] ? signatureTypes(match[2], item.file) : receiverTypes(match[3]!);
+      const initializer=local.range.byteOffset.start+Buffer.byteLength(local.text.slice(0,local.text.lastIndexOf(match[3]!)));
+      const literal=itemNodes.find(node=>node.ruleId==="struct_expression"&&node.range.byteOffset.start===initializer&&node.range.byteOffset.end<=local.range.byteOffset.end);
+      const literalTypes=literal&&contextualName(literal.text.slice(0,literal.text.indexOf("{")).trim().replace(/::<[^>]*>/g,""),item,ownerType).filter(type=>aggregates.has(type.kind));
+      const inferred = match[2] ? signatureTypes(match[2], item.file) : literalTypes ?? receiverTypes(match[3]!);
       if (inferred) bindings.set(match[1]!, [...new Set([...(bindings.get(match[1]!) ?? []), ...inferred])]);
     }
     let previousSize = -1;
@@ -485,7 +492,7 @@ export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporar
     }
     for (const literal of itemNodes.filter(node => node.ruleId === "struct_expression")) {
       const name = literal.text.slice(0,literal.text.indexOf("{")).trim().replace(/::<[^>]*>/g, "");
-      for (const target of resolveName(name,item.file,ownerType,undefined,item.module)) for (const field of nodesWithin(item.file,literal.range.byteOffset.start,literal.range.byteOffset.end).filter(node => ["field_initializer", "shorthand_field_initializer"].includes(node.ruleId))) {
+      for (const target of contextualName(name,item,ownerType)) for (const field of nodesWithin(item.file,literal.range.byteOffset.start,literal.range.byteOffset.end).filter(node => ["field_initializer", "shorthand_field_initializer"].includes(node.ruleId))) {
         const member = field.text.match(/^\s*(\w+)/)?.[1]; if (!member) continue;
         for (const declaration of memberTargets(target,member)) if (declaration.kind === "field_declaration") mark(declaration,item.id, `AST constructed field ${name}.${member}`);
       }
@@ -494,19 +501,20 @@ export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporar
       if (/\.\s*(?:into|try_into)\s*\(/.test(call.text)) {
         const name = call.text.match(/^\s*((?:[A-Za-z_]\w*::)*[A-Za-z_]\w*)\s*\(/)?.[1];
         for (const target of name ? resolveName(name, item.file, ownerType, undefined, item.module) : []) if (target.kind === "function_item") {
-          for (const type of signatureTypes(target.text.slice(0,target.text.indexOf("{")), target.file, target.module)) implicitMethods(type, ["From", "Into", "TryFrom", "TryInto"], item.id, "implicit conversion of an actual called function's typed argument");
+          for (const type of signatureTypes(target.text.slice(0,target.text.indexOf("{")), target.file, target.module,target)) implicitMethods(type, ["From", "Into", "TryFrom", "TryInto"], item.id, "implicit conversion of an actual called function's typed argument");
         }
       }
       const serde = call.text.match(/^serde_json\s*::\s*(?:to_value|to_string|from_value|from_str)(?:\s*::\s*<([\s\S]+)>)?\s*\(([\s\S]*)\)$/); if (!serde) continue;
-      if (serde[1]) for (const name of identifiers(serde[1])) for (const type of resolveName(name, item.file, ownerType, undefined, item.module)) serializeType(type, item.id);
+      if (serde[1]) for (const name of identifiers(serde[1])) for (const type of contextualName(name,item,ownerType)) serializeType(type, item.id);
       const argument = serde[2]!.trim().replace(/^&\s*(?:mut\s+)?/, ""), field = argument.match(/\.\s*([A-Za-z_]\w*)$/)?.[1];
       if (field) for (const type of types) for (const member of byFile.get(type.file) ?? []) if (member.owner === type && member.kind === "field_declaration" && member.name === field) {
-        for (const ref of nodesWithin(member.file,member.start,member.end).filter(node => ["type_identifier", "scoped_type_identifier"].includes(node.ruleId))) for (const target of resolveName(ref.text, member.file, undefined, undefined, member.module)) serializeType(target, item.id);
+        for (const ref of nodesWithin(member.file,member.start,member.end).filter(node => ["type_identifier", "scoped_type_identifier"].includes(node.ruleId))) for (const target of contextualName(ref.text,member)) serializeType(target, item.id);
       }
       if (/^[A-Za-z_]\w*$/.test(argument)) {
+        for(const type of bindings.get(argument)??[])serializeType(type,item.id);
         if (argument === "self" && ownerType) for (const type of resolveName(ownerType, item.file, undefined, undefined, item.module)) serializeType(type, item.id);
         const signature = item.text.slice(0, item.text.indexOf("{")), parameterType = signature.match(new RegExp(`\\b${argument}\\s*:\\s*([^,)]*)`))?.[1];
-        if (parameterType) for (const name of identifiers(parameterType)) for (const type of resolveName(name, item.file, ownerType, undefined, item.module)) serializeType(type, item.id);
+        if (parameterType) for (const name of identifiers(parameterType)) for (const type of contextualName(name,item,ownerType)) serializeType(type, item.id);
       }
     }
   }

@@ -115,7 +115,7 @@ internal class CodeModeGatewayMcpRequests(
                 buildJsonObject {
                     put("id", result.id); put("origin", result.origin.name)
                     put("disposition", result.disposition.name); put("isError", result.isError)
-                    put("payload", result.payload); put("value", CodeModeToolOutputs.value(result))
+                    put("payload", checkNotNull(result.payload)); put("value", CodeModeToolOutputs.value(result))
                 }
             }
         },

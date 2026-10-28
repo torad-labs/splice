@@ -117,7 +117,11 @@ const createKnobs = (scope) => {
     // what a budget made without an action of its own does once it is spent (PUT /api/budgets, Knob.kt BUDGET_DEFAULT_ACTION)
     K("budgetDefaultAction", "Spent budget", { k: "pick", names: { warn: "Warns", block: "Blocks" } }, "warn",
       { home: "plan", also: "when a budget runs out spend money new budget spent" }),
-    K("effort", "Reasoning effort", { k: "pick", unset: "Model's own", names: { none: "None", minimal: "Minimal", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" } }, null),
+    // how hard a Responses head's model reasons on every turn (Marcos, Oct 28: "effort at high by default, but these should be
+    // configurable by users in the console and in the toml file"). splice sends this, not the effort Claude Code picked, and
+    // high when nothing is set. It is part of the prompt-cache key, so the head reads it at start (Knob.kt EFFORT).
+    K("effort", "Reasoning effort", { k: "pick", unset: "High", names: { none: "None", minimal: "Minimal", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" } }, null,
+      { home: "reasoning", also: "effort reasoning effort how hard it thinks thinking level gpt responses xhigh max" }),
     // how long a GPT head's answers run: text.verbosity on each of its turns, as Codex's model_verbosity (Knob.kt
     // VERBOSITY, fix 5 of Oct 27). Read as the head is built, so it takes a restart, and a command can hold its own.
     K("verbosity", "Answer length", { k: "pick", unset: "Model's own", names: { low: "Short", medium: "Medium", high: "Long" } }, null,

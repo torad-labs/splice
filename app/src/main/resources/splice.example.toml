@@ -19,7 +19,7 @@ control_port = 3096          # loopback-only control plane + dashboard
 # Env aliases (CLAUDEX_SHOW_REASONING etc.) and runtime PATCH still override these.
 show_reasoning = "text"      # "text" | "thinking" | "off"  — stream thinking into Claude Code (HOT, per turn)
 summary        = "detailed"  # "detailed" | "concise" | "auto" | "none" (HOT, per turn)
-# effort       = "high"      # optional; omit → high (Grok floors invalid values to low)
+# effort       = "high"      # optional; omit → high. A Responses head sends this, not the effort Claude Code picked (Grok floors invalid values to low)
 replay_reasoning = true      # (HOT, per turn) send the model's earlier reasoning back, as Codex does until compaction
 mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtime PATCH cannot enable transcript mirrors
 # Plan-usage bars: a subscription head (ChatGPT, Kimi, SuperGrok) polls its provider's usage

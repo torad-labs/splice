@@ -72,7 +72,7 @@ class GrokProviderTest {
         defaultContextWindow = 1_000_000,
     )
 
-    private fun provider(auth: splice.core.auth.RefreshableAuthProvider) = GrokProvider(
+    private fun provider(auth: splice.core.auth.RefreshableAuthProvider, effort: String = "high") = GrokProvider(
         tuning = ProviderTuning(
             name = ProviderName(key = "grok", label = "grok"),
             catalog = catalog,
@@ -81,7 +81,7 @@ class GrokProviderTest {
             locations = ProviderLocations(baseUrl = mock.baseUrl),
             watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
         ),
-        reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", null),
+        reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, effort, null),
     )
 
     /** ~/.grok/auth.json with an OAuth access token. */
@@ -143,9 +143,9 @@ class GrokProviderTest {
         @TempDir tempDir: Path,
     ) = runBlocking {
         val parsed = AnthropicParse.parseAnthropicBody(
-            """{"model":"grok-4.5","effort":"xhigh","messages":[{"role":"user","content":"first"}]}""",
+            """{"model":"grok-4.5","messages":[{"role":"user","content":"first"}]}""",
         )
-        val grokProvider = provider(oauthAuth(tempDir))
+        val grokProvider = provider(oauthAuth(tempDir), effort = "xhigh")
         val built = grokProvider.buildTurn(parsed, compact = false, sessionId = "s1")
         val reasoning = built.requestBody["reasoning"]!!.jsonObject
         // 2026-08-13: xhigh is native on grok-4.6+; on 4.5 xAI clamps it to high server-side.

@@ -1,5 +1,5 @@
 // PORT-OF: buildRequest pins from server/test/codex-proxy.test.mjs @ pre-public-port-baseline — effort
-// precedence (v27), visibility floor semantics, spark summary quirk, compaction built byte-identical
+// from splice's config (2026-10-28), visibility floor semantics, spark summary quirk, compaction built byte-identical
 // to a turn (2026-09-05), cache-key stability, tool mapping, replay gating, grok ladder clamps,
 // purity/determinism.
 package splice.dialect.responses.request
@@ -102,6 +102,12 @@ private fun build(json: String, quirks: ResponsesQuirks = CODEX, options: BuildO
     return ResponsesRequestBuilder(quirks).build(parsed.typed, parsed.raw, options).req
 }
 
+/** [base] with splice's configured effort set to [effort], the way splice.toml or the console sets it. */
+private fun configured(effort: String, base: BuildOptions = opts()): BuildOptions =
+    base.copy(reasoning = base.reasoning.copy(effort = effort))
+
+private fun JsonObject.effort(): String? = this["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content
+
 class ResponsesRequestBuilderTest {
 
     @Test
@@ -117,58 +123,40 @@ class ResponsesRequestBuilderTest {
     }
 
     @Test
-    fun `effort precedence - body beats budget beats config, ultracode maps to max`() {
-        val budgetBody = """{"model":"m","thinking":{"type":"enabled","budget_tokens":32000},
+    fun `effort is splice's - the configured one wins over the body and the budget, nothing set is high`() {
+        // Marcos, 2026-10-28: "effort at high by default, but these should be configurable by users in the console and
+        // in the toml file". The effort Claude Code's request names (its picker, its thinking budget) is not read.
+        val clientPicked = """{"model":"m","effort":"max","thinking":{"type":"enabled","budget_tokens":64000},
             "messages":[{"role":"user","content":"x"}]}"""
-        // budget 32k -> xhigh (beats config low)
-        var req = build(budgetBody, options = opts().let { it.copy(reasoning = it.reasoning.copy(effort = "low")) })
-        assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
-        // explicit body field beats the budget
-        req = build(
-            """{"model":"m","effort":"ultracode","thinking":{"type":"enabled","budget_tokens":2000},
-                "messages":[{"role":"user","content":"x"}]}""",
-        )
-        assertEquals("max", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
-        // nothing anywhere -> high
-        req = build("""{"model":"m","messages":[{"role":"user","content":"x"}]}""")
-        assertEquals("high", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        assertEquals("low", build(clientPicked, options = configured("low")).effort())
+        assertEquals("high", build(clientPicked).effort(), "nothing configured is high, whatever the client picked")
+        assertEquals("max", build(clientPicked, options = configured("ultracode")).effort(), "ultracode maps to max")
     }
 
     @Test
-    fun `grok ladder reaches xhigh on the top budget rung and the ultracode alias`() {
+    fun `grok ladder reaches xhigh and the ultracode alias lands on it`() {
         // Grok 4.6 adds the xhigh rung (xAI docs 2026-08: native on 4.6+; older groks clamp it
         // to high upstream), so the ladder emits it model-blind — a stale gate would silently
-        // cap every future grok at high. Before this the GROK ladder topped out at high and the
-        // ultracode alias clamped to high.
-        var req = build(
-            """{"model":"grok-4.6","thinking":{"type":"enabled","budget_tokens":64000},
-                "messages":[{"role":"user","content":"x"}]}""",
-            quirks = GROK,
-            options = opts(model = "grok-4.6"),
-        )
-        assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
-        req = build(
-            """{"model":"grok-4.6","effort":"ultracode","thinking":{"type":"enabled","budget_tokens":2000},
-                "messages":[{"role":"user","content":"x"}]}""",
-            quirks = GROK,
-            options = opts(model = "grok-4.6"),
-        )
-        assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        // cap every future grok at high.
+        val body = """{"model":"grok-4.6","messages":[{"role":"user","content":"x"}]}"""
+        val grok = opts(model = "grok-4.6")
+        assertEquals("xhigh", build(body, quirks = GROK, options = configured("xhigh", grok)).effort())
+        assertEquals("xhigh", build(body, quirks = GROK, options = configured("ultracode", grok)).effort())
     }
 
     @Test
     fun `visibility floor lifts none-minimal to low but never a deliberate pick`() {
-        var req = build(
-            """{"model":"m","effort":"minimal","messages":[{"role":"user","content":"x"}]}""",
-            options = opts(show = "text"),
-        )
-        assertEquals("low", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        val body = """{"model":"m","messages":[{"role":"user","content":"x"}]}"""
+        var req = build(body, options = configured("minimal", opts(show = "text")))
+        assertEquals("low", req.effort())
         assertEquals("detailed", req["reasoning"]?.jsonObject?.get("summary")?.jsonPrimitive?.content)
         req = build(
-            """{"model":"m","effort":"medium","messages":[{"role":"user","content":"x"}]}""",
-            options = opts(show = "text").let { it.copy(reasoning = it.reasoning.copy(summary = "concise")) },
+            body,
+            options = configured("medium", opts(show = "text")).let {
+                it.copy(reasoning = it.reasoning.copy(summary = "concise"))
+            },
         )
-        assertEquals("medium", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        assertEquals("medium", req.effort())
         // configSummary is operator-controlled — concise stays concise when TOML/env says so.
         assertEquals("concise", req["reasoning"]?.jsonObject?.get("summary")?.jsonPrimitive?.content)
     }
@@ -300,34 +288,21 @@ class ResponsesRequestBuilderTest {
 
     @Test
     fun `mini clamps effort max to xhigh, other models keep max`() {
-        val maxBody = """{"model":"m","effort":"max","messages":[{"role":"user","content":"x"}]}"""
-        var req = build(maxBody, options = opts(model = "gpt-5.4-mini"))
-        assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
-        req = build(maxBody, options = opts(model = "gpt-5.6-sol"))
-        assertEquals("max", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
-        // the 64k budget tier maps to max — the real-world trigger — and clamps on mini too
-        req = build(
-            """{"model":"m","thinking":{"type":"enabled","budget_tokens":64000},
-                "messages":[{"role":"user","content":"x"}]}""",
-            options = opts(model = "gpt-5.4-mini"),
-        )
-        assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        val body = """{"model":"m","messages":[{"role":"user","content":"x"}]}"""
+        assertEquals("xhigh", build(body, options = configured("max", opts(model = "gpt-5.4-mini"))).effort())
+        assertEquals("max", build(body, options = configured("max", opts(model = "gpt-5.6-sol"))).effort())
     }
 
     @Test
     fun `google gemini-2_5-pro keeps effort max on an OpenAI-shaped profile`() {
         val req = build(
-            """{"model":"m","effort":"max","messages":[{"role":"user","content":"x"}]}""",
+            """{"model":"m","messages":[{"role":"user","content":"x"}]}""",
             quirks = OPENAI,
-            options = opts(model = "google/gemini-2.5-pro"),
+            options = configured("max", opts(model = "google/gemini-2.5-pro")),
         )
-        assertEquals("max", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        assertEquals("max", req.effort())
     }
 
-    // CACHE LAW (2026-07-20, made total 2026-09-05): compaction MUST run on the session's own
-    // model AND effort, or the warm prompt-cache prefix is invalidated and the whole transcript
-    // re-reads cold (the "compaction ate my subscription" bug). No compact-model override and no
-    // effort pin exist on any provider: both inherit the session.
     @Test
     fun `compact inherits the session model and effort - the cache law`() {
         val body = """{"model":"m","system":"base","messages":[{"role":"user","content":"go"}]}"""
@@ -449,10 +424,10 @@ class ResponsesRequestBuilderTest {
         // so the ladder emits it model-blind instead of keeping a client-side gate that would
         // silently cap every future grok at high.
         val req = build(
-            """{"model":"grok-4.5","effort":"xhigh","tools":[{"name":"t","input_schema":{"type":"object"}}],
+            """{"model":"grok-4.5","tools":[{"name":"t","input_schema":{"type":"object"}}],
                 "tool_choice":{"type":"any"},"messages":[{"role":"user","content":"x"}]}""",
             quirks = GROK,
-            options = opts(model = "grok-4.5"),
+            options = configured("xhigh", opts(model = "grok-4.5")),
         )
         assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
         // Full reasoning visibility: detailed summary is requested so the stream fills the
@@ -460,9 +435,7 @@ class ResponsesRequestBuilderTest {
         assertEquals("detailed", req["reasoning"]?.jsonObject?.get("summary")?.jsonPrimitive?.content)
         assertEquals("required", req["tool_choice"]?.jsonPrimitive?.content)
         assertEquals(true, req["parallel_tool_calls"]?.jsonPrimitive?.content?.toBoolean())
-        // disabled thinking does NOT disable grok reasoning — the default chain applies
-        // (Node grok source: budget skipped, config||high; the low-floor is only for
-        // out-of-ladder values)
+        // disabled thinking does NOT disable grok reasoning: nothing configured is high
         val disabled = build(
             """{"model":"grok-4.5","thinking":{"type":"disabled"},"messages":[{"role":"user","content":"x"}]}""",
             quirks = GROK,

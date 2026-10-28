@@ -47,6 +47,9 @@ internal class HeadServerFactory(
      *  head built without it would serve turns the console never hears of. */
     private val console: ConsoleEventPublisher? = null,
 ) {
+    /** What splice ships beside Claude Code's prompt for a head that sets none (Marcos, 2026-10-28). */
+    private val shippedPrompts = ShippedStandingPrompts()
+
     private val upstreamFactory = UpstreamFactory()
     private val voices = HeadVoiceFacts()
 
@@ -118,7 +121,11 @@ internal class HeadServerFactory(
                     // system_prompt_file or a relative project root becomes a load-time config
                     // error rather than a prompt that silently never rides.
                     systemPrompt = SystemPromptLayers(
-                        head = ctx.head.systemPromptFor(key, prompts.configDir),
+                        head = ctx.head.systemPromptFor(
+                            key,
+                            prompts.configDir,
+                            shippedPrompts.forProvider(ctx.providerCfg),
+                        ),
                         projects = prompts.projects,
                         headKey = key,
                     ),

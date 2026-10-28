@@ -9,7 +9,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.util.JsonScalars
-import splice.core.wire.AnthropicRequest
 import splice.dialect.responses.ResponsesLiteShape
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.request.BuildOptions
@@ -21,28 +20,18 @@ import splice.dialect.responses.stream.ResponsesLooseFields
 internal class ResponsesReasoningKnobs(private val quirks: ResponsesQuirks) {
 
     private val effortRules = ResponsesEffort()
-    private val looseFields = ResponsesLooseFields(quirks)
+    private val looseFields = ResponsesLooseFields()
     private val liteShape = ResponsesLiteShape(quirks)
 
-    internal fun resolveEffort(body: AnthropicRequest, raw: JsonObject, opts: BuildOptions): String? {
-        // No compaction pin, on any provider (2026-09-05): a compaction inherits the session's
-        // effort or the reasoning mismatch invalidates the whole prompt-cache prefix.
-        val requested = looseFields.looseEffort(raw)
-        // An explicit none is a reasoning choice, not a display setting or a turn-type default.
-        if (requested == "none") return requested
-        // Thinking off is never a reasoning choice (Marcos, 2026-10-27): the turn keeps the effort it
-        // asked for, else the configured one, else high. A disabled thinking config's budget picks nothing.
-        var effort = requested
-        if (effort == null) {
-            // v27: the /effort picker (budget) WINS over the config/env fallback
-            val budgetEffort = body.thinking
-                ?.takeIf { !it.disabled }
-                ?.budgetTokens
-                ?.let { effortRules.effortFromBudget(it, quirks.reasoning.effortVocabulary) }
-            effort = budgetEffort
-                ?: effortRules.normalizeEffort(opts.reasoning.effort, quirks.reasoning.effortVocabulary)
-                ?: "high"
-        }
+    internal fun resolveEffort(opts: BuildOptions): String? {
+        // splice authors a Responses head's effort (Marcos, 2026-10-28: "effort at high by default, but these should
+        // be configurable by users in the console and in the toml file"): the configured effort, else high. The effort
+        // the client's request names (Claude Code's own picker, its thinking budget) is not read: it is Claude's
+        // setting, shared with every Claude head, and it sent xhigh or max to GPT where splice.toml said high. One
+        // value per head keeps a compaction on the session's effort, so the prompt-cache prefix holds (2026-09-05).
+        var effort: String? =
+            effortRules.normalizeEffort(opts.reasoning.effort, quirks.reasoning.effortVocabulary) ?: "high"
+        if (effort == "none") return effort
         effort = effortRules.flooredForVisibility(effort, opts.reasoning.display)
         effort = effortRules.flooredForVendor(effort, quirks.reasoning.effortVocabulary)
         return effortRules.clampedForModelCeiling(

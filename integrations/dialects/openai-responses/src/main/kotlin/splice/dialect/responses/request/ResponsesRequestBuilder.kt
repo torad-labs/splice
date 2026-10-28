@@ -66,7 +66,7 @@ internal class ResponsesRequestBuilder(
     // where it needs them, so every relocated member kept its original argument list.
     private val toolPlan = ResponsesToolPlan(quirks, toolNames)
     private val knobs = ResponsesReasoningKnobs(quirks)
-    private val looseFields = ResponsesLooseFields(quirks)
+    private val looseFields = ResponsesLooseFields()
     private val ids = ResponsesStableIds()
     private val assembler = ResponsesRequestAssembler(quirks, toolNames)
     private val priorReasoning = ResponsesPriorReasoning()
@@ -90,7 +90,7 @@ internal class ResponsesRequestBuilder(
         val surfaceBody = wireBody.copy(tools = directTools(inline, forcedSchema, dynamicTools))
         val partition = toolPlan.partition(surfaceBody, opts)
         val declareByName = toolPlan.declarationCandidates(surfaceBody, partition)
-        val effort = knobs.resolveEffort(body, raw, opts)
+        val effort = knobs.resolveEffort(opts)
         val summary = knobs.resolveSummary(raw, opts, effort)
         val walked = messages.walk(body, raw, opts, declareByName, effort)
         // replay_reasoning=false: the gateway cache must not put an earlier turn's reasoning back, and the current

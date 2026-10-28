@@ -1,4 +1,4 @@
-// NEW: the effort/summary vocabulary — the alias tables, the budget tiers, and the three
+// NEW: the effort/summary vocabulary — the alias tables and the three
 // post-resolution clamps. Split out of ResponsesRequestBuilder.kt (2026-08-17, concentration
 // campaign): it has zero callers anywhere but the resolvers, and it touches no JsonObject — a pure
 // vocabulary that owns its own tables. Every member kept its identical name and argument list.
@@ -30,9 +30,6 @@ internal class ResponsesEffort {
             else -> null
         }
     }
-
-    public fun effortFromBudget(budget: Long, vocabulary: EffortVocabulary): String? =
-        vocabulary.fromBudget(budget)
 
     /** Visibility may floor minimal, but never changes none: summary display does not enable reasoning. */
     internal fun flooredForVisibility(effort: String?, showReasoning: ReasoningDisplay): String? {

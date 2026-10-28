@@ -38,7 +38,9 @@ public data class HeadConfig(
      *  [systemPromptFile] — never both (the resolver makes that a config error at load) — and
      *  [systemPromptMode] picks the seam: `append` (the default) adds the text beside Claude
      *  Code's own system field, `replace` SUBSTITUTES it, which strips the harness instructions
-     *  Claude Code ships in that field. Absent, or empty, is exactly today's bytes. */
+     *  Claude Code ships in that field. Absent takes what splice ships for the head's provider, appended (the
+     *  OpenAI Responses adapter ships one, Marcos 2026-10-28; every other dialect ships none, so its bytes are
+     *  unchanged). Empty is no standing prompt at all, the way to turn a shipped one off. */
     @SerialName("system_prompt") val systemPrompt: String? = null,
     @SerialName("system_prompt_file") val systemPromptFile: String? = null,
     @SerialName("system_prompt_mode") val systemPromptMode: SystemPromptMode? = null,
@@ -75,12 +77,27 @@ public data class HeadConfig(
     /** V4-36: this head's standing prompt as its resolver. An ABSENT `system_prompt_mode` is the
      *  documented default rather than a missing value — an operator who names no mode gets
      *  `append` — so the default lives here, once, next to the schema that documents it, instead
-     *  of being re-spelt at each wiring site. [key] names the head in the resolved source. */
-    public fun systemPromptFor(key: String, configDir: Path): HeadSystemPrompt = HeadSystemPrompt(
-        text = systemPrompt,
-        file = systemPromptFile,
-        mode = systemPromptMode ?: SystemPromptMode.APPEND,
-        configDir = configDir,
-        source = "head:$key",
-    )
+     *  of being re-spelt at each wiring site. [key] names the head in the resolved source. [shipped] is
+     *  the text splice ships for this head's provider: it rides, appended, only when the head sets
+     *  neither `system_prompt` nor `system_prompt_file`. */
+    public fun systemPromptFor(key: String, configDir: Path, shipped: String? = null): HeadSystemPrompt {
+        val ownPrompt = systemPrompt != null || systemPromptFile != null
+        return if (shipped != null && !ownPrompt) {
+            HeadSystemPrompt(
+                text = shipped,
+                file = null,
+                mode = SystemPromptMode.APPEND,
+                configDir = configDir,
+                source = "splice:$key",
+            )
+        } else {
+            HeadSystemPrompt(
+                text = systemPrompt,
+                file = systemPromptFile,
+                mode = systemPromptMode ?: SystemPromptMode.APPEND,
+                configDir = configDir,
+                source = "head:$key",
+            )
+        }
+    }
 }

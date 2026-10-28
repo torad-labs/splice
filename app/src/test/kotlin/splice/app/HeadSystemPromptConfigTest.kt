@@ -83,21 +83,6 @@ class HeadSystemPromptConfigTest {
     }
 
     @Test
-    fun `a head that configures nothing resolves nothing`() {
-        val head = heads(
-            """
-            [heads.claudex]
-            provider = "codex"
-            port = 8801
-            discovery_prefix = "claude-codex--"
-            pinned_model = "gpt-5.6-sol"
-            """.trimIndent(),
-        ).getValue("claudex")
-
-        assertNull(head.systemPromptFor("claudex", tmp).resolve())
-    }
-
-    @Test
     fun `naming both the inline text and a file is refused at load`() {
         val head = heads(
             """

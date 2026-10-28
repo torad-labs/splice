@@ -609,12 +609,13 @@ class WatchdogProgressRoundTest {
 
     private fun progressRunner(source: kotlinx.coroutines.flow.Flow<JsonObject>): WsRoundRunner =
         object : WsRoundRunner by ScriptedRunner(emptyList()) {
+            // This case isolates protocol progress; an always-live socket is correctly held even without that progress.
             override suspend fun attempt(
                 bodyJson: String,
                 meta: TurnMeta,
                 turnHeaders: Map<String, String>,
                 creds: Credentials,
-            ): WsRound = WsRound(source, WsRoundAbort {}, WsPathPulse { 0 })
+            ): WsRound = WsRound(source, WsRoundAbort {})
 
             override suspend fun attempt(
                 bodyJson: String,

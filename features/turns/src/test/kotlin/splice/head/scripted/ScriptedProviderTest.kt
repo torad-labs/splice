@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.client.CLIENT_WALL_HEADER
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
@@ -74,7 +75,11 @@ class ScriptedProviderTest {
         withScriptedHeads(tmp, VirtualTime()) {
             provider.script(reply { delay(5.hours); responsesAnswer("after five hours") })
             val real = TimeSource.Monotonic.markNow()
-            val stream = responses().client.open()
+            // This clock fixture names a wall beyond its five-hour wait; an unnamed client keeps its normal wall.
+            val request = ClientRequest(
+                headers = mapOf(CLIENT_WALL_HEADER to (5.hours + 1.minutes).inWholeMilliseconds.toString()),
+            )
+            val stream = responses().client.open(request)
 
             provider.awaitRequests(1)
             assertFalse(stream.finished, "the answer came before the clock moved: ${stream.soFar().describe()}")

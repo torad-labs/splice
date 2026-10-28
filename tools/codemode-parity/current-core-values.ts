@@ -50,6 +50,19 @@ export function coreValueWitnesses(input: any, result: any, functions: FunctionW
   const described = input.operation === "describe" && descriptionUnits.some(unit => unit.label === "build_exec_tool_description" && entered.has(unit.id)) && typeof result.description === "string";
   if (described) {
     const options = input.options ?? {}, messages = options.messages ?? {}, path = ["description"];
+    if (options.code_mode_only !== false && Array.isArray(input.tools)) {
+      // The source harness constructs this actual typed map from the supplied
+      // namespace descriptions; a declaration needs its rendered heading/value.
+      const namespaces = new Map<string, string>();
+      for (const tool of input.tools) if (typeof tool.namespace === "string") namespaces.set(tool.namespace, typeof tool.namespace_description === "string" ? tool.namespace_description : "");
+      const declaration = descriptionUnits.find(unit => unit.kind === "struct_item" && unit.label === "ToolNamespaceDescription");
+      if (declaration) for (const [name, description] of namespaces) {
+        const fragment = `## ${name}\n${description.trim()}`;
+        if (!name || !description.trim() || !result.description.includes(fragment)) continue;
+        add(declaration, "rendered-source-value-v1", path, fragment);
+        for (const field of descriptionUnits.filter(unit => unit.kind === "field_declaration" && declaration.start < unit.start && unit.end < declaration.end && ["name", "description"].includes(unit.label))) add(field, "rendered-source-value-v1", path, fragment);
+      }
+    }
     for (const name of ["DEFERRED_NESTED_TOOLS_GUIDANCE", "TOOL_SEARCH_GUIDANCE", "LEGACY_IMAGE_HELPER_DESCRIPTION", "UNIFIED_IMAGE_HELPER_DESCRIPTION", "MCP_TYPESCRIPT_PREAMBLE"]) {
       const unit = constant(name), fragment = rawConstant(name);
       if (!unit || !fragment) continue;

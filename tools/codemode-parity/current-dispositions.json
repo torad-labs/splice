@@ -18844,19 +18844,37 @@
       "id": "codex-rs/code-mode-protocol/src/description.rs#field_declaration@8324",
       "sha256": "cb33212189385fa76c731a9c3d9bcf496b8436ef30c8a0372dd4218881257de6",
       "scopeSha256": "0d8122c45b1373e5ebf57db039499ecd298014a9642e8c108b08c9554ec15512",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/describe/f05446b67e6fe259b53b",
+          "inputSha256": "f05446b67e6fe259b53be9cf8e9e14c584fe0479b9a936bc830226c2f22421e9",
+          "productionEntrypoint": "splice.upstream.codemode.diagnostics.CodeModeCoreProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/code-mode-protocol/src/description.rs#field_declaration@8324"
+        }
+      ],
+      "reason": "The exact typed namespace description and its name/guidance are observed in the actual source-rendered namespace heading; the complete named production description comparison is mandatory. No declaration receives credit solely from its parent's function entry."
     },
     {
       "id": "codex-rs/code-mode-protocol/src/description.rs#field_declaration@8346",
       "sha256": "cd3b23e5ad87d17f9d4154d6f351ed0508124a9ed77a6dec3625f336d3653487",
       "scopeSha256": "f324bd28723ba6cc94dc6ebd09f8b4b6ad94243d1028b15af2b85361bcf432d9",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/describe/f05446b67e6fe259b53b",
+          "inputSha256": "f05446b67e6fe259b53be9cf8e9e14c584fe0479b9a936bc830226c2f22421e9",
+          "productionEntrypoint": "splice.upstream.codemode.diagnostics.CodeModeCoreProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/code-mode-protocol/src/description.rs#field_declaration@8346"
+        }
+      ],
+      "reason": "The exact typed namespace description and its name/guidance are observed in the actual source-rendered namespace heading; the complete named production description comparison is mandatory. No declaration receives credit solely from its parent's function entry."
     },
     {
       "id": "codex-rs/code-mode-protocol/src/description.rs#field_declaration@8512",
@@ -19204,10 +19222,19 @@
       "id": "codex-rs/code-mode-protocol/src/description.rs#struct_item@8282",
       "sha256": "24fb42d5b05d7fc0d6ecb3ccced1c97ec140b245aef5c260f2fd65ae51f76fbd",
       "scopeSha256": "39faf32a0d0219a52773c057d0032b55256ff3c2b2fae810e613fd142b490289",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/describe/f05446b67e6fe259b53b",
+          "inputSha256": "f05446b67e6fe259b53be9cf8e9e14c584fe0479b9a936bc830226c2f22421e9",
+          "productionEntrypoint": "splice.upstream.codemode.diagnostics.CodeModeCoreProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/code-mode-protocol/src/description.rs#struct_item@8282"
+        }
+      ],
+      "reason": "The exact typed namespace description and its name/guidance are observed in the actual source-rendered namespace heading; the complete named production description comparison is mandatory. No declaration receives credit solely from its parent's function entry."
     },
     {
       "id": "codex-rs/code-mode-protocol/src/description.rs#struct_item@8458",
@@ -61663,10 +61690,10 @@
       "id": "codex-rs/core/src/tools/context.rs#enum_item@2154",
       "sha256": "5e9ac75976aeeaa598c3863d361a760ba160b89b18bfa49a52ea831d8343ae00",
       "scopeSha256": "323cc06124dfaeb3cdc1780599bc145f6fd2b3651105e7a3728532322741ed4e",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for ToolCallSource. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#enum_item@2154; source hash: 5e9ac75976aeeaa598c3863d361a760ba160b89b18bfa49a52ea831d8343ae00."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#enum_item@2723",
@@ -61681,28 +61708,28 @@
       "id": "codex-rs/core/src/tools/context.rs#enum_variant@2184",
       "sha256": "002c7c68468b4f550fbaa7fb8588155c58f8b5760fde69b3fe1773ae2a197ba2",
       "scopeSha256": "3442759e5a754a6d8dd7b52c87ff259021f63bc7c876ea6e0ab326edb6c44fad",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for ToolCallSource. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#enum_item@2154; source hash: 5e9ac75976aeeaa598c3863d361a760ba160b89b18bfa49a52ea831d8343ae00."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#enum_variant@2196",
       "sha256": "968f0c17d624a34804e91a9002d71b92a5976ba567eb44835ee7f3ec71b0b764",
       "scopeSha256": "1874d4676f1cddc7d282edf6dc363e9b72b65a1e8117c086d175c22c4bddd9a2",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for ToolCallSource. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#enum_item@2154; source hash: 5e9ac75976aeeaa598c3863d361a760ba160b89b18bfa49a52ea831d8343ae00."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#enum_variant@2224",
       "sha256": "a6e73160c97749116c6cd99702328b80e8d2c1f0676e5127a8c6a899a3da657f",
       "scopeSha256": "0e12b9fd456eb65f55c5e2206a060bc27e492bdeef52b3754e521fc42d20ebde",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for ToolCallSource. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#enum_item@2154; source hash: 5e9ac75976aeeaa598c3863d361a760ba160b89b18bfa49a52ea831d8343ae00."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#enum_variant@2777",
@@ -61744,19 +61771,19 @@
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@10263",
       "sha256": "9d674ccb71aebb6e2d222531d1855ede2407d87fe81523e654ec2da5da444524",
       "scopeSha256": "ed983b7173b2709df8299987616ad0dfe3d2a3afe6097aa34aa888ae76f50f52",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for FunctionToolOutput. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#struct_item@10227; source hash: ff483746593e962ee2f10f15f3eb483dd1ab4631c73c7842ff9547ab36890ce8."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@10313",
       "sha256": "7cbca4c5fba93a35f7181271004dff2061f6144079fe45aa6e5a8291a3486289",
       "scopeSha256": "34b7e1c2e22cc9abca92708149e80390b128b2290aecd3ca1213d4a9cd7870a3",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for FunctionToolOutput. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#struct_item@10227; source hash: ff483746593e962ee2f10f15f3eb483dd1ab4631c73c7842ff9547ab36890ce8."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@10344",
@@ -61780,10 +61807,10 @@
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@12612",
       "sha256": "3219f3b28b2c25a954a3703c9e513a2219e05ae5ad84f0e48e0c2097eee4ae2c",
       "scopeSha256": "d66fcf5c02a2b2b66866d90b278c9b5ab34f95f717acd95121a21a9e7477eb4d",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for AbortedToolOutput. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#struct_item@12577; source hash: bbb6d2987075bb888ade5372c6846e28dc2165be82b3005940d0697ffa7b9197."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@13573",
@@ -61798,28 +61825,28 @@
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@13604",
       "sha256": "0be5d5b68e241646155a64e8ae4e77e848f4c6bf73424094f61d79043f576a2e",
       "scopeSha256": "d86812dc039688aa9d89ac58a7d4dba495608f51022f23e129cc37cc34e35dce",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for ExecCommandToolOutput. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#struct_item@13534; source hash: b81a4dba59cbde29be8091618a6e96bb460f8a1a69913507a03fa9361efa9cc3."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@13630",
       "sha256": "c2f521f4f157de8734ab956e20d6aaf08a328860b16681d49a2e408f3b56ed50",
       "scopeSha256": "ca290a30946be1c6fe981e1efce6ba986d0f0ef1ee197ce3d5d50763d694dcb7",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for ExecCommandToolOutput. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#struct_item@13534; source hash: b81a4dba59cbde29be8091618a6e96bb460f8a1a69913507a03fa9361efa9cc3."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@13736",
       "sha256": "d9f2b82a05418d3af1f3339d0be2975ca65565146ecb5761d7b962bf3ae0de72",
       "scopeSha256": "93761fb85e43d7a0358536fefd115b8d155e7b7dec03576b05798b0ff9fa0d9d",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for ExecCommandToolOutput. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#struct_item@13534; source hash: b81a4dba59cbde29be8091618a6e96bb460f8a1a69913507a03fa9361efa9cc3."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@13765",
@@ -61834,46 +61861,46 @@
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@13810",
       "sha256": "cdf5c3a7b686b0bbed155206839312eacfc37b21419ec5c39e3a029b8b1f464d",
       "scopeSha256": "e2fa68f0b6e058f5ee1220b92720e1ed9b7980d74daad380d91568fb224163ea",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for ExecCommandToolOutput. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#struct_item@13534; source hash: b81a4dba59cbde29be8091618a6e96bb460f8a1a69913507a03fa9361efa9cc3."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@13852",
       "sha256": "b0bf520e89175f0a70d707f54a83984827c17e04b4217763b9f346181598584c",
       "scopeSha256": "7fc4374317c9f8ddb9a55eda4757c28442a6c896899f795b8fcef33ca6695301",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for ExecCommandToolOutput. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#struct_item@13534; source hash: b81a4dba59cbde29be8091618a6e96bb460f8a1a69913507a03fa9361efa9cc3."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@13885",
       "sha256": "5a35b72eecac9ed54a151cfc63bc2ebf06eed887ac40c60d32d1f4c63b9cdb7c",
       "scopeSha256": "5f7e496e7dc268dd26abf34b821ee532713b2659be3406c846936166e863b57a",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for ExecCommandToolOutput. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#struct_item@13534; source hash: b81a4dba59cbde29be8091618a6e96bb460f8a1a69913507a03fa9361efa9cc3."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@13917",
       "sha256": "d5c0e7a28c7ba2a44c12b524e1593bb4e0ca7a8be17f7b1181c00f1be44594ff",
       "scopeSha256": "df8e49c85d44a850a85f62af2cd148a6d1772a5bbb06679b20f1a202298fae23",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for ExecCommandToolOutput. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#struct_item@13534; source hash: b81a4dba59cbde29be8091618a6e96bb460f8a1a69913507a03fa9361efa9cc3."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@14045",
       "sha256": "12f88a82e810cad9115c5d1b1a1796f2ee8c21cc0ff22cf82f3d5e7b91b5d7f4",
       "scopeSha256": "0a78ffc7f81c91806dec5b0308b46973b855e3f7ff181d37a99f8a0746d337ea",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for ExecCommandToolOutput. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#struct_item@13534; source hash: b81a4dba59cbde29be8091618a6e96bb460f8a1a69913507a03fa9361efa9cc3."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@14097",
@@ -61960,19 +61987,19 @@
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@2305",
       "sha256": "8dac9a9fac81b120729b6939b6002c0533b2e83475bc60975257edce619e40e8",
       "scopeSha256": "d222ef25ad3bade28185040a9cd6ca9ce345abfb524cf494851037bad7c51441",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for ToolCallSource. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#enum_item@2154; source hash: 5e9ac75976aeeaa598c3863d361a760ba160b89b18bfa49a52ea831d8343ae00."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@2560",
       "sha256": "2101a6eaef0bfdd1eede2bb65ba5723d78160b635eecd11aab224609f0c8a863",
       "scopeSha256": "2e2d9ac68894fb3e5a27c1169fe4b3b1af05ef31f4949208bdbed44b6eae0deb",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for ToolCallSource. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#enum_item@2154; source hash: 5e9ac75976aeeaa598c3863d361a760ba160b89b18bfa49a52ea831d8343ae00."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@2910",
@@ -61996,91 +62023,91 @@
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@3927",
       "sha256": "8731edc775a579cde9503434e577a93e9931ddb0c6a7841d999f2c568f2eb07b",
       "scopeSha256": "8b8e25b8d0ce8aab319d6a745e541ed90a864c94514bc736ebd7c8100f37e6c2",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for ToolInvocation. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#struct_item@3895; source hash: 47bc52f670ba8f111ff552bc65ea7fc7901935144c83c69fad5884da304d9a05."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@4049",
       "sha256": "07c2ac993178449e56565178138efacf57e92d7565cc62c72f933752fa55a048",
       "scopeSha256": "4ee829a21f3b3859d1eccd5c4a7fc69d77a335d910c4b5cf12cb6d20853f8346",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for ToolInvocation. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#struct_item@3895; source hash: 47bc52f670ba8f111ff552bc65ea7fc7901935144c83c69fad5884da304d9a05."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@4081",
       "sha256": "0d56d4f63d579a43a233731a88cebe0100537b9ee7d8627366440c299f827c7d",
       "scopeSha256": "55d0186fdb578b0e5aeb3c56f5914279bbca3d3d494ea872458f3c35ca86f092",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for ToolInvocation. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#struct_item@3895; source hash: 47bc52f670ba8f111ff552bc65ea7fc7901935144c83c69fad5884da304d9a05."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@4128",
       "sha256": "2f3cdd07e2a134b4ede0b448efc48347cc5d70ef57039c1b7f84cdbbe9bd119f",
       "scopeSha256": "70f488e3d725067f337efc7a0d3b660c352c6d64bbde11da2f2998d8bf09b59a",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for ToolInvocation. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#struct_item@3895; source hash: 47bc52f670ba8f111ff552bc65ea7fc7901935144c83c69fad5884da304d9a05."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@4175",
       "sha256": "52fef3766165ddcd4cc44d57de9871e330656bb925af5a3efaef78d73b5dea33",
       "scopeSha256": "d5d3dac56645e6e9c85ce7f4ae97d95d6e19b729210ddfb724071f246ab703c4",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for ToolInvocation. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#struct_item@3895; source hash: 47bc52f670ba8f111ff552bc65ea7fc7901935144c83c69fad5884da304d9a05."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@4215",
       "sha256": "e0406b57b51f20e84b7a3a218e68b382e063eee900e3b0c22fbc9ff9b2a7eb3e",
       "scopeSha256": "43100f48e4f59b8dce2312e4d12b5ad6a360702cab74a90c4911d70866bfd2bb",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for ToolInvocation. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#struct_item@3895; source hash: 47bc52f670ba8f111ff552bc65ea7fc7901935144c83c69fad5884da304d9a05."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@4240",
       "sha256": "d6e2cbd40b09206163e29c154b85a3c2c79715ec06c212ba40e688c66f4cac63",
       "scopeSha256": "50b2dd727cb10cca5e3ab6e862802105cfb8773f27b01ebf28c4e2b04e64788a",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for ToolInvocation. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#struct_item@3895; source hash: 47bc52f670ba8f111ff552bc65ea7fc7901935144c83c69fad5884da304d9a05."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@4269",
       "sha256": "27806fba2d48071e516c1fb9223ac66e5cd0cd99330ba486e01ed7deeb815bf1",
       "scopeSha256": "ed84971f34306bad39b26e8ddab1161184666fef1946df78378689a93deba740",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for ToolInvocation. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#struct_item@3895; source hash: 47bc52f670ba8f111ff552bc65ea7fc7901935144c83c69fad5884da304d9a05."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@4301",
       "sha256": "3bcdbef366512c1906498d19d18f7d206e5ce1eed4bc0917f9722ea277e3f16f",
       "scopeSha256": "9ff6b7375ac349ec4101010ad740709bcb397f5d4959b046fe42b3a7ba274640",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for ToolInvocation. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#struct_item@3895; source hash: 47bc52f670ba8f111ff552bc65ea7fc7901935144c83c69fad5884da304d9a05."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@4402",
       "sha256": "0d640980d7ff4d3fba623e258514a02bc1f454853d7ce8dacca3fa9285263013",
       "scopeSha256": "10ab08e634acf6cc8f97a425b9af3d4e35fadf0b5d11d506423fa2371f790ebc",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for ToolInvocation. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#struct_item@3895; source hash: 47bc52f670ba8f111ff552bc65ea7fc7901935144c83c69fad5884da304d9a05."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@4716",
@@ -62104,10 +62131,10 @@
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@5931",
       "sha256": "083373fc88169e7d7db3d98a00d6a8b0f635f95502045a0cae926c0b50df8c34",
       "scopeSha256": "c6f49da0853f9b946c212c68e08a6f63ad4d6760b48210cd948298fc92e525e9",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for McpToolOutput. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#struct_item@5900; source hash: 3b3a00ceba0cecfe860050612decf73c1d589754cce3812c25e13d254c2a97e9."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#field_declaration@5963",
@@ -62716,10 +62743,10 @@
       "id": "codex-rs/core/src/tools/context.rs#struct_item@10227",
       "sha256": "ff483746593e962ee2f10f15f3eb483dd1ab4631c73c7842ff9547ab36890ce8",
       "scopeSha256": "d72557370e84acda7f41696ac71ad151b906ec334992a9010e4a1b22bd12a234",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for FunctionToolOutput. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#struct_item@10227; source hash: ff483746593e962ee2f10f15f3eb483dd1ab4631c73c7842ff9547ab36890ce8."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#struct_item@11626",
@@ -62734,10 +62761,10 @@
       "id": "codex-rs/core/src/tools/context.rs#struct_item@12577",
       "sha256": "bbb6d2987075bb888ade5372c6846e28dc2165be82b3005940d0697ffa7b9197",
       "scopeSha256": "ec3ea2a1aa5a0fbca2a0717fd00d2e477681db9b59e4c81eabf1015bfbb37506",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for AbortedToolOutput. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#struct_item@12577; source hash: bbb6d2987075bb888ade5372c6846e28dc2165be82b3005940d0697ffa7b9197."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#struct_item@13534",
@@ -62770,10 +62797,10 @@
       "id": "codex-rs/core/src/tools/context.rs#struct_item@3895",
       "sha256": "47bc52f670ba8f111ff552bc65ea7fc7901935144c83c69fad5884da304d9a05",
       "scopeSha256": "4f28566b6233a5a3e3414f029ac207846cfa6f9bffd02117abbb31e86cfa0e36",
-      "disposition": "unsupported",
+      "disposition": "context",
       "verifiers": [],
       "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "reason": "Exact effectively crate-private nonwire Rust representation for ToolInvocation. Immutable core lib.rs keeps tools private; tools/mod.rs restricts context and router to the crate. The only ToolCallSource reexport remains inside that restricted router. These exact owners have no serde/JSON/V8/FFI layout conversion; the nested serialized UnifiedExecCodeModeResult and protocol/extension DTOs are separate obligations. All 47 exact selected executable declarations, including dispatch, explicit result projection and extension conversion, remain required with their original hashes. This representation receives no execution PASS. Owner: codex-rs/core/src/tools/context.rs#struct_item@3895; source hash: 47bc52f670ba8f111ff552bc65ea7fc7901935144c83c69fad5884da304d9a05."
     },
     {
       "id": "codex-rs/core/src/tools/context.rs#struct_item@4561",
@@ -100447,10 +100474,19 @@
       "id": "codex-rs/protocol/src/openai_models.rs#field_declaration@13817",
       "sha256": "9aa16ac78fd1dd8ed13c8e3dc0bd6da8a5cb4521fba568484951a3b3e1873544",
       "scopeSha256": "8466baf15100e5b5766b72a7136c09b45abfe9e7b0a0fa76dcf7833c87d93fed",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/api_metadata/cd9b7de1bb85c8a1d1a1",
+          "inputSha256": "cd9b7de1bb85c8a1d1a101b005a82198623bc552c29e70fcda34663f030c7a07",
+          "productionEntrypoint": "splice.models.discovery.ModelMetadataProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/protocol/src/openai_models.rs#field_declaration@13817"
+        }
+      ],
+      "reason": "This exact typed source member has an equal present output projection through the production model metadata parser and real cache. The full immutable API batch, including its currently failing rows, remains mandatory for final qualification; no development comparison is a qualification PASS."
     },
     {
       "id": "codex-rs/protocol/src/openai_models.rs#field_declaration@13886",
@@ -100969,10 +101005,19 @@
       "id": "codex-rs/protocol/src/openai_models.rs#field_declaration@24562",
       "sha256": "b392904ebda39ac8062637c4a10e9775c15cf1c3821cb0c5b28385b9fe0bee2d",
       "scopeSha256": "fd4cac2ed96d17ef1ba8e71c62d2ac4ae188e9a44f6982e318825942ebc90e3c",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/api_metadata/cd9b7de1bb85c8a1d1a1",
+          "inputSha256": "cd9b7de1bb85c8a1d1a101b005a82198623bc552c29e70fcda34663f030c7a07",
+          "productionEntrypoint": "splice.models.discovery.ModelMetadataProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/protocol/src/openai_models.rs#field_declaration@24562"
+        }
+      ],
+      "reason": "This exact typed source member has an equal present output projection through the production model metadata parser and real cache. The full immutable API batch, including its currently failing rows, remains mandatory for final qualification; no development comparison is a qualification PASS."
     },
     {
       "id": "codex-rs/protocol/src/openai_models.rs#field_declaration@25293",
@@ -102355,10 +102400,19 @@
       "id": "codex-rs/protocol/src/openai_models.rs#struct_item@18859",
       "sha256": "eb967632115a99ef8caae3801af020cd562ccd74c1e4dd85cfab18dabf6f780a",
       "scopeSha256": "cd82a3fbd2f4992fce4de8695478fbc95675f51611abb79257af9ab0b0efb4e0",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/api_metadata/cd9b7de1bb85c8a1d1a1",
+          "inputSha256": "cd9b7de1bb85c8a1d1a101b005a82198623bc552c29e70fcda34663f030c7a07",
+          "productionEntrypoint": "splice.models.discovery.ModelMetadataProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/protocol/src/openai_models.rs#struct_item@18859"
+        }
+      ],
+      "reason": "This exact typed source member has an equal present output projection through the production model metadata parser and real cache. The full immutable API batch, including its currently failing rows, remains mandatory for final qualification; no development comparison is a qualification PASS."
     },
     {
       "id": "codex-rs/protocol/src/openai_models.rs#struct_item@20418",
@@ -102391,10 +102445,19 @@
       "id": "codex-rs/protocol/src/openai_models.rs#struct_item@24295",
       "sha256": "1086988a6cb49f16c85f17be9036a50c0d98168ce00c0748f43c8b96a4be658b",
       "scopeSha256": "508f7ed64a5aa6199ae8674d55a23cd86a06fa68a6d20aae0c1b51a49ec32460",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/api_metadata/cd9b7de1bb85c8a1d1a1",
+          "inputSha256": "cd9b7de1bb85c8a1d1a101b005a82198623bc552c29e70fcda34663f030c7a07",
+          "productionEntrypoint": "splice.models.discovery.ModelMetadataProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/protocol/src/openai_models.rs#struct_item@24295"
+        }
+      ],
+      "reason": "This exact typed source member has an equal present output projection through the production model metadata parser and real cache. The full immutable API batch, including its currently failing rows, remains mandatory for final qualification; no development comparison is a qualification PASS."
     },
     {
       "id": "codex-rs/protocol/src/openai_models.rs#struct_item@25601",

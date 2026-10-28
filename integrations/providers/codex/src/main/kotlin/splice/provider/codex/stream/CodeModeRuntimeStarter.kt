@@ -27,6 +27,14 @@ import splice.upstream.failure.CodeModeCapacityException
 import splice.upstream.failure.CodeModeStartException
 import splice.upstream.failure.CodeModeToolException
 import java.io.IOException
+
+/** Expected preflight refusal never uses an exception or implies that a runtime opened. */
+internal sealed class CodeModeRuntimeSelection {
+    abstract val record: CodeModeRecord
+    data class Ready(override val record: CodeModeRecord) : CodeModeRuntimeSelection()
+    data class Refused(override val record: CodeModeRecord, val reason: String) : CodeModeRuntimeSelection()
+}
+
 internal class CodeModeRuntimeStarter(
     private val run: CodeModeRuntimeRun,
     private val registry: CodexCodeModeRegistry,
@@ -99,12 +107,24 @@ internal class CodeModeRuntimeStarter(
         record: CodeModeRecord,
         stream: CodeModeLiveRound?,
         policy: CodeModeToolPolicy = CodeModeToolPolicy(),
-    ): CodeModeRecord {
+    ): CodeModeRuntimeSelection {
         CodeModeAvailabilityPlan(config.runtimes.availability(), policy.presentation.toolMode).rejection?.let {
-            throw CodeModeArgumentException(it)
+            val selected = if (stream == null) {
+                record
+            } else {
+                stream.select(record)
+                    ?: throw IOException("Native source did not complete")
+            }
+            return CodeModeRuntimeSelection.Refused(selected, it)
         }
-        if (stream == null || runtime() !is NativeCodeModeLifecycle) return record
-        return stream.select(record) ?: throw IOException("Native source did not complete")
+        if (stream == null || runtime() !is NativeCodeModeLifecycle) return CodeModeRuntimeSelection.Ready(record)
+        val selected = stream.select(record) ?: throw IOException("Native source did not complete")
+        return CodeModeRuntimeSelection.Ready(selected)
+    }
+
+    fun refused(record: CodeModeRecord, reason: String): TurnOutcome.Success {
+        registry.complete(record, reason)
+        return CodeModeLocalOutcome.success()
     }
 
     /** A failure before source dispatch has a typed proof; every other start failure stays no-rerun. */

@@ -6,6 +6,7 @@ import java.net.URL
 import java.util.Locale
 import java.util.Properties
 
+// why: pinned manifests are tiny; 4 KiB bounds preflight resource reads before any host payload is opened.
 private const val MANIFEST_BYTES: Int = 4096
 
 /** Bounded resource preflight. Payload verification and process startup remain owned by resolve/open. */

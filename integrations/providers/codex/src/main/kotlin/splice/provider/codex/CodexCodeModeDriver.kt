@@ -58,11 +58,12 @@ internal class CodexCodeModeDriver(
         batches,
     )
 
+    private val starting = CodeModeBatchStart(::startRuntime)
     private val generated = CodeModeGeneratedContinuation(
         streams,
         batches,
         CodeModeGeneratedActions(
-            CodeModeBatchStart(::startRuntime),
+            starting,
             CodeModeBatchPost(::post),
             CodeModeBatchRewrite(::continuation),
             CodeModeBatchRefusal(protocol::failure),
@@ -258,14 +259,7 @@ internal class CodexCodeModeDriver(
         context: CodeModeRunContext,
         stream: CodeModeLiveRound? = null,
     ): Pair<CodeModeRecord, TurnOutcome> = try {
-        val selected = starter.select(record, stream, context.turn.toolPolicy)
-        if (selected.id != record.id) {
-            val round = checkNotNull(stream)
-            streams.keep(selected, round, record)
-            startRuntime(selected, context, round)
-        } else {
-            dispatch.start(record, context, stream)
-        }
+        dispatch.selected(record, starter.select(record, stream, context.turn.toolPolicy), context, stream, starting)
     } catch (error: CancellationException) {
         starter.cancelled(record, error)
         throw error

@@ -13,6 +13,7 @@ import splice.provider.codex.CodexCodeModeMachine
 import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.history.CodeModeUpstreamHistory
 import splice.provider.codex.stream.CodeModeLiveRound
+import splice.provider.codex.stream.CodeModeRuntimeSelection
 import splice.provider.codex.stream.CodeModeRuntimeStarter
 import splice.provider.codex.stream.CodeModeStreams
 
@@ -25,6 +26,23 @@ internal class CodeModeRuntimeDispatch(
     private val sent: CodeModeUpstreamHistory,
     private val batches: CodeModeBatchDispatch,
 ) {
+    suspend fun selected(
+        record: CodeModeRecord,
+        selected: CodeModeRuntimeSelection,
+        context: CodeModeRunContext,
+        stream: CodeModeLiveRound?,
+        restarting: CodeModeBatchStart,
+    ): Pair<CodeModeRecord, TurnOutcome> = if (selected.record.id != record.id) {
+        val round = checkNotNull(stream)
+        streams.keep(selected.record, round, record)
+        restarting.start(selected.record, context, round)
+    } else {
+        when (selected) {
+            is CodeModeRuntimeSelection.Refused -> record to starter.refused(record, selected.reason)
+            is CodeModeRuntimeSelection.Ready -> start(record, context, stream)
+        }
+    }
+
     suspend fun start(
         record: CodeModeRecord,
         context: CodeModeRunContext,

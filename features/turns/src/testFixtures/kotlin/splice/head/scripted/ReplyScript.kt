@@ -3,6 +3,7 @@
 // built from them, so a test scripts "an Anthropic error after some text" without spelling the JSON.
 package splice.head.scripted
 
+import kotlinx.coroutines.Deferred
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.time.Duration
 
@@ -53,6 +54,14 @@ public sealed class ReplyStep {
     /** Waits until the test calls [ScriptedProvider.release], or until the head hangs up. */
     public data object Hold : ReplyStep() {
         override suspend fun playOn(wire: ReplyWire): Boolean = wire.hold()
+    }
+
+    /** A reply-local delivery proof, independent of every other held reply on this provider. */
+    public data class AwaitSignal(val signal: Deferred<Unit>) : ReplyStep() {
+        override suspend fun playOn(wire: ReplyWire): Boolean {
+            signal.await()
+            return true
+        }
     }
 
     /**
@@ -284,6 +293,10 @@ public class ReplyScript : AnthropicFrames, ChatFrames, ResponsesFrames {
 
     public fun hold() {
         steps += ReplyStep.Hold
+    }
+
+    public fun awaitSignal(signal: Deferred<Unit>) {
+        steps += ReplyStep.AwaitSignal(signal)
     }
 
     public fun cut() {

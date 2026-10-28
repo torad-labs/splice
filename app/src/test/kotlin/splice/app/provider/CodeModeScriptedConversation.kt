@@ -5,6 +5,7 @@
 // and the rig that starts the head. Everything between the client and the backend is the head's own.
 package splice.app.provider
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -228,7 +229,10 @@ internal class CodeModeConversation(val session: String, opening: String) {
 }
 
 /** A scripted answer of GPT's, and the response id the backend keeps its output under (none when it gave none). */
-internal data class GptAnswer(val reply: ScriptedReply, val id: String?)
+internal data class GptAnswer(val reply: ScriptedReply, val id: String?, val delivery: GptDelivery? = null)
+
+/** The exact partial text the real client must receive before this particular reply may cut its connection. */
+internal data class GptDelivery(val text: String, val observed: CompletableDeferred<Unit> = CompletableDeferred())
 
 /** GPT as the backend streams it: each answer its own response, whose output the backend keeps by id. Reasoning items
  *  carry the stream's empty content, as the backend sends them. */
@@ -269,13 +273,16 @@ internal class ScriptedGpt {
         val id = "resp_synthetic_$n"
         val output = listOf(reasoning(n), message(n, text))
         outputs[id] = output.take(1)
+        val delivery = GptDelivery(text)
         return GptAnswer(
             reply {
                 event(created(id))
                 output.forEachIndexed { at, item -> stream(this, at, item, done = at == 0) }
+                awaitSignal(delivery.observed)
                 cut()
             },
             id,
+            delivery,
         )
     }
 
@@ -595,7 +602,25 @@ internal class CodeModeRig(val head: ScriptedHead, private val ledger: BackendLe
         ledger.script(answers.toList())
         val body = JsonObject(talk.body() + ("model" to JsonPrimitive(model)))
         val request = ClientRequest(text = "", stream = true, session = talk.session, extra = body)
-        val answer = withTimeoutOrNull(TURN_LIMIT_MS) { head.client.send(request) }
+        val answer = withTimeoutOrNull(TURN_LIMIT_MS) {
+            val stream = head.client.open(request)
+            val deliveries = answers.mapNotNull { it.delivery }
+            require(deliveries.size <= 1) { "One client observation may release at most one truncated reply" }
+            val delivery = deliveries.singleOrNull()
+            try {
+                delivery?.let {
+                    val seen = stream.awaitText(it.text)
+                    assertTrue(
+                        it.text in seen.text,
+                    ) { "The intended partial output never reached the client: ${seen.describe()}" }
+                    it.observed.complete(Unit)
+                }
+                stream.finish()
+            } finally {
+                delivery?.observed?.complete(Unit)
+                if (!stream.finished) stream.hangUp()
+            }
+        }
         ledger.took(before, answers.toList())
         return answer ?: fail("the head never answered within ${TURN_LIMIT_MS / 1000} s\n${ledger.summary(this)}")
     }

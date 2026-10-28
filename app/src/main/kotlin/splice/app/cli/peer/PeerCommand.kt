@@ -7,6 +7,9 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import splice.app.cli.hook.HarnessHook
+import splice.app.cli.hook.StdinDevice
+import splice.app.cli.hook.StdinTerminal
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
@@ -19,9 +22,11 @@ internal class PeerCommand(
     private val err: TerminalOutput = TerminalOutput(System.err::println),
     private val env: EnvReader = EnvReader(System::getenv),
     private val stdin: PeerStdin = PeerStdin { System.`in`.readBytes().decodeToString() },
+    private val terminal: StdinTerminal = StdinDevice(),
 ) {
     private val call = PeerCall(env, err)
     private val reader = PeerReader(call, out, err)
+    private val hooks = HarnessHook(stdin::read, terminal, err)
 
     suspend fun run(args: List<String>): Int {
         val verb = args.firstOrNull().orEmpty()
@@ -29,7 +34,7 @@ internal class PeerCommand(
         val code = when (verb) {
             "register", "list", "revoke", "rotate", "webhook" -> manage(verb, rest)
             "send", "inbox", "status" -> asPeer(verb, rest)
-            "codex" -> PeerCodexCommand(call, out, env).run(rest)
+            "codex" -> PeerCodexCommand(call, out, env, hooks).run(rest)
             "limit" -> PeerLimitCommand(call, out).run(rest)
             else -> null
         }

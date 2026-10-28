@@ -25,7 +25,6 @@ import java.nio.file.Path
 internal const val CODEX_THREAD_ENV = "CODEX_THREAD_ID"
 private const val CODEX_SESSION_ENV = "CODEX_SESSION_ID"
 private const val CODEX_HOME_ENV = "CODEX_HOME"
-private const val HOOK_FLAG = "--hook"
 
 /** `splice peer codex <attach|detach>`. */
 internal class PeerCodexCommand(
@@ -47,7 +46,7 @@ internal class PeerCodexCommand(
     /** `attach [<thread>] [--cwd DIR] [--codex-home DIR] [--json] [--hook]`. */
     private fun attach(args: List<String>): Int? {
         val parsed = attachArgs.parse(args)
-        val look = hooks.look(parsed.forcesHook() || HOOK_FLAG in args)
+        val look = hooks.look(parsed?.forcesHook() == true || HOOK_FLAG in args)
         val thread = parsed?.takeIf { it.words.size <= 1 }?.let { named(it.words, look) }
         return when {
             parsed == null || parsed.words.size > 1 -> look.refuseUsage()
@@ -105,7 +104,7 @@ internal class PeerCodexCommand(
     /** `detach [<thread>] [--purge] [--hook]`: revokes the thread's peer; its journal stays unless --purge. */
     private fun detach(args: List<String>): Int? {
         val parsed = detachArgs.parse(args)
-        val look = hooks.look(parsed.forcesHook() || HOOK_FLAG in args)
+        val look = hooks.look(parsed?.forcesHook() == true || HOOK_FLAG in args)
         val thread = parsed?.takeIf { it.words.size <= 1 }?.let { named(it.words, look) }
         return when {
             parsed == null || parsed.words.size > 1 -> look.refuseUsage()
@@ -135,6 +134,4 @@ internal class PeerCodexCommand(
     }
 
     private fun absolute(path: String): String = Path.of(path).toAbsolutePath().normalize().toString()
-
-    private fun PeerArgs?.forcesHook(): Boolean = this != null && HOOK_FLAG in switches
 }

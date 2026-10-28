@@ -31,6 +31,11 @@ internal fun interface StdinTerminal {
     fun isTerminal(): Boolean
 }
 
+/** The complete hook payload supplied on standard input. */
+internal fun interface HookStdin {
+    operator fun invoke(): String
+}
+
 /** `/proc/self/fd/0` names a terminal; anything else, including a pipe, does not. */
 internal object StdinKind {
     fun terminal(link: String): Boolean = link.startsWith("/dev/pts/") || link.startsWith("/dev/tty")
@@ -97,7 +102,7 @@ internal class HookLook(
 
 /** Reads a harness hook's stdin once and decides whether this process may block a turn. */
 internal class HarnessHook(
-    private val stdin: () -> String,
+    private val stdin: HookStdin,
     private val terminal: StdinTerminal,
     private val err: TerminalOutput,
 ) {

@@ -17,7 +17,11 @@ internal const val PEER_USAGE =
         "codex detach [<thread>] [--purge] [--hook]"
 
 /** One verb's words: the positionals in order, the flags that take a value, and the switches that stand alone. */
-internal data class PeerArgs(val words: List<String>, val values: Map<String, String>, val switches: Set<String>)
+internal data class PeerArgs(val words: List<String>, val values: Map<String, String>, val switches: Set<String>) {
+    fun forcesHook(): Boolean = HOOK_FLAG in switches
+}
+
+internal const val HOOK_FLAG = "--hook"
 
 /** Splits argv into [PeerArgs] against the flags a verb accepts; null on an unknown, repeated or valueless flag. */
 internal class PeerArgsParser(private val valued: Set<String>, private val standalone: Set<String>) {

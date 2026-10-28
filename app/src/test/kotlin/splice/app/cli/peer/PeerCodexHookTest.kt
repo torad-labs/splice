@@ -19,11 +19,11 @@ import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.hook.StdinKind
 import splice.app.cli.hook.StdinTerminal
 import splice.core.terminal.TerminalOutput
+import splice.core.testing.TestPorts
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.core.wire.HttpStatus
 import java.net.InetSocketAddress
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -245,7 +245,7 @@ private fun field(body: String, key: String): String? =
 
 private fun absolute(path: String): String = Path.of(path).toAbsolutePath().normalize().toString()
 
-private fun closedPort(): Int = ServerSocket(0).use { it.localPort }
+private fun closedPort(): Int = TestPorts.reserve()
 
 private fun daemonEnv(dir: Path, port: Int): Map<String, String> {
     val state = Files.createDirectories(dir.resolve("state"))

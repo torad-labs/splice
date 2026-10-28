@@ -60,11 +60,8 @@ internal object CodeModeDescriptions {
         val sections = ArrayList<String>()
         val descriptions = namespaceDescriptions(tools)
         var namespace: String? = null
-        val ordered = tools.sortedWith(
-            compareBy<CodeModeManual.NestedTool, String?>(nullsFirst(CodeModeText.order)) { it.metadata.namespace }
-                .thenBy(CodeModeText.order) { it.name }.thenBy(CodeModeText.order) { it.codeModeName },
-        ).distinctBy { it.codeModeName }
-        for (tool in ordered) {
+        // Collection owns normalization; the source description renderer preserves its supplied definitions.
+        for (tool in tools) {
             val metadata = tool.metadata
             if (namespace != metadata.namespace) {
                 val description = descriptions[metadata.namespace].orEmpty()

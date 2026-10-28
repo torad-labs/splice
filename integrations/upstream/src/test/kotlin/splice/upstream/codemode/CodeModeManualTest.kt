@@ -43,11 +43,20 @@ class CodeModeManualTest {
             manual.contains("hidden_dynamic_tool(args: { city: string; }): Promise<unknown>;"),
             manual,
         )
-        assertTrue(manual.indexOf("### `foo`") < manual.indexOf("### `hidden_dynamic_tool`"), "name order")
+        assertTrue(manual.indexOf("### `hidden_dynamic_tool`") < manual.indexOf("### `foo`"), "supplied order")
         // Current Codex adds the deferred-tools note to every manual, withheld tools or not: its
         // build_exec_tool_description takes the deferred list as an unused `_deferred_tools`
         // (codex-rs/code-mode-protocol/src/description.rs @ rust-v0.164.0).
         assertTrue(manual.contains("Some deferred nested tools may be omitted"), manual)
+    }
+
+    @Test
+    fun `description preserves repeated supplied definitions as the native renderer does`() {
+        val tools = listOf("z", "a", "z").map { name -> NestedTool(name, "Tool $name", null) }
+        val manual = CodeModeManual.description(tools, deferred = false)
+        val headings = Regex("(?m)^### `([^`]+)`").findAll(manual).map { it.groupValues[1] }.toList()
+
+        assertEquals(listOf("z", "a", "z"), headings)
     }
 
     @Test

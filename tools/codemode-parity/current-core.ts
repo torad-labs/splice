@@ -65,8 +65,10 @@ export async function prepareCurrentCoreOracleSources(directory: string, lock: C
     await save("native-output-value-impls.rs", `impl JsonOutputValue {\n${jsonMethodSource}\n}\nimpl McpOutputValue {\n${mcpMethodSource}\n}\n`);
     const waitFile = "codex-rs/core/src/tools/code_mode/wait_handler.rs";
     const waitSource = await capturedCommand(["git", "-C", sourceRepository, "show", `${lock.sourceRevision}:${waitFile}`], directory);
-    assert.equal(waitSource.exitCode, 0, waitSource.stderr); await save("native-wait-handler-full.rs", waitSource.stdout);
+    assert.equal(waitSource.exitCode, 0, waitSource.stderr);
     const waitBytes = Buffer.from(waitSource.stdout), argumentSnippets: string[] = [];
+    // The complete original guards member declarations; only invoked compiled snippets earn function witnesses.
+    await saveRust("native-wait-handler-full.rs", waitFile, waitBytes);
     for (const name of ["ExecWaitArgs", "default_wait_yield_time_ms", "parse_arguments"]) {
       const unit = inventory.units.find(unit => unit.file === waitFile && unit.label === name && ["function_item", "struct_item"].includes(unit.kind));
       assert.ok(unit, `source inventory omitted wait argument helper ${name}`); argumentSnippets.push((name === "ExecWaitArgs" ? "#[derive(Debug,Deserialize)]\n" : "") + await saveRust(`native-argument-${name}.rs`, waitFile, waitBytes.subarray(unit.start, unit.end), unit.start));
@@ -104,6 +106,9 @@ export function currentCoreFixtures(): Fixture[] {
     vectors.push({ operation: "augment", tools: [tool], tool_description_first: first });
     vectors.push({ operation: "describe", tools: [tool], options: { code_mode_only: true } });
   }
+  for (const namespace of [undefined, "mcp__fixture__"]) vectors.push({ operation: "describe",
+    tools: ["z", "a", "z"].map(name => ({ name, namespace, namespace_description: " Namespace instructions. ", description: `Tool ${name}`, input_schema: { type: "object", properties: {} } })),
+    options: { code_mode_only: true, messages: { exec_description: "", deferred_guidance: "", mcp_preamble: "" } } });
   const names = ["z", "a-b", "a_b", "λ雪", "9lead", "", "exec", "wait", "$valid", "leading__", "_private"];
   for (const first of [false, true]) vectors.push({ operation: "prepare", tool_description_first: first,
     tools: names.flatMap(name => [undefined, "functions", "mcp__fixture__", "edge_", "edge"].map(namespace => ({ name, namespace, description: `Tool ${name}`, namespace_description: " Namespace instructions. ", input_schema: { type: "object" }, kind: name === "_private" ? "freeform" : "function" }))) });
@@ -153,7 +158,8 @@ export function currentCoreFixtures(): Fixture[] {
     '{"cell_id":"a","max_tokens":-1}', '{"cell_id":"a","max_tokens":1.5}', '{"cell_id":"a","max_tokens":18446744073709551615}',
     '{"cell_id":"a","terminate":true}', '{"cell_id":"a","terminate":null}', '{"cell_id":"a","terminate":1}', '{"cell_id":"a","extra":{"a":1}}',
     '["a"]', '["a",1,null,true]', '["a",1,null,true,2]', '[]', 'null', '{"cell_id":"a",}', '{"cell_id":', '{"cell_id":"a"} tail',
-    '{\n "cell_id":"λ",\n "yield_time_ms":false\n}', '{"cell_id":"escaped\\n\\u03bb"}', '{"cell_id":"a","yield_time_ms":1,"yield_time_ms":2}'];
+    '{\n "cell_id":"λ",\n "yield_time_ms":false\n}', '{"cell_id":"escaped\\n\\u03bb"}', '{"cell_id":"a","yield_time_ms":1,"yield_time_ms":2}',
+    '{"cell_id":"a","yield_time_ms":37,"max_tokens":19,"terminate":false}'];
   for (const arguments_ of waitArguments) vectors.push({ operation: "wait_arguments", arguments: arguments_ });
   vectors.push(...readFileSync(resolve(import.meta.dir, "current-schema-fixtures.jsonl"), "utf8").trimEnd().split("\n").map(line => { const { id: _id, ...body } = parseLosslessJson(line); return body; }));
   // Repeated identical inputs add no witness. Each named case must have exactly one raw row per side.

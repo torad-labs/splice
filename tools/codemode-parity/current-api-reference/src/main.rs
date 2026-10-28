@@ -2,7 +2,7 @@ use serde_json::{Value,json};
 use std::{collections::BTreeMap,io::{self,BufRead}};
 use codex_tools::{ToolSpec,ResponsesApiTool,ResponsesApiNamespace,ResponsesApiNamespaceTool,FreeformTool,FreeformToolFormat,ToolName};
 use codex_code_mode::{ToolDefinition,ToolNamespaceDescription,CodeModeToolKind,ImageDetailVisibility,DeferredToolDiscovery};
-mod tools { pub mod registry { pub trait CoreToolRuntime { fn cached_code_mode_definitions(&self, max:Option<usize>, first:bool)->Option<&[codex_code_mode::ToolDefinition]>; } } pub mod prepare_definitions { include!("prepare_definitions.rs"); } pub mod catalog_parameters { include!("catalog_parameters.rs"); } pub mod wait_spec { include!("wait_spec.rs"); } }
+mod tools { pub mod registry { pub trait CoreToolRuntime { fn cached_code_mode_definitions(&self, max:Option<usize>, first:bool)->Option<&[codex_code_mode::ToolDefinition]>; } } pub mod prepare_definitions { include!("prepare_definitions.rs"); } pub mod wait_spec { include!("wait_spec.rs"); } }
 mod parse_arguments;
 mod response_adapter;
 mod search_arguments;

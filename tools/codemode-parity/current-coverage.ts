@@ -8,6 +8,7 @@ import { verifyLinuxSigstore, verifyActionsArtifact } from "./current-native-pro
 import { unitScopeSha256, caseWitnessArtifacts, type NamedWitness, type ExecutedCaseWitness } from "./current-witness";
 import { plannedWitnessLookup } from "./current-plans";
 import type { CliControlCase } from "./current-cli-proof";
+import { declarationContextReason } from "./current-declaration-context";
 
 export const currentVerifierIds = [
   "current.native-protocol", "current.tools-and-description", "current.output-and-media", "current.gateway-history", "current.interactive-delivery", "current.packaged-identities", "current.rust-client",
@@ -40,6 +41,8 @@ export type NativeProvenance = {
 const contextReview: { schema: 1; sourceRevision: string; units: Array<{ id: string; sha256: string; reason: string; evidence: Array<{ path: string; sha256: string; line: number; predicate: string }> }> } = JSON.parse(readFileSync(resolve(import.meta.dir, "current-context.json"), "utf8"));
 export function contextReason(unit: SourceUnit, inventory?: CurrentInventory): string | undefined {
   if (["source-file", "impl_item", "mod_item"].includes(unit.kind)) return "AST accounting container: its exact source hash guards scope and anonymous content. It receives no coverage PASS; behavioral declarations inside the container require their own execution witness or native ownership proof.";
+  const declaration = inventory && declarationContextReason(unit, inventory);
+  if (declaration) return declaration;
   const representation = unit.representation;
   if (representation?.algorithm === "private-nonwire-layout-v1" && inventory && representation.methods.length &&
     inventory.units.some(owner => owner.id === representation.owner.id && owner.sha256 === representation.owner.sha256) &&

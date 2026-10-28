@@ -1,319 +1,295 @@
 {
   "schema": 2,
-  "release": "0.164.0",
-  "tag": "rust-v0.164.0",
-  "sourceRevision": "6aaac694803004a63c6f393d153c96d22521a6b9",
-  "releaseUrl": "https://github.com/openai/codex/releases/tag/rust-v0.164.0",
+  "release": "0.165.0",
+  "tag": "rust-v0.165.0",
+  "sourceRevision": "360319d8dee62d87e2d59fc0c21805d79519cfed",
+  "releaseUrl": "https://github.com/openai/codex/releases/tag/rust-v0.165.0",
   "artifacts": [
     {
       "platform": "linux-amd64",
-      "release": "0.164.0",
-      "sourceRevision": "6aaac694803004a63c6f393d153c96d22521a6b9",
-      "archiveSha256": "feade7026436baa4e82e898050c7ef82a8adbd98163dc504771275b5ef224f2f",
-      "sha256": "8ee4f472e92ac226a189e98998633b2d07f989f208515750764db660369f2926",
-      "assetId": 667994740,
-      "origin": "https://github.com/openai/codex/releases/download/rust-v0.164.0/codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz",
-      "size": 28137475,
-      "tag": "rust-v0.164.0",
-      "executableSha256": "8ee4f472e92ac226a189e98998633b2d07f989f208515750764db660369f2926",
+      "release": "0.165.0",
+      "sourceRevision": "360319d8dee62d87e2d59fc0c21805d79519cfed",
+      "archiveSha256": "9577b09b2a546eeb3da8a09807de6d58fbaa207755256390113772ea4f05235e",
+      "sha256": "522935d4392ec9674fab60b239b5495992c6a93e4deb65113a216b6f5451ccd4",
+      "assetId": 682734791,
+      "origin": "https://github.com/openai/codex/releases/download/rust-v0.165.0/codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz",
+      "size": 77002000,
+      "tag": "rust-v0.165.0",
+      "executableSha256": "522935d4392ec9674fab60b239b5495992c6a93e4deb65113a216b6f5451ccd4",
       "releaseAsset": {
-        "id": 667994740,
-        "url": "https://github.com/openai/codex/releases/download/rust-v0.164.0/codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz",
-        "sha256": "feade7026436baa4e82e898050c7ef82a8adbd98163dc504771275b5ef224f2f"
+        "id": 682734791,
+        "url": "https://github.com/openai/codex/releases/download/rust-v0.165.0/codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz",
+        "sha256": "9577b09b2a546eeb3da8a09807de6d58fbaa207755256390113772ea4f05235e"
       },
       "sourceLinkage": {
         "state": "verified",
         "method": "sigstore-attestation",
-        "sourceRevision": "6aaac694803004a63c6f393d153c96d22521a6b9",
-        "executableSha256": "8ee4f472e92ac226a189e98998633b2d07f989f208515750764db660369f2926",
+        "sourceRevision": "360319d8dee62d87e2d59fc0c21805d79519cfed",
+        "executableSha256": "522935d4392ec9674fab60b239b5495992c6a93e4deb65113a216b6f5451ccd4",
         "kind": "sigstore-blob-signature",
-        "workflowIdentity": "https://github.com/openai/codex/.github/workflows/rust-release.yml@refs/tags/rust-v0.164.0",
-        "workflowSha": "6aaac694803004a63c6f393d153c96d22521a6b9",
+        "workflowIdentity": "https://github.com/openai/codex/.github/workflows/rust-release.yml@refs/tags/rust-v0.165.0",
+        "workflowSha": "360319d8dee62d87e2d59fc0c21805d79519cfed",
         "oidcIssuer": "https://token.actions.githubusercontent.com",
         "slsaProvenance": false,
+        "archivedExecutionArtifacts": [],
         "evidence": [
           {
             "path": "tools/codemode-parity/current-provenance/release.json",
-            "sha256": "cc47a2480ba68930de0cf4825bea008c00a8766bc452a55e4f4e9045c2131cf0",
-            "bytes": 569700
+            "sha256": "0883d7f8764d31d414ca5b4578d90668941cb919c48c9112cd209f5b6fdbc422",
+            "bytes": 547881
           },
           {
             "path": "tools/codemode-parity/current-provenance/tag.json",
-            "sha256": "76e076a9689cc3bbf95578250f6a24367ed1157e5f835f587bdece541276716e",
-            "bytes": 655
+            "sha256": "7995e9f45dd4c057899e9104e941ba1175e72dabb341cc429195c8dadfb9fc2a",
+            "bytes": 664
           },
           {
             "path": "tools/codemode-parity/current-provenance/source-workflow-runs.json",
-            "sha256": "8902210490e5db1a95580f1fa0051c785609b42f286007ca83d4da6bd894891f",
-            "bytes": 429
+            "sha256": "cbb4aba92b877580d87972f5e922eb0a32398d0bd04a799418b516447c13ca82",
+            "bytes": 18962
           },
           {
             "path": "tools/codemode-parity/current-provenance/linux-amd64/codex-code-mode-host-x86_64-unknown-linux-musl.sigstore",
-            "sha256": "a61eb6c4ab76ca70596e23a69ad00c5cd46be0c8da97b5c4e397fdf66a01df96",
+            "sha256": "de8ee070a4a4494ed6df795d494356ded5046cdec2525de8532eed492b66bf2d",
             "bytes": 8509
           },
           {
-            "path": "tools/codemode-parity/current-provenance/linux-amd64/source-linkage-verification.json",
-            "sha256": "64680af3211e059bd1e3b7c4779b14563707bbec9ec2fc31c2caf79436adfc86",
-            "bytes": 1175
+            "path": "tools/codemode-parity/current-provenance/linux-amd64/verification-bundle.sigstore",
+            "sha256": "39d7da4bf82b25577b745cee2947472b5215577038988cd47aaa2771bc4a043b",
+            "bytes": 9690
           },
           {
-            "path": "tools/codemode-parity/current-provenance/linux-amd64/verification-bundle.sigstore",
-            "sha256": "ef2dd46670eb47634f7fbcd9a73f913358c0a7bdffb6f33578ffed4b03e5f312",
-            "bytes": 9690
+            "path": "tools/codemode-parity/current-provenance/linux-amd64/source-linkage-verification.json",
+            "sha256": "d4527966b4a3d4680b29b9bb2ca0b74684f7b7b9ad869ad7b71ffc586b4b603b",
+            "bytes": 421
           }
-        ],
-        "archivedExecutionArtifacts": []
+        ]
       },
       "packagedGzip": {
         "path": "integrations/codemode/native/linux-amd64/codex-code-mode-host.gz",
-        "sha256": "6dcc484bad7f3b4824c8065acf44f2ca50c5a9ccc9cde8d23fd5f16acc70cc86",
-        "bytes": 28015585
+        "sha256": "686792080433b3712a71675a1dd88b51f3cfe2cd030c3484a565dbb026e37aa1",
+        "bytes": 27937905
       },
       "packagedManifest": {
         "path": "integrations/codemode/native/linux-amd64/host.properties",
-        "sha256": "30f6a23b41db966a38443b5108f8409dec1a654540676b6a912cebeacf7ece71",
+        "sha256": "27fdf0efc10bbad1045390a6a842403adc58d95af00158418143f7715b28c440",
         "bytes": 748
       },
       "archiveCapture": {
         "file": "codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz",
-        "sha256": "feade7026436baa4e82e898050c7ef82a8adbd98163dc504771275b5ef224f2f"
+        "sha256": "9577b09b2a546eeb3da8a09807de6d58fbaa207755256390113772ea4f05235e"
       }
     },
     {
       "platform": "linux-aarch64",
-      "release": "0.164.0",
-      "sourceRevision": "6aaac694803004a63c6f393d153c96d22521a6b9",
-      "archiveSha256": "0e0bdde24d5b31b05519693635baa9c4f2dc4fe7eee31c67b92155f190dd32d2",
-      "sha256": "7d28b996b825b13ea058af67655b619a26a125d61d4fb2985694a9c4e77d2e21",
-      "assetId": 667986826,
-      "origin": "https://github.com/openai/codex/releases/download/rust-v0.164.0/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz",
-      "size": 26642339,
-      "tag": "rust-v0.164.0",
-      "executableSha256": "7d28b996b825b13ea058af67655b619a26a125d61d4fb2985694a9c4e77d2e21",
+      "release": "0.165.0",
+      "sourceRevision": "360319d8dee62d87e2d59fc0c21805d79519cfed",
+      "archiveSha256": "400956c325a2118768029f235958b7d2fd2ea4e59c5466d336fb4fb7f0e94b61",
+      "sha256": "fd7a4a1f29871fb0015c19ad2f885ef6a878244643260703e17663418695aa14",
+      "assetId": 682726360,
+      "origin": "https://github.com/openai/codex/releases/download/rust-v0.165.0/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz",
+      "size": 70183264,
+      "tag": "rust-v0.165.0",
+      "executableSha256": "fd7a4a1f29871fb0015c19ad2f885ef6a878244643260703e17663418695aa14",
       "releaseAsset": {
-        "id": 667986826,
-        "url": "https://github.com/openai/codex/releases/download/rust-v0.164.0/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz",
-        "sha256": "0e0bdde24d5b31b05519693635baa9c4f2dc4fe7eee31c67b92155f190dd32d2"
+        "id": 682726360,
+        "url": "https://github.com/openai/codex/releases/download/rust-v0.165.0/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz",
+        "sha256": "400956c325a2118768029f235958b7d2fd2ea4e59c5466d336fb4fb7f0e94b61"
       },
       "sourceLinkage": {
         "state": "verified",
         "method": "sigstore-attestation",
-        "sourceRevision": "6aaac694803004a63c6f393d153c96d22521a6b9",
-        "executableSha256": "7d28b996b825b13ea058af67655b619a26a125d61d4fb2985694a9c4e77d2e21",
+        "sourceRevision": "360319d8dee62d87e2d59fc0c21805d79519cfed",
+        "executableSha256": "fd7a4a1f29871fb0015c19ad2f885ef6a878244643260703e17663418695aa14",
         "kind": "sigstore-blob-signature",
-        "workflowIdentity": "https://github.com/openai/codex/.github/workflows/rust-release.yml@refs/tags/rust-v0.164.0",
-        "workflowSha": "6aaac694803004a63c6f393d153c96d22521a6b9",
+        "workflowIdentity": "https://github.com/openai/codex/.github/workflows/rust-release.yml@refs/tags/rust-v0.165.0",
+        "workflowSha": "360319d8dee62d87e2d59fc0c21805d79519cfed",
         "oidcIssuer": "https://token.actions.githubusercontent.com",
         "slsaProvenance": false,
+        "archivedExecutionArtifacts": [],
         "evidence": [
           {
             "path": "tools/codemode-parity/current-provenance/release.json",
-            "sha256": "cc47a2480ba68930de0cf4825bea008c00a8766bc452a55e4f4e9045c2131cf0",
-            "bytes": 569700
+            "sha256": "0883d7f8764d31d414ca5b4578d90668941cb919c48c9112cd209f5b6fdbc422",
+            "bytes": 547881
           },
           {
             "path": "tools/codemode-parity/current-provenance/tag.json",
-            "sha256": "76e076a9689cc3bbf95578250f6a24367ed1157e5f835f587bdece541276716e",
-            "bytes": 655
+            "sha256": "7995e9f45dd4c057899e9104e941ba1175e72dabb341cc429195c8dadfb9fc2a",
+            "bytes": 664
           },
           {
             "path": "tools/codemode-parity/current-provenance/source-workflow-runs.json",
-            "sha256": "8902210490e5db1a95580f1fa0051c785609b42f286007ca83d4da6bd894891f",
-            "bytes": 429
+            "sha256": "cbb4aba92b877580d87972f5e922eb0a32398d0bd04a799418b516447c13ca82",
+            "bytes": 18962
           },
           {
             "path": "tools/codemode-parity/current-provenance/linux-aarch64/codex-code-mode-host-aarch64-unknown-linux-musl.sigstore",
-            "sha256": "3c6440af81c56bc27827d8d8029b939ea806b3e9cb4d70cafa1d9482ae32a04f",
+            "sha256": "a389688cc34a0c727b368432c934833c7d8c45edf27b4a11e65fce890ce44764",
             "bytes": 8489
           },
           {
-            "path": "tools/codemode-parity/current-provenance/linux-aarch64/source-linkage-verification.json",
-            "sha256": "ce26b0b5650106cd446aa909c22f2e80eb1b1f0a6c3a8df56b04ebf600722371",
-            "bytes": 1181
+            "path": "tools/codemode-parity/current-provenance/linux-aarch64/verification-bundle.sigstore",
+            "sha256": "e4eea3a3706037acae044bd4122651d093616704084f5ee17a35d6df33a07c7e",
+            "bytes": 9674
           },
           {
-            "path": "tools/codemode-parity/current-provenance/linux-aarch64/verification-bundle.sigstore",
-            "sha256": "34a21e5b68f9fe6ece6f06371ec86749c0d54a7c7cfd54c9eb763772af598024",
-            "bytes": 9674
+            "path": "tools/codemode-parity/current-provenance/linux-aarch64/source-linkage-verification.json",
+            "sha256": "0aedbe80d2e2a10f7acdb9ac3a44b562ee6de7cf8b207ca42f780670fa129b5c",
+            "bytes": 421
           }
-        ],
-        "archivedExecutionArtifacts": []
+        ]
       },
       "packagedGzip": {
         "path": "integrations/codemode/native/linux-aarch64/codex-code-mode-host.gz",
-        "sha256": "b91beea2f54b203ba2546af84c1e46c773415c0b5e5bfe8ac57cdee5954843a6",
-        "bytes": 26565769
+        "sha256": "48ee04112da4d9d7b9afadf595ae34f6645cd89e276e7656c448293ced17baaa",
+        "bytes": 26456930
       },
       "packagedManifest": {
         "path": "integrations/codemode/native/linux-aarch64/host.properties",
-        "sha256": "704dd8588c996149757f5e20c502c833ee922fa0fa1d42d8a160400a8f02737b",
+        "sha256": "389b5e8851606c6ebc3d9a9c8d8ad8e8a6b98c2e1030cdbeb74c4eff2e6068f5",
         "bytes": 751
       },
       "archiveCapture": {
         "file": "codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz",
-        "sha256": "0e0bdde24d5b31b05519693635baa9c4f2dc4fe7eee31c67b92155f190dd32d2"
+        "sha256": "400956c325a2118768029f235958b7d2fd2ea4e59c5466d336fb4fb7f0e94b61"
       }
     },
     {
       "platform": "darwin-aarch64",
-      "release": "0.164.0",
-      "sourceRevision": "6aaac694803004a63c6f393d153c96d22521a6b9",
-      "archiveSha256": "7bc3ca697567bc884a76233999c46cb22b023b09f2d4d4ab3518f1354c64e415",
-      "sha256": "416721e33af8822041dc650793512b3e58d43e0be4f3a5c6187eb4dfaad3148a",
-      "assetId": 667983437,
-      "origin": "https://github.com/openai/codex/releases/download/rust-v0.164.0/codex-code-mode-host-aarch64-apple-darwin.tar.gz",
-      "size": 24347400,
-      "tag": "rust-v0.164.0",
-      "executableSha256": "416721e33af8822041dc650793512b3e58d43e0be4f3a5c6187eb4dfaad3148a",
+      "release": "0.165.0",
+      "sourceRevision": "360319d8dee62d87e2d59fc0c21805d79519cfed",
+      "archiveSha256": "d861a7dd3656e91d04d3753f2ca5624f100e37401993b299661ab6631bda8610",
+      "sha256": "e723d01c65aba4b81451d486d57318232b2738889de67c35051734be917d96ba",
+      "assetId": 682722294,
+      "origin": "https://github.com/openai/codex/releases/download/rust-v0.165.0/codex-code-mode-host-aarch64-apple-darwin.tar.gz",
+      "size": 68543056,
+      "tag": "rust-v0.165.0",
+      "executableSha256": "e723d01c65aba4b81451d486d57318232b2738889de67c35051734be917d96ba",
       "releaseAsset": {
-        "id": 667983437,
-        "url": "https://github.com/openai/codex/releases/download/rust-v0.164.0/codex-code-mode-host-aarch64-apple-darwin.tar.gz",
-        "sha256": "7bc3ca697567bc884a76233999c46cb22b023b09f2d4d4ab3518f1354c64e415"
+        "id": 682722294,
+        "url": "https://github.com/openai/codex/releases/download/rust-v0.165.0/codex-code-mode-host-aarch64-apple-darwin.tar.gz",
+        "sha256": "d861a7dd3656e91d04d3753f2ca5624f100e37401993b299661ab6631bda8610"
       },
       "sourceLinkage": {
         "state": "verified",
         "method": "official-actions-artifact",
-        "sourceRevision": "6aaac694803004a63c6f393d153c96d22521a6b9",
-        "executableSha256": "416721e33af8822041dc650793512b3e58d43e0be4f3a5c6187eb4dfaad3148a",
-        "workflowRunId": 39894017941,
-        "workflowRunUrl": "https://github.com/openai/codex/actions/runs/39894017941",
-        "workflowSha": "6aaac694803004a63c6f393d153c96d22521a6b9",
-        "artifactId": 12478021627,
-        "artifactDigest": "sha256:5a130e472fad72f3640e371629f55b9aceb31255101e1a74e87de88c19d69719",
+        "sourceRevision": "360319d8dee62d87e2d59fc0c21805d79519cfed",
+        "executableSha256": "e723d01c65aba4b81451d486d57318232b2738889de67c35051734be917d96ba",
+        "workflowRunId": 40558883763,
+        "workflowRunUrl": "https://github.com/openai/codex/actions/runs/40558883763",
+        "workflowSha": "360319d8dee62d87e2d59fc0c21805d79519cfed",
+        "artifactId": 12762748639,
+        "artifactDigest": "sha256:e72cf30442e8a9f0ac7b615012476a91f28af13af4c0d34d1b06ca7c44bf6bc8",
+        "archiveMembers": [
+          "codex-code-mode-host"
+        ],
         "extractedMember": "codex-code-mode-host",
         "evidence": [
           {
             "path": "tools/codemode-parity/current-provenance/release.json",
-            "sha256": "cc47a2480ba68930de0cf4825bea008c00a8766bc452a55e4f4e9045c2131cf0",
-            "bytes": 569700
+            "sha256": "0883d7f8764d31d414ca5b4578d90668941cb919c48c9112cd209f5b6fdbc422",
+            "bytes": 547881
           },
           {
             "path": "tools/codemode-parity/current-provenance/tag.json",
-            "sha256": "76e076a9689cc3bbf95578250f6a24367ed1157e5f835f587bdece541276716e",
-            "bytes": 655
+            "sha256": "7995e9f45dd4c057899e9104e941ba1175e72dabb341cc429195c8dadfb9fc2a",
+            "bytes": 664
           },
           {
             "path": "tools/codemode-parity/current-provenance/source-workflow-runs.json",
-            "sha256": "8902210490e5db1a95580f1fa0051c785609b42f286007ca83d4da6bd894891f",
-            "bytes": 429
+            "sha256": "cbb4aba92b877580d87972f5e922eb0a32398d0bd04a799418b516447c13ca82",
+            "bytes": 18962
           },
           {
             "path": "tools/codemode-parity/current-provenance/darwin-aarch64/source-linkage-verification.json",
-            "sha256": "a2252bea7be0fb865d4cf6e21c853fc119461bc92d6f1194f6b016e3b0a66f2a",
-            "bytes": 1571
+            "sha256": "4854104e0503461a991de308bf46f7546e3a2cc864224a341d5fa3e67fed2de9",
+            "bytes": 557
           }
-        ],
-        "archivedExecutionArtifacts": [
-          {
-            "sha256": "5a130e472fad72f3640e371629f55b9aceb31255101e1a74e87de88c19d69719",
-            "bytes": 134502514,
-            "file": "source-build.zip"
-          },
-          {
-            "sha256": "416721e33af8822041dc650793512b3e58d43e0be4f3a5c6187eb4dfaad3148a",
-            "bytes": 68543072,
-            "file": "source-build-host"
-          }
-        ],
-        "archiveMembers": [
-          "codex-code-mode-host"
         ]
       },
       "packagedGzip": {
         "path": "integrations/codemode/native/darwin-aarch64/codex-code-mode-host.gz",
-        "sha256": "cf618016667bc3e1c2b767dbebd21938c9eb3f0337cdbbd02a0258475ad3e17d",
-        "bytes": 24293596
+        "sha256": "710f323b55ed4deac859a7c47835645eefb337e4d1c7cbcb331264c76240db6d",
+        "bytes": 24202861
       },
       "packagedManifest": {
         "path": "integrations/codemode/native/darwin-aarch64/host.properties",
-        "sha256": "4709123f1d5e6b64929611d958da78eeda5c1eeb2ffad6f4d6b68fe6514612a7",
+        "sha256": "0ba32c31859f38913b531d30ae93fd081c267430867c9d3cd29bfbe809b78a13",
         "bytes": 522
       },
       "archiveCapture": {
         "file": "codex-code-mode-host-aarch64-apple-darwin.tar.gz",
-        "sha256": "7bc3ca697567bc884a76233999c46cb22b023b09f2d4d4ab3518f1354c64e415"
+        "sha256": "d861a7dd3656e91d04d3753f2ca5624f100e37401993b299661ab6631bda8610"
       }
     },
     {
       "platform": "windows-amd64",
-      "release": "0.164.0",
-      "sourceRevision": "6aaac694803004a63c6f393d153c96d22521a6b9",
-      "archiveSha256": "a17825919d06970ca739cdfd5e9c8040b1b0d33896e79db3980f96545ea1774e",
-      "sha256": "be52517ca0f9a8eb626ec065ed3a357b5ee150fe1934a254d0126e6d40f29b57",
-      "assetId": 667993004,
-      "origin": "https://github.com/openai/codex/releases/download/rust-v0.164.0/codex-code-mode-host-x86_64-pc-windows-msvc.exe.tar.gz",
-      "size": 30005650,
-      "tag": "rust-v0.164.0",
-      "executableSha256": "be52517ca0f9a8eb626ec065ed3a357b5ee150fe1934a254d0126e6d40f29b57",
+      "release": "0.165.0",
+      "sourceRevision": "360319d8dee62d87e2d59fc0c21805d79519cfed",
+      "archiveSha256": "67de9681bd42623b7a8e2560ad01d7456fdc936d4e480909ba2f5e3ada45b2d7",
+      "sha256": "c15b0ec7c44be4bef2516c251cc8b9f3f4ab9f8727cf2d567d1f183fd415ef2d",
+      "assetId": 682732906,
+      "origin": "https://github.com/openai/codex/releases/download/rust-v0.165.0/codex-code-mode-host-x86_64-pc-windows-msvc.exe.tar.gz",
+      "size": 78139696,
+      "tag": "rust-v0.165.0",
+      "executableSha256": "c15b0ec7c44be4bef2516c251cc8b9f3f4ab9f8727cf2d567d1f183fd415ef2d",
       "releaseAsset": {
-        "id": 667993004,
-        "url": "https://github.com/openai/codex/releases/download/rust-v0.164.0/codex-code-mode-host-x86_64-pc-windows-msvc.exe.tar.gz",
-        "sha256": "a17825919d06970ca739cdfd5e9c8040b1b0d33896e79db3980f96545ea1774e"
+        "id": 682732906,
+        "url": "https://github.com/openai/codex/releases/download/rust-v0.165.0/codex-code-mode-host-x86_64-pc-windows-msvc.exe.tar.gz",
+        "sha256": "67de9681bd42623b7a8e2560ad01d7456fdc936d4e480909ba2f5e3ada45b2d7"
       },
       "sourceLinkage": {
         "state": "verified",
         "method": "official-actions-artifact",
-        "sourceRevision": "6aaac694803004a63c6f393d153c96d22521a6b9",
-        "executableSha256": "be52517ca0f9a8eb626ec065ed3a357b5ee150fe1934a254d0126e6d40f29b57",
-        "workflowRunId": 39894017941,
-        "workflowRunUrl": "https://github.com/openai/codex/actions/runs/39894017941",
-        "workflowSha": "6aaac694803004a63c6f393d153c96d22521a6b9",
-        "artifactId": 12477189782,
-        "artifactDigest": "sha256:c40c3abb35e84f75a2db73d2c599ed9ac40a74f7cff806e1a978218baf9d3441",
-        "extractedMember": "openai_codex_cli_bin-0.164.0-py3-none-win_amd64.whl -> codex_cli_bin/bin/codex-code-mode-host.exe",
+        "sourceRevision": "360319d8dee62d87e2d59fc0c21805d79519cfed",
+        "executableSha256": "c15b0ec7c44be4bef2516c251cc8b9f3f4ab9f8727cf2d567d1f183fd415ef2d",
+        "workflowRunId": 40558883763,
+        "workflowRunUrl": "https://github.com/openai/codex/actions/runs/40558883763",
+        "workflowSha": "360319d8dee62d87e2d59fc0c21805d79519cfed",
+        "artifactId": 12763408691,
+        "artifactDigest": "sha256:cedea5f1adf80f1952acbb0b46da27b470d426a10408312e7f17143ebc9a3f89",
+        "archiveMembers": [
+          "openai_codex_cli_bin-0.165.0-py3-none-win_amd64.whl",
+          "codex_cli_bin/bin/codex-code-mode-host.exe"
+        ],
+        "extractedMember": "openai_codex_cli_bin-0.165.0-py3-none-win_amd64.whl -> codex_cli_bin/bin/codex-code-mode-host.exe",
         "evidence": [
           {
             "path": "tools/codemode-parity/current-provenance/release.json",
-            "sha256": "cc47a2480ba68930de0cf4825bea008c00a8766bc452a55e4f4e9045c2131cf0",
-            "bytes": 569700
+            "sha256": "0883d7f8764d31d414ca5b4578d90668941cb919c48c9112cd209f5b6fdbc422",
+            "bytes": 547881
           },
           {
             "path": "tools/codemode-parity/current-provenance/tag.json",
-            "sha256": "76e076a9689cc3bbf95578250f6a24367ed1157e5f835f587bdece541276716e",
-            "bytes": 655
+            "sha256": "7995e9f45dd4c057899e9104e941ba1175e72dabb341cc429195c8dadfb9fc2a",
+            "bytes": 664
           },
           {
             "path": "tools/codemode-parity/current-provenance/source-workflow-runs.json",
-            "sha256": "8902210490e5db1a95580f1fa0051c785609b42f286007ca83d4da6bd894891f",
-            "bytes": 429
+            "sha256": "cbb4aba92b877580d87972f5e922eb0a32398d0bd04a799418b516447c13ca82",
+            "bytes": 18962
           },
           {
             "path": "tools/codemode-parity/current-provenance/windows-amd64/source-linkage-verification.json",
-            "sha256": "76ddaac352667d93b615b93872c7836cd1a5a2239d2fe89a3f4300d12ae198a0",
-            "bytes": 1655
+            "sha256": "2e9b533d013e82c82f87281aaa8999e4aa8d108ac8908387fff8de7336355b7b",
+            "bytes": 638
           }
-        ],
-        "archivedExecutionArtifacts": [
-          {
-            "sha256": "c40c3abb35e84f75a2db73d2c599ed9ac40a74f7cff806e1a978218baf9d3441",
-            "bytes": 158451477,
-            "file": "source-build.zip"
-          },
-          {
-            "sha256": "be52517ca0f9a8eb626ec065ed3a357b5ee150fe1934a254d0126e6d40f29b57",
-            "bytes": 78141232,
-            "file": "source-build-host.exe"
-          }
-        ],
-        "archiveMembers": [
-          "openai_codex_cli_bin-0.164.0-py3-none-win_amd64.whl",
-          "codex_cli_bin/bin/codex-code-mode-host.exe"
         ]
       },
       "packagedGzip": {
         "path": "integrations/codemode/native/windows-amd64/codex-code-mode-host.gz",
-        "sha256": "9a673a3af90b9cdba8d25e5fe3b1153672cf1e9e2de856e8471a379e24fc2708",
-        "bytes": 29885059
+        "sha256": "07bde86c123c55a5b44ee9ae81d464a33fac5aba83d74acaae2d96f2c9a5015e",
+        "bytes": 29810426
       },
       "packagedManifest": {
         "path": "integrations/codemode/native/windows-amd64/host.properties",
-        "sha256": "95b71751711fe770c6020f928c3e7052384238a73098c26834854c23cc872e88",
+        "sha256": "157595effc2227aabb5e88d42f69630bbd0258d02436588252ab6d26a07c37bc",
         "bytes": 530
       },
       "archiveCapture": {
         "file": "codex-code-mode-host-x86_64-pc-windows-msvc.exe.tar.gz",
-        "sha256": "a17825919d06970ca739cdfd5e9c8040b1b0d33896e79db3980f96545ea1774e"
+        "sha256": "67de9681bd42623b7a8e2560ad01d7456fdc936d4e480909ba2f5e3ada45b2d7"
       }
     }
   ],

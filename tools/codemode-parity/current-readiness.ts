@@ -13,6 +13,7 @@ import { clientWitnessFindings, type ClientCaseWitness } from "./current-client-
 import { coreCorpusFindings } from "./current-core-corpus";
 import { apiWitnessFindings, type ApiCaseWitness } from "./current-core-api-witness";
 import { cliControlFindings } from "./current-cli-proof";
+import { currentHistoryFindings } from "./current-history";
 
 const directory = import.meta.dir, repo = resolve(directory, "../..");
 export type CurrentReference = {
@@ -65,7 +66,7 @@ export async function loadCurrentInputs(sourceRepo?: string): Promise<{
   if (sha256(contractBytes) !== lock.historicalContractSha256) findings.push("frozen 24-family historical contract was changed");
   lock.sourceRepositoryDefault = await resolveCurrentSource(lock, sourceRepo);
   const generated = await generateCurrentInventory(lock.sourceRepositoryDefault, lock.sourceRevision);
-  findings.push(...inventoryFindings(generated, inventory), ...dispositionFindings(inventory, dispositions));
+  findings.push(...inventoryFindings(generated, inventory), ...dispositionFindings(inventory, dispositions), ...await currentHistoryFindings());
   let provenance: NativeProvenance | undefined;
   try {
     const bytes = await readFile(resolve(repo, lock.nativeProvenanceDefault));

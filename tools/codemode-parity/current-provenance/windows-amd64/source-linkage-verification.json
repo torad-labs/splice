@@ -1,41 +1,14 @@
 {
-  "schema": 1,
-  "command": [
-    "gh",
-    "api",
-    "repos/openai/codex/actions/artifacts/12477189782/zip"
-  ],
-  "workflow": {
-    "artifacts_url": "https://api.github.com/repos/openai/codex/actions/runs/39894017941/artifacts",
-    "conclusion": "success",
-    "event": "push",
-    "head_branch": "rust-v0.164.0",
-    "head_sha": "6aaac694803004a63c6f393d153c96d22521a6b9",
-    "html_url": "https://github.com/openai/codex/actions/runs/39894017941",
-    "id": 39894017941,
-    "name": "rust-release",
-    "path": ".github/workflows/rust-release.yml",
-    "status": "completed"
-  },
-  "artifact": {
-    "archive_download_url": "https://api.github.com/repos/openai/codex/actions/artifacts/12477189782/zip",
-    "digest": "sha256:c40c3abb35e84f75a2db73d2c599ed9ac40a74f7cff806e1a978218baf9d3441",
-    "expired": false,
-    "id": 12477189782,
-    "name": "python-runtime-wheel-x86_64-pc-windows-msvc",
-    "size_in_bytes": 158451477,
-    "workflow_run": {
-      "head_branch": "rust-v0.164.0",
-      "head_repository_id": 965415649,
-      "head_sha": "6aaac694803004a63c6f393d153c96d22521a6b9",
-      "id": 39894017941,
-      "repository_id": 965415649
-    }
-  },
-  "verifiedArchiveSha256": "c40c3abb35e84f75a2db73d2c599ed9ac40a74f7cff806e1a978218baf9d3441",
-  "extractedMember": "openai_codex_cli_bin-0.164.0-py3-none-win_amd64.whl -> codex_cli_bin/bin/codex-code-mode-host.exe",
-  "extractedSha256": "be52517ca0f9a8eb626ec065ed3a357b5ee150fe1934a254d0126e6d40f29b57",
-  "releaseExecutableSha256": "be52517ca0f9a8eb626ec065ed3a357b5ee150fe1934a254d0126e6d40f29b57",
-  "identical": true,
-  "sourceRevision": "6aaac694803004a63c6f393d153c96d22521a6b9"
+  "schema": 2,
+  "checkedAt": "2026-10-28T00:18:01.072Z",
+  "verifier": "Fresh official completed Actions workflow/artifact metadata, archive SHA-256 and exact extracted executable byte equality",
+  "sourceRevision": "360319d8dee62d87e2d59fc0c21805d79519cfed",
+  "executableSha256": "c15b0ec7c44be4bef2516c251cc8b9f3f4ab9f8727cf2d567d1f183fd415ef2d",
+  "workflowRunId": 40558883763,
+  "artifactId": 12763408691,
+  "artifactDigest": "sha256:cedea5f1adf80f1952acbb0b46da27b470d426a10408312e7f17143ebc9a3f89",
+  "members": [
+    "openai_codex_cli_bin-0.165.0-py3-none-win_amd64.whl",
+    "codex_cli_bin/bin/codex-code-mode-host.exe"
+  ]
 }

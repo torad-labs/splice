@@ -1,18 +1,18 @@
 {
   "schema": 2,
   "repository": "https://github.com/openai/codex",
-  "release": "0.164.0",
-  "tag": "rust-v0.164.0",
-  "sourceRevision": "6aaac694803004a63c6f393d153c96d22521a6b9",
-  "cliSha256": "b93f6811d3f653f0fb83be4050d857fb9abbb111dfa2ce160563327daff7f306",
-  "nativeHostSha256": "8ee4f472e92ac226a189e98998633b2d07f989f208515750764db660369f2926",
+  "release": "0.165.0",
+  "tag": "rust-v0.165.0",
+  "sourceRevision": "360319d8dee62d87e2d59fc0c21805d79519cfed",
+  "cliSha256": "c06a67fd8ac76508dc78bd99ce20c9f317b8d568beda59485f3f4134df9962d5",
+  "nativeHostSha256": "522935d4392ec9674fab60b239b5495992c6a93e4deb65113a216b6f5451ccd4",
   "target": "x86_64-unknown-linux-musl",
   "scope": "Current CodeMode API and observable gateway behavior; Linux deployment execution, all packaged native binary identities. Other platforms have no claimed interactive deployment execution.",
   "sourceRepositoryDefault": null,
   "installedPackageRootDefault": null,
   "nativeProvenanceDefault": "tools/codemode-parity/current-provenance/provenance.json",
   "historicalContractSha256": "1447cea2a966f22f65ab0142b87825c37d06f83e36655680136005fc14422a29",
-  "nativeProvenanceSha256": "a9633465d6a69dc71ac9ea1edf7ee05048134879a41cef3280f784e1f9b3972d",
+  "nativeProvenanceSha256": "aaabd401ae39665e5be77d647034e6cf16201ef6ba9fe22024031f0de49d4d64",
   "cliSourceBundle": "tools/codemode-parity/current-provenance/cli/linux-amd64.sigstore",
-  "cliSourceBundleSha256": "544218c53804cd5a85051bcdd4eafb68d37195bf6cd871366c0c6daf9e961488"
+  "cliSourceBundleSha256": "9e781c3bd2ffa23e1d0aebe83f552aa60f0030068a5c7d4c2ad3b363e73d2d74"
 }

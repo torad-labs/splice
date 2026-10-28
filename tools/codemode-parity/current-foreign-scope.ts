@@ -213,9 +213,10 @@ export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporar
     if (explicitRoots) { if (explicitRoots.some(root => item.file.startsWith(root + "/"))) mark(item, item.file, "native host/runtime root crate census"); }
     else if (crates.some(crate => item.file.startsWith(crate + "/")) || !applicationRootBoundary(item.file) && marker.test(item.file)) mark(item, item.file, "complete CodeMode crate/named module census");
     else if (!applicationRootBoundary(item.file) && marker.test(item.name)) mark(item, item.file, "explicit CodeMode declaration/member");
-    else if (!applicationRootBoundary(item.file) && item.kind === "function_item" && (astByFile.get(item.file) ?? []).some(node =>
-      ["identifier", "type_identifier", "scoped_identifier", "scoped_type_identifier"].includes(node.ruleId) && node.range.byteOffset.start >= item.start && node.range.byteOffset.end <= item.end && marker.test(node.text)))
-      mark(item, item.file, "CodeMode semantic consumer identified by an actual AST reference in its signature/body");
+    // A caller is not an entrypoint of the API it consumes. In particular Session::new and the sampling loop
+    // mention CodeMode while also configuring unrelated tools, analytics and model requests. Their declarations
+    // remain in the census; only an actual call/import from one of the roots above can make them required.
+    // The closure below follows those calls, including generic helper names, and retains unresolved imports.
   }
   for (let index = 0; index < queue.length; index++) {
     const item = queue[index]!;
@@ -332,7 +333,7 @@ export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporar
       }
     }
   }
-  const selectorsSha256 = sha256(JSON.stringify({ rootPolicy: "codemode-api-entrypoints-v2", applicationNonRoots: files.filter(file => applicationRootBoundary(file.path)).map(file => ({ path: file.path, sha256: sha256(file.source) })).sort((a,b)=>a.path.localeCompare(b.path)), roots: [...required].filter(id => incoming.get(id)?.some(link => link.relation.includes("census") || link.relation.includes("explicit CodeMode") || link.relation.includes("semantic consumer"))).sort(), files: files.map(file => ({ path: file.path, sha256: sha256(file.source) })).sort((a, b) => a.path.localeCompare(b.path)) }));
+  const selectorsSha256 = sha256(JSON.stringify({ rootPolicy: "codemode-api-entrypoints-v3", applicationNonRoots: files.filter(file => applicationRootBoundary(file.path)).map(file => ({ path: file.path, sha256: sha256(file.source) })).sort((a,b)=>a.path.localeCompare(b.path)), roots: [...required].filter(id => incoming.get(id)?.some(link => link.relation.includes("census") || link.relation.includes("explicit CodeMode"))).sort(), files: files.map(file => ({ path: file.path, sha256: sha256(file.source) })).sort((a, b) => a.path.localeCompare(b.path)) }));
   const result = new Map<string, ForeignScope>();
   for (const item of declarations) result.set(item.id, { state: required.has(item.id) ? "required" : "foreign-context", algorithm: "ast-import-member-closure-v1", selectorsSha256,
     incoming: (incoming.get(item.id) ?? []).sort((a, b) => a.from.localeCompare(b.from) || a.relation.localeCompare(b.relation)), route: routes.get(item.id) ?? [],

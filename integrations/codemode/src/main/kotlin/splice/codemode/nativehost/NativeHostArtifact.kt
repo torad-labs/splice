@@ -9,8 +9,8 @@ import java.util.Locale
 import java.util.Properties
 import java.util.zip.GZIPInputStream
 
-internal const val NATIVE_HOST_RELEASE: String = "0.164.0"
-internal const val NATIVE_HOST_SOURCE_REVISION: String = "6aaac694803004a63c6f393d153c96d22521a6b9"
+internal const val NATIVE_HOST_RELEASE: String = "0.165.0"
+internal const val NATIVE_HOST_SOURCE_REVISION: String = "360319d8dee62d87e2d59fc0c21805d79519cfed"
 
 /** A verified bundled host. It never searches PATH, a Codex installation, or a user-controlled cache. */
 public class NativeHostArtifact : AutoCloseable {

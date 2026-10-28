@@ -128,13 +128,31 @@ test("const function names remain callable dependency members", async () => {
   expect(result.selected("codex-rs/protocol/src/lib.rs", "fn new")).toEqual(["required"]);
   expect(result.selected("codex-rs/protocol/src/lib.rs", "fn unrelated")).toEqual(["foreign-context"]);
 });
-test("generic consumer bodies with CodeMode AST references are roots", async () => {
+test("calling CodeMode does not make an unrelated application entrypoint part of the CodeMode API", async () => {
   const result = await scope({
     "codex-rs/code-mode/src/lib.rs": "pub fn exec() {}",
     "codex-rs/protocol/src/lib.rs": "pub fn spec_for_model_request() { codex_code_mode::normalize_code_mode_identifier(); } pub fn unrelated() {}",
   });
+  expect(result.selected("codex-rs/protocol/src/lib.rs", "fn spec_for_model_request")).toEqual(["foreign-context"]);
+  expect(result.selected("codex-rs/protocol/src/lib.rs", "fn unrelated")).toEqual(["foreign-context"]);
+});
+
+test("a generic consumer becomes required when an actual CodeMode root calls it", async () => {
+  const result = await scope({
+    "codex-rs/code-mode/src/lib.rs": "pub fn exec() { codex_protocol::spec_for_model_request(); } pub fn normalize_code_mode_identifier() {}",
+    "codex-rs/protocol/src/lib.rs": "pub fn spec_for_model_request() { codex_code_mode::normalize_code_mode_identifier(); } pub fn unrelated() {}",
+  });
   expect(result.selected("codex-rs/protocol/src/lib.rs", "fn spec_for_model_request")).toEqual(["required"]);
   expect(result.selected("codex-rs/protocol/src/lib.rs", "fn unrelated")).toEqual(["foreign-context"]);
+});
+
+test("session startup mentioning CodeMode cannot pull unrelated analytics into the API closure", async () => {
+  const result = await scope({
+    "codex-rs/code-mode/src/lib.rs": "pub struct CodeModeSession; pub fn exec() {}",
+    "codex-rs/protocol/src/session.rs": "pub fn new_session() { let _ = codex_code_mode::CodeModeSession; publish_analytics(); } fn publish_analytics() {}",
+  });
+  expect(result.selected("codex-rs/protocol/src/session.rs", "fn new_session")).toEqual(["foreign-context"]);
+  expect(result.selected("codex-rs/protocol/src/session.rs", "fn publish_analytics")).toEqual(["foreign-context"]);
 });
 test("typed serialization dispatch retains a handwritten serde implementation", async () => {
   const result = await scope({

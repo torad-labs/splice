@@ -1,0 +1,807 @@
+{
+  "schema": 1,
+  "sourceRevision": "360319d8dee62d87e2d59fc0c21805d79519cfed",
+  "units": [
+    {
+      "id": "codex-rs/app-server/src/code_mode_host.rs#enum_item@627",
+      "sha256": "5cedc691d5f223e59210f414b3cba1b4103959de558f23c8ee388c6045ca0165",
+      "reason": "Exact Codex app-server executable command-line adapter: --code-mode-host parsing and conversion of its optional URL into app-server Local/Grpc transport selection. This is the app-server process's CLI surface, not a shared CodeMode execute/wait/delegate API or host protocol. Splice selects and owns the local pipe-backed host and has no remote app-server endpoint option in the qualified route. The shared gRPC provider, URL/channel transport implementation, and default local host availability/execution obligations remain separately inventoried. This application adapter declaration receives no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/app-server/src/code_mode_host.rs",
+          "sha256": "39a0b682da90b7b567ef4dcbb4ba8b310401ce17a23345cb79084592b4daaf5d",
+          "line": 10,
+          "predicate": "AppServerCodeModeHostArgs derives clap::Args and exposes only the --code-mode-host optional URL flag. From maps Some(url) to CodeModeHostTransport::Grpc and None to Local; RedactedHostUrlParser and parse_host_url at lines45-78 perform clap/URL validation only. No source evaluation, cell lifecycle, callback admission or result rendering occurs in this file."
+        },
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 65,
+          "predicate": "The selected local ProcessOwnedGrpcCodeModeSessionProvider lazily constructs its gRPC provider with_channel over a connector spawning HostConnection; lines91-100 launch the local host as grpc+stdio://. It does not consume AppServerCodeModeHostArgs or the clap URL parser."
+        }
+      ]
+    },
+    {
+      "id": "codex-rs/app-server/src/code_mode_host.rs#enum_variant@735",
+      "sha256": "8c31e6e7223097e2e4847773c47a4efab6aaf79deeecc92a7759891c74976dde",
+      "reason": "Exact Codex app-server executable command-line adapter: --code-mode-host parsing and conversion of its optional URL into app-server Local/Grpc transport selection. This is the app-server process's CLI surface, not a shared CodeMode execute/wait/delegate API or host protocol. Splice selects and owns the local pipe-backed host and has no remote app-server endpoint option in the qualified route. The shared gRPC provider, URL/channel transport implementation, and default local host availability/execution obligations remain separately inventoried. This application adapter declaration receives no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/app-server/src/code_mode_host.rs",
+          "sha256": "39a0b682da90b7b567ef4dcbb4ba8b310401ce17a23345cb79084592b4daaf5d",
+          "line": 10,
+          "predicate": "AppServerCodeModeHostArgs derives clap::Args and exposes only the --code-mode-host optional URL flag. From maps Some(url) to CodeModeHostTransport::Grpc and None to Local; RedactedHostUrlParser and parse_host_url at lines45-78 perform clap/URL validation only. No source evaluation, cell lifecycle, callback admission or result rendering occurs in this file."
+        },
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 65,
+          "predicate": "The selected local ProcessOwnedGrpcCodeModeSessionProvider lazily constructs its gRPC provider with_channel over a connector spawning HostConnection; lines91-100 launch the local host as grpc+stdio://. It does not consume AppServerCodeModeHostArgs or the clap URL parser."
+        }
+      ]
+    },
+    {
+      "id": "codex-rs/app-server/src/code_mode_host.rs#enum_variant@826",
+      "sha256": "65b42c9da2bf10d9c94a728f46a927571531ce516846b94bd4a6a323c9cb52ea",
+      "reason": "Exact Codex app-server executable command-line adapter: --code-mode-host parsing and conversion of its optional URL into app-server Local/Grpc transport selection. This is the app-server process's CLI surface, not a shared CodeMode execute/wait/delegate API or host protocol. Splice selects and owns the local pipe-backed host and has no remote app-server endpoint option in the qualified route. The shared gRPC provider, URL/channel transport implementation, and default local host availability/execution obligations remain separately inventoried. This application adapter declaration receives no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/app-server/src/code_mode_host.rs",
+          "sha256": "39a0b682da90b7b567ef4dcbb4ba8b310401ce17a23345cb79084592b4daaf5d",
+          "line": 10,
+          "predicate": "AppServerCodeModeHostArgs derives clap::Args and exposes only the --code-mode-host optional URL flag. From maps Some(url) to CodeModeHostTransport::Grpc and None to Local; RedactedHostUrlParser and parse_host_url at lines45-78 perform clap/URL validation only. No source evaluation, cell lifecycle, callback admission or result rendering occurs in this file."
+        },
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 65,
+          "predicate": "The selected local ProcessOwnedGrpcCodeModeSessionProvider lazily constructs its gRPC provider with_channel over a connector spawning HostConnection; lines91-100 launch the local host as grpc+stdio://. It does not consume AppServerCodeModeHostArgs or the clap URL parser."
+        }
+      ]
+    },
+    {
+      "id": "codex-rs/app-server/src/code_mode_host.rs#field_declaration@480",
+      "sha256": "7c878eb1699b819651897af6d9a7cee9d6a91e1ed62b5415c816083acbe0e165",
+      "reason": "Exact Codex app-server executable command-line adapter: --code-mode-host parsing and conversion of its optional URL into app-server Local/Grpc transport selection. This is the app-server process's CLI surface, not a shared CodeMode execute/wait/delegate API or host protocol. Splice selects and owns the local pipe-backed host and has no remote app-server endpoint option in the qualified route. The shared gRPC provider, URL/channel transport implementation, and default local host availability/execution obligations remain separately inventoried. This application adapter declaration receives no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/app-server/src/code_mode_host.rs",
+          "sha256": "39a0b682da90b7b567ef4dcbb4ba8b310401ce17a23345cb79084592b4daaf5d",
+          "line": 10,
+          "predicate": "AppServerCodeModeHostArgs derives clap::Args and exposes only the --code-mode-host optional URL flag. From maps Some(url) to CodeModeHostTransport::Grpc and None to Local; RedactedHostUrlParser and parse_host_url at lines45-78 perform clap/URL validation only. No source evaluation, cell lifecycle, callback admission or result rendering occurs in this file."
+        },
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 65,
+          "predicate": "The selected local ProcessOwnedGrpcCodeModeSessionProvider lazily constructs its gRPC provider with_channel over a connector spawning HostConnection; lines91-100 launch the local host as grpc+stdio://. It does not consume AppServerCodeModeHostArgs or the clap URL parser."
+        }
+      ]
+    },
+    {
+      "id": "codex-rs/app-server/src/code_mode_host.rs#function_item@1215",
+      "sha256": "ef19e31bbbac8dedf33872c50263113812c67f251a756ea592bb7a1c96748363",
+      "reason": "Exact Codex app-server executable command-line adapter: --code-mode-host parsing and conversion of its optional URL into app-server Local/Grpc transport selection. This is the app-server process's CLI surface, not a shared CodeMode execute/wait/delegate API or host protocol. Splice selects and owns the local pipe-backed host and has no remote app-server endpoint option in the qualified route. The shared gRPC provider, URL/channel transport implementation, and default local host availability/execution obligations remain separately inventoried. This application adapter declaration receives no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/app-server/src/code_mode_host.rs",
+          "sha256": "39a0b682da90b7b567ef4dcbb4ba8b310401ce17a23345cb79084592b4daaf5d",
+          "line": 10,
+          "predicate": "AppServerCodeModeHostArgs derives clap::Args and exposes only the --code-mode-host optional URL flag. From maps Some(url) to CodeModeHostTransport::Grpc and None to Local; RedactedHostUrlParser and parse_host_url at lines45-78 perform clap/URL validation only. No source evaluation, cell lifecycle, callback admission or result rendering occurs in this file."
+        },
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 65,
+          "predicate": "The selected local ProcessOwnedGrpcCodeModeSessionProvider lazily constructs its gRPC provider with_channel over a connector spawning HostConnection; lines91-100 launch the local host as grpc+stdio://. It does not consume AppServerCodeModeHostArgs or the clap URL parser."
+        }
+      ]
+    },
+    {
+      "id": "codex-rs/app-server/src/code_mode_host.rs#function_item@1765",
+      "sha256": "7f1119f26c67ca90893a4059f6eca4e4af3a62d1d00aa23d9c571d616e3f3af9",
+      "reason": "Exact Codex app-server executable command-line adapter: --code-mode-host parsing and conversion of its optional URL into app-server Local/Grpc transport selection. This is the app-server process's CLI surface, not a shared CodeMode execute/wait/delegate API or host protocol. Splice selects and owns the local pipe-backed host and has no remote app-server endpoint option in the qualified route. The shared gRPC provider, URL/channel transport implementation, and default local host availability/execution obligations remain separately inventoried. This application adapter declaration receives no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/app-server/src/code_mode_host.rs",
+          "sha256": "39a0b682da90b7b567ef4dcbb4ba8b310401ce17a23345cb79084592b4daaf5d",
+          "line": 10,
+          "predicate": "AppServerCodeModeHostArgs derives clap::Args and exposes only the --code-mode-host optional URL flag. From maps Some(url) to CodeModeHostTransport::Grpc and None to Local; RedactedHostUrlParser and parse_host_url at lines45-78 perform clap/URL validation only. No source evaluation, cell lifecycle, callback admission or result rendering occurs in this file."
+        },
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 65,
+          "predicate": "The selected local ProcessOwnedGrpcCodeModeSessionProvider lazily constructs its gRPC provider with_channel over a connector spawning HostConnection; lines91-100 launch the local host as grpc+stdio://. It does not consume AppServerCodeModeHostArgs or the clap URL parser."
+        }
+      ]
+    },
+    {
+      "id": "codex-rs/app-server/src/code_mode_host.rs#function_item@909",
+      "sha256": "38bfdab7b91c700d6de4aba51803eec6c94cae042c7dc853622ae3a137029b85",
+      "reason": "Exact Codex app-server executable command-line adapter: --code-mode-host parsing and conversion of its optional URL into app-server Local/Grpc transport selection. This is the app-server process's CLI surface, not a shared CodeMode execute/wait/delegate API or host protocol. Splice selects and owns the local pipe-backed host and has no remote app-server endpoint option in the qualified route. The shared gRPC provider, URL/channel transport implementation, and default local host availability/execution obligations remain separately inventoried. This application adapter declaration receives no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/app-server/src/code_mode_host.rs",
+          "sha256": "39a0b682da90b7b567ef4dcbb4ba8b310401ce17a23345cb79084592b4daaf5d",
+          "line": 10,
+          "predicate": "AppServerCodeModeHostArgs derives clap::Args and exposes only the --code-mode-host optional URL flag. From maps Some(url) to CodeModeHostTransport::Grpc and None to Local; RedactedHostUrlParser and parse_host_url at lines45-78 perform clap/URL validation only. No source evaluation, cell lifecycle, callback admission or result rendering occurs in this file."
+        },
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 65,
+          "predicate": "The selected local ProcessOwnedGrpcCodeModeSessionProvider lazily constructs its gRPC provider with_channel over a connector spawning HostConnection; lines91-100 launch the local host as grpc+stdio://. It does not consume AppServerCodeModeHostArgs or the clap URL parser."
+        }
+      ]
+    },
+    {
+      "id": "codex-rs/app-server/src/code_mode_host.rs#ordered_field_declaration_list@830",
+      "sha256": "6739a2bc980276ce0b28d4f1eb9188ee9c947be29792754a68ec3d5dd34657cb",
+      "reason": "Exact Codex app-server executable command-line adapter: --code-mode-host parsing and conversion of its optional URL into app-server Local/Grpc transport selection. This is the app-server process's CLI surface, not a shared CodeMode execute/wait/delegate API or host protocol. Splice selects and owns the local pipe-backed host and has no remote app-server endpoint option in the qualified route. The shared gRPC provider, URL/channel transport implementation, and default local host availability/execution obligations remain separately inventoried. This application adapter declaration receives no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/app-server/src/code_mode_host.rs",
+          "sha256": "39a0b682da90b7b567ef4dcbb4ba8b310401ce17a23345cb79084592b4daaf5d",
+          "line": 10,
+          "predicate": "AppServerCodeModeHostArgs derives clap::Args and exposes only the --code-mode-host optional URL flag. From maps Some(url) to CodeModeHostTransport::Grpc and None to Local; RedactedHostUrlParser and parse_host_url at lines45-78 perform clap/URL validation only. No source evaluation, cell lifecycle, callback admission or result rendering occurs in this file."
+        },
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 65,
+          "predicate": "The selected local ProcessOwnedGrpcCodeModeSessionProvider lazily constructs its gRPC provider with_channel over a connector spawning HostConnection; lines91-100 launch the local host as grpc+stdio://. It does not consume AppServerCodeModeHostArgs or the clap URL parser."
+        }
+      ]
+    },
+    {
+      "id": "codex-rs/app-server/src/code_mode_host.rs#struct_item@1107",
+      "sha256": "e88587767c81d5613129b248f2395c7f83637ddcbd8bc3775038c26fd4934f37",
+      "reason": "Exact Codex app-server executable command-line adapter: --code-mode-host parsing and conversion of its optional URL into app-server Local/Grpc transport selection. This is the app-server process's CLI surface, not a shared CodeMode execute/wait/delegate API or host protocol. Splice selects and owns the local pipe-backed host and has no remote app-server endpoint option in the qualified route. The shared gRPC provider, URL/channel transport implementation, and default local host availability/execution obligations remain separately inventoried. This application adapter declaration receives no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/app-server/src/code_mode_host.rs",
+          "sha256": "39a0b682da90b7b567ef4dcbb4ba8b310401ce17a23345cb79084592b4daaf5d",
+          "line": 10,
+          "predicate": "AppServerCodeModeHostArgs derives clap::Args and exposes only the --code-mode-host optional URL flag. From maps Some(url) to CodeModeHostTransport::Grpc and None to Local; RedactedHostUrlParser and parse_host_url at lines45-78 perform clap/URL validation only. No source evaluation, cell lifecycle, callback admission or result rendering occurs in this file."
+        },
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 65,
+          "predicate": "The selected local ProcessOwnedGrpcCodeModeSessionProvider lazily constructs its gRPC provider with_channel over a connector spawning HostConnection; lines91-100 launch the local host as grpc+stdio://. It does not consume AppServerCodeModeHostArgs or the clap URL parser."
+        }
+      ]
+    },
+    {
+      "id": "codex-rs/app-server/src/code_mode_host.rs#struct_item@236",
+      "sha256": "4a84a5b7e3f77586f4b6022120f066901b747e5ab064844d2dfff60372a5e1da",
+      "reason": "Exact Codex app-server executable command-line adapter: --code-mode-host parsing and conversion of its optional URL into app-server Local/Grpc transport selection. This is the app-server process's CLI surface, not a shared CodeMode execute/wait/delegate API or host protocol. Splice selects and owns the local pipe-backed host and has no remote app-server endpoint option in the qualified route. The shared gRPC provider, URL/channel transport implementation, and default local host availability/execution obligations remain separately inventoried. This application adapter declaration receives no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/app-server/src/code_mode_host.rs",
+          "sha256": "39a0b682da90b7b567ef4dcbb4ba8b310401ce17a23345cb79084592b4daaf5d",
+          "line": 10,
+          "predicate": "AppServerCodeModeHostArgs derives clap::Args and exposes only the --code-mode-host optional URL flag. From maps Some(url) to CodeModeHostTransport::Grpc and None to Local; RedactedHostUrlParser and parse_host_url at lines45-78 perform clap/URL validation only. No source evaluation, cell lifecycle, callback admission or result rendering occurs in this file."
+        },
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 65,
+          "predicate": "The selected local ProcessOwnedGrpcCodeModeSessionProvider lazily constructs its gRPC provider with_channel over a connector spawning HostConnection; lines91-100 launch the local host as grpc+stdio://. It does not consume AppServerCodeModeHostArgs or the clap URL parser."
+        }
+      ]
+    },
+    {
+      "id": "codex-rs/app-server/src/code_mode_host.rs#type_item@1192",
+      "sha256": "6a6e0275580a09b6ee2cab86a0f87dd978b8b6cc4e0563ffc82a5fae068503f8",
+      "reason": "Exact Codex app-server executable command-line adapter: --code-mode-host parsing and conversion of its optional URL into app-server Local/Grpc transport selection. This is the app-server process's CLI surface, not a shared CodeMode execute/wait/delegate API or host protocol. Splice selects and owns the local pipe-backed host and has no remote app-server endpoint option in the qualified route. The shared gRPC provider, URL/channel transport implementation, and default local host availability/execution obligations remain separately inventoried. This application adapter declaration receives no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/app-server/src/code_mode_host.rs",
+          "sha256": "39a0b682da90b7b567ef4dcbb4ba8b310401ce17a23345cb79084592b4daaf5d",
+          "line": 10,
+          "predicate": "AppServerCodeModeHostArgs derives clap::Args and exposes only the --code-mode-host optional URL flag. From maps Some(url) to CodeModeHostTransport::Grpc and None to Local; RedactedHostUrlParser and parse_host_url at lines45-78 perform clap/URL validation only. No source evaluation, cell lifecycle, callback admission or result rendering occurs in this file."
+        },
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 65,
+          "predicate": "The selected local ProcessOwnedGrpcCodeModeSessionProvider lazily constructs its gRPC provider with_channel over a connector spawning HostConnection; lines91-100 launch the local host as grpc+stdio://. It does not consume AppServerCodeModeHostArgs or the clap URL parser."
+        }
+      ]
+    },
+    {
+      "id": "codex-rs/code-mode-protocol/src/host/codec.rs#function_item@1259",
+      "sha256": "cf7d9f6b5226b33d86b8e065e29c7fd8d9d823097730547e2350db0c3ab8330e",
+      "reason": "Exact alternate framed-JSON buffer helper: into_framed_bytes writes a little-endian u32 payload prefix and decode_framed consumes that prefix before serde_json decoding. The selected grpc+stdio:// host uses HTTP/2 generated protobuf service framing. The shared MAX_FRAME_BYTES limit and selected gRPC size checks remain required. These two unselected transport helpers stay inventoried and receive no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 96,
+          "predicate": "ProcessOwnedGrpcCodeModeSessionProvider creates the default local CodeMode host with --listen grpc+stdio://; this selected production adapter does not launch the JSON length-prefixed stdio endpoint."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/transport.rs",
+          "sha256": "4a23b7bd475f99bde87db854ae9fb6907bb407a4e98a7ab701fe24b9d9df41dd",
+          "line": 18,
+          "predicate": "run_transport sends GrpcStdio to grpc_stdio::run. Only the disjoint Stdio arm invokes run_stdio; the exact grpc+stdio:// selector returns GrpcStdio at lines27-28."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc_stdio.rs",
+          "sha256": "a39275fce82b4f4393448e23f6038a2f18090733bc991901a118aed1e174b3f5",
+          "line": 34,
+          "predicate": "The selected pipe serves generated protobuf CodeModeHostServer over HTTP/2. Its sole host-module import is the shared MAX_FRAME_BYTES bound; JSON EncodedFrame and ClientHello/HostHello are not used here."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc/conversions.rs",
+          "sha256": "7523d7c9e84c07243e511450d2b62d834dcf1be3aa4ef7a97ba74530dda97927",
+          "line": 32,
+          "predicate": "The selected gRPC server converts generated proto::ExecuteRequest directly to shared ExecuteRequest and ToolDefinition types. It does not pass through the alternate JSON ClientHello/HostHello handshake or length-prefixed EncodedFrame DTOs."
+        },
+        {
+          "path": "codex-rs/code-mode-protocol/src/host/codec.rs",
+          "sha256": "76b37ff1d32c3214b3457235cf87670015024173383713ebb255439d2d444d3c",
+          "line": 44,
+          "predicate": "into_framed_bytes at line44 and decode_framed at line52 implement complete little-endian length-prefixed JSON buffers, not gRPC/HTTP2 framing. This context review names only these two methods; EncodedFrame encode/write/read and MAX_FRAME_BYTES are not removed by it."
+        }
+      ]
+    },
+    {
+      "id": "codex-rs/code-mode-protocol/src/host/codec.rs#function_item@1596",
+      "sha256": "0240c820914f31f2d1b05feddd16f367a63c84fd1a5d65beca640c50a08c14b3",
+      "reason": "Exact alternate framed-JSON buffer helper: into_framed_bytes writes a little-endian u32 payload prefix and decode_framed consumes that prefix before serde_json decoding. The selected grpc+stdio:// host uses HTTP/2 generated protobuf service framing. The shared MAX_FRAME_BYTES limit and selected gRPC size checks remain required. These two unselected transport helpers stay inventoried and receive no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 96,
+          "predicate": "ProcessOwnedGrpcCodeModeSessionProvider creates the default local CodeMode host with --listen grpc+stdio://; this selected production adapter does not launch the JSON length-prefixed stdio endpoint."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/transport.rs",
+          "sha256": "4a23b7bd475f99bde87db854ae9fb6907bb407a4e98a7ab701fe24b9d9df41dd",
+          "line": 18,
+          "predicate": "run_transport sends GrpcStdio to grpc_stdio::run. Only the disjoint Stdio arm invokes run_stdio; the exact grpc+stdio:// selector returns GrpcStdio at lines27-28."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc_stdio.rs",
+          "sha256": "a39275fce82b4f4393448e23f6038a2f18090733bc991901a118aed1e174b3f5",
+          "line": 34,
+          "predicate": "The selected pipe serves generated protobuf CodeModeHostServer over HTTP/2. Its sole host-module import is the shared MAX_FRAME_BYTES bound; JSON EncodedFrame and ClientHello/HostHello are not used here."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc/conversions.rs",
+          "sha256": "7523d7c9e84c07243e511450d2b62d834dcf1be3aa4ef7a97ba74530dda97927",
+          "line": 32,
+          "predicate": "The selected gRPC server converts generated proto::ExecuteRequest directly to shared ExecuteRequest and ToolDefinition types. It does not pass through the alternate JSON ClientHello/HostHello handshake or length-prefixed EncodedFrame DTOs."
+        },
+        {
+          "path": "codex-rs/code-mode-protocol/src/host/codec.rs",
+          "sha256": "76b37ff1d32c3214b3457235cf87670015024173383713ebb255439d2d444d3c",
+          "line": 52,
+          "predicate": "into_framed_bytes at line44 and decode_framed at line52 implement complete little-endian length-prefixed JSON buffers, not gRPC/HTTP2 framing. This context review names only these two methods; EncodedFrame encode/write/read and MAX_FRAME_BYTES are not removed by it."
+        }
+      ]
+    },
+    {
+      "id": "codex-rs/code-mode-protocol/src/host/message.rs#enum_item@2423",
+      "sha256": "08542f85909bff6c3f6648db70338665a3736ba15b6e42fcf422308600b303bc",
+      "reason": "Exact alternate framed-JSON handshake member: ClientHello construction/serde overlap validation and its ClientHelloWire fields/error, or HostHello selected-version/capability accessors. The production core adapter selects grpc+stdio:// and generated protobuf CodeModeHostServer; this JSON connection/hello handshake is confined to the unselected legacy stdio endpoint. Shared runtime/session types, gRPC session negotiation, and host frame limits remain required. This unit stays inventoried and receives no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 96,
+          "predicate": "ProcessOwnedGrpcCodeModeSessionProvider creates the default local CodeMode host with --listen grpc+stdio://; this selected production adapter does not launch the JSON length-prefixed stdio endpoint."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/transport.rs",
+          "sha256": "4a23b7bd475f99bde87db854ae9fb6907bb407a4e98a7ab701fe24b9d9df41dd",
+          "line": 18,
+          "predicate": "run_transport sends GrpcStdio to grpc_stdio::run. Only the disjoint Stdio arm invokes run_stdio; the exact grpc+stdio:// selector returns GrpcStdio at lines27-28."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc_stdio.rs",
+          "sha256": "a39275fce82b4f4393448e23f6038a2f18090733bc991901a118aed1e174b3f5",
+          "line": 34,
+          "predicate": "The selected pipe serves generated protobuf CodeModeHostServer over HTTP/2. Its sole host-module import is the shared MAX_FRAME_BYTES bound; JSON EncodedFrame and ClientHello/HostHello are not used here."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc/conversions.rs",
+          "sha256": "7523d7c9e84c07243e511450d2b62d834dcf1be3aa4ef7a97ba74530dda97927",
+          "line": 32,
+          "predicate": "The selected gRPC server converts generated proto::ExecuteRequest directly to shared ExecuteRequest and ToolDefinition types. It does not pass through the alternate JSON ClientHello/HostHello handshake or length-prefixed EncodedFrame DTOs."
+        },
+        {
+          "path": "codex-rs/code-mode-protocol/src/host/message.rs",
+          "sha256": "3aa537cafccf7127921cbc7a361d7608431bea1852f5be4b844851a62a2eaa5b",
+          "line": 87,
+          "predicate": "Lines25-83 define ClientHello and its JSON serde adapter, lines87-99 its overlap-validation error, and lines106-124 the HostHello JSON handshake fields/accessors. The reviewed units are these exact handshake declarations; no shared ExecuteRequest, RuntimeResponse, or session callback declaration is reclassified."
+        }
+      ]
+    },
+    {
+      "id": "codex-rs/code-mode-protocol/src/host/message.rs#enum_variant@2455",
+      "sha256": "f673e6ab217771445471a89b4573df3e1db08b4f5eb8ab88470f7c550e9b5001",
+      "reason": "Exact alternate framed-JSON handshake member: ClientHello construction/serde overlap validation and its ClientHelloWire fields/error, or HostHello selected-version/capability accessors. The production core adapter selects grpc+stdio:// and generated protobuf CodeModeHostServer; this JSON connection/hello handshake is confined to the unselected legacy stdio endpoint. Shared runtime/session types, gRPC session negotiation, and host frame limits remain required. This unit stays inventoried and receives no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 96,
+          "predicate": "ProcessOwnedGrpcCodeModeSessionProvider creates the default local CodeMode host with --listen grpc+stdio://; this selected production adapter does not launch the JSON length-prefixed stdio endpoint."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/transport.rs",
+          "sha256": "4a23b7bd475f99bde87db854ae9fb6907bb407a4e98a7ab701fe24b9d9df41dd",
+          "line": 18,
+          "predicate": "run_transport sends GrpcStdio to grpc_stdio::run. Only the disjoint Stdio arm invokes run_stdio; the exact grpc+stdio:// selector returns GrpcStdio at lines27-28."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc_stdio.rs",
+          "sha256": "a39275fce82b4f4393448e23f6038a2f18090733bc991901a118aed1e174b3f5",
+          "line": 34,
+          "predicate": "The selected pipe serves generated protobuf CodeModeHostServer over HTTP/2. Its sole host-module import is the shared MAX_FRAME_BYTES bound; JSON EncodedFrame and ClientHello/HostHello are not used here."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc/conversions.rs",
+          "sha256": "7523d7c9e84c07243e511450d2b62d834dcf1be3aa4ef7a97ba74530dda97927",
+          "line": 32,
+          "predicate": "The selected gRPC server converts generated proto::ExecuteRequest directly to shared ExecuteRequest and ToolDefinition types. It does not pass through the alternate JSON ClientHello/HostHello handshake or length-prefixed EncodedFrame DTOs."
+        },
+        {
+          "path": "codex-rs/code-mode-protocol/src/host/message.rs",
+          "sha256": "3aa537cafccf7127921cbc7a361d7608431bea1852f5be4b844851a62a2eaa5b",
+          "line": 88,
+          "predicate": "Lines25-83 define ClientHello and its JSON serde adapter, lines87-99 its overlap-validation error, and lines106-124 the HostHello JSON handshake fields/accessors. The reviewed units are these exact handshake declarations; no shared ExecuteRequest, RuntimeResponse, or session callback declaration is reclassified."
+        }
+      ]
+    },
+    {
+      "id": "codex-rs/code-mode-protocol/src/host/message.rs#field_declaration@1825",
+      "sha256": "e406f635a2a60d0fe4c8a4af333382a6e471500caa8be869d42f7f0be4157a61",
+      "reason": "Exact alternate framed-JSON handshake member: ClientHello construction/serde overlap validation and its ClientHelloWire fields/error, or HostHello selected-version/capability accessors. The production core adapter selects grpc+stdio:// and generated protobuf CodeModeHostServer; this JSON connection/hello handshake is confined to the unselected legacy stdio endpoint. Shared runtime/session types, gRPC session negotiation, and host frame limits remain required. This unit stays inventoried and receives no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 96,
+          "predicate": "ProcessOwnedGrpcCodeModeSessionProvider creates the default local CodeMode host with --listen grpc+stdio://; this selected production adapter does not launch the JSON length-prefixed stdio endpoint."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/transport.rs",
+          "sha256": "4a23b7bd475f99bde87db854ae9fb6907bb407a4e98a7ab701fe24b9d9df41dd",
+          "line": 18,
+          "predicate": "run_transport sends GrpcStdio to grpc_stdio::run. Only the disjoint Stdio arm invokes run_stdio; the exact grpc+stdio:// selector returns GrpcStdio at lines27-28."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc_stdio.rs",
+          "sha256": "a39275fce82b4f4393448e23f6038a2f18090733bc991901a118aed1e174b3f5",
+          "line": 34,
+          "predicate": "The selected pipe serves generated protobuf CodeModeHostServer over HTTP/2. Its sole host-module import is the shared MAX_FRAME_BYTES bound; JSON EncodedFrame and ClientHello/HostHello are not used here."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc/conversions.rs",
+          "sha256": "7523d7c9e84c07243e511450d2b62d834dcf1be3aa4ef7a97ba74530dda97927",
+          "line": 32,
+          "predicate": "The selected gRPC server converts generated proto::ExecuteRequest directly to shared ExecuteRequest and ToolDefinition types. It does not pass through the alternate JSON ClientHello/HostHello handshake or length-prefixed EncodedFrame DTOs."
+        },
+        {
+          "path": "codex-rs/code-mode-protocol/src/host/message.rs",
+          "sha256": "3aa537cafccf7127921cbc7a361d7608431bea1852f5be4b844851a62a2eaa5b",
+          "line": 66,
+          "predicate": "Lines25-83 define ClientHello and its JSON serde adapter, lines87-99 its overlap-validation error, and lines106-124 the HostHello JSON handshake fields/accessors. The reviewed units are these exact handshake declarations; no shared ExecuteRequest, RuntimeResponse, or session callback declaration is reclassified."
+        }
+      ]
+    },
+    {
+      "id": "codex-rs/code-mode-protocol/src/host/message.rs#field_declaration@1876",
+      "sha256": "bbbe130c9813f0e1b5217496ae9c98e94eb9e9c920bb7c25584bb00c8ffb5ce0",
+      "reason": "Exact alternate framed-JSON handshake member: ClientHello construction/serde overlap validation and its ClientHelloWire fields/error, or HostHello selected-version/capability accessors. The production core adapter selects grpc+stdio:// and generated protobuf CodeModeHostServer; this JSON connection/hello handshake is confined to the unselected legacy stdio endpoint. Shared runtime/session types, gRPC session negotiation, and host frame limits remain required. This unit stays inventoried and receives no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 96,
+          "predicate": "ProcessOwnedGrpcCodeModeSessionProvider creates the default local CodeMode host with --listen grpc+stdio://; this selected production adapter does not launch the JSON length-prefixed stdio endpoint."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/transport.rs",
+          "sha256": "4a23b7bd475f99bde87db854ae9fb6907bb407a4e98a7ab701fe24b9d9df41dd",
+          "line": 18,
+          "predicate": "run_transport sends GrpcStdio to grpc_stdio::run. Only the disjoint Stdio arm invokes run_stdio; the exact grpc+stdio:// selector returns GrpcStdio at lines27-28."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc_stdio.rs",
+          "sha256": "a39275fce82b4f4393448e23f6038a2f18090733bc991901a118aed1e174b3f5",
+          "line": 34,
+          "predicate": "The selected pipe serves generated protobuf CodeModeHostServer over HTTP/2. Its sole host-module import is the shared MAX_FRAME_BYTES bound; JSON EncodedFrame and ClientHello/HostHello are not used here."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc/conversions.rs",
+          "sha256": "7523d7c9e84c07243e511450d2b62d834dcf1be3aa4ef7a97ba74530dda97927",
+          "line": 32,
+          "predicate": "The selected gRPC server converts generated proto::ExecuteRequest directly to shared ExecuteRequest and ToolDefinition types. It does not pass through the alternate JSON ClientHello/HostHello handshake or length-prefixed EncodedFrame DTOs."
+        },
+        {
+          "path": "codex-rs/code-mode-protocol/src/host/message.rs",
+          "sha256": "3aa537cafccf7127921cbc7a361d7608431bea1852f5be4b844851a62a2eaa5b",
+          "line": 67,
+          "predicate": "Lines25-83 define ClientHello and its JSON serde adapter, lines87-99 its overlap-validation error, and lines106-124 the HostHello JSON handshake fields/accessors. The reviewed units are these exact handshake declarations; no shared ExecuteRequest, RuntimeResponse, or session callback declaration is reclassified."
+        }
+      ]
+    },
+    {
+      "id": "codex-rs/code-mode-protocol/src/host/message.rs#field_declaration@1918",
+      "sha256": "b7fc674523df091e31485b002efd832ffb1d4c637843390bcb84843c1b94b9a2",
+      "reason": "Exact alternate framed-JSON handshake member: ClientHello construction/serde overlap validation and its ClientHelloWire fields/error, or HostHello selected-version/capability accessors. The production core adapter selects grpc+stdio:// and generated protobuf CodeModeHostServer; this JSON connection/hello handshake is confined to the unselected legacy stdio endpoint. Shared runtime/session types, gRPC session negotiation, and host frame limits remain required. This unit stays inventoried and receives no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 96,
+          "predicate": "ProcessOwnedGrpcCodeModeSessionProvider creates the default local CodeMode host with --listen grpc+stdio://; this selected production adapter does not launch the JSON length-prefixed stdio endpoint."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/transport.rs",
+          "sha256": "4a23b7bd475f99bde87db854ae9fb6907bb407a4e98a7ab701fe24b9d9df41dd",
+          "line": 18,
+          "predicate": "run_transport sends GrpcStdio to grpc_stdio::run. Only the disjoint Stdio arm invokes run_stdio; the exact grpc+stdio:// selector returns GrpcStdio at lines27-28."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc_stdio.rs",
+          "sha256": "a39275fce82b4f4393448e23f6038a2f18090733bc991901a118aed1e174b3f5",
+          "line": 34,
+          "predicate": "The selected pipe serves generated protobuf CodeModeHostServer over HTTP/2. Its sole host-module import is the shared MAX_FRAME_BYTES bound; JSON EncodedFrame and ClientHello/HostHello are not used here."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc/conversions.rs",
+          "sha256": "7523d7c9e84c07243e511450d2b62d834dcf1be3aa4ef7a97ba74530dda97927",
+          "line": 32,
+          "predicate": "The selected gRPC server converts generated proto::ExecuteRequest directly to shared ExecuteRequest and ToolDefinition types. It does not pass through the alternate JSON ClientHello/HostHello handshake or length-prefixed EncodedFrame DTOs."
+        },
+        {
+          "path": "codex-rs/code-mode-protocol/src/host/message.rs",
+          "sha256": "3aa537cafccf7127921cbc7a361d7608431bea1852f5be4b844851a62a2eaa5b",
+          "line": 68,
+          "predicate": "Lines25-83 define ClientHello and its JSON serde adapter, lines87-99 its overlap-validation error, and lines106-124 the HostHello JSON handshake fields/accessors. The reviewed units are these exact handshake declarations; no shared ExecuteRequest, RuntimeResponse, or session callback declaration is reclassified."
+        }
+      ]
+    },
+    {
+      "id": "codex-rs/code-mode-protocol/src/host/message.rs#field_declaration@3025",
+      "sha256": "65a2b0746e0b0aaaa393d4658f34c4ee63c2352b602a75ec9c49f5edf41c0a84",
+      "reason": "Exact alternate framed-JSON handshake member: ClientHello construction/serde overlap validation and its ClientHelloWire fields/error, or HostHello selected-version/capability accessors. The production core adapter selects grpc+stdio:// and generated protobuf CodeModeHostServer; this JSON connection/hello handshake is confined to the unselected legacy stdio endpoint. Shared runtime/session types, gRPC session negotiation, and host frame limits remain required. This unit stays inventoried and receives no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 96,
+          "predicate": "ProcessOwnedGrpcCodeModeSessionProvider creates the default local CodeMode host with --listen grpc+stdio://; this selected production adapter does not launch the JSON length-prefixed stdio endpoint."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/transport.rs",
+          "sha256": "4a23b7bd475f99bde87db854ae9fb6907bb407a4e98a7ab701fe24b9d9df41dd",
+          "line": 18,
+          "predicate": "run_transport sends GrpcStdio to grpc_stdio::run. Only the disjoint Stdio arm invokes run_stdio; the exact grpc+stdio:// selector returns GrpcStdio at lines27-28."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc_stdio.rs",
+          "sha256": "a39275fce82b4f4393448e23f6038a2f18090733bc991901a118aed1e174b3f5",
+          "line": 34,
+          "predicate": "The selected pipe serves generated protobuf CodeModeHostServer over HTTP/2. Its sole host-module import is the shared MAX_FRAME_BYTES bound; JSON EncodedFrame and ClientHello/HostHello are not used here."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc/conversions.rs",
+          "sha256": "7523d7c9e84c07243e511450d2b62d834dcf1be3aa4ef7a97ba74530dda97927",
+          "line": 32,
+          "predicate": "The selected gRPC server converts generated proto::ExecuteRequest directly to shared ExecuteRequest and ToolDefinition types. It does not pass through the alternate JSON ClientHello/HostHello handshake or length-prefixed EncodedFrame DTOs."
+        },
+        {
+          "path": "codex-rs/code-mode-protocol/src/host/message.rs",
+          "sha256": "3aa537cafccf7127921cbc7a361d7608431bea1852f5be4b844851a62a2eaa5b",
+          "line": 107,
+          "predicate": "Lines25-83 define ClientHello and its JSON serde adapter, lines87-99 its overlap-validation error, and lines106-124 the HostHello JSON handshake fields/accessors. The reviewed units are these exact handshake declarations; no shared ExecuteRequest, RuntimeResponse, or session callback declaration is reclassified."
+        }
+      ]
+    },
+    {
+      "id": "codex-rs/code-mode-protocol/src/host/message.rs#field_declaration@3064",
+      "sha256": "ffcf235a5435a357419f305c0c52a7a5eed09bfe1dcc8925f57f8bcb3d9a88e3",
+      "reason": "Exact alternate framed-JSON handshake member: ClientHello construction/serde overlap validation and its ClientHelloWire fields/error, or HostHello selected-version/capability accessors. The production core adapter selects grpc+stdio:// and generated protobuf CodeModeHostServer; this JSON connection/hello handshake is confined to the unselected legacy stdio endpoint. Shared runtime/session types, gRPC session negotiation, and host frame limits remain required. This unit stays inventoried and receives no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 96,
+          "predicate": "ProcessOwnedGrpcCodeModeSessionProvider creates the default local CodeMode host with --listen grpc+stdio://; this selected production adapter does not launch the JSON length-prefixed stdio endpoint."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/transport.rs",
+          "sha256": "4a23b7bd475f99bde87db854ae9fb6907bb407a4e98a7ab701fe24b9d9df41dd",
+          "line": 18,
+          "predicate": "run_transport sends GrpcStdio to grpc_stdio::run. Only the disjoint Stdio arm invokes run_stdio; the exact grpc+stdio:// selector returns GrpcStdio at lines27-28."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc_stdio.rs",
+          "sha256": "a39275fce82b4f4393448e23f6038a2f18090733bc991901a118aed1e174b3f5",
+          "line": 34,
+          "predicate": "The selected pipe serves generated protobuf CodeModeHostServer over HTTP/2. Its sole host-module import is the shared MAX_FRAME_BYTES bound; JSON EncodedFrame and ClientHello/HostHello are not used here."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc/conversions.rs",
+          "sha256": "7523d7c9e84c07243e511450d2b62d834dcf1be3aa4ef7a97ba74530dda97927",
+          "line": 32,
+          "predicate": "The selected gRPC server converts generated proto::ExecuteRequest directly to shared ExecuteRequest and ToolDefinition types. It does not pass through the alternate JSON ClientHello/HostHello handshake or length-prefixed EncodedFrame DTOs."
+        },
+        {
+          "path": "codex-rs/code-mode-protocol/src/host/message.rs",
+          "sha256": "3aa537cafccf7127921cbc7a361d7608431bea1852f5be4b844851a62a2eaa5b",
+          "line": 108,
+          "predicate": "Lines25-83 define ClientHello and its JSON serde adapter, lines87-99 its overlap-validation error, and lines106-124 the HostHello JSON handshake fields/accessors. The reviewed units are these exact handshake declarations; no shared ExecuteRequest, RuntimeResponse, or session callback declaration is reclassified."
+        }
+      ]
+    },
+    {
+      "id": "codex-rs/code-mode-protocol/src/host/message.rs#function_item@2008",
+      "sha256": "eecd0919044da25a2c68e884bf1f8ba3e48311177de43d52f550fcd3d05bf849",
+      "reason": "Exact alternate framed-JSON handshake member: ClientHello construction/serde overlap validation and its ClientHelloWire fields/error, or HostHello selected-version/capability accessors. The production core adapter selects grpc+stdio:// and generated protobuf CodeModeHostServer; this JSON connection/hello handshake is confined to the unselected legacy stdio endpoint. Shared runtime/session types, gRPC session negotiation, and host frame limits remain required. This unit stays inventoried and receives no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 96,
+          "predicate": "ProcessOwnedGrpcCodeModeSessionProvider creates the default local CodeMode host with --listen grpc+stdio://; this selected production adapter does not launch the JSON length-prefixed stdio endpoint."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/transport.rs",
+          "sha256": "4a23b7bd475f99bde87db854ae9fb6907bb407a4e98a7ab701fe24b9d9df41dd",
+          "line": 18,
+          "predicate": "run_transport sends GrpcStdio to grpc_stdio::run. Only the disjoint Stdio arm invokes run_stdio; the exact grpc+stdio:// selector returns GrpcStdio at lines27-28."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc_stdio.rs",
+          "sha256": "a39275fce82b4f4393448e23f6038a2f18090733bc991901a118aed1e174b3f5",
+          "line": 34,
+          "predicate": "The selected pipe serves generated protobuf CodeModeHostServer over HTTP/2. Its sole host-module import is the shared MAX_FRAME_BYTES bound; JSON EncodedFrame and ClientHello/HostHello are not used here."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc/conversions.rs",
+          "sha256": "7523d7c9e84c07243e511450d2b62d834dcf1be3aa4ef7a97ba74530dda97927",
+          "line": 32,
+          "predicate": "The selected gRPC server converts generated proto::ExecuteRequest directly to shared ExecuteRequest and ToolDefinition types. It does not pass through the alternate JSON ClientHello/HostHello handshake or length-prefixed EncodedFrame DTOs."
+        },
+        {
+          "path": "codex-rs/code-mode-protocol/src/host/message.rs",
+          "sha256": "3aa537cafccf7127921cbc7a361d7608431bea1852f5be4b844851a62a2eaa5b",
+          "line": 72,
+          "predicate": "Lines25-83 define ClientHello and its JSON serde adapter, lines87-99 its overlap-validation error, and lines106-124 the HostHello JSON handshake fields/accessors. The reviewed units are these exact handshake declarations; no shared ExecuteRequest, RuntimeResponse, or session callback declaration is reclassified."
+        }
+      ]
+    },
+    {
+      "id": "codex-rs/code-mode-protocol/src/host/message.rs#function_item@2538",
+      "sha256": "09bb46c56d384c46659db4b238e993c5850c40e39ae95c90be20d7695d03539f",
+      "reason": "Exact alternate framed-JSON handshake member: ClientHello construction/serde overlap validation and its ClientHelloWire fields/error, or HostHello selected-version/capability accessors. The production core adapter selects grpc+stdio:// and generated protobuf CodeModeHostServer; this JSON connection/hello handshake is confined to the unselected legacy stdio endpoint. Shared runtime/session types, gRPC session negotiation, and host frame limits remain required. This unit stays inventoried and receives no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 96,
+          "predicate": "ProcessOwnedGrpcCodeModeSessionProvider creates the default local CodeMode host with --listen grpc+stdio://; this selected production adapter does not launch the JSON length-prefixed stdio endpoint."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/transport.rs",
+          "sha256": "4a23b7bd475f99bde87db854ae9fb6907bb407a4e98a7ab701fe24b9d9df41dd",
+          "line": 18,
+          "predicate": "run_transport sends GrpcStdio to grpc_stdio::run. Only the disjoint Stdio arm invokes run_stdio; the exact grpc+stdio:// selector returns GrpcStdio at lines27-28."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc_stdio.rs",
+          "sha256": "a39275fce82b4f4393448e23f6038a2f18090733bc991901a118aed1e174b3f5",
+          "line": 34,
+          "predicate": "The selected pipe serves generated protobuf CodeModeHostServer over HTTP/2. Its sole host-module import is the shared MAX_FRAME_BYTES bound; JSON EncodedFrame and ClientHello/HostHello are not used here."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc/conversions.rs",
+          "sha256": "7523d7c9e84c07243e511450d2b62d834dcf1be3aa4ef7a97ba74530dda97927",
+          "line": 32,
+          "predicate": "The selected gRPC server converts generated proto::ExecuteRequest directly to shared ExecuteRequest and ToolDefinition types. It does not pass through the alternate JSON ClientHello/HostHello handshake or length-prefixed EncodedFrame DTOs."
+        },
+        {
+          "path": "codex-rs/code-mode-protocol/src/host/message.rs",
+          "sha256": "3aa537cafccf7127921cbc7a361d7608431bea1852f5be4b844851a62a2eaa5b",
+          "line": 92,
+          "predicate": "Lines25-83 define ClientHello and its JSON serde adapter, lines87-99 its overlap-validation error, and lines106-124 the HostHello JSON handshake fields/accessors. The reviewed units are these exact handshake declarations; no shared ExecuteRequest, RuntimeResponse, or session callback declaration is reclassified."
+        }
+      ]
+    },
+    {
+      "id": "codex-rs/code-mode-protocol/src/host/message.rs#function_item@3294",
+      "sha256": "8c1375ed343ea432363665a96a6f0f73fa121f2e843de9ff68c54e8ca5c1b6cd",
+      "reason": "Exact alternate framed-JSON handshake member: ClientHello construction/serde overlap validation and its ClientHelloWire fields/error, or HostHello selected-version/capability accessors. The production core adapter selects grpc+stdio:// and generated protobuf CodeModeHostServer; this JSON connection/hello handshake is confined to the unselected legacy stdio endpoint. Shared runtime/session types, gRPC session negotiation, and host frame limits remain required. This unit stays inventoried and receives no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 96,
+          "predicate": "ProcessOwnedGrpcCodeModeSessionProvider creates the default local CodeMode host with --listen grpc+stdio://; this selected production adapter does not launch the JSON length-prefixed stdio endpoint."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/transport.rs",
+          "sha256": "4a23b7bd475f99bde87db854ae9fb6907bb407a4e98a7ab701fe24b9d9df41dd",
+          "line": 18,
+          "predicate": "run_transport sends GrpcStdio to grpc_stdio::run. Only the disjoint Stdio arm invokes run_stdio; the exact grpc+stdio:// selector returns GrpcStdio at lines27-28."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc_stdio.rs",
+          "sha256": "a39275fce82b4f4393448e23f6038a2f18090733bc991901a118aed1e174b3f5",
+          "line": 34,
+          "predicate": "The selected pipe serves generated protobuf CodeModeHostServer over HTTP/2. Its sole host-module import is the shared MAX_FRAME_BYTES bound; JSON EncodedFrame and ClientHello/HostHello are not used here."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc/conversions.rs",
+          "sha256": "7523d7c9e84c07243e511450d2b62d834dcf1be3aa4ef7a97ba74530dda97927",
+          "line": 32,
+          "predicate": "The selected gRPC server converts generated proto::ExecuteRequest directly to shared ExecuteRequest and ToolDefinition types. It does not pass through the alternate JSON ClientHello/HostHello handshake or length-prefixed EncodedFrame DTOs."
+        },
+        {
+          "path": "codex-rs/code-mode-protocol/src/host/message.rs",
+          "sha256": "3aa537cafccf7127921cbc7a361d7608431bea1852f5be4b844851a62a2eaa5b",
+          "line": 119,
+          "predicate": "Lines25-83 define ClientHello and its JSON serde adapter, lines87-99 its overlap-validation error, and lines106-124 the HostHello JSON handshake fields/accessors. The reviewed units are these exact handshake declarations; no shared ExecuteRequest, RuntimeResponse, or session callback declaration is reclassified."
+        }
+      ]
+    },
+    {
+      "id": "codex-rs/code-mode-protocol/src/host/message.rs#function_item@3387",
+      "sha256": "86688a449fa8977fcc90584ac77e5e4ae57f14dfb1461820ae0d59407065003c",
+      "reason": "Exact alternate framed-JSON handshake member: ClientHello construction/serde overlap validation and its ClientHelloWire fields/error, or HostHello selected-version/capability accessors. The production core adapter selects grpc+stdio:// and generated protobuf CodeModeHostServer; this JSON connection/hello handshake is confined to the unselected legacy stdio endpoint. Shared runtime/session types, gRPC session negotiation, and host frame limits remain required. This unit stays inventoried and receives no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 96,
+          "predicate": "ProcessOwnedGrpcCodeModeSessionProvider creates the default local CodeMode host with --listen grpc+stdio://; this selected production adapter does not launch the JSON length-prefixed stdio endpoint."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/transport.rs",
+          "sha256": "4a23b7bd475f99bde87db854ae9fb6907bb407a4e98a7ab701fe24b9d9df41dd",
+          "line": 18,
+          "predicate": "run_transport sends GrpcStdio to grpc_stdio::run. Only the disjoint Stdio arm invokes run_stdio; the exact grpc+stdio:// selector returns GrpcStdio at lines27-28."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc_stdio.rs",
+          "sha256": "a39275fce82b4f4393448e23f6038a2f18090733bc991901a118aed1e174b3f5",
+          "line": 34,
+          "predicate": "The selected pipe serves generated protobuf CodeModeHostServer over HTTP/2. Its sole host-module import is the shared MAX_FRAME_BYTES bound; JSON EncodedFrame and ClientHello/HostHello are not used here."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc/conversions.rs",
+          "sha256": "7523d7c9e84c07243e511450d2b62d834dcf1be3aa4ef7a97ba74530dda97927",
+          "line": 32,
+          "predicate": "The selected gRPC server converts generated proto::ExecuteRequest directly to shared ExecuteRequest and ToolDefinition types. It does not pass through the alternate JSON ClientHello/HostHello handshake or length-prefixed EncodedFrame DTOs."
+        },
+        {
+          "path": "codex-rs/code-mode-protocol/src/host/message.rs",
+          "sha256": "3aa537cafccf7127921cbc7a361d7608431bea1852f5be4b844851a62a2eaa5b",
+          "line": 123,
+          "predicate": "Lines25-83 define ClientHello and its JSON serde adapter, lines87-99 its overlap-validation error, and lines106-124 the HostHello JSON handshake fields/accessors. The reviewed units are these exact handshake declarations; no shared ExecuteRequest, RuntimeResponse, or session callback declaration is reclassified."
+        }
+      ]
+    },
+    {
+      "id": "codex-rs/code-mode-protocol/src/host/message.rs#function_item@805",
+      "sha256": "9388896af58304ea5e0b7205b2aa7214a1e2d7c288df546eb1ef3d4f77ada48c",
+      "reason": "Exact alternate framed-JSON handshake member: ClientHello construction/serde overlap validation and its ClientHelloWire fields/error, or HostHello selected-version/capability accessors. The production core adapter selects grpc+stdio:// and generated protobuf CodeModeHostServer; this JSON connection/hello handshake is confined to the unselected legacy stdio endpoint. Shared runtime/session types, gRPC session negotiation, and host frame limits remain required. This unit stays inventoried and receives no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 96,
+          "predicate": "ProcessOwnedGrpcCodeModeSessionProvider creates the default local CodeMode host with --listen grpc+stdio://; this selected production adapter does not launch the JSON length-prefixed stdio endpoint."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/transport.rs",
+          "sha256": "4a23b7bd475f99bde87db854ae9fb6907bb407a4e98a7ab701fe24b9d9df41dd",
+          "line": 18,
+          "predicate": "run_transport sends GrpcStdio to grpc_stdio::run. Only the disjoint Stdio arm invokes run_stdio; the exact grpc+stdio:// selector returns GrpcStdio at lines27-28."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc_stdio.rs",
+          "sha256": "a39275fce82b4f4393448e23f6038a2f18090733bc991901a118aed1e174b3f5",
+          "line": 34,
+          "predicate": "The selected pipe serves generated protobuf CodeModeHostServer over HTTP/2. Its sole host-module import is the shared MAX_FRAME_BYTES bound; JSON EncodedFrame and ClientHello/HostHello are not used here."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc/conversions.rs",
+          "sha256": "7523d7c9e84c07243e511450d2b62d834dcf1be3aa4ef7a97ba74530dda97927",
+          "line": 32,
+          "predicate": "The selected gRPC server converts generated proto::ExecuteRequest directly to shared ExecuteRequest and ToolDefinition types. It does not pass through the alternate JSON ClientHello/HostHello handshake or length-prefixed EncodedFrame DTOs."
+        },
+        {
+          "path": "codex-rs/code-mode-protocol/src/host/message.rs",
+          "sha256": "3aa537cafccf7127921cbc7a361d7608431bea1852f5be4b844851a62a2eaa5b",
+          "line": 32,
+          "predicate": "Lines25-83 define ClientHello and its JSON serde adapter, lines87-99 its overlap-validation error, and lines106-124 the HostHello JSON handshake fields/accessors. The reviewed units are these exact handshake declarations; no shared ExecuteRequest, RuntimeResponse, or session callback declaration is reclassified."
+        }
+      ]
+    },
+    {
+      "id": "codex-rs/code-mode-protocol/src/host/message.rs#ordered_field_declaration_list@2476",
+      "sha256": "9312aec33efb85e6dcb52c74a5c0f23b884ca8819e2b0e0b40bea2c66a9185f6",
+      "reason": "Exact alternate framed-JSON handshake member: ClientHello construction/serde overlap validation and its ClientHelloWire fields/error, or HostHello selected-version/capability accessors. The production core adapter selects grpc+stdio:// and generated protobuf CodeModeHostServer; this JSON connection/hello handshake is confined to the unselected legacy stdio endpoint. Shared runtime/session types, gRPC session negotiation, and host frame limits remain required. This unit stays inventoried and receives no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 96,
+          "predicate": "ProcessOwnedGrpcCodeModeSessionProvider creates the default local CodeMode host with --listen grpc+stdio://; this selected production adapter does not launch the JSON length-prefixed stdio endpoint."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/transport.rs",
+          "sha256": "4a23b7bd475f99bde87db854ae9fb6907bb407a4e98a7ab701fe24b9d9df41dd",
+          "line": 18,
+          "predicate": "run_transport sends GrpcStdio to grpc_stdio::run. Only the disjoint Stdio arm invokes run_stdio; the exact grpc+stdio:// selector returns GrpcStdio at lines27-28."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc_stdio.rs",
+          "sha256": "a39275fce82b4f4393448e23f6038a2f18090733bc991901a118aed1e174b3f5",
+          "line": 34,
+          "predicate": "The selected pipe serves generated protobuf CodeModeHostServer over HTTP/2. Its sole host-module import is the shared MAX_FRAME_BYTES bound; JSON EncodedFrame and ClientHello/HostHello are not used here."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc/conversions.rs",
+          "sha256": "7523d7c9e84c07243e511450d2b62d834dcf1be3aa4ef7a97ba74530dda97927",
+          "line": 32,
+          "predicate": "The selected gRPC server converts generated proto::ExecuteRequest directly to shared ExecuteRequest and ToolDefinition types. It does not pass through the alternate JSON ClientHello/HostHello handshake or length-prefixed EncodedFrame DTOs."
+        },
+        {
+          "path": "codex-rs/code-mode-protocol/src/host/message.rs",
+          "sha256": "3aa537cafccf7127921cbc7a361d7608431bea1852f5be4b844851a62a2eaa5b",
+          "line": 88,
+          "predicate": "Lines25-83 define ClientHello and its JSON serde adapter, lines87-99 its overlap-validation error, and lines106-124 the HostHello JSON handshake fields/accessors. The reviewed units are these exact handshake declarations; no shared ExecuteRequest, RuntimeResponse, or session callback declaration is reclassified."
+        }
+      ]
+    },
+    {
+      "id": "codex-rs/code-mode-protocol/src/host/message.rs#struct_item@1796",
+      "sha256": "a3b13fce657d39ba091b957a176d03b73265ae330da22442fab04c4c05b5edad",
+      "reason": "Exact alternate framed-JSON handshake member: ClientHello construction/serde overlap validation and its ClientHelloWire fields/error, or HostHello selected-version/capability accessors. The production core adapter selects grpc+stdio:// and generated protobuf CodeModeHostServer; this JSON connection/hello handshake is confined to the unselected legacy stdio endpoint. Shared runtime/session types, gRPC session negotiation, and host frame limits remain required. This unit stays inventoried and receives no execution PASS.",
+      "evidence": [
+        {
+          "path": "codex-rs/core/src/code_mode_host.rs",
+          "sha256": "46041affb995e4907a95f5bc72b42f616e2b61191987d48538c2240d7403f674",
+          "line": 96,
+          "predicate": "ProcessOwnedGrpcCodeModeSessionProvider creates the default local CodeMode host with --listen grpc+stdio://; this selected production adapter does not launch the JSON length-prefixed stdio endpoint."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/transport.rs",
+          "sha256": "4a23b7bd475f99bde87db854ae9fb6907bb407a4e98a7ab701fe24b9d9df41dd",
+          "line": 18,
+          "predicate": "run_transport sends GrpcStdio to grpc_stdio::run. Only the disjoint Stdio arm invokes run_stdio; the exact grpc+stdio:// selector returns GrpcStdio at lines27-28."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc_stdio.rs",
+          "sha256": "a39275fce82b4f4393448e23f6038a2f18090733bc991901a118aed1e174b3f5",
+          "line": 34,
+          "predicate": "The selected pipe serves generated protobuf CodeModeHostServer over HTTP/2. Its sole host-module import is the shared MAX_FRAME_BYTES bound; JSON EncodedFrame and ClientHello/HostHello are not used here."
+        },
+        {
+          "path": "codex-rs/code-mode-host/src/grpc/conversions.rs",
+          "sha256": "7523d7c9e84c07243e511450d2b62d834dcf1be3aa4ef7a97ba74530dda97927",
+          "line": 32,
+          "predicate": "The selected gRPC server converts generated proto::ExecuteRequest directly to shared ExecuteRequest and ToolDefinition types. It does not pass through the alternate JSON ClientHello/HostHello handshake or length-prefixed EncodedFrame DTOs."
+        },
+        {
+          "path": "codex-rs/code-mode-protocol/src/host/message.rs",
+          "sha256": "3aa537cafccf7127921cbc7a361d7608431bea1852f5be4b844851a62a2eaa5b",
+          "line": 65,
+          "predicate": "Lines25-83 define ClientHello and its JSON serde adapter, lines87-99 its overlap-validation error, and lines106-124 the HostHello JSON handshake fields/accessors. The reviewed units are these exact handshake declarations; no shared ExecuteRequest, RuntimeResponse, or session callback declaration is reclassified."
+        }
+      ]
+    }
+  ]
+}

@@ -16,12 +16,17 @@ function namespace(kind: string, parents: readonly CompilerFrame[]): CompilerNam
 /** Collects only compiler-recorded facts; no source identifier or module-name lookup occurs here. */
 export async function parseCompilerBindings(hir: AsyncIterable<string>, thir: AsyncIterable<string>): Promise<CompilerRawIndex> {
   const definitions = new Map<string, CompilerDef>(), declarations = new Map<string, CompilerDeclaration>(), references = new Map<string, CompilerReference>();
-  const define = (value: CompilerDef) => { definitions.set(value.key, value); return value.key; };
+  // Local definitions share the same checked source/argv in HIR and THIR. Extern crate numbers are
+  // session-local, so external facts remain separate between the two compiler invocations.
+  const define = (value: CompilerDef, mode: "hir" | "thir") => {
+    const scoped = { ...value, key: `${value.crateNumber === 0 ? "local" : mode}:${value.key}` };
+    definitions.set(scoped.key, scoped); return scoped;
+  };
   const reference = (value: CompilerReference) => { references.set(JSON.stringify(value), value); };
   type PathResolution = { target?: CompilerDef; namespace: CompilerNamespace; resolution: string };
   const pathResolutions = new WeakMap<CompilerFrame, PathResolution[]>();
   await walkCompilerDebug(hir, "hir", {
-    open(frame) { define(frame.owner); },
+    open(frame) { define(frame.owner, "hir"); },
     close(frame, parents) {
       if (frame.type === "Def") {
         const pathIndex = parents.findLastIndex(parent => parent.type === "Path");
@@ -30,16 +35,16 @@ export async function parseCompilerBindings(hir: AsyncIterable<string>, thir: As
         if (path && !chain.some(parent => parent.type === "PathSegment") && (frame.key === "res" || chain.some(parent => parent.key === "res"))) {
           const targets = frame.values.map(compilerDef).filter((value): value is CompilerDef => value !== undefined);
           if (targets.length !== 1) throw new Error("compiler path resolution has no unique definition");
-          define(targets[0]!);
+          const target = define(targets[0]!, "hir");
           const found = pathResolutions.get(path) ?? [];
-          found.push({ target: targets[0], namespace: namespace(frame.children.get("$first") ?? frame.values[0] ?? "", [...parents, frame]), resolution: "Def" });
+          found.push({ target, namespace: namespace(frame.children.get("$first") ?? frame.values[0] ?? "", [...parents, frame]), resolution: "Def" });
           pathResolutions.set(path, found);
         }
       }
       if (frame.type === "Path") {
         const span = compilerSpan(frame.fields.get("span"));
         const found = pathResolutions.get(frame) ?? [{ namespace: "unknown" as const, resolution: frame.fields.get("res") ?? frame.children.get("res") ?? "unresolved" }];
-        for (const item of found) reference({ owner: frame.owner.key, span, kind: parents.some(parent => parent.type === "Use") ? "import" : "path",
+        for (const item of found) reference({ owner: define(frame.owner, "hir").key, span, kind: parents.some(parent => parent.type === "Use") ? "import" : "path",
           namespace: item.namespace, target: item.target?.key, resolution: item.resolution });
       }
       if (["Item", "TraitItem", "ImplItem", "ForeignItem"].includes(frame.type)) {
@@ -47,16 +52,16 @@ export async function parseCompilerBindings(hir: AsyncIterable<string>, thir: As
         if (owner?.key === frame.owner.key) {
           const span = compilerSpan(frame.fields.get("span"));
           const kind = frame.children.get("kind") ?? frame.fields.get("kind") ?? frame.type;
-          const prior = declarations.get(owner.key);
+          const key = define(owner, "hir").key, prior = declarations.get(key);
           if (prior && JSON.stringify(prior.span) !== JSON.stringify(span)) throw new Error("compiler declaration has conflicting spans");
-          declarations.set(owner.key, { owner: owner.key, kind, span });
+          declarations.set(key, { owner: key, kind, span });
         }
       }
       if (["FieldDef", "Variant", "GenericParam"].includes(frame.type)) {
         const item = compilerDef(frame.fields.get("def_id") ?? "");
         if (!item) throw new Error("compiler nested declaration omitted its definition");
-        define(item);
-        declarations.set(item.key, { owner: item.key, parentOwner: frame.owner.key, kind: frame.type, span: compilerSpan(frame.fields.get("span")) });
+        const key = define(item, "hir").key;
+        declarations.set(key, { owner: key, parentOwner: define(frame.owner, "hir").key, kind: frame.type, span: compilerSpan(frame.fields.get("span")) });
       }
     },
   });
@@ -64,7 +69,7 @@ export async function parseCompilerBindings(hir: AsyncIterable<string>, thir: As
   type ExprFacts = { value?: Target; call?: { target?: CompilerDef; resolution: string; fnSpan?: ReturnType<typeof compilerSpan> } };
   const exprs = new WeakMap<CompilerFrame, ExprFacts>(), calls = new WeakMap<CompilerFrame, Target>(), dependent = new WeakMap<CompilerFrame, string>();
   await walkCompilerDebug(thir, "thir", {
-    open(frame) { define(frame.owner); },
+    open(frame) { define(frame.owner, "thir"); },
     scalar(frame, _key, value, parents) {
       const fn = [...parents, frame].findLast(parent => parent.type === "FnDef");
       if (!fn) return;
@@ -76,8 +81,7 @@ export async function parseCompilerBindings(hir: AsyncIterable<string>, thir: As
       if (frame.type === "FnDef" && frame.key === "ty") {
         const target = compilerDef(frame.values[0] ?? "");
         if (!target) throw new Error("compiler FnDef omitted its exact definition");
-        define(target);
-        const typed = { target, resolution: dependent.get(frame) ?? "FnDef" };
+        const typed = { target: define(target, "thir"), resolution: dependent.get(frame) ?? "FnDef" };
         if (parent?.type === "Call") calls.set(parent, typed);
         if (parent?.type === "Expr") {
           const facts = exprs.get(parent) ?? {}; facts.value = typed; exprs.set(parent, facts);
@@ -90,8 +94,8 @@ export async function parseCompilerBindings(hir: AsyncIterable<string>, thir: As
       }
       if (frame.type === "Expr") {
         const facts = exprs.get(frame), span = compilerSpan(frame.fields.get("span"));
-        if (facts?.value) reference({ owner: frame.owner.key, span, namespace: "value", kind: "typed-value", target: facts.value.target.key, resolution: facts.value.resolution });
-        if (facts?.call) reference({ owner: frame.owner.key, span, namespace: "value", kind: "call", target: facts.call.target?.key,
+        if (facts?.value) reference({ owner: define(frame.owner, "thir").key, span, namespace: "value", kind: "typed-value", target: facts.value.target.key, resolution: facts.value.resolution });
+        if (facts?.call) reference({ owner: define(frame.owner, "thir").key, span, namespace: "value", kind: "call", target: facts.call.target?.key,
           fnSpan: facts.call.fnSpan, resolution: facts.call.resolution });
       }
     },

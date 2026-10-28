@@ -1,5 +1,6 @@
 /** The pinned rustc pretty-debug format is parsed structurally; Rust source names are never searched. */
-export type CompilerDef = { key: string; raw: string; crate: string; crateHash: string; index: number; path: string };
+// crateHash is rustc's shortened Debug suffix. Only a proof-scoped key is an identity across files.
+export type CompilerDef = { key: string; raw: string; crate: string; crateHash: string; crateNumber: number; index: number; path: string };
 export type CompilerSpan = { file: string; line: number; column: number; endLine: number; endColumn: number; context: number };
 export type CompilerFrame = {
   indent: number; type: string; key?: string; close: string; owner: CompilerDef;
@@ -14,10 +15,10 @@ export type CompilerVisitor = {
 export function compilerDef(text: string): CompilerDef | undefined {
   const match = /^DefId\((\d+):(\d+) ~ ([A-Za-z_][A-Za-z_0-9]*)\[([0-9a-f]+)\](?:::(.*))?\)$/.exec(text);
   if (!match) return;
-  const index = Number(match[2]);
-  if (!Number.isSafeInteger(index)) throw new Error("compiler definition index is invalid");
+  const crateNumber = Number(match[1]), index = Number(match[2]);
+  if (![crateNumber, index].every(Number.isSafeInteger)) throw new Error("compiler definition index is invalid");
   const crate = match[3]!, crateHash = match[4]!, path = match[5] ?? "";
-  return { key: `${crate}[${crateHash}]:${index}:${path}`, raw: text, crate, crateHash, index, path };
+  return { key: `${crateNumber}:${crate}[${crateHash}]:${index}:${path}`, raw: text, crate, crateHash, crateNumber, index, path };
 }
 
 export function compilerSpan(text: string | undefined): CompilerSpan | undefined {

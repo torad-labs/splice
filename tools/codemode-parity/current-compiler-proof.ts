@@ -3,11 +3,14 @@ import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { isAbsolute, posix, relative } from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import { createGunzip } from "node:zlib";
 import { parseCompilerBindings } from "./current-compiler-bindings";
 import type { CompilerSpan } from "./current-compiler-format";
-import type { CompilerArtifact, CompilerBindingIndex, CompilerExpectation, CompilerImmutableFile, CompilerProof, CompilerRange } from "./current-compiler-types";
+import type { CompilerArtifact, CompilerBindingIndex, CompilerExpectation, CompilerImmutableFile, CompilerIrArtifact, CompilerProof, CompilerRange } from "./current-compiler-types";
 
 const MAX_IR_BYTES = 128 * 1024 * 1024;
+const MAX_GZIP_BYTES = 512 * 1024 * 1024;
+const MAX_DECODED_BYTES = 2 * 1024 * 1024 * 1024;
 const hash = (bytes: string | Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 function object(value: unknown): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("compiler proof requires an object");
@@ -24,6 +27,14 @@ function artifact(value: unknown): CompilerArtifact {
   if (!isAbsolute(path) || !/^[a-f0-9]{64}$/.test(sha256) || typeof bytes !== "number" || !Number.isSafeInteger(bytes) || bytes < 0) throw new Error("invalid compiler artifact identity");
   return { path, sha256, bytes };
 }
+function irArtifact(value: unknown): CompilerIrArtifact {
+  const row = object(value), identity = artifact(value);
+  if (row.encoding === undefined && row.decoded === undefined) return identity;
+  if (row.encoding !== "gzip") throw new Error("unsupported compiler IR encoding");
+  const decoded = object(row.decoded), bytes = decoded.bytes, sha256 = string(decoded.sha256);
+  if (typeof bytes !== "number" || !Number.isSafeInteger(bytes) || bytes < 0 || !/^[a-f0-9]{64}$/.test(sha256)) throw new Error("invalid decoded compiler IR identity");
+  return { ...identity, encoding: "gzip", decoded: { bytes, sha256 } };
+}
 function proof(value: unknown): CompilerProof {
   const row = object(value), source = object(row.source), compiler = object(row.compiler);
   if (row.schema !== 1) throw new Error("unsupported compiler proof schema");
@@ -35,29 +46,40 @@ function proof(value: unknown): CompilerProof {
   const crates = array(row.crates).map(value => {
     const crate = object(value), hir = object(crate.hir), thir = object(crate.thir);
     return { crate: string(crate.crate), cwd: string(crate.cwd), features: strings(crate.features), cfgs: strings(crate.cfgs), externs: array(crate.externs).map(artifact),
-      hir: { ...artifact(hir), args: strings(hir.args) }, thir: { ...artifact(thir), args: strings(thir.args) } };
+      hir: { ...irArtifact(hir), args: strings(hir.args) }, thir: { ...irArtifact(thir), args: strings(thir.args) } };
   });
   if (!crates.length || new Set(crates.map(crate => crate.crate)).size !== crates.length) throw new Error("compiler proof has no unique crate set");
   return { schema: 1, source: sourceIdentity, sourcePrefix, compiler: { ...artifact(compiler), version: string(compiler.version) }, buildCargoLock: artifact(row.buildCargoLock), crates };
 }
 
 /** Hashes the exact bytes parsed; a changed/truncated file cannot publish a partial index. */
-export async function* verifiedCompilerLines(file: CompilerArtifact): AsyncIterable<string> {
-  if (file.bytes > MAX_IR_BYTES || (await stat(file.path)).size !== file.bytes) throw new Error("compiler IR size differs or exceeds its bound");
-  const digest = createHash("sha256"), decoder = new StringDecoder("utf8");
-  let pending = "", bytes = 0;
-  for await (const chunk of createReadStream(file.path)) {
-    const data = chunk as Buffer;
-    bytes += data.length;
-    if (bytes > file.bytes) throw new Error("compiler IR grew beyond its identity");
-    digest.update(data); pending += decoder.write(data);
-    let newline = pending.indexOf("\n");
-    while (newline >= 0) { yield pending.slice(0, newline).replace(/\r$/, ""); pending = pending.slice(newline + 1); newline = pending.indexOf("\n"); }
-    if (pending.length > 1024 * 1024) throw new Error("compiler IR line exceeds its bound");
+export async function* verifiedCompilerLines(file: CompilerIrArtifact): AsyncIterable<string> {
+  const compressed = file.encoding === "gzip", decoded = compressed ? file.decoded! : file;
+  if (file.bytes > (compressed ? MAX_GZIP_BYTES : MAX_IR_BYTES) || decoded.bytes > MAX_DECODED_BYTES || (await stat(file.path)).size !== file.bytes) throw new Error("compiler IR size differs or exceeds its bound");
+  const digest = createHash("sha256"), encodedDigest = createHash("sha256"), decoder = new StringDecoder("utf8");
+  let pending = "", bytes = 0, encodedBytes = 0;
+  const input = createReadStream(file.path), stream = compressed ? input.pipe(createGunzip()) : input;
+  input.on("data", (data: Buffer) => {
+    encodedBytes += data.length; encodedDigest.update(data);
+    if (encodedBytes > file.bytes) stream.destroy(new Error("compiler IR grew beyond its identity"));
+  });
+  input.on("error", error => { if (stream !== input) stream.destroy(error); });
+  try {
+    for await (const chunk of stream) {
+      const data = chunk as Buffer;
+      bytes += data.length;
+      if (bytes > decoded.bytes) throw new Error("decoded compiler IR grew beyond its identity");
+      digest.update(data); pending += decoder.write(data);
+      let newline = pending.indexOf("\n");
+      while (newline >= 0) { yield pending.slice(0, newline).replace(/\r$/, ""); pending = pending.slice(newline + 1); newline = pending.indexOf("\n"); }
+      if (pending.length > 1024 * 1024) throw new Error("compiler IR line exceeds its bound");
+    }
+  } finally {
+    input.destroy(); if (stream !== input) stream.destroy();
   }
   pending += decoder.end();
   if (pending) yield pending;
-  if (bytes !== file.bytes || digest.digest("hex") !== file.sha256) throw new Error("compiler IR hash differs");
+  if (bytes !== decoded.bytes || digest.digest("hex") !== decoded.sha256 || encodedBytes !== file.bytes || encodedDigest.digest("hex") !== file.sha256) throw new Error("compiler IR hash differs");
 }
 async function verifyArtifact(file: CompilerArtifact): Promise<void> {
   if ((await stat(file.path)).size !== file.bytes) throw new Error("compiler input size differs");
@@ -135,9 +157,10 @@ export async function loadCompilerBindings(proofPath: string, expected: Compiler
     for (const input of crate.externs) await verifyArtifact(input);
     const parsed = await parseCompilerBindings(verifiedCompilerLines(crate.hir), verifiedCompilerLines(crate.thir));
     if (parsed.definitions.some(definition => definition.raw.startsWith("DefId(0:") && definition.crate !== crate.crate)) throw new Error("compiler local crate namespace differs");
-    index.definitions.push(...parsed.definitions);
-    index.declarations.push(...parsed.declarations.map(item => ({ ...item, range: range(item.span, crate.cwd, value.sourcePrefix, files, sourceLines) })));
-    index.references.push(...parsed.references.map(item => ({ ...item, range: range(item.span, crate.cwd, value.sourcePrefix, files, sourceLines) })));
+    const key = (local: string) => `${proofSha256}:${crate.crate}:${local}`;
+    index.definitions.push(...parsed.definitions.map(item => ({ ...item, key: key(item.key) })));
+    index.declarations.push(...parsed.declarations.map(item => ({ ...item, owner: key(item.owner), parentOwner: item.parentOwner && key(item.parentOwner), range: range(item.span, crate.cwd, value.sourcePrefix, files, sourceLines) })));
+    index.references.push(...parsed.references.map(item => ({ ...item, owner: key(item.owner), target: item.target && key(item.target), range: range(item.span, crate.cwd, value.sourcePrefix, files, sourceLines) })));
   }
   return freeze(index);
 }

@@ -9,6 +9,7 @@ export type CompilerReference = {
 };
 export type CompilerRawIndex = { definitions: CompilerDef[]; declarations: CompilerDeclaration[]; references: CompilerReference[] };
 export type CompilerArtifact = { path: string; sha256: string; bytes: number };
+export type CompilerIrArtifact = CompilerArtifact & { encoding?: "gzip"; decoded?: { bytes: number; sha256: string } };
 export type CompilerSourceIdentity = {
   revision: string; tree: string; originalCargoLockSha256: string; buildCargoLockSha256: string;
 };
@@ -19,8 +20,8 @@ export type CompilerProof = {
   crates: Array<{
     crate: string; cwd: string; features: string[]; cfgs: string[];
     externs: CompilerArtifact[];
-    hir: CompilerArtifact & { args: string[] };
-    thir: CompilerArtifact & { args: string[] };
+    hir: CompilerIrArtifact & { args: string[] };
+    thir: CompilerIrArtifact & { args: string[] };
   }>;
 };
 export type CompilerImmutableFile = { source: string; sha256: string };

@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { gzipSync } from "node:zlib";
 import { findCompilerBinding, loadCompilerBindings, parseCompilerBindings, type CompilerExpectation, type CompilerProof } from "./current-compiler-bindings";
 import { compilerTextLines } from "./current-compiler-format";
 
@@ -81,6 +82,20 @@ describe("pinned compiler bindings", () => {
     expect(findCompilerBinding(index, { ...f.locate("alpha::Worker::run"), namespace: "value", owner: other.key }).status).toBe("unresolved");
   });
 
+  test("matching debug DefIds from different pinned analyses cannot join their declarations", async () => {
+    const first = await fixture(), second = await fixture();
+    const a = await loadCompilerBindings(first.path, await first.seal(), first.files);
+    const b = await loadCompilerBindings(second.path, await second.seal(), second.files);
+    const left = findCompilerBinding(a, { ...first.locate("alpha::Worker::run"), namespace: "value" });
+    const right = findCompilerBinding(b, { ...second.locate("alpha::Worker::run"), namespace: "value" });
+    expect(left.status).toBe("bound"); expect(right.status).toBe("bound");
+    if (left.status !== "bound" || right.status !== "bound") throw new Error("local source binding did not resolve");
+    expect(left.target.raw).toBe(right.target.raw);
+    expect(left.target.key).not.toBe(right.target.key);
+    expect(b.declarations.some(item => item.owner === left.target.key)).toBe(false);
+    expect(left.target.crateNumber).toBe(0);
+  });
+
   test("dynamic calls retain the trait fact but cannot certify a concrete target", async () => {
     const f = await fixture(), index = await loadCompilerBindings(f.path, await f.seal(), f.files);
     expect(index.references.some(item => item.kind === "call" && item.resolution === "dynamic-call" && item.target !== undefined)).toBe(true);
@@ -131,6 +146,38 @@ describe("pinned compiler bindings", () => {
     const expected = await f.seal(); await writeFile(external, "changed metadata data!!");
     await expect(loadCompilerBindings(f.path, expected, f.files)).rejects.toThrow("input hash differs");
     await expect(parseCompilerBindings(compilerTextLines("DefId(0:0 ~ sample[abc]) => OwnerNodes {"), compilerTextLines(""))).rejects.toThrow("incomplete compiler output");
+  });
+
+  test("streams complete compressed IR and verifies both encoded and decoded identities", async () => {
+    const f = await fixture();
+    const plain = await loadCompilerBindings(f.path, await f.seal(), f.files);
+    for (const mode of [f.proof.crates[0]!.hir, f.proof.crates[0]!.thir]) {
+      const path = join(f.root, mode.path.endsWith("hir-tree.txt") ? "hir.gz" : "thir.gz");
+      await writeFile(path, gzipSync(await readFile(mode.path)));
+      Object.assign(mode, { ...await f.artifact(path), encoding: "gzip", decoded: { bytes: mode.bytes, sha256: mode.sha256 } });
+    }
+    const compressed = await loadCompilerBindings(f.path, await f.seal(), f.files);
+    // Transport bytes give each proof a different identity; compare all compiler facts by their
+    // original DefIds rather than treating those distinct proof-scoped keys as interchangeable.
+    const facts = (index: typeof plain) => {
+      const definitions = new Map(index.definitions.map(item => [item.key, item.raw]));
+      return { references: index.references.map(item => ({ ...item, owner: definitions.get(item.owner), target: item.target && definitions.get(item.target) })),
+        declarations: index.declarations.map(item => ({ ...item, owner: definitions.get(item.owner), parentOwner: item.parentOwner && definitions.get(item.parentOwner) })) };
+    };
+    expect(facts(compressed)).toEqual(facts(plain));
+    expect(compressed.proofSha256).not.toBe(plain.proofSha256);
+    f.proof.crates[0]!.hir.decoded!.sha256 = "0".repeat(64);
+    await expect(loadCompilerBindings(f.path, await f.seal(), f.files)).rejects.toThrow("IR hash differs");
+  });
+
+  test("a truncated or oversized compressed emission never supplies a partial index", async () => {
+    const f = await fixture(), mode = f.proof.crates[0]!.hir, path = join(f.root, "truncated.gz");
+    const encoded = gzipSync(await readFile(mode.path));
+    await writeFile(path, encoded.subarray(0, encoded.length - 8));
+    Object.assign(mode, { ...await f.artifact(path), encoding: "gzip", decoded: { bytes: mode.bytes, sha256: mode.sha256 } });
+    await expect(loadCompilerBindings(f.path, await f.seal(), f.files)).rejects.toThrow();
+    mode.decoded!.bytes = 2 * 1024 * 1024 * 1024 + 1;
+    await expect(loadCompilerBindings(f.path, await f.seal(), f.files)).rejects.toThrow("exceeds its bound");
   });
 
   test("conflicting compiler targets and absent source evidence remain unresolved without deleting rows", async () => {

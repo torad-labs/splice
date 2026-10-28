@@ -163,8 +163,9 @@ export function foreignMemberScope(files: ScopeFile[], raw: AstMatch[], temporar
     if (name.startsWith("Self::") && implType) name = implType + name.slice(4);
     const [head, ...tail] = name.split("::"), imported = importMap.get(`${file}:${module}`)?.get(head!);
     const wildcard = importMap.get(`${file}:${module}`)?.get("*") ?? [];
-    const choices = [...(imported?.map(path => [path, ...tail].join("::")) ?? []),
-      ...wildcard.map(path => path.replace(/\*$/, name)), absolute(name, file, module)];
+    // A named import shadows glob imports and lexical guesses for that binding.
+    const choices = imported ? imported.map(path => [path, ...tail].join("::")) :
+      [...wildcard.map(path => path.replace(/\*$/, name)), absolute(name, file, module)];
     query.choices = choices.filter(isProjectPath);
     const results: Declaration[] = [];
     for (const path of choices) {

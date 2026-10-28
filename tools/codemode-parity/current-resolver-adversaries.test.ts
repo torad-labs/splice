@@ -56,3 +56,26 @@ test("a binary's same-named type cannot satisfy a reference to the package libra
   expect(result.state("codex-rs/protocol/src/main.rs", "fn make() -> i32 { 9 }")).toEqual(["foreign-context"]);
   expect(result.unresolved).toEqual([]);
 });
+
+test("an explicit import takes precedence over a same-named wildcard export", async () => {
+  const result = await audit({
+    "codex-rs/code-mode/src/lib.rs": "use codex_protocol::picked::selected; use codex_protocol::other::*; pub fn exec() -> i32 { selected() }",
+    "codex-rs/protocol/src/lib.rs": "pub mod picked { pub fn selected() -> i32 { 7 } } pub mod other { pub fn selected() -> i32 { 9 } }",
+  });
+  expect(result.state("codex-rs/protocol/src/lib.rs", "pub fn selected() -> i32 { 7 }")).toEqual(["required"]);
+  expect(result.state("codex-rs/protocol/src/lib.rs", "pub fn selected() -> i32 { 9 }")).toEqual(["foreign-context"]);
+  expect(result.unresolved).toEqual([]);
+});
+
+test("an explicitly imported generated module cannot retain a nonexistent lexical alternative", async () => {
+  const result = await audit({
+    "codex-rs/code-mode/src/lib.rs": "use codex_protocol::grpc; pub fn exec() { let _ = grpc::request::Value::Text(String::new()); }",
+    "codex-rs/protocol/src/lib.rs": "pub mod grpc;",
+    "codex-rs/protocol/src/grpc/mod.rs": 'tonic::include_proto!("fixture.v1");',
+    "codex-rs/protocol/build.rs": 'glob::glob("src/grpc/*.proto"); tonic_prost_build::configure().compile_with_config();',
+    "codex-rs/protocol/src/grpc/wire.proto": 'syntax="proto3"; package fixture.v1; message Request { oneof value { string text=1; } }',
+  });
+  expect(result.generated.some(entry => entry.path === "codex_protocol::grpc::request::Value::Text" &&
+    entry.schema.some(id => id.includes("#proto-field@")))).toBe(true);
+  expect(result.unresolved).toEqual([]);
+});

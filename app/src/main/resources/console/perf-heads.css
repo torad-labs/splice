@@ -53,16 +53,7 @@
 
 /* a window with no request at all keeps the table's frame and says so once inside it */
 .perf-heads .pnone { display: flex; align-items: center; min-height: 3.7rem; padding: .45rem 1.15rem; }
-/* a read that failed: the console's error row (console.css .route-error), with the act that reads it again beside it */
-.readfail {
-  display: flex; width: fit-content; max-width: 100%; align-items: center; flex-wrap: wrap; gap: var(--u) calc(2 * var(--u));
-  padding: calc(2 * var(--u)) calc(3 * var(--u)); border-radius: var(--r-in);
-  background: color-mix(in oklab, var(--limit) 10%, transparent); box-shadow: inset 0 0 0 .1rem color-mix(in oklab, var(--limit) 45%, transparent);
-  font: 500 .95rem/1.3 var(--font-name); color: var(--text-body); animation: pop var(--t-pop) var(--e-out) 1;
-}
-.readfail > svg { flex: none; width: 1.15rem; height: 1.15rem; color: var(--limit); }
-.readfail b { font-weight: 600; color: var(--text); }
-.readfail .why { color: var(--text-mute); }
+/* a read that failed is the console's error row (console.css .errline), with the act that reads it again beside it */
 
 /* the panel a row opens: the kit's plate, hung under the row it belongs to */
 .pdetail { margin: .1rem 0 1rem 1.45rem; }

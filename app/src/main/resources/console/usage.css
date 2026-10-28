@@ -99,7 +99,8 @@
 .thru .ghost-row { gap: .9rem; min-height: 1.2rem; }
 .thru .ghost-row > .ghost.track { flex: 1 1 auto; height: .4rem; }
 /* a login with nothing in the window keeps the footer's height, so the board holds its shape from one window to the next */
-.thru.none { justify-content: center; min-height: calc(3 * 1.2rem + 2 * var(--u)); }
+/* (its content box holds three rows as they draw, 1.25rem each, and their two gaps; padding and rule sit outside it) */
+.thru.none { justify-content: center; box-sizing: content-box; min-height: calc(3 * 1.25rem + 2 * var(--u)); }
 /* a figure nobody reported: its track dashed and empty, and the dash where the figure goes */
 .barcell.gone .vbar, .cell .vbar.gone { background: none; outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }
 /* a figure with no price: the reason in words in the bar's place, on a dashed empty track, and the dash */
@@ -151,6 +152,7 @@
 .cstack > a { display: flex; align-items: center; justify-content: center; min-height: .12rem; overflow: hidden; background: var(--c); color: var(--on-cable); text-decoration: none; }
 .cstack > a + a { border-bottom: .1rem solid var(--ink); }
 .cstack > a:last-child { border-radius: .18rem .18rem 0 0; }
+.cstack > a { transition: filter var(--t-hover) var(--e-out); }
 .cstack > a:hover { filter: brightness(1.15); }
 /* a part with room carries its command and its figure inside it (usage.js fitParts keeps only what fits) */
 .cstack > a > .sl { flex: none; padding: .15rem .4rem; font: 600 .8rem/1.15 var(--font-name); white-space: nowrap; color: var(--on-cable); }
@@ -244,12 +246,18 @@
 .brow .who .nm .var { font: 500 .92rem/1.2 var(--font-data); letter-spacing: .01em; }
 .brow .who .sb { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
 .brow .who .state { flex: none; font-size: .88rem; color: var(--text-mute); }
-.brow .who .cmds { display: inline-flex; gap: .4rem; margin-left: auto; padding-left: .4rem; }
+.brow .who .act.signin { flex: none; display: inline-flex; align-items: center; gap: .45rem; }
+/* a row's own commands sit at the cell's end and give way to the name: the box clips rather than draw over the bars
+   beside it, and the chips that do not fit leave for one "+N" that names them, which then holds its room */
+.brow .who .cmds { display: inline-flex; flex: 0 1 auto; min-width: 0; overflow: hidden; gap: .4rem; margin-left: auto; padding-left: .4rem; }
+.brow .who .cmds:has(> .more) { flex-shrink: 0; }
+.brow .who .cmds > .chip { flex: none; }
+.brow .who .cmds > .chip.more { --c: var(--track-line); color: var(--text-mute); cursor: default; }
 .brow .who .namebox { flex: 1 1 auto; }
 .brow .cell { display: flex; align-items: center; gap: .7rem; min-width: 0; text-decoration: none; color: var(--text); }
 .brow .cell > .vbar, .cline > .vbar { flex: 1 1 auto; }
 .brow .cell > .v, .cline > .v { flex: none; min-width: 4.2rem; text-align: right; font: 500 .92rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
-.brow a.cell { margin: -.3rem -.4rem; padding: .3rem .4rem; border-radius: .3rem; }
+.brow a.cell { margin: -.3rem -.4rem; padding: .3rem .4rem; border-radius: .3rem; transition: background-color var(--t-hover) var(--e-out); }
 .brow a.cell .go { color: var(--text-mute); }
 .brow a.cell:hover { background: var(--track); }
 .brow a.cell:hover .go { color: var(--text); }
@@ -295,8 +303,11 @@
 .tstack > i.s3 > b { color: var(--text); }
 .pd-leg.tk .sw { height: .7rem; }
 /* turns that ran cache-cold after an account switch: the row opens its accounts in place */
+/* the band's answer: the share of the input read from the cache as the drill-down's 50 px ring, then its figure */
+.cachelead > .pd-ring, .cachelead > .ghost.ring { flex: none; align-self: center; width: var(--ring-focal); height: var(--ring-focal); margin-right: calc(.5 * var(--u)); }
+.cachelead > .ghost.ring { border-radius: 50%; }
 .trow .cell.cold { flex-wrap: wrap; justify-content: flex-end; row-gap: .2rem; }
-.trow button.cell.cold { cursor: pointer; border-radius: .3rem; }
+.trow button.cell.cold { cursor: pointer; border-radius: .3rem; transition: background-color var(--t-hover) var(--e-out); }
 .trow button.cell.cold:hover { background: var(--track); }
 .trow button.cell.cold:focus-visible { outline: .14rem solid var(--text); outline-offset: .15rem; }
 .trow .cell.cold > .vbar { flex: 1 1 2rem; }
@@ -310,6 +321,7 @@
 .crow.chead .cell { justify-content: flex-end; }
 .crow .cn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 .95rem/1.2 var(--font-name); color: var(--text); }
 .crow .cn .var { font: 500 .9rem/1.2 var(--font-data); }
+.crow .cn .state { margin-left: .55rem; font-size: .85rem; color: var(--text-mute); }
 .crow .cell { display: flex; align-items: center; gap: .6rem; min-width: 0; }
 .crow .cell > .vbar { flex: 1 1 auto; }
 .crow .cell > .v { flex: none; min-width: 3rem; text-align: right; font: 500 .92rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
@@ -328,14 +340,24 @@
 @media (prefers-reduced-motion: no-preference) {
   .grow .vbar > b, .grow .tstack, .grow .ftrk > i { transform-origin: left; animation: ubar-grow var(--t-snap) var(--e-out) both; }
   .grow .cstack { transform-origin: bottom; animation: ucol-grow var(--t-snap) var(--e-out) both; }
+  /* the column under the pointer is drawn anew with its ring and its tip, so both ease in rather than snap */
+  .cbar.on > .cstack { animation: uring-in var(--t-hover) var(--e-out) both; }
+  .tip { animation: utip-in var(--t-hover) var(--e-out) both; }
+  /* the rows a list's tail lets go of arrive one after another and grow their bars; the rows above them stay still */
+  .brow.arrive { animation: utip-in var(--t-pop) var(--e-out) both; animation-delay: calc(var(--i, 0) * 30ms); }
+  .brow.arrive .vbar > b { transform-origin: left; animation: ubar-grow var(--t-snap) var(--e-out) both; animation-delay: calc(var(--i, 0) * 30ms); }
 }
 @keyframes ubar-grow { from { transform: scaleX(0); } }
 @keyframes ucol-grow { from { transform: scaleY(0); } }
+@keyframes uring-in { from { box-shadow: 0 0 0 0 var(--text); } }
+@keyframes utip-in { from { opacity: 0; } }
 
 /* ---------- the widths ---------- */
 /* given a wide column, the name takes the room a name needs and the rest goes to the drawings */
 @container lower (min-width: 70rem) {
-  .brow, .gbrow { grid-template-columns: minmax(12rem, 26rem) minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr); }
+  /* 32rem holds an agent's title, its project and its first command's chip side by side: at 26rem the longest agent
+     names kept only "+3", which names nothing until hovered */
+  .brow, .gbrow { grid-template-columns: minmax(12rem, 32rem) minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr); }
   .trow, .gtrow { grid-template-columns: minmax(9rem, 14rem) minmax(0, 2.6fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, .9fr) minmax(0, 1fr); }
 }
 /* Two columns of tables where each still has room for its bars, three where all three do; under that the tables keep
@@ -363,11 +385,10 @@
   .crow.chead { display: none; }
 }
 
-/* the project tiles and the picker, over the page; while they are read, a tile's own box per tile (requests.css draws
-   the same shape, and the kit is the place for it: rounds/r2/build/requests/usage.md) */
+/* the project tiles and the picker, over the page; while they are read, the kit's hollow tiles (GHOST.tiles), so no band
+   under the pick line moves when the tiles arrive. */
 .pickline:not(:empty) { margin: 0 0 calc(4 * var(--u)); }
 .pickline .lhead { margin-left: 0; }
-.ptiles > .ghost.ptg { width: auto; height: 6.97rem; border-radius: var(--r-obj); box-shadow: 0 0 0 var(--ink-w) var(--ink); }
 
 /* ---------- Results by command keeps its own file (perf-heads.css); these two things it shares with the page ---------- */
 /* the command that is slow or failing today, with since when, at the top of its panel */

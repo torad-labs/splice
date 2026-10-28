@@ -153,11 +153,16 @@ const setVisible = (page: Page, visible: boolean) =>
     Object.defineProperty(document, "visibilityState", { configurable: true, get: () => (v ? "visible" : "hidden") });
     document.dispatchEvent(new Event("visibilitychange"));
   }, visible);
-// What a command's card says: its word, then its model.
+// What a command's card says, as he reads it: its state, then its model. A command that needs him says its state once, in
+// the card's top-right slot ("Not started", "Signed out"); one that is fine says no word, and its lamp is the state:
+// "ready" when it is up and idle, "working" while a session runs on it.
 const cardOf = (page: Page, key = "alpha") =>
   page.evaluate((sel) => {
     const card = document.querySelector(sel);
-    return card ? [...card.querySelectorAll(".meta > span")].map((s) => s.textContent ?? "") : null;
+    if (!card) return null;
+    const lamp = card.querySelector(".lamp")?.classList;
+    const state = card.querySelector(".cstate")?.textContent?.trim() || ["working", "ready"].find((c) => lamp?.contains(c)) || "";
+    return [state, card.querySelector(".meta .cmodel")?.textContent ?? ""];
   }, `article.card.h[data-open="${key}"]`);
 // What [read] finds on the page once it is as wanted, or after 5 s of real time, whichever comes first.
 async function showing(page: Page, read: (page: Page) => Promise<unknown>, want: unknown) {
@@ -202,7 +207,7 @@ test("Back on the tab after two minutes hidden, what changed meanwhile shows at 
     world.label = "Alpha Two";
     await setVisible(page, true);
     await settled(page);
-    expect(await cardReading(page, ["Ready", "Alpha Two"])).toEqual(["Ready", "Alpha Two"]);
+    expect(await cardReading(page, ["ready", "Alpha Two"])).toEqual(["ready", "Alpha Two"]);
   } finally {
     await page.close();
   }
@@ -221,7 +226,7 @@ test("A tab out of view keeps its card as it was while the daemon changes under 
     expect(await cardOf(page)).toEqual(["Not started", "Alpha One"]);
     await setVisible(page, true);
     await settled(page);
-    expect(await cardReading(page, ["Ready", "Alpha Two"])).toEqual(["Ready", "Alpha Two"]);
+    expect(await cardReading(page, ["ready", "Alpha Two"])).toEqual(["ready", "Alpha Two"]);
   } finally {
     await page.close();
   }
@@ -245,19 +250,19 @@ test("A tab that goes out of view while a tick's read is out reads no lists afte
     expect((await cardOf(page))?.[1]).toBe("Alpha One");
     await setVisible(page, true);
     await settled(page);
-    expect(await cardReading(page, ["Ready", "Alpha Two"])).toEqual(["Ready", "Alpha Two"]);
+    expect(await cardReading(page, ["ready", "Alpha Two"])).toEqual(["ready", "Alpha Two"]);
   } finally {
     await page.close();
   }
 }, 30_000);
 
-test("A command started outside the page reads Ready within one tick", async () => {
+test("A command started outside the page shows as ready within one tick", async () => {
   const page = await open();
   try {
     expect(await cardOf(page)).toEqual(["Not started", "Alpha One"]);
     world.running = true;
     await step(page, 5_000);
-    expect(await cardReading(page, ["Ready", "Alpha One"])).toEqual(["Ready", "Alpha One"]);
+    expect(await cardReading(page, ["ready", "Alpha One"])).toEqual(["ready", "Alpha One"]);
   } finally {
     await page.close();
   }
@@ -271,7 +276,7 @@ test("A command added outside the page shows its card with its model within one 
     // added from a terminal: heads, topology and the roster all list beta at once
     world.beta = true;
     await step(page, 5_000);
-    expect(await cardReading(page, ["Ready", "Beta One"], "beta")).toEqual(["Ready", "Beta One"]);
+    expect(await cardReading(page, ["ready", "Beta One"], "beta")).toEqual(["ready", "Beta One"]);
   } finally {
     await page.close();
   }
@@ -281,13 +286,13 @@ test("A session that starts or ends on a command shows on its card within one ti
   world.running = true;
   const page = await open();
   try {
-    expect(await cardOf(page)).toEqual(["Ready", "Alpha One"]);
+    expect(await cardOf(page)).toEqual(["ready", "Alpha One"]);
     world.sessions = [{ session_id: "s-1", head: "alpha", status: "working" }];
     await step(page, 5_000);
-    expect(await cardReading(page, ["1 running", "Alpha One"])).toEqual(["1 running", "Alpha One"]);
+    expect(await cardReading(page, ["working", "Alpha One"])).toEqual(["working", "Alpha One"]);
     world.sessions = [];
     await step(page, 5_000);
-    expect(await cardReading(page, ["Ready", "Alpha One"])).toEqual(["Ready", "Alpha One"]);
+    expect(await cardReading(page, ["ready", "Alpha One"])).toEqual(["ready", "Alpha One"]);
   } finally {
     await page.close();
   }
@@ -297,10 +302,10 @@ test("A change to the lists made outside the console shows within a minute", asy
   world.running = true;
   const page = await open();
   try {
-    expect(await cardOf(page)).toEqual(["Ready", "Alpha One"]);
+    expect(await cardOf(page)).toEqual(["ready", "Alpha One"]);
     world.label = "Alpha Two";
     for (let s = 5; s <= 60; s += 5) await step(page, 5_000);
-    expect(await cardReading(page, ["Ready", "Alpha Two"])).toEqual(["Ready", "Alpha Two"]);
+    expect(await cardReading(page, ["ready", "Alpha Two"])).toEqual(["ready", "Alpha Two"]);
   } finally {
     await page.close();
   }
@@ -312,15 +317,15 @@ test("A change made just after a read of the lists shows a minute on, whichever 
     // started from a terminal: the tick's heads show it moved, and the same round reads the lists after them
     world.running = true;
     await step(page, 5_000);
-    expect(await cardReading(page, ["Ready", "Alpha One"])).toEqual(["Ready", "Alpha One"]);
+    expect(await cardReading(page, ["ready", "Alpha One"])).toEqual(["ready", "Alpha One"]);
     // renamed in splice.toml just after that read: twelve ticks on, a minute, the card shows it
     world.label = "Alpha Two";
     for (let i = 0; i < 12; i++) await step(page, 5_000);
-    expect(await cardReading(page, ["Ready", "Alpha Two"])).toEqual(["Ready", "Alpha Two"]);
+    expect(await cardReading(page, ["ready", "Alpha Two"])).toEqual(["ready", "Alpha Two"]);
     // renamed again just after that minute's own read: the next minute shows it too
     world.label = "Alpha Three";
     for (let i = 0; i < 12; i++) await step(page, 5_000);
-    expect(await cardReading(page, ["Ready", "Alpha Three"])).toEqual(["Ready", "Alpha Three"]);
+    expect(await cardReading(page, ["ready", "Alpha Three"])).toEqual(["ready", "Alpha Three"]);
   } finally {
     await page.close();
   }
@@ -330,7 +335,7 @@ test("The lists are read once a minute: eleven ticks after a read of them leave 
   world.running = true;
   const page = await open();
   try {
-    expect(await cardOf(page)).toEqual(["Ready", "Alpha One"]);
+    expect(await cardOf(page)).toEqual(["ready", "Alpha One"]);
     // the first read of the lists after the page loaded, wherever in its minute that falls
     world.label = "Alpha Two";
     await stepUntilModel(page, "Alpha Two", 12);
@@ -338,10 +343,10 @@ test("The lists are read once a minute: eleven ticks after a read of them leave 
     world.label = "Alpha Three";
     for (let tick = 1; tick <= 11; tick++) {
       await step(page, 5_000);
-      expect(await cardOf(page)).toEqual(["Ready", "Alpha Two"]);
+      expect(await cardOf(page)).toEqual(["ready", "Alpha Two"]);
     }
     await step(page, 5_000);
-    expect(await cardReading(page, ["Ready", "Alpha Three"])).toEqual(["Ready", "Alpha Three"]);
+    expect(await cardReading(page, ["ready", "Alpha Three"])).toEqual(["ready", "Alpha Three"]);
   } finally {
     await page.close();
   }
@@ -349,13 +354,13 @@ test("The lists are read once a minute: eleven ticks after a read of them leave 
 
 // Each list the minute's read asks but topology, whose failure leaves every list as it was: where the page shows it, and
 // what it shows once read. A read that failed shows something else until the lists are read again: the card's model
-// reads None, a signed-out command reads Ready, the claude switch goes, a local runtime reads as its TOML key, the
+// reads None, a signed-out command reads ready, the claude switch goes, a local runtime reads as its TOML key, the
 // projects read none, and a command's own settings leave its pane. [look] goes where that shows, once they are read.
 const LISTS: {
   route: string; what: string; world: Partial<typeof world>;
   look?: (page: Page) => Promise<void>; read: (page: Page) => Promise<unknown>; answer: unknown;
 }[] = [
-  { route: "/api/models", what: "the roster", world: { running: true }, read: (page) => cardOf(page), answer: ["Ready", "Alpha One"] },
+  { route: "/api/models", what: "the roster", world: { running: true }, read: (page) => cardOf(page), answer: ["ready", "Alpha One"] },
   {
     route: "/api/doctor", what: "doctor's checks", world: { running: true, signedOut: true },
     read: (page) => cardOf(page), answer: ["Signed out", "Alpha One"],
@@ -434,7 +439,7 @@ test("A tick waits for the round still out, so a slow splice is read at its own 
   world.running = true;
   const page = await open();
   try {
-    expect(await cardOf(page)).toEqual(["Ready", "Alpha One"]);
+    expect(await cardOf(page)).toEqual(["ready", "Alpha One"]);
     // the tick's read of the sessions answers slowly, which holds its round open
     const slow = hold("/api/sessions");
     await page.clock.runFor(5_000);
@@ -444,10 +449,10 @@ test("A tick waits for the round still out, so a slow splice is read at its own 
     world.sessions = [{ session_id: "s-1", head: "alpha", status: "working" }];
     await page.clock.runFor(5_000);
     await settled(page, 1);
-    expect(await cardOf(page)).toEqual(["Ready", "Alpha One"]);
+    expect(await cardOf(page)).toEqual(["ready", "Alpha One"]);
     slow.release();
     await settled(page);
-    expect(await cardReading(page, ["1 running", "Alpha One"])).toEqual(["1 running", "Alpha One"]);
+    expect(await cardReading(page, ["working", "Alpha One"])).toEqual(["working", "Alpha One"]);
   } finally {
     await page.close();
   }
@@ -478,13 +483,13 @@ test("Models left while its first read is out leaves nothing of itself in the ta
   }
 }, 30_000);
 
-test("Start on a stopped command's card brings it to Ready at once", async () => {
+test("Start on a stopped command's card brings it to ready at once", async () => {
   const page = await open();
   try {
     expect(await cardOf(page)).toEqual(["Not started", "Alpha One"]);
     await page.locator(`${CARD} [data-act="fix"]`).click();
     await settled(page);
-    expect(await cardReading(page, ["Ready", "Alpha One"])).toEqual(["Ready", "Alpha One"]);
+    expect(await cardReading(page, ["ready", "Alpha One"])).toEqual(["ready", "Alpha One"]);
   } finally {
     await page.close();
   }

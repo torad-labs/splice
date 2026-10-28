@@ -95,6 +95,8 @@ test("a store that holds something shows its size, its count and its share; one 
       });
     });
     await expect.poll(async () => (await shares()).find((s) => s.title.startsWith("Transcript copies"))?.drawn ?? 0).toBeGreaterThan(0.5);
+    // the parts grow in together: measure once every one of them has finished, not while a small part is still partway
+    await whole.locator(".pd-bar").first().evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)).then(() => undefined));
     const parts = await shares();
     expect(parts.map((s) => s.title)).toContain("Transcript copies 12.8 GB");
     for (const part of parts) expect(Math.abs(part.drawn - part.read)).toBeLessThan(0.02);

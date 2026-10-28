@@ -2,8 +2,9 @@
 // answers in the routes' own shapes:
 // - a member row of the team form whose Join by rule is on says what the rule takes: the row's command, the team's
 //   folder, and that such a session joins only while the member has none running;
-// - a member's own plan-window figures are headed by the span they were counted over, "7 days", and the plan's own
-//   long window is named on the plan's meter row ("Month" on a 30-day plan, "Week" on a 7-day one), with its share.
+// - a member's own plan-window figures are a row headed by the span they were counted over, "7 days", with its count
+//   under the Requests column, and the plan's own long window is named on the plan's meter row ("Month" on a 30-day plan,
+//   "Week" on a 7-day one), with its share.
 import { afterAll, beforeAll, test } from "bun:test";
 import { chromium, expect, type Browser, type Locator, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -86,6 +87,8 @@ async function onTeams(check: (p: Page) => Promise<void>) {
 const member = (p: Page, id: string) => p.locator(`article[data-key="m:${id}"]`);
 // the element whose own words hold [text], and the row it sits in
 const rowOf = (scope: Locator, text: RegExp) => scope.getByText(text).first().locator("xpath=..");
+// a member's own row of plan figures for one span, headed by it: "7 days", its requests under the Requests column
+const spanRow = (scope: Locator, span: string) => scope.locator(".mtab .mtr.plan").filter({ hasText: span });
 
 test("a form row with Join by rule on says what the rule takes: its command, the team's folder, and the condition", () => onTeams(async (p) => {
   await p.locator('[data-act="new"]').first().click();
@@ -109,14 +112,14 @@ test("a form row with Join by rule on says what the rule takes: its command, the
 test("a member's own plan figures are headed 7 days, and the plan's long window is named on its meter row with its share", () => onTeams(async (p) => {
   const lead = member(p, "lead");
   // the member's own week, under the span it was counted over, never under the plan's month
-  await expect(rowOf(lead, /402 requests/)).toContainText(/7 days/i);
-  await expect(rowOf(lead, /402 requests/)).not.toContainText(/month/i);
+  await expect(spanRow(lead, "7 days").locator(".rf")).toHaveText("402");
+  await expect(spanRow(lead, "7 days")).not.toContainText(/month/i);
   // the plan's month is the plan's meter row, with the share the provider reported
   await expect(rowOf(lead, /^month$/i)).toContainText(/40%\s*used/);
   await expect(lead).toContainText("Work login");
   // a login /api/accounts keys by the ref its pool entry carries is still found: named, and its week drawn
   const builder = member(p, "builder");
-  await expect(rowOf(builder, /193 requests/)).toContainText(/7 days/i);
+  await expect(spanRow(builder, "7 days").locator(".rf")).toHaveText("193");
   await expect(rowOf(builder, /^week$/i)).toContainText(/15%\s*used/);
   await expect(builder).toContainText("Home login");
 }), 60_000);

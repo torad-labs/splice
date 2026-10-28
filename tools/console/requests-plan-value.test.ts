@@ -1,6 +1,7 @@
-// A request on a plan account costs the person nothing: the list and the opened request say "On your plan", and the
-// opened request adds what it would have cost at API prices (plan_value_usd), never as its cost (Marlin, Oct 11 5:52 PM).
-// A request billed to a key keeps its dollars and has no such line. Through the real page against a stub daemon.
+// A request on a plan account costs the person nothing: the list's key says "On your plan, at API prices" once, and the
+// opened request draws what it would have cost at API prices (plan_value_usd) as its figure with "On your plan" under it,
+// never as a price paid (Marlin, Oct 11 5:52 PM; Requests' goal, Oct 26). A request billed to a key keeps its dollars and
+// has no such line. Through the real page against a stub daemon.
 import { afterAll, beforeAll, test } from "bun:test";
 import { chromium, expect, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -63,18 +64,18 @@ test("a plan request draws its API-price worth hollow, the list's key says On yo
     const card = (turn: string) => page.locator(`article[data-open="codex:${turn}"]`);
     await expect(card("onplan")).toBeVisible({ timeout: 20_000 });
     const fill = (turn: string) => card(turn).locator(".co .cbar > b").evaluate((b) => getComputedStyle(b).backgroundColor);
-    await expect(card("onplan").locator(".co .v")).toHaveText("≈$0.053");
+    await expect(card("onplan").locator(".co .v")).toHaveText("$0.053");
     expect(await card("onplan").locator(".co.plan").count()).toBe(1);
     expect(await fill("onplan")).toBe("rgba(0, 0, 0, 0)");
     await expect(page.locator(".lkey")).toContainText("On your plan, at API prices");
-    await expect(card("onkey").locator(".co .v")).toHaveText("≈$0.120");
+    await expect(card("onkey").locator(".co .v")).toHaveText("$0.120");
     expect(await card("onkey").locator(".co.plan").count()).toBe(0);
     expect(await fill("onkey")).not.toBe("rgba(0, 0, 0, 0)");
 
     const cost = page.locator(".rqpane .fig").filter({ hasText: "Cost" });
     await card("onplan").click();
-    await expect(cost.locator(".v")).toHaveText("On your plan");
-    await expect(cost.locator(".fsub")).toHaveText("≈$0.053 at API prices");
+    await expect(cost.locator(".v")).toHaveText("≈$0.053");
+    await expect(cost.locator(".fsub")).toHaveText("On your plan");
 
     await page.locator('.rqpane [data-act="close"]').click();
     await card("onkey").click();

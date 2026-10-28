@@ -76,7 +76,9 @@ const plainPlan = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : undefined
 // An account's name on one command, as splice knows it there: two commands can each have an account called "primary"
 // (ChatGPT's and Grok's), so the page keys an account by its commands and that name, and sends splice the name only.
 const labelOf = (row) => row.selector_key || row.label || "primary";
-const acctId = (row) => `${(row.heads || []).join("+")}/${labelOf(row)}`;
+// a login's id on its provider's board is the kit's (kit.js loginCardId), so the pages that link to a card spell it the
+// way the board keys it
+const acctId = loginCardId;
 const labelOn = (a, head) => a.row?.account_labels?.[head] || labelOf(a.row);
 
 // One read of everything the page shows. Each provider: its commands (with their order, pin and day) and its accounts.
@@ -351,7 +353,7 @@ function askAgainSoon() {
   againTimer = setTimeout(async () => { await load(); render({ flip: true }); }, 5000);
 }
 const FRESH_UI = () => ({ lane: {}, signin: {}, editor: null, addProv: null, menu: null, armed: null, removeErr: null, rename: null, renameErr: null, renameDraft: null, replace: null, pulse: null, naming: null,
-  moving: null, slotErr: null, orderErr: null, orderSaving: null, removing: null });
+  moving: null, slotErr: null, orderErr: null, keyErr: null, orderSaving: null, removing: null });
 // why: the Day rows whose Not read reason is open; reasons: the refusals whose reason splice gave is open under their
 // word; doors: the logins whose every session door is out; enter: the one form or menu just opened, which rises into
 // place once and never again on a later redraw; shook: the refusal just drawn, which shakes once and then stands still
@@ -502,7 +504,9 @@ function refills(day) {
 // this login on the command the rail shows (usage.html?win=&account=head|label, the address Usage reads), so a week at
 // 92% leads to the projects and agents that spent it. A window Usage does not draw, such as a Month, stays a label.
 const USAGE_WIN = { "5 hours": "5h", Week: "7d" };
-const usageDoor = (a, c) => (c ? (label) => (USAGE_WIN[label] ? `usage.html?win=${USAGE_WIN[label]}&account=${encodeURIComponent(`${c.head}|${labelOn(a, c.head)}`)}` : null) : null);
+// A login the daemon names carries a ref, which is what Usage matches its requests and its name by (usage.js planRowOf);
+// one without a ref goes by its label on that command
+const usageDoor = (a, c) => (c ? (label) => (USAGE_WIN[label] ? `usage.html?win=${USAGE_WIN[label]}&account=${encodeURIComponent(`${c.head}|${a.row?.ref ?? labelOn(a, c.head)}`)}` : null) : null);
 // the login a line names, as a door to its card on this board with the socket it has on the rail (a move, the Next row)
 const loginDoor = (name, id, sock) => (id ? `<button class="mlogin" type="button" data-act="goto" data-a="${esc(id)}" title="Show ${esc(name)}'s card">`
   + `${sock ? `<span class="msock" aria-hidden="true">${sock}</span>` : ""}<b>${esc(name)}</b></button>` : `<b>${esc(name)}</b>`);
@@ -1017,19 +1021,22 @@ function movesHtml(p, a) {
     const sw = x.account_switch, cmd = cmdOf(x.head);
     if (sw?.from && mine(x.head, sw.from) && !mine(x.head, x.account)) add(away, `${cmd}|${loginOf(x.head, x.account)}`, { cmd, other: login(x.head, x.account) }, x, sw.at_epoch_millis);
   }
-  const tail = (g) => `${g.why ? ` · ${esc(g.why)}` : ""}${g.at ? ` · ${at24(g.at)}` : ""}`;
+  // why and when stand in columns of their own, so a card's moves read down as a small table: the reasons start on one
+  // line and the times end on the card's edge, where its resets end
+  const tail = (g) => `<span class="mwhy">${g.why ? esc(g.why) : ""}</span><span class="mat">${g.at ? at24(g.at) : ""}</span>`;
   const chip = (g) => (g.cmd ? `<span class="chip" data-key="move:${esc(g.cmd)}">${esc(g.cmd)}</span>` : "");
-  const other = ({ name, id, sock }) => loginDoor(name, id, sock);
+  const other = ({ name, id, sock }, word) => `<span class="mother">${word} ${loginDoor(name, id, sock)}</span>`;
   // the sessions a move carried, the first two by name as doors to them on Sessions and the rest counted; the command's
   // own move, which carried no one session, reads from or to the login alone
-  const who = (g, word) => {
-    if (!g.who.length) return word[0].toUpperCase() + word.slice(1);
+  const who = (g) => {
+    if (!g.who.length) return "";
     const named = g.who.slice(0, 2).map((x) => `<a class="mdoor" href="sessions.html#${encodeURIComponent(x.session_id)}">${esc(sessNameOf(x))}</a>`).join(", ");
-    return `${named}${g.who.length > 2 ? ` +${n0(g.who.length - 2)}` : ""} ${word}`;
+    return `${named}${g.who.length > 2 ? ` +${n0(g.who.length - 2)}` : ""}`;
   };
-  const ins = [...into.values()].map((g) => `<p class="moveline">${GLYPH.into}${chip(g)}<span>${who(g, "from")} ${other(g.other)}${tail(g)}</span></p>`);
-  const outs = [...away.values()].map((g) => `<p class="moveline">${GLYPH.away}${chip(g)}<span>${who(g, "to")} ${other(g.other)}${tail(g)}</span></p>`);
-  return [...ins, ...outs].join("");
+  const line = (g, glyph, word) => `<p class="moveline">${glyph}<span class="mwho">${chip(g)}${who(g)}</span>`
+    + `${other(g.other, g.who.length ? word : word[0].toUpperCase() + word.slice(1))}${tail(g)}</p>`;
+  const lines = [...[...into.values()].map((g) => line(g, GLYPH.into, "from")), ...[...away.values()].map((g) => line(g, GLYPH.away, "to"))];
+  return lines.length ? `<div class="moves">${lines.join("")}</div>` : "";
 }
 // how many rows a card's windows draw, so a login being read for the first time stands at the height it will land at
 const WINDOW_GHOST = () => `${GHOST.bar(3.4)}${GHOST.track()}<span class="pct">${GHOST.fig(4.2)}</span><span class="when">${GHOST.ring()}${GHOST.bar(6.2)}</span>`;
@@ -1057,8 +1064,10 @@ function cardHtml(p, c, a, i, serves) {
   const signT = mine(`out:${a.id}`) ? `out:${a.id}` : mine(`re:${a.id}`) ? `re:${a.id}` : null;
   const signRow = signT ? `<div class="outbox${ui.signin[signT].state === "fail" ? " failed" : ""}${ui.enter === "sign" ? " enter" : ""}">${signingHtml(signT)}</div>` : "";
   let body;
-  const keyField = (cancel) => `<div class="outbox${cancel && ui.enter === "key" ? " enter" : ""}"><input class="field" id="key-in" type="password" data-a="${a.id}" placeholder="Paste key" aria-label="API key" autocomplete="off" spellcheck="false">`
-    + `<button class="act primary" data-act="save-replace" data-p="${p.id}" data-a="${a.id}" disabled>Save</button>${cancel ? `<button class="act quiet" data-act="cancel-replace">Cancel</button>` : ""}</div>`;
+  // a key splice refused is said beside its field, its word the door to splice's reason, which opens under the row
+  const keyErr = ui.keyErr?.spot === spot ? ui.keyErr : null, keyKey = `key:${spot}`;
+  const keyField = (cancel) => `<div class="outbox${cancel && ui.enter === "key" ? " enter" : ""}${keyErr && ui.shook === keyKey ? " failed" : ""}"><input class="field" id="key-in" type="password" data-a="${a.id}" placeholder="Paste key" aria-label="API key" autocomplete="off" spellcheck="false"${keyErr ? ' aria-invalid="true"' : ""}>`
+    + `${keyErr ? refusalHtml(keyErr, keyKey) : ""}<button class="act primary" data-act="save-replace" data-p="${p.id}" data-a="${a.id}" disabled>Save</button>${cancel ? `<button class="act quiet" data-act="cancel-replace">Cancel</button>` : ""}${reasonHtml(keyErr, keyKey)}</div>`;
   if (p.kind === "key") {
     // where the value comes from rides the name line as a tag (src, below); the body is the field while one is open
     body = !a.has ? keyField(false) : ui.replace === spot ? keyField(true) : "";
@@ -1233,12 +1242,14 @@ let layout = null;
 // what it will show (a serving login with its Next row, doors and moves stands twice as tall as a signed-out one); a
 // provider from its head, its days and its rail. Doors wrap at the width a card has in a column of the board.
 const REM = { card: 4.65, email: 1.4, row: 2.05, doors: 2.55, doorLine: 2.2, move: 2.05, outbox: 3.3, line: 1.9, gap: 1, add: 3.35,
-  head: 3.8, strip: 11.15, prov: 2.4, addProv: 4.6 };
+  head: 3.7, strip: 10.66, prov: 2.4, addProv: 4.6 };
 function cardRem(html, inner) {
   const n = (re) => (html.match(re) || []).length;
   // a row per window, model and Next row, and one for a held line, a not-read line or a read-at line
   const rows = n(/class="pct[" ]/g) + n(/class="next[" ]/g) + n(/class="(?:heldline|unproved|stale-at)"/g);
-  const doors = [...html.matchAll(/<a class="sdoor"[^>]*>([\s\S]*?)<\/a>/g)].reduce((w, m) => w + 3.2 + .5 * m[1].replace(/<[^>]+>/g, "").length, n(/class="morepill/g) * 3);
+  // a door is its lamp and its name; a door still being read (its ghost) counts as a name of middling length
+  const doors = [...html.matchAll(/<a class="sdoor"[^>]*>([\s\S]*?)<\/a>/g)].reduce((w, m) => w + 2.6 + .46 * m[1].replace(/<[^>]+>/g, "").length,
+    n(/class="morepill/g) * 2.6 + n(/class="sdoor gdoor"/g) * 9);
   return REM.card + n(/class="email"/g) * REM.email + rows * REM.row + (doors ? REM.doors + (Math.ceil(doors / inner) - 1) * REM.doorLine : 0)
     + n(/class="moveline"/g) * REM.move + n(/class="outbox/g) * REM.outbox + n(/class="(?:keysrc|local-model)"/g) * REM.line;
 }
@@ -1297,28 +1308,36 @@ function columns() {
   const n = colCount();
   // laid out again when the width, the providers or a plan provider's count of cards changes, never for an open editor
   const ids = data.map((p) => p.id).join() + "|" + data.map((p) => (p.kind === "plan" ? laneAccts(p, laneOf(p)).length : 0)).join();
-  if (!layout || layout.n !== n || layout.ids !== ids) {
-    layout = keptPacking(n, ids) || packed(n, ids);
-    try { localStorage.setItem(PACK_KEY, JSON.stringify(layout)); } catch { /* a full store packs again next visit */ }
+  // a packing made before the sessions were read counts no doors or moves on the cards, so it holds only until they land,
+  // then the board packs once more and keeps that one (a first visit cut Claude's rail at 3 where 4 was even)
+  const rough = data.some((p) => p.accounts.some((a) => a.sessions === null));
+  if (!layout || layout.n !== n || layout.ids !== ids || (layout.rough && !rough)) {
+    layout = keptPacking(n, ids) || { ...packed(n, ids), rough };
+    if (!layout.rough) try { localStorage.setItem(PACK_KEY, JSON.stringify(layout)); } catch { /* a full store packs again next visit */ }
   }
   return layout;
 }
 function packed(n, ids) {
-  const inner = innerRem(n), rails = new Map(data.map((p) => [p, railRems(p, inner)]));
-  const w = (p) => REM.head + stripsOf(p) * REM.strip + runRem(rails.get(p)) + REM.prov;
-  const big = data.filter((p) => p.kind === "plan").reduce((m, p) => (!m || runRem(rails.get(p)) > runRem(rails.get(m)) ? p : m), null);
+  const inner = innerRem(n);
+  return { rule: PACK_RULE, n, ids, ...packShape(data.map((p) => ({ id: p.id, plan: p.kind === "plan", strips: stripsOf(p), hs: railRems(p, inner) })), n) };
+}
+// The packing rule on providers given as heights ({ id, plan, strips, hs: each card's rem, Add account last on a plan's
+// rail}), shared by the board and by a first visit's ghosts, so the ghosts stand where the board will land
+function packShape(items, n) {
+  const w = (p) => REM.head + p.strips * REM.strip + runRem(p.hs) + REM.prov;
+  const big = items.filter((p) => p.plan).reduce((m, p) => (!m || runRem(p.hs) > runRem(m.hs) ? p : m), null);
   // a split is weighed against the board packed in splice's own order, as it always was; unsplit, the big one leads
-  let best = { k: 1, cuts: null, ...pack(big ? [big, ...data.filter((p) => p !== big)] : data, n, w) }, under = 0.85 * pack(data, n, w).tall;
+  let best = { k: 1, cuts: null, ...pack(big ? [big, ...items.filter((p) => p !== big)] : items, n, w) }, under = 0.85 * pack(items, n, w).tall;
   if (big && n > 1) {
-    const rest = data.filter((p) => p !== big), hs = rails.get(big);
+    const rest = items.filter((p) => p !== big), hs = big.hs;
     for (let k = 2; k <= Math.min(n - 1, Math.floor(hs.length / 2)); k++) {
       // over k columns its days stand side by side, a row of them per k commands
       const r = pack(rest, n - k, w), cut = cutRail(hs, k);
-      const tall = Math.max(REM.head + Math.ceil(stripsOf(big) / k) * REM.strip + cut.tall + REM.prov, r.tall);
+      const tall = Math.max(REM.head + Math.ceil(big.strips / k) * REM.strip + cut.tall + REM.prov, r.tall);
       if (tall < under) { best = { k, cuts: cut.cuts, ...r, tall }; under = tall; } // 15% shorter or no split
     }
   }
-  return { rule: PACK_RULE, n, ids, wide: best.k > 1 ? { id: big.id, k: best.k, cuts: best.cuts } : null, cols: best.cols, addAt: best.add };
+  return { wide: best.k > 1 ? { id: big.id, k: best.k, cuts: best.cuts } : null, cols: best.cols, addAt: best.add };
 }
 addEventListener("resize", () => {
   if (!readOnce) { ghostBoard(); return; }
@@ -1344,7 +1363,7 @@ function shapeOf(L) {
       const el = sec?.querySelector(`[data-key="card:${CSS.escape(`${p.id}/${a.id}`)}"]`);
       const rows = p.kind !== "plan" || a.out ? 0 : Math.max(1, (a.windows?.length || 0) + (a.models?.length || 0)) + (el?.querySelector(".windows > .next") ? 1 : 0);
       const over = (el?.querySelector(":scope > .email") ? 1 : 0) + (el?.querySelector(".windows > .heldline") ? 1 : 0);
-      return [rows, Math.min(SESS_SHOWN, doors(a)), remOf(el), over, el?.querySelectorAll(":scope > .moveline").length || 0];
+      return [rows, Math.min(SESS_SHOWN, doors(a)), remOf(el), over, el?.querySelectorAll(":scope > .moves > .moveline").length || 0];
     };
     return { k: p.kind, d: [...(sec?.querySelectorAll(".meter.day") || [])].map(remOf), a: (p.kind === "plan" ? ordered(p, laneOf(p)) : p.accounts).map(card) };
   };
@@ -1361,7 +1380,7 @@ function ghostCard(kind, [rows, doors, h, over = 0, moves = 0], k) {
     : rows ? `<div class="windows">${lines(Math.max(0, over - 1), 12, "heldline")}${Array.from({ length: rows }, WINDOW_GHOST).join("")}</div>` : `<div class="outbox">${GHOST.bar(5.4, "chip")}</div>`;
   return `<article class="card gcard ghosted" style="--i:${Math.min(k, 3)}${tall(h)}">${kind === "plan" ? `<span class="socket"></span>` : ""}`
     + `<div class="top">${GHOST.bar(7.4, "big")}<span class="slot">${GHOST.bar(6.2, "chip")}</span></div>${over ? lines(1, 9.5, "email") : ""}${body}${ghostDoors(doors)}`
-    + `${Array.from({ length: moves }, () => `<p class="moveline">${GHOST.bar(15)}</p>`).join("")}</article>`;
+    + `${moves ? `<div class="moves">${Array.from({ length: moves }, () => `<p class="moveline">${GHOST.bar(15)}</p>`).join("")}</div>` : ""}</article>`;
 }
 const ghostStrip = (h) => `<div class="meter day ghosted" style="${tall(h).slice(1)}"><span class="label">Day</span><span class="money">${GHOST.fig(4.6)} ${GHOST.bar(9.5)}</span>`
   + `<span class="dayrun">${GHOST.track()}</span><span class="when">${GHOST.ring()}${GHOST.bar(6.2)}</span></div>`;
@@ -1379,20 +1398,38 @@ function ghostProvider(g, span = 1, cuts = null) {
   return `<section class="provider ghostp${span > 1 ? ` wide" style="--span:${span}` : ""}">${head}${span > 1 ? `<div class="meters" style="--span:${across}">${strips}</div>` : strips}${rail}</section>`;
 }
 // A FIRST VISIT, or a width the last one never drew, has no kept shape: its ghosts come from splice's own list of commands
-// as soon as that answers (it answers well before the rest), one provider per family with a strip and a card per command
-// (two on a plan, which pools its logins), packed as the board packs; until then, one plain provider per column.
-let registry = null, askedRegistry = false;
+// as soon as that answers (it answers well before the rest), one provider per family with a strip per command. Where the
+// list of logins has answered with it, each plan login is a card with the rows its reading holds (a window per figure, a
+// model's slice, the held line, the address), and the board is packed and its widest rail cut by the board's own rule
+// (packShape), so the ghosts stand where the board lands; without it, two cards per plan command. Until the list
+// answers, one plain provider per column.
+let registry = null, logins = null, askedRegistry = false;
+function loginGhost(r) {
+  const ws = [r.five_hour_used_percent, r.seven_day_used_percent].filter((v) => v != null);
+  // Claude Code's own login place that holds no account is no card (readAll)
+  if (r.login_place && !r.credential_present && !r.identity_verified && !r.observed_at_epoch_seconds) return null;
+  if (!r.credential_present && !r.token_renews) return [0, 0, 0, 0, 0];
+  const rows = Math.max(1, ws.length + (r.seven_day_models || []).length), over = (r.email && r.email !== r.display_name ? 1 : 0) + (ws.some((v) => v >= 100) ? 1 : 0);
+  return [rows, 0, 0, over, 0];
+}
+const ghostRem = (k, [rows, , , over]) => (k === "plan" ? REM.card + over * REM.email + (rows ? rows * REM.row : REM.outbox) : REM.card + REM.line);
 function shapeFromRegistry(n) {
   const provs = new Map();
   for (const h of registry) {
     const id = (FAMILY[h.family] || { id: h.family || h.key }).id;
     const k = h.family === "local" || h.family === "vast" ? "local" : h.authKind === "api-key" ? "key" : "plan";
-    const p = provs.get(id) || { k, cmds: 0 };
-    p.cmds++; provs.set(id, p);
+    const p = provs.get(id) || { id, k, cmds: 0, heads: new Set() };
+    p.cmds++; p.heads.add(h.key); provs.set(id, p);
   }
-  const ps = [...provs.values()].map(({ k, cmds }) => ({ k, d: Array.from({ length: k === "local" ? 0 : cmds }, () => 0),
-    a: Array.from({ length: k === "plan" ? cmds + 1 : cmds }, () => (k === "plan" ? [2, 0] : [0, 0])) }));
-  return { n, wide: null, cols: DRAW.packCols(ps, n, (g) => 4 + 3 * g.d.length + g.a.length * (g.k === "plan" ? 4 : 2)).map((c) => c.items) };
+  const ps = [...provs.values()].map(({ id, k, cmds, heads }) => {
+    const mine = k === "plan" && logins ? logins.filter((r) => (r.heads || []).some((x) => heads.has(x))).map(loginGhost).filter(Boolean) : null;
+    const a = mine?.length ? mine : Array.from({ length: k === "plan" ? cmds + 1 : cmds }, () => (k === "plan" ? [2, 0, 0, 0, 0] : [0, 0]));
+    return { id, k, d: Array.from({ length: k === "local" ? 0 : cmds }, () => 0), a };
+  });
+  const L = packShape(ps.map((g) => ({ id: g.id, plan: g.k === "plan", strips: g.d.length,
+    hs: [...g.a.map((x) => ghostRem(g.k, x)), ...(g.k === "plan" ? [REM.add] : [])] })), n);
+  const byId = (id) => ps.find((g) => g.id === id);
+  return { n, wide: L.wide ? { k: L.wide.k, cuts: L.wide.cuts, p: byId(L.wide.id) } : null, cols: L.cols.map((ids) => ids.map(byId)) };
 }
 function ghostBoard() {
   let shape = null;
@@ -1406,8 +1443,9 @@ function ghostBoard() {
       if (!askedRegistry) {
         askedRegistry = true;
         const plain = setTimeout(() => { registry = registry ?? []; if (!readOnce) ghostBoard(); }, 600);
-        API.get("/api/status").then((st) => {
+        Promise.all([API.get("/api/status"), API.get("/api/accounts")]).then(([st, ac]) => {
           clearTimeout(plain);
+          logins = ac.ok ? ac.body?.accounts || null : null;
           registry = st.ok ? st.body?.registry || [] : registry ?? [];
           if (!readOnce) ghostBoard();
         });
@@ -1451,6 +1489,67 @@ function headState() {
 // Chrome fires focusout on a focused field as the board replaces it; `drawing` keeps that from reading as him leaving it.
 let drawing = false, landed = false;
 const DAYS_GROWN = new Set(); // the Day rows whose hours have risen in once, so a redraw never plays it again
+// THE FIELDS BEING TYPED IN OUTLIVE A REDRAW: the board is drawn again whenever a read lands (the sessions, the day, a
+// refusal), and a field drawn from the data lost what he had typed and where his cursor was. The budget's amount is
+// kept by the editor itself (ui.editor.cap), so only its focus is carried. A key goes back into its field as a value,
+// never into the page's markup.
+function fieldSel(f) {
+  if (f.matches(".rename")) return `.field.rename[data-s="${CSS.escape(f.dataset.s || "")}"]`;
+  if (f.matches(".code-in")) return `.code-in[data-t="${CSS.escape(f.dataset.t || "")}"]`;
+  // a key field is told apart by its login; the new provider's, which has none, by that
+  if (f.id === "key-in") return f.dataset.a ? `#key-in[data-a="${CSS.escape(f.dataset.a)}"]` : "#key-in:not([data-a])";
+  return f.id ? `#${f.id}` : f.matches(".add-name") ? ".add-name" : null;
+}
+// the act or door that held the focus, by what it does and what it acts on, so the same one holds it after the redraw
+function focusSel(el) {
+  if (!el || el === board || !board.contains(el) || el.matches("input")) return null;
+  if (el.dataset.act) return ["act", "p", "a", "c", "s", "t", "k", "v"].filter((k) => el.dataset[k] != null).map((k) => `[data-${k}="${CSS.escape(el.dataset[k])}"]`).join("");
+  if (el.matches(".dayrun")) { const m = el.closest("[data-meter]")?.dataset.meter; return m ? `[data-meter="${CSS.escape(m)}"] .dayrun` : null; }
+  if (el.matches("a[href]")) return `a[href="${CSS.escape(el.getAttribute("href"))}"]`;
+  return null;
+}
+function keepFields() {
+  const kept = [...board.querySelectorAll("input.field")].map((f) => ({ sel: fieldSel(f), v: f.value, own: f.id !== "cap-in",
+    focus: f === document.activeElement, s: f.selectionStart, e: f.selectionEnd })).filter((x) => x.sel);
+  const other = focusSel(document.activeElement);
+  return other ? [...kept, { sel: other, focus: true, act: true }] : kept;
+}
+function putFields(kept) {
+  for (const k of kept) {
+    if (k.act) { board.querySelector(k.sel)?.focus({ preventScroll: true }); continue; }
+    const f = board.querySelector(k.sel);
+    if (!f) continue;
+    // a key put back in its field turns Save on, and leaves any refusal the draw itself made standing
+    if (k.own && f.value !== k.v && !f.readOnly) { f.value = k.v; if (f.id === "key-in") f.parentElement.querySelector('[data-act="save-replace"], [data-act="save-key"]')?.toggleAttribute("disabled", !k.v.trim()); }
+    if (k.focus) { f.focus({ preventScroll: true }); try { f.setSelectionRange(k.s, k.e); } catch { /* a field with no caret */ } }
+  }
+}
+// EVERY METER THAT CHANGED SLIDES FROM ITS LAST WIDTH TO ITS NEW ONE over 240 ms, when a read lands with new figures,
+// so what moved is what changed; a meter that grows from nothing (ui.grow) or is drawn for the first time is left alone
+const barId = (b) => { const h = b.closest("[data-a], [data-meter], [data-grow]"); return h && (h.dataset.a || h.dataset.meter || h.dataset.grow); };
+function barsNow() {
+  const seen = new Map(), out = new Map();
+  for (const b of board.querySelectorAll(".bar > b[data-v]")) {
+    const id = barId(b); if (!id) continue;
+    const i = seen.get(id) ?? 0; seen.set(id, i + 1);
+    out.set(`${id}#${i}`, b.style.width);
+  }
+  return out;
+}
+function slideBars(before, grown) {
+  if (!before.size || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const seen = new Map(), moving = [];
+  for (const b of board.querySelectorAll(".bar > b[data-v]")) {
+    const id = barId(b); if (!id) continue;
+    const i = seen.get(id) ?? 0; seen.set(id, i + 1);
+    const from = before.get(`${id}#${i}`);
+    if (!from || from === b.style.width || grown?.has?.(id)) continue;
+    moving.push([b, b.style.width]); b.style.transition = "none"; b.style.width = from;
+  }
+  if (!moving.length) return;
+  void board.offsetWidth;
+  for (const [b, to] of moving) { b.style.transition = "width var(--t-snap) var(--e-out)"; b.style.width = to; }
+}
 function render({ flip = false } = {}) {
   if (!board.isConnected || drag) return;
   headState();
@@ -1461,7 +1560,7 @@ function render({ flip = false } = {}) {
   // them into other columns
   const sliding = flip ? "[data-key]" : '[data-key^="prov:"]', before = new Map(), was = layout;
   for (const el of board.querySelectorAll(sliding)) before.set(el.dataset.key, el.getBoundingClientRect());
-  const L = columns();
+  const L = columns(), typed = keepFields(), barsBefore = barsNow(), entered = ui.enter, grown = ui.grow;
   drawing = true;
   // Add provider sits under the shortest column while a provider is left to add; with all of them here it has none to offer
   const addable = ui.addProv || CATALOG.some((c) => !data.some((p) => p.id === c.id));
@@ -1478,6 +1577,12 @@ function render({ flip = false } = {}) {
   // the meters take their widths, growing over 240 ms the ones that changed; while splice asks the providers again the
   // last figure stays on screen and the track stripes (kit.js DRAW.paint, which every page now shares)
   DRAW.paint(board, { grow: ui.grow, reading: ui.probing });
+  if (!ui.probing && grown !== "all") slideBars(barsBefore, grown);
+  // the logins at their limit ride Accounts' link on every page (kit.js navMark), each until its window comes back
+  if (!unheard) {
+    const out = data.flatMap((p) => p.accounts).filter(held);
+    navMark("accounts.html", out.length, "limit", out.map((a) => Math.max(0, ...a.windows.filter(atLimit).map((w) => w.resetMs ?? 0)) || null));
+  }
   // a day's hours rise in with the bars, when the fresh reading lands (ui.grow), and a day that lands after it rises on
   // first sight; while the page is still asking the providers they stand, as the striped bars do
   for (const run of board.querySelectorAll(".dayrun[role=group]")) {
@@ -1491,8 +1596,11 @@ function render({ flip = false } = {}) {
   if (ui.pulse) { board.querySelectorAll(`.card[data-a="${ui.pulse}"]`).forEach((el) => el.classList.add("pulse-once")); ui.pulse = null; }
   const menu = board.querySelector(".menu"); // a menu that would cross the bottom of the window opens upward
   if (menu && menu.getBoundingClientRect().bottom > innerHeight - 12) menu.classList.add("up");
-  const focus = board.querySelector(".field.rename") || board.querySelector("#key-in");
-  if (focus) { focus.focus(); if (focus.select) focus.select(); }
+  // a field opened by this draw takes the focus with its text picked; one he was typing in keeps what he typed, his focus
+  // and his place in it, whatever redrew the board under him (the sessions or the day landing, a refusal)
+  const opened = entered === "rename" ? board.querySelector(".field.rename")
+    : entered === "key" ? board.querySelector(`.card[data-key="card:${CSS.escape(ui.replace ?? "")}"] #key-in`) ?? keyIn() : null;
+  if (opened) { opened.focus(); opened.select?.(); } else putFields(typed);
   const shape = atRest() && !ui.probing ? JSON.stringify(shapeOf(L)) : shapeSaved;
   if (shape !== shapeSaved) { shapeSaved = shape; try { localStorage.setItem(SHAPE_KEY, shape); } catch { /* a full store keeps the last shape */ } }
   if (!flip && L === was) return;
@@ -1528,8 +1636,26 @@ async function probe() {
   ui.probing = true; glyph.classList.add("turning"); render();
   await API.post("/api/usage/probe");
   await load();
-  ui.probing = false; glyph.classList.remove("turning"); ui.grow = "all"; render();
+  // the first reading of a visit grows every bar from nothing; a later one slides only the bars whose figure changed
+  ui.probing = false; glyph.classList.remove("turning"); ui.grow = probed ? null : "all"; probed = true; render();
 }
+let probed = false;
+// THE BOARD STAYS CURRENT WHILE IT IS OPEN (Oct 27): it read once when the page opened and then only when he acted, so a
+// board left open showed the logins serving, the sessions on them and the day as they were an hour ago, and a splice
+// that stopped answering went unsaid. It reads again every minute while it is in view and at rest (no form, menu or
+// drag open, no hour being read under the pointer), and at once when he comes back to it after a minute away; what
+// changed slides into place and the rest stands still.
+const KEEP_MS = 60000;
+let readAt = Date.now();
+async function keepCurrent() {
+  if (document.visibilityState !== "visible" || !readOnce || unheard || ui.probing || drag || ui.orderSaving || ui.removing) return;
+  if (!atRest() || board.querySelector(".dayrun.at") || Date.now() - readAt < KEEP_MS - 1000) return;
+  readAt = Date.now();
+  await load();
+  if (atRest() && !drag) render();
+}
+setInterval(keepCurrent, KEEP_MS);
+document.addEventListener("visibilitychange", keepCurrent);
 // ---------- a window that rolls while the page is open ----------
 // The row goes empty the moment its reset passes, and the page reads again right then, so the true figure takes its
 // place within seconds (Marlin, Oct 10, 2026). Without this the empty row would sit there until someone pressed the
@@ -1584,7 +1710,7 @@ async function pickProvider(c) {
   const res = await API.post("/api/add", { profile: PROFILE[c.id] });
   const add = res.ok ? res.body : null;
   ui.addProv = { id: c.id, stage: add?.sign_in_by === "key" ? "key" : "sign", add: add?.id || null, env: add?.key_env || null };
-  if (ui.addProv.stage === "key") { render(); document.getElementById("key-in")?.focus(); return; }
+  if (ui.addProv.stage === "key") { render(); keyIn()?.focus(); return; }
   const done = () => saveAdd(c.id, "prov");
   if (add?.sign_in_by === "login") {
     startSignin("prov", { start: `/api/add/${encodeURIComponent(add.id)}/login`, watch: `/api/add/${encodeURIComponent(add.id)}`, done });
@@ -1601,30 +1727,33 @@ async function pickProvider(c) {
 // not come back in a minute and a half, shows on the tile it was added from.
 async function saveAdd(pid, target) {
   const res = await API.post(`/api/add/${encodeURIComponent(ui.addProv.add)}/save`);
-  if (!res.ok) { if (target === "key") keyState(document.getElementById("key-in"), "Not saved"); else failSignin(target, res.body); return false; }
+  if (!res.ok) { if (target === "key") keyState(keyIn(), "Not saved"); else failSignin(target, res.body); return false; }
   ui.addProv.add = null; // saved: nothing left to discard
   for (let i = 0; i < 90; i++) {
     await new Promise((r) => setTimeout(r, 1000));
     await load();
     if (data.some((p) => p.id === pid)) return true;
   }
-  if (target === "key") keyState(document.getElementById("key-in"), "Not saved"); else failSignin(target);
+  if (target === "key") keyState(keyIn(), "Not saved"); else failSignin(target);
   return false;
 }
 function dropAdd() { // an add that will not be saved is closed on splice too
   if (ui.addProv?.add) API.del(`/api/add/${encodeURIComponent(ui.addProv.add)}`);
   ui.addProv = null;
 }
-async function saveKey() {
-  const st = ui.addProv, field = document.getElementById("key-in");
+async function saveKey(from) {
+  const st = ui.addProv, field = keyIn(from);
   if (!st.add || !st.env) { keyState(field, "Not saved"); return; }
-  const res = await API.put(`/api/keys/${encodeURIComponent(st.env)}`, { value: pasted() });
+  const res = await API.put(`/api/keys/${encodeURIComponent(st.env)}`, { value: pasted(from) });
   if (!res.ok) { keyState(field, "Not saved"); return; }
   field.parentElement.querySelectorAll("button").forEach((b) => { b.disabled = true; });
   if (await saveAdd(st.id, "key")) { ui.addProv = null; await refresh(st.id); }
   else field.parentElement.querySelectorAll("button").forEach((b) => { b.disabled = false; });
 }
-const pasted = () => document.getElementById("key-in").value.trim(); // the value goes one way: into the store, never back
+// The board can hold several key fields at once: every key with no key, the one being replaced, a new provider's. Each act
+// reads the field in its own box (the box of the act pressed), never the first one on the page.
+const keyIn = (from) => from?.parentElement?.querySelector("#key-in") ?? board.querySelector('[data-key="addprov"] #key-in') ?? board.querySelector("#key-in");
+const pasted = (from) => (keyIn(from)?.value ?? "").trim(); // the value goes one way: into the store, never back
 // The key field's state, set in place so the pasted value is never written back into the page. Save stays off while the
 // field is empty (KeyWrites.kt:26).
 function keyState(field, word) {
@@ -1789,7 +1918,7 @@ board.addEventListener("paste", (e) => {
   keyState(f, bad ? "Invalid key" : null);
 });
 board.addEventListener("input", (e) => {
-  if (e.target.matches("#key-in")) keyState(e.target, null);
+  if (e.target.matches("#key-in")) { keyState(e.target, null); if (ui.keyErr) { ui.keyErr = null; render(); } }
   // a typed amount is the choice now, so a preset it no longer matches loses its outline at once (Marlin's walk, Oct 10)
   if (e.target.matches("#cap-in")) {
     const v = Number(e.target.value);
@@ -1806,7 +1935,7 @@ board.addEventListener("focusout", (e) => {
   const f = board.querySelector(".field.rename");
   if (!drawing && f && inRename(e.target) && !inRename(e.relatedTarget)) saveRename(f, false);
 });
-const closeAll = () => Object.assign(ui, { menu: null, armed: null, removeErr: null, rename: null, renameErr: null, renameDraft: null, replace: null, editor: null, naming: null });
+const closeAll = () => Object.assign(ui, { menu: null, armed: null, removeErr: null, rename: null, renameErr: null, renameDraft: null, replace: null, keyErr: null, editor: null, naming: null });
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || !(ui.menu || ui.rename || ui.replace || ui.editor || ui.naming)) return;
   closeAll(); render();
@@ -1843,7 +1972,7 @@ document.addEventListener("click", async (e) => {
   const act = t.dataset.act, p = t.dataset.p && findProv(t.dataset.p), a = t.dataset.a && findAcct(t.dataset.a);
   const k = t.dataset.c && findCmd(t.dataset.c).c;
   // a refused switch or order is said until the next press; opening its reason is no new press
-  if (act !== "reason") { ui.slotErr = null; ui.orderErr = null; }
+  if (act !== "reason") { ui.slotErr = null; ui.orderErr = null; ui.keyErr = null; }
   switch (act) {
     // a refusal's word opens splice's own reason under it, and folds it back
     case "reason":
@@ -1922,9 +2051,14 @@ document.addEventListener("click", async (e) => {
       break;
     }
     case "save-replace": {
-      if (!pasted()) break;
-      const res = await API.put(`/api/keys/${encodeURIComponent(a.env)}`, { value: pasted() });
-      if (!res.ok) { keyState(document.getElementById("key-in"), "Not saved"); break; }
+      if (!pasted(t)) break;
+      const res = await API.put(`/api/keys/${encodeURIComponent(a.env)}`, { value: pasted(t) });
+      if (!res.ok) {
+        // splice's reason, where it gave one, opens under the word; without one the word stands beside the field in place
+        const err = mutationError(res, "Not saved");
+        if (!err.why) { keyState(keyIn(t), "Not saved"); break; }
+        ui.keyErr = { spot: `${p.id}/${a.id}`, ...err }; refused(`key:${ui.keyErr.spot}`); render(); break;
+      }
       ui.replace = null; await refresh(); break;
     }
     // a new budget starts from Settings' "A new budget, when it's spent" (budgetDefaultAction), so that row governs it;
@@ -1962,7 +2096,7 @@ document.addEventListener("click", async (e) => {
     case "add-provider": ui.addProv = { stage: "pick" }; ui.enter = "pick"; render(); break;
     case "cancel-prov": dropAdd(); render(); break;
     case "pick": pickProvider(CATALOG.find((x) => x.id === t.dataset.id)); break;
-    case "save-key": if (pasted()) saveKey(); break;
+    case "save-key": if (pasted(t)) saveKey(t); break;
   }
 });
 // the login a command is pinned to, by its card's id, for a refused Unpin said on that card

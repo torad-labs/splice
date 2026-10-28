@@ -1,6 +1,7 @@
 // Marlin's Teams-by-project walk of Oct 12 (78056fbbd), fin's cuts and hitstop's eye pass, through the real Teams page
 // against a stub daemon answering in the routes' own shapes: a member last heard on another day reads that day's weekday;
-// a role that already reads Lead carries no Lead tag; a member with no requests shows no tokens; an empty activity
+// a role that already reads Lead carries no Lead tag; a member with no requests draws no table and so no tokens (the unit is
+// the Tokens column's head, said once, over the member that has requests); an empty activity
 // panel is as tall as its one line, and an empty chat only as tall as the column beside it; and a tab's needs dot takes
 // the needs-you ink in either theme, never the key light.
 import { afterAll, beforeAll, expect as bunExpect, test } from "bun:test";
@@ -78,8 +79,12 @@ test("a role that already reads Lead carries no Lead tag", () => onTeams(async (
 
 test("a member with no requests shows no tokens, and one with requests does", () => onTeams(async (p) => {
   await expect(member(p, "lead").locator(".use")).toContainText("0 requests");
-  await expect(member(p, "lead").locator(".use")).not.toContainText("tokens");
-  await expect(member(p, "builder").locator(".use")).toContainText("tokens");
+  await expect(member(p, "lead").locator(".mtab")).toHaveCount(0);
+  await expect(member(p, "lead").locator(".use")).not.toContainText("Tokens");
+  // with requests the unit is the column's head, and the Total row carries the member's 1,000 in and 200 out under it
+  const table = member(p, "builder").locator(".use .mtab");
+  await expect(table.locator(".mth")).toContainText("Tokens");
+  await expect(table.locator(".mtr", { hasText: "Total" })).toContainText("1.2K");
 }), 60_000);
 
 // Beside the members the chat runs the whole height of the column next to it, so no hole opens under either side

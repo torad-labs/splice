@@ -143,6 +143,10 @@ button { font: inherit; color: inherit; }
    on cream and on the night alike. It used to take the key light, so on Teams the focused field, the pressed toggle and
    the one primary button all lit warm at once and none of them led the eye. */
 :focus-visible { outline: var(--ink-w) solid var(--text); outline-offset: .18rem; }
+/* The page itself takes focus when another page opens in place (console.js), so a reader starts at its top. It is no
+   control and Tab never stops on it, so it draws no ring: the ring ran the window's whole width as a bright rule along
+   the page's lower edge, a divider for nothing. Every control inside it keeps its own. */
+main.page:focus { outline: none; }
 
 /* ---------- the frame: the nav across the top, the page on the wall under it (Marcos, Oct 15: "let's also move the
    navigation from the left to the top") ---------- */
@@ -199,6 +203,14 @@ html { scroll-padding-top: calc(var(--bar-h) + 1rem); }
 .nav .tlamp { width: 1.55rem; height: 1.55rem; }
 .nav .tlamp svg { width: .95rem; height: .95rem; }
 .nav .tlamp.needs svg { width: .85rem; height: .85rem; }
+/* a login at its limit, on Accounts' link (kit.js navMark): the lock in the limit red, its count beside it */
+.tlamp.limit { color: var(--limit); }
+.nav .tlamp.limit svg { width: .85rem; height: .85rem; }
+/* each count in its lamp's ink, as Sessions' stalled count beside it is: the logins at their limit read red, never in
+   the links' body ink, which made the one count of a limit the only neutral figure in the bar */
+.nav .pc.limit b { color: var(--limit); }
+/* a locked console reads nothing, so the bar draws nothing it read before: the counts come back with the key */
+body.locked .nav .nmarks { display: none; }
 .side .foot { flex: 0 1 auto; min-width: 0; margin-left: auto; display: flex; align-items: center; gap: .9rem; }
 /* the stale mark (kit.js markStale): the fact in the needs-you ink, in the links' own type and as a door to the
    settings it is about, and ON IT the act that applies them, the console's one small act. One line where the bar has
@@ -206,7 +218,8 @@ html { scroll-padding-top: calc(var(--bar-h) + 1rem); }
 .side .foot .stale { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .4rem calc(1.5 * var(--u)); font: 400 1rem/1.2 var(--font-name); text-align: right; }
 .side .foot .stale-door { display: inline-flex; align-items: center; gap: .45rem; color: var(--needs); text-decoration: none; white-space: nowrap; }
 .side .foot .stale-door:hover span { text-decoration: underline; text-underline-offset: .2rem; }
-.side .foot .stale svg { flex: none; width: 1rem; height: 1rem; }
+/* the retries glyph is a bare path: drawn as a line in the mark's own ink, never the black fill an svg takes by default */
+.side .foot .stale svg { flex: none; width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 /* what the press did, said in the bar: the kit's own result word, at the bar's size */
 .side .foot .stale .result { font-size: .88rem; }
 .side .foot .stale.shook, .side .foot .stale .shook { animation: shake 300ms var(--e-out) 1; }
@@ -242,11 +255,20 @@ html { scroll-padding-top: calc(var(--bar-h) + 1rem); }
    THE TITLE HOLDS THE ROW'S TOP (Oct 27): centred in the row, it still sat at y 76, 77 or 81 because a taller control
    on the right (Usage's 48 px switch, a 39 px search) made the row taller. Now the title keeps the top and the row grows
    downward under it; the controls stay centred on the row. */
-.head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--u) calc(2 * var(--u)); margin: 0 0 calc(2 * var(--u)); }
-.head h1 { align-self: flex-start; font: 400 2.1rem/1.05 var(--font-lead); letter-spacing: -.01em; margin: 0; min-height: var(--ctl-h); display: flex; align-items: center; }
+.head { --head-h: 2.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--u) calc(2 * var(--u)); margin: 0 0 calc(2 * var(--u)); }
+/* THE ROW IS ONE HEIGHT, AND THE CONTROLS ON IT ARE THAT HEIGHT (Oct 27): the search and the window switch stood 1.5 px
+   taller than the title's row, so the body began 117.6 px down on one page and 119.2 on the next. */
+.head h1 { align-self: flex-start; font: 400 2.1rem/1.05 var(--font-lead); letter-spacing: -.01em; margin: 0; min-height: var(--head-h); display: flex; align-items: center; }
 /* a title with a line under it (Compare) keeps the title on the header's first row and grows downward */
 .head > .titles { align-self: flex-start; }
 main.page > .head + *:not(.lockedby) { margin-top: 0; }
+/* ONE WIDTH FOR THE HEADER'S SEARCH (Oct 27): the same field in the same place read 334, 394 and 455 px wide at 3822 on
+   Sessions, Settings and Requests, so the header's right end changed shape from page to page. 26rem holds Settings'
+   count beside its words. */
+.head .search { width: 26rem; max-width: 100%; height: var(--head-h); }
+.head .search .field { height: 100%; min-height: 0; }
+.head .switch { height: var(--head-h); }
+.head .switch button { padding-block: 0; }
 .read { display: flex; align-items: center; gap: .6rem; font: 500 .88rem/1 var(--font-data); color: var(--text-mute); }
 
 /* ---------- icon buttons: copy, refresh, more, theme ---------- */
@@ -389,6 +411,27 @@ a.chip { text-decoration: none; }  /* a chip that opens something (a session it 
    the chip the loudest shape on the row, over the session's own name. The padding grows by what the border loses, so
    the box is the size of every other chip. */
 .chip.quiet { border-color: transparent; box-shadow: inset 0 0 0 1px var(--c); background: transparent; }
+/* THE EDGE CHIP, for a column of commands down a list of rows (Sessions' rows, Oct 27): the chip's own size, face and
+   live dot, its colour spent down to one 1 px left edge, with no fill, rim or shadow, so forty rows read as one quiet
+   column with each provider's colour kept. The padding grows by what the border loses, so the text sits where every
+   other chip's does. */
+.chip.edge {
+  background: none; border: 0; border-left: 1px solid var(--c); border-radius: 0; box-shadow: none; color: var(--text-body);
+  padding: calc(.32rem + .12rem) calc(.55rem + .12rem) calc(.32rem + .12rem) calc(.55rem + .12rem - 1px);
+}
+.chip.edge i { box-shadow: none; }
+
+/* A WORD A SEARCH MATCHED, on every page that searches (Sessions, Settings, Requests' trace, Compare's find): the text's
+   own ink on a neutral wash, underlined in that ink. The key light marks the one place to look or act next, and one
+   search can match forty words at once, which would read as forty things to press. */
+mark { color: var(--text); background: color-mix(in oklab, var(--text) 18%, transparent); border-radius: .2rem; padding: 0 .06rem;
+  box-shadow: inset 0 -.1rem 0 color-mix(in oklab, var(--text) 55%, transparent); }
+
+/* A LINK AN AGENT WROTE (kit.js inline): an address on the web opens under its own words; a link to a file names the
+   file in the data face, since the console cannot open his disk, and carries the whole path as its title. */
+.mdlink { color: var(--text); text-decoration: underline; text-underline-offset: .2em; }
+.mdlink:hover { color: var(--key-ink); }
+.flink { font: 500 .95em/1 var(--font-data); color: var(--text-body); border-bottom: .08rem dotted var(--track-line); }
 
 .state { font: 500 .95rem/1 var(--font-name); color: var(--text-body); display: inline-flex; align-items: center; gap: .45rem; white-space: nowrap; }
 .state.limit { color: var(--limit); }
@@ -701,7 +744,8 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 .ptile .ptotal { flex: none; color: var(--text-body); font: 500 .95rem/1 var(--font-data); font-variant-numeric: tabular-nums; }
 /* WHAT THE FIGURE COUNTS, SAID ONCE ON THE TILE (Oct 27): "2,127 requests", the unit muted on the figure's baseline. It
    was a kicker over the row, which under the page's own title read as the title again ("TEAMS" under "Teams"). */
-.ptile .punit { flex: none; margin-left: -.3rem; color: var(--text-mute); font: 500 .88rem/1 var(--font-name); white-space: nowrap; }
+.ptile .pfigs { flex: none; white-space: nowrap; }
+.ptile .punit { color: var(--text-mute); font: 500 .88rem/1 var(--font-name); white-space: nowrap; }
 /* each tile draws its share of every project's total on the one track every tile has, so a row compares by eye. Every
    project is the whole, so it draws no share of itself. */
 .ptile .pshare { height: .4rem; border-radius: .2rem; background: color-mix(in oklab, var(--text) 10%, transparent); overflow: hidden; }
@@ -788,17 +832,27 @@ body.locked main.page > :not(.head):not(.lockedby), body.locked main.page > .hea
 
 /* A page that did not open (console.js): where it would have been, in its own words, with the act that opens it again.
    It had no rule of its own and rendered as a bare paragraph that told him to try the link again. */
-.route-error {
+.route-error, .errline {
   display: flex; width: fit-content; max-width: 100%; align-items: center; flex-wrap: wrap; gap: var(--u) calc(2 * var(--u)); margin: 0 0 calc(2 * var(--u));
   padding: calc(2 * var(--u)) calc(3 * var(--u)); border-radius: var(--r-in);
   background: color-mix(in oklab, var(--limit) 10%, transparent); box-shadow: inset 0 0 0 .1rem color-mix(in oklab, var(--limit) 45%, transparent);
   font: 500 .95rem/1.3 var(--font-name); color: var(--text-body); animation: pop var(--t-pop) var(--e-out) 1;
 }
-.route-error > svg { flex: none; width: 1.15rem; height: 1.15rem; color: var(--limit); }
-.route-error b { font-weight: 600; color: var(--text); }
-.route-error .why { color: var(--text-mute); }
+.route-error > svg, .errline > svg { flex: none; width: 1.15rem; height: 1.15rem; color: var(--limit); }
+.route-error b, .errline b { font-weight: 600; color: var(--text); }
+.route-error .why, .errline .why { color: var(--text-mute); }
 /* the act stands beside the words it answers, never at the far end of a 3,749 px row (it sat 3,291 px from them) */
-.route-error .act { margin-left: var(--u); }
+.route-error .act, .errline .act { margin-left: var(--u); }
+/* .errline is the same row for a band inside a page that reads on its own and fails on its own (Usage's Results by
+   command): the same look and the same act, so a failed read never has a second invention. */
+/* UNDER THE LINK THAT DID NOT OPEN (console.js routeFailed): the same row, hung 2u under the bar from the link he
+   pressed, over the page rather than in it, so the page under it keeps its place. Over the page it needs a ground of
+   its own: the limit's tint on the raised face, an ink rim and the hard shadow a popover casts. */
+.nav > .route-error {
+  position: absolute; top: calc(100% + 2 * var(--u)); left: 0; z-index: 1; width: max-content; max-width: min(40rem, 90vw); margin: 0;
+  white-space: nowrap; background: color-mix(in oklab, var(--limit) 12%, var(--obj-high));
+  border: .12rem solid var(--ink); box-shadow: inset 0 0 0 .1rem color-mix(in oklab, var(--limit) 45%, transparent), .2rem .2rem 0 var(--ink);
+}
 
 /* Accounts: the sessions on a login now, under its card, each a door to Sessions (v0.4.0 section 9) */
 .card .onlogin { display: flex; flex-wrap: wrap; gap: .45rem .6rem; margin-top: .8rem; }
@@ -1072,6 +1126,8 @@ a.pd-lb:hover { color: var(--text); text-decoration: underline; }
 .ghost.focalfig { height: var(--fig-focal); width: 3.4rem; }
 .ghost.vtrack { flex: 1 1 auto; min-width: 1.5rem; height: .4rem; border-radius: .2rem; }
 .ghost.range { display: block; width: auto; height: var(--meter-h); border-radius: .2rem; }
+/* the project tiles while the projects are read (GHOST.tiles): each a tile's own height, on the tiles' equal columns */
+.ptiles > .ghost.ptg { width: auto; height: 6.97rem; border-radius: var(--r-obj); box-shadow: 0 0 0 var(--ink-w) var(--ink); }
 
 /* ---------- a bar cell's figures on ONE right edge, and its tracks on one length ----------
    A column of bar cells sets --v-w to its widest figure (Usage's Results: 4.3rem for requests): every figure then takes

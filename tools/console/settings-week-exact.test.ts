@@ -53,9 +53,10 @@ test("a busy command's week shows the daemon's real count above 2,000, and its l
   try {
     await page.goto(`http://127.0.0.1:${server.port}/settings.html`);
     await page.getByText("Stalled answers").first().click();
-    const waited = page.locator(".fig3", { hasText: "Waited out" });
-    await expect(waited.locator(".lead .big")).toHaveText("4,321", { timeout: 15_000 });
-    await expect(waited).toContainText("1 min 30 s");
+    // the outcome's row in the table: its count, a door to those requests, and the longest stall this week on the waits' scale
+    const waited = page.locator(".orow", { hasText: "Waited out" });
+    await expect(waited.locator(".on a")).toHaveText("4,321", { timeout: 15_000 });
+    await expect(page.locator(".pane .dmark")).toContainText("1 min 30 s");
     expect(asked.some((q) => q.includes("test=waited") && q.includes("silence_ms=60000"))).toBe(true);
     expect(asked.every((q) => new URLSearchParams(q).get("n") === "1")).toBe(true);
   } finally {

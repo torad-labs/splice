@@ -1,5 +1,5 @@
 // Usage › Results by command: the per-command table (v0.4.0 spec §3, its Resolved block), in the place the Commands cards
-// held, so each command is said once (marlin, Oct 12). It answers one question: which command is healthy and which one
+// held, so each command is said once. It answers one question: which command is healthy and which one
 // is hurting. A row is five columns, in the worst first: the command (the provider's colour on its dot alone), its
 // requests as a number over a bar, its failure rate as one bar that is coloured only when it is bad, and the whole
 // request's typical time and slowest 5%. Everything else a command has opens under its row, collapsed by default, as
@@ -9,7 +9,7 @@
 // ignores the page's project pick and filters and says so on its head when one is set. It reads the page's window (the
 // page's 5 hours as 24 hours, the nearest the summary keeps) until a window is picked on its own switch. Nothing is
 // invented: a figure the summary does not carry is a dash, never a zero, and a count that has no command with a figure is
-// left out (marlin). Every count in the panel opens its requests on Requests, in the table's window and with no pick.
+// left out. Every count in the panel opens its requests on Requests, in the table's window and with no pick.
 //
 // Mounted by usage.js: render() draws PERF_HEADS.html() beside Where it went and Tokens by command. This file reads the page's own helpers at
 // draw time (colorOf, providerOfHead, cmdOf, flagOf, flagHtml, hasFilter, ui, n0, secs, OPEN, OUTCOME_WORD, tagWord,
@@ -29,9 +29,27 @@ const createPerfHeads = (scope, helpers) => {
   const PLAIN = { ok: "Answered", empty_message: "Empty message" };
   // [pick] is the window he chose on this table's own switch; until he does, the table reads the page's window, or the
   // nearest one the summary keeps (it folds 1 hour, 24 hours and 7 days, so the page's 5 hours reads as 24 hours)
-  const st = { pick: null, readFor: null, body: null, error: null, reading: false, gen: 0, warned: new Set(), models: new Set(), open: new Set(), opened: null, rows: 6 };
+  const st = { pick: null, readFor: null, body: null, error: null, reading: false, gen: 0, warned: new Set(), models: new Set(), open: new Set(), opened: null, ...lastShape() };
+  // THE TABLE'S OWN SHAPE FROM THE LAST TIME IT LANDED: how many rows, and whether the idle commands drew their line
+  // under it, so the first frame of the next visit is the height the table lands at and nothing under it moves
+  function lastShape() {
+    try {
+      const v = JSON.parse(localStorage.getItem("splice-usage-results") || "null");
+      if (v && v.rows > 0) return { rows: Math.min(Number(v.rows) || 6, 24), quiet: Boolean(v.quiet) };
+    } catch { /* unreadable: the default shape */ }
+    // a first visit has nothing remembered: a console with seven commands in use and a few idle ones under them
+    return { rows: 7, quiet: true };
+  }
+  function keepShape(rows, quiet) {
+    if (rows === st.rows && quiet === st.quiet) return;
+    st.rows = rows; st.quiet = quiet;
+    try { localStorage.setItem("splice-usage-results", JSON.stringify({ rows, quiet })); } catch { /* a blocked store costs the ghost its shape */ }
+  }
   const winNow = () => st.pick ?? (ui.win === "7d" ? "7d" : "24h");
   const SHOWN_MODELS = 3;
+  // the table's column heads, known before any figure: the reading table carries them too, so it reads as itself
+  const COLS = `<div class="pthead pcols" role="row"><span class="pf cmd">Command</span><span class="pf">Requests</span><span class="pf">Failed</span>`
+    + `<span class="pf num" title="Counts every request, failed ones included">Typical</span><span class="pf num" title="Counts every request, failed ones included">Slowest 5%</span></div>`;
   // the failure rate that reads as hurting (red) and as worth a look (Key Light); below, the bar stays neutral
   const BAD = 0.05, WATCH = 0.01;
 
@@ -65,7 +83,7 @@ const createPerfHeads = (scope, helpers) => {
 
   /** Failures by kind, the largest count first, in the words every page uses for an outcome. Tags that read as one word
    *  are one reason with their counts summed: error:rate-limited, error:rate-limit-relayed and failure:rate_limit_error
-   *  all read "Rate limited" (kit.js OUTCOME_WORD), and a row listed it twice (marlin, desk c at 3828, Oct 13). The reason
+   *  all read "Rate limited" (kit.js OUTCOME_WORD), and a row listed it twice. The reason
    *  opens every tag under it on Requests, so the click shows all of its count. */
   function kindsOf(h) {
     const byWord = new Map();
@@ -92,7 +110,7 @@ const createPerfHeads = (scope, helpers) => {
     { label: "Sign-ins renewed", glyph: "key", has: (h) => h.refreshes > 0, n: (h) => h.refreshes },
     // The spec's count (§3), shown as "Record gaps" by a recorded Deviation: requests during which splice dropped some of
     // the records it keeps on this disk. Telemetry reads as data leaving the machine, and these are local writes. The lost
-    // writes are other records, never the row that counts them, so no Requests row carries a mark (marlin, gap 410).
+    // writes are other records, never the row that counts them, so no Requests row carries a mark.
     { label: "Record gaps", glyph: "gap", has: (h) => h.telemetry_dropped > 0, n: (h) => h.telemetry_dropped },
   ];
   /** The command's whole population: the failure rate as printed, over one bar of every request in the window. The ok
@@ -115,8 +133,7 @@ const createPerfHeads = (scope, helpers) => {
 
   /** The stat strip: the cache hit as a ring, then the counts that are above zero, each a small glyph, its number and its
    *  name on one baseline. The status labels are the ones splice wrote itself from the last tool call with no model
-   *  (PerfKeys.ACTIVITY_QUERY, ActivityLabel.kt), so they cost nothing; fin's words, the ones that count has carried since
-   *  Oct 12. */
+   *  (PerfKeys.ACTIVITY_QUERY, ActivityLabel.kt), so they cost nothing. */
   const statStrip = (h, facts) => {
     const r = h.cache_hit_ratio, q = h.kinds?.activity_query ?? 0;
     const ring = r > 0 ? DRAW.statTile(DRAW.ring(r, { size: "focal", label: `Cache hit ${pct(r)}` }), pct(r), "Cache hit", { focal: true }) : "";
@@ -155,7 +172,7 @@ const createPerfHeads = (scope, helpers) => {
    *  by_outcome_7d): it keeps its own week whatever window the table reads, so the bar names its span. The count beside the
    *  heading is the table's window, named, and opens the compactions on Requests with its Compactions toggle on; the bar is its
    *  own seven days, named, with its own total, so the two never read as one figure. Only where there
-   *  are any; the spec counts turn kind per command (v0.4.0 §3, the President's Oct 13 ruling; marlin's form). */
+   *  are any; the spec counts turn kind per command (v0.4.0 §3). */
   const turnsSection = (h) => {
     const n = h.kinds?.compaction ?? 0;
     const by = Object.entries(st.compact?.[h.key]?.by_outcome_7d ?? {}).filter(([, k]) => k > 0)
@@ -168,7 +185,7 @@ const createPerfHeads = (scope, helpers) => {
     return DRAW.section("Compactions", by.length ? DRAW.focal(n0(total), "ended, last 7 days") + DRAW.stack(segs, total, { small: true }) : "", { aside: count });
   };
 
-  // a model id carrying its release date (claude-haiku-4-5-20251001) reads by its name, never the date (marlin)
+  // a model id carrying its release date (claude-haiku-4-5-20251001) reads by its name, never the date
   // a request with no model ended before splice picked one, cut by a restart or refused first (no_request rows; live
   // Oct 13, claudex's 23 were all error:restarted), so its row says that and never reads as a model of that name
   const modelWord = (id) => (id === "?" ? "Ended before a model was picked" : modelName(S.labels, id.replace(/-\d{8}$/, "")) ?? id);
@@ -178,7 +195,7 @@ const createPerfHeads = (scope, helpers) => {
    *  busiest model's count and the failure rate on 0 to 100%, as the table's own bars are, and the typical to slowest 5%
    *  on one log axis across the cards. A model that fails is the loud card, in the limit red. A time needs an answer: a
    *  request that named no model failed before one answered, and a model every request to failed never answered, so
-   *  neither prints one. The three biggest by requests are shown and the rest sit behind "N more" (marlin, Oct 13). A
+   *  neither prints one. The three biggest by requests are shown and the rest sit behind "N more". A
    *  command with one model has no cards: its own figures already say it. */
   const modelsSection = (h) => {
     const ms = byCount(h);
@@ -263,25 +280,28 @@ const createPerfHeads = (scope, helpers) => {
     const scoped = ui.project != null || hasFilter() ? `<span class="hn">Every project, no filter</span>` : "";
     const header = `<div class="bandhead"><h2>Results by command</h2>${scoped}${sw}</div>`;
     if (st.error) {
-      return `<section class="perf-heads">${header}<div class="readfail" role="alert">${ICON.bang}<span><b>Results didn't load</b> <span class="why">${esc(st.error)}</span></span>`
+      return `<section class="perf-heads">${header}<div class="errline" role="alert">${ICON.bang}<span><b>Results didn't load</b> <span class="why">${esc(st.error)}</span></span>`
         + `<button class="act small" type="button" data-act="perfretry">Try again</button></div></section>`;
     }
     // READING: the table's own rows in stripes, as many as it last held, so the column keeps its height and nothing
-    // under it moves when the window's figures land (a generic four-bar card stood where a six-row table lands).
-    if (!st.body) {
+    // under it moves when the window's figures land (a generic four-bar card stood where a six-row table lands). The
+    // rows also wait for the page's own read of the commands: before it, a command has neither its name nor its
+    // provider's colour, and the table would draw the daemon's keys on grey dots, then rename them in place.
+    if (!st.body || !S.stood) {
       const rows = Array.from({ length: Math.max(3, st.rows) }, (_, i) =>
         `<div class="prow pcols gprow" style="--i:${i}"><span class="pf cmd">${GHOST.bar(8)}</span>`
         + `<span class="pf">${GHOST.track()}</span><span class="pf">${GHOST.track()}</span><span class="pf num">${GHOST.bar(3)}</span><span class="pf num">${GHOST.bar(3.4)}</span></div>`).join("");
-      return `<section class="perf-heads" aria-busy="true">${header}<div class="ptable card ghosted">${rows}</div></section>`;
+      const quietGhost = st.quiet ? `<p class="quiet-heads" aria-hidden="true">${GHOST.bar(11)}${[6.5, 8, 9.5].map((w) => GHOST.chip(w)).join("")}</p>` : "";
+      return `<section class="perf-heads" aria-busy="true">${header}<div class="ptable card ghosted">${COLS}${rows}</div>${quietGhost}</section>`;
     }
     const heads = st.body.heads || [];
     // the one that is hurting reads first: the highest failure rate, then the busiest
     const used = heads.filter((h) => h.count > 0).sort((a, b) => shareOf(b) - shareOf(a) || b.count - a.count);
     const idle = heads.filter((h) => !(h.count > 0));
-    st.rows = used.length || st.rows;
+    if (used.length) keepShape(used.length, idle.length > 0);
     const ctx = { max: Math.max(0, ...used.map((h) => h.count)), facts: FACTS.filter((c) => used.some(c.has)) };
     const table = used.length
-      ? `<div class="ptable card" role="table"><div class="pthead pcols" role="row"><span class="pf cmd">Command</span><span class="pf">Requests</span><span class="pf">Failed</span><span class="pf num" title="Counts every request, failed ones included">Typical</span><span class="pf num" title="Counts every request, failed ones included">Slowest 5%</span></div>${used.map((h) => item(h, ctx)).join("")}</div>`
+      ? `<div class="ptable card" role="table">${COLS}${used.map((h) => item(h, ctx)).join("")}</div>`
       : `<div class="card ptable pnone">${DRAW.nothing(`No requests in the last ${WINDOWS[win]}`)}</div>`;
     // The method footnote is gone (Oct 26): it was the old page's "Times count every request, failed ones included, so fast
     // rejections pull a typical time down", a sentence under the table explaining how its figures were counted.

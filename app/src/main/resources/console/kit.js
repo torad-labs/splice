@@ -34,6 +34,20 @@ const PROVIDER_FAMILY = { anthropic: "claude", openai: "gpt", codex: "gpt", xai:
   local: "local", vast: "vast" };
 // A provider splice has no colour for draws in the muted text colour rather than in another provider's.
 const colorOf = (provider) => `var(${COLORS[provider] || "--text-mute"})`;
+/** The colour family of a provider /api/models names. The table above knows the words a provider module uses; a provider
+ *  it does not know, one he named in splice.toml, is served from THIS COMPUTER when it answers on this machine's own
+ *  loopback (his own model servers, the tunnel to a rented GPU), whatever it is called: the address is the fact, the name
+ *  is not. [bases] is /api/topology's providers by name, where a page has read it; without it a name the table does not
+ *  know stays itself, and colorOf draws it muted. */
+const LOOPBACK_BASE = /^https?:\/\/(127\.0\.0\.1|\[?::1\]?|localhost)\b/;
+const providerFamilyOf = (provider, bases = {}) =>
+  PROVIDER_FAMILY[provider] ?? (COLORS[provider] ? provider : LOOPBACK_BASE.test(bases[provider]?.base_url || "") ? "local" : provider);
+/** A plan login's card on Accounts has one address, spelled here for the page that draws the card and for every page that
+ *  links to it (accounts.html?card=). loginCardId is the login's id on its provider's board: the commands it serves joined
+ *  with "+", then its selector (its selector key, else its label, else "primary"). acctCardKey puts the provider's colour
+ *  family before it, which is the card's key. [row] is a login as /api/accounts sends it. */
+const loginCardId = (row) => `${(row.heads || []).join("+")}/${row.selector_key || row.label || "primary"}`;
+const acctCardKey = (row) => `${providerFamilyOf(row.provider)}/${loginCardId(row)}`;
 
 // ---------- a command removed from Models (marlin's ruling: "History stays" must mean findable) ----------
 /** The commands /api/heads/retired lists, as heads beside the live ones: key and name, marked retired, with no
@@ -269,6 +283,13 @@ const GHOST = {
   cell: () => `<span class="barcell" aria-hidden="true"><i class="ghost vtrack"></i><i class="ghost fig v"></i></span>`,
   /** a range on the shared log axis (DRAW.range) */
   range: () => `<i class="ghost range" aria-hidden="true"></i>`,
+  /** THE PROJECT TILES WHILE THE PROJECTS ARE READ (Oct 27): the tiles land only once the transcripts are listed, the
+   *  last read on a page, so a line that drew nothing jumped the page down by the tiles' height when they came. [n]
+   *  tiles on the tiles' own equal columns at a wide page (tilesWide), else the picker's chip; a page with no count
+   *  to go by passes 0 and draws nothing. Requests and Usage both draw it. */
+  tiles: (n) => (!(n > 0) ? ""
+    : tilesWide() ? `<nav class="ptiles" aria-hidden="true">${Array.from({ length: n }, () => `<i class="ghost ptg"></i>`).join("")}</nav>`
+      : `<div class="lhead" aria-hidden="true">${GHOST.chip(13)}</div>`),
 };
 const clock = (d) => {
   const h = d.getHours() % 12 || 12, m = d.getMinutes(), ap = d.getHours() < 12 ? "AM" : "PM";
@@ -281,8 +302,12 @@ const backWord = (d) => (d.toDateString() === NOW.toDateString() ? clock(d) : `$
 const counter = (ms) => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
 /** A dollar figure as every page says it (Marlin's money form, fin, Oct 10 and 12): an estimate from the rate card is
  *  "≈". Under a cent it keeps two significant digits, so a tiny reply reads "≈$0.00012" and never "<$0.0001" or
- *  zeros, and "<$0.000001" only below a millionth. A cent and up is cents. Nothing charged is exact, "$0". */
-const dollars = (v) => (v === 0 ? "$0" : v < 0.000001 ? "<$0.000001" : `≈$${v.toLocaleString("en-US", v < 0.0095 ? { minimumSignificantDigits: 2, maximumSignificantDigits: 2 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+ *  zeros, and "<$0.000001" only below a millionth. A cent and up is cents. Nothing charged is exact, "$0".
+ *  WHOLE DOLLARS FROM $100 UP (Oct 27): a week's spend runs to five digits, and two digits of cents on a figure nobody
+ *  reconciles to the cent widened every money column on Usage; "$20,390", while a figure under $100 keeps its cents. */
+const DOLLAR_FORM = (v) => (v < 0.0095 ? { minimumSignificantDigits: 2, maximumSignificantDigits: 2 }
+  : v >= 99.995 ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const dollars = (v) => (v === 0 ? "$0" : v < 0.000001 ? "<$0.000001" : `≈$${v.toLocaleString("en-US", DOLLAR_FORM(v))}`);
 const kTok = (n) => (n >= 999500 ? `${+(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : n >= 1e4 ? `${Math.round(n / 1000)}K` : n >= 1000 ? `${+(n / 1000).toFixed(1)}K` : `${n}`);
 // AN AGENT'S *EMPHASIS* IS EMPHASIS (Oct 27): only **bold** was read, so a line an agent wrote with single asterisks
 // round a word printed the asterisks themselves, wherever agent text is shown (the manager's sheet, a session's
@@ -290,8 +315,36 @@ const kTok = (n) => (n >= 999500 ? `${+(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : 
 // in italic; a lone asterisk (5 * 3, a glob, a bullet already read off its line) is left as written, and code keeps
 // its own text.
 const EMPH = /(^|[^*\w])\*(?![\s*])([^*\n]*?[^\s*])\*(?![*\w])/g;
-const inline = (s) => esc(s).split(/(`[^`]+`)/g).map((part, i) => (i % 2 ? `<code>${part.slice(1, -1)}</code>`
-  : part.replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(EMPH, "$1<em>$2</em>"))).join("");
+// A LINK AN AGENT WROTE IS A LINK (Oct 27). Claude Code writes links in its answers constantly, and this read left
+// "[the guide](https://…)" on the screen as written, brackets, address and all, on every page that shows an agent's
+// words. An address on the web opens in a new tab under its own words; any other address (a file path, an anchor) names
+// the file and keeps the whole path as its title, since the console cannot open his disk; a script, data or mail
+// address keeps only its words. A bare web address is a link to itself. Code keeps its own text: a link inside
+// backticks, or in a fenced block, which md never reads inline, stays as written.
+const MD_LINK = /\[([^\]\n]+)\]\(([^)\s]+)(?:\s+"[^"\n]*")?\)/g;
+const BARE_URL = /\bhttps?:\/\/[^\s\u0000<>()"'`\]]+[^\s\u0000<>()"'`.,;:!?\]]/g;
+const linkName = (label, href) => {
+  const name = /[\\/]/.test(label) ? label.split(/[\\/]/).filter(Boolean).pop() : label;
+  return name || String(href).split(/[\\/]/).filter(Boolean).pop() || label;
+};
+function linkHtml(label, href) {
+  if (/^https?:\/\//i.test(href)) return `<a class="mdlink" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`;
+  if (/^(?:mailto|javascript|data|vbscript):/i.test(href)) return esc(label);
+  return `<span class="flink" title="${esc(href)}">${esc(linkName(label, href))}</span>`;
+}
+// EACH CODE SPAN AND EACH LINK IS TAKEN OUT BEFORE THE TEXT IS ESCAPED AND READ FOR EMPHASIS, and put back drawn, so bold or
+// italic that runs across a code span (**the record `state` field**) is read as one run instead of leaving its asterisks on
+// the screen, and what is in code or in a link's address is never read for emphasis.
+const inline = (s) => {
+  const held = [];
+  const hold = (html) => `\u0000${held.push(html) - 1}\u0000`;
+  const text = String(s ?? "").replace(/\u0000/g, "").replace(/`([^`]+)`/g, (all, code) => hold(`<code>${esc(code)}</code>`))
+    .replace(MD_LINK, (all, label, href) => hold(linkHtml(label, href))).replace(BARE_URL, (url) => hold(linkHtml(url, url)));
+  let html = esc(text).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(EMPH, "$1<em>$2</em>");
+  // a link's words may hold a code span, so each put-back can bring another placeholder with it
+  for (let i = 0; i <= held.length && /\u0000\d+\u0000/.test(html); i++) html = html.replace(/\u0000(\d+)\u0000/g, (all, n) => held[+n] ?? "");
+  return html;
+};
 // THE BLOCK SHAPES AN AGENT ACTUALLY WRITES (Oct 26). This read dash lists and backticks only, so a Claude Code turn's
 // table came out as a run of pipes, a heading as hash marks, a numbered list as paragraphs and a fenced block as one
 // long line — the walls of explanation Marcos stopped the console for. Sessions carried its own copy of this; every
@@ -369,8 +422,9 @@ const labelRem = (text) => text.length * 0.42 + 0.8;  // rem a label takes at th
 const STEP = ["f0", "f1", "f2"];                      // failure blocks by rank: the largest is the full limit red
 // the times on a log axis, from a round figure under the smallest typical to one over the largest slowest 5%
 const NICE = [1, 3, 10, 30, 100, 300, 1e3, 3e3, 1e4, 3e4, 6e4, 18e4, 6e5];
-// an axis label: a round figure, never a table's two-part reading (60 000 ms is "1 min", not "1 min 0 s")
-const tickWord = (ms) => (ms < 1000 ? `${ms} ms` : ms < 60000 ? `${ms / 1000} s` : `${ms / 60000} min`);
+// an axis label: a round figure, never a table's two-part reading (60 000 ms is "1 min", not "1 min 0 s"). Past ten minutes
+// the axis ends on the longest time itself (axis below), which is not a round figure: whole minutes.
+const tickWord = (ms) => (ms < 1000 ? `${ms} ms` : ms < 60000 ? `${ms / 1000} s` : `${Math.round(ms / 60000)} min`);
 
 const DRAW = {
   // ---------- how a figure is written: one spelling per kind, everywhere ----------
@@ -551,7 +605,12 @@ const DRAW = {
     const span = Math.log(hi) - Math.log(lo) || 1;
     const at = (x) => Math.max(0, Math.min(100, ((Math.log(Math.max(x, lo)) - Math.log(lo)) / span) * 100));
     // no more than six labels along the axis, always the last one, and none within 7% of another, so no two touch
-    const all = NICE.filter((v) => v >= lo && v <= hi), step = Math.ceil(all.length / 6);
+    const all = NICE.filter((v) => v >= lo && v <= hi);
+    // A LONGEST TIME PAST THE LAST ROUND FIGURE IS ITS OWN END: the axis runs to it, so it closes the list and its label
+    // stands at the track's end. Left out, the last label was "10 min" standing half its width left of a tick at 77% of a
+    // track that ran to 35 min. Skipped when it reads the same as the figure before it.
+    if (all.at(-1) !== hi && tickWord(hi) !== tickWord(all.at(-1) ?? 0)) all.push(hi);
+    const step = Math.ceil(all.length / 6);
     const picked = all.filter((v, i) => (all.length - 1 - i) % step === 0);
     const wide = (v) => tickWord(v).length * 2.4, GAP = 7;
     const kept = [];
@@ -666,9 +725,11 @@ const DRAW = {
   /** A board's columns as drawn (console.css .board): [{ body, span }] in order; a column of span k is as wide as k
    *  columns and the k - 1 gaps between them, so its own columns line up with the board's. */
   boardCols: (cols) => cols.map(({ body, span = 1 }) => `<div class="col${span > 1 ? " wide" : ""}"${span > 1 ? ` style="--span:${span}"` : ""}>${body}</div>`).join(""),
-  /** A list's tail: the top few at full size, the rest behind one pill. Never a column that runs past the fold. */
-  more: (n, { word = "more", act = "", data = "", pill = false, open = false, less = "Fewer" } = {}) =>
-    `<button class="${pill ? "morepill pill" : "morepill"}" type="button" data-act="${esc(act)}"${data}>${open ? esc(less) : `${pill ? `<b>+${DRAW.n(n)}</b>` : `<b>${DRAW.n(n)}</b> ${esc(word)}`}`}</button>`,
+  /** A list's tail: the top few at full size, the rest behind one pill. Never a column that runs past the fold.
+   *  { one } is the word for a count of one ("1 more line"), so no caller has to spell the singular itself; without
+   *  it the one word serves every count. */
+  more: (n, { word = "more", one = null, act = "", data = "", pill = false, open = false, less = "Fewer" } = {}) =>
+    `<button class="${pill ? "morepill pill" : "morepill"}" type="button" data-act="${esc(act)}"${data}>${open ? esc(less) : `${pill ? `<b>+${DRAW.n(n)}</b>` : `<b>${DRAW.n(n)}</b> ${esc(n === 1 && one != null ? one : word)}`}`}</button>`,
   /** A row that opens its own detail under itself: the chevron turns over 240 ms and the detail lands in place, so the
    *  row keeps its context and the panel needs no title. */
   disc: ({ open, controls, inner, cls = "", act = "", data = "" }) =>
@@ -1068,6 +1129,44 @@ function drawNavMarks(file, name, counts) {
   link.setAttribute("aria-label", [name, ...counts.map(([k, n]) => `${n} ${STATE_WORDS[k]}`)].join(", "));
   navLine(false);
 }
+// A PAGE'S LINK CARRIES THE STATE THAT PAGE HOLDS (Oct 27). Accounts is the page that knows which logins are at their
+// limit, and nothing anywhere else said so: a provider ran out and a person on Sessions or Usage could not see it until
+// they opened Accounts. Accounts draws its own count on its link from the reading its board is drawn from, so the two
+// never disagree, and keeps it in this browser with the moment each login comes back; every other page draws that
+// reading, and a login drops out of the count at its own reset, the instant Accounts showed. A login held with no reset
+// reported stays counted until Accounts reads it again. Drawn only above zero, as the lamp the tiles draw for it.
+const NAV_MARK_KEY = "splice-nav-marks";
+const NAV_MARK = { limit: { lamp: ICON.lock, words: (n) => `${n} at ${n === 1 ? "its" : "their"} limit` } };
+const navMarks = () => { try { return JSON.parse(localStorage.getItem(NAV_MARK_KEY) || "{}") || {}; } catch { return {}; } };
+/** [file]'s link carries [n] of [tone] ("limit"), the count its page holds; [until] is when each one comes back, null
+ *  where no reset is known. A page calls this each time it draws the count. */
+function navMark(file, n, tone, until = null) {
+  const marks = navMarks();
+  if (n > 0) marks[file] = { tone, until: until ?? Array.from({ length: n }, () => null) }; else delete marks[file];
+  try { localStorage.setItem(NAV_MARK_KEY, JSON.stringify(marks)); } catch { /* a blocked store keeps the mark on this page only */ }
+  drawNavMark(file, n, tone);
+}
+/** Every page: the marks its pages left, each counted at this moment against the resets they carry. */
+function drawStoredMarks() {
+  const now = Date.now();
+  for (const [file, m] of Object.entries(navMarks())) if (NAV_MARK[m?.tone]) drawNavMark(file, (m.until || []).filter((t) => t == null || t > now).length, m.tone);
+}
+function drawNavMark(file, n, tone) {
+  const link = document.querySelector(`.side .nav a[href="${file}"]`), kind = NAV_MARK[tone];
+  if (!link || !kind) return;
+  let mark = link.querySelector(".nmark");
+  const name = link.querySelector(".nname")?.textContent ?? "";
+  if (!(n > 0)) { if (mark) { mark.remove(); link.removeAttribute("aria-label"); link.removeAttribute("title"); navLine(false); } return; }
+  const html = `<span class="pc big ${tone}"><span class="tlamp ${tone}" aria-hidden="true">${kind.lamp}</span><b>${DRAW.n(n)}</b></span>`;
+  if (mark?.innerHTML === html) return;
+  const fresh = !mark;
+  if (!mark) { mark = document.createElement("span"); mark.className = "nmarks nmark"; link.append(mark); }
+  mark.innerHTML = html;
+  if (fresh) mark.classList.add("pop");
+  link.setAttribute("aria-label", `${name}, ${kind.words(n)}`);
+  link.title = kind.words(n);
+  navLine(false);
+}
 let navTimer = 0;
 // a page's own read of the sessions landing redraws the marks off it, a moment after, once the live turns are in too
 addEventListener("splice:heard", (e) => {
@@ -1077,7 +1176,8 @@ addEventListener("splice:heard", (e) => {
 });
 addEventListener("DOMContentLoaded", () => {
   markNav();
-  setInterval(markNav, NAV_READ_MS);
+  drawStoredMarks();
+  setInterval(() => { markNav(); drawStoredMarks(); }, NAV_READ_MS);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) markNav(); });
 });
 drawTheme();
@@ -1225,10 +1325,12 @@ const NEEDS_LAMP = (n) => `<span class="pc needs"><span class="plamp" aria-hidde
 // Every project's total. A total not read yet is null and draws nothing. [show] writes a figure: digits grouped unless
 // the page counts something that runs to billions (Usage writes tokens short, "16 bn", Marlin).
 const showCount = (n) => n.toLocaleString("en-US");
+// a count whose read answered with a failure: the dash a figure splice has no reading for wears, said "Not read" on hover
+const NOT_READ = `<i class="nr" title="Not read">—</i>`;
 function pickerHtml(projects, pick, open, doors, all = null, show = showCount) {
   const label = (k) => projects.find(([key]) => key === k)?.[1] ?? doors.find(([key]) => key === k)?.[1] ?? "Every project";
   const totalOf = (k) => (k === "" ? all : projects.find(([key]) => key === k)?.[2] ?? null);
-  const fig = (n) => (n == null ? "" : `<span class="pfig">${show(n)}</span>`);
+  const fig = (n) => (n == null ? "" : `<span class="pfig">${n === false ? NOT_READ : show(n)}</span>`);
   const item = (k, text) => `<button role="menuitemradio" aria-checked="${(pick ?? "") === k}" data-act="pickproj" data-p="${esc(k)}"><span class="pname">${esc(text)}</span>${fig(totalOf(k))}</button>`;
   const menu = open ? `<div class="menu pmenu" role="menu">${item("", "Every project")}${projects.map(([k, l]) => item(k, l)).join("")}</div>` : "";
   const ways = pick == null ? "" : doors.filter(([k, , n]) => k !== pick && n)
@@ -1277,12 +1379,17 @@ function tilesHtml(items, pick, show = showCount, unit = "") {
     // A TILE BEING READ IS THE SIZE IT WILL BE (Oct 26): the names are known before the figures, so a tile whose
     // total has not landed draws the figure and the share as the shapes that will land there, and the page under
     // the row stays where it is. It used to lose both, which left a 10 px stripe and moved the page by ~100 px.
-    const figure = total == null ? GHOST.bar(2.6) : show(total);
+    // A COUNT THAT COULD NOT BE READ IS NOT A COUNT ON ITS WAY: null is being read (stripes, which move), false is a read
+    // that answered with a failure (a muted dash and an empty track, which stand still), so a tile whose figure will
+    // never come is told from one whose figure is coming.
+    const figure = total == null ? GHOST.bar(2.6) : total === false ? NOT_READ : show(total);
     const what = unit ? `<span class="punit">${esc(total === 1 ? unit : `${unit}s`)}</span>` : "";
     const share = every ? "" : total == null ? `<span class="pshare ghost" aria-hidden="true"></span>`
-      : `<span class="pshare" aria-hidden="true"><i style="width:${all > 0 ? Math.min(100, (total / all) * 100).toFixed(1) : 0}%"></i></span>`;
+      : `<span class="pshare" aria-hidden="true"><i style="width:${total !== false && all > 0 ? Math.min(100, (total / all) * 100).toFixed(1) : 0}%"></i></span>`;
     return `<button class="ptile${on ? " on" : ""}${zero ? " zero" : ""}" data-act="pickproj" data-p="${esc(k)}" aria-pressed="${on}" aria-label="${esc(`${label}, ${words}`)}" title="${esc(label)}">`
-      + `<span class="ptop"><span class="tname">${esc(label)}</span><span class="ptotal">${figure}</span>${what}</span>${share}`
+      // the figure and its unit are one run of words with a real space between them, so the tile reads "2,262 sessions"
+      // as text and aloud, never "2,262sessions"; the run keeps together on the name's baseline
+      + `<span class="ptop"><span class="tname">${esc(label)}</span><span class="pfigs"><span class="ptotal">${figure}</span>${what ? ` ${what}` : ""}</span></span>${share}`
       + `<span class="plamps">${counts.filter(([, n]) => n).map((c) => tlampHtml(c, true)).join("")}</span></button>`;
   }).join("");
   return `<nav class="ptiles" aria-label="Projects">${tiles}</nav>`;
@@ -1345,7 +1452,7 @@ function pickLineHtml(groups, pick, open, count) {
   if (groups.length < 2) return groups[0].key === NO_PROJECT_KEY ? "" : `<div class="lhead"><span class="pname solo">${esc(groups[0].label)}</span></div>`;
   const show = count.show ?? showCount;
   if (tilesWide()) {
-    const words = (c, n) => (n == null ? countWords(c, 0, count.unit).replace(/(, )?0 \w+$/, "") : countWords(c, n, count.unit, show));
+    const words = (c, n) => (n == null || n === false ? countWords(c, 0, count.unit).replace(/(, )?0 \w+$/, "") : countWords(c, n, count.unit, show));
     const items = groups.map((g) => { const n = count.of(g.key); return [g.key, g.label, g.counts, n, words(g.counts, n)]; });
     const every = sumCounts(items.map((x) => x[2]));
     return tilesHtml([["", "Every project", every, count.all, words(every, count.all)], ...items], pick, show, count.unit);

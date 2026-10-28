@@ -6,7 +6,9 @@
    the plain word (.pane, .meta, .who, .lamp, .result, .send). */
 
 /* the page says what it's for under its name (Marcos, Oct 9: "a subtitle explaining what is it for"; fin's words) */
-.head .titles { display: flex; flex-direction: column; gap: .85rem; }
+/* on the title's row, baseline to baseline, where the two fit; under it only where they do not, so the page's body
+   starts where every other page's does */
+.head .titles { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--u) calc(2 * var(--u)); }
 .head .sub { margin: 0; font: 400 1rem/1.4 var(--font-name); color: var(--text-body); }
 
 .page { container-type: inline-size; }
@@ -25,10 +27,10 @@
   flex: 1; display: grid; min-width: 0; min-height: 12rem; border-radius: var(--r-in); background: var(--obj-sunk);
   border: .12rem solid var(--track-line); cursor: text; transition: border-color var(--t-hover) var(--e-out);
 }
-.pg-md:focus-within, .pg-md.read:hover { border-color: var(--text-mute); }
+.pg-md:focus-within, .pg-md.pg-read:hover { border-color: var(--text-mute); }
 /* the field and the plan it renders are set alike, so his words stay where they were when one turns into the other */
 .pg-md .field, .pg-md-out { min-width: 0; padding: 1.1rem 1.3rem; font: 400 1.05rem/1.6 var(--font-name); color: var(--text); }
-.pg-md .field { min-height: 12rem; resize: none; overflow: hidden; border: 0; border-radius: var(--r-in); background: transparent; }
+.pg-md .field { min-height: 12rem; height: var(--fit, auto); resize: none; overflow: hidden; border: 0; border-radius: var(--r-in); background: transparent; }
 .pg-md .field:focus, .pg-md .field:focus-visible { border: 0; outline: none; box-shadow: none; }
 .pg-md .field::placeholder { color: var(--text-mute); }
 .pg-md-out { overflow-wrap: anywhere; border-radius: var(--r-in); }
@@ -36,6 +38,19 @@
 .pg-md-out > * { max-width: 72rem; }
 .pg-md.swap > * { animation: pg-fade var(--t-hover) var(--e-out) 1; }
 @keyframes pg-fade { from { opacity: .35; } }
+/* beside the models plate the prompt's box takes the row's height and never sets it: a plan longer than the box scrolls
+   inside it, read or written, so the models plate never stands half empty beside a long plan and the box keeps its size
+   when one mode turns into the other */
+@container (min-width: 150rem) {
+  .pg-md { position: relative; flex: 1 1 0; grid-template-rows: minmax(0, 1fr); }
+  .pg-md .field { height: auto; }
+  .pg-md .field, .pg-md-out { overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--track-line) transparent; }
+  /* more of the plan lies below the box's foot: the foot fades into the box until he scrolls to the plan's end */
+  .pg-md.pg-more::after {
+    content: ""; position: absolute; left: 0; right: .9rem; bottom: 0; height: 3.4rem; pointer-events: none;
+    border-radius: 0 0 0 var(--r-in); background: linear-gradient(to bottom, transparent, var(--obj-sunk));
+  }
+}
 
 /* the markdown a plan and an answer are written in (compare.js mdPlan) */
 .pg-mdx > :first-child { margin-top: 0; }
@@ -102,7 +117,7 @@
    column and a row across. The time on one log axis, then what the send brought, then what the model is. */
 .pg-table {
   position: relative; display: grid; align-items: stretch; column-gap: calc(2 * var(--u));
-  grid-template-columns: 2rem minmax(14rem, 1.25fr) minmax(16rem, 2.4fr) minmax(4.6rem, max-content) repeat(6, minmax(7.4rem, 1fr));
+  grid-template-columns: 2rem minmax(18rem, 3fr) minmax(14rem, 1.6fr) minmax(4.6rem, max-content) repeat(6, minmax(6.8rem, .9fr));
 }
 .pg-tr { position: relative; grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; min-height: 3.6rem; transition: transform var(--t-move) var(--e-io); }
 /* the hairline between rows starts after the rail, so the rail runs unbroken from socket to socket */
@@ -114,17 +129,17 @@
 /* the axis's own marks over the time column; the lines under them run down every row */
 .pg-axis { position: relative; align-self: end; height: 1rem; font: 500 .8rem/1 var(--font-data); color: var(--text-mute); }
 .pg-axis span { position: absolute; bottom: 0; transform: translateX(-50%); white-space: nowrap; }
-.pg-axis span.first { transform: none; }
-.pg-axis span.last { transform: translateX(-100%); }
+.pg-axis span.pg-a { transform: none; }
+.pg-axis span.pg-z { transform: translateX(-100%); }
 .pg-grid { grid-column: 3; position: relative; z-index: 1; pointer-events: none; }
 .pg-grid > i { position: absolute; top: 0; bottom: 0; width: .1rem; margin-left: -.05rem; background: color-mix(in oklab, var(--text) 20%, transparent); }
 
 /* the rail: a dark bar the rows dock into, its sockets numbering the order the answers landed in */
 .pg-railc { position: relative; align-self: stretch; display: grid; place-items: center; }
 .pg-railc::before { content: ""; position: absolute; top: 0; bottom: 0; left: calc(50% - .28rem); width: .56rem; background: var(--rail); box-shadow: -.16rem 0 0 var(--ink), .16rem 0 0 var(--ink); }
-.pg-tr.first > .pg-railc::before { top: 50%; }
-.pg-tr.last > .pg-railc::before { bottom: 50%; }
-.pg-tr.first.last > .pg-railc::before { content: none; }
+.pg-tr.pg-a > .pg-railc::before { top: 50%; }
+.pg-tr.pg-z > .pg-railc::before { bottom: 50%; }
+.pg-tr.pg-a.pg-z > .pg-railc::before { content: none; }
 .pg-railc > .pg-sock { position: relative; z-index: 1; }
 .pg-sock.n b { font: 600 .98rem/1 var(--font-data); color: var(--splice-cream); }  /* the socket is dark in both themes */
 .pg-sock.pop { animation: pop var(--t-pop) var(--e-out) 1; }
@@ -175,6 +190,9 @@
 .pg-offer b { font: 600 .95rem/1 var(--font-data); color: var(--text-body); margin-right: .3rem; }
 .pg-add[aria-expanded="true"] { border-color: var(--text-mute); color: var(--text); background: color-mix(in oklab, var(--text) 4%, transparent); }
 .pg-addrow > .pg-add { grid-column: 2 / -1; margin-block: .6rem; }
+/* four chosen: a solid row, not the dashed place where a model lands, since none is left */
+.pg-add.pg-swap { border-style: solid; border-width: .12rem; min-height: 3rem; }
+.pg-add.pg-swap .plus svg { width: .95rem; height: .95rem; }
 .pg-first { flex: 1; display: flex; min-height: 9rem; }
 .pg-first > .pg-add { flex: 1; justify-content: center; gap: 1.2rem; }
 .pg-first > .pg-add .pg-offer { margin-left: 0; }
@@ -246,6 +264,7 @@
 .pgp.stale .pg-body, .pg-tr.stale > .pg-c:not(.pg-railc) { opacity: .58; }
 
 /* a failure: its word and the act that fixes it, then what the provider, or splice, said, one line until opened */
+.pgp.is-failed.alone:not(:has(.pg-req)) { max-width: 46rem; }  /* a failure alone in its row: one line, so not a whole row's width */
 .pg-fixrow { display: flex; align-items: center; flex-wrap: wrap; gap: .8rem 1rem; }
 .pg-fixrow .state { font-size: 1.02rem; white-space: normal; }
 .pg-fixrow .state.limit .lockico { display: inline-grid; }
@@ -273,6 +292,8 @@
 /* the tabs beside the record's kicker and each attempt's status beside its address, never across the pane */
 .pg-req .rqpane .sechead .switch.tabs { margin-left: 0; }
 .pg-req .attempt .status { margin-left: 0; }
+/* a tab changed: the record's body fades in where it stands, so a switch reads as a change and not a jump */
+.pg-req.swap .bodies { animation: pg-fade var(--t-snap) var(--e-out) 1; }
 
 /* ---------- the board: providers as Accounts draws them, packed into columns, each command a card ---------- */
 .pg-pick { gap: calc(3 * var(--u)); }
@@ -370,7 +391,7 @@
 .pg-why.bad { color: var(--limit); }
 
 @media (prefers-reduced-motion: reduce) {
-  .pg-pick.opening, .pg-body.rise > *, .pg-fixrow.again, .pg-sock.pop, .pg-acts.armed > .act, .pg-md.swap > * { animation: none; }
+  .pg-pick.opening, .pg-body.rise > *, .pg-fixrow.again, .pg-sock.pop, .pg-acts.armed > .act, .pg-md.swap > *, .pg-req.swap .bodies { animation: none; }
   .pg-tr.is-sending .pg-trk > i, .pg-tr > .barcell.is-wait .vbar { animation: none; }
   .pg-trk > i, .pg-tr, .pgp .pg-body, .pg-tr > .pg-c { transition: none; }
 }

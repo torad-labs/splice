@@ -1,8 +1,8 @@
 // Settings' "Many agents at once": a busy command's day holds more requests than one read returns, so the daemon works
-// out its peak over the whole day and the page draws that figure. The commands that ran lead as cards, the ones that
-// held nothing collapse to a line (Marcos's verdict on this pane, Oct 11), and the commands that hold their own value
-// for a setting read as chips that lie across its card and wrap inside it, never cut (gap 457, Oct 13). Through the real
-// page against a stub daemon.
+// out its peak over the whole day and the page draws that figure. Today is one table, a row per command that ran, the
+// limit said once in the column's head; the commands that held nothing collapse to one line (Marcos's verdict on this
+// pane, Oct 11), and the commands that hold their own value for a setting read as chips that lie across its row and wrap
+// inside it, never cut (gap 457, Oct 13). Through the real page against a stub daemon.
 import { afterAll, beforeAll, test } from "bun:test";
 import { chromium, expect, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -50,24 +50,30 @@ afterAll(async () => {
   server.stop(true);
 });
 
-/** The pane, open, with its Today section drawn. */
+/** The section of the pane under this kicker. */
+const section = (page: Awaited<ReturnType<typeof open>>, kicker: string) =>
+  page.locator("section.psec", { has: page.locator(`.sechead > .kicker:text-is("${kicker}")`) });
+
+/** The pane, open, with its Today table drawn. */
 async function open(width: number, height = 1000) {
   const page = await browser.newPage({ viewport: { width, height } });
   await page.goto(`http://127.0.0.1:${server.port}/settings.html`);
   await page.getByText("Many agents at once").first().click();
-  await expect(page.locator(".pcards .pcard").first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator(".peaks .pk[data-grow]").first()).toBeVisible({ timeout: 15_000 });
   return page;
 }
 
 test("a command whose day holds more requests than one read returns still shows its peak, and nothing says not read", async () => {
   const page = await open(1440, 900);
   try {
-    const today = page.locator(".tally").filter({ hasText: "Today" }).first();
-    const alpha = today.locator(".pcard").filter({ hasText: "alpha" });
-    await expect(alpha.locator(".pbig b")).toHaveText("7");
-    await expect(alpha.locator(".pof")).toContainText("at once");
-    await expect(today.locator(".pcard").filter({ hasText: "beta" }).locator(".pbig b")).toHaveText("3");
-    await expect(today).not.toContainText("not read");
+    const today = section(page, "Today");
+    const alpha = today.locator(".pk[data-grow]").filter({ hasText: "alpha" });
+    await expect(alpha.locator(".pmv b")).toHaveText("7");
+    // every command shares the one limit, so the column's head says "of 12" once and no row repeats it
+    await expect(today.locator(".ph")).toContainText("of 12");
+    await expect(alpha.locator(".pmv")).not.toContainText("of 12");
+    await expect(today.locator(".pk[data-grow]").filter({ hasText: "beta" }).locator(".pmv b")).toHaveText("3");
+    await expect(today).not.toContainText(/not read/i);
     await expect(today).not.toContainText("over 2,000");
     expect(asked.sort()).toEqual(["alpha", "beta", "gamma"]);
   } finally {
@@ -75,33 +81,33 @@ test("a command whose day holds more requests than one read returns still shows 
   }
 }, 30_000);
 
-test("a command that held nothing today is named on one line, with no card and no bar of its own", async () => {
+test("a command that held nothing today is named on one line, with no row and no bar of its own", async () => {
   const page = await open(1440, 900);
   try {
-    const today = page.locator(".tally").filter({ hasText: "Today" }).first();
+    const today = section(page, "Today");
     // the words are fin's, under Marlin's order: the line says what there was, and the chips say which commands
     await expect(today.locator(".pidle")).toContainText("No requests today");
     await expect(today.locator(".pidle")).toContainText("gamma");
-    expect(await today.locator(".pcard").count()).toBe(2); // alpha and beta, never gamma
-    await expect(today.locator(".pcard").filter({ hasText: "gamma" })).toHaveCount(0);
+    expect(await today.locator(".pk[data-grow]").count()).toBe(2); // alpha and beta, never gamma
+    await expect(today.locator(".pk[data-grow]").filter({ hasText: "gamma" })).toHaveCount(0);
   } finally {
     await page.close();
   }
 }, 30_000);
 
-// A command's "Waited in line" door keeps its words on one line inside its card however many digits the count has
+// A command's "Waited in line" door keeps its words on one line inside the table however many digits the count has
 // ("2,098" broke it into "Waited in / line" and "Open on / Requests" live at 3828, e2dfed21a).
 for (const width of [3828, 1440]) {
-  test(`at ${width} a five-digit Waited in line door stays one line inside its card`, async () => {
+  test(`at ${width} a five-digit Waited in line door stays one line inside its table`, async () => {
     const page = await open(width);
     try {
-      const door = page.locator(".pcard .door").filter({ hasText: "12,345" });
+      const door = page.locator(".peaks .pq .pd-count").filter({ hasText: "12,345" });
       await expect(door).toBeVisible({ timeout: 15_000 });
       const m = await page.evaluate(() => {
-        const d = [...document.querySelectorAll(".pcard .door")].find((e) => /12,345/.test(e.textContent ?? ""))!;
-        const card = d.closest(".pcard")!.getBoundingClientRect(), box = d.getBoundingClientRect();
-        const tops = [...d.querySelectorAll("span, b, em")].map((e) => Math.round(e.getBoundingClientRect().height));
-        return { lineH: parseFloat(getComputedStyle(d).fontSize) * 2, tallest: Math.max(...tops), inside: box.right <= card.right + 1 };
+        const d = [...document.querySelectorAll(".peaks .pq .pd-count")].find((e) => /12,345/.test(e.textContent ?? ""))!;
+        const table = d.closest(".peaks")!.getBoundingClientRect(), box = d.getBoundingClientRect();
+        const tops = [...d.querySelectorAll("span, b, em, svg")].map((e) => Math.round(e.getBoundingClientRect().height));
+        return { lineH: parseFloat(getComputedStyle(d).fontSize) * 2, tallest: Math.max(box.height, ...tops), inside: box.left >= table.left - 1 && box.right <= table.right + 1 };
       });
       expect(m.tallest).toBeLessThan(m.lineH); // no part of the door wraps to a second line
       expect(m.inside).toBe(true);
@@ -111,13 +117,13 @@ for (const width of [3828, 1440]) {
   }, 30_000);
 }
 
-/** Where the four commands holding their own value sit, as chips, measured against the card that holds them. */
+/** Where the four commands holding their own value sit, as chips, measured against the setting's row that holds them. */
 async function chipShape(page: Awaited<ReturnType<typeof open>>) {
   return page.evaluate(() => {
     const owners = [...document.querySelectorAll(".kn .owners")].find((o) => o.querySelectorAll(".chip.own").length >= 4)!;
     const chips = [...owners.querySelectorAll(".chip.own")];
     const cells = chips.map((e) => e.getBoundingClientRect());
-    const box = owners.closest(".kcard")!.getBoundingClientRect();
+    const box = owners.closest(".krow")!.getBoundingClientRect();
     return {
       cols: new Set(cells.map((b) => Math.round(b.left))).size,
       rows: new Set(cells.map((b) => Math.round(b.top))).size,
@@ -127,7 +133,7 @@ async function chipShape(page: Awaited<ReturnType<typeof open>>) {
   });
 }
 
-test("at 3828 the commands that hold their own value lie side by side as chips in their card, not stacked in one column", async () => {
+test("at 3828 the commands that hold their own value lie side by side as chips in their row, not stacked in one column", async () => {
   const page = await open(3828, 2130);
   try {
     await expect(page.locator(".kn .owners .chip.own")).toHaveCount(4, { timeout: 15_000 });
@@ -141,7 +147,7 @@ test("at 3828 the commands that hold their own value lie side by side as chips i
   }
 }, 30_000);
 
-test("at 1440 the same chips wrap inside their card instead of running past its edge, and none is cut", async () => {
+test("at 1440 the same chips wrap inside their row instead of running past its edge, and none is cut", async () => {
   const page = await open(1440, 900);
   try {
     await expect(page.locator(".kn .owners .chip.own")).toHaveCount(4, { timeout: 15_000 });
@@ -154,29 +160,28 @@ test("at 1440 the same chips wrap inside their card instead of running past its 
   }
 }, 30_000);
 
-// A setting that carries per-command values takes the row it is on, as a section holding one setting does: beside two
-// plain cards it ran four lines taller, and the two stretched to its height stood empty under their dropdown. The
-// plain settings of a section still share one row (Marcos: "why are we having all this empty space", Oct 11).
-test("a setting alone in its section lays its name and value along the row, and several share the row as cards", async () => {
+// A setting that carries per-command values takes the line it is on, as a section holding one setting does: its chips
+// make it taller than the plain ones, and a plain setting beside it would stand with empty space under its control. Every
+// row fills its section (Marcos: "why are we having all this empty space", Oct 11).
+test("a setting carrying per-command values has its line to itself, and every row fills its section", async () => {
   const page = await open(3828, 2130);
   try {
-    await expect(page.locator(".kcard").first()).toBeVisible({ timeout: 15_000 });
-    const m = await page.evaluate(() => [...document.querySelectorAll(".kcards")].map((g) => {
-      const cards = [...g.querySelectorAll(".kcard")].map((c) => ({ box: c.getBoundingClientRect(), over: !!c.querySelector(".over") }));
-      const tops = cards.map((c) => Math.round(c.box.top));
+    await expect(page.locator(".krow").first()).toBeVisible({ timeout: 15_000 });
+    const m = await page.evaluate(() => [...document.querySelectorAll(".krows")].map((g) => {
+      const rows = [...g.querySelectorAll(".krow")].map((r) => ({ box: r.getBoundingClientRect(), over: !!r.querySelector(".owners") }));
+      const tops = rows.map((r) => Math.round(r.box.top));
       return {
         width: g.getBoundingClientRect().width,
-        span: Math.max(...cards.map((c) => c.box.right)) - Math.min(...cards.map((c) => c.box.left)),
-        anyOver: cards.some((c) => c.over),
-        rows: new Set(tops).size,
-        // a card carrying per-command values has no other card on its row
-        sharedWithOver: cards.filter((c) => c.over).filter((c) => tops.filter((t) => t === Math.round(c.box.top)).length > 1).length,
+        span: Math.max(...rows.map((r) => r.box.right)) - Math.min(...rows.map((r) => r.box.left)),
+        anyOver: rows.some((r) => r.over),
+        // a row carrying per-command values has no other row on its line
+        sharedWithOver: rows.filter((r) => r.over).filter((r) => tops.filter((t) => t === Math.round(r.box.top)).length > 1).length,
       };
     }));
-    expect(m.length).toBeGreaterThan(1);
+    expect(m.length).toBeGreaterThan(0);
+    expect(m.some((g) => g.anyOver)).toBe(true);
     for (const g of m) {
-      expect(g.span / g.width).toBeGreaterThan(0.98); // every section fills its row, alone or in company
-      if (!g.anyOver) expect(g.rows).toBe(1); // settings that override nothing share one row
+      expect(g.span / g.width).toBeGreaterThan(0.98); // every section's rows fill it
       expect(g.sharedWithOver).toBe(0);
     }
   } finally {

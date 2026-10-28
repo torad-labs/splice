@@ -1,6 +1,7 @@
 // How a dollar figure reads, on the page that draws it (fin, Oct 12): a tiny reply keeps two significant digits instead
-// of collapsing to "<$0.0001", a cent and up is cents, and Requests' rows say the same under a cent. Requests' row is
-// read off the page, against a stub daemon serving one request that cost a hundredth of a cent.
+// of collapsing to "<$0.0001", a cent and up is cents until $100 and whole dollars from there, and Requests' rows say the
+// same under a cent. Requests' row is read off the page, against a stub daemon serving one request that cost a hundredth
+// of a cent.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, expect as see, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -45,7 +46,11 @@ const CASES: [number, string][] = [
   [0.00999, "≈$0.01"],
   [0.0000004, "<$0.000001"],
   [0, "$0"],
-  [1512.4, "≈$1,512.40"],
+  // under $100 a figure keeps its cents; from $100 up it is whole dollars, a week's spend running to five digits
+  [99.99, "≈$99.99"],
+  [100.4, "≈$100"],
+  [1512.4, "≈$1,512"],
+  [20390.47, "≈$20,390"],
 ];
 
 test("a dollar figure keeps two significant digits under a cent, and Requests says the same", async () => {
@@ -54,7 +59,11 @@ test("a dollar figure keeps two significant digits under a cent, and Requests sa
     await page.goto(`http://127.0.0.1:${server.port}/requests.html`);
     const read = await page.evaluate((xs) => xs.map((x) => dollars(x)), CASES.map(([v]) => v));
     expect(read).toEqual(CASES.map(([, w]) => w));
-    await see(page.locator('article[data-open="alpha:tiny"]')).toContainText("≈$0.00012", { timeout: 15_000 });
+    // a row's cost cell is headed "Est. cost", so its figure carries no "≈" of its own
+    const row = page.locator('article[data-open="alpha:tiny"]');
+    await see(row).toContainText("$0.00012", { timeout: 15_000 });
+    await see(row).not.toContainText("≈");
+    await see(page.getByText("Est. cost", { exact: true }).first()).toBeVisible();
   } finally {
     await page.close();
   }

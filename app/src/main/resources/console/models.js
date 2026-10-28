@@ -180,11 +180,14 @@ function stateOf(c) {
   if (!bad && pending("doctor")) return { state: "checking", word: "Reading" };
   if (!bad) return null;
   const auth = bad.id.startsWith("auth/"), keyed = /key/i.test(c.auth), refused = /refus|reject|invalid|401/i.test(bad.detail ?? "");
-  const word = auth ? (keyed ? (refused ? "Credentials refused" : "No key") : "Signed out") : bad.id === "installation/wrapper" ? "Command not found" : "Not started";
+  // one word for one state wherever it shows: the card, the header and the Sign-in section all read authWord
+  const word = auth ? authWord(c, bad) : bad.id === "installation/wrapper" ? "Command not found" : "Not started";
   const label = auth ? (keyed ? (refused ? "Replace key" : "Add key") : "Sign in") : bad.id === "installation/wrapper" ? "Restore" : "Start";
   return { state: bad.id, word, fix: auth ? { signin: true, label } : bad.fix_id ? { id: bad.fix_id, label } : null };
 }
 const cmdByKey = (k) => commandsOf().find((c) => c.key === k);
+// a model a request names, by the name the command's roster gives it, or dressed the way the catalog would name it
+const modelWord = (c, id) => (c.models.find((m) => m.id === id) ?? c.missing.find((m) => m.id === id))?.label ?? nameOf({ id });
 
 // ---------- what a person reads ----------
 function big(n) { // a window: 200K, 256K, 1M, 1.05M; none is "", for a draft field left empty
@@ -214,8 +217,11 @@ const GL = {
   restart: G('<path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v5h-5"/>', 'aria-hidden="true"'),
   // the way back to the provider's own value
   back: G('<path d="M9 7L4 12l5 5"/><path d="M4 12h10a6 6 0 0 1 0 12h-2" transform="translate(0 -6)"/>', 'aria-hidden="true"'),
+  // what one word becomes on the wire: the word Claude Code sends maps to the word the provider is sent
+  maps: G('<path d="M5 12h12"/><path d="M13 8l4 4-4 4"/>', 'aria-hidden="true"'),
 };
-const pfile = (name) => `<span class="pfile">${GL.file}<span>${esc(name)}</span></span>`;
+// a file a prompt is read from, by its own name, as the log's file is; where it sits is the name's title
+const pfile = (name) => `<span class="pfile" title="${esc(homeRel(name))}">${GL.file}<span>${esc(String(name).split("/").pop())}</span></span>`;
 const WAIT = '<svg class="wait" viewBox="0 0 40 40"><circle cx="20" cy="20" r="15"/></svg>';
 
 // ---------- the drawings this page draws with (kit.js's DRAW and GHOST) ----------
@@ -307,15 +313,16 @@ function cardHtml(c) {
   const said = ui.fixSaid?.key === c.key ? DRAW.result(ui.fixSaid.word, "bad") : "";
   const fix = s?.fix && !mine && !ui.fixing[c.key] && ui.sign?.key !== c.key && ui.keyin?.key !== c.key
     ? `<div class="fix"><button class="act primary" data-act="fix" data-h="${esc(c.key)}">${esc(s.fix.label)}</button>${said}</div>` : "";
-  const slot = k.ghost ? GHOST.state() : k.word ? `<span class="cstate">${esc(k.word)}</span>` : "";
+  // the open command's header beside the rail says its state, so its card keeps the lamp and drops the word
+  const slot = k.ghost ? GHOST.state() : k.word && !mine ? `<span class="cstate">${esc(k.word)}</span>` : "";
   const ld = !s && c.live ? loadOf(c) : null;
   const load = ld?.flight
     ? `<div class="cload" data-meter="card:${esc(c.key)}" title="${esc(`${DRAW.n(ld.flight)} requests in flight${ld.max ? ` of ${DRAW.n(ld.max)} allowed at once` : ""}`)}">`
       + `${ld.max ? DRAW.meter(Math.min(100, (ld.flight / ld.max) * 100), ld.flight >= ld.max ? "full" : "") : ""}`
-      + `<span class="cfig"><b>${DRAW.n(ld.flight)}</b>${ld.max ? ` of ${DRAW.n(ld.max)}` : " in flight"}</span></div>` : "";
+      + `<span class="cfig"><b data-fig="card:${esc(c.key)}">${DRAW.n(ld.flight)}</b>${ld.max ? ` of ${DRAW.n(ld.max)}` : " in flight"}</span></div>` : "";
   // a runtime that does not answer names where splice expects it, which is what he has to start
   const where = c.down && c.url ? `<span class="caddr">${esc(hostPort(c.url))}</span>` : "";
-  return `<article class="card h ${k.cls}${ui.shook === c.key ? " shook" : ""}" style="--c:${colorOf(c.family)}" data-open="${esc(c.key)}" aria-current="${mine}">`
+  return `<article class="card h ${k.cls}${ui.shook === c.key ? " shook" : ""}${ui.fx?.landed === c.key ? " landed" : ""}" style="--c:${colorOf(c.family)}" data-open="${esc(c.key)}" aria-current="${mine}">`
     + `<span class="lamp ${k.cls}" aria-hidden="true">${k.lamp}</span>`
     + `<div class="top">${DRAW.chip({ text: c.cmd, live: c.running > 0 && !s })}${provSaid(c) ? "" : `<span class="prov">${esc(c.prov)}</span>`}${slot}</div>`
     + `<div class="meta"><span class="cmodel">${esc(c.model)}</span>${where}`
@@ -564,13 +571,26 @@ async function tryLive(key) {
  *  HOW MANY COLUMNS is the pane's own measured width over PANE_COL_REM a column (kit colsFit, the rule Accounts' board
  *  uses), never the viewport: three where the pane is about 180rem wide, two at about 120rem, one below. Which section
  *  stands where is fixed for each count, so no section jumps column on a redraw; the log stays high in the first
- *  column, under Right now; and the columns end at their own heights, with nothing spanning under them. */
+ *  column, under Right now. Only the tail (Instructions with its project layers, then Settings) goes down whichever
+ *  column is shortest for this command, decided once when the command opens, so a command with little to run does not
+ *  leave one column long beside an empty one. The plates stand as tall as the tallest, and only Every setting, when
+ *  opened, goes on under them in the same columns. */
 const PANE_COL_REM = 58;
-const PANE_COLS = {
+const PANE_BASE = {
   1: [["added", "now", "log", "models", "client", "prices", "where", "signin", "running", "settings", "prompt", "projects"]],
-  2: [["added", "now", "log", "where", "signin", "prompt", "projects"], ["models", "client", "prices", "running", "settings"]],
-  3: [["added", "now", "log", "where", "signin"], ["models", "client", "prices", "prompt", "projects"], ["running", "settings"]],
+  2: [["added", "now", "log", "where", "signin"], ["models", "client", "prices", "running"]],
+  3: [["added", "now", "log", "where", "signin"], ["models", "client", "prices"], ["running"]],
 };
+const PANE_TAILS = [["prompt", "projects"], ["settings"]];
+// where the tails stand until the command's own heights are known
+const TAILS_AT = { 2: [0, 0], 3: [1, 2] };
+function paneCols(n) {
+  if (n < 2) return PANE_BASE[1];
+  const at = ui.tails?.key === ui.open && ui.tails.n === n ? ui.tails.at : TAILS_AT[n];
+  const cols = PANE_BASE[n].map((ids) => [...ids]);
+  PANE_TAILS.forEach((ids, i) => cols[at[i]].push(...ids));
+  return cols;
+}
 // a section's own name rides its element, so an edit knows which section's Save it fills and #log lands on the log
 const tagSec = (id, html) => (html ? html.replace(/^<section /, `<section data-sec="${id}" `) : "");
 const SECTION_DRAW = {
@@ -595,9 +615,12 @@ function paneHtml() {
   if (!ui.draft) takeDraft(c);
   const d = ui.draft, st = draftState(c);
   const n = Math.min(3, Math.max(1, ui.cols || 1));
-  const cols = PANE_COLS[n].map((ids) => DRAW.plate(ids.map((id) => tagSec(id, SECTION_DRAW[id](c, d, st))).join(""), "pcol"));
+  const cols = paneCols(n).map((ids) => DRAW.plate(ids.map((id) => tagSec(id, SECTION_DRAW[id](c, d, st))).join(""), "pcol"));
+  // every setting, opened from Settings' disclosure, takes the pane's own columns under the sections: forty-odd rows in
+  // one column would stand beside two that end far above it
+  const every = ui.effOpen && !data.knobsErr && !pending("knobs") ? `<div class="everywrap${ui.fx?.eff ? " unfold" : ""}" id="every-settings">${everySetHtml(c, n)}</div>` : "";
   return `<div class="pane${ui.grow ? " unfold" : ""}" style="--c:${colorOf(c.family)}">${paneHead(c)}`
-    + `<div class="body"><div class="pcols" style="--n:${n}">${cols.join("")}</div></div></div>`;
+    + `<div class="body"><div class="pcols" style="--n:${n}">${cols.join("")}</div>${every}</div></div>`;
 }
 /** How many columns the open pane's body holds now, and how wide each is in rem; true when the count, or whether a
  *  column has room for the settings two to a row, changed since the last draw. */
@@ -612,6 +635,23 @@ function fitCols() {
   const moved = n !== ui.cols || roomy(colW) !== roomy(ui.colW);
   ui.cols = n; ui.colW = colW;
   return moved;
+}
+/** Where the pane's tail sections stand for this command at this column count: each goes down the shortest column by the
+ *  height its sections were drawn at, decided once, when what they hold has been read (the settings and the log), so a
+ *  later poll never moves a section under the hand that is editing it. True when that moved a tail from where it stood. */
+function settleTails() {
+  const n = ui.cols || 1;
+  if (n < 2 || !ui.open || !root.querySelector(".pane .pcols") || (ui.tails?.key === ui.open && ui.tails.n === n)) return false;
+  if (pending("knobs") || (ui.logs[ui.open] === undefined && !ui.logWhy[ui.open])) return false;
+  const foot = (id) => {
+    const el = root.querySelector(`.pane [data-sec="${id}"]`);
+    return el ? el.offsetHeight + (parseFloat(getComputedStyle(el).marginTop) || 0) : 0;
+  };
+  const sum = (ids) => ids.reduce((a, id) => a + foot(id), 0);
+  const h = PANE_BASE[n].map(sum);
+  const at = PANE_TAILS.map((ids) => { const i = h.indexOf(Math.min(...h)); h[i] += sum(ids); return i; });
+  ui.tails = { key: ui.open, n, at };
+  return at.some((v, i) => v !== TAILS_AT[n][i]);
 }
 function paneHead(c) {
   const k = look(c), s = stateOf(c);
@@ -634,18 +674,24 @@ function paneHead(c) {
  *  from the provider and refused, each failure a door to those requests. A count that is zero draws nothing. */
 function nowSection(c) {
   const h = data.heads.find((x) => x.key === c.key), g = h?.gate, e = h?.health ?? {};
-  const still = (of, cls = "") => DRAW.section("Right now", DRAW.hero({ figure: "—", of })
-    + `<div class="flow"><span class="mlbl">In flight</span>${DRAW.meter(null, cls)}</div>`, { cls: "snow" });
-  // a command whose runtime does not answer takes nothing, whatever its gate held last: a dash over a hatched track
-  if (c.down) return still("runtime not answering", "down");
-  if (!c.live || !g) return still(c.live ? "nothing read yet" : "not running");
-  const max = g.max === "unlimited" ? null : Number(g.max) || null;
+  const max = !g || g.max === "unlimited" ? null : Number(g.max) || null;
+  // a command that takes nothing now (its runtime does not answer, or it is not running) is a dash over a hatched
+  // track, against the limit it would hold when one is set: the header already names what is wrong with it, so the
+  // figure does not say it a third time. A running command with no gate read yet is the unread track.
+  // The hero says what it counts on its own baseline, "4 in flight of 100 allowed at once", so the meter under it needs
+  // no label of its own and runs the column's full width, ending where the outcome bar under it ends.
+  const heroOf = (figure, level, tail) => `<div class="pd-top"><b class="pd-rate lv-${level}" data-fig="now:${esc(c.key)}">${esc(figure)}</b>`
+    + `<span class="pd-failed">in flight${tail}</span></div>`;
+  const limitWords = max ? ` of <b>${DRAW.n(max)}</b> allowed at once` : "";
+  const still = (cls) => DRAW.section("Right now", heroOf("—", "ok", max ? limitWords : cls ? "" : `<span>, nothing read yet</span>`)
+    + `<div class="flow">${DRAW.meter(null, cls)}</div>`, { cls: "snow" });
+  if (c.down || !c.live) return still("down");
+  if (!g) return still("");
   const flight = Number(g.inflight) || 0, frac = max ? Math.min(1, flight / max) : 0;
   const level = max && frac >= 0.8 ? "bad" : max && frac >= 0.5 ? "watch" : "ok";
-  const hero = max ? DRAW.hero({ figure: DRAW.n(flight), level, count: max, word: "allowed at once" })
-    : DRAW.hero({ figure: DRAW.n(flight), level, of: "no limit set" });
+  const hero = heroOf(DRAW.n(flight), level, max ? limitWords : "<span>, no limit set</span>");
   const meter = max
-    ? `<div class="flow" data-meter="now:${esc(c.key)}"><span class="mlbl">In flight</span>${DRAW.meter(frac * 100, frac >= 1 ? "full" : "")}</div>` : "";
+    ? `<div class="flow" data-meter="now:${esc(c.key)}">${DRAW.meter(frac * 100, frac >= 1 ? "full" : "")}</div>` : "";
   // the requests the gate holds, one row per session that sent them, the session holding the oldest first
   const bySess = new Map();
   for (const t of g.live ?? []) {
@@ -664,11 +710,14 @@ function nowSection(c) {
     const n = x.ts.length > 1 ? `<b class="cnt" title="${x.ts.length} requests in flight">${x.ts.length}</b>` : "";
     // one tick per request in flight from this session, at how long each has been held
     const ticks = x.ts.length > 1 ? x.ts.map((t) => `<u style="left:${ax.at(t.age).toFixed(2)}%"></u>`).join("") : "";
-    return `<div class="pd-grid trow"><span class="pd-sl"><span class="who">${who}${n}</span><small>${esc(x.compact ? "Compacting" : x.old.model)}</small></span>`
+    // ONE LINE A SESSION. Streaming is the ordinary state and the bar already says it is running; only compacting and
+    // the moment before the first byte are worth a word, a muted one, never the limit red. The model is named, by its
+    // catalog name, only where it is not the one the command leads with, which its card and Models already name.
+    const other = x.old.model && x.old.model !== c.mainId ? modelWord(c, x.old.model) : "";
+    const word = [x.compact ? "Compacting" : x.old.phase === "connect" ? "no output yet" : "", other].filter(Boolean).join(" · ");
+    return `<div class="pd-grid trow"><span class="pd-sl"><span class="who">${who}${n}</span></span>`
       + `<span>${DRAW.range(ax, x.old.age, x.old.age).replace(/<\/span>$/, `${ticks}</span>`)}</span><span class="pd-n">${DRAW.ms(x.old.age)}</span>`
-      // streaming is the ordinary state and the bar already says it is running; only the moment before the first byte
-      // is worth a word, and it is a muted one, never the limit red (the colour pass, Oct 26)
-      + `<span class="pd-n soft">${x.old.phase === "connect" ? "no output yet" : ""}</span></div>`;
+      + `<span class="pd-n soft">${esc(word)}</span></div>`;
   }).join("");
   const rest = groups.length - 4;
   const tail = rest > 0 ? DRAW.more(rest, { word: rest === 1 ? "more session" : "more sessions", act: "more", data: ` data-m="${esc(lid)}"`, open: lopen }) : "";
@@ -681,10 +730,10 @@ function nowSection(c) {
   const fails = [{ n: le, word: "Errors in splice" }, { n: pe, word: "Errors from the provider" }, { n: refused, word: "Refused" }]
     .sort((a, b) => b.n - a.n).map((s, i) => ({ ...s, cls: `f${i}`, href: failDoor(c) }));
   const whole = total > 0
-    ? `${DRAW.focal(DRAW.n(total), total === 1 ? "request since it started" : "requests since it started")}`
-      + DRAW.stack([{ n: Math.max(0, served - le - pe - flight), word: "Answered", cls: "ok", href: cmdDoor(c) },
-        { n: flight, word: "In flight", cls: "nt" }, ...fails], total, { grow: Boolean(ui.grow), label: `${DRAW.n(total)} requests since it started` })
-    : `<div class="pd-pop"><div class="pd-bar none"></div><div class="pd-legend">${DRAW.nothing("No requests yet")}</div></div>`;
+    ? `<div class="pd-sub"><b data-fig="total:${esc(c.key)}">${DRAW.n(total)}</b>${total === 1 ? "request since it started" : "requests since it started"}</div>`
+      + `<div data-stack="out:${esc(c.key)}">` + DRAW.stack([{ n: Math.max(0, served - le - pe - flight), word: "Answered", cls: "ok", href: cmdDoor(c) },
+        { n: flight, word: "In flight", cls: "nt" }, ...fails], total, { grow: Boolean(ui.grow), label: `${DRAW.n(total)} requests since it started` }) + "</div>"
+    :`<div class="pd-pop"><div class="pd-bar none"></div><div class="pd-legend">${DRAW.nothing("No requests yet")}</div></div>`;
   // what waited and what was held back, as tiles that exist only above zero; the turn counts are turns, not requests,
   // so they stay tiles beside the whole rather than parts of it
   const since = DRAW.tiles([
@@ -729,39 +778,65 @@ function modelsSection(c, d, st) {
   const mosts = rows.filter((r) => r.id).map((r) => r.most);
   const oneMost = mosts.length > 1 && mosts[0] != null && mosts.every((v) => v === mosts[0]) && !rows.some((r) => r.facts.now) ? mosts[0] : null;
   const sorted = [...c.models].sort((a, b) => (b.window ?? 0) - (a.window ?? 0) || a.label.localeCompare(b.label));
+  // FOUR TIERS ON ONE MODEL ARE ONE ROW. Where every tier answers with the same model at the same window (a local
+  // runtime serving one model, or a command set that way), the tiers read as one row, Every tier, whose picker and
+  // window set all four; Set each tier splits it back into four rows, which is how one tier is given another model.
+  const winOf = (r) => (r.picked ? `set:${r.sel.win}` : "default");
+  const merged = !ui.split?.has(c.key) && rows.every((r) => r.id && r.id === rows[0].id && winOf(r) === winOf(rows[0]));
   const tierRow = (r) => {
-    const { t, sel, ts, picked, dm, lost, asDefault, id, facts, most, drawn } = r;
+    const { sel, picked, dm, lost, asDefault, id, facts, most, drawn } = r;
+    const t = merged ? "all" : r.t, ts = r.ts, wasWin = was.tiers[r.t].win;
     const open = ui.pick === `tier:${t}`;
-    // clearing this tier gives its default back when the other three are unset too, else no model (a tier left out is a 400)
-    const alone = TIERS.every((x) => x === t || !d.tiers[x].model);
-    const clear = alone && dm ? `<span>${esc(dm.label)}</span><span class="dflt">Default</span>` : "<span>No model</span>";
+    // clearing this tier gives its default back when the other three are unset too, else no model (a tier left out is a
+    // 400); clearing every tier gives each its default
+    const alone = merged || TIERS.every((x) => x === t || !d.tiers[x].model);
+    const oneDefault = merged ? new Set(TIERS.map((x) => c.defaults[x])).size === 1 : true;
+    const clear = alone && dm ? `<span>${oneDefault ? esc(dm.label) : "Each tier's own"}</span><span class="dflt">Default</span>` : "<span>No model</span>";
     const q = (ui.mq ?? "").trim().toLowerCase();
     const list = q ? sorted.filter((x) => x.label.toLowerCase().includes(q) || x.id.toLowerCase().includes(q)) : sorted;
     // a roster of hundreds (OpenRouter lists 361) is found by typing, with the count of what matches said once
     const filter = c.models.length > 12
       ? `<div class="mfilter"><input class="field" id="mq" value="${esc(ui.mq ?? "")}" placeholder="Find a model" autocomplete="off" spellcheck="false" aria-label="Find a model">`
         + `<span class="pd-count"><b>${DRAW.n(list.length)}</b> of ${DRAW.n(c.models.length)}</span></div>` : "";
-    // the menu: the models by window, largest first, each window a bar on this section's scale, the one in use marked
+    // the menu: the models by window, largest first, each window a bar on this section's scale, the one in use marked.
+    // A roster from many makers ("Maker: Model") reads under one head per maker, a to z, each name without the
+    // maker it repeats; a roster from one maker stays one list.
     const inUse = picked?.id ?? asDefault?.id ?? null;
-    const items = filter + [`<button role="menuitem" data-act="tier" data-t="${t}" data-v=""${inUse ? "" : ' aria-current="true"'}>${clear}</button>`,
-      ...list.map((x) => `<button role="menuitem" data-act="tier" data-t="${t}" data-v="${esc(x.id)}"${x.id === inUse ? ' aria-current="true"' : ""}>`
-        + `<span class="mname">${esc(x.label)}</span><span class="mwin">${winBar(x.window, x.max, scale)}</span><span class="mmeta">${x.window ? big(x.window) : DASH}</span></button>`)].join("");
+    const mrow = (x, name) => `<button role="menuitem" data-act="tier" data-t="${t}" data-v="${esc(x.id)}"${x.id === inUse ? ' aria-current="true"' : ""} title="${esc(x.label)}">`
+      + `<span class="mname">${esc(name)}</span><span class="mwin">${winBar(x.window, x.max, scale)}</span><span class="mmeta">${x.window ? big(x.window) : DASH}</span></button>`;
+    const makerOf = (x) => /^([^:]{1,32}):\s+(.+)$/.exec(x.label);
+    const byMaker = list.filter(makerOf).length >= Math.max(2, list.length / 2);
+    let rowsHtml = list.map((x) => mrow(x, x.label)).join("");
+    if (byMaker) {
+      const by = new Map();
+      for (const x of list) {
+        const m = makerOf(x), k = m ? m[1] : "Others";
+        if (!by.has(k)) by.set(k, []);
+        by.get(k).push(mrow(x, m ? m[2] : x.label));
+      }
+      rowsHtml = [...by.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([k, xs]) => `<div class="mgroup" role="group" aria-label="${esc(k)}"><span class="mhead">${esc(k)}</span>${xs.join("")}</div>`).join("");
+    }
+    const items = `${filter}<button role="menuitem" data-act="tier" data-t="${t}" data-v=""${inUse ? "" : ' aria-current="true"'}>${clear}</button>`
+      + `${rowsHtml || (q ? DRAW.nothing("No model matches") : "")}`;
     // the name fills the picker and is cut with an ellipsis rather than wrapping a row three lines tall; the whole
     // name is on the button as its title and in the menu it opens. A tier left out reads None behind the lock.
     const named = picked ?? lost ?? asDefault;
     const face = named ? `<span class="pf">${esc(named.label)}</span>${asDefault ? '<span class="dflt">Default</span>' : ""}`
       : `<span class="pf">${ICON.lock}None</span>`;
-    const win = picked ? `<input class="field win${dirt(sel.win !== was.tiers[t].win)}" id="h-win-${t}" data-t="${t}" value="${esc(sel.win)}" spellcheck="false" autocomplete="off" aria-label="${tierName(t)} window">`
-      : asDefault ? `<input class="field win${dirt(d.headWin !== was.headWin)}" id="h-win-${t}" data-hw="1" value="${esc(d.headWin)}" spellcheck="false" autocomplete="off" aria-label="${tierName(t)} window">` : "";
+    const label = merged ? "Every tier" : tierName(t);
+    const win = picked ? `<input class="field win${dirt(sel.win !== wasWin)}" id="h-win-${t}" data-t="${t}" value="${esc(sel.win)}" spellcheck="false" autocomplete="off" aria-label="${label} window">`
+      : asDefault ? `<input class="field win${dirt(d.headWin !== was.headWin)}" id="h-win-${t}" data-hw="1" value="${esc(d.headWin)}" spellcheck="false" autocomplete="off" aria-label="${label} window">` : "";
     const wrong = picked ? !(ts.ok || ts.over) : asDefault && !st.head.ok && !st.head.over;
     const over = picked ? ts.over : asDefault && st.head.over;
     const marks = [facts.marks, lost ? notServed(lost) : "",
       // a tier left out is never sent to Claude Code, which then asks for its own built-in model; the command refuses it
       // with a 400, so a subagent or tool call on this tier fails (LaunchModelEnvironment.kt:21-23, gap 472)
       !named ? `<span class="said limit">Subagents on it fail</span>` : "",
-      wrong ? `<span class="said limit">Not a window</span>` : ""].filter(Boolean).join("");
+      wrong ? `<span class="said limit">Not a window</span>` : "",
+      merged ? DRAW.act({ word: "Set each tier", act: "splittiers", cls: "quiet small" }) : ""].filter(Boolean).join("");
     const mostCell = oneMost != null ? "" : most ? `${big(most)}${facts.now ? '<small class="srv">now</small>' : ""}` : id ? DASH : "";
-    return `<div class="tier" role="group" aria-labelledby="tl-${t}"><span class="lbl" id="tl-${t}">${tierName(t)}</span>`
+    return `<div class="tier" role="group" aria-labelledby="tl-${t}"><span class="lbl" id="tl-${t}">${label}</span>`
       + `<div class="ctl menuwrap"><button class="pickbtn${picked || lost ? "" : asDefault ? " dflt-tier" : " empty"}" type="button" data-act="tierpick" data-t="${t}" aria-haspopup="menu" aria-expanded="${open}" style="--c:${colorOf(c.family)}"${named ? ` title="${esc(named.label)}"` : ""}${lost || !named ? ' aria-invalid="true"' : ""}>${face}${ICON.caret}</button>`
       + `${open ? `<div class="menu mpick${ui.fx?.menu ? " unfold" : ""}" role="menu">${items}</div>` : ""}</div>`
       + `<span class="tglyph">${facts.tools ? toolsMark() : ""}</span>`
@@ -779,7 +854,7 @@ function modelsSection(c, d, st) {
   // the windows are the provider's, which every command on it shares: the others are named once, under the tiers
   const shared = rows.some((r) => r.picked) ? sharedHtml(c) : "";
   const other = dRows ? `<div class="tier thead osub"><span class="chead">Other models</span></div>${dRows}` : "";
-  const body = `<div class="tiers">${heads}${rows.map(tierRow).join("")}${shared ? `<div class="tier tfoot"><span class="marks">${shared}</span></div>` : ""}${other}</div>${dmore}`;
+  const body = `<div class="tiers">${heads}${(merged ? rows.slice(0, 1) : rows).map(tierRow).join("")}${shared ? `<div class="tier tfoot"><span class="marks">${shared}</span></div>` : ""}${other}</div>${dmore}`;
   const legend = rows.some((r) => r.facts.tools) ? `<span class="pd-leg tleg">${GL.tools}Calls tools</span>` : "";
   return DRAW.section("Models", body + secSave(c, "models", st), { aside: `${runtimeAside(c)}${legend}` });
 }
@@ -799,6 +874,10 @@ function clientSection(c) {
     by.get(w).push(s);
   }
   const live = (s) => s.status === "working" || s.status === "busy";
+  // each window is a bar on one scale with the window splice gives the command's main model, its tick, so a session
+  // counting against less than the model is given reads short of the tick before a figure is read
+  const main = c.models.find((m) => m.id === c.mainId) ?? null;
+  const scale = Math.max(...by.keys(), main?.window ?? 0, main?.max ?? 0);
   const body = [...by.entries()].sort((a, b) => b[0] - a[0]).map(([w, ss]) => {
     // sessions of one name are one chip with their count; the chip opens the first of them, a live one first
     const names = new Map();
@@ -814,7 +893,8 @@ function clientSection(c) {
       + `${g.n > 1 ? `<b class="cnt" title="${g.n} sessions">${g.n}</b>` : ""}</span>`).join("");
     const pill = rest > 0 ? DRAW.more(rest, { word: rest === 1 ? "more session" : "more sessions", act: "moren", data: ` data-m="${esc(id)}"` })
       : cap > 4 ? DRAW.more(0, { act: "moren", data: ` data-m="${esc(id)}" data-less="1"`, open: true }) : "";
-    return `<div class="wgroup">${DRAW.focal(big(w), `${ss.length} ${ss.length === 1 ? "session" : "sessions"}`)}`
+    return `<div class="wgroup"><div class="wline"><b class="wfig">${esc(big(w))}</b><span class="wcell">${winBar(w, main?.window ?? null, scale)}</span>`
+      + `<span class="pd-count"><b>${DRAW.n(ss.length)}</b> ${ss.length === 1 ? "session" : "sessions"}</span></div>`
       + `<div class="chips${ui.fx?.more === id ? " unfold" : ""}">${chips}${pill}</div></div>`;
   }).join("");
   return DRAW.section("Claude Code's window", body);
@@ -832,25 +912,28 @@ function pricesSection(c, d, st) {
   const pool = q ? c.models.filter((m) => m.label.toLowerCase().includes(q) || m.id.toLowerCase().includes(q)) : c.models;
   const lead = pool.filter((m) => tiers.has(m.id) || num(d.rates[m.id]?.i) || num(d.rates[m.id]?.o));
   const ordered = [...lead, ...pool.filter((m) => !lead.includes(m))];
-  const id = `prices:${c.key}`, open = ui.more.has(id);
-  const shown = open ? ordered : ordered.slice(0, 6), rest = ordered.length - shown.length;
+  // the rest come twenty a press, never all of a roster of hundreds at once
+  const id = `prices:${c.key}`, cap = ui.moreN?.[id] ?? 6;
+  const shown = ordered.slice(0, cap), rest = ordered.length - shown.length;
   const cell = (m, k) => `<div class="ctl pcell"><input class="field price${dirt(d.rates[m.id][k] !== was[m.id][k])}" id="pr-${k}-${esc(m.id)}" data-rate="${esc(m.id)}" data-rk="${k}" value="${esc(d.rates[m.id][k])}" placeholder="—" inputmode="decimal" spellcheck="false" autocomplete="off" aria-label="${esc(m.label)}, ${k === "i" ? "in" : "out"} per 1M tokens">${bad(s.rate[m.id][k], "Not a price")}</div>`;
   const rows = shown.map((m) => {
     const cache = cacheShown(c, m.id, d.rates[m.id])
       ? `<span class="marks"><span class="lbl">Cached</span><input class="field price dirty" id="pr-c-${esc(m.id)}" data-rate="${esc(m.id)}" data-rk="c" value="${esc(d.rates[m.id].c ?? d.rates[m.id].i)}" inputmode="decimal" spellcheck="false" autocomplete="off" aria-label="${esc(m.label)}, cached per 1M tokens">${bad(s.rate[m.id].c, "Not a price")}</span>`
       : "";
-    return `<span class="lbl mname">${esc(m.label)}</span>${cell(m, "i")}`
-      + `<span class="wcell">${DRAW.vbar(scale ? (num(d.rates[m.id].i) / scale) * 100 : 0)}</span>${cell(m, "o")}`
-      + `<span class="wcell">${DRAW.vbar(scale ? (num(d.rates[m.id].o) / scale) * 100 : 0)}</span>${cache}`;
+    // each price is a bar on its column's one scale with its figure after it, so the figures end on one edge per column
+    return `<span class="lbl mname">${esc(m.label)}</span>`
+      + `<span class="wcell">${DRAW.vbar(scale ? (num(d.rates[m.id].i) / scale) * 100 : 0)}</span>${cell(m, "i")}`
+      + `<span class="wcell">${DRAW.vbar(scale ? (num(d.rates[m.id].o) / scale) * 100 : 0)}</span>${cell(m, "o")}${cache}`;
   }).join("");
-  const pill = rest > 0 || open ? DRAW.more(rest, { word: rest === 1 ? "more model" : "more models", act: "more", data: ` data-m="${esc(id)}"`, open }) : "";
+  const pill = rest > 0 ? DRAW.more(rest, { word: rest === 1 ? "more model" : "more models", act: "moren", data: ` data-m="${esc(id)}" data-base="6"` })
+    : cap > 6 ? DRAW.more(0, { act: "moren", data: ` data-m="${esc(id)}" data-less="1"`, open: true }) : "";
   // a roster past twelve models is found by typing, the count of what matches said once beside the field
   const find = c.models.length > 12
     ? `<div class="search pfind">${SEARCH_GLYPH}<input class="field" id="prq" value="${esc(ui.prq ?? "")}" placeholder="Find a model" autocomplete="off" spellcheck="false" aria-label="Find a model's price">`
       + `<span class="pd-count"><b>${DRAW.n(pool.length)}</b> of ${DRAW.n(c.models.length)}</span></div>` : "";
-  const heads = `<span class="chead"></span><span class="chead">In</span><span class="chead"></span><span class="chead">Out</span><span class="chead"></span>`;
+  const heads = `<span class="chead"></span><span class="chead"></span><span class="chead fig">In</span><span class="chead"></span><span class="chead fig">Out</span>`;
   const none = q && !pool.length ? DRAW.nothing("No model matches") : "";
-  return DRAW.section("Prices", `${find}${rows ? `<div class="prices">${heads}${rows}</div>` : none}${pill}${secSave(c, "prices", st)}`,
+  return DRAW.section("Prices", `${find}${rows ? `<div class="prices${ui.fx?.more === id ? " unfold" : ""}">${heads}${rows}</div>` : none}${pill}${secSave(c, "prices", st)}`,
     { aside: `<span class="pd-count">$ per 1M tokens</span>` });
 }
 /** WHERE IT GOES: the address this command sends to, the port Claude Code reaches it on here, and the prefix each of
@@ -883,10 +966,14 @@ function authLook(c) {
   if (pending("doctor")) return { ghost: true };
   const row = (data.doctor?.checks ?? []).find((x) => x.id === `auth/${c.key}`);
   if (!row) return null;
+  const ok = row.status === "ok" || row.status === "info";
+  return { ok, word: authWord(c, row) };
+}
+/** doctor's sign-in check for a command, in his words: the same word on the card, in the header and in Sign-in. */
+function authWord(c, row) {
   const ok = row.status === "ok" || row.status === "info", keyed = /key/i.test(c.auth);
-  const word = ok ? (keyed ? "Key in place" : "Signed in")
-    : /refus|reject|invalid|401/i.test(row.detail ?? "") ? "Credentials refused" : keyed ? "No key" : "Signed out";
-  return { ok, word };
+  if (ok) return keyed ? "Key in place" : "Signed in";
+  return /refus|reject|invalid|401/i.test(row.detail ?? "") ? "Credentials refused" : keyed ? "No key" : "Signed out";
 }
 function signInSection(c, d, st) {
   const was = fieldsOf(c), s = st.own;
@@ -905,7 +992,7 @@ function signInSection(c, d, st) {
     + `<button class="icon" data-act="hdr-rm" data-i="${i}" aria-label="Remove ${esc(x.name || "header")}">${GL.close}</button>${bad(s.header[i], "Needs a name and a value")}</div>`).join("");
   return DRAW.section("Sign-in", '<div class="form">'
     + `<span class="lbl">Signs in with</span><div class="ctl menuwrap"><button class="pickbtn kindbtn" type="button" data-act="kindpick" aria-haspopup="menu" aria-expanded="${open}">${esc(kindName(d.kind))}${ICON.caret}</button>`
-    + `${open ? `<div class="menu${ui.fx?.menu ? " unfold" : ""}" role="menu">${items}</div>` : ""}${sharedHtml(c)}</div>`
+    + `${open ? `<div class="menu kmenu${ui.fx?.menu ? " unfold" : ""}" role="menu">${items}</div>` : ""}${sharedHtml(c)}</div>`
     + env
     + `<span class="lbl">Headers</span><div class="ctl col">${rows}${DRAW.addTile({ word: "Add header", act: "hdr-add", cls: "row" })}</div>`
     + `</div>${secSave(c, "signin", st)}`, { aside: lamp });
@@ -921,8 +1008,16 @@ function promptSection(c, d, st) {
 function projectsSection(c, d, st) {
   // each field carries an id, as every other field in the pane does, so the redraw every few seconds gives the focus and
   // the caret back to it: without one, a layer being typed lost its focus at the next redraw
-  const per = Object.entries(d.per).map(([root, l], i) => `<div class="per"><div class="per-top"><span class="pname">${esc(nameOfRoot(root))}</span>${modeSwitch(`per:${root}`, l.mode)}`
-    + `<button class="icon" data-act="unper" data-p="${esc(root)}" aria-label="Remove ${esc(nameOfRoot(root))}">${GL.close}</button></div>${l.file ? pfile(l.file) : `<textarea class="field ptext" id="pt-${i}" data-ptext="${esc(root)}" rows="2" aria-label="${esc(nameOfRoot(root))}: system prompt here">${esc(l.text)}</textarea>`}</div>`).join("");
+  // each layer is its project: its name, where it sits, its live sessions, then what the layer does and its remove
+  // together at the row's end, and the text it adds
+  const pst = Object.keys(d.per).length ? projectStats() : null;
+  const per = Object.entries(d.per).map(([root, l], i) => {
+    const pr = data.projects.find((x) => samePath(x.root, root)), s = (pr && pst.get(pr.id)) || NO_STATS;
+    return `<div class="per"><div class="per-top"><span class="pname">${esc(nameOfRoot(root))}</span><span class="ppath" title="${esc(root)}"><bdo dir="ltr">${esc(homeRel(root))}</bdo></span>`
+      + `${s.live ? `<span class="plive"><i aria-hidden="true"></i><b>${DRAW.n(s.live)}</b></span>` : ""}<span class="pend">${modeSwitch(`per:${root}`, l.mode)}`
+      + `<button class="icon" data-act="unper" data-p="${esc(root)}" aria-label="Remove ${esc(nameOfRoot(root))}">${GL.close}</button></span></div>`
+      + `${l.file ? pfile(l.file) : `<textarea class="field ptext" id="pt-${i}" data-ptext="${esc(root)}" rows="2" placeholder="Nothing added" aria-label="${esc(nameOfRoot(root))}: system prompt here">${esc(l.text)}</textarea>`}</div>`;
+  }).join("");
   const free = data.projects.filter((p) => !d.per[p.root]);
   const open = ui.pick === "per";
   // a long list of projects is found by typing, as every long menu on the page is
@@ -931,7 +1026,20 @@ function projectsSection(c, d, st) {
   const find = free.length > 12
     ? `<div class="mfilter"><input class="field" id="ppq" value="${esc(ui.ppq ?? "")}" placeholder="Find a project" autocomplete="off" spellcheck="false" aria-label="Find a project">`
       + `<span class="pd-count"><b>${DRAW.n(list.length)}</b> of ${DRAW.n(free.length)}</span></div>` : "";
-  const menu = open ? `<div class="menu ppick${ui.fx?.menu ? " unfold" : ""}" role="menu">${find}${list.map((p) => `<button role="menuitem" data-act="per" data-p="${esc(p.root)}"><span>${esc(p.name)}</span><span class="mmeta">${esc(homeRel(p.root).split("/").slice(0, -1).join("/"))}</span></button>`).join("")}</div>` : "";
+  // the projects as the Projects tab lists them: under the folder they share, the ones with live sessions first, each
+  // with its live sessions as the live dot and its count, and its sessions in all, so where he works is found by eye
+  const st0 = open ? projectStats() : null;
+  const groups = open ? projectFolders(list, st0).map((g) => {
+    const at = g.dir ? homeRel(g.dir) : "Elsewhere";
+    return `<div class="mgroup" role="group" aria-label="${esc(at)}"><span class="mhead">${esc(at)}</span>`
+      + g.list.map((p) => {
+        const s = st0.get(p.id) ?? NO_STATS;
+        return `<button role="menuitem" data-act="per" data-p="${esc(p.root)}"><span>${esc(p.name)}</span><span class="pmeta">`
+          + `${s.live ? `<span class="plive"><i aria-hidden="true"></i><b>${DRAW.n(s.live)}</b></span>` : ""}<span class="mmeta">${s.total ? DRAW.n(s.total) : ""}</span></span></button>`;
+      }).join("") + "</div>";
+  }).join("") : "";
+  const menu = open ? `<div class="menu ppick${ui.fx?.menu ? " unfold" : ""}" role="menu">${find}${groups || DRAW.nothing("No project matches")}`
+    + `${list.length ? `<div class="mfoot"><span class="plive"><i aria-hidden="true"></i>live now</span><span class="mmeta">sessions in all</span></div>` : ""}</div>` : "";
   const add = free.length
     ? `<div class="menuwrap">${DRAW.addTile({ word: "Add project", act: "perpick", cls: "row", data: ` aria-haspopup="menu" aria-expanded="${open}"` })}${menu}</div>`
     : "";
@@ -954,8 +1062,7 @@ function settingsSection(c) {
   // what this command holds its own value for, with the marks those values carry said once on the kicker's line
   const own = COMMAND_KNOBS.filter((k) => KNOBS.KNOB[k] && KNOBS.ownValue(k, c.key) !== undefined);
   const aside = own.length ? `<span class="kn">${KNOBS.legendHtml(own)}</span>` : "";
-  const every = ui.effOpen ? `<div class="everywrap${ui.fx?.eff ? " unfold" : ""}">${everySetHtml(c)}</div>` : "";
-  return DRAW.section("Settings", `<div class="form kn">${KNOBS.commandRowsHtml(c.key, COMMAND_KNOBS)}</div>${effHtml()}${every}`, { aside });
+  return DRAW.section("Settings", `<div class="form kn">${KNOBS.commandRowsHtml(c.key, COMMAND_KNOBS)}</div>${effHtml()}`, { aside });
 }
 /** LOG: this command's own lines from the daemon's log, as events in his words with their times and repeats, a search
  *  that counts the lines it matched of all of them, and the raw lines behind one disclosure: the last hundred, older
@@ -968,8 +1075,10 @@ function logSection(c) {
   const raw = lines.filter((l) => l.raw);
   const path = ui.logPath[c.key], why = ui.logWhy[c.key];
   const most = Math.max(1, ...ev.map((e) => e.n));
+  // the count follows the query: the lines it matched of every line read, and Clear beside it when it matched none
   const top = `<div class="loghead"><div class="search">${SEARCH_GLYPH}<input class="field" id="logq" placeholder="Search the log" value="${esc(ui.logq)}" autocomplete="off" spellcheck="false" aria-label="Search the log"></div>`
     + `${q ? `<span class="pd-count"><b>${DRAW.n(raw.length)}</b> of ${DRAW.n(held.length)} lines</span>` : ""}`
+    + `${q && !raw.length ? DRAW.act({ word: "Clear", act: "clearlogq", cls: "quiet small" }) : ""}`
     + DRAW.act({ word: ui.logPaused ? "Resume" : "Pause", act: "logpause", cls: "quiet small", data: ` aria-pressed="${ui.logPaused}"` })
     + "</div>";
   // a search that finds lines and no event shows the lines it found, so "no match" is never said beside a count of matches
@@ -1111,7 +1220,7 @@ const settingName = (k) => (k.label && k.label !== k.key ? k.label
 // group's legend, and a value this command holds for itself carries the way back to the shared one on its own row
 // (v0.4.0 section 9, Resolved: source and disposition inline).
 function effHtml() {
-  return `<div class="everyset">${DRAW.disc({ open: ui.effOpen, act: "eff", inner: "<span>Every setting as this command runs it</span>" })}</div>`;
+  return `<div class="everyset">${DRAW.disc({ open: ui.effOpen, act: "eff", controls: "every-settings", inner: "<span>Every setting as this command runs it</span>" })}</div>`;
 }
 // The jobs Settings draws its settings under, in its order and its words (settings.js TOPICS), so a setting is found
 // here under the same name it has there.
@@ -1123,14 +1232,37 @@ const topicOfKnob = (k) => k?.home || k?.adv || (BUSY_KEYS.has(k?.key) ? "busy" 
 // belong to the provider splice calls xai, ChatGPT's address and sign-in file to codex. Every other command's list
 // leaves them out, so a command never reads as running on another provider's settings.
 const PLUMBING = { grokPort: "xai", grokModel: "xai", grokAuthPath: "xai", xaiApiBase: "xai", chatgptApiBase: "codex", codexAuthPath: "codex" };
+// Retired in 0.4.0: splice decides when to send a failed request again and when to continue a cut answer from what
+// happened, so these have nothing to set. A daemon from before 0.4.0 still reports them; the pane draws no row for them.
+const RETIRED = new Set(["upstreamRetries", "retryBackoffBaseMs", "retryBackoffCapMs", "retryBackoffJitterPct", "foldReasoningModels",
+  "foldMaxContinue", "foldMarkerText", "foldMaxTier"]);
 /** Every setting as this command runs it, opened in place under its disclosure: grouped by the job Settings draws it
- *  under, each group under its kicker with its legend, the pairs two to a row where the column is wide enough. */
-function everySetHtml(c) {
+ *  under, each group under its kicker with its legend, ruled off from the next, one setting to a row so no control
+ *  wraps under its own value. A group that holds times draws each as a bar on ONE log axis shared by the whole list,
+ *  with the axis once under the group, so 20 s and 30 min read as lengths before their figures do. */
+function everySetHtml(c, n = 1) {
   const K = KNOBS, wire = K.st.cfg?.knobs;
-  if (!wire) return DRAW.result("Not read", "bad");
+  if (!wire) return DRAW.plate(DRAW.result("Not read", "bad"));
   const keys = [...K.LIST.map((k) => k.key), ...K.others().map((k) => k.key)]
-    .filter((key, i, all) => wire[key] && all.indexOf(key) === i && (!PLUMBING[key] || PLUMBING[key] === c.provKey));
+    .filter((key, i, all) => wire[key] && !RETIRED.has(key) && all.indexOf(key) === i && (!PLUMBING[key] || PLUMBING[key] === c.provKey));
   const own = (key) => K.ownValue(key, c.key) !== undefined;
+  const valueOfKey = (key) => (own(key) ? K.ownValue(key, c.key) : K.valueOf(K.KNOB[key]).v);
+  const timeOf = (key) => { const k = K.KNOB[key], v = Number(valueOfKey(key)); return k?.c?.k === "dur" && v > 0 ? v : null; };
+  const times = keys.map(timeOf).filter((v) => v != null);
+  const ax0 = times.length ? DRAW.axis(times, times) : null;
+  // the shared axis spaces its labels for a wide track; this one is a single column of a group, so only the labels that
+  // fit it stay: the first and the last (the axis always ends on its longest time) always, and none within a few percent
+  // of another
+  const fitTicks = (a, perChar = 3.3, gap = 3) => {
+    const w = (v) => DRAW.tickWord(v).length * perChar, kept = [];
+    a.ticks.forEach((v, i, all) => {
+      if (i === 0) { kept.push({ v, r: w(v) }); return; }
+      if (i === all.length - 1) { const l = 100 - w(v); while (kept.length > 1 && l - kept.at(-1).r < gap) kept.pop(); kept.push({ v, r: 100 }); return; }
+      if (a.at(v) - w(v) / 2 - kept.at(-1).r >= gap) kept.push({ v, r: a.at(v) + w(v) / 2 });
+    });
+    return kept.map((k) => k.v);
+  };
+  const ax = ax0 && { ...ax0, ticks: fitTicks(ax0) };
   const row = (key) => {
     const k = K.KNOB[key], id = `${key}@${c.key}`, mine = own(key);
     // the marks the foundation gives a value a reader could not guess at (takes a restart); their words are said once
@@ -1143,7 +1275,11 @@ function everySetHtml(c) {
       ? `${K.ctlHtml(k, mine ? K.ownValue(key, c.key) : K.valueOf(k).v, c.key)}${K.saidHtml(id, { rest: false })}${mine ? K.backHtml(k, c.key) : ""}`
       : "";
     const ctl = editable.trim() ? editable : said;
-    return `<div class="lbl" data-row="${key}">${esc(settingName(k))}</div><div class="ctl"><div class="line">${ctl}${marks}</div></div>`;
+    const t = timeOf(key);
+    // a text field with no time of its own takes the time column too, so an address or a path is read whole
+    const wide = t == null && editable.trim() !== "" && k?.c?.k === "text";
+    return `<div class="lbl" data-row="${key}">${esc(settingName(k))}</div><div class="ctl${wide ? " span" : ""}"><div class="line">${ctl}${marks}</div></div>`
+      + `${wide ? "" : `<span class="etime">${t != null ? DRAW.range(ax, t, t) : ""}</span>`}`;
   };
   const groups = new Map();
   for (const key of keys) {
@@ -1152,13 +1288,21 @@ function everySetHtml(c) {
     groups.get(t).push(key);
   }
   const order = [...Object.keys(TOPIC_NAME), "other"].filter((t) => groups.has(t));
-  const two = (ui.colW ?? 0) >= 66 ? " two" : "";
-  return `<div class="kn everygrid">${order.map((t) => {
-    const list = groups.get(t);
-    return `<div class="egroup"><div class="sechead sub"><h4 class="kicker">${esc(TOPIC_NAME[t] ?? "More")}</h4>`
+  const blocks = order.map((t) => {
+    const list = groups.get(t), timed = list.some((key) => timeOf(key) != null);
+    const axis = timed ? `<span></span><span></span><div class="eaxis">${DRAW.axisRow(ax, "")}</div>` : "";
+    // its height in rows: the head, each setting, the axis when it draws one
+    return { w: 2 + list.length + (timed ? 2 : 0), html: `<div class="egroup"><div class="sechead sub"><h4 class="kicker">${esc(TOPIC_NAME[t] ?? "More")}</h4>`
       + `<span class="pd-count"><b>${DRAW.n(list.length)}</b></span>${K.legendHtml(list)}</div>`
-      + `<div class="effgrid${two}">${list.map(row).join("")}</div></div>`;
-  }).join("")}</div>`;
+      + `<div class="effgrid${timed ? " timed" : ""}">${list.map(row).join("")}${axis}</div></div>` };
+  });
+  // the groups go down as many plates as the sections above stand in, each into the shortest so far, so the plates line
+  // up under the ones above and end near one height
+  const plates = DRAW.packCols(blocks, n, (b) => b.w).map((col) => (col.items.length
+    ? DRAW.plate(`<div class="kn everycol">${col.items.map((b) => b.html).join("")}</div>`, "pcol") : ""));
+  const head = `<div class="everyhead"><p class="kicker on-wall">Every setting as this command runs it</p>`
+    + `<span class="pd-count"><b>${DRAW.n(keys.length)}</b></span>${DRAW.act({ word: "Hide", act: "eff", cls: "quiet small" })}</div>`;
+  return `${head}<div class="ecols" style="--n:${n}">${plates.join("")}</div>`;
 }
 
 // ---------- a command's own fields, edited in place (gaps 461/462; marlin's four groups) ----------
@@ -1240,10 +1384,12 @@ function runningSection(c, d, st) {
       + `<div class="chips tog" role="group" aria-label="Shares with Claude Code">${items.map((x) => `<button class="chip tg" type="button" data-act="share" data-v="${esc(x)}" aria-pressed="${!d.isolate.includes(x)}">${esc(shareName(x))}</button>`).join("")}</div>`
     : "";
   const moved = (q) => JSON.stringify(was[q.name]) !== JSON.stringify(d.quirks[q.name]);
+  // the way back to the provider's own value is the back glyph at the row's end, named once on the kicker's line
+  const back = (q) => (d.quirks[q.name] === undefined || q.kind === "table" ? ""
+    : `<button class="icon qback" type="button" data-act="qback" data-q="${esc(q.name)}" title="Back to the provider's own" aria-label="${esc(quirkName(q.name))}: back to the provider's own">${GL.back}</button>`);
   const qrow = (q) => `<span class="lbl" title="${esc(q.name)}">${esc(quirkName(q.name))}</span><div class="ctl">`
     + `${quirkCtl(q, d.quirks[q.name], moved(q))}`
-    + `${QUIRK_UNIT[q.name] ? `<span class="unit">${QUIRK_UNIT[q.name]}</span>` : ""}${bad(s.quirk[q.name], "Not a value")}`
-    + `${d.quirks[q.name] === undefined || q.kind === "table" ? "" : `<button class="back" type="button" data-act="qback" data-q="${esc(q.name)}">Provider's own</button>`}</div>`;
+    + `${QUIRK_UNIT[q.name] ? `<span class="unit">${QUIRK_UNIT[q.name]}</span>` : ""}${bad(s.quirk[q.name], "Not a value")}${back(q)}</div>`;
   const qs = quirksOf(c);
   const set = qs.filter((q) => was[q.name] !== undefined), rest = qs.filter((q) => was[q.name] === undefined);
   const mine = set.length ? `<div class="form">${set.map(qrow).join("")}</div>` : "";
@@ -1251,11 +1397,14 @@ function runningSection(c, d, st) {
     ? `<div class="qrest">${DRAW.disc({ open: ui.qOpen, act: "qopen", inner: `<span><b>${DRAW.n(rest.length)}</b> follow the provider</span>` })}`
       + `${ui.qOpen ? `<div class="form${ui.fx?.q ? " unfold" : ""}">${rest.map(qrow).join("")}</div>` : ""}</div>`
     : "";
+  const backs = qs.some((q) => back(q));
   const quirks = qs.length
     ? `<div class="sechead sub"><h4 class="kicker">${esc(DIALECT_NAME[cmdDialect(c)] ?? cmdDialect(c) ?? "")} quirks</h4>`
-      + `${set.length ? `<span class="pd-count"><b>${DRAW.n(set.length)}</b> set here</span>` : ""}</div>${mine}${theirs}`
+      + `${set.length ? `<span class="pd-count"><b>${DRAW.n(set.length)}</b> set here</span>` : ""}`
+      + `${backs ? `<span class="leg qleg">${GL.back}Provider's own</span>` : ""}</div>${mine}${theirs}`
     : "";
-  return DRAW.section("Running", `${local ? `<div class="form">${local}</div>` : ""}${share}${quirks}${secSave(c, "running", st)}`, { aside: dialectHtml(c) });
+  // the wire it speaks is named once: on its quirks' kicker where it has quirks, else beside Running
+  return DRAW.section("Running", `${local ? `<div class="form">${local}</div>` : ""}${share}${quirks}${secSave(c, "running", st)}`, { aside: qs.length ? "" : dialectHtml(c) });
 }
 const dirt = (on) => (on ? " dirty" : "");
 // fin's name for each quirk, from its doc comment in QuirksConfig.kt; a key with none reads as itself
@@ -1279,21 +1428,34 @@ const valueWords = (x) => (Array.isArray(x) ? x.map(valueWords).join(", ")
   : x && typeof x === "object" ? Object.entries(x).map(([k, y]) => `${quirkWord(k)} ${valueWords(y)}`).join(" · ")
     : String(x));
 // A switch carries only the values splice.toml can hold: a quirk left at the provider's own lights none of them, and
-// the way back to it is the word beside a value set here (the row's "Provider's own"), as a setting's own value carries
-// its way back on Settings.
+// the way back to it is the back glyph beside a value set here, as a setting's own value carries its way back on
+// Settings. An empty field is a dash: the group it stands in already says whose value it follows.
 function quirkCtl(q, v, moved) {
   const opt = (val, word) => `<button type="button" data-act="quirk" data-q="${esc(q.name)}" data-v="${esc(JSON.stringify(val))}" aria-pressed="${JSON.stringify(v) === JSON.stringify(val)}">${esc(word)}</button>`;
   const sw = (opts) => `<div class="switch${v === undefined ? " unlit" : ""}${dirt(moved)}" role="group" aria-label="${esc(quirkName(q.name))}">${opts}</div>`;
   if (q.kind === "bool") return sw(opt(true, "On") + opt(false, "Off"));
   if (q.words) return sw(q.words.map((w) => opt(w, quirkWord(w))).join(""));
-  if (q.kind === "list") return `<input class="field mono${dirt(moved)}" id="q-${esc(q.name)}" data-ql="${esc(q.name)}" value="${esc((v ?? []).join(", "))}" placeholder="Provider's own" spellcheck="false" autocomplete="off" aria-label="${esc(quirkName(q.name))}">`;
+  // a list reads as its items, a chip each, by the names he knows them by (a model by its catalog name); Edit opens the
+  // field the list is typed in, and the field stays open while it holds a change or a value that is not one
+  if (q.kind === "list" && ui.qedit !== q.name && !moved && Array.isArray(v) && v.length) {
+    const word = (x) => (cmdByKey(ui.open)?.models.find((m) => m.id === x)?.label ?? nameOf({ id: x }));
+    return `<span class="chips qitems">${v.map((x) => DRAW.chip({ cls: "flat", text: word(x), title: x })).join("")}</span>`
+      + DRAW.act({ word: "Edit", act: "qedit", cls: "quiet small", data: ` data-q="${esc(q.name)}"` });
+  }
+  if (q.kind === "list") return `<input class="field mono qlist${dirt(moved)}" id="q-${esc(q.name)}" data-ql="${esc(q.name)}" value="${esc((v ?? []).join(", "))}" placeholder="—" spellcheck="false" autocomplete="off" aria-label="${esc(quirkName(q.name))}">`;
   if (q.kind === "table") {
     if (v === undefined) return DRAW.nothing("Provider's own");
+    // a table is what one word becomes on the wire: each entry one chip, the word Claude Code sends, the mapping
+    // glyph, and the word the provider is sent, a nested table its own row under its name
+    const pair = (k, x) => `<span class="chip flat qpair"><span class="qk">${esc(quirkWord(k))}</span>${GL.maps}<span class="qv">${esc(valueWords(x))}</span></span>`;
     const entries = v && typeof v === "object" && !Array.isArray(v) ? Object.entries(v) : [["", v]];
-    return `<span class="chips">${entries.map(([k, x]) => DRAW.chip({ cls: "flat", text: `${k ? `${quirkWord(k)} ` : ""}${valueWords(x)}` })).join("")}</span>`;
+    const nested = (x) => x && typeof x === "object" && !Array.isArray(x);
+    const flat = entries.filter(([, x]) => !nested(x)), deep = entries.filter(([, x]) => nested(x));
+    return `<div class="qtable">${flat.length ? `<span class="chips">${flat.map(([k, x]) => (k ? pair(k, x) : DRAW.chip({ cls: "flat", text: valueWords(x) }))).join("")}</span>` : ""}`
+      + deep.map(([k, x]) => `<div class="qgroup"><span class="qgk">${esc(quirkWord(k))}</span><span class="chips">${Object.entries(x).map(([k2, y]) => pair(k2, y)).join("")}</span></div>`).join("")
+      + `</div>`;
   }
-  // a number's box is too narrow for "Provider's own", and inside the group that says so it would say it twice
-  return `<input class="field mono${q.kind === "int" ? " num" : ""}${dirt(moved)}" id="q-${esc(q.name)}" data-q="${esc(q.name)}" data-qk="${q.kind}" value="${esc(v ?? "")}"${q.kind === "int" ? "" : ` placeholder="Provider's own"`} spellcheck="false" autocomplete="off" aria-label="${esc(quirkName(q.name))}">`;
+  return `<input class="field mono${q.kind === "int" ? " num" : ""}${dirt(moved)}" id="q-${esc(q.name)}" data-q="${esc(q.name)}" data-qk="${q.kind}" value="${esc(v ?? "")}" placeholder="—" spellcheck="false" autocomplete="off" aria-label="${esc(quirkName(q.name))}">`;
 }
 function ownInput(t, d) {
   if (t.id === "h-port") d.port = t.value;
@@ -1343,9 +1505,13 @@ function changesOf(c, only = null) {
   add("System prompt", { append: "Append", replace: "Replace" }[a.mode] ?? a.mode, { append: "Append", replace: "Replace" }[d.mode] ?? d.mode);
   add("System prompt text", a.file || a.text, d.file || d.text);
   sec = "projects";
-  for (const root of new Set([...Object.keys(a.per), ...Object.keys(d.per)])) {
-    add(`Prompt in ${nameOfRoot(root)}`, a.per[root] ? clip(a.per[root].file || a.per[root].text) || "Set" : "None", d.per[root] ? clip(d.per[root].file || d.per[root].text) || "Set" : "None");
-  }
+  // a project's layer reads as what it does and the start of what it says: "Append: Use the house style", or No layer
+  const layer = (l) => {
+    if (!l) return "No layer";
+    const said = l.file || String(l.text ?? "").trim();
+    return `${{ append: "Append", replace: "Replace", strip: "Strip" }[l.mode] ?? l.mode}${said ? `: ${said}` : ""}`;
+  };
+  for (const root of new Set([...Object.keys(a.per), ...Object.keys(d.per)])) add(`Prompt in ${nameOfRoot(root)}`, layer(a.per[root]), layer(d.per[root]));
   sec = "running";
   const yn = (v) => (v ? "Yes" : "No");
   add("Runs on this computer", yn(a.local ?? autoLocal(c)), yn(d.local ?? autoLocal(c)));
@@ -1558,31 +1724,57 @@ async function restartSplice() {
 const notServed = (m) => `<span class="said limit">Not served${m.reason ? `: ${esc(m.reason)}` : ""}</span>`;
 
 // ---------- Every model: each command's models, their windows and their prices, on the board's own two scales ----------
-// WHAT IS DRAWN IS COMPARED BY EYE ACROSS THE BOARD (the tabs' pass, Oct 26). Every model was one table capped at 72rem,
-// a third of his width, each figure a word in a cell. Each command is now a card on .cols, and each model a row of two
-// drawings: its window as a bar on ONE linear scale the whole board shares, with a lighter run on to the most it takes
-// and a notch where its price rises; its price as a track on ONE log scale the board shares, a band to In and a line
-// on to Out. The biggest window and the dearest model are found before a digit is read. The marks are named once, on
-// the legend line, and a figure the route does not send is a dash, never a 0.
-const EVERY_SHOWN = 6;     // a card's first models at full size; the rest behind one pill (console.css .morepill)
-const EVERY_SPAN = 24;     // a card opened past this many models takes the board's whole width, its rows in columns
+// WHAT IS DRAWN IS COMPARED BY EYE ACROSS THE BOARD. Each provider is a titled group of its commands' cards, the groups
+// packed into as many columns as the board's width holds, and each model a row of two drawings: its window as a bar on
+// ONE linear scale the whole board shares, with a lighter run on to the most it takes and a notch where its price rises;
+// its price as a track on ONE log scale the board shares, a band to In and a line on to Out. Each card heads its
+// columns once, with the scales' ends over the tracks, and the marks are named once on the legend line. A figure the
+// route does not send is a dash, never a 0, and a model with no price keeps its row's shape with a hatched track.
+const EVERY_SHOWN = 6;      // a card's first models at full size; the rest twenty at a time behind one pill
+const EVERY_STEP = 20;
+const EVERY_FIND = 24;      // a search shows every match up to this many rows on a card before it folds them
+const EVERY_COL_REM = 56;   // a board column: a model's name, its window and its price side by side at full size
 const PRICE_STOPS = [0.01, 0.1, 1, 10, 100, 1000];
 // a price per 1M tokens as a rate card writes it: cents, and two significant digits under a dime ("$0.075")
 const per1m = (x) => (x == null ? DASH : x === 0 ? "$0" : x < 0.1 ? `$${+x.toPrecision(2)}` : usd(x));
+// a scale's end as its tick says it: "1¢", "10¢", "$1", "$100"
+const priceTick = (v) => (v < 1 ? `${Math.round(v * 100)}¢` : `$${v}`);
 const rateOf = (r, k) => r?.[k] ?? (k === "input" ? r?.i : k === "output" ? r?.o : null) ?? null;
 // the model each tier sends to: the tiers it declares, or with none declared, the ones its client plants by position
 function tierMap(c) {
   const declared = TIERS.some((t) => c.slots[t]);
   return Object.fromEntries(TIERS.map((t) => [t, (declared ? c.slots[t] : c.defaults[t]) ?? null]));
 }
-function tierTags(id, tiers) {
+function tagWords(id, tiers) {
   const mine = TIERS.filter((t) => tiers[t] === id);
-  if (!mine.length) return "";
-  const words = mine.length === TIERS.length ? ["Every tier"] : mine.map(tierName);
-  return `<span class="tags">${words.map((w) => `<i class="tag">${esc(w)}</i>`).join("")}</span>`;
+  return !mine.length ? [] : mine.length === TIERS.length ? ["Every tier"] : mine.map(tierName);
 }
-/** The board's two scales: windows on one linear scale to the largest the board holds, prices on one log scale between
- *  round figures under the cheapest and over the dearest. */
+function tierTags(id, tiers) {
+  const words = tagWords(id, tiers);
+  return words.length ? `<span class="tags">${words.map((w) => `<i class="tag">${esc(w)}</i>`).join("")}</span>` : "";
+}
+// A row's height in rows, as its name and tier tags will wrap in the name column (one line holds about LINE_CHARS
+// characters of the name face, a tag about its letters and a little more): a second line takes 0.4 of a row. It only
+// packs the board's columns by what each group will take; the drawing itself wraps by its own rules.
+const LINE_CHARS = 36;
+function rowUnits(label, words) {
+  const tags = words.reduce((a, w) => a + w.length * 0.9 + 2.5, 0), long = label.length > LINE_CHARS;
+  const lines = Math.ceil(label.length / LINE_CHARS) + (words.length && (long || label.length + 1 + tags > LINE_CHARS) ? 1 : 0);
+  return 1 + 0.4 * (lines - 1);
+}
+// the maker a router's roster names before a colon ("Maker: Model"), and the model's own name after it
+const makerSplit = (label) => { const m = /^([^:]{1,32}):\s+(.+)$/.exec(label ?? ""); return m ? { maker: m[1], name: m[2] } : null; };
+// the words searched for, marked in neutral ink where they stand in a name
+function marked(text, terms) {
+  const s = String(text ?? "");
+  if (!terms.length) return esc(s);
+  const re = new RegExp(terms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "gi");
+  let out = "", at = 0;
+  for (const m of s.matchAll(re)) { if (!m[0]) continue; out += `${esc(s.slice(at, m.index))}<mark>${esc(m[0])}</mark>`; at = m.index + m[0].length; }
+  return out + esc(s.slice(at));
+}
+/** The board's two scales: windows on one linear scale to the largest the board holds, with a faint tick at each round
+ *  step, and prices on one log scale between round figures under the cheapest and over the dearest, a tick each tenfold. */
 function boardScales(cs) {
   const ms = cs.flatMap((c) => c.models);
   const win = Math.max(1, ...ms.map((m) => Math.max(m.window ?? 0, m.max ?? 0)));
@@ -1591,7 +1783,8 @@ function boardScales(cs) {
   const hi = PRICE_STOPS.find((v) => v >= Math.max(...prices)) ?? PRICE_STOPS.at(-1);
   const span = Math.log(hi) - Math.log(lo) || 1;
   const at = (x) => (x > 0 ? Math.max(1, Math.min(100, ((Math.log(x) - Math.log(lo)) / span) * 100)) : 0);
-  return { win, at };
+  const step = [100_000, 250_000, 500_000, 1_000_000, 2_000_000].find((s) => win / s <= 6) ?? win / 4;
+  return { win, at, lo, hi, wtick: (step / win) * 100, ptick: 100 / Math.max(1, Math.round(span / Math.LN10)) };
 }
 const pctOf = (n, of) => (n > 0 && of > 0 ? Math.min(100, (n / of) * 100) : 0);
 function winTrack(m, sc) {
@@ -1601,80 +1794,155 @@ function winTrack(m, sc) {
   return `<span class="wtrk" aria-hidden="true">${most ? `<i class="most" style="width:${most.toFixed(2)}%"></i>` : ""}`
     + `${w ? `<i class="win" style="width:${w.toFixed(2)}%"></i>` : ""}${notch}</span>`;
 }
-const priceTrack = (r, sc) => `<span class="ptrk" aria-hidden="true"><i class="out" style="width:${sc.at(rateOf(r, "output")).toFixed(2)}%"></i>`
-  + `<i class="in" style="width:${sc.at(rateOf(r, "input")).toFixed(2)}%"></i></span>`;
-/** The marks, named once for the whole board. */
-const everyLegend = (sc) => `<div class="em-legend"><span class="lg"><i class="sw main"></i>Main model</span>`
-  + `<span class="lg"><i class="sw win"></i>Window<i class="sw most"></i>Most it takes<i class="sw notch"></i>Dearer past here, one scale to ${big(sc.win)}</span>`
-  + `<span class="lg"><i class="sw in"></i>In<i class="sw out"></i>Out, per 1M tokens, log scale</span></div>`;
+// a price track: the band to [lo], and the line on to [hi] ending in its tick (Out on a row, the dearer rate on a card)
+const priceTrack = (lo, hi, sc) => `<span class="ptrk" aria-hidden="true">${hi != null ? `<i class="out" style="width:${sc.at(hi).toFixed(2)}%"></i>` : ""}`
+  + `<i class="in" style="width:${sc.at(lo).toFixed(2)}%"></i></span>`;
+/** The marks, named once for the whole board; the unit of every price figure is said here. */
+const everyLegend = () => `<div class="em-legend"><span class="lg"><i class="sw main"></i>Main model</span>`
+  + `<span class="lg"><i class="sw win"></i>Window<i class="sw most"></i>Most it takes<i class="sw notch"></i>Price rises</span>`
+  + `<span class="lg"><i class="sw in"></i>In<i class="sw out"></i>Out, $ per 1M tokens</span><span class="lg"><i class="sw none"></i>No price</span></div>`;
+/** A card's column head, once over its rows: the window scale's end over its track, the price scale's two ends over its
+ *  own, and the two figures each names. */
+const everyHead = (sc) => `<div class="em-row em-colhead" aria-hidden="true"><span></span>`
+  + `<span class="axh"><i>${big(sc.win)}</i></span><span class="ch">Window</span>`
+  + `<span class="axh two"><i>${priceTick(sc.lo)}</i><i>${priceTick(sc.hi)}</i></span><span class="ch">In</span><span class="ch">Out</span></div>`;
 const rateId = (c, m) => `rate-${`${c.key}-${m.id}`.replace(/[^A-Za-z0-9_-]/g, "_")}`;
-/** A model's rate card, opened under its row: its windows, then every rate its card sends, and the dearer ones past the
- *  long-context threshold on a line of their own. */
-function rateCard(m, id, grow) {
+/** A model's rate card, opened under its row: each rate its card sends as a band on the board's price scale with its
+ *  figure; past the long-context threshold the dearer rate is the line on to its tick and a second figure. */
+function rateCard(m, id, grow, sc) {
   const r = m.rates, lc = r?.long_context;
-  const wins = `<div class="rwins"><span>Window <b>${m.window ? big(m.window) : DASH}</b></span><span>Most it takes <b>${m.max ? big(m.max) : DASH}</b></span></div>`;
   const KINDS = [["input", "In"], ["output", "Out"], ["cache_read", "Cache read"], ["cache_write", "Cache write"], ["cache_write_1h", "Cache write, 1 h"]];
   const cols = r ? KINDS.filter(([k]) => rateOf(r, k) != null || lc?.[k] != null) : [];
-  const line = (word, of) => `<span class="rk">${esc(word)}</span>${cols.map(([k]) => `<b class="v">${per1m(of === r ? rateOf(r, k) : of?.[k] ?? null)}</b>`).join("")}`;
-  const table = cols.length
-    ? `<div class="rtab" style="--n:${cols.length}"><span class="rk">Per 1M tokens</span>${cols.map(([, w]) => `<span class="rh">${esc(w)}</span>`).join("")}`
-      + `${line(lc ? `Up to ${big(lc.over_input_tokens)}` : "", r)}${lc ? line(`Past ${big(lc.over_input_tokens)}`, lc) : ""}</div>`
-    : DRAW.nothing("No price");
-  return `<div class="em-rate${grow ? " grow" : ""}" id="${id}">${wins}${table}</div>`;
+  const most = m.max > (m.window ?? 0) ? `<span class="rwins">Most it takes <b>${big(m.max)}</b></span>` : "";
+  const over = lc ? big(lc.over_input_tokens) : "";
+  const head = `<span class="rk">$ per 1M tokens</span><span></span>${lc ? `<span class="rh">Up to ${over}</span><span class="rh">Past ${over}</span>` : `<span class="rh"></span>`}`;
+  const row = ([k, w]) => {
+    const low = rateOf(r, k), high = lc?.[k] ?? null;
+    return `<span class="rk">${esc(w)}</span>${low != null || high != null ? priceTrack(low ?? high, high, sc) : `<span class="ptrk none"></span>`}`
+      + `<b class="v">${per1m(low)}</b>${lc ? `<b class="v">${per1m(high)}</b>` : ""}`;
+  };
+  const table = cols.length ? `<div class="rtab${lc ? " lc" : ""}">${head}${cols.map(row).join("")}</div>` : DRAW.nothing("No price");
+  return `<div class="em-rate${grow ? " grow" : ""}" id="${id}">${most}${table}</div>`;
 }
-function everyRow(c, m, tiers, sc, fresh, i) {
+function everyRow(c, m, tiers, sc, fresh, i, terms, name = m.label, maker = "") {
   const k = `${c.key}|${m.id}`, open = ui.rates.has(k), id = rateId(c, m), turned = ui.fx?.turn === k;
-  const name = DRAW.disc({ open, controls: id, act: "rate", data: ` data-r="${esc(k)}"`, cls: `em-name${turned ? (open ? " turn-on" : " turn-off") : ""}`,
-    inner: `<span class="nm"><span class="mname">${esc(m.label)}</span>${tierTags(m.id, tiers)}</span>` });
-  const r = m.rates;
-  const price = r ? `${priceTrack(r, sc)}<b class="v">${per1m(rateOf(r, "input"))}</b><b class="v">${per1m(rateOf(r, "output"))}</b>`
-    : `<span class="noprice">${DRAW.nothing("No price")}</span>`;
+  const disc = DRAW.disc({ open, controls: id, act: "rate", data: ` data-r="${esc(k)}"`, cls: `em-name${turned ? (open ? " turn-on" : " turn-off") : ""}`,
+    inner: `<span class="nm">${maker ? `<span class="mk">${esc(maker)}</span>` : ""}<span class="mname" title="${esc(m.label)}">${marked(name, terms)}</span>${tierTags(m.id, tiers)}</span>` });
+  const r = m.rates, i0 = rateOf(r, "input"), o0 = rateOf(r, "output");
+  const price = r && (i0 != null || o0 != null) ? `${priceTrack(i0 ?? o0, o0, sc)}<b class="v">${per1m(i0)}</b><b class="v">${per1m(o0)}</b>`
+    : `<span class="ptrk none" aria-hidden="true"></span><b class="v">${DASH}</b><b class="v">${DASH}</b>`;
   return `<div class="em-item${open ? " open" : ""}"><div class="em-row${m.id === c.pinned ? " main" : ""}${fresh ? " arrive" : ""}" style="--i:${Math.min(i, 8)}">`
-    + `${name}${winTrack(m, sc)}<b class="v">${m.window ? big(m.window) : DASH}</b>${price}</div>${open ? rateCard(m, id, turned) : ""}</div>`;
+    + `${disc}${winTrack(m, sc)}<b class="v">${m.window ? big(m.window) : DASH}</b>${price}</div>${open ? rateCard(m, id, turned, sc) : ""}</div>`;
 }
-// a model the provider does not serve leads its card in the limit red, with the route's reason
-const goneRow = (m, tiers, fresh, i) => `<div class="em-item"><div class="em-row gone${fresh ? " arrive" : ""}" style="--i:${Math.min(i, 8)}">`
-  + `<span class="em-name"><span class="nm"><span class="mname">${esc(m.label)}</span>${tierTags(m.id, tiers)}</span></span>${notServed(m)}</div></div>`;
-function everyCard(c, hits, gone, sc, drawn, searching) {
+// a model the provider does not serve leads its card: its name, and the lock where its price would be; the route's
+// reason opens under it, as a rate card does
+function goneRow(c, m, tiers, fresh, i, terms) {
+  const k = `${c.key}|${m.id}`, open = ui.rates.has(k), id = rateId(c, m), turned = ui.fx?.turn === k;
+  const name = m.reason
+    ? DRAW.disc({ open, controls: id, act: "rate", data: ` data-r="${esc(k)}"`, cls: `em-name${turned ? (open ? " turn-on" : " turn-off") : ""}`,
+      inner: `<span class="nm"><span class="mname">${marked(m.label, terms)}</span>${tierTags(m.id, tiers)}</span>` })
+    : `<span class="em-name"><span class="nm"><span class="mname">${marked(m.label, terms)}</span>${tierTags(m.id, tiers)}</span></span>`;
+  const why = open && m.reason ? `<div class="em-rate${turned ? " grow" : ""}" id="${id}"><p class="gonewhy">${esc(m.reason)}</p></div>` : "";
+  return `<div class="em-item"><div class="em-row gone${fresh ? " arrive" : ""}" style="--i:${Math.min(i, 8)}">${name}`
+    + `<span class="wtrk none" aria-hidden="true"></span><b class="v">${DASH}</b><span class="gonelock">${DRAW.lock("Not served")}</span></div>${why}</div>`;
+}
+function everyCard(c, hits, gone, sc, drawn, terms) {
   const tiers = tierMap(c), place = new Map(c.models.map((m, i) => [m.id, i]));
+  const chosen = (m) => m.id === c.pinned || TIERS.some((t) => tiers[t] === m.id);
   // the main model, then the tiers' models in tier order, then the rest in the provider's own order
   const rank = (m) => (m.id === c.pinned ? -1 : TIERS.some((t) => tiers[t] === m.id) ? TIERS.findIndex((t) => tiers[t] === m.id) : TIERS.length + (place.get(m.id) ?? 0));
   const rows = [...hits].sort((a, b) => rank(a) - rank(b));
-  const all = gone.length + rows.length, k = `every:${c.key}`, open = ui.more.has(k);
-  // a pill that would hide three rows or fewer takes about the room those rows take: they are drawn instead
-  const folds = all > EVERY_SHOWN + 3, cap = open || !folds ? all : EVERY_SHOWN;
+  // a roster from many makers: after the models the command uses, one head per maker, a to z, each name without the
+  // maker it repeats; the models it uses keep the maker in muted ink before their name
+  const makers = rows.filter((m) => makerSplit(m.label)).length >= Math.max(3, rows.length / 2);
+  const top = makers ? rows.filter(chosen) : rows, rest = makers ? rows.filter((m) => !chosen(m)) : [];
+  const byMaker = new Map();
+  for (const m of rest) { const s = makerSplit(m.label), k = s?.maker ?? "Others"; if (!byMaker.has(k)) byMaker.set(k, []); byMaker.get(k).push({ m, name: s?.name ?? m.label }); }
+  const groups = [...byMaker.entries()].sort((a, b) => (a[0] === "Others") - (b[0] === "Others") || a[0].localeCompare(b[0]));
+  const flat = [...gone.map((m) => ({ m, gone: true })), ...top.map((m) => ({ m, name: m.label })),
+    ...groups.flatMap(([maker, xs]) => xs.map((x, j) => ({ ...x, maker: j === 0 ? { word: maker, n: xs.length } : null })))];
+  const all = flat.length, k = `every:${c.key}`;
+  // a pill that would hide three rows or fewer takes about the room those rows take: they are drawn instead; a search
+  // shows every match up to EVERY_FIND, so its result never takes a second press
+  const folds = all > (terms.length ? EVERY_FIND : EVERY_SHOWN + 3);
+  const cap = folds ? Math.min(all, ui.moreN?.[k] ?? EVERY_SHOWN) : all;
   const seen = (id) => { const key = `${c.key}|${id}`; drawn.add(key); return !ui.seenRows?.has(key); };
-  const items = [...gone.map((m) => ({ m, gone: true })), ...rows.map((m) => ({ m }))].slice(0, cap);
-  const body = items.map(({ m, gone: g }, i) => (g ? goneRow(m, tiers, seen(m.id), i) : everyRow(c, m, tiers, sc, seen(m.id), i))).join("");
+  const body = flat.slice(0, cap).map((x, i) => {
+    const head = x.maker ? `<p class="em-maker">${esc(x.maker.word)}<b>${DRAW.n(x.maker.n)}</b></p>` : "";
+    if (x.gone) return goneRow(c, x.m, tiers, seen(x.m.id), i, terms);
+    const s = makers && !x.maker && x.name === x.m.label ? makerSplit(x.m.label) : null;
+    return `${head}${everyRow(c, x.m, tiers, sc, seen(x.m.id), i, terms, s ? s.name : x.name, s?.maker ?? "")}`;
+  }).join("");
   const n = c.models.length + c.missing.length;
-  const prov = c.prov && !c.cmd.toLowerCase().includes(String(c.prov).toLowerCase()) ? `<span class="prov">${esc(c.prov)}</span>` : "";
-  const count = `<span class="pd-count">${searching ? `<b>${DRAW.n(all)}</b> of ${DRAW.n(n)}` : `<b>${DRAW.n(n)}</b>`} ${n === 1 ? "model" : "models"}</span>`;
-  const more = folds ? DRAW.more(all - EVERY_SHOWN, { pill: true, act: "more", data: ` data-m="${esc(k)}"`, open, less: "Fewer" }) : "";
-  return `<article class="card em-card${open && all > EVERY_SPAN ? " full" : ""}" style="--c:${colorOf(c.family)}" data-cmd="${esc(c.key)}">`
-    + `<header class="em-head">${DRAW.chip({ text: c.cmd, live: c.running > 0 })}${prov}${count}</header>`
-    + `${body ? `<div class="em-rows">${body}</div>` : `<div class="em-rows">${DRAW.nothing("No models")}</div>`}${more}</article>`;
+  const count = `<span class="pd-count">${terms.length ? `<b>${DRAW.n(all)}</b> of ${DRAW.n(n)}` : `<b>${DRAW.n(n)}</b>`} ${n === 1 ? "model" : "models"}</span>`;
+  const opened = folds && cap > EVERY_SHOWN;
+  const less = (cls = "") => DRAW.act({ word: "Fewer", act: "moren", cls: `quiet small${cls}`, data: ` data-m="${esc(k)}" data-less="1"` });
+  const next = folds && cap < all
+    ? `<button class="morepill pill" type="button" data-act="moren" data-m="${esc(k)}" data-base="${EVERY_SHOWN}" data-step="${EVERY_STEP}">Next <b>${DRAW.n(Math.min(EVERY_STEP, all - cap))}</b> of <b>${DRAW.n(all - cap)}</b></button>` : "";
+  const foot = next || opened ? `<div class="em-foot">${next}${opened ? less() : ""}</div>` : "";
+  // its height in rows, folded as drawn: the head and column head, each row as its name wraps, a maker's head, the foot
+  const units = 3 + flat.slice(0, folds ? EVERY_SHOWN : all).reduce((a, x) => a + rowUnits(x.name ?? x.m.label, tagWords(x.m.id, tiers)) + (x.maker ? 0.6 : 0), 0)
+    + (folds ? 1.4 : 0);
+  const html = `<article class="card em-card" style="--c:${colorOf(c.family)}" data-cmd="${esc(c.key)}">`
+    + `<header class="em-head">${DRAW.chip({ text: c.cmd, live: c.running > 0 })}${count}${opened ? less(" headless") : ""}</header>`
+    + `${body ? `<div class="em-rows">${everyHead(sc)}${body}</div>` : `<div class="em-rows">${DRAW.nothing("No models")}</div>`}${foot}</article>`;
+  return { html, units };
 }
+// the provider a card stands under: the kit's one name for it, a local runtime under This computer, else the provider's
+const groupOf = (c) => ({ key: PROVIDER_NAME[c.family] ? c.family : autoLocal(c) ? "local" : c.provKey || c.key,
+  name: PROVIDER_NAME[c.family] ?? (autoLocal(c) ? PROVIDER_NAME.local : c.prov), c: colorOf(PROVIDER_NAME[c.family] ? c.family : autoLocal(c) ? "local" : c.family) });
+// the board's columns before the board itself has been measured: the page's width in board columns and their gaps
+const boardN = () => ui.everyN ?? Math.max(1, Math.floor((root.clientWidth / (parseFloat(getComputedStyle(document.documentElement).fontSize) || 16) + 2) / (EVERY_COL_REM + 2)));
+/** How many board columns the board's own width holds; true when that changed since the last draw. */
+function fitEvery() {
+  const b = root.querySelector(".every > .em-board");
+  if (!b) return false;
+  const n = DRAW.colsFit(b, EVERY_COL_REM), moved = n !== ui.everyN;
+  ui.everyN = n;
+  return moved;
+}
+const SEARCH_GLYPH = G('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>');
+// a search field with its clear cross inside it while something is typed, so the field is emptied where it is read
+const searchBox = (id, value, word, clear) => `<div class="search">${SEARCH_GLYPH}`
+  + `<input class="field" id="${id}" placeholder="${esc(word)}" value="${esc(value)}" autocomplete="off" spellcheck="false" aria-label="${esc(word)}">`
+  + `${value ? `<button class="sclear" type="button" data-act="${clear}" aria-label="Clear">${ICON.close}</button>` : ""}</div>`;
 function everyHtml() {
   const cs = commandsOf(), sc = boardScales(cs);
+  if (!cs.length) return `<div class="every">${DRAW.addTile({ word: "New command", act: "everynew", cls: "em-new" })}</div>`;
   const terms = ui.q.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const hit = (c, m) => terms.every((t) => `${m.label} ${m.id} ${c.cmd} ${c.prov}`.toLowerCase().includes(t));
   const total = cs.reduce((a, c) => a + c.models.length + c.missing.length, 0);
-  const drawn = new Set();
+  const drawn = new Set(), groups = new Map();
   let found = 0;
-  const cards = cs.map((c) => {
+  for (const c of [...cs].sort((a, b) => a.cmd.localeCompare(b.cmd))) {
     const hits = c.models.filter((m) => hit(c, m)), gone = c.missing.filter((m) => hit(c, m));
     found += hits.length + gone.length;
-    return terms.length && !hits.length && !gone.length ? "" : everyCard(c, hits, gone, sc, drawn, terms.length > 0);
-  }).join("");
+    if (terms.length && !hits.length && !gone.length) continue;
+    const g = groupOf(c);
+    if (!groups.has(g.key)) groups.set(g.key, { ...g, cards: [], weight: 2, gone: 0 });
+    const x = groups.get(g.key);
+    const card = everyCard(c, hits, gone, sc, drawn, terms);
+    x.cards.push(card.html);
+    // its height as drawn folded, so opening a card never moves another group to another column
+    x.weight += card.units;
+    x.gone += gone.length;
+  }
   ui.seenRows = drawn;
-  const search = `<div class="search">${G('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>')}`
-    + `<input class="field" id="q" placeholder="Search models" value="${esc(ui.q)}" autocomplete="off" spellcheck="false" aria-label="Search models"></div>`;
+  // the one that hurts first: a group holding a model its provider no longer serves; then a to z, This computer last
+  const order = [...groups.values()].sort((a, b) => (b.gone > 0) - (a.gone > 0) || (a.key === "local") - (b.key === "local") || a.name.localeCompare(b.name));
   const count = terms.length ? `<span class="pd-count"><b>${DRAW.n(found)}</b> of ${DRAW.n(total)} models</span>`
     : `<span class="pd-count"><b>${DRAW.n(total)}</b> models on <b>${DRAW.n(cs.length)}</b> commands</span>`;
-  if (!cs.length) return `<div class="every"><div class="nomatch">${DRAW.nothing("No commands")}${DRAW.act({ word: "New command", act: "everynew", cls: "quiet" })}</div></div>`;
-  const body = cards ? `<div class="cols em-board">${cards}</div>`
-    : `<div class="nomatch"><span class="state">No model matches <b>${esc(ui.q.trim())}</b></span>${DRAW.act({ word: "Clear", act: "clearq", cls: "quiet" })}</div>`;
-  return `<div class="every"><div class="em-bar">${search}${count}${cards ? everyLegend(sc) : ""}</div>${body}</div>`;
+  const bar = `<div class="em-bar">${searchBox("q", ui.q, "Search models", "clearq")}${count}${order.length ? everyLegend() : ""}</div>`;
+  if (!order.length) return `<div class="every">${bar}<div class="nomatch"><span class="state">No model matches <b>${esc(ui.q.trim())}</b></span>${DRAW.act({ word: "Clear", act: "clearq", cls: "quiet" })}</div></div>`;
+  // the board keeps its columns while a search narrows it, so a card keeps its width as he types
+  const n = boardN();
+  // the groups are packed tallest first, each into the shortest column so far, so no column stands as a tall wall beside
+  // short ones; inside a column they keep the order above. Those holding a model no longer served are placed first.
+  const packed = [...order.filter((g) => g.gone > 0), ...order.filter((g) => !g.gone).sort((a, b) => b.weight - a.weight)];
+  const cols = DRAW.packCols(packed, n, (g) => g.weight).map((col) => ({
+    body: col.items.sort((a, b) => order.indexOf(a) - order.indexOf(b)).map((g) => DRAW.group({ name: g.name, c: g.c, key: g.key, body: DRAW.cards(g.cards) })).join(""),
+  }));
+  return `<div class="every" style="--wtk:${sc.wtick.toFixed(3)}%;--ptk:${sc.ptick.toFixed(3)}%">${bar}<div class="board em-board">${DRAW.boardCols(cols)}</div></div>`;
 }
 
 // ---------- Projects: compaction's rules for this project and command, edited in place (spec 7 Resolved) ----------
@@ -1819,20 +2087,25 @@ const PG = {
   squeeze: G('<path d="M12 3v6.5M8.8 6.5 12 9.5l3.2-3M12 21v-6.5M8.8 17.5l3.2-3 3.2 3M4 12h16"/>', 'aria-hidden="true"'),
   draft: G('<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>', 'aria-hidden="true"'),
 };
+// a project's sessions as a length every tile shares: on a log scale, so 28 sessions and 1 differ by eye beside 616
+const shareOf = (n, max) => (n > 0 ? Math.max(4, (Math.log1p(n) / Math.log1p(Math.max(1, max))) * 100) : 0);
+// the tiles' marks: its own system prompt, its own compaction rule, and an edit in hand on a project not open
+const marksOf = (p, on) => ({ prompt: ownPrompt(p), squeeze: ownComp(p), draft: ui.comp?.root === p.root && !on });
+const MARK_WORDS = { prompt: "Its own system prompt", squeeze: "Its own compaction rule", draft: "A compaction edit not saved yet" };
+/** A project: one line of its name, its marks, its live sessions and its sessions drawn and counted; its place under it
+ *  only where the folder and the name do not already say it (the whole place is the tile's title). */
 function projTile(p, rel, s, maxTotal, on) {
-  const marks = `${ownPrompt(p) ? `<span class="pmark" title="Its own system prompt">${PG.prompt}</span>` : ""}`
-    + `${ownComp(p) ? `<span class="pmark" title="Its own compaction rule">${PG.squeeze}</span>` : ""}`
-    + `${ui.comp?.root === p.root && !on ? `<span class="pmark draft" title="A compaction edit not saved yet">${PG.draft}</span>` : ""}`;
+  const mk = marksOf(p, on);
+  const marks = Object.keys(MARK_WORDS).filter((k) => mk[k]).map((k) => `<span class="pmark${k === "draft" ? " draft" : ""}" title="${MARK_WORDS[k]}">${PG[k]}</span>`).join("");
   return `<button class="proj-tab" type="button" data-act="proj" data-p="${esc(p.id)}" aria-current="${on}" title="${esc(homeRel(p.root))}">`
-    + `<span class="pt-top"><span class="pname">${esc(p.label || p.name)}</span>${marks}${s.live ? `<span class="pt-live"><i></i><b>${DRAW.n(s.live)}</b></span>` : ""}</span>`
-    + `<span class="pt-meta"><span class="ppath"><bdo dir="ltr">${esc(rel)}</bdo></span>`
-    + `<span class="pt-share" aria-hidden="true">${s.total ? `<i style="width:${pctOf(s.total, maxTotal).toFixed(1)}%"></i>` : ""}</span><b class="pt-n">${s.total ? DRAW.n(s.total) : DASH}</b></span></button>`;
+    + `<span class="pname">${marked(p.label || p.name, ui.pq.trim().toLowerCase().split(/\s+/).filter(Boolean))}</span>${marks}`
+    + `${s.live ? `<span class="pt-live"><i></i><b>${DRAW.n(s.live)}</b></span>` : ""}`
+    + `<span class="pt-share" aria-hidden="true">${s.total ? `<i style="width:${shareOf(s.total, maxTotal).toFixed(1)}%"></i>` : ""}</span><b class="pt-n">${s.total ? DRAW.n(s.total) : DASH}</b>`
+    + `${rel ? `<span class="ppath"><bdo dir="ltr">${esc(rel)}</bdo></span>` : ""}</button>`;
 }
-const SEARCH_GLYPH = G('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>');
-// the key to the tiles' marks; the pencil is keyed only while a tile carries it
-const projLegend = (draft) => `<div class="pj-legend"><span class="lg"><i class="dot"></i>Live now</span><span class="lg"><i class="sw share"></i>Sessions, one scale</span>`
-  + `<span class="lg">${PG.prompt}Its own system prompt</span><span class="lg">${PG.squeeze}Its own compaction rule</span>`
-  + `${draft ? `<span class="lg">${PG.draft}A compaction edit not saved yet</span>` : ""}</div>`;
+// the key to the tiles: the sessions bar every tile draws, and each mark only while a tile on screen carries it
+const projLegend = (has = {}) => `<div class="pj-legend"><span class="lg"><i class="sw share"></i>Sessions</span>`
+  + Object.keys(MARK_WORDS).filter((k) => has[k]).map((k) => `<span class="lg">${PG[k]}${MARK_WORDS[k]}</span>`).join("") + `</div>`;
 
 // ----- a project's files: a tile each, and the one open rendered under them -----
 const lineCount = (text) => String(text ?? "").replace(/\s+$/, "").split("\n").length;
@@ -1863,7 +2136,7 @@ function mdDoc(text) {
 function fileTile(f, max) {
   const id = `${f.kind}:${f.path}`, open = ui.shownFile === id, lines = lineCount(f.text);
   return `<button class="ftile" type="button" data-act="file" data-f="${esc(id)}" aria-expanded="${open}" title="${esc(homeRel(f.path))}">${GL.file}`
-    + `<span class="fname">${esc(f.path.split("/").pop())}</span><span class="fsize"><span class="fbar" aria-hidden="true"><i style="width:${pctOf(f.text.length, max).toFixed(1)}%"></i></span>`
+    + `<span class="fname">${esc(f.path.split("/").pop())}</span><span class="fsize"><span class="fbar" aria-hidden="true"><i style="width:${pctOf(lines, max).toFixed(1)}%"></i></span>`
     + `<b>${DRAW.n(lines)}</b> ${lines === 1 ? "line" : "lines"}</span></button>`;
 }
 /** A file's front matter (a memory file's name, description and type between two --- lines) as its fields, and the
@@ -1888,12 +2161,13 @@ function filePreview(f) {
   const fields = front.length ? `<dl class="ffront">${front.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${inl(v)}</dd>`).join("")}</dl>` : "";
   return `<div class="fprev${ui.fx?.file ? " pj-grow" : ""}"><div class="fdoc">${fields}${mdDoc(shown.join("\n"))}</div>${more}</div>`;
 }
-/** A plate of files: ghosts the size of its tiles while the project's files are read, the lock and Read again when
- *  that read failed, its word when it has none, else a tile per file with its length drawn on the project's one scale,
- *  and the open one rendered under the tiles. */
+/** A plate of files: ghosts the size of its tiles while the project's files are read, the same shapes held still when
+ *  that read failed (the pane's head says so once, with Read again), its word when it has none, else a tile per file
+ *  with its length drawn on the project's one scale, and the open one rendered under the tiles. */
 function filesSection(kicker, fs, got, empty, max, aside = "") {
-  if (!got || got.reading) return DRAW.section(kicker, `<div class="ftiles" aria-hidden="true">${GHOST.bar(13, "ftile-g")}${GHOST.bar(13, "ftile-g")}</div>`, { aside });
-  if (got.err) return DRAW.section(kicker, `<div class="pj-fail">${DRAW.lock(got.err)}${DRAW.act({ word: "Read again", act: "refiles", cls: "quiet small" })}</div>`, { aside });
+  const ghosts = (cls = "") => `<div class="ftiles${cls}" aria-hidden="true">${GHOST.bar(13, "ftile-g")}${GHOST.bar(13, "ftile-g")}</div>`;
+  if (!got || got.reading) return DRAW.section(kicker, ghosts(), { aside });
+  if (got.err) return DRAW.section(kicker, ghosts(" held"), { aside });
   if (!fs.length) return DRAW.section(kicker, DRAW.nothing(empty), { aside });
   const open = fs.find((f) => `${f.kind}:${f.path}` === ui.shownFile);
   return DRAW.section(kicker, `<div class="ftiles">${fs.map((f) => fileTile(f, max)).join("")}</div>${open ? filePreview(open) : ""}`, { aside });
@@ -1949,7 +2223,9 @@ function compRail(p, c) {
   const rules = (k) => st[k].mode !== "inherit" && !(k === "g" && st[k].mode === "off");
   const lit = [...keys].reverse().find(rules) ?? "base";
   const name = `<span class="pname">${esc(p.label || p.name)}</span>`;
-  const who = { base: `<span class="rbase">Claude Code's own</span>`, g: `<span class="rscope">Everywhere</span>`, m: model ? cmdChip(c, mlabel) : "", p: name, pm: `${name}${model ? cmdChip(c, mlabel) : ""}` };
+  // a model is named in words: a chip is a command's shape, and this rung is the model's, whichever command sends to it
+  const mword = model ? `<span class="rmodel">${esc(mlabel)}</span>` : "";
+  const who = { base: `<span class="rbase">Claude Code's own</span>`, g: `<span class="rscope">Everywhere</span>`, m: mword, p: name, pm: `${name}${mword}` };
   // what splice reads for each rule (GET /api/projects compaction): a file it cannot read says so in the limit red
   const rows = p.compaction ?? [];
   const rowOf = { g: rows.find((r) => r.scope === "global"), m: rows.find((r) => r.scope === "model" && r.source?.includes(`model:${model}`)),
@@ -1986,8 +2262,13 @@ function compRail(p, c) {
   const changed = cx ? keys.filter((k) => cxDirty(cx, k)).length : 0;
   const foot = cx ? `<div class="cfoot">${DRAW.act({ word: cx.saving ? "Saving" : changed ? `Save ${changed === 1 ? "1 change" : `${changed} changes`}` : "Save", act: "csave", cls: `primary${ui.shook === "csave" ? " shook" : ""}`, busy: cx.saving, disabled: !changed || cx.saving })}`
     + `${DRAW.act({ word: "Cancel", act: "ccancel", cls: "quiet" })}${cx.said ? DRAW.result(cx.said, "bad") : ""}</div>${cx.finding ? `<p class="cfind">${esc(cx.finding)}</p>` : ""}` : "";
-  // where Claude Code compacts on this command's main model: about 85% of its window (splice CLAUDE.md, section 22)
-  const win = c.window ? `<div class="cwin"><span class="ctrk" aria-hidden="true"><u></u></span><span class="pd-count">Compacts near <b>${big(Math.round(c.window * 0.85))}</b> of a <b>${big(c.window)}</b> window</span></div>` : "";
+  // where Claude Code compacts on this command's main model, about 85% of its window (splice CLAUDE.md, section 22): the
+  // window drawn on the one scale of every command's window, so a small one reads small, the point marked on it, and
+  // the two figures said as a figure of its whole
+  const top = Math.max(1, ...commandsOf().map((x) => x.window || 0)), at = Math.round(c.window * 0.85);
+  const win = c.window ? `<div class="cwin" title="Compacts near ${big(at)} of a ${big(c.window)} window"><span class="cglyph" aria-hidden="true">${PG.squeeze}</span>`
+    + `<span class="ctrk" style="--w:${pctOf(c.window, top).toFixed(2)}%" aria-hidden="true"><i></i><u></u></span>`
+    + `<span class="pd-count"><b>${big(at)}</b> of ${big(c.window)}</span></div>` : "";
   // the ring on the rule in force is named once, on the kicker's line, in the editor too, since the ring follows the draft
   const aside = `<span class="pd-leg"><i class="rl-lit"></i>In force</span>${cx ? "" : DRAW.act({ word: "Edit", act: "cedit", cls: "quiet small" })}`;
   return DRAW.section("Compaction", `${rail}${foot}${cx ? "" : win}`, { aside });
@@ -1996,16 +2277,18 @@ function compRail(p, c) {
 // ----- the tab -----
 function ghostProjectsHtml() {
   const tile = () => `<i class="ghost pj-gtile" aria-hidden="true"></i>`;
-  const group = (n) => `<section class="pj-group" aria-hidden="true"><p class="pj-gh">${GHOST.bar(14)}</p><div class="pj-tiles">${Array.from({ length: n }, tile).join("")}</div></section>`;
+  const group = (n) => `<section class="pj-group" aria-hidden="true"><p class="pj-gh">${GHOST.bar(9)}</p><div class="pj-tiles">${Array.from({ length: n }, tile).join("")}</div></section>`;
   // the plates land as rails (a rung per layer or rule) and as file tiles, so their ghosts are those shapes
   const sec = (body, cls = "") => `<div class="plate${cls}"><section class="psec"><div class="sechead">${GHOST.bar(7)}</div>${body}</section></div>`;
   const rail = (ws) => sec(`<ol class="rrail">${ws.map((w) => `<li class="rung unset"><span class="rdot"></span><div class="rwho">${GHOST.bar(w)}</div></li>`).join("")}</ol>`);
   const tiles = `<div class="ftiles">${GHOST.bar(13, "ftile-g")}${GHOST.bar(13, "ftile-g")}</div>`;
   const pick = () => `<i class="ghost pj-gpick" style="width:9rem" aria-hidden="true"></i>`;
-  // the side holds the loaded side's shape: the filter's box and its count, the same key, then the folders
-  return `<div class="pj" aria-busy="true"><div class="pj-side"><div class="pj-bar"><i class="ghost pj-gsearch" aria-hidden="true"></i>${GHOST.bar(5)}</div>${projLegend(false)}<div class="proj-list">${group(6)}${group(4)}${group(3)}</div></div>`
+  // the side holds the loaded side's shape: the filter's box and its count, the key, then the folders, as many tiles as a
+  // machine with a few dozen projects lands, so the rail does not jump to three times its height
+  return `<div class="pj" aria-busy="true"><div class="pj-side"><div class="pj-bar"><i class="ghost pj-gsearch" aria-hidden="true"></i>${GHOST.bar(5)}</div>${projLegend()}`
+    + `<div class="proj-list">${[9, 5, 4, 3, 12, 3].map(group).join("")}</div></div>`
     + `<section class="pane pj-pane" aria-hidden="true"><header class="pj-head">${GHOST.bar(12, "big")}${GHOST.bar(20)}</header><div class="body pj-body">`
-    + `<div class="pj-cmd"><div class="pj-run"><section class="psec"><div class="sechead">${GHOST.bar(5)}</div><div class="pj-chips">${pick()}${pick()}${pick()}</div></section></div>`
+    + `<div class="pj-cmd"><div class="pj-run"><section class="psec"><div class="sechead">${GHOST.bar(5)}</div><i class="ghost pj-gsplit"></i><div class="pj-chips">${pick()}${pick()}${pick()}</div></section></div>`
     + `<div class="pj-cols">${rail([9, 11, 7, 12])}${rail([9, 7, 10, 7, 11])}${sec(tiles)}</div></div>`
     + `${sec(tiles, " pj-files")}</div></section></div>`;
 }
@@ -2015,20 +2298,25 @@ function pickCmd(cs, s) {
   if (mine) return mine;
   return [...cs].sort((a, b) => (s.heads.get(b.key) ?? 0) - (s.heads.get(a.key) ?? 0))[0] ?? null;
 }
+/** AS RUN BY: the project's sessions as ONE bar split by command, each part in its command's colour, largest first, the
+ *  part splice could not tie to one of his commands hatched at its end; the chips under it, in the same order, are its
+ *  labels and the picks the plates below follow. A command never run here is still there to pick, quieter. */
 function runByHtml(cs, c, s) {
   if (!c) return `<div class="pj-run">${DRAW.section("As run by", `<div class="pj-chips">${DRAW.nothing("No commands")}${DRAW.act({ word: "New command", act: "everynew", cls: "quiet small" })}</div>`)}</div>`;
   const here = (x) => s.heads.get(x.key) ?? 0;
   const pick = (x) => `<button class="pj-pick${x.key === c.key ? " on" : ""}${here(x) ? "" : " idle"}" type="button" data-act="projcmd" data-h="${esc(x.key)}" aria-pressed="${x.key === c.key}" style="--c:${colorOf(x.family)}">`
     + `${DRAW.chip({ text: x.cmd, live: (s.lives.get(x.key) ?? 0) > 0 })}${here(x) ? `<b class="pc-n">${DRAW.n(here(x))}</b>` : ""}</button>`;
   const used = cs.filter((x) => here(x)).sort((a, b) => here(b) - here(a)), rest = cs.filter((x) => !here(x));
-  // sessions splice could not tie to one of his commands still count in the head's total, so they stand in the row as
-  // a dashed chip with their count, after the commands that ran here: the figures in the row add up to the total
   const known = new Set(cs.map((x) => x.key));
   const other = [...s.heads].reduce((a, [k, n]) => a + (known.has(k) ? 0 : n), 0);
-  const unk = other ? `<span class="pj-pick pj-unk" title="Sessions here that splice could not tie to one of your commands"><span class="chip">Command not known</span><b class="pc-n">${DRAW.n(other)}</b></span>` : "";
+  const unk = other ? `<span class="pj-unk"><i class="sw unk" aria-hidden="true"></i>Command not known<b class="pc-n">${DRAW.n(other)}</b></span>` : "";
+  const all = used.reduce((a, x) => a + here(x), 0) + other;
+  const split = all ? `<div class="pj-split${ui.fx?.pane ? " grow" : ""}" role="img" aria-label="${esc([...used.map((x) => `${x.cmd} ${here(x)}`), ...(other ? [`Command not known ${other}`] : [])].join(", "))}">`
+    + used.map((x) => `<i style="--c:${colorOf(x.family)};width:${((here(x) / all) * 100).toFixed(2)}%" title="${esc(`${x.cmd} ${DRAW.n(here(x))}`)}"></i>`).join("")
+    + `${other ? `<i class="unk" style="width:${((other / all) * 100).toFixed(2)}%" title="Command not known ${DRAW.n(other)}"></i>` : ""}</div>` : "";
   // the figure beside a chip is named once, on the kicker's line, as every section names its marks
-  const aside = used.length || other ? `<span class="pd-count">sessions here</span>` : "";
-  return `<div class="pj-run">${DRAW.section("As run by", `<div class="pj-chips">${used.map(pick).join("")}${unk}${rest.map(pick).join("")}</div>`, { aside })}</div>`;
+  const aside = all ? `<span class="pd-count">sessions here</span>` : "";
+  return `<div class="pj-run">${DRAW.section("As run by", `${split}<div class="pj-chips">${used.map(pick).join("")}${unk}${rest.map(pick).join("")}</div>`, { aside })}</div>`;
 }
 function projPane(p, cs, st) {
   const s = st.get(p.id) ?? NO_STATS, c = pickCmd(cs, s);
@@ -2036,19 +2324,21 @@ function projPane(p, cs, st) {
   ui.shownProj = p.id; ui.shownCmd = c?.key ?? null;
   loadProject(p.id);
   const got = ui.files[p.id], files = got?.files ?? [];
-  const max = Math.max(1, ...files.map((f) => String(f.text ?? "").length));
+  const max = Math.max(1, ...files.map((f) => lineCount(f.text)));
   const instr = files.filter((f) => f.kind === "instructions"), memory = c ? files.filter((f) => f.kind === "memory" && f.head === c.key) : [];
   // the file read open: the one he opened, else the project's first instructions file, so the plate shows what Claude
   // Code reads here before anything is pressed; a press on the open tile closes it ("" until another project opens)
   ui.shownFile = ui.file ?? (instr[0] ? `${instr[0].kind}:${instr[0].path}` : null);
-  const door = s.total ? `<a class="pd-count" href="sessions.html?project=${encodeURIComponent(p.id)}"><b>${DRAW.n(s.total)}</b> sessions${s.live ? `, <b>${DRAW.n(s.live)}</b> live` : ""}${DRAW.go}</a>` : `<span class="pd-count">No sessions yet</span>`;
-  const head = `<header class="pj-head"><h2 class="pj-name">${esc(p.label || p.name)}</h2><span class="ppath" title="${esc(p.root)}"><bdo dir="ltr">${esc(homeRel(p.root))}</bdo></span>${door}</header>`;
+  const door = s.total ? `<a class="pd-count" href="sessions.html?project=${encodeURIComponent(p.id)}"><b>${DRAW.n(s.total)}</b> sessions${DRAW.go}</a>` : `<span class="pd-count">No sessions yet</span>`;
+  const live = s.live ? `<span class="pt-live" title="Live now"><i></i><b>${DRAW.n(s.live)}</b></span>` : "";
+  // the project's files are one read: when it fails it is said once, here, with the act that reads them again
+  const failed = got?.err ? `<span class="pj-fail">${DRAW.lock(got.err)}${DRAW.act({ word: "Read again", act: "refiles", cls: "quiet small" })}</span>` : "";
+  const head = `<header class="pj-head"><h2 class="pj-name">${esc(p.label || p.name)}</h2><span class="ppath" title="${esc(p.root)}"><bdo dir="ltr">${esc(homeRel(p.root))}</bdo></span>${failed}<span class="pj-door">${live}${door}</span></header>`;
   const instructions = `<div class="plate pj-files">${filesSection("Instructions", instr, got, "No files", max)}</div>`;
   const plates = c ? `<div class="pj-cols${ui.fx?.cmd ? " pj-grow" : ""}"><div class="plate">${promptRail(p, c)}</div><div class="plate">${compRail(p, c)}</div>`
     + `<div class="plate">${filesSection("Memory", memory, got, "No memory", max)}</div></div>` : "";
-  // A PANE BY THE CONSOLE'S CONTRACT (.pane > .body): the redraw keeps the body's scroll, a body taller than the window
-  // says More below on its edge, and the splice manager's bar steps aside to the rail instead of covering the pane.
-  // What each command does here leads; the files every command reads follow, beside it where the pane is wide.
+  // THE OPEN PROJECT IS IN THE PAGE'S ONE SCROLL: no height of its own and no scroll inside it. What each command does
+  // here leads; the files every command reads follow, beside it where the pane is wide.
   return `<section class="pane pj-pane${ui.fx?.pane ? " pj-grow" : ""}" aria-label="${esc(p.label || p.name)}">${head}`
     + `<div class="body pj-body"><div class="pj-cmd">${runByHtml(cs, c, s)}${plates}</div>${instructions}</div></section>`;
 }
@@ -2066,29 +2356,30 @@ function projectsHtml() {
   const terms = ui.pq.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const hit = (x) => terms.every((t) => `${x.label} ${x.name} ${homeRel(x.root)}`.toLowerCase().includes(t));
   const maxTotal = Math.max(1, ...ps.map((x) => (st.get(x.id) ?? NO_STATS).total));
-  let found = 0, drafted = false;
-  // a folder's head: the shared part of its place muted and its own name in ink, how many of its projects are drawn
-  // under it, and its live sessions, which is what puts the folder where it stands
-  const folderHead = (g, n) => {
-    const at = g.dir ? homeRel(g.dir) : "", cut = at.lastIndexOf("/") + 1;
-    const live = g.list.reduce((a, x) => a + (st.get(x.id) ?? NO_STATS).live, 0);
-    const name = `<span class="gat">${g.dir ? `<span class="gup">${esc(at.slice(0, cut))}</span>${esc(at.slice(cut))}` : "Elsewhere"}</span>`;
-    return `<p class="pj-gh" title="${esc(at || "Projects in no shared folder")}">${name}<b class="gn">${DRAW.n(n)}</b>${live ? `<span class="pt-live"><i></i><b>${DRAW.n(live)}</b></span>` : ""}</p>`;
+  const has = {};
+  let found = 0;
+  // a folder's head: its own name (the whole place is its title), its live sessions and its sessions in all, which are
+  // what put the folder where it stands
+  const folderHead = (g) => {
+    const at = g.dir ? homeRel(g.dir) : "";
+    const live = g.list.reduce((a, x) => a + (st.get(x.id) ?? NO_STATS).live, 0), total = g.list.reduce((a, x) => a + (st.get(x.id) ?? NO_STATS).total, 0);
+    return `<p class="pj-gh" title="${esc(at || "Projects in no shared folder")}"><span class="gat">${esc(g.dir ? at.slice(at.lastIndexOf("/") + 1) : "Elsewhere")}</span>`
+      + `${live ? `<span class="pt-live"><i></i><b>${DRAW.n(live)}</b></span>` : ""}<b class="gn">${total ? DRAW.n(total) : DASH}</b></p>`;
   };
   const wall = groups.map((g) => {
     const list = g.list.filter(hit);
     found += list.length;
     if (!list.length) return "";
-    drafted ||= list.some((x) => ui.comp?.root === x.root && x.id !== p.id);
-    const rel = (x) => (g.dir ? x.root.slice(g.dir.length + 1) : homeRel(x.root));
-    const tiles = list.map((x) => projTile(x, rel(x) === x.name ? "" : rel(x), st.get(x.id) ?? NO_STATS, maxTotal, x.id === p.id)).join("");
-    return `<section class="pj-group">${folderHead(g, list.length)}<div class="pj-tiles">${tiles}</div></section>`;
+    for (const x of list) { const mk = marksOf(x, x.id === p.id); for (const k of Object.keys(mk)) has[k] ||= mk[k]; }
+    // a project in no shared folder carries its place; in a folder, the folder's head says where it sits
+    const tiles = list.map((x) => projTile(x, g.dir ? "" : homeRel(x.root), st.get(x.id) ?? NO_STATS, maxTotal, x.id === p.id)).join("");
+    return `<section class="pj-group">${folderHead(g)}<div class="pj-tiles">${tiles}</div></section>`;
   }).join("");
   const count = `<span class="pd-count">${terms.length ? `<b>${DRAW.n(found)}</b> of ${DRAW.n(ps.length)}` : `<b>${DRAW.n(ps.length)}</b>`} projects</span>`;
-  const filter = `<div class="search">${SEARCH_GLYPH}<input class="field" id="pq" placeholder="Filter projects" value="${esc(ui.pq)}" autocomplete="off" spellcheck="false" aria-label="Filter projects"></div>`;
   const none = `<div class="nomatch"><span class="state">No project matches <b>${esc(ui.pq.trim())}</b></span>${DRAW.act({ word: "Clear", act: "clearpq", cls: "quiet" })}</div>`;
-  return `<div class="pj"><div class="pj-side"><div class="pj-bar">${filter}${count}${fail}</div>${projLegend(drafted)}<nav class="proj-list" aria-label="Projects">${wall || none}</nav></div>`
-    + `${projPane(p, cs, st)}</div>`;
+  // a later read that failed keeps the list it had, dimmed, so figures from before read as held, not as fresh
+  return `<div class="pj"><div class="pj-side"><div class="pj-bar">${searchBox("pq", ui.pq, "Filter projects", "clearpq")}${count}${fail}</div>${projLegend(has)}`
+    + `<nav class="proj-list${fail ? " stale" : ""}" aria-label="Projects">${wall || none}</nav></div>${projPane(p, cs, st)}</div>`;
 }
 
 // ---------- claude: plain `claude`, through splice or direct ----------
@@ -2104,10 +2395,12 @@ function claudeHtml() {
   const said = ui.claudeSaid ? DRAW.result(ui.claudeSaid, "bad") : "";
   const to = data.claude.resolves_to;
   const shadowed = Boolean(to && through && shim && to !== shim);
-  const kind = !to || shadowed ? "stalled" : "ready";
+  // the lit lamp is for splice's launcher answering plain `claude`; Claude Code's own is a fact, not a fault, so its lamp
+  // is hollow in the text's ink
+  const kind = !to || shadowed ? "stalled" : to === shim ? "ready" : "own";
   const what = shadowed ? "Another claude comes first" : to === shim ? "splice's launcher" : "Claude Code's own";
   const runs = to
-    ? `<span class="raside" title="${esc(homeRel(to))}"><span class="lamp inline ${kind}" aria-hidden="true">${kind === "ready" ? "<i></i>" : GL.notstarted}</span>`
+    ? `<span class="raside" title="${esc(homeRel(to))}"><span class="lamp inline ${kind}" aria-hidden="true">${kind === "stalled" ? GL.notstarted : "<i></i>"}</span>`
       + `<span class="rname${shadowed ? " limit" : ""}">${esc(what)}</span></span>`
     : DRAW.lock("No claude on your PATH");
   const switcher = can
@@ -2164,59 +2457,83 @@ const sharesKey = (p, a) => second(p) && sameUrl(p, a) && !a.newKey;
 const showsUrl = (p, a) => p.asks.includes("base_url") || second(p) || Boolean(a.urlFailed);
 // how a template signs in, drawn before its words: a key, or a sign-in page opened in the browser
 const kindGlyph = (k) => (/key/i.test(k ?? "") ? GL.key : /oauth|login|sign|browser|device/i.test(k ?? "") ? GL.browser : "");
+// the command a new one will be, as the chip it will be: until a name is typed the name's place in it is a dashed slot
+function toBe(p, a) {
+  const cmd = commandFor(p, a);
+  const stem = p.command && second(p) ? `${p.command}-` : !p.command ? "claude-" : "";
+  const chip = cmd ? DRAW.chip({ text: cmd }) : `<span class="chip tobe"><span>${esc(stem)}</span><i class="slot" aria-hidden="true"></i></span>`;
+  return { cmd, stem, chip };
+}
 function addPaneHtml() {
   const a = ui.add;
   const p = a.profile && data.profiles.find((x) => x.name === a.profile);
   const back = p && !a.busy && !a.saved && !a.sign ? `<button class="back tback" type="button" data-act="tpl-back">${GL.back}<span>Start from</span></button>` : "";
-  const head = `<header style="--c:${p ? colorOf(famOf(p)) : "var(--key-light)"}"><div class="who"><div class="top"><span class="name">New command</span></div>${back ? `<div class="meta">${back}</div>` : ""}</div>`
+  const { cmd, stem, chip } = p ? toBe(p, a) : { cmd: "", stem: "", chip: "" };
+  // the template it starts from rides the header beside the title, as an open command's provider does, with how it
+  // signs in drawn by its glyph; the command it will make is its card, beside the form
+  const kind = p && kindGlyph(p.auth_kind) ? `<span class="tsub" title="${esc(kindName(p.auth_kind))}">${kindGlyph(p.auth_kind)}<span>${kindGlyph(p.auth_kind) === GL.key ? "A key" : "Signs in on its own page"}</span></span>` : "";
+  const head = `<header style="--c:${p ? colorOf(famOf(p)) : "var(--key-light)"}"><div class="who"><div class="top"><span class="name">New command</span>`
+    + `${p ? `<span class="prov">${esc(tplName(p))}</span>` : ""}</div>${p || back ? `<div class="meta">${kind}${back}</div>` : ""}</div>`
     + `<div class="acts"><button class="icon close" data-act="cancel-add" aria-label="Close">${GL.close}</button></div></header>`;
   if (!p) {
-    // each template says what it is and how it signs in; one already added carries that command's own chip, which is
-    // the fact the word "Added" used to carry, and a command that does not exist yet carries its name hollow
+    // each template says what it is and how it signs in, by its glyph, named once in the legend on the kicker's line;
+    // one already added carries that command's own chip, and a command that does not exist yet carries its name hollow
     const tiles = data.profiles.map((x) => {
       const fam = famOf(x), live = taken(x) ? commandsOf().find((h) => h.key === x.head_key || h.cmd === x.command) : null;
-      const chip = live ? DRAW.chip({ text: live.cmd, live: live.running > 0, data: ` style="--c:${colorOf(live.family)}"` })
+      const tchip = live ? DRAW.chip({ text: live.cmd, live: live.running > 0, data: ` style="--c:${colorOf(live.family)}"` })
         : x.command ? DRAW.chip({ text: x.command, cls: "ghost" }) : "";
-      return `<button class="pick tpl" style="--c:${colorOf(fam)}" data-act="tpl" data-t="${esc(x.name)}"><span class="blot"></span>`
-        + `<span class="tname">${esc(tplName(x))}</span><span class="tsub">${kindGlyph(x.auth_kind)}<span>${esc(kindName(x.auth_kind))}</span></span>${chip}</button>`;
+      const glyph = kindGlyph(x.auth_kind);
+      return `<button class="pick tpl" style="--c:${colorOf(fam)}" data-act="tpl" data-t="${esc(x.name)}" title="${esc(`${tplName(x)}: ${kindName(x.auth_kind)}`)}">`
+        + `<span class="ttop"><span class="blot"></span><span class="tname">${esc(tplName(x))}</span>${glyph ? `<span class="tkind">${glyph}</span>` : ""}</span>${tchip}</button>`;
     }).join("");
+    const kinds = new Set(data.profiles.map((x) => (kindGlyph(x.auth_kind) === GL.key ? "key" : kindGlyph(x.auth_kind) ? "page" : "")).filter(Boolean));
+    const legend = `${kinds.has("key") ? `<span class="leg">${GL.key}A key</span>` : ""}${kinds.has("page") ? `<span class="leg">${GL.browser}Signs in on its own page</span>` : ""}`;
     const none = data.profiles.length ? "" : DRAW.nothing("No templates read");
-    return `<div class="pane add-pane${ui.fx?.add ? " unfold" : ""}">${head}<div class="body">${DRAW.kicker("Start from")}<div class="tpls">${tiles}</div>${none}</div></div>`;
+    return `<div class="pane add-pane${ui.fx?.add ? " unfold" : ""}">${head}<div class="body"><div class="sechead tplkick">${DRAW.kicker("Start from")}${legend}</div>`
+      + `<div class="tpls">${tiles}</div>${none}</div></div>`;
   }
   const asks = (k) => p.asks.includes(k);
-  const field = (id, lbl, val, extra = "") => `<label class="lbl" for="${id}">${lbl}</label><div class="ctl"><input class="field${id === "a-url" ? " url" : ""}" id="${id}" value="${esc(val)}" spellcheck="false" autocomplete="off" ${extra}></div>`;
+  // a field Add still waits for wears a dashed edge until it is filled, so the word beside Add points at something
+  const field = (id, lbl, val, extra = "", wants = false) => `<label class="lbl" for="${id}">${lbl}</label><div class="ctl"><input class="field${id === "a-url" ? " url" : ""}${wants && !String(val).trim() ? " need" : ""}" id="${id}" value="${esc(val)}" spellcheck="false" autocomplete="off" ${extra}></div>`;
   let f = "";
-  if (asks("name") || second(p)) f += field("a-name", "Name", a.name);
+  if (asks("name") || second(p)) f += field("a-name", "Name", a.name, "", true);
   // the address the template sends to by default is the field's hint, so an empty field reads as what it falls back to
-  if (showsUrl(p, a)) f += field("a-url", "URL", a.url, p.base_url ? `placeholder="${esc(p.base_url)}"` : "");
+  if (showsUrl(p, a)) f += field("a-url", "URL", a.url, p.base_url ? `placeholder="${esc(p.base_url)}"` : "", true);
   if (asksWhichKey(p, a)) {
+    // the provider's key is drawn as the key it is: the variable it is read from and the commands that send with it
+    const twin = commandsOf().find((x) => x.key === p.head_key || x.cmd === p.command);
+    const env = twin ? topology().providers?.[twin.provKey]?.auth?.env : null;
+    const users = twin ? commandsOf().filter((x) => x.provKey === twin.provKey) : [];
+    const keyFact = !a.newKey && (env || users.length)
+      ? `<span class="keyfact">${GL.key}${env ? `<code>${esc(env)}</code>` : ""}${users.map((x) => DRAW.chip({ text: x.cmd, live: x.running > 0, data: ` style="--c:${colorOf(x.family)}"` })).join("")}</span>` : "";
     f += `<span class="lbl">Key</span><div class="ctl"><div class="switch" role="radiogroup" aria-label="Key">`
       + `<button data-act="keychoice" data-v="provider" role="radio" aria-pressed="${!a.newKey}" aria-checked="${!a.newKey}">${esc(tplName(p))}'s key</button>`
-      + `<button data-act="keychoice" data-v="new" role="radio" aria-pressed="${Boolean(a.newKey)}" aria-checked="${Boolean(a.newKey)}">A new key</button></div></div>`;
+      + `<button data-act="keychoice" data-v="new" role="radio" aria-pressed="${Boolean(a.newKey)}" aria-checked="${Boolean(a.newKey)}">A new key</button></div>${keyFact}</div>`;
   }
   if (!sharesKey(p, a) && (p.requires_key || (p.auth_kind === "api-key" && p.asks.length))) {
     f += field("a-key", asksWhichKey(p, a) ? "" : "Key", a.key, 'type="password" aria-label="Key"');
   }
   if (asks("models")) {
-    const rows = a.rows.map((r, i) => `<div class="mrow"><input class="field" id="a-m${i}" data-i="${i}" data-f="id" value="${esc(r.id)}" spellcheck="false" autocomplete="off" aria-label="Model">`
+    // each window typed is a bar on one scale with every window his commands already serve, so a new row reads
+    // against the ones he knows; the scale's end is said once over the bars
+    const scale = Math.max(0, ...a.rows.map((r) => parseWindow(r.win) ?? 0), ...commandsOf().flatMap((x) => x.models.map((m) => m.window ?? 0)));
+    const noModel = !a.rows.some((r) => r.id.trim());
+    const rows = a.rows.map((r, i) => `<div class="mrow"><input class="field${noModel && i === 0 ? " need" : ""}" id="a-m${i}" data-i="${i}" data-f="id" value="${esc(r.id)}" spellcheck="false" autocomplete="off" aria-label="Model">`
       + `<input class="field win" id="a-w${i}" data-i="${i}" data-f="win" value="${esc(r.win)}" spellcheck="false" autocomplete="off" aria-label="Window"${r.win.trim() && !parseWindow(r.win) ? ' aria-invalid="true"' : ""}>`
+      + `<span class="wcell">${winBar(parseWindow(r.win), null, scale)}</span>`
       + `${a.rows.length > 1 ? `<button class="icon" data-act="rmrow" data-i="${i}" aria-label="Remove this model">${GL.close}</button>` : ""}`
       + `${r.win.trim() && !parseWindow(r.win) ? `<span class="said limit">Not a window</span>` : ""}</div>`).join("");
-    f += `<span class="lbl"></span><div class="ctl col"><div class="mrow labels"><span>Model</span><span>Window</span></div>${rows}`
+    f += `<span class="lbl"></span><div class="ctl col"><div class="mrow labels"><span>Model</span><span>Window</span>${scale ? `<span class="mscale">to ${big(scale)}</span>` : ""}</div>${rows}`
       + `${DRAW.addTile({ word: "Add model", act: "addrow", cls: "row" })}</div>`;
   }
   const fam = famOf(p);
-  const cmd = commandFor(p, a);
-  // the command it will add, as the chip it will be: until a name is typed the name's place in it is a dashed slot
-  const stem = p.command && second(p) ? `${p.command}-` : !p.command ? "claude-" : "";
-  const chip = cmd ? `<span class="chip">${esc(cmd)}</span>` : `<span class="chip tobe"><span>${esc(stem)}</span><i class="slot" aria-hidden="true"></i></span>`;
-  const headRow = `<div class="tplhead"><span class="blot"></span><span class="tname">${esc(tplName(p))}</span><span class="tsub">${kindGlyph(p.auth_kind)}<span>${esc(kindName(p.auth_kind))}</span></span>${chip}</div>`;
   const checkRow = (c) => {
     const soft = !c.ok && SOFT.has(c.name);
     const cls = c.ok ? "ready" : soft ? "unchecked" : "stalled";
     const mark = c.ok ? "<i></i>" : soft ? "<i></i>" : GL.notstarted;
     const why = c.ok ? null : failWordOf(c, p);
-    const word = why ? `<span class="said${soft ? "" : " limit"}"${why.code ? ` title="HTTP ${why.code}"` : ""}>${esc(why.word)}</span>` : "";
+    const tip = why?.code ? `HTTP ${why.code}` : why?.at ?? "";
+    const word = why ? `<span class="said${soft ? "" : " limit"}"${tip ? ` title="${esc(tip)}"` : ""}>${esc(why.word)}</span>` : "";
     return `<li class="${c.ok ? "pass" : "fail"}"><span class="lamp ${cls}">${mark}</span><span class="cname">${esc(c.name === "credential" && /oauth|login|sign/i.test(p.auth_kind) ? "Sign-in" : CHECK_NAME[c.name] ?? c.name)}</span>${word}</li>`;
   };
   // while splice runs its checks, their rows are arriving shapes in the place the answers land
@@ -2235,12 +2552,23 @@ function addPaneHtml() {
   // saved: splice restarts to start the command, and the pane says so until the restarted daemon lists it and its own
   // pane opens (marlin's desk A look, Oct 12: "Adding" sat still through the restart, and only a reload showed the pane)
   const foot = a.stalled
-    ? `<div class="foot">${restartBtn()}<span class="said limit">Saved, but splice did not restart</span></div>`
+    ? `<div class="foot"><span class="said">Saved</span><span class="said limit">Not restarted</span>${restartBtn()}</div>`
     : a.saved
-    ? `<div class="foot"><span class="waitbox" role="status">${ICON.wait}<span class="sr">Restarting</span></span><span class="said">Saved. Restarting splice to start ${esc(a.savedCmd || "it")}</span></div>`
+    ? `<div class="foot"><span class="said">Saved</span><span class="waitbox" role="status">${ICON.wait}<span class="sr">Restarting</span></span><span class="said">Restarting splice</span></div>`
     : `<div class="foot">${DRAW.act({ word: a.busy ? "Adding" : "Add", act: "add", cls: `primary${ui.shook === "add" ? " shook" : ""}`, busy: a.busy, disabled: !ready || a.busy })}`
       + `${DRAW.act({ word: "Cancel", act: "cancel-add", cls: "quiet" })}${said}${waits ? `<span class="said">${esc(waits)}</span>` : ""}</div>`;
-  return `<div class="pane add-pane${ui.fx?.add ? " unfold" : ""}" style="--c:${colorOf(fam)}">${head}<div class="body">${headRow}${f ? `<section class="form">${f}</section>` : ""}${checks}${sign}${foot}</div></div>`;
+  // WHAT ADD MAKES, drawn as the card it will be on the rail: its chip, its name's place dashed until one is typed, its
+  // provider, the first model typed with its window and the address it sends to; once Add runs, splice's checks of it
+  // stand under it, and the sign-in box where it signs in
+  const m0 = a.rows.find((r) => r.id.trim()), w0 = m0 ? parseWindow(m0.win) : null;
+  const host = hostPort((showsUrl(p, a) && a.url.trim()) || p.base_url || "");
+  const card = `<article class="card h newcard" style="--c:${colorOf(fam)}" aria-label="The command Add makes"><span class="lamp" aria-hidden="true"></span>`
+    + `<div class="top">${chip}${provSaid({ cmd: cmd || stem, prov: tplName(p) }) ? "" : `<span class="prov">${esc(tplName(p))}</span>`}</div>`
+    + `<div class="meta">${m0 ? `<span class="cmodel">${esc(m0.id.trim())}</span>` : ""}${host ? `<span class="caddr">${esc(host)}</span>` : ""}`
+    + `${w0 ? `<b class="cwin">${big(w0)}</b>` : ""}</div></article>`;
+  const made = `<div class="addmade">${DRAW.kicker("Its card")}${card}${checks}${sign}</div>`;
+  return `<div class="pane add-pane${ui.fx?.add ? " unfold" : ""}" style="--c:${colorOf(fam)}">${head}<div class="body"><div class="addcols">`
+    + `<div class="addform">${f ? `<section class="form">${f}</section>` : ""}${foot}</div>${made}</div></div></div>`;
 }
 const CHECK_NAME = { credential: "Key", "base url": "URL", models: "Models", windows: "Windows", "live turn": "Live request" };
 // what a provider's HTTP status means for him, in words; the number itself stays on the word's title and in the log
@@ -2253,7 +2581,8 @@ function failWordOf(c, p) {
   const d = c.detail ?? "", http = /HTTP (\d{3})/.exec(d)?.[1] ?? null;
   console.warn(`add check ${c.name}: ${d}`);
   if (c.name === "credential") return { word: /oauth|login|sign/i.test(p.auth_kind) ? "Signed out" : "No key" };
-  if (c.name === "base url") { const at = /\bat (\S+)$/.exec(d)?.[1]; return { word: at ? `No answer at ${at}` : "No answer" }; }
+  // the address tried is the URL field's own value beside the check, so the word does not say it again; it rides the title
+  if (c.name === "base url") return { word: "No answer", at: /\bat (\S+)$/.exec(d)?.[1] ?? null };
   if (c.name === "models") {
     return http ? { word: httpWord(http), code: http }
       : { word: /did not answer with a model list|not a list/i.test(d) ? "No list" : /not listed|missing/i.test(d) ? "Not listed" : "No answer" };
@@ -2303,16 +2632,15 @@ async function signIn() {
 const profileOf = (a) => data.profiles.find((x) => x.name === a.profile);
 // Add with a failed check saves nothing, and says so on the form with what to fix (marlin p226: a press did nothing). A
 // failed address opens the URL field beside the check, filled with the address tried, so it can be fixed in place.
+// The check that stopped it is lamped red on its own row under the card, with its word, so the foot says only Not added,
+// never the check again as a sentence.
 function notAddedWhy(a, prof) {
   const failed = a.checks.find((c) => !c.ok && !SOFT.has(c.name)) ?? a.checks.find((c) => !c.ok);
-  if (!failed) return "Not added";
-  if (failed.name === "base url") {
+  if (failed?.name === "base url") {
     a.urlFailed = true;
     if (!a.url.trim()) a.url = /\bat (\S+)$/.exec(failed.detail ?? "")?.[1] ?? prof.base_url ?? "";
-    return "Not added until the URL answers";
   }
-  if (failed.name === "credential") return /oauth|login|sign/i.test(prof.auth_kind) ? "Not added until signed in" : "Not added until the key works";
-  return `Not added until ${CHECK_NAME[failed.name] ?? failed.name} passes`;
+  return "Not added";
 }
 async function verifyAndSave() {
   const a = ui.add;
@@ -2338,7 +2666,8 @@ async function verifyAndSave() {
     await readAll();
     const added = commandsOf().find((c) => c.key === key || c.cmd === cmd);
     if (!added) continue;
-    ui.add = null; ui.open = added.key; ui.draft = null; ui.added = { key: added.key, live: null }; render();
+    // its card lands on the rail with the kit's one pulse, so the eye finds where the new command went
+    ui.add = null; ui.open = added.key; ui.draft = null; ui.added = { key: added.key, live: null }; ui.fx = { landed: added.key }; render();
     return;
   }
   // saved, but the restarted daemon never listed it in time: the file holds it, so the words say what to do, not "Not added"
@@ -2398,7 +2727,11 @@ const commandsHtml = () => {
   const cs = commandsOf();
   const needs = cs.filter((c) => stateOf(c)), fine = cs.filter((c) => !stateOf(c));
   const split = needs.length > 0 && fine.length > 0;
-  const tile = DRAW.addTile({ word: "New command", act: "new", socket: true, pressed: Boolean(ui.add) });
+  // while a new command is being made, the rail's tile is where it will land: it holds the chip it will be and its
+  // provider, so the rail shows the coming card in its place
+  const tp = ui.add?.profile ? data.profiles.find((x) => x.name === ui.add.profile) : null;
+  const tile = DRAW.addTile({ word: "New command", act: "new", socket: true, pressed: Boolean(ui.add),
+    body: tp ? `<span class="tland" style="--c:${colorOf(famOf(tp))}">${toBe(tp, ui.add).chip}<span class="prov">${esc(tplName(tp))}</span></span>` : null });
   const open = ui.open || ui.add;
   const group = (word, list) => (list.length ? `${split ? `<div class="rhead">${DRAW.kicker(word)}<span class="pd-count"><b>${DRAW.n(list.length)}</b></span></div>` : ""}${list.map(cardHtml).join("")}` : "");
   // no command yet: the rail says so where the first card lands, just above the tile that adds it, at every width
@@ -2414,9 +2747,20 @@ const commandsHtml = () => {
 // The tabs need no read, so they are drawn as they are and answer at once: another tab shows its own arriving shape.
 const ghostViews = () => `<div class="views">${DRAW.switcher(VIEWS, ui.view, "view", "What to show")}</div>`;
 const ghostPageHtml = () => (ui.view === "every"
-  ? `${ghostViews()}<div class="every" aria-busy="true"><div class="em-bar">${GHOST.bar(28, "big")}${GHOST.bar(14)}</div>`
-    + `<div class="cols em-board">${[0, 1, 2, 3, 4, 5, 6, 7].map((i) => GHOST.card([9, 40, 36, 40, 34, 38, 36], i, "em-card")).join("")}</div></div>`
+  ? `${ghostViews()}${ghostEveryHtml()}`
   : ui.view === "projects" ? `${ghostViews()}${ghostProjectsHtml()}` : ghostCommandsHtml());
+// the board while its first read is out: the search and the legend's line, then as many columns as the board holds, each
+// a provider's title over command cards whose rows are the rows that land (a name, a window bar and its figure, a price
+// track and its two figures), so nothing below moves when the models answer
+function ghostEveryHtml() {
+  const row = (w) => `<div class="em-row" aria-hidden="true">${GHOST.bar(w)}<i class="ghost gtrk"></i>${GHOST.bar(2.6)}<i class="ghost gtrk"></i>${GHOST.bar(2.6)}${GHOST.bar(2.6)}</div>`;
+  const card = (n, i) => `<article class="card em-card ghosted" style="--i:${i}" aria-hidden="true"><header class="em-head">${GHOST.bar(9)}</header>`
+    + `<div class="em-rows">${Array.from({ length: n }, (_, j) => row([11, 9, 13, 10, 8, 12][j % 6])).join("")}</div></article>`;
+  const group = (ns, i) => `<section class="titled" aria-hidden="true"><header><h2>${GHOST.bar(7, "big")}</h2></header><div class="stack-cards">${ns.map((n, j) => card(n, i + j)).join("")}</div></section>`;
+  const cols = [[[6, 6]], [[6], [2]], [[6], [1, 1]], [[6], [6]]];
+  return `<div class="every" aria-busy="true"><div class="em-bar"><i class="ghost pj-gsearch em-gsearch" aria-hidden="true"></i>${GHOST.bar(14)}</div>`
+    + `<div class="board em-board">${DRAW.boardCols(cols.slice(0, boardN()).map((gs, i) => ({ body: gs.map((ns, j) => group(ns, i + j)).join("") })))}</div></div>`;
+}
 const ghostCmdsBody = () => `<div class="cmds"><div class="list rail">${[0, 1, 2, 3, 4].map((i) => GHOST.card([9, 13, 7], i)).join("")}`
   + `<i class="ghost card-tile" aria-hidden="true"></i></div>`
   // beside the rail, where the open command lands on a wide screen: its header, then its columns of sections, as
@@ -2429,8 +2773,12 @@ const ghostCommandsHtml = () => `${ghostViews()}${ghostCmdsBody()}`;
 // have arrived, held still, since nothing is on its way until Read again is pressed or the next round answers.
 const firstFailHtml = () => `${ghostViews()}<div class="firstread" role="alert">${DRAW.lock(data.err)}${DRAW.act({ word: "Read again", act: "reread-all", cls: "quiet" })}</div>`
   + (ui.view === "commands" ? `<div class="held" aria-hidden="true">${ghostCmdsBody()}</div>` : "");
-/** A card that changed place slides to its new one over 420 ms, so a command that starts or fails is followed by eye
- *  rather than appearing somewhere else (the kit's own FLIP; nothing moves where he asked for no motion). */
+/** A card that changed place slides to its new one at the kit's --t-snap, so a command that starts or fails is followed
+ *  by eye rather than appearing somewhere else (the kit's own FLIP; the token is zero where he asked for no motion). */
+const snapMotion = () => {
+  const css = getComputedStyle(document.documentElement), v = css.getPropertyValue("--t-snap").trim(), n = parseFloat(v);
+  return { duration: Number.isFinite(n) ? (v.endsWith("ms") ? n : n * 1000) : 0, easing: css.getPropertyValue("--e-out").trim() || "ease-out" };
+};
 function cardTops() {
   const m = new Map();
   for (const el of root.querySelectorAll(".card.h[data-open]")) m.set(el.dataset.open, el.getBoundingClientRect().top);
@@ -2438,23 +2786,50 @@ function cardTops() {
 }
 function flip(was) {
   if (!was?.size || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const how = snapMotion();
+  if (!how.duration) return;
   for (const el of root.querySelectorAll(".card.h[data-open]")) {
     const from = was.get(el.dataset.open);
     if (from == null) continue;
     const dy = from - el.getBoundingClientRect().top;
     if (Math.abs(dy) < 2) continue;
-    el.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], { duration: 420, easing: "cubic-bezier(.2,.75,.3,1)" });
+    el.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], how);
+  }
+}
+/** WHAT A POLL CHANGED MOVES, AND ONLY THAT. Each redraw builds the page anew, so a meter, an outcome bar or a figure
+ *  would swap in one frame. What the last draw showed is kept by its place ([data-meter], [data-stack], [data-fig]):
+ *  a meter or a segment that moved slides from its old width to its new one, and a figure whose words changed settles
+ *  in, each at the kit's --t-snap; one that did not change does not move. */
+function shownNow() {
+  const m = new Map(), s = new Map(), f = new Map();
+  for (const b of root.querySelectorAll("[data-meter] .bar > b[data-v]")) m.set(b.closest("[data-meter]").dataset.meter, b.dataset.v);
+  for (const el of root.querySelectorAll("[data-stack] .pd-seg")) s.set(`${el.closest("[data-stack]").dataset.stack}|${el.className}`, el.getBoundingClientRect().width);
+  for (const el of root.querySelectorAll("[data-fig]")) f.set(el.dataset.fig, el.textContent);
+  return { m, s, f };
+}
+function settle(was) {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const how = snapMotion();
+  if (!how.duration) return;
+  for (const b of root.querySelectorAll("[data-meter] .bar > b[data-v]")) {
+    const from = was.m.get(b.closest("[data-meter]").dataset.meter);
+    if (from != null && from !== b.dataset.v) b.animate([{ width: `${from}%` }, { width: `${b.dataset.v}%` }], how);
+  }
+  for (const el of root.querySelectorAll("[data-stack] .pd-seg")) {
+    const from = was.s.get(`${el.closest("[data-stack]").dataset.stack}|${el.className}`), to = el.getBoundingClientRect().width;
+    if (from != null && Math.abs(from - to) >= 1) el.animate([{ width: `${from}px` }, { width: `${to}px` }], how);
+  }
+  for (const el of root.querySelectorAll("[data-fig]")) {
+    const from = was.f.get(el.dataset.fig);
+    if (from != null && from !== el.textContent) el.animate([{ opacity: 0.3, transform: "translateY(-.2em)" }, { opacity: 1, transform: "none" }], how);
   }
 }
 function render() {
   KNOBS.save?.();
   const f = document.activeElement, fid = f?.id, pos = f?.selectionStart;
+  const shown = shownNow();
   // a key being pasted lives only in its field until Add is pressed, so it is carried across the redraw
   if (ui.keyin) { const k = document.getElementById("k-in"); if (k) ui.keyin.val = k.value; }
-  // the Projects pane keeps its scroll across a redraw; another project opens at its top. The Commands pane has no
-  // scroll of its own: it is in the page's one scroll.
-  const shown = ui.view === "projects" ? `projects:${ui.proj ?? ""}` : `${ui.view}:${ui.open}`;
-  const body = root.querySelector(".pj .pane .body"), top = body && root.dataset.shown === shown ? body.scrollTop : 0;
   const was = cardTops();
   document.getElementById("claude").innerHTML = data.loaded ? claudeHtml() : "";
   // a round that failed after the page loaded: what is drawn is what splice last answered, and it reads as held
@@ -2471,13 +2846,15 @@ function render() {
   ui.dirtyWas = dirtyNow;
   const draw = () => { root.innerHTML = viewsHtml() + (ui.view === "commands" ? commandsHtml() : ui.view === "every" ? everyHtml() : projectsHtml()); };
   draw();
-  // the open pane's columns come from its own width, read once it is in the page: a count that changed draws once more
+  // the open pane's columns, and the board's, come from their own width, read once they are in the page: a count that
+  // changed draws once more
   if (ui.view === "commands" && fitCols()) draw();
-  root.dataset.shown = shown;
-  const now = root.querySelector(".pj .pane .body");
-  if (now) now.scrollTop = top;
+  // and once the sections stand in that many columns, where the tail goes is read from their heights
+  if (ui.view === "commands" && settleTails()) draw();
+  if (ui.view === "every" && fitEvery()) draw();
   // the meters and bars take their widths once the markup is in; they grow from nothing only when the pane just opened
   DRAW.paint(root, { grow: ui.grow ? "all" : null });
+  if (!ui.grow) settle(shown);
   ui.grow = false;
   flip(was);
   if (fid) {
@@ -2490,9 +2867,9 @@ function render() {
 }
 // a pane that is now wider or narrower holds another number of columns: drawn again once the resize settles
 let refit = 0;
-window.addEventListener("resize", () => { clearTimeout(refit); refit = setTimeout(() => { if (fitCols()) render(); }, 120); });
+window.addEventListener("resize", () => { clearTimeout(refit); refit = setTimeout(() => { const a = fitCols(), b = fitEvery(); if (a || b) render(); }, 120); });
 function openCmd(key) {
-  Object.assign(ui, { open: key, add: null, draft: null, said: null, pick: null, grow: true, changesOpen: false });
+  Object.assign(ui, { open: key, add: null, draft: null, said: null, pick: null, grow: true, changesOpen: false, split: null, qedit: null });
   readLog(key);
 }
 function onClick(e) {
@@ -2540,8 +2917,15 @@ function onClick(e) {
     case "rawopen": ui.rawOpen = true; render(); break;
     case "remove": removeCommand(ui.open); break;
     case "tierpick": ui.pick = ui.pick === `tier:${d.t}` ? null : `tier:${d.t}`; ui.mq = ""; opens(ui.pick, { menu: true }); render(); document.getElementById("mq")?.focus(); break;
+    case "splittiers": (ui.split ??= new Set()).add(ui.open); render(); root.querySelector('[data-act="tierpick"]')?.focus({ preventScroll: true }); break;
     case "tier": {
       const c = cmdByKey(ui.open), m = c.models.find((x) => x.id === d.v);
+      // Every tier's picker sets all four to one model, or gives each its default back
+      if (d.t === "all") {
+        for (const x of TIERS) ui.draft.tiers[x] = { model: d.v || null, win: m ? big(m.window) : "" };
+        if (!d.v) ui.draft.headWin = draftOf(c).headWin;
+        ui.pick = null; edited(); render(); break;
+      }
       const wasUnset = TIERS.every((x) => !ui.draft.tiers[x].model);
       // from the defaults, picking one tier declares the other three at the defaults they had: Save never turns them into a 400
       if (wasUnset && d.v) for (const x of TIERS) { const dm = c.models.find((y) => y.id === c.defaults[x]); ui.draft.tiers[x] = { model: dm?.id ?? null, win: dm ? big(dm.window) : "" }; }
@@ -2567,24 +2951,38 @@ function onClick(e) {
     case "keep-running": ui.cut = null; render(); break;
     // Clear hands the search back for the next word, as Projects' Clear does
     case "clearq": ui.q = ""; render(); document.getElementById("q")?.focus(); break;
+    case "clearlogq": ui.logq = ""; render(); document.getElementById("logq")?.focus(); break;
     // the tail of a bounded list, opened in place: live requests, a window's sessions, the ports, the prices
     // the redraw keeps the focus on the same count, now "Fewer", without scrolling to it, so the keyboard can close it again
     case "more": { if (ui.more.has(d.m)) ui.more.delete(d.m); else { ui.more.add(d.m); ui.fx = { more: d.m }; } render(); root.querySelector(`[data-act="more"][data-m="${CSS.escape(d.m ?? "")}"]`)?.focus({ preventScroll: true }); break; }
     // a list shown a few at a time: twenty more a press, and Fewer back to the first four
     case "moren": {
       ui.moreN ??= {};
-      if (d.less) delete ui.moreN[d.m]; else { ui.moreN[d.m] = (ui.moreN[d.m] ?? 4) + 20; ui.fx = { more: d.m }; }
+      if (d.less) delete ui.moreN[d.m]; else { ui.moreN[d.m] = (ui.moreN[d.m] ?? (Number(d.base) || 4)) + 20; ui.fx = { more: d.m }; }
       render(); root.querySelector(`[data-act="moren"][data-m="${CSS.escape(d.m ?? "")}"]`)?.focus({ preventScroll: true }); break;
     }
-    case "eff": ui.effOpen = !ui.effOpen; opens(ui.effOpen, { eff: true }); render(); break;
+    case "eff": {
+      ui.effOpen = !ui.effOpen; opens(ui.effOpen, { eff: true }); render();
+      // it opens under the sections: when its head lands low on the screen it is brought up to be read
+      const drawer = ui.effOpen ? root.querySelector("#every-settings") : null;
+      if (drawer && drawer.getBoundingClientRect().top > window.innerHeight * 0.7) drawer.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+      break;
+    }
     case "qopen": ui.qOpen = !ui.qOpen; opens(ui.qOpen, { q: true }); render(); break;
     case "qback": ui.draft.quirks[d.q] = undefined; edited(); render(); break;
+    case "qedit": ui.qedit = d.q; render(); document.getElementById(`q-${d.q}`)?.focus(); break;
     case "rawtoggle": ui.rawOpen = !ui.rawOpen; opens(ui.rawOpen, { raw: true }); render(); break;
     case "rawmore": ui.rawN = (ui.rawN ?? 100) + 400; render(); break;
     case "reread-all": readAll({ draw: () => render() }).then(render); break;
     case "logpause": ui.logPaused = !ui.logPaused; if (!ui.logPaused && ui.open) readLog(ui.open); else render(); break;
     // another project or command keeps a compaction edit in hand where it was made: it waits there, marked on its tile
-    case "proj": ui.proj = d.p; ui.file = null; ui.fileAll = null; ui.fx = { pane: true }; viewToUrl(); render(); break;
+    case "proj": {
+      ui.proj = d.p; ui.file = null; ui.fileAll = null; ui.fx = { pane: true }; viewToUrl(); render();
+      // the pane is in the page's one scroll: a project picked low in the rail brings the pane's top into view
+      const pane = root.querySelector(".pj-pane"), bar = document.querySelector(".side")?.getBoundingClientRect().bottom ?? 0;
+      if (pane && pane.getBoundingClientRect().top < bar) pane.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+      break;
+    }
     case "projcmd": ui.projCmd = d.h; if (ui.file?.startsWith("memory:")) ui.file = null; ui.fx = { cmd: true }; render(); break;
     case "cedit": {
       const p = data.projects.find((x) => x.id === ui.shownProj), c = cmdByKey(ui.shownCmd);
@@ -2644,6 +3042,7 @@ function onInput(e) {
   const sec = t.closest("[data-sec]")?.dataset.sec;
   if (sec && SECTION_FIELDS[sec]) ui.lastSec = sec;
   if (t.dataset.hw) ui.draft.headWin = t.value;
+  else if (t.dataset.t === "all") for (const x of TIERS) ui.draft.tiers[x].win = t.value;
   else if (t.dataset.t) ui.draft.tiers[t.dataset.t].win = t.value;
   else if (t.id === "h-text") ui.draft.text = t.value;
   else if (t.id === "h-url") ui.draft.url = t.value;

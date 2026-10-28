@@ -160,9 +160,18 @@
 .card .cutask .said { font: 500 .92rem/1.3 var(--font-name); color: var(--text-body); }
 /* a move this login was part of: onto it or off it, the other login by its socket and name as a door to its card, then
    why and when; with two or more commands, the command's chip says which one moved */
-.card > .moveline { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .5rem; margin: .7rem 0 0; font: 500 .9rem/1.35 var(--font-name); color: var(--text-mute); }
-.card > .moveline > svg { flex: none; width: .95rem; height: .95rem; }
-.card > .moveline b { font-weight: 600; color: var(--text-body); }
+/* the moves on one card read down as a small table on shared columns: the glyph, who moved, the other login, why, and
+   when at the card's edge, so the reasons start on one line and the times end on one */
+.card > .moves { display: grid; grid-template-columns: .95rem max-content minmax(0, max-content) minmax(0, 1fr) max-content; column-gap: .6rem; row-gap: .45rem;
+  align-items: center; margin: .7rem 0 0; font: 500 .9rem/1.35 var(--font-name); color: var(--text-mute); }
+.card > .moves > .moveline { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; margin: 0; }
+.card > .moves > .moveline > svg { width: .95rem; height: .95rem; }
+.card > .moves .mwho { min-width: 0; }
+.card > .moves .mwho > .chip { margin-right: .4rem; }
+.card > .moves .mother { min-width: 0; }
+.card > .moves .mwhy { min-width: 0; overflow-wrap: anywhere; }
+.card > .moves .mat { justify-self: end; font: 500 .86rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.card > .moves b { font-weight: 600; color: var(--text-body); }
 .card .mlogin { display: inline-flex; align-items: center; gap: .35rem; padding: .1rem .2rem; margin: -.1rem -.2rem; border: 0; border-radius: .3rem;
   background: none; font: inherit; color: inherit; cursor: pointer; vertical-align: middle; }
 .card .mlogin:hover b { color: var(--text); text-decoration: underline; }
@@ -171,9 +180,9 @@
 .windows .next .who .mlogin { max-width: 100%; min-width: 0; }
 .windows .next .who .mlogin b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 /* the sessions the move carried, each a door to its pane on Sessions */
-.card > .moveline .mdoor { font-weight: 600; color: var(--text-body); text-decoration: none; }
-.card > .moveline .mdoor:hover { color: var(--text); text-decoration: underline; }
-.card > .moveline .mdoor:focus-visible { outline: .14rem solid var(--text); outline-offset: .1rem; border-radius: .2rem; }
+.card > .moves .mdoor { font-weight: 600; color: var(--text-body); text-decoration: none; }
+.card > .moves .mdoor:hover { color: var(--text); text-decoration: underline; }
+.card > .moves .mdoor:focus-visible { outline: .14rem solid var(--text); outline-offset: .1rem; border-radius: .2rem; }
 .card .mlogin:focus-visible { outline: .14rem solid var(--text); outline-offset: .1rem; }
 .card .msock { display: inline-grid; place-items: center; width: 1.35rem; height: 1.35rem; border-radius: 50%; font: 600 .72rem/1 var(--font-data);
   color: var(--socket-ink); background: var(--socket); box-shadow: 0 0 0 .12rem var(--ink), inset 0 0 0 .1rem var(--rail); }
@@ -215,7 +224,7 @@
 /* a ghost line is as tall as the line it stands for, so the card's content never outgrows the height it kept */
 .card.gcard > .email { display: flex; align-items: center; height: 1.08rem; }
 .card.gcard .windows > .heldline { display: flex; align-items: center; height: 1.28rem; }
-.card.gcard > .moveline { align-items: center; height: 1.22rem; }
+.card.gcard > .moves > .moveline { display: flex; align-items: center; height: 1.22rem; }
 /* a window row with no reset has no ring, so a ghost row stands at the bar's height and the card's kept height decides */
 .card.gcard .windows .ghost.ring { width: var(--meter-h); height: var(--meter-h); }
 .card .onlogin .gdoor .lampg { width: 1.4rem; height: 1.4rem; border-radius: 50%; }

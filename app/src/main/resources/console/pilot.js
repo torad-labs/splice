@@ -14,7 +14,7 @@ const PILOT = (() => {
     "[role=button]", "[role=link]", "[role=tab]", "[role=switch]", "[role=checkbox]", "[role=radio]", "[role=menuitem]",
     "[role=option]", "[role=slider]", "[role=combobox]", "[data-act]", "[tabindex]:not([tabindex='-1'])",
   ].join(",");
-  const OWN = ".cmp, .cmp-dim, .pilot-ring, .pilot-note";
+  const OWN = ".cmp, .cmp-tab, .cmp-dim, .pilot-ring, .pilot-note";
   const ROW = "tr, li, [role=row], [role=listitem], article";
   const HEADING = "h1, h2, h3, h4, h5, h6, legend, caption, [role=heading]";
   const SECRET = /key|token|secret|passw|credential/i;
@@ -47,7 +47,8 @@ const PILOT = (() => {
   // The person may be typing to the agent in the composer: an agent's act never pulls the focus out of it.
   const typing = () => Boolean(document.activeElement?.closest?.(".cmp"));
   const take = (el) => { if (!typing()) el.focus?.({ preventScroll: true }); };
-  const routeError = () => squash(mainNode()?.querySelector(".route-error")?.innerText);
+  // a page that did not open says so under its own link in the top bar (console.js routeFailed), or atop the page
+  const routeError = () => squash(document.querySelector(".route-error")?.innerText);
 
   // ---- what a person sees -------------------------------------------------------------------------------------
   function shown(el) {
@@ -223,7 +224,8 @@ const PILOT = (() => {
       barHeight = probe.offsetHeight;
       probe.remove();
     }
-    const cmp = document.querySelector(".cmp")?.getBoundingClientRect();
+    // a bar folded into its tab is not drawn, so nothing is under it
+    const dock = document.querySelector(".cmp"), cmp = dock && getComputedStyle(dock).visibility !== "hidden" ? dock.getBoundingClientRect() : null;
     const under = cmp && cmp.height && (!rect || (rect.right > cmp.left && rect.left < cmp.right));
     return { top: barHeight + 8, bottom: under ? cmp.top - 12 : innerHeight - 8 };
   }
@@ -318,8 +320,8 @@ const PILOT = (() => {
     rings.push({ el, again, box, tag, file: here().file, tried: 0, lostAt: 0 });
     track();
   }
-  // The person's own press anywhere but the composer, or their Escape, puts the rings away.
-  addEventListener("pointerdown", (e) => { if (e.isTrusted && rings.length && !e.target.closest?.(".cmp")) clearRings(); }, true);
+  // The person's own press anywhere but the composer (its folded tab too), or their Escape, puts the rings away.
+  addEventListener("pointerdown", (e) => { if (e.isTrusted && rings.length && !e.target.closest?.(".cmp, .cmp-tab")) clearRings(); }, true);
   addEventListener("keydown", (e) => { if (e.isTrusted && e.key === "Escape" && rings.length) clearRings(); }, true);
 
   // ---- what an act changed -------------------------------------------------------------------------------------

@@ -6,7 +6,7 @@
    Sessions' own, .card .top, .card .plan, .meta, .pane and .nomatch are theirs too and are set here where a row uses
    the same words. */
 
-.head .search { width: 30rem; }
+/* the header's search is one width on every page that has one (console.css .head .search) */
 
 /* ---------- the filters: what /api/perf/turns takes, one button each ---------- */
 .filters-row { margin: 0 0 calc(3 * var(--u)); }
@@ -153,7 +153,7 @@ a.byr:hover .bn { color: var(--text); }
 
 /* ---------- the list: its head line, then one table ---------- */
 .requests { display: block; }
-.requests .list { display: flex; flex-direction: column; gap: calc(2 * var(--u)); min-width: 0; }
+.requests .list { display: flex; flex-direction: column; gap: calc(2 * var(--u)); min-width: 0; padding-left: 0; }  /* on the band's left edge */
 /* the list's head: how much of the window it holds, what the bars' parts mean, and the order, at its end */
 .lline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(4 * var(--u)); min-height: var(--ctl-h); }
 .list .foot { margin: 0; font: 500 .88rem/1.4 var(--font-data); color: var(--text-mute); }
@@ -168,6 +168,7 @@ a.byr:hover .bn { color: var(--text); }
 .sw.pre { background: repeating-linear-gradient(-45deg, color-mix(in oklab, var(--text) 55%, transparent) 0 .18rem, transparent .18rem .36rem); box-shadow: inset 0 0 0 .08rem color-mix(in oklab, var(--text) 40%, transparent); }
 .sw.p95 { width: .18rem; height: 1rem; border-radius: .08rem; background: var(--text); }
 .sw.plan { box-shadow: inset 0 0 0 .12rem color-mix(in oklab, var(--text) 48%, transparent); }
+.rqpane .fig .fsub > .sw { margin-right: .45rem; vertical-align: -.02rem; }  /* the open request's plan mark, a space before its words */
 /* A READ THAT REFUSED SAYS SO WHERE IT HAPPENED: the command and one word, above the rows it is missing from, or under
    the rows for a search; the reason goes to the browser's log (fin). One command that cannot answer is not an empty day. */
 .list-wait { display: flex; align-items: center; gap: .55rem; margin: 0; font: 500 .92rem/1.45 var(--font-data); color: var(--text-mute); }
@@ -208,8 +209,10 @@ a.byr:hover .bn { color: var(--text); }
 .rqburst .bsess { grid-area: tk; }
 @container rqt (min-width: 92rem) {
   .rq, .rqg, .rqhead, .rqburst {
-    /* the session and the bars take the room; a model keeps room for names that differ only at their end */
-    grid-template-columns: .8rem 1.9rem var(--t) minmax(13rem, 1.3fr) minmax(8.5rem, .5fr) minmax(11rem, .8fr) minmax(7rem, .5fr) minmax(11rem, 1fr) minmax(13rem, 1.3fr) minmax(7.4rem, .55fr);
+    /* the bars take the room, so a row's tokens, time and cost compare by length; the session keeps room for its name
+       and what happened to it; a model keeps room for names that differ only at their end, and an account for a whole
+       login name */
+    grid-template-columns: .8rem 1.9rem var(--t) minmax(13rem, 1fr) minmax(8.5rem, .5fr) minmax(11rem, .8fr) minmax(9rem, .7fr) minmax(11rem, 1fr) minmax(13rem, 1.3fr) minmax(9rem, .85fr);
     grid-template-areas: "ch lp t who cmd mdl acc tk du co";
   }
   .rq .meta, .rqg .meta, .rqhead .meta { display: contents; }
@@ -237,8 +240,8 @@ a.byr:hover .bn { color: var(--text); }
 :is(.rq, .rqburst, .rqg) > .lamp { position: static; width: 1.9rem; height: 1.9rem; margin: 0; }
 .rq time, .rqburst time { font: 500 .92rem/1 var(--font-data); color: var(--text-mute); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .rq .who, .rqburst .who { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem calc(1.2 * var(--u)); min-width: 0; }  /* the name keeps its line; what happened wraps under it where both do not fit */
-.rq .name { flex: 0 1 auto; min-width: 4rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 1rem/1.2 var(--font-name); color: var(--text); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
-.rq .who .word, .rq .who .detail, .rq .who .door, .rq .who .note, .rqburst .who .word, .rqburst .who .note { flex: none; white-space: nowrap; font: 500 .88rem/1.2 var(--font-data); }
+.rq .name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 1rem/1.2 var(--font-name); color: var(--text); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+.rq .who .word, .rq .who .detail, .rq .who .door, .rq .who .note, .rqburst .who .word, .rqburst .who .note, .rqburst .bsess .detail { flex: none; white-space: nowrap; font: 500 .88rem/1.2 var(--font-data); }
 .rq .who .word { color: var(--text-body); }
 .rq .who .word.fail, .rqburst .who .word.fail { color: var(--limit); }
 .rq .who .note, .rqburst .who .note { color: var(--text-mute); }
@@ -250,6 +253,7 @@ a.byr:hover .bn { color: var(--text); }
 .rq .mdl { color: var(--text-body); }
 .rq .acc { color: var(--text-mute); }
 a.acct { color: inherit; text-decoration: none; }  /* the login opens its Accounts card; it reads as the same words, underlined only under the pointer */
+.rq .meta .acct { display: inline; color: inherit; }  /* inline, so a login longer than its column ends in an ellipsis, never cut mid-letter */
 a.acct:hover { text-decoration: underline; }
 .rq .nr { color: var(--text-mute); font-style: normal; }
 /* the rows of a burst he opened, marked as one run by a rule down their left */
@@ -279,7 +283,6 @@ a.acct:hover { text-decoration: underline; }
 .rqhead .h { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rqhead .h.v { text-align: right; }
 .rqhead .who { display: block; }
-.rqhead .co .h { grid-column: 1 / -1; }
 .dax { position: relative; display: block; height: 1rem; }
 .dax i { position: absolute; top: 0; transform: translateX(-50%); font: 400 .74rem/1 var(--font-data); font-style: normal; font-variant-numeric: tabular-nums; color: var(--text-mute); white-space: nowrap; }
 .dax i.first { transform: none; }
@@ -289,6 +292,9 @@ a.acct:hover { text-decoration: underline; }
 .rqhead .du { container: rqdu / inline-size; }
 .dax i.mid { display: none; }
 @container rqdu (min-width: 19rem) { .dax i.mid { display: block; } }
+/* the cost column names its powers of ten the same way, over its own bars */
+.rqhead .co { container: rqco / inline-size; }
+@container rqco (min-width: 15rem) { .dax i.mid { display: block; } }
 
 /* what the search found, in the body it was found in */
 .match { grid-column: who-start / -1; margin: .1rem 0 0; font: 500 .9rem/1.35 var(--font-data); color: var(--text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -316,7 +322,7 @@ a.acct:hover { text-decoration: underline; }
 .hbar .ok { background: color-mix(in oklab, var(--text) 45%, transparent); }
 .hbar .nt { background: color-mix(in oklab, var(--text) 25%, transparent); }
 .hbar .f { background: var(--limit); }
-.hour .act { margin-left: auto; }  /* the day before, at the right end of the oldest day's heading */
+.hour .act { margin-left: auto; margin-block: -.14rem; }  /* the day before, at the right end of the oldest day's heading, never taller than the tag */
 /* a stretch with no requests between two hours: a dashed rule across the table, and how long it lasted */
 .hgap { display: flex; align-items: center; gap: calc(2 * var(--u)); min-height: 2.4rem; margin: 0 -.6rem; padding: 0 .6rem; font: 500 .84rem/1.2 var(--font-name); color: var(--text-mute); }
 .hgap::after { content: ""; flex: 1 1 auto; border-top: .12rem dashed var(--track-line); }
@@ -339,16 +345,21 @@ a.acct:hover { text-decoration: underline; }
 .ghost.nm { height: 1rem; }
 .list.ghosts .hour .hw { padding: .42rem .6rem; }
 
+/* the rows a new order or outcome lands with rise in once, so the list reads as the answer to the press */
+.rqtable.arrive > :is(.rq, .rqburst, .hour, .hgap, .nomatch) { animation: rq-arrive var(--t-pop) var(--e-out) both; }
+@keyframes rq-arrive { from { opacity: 0; transform: translateY(.4rem); } }
+
 /* the outcome as an element, and the lamp of a request that answered after more than one send: the retries glyph,
    in the lamp's own ink, so a failure's red stays the only colour in the table */
 .lamp.retried svg { width: 1.1rem; height: 1.1rem; }
 
 @media (prefers-reduced-motion: reduce) {
   .rq, .rqburst, .fbtn, .ftog, .kr, .byr { transition: none; }
-  .fmenu { animation: none; }
+  .fmenu, .rqtable.arrive > :is(.rq, .rqburst, .hour, .hgap, .nomatch) { animation: none; }
 }
 
 /* the pick line and the filters while they are read: the tiles or the picker, and the filters' own row, hollow */
-.ptiles > .ghost.ptg { width: auto; height: 6.97rem; border-radius: var(--r-obj); box-shadow: 0 0 0 var(--ink-w) var(--ink); }
 .lhead > .ghost.chip { height: 2.4rem; }
-.filters > .ghost.chip { height: 2.26rem; }
+.filters > .ghost.chip { height: 2.29rem; }
+.filters > .ghost.chip.gsw { height: 2.54rem; }  /* the outcome switch, the row's tallest */
+.filters > .ghost.chip.gtg { height: 2.44rem; }

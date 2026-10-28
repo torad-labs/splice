@@ -7,13 +7,13 @@
 .page { container-type: inline-size; }
 /* the field and what the search found, together at the right of the title's line */
 .head .finder { display: flex; align-items: center; gap: calc(2 * var(--u)); min-width: 0; }
-.head .search { width: 26rem; }
+/* the field is the header search's one width (console.css .head .search) */
 /* how many settings the search found, in the field it was typed in: the rail shows WHICH topics, never how many */
 .qn { display: inline-flex; align-items: center; gap: .7rem; font: 500 .92rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
 .qn b { font-weight: 500; color: var(--text); font-variant-numeric: tabular-nums; }
 /* nothing matched: still not a failure, so no limit red — the words brighten and the way out stands beside them */
 .qn.miss { color: var(--text-body); }
-mark { color: inherit; background: color-mix(in oklab, var(--key-light) 38%, transparent); border-radius: .2rem; padding: 0 .06rem; }
+/* a word the search matched is the console's one search mark (console.css mark) */
 
 /* The stores' colours. A tint ramp of the one key made six near-identical beiges in day, so the split bar could not
    show where the space goes, which is its whole job (splice-lead's walk, Oct 11). These are six hues of their own and
@@ -44,12 +44,22 @@ mark { color: inherit; background: color-mix(in oklab, var(--key-light) 38%, tra
 /* the topics are a plain list of cards, with no rail bar and no socket: a topic has no order to keep and no live state
    to light, so the glyph in its name line is what tells it apart (sessions.css .list, console.css .rail) */
 .jobs .list.rail.plain { padding-left: 0; }
-.card.job { --c: var(--track-line); cursor: pointer; }
+.card.job { --c: var(--track-line); --quiet: .4; cursor: pointer; }
 .card.job:hover { background: var(--obj-high); }
 .jname { font: 500 1.08rem/1.15 var(--font-name); color: var(--text); }
 /* a topic the search did not reach keeps its place and goes quiet: the page never empties under him */
-.card.job.dim { opacity: .4; }
+.card.job.dim { opacity: var(--quiet); }
 .card.job.dim:hover { opacity: .75; }
+/* A CHANGE OF STATE FADES, AND A REDRAW CARRIES THE FADE ON (settings.js turn): the page draws its rail and pane whole,
+   so a transition never runs on them. A card, a row or a disclosure whose state just changed wears .turning, and every
+   drawing in the next moment sets --turn-at to how far into the fade it is, so the fade is one movement. */
+@keyframes turnQuiet { from { opacity: 1; } }
+@keyframes turnBack { from { opacity: var(--quiet); } }
+@keyframes turnIn { from { opacity: 0; } }
+:is(.card.job, .krow).turning { animation: turnBack var(--t-snap) var(--e-out) var(--turn-at, 0ms) 1 both; }
+:is(.card.job.dim, .krow.miss).turning { animation-name: turnQuiet; }
+/* a card's words are the name face; its figures keep the data face (.rfig b) */
+.card.job .meta { font-family: var(--font-name); }
 .nomatch { padding: 1.33rem 0 0; display: flex; align-items: center; gap: 1rem; }
 .lamp.done i { background: var(--live); }
 /* THE TOPIC'S GLYPH, beside its name on the card and again on the pane's header, so the open topic is the card he
@@ -63,8 +73,10 @@ mark { color: inherit; background: color-mix(in oklab, var(--key-light) 38%, tra
    one line, so the rail keeps its height and every card its place under the pointer while he types. */
 .jstate { display: grid; margin-top: .85rem; min-width: 0; }
 .jstate > * { grid-area: 1 / 1; min-width: 0; }
-.jstate .jdraw { transition: opacity var(--t-hover) var(--e-out); }
 .jstate.hit .jdraw { opacity: 0; }
+/* what the search found fades in over the card's state, and the state fades back when the search lets it go */
+.jstate.turning :is(.hits, .jdraw) { animation: turnIn var(--t-snap) var(--e-out) var(--turn-at, 0ms) 1 both; }
+.jstate.hit.turning .jdraw { animation-name: turnQuiet; }
 .hits { display: flex; align-items: center; gap: .5rem; min-width: 0; }
 .hits > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 .98rem/1.4 var(--font-name); color: var(--text); }
 .hits .more { flex: none; color: var(--text-mute); }
@@ -74,7 +86,10 @@ mark { color: inherit; background: color-mix(in oklab, var(--key-light) 38%, tra
    and Requests, where a feed does want the screen's height). A topic holds settings, not a feed: it ends where they end.
    THE OPEN TOPIC IS A PLATE, NOT A CARD (console.css's rhythm): a wash and 4u of inset, no ink border and no cast,
    because a card is for objects and a topic is a ground for them. Its sections sit 4u, a hairline and 4u apart. */
-.pane { --c: var(--track-line); height: auto; flex-direction: column; background: none; border: 0; box-shadow: none; }
+/* overflow: visible undoes the shell's clip: this pane has no ring or cast to clip to, and a clipping box is a scroll
+   container as far as sticky goes, so the settings beside a longer half and the "More below" cue would have stuck to
+   the pane's own edge instead of riding the window. */
+.pane { --c: var(--track-line); height: auto; overflow: visible; flex-direction: column; background: none; border: 0; box-shadow: none; }
 .pane > header { min-height: 0; padding: 0 0 calc(2 * var(--u)); border-bottom: 0; background: none; align-items: center; }
 .pane > header .name { font: 500 1.45rem/1.1 var(--font-name); color: var(--text); }
 /* the cue that the topic runs past the fold, on the pane's own lower edge; the page is what scrolls */
@@ -83,6 +98,9 @@ mark { color: inherit; background: color-mix(in oklab, var(--key-light) 38%, tra
   background: linear-gradient(transparent, color-mix(in oklab, var(--obj) 86%, transparent) 72%); }
 /* the plate asks its own width, so the parts of a topic pair up only once it holds both of them whole */
 .pane .body { flex: 1; min-width: 0; }
+/* another topic's pane rises into place once (settings.js turn), and a redraw in that moment carries the rise on */
+@keyframes paneIn { from { opacity: 0; transform: translateY(.45rem); } }
+.pane.turning > :is(header, .body) { animation: paneIn var(--t-snap) var(--e-out) var(--turn-at, 0ms) 1 both; }
 .body.kn.plate { container: plate / inline-size; }
 /* EVERY PART OF THIS PAGE TAKES THE PLATE'S RHYTHM, however it is built: DRAW.section's .psec and the pairs of them
    (.pair), so one page has one rhythm — 4u, a hairline, 4u — and one kicker. */
@@ -110,25 +128,46 @@ mark { color: inherit; background: color-mix(in oklab, var(--key-light) 38%, tra
      the same width as three dropdowns */
   .pair.lead { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
   .pair > .pcol + .pcol { margin-top: 0; padding-top: 0; border-top: 0; padding-left: calc(4 * var(--u)); border-left: .08rem solid var(--hair); }
+  /* the settings ride beside a longer half as the page scrolls (a list of nine logins runs to two screens at his width),
+     the way the rail rides, so the setting that acts on a figure is never a screen away from it */
+  .pair > .pcol + .pcol { position: sticky; top: 4.6rem; }
 }
 
 /* ---------- a setting is a row, and what it does is drawn on it ----------
    (Oct 27, from Marcos's "show don't tell".) One grid a section: the name, the control, and the drawing of what the
    value does, each in a column of its own, so the names, the controls and the drawings start at one x down a section
    and a value is read against the figures it acts on. A section whose rows draw nothing is two columns. */
-.krows { display: grid; grid-template-columns: minmax(10rem, 15rem) minmax(16rem, 26rem) minmax(0, 1fr); column-gap: calc(3 * var(--u)); }
+/* A NAME READS ON ONE LINE (Oct 27): the name column is as wide as the section's longest name, up to 28rem, so "Check
+   the connection if no output arrives for" (a little over 24rem in the name face) stands whole beside its control
+   where a 15rem column broke four names of one section in two. The control column is as wide as its widest control and
+   the commands under it, and the drawing takes the rest, never less than a track a value can be read on. */
+.krows { display: grid; grid-template-columns: fit-content(28rem) fit-content(26rem) minmax(14rem, 1fr); column-gap: calc(3 * var(--u)); }
 .krows > :is(.krow, .khead, .kaxis) { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; padding-inline: var(--u); }
-/* a section with no drawing to make divides its settings over the width instead, as a form does, rather than standing
-   them in the left third of the plate with two thirds of wash beside them (Advanced at 3822) */
-.krows.flat { grid-template-columns: repeat(auto-fit, minmax(min(100%, 42rem), 1fr)); column-gap: calc(4 * var(--u)); }
-.krows.flat > .krow { grid-column: auto; grid-template-columns: minmax(9rem, 16rem) minmax(0, 1fr); }
-.krow { position: relative; padding-block: calc(1.5 * var(--u)); border-top: .08rem solid var(--hair); border-radius: var(--r-in); transition: background var(--t-hover) var(--e-out), opacity var(--t-hover) var(--e-out); }
-/* a row the search did not reach keeps its place and goes quiet, as a rail card does */
-.krow.miss { opacity: .38; }
+/* A SECTION WITH NO DRAWING TO MAKE divides its settings over the width in columns of name and control, as a form does,
+   rather than standing them in the left third of the plate with two thirds of wash beside them (Advanced at 3822).
+   Every column is one name track and one control track shared by the rows under it, so the controls of a column start
+   at one x and a name is as wide as the longest name in its column: a 16rem track broke "Read the sign-in files again
+   after" at its hyphen. The plate's width decides how many columns stand, and a section never has more columns than
+   rows (n2, n3: settings.js krowsHtml). */
+.krows.flat { --fc: 1; grid-template-columns: repeat(var(--fc), fit-content(28rem) minmax(0, 1fr)); column-gap: calc(3 * var(--u)); }
+.krows.flat > .krow { grid-column: span 2; }
+/* two columns from a plate of 100rem (his 2548 at 150% is 154rem), three from 140rem, where a column of name, control
+   and the control's commands still has the 45rem it takes; these name the classes outright, as the base rule does, so
+   the wider plate wins over `--fc: 1` above */
+@container plate (min-width: 100rem) { .krows.flat:is(.n2, .n3) { --fc: 2; } }
+@container plate (min-width: 140rem) { .krows.flat.n3 { --fc: 3; } }
+/* beside what happened, a topic's settings are one column at every width: at 3822 the column held two tracks and
+   Reasoning's three settings stood two and one, the third 700 px to the right of the other two */
+.pcol .krows.flat { --fc: 1; }
+.krow { --quiet: .38; position: relative; padding-block: calc(1.5 * var(--u)); border-top: .08rem solid var(--hair); border-radius: var(--r-in); transition: background var(--t-hover) var(--e-out), opacity var(--t-hover) var(--e-out); }
+/* a row the search did not reach keeps its place and fades to quiet, as a rail card does (.turning above) */
+.krow.miss { opacity: var(--quiet); }
 .krow.miss:hover { opacity: .8; }
 .krow.landed { animation: pulseOnce var(--t-pulse) var(--e-out) 1; }
-/* a setting's name is the row's own ink, at the size it has on a card: the kit's .lbl is a caption inside a control */
-#st .krows .lbl { display: flex; align-items: center; min-height: var(--ctl-h); font: 500 1.08rem/1.25 var(--font-name); color: var(--text); text-wrap: balance; }
+/* a setting's name is the row's own ink, at the size it has on a card: the kit's .lbl is a caption inside a control.
+   It is one run of text centred by align-content, never a flex box: as one, a search's <mark> became an item of its
+   own, lost the spaces around it ("Give upafterno progress for") and stood apart at the column's end */
+#st .krows .lbl { display: block; align-content: center; min-height: var(--ctl-h); font: 500 1.08rem/1.25 var(--font-name); color: var(--text); text-wrap: balance; }
 #st .krows .ctl { align-items: flex-start; min-height: var(--ctl-h); }
 #st .krows .ctl.col { gap: .9rem; }
 #st .krows .switch { flex-wrap: wrap; }  /* three long options stack inside the pill rather than overflow the column */
@@ -136,9 +175,13 @@ mark { color: inherit; background: color-mix(in oklab, var(--key-light) 38%, tra
 .kdraw { position: relative; display: flex; align-items: center; min-width: 0; min-height: var(--ctl-h); }
 /* a fact this page read, where the value's effect is a fact and not a length: when the plans were last read, how many
    servers run, the logins that report no window */
-.kfact { font: 500 1rem/1.3 var(--font-data); color: var(--text-body); }
-.kfact b { font-weight: 500; color: var(--text); font-variant-numeric: tabular-nums; }
-.kchips { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-left: .8rem; }
+.kfact { font: 500 1rem/1.3 var(--font-name); color: var(--text-mute); }
+.kfact b { font: 500 1rem/1.3 var(--font-data); color: var(--text); font-variant-numeric: tabular-nums; }
+/* the last plan read, with how soon the next is due as the reset ring Accounts draws, in neutral ink: it is no provider's */
+.kfact.kread { --c: var(--text-body); display: inline-flex; align-items: center; gap: .55rem; }
+/* words over the objects they name: the chips wrap in rows under them, never down one column */
+.kfacts { display: flex; flex-direction: column; align-items: flex-start; gap: .55rem; min-width: 0; padding-block: .3rem; }
+.kchips { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; min-width: 0; }
 .kdraw .kmeter { display: flex; align-items: center; gap: var(--u); width: 100%; font: 500 1rem/1.3 var(--font-data); color: var(--text-body); }
 .kdraw .kmeter .bar { --c: color-mix(in oklab, var(--text) 60%, transparent); flex: 1 1 auto; min-width: 4rem; height: var(--meter-h-sub); }
 .kdraw .kmeter > span { flex: none; white-space: nowrap; }
@@ -193,14 +236,21 @@ a.oseg:hover { box-shadow: inset 0 0 0 999px color-mix(in oklab, var(--text) 16%
 .olast { font: 500 .95rem/1.2 var(--font-data); color: var(--text-body); white-space: nowrap; }
 .olast a { color: inherit; text-decoration: none; }
 .olast a:hover { color: var(--text); text-decoration: underline; }
-/* nothing happened, or the read did not answer: the row keeps its place and goes quiet (never drops out) */
-.orow.zero :is(.ow, .on), .orow.unread .ow { color: var(--text-mute); }
+/* the read did not answer: the row keeps its place and goes quiet, with Not read where its count would be */
+.orow.unread .ow { color: var(--text-mute); }
+/* the outcomes that did not happen this week, named once together under the table, never a row of noughts */
+.ozero { display: flex; flex-wrap: wrap; align-items: baseline; gap: .4rem .9rem; margin: 0; padding-block: calc(1.25 * var(--u)) 0; border-top: .08rem solid var(--hair); font: 500 .98rem/1.3 var(--font-name); color: var(--text-mute); }
+.otab + .ozero { margin-top: 0; }
+.ozero .ozl { color: var(--text-body); }
+.ozero .ozw + .ozw::before { content: "·"; margin-right: .9rem; }
 #st .r { text-align: right; justify-self: end; }
 
 /* ---------- Many agents at once: today, one row per command on shared scales ----------
    The most requests it held at once against its own limit, when in the day that was, how many it sent and how many
    waited in line, each figure a door to those requests. */
 .peaks { display: grid; grid-template-columns: max-content minmax(9rem, 1fr) max-content minmax(7rem, 1.1fr) minmax(6rem, 1fr) max-content; column-gap: calc(2 * var(--u)); }
+/* a day when nothing waited in line has no column for it: the kicker line says "None waited in line today" once */
+.peaks.noq { grid-template-columns: max-content minmax(9rem, 1fr) max-content minmax(7rem, 1.1fr) minmax(6rem, 1fr); }
 .peaks > .pk { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; padding-block: calc(1.25 * var(--u)); border-top: .08rem solid var(--hair); }
 .peaks > .ph { padding-block: 0 var(--u); border-top: 0; }
 .ph > span { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
@@ -211,6 +261,8 @@ a.oseg:hover { box-shadow: inset 0 0 0 999px color-mix(in oklab, var(--text) 16%
 /* how many at once against the limit set for it, as a meter on that ceiling in the command's own colour */
 .pm { display: flex; align-items: center; gap: var(--u); min-width: 0; }
 .pm .bar { flex: 1 1 auto; min-width: 3rem; height: var(--meter-h-sub); }
+/* the meter not read yet is its empty track across the cell, as the meter that lands will be */
+.pm > .ghost.track { flex: 1 1 auto; min-width: 3rem; }
 .pmv { flex: none; display: flex; align-items: baseline; gap: .4rem; white-space: nowrap; }
 .pmv b { font: 600 1.08rem/1 var(--font-data); color: var(--text); font-variant-numeric: tabular-nums; }
 .pmv i { font: 500 .88rem/1 var(--font-name); font-style: normal; color: var(--text-mute); }
@@ -221,22 +273,24 @@ a.oseg:hover { box-shadow: inset 0 0 0 999px color-mix(in oklab, var(--text) 16%
 .pday { position: relative; display: block; min-width: 0; height: var(--meter-h-sub); border-radius: .31rem; background: color-mix(in oklab, var(--text) 7%, transparent); }
 .pfut { position: absolute; top: 0; bottom: 0; right: 0; border-radius: 0 .31rem .31rem 0; background: repeating-linear-gradient(135deg, transparent 0 .2rem, color-mix(in oklab, var(--text) 9%, transparent) .2rem .4rem); }
 .pdot { position: absolute; top: 50%; width: .5rem; height: .5rem; margin: -.25rem 0 0 -.25rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--obj); }
-.pq0 { font: 500 .98rem/1.2 var(--font-data); color: var(--text-mute); }
 .pidle { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem .8rem; margin: 1.05rem 0 0; font: 500 .92rem/1.3 var(--font-name); color: var(--text-body); }
 /* ---------- Providers today: what each kind of pushback cost, and each command's share of it ---------- */
 .pb { display: flex; flex-direction: column; gap: var(--u); }
 .pbfig { text-decoration: none; }
 .pbfig b { color: var(--limit); }  /* overloaded and cut off are failures, and wear the limit red */
 a.pbfig:hover { color: var(--text-body); }
-.pbrows { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: .3rem calc(3 * var(--u)); }
+/* each command's share on one scale, in tracks of a bar's readable length: auto-fill keeps a lone pair of commands from
+   stretching across the column */
+.pbrows { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); gap: .3rem calc(3 * var(--u)); }
 .pbrow { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; column-gap: var(--u); padding-block: .2rem; text-decoration: none; }
 .pbrow .barcell { font: 500 .92rem/1.2 var(--font-data); color: var(--text-body); }
 .pbrow:hover .barcell { color: var(--text); }
-/* a zero, or a count splice could not read: one quiet line under the figures, never a figure of its own */
-.zeros { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: .5rem .9rem; }
+/* a kind that did not happen, or a count splice could not read: one quiet line in words under the figures, never a
+   "0" of its own */
+.zeros { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem .9rem; margin: 0; }
 .zeros .dot { color: var(--text-mute); }
-.fig { font: 500 1rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
-.fig b { font: 500 1.1rem/1 var(--font-data); color: var(--text); }
+.zw { font: 500 .98rem/1.3 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.pb + .zeros { margin-top: calc(1.5 * var(--u)); }
 
 /* ---------- Reasoning: the terminal it lands in ----------
    Nothing on the wire counts what a reasoning setting did, so this topic opens on the thing itself, drawn from the
@@ -259,7 +313,7 @@ a.pbfig:hover { color: var(--text-body); }
 .tl.rs.out > .tx { color: var(--text-body); }
 /* a line of model text, as the length it is and not as words we made up */
 .wire { flex: none; height: .5rem; border-radius: .25rem; background: color-mix(in oklab, var(--text) 15%, transparent); }
-.wire.s { height: .4rem; }
+.wire.short { height: .4rem; }
 .tl.reply .wire { background: color-mix(in oklab, var(--text) 30%, transparent); }
 .sep { color: var(--text-mute); }
 /* the waiting line's own dot: flat, because this is a drawing of a terminal and nothing here is running */
@@ -292,8 +346,15 @@ a.pbfig:hover { color: var(--text-body); }
 .plog { display: flex; flex-direction: column; min-width: 0; padding: calc(1.5 * var(--u)) calc(2 * var(--u)) calc(2 * var(--u)); border-radius: var(--r-obj); background: var(--obj); border: var(--ink-w) solid var(--ink); }
 .plog > header { display: flex; align-items: center; gap: .7rem; min-width: 0; }
 .plog .blot { flex: none; width: .75rem; height: .75rem; border-radius: 50%; background: var(--c); }
+/* the way to this login's card on Accounts, where a limit is dealt with: a door at the header's far end, the same word and
+   arrow as the store cards' doors, in the same place on every card */
+.plog > header .plogdoor { margin-left: auto; flex: none; }
+.pmoreline { margin-top: calc(2 * var(--u)); }
 .plog .pln { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 1.04rem/1.2 var(--font-name); color: var(--text); }
-.plog .windows { margin-top: calc(1.5 * var(--u)); }
+/* every login's windows stand on the same four tracks, the reset's as wide as its longest words ("Resets Wed 12:50 AM"
+   with its ring), so the meters of all the cards begin and end at one x instead of each card giving its own reset
+   column what its own words need */
+.plog .windows { grid-template-columns: 4.2rem minmax(0, 1fr) 5.2rem 13.2rem; margin-top: calc(1.5 * var(--u)); }
 /* the warn line as a tick on the meter it acts on, so the per-cent he picks is read where he will meet it */
 .wmeter { position: relative; min-width: 0; }
 .wmk { position: absolute; top: -.25rem; bottom: -.25rem; width: .16rem; margin-left: -.08rem; border-radius: .08rem; background: var(--text-mute); }
@@ -301,11 +362,17 @@ a.pbfig:hover { color: var(--text-body); }
 /* THE WARN LINE ON THE WHOLE IT MARKS, with every login a dot at its highest running window: the setting is read as a
    line among the figures it acts on rather than as a number in a box. Dots that would touch take a lane under the one
    before, so each stays a dot of its own. */
-.wtrk { position: relative; display: block; width: 100%; min-width: 8rem; height: calc(.62rem + (var(--lanes, 1) - 1) * .62rem); }
+/* A share's place runs from the track's start to its end less one dot (--at, 0 to 100), so a dot at 100% stands inside
+   the end and never half past it; the warn zone starts at the same place a dot at the warn share would be centred. */
+.wtrk { --dot: .5rem; --step: .8rem; position: relative; display: block; width: 100%; min-width: 8rem; height: calc(.62rem + (var(--lanes, 1) - 1) * var(--step)); }
 .wtrk::before { content: ""; position: absolute; inset: 0 0 auto 0; height: .62rem; border-radius: .31rem; background: color-mix(in oklab, var(--text) 8%, transparent); }
-.wzone { position: absolute; top: 0; right: 0; height: .62rem; border-radius: 0 .31rem .31rem 0; background: repeating-linear-gradient(135deg, transparent 0 .18rem, color-mix(in oklab, var(--limit) 26%, transparent) .18rem .36rem); }
-.ldot { position: absolute; top: calc(.06rem + var(--lane, 0) * .62rem); width: .5rem; height: .5rem; margin-left: -.25rem; border-radius: 50%; background: var(--c); }
-.ldot.over { box-shadow: 0 0 0 .13rem color-mix(in oklab, var(--limit) 60%, transparent); }
+.wzone { position: absolute; top: 0; right: 0; left: calc((100% - var(--dot)) * var(--at) / 100 + var(--dot) / 2); height: .62rem; border-radius: 0 .31rem .31rem 0; background: repeating-linear-gradient(135deg, transparent 0 .18rem, color-mix(in oklab, var(--limit) 26%, transparent) .18rem .36rem); }
+.ldot { position: absolute; top: calc(.06rem + var(--lane, 0) * var(--step)); left: calc((100% - var(--dot)) * var(--at) / 100); width: var(--dot); height: var(--dot); border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--obj); }
+.ldot.atlimit { box-shadow: 0 0 0 .07rem var(--obj), 0 0 0 .16rem color-mix(in oklab, var(--limit) 55%, transparent); }
+/* the logins no lane had room for, as their count on a lane under their crowd: it ends where its dots stand, and from
+   the track's first half it starts there instead, so it never leaves the track */
+.lmore { position: absolute; top: calc(var(--lane, 0) * var(--step) - .12rem); left: calc((100% - var(--dot)) * var(--at) / 100 + var(--dot)); transform: translateX(-100%); font: 600 .78rem/1 var(--font-data); font-style: normal; color: var(--text-body); white-space: nowrap; }
+.lmore.lo { left: calc((100% - var(--dot)) * var(--at) / 100); transform: none; }
 
 /* ---------- Your data: what splice keeps, as one figure and one bar split by store, then a card per store ----------
    Rebuilt Oct 26 in the drawings' language: the total is the topic's hero, the bar under it is split by store in the
@@ -330,12 +397,15 @@ a.pbfig:hover { color: var(--text-body); }
 .yours { display: inline-block; white-space: nowrap; padding: .25rem .5rem; font: 500 .85rem/1 var(--font-name); color: var(--text-body); border: .12rem solid var(--track-line); border-radius: .35rem; }
 /* flex, not a grid of fixed tracks: wrapped flex items share the row they land on, so the last row is never part
    empty (three stores at 1440 sat two to a row with the third in the left half of an empty one) */
-.dcards { display: flex; flex-wrap: wrap; gap: var(--gap-card); align-items: flex-start; }
+.dcards { display: flex; flex-wrap: wrap; gap: var(--gap-card); align-items: stretch; }
 .dcards > .dcard, .dcards > .gcard { flex: 1 1 25rem; min-width: 0; }
 .dcards > .gcard { box-shadow: none; }
-/* Conversation text holds cards of one kind: stand them level so their Save and Keep for sit on one line (.dctl's
-   margin-top: auto), and a card with no "when off" line reserves that line, so a row's labels still meet */
-.dcards.text { align-items: stretch; }
+/* a store's card before its reads land stands as tall as the one that comes (the text cards' two rows between them, the records' chart), so nothing under them moves */
+.dcards.text > .dghost { min-height: 15rem; }
+.dcards.records > .dghost { min-height: 22rem; }
+/* Cards of a row stand level, whatever one of them holds (a chart makes one taller), so their bottoms meet and their Save
+   and Keep for sit on one line (.dctl's margin-top: auto). In Conversation text a card with no "when off" line also
+   reserves that line, so a row's labels still meet */
 .dcards.text .dcard:not(:has(.offcost)) .din::after { content: ""; min-height: 1.25rem; }
 /* a card whose commands are open takes the row to itself and lays them out along it, so its eleven switches never
    stand the cards beside it as tall as the list (Your data at 1440, Oct 26) */
@@ -397,14 +467,20 @@ button.count:hover { color: var(--text); }
 /* THE SHARED SERVERS ON COLUMNS NAMED ONCE (Oct 26): the lamp, the name and where it is declared, the sessions on it,
    what its one copy holds, when it started, when it was last called, and its acts. Every row is a subgrid of the list,
    so a column starts at one x down every row however long a name or a chip is. */
-.srvs:not(.out) { display: grid; grid-template-columns: 2rem minmax(13rem, 1.2fr) minmax(13rem, 2fr) repeat(4, max-content); column-gap: calc(2 * var(--u)); }
+/* the columns that hold the most share what is left: the name, the commands on it, and what its one copy holds as a bar.
+   The two times and the acts are as wide as they read, so no value stands a screen away from its name across an empty cell. */
+.srvs:not(.out) { display: grid; grid-template-columns: 2rem minmax(12rem, 1fr) minmax(12rem, 1.5fr) minmax(10rem, 1fr) repeat(3, max-content); column-gap: calc(2 * var(--u)); }
 .srvs:not(.out) > :is(.srvhead, .srv) { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; }
 .srvhead { padding-bottom: var(--u); }
 .srvhead > span { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
-.srvhead > span:nth-child(n+4) { text-align: right; }
+.srvhead > span:nth-child(n+5) { text-align: right; }
 .srv { padding-block: calc(1.5 * var(--u)); border-top: .08rem solid var(--hair); }
 .srv.lit { box-shadow: inset .3rem 0 0 var(--key-light); }
 .srvs.dim { opacity: .55; }
+/* the rest of a whole (servers not shared, repos no folder holds) sits well back from the parts it is the rest of, so
+   the shared part reads first: the kit's quiet grey stood 14% from the shared part's */
+#st .pd-seg.rest, #st .pd-sw.rest { background: color-mix(in oklab, var(--text) 24%, transparent); }
+#st .pd-seg.rest { color: var(--text); }
 /* a lamp with nothing running in it is an unlit dot, in the socket's own ink */
 #st .tlamp > i { width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; }
 .sname { display: flex; flex-direction: column; gap: .45rem; min-width: 0; }
@@ -418,6 +494,20 @@ button.count:hover { color: var(--text); }
 .srv .fig { font: 500 .92rem/1.2 var(--font-data); color: var(--text-body); text-align: right; white-space: nowrap; }
 .srv .fig b { font: 600 1rem/1 var(--font-data); color: var(--text); font-variant-numeric: tabular-nums; }
 .srv .fig span { color: var(--text-mute); }
+/* what one copy holds: a bar on the list's one scale, its figure on the column's right edge, the copies beside it */
+.srv .fig.mem { display: flex; align-items: center; gap: .7rem; text-align: left; min-width: 0; }
+.srv .fig.mem .barcell { flex: 1 1 auto; min-width: 0; font: 500 .92rem/1.2 var(--font-data); color: var(--text); --v-w: 6.5ch; }
+.srv .fig.mem .vbar, .srv .fig.mem .vbar b { height: var(--meter-h-sub); border-radius: .31rem; }
+.srv .fig.mem .n { flex: none; font: 500 .88rem/1.2 var(--font-data); color: var(--text-mute); }
+/* a server nothing runs here is a mark in the figure's slot: a globe at a web address, an unlit socket not running. The
+   section's line names each once, so no row says it in words. */
+.srv .fig.mem:has(> .idle) { justify-content: flex-end; }
+.idle { display: inline-flex; align-items: center; color: var(--text-mute); }
+.idle svg { width: 1.15rem; height: 1.15rem; stroke-width: 1.8; }
+.idlekey .lg svg { width: 1rem; height: 1rem; }
+/* two things on one kicker line stand together at its right end */
+.kside { display: inline-flex; align-items: baseline; flex-wrap: wrap; justify-content: flex-end; gap: .3rem calc(3 * var(--u)); }
+.srvs .ghost.lampg { width: 2rem; height: 2rem; }
 .srv .fig.uses { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; text-align: left; white-space: normal; min-width: 0; }
 .srv .fig .chip.soon { opacity: .6; }
 .srv .fig .next, .srv .fig .more { color: var(--text-mute); white-space: nowrap; }
@@ -434,28 +524,42 @@ button.count:hover { color: var(--text); }
 .srv .said svg { width: 1rem; height: 1rem; }
 /* NOT SHARED, A CARD PER REASON (Oct 26): the reason and its count once on the card, the line it carries once under
    it, then each server with the value that decides it, four of them and the rest behind one pill */
-.mcards { display: flex; flex-wrap: wrap; gap: var(--gap-card); align-items: flex-start; }
+.mcards { display: flex; flex-wrap: wrap; gap: var(--gap-card); align-items: stretch; }
 .mcard { flex: 1 1 26rem; min-width: 0; display: flex; flex-direction: column; gap: var(--u); padding: calc(2 * var(--u)); border-radius: var(--r-in); background: color-mix(in oklab, var(--text) 2.5%, transparent); box-shadow: inset 0 0 0 .08rem var(--hair); }
-.mcard > .morepill { align-self: flex-start; }  /* each card ends where its group does, opened or not */
+.mcard > .morepill { align-self: flex-start; }  /* the pill ends its own card's list, opened or not, however tall the row is */
+.mcards > .mcard[aria-hidden="true"] { min-height: 22rem; }  /* before the servers are read a card stands as tall as the cards of a typical machine */
 .mtop { display: flex; align-items: baseline; justify-content: space-between; gap: calc(2 * var(--u)); }
 .mtop .mw { font: 600 1rem/1.2 var(--font-name); color: var(--text); }
-.mtop .mn { font: 600 var(--fig-focal)/1 var(--font-data); font-variant-numeric: tabular-nums; letter-spacing: -.01em; color: var(--text); }
+.mtop .mn { font: 600 1.15rem/1 var(--font-data); font-variant-numeric: tabular-nums; letter-spacing: -.01em; color: var(--text); }
 .mcard .ml { margin: 0; font: 500 .88rem/1.3 var(--font-name); color: var(--text-mute); }
 .srvs.out { display: flex; flex-direction: column; }
 .srv.out { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-auto-flow: dense; align-items: center; column-gap: calc(2 * var(--u)); row-gap: .45rem; padding-block: var(--u); }
 .srv.out > :is(.sname, .why) { grid-column: 1; }
 .srv.out > :is(.fig, .acts) { grid-column: 2; justify-self: end; }
 .srv.out .fig.mem { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: .4rem; }
+
+/* a plugin or project that declares two or more of a card's servers heads them once */
+.mfrom { padding-top: var(--u); border-top: .08rem solid var(--hair); }
+.mfrom .from { display: inline-flex; align-items: center; gap: .3rem .6rem; font: 500 .92rem/1.2 var(--font-name); color: var(--text-body); }
+.mfrom .from svg { flex: none; width: 1.05rem; height: 1.05rem; }
+.mfrom + .srv.out { border-top: 0; }
 .why { display: flex; flex-direction: column; gap: .35rem; min-width: 0; }
 .why .w { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; min-width: 0; }
 .why code { font: 500 .85rem/1.3 var(--font-data); color: var(--text-body); background: var(--obj-sunk); border-radius: .3rem; padding: .15rem .4rem; overflow-wrap: anywhere; }
 .why .wl { font: 500 .88rem/1.3 var(--font-name); color: var(--text-body); }
-/* what sharing saves: the saving as the focal figure, then the copies now and one copy each as two bars on one scale */
-.msave { display: grid; gap: var(--u); }
-.mbar { display: grid; grid-template-columns: minmax(10rem, 16rem) minmax(0, 1fr); align-items: center; column-gap: calc(2 * var(--u)); }
-.mbar .k { font: 500 .92rem/1.2 var(--font-name); color: var(--text-body); }
-.mbar .barcell { font: 500 .92rem/1.2 var(--font-data); color: var(--text); }
-.mbar .vbar, .mbar .vbar b { height: var(--meter-h-sub); border-radius: .31rem; }
+/* what sharing saves: the saving as the focal figure, then each server's copies now beside one copy of it, every bar
+   on one scale, the columns named once over them and the sum on the last line */
+.msave { display: grid; grid-template-columns: minmax(9rem, 16rem) minmax(8rem, 1fr) max-content minmax(8rem, 1fr); column-gap: calc(3 * var(--u)); max-width: 96rem; }
+.msrv { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; padding-block: var(--u); border-top: .08rem solid var(--hair); }
+.msrv.head { border-top: 0; padding-block: 0 var(--u); }
+.msrv.head > span { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.msrv .nm { font: 500 .95rem/1.2 var(--font-name); color: var(--text); overflow-wrap: anywhere; }
+.msrv .n { font: 500 .88rem/1.2 var(--font-data); color: var(--text-mute); white-space: nowrap; }
+.msrv .barcell { font: 500 .92rem/1.2 var(--font-data); color: var(--text); }
+.msrv .vbar, .msrv .vbar b { height: var(--meter-h-sub); border-radius: .31rem; }
+.msrv.sum .nm, .msrv.sum .v { font-weight: 600; }
+.msrv.sum .barcell { justify-content: flex-end; }
+.msave > .morepill { grid-column: 1 / -1; justify-self: start; margin-block: var(--u); }
 /* the switch on the Sharing kicker's line, with what the change did beside it */
 .mshare { display: inline-flex; align-items: center; gap: var(--u); }
 .ghost-rows { display: flex; flex-direction: column; gap: calc(2 * var(--u)); }
@@ -480,7 +584,7 @@ button.count:hover { color: var(--text); }
 #st .vacts .act { display: inline-flex; align-items: center; gap: .5rem; padding: .5rem .85rem; font-size: .92rem; }
 #st .vacts .act svg { width: 1rem; height: 1rem; }
 #st .vacts .act .wait { --c: currentColor; }  /* the ring while his tap reads, in the button's own ink */
-.vghost { display: flex; flex-direction: column; gap: var(--u); padding: calc(2 * var(--u)) calc(2.5 * var(--u)); border-radius: var(--r-in); box-shadow: inset 0 0 0 .08rem var(--hair); }
+.vghost { display: flex; flex-direction: column; gap: var(--u); min-height: 9.3rem;  /* as tall as a tile holding a version beside its acts */  padding: calc(2 * var(--u)) calc(2.5 * var(--u)); border-radius: var(--r-in); box-shadow: inset 0 0 0 .08rem var(--hair); }
 .vghost .ghost.fig { height: var(--fig-focal); }
 /* on a row wide enough to read along, a card holds its version at one end and its acts at the other, instead of a
    number and two buttons in the top corner of a 100rem box (Version at 3822) */
@@ -591,7 +695,8 @@ button.count:hover { color: var(--text); }
 .pin > .psec { min-width: 0; display: flex; flex-direction: column; gap: calc(2 * var(--u)); }
 .pin > .psec + .psec { margin-top: calc(4 * var(--u)); padding-top: calc(4 * var(--u)); border-top: .08rem solid var(--hair); }
 @container pcols (min-width: 104rem) {
-  .pin { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: calc(4 * var(--u)); }
+  /* the projects take the larger share: their rows are bars that read by length, where the folder side holds one tile */
+  .pin { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); column-gap: calc(4 * var(--u)); }
   .pin > .psec + .psec { margin-top: 0; padding-top: 0; border-top: 0; padding-left: calc(4 * var(--u)); border-left: .08rem solid var(--hair); }
 }
 #st .plist { display: grid; gap: calc(1.5 * var(--u)); width: 100%; }
@@ -605,10 +710,26 @@ button.count:hover { color: var(--text); }
 /* WHAT HE SET IS NEVER QUIETER THAN WHAT IT MAKES (Marlin, Oct 12): the projects a path makes sit beside it, each in
    the name font it wears on Sessions, Teams and Requests, at the size of the path that made them */
 #st .pmakes { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+/* a project is a row and a door to its sessions: its name, its sessions on the list's one scale, when it was last
+   active. The rows are a grid whose columns are named once over them, so every bar starts at one x. */
+#st .pmakes { flex-direction: column; align-items: stretch; }
+#st .prjs { display: grid; grid-template-columns: minmax(10rem, 1fr) minmax(10rem, 1.4fr) max-content; column-gap: calc(3 * var(--u)); width: 100%; max-width: 130rem; }
+#st .prj { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; min-height: calc(var(--ctl-h) + var(--u)); padding-inline: var(--u); border-top: .08rem solid var(--hair); border-radius: .3rem; color: var(--text); text-decoration: none; transition: background-color var(--t-hover) var(--e-out); }
+#st a.prj:hover { background: color-mix(in oklab, var(--text) 6%, transparent); }
+#st a.prj:hover .nm { text-decoration: underline; text-underline-offset: .2em; }
+#st .prj.head { min-height: 0; padding-bottom: var(--u); border-top: 0; }
+#st .prj.head > span { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+#st .prj.head > span:last-child { text-align: right; }
+#st .prj .nm { font: 500 1rem/1.25 var(--font-name); overflow-wrap: anywhere; }
+#st .prj .barcell { font: 500 .92rem/1.2 var(--font-data); color: var(--text); }
+#st .prj .vbar, #st .prj .vbar b { height: var(--meter-h-sub); border-radius: .31rem; }
+#st .prj .t { font: 500 .92rem/1.2 var(--font-data); color: var(--text-body); text-align: right; white-space: nowrap; }
+#st .pmakes > .morepill { align-self: flex-start; }
+#st .prule { font: 500 1rem/1.3 var(--font-name); color: var(--text-body); }
 #st .pmakes .mchip.quiet { padding: .45rem .8rem; font: 500 1.04rem/1 var(--font-name); color: var(--text-body); border-color: var(--track-line); background: transparent; }
 #st .pmakes .morepill { padding-block: .44rem; }  /* the tail stands as tall as the chips it ends */
 /* the add tile where the next path lands, and the form it turns into in place: one path wide, never a 200rem field */
-#st .add.padd { width: min(100%, 52rem); }
+#st .add.padd { width: 100%; }
 #st .add.signing.padd { gap: var(--u) calc(1.5 * var(--u)); padding-block: .6rem; }
 #st .add.signing.padd .field.wide { flex: 1 1 18rem; text-align: left; font: 500 1.04rem/1 var(--font-data); }
 #st .add.signing.padd .said { white-space: nowrap; }
@@ -620,11 +741,15 @@ button.count:hover { color: var(--text); }
 #st .adv .advbtn svg { width: .95rem; height: .95rem; color: var(--text-mute); transition: transform var(--t-snap); }
 #st .adv .advbtn[aria-expanded="true"] svg { transform: rotate(90deg); }  /* right when closed, down when open, as Full log does (marlin) */
 #st .adv .advin { display: grid; grid-template-rows: 1fr; }
+/* what unfolds under the button starts 2u below it, as a kicker stands 2u over its content; a second block of rows in one
+   group (the timers on their axis) stands 2u under the first */
+#st .adv .advin:not([hidden]) { margin-top: calc(2 * var(--u)); }
+.advg > .krows + .krows { margin-top: calc(2 * var(--u)); }
 #st .adv .advin[hidden] { display: none; }
-@media (prefers-reduced-motion: no-preference) {
-  #st .adv .advin > * { animation: advin var(--t-snap) var(--e-out) 1; }
-  @keyframes advin { from { opacity: 0; transform: translateY(-.4rem); } }
-}
+/* it unfolds once, as it opens (.turning, settings.js turn), and every later drawing finds it already there: the rule
+   it replaced ran the unfold again on every redraw, so a read landing made the open rows flicker */
+#st .adv .advin.turning > * { animation: advin var(--t-snap) var(--e-out) var(--turn-at, 0ms) 1 both; }
+@keyframes advin { from { opacity: 0; transform: translateY(-.4rem); } }
 
 /* ---------- what a rail card draws (railDraw): the same mini pair the console draws inside a small multiple ---------- */
 /* on a rail card the pair reads across, which is the kit's row form (console.css .pd-q.row), passed as cls: "row" */
@@ -644,3 +769,11 @@ button.count:hover { color: var(--text); }
 .rfig.rstop { align-items: center; }
 .rstop .tlamp { width: 1.4rem; height: 1.4rem; }
 .rstop .tlamp svg { width: .85rem; height: .85rem; }
+
+/* Version's Advanced in groups: each group's name once over its rows, in the kicker's face one step quieter, with the
+   section's rhythm between groups */
+.advg + .advg { margin-top: calc(4 * var(--u)); }
+.advk { margin: 0 0 var(--u); font: 600 .78rem/1.2 var(--font-name); letter-spacing: .08em; text-transform: uppercase; color: var(--text-mute); }
+/* a bar's figure holds one width down its column, so every track on the scale is one length whatever its figure */
+#st .prj .barcell .v { min-width: 4ch; text-align: right; }
+#st .msrv .barcell .v { min-width: 8ch; text-align: right; }

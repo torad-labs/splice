@@ -12,6 +12,9 @@ const { fmt, KNOB, st: ks, val, word, rowHtml, ctlHtml, saidHtml, cmdChip, needs
 const SV = {
   file: G('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>'),
   open: G('<path d="M7 17L17 7M9 7h8v8"/>'),
+  // a server that lives at a web address, and one nothing runs now (a socket with no lamp lit)
+  web: G('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>'),
+  off: G('<circle cx="12" cy="12" r="6.5"/>'),
   busy: G('<path d="M4 6h16M4 12h16M4 18h9"/><circle cx="18" cy="18" r="1.6"/>'),
   silent: G('<circle cx="12" cy="13" r="7"/><path d="M12 9v4l2.5 2M9 3h6"/>'),
   reasoning: G('<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.4 1 2.5h6c0-1.1.3-1.8 1-2.5A6 6 0 0 0 12 3z"/>'),
@@ -24,6 +27,18 @@ const SV = {
 };
 const MiB = 1048576;
 const DAY = 864e5;
+// WHAT LANDED LAST TIME SIZES THE FIRST FRAME'S GHOST (as Accounts keeps how many doors a login had): the rows of a list are
+// read from the daemon, so before they are read the page cannot know how many there will be, and a ghost of three where
+// nine land moves everything under it. How many the last real read held is kept in this browser and shapes the next first
+// frame; it is a count of shapes to draw and never a figure drawn.
+const SHAPE_KEY = "splice-settings-shape";
+const shapeKept = (() => { try { return JSON.parse(localStorage.getItem(SHAPE_KEY) || "{}") || {}; } catch { return {}; } })();
+const shapeOf = (name, dflt) => (Number.isInteger(shapeKept[name]) && shapeKept[name] >= 0 ? shapeKept[name] : dflt);
+function keepShape(name, n) {
+  if (shapeKept[name] === n) return;
+  shapeKept[name] = n;
+  try { localStorage.setItem(SHAPE_KEY, JSON.stringify(shapeKept)); } catch { /* a full store keeps the last shape */ }
+}
 
 // ---------- the jobs ----------
 // Only the jobs people come to it with (Marlin, Oct 10): a job draws the settings the daemon takes live, in knobs.js's
@@ -54,7 +69,7 @@ const liveKnobs = () => (KNOBS.others(), Object.values(KNOB))
 // into view (knobs.js inertHtml, "seerow" below).
 const inertWhy = (key) => key === "quotaPollIntervalMs" && val("quotaPoll") === "off" ? { text: "Off with", see: "quotaPoll" }
   : key === "stallReanchorMs" && !KNOB.stallReanchorMs.only.length ? "No command resumes stalled answers"
-  : key === "mcpMaxServers" && ui.hubOn ? "The MCP hub runs these servers, with no limit on how many" : null;
+  : key === "mcpMaxServers" && ui.hubOn ? "Unlimited under the MCP hub" : null;
 /** The jobs on the rail: Your data always, the others once one of their settings is live. */
 const jobs = () => TOPICS.filter((x) => x.id === "data" || x.id === "version" || liveKnobs().some((k) => topicOf(k.key) === x.id));
 /** A job's live settings, in the order knobs.js lists them (the first two of Many agents at once are its own section). */
@@ -67,11 +82,38 @@ const advKeys = (id) => liveKnobs().filter((k) => k.adv === id).map((k) => k.key
 const advOpen = (id) => Boolean(ui.adv[id]) || advKeys(id).some((key) => hits([KNOB[key].label, key, KNOB[key].also || ""].join(" ")));
 function advancedHtml(id) {
   const keys = advKeys(id);
+  // how many settings stood behind the button is what the next first frame draws on it, since the daemon names them
+  if (ks.cfg) keepShape(`adv:${id}`, keys.length);
   if (!keys.length) return "";
-  const open = advOpen(id);
-  // the count is on the button: how much is behind it is the one thing he cannot see while it is closed
-  return `<section class="psec adv"><div class="sechead"><button class="act quiet advbtn" data-act="adv" data-id="${id}" aria-expanded="${open}">Advanced<b>${fmt(keys.length)}</b>${ICON.caret}</button>${open ? paneLegend() : ""}</div>`
-    + `<div class="advin"${open ? "" : " hidden"}>${open ? krowsHtml(keys) : ""}</div></section>`;
+  const open = advOpen(id), t = turn(`adv:${id}`, open);
+  // the count is on the button: how much is behind it is the one thing he cannot see while it is closed. Its rows
+  // unfold once, when it opens, and stand still through every later drawing
+  return `<section class="psec adv"><div class="sechead"><button class="act quiet advbtn" data-act="adv" data-id="${id}" aria-expanded="${open}">Advanced<b>${fmt(keys.length)}</b>${ICON.caret}</button>${open ? paneLegend(keys) : ""}</div>`
+    + `<div class="advin${open ? t.cls : ""}"${open ? t.style : " hidden"}>${open ? advRows(id, keys) : ""}</div></section>`;
+}
+// VERSION'S ADVANCED IS SPLIT BY WHAT EACH SETTING BELONGS TO (Oct 27): twenty-odd settings in one grid mixed the ChatGPT
+// and Grok commands' addresses with Code mode's switches and splice's own ports, so finding one meant reading them all.
+// Each group is named once over its rows; a setting no group claims (one the daemon added, or one it still carries from
+// an older release) stands under Other by its own name.
+const ADV_GROUPS = [
+  ["ChatGPT and Grok", (k) => /^(chatgpt|xai|codex|grok)/.test(k) || k === "pinnedModel" || k === "contextWindowOverride"],
+  ["Code mode", (k) => k.startsWith("codeMode")],
+  ["splice itself", (k) => ["port", "controlPort", "supervisorUnit"].includes(k) || k.startsWith("ws")],
+];
+function advRows(id, keys) {
+  if (id !== "version") return krowsHtml(keys);
+  const left = new Set(keys);
+  const groups = ADV_GROUPS.map(([word, of]) => { const xs = keys.filter((k) => of(k)); xs.forEach((k) => left.delete(k)); return [word, xs]; });
+  groups.push(["Other", [...left]]);
+  return groups.filter(([, xs]) => xs.length).map(([word, xs]) => `<div class="advg"><h4 class="advk">${esc(word)}</h4>${groupRows(xs)}</div>`).join("");
+}
+/** A group's rows. Two or more of its settings that are lengths of time stand on one log axis under the rest, as the MCP
+ *  timers do (the websocket's idle close and its age limit): "10 min" and "35 min" read as two lengths, not two numbers. */
+function groupRows(xs) {
+  const timed = xs.filter((k) => KNOB[k]?.c?.k === "dur");
+  if (timed.length < 2) return krowsHtml(xs);
+  return krowsHtml(xs.filter((k) => !timed.includes(k)))
+    + krowsHtml(timed, { ax: durAxis(msOf(timed), "How long, log scale"), draw: Object.fromEntries(timed.map((k) => [k, durDraw])) });
 }
 
 // A figure not read yet is undefined and draws its own shape, striped; one asked for and not answered is null and draws "Not read", its reason warned to the console.
@@ -93,6 +135,23 @@ const later = () => { if (!drawLater) drawLater = setTimeout(() => { drawLater =
 /** A REFUSAL SHAKES ONCE (console.css .failed, .act.shook): the drawing right after it carries the mark, and the next one is still. */
 const shake = (id) => { ui.shook = id; render(); ui.shook = null; };
 
+// ---------- a change of state that fades ----------
+// THE PANE IS DRAWN WHOLE ON EVERY CHANGE (render), so a CSS transition never runs here: each drawing makes new nodes
+// that are already in their new state, and a card the search quieted snapped to it. A card, a row or a disclosure whose
+// state changed fades from its old look by an animation instead, and every drawing in the next moment (a read landing
+// while he types) draws it at the same point of that fade through --turn-at, a negative delay, so the fade is one
+// movement and never restarts or snaps. The first drawing of a thing never fades: it had no state to come from.
+const turns = new Map();
+let snapMs = null;
+/** [id] in state [now]: the class and the style that carry it from the state it had into this one, empty once there. */
+function turn(id, now) {
+  snapMs ??= parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--t-snap")) || 0;
+  const t = performance.now(), was = turns.get(id);
+  if (!was || was.v !== now) turns.set(id, { v: now, at: was ? t : -Infinity });
+  const gone = t - turns.get(id).at;
+  return gone < snapMs ? { cls: " turning", style: ` style="--turn-at:${-Math.round(gone)}ms"` } : { cls: "", style: "" };
+}
+
 // ---------- what the daemon keeps ----------
 // One read per store; a store whose route answers with an error is drawn as unreadable, never as empty.
 /** Each store, each command's own read and each week's count start together and draw as they answer, so the cards are
@@ -110,13 +169,13 @@ function readKept() {
   // ceiling, so "Run at most" binds only the servers the daemon runs itself (v0.4.0 section 8, as built under the hub)
   get("/health", (r) => { ui.hubOn = r.ok && r.body?.mcpHub === "on"; });
   // the sharing choice ([daemon] mcp_share) and what every copy on this machine holds against one copy each
-  get("/api/topology", (r) => { ui.topo = r.ok ? r.body : null; });
+  get("/api/topology", (r) => { ui.topo = r.ok ? r.body : null; colourCommands(); });
   get("/api/mcp/memory", (r) => { ui.mmem = r.ok ? r.body : null; nameHolders(); });
   // the plan windows Accounts draws, read here for the highest of each against the warn line these settings set
-  get("/api/accounts", (r) => { ui.accts = r.ok ? (r.body?.accounts ?? []) : null; });
+  get("/api/accounts", (r) => { ui.accts = r.ok ? (r.body?.accounts ?? []) : null; if (r.ok) keepShape("logins", planLogins().length); });
   // the projects the saved folders actually make, and whether each folder is still on disk (ProjectsRoutes.kt): the
   // row under each path is the daemon's own answer, never a listing this page takes itself
-  get("/api/projects", (r) => { ui.projects = r.ok ? r.body : null; });
+  get("/api/projects", (r) => { ui.projects = r.ok ? r.body : null; if (r.ok) keepShape("projects", (r.body?.projects || []).filter(projectName).length); });
   // a rollback already running (started elsewhere) is picked up once the version is known: it names the release it goes back to
   get("/api/upgrade", (r) => { ui.ver = r.ok ? r.body : null; }).then(async () => {
     const upgradeRun = await API.get("/api/upgrade/run");
@@ -136,7 +195,8 @@ async function readBase() {
   ks.commandOf = Object.fromEntries(ui.headRows.map((h) => [h.key, h.command]));
   // a command's colour is its provider's FAMILY: the models route names a provider in its module's own word ("codex",
   // "openai"), which the colour table does not, and a chip drawn from the module's word came out in no colour at all
-  ks.providerOf = Object.fromEntries((models.body?.heads || []).map((r) => [r.head, familyOf(r.provider)]));
+  ui.modelRows = models.body?.heads || [];
+  colourCommands();
   // the fold set is ChatGPT models, so only the commands that reach that provider offer theirs
   ks.models = [...new Map((models.body?.heads || []).filter((r) => r.provider === "codex").flatMap((r) => r.models || []).map((m) => [m.id, { id: m.id, label: m.label || m.id }])).values()];
 }
@@ -184,8 +244,15 @@ const lit = (text) => (words().length && hits(text) ? " lit" : "");
 /** How many cards to a row, so the rows come out even: six read as two rows of three, never four and then two with
  *  half a row empty. Four or fewer stand on one row; above that, the fewest rows of at most four, shared evenly. */
 const perRow = (n) => (n <= 4 ? Math.max(1, n) : Math.ceil(n / Math.ceil(n / 4)));
-/** A provider as the colour table names it (kit.js COLORS), from the word its module uses ("codex", "anthropic"). */
-const familyOf = (p) => (COLORS[p] ? p : PROVIDER_FAMILY[p] ?? p);
+/** A provider as the colour table names it (kit.js COLORS), from the word its module uses ("codex", "anthropic") or, for a
+ *  provider he named himself that answers on this computer's loopback, "local" (kit.js providerFamilyOf). */
+const familyOf = providerFamilyOf;
+/** Every command in its provider's colour: the models route's provider for each, read as its family. Drawn again when the
+ *  topology lands, since a provider he named is known to be local only by the address it answers on. */
+function colourCommands() {
+  const bases = ui.topo?.topology?.providers || {};
+  ks.providerOf = Object.fromEntries((ui.modelRows || []).map((r) => [r.head, familyOf(r.provider, bases)]));
+}
 
 // ---------- what a setting's row draws ----------
 // AN ELEMENT, NEVER A SENTENCE, AND ONLY WHERE THE FACT IS ON THE WIRE (Marlin's ruling, Oct 12). Each of these is a
@@ -212,20 +279,27 @@ const loginChip = (x) => `<span class="chip" style="--c:${colorOf(familyOf(x.pro
 const quietLogins = () => (ui.accts || []).filter((x) => !signedOut(x) && x.five_hour_used_percent == null && x.seven_day_used_percent == null);
 /** What a row draws when its section gives it no drawing of its own. */
 function elOf(key) {
+  // the last read, and how soon the next one is due as the reset ring Accounts draws beside a window: full just after
+  // a read, empty once the next is due
   if (key === "quotaPollIntervalMs") {
-    const seen = seenAt();
-    return seen ? `<span class="kfact">Read <b>${esc(whenWord(seen * 1000))}</b></span>` : "";
+    const seen = seenAt(), every = Number(val("quotaPollIntervalMs")) || 0;
+    const left = every ? Math.max(0, 1 - (Date.now() - seen * 1000) / every) : 0;
+    return seen ? `<span class="kfact kread">${every && val("quotaPoll") !== "off" ? DRAW.ring(left) : ""}Read <b>${esc(whenWord(seen * 1000))}</b></span>` : "";
   }
+  if (key === "maxInflight") return peaksOnLimit();
   if (key === "usageWarnPct") return warnDraw();
+  // the logins this stand-in covers, as their chips in rows under the words, the first four whole and the rest a count
   if (key === "usageWarnTokens5h") {
-    const quiet = quietLogins();
-    return quiet.length ? `<span class="kfact">No limit reported</span><span class="kchips">${quiet.map(loginChip).join("")}</span>` : "";
+    const quiet = quietLogins(), rest = quiet.slice(4);
+    return quiet.length ? `<div class="kfacts"><span class="kfact">No limit reported</span><span class="kchips">${quiet.slice(0, 4).map(loginChip).join("")}`
+      + `${rest.length ? `<span class="omore" title="${esc(rest.map(loginFull).join(", "))}">+${fmt(rest.length)}</span>` : ""}</span></div>` : "";
   }
   // how many run now against the most it may, as a meter on that ceiling: full at the limit, in the limit red
   if (key === "mcpMaxServers") {
     if (!ui.mcp) return "";
     const up = Object.values(ui.mcp.servers || {}).filter((s) => s.hosted).length, most = Number(val("mcpMaxServers")) || 0;
-    return most ? `<div class="kmeter">${DRAW.meter((up / most) * 100, up >= most ? "full" : "")}<span><b>${fmt(up)}</b> running</span></div>`
+    // under the hub the ceiling does nothing, so there is nothing to draw it against: how many run is the one fact
+    return most && !ui.hubOn ? `<div class="kmeter">${DRAW.meter((up / most) * 100, up >= most ? "full" : "")}<span><b>${fmt(up)}</b> running</span></div>`
       : `<span class="kfact"><b>${fmt(up)}</b> running</span>`;
   }
   return "";
@@ -246,10 +320,10 @@ function krowsHtml(keys, { ax = null, draw = {}, mark = null } = {}) {
   const line = at == null ? "" : `<i class="dline" style="left:${at.toFixed(2)}%" aria-hidden="true"></i>`;
   const rows = keys.map((key, i) => {
     const k = KNOB[key], hay = knobHay(k);
-    // a search keeps every row in its place: the ones it found keep their ink, the rest go quiet
-    const found = words().length ? (hits(hay) ? " hit" : " miss") : "";
+    // a search keeps every row in its place: the ones it found keep their ink, the rest fade to quiet
+    const found = words().length ? (hits(hay) ? " hit" : " miss") : "", t = turn(`row:${key}`, found === " miss");
     const el = flat ? "" : `<div class="kdraw">${drawn[i] ? `${drawn[i]}${draw[key] ? line : ""}` : ""}</div>`;
-    return `<div class="krow${found}" data-key="${key}">${rowHtml(k, { hl, lit: lit(hay), el, inert: inertWhy(key) })}</div>`;
+    return `<div class="krow${found}${t.cls}" data-key="${key}"${t.style}>${rowHtml(k, { hl, lit: lit(hay), el, inert: inertWhy(key) })}</div>`;
   });
   const head = at == null ? "" : `<div class="khead"><span></span><span></span><span class="kmk">`
     + `<a class="dmark${at > 55 ? " end" : ""}" href="${mark.href}" style="left:${at.toFixed(2)}%">${mark.inner}</a></span></div>`;
@@ -259,7 +333,9 @@ function krowsHtml(keys, { ax = null, draw = {}, mark = null } = {}) {
   }).join("") : "";
   // the axis's word sits in the control column, at its right edge, so it ends where the axis starts and reads as its caption
   const foot = ax ? `<div class="kaxis" aria-hidden="true"><span></span><span class="kaw">${esc(ax.word)}</span><span class="pd-ax">${ticks}</span></div>` : "";
-  return `<div class="krows${flat ? " flat" : ""}">${head}${rows.join("")}${foot}</div>`;
+  // a section with no drawing stands in columns, never more of them than it has rows (settings.css .krows.flat)
+  const cols = flat ? ` flat${keys.length >= 3 ? " n3" : keys.length === 2 ? " n2" : ""}` : "";
+  return `<div class="krows${cols}">${head}${rows.join("")}${foot}</div>`;
 }
 // THE MARKS ARE NAMED ONCE A PANE (Marcos, Oct 25: "show don't tell"): a row names a command only where that command
 // holds its own value, so the scope every other row follows is said once, on the first section it applies to; and the
@@ -344,7 +420,8 @@ const allBytes = () => DATA_ROWS.reduce((s, r) => s + (heldOf(r)?.bytes ?? 0), 0
 /** How fast a store grows. Usage history is the one store the daemon measures (rate_bytes_per_month, over its own days);
  *  for every other store it is the size over the days since the oldest thing kept. */
 function growOf(r, x) {
-  if (r.id === "hist") return ui.hist && ui.hist.rate_bytes_per_month ? `About ${mbWord(ui.hist.rate_bytes_per_month)} a month` : "";
+  // every card says its growth by the day, so two cards compare without a sum; the daemon's month is thirty days of it
+  if (r.id === "hist") return ui.hist && ui.hist.rate_bytes_per_month ? `About ${mbWord(ui.hist.rate_bytes_per_month / 30)} a day` : "";
   if (!x.since || !x.bytes) return "";
   const days = Math.max(1, Math.round((Date.now() - x.since) / DAY));
   return `About ${mbWord(x.bytes / days)} a day`;
@@ -369,7 +446,7 @@ function daysChart(h, hue = "") {
     + `<div class="dcends"><span>${esc(dateWord(new Date(h.held.oldest_epoch_ms)))}</span><span>Today</span></div></div>`;
 }
 const amountOf = (x, r) => (x.n || x.bytes
-  ? `<div class="pd-sub"><b>${esc(mbWord(x.bytes))}</b><span>${fmt(x.n)} ${esc(r.unit)}${x.since ? ` · since ${esc(dateWord(new Date(x.since)))}` : ""}</span></div>`
+  ? `<div class="pd-sub"><b>${esc(mbWord(x.bytes))}</b><span>${fmt(x.n)} ${esc(x.n === 1 ? r.unit.replace(/s$/, "") : r.unit)}${x.since ? ` · since ${esc(dateWord(new Date(x.since)))}` : ""}</span></div>`
     + (growOf(r, x) ? `<span class="dgrow">${growOf(r, x)}</span>` : "") + (r.id === "hist" ? daysChart(ui.hist, hueOf(r)) : "")
   : DRAW.nothing("Nothing saved"));
 // what a store's size will be, while it is read: the figure and the line under it, striped
@@ -474,7 +551,9 @@ function dataRow(r) {
     return drow({ name: r.name, amount: DRAW.nothing("Not counted"), keep: "", sw: r.always ? ALWAYS : "" }); // a store the daemon has no off switch for
   }
   const x = heldOf(r), id = `del:${r.id}`;
-  if (x === undefined) return drow({ name: r.name, door: r.door, amount: AMOUNT_GHOST });
+  // the card that lands with its switch and how long it keeps holds the place of both while its size is read, so the row
+  // of cards is as tall before the read as after it
+  if (x === undefined) return drow({ name: r.name, door: r.door, amount: AMOUNT_GHOST, ...(r.id === "trace" ? { sw: GHOST.bar(11, "chip"), keep: GHOST.bar(7) } : {}) });
   if (!x) return drow({ name: r.name, door: r.door, amount: unreadable });
   const on = r.id === "trace" ? ui.heads.filter(traceOn) : null;
   // the copies keep their own days (the President, Oct 12), and the messages theirs, so each row sets them in its Keep for
@@ -501,7 +580,9 @@ function dataRow(r) {
 // own word instead of being gathered under an outcome's phrase — so this page carries no copy of the bar. A bar grows
 // in from nothing the first time it is drawn with data, once.
 const SPLIT_REM = 60; // about how wide the pane's bar is at the narrowest side-by-side width, in rem
-const storeInk = (i) => `var(--store-${(i % 6) + 1})`;
+// six store colours; a seventh part would take the first one's colour again and read as that store, so every part past
+// the sixth wears the one neutral ink, its name on it
+const storeInk = (i) => (i < 6 ? `var(--store-${i + 1})` : "var(--text-mute)");
 function splitBar(parts, total, { id = "", tail = "" } = {}) {
   const grow = id && !ui.grown.has(id) && total > 0;
   if (grow) ui.grown.add(id);
@@ -736,7 +817,6 @@ function stallRow(why, what, top, early) {
     console.warn(`${what}: ${per.find((p) => p.err)?.err ?? "splice did not answer"}`);
     return cells(" unread", "", `<span class="state limit">Not read</span>`, "", "");
   }
-  if (!total) return cells(" zero", "", "0", "", "");
   const shares = per.filter((p) => !p.err && p.n).sort((a, b) => b.n - a.n), cmd = (p) => p.head.command;
   const segs = shares.map((p) => `<a class="oseg" href="${reqUrl({ ...ask, cmd: cmd(p) })}" style="flex-grow:${p.n};--c:${colorOf(ks.providerOf[p.head.key])}" title="${esc(`${cmd(p)} · ${fmt(p.n)}`)}"></a>`).join("");
   const bar = `<span class="ofill" style="width:${Math.max(2, (total / top) * 100).toFixed(2)}%">${segs}</span>`;
@@ -748,11 +828,19 @@ function stallRow(why, what, top, early) {
   const last = newest ? `<a href="${rowUrl(newest.head.key, newest.newest)}">${esc(whenShort(newest.newest.ts))}</a>` : "";
   return cells("", bar, count, cmds, last);
 }
+// A ZERO IS SAID ONCE (Oct 27): an outcome that did not happen this week is not a row of its own with a 0 and an empty
+// bar. The ones that did not happen are named together on one quiet line under the table, and a group none of whose
+// outcomes happened draws no header over nothing. A count that did not answer keeps its row, with Not read.
 function stallTable() {
   if (weekReading(...STALL_WHYS)) return stallGhost();
-  const top = Math.max(1, ...STALL_WHYS.map((why) => weekTotal(why) ?? 0));
-  const body = STALL_GROUPS.map(([group, rows], g) => ogroup(group) + rows.map(([why, what]) => stallRow(why, what, top, g === 0)).join("")).join("");
-  return `<div class="otab" role="table" aria-label="Stalled answers this week">${otabHead()}${body}</div>`;
+  const top = Math.max(1, ...STALL_WHYS.map((why) => weekTotal(why) ?? 0)), none = [];
+  const body = STALL_GROUPS.map(([group, rows], g) => {
+    const drawn = rows.filter(([why]) => weekTotal(why) !== 0);
+    none.push(...rows.filter(([why]) => weekTotal(why) === 0).map(([, what]) => what));
+    return drawn.length ? ogroup(group) + drawn.map(([why, what]) => stallRow(why, what, top, g === 0)).join("") : "";
+  }).join("");
+  const zero = none.length ? `<p class="ozero"><span class="ozl">None this week</span>${none.map((w) => `<span class="ozw">${esc(w)}</span>`).join("")}</p>` : "";
+  return (body ? `<div class="otab" role="table" aria-label="Stalled answers this week">${otabHead()}${body}</div>` : "") + zero;
 }
 /** The table as it will land: its words are this page's own, its figures the ghosts of figures. */
 const stallGhost = () => `<div class="otab" aria-busy="true">${otabHead()}${STALL_GROUPS.map(([group, rows]) => ogroup(group)
@@ -778,8 +866,14 @@ const LIMITS = ["maxInflight", "maxQueued", "maxRequestBytes"];
 /** Where a moment of today falls on the day's track, in percent. */
 const dayAt = (ms) => Math.max(0, Math.min(100, ((ms - startOfToday()) / DAY) * 100));
 const DAY_TICKS = [[0, "12 AM"], [25, "6 AM"], [50, "12 PM"], [75, "6 PM"]];
-const peakHead = () => `<div class="pk ph" role="row"><span role="columnheader">Command</span><span role="columnheader">At once, of its limit</span>`
-  + `<span role="columnheader" class="pdh">${esc(zoneHead("Busiest at"))}</span><span role="columnheader" class="r">Requests</span><span role="columnheader" class="r">Waited in line</span></div>`;
+// the Waited in line column stands only on a day when something waited: a column of noughts said one fact once per row
+// THE LIMIT IS SAID ONCE WHEN EVERY ROW SHARES IT (Oct 27): "of 100" stood on every row of a table whose meters all
+// ran to 100, so the column says it once in its head; a day when commands hold limits of their own says each on its row
+const limitHead = (one) => (one === undefined ? "At once, of its limit" : one ? `At once, of ${DRAW.n(one)}` : "At once, no limit set");
+const peakHead = (lined = true, one = undefined) => `<div class="pk ph" role="row"><span role="columnheader">Command</span><span role="columnheader">${esc(limitHead(one))}</span>`
+  + `<span role="columnheader" class="pdh">${esc(zoneHead("Busiest at"))}</span><span role="columnheader" class="r">Requests</span>${lined ? `<span role="columnheader" class="r">Waited in line</span>` : ""}</div>`;
+/** How many of a command's requests waited in line today: the week's count where it answered, else the peak's own. */
+const queuedOf = (p) => { const q = (ui.week.queued || []).find((x) => x.head.key === p.head.key); return q && !q.err ? q.n : p.queued || 0; };
 function busyHero() {
   if (ui.peaks === undefined) return heroGhost();
   const rows = (ui.peaks || []).filter((p) => !p.err && p.peak > 0);
@@ -792,17 +886,17 @@ function busyHero() {
     ? { figure: DRAW.pct(top.peak / lim), level: levelOf(top.peak / lim, 0.8, 1), count: top.peak, word: "at once", of: `of ${DRAW.n(lim)} allowed`, href, tail }
     : { figure: DRAW.n(top.peak), of: "at once, no limit set", href, tail });
 }
-function peakRow(p, maxN, now) {
-  const key = p.head.key, lim = limitOf(key), full = lim > 0 && p.peak >= lim;
-  const q = (ui.week.queued || []).find((x) => x.head.key === key), queued = q && !q.err ? q.n : p.queued || 0;
+function peakRow(p, maxN, now, lined, one = undefined) {
+  const key = p.head.key, lim = limitOf(key), full = lim > 0 && p.peak >= lim, queued = queuedOf(p);
   const meter = lim ? DRAW.meter(Math.min(100, (p.peak / lim) * 100), full ? "full" : "") : "";
   return `<div class="pk" role="row" data-grow="peak-${esc(key)}" style="--c:${colorOf(ks.providerOf[key])}">`
     + `<span role="cell"><a class="pcmd" href="${reqUrl({ from: today(), cmd: p.head.command })}">${cmdChip(key)}</a></span>`
-    + `<span class="pm" role="cell">${meter}<span class="pmv${full ? " lv-bad" : ""}"><b>${fmt(p.peak)}</b><i>${lim ? `of ${fmt(lim)}` : "no limit"}</i></span></span>`
+    + `<span class="pm" role="cell">${meter}<span class="pmv${full ? " lv-bad" : ""}"><b>${fmt(p.peak)}</b>${one === undefined ? `<i>${lim ? `of ${fmt(lim)}` : "no limit"}</i>` : ""}</span></span>`
     + `<span class="pclk" role="cell">${esc(clock(new Date(p.at)))}</span>`
     + `<span class="pday" aria-hidden="true"><i class="pfut" style="left:${now.toFixed(2)}%"></i><i class="pdot" style="left:${dayAt(p.at).toFixed(2)}%"></i></span>`
     + `<span role="cell">${DRAW.barCell({ w: ((p.n || 0) / maxN) * 100, text: fmt(p.n || 0) })}</span>`
-    + `<span class="pq r" role="cell">${queued ? `<a class="pd-count" href="${reqUrl({ from: today(), why: "queued", cmd: p.head.command })}"><b>${fmt(queued)}</b>${DRAW.go}</a>` : `<span class="pq0">0</span>`}</span></div>`;
+    // a command none of whose requests waited leaves its cell empty: the column's other doors say what waited
+    + (lined ? `<span class="pq r" role="cell">${queued ? `<a class="pd-count" href="${reqUrl({ from: today(), why: "queued", cmd: p.head.command })}"><b>${fmt(queued)}</b>${DRAW.go}</a>` : ""}</span>` : "") + `</div>`;
 }
 function peaksTable() {
   if (ui.peaks === undefined) return peaksGhost();
@@ -811,9 +905,10 @@ function peaksTable() {
   // the commands that ran today are rows; the ones that held nothing are one line naming them, and a command whose
   // peak was not read says so beside its chip, its reason in the console (fin, Oct 12)
   const busy = rows.filter((p) => !p.err && p.peak > 0), idle = rows.filter((p) => !p.err && !p.peak), bad = rows.filter((p) => p.err);
-  const maxN = Math.max(1, ...busy.map((p) => p.n || 0)), now = dayAt(Date.now());
+  const maxN = Math.max(1, ...busy.map((p) => p.n || 0)), now = dayAt(Date.now()), lined = busy.some((p) => queuedOf(p) > 0);
+  const lims = new Set(busy.map((p) => limitOf(p.head.key))), one = lims.size === 1 ? [...lims][0] : undefined;
   const ticks = DAY_TICKS.map(([x, w]) => `<span class="pd-tk${x ? "" : " pd-t-first"}" style="left:${x}%">${w}</span>`).join("");
-  const table = busy.length ? `<div class="peaks" role="table" aria-label="Today's busiest moment per command">${peakHead()}${busy.map((p) => peakRow(p, maxN, now)).join("")}`
+  const table = busy.length ? `<div class="peaks${lined ? "" : " noq"}" role="table" aria-label="Today's busiest moment per command">${peakHead(lined, one)}${busy.map((p) => peakRow(p, maxN, now, lined, one)).join("")}`
     + `<div class="pk pt" aria-hidden="true"><span class="pdax pd-ax">${ticks}</span></div></div>` : "";
   const quiet = idle.length ? `<p class="pidle"><span>No requests today</span>${idle.map((p) => cmdChip(p.head.key)).join("")}</p>` : "";
   const errs = [...new Set(bad.map((p) => p.err))].map((err) => `<p class="pidle"><span class="state limit">${esc(err)}</span>${bad.filter((p) => p.err === err).map((p) => cmdChip(p.head.key)).join("")}</p>`).join("");
@@ -825,32 +920,40 @@ const peaksGhost = () => `<div class="peaks" aria-busy="true">${peakHead()}${(ui
 /** How many waited in line today, as a door to them, on the section's kicker line. */
 function queuedAside() {
   if (weekReading("queued")) return "";
-  const q = weekTotal("queued");
+  // where the count's own ask did not answer, every command's peak read counts its day's waits too: their sum is the
+  // same count, and it is the one the table under this line shows, so the line never says Not read over figures
+  const peaks = ui.peaks || [], summed = peaks.length && peaks.every((p) => !p.err && Number.isFinite(p.queued)) ? peaks.reduce((s, p) => s + p.queued, 0) : null;
+  if (weekTotal("queued") === null && ui.peaks === undefined) return "";
+  const q = weekTotal("queued") ?? summed;
   if (q === null) return `<span class="pd-count"><span class="state limit">Not read</span> waited in line</span>`;
-  return q ? DRAW.countDoor(q, "waited in line today", reqUrl({ from: today(), why: "queued" })) : `<span class="pd-count"><b>0</b> waited in line today</span>`;
+  return q ? DRAW.countDoor(q, "waited in line today", reqUrl({ from: today(), why: "queued" })) : `<span class="hn">None waited in line today</span>`;
 }
 /** What the providers pushed back with today: each kind's count against the day's requests as a door to them, then
  *  each command's share of it on one scale. A kind that came back zero, or unread, is one quiet line. */
 function pushback() {
   if (weekReading("overloaded", "cutoff", "allday")) return `${GHOST.focal(16)}${GHOST.row([GHOST.chip(), GHOST.cell()])}`;
-  const all = weekTotal("allday"), parts = [], quiet = [];
+  const all = weekTotal("allday"), parts = [], quiet = [], none = [];
   for (const [why, what] of [["overloaded", "overloaded"], ["cutoff", "cut off"]]) {
     const per = ui.week[why] ?? [], total = weekTotal(why);
     if (total === null) {
       console.warn(`${what} today: ${per.find((p) => p.err)?.err ?? "splice did not answer"}`);
-      quiet.push(`<span class="fig"><span class="state limit">Not read</span> ${esc(what)}</span>`);
+      quiet.push(`<span class="zw"><span class="state limit">Not read</span> ${esc(what)}</span>`);
       continue;
     }
-    if (!total) { quiet.push(`<span class="fig"><b>0</b> ${esc(what)}</span>`); continue; }
+    // a kind that did not happen is said in words, once, with the others that did not: "None cut off today"
+    if (!total) { none.push(what); continue; }
     const shares = per.filter((p) => !p.err && p.n).sort((a, b) => b.n - a.n), top = shares[0]?.n || 1;
     parts.push(`<div class="pb"><a class="pd-sub pbfig" href="${reqUrl({ from: today(), why })}"><b>${fmt(total)}</b>${esc(what)}${all ? ` of ${DRAW.n(all)} requests` : ""}${DRAW.go}</a>`
       + `<div class="pbrows">${shares.map((p) => `<a class="pbrow" href="${reqUrl({ from: today(), why, cmd: p.head.command })}">${cmdChip(p.head.key)}${DRAW.barCell({ w: (p.n / top) * 100, text: fmt(p.n) })}</a>`).join("")}</div></div>`);
   }
+  if (none.length) quiet.unshift(`<span class="zw">None ${esc(none.join(" or "))} today</span>`);
   return parts.join("") + (quiet.length ? `<p class="zeros">${quiet.join('<span class="dot">·</span>')}</p>` : "");
 }
-const busyHtml = () => pair(DRAW.section("Today", `${busyHero()}${peaksTable()}`, { aside: queuedAside() }),
-  knobSec("splice's limits", LIMITS.filter((key) => keysOf("busy").includes(key))), "lead")
-  + DRAW.section("Providers today", pushback());
+// WHAT HAPPENED TODAY STANDS IN ONE COLUMN, THE LIMITS THAT SHAPED IT IN THE OTHER (Oct 27): what the providers pushed
+// back with is part of today, so it sits under today's table, and a full-width section of two bars no longer ran a
+// 6-request bar 1,700 px long across the plate at 3822.
+const busyHtml = () => pair(DRAW.section("Today", `${busyHero()}${peaksTable()}`, { aside: queuedAside() }) + DRAW.section("Providers today", pushback()),
+  knobSec("splice's limits", LIMITS.filter((key) => keysOf("busy").includes(key))), "lead");
 
 // ---------- Reasoning ----------
 // REASONING HAS NO FIGURE, SO IT OPENS ON THE THING ITSELF (Oct 26): nothing on the wire counts what a reasoning setting
@@ -879,7 +982,9 @@ function terminal() {
     + line("you", `<b class="pr">$</b>claude`)
     + line("think", `${dot}Thinking…`, "showReasoning", where === "off" ? word(KNOB.showReasoning, where) : "")
     + reasoning
-    + line("wait", `<i class="spin"></i>${wire(8, "s")}<b class="sep">·</b>${wire(6, "s")}<b class="sep">·</b>${wire(7, "s")}`, "progressLine", prog ? "" : word(KNOB.progressLine, false))
+    // "prog", never "wait": console.css's .wait is the spinning ring, and a terminal line wearing it turned in circles
+    // and its words are "short" wires, never ".s", which is the session card's padded class
+    + line("prog", `<i class="spin"></i>${wire(8, "short")}<b class="sep">·</b>${wire(6, "short")}<b class="sep">·</b>${wire(7, "short")}`, "progressLine", prog ? "" : word(KNOB.progressLine, false))
     + line("reply", `${dot}${wire(70)}`)
     + `</div>`;
 }
@@ -919,7 +1024,8 @@ function planHero() {
   if (ui.accts === undefined) return heroGhost();
   const top = planTop();
   if (!top) return "";
-  const warn = warnPct(), back = top.w.resetMs ? `Resets ${backWord(new Date(top.w.resetMs))}` : "";
+  // the zone is said here, on the pane's first time, and the reset times on the cards below read in it
+  const warn = warnPct(), back = top.w.resetMs ? `Resets ${backWord(new Date(top.w.resetMs))}${ZONE_WORD ? ` ${ZONE_WORD}` : ""}` : "";
   return DRAW.hero({
     figure: `${top.p}%`, level: top.p >= 100 ? "bad" : top.p >= warn ? "watch" : "ok", of: `used of its ${lenWord(top.w)} limit`, href: "accounts.html",
     under: loginWord(top.x), tail: top.p >= 100 ? DRAW.lock(back ? `Limit reached · ${back}` : "Limit reached") : back ? `<span class="hat">${esc(back)}</span>` : "",
@@ -939,14 +1045,28 @@ function planWin(w, warn) {
     + `<span class="pct${full ? " limit" : ""}">${w.used}%<span class="used">used</span></span>`
     + (w.left != null ? `<span class="when">${DRAW.ring(w.left / w.len)}Resets ${esc(backWord(new Date(w.resetMs)))}</span>` : "<span></span>");
 }
+// A LOGIN'S CARD IS A DOOR TO ITS CARD ON ACCOUNTS (Oct 27): the act on a login at its limit is there (sign in again, move
+// to another login), so each card carries the way in at its header's right end, one mark in the same place on every card.
+// Accounts opens the card named by ?card=, and the kit spells that key once for the board and for every door to it
+// (kit.js acctCardKey).
+const PLAN_SHOWN = 4;
+function planCard(x, warn) {
+  return `<article class="plog" style="--c:${colorOf(familyOf(x.provider))}" data-grow="plan">`
+    + `<header title="${esc(loginFull(x))}"><span class="blot"></span><span class="pln">${esc(loginWord(x))}</span>`
+    + `<a class="link plogdoor" href="accounts.html?card=${encodeURIComponent(acctCardKey(x))}" aria-label="${esc(`${loginWord(x)} on Accounts`)}">${SV.open}Accounts</a></header>`
+    + `<div class="windows">${windowsOf(x).map((w) => planWin(w, warn)).join("")}</div></article>`;
+}
 function planCards() {
   const a = ui.accts;
   if (a === undefined) return planGhost();
   if (!a) return `<p class="pidle"><span class="state limit">Not read</span></p>`;
   const warn = warnPct(), out = a.filter(signedOut);
-  const cards = planLogins().map(({ x }) => `<article class="plog" style="--c:${colorOf(familyOf(x.provider))}" data-grow="plan">`
-    + `<header title="${esc(loginFull(x))}"><span class="blot"></span><span class="pln">${esc(loginWord(x))}</span></header>`
-    + `<div class="windows">${windowsOf(x).map((w) => planWin(w, warn)).join("")}</div></article>`);
+  // THE LOGINS NEAREST THEIR LIMIT STAND AT FULL SIZE, THE REST BEHIND ONE COUNT (Oct 27): nine cards were two screens, and
+  // the plans far from their limit are not what this topic is read for. They open in place, and the warn line's track beside
+  // them still has every login as a dot.
+  const logins = planLogins(), open = !!ui.pmore.plan, shown = open ? logins : logins.slice(0, capOf(logins.length, PLAN_SHOWN));
+  const more = logins.length > PLAN_SHOWN + 1 ? DRAW.more(logins.length - PLAN_SHOWN, { word: "more logins", act: "pmore", data: ` data-id="plan"`, open }) : "";
+  const cards = shown.map(({ x }) => planCard(x, warn));
   // a signed-out login's last reading is from before, so it stands as its chip under the state, never as windows
   const signed = out.length ? `<p class="pidle"><span>Signed out</span>${out.map(loginChip).join("")}</p>` : "";
   if (!cards.length) {
@@ -955,25 +1075,60 @@ function planCards() {
     const never = a.some((x) => !x.refusal && x.credential_present !== false && !x.observed_at_epoch_seconds && !x.no_usage_at_epoch_seconds);
     return `<p class="pidle"><span class="state">${never ? "Not read" : "No limits reported"}</span></p>${signed}`;
   }
-  return DRAW.cols(cards, 26, "plogs") + signed;
+  return DRAW.cols(cards, PLOG_MIN, "plogs") + (more ? `<div class="pmoreline">${more}</div>` : "") + signed;
 }
-const planGhost = () => DRAW.cols([0, 1, 2].map((i) => `<article class="plog ghosted" style="--i:${i}" aria-hidden="true"><header>${GHOST.bar(8)}</header>`
-  + `<div class="windows">${[0, 1].map(() => `${GHOST.bar(3.4)}${GHOST.track()}<span class="pct">${GHOST.fig(4.2)}</span><span class="when">${GHOST.ring()}${GHOST.bar(6.2)}</span>`).join("")}</div></article>`), 26, "plogs");
+// A LOGIN'S CARD IS WIDE ENOUGH FOR ITS METER TO READ (Oct 27): the label, "100% used" and the reset take about 28rem
+// of a card (settings.css .plog .windows), so a card of 35rem left its meter 7rem, a sliver beside its percent, wherever
+// two cards stood in a row of the left half (his 2548 at 150%, and 1440). At 41rem the meter has 13rem at the least:
+// two cards share a row where the half holds 84rem (3822), and a half narrower than that holds one card a row, its
+// meter running most of the card's width.
+const PLOG_MIN = 41;
+const planGhost = () => DRAW.cols(Array.from({ length: Math.max(1, Math.min(PLAN_SHOWN, shapeOf("logins", 3))) }, (_, i) => i).map((i) => `<article class="plog ghosted" style="--i:${i}" aria-hidden="true"><header>${GHOST.bar(8)}</header>`
+  + `<div class="windows">${[0, 1].map(() => `${GHOST.bar(3.4)}${GHOST.track()}<span class="pct">${GHOST.fig(4.2)}</span><span class="when">${GHOST.ring()}${GHOST.bar(6.2)}</span>`).join("")}</div></article>`), PLOG_MIN, "plogs");
 /** The warn line on a plan's whole, with every login a dot at its highest running window, in its provider's colour.
- *  Dots that would touch take a lane under the one before, so each stays a dot of its own. */
+ *  A dot takes the first of three lanes where it clears the dot before it, so no two dots ever touch. A login with no
+ *  lane left joins a count on a lane of its own under its crowd ("+6"), whose title names them, and the count reads
+ *  toward the track's middle so it never leaves the track. A dot at 100% sits inside the track's end. */
+const WARN_LANES = 3, LANE_GAP = 4, MORE_GAP = 12;
+/** Dots on one track, the highest first: each { p (0 to 100), c, title, full }. A dot takes the first lane where it
+ *  clears the dot before it; the ones left over join a count on a lane of their own under their crowd. */
+function laneDots(items) {
+  const fronts = [], dots = [], more = [];
+  for (const it of items) {
+    const p = Math.max(0, Math.min(100, it.p)), lane = [...Array(WARN_LANES).keys()].find((i) => fronts[i] === undefined || fronts[i] - p >= LANE_GAP);
+    if (lane !== undefined) { fronts[lane] = p; dots.push({ ...it, p, lane }); continue; }
+    const m = more.at(-1);
+    if (m && m.p - p < MORE_GAP) m.its.push(it); else more.push({ p, its: [it] });
+  }
+  const lanes = Math.max(1, ...dots.map((d) => d.lane + 1)) + (more.length ? 1 : 0);
+  // only a dot at its limit wears the limit red ("atlimit", never "over", which is the kit's per-command line, .kn
+  // .over, and gave the dot its padding and rule)
+  const marks = dots.map((d) => `<i class="ldot${d.full ? " atlimit" : ""}" style="--at:${d.p};--lane:${d.lane};--c:${d.c}" title="${esc(d.title)}"></i>`)
+    .concat(more.map(({ p, its }) => `<i class="lmore${p < 50 ? " lo" : ""}" style="--at:${p};--lane:${lanes - 1}" title="${esc(its.map((x) => x.title).join("\n"))}">+${fmt(its.length)}</i>`));
+  return { lanes, marks: marks.join("") };
+}
 function warnDraw() {
   if (ui.accts === undefined) return GHOST.track();
-  const warn = warnPct(), lanes = [];
-  const dots = planLogins().filter((l) => l.top).sort((a, b) => a.top.used - b.top.used).map((l) => {
-    let lane = lanes.findIndex((last) => l.top.used - last >= 4);
-    if (lane < 0) lane = Math.min(lanes.length, 2);
-    lanes[lane] = l.top.used;
-    return { ...l, lane };
-  });
-  const said = `Warns at ${warn}%${dots.length ? `; ${dots.map((d) => `${loginWord(d.x)} ${d.top.used}%`).join(", ")}` : ""}`;
-  return `<span class="wtrk" style="--lanes:${Math.max(1, lanes.length)}" role="img" aria-label="${esc(said)}"><i class="wzone" style="left:${warn}%"></i>`
-    + dots.map((d) => `<i class="ldot${d.top.used >= warn ? " over" : ""}" style="left:${Math.min(100, d.top.used)}%;--lane:${d.lane};--c:${colorOf(familyOf(d.x.provider))}" title="${esc(`${loginWord(d.x)} · ${d.top.used}% of its ${lenWord(d.top)} limit`)}"></i>`).join("")
-    + `</span>`;
+  const warn = warnPct(), at = (p) => Math.max(0, Math.min(100, p));
+  const all = planLogins().filter((y) => y.top).sort((a, b) => b.top.used - a.top.used);
+  const name = (l) => `${loginWord(l.x)} · ${l.top.used}% of its ${lenWord(l.top)} limit`;
+  const { lanes, marks } = laneDots(all.map((l) => ({ p: l.top.used, c: colorOf(familyOf(l.x.provider)), title: name(l), full: l.top.used >= 100 })));
+  // the zone says which are past the warn line
+  const said = `Warns at ${warn}%${all.length ? `; ${all.map((l) => `${loginWord(l.x)} ${l.top.used}%`).join(", ")}` : ""}`;
+  return `<span class="wtrk" style="--lanes:${lanes}" role="img" aria-label="${esc(said)}"><i class="wzone" style="--at:${at(warn)}"></i>${marks}</span>`;
+}
+/** TODAY'S PEAKS UNDER THE LIMIT THAT HELD THEM (Oct 27): "Requests at once" is the ceiling every row of Today's table is
+ *  drawn against, so its row draws that ceiling as the track's end and every command that ran today as a dot at its
+ *  busiest moment, in its provider's colour. A command holding a limit of its own stands at its share of its own. One
+ *  with no limit at all has no share to place, and is left to Today's table. */
+function peaksOnLimit() {
+  if (ui.peaks === undefined) return GHOST.track();
+  const busy = (ui.peaks || []).filter((p) => !p.err && p.peak > 0 && limitOf(p.head.key) > 0)
+    .map((p) => ({ p, lim: limitOf(p.head.key) })).sort((a, b) => b.p.peak / b.lim - a.p.peak / a.lim);
+  if (!busy.length) return "";
+  const title = ({ p, lim }) => `${p.head.command} · ${fmt(p.peak)} of ${fmt(lim)} at once, ${clock(new Date(p.at))}`;
+  const { lanes, marks } = laneDots(busy.map((b) => ({ p: (b.p.peak / b.lim) * 100, c: colorOf(ks.providerOf[b.p.head.key]), title: title(b), full: b.p.peak >= b.lim })));
+  return `<span class="wtrk lim" style="--lanes:${lanes}" role="img" aria-label="${esc(`Today: ${busy.map(title).join("; ")}`)}">${marks}</span>`;
 }
 const planHtml = () => pair(DRAW.section("Right now", `${planHero()}${planCards()}`, { aside: planAside() }), knobSec("When splice warns", keysOf("plan")));
 
@@ -1040,7 +1195,16 @@ const codeOf = (v) => (/^(https?|wss?):\/\//i.test(String(v || "")) ? addressOf(
 // where a server is declared, under its name: its project's chip, else its file or plugin, and a web server's address
 // a server the files never declared (the daemon planned it from elsewhere) has no line here: a file glyph naming nothing
 // read as a file with no name (temple, Per project, at 3822 on Oct 26)
-const fromHtml = (s) => !s.project && !s.from && !s.address ? "" : `<span class="from" title="${esc(s.path || s.from)}">${SV.file}${s.project ? `<span class="chip">${esc(s.project)}</span>` : `<span class="ft">${esc(s.from)}</span>`}${s.address ? `<code>${esc(s.address)}</code>` : ""}</span>`;
+// HIS OWN .claude.json IS WHERE A SERVER IS DECLARED UNLESS SAID OTHERWISE, so no row says it: the same file name under
+// every server of a list is the one qualifier of a page said on every row. A row names its place only where it is
+// somewhere else (a project, a plugin, a command's own copy), and a web server its address, which is what tells it apart.
+const OWN_FILE = ".claude.json";
+const placeOf = (s) => s.project || (s.from && s.from !== OWN_FILE ? s.from : "");
+const fromHtml = (s) => {
+  const place = s.project ? `<span class="chip">${esc(s.project)}</span>` : placeOf(s) ? `<span class="ft">${esc(s.from)}</span>` : "";
+  if (!place && !s.address) return "";
+  return `<span class="from" title="${esc(s.path || s.from)}">${place ? SV.file : ""}${place}${s.address ? `<code>${esc(s.address)}</code>` : ""}</span>`;
+};
 /** Every server by name, from what the daemon planned (servers) and what it found in the files (sources). */
 function mcpServerRows(m) {
   const found = new Map();
@@ -1185,7 +1349,7 @@ async function nameHolders() {
  *  declared by several plugins, and each is measured on its own. Null while the census has nothing under that name. */
 function censusOf(name) {
   const xs = (ui.mmem?.servers || []).filter((c) => (c.label ?? c.name) === name);
-  return xs.length ? { copies: xs.reduce((n, c) => n + (c.copies || 0), 0), now: xs.reduce((n, c) => n + (c.bytes_now || 0), 0), held: xs.flatMap((c) => c.held_by || []) } : null;
+  return xs.length ? { copies: xs.reduce((n, c) => n + (c.copies || 0), 0), now: xs.reduce((n, c) => n + (c.bytes_now || 0), 0), held: xs.flatMap((c) => c.held_by || []), web: xs.some((c) => c.web) } : null;
 }
 // the cause in his words: the daemon's sentence ends in the part he can act on, and the whole of it stays on the title
 const shortWhy = (t) => String(t || "").split(/:\s+/).filter(Boolean).pop() || "";
@@ -1207,8 +1371,24 @@ const USES_SHOWN = 4;
 // A LIST'S TAIL IS NEVER ONE (Oct 26): a pill that hides one item is as big as the item, so a list one over its cap
 // shows whole, and a pill only ever stands for two or more
 const capOf = (n, cap) => (n > cap + 1 ? cap : n);
+// WHAT A SERVER IS WHEN NOTHING RUNS IT HERE IS A MARK, NOT A WORD ON EVERY ROW (Oct 27): "At a web address" and "Not
+// running" read on twenty-one rows of one section, one qualifier said twenty-one times. A globe is a server that lives at
+// a web address, an unlit socket one nothing runs now, and the section's line says each once (idleKey).
+const idleWord = { web: "At a web address", off: "Not running" };
+/** "web" or "off" for a server with no copy running; null where copies run (the census's web, else its value's scheme). */
+function idleKind(s) {
+  const c = censusOf(s.name);
+  if (c?.copies) return null;
+  return c?.web || /^(https?|wss?):\/\//i.test(String(s.value || "")) ? "web" : "off";
+}
+const idleMark = (web) => `<span class="idle ${web ? "web" : "off"}" role="img" aria-label="${idleWord[web ? "web" : "off"]}" title="${idleWord[web ? "web" : "off"]}">${web ? SV.web : SV.off}</span>`;
+/** The key to the marks the rows under it carry, for the kinds that appear. */
+const idleKey = (kinds) => (kinds.size ? `<span class="legend idlekey">${["web", "off"].filter((k) => kinds.has(k)).map((k) => `<span class="lg">${k === "web" ? SV.web : SV.off}${idleWord[k]}</span>`).join("")}</span>` : "");
 const SRV_HEAD = `<div class="srvhead"><span></span><span></span><span>Used by</span><span>Memory</span><span>Started</span><span>Last call</span><span></span></div>`;
-function sharedRow(s) {
+/** What a shared server's one copy holds now: the census's reading of every copy on the machine, else /proc's for the one
+ *  splice runs. A web address runs no process here and has no figure. */
+const copyBytes = (s) => { if (s.web) return null; const c = censusOf(s.name); return c?.copies ? c.now : s.hosted && s.rss ? s.rss : null; };
+function sharedRow(s, top = 1) {
   const c = censusOf(s.name);
   // THE COMMANDS ON A SERVER ARE A BOUNDED LIST (Oct 26): eleven chips ran the row past every other column. The first
   // four, then the rest behind one pill; a command whose own copy of the config is older joins at its next session,
@@ -1223,11 +1403,12 @@ function sharedRow(s) {
     ? `<span class="next">Next session</span>${s.stale.map((x) => cmdChip(x).replace("class=\"chip\"", "class=\"chip soon\"")).join("")}${soonFits ? "" : DRAW.more(s.stale.length, { act: "mmore", data: ` data-id="soon:${esc(s.name)}"`, open: true })}`
     : DRAW.more(s.stale.length, { word: "join next session", act: "mmore", data: ` data-id="soon:${esc(s.name)}"` });
   const used = `${cmds}${soon}${heldHtml(s, c)}`;
-  // what its one copy holds now, as the census measures every copy on the machine, so this row and What sharing saves
-  // read one figure; /proc's own reading where the census has none, Running where neither does. A web address runs no
-  // process here, so its figure is the dash every figure without a reading is.
-  const mem = s.web ? DRAW.dash : c?.copies ? `<b>${esc(mbWord(c.now))}</b>${c.copies > 1 ? ` <span>${copiesWord(c.copies)}</span>` : ""}`
-    : s.hosted ? (s.rss ? `<b>${esc(mbWord(s.rss))}</b>` : "Running") : `<span class="state">Not running</span>`;
+  // what its one copy holds now is a bar on the list's one scale (the largest copy is the full track), so the server that
+  // holds the most is read before a figure is; the census's reading is the same one What sharing saves draws. A web
+  // address runs no process here, so its cell is the dash every figure without a reading is.
+  const bytes = copyBytes(s);
+  const mem = s.web ? DRAW.dash : bytes != null ? `${DRAW.barCell({ w: (bytes / top) * 100, text: esc(mbWord(bytes)) })}${c?.copies > 1 ? `<span class="n">${copiesWord(c.copies)}</span>` : ""}`
+    : s.hosted ? `<span class="state">Running</span>` : idleMark(false);
   const when = (ms) => (ms ? esc(whenWord(ms)) : DRAW.dash);
   const err = s.err ? `<span class="serr" title="${esc(s.err)}">${esc(shortWhy(s.err))}</span>` : "";
   const test = `${testSaid(s.name)}<button class="act quiet small" data-act="mtest" data-name="${esc(s.name)}"${ui.mtest[s.name] === "running" ? " disabled" : ""}>Test</button>`;
@@ -1244,56 +1425,88 @@ function outGroups(rows) {
   for (const s of rows.filter((r) => !r.shared)) groups.set(outWord(s), [...(groups.get(outWord(s)) ?? []), s]);
   return [...groups].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
 }
-function outItem(s, lines) {
+function outItem(s, lines, own = true) {
   const m = MCP_STATE[s.state], c = censusOf(s.name);
   const cmd = m?.cmd && s.cmd ? cmdChip(s.cmd) : "";
   const code = m && s.value && s.state !== "added_in" ? `<code>${esc(codeOf(s.value))}</code>` : "";
   const why = cmd || code || (lines && m?.line) ? `<div class="why">${cmd || code ? `<span class="w">${cmd}${code}</span>` : ""}${lines && m?.line ? `<span class="wl">${esc(m.line)}</span>` : ""}</div>` : "";
-  // what its copies hold now, one per session: drawn only where there are copies, never a row of zeros
-  const mem = c?.copies ? `<span class="fig mem"><b>${esc(mbWord(c.now))}</b> <span>${copiesWord(c.copies)}</span>${heldHtml(s, c)}</span>` : "";
+  // what its copies hold now, one per session; a server with no copy is a mark that says why nothing of it is here:
+  // nothing runs it now, or it lives at a web address (idleKind), the two marks named once on the section's line
+  const kind = idleKind(s);
+  const mem = c?.copies ? `<span class="fig mem"><b>${esc(mbWord(c.now))}</b> <span>${copiesWord(c.copies)}</span>${heldHtml(s, c)}</span>`
+    : `<span class="fig mem">${idleMark(kind === "web")}</span>`;
   const acts = s.state === "excluded" ? `<span class="acts">${exAct(s.name, false)}</span>` : "";
-  return `<div class="srv out"><div class="sname"><span class="nm">${hl(s.name)}</span>${fromHtml(s)}</div>${why}${mem}${acts}</div>`;
+  return `<div class="srv out"><div class="sname"><span class="nm">${hl(s.name)}</span>${own ? fromHtml(s) : ""}</div>${why}${mem}${acts}</div>`;
 }
 function outCard([word, xs]) {
   // a reason whose servers all carry the same line says it once, under the reason, instead of on every server
   const lines = [...new Set(xs.map((s) => MCP_STATE[s.state]?.line || ""))], once = lines.length === 1 ? lines[0] : "";
-  const open = !!ui.mmore[word], shown = open ? xs : xs.slice(0, capOf(xs.length, MCP_SHOWN));
+  // SERVERS DECLARED IN ONE PLACE ARE UNDER IT ONCE: a plugin or a project that declares two or more of a card's servers
+  // is a line of its own, its servers under it without it, where four rows each read the same plugin's name
+  const at = placeOf;
+  const runs = new Map(); for (const s of xs) runs.set(at(s), (runs.get(at(s)) ?? 0) + 1);
+  const sorted = [...xs].sort((a, b) => (runs.get(at(b)) ?? 0) - (runs.get(at(a)) ?? 0) || at(a).localeCompare(at(b)) || a.name.localeCompare(b.name));
+  const open = !!ui.mmore[word], shown = open ? sorted : sorted.slice(0, capOf(sorted.length, MCP_SHOWN));
   const more = xs.length > MCP_SHOWN + 1 ? DRAW.more(xs.length - MCP_SHOWN, { act: "mmore", data: ` data-id="${esc(word)}"`, open }) : "";
+  const items = shown.map((s, i) => {
+    const grouped = at(s) && runs.get(at(s)) > 1;
+    const head = grouped && (i === 0 || at(shown[i - 1]) !== at(s)) ? `<div class="mfrom">${fromHtml(s).replace('class="from"', 'class="from mf"')}</div>` : "";
+    return head + outItem(s, !once, !grouped);
+  }).join("");
   return `<article class="mcard"><header class="mtop"><span class="mw">${esc(word)}</span><b class="mn">${fmt(xs.length)}</b></header>`
-    + `${once ? `<p class="ml">${esc(once)}</p>` : ""}<div class="srvs out">${shown.map((s) => outItem(s, !once)).join("")}</div>${more}</article>`;
+    + `${once ? `<p class="ml">${esc(once)}</p>` : ""}<div class="srvs out">${items}</div>${more}</article>`;
 }
+const SAVE_SHOWN = 6;
+// the saving's figure, then rows of a name and two bars with the copies between them, as the servers land
+const saveGhost = () => `${GHOST.row([GHOST.fig(6), GHOST.bar(9)])}<div class="ghost-rows">${[0, 1, 2].map(() => GHOST.row([GHOST.bar(8), GHOST.track(), GHOST.bar(4), GHOST.track()])).join("")}</div>`;
 /** What sharing saves, from the census: every copy of every server sharing would serve, against one copy of each. */
 function savedHtml() {
   const m = ui.mmem;
   const aside = m?.claude_processes ? `<span class="hn"><b>${fmt(m.claude_processes)}</b> Claude Code processes</span>` : "";
-  if (m === undefined) return DRAW.section("What sharing saves", `${GHOST.row([GHOST.fig(6), GHOST.bar(9)])}<div class="msave">${GHOST.track()}${GHOST.track()}</div>`);
+  if (m === undefined) return DRAW.section("What sharing saves", saveGhost());
   if (!m) return DRAW.section("What sharing saves", `<div class="pd-sub"><b>${DRAW.dash}</b>${unreadable}</div>`);
   // each server carries its class from the host's own sharing plan, unless the list keeps it unshared (asListed)
   const byName = new Map((ui.mcp ? mcpServerRows(ui.mcp) : []).map((r) => [r.name, r]));
   const share = (m.servers || []).map((s) => asListed(s, byName)).filter((s) => shareable(s) && s.copies);
   if (!share.length) return DRAW.section("What sharing saves", DRAW.nothing("No copies running"), { aside });
   const now = share.reduce((n, s) => n + s.bytes_now, 0), one = share.reduce((n, s) => n + s.bytes_if_shared, 0);
-  const copies = share.reduce((n, s) => n + s.copies, 0), top = Math.max(now, one, 1);
+  const copies = share.reduce((n, s) => n + s.copies, 0);
   // the census measures what runs now, so the saving it can show is what one copy of each would free from it: once each
   // runs one copy there is nothing more to free, which is sharing working, never "sharing saves nothing" (Oct 26)
   const saves = now - one > 0 ? DRAW.focal(mbWord(now - one), "sharing would free") : DRAW.nothing("Nothing more to free");
-  const bar = (k, b) => `<div class="mbar"><span class="k">${k}</span>${DRAW.barCell({ w: (b / top) * 100, text: esc(mbWord(b)) })}</div>`;
-  const each = `${fmt(share.length)} ${share.length === 1 ? "server" : "servers"}, one copy each`;
-  return DRAW.section("What sharing saves", `${saves}<div class="msave">${bar(`${copiesWord(copies)} now`, now)}${bar(each, one)}</div>`, { aside });
+  // EACH SERVER ON ONE SCALE (Oct 27): what its copies hold now beside what one copy of it would, so the server worth
+  // sharing is the longest pair of bars and the total is their sum on the last line. The biggest six, the rest in place.
+  const rows = [...share].sort((a, b) => b.bytes_now - a.bytes_now || a.name.localeCompare(b.name));
+  const top = Math.max(...rows.map((s) => Math.max(s.bytes_now, s.bytes_if_shared)), 1);
+  const open = !!ui.mmore["save"], shown = open ? rows : rows.slice(0, capOf(rows.length, SAVE_SHOWN));
+  const cell = (b, w = b) => DRAW.barCell({ w: (w / top) * 100, text: esc(mbWord(b)) });
+  const line = (s) => `<div class="msrv"><span class="nm">${esc(s.label ?? s.name)}</span>`
+    + `${cell(s.bytes_now)}<span class="n">${copiesWord(s.copies)}</span>${cell(s.bytes_if_shared)}</div>`;
+  const more = rows.length > SAVE_SHOWN + 1 ? DRAW.more(rows.length - SAVE_SHOWN, { act: "mmore", data: ` data-id="save"`, open }) : "";
+  const sum = rows.length > 1 ? `<div class="msrv sum"><span class="nm">${fmt(rows.length)} servers</span>`
+    + `<span class="barcell"><b class="v">${esc(mbWord(now))}</b></span><span class="n">${copiesWord(copies)}</span><span class="barcell"><b class="v">${esc(mbWord(one))}</b></span></div>` : "";
+  const head = `<div class="msrv head"><span></span><span>Now</span><span></span><span>One copy</span></div>`;
+  return DRAW.section("What sharing saves", `${saves}<div class="msave">${head}${shown.map(line).join("")}${more}${sum}</div>`, { aside });
 }
 // the server timers in the order they bite: how many may run, how long one may take to start, to answer, to sit unused
 const MCP_ORDER = ["mcpMaxServers", "mcpInitializeTimeoutMs", "mcpRequestTimeoutMs", "mcpIdleTimeoutMs"];
 const mcpKeys = () => { const keys = keysOf("mcp"); return [...MCP_ORDER.filter((k) => keys.includes(k)), ...keys.filter((k) => !MCP_ORDER.includes(k))]; };
 // the reasons land as cards, so their place is held by two cards of their shape: a name and its count, then servers
-const mcardsGhost = () => `<div class="mcards">${[0, 1].map(() => `<article class="mcard" aria-hidden="true"><header class="mtop">${GHOST.bar(8)}${GHOST.fig(1.6)}</header>${GHOST.lines([9, 12, 8, 11])}</article>`).join("")}</div>`;
+// four reasons stand on a row at his width, each as tall as its servers make it: the ghost is four cards, each as tall as a typical machine's
+const mcardsGhost = () => `<div class="mcards">${[0, 1, 2, 3].map(() => `<article class="mcard" aria-hidden="true"><header class="mtop">${GHOST.bar(8)}${GHOST.fig(1.6)}</header>${GHOST.lines([9, 12, 8, 11, 9, 12])}</article>`).join("")}</div>`;
+// the shared list's rows as the grid they land on: lamp, name, users, memory bar, two times and the two acts
+const srvGhost = () => `<div class="srvs" aria-hidden="true">${SRV_HEAD}${[0, 1, 2].map(() => `<div class="srv"><i class="ghost ring lampg"></i><div class="sname">${GHOST.bar(8)}${GHOST.bar(6)}</div>`
+  + `<span class="fig uses">${GHOST.chip()}${GHOST.chip()}</span><span class="fig mem">${GHOST.cell()}</span><span class="fig t">${GHOST.bar(6)}</span><span class="fig t">${GHOST.bar(6)}</span>`
+  + `<span class="acts">${GHOST.bar(3.4, "chip")}${GHOST.bar(6, "chip")}</span></div>`).join("")}</div>`;
 /** The topic: how many servers are shared and why the rest are not, the shared ones, the rest by reason, what sharing
  *  saves, and the timers. Each part draws its own shape while its read is out. */
 function mcpHtml() {
   const m = ui.mcp, aside = shareSwitch();
-  const limits = knobSec("Server limits", mcpKeys());
+  const keys = mcpKeys(), timed = keys.filter((k) => KNOB[k]?.c?.k === "dur");
+  // the timers read as lengths on one log axis, in the order they bite; how many may run stays its own row
+  const limits = knobSec("Server limits", keys, { ax: durAxis(msOf(timed), "How long, log scale"), draw: Object.fromEntries(timed.map((k) => [k, durDraw])) });
   if (m === undefined) {
-    const ghost = [0, 1, 2].map(() => GHOST.row([GHOST.tile(), GHOST.bar(9), GHOST.bar(15), GHOST.bar(5), GHOST.bar(8)])).join("");
-    return DRAW.section("Sharing", `${heroGhost()}${GHOST.stack()}`, { aside, cls: "tally" }) + DRAW.section("Shared", `<div class="ghost-rows">${ghost}</div>`)
+    return DRAW.section("Sharing", `${heroGhost()}${GHOST.stack()}`, { aside, cls: "tally" }) + DRAW.section("Shared", srvGhost())
       + DRAW.section("Not shared", mcardsGhost()) + savedHtml() + limits;
   }
   // the route is mounted only while splice hosts MCP (ControlServer.kt), so its 404 is the honest "nothing is hosted"
@@ -1315,8 +1528,12 @@ function mcpHtml() {
     : DRAW.nothing("No MCP servers set up");
   const up = shared.filter((r) => r.hosted), sessions = up.reduce((n, r) => n + r.sessions, 0);
   const upAside = up.length ? `<span class="hn"><b>${fmt(up.length)}</b> running${sessions ? ` · <b>${fmt(sessions)}</b> ${sessions === 1 ? "session" : "sessions"}` : ""}</span>` : "";
-  const list = shared.length ? DRAW.section("Shared", `<div class="srvs${m.hosting === false ? " dim" : ""}">${SRV_HEAD}${shared.map(sharedRow).join("")}</div>`, { aside: upAside }) : "";
-  const out = groups.length ? DRAW.section("Not shared", `<div class="mcards">${groups.map(outCard).join("")}</div>`) : "";
+  // memory on one scale: the largest copy on the list is the full track
+  const topBytes = Math.max(1, ...shared.map((s) => copyBytes(s) ?? 0));
+  const sharedKinds = new Set(shared.filter((s) => !s.web && !s.hosted && copyBytes(s) == null).map(() => "off"));
+  const list = shared.length ? DRAW.section("Shared", `<div class="srvs${m.hosting === false ? " dim" : ""}">${SRV_HEAD}${shared.map((s) => sharedRow(s, topBytes)).join("")}</div>`, { aside: upAside && sharedKinds.size ? `<span class="kside">${upAside}${idleKey(sharedKinds)}</span>` : upAside + idleKey(sharedKinds) }) : "";
+  // the two marks a server with nothing running wears are named once, on the line the cards stand under
+  const out = groups.length ? DRAW.section("Not shared", `<div class="mcards">${groups.map(outCard).join("")}</div>`, { aside: idleKey(new Set(groups.flatMap(([, xs]) => xs.map(idleKind)).filter(Boolean))) }) : "";
   return DRAW.section("Sharing", top, { aside, cls: "tally" }) + list + out + savedHtml() + limits;
 }
 
@@ -1539,18 +1756,49 @@ const folderFacts = () => {
   return foldersNow().map((path) => ({
     path,
     found: by[path] ? by[path].found !== false : null, // null while /api/projects has not answered
-    makes: (ui.projects?.projects || []).filter((p) => p.folder === path).map((p) => p.name || p.label).filter(Boolean).sort(),
+    makes: (ui.projects?.projects || []).filter((p) => p.folder === path && (p.name || p.label)),
   }));
 };
-// THE PROJECTS ARE THE TOPIC'S CONTENT (Oct 26): four names and "+31" stood in a column 1,600 px wide at 3822, so he
-// clicked to read what splice groups his sessions by. They show whole up to forty, the rest behind one pill.
-const PROJECTS_SHOWN = 40;
-/** A list of project names as chips, up to forty, and the rest behind one pill that opens them in place. */
-function projectChips(names, id) {
+// A PROJECT IS AN OBJECT HE CAN OPEN (Oct 27): each one is a door to its sessions on Sessions, with how many sessions it
+// holds drawn on one scale and when it was last active, newest first, so the projects he works in lead and the rest
+// follow. Sixteen, then the rest behind one pill that opens them in place. The counts come from one read of
+// /api/sessions made the first time the topic is drawn; until it lands each row holds a bar's place.
+const PROJECTS_SHOWN = 16;
+const atMs = (v) => (typeof v === "number" ? v : Date.parse(v) || 0);
+/** Sessions per project id, and the newest update among them, read once from /api/sessions. */
+async function readProjectSessions() {
+  ui.psess = null;
+  const r = await API.get("/api/sessions");
+  if (!r.ok) { whyNot("/api/sessions", r); ui.psess = false; later(); return; }
+  const by = new Map();
+  for (const x of r.body?.sessions || []) {
+    const id = x.project?.id;
+    if (!id) continue;
+    const t = atMs(x.updated_at), had = by.get(id);
+    by.set(id, had ? { n: had.n + 1, last: Math.max(had.last, t) } : { n: 1, last: t });
+  }
+  ui.psess = by;
+  later();
+}
+const projectName = (p) => p.name || p.label || "";
+/** Projects as doors to their sessions, the most recent first, each with its session count on the list's one scale. */
+function projectChips(list, id) {
+  if (ui.psess === undefined) readProjectSessions();
+  const facts = ui.psess instanceof Map ? ui.psess : null;
+  const of = (p) => facts?.get(p.id) ?? { n: 0, last: 0 };
+  const rows = [...list].filter((p) => projectName(p)).sort((a, b) => of(b).last - of(a).last || projectName(a).localeCompare(projectName(b)));
+  const top = Math.max(1, ...rows.map((p) => of(p).n));
   // a list one over the cap shows whole, as a server's commands do (capOf): a "+1" pill is as big as the name it hides
-  const open = !!ui.pmore[id], shown = open ? names : names.slice(0, capOf(names.length, PROJECTS_SHOWN));
-  const more = names.length > PROJECTS_SHOWN + 1 ? DRAW.more(names.length - PROJECTS_SHOWN, { act: "pmore", data: ` data-id="${esc(id)}"`, open, pill: !open }) : "";
-  return `${shown.map((n) => `<span class="mchip quiet">${hl(n)}</span>`).join("")}${more}`;
+  const open = !!ui.pmore[id], shown = open ? rows : rows.slice(0, capOf(rows.length, PROJECTS_SHOWN));
+  const more = rows.length > PROJECTS_SHOWN + 1 ? DRAW.more(rows.length - PROJECTS_SHOWN, { act: "pmore", data: ` data-id="${esc(id)}"`, open, pill: !open }) : "";
+  const line = (p) => {
+    const x = of(p);
+    const n = facts ? DRAW.barCell({ w: (x.n / top) * 100, text: x.n ? `${fmt(x.n)}` : DRAW.dash }) : ui.psess === false ? `<span class="barcell">${DRAW.dash}</span>` : GHOST.bar(8);
+    const when = facts && x.last ? esc(whenShort(x.last)) : facts || ui.psess === false ? DRAW.dash : "";
+    return `<a class="prj" href="sessions.html?project=${encodeURIComponent(p.id)}" title="${esc(p.root || p.id)}"><span class="nm">${hl(projectName(p))}</span>${n}<span class="t">${when}</span></a>`;
+  };
+  const head = `<div class="prj head"><span></span><span>Sessions</span><span>${esc(zoneHead("Last active"))}</span></div>`;
+  return `<div class="prjs">${head}${shown.map(line).join("")}</div>${more}`;
 }
 /** The projects there are, as the topic's figure, and where they come from: one bar split by the folder that makes
  *  each (and the repos no folder holds), only where there is more than one source to split. */
@@ -1558,12 +1806,13 @@ function projectsTop(p, folders) {
   const all = p.projects || [];
   if (!all.length) return DRAW.nothing(folders.length ? "No projects in these folders yet" : "No git repos seen yet");
   const from = all.filter((x) => x.folder), repos = all.filter((x) => !x.folder);
-  const hero = DRAW.hero({ figure: fmt(all.length), of: folders.length ? `projects from ${fmt(folders.length)} ${folders.length === 1 ? "folder" : "folders"}` : "projects, one per git repo" });
+  // the rule that makes them is said on the folder side, where it is changed
+  const hero = DRAW.hero({ figure: fmt(all.length), of: folders.length ? `projects from ${fmt(folders.length)} ${folders.length === 1 ? "folder" : "folders"}` : "projects" });
   const parts = [...folders.map((f, i) => ({ n: f.makes.length, word: f.path, text: fmt(f.makes.length), ink: storeInk(i) })),
     ...(from.length && repos.length ? [{ n: repos.length, word: "Git repos", text: fmt(repos.length), cls: "rest" }] : [])];
   const split = parts.filter((x) => x.n > 0).length > 1 ? splitBar(parts, all.length, { id: "projects" }) : "";
   // with no folder saved every project is a repo, and those are the chips; with folders, each path carries its own
-  const chips = !folders.length ? `<div class="pmakes">${projectChips(repos.map((x) => x.name || x.label).filter(Boolean).sort(), "repo")}</div>` : "";
+  const chips = !folders.length ? `<div class="pmakes">${projectChips(repos, "repo")}</div>` : "";
   return `${hero}${split}${chips}`;
 }
 function pathRow(f) {
@@ -1586,13 +1835,19 @@ function addFolder() {
     + `<button class="act primary small" data-act="savefolder">Save</button><button class="act quiet small" data-act="cancelfolder">Cancel</button>`
     + (bad ? `<span class="said limit">${esc(bad)}</span>` : "") + `</div>`;
 }
+// the projects' rows before they are read, as the grid they land on: a name, a bar's track and a time, as many as the
+// last read held (sixteen at most, the rest being one pill)
+const prjGhost = () => `<div class="prjs" aria-hidden="true"><div class="prj head"><span></span><span>Sessions</span><span>${esc(zoneHead("Last active"))}</span></div>`
+  + `${Array.from({ length: Math.max(1, Math.min(PROJECTS_SHOWN, shapeOf("projects", 8))) }, () => `<div class="prj"><span class="nm">${GHOST.bar(8)}</span>${GHOST.cell()}<span class="t">${GHOST.bar(5)}</span></div>`).join("")}</div>`;
 function projectsHtml() {
   const k = KNOB.projectsFolders, folders = folderFacts(), p = ui.projects;
-  const top = p === undefined ? `${heroGhost()}${GHOST.row([GHOST.bar(7), GHOST.bar(8), GHOST.bar(6), GHOST.bar(7)])}`
+  const top = p === undefined ? `${heroGhost()}${folders.length ? "" : `<div class="pmakes">${prjGhost()}</div>`}`
     : p === null ? `<div class="pd-top"><b class="pd-rate">${DRAW.dash}</b><span class="pd-failed"><span>projects</span></span>${unreadable}</div>`
     : projectsTop(p, folders);
   // the folders are one setting: its name is the section's kicker, lit by a search the way a setting's name is
-  const list = `<div class="plist">${folders.map(pathRow).join("")}${addFolder()}</div>`;
+  // with no folder saved, the rule in force is said where a folder would change it
+  const rule = folders.length ? "" : `<span class="kfact prule">One project per git repo</span>`;
+  const list = `<div class="plist">${rule}${folders.map(pathRow).join("")}${addFolder()}</div>`;
   // the projects and the folders that make them are one pair: side by side once the plate holds two columns (settings.css)
   return `<div class="psec pcols"><div class="pin">${DRAW.section("Projects", top, { cls: "tally" })}`
     + `<section class="psec pfolders${lit(knobHay(k))}"><div class="sechead"><h3 class="kicker" data-row="${k.key}">${hl(k.label)}</h3>${saidHtml(k.key)}</div>${list}</section></div></div>`;
@@ -1664,7 +1919,7 @@ function summary(id) {
 const RAIL_UNREAD = `<p class="rfig"><b>${DRAW.dash}</b><span class="state limit">Not read</span></p>`;
 function railDraw(id) {
   if (id === "silent") {
-    if (weekReading("restarted", "gaveup", "waited")) return GHOST.row([GHOST.bar(6), GHOST.bar(4)]);
+    if (weekReading("restarted", "gaveup", "waited")) return railGhost(id);
     const early = ["restarted", "gaveup"].map(weekTotal), waited = weekTotal("waited");
     if (early.includes(null) || waited === null) return "";
     const n = early[0] + early[1], top = Math.max(n, waited, 1);
@@ -1672,7 +1927,7 @@ function railDraw(id) {
       + `${DRAW.miniPair({ label: "Waited out", figure: DRAW.n(waited), w: (waited / top) * 100, cls: "row" })}</div>`;
   }
   if (id === "busy") {
-    if (ui.peaks === undefined) return GHOST.row([GHOST.bar(6), GHOST.track()]);
+    if (ui.peaks === undefined) return railGhost(id);
     const rows = (ui.peaks || []).filter((p) => !p.err && p.peak > 0);
     const over = weekTotal("overloaded");
     const share = (p) => { const lim = limitOf(p.head.key); return lim ? p.peak / lim : 0; };
@@ -1685,7 +1940,7 @@ function railDraw(id) {
       + (over ? `<p class="rfig"><b class="lv-bad">${DRAW.n(over)}</b>Overloaded today</p>` : "") + `</div>`;
   }
   if (id === "plan") {
-    if (ui.accts === undefined) return GHOST.row([GHOST.bar(5), GHOST.track()]);
+    if (ui.accts === undefined) return railGhost(id);
     const top = planTop();
     if (!top) return "";
     const warn = Number(val("usageWarnPct")) || 80;
@@ -1695,7 +1950,7 @@ function railDraw(id) {
   }
   // MCP servers: the share of his servers that are shared, on its whole, how many run, and a failure in the limit red
   if (id === "mcp") {
-    if (ui.mcp === undefined) return GHOST.row([GHOST.bar(5), GHOST.track()]);
+    if (ui.mcp === undefined) return railGhost(id);
     if (ui.mcp === null) return RAIL_UNREAD;
     if (!ui.mcp) return "";
     const rows = mcpServerRows(ui.mcp), shared = rows.filter((r) => r.shared);
@@ -1706,7 +1961,7 @@ function railDraw(id) {
   }
   // Projects: how many there are, and the rule that makes them (the saved folders, or one per repo)
   if (id === "projects") {
-    if (ui.projects === undefined) return GHOST.row([GHOST.bar(6), GHOST.bar(5)]);
+    if (ui.projects === undefined) return railGhost(id);
     const n = ui.projects ? (ui.projects.projects || []).length : null, f = foldersNow();
     // the count and its rule share one line, as Version's two figures do: stacked, the rail ran 14 px under the
     // composer at 1440 x 900 once every card had read (Oct 26)
@@ -1715,7 +1970,7 @@ function railDraw(id) {
   }
   // Your data: everything kept, split by store in the store colours the pane uses, and Saving stopped in the limit red
   if (id === "data") {
-    if (DATA_ROWS.some(stillReading)) return GHOST.row([GHOST.bar(5), GHOST.track()]);
+    if (DATA_ROWS.some(stillReading)) return railGhost(id);
     if (DATA_ROWS.some((r) => !(r.noRoute || r.own) && heldOf(r) === null)) return RAIL_UNREAD;
     const held = bySize(), all = allBytes(), stop = traceStopped();
     const bar = all ? `<span class="rsplit" aria-hidden="true">${held.map((p, i) => `<i style="${hueAt(i)};width:max(${((p.x.bytes / all) * 100).toFixed(2)}%, .12rem)"></i>`).join("")}</span>` : "";
@@ -1725,7 +1980,7 @@ function railDraw(id) {
   }
   // Version: the one it runs, and the newer one a check found, each a figure
   if (id === "version") {
-    if (ui.ver === undefined) return GHOST.row([GHOST.bar(4), GHOST.bar(5)]);
+    if (ui.ver === undefined) return railGhost(id);
     if (!ui.ver) return RAIL_UNREAD;
     const v = ui.ver, news = v.latest && v.latest !== v.installed;
     return `<div class="rfigs"><p class="rfig"><b>${esc(v.installed)}</b>running</p>${news ? `<p class="rfig"><b>${esc(v.latest)}</b>newest</p>` : ""}</div>`;
@@ -1739,11 +1994,13 @@ function railDraw(id) {
 function cardHtml(x, dim = false) {
   const f = found(x.id), drawn = railDraw(x.id), s = drawn ? [] : summary(x.id);
   // a card still being read draws the line it will hold, striped, instead of saying the word Reading
-  const draw = drawn || (s.length === 1 && s[0] === "Reading" ? GHOST.row([GHOST.bar(7)]) : `<div class="meta">${s.map((w) => `<span>${esc(w)}</span>`).join("")}</div>`);
+  const draw = drawn || (s.length === 1 && s[0] === "Reading" ? railGhost(x.id) : `<div class="meta">${s.map((w) => `<span>${esc(w)}</span>`).join("")}</div>`);
   const hit = f.length ? `<div class="hits"><span>${hl(f[0])}</span>${f.length > 1 ? `<span class="more">${fmt(f.length - 1)} more</span>` : ""}</div>` : "";
-  return `<article class="card job${dim ? " dim" : ""}" data-open="${x.id}" aria-current="${ui.open === x.id}"${f.length > 1 ? ` title="${esc(f.join(" · "))}"` : ""}>`
+  // a card the search leaves goes quiet by a fade, and what it found fades in over its state (turn)
+  const q = turn(`card:${x.id}`, dim), h = turn(`hit:${x.id}`, Boolean(hit));
+  return `<article class="card job${dim ? " dim" : ""}${q.cls}" data-open="${x.id}" aria-current="${ui.open === x.id}"${q.style}${f.length > 1 ? ` title="${esc(f.join(" · "))}"` : ""}>`
     + `<div class="top"><span class="jglyph" aria-hidden="true">${SV[x.id]}</span><span class="jname">${hl(x.name)}</span></div>`
-    + `<div class="jstate${hit ? " hit" : ""}"><div class="jdraw">${draw}</div>${hit}</div></article>`;
+    + `<div class="jstate${hit ? " hit" : ""}${h.cls}"${h.style}><div class="jdraw">${draw}</div>${hit}</div></article>`;
 }
 
 // ---------- the page ----------
@@ -1760,10 +2017,14 @@ function render() {
   if (shown.length && !shown.some((x) => x.id === ui.open)) ui.open = shown[0].id;
   if (!all.some((j) => j.id === ui.open) && all.length) ui.open = all[0].id;
   const x = TOPIC[ui.open];
+  // a pane opened afresh draws its rows as they are, with no fade from the last time it was open
+  if (ui.drawnTopic !== ui.open) { for (const id of [...turns.keys()]) if (/^(row|adv):/.test(id)) turns.delete(id); ui.drawnTopic = ui.open; }
   const cards = all.map((j) => cardHtml(j, searching && !found(j.id).length));
   const list = `<div class="list rail plain">${cards.join("")}</div>`;
   // the pane's header names the topic and nothing the card beside it already says: its state is drawn inside the pane
-  const pane = `<div class="pane"><header><span class="jglyph" aria-hidden="true">${SV[x.id]}</span><div class="who"><div class="top"><span class="name">${esc(x.name)}</span></div></div>`
+  // another topic's pane arrives by a short rise, once, so the eye follows the change from the card he pressed
+  const pt = turn("pane", ui.open);
+  const pane = `<div class="pane${pt.cls}"${pt.style}><header><span class="jglyph" aria-hidden="true">${SV[x.id]}</span><div class="who"><div class="top"><span class="name">${esc(x.name)}</span></div></div>`
     + `<div class="acts"><button class="icon close" data-act="close" aria-label="Close">${ICON.close}</button></div></header><div class="body kn plate">${PANES[x.id]()}${advancedHtml(x.id)}</div></div>`;
   // a setting's typed field keeps its caret through a redraw (knobs.js keeps the text)
   const f = document.activeElement, fid = f?.id?.startsWith("kf-") ? f.id : null, pos = f?.selectionStart;
@@ -1921,8 +2182,22 @@ document.addEventListener("click", (e) => {
 if (TOPIC[location.hash.slice(1)]) { ui.open = location.hash.slice(1); ui.shown = true; }
 // before the first read answers, the rail draws its cards: their names and glyphs are this page's own, and each card's
 // state is the ghost of what will land in it (Marcos, Oct 12: a blank page under its title read as broken)
-const RAIL_GHOST = { silent: [6, 4], busy: [6, 0], reasoning: [9], plan: [5, 0], mcp: [5, 0], projects: [6, 5], data: [5, 0], version: [4, 5] };
-const railGhost = (id) => GHOST.row((RAIL_GHOST[id] ?? [7]).map((w) => (w ? GHOST.bar(w) : GHOST.track())));
+// EACH CARD'S GHOST IS THE STATE IT WILL HOLD (Oct 27): the pairs of a word, a figure and a bar the card draws once read,
+// in their own words, their figures striped and their bars empty tracks, so no card grows and no card under it moves
+// when the reads land. A one-line stripe stood where two pairs land, and the rail grew 150 px under the pointer.
+const gPair = (label) => `<div class="pd-q row" aria-hidden="true"><span class="k">${esc(label)}</span><b>${GHOST.fig(2.6)}</b><span class="pd-mini"><i style="width:0%"></i></span></div>`;
+const gFig = (w) => `<p class="rfig" aria-hidden="true"><b>${GHOST.fig(1.6)}</b>${esc(w)}</p>`;
+const RAIL_GHOST = {
+  silent: () => `<div class="rmini">${gPair("Ended early")}${gPair("Waited out")}</div>`,
+  busy: () => `<div class="rmini">${gPair("Busiest at once")}${gFig("Overloaded today")}</div>`,
+  reasoning: () => GHOST.row([GHOST.bar(9)]),
+  plan: () => `<div class="rmini">${gPair("Highest plan")}</div>`,
+  mcp: () => `<div class="rmini">${gPair("Shared")}<div class="rfigs">${gFig("running")}</div></div>`,
+  projects: () => `<div class="rfigs">${gFig("projects")}</div>`,
+  data: () => `<div class="rmini"><div class="rkept"><p class="rfig" aria-hidden="true"><b>${GHOST.fig(3.4)}</b>kept</p><span class="rsplit">${GHOST.track()}</span></div></div>`,
+  version: () => `<div class="rfigs">${gFig("running")}</div>`,
+};
+const railGhost = (id) => (RAIL_GHOST[id] ?? RAIL_GHOST.reasoning)();
 // the rail AND the open topic beside it, both as the shapes that will land: a rail alone left two thirds of the page
 // empty for as long as the first read takes, and the pane then arrived into that hole (the slow door, Oct 26)
 const ghostHtml = () => `<div class="jobs${ui.shown ? " open" : ""}"><div class="list rail plain" aria-busy="true" aria-label="Reading settings">${TOPICS.map((x) => `<article class="card job ghosted" aria-hidden="true" aria-current="${ui.open === x.id}">`
@@ -1934,19 +2209,51 @@ const ghostHtml = () => `<div class="jobs${ui.shown ? " open" : ""}"><div class=
 // nothing moves when the reads land.
 const ghostSec = (body, kicker = "") => `<section class="psec"><div class="sechead">${kicker ? `<h3 class="kicker">${esc(kicker)}</h3>` : GHOST.bar(5)}</div>${body}</section>`;
 /** A section's settings before the settings are read: each name, and its control's ghost. */
-const ghostRows = (keys) => `<div class="krows flat">${keys.filter((key) => KNOB[key]).map((key) => `<div class="krow" aria-hidden="true"><div class="lbl">${esc(KNOB[key].label)}</div><div class="ctl">${GHOST.bar(9, "chip")}</div></div>`).join("")}</div>`;
+/** A section's settings before the settings are read: each name, its control's ghost, and where the loaded rows draw
+ *  what a value does, that drawing's ghost [draw] by key, on the grid the loaded rows use, with the axis line [axis]
+ *  names under them and the longest stall's place over them [head], so the rows land where their ghosts stood. */
+function ghostRows(keys, { draw = null, axis = "", head = false } = {}) {
+  const xs = keys.filter((key) => KNOB[key]);
+  const cls = draw ? "" : ` flat${xs.length >= 3 ? " n3" : xs.length === 2 ? " n2" : ""}`;
+  const rows = xs.map((key) => `<div class="krow" aria-hidden="true"><div class="lbl">${esc(KNOB[key].label)}</div><div class="ctl">${GHOST.bar(9, "chip")}</div>`
+    + `${draw ? `<div class="kdraw">${draw[key] ?? ""}</div>` : ""}</div>`).join("");
+  return `<div class="krows${cls}">${head ? `<div class="khead" aria-hidden="true"><span></span><span></span><span class="kmk"></span></div>` : ""}${rows}`
+    + `${axis ? `<div class="kaxis" aria-hidden="true"><span></span><span class="kaw">${esc(axis)}</span><span class="pd-ax"></span></div>` : ""}</div>`;
+}
+/** The Advanced button a topic ends in, as the shape it will be, with the count of what it holds. */
+const advGhost = (id) => {
+  // the daemon names a topic's advanced settings when it answers, so until then the count is what the last visit held, and
+  // a ghost where no visit has kept one (every topic but Plan limits ends in the button)
+  const n = Object.values(KNOB).filter((k) => k.adv === id).length || shapeOf(`adv:${id}`, -1);
+  const count = n < 0 ? GHOST.bar(1.6) : `<b>${fmt(n)}</b>`;
+  return n ? `<section class="psec adv"><div class="sechead"><span class="act quiet advbtn" aria-hidden="true">Advanced${count}${ICON.caret}</span></div></section>` : "";
+};
+const trackOf = (keys) => Object.fromEntries(keys.map((key) => [key, GHOST.track()]));
 const PANE_GHOST = {
-  silent: () => pair(ghostSec(heroGhost() + stallGhost(), "This week"), ghostSec(ghostRows(keysOf("silent")), "How long splice waits")),
-  busy: () => pair(ghostSec(heroGhost() + peaksGhost(), "Today"), ghostSec(ghostRows(LIMITS.filter((key) => keysOf("busy").includes(key))), "splice's limits"), "lead")
-    + ghostSec(`${GHOST.focal(16)}${GHOST.row([GHOST.chip(), GHOST.cell()])}`, "Providers today"),
+  silent: () => pair(ghostSec(heroGhost() + stallGhost(), "This week"),
+    ghostSec(ghostRows(keysOf("silent"), { draw: trackOf(keysOf("silent")), axis: "Without progress, log scale", head: true }), "How long splice waits")) + advGhost("silent"),
+  busy: () => pair(ghostSec(heroGhost() + peaksGhost(), "Today") + ghostSec(`${GHOST.focal(16)}${GHOST.row([GHOST.chip(), GHOST.cell()])}`, "Providers today"),
+    ghostSec(ghostRows(LIMITS.filter((key) => keysOf("busy").includes(key)), { draw: trackOf(["maxInflight"]) }), "splice's limits"), "lead") + advGhost("busy"),
   reasoning: () => pair(ghostSec(termGhost(), "In your terminal"),
-    ghostSec(ghostRows(SHOWS.filter((key) => keysOf("reasoning").includes(key))), "How reasoning shows")),
-  plan: () => pair(ghostSec(heroGhost() + planGhost(), "Right now"), ghostSec(ghostRows(keysOf("plan")), "When splice warns")),
-  mcp: () => ghostSec(heroGhost() + GHOST.stack()) + ghostSec(`<div class="ghost-rows">${[0, 1, 2].map(() => GHOST.row([GHOST.tile(), GHOST.bar(9), GHOST.bar(15), GHOST.bar(5), GHOST.bar(8)])).join("")}</div>`) + ghostSec(mcardsGhost()),
-  projects: () => ghostSec(heroGhost() + GHOST.row([GHOST.bar(7), GHOST.bar(8), GHOST.bar(6), GHOST.bar(7)])) + ghostSec(GHOST.row([GHOST.bar(9), GHOST.tile()])),
-  data: () => ghostSec(heroGhost() + GHOST.stack()) + ghostSec(`<div class="dcards text">${[0, 1, 2].map((i) => GHOST.card([9, 6, 12, 10], i, "dghost")).join("")}</div>`),
-  version: () => ghostSec(`<div class="vline">${[5, 8].map((w) => `<div class="vghost" aria-hidden="true">${GHOST.bar(5)}${GHOST.fig(w)}${GHOST.bar(9)}</div>`).join("")}</div>`)
-    + ghostSec(`<div class="vfiles">${[13, 10, 10].map((w) => `<div class="vfile" aria-hidden="true">${GHOST.bar(5)}${GHOST.bar(w)}</div>`).join("")}</div>`),
+    ghostSec(ghostRows(SHOWS.filter((key) => keysOf("reasoning").includes(key))), "How reasoning shows")) + advGhost("reasoning"),
+  plan: () => pair(ghostSec(heroGhost() + planGhost(), "Right now"), ghostSec(ghostRows(keysOf("plan"), { draw: {
+    quotaPollIntervalMs: GHOST.bar(9), usageWarnPct: GHOST.track(),
+    usageWarnTokens5h: `<div class="kfacts">${GHOST.bar(8)}<span class="kchips">${GHOST.chip()}${GHOST.chip()}${GHOST.chip()}</span></div>` } }), "When splice warns")),
+  mcp: () => ghostSec(heroGhost() + GHOST.stack(), "Sharing") + ghostSec(srvGhost(), "Shared") + ghostSec(mcardsGhost(), "Not shared") + ghostSec(saveGhost(), "What sharing saves")
+    + ghostSec(ghostRows(mcpKeys(), { draw: Object.fromEntries(mcpKeys().map((k) => [k, KNOB[k]?.c?.k === "dur" ? GHOST.track() : GHOST.bar(6)])), axis: "How long, log scale" }), "Server limits") + advGhost("mcp"),
+  // the projects and the folder that makes them, in the two columns they land in
+  projects: () => `<div class="psec pcols"><div class="pin">${ghostSec(`${heroGhost()}<div class="pmakes">${prjGhost()}</div>`, "Projects")}`
+    + `${ghostSec(`<div class="plist">${GHOST.bar(12)}<i class="ghost" style="width:100%;height:2.7rem;border-radius:var(--r-in)" aria-hidden="true"></i></div>`, "Projects folder")}</div></div>${advGhost("projects")}`,
+  // the four sections it lands in, each under its kicker: the stores' cards in their rows (five and two, then three) and the
+  // delete list's eight rows, so the page is as tall at its first frame as when the reads land
+  data: () => {
+    const cards = (g, n) => `<div class="dcards ${g}">${Array.from({ length: n }, (_, i) => GHOST.card([9, 6, 12, 10], i, "dghost")).join("")}</div>`;
+    const frees = Array.from({ length: 8 }, (_, i) => `<div class="dfrow" aria-hidden="true"><span class="nm">${GHOST.bar(9)}</span>${GHOST.track()}<span class="dfa">${GHOST.bar(5.5)}</span></div>`).join("");
+    return ghostSec(heroGhost() + GHOST.stack(), "On this computer") + ghostSec(cards("text", 7), "Conversation text") + ghostSec(cards("records", 3), "Records")
+      + ghostSec(`<div class="dfrows cols" style="--n:${perRow(8)}">${frees}</div>`, "Free up space") + advGhost("data");
+  },
+  version: () => ghostSec(`<div class="vline">${[5, 8].map((w) => `<div class="vghost" aria-hidden="true">${GHOST.bar(5)}${GHOST.fig(w)}${GHOST.bar(9)}</div>`).join("")}</div>`, "Versions")
+    + ghostSec(`<div class="vfiles">${[13, 10, 10].map((w) => `<div class="vfile" aria-hidden="true">${GHOST.bar(5)}${GHOST.bar(w)}</div>`).join("")}</div>`, "Files") + advGhost("version"),
 };
 root.innerHTML = ghostHtml();
 refresh();

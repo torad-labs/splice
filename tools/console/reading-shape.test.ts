@@ -1,6 +1,6 @@
 // A page still reading draws its own shape, never the lone word "Reading" (Marcos, Oct 12: "we can do better than that
 // reading indicator"). With every daemon read held open, Requests, Teams, Usage and Settings each draw striped bars where
-// their figures will land, and Settings draws its own cards, each line's bar starting where its figure will.
+// their figures will land, and Settings draws its own cards, each with a ghost where its figure will land.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -49,14 +49,25 @@ for (const page of ["requests", "teams", "usage"] as const) {
   test(`${page} draws its shape while it reads`, () => reading(page), 30_000);
 }
 
-test("settings draws its own cards while it reads, each line's bar where its figure will land", () => reading("settings", async (p) => {
+test("settings draws its own cards while it reads, each with a ghost where its figure will land", () => reading("settings", async (p) => {
   expect(await p.locator(".card.job .jname").allInnerTexts()).toContain("Stalled answers");
-  const lines = await p.locator(".card.job").evaluateAll((cards) => cards.flatMap((c) => {
-    const bar = c.querySelector(".meta .ghost"), name = c.querySelector(".jname");
-    return bar && name ? [Math.round(bar.getBoundingClientRect().x - name.getBoundingClientRect().x)] : [];
+  // a card's figure lands under its name, in the card's state slot: the ghost stands there, inside the card and below its
+  // name, in the slot's own box, so nothing moves when the figure arrives
+  const cards = await p.locator(".card.job").evaluateAll((els) => els.map((c) => {
+    const slot = c.querySelector(".jstate")!.getBoundingClientRect(), name = c.querySelector(".jname")!.getBoundingClientRect();
+    const ghost = c.querySelector(".jstate .ghost")?.getBoundingClientRect(), box = c.getBoundingClientRect();
+    const inSlot = ghost ? ghost.left >= slot.left - 1 && ghost.right <= slot.right + 1 && ghost.top >= slot.top - 1 && ghost.bottom <= slot.bottom + 1 : false;
+    return {
+      drawn: Boolean(ghost),
+      below: ghost ? ghost.top >= name.bottom - 1 : false,
+      inside: ghost ? ghost.left >= box.left - 1 && ghost.right <= box.right + 1 && ghost.bottom <= box.bottom + 1 : false,
+      inSlot,
+    };
   }));
-  expect(lines.length).toBeGreaterThan(5);
-  expect(lines.every((d) => d === 0)).toBe(true);
+  expect(cards.length).toBeGreaterThan(5);
+  expect(cards.filter((c) => !c.drawn).length).toBe(0);
+  expect(cards.filter((c) => !c.below || !c.inside).length).toBe(0);
+  expect(cards.filter((c) => !c.inSlot).length).toBe(0);
 }), 30_000);
 
 test("teams keeps Read again off while its read is out", () => reading("teams", async (p) => {

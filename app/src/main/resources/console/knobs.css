@@ -14,7 +14,18 @@
 /* the setting a menu is showing: the picked row's own rule, in the text's ink (console.css .picked), never the key */
 .kn .menu button[aria-current="true"] { box-shadow: inset .25rem 0 0 var(--sel-ink); }
 .kn .mmeta { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); }
-.kn .pickbtn { --c: var(--key-light); justify-content: space-between; min-width: 10.5rem; }
+/* a menu's button casts in the rim's own ink: the key light is the one place to look or act next in a view, and a
+   settings pane holds a dozen of these buttons */
+.kn .pickbtn { --c: var(--track-line); justify-content: space-between; min-width: 10.5rem; transition: border-color var(--t-hover) var(--e-out); }
+.kn .pickbtn:hover, .kn .pickbtn[aria-expanded="true"] { border-color: var(--text-mute); }
+/* A MENU DROPS IN ONCE where it was asked for (knobs.js opening): a drawing while it is open finds it at the same point
+   of its arrival through --menu-at, so a read landing never makes it arrive again */
+/* a long Add setting menu is found by typing: the field and its count ride the menu's top */
+.kn .menu.kadd .kfind { display: flex; align-items: center; gap: calc(2 * var(--u)); padding: var(--u); border-bottom: .08rem solid var(--hair); }
+.kn .menu.kadd .kfind .field { width: 14rem; }
+.kn .menu.kadd .kfnone { margin: 0; padding: var(--u) calc(2 * var(--u)); font: 500 .9rem/1.3 var(--font-name); color: var(--text-mute); }
+.kn .menu.opening { animation: kmenu var(--t-pop) var(--e-out) var(--menu-at, 0ms) 1 both; transform-origin: top left; }
+@keyframes kmenu { from { opacity: 0; transform: translateY(-.35rem) scale(.98); } }
 .kn .custom { display: inline-flex; align-items: center; gap: .55rem; }
 .kn .custom .field { width: 6.5rem; text-align: right; font: 500 .95rem/1 var(--font-data); padding: .65rem .8rem; }
 /* A TEXT SETTING SHOWS ALL IT HOLDS (Oct 26): an address, a path or a service name in a number's 6.5rem box read
@@ -22,8 +33,10 @@
    line and reads from the left, as text does. A blank number is as wide as the words that say what blank means. */
 /* A FIELD IS NEVER NARROWER THAN ITS VALUE READS (Oct 27): the same text fields stood in 26 to 56 px boxes inside a
    pane's own grid of pairs, where the cell they land in may be narrower than the words, and clipped an address to two
-   characters. The box has a floor and the line wraps instead (.ctl wraps), so a value is read or the row grows. */
-.kn .custom.wide { flex: 1 1 16rem; min-width: min(100%, 11rem); }
+   characters. The box has a floor and the line wraps instead (.ctl wraps), so a value is read or the row grows. The floor
+   and the basis are the field's own and no more, so the mark or the way back after it shares its line in a column of
+   three settings and wraps beneath only where the line truly has no room. */
+.kn .custom.wide { flex: 1 1 9rem; min-width: min(100%, 8rem); }
 .kn .custom.wide .field { flex: 1 1 0; width: 0; min-width: min(100%, 8rem); text-align: left; }
 .kn .custom .field[size] { width: auto; }
 .kn .custom em { font: 500 .9rem/1 var(--font-data); font-style: normal; color: var(--text-mute); }

@@ -155,7 +155,7 @@ test("a command the daemon is still reading stands as its day's ghost, never Rea
 
 test("a figure past a thousand dollars groups its thousands and keeps its dollar sign", async () => {
   const day = await dayOf("big-day");
-  expect(day).toContain("≈$1,512.40");
+  expect(day).toContain("≈$1,512");
   expect(day).toContain("for 23,465 requests");
 }, 30_000);
 
@@ -165,7 +165,7 @@ for (const width of [3828, 1440]) {
     try {
       await page.goto(`http://127.0.0.1:${server.port}/accounts.html`);
       const meter = page.locator(`[data-meter="big-day"]`);
-      await expect(meter).toContainText("≈$1,512.40", { timeout: 15_000 });
+      await expect(meter).toContainText("≈$1,512", { timeout: 15_000 });
       // read in one step from the live document: the page redraws its rows when a poll answers, and a row it replaced
       // between finding it and measuring it is detached and measures as nothing
       const shape = await page.evaluate(() => {

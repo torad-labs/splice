@@ -182,6 +182,7 @@ const createKnobs = (scope) => {
   const st = {
     cfg: null, models: [], providerOf: {}, commandOf: {}, perCommand: true, cmds: [], adding: {}, restart: {}, restarting: false,
     said: {}, unsaved: {}, undo: {}, typing: {}, bad: {}, slow: {}, shake: {}, menu: null, menuAt: -Infinity, custom: null, onAsk: () => false,
+    find: "",
   };
 
   /** GET /api/config, and the commands a per-command value can name. Answers the error text, or null when it read. */
@@ -236,7 +237,8 @@ const createKnobs = (scope) => {
     if (c.k === "pick") return (pickOpts(k).find(([o]) => String(o) === String(v)) || [, String(v)])[1];
     if (c.k === "flag") return v === true || v === "true" ? "On" : "Off";
     if (c.k === "models") return idsOf(v).map(labelOf).join(", ");
-    return v === null || v === undefined ? (c.none || "") : String(v);
+    // a text setting that holds "*" for all reads as the word its own control gives that value, wherever it is read
+    return v === null || v === undefined ? (c.none || "") : c.star && String(v) === "*" ? c.star : String(v);
   }
 
   // ---------- controls ----------
@@ -301,8 +303,9 @@ const createKnobs = (scope) => {
           + (mopen ? `${menuTag()}${left.map((m) => `<button role="menuitem" data-kact="model" data-key="${k.key}" data-m="${esc(m.id)}">${esc(m.id)}${m.label && m.label !== m.id ? `<span class="mmeta">${esc(m.label)}</span>` : ""}</button>`).join("")}</div>` : "") + "</span>" : "") + "</span>";
     }
     if (c.k === "text") { // a text the daemon reads as it is: a field, applied like a number's
-      const text = st.typing[id] ?? (v === null || v === undefined ? "" : String(v));
-      return `<span class="custom wide"><input class="field" id="kf-${esc(id.replace("@", "-"))}" data-kfield="${id}" value="${esc(text)}" spellcheck="false" autocomplete="off" aria-label="${esc(k.label)}"${bad}></span>`;
+      const star = c.star && String(v) === "*";
+      const text = st.typing[id] ?? (v === null || v === undefined || star ? "" : String(v));
+      return `<span class="custom wide"><input class="field" id="kf-${esc(id.replace("@", "-"))}" data-kfield="${id}" value="${esc(text)}"${star ? ` placeholder="${esc(c.star)}"` : ""} spellcheck="false" autocomplete="off" aria-label="${esc(k.label)}"${bad}></span>`;
     }
     return "";
   }
@@ -390,8 +393,19 @@ const createKnobs = (scope) => {
       return `<div class="lbl" data-row="${key}">${hl(k.label)}</div><div class="ctl col"><div class="line">`
         + `${ctlHtml(k, own === undefined ? valueOf(k).v : own, cmd)}${saidHtml(`${key}@${cmd}`)}${backHtml(k, cmd)}</div></div>`;
     }).join("");
-    const add = left.length ? `<div class="lbl"></div><div class="ctl"><span class="menuwrap"><button class="act quiet small" data-kmenu="own:${cmd}" aria-expanded="${open}">${PLUS}Add setting</button>`
-      + (open ? `${menuTag()}${left.map((key) => `<button role="menuitem" data-kact="over" data-key="${key}" data-cmd="${cmd}">${esc(KNOB[key].label)}<span class="mmeta">${esc(word(KNOB[key], valueOf(KNOB[key]).v))}</span></button>`).join("")}</div>` : "") + "</span></div>" : "";
+    // ADD SETTING IS THE PANE'S DASHED ADD ROW (Oct 27), the place the next one lands, as Add header, Add model and Add
+    // project are beside it: a quiet button with a plus read as a second kind of control for the same act. Past twelve
+    // settings its menu is found by typing, with the count of what matches said once, as the pane's other long menus are.
+    const q = open ? st.find.trim().toLowerCase() : "";
+    const found = q ? left.filter((key) => KNOB[key].label.toLowerCase().includes(q) || key.toLowerCase().includes(q)) : left;
+    const find = left.length > 12
+      ? `<div class="kfind"><input class="field" data-kfind="own:${cmd}" value="${esc(st.find)}" placeholder="Find a setting" autocomplete="off" spellcheck="false" aria-label="Find a setting">`
+        + `<span class="pd-count"><b>${DRAW.n(found.length)}</b> of ${DRAW.n(left.length)}</span></div>` : "";
+    const items = found.length ? found.map((key) => `<button role="menuitem" data-kact="over" data-key="${key}" data-cmd="${cmd}">${esc(KNOB[key].label)}<span class="mmeta">${esc(word(KNOB[key], valueOf(KNOB[key]).v))}</span></button>`).join("")
+      : `<p class="kfnone">No setting matches</p>`;
+    const add = left.length ? `<div class="lbl"></div><div class="ctl"><span class="menuwrap">`
+      + DRAW.addTile({ word: "Add setting", act: "", cls: "row", data: ` data-kmenu="own:${cmd}" aria-expanded="${open}" aria-haspopup="menu"` })
+      + (open ? `${menuTag("kadd")}${find}${items}</div>` : "") + "</span></div>" : "";
     return rows + add;
   }
   // a setting's row in a form: its name, its control, what the change did, and the commands that hold their own value
@@ -560,7 +574,7 @@ const createKnobs = (scope) => {
       return false;
     }
     const d = t.dataset;
-    if (d.kmenu) { st.menu = st.menu === d.kmenu ? null : d.kmenu; if (st.menu) st.menuAt = performance.now(); return true; }
+    if (d.kmenu) { st.menu = st.menu === d.kmenu ? null : d.kmenu; st.find = ""; if (st.menu) st.menuAt = performance.now(); return true; }
     st.menu = null;
     if (d.kpick) {
       const v = JSON.parse(d.v);
@@ -627,7 +641,19 @@ const createKnobs = (scope) => {
       if (e.key === "Escape" && d.kfield) { delete st.typing[d.kfield]; e.target.dataset.kfield = ""; render(); }
     });
     // a typed field applies when it is left changed; Escape cleared its id above, so leaving it then sends nothing
-    root.addEventListener("input", (e) => { const id = e.target.dataset?.kfield; if (id) st.typing[id] = e.target.value; });
+    root.addEventListener("input", (e) => {
+      const id = e.target.dataset?.kfield;
+      if (id) st.typing[id] = e.target.value;
+      // a menu's find field narrows the menu as he types, and keeps his caret through the redraw
+      const menu = e.target.dataset?.kfind;
+      if (menu) {
+        st.find = e.target.value;
+        const at = e.target.selectionStart;
+        render();
+        const again = root.querySelector(`[data-kfind="${CSS.escape(menu)}"]`);
+        if (again) { again.focus(); again.setSelectionRange(at, at); }
+      }
+    });
     root.addEventListener("change", (e) => {
       const id = e.target.dataset?.kfield;
       if (id) { delete st.typing[id]; sent(id, fromField(id, e.target.value), render); }
@@ -661,7 +687,8 @@ const createKnobs = (scope) => {
     // Projects (STATUSLINE_GIT_ROOTS): only $HOME and /tmp are trusted for the status line's branch until named here
     statuslineGitRoots: ["Show the git branch for repos under", { k: "text" }],
     // Your data (ACTIVITY_STORE_HEADS, DEBUG, TRACE, WIRE_TAP, the old usage archive)
-    activityStoreHeads: ["Commands that save what each agent is doing", { k: "text" }],
+    // an asterisk is the daemon's word for every command, which the field says in his, as a blank field where it holds it
+    activityStoreHeads: ["Commands that save what each agent is doing", { k: "text", star: "Every command" }],
     debug: ["Debug logging", { k: "flag" }],
     trace: ["Save prompts and answers", { k: "flag" }],
     wireTap: ["Last requests kept in memory", { k: "count", none: "None" }],
@@ -683,6 +710,9 @@ const createKnobs = (scope) => {
     codeModeShowCellOverhead: ["Code mode shows each cell's overhead", { k: "flag" }],
     codeModeToolInputSchemaMaxBytes: ["Code mode's largest tool schema", { k: "count", unit: "bytes", none: "No limit" }],
     codeModeUnifiedImageBudget: ["Code mode shares one image budget", { k: "flag" }],
+    // the pooled Responses websocket: how long an idle one stays open, and how old an idle one may grow before it is retired
+    wsIdleCloseMs: ["Close an idle websocket after", { k: "dur", unit: "min" }],
+    wsMaxAgeMs: ["Retire an idle websocket older than", { k: "dur", unit: "min" }],
   };
   function others() {
     const wire = st.cfg?.knobs ?? {}, drawn = new Set(LIST.map((k) => k.key));

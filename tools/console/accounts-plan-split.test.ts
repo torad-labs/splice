@@ -75,7 +75,7 @@ async function dayOf(command: string, width = 1440) {
 
 test("a command all on a plan counts its requests on the plan and names their value at API prices, with no Set budget", async () => {
   const { text } = await dayOf("all-plan");
-  bunExpect(text).toContain("23,559 requests on your plan · ≈$1,512.40 at API prices");
+  bunExpect(text).toContain("23,559 requests on your plan · ≈$1,512 at API prices");
   bunExpect(text).not.toContain("Set budget");
 }, 30_000);
 

@@ -31,8 +31,6 @@ CONSOLE.page("requests.html", (scope) => {
 // ---------- what this page adds to the kit ----------
 // kit.js carries the console's shared language: NOW and tick(), esc, G, ICON, COLORS, colorOf, clock, dayWord, md,
 // OUTCOME_WORD, STOPPED, isClean, WHY and sideBySide. Only what Requests alone needs is here.
-//
-const FAMILY = PROVIDER_FAMILY; // kit.js: the provider /api/models names, as the colour it draws in
 
 // the open request is reqview.js, shared with Compare models, and so are its clock and count words
 const { clockS, dayOf, n0, secs, GLYPH } = REQVIEW;
@@ -90,8 +88,9 @@ const resetWord = (r) => `${lockWord(r) ? `${lockWord(r)} · ` : ""}Resets ${day
 // the tick's colour (.mend, hitstop 8405b48), so a walker finds docs-site without timing it (p157), and its retries.
 // Retries are splice mending a request, never a failure, so they take body ink like a resume. On a [row], the mend the
 // pressed toggle already names is not said again.
-const besideOf = (r, row = false) => {
-  if (r.reset) return `<span class="detail">${ICON.lock}${resetWord(r)}</span>`;
+// [resetSaid]: a burst row above already names the reset every row in it shares, so the row does not say it again
+const besideOf = (r, row = false, resetSaid = false) => {
+  if (r.reset) return resetSaid ? "" : `<span class="detail">${ICON.lock}${resetWord(r)}</span>`;
   const why = r.resumedFresh ? "startedover" : "resumed", said = row && (ui.why === why || ui.why === (r.resumedFresh ? "silentover" : "silentresume"));
   const mend = r.resumed && !said ? `<span class="detail mend">${WHY[why].word}</span>` : "";
   // on a row the retries are the lamp's retries glyph and their count, named once in the list's key, so a long session
@@ -114,7 +113,7 @@ const acctHtml = (r) => {
   if (r.acctLabel) return esc(r.acctLabel); // a login reads the label the daemon names it by, never an email or id (Oct 12)
   const key = state.keySeen[r.account], name = key?.name ?? keyNameOf(r.account), provider = PROVIDER_NAME[r.provider];
   const isKey = Boolean(key) || /^[A-Z0-9_]+$/.test(name);
-  if (!isKey || !provider) return key ? `<span class="var">${esc(key.name)}</span> · ${dayWord(key.seen)}${key.replaced ? `<span class="detail">Replaced</span>` : ""}` : esc(name || r.account);
+  if (!isKey || !provider) return key ? `<span class="var">${esc(key.name)}</span> · ${dayWord(key.seen)}${key.replaced ? `<span class="detail">Replaced</span>` : ""}` : esc(state.soleAccount?.[r.head] ?? (name || r.account));
   const both = (state.keysOfHead[r.head] ?? 0) > 1 ? ` · <span class="var">${esc(name)}</span>` : "";
   // a bare variable, no fingerprint after it, is a row from before splice tracked keys: say so, never "1" and "2"
   if (!key && !String(r.account).includes(":")) return `${esc(provider)}, before key tracking`;
@@ -167,11 +166,16 @@ async function readTileCounts() {
   const keys = [null, ...new Set([...named, NO_PROJECT_KEY])];
   const reads = await Promise.all(keys.flatMap((k) => heads.map((h) => API.get(turnsPath(h, true, ui.win, 1, k)))));
   const counts = new Map();
+  // A project's count is a number, null while a head is still reading it (the tile shows stripes, which move), or false
+  // when a head's read answered with a failure (the tile shows a dash, which stands still): one failed head means the
+  // total will not come, whatever the others say.
   keys.forEach((k, i) => {
     let n = 0;
     heads.forEach((h, j) => {
       const r = reads[i * heads.length + j], a = (r.body?.heads || []).find((x) => x.key === h.key);
-      n = n == null || !r.ok || !a || a.error || a.read_pending ? null : n + (a.count ?? 0);
+      if (n === false || !r.ok || !a || a.error) n = false;
+      else if (n === null || a.read_pending) n = null;
+      else n += a.count ?? 0;
     });
     counts.set(k ?? "", n);
   });
@@ -278,21 +282,26 @@ const inPick = (r) => !ui.project || rowKey(r) === ui.project;
 /** The commands, their providers, the models' labels, the sessions requests belong to, and a key's first day. */
 async function readStanding() {
   const sessionsRead = API.get("/api/sessions");
-  const [heads, models, keys, topology, retired] = await Promise.all([
+  const [heads, models, keys, topology, retired, accounts] = await Promise.all([
     API.get("/api/heads"), API.get("/api/models"), API.get("/api/keys"), API.get("/api/topology"),
-    API.get("/api/heads/retired"),
+    API.get("/api/heads/retired"), API.get("/api/accounts"),
   ]);
+  // A COMMAND WITH ONE LOGIN names it as Accounts does: a login the row names only by its slot in the config ("primary")
+  // reads the name its Accounts card carries ("Account" until he names it), so one login has one name on both pages
+  state.soleAccount = {};
+  const serving = {};
+  for (const a of accounts.body?.accounts || []) for (const h of a.heads || []) (serving[h] ??= []).push(a.display_name);
+  for (const [h, names] of Object.entries(serving)) if (names.length === 1 && names[0]) state.soleAccount[h] = names[0];
   state.error = heads.ok ? null : LIST_NOT_READ;
   if (!heads.ok) console.warn(`commands: ${refusalOf(heads, "no answer")}`);
   state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null, idleMs: h.gate?.stream_idle_ms ?? null, firstByteMs: h.gate?.first_byte_timeout_ms ?? null }));
   state.heads.push(...retiredHeads(retired, state.heads));
-  // A provider splice reaches on this machine's own loopback is served from THIS COMPUTER, whatever it is called:
-  // his own model servers and the tunnel to a rented GPU both answer at 127.0.0.1 (splice.toml base_url), and both
-  // draw in the one colour the kit gives a local provider. The address is the fact; the name is not.
+  // A provider splice reaches on this machine's own loopback is served from THIS COMPUTER, whatever it is called (kit.js
+  // providerFamilyOf, which Settings reads the same way): his own model servers and the tunnel to a rented GPU both
+  // answer at 127.0.0.1 (splice.toml base_url), and both draw in the one colour the kit gives a local provider.
   const bases = topology.body?.topology?.providers || {};
-  const local = (name) => /^https?:\/\/(127\.0\.0\.1|\[?::1\]?|localhost)\b/.test(bases[name]?.base_url || "");
   for (const row of models.body?.heads || []) {
-    state.providerOf[row.head] = FAMILY[row.provider] ?? (local(row.provider) ? "local" : row.provider);
+    state.providerOf[row.head] = providerFamilyOf(row.provider, bases);
     learnModels(state.modelLabel, row);
   }
   const running = state.heads.filter((h) => !h.retired); // a removed command runs nothing and keeps no capture setting
@@ -312,7 +321,9 @@ async function readStanding() {
     state.groups = projectGroups(sessions.body?.sessions || [], turns, state.heads);
     const before = ui.project;
     ui.project = reconcilePick(ui.project, state.groups);
-    if (before !== ui.project) reload({ reading: true }); else render();
+    // the tiles' counts are read per project, so they wait on the projects: a window read that answered first found
+    // no project to count and left every tile's figure hollow for good, so they are asked here once the projects land
+    if (before !== ui.project) reload({ reading: true }); else { render(); readTileCounts().then(render); }
   });
   // Each key splice has seen under a variable, by the account label a request row carries: the one in use now and
   // every one it replaced (/api/keys serves both, KeyReaders.kt). A fingerprint this daemon has never seen leaves
@@ -608,7 +619,7 @@ const slowLine = (r) => state.slowAt?.get(`${r.head}|${r.modelId}`) ?? null;
 const isRetried = (r) => answered(r) && r.attempts > 1;
 /** A row's lamp, its class and the words beside its name, the same on the list's row and in the open request. On a
  *  [row], a word the filter he set already says (its chip, or its pressed toggle) is not said again on every row. */
-function stateOf(r, row = false) {
+function stateOf(r, row = false, resetSaid = false) {
   const o = outcomeOf(r), retried = isRetried(r);
   const said = row && ((ui.tag && ui.tag.split(",").includes(r.outcome)) || (OUTCOME_WHYS.has(ui.why) && WHY[ui.why].has(r)));
   const word = o.word ? (said ? "" : `<span class="word ${o.cls}">${o.word}</span>`)
@@ -617,7 +628,7 @@ function stateOf(r, row = false) {
     o, retried,
     lamp: r.compact ? GLYPH.compact : o.glyph ? GLYPH[o.glyph] : retried ? GLYPH.retries : "<i></i>",
     lampCls: `${o.cls}${r.compact ? " compact" : ""}${retried ? " retried" : ""}`,
-    word: word + besideOf(r, row),
+    word: word + besideOf(r, row, resetSaid),
   };
 }
 // THE WATERFALL'S COUNTERS (web-console.md, Turn waterfall): what the bar alone cannot say, each drawn only when it
@@ -937,19 +948,22 @@ function menuHtml(key) {
 // Newest, never Highest price over them.
 const orderHtml = () => `<div class="switch order" role="group" aria-label="Order">${[["new", "Newest"], ["price", "Highest price"]]
   .map(([v, w]) => `<button data-act="order" data-v="${v}" aria-pressed="${(state.order ?? ui.order) === v}">${w}</button>`).join("")}</div>`;
-// EVERY CONTROL SAYS WHAT PRESSING IT WOULD LIST (the redesign, Oct 26): the outcome switch's parts are the band's own
-// counts, and each toggle carries what the daemon counted with it pressed, so no press lands on an empty list unawares.
-// Counted only where the daemon counted the whole window: a search or a repo lists rows the daemon cannot count.
+// EVERY CONTROL SAYS WHAT PRESSING IT WOULD LIST (the redesign, Oct 26). The outcome switch says it with the band right
+// under it, whose hero and bar count each outcome, so the switch is its words alone; each toggle carries what the daemon
+// counted with it pressed, so no press lands on an empty list unawares. Counted only where the daemon counted the whole
+// window: a search or a repo lists rows the daemon cannot count.
 function filtersHtml() {
   const out = ui.outcome, b = bandOf(), wb = b && b.listed == null ? b : null;
   const n = (v) => (wb && v != null ? `<b class="n">${n0(v)}</b>` : "");
-  const sw = `<div class="switch" role="group" aria-label="Outcome">${[["all", "All", wb?.m], ["clean", "Answered", wb && wb.m - wb.failed - wb.stopped], ["fail", "Failed", wb?.failed], ["stopped", "Stopped", wb?.stopped]]
-    .map(([v, w, c]) => `<button data-act="outcome" data-v="${v}" aria-pressed="${out === v}">${w}${n(c)}</button>`).join("")}</div>`;
-  // Started over happens during a request that can still end clean, so it is not an outcome (fin) but a door of its
-  // own beside the switch (Marlin, p157; hitstop f80553d): the why filter, pressed when a door brings it, and it
-  // combines with Failed and Stopped. Its toggle is its chip, so no second chip is drawn for it.
-  const over = `<button class="ftog" data-act="why" data-v="startedover" aria-pressed="${ui.why === "startedover"}"><i class="tick"></i>${WHY.startedover.word}${n(wb?.over)}</button>`;
-  const tog = (key, label, on) => `<button class="ftog" data-act="toggle" data-m="${key}" aria-pressed="${on}">${GLYPH.compact}${label}${n(wb?.compact)}</button>`; // each toggle draws its rows' mark (fin; hitstop d91f182)
+  const sw = `<div class="switch" role="group" aria-label="Outcome">${[["all", "All"], ["clean", "Answered"], ["fail", "Failed"], ["stopped", "Stopped"]]
+    .map(([v, w]) => `<button data-act="outcome" data-v="${v}" aria-pressed="${out === v}">${w}</button>`).join("")}</div>`;
+  // Started over happens during a request that can still end clean, so it is not an outcome but a door of its own
+  // beside the switch: the why filter, pressed when a door brings it, and it combines with Failed and Stopped. Its
+  // toggle is its chip, so no second chip is drawn for it. A toggle the daemon counted none for in the window stays,
+  // quiet and with no figure, so a zero is never printed and the control is still there to press.
+  const quiet = (c, on) => (wb && c === 0 && !on ? " none" : "");
+  const over = `<button class="ftog${quiet(wb?.over, ui.why === "startedover")}" data-act="why" data-v="startedover" aria-pressed="${ui.why === "startedover"}"><i class="tick"></i>${WHY.startedover.word}${wb?.over ? n(wb.over) : ""}</button>`;
+  const tog = (key, label, on) => `<button class="ftog${quiet(wb?.compact, on)}" data-act="toggle" data-m="${key}" aria-pressed="${on}">${GLYPH.compact}${label}${wb?.compact ? n(wb.compact) : ""}</button>`; // each toggle draws its rows' mark
   return `<div class="filters">${pickBtn("win", WINDOWS[ui.win][0], false)}`
     + pickBtn("cmd", ui.cmd ? `<i class="blot" style="--c:${colorOf(providerOfCmd(ui.cmd))}"></i>${esc(ui.cmd)}` : "Command", Boolean(ui.cmd))
     + pickBtn("sid", ui.sid ? esc(sessTitle(ui.sid)) : "Session", Boolean(ui.sid))
@@ -972,17 +986,28 @@ const pctOf = (v, max) => (max > 0 && v > 0 ? Math.max(1.5, Math.min(100, (v / m
 /** The shared scales of the rows listed: the most tokens in, the highest price, and the time axis every bar and the
  *  band's times share, from the quickest first byte to the longest request. */
 function scalesOf(rows) {
-  let tok = 0, cost = 0, lo = Infinity, hi = 0;
+  let tok = 0, cost = 0, cheap = Infinity, lo = Infinity, hi = 0;
   for (const r of rows) {
     if (r.in > tok) tok = r.in;
     const p = priceOf(r);
     if (p > cost) cost = p;
+    if (p > 0 && p < cheap) cheap = p;
     for (const x of [r.ttfb, r.total, r.queued]) if (x > 0) { if (x < lo) lo = x; if (x > hi) hi = x; }
   }
-  return { tok, cost, ax: hi > 0 ? DRAW.axis([lo], [hi]) : null };
+  return { tok, cost, cax: cost > 0 ? costAxis(cheap, cost) : null, ax: hi > 0 ? DRAW.axis([lo], [hi]) : null };
 }
+// THE COST COLUMN IS A LOG AXIS OF DOLLARS, from the power of ten under the cheapest request listed to the one over the
+// dearest, as the duration column is a log axis of time: one list holds a tenth of a cent beside a dollar, and on a
+// straight scale the dearest request left every other bar a sliver. A tenfold step is the same length anywhere on it,
+// and the column header marks each power of ten.
+function costAxis(cheap, dear) {
+  const a = Math.floor(Math.log10(cheap)), b = Math.max(a + 1, Math.ceil(Math.log10(dear)));
+  const ticks = Array.from({ length: b - a + 1 }, (_, i) => +(10 ** (a + i)).toPrecision(1));
+  return { ticks, at: (v) => (v > 0 ? Math.max(1.5, Math.min(100, ((Math.log10(v) - a) / (b - a)) * 100)) : 0) };
+}
+const dollarTick = (v) => `$${v >= 1 ? v.toLocaleString("en-US") : v}`;
 function rowHtml(r, S, burst = null) {
-  const { o, lamp, lampCls, word } = stateOf(r, true), h = r.said, open = ui.open === r.id;
+  const { o, lamp, lampCls, word } = stateOf(r, true, Boolean(burst?.reset)), h = r.said, open = ui.open === r.id;
   const door = (id, text) => `<button class="door" data-open="${esc(id)}">${text}</button>`, note = (text) => `<span class="note">${text}</span>`;
   // where a cut request's tokens went and what the carrier's count holds, each a door to the other where both are listed
   // (linkCuts); a finished request with no tokens and no carrier says it has no reading; and the request splice cut when
@@ -1004,7 +1029,7 @@ function rowHtml(r, S, burst = null) {
   // (TurnPriceGap). The column's header says the figures are estimates, so no row says it again.
   const price = priceOf(r), plan = r.cost == null && r.planValue != null;
   const co = price != null
-    ? `<span class="co${plan ? " plan" : ""}"><span class="cbar"><b style="width:${pctOf(price, S.cost).toFixed(1)}%"></b></span><b class="v">${moneyFig(price)}</b></span>`
+    ? `<span class="co${plan ? " plan" : ""}"><span class="cbar"><b style="width:${(S.cax ? S.cax.at(price) : 0).toFixed(1)}%"></b></span><b class="v">${moneyFig(price)}</b></span>`
     : `<span class="co gap"><span class="cbar"></span><b class="v">${r.reason === "unanswered" ? moneyFig(0) : `<i class="nr" title="${esc(REASON[r.reason] ?? "Not reported")}">—</i>`}</b></span>`;
   const match = h ? `<p class="match"><span class="where">${h.where === "sent" ? "Sent" : "Returned"}</span>${markIn(`… ${h.text} …`)}</p>` : "";
   const none = (what) => `<i class="nr" title="No ${what}">—</i>`;
@@ -1022,7 +1047,7 @@ const headHtml = (S) => `<div class="rqhead"><span class="ch"></span><span class
   + `<div class="meta"><span class="h">Command</span><span class="h mdl">Model</span><span class="h acc">Account</span></div>`
   + `<span class="tk"><span class="h">Tokens</span><span class="h v">In</span><span class="h v">Out</span></span>`
   + `<span class="du"><span class="dax">${headTicks(S.ax).map(([v, cls]) => `<i class="${cls}" style="left:${S.ax.at(v).toFixed(2)}%">${DRAW.tickWord(v)}</i>`).join("")}</span><span class="h v">Duration</span></span>`
-  + `<span class="co"><span class="h v">Cost, estimated</span></span></div>`;
+  + `<span class="co"><span class="dax">${S.cax ? headTicks(S.cax).map(([v, cls]) => `<i class="${cls}" style="left:${S.cax.at(v).toFixed(2)}%">${dollarTick(v)}</i>`).join("") : ""}</span><span class="h v">Est. cost</span></span></div>`;
 /** The axis's ticks as a column's header can hold them: the two ends, and between them only ticks 30% of the axis
  *  from their neighbours, so no two labels touch even where the column is 13rem wide (1440). */
 function headTicks(ax) {
@@ -1083,13 +1108,12 @@ const ghostRowHtml = (i) => {
 const ghostListHtml = () => `<div class="list ghosts" aria-busy="true" aria-label="Reading requests"><div class="lline">${KEY}${orderHtml()}</div>`
   + `<div class="rqtable card">${headHtml({ ax: null })}<div class="hour"><span class="hw">${GHOST.bar(4.4)}</span></div>`
   + Array.from({ length: 24 }, (_, i) => ghostRowHtml(i)).join("") + "</div></div>";
-// the filters' row hollow: the five pickers, the outcome switch and the two toggles, each the width it lands at
-const ghostFiltersHtml = () => `<div class="filters" aria-hidden="true">${[7.2, 8.4, 7.6, 7, 8.2, 23.5, 10.2, 11.4].map((w) => GHOST.chip(w)).join("")}</div>`;
+// the filters' row hollow: the five pickers, the outcome switch and the two toggles, each the size it lands at
+const ghostFiltersHtml = () => `<div class="filters" aria-hidden="true">${[7, 7.9, 6.6, 6, 7].map((w) => GHOST.chip(w)).join("")}`
+  + `${GHOST.bar(19.2, "chip gsw")}${GHOST.bar(10.1, "chip gtg")}${GHOST.bar(11.8, "chip gtg")}</div>`;
 // while the projects are read the pick line holds its own shape, hollow: the tiles where the page is wide, on the
 // tiles' own equal columns, else the picker
-const ghostPickHtml = () => (tilesWide()
-  ? `<nav class="ptiles" aria-hidden="true">${Array.from({ length: 10 }, () => `<i class="ghost ptg"></i>`).join("")}</nav>`
-  : `<div class="lhead" aria-hidden="true">${GHOST.chip(13)}</div>`);
+const ghostPickHtml = () => GHOST.tiles(10);
 // THE HOUR MARK says its own day on any day but today, so a mark read mid-scroll still names it, and today's first
 // names Today (Marlin, desk c, Oct 12: the 24-hour view's first screen had no date). It carries the hour's count and a
 // bar as long as the hour was busy, failures in the limit's red, so the day's shape reads down the rail. An hour older
@@ -1117,7 +1141,9 @@ function burstsOf(rows) {
   let run = [];
   const flush = () => {
     // keyed by each row it holds, so a row knows its burst, AND by the burst's own id, so a press on the burst finds it
-    if (run.length >= BURST_MIN) { const b = { id: `burst:${run[0].id}`, rows: run }; for (const r of run) out.set(r.id, b); out.set(b.id, b); }
+    // a reset every row of the run shares (one spent window) is said once, on the burst row
+    const resets = uniq(run.map((r) => (r.reset ? resetWord(r) : "")));
+    if (run.length >= BURST_MIN) { const b = { id: `burst:${run[0].id}`, rows: run, reset: resets.length === 1 && resets[0] ? resets[0] : null }; for (const r of run) out.set(r.id, b); out.set(b.id, b); }
     run = [];
   };
   for (const r of rows) {
@@ -1130,6 +1156,8 @@ function burstsOf(rows) {
   return out;
 }
 let lastBursts = new Map(), unfolding = null; // the bursts the list drew, and the one whose rows open on this draw
+// a new order or outcome is the list's answer to a press: the rows it lands with rise in once (requests.css .arrive)
+let arriving = false;
 function burstHtml(b, open) {
   const newest = b.rows[0], span = +newest.ts - +b.rows.at(-1).ts, { lamp, lampCls, o } = stateOf(newest, true);
   const cmds = uniq(b.rows.map((r) => r.cmd)), sids = uniq(b.rows.map((r) => r.sid).filter(Boolean));
@@ -1138,7 +1166,7 @@ function burstHtml(b, open) {
   return `<button class="rqburst ${o.cls}" type="button" data-act="burst" data-v="${esc(b.id)}" aria-expanded="${open}">${DRAW.chev}`
     + `<span class="lamp ${lampCls}" aria-hidden="true">${lamp}</span><time>${state.order === "price" ? dayOf(newest.ts) : ""}${clockS(newest.ts)}</time>`
     + `<span class="who"><b class="bn">${n0(b.rows.length)} requests</b><span class="word fail">${esc(o.word)}</span><span class="note">${span >= 1000 ? `in ${secs(span)}` : "within a second"}</span></span>`
-    + `<span class="bcmd">${cmds.map(chip).join("")}</span><span class="bsess">${names}</span></button>`;
+    + `<span class="bcmd">${cmds.map(chip).join("")}</span><span class="bsess">${b.reset ? `<span class="detail">${ICON.lock}${esc(b.reset)}</span>` : ""}${names}</span></button>`;
 }
 /** The list: its head line, then one table with the open request ([pane]) in place right under its row. */
 function listHtml(pane = "") {
@@ -1153,10 +1181,11 @@ function listHtml(pane = "") {
   const trouble = wait + said(state.headErrors.concat(names));
   // a command whose search failed sits under the rows the others found (fin)
   const unsearched = said(state.search?.errors || []);
-  const S = scalesOf(rows), priced = state.order === "price";
+  const S = scalesOf(rows), priced = state.order === "price", arrive = arriving;
+  arriving = false;
   // nothing to list keeps the table and its header, and says so once where the rows go, with the act that finds some
   const table = (body, tail = "") => `<div class="list${priced ? " priced" : ""}"><div class="lline">${heldFoot()}${KEY}${orderHtml()}</div>${trouble}`
-    + `<div class="rqtable card">${headHtml(S)}${body}</div>${tail}</div>`;
+    + `<div class="rqtable card${arrive ? " arrive" : ""}">${headHtml(S)}${body}</div>${tail}</div>`;
   const empty = (word, acts = "") => `<div class="nomatch"><span class="state">${word}</span>${acts}</div>`;
   lastBursts = new Map();
   if (state.error) return table(`<div class="nomatch"><span class="state limit">${esc(state.error)}</span></div>`);
@@ -1285,7 +1314,8 @@ function timesHtml(rows, ax) {
   const at = (xs, q) => xs[Math.floor(q * (xs.length - 1))];
   const lines = [["First byte", ok.map((r) => r.ttfb)], ["Whole request", ok.map((r) => r.total)], ["Waited in line", ok.map((r) => r.queued)]].map(([word, xs]) => [word, xs.filter((x) => x != null).sort((a, b) => a - b)]);
   const body = lines.filter(([word, xs]) => xs.length && (word !== "Waited in line" || xs.at(-1) > 0)).map(([word, xs]) => {
-    const typ = at(xs, 0.5), slow = at(xs, 0.95), sub = word === "Waited in line" ? `<small>${n0(xs.length)} of them</small>` : "";
+    // only the requests the gate held carry a wait, so its stage says how many of the answered ones that was
+    const typ = at(xs, 0.5), slow = at(xs, 0.95), sub = word === "Waited in line" ? `<small>${n0(xs.length)} of ${n0(ok.length)}</small>` : "";
     return stageHtml(word + sub, DRAW.range(ax, typ, slow), DRAW.ms(typ), DRAW.ms(slow), word === "Whole request");
   }).join("") + DRAW.axisRow(ax, `${n0(ok.length)} answered, log scale`, "<span></span><span></span>");
   return DRAW.section("Times", body, TIMES_HEAD);
@@ -1342,7 +1372,9 @@ function bySessionHtml(sessions) {
 function costHtml(t, sel) {
   const paid = t.cost_usd ?? 0, plan = t.plan_value_usd ?? 0, m = sel?.m ?? 0;
   const unpriced = (t.unpriced_uncounted_requests ?? 0) + (t.unpriced_local_requests ?? 0) + (t.unpriced_undeclared_requests ?? 0);
-  const lead = DRAW.focal(paid + plan > 0 || t.cost_usd != null ? usdWord(paid + plan) : "—", "estimated");
+  // a window with no price at all is the dash alone: "estimated" qualifies a figure, and there is none to qualify
+  const priced = paid + plan > 0 || t.cost_usd != null;
+  const lead = DRAW.focal(priced ? usdWord(paid + plan) : "—", priced ? "estimated" : "");
   const bar = paid + plan > 0 ? DRAW.stack([{ n: paid, word: "Paid on keys", text: usdWord(paid), cls: "paid" }, { n: plan, word: "On your plan", text: usdWord(plan), cls: "onplan" }], paid + plan, { small: true })
     : `<div class="pd-pop sm"><div class="pd-bar none"></div></div>`;
   const gap = unpriced ? `<div class="kr"><span class="kn">With no price</span>${DRAW.barCell({ w: m ? pctOf(unpriced, m) : 0, text: n0(unpriced) })}</div>` : "";
@@ -1720,7 +1752,7 @@ document.addEventListener("click", async (e) => {
   if (door && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) {
     e.preventDefault();
     applyAddress(new URLSearchParams(door.getAttribute("href").split("?")[1]), true);
-    ui.menu = null; ui.n = 200; again();
+    ui.menu = null; ui.n = 200; arriving = true; again();
     return;
   }
   if (!el) return;
@@ -1739,8 +1771,8 @@ document.addEventListener("click", async (e) => {
     case "pickproj": ui.project = el.dataset.p || null; ui.pmenu = false; PICK.set(ui.project); ui.n = 200; again(); break;
     case "set": ui[m] = v || null; if (m === "win") ui.win = v; ui.menu = null; ui.n = 200; again(); break;
     case "unset": ui[m] = null; if (m === "from") ui.to = null; ui.n = 200; again(); break;
-    case "outcome": ui.outcome = v; ui.n = 200; again(); break;
-    case "order": ui.order = v; ui.n = 200; again(); break;
+    case "outcome": ui.outcome = v; ui.n = 200; arriving = true; again(); break;
+    case "order": ui.order = v; ui.n = 200; arriving = true; again(); break;
     case "startsave": startSaving(el.dataset.h); break;
     case "why": ui.why = ui.why === v ? null : v; ui.n = 200; again(); break;
     case "widen": ui.win = v; ui.n = 200; again(); break;

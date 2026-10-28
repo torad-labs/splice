@@ -7,7 +7,11 @@ const CONSOLE = (() => {
   const fileOf = (url) => PAGES.find(([file]) => url.pathname.endsWith(`/${file}`))?.[0];
 
   function lifetime(root, extras) {
-    const abort = new AbortController(), timers = new Set(), intervals = new Set(), frames = new Set(), observers = new Set(), listeners = [];
+    const timers = new Set(), intervals = new Set(), frames = new Set(), observers = new Set(), listeners = [];
+    // The page's reads are cancelled when he leaves it. If the next page then fails to open he is still on this one, so
+    // it takes a fresh signal and reads on (stay); its API is a view of whichever signal is current.
+    let abort = new AbortController(), live = API.scoped(abort.signal);
+    const pageApi = new Proxy({}, { get: (_, key) => live[key], has: (_, key) => key in live });
     const app = document.querySelector(".app"), retiredApp = document.createElement("div");
     const roots = [root, ...extras];
     let active = true, pageWindow;
@@ -49,7 +53,7 @@ const CONSOLE = (() => {
       },
     });
     const scope = {
-      root, document: pageDocument, API: API.scoped(abort.signal),
+      root, document: pageDocument, API: pageApi,
       addEventListener: (type, fn, options) => listen(window, type, fn, options),
       removeEventListener: (type, fn, options) => unlisten(window, type, fn, options),
       setTimeout(fn, delay, ...args) {
@@ -103,6 +107,7 @@ const CONSOLE = (() => {
       scope,
       // Leaving a page cancels its requests at the click, so the next page never queues behind them.
       leave() { abort.abort(); },
+      stay() { if (active && abort.signal.aborted) { abort = new AbortController(); live = API.scoped(abort.signal); } },
       dispose() {
         active = false; abort.abort();
         for (const id of timers) window.clearTimeout(id);
@@ -179,6 +184,7 @@ const CONSOLE = (() => {
       if (ticket !== generation) return;
       const previous = mounted, main = next.main.cloneNode(true), extras = next.extras.map((node) => node.cloneNode(true));
       previous.dispose();
+      clearRouteError();
       previous.main.replaceWith(main);
       document.body.append(...extras);
       for (const link of document.querySelectorAll("link[data-console-section]")) link.media = links.includes(link) ? "all" : "not all";
@@ -189,13 +195,11 @@ const CONSOLE = (() => {
       if (options.focus !== false) { main.tabIndex = -1; main.focus({ preventScroll: true }); }
     } catch (error) {
       if (ticket !== generation) return;
+      // the page he stays on reads again: leaving it had cancelled its reads, and every read after would have failed
+      mounted?.stay();
       routeFailed(file, error, address, options);
     }
   }
-  /** A page that did not open, where it would have been: the page's name, what happened in splice's own words, and the
-   *  act that opens it again. It used to end in "Try the link again", which is an order to the reader to do what the
-   *  console can do itself; the retry reads the page again from scratch, because load() drops what failed from its
-   *  caches. The class is kept: it is what the manager's eyes read to see that a page did not open (pilot.js). */
   /** What happened, in splice's words and not the browser's: a fetch that never landed says so as "splice did not
    *  answer", and a daemon that answered with a code says what the code means, never the number (a 503 is splice
    *  still starting or stopping). Everything load() throws is already a sentence. */
@@ -206,19 +210,39 @@ const CONSOLE = (() => {
     const code = /Section returned (\d+)/.exec(said);
     return code ? CODE_WORDS[code[1]] ?? "splice did not send it" : said || "Something went wrong";
   }
+  /** A page that did not open, said on the link that failed (Oct 27): the page's name, what happened in splice's own
+   *  words, and Try again beside them, which reads the page again from scratch because load() drops what failed from its
+   *  caches. The line stood over the page he was still on, as its first row, so that page's title dropped 63 px the
+   *  moment it landed and "Teams didn't open" read as a fact about Accounts. It hangs under the link he pressed, over
+   *  the page, so nothing on the page moves; the next page that opens takes it away. A failure with no link (an address
+   *  typed by hand) keeps the place at the top of the page. The class is kept: it is what the manager's eyes read to
+   *  see that a page did not open (pilot.js). */
   function routeFailed(file, error, address, options) {
-    const main = document.querySelector("main.page");
-    main.querySelector(".route-error")?.remove();
+    clearRouteError();
+    const nav = document.querySelector(".side .nav"), link = nav?.querySelector(`a[href="${CSS.escape(file)}"]`);
     const note = document.createElement("section");
     note.className = "route-error"; note.setAttribute("role", "alert");
     note.innerHTML = `${ICON.bang}<span><b>${esc(PAGES.find(([f]) => f === file)?.[1] || "That page")} didn't open</b> `
       + `<span class="why">${esc(why(error))}</span></span>`
       + `<button class="act small" type="button" data-act="retry">Try again</button>`;
     note.querySelector('[data-act="retry"]').addEventListener("click", () => {
-      note.remove();
+      clearRouteError();
       navigate(address, options);
     });
-    main.prepend(note);
+    if (!link) { document.querySelector("main.page")?.prepend(note); return; }
+    nav.append(note);
+    placeNote = () => {
+      // under the link's own name, held inside the window when the link stands near its right edge
+      const room = document.documentElement.clientWidth - nav.getBoundingClientRect().left - note.offsetWidth - 16;
+      note.style.left = `${Math.max(0, Math.min(link.offsetLeft, room))}px`;
+    };
+    placeNote();
+    addEventListener("resize", placeNote);
+  }
+  let placeNote = null;
+  function clearRouteError() {
+    document.querySelector(".route-error")?.remove();
+    if (placeNote) { removeEventListener("resize", placeNote); placeNote = null; }
   }
   window.addEventListener("click", (event) => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;

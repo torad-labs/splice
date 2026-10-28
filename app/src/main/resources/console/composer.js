@@ -72,7 +72,7 @@
   };
   // Nothing on the wire says a call failed: the served result carries no flag (SessionTranscripts.kt holds name, result
   // and id alone), so these are the shapes a failure actually takes in the manager's own log, and nothing else is
-  // called one. A request for the flag is filed; until it lands these four cover what capture 20 shows.
+  // called one. A request for the flag is filed; until it lands these four cover the failures the log holds.
   const FAILED = [/^\s*\{\s*"success"\s*:\s*false/, /<tool_use_error>/, /^Auto mode could not evaluate this action/m, /^\s*Exit code [1-9]/m];
   const failedResult = (text) => typeof text === "string" && FAILED.some((r) => r.test(text));
 
@@ -105,8 +105,9 @@
     compacting: null,           // { at, was } Compact was pressed: the context meter is pending until the reading drops
     busy: false, line: null, reading: false, retrying: false, timer: 0, opened: new Set(),
     narrow: false, shortHint: false, keyW: 0,  // the room the bar has in the column it stands in (fitBar)
+    sizing: false,              // the bar is folding or opening, so its width is a passing one
   };
-  let dock, dim, card, sheet, log, ask, meters, foot, line, pill, lamp, door, said, field, send, lineTimer = 0;
+  let dock, dim, tab, tabLamp, card, sheet, log, ask, meters, foot, line, pill, lamp, door, said, field, send, lineTimer = 0;
   const drawn = { card: "", ask: "", meters: "", foot: "", head: "", rows: [] };
 
   // ---------- reading ----------
@@ -359,6 +360,7 @@
     // THE PAGE DIMS BEHIND AN OPEN SHEET OR CARD (Oct 27), so it reads as above the page, and a press outside it,
     // which closes it, is plainly the way back. Nothing under it stops working: the dim takes no presses.
     dim.classList.toggle("on", (st.open || st.card) && !locked());
+    tuck();
   }
   /** THE BAR SAYS THE STATE ONCE (Oct 26). The lamp, the placeholder, the button and the sheet's foot each said that the
    *  manager was not running, so one state was written four times over; and the first read was announced in the field
@@ -382,6 +384,7 @@
     // the door's verb is the card's: Resume over a card that resumes, Start over one that starts
     door.querySelector("span").textContent = `${m?.state === "resumable" ? "Resume" : "Start"} the splice manager`;
     lamp.className = `cmp-lamp ${lampOf()}`;
+    tabLamp.className = lamp.className;
     field.readOnly = st.busy || Boolean(st.phase) || !m || down;
     field.placeholder = dead ? "" : st.shortHint ? SHORT_HINT : HINT;
     // WHILE IT WAITS ON HIM THE BAR'S ONE ACT IS ANSWER (Oct 27). The button was lit for a waiting manager and also
@@ -640,11 +643,25 @@
    *  run printed its own pipes, brackets and asterisks; the manager writes all four, so the sheet reads them (Oct 26).
    *  Only an address this console can open is made a link, so nothing in a reply can carry a script. */
   const LINK = /\[([^\]\n]+)]\((https?:\/\/[^\s)]+|[a-z0-9-]+\.html(?:[?#][^\s)]*)?|[#/][^\s)]*)\)/gi;
-  const inline = (s) => String(s).split(/(`[^`\n]+`)/).map((p, i) => (i % 2 ? `<code>${h(p.slice(1, -1))}</code>`
-    : h(p)
-      .replace(LINK, (_, text, url) => `<a href="${url}" rel="noreferrer">${text}</a>`)
+  /** A COMMAND THE MANAGER NAMES IS DRAWN AS THAT COMMAND (Oct 27). Its replies name commands in code or in a table's
+   *  column, and the foot under them draws the same command as a chip in its provider's colour, so the log printed as a
+   *  plain word what every other part of the console draws as an object. A code span or a table cell that is exactly
+   *  one of this splice's commands is that command's chip; any other text stays as it was written. */
+  const commandChip = (text) => {
+    const t = String(text).trim(), x = t ? heads().find((y) => y.key === t || y.label === t) : null;
+    return x ? DRAW.chip({ text: x.label || x.key, data: ` style="--c:${tint(x.key)}"` }) : null;
+  };
+  // a code span is taken out before the text is read for bold and italics and put back drawn, so a bold run that holds a
+  // code span is one run, with no asterisks left on the screen, and nothing in code is read for emphasis
+  const inline = (s) => {
+    const held = [];
+    const text = String(s).replace(/\u0000/g, "").replace(/`([^`\n]+)`/g, (_, code) => `\u0000${held.push(commandChip(code) ?? `<code>${h(code)}</code>`) - 1}\u0000`);
+    return h(text)
+      .replace(LINK, (_, label, url) => `<a href="${url}" rel="noreferrer">${label}</a>`)
       .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
-      .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,;:!?]|$)/g, "$1<em>$2</em>"))).join("");
+      .replace(/(^|[\s\u0000(])\*([^*\n]+)\*(?=[\s\u0000).,;:!?]|$)/g, "$1<em>$2</em>")
+      .replace(/\u0000(\d+)\u0000/g, (_, n) => held[+n] ?? "");
+  };
   /** A reply that is nothing but a path is what it is: the mono face, so it reads as a place and not as a sentence. */
   const PATH_ONLY = /^(?:~|\.{0,2}\/)[^\s]*$/;
   const ROW = /^\s*\|(.+)\|\s*$/;
@@ -660,7 +677,7 @@
       if (!table) return;
       const [head, ...body] = table;
       out.push(`<table class="cmp-tbl"><thead><tr>${head.map((c) => `<th>${inline(c)}</th>`).join("")}</tr></thead>`
-        + `<tbody>${body.map((r) => `<tr>${r.map((c) => `<td>${inline(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`);
+        + `<tbody>${body.map((r) => `<tr>${r.map((c) => `<td>${commandChip(c) ?? inline(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`);
       table = null;
     };
     const lines = String(text).split("\n");
@@ -712,17 +729,58 @@
     return `<div class="cmp-md cmp-clamp">${md(whole)}</div>`
       + `<button class="morepill pill" type="button" data-act="more" data-k="${h(key)}" hidden><b></b> more lines</button>`;
   }
-  /** What a clamped body is hiding, measured on the block itself: with nothing hidden the pill is not drawn at all. */
-  function countLines() {
+  /** What a clamped body is hiding, measured on the block itself: with nothing hidden the pill is not drawn at all.
+   *
+   *  A CLAMP ENDS ON A WHOLE LINE (Oct 27): six lines' height cut a reply's table through a row, and the command's
+   *  chip in that row in half, and the count divided the hidden height by a paragraph's line, so a table's rows,
+   *  taller than a line, were counted as more lines than there were. The block now ends under the last line, row or
+   *  chip that fits whole in the six lines the stylesheet allows, and the count is of what lies under that edge: a line
+   *  of text is one, a row of a table is one.
+   *  A block is measured once, when it is drawn in an open sheet, and again when the window's width changes
+   *  [again]; a hidden log has nothing to measure, and is measured when the sheet opens (drawLog). */
+  function countLines(again = false) {
+    if (sheet.hidden) return;
     for (const block of log.querySelectorAll(".cmp-clamp")) {
       const pill = block.nextElementSibling;
-      if (!pill?.classList.contains("morepill")) continue;
-      const line = parseFloat(getComputedStyle(block).lineHeight) || 1;
-      const hidden = Math.round((block.scrollHeight - block.clientHeight) / line);
-      pill.hidden = hidden < 1;
-      if (hidden >= 1) pill.querySelector("b").textContent = `+${hidden}`;
-      else block.classList.remove("cmp-clamp");
+      if (!pill?.classList.contains("morepill") || (block.style.maxHeight && !again)) continue;
+      const cut = wholeLines(block);
+      pill.hidden = !cut;
+      if (!cut) { block.classList.remove("cmp-clamp"); continue; }
+      block.style.maxHeight = `${cut.at}px`;
+      pill.querySelector("b").textContent = `+${cut.hidden}`;
+      pill.lastChild.textContent = cut.hidden === 1 ? " more line" : " more lines";
     }
+  }
+  /** Where a clamped block can end, and how many lines lie under that edge; null when every line fits. A line of text, a
+   *  table's row and a chip with its offset edge are each a span the edge may not cross. When no edge inside the bound
+   *  falls clear of every span, the block is cut where the bound falls. */
+  function wholeLines(block) {
+    block.style.maxHeight = "";
+    const limit = block.clientHeight, top = block.getBoundingClientRect().top;
+    const spans = [], range = document.createRange();
+    const add = (r, line, edge = 0) => spans.push({ top: r.top - top, bottom: r.bottom - top + edge, line });
+    const walk = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      if (!n.data.trim() || n.parentElement.closest("tr")) continue;
+      range.selectNodeContents(n);
+      for (const r of range.getClientRects()) if (r.width) add(r, true);
+    }
+    for (const tr of block.querySelectorAll("tr")) add(tr.getBoundingClientRect(), true);
+    for (const chip of block.querySelectorAll(".chip")) {
+      add(chip.getBoundingClientRect(), false, parseFloat(getComputedStyle(chip).boxShadow.split("px")[1]) || 0);
+    }
+    if (Math.max(...spans.filter((s) => s.line).map((s) => s.bottom)) <= limit + 1) return null;
+    const whole = (y) => !spans.some((s) => s.top < y - 1 && s.bottom > y + 1);
+    let at = 0;
+    for (const s of spans) if (s.bottom <= limit && s.bottom > at && whole(s.bottom)) at = s.bottom;
+    at = at ? Math.max(at, Math.min(limit, ...spans.filter((s) => s.top >= at - 1).map((s) => s.top))) : limit;
+    // the lines under the edge: a span that overlaps the lines above it by less than half its own height starts a line
+    let hidden = 0, end = -Infinity;
+    for (const s of spans.filter((x) => x.line && x.top >= at - 1).sort((a, b) => a.top - b.top)) {
+      if (end - s.top < (s.bottom - s.top) / 2) hidden++;
+      end = Math.max(end, s.bottom);
+    }
+    return { at, hidden: Math.max(1, hidden) };
   }
   /** What a call was about, from its input as the transcript keeps it (Sessions' callSummary); a path in the manager's
    *  own folder reads from there. A message's own summary is what it was about; who it went to is drawn as that
@@ -763,8 +821,8 @@
       + `${DRAW.chev}${k.icon}<b>${h(word)}</b><span class="cmp-sum">${h(sum)}</span>${who ? chipOfWho(who) : ""}${mark}</button>`
       + `<div class="cmp-drop" id="cmp-r-${h(key)}" data-open="${open}"><div class="cmp-dropin">${resultHtml(key, result)}</div></div></div>`;
   }
-  /** A result, bounded to its first lines with the rest behind a count: capture 20's first open result was a 242 px
-   *  scroller inside the 632 px log, hiding 85% of 1,624 px. */
+  /** A result, bounded to its first lines with the rest behind a count: left whole, an opened result was a scroller of
+   *  its own inside the log that hid most of a long result. */
   function resultHtml(key, result) {
     if (result == null) return `<p class="cmp-none">${DRAW.nothing("No result yet")}</p>`;
     const text = String(result).trim();
@@ -897,7 +955,7 @@
     const next = rows(), old = drawn.rows;
     let i = 0;
     while (i < old.length && i < next.length && old[i].key === next[i].key && old[i].html === next[i].html) i++;
-    if (i === old.length && i === next.length) return;
+    if (i === old.length && i === next.length) { countLines(); return; }  // a log drawn while the sheet was closed
     const follow = log.scrollHeight - log.scrollTop - log.clientHeight < FOLLOW_PX || !old.length;
     const top = log.scrollTop;
     while (log.children.length > i) log.lastElementChild.remove();
@@ -967,20 +1025,21 @@
   function toggle(key) {
     if (!key) return;
     const opening = !st.opened.has(key);
+    const shown = opening && key.startsWith("b") ? bodyOf(key.slice(1))?.clientHeight : 0;
     if (opening) st.opened.add(key); else st.opened.delete(key);
     const top = log.scrollTop;
     drawLog();
     log.scrollTop = top;
-    if (opening && key.startsWith("b")) grow(key.slice(1));
+    if (shown) grow(key.slice(1), shown);
   }
+  const bodyOf = (k) => log.querySelector(`.cmp-m[data-k="${CSS.escape(k)}"] > .cmp-md`);
   /** A LONG MESSAGE OPENS OVER --t-snap (Oct 27): it jumped from six lines to its whole height in one frame. It grows
-   *  from the six lines it showed to its full height, in the console's own time and easing for a change in place. */
-  function grow(k) {
-    const md = log.querySelector(`.cmp-m[data-k="${CSS.escape(k)}"] > .cmp-md`);
+   *  from the lines it showed [from] to its full height, in the console's own time and easing for a change in place. */
+  function grow(k, from) {
+    const md = bodyOf(k);
     const root = getComputedStyle(document.documentElement);
     const ms = parseFloat(root.getPropertyValue("--t-snap")) || 0;
     if (!md || !ms || !md.animate) return;
-    const from = (parseFloat(getComputedStyle(md).lineHeight) || 0) * BODY_LINES;
     md.animate([{ maxHeight: `${from}px`, overflow: "hidden" }, { maxHeight: `${md.scrollHeight}px`, overflow: "hidden" }],
       { duration: ms, easing: root.getPropertyValue("--e-out").trim() || "ease-out" });
   }
@@ -1263,6 +1322,25 @@
     if (dock.style.width) dock.style.width = "";
     fitBar();
     room();
+    tuck();
+  }
+  /** WHILE THE PAGE GOES ON UNDER IT, AN IDLE BAR FOLDS INTO THE WINDOW'S MARGIN (Oct 27). Mid-scroll the bar stood over
+   *  the page's own lines: two answers' middle lines on Compare, a pane's last rows on Settings, the last cards on
+   *  Accounts, and a press near the window's foot could land on it. Folded to a smaller bar at its own home it still
+   *  stood over a line of a page here and there, so it folds to a tab in the margin the page keeps clear (composer.css
+   *  .cmp-tab) and covers nothing at any scroll. At the end of a scroll the reserve already holds the whole bar clear, so
+   *  there it is the whole bar. A press on the tab, Ctrl+K or Tab brings it back. It never folds while it has something
+   *  for him: an open sheet or card, a menu, a line it is saying, words in the field, a send under way, or the manager
+   *  waiting on his answer. */
+  function tuck() {
+    if (!dock || !field) return;
+    // nor before the first read lands, whose striped hint is the only sign the bar is still being read, nor while the
+    // read fails: "splice is not answering" and its Try again, or a splice with no manager, stay said in full
+    const m = st.m, idle = !st.open && !st.card && !st.menu && !st.line && !st.busy && !st.phase && !field.value.trim()
+      && !(m?.state === "live" && m.status === "waiting") && Boolean(m) && !st.gone;
+    const doc = document.scrollingElement || document.documentElement;
+    const under = doc.scrollHeight - (doc.scrollTop + innerHeight) > 8;
+    dock.classList.toggle("tucked", idle && under && !locked());
   }
   /** THE BAR READS ON ONE LINE IN A NARROW COLUMN (Oct 26). Stepped aside under a 27 rem list at 1440 it had 331 px,
    *  and "Message the splice manager" wrapped onto a second line that the bar then clipped. The room is measured, not
@@ -1271,6 +1349,11 @@
    *  is the short one (drawPill). Both tests read the same measurements, so neither can flip the other back. */
   function fitBar() {
     if (!pill || !field) return;
+    // a folded bar is not drawn, so the last whole bar's reading stands until it is back
+    if (dock.classList.contains("tucked") && !dock.matches(":focus-within")) return;
+    // nor while it is folding or opening: half way, it would read a width it is only passing through (the end of the
+    // move measures it again)
+    if (st.sizing) return;
     const cs = getComputedStyle(pill), gap = parseFloat(cs.gap) || 0;
     const w = (el) => (el && !el.hidden ? el.getBoundingClientRect().width : 0);
     const keyNow = w(dock.querySelector(".cmp-k"));
@@ -1332,7 +1415,14 @@
     dim = document.createElement("div");
     dim.className = "cmp-dim";
     dim.setAttribute("aria-hidden", "true");
-    document.body.append(dim, dock);
+    // where the bar stands while it is folded (composer.css .cmp-tab): after the bar, which its style reads
+    tab = document.createElement("button");
+    tab.type = "button";
+    tab.className = "cmp-tab";
+    tab.title = `The splice manager · ${KEYS}`;
+    tab.innerHTML = `<span class="cmp-lamp off" aria-hidden="true"><i></i></span><span class="cmp-tabword">Manager</span>`;
+    tabLamp = tab.querySelector(".cmp-lamp");
+    document.body.append(dim, dock, tab);
 
     dock.querySelector("form").addEventListener("submit", (e) => { e.preventDefault(); submit(); });
     door.addEventListener("click", openCard);
@@ -1341,6 +1431,17 @@
     // cross, which hands focus back to the field, closed the sheet and opened it again in the same instant.
     const reveal = () => { if (!st.open && st.sid && st.m && st.m.state !== "off") openSheet(); };
     field.addEventListener("click", reveal);
+    // Ctrl+K and a press on the folded tab bring the bar back where it was and take him to it: the door's card when the
+    // manager was never asked, else the field with the conversation open
+    const summon = () => {
+      dock.classList.remove("tucked");
+      if (!door.hidden) { openCard(); return; }
+      field.focus();
+      reveal();
+    };
+    tab.addEventListener("click", summon);
+    // done with it, the bar folds again over a page that goes on
+    dock.addEventListener("focusout", (e) => { if (!dock.contains(e.relatedTarget)) setTimeout(tuck, 0); });
     field.addEventListener("keydown", (e) => {
       if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !(e.shiftKey || e.altKey || e.ctrlKey || e.metaKey || e.isComposing)) {
         if (recalled(e.key === "ArrowUp" ? 1 : -1)) e.preventDefault();
@@ -1410,13 +1511,18 @@
       if (!e.isTrusted || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || String(e.key).toLowerCase() !== "k") return;
       if (locked() || document.querySelector(".scrim")) return;
       e.preventDefault(); e.stopPropagation();
-      if (!door.hidden) { openCard(); return; }
-      field.focus();
-      reveal();
+      summon();
     }, true);
     // a page opens or closes its pane on its own clock, so where the pill stands is looked at a little more than once a second
     setInterval(() => { if (!locked()) place(); }, 700);
-    addEventListener("resize", place);
+    // a clamped body re-wraps when the window's width changes or the console's faces land, so its edge moves with it
+    addEventListener("resize", () => { place(); countLines(true); });
+    addEventListener("scroll", tuck, { passive: true });
+    const sizing = (on) => (e) => { if (e.target !== dock || e.propertyName !== "width") return; st.sizing = on; if (!on) fitBar(); };
+    dock.addEventListener("transitionrun", sizing(true));
+    dock.addEventListener("transitionend", sizing(false));
+    dock.addEventListener("transitioncancel", sizing(false));
+    document.fonts?.ready.then(() => countLines(true));
     document.addEventListener("visibilitychange", () => { if (!document.hidden) tick(); });
     draw();
     place();

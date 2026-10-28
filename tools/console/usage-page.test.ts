@@ -85,12 +85,14 @@ test("Usage: a week's figures are the daemon's totals, not the rows returned; a 
   try {
     const plan = p.locator(".brow", { hasText: "Primary" }).first();
     await expect(plan.locator(".num.open")).toContainText("1,234,567", { timeout: 20_000 });
-    await expect(plan.locator(".cost .val")).toHaveText("≈$4,321.50");
+    // a cost cell carries no "≈" of its own: its column's head says once that the figures are estimates
+    await expect(p.locator("#band-by").getByText("Cost, estimated").first()).toBeVisible();
+    await expect(plan.locator(".cost .val")).toHaveText("$4,322");
     await expect(plan.locator(".cost .vbar .plan")).toHaveCount(1);
     await expect(p.locator("#band-by .bandhead")).toContainText("On your plan, at API prices");
     await expect(plan.locator(".cost .money")).toHaveCount(0);
     const key = p.locator(".brow", { hasText: "OPENROUTER_API_KEY" }).first();
-    await expect(key.locator(".cost .money")).toHaveText("≈$1.25");
+    await expect(key.locator(".cost .money")).toHaveText("$1.25");
     await expect(p.locator("#band-money .bandhead")).toContainText("Counted by splice");
     await expect(p.locator(".pcard .thru")).toContainText("1,234,567");
   } finally {

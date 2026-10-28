@@ -44,9 +44,9 @@ const ui = { ending: new Map(), armedEnd: new Map(), armedStop: new Set(), open:
   since: new Map(),
   // conversations opened past their newest items, the client's texts he opened, the copy lines he opened, a Copy that
   // said Copied, and the ended namesakes folded under each row
-  logOpen: new Set(), sys: new Set(), lines: new Set(), copied: new Map(), earlier: new Map(),
+  logOpen: new Set(), sys: new Set(), lines: new Set(), namesakes: new Set(), allModels: new Set(), copied: new Map(), earlier: new Map(),
   // the session whose plate just opened (it unfolds once), whether to bring it on screen, and the board's columns
-  unfold: null, reveal: false, cols: 1, colOf: null, colN: 0, focusSay: false };
+  unfold: null, reveal: false, cols: 1, colOf: null, focusSay: false };
 const remember = (key, set) => sessionStorage.setItem(key, JSON.stringify([...set]));
 const root = document.getElementById("sessions");
 
@@ -299,14 +299,29 @@ function whereHtml(s, inPlate) {
   if (s.project) return inPlate ? `<span>${esc(projName(s))}</span>` : (!ui.grouped || ui.by !== "project") && s.name && s.repo ? `<span>${esc(s.repo)}</span>` : "";
   const place = s.row.place || s.repo;
   if (!place) return "";
-  if (inPlate) return `<span class="where" title="${esc(place)}">${FOLDER}${esc(placeWords(place))}</span>`;
+  // a folder too long for its cell breaks after a slash, never inside a folder's name
+  if (inPlate) return `<span class="where" title="${esc(place)}">${FOLDER}<span>${esc(placeWords(place)).replace(/\//g, "/<wbr>")}</span></span>`;
   return ui.grouped ? `<span class="where" title="${esc(place)}">${esc(shortPlace(place))}</span>` : s.name ? `<span title="${esc(place)}">${esc(shortPlace(place))}</span>` : "";
 }
 /** The command a session runs on, as an object: its chip with the live dot. One that never went through splice, and one
  *  splice cannot place, have no command to name, so the column draws an empty command with the fact in it. Grouped by
  *  command, the block's own header names it, so the row keeps only the live dot. */
-function cmdCell(s, cls = "") {
-  if (QUIET.has(s.cmd)) return `<span class="nocmd">${esc(QUIET_WORD[s.cmd])}</span>`;
+// ON A ROW the empty command is a mark, not three words on every such row: its arc goes round splice, its question mark
+// is a command splice cannot place, and the head line's legend says each once for the page. The open session's facts,
+// and the mark's own name for a screen reader, keep the words.
+const QUIET_MARK = {
+  [DIRECT]: `<svg viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><path d="M2 12C3.5 5 12.5 5 14 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="2.2 2.4"/><circle cx="8" cy="12" r="1.6" fill="currentColor"/></svg>`,
+  [UNPLACED]: `<svg viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><path d="M5.6 6a2.5 2.5 0 1 1 3.4 2.3c-.7.3-1 .8-1 1.5v.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="12.6" r="1" fill="currentColor"/></svg>`,
+};
+const quietMark = (cmd) => `<span class="nocmd mark" data-q="${cmd === DIRECT ? "d" : "u"}" role="img" aria-label="${esc(QUIET_WORD[cmd])}" title="${esc(QUIET_WORD[cmd])}">${QUIET_MARK[cmd]}</span>`;
+/** The head line's legend for the empty command's marks the list draws now, each said once for the page: render reads
+ *  which marks it drew, and draws the legend again when that changed. */
+function quietLegend() {
+  const kinds = [DIRECT, UNPLACED].filter((k) => (ui.quietSeen || "").includes(k === DIRECT ? "d" : "u"));
+  return kinds.map((k) => `<span class="axleg quietleg">${QUIET_MARK[k].replace("<svg", '<svg class="qm"')}<span>${esc(QUIET_WORD[k])}</span></span>`).join("");
+}
+function cmdCell(s, cls = "", row = false) {
+  if (QUIET.has(s.cmd)) return row ? quietMark(s.cmd) : `<span class="nocmd">${esc(QUIET_WORD[s.cmd])}</span>`;
   if (!s.cmd) return DRAW.dash;
   if (ui.grouped && ui.by === "head") return s.live ? `<span class="livedot" role="img" aria-label="Running now"><i></i></span>` : "";
   return DRAW.chip({ text: s.cmd, live: s.live, cls });
@@ -329,6 +344,8 @@ function stateCell(s, L, inPlate = false) {
   else if (k === "retries") words.push(`<span class="word limit">${ICON.retries}${s.stall.n} ${s.stall.n === 1 ? "retry" : "retries"}</span>`);
   else if (k === "silent" && s.stall.wontResume) words.push(`<span class="word limit">Won't resume</span>`);
   else if (resuming(s)) words.push(`<span class="detail resumes" data-resume="${esc(s.id)}">${ICON.watch(Math.floor(s.stall.resumeMs / 1000))}<span>Resumes in ${counter(s.stall.resumeMs)}</span></span>`);
+  // a silence nothing will end on its own: on a row the flat red lamp says it, and the open title line says it in a word
+  else if (inPlate && k === "silent") words.push(`<span class="word limit">Stalled</span>`);
   else if (s.state === "working" && t?.phase == null && s.wait) words.push(`<span class="word">In line</span>`);
   else if (s.state === "working" && t?.compact) words.push(`<span class="word">Compacting</span>`);
   else if (s.state === "working" && t?.phase === "connect") words.push(`<span class="detail soft">No output yet</span>`);
@@ -382,7 +399,7 @@ function cmdBox(id, text, cls = "cmd") {
   if (lines.length <= CMD_LINES) return `<p class="${cls}">${esc(text)}</p>`;
   const shown = open ? text : lines.slice(0, CMD_LINES).join("\n");
   return `<p class="${cls}">${esc(shown)}</p>`
-    + DRAW.more(lines.length - CMD_LINES, { word: lines.length - CMD_LINES === 1 ? "more line" : "more lines", act: "full", data: ` data-k="${esc(id)}"`, open, less: "Fewer lines" });
+    + DRAW.more(lines.length - CMD_LINES, { word: "more lines", one: "more line", act: "full", data: ` data-k="${esc(id)}"`, open, less: "Fewer lines" });
 }
 function runHtml(s, call, offer) {
   const panel = offer?.panel || [], at = panel.findIndex((l) => l.framed);
@@ -453,7 +470,7 @@ function hi(text) {
 /** THE LAMP NAMES ITS STATE (round 2's bug list): a working row and a stalled one differed only by a drawing, which
  *  says nothing without sight. Its name is the word the drawing stands for. */
 const lampName = (L) => L.name ?? String(L.word ?? "").replace(/<[^>]*>/g, "").split(" · ")[0].trim();
-const lampHtml = (L) => `<span class="lamp ${L.cls}" role="img" aria-label="${esc(lampName(L))}">${L.lamp}</span>`;
+const lampHtml = (L) => `<span class="lamp ${L.cls}" role="img" aria-label="${esc(lampName(L))}" title="${esc(lampName(L))}">${L.lamp}</span>`;
 // a worktree whose folder is an id names nothing he would know it by: it reads as a worktree, its folder its title
 const wtWord = (wt) => (ID_PART.test(wt) ? "Worktree" : wt);
 /** THE ROW'S LINE, on the tracks every row of the page shares: who it is (the chevron that opens it in place, its name,
@@ -483,23 +500,19 @@ function lineHtml(s, L, inPlate) {
   return `<${tag} class="top${bare ? " bare" : ""}"><span class="who"><button class="name" data-open="${esc(s.id)}" aria-expanded="${inPlate}" title="${esc(title(s))}">${DRAW.chev}${hi(title(s))}</button>${also}${wt}</span>`
     // the command keeps its name, its live dot and its provider's colour as one 1 px edge (.chip.edge), so down a block
     // the commands read as a quiet column under the names and the words
-    + `${said}${spanCell(s, ax)}<span class="cmd">${cmdCell(s, "edge")}</span><span class="doing">${stop}${fix}${elsewhere}</span></${tag}>`;
+    + `${said}${spanCell(s, ax)}<span class="cmd">${cmdCell(s, "edge", !inPlate)}</span><span class="doing">${stop}${fix}${elsewhere}</span></${tag}>`;
 }
 /** A SESSION IN THE LIST: its line, and a session that needs him opens under its line to what it asks and the answers it
- *  takes, so nothing waiting on him is a click away. The open session is drawn in its place (plateHtml), and an ended
- *  namesake he opened from it opens right under it. */
+ *  takes, so nothing waiting on him is a click away. */
 function cardHtml(s) {
-  if (ui.open === s.id) return plateHtml(s);
   const L = movingLook(s) || look(s);
   const failed = ui.failed.get(s.id);
   // a card whose state changed since it was last drawn rings once where it stands
   const was = ui.looks.get(s.id); ui.looks.set(s.id, L.cls);
   const quiet = s.row.availability === "stale" && !s.turn ? " quiet" : ""; // alive, but its registration stopped refreshing (§4)
-  const namesake = (ui.earlier.get(s.id) || []).find((x) => x.id === ui.open);
   return `<article class="card s ${L.cls}${quiet}${was && was !== L.cls ? " changed" : ""}${ui.landing.has(s.id) ? " landing" : ""}" style="--c:${color(s)}" data-key="s:${esc(s.id)}" data-open="${esc(s.id)}">`
     + lampHtml(L) + lineHtml(s, L, false)
-    + `${s.state === "needs" ? askHtml(s) : ""}${armedStopHtml(s, true)}${failedHtml(s, failed, false)}</article>`
-    + (namesake ? plateHtml(namesake) : "");
+    + `${s.state === "needs" ? askHtml(s) : ""}${armedStopHtml(s, true)}${failedHtml(s, failed, false)}</article>`;
 }
 
 // ---------- the list: what needs him first, then what runs, then what rests ----------
@@ -619,9 +632,16 @@ function pagePieces(key, rows, first = PAGE_ROWS) {
   const left = rows.length - shown.length;
   return [...shown.map(rowPiece), ...(left > 0 ? [{ html: `<div class="pmore">${DRAW.more(left, { word: "more", act: "more", data: ` data-p="${esc(key)}"` })}</div>`, w: 1 }] : [])];
 }
-/** One row as a piece of a block: its markup, and how much of a column it takes. The open session's plate weighs as
- *  its row did, so opening it moves no block to another column. */
-const rowPiece = (s) => ({ html: cardHtml(s), w: s.state === "needs" ? 2.5 : 1 });
+/** One row as a piece of a block: its markup, how much of a column it takes, and the plate that opens under it. The
+ *  open session's own line becomes its plate's title, so its piece is the plate alone; an ended namesake he opened from
+ *  a row opens under that row. A plate weighs as its row did, so opening it moves no block to another column. */
+function rowPiece(s) {
+  const w = s.state === "needs" ? 2.5 : 1;
+  if (ui.open === s.id) return { html: "", plate: plateHtml(s), w };
+  const namesake = (ui.earlier.get(s.id) || []).find((x) => x.id === ui.open);
+  return { html: cardHtml(s), plate: namesake ? plateHtml(namesake) : "", w };
+}
+const pieceHtml = (p) => p.html + (p.plate || "");
 // A GROUP SHOWS WHAT MOVES AND FOLDS WHAT RESTS (Marcos, Oct 15: "organize sessions per project a bit more efficiently").
 // Needs you, stalled and working always stand, then its latest idle sessions up to a handful of rows; the idle ones past
 // that fold behind "N idle" on the group's foot line, beside its Ended fold, closed until he opens it. A search opens
@@ -636,10 +656,11 @@ function rowPieces(key, g, ended) {
   const idleFold = folds ? DRAW.disc({ open, act: "idle", data: ` data-p="${esc(key)}"`, cls: "pidle", inner: `<span><b>${DRAW.n(hidden)}</b> idle</span>` }) : "";
   const restOpen = ended.length && (ui.rest.has(key) || Boolean(ui.q) || ended.some(holdsOpen));
   const rest = ended.length ? DRAW.disc({ open: restOpen, act: "rest", data: ` data-p="${esc(key)}"`, cls: "prest", inner: `<span><b>${DRAW.n(ended.length)}</b> ended</span>` }) : "";
-  const foot = idleFold || rest ? [{ html: `<div class="pfoot">${idleFold}${rest}</div>`, w: 1 }] : [];
+  const foot = idleFold || rest ? [{ html: `<div class="pfoot">${idleFold}${rest}</div>`, w: 1, foot: true }] : [];
   const rested = restOpen ? pagePieces(`r:${key}`, ended) : [];
-  return [...up.map(rowPiece), ...idleRows, ...foot, ...(rested.length ? [{ html: `<div class="rested">`, w: 0 }, ...rested, { html: `</div>`, w: 0 }] : [])];
+  return [...up.map(rowPiece), ...idleRows, ...foot, ...(rested.length ? [{ html: REST_OPEN, w: 0, wrap: 1 }, ...rested, { html: REST_SHUT, w: 0, wrap: -1 }] : [])];
 }
+const REST_OPEN = `<div class="rested">`, REST_SHUT = `</div>`;
 /** COLLAPSED, A GROUP STILL SHOWS ITS NEEDS-YOU CARDS (Marlin): nothing waiting on him is ever hidden by a fold. */
 function groupBlock([key, g], ended, { loose = false } = {}) {
   const shut = ui.shut.has(key) && !ui.q, counts = countsOf(g);
@@ -653,11 +674,49 @@ function groupBlock([key, g], ended, { loose = false } = {}) {
   const tot = `<span class="ptot"><b class="ptotal" data-f="t:${esc(key)}">${DRAW.n(total)}</b><span class="punit">${total === 1 ? "session" : "sessions"}</span></span>`;
   const pieces = shut ? g.filter((s) => RANK(s) === 0 || holdsOpen(s)).map(rowPiece) : loose ? pagePieces(`l:${key}`, ended, HANDFUL) : rowPieces(key, g, ended);
   const why = key === NO_PROJECT && ui.by === "project" ? noProjectWhy([...g, ...ended]) : "";
-  const html = `<section class="pgroup${shut ? " shut" : ""}${loose ? " loose" : ""}" data-key="g:${esc(key)}${loose ? ":l" : ""}" aria-label="${esc(`${name}, ${countWords(counts, total, "session")}`)}">`
+  const open = pieces.some((p) => p.plate);
+  const section = (body, wide = 0) => `<section class="pgroup${shut ? " shut" : ""}${loose ? " loose" : ""}${wide ? " opened" : ""}" data-key="g:${esc(key)}${loose ? ":l" : ""}" aria-label="${esc(`${name}, ${countWords(counts, total, "session")}`)}">`
     + `<header class="phead"><button class="pfold" data-act="fold" data-p="${esc(key)}" aria-expanded="${!shut}">${ICON.caret}<span class="pname">${esc(name)}</span></button>`
-    + `${loose ? "" : `<span class="pcounts">${counts.map((c) => bigCount(c, key)).join("")}</span>${mixHtml(g, ui.maxLive)}`}${tot}${go}</header>${why}`
-    + `${pieces.map((p) => p.html).join("")}</section>`;
-  return { key: `${key}${loose ? ":l" : ""}`, html, w: 1.6 + (why ? 0.8 : 0) + pieces.reduce((a, p) => a + p.w, 0) };
+    + `${loose ? "" : `<span class="pcounts">${counts.map((c) => bigCount(c, key)).join("")}</span>${mixHtml(g, ui.maxLive)}`}${tot}${go}</header>${why}${body}</section>`;
+  return {
+    key: `${key}${loose ? ":l" : ""}`, open, html: section(pieces.map(pieceHtml).join("")),
+    w: 1.6 + (why ? 0.8 : 0) + pieces.reduce((a, p) => a + p.w, 0),
+    // the block that holds the open session, drawn across [n] of the board's columns (boardHtml)
+    wide: (n) => section(spreadHtml(pieces, n), n),
+  };
+}
+/** THE OPEN SESSION'S BLOCK ACROSS THE BOARD: its rows keep the width of a column of the board and run down [n] columns
+ *  in their order, and the open session's plate spans them all, under its row, so the session he reads has the width
+ *  and no column stands empty beside it. The rows before it stand above the plate, the rows after it below, and the
+ *  block's foot line keeps the block's whole width where it falls. */
+function spreadHtml(pieces, n) {
+  const at = pieces.findIndex((p) => p.plate), p = pieces[at];
+  const before = pieces.slice(0, at), after = pieces.slice(at + 1);
+  // a plate opened from inside the block's ended rows closes their wrapper above it and opens it again below
+  const inRest = before.reduce((d, x) => d + (x.wrap || 0), 0) > 0;
+  const head = [...before, ...(p.html ? [{ html: p.html, w: p.w }] : []), ...(inRest ? [{ html: REST_SHUT, w: 0, wrap: -1 }] : [])];
+  const tail = [...(inRest ? [{ html: REST_OPEN, w: 0, wrap: 1 }] : []), ...after];
+  return `${rowColsHtml(head, n)}<div class="wideplate">${p.plate}</div>${rowColsHtml(tail, n)}`;
+}
+/** Rows down [n] columns in their order, as even as they divide, the foot line across the whole width where it falls,
+ *  and a fold's ended rows kept together under their own hairline. */
+function rowColsHtml(pieces, n) {
+  const out = [];
+  let run = [], rested = false;
+  const flush = () => {
+    if (!run.length) return;
+    const k = Math.min(n, run.length), per = Math.ceil(run.length / k);
+    const cols = Array.from({ length: k }, (_, i) => run.slice(i * per, (i + 1) * per)).filter((c) => c.length);
+    out.push(`<div class="prows${rested ? " rested" : ""}" style="--n:${n}">${cols.map((c) => `<div class="pcol">${c.join("")}</div>`).join("")}</div>`);
+    run = [];
+  };
+  for (const x of pieces) {
+    if (x.wrap) { flush(); rested = x.wrap > 0; continue; }
+    if (x.foot) { flush(); out.push(x.html); continue; }
+    run.push(pieceHtml(x));
+  }
+  flush();
+  return out.join("");
 }
 /** WHY THESE SESSIONS ARE IN NO PROJECT, SAID ONCE (gap: one sentence printed on eight rows, in the code's word for a
  *  folder). Each reason the repo wire gives, once, in plain words, with the folders it holds (round 2: with two
@@ -711,7 +770,7 @@ function listHead() {
   const by = live.length >= 2 ? byHtml() : ""; // the grouping switch, once there are two sessions to group
   const found = ui.q ? `<span class="found"><b>${DRAW.n(ui.shownCount ?? 0)}</b> ${ui.shownCount === 1 ? "match" : "matches"}</span>` : "";
   // what the rows' bars measure, what a query found, and the grouping switch at the line's right end
-  const ctl = `<div class="lctl">${axisLegend()}${found}${by}</div>`;
+  const ctl = `<div class="lctl">${quietLegend()}${axisLegend()}${found}${by}</div>`;
   if (!grouped()) {
     const solo = live[0].project && ui.by === "project" ? `<span class="pname solo">${esc(projName(live[0]))}</span>` : "";
     return `<div class="lhead">${solo}${ctl}</div>`;
@@ -776,34 +835,55 @@ function ghostListHtml() {
 function boardHtml(blocks, cls = "") {
   if (!blocks.length) return "";
   const n = Math.max(1, Math.min(ui.cols, blocks.length));
+  const at = n >= 2 ? blocks.findIndex((b) => b.open) : -1;
+  if (at < 0) return colsHtml(blocks, n, cls);
+  // THE OPEN SESSION TAKES THE BOARD'S WIDTH (Marcos, Oct 26: "we're wasting a lot of horizontal space"): the blocks
+  // before its block keep their columns above it, its block spans the board, and the blocks after it continue below.
+  // Where three or more columns fit, its block takes all but one, and the blocks after it run down that one beside the
+  // session, on the side its block stood, so the list stays in sight while he reads.
+  const before = blocks.slice(0, at), open = blocks[at], after = blocks.slice(at + 1);
+  if (n < 3 || !after.length) return colsHtml(before, n, cls, "a") + `<div class="board sboard opened${cls ? ` ${cls}` : ""}">${open.wide(n)}</div>` + colsHtml(after, n, cls, "b");
+  const stood = DRAW.packCols(blocks, n, (b) => b.w).findIndex((c) => c.items.includes(open));
+  const wide = { body: open.wide(n - 1), span: n - 1 }, side = { body: after.map((b) => b.html).join("") };
+  return colsHtml(before, n, cls, "a")
+    + `<div class="board sboard opened${cls ? ` ${cls}` : ""}">${DRAW.boardCols(stood === n - 1 ? [side, wide] : [wide, side])}</div>`;
+}
+/** Blocks packed down [n] columns. While his pointer is in the list each block keeps the column it was drawn in, as the
+ *  rows keep their order; [part] tells apart the columns above and below an open session. */
+function colsHtml(blocks, n, cls = "", part = "") {
+  if (!blocks.length) return "";
+  ui.colOf ??= new Map();
+  const spot = (b) => `${cls}|${part}|${n}|${b.key}`;
   let cols;
-  if (ui.hold && ui.colOf && ui.colN === n && blocks.every((b) => ui.colOf.has(b.key))) {
+  if (ui.hold && blocks.every((b) => ui.colOf.get(spot(b)) < n)) {
     cols = Array.from({ length: n }, () => ({ items: [] }));
-    for (const b of blocks) cols[ui.colOf.get(b.key)].items.push(b);
+    for (const b of blocks) cols[ui.colOf.get(spot(b))].items.push(b);
   } else {
     cols = DRAW.packCols(blocks, n, (b) => b.w);
-    ui.colOf = new Map(); ui.colN = n;
-    cols.forEach((c, i) => c.items.forEach((b) => ui.colOf.set(b.key, i)));
+    cols.forEach((c, i) => c.items.forEach((b) => ui.colOf.set(spot(b), i)));
   }
   return `<div class="board sboard${cls ? ` ${cls}` : ""}">${DRAW.boardCols(cols.map((c) => ({ body: c.items.map((b) => b.html).join("") })))}</div>`;
 }
 /** One block of rows with no header (one project alone, or the one he picked), split down the columns the width holds
- *  when it has more rows than one column reads well, row by row and in order. */
+ *  when it has more rows than one column reads well, row by row and in order. A column is as wide as the board's
+ *  column, so a few rows never stretch their words across the whole screen. The open session takes the width, as it
+ *  does in a block (spreadHtml). */
 function flatBoard(key, live, ended) {
   const pieces = rowPieces(key, live, ended);
+  if (ui.cols >= 2 && pieces.some((p) => p.plate)) return `<div class="board sboard opened"><div class="rows">${spreadHtml(pieces, ui.cols)}</div></div>`;
   const weight = pieces.reduce((a, p) => a + p.w, 0);
   const n = Math.max(1, Math.min(ui.cols, Math.floor(weight / HANDFUL) || 1));
-  if (n === 1) return `<div class="board sboard"><div class="col"><div class="rows">${pieces.map((p) => p.html).join("")}</div></div></div>`;
   // the rested rows stay with their wrapper: a column never starts inside it
   const cols = Array.from({ length: n }, () => []), per = weight / n;
   let c = 0, w = 0, inRest = false;
   for (const p of pieces) {
     if (!inRest && w >= per * (c + 1) && c < n - 1 && p.w > 0) c += 1;
-    cols[c].push(p.html);
+    cols[c].push(pieceHtml(p));
     w += p.w;
-    if (p.html === `<div class="rested">`) inRest = true; else if (p.html === `</div>`) inRest = false;
+    if (p.wrap) inRest = p.wrap > 0;
   }
-  return `<div class="board sboard">${cols.map((h) => `<div class="col"><div class="rows">${h.join("")}</div></div>`).join("")}</div>`;
+  const empty = Array.from({ length: Math.max(0, ui.cols - n) }, () => `<div class="col"></div>`);
+  return `<div class="board sboard">${cols.map((h) => `<div class="col"><div class="rows">${h.join("")}</div></div>`).join("")}${empty.join("")}</div>`;
 }
 function listHtml() {
   if (state.loading) return ghostListHtml();
@@ -874,9 +954,25 @@ function callLine(m, s) {
   const cwd = String(s.row.cwd || "").replace(/\/+$/, "");
   const rel = (p) => (cwd && typeof p === "string" && p.startsWith(`${cwd}/`) ? p.slice(cwd.length + 1) : p);
   if (input.command) return { text: input.command, words: false };
-  if (input.file_path || input.notebook_path) return { text: rel(input.file_path || input.notebook_path), words: false };
+  // A MESSAGE TO ANOTHER SESSION names who it went to, by the name the list knows it by, never its socket's path; the
+  // address stays in the call's whole input, one press away
+  if (typeof input.to === "string" && input.to.trim()) {
+    const to = input.to.trim(), bare = to.replace(/^uds:/, "");
+    const peer = state.rows.find((x) => x.name === to || (x.row.address && String(x.row.address).replace(/^uds:/, "") === bare));
+    const who = peer?.name || (/[/:]/.test(to) ? "another session" : to);
+    const what = typeof input.summary === "string" ? input.summary.trim() : "";
+    return { text: what ? `To ${who} · ${what}` : `To ${who}`, words: true };
+  }
+  if (input.file_path || input.notebook_path) return { text: rel(input.file_path || input.notebook_path), words: false, file: true };
   if (input.pattern) return { text: input.path ? `${input.pattern} in ${rel(input.path)}` : input.pattern, words: false };
   return { text: callSummary(m), words: false };
+}
+/** A FILE'S PATH ON A CALL'S LINE: the file's own name stays whole and the folders before it give way from their start,
+ *  so a path longer than the line never loses the one part he would name the file by. */
+function pathHtml(p) {
+  const at = p.lastIndexOf("/");
+  if (at < 1) return esc(p);
+  return `<span class="tdir"><bdi>${esc(p.slice(0, at + 1))}</bdi></span><span class="tfile">${esc(p.slice(at + 1))}</span>`;
 }
 /** A teammate's colour: the command its own session runs on, found by its name, else this session's. */
 const senderColor = (name, s) => color(state.rows.find((x) => x.name && x.name === name) ?? s);
@@ -887,45 +983,20 @@ function fromHtml(name, s) {
   return peer ? `<a class="from" href="#${encodeURIComponent(peer.id)}" data-open="${esc(peer.id)}">${inner}</a>` : `<p class="from">${inner}</p>`;
 }
 // ---------- the agent's own text, as it wrote it ----------
-// The kit draws it (kit.js md, DRAW.md): headings, lists, tables, fenced blocks and bold, the shapes a Claude Code turn
-// actually writes. A LINK IS A LINK (round 2's bug list): the kit's reader leaves [words](address) as written, so the
-// page takes each link out before the kit reads the text and puts it back drawn: an address on the web opens in a new
-// tab under its own words, and a link to a file names the file and nothing else, since the console cannot open his
-// disk. Code keeps its own text: a link written inside backticks or a fenced block stays as written.
-const MD_LINK = /\[([^\]\n]+)\]\(([^)\s]+)(?:\s+"[^"\n]*")?\)/g;
-const BARE_URL = /\bhttps?:\/\/[^\s<>()"'`\]]+[^\s<>()"'`.,;:!?\]]/g;
-const fileName = (label, href) => {
-  const name = /[\\/]/.test(label) ? label.split(/[\\/]/).filter(Boolean).pop() : label;
-  return name || String(href).split(/[\\/]/).filter(Boolean).pop() || label;
-};
-function linkHtml(label, href) {
-  if (/^https?:\/\//i.test(href)) return `<a class="mdlink" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`;
-  if (/^(?:mailto|javascript|data|vbscript):/i.test(href)) return esc(label);
-  return `<span class="flink" title="${esc(href)}">${esc(fileName(label, href))}</span>`;
-}
-function mdRich(text) {
-  const links = [];
-  const mark = (html) => `\u0000${links.push(html) - 1}\u0000`;
-  const plain = (part) => part.replace(MD_LINK, (all, label, href) => mark(linkHtml(label, href))).replace(BARE_URL, (url) => mark(linkHtml(url, url)));
-  let fence = false;
-  const lines = String(text ?? "").split("\n").map((line) => {
-    if (/^\s*```/.test(line)) { fence = !fence; return line; }
-    return fence ? line : line.split(/(`[^`]+`)/g).map((part, i) => (i % 2 ? part : plain(part))).join("");
-  });
-  const html = DRAW.md(lines.join("\n"));
-  return links.length ? html.replace(/\u0000(\d+)\u0000/g, (all, i) => links[+i] ?? "") : html;
-}
+// The kit draws it (kit.js md, DRAW.md): headings, lists, tables, fenced blocks, bold and links, the shapes a Claude Code
+// turn actually writes. A web address opens in a new tab under its own words, and a link to a file names the file,
+// since the console cannot open his disk.
 // A LONG MESSAGE FOLDS AFTER ITS FIRST LINES (one page, one scroll): a summary or a report a screen long stood between him
 // and everything after it. Its first lines stand, and the rest is one press away, in place.
 const CLAMP_LINES = 28, CLAMP_SHOWN = 14, CLAMP_CHARS = 3600;
 function bodyHtml(s, m, text = m.text) {
   const key = `m:${s.id}:${m.index}`, lines = String(text).split("\n");
   const tall = lines.length > CLAMP_LINES, wide = !tall && text.length > CLAMP_CHARS;
-  if (!tall && !wide) return mdRich(text);
+  if (!tall && !wide) return DRAW.md(text);
   const open = ui.full.has(key), data = ` data-k="${esc(key)}"`;
   const left = tall ? lines.length - CLAMP_SHOWN : 0;
   const shown = open ? text : tall ? lines.slice(0, CLAMP_SHOWN).join("\n") : `${text.slice(0, CLAMP_CHARS / 2).replace(/\s+\S*$/, "")}…`;
-  return mdRich(shown) + DRAW.more(left, { word: tall ? (left === 1 ? "more line" : "more lines") : "", act: "full", data, open, less: "Fewer lines" })
+  return DRAW.md(shown) + DRAW.more(left, { word: tall ? "more lines" : "", one: tall ? "more line" : "", act: "full", data, open, less: "Fewer lines" })
     .replace(/<b>0<\/b> /, "Whole message");
 }
 // A SLASH COMMAND IS ONE EVENT, NOT ITS MARKUP (gap: raw <command-name> tags shown as text). Claude Code writes a
@@ -958,13 +1029,19 @@ function sysWord(text) {
   const t = String(text ?? "").trim();
   for (const [re, word] of SYS_LINES) { const m = t.match(re); if (m) return word(m); }
   const first = t.split("\n").find((l) => l.trim()) ?? "";
+  // a line that opens with a markup tag reads as the tag's own words, never as the tag
+  const tag = first.trim().match(/^<\/?([a-z][\w-]*)[^>]*>/i);
+  if (tag) return tag[1].replace(/[-_]+/g, " ").replace(/^./, (c) => c.toUpperCase());
   return first.replace(/^\[([^\]]+)\]\s*/, "$1 · ").replace(/uds:\S+/g, "").replace(/(?:\/[\w.@~-]+){2,}/g, "…")
     .replace(/\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b/gi, "").replace(/\b[0-9a-f]{8,}\b/gi, "").replace(/\s+/g, " ").trim() || "Note from the client";
 }
-function sysHtml(s, m, at) {
-  const key = `${s.id}:${m.index}`, open = ui.sys.has(key);
-  return `<div class="sysline${open ? " open" : ""}">${DRAW.disc({ open, act: "sys", data: ` data-k="${esc(key)}"`, cls: "sysdisc", inner: `<span>${esc(sysWord(m.text))}</span>` })}${at}`
-    + (open ? `<div class="sysbody unfold">${bodyHtml(s, m)}</div>` : "") + `</div>`;
+/** One line for a client's text, or for a run of the same kind side by side: its words once and the count of them after,
+ *  one press to open every text as written, in place. */
+function sysHtml(s, group, at, word) {
+  const key = `${s.id}:${group[0].index}`, open = ui.sys.has(key);
+  const times = group.length > 1 ? `<b class="times">×${DRAW.n(group.length)}</b>` : "";
+  return `<div class="sysline${open ? " open" : ""}">${DRAW.disc({ open, act: "sys", data: ` data-k="${esc(key)}"`, cls: "sysdisc", inner: `<span>${esc(word)}${times ? " " : ""}${times}</span>` })}${at}`
+    + (open ? group.map((m) => `<div class="sysbody unfold">${bodyHtml(s, m)}</div>`).join("") : "") + `</div>`;
 }
 /** What the session's prompt holds now, read off its screen; empty when nothing or unread. */
 const inPrompt = (s) => (state.screens[s.id]?.draft || "").trim();
@@ -1028,7 +1105,15 @@ function logHtml(s) {
     // the client's own mark where he refused a call or stopped a turn: a line in the conversation, never his words
     if (m.role === "system" && m.kind === "interrupted") { put(m.ts, (at) => `<p class="cutoff">${ICON.stop}Stopped${at}</p>`); return; }
     if (!m.text) return;
-    if (m.role === "system") { put(m.ts, (at) => sysHtml(s, m, at)); return; }
+    if (m.role === "system") {
+      // the same notice again, with nothing between, joins the line before it rather than standing as a twin of it
+      const word = sysWord(m.text), prev = items.at(-1);
+      if (!run.length && prev?.sys === word) { prev.group.push(m); return; }
+      const group = [m];
+      put(m.ts, (at) => sysHtml(s, group, at, word));
+      Object.assign(items.at(-1), { sys: word, group });
+      return;
+    }
     // a teammate's message reads as its sender's, beside the agent's side, with who sent it
     if (m.role === "peer") { put(m.ts, (at) => `<div class="msg peer" style="--c:${senderColor(m.from, s)}">${fromHtml(m.from, s)}<div class="body">${bodyHtml(s, m)}</div>${at}</div>`); return; }
     // a command he typed and what it printed: one event, drawn, never its markup
@@ -1079,10 +1164,14 @@ function trailHtml(s, calls, results, out, working) {
   const hidden = calls.length > TRAIL_SHOWN + 1 ? calls.slice(0, -TRAIL_SHOWN) : [];
   const open = hidden.some((m) => ui.trails.has(keyOf(m)) || ui.results.has(keyOf(m)));
   const shown = open ? calls : calls.slice(hidden.length);
-  const tw = Math.min(14, Math.max(4, ...shown.map((m) => DRAW.toolWord(m.tool).length)));
+  // the tool word's track is as wide as the run's usual words: one long word among short ones (Send message among Bash
+  // lines) runs on into its own line's text rather than pushing every other line's words to the right
+  const lens = shown.map((m) => DRAW.toolWord(m.tool).length), sorted = [...lens].sort((a, b) => a - b);
+  const typical = sorted[Math.floor((sorted.length - 1) / 2)] ?? 4, fits = (n) => n <= Math.max(typical + 2, typical * 1.5);
+  const tw = Math.min(14, Math.max(4, ...lens.filter(fits)));
   const count = !hidden.length ? "" : DRAW.disc({ open, cls: "tmore", act: "trail", data: ` data-ks="${esc(hidden.map(keyOf).join(" "))}"`,
     inner: `<span><b>${DRAW.n(hidden.length)}</b> earlier calls${open ? "" : `<span class="tally">${esc(tally(hidden))}</span>`}</span>` });
-  return `<div class="trail" style="--tw:${tw}">${count}${shown.map((m) => callHtml(s, m, results, out, working)).join("")}</div>`;
+  return `<div class="trail" style="--tw:${tw}">${count}${shown.map((m) => callHtml(s, m, results, out, working, !fits(DRAW.toolWord(m.tool).length))).join("")}</div>`;
 }
 /** What a folded run held, by tool, the commonest first, every tool it used so the parts add up to the count:
  *  "Bash 7 · Read 4 · Edit 2". */
@@ -1095,19 +1184,19 @@ function tally(calls) {
  *  nothing (Marlin p164), never on a second line. Opened: its whole input when the line showed something else, then its
  *  result, bounded on the page rather than in a box that scrolls. A call nothing has come back for yet ([out]) runs
  *  while the session works, and says nothing of its output. */
-function callHtml(s, m, results, out, working) {
+function callHtml(s, m, results, out, working, long = false) {
   const key = `${s.id}:${m.index}`;
   const result = results.get(m.tool_use_id) ?? null, none = result == null, empty = !none && !result.trim();
   const running = out.has(m) && working;
   const line = callLine(m, s), whole = callSummary(m), more = line.text !== whole;
   const can = !none || more, open = can && ui.results.has(key);
   const mark = running ? "<i></i>" : can ? ICON.caret : "";
-  const said = `<span class="tsum${line.words ? " words" : ""}"${more ? "" : ` title="${esc(whole)}"`}>${esc(line.text)}</span>`;
+  const said = `<span class="tsum${line.words ? " words" : ""}${line.file ? " pathed" : ""}"${more ? "" : ` title="${esc(whole)}"`}>${line.file ? pathHtml(line.text) : esc(line.text)}</span>`;
   const nothing = (none && !out.has(m)) || empty ? `<span class="nothing">No output</span>` : "";
   // the output block carries its own class: `.result` is the kit's one-word result beside an act, and this is a tool's output
   const under = !open ? "" : `${more ? `<p class="tin">${esc(whole)}</p>` : ""}${!none && !empty ? cmdBox(`t:${key}`, result, "toolout") : ""}`;
   const word = DRAW.toolWord(m.tool);
-  return `<div class="call${ui.landing.has(key) ? " landing" : ""}"><button class="tool" type="button" data-act="result" data-k="${esc(key)}" aria-expanded="${open}"${can ? "" : " disabled"}>`
+  return `<div class="call${ui.landing.has(key) ? " landing" : ""}"><button class="tool${long ? " long" : ""}" type="button" data-act="result" data-k="${esc(key)}" aria-expanded="${open}"${can ? "" : " disabled"}>`
     + `${mark}<span class="tname" title="${esc(word)}">${esc(word)}</span><span class="twhat">${said}${nothing}</span></button>${under}</div>`;
 }
 /** The /exit splice typed to end the client for a move, and what Claude Code printed for it: the move's mechanics, which
@@ -1138,24 +1227,33 @@ function jointHtml(mv) {
  *  the whole session; then whatever must be seen or answered (an armed act, a refusal, what it asks), the details,
  *  which fold away so the conversation comes up under the acts (Marcos, Oct 26: "we should be able to collapse the top
  *  component"), the conversation, and the Message field. */
+const BRIEF_ITEMS = 6;
 function plateHtml(s) {
   const L = movingLook(s) || look(s);
   const failed = ui.failed.get(s.id);
   const ask = s.state === "needs" ? askHtml(s, "pane") : "";
-  return `<section class="pane s ${L.cls}${ui.unfold === s.id ? " unfold" : ""}" style="--c:${color(s)}" data-key="p:${esc(s.id)}" aria-label="${esc(title(s))}">`
+  // the details and the conversation share one body: stacked in a narrow plate, side by side in a wide one (sessions.css),
+  // unless the conversation is too short to stand beside them
+  const held = state.logs[s.id];
+  const brief = held != null && (held.off || !held.messages || held.messages.filter((m) => m.text && m.role !== "tool" && !m.tool).length < BRIEF_ITEMS);
+  return `<section class="pane s ${L.cls}${ui.unfold === s.id ? " unfold" : ""}${ui.topShut ? " topshut" : ""}${brief ? " brief" : ""}" style="--c:${color(s)}" data-key="p:${esc(s.id)}" aria-label="${esc(title(s))}">`
     + lampHtml(L) + lineHtml(s, L, true) + toolsHtml(s)
     + `${armedStopHtml(s, false)}${armedEndHtml(s)}${failedHtml(s, failed, true)}${ask ? `<div class="askbox">${ask}</div>` : ""}`
-    + detailsHtml(s) + logHtml(s) + composerHtml(s) + `</section>`;
+    + `<div class="pbody">${detailsHtml(s)}<div class="talk">${logHtml(s)}${composerHtml(s)}</div></div></section>`;
 }
 /** THE LINE OF ACTS ON THE WHOLE SESSION: the details' fold first, in the block folds' own disc, then End, Continue on
- *  with its menu, and Close, which the name also is. */
+ *  and Close, which the name also is. Continue on's menu, and the prompt a move holds back, open in place on their own
+ *  line under it, so the line of acts keeps its height wherever it stands. */
 function toolsHtml(s) {
   const shut = ui.topShut;
   const fold = `<button class="topfold disc" type="button" data-act="top" aria-expanded="${!shut}" aria-controls="panetop-${esc(s.id)}">${DRAW.chev}<span>Details</span></button>`;
-  const cont = movable(s) ? (ui.moving.has(s.id) ? `<button class="act stopping" disabled>${ICON.wait}Continuing on</button>`
-    : `<button class="act" data-act="menu" data-s="${esc(s.id)}" aria-haspopup="menu" aria-expanded="${ui.menu === s.id}">Continue on</button>${ui.menu === s.id ? choicesHtml(s) : heldHtml(s)}`) : "";
+  const go = movable(s) && !ui.moving.has(s.id);
+  const cont = !movable(s) ? "" : go
+    ? `<button class="act" data-act="menu" data-s="${esc(s.id)}" aria-haspopup="menu" aria-expanded="${ui.menu === s.id}">Continue on</button>`
+    : `<button class="act stopping" disabled>${ICON.wait}Continuing on</button>`;
   const close = `<button class="act quiet" data-act="close">Close</button>`;
-  return `<div class="tools">${fold}<div class="acts">${endHtml(s)}${cont}${close}</div></div>`;
+  const under = go ? (ui.menu === s.id ? choicesHtml(s) : heldHtml(s)) : "";
+  return `<div class="tools">${fold}<div class="acts">${endHtml(s)}${cont}${close}</div></div>${under}`;
 }
 /** THE DETAILS: the facts that say which session it is, then what it did today, what it holds and where it sends, as
  *  drawings in two columns, then the lines to paste. They fold to nothing and back over 240 ms. */
@@ -1170,15 +1268,19 @@ function detailsHtml(s) {
 /** THE FACTS OF ONE SESSION, EACH UNDER ITS OWN LABEL, a dash for any the daemon does not send: where it is (its project,
  *  or its folder with the reason it is in none), its command, how many turns it ran, when it started, its team, its
  *  Claude Code, and the ended sessions that carried its name before it. */
+const NAMESAKES_SHOWN = 3;
 function factsHtml(s) {
-  const fact = (label, value) => `<div class="fact"><dt>${esc(label)}</dt><dd>${value || DRAW.dash}</dd></div>`;
+  const fact = (label, value, cls = "") => `<div class="fact${cls ? ` ${cls}` : ""}"><dt>${esc(label)}</dt><dd>${value || DRAW.dash}</dd></div>`;
   const team = s.team ? `<span class="team">${ICON.team}${esc(s.team)}</span>` : "";
   const started = s.row.started_at ? esc(backWord(new Date(s.row.started_at))) : "";
   const turns = s.row.turns == null ? "" : `${DRAW.n(s.row.turns)}${s.row.turns_partial ? "+" : ""}`;
   const reason = !s.project && s.row.repo?.reason ? `<span class="reason">${esc(reasonWord(s.row.repo.reason))}</span>` : "";
-  const before = (ui.earlier.get(s.id) || []).concat(namesakeOf(s) ? [namesakeOf(s)] : []);
-  const earlier = before.length ? fact("Earlier", before.map((x) => x.id === s.id ? "" : `<a class="chip quiet" href="#${esc(x.id)}" data-open="${esc(x.id)}">${x.state === "ended" ? "Ended" : "Live"} ${esc(backWord(x.at))}</a>`).join("")) : "";
-  return `<dl class="meta facts">${fact(s.project ? "Project" : "Folder", (whereHtml(s, true) || "") + reason)}${fact("Command", cmdCell(s, "edge"))}`
+  // the sessions that carried its name, the newest three standing and the rest behind one count that opens them in place
+  const before = (ui.earlier.get(s.id) || []).concat(namesakeOf(s) ? [namesakeOf(s)] : []).filter((x) => x.id !== s.id);
+  const all = ui.namesakes.has(s.id), shown = all ? before : before.slice(0, NAMESAKES_SHOWN), left = before.length - NAMESAKES_SHOWN;
+  const more = left > 0 ? DRAW.more(left, { word: "more", act: "namesakes", data: ` data-s="${esc(s.id)}"`, open: all, less: "Fewer" }) : "";
+  const earlier = before.length ? fact("Earlier", shown.map((x) => `<a class="chip quiet" href="#${esc(x.id)}" data-open="${esc(x.id)}">${x.state === "ended" ? "Ended" : "Live"} ${esc(backWord(x.at))}</a>`).join("") + more, "earlier") : "";
+  return `<dl class="meta facts">${fact(s.project ? "Project" : "Folder", (whereHtml(s, true) || "") + reason, s.project ? "" : "folder")}${fact("Command", cmdCell(s, "edge"))}`
     + `${fact("Turns", turns)}${fact("Started", started)}${fact("Team", team)}${fact("Claude Code", s.row.version ? esc(s.row.version) : "")}${earlier}</dl>`;
 }
 /** The row an ended namesake is folded under, when this session is one of them: its link back to the newest. */
@@ -1218,7 +1320,8 @@ function todayHtml(s) {
 function tokensHtml(s) {
   const u = state.usage[s.id];
   if (u === undefined) return `<div class="tokhead">${GHOST.ring("focal")}${GHOST.focal(6)}</div>${GHOST.stack()}`;
-  if (!u?.requests || (!u.tin && !u.tout)) return EMPTY_SPLIT;
+  // nothing went in or out today: the section keeps its figures' places, each a dash, over the split's empty track
+  if (!u?.requests || (!u.tin && !u.tout)) return `<div class="tokhead"><div class="io">${DRAW.focal("—", "in")}${DRAW.focal("—", "out")}</div></div>${EMPTY_SPLIT}`;
   const share = u.tin > 0 ? u.cached / u.tin : null;
   const ring = share == null ? "" : DRAW.statTile(DRAW.ring(share, { size: "focal", label: `${DRAW.pct(share)} from the cache` }), DRAW.pct(share), "from cache", { focal: true });
   const io = `${DRAW.focal(u.noIn < u.requests ? DRAW.big(u.tin) : "—", "in")}${DRAW.focal(u.noOut < u.requests ? DRAW.big(u.tout) : "—", "out")}`;
@@ -1364,8 +1467,8 @@ function colCount() {
   return Math.max(1, Math.floor((root.clientWidth + gap) / (COL_REM * rem + gap)));
 }
 function render(opts = {}) {
-  const { slide = false } = opts;
-  const before = slide && !ui.unfold ? spots() : null;
+  const { slide = false, settle = false } = opts;
+  const before = (slide && !ui.unfold) || settle ? spots() : null;
   // the five-second read redraws the page: a name he had the keyboard on keeps it, on the row or on its open plate
   const active = document.activeElement;
   const named = active?.matches?.("button.name[data-open]") ? active.dataset.open : null;
@@ -1375,6 +1478,8 @@ function render(opts = {}) {
   ui.wide = ui.grouped && ui.by === "project" && !state.loading && tilesWide();
   ui.cols = colCount();
   morph(root, listHtml());
+  const seen = [...new Set([...root.querySelectorAll(".list .nocmd.mark")].map((el) => el.dataset.q))].sort().join("");
+  if (seen !== (ui.quietSeen || "")) { ui.quietSeen = seen; morph(root, listHtml()); }
   fitTracks(); // the rows' tracks as wide as what they hold, before anything is measured
   paintBand();
   if (named && !root.contains(active)) root.querySelector(`button.name[data-open="${CSS.escape(named)}"]`)?.focus({ preventScroll: true });
@@ -1390,7 +1495,7 @@ function render(opts = {}) {
     const addr = ui.open ? `#${ui.open}` : ui.missing ? `#${ui.missing}` : "";
     if (decodeURIComponent(location.hash) !== addr) history.replaceState(history.state, "", `${location.pathname}${location.search}${addr}`);
   }
-  if (before) slideFrom(before);
+  if (before) (settle ? settleFrom : slideFrom)(before);
   land();
   reveal();
   ui.unfold = null;
@@ -1492,6 +1597,20 @@ function slideFrom(before) {
     el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: parseFloat(tok("--t-move")) || 420, easing: tok("--e-io") || "ease-in-out" });
   }
 }
+/** WHAT AN OPENING OR A CLOSING RE-PACKED LANDS IN ITS NEW PLACE: a block or row that a plate sent to another column
+ *  fades and settles there over 240 ms, as the plate itself unfolds, never travelling across the plate to get there.
+ *  One that only moved down or up, pushed by what opened above it, keeps still, as rows under an opened row do. */
+function settleFrom(before) {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const moved = (el) => { const was = before.get(el.dataset.key); return was && Math.abs(was.left - el.getBoundingClientRect().left) >= 1; };
+  for (const el of root.querySelectorAll(".list .s[data-key], .list .pgroup[data-key]")) {
+    if (!moved(el)) continue;
+    // a row lands with its block when the block itself moved
+    const g = el.matches(".s") ? el.closest(".pgroup[data-key]") : null;
+    if (g && moved(g)) continue;
+    el.animate([{ opacity: 0, transform: "translateY(-.4rem)" }, { opacity: 1, transform: "none" }], { duration: parseFloat(tok("--t-snap")) || 240, easing: tok("--e-out") || "ease-out" });
+  }
+}
 // the list holds still while the pointer is over it or focus is inside it; on release it redraws, sliding only if the
 // order it held is not the order it would draw
 let pointerIn = false;
@@ -1526,7 +1645,7 @@ function open(id, { reveal: show = true } = {}) {
   if (ui.open !== id) { ui.unfold = id; ui.menu = null; ui.lopen.clear(); }
   ui.open = id; ui.missing = null; ui.reveal = show;
   bringEnded(find(id));
-  render();
+  render({ settle: true });
   const s = find(id);
   if (s && !(id in state.logs)) readLog(s); // null: a read at a moment is on its way
   if (s && s.state !== "ended" && !state.screens[id]) readScreen(s);
@@ -1535,7 +1654,7 @@ function open(id, { reveal: show = true } = {}) {
 }
 function close() {
   ui.open = null; ui.missing = null; ui.menu = null; ui.lopen.clear();
-  render();
+  render({ settle: true });
 }
 
 // ---------- the login a session is on (spec section 11) ----------
@@ -1768,20 +1887,27 @@ async function readChoices(s) {
   // with room first, and among those its own command first; then the rest by when their windows come back
   return groups.sort((x, y) => x.rank - y.rank || (y.own ? 1 : 0) - (x.own ? 1 : 0) || x.long - y.long || x.short - y.short);
 }
+/** CONTINUE ON, ONE COMMAND AT A TIME: its chip, the account it would send as and that account's room, said once on
+ *  the command's own line, then each of its models as a press under it, the first sixteen standing and the rest behind
+ *  one count that opens them in place. A command at its limit, signed out or not installed says so on its line, and its
+ *  models stay in view, disabled. */
+const MODELS_SHOWN = 16;
 function choicesHtml(s) {
   const groups = ui.choices[s.id];
   if (!groups) return "";
-  const acctOf = (g) => (!g.acct ? "<span></span>" : g.keyVar !== undefined
+  const acctOf = (g) => (!g.acct ? "" : g.keyVar !== undefined
     ? `<span class="acct">${esc(g.acct)}${g.keyVar ? ` · <span class="var">${esc(g.keyVar)}</span>` : ""}</span>` : acctPlanHtml(g.acct, g.plan));
-  return `<div class="menu models" role="menu">${groups.map((g, gi) => g.names.map((n, i) => {
+  return `<div class="menu models" role="menu">${groups.map((g) => {
     const room = g.kind === "room" && g.used != null ? `<span class="room"><span class="bar sub"><b style="width:${g.used}%"></b></span><span class="pct">${g.used}%<span class="used">used</span></span></span>`
       : g.kind === "limit" ? `<span class="room out"><span class="pct limit">100%<span class="used">used</span></span>${g.until ? `${ICON.lock}Resets ${backWord(g.until)}` : ""}</span>`
       : g.kind === "unlinked" ? `<span class="room out">Not installed${g.fix ? ` · <code>${esc(g.fix)}</code>` : ""}</span>`
-      : g.kind === "signedout" ? `<span class="room out">Signed out</span>` : `<span class="room"></span>`;
+      : g.kind === "signedout" ? `<span class="room out">Signed out</span>` : "";
     const off = g.kind === "limit" || g.kind === "signedout" || g.kind === "unlinked";
-    return `<button role="menuitem" class="line${gi && !i ? " plan" : ""}" style="--c:${colorOf(state.providerOf[g.head])}" data-act="continue" data-s="${esc(s.id)}" data-head="${esc(g.head)}" data-model="${esc(n.id)}" data-label="${esc(n.label)}"${off ? " disabled" : ""}>`
-      + `<span class="blot"></span><span class="mname">${esc(n.label)}</span>${acctOf(g)}${room}</button>`;
-  }).join("")).join("")}</div>`;
+    const key = `${s.id}|${g.head}`, all = ui.allModels.has(key), left = g.names.length - MODELS_SHOWN;
+    const more = left > 0 ? DRAW.more(left, { word: "more", act: "models", data: ` data-k="${esc(key)}"`, open: all, less: "Fewer" }) : "";
+    const names = (all ? g.names : g.names.slice(0, MODELS_SHOWN)).map((n) => `<button role="menuitem" class="line" data-act="continue" data-s="${esc(s.id)}" data-head="${esc(g.head)}" data-model="${esc(n.id)}" data-label="${esc(n.label)}"${off ? " disabled" : ""}>${esc(n.label)}</button>`).join("") + more;
+    return `<div class="mgroup${off ? " off" : ""}" role="group" aria-label="${esc(commandOf(g.head) ?? g.head)}"><div class="mhead">${cmdChip(g.head)}${acctOf(g)}${room}</div><div class="mnames">${names}</div></div>`;
+  }).join("")}</div>`;
 }
 async function openChoices(s) {
   if (ui.menu === s.id) { ui.menu = null; render(); return; }
@@ -1862,7 +1988,7 @@ function unmovedHtml(s, f, pane) {
   if (state.reading && f.screen) {
     const lines = String(f.screen).split("\n"), key = `u:${s.id}`, open = ui.full.has(key), left = lines.length - SCREEN_LINES;
     screen = `<pre class="screen">${esc(open || left <= 0 ? f.screen : lines.slice(-SCREEN_LINES).join("\n"))}</pre>`
-      + (left > 0 ? DRAW.more(left, { word: left === 1 ? "earlier line" : "earlier lines", act: "full", data: ` data-k="${esc(key)}"`, open, less: "Last lines" }) : "");
+      + (left > 0 ? DRAW.more(left, { word: "earlier lines", one: "earlier line", act: "full", data: ` data-k="${esc(key)}"`, open, less: "Last lines" }) : "");
   }
   const run = f.back || !f.resume ? ""
     : `<div class="runline"><p class="cmd">${esc(f.resume)}</p><button class="act small" data-act="copy-resume" data-s="${esc(s.id)}">${ui.copied.get(`copy-resume:${s.id}`) > Date.now() ? "Copied" : "Copy"}</button></div>`;
@@ -2008,6 +2134,8 @@ document.addEventListener("click", (e) => {
     case "copy-path": if (s) copy("copy-path", s, state.logs[s.id]?.path); break;
     case "copy-resume": if (s) copy("copy-resume", s, ui.failed.get(s.id)?.resume); break;
     case "lines": if (s) { ui.lines.has(s.id) ? ui.lines.delete(s.id) : ui.lines.add(s.id); render(); } break;
+    case "namesakes": if (s) { ui.namesakes.has(s.id) ? ui.namesakes.delete(s.id) : ui.namesakes.add(s.id); render(); } break;
+    case "models": { const k = el.dataset.k; ui.allModels.has(k) ? ui.allModels.delete(k) : ui.allModels.add(k); render(); } break;
     case "clear-send": if (s && ui.drafts[s.id]?.trim()) send(s, ui.drafts[s.id].trim(), true); break;
     case "keep": if (s) { delete ui.leftover[s.id]; ui.focusSay = true; render(); } break;
     case "held-cancel": if (s) { delete ui.held[s.id]; render(); } break;

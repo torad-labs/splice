@@ -62,6 +62,7 @@ async function look(query: string) {
       plan: await page.locator('article[data-open="alpha:plan"] .top').innerText(),
       planCost: await page.locator('article[data-open="alpha:plan"] .co.plan .v').innerText(),
       key: await page.locator(".lkey").innerText(),
+      costHead: await page.getByText("Est. cost", { exact: true }).count(),
       foot: await page.locator(".foot.held").innerText(),
     };
   } finally {
@@ -77,7 +78,8 @@ test("Highest price runs dearest first, unpriced last, with no hour marks, a pla
   expect(seen.order).toEqual(["alpha:dear", "alpha:plan", "alpha:cheap", "alpha:none"]);
   expect(seen.pressed).toBe("Highest price");
   expect(seen.hours).toBe(0);
-  expect(seen.planCost).toBe("≈$0.500");
+  expect(seen.planCost).toBe("$0.500"); // no "≈" on the cell: its column's head says the cost is estimated
+  expect(seen.costHead).toBeGreaterThan(0);
   expect(seen.key).toContain("On your plan, at API prices");
   expect(seen.foot).toContain("highest priced of each command");
 }, 30_000);

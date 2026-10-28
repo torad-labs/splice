@@ -6,8 +6,6 @@
 .detail { font: 500 .92rem/1 var(--font-data); color: var(--limit); display: inline-flex; align-items: center; gap: .35rem; white-space: nowrap; }
 .detail svg { width: 1rem; height: 1rem; }
 .detail.mend { color: var(--text-body); }  /* a broken stream splice resumed or started over: a fact about the row, in body ink. It is neither a limit, a failure nor the one place to act, so it takes no status colour (the colour pass, Oct 26) */
-/* what a search found, marked where it stands: the full ink over a neutral wash, so the key light keeps its one job */
-mark { background: color-mix(in oklab, var(--text) 24%, transparent); color: var(--text); border-radius: .2rem; padding: 0 .12rem; box-shadow: inset 0 -.1rem 0 var(--text); }
 /* the outcome as an element: clean a still dot, a failure in the limit's colour with what stopped it, stopped a square,
    a compaction its own mark, and a step splice answered itself an outline */
 .lamp.clean i { width: .6rem; height: .6rem; background: var(--text-mute); }
@@ -20,7 +18,7 @@ mark { background: color-mix(in oklab, var(--text) 24%, transparent); color: var
 /* ---------- the open request ---------- */
 /* its header on two lines: whose request and when, over what ran it (command, outcome, model, account); the acts at
    the end */
-.rqpane > header .who { flex: 1 1 auto; flex-direction: column; align-items: flex-start; gap: .4rem; }
+.rqpane > header > .who { flex: 1 1 auto; flex-direction: column; align-items: flex-start; gap: .4rem; }
 .rqpane > header .top { display: flex; align-items: baseline; gap: calc(1.5 * var(--u)); min-width: 0; max-width: 100%; }
 .rqpane > header time { flex: none; font: 500 .92rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
 .rqpane > header .meta { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem calc(1.5 * var(--u)); margin: 0; font: 500 .9rem/1.2 var(--font-data); color: var(--text-body); }
@@ -41,8 +39,12 @@ mark { background: color-mix(in oklab, var(--text) 24%, transparent); color: var
 }
 .rqline > .upmsgs { flex: 1 1 auto; min-width: 0; }
 .rqline > .acts { display: flex; align-items: center; gap: var(--u); margin-left: auto; }
+/* with nothing said above them, the acts ride the first section's kicker line, at its end */
+.rqpane .sechead > .acts { display: flex; align-items: center; gap: var(--u); margin-left: auto; }
+.rqpane .sechead > .switch.tabs ~ .acts { margin-left: 0; }
 .doc-node { display: block; min-width: 0; }
 .doc-reading { display: inline-block; min-width: 8rem; padding: .4rem 0; }
+.doc-reading.top { display: block; padding: .2rem 0; }  /* a body's first keys, hollow, one tree line each */
 .doc-text { margin: .5rem 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
 .doc-more { margin: .55rem 0; }
 
@@ -102,11 +104,11 @@ mark { background: color-mix(in oklab, var(--text) 24%, transparent); color: var
 .rqpane .fig .label { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
 .rqpane .fig .v { font: 600 1.3rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
 .rqpane .fig .v .nr { font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); }  /* the provider never sent it */
-.rqpane .fig .fsub { font: 500 .84rem/1.25 var(--font-data); color: var(--text-mute); }
+.rqpane .fig .fsub { font: 500 .84rem/1.25 var(--font-name); color: var(--text-mute); }  /* words under a figure, as a tile's caption */
 /* tokens in, written to cache and out as bars on ONE scale, so the three are read against each other and not only as
    digits; the cells that carry a bar take one width, so their lengths compare. The input bar shades the part that came
    from the cache, in the same ink the list's token column uses for it. */
-.rqpane .fig:has(.fbar) { width: 9rem; }
+.rqpane .fig:has(.fbar) { width: clamp(9rem, 10cqi, 16rem); }  /* on a wide table the bars grow with it, so their lengths read */
 .fbar { display: block; width: 100%; height: .5rem; border-radius: .25rem; background: color-mix(in oklab, var(--text) 8%, transparent); }
 .fbar > b { position: relative; display: block; height: 100%; border-radius: .25rem; background: color-mix(in oklab, var(--text) 55%, transparent); overflow: hidden; }
 .fbar > b > i { position: absolute; left: 0; top: 0; bottom: 0; background: color-mix(in oklab, var(--text) 22%, var(--obj)); }
@@ -170,6 +172,16 @@ mark { background: color-mix(in oklab, var(--text) 24%, transparent); color: var
 .status.s2 { color: var(--text); }  /* an answer is the ordinary case: text ink, never the live green */
 .status.s4, .status.s5 { color: var(--limit); }
 .status.sx { color: var(--text-body); } /* a 200 that ended on an error event */
+/* the status in the console's words with its code beside it, small (reqview.js statusHtml): the tick of an answer, the
+   lock of a spent window, the word in the name face, the code in the data face a step down and muted */
+.status { display: inline-flex; align-items: baseline; gap: .4rem; white-space: nowrap; }
+.status .sword { font: 600 .95rem/1 var(--font-name); }
+.status .scode { font: 500 .8rem/1 var(--font-data); color: var(--text-mute); }
+.status > svg { flex: none; width: .95rem; height: .95rem; align-self: center; }
+/* a Compare send in the console's names: the command's chip, the model's name, and the prompt as he wrote it */
+.sentplay .chip { vertical-align: baseline; }
+.sentplay .mname { font: 500 .95rem/1.3 var(--font-name); color: var(--text); }
+.sentplay .sprompt { display: block; margin-top: var(--u); white-space: pre-wrap; font: 400 .95rem/1.5 var(--font-name); color: var(--text-body); }
 /* what the provider said on a failed request, first in the pane (Marlin p157 item 2, hitstop 442e831). Not .said,
    which is the Applied word on knobs.css. */
 .upmsg { display: flex; align-items: baseline; flex-wrap: wrap; gap: .4rem .7rem; margin: 0; padding: .15rem 0 .15rem .8rem; border-left: .22rem solid var(--limit); }
@@ -188,7 +200,8 @@ mark { background: color-mix(in oklab, var(--text) 24%, transparent); color: var
 .attempt .an { width: 1.7rem; height: 1.7rem; border-radius: 50%; display: grid; place-items: center; flex: none; font: 600 .88rem/1 var(--font-data); color: var(--splice-cream); background: var(--socket); box-shadow: 0 0 0 .12rem var(--ink), inset 0 0 0 .14rem var(--rail); }  /* the socket is dark in both themes: day's --text sank into it, so the number keeps night's ink */
 .attempt .url { font: 500 .92rem/1.2 var(--font-data); color: var(--text); overflow-wrap: anywhere; min-width: 0; }
 .attempt .status { font-size: .95rem; margin-left: auto; }
-.attempt .ams { font: 500 .92rem/1 var(--font-data); color: var(--text-body); }
+/* an attempt's time reads as one figure ("17 ms") beside its status; in a pane narrower than its address, the address wraps */
+.attempt .ams { font: 500 .92rem/1 var(--font-data); color: var(--text-body); white-space: nowrap; }
 .attempt .why { margin: -.25rem 0 .7rem 2.5rem; font: 500 .92rem/1 var(--font-data); color: var(--limit); display: flex; align-items: center; gap: .4rem; }
 .attempt .why svg { width: 1rem; height: 1rem; flex: none; }  /* a spent window: the lock, then when it comes back */
 .attempt .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .9rem; }

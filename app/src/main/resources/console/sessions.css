@@ -215,23 +215,33 @@
 /* the empty list says why a claude -p run is not here, quietly beside No sessions (spec §4) */
 .nomatch .why { font-size: .95rem; color: var(--text-mute); }
 
-/* Continue on: model, the plan it runs on, that plan's room; one column each, so the lines read down as a table */
-.menu.models { right: 0; top: calc(100% + .6rem); min-width: 0; padding: .6rem; width: max-content; max-width: 70rem; max-height: calc(100vh - 16rem); overflow-y: auto;
-  display: grid; grid-template-columns: auto auto auto auto; }
-.menu.models .line { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; column-gap: 1rem; padding: .6rem .75rem; font-size: 1rem; }
-.menu.models .line.plan { margin-top: .35rem; box-shadow: 0 -.1rem 0 var(--track-line); border-radius: 0 0 .35rem .35rem; }
-.menu.models .blot { width: .9rem; height: .9rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .12rem var(--ink); margin-left: .2rem; }
-.menu.models .acct { display: inline-flex; align-items: baseline; gap: .45rem; font: 500 1rem/1.15 var(--font-name); color: var(--text); }
+/* Continue on: one command at a time, its chip, its account and that account's room on its own line, said once, and
+   its models as presses under it; the commands flow down as many columns as the menu's width holds, as the blocks do */
+.menu.models {
+  right: 0; top: calc(100% + .6rem); min-width: 0; width: auto; max-height: calc(100vh - 16rem); overflow-y: auto; display: block;
+  padding: var(--u) calc(2 * var(--u)); columns: 30rem; column-gap: calc(4 * var(--u)); column-rule: .08rem solid var(--hair);
+}
+.menu.models .mgroup { display: grid; gap: var(--u); padding: calc(1.5 * var(--u)) 0; break-inside: avoid; }
+.menu.models .mhead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(1.5 * var(--u)); min-height: 2rem; }
+.menu.models .mhead .chip { flex: none; }
+.menu.models .acct { display: inline-flex; align-items: baseline; gap: .45rem; min-width: 0; font: 500 1rem/1.15 var(--font-name); color: var(--text); }
 .menu.models .acct .var { font: 500 .95rem/1.15 var(--font-data); letter-spacing: .01em; }
 .menu.models .acct .pv { font-size: .95rem; color: var(--text-mute); }
-.menu.models .room { display: inline-flex; align-items: center; gap: .6rem; justify-self: end; }
+.menu.models .room { display: inline-flex; align-items: center; gap: .6rem; margin-left: auto; }
 .menu.models .room .bar { display: block; width: 5rem; }  /* Accounts' small bar (.bar.sub) */
 .menu.models .room .pct { min-width: 3rem; font-size: .95rem; }
 .menu.models .room.out { font: 500 .95rem/1 var(--font-data); color: var(--limit); gap: .35rem; }
 .menu.models .room.out svg { width: 1rem; height: 1rem; }
-.menu.models .line:disabled { cursor: default; color: var(--text-mute); }
-.menu.models .line:disabled .acct { color: var(--text-mute); }
-.menu.models .line:disabled:hover { background: none; }
+/* each model one press, as wide as its name, wrapping under its command */
+.menu.models .mnames { display: flex; flex-wrap: wrap; gap: .5rem; }
+.menu.models .line {
+  display: inline-flex; align-items: center; min-height: 2.1rem; padding: .3rem .8rem; border: var(--ink-w) solid var(--track-line);
+  border-radius: var(--r-in); background: none; font: 500 .95rem/1.2 var(--font-name); color: var(--text); text-align: left; cursor: pointer;
+  transition: background var(--t-hover) var(--e-out), border-color var(--t-hover) var(--e-out);
+}
+.menu.models .line:hover:not(:disabled), .menu.models .line:focus-visible { background: var(--obj-high); border-color: var(--text-mute); }
+.menu.models .mgroup.off .acct, .menu.models .line:disabled { color: var(--text-mute); }
+.menu.models .line:disabled { cursor: default; border-style: dashed; }
 
 /* End armed: what ending would lose, then the danger End and Keep running (fin, Marlin p218) */
 .pane .armed.end { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; padding: .6rem 1.4rem; border-bottom: var(--ink-w) solid var(--ink); }
@@ -305,9 +315,21 @@
 .sessions .sboard { align-items: flex-start; }
 .sessions .sboard > .col { gap: calc(4 * var(--u)); }
 .sessions .board.loose { margin-top: calc(2 * var(--u)); }
+/* THE OPEN SESSION TAKES THE BOARD'S WIDTH (sessions.js boardHtml): the blocks before its block keep their columns above
+   it, its block spans the board (all but one column where three or more fit, the blocks after it running down that one),
+   and the blocks after it continue below. Its rows keep a column's width and run down the board's columns, and the
+   session's plate spans them all, under its row. */
+.sessions .board.opened > .pgroup, .sessions .board.opened > .rows { flex: 1 1 auto; min-width: 0; }
+.sessions .prows { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); }
+.sessions .prows > .pcol { display: flex; flex-direction: column; min-width: 0; }
+.sessions .prows > .pcol + .pcol { box-shadow: inset .08rem 0 0 var(--track-line); }
+.sessions .prows.rested { box-shadow: inset 0 .08rem 0 var(--track-line); }
+.sessions .wideplate { display: flex; flex-direction: column; min-width: 0; }
 
 /* ---------- a block: one cel object whose rows are lines in it ---------- */
+/* a block's own width is what its open session lays itself out by (@container plate), never the screen's */
 .sessions .pgroup, .sessions .rows {
+  container: plate / inline-size;
   display: flex; flex-direction: column; gap: 0; min-width: 0; overflow: clip;
   background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
   box-shadow: .3rem .3rem 0 var(--wall-low), .3rem .3rem 0 var(--ink-w) var(--ink);
@@ -396,8 +418,6 @@
   margin: 0; display: block; height: 1.4rem; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   font: 400 .95rem/1.4rem var(--font-name); color: var(--text-body); -webkit-line-clamp: none;
 }
-/* a query's words marked where they matched: a neutral mark, since the key light marks the one act to press */
-.sessions .s .top .last mark, .sessions .s .name mark { background: color-mix(in oklab, var(--text) 20%, transparent); color: inherit; border-radius: .2rem; }
 /* where it runs, where the block's own header does not already say it: in No project, and grouped by command or team */
 .sessions .s .top .last > .place {
   display: inline-block; vertical-align: top; max-width: 16rem; margin-right: var(--u); overflow: hidden;
@@ -432,19 +452,17 @@
 .sessions .s .top .cmd { display: flex; justify-content: flex-start; min-width: 0; }
 .sessions .s .top .cmd > * { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .sessions .s .top .cmd > .nr { padding-left: calc(.55rem + .12rem); }
-/* the command as a quiet column: the chip's own size, face and live dot, its colour spent down to one 1 px edge.
-   This page carries .chip.edge until console.css does (requests/sessions.md). */
-.sessions .chip.edge {
-  background: none; border: 0; border-left: 1px solid var(--c); border-radius: 0; box-shadow: none; color: var(--text-body);
-  padding: calc(.32rem + .12rem) calc(.55rem + .12rem) calc(.32rem + .12rem) calc(.55rem + .12rem - 1px);
-}
-.sessions .chip.edge i { box-shadow: none; }
+/* the command as a quiet column is the kit's edge chip (console.css .chip.edge) */
 /* no command to name: the fact in the chip's place, in the words the page uses, on the same left edge, dashed */
 .sessions .nocmd {
   display: inline-flex; align-items: center; min-width: 0; white-space: nowrap; color: var(--text-mute);
   border: 0; border-left: 1px dashed var(--track-line); border-radius: 0; font: 400 .92rem/1 var(--font-name);
   padding: calc(.32rem + .12rem) calc(.55rem + .12rem) calc(.32rem + .12rem) calc(.55rem + .12rem - 1px);
 }
+/* on a row the empty command is its mark on the same dashed edge; the head line's legend says what each mark means */
+.sessions .nocmd.mark { padding-block: .3rem; }
+.sessions .nocmd.mark > svg { width: 1.3rem; height: 1.3rem; }
+.sessions .quietleg .qm { width: 1.15rem; height: 1.15rem; flex: none; padding-left: .45rem; border-left: 1px dashed var(--track-line); box-sizing: content-box; }
 /* grouped by command, the block's header names it, so the row keeps only the live dot */
 .sessions .livedot { display: inline-flex; align-items: center; justify-content: flex-start; }
 .sessions .livedot i { width: .7rem; height: .7rem; border-radius: 50%; background: var(--live); box-shadow: 0 0 .5rem var(--live); }
@@ -486,9 +504,7 @@
 .sessions .ptile .plead .pw { margin: 0; font: 500 .9rem/1.2 var(--font-name); color: var(--text-body); }
 .sessions .ptile .pof { display: inline-flex; align-items: baseline; gap: .3rem; min-width: 0; font: 500 .88rem/1.2 var(--font-name); color: var(--text-mute); }
 .sessions .ptile .pof .ptotal { font: 500 .95rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
-/* the unit keeps the space the markup gives it: the kit's tiles close it with a negative margin, which this row,
-   whose figure and unit are two facts apart, must not inherit (requests/sessions.md) */
-.sessions .ptile .pof .punit { margin-left: 0; font: 500 .88rem/1.2 var(--font-name); color: var(--text-mute); }
+.sessions .ptile .pof .punit { font: 500 .88rem/1.2 var(--font-name); color: var(--text-mute); }
 .sessions .ptile .plamps { min-height: 0; }
 /* while the first read is out, the tiles that will land stand hollow in their own places */
 .sessions .gtiles { width: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: var(--gap-card); }
@@ -531,6 +547,10 @@
 }
 .sessions .pane.s:hover { background: var(--sel-face); }
 .sessions .pane.s > .lamp { align-self: center; }
+/* the details and the conversation share one body, which lays itself out only in the widest plate (below): in a
+   narrower one its parts stand in the plate's own column, one under the other */
+.sessions .pane.s .pbody, .sessions .pane.s .talk { display: contents; }
+.sessions .pane.s .pbody > *, .sessions .pane.s .talk > * { grid-column: 2; }
 /* the title bar is the row's line, with no band of its own: the plate's fill is what says it is open */
 .sessions .pane.s > .top { background: none; border: 0; padding: 0; min-height: 2.2rem; }
 .sessions .pane.s > .top .name { font-weight: 600; color: var(--text); }
@@ -544,8 +564,9 @@
 .sessions .pane.s > .tools > .acts { position: relative; margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: var(--u); }
 /* the models menu and the in-prompt card open IN PLACE here, each on its own line under the acts: a block clips what
    hangs over it, and a menu that scrolls inside itself is a second scroll on the page */
-.sessions .pane.s .menu.models { position: static; flex: 1 1 100%; width: auto; max-width: 100%; max-height: none; overflow: visible; margin-top: var(--u); }
-.sessions .pane.s .inprompt { position: static; flex: 1 1 100%; height: auto; margin-top: var(--u); }
+.sessions .pane.s > .menu.models { position: static; max-width: none; max-height: none; overflow: visible; margin-top: var(--u); }
+.sessions .pane.s > .inprompt { position: static; height: auto; margin-top: var(--u); }
+.sessions .pane.s > .inprompt.onmove { justify-self: end; }
 .sessions .pane.s .inprompt-card { position: static; width: auto; max-width: 46rem; }
 /* what must be answered or read before anything else: an armed act, a refusal, a move that did not happen, the ask */
 .sessions .pane.s > .armed.end { margin-top: var(--u); padding: var(--u) calc(1.5 * var(--u)); border: 0; border-radius: var(--r-in); background: var(--obj-high); }
@@ -579,6 +600,11 @@
 .sessions .facts dd > .where, .sessions .facts dd > .team { display: inline-flex; align-items: center; gap: .35rem; min-width: 0; overflow-wrap: anywhere; }
 .sessions .facts .reason { font: 500 .85rem/1.3 var(--font-name); color: var(--text-mute); }
 .sessions .facts .chip.quiet { font-size: .85rem; text-decoration: none; }
+/* a folder is a path, which reads whole across two of the facts' columns, whenever the plate has the room for four */
+@container plate (min-width: 60rem) { .sessions .facts .fact.folder { grid-column: span 2; } }
+/* the sessions that carried its name before it, on one line across the facts, the rest behind their count */
+.sessions .facts .fact.earlier { grid-column: 1 / -1; }
+.sessions .facts .fact.earlier .morepill { font-size: .85rem; }
 /* what it did today, what it holds, the room its conversation has, and the login it sends on: four sections in columns */
 .sessions .secs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: calc(3 * var(--u)) var(--gap-col); align-items: start; }
 .sessions .secs .psec { gap: var(--u); min-width: 0; }
@@ -636,7 +662,7 @@
 /* --gut is the room each side of a centred 64rem column, resolved by each child against the conversation's own width:
    his messages sit on the column's right edge, a teammate's on its left, the agent's across it, and a run of calls
    starts on its left edge and runs on to the conversation's right edge, as tables and code may. */
-.sessions .pane.s > .log {
+.sessions .pane.s .talk > .log {
   --col: 64rem; --gut: max(0px, calc((100% - var(--col)) / 2));
   flex: none; height: auto; overflow: visible; overflow-anchor: auto;
   margin-top: calc(3 * var(--u)); padding: calc(3 * var(--u)) 0 0; gap: calc(2 * var(--u));
@@ -678,11 +704,6 @@
 .sessions .msg .body .mdt { margin: .5rem 0; border-collapse: collapse; font: 500 .9rem/1.3 var(--font-data); }
 .sessions .msg .body .mdt th { text-align: left; font-weight: 600; color: var(--text-mute); padding: .3rem .8rem .3rem 0; border-bottom: .08rem solid var(--hair); white-space: nowrap; }
 .sessions .msg .body .mdt td { padding: .28rem .8rem .28rem 0; border-bottom: .08rem solid color-mix(in oklab, var(--hair) 60%, transparent); color: var(--text-body); font-variant-numeric: tabular-nums; }
-/* A LINK IS A LINK: an address on the web opens under its own words; a link to a file names the file, since the console
-   cannot open his disk, and carries the whole path as its title */
-.sessions .msg .body .mdlink { color: var(--text); text-decoration: underline; text-underline-offset: .2em; }
-.sessions .msg .body .mdlink:hover { color: var(--key-ink); }
-.sessions .msg .body .flink { font: 500 .95em/1 var(--font-data); color: var(--text-body); border-bottom: .08rem dotted var(--track-line); }
 /* a message a screen long folds after its first lines, with the rest one press away in place */
 .sessions .msg .body + .morepill, .sessions .msg .body .morepill { margin-top: .3rem; }
 /* WHAT THE CLIENT PUT INTO THE CONVERSATION IS ONE LINE: a compaction's summary, a skill it loaded, a notice about a
@@ -693,6 +714,7 @@
 }
 .sessions .sysline .sysdisc { font: 500 .92rem/1.4 var(--font-name); color: var(--text-mute); }
 .sessions .sysline .sysdisc:hover { color: var(--text-body); }
+.sessions .sysline .times { margin-left: .2rem; font: 500 .85rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
 .sessions .sysline > time { font: 500 .85rem/1.4 var(--font-data); color: var(--text-mute); }
 .sessions .sysline > .sysbody { flex: 1 1 100%; min-width: 0; padding-left: calc(.8rem + .65rem); font: 400 .98rem/1.55 var(--font-name); color: var(--text-body); }
 .sessions .sysline > .sysbody > :not(.code):not(.mdt) { max-width: 58rem; }
@@ -727,8 +749,18 @@
 .sessions .trail .tool > .caret { width: .7rem; height: .7rem; color: var(--text-mute); }
 .sessions .trail .tname { grid-column: 2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; color: var(--text-mute); }
 .sessions .trail .twhat { grid-column: 3; display: flex; align-items: center; gap: var(--u); min-width: 0; overflow: hidden; white-space: nowrap; }
+/* a tool word longer than the run's usual ones runs on into its own line's text instead of widening the track */
+.sessions .trail .tool.long { display: flex; column-gap: var(--u); }
+.sessions .trail .tool.long > .caret, .sessions .trail .tool.long > i { flex: none; }
+.sessions .trail .tool.long > .caret { width: .7rem; margin-inline: .1rem; }
+.sessions .trail .tool.long > .tname { flex: none; overflow: visible; }
+.sessions .trail .tool.long > .twhat { flex: 1 1 auto; }
 .sessions .trail .tsum { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .sessions .trail .tsum.words { font: 400 .92rem/1.7rem var(--font-name); }
+/* a file's path: its name whole at the end, the folders before it clipped from their start (the isolate keeps their order) */
+.sessions .trail .tsum.pathed { display: flex; }
+.sessions .trail .tsum.pathed > .tdir { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; }
+.sessions .trail .tsum.pathed > .tfile { flex: none; white-space: nowrap; }
 .sessions .trail .nothing { flex: none; font: 400 .85rem/1.7rem var(--font-name); color: var(--text-mute); }
 .sessions .trail .tmore > span {
   grid-column: 2 / -1; display: flex; align-items: baseline; gap: var(--u); min-width: 0; overflow: hidden; white-space: nowrap;
@@ -744,15 +776,89 @@
 .sessions .log.ghosts { gap: 1.3rem; }
 .sessions .log.ghosts .msg .body { width: 100%; }
 /* the Message field at the plate's foot, in the page's flow */
-.sessions .pane.s > .composer, .sessions .pane.s > .composer.note {
+.sessions .pane.s .talk > .composer, .sessions .pane.s .talk > .composer.note {
   margin-top: calc(2 * var(--u)); padding: calc(2 * var(--u)) 0 0; border: 0; background: none;
   box-shadow: inset 0 .08rem 0 var(--hair); max-width: 64rem;
 }
-.sessions .pane.s > .composer .field { font: 400 1.05rem/1.3 var(--font-name); }
+.sessions .pane.s .talk > .composer .field { font: 400 1.05rem/1.3 var(--font-name); }
 /* a permission is refused with a word, not with the failure's red (catalog principle 3) */
 .sessions .pane .composer .act.deny { background: var(--obj-high); color: var(--text); }
 /* a move that did not happen: its last lines bounded on the page, with the rest one press away */
 .sessions .unmoved .screen { max-height: none; overflow: visible; }
+
+/* ---------- a plate with room: the words down one column, each run of calls beside the words it followed ----------
+   (Marcos, Oct 26: "the tool call ui is very busy", "we're wasting a lot of horizontal space"). The conversation takes
+   two tracks: the words at a reading measure, and the calls in a quiet track to their right, each run on the line of
+   the words it followed, so the words read on with nothing between them. A turn's hairline, the count of earlier items
+   and a move's joint cross both tracks. The plate's own width decides, never the screen's. */
+@container plate (min-width: 100rem) {
+  /* the title line takes every bit of the width the acts on the whole session leave it, so its words are never cut
+     while the line beside them stands empty; the acts keep their own width at the line's right end */
+  .sessions .pane.s { grid-template-columns: 2rem minmax(0, 1fr) max-content; }
+  .sessions .pane.s > :not(.lamp), .sessions .pane.s .pbody > *, .sessions .pane.s .talk > * { grid-column: 2 / -1; }
+  .sessions .pane.s > .top { grid-column: 2; grid-row: 1; }
+  /* its time, command and act follow its words, which take what they need up to the room there is, so a short line
+     never leaves its time a screen away from its name across an empty track */
+  .sessions .pane.s > .top { grid-template-columns: var(--name-w, 14rem) minmax(0, max-content) 7rem var(--cmd-w, 10rem) var(--act-w, 4.8rem); justify-content: start; }
+  .sessions .pane.s > .tools { grid-column: 3; grid-row: 1; margin-top: 0; padding-left: calc(2 * var(--u)); }
+  /* the prompt a move holds back opens under the acts, at the line's right end; the models menu takes the plate's width */
+  .sessions .pane.s > .inprompt.onmove { grid-column: 2 / -1; }
+  .sessions .pane.s .talk > .log {
+    --gut: 0px; display: grid; grid-template-columns: minmax(0, 64rem) minmax(0, 1fr); align-items: start;
+    column-gap: calc(4 * var(--u)); row-gap: calc(2 * var(--u));
+  }
+  .sessions .pane.s .talk > .log > * { grid-column: 1; max-width: 100%; }
+  .sessions .pane.s .talk > .log > .trail { grid-column: 2; margin-left: 0; }
+  .sessions .pane.s .talk > .log > .tsep, .sessions .pane.s .talk > .log > .loghead, .sessions .pane.s .talk > .log > .jwrap,
+  .sessions .pane.s .talk > .log > .note { grid-column: 1 / -1; }
+  /* a conversation with nothing to show says so where its words would start; what it asks stands over the words too,
+     at the words' width */
+  .sessions .pane.s .talk > .log > .empty { justify-self: start; margin: 0; }
+  .sessions .pane.s > .askbox { grid-column: 2 / -1; max-width: 64rem; }
+  .sessions .pane.s .talk > .log > .msg.his, .sessions .pane.s .talk > .log > .slash, .sessions .pane.s .talk > .log > .cutoff { justify-self: end; }
+  .sessions .pane.s .talk > .log > .msg.peer, .sessions .pane.s .talk > .log > .earlier { justify-self: start; }
+}
+/* ---------- the widest plate: the details stand in a rail beside the conversation ----------
+   (Marcos, Oct 26: "scrolling on the chat gets crampped, so ideally we should be able to collapse the top component",
+   "we're wasting a lot of horizontal space"). At his width and wider, a conversation's words and calls leave a third
+   of the plate empty, so the details take that third as a rail on the right, under the acts on the whole session,
+   and the conversation starts right under the title line with the details open. The rail holds the facts, then
+   Today beside Tokens and Context beside Login between hairlines, then the lines to paste; it ends where its sections
+   end. Details folds the rail away and the conversation takes the whole width. A conversation of a few items, or none,
+   has nothing to stand beside a rail: its details lie as one band of sections over it (.brief, sessions.js plateHtml). */
+@container plate (min-width: 150rem) {
+  .sessions .pane.s:not(.brief) { grid-template-columns: 2rem minmax(0, 1fr) minmax(46rem, .5fr); }
+  .sessions .pane.s:not(.brief) > .tools { padding-left: calc(4 * var(--u) - .75rem); }
+  .sessions .pane.s:not(.brief) .pbody {
+    display: grid; grid-column: 2 / -1; grid-template-columns: subgrid; align-items: start; row-gap: 0;
+    margin-top: calc(3 * var(--u)); box-shadow: inset 0 .08rem 0 var(--hair);
+  }
+  .sessions .pane.s:not(.brief) .talk { display: flex; flex-direction: column; grid-column: 1; grid-row: 1; min-width: 0; }
+  .sessions .pane.s:not(.brief) .talk > .log { margin-top: 0; box-shadow: none; }
+  .sessions .pane.s:not(.brief) .pbody > .panetop {
+    grid-column: 2; grid-row: 1; align-self: stretch;
+    padding-left: calc(4 * var(--u) - .75rem); box-shadow: inset .08rem 0 0 var(--hair);
+  }
+  .sessions .pane.s:not(.brief) .panetop-in { gap: 0; }
+  .sessions .pane.s:not(.brief) .panetop-in > * + * { margin-top: calc(4 * var(--u)); padding-top: calc(4 * var(--u)); box-shadow: inset 0 .08rem 0 var(--hair); }
+  /* Today beside Tokens, Context beside Login: two sections a line, so the rail stays about as tall as a conversation */
+  .sessions .pane.s:not(.brief) .panetop-in > .secs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--gap-col); }
+  .sessions .pane.s:not(.brief) .secs > .psec:nth-child(n + 3) { margin-top: calc(4 * var(--u)); padding-top: calc(4 * var(--u)); box-shadow: inset 0 .08rem 0 var(--hair); }
+  /* folded: the rail closes over 240 ms and the conversation takes the whole width under the title line */
+  .sessions .pane.s.topshut:not(.brief) .talk { grid-column: 1 / -1; grid-row: 2; }
+  .sessions .pane.s.topshut:not(.brief) .pbody > .panetop { box-shadow: none; }
+  /* a short conversation: the facts and the lines to paste, then Today, Tokens, Context and Login, side by side between
+     hairlines over it, about a third of the height they take stacked */
+  .sessions .pane.s.brief .panetop-in {
+    display: grid; grid-template-columns: minmax(0, 1.3fr) repeat(4, minmax(0, 1fr)); grid-template-rows: auto 1fr;
+    gap: calc(3 * var(--u)) 0;
+  }
+  .sessions .pane.s.brief .panetop-in > .facts { grid-column: 1; grid-row: 1; padding-right: calc(4 * var(--u)); }
+  .sessions .pane.s.brief .panetop-in > .copies { grid-column: 1; grid-row: 2; align-self: end; padding-right: calc(4 * var(--u)); }
+  .sessions .pane.s.brief .panetop-in > .secs { display: contents; }
+  .sessions .pane.s.brief .secs > .psec { grid-row: 1 / span 2; padding-inline: calc(4 * var(--u)); box-shadow: inset .08rem 0 0 var(--hair); }
+  .sessions .pane.s.brief .secs > .psec:last-child { padding-right: 0; }
+}
 
 /* ---------- a session splice no longer lists: a compact plate at the list's top ---------- */
 .sessions .pane.missing {

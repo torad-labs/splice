@@ -14,7 +14,7 @@
 //   GET /api/perf/summary                        how each command answered, per command (perf-heads.js)
 //   PUT /api/accounts/names/{ref} · PATCH /api/auth/{head}/accounts/{label}   naming a login that has no name
 //
-// PLANS AND KEYS NEVER MEET IN ONE MONEY FIGURE (fin, Oct 11). A plan's requests read as their value at API prices,
+// PLANS AND KEYS NEVER MEET IN ONE MONEY FIGURE. A plan's requests read as their value at API prices,
 // drawn hatched, never as money spent; only a key's requests are money. The two sit side by side, in the chart's Cost
 // columns and in Where it went's lead, and are never added. A figure nobody reported is a dash, never a zero.
 //
@@ -125,8 +125,8 @@ function filterParams(p, f, label) {
   if (label != null) p.set("account", label);
   if (f.model) p.set("model", f.model);
   if (f.agent) p.set("session", String(f.agent).slice(0, 8));
-  // No project is a pick of its own: the daemon reads it as project=none (TurnsFilter.kt), the way Requests asks
-  // (splice-builder, Oct 12: the pick sent nothing and showed every project's figures under its name)
+  // No project is a pick of its own: the daemon reads it as project=none (TurnsFilter.kt), the way Requests asks. Sent
+  // as nothing, it would show every project's figures under its name.
   if (ui.project && !f.wide) p.set("project", ui.project === NO_PROJECT_KEY ? "none" : ui.project);
   return p;
 }
@@ -234,7 +234,7 @@ const tokensOf = (s) => s.in + s.out;
 // no request in the group reported a token count: its figure is missing, never 0 tokens (v0.4.0 section 9)
 const noTokens = (s) => s.requests > 0 && s.noIn >= s.requests && s.noOut >= s.requests;
 // A group whose only unpriced requests failed before any model answered spent $0 on them: the daemon counts those apart
-// (unanswered_requests, TurnPriceGap), so a group of nothing else reads $0, never "No price" (Marlin, p229, Oct 12)
+// (unanswered_requests, TurnPriceGap), so a group of nothing else reads $0, never "No price"
 const spentOf = (s) => s.cost ?? (s.unanswered && !s.plan && !s.uncounted && !s.undeclared && !s.local ? 0 : null);
 /** Why a group has no money figure at all, in one word, said beside the dash that stands where the figure would be. A
  *  plan's requests with no value are ones no price card covers. */
@@ -250,6 +250,9 @@ const usd = (v) => DRAW.usd(v);
 const rateWord = (x) => (!(x > 0) ? "0%" : x < 0.001 ? "<0.1%" : x >= 0.0995 ? `${Math.round(x * 100)}%` : `${(x * 100).toFixed(1)}%`);
 const chip = (head) => DRAW.chip({ text: cmdOf(head), data: ` style="--c:${colorOf(providerOfHead(head))}"` });
 const chipsOf = (heads) => [...heads].map(chip).join("");
+/** A row's own commands, in the console's quiet chip: a list where the chip repeats row after row keeps it under the
+ *  name it rides on, while a group's head keeps the full chip. */
+const rowChipsOf = (heads) => [...heads].map((h) => DRAW.chip({ text: cmdOf(h), cls: "quiet", data: ` style="--c:${colorOf(providerOfHead(h))}"` })).join("");
 const acctKeyOf = (head, label) => `${head}|${label}`;
 /** The key of an account that may carry several labels: the one with the most requests first. */
 const acctKeyOfAll = (entries) => { const e = entries.slice().sort((a, b) => b.requests - a.requests); return acctKeyOf(e[0].head, e.map((x) => x.label).join(SEP)); };
@@ -279,8 +282,11 @@ function acctLabel(head, label, name) {
   if (plan) return esc(planName(plan, label));
   const key = keyRecord(label);
   if (key) return `<span class="var">${esc(key.name)}</span>`;
-  return esc(name ?? label);
+  return esc(outName(name ?? label));
 }
+/** A login the roster no longer holds keeps the number the daemon gave it while signed in. The daemon words that
+ *  number two ways ("Account 3", "Signed-out account 8"); the page says one: "Account 8", with its state beside it. */
+const outName = (s) => String(s ?? "").replace(/^signed-out account (\d+)$/i, "Account $1");
 
 // ---------- plans and keys: one board of cards, grouped under each provider, as the Accounts page draws it ----------
 function windowOf(pct, resetSec, lenSec, slot, current) {
@@ -403,9 +409,10 @@ function planCard(row, mx) {
   const lead = mine.length ? mine[0] : null;
   const door = lead ? ` data-act="pick" data-d="account" data-v="${esc(acctKeyOfAll(mine))}" role="button" tabindex="0" aria-label="${esc(`${planName(row) || "Account"}: where its requests went`)}"` : "";
   const pk = pickedAccount(), picked = Boolean(pk && heads.includes(pk.head) && pk.labels.some((l) => planRowOf(pk.head, l) === row));
-  const lines = out ? 0 : rows.length;
+  // a login with no window read still draws its unread rows (two, or one "Limits" row and its "No limits reported" line)
+  const unread = !out && !rows.length, lines = out ? 0 : rows.length || (row.no_usage_at_epoch_seconds ? 1 : 2);
   return { prov: providerOfHead(heads[0]), kind: "plan", name: planName(row) || "Account", used: Math.max(0, ...windows.map((w) => w.used)), s, heads: new Set(heads),
-    rows: lines, h: cardH("plan", lines, out, (held ? 1 : 0) + (ranOut ? 1 : 0)),
+    rows: lines, h: cardH("plan", lines, out, (held ? 1 : 0) + (ranOut ? 1 : 0) + (unread && row.no_usage_at_epoch_seconds ? 1 : 0)),
     make: (withChips) => `<article class="card pcard${held ? " held" : ""}${out ? " out" : ""}${picked ? " picked" : ""}${ui.landed === idx ? " landed" : ""}" data-a="plan-${idx}" style="--c:${colorOf(providerOfHead(heads[0]))}"${door}>`
       + `<header>${canName(row) ? nameSlot(row, idx, "card") : `<span class="nm">${esc(planName(row))}</span>`}`
       + `${row.plan ? `<span class="pv">${esc(row.plan.charAt(0).toUpperCase() + row.plan.slice(1))}</span>` : ""}`
@@ -467,7 +474,7 @@ function moneyHtml() {
   }
   const cols = boardCols();
   const stacks = packBoard(ordered, cols);
-  keepShape(stacks, cols);
+  keepShape(ordered);
   return boardHead() + `<div class="board" style="--n:${cols}">`
     + stacks.map((st) => `<div class="pstack" style="--span:${st.span}">${st.items.map(groupHtml).join("")}</div>`).join("")
     + `</div>`;
@@ -531,28 +538,33 @@ const ghostCard = (i, rows = 2, h = 0) => `<article class="card pcard ghosted" s
   + (rows > 0 ? `<div class="windows">${Array.from({ length: rows }, () => `${GHOST.bar(3.2)}${GHOST.track()}${GHOST.bar(3)}${GHOST.bar(6)}`).join("")}</div>`
     : `<p class="nolimit">${GHOST.bar(12)}</p>`)
   + `<footer class="thru">${[0, 1, 2].map(() => GHOST.row([GHOST.bar(4.2), GHOST.track(), GHOST.bar(3.2)])).join("")}</footer></article>`;
-// The board's own shape, kept from the last read: how many columns, which groups each held, how each group split its
-// cards down its own columns, and each card's window lines and height. Shapes only: no figure is kept and none is
-// drawn, so the first paint is the size of what lands.
+// The board's own shape, kept from the last read: each provider's group, in the board's order, with every card's window
+// lines and height. The columns they fall in are worked out again for the width at hand, so a window of another width
+// still opens on the board it will land as. Shapes only: no figure is kept and none is drawn.
 const SHAPE_KEY = "splice-usage-board";
-const keepShape = (stacks, cols) => {
-  try { localStorage.setItem(SHAPE_KEY, JSON.stringify({ n: cols, s: stacks.map((st) => ({ p: st.span, g: st.items.map((it) => it.cols.map((c) => c.map((card) => [card.rows, Math.round(card.h * 10) / 10]))) })) })); }
+const keepShape = (groups) => {
+  try { localStorage.setItem(SHAPE_KEY, JSON.stringify(groups.map((g) => g.cards.map((card) => [card.rows, Math.round(card.h * 10) / 10])))); }
   catch { /* a blocked or full store costs the ghost its shape and nothing else */ }
 };
 const okCard = (c) => Array.isArray(c) && c.length === 2 && c.every((v) => typeof v === "number");
-const lastShape = (cols) => {
+// before a first read there is nothing to remember: a console with eight logins under one provider (each its two windows
+// and the model's own slice under the week), one login under each of three more and a key under each of two, the shape
+// the ghost holds until the first read has landed
+const TYPICAL = [Array.from({ length: 8 }, () => [3, cardH("plan", 3, false)]), [[2, cardH("plan", 2, false)]], [[1, cardH("plan", 1, false)]], [[1, cardH("plan", 1, false)]],
+  [[-1, cardH("key")]], [[-1, cardH("key")]]];
+const lastShape = () => {
   try {
     const s = JSON.parse(localStorage.getItem(SHAPE_KEY) || "null");
-    if (s && s.n === cols && Array.isArray(s.s) && s.s.length
-      && s.s.every((st) => Array.isArray(st.g) && st.g.every((g) => Array.isArray(g) && g.every((c) => Array.isArray(c) && c.every(okCard))))) return s.s;
+    if (Array.isArray(s) && s.length && s.every((g) => Array.isArray(g) && g.length && g.every(okCard))) return s;
   } catch { /* unreadable */ }
-  return Array.from({ length: cols }, () => ({ p: 1, g: [[[[2, cardH("plan", 2, false)], [2, cardH("plan", 2, false)]]]] }));
+  return TYPICAL;
 };
-/** And the board they land in: the same columns and the same groups, so nothing jumps when the read lands. */
+/** And the board they land in: the same groups packed into the same columns, so nothing jumps when the read lands. */
 const ghostBoard = () => { const cols = boardCols(); let i = 0;
-  return `<div class="board" style="--n:${cols}">` + lastShape(cols).map((st) =>
-    `<div class="pstack" style="--span:${st.p}">` + st.g.map((sub) =>
-      `<section class="ugroup"><h3>${GHOST.bar(5)}</h3><div class="gcards" style="--k:${sub.length}">${sub.map((c) => `<div class="gcol">${c.map(([r, h]) => ghostCard(i++, r, h)).join("")}</div>`).join("")}</div></section>`).join("")
+  const groups = lastShape().map((cards) => ({ cards: cards.map(([rows, h]) => ({ rows, h })) }));
+  return `<div class="board" style="--n:${cols}">` + packBoard(groups, cols).map((st) =>
+    `<div class="pstack" style="--span:${st.span}">` + st.items.map((it) =>
+      `<section class="ugroup"><h3>${GHOST.bar(5)}</h3><div class="gcards" style="--k:${it.cols.length}">${it.cols.map((c) => `<div class="gcol">${c.map((card) => ghostCard(i++, card.rows, card.h)).join("")}</div>`).join("")}</div></section>`).join("")
     + `</div>`).join("") + `</div>`;
 };
 
@@ -657,16 +669,17 @@ function chartHtml() {
   // THE SECTION'S ANSWER, on one baseline: the window's own figure and what it is a figure of, each a door to exactly
   // those requests; then the failed share, red only when it hurts, with its count as the door to them.
   const failPart = fails ? `<span class="fsep" aria-hidden="true"></span><b class="fig-focal${fails / reqs >= 0.05 ? " lv-bad" : ""}">${rateWord(fails / reqs)}</b>`
-    + `<a class="cap" href="${reqUrl({ outcome: "fail" })}"><b>${n0(fails)}</b> failed${all.limited ? `<span>, <b>${n0(all.limited)}</b> rate-limited</span>` : ""}${OPEN}</a>` : "";
+    // one run of words, so the comma stays on the word it follows (a flex caption spaces every child apart)
+    + `<a class="cap" href="${reqUrl({ outcome: "fail" })}"><span><b>${n0(fails)}</b> failed${all.limited ? `, <b>${n0(all.limited)}</b> rate-limited` : ""}</span>${OPEN}</a>` : "";
   let lead;
   if (!money) {
     lead = `<div class="figline"><b class="fig-hero">${reqs && !noTokens(all) ? tok(tokensOf(all)) : DRAW.dash}</b>`
-      + (reqs ? `<a class="cap" href="${reqUrl()}">tokens in <b>${n0(reqs)}</b> requests${OPEN}</a>` : `<span class="cap">tokens</span>`)
+      + (reqs ? `<a class="cap" href="${reqUrl()}"><span>tokens in <b>${n0(reqs)}</b> requests</span>${OPEN}</a>` : `<span class="cap">tokens</span>`)
       + failPart + `</div>`;
   } else {
     const value = planValueOf(all), spent = spentOf(all);
     lead = `<div class="figline">`
-      + (value != null || spent == null ? `<b class="fig-hero">${value != null ? usd(value) : DRAW.dash}</b><span class="cap"><i class="sw plan" aria-hidden="true"></i>on your plans</span>` : "")
+      + (value != null || spent == null ? `<b class="fig-hero">${value != null ? usd(value) : DRAW.dash}</b><span class="cap"><i class="sw plan" aria-hidden="true"></i>on your plan</span>` : "")
       + (spent != null ? `${value != null ? `<span class="fsep" aria-hidden="true"></span>` : ""}<b class="${value != null ? "fig-focal" : "fig-hero"}">${usd(spent)}</b><span class="cap"><i class="sw money" aria-hidden="true"></i>spent on keys</span>` : "")
       + failPart + `</div>`;
   }
@@ -675,7 +688,7 @@ function chartHtml() {
     ? `<a class="cfl${x.failed / x.n >= 0.05 ? " lv-bad" : ""}" href="${reqUrl({ from: x.from, to: x.to, outcome: "fail" })}" aria-label="${esc(failWords(x))}"><span class="ftrk"><i style="width:${barW(x.failed, x.n).toFixed(2)}%"></i></span><b>${rateWord(x.failed / x.n)}</b></a>`
     : `<span></span>`)).join("")}</div>`;
   const keys = shown.map((h) => `<span class="key">${swatch(h)}${esc(cmdOf(h))}</span>`).join("")
-    + (money && kinds.includes("val") ? `<span class="key kind"><i class="hatch" style="--c:var(--text-mute)"></i>On your plans, at API prices</span>` : "")
+    + (money && kinds.includes("val") ? `<span class="key kind"><i class="hatch" style="--c:var(--text-mute)"></i>On your plan, at API prices</span>` : "")
     + (money && kinds.includes("mon") ? `<span class="key kind"><i style="--c:var(--text-mute)"></i>Spent on keys</span>` : "")
     // the last column is the one still filling: its top edge is open and its parts lighter, and the legend says so once
     + `<span class="key part"><i aria-hidden="true"></i>${ui.win === "7d" ? "Today, so far" : "This quarter hour, so far"}</span>`;
@@ -694,7 +707,8 @@ function chartHtml() {
         + `<span class="sl"><span class="nm">${esc(cmdOf(h))}</span> <b>${fmt(v)}</b></span></a>`).join("") + `</div>`;
   };
   const bars = sl.map((x, i) => `<div class="cbar${kinds.length > 1 ? " pair" : ""}${ui.hover === i ? " on" : ""}${x.now ? " part" : ""}" data-i="${i}">${kinds.map((k) => stackOf(x, k)).join("")}</div>`).join("");
-  const grid = [1, .5].map((f) => `<div class="gl" style="bottom:${f * 100}%"><span>${fmt(top * f)}</span></div>`).join("");
+  // the axis is drawn at round values, so its money reads in whole dollars: cents of zero on a gridline say nothing
+  const grid = [1, .5].map((f) => `<div class="gl" style="bottom:${f * 100}%"><span>${money ? fmt(top * f).replace(/\.00$/, "") : fmt(top * f)}</span></div>`).join("");
   const tip = ui.hover != null ? tipHtml(sl[ui.hover], sl.length, kinds, fmt) : "";
   return head + lead + `<div class="plot">${grid}<div class="cbars" style="--n:${n}">${bars}</div>${tip}</div>${xrow(sl)}${flane}<div class="legend">${keys}</div>`;
 }
@@ -711,6 +725,41 @@ function fitParts(el) {
   const figs = [...el.querySelectorAll(".cfig")].map((f) => [f, f.getBoundingClientRect()]).sort((a, b) => a[1].left - b[1].left);
   if (figs.some(([, r], i) => i > 0 && r.left < figs[i - 1][1].right + 4)) for (const [f] of figs) f.remove();
 }
+/** A row's commands give way to its name, measured as drawn like the chart's labels. Where the name, its project and its
+ *  chips do not all fit the row's first cell, chips leave from the end and one "+N" stands in their place, naming them
+ *  on hover and to assistive tech; opening the row narrows the page to it, where the chart's legend and Tokens by
+ *  command list every one. So no chip runs over the bars beside it, and no name is cut to make room for a chip. */
+function fitChips(el) {
+  // what an element holds ends past its own right edge: a name its ellipsis cuts by less than a pixel is cut all the
+  // same (two letters go for the ellipsis), and whole-pixel widths would call it a fit
+  const cut = (x) => {
+    if (x == null) return false;
+    const r = document.createRange();
+    r.selectNodeContents(x);
+    return r.getBoundingClientRect().right > x.getBoundingClientRect().right + .05;
+  };
+  for (const who of el.querySelectorAll(".brow .who")) {
+    const box = who.querySelector(":scope > .cmds"), nm = who.querySelector(":scope > .nm"), sb = who.querySelector(":scope > .sb");
+    const tight = () => cut(box) || cut(who) || cut(nm) || cut(sb);
+    if (box && tight()) {
+      const chips = [...box.querySelectorAll(".chip")], gone = [];
+      const more = document.createElement("span");
+      more.className = "chip quiet more";
+      box.append(more);
+      while (chips.length) {
+        const c = chips.pop();
+        gone.unshift(c.textContent);
+        c.remove();
+        more.textContent = `+${gone.length}`;
+        if (!tight()) break;
+      }
+      more.title = gone.join(", ");
+      more.setAttribute("aria-label", `and ${gone.join(", ")}`);
+    }
+    // a name longer than the whole cell keeps its start, and its hover gives it whole
+    for (const t of [nm, sb]) if (cut(t)) t.title = t.textContent;
+  }
+}
 // a slice's failed requests, and the rate-limited ones among them, in words: what a door to them reads aloud
 const failWords = (x) => `${n0(x.failed)} failed of ${n0(x.n)} requests${x.limited ? `, ${n0(x.limited)} of them rate-limited` : ""}`;
 function tipHtml(x, n, kinds, fmt) {
@@ -719,7 +768,7 @@ function tipHtml(x, n, kinds, fmt) {
   const part = (k) => {
     const total = sumParts(x[k]);
     const lines = x[k].slice().sort((a, b) => b[1] - a[1]).map(([h, v]) => `<p>${swatch(h, k === "val")}<span>${esc(cmdOf(h))}</span><i class="tbar" style="width:${share(v, total).toFixed(1)}%"></i><b>${fmt(v)}</b></p>`).join("");
-    const word = k === "val" ? "On your plans" : k === "mon" ? "Spent on keys" : "All";
+    const word = k === "val" ? "On your plan" : k === "mon" ? "Spent on keys" : "All";
     return lines + (x[k].length > 1 || kinds.length > 1 ? `<p class="sum"><span>${word}</span><b>${fmt(total)}</b></p>` : "");
   };
   const body = kinds.map(part).join("");
@@ -771,8 +820,9 @@ const keepRows = (k, n) => { try { const all = JSON.parse(localStorage.getItem(R
 const RANKS = [["tokens", "Tokens"], ["requests", "Requests"], ["cost", "Cost, estimated"]];
 const rankBy = (e) => (ui.rank === "cost" ? Math.max(spentOf(e.s) ?? 0, planValueOf(e.s) ?? 0) : ui.rank === "requests" ? e.s.requests : tokensOf(e.s));
 function byHtml() {
-  const head = `<div class="bandhead"><h2>Where it went</h2>`
-    + `<span class="pd-leg"><i class="sw money"></i>Spent<i class="sw plan"></i>On your plan, at API prices</span></div>`;
+  // the legend names the marks the rows draw: a window where no row has key money draws no solid mark, so it names none
+  const headOf = (money, plan) => `<div class="bandhead"><h2>Where it went</h2>`
+    + (money || plan ? `<span class="pd-leg">${money ? `<i class="sw money"></i>Spent` : ""}${plan ? `<i class="sw plan"></i>On your plan, at API prices` : ""}</span>` : "") + `</div>`;
   const tools = (extra = "") => `<div class="byhead">${DRAW.switcher(Object.entries(DIMS).map(([k, v]) => [k, v.word]), ui.by, "by", "Group by")}${extra}</div>`;
   // the head row's columns are doors that rank the rows; the column the rows are ranked by carries the arrow
   const colsOf = (cls) => `<div class="${cls} bhead"><span>${DIMS[ui.by].one}</span>`
@@ -780,7 +830,7 @@ function byHtml() {
     + `</div>`;
   // reading: the columns' names are already known, so the table reads as itself and the rows that land take the place
   // the stripes held. Its rows are .gbrow, never .brow: a .brow is a row of this window's figures.
-  const waiting = () => head + `<div class="figline sub">${GHOST.fig(2.6)}${GHOST.bar(8)}</div>` + tools() + ghostRows(lastRows(`by-${ui.by}`, CUT + 1), 4, colsOf("gbrow"));
+  const waiting = () => headOf(true, true) + `<div class="figline sub">${GHOST.fig(2.6)}${GHOST.bar(8)}</div>` + tools() + ghostRows(lastRows(`by-${ui.by}`, CUT + 2), 4, colsOf("gbrow"));
   if (reading()) return waiting();
   if ((ui.by === "project" || ui.by === "agent") && S.sessionsPending) return waiting();
   const every = groupsOf(ui.by).sort((a, b) => rankBy(b) - rankBy(a) || b.s.requests - a.s.requests || tokensOf(b.s) - tokensOf(a.s));
@@ -807,9 +857,13 @@ function byHtml() {
     const name = naming ? nameSlot(e.row, e.nameIdx, "row") : `<span class="nm">${e.label}</span>`;
     const line = first && size > 1 ? `<div class="bgrp"><span class="cmds">${chipsOf(e.heads)}</span></div>` : "";
     const dot = ui.by === "project" ? "" : `<i class="dot-c" aria-hidden="true"></i>`;
+    // the daemon may already name such a login by its state ("Signed-out account N"): the state is then said once
+    // and the way back in beside it, as its card would offer it: signing in again happens on Accounts
+    const outWord = (e.gone && !/signed.out/i.test(plain(e.label)) ? `<span class="state">Signed out</span>` : "")
+      + (e.gone ? `<a class="act small signin" href="accounts.html?head=${encodeURIComponent([...e.heads][0] ?? "")}">Sign in${OPEN}</a>` : "");
     return line + `<div class="brow${e.gone ? " gone" : ""}" data-act="pick" data-d="${ui.by}" data-v="${esc(e.k)}" style="--c:${colorOf(providerOfHead([...e.heads][0]))}" role="button" tabindex="0">`
-      + `<span class="who">${dot}${name}${e.sub ? `<span class="sb">${e.sub}</span>` : ""}${e.gone ? `<span class="state">Signed out</span>` : ""}`
-      + `${size === 1 ? `<span class="cmds">${chipsOf(e.heads)}</span>` : ""}</span>`
+      + `<span class="who">${dot}${name}${e.sub ? `<span class="sb">${e.sub}</span>` : ""}${outWord}`
+      + `${size === 1 ? `<span class="cmds">${rowChipsOf(e.heads)}</span>` : ""}</span>`
       + tokCell(e.s, mx.tok)
       + (e.many ? `<span class="cell req num">${reqFig}</span>` : `<a class="cell req num open" href="${reqUrl({ ...extra, order: "price" }, f)}">${reqFig}${OPEN}</a>`)
       + costCell(e.s, mx.cost) + `</div>`;
@@ -841,7 +895,10 @@ function byHtml() {
     + `</div>`;
   const rowsHtml = list.length ? shown.map(row).join("") + tailRow
     : `<div class="bnone">${DRAW.nothing(find ? "Nothing by that name" : uncounted() ? "Nothing counted yet" : "No requests")}</div>`;
-  keepRows(`by-${ui.by}`, list.length ? shown.length + (tail.length ? 1 : 0) + shown.filter((o) => o.first && o.size > 1).length * .6 : 1);
+  // a list still being counted, or narrowed by Find, is not the size the next read lands at: its ghost keeps the last
+  // whole count
+  if (!find && (list.length || !uncounted())) keepRows(`by-${ui.by}`, list.length ? shown.length + (tail.length ? 1 : 0) + shown.filter((o) => o.first && o.size > 1).length * .6 : 1);
+  const head = headOf(every.some((e) => spentOf(e.s) != null), every.some((e) => planValueOf(e.s) != null));
   return head + lead + tools(finder) + `<div class="card btable">${colsOf("brow")}${rowsHtml}</div>${fewer}`;
 }
 /** Rows the size of the rows that will land, so the column keeps its height while the window reads. They are not
@@ -858,18 +915,19 @@ function tokensHtml() {
   const head = (body, lead = "") => `<div class="bandhead"><h2>Tokens by command</h2>${legend}</div>${lead}${body}`;
   const cols = `<div class="trow thead"><span>Command</span><span class="cell">Input</span><span class="cell">Written</span><span class="cell">Output</span><span class="cell">Reported</span><span class="cell">Cold turns</span></div>`;
   // the table is kept while the window reads, every row a striped bar the size its figures land at, its columns named
-  if (reading()) return head(`<div class="card ttable ghosted">${cols}${Array.from({ length: Math.max(3, lastRows("tok", 6)) }, (_, i) =>
+  if (reading()) return head(`<div class="card ttable ghosted">${cols}${Array.from({ length: Math.max(3, lastRows("tok", 7)) }, (_, i) =>
     `<div class="gtrow" style="--i:${i}"><span class="who">${GHOST.bar(7, "chip")}</span>${[0, 1, 2, 3, 4].map(() => `<span class="cell">${GHOST.track()}</span>`).join("")}</div>`).join("")}</div>`,
-  `<div class="figline sub">${GHOST.fig(2.6)}${GHOST.bar(9)}</div>`);
+  `<div class="figline sub cachelead">${GHOST.ring("focal")}${GHOST.fig(2.6)}${GHOST.bar(9)}</div>`);
   const w = D.scoped, rd = D.reading ?? new Set();
   // the command with the most input leads, so the column the rows are read by is the order they are in
   const list = headsOrder().map((h) => [h, w.byHead.get(h)]).filter(([h, s]) => rd.has(h) || s?.requests > 0)
     .sort((a, b) => (rd.has(a[0]) - rd.has(b[0])) || (b[1]?.in ?? 0) - (a[1]?.in ?? 0));
-  keepRows("tok", list.length || 1);
-  if (!list.length) return head(`<div class="card ttable">${cols}<div class="bnone">${DRAW.nothing(uncounted() ? "Nothing counted yet" : "No requests")}</div></div>`, `<div class="figline sub"><b class="fig-focal">${DRAW.dash}</b><span class="cap">read from cache</span></div>`);
+  if (list.length || !uncounted()) keepRows("tok", list.length || 1);
+  if (!list.length) return head(`<div class="card ttable">${cols}<div class="bnone">${DRAW.nothing(uncounted() ? "Nothing counted yet" : "No requests")}</div></div>`, `<div class="figline sub cachelead">${DRAW.ring(0, { size: "focal" })}<b class="fig-focal">${DRAW.dash}</b><span class="cap">input read from cache</span></div>`);
   const mx = { in: Math.max(1, ...list.map(([, s]) => s?.in ?? 0)), out: Math.max(1, ...list.map(([, s]) => s?.out ?? 0)), write: Math.max(1, ...list.map(([, s]) => s?.write ?? 0)), cold: Math.max(1, ...list.map(([, s]) => s?.cold ?? 0)) };
   const tin = list.reduce((a, [, s]) => a + (s?.in ?? 0), 0), tcached = list.reduce((a, [, s]) => a + (s?.cached ?? 0), 0);
-  const lead = `<div class="figline sub">${tin > 0 ? `<b class="fig-focal">${DRAW.pct(tcached / tin)}</b><span class="cap">of <b>${tok(tin)}</b> input read from cache</span>` : `<b class="fig-focal">${DRAW.dash}</b><span class="cap">read from cache</span>`}</div>`;
+  // the share of the input read from the cache is drawn first, as the ring Results' Cache hit draws, then written
+  const lead = `<div class="figline sub cachelead">${tin > 0 ? `${DRAW.ring(tcached / tin, { size: "focal", label: `${DRAW.pct(tcached / tin)} of input read from cache` })}<b class="fig-focal">${DRAW.pct(tcached / tin)}</b><span class="cap">of <b>${tok(tin)}</b> input read from cache</span>` : `${DRAW.ring(0, { size: "focal" })}<b class="fig-focal">${DRAW.dash}</b><span class="cap">input read from cache</span>`}</div>`;
   const rows = list.map(([h, s]) => {
     if (rd.has(h)) return `<div class="trow"><span class="who">${chip(h)}</span>${[0, 1, 2, 3, 4].map(() => `<span class="cell">${GHOST.track()}</span>`).join("")}</div>`;
     const noIn = s.noIn >= s.requests, counted = s.requests - Math.max(s.noIn, s.noOut);
@@ -906,13 +964,14 @@ function coldPlate(h, s, accts) {
   // the turns splice could not mark are a column of the plate only where a login has any: a column of nothing says
   // nothing, and the command's own row already carries the count where it has one
   const un = accts.some((a) => a.coldUn > 0);
-  const rows = accts.map((a) => `<div class="crow${un ? " un" : ""}"><span class="cn">${acctLabel(h, a.label, a.name)}</span>`
+  const gone = (a) => !planRowOf(h, a.label) && isPlanHead(h) && REF_SHAPE.test(String(a.label));
+  const rows = accts.map((a) => `<div class="crow${un ? " un" : ""}"><span class="cn">${acctLabel(h, a.label, a.name)}${gone(a) ? `<span class="state">Signed out</span>` : ""}</span>`
     + `<span class="cell">${a.cold > 0 ? `${DRAW.vbar(barW(a.cold, mx.cold))}<b class="v">${n0(a.cold)}</b>` : ""}</span>`
     + `<span class="cell">${a.coldIn > 0 ? `${DRAW.vbar(barW(a.coldIn, mx.in))}<b class="v">${tok(a.coldIn)}</b><small>of ${tok(a.in)}</small>` : ""}</span>`
     + (un ? `<span class="cell um">${a.coldUn > 0 ? `<b class="v">${n0(a.coldUn)}</b>` : ""}</span>` : "")    + `</div>`).join("");
   const lead = s.coldIn > 0 ? DRAW.focal(tok(s.coldIn), `input sent again, of ${tok(s.in)}`) : "";
   return `<div class="tdetail plate${ui.coldNew === h ? " unfold" : ""}" id="cold-${esc(h)}">`
-    + DRAW.section("Cold after an account switch", lead
+    + DRAW.section("Account switches", lead
       + `<div class="ctable"><div class="crow chead${un ? " un" : ""}"><span>Account</span><span class="cell">Cold turns</span><span class="cell">Input sent again</span>`
       + `${un ? `<span class="cell um">Not marked</span>` : ""}</div>${rows}</div>`)
     + `</div>`;
@@ -989,23 +1048,26 @@ function renderBand(name, grow = false) {
   el.innerHTML = BANDS[name].html();
   if (name === "money" || name === "tok") DRAW.paint(el, { grow: grow ? "all" : null, reading: false });
   if (name === "chart" || name === "tok") fitParts(el);
+  if (name === "by") fitChips(el);
 }
 // The project tiles are known only once the transcripts have been listed. Until then the line holds the shape it last
 // landed in, hollow: a tile's own box per tile at a wide page, the picker's chip at a narrow one. It drew nothing, and
 // the whole page jumped down by the tiles' height when they arrived.
 const TILES_KEY = "splice-usage-tiles";
-const lastTiles = () => { const n = Number(localStorage.getItem(TILES_KEY)); return Number.isFinite(n) && n > 0 ? Math.min(n, 12) : 0; };
-const ghostPick = () => {
-  const n = lastTiles();
-  if (!n) return "";
-  return tilesWide() ? `<nav class="ptiles" aria-hidden="true">${Array.from({ length: n }, () => `<i class="ghost ptg"></i>`).join("")}</nav>`
-    : `<div class="lhead" aria-hidden="true">${GHOST.chip(13)}</div>`;
+// A visit that has remembered nothing holds a row of six: a console with a few projects, the shape most have. What is
+// remembered is how many tiles the projects make, not how many this width drew, so a window of another width keeps it.
+const lastTiles = () => {
+  let raw = null;
+  try { raw = localStorage.getItem(TILES_KEY); } catch { /* a blocked store remembers nothing */ }
+  if (raw == null) return 6;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 12) : 0;
 };
 function renderPick() {
   const line = document.getElementById("pickline");
-  line.innerHTML = S.sessionsPending ? ghostPick() : pickLineHtml(S.groups, ui.project, ui.pmenu, projectFigures());
+  line.innerHTML = S.sessionsPending ? GHOST.tiles(lastTiles()) : pickLineHtml(S.groups, ui.project, ui.pmenu, projectFigures());
   if (!S.sessionsPending) {
-    try { localStorage.setItem(TILES_KEY, String(line.querySelectorAll(".ptile").length)); } catch { /* a blocked store costs the ghost its shape and nothing else */ }
+    try { localStorage.setItem(TILES_KEY, String(S.groups.length >= 2 ? S.groups.length + 1 : 0)); } catch { /* a blocked store costs the ghost its shape and nothing else */ }
   }
   document.getElementById("win").innerHTML = DRAW.switcher(Object.entries(WINDOWS).map(([k, v]) => [k, v.label]), ui.win, "win", "Window");
 }
@@ -1093,7 +1155,11 @@ document.addEventListener("click", (e) => {
     case "measure": if (v === ui.measure) break; ui.measure = v; ui.hover = null; renderBand("chart", true); break;
     case "by": if (v === ui.by) break; ui.by = v; ui.shown = CUT; ui.find = ""; renderBand("by", true); break;
     case "rank": if (v === ui.rank) break; ui.rank = v; ui.shown = CUT; renderBand("by", true); break;
-    case "more": ui.shown += MORE_STEP; renderBand("by", true); break;
+    case "more": { // only the rows the tail let go of arrive; the rows already on screen stay still
+      const was = ui.shown; ui.shown += MORE_STEP; renderBand("by");
+      [...(BANDS.by.el()?.querySelectorAll(".btable > .brow:not(.bhead):not(.btail)") ?? [])].slice(was).forEach((r, i) => { r.classList.add("arrive"); r.style.setProperty("--i", String(Math.min(i, 12))); });
+      break;
+    }
     case "fewer": ui.shown = CUT; renderBand("by"); BANDS.by.el()?.scrollIntoView({ block: "start", behavior: "smooth" }); break;
     case "cold": { const k = el.dataset.k; if (ui.cold.has(k)) { ui.cold.delete(k); ui.coldNew = null; } else { ui.cold.add(k); ui.coldNew = k; } renderBand("tok"); ui.coldNew = null; break; }
     case "name": ui.naming = Number(el.dataset.k); ui.nameAt = el.dataset.at || "card"; ui.nameErr = null; ui.nameDraft = ""; renderNames();
@@ -1148,13 +1214,17 @@ root.addEventListener("mouseover", (e) => {
   ui.hover = i; renderBand("chart");
 });
 root.addEventListener("mouseleave", () => { if (ui.hover != null) { ui.hover = null; renderBand("chart"); } });
-// the board's columns, the project tiles and which labels fit inside their bars are the page's own width, so a resized
-// window is drawn again for it
+// the board's columns, the project tiles, which labels fit inside their bars and how many of a row's chips fit beside
+// its name are the page's own width, so a resized window is drawn again for it; a name being typed or a search being
+// typed keeps its field
 let sized = null;
+const typing = () => ui.naming != null || document.activeElement?.matches?.(".bfind") === true;
 addEventListener("resize", () => {
   clearTimeout(sized);
-  sized = setTimeout(() => { if (ui.naming == null) { renderPick(); renderBand("money"); } renderBand("chart"); renderBand("tok"); }, 200);
+  sized = setTimeout(() => { if (ui.naming == null) { renderPick(); renderBand("money"); } renderBand("chart"); renderBand("tok"); if (!typing()) renderBand("by"); }, 200);
 });
+// what fits is measured in the console's own faces: once they have loaded, the bands that measure are drawn again
+document.fonts?.ready.then(() => { if (reading()) return; renderBand("chart"); renderBand("tok"); if (!typing()) renderBand("by"); });
 // a door from elsewhere opens the page on a window and a filter: usage.html?account=head|label&by=project
 {
   const A = new URLSearchParams(location.search);

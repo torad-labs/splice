@@ -532,7 +532,7 @@ const oneModule = (): string => {
 describe("pre-push stops a gradle run whose push cannot pass, and records how long each push took", () => {
   test("RED: a direct leg that fails stops the gradle run at once, and the verdict says so", async () => {
     const root = oneModule();
-    const red: Leg[] = [{ task: "redLeg", command: ["bun", "-e", "process.exit(3)"], inputs: ["**"] }];
+    const red: Leg[] = [{ task: "redLeg", command: ["bun", "-e", "process.exit(3)"], inputs: ["**/*.kt"] }];
     const lines: PushTiming[] = [];
     const { result, text } = await captured(() =>
       prePush(lay(root), pushOf(root, head(root)), { gate: untilStopped, openRun: () => null, legs: red, timings: (line) => void lines.push(line) }),
@@ -659,7 +659,7 @@ describe("pre-push stops a gradle run whose push cannot pass, and records how lo
 describe("the legs that read no code run and pass before gradle starts", () => {
   const NO_CODE = ["prTitle", "attribution", "noPython", "gateRules"] as const;
   /** A ladder row that runs [script] in bun, from the tree the push is judged in. */
-  const bunLeg = (task: string, script: string): Leg => ({ task, command: ["bun", "-e", script], inputs: ["**"] });
+  const bunLeg = (task: string, script: string): Leg => ({ task, command: ["bun", "-e", script], inputs: ["**/*.kt"] });
 
   test("RED: any of the four failing fails the push, and gradle is never asked", async () => {
     for (const task of NO_CODE) {
@@ -725,7 +725,7 @@ describe("the legs that read no code run and pass before gradle starts", () => {
     const calls: string[][] = [];
     // The leg moves the pushed branch back to the scaffold, as a peer's command in the shared checkout can while the legs run.
     const move = `GIT_CONFIG_GLOBAL=${JSON.stringify(EMPTY_GIT_CONFIG)} GIT_CONFIG_NOSYSTEM=1 git -C ${JSON.stringify(root)} update-ref ${branchRef(root)} refs/remotes/origin/main`;
-    const legs: Leg[] = [{ task: "attribution", command: ["bash", "-c", move], inputs: ["**"] }];
+    const legs: Leg[] = [{ task: "attribution", command: ["bash", "-c", move], inputs: ["**/*.kt"] }];
     const { result, text } = await captured(() => prePush(lay(root), pushOf(root, judged), { gate: compiler(root, calls), openRun: () => null, legs }));
     expect(result).toBe(1);
     expect(calls).toEqual([]);
@@ -821,7 +821,7 @@ describe("pre-push scopes the gate to the pushed diff", () => {
   test("RED: a direct leg that exits nonzero fails the push, and the verdict names it with its scope", async () => {
     const root = wallsRepo();
     docsCommit(root);
-    const red: Leg[] = [{ task: "redLeg", command: ["bun", "-e", "process.exit(3)"], inputs: ["**"] }];
+    const red: Leg[] = [{ task: "redLeg", command: ["bun", "-e", "process.exit(3)"], inputs: ["docs/**"] }];
     const { result, text } = await captured(() => prePush(lay(root), pushOf(root, head(root)), { gate: compiler(root), openRun: () => null, legs: red }));
     expect(result).toBe(1);
     expect(text).toContain("PRE-PUSH: FAIL — judged the pushed sha ");
@@ -833,7 +833,7 @@ describe("pre-push scopes the gate to the pushed diff", () => {
     const root = wallsRepo();
     docsCommit(root);
     const calls: string[][] = [];
-    const green: Leg[] = [{ task: "greenLeg", command: ["bun", "-e", "process.exit(0)"], inputs: ["**"] }];
+    const green: Leg[] = [{ task: "greenLeg", command: ["bun", "-e", "process.exit(0)"], inputs: ["docs/**"] }];
     const { result, text } = await captured(() => prePush(lay(root), pushOf(root, head(root)), { gate: compiler(root, calls), openRun: () => null, legs: green }));
     expect(result).toBe(0);
     expect(calls).toEqual([]);
@@ -880,7 +880,20 @@ describe("pre-push runs the packaged code-mode test only when the push can chang
     writeFile(
       root,
       "app/build.gradle.kts",
-      'val codeModePackagedTest = tasks.register<Test>("codeModePackagedTest") {\n    filter {\n        includeTestsMatching("CodeModeLanguagesTest")\n    }\n}\n',
+      [
+        "dependencies {",
+        '    implementation(project(":core"))',
+        '    implementation(project(":features-turns"))',
+        '    implementation(project(":integrations-codemode"))',
+        '    implementation(project(":integrations-providers-codex"))',
+        "}",
+        'val codeModePackagedTest = tasks.register<Test>("codeModePackagedTest") {',
+        "    filter {",
+        '        includeTestsMatching("CodeModeLanguagesTest")',
+        "    }",
+        "}",
+        "",
+      ].join("\n"),
     );
     writeFile(root, WORKER_FILE, "package splice.codemode\n\nclass WorkerSession\n");
     writeFile(root, FEATURE_FILE, "package splice.head\n\nclass TurnDriver\n");
@@ -949,14 +962,16 @@ describe("pre-push runs the packaged code-mode test only when the push can chang
     const { result, text } = await captured(() => prePush(lay(root), pushOf(root, head(root)), { gate: recording(runs), openRun: () => null, legs: NO_LEGS }));
     expect(result).toBe(0);
     expect(runs.map((run) => run.options)).toEqual([[]]);
-    expect(text).not.toContain("codeModePackagedTest");
+    expect(text).toContain("check :app:codeModePackagedTest: skipped — :app:check is not in this push, so the packaged test is not run");
+    expect(text).not.toContain("--exclude-task=:app:codeModePackagedTest");
   });
 });
 
 // Simon asked for the diff-aware test run on Oct 26 2026, with Marcos's approval, while a full check cost about 14 minutes a push:
-// the pre-push runs the test classes the pushed diff reaches, falls back to the full suite on a build file or a shared fixture, and
-// prints which mode ran and why. Which classes a diff reaches is test-impact.test.ts's to pin; this pins what the push does with the
-// answer: the gradle tasks it names, the exclusions it carries, and the lines it prints.
+// the pre-push runs the test classes the pushed diff reaches. A full suite runs only for a path tools/gate/config/scope.json marks
+// `full`. A module's own build file or a test fixture checks that module and its dependents, and prints which mode ran and why.
+// Which classes a diff reaches is test-impact.test.ts's to pin; this pins what the push does with the answer: the gradle tasks it
+// names, the exclusions it carries, and the lines it prints.
 describe("pre-push runs the test classes the pushed diff reaches, and says which mode ran and why", () => {
   const MODULES = [
     [":core", "core"],
@@ -1046,25 +1061,31 @@ describe("pre-push runs the test classes the pushed diff reaches, and says which
     expect(text).toContain("  no test reaches the change in :app");
   });
 
-  test("a changed build file runs the full suite, names the reason, and checks the modules the scope left out", async () => {
+  test("a module's build file checks that module and its dependents, and does not run the full suite", async () => {
     const root = testsRepo();
     change(root, "core/build.gradle.kts", "// the module's own build\n");
     const runs: Run[] = [];
     const { result, text } = await push(root, runs);
     expect(result).toBe(0);
-    expect(runs[0]?.tasks).toEqual([":app:check", ":core:check", "lawSuites", ":features-turns:check"]);
+    expect(runs[0]?.tasks).toEqual([":app:check", ":core:check", "lawSuites", ":app:test", "--tests=splice.app.CheckoutTest*"]);
+    expect(runs[0]?.tasks).not.toContain(":features-turns:check");
     expect(runs[0]?.options).toEqual([]);
-    expect(text).toContain("── tests: the full suite, because core/build.gradle.kts is a build file ──");
-    expect(text.split("\n").find((line) => line.startsWith("PRE-PUSH: PASS"))).toContain("; tests: full suite");
+    expect(text).toContain("── tests: narrowed to what the 1 changed file reaches:");
+    expect(text).toContain("  :core: whole, because core/build.gradle.kts is a file the references cannot follow");
+    expect(text).not.toContain("the full suite");
   });
 
-  test("a shared test fixture runs the full suite", async () => {
+  test("a shared test fixture checks its module and the modules that depend on it", async () => {
     const root = testsRepo();
     change(root, "core/src/testFixtures/kotlin/splice/core/Fixtures.kt", "package splice.core\n\nclass Fixtures\n");
     const runs: Run[] = [];
     const { text } = await push(root, runs);
-    expect(text).toContain("── tests: the full suite, because core/src/testFixtures/kotlin/splice/core/Fixtures.kt is a shared test fixture ──");
-    expect(runs[0]?.tasks).toContain(":features-turns:check");
+    expect(text).toContain("── tests: narrowed to what the 1 changed file reaches:");
+    expect(text).toContain("  no test reaches the change in :core, :app");
+    expect(runs[0]?.tasks).toContain(":core:check");
+    expect(runs[0]?.tasks).toContain(":app:check");
+    expect(runs[0]?.tasks).not.toContain(":features-turns:check");
+    expect(text).not.toContain("the full suite");
   });
 
   test("a push that checks no module narrows nothing and names no test task", async () => {

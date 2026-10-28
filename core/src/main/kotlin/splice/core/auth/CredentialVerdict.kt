@@ -26,7 +26,7 @@ public sealed class CredentialVerdict {
 
     /** Upstream accepted the last forwarded turn it answered. */
     public data class Accepted(override val atEpochMs: Long) : CredentialVerdict() {
-        override val wire: String = ACCEPTED
+        override val wire: String = CREDENTIAL_ACCEPTED_STATE
     }
 
     /** Upstream answered the last forwarded turn 401: the login was rejected. */
@@ -42,11 +42,12 @@ public class CredentialVerdictRead {
     public fun of(wire: String?, atEpochMs: Long?): CredentialVerdict? = when (wire) {
         CredentialVerdict.Held.wire -> CredentialVerdict.Held
         CredentialVerdict.Unverified.wire -> CredentialVerdict.Unverified
-        ACCEPTED -> atEpochMs?.let(CredentialVerdict::Accepted)
+        CREDENTIAL_ACCEPTED_STATE -> atEpochMs?.let(CredentialVerdict::Accepted)
         REJECTED -> atEpochMs?.let(CredentialVerdict::Rejected)
         else -> null
     }
 }
 
-private const val ACCEPTED = "accepted"
+/** The credential verdict on /api/auth, distinct from an HTTP request's accepted status. */
+private const val CREDENTIAL_ACCEPTED_STATE = "accepted"
 private const val REJECTED = "rejected"

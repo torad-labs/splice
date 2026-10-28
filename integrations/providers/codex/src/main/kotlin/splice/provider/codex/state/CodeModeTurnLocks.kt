@@ -67,9 +67,10 @@ internal class CodeModeTurnIdentity {
     )
 
     /** Model changes can supersede parked programs, but never sibling conversations or a busy engine. */
-    fun conversationId(turn: CodexCodeModeBridge.Turn): String = digest(
-        "${turn.sessionId}${0.toChar()}${turn.conversationKey}",
-    )
+    fun conversationId(turn: CodexCodeModeBridge.Turn): String = conversationId(turn.sessionId, turn.conversationKey)
+
+    fun conversationId(sessionId: String, conversationKey: String): String =
+        digest("$sessionId${0.toChar()}$conversationKey")
 
     /** The conversation key a turn of [agentId] carries: the opening's own key on the main thread, which names no
      *  agent, so the records it persisted are still found; the opening and the subagent otherwise. */

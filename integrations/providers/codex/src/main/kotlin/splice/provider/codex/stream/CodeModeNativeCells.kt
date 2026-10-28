@@ -1,6 +1,7 @@
 package splice.provider.codex.stream
 
 import splice.provider.codex.CodeModeToolPolicy
+import splice.provider.codex.stream.interrupt.CodeModeNativeInterrupts
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeInvocationAction
 import splice.upstream.codemode.CodeModeResult
@@ -11,6 +12,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 /** Live engines remain session-local. Durable ids describe lost engines after restart; they never replay source. */
 internal class CodeModeNativeCells : AutoCloseable {
+    private val ownership = Any()
     private val cells = ConcurrentHashMap<Pair<String, String>, CodeModeHeldNativeCell>()
     private val completed = ConcurrentHashMap<Pair<String, String>, String>()
 
@@ -18,8 +20,23 @@ internal class CodeModeNativeCells : AutoCloseable {
     private val owned = ConcurrentHashMap.newKeySet<Pair<String, String>>()
     private val sessions = ConcurrentHashMap<String, String>()
     private val aliases = ConcurrentHashMap<String, String>()
+    val interrupts = CodeModeNativeInterrupts()
 
-    fun trackSession(recordKey: String, key: String, clientSessionId: String) {
+    suspend fun interrupt(key: String, clientSessionId: String): splice.provider.codex.CodeModeInterruptOutcome {
+        val selected = synchronized(ownership) {
+            if (sessions[key] == clientSessionId) interrupts.snapshot(key) else null
+        } ?: return splice.provider.codex.CodeModeInterruptOutcome.Unavailable
+        val cells = interrupts.interrupt(selected).map { interrupted ->
+            if (interrupted.completed) {
+                val held = interrupted.owner
+                completed(key, held.cell.cellId, held.notificationCallId)
+            }
+            interrupted.result
+        }
+        return splice.provider.codex.CodeModeInterruptOutcome.Interrupted(cells)
+    }
+
+    fun trackSession(recordKey: String, key: String, clientSessionId: String) = synchronized(ownership) {
         aliases[recordKey] = key
         val prior = sessions.putIfAbsent(key, clientSessionId)
         require(prior == null || prior == clientSessionId) { "Native session ownership changed" }
@@ -51,10 +68,13 @@ internal class CodeModeNativeCells : AutoCloseable {
 
     fun completed(key: String, id: String, notificationCallId: String) {
         completed[key to id] = notificationCallId
+        interrupts.completed(key, id)
+        cells.remove(key to id)
     }
 
-    fun closeSession(recordKey: String) {
+    fun closeSession(recordKey: String) = synchronized(ownership) {
         val key = nativeSession(recordKey)
+        interrupts.closeSession(key)
         val ended = cells.entries.filter { it.key.first == key }
         ended.forEach { (id, held) -> if (cells.remove(id, held)) held.cell.close() }
         completed.keys.removeIf { it.first == key }
@@ -63,7 +83,8 @@ internal class CodeModeNativeCells : AutoCloseable {
         aliases.entries.removeIf { it.value == key }
     }
 
-    override fun close() {
+    override fun close() = synchronized(ownership) {
+        interrupts.close()
         val ending = cells.values.toList()
         cells.clear()
         completed.clear()
@@ -137,7 +158,10 @@ internal class CodeModeNativeObservation(
     }
 
     override fun close() {
-        if (!handedOff) cell.close()
+        if (!handedOff) {
+            retained.interrupts.release(key, cell)
+            cell.close()
+        }
     }
 }
 

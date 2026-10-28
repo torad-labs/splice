@@ -103,6 +103,12 @@ public class CodexCodeModeBridge(
     public fun injectTool(request: JsonObject, clientTools: Set<String>, policy: CodeModeToolPolicy): JsonObject =
         wire.injectTool(request, clientTools, policy)
 
+    /** Explicit authenticated user action; foreground cancellation alone never calls this operation. */
+    public suspend fun interruptActiveCells(sessionId: String, conversationKey: String): CodeModeInterruptOutcome =
+        splice.provider.codex.stream.interrupt.CodeModeConversationInterrupts(
+            registry,
+        ).interrupt(sessionId, conversationKey)
+
     public fun onHeadStop() {
         driver.streams.stop()
         try {

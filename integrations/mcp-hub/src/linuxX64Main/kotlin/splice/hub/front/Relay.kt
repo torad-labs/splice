@@ -28,6 +28,7 @@ data class WireOutstanding(
     /** Socket-write proof is not proof that a live front has consumed its response data. */
     var backendSettled = false
     var recorded = false
+    internal var toolResult: McpResultIdentity? = null
 }
 
 private class ForwardAdmission(
@@ -55,6 +56,7 @@ class Relay(
     private val clock: Clock,
     private val changed: () -> Unit,
     private val checkpoint: () -> Boolean,
+    toolResults: NativeMcpResults,
 ) {
     private val wireOutstanding = HashMap<String, WireOutstanding>()
     private val keys = RelayWireKeys()
@@ -63,6 +65,7 @@ class Relay(
         wireOutstanding,
         fromServer,
         HolderPersistence(changed, checkpoint),
+        toolResults,
     )
     private val resume = RelayResumeBinding(settlements)
     internal val notifications = RelayNotifications(wireOutstanding, settlements)
@@ -118,6 +121,7 @@ class Relay(
                         put(CALL_METHOD, call.method)
                         put(CALL_AT, call.at)
                         put(CALL_RECORDED, call.recorded)
+                        call.toolResult?.let { put(CALL_TOOL_RESULT, it.state()) }
                     }
                 },
             ),
@@ -171,6 +175,7 @@ class Relay(
             clock.now(),
         )
         call.recorded = forward.link?.recorded == true
+        call.toolResult = McpResultIdentities.fromCall(session.route.server, msg)
         wireOutstanding[key] = call
         resume.remember(holder)
         if (checkpoint()) {
@@ -239,6 +244,7 @@ class Relay(
             (body[CALL_AT] as? JsonPrimitive)?.longOrNull ?: 0L,
         ).also {
             it.recorded = Rpc.str(body, CALL_RECORDED) == "true"
+            it.toolResult = (body[CALL_TOOL_RESULT] as? JsonObject)?.let(McpResultIdentities::restore)
             resume.remember(it.holder)
         }
         keys.retained(key)
@@ -375,7 +381,7 @@ internal class RelayInbound(
     }
 
     private fun answered(holder: Holder, key: String, msg: JsonObject) {
-        val call = settlements.answered(holder, key) ?: return
+        val call = settlements.answered(holder, key, msg) ?: return
         deliver(call, msg)
         listed(holder, call, msg)
     }
@@ -427,6 +433,7 @@ private const val CALL_SESSION = "session"
 private const val CALL_METHOD = "method"
 private const val CALL_AT = "at"
 private const val CALL_RECORDED = "recorded"
+private const val CALL_TOOL_RESULT = "tool_result"
 internal const val CANCELLED = "notifications/cancelled"
 private const val REQUEST_ID = "requestId"
 private const val ROOTS_LIST = "roots/list"

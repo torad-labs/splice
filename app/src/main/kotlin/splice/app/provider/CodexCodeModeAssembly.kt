@@ -4,6 +4,7 @@ package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import splice.app.provider.codex.CodeModeMcpReplies
 import splice.app.provider.codex.CodeModeSessionLiveness
 import splice.codemode.DEFAULT_HEAP_MB
 import splice.codemode.DEFAULT_MAX_WORKERS
@@ -13,6 +14,7 @@ import splice.codemode.host.PoolLimits
 import splice.core.config.CODE_MODE_DIR
 import splice.core.config.CODE_MODE_STATE_SUFFIX
 import splice.core.config.StatePaths
+import splice.core.mcp.McpToolResultStore
 import splice.core.util.Cancellables
 import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
@@ -105,6 +107,10 @@ internal class CodexCodeModeAssembly(
                         legacyFile = statePaths.stateDir.resolve("${ctx.key}$CODE_MODE_STATE_SUFFIX"),
                         journaling = CodeModeJournaling { ctx.cfg.current().keepCodeModeWork },
                         replayReasoning = CodeModeReplayReasoning { ctx.cfg.current().replayReasoning },
+                        mcpResults = CodeModeMcpReplies(
+                            McpToolResultStore(statePaths),
+                            HeadScopedLogs.headScopedLog(ctx.key, log),
+                        ),
                     ),
                     log = HeadScopedLogs.headScopedLog(ctx.key, log),
                     cellLease = CodeModeCellLease(sessionAlive = sessionAlive, sessionIdle = sessionIdle),

@@ -281,6 +281,9 @@ public class StatePaths(
      *  session, written when he presses and removed when the move ends, either way (MovingTrust). */
     public val movingTrustDir: Path = stateDir.resolve("moving-trust")
 
+    /** Raw MCP tool results privately correlated with the code-mode callback that the client actually executed. */
+    public val mcpToolResultsDir: Path = stateDir.resolve("mcp-tool-results")
+
     /** Per-head stat files. The codex/grok names are a frozen legacy contract kept for CONTINUITY,
      *  not for an external reader (the header's own words — the HUD that justified them is gone, and
      *  renaming them now would strand usage history for no measured gain); new heads derive

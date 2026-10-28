@@ -133,6 +133,7 @@ internal class HostedServer(
                     writer?.takeIf { process === it.child && it.child.isAlive && initResult != null }
                 }
             },
+            log,
         ),
         ids,
         pending,

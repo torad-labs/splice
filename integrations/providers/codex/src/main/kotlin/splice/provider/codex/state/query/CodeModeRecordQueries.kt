@@ -4,6 +4,7 @@ package splice.provider.codex.state.query
 import splice.provider.codex.CODE_MODE_CLIENT_ID_PREFIX
 import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
+import splice.provider.codex.callbacks.mcp.CodeModeMcpOwnership
 import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.CodeModeRegistryAccess
@@ -28,6 +29,8 @@ internal class CodeModeRecordQueries(
     private val history: CodeModeExpiredHistory,
     private val prepare: CodeModeQueryPreparation,
 ) {
+    val mcpOwnership = CodeModeMcpOwnership(access, records, prepare)
+
     fun owner(
         key: String,
         digest: String,

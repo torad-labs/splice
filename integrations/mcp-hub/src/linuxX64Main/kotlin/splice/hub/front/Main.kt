@@ -388,6 +388,7 @@ class HubFiles(private val dir: String) {
     private val stateWriter = HubStateWriter(::say)
 
     val accessKey: String? get() = access.key()
+    val toolResultsDir: String get() = "${dir.substringBeforeLast('/')}/mcp-tool-results"
 
     /** Authenticates MCP session traffic or the front's narrow management controls before their body is buffered. */
     fun admits(path: String, headers: Map<String, String>): Boolean =

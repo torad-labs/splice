@@ -25,7 +25,7 @@ class Hub(
 ) {
     internal val sessions = HashMap<String, Session>()
     internal val routes = Routes(daemon, timers, clock, ::changed)
-    internal val relay = Relay(sessions, routes, clock, ::changed, ::save)
+    internal val relay = Relay(sessions, routes, clock, ::changed, ::save, NativeMcpResults(files, clock))
     internal val holders = Holders(
         files,
         links,

@@ -39,5 +39,10 @@ kotlin {
                 implementation(libs.kotlinx.serialization.json)
             }
         }
+        val linuxX64Test by getting {
+            dependencies {
+                implementation(kotlin("test"))
+            }
+        }
     }
 }

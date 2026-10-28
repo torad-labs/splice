@@ -121,7 +121,7 @@ abstract class McpHostFixture {
                 maxServers = { serverCeiling },
                 requestTimeout = { requestBudget },
                 initializeTimeout = { handshakeBudget },
-                clock = clock,
+                runtime = McpHostConfig.Runtime(clock = clock),
             ),
             log = LogSink { line ->
                 synchronized(log) { log.append(line) }

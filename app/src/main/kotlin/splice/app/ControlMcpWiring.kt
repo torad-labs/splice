@@ -20,6 +20,7 @@ import splice.control.mcp.McpIdleBudget
 import splice.control.mcp.McpRequestBudget
 import splice.control.mcp.McpServerCeiling
 import splice.core.config.Knob
+import splice.core.mcp.McpToolResultStore
 import splice.launch.LaunchSpec
 import splice.upstream.codemode.ProcessDispatchers
 import java.nio.file.Path
@@ -114,8 +115,11 @@ internal class ControlMcpWiring(
         // V4-176: the slice is a NAME, not a duration, and a blank one would spawn every hosted
         // child into a `--slice=` systemd rejects. An empty knob therefore falls back to the
         // declared default rather than being passed through.
-        slice = (config.getConfig().asMap()[Knob.MCP_SLICE.key] as? String)?.takeIf { it.isNotBlank() }
-            ?: APP_MCP_SLICE,
+        runtime = McpHostConfig.Runtime(
+            slice = (config.getConfig().asMap()[Knob.MCP_SLICE.key] as? String)?.takeIf { it.isNotBlank() }
+                ?: APP_MCP_SLICE,
+            capture = McpHostConfig.Capture(McpToolResultStore(statePaths), ProcessDispatchers().io()),
+        ),
     )
 
     /** One knob's number off the config AS IT STANDS NOW, falling back to the knob's declared default when the

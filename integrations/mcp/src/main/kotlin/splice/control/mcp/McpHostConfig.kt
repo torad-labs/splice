@@ -11,7 +11,9 @@
 // this record real equality rather than assume it has some.
 package splice.control.mcp
 
+import kotlinx.coroutines.CoroutineDispatcher
 import splice.core.config.Knob
+import splice.core.mcp.McpToolResultStore
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -59,12 +61,22 @@ public data class McpHostConfig(
     /** Child initialize handshake budget — a server that cannot answer this is not hostable
      *  (see [McpHandshakeBudget]). */
     val initializeTimeout: McpHandshakeBudget = McpHandshakeBudget { 1.minutes },
-    val clock: HostClock = HostClock(System::currentTimeMillis),
     /** How long Settings' Test waits for a started server to list its tools. The start itself is bounded by
      *  [initializeTimeout]. This is its own bound, apart from [requestTimeout], which is for real tool calls: a
      *  server that cannot list its tools in this long is the hung one the person is looking for. */
     val testListTimeout: Duration = 10.seconds,
-    /** V4-176: the slice hosted children are spawned into, by name. splice never creates it — it
-     *  asks systemd for the CEILING on it at every spawn and says so in the log when there is none. */
-    val slice: String = APP_MCP_SLICE,
-)
+    val runtime: Runtime = Runtime(),
+) {
+    public val clock: HostClock get() = runtime.clock
+    public val slice: String get() = runtime.slice
+
+    /** Process resources are explicit so fixtures never publish receipts into the operator's state. */
+    public data class Runtime(
+        val clock: HostClock = HostClock(System::currentTimeMillis),
+        /** The existing systemd slice name, checked at every hosted spawn. */
+        val slice: String = APP_MCP_SLICE,
+        val capture: Capture? = null,
+    )
+
+    public data class Capture(val store: McpToolResultStore, val io: CoroutineDispatcher)
+}

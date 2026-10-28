@@ -18,6 +18,7 @@ import splice.control.mcp.ProgressTokens
 import splice.control.mcp.RPC_SERVER_ERROR
 import splice.control.mcp.RPC_SERVER_EXITED
 import splice.control.mcp.RPC_TIMED_OUT
+import splice.core.util.LogSink
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration
@@ -50,6 +51,7 @@ internal class HostedClientCalls(
         val codec: JsonRpcCodec,
         val writer: McpChildWriter,
         val target: Target,
+        val log: LogSink,
     )
 
     internal data class RequestId(val sessionId: String, val clientId: JsonElement)
@@ -83,7 +85,9 @@ internal class HostedClientCalls(
         val forwarded = Forward(hostId, child, out, slot, clientId)
         pending[hostId] = slot
         return try {
-            awaitAnswer(forwarded, deadline)
+            awaitAnswer(forwarded, deadline).also { answer ->
+                HostedMcpResults(name, runtime.config.runtime, runtime.log).capture(request, answer)
+            }
         } catch (error: CancellationException) {
             slot.terminateProgress()
             throw error

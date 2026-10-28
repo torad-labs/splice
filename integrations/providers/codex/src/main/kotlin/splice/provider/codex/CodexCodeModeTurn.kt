@@ -2,6 +2,7 @@
 package splice.provider.codex
 
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.runInterruptible
 import splice.core.perf.PerfKeys
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.HeadStopKey
@@ -22,6 +23,7 @@ import splice.provider.codex.stream.CodeModeRunInput
 import splice.provider.codex.stream.CodeModeUpstreamPost
 import splice.provider.codex.stream.batch.CodeModeBatchHistory
 import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.sse.WireSink
 internal data class CodeModeRunContext(
     val turn: CodexCodeModeBridge.Turn,
@@ -88,8 +90,29 @@ internal class CodexCodeModeTurn(
 
     suspend fun run(input: CodeModeRunInput): TurnOutcome {
         val key = identity.turnKey(input.turn)
+        val branchKey = identity.branchKey(key, input.body.request?.second)
+        val held = input.post.perf?.timed(PerfKeys.CODE_MODE_TURN_LOCK_WAIT_MS) { locks.acquire(branchKey, key) }
+            ?: locks.acquire(branchKey, key)
+        return try {
+            runHeld(input, key)
+        } finally {
+            locks.release(branchKey, key, held)
+        }
+    }
+
+    private suspend fun resolveTurn(input: CodeModeRunInput, key: String): CodexCodeModeBridge.Turn {
+        val original = input.turn
+        if (original.toolResults.isEmpty()) return original
+        val ids = original.toolResults.mapTo(HashSet()) { it.id }
+        val before = registry.mcpOwners.snapshot(key, original.sessionId, ids)
+        val captured = runInterruptible(ProcessDispatchers().io()) { validation.resolveCallbacks(original, before) }
+        val after = registry.mcpOwners.snapshot(key, original.sessionId, ids)
+        return validation.reconcileCallbacks(original, captured, before, after)
+    }
+
+    private suspend fun runHeld(input: CodeModeRunInput, key: String): TurnOutcome {
         val context = CodeModeRunContext(
-            input.turn,
+            resolveTurn(input, key),
             input.disableParallel,
             key,
             identity.digest(input.body.round),
@@ -97,9 +120,6 @@ internal class CodexCodeModeTurn(
             currentCoroutineContext()[HeadStopKey],
             input.recovery,
         )
-        val branchKey = identity.branchKey(key, input.body.request?.second)
-        val held = input.post.perf?.timed(PerfKeys.CODE_MODE_TURN_LOCK_WAIT_MS) { locks.acquire(branchKey, key) }
-            ?: locks.acquire(branchKey, key)
         val watched = driver.streams.watchCuts(key)
         return try {
             val outcome = try {
@@ -115,12 +135,8 @@ internal class CodexCodeModeTurn(
             registry.contexts.report(key, driver.streams.billCuts(watched, context.postedSources, billed))
         } finally {
             // A refusal or cancellation has no returned outcome, but the cutting turn still owns its perf row.
-            try {
-                val cuts = driver.streams.takeCuts(watched, context.postedSources)
-                input.post.perf?.add(PerfKeys.CUT_SOURCE_ROUNDS, cuts)
-            } finally {
-                locks.release(branchKey, key, held)
-            }
+            val cuts = driver.streams.takeCuts(watched, context.postedSources)
+            input.post.perf?.add(PerfKeys.CUT_SOURCE_ROUNDS, cuts)
         }
     }
 

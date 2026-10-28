@@ -104,6 +104,7 @@ internal class CodexCodeModeRegistry(
         val changed = sweeper.sweep(key, key)
         store.save(records, history.entries, retryOnly = !changed, dirtyKeys = setOf(key))
     }
+    val mcpOwners = queries.mcpOwnership
     val timed = CodeModeTimedSweep(
         monitor,
         records,

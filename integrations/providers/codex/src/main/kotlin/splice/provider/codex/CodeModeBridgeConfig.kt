@@ -2,6 +2,7 @@ package splice.provider.codex
 
 import kotlinx.serialization.json.JsonElement
 import splice.core.util.LogSink
+import splice.provider.codex.callbacks.mcp.CodeModeMcpResults
 import splice.provider.codex.state.lease.CodeModeCellLease
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeResult
@@ -82,6 +83,8 @@ public data class CodeModeStateLocation(
     val journaling: CodeModeJournaling = CodeModeJournaling { true },
     /** Whether an earlier turn's reasoning rides back, asked at each post: replay_reasoning. */
     val replayReasoning: CodeModeReplayReasoning = CodeModeReplayReasoning { true },
+    /** Lossless replies retained by the client's existing permission-checked MCP transport. */
+    val mcpResults: CodeModeMcpResults = CodeModeMcpResults { _, _, _ -> null },
 )
 
 /** V4-179: the two renderings of a turn's code-mode results that the script itself never sees. */
@@ -96,6 +99,9 @@ public data class CodeModeResultRendering(
     val clearedCallbacks: Map<String, CodeModeCall> = emptyMap(),
 ) {
     internal val verifiedCleared: MutableMap<String, MutableSet<String>> = mutableMapOf()
+
+    /** Exact ordinary receipts before transport enrichment, scoped to this request and never persisted. */
+    internal var mcpOriginals: Map<String, CodeModeResult> = emptyMap()
 
     /** Admission still sees all media. Only proved cleared echoes defer to the record's accepted media. */
     internal val replayMedia: Map<String, List<JsonElement>>

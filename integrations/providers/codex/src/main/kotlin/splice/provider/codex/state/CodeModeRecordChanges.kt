@@ -162,12 +162,14 @@ internal class CodeModeRecordChanges(
         clientOutputDigests: Map<String, String>,
     ) = access.withKey(record.key) {
         // The prior issuance is already durable. New results and the worker's next step commit together.
-        CodeModeHeap.grow(record, record.accepted.heapGrowth(supplied, media, clientOutputDigests)) { kept ->
-            record.accepted.kept(kept, supplied)
+        if (records.none { it === record }) return@withKey
+        val fresh = supplied.filterKeys { !record.accepted.holds(it) }
+        CodeModeHeap.grow(record, record.accepted.heapGrowth(fresh, media, clientOutputDigests)) { kept ->
+            record.accepted.kept(kept, fresh)
         }
         record.progress.lastDigest = digest
         record.progress.updatedAt = config.clock.millis()
-        record.accepted.accept(supplied, media, clientOutputDigests)
+        record.accepted.accept(fresh, media, clientOutputDigests)
     }
 
     /** A change the record's next save carries. */

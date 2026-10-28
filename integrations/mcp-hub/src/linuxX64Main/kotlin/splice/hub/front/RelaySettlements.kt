@@ -1,5 +1,6 @@
 package splice.hub.front
 
+import kotlinx.serialization.json.JsonObject
 import splice.hub.holder.HolderControlWire
 import splice.hub.holder.HolderPairProtocol
 import splice.hub.holder.HolderProtocol
@@ -9,15 +10,18 @@ internal class RelaySettlements(
     private val calls: MutableMap<String, WireOutstanding>,
     private val requests: ServerRequests,
     private val persistence: HolderPersistence,
+    private val toolResults: NativeMcpResults,
 ) {
     private val recoveries = HashMap<Holder, HolderRecovery>()
     private val acknowledgements = HolderAcknowledgements()
     private val recoveryCompletion = HolderRecoveryCompletion(calls, requests, persistence)
 
-    fun answered(holder: Holder, key: String): WireOutstanding? {
+    fun answered(holder: Holder, key: String, answer: JsonObject): WireOutstanding? {
         val call = calls[key]
             ?.takeIf { it.holder === holder && it.generation == holder.generation }
             ?: return null
+        // The holder must not discard its durable response until the exact raw reply is captured.
+        toolResults.capture(call.toolResult, answer)
         call.backendSettled = true
         calls.remove(key)
         val persisted = persistence.checkpoint()

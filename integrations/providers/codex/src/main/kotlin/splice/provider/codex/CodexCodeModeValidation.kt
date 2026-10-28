@@ -5,16 +5,33 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.turn.GatewayCustomCall
 import splice.core.util.JsonScalars
+import splice.provider.codex.callbacks.mcp.CodeModeMcpOwner
+import splice.provider.codex.callbacks.mcp.CodeModeMcpReceipts
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeLimits
 import splice.upstream.codemode.CodeModeProtocol
 import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeResultOrigin
 
 internal enum class CodeModeSourceAdmission { PENDING, EXECUTABLE }
 
 internal enum class CodeModeResultMode { RESUME, INTERRUPT }
 
 internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig) {
+    private val mcp = CodeModeMcpReceipts(config.state.mcpResults)
+
+    fun resolveCallbacks(
+        turn: CodexCodeModeBridge.Turn,
+        owners: Map<String, CodeModeMcpOwner>,
+    ): CodexCodeModeBridge.Turn = mcp.resolve(turn, owners)
+
+    fun reconcileCallbacks(
+        original: CodexCodeModeBridge.Turn,
+        captured: CodexCodeModeBridge.Turn,
+        before: Map<String, CodeModeMcpOwner>,
+        after: Map<String, CodeModeMcpOwner>,
+    ): CodexCodeModeBridge.Turn = mcp.reconcile(original, captured, before, after)
+
     fun fitsOutput(value: String): Boolean =
         value.length <= config.bounds.maxOutputChars && CodeModeLimits.fitsText(value)
 
@@ -100,25 +117,46 @@ internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig)
      *  tool results: either way that part of the history is the client's now, and not the running cell's next result.
      *  Its record is not folded, so its client calls go out as Claude Code sent them (fix 2, goal item 3). */
     fun conflicts(record: CodeModeRecord, turn: CodexCodeModeBridge.Turn): Boolean =
-        turn.toolResults.any { conflicts(record, turn, it) || cleared(record, turn, it) }
-
-    private fun cleared(record: CodeModeRecord, turn: CodexCodeModeBridge.Turn, prior: CodeModeResult): Boolean =
-        prior.id in record.results && turn.rendering.verifiedCleared[record.id]?.contains(prior.id) == true
+        turn.toolResults.any { prior ->
+            conflicts(record, turn, prior) ||
+                (prior.id in record.results && turn.rendering.verifiedCleared[record.id]?.contains(prior.id) == true)
+        }
 
     private fun conflicts(record: CodeModeRecord, turn: CodexCodeModeBridge.Turn, prior: CodeModeResult): Boolean {
         val accepted = record.results[prior.id] ?: return false
         val cleared = turn.rendering.verifiedCleared[record.id]?.contains(prior.id) == true
         val media = record.accepted.media(prior.id)
         // Transport disposition is server-owned; an old receipt keeps its original contract on replay.
-        val payload = if (prior.disposition == accepted.disposition) prior.payload else accepted.payload
+        val metadataOnly = retainedGeneric(record, turn, prior, accepted)
+        val payload = if (prior.disposition != accepted.disposition || metadataOnly) {
+            accepted.payload
+        } else {
+            prior.payload
+        }
         val receipt = prior.copy(payload = payload, disposition = accepted.disposition, origin = accepted.origin)
-        val same = accepted == receipt || accepted == receipt.copy(payload = savedCut(receipt.payload))
+        val same = sameSavedValue(accepted, receipt)
         return when {
             cleared -> accepted.isError != prior.isError
             media == null -> !same && accepted != turn.rendering.legacy.firstOrNull { it.id == prior.id }
             else -> !same || media != turn.rendering.media[prior.id].orEmpty()
         }
     }
+
+    /** A sibling's first generic receipt wins; only unchanged ordinary content can gain transport metadata. */
+    private fun retainedGeneric(
+        record: CodeModeRecord,
+        turn: CodexCodeModeBridge.Turn,
+        prior: CodeModeResult,
+        accepted: CodeModeResult,
+    ): Boolean {
+        if (accepted.origin != CodeModeResultOrigin.GENERIC || prior.origin != CodeModeResultOrigin.MCP) return false
+        val original = turn.rendering.mcpOriginals[prior.id]?.takeIf { it.origin == CodeModeResultOrigin.GENERIC }
+            ?: return false
+        return !conflicts(record, turn, original)
+    }
+
+    private fun sameSavedValue(accepted: CodeModeResult, receipt: CodeModeResult): Boolean =
+        accepted == receipt || accepted == receipt.copy(payload = savedCut(receipt.payload))
 
     /** [payload] as admission saved it before Oct 26, 2026, when it cut a tool value whole, its images included. A
      *  result saved that way is the same result replayed now with its images whole, so the upgrade forks nothing. */

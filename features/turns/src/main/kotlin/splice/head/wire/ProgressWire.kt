@@ -55,7 +55,8 @@ internal class ProgressWire(
     // Whether a recovery episode is open: its line was shown and no model content has reached the client since. Read
     // and written under [lock]. It ends with the notice its line went into, which the turn's writer ends before its
     // next block of model content and the ending ends with the turn (final-design.md section 8, rule 5).
-    private var episode = false
+    @Volatile private var episode = false
+    private var heldEpisode = false
 
     /** One `ping` event. The caller holds [lock]. */
     suspend fun pingLocked() {
@@ -66,6 +67,7 @@ internal class ProgressWire(
      *  holds [lock], past every guard, because composing a line consumes the caller's ticker state
      *  (TurnTerminal.progress); a null line writes nothing. */
     suspend fun writeNoticeLocked(line: ProgressLine) {
+        if (heldEpisode) return
         val said = line(notice == null) ?: return
         appendLocked(separated(said), commits = true)
     }
@@ -83,6 +85,7 @@ internal class ProgressWire(
      *  shows a notice when its block closes. The episode stays open, so a hold entered again after a probe that did not
      *  lift it says nothing new. The caller holds [lock]. */
     suspend fun closeEpisodeLocked() {
+        heldEpisode = true
         notice?.let { index ->
             blocks.signatureDelta(index, SpliceNotice.SIGNATURE)
             blocks.closeBlock(index)
@@ -107,7 +110,7 @@ internal class ProgressWire(
      *  when no notice is open, which is nearly always. A notice still being opened at that instant is
      *  not seen, and is ended at the turn's next boundary or its ending instead. */
     suspend fun endNoticeAtBoundary() {
-        if (notice != null) endNotice()
+        if (notice != null || episode) endNotice()
     }
 
     /** End the open notice, if any: splice's own signature after its last delta (Claude Code stores
@@ -122,6 +125,7 @@ internal class ProgressWire(
             }
             notice = null
             episode = false
+            heldEpisode = false
         }
     }
 }

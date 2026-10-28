@@ -168,7 +168,7 @@ internal class SseEmitter(
         if (held) return
         if (!start.hasOpened) return
         progress.lock.withLock {
-            if (seal.get() == SealState.OPEN) progress.writeNoticeLocked(line)
+            if (seal.get() == SealState.OPEN && !held) progress.writeNoticeLocked(line)
         }
     }
 

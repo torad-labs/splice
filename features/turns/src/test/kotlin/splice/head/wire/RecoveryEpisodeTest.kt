@@ -12,14 +12,19 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.failure.FailureCause
+import splice.core.failure.Lift
+import splice.core.failure.LiftSource
+import splice.core.failure.LimitWindow
 import splice.core.failure.QuietTurn
 import splice.core.failure.Recovery
 import splice.core.failure.ServerFault
 import splice.core.failure.WaitLine
 import splice.core.turn.Usage
 import splice.head.testVoice
+import java.time.Instant
 
 class RecoveryEpisodeTest {
     private val frames = mutableListOf<String>()
@@ -93,6 +98,31 @@ class RecoveryEpisodeTest {
             lines(),
             "the episode silences repeated failures, never the heartbeat",
         )
+    }
+
+    @Test
+    fun `a hold keeps its one finished notice through retry until model content opens a new episode`() = runTest {
+        val reset = Instant.parse("2026-10-27T12:10:00Z")
+        val hold = WaitLine(
+            FailureCause.Provider.Limited(Lift.At(reset, true, LiftSource.RESET_HEADER), LimitWindow.FIVE_HOUR),
+            Recovery.Hold(reset, false),
+        )
+        emitter.recovering(hold)
+        emitter.holding(true)
+        emitter.progress { fresh -> testVoice.quiet(QuietTurn(30_000, answering = false, again = !fresh)) }
+        emitter.heartbeat()
+        emitter.holding(false)
+        emitter.progress { fresh -> testVoice.quiet(QuietTurn(600_000, answering = false, again = !fresh)) }
+        emitter.heartbeat()
+
+        val held = testVoice.waiting(hold.cause, hold.next).text
+        assertEquals(listOf(held), lines())
+        assertTrue(frames.any { it.startsWith("event: ping") }, frames.toString())
+
+        val answer = emitter.openText()
+        emitter.textDelta(answer, "the answer after the reset")
+        emitter.recovering(midAnswer)
+        assertEquals(listOf(held, testVoice.waiting(midAnswer.cause, midAnswer.next).text), lines())
     }
 
     @Test

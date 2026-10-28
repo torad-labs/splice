@@ -41,25 +41,45 @@ export function assertCandidateClientOrigin(row: any, expectedJar: string, class
   assert.equal(row.classpath, classpath, "candidate classpath contains an overlay or unbound dependency");
 }
 function byteOffset(bytes: Uint8Array, line: number, column: number): number {
+  assert.ok(Number.isSafeInteger(line)&&line>0&&Number.isSafeInteger(column)&&column>0,"LLVM entry is not an exact source position");
   let current = 1, offset = 0; while (current < line && offset < bytes.length) if (bytes[offset++] === 10) current++;
-  assert.equal(current, line, "LLVM entry is beyond the pinned source file"); return offset + column - 1;
+  assert.equal(current, line, "LLVM entry is beyond the pinned source file");
+  const end=bytes.indexOf(10,offset),limit=end<0?bytes.length:end;
+  assert.ok(offset+column-1<=limit,"LLVM entry column exceeds its exact source line");return offset+column-1;
 }
-export async function llvmSourceEntries(exported: any, inventory: CurrentInventory, sourceDirectory: string, sourceRepository: string): Promise<{ linked: FunctionWitness[]; mappings: any[] }> {
-  const units = inventory.units.filter(unit => unit.kind === "function_item"), source = new Map<string, Buffer>(), mappings: any[] = [];
+export type GeneratedMacroBodyEntry = { kind:"generated-macro-body"; macro:{id:string;sha256:string}; function:string;count:number;entryRegion:number[];
+  file:string;start:number;end:number;fileSha256:string;behavioralCoverage:false };
+export type SourceEntryMappings = { linked:FunctionWitness[];mappings:any[];generatedMacroBodies:GeneratedMacroBodyEntry[] };
+export async function llvmSourceEntries(exported: any, inventory: CurrentInventory, sourceDirectory: string, sourceRepository: string): Promise<SourceEntryMappings> {
+  const units = inventory.units.filter(unit => unit.kind === "function_item"), macros=inventory.units.filter(unit=>unit.kind==="macro_definition"),
+    files=new Set(inventory.files.map(file=>file.path)),source = new Map<string, Buffer>(), mappings: any[] = [],generatedMacroBodies:GeneratedMacroBodyEntry[]=[];
   for (const section of exported.data ?? []) for (const function_ of section.functions ?? []) {
     if (!(function_.count > 0)) continue;
     const entry = function_.regions.find((region: number[]) => region[7] === 0); if (!entry) continue;
     const rawFilename = function_.filenames[entry[5]]; if (typeof rawFilename !== "string") continue;
     const filename = resolve(rawFilename), prefix = resolve(sourceDirectory) + "/"; if (!filename.startsWith(prefix)) continue;
-    const file = filename.slice(prefix.length); if (!units.some(unit => unit.file === file)) continue;
-    if (!source.has(file)) { const read = await capturedCommand(["git", "-C", sourceRepository, "show", `${inventory.sourceRevision}:${file}`], import.meta.dir); assert.equal(read.exitCode, 0); source.set(file, Buffer.from(read.stdout)); }
+    const file = filename.slice(prefix.length); if (!files.has(file)) continue;
+    if (!source.has(file)) {
+      const pins=inventory.files.filter(item=>item.path===file);assert.equal(pins.length,1,"LLVM source file identity is ambiguous");
+      const read = await capturedCommand(["git", "-C", sourceRepository, "show", `${inventory.sourceRevision}:${file}`], import.meta.dir); assert.equal(read.exitCode, 0);
+      const bytes=Buffer.from(read.stdout);assert.equal(sha256(bytes),pins[0]!.sha256,"LLVM immutable source file hash differs");source.set(file,bytes);
+    }
     const bytes = source.get(file)!, start = byteOffset(bytes, entry[0], entry[1]), end = byteOffset(bytes, entry[2], entry[3]);
+    assert.ok(start<end,"LLVM entry has no positive exact source span");
+    const generated=macros.filter(unit=>unit.file===file&&unit.start<=start&&end<=unit.end);
+    if(generated.length){
+      assert.equal(generated.length,1,`positive project-local LLVM function has ambiguous macro body mapping: ${file}:${start}-${end}`);
+      const macro=generated[0]!;assert.equal(sha256(bytes.subarray(macro.start,macro.end)),macro.sha256,"LLVM macro definition bytes differ");
+      generatedMacroBodies.push({kind:"generated-macro-body",macro:{id:macro.id,sha256:macro.sha256},function:function_.name,count:function_.count,
+        entryRegion:[...entry],file,start,end,fileSha256:sha256(bytes),behavioralCoverage:false});
+      continue;
+    }
     const unit = units.filter(unit => unit.file === file && unit.start <= start && end <= unit.end).sort((a, b) => (a.end - a.start) - (b.end - b.start))[0];
     assert.ok(unit, `positive project-local LLVM function has no exact AST body mapping: ${file}:${start}-${end}`);
     assert.equal(sha256(bytes.subarray(unit.start, unit.end)), unit.sha256); assert.equal(sha256(bytes), inventory.files.find(item => item.path === file)?.sha256);
     mappings.push({ id: unit.id, sha256: unit.sha256, function: function_.name, count: function_.count, entryRegion: entry, start, end, fileSha256: sha256(bytes) });
   }
-  return { linked: [...new Map(mappings.map(item => [item.id, { id: item.id, sha256: item.sha256 }])).values()].sort((a, b) => a.id.localeCompare(b.id)), mappings };
+  return { linked: [...new Map(mappings.map(item => [item.id, { id: item.id, sha256: item.sha256 }])).values()].sort((a, b) => a.id.localeCompare(b.id)), mappings,generatedMacroBodies };
 }
 async function checkedBytes(proof: Artifact): Promise<Buffer> { const bytes = await readFile(proof.path); assert.equal(bytes.length, proof.bytes); assert.equal(sha256(bytes), proof.sha256); return bytes; }
 /** Re-run the profile decoder/exporter against the bound executable; stored positive JSON counts cannot authorize credit. */
@@ -113,6 +133,7 @@ export async function clientWitnessFindings(cases: ClientCaseWitness[], inventor
       const derived = await llvmSourceEntries(JSON.parse(exported.stdout), inventory, build.sourceDirectory, build.sourceRepository);
       const saved = await llvmSourceEntries(JSON.parse(decoded.toString()), inventory, build.sourceDirectory, build.sourceRepository);
       assert.deepEqual(saved, derived, "saved LLVM function-entry mappings disagree with actual binary/profile export");
+      assert.deepEqual(JSON.parse((await checkedBytes(profile.mappings)).toString()),derived,"saved source mapping audit differs from the reproduced LLVM mappings");
       assert.deepEqual(witness.referenceFunctions, derived.linked, "claimed source function was not entered by this named case");
     } finally { await (await import("node:fs/promises")).rm(merged, { force: true }); }
   } catch (error) { findings.push(`${witness.caseId}: invalid actual-client witness: ${error instanceof Error ? error.message : String(error)}`); }

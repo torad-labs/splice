@@ -82,7 +82,7 @@ function offset(bytes: Buffer, line: number, column: number): number {
   let at = 0, current = 1; while (current < line && at < bytes.length) if (bytes[at++] === 10) current++;
   assert.equal(current, line); return at + column - 1;
 }
-export async function apiSourceEntries(exported: any, inventory: CurrentInventory, build: Pick<ApiBuildProof, "sourceDirectory" | "sourceRepository" | "extractions">): Promise<{ linked: FunctionWitness[]; mappings: any[] }> {
+export async function apiSourceEntries(exported: any, inventory: CurrentInventory, build: Pick<ApiBuildProof, "sourceDirectory" | "sourceRepository" | "extractions">): ReturnType<typeof llvmSourceEntries> {
   const result = await llvmSourceEntries(exported, inventory, build.sourceDirectory, build.sourceRepository);
   for (const extraction of build.extractions) {
     const local = await readFile(extraction.localFile), original = await readFile(extraction.original.path);
@@ -140,6 +140,7 @@ export async function apiWitnessFindings(cases: ApiCaseWitness[], inventory: Cur
       const exported = await capturedCommand([build.tools.cov.path, "export", build.binary.path, `-instr-profile=${merged}`, "-skip-expansions"], import.meta.dir, undefined, 180_000); assert.equal(exported.exitCode, 0, exported.stderr);
       const derived = await apiSourceEntries(JSON.parse(exported.stdout), inventory, build), stored = await apiSourceEntries(JSON.parse(saved.toString()), inventory, build);
       assert.deepEqual(stored, derived, "actual-crate source counters disagree with executable/profile"); assert.deepEqual(witness.referenceFunctions, derived.linked);
+      assert.deepEqual(JSON.parse((await checked(profile.mappings)).toString()),derived,"actual-crate source mapping audit differs from the reproduced LLVM mappings");
     } finally { await rm(merged, { force: true }); }
   } catch (error) { findings.push(`${witness.caseId}: invalid actual-crate API witness: ${error instanceof Error ? error.message : String(error)}`); }
   for (const plan of plans) if (!seen.has(plan.caseId)) findings.push(`mandatory actual-crate API batch was omitted: ${plan.caseId}`);

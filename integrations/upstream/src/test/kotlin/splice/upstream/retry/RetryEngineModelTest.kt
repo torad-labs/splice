@@ -533,13 +533,18 @@ class RetryEngineModelTest {
     fun `every sequence ends within 24 attempts outside holds`() {
         val long = Random(7).let { random ->
             List(SEQUENCES) {
+                val facts = Failures(random).facts()
                 val met = Met(
                     FailureCause.Path.Torn(Tear.RESET, toolOpen = false),
                     Position(Moment.MID_CONTENT, streamBegan = true),
-                    Failures(random).facts().copy(canContinue = true, wallLeftMs = Long.MAX_VALUE),
+                    facts.copy(canContinue = true, deadlines = facts.deadlines.copy(wallLeftMs = Long.MAX_VALUE)),
                 )
                 val mixed = Failures(random).sequence()
-                    .map { it.copy(facts = it.facts.copy(wallLeftMs = Long.MAX_VALUE)) }
+                    .map {
+                        it.copy(
+                            facts = it.facts.copy(deadlines = it.facts.deadlines.copy(wallLeftMs = Long.MAX_VALUE)),
+                        )
+                    }
                 run(mixed + List(LONGEST) { met } + mixed, random)
             }
         }

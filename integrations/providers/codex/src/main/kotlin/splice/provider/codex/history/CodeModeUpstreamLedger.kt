@@ -2,10 +2,12 @@ package splice.provider.codex.history
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.history.durable.CodeModeHistoryDeltas
 import splice.provider.codex.history.durable.CodeModeHistoryPrepared
 import splice.provider.codex.history.durable.CodeModeHistoryState
 import splice.provider.codex.history.durable.CodeModeHistoryStorage
+import splice.provider.codex.history.notification.CodeModeNotificationInputs
 import java.util.concurrent.ConcurrentHashMap
 
 /** Exact model input and the client prefix it acknowledged. Echoes are delivery receipts, never model authority. */
@@ -56,6 +58,23 @@ internal class CodeModeUpstreamLedger(
             val base = prior.posts.firstOrNull { it.id == id } ?: return@synchronized
             if (base.outputRecorded) return@synchronized
             val next = base.copy(sent = base.sent + output, echoes = base.echoes + echoes, outputRecorded = true)
+            val state = prior.copy(revision = prior.revision + 1L)
+            val prepared = CodeModeHistoryDeltas.prepare(state, next, base)
+            val posts = prior.posts.map { if (it.id == id) prepared.entry else it }
+            publish(state.copy(posts = posts), prepared, prior.memoryBytes)
+        }
+
+    /** Accepted asynchronous input extends this exact branch without finishing or replacing its model response. */
+    fun inject(key: String, id: Long, record: CodeModeRecord) =
+        synchronized(keyLocks.computeIfAbsent(key) { Any() }) {
+            val prior = state(key) ?: return@synchronized
+            val base = prior.posts.firstOrNull { it.id == id } ?: return@synchronized
+            val missing = CodeModeNotificationInputs.missing(base.sent, listOf(record))
+            if (missing.isEmpty()) return@synchronized
+            val next = base.copy(
+                sent = base.sent + missing,
+                echoes = base.echoes + CodeModeNotificationInputs.echoes(missing),
+            )
             val state = prior.copy(revision = prior.revision + 1L)
             val prepared = CodeModeHistoryDeltas.prepare(state, next, base)
             val posts = prior.posts.map { if (it.id == id) prepared.entry else it }

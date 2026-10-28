@@ -77,7 +77,7 @@ internal class CodexCodeModeTurn(
             input.recovery,
         )
         val watched = driver.streams.watchCuts(key)
-        val notificationOwner = registry.notifications.open(context)
+        val notificationOwner = registry.notifications.open(context, driver.sent.notifications)
         return try {
             val outcome = try {
                 // An identical request is served before retention can trim its recorded step.

@@ -33,7 +33,16 @@ internal data class CodeModeRunContext(
     var conflicts: Set<String> = emptySet()
 
     /** A sibling may post concurrently, so continuation follows this step's own post. */
-    var postId: Long? = null
+    val postPosition = CodeModePostPosition()
+    var postId: Long?
+        get() = synchronized(postPosition.monitor) { postPosition.id }
+        set(value) = synchronized(postPosition.monitor) { postPosition.id = value }
+}
+
+/** One branch's captured-post cursor and asynchronous injections advance under the same ownership hold. */
+internal class CodeModePostPosition {
+    val monitor = Any()
+    var id: Long? = null
 }
 
 /** Delivery and posting capabilities attached to the client request, including resumed sinks. */

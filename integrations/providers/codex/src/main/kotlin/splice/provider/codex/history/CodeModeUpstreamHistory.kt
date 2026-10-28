@@ -15,6 +15,8 @@ import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeHistoryCodec
 import splice.provider.codex.history.durable.CodeModeHistoryStorage
+import splice.provider.codex.history.notification.CodeModeHistoryNotifications
+import splice.provider.codex.history.notification.CodeModeNotificationInputs
 import splice.provider.codex.stream.batch.CodeModeBatchHistory
 import splice.provider.codex.stream.batch.CodeModeBatchLinks
 import splice.upstream.RoundBody
@@ -40,6 +42,7 @@ internal class CodeModeUpstreamHistory(
         cacheBytes = cacheBytes,
     )
     private val clientDelta = CodeModeClientDelta(codec)
+    val notifications = CodeModeHistoryNotifications(ledger)
     private val durableClears = CodeModeDurableClears(ledger, clientDelta)
     private val scripts = CodeModeScriptPlacements(codec)
     private val clientStep = CodeModeClientStep(codec, scripts)
@@ -134,23 +137,29 @@ internal class CodeModeUpstreamHistory(
     /** Keeps [body] as what [context]'s conversation last sent, as it is posted. A recovery's post is kept too: the
      *  partial and the marker it covers are the head's own, so the client's next request extends the post of the round
      *  it tore, and a script started in the recovery follows the post it started on. */
-    fun sent(context: CodeModeRunContext, body: CodeModeBody) {
+    fun sent(context: CodeModeRunContext, body: CodeModeBody) = synchronized(context.postPosition.monitor) {
         val client = context.client?.request?.second
         val posted = body.request?.second
         if (client == null || posted == null) {
             ledger.forget(context.key)
             context.postId = null
-            return
+            return@synchronized
         }
         val observed = client.subList(clientStep.preambleCount(client), client.size)
         val proof = CodeModeCallbackReceipts.proof(context)
         val prior = ledger.entries(context.key).firstOrNull { clientDelta.after(it, observed, proof) != null }
         val covered = prior?.let { clientDelta.normalized(it, observed, proof) } ?: observed
         val conversation = posted.subList(clientStep.preambleCount(posted), posted.size)
+        val pending = CodeModeNotificationInputs.missing(conversation, context.completed)
         val callbacks = CodeModeCallbackReceipts.capture(context, covered, prior?.callbacks.orEmpty())
         context.postId = ledger.record(
             context.key,
-            CodeModeLedgerEntry(covered, conversation, body.echoes, callbacks = callbacks),
+            CodeModeLedgerEntry(
+                covered,
+                conversation + pending,
+                body.echoes + CodeModeNotificationInputs.echoes(pending),
+                callbacks = callbacks,
+            ),
             prior?.id,
         )
     }

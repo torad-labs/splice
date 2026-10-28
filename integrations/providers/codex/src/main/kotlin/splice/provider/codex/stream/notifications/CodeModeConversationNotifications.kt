@@ -10,6 +10,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext
+import splice.provider.codex.history.notification.CodeModeHistoryNotifications
 import splice.provider.codex.state.CodeModeTurnIdentity
 import splice.provider.codex.state.notification.CodeModeNotificationRecords
 import splice.upstream.codemode.CodeModeText
@@ -25,13 +26,17 @@ internal class CodeModeConversationNotifications(private val records: CodeModeNo
     private val owners = IdentityHashMap<CodeModeRunContext, CodeModeNotificationOwner>()
     private val preferred = mutableMapOf<Pair<String, String>, CodeModeNotificationToken>()
 
-    suspend fun open(context: CodeModeRunContext): CodeModeNotificationOwner {
+    suspend fun open(
+        context: CodeModeRunContext,
+        history: CodeModeHistoryNotifications? = null,
+    ): CodeModeNotificationOwner {
         val owner =
             CodeModeNotificationOwner(
                 CodeModeNotificationToken(),
                 identity.conversationId(context.turn),
                 context,
                 currentCoroutineContext().job,
+                history,
             )
         synchronized(monitor) {
             check(owners[context] == null) { "Notification request owner was already active" }
@@ -97,6 +102,7 @@ internal class CodeModeConversationNotifications(private val records: CodeModeNo
                     owner.mutex.withLock {
                         if (!owner.active || !owner.job.isActive) return@withLock refused
                         if (!records.append(record, owner.context.turn.sessionId, notification)) return@withLock refused
+                        owner.history?.inject(owner.context, record)
                         persisted = true
                         owner.context.link.sink.addTextBlock(notification.text)
                         NativeCodeModeNotificationDelivery.Delivered

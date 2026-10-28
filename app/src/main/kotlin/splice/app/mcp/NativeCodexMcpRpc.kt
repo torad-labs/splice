@@ -4,6 +4,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import splice.core.util.LogSink
+import splice.core.util.SecureFile
 import splice.upstream.codemode.ProcessDispatchers
 import java.io.IOException
 import java.nio.file.Path
@@ -23,22 +24,7 @@ internal class NativeCodexMcpRpc(private val log: LogSink) {
         launch: LaunchContext,
         initializeTimeoutMs: Long,
     ): NativeCodexMcpRpcSession? {
-        val process = try {
-            withContext(NonCancellable + ioDispatcher) {
-                ProcessBuilder(launch.command)
-                    .apply {
-                        launch.cwd?.let { directory(it.toFile()) }
-                        environment().putAll(launch.environment)
-                        environment()["CODEX_HOME"] = home.toString()
-                        redirectError(ProcessBuilder.Redirect.DISCARD)
-                    }
-                    .start()
-            }
-        } catch (_: IOException) {
-            return null
-        } catch (_: SecurityException) {
-            return null
-        }
+        val process = start(home, launch) ?: return null
 
         val session = NativeCodexMcpRpcSession(process, ioDispatcher, log)
         return try {
@@ -55,6 +41,27 @@ internal class NativeCodexMcpRpc(private val log: LogSink) {
             null
         }
     }
+
+    private suspend fun start(home: Path, launch: LaunchContext): Process? =
+        try {
+            withContext(NonCancellable + ioDispatcher) {
+                // Codex rejects an explicit home before initialize when a fresh account has no directory yet.
+                // Prepare it owner-only before the native process can write config or credentials into it.
+                if (SecureFile.ownerOnlyDirectory(home) != null) return@withContext null
+                ProcessBuilder(launch.command)
+                    .apply {
+                        launch.cwd?.let { directory(it.toFile()) }
+                        environment().putAll(launch.environment)
+                        environment()["CODEX_HOME"] = home.toString()
+                        redirectError(ProcessBuilder.Redirect.DISCARD)
+                    }
+                    .start()
+            }
+        } catch (_: IOException) {
+            null
+        } catch (_: SecurityException) {
+            null
+        }
 }
 
 internal fun interface NativeCodexMcpBlockingOperation<T> {

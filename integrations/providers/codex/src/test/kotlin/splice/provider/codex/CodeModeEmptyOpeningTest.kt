@@ -10,7 +10,6 @@ import org.junit.jupiter.api.Test
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
-import splice.core.client.AgentConversationKey
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicParse
@@ -19,7 +18,6 @@ import splice.core.turn.WatchdogBudget
 import splice.core.util.JsonWire
 import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesLiteQuirks
-import splice.provider.codex.state.CodeModeTurnIdentity
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
@@ -62,9 +60,12 @@ class CodeModeEmptyOpeningTest : CodeModeBridgeTestSupport() {
         assertNotEquals(callbacks[0], callbacks[1])
         assertNotEquals(callbacks[0], callbacks[2])
         assertNotEquals(callbacks[1], callbacks[2])
-        val expected = listOf("agent-a", "agent-b", null).map { agent ->
-            CodeModeTurnIdentity().conversationId("session", AgentConversationKey.of("", agent))
-        }.toSet()
+        // Existing persisted turn keys include the model, unlike conversation IDs. Pin the legacy values.
+        val expected = setOf(
+            "d01f2a2f825ceba3269318540cea3c691c8edc87e8254a5c061e66385ea15bd7",
+            "381fb047aecffb9a68e851752e363f8205fee32b8eb8b5bf3c175840538d11c4",
+            "c952de695090e70ba0b924c7a95e72b96f307202e75405352ad5272379036819",
+        )
         assertEquals(expected, stateFiles.records().map { it.getValue("key").jsonPrimitive.content }.toSet())
         provider.onHeadStop()
     }

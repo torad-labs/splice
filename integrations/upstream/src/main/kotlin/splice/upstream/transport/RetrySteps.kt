@@ -162,7 +162,7 @@ internal class RetrySteps(
     ): LoopStep<Nothing> {
         val ledger = state.ledger
         val now = wall()
-        ledger.held(step.until, now)
+        ledger.held(step.until, now, asked.cause)
         val ask = HoldAsk(asked.cause, asked.at, step.until, step.probes, ledger.login, ledger.heldSinceMs ?: now)
         return when (state.retry.waits.hold(ask)) {
             HoldEnd.RESUME -> {

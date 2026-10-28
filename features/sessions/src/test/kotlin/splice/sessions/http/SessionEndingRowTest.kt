@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.perf.OutcomeTag
 import java.nio.file.Path
 
 class SessionEndingRowTest {
@@ -59,5 +60,20 @@ class SessionEndingRowTest {
 
         assertFalse(listed.getValue(LEAD).getValue("ended_by").jsonObject.containsKey("reset_ms"))
         assertFalse(listed.getValue(BUILDER).containsKey("ended_by"))
+    }
+
+    @Test
+    fun `a restarted hold can name its resume time without inventing a spent-window reset`() {
+        val resume = 1_791_700_000_000L
+        val restarted = SessionEnding(
+            OutcomeTag.RESTARTED.wire,
+            "Torad",
+            resetMs = null,
+            atMs = 1_791_690_000_000,
+            recovery = SessionEndingRecovery(resumeAtMs = resume),
+        )
+        val ended = rows(mapOf(LEAD to restarted)).getValue(LEAD).getValue("ended_by").jsonObject
+        assertEquals(resume, ended.getValue("resume_at_ms").jsonPrimitive.long)
+        assertFalse(ended.containsKey("reset_ms"))
     }
 }

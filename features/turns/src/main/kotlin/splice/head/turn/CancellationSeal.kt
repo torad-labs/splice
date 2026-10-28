@@ -18,7 +18,6 @@ import splice.core.failure.FailureCause
 import splice.core.failure.StoppedBy
 import splice.core.perf.OutcomeTag
 import splice.core.perf.OutcomeTags
-import splice.core.perf.PerfKeys
 import splice.core.util.LogSink
 import splice.head.HeadHealthCounters
 import splice.upstream.Provider
@@ -72,9 +71,7 @@ internal class CancellationSeal(
      *  [cause] preserves the owner of the cut, including the operator's permanent stop ([endingOf]). */
     suspend fun seal(drive: TurnDrive, seal: Boolean, cause: Throwable) {
         if (isRestart(cause)) {
-            drive.retry?.ledger?.resumeAt?.epochSecond?.let { reset ->
-                drive.perf.setCount(PerfKeys.EARLIEST_RESET_EPOCH_SECONDS, reset)
-            }
+            telemetry.recordHeldTimes(drive)
         }
         // Flat when (not nested if) so the still-connected try/catch stays shallow:
         // catch → if(seal) → if(clientGone) → try would trip NestedBlockDepth's depth-4 ceiling.

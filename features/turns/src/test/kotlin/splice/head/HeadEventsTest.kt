@@ -132,14 +132,21 @@ class HeadEventsTest(@param:TempDir private val root: Path) {
 
     @Test
     fun `a turn refused locally still starts and ends, keyed by its refusal row`() = runBlocking {
-        val rig = Rig(root)
+        val rig = Rig(root, credentialsPresent = false)
         try {
             rig.start()
-            rig.exhaustAll()
-            rig.turn()
+            val refused = rig.turn()
+            assertEquals(403, refused.first)
+            assertEquals(
+                "permission_error",
+                Json.parseToJsonElement(
+                    refused.second,
+                ).jsonObject.getValue("error").jsonObject.getValue("type").jsonPrimitive.content,
+            )
             val row = rig.perfRows(1).single()
             assertTrue(row.second.startsWith("error:"), "the rig must reach a LOCAL refusal row, got ${row.second}")
             assertEquals(listOf("start $SESSION", "end ${row.first} ${row.second} $SESSION"), rig.events.turnCalls())
+            assertEquals(0, rig.upstreamCalls, "missing credentials refuse the turn before any provider request")
         } finally {
             rig.close()
         }
@@ -197,7 +204,7 @@ private fun afterSendMessage(lastUser: String): String =
         """{"type":"tool_result","tool_use_id":"toolu_b","content":"sent"},{"type":"text","text":"$lastUser"}]}]"""
 
 /** One codex head on a mock upstream with a two-account pool, reporting to [events]. */
-private class Rig(root: Path) {
+private class Rig(root: Path, private val credentialsPresent: Boolean = true) {
     val events = RecordingEvents()
     private val tmp: Path = Files.createDirectory(root.resolve(UUID.randomUUID().toString()))
     private val mock = MockChatGptUpstream()
@@ -205,11 +212,11 @@ private class Rig(root: Path) {
     private val perfFile = tmp.resolve("perf.jsonl")
     private val primaryQuota = QuotaTracker(tmp.resolve("primary-quota.json"))
     private val backupQuota = QuotaTracker(tmp.resolve("backup-quota.json"))
-    private val primaryAuth = RigAuth("primary-token", "primary-id")
+    private val primaryAuth = RigAuth("primary-token", "primary-id", credentialsPresent)
     private val pool = AccountPool(
         listOf(
             account("primary", true, primaryAuth, primaryQuota),
-            account("backup", false, RigAuth("backup-token", "backup-id"), backupQuota),
+            account("backup", false, RigAuth("backup-token", "backup-id", credentialsPresent), backupQuota),
         ),
         WallClock(System::currentTimeMillis),
     )
@@ -236,8 +243,8 @@ private class Rig(root: Path) {
         awaitListening(port)
     }
 
-    suspend fun turn(messages: String = """[{"role":"user","content":"go"}]""") {
-        client.post("http://127.0.0.1:$port/v1/messages") {
+    suspend fun turn(messages: String = """[{"role":"user","content":"go"}]"""): Pair<Int, String> {
+        val response = client.post("http://127.0.0.1:$port/v1/messages") {
             header("Content-Type", "application/json")
             header("x-claude-code-session-id", SESSION)
             setBody(
@@ -245,13 +252,11 @@ private class Rig(root: Path) {
                     "system":"You are a test. SCENARIO:basic",
                     "messages":$messages}""",
             )
-        }.bodyAsText()
+        }
+        return response.status.value to response.bodyAsText()
     }
 
-    fun exhaustAll() {
-        // Only an explicit provider pushback refuses admission; percentages are ordering hints.
-        pool.members.forEach { it.cooldown.markUnavailable(60_000L) }
-    }
+    val upstreamCalls: Int get() = mock.upstreamBodies.size
 
     /** The perf rows of TURNS the head wrote, as (ts, outcome), once [count] of them have landed and been
      *  announced. The head's own answer to the activity side query leaves a row too, marked a local step, and is
@@ -292,7 +297,7 @@ private class Rig(root: Path) {
             auth = auth,
             quota = AccountQuotaSource(tracker::snapshot),
             cooldown = RateLimitCooldown(ProcessElapsedNow()),
-            credentialPresent = true,
+            credentialPresent = credentialsPresent,
         )
 
     private fun quota(used: Double): QuotaSnapshot {
@@ -322,8 +327,12 @@ private class Rig(root: Path) {
     )
 }
 
-private class RigAuth(private val token: String, private val accountId: String) : RefreshableAuthProvider {
-    override suspend fun credentials(): Credentials = Credentials.Bearer(token, accountId)
-    override suspend fun refresh(): Credentials = credentials()
-    override suspend fun describe(): AuthDescription = AuthDescription(true, "test")
+private class RigAuth(
+    private val token: String,
+    private val accountId: String,
+    private val present: Boolean,
+) : RefreshableAuthProvider {
+    override suspend fun credentials(): Credentials? = if (present) Credentials.Bearer(token, accountId) else null
+    override suspend fun refresh(): Credentials? = credentials()
+    override suspend fun describe(): AuthDescription = AuthDescription(present, "test")
 }

@@ -50,6 +50,11 @@ public class RetryLedger {
     internal var heldUntil: Instant? = null
         private set
 
+    private var heldFailure: FailureCause? = null
+
+    /** The provider fact behind the current stated hold, retained without turning a probe deadline into a reset. */
+    public val heldCause: FailureCause? get() = heldFailure.takeIf { holding && heldUntil != null }
+
     /** The stated reset retained while a held turn is interrupted, so restart recovery can wake its session. */
     public val resumeAt: Instant? get() = heldUntil.takeIf { holding }
 
@@ -57,6 +62,7 @@ public class RetryLedger {
     public fun served() {
         holding = false
         heldUntil = null
+        heldFailure = null
     }
 
     /** How many times a stated reset passed without its cause lifting. */
@@ -67,9 +73,10 @@ public class RetryLedger {
     private var holding = false
 
     /** A hold until [until] began at [nowMs]. */
-    internal fun held(until: Instant?, nowMs: Long) {
+    internal fun held(until: Instant?, nowMs: Long, cause: FailureCause? = null) {
         if (heldSinceMs == null) heldSinceMs = nowMs
         heldUntil = until
+        heldFailure = cause
         holding = true
     }
 
@@ -93,6 +100,7 @@ public class RetryLedger {
     public fun took(step: RetryStep, cause: FailureCause) {
         holding = false
         heldUntil = null
+        heldFailure = null
         val spend = RetryEngine.spendOf(step, cause, this)
         spent[spend.ordinal] += 1
         if (step is RetryStep.Again) waitedMs[spend.ordinal] += step.afterMs

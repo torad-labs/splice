@@ -23,10 +23,13 @@ public data class SessionEnding(
     val atMs: Long,
     val head: String? = null,
     val retries: Long = 0,
-    val runSinceMs: Long? = null,
+    val recovery: SessionEndingRecovery = SessionEndingRecovery(),
 ) {
+    public val runSinceMs: Long? get() = recovery.runSinceMs
+
     /** A held request cut by restart can be taken up at its retained reset. */
-    public val resumeAtMs: Long? get() = resetMs.takeIf { outcome == OutcomeTag.RESTARTED.wire }
+    public val resumeAtMs: Long? get() = (recovery.resumeAtMs ?: resetMs)
+        .takeIf { outcome == OutcomeTag.RESTARTED.wire }
 
     internal fun json() = buildJsonObject {
         put("outcome", outcome)
@@ -37,6 +40,12 @@ public data class SessionEnding(
         runSinceMs?.let { put("run_since_ms", it) }
     }
 }
+
+/** The refusal run's beginning and a restart's retained wake time, independently of quota reset reporting. */
+public data class SessionEndingRecovery(
+    val runSinceMs: Long? = null,
+    val resumeAtMs: Long? = null,
+)
 
 /** The daemon's newest ending per session, read per row. Null = nothing holds the session back. */
 public fun interface SessionEndingOf {

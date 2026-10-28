@@ -81,6 +81,7 @@ private fun usageLimitBody(reset: Long) =
         """"resets_in_seconds":$SIX_DAYS_S,"limit_window_minutes":10080}}"""
 
 private const val BURST_BODY = """{"error":{"type":"rate_limit_exceeded","message":"slow down"}}"""
+private const val BURST_RETRY_AFTER_S = 90
 
 /** A client timeout too short to hold any limit, so a limit is handed to the client rather than held. */
 private const val SHORT_WALL_MS = 10_000L
@@ -194,6 +195,10 @@ private fun JsonObject.resetCounted(): Long? = get("perf")?.jsonObject
     ?.get("counters")?.jsonObject
     ?.get(PerfKeys.EARLIEST_RESET_EPOCH_SECONDS)?.jsonPrimitive?.content?.toLong()
 
+private fun JsonObject.resumeCounted(): Long? = get("perf")?.jsonObject
+    ?.get("counters")?.jsonObject
+    ?.get(PerfKeys.RESUME_AT_EPOCH_SECONDS)?.jsonPrimitive?.content?.toLong()
+
 /** How long this row says the spent window is, null when it says nothing. The console names the window from it
  *  ("Week") instead of showing a bare "At limit" (V4-444). */
 private fun JsonObject.windowCounted(): Long? = get("perf")?.jsonObject
@@ -253,13 +258,15 @@ class PlanLimitTurnEndingTest {
     fun `a burst 429 that names no reset ends rate-limited on every turn`(
         @TempDir tmp: Path,
     ) = runBlocking {
-        val head = LimitedHead(tmp, BURST_BODY, retryAfterSeconds = 90)
+        val head = LimitedHead(tmp, BURST_BODY, retryAfterSeconds = BURST_RETRY_AFTER_S)
+        val sentAt = System.currentTimeMillis() / 1_000
         head.start()
         val (read, endings) = try {
             listOf(head.turn().bodyAsText(), head.turn().bodyAsText()) to head.endings()
         } finally {
             head.close()
         }
+        val finishedAt = System.currentTimeMillis() / 1_000
 
         assertEquals(listOf("error:rate-limited", "error:rate-limited"), endings.map { it.outcome() })
         val said = linesRead(read)
@@ -271,6 +278,9 @@ class PlanLimitTurnEndingTest {
         endings.forEach { ending ->
             assertNull(ending.resetCounted(), "a burst with no reset counts none, so no surface can invent one")
             assertNull(ending.windowCounted(), "and no window either: a burst spends none")
+            val resume =
+                requireNotNull(ending.resumeCounted()) { "the provider's Retry-After must still schedule a wake" }
+            assertTrue(resume in (sentAt + BURST_RETRY_AFTER_S)..(finishedAt + BURST_RETRY_AFTER_S))
         }
     }
 }

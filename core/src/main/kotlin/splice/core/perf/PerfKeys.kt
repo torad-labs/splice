@@ -145,6 +145,9 @@ public object PerfKeys {
      *  turn that ended error:plan-limit (V4-444). */
     public const val EARLIEST_RESET_EPOCH_SECONDS: String = "earliest_reset_epoch_seconds"
 
+    /** A provider-stated retry or resume instant, including Retry-After; it need not describe a spent window. */
+    public const val RESUME_AT_EPOCH_SECONDS: String = "resume_at_epoch_seconds"
+
     /** V4-444: the HTTP status the provider's own answer carried, for a turn whose failure came back as a response.
      *  ABSENT when no answer came back at all — a transport failure, or a local hold that refused the turn before it
      *  was sent — because 0 there reads as a status the provider returned. The outcome tag says what splice made of

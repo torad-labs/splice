@@ -11,6 +11,7 @@ import splice.core.util.WallClock
 import splice.sessions.http.SessionAccountOf
 import splice.sessions.http.SessionEnding
 import splice.sessions.http.SessionEndingOf
+import splice.sessions.http.SessionEndingRecovery
 import splice.sessions.http.SessionRowFacts
 import splice.sessions.http.SessionServedOf
 import splice.sessions.http.SessionTurnCount
@@ -76,12 +77,17 @@ internal class SessionPerfFacts(
             (head.sources.perf as? PerfStatsSource)?.sessionEndings?.endingFor(id)?.let { key to it }
         }
             .maxByOrNull { (_, ended) -> ended.ts }
-            ?.takeIf { (_, ended) ->
-                !OutcomeTags.isClean(ended.outcome) &&
-                    (ended.outcome in holdingEndings || ended.resetEpochSeconds != null)
-            }
+            ?.takeUnless { (_, ended) -> OutcomeTags.isClean(ended.outcome) }
+            ?.takeIf { (_, ended) -> holdsSession(ended) }
             ?.let { (head, ended) -> ending(head, ended) }
-            ?.takeIf { ending -> includeExpired || ending.resetMs?.let { it > clock() } != false }
+            ?.takeIf { ending ->
+                includeExpired || (ending.resumeAtMs ?: ending.resetMs)?.let { it > clock() } != false
+            }
+    }
+
+    private fun holdsSession(ended: splice.head.perf.SessionEnding): Boolean {
+        val restart = ended.outcome == OutcomeTag.RESTARTED.wire && ended.resumeEpochSeconds != null
+        return ended.outcome in holdingEndings || ended.resetEpochSeconds != null || restart
     }
 
     /** The same persisted reset feeds the row and the session wake after restart. */
@@ -91,6 +97,8 @@ internal class SessionPerfFacts(
                 ended.outcome == OutcomeTags.error("stopped")
         }?.let(TimeUnit.SECONDS::toMillis)
         val account = ended.account?.let { ports.claudeLogins?.accountLabel(head, it) ?: it }
+        val resumeMs = ended.resumeEpochSeconds?.takeIf { ended.outcome == OutcomeTag.RESTARTED.wire }
+            ?.let(TimeUnit.SECONDS::toMillis)
         return SessionEnding(
             ended.outcome,
             account,
@@ -98,7 +106,7 @@ internal class SessionPerfFacts(
             ended.ts,
             head,
             ended.retries,
-            ended.runSince,
+            SessionEndingRecovery(ended.runSince, resumeMs),
         )
     }
 

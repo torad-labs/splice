@@ -28,6 +28,7 @@ import splice.core.util.SafeFailureText
 import splice.head.HeadEvents
 import splice.head.NoHeadEvents
 import splice.head.admission.LocalRefusal
+import splice.head.hold.resources.HeldCauseTimes
 import splice.head.perf.HeldRows
 import splice.head.perf.LocalAnswerRows
 import splice.head.perf.PerfAccount
@@ -110,13 +111,32 @@ internal class TurnTelemetry(
         failure: PerfFailure,
         cause: FailureCause?,
     ) {
-        cause?.resumeAt?.epochSecond?.let { reset ->
-            drive.perf.setCount(PerfKeys.EARLIEST_RESET_EPOCH_SECONDS, reset)
-        }
+        recordEndingTimes(drive, cause)
         drive.perf.mark(PerfKeys.TOTAL)
         drive.perf.setCount(PerfKeys.ATTEMPTS, drive.perfCounter(PerfKeys.ATTEMPTS))
         val ending = RowEnding(outcomeTag, rateLimited, failure, perfStats.clock(), cause)
         held.write(drive.sourceRow) { usage -> writeRow(drive, ending, usage) }
+    }
+
+    /** A retry horizon also schedules a held session, but only an actual quota reset describes a spent window. */
+    private fun recordEndingTimes(drive: TurnDrive, cause: FailureCause?) {
+        cause?.resumeAt?.epochSecond?.let { resume ->
+            drive.perf.setCount(PerfKeys.RESUME_AT_EPOCH_SECONDS, resume)
+        }
+        HeldCauseTimes.quotaResetEpochSeconds(cause)?.let { reset ->
+            drive.perf.setCount(PerfKeys.EARLIEST_RESET_EPOCH_SECONDS, reset)
+        }
+    }
+
+    /** A restart retains the exact active hold's wake horizon and its separately proved quota reset, where stated. */
+    fun recordHeldTimes(drive: TurnDrive) {
+        val ledger = drive.retry?.ledger ?: return
+        ledger.resumeAt?.epochSecond?.let { resume ->
+            drive.perf.setCount(PerfKeys.RESUME_AT_EPOCH_SECONDS, resume)
+        }
+        HeldCauseTimes.quotaResetEpochSeconds(ledger.heldCause)?.let { reset ->
+            drive.perf.setCount(PerfKeys.EARLIEST_RESET_EPOCH_SECONDS, reset)
+        }
     }
 
     /** Every row still waiting on a source round, written with what is known: a head stop calls this once its

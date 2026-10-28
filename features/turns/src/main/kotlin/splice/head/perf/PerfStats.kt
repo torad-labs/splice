@@ -150,10 +150,19 @@ public class PerfStats(
         )
         meta.session?.let { session ->
             val reset = snap.counters[PerfKeys.EARLIEST_RESET_EPOCH_SECONDS]
+            val resume = snap.counters[PerfKeys.RESUME_AT_EPOCH_SECONDS]
             val retries = snap.counters.getOrDefault(PerfKeys.RETRIES, 0L)
             endings.note(
                 meta.transcript.sessionId ?: session,
-                SessionEnding(meta.outcome, meta.account.label, reset, ts, meta.model, retries),
+                SessionEnding(
+                    meta.outcome,
+                    meta.account.label,
+                    reset,
+                    ts,
+                    meta.model,
+                    retries,
+                    SessionEndingRecovery(resumeEpochSeconds = resume),
+                ),
             )
             Cancellables.discard(
                 Cancellables.runCatchingCancellable { meta.model?.let { totals?.add(session, it, snap.counters, ts) } },

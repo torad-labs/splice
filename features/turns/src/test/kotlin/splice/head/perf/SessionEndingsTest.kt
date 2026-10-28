@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSnapshot
 import splice.core.util.AsyncFileIo
@@ -148,5 +149,35 @@ class SessionEndingsTest {
         assertEquals(100L, restarted.endings.endingFor(first)?.resetEpochSeconds)
         assertEquals(200L, restarted.endings.endingFor(second)?.resetEpochSeconds)
         watch.close()
+    }
+
+    @Test
+    fun `provider resume times survive restart independently of quota resets and old rows retain their fallback`() {
+        val reset = 1_791_700_000L
+        val resume = reset + 100L
+        val cases = mapOf(
+            "quota" to mapOf(
+                PerfKeys.EARLIEST_RESET_EPOCH_SECONDS to reset,
+                PerfKeys.RESUME_AT_EPOCH_SECONDS to resume,
+            ),
+            "burst" to mapOf(PerfKeys.RESUME_AT_EPOCH_SECONDS to resume),
+            "legacy" to mapOf(PerfKeys.EARLIEST_RESET_EPOCH_SECONDS to reset),
+        )
+        for ((session, counters) in cases) {
+            stats.record(
+                PerfRowMeta("test", OutcomeTag.RESTARTED.wire, compact = false, session = session),
+                PerfSnapshot(emptyMap(), counters),
+            )
+        }
+        AsyncFileIo.drain()
+        val restored = PerfStats(tmp.resolve("perf.jsonl"), clock = { now })
+        for (endings in listOf(stats.endings, restored.endings)) {
+            assertEquals(reset, endings.endingFor("quota")?.resetEpochSeconds)
+            assertEquals(resume, endings.endingFor("quota")?.resumeEpochSeconds)
+            assertNull(endings.endingFor("burst")?.resetEpochSeconds)
+            assertEquals(resume, endings.endingFor("burst")?.resumeEpochSeconds)
+            assertEquals(reset, endings.endingFor("legacy")?.resetEpochSeconds)
+            assertEquals(reset, endings.endingFor("legacy")?.resumeEpochSeconds)
+        }
     }
 }

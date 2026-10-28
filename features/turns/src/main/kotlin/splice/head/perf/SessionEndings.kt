@@ -27,7 +27,16 @@ public data class SessionEnding(
     val ts: Long,
     val model: String? = null,
     val retries: Long = 0,
-    val runSince: Long? = null,
+    val recovery: SessionEndingRecovery = SessionEndingRecovery(),
+) {
+    public val runSince: Long? get() = recovery.runSinceMs
+    public val resumeEpochSeconds: Long? get() = recovery.resumeEpochSeconds ?: resetEpochSeconds
+}
+
+/** Continuation timing is distinct from the provider's spent-window reset. */
+public data class SessionEndingRecovery(
+    val runSinceMs: Long? = null,
+    val resumeEpochSeconds: Long? = null,
 )
 
 // why: a person runs tens of sessions a day, so this many covers every one the console lists with room to spare,
@@ -57,7 +66,10 @@ public class SessionEndings {
             val held = newest.remove(sessionTag)
             newest[sessionTag] = when {
                 held != null && held.ts > ending.ts -> held.copy(model = held.model ?: ending.model)
-                else -> ending.copy(model = ending.model ?: held?.model, runSince = runSince(held, ending))
+                else -> ending.copy(
+                    model = ending.model ?: held?.model,
+                    recovery = ending.recovery.copy(runSinceMs = runSince(held, ending)),
+                )
             }
             while (newest.size > MAX_SESSION_ENDINGS) newest.remove(newest.keys.first())
             newest.getValue(sessionTag)
@@ -79,8 +91,20 @@ public class SessionEndings {
             val outcome = text(row, "outcome") ?: return@forEach
             val ts = (row["ts"] as? JsonPrimitive)?.longOrNull ?: return@forEach
             val reset = (row[PerfKeys.EARLIEST_RESET_EPOCH_SECONDS] as? JsonPrimitive)?.longOrNull
+            val resume = (row[PerfKeys.RESUME_AT_EPOCH_SECONDS] as? JsonPrimitive)?.longOrNull
             val retries = (row[PerfKeys.RETRIES] as? JsonPrimitive)?.longOrNull ?: 0
-            note(session, SessionEnding(outcome, text(row, "account"), reset, ts, text(row, "model"), retries))
+            note(
+                session,
+                SessionEnding(
+                    outcome,
+                    text(row, "account"),
+                    reset,
+                    ts,
+                    text(row, "model"),
+                    retries,
+                    SessionEndingRecovery(resumeEpochSeconds = resume),
+                ),
+            )
         }
     }
 

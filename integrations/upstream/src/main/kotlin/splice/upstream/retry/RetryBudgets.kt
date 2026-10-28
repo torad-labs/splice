@@ -89,7 +89,7 @@ internal const val UNSTATED_LAST_DOUBLING_MS: Long = 960_000L // why: the doubli
 internal const val PROBE_CEILING_MS: Long = 1_800_000L
 
 /** A firm hold is probed hourly, so a top-up or a reset before the stated time is noticed (V4-47). */
-public const val FIRM_PROBE_MS: Long = 3_600_000L
+internal const val FIRM_PROBE_MS: Long = 3_600_000L
 
 /** A spent account is probed every 5 minutes, so credit added is noticed (V4-73). */
 internal const val CREDIT_PROBE_MS: Long = 300_000L

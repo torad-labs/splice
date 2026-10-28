@@ -275,6 +275,7 @@ private val COLUMNS = listOf("head", "command", "port", "upstream")
 
 /** How a held turn's memory reads: in MiB, to one decimal. */
 private object Mebibytes {
+    // why: a binary mebibyte is exactly 2^20 bytes, independent of locale or the size of the held turn.
     private const val MEBIBYTE_BYTES = 1_048_576.0
 
     fun of(bytes: Long): String = "%.1f MB".format(java.util.Locale.ROOT, bytes / MEBIBYTE_BYTES)

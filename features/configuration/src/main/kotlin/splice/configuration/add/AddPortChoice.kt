@@ -5,6 +5,7 @@ import splice.core.topology.Topology
 import java.net.URI
 import java.net.URISyntaxException
 
+// why: 3099 is the established first head listener; further heads start above the ports already declared.
 private const val FIRST_HEAD_PORT = 3099
 
 // why: TCP listener ports are unsigned 16-bit; a range must never wrap past this ceiling.

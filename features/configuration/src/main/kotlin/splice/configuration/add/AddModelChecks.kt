@@ -3,6 +3,7 @@ package splice.configuration.add
 
 import splice.core.model.ModelEntry
 
+// why: an unlisted-model diagnostic shows at most ten advertised alternatives so large catalogs do not flood the CLI.
 private const val LISTED_SHOWN = 10
 
 /** The single name used for model-list checks on the CLI and console. */

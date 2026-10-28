@@ -9,6 +9,7 @@ import splice.sessions.http.SessionEnding
 import splice.upstream.Waiter
 import splice.upstream.codemode.ProcessWaiter
 
+// why: retain reset timers and clean-ending tombstones for 2,000 recent sessions while bounding scheduler memory.
 private const val MAX_PENDING_SESSIONS = 2_000
 
 /** The deadline has arrived; the owner rechecks the live session and its latest ending before sending. */

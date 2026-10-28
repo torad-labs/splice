@@ -15,6 +15,7 @@
 package splice.app.cli.hook
 
 import kotlinx.serialization.json.Json
+import splice.app.cli.peer.PeerExit.DONE
 import splice.core.terminal.TerminalOutput
 import splice.core.util.JsonScalars
 import java.io.IOException
@@ -123,7 +124,7 @@ internal class HarnessHook(
         val obj = JsonScalars.objectOrNull(json, text.trim()) ?: return HookFields(null, null, null)
         return HookFields(
             JsonScalars.str(obj, EVENT)?.takeIf(String::isNotBlank),
-            JsonScalars.str(obj, SESSION)?.takeIf(String::isNotBlank),
+            JsonScalars.str(obj, HOOK_SESSION_ID_FIELD)?.takeIf(String::isNotBlank),
             JsonScalars.str(obj, CWD)?.takeIf(String::isNotBlank),
         )
     }
@@ -132,9 +133,10 @@ internal class HarnessHook(
 private data class HookFields(val event: String?, val sessionId: String?, val cwd: String?)
 
 private const val EVENT: String = "hook_event_name"
-private const val SESSION: String = "session_id"
+private const val HOOK_SESSION_ID_FIELD: String = "session_id"
 private const val CWD: String = "cwd"
-private const val DONE: Int = 0
+
+// why: both harnesses reserve exit 2 for blocking; exit 1 reports bad hook arguments without blocking the turn.
 private const val NON_BLOCKING: Int = 1
 private const val NO_THREAD: String = "splice peer: no Codex thread id; leaving the session alone"
 private const val BAD_ARGS: String = "splice peer: these arguments are not a Codex hook invocation"

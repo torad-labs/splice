@@ -1022,6 +1022,10 @@ command = "claude-splice"
 #   SPLICE_HISTORY_RETENTION_DAYS historyRetentionDays
 #
 # Seam reads, no TOML spelling — a path or endpoint the daemon reads directly:
+#   ANTHROPIC_CUSTOM_HEADERS newline-separated headers inherited by a launched Claude Code client.
+#                           splice keeps ambient headers, replaces any x-splice-client-wall-ms header with
+#                           the session's computed client timeout, and adds that header when none was set.
+#                           It has no TOML key; the launcher's wall header wins over the ambient value.
 #   SPLICE_CONFIG           the config file to load, overriding the default lookup
 #   SPLICE_STATE_DIR        the state directory, overriding both the default root and the
 #                           pre-0.4 one it adopts; CLAUDEX_STATE_DIR is the older spelling

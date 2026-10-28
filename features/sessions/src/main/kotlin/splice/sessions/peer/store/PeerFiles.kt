@@ -19,6 +19,7 @@ internal data class PeerFile(
     val scope: PeerFileScope,
     val webhook: PeerFileWebhook? = null,
     val codex: PeerFileCodex? = null,
+    val owner: PeerFileOwner? = null,
 )
 
 /** A codex peer's thread (docs/peers.md): its id, its Codex home, and the Codex process that attached it, if any. */

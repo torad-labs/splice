@@ -2,6 +2,7 @@
 // verbatim out of PeerHelperMain.kt: the inbox socket, the registry heartbeat every 30 s, the look at peer.json every
 // 10 s, and the webhook pusher, started again on a changed peer.json or a SIGHUP. A codex peer's helper (Oct 27, 2026)
 // also hands its messages to its Codex thread, and stops once the thread can no longer be reached.
+// A persisted native owner supplies a cancellable process-exit event; neither the helper's parent nor the daemon does.
 package splice.app.peer
 
 import kotlinx.coroutines.CompletableDeferred
@@ -12,6 +13,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import splice.app.peer.codex.CodexPeerParts
 import splice.app.peer.codex.CodexPeerRun
+import splice.app.peer.owner.PeerOwnerWatch
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
@@ -87,6 +89,14 @@ internal class HelperLoops(
         scope.launch { while (ticker.awaitTick(HEARTBEAT_MS)) helper.heartbeat() }
         scope.launch { while (ticker.awaitTick(LOOK_MS)) look() }
         scope.launch { pushes() }
+        helper.parts.owner?.let { owner ->
+            scope.launch {
+                val watched = Cancellables.runCatchingCancellable { PeerOwnerWatch().await(owner) }
+                watched.exceptionOrNull()?.let { log.error("native owner", it) }
+                log.note("native owner ended")
+                stop.complete(Unit)
+            }
+        }
         PeerStore(setup.settingsDir).codexThreads[setup.name]?.let { binding ->
             scope.launch { codex(binding, CodexReturns(outbox, sender)) }
         }

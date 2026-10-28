@@ -3,10 +3,8 @@
 // management verbs present the management key, and the `--as` verbs present the peer's own key from its file.
 package splice.app.cli.peer
 
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonArray
 import splice.app.cli.hook.HarnessHook
 import splice.app.cli.hook.StdinDevice
 import splice.app.cli.hook.StdinTerminal
@@ -62,14 +60,7 @@ internal class PeerCommand(
         val parsed = PeerArgsParser(setOf("--cwd", "--send-to"), emptySet()).parse(args)
         val name = parsed?.words?.singleOrNull() ?: return null
         val key = call.managementKey() ?: return PeerExit.REFUSED
-        val body = buildJsonObject {
-            put("name", name)
-            parsed.values["--cwd"]?.let { put("cwd", Path.of(it).toAbsolutePath().normalize().toString()) }
-            parsed.values["--send-to"]?.let { list ->
-                val names = list.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                putJsonArray("sendTo") { names.forEach { add(JsonPrimitive(it)) } }
-            }
-        }
+        val body = PeerRegistrationBody.build(name, parsed.values)
         return when (val answer = call.call("POST", "/api/peers", key, body)) {
             is PeerAnswer.Exit -> answer.code
             is PeerAnswer.Ok -> {

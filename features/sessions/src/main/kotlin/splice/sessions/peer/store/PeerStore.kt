@@ -14,6 +14,7 @@ import splice.sessions.peer.PeerWebhook
 import splice.sessions.peer.codex.CodexBinding
 import splice.sessions.peer.codex.CodexNames
 import splice.sessions.peer.codex.CodexRequest
+import splice.sessions.peer.codex.NativeProcess
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
@@ -40,7 +41,12 @@ private const val WEBHOOK_BEARER = "webhook.bearer"
 private const val FIRST_KEY_ID = "k1"
 
 /** What a register asks for. [cwd] is absolute; [sendTo] is `["*"]` or names and session ids. */
-public data class PeerRequest(val name: String, val cwd: String, val sendTo: List<String>)
+public data class PeerRequest(
+    val name: String,
+    val cwd: String,
+    val sendTo: List<String>,
+    val owner: NativeProcess? = null,
+)
 
 /** Why a register was refused: a request that can never succeed, or a name that is reserved or taken (400 and 409). */
 public enum class PeerRefusal { INVALID, TAKEN }
@@ -91,6 +97,11 @@ public class PeerStore(
         booted.mapNotNull { file -> codexPeers.binding(file)?.let { file.name to it } }.toMap()
 
     @Volatile
+    private var owners: Map<String, NativeProcess> = booted.mapNotNull { file ->
+        file.owner?.let { file.name to NativeProcess(it.pid, it.procStart, it.pidDomain) }
+    }.toMap()
+
+    @Volatile
     private var byKeyHash: Map<String, String> = peers.values.associate { it.keySha256 to it.name }
 
     /** When each codex peer last attached since this store loaded: a thread's end before it does not revoke it. */
@@ -112,6 +123,10 @@ public class PeerStore(
 
     /** The thread each codex peer stands for, by the peer's name. */
     public val codexThreads: Map<String, CodexBinding> get() = codexes
+
+    /** A registered native owner, never the detached helper's own identity. Legacy peers have no inferred owner. */
+    public val nativeOwners: Map<String, NativeProcess>
+        get() = codexes.mapNotNull { (name, binding) -> binding.owner?.let { name to it } }.toMap() + owners
 
     /**
      * Registers [request]'s thread as the codex peer `codex-<thread>`, or brings the one there up to date: peer.key
@@ -171,6 +186,7 @@ public class PeerStore(
                 cwd = request.cwd,
                 key = PeerFileKey(FIRST_KEY_ID, keys.hash(key), rotatedAt = now),
                 scope = PeerFileScope(request.sendTo),
+                owner = request.owner?.let { PeerFileOwner(it.pid, it.procStart, it.pidDomain) },
             )
             folder.create(file, key)
             PeerRegistration.Registered(publish(file), folder.keyFile(request.name))
@@ -181,11 +197,18 @@ public class PeerStore(
      * `<settings dir>/peers/<name>/`. False when there is no such peer. With [threadEndedAt], it revokes only a codex
      * peer whose thread ended then and that did not attach again since: a thread that loaded again keeps its peer.
      */
-    public suspend fun revoke(name: String, threadEndedAt: Long? = null): Boolean = mutation.withLock {
+    public suspend fun revoke(
+        name: String,
+        threadEndedAt: Long? = null,
+        expectedOwner: NativeProcess? = null,
+    ): Boolean = mutation.withLock {
         val ended = threadEndedAt == null || (codexes[name] != null && (attachedAt[name] ?: 0L) <= threadEndedAt)
+        val stillOwned = expectedOwner == null || nativeOwners[name] == expectedOwner
         if (name !in peers || !ended) return@withLock false
+        if (!stillOwned) return@withLock false
         peers = peers - name
         codexes = codexes - name
+        owners = owners - name
         attachedAt.remove(name)
         byKeyHash = byKeyHash.filterValues { it != name }
         folder.deleteTree(folder.dir(name))
@@ -239,6 +262,8 @@ public class PeerStore(
         val config = folder.config(file)
         peers = peers + (file.name to config)
         codexes = codexPeers.binding(file)?.let { codexes + (file.name to it) } ?: (codexes - file.name)
+        owners = file.owner?.let { owners + (file.name to NativeProcess(it.pid, it.procStart, it.pidDomain)) }
+            ?: (owners - file.name)
         byKeyHash = byKeyHash.filterValues { it != file.name } + (config.keySha256 to file.name)
         return config
     }

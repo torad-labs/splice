@@ -210,7 +210,8 @@ head-isolation law is not touched. It is the one place Splice writes under `~/.c
   "cwd": "/home/marcos",
   "key": {"id": "k2", "sha256": "<hex of sha256(peer key)>", "rotatedAt": 1792459759719},
   "scope": {"sendTo": ["*"]},
-  "webhook": null
+  "webhook": null,
+  "owner": null
 }
 ```
 
@@ -225,6 +226,11 @@ When a webhook is set, the field becomes
 - **`scope.sendTo`** is `["*"]` for any session or peer, or a list of names and session ids.
 - **The peer key** is `splp_` followed by 43 base64url characters, 32 random bytes from `SecureRandom`. Only
   `peer.key` holds it. `peer.json` holds its sha256.
+- **`owner`**, when present, is `{pid, procStart, pidDomain}` for the native harness process, never the detached
+  helper or daemon. CLI registration discovers only a bounded, recognized native ancestor. Management registration
+  validates all three values against the live local process. The helper watches that exact process's exit and
+  withdraws its registry files and socket; the supervisor then revokes the peer rather than resurrecting it.
+  A missing owner stays persistent, including legacy registrations; no process or transcript scan supplies a guess.
 
 ### 2.2 Registry record (B writes)
 

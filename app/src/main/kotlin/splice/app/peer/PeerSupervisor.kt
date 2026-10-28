@@ -11,6 +11,7 @@
 // before it stops the helper, so the supervisor keeps each peer's session id from the last time it saw peer.json; a
 // dead helper's leftovers are cleared before its restart, so a later revoke never meets a socket no helper.json names.
 // A codex peer whose helper journaled that its thread ended (Oct 27, 2026) is revoked instead of started again.
+// A peer bound to a native harness is likewise revoked when that exact pid/start/domain no longer runs.
 package splice.app.peer
 
 import kotlinx.coroutines.CoroutineDispatcher
@@ -18,6 +19,7 @@ import kotlinx.coroutines.runInterruptible
 import splice.app.control.peer.PeerHelpers
 import splice.app.control.peer.RunningHelper
 import splice.app.peer.codex.CodexEnds
+import splice.app.peer.owner.PeerOwnerRetirement
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.LogSafe
@@ -67,7 +69,10 @@ private const val REGISTER_WAIT_MS = 10_000L
 private const val REGISTER_POLL_MS = 200L
 
 /** One peer's restart history: how many starts in a row died, and when the last one began. */
-private data class Restarts(val failures: Int, val lastStart: Long)
+private data class Restarts(val failures: Int, val lastStart: Long) {
+    val backoff: Long get() =
+        if (failures <= 0) 0L else minOf(MAX_BACKOFF_MS, 1_000L shl minOf(failures - 1, MAX_SHIFT))
+}
 
 /** The daemon's supervisor of peer helpers, as the /api/peers routes use it ([PeerHelpers]). */
 internal class PeerSupervisor(
@@ -84,6 +89,7 @@ internal class PeerSupervisor(
     private val build = PeerBuild()
     private val restarts = ConcurrentHashMap<String, Restarts>()
     private val ends = CodexEnds(store, places.stateDir, log)
+    private val owners = PeerOwnerRetirement(store, log)
 
     /** Each peer's session id as last read from peer.json, for the leftovers of a peer whose folder is gone. */
     private val sessions = ConcurrentHashMap<String, String>()
@@ -101,6 +107,7 @@ internal class PeerSupervisor(
      *  is still starting. A peer registered again is no longer held. */
     override suspend fun start(name: String): Long? {
         held.remove(name)
+        if (owners.retired(name)) return null
         store.get(name)?.let { sessions[name] = it.sessionId }
         if (running(name) == null) launch(name, failures = 0)
         val deadline = clock() + REGISTER_WAIT_MS
@@ -149,26 +156,31 @@ internal class PeerSupervisor(
     private suspend fun adopt() {
         val current = build.current()
         for (peer in store.list()) {
-            sessions[peer.name] = peer.sessionId
-            val files = PeerStateFiles(places.stateDir, peer.name)
-            val helper = helpers.read(files)
-            val alive = helper != null && helpers.alive(helper)
-            val sameBuild = helper?.version == current
-            if (alive && !sameBuild) {
-                stop(peer.name)
-                held.remove(peer.name)
-                sessions[peer.name] = peer.sessionId
-            }
-            if (helper != null && !alive) leftovers(peer.name, helper, files, peer.sessionId)
-            if (!alive || !sameBuild) launch(peer.name, failures = 0)
+            if (owners.retired(peer.name)) continue
+            adopt(peer.name, peer.sessionId, current)
         }
+    }
+
+    private suspend fun adopt(name: String, sessionId: String, current: String) {
+        sessions[name] = sessionId
+        val files = PeerStateFiles(places.stateDir, name)
+        val helper = helpers.read(files)
+        val alive = helper != null && helpers.alive(helper)
+        val sameBuild = helper?.version == current
+        if (alive && !sameBuild) {
+            stop(name)
+            held.remove(name)
+            sessions[name] = sessionId
+        }
+        if (helper != null && !alive) leftovers(name, helper, files, sessionId)
+        if (!alive || !sameBuild) launch(name, failures = 0)
     }
 
     private suspend fun reconcile() {
         held.retainAll { store.get(it) != null }
         for (peer in store.list()) {
             sessions[peer.name] = peer.sessionId
-            if (peer.name !in held) reconcile(peer.name, peer.sessionId)
+            if (peer.name !in held && !owners.retired(peer.name)) reconcile(peer.name, peer.sessionId)
         }
     }
 
@@ -181,7 +193,7 @@ internal class PeerSupervisor(
             return
         }
         val last = restarts[name]
-        if (last != null && now - last.lastStart < HELPER_START_GRACE_MS + backoff(last.failures)) return
+        if (last != null && now - last.lastStart < HELPER_START_GRACE_MS + last.backoff) return
         helper?.let { leftovers(name, it, files, sessionId) }
         launch(name, failures = (last?.failures ?: 0) + 1, since = last?.lastStart ?: 0L)
     }
@@ -189,7 +201,7 @@ internal class PeerSupervisor(
     /** Starts [name]'s helper, unless it is a codex peer whose helper journaled, since [since], that its thread ended:
      *  that peer is revoked instead, and nothing starts for it until its thread attaches again. */
     private suspend fun launch(name: String, failures: Int, since: Long = 0L) {
-        if (ends.retired(name, since)) {
+        if (owners.retired(name) || ends.retired(name, since)) {
             restarts.remove(name)
             sessions.remove(name)
             return
@@ -202,9 +214,6 @@ internal class PeerSupervisor(
             else -> say("$name: helper starting")
         }
     }
-
-    private fun backoff(failures: Int): Long =
-        if (failures <= 0) 0L else minOf(MAX_BACKOFF_MS, 1_000L shl minOf(failures - 1, MAX_SHIFT))
 
     private suspend fun terminate(pid: Long) {
         val process = ProcessHandle.of(pid).orElse(null) ?: return

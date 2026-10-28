@@ -29,6 +29,7 @@ import splice.http.JsonBody
 import splice.http.JsonReply
 import splice.sessions.peer.PeerConfig
 import splice.sessions.peer.PeerOutbox
+import splice.sessions.peer.codex.NativeProcess
 import splice.sessions.peer.store.PeerLimits
 import splice.sessions.peer.store.PeerRefusal
 import splice.sessions.peer.store.PeerRegistration
@@ -109,10 +110,20 @@ internal class PeerManagementRoutes(
 ) {
     private val store = parts.store
     private val jsonBody = JsonBody()
+    private val owners = PeerOwnerInputs()
 
     /** POST /api/peers: writes peer.json and peer.key, starts the helper, and answers once its record is on disk. */
     suspend fun register(call: ApplicationCall) {
-        registered(jsonBody.parse(call)).send(call)
+        val body = jsonBody.parse(call)
+        val answer = when (val owner = owners.parse(body)) {
+            PeerOwnerInput.Persistent -> registered(body, null)
+            is PeerOwnerInput.Owned -> registered(body, owner.process)
+            PeerOwnerInput.Invalid -> PeerReplies.refuse(
+                HttpStatusCode.BadRequest,
+                "owner must name a live pid with its exact procStart and pidDomain",
+            )
+        }
+        answer.send(call)
     }
 
     /** GET /api/peers: every peer, whether its helper runs, its scope, webhook and inbox counts. */
@@ -141,7 +152,7 @@ internal class PeerManagementRoutes(
         answer.send(call)
     }
 
-    private suspend fun registered(body: JsonObject?): PeerAnswer {
+    private suspend fun registered(body: JsonObject?, owner: NativeProcess?): PeerAnswer {
         val name = PeerReplies.string(body, "name")
         val cwd = if (body?.containsKey("cwd") == true) PeerReplies.string(body, "cwd") else UserHome.dir().toString()
         val sendTo = sendTo(body)
@@ -151,7 +162,7 @@ internal class PeerManagementRoutes(
         }
         val live = parts.registry.read().filter { it.availability != SessionAvailability.GONE }
         val liveNames = live.mapNotNull { it.name }.toSet()
-        return when (val outcome = store.register(PeerRequest(name, cwd, sendTo), liveNames)) {
+        return when (val outcome = store.register(PeerRequest(name, cwd, sendTo, owner), liveNames)) {
             is PeerRegistration.Refused -> PeerReplies.refuse(
                 if (outcome.why == PeerRefusal.INVALID) HttpStatusCode.BadRequest else HttpStatusCode.Conflict,
                 outcome.reason,

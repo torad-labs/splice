@@ -17,6 +17,15 @@ This prints the peer's name, its session id, the path of its key file and its so
 The key file is `<settings dir>/peers/gary/peer.key`, mode 0600, where the settings dir is the folder holding
 `splice.toml` (usually `~/.config/splice`).
 
+When registration runs beneath a recognized native `codex` or `claude` process, the CLI binds the peer to that
+ancestor's pid, kernel start time and process domain. Its detached helper watches that exact process's exit,
+withdraws its registry entry and socket when the owner ends, and the supervisor revokes the registration instead
+of restarting it. Daemon restarts do not end the owner. Registrations from an ordinary shell, and older peers
+without an owner binding, remain persistent until revoked; Splice does not infer an owner for them.
+
+A management `POST /api/peers` can supply `owner: {pid, procStart, pidDomain}`. All three values must identify the
+same live local process. An incomplete, stale or reused-pid tuple is refused before a peer is registered.
+
 A name is 2 to 32 characters: a lowercase letter, then lowercase letters, digits or `-`. These names are
 reserved: `system`, `user`, `operator`, `human`, `assistant`, `claude`, `anthropic`, `splice`, `splice-console`,
 `telegram`, `president`, `marcos` and `dispatch`. A name a running session or another peer already carries is

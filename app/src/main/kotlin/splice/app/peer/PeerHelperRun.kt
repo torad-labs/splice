@@ -6,6 +6,7 @@
 // rewrites its registry record every 30 s, and looks at peer.json every 10 s: gone means revoked, so it exits; changed,
 // or a SIGHUP, restarts the webhook pusher on the new config. SIGTERM and SIGINT end it cleanly through the shutdown
 // hook, which only asks main to stop and waits while main removes the record, the key file, the socket and helper.json.
+// A native-owner-bound helper also ends through that same cleanup when its actual harness process exits.
 package splice.app.peer
 
 import kotlinx.coroutines.CompletableDeferred

@@ -14,10 +14,10 @@ import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import splice.sessions.note.PeerTargets
 import splice.sessions.peer.PeerConfig
+import splice.sessions.peer.codex.NativeProcess
 import splice.sessions.peer.journal.PeerInbox
 import splice.sessions.peer.store.PeerStore
 import java.nio.channels.FileChannel
-import java.nio.channels.FileLock
 import java.nio.channels.OverlappingFileLockException
 import java.nio.channels.ServerSocketChannel
 import java.nio.file.Files
@@ -67,15 +67,6 @@ public sealed class HelperStart {
 /** What peer.json and the webhook secret looked like at the last look, to tell a change from a removal. */
 public enum class PeerFileState { SAME, CHANGED, GONE }
 
-/** Whether this helper got its peer's lock. */
-private sealed class LockTry {
-    data class Held(val lock: HelperLock) : LockTry()
-
-    data object Busy : LockTry()
-
-    data class Refused(val reason: String) : LockTry()
-}
-
 public class PeerHelper(
     private val setup: HelperSetup,
     private val clock: WallClock,
@@ -86,8 +77,9 @@ public class PeerHelper(
     public fun start(): HelperStart {
         val store = PeerStore(setup.settingsDir)
         val config = store.get(setup.name) ?: return HelperStart.Unregistered
-        // A codex peer's record binds the Codex process that attached it, while that process is still the one named.
-        val owner = store.codexThreads[setup.name]?.owner?.takeIf(helpers::live)
+        // A native peer keeps its exact harness owner; a dead one is never downgraded to a persistent peer.
+        val owner = store.nativeOwners[setup.name]
+        if (owner != null && !helpers.live(owner)) return HelperStart.Failed("the peer's native owner no longer runs")
         val peer = RecordPeer(config.name, config.sessionId, config.cwd, owner)
         val files = PeerStateFiles(setup.stateDir, setup.name)
         return when (val lock = lock(files)) {
@@ -106,7 +98,7 @@ public class PeerHelper(
                 if (!setup.sockets.inClientFolder(socket)) log.note("socket outside the client folder: no receipts")
                 val token = HexFormat.of().formatHex(ByteArray(PEER_TOKEN_BYTES).also(random::nextBytes))
                 val record = PeerRegistryRecord(PeerRegistryFiles(setup.registryDirs), peer, self, socket, clock)
-                val parts = HelperParts(bound.channel, socket, token, record, log)
+                val parts = HelperParts(bound.channel, socket, token, record, log, peer.owner)
                 publish(RunningHelper(config, parts, files, setup, lock), self)
             }
             is SocketBind.Refused -> {
@@ -152,19 +144,6 @@ public class PeerHelper(
     }.getOrElse { LockTry.Refused("the peer's lock cannot be taken: ${SafeFailureText.render(it)}") }
 }
 
-/** The lock that makes a helper the only one for its peer, held for the helper's whole life. */
-internal class HelperLock(private val channel: FileChannel, private val lock: FileLock) {
-    public fun release() {
-        Cancellables.discard(
-            Cancellables.runCatchingCancellable {
-                lock.release()
-                channel.close()
-            },
-            "the process is ending, and its exit releases the lock regardless",
-        )
-    }
-}
-
 /** The pieces a started helper serves with: its bound socket, its token, its record and its log. */
 public data class HelperParts(
     internal val server: ServerSocketChannel,
@@ -172,6 +151,7 @@ public data class HelperParts(
     internal val token: String,
     internal val record: PeerRegistryRecord,
     public val log: HelperLog,
+    public val owner: NativeProcess? = null,
 )
 
 /** A helper that started: it serves its socket, keeps its record fresh, notices its peer.json change or go, and exits

@@ -99,11 +99,11 @@ public class StoredCredential(
     }
 
     /** The api-key this provider authenticates with, in the order its head reads it (ApiKeyAuthProvider): the
-     *  environment, then the key file its auth names ([pathFor]), then splice's own key store. Null for every other auth
-     *  kind — an OAuth provider's token is [presentedToken]'s answer. The key file was left out until fix 3's third
-     *  count (Oct 27), so a key kept there never reached the head's model list or `splice models`. */
+     *  environment, then the key file its auth names ([pathFor]), then splice's own key store. Unregistered kinds use
+     *  that provider in every assembly arm, custom kinds included. Registered schemes keep their own reader: an OAuth
+     *  provider's token is [presentedToken]'s answer and a client-auth head holds no key of its own. */
     public fun apiKey(provider: ProviderConfig, key: String, env: EnvReader): String? {
-        if (!provider.auth.isApiKey) return null
+        if (AuthKindRegistry.from(provider.auth.kind) != null) return null
         val envVar = provider.auth.effectiveApiKeyEnv(key)
         return env(envVar)?.takeIf { it.isNotBlank() }
             ?: pathFor(provider)?.let(::keyFileKey)

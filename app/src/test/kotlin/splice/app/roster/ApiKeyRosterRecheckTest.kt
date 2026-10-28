@@ -17,6 +17,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import splice.app.auth.EndpointModels
 import splice.app.auth.StoredModelCredentials
 import splice.app.control.ControlAuth
@@ -66,11 +68,13 @@ private const val STORE_MODEL = "synthetic-store-model"
 
 @Timeout(90)
 class ApiKeyRosterRecheckTest {
-    @Test
+    @ParameterizedTest
+    @ValueSource(strings = ["api-key", "custom-key"])
     fun `a key set in the console reaches its api-key head's list at the next recheck, with no hourly refresh`(
+        authKind: String,
         @TempDir tmp: Path,
     ) = runBlocking {
-        val fixture = ApiKeyRosterFixture(tmp, this)
+        val fixture = ApiKeyRosterFixture(tmp, this, authKind = authKind)
         try {
             withTimeout(60.seconds) {
                 fixture.backend.serve(KEY_A, listOf(listedModel(MODEL_A, codeModeOnly = false)))
@@ -121,10 +125,14 @@ class ApiKeyRosterRecheckTest {
 
     /** The head reads its environment, then the key file its auth names, then the key store (ApiKeyAuthProvider), so a
      *  key written to that file is the head's credential, and its list follows it at the next recheck. */
-    @Test
-    fun `a key written to its api-key head's key file reaches the head's list at the next recheck`(@TempDir tmp: Path) =
+    @ParameterizedTest
+    @ValueSource(strings = ["api-key", "custom-key"])
+    fun `a key written to its api-key head's key file reaches the head's list at the next recheck`(
+        authKind: String,
+        @TempDir tmp: Path,
+    ) =
         runBlocking {
-            val fixture = ApiKeyRosterFixture(tmp, this, keyFile = tmp.resolve("synthetic.key"))
+            val fixture = ApiKeyRosterFixture(tmp, this, keyFile = tmp.resolve("synthetic.key"), authKind = authKind)
             try {
                 withTimeout(60.seconds) {
                     fixture.backend.serve(KEY_A, listOf(listedModel(MODEL_A, codeModeOnly = false)))
@@ -152,8 +160,12 @@ class ApiKeyRosterRecheckTest {
     /** Every combination of where the key is kept, each a daemon start in a folder of its own: the list is asked with the
      *  environment's key, else the key the key file supplies, else the key store's, as the head presents them. A key file
      *  that supplies none is passed over for the store, as the head passes it over. */
-    @Test
-    fun `an api-key head's list is asked with the key the head presents, in the head's own order`(@TempDir tmp: Path) =
+    @ParameterizedTest
+    @ValueSource(strings = ["api-key", "custom-key"])
+    fun `an api-key head's list is asked with the key the head presents, in the head's own order`(
+        authKind: String,
+        @TempDir tmp: Path,
+    ) =
         runBlocking {
             ChatGptListBackend().use { backend ->
                 backend.serve(ENV_KEY, listOf(listedModel(ENV_MODEL, codeModeOnly = false)))
@@ -166,7 +178,7 @@ class ApiKeyRosterRecheckTest {
                     }
                 }
                 combinations.forEachIndexed { n, sources ->
-                    val listed = listedAtStart(tmp.resolve("start-$n"), backend, sources)
+                    val listed = listedAtStart(tmp.resolve("start-$n"), backend, sources, authKind)
                     assertEquals(listOfNotNull(sources.presented?.let(modelOf::getValue)), listed, "$sources")
                 }
             }
@@ -174,15 +186,19 @@ class ApiKeyRosterRecheckTest {
 
     /** `splice models` reads an api-key head's key through the same StoredCredential, so it asks with the key in the
      *  head's key file and reports what that key is served. */
-    @Test
-    fun `splice models asks an api-key head's provider with the key in its key file`(@TempDir tmp: Path) {
+    @ParameterizedTest
+    @ValueSource(strings = ["api-key", "custom-key"])
+    fun `splice models asks an api-key head's provider with the key in its key file`(
+        authKind: String,
+        @TempDir tmp: Path,
+    ) {
         ChatGptListBackend().use { backend ->
             backend.serve(FILE_KEY, listOf(listedModel(FILE_MODEL, codeModeOnly = false)))
             val keyFile = tmp.resolve("synthetic.key")
             Files.writeString(keyFile, "$FILE_KEY\n")
             val configFile = tmp.resolve("splice.toml")
             val env = EnvReader { name -> if (name == "SPLICE_CONFIG") configFile.toString() else null }
-            val provider = apiKeyProvider(backend.baseUrl, keyFile, declared = FILE_MODEL)
+            val provider = apiKeyProvider(backend.baseUrl, keyFile, declared = FILE_MODEL, authKind = authKind)
             val printed = mutableListOf<String>()
             val command = ModelsCommand(
                 ModelConfigurationSource { ModelConfiguration(configFile.toString(), mapOf(API_KEY_HEAD to provider)) },
@@ -202,10 +218,15 @@ class ApiKeyRosterRecheckTest {
 
 /** An api-key head on a loopback list backend, its key named by [KEY_ENV] and, when [keyFile] is set, by its auth's key
  *  file, with one declared row. */
-private fun apiKeyProvider(baseUrl: String, keyFile: Path?, declared: String = "synthetic-declared") = ProviderConfig(
+private fun apiKeyProvider(
+    baseUrl: String,
+    keyFile: Path?,
+    declared: String = "synthetic-declared",
+    authKind: String = "api-key",
+) = ProviderConfig(
     dialect = Dialect.OPENAI_CHAT,
     baseUrl = baseUrl,
-    auth = AuthConfig("api-key", file = keyFile?.toString(), env = KEY_ENV),
+    auth = AuthConfig(authKind, file = keyFile?.toString(), env = KEY_ENV),
     models = listOf(ModelEntry(declared, contextWindow = 128_000)),
     local = false,
 )
@@ -246,7 +267,12 @@ private data class KeySources(val environment: String?, val file: KeyFileHolds, 
 }
 
 /** One daemon start in [folder] with [sources] in place: the head's list as the start's ask leaves it. */
-private suspend fun listedAtStart(folder: Path, backend: ChatGptListBackend, sources: KeySources): List<String> {
+private suspend fun listedAtStart(
+    folder: Path,
+    backend: ChatGptListBackend,
+    sources: KeySources,
+    authKind: String,
+): List<String> {
     Files.createDirectories(folder)
     val configFile = folder.resolve("splice.toml")
     val env = EnvReader { name ->
@@ -261,14 +287,19 @@ private suspend fun listedAtStart(folder: Path, backend: ChatGptListBackend, sou
     val keyFile = folder.resolve("synthetic.key")
     sources.file.writeAt(keyFile)
     val rosters = ModelRosters(StatePaths(baseOverride = folder.resolve("state")), log, EndpointModels(env, log))
-    rosters.resolve(mapOf(API_KEY_HEAD to apiKeyProvider(backend.baseUrl, keyFile)))
+    rosters.resolve(mapOf(API_KEY_HEAD to apiKeyProvider(backend.baseUrl, keyFile, authKind = authKind)))
     return rosters.forHead(API_KEY_HEAD).map { it.id }
 }
 
 /** An api-key head's model list as the daemon keeps it, asked of a loopback backend with the key the daemon reads, and
  *  the console's control server writing splice's key store in the same temp folder. [keyFile], when set, is the key
  *  file the head's auth names. */
-private class ApiKeyRosterFixture(tmp: Path, parent: CoroutineScope, private val keyFile: Path? = null) {
+private class ApiKeyRosterFixture(
+    tmp: Path,
+    parent: CoroutineScope,
+    private val keyFile: Path? = null,
+    authKind: String = "api-key",
+) {
     private val scope = LifecycleScope(parent.coroutineContext)
     private val paths = StatePaths(baseOverride = tmp.resolve("state"))
     private val configFile = tmp.resolve("config").resolve("splice").resolve("splice.toml")
@@ -285,7 +316,7 @@ private class ApiKeyRosterFixture(tmp: Path, parent: CoroutineScope, private val
     val hourly = HeldBeat()
     val credentialBeat = HeldBeat()
 
-    private val heads = mapOf(API_KEY_HEAD to apiKeyProvider(backend.baseUrl, keyFile))
+    private val heads = mapOf(API_KEY_HEAD to apiKeyProvider(backend.baseUrl, keyFile, authKind = authKind))
     private val rosters = ModelRosters(
         paths,
         log,

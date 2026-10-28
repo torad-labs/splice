@@ -4,6 +4,8 @@ import type { CliRun, CliScenario, Json, ObjectValue } from "./types";
 import { compareMcpBoundary, mcpGatewayFields, sourceMcpTranscript, type McpTranscript } from "./mcp-contract";
 import { compareFreeformBoundary, freeformGatewayFields, sourceFreeformTranscript, type FreeformTranscript } from "./freeform-contract";
 import { compareInterruption, sourceInterruption } from "./interruption-contract";
+import { canonicalMcpSearchPackets } from "./mcp-search-contract";
+import { canonicalSelectedMcpCall, mcpSearchCallbackPlan, selectedMcpTranscript } from "./mcp-search-call";
 
 const callTypes = new Set(["function_call", "custom_tool_call", "function_call_output", "custom_tool_call_output"]);
 const status = /^(Script (?:completed|failed|terminated|running with cell ID [^\n]+)\n)Wall time [0-9]+\.[0-9] seconds\nOutput:\n$/;
@@ -33,8 +35,15 @@ export function compareControlPackets(source: CliRun, candidate: ObjectValue, ca
   if (!source.observations.length) throw Error("Actual reference supplied no actual model requests");
   const input = candidate.posted.at(-1);
   if (!Array.isArray(input) || input.some(item => item === null || typeof item !== "object" || Array.isArray(item))) throw Error("Invalid candidate model input");
-  assert.deepStrictEqual(protocolSequence(input as ObjectValue[]), protocolSequence(source.observations.at(-1)!.input), "Actual source and gateway calls/results/history order differ");
-  if (source.scenario.mcp) compareMcpBoundary(sourceMcpTranscript(source), candidate);
+  const reference = protocolSequence(source.observations.at(-1)!.input), actual = protocolSequence(input as ObjectValue[]);
+  const mcp = source.scenario.mcp ? sourceMcpTranscript(source) : undefined;
+  let packets = [reference, actual];
+  if (mcp && source.scenario.rankedSearch) {
+    packets = canonicalSelectedMcpCall(source, mcp, reference, actual);
+    packets = canonicalMcpSearchPackets(source, packets[0]!, packets[1]!);
+  }
+  assert.deepStrictEqual(packets[1], packets[0], "Actual source and gateway calls/results/history order differ");
+  if (mcp) compareMcpBoundary(source.scenario.rankedSearch ? selectedMcpTranscript(source, mcp, actual) : mcp, candidate);
   if (source.scenario.applyPatch) {
     assert.ok(candidateDirectory, "Freeform comparison requires the actual candidate directory");
     compareFreeformBoundary(sourceFreeformTranscript(source), candidate, candidateDirectory);
@@ -81,6 +90,9 @@ export function gatewayInputBytes(scenario: CliScenario, mcp?: McpTranscript, fr
 
 /** MCP candidate inputs are derived from measured source exchanges, never invented from a case label. */
 export function sourceGatewayInputBytes(source: CliRun): string {
-  return gatewayInputBytes(source.scenario, source.scenario.mcp ? sourceMcpTranscript(source) : undefined,
-    source.scenario.applyPatch ? sourceFreeformTranscript(source) : undefined, source.scenario.interruption ? sourceInterruption(source) : undefined);
+  const mcp = source.scenario.mcp ? sourceMcpTranscript(source) : undefined;
+  const input = gatewayInput(source.scenario, mcp, source.scenario.applyPatch ? sourceFreeformTranscript(source) : undefined,
+    source.scenario.interruption ? sourceInterruption(source) : undefined);
+  if (mcp && source.scenario.rankedSearch) input.callbacks = mcpSearchCallbackPlan(source, mcp);
+  return JSON.stringify(input) + "\n";
 }

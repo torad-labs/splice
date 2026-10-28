@@ -1,5 +1,6 @@
 import type { CliScenario } from "./types";
 import { mcpRpcErrorVectors } from "./mcp-rpc-cases";
+import { mcpSearchScenario } from "./mcp-search-cases";
 
 /** Fixed scripts exercise control/history independently of the frontends' different built-in tools. */
 export const controlScenarios: readonly CliScenario[] = [
@@ -34,10 +35,7 @@ export const mcpScenarios: readonly CliScenario[] = [
     { kind: "exec", source: 'try{text({tag:"mcp-failure",resolved:await tools.mcp__parity__ordinary_failure({value:"beta"})});}catch(e){text({tag:"mcp-failure",rejected:String(e)});}' },
     { kind: "exec", source: 'text({tag:"mcp-structured",value:await tools.mcp__parity__structured({value:"gamma"})});' },
   ] },
-  { schema: 1, id: "mcp-search", mcp: true, rankedSearch: true, actions: [
-    { kind: "exec", source: 'text({tag:"ranked-search",value:await tools.tool_search({query:"quasar-zephyr",limit:1})});' },
-    { kind: "exec", source: 'text({tag:"discovered-call",value:await tools.mcp__parity__echo({value:"after-search"})});' },
-  ] },
+  mcpSearchScenario(),
   { schema: 1, id: "mcp-rpc-error", mcp: true, actions: mcpRpcErrorVectors.map(vector => ({ kind: "exec",
     source: `try{text({tag:${JSON.stringify(vector.id)},resolved:await tools.mcp__parity__echo({value:${JSON.stringify(`rpc-error-probe/${vector.id}`)}})});}catch(e){text({tag:${JSON.stringify(vector.id)},rejected:String(e)});}`,
   })) },

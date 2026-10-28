@@ -18,6 +18,7 @@ import { coreValueWitnesses, originalCoreSources } from "./current-core-values";
 import { runCurrentCoreApi } from "./current-core-api";
 import { budgetBoundaryFixtures } from "./current-boundary-fixtures";
 import { jsonCorpusFixtures, assertJsonCorpus } from "./current-json-fixtures";
+import { assertMcpSearchRank, mcpSearchRankFixtures } from "./current-cli/mcp-search-cases";
 
 export async function prepareCurrentCoreOracleSources(directory: string, lock: CurrentReference, inventory: CurrentInventory, save: (name: string, value: string | Uint8Array) => Promise<unknown>): Promise<void> {
     const sourceRepository = await resolveCurrentSource(lock, lock.sourceRepositoryDefault ?? undefined);
@@ -90,6 +91,7 @@ type Fixture = Record<string, any>;
 export function currentCoreFixtures(): Fixture[] {
   const vectors: Fixture[] = [];
   vectors.push(...budgetBoundaryFixtures());
+  vectors.push(...mcpSearchRankFixtures());
   for (const type of ["string", "number", "boolean", "integer", "object", "array", "null"]) vectors.push({ operation: "schema_projection", schema: { type } });
   const schemaCases: any[] = [true, false, {}, { type: "string" }, { type: ["string", "null"] }, { enum: ["first", "λ", null, false, 2] },
     { const: { nested: ["x"] } }, { anyOf: [{ type: "integer" }, { type: "boolean" }] }, { oneOf: [{ type: "string" }, { type: "array" }] },
@@ -206,6 +208,7 @@ export async function runCurrentCore(java: string, jar: string, evidence: string
     for (let index = 0; index < fixtures.length; index++) {
       assert.equal(expected[index].id, fixtures[index]!.id); assert.equal(actual[index].id, fixtures[index]!.id); assert.equal(actual[index].nonce, runId);
       assert.deepEqual(actual[index].result, expected[index].result, `current production core disagreement at ${fixtures[index]!.id}`);
+      assertMcpSearchRank(fixtures[index]!, expected[index].result);
       if (fixtures[index]!.operation === "tool_output") assertObservableJsonKeyOrder(actual[index].result.value, expected[index].result.value);
       if (fixtures[index]!.operation === "json_value" && Object.hasOwn(expected[index].result, "value")) assertObservableJsonKeyOrder(actual[index].result.value, expected[index].result.value);
     }

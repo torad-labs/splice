@@ -11,16 +11,17 @@ import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.provider.codex.diagnostics.CodeModeGatewayBridgeSink
 import splice.provider.codex.diagnostics.CodeModeGatewayNativeResults
+import splice.provider.codex.diagnostics.current.callback.CodeModeGatewayScenarioCallbacks
 
 /** Each scripted call and client response is consumed once; unexpected callbacks fail the probe. */
-internal class CodeModeGatewayScenarioPlan(specification: JsonObject, private val json: Json) {
+internal class CodeModeGatewayScenarioPlan(specification: JsonObject, json: Json) {
     private val actions = ArrayDeque(specification.getValue("actions").jsonArray.map { it.jsonObject })
-    private val expectedCallbacks = ArrayDeque(specification.getValue("callbacks").jsonArray.map { it.jsonObject })
+    private val client = CodeModeGatewayScenarioCallbacks(specification, json)
     private var lastExec: String? = null
-    val callbacks = ArrayList<JsonObject>()
+    val callbacks: List<JsonObject> get() = client.accepted
     var finished: Boolean = false
         private set
-    val stageLimit: Int = actions.size + expectedCallbacks.size + 1
+    val stageLimit: Int = actions.size + client.count + 1
 
     init {
         require(specification["schema"] == JsonPrimitive(1)) { "Unsupported scenario schema" }
@@ -60,18 +61,10 @@ internal class CodeModeGatewayScenarioPlan(specification: JsonObject, private va
         return GatewayCustomCall(id, name, value, outer)
     }
 
-    fun accept(sink: CodeModeGatewayBridgeSink) {
-        sink.callbackIds.forEachIndexed { index, id ->
-            val expected = checkNotNull(expectedCallbacks.removeFirstOrNull()) { "Unexpected client callback" }
-            val name = sink.callbackNames[index]
-            val arguments = json.parseToJsonElement(sink.callbackInputs[index].toString())
-            check(JsonScalars.str(expected, "name") == name) { "Client callback name differs from bound input" }
-            check(expected.getValue("arguments") == arguments) { "Client callback arguments differ from bound input" }
-            callbacks += JsonObject(expected + ("id" to JsonPrimitive(id)))
-        }
-    }
+    fun accept(sink: CodeModeGatewayBridgeSink) = client.accept(sink)
 
     fun checkComplete() {
-        check(finished && actions.isEmpty() && expectedCallbacks.isEmpty()) { "Scenario was not fully consumed" }
+        check(finished && actions.isEmpty()) { "Scenario was not fully consumed" }
+        client.checkComplete()
     }
 }

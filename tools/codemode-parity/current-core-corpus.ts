@@ -6,6 +6,7 @@ import { assertTokenizerCorpus } from "./current-tokenizer-fixtures";
 import { assertJsonCorpus } from "./current-json-fixtures";
 import { coreCaseIdentity, parseLosslessJson, assertObservableJsonKeyOrder } from "./current-witness";
 import { sha256, type Artifact } from "./qualification";
+import { assertMcpSearchRank } from "./current-cli/mcp-search-cases";
 
 /** Validate every mandatory raw row, including cases with no project function counter. */
 export async function coreCorpusFindings(execution: ExecutedVerifier | undefined, runId: string): Promise<string[]> {
@@ -26,6 +27,7 @@ export async function coreCorpusFindings(execution: ExecutedVerifier | undefined
       if(input.operation!=="tokenize"&&!input.corpus?.startsWith("json-"))assert.ok(required.delete(input.id),"unrecognized current core input");
       assert.equal(reference[index].id,input.id);assert.equal(candidate[index].id,input.id);assert.equal(candidate[index].nonce,runId);
       assert.deepEqual(candidate[index].result,reference[index].result,"mandatory source/production result differs");
+      assertMcpSearchRank(input,reference[index].result);
       if(input.operation==="tool_output")assertObservableJsonKeyOrder(candidate[index].result.value,reference[index].result.value);
       if(input.operation==="json_value"&&Object.hasOwn(reference[index].result,"value"))assertObservableJsonKeyOrder(candidate[index].result.value,reference[index].result.value);
     }

@@ -2,9 +2,40 @@
 // function of (body.thinking, upstreamModel) with zero coupling to the rest of the file.
 package splice.dialect.chat
 
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import splice.core.wire.AnthropicRequest
 
 internal class ChatEffortTiers(private val xhighModels: Regex? = null) {
+
+    /**
+     * The effort Claude Code's request names, on this vendor's rungs, else the budget tier (Marcos, 2026-10-28:
+     * "claude code picks should also be considered, for all heads and all adapters we do. Always."). Claude Code
+     * names it in output_config (its /effort, its --effort, which a launch sets to the head's configured effort), and
+     * a later message's output_config changes it for the turn, as the Responses adapter reads it. A request that
+     * names none keeps the budget tier, so a compaction on the same session's request shape keeps its effort.
+     */
+    fun chatReasoningEffort(body: AnthropicRequest, upstreamModel: String, raw: JsonObject): String =
+        clientEffort(raw, upstreamModel) ?: chatReasoningEffort(body, upstreamModel)
+
+    /** low, medium and high as named; xhigh, max and ultracode as xhigh where the model takes it, else high. */
+    private fun clientEffort(raw: JsonObject, upstreamModel: String): String? {
+        val fromMessages = (raw["messages"] as? JsonArray)?.asReversed()?.firstNotNullOfOrNull { askedIn(it) }
+        return when ((fromMessages ?: askedIn(raw))?.trim()?.lowercase()) {
+            "low" -> "low"
+            "medium" -> "medium"
+            "high" -> "high"
+            "xhigh", "max", "ultracode" -> if (xhighModels?.containsMatchIn(upstreamModel) == true) "xhigh" else "high"
+            else -> null
+        }
+    }
+
+    /** The effort an object's output_config names, when it is a string. */
+    private fun askedIn(element: JsonElement?): String? =
+        (((element as? JsonObject)?.get("output_config") as? JsonObject)?.get("effort") as? JsonPrimitive)
+            ?.takeIf { it.isString }?.content
 
     /**
      * Map Anthropic thinking budget → chat `reasoning_effort`. Default high so backends that

@@ -26,14 +26,18 @@ class ChatEffortWiringTest {
         assertEquals("max", built.meta.reasoning.effort)
     }
 
+    // Marcos, Oct 28: "claude code picks should also be considered, for all heads and all adapters we do. Always." A
+    // provider without its own vocabulary sends the effort Claude Code's request names on the standard rungs, and its
+    // request is otherwise byte-for-byte what it was. Rewritten from "preserves its exact request bytes", which pinned
+    // high for every pick.
     @Test
-    fun `a provider without the vocabulary preserves its exact request bytes`() {
+    fun `a provider without the vocabulary sends Claude Code's effort on the standard rungs`() {
         val provider = provider(configured = false)
-        val expected = """{"model":"GLM-5.3-Flash","messages":[{"role":"user","content":"hello"}],""" +
-            """"stream":true,"reasoning_effort":"high","reasoning":{"effort":"high"}}"""
-        for (effort in listOf("low", "high", "max")) {
+        fun expected(rung: String) = """{"model":"GLM-5.3-Flash","messages":[{"role":"user","content":"hello"}],""" +
+            """"stream":true,"reasoning_effort":"$rung","reasoning":{"effort":"$rung"}}"""
+        for ((effort, rung) in listOf("low" to "low", "high" to "high", "max" to "high")) {
             val built = provider.buildTurn(body("\"output_config\":{\"effort\":\"$effort\"}"), false, null)
-            assertEquals(expected, built.requestBody.toString(), effort)
+            assertEquals(expected(rung), built.requestBody.toString(), effort)
         }
     }
 

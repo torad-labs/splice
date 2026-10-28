@@ -24,6 +24,7 @@ import splice.core.topology.TopologyKnobLayer
 import splice.core.turn.WatchdogBudget
 import splice.launch.HeadTrees
 import splice.launch.LaunchOutcome
+import splice.launch.LaunchRecipe
 import splice.launch.recipe.LaunchService
 import splice.topology.TopologyLoader
 import java.nio.file.Path
@@ -65,10 +66,22 @@ class LaunchEffortTest {
         assertEquals(listOf("--effort=low"), rig.argv(listOf("--effort=low")).filter { it.startsWith("--effort") })
     }
 
+    // A head set to none or minimal: Claude Code's --effort has no such word, and a session given none sends its own
+    // default, which every adapter would take over the head's setting. So the launch tells Claude Code to send no
+    // effort at all (CLAUDE_CODE_EFFORT_LEVEL=unset, read in the 2.1.312 binary), and the head's own setting rides.
     @Test
-    fun `an effort Claude Code has no word for starts nothing of splice's`(@TempDir tmp: Path) {
-        val rig = EffortLaunchRig(tmp, settings = "[heads.$HEAD.overrides]\neffort = \"minimal\"")
-        assertEquals(emptyList<String>(), rig.efforts(emptyList()), "--effort takes low, medium, high, xhigh or max")
+    fun `a head set to none or minimal starts Claude Code sending no effort of its own`(@TempDir tmp: Path) {
+        for (word in listOf("none", "minimal")) {
+            val rig = EffortLaunchRig(tmp.resolve(word), settings = "[heads.$HEAD.overrides]\neffort = \"$word\"")
+            assertEquals(emptyList<String>(), rig.efforts(emptyList()), "$word: no --effort")
+            assertEquals("unset", rig.env(emptyList())["CLAUDE_CODE_EFFORT_LEVEL"], "$word: Claude Code sends none")
+        }
+    }
+
+    @Test
+    fun `a head at any effort Claude Code can send leaves Claude Code free to send it`(@TempDir tmp: Path) {
+        val rig = EffortLaunchRig(tmp, settings = "")
+        assertEquals(null, rig.env(emptyList())["CLAUDE_CODE_EFFORT_LEVEL"], "no env lock: /effort still changes it")
     }
 }
 
@@ -100,7 +113,12 @@ private class EffortLaunchRig(private val tmp: Path, settings: String) {
     )
 
     /** The argv Claude Code is started with when the person gave [extraArgs]. */
-    fun argv(extraArgs: List<String>): List<String> {
+    fun argv(extraArgs: List<String>): List<String> = launch(extraArgs).argv
+
+    /** The environment Claude Code is started with when the person gave [extraArgs]. */
+    fun env(extraArgs: List<String>): Map<String, String> = launch(extraArgs).env
+
+    private fun launch(extraArgs: List<String>): LaunchRecipe {
         val head = topology.heads.getValue(HEAD)
         val providerCfg = topology.providers.getValue(head.provider)
         val planner = SignInPlanner()
@@ -117,7 +135,7 @@ private class EffortLaunchRig(private val tmp: Path, settings: String) {
             .let { it.copy(trees = HeadTrees(tmp.resolve(".claude-held"))) }
         val service = LaunchService(ClaudeConfigMaterializer(tmp.resolve("home")), envReader = { null })
         val outcome = service.launchOutcome(spec, extraArgs, dangerouslySkipPermissions = false)
-        return (outcome as LaunchOutcome.Ready).recipe.argv
+        return (outcome as LaunchOutcome.Ready).recipe
     }
 
     /** The values given after each `--effort` in the argv. */

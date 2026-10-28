@@ -43,6 +43,9 @@ import java.nio.file.Path
 /** Claude Code's flag for the effort a session starts at. */
 private const val EFFORT_FLAG = "--effort"
 
+/** Claude Code's environment word for its effort; "unset" makes it send none. */
+private const val EFFORT_ENV = "CLAUDE_CODE_EFFORT_LEVEL"
+
 public class LaunchService(
     private val materializer: ClaudeConfigMaterializer,
     private val claudeBinary: String = "claude",
@@ -83,13 +86,27 @@ public class LaunchService(
      *  Assigned by the daemon before routes serve requests; null launches heads only. */
     public var remotes: RemoteCommands? = null
 
+    /** The words Claude Code's --effort takes (`claude --help`, 2.1.312). */
+    private val clientEfforts = setOf("low", "medium", "high", "xhigh", "max")
+
+    /** The efforts below low, which --effort has no word for. */
+    private val belowClientEfforts = setOf("none", "minimal")
+
+    /** [spec] as the person launches it: an effort of their own on the command line ([extraArgs], spaced or as
+     *  `--effort=<level>`) is theirs, and splice names none beside it. */
+    private fun effortGiven(spec: LaunchSpec, extraArgs: List<String>): LaunchSpec =
+        if (extraArgs.any { it == EFFORT_FLAG || it.startsWith("$EFFORT_FLAG=") }) spec.copy(effort = null) else spec
+
     /** Oct 28: the session starts at its head's effort as Claude Code's own --effort, so it shows there and /effort
-     *  changes it. `--effort <level>` for the effort [spec] starts its session at, or nothing when it names none or the person's own
-     *  [extraArgs] name one, spaced or as `--effort=<level>`. */
-    private fun effortArgs(spec: LaunchSpec, extraArgs: List<String>): List<String> {
-        if (extraArgs.any { it == EFFORT_FLAG || it.startsWith("$EFFORT_FLAG=") }) return emptyList()
-        return spec.effort?.current()?.let { listOf(EFFORT_FLAG, it) }.orEmpty()
-    }
+     *  changes it. Nothing for a word --effort does not take. */
+    private fun effortArgs(spec: LaunchSpec): List<String> =
+        spec.effort?.current()?.takeIf { it in clientEfforts }?.let { listOf(EFFORT_FLAG, it) }.orEmpty()
+
+    /** A head set to none or minimal: a session Claude Code starts at no effort sends its own default, which every
+     *  adapter takes over the head's setting, so Claude Code is told to send none (read in the 2.1.312 binary: "null
+     *  when no effort parameter will be sent (... CLAUDE_CODE_EFFORT_LEVEL=unset ...)"), and the head's own rides. */
+    private fun effortEnv(spec: LaunchSpec): Map<String, String> =
+        if (spec.effort?.current() in belowClientEfforts) mapOf(EFFORT_ENV to "unset") else emptyMap()
 
     /** V4-183 and V4-115: what a launch resumes, and what the operator is told about it. */
     private val resume = LaunchResume(resumeAcrossHeads, moving)
@@ -126,7 +143,7 @@ public class LaunchService(
         val effective = wrapped?.let { keyed.copy(trees = keyed.trees.copy(own = it.configDir)) } ?: keyed
         val slots = LaunchAliasSlots.of(effective)
         // V4-358: every choice above is made on the rows' own ids; what the client is HANDED is spelled here.
-        val held = effective.heldByClient()
+        val held = effortGiven(effective.heldByClient(), extraArgs)
         // V4-449: client-login heads author no roster or picker cache; an explicit pin is a launch default only.
         val roster = held.models.availableModelIds.takeUnless { held.gateway.clientModels }
         val materialize = MaterializeSpec(
@@ -183,7 +200,7 @@ public class LaunchService(
             // arguments keep there (LaunchMarker); elsewhere the arguments are as they were
             val overlay = overlayOf(wrapped, roster, held.gateway, keyed)
             addAll(LaunchMarker.settingsArgs(overlay))
-            addAll(hub.args + effortArgs(held, extraArgs)) // the effort after the hub's: a relaunch reads it as its own
+            addAll(hub.args + effortArgs(held)) // the effort after the hub's: a relaunch reads it as its own
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
             // picker (populated by the materialized bare-id roster) can freely switch. Forcing it locked the row.
             // V4-169 (the President, Oct 13): a session another head wrote goes on as the copy the client resumes.
@@ -297,7 +314,7 @@ public class LaunchService(
         val dirs = listOf(spec.trees.own) + spec.trees.siblings
         val config = wrapped?.configRootUnsets(inheritedConfigDir, dirs).orEmpty()
         // V4-449: what this head no longer plants must not leak in from an outer head's session either.
-        val planted = buildEnv(held, slots)
+        val planted = buildEnv(held, slots) + effortEnv(held)
         val clientModels = if (spec.gateway.clientModels) {
             LaunchModelEnvironment.inherited(planted)
         } else {

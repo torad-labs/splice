@@ -44,7 +44,7 @@ public class ChatRequestBuilder(
         val listed = body.copy(tools = toolChanges.current(body))
         val emitTools = quirks.capabilities.supportsTools && listed.tools.isNotEmpty()
         val effort = quirks.reasoning.effortVocabulary?.effort(raw, upstreamModel)
-            ?: effortTiers.chatReasoningEffort(body, upstreamModel)
+            ?: effortTiers.chatReasoningEffort(body, upstreamModel, raw)
         val context = JsonWire.string(
             buildJsonObject {
                 put("request", MessageFragmentContext.of(body, raw))

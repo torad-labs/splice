@@ -43,9 +43,6 @@ internal class LaunchSpecFactory(
     // the model runs there, so neither may carry it (see [TurnKey]).
     private val turnKey = TurnKey(mgmtKey)
 
-    /** The words Claude Code's --effort takes (`claude --help`, 2.1.312). */
-    private val clientEfforts = setOf("low", "medium", "high", "xhigh", "max")
-
     /**
      * [forwardClientAuth] is [ManagedHeadFactory]'s own `forwardClientAuth` — the STRUCTURAL read of
      * the wired credential (`wired.auth is ClientAuthProvider`), passed in rather than re-derived
@@ -144,14 +141,10 @@ internal class LaunchSpecFactory(
         modelOptionsCache = buildInputs.modelOptionsCache(ctx.catalog),
     )
 
-    /** Oct 28: the head's configured effort as of each launch (splice.toml, or the console's Settings), else high. A
-     *  word Claude Code's --effort does not take (none, minimal) starts nothing of splice's: the session keeps its own. */
+    /** Oct 28: the head's configured effort as of each launch (splice.toml, or the console's Settings), else high. The
+     *  launch decides how Claude Code is told it (LaunchService). */
     private fun launchEffort(cfg: SpliceConfig): LaunchEffort = LaunchEffort {
-        when (val configured = cfg.current().effort?.lowercase()) {
-            null -> DEFAULT_LAUNCH_EFFORT
-            in clientEfforts -> configured
-            else -> null
-        }
+        cfg.current().effort?.trim()?.lowercase()?.takeIf { it.isNotEmpty() } ?: DEFAULT_LAUNCH_EFFORT
     }
 
     /** Oct 26 (key rotation): the session reads its turn key through Claude Code's apiKeyHelper, which prints the

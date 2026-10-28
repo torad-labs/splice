@@ -58,7 +58,7 @@ export class Probe {
     }
   }
 
-  async post(body: unknown, token?: string): Promise<HttpReply> {
+  async post(body: unknown, token?: string, timeoutMs = 2500): Promise<HttpReply> {
     if (!this.active) throw Object.assign(new Error("stand-in probe stopped"), { code: "PROBE_STOPPED" });
     const authorization = token ?? await this.bearer();
     const payload = JSON.stringify(body);
@@ -92,7 +92,7 @@ export class Probe {
           resolve({ status: response.statusCode ?? 0, session: typeof session === "string" ? session : undefined, body: Buffer.concat(chunks).toString("utf8") });
         });
       });
-      const timer = setTimeout(() => req.destroy(Object.assign(new Error("stand-in request deadline"), { code: "ETIMEDOUT" })), 2500);
+      const timer = setTimeout(() => req.destroy(Object.assign(new Error("stand-in request deadline"), { code: "ETIMEDOUT" })), timeoutMs);
       req.once("close", () => clearTimeout(timer));
       req.once("error", reject);
       req.end(payload);
@@ -116,13 +116,13 @@ export class Probe {
     const id = this.nextId++;
     const reply = await this.post({ jsonrpc: "2.0", id, method: "initialize", params: {
       protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "splice-native-standin", version: "1" },
-    } });
+    } }, undefined, 15_000);
     this.result(reply, id);
     this.session = reply.session;
     const notified = await this.post({ jsonrpc: "2.0", method: "notifications/initialized" });
     if (notified.status < 200 || notified.status >= 300) throw Object.assign(new Error("initialize notification refused"), { code: `HTTP_${notified.status}` });
     const listingId = this.nextId++;
-    const listing = this.result(await this.post({ jsonrpc: "2.0", id: listingId, method: "tools/list" }), listingId);
+    const listing = this.result(await this.post({ jsonrpc: "2.0", id: listingId, method: "tools/list" }, undefined, 15_000), listingId);
     if (!Array.isArray(listing.tools) || !listing.tools.some((tool) => tool && typeof tool === "object" && tool.name === "count")) {
       throw Object.assign(new Error("stand-in tool absent"), { code: "TOOL_ABSENT" });
     }

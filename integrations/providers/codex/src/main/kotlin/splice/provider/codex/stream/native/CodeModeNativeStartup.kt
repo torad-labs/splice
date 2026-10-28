@@ -56,7 +56,7 @@ internal class CodeModeNativeStartup(private val registry: CodexCodeModeRegistry
             val cell = execute(host, owner, invocation, context, record)
             CodeModeHeldNativeCell(cell, record.origin.outerCallId)
         }
-        registry.nativeCells.trackSession(record.key, owner, context.turn.sessionId)
+        registry.nativeCells.services.trackSession(record.key, owner, context.turn.sessionId)
         registry.nativeCells.interrupts.started(owner, held)
         record.nativeCellId = held.cell.cellId
         return CodeModeNativeObservation(

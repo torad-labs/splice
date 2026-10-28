@@ -125,7 +125,7 @@ internal class CodexCodeModeRegistry(
         store,
         config,
         sweepInterval,
-    ).also { it.nativeOwned = CodeModeSweepOwnership(nativeCells::hasSessions) }
+    ).also { it.nativeOwned = CodeModeSweepOwnership(nativeCells.services::hasSessions) }
 
     /** V4-337: where each code-mode turn starts, before its history is built. */
     val turnStart = CodeModeTurnStart(access, retention, records, history, store, config.clock, retainedCells)

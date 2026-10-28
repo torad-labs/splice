@@ -19,8 +19,8 @@ class CodeModeNativeInterruptTest {
     @Test
     fun `interrupt addresses only active cells of the exact owned conversation`() = runTest {
         val cells = CodeModeNativeCells()
-        cells.trackSession("record-one", "one", "client")
-        cells.trackSession("record-two", "two", "client")
+        cells.services.trackSession("record-one", "one", "client")
+        cells.services.trackSession("record-two", "two", "client")
         val active = Cell("active")
         val completed = Cell("completed")
         val sibling = Cell("sibling")
@@ -30,7 +30,7 @@ class CodeModeNativeInterruptTest {
         cells.completed("one", completed.cellId, "outer-completed")
         cells.interrupts.started("two", CodeModeHeldNativeCell(sibling, "outer-sibling"))
         assertEquals(listOf(CodeModeInterruptedCell("active", true)), interrupted(cells, "one", "client"))
-        assertEquals("client", cells.clientSession("one"))
+        assertEquals("client", cells.services.clientSession("one"))
         assertTrue(interrupted(cells, "one", "client").isEmpty())
         assertEquals(null, cells.takeRetained("one", "active"))
         assertEquals(listOf(CodeModeInterruptedCell("sibling", true)), interrupted(cells, "two", "client"))
@@ -39,7 +39,7 @@ class CodeModeNativeInterruptTest {
     @Test
     fun `missing wrong-client and evicted conversations cannot masquerade as owned idle state`() = runTest {
         val cells = CodeModeNativeCells()
-        cells.trackSession("record", "owned", "client")
+        cells.services.trackSession("record", "owned", "client")
         unavailable(cells, "missing", "client")
         unavailable(cells, "owned", "another-client")
         assertTrue(interrupted(cells, "owned", "client").isEmpty())
@@ -50,7 +50,7 @@ class CodeModeNativeInterruptTest {
     @Test
     fun `new cells admitted after the explicit snapshot are not stopped by that earlier action`() = runTest {
         val cells = CodeModeNativeCells()
-        cells.trackSession("record", "owned", "client")
+        cells.services.trackSession("record", "owned", "client")
         val first = Cell("before").also { it.release = CompletableDeferred() }
         cells.interrupts.started("owned", CodeModeHeldNativeCell(first, "first"))
         val interrupt = async { interrupted(cells, "owned", "client") }
@@ -65,7 +65,7 @@ class CodeModeNativeInterruptTest {
     @Test
     fun `one native failure is visible while independent sibling terminations finish and remain retryable`() = runTest {
         val cells = CodeModeNativeCells()
-        cells.trackSession("record", "owned", "client")
+        cells.services.trackSession("record", "owned", "client")
         val failed = Cell("failed").also { it.failure = IOException("transport closed") }
         val healthy = Cell("healthy")
         cells.interrupts.started("owned", CodeModeHeldNativeCell(failed, "first"))
@@ -80,7 +80,7 @@ class CodeModeNativeInterruptTest {
     @Test
     fun `native cancellation propagates instead of turning into a successful interrupt report`() = runTest {
         val cells = CodeModeNativeCells()
-        cells.trackSession("record", "owned", "client")
+        cells.services.trackSession("record", "owned", "client")
         val cancelled = Cell("cancelled").also { it.cancellation = CancellationException("actual cancellation") }
         cells.interrupts.started("owned", CodeModeHeldNativeCell(cancelled, "first"))
         try {

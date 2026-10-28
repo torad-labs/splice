@@ -38,7 +38,7 @@ internal class CodexCodeModeTurn(
     config: CodeModeBridgeConfig,
 ) {
     private val log = config.log
-    val availability = CodeModeAvailabilityPolicy(config)
+    val availability = CodeModeAvailabilityPolicy(config, registry)
     private val identity = CodeModeTurnIdentity()
     private val notes = CodeModeTurnNotes(registry, log)
     private val branch = CodexCodeModeBranch(registry, driver, machine, validation, log)

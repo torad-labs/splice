@@ -18,13 +18,18 @@ import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.provider.codex.catalog.CodeModePresentation
 import splice.provider.codex.diagnostics.CodeModeGatewayBridgeSink
+import splice.provider.codex.state.lease.CodeModeCellLease
+import splice.provider.codex.state.lease.CodeModeSessionAlive
 import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeRuntime
 import splice.upstream.codemode.availability.CodeModeAvailability
 import splice.upstream.codemode.availability.CodeModeToolMode
 import java.io.IOException
+import kotlin.time.Duration.Companion.hours
 
 class CodeModeAvailabilityTest : CodeModeBridgeTestSupport() {
+    private val availabilityClock = MutableClock(1_000)
+
     @Test
     fun `preferred unavailable mode preserves direct declarations and only mode keeps exec`() {
         val manager = unavailable()
@@ -98,24 +103,44 @@ class CodeModeAvailabilityTest : CodeModeBridgeTestSupport() {
     fun `warning is separate head diagnostics once per live exact conversation and resets on stop`() = runTest {
         val manager = unavailable()
         val owner = turn().copy(catalog = turn().catalog.copy(policy = policy(CodeModeToolMode.CODE_MODE)))
-        suspend fun visit(turn: CodexCodeModeBridge.Turn) {
-            val sink = CodeModeGatewayBridgeSink()
-            val result = manager.interceptor(turn, disableParallel = false).intercept(BASE_REQUEST, sink) {
-                RoundResult.Outcome(TurnOutcome.Success(false, false, noRequestUsage))
-            }.turn()
-            assertTrue(result is TurnOutcome.Success)
-            assertEquals("", sink.text.toString())
-        }
         try {
-            visit(owner)
-            visit(owner.copy(model = "another-model"))
+            visit(manager, owner)
+            visit(manager, owner.copy(model = "another-model"))
             assertEquals(listOf(preferredWarning), notices())
-            visit(owner.copy(conversationKey = "separate-agent-conversation"))
-            visit(owner.copy(sessionId = "separate-client-session"))
+            visit(manager, owner.copy(conversationKey = "separate-agent-conversation"))
+            visit(manager, owner.copy(sessionId = "separate-client-session"))
             assertEquals(listOf(preferredWarning, preferredWarning, preferredWarning), notices())
             manager.onHeadStop()
-            visit(owner)
+            visit(manager, owner)
             assertEquals(List(4) { preferredWarning }, notices())
+        } finally {
+            manager.onProviderStop()
+        }
+    }
+
+    @Test
+    fun `idle record retention history replacement and interruption never reset a live service warning`() = runTest {
+        val manager = unavailable()
+        val owner = turn().copy(catalog = turn().catalog.copy(policy = policy(CodeModeToolMode.CODE_MODE)))
+        try {
+            visit(manager, owner)
+            availabilityClock.now += 48.hours.inWholeMilliseconds
+            manager.registry.timed.sweep()
+            assertEquals(
+                CodeModeInterruptOutcome.Interrupted(emptyList()),
+                manager.interruptActiveCells(owner.sessionId, owner.conversationKey),
+            )
+            visit(manager, owner, """{"input":[{"role":"user","content":"a compacted continuation"}]}""")
+            assertEquals(listOf(preferredWarning), notices())
+            deadSessions += owner.sessionId
+            manager.registry.timed.sweep()
+            assertEquals(
+                CodeModeInterruptOutcome.Unavailable,
+                manager.interruptActiveCells(owner.sessionId, owner.conversationKey),
+            )
+            deadSessions -= owner.sessionId
+            visit(manager, owner)
+            assertEquals(listOf(preferredWarning, preferredWarning), notices())
         } finally {
             manager.onProviderStop()
         }
@@ -153,9 +178,26 @@ class CodeModeAvailabilityTest : CodeModeBridgeTestSupport() {
                 override fun open(): CodeModeRuntime = throw IOException("Actual opening failed")
             },
             stateLocation(),
+            clock = availabilityClock,
+            cellLease = CodeModeCellLease(
+                sessionAlive = CodeModeSessionAlive { id -> id !in deadSessions },
+            ),
             log = LogSink { logLines += it },
         ),
     )
+
+    private suspend fun visit(
+        manager: CodexCodeModeBridge,
+        owner: CodexCodeModeBridge.Turn,
+        request: String = BASE_REQUEST,
+    ) {
+        val sink = CodeModeGatewayBridgeSink()
+        val result = manager.interceptor(owner, disableParallel = false).intercept(request, sink) {
+            RoundResult.Outcome(TurnOutcome.Success(false, false, noRequestUsage))
+        }.turn()
+        assertTrue(result is TurnOutcome.Success)
+        assertEquals("", sink.text.toString())
+    }
 
     private fun policy(mode: CodeModeToolMode): CodeModeToolPolicy =
         CodeModeToolPolicy(presentation = CodeModePresentation(toolMode = mode))

@@ -121,7 +121,6 @@ public class CodexCodeModeBridge(
         } finally {
             // Head stop releases child JVM workers even when the final durable write needs a retry.
             // The reusable provider opens a fresh runtime after its next start.
-            controller.availability.clear()
             run.end()
         }
     }

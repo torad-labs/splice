@@ -95830,10 +95830,19 @@
       "id": "codex-rs/protocol/src/models.rs#enum_item@85423",
       "sha256": "95f9fb7f02f9c424115d00b7cf76f7785521f5564e741c41ce9c9fed9326f51e",
       "scopeSha256": "177f206f8d7d9aca82404d5c6409ef32c4fe7f25872e6adc66b36d0b20966e45",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/protocol/src/models.rs#enum_item@85423"
+        }
+      ],
+      "reason": "Exact reviewed source serialization root ResponsesApiRequest.input:Vec<ResponseItem>; this mandatory actual-CLI case must rederive the present, raw-equal typed member/payload path from both real model inputs. Normalized timing, stripped IDs, absent fields, sibling DTOs and ordinary MCP frontend metadata earn no credit. This is an execution plan, not a historical PASS."
     },
     {
       "id": "codex-rs/protocol/src/models.rs#enum_item@90678",
@@ -96613,19 +96622,37 @@
       "id": "codex-rs/protocol/src/models.rs#enum_variant@85461",
       "sha256": "63b5dbf4cca6bd4304398a5458aab505e46d0d26506ac9d760b6a51b75a39956",
       "scopeSha256": "67d0f957c0ca4310b67936317a81d76e27c6da181feef6e5bb4ab411eb7eb660",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/terminate",
+          "inputSha256": "e7ff337122eafd09b2aa248e01f1de1823e620290119430e3e185fdb823f3904",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/protocol/src/models.rs#enum_variant@85461"
+        }
+      ],
+      "reason": "Exact reviewed source serialization root ResponsesApiRequest.input:Vec<ResponseItem>; this mandatory actual-CLI case must rederive the present, raw-equal typed member/payload path from both real model inputs. Normalized timing, stripped IDs, absent fields, sibling DTOs and ordinary MCP frontend metadata earn no credit. This is an execution plan, not a historical PASS."
     },
     {
       "id": "codex-rs/protocol/src/models.rs#enum_variant@85479",
       "sha256": "3c5b53f431a2970a370059e113765fe125d50d231283eb08a4515579afee3552",
       "scopeSha256": "3057233bb1129cb7f0b6534d97f0365bac88b77499c4e7884d49723649c2e055",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/protocol/src/models.rs#enum_variant@85479"
+        }
+      ],
+      "reason": "Exact reviewed source serialization root ResponsesApiRequest.input:Vec<ResponseItem>; this mandatory actual-CLI case must rederive the present, raw-equal typed member/payload path from both real model inputs. Normalized timing, stripped IDs, absent fields, sibling DTOs and ordinary MCP frontend metadata earn no credit. This is an execution plan, not a historical PASS."
     },
     {
       "id": "codex-rs/protocol/src/models.rs#enum_variant@90738",
@@ -97414,10 +97441,19 @@
       "id": "codex-rs/protocol/src/models.rs#field_declaration@40957",
       "sha256": "7d9c8471af736ddb1c5c05231fbc85aba0bb84760232950059c5b41189f90ad1",
       "scopeSha256": "5e677e6ba3cb711330583600e01746d5c73cc1d23b60df4442b7dc00c5e43740",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/protocol/src/models.rs#field_declaration@40957"
+        }
+      ],
+      "reason": "Exact reviewed source serialization root ResponsesApiRequest.input:Vec<ResponseItem>; this mandatory actual-CLI case must rederive the present, raw-equal typed member/payload path from both real model inputs. Normalized timing, stripped IDs, absent fields, sibling DTOs and ordinary MCP frontend metadata earn no credit. This is an execution plan, not a historical PASS."
     },
     {
       "id": "codex-rs/protocol/src/models.rs#field_declaration@41070",
@@ -97432,10 +97468,19 @@
       "id": "codex-rs/protocol/src/models.rs#field_declaration@41354",
       "sha256": "ef68e4a14e0952463e3cd20189efac5b4aa79bd91a1ad687c7352a3c2ee921ad",
       "scopeSha256": "3cb976ad6146e5127b88a7986e8f2da0c9bceed294a82da328c8c3c91d5c25f9",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/protocol/src/models.rs#field_declaration@41354"
+        }
+      ],
+      "reason": "Exact reviewed source serialization root ResponsesApiRequest.input:Vec<ResponseItem>; this mandatory actual-CLI case must rederive the present, raw-equal typed member/payload path from both real model inputs. Normalized timing, stripped IDs, absent fields, sibling DTOs and ordinary MCP frontend metadata earn no credit. This is an execution plan, not a historical PASS."
     },
     {
       "id": "codex-rs/protocol/src/models.rs#field_declaration@41472",
@@ -97450,10 +97495,19 @@
       "id": "codex-rs/protocol/src/models.rs#field_declaration@41526",
       "sha256": "ff322153fc1c4aacbfdbec84ef1e2d1f38994bdebf516e06a89c0346bc1d16c7",
       "scopeSha256": "49703f005f72af4124db67f33926372ab2f903f5fab2769b167dc5edead03e4d",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/protocol/src/models.rs#field_declaration@41526"
+        }
+      ],
+      "reason": "Exact reviewed source serialization root ResponsesApiRequest.input:Vec<ResponseItem>; this mandatory actual-CLI case must rederive the present, raw-equal typed member/payload path from both real model inputs. Normalized timing, stripped IDs, absent fields, sibling DTOs and ordinary MCP frontend metadata earn no credit. This is an execution plan, not a historical PASS."
     },
     {
       "id": "codex-rs/protocol/src/models.rs#field_declaration@41642",
@@ -97540,10 +97594,19 @@
       "id": "codex-rs/protocol/src/models.rs#field_declaration@43051",
       "sha256": "c373dc75d1e10499215ba7e9ce3646c241ae21799f1a56e3837f40b23851cc1f",
       "scopeSha256": "5b1bcabc9a90ce4bab4fc13be948da3081d3c06ab155b2ab0a541bb11433c312",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/protocol/src/models.rs#field_declaration@43051"
+        }
+      ],
+      "reason": "Exact reviewed source serialization root ResponsesApiRequest.input:Vec<ResponseItem>; this mandatory actual-CLI case must rederive the present, raw-equal typed member/payload path from both real model inputs. Normalized timing, stripped IDs, absent fields, sibling DTOs and ordinary MCP frontend metadata earn no credit. This is an execution plan, not a historical PASS."
     },
     {
       "id": "codex-rs/protocol/src/models.rs#field_declaration@43175",
@@ -97567,10 +97630,19 @@
       "id": "codex-rs/protocol/src/models.rs#field_declaration@43429",
       "sha256": "2eb4877cec24a4fb5d81fc2d07f23b1b06b38f8e59167eb4242340ff3911c7eb",
       "scopeSha256": "8b0c942c9b6392b5a4d5f5087304c603bb1b1924189fa4567aac75a311726849",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/protocol/src/models.rs#field_declaration@43429"
+        }
+      ],
+      "reason": "Exact reviewed source serialization root ResponsesApiRequest.input:Vec<ResponseItem>; this mandatory actual-CLI case must rederive the present, raw-equal typed member/payload path from both real model inputs. Normalized timing, stripped IDs, absent fields, sibling DTOs and ordinary MCP frontend metadata earn no credit. This is an execution plan, not a historical PASS."
     },
     {
       "id": "codex-rs/protocol/src/models.rs#field_declaration@43563",
@@ -97612,19 +97684,37 @@
       "id": "codex-rs/protocol/src/models.rs#field_declaration@44076",
       "sha256": "ff322153fc1c4aacbfdbec84ef1e2d1f38994bdebf516e06a89c0346bc1d16c7",
       "scopeSha256": "1a58ef52b38b7bed02425e092a770ab81d84b62e43cbb18931fe40a18b3d6e90",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/protocol/src/models.rs#field_declaration@44076"
+        }
+      ],
+      "reason": "Exact reviewed source serialization root ResponsesApiRequest.input:Vec<ResponseItem>; this mandatory actual-CLI case must rederive the present, raw-equal typed member/payload path from both real model inputs. Normalized timing, stripped IDs, absent fields, sibling DTOs and ordinary MCP frontend metadata earn no credit. This is an execution plan, not a historical PASS."
     },
     {
       "id": "codex-rs/protocol/src/models.rs#field_declaration@44101",
       "sha256": "7d9c8471af736ddb1c5c05231fbc85aba0bb84760232950059c5b41189f90ad1",
       "scopeSha256": "93d2bd1eee7d02a8c30cabc29a9ed7f217a3fe956ba5b2f211e7851a2e2d75b9",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/protocol/src/models.rs#field_declaration@44101"
+        }
+      ],
+      "reason": "Exact reviewed source serialization root ResponsesApiRequest.input:Vec<ResponseItem>; this mandatory actual-CLI case must rederive the present, raw-equal typed member/payload path from both real model inputs. Normalized timing, stripped IDs, absent fields, sibling DTOs and ordinary MCP frontend metadata earn no credit. This is an execution plan, not a historical PASS."
     },
     {
       "id": "codex-rs/protocol/src/models.rs#field_declaration@44214",
@@ -97639,10 +97729,19 @@
       "id": "codex-rs/protocol/src/models.rs#field_declaration@44249",
       "sha256": "9ef674c999f7266fa72f59fed51fb9d0e163e772f3d2cfe6af3d7089e68665bc",
       "scopeSha256": "ad22c3262dec779aa9c9765a03bdf19e85422c17a36f8ce92ac7a09b3c7c15a3",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/protocol/src/models.rs#field_declaration@44249"
+        }
+      ],
+      "reason": "Exact reviewed source serialization root ResponsesApiRequest.input:Vec<ResponseItem>; this mandatory actual-CLI case must rederive the present, raw-equal typed member/payload path from both real model inputs. Normalized timing, stripped IDs, absent fields, sibling DTOs and ordinary MCP frontend metadata earn no credit. This is an execution plan, not a historical PASS."
     },
     {
       "id": "codex-rs/protocol/src/models.rs#field_declaration@44363",
@@ -97666,28 +97765,55 @@
       "id": "codex-rs/protocol/src/models.rs#field_declaration@44815",
       "sha256": "ff322153fc1c4aacbfdbec84ef1e2d1f38994bdebf516e06a89c0346bc1d16c7",
       "scopeSha256": "ce5c466f9959ed12d8a787b2ff2032d7394dbcde04f682ee3e4c644a789c82f3",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/protocol/src/models.rs#field_declaration@44815"
+        }
+      ],
+      "reason": "Exact reviewed source serialization root ResponsesApiRequest.input:Vec<ResponseItem>; this mandatory actual-CLI case must rederive the present, raw-equal typed member/payload path from both real model inputs. Normalized timing, stripped IDs, absent fields, sibling DTOs and ordinary MCP frontend metadata earn no credit. This is an execution plan, not a historical PASS."
     },
     {
       "id": "codex-rs/protocol/src/models.rs#field_declaration@44931",
       "sha256": "155bab159fc0ea748020f88b7b208ec0f7c38fcfde83a45a1b030a0cd8c7fc99",
       "scopeSha256": "22e1f9e1e40c888aecf366b923df1e18c3c4779384577c21989e7bc952a34ceb",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/notify",
+          "inputSha256": "fc0fbfcdf7215f55c164402bd9444480dcd5493577a189edf473013c01bce357",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/protocol/src/models.rs#field_declaration@44931"
+        }
+      ],
+      "reason": "Exact reviewed source serialization root ResponsesApiRequest.input:Vec<ResponseItem>; this mandatory actual-CLI case must rederive the present, raw-equal typed member/payload path from both real model inputs. Normalized timing, stripped IDs, absent fields, sibling DTOs and ordinary MCP frontend metadata earn no credit. This is an execution plan, not a historical PASS."
     },
     {
       "id": "codex-rs/protocol/src/models.rs#field_declaration@45059",
       "sha256": "2eb4877cec24a4fb5d81fc2d07f23b1b06b38f8e59167eb4242340ff3911c7eb",
       "scopeSha256": "69fe577e89b9eb69beca228d6bda682fdf1619e2d27ed895678ec4af46f47ce5",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/protocol/src/models.rs#field_declaration@45059"
+        }
+      ],
+      "reason": "Exact reviewed source serialization root ResponsesApiRequest.input:Vec<ResponseItem>; this mandatory actual-CLI case must rederive the present, raw-equal typed member/payload path from both real model inputs. Normalized timing, stripped IDs, absent fields, sibling DTOs and ordinary MCP frontend metadata earn no credit. This is an execution plan, not a historical PASS."
     },
     {
       "id": "codex-rs/protocol/src/models.rs#field_declaration@45193",
@@ -98179,10 +98305,19 @@
       "id": "codex-rs/protocol/src/models.rs#field_declaration@85261",
       "sha256": "cf8f221397be2107219ef68e3a0e83689aad6ec4ae8aac62b061b2619f804116",
       "scopeSha256": "b491cb9ea3d96217f76bbe4bacf633e8501432205d91d2b1e0df26af46bef465",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/protocol/src/models.rs#field_declaration@85261"
+        }
+      ],
+      "reason": "Exact reviewed source serialization root ResponsesApiRequest.input:Vec<ResponseItem>; this mandatory actual-CLI case must rederive the present, raw-equal typed member/payload path from both real model inputs. Normalized timing, stripped IDs, absent fields, sibling DTOs and ordinary MCP frontend metadata earn no credit. This is an execution plan, not a historical PASS."
     },
     {
       "id": "codex-rs/protocol/src/models.rs#field_declaration@85299",
@@ -99709,19 +99844,37 @@
       "id": "codex-rs/protocol/src/models.rs#ordered_field_declaration_list@85465",
       "sha256": "1c10a1297a34000311bcfdef35203ebf28858f9090fac65b300b7bbc7ab52edd",
       "scopeSha256": "4cabcd564903a493cca57f5439c31ec5818fcc8890f566b4886fa7c3d60f5cf2",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/terminate",
+          "inputSha256": "e7ff337122eafd09b2aa248e01f1de1823e620290119430e3e185fdb823f3904",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/protocol/src/models.rs#ordered_field_declaration_list@85465"
+        }
+      ],
+      "reason": "Exact reviewed source serialization root ResponsesApiRequest.input:Vec<ResponseItem>; this mandatory actual-CLI case must rederive the present, raw-equal typed member/payload path from both real model inputs. Normalized timing, stripped IDs, absent fields, sibling DTOs and ordinary MCP frontend metadata earn no credit. This is an execution plan, not a historical PASS."
     },
     {
       "id": "codex-rs/protocol/src/models.rs#ordered_field_declaration_list@85491",
       "sha256": "a49b46f19a6f10e5de2d7e9918802e123d45a8545f6a9ebf06fc31b2d6622993",
       "scopeSha256": "f7802a4106927f55fc0614adb73555229cafdc3bcf542964fa27064f47bbe005",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/protocol/src/models.rs#ordered_field_declaration_list@85491"
+        }
+      ],
+      "reason": "Exact reviewed source serialization root ResponsesApiRequest.input:Vec<ResponseItem>; this mandatory actual-CLI case must rederive the present, raw-equal typed member/payload path from both real model inputs. Normalized timing, stripped IDs, absent fields, sibling DTOs and ordinary MCP frontend metadata earn no credit. This is an execution plan, not a historical PASS."
     },
     {
       "id": "codex-rs/protocol/src/models.rs#source-file@0",
@@ -99826,10 +99979,19 @@
       "id": "codex-rs/protocol/src/models.rs#struct_item@85218",
       "sha256": "4e55b33b0c0f5d131c1c6e95a16342feb93c564ccd4b927f60141b1df4360439",
       "scopeSha256": "e96f9971e39af09db10d54933c51a846322d390821338049c344dec31949070f",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.core-gateway"
+      ],
+      "witnesses": [
+        {
+          "caseId": "cli-source/control",
+          "inputSha256": "9f93cf3633eb5deacd4d2729d7c986788d18d91309eb4e3e37e5fcf84edc2634",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run",
+          "referenceEntrypoint": "codex-rs/protocol/src/models.rs#struct_item@85218"
+        }
+      ],
+      "reason": "Exact reviewed source serialization root ResponsesApiRequest.input:Vec<ResponseItem>; this mandatory actual-CLI case must rederive the present, raw-equal typed member/payload path from both real model inputs. Normalized timing, stripped IDs, absent fields, sibling DTOs and ordinary MCP frontend metadata earn no credit. This is an execution plan, not a historical PASS."
     },
     {
       "id": "codex-rs/protocol/src/models.rs#struct_item@8859",

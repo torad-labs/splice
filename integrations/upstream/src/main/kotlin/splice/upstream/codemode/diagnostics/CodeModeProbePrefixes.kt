@@ -9,6 +9,7 @@ import splice.core.util.JsonScalars
 import splice.upstream.codemode.CodeModeFunctionPrefixes
 import splice.upstream.codemode.CodeModeManual
 import splice.upstream.codemode.CodeModeNamespacePrefixes
+import splice.upstream.codemode.CodeModeToolDefinitions
 
 internal object CodeModeProbePrefixes {
     fun evaluate(input: JsonObject): JsonObject = try {
@@ -30,7 +31,10 @@ internal object CodeModeProbePrefixes {
                 "runtime",
                 JsonArray(prefixes.codeMode(CodeModeManual.prepare(functions)).map(CodeModeProbeTools::wire)),
             )
-            put("prompt_description", CodeModeManual.description(prefixes.prompt(functions), false))
+            put(
+                "prompt_description",
+                CodeModeManual.description(prefixes.prompt(CodeModeToolDefinitions.prompt(functions)), false),
+            )
         }
     } catch (error: IllegalArgumentException) {
         buildJsonObject { put("error", error.message) }

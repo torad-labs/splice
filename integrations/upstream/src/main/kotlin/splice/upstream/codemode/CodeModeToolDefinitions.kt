@@ -12,8 +12,12 @@ import splice.core.util.JsonScalars
 public object CodeModeToolDefinitions {
     public val emptyInputSchema: JsonObject = buildJsonObject { put("type", "object") }
 
-    public fun collect(specs: List<JsonElement>): List<CodeModeManual.NestedTool> = specs
-        .flatMap { collect(it as? JsonObject) }
+    public fun collect(specs: List<JsonElement>): List<CodeModeManual.NestedTool> = prompt(
+        specs.flatMap { collect(it as? JsonObject) },
+    )
+
+    /** Raw exec-prompt collection normalizes membership before the description renderer receives it. */
+    public fun prompt(tools: List<CodeModeManual.NestedTool>): List<CodeModeManual.NestedTool> = tools
         .filter { it.codeModeName != CodeModeManual.TOOL_NAME && it.codeModeName != "wait" }
         .sortedWith(compareBy(CodeModeText.order) { it.codeModeName })
         .distinctBy { it.codeModeName }

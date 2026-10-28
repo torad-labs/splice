@@ -74,7 +74,7 @@ class CodeModeEmptyOpeningTest : CodeModeBridgeTestSupport() {
             name = ProviderName("test", "Test"),
             catalog = ModelCatalog(
                 discoveryPrefix = "test--",
-                models = listOf(ModelEntry("gpt-6-sol", "Sol", 400_000)),
+                models = listOf(ModelEntry(id = "gpt-6-sol", label = "Sol", contextWindow = 400_000)),
                 defaultContextWindow = 400_000,
             ),
             pinnedModel = "gpt-6-sol",

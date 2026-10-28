@@ -93,6 +93,8 @@ function build(ref: string, repoRoot: string): number {
   if (existsSync(TREE)) run(["git", "worktree", "remove", "--force", TREE], repoRoot);
   run(["git", "worktree", "add", "--detach", TREE, short], repoRoot);
   try {
+    // A fresh detached tree has no Node modules; the slot command loads the pinned TypeScript tooling too.
+    run(["bun", "install", "--frozen-lockfile"], TREE, false);
     run(["bun", "tools/gate", "slot", `hub-${short}`, "--",
       ":integrations-mcp-hub:linkHolderReleaseExecutableLinuxX64",
       ":integrations-mcp-hub:linkFrontReleaseExecutableLinuxX64"], TREE, false);

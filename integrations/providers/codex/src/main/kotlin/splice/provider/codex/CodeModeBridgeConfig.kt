@@ -3,6 +3,7 @@ package splice.provider.codex
 import kotlinx.serialization.json.JsonElement
 import splice.core.util.LogSink
 import splice.provider.codex.callbacks.mcp.CodeModeMcpResults
+import splice.provider.codex.catalog.CodeModeMcpSearchCatalog
 import splice.provider.codex.state.lease.CodeModeCellLease
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeResult
@@ -85,6 +86,8 @@ public data class CodeModeStateLocation(
     val replayReasoning: CodeModeReplayReasoning = CodeModeReplayReasoning { true },
     /** Lossless replies retained by the client's existing permission-checked MCP transport. */
     val mcpResults: CodeModeMcpResults = CodeModeMcpResults { _, _, _ -> null },
+    /** Current head-owned MCP search sources, independently proved against this request's advertised catalog. */
+    val mcpSearch: CodeModeMcpSearchCatalog = CodeModeMcpSearchCatalog { emptyMap() },
 )
 
 /** V4-179: the two renderings of a turn's code-mode results that the script itself never sees. */

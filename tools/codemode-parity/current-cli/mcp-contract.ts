@@ -139,6 +139,12 @@ export function mcpGatewayFields(transcript: McpTranscript): ObjectValue {
     boundary: "typed-mcp-delegate",
     tools: transcript.tools.map(tool => ({ name: `mcp__parity__${tool.name}`, description: tool.description!, input_schema: tool.inputSchema! })),
     declarations: transcript.tools.map(tool => ({ type: "function", name: `mcp__parity__${tool.name}`, description: tool.description!, parameters: tool.inputSchema!, output_schema: outputSchema(tool) })),
+    mcpSearch: Object.fromEntries(transcript.tools.map(tool => {
+      const name = `mcp__parity__${tool.name}`, schema = object(tool.inputSchema, "Source MCP input schema");
+      return [name, { identity: { flatName: `mcp__parity${tool.name}`, callableName: tool.name!, rawToolName: tool.name!, serverName: "parity" },
+        descriptions: { ...(tool.title ? { title: tool.title } : {}), ...(tool.description ? { description: tool.description } : {}) },
+        inputPropertyNames: Object.keys(object(schema.properties, "Source MCP input properties")), agentPlugin: false, declarationName: name }];
+    })),
     callbacks: transcript.calls.map(call => ({ name: `mcp__parity__${call.name}`, arguments: call.arguments,
       ...("error" in call ? { rpcError: call.error, server: "parity", tool: call.name, origin: "MCP_RPC_ERROR" } : { result: call.result, origin: "MCP" }) })),
   };

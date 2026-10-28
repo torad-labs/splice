@@ -17,6 +17,7 @@ import splice.provider.codex.CodeModeToolPolicy
 import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.catalog.CodeModeTurnCatalog
 import splice.provider.codex.diagnostics.CodeModeGatewayProbeSupport
+import splice.provider.codex.diagnostics.current.catalog.CodeModeGatewayMcpSearch
 import splice.upstream.BuiltTurn
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeToolDefinitions
@@ -33,6 +34,7 @@ internal class CodeModeGatewayTypedRequests(
     private val names = definitions.map { it.codeModeName }.toSet()
     private val ranked = specification["rankedSearch"] == JsonPrimitive(true)
     private val policy = CodeModeToolPolicy(deferredNames = if (ranked) names else emptySet())
+    private val mcpSearch = CodeModeGatewayMcpSearch.read(specification)
 
     fun prepare(manager: CodexCodeModeBridge, callbacks: List<JsonObject>, results: List<CodeModeResult>): BuiltTurn {
         check(callbacks.map { JsonScalars.str(it, "id") } == results.map { it.id })
@@ -45,6 +47,7 @@ internal class CodeModeGatewayTypedRequests(
             catalog = CodeModeTurnCatalog(
                 definitions + if (ranked) listOf(CodeModeToolSearch.definition()) else emptyList(),
                 policy,
+                mcpSearch = mcpSearch,
             ),
         )
         return BuiltTurn(

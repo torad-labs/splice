@@ -193,6 +193,7 @@ internal class ControlPlane(
         val home = statePaths.rootDir.parent ?: statePaths.rootDir
         val sharing = mcp.planner(controlPort)
         val mcpHost = mcp.host(home, sharing, heads.values.mapNotNull { it.launchSpec })
+        providerAssembly.codeModeCatalogs.attach(mcpHost)
         val mcpServices = mcp.services(mcpHost, home)
         // One session source serves the sessions routes and the heads route's client pids.
         val sessions = sessionWiring.source(home, heads, console, foregroundTools)

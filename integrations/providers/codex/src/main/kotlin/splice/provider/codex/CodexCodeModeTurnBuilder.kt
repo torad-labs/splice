@@ -52,6 +52,7 @@ internal class CodexCodeModeTurnBuilder(
         val toolPolicy = catalogs.policy(body, built, availability)
             .copy(loadedNames = loaded.names(results.blocks(body)))
         val messages = CodeModeCatalogMessages(toolPolicy.modelMessages)
+        val definitions = catalogs.definitions(body, built.requestBody, availability)
         val turn = CodexCodeModeBridge.Turn(
             sessionId = sessionId,
             conversationKey = built.meta.scope.conversationKey ?: AgentConversationKey.of("", body.agentId),
@@ -64,9 +65,10 @@ internal class CodexCodeModeTurnBuilder(
                 cleared,
             ),
             catalog = splice.provider.codex.catalog.CodeModeTurnCatalog(
-                messages.functions(catalogs.definitions(body, built.requestBody, availability)),
+                messages.functions(definitions),
                 toolPolicy,
                 loaded.descriptions(),
+                manager.mcpSearch.entries(definitions).toMap(),
             ),
         )
         val disableParallel = body.typed.toolChoice?.disableParallelToolUse == true

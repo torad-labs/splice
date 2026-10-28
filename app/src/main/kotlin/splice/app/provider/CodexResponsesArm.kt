@@ -30,6 +30,7 @@ internal class CodexResponsesArm(
     private val codeMode: CodexCodeModeAssembly = CodexCodeModeAssembly(statePaths, probeScope, log),
 ) {
     internal val codeModeControls get() = codeMode.controls
+    internal val codeModeCatalogs get() = codeMode.catalogs
 
     private val quirksOverlay = QuirksOverlay()
     private val accountFiles = OAuthAccountFiles()

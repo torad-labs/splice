@@ -122,7 +122,7 @@ internal class CodeModeSearchCell(private val delegate: NativeCodeModeCell, turn
         if (turn.toolDefinitions.none { it.codeModeName == CodeModeToolSearch.FUNCTION_NAME }) return null
         val deferred = turn.toolDefinitions.filter { it.codeModeName in turn.toolPolicy.deferredNames }
         return CodeModeRankedSearch(
-            CodeModeSearchCorpus.entries(deferred),
+            CodeModeSearchCorpus.entries(deferred, turn.catalog.mcpSearch),
             turn.tools,
             turn.toolPolicy.toolDescriptionFirst,
         )

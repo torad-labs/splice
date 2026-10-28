@@ -57,6 +57,7 @@ public class CodexCodeModeBridge(
     private val retirement = CodeModeNativeRetirement(registry.changes::retireNative)
     private val wire = CodexCodeModeWire(json, config.log, retirement, config.state.replayReasoning)
     private val validation = CodexCodeModeValidation(config)
+    internal val mcpSearch = config.state.mcpSearch
     internal val machine = CodexCodeModeMachine(config, registry, validation)
     internal val driver =
         CodexCodeModeDriver(

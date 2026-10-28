@@ -4,6 +4,7 @@ package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import splice.app.provider.codex.CodeModeMcpCatalogs
 import splice.app.provider.codex.CodeModeMcpReplies
 import splice.app.provider.codex.CodeModeSessionLiveness
 import splice.app.provider.codex.HeadCodeModeControls
@@ -53,6 +54,7 @@ internal class CodexCodeModeAssembly(
         (sessionAlive as? CodeModeSessionLiveness)?.idle ?: CodeModeSessionIdle { false },
 ) {
     internal val controls: HeadCodeModeControls = HeadCodeModeControls()
+    internal val catalogs: CodeModeMcpCatalogs = CodeModeMcpCatalogs()
 
     fun wiring(ctx: ProviderBuild): CodexCodeModeWiring = CodexCodeModeWiring(
         bridge = codeModeBridge(ctx)?.also { codeModeHeads += ctx.key },
@@ -114,6 +116,7 @@ internal class CodexCodeModeAssembly(
                             McpToolResultStore(statePaths),
                             HeadScopedLogs.headScopedLog(ctx.key, log),
                         ),
+                        mcpSearch = catalogs.forHead(ctx.key),
                     ),
                     log = HeadScopedLogs.headScopedLog(ctx.key, log),
                     cellLease = CodeModeCellLease(sessionAlive = sessionAlive, sessionIdle = sessionIdle),

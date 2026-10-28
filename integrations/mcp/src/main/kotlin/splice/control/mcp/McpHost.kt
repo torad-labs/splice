@@ -17,31 +17,17 @@
 package splice.control.mcp
 
 import kotlinx.coroutines.channels.ReceiveChannel
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import splice.client.mcp.McpInventory
 import splice.client.mcp.McpServerInput
 import splice.client.mcp.McpSharing
-import splice.control.mcp.catalog.McpCatalogSnapshots
+import splice.control.mcp.catalog.McpSearchCatalogs
+import splice.control.mcp.hosted.McpPostHandler
+import splice.control.mcp.hosted.McpSweeper
 import splice.control.mcp.hub.McpHubCalls
-import splice.core.util.Cancellables
-import splice.core.util.LogSafe
 import splice.core.util.LogSink
-import splice.core.wire.HttpStatus
-import java.util.concurrent.Executors
-import java.util.concurrent.ScheduledExecutorService
-import java.util.concurrent.TimeUnit
 
-private const val RPC_INVALID = -32600
-private const val RPC_UNKNOWN_SESSION = -32001
 internal const val RPC_SERVER_ERROR = -32000
-
-// HTTP_OK and HTTP_ACCEPTED stay local: HttpStatus declares no 2xx constant, and the wall is silent
-// on them. The three ERROR statuses read HttpStatus now.
-private const val HTTP_OK = 200
-private const val HTTP_ACCEPTED = 202
-private const val SWEEP_PERIOD_S = 60L
 
 /** What the transport writes back: status, an optional session header, and a JSON body (or none for 202). */
 public data class McpReply(val status: Int, val body: String?, val sessionId: String? = null)
@@ -87,27 +73,17 @@ public class McpHost(
     /** Management-only pause, settlement status and compatible replacement for a hosted server. */
     public val replacements: McpReplacements = McpReplacements(servers.replacements)
 
-    @Volatile private var sweeper: ScheduledExecutorService? = null
+    /** Shared catalog observations have their own current-configuration and source-identity boundary. */
+    public val catalogs: McpSearchCatalogs = McpSearchCatalogs(sharing, global, servers.catalogs, hub)
+
+    private val sweeper = McpSweeper { sweep() }
 
     public fun start() {
-        val exec = Executors.newSingleThreadScheduledExecutor { r ->
-            Executors.defaultThreadFactory().newThread(r).apply {
-                name = "mcp-host-sweep"
-                isDaemon = true
-            }
-        }
-        exec.scheduleAtFixedRate(
-            { Cancellables.runCatchingCancellable { sweep() } },
-            SWEEP_PERIOD_S,
-            SWEEP_PERIOD_S,
-            TimeUnit.SECONDS,
-        )
-        sweeper = exec
+        sweeper.start()
     }
 
     public fun stop() {
-        sweeper?.shutdownNow()
-        sweeper = null
+        sweeper.stop()
         servers.closeAll("daemon stopping")
     }
 
@@ -167,161 +143,4 @@ public class McpHost(
 
     /** `/api/mcp`. */
     public fun statusJson(): String = status.json()
-
-    /** Exact cached listings for this head's currently shared declarations; per-session servers never enter it. */
-    public fun sharedTools(headKey: String): Map<String, JsonObject> {
-        val specs = sharing.plan(global.inputs(), headKey).hosted
-        return McpCatalogSnapshots.combine(specs.keys, servers.catalogs.read(specs), hub?.sharedTools(specs).orEmpty())
-    }
-}
-
-/** Keeps admission, initialization, and session routing below McpHost's lifecycle surface. */
-private class McpPostHandler(
-    private val codec: JsonRpcCodec,
-    private val sharing: McpSharing,
-    private val global: GlobalMcpServers,
-    private val servers: HostedServers,
-    private val sessions: McpSessions,
-    private val minting: SessionMinting,
-    private val log: LogSink,
-) {
-    suspend fun post(
-        name: String,
-        sessionId: String?,
-        body: String,
-        protocolVersion: String?,
-        head: String?,
-    ): McpReply {
-        val msg = codec.parse(body)
-            ?: return bad(HttpStatus.BAD_REQUEST, JsonPrimitive(0), RPC_INVALID, "not a JSON-RPC object")
-        val message = McpHostMessage(msg, codec)
-        if (message.kind == RpcKind.INVALID) {
-            return bad(HttpStatus.BAD_REQUEST, message.id, RPC_INVALID, "invalid JSON-RPC")
-        }
-        val admission = admission(name, sessionId, message)
-        return route(name, McpClient(sessionId, protocolVersion, head), msg, message, admission)
-    }
-
-    private suspend fun admission(name: String, sessionId: String?, message: McpHostMessage): McpAdmission? =
-        if (message.settlement) null else servers.replacements.admit(name, sessions.get(name, sessionId))
-
-    private suspend fun route(
-        name: String,
-        client: McpClient,
-        msg: JsonObject,
-        message: McpHostMessage,
-        admission: McpAdmission?,
-    ): McpReply {
-        if (!accepts(name, msg, message, admission)) {
-            return bad(
-                HttpStatus.SERVICE_UNAVAILABLE,
-                message.id,
-                RPC_SERVER_ERROR,
-                "no hosted MCP admission for '$name'",
-            )
-        }
-        return try {
-            when {
-                initializes(message.kind, msg) -> initialize(name, msg, client.head, admission)
-                !protocolAccepted(name, client.sessionId, client.protocolVersion) -> bad(
-                    HttpStatus.BAD_REQUEST,
-                    message.id,
-                    RPC_INVALID,
-                    "unsupported MCP-Protocol-Version '${client.protocolVersion}'",
-                )
-                else -> forSession(name, client, msg, message.kind, admission)
-            }
-        } finally {
-            admission?.leave()
-        }
-    }
-
-    private fun accepts(name: String, msg: JsonObject, message: McpHostMessage, admission: McpAdmission?): Boolean {
-        val unknownInitialize = initializes(message.kind, msg) && sharing.hostedSpec(global.inputs(), name) == null
-        return message.accepts(admission) || unknownInitialize
-    }
-
-    private fun initializes(kind: RpcKind, msg: JsonObject): Boolean =
-        kind == RpcKind.REQUEST && codec.method(msg) == "initialize"
-
-    /** An unknown session must reach the session path's 404 before protocol validation. */
-    fun protocolAccepted(name: String, sessionId: String?, protocolVersion: String?): Boolean {
-        val session = sessions.get(name, sessionId) ?: return true
-        return session.adopted || protocolVersion == null || session.protocolVersion == protocolVersion
-    }
-
-    private suspend fun initialize(name: String, msg: JsonObject, head: String?, admission: McpAdmission?): McpReply {
-        val id = msg.getValue("id")
-        val minted = minting.mint(name, null, head, admission)
-        val code = if (minted.timedOut) RPC_TIMED_OUT else RPC_SERVER_ERROR
-        return minted.session?.let { McpReply(HTTP_OK, codec.encode(codec.result(id, it.initResult)), it.id) }
-            ?: bad(HttpStatus.SERVICE_UNAVAILABLE, id, code, minted.failure)
-    }
-
-    private suspend fun forSession(
-        name: String,
-        client: McpClient,
-        msg: JsonObject,
-        kind: RpcKind,
-        admission: McpAdmission?,
-    ): McpReply {
-        val id = msg["id"] ?: JsonPrimitive(0)
-        val sessionId = client.sessionId
-        val session = sessions.get(name, sessionId)
-            ?: minting.adopt(name, client, kind, admission)
-            ?: return bad(HttpStatus.NOT_FOUND, id, RPC_UNKNOWN_SESSION, "session not found")
-        sessions.touch(session)
-        val server = servers.reserve(name)
-            ?: return bad(HttpStatus.NOT_FOUND, id, RPC_UNKNOWN_SESSION, "server not hosted")
-        return try {
-            if (sessions.get(name, sessionId) !== session) {
-                bad(HttpStatus.NOT_FOUND, id, RPC_UNKNOWN_SESSION, "session not found")
-            } else {
-                when (kind) {
-                    RpcKind.REQUEST -> forward(server, session, msg)
-                    RpcKind.NOTIFICATION -> notification(name, server, session, msg)
-                    RpcKind.RESPONSE, RpcKind.INVALID -> McpReply(HTTP_ACCEPTED, null)
-                }
-            }
-        } finally {
-            sessions.touch(session)
-            servers.release(name, server)
-        }
-    }
-
-    /** 202 when the child took it; 503 in words when it could not — never a silent drop. */
-    private suspend fun notification(
-        name: String,
-        server: HostedServer,
-        session: McpSession,
-        msg: JsonObject,
-    ): McpReply {
-        val delivered = when (val sent = server.notify(session.id, msg)) {
-            is McpResult.Served -> sent.value
-            is McpResult.Refused -> {
-                log("[mcp-host] ${LogSafe.str(name)}: notify failed (${LogSafe.str(sent.reason)})\n")
-                false
-            }
-        }
-        return if (delivered) {
-            McpReply(HTTP_ACCEPTED, null)
-        } else {
-            bad(
-                HttpStatus.SERVICE_UNAVAILABLE,
-                JsonPrimitive(0),
-                RPC_SERVER_ERROR,
-                "hosted MCP server '$name' is not running",
-            )
-        }
-    }
-
-    private suspend fun forward(server: HostedServer, session: McpSession, msg: JsonObject): McpReply {
-        val id = msg.getValue("id")
-        val answer = server.call(session.id, id, msg)
-        sessions.touch(session)
-        return McpReply(HTTP_OK, codec.encode(answer), session.id)
-    }
-
-    private fun bad(status: Int, id: JsonElement, code: Int, message: String) =
-        McpReply(status, codec.encode(codec.error(id, code, message)))
 }

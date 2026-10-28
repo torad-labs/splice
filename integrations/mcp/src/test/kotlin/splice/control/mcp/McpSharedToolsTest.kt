@@ -28,19 +28,17 @@ class McpSharedToolsTest : McpHostFixture() {
             put("session", buildJsonObject { put("command", "fixture"); put("cwd", "/synthetic-project") })
             put("remote", buildJsonObject { put("type", "http"); put("url", "http://127.0.0.1:1/mcp") })
         }
-        var observed = emptyMap<String, McpServerSpec>()
         val hub = object : McpHubCalls by McpHubOff("fixture") {
             override fun sharedTools(specs: Map<String, McpServerSpec>): Map<String, JsonObject> {
-                observed = specs
                 return mapOf("fake" to raw, "session" to raw, "remote" to raw, "unknown" to raw)
             }
         }
         host = host(declarations, hub)
-        assertEquals(mapOf("fake" to raw), host.sharedTools("codex"))
-        assertEquals(setOf("fake"), observed.keys)
-        host.sharing.rootsAsked(observed.getValue("fake"))
-        assertTrue(host.sharedTools("codex").isEmpty(), "current roots evidence removes the tuple from the shared plan")
-        assertTrue(observed.isEmpty())
+        assertEquals(mapOf("fake" to raw), host.catalogs.sharedTools("codex"))
+        assertEquals(mapOf("fake" to raw, "session" to null, "remote" to null), host.catalogs.searchCatalogs("codex"))
+        host.sharing.rootsAsked(host.sharing.plan(declarations).hosted.getValue("fake"))
+        assertTrue(host.catalogs.sharedTools("codex").isEmpty(), "current roots evidence removes the shared tuple")
+        assertEquals(mapOf("fake" to null, "session" to null, "remote" to null), host.catalogs.searchCatalogs("codex"))
     }
 
     @Test
@@ -54,13 +52,13 @@ class McpSharedToolsTest : McpHostFixture() {
         val response = host.post("fake", session, MCP_HOST_LIST)
         assertEquals(200, response.status)
         val raw = json.parseToJsonElement(checkNotNull(response.body)).jsonObject.getValue("result").jsonObject
-        assertEquals(mapOf("fake" to raw), host.sharedTools("codex"))
+        assertEquals(mapOf("fake" to raw), host.catalogs.sharedTools("codex"))
         native = mapOf("fake" to raw)
-        assertEquals(mapOf("fake" to raw), host.sharedTools("codex"))
+        assertEquals(mapOf("fake" to raw), host.catalogs.sharedTools("codex"))
         native = mapOf("fake" to JsonObject(raw + ("different-metadata" to JsonPrimitive(true))))
-        assertFalse(host.sharedTools("codex").containsKey("fake"), "disagreement cannot select either catalog as proof")
+        assertFalse(host.catalogs.sharedTools("codex").containsKey("fake"), "disagreement cannot select either catalog")
         native = emptyMap()
-        assertEquals(mapOf("fake" to raw), host.sharedTools("codex"))
+        assertEquals(mapOf("fake" to raw), host.catalogs.sharedTools("codex"))
     }
 
     private fun host(declarations: JsonObject, hub: McpHubCalls): McpHost = McpHost(

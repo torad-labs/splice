@@ -94,6 +94,7 @@ names = [
     "FragmentReleased",
     "HandoffMark",
     "HoldChange",
+    "McpIdleSweep",
     "McpWriteAvailable",
     "McpWriteFailureDrain",
     "NotificationEnqueue",
@@ -150,7 +151,7 @@ its own rather than folded onto one of the observers above: an observer is subsc
 is set). ParseTally (9cfae331a) counts one perf line decoded, the read's own measure of how much it \
 decoded; wired where FileIoTask or a release was meant it would count nothing while the work ran. \
 Substituting any for any other is not a type error and would be silent: RestoreStep \
-for WsRoundAbort unwinds an upgrade in the middle of a turn. McpWriteAvailable signals that a bounded stdin slot opened for retained reverse replies. McpWriteFailureDrain is the asynchronous stop-and-reap action returned after the exact transport failure has already been synchronously fenced and published. NotificationEnqueue requests dispatch of a hosted child notification only after the host confirms ownership. McpWriteExpired records that one queued child write timed out; substituting slot availability for failure draining would leave the failed child unreaped, while using the drain as an availability signal would stop a child when capacity opens. Expiring a notification would discard a reply the client still awaits. These roles need MORE naming than a shared shape, not less. NativeGrpcProtocolEvent delivers one inbound native gRPC frame to its session, and the router invalidates that session alone when the delivery throws. NativeGrpcWaitReleased is a closed wait claim's one notice that its slot's permit is back, so the next queued wait may run; a delivery wired there would run a frame on every release, and a release wired as a delivery would free a slot no claim gave back."""
+for WsRoundAbort unwinds an upgrade in the middle of a turn. McpWriteAvailable signals that a bounded stdin slot opened for retained reverse replies. McpWriteFailureDrain is the asynchronous stop-and-reap action returned after the exact transport failure has already been synchronously fenced and published. NotificationEnqueue requests dispatch of a hosted child notification only after the host confirms ownership. McpWriteExpired records that one queued child write timed out; substituting slot availability for failure draining would leave the failed child unreaped, while using the drain as an availability signal would stop a child when capacity opens. Expiring a notification would discard a reply the client still awaits. These roles need MORE naming than a shared shape, not less. NativeGrpcProtocolEvent delivers one inbound native gRPC frame to its session, and the router invalidates that session alone when the delivery throws. NativeGrpcWaitReleased is a closed wait claim's one notice that its slot's permit is back, so the next queued wait may run; a delivery wired there would run a frame on every release, and a release wired as a delivery would free a slot no claim gave back. McpIdleSweep runs the host's scheduled idle maintenance; stopping its scheduler is separate from executing a turn or stopping the control plane, so it cannot replace StreamStart, TurnEnd, StopControl or a transport abort."""
 
 # ── 24 names, () -> Boolean ───────────────────────────────────────────────────────────────────────
 [[groups]]

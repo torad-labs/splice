@@ -12,12 +12,22 @@ import splice.upstream.codemode.CodeModeText
 public data class CodeModeSearchEntry(val tools: List<CodeModeManual.NestedTool>, val searchText: String)
 
 public object CodeModeSearchCorpus {
-    public fun entries(tools: List<CodeModeManual.NestedTool>): List<CodeModeSearchEntry> {
-        val namespaces = tools.filter { it.metadata.namespace != null }.groupBy { it.metadata.namespace }
+    public fun entries(
+        tools: List<CodeModeManual.NestedTool>,
+        mcp: Map<String, CodeModeMcpSearchInfo> = emptyMap(),
+    ): List<CodeModeSearchEntry> {
+        val namespaces = tools.filter { it.metadata.namespace != null && it.codeModeName !in mcp }
+            .groupBy { it.metadata.namespace }
         val seen = HashSet<String>()
         return tools.mapNotNull { tool ->
             val namespace = tool.metadata.namespace
-            if (namespace == null) {
+            val custom = mcp[tool.codeModeName]
+            if (custom != null) {
+                require(
+                    custom.declarationName == tool.codeModeName,
+                ) { "MCP search identity differs from its advertised tool" }
+                CodeModeSearchEntry(listOf(tool), CodeModeMcpSearchText.build(custom))
+            } else if (namespace == null) {
                 entry(tool)
             } else if (seen.add(namespace)) {
                 val members = namespaces.getValue(namespace)

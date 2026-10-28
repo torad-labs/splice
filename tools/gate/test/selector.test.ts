@@ -21,12 +21,24 @@ describe("a changed file selects the checks it affects", () => {
     expect(leaf.modules).not.toContain(":core");
   });
 
-  test("a build-wide input selects every module", () => {
-    for (const path of ["settings.gradle.kts", "gradle/libs.versions.toml", "build-logic/build.gradle.kts", "quality/detekt/detekt.yml", "quality/rules/x.yml", "package.json", "bun.lock"]) {
+  test("a path the scope file marks full selects every module, and a rule, a lockfile or one module's build file does not", () => {
+    for (const path of ["settings.gradle.kts", "gradle/libs.versions.toml", "build-logic/build.gradle.kts", "build-logic/src/main/kotlin/splice.kotlin-common.gradle.kts", "quality/detekt/detekt.yml", ".editorconfig"]) {
       const s = pick(path);
       expect(s.full, path).toBe(true);
       expect(s.modules, path).toEqual([...modules].sort());
+      expect(s.why, path).toContain(path);
     }
+    for (const path of ["quality/rules/x.yml", "package.json", "bun.lock", "features/turns/build.gradle.kts", "build-logic/src/test/kotlin/splice/ladder/LadderTableTest.kt"]) {
+      const s = pick(path);
+      expect(s.full, path).toBe(false);
+      expect(s.modules.length, path).toBeLessThan(modules.length);
+    }
+  });
+
+  test("a module the law does not list is not a dependent of every module", () => {
+    const leaf = pick("features/turns/src/main/kotlin/splice/head/HeadDeps.kt");
+    expect(leaf.modules).not.toContain(":app");
+    expect(leaf.modules).toEqual([":features-turns"]);
   });
 
   test("prose no law reads selects no module and counts as docs-only; prose a law reads does not", () => {

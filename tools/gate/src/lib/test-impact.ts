@@ -19,15 +19,16 @@
 // selected class runs one (a test inherited from a parent, an expression body whose type it cannot resolve). So when no selected
 // class is sure, one sure test class of the module joins the filter, and the module runs whole only when it has none.
 //
-// THE FULL SUITE runs when the build itself changes: a build or settings script, gradle/, a version catalog, gradle properties,
-// the wrapper, build logic, the compiler plugin every module compiles with, the package.json whose version the root build reads,
-// and the shared test fixtures every module's tests can use. The quality/architecture laws and every non-test leg run either way.
+// THE FULL SUITE runs when a changed path is one tools/gate/config/scope.json marks `full`: the version catalog, the root
+// build, and the other inputs every module's build reads. A module's own build script, a shared fixture and a build-logic
+// file that is not on that list are that module's (or build-logic's) concern, and the reference walk selects their tests.
+// The quality/architecture laws run when the path is on the scope file's `laws` list, which is the scope's call.
 //
 // WHAT THE SELECTION NEVER DOES is widen the run: it names classes inside the module checks the scope already requested
 // (prepush-scope.ts), and `confineTo` drops everything else. Only the full suite reaches past the scope.
 
 import { scanSource, type SourceScan, type TestClassDecl } from "./kotlin-source.ts";
-import { isDocsOnly } from "./selector.ts";
+import { docsRule, fullRule, repoScope, type ScopeRules } from "./scope.ts";
 
 /** A gradle module: its project path, as settings.gradle.kts names it, and its directory. */
 export interface ImpactModule {
@@ -50,6 +51,8 @@ export interface ImpactInput {
   /** The paths the push changes since its base commit. */
   readonly changed: readonly string[];
   readonly tree: PushedTree;
+  /** The scope rules. The committed file when omitted. */
+  readonly scope?: ScopeRules;
 }
 
 /** What one module's unit `test` task runs: the top-level test classes selected, by full name, the whole task, or nothing. */
@@ -67,22 +70,10 @@ export type TestImpact =
   | { readonly mode: "full"; readonly why: string }
   | { readonly mode: "selected"; readonly modules: ReadonlyMap<string, ModuleTests>; readonly changed: number };
 
-/** Why a change to [path] runs the full suite, or undefined when it does not. */
-export function fullSuiteReason(path: string): string | undefined {
-  if (isDocsOnly(path)) return undefined;
-  const file = path.slice(path.lastIndexOf("/") + 1);
-  if (/^(build-logic|buildSrc)\//.test(path)) return `${path} is build logic every module's build applies`;
-  if (path.startsWith("quality/compiler-plugin/src/main/")) return `${path} is the compiler plugin every module compiles with`;
-  if (/(^|\/)src\/(testFixtures|lawFixtures)\//.test(path)) return `${path} is a shared test fixture`;
-  // Anything else in a source set is a module's own source or resource, whatever its name.
-  if (/(^|\/)src\//.test(path)) return undefined;
-  if (/\.gradle(\.kts)?$/.test(file)) return `${path} is a build file`;
-  if (/(^|\/)gradle\//.test(path)) return `${path} is in gradle/`;
-  if (file.endsWith(".versions.toml")) return `${path} is a version catalog`;
-  if (file === "gradle.properties") return `${path} sets gradle properties`;
-  if (file === "gradlew" || file === "gradlew.bat") return `${path} is the gradle wrapper`;
-  if (path === "package.json") return "package.json carries the version the root build reads";
-  return undefined;
+/** Why a change to [path] runs the full suite, or undefined when it does not. Only a scope.json `full` path does. */
+export function fullSuiteReason(path: string, scope: ScopeRules = repoScope()): string | undefined {
+  const rule = fullRule(path, scope);
+  return rule === undefined ? undefined : `${path} ${rule.why}`;
 }
 
 /** A source file of a module, in the pushed commit or, deleted by the push, in its base. */
@@ -160,13 +151,14 @@ function namesPath(strings: readonly string[], path: string): boolean {
 }
 
 export function testImpact(input: ImpactInput): TestImpact {
-  const triggers = input.changed.flatMap((path) => fullSuiteReason(path) ?? []);
+  const scope = input.scope ?? repoScope();
+  const triggers = input.changed.flatMap((path) => fullSuiteReason(path, scope) ?? []);
   const [first] = triggers;
   if (first !== undefined) return { mode: "full", why: triggers.length === 1 ? first : `${first}, and ${triggers.length - 1} more` };
-  return select(input);
+  return select(input, scope);
 }
 
-function select(input: ImpactInput): TestImpact {
+function select(input: ImpactInput, scope: ScopeRules): TestImpact {
   const { tree } = input;
   const modules = input.modules.filter((m) => m.dir !== "").sort((a, b) => b.dir.length - a.dir.length);
   const owner = (path: string): ImpactModule | undefined => modules.find((m) => path.startsWith(`${m.dir}/`));
@@ -253,7 +245,7 @@ function select(input: ImpactInput): TestImpact {
     extraSeeds.add(path.slice(path.lastIndexOf("/") + 1));
   }
   for (const path of changed) {
-    if (owner(path) || isDocsOnly(path)) continue;
+    if (owner(path) || docsRule(path, scope) !== undefined) continue;
     for (const b of buildTexts) {
       if (b.module && namesPath(b.scan.strings, path)) {
         unsure(b.module, `${path} is read by ${b.path}`, false);

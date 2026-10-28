@@ -23,16 +23,17 @@
 // PRE-PUSH judges the PUSHED COMMIT, and the verdict line says so. It moves the persistent build tree under the git
 // directory (prepush-tree.ts) to the commit, so a half-finished edit in the shared checkout never reddens a push and the
 // build output of the last push is still there. It lints the tip's subject, then scopes the push to its own diff
-// (prepush-scope.ts, selector.ts): the ladder rows whose inputs the diff touches run, and gradle runs the changed modules
-// and their dependents, in parallel, through the slot. The full ladder is a push to main's. Inside those modules, each unit suite
-// is narrowed to the test classes the diff reaches (test-impact.ts), and the log says which mode ran and why; a build file or a
-// shared test fixture falls back to the full suite. :app:codeModePackagedTest, which
-// reruns the code-mode suites against the fat jar, runs only when the push can change what the worker loads (packaged-worker.ts).
+// (prepush-scope.ts, selector.ts, tools/gate/config/scope.json): the ladder rows whose inputs the diff touches run, and
+// gradle runs the changed modules and the modules that depend on them, in parallel, through the slot. The log says why
+// each module and each check was selected or skipped. The full suite runs only when a changed path is one scope.json
+// marks `full`. Inside the selected modules, each unit suite is narrowed to the test classes the diff reaches
+// (test-impact.ts). :app:codeModePackagedTest, which reruns the code-mode suites against the fat jar, runs only when the
+// push can change what the worker loads (packaged-worker.ts), and a jar leg runs only when its own inputs match.
 // Pushes of one branch queue in the push lane (push-lane.ts): only the newest queued push is judged, an older one whose commit it
 // carried is told so and sends nothing, and when the newest fails the next older one is judged.
 //
-// A PUSH THAT CANNOT PASS STOPS ITS GRADLE RUN, OR NEVER STARTS IT. The legs that read no code (title, attribution, no-Python,
-// ast-grep walls) run first, and gradle starts only once they pass: stopping a run also ends the warm pre-push daemon. A direct
+// A PUSH THAT CANNOT PASS STOPS ITS GRADLE RUN, OR NEVER STARTS IT. Of the legs this push selected, title, attribution,
+// no-Python and the ast-grep walls run first, and gradle starts only once they pass: stopping a run also ends the warm pre-push daemon. A direct
 // leg that fails, or a branch that moved (looked at before gradle starts and every 20 s while it runs), fails the push however
 // gradle ends, so the gate stops gradle at once, or never starts it, and reports. A gradle red is never stopped: --continue
 // lists every failure at once. Each judged push appends one line to ~/.local/state/splice-gate/
@@ -58,7 +59,9 @@ import { isoSeconds } from "../lib/slot.ts";
 import { exitStatusOf } from "../lib/status.ts";
 import { confineTo, type ImpactInput, impactClause, impactLines, testArgs, testImpact, type TestImpact } from "../lib/test-impact.ts";
 import { narrowBunTest } from "../lib/test-select.ts";
-import { commitLegs, type Leg, legsWithoutInputs, prePushScope } from "../lib/prepush-scope.ts";
+import { withBuildDeps } from "../lib/project-deps.ts";
+import { commitLegs, decisionLine, type Leg, legsWithoutInputs, prePushScope, shadowJarDecision } from "../lib/prepush-scope.ts";
+import { repoScope } from "../lib/scope.ts";
 import { cancelledBySignal, RUN_ALREADY_OPEN_EXIT } from "./run.ts";
 import { title } from "./title.ts";
 
@@ -719,25 +722,46 @@ async function judgeIn(
     return 1;
   }
   const modules = gradleModules(root);
-  const graph = readModuleGraph(root);
+  const graph = withBuildDeps(modules, readModuleGraph(root), (module) => {
+    const script = join(root, module.dir, "build.gradle.kts");
+    return existsSync(script) ? readFileSync(script, "utf8") : undefined;
+  });
   const scope = prePushScope({
     legs,
     modules: modules.map((module) => module.path),
     moduleOf: (file) => moduleOf(modules, file),
     changed,
     graph,
+    scope: repoScope(),
   });
   // The packaged code-mode test reruns the worker's suites against the fat jar. A push that cannot change what the worker loads
   // from that jar skips it, and the verdict says so; one that can runs it, and the log names the path that decided.
   const packaged = scope.gradle.includes(APP_CHECK) ? packagedVerdict(lay.repoRoot, root, refs, modules, graph, changed) : undefined;
   const skipPackaged = packaged?.runs === false;
-  // The unit suites the push runs: the classes the diff reaches in each module the scope checks, or the full suite when a build file
-  // or a shared fixture changed. A push that starts no gradle has no test run to narrow.
+  // The unit suites the push runs: the classes the diff reaches in each module the scope checks, or the full suite when a
+  // scope.json `full` path changed. A push that starts no gradle has no test run to narrow.
   const checkedModules = scope.gradle.flatMap((task) => (task.endsWith(":check") ? task.slice(0, -":check".length) : []));
   const impact = scope.gradle.length === 0 ? undefined : testSelection(root, lay.repoRoot, refs, modules, changed, checkedModules);
   const tests = impact === undefined ? { tasks: [], options: [] } : testArgs(impact, checkedModules, modules.map((module) => module.path));
   const summary = `${scope.summary}${impact === undefined ? "" : `; ${impactClause(impact)}`}`;
   const scopeClause = `; scope: ${summary}${skipPackaged ? `; ${PACKAGED_TEST} skipped: ${PACKAGED_SKIPPED}` : ""}`;
+  const packagedWhy = packaged?.runs === true ? packaged.why : undefined;
+  console.error("── scope ──");
+  for (const line of scope.decisions) console.error(decisionLine(line));
+  console.error(decisionLine(shadowJarDecision(scope.legs, packaged?.runs === true, packagedWhy)));
+  console.error(
+    decisionLine({
+      kind: "check",
+      name: PACKAGED_TEST,
+      selected: packaged?.runs === true,
+      why:
+        packaged === undefined
+          ? ":app:check is not in this push, so the packaged test is not run"
+          : packaged.runs
+            ? packaged.why
+            : PACKAGED_SKIPPED,
+    }),
+  );
   console.error(`── scope: ${scope.summary} ──`);
   if (impact !== undefined) {
     const [mode, ...detail] = impactLines(impact);

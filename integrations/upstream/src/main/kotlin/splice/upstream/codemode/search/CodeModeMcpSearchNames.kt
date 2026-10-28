@@ -78,6 +78,8 @@ public object CodeModeMcpSearchNames {
 
 // why: source MAX_TOOL_NAME_LENGTH=128 and unique_callable_parts reserves the two-byte "__" delimiter.
 private const val MCP_NAME_MAX_BYTES = 128
+
+// why: source unique_callable_parts reserves two bytes for the namespace/member delimiter when checking the limit.
 private const val MCP_NAME_RESERVED_BYTES = 2
 
 // why: codex_apps.rs derives connector-specific namespaces; regular raw-server identity cannot prove that route.

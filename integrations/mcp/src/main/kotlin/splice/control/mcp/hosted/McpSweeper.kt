@@ -5,6 +5,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 
+// why: one minute between idle sweeps bounds maintenance churn; active requests and streams retain their leases.
 private const val SWEEP_PERIOD_S = 60L
 
 /** The host's periodic idle maintenance, distinct from request handling or stopping the host. */

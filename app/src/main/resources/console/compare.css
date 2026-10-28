@@ -1,18 +1,18 @@
 /* Compare models (compare.js), in the console's shared drawings (console.css "THE DRAWINGS EVERY PAGE SHARES"). The
    first row holds the prompt beside the models plate, where every chosen model is a row of one table on scales the rows
-   share, docked on a numbered rail; the board of models opens across the whole width under that row, and the answers
-   stand side by side under it, each pane opening its own request in place. Built for 3822 first; narrower than 150rem
-   the prompt sits above the models plate. Class names are prefixed pg- where sessions.css or reqview.css already own
-   the plain word (.pane, .meta, .who, .lamp, .result, .send). */
+   share, docked on a numbered rail, its four places always drawn; the board of models opens across the whole width under
+   that row, and the answers stand side by side under it, each pane opening its own request at its foot. Built for 3822
+   first; narrower than 150rem the prompt sits above the models plate. Class names are prefixed pg- where sessions.css or
+   reqview.css already own the plain word (.pane, .meta, .who, .lamp, .result, .send). */
 
-/* the page says what it's for under its name (Marcos, Oct 9: "a subtitle explaining what is it for"; fin's words) */
+/* the page says what it's for under its name */
 /* on the title's row, baseline to baseline, where the two fit; under it only where they do not, so the page's body
    starts where every other page's does */
 .head .titles { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--u) calc(2 * var(--u)); }
 .head .sub { margin: 0; font: 400 1rem/1.4 var(--font-name); color: var(--text-body); }
 
 .page { container-type: inline-size; }
-.pg { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2.4rem var(--gap-col); align-items: start; }
+.pg { display: grid; grid-template-columns: minmax(0, 1fr); gap: calc(4 * var(--u)) var(--gap-col); align-items: start; }
 /* wide: the prompt and the models plate share the first row at one height; the board and the answers take the whole
    width under it, so the page scrolls as one */
 @container (min-width: 150rem) {
@@ -24,7 +24,7 @@
 /* ---------- the prompt: one surface, his plan read as it renders, the field while he writes ---------- */
 .pg-ask > .psec { flex: 1; }
 .pg-md {
-  flex: 1; display: grid; min-width: 0; min-height: 12rem; border-radius: var(--r-in); background: var(--obj-sunk);
+  position: relative; flex: 1; display: grid; min-width: 0; min-height: 12rem; border-radius: var(--r-in); background: var(--obj-sunk);
   border: .12rem solid var(--track-line); cursor: text; transition: border-color var(--t-hover) var(--e-out);
 }
 .pg-md:focus-within, .pg-md.pg-read:hover { border-color: var(--text-mute); }
@@ -38,11 +38,15 @@
 .pg-md-out > * { max-width: 72rem; }
 .pg-md.swap > * { animation: pg-fade var(--t-hover) var(--e-out) 1; }
 @keyframes pg-fade { from { opacity: .35; } }
+/* the pencil in a read plan's corner draws what a click does: it turns the plan into the field */
+.pg-edit { position: absolute; top: .8rem; right: .9rem; display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: var(--r-in); color: var(--text-mute); pointer-events: none; background: var(--obj-sunk); transition: color var(--t-hover) var(--e-out), transform var(--t-hover) var(--e-out); }
+.pg-edit svg { width: 1.15rem; height: 1.15rem; }
+.pg-md.pg-read:hover .pg-edit { color: var(--text); transform: translate(-.1rem, -.1rem) rotate(-8deg); }
 /* beside the models plate the prompt's box takes the row's height and never sets it: a plan longer than the box scrolls
    inside it, read or written, so the models plate never stands half empty beside a long plan and the box keeps its size
    when one mode turns into the other */
 @container (min-width: 150rem) {
-  .pg-md { position: relative; flex: 1 1 0; grid-template-rows: minmax(0, 1fr); }
+  .pg-md { flex: 1 1 0; grid-template-rows: minmax(0, 1fr); }
   .pg-md .field { height: auto; }
   .pg-md .field, .pg-md-out { overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--track-line) transparent; }
   /* more of the plan lies below the box's foot: the foot fades into the box until he scrolls to the plan's end */
@@ -77,9 +81,11 @@
 .pg-box.on { background: var(--text); border-color: var(--text); }
 .pg-box.on::after { content: ""; position: absolute; left: .3rem; top: .06rem; width: .3rem; height: .62rem; border: solid var(--obj); border-width: 0 .17rem .17rem 0; transform: rotate(45deg); }
 /* what changed since the prompt the dimmed answers were asked: the words added underlined on a wash, the words taken
-   out struck where they stood, both in the text's own ink */
-.pg-mdx ins, .pg-dleg ins { text-decoration: none; background: color-mix(in oklab, var(--text) 12%, transparent); box-shadow: inset 0 -.12rem 0 color-mix(in oklab, var(--text) 70%, transparent); border-radius: .15rem; padding: 0 .12rem; }
-.pg-mdx del, .pg-dleg del { color: var(--text-mute); text-decoration: line-through; text-decoration-thickness: .1rem; }
+   out struck where they stood, both in the text's own ink, each fading in as the plan is drawn */
+.pg-mdx ins, .pg-dleg ins { text-decoration: none; background: color-mix(in oklab, var(--text) 14%, transparent); box-shadow: inset 0 -.14rem 0 color-mix(in oklab, var(--text) 75%, transparent); border-radius: .15rem; padding: 0 .12rem; }
+.pg-mdx del, .pg-dleg del { color: var(--text-body); text-decoration: line-through; text-decoration-thickness: .15rem; text-decoration-color: color-mix(in oklab, var(--text) 80%, transparent); background: color-mix(in oklab, var(--text) 6%, transparent); border-radius: .15rem; padding: 0 .12rem; }
+.pg-mdx ins, .pg-mdx del { animation: pg-mark var(--t-move) var(--e-out) 1 both; }
+@keyframes pg-mark { from { opacity: 0; } }
 .pg-dleg { display: inline-flex; align-items: baseline; gap: 1.2rem; font: 500 .88rem/1.2 var(--font-name); color: var(--text-body); }
 
 .pg-go { display: flex; align-items: center; justify-content: flex-end; gap: 1.2rem; }
@@ -90,9 +96,12 @@
 }
 .pg-send { display: inline-flex; align-items: center; gap: .6rem; padding: .75rem 1.35rem; font-size: 1rem; }
 .pg-send svg { width: 1.05rem; height: 1.05rem; }
+.pg-send span.rise { animation: pg-word var(--t-snap) var(--e-out) 1; }
+@keyframes pg-word { from { opacity: 0; transform: translateY(.45rem); } }
 .pg-send[aria-busy="true"]:disabled { opacity: 1; }  /* working, not unavailable: the wheel turns where Send stands */
 
 /* ---------- the models plate: its keys, the round's figure, and one row per model ---------- */
+.pg-cmp { container: plate / inline-size; }  /* the round's three parts stand on one line where the plate holds them */
 .pg-cmp > .psec { flex: 1; }
 .pg-cmps > .sechead { align-items: center; min-height: 2.2rem; }
 .pg-aside { flex: 1; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: .6rem 2.2rem; }
@@ -108,23 +117,33 @@
 .pg-costleg .sw { width: 1.6rem; height: .55rem; border-radius: .25rem; background: color-mix(in oklab, var(--text) 38%, transparent); }
 .pg-costleg .sw.plan { background: transparent; box-shadow: inset 0 0 0 .12rem color-mix(in oklab, var(--text) 70%, transparent); }
 
-/* the round's figure: the time until its last answer, how many answered of how many were asked, how many failed */
-.pg-hero { transition: opacity var(--t-snap) var(--e-out); }
-.pg-hero .pg-failn, .pg-hero .pg-failn b { color: var(--limit); }
-.pg-hero.stale { opacity: .58; }
+/* THE ROUND: how many answered of how many were asked leads the plate, the round's split is one bar beside it, and the
+   time to the last answer and the failures are tiles at its end; a hairline, with 4u over and under it, divides it from the
+   table. Beside the table's width the three stand on one line, narrower they stack. */
+.pg-round { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: calc(2 * var(--u)) calc(4 * var(--u)); margin-bottom: calc(4 * var(--u)); padding-bottom: calc(4 * var(--u)); border-bottom: .08rem solid var(--hair); transition: opacity var(--t-snap) var(--e-out); }
+@container plate (min-width: 64rem) { .pg-round { grid-template-columns: auto minmax(18rem, 1fr) auto; } }
+.pg-round.stale { opacity: .58; }
+.pg-round .pd-pop { min-width: 0; }
+.pg-rtiles { justify-content: flex-start; }
+.pg-failt .pd-stat > svg { color: var(--limit); stroke: var(--limit); background: color-mix(in oklab, var(--limit) 14%, transparent); }
+.pg-failt .pd-stat b { color: var(--limit); }
+.pg-round .pd-seg.nt { background-image: repeating-linear-gradient(-45deg, transparent 0 .45rem, rgba(7, 5, 10, .24) .45rem .9rem); background-size: 200% 100%; animation: ghost-stripes var(--t-stripe) linear infinite; }  /* answers still out: work in progress, striped */
 
 /* THE TABLE: one row per model, its cells on the columns every row shares (a subgrid), so a figure is read down its
-   column and a row across. The time on one log axis, then what the send brought, then what the model is. */
+   column and a row across. The time on one log axis, then what the send brought, then what the model is. The model's
+   column is as wide as its widest name asks, never more than 34rem, and the time takes the room left. */
 .pg-table {
   position: relative; display: grid; align-items: stretch; column-gap: calc(2 * var(--u));
-  grid-template-columns: 2rem minmax(18rem, 3fr) minmax(14rem, 1.6fr) minmax(4.6rem, max-content) repeat(6, minmax(6.8rem, .9fr));
+  grid-template-columns: 2rem fit-content(34rem) minmax(11rem, 2fr) minmax(4.6rem, max-content) repeat(6, minmax(6.2rem, 1fr));
 }
 .pg-tr { position: relative; grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; min-height: 3.6rem; transition: transform var(--t-move) var(--e-io); }
+.pg-tr:not(.pg-addrow) > :nth-child(2) { min-width: 15rem; }
 /* the hairline between rows starts after the rail, so the rail runs unbroken from socket to socket */
 .pg-tr:not(.pg-th)::after { content: ""; position: absolute; left: calc(2rem + 2 * var(--u)); right: 0; top: 0; height: .08rem; background: var(--hair); pointer-events: none; }
 .pg-c { min-width: 0; }
 .pg-th { min-height: 0; align-items: end; padding-bottom: .65rem; }
 .pg-h { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.pg-h small { display: block; margin-top: .15rem; font: 500 .76rem/1.2 var(--font-name); color: var(--text-mute); }
 .pg-timeh { text-align: right; }
 /* the axis's own marks over the time column; the lines under them run down every row */
 .pg-axis { position: relative; align-self: end; height: 1rem; font: 500 .8rem/1 var(--font-data); color: var(--text-mute); }
@@ -158,7 +177,7 @@
 .pg-rname:hover { background: var(--track); }
 .pg-rname:focus-visible { outline: .14rem solid var(--text); outline-offset: .1rem; }
 .pg-rname > span { overflow-wrap: anywhere; }
-.pg-rname .blot, .pg-meta .blot { flex: none; width: .75rem; height: .75rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .13rem var(--ink); }
+.pg-rname .blot { flex: none; width: .75rem; height: .75rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .13rem var(--ink); }
 
 /* the time: a meter in the provider's colour on the shared log axis, striped while the send is out */
 .pg-trk { position: relative; display: block; height: var(--meter-h); border-radius: .3rem; overflow: hidden; background: color-mix(in oklab, var(--text) 10%, transparent); box-shadow: inset 0 0 0 .1rem var(--track-line); }
@@ -175,30 +194,41 @@
 .pg-tr > .barcell > .v { font: 500 .98rem/1 var(--font-data); color: var(--text-body); white-space: nowrap; }
 .pg-tr > .barcell > .v .nr { font: 500 .98rem/1 var(--font-data); }
 /* a plan's answer is charged nothing: its bar is hollow, at its value at API prices */
-.pg-tr > .barcell.is-plan .vbar b { background: transparent; box-shadow: inset 0 0 0 .12rem color-mix(in oklab, var(--text) 70%, transparent); }
+.pg-tr > .barcell.is-plan .vbar b, .pg-sc.is-plan .vbar b { background: transparent; box-shadow: inset 0 0 0 .12rem color-mix(in oklab, var(--text) 70%, transparent); }
 /* what the send will bring: an empty track before it, striped while it is out */
-.pg-tr > .barcell.is-wait .vbar { background-image: repeating-linear-gradient(-45deg, transparent 0 .3rem, var(--track) .3rem .6rem); background-size: 200% 100%; animation: ghost-stripes var(--t-stripe) linear infinite; }
+.pg-tr > .barcell.is-wait .vbar, .pg-sc.is-wait .vbar { background-image: repeating-linear-gradient(-45deg, transparent 0 .3rem, var(--track) .3rem .6rem); background-size: 200% 100%; animation: ghost-stripes var(--t-stripe) linear infinite; }
+/* a figure the daemon did not send: the dash, on the track's dashed outline */
+.pg-tr > .barcell.is-none .vbar, .pg-sc.is-none .vbar { background: none; outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }
 /* the best of a column: a star in the text's ink and the figure in full ink */
 .pg-star { flex: none; display: inline-block; width: .9em; height: .9em; margin-right: .3em; vertical-align: -.08em; fill: currentColor; }
 .pg-tr > .barcell.best > .v, .pg-tv.best { color: var(--text); font-weight: 700; }
 
-/* the dashed row where the next model docks, opening the board under the first row */
+/* an open place on the rail: its dashed socket and the empty tracks a model's figures will fill */
+.pg-slot .pg-trk { background: none; box-shadow: none; outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }
+.pg-slot .vbar { background: none; outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }
+
+/* the dashed row where the next model docks, opening the board under the first row; its count stands beside its label */
 .pg-add { --c: var(--text-mute); gap: 1rem; }
 .pg-add .plus { flex: none; }
 .pg-addw { font: 500 1.02rem/1 var(--font-name); color: var(--text); }
-.pg-offer { margin-left: auto; font: 500 .9rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.pg-offer { font: 500 .9rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
 .pg-offer b { font: 600 .95rem/1 var(--font-data); color: var(--text-body); margin-right: .3rem; }
+.pg-add .chev { margin-left: auto; }
 .pg-add[aria-expanded="true"] { border-color: var(--text-mute); color: var(--text); background: color-mix(in oklab, var(--text) 4%, transparent); }
-.pg-addrow > .pg-add { grid-column: 2 / -1; margin-block: .6rem; }
+.pg-add[aria-expanded="true"] .chev { transform: rotate(90deg); }
+.pg-addrow > .pg-add { grid-column: 2 / -1; justify-self: start; width: min(100%, 46rem); margin-block: .6rem; }
+.pg-addrow > .pg-add.ghosted { width: min(100%, 46rem); }
 /* four chosen: a solid row, not the dashed place where a model lands, since none is left */
 .pg-add.pg-swap { border-style: solid; border-width: .12rem; min-height: 3rem; }
 .pg-add.pg-swap .plus svg { width: .95rem; height: .95rem; }
-.pg-first { flex: 1; display: flex; min-height: 9rem; }
-.pg-first > .pg-add { flex: 1; justify-content: center; gap: 1.2rem; }
-.pg-first > .pg-add .pg-offer { margin-left: 0; }
-.pg-first > .pg-add .plus { width: 2.2rem; height: 2.2rem; font-size: 1.25rem; }
+/* nothing can send: the first place says so, and stands still */
+.pg-nada, .pg-nada:hover { cursor: default; border-color: var(--track-line); background: transparent; color: var(--text-mute); }
+.pg-nada .pg-addw { color: var(--text-body); }
+.pg-nada .state { font-size: 1.02rem; }
+.pg-nada a.act { display: inline-flex; align-items: center; gap: .45rem; text-decoration: none; }
+.pg-nada .act .go { width: .9rem; height: .9rem; }
 
-/* ---------- the answers: side by side, each pane opening its own request in place ---------- */
+/* ---------- the answers: side by side, each pane opening its own request at its foot ---------- */
 .pg-answers { display: flex; flex-direction: column; gap: calc(2 * var(--u)); min-width: 0; }
 .pg-ahead { align-items: center; }
 .pg-oldleg { display: inline-flex; align-items: center; gap: .5rem; font: 500 .88rem/1 var(--font-name); color: var(--text-body); }
@@ -211,26 +241,24 @@
   background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
   box-shadow: var(--cast) var(--cast) 0 var(--c), var(--cast) var(--cast) 0 var(--ink-w) var(--ink);
 }
-/* the head: the socket, the model's name with the pane's acts on its line, and under both the line that says whose it
-   is, which may run under the acts so it never wraps beside them */
+/* the head: the socket, the model's name with its command and the pane's acts on its line, under them whose it is, and
+   under both the answer's own figures, each a bar on the table's scale */
 .pg-head {
-  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: minmax(2.2rem, auto) auto;
-  grid-template-areas: "sock name acts" "sock meta meta"; align-items: center; align-content: start; gap: .45rem 1rem; min-width: 0; padding: 1rem 1rem 1rem 1.2rem;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "sock nm acts" "sock meta meta" "strip strip strip";
+  align-items: center; align-content: start; column-gap: 1rem; row-gap: 0; min-width: 0; padding: calc(2.5 * var(--u)) calc(2 * var(--u)) calc(2.5 * var(--u)) calc(3 * var(--u));
   background: var(--obj-high); border-bottom: .12rem solid var(--ink);
   border-radius: calc(var(--r-obj) - var(--ink-w)) calc(var(--r-obj) - var(--ink-w)) 0 0;
 }
 .pgp:has(> .pg-body:empty) > .pg-head { border-bottom: 0; border-radius: calc(var(--r-obj) - var(--ink-w)); }
 .pg-head > .pg-sock { grid-area: sock; align-self: start; margin-top: .05rem; }
-.pg-head .pg-model, .pgp.ghosted .pg-who > .ghost.big { grid-area: name; }
-.pg-head .pg-meta { grid-area: meta; }
+.pg-nm { grid-area: nm; display: flex; align-items: center; flex-wrap: wrap; gap: .35rem .8rem; min-width: 0; min-height: 2.2rem; }
+.pg-head .pg-meta { grid-area: meta; margin-top: .35rem; }
 .pg-head .pg-acts { grid-area: acts; }
-.pg-who { display: contents; }
+.pg-head .pg-strip { grid-area: strip; }
 .pg-model { margin: 0; font: 400 1.4rem/1.15 var(--font-lead); color: var(--text); overflow-wrap: anywhere; }
 .pg-meta { display: flex; align-items: center; flex-wrap: wrap; gap: .45rem .6rem; font: 500 .92rem/1.25 var(--font-name); color: var(--text-body); }
 .pg-meta > span { display: inline-flex; align-items: baseline; gap: .45rem; }
-.pg-meta .pv { align-items: center; color: var(--text); }
 .pg-meta .sep { font-style: normal; color: var(--text-mute); }
-.pg-meta .chip { margin-left: .3rem; }
 .pg-an { color: var(--text); }
 .pg-an.var { font: 500 .86rem/1.2 var(--font-data); color: var(--text-body); letter-spacing: .01em; }
 .pg-key { display: inline-flex; align-items: baseline; gap: .45rem; min-width: 0; }
@@ -247,35 +275,60 @@
 .pg-acts.armed > .act { animation: pg-arm var(--t-pop) var(--e-out) 1; }
 @keyframes pg-arm { from { opacity: 0; transform: scale(.9); } }
 
+/* the answer's own figures: time, cost and tokens each way, each a bar on the same scale as its column of the table, so the
+   answer is never read apart from what it cost; empty before the send, striped while it is out */
+.pg-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: calc(1.5 * var(--u)) calc(2.5 * var(--u)); margin-top: calc(2 * var(--u)); padding-top: calc(2 * var(--u)); border-top: .08rem solid var(--hair); transition: opacity var(--t-snap) var(--e-out); }
+.pgp.alone .pg-strip { max-width: 70rem; }
+.pg-sc { min-width: 0; display: flex; flex-direction: column; gap: .4rem; }
+.pg-scl { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; min-width: 0; }
+.pg-scl em { font: 500 .8rem/1.2 var(--font-name); font-style: normal; color: var(--text-mute); white-space: nowrap; }
+.pg-scl .v { font: 500 .98rem/1.1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); white-space: nowrap; }
+.pg-scl .v .nr { font: 500 .98rem/1.1 var(--font-data); }
+.pg-sc.best .v { color: var(--text); font-weight: 700; }
+.pg-sc .vbar { display: block; flex: none; width: 100%; height: .55rem; }
+.pg-sc[data-f="ms"] .vbar { height: .7rem; }
+.pg-sc[data-f="ms"] .vbar b { background: var(--c); box-shadow: inset -.14rem 0 0 var(--ink); }
+.pg-strip.is-failed .pg-sc[data-f="ms"] .vbar b { background: var(--limit); }
+.pg-sc.is-run .vbar b { transition: width 250ms linear; background-image: repeating-linear-gradient(-45deg, transparent 0 .45rem, rgba(7, 5, 10, .28) .45rem .9rem); background-size: 200% 100%; animation: ghost-stripes var(--t-stripe) linear infinite; }
+.pgp.stale .pg-strip { opacity: .58; }
+
 /* the answer: the model's reply in the plan's face, flowing into as many columns of a reading measure as its pane holds */
-.pg-body { min-width: 0; padding: 1.3rem 1.4rem 1.5rem 1.2rem; }
+.pg-body { min-width: 0; padding: calc(3 * var(--u)); }
 .pg-body:empty { display: none; }
+.pg-body:has(> .pg-idle) { display: flex; }
 .pg-body .msg.agent { max-width: none; align-self: stretch; }
-.pg-ans { font: 400 1.05rem/1.62 var(--font-name); columns: 34rem 4; column-gap: 2.6rem; column-rule: .08rem solid var(--hair); }
+.pg-ans { font: 400 1.12rem/1.62 var(--font-name); columns: 34rem 4; column-gap: 2.6rem; column-rule: .08rem solid var(--hair); }
 .pg-ans li, .pg-ans pre, .pg-ans table { break-inside: avoid; }
 .pg-ans table { column-span: all; }
 .pg-body.rise > * { animation: pg-rise var(--t-snap) var(--e-out) 1; }
 .pg-body > .ghost-lines { padding: .2rem 0; }
 .pg-body > .ghost-lines .ghost { height: 1.05rem; }
-.pg-idle { margin: 0; }
+/* a pane chosen after the others were asked: an empty slot the size of its neighbours, where its answer will land */
+.pg-idle { flex: 1; min-height: 9rem; border: .14rem dashed var(--track-line); border-radius: var(--r-in); }
 @keyframes pg-rise { from { opacity: 0; transform: translateY(.5rem); } }
 /* answers to an earlier prompt: dimmed, still readable, with their rows; the next Send asks again */
 .pgp .pg-body, .pg-tr > .pg-c:not(.pg-railc) { transition: opacity var(--t-snap) var(--e-out); }
 .pgp.stale .pg-body, .pg-tr.stale > .pg-c:not(.pg-railc) { opacity: .58; }
 
-/* a failure: its word and the act that fixes it, then what the provider, or splice, said, one line until opened */
+/* a failure: its word as a shape (the window at its limit, the day's budget spent), the act that fixes it, then what the
+   provider, or splice, said, one line until opened */
 .pgp.is-failed.alone:not(:has(.pg-req)) { max-width: 46rem; }  /* a failure alone in its row: one line, so not a whole row's width */
-.pg-fixrow { display: flex; align-items: center; flex-wrap: wrap; gap: .8rem 1rem; }
+.pg-fix { display: flex; flex-direction: column; align-items: flex-start; gap: calc(2 * var(--u)); min-width: 0; }
+.pg-fixrow { display: flex; align-items: center; flex-wrap: wrap; gap: .8rem calc(3 * var(--u)); }
 .pg-fixrow .state { font-size: 1.02rem; white-space: normal; }
 .pg-fixrow .state.limit .lockico { display: inline-grid; }
-.pg-fixrow .act { display: inline-flex; align-items: center; gap: .45rem; text-decoration: none; }
-.pg-fixrow .act .go { width: .9rem; height: .9rem; }
-.pg-fixrow .pd-stat { margin-left: auto; }
-.pg-fixrow.again { animation: pg-rise 300ms var(--e-out) 1; }
-.pg-reset { display: inline-grid; }
+.pg-fixacts { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem; }
+.pg-fixacts .act { display: inline-flex; align-items: center; gap: .45rem; text-decoration: none; }
+.pg-fixacts .act .go { width: .9rem; height: .9rem; }
+.pg-fix.again { animation: pg-rise 300ms var(--e-out) 1; }
+/* a window as Accounts draws one: its word, the meter, what is used, and under the meter where it refills */
+.pg-wrow { align-self: stretch; display: grid; grid-template-columns: 4.6rem minmax(6rem, 1fr) auto; align-items: center; gap: .7rem .9rem; }
+.pg-ww { font: 400 .95rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
+.pg-wrow .bar { --c: var(--limit); }
+.pg-wrow .pct { min-width: 0; }
+.pg-reset { grid-column: 2 / -1; display: inline-flex; align-items: center; gap: .6rem; font: 500 .95rem/1 var(--font-data); color: var(--text-body); white-space: nowrap; }
 .pg-reset .ring .arc { stroke: var(--limit); }
-.pg-win { font: 500 .95rem/1 var(--font-name); color: var(--text-body); }
-.pg-said { margin-top: 1rem; padding-left: .8rem; border-left: .22rem solid var(--track-line); }
+.pg-said { align-self: stretch; padding-left: .8rem; border-left: .22rem solid var(--track-line); }
 .pg-saidd { width: 100%; align-items: flex-start; gap: .6rem; font: 500 .92rem/1.45 var(--font-data); color: var(--text-body); }
 .pg-saidd > .chev { margin-top: .35rem; }
 .pg-saidd .who { flex: none; font: 600 .95rem/1.45 var(--font-name); color: var(--text); }
@@ -283,9 +336,17 @@
 .pg-said:not(.open) .pg-saidd q { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pg-said.open .pg-saidd q { overflow-wrap: anywhere; }
 
-/* the request: Requests' own open request (reqview.css), inside its pane under the head, its record alone */
-.pg-req { container-type: inline-size; min-width: 0; margin-bottom: calc(4 * var(--u)); padding-bottom: calc(4 * var(--u)); border-bottom: .08rem solid var(--hair); }
-.pg-reqat { display: flex; align-items: baseline; gap: .7rem; margin: 0 0 calc(2 * var(--u)); font: 600 var(--kicker)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
+/* the request: Requests' own open request (reqview.css), at its pane's foot under the answer, its record alone. It opens
+   and folds by its rows growing from and shrinking to nothing, so the answers across a row stay on one line and the
+   panes move rather than jump. The hairline and the 4u over and under it are the record's own, so they fold with it. */
+.pg-req { display: grid; grid-template-rows: 1fr; container-type: inline-size; min-width: 0; }
+.pg-reqin { min-width: 0; min-height: 0; }
+.pg-req.unfold { animation: pg-unfold var(--t-move) var(--e-out) both; }
+.pg-req.fold { animation: pg-fold var(--t-snap) var(--e-io) both; }
+.pg-req.unfold > .pg-reqin, .pg-req.fold > .pg-reqin { overflow: hidden; }
+@keyframes pg-unfold { from { grid-template-rows: 0fr; opacity: 0; } to { grid-template-rows: 1fr; opacity: 1; } }
+@keyframes pg-fold { from { grid-template-rows: 1fr; opacity: 1; } to { grid-template-rows: 0fr; opacity: 0; } }
+.pg-reqat { display: flex; align-items: baseline; gap: .7rem; margin: calc(4 * var(--u)) 0 calc(2 * var(--u)); padding-top: calc(4 * var(--u)); border-top: .08rem solid var(--hair); font: 600 var(--kicker)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
 .pg-reqat time { font: 500 .92rem/1 var(--font-data); letter-spacing: 0; text-transform: none; color: var(--text-body); }
 .pg-req .pane.rqpane { display: flex; flex-direction: column; height: auto; overflow: visible; border: 0; border-radius: 0; box-shadow: none; background: none; }
 .pg-req .rqpane .scroll { overflow: visible; padding: 0; }
@@ -295,7 +356,7 @@
 /* a tab changed: the record's body fades in where it stands, so a switch reads as a change and not a jump */
 .pg-req.swap .bodies { animation: pg-fade var(--t-snap) var(--e-out) 1; }
 
-/* ---------- the board: providers as Accounts draws them, packed into columns, each command a card ---------- */
+/* ---------- the board: providers balanced into equal columns, each command a card, each model a row of figures ---------- */
 .pg-pick { gap: calc(3 * var(--u)); }
 .pg-pick.opening { animation: pg-open var(--t-snap) var(--e-out) 1; }
 @keyframes pg-open { from { opacity: 0; transform: translateY(-.6rem); } }
@@ -305,22 +366,21 @@
 .pg-search .field:focus { border-color: var(--text-mute); }
 .pg-count { font: 500 .95rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
 .pg-count b { font: 600 1.05rem/1 var(--font-data); color: var(--text); margin-right: .2rem; }
-.pg-leg { display: inline-flex; align-items: center; gap: .6rem; font: 500 .88rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
-.pg-leg .vbar { flex: none; width: 2.6rem; }
 .pg-find > .state .lockico { display: inline-grid; }
-.pg-shut { margin-left: auto; }
-/* a provider over k columns: its cards, or its one card's list, flow down the board's own columns */
-.pg-prov.wide:not(.one) > .stack-cards { display: block; columns: var(--k); column-gap: var(--gap-col); }
-.pg-prov.wide:not(.one) > .stack-cards > .card { break-inside: avoid; margin-bottom: var(--gap-card); }
-.pg-prov.wide.one .pg-cmd > .pg-list { display: block; columns: var(--k); column-gap: calc(var(--gap-col) + 1rem); }
-.pg-prov.wide.one .pg-list > * { break-inside: avoid; margin-bottom: .55rem; }
-.pg-cmd { display: flex; flex-direction: column; gap: .7rem; padding: .85rem .9rem .9rem 1.05rem; }
+.pg-unit { margin-left: auto; font: 500 .88rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.pg-shut { margin-left: 0; }
+.pg-board { min-width: 0; }
+.pg-prov .stack-cards { gap: var(--gap-card); }
+/* a provider no model matches stays as its title over an empty slot, so the search narrows the board and never empties it */
+.pg-prov.void > header { opacity: .5; }
+.pg-void { min-height: 4.6rem; border: .14rem dashed var(--track-line); border-radius: var(--r-obj); }
+.pg-cmd { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); padding: calc(2 * var(--u)) calc(2.5 * var(--u)) calc(2.5 * var(--u)); }
 .pg-ch { display: flex; align-items: center; flex-wrap: wrap; gap: .45rem .7rem; min-height: 2.1rem; }
 .pg-ch .pg-an { font: 500 1.08rem/1.2 var(--font-name); }
 .pg-ch .pg-an.var { font: 500 .9rem/1.2 var(--font-data); }
 .pg-ch .pg-tail { font-size: .9rem; }
 .pg-ch .pg-plan { font: 400 .95rem/1.2 var(--font-name); }
-.pg-ch .chip { margin-left: auto; }
+.pg-ch:not(.keyed) .chip { margin-left: auto; }
 .pg-nameit { padding: .3rem .55rem; text-decoration: none; }
 .pg-nameit .go { width: .85rem; height: .85rem; }
 .pg-st { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem 1rem; }
@@ -328,17 +388,18 @@
 .pg-st .lockico { display: inline-grid; }
 .pg-st a.act { text-decoration: none; }
 .pg-cmd.down .pg-list { opacity: .72; }
-/* a card's models under the context window they share, the window said once over them on the board's one scale */
-.pg-list { display: flex; flex-direction: column; gap: .55rem; margin: 0 -.45rem; }
-.pg-wg { display: flex; flex-direction: column; gap: .1rem; }
-.pg-wh { display: flex; align-items: center; gap: .8rem; padding: .3rem .45rem .2rem; }
-.pg-wh .vbar { height: .4rem; }
-.pg-wh b { flex: none; min-width: 3.4rem; text-align: right; font: 500 .95rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
-.pg-rows { display: flex; flex-direction: column; gap: .1rem; }
+.pg-list { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); margin: 0 -.45rem; }
+/* a long list opened takes as many of the board's columns as its length needs, its rows flowing down each in turn */
+.pg-rcols { display: grid; grid-template-columns: repeat(var(--k, 1), minmax(0, 1fr)); column-gap: calc(var(--gap-col) + 1rem); align-items: start; }
+.pg-rc { min-width: 0; display: flex; flex-direction: column; }
+/* a model list's columns, said once over its rows: the tick, the name, the window, the two prices */
+.pg-mh, .pg-mrow { display: grid; grid-template-columns: 1.25rem minmax(0, 1fr) 5.4rem 4.6rem 4.6rem; align-items: center; column-gap: .7rem; }
+.pg-mh { align-items: end; padding: 0 .45rem .45rem; font: 500 .78rem/1.2 var(--font-name); color: var(--text-mute); border-bottom: .08rem solid var(--hair); }
+.pg-mh .pg-h { font: inherit; white-space: nowrap; }
+.pg-rows { display: flex; flex-direction: column; gap: .1rem; padding-top: .35rem; }
 .pg-mrow {
-  display: grid; grid-template-columns: 1.25rem minmax(0, 1fr); align-items: center; gap: .7rem;
-  padding: .48rem .45rem; border: 0; border-radius: var(--r-in); background: none; color: var(--text-body); cursor: pointer;
-  font: 500 .95rem/1.2 var(--font-name); text-align: left;
+  padding: .5rem .45rem; border: 0; border-radius: var(--r-in); background: none; color: var(--text-body); cursor: pointer;
+  font: 500 .98rem/1.2 var(--font-name); text-align: left;
   transition: background-color var(--t-hover) var(--e-out), color var(--t-hover) var(--e-out), box-shadow var(--t-hover) var(--e-out);
 }
 .pg-mrow:hover { background: var(--track); color: var(--text); }
@@ -348,24 +409,32 @@
 .pg-mrow:disabled:hover { background: none; color: var(--text-body); }
 /* a model's name is read whole: a name longer than its column takes a second line rather than losing its end */
 .pg-mn { min-width: 0; overflow-wrap: anywhere; }
+.pg-mf { display: flex; align-items: center; gap: .5rem; min-width: 0; }
+.pg-mf .vbar { height: .45rem; min-width: .8rem; }
+.pg-mf .v { flex: none; min-width: 2.5rem; text-align: right; font: 500 .9rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
+.pg-mf .v .nr { font: 500 .9rem/1 var(--font-data); }
+.pg-mrow:hover .pg-mf .vbar b, .pg-mrow[aria-pressed="true"] .pg-mf .vbar b { background: color-mix(in oklab, var(--text) 60%, transparent); }
 .pg-tick { display: grid; place-items: center; width: 1.25rem; height: 1.25rem; border-radius: .3rem; border: .14rem solid var(--track-line); transition: background-color var(--t-hover) var(--e-out), border-color var(--t-hover) var(--e-out); }
 .pg-tick svg { width: .8rem; height: .8rem; opacity: 0; transform: scale(.5); transition: opacity var(--t-hover) var(--e-out), transform var(--t-pop) var(--e-out); }
 .pg-mrow:hover .pg-tick { border-color: var(--text-mute); }
 .pg-mrow[aria-pressed="true"] .pg-tick { background: var(--text); border-color: var(--text); color: var(--obj); }
 .pg-mrow[aria-pressed="true"] .pg-tick svg { opacity: 1; transform: none; }
+.pg-rows.unfold { animation: unfold var(--t-snap) var(--e-out) both; }
 .pg-list > .morepill { align-self: flex-start; margin: .15rem .45rem 0; }
 /* a list grouped by vendor: each vendor a row that opens its models in place, its count a bar on the largest's scale */
 .pg-vends { gap: .1rem; }
 .pg-vrow {
-  display: grid; grid-template-columns: .8rem minmax(0, 12rem) minmax(0, 1fr); align-items: center; gap: .65rem; width: 100%; max-width: none;
+  display: grid; grid-template-columns: .8rem minmax(8rem, 14rem) minmax(8rem, 16rem); align-items: center; justify-content: start; gap: .65rem 1rem; width: 100%; max-width: none;
   padding: .55rem .45rem; border-radius: var(--r-in); font: 500 1rem/1.2 var(--font-name); color: var(--text); transition: background-color var(--t-hover) var(--e-out);
 }
 .pg-vrow:hover { background: var(--track); }
 .pg-vn { min-width: 0; overflow-wrap: anywhere; }
 .pg-vc > .v { min-width: 2.2rem; font: 500 .88rem/1 var(--font-data); color: var(--text-body); }
-.pg-vlist { display: flex; flex-direction: column; gap: .55rem; margin: .1rem 0 .5rem 1.45rem; }
+.pg-vfold { display: grid; grid-template-rows: 1fr; margin: .1rem 0 .5rem 1.45rem; }
+.pg-vin { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: .55rem; }
+.pg-vfold.unfold { animation: pg-unfold var(--t-move) var(--e-out) both; }
+.pg-vfold.unfold > .pg-vin { overflow: hidden; }
 .pg-vends > .morepill { align-self: flex-start; margin: .35rem .45rem 0; }
-.pg-nomatch { margin: 0; padding: .4rem 0; }
 
 /* ---------- while the reads run, and when they fail ---------- */
 .pg-c > .barcell { width: 100%; }
@@ -373,16 +442,17 @@
 .pg-tr.ghosted .pg-tv { display: flex; justify-content: flex-end; }
 .pg-add.ghosted { justify-content: flex-start; cursor: default; }
 .pgp.ghosted { box-shadow: var(--cast) var(--cast) 0 var(--wall-low), var(--cast) var(--cast) 0 var(--ink-w) var(--ink); }
-.pgp.ghosted .pg-who > .ghost.big { margin-block: .155rem; }  /* the name's line, 1.61rem */
-.pgp.ghosted .pg-meta .ghost.chip { height: 1.68rem; box-shadow: 0 0 0 .12rem var(--track-line); }
+.pgp.ghosted .pg-nm > .ghost.big { margin-block: .155rem; }  /* the name's line, 1.61rem */
+.pgp.ghosted .pg-nm .ghost.chip { height: 1.68rem; box-shadow: 0 0 0 .12rem var(--track-line); }
 .pg-prov.ghosted .ghost.big { width: 9rem; }
 .pg-prov.ghosted .ghost, .pgp.ghosted .ghost { max-width: 100%; }
 .pg-unread { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem 1.4rem; padding: 1.4rem 1.6rem; border: .14rem dashed var(--track-line); border-radius: var(--r-obj); }
 .pg-unread .state { font-size: 1.02rem; }
 .pg-unread a.act { display: inline-flex; align-items: center; gap: .45rem; text-decoration: none; }
 .pg-unread .act .go { width: .9rem; height: .9rem; }
-/* nothing can send: said once, then each command that can't, why, and the page that fixes it, on shared columns */
-.pg-none { display: flex; flex-direction: column; gap: calc(2 * var(--u)); padding: .4rem 0; }
+/* nothing can send: the table's four places stand empty with the first one saying so, and under them each command that
+   can't, why, and the page that fixes it, on shared columns */
+.pg-none { display: flex; flex-direction: column; gap: calc(4 * var(--u)); }
 .pg-none > a.act { align-self: flex-start; text-decoration: none; }
 .pg-blocked { display: grid; grid-template-columns: repeat(3, max-content); align-items: center; gap: .8rem 1.6rem; margin: 0; padding: 0; list-style: none; }
 .pg-blocked > li { display: contents; }
@@ -391,7 +461,8 @@
 .pg-why.bad { color: var(--limit); }
 
 @media (prefers-reduced-motion: reduce) {
-  .pg-pick.opening, .pg-body.rise > *, .pg-fixrow.again, .pg-sock.pop, .pg-acts.armed > .act, .pg-md.swap > *, .pg-req.swap .bodies { animation: none; }
-  .pg-tr.is-sending .pg-trk > i, .pg-tr > .barcell.is-wait .vbar { animation: none; }
-  .pg-trk > i, .pg-tr, .pgp .pg-body, .pg-tr > .pg-c { transition: none; }
+  .pg-pick.opening, .pg-body.rise > *, .pg-fix.again, .pg-sock.pop, .pg-acts.armed > .act, .pg-md.swap > *, .pg-req.swap .bodies, .pg-req.unfold, .pg-req.fold,
+  .pg-vfold.unfold, .pg-rows.unfold, .pg-send span.rise, .pg-mdx ins, .pg-mdx del { animation: none; }
+  .pg-tr.is-sending .pg-trk > i, .pg-tr > .barcell.is-wait .vbar, .pg-sc.is-run .vbar b, .pg-sc.is-wait .vbar, .pg-round .pd-seg.nt { animation: none; }
+  .pg-trk > i, .pg-tr, .pgp .pg-body, .pg-tr > .pg-c, .pg-strip, .pg-round, .pg-edit { transition: none; }
 }

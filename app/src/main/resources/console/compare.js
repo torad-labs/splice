@@ -8,14 +8,16 @@
 // no credential for.
 // Reads: GET /api/heads, /api/models, /api/auth, /api/accounts, /api/status, and each pooled command's order.
 //
-// THE COMPARISON IS ONE TABLE (Oct 27; Marcos: "show don't tell"). Every chosen model is a row of the models plate beside
+// THE COMPARISON IS ONE TABLE (Oct 27). Every chosen model is a row of the models plate beside
 // the prompt, docked on a numbered rail: its time on one log axis that grows while the send is out, then its cost, its
 // tokens each way, its context window and its prices as bars on scales the rows share, the best of each column starred.
-// The rail numbers the order the answers landed in, the rows move to that order as they land, and each answer's pane
-// carries the same number. The round's own figure leads the table: the time until the last answer, a running clock while
-// any is out, with how many answered of how many were asked. The board of models opens across the whole width under the
-// first row, its providers packed into columns that end near one height and each command's models under the context
-// window they share; the answers stand side by side under it, each opening its own request in place.
+// The rail numbers the order the answers landed in (a failure reads first, the row that needs a look), the rows move to
+// that order as they land, and each answer's pane carries the same number and its own figures on the same scales. The
+// round's own figure leads the plate: how many answered of how many were asked, with the split of the round as one bar
+// and the time to the last answer beside it. The table always shows its four places, taken or open. The board of models
+// opens across the whole width under the first row, its providers balanced into equal columns, each model a row with its
+// window and its two prices drawn before it is chosen; an opened list takes as many columns as its length needs. The
+// answers stand side by side under it, and a pane's request opens at the pane's foot, so the answers stay on one line.
 CONSOLE.page("compare.html", (scope) => {
   "use strict";
   const { document, window, API, setInterval, clearInterval, setTimeout, requestAnimationFrame, ResizeObserver } = scope;
@@ -24,12 +26,16 @@ const MAX_PANES = 4;
 const KEPT = "splice.compare.prompt";
 const KEPT_MODELS = "splice.compare.models";
 // a command's list shows up to WHOLE models; a longer one shows its first FIRST and the rest behind +N
-const LIST = { whole: 10, first: 8 };
+const LIST = { whole: 10, first: 6 };
 // a list grouped by vendor (OpenRouter) shows its largest vendors, each opening its models in place, kept the same way
 const VENDORS = 6, VENDOR_LIST = { whole: 8, first: 6 };
+// an opened list longer than OPEN_ROWS takes one more board column for every PER_COLUMN rows, so no list runs down one column
+const OPEN_ROWS = 12, PER_COLUMN = 8;
 // a board column and an answer's narrowest lane, in rem: six columns and four lanes at 3822, two of each at 1440
 const COL_REM = 38, LANE_REM = 40;
 const TICK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg>';
+const CLOCK = G('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>', 'aria-hidden="true"');
+const PENCIL = G('<path d="M4.5 19.5l.9-4 10.6-10.6a1.8 1.8 0 0 1 2.6 0l.5.5a1.8 1.8 0 0 1 0 2.6L8.5 18.6z"/><path d="M13.8 6.7l3.5 3.5"/>', 'aria-hidden="true"');
 // the best figure of a column: a star in the text's own ink, never the key light (Send's alone)
 const STAR = '<svg class="pg-star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8l2.75 5.9 6.45.75-4.8 4.4 1.3 6.35L12 17l-5.7 3.2 1.3-6.35-4.8-4.4 6.45-.75z"/></svg>';
 const FIND = G('<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.3-4.3"/>', 'aria-hidden="true"');
@@ -44,7 +50,7 @@ const still = () => window.matchMedia("(prefers-reduced-motion: reduce)").matche
 // rates}], held, down }; blocked: the ones that can't, each with why and the page that fixes it
 const ui = {
   editing: false, prompt: "", panes: [], cmds: null, blocked: [], error: null, reading: false, restored: false, add: null,
-  q: "", open: new Set(), unfold: null, finished: 0, back: 0, uid: 0, opened: false, swap: false, done: false, hi: 0, fit: null,
+  q: "", open: new Set(), unfold: null, finished: 0, back: 0, uid: 0, opened: false, swap: false, done: false, ax: null, t: null, fit: null,
   marks: "",
 };
 try { ui.prompt = sessionStorage.getItem(KEPT) ?? ""; } catch { /* no storage: the field starts empty */ }
@@ -79,10 +85,18 @@ function whyNot(a, next, listed) {
 // A key shows its masked tail beside its variable, as Accounts draws it ("…9c21" from api_key_masked), so commands whose
 // keys share one variable can be told apart; a key too short to mask is masked "set" and shows no tail.
 const tailOf = (masked) => (typeof masked === "string" && masked.includes("…") ? `…${masked.split("…").pop()}` : null);
+// A login is named by the console's one name rule (kit DRAW.name): the name its owner gave, else its provider and plan,
+// never its address or the bare word "Account"; two unnamed ones that would read alike are told apart by an ordinal.
+// acctOf only gathers what the rule reads ({ kind: "login", given, plan }); read() names them all together.
 function acctOf(a, known, next) {
   if (a?.env_var) return { kind: "key", var: a.env_var, tail: tailOf(a.api_key_masked) };
-  if (known) return { kind: known.label_default && known.can_rename ? "unnamed" : "named", name: known.display_name ?? known.label ?? "", plan: cap(known.plan) };
-  return next ? { kind: "named", name: next, plan: "" } : { kind: "none" };
+  if (known) return { kind: "login", given: known.label_default && known.can_rename ? "" : known.display_name ?? known.label ?? "", plan: cap(known.plan) };
+  return next ? { kind: "login", given: next, plan: "" } : { kind: "none" };
+}
+function nameLogins(cmds) {
+  const logins = cmds.filter((c) => c.acct.kind === "login");
+  const named = DRAW.names("login", logins.map((c) => ({ name: c.acct.given, provider: c.family, plan: c.acct.plan })));
+  logins.forEach((c, i) => { c.acct = { kind: named[i].own ? "named" : "unnamed", name: named[i].text, plan: named[i].own ? c.acct.plan : "", head: c.acct.head }; });
 }
 // OpenRouter spells its vendor into every label ("OpenAI: GPT-6 Sol"); the vendor is said once over its models instead
 function vendorsOf(models) {
@@ -133,6 +147,7 @@ async function read() {
       down: Boolean(h.runtimeNotAnswering),
     }];
   });
+  nameLogins(ui.cmds);
   ui.blocked = blocked; ui.error = null; ui.reading = false;
 }
 const cmdOf = (key) => ui.cmds?.find((c) => c.key === key);
@@ -157,7 +172,7 @@ function restore() {
 const pane = (c, m) => ({
   uid: ++ui.uid, key: c.key, id: m.id, label: m.short, vendor: m.vendor, st: "idle", asked: null, fail: null, ms: null, at: null, text: "",
   tin: null, tout: null, cost: null, trace: null, tries: 0, t0: 0, order: null, seq: null, req: false, reqNew: false, said: false,
-  rv: { tab: "attempts", nodes: new Set(), q: "" }, RV: null, rvSwap: false, painted: {}, fresh: false, arm: false, pop: false,
+  rv: { tab: "attempts", nodes: new Set(), q: "" }, RV: null, rvSwap: false, painted: {}, strip: {}, fresh: false, arm: false, pop: false,
 });
 const paneOf = (key, id) => ui.panes.find((p) => p.key === key && p.id === id);
 const byUid = (u) => ui.panes.find((p) => p.uid === Number(u)) ?? null;
@@ -201,7 +216,7 @@ function readFrames(frames) {
 }
 const DOWN = "Not answering"; // a command whose runtime is not up, as Accounts and the board's card say it
 const LIMIT = "Limit reached"; // a spent plan window, the lock's own word, on the pane and in its request alike
-// What went wrong, in Fin's word for its kind: the provider's status or error type, else the sentence splice answered.
+// What went wrong, in the console's word for its kind: the provider's status or error type, else the sentence splice answered.
 function failWord(status, body, said) {
   const type = body?.error?.type ?? body?.error?.code ?? body?.type ?? "";
   if (status === 429 || /rate_limit|usage_limit/.test(type)) return OUTCOME_WORD["error:rate-limited"];
@@ -211,7 +226,7 @@ function failWord(status, body, said) {
   if (status === 404 || /not_found/.test(type)) return OUTCOME_WORD["failure:not_found_error"];
   if (status >= 400 && status < 500) return OUTCOME_WORD["failure:invalid_request_error"];
   // Compare's own word: its send runs under a connect and a whole-request timeout, and a model still answering is cut
-  // with no silence at all, so the kit's "Given up after a silence" is not its fact (fin, Oct 12)
+  // with no silence at all, so the kit's "Given up after a silence" is not its fact
   if (/timed? ?out|HttpRequestTimeout/i.test(said)) return "Timed out";
   if (/no credential|forwards the caller/.test(said)) return OUTCOME_WORD["error:auth-missing"];
   // a command whose runtime is not up: Accounts' word for the same fact, so one thing keeps one name
@@ -240,11 +255,20 @@ function spentWindow(body) {
   const secs = Number(e.limit_window_minutes) * 60 || null;
   return { until: new Date(at * 1000), word: WINDOW[secs] ?? "", secs };
 }
+// What a budget refusal measured, spent and cap, read off the refusal's own sentence ("... $5.12 ... against its $5.00 daily
+// budget ..."): the daemon's reply carries them nowhere else. The sentence itself stays off the page; only its two amounts
+// are drawn. A refusal worded another way draws no meter (the word and its door stand alone) rather than a guess.
+const AMOUNT = "\\$([\\d,]+(?:\\.\\d+)?)";
+const budgetOf = (said) => {
+  const m = new RegExp(`${AMOUNT}[^$]*?against its ${AMOUNT}`).exec(said ?? "");
+  const n = (s) => Number(s.replace(/,/g, ""));
+  return m && n(m[2]) > 0 ? { spent: n(m[1]), cap: n(m[2]) } : null;
+};
 // a reply with no price, in Requests' words for why (requests.js REASON), said once beside the table's legend
 const NO_COST = { plan: "On your plan", uncounted: "Uncounted" };
-// a cost in the console's one money form (kit dollars), so a reply reads the same here and on its Requests row; the
-// bars on the cost column's scale tell two close costs apart
-const money = dollars;
+// a cost in the console's one money form (kit dollars) without its "≈" on every cell: the column's header says
+// "estimated" once. The bars on the cost column's scale tell two close costs apart.
+const money = DRAW.usd;
 // a rate card's price per million tokens: "$15", "$2.50", "$0.15"
 const rate = (v) => (v >= 1 ? `$${Number.isInteger(v) ? v : v.toFixed(2)}` : `$${v.toFixed(v < 0.01 ? 3 : 2)}`);
 // the daemon prices the reply the way it prices a recorded request, from the tokens the answer reported
@@ -272,7 +296,7 @@ async function ask(p) {
   if (res.status === 429 && reply?.blocked === "budget") { // the command's budget refused it as it refuses a turn, leaving an Over budget row
     // the daemon's sentence names its files, so the pane says Over budget with the door to that command's budget instead
     console.warn(`compare: ${reply.error ?? "the budget refused the send"}`);
-    Object.assign(p, { st: "failed", fail: { word: OUTCOME_WORD[reply.outcome] ?? OUTCOME_WORD["error:budget-blocked"], door: reply.head || p.key, splice: true } });
+    Object.assign(p, { st: "failed", fail: { word: OUTCOME_WORD[reply.outcome] ?? OUTCOME_WORD["error:budget-blocked"], door: reply.head || p.key, splice: true, budget: budgetOf(reply.error) } });
     return;
   }
   if (!res.ok || !reply?.response) { // splice's own refusal, or a call that never reached the provider: splice said it, not the provider
@@ -330,36 +354,50 @@ function land(p) {
   p.pop = true;
   paintCmp();
   paintPane(p);
+  paintStrips(p); // the others' figures move to the round's new scales
   p.pop = false; ui.done = false;
   paintSend();
 }
 
 // ---------- the comparison: every row on scales the rows share ----------
-// One log axis for every row's time, from 100 ms to 5 min (10 min once a send runs past that), so 0.9 s and 40 s read
-// as lengths on one line while the sends race. A time under the axis's start keeps a sliver, so an answer is never
-// drawn as no time at all.
-const AXIS_LO = 100;
+// One log axis for every row's time. It starts at the round figure under the fastest answer that landed (100 ms until
+// one has) and ends at 5 min (10 min once a send runs past that), so 0.9 s and 40 s, or 31 ms and 33 ms, read as lengths
+// on one line while the sends race. A time under the axis's start keeps a sliver, so an answer is never drawn as no time.
 const axisHi = () => (ui.panes.some((p) => (p.st === "sending" ? Date.now() - p.t0 : p.ms ?? 0) > 3e5) ? 6e5 : 3e5);
-const axisAt = (ms, hi = axisHi()) => (ms > 0 ? Math.max(1.2, Math.min(100, (Math.log(Math.max(ms, AXIS_LO) / AXIS_LO) / Math.log(hi / AXIS_LO)) * 100)) : 0);
-// (written 1m, 5m: the last decades of the log axis sit close, and "1 min" beside "5 min" would touch in a narrow column)
-const ticksOf = (hi) => [[AXIS_LO, "100ms"], [1000, "1s"], [10000, "10s"], [60000, "1m"], [hi, hi > 3e5 ? "10m" : "5m"]];
+function axisLo() {
+  const landed = (st) => ui.panes.filter((p) => p.st === st && p.ms > 0).map((p) => p.ms);
+  const first = Math.min(...(landed("done").length ? landed("done") : landed("failed")));
+  return Number.isFinite(first) ? Math.min(1000, Math.max(1, 10 ** Math.floor(Math.log10(first)))) : 100;
+}
+const axisNow = () => ({ lo: axisLo(), hi: axisHi() });
+const sameAxis = (a, b) => Boolean(a) && a.lo === b.lo && a.hi === b.hi;
+const axisAt = (ms, { lo, hi }) => (ms > 0 ? Math.max(1.2, Math.min(100, (Math.log(Math.max(ms, lo) / lo) / Math.log(hi / lo)) * 100)) : 0);
+// the axis's marks, written compactly (1m, 5m: the last decades sit close, and "1 min" beside "5 min" would touch in a
+// narrow column); never more than five, so no two touch
+const LO_WORD = { 1: "1ms", 10: "10ms", 100: "100ms", 1000: "1s" };
+function ticksOf({ lo, hi }) {
+  const all = [[lo, LO_WORD[lo]], ...[[10, "10ms"], [100, "100ms"], [1000, "1s"], [1e4, "10s"], [6e4, "1m"]].filter(([ms]) => ms > lo), [hi, hi > 3e5 ? "10m" : "5m"]];
+  while (all.length > 5) all.splice(1, 1);
+  return all;
+}
 const top = (xs) => Math.max(0, ...xs.filter((x) => typeof x === "number" && Number.isFinite(x)));
 // a share of the largest, with a sliver kept for anything above nothing
 const share = (v, max) => (v > 0 && max > 0 ? Math.max(1.5, (v / max) * 100) : 0);
 // the round's figure: the time until its last answer, still running while any is out
 const roundMs = () => Math.max(0, ...askedOnes().map((p) => (p.st === "sending" ? Date.now() - p.t0 : p.ms ?? 0)));
-// what the send brought, then what the model is; the best of a column is the least, or the most for a window
+// what the send brought, then what the model is; the best of a column is the least, or the most for a window. A column's
+// unit or qualifier is said once, under its name (unit).
 const COLS = [
-  { f: "cost", word: "Cost", best: "low", sent: true, text: money },
+  { f: "cost", word: "Cost", unit: "estimated", best: "low", sent: true, text: money },
   { f: "tin", word: "Tokens in", sent: true, text: DRAW.n },
   { f: "tout", word: "Tokens out", sent: true, text: DRAW.n },
   { f: "win", word: "Context", best: "high", text: DRAW.big },
-  { f: "pin", word: "Price in", best: "low", text: rate },
-  { f: "pout", word: "Price out", best: "low", text: rate },
+  { f: "pin", word: "Price in", unit: "per M tokens", best: "low", text: rate },
+  { f: "pout", word: "Price out", unit: "per M tokens", best: "low", text: rate },
 ];
-const RAIL = { done: 0, failed: 0, sending: 1, idle: 2 };
-// the rail's order: the rows in the order their sends came back, answered or failed, then the ones still out, then the
-// ones not asked yet, each of those in the order he chose them
+const RAIL = { failed: 0, done: 1, sending: 2, idle: 3 };
+// the rail's order: the sends that failed first (the row that needs a look reads first), then the answers in the order
+// they came back, then the ones still out, then the ones not asked yet, each of those in the order he chose them
 const railOrder = () => ui.panes.map((p, i) => ({ p, i })).sort((a, b) => RAIL[a.p.st] - RAIL[b.p.st] || (a.p.seq ?? 0) - (b.p.seq ?? 0) || a.i - b.i).map((x) => x.p);
 function figuresOf(p) {
   const m = modelOf(p), back = p.st === "done" || p.st === "failed", c = p.st === "done" ? p.cost : null;
@@ -370,8 +408,9 @@ function figuresOf(p) {
     win: m?.window ?? null, pin: m?.rates?.input ?? null, pout: m?.rates?.output ?? null,
   };
 }
+// THE SCALES, DRAWN ONCE FOR THE WHOLE ROUND: the table's rows and each answer's own figures read the same scales
 function comparison() {
-  const rows = railOrder(), hi = (ui.hi = axisHi()), figs = new Map(rows.map((p) => [p, figuresOf(p)])), all = [...figs.values()];
+  const rows = railOrder(), ax = axisNow(), figs = new Map(rows.map((p) => [p, figuresOf(p)])), all = [...figs.values()];
   const sc = Object.fromEntries(COLS.map(({ f }) => [f, top(all.map((x) => x[f]))]));
   // a column's best is marked only where two rows or more have it and they read differently; it is the figure as the
   // table writes it, so two windows that both read 1M are starred alike or not at all. A sent figure counts once answered.
@@ -387,16 +426,20 @@ function comparison() {
   // each column's figures end on one line: the cell keeps room for the widest figure the column holds
   const room = {};
   for (const c of COLS) room[c.f] = Math.max(3, ...all.map((x) => (x[c.f] == null ? 1 : c.text(x[c.f]).length))) + (best[c.f] != null ? 2 : 0);
-  return { rows, figs, sc, best, hi, room, dash: new Set(), paid: false, plan: false };
+  ui.ax = ax;
+  return (ui.t = { rows, figs, sc, best, ax, room, dash: new Set(), paid: false, plan: false });
 }
 // a bar drawn at the width it was last painted, then grown to its new one, so a change moves instead of jumping
-function barI(p, f, w, tag = "b") {
-  const html = `<${tag} style="width:${(p.painted[f] ?? 0).toFixed(2)}%" data-w="${w.toFixed(2)}"></${tag}>`;
-  p.painted[f] = w;
+// ([store] is where a place keeps its last width: the table's row, or the answer's own strip)
+function barI(p, f, w, tag = "b", store = "painted") {
+  const html = `<${tag} style="width:${(p[store][f] ?? 0).toFixed(2)}%" data-w="${w.toFixed(2)}"></${tag}>`;
+  p[store][f] = w;
   return html;
 }
 const dashHtml = `<i class="nr">—</i>`;
-function cellHtml(p, col, x, t) {
+// What one figure of one row is: an empty track before the send, stripes while it is out, a value on its column's
+// scale, or a dash. The table's cell and the answer's own strip both draw it, so a figure reads alike in both.
+function figOf(p, col, x, t) {
   const { f } = col, v = x[f], st = p.st;
   let kind = "val", text = "";
   if (col.sent && st === "idle") kind = "idle"; // what the send will bring: an empty track before it
@@ -411,8 +454,12 @@ function cellHtml(p, col, x, t) {
   }
   const best = v != null && t.best[f] != null && col.text(v) === t.best[f] && (!col.sent || st === "done");
   const w = kind === "val" || kind === "plan" || kind === "paid" ? share(v, t.sc[f]) : 0;
-  return `<span class="pg-c barcell is-${kind}${best ? " best" : ""}" role="cell" data-f="${f}" style="--v-w:${t.room[f]}ch">`
-    + `<span class="vbar" aria-hidden="true">${barI(p, f, w)}</span><b class="v">${best ? STAR : ""}${text}</b></span>`;
+  return { kind, text, best, w };
+}
+function cellHtml(p, col, x, t) {
+  const { f } = col, g = figOf(p, col, x, t);
+  return `<span class="pg-c barcell is-${g.kind}${g.best ? " best" : ""}" role="cell" data-f="${f}" style="--v-w:${t.room[f]}ch">`
+    + `<span class="vbar" aria-hidden="true">${barI(p, f, g.w)}</span><b class="v">${g.best ? STAR : ""}${g.text}</b></span>`;
 }
 // the socket: empty before a send, the working lamp while it is out, then its place in the order, or the failure mark
 function sockHtml(p) {
@@ -425,22 +472,24 @@ function sockHtml(p) {
 function rowHtml(p, at, t, edge) {
   const c = cmdOf(p.key), x = t.figs.get(p);
   const fast = t.best.ms != null && p.st === "done" && DRAW.ms(p.ms) === t.best.ms;
-  const time = `<span class="pg-c pg-time" role="cell"><span class="pg-trk" aria-hidden="true">${barI(p, "ms", x.ms == null ? 0 : axisAt(x.ms, t.hi), "i")}</span></span>`
+  const time = `<span class="pg-c pg-time" role="cell"><span class="pg-trk" aria-hidden="true">${barI(p, "ms", x.ms == null ? 0 : axisAt(x.ms, t.ax), "i")}</span></span>`
     + `<span class="pg-c pg-tv${fast ? " best" : ""}" role="cell" data-f="msv">${x.ms == null ? "" : `${fast ? STAR : ""}${DRAW.ms(x.ms)}`}</span>`;
   return `<div class="pg-tr is-${p.st}${edge}${stale(p) ? " stale" : ""}${p.fresh ? " landed" : ""}" role="row" data-u="${p.uid}" style="grid-row:${at};--c:${colorOf(c?.family)}">`
     + `<span class="pg-c pg-railc" role="cell">${sockHtml(p)}</span>`
     + `<span class="pg-c pg-rwho" role="cell"><button class="pg-rname" type="button" data-act="goto" data-u="${p.uid}"><i class="blot" aria-hidden="true"></i><span>${esc(p.label)}</span></button>${c ? DRAW.chip({ text: c.command }) : ""}</span>`
     + time + COLS.map((col) => cellHtml(p, col, x, t)).join("") + `</div>`;
 }
+// A column's name with its unit or qualifier under it, said once; the other columns carry no unit.
+const colHead = (word, unit = "") => `${word}${unit ? `<small>${unit}</small>` : ""}`;
 // the column names, said once; over the time the axis's own marks, which the rows' tracks are read against
 // (the axis's ends and the rail's are named pg-a and pg-z: Sessions' stylesheet, loaded on this page, owns .last)
-function headHtml(hi) {
-  const ticks = ticksOf(hi).map(([ms, w], i, a) => `<span class="${i === 0 ? "pg-a" : i === a.length - 1 ? "pg-z" : ""}" style="left:${axisAt(ms, hi).toFixed(2)}%">${w}</span>`).join("");
+function headHtml(ax) {
+  const ticks = ticksOf(ax).map(([ms, w], i, a) => `<span class="${i === 0 ? "pg-a" : i === a.length - 1 ? "pg-z" : ""}" style="left:${axisAt(ms, ax).toFixed(2)}%">${w}</span>`).join("");
   return `<div class="pg-tr pg-th" role="row" style="grid-row:1"><span class="pg-c" role="columnheader"></span><span class="pg-c pg-h" role="columnheader">Model</span>`
     + `<span class="pg-c pg-axis" aria-hidden="true">${ticks}</span><span class="pg-c pg-h pg-timeh" role="columnheader">Time</span>`
-    + COLS.map((c) => `<span class="pg-c pg-h" role="columnheader">${c.word}</span>`).join("") + `</div>`;
+    + COLS.map((c) => `<span class="pg-c pg-h" role="columnheader">${colHead(c.word, c.unit)}</span>`).join("") + `</div>`;
 }
-// the dashed row where the next model lands, its socket the next one on the rail; with none chosen it is the whole plate
+// the dashed row where the next model lands, its socket the next one on the rail; its count of models sits beside its label
 const addHtml = () => `<button class="add pg-add" type="button" data-act="add" aria-expanded="${pickerOpen()}" aria-controls="pick">`
   + `<span class="plus" aria-hidden="true">+</span><span class="pg-addw">Add model</span><span class="pg-offer"><b>${DRAW.n(offered())}</b> models</span>${DRAW.chev}</button>`;
 // four chosen: no place is left on the rail, so the row under the last one opens the same board to swap a model, a
@@ -448,25 +497,49 @@ const addHtml = () => `<button class="add pg-add" type="button" data-act="add" a
 const SWAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7h11l-3-3M17 17H6l3 3"/></svg>';
 const swapHtml = () => `<button class="add pg-add pg-swap" type="button" data-act="add" aria-expanded="${pickerOpen()}" aria-controls="pick">`
   + `<span class="plus" aria-hidden="true">${SWAP}</span><span class="pg-addw">Change models</span><span class="pg-offer"><b>${DRAW.n(offered())}</b> models</span>${DRAW.chev}</button>`;
+// an open place on the rail: its dashed socket and the empty tracks a model's figures will fill, so the table's four
+// places are always drawn, taken or open, and the plate keeps one height as models are chosen
+function slotHtml(at, edge) {
+  return `<div class="pg-tr pg-slot${edge}" role="row" style="grid-row:${at}"><span class="pg-c pg-railc"><span class="pg-sock tlamp open" aria-hidden="true"></span></span><span class="pg-c"></span>`
+    + `<span class="pg-c pg-time"><span class="pg-trk" aria-hidden="true"></span></span><span class="pg-c pg-tv"></span>`
+    + COLS.map(() => `<span class="pg-c barcell"><span class="vbar" aria-hidden="true"></span></span>`).join("") + `</div>`;
+}
+// the places under the chosen rows: the add row at the next socket, then the rest as open places; the rail runs from the
+// first place to the last, so with none chosen the add row begins it. [ghost]: the add row as a ghost, while the reads run.
+function placesHtml(n, { ghost = false } = {}) {
+  const out = [];
+  for (let k = n; k < MAX_PANES; k++) {
+    const at = k + 2, edge = `${k === 0 ? " pg-a" : ""}${k === MAX_PANES - 1 ? " pg-z" : ""}`;
+    out.push(k === n
+      ? `<div class="pg-tr pg-addrow${edge}" style="grid-row:${at}"><span class="pg-c pg-railc"><span class="pg-sock tlamp open" aria-hidden="true"></span></span>${ghost ? `<div class="add pg-add ghosted" aria-hidden="true">${GHOST.bar(11)}</div>` : addHtml()}</div>`
+      : slotHtml(at, edge));
+  }
+  return out.join("");
+}
+// four chosen: the Change models row under the last one
+const swapRow = (n, { ghost = false } = {}) => `<div class="pg-tr pg-addrow pg-swaprow" style="grid-row:${n + 2}"><span class="pg-c"></span>${ghost ? `<div class="add pg-add pg-swap ghosted" aria-hidden="true">${GHOST.bar(11)}</div>` : swapHtml()}</div>`;
 function tableHtml(t) {
   const n = t.rows.length;
-  if (!n) return `<div class="pg-first">${addHtml()}</div>`;
-  const more = n < MAX_PANES;
-  const rows = t.rows.map((p, k) => rowHtml(p, k + 2, t, `${k === 0 ? " pg-a" : ""}${k === n - 1 && !more ? " pg-z" : ""}`)).join("");
-  const grid = `<span class="pg-grid" aria-hidden="true" style="grid-row:2 / span ${n}">${ticksOf(t.hi).slice(1, -1).map(([ms]) => `<i style="left:${axisAt(ms, t.hi).toFixed(2)}%"></i>`).join("")}</span>`;
-  const add = more ? `<div class="pg-tr pg-addrow pg-z" style="grid-row:${n + 2}"><span class="pg-c pg-railc"><span class="pg-sock tlamp open" aria-hidden="true"></span></span>${addHtml()}</div>`
-    : `<div class="pg-tr pg-addrow pg-swaprow" style="grid-row:${n + 2}"><span class="pg-c"></span>${swapHtml()}</div>`;
-  return `<div class="pg-table" role="table" aria-label="The models compared">${headHtml(t.hi)}${rows}${grid}${add}</div>`;
+  const rows = t.rows.map((p, k) => rowHtml(p, k + 2, t, `${k === 0 ? " pg-a" : ""}${n === MAX_PANES && k === n - 1 ? " pg-z" : ""}`)).join("");
+  // the axis's lines run behind the chosen rows and behind the open places, and stop at the add row, which stands over them
+  const lines = ticksOf(t.ax).slice(1, -1).map(([ms]) => `<i style="left:${axisAt(ms, t.ax).toFixed(2)}%"></i>`).join("");
+  const grid = (at, span) => (span > 0 ? `<span class="pg-grid" aria-hidden="true" style="grid-row:${at} / span ${span}">${lines}</span>` : "");
+  const open = n < MAX_PANES ? MAX_PANES - n - 1 : 0;
+  return `<div class="pg-table" role="table" aria-label="The models compared">${headHtml(t.ax)}${rows}${grid(2, n)}${grid(n + 3, open)}${n < MAX_PANES ? placesHtml(n) : swapRow(n)}</div>`;
 }
-// the round's figure leads the table: the time until the last answer with how many answered of how many asked, and
-// how many failed
+// the round's figure leads the plate: how many answered of how many asked, as the hero with its denominator, the round's
+// split as one bar (answered, failed, still out), and beside them the time to the last answer and how many failed
 function heroHtml() {
   const a = askedOnes();
   if (!a.length) return "";
-  const done = a.filter((p) => p.st === "done").length, failed = a.filter((p) => p.st === "failed").length;
-  return `<div class="pg-hero${a.every(stale) ? " stale" : ""}${ui.done ? " landed" : ""}"><div class="pd-top"><b class="pd-rate">${DRAW.ms(roundMs())}</b>`
-    + `<span class="pd-failed"><b>${DRAW.n(done)}</b>of ${DRAW.n(a.length)} answered</span>`
-    + `${failed ? `<span class="pd-failed pg-failn"><b>${DRAW.n(failed)}</b> failed</span>` : ""}</div></div>`;
+  const done = a.filter((p) => p.st === "done").length, failed = a.filter((p) => p.st === "failed").length, out = a.filter((p) => p.st === "sending").length;
+  const level = done === 0 && failed > 0 ? "bad" : "ok";
+  const bar = DRAW.stack([{ n: done, word: "Answered", cls: "ok" }, { n: failed, word: "Failed", cls: "f0" }, { n: out, word: "Still out", cls: "nt" }], a.length,
+    { label: `${done} of ${a.length} answered, ${failed} failed, ${out} still out` });
+  const clock = `<span class="pd-stat">${CLOCK}<span><b data-clock>${DRAW.ms(roundMs())}</b><small>to the last answer</small></span></span>`;
+  const bad = failed ? `<span class="pg-failt">${DRAW.statTile(ICON.bang, DRAW.n(failed), "failed")}</span>` : "";
+  return `<div class="pg-round${a.every(stale) ? " stale" : ""}${ui.done ? " landed" : ""}"><div class="pg-hero">${DRAW.hero({ figure: DRAW.n(done), level, of: `of ${DRAW.n(a.length)} answered`, key: "round" })}</div>`
+    + `${bar}<div class="pd-stats pg-rtiles">${clock}${bad}</div></div>`;
 }
 // the kicker's line: the four places, each chosen one in its provider's colour, then the keys to what the table draws,
 // each said once
@@ -478,36 +551,42 @@ function asideHtml(t) {
   if (ui.panes.some((p) => p.order)) parts.push(`<span class="pg-legi"><span class="pg-sock tlamp n mini" aria-hidden="true"><b>1</b></span>Answered first</span>`);
   if (Object.values(t.best).some((v) => v != null)) parts.push(`<span class="pg-legi pg-bestk">${STAR}Best</span>`);
   if (t.paid || t.plan) parts.push(`<span class="pg-costleg">${t.paid ? `<span><i class="sw paid"></i>Charged</span>` : ""}${t.plan ? `<span><i class="sw plan"></i>On your plan, at API prices</span>` : ""}</span>`);
-  parts.push(`<span class="pg-note">Prices per M tokens</span>`);
   if (t.dash.size) parts.push(`<span class="pg-legi pg-note">${dashHtml}${[...t.dash].map(esc).join(" · ")}</span>`);
   return parts.join("");
 }
 function cmpHtml() {
   let body = "", t = null;
-  if (ui.cmds === null) body = ui.error ? unreadHtml() : ghostTableHtml();
+  if (ui.cmds === null) body = ui.error ? unreadTableHtml() : ghostTableHtml();
   else if (!ui.cmds.length && !ui.error) body = noneHtml();
   else {
     t = comparison();
     const table = tableHtml(t); // drawn first: it gathers what the legend says
-    body = `${ui.error ? unreadHtml() : ""}${heroHtml()}${table}`;
+    const lead = heroHtml();
+    body = `${ui.error ? unreadHtml() : ""}${lead}${table}`;
   }
   return `<div class="plate pg-cmp" id="cmp">${DRAW.section("Models", body, { aside: `<span class="pg-aside">${asideHtml(t)}</span>`, cls: "pg-cmps" })}</div>`;
 }
 // the stopwatch: each row still out grows along the shared axis and the round's figure runs, written in place
 function tickClock() {
-  const hi = axisHi();
-  if (hi !== ui.hi) { paintCmp(); return; } // a send ran past the axis: every row moves to the longer one
+  if (!sameAxis(ui.ax, axisNow())) { paintCmp(); paintStrips(); return; } // the axis moved: every row and strip moves to the new one
+  const ax = ui.ax;
   for (const p of ui.panes) {
     if (p.st !== "sending") continue;
-    const row = root.querySelector(`.pg-tr[data-u="${p.uid}"]`);
-    if (!row) continue;
-    const ms = Date.now() - p.t0, w = axisAt(ms, hi), i = row.querySelector(".pg-trk > i");
+    const ms = Date.now() - p.t0, w = axisAt(ms, ax);
+    const row = root.querySelector(`.pg-tr[data-u="${p.uid}"]`), i = row?.querySelector(".pg-trk > i");
     if (i) { i.style.width = `${w.toFixed(2)}%`; i.dataset.w = w.toFixed(2); }
     p.painted.ms = w;
-    const v = row.querySelector('[data-f="msv"]');
+    const v = row?.querySelector('[data-f="msv"]');
     if (v) v.textContent = DRAW.ms(ms);
+    const sc = root.querySelector(`.pgp[data-u="${p.uid}"] .pg-sc[data-f="ms"]`);
+    if (sc) {
+      const bar = sc.querySelector(".vbar > b"), fig = sc.querySelector(".v");
+      if (bar) { bar.style.width = `${w.toFixed(2)}%`; bar.dataset.w = w.toFixed(2); }
+      if (fig) fig.textContent = DRAW.ms(ms);
+      p.strip.ms = w;
+    }
   }
-  const fig = root.querySelector(".pg-hero .pd-rate");
+  const fig = root.querySelector("[data-clock]");
   if (fig) fig.textContent = DRAW.ms(roundMs());
 }
 
@@ -613,7 +692,7 @@ function marked(was, now) {
   close();
   return mdPlan(txt).replace(//g, "<ins>").replace(//g, "</ins>").replace(//g, "<del>").replace(//g, "</del>");
 }
-// The prompt is one surface (fin, Oct 12): his plan reads as it renders, the way the answers do; a click or Enter on it
+// The prompt is one surface: his plan reads as it renders, the way the answers do; a click or Enter on it
 // turns it into the field, caret at the end, and leaving the field (a click elsewhere, Escape, a send) renders it again.
 // Both are set in one face at one size, so the words stay where they were. An empty prompt is the field.
 const writing = () => ui.editing || !ui.prompt.trim();
@@ -628,7 +707,8 @@ function fieldHtml() {
   return `<div class="pg-md-out pg-mdx" role="button" tabindex="0" data-act="write" aria-label="Prompt, edit">${html}</div>`;
 }
 // pg-read, not the console's own .read (a muted line of data, centred), which would set his plan in its box's middle
-const mdHtml = () => `<div class="pg-md${writing() ? "" : " pg-read"}${ui.swap ? " swap" : ""}">${fieldHtml()}</div>`;
+// the pencil in a read plan's corner draws what a click does: it turns the plan into the field
+const mdHtml = () => `<div class="pg-md${writing() ? "" : " pg-read"}${ui.swap ? " swap" : ""}">${fieldHtml()}${writing() ? "" : `<span class="pg-edit" aria-hidden="true">${PENCIL}</span>`}</div>`;
 const diffLegend = () => (ui.marks ? `<span class="pg-dleg">${ui.marks}</span>` : "");
 // Send is the page's one warm control: the key light's one use in the view
 const sendHtml = () => `<button class="act primary pg-send" type="button" data-act="send" aria-keyshortcuts="Control+Enter Meta+Enter"${sendable() ? "" : " disabled"}${busy() ? ' aria-busy="true"' : ""}>${ICON.send}<span>${busy() ? "Sending" : "Send"}</span></button>`;
@@ -658,7 +738,7 @@ function paintStale() {
     root.querySelector(`.pg-tr[data-u="${p.uid}"]`)?.classList.toggle("stale", stale(p));
   }
   const a = askedOnes();
-  root.querySelector(".pg-hero")?.classList.toggle("stale", a.length > 0 && a.every(stale));
+  root.querySelector(".pg-round")?.classList.toggle("stale", a.length > 0 && a.every(stale));
   const head = root.querySelector(".pg-ahead");
   head?.querySelector(".pg-oldleg")?.remove();
   if (ui.panes.some(stale)) head?.insertAdjacentHTML("beforeend", oldLegend);
@@ -686,11 +766,17 @@ function paintSend() {
   if (!b) return;
   b.disabled = !sendable();
   if (busy()) b.setAttribute("aria-busy", "true"); else b.removeAttribute("aria-busy");
-  b.querySelector("span").textContent = busy() ? "Sending" : "Send";
+  const word = b.querySelector("span"), now = busy() ? "Sending" : "Send";
+  if (word.textContent === now) return;
+  word.textContent = now;
+  // the word is replaced by the next, which rises into its place
+  if (!still()) { word.classList.remove("rise"); void word.offsetWidth; word.classList.add("rise"); }
 }
 
 // ---------- drawing: the answers ----------
-// the account as Accounts heads its card: its name and plan, "Account" until it has a name, a key by its variable
+// the account as the board's card heads it: its name and plan, a key by its variable and masked tail. A login nobody named
+// shows the name the console's rule made for it, and its "Name it" door stays on the board's cards ([door]), where
+// Accounts' act belongs, never on every pane of a comparison.
 function acctHtml(a, { door = false } = {}) {
   if (a.kind === "key") return `<span class="pg-key"><span class="pg-an var">${esc(a.var)}</span>${a.tail ? `<span class="pg-tail">${esc(a.tail)}</span>` : ""}</span>`;
   if (a.kind === "none" || !a.name) return "";
@@ -701,17 +787,44 @@ function acctHtml(a, { door = false } = {}) {
   return a.kind === "unnamed" && door ? `${name}<a class="act small pg-nameit" href="${to}">Name it${DRAW.go}</a>` : name;
 }
 const SEP = `<i class="sep" aria-hidden="true">·</i>`;
+// under the model's name: where it came from (the vendor, for a command that groups by vendor) and whose it is; the
+// provider is the pane's colour edge and the command is its chip, so neither is said again in words
 function metaHtml(p, c) {
   if (!c) return "";
-  const parts = [`<span class="pv"><i class="blot" aria-hidden="true"></i>${esc(c.title)}</span>`];
+  const parts = [];
   if (p.vendor) parts.push(`<span>${esc(p.vendor)}</span>`);
-  const a = acctHtml(c.acct, { door: true }); // a login with no name yet keeps its door to Accounts here too
+  const a = acctHtml(c.acct);
   if (a) parts.push(`<span class="who">${a}</span>`);
-  return `${parts.join(SEP)}${DRAW.chip({ text: c.command })}`;
+  return parts.join(SEP);
 }
-// the request this pane sent opens under its head; Remove at the pane's right edge. A pane that holds an answer arms
-// first: its acts turn into Remove and Keep in place, and only the second press takes it away. One whose answer is still
-// out goes at once, and its answer is dropped when it lands.
+// THE ANSWER'S OWN FIGURES, in its head: its time, cost and tokens each way as bars on the same scales the table reads, so
+// an answer is never read apart from its numbers. Empty tracks before its send, stripes while it is out, a dash where
+// the daemon sent no figure. It draws once any answer has been asked for.
+function stripHtml(p) {
+  const t = ui.t;
+  if (!t || !askedOnes().length) return "";
+  const x = t.figs.get(p) ?? figuresOf(p), c = cmdOf(p.key);
+  const fast = t.best.ms != null && p.st === "done" && DRAW.ms(p.ms) === t.best.ms;
+  const cell = (f, word, kind, best, text, w) => `<span class="pg-sc is-${kind}${best ? " best" : ""}" data-f="${f}"><span class="pg-scl"><em>${word}</em><b class="v">${best ? STAR : ""}${text}</b></span>`
+    + `<span class="vbar" aria-hidden="true">${barI(p, f, w, "b", "strip")}</span></span>`;
+  const time = cell("ms", "Time", p.st === "sending" ? "run" : p.st === "idle" ? "idle" : "val", fast, x.ms == null ? "" : DRAW.ms(x.ms), x.ms == null ? 0 : axisAt(x.ms, t.ax));
+  const sent = COLS.filter((col) => col.sent).map((col) => { const g = figOf(p, col, x, t); return cell(col.f, col.word, g.kind, g.best, g.text, g.w); });
+  return `<div class="pg-strip is-${p.st}" style="--c:${colorOf(c?.family)}">${time}${sent.join("")}</div>`;
+}
+// every answer's strip drawn again on the round's new scales, each bar moving from where it stood ([skip]: the pane that
+// was just drawn whole)
+function paintStrips(skip = null) {
+  if (!askedOnes().length) return;
+  for (const p of ui.panes) {
+    if (p === skip) continue;
+    const el = root.querySelector(`.pgp[data-u="${p.uid}"] .pg-strip`);
+    if (el) el.outerHTML = stripHtml(p);
+  }
+  grow();
+}
+// the request this pane sent opens at the pane's foot, under its answer, so the answers across a row stay on one line;
+// Remove at the pane's right edge. A pane that holds an answer arms first: its acts turn into Remove and Keep in place,
+// and only the second press takes it away. One whose answer is still out goes at once, and its answer is dropped when it lands.
 const holds = (p) => p.st === "done" || p.st === "failed";
 function actsHtml(p) {
   if (p.arm) return `<div class="pg-acts armed"><button class="act small" type="button" data-act="drop">Remove</button>`
@@ -719,12 +832,14 @@ function actsHtml(p) {
   const rq = p.trace && p.st !== "sending" ? DRAW.disc({ open: p.req, controls: `rq-${p.uid}`, act: "req", cls: "pg-reqd", inner: "<span>Request</span>" }) : "";
   return `<div class="pg-acts">${rq}<button class="icon pg-x" type="button" data-act="close" aria-label="Remove ${esc(p.label)}">${ICON.close}</button></div>`;
 }
-// a failure's own acts: the one that fixes it, beside its word
+// a failure's own acts: the one that fixes it, beside its word. What a retry cannot fix also offers another model, in place.
+const swapAct = `<button class="act quiet small" type="button" data-act="swap">Another model</button>`;
 function fixActs(p) {
   const f = p.fail;
-  if (f.door) return `<a class="act small" href="accounts.html?budget=${enc(f.door)}">Set budget${DRAW.go}</a>`;
+  if (f.spent) return `<a class="act small" href="accounts.html?head=${enc(p.key)}">Accounts${DRAW.go}</a>${swapAct}`;
+  if (f.door) return `<a class="act small" href="accounts.html?budget=${enc(f.door)}">Set budget${DRAW.go}</a>${swapAct}`;
   // a refused or missing sign-in opens Accounts on what this command needs fixed (its ?head= door)
-  if (SIGNED.has(f.word)) return `<a class="act small" href="accounts.html?head=${enc(p.key)}">Accounts${DRAW.go}</a>`;
+  if (SIGNED.has(f.word)) return `<a class="act small" href="accounts.html?head=${enc(p.key)}">Accounts${DRAW.go}</a>${swapAct}`;
   // a runtime that is not up starts from its command on Models (models.html?cmd= takes the head's key); once it runs,
   // Try again asks this pane alone
   if (f.word === DOWN) return `<a class="act small" href="models.html?cmd=${enc(p.key)}">Models${DRAW.go}</a><button class="act quiet small" type="button" data-act="retry">Try again</button>`;
@@ -732,34 +847,43 @@ function fixActs(p) {
   if (f.retry) return `<button class="act small" type="button" data-act="retry">Try again</button>`;
   return "";
 }
-// a failure: its word and the act that fixes it, then what the provider, or splice, said, folded to one line until he
-// opens it. A spent plan window is its lock, when it frees and how far along its window is, in place of any act.
+// a window's row as Accounts draws one: its word, the meter, what is used and, where it refills, the reset ring
+const winRow = (word, used, figure, tail = "") => `<div class="pg-wrow"><span class="pg-ww">${esc(word)}</span><div class="bar${used >= 100 ? " full" : ""}"><b data-v="${used.toFixed(1)}" style="width:${used.toFixed(1)}%"></b></div>`
+  + `<span class="pct limit">${figure}</span>${tail}</div>`;
+// a failure: its word, then what it is as a shape (a spent window's meter at its limit with the reset ring, a spent
+// budget's meter with its two amounts), the act that fixes it, then what the provider, or splice, said, folded to one
+// line until he opens it
 function fixHtml(p) {
   const f = p.fail, c = cmdOf(p.key);
   const tries = p.tries > 1 ? DRAW.statTile(DRAW.glyph.retry, DRAW.n(p.tries), "tries") : "";
-  let row;
+  let head, meter = "";
   if (f.spent) {
-    const along = f.spent.secs ? Math.max(0, Math.min(1, 1 - (f.spent.until - Date.now()) / 1000 / f.spent.secs)) : null;
-    row = `${along != null ? `<span class="pg-reset">${DRAW.ring(along)}</span>` : ""}${f.spent.word ? `<span class="pg-win">${esc(f.spent.word)}</span>` : ""}`
-      + DRAW.lock(`${LIMIT} until ${backWord(f.spent.until)}`, { pop: true });
-  } else row = `<span class="state limit pg-word">${esc(f.word)}</span>${fixActs(p)}`;
+    const sp = f.spent, along = sp.secs ? Math.max(0, Math.min(1, 1 - (sp.until - Date.now()) / 1000 / sp.secs)) : null;
+    head = DRAW.lock(LIMIT, { pop: true });
+    meter = winRow(sp.word || "Window", 100, `100%<span class="used">used</span>`, `<span class="pg-reset">${along != null ? DRAW.ring(along) : ""}<span>Resets ${esc(backWord(sp.until))}</span></span>`);
+  } else {
+    // "Not answering" is the command's state, in the same neutral ink its board card says it in; every other word is a failure
+    head = `<span class="state${f.word === DOWN ? "" : " limit"} pg-word">${esc(f.word)}</span>`;
+    if (f.budget) meter = winRow("Today", Math.min(100, (f.budget.spent / f.budget.cap) * 100), `${DRAW.usd(f.budget.spent)}<span class="used">of ${DRAW.usd(f.budget.cap)}</span>`);
+  }
+  const acts = fixActs(p);
   const text = f.said || (f.code != null ? `Answered ${f.code} with no reason` : "");
   const who = f.splice ? "splice" : titleOf(c?.family, c?.command ?? "");
   const said = text ? `<div class="pg-said${p.said ? " open" : ""}">${DRAW.disc({ open: p.said, act: "said", cls: "pg-saidd", inner: `<span class="who">${esc(who)}</span><q>${esc(text)}</q>` })}</div>` : "";
-  return `<div class="pg-fixrow${p.tries > 1 ? " again" : ""}">${row}${tries}</div>${said}`;
+  return `<div class="pg-fix${p.tries > 1 ? " again" : ""}"><div class="pg-fixrow">${head}${tries}</div>${meter}${acts ? `<div class="pg-fixacts">${acts}</div>` : ""}${said}</div>`;
 }
-// ---------- the request, in Requests' own open request (reqview.js), inside its own pane ----------
-// The pane's head already names the model, its command and its account, and its row draws the request's time, tokens
+// ---------- the request, in Requests' own open request (reqview.js), at the foot of its own pane ----------
+// The pane's head already names the model, its command and its account, and its strip draws the request's time, tokens
 // and cost on the shared scales, so reqview is asked for its record alone: no head (head: false), no figures (cells: []),
 // and no time rail (rail: false), which would be one bar, the playground's answer carrying no first-byte time.
 function reqHtml(p) {
   const c = cmdOf(p.key), ts = new Date(+p.at + p.ms);
   const r = { id: `${p.key}:${p.id}:${p.uid}`, cmd: c?.command ?? p.key, provider: c?.family, model: "", ts, total: p.ms, in: p.tin, out: p.tout, cached: 0, attempts: 1 };
   p.RV ??= REQVIEW.view(() => p.rv);
-  return `<div class="pg-req${p.reqNew ? " unfold" : ""}${p.rvSwap ? " swap" : ""}" id="rq-${p.uid}"><p class="pg-reqat">Asked<time>${REQVIEW.dayOf(p.at)}${REQVIEW.clockS(p.at)}</time></p>`
-    // a finished answer's words stand under this record in the same pane, so the Returned tab keeps what only the record
+  return `<div class="pg-req${p.reqNew ? " unfold" : ""}${p.rvSwap ? " swap" : ""}" id="rq-${p.uid}"><div class="pg-reqin"><p class="pg-reqat">Asked<time>${REQVIEW.dayOf(p.at)}${REQVIEW.clockS(p.at)}</time></p>`
+    // a finished answer's words stand above this record in the same pane, so the Returned tab keeps what only the record
     // knows (its status, how the stream ended, its tool calls and its frames) and the words are set once
-    + `${p.RV.paneHtml(r, { head: false, st: "kept", tr: () => p.trace, cells: [], rail: false, reply: p.st !== "done", names: { head: r.cmd, model: modelOf(p)?.label } })}</div>`;
+    + `${p.RV.paneHtml(r, { head: false, st: "kept", tr: () => p.trace, cells: [], rail: false, reply: p.st !== "done", names: { head: r.cmd, model: modelOf(p)?.label } })}</div></div>`;
 }
 // the answer's shape while it is out: as many lines as the last answer here ran to, else a short answer's
 function waitHtml(p) {
@@ -769,10 +893,10 @@ function waitHtml(p) {
 function bodyHtml(p) {
   const rec = p.req && p.trace ? reqHtml(p) : "";
   if (p.st === "sending") return waitHtml(p);
-  if (p.st === "failed") return rec + fixHtml(p);
-  if (p.st === "done") return `${rec}<div class="msg agent"><div class="body pg-mdx pg-ans">${mdPlan(p.text)}</div></div>`;
-  // a pane chosen after the others were asked says so once, where its answer will land
-  return ui.panes.some((o) => o.st !== "idle") ? `<p class="pg-idle">${DRAW.nothing("Not asked yet")}</p>` : "";
+  if (p.st === "failed") return fixHtml(p) + rec;
+  if (p.st === "done") return `<div class="msg agent"><div class="body pg-mdx pg-ans">${mdPlan(p.text)}</div></div>${rec}`;
+  // a pane chosen after the others were asked is an empty slot the size of its neighbours, where its answer will land
+  return ui.panes.some((o) => o.st !== "idle") ? `<div class="pg-idle" role="img" aria-label="Not asked yet"></div>` : "";
 }
 // how many of the answers stand across: as many as fit at LANE_REM, never more than there are; the last of an
 // uneven row takes the rest of its row, so no row ends in an empty lane
@@ -782,12 +906,12 @@ function spanOf(i) {
   return i === n - 1 && n % lanes ? lanes - ((n - 1) % lanes) : 1;
 }
 function paneHtml(p, i) {
-  const c = cmdOf(p.key), span = spanOf(i);
+  const c = cmdOf(p.key), span = spanOf(i), meta = metaHtml(p, c);
   // a pane that stands alone in its row (one model, or the last of an uneven row) has a whole row to itself; an answer
-  // fills it with columns, a failure's one line would not, so a failure keeps to a reading width there
+  // fills it with columns, a failure's lines would not, so a failure keeps to a reading width there
   const alone = span > 1 || lanesOf() === 1;
   return `<article class="pgp is-${p.st}${alone ? " alone" : ""}${stale(p) ? " stale" : ""}${p.fresh ? " landed" : ""}" id="ans-${p.uid}" data-u="${p.uid}" style="--c:${colorOf(c?.family)}${span > 1 ? `;grid-column:span ${span}` : ""}" aria-label="${esc(p.label)}">`
-    + `<header class="pg-head">${sockHtml(p)}<div class="pg-who"><h3 class="pg-model">${esc(p.label)}</h3><div class="pg-meta">${metaHtml(p, c)}</div></div>${actsHtml(p)}</header>`
+    + `<header class="pg-head">${sockHtml(p)}<div class="pg-nm"><h3 class="pg-model">${esc(p.label)}</h3>${c ? DRAW.chip({ text: c.command }) : ""}</div>${meta ? `<div class="pg-meta">${meta}</div>` : ""}${actsHtml(p)}${stripHtml(p)}</header>`
     + `<div class="pg-body${p.pop ? " rise" : ""}">${bodyHtml(p)}</div></article>`;
 }
 function answersHtml() {
@@ -797,63 +921,78 @@ function answersHtml() {
     + `<div class="pg-lanes" style="--lanes:${lanesOf()}">${ui.panes.map((p, i) => paneHtml(p, i)).join("")}</div></section>`;
 }
 
-// ---------- drawing: the board, providers as Accounts draws them, packed into columns ----------
+
+// ---------- drawing: the board, providers balanced into equal columns, each command a card ----------
 const norm = (s) => String(s ?? "").toLowerCase();
 const terms = () => norm(ui.q).split(/\s+/).filter(Boolean);
 const hits = (c, m, t) => { const hay = norm(`${m.label} ${m.id} ${c.command} ${c.title} ${c.acct.name ?? ""} ${c.acct.var ?? ""}`); return t.every((w) => hay.includes(w)); };
-// a model: its box and its name; four chosen leaves the rest off, the board's head saying why
-function mrowHtml(c, m, name) {
+// a model: its tick and its name, then its own context window and its two prices as bars on the board's shared scales, so
+// it is chosen with its figures in view; four chosen leaves the rest off, the board's head saying why. A figure the
+// daemon did not send is a dash on a dashed track.
+function mfig(v, max, text) {
+  if (v == null) return `<span class="pg-mf"><span class="vbar unread" aria-hidden="true"></span><b class="v">${dashHtml}</b></span>`;
+  return `<span class="pg-mf"><span class="vbar" aria-hidden="true"><b style="width:${share(v, max).toFixed(1)}%"></b></span><b class="v">${text(v)}</b></span>`;
+}
+function mrowHtml(c, m, name, sc) {
   const on = Boolean(paneOf(c.key, m.id)), off = !on && ui.panes.length >= MAX_PANES;
   return `<button class="pg-mrow" type="button" aria-pressed="${on}" data-act="toggle" data-key="${esc(c.key)}" data-model="${esc(m.id)}"${off ? " disabled" : ""}>`
-    + `<span class="pg-tick" aria-hidden="true">${TICK}</span><span class="pg-mn">${esc(name(m))}</span></button>`;
+    + `<span class="pg-tick" aria-hidden="true">${TICK}</span><span class="pg-mn">${esc(name(m))}</span>`
+    + `${mfig(m.window, sc.win, DRAW.big)}${mfig(m.rates?.input ?? null, sc.price, rate)}${mfig(m.rates?.output ?? null, sc.price, rate)}</button>`;
 }
-// A list's models under the context window they share, the largest first, the window said once over them as a bar on
-// the board's one scale; a long list shows its first rows and the rest behind "+N", opening in place.
-function listHtml(c, list, k, maxWin, { whole, first }, name) {
+// the column names of a model list, said once over its rows; the price unit is said once for the whole board, in its head
+const MHEAD = `<div class="pg-mh" aria-hidden="true"><span></span><span></span><span>Context</span><span>Price in</span><span>Price out</span></div>`;
+// an opened list longer than OPEN_ROWS takes one more board column for each PER_COLUMN rows, never more than the board has
+const colsFor = (n, rows) => (n > 1 && rows > OPEN_ROWS ? Math.min(n, Math.ceil(rows / PER_COLUMN)) : 1);
+// A list's models, the largest window first; a long list shows its first rows and the rest behind "+N", opening in place
+// across as many of the board's columns as its length needs ({ need } tells the provider how wide to stand), each with
+// its own column names.
+function listHtml(c, list, k, sc, { whole, first }, name, n) {
   const long = list.length > whole, open = ui.open.has(k);
   const sorted = list.map((m, i) => ({ m, i })).sort((a, b) => (b.m.window ?? -1) - (a.m.window ?? -1) || a.i - b.i).map((x) => x.m);
   const shown = long && !open ? sorted.slice(0, first) : sorted;
-  const groups = [];
-  for (const m of shown) { const g = groups.at(-1), win = m.window ?? null; if (g && g.win === win) g.ms.push(m); else groups.push({ win, ms: [m] }); }
+  const cols = open && long ? colsFor(n, shown.length) : 1, per = Math.ceil(shown.length / cols);
   const data = ` data-k="${esc(k)}"`;
   const more = !long ? "" : open ? DRAW.more(0, { pill: true, open: true, less: "Fewer", act: "more", data }) : DRAW.more(list.length - shown.length, { pill: true, act: "more", data });
-  const html = groups.map((g) => `<div class="pg-wg"><div class="pg-wh">${g.win ? DRAW.vbar(share(g.win, maxWin)) : `<span class="vbar" aria-hidden="true"></span>`}<b>${g.win ? DRAW.big(g.win) : dashHtml}</b></div>`
-    + `<div class="pg-rows">${g.ms.map((m) => mrowHtml(c, m, name)).join("")}</div></div>`).join("") + more;
-  return { html, w: shown.length + 0.9 * groups.length + (more ? 1 : 0) };
+  const chunks = Array.from({ length: cols }, (_, i) => shown.slice(i * per, (i + 1) * per)).filter((x) => x.length);
+  const rc = chunks.map((ms) => `<div class="pg-rc">${MHEAD}<div class="pg-rows${open && long && ui.unfold === k ? " unfold" : ""}">${ms.map((m) => mrowHtml(c, m, name, sc)).join("")}</div></div>`).join("");
+  return { html: `<div class="pg-rcols" style="--k:${chunks.length}">${rc}</div>${more}`, need: chunks.length };
 }
 // a command whose models come from three vendors or more (OpenRouter) is grouped by vendor, found or not
 const vendorsIn = (models) => new Set(models.map((m) => m.vendor ?? "")).size;
-function vendorsHtml(c, list, maxWin, t) {
+function vendorsHtml(c, list, sc, t, n) {
   const by = new Map();
   for (const m of list) { const v = m.vendor ?? ""; if (!by.has(v)) by.set(v, []); by.get(v).push(m); }
   // each vendor a row that opens its models under itself, the largest first, its count a bar on the largest's scale
   const vendors = [...by].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
   const all = ui.open.has(c.key) || t.length, shown = all ? vendors : vendors.slice(0, VENDORS);
   const most = Math.max(...vendors.map(([, ms]) => ms.length));
-  let w = 0;
+  let need = 1;
   const rows = shown.map(([v, ms]) => {
     const k = `${c.key}|${v}`, open = ui.open.has(k) || t.length > 0;
-    const head = DRAW.disc({ open, act: "vendor", data: ` data-k="${esc(k)}"`, cls: "pg-vrow", inner: `<span class="pg-vn">${esc(v || "Other")}</span>${DRAW.barCell({ w: share(ms.length, most), text: DRAW.n(ms.length), cls: "pg-vc" })}` });
-    w += 1;
+    const count = `<span class="barcell pg-vc"><span class="vbar" aria-hidden="true"><b style="width:${share(ms.length, most).toFixed(1)}%"></b></span><b class="v">${DRAW.n(ms.length)}</b></span>`;
+    const head = DRAW.disc({ open, act: "vendor", data: ` data-k="${esc(k)}"`, cls: "pg-vrow", inner: `<span class="pg-vn">${esc(v || "Other")}</span>${count}` });
     if (!open) return `<div class="pg-vend">${head}</div>`;
-    const l = listHtml(c, ms, `${k}|more`, maxWin, VENDOR_LIST, (m) => m.short);
-    w += l.w;
-    return `<div class="pg-vend open">${head}<div class="pg-vlist${ui.unfold === k ? " unfold" : ""}">${l.html}</div></div>`;
+    const l = listHtml(c, ms, `${k}|more`, sc, VENDOR_LIST, (m) => m.short, n);
+    need = Math.max(need, l.need);
+    return `<div class="pg-vend open">${head}<div class="pg-vfold${ui.unfold === k ? " unfold" : ""}"><div class="pg-vin">${l.html}</div></div></div>`;
   }).join("");
+  // the rest of the vendors behind the same "+N" every list uses
   const more = t.length || vendors.length <= VENDORS ? ""
-    : DRAW.more(ui.open.has(c.key) ? 0 : vendors.length - VENDORS, { word: "more vendors", act: "more", data: ` data-k="${esc(c.key)}"`, open: ui.open.has(c.key), less: "Fewer vendors" });
-  return { html: `${rows}${more}`, w: w + (more ? 1 : 0) };
+    : DRAW.more(ui.open.has(c.key) ? 0 : vendors.length - VENDORS, { pill: true, act: "more", data: ` data-k="${esc(c.key)}"`, open: ui.open.has(c.key), less: "Fewer" });
+  return { html: `${rows}${more}`, need };
 }
-function cardOf(c, list, maxWin, t) {
+function cardOf(c, list, sc, t, n) {
   // a command out of quota or down says so once on its card, with the door to where it is fixed
   const state = c.held ? `<div class="pg-st">${DRAW.lock(c.held.until ? `${LIMIT} until ${backWord(c.held.until)}` : LIMIT)}<a class="act small quiet" href="accounts.html?head=${enc(c.key)}">Accounts${DRAW.go}</a></div>`
     : c.down ? `<div class="pg-st">${DRAW.nothing(DOWN)}<a class="act small quiet" href="models.html?cmd=${enc(c.key)}">Models${DRAW.go}</a></div>` : "";
   // a vendor's name is said over its models, so a grouped list names each model by the rest of its label
   const grouped = vendorsIn(c.models) >= 3;
-  const body = grouped ? vendorsHtml(c, list, maxWin, t) : listHtml(c, list, c.key, maxWin, LIST, (m) => m.label);
+  const body = grouped ? vendorsHtml(c, list, sc, t, n) : listHtml(c, list, c.key, sc, LIST, (m) => m.label, n);
+  // a key has no name of its own to lead with: its card leads with the command, so two runtimes on one key variable are two
+  const chip = DRAW.chip({ text: c.command }), keyed = c.acct.kind === "key";
   return {
-    html: `<article class="card pg-cmd${c.held ? " held" : ""}${c.down ? " down" : ""}" style="--c:${colorOf(c.family)}"><div class="pg-ch">${acctHtml(c.acct, { door: true })}${DRAW.chip({ text: c.command })}</div>${state}<div class="pg-list${grouped ? " pg-vends" : ""}">${body.html}</div></article>`,
-    w: 2.6 + (state ? 1.2 : 0) + body.w,
+    html: `<article class="card pg-cmd${c.held ? " held" : ""}${c.down ? " down" : ""}" style="--c:${colorOf(c.family)}"><div class="pg-ch${keyed ? " keyed" : ""}">${keyed ? `${chip}${acctHtml(c.acct)}` : `${acctHtml(c.acct, { door: true })}${chip}`}</div>${state}<div class="pg-list${grouped ? " pg-vends" : ""}">${body.html}</div></article>`,
+    need: body.need,
   };
 }
 // how many of [rem] fit across [px], the board's column gap between them
@@ -861,43 +1000,29 @@ const remPx = () => parseFloat(getComputedStyle(document.documentElement).fontSi
 const fit = (px, rem) => { const r = remPx(), gap = 2 * r; return Math.max(1, Math.floor((px + gap) / (rem * r + gap))); };
 const boardFit = () => fit(root.clientWidth - 8 * 0.667 * remPx(), COL_REM);
 const lanesFit = () => fit(root.clientWidth, LANE_REM);
-// The board's tallest column is as short as it can be (Accounts' rule): each provider into the shortest column so far,
-// and the heaviest may take k columns, its cards or its one card's list flowing down them, when that makes the tallest
-// column shorter by 15% or more and leaves a column for the rest.
-function boardCols(provs, n) {
-  const group = (pv, k) => DRAW.group({ name: pv.title, c: colorOf(pv.family), cls: `titled pg-prov${k > 1 ? ` wide${pv.cards.length === 1 ? " one" : ""}` : ""}`, style: k > 1 ? `--k:${k}` : "", body: DRAW.cards(pv.cards.map((x) => x.html)) });
-  const tall = (cols) => Math.max(0, ...cols.map((c) => c.w));
-  const base = DRAW.packCols(provs, Math.min(n, provs.length), (pv) => pv.w);
-  let best = { k: 1, cols: base, tall: tall(base) };
-  const big = provs.reduce((m, pv) => (pv.w > m.w ? pv : m), provs[0]), rest = provs.filter((pv) => pv !== big);
-  for (let k = 2; k <= n; k++) {
-    const m = Math.min(n - k, rest.length);
-    if (rest.length && m < 1) break;
-    if ((big.w - 2.6) / k < 8) break; // a list too short to fill k columns would leave all but its first empty
-    const cols = rest.length ? DRAW.packCols(rest, m, (pv) => pv.w) : [];
-    const h = Math.max(2.6 + (big.w - 2.6) / k, tall(cols));
-    if (h < best.tall && h < 0.85 * tall(base)) best = { k, cols, tall: h };
-  }
-  const out = best.k > 1 ? [{ body: group(big, best.k), span: best.k }] : [];
-  for (const col of best.cols) out.push({ body: col.items.map((pv) => group(pv, 1)).join("") });
-  return DRAW.boardCols(out);
-}
+// A provider is a titled group on the balanced board (kit DRAW.masonry): each into the shortest column, measured, and a
+// provider whose opened list needs more columns stands that many columns wide.
+const providerBlock = (pv, k, body) => `<div class="pg-pb" data-cols="${k}">${DRAW.group({ name: pv.title, c: colorOf(pv.family), cls: `titled pg-prov${body ? "" : " void"}`, style: k > 1 ? `--k:${k}` : "", body: body ?? `<div class="pg-void" aria-hidden="true"></div>` })}</div>`;
 function boardHtml() {
-  const t = terms(), maxWin = top(ui.cmds.flatMap((c) => c.models.map((m) => m.window)));
+  const t = terms(), n = ui.fit?.board ?? boardFit();
+  const models = ui.cmds.flatMap((c) => c.models);
+  const sc = { win: top(models.map((m) => m.window)), price: top(models.flatMap((m) => [m.rates?.input, m.rates?.output])) };
   // ready commands first, then the ones out of quota, then the ones that are down; each provider under its own title
   const rank = (c) => (c.down ? 2 : c.held ? 1 : 0);
-  const provs = [];
-  for (const c of [...ui.cmds].sort((a, b) => rank(a) - rank(b))) {
+  const sorted = [...ui.cmds].sort((a, b) => rank(a) - rank(b));
+  const provs = [], all = [];
+  for (const c of sorted) {
+    if (!all.some((x) => x.title === c.title)) all.push({ title: c.title, family: c.family });
     const list = t.length ? c.models.filter((m) => hits(c, m, t)) : c.models;
     if (!list.length) continue;
     let pv = provs.find((x) => x.title === c.title);
-    if (!pv) provs.push((pv = { title: c.title, family: c.family, cards: [], w: 2.6 }));
-    const card = cardOf(c, list, maxWin, t);
-    pv.cards.push(card); pv.w += card.w + 0.7;
+    if (!pv) provs.push((pv = { title: c.title, family: c.family, cards: [] }));
+    pv.cards.push(cardOf(c, list, sc, t, n));
   }
   ui.unfold = null;
-  if (!provs.length) return `<p class="pg-nomatch">${DRAW.nothing("No model matches")}</p>`;
-  return boardCols(provs, ui.fit?.board ?? boardFit());
+  // nothing matches: every provider stands dimmed over an empty slot, the count already reading zero
+  if (!provs.length) return DRAW.masonry(all.map((pv) => providerBlock(pv, 1, null)), COL_REM, { n });
+  return DRAW.masonry(provs.map((pv) => providerBlock(pv, Math.max(1, ...pv.cards.map((x) => x.need)), DRAW.cards(pv.cards.map((x) => x.html)))), COL_REM, { n });
 }
 const matched = () => { const t = terms(); return (ui.cmds || []).reduce((a, c) => a + c.models.filter((m) => !t.length || hits(c, m, t)).length, 0); };
 const countHtml = () => (terms().length ? `<b>${DRAW.n(matched())}</b> of ${DRAW.n(offered())}` : `<b>${DRAW.n(offered())}</b> models`);
@@ -905,9 +1030,10 @@ function pickerHtml() {
   // four chosen: the lock stands where the rows went off, in the board's own head
   const full = ui.panes.length >= MAX_PANES ? DRAW.lock(`${MAX_PANES} of ${MAX_PANES} chosen`, { pop: true }) : "";
   const head = `<div class="pg-find"><label class="search pg-search">${FIND}<input class="field" id="find" type="search" placeholder="Find a model" value="${esc(ui.q)}" autocomplete="off" spellcheck="false" aria-label="Find a model"></label>`
-    + `<span class="pg-count" aria-live="polite">${countHtml()}</span><span class="pg-leg">${DRAW.vbar(100)}Context window</span>${full}`
+    + `<span class="pg-count" aria-live="polite">${countHtml()}</span>${full}`
+    + `<span class="pg-unit">Prices per M tokens</span>`
     + `<button class="icon pg-shut" type="button" data-act="shut" aria-label="Close the models">${ICON.close}</button></div>`;
-  return `<div class="plate pg-pick${ui.opened ? " opening" : ""}" id="pick" role="group" aria-label="Models to compare">${head}<div class="board pg-board">${boardHtml()}</div></div>`;
+  return `<div class="plate pg-pick${ui.opened ? " opening" : ""}" id="pick" role="group" aria-label="Models to compare">${head}<div class="pg-board">${boardHtml()}</div></div>`;
 }
 function paintBoard() {
   const b = root.querySelector(".pg-board"), n = root.querySelector(".pg-count");
@@ -915,42 +1041,50 @@ function paintBoard() {
   if (n) n.innerHTML = countHtml();
 }
 
+
 // ---------- drawing: what stands in while the reads run, and when they fail ----------
 // each shape the size of what lands there: the rows kept from last time, the board's columns, the panes' heads
 function ghostTableHtml() {
   const kept = keptModels().length;
-  if (!kept) return `<div class="pg-first"><div class="add pg-add ghosted" aria-hidden="true">${GHOST.bar(11)}</div></div>`;
-  const rows = Array.from({ length: kept }, (_, k) => `<div class="pg-tr ghosted${k === 0 ? " pg-a" : ""}${k === kept - 1 && kept >= MAX_PANES ? " pg-z" : ""}" style="grid-row:${k + 2};--i:${k}" aria-hidden="true">`
+  const rows = Array.from({ length: kept }, (_, k) => `<div class="pg-tr ghosted${k === 0 ? " pg-a" : ""}${k === MAX_PANES - 1 ? " pg-z" : ""}" style="grid-row:${k + 2};--i:${k}" aria-hidden="true">`
     + `<span class="pg-c pg-railc"><span class="pg-sock tlamp"></span></span><span class="pg-c pg-rwho">${GHOST.bar(10)}${GHOST.chip(5.5)}</span>`
     + `<span class="pg-c pg-time">${GHOST.track()}</span><span class="pg-c pg-tv">${GHOST.fig(3)}</span>${COLS.map(() => `<span class="pg-c">${GHOST.cell()}</span>`).join("")}</div>`).join("");
-  const add = kept < MAX_PANES ? `<div class="pg-tr pg-addrow pg-z" style="grid-row:${kept + 2}"><span class="pg-c pg-railc"><span class="pg-sock tlamp open"></span></span><div class="add pg-add ghosted" aria-hidden="true">${GHOST.bar(11)}</div></div>`
-    : `<div class="pg-tr pg-addrow pg-swaprow" style="grid-row:${kept + 2}"><span class="pg-c"></span><div class="add pg-add pg-swap ghosted" aria-hidden="true">${GHOST.bar(11)}</div></div>`;
-  return `<div class="pg-table">${headHtml(axisHi())}${rows}${add}</div>`;
+  return `<div class="pg-table" aria-hidden="true">${headHtml(axisNow())}${rows}${kept < MAX_PANES ? placesHtml(kept, { ghost: true }) : swapRow(kept, { ghost: true })}</div>`;
 }
 function ghostPickHtml() {
   if (keptModels().length >= MAX_PANES) return "";
-  const provs = [8, 6, 7, 9, 2, 9, 3, 1, 1].map((rows, i) => ({ i, rows, w: 5.2 + rows }));
-  const cols = DRAW.packCols(provs, Math.min(boardFit(), provs.length), (x) => x.w);
-  const prov = (x) => `<section class="titled pg-prov ghosted" style="--i:${x.i % 3}" aria-hidden="true"><header>${GHOST.bar(9, "big")}</header>`
-    + `${GHOST.card([15, ...Array.from({ length: x.rows }, (_, k) => 17 + ((k * 7 + x.i * 3) % 6))], 0, "pg-cmd")}</section>`;
-  return `<div class="plate pg-pick" aria-hidden="true"><div class="pg-find">${GHOST.bar(24, "chip")}${GHOST.bar(6)}</div><div class="board pg-board">${DRAW.boardCols(cols.map((c) => ({ body: c.items.map(prov).join("") })))}</div></div>`;
+  const prov = (rows, i) => `<div class="pg-pb"><section class="titled pg-prov ghosted" style="--i:${i % 3}" aria-hidden="true"><header>${GHOST.bar(9, "big")}</header>`
+    + `${GHOST.card([15, ...Array.from({ length: rows }, (_, k) => 17 + ((k * 7 + i * 3) % 6))], 0, "pg-cmd")}</section></div>`;
+  return `<div class="plate pg-pick" aria-hidden="true"><div class="pg-find">${GHOST.bar(24, "chip")}${GHOST.bar(6)}</div>`
+    + `<div class="pg-board">${DRAW.masonry([8, 6, 7, 9, 2, 9, 3, 1, 1].map(prov), COL_REM, { n: boardFit() })}</div></div>`;
 }
 function ghostAnswersHtml() {
   const kept = keptModels().length;
   if (!kept) return "";
   const pane = (i) => `<article class="pgp ghosted" style="--i:${i}" aria-hidden="true"><header class="pg-head"><span class="pg-sock tlamp"></span>`
-    + `<div class="pg-who">${GHOST.bar(13, "big")}<div class="pg-meta">${GHOST.bar(12)}${GHOST.bar(7.5, "chip")}</div></div></header><div class="pg-body"></div></article>`;
+    + `<div class="pg-nm">${GHOST.bar(13, "big")}${GHOST.chip(5.5)}</div><div class="pg-meta">${GHOST.bar(12)}</div></header><div class="pg-body"></div></article>`;
   return `<section class="pg-answers" aria-hidden="true"><div class="sechead pg-ahead"><h2 class="kicker">Answers</h2></div>`
     + `<div class="pg-lanes" style="--lanes:${Math.min(kept, lanesFit())}">${Array.from({ length: kept }, (_, i) => pane(i)).join("")}</div></section>`;
 }
 const unreadHtml = () => `<div class="pg-unread"><span class="state limit">${esc(ui.error)}</span>${DRAW.act({ word: "Read again", act: "reread", busy: ui.reading })}`
   + `${ui.error.startsWith("Sign") ? `<a class="act quiet" href="accounts.html">Accounts${DRAW.go}</a>` : ""}</div>`;
-// nothing can send: said once, then each command that can't, why, and the door that fixes it
+// the table's four places with the first one holding a line of its own: what stopped the page, and what to press
+const placesWith = (inner) => Array.from({ length: MAX_PANES }, (_, k) => (k === 0
+  ? `<div class="pg-tr pg-addrow pg-a" style="grid-row:2"><span class="pg-c pg-railc"><span class="pg-sock tlamp open" aria-hidden="true"></span></span><div class="add pg-add pg-nada" role="status">${inner}</div></div>`
+  : slotHtml(k + 2, k === MAX_PANES - 1 ? " pg-z" : ""))).join("");
+// nothing can send: the table's four places stand empty, the first one saying so, and under them each command that can't,
+// why, and the door that fixes it
 function noneHtml() {
   const rows = ui.blocked.map((b) => `<li style="--c:${colorOf(b.family)}">${DRAW.chip({ text: b.command })}<span class="pg-why${b.bad ? " bad" : ""}">${esc(b.word)}</span>`
     + `<a class="act small quiet" href="${b.door === "models" ? `models.html?cmd=${enc(b.key)}` : `accounts.html?head=${enc(b.key)}`}">${b.door === "models" ? "Models" : "Accounts"}${DRAW.go}</a></li>`).join("");
-  return `<div class="pg-none">${DRAW.nothing("No model can send now")}${rows ? `<ul class="pg-blocked">${rows}</ul>` : `<a class="act small" href="models.html">Models${DRAW.go}</a>`}</div>`;
+  return `<div class="pg-none"><div class="pg-table" role="table" aria-label="The models compared">${headHtml(axisNow())}${placesWith(`<span class="pg-addw">No model can send now</span>`)}</div>`
+    + `${rows ? `<ul class="pg-blocked">${rows}</ul>` : `<a class="act small" href="models.html">Models${DRAW.go}</a>`}</div>`;
 }
+// the first read failed: the same four places, the first saying what was not read, with the way to read again
+const unreadTableHtml = () => `<div class="pg-none"><div class="pg-table" role="table" aria-label="The models compared">${headHtml(axisNow())}${placesWith(
+  `<span class="state limit">${esc(ui.error)}</span>${DRAW.act({ word: "Read again", act: "reread", busy: ui.reading })}`
+  + `${ui.error.startsWith("Sign") ? `<a class="act quiet" href="accounts.html">Accounts${DRAW.go}</a>` : ""}`)}</div></div>`;
+
 
 // ---------- the page ----------
 // what has focus, so a redraw can give it back: the field and its caret, or the row or act he pressed, in its own pane
@@ -1022,6 +1156,26 @@ function paintPane(p) {
   el.outerHTML = paneHtml(p, ui.panes.indexOf(p));
   p.reqNew = false;
   refocus(f);
+  grow();
+}
+// the pane's acts alone, so a request folding keeps its pane (and its answer) untouched
+function paintActs(p) {
+  const el = root.querySelector(`.pgp[data-u="${p.uid}"] .pg-acts`);
+  if (!el) return;
+  const f = focused();
+  el.outerHTML = actsHtml(p);
+  refocus(f);
+}
+// a request closes by folding up to nothing, and only then is the pane drawn without it; with motion reduced it goes at once
+function foldRec(p) {
+  const el = root.querySelector(`#rq-${p.uid}`);
+  p.req = false; paintActs(p);
+  if (!el || still()) { paintPane(p); return; }
+  el.classList.remove("unfold"); el.classList.add("fold");
+  let gone = false;
+  const end = () => { if (gone) return; gone = true; if (!p.req) paintPane(p); };
+  el.addEventListener("animationend", (e) => { if (e.target === el) end(); });
+  setTimeout(end, 420);
 }
 // a tab or a fold inside a request: only that request is drawn again
 function paintReq(p) {
@@ -1136,8 +1290,22 @@ document.addEventListener("click", (e) => {
     case "keep": if (p) arm(p, false); return;
     case "req": {
       if (!p?.trace) return;
-      p.req = !p.req; p.reqNew = p.req; paintPane(p);
-      if (p.req) root.querySelector(`#rq-${p.uid}`)?.scrollIntoView({ block: "nearest", behavior: still() ? "auto" : "smooth" });
+      if (p.req) { foldRec(p); return; }
+      p.req = true; p.reqNew = true; paintPane(p);
+      // the record unfolds first; the page follows it down once there is something to follow
+      setTimeout(() => root.querySelector(`#rq-${p.uid}`)?.scrollIntoView({ block: "nearest", behavior: still() ? "auto" : "smooth" }), still() ? 0 : 260);
+      return;
+    }
+    // a failure that no retry fixes offers another model: this one comes off without asking, and the board opens to choose it
+    case "swap": {
+      if (!p) return;
+      ui.panes.splice(ui.panes.indexOf(p), 1);
+      keepModels(); stopTicker();
+      ui.add = true; ui.opened = true;
+      render(); paintSend();
+      const f = document.getElementById("find");
+      f?.focus({ preventScroll: true });
+      f?.closest(".pg-pick")?.scrollIntoView({ block: "nearest", behavior: still() ? "auto" : "smooth" });
       return;
     }
     case "said": if (p) { p.said = !p.said; paintPane(p); } return;
@@ -1152,7 +1320,7 @@ document.addEventListener("click", (e) => {
     case "more": case "vendor": {
       const k = t.dataset.k;
       flip(ui.open, k);
-      ui.unfold = t.dataset.act === "vendor" && ui.open.has(k) ? k : null;
+      ui.unfold = ui.open.has(k) ? k : null;
       paintBoard(); root.querySelector(`.pg-board [data-k="${CSS.escape(k)}"]`)?.focus({ preventScroll: true });
       return;
     }

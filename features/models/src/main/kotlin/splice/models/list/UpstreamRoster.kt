@@ -139,7 +139,7 @@ internal class UpstreamRosterParser(private val json: Json = Json { ignoreUnknow
         rates = ListedPricing.of(row),
         runtimeMetadata = ModelRuntimeMetadata(
             supportsImageDetailOriginal = row["supports_image_detail_original"] == JsonPrimitive(true),
-            modelMessages = ModelMessagesOrder.ordered(row["model_messages"] as? JsonObject),
+            modelMessages = ModelMessagesInput.of(row),
             useResponsesLite = row["use_responses_lite"] == JsonPrimitive(true),
             toolMode = JsonScalars.str(row, "tool_mode"),
         ),

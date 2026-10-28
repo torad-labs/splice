@@ -1,11 +1,12 @@
 package splice.upstream.codemode
 
 import kotlinx.serialization.json.JsonElement
+import splice.core.util.text.UnicodeOrder
 
 /** Rust str whitespace and lines differ from the JVM's control-character and lone-CR rules. */
 public object CodeModeText {
     /** Rust String ordering follows scalar values, including supplementary characters. */
-    public val order: Comparator<String> = Comparator(::compare)
+    public val order: Comparator<String> = UnicodeOrder.scalarValues
 
     public fun jsonValue(value: JsonElement): JsonElement = splice.upstream.codemode.json.CodeModeJson.normalize(value)
 
@@ -24,19 +25,6 @@ public object CodeModeText {
     }
 
     private fun whitespace(char: Char): Boolean = char in RUST_WHITESPACE
-
-    private fun compare(left: String, right: String): Int {
-        var first = 0
-        var second = 0
-        while (first < left.length && second < right.length) {
-            val leftPoint = left.codePointAt(first)
-            val rightPoint = right.codePointAt(second)
-            if (leftPoint != rightPoint) return leftPoint.compareTo(rightPoint)
-            first += Character.charCount(leftPoint)
-            second += Character.charCount(rightPoint)
-        }
-        return (left.length - first).compareTo(right.length - second)
-    }
 }
 
 private val RUST_WHITESPACE = "\u0009\u000a\u000b\u000c\u000d\u0020\u0085\u00a0\u1680\u2028\u2029\u202f\u205f\u3000"

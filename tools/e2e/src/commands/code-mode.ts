@@ -2033,6 +2033,10 @@ export async function runToggleBoots(root: string, artifact: string, upstream: n
     const [proc, log] = await startDaemon(boot, artifact, env, control);
     try {
       await runToggleProbe(head, env.SPLICE_PROBE_BEARER as string);
+    } catch (error) {
+      const said = state.get("error") as string | undefined;
+      if (error instanceof Error && said) error.message += ` (toggle boot ${index}, code_mode = ${configured}: ${said})`;
+      throw error;
     } finally {
       await stopDaemon(proc, log);
     }

@@ -57,7 +57,14 @@ internal class CodexCodeModeAssembly(
     internal val catalogs: CodeModeMcpCatalogs = CodeModeMcpCatalogs()
 
     fun wiring(ctx: ProviderBuild): CodexCodeModeWiring = CodexCodeModeWiring(
-        bridge = codeModeBridge(ctx).also { if (ctx.providerCfg.codeModeEnabled) codeModeHeads += ctx.key },
+        // A provider's `code_mode = false` is the operator's off switch (V4-11): no bridge, so its turns keep direct
+        // tools. Only an enabled provider whose native host is missing takes the unavailable, fail-closed path.
+        bridge = if (ctx.providerCfg.codeModeEnabled) {
+            codeModeBridge(ctx).also { codeModeHeads += ctx.key }
+        } else {
+            controls.register(ctx.key, null)
+            null
+        },
         models = ctx.providerCfg.quirks.codeModeModels,
         onlyModels = backendCodeModeOnly(ctx),
         originalImageModels = CodeModeOriginalImageModels {
@@ -120,7 +127,7 @@ internal class CodexCodeModeAssembly(
                 cellLease = CodeModeCellLease(sessionAlive = sessionAlive, sessionIdle = sessionIdle),
             ),
         ).also { bridge ->
-            controls.register(ctx.key, bridge.takeIf { ctx.providerCfg.codeModeEnabled })
+            controls.register(ctx.key, bridge)
             checkNotNull(probeScope.coroutineContext[Job]).invokeOnCompletion {
                 controls.remove(ctx.key, bridge)
                 Cancellables.runCatchingBestEffort { bridge.onProviderStop() }.exceptionOrNull()?.let { failure ->

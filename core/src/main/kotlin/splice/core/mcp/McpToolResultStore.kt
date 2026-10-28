@@ -171,11 +171,11 @@ public class McpToolResultStore(
         val bytes = files.bytes(path) ?: return null
         val text = Charsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString()
         val fields = Json.parseToJsonElement(text) as? JsonObject
-        check(fields?.get("conflict") != kotlinx.serialization.json.JsonPrimitive(true)) {
+        require(fields?.get("conflict") != kotlinx.serialization.json.JsonPrimitive(true)) {
             "the callback has conflicting raw MCP captures"
         }
         val record = Json.decodeFromString<Receipt>(text)
-        check(record.schema == 1) { "unsupported raw MCP result schema" }
+        require(record.schema == 1) { "unsupported raw MCP result schema" }
         return record
     }
 

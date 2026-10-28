@@ -68,7 +68,7 @@ test("an exact unstaged target names only its immutable file and remains unbound
   const changed=new Map(f.immutable);changed.set(extra,{source:"pub fn wrong() {}",sha256:sha256("pub fn wrong() {}")});
   expect(()=>unstagedCompilerFiles(result.compiler,changed)).toThrow("immutable Git source");
 });
-test("known project declarations with unreviewed kinds remain visible qualification debt",async()=>{
+test("a constructor kind cannot bind a method body or hide known project source debt",async()=>{
   const f=await fixture();f.index.declarations[1]!.kind="Ctor(Struct, Fn)";const result=f.run();
   expect(result.unresolved.some(value=>value.expression.startsWith("rustc value/callee:"))).toBe(true);
   expect(result.selections.get(f.a.id)?.state).toBe("required");

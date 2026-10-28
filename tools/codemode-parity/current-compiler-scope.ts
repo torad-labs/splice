@@ -48,17 +48,18 @@ export async function loadCompilerScopeIndex(proofPath: string, source: Compiler
     compilerSha256: proof.compiler?.sha256, compilerVersion: proof.compiler?.version, proofSha256 }, files);
 }
 
+/** Exact debug forms observed from the pinned rustc 1.99.1 driver; unknown payloads never inherit a mapping. */
 function compatibleKinds(kind: string): readonly string[] {
   switch (kind) {
     case "Fn": case "AssocFn": return ["function_item", "function_signature_item"];
-    case "Struct": return ["struct_item"];
+    case "Struct": case "Ctor(Struct, Fn)": case "Ctor(Struct, Const)": return ["struct_item"];
     case "Enum": return ["enum_item"];
-    case "Variant": return ["enum_variant"];
+    case "Variant": case "Ctor(Variant, Fn)": case "Ctor(Variant, Const)": return ["enum_variant"];
     case "Field": case "FieldDef": return ["field_declaration"];
     case "Trait": return ["trait_item"];
     case "TyAlias": case "AssocTy": return ["type_item"];
-    case "Const": case "AssocConst": return ["const_item"];
-    case "Static": return ["static_item"];
+    case "Const": case "AssocConst": case "Const { is_type_const: false }": return ["const_item"];
+    case "Static": case "Static { safety: Safe, mutability: Not, nested: false }": return ["static_item"];
     case "Impl": return ["impl_item"];
     case "Mod": return ["mod_item"];
     case "Macro": return ["macro_definition"];

@@ -153,3 +153,53 @@ test("source identity digest excludes unrelated inventory fields and empty sourc
   const node: CompilerScopeNode = { id: `${empty}#source-file@0`, file: empty, kind: "source-file", start: 0, end: 0, sha256: sha256("") };
   expect(compilerScope(f.index, f.source, f.files, [...f.census, node]).resolve(f.query).status).toBe("bound");
 });
+
+function constructorFixture() {
+  const source="enum Mode { Active(u32), Cancelled }\nstruct Kind(u32);\nstruct Nothing;\nconst LIMIT: usize = 3;\nstatic FLAG: usize = 2;\n"+
+    "fn owner() { let _ = Mode::Active(1); let _ = Mode::Cancelled; let _ = Kind(1); let _ = Nothing; let _ = LIMIT; let _ = FLAG; }";
+  const span=(text:string,after=0)=>{const start=source.indexOf(text,after);if(start<0)throw Error(text);return{file,start,end:start+text.length};};
+  const node=(kind:string,text:string)=>{const range=span(text);return{id:`${file}#${kind}@${range.start}`,kind,...range,sha256:sha256(text)};};
+  const owner=node("function_item",source.slice(source.indexOf("fn owner")));
+  const cases=[
+    {raw:"Ctor(Variant, Fn)",kind:"enum_variant",text:"Active(u32)",prefix:"Active",reference:"Mode::Active"},
+    {raw:"Ctor(Variant, Const)",kind:"enum_variant",text:"Cancelled",prefix:"Cancelled",reference:"Mode::Cancelled"},
+    {raw:"Ctor(Struct, Fn)",kind:"struct_item",text:"struct Kind(u32);",prefix:"struct Kind",reference:"Kind"},
+    {raw:"Ctor(Struct, Const)",kind:"struct_item",text:"struct Nothing;",prefix:"struct Nothing",reference:"Nothing"},
+    {raw:"Const { is_type_const: false }",kind:"const_item",text:"const LIMIT: usize = 3;",prefix:"const LIMIT: usize",reference:"LIMIT"},
+    {raw:"Static { safety: Safe, mutability: Not, nested: false }",kind:"static_item",text:"static FLAG: usize = 2;",prefix:"static FLAG: usize",reference:"FLAG"},
+  ];
+  const f=fixture();f.files=new Map([[file,{source,sha256:sha256(source)}]]);f.census=[owner,...cases.map(value=>node(value.kind,value.text))];
+  f.index.definitions=["owner",...cases.map((_,index)=>`opaque-${index}`)].map((key,index)=>({key,raw:"opaque",crate:"fixture",crateHash:"f".repeat(64),crateNumber:0,index,path:"misleading::debug::name"}));
+  f.index.declarations=[{owner:"owner",kind:"Fn",range:span("fn owner()")},...cases.map((value,index)=>({owner:`opaque-${index}`,kind:value.raw,range:span(value.prefix)}))];
+  f.index.references=cases.map((value,index)=>({owner:"owner",target:`opaque-${index}`,namespace:"value",kind:"path",resolution:"Def",range:span(value.reference,owner.start)}));
+  return{...f,owner,cases,span};
+}
+
+test("exact pinned compiler constructor, constant and immutable static forms select their actual source declarations",()=>{
+  const f=constructorFixture(),scope=compilerScope(f.index,f.source,f.files,f.census);
+  for(const [index,value]of f.cases.entries()){
+    const reference=f.index.references[index]!,result=scope.resolve({...reference.range!,owner:f.owner.id,namespace:"value",kind:"path"});
+    expect(result.status).toBe("bound");if(result.status!=="bound")throw Error(value.raw);
+    expect(result.target.kind).toBe(value.kind);expect(result.target.sha256).toBe(sha256(value.text));expect(result.behavioralCoverage).toBe(false);
+    expect(result.evidence[0]!.declaration.kind).toBe(value.raw);
+  }
+});
+
+test("unreviewed constructor or const/static payloads and generic dispatch remain debt",()=>{
+  for(const [index,raw]of [[0,"Ctor(Variant, Closure)"],[2,"Ctor(Struct, Unknown)"],[4,"Const { is_type_const: true }"],[5,"Static { safety: Unsafe, mutability: Mut, nested: true }"]]as const){
+    const f=constructorFixture();f.index.declarations[index+1]!.kind=raw;
+    const result=compilerScope(f.index,f.source,f.files,f.census).resolve({...f.index.references[index]!.range!,owner:f.owner.id,namespace:"value",kind:"path"});
+    expect(result.status).toBe("unresolved");
+  }
+  const generic=constructorFixture();generic.index.references[0]!.resolution="generic-call";
+  expect(compilerScope(generic.index,generic.source,generic.files,generic.census).resolve({...generic.index.references[0]!.range!,owner:generic.owner.id,namespace:"value",kind:"path"}).status).toBe("unresolved");
+  const parameter=constructorFixture();parameter.index.declarations[1]!.kind="TyParam";
+  expect(compilerScope(parameter.index,parameter.source,parameter.files,parameter.census).resolve({...parameter.index.references[0]!.range!,owner:parameter.owner.id,namespace:"value",kind:"path"}).status).toBe("unresolved");
+});
+
+test("reviewed constructor kinds still require the unique exact source start and compatible AST kind",()=>{
+  const f=constructorFixture();f.index.declarations[1]!.range!.start++;
+  expect(compilerScope(f.index,f.source,f.files,f.census).resolve({...f.index.references[0]!.range!,owner:f.owner.id,namespace:"value",kind:"path"}).status).toBe("unresolved");
+  const wrong=constructorFixture(),old=wrong.census[1]!;wrong.census[1]={...old,kind:"struct_item",id:old.id.replace("#enum_variant@","#struct_item@")};
+  expect(compilerScope(wrong.index,wrong.source,wrong.files,wrong.census).resolve({...wrong.index.references[0]!.range!,owner:wrong.owner.id,namespace:"value",kind:"path"}).status).toBe("unresolved");
+});

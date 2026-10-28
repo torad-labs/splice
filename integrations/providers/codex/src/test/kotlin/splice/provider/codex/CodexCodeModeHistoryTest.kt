@@ -3,6 +3,7 @@ package splice.provider.codex
 import com.sun.management.ThreadMXBean
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -13,14 +14,127 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.Tear
+import splice.core.perf.InputDigest
 import splice.core.turn.TurnOutcome
 import splice.provider.codex.history.CodexCodeModeHistory
+import splice.provider.codex.state.CodeModeHistoryAnchor
+import splice.upstream.ReanchorRound
 import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 import java.lang.management.ManagementFactory
 
 class CodexCodeModeHistoryTest : CodeModeBridgeTestSupport() {
+    /** Older journals did not capture following witnesses. A recovery's private partial must not make their stale
+     *  placement metadata replace the authoritative request that GPT was already sent. */
+    @ParameterizedTest
+    @ValueSource(strings = ["anchor", "unexpected-offset"])
+    fun `recovery keeps GPT's script when an older record has stale placement metadata`(reason: String) = runTest {
+        val runtime = ScriptedRuntime(
+            ArrayDeque(listOf(CodeModeStep.Calls(listOf(call("read", "Read"))), CodeModeStep.Completed("done"))),
+        )
+        val manager = bridge(runtime)
+        try {
+            val history = completedRecoveryHistory(manager)
+            val (client, record, request) = history
+            val partial = Json.parseToJsonElement(
+                """{"type":"reasoning","id":"synthetic-recovery","encrypted_content":"synthetic partial"}""",
+            ).jsonObject
+            val failure = TurnOutcome.Failure(
+                cause = FailureCause.Path.Torn(Tear.NO_TERMINAL, toolOpen = false),
+                at = Position(Moment.MID_CONTENT, streamBegan = true),
+                evidence = FailureEvidence("synthetic dropped stream"),
+                partial = TurnOutcome.PartialRound(nativePrefix = listOf(partial)),
+            )
+            val interceptor = manager.interceptor(turn(history.callbackId, "A"), disableParallel = false)
+            var previous = JsonObject(emptyMap())
+            interceptor.intercept(client.toString(), RecordingSink()) { posted ->
+                previous = Json.parseToJsonElement(posted).jsonObject
+                RoundResult.Outcome(failure)
+            }
+            staleRecoveryPlacement(record, reason, request)
+            val marker = Json.parseToJsonElement("""{"role":"user","content":"synthetic recovery marker"}""")
+            val recovered = JsonObject(
+                client + ("input" to JsonArray(client.getValue("input").jsonArray + partial + marker)),
+            )
+            val legacy = CodexCodeModeHistory(Json).canonicalize(codeModeBody(recovered.toString()), listOf(record))
+            assertTrue(legacy.omitted.any { reason in it.reason }, "the fixture reproduces $reason: ${legacy.omitted}")
+            interceptor.reanchor(ReanchorRound(client, failure, 1))
+            var sent = JsonObject(emptyMap())
+            val result = interceptor.intercept(recovered.toString(), RecordingSink()) { posted ->
+                sent = Json.parseToJsonElement(posted).jsonObject
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
+
+            assertTrue(result is TurnOutcome.Success)
+            assertEquals(
+                previous.getValue("input").jsonArray + partial + marker,
+                sent.getValue("input").jsonArray.toList(),
+                "the recovered request keeps GPT's actual past and appends only the torn round and marker",
+            )
+            assertFalse(
+                sent.getValue("input").jsonArray.any { it.jsonObject["type"] == JsonPrimitive("function_call") },
+            )
+        } finally {
+            manager.onHeadStop()
+        }
+    }
+
+    private data class RecoveryHistory(
+        val client: JsonObject,
+        val record: CodeModeRecord,
+        val request: JsonElement,
+        val callbackId: String,
+    )
+
+    private suspend fun completedRecoveryHistory(manager: CodexCodeModeBridge): RecoveryHistory {
+        val historical = Json.parseToJsonElement(
+            """{"type":"reasoning","id":"synthetic-history","encrypted_content":"synthetic prior"}""",
+        )
+        val request = Json.parseToJsonElement("""{"role":"user","content":"synthetic existing request"}""")
+        val baseline = Json.parseToJsonElement(BASE_REQUEST).jsonObject
+        val initial = JsonObject(
+            baseline + ("input" to JsonArray(baseline.getValue("input").jsonArray + historical + request)),
+        )
+        val first = RecordingSink()
+        manager.interceptor(turn(), outer(), disableParallel = false)
+            .intercept(initial.toString(), first) { RoundResult.Outcome(outerOutcome()) }
+        val id = first.tools.single().id
+        val plain = Json.parseToJsonElement(requestWithResult(id, "A")).jsonObject
+        val items = plain.getValue("input").jsonArray
+        val client = JsonObject(
+            plain + ("input" to JsonArray(items.take(1) + historical + request + items.drop(1))),
+        )
+        manager.interceptor(turn(id, "A"), disableParallel = false)
+            .intercept(client.toString(), RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
+        val record = manager.registry.recordsFor(
+            stateFiles.records().single().getValue("key").jsonPrimitive.content,
+        ).single()
+        return RecoveryHistory(client, record, request, id)
+    }
+
+    private fun staleRecoveryPlacement(record: CodeModeRecord, reason: String, request: JsonElement) {
+        val anchors = checkNotNull(record.replayAnchors)
+        record.replayAnchors = if (reason == "anchor") {
+            anchors.copy(
+                baseline = CodeModeHistoryAnchor("synthetic-missing-anchor", 0),
+                nativeFollowing = emptyMap(),
+            )
+        } else {
+            anchors.copy(
+                native = anchors.native.mapValues { CodeModeHistoryAnchor(InputDigest.hex(request), 0) },
+                nativeFollowing = emptyMap(),
+            )
+        }
+    }
+
     @Test
     fun `persisted input digest is byte stable across digest owner relocation`() {
         val codec = CodexCodeModeHistoryCodec(Json)

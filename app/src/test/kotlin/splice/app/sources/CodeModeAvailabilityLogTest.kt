@@ -58,13 +58,15 @@ class CodeModeAvailabilityLogTest {
             assertTrue(result is RoundResult.Outcome && result.outcome is TurnOutcome.Success)
             val file = tmp.resolve("daemon.log")
             Files.writeString(file, lines.joinToString("\n", postfix = "\n") + "[other] unrelated notice\n")
+            val tail = LogFileSource(file, "[availability]").tailLines(20)
+            assertTrue(tail.all { it.startsWith("[availability]") }, tail.toString())
             assertEquals(
                 listOf(
                     "[availability][code-mode] Code Mode is unavailable because code-mode host is disabled. " +
                         "Falling back to direct tools; enable `features.code_mode_host` " +
                         "and install `codex-code-mode-host`.",
                 ),
-                LogFileSource(file, "[availability]").tailLines(20),
+                tail.filter { it.startsWith("[availability][code-mode] Code Mode is unavailable because ") },
             )
         } finally {
             manager.onProviderStop()

@@ -39,16 +39,14 @@ describe("exact effectively private Rust layout context", () => {
 
   test("removing any one of the 47 bodies refuses layout context", () => {
     for (const behavior of preserved) {
-      const inventory = fixture();
-      inventory.units = inventory.units.filter(found => found.id !== behavior.id);
+      const inventory = { ...original, units: original.units.filter(found => found.id !== behavior.id) };
       expect(effectiveLayoutContextReason(unit(inventory), inventory)).toBeUndefined();
     }
   });
 
   test("mutating any selected body hash or excluding its selected scope refuses context", () => {
     for (const behavior of preserved) {
-      const inventory = fixture();
-      unit(inventory, behavior.id).sha256 = "0".repeat(64);
+      const inventory = { ...original, units: original.units.map(found => found.id === behavior.id ? { ...found, sha256: "0".repeat(64) } : found) };
       expect(effectiveLayoutContextReason(unit(inventory), inventory)).toBeUndefined();
     }
     const inventory = fixture();

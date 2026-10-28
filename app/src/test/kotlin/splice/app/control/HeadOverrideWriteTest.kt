@@ -123,11 +123,19 @@ class HeadOverrideWriteTest {
 
     @Test
     fun `daemon timing refuses a head override and the global write names its required restart`() {
-        serve { patch, _ ->
+        serve { patch, config ->
             val refused = patch(ROUTE, """{"upstreamTimeoutMs":"120000"}""")
             assertEquals(400, refused.status.value)
             assertTrue(json(refused.bodyAsText()).getValue("rejected").jsonObject.containsKey("upstreamTimeoutMs"))
             assertEquals(TOML, Files.readString(file))
+
+            val mixed = patch(ROUTE, """{"maxInflight":"3","upstreamTimeoutMs":"120000"}""")
+            assertEquals(400, mixed.status.value)
+            val mixedReply = json(mixed.bodyAsText())
+            assertTrue(mixedReply.getValue("applied").jsonObject.isEmpty())
+            assertTrue(mixedReply.getValue("rejected").jsonObject.containsKey("upstreamTimeoutMs"))
+            assertEquals(TOML, Files.readString(file))
+            assertEquals(config.getConfig().maxInflight, config.getConfig("local").maxInflight)
 
             val accepted = patch("/api/config", """{"upstreamTimeoutMs":"120000"}""")
             assertEquals(200, accepted.status.value)

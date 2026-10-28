@@ -34,6 +34,7 @@ import splice.core.config.knobsByKey
 import splice.core.config.restartRequiredKnobKeys
 import splice.core.topology.HeadConfig
 import splice.core.topology.Topology
+import splice.core.topology.TopologyFinding
 import splice.core.topology.TopologyWriteResult
 import splice.core.topology.TopologyWriter
 import splice.core.topology.TopologyWriterSource
@@ -78,7 +79,12 @@ internal class HeadOverrideWrite(
             return refuse(HttpStatusCode.InternalServerError, "splice.toml does not parse: $why")
         }
         val held = current.heads[head] ?: return refuse(HttpStatusCode.BadRequest, "unknown head: $head")
-        return land(writer, current, head, held, ask(partial, head, LegacyKnobScope(current)))
+        val ask = ask(partial, head, LegacyKnobScope(current))
+        return if (ask.rejected.isNotEmpty()) {
+            refused(head, ask.rejected, emptyList())
+        } else {
+            land(writer, current, head, held, ask)
+        }
     }
 
     private fun ask(partial: JsonObject, head: String, legacy: LegacyKnobScope): Ask {
@@ -102,7 +108,7 @@ internal class HeadOverrideWrite(
         ask.wanted.forEach { (key, value) -> if (value == null) overrides.remove(key) else overrides[key] = value }
         val requested = current.copy(heads = current.heads + (head to held.copy(overrides = overrides)))
         return when (val result = writer.write(requested)) {
-            is TopologyWriteResult.Refused -> refused(head, ask.rejected, result)
+            is TopologyWriteResult.Refused -> refused(head, ask.rejected, result.findings)
             is TopologyWriteResult.Written -> {
                 config.headLayer.set(head, overrides)
                 JsonReply(HttpStatusCode.OK, writtenJson(ask))
@@ -123,11 +129,11 @@ internal class HeadOverrideWrite(
     }
 
     /** A finding names `heads.<head>.overrides.<key>`; that key is the one rejected, with the daemon's own reason. */
-    private fun refused(head: String, rejected: Map<String, String>, result: TopologyWriteResult.Refused): JsonReply {
+    private fun refused(head: String, rejected: Map<String, String>, findings: List<TopologyFinding>): JsonReply {
         val prefix = "heads.$head.overrides."
-        val byKey = result.findings.filter { it.path.startsWith(prefix) }
+        val byKey = findings.filter { it.path.startsWith(prefix) }
             .associate { it.path.removePrefix(prefix) to it.message }
-        val message = result.findings.joinToString("; ") { it.text() }.ifEmpty { "splice.toml write refused" }
+        val message = findings.joinToString("; ") { it.text() }.ifEmpty { "splice.toml write refused" }
         val body = buildJsonObject {
             put("error", message)
             putJsonObject("rejected") { (rejected + byKey).forEach { (key, why) -> put(key, why) } }

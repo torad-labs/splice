@@ -251,8 +251,9 @@
    scale, so the largest is found by eye before a figure is read */
 .menu.mpick, .menu.ppick { max-height: 28rem; overflow-y: auto; }
 /* the menu keeps one width while its list is filtered, so the field under the caret never moves */
-.menu.mpick { width: 34rem; max-width: calc(100vw - 4rem); }
-.menu.mpick > button, .menu.mpick .mgroup > button { display: grid; grid-template-columns: minmax(0, 1fr) 6rem 3.4rem; align-items: center; gap: .9rem; }
+.menu.mpick { width: 50rem; max-width: calc(100vw - 4rem); }
+.menu.mpick > button, .menu.mpick .mgroup > button { display: grid; grid-template-columns: minmax(0, 1fr) 7.5rem 6rem 3.6rem 8.6rem; align-items: center; gap: .9rem; }
+.menu.mpick > button.mclr { display: flex; justify-content: space-between; }
 .mpick .mname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .mpick .mwin .wbar { height: .45rem; }
 .mpick .mmeta { text-align: right; font-variant-numeric: tabular-nums; }
@@ -294,7 +295,14 @@
 .prices > .chead { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
 .prices .mname { font: 500 .9rem/1.25 var(--font-name); color: var(--text); overflow-wrap: anywhere; }
 .prices .pcell { flex-wrap: nowrap; }
-.prices .field.price { width: 100%; text-align: right; font-family: var(--font-data); }
+/* the figure is the bar's label: it reads as a figure, and the field shows on hover, on focus and once it holds a change */
+.prices > .chead.hin { grid-column: 2 / 4; }
+.prices > .chead.hout { grid-column: 4 / 6; }
+.prices .field.price { width: 100%; text-align: right; font-family: var(--font-data); font-variant-numeric: tabular-nums; background: transparent; border-color: transparent; padding-inline: .45rem; }
+.prices .field.price::placeholder { color: var(--text-mute); }
+.prices .field.price:hover { border-color: var(--track-line); }
+.prices .field.price:focus, .prices .field.price.dirty { background: var(--obj-sunk); }
+.prices .field.price.dirty { border-color: var(--track-line); }
 .prices > .marks { grid-column: 1 / -1; display: flex; align-items: center; gap: .6rem; margin-top: -.2rem; }
 .prices > .marks .field.price { width: 6.5rem; }
 .search.pfind { width: auto; max-width: 30rem; margin-bottom: calc(1.5 * var(--u)); }
@@ -304,7 +312,6 @@
 .chip.tg { cursor: pointer; box-shadow: none; border-color: var(--text); color: var(--text); background: var(--obj-high); }
 .chip.tg[aria-pressed="false"] { border-style: dashed; border-color: var(--track-line); color: var(--text-mute); background: transparent; }
 .chip.tg:hover { border-color: var(--c); }
-.dialect { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); }
 .qrest { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); margin-top: calc(1.5 * var(--u)); }
 .qrest .disc b { font-family: var(--font-data); color: var(--text); }
 .form .unit { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); }
@@ -373,7 +380,7 @@
 .loghead { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem .9rem; margin-bottom: calc(1.5 * var(--u)); }
 /* the search keeps its width whatever the count beside it says, so typing never moves the field under the caret */
 .loghead .search { flex: 0 1 26rem; width: auto; min-width: 12rem; }
-.loghead .act[data-act="logpause"] { margin-left: auto; }
+.loghead .act[data-act="logpause"] { margin-left: 0; }
 /* the file the lines come from, by its own name, on the kicker's line */
 .pfile.logfile { gap: .4rem; font-size: .85rem; color: var(--text-mute); }
 .events { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 5.6rem minmax(0, 1fr) minmax(4rem, 10rem); gap: .4rem .9rem; align-items: center; }
@@ -385,7 +392,8 @@
 .rawwrap { display: flex; flex-direction: column; gap: .7rem; margin-top: calc(2 * var(--u)); }
 .rawwrap .disc .mmeta { margin-left: .2rem; }
 .rawlines { list-style: none; margin: 0; padding: .8rem .9rem; display: flex; flex-direction: column; gap: .35rem; background: var(--obj-sunk); border-radius: var(--r-in); font: 500 .88rem/1.45 var(--font-data); color: var(--text-body); }
-.rawlines li { display: block; content-visibility: auto; contain-intrinsic-size: auto 1.3rem; overflow-wrap: anywhere; }
+.rawlines li { display: block; content-visibility: auto; contain-intrinsic-size: auto 1.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rawlines li.rawend { white-space: normal; }
 /* the term searched for, marked in neutral ink in each line it is in */
 .rawlines mark { padding: 0 .1rem; border-radius: .15rem; background: color-mix(in oklab, var(--text) 22%, transparent); color: var(--text); font-weight: 600; }
 
@@ -495,90 +503,96 @@ code.launch { font: 500 .95rem/1 var(--font-data); color: var(--text); padding: 
 .vstale { display: inline-flex; align-items: center; gap: calc(2 * var(--u)); }
 
 /* ---------- every model: each provider a titled group of its commands' cards, every model on the board's two scales ----------
-   A card is an object (a command), so it is a cel card with its provider's colour on its edge; a row is a model, its
-   window a bar on the board's one linear scale and its price a track on the board's one log scale, both in neutral
-   ink, so the eye compares lengths across every card. Each card heads its columns once; figures end on one right edge
-   per column. The groups are packed into the board's columns (models.js packCols), so columns end at their own heights. */
+   A card is an object (a command): a cel card with its provider's colour on its back edge. A row is a model, drawn as two
+   tracks on scales the whole board shares: its window a meter in its provider's colour on one linear scale, its price the
+   console's range bar on one log scale, so the eye compares lengths across every card. Figures end on one right edge per
+   column, the columns are named once over each column of the board, and the key above them names only the marks drawn. */
 .every { display: flex; flex-direction: column; gap: calc(4 * var(--u)); }
-.em-bar { display: flex; flex-wrap: wrap; align-items: center; gap: calc(2 * var(--u)) calc(4 * var(--u)); }
-.em-bar .search { width: 28rem; }
+.em-bar { display: flex; flex-wrap: wrap; align-items: center; gap: calc(2 * var(--u)) calc(6 * var(--u)); }
+.em-bar .search { width: 28rem; max-width: 100%; }
 /* a search's clear cross, inside the field at its end, while something is typed */
 .search .sclear { position: absolute; right: .35rem; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 1.9rem; height: 1.9rem; padding: 0; border: 0; border-radius: var(--r-in); background: none; color: var(--text-mute); cursor: pointer; transition: color var(--t-hover) var(--e-out), background-color var(--t-hover) var(--e-out); }
 .search .sclear:hover { color: var(--text); background: var(--obj-high); }
 .search .sclear:focus-visible { outline: .14rem solid var(--text); outline-offset: .05rem; }
 .search .sclear svg { position: static; width: .9rem; height: .9rem; }
 .search:has(.sclear) .field { padding-right: 2.5rem; }
-.em-legend { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem calc(4 * var(--u)); font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
-.em-legend .lg { display: inline-flex; align-items: center; gap: .45rem; }
-.em-legend .sw { flex: none; position: relative; display: inline-block; width: 1.3rem; height: .55rem; border-radius: .14rem; }
-.em-legend .sw + .sw, .em-legend .lg > .sw:not(:first-child) { margin-left: .5rem; }
-.sw.main { width: .3rem; height: 1.1rem; border-radius: .1rem; background: var(--text-body); }
-.sw.win, .wtrk .win { background: color-mix(in oklab, var(--text) 62%, transparent); }
-.sw.most, .wtrk .most { background: color-mix(in oklab, var(--text) 30%, transparent); }
-.sw.notch, .wtrk u { width: .16rem; height: 1rem; border-radius: .08rem; background: var(--text); }
-.sw.in, .ptrk .in { background: color-mix(in oklab, var(--text) 62%, transparent); }
-.sw.out { height: .16rem; background: color-mix(in oklab, var(--text) 50%, transparent); }
-.sw.out::after, .ptrk .out::after { content: ""; position: absolute; right: 0; top: 50%; width: .16rem; height: .85rem; transform: translateY(-50%); border-radius: .08rem; background: var(--text); }
+/* the key, the column names and the board are one thing read together: 2u between them, not the page's 4u */
+.em-wall { display: flex; flex-direction: column; gap: calc(2 * var(--u)); min-width: 0; }
+.em-keys .legend { gap: .55rem 1.8rem; }
+.em-keys .legend .lg { gap: .55rem; font-size: .92rem; }
+/* the marks a row draws without a word on it, as the key shows them */
+.sw { flex: none; position: relative; display: inline-block; width: 1.5rem; height: .62rem; border-radius: .16rem; }
+.sw.most, .wtrk .most { background: color-mix(in oklab, var(--c, var(--text)) 34%, transparent); }
+.sw.notch, .wtrk u { width: .17rem; height: 1.3rem; border-radius: .08rem; background: var(--text); }
+.sw.notch { height: 1.1rem; }
 /* a model with no price, a window not served: the track's own shape, hatched, with nothing on it */
-.sw.none, .ptrk.none, .wtrk.none { background: repeating-linear-gradient(135deg, color-mix(in oklab, var(--text) 16%, transparent) 0 .14rem, transparent .14rem .42rem); box-shadow: inset 0 0 0 .06rem color-mix(in oklab, var(--text) 14%, transparent); }
-.em-board { align-items: flex-start; }
-.em-board > .col { gap: 2.4rem; }
-.em-board .titled > header { margin-bottom: calc(1.5 * var(--u)); }
-.em-card { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); padding: calc(2 * var(--u)) calc(3 * var(--u)) calc(2.5 * var(--u)); container: emcard / inline-size; }
-.em-head { display: flex; align-items: center; gap: .9rem; min-height: 2.2rem; }
-.em-head .pd-count { margin-left: auto; font-size: .88rem; }
-.em-head .pd-count b { font-size: .88rem; }
-.em-head .act.headless { margin-left: 0; }
-.em-rows { display: flex; flex-direction: column; min-width: 0; }
-.em-item { border-top: .08rem solid var(--hair); }
-.em-colhead + .em-item, .em-maker + .em-item { border-top: 0; }
-.em-row {
-  display: grid; grid-template-columns: minmax(0, 1fr) minmax(4rem, 8rem) 3.6rem minmax(4.5rem, 9rem) 4.4rem 4.6rem;
-  align-items: center; column-gap: calc(1.5 * var(--u)); padding: .5rem 0 .5rem .6rem; min-height: 2.6rem;
-}
-/* each card names its columns once: the window scale's end over its track, the price scale's two ends over its own */
-.em-row.em-colhead { min-height: 0; padding-top: 0; padding-bottom: .35rem; font: 500 .74rem/1.2 var(--font-name); color: var(--text-mute); border-bottom: .08rem solid var(--hair); }
+.sw.none, .ptrk.none, .wtrk.none { background: repeating-linear-gradient(135deg, color-mix(in oklab, var(--text) 18%, transparent) 0 .14rem, transparent .14rem .42rem); box-shadow: inset 0 0 0 .08rem color-mix(in oklab, var(--text) 16%, transparent); }
+.mdot { flex: none; width: .72rem; height: .72rem; border-radius: 50%; background: var(--text); }
+/* the tiers a command sends to a model: four places in a strip, lit where it does, in the page's neutral selected look */
+.tstrip { flex: none; display: inline-flex; gap: .2rem; }
+.tstrip i { display: grid; place-items: center; width: 1.55rem; height: 1.55rem; border-radius: .34rem; font: 600 .76rem/1 var(--font-data); font-style: normal; color: var(--text-mute); box-shadow: inset 0 0 0 .08rem var(--track-line); }
+.tstrip i.on { background: var(--text-body); color: var(--obj); box-shadow: none; }
+.tstrip.key { gap: .2rem; }
+/* the column names, once over each column of the board, on the card's own grid so every name stands over its track */
+.em-heads { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); column-gap: var(--gap-col); }
+.em-hc { min-width: 0; container: emcard / inline-size; padding: 0 calc(3 * var(--u)); border-inline: var(--ink-w) solid transparent; }
+.em-row.em-colhead { min-height: 0; padding-top: 0; padding-bottom: .5rem; font: 500 .88rem/1.2 var(--font-name); color: var(--text-mute); border-bottom: .08rem solid var(--hair); }
 .em-colhead .ch { text-align: right; white-space: nowrap; }
-.em-colhead .axh { display: flex; justify-content: flex-end; font: 500 .74rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; }
-.em-colhead .axh.two { justify-content: space-between; }
+.em-colhead .axh { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; white-space: nowrap; }
+.em-colhead .axh b { font-weight: 500; }
+.em-colhead .axh i { font: 500 .82rem/1.2 var(--font-data); font-style: normal; font-variant-numeric: tabular-nums; }
+.em-board .titled > header { margin-bottom: calc(2 * var(--u)); }
+.em-card { display: flex; flex-direction: column; gap: calc(2 * var(--u)); padding: calc(2.5 * var(--u)) calc(3 * var(--u)) calc(3 * var(--u)); container: emcard / inline-size; }
+.em-head { display: flex; align-items: center; gap: .9rem; min-height: 2.2rem; }
+.em-head .pd-count, .em-head .pd-count b { font-size: .95rem; }
+.em-head .pd-count { margin-left: auto; }
+.em-head a.chip { transition: background-color var(--t-hover) var(--e-out); }
+.em-head a.chip:hover { background: var(--obj-high); }
+.em-rows { display: flex; flex-direction: column; min-width: 0; }
+.em-item { border-top: .08rem solid var(--hair); transition: background-color var(--t-hover) var(--e-out); }
+.em-rows > .em-item:first-child, .em-maker + .em-item { border-top: 0; }
+.em-item:hover, .em-item.open { background: color-mix(in oklab, var(--text) 4.5%, transparent); }
+.em-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(4rem, 7.5rem) 3.8rem minmax(4rem, 7.5rem) 4.6rem 4.8rem;
+  align-items: center; column-gap: calc(2 * var(--u)); padding: .55rem 0 .55rem .6rem; min-height: var(--row-h);
+}
 /* a router's roster: one head per maker, its count beside it */
-.em-maker { margin: calc(1.5 * var(--u)) 0 .2rem; padding: 0 0 .3rem .6rem; display: flex; align-items: baseline; gap: .55rem; font: 600 .8rem/1.2 var(--font-name); letter-spacing: .04em; color: var(--text-body); border-bottom: .08rem solid var(--hair); }
-.em-maker b { font: 500 .8rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
-/* the command's main model: its colour on the row's left edge, the one place a row carries it (spec 9h) */
-.em-row.main { box-shadow: inset .3rem 0 0 var(--c); }
+.em-maker { margin: calc(1.5 * var(--u)) 0 .2rem; padding: 0 0 .3rem .6rem; display: flex; align-items: baseline; gap: .55rem; font: 600 .84rem/1.2 var(--font-name); letter-spacing: .04em; color: var(--text-body); border-bottom: .08rem solid var(--hair); }
+.em-maker b { font: 500 .84rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
 .em-row.gone .gonelock { grid-column: 4 / -1; justify-self: start; }
-.em-row.gone > span.em-name { padding-left: 1.45rem; }
 .em-name { min-width: 0; display: flex; align-items: center; gap: .65rem; }
-.em-name .nm { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .65rem; }
-.em-name .mname { font: 500 1rem/1.25 var(--font-name); color: var(--text); overflow-wrap: anywhere; }
-.em-name .mk { font: 500 .88rem/1.25 var(--font-name); color: var(--text-mute); }
+.em-name.still { padding-left: 1.45rem; }
+.em-name .nm { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .8rem; }
+.em-name .mnm { min-width: 0; display: inline-flex; align-items: center; gap: .55rem; }
+.em-name .mname { font: 500 1.05rem/1.25 var(--font-name); color: var(--text); overflow-wrap: anywhere; }
+.em-name .mk { font: 500 .92rem/1.25 var(--font-name); color: var(--text-mute); }
 .em-name mark, .proj-tab mark { padding: 0 .08rem; border-radius: .15rem; background: color-mix(in oklab, var(--text) 22%, transparent); color: var(--text); }
 .disc.em-name:hover .mname { text-decoration: underline; text-decoration-color: var(--text-mute); text-underline-offset: .2em; }
-.em-row .tags { display: inline-flex; flex-wrap: wrap; gap: .3rem; }
-.em-row .tag { font: 600 .74rem/1 var(--font-name); font-style: normal; letter-spacing: .06em; text-transform: uppercase; color: var(--text-body); padding: .2rem .38rem; border-radius: .25rem; box-shadow: inset 0 0 0 .08rem var(--track-line); white-space: nowrap; }
-.em-row > .v { text-align: right; white-space: nowrap; font: 500 .92rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.em-row > .v { text-align: right; white-space: nowrap; font: 500 .96rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
 .em-row > .v .nr { font-family: var(--font-name); color: var(--text-mute); }
-/* the tracks: a faint tick at each round step of the window scale and each tenfold of the price scale (models.js
-   boardScales sets --wtk and --ptk on the board), so a length reads against the scale as well as against its neighbours */
-.wtrk, .ptrk { position: relative; display: block; height: .55rem; border-radius: .2rem; background: color-mix(in oklab, var(--text) 8%, transparent); }
-.wtrk:not(.none) { background-image: repeating-linear-gradient(to right, transparent 0 calc(var(--wtk, 100%) - .08rem), color-mix(in oklab, var(--text) 22%, transparent) calc(var(--wtk, 100%) - .08rem) var(--wtk, 100%)); }
+/* the window: the console's meter, a sunk track with a rim and the fill in the provider's colour with an ink right edge,
+   a lighter run on to the most it takes, a notch where the price rises. A faint tick at each round step of the board's scale
+   (--wtk, --ptk, set on the board by models.js boardScales) so a length reads against the scale as well as its neighbours. */
+.wtrk, .ptrk { position: relative; display: block; height: var(--meter-h); border-radius: .3rem; }
+.wtrk { overflow: hidden; background-color: var(--track); box-shadow: inset 0 0 0 .1rem var(--track-line); }
+.wtrk:not(.none) { background-image: repeating-linear-gradient(to right, transparent 0 calc(var(--wtk, 100%) - .08rem), color-mix(in oklab, var(--text) 16%, transparent) calc(var(--wtk, 100%) - .08rem) var(--wtk, 100%)); }
 .ptrk:not(.none) { background-image: repeating-linear-gradient(to right, transparent 0 calc(var(--ptk, 100%) - .08rem), color-mix(in oklab, var(--text) 22%, transparent) calc(var(--ptk, 100%) - .08rem) var(--ptk, 100%)); }
-.wtrk i, .ptrk i { position: absolute; left: 0; top: 0; bottom: 0; min-width: .2rem; border-radius: .2rem; }
+.wtrk i { position: absolute; inset: 0 auto 0 0; min-width: .2rem; transition: width var(--t-snap) var(--e-out); }
+.wtrk .win { background: var(--c); border-right: .12rem solid var(--ink); border-radius: .3rem 0 0 .3rem; }
 .wtrk u { position: absolute; top: 50%; transform: translate(-50%, -50%); }
-.ptrk .out { top: 50%; bottom: auto; height: .16rem; margin-top: -.08rem; border-radius: 0; background: color-mix(in oklab, var(--text) 50%, transparent); }
 /* the rate card under its row: each rate a band on the board's price scale with its figure, the dearer one past the
    threshold the line on to its tick and the second figure */
-.em-rate { margin: 0 0 calc(1.5 * var(--u)) 2rem; padding: calc(2 * var(--u)) calc(3 * var(--u)); display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); background: var(--obj-sunk); border-radius: var(--r-in); }
-.rwins { font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
-.rwins b, .rtab .v { font: 500 .9rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
-.rtab { display: grid; grid-template-columns: max-content minmax(6rem, 16rem) 4.6rem; justify-content: start; align-items: center; gap: .55rem calc(2 * var(--u)); }
-.rtab.lc { grid-template-columns: max-content minmax(6rem, 16rem) 5.6rem 5.6rem; }
-.rtab .rh, .rtab .rk { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.em-rate { margin: 0 0 calc(2 * var(--u)) 2rem; padding: calc(2 * var(--u)) calc(3 * var(--u)); display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); background: var(--obj-sunk); border-radius: var(--r-in); }
+.rwins { font: 500 .88rem/1.2 var(--font-name); color: var(--text-mute); }
+.rwins b, .rtab .v { font: 500 .94rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.rtab { display: grid; grid-template-columns: max-content minmax(6rem, 16rem) 4.8rem; justify-content: start; align-items: center; gap: .6rem calc(2 * var(--u)); }
+.rtab.lc { grid-template-columns: max-content minmax(6rem, 16rem) 5.8rem 5.8rem; }
+.rtab .rh, .rtab .rk { font: 500 .84rem/1.2 var(--font-name); color: var(--text-mute); white-space: nowrap; }
 .rtab .rh, .rtab .v { text-align: right; }
-.em-rate .gonewhy { margin: 0; font: 500 .9rem/1.45 var(--font-name); color: var(--text-body); overflow-wrap: anywhere; }
+.em-rate .gonewhy { margin: 0; font: 500 .94rem/1.45 var(--font-name); color: var(--text-body); overflow-wrap: anywhere; }
 .em-foot { display: flex; align-items: center; gap: calc(2 * var(--u)); }
 @container emcard (max-width: 44rem) {
-  .em-row { grid-template-columns: minmax(0, 1fr) minmax(3rem, 5rem) 3.4rem minmax(3rem, 6rem) 4.2rem 4.4rem; column-gap: var(--u); }
+  .em-row { grid-template-columns: minmax(0, 1fr) minmax(3rem, 6rem) 3.4rem minmax(3rem, 6rem) 4.2rem 4.4rem; column-gap: var(--u); }
 }
 @container emcard (max-width: 34rem) {
   .em-row { grid-template-columns: minmax(0, 1fr) 3.4rem minmax(0, 1fr) 4.2rem 4.4rem; row-gap: .4rem; }
@@ -589,8 +603,9 @@ code.launch { font: 500 .95rem/1 var(--font-data); color: var(--text); padding: 
 .every > .add.em-new { align-self: flex-start; min-width: 24rem; }
 .every .nomatch, .pj .nomatch { border: 0; padding: 0; min-height: 0; }
 /* the board while it is read: the rows' own tracks, ghosted */
-.em-row .ghost.gtrk { display: block; height: .55rem; border-radius: .2rem; }
+.em-row .ghost.gtrk { display: block; height: var(--meter-h); border-radius: .3rem; }
 .every .ghost.em-gsearch { width: 28rem; height: 2.55rem; border-radius: var(--r-in); }
+.em-keys > .ghost { display: block; height: 1rem; }
 /* motion: a row new since the last draw comes in once; a chevron turns once on the press that turned it */
 .em-row.arrive { animation: em-in var(--t-snap) var(--e-out) both; animation-delay: calc(var(--i, 0) * 24ms); }
 @keyframes em-in { from { opacity: 0; transform: translateY(.4rem); } }
@@ -615,11 +630,12 @@ code.launch { font: 500 .95rem/1 var(--font-data); color: var(--text); padding: 
 .pj-empty { display: flex; flex-wrap: wrap; align-items: center; gap: calc(2 * var(--u)) calc(4 * var(--u)); padding: calc(4 * var(--u)) 0; }
 /* the way to Settings is the kit's own link, arrow and all (console.css .plink) */
 .pj-empty .plink { align-self: center; }
-.pj-legend { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem calc(3 * var(--u)); font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
-.pj-legend .lg { display: inline-flex; align-items: center; gap: .4rem; }
+.pj-legend .legend { gap: .45rem calc(3 * var(--u)); }
+.pj-legend .lg { font-size: .88rem; }
+
 .pj-legend svg, .pmark svg { flex: none; width: .95rem; height: .95rem; }
 .pj .pt-live i { flex: none; width: .55rem; height: .55rem; border-radius: 50%; background: var(--live); box-shadow: 0 0 .4rem var(--live); }
-.pj-legend .sw.share { flex: none; width: 1.3rem; height: .4rem; border-radius: .2rem; background: color-mix(in oklab, var(--text) 45%, transparent); }
+.sw.share { width: 1.5rem; height: .7rem; border-radius: .2rem; background: color-mix(in oklab, var(--text) 45%, transparent); }
 /* the folders run down as many 22rem columns as the rail is wide: one at 1440, two on his screen */
 .proj-list { columns: 22rem; column-gap: var(--gap-card); }
 .pj-group { break-inside: avoid; display: flex; flex-direction: column; gap: var(--u); margin-bottom: calc(2.5 * var(--u)); }
@@ -635,7 +651,7 @@ code.launch { font: 500 .95rem/1 var(--font-data); color: var(--text); padding: 
 /* a project is one line: its name, its marks, its live sessions, then its sessions as a bar and a figure at the right,
    every tile's bar and figure on one edge; its place on a line under it only where no folder says it */
 .proj-tab {
-  display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .55rem; min-width: 0; padding: .6rem calc(1.5 * var(--u));
+  display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .65rem; min-width: 0; min-height: 2.8rem; padding: .65rem calc(1.5 * var(--u));
   background: transparent; border: 0; border-radius: 0; box-shadow: inset 0 -.08rem 0 var(--track-line);
   font: inherit; color: var(--text-body); text-align: left; cursor: pointer; transition: background-color var(--t-hover) var(--e-out), box-shadow var(--t-snap) var(--e-out);
 }
@@ -652,18 +668,24 @@ code.launch { font: 500 .95rem/1 var(--font-data); color: var(--text); padding: 
 /* a path cut from its start, so its last folders stay in view; the whole path is the tile's title */
 .proj-tab .ppath, .pj-head .ppath { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; direction: rtl; text-align: left; }
 .proj-tab .ppath { flex: 1 0 100%; font-size: .8rem; line-height: 1.2; }
-.pt-share { flex: none; width: 4.5rem; height: .4rem; border-radius: .2rem; overflow: hidden; background: color-mix(in oklab, var(--text) 10%, transparent); }
-.pt-share i { display: block; height: 100%; min-width: .2rem; border-radius: .2rem; background: color-mix(in oklab, var(--text) 45%, transparent); transition: width var(--t-snap) var(--e-out); }
-.pt-n { flex: none; min-width: 2.6rem; font: 500 .82rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); text-align: right; }
+.pt-share { flex: none; width: 7rem; height: .72rem; border-radius: .3rem; overflow: hidden; background: color-mix(in oklab, var(--text) 10%, transparent); }
+.pt-share i { display: block; height: 100%; min-width: .2rem; border-radius: .3rem; background: color-mix(in oklab, var(--text) 52%, transparent); transition: width var(--t-snap) var(--e-out); }
+.proj-tab.idle .pname { color: var(--text-body); }
+.pt-n { flex: none; min-width: 2.8rem; font: 500 .9rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); text-align: right; }
 /* a later read that failed: the list it had, quieter, so its figures read as held rather than fresh */
 .proj-list.stale { opacity: .55; }
-.pj .ghost.pj-gtile { display: block; width: auto; height: 2.65rem; border-radius: 0; background-clip: content-box; padding: .9rem calc(1.5 * var(--u)); box-sizing: border-box; box-shadow: inset 0 -.08rem 0 var(--track-line); }
+.pj .ghost.pj-gtile { display: block; width: auto; height: 2.8rem; border-radius: 0; background-clip: content-box; padding: 1rem calc(1.5 * var(--u)); box-sizing: border-box; box-shadow: inset 0 -.08rem 0 var(--track-line); }
 .pj .ghost.pj-gtile:last-child { box-shadow: none; }
 /* the filter's box while the list is read: as wide as the field and as tall (its line box, padding and border) */
 .pj .ghost.pj-gsearch { flex: 1 1 14rem; height: 2.55rem; border-radius: var(--r-in); }
 /* a command's picker while the list is read: its chip and the picker's padding and edge */
 .pj .ghost.pj-gpick { height: 2.42rem; border-radius: var(--r-obj); }
-.pj .ghost.pj-gsplit { display: block; height: 1.1rem; margin-bottom: calc(1.5 * var(--u)); border-radius: .25rem; }
+.pj .ghost.pj-gsplit { display: block; height: var(--stack-h); margin-bottom: calc(2 * var(--u)); border-radius: .3rem; }
+.pj .ghost.pj-gstat { display: block; width: 11rem; height: 2.2rem; border-radius: var(--r-in); }
+.pj-gdoc .ghost-lines { gap: .55rem; }
+.pj-gwin { margin-top: calc(2 * var(--u)); padding-top: calc(2 * var(--u)); border-top: .08rem solid var(--hair); }
+.pj-gwin .ghost { display: block; width: 70%; height: .55rem; }
+.pj-gdoc .ghost { height: .9rem; }
 
 /* ---------- the open project: a pane by the console's contract, its head, then what each command does here ----------
    It is a .pane with a .body, as the open command and the open session are, in the page's one scroll (console.css): the
@@ -691,10 +713,20 @@ code.launch { font: 500 .95rem/1 var(--font-data); color: var(--text); padding: 
 .pj-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u); margin-left: -.3rem; }
 /* the project's sessions split by command: one bar, each part its command's colour (a meter's fill), largest first,
    the part tied to no command of his hatched at its end; the chips under it are its labels */
-.pj-split { display: flex; height: 1.1rem; margin-bottom: calc(1.5 * var(--u)); border-radius: .25rem; overflow: hidden; background: var(--obj-sunk); box-shadow: inset 0 0 0 var(--ink-w) var(--ink); }
-.pj-split > i { flex: none; min-width: .16rem; height: 100%; background: var(--c); box-shadow: inset -.12rem 0 0 var(--ink); transition: width var(--t-snap) var(--e-out); }
-.pj-split > i.unk, .sw.unk { background: repeating-linear-gradient(135deg, color-mix(in oklab, var(--text) 34%, transparent) 0 .14rem, transparent .14rem .42rem); }
-.pj-split.grow > i { animation: split-in var(--t-snap) var(--e-out) both; transform-origin: left; }
+.pj-split { display: flex; height: var(--stack-h); margin-bottom: calc(2 * var(--u)); border-radius: .3rem; overflow: hidden; background: var(--obj-sunk); box-shadow: inset 0 0 0 var(--ink-w) var(--ink); }
+.pj-seg {
+  flex: none; display: flex; align-items: center; min-width: .5rem; height: 100%; margin: 0; padding: 0; border: 0; border-radius: 0; overflow: hidden; white-space: nowrap;
+  background: var(--c); box-shadow: inset -.12rem 0 0 var(--ink); color: var(--on-cable); font: 600 .85rem/1 var(--font-name); cursor: pointer;
+  transition: width var(--t-snap) var(--e-out), filter var(--t-hover) var(--e-out);
+}
+.pj-seg > span { padding-inline: .7rem; }
+.pj-seg b { font: 600 .85rem/1 var(--font-data); font-variant-numeric: tabular-nums; }
+.pj-seg:hover { filter: brightness(1.12); }
+.pj-seg.on { outline: .2rem solid var(--text); outline-offset: -.2rem; }
+.pj-seg:focus-visible { outline: .2rem solid var(--text); outline-offset: -.2rem; }
+.pj-split > i.unk, .sw.unk { flex: none; min-width: .16rem; background: repeating-linear-gradient(135deg, color-mix(in oklab, var(--text) 34%, transparent) 0 .14rem, transparent .14rem .42rem); }
+.pj-split > i.unk { height: 100%; }
+.pj-split.grow > * { animation: split-in var(--t-snap) var(--e-out) both; transform-origin: left; }
 @keyframes split-in { from { transform: scaleX(0); } }
 .pj-pick {
   display: inline-flex; align-items: center; gap: .5rem; padding: .3rem .55rem .3rem .3rem; background: none;
@@ -706,14 +738,19 @@ code.launch { font: 500 .95rem/1 var(--font-data); color: var(--text); padding: 
 .pj-pick:focus-visible { outline: .14rem solid var(--text); outline-offset: .15rem; }
 /* a command never run in this project is still there to pick, quieter than the ones that were */
 .pj-pick.idle:not(.on) .chip { color: var(--text-mute); border-color: var(--track-line); }
+.pj-idle { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: var(--u); }
+.pj-run .pd-sub { margin-bottom: calc(1.5 * var(--u)); }
+/* what Claude Code gets here from the picked command: its chip, then a tile for each thing it receives */
+.pj-for { display: flex; flex-wrap: wrap; align-items: center; gap: calc(1.5 * var(--u)) calc(4 * var(--u)); }
+.pj-for > .chip { flex: none; }
 .pc-n { font: 500 .88rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
 /* sessions tied to no command of his: a fact in the row, not a pick, keyed by the bar's hatched part */
 .pj-unk { display: inline-flex; align-items: center; gap: .5rem; padding: .3rem .55rem .3rem .3rem; font: 500 .9rem/1 var(--font-name); color: var(--text-mute); }
 .pj-unk .sw.unk { flex: none; width: 1.3rem; height: .8rem; border-radius: .2rem; box-shadow: inset 0 0 0 .06rem var(--track-line); }
 .pj-cmd { container: pjcmd / inline-size; }
 .pj-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr)); gap: var(--gap-col); align-items: start; }
-/* two plates to a row: Memory takes the row under them whole rather than leaving a hole beside it */
-@container pjcmd (min-width: 62rem) and (max-width: 93.9rem) { .pj-cols > .plate:nth-child(3) { grid-column: 1 / -1; } }
+
+
 .pj .sechead > .act { margin-left: auto; }
 /* wide, the files every command reads stand beside what each command does here, wide enough for their text to read */
 @container pjpane (min-width: 120rem) { .pane.pj-pane > .pj-body { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); } }
@@ -741,6 +778,8 @@ code.launch { font: 500 .95rem/1 var(--font-data); color: var(--text); padding: 
 .ftile .fbar i { display: block; height: 100%; min-width: .2rem; border-radius: .2rem; background: color-mix(in oklab, var(--text) 45%, transparent); }
 .pj .ghost.ftile-g { display: block; height: 3.5rem; border-radius: var(--r-in); }
 .fprev { display: flex; flex-direction: column; align-items: flex-start; gap: calc(1.5 * var(--u)); padding: calc(2 * var(--u)) calc(3 * var(--u)) calc(2.5 * var(--u)); background: var(--obj-sunk); border-radius: var(--r-in); }
+.fprev > .fhead { align-self: stretch; display: flex; align-items: baseline; justify-content: space-between; gap: .8rem; padding-bottom: calc(1.5 * var(--u)); border-bottom: .08rem solid var(--hair); }
+.fhead .fname { min-width: 0; overflow-wrap: anywhere; font: 500 .95rem/1.2 var(--font-data); color: var(--text); }
 .fdoc { max-width: 62rem; min-width: 0; font: 400 .95rem/1.55 var(--font-name); color: var(--text-body); overflow-wrap: anywhere; }
 .fdoc > :first-child { margin-top: 0; }
 .fdoc > :last-child { margin-bottom: 0; }
@@ -779,20 +818,21 @@ code.launch { font: 500 .95rem/1 var(--font-data); color: var(--text); padding: 
 .rval { grid-column: 2; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .8rem; }
 .rbase, .rscope { font: 500 .95rem/1.2 var(--font-name); color: var(--text); }
 .pj .rung.unset > .rwho .pname, .pj .rung.unset > .rwho .rscope { color: var(--text-body); }
-.rnone { font: 500 .9rem/1 var(--font-data); }
 .rown { font: 500 .9rem/1.3 var(--font-name); color: var(--text-body); }
 .mtag, .dmark { flex: none; padding: .2rem .38rem; border-radius: .25rem; font: 600 .74rem/1 var(--font-name); font-style: normal; letter-spacing: .07em; text-transform: uppercase; color: var(--text-body); box-shadow: inset 0 0 0 .08rem var(--track-line); }
 .dmark { color: var(--text); box-shadow: inset 0 0 0 .1rem var(--text); }
 .rtext { flex: 1 1 100%; min-width: 0; display: flex; flex-direction: column; padding: .5rem .7rem; background: var(--obj-sunk); border-radius: var(--r-in); font: 400 .86rem/1.5 var(--font-data); color: var(--text-body); white-space: pre-wrap; overflow-wrap: anywhere; }
 /* under a Replace the layers above it are not sent: they dim, and their stretch of the rail is dashed */
 .pj .rung.cut > .rwho, .pj .rung.cut > .rval { opacity: .45; }
-.pj .rung.cut::before, .pd-leg i.rl-cut { background: repeating-linear-gradient(to bottom, var(--text-mute) 0 .3rem, transparent .3rem .55rem); }
+.pj .rung:not(:has(.rval)) { row-gap: 0; }
+.pj .rung.cut::before, .legend i.rl-cut { background: repeating-linear-gradient(to bottom, var(--text-mute) 0 .3rem, transparent .3rem .55rem); }
 .pj .rung.cut .rdot { background: var(--obj); box-shadow: 0 0 0 .14rem var(--text-mute); }
-.pd-leg i.rl-cut { width: .14rem; height: 1.1rem; border-radius: 0; }
+.legend i.rl-cut { flex: none; width: .14rem; height: 1.1rem; border-radius: 0; }
+.legend i.rl-unset { flex: none; width: .85rem; height: .85rem; border-radius: 50%; background: var(--obj); box-shadow: 0 0 0 .14rem var(--track-line); margin: 0 .15rem; }
 /* compaction: the rule in force is ringed; a rule it overrides fills quieter than it */
 .rrail.cx .rung:not(.lit):not(.unset) .rdot { background: var(--text-mute); box-shadow: 0 0 0 .14rem var(--text-mute); }
-.rrail.cx .rung.lit .rdot, .pd-leg i.rl-lit { background: var(--text); box-shadow: 0 0 0 .14rem var(--text), 0 0 0 .42rem color-mix(in oklab, var(--text) 18%, transparent); }
-.pd-leg i.rl-lit { width: .62rem; height: .62rem; margin: 0 .2rem; border-radius: 50%; }
+.rrail.cx .rung.lit .rdot, .legend i.rl-lit { background: var(--text); box-shadow: 0 0 0 .14rem var(--text), 0 0 0 .42rem color-mix(in oklab, var(--text) 18%, transparent); }
+.legend i.rl-lit { flex: none; width: .62rem; height: .62rem; margin: 0 .3rem; border-radius: 50%; }
 .redit { flex-direction: column; align-items: stretch; gap: .6rem; }
 .redit > .switch { align-self: flex-start; flex-wrap: wrap; }
 .redit > .field.ptext { min-height: 5.5rem; font: 400 .9rem/1.45 var(--font-data); }
@@ -815,3 +855,81 @@ code.launch { font: 500 .95rem/1 var(--font-data); color: var(--text); padding: 
 
 /* The key glyph is drawn as strokes: a ring and its bit. Without these it fills its ring solid and shows as a dot. */
 .tsub svg, .keyfact svg, .pick.tpl .tkind svg, .sechead.tplkick svg { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- the page's one reading mark, and a down command's act ---------- */
+.vread { display: inline-flex; align-items: center; }
+.vread .ghost { height: .55rem; }
+
+/* ---------- Log: each turn a row, its time a bar on one log axis ---------- */
+.turnstats { margin-bottom: calc(3 * var(--u)); }
+.turns { display: grid; grid-template-columns: 5.6rem minmax(0, 1fr) 5.2rem minmax(0, 9rem) 4.2rem; column-gap: calc(2 * var(--u)); row-gap: calc(1.2 * var(--u)); align-items: center; }
+.trn { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; }
+.trn time { font: 500 .9rem/1.3 var(--font-data); color: var(--text-mute); }
+.trn .pd-n { text-align: right; font-variant-numeric: tabular-nums; }
+.trn .barcell { min-width: 0; }
+.trhead span { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.trhead span:nth-child(2) { grid-column: 2 / 4; }
+.trhead span:nth-child(4) { text-align: right; }
+.trn.bad .pd-trk .mid, .trn.bad .pd-trk .hi { background: var(--limit); }
+.trax { margin-top: calc(-.4 * var(--u)); }
+.trax .pd-ax { grid-column: 2; }
+.turns + .morepill, .turns + .more { margin-top: calc(1.5 * var(--u)); }
+.hlog .events { margin-top: calc(3 * var(--u)); }
+
+/* ---------- Running: a behaviour is a tile ---------- */
+.qgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: var(--gap-card); }
+.qtile { display: flex; flex-direction: column; gap: calc(1.2 * var(--u)); min-width: 0; padding: calc(1.5 * var(--u)) calc(2 * var(--u)); border: .1rem solid var(--text-mute); border-radius: var(--r-in); background: var(--obj-sunk); }
+.qtile:not(.own) { border-style: dashed; border-color: var(--track-line); }
+.qtile.wide { grid-column: 1 / -1; }
+.qhead { display: flex; align-items: center; justify-content: space-between; gap: .6rem; min-height: 1.9rem; }
+.qhead .lbl { font: 500 .9rem/1.25 var(--font-name); color: var(--text-body); }
+.qtile .ctl { gap: .5rem .7rem; }
+.qtile .field.num, .qtile .field.mono { flex: 0 1 9rem; }
+.qfig { font: 500 .88rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.qfig b { font: 600 1rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.qrest .qgrid { margin-top: calc(1.5 * var(--u)); }
+.qtile .switch { max-width: 100%; }
+
+/* the sign-in kinds: each choice carries how it signs in as a glyph, and the menu is as wide as its picker at least */
+.menuwrap > .menu.kmenu { min-width: max(100%, 16rem); }
+.menu.kmenu button { justify-content: flex-start; gap: .7rem; }
+.kg { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 1.1rem; color: var(--text-body); }
+.kg svg { width: 1rem; height: 1rem; }
+.pickbtn .pf .kg { margin-right: .5rem; vertical-align: -.15rem; }
+
+/* the tiers that already use a model ride its row, and its price ends the row, so a model is chosen on what it costs */
+.mpick .muse { display: flex; gap: .3rem; min-width: 0; overflow: hidden; }
+.mpick .muse i { font: 500 .72rem/1 var(--font-name); font-style: normal; padding: .18rem .4rem; border-radius: .7rem; box-shadow: inset 0 0 0 .08rem var(--track-line); color: var(--text-body); white-space: nowrap; }
+.mpick .mprice { color: var(--text-body); white-space: nowrap; text-align: right; }
+.mpick .mprice i { font-style: normal; color: var(--text-mute); margin-inline: .15rem; }
+.mclr-word { display: inline-flex; align-items: center; gap: .45rem; font-weight: 600; }
+.mclr-word svg { width: .9rem; height: .9rem; }
+
+/* the project menu opens in place under its tile, in the plate's own width, so it never runs past the pane or the screen */
+.menuwrap.inflow > .menu { position: static; margin-top: .6rem; width: auto; min-width: 0; }
+.ppick .pbar { width: 6.5rem; flex: none; }
+.ppick .pbar .vbar { width: 100%; }
+
+/* what Add still waits for, as segments filled one by one */
+.needs { display: inline-flex; align-items: center; gap: .35rem; }
+.needs i { display: block; width: 1.7rem; height: .4rem; border-radius: .2rem; background: color-mix(in oklab, var(--text) 16%, transparent); transition: background var(--t-snap) var(--e-out); }
+.needs i.on { background: var(--text); }
+
+/* a ghost plate holds sections the way a plate does: 4u, a hairline, 4u */
+.gpane .plate.pcol { align-items: stretch; }
+.gsec { display: flex; flex-direction: column; align-items: flex-start; gap: calc(2 * var(--u)); }
+.gsec + .gsec { margin-top: calc(4 * var(--u)); padding-top: calc(4 * var(--u)); border-top: .08rem solid var(--hair); align-self: stretch; }
+
+/* a list of models: every one of the command's, pressed where it is in the list */
+.chips.qpick { gap: .45rem; }
+
+/* each card's window is a bar on the one scale the rail shares, between its model and its figure */
+.card.h .cwbar { flex: 0 0 5.5rem; margin-left: auto; }
+.card.h .cwbar + .cwin { margin-left: 0; min-width: 3rem; text-align: right; }
+.card.h .cwbar .wbar { height: .5rem; }
+.door { display: inline-flex; align-items: center; gap: .3rem; text-decoration: none; color: var(--text-body); }
+.door:hover { color: var(--text); }
+.door .go { width: .8rem; height: .8rem; }
+
+/* the marks of the one axis, faint inside every timed track, so a group without its own axis reads against the plate's */
+.etime .pd-trk u.atk { position: absolute; top: 0; bottom: 0; width: .08rem; background: color-mix(in oklab, var(--text) 16%, transparent); pointer-events: none; }

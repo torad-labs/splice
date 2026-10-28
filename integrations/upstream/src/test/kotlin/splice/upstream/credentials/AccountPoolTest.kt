@@ -117,8 +117,9 @@ class AccountPoolTest {
         primary.cooldown.markUnavailable(Long.MAX_VALUE)
 
         assertSame(backup, pool.chosen("session").account)
-        val blocked = fixture.pool(primary).exhausted("blocked")
-        assertEquals(605_800L, blocked.earliestResetEpochSeconds)
+        val single = fixture.pool(primary)
+        assertSame(primary, single.chosen("blocked").account)
+        assertEquals(605_800L, single.view(null).blockedUntilEpochSecondsByLabel["primary"])
         fixture.advanceElapsed(120_000L)
         assertSame(backup, pool.chosen("session").account)
         assertSame(primary, pool.chosen(null).account)
@@ -132,22 +133,24 @@ class AccountPoolTest {
             val primary = fixture.account("primary", primary = true)
             primary.cooldown.markUnavailable(Long.MAX_VALUE)
 
-            val failure = fixture.pool(primary).exhausted("session")
+            val pool = fixture.pool(primary)
+            assertSame(primary, pool.chosen("session").account)
 
-            assertEquals(at / 1_000L + 604_800L, failure.earliestResetEpochSeconds)
+            assertEquals(at / 1_000L + 604_800L, pool.view(null).blockedUntilEpochSecondsByLabel["primary"])
         }
     }
 
     @Test
-    fun `all exhausted reports the provider reset beyond the bounded re-probe horizon`() {
+    fun `a held login remains probeable and publishes its reset beyond the bounded re-probe horizon`() {
         val fixture = Fixture()
         val primary = fixture.account("primary", primary = true)
         val pool = fixture.pool(primary)
         primary.cooldown.markUnavailable(86_400_000L)
 
-        val failure = pool.exhausted("session")
+        val selected = pool.chosen("session")
 
-        assertEquals(87_400L, failure.earliestResetEpochSeconds)
+        assertSame(primary, selected.account)
+        assertEquals(87_400L, pool.view(null).blockedUntilEpochSecondsByLabel["primary"])
         assertEquals(120_000L, primary.cooldown.unavailableForMs())
     }
 
@@ -198,7 +201,7 @@ class AccountPoolTest {
     }
 
     @Test
-    fun `all exhausted reports the earliest account reset`() {
+    fun `all held logins select the earliest published account reset`() {
         val fixture = Fixture()
         val primary = fixture.account(
             "primary",
@@ -213,9 +216,13 @@ class AccountPoolTest {
         )
         val pool = fixture.pool(primary, backup)
 
-        val failure = pool.exhausted("session")
+        val selected = pool.chosen("session")
 
-        assertEquals(2_000L, failure.earliestResetEpochSeconds)
+        assertSame(backup, selected.account)
+        assertEquals(
+            mapOf("primary" to 3_000L, "plus-a" to 2_000L),
+            pool.view(null).blockedUntilEpochSecondsByLabel,
+        )
     }
 
     @Test
@@ -398,8 +405,8 @@ class AccountPoolTest {
         val backup = fixture.account("backup", credential = CredentialState.MISSING)
         primary.cooldown.markUnavailable(18000000L)
         val pool = fixture.pool(primary, backup)
-        assertTrue(pool.select("blocked") is Selection.Exhausted)
-        assertEquals(19000L, pool.exhausted(null).earliestResetEpochSeconds)
+        assertSame(primary, pool.chosen("blocked").account)
+        assertEquals(mapOf("primary" to 19000L), pool.view(null).blockedUntilEpochSecondsByLabel)
         assertEquals(18000000L, pool.providerResetForMs)
 
         fixture.rotateCredential(backup)
@@ -407,7 +414,8 @@ class AccountPoolTest {
         assertEquals(0L, pool.providerResetForMs)
         backup.cooldown.markUnavailable(3600000L)
         assertEquals(3600000L, pool.providerResetForMs)
-        assertEquals(4600L, pool.exhausted(null).earliestResetEpochSeconds)
+        assertSame(backup, pool.chosen(null).account)
+        assertEquals(4600L, pool.view(null).blockedUntilEpochSecondsByLabel["backup"])
     }
 
     @Test
@@ -430,7 +438,11 @@ class AccountPoolTest {
             assertEquals("backup", chosen.account.label)
             reject(chosen)
             assertTrue(pool.view(null).accounts.single { it.label == "backup" }.credential.present)
-            assertEquals(1300L, pool.exhausted(null).earliestResetEpochSeconds)
+            assertSame(primary, pool.chosen(null).account, "an auth-excluded backup cannot take the provider probe")
+            assertEquals(
+                mapOf("primary" to 19000L, "backup" to 1300L),
+                pool.view(null).blockedUntilEpochSecondsByLabel,
+            )
             assertEquals(300000L, pool.providerResetForMs)
         }
     }
@@ -547,7 +559,8 @@ class AccountPoolTestAuthOnly {
             val pool = fixture.pool(account)
             assertEquals(433000L, pool.view(null).blockedUntilEpochSecondsByLabel["primary"])
             val published = pool.view(null).blockedUntilEpochSecondsByLabel["primary"]
-            assertEquals((pool.select(null) as Selection.Exhausted).earliestResetEpochSeconds, published)
+            assertSame(account, (pool.select(null) as Selection.Chosen).account.account)
+            assertEquals(433000L, published)
             fixture.advanceWall(433000000L)
             assertEquals(emptyMap<String, Long>(), pool.view(null).blockedUntilEpochSecondsByLabel)
             assertTrue(pool.view(null).accounts.single().available)
@@ -571,7 +584,9 @@ class AccountPoolTestAuthOnly {
         val pool = fixture.pool(primary, backup)
         val published = pool.view(null).blockedUntilEpochSecondsByLabel
         assertEquals(mapOf("primary" to 5000L, "backup" to 2000L), published)
-        assertEquals(published.values.minOrNull(), (pool.select(null) as Selection.Exhausted).earliestResetEpochSeconds)
+        val selected = (pool.select(null) as Selection.Chosen).account.account
+        assertSame(backup, selected)
+        assertEquals(published.values.minOrNull(), published[selected.label])
     }
 
     @Test
@@ -592,11 +607,13 @@ class AccountPoolTestAuthOnly {
         val pool = fixture.pool(primary, backup)
         assertFalse(pool.view(null).accounts.single { it.label == "backup" }.credential.present)
         assertEquals(mapOf("primary" to 433000L), pool.view(null).blockedUntilEpochSecondsByLabel)
-        assertEquals(433000L, (pool.select(null) as Selection.Exhausted).earliestResetEpochSeconds)
+        assertSame(primary, (pool.select(null) as Selection.Chosen).account.account)
+        assertEquals(433000L, pool.view(null).blockedUntilEpochSecondsByLabel["primary"])
         fixture.rotateCredential(backup)
         backup.refreshCredentialEvidence()
         assertEquals(mapOf("primary" to 433000L, "backup" to 8200L), pool.view(null).blockedUntilEpochSecondsByLabel)
-        assertEquals(8200L, (pool.select(null) as Selection.Exhausted).earliestResetEpochSeconds)
+        assertSame(backup, (pool.select(null) as Selection.Chosen).account.account)
+        assertEquals(8200L, pool.view(null).blockedUntilEpochSecondsByLabel["backup"])
     }
 
     @Test

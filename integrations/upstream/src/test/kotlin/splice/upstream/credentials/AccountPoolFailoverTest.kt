@@ -2,8 +2,8 @@
 // one hits its limit the same command moves to the next in the order Accounts sets"). A login the provider holds on its
 // plan, by a native 429 with plan headers or a held refusal a translated provider read from the body, stays held for
 // the reset it named, and the next turn of the same session goes to the next login in the operator's order. When every
-// login is held and armed, the turn is the pool's own "earliest reset" refusal (splice-lead, Oct 12); once a horizon
-// lifts, the login whose reset is nearest is probed. A restart keeps the held login held.
+// login is held and armed, selection chooses the nearest-reset eligible login. Its own provider answer controls the
+// turn's hold; admission does not synthesize a quota refusal. A restart keeps the held login held.
 package splice.upstream.credentials
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -118,7 +118,7 @@ class AccountPoolFailoverTest {
     }
 
     @Test
-    fun `when every login is held the pool names its earliest reset, then probes the nearest once its horizon lifts`() {
+    fun `when every login is held the nearest reset is selected without clearing its provider hold`() {
         val fixture = AccountPoolTest.Fixture()
         val one = fixture.account("one", primary = true)
         val two = fixture.account("two")
@@ -130,8 +130,13 @@ class AccountPoolFailoverTest {
 
         val selection = pool.select(SESSION)
 
-        assertTrue(selection is Selection.Exhausted, "every hold is armed: the pool answers, naming its reset")
-        assertTrue((selection as Selection.Exhausted).earliestResetEpochSeconds != null, "the pool names a reset")
+        assertTrue(selection is Selection.Chosen, "an eligible login's provider answer controls the hold")
+        assertEquals("two", (selection as Selection.Chosen).account.account.label)
+        val horizons = pool.view(SESSION).blockedUntilEpochSecondsByLabel
+        assertEquals(3, horizons.size, "all three provider holds remain published")
+        assertEquals(horizons.values.minOrNull(), horizons["two"])
+        assertTrue(pool.view(SESSION).accounts.none { it.available }, "selection does not clear a provider hold")
+        assertEquals(reply("two"), two.cooldown.rateLimitReply)
         assertEquals("two", pool.nextTargetLabel(SESSION))
         fixture.advanceElapsed(MAX_RATE_LIMIT_COOLDOWN_MS + 1)
         assertEquals("two", pool.chosen(), "once the horizon lifts, the nearest reset is the one probed")

@@ -1,0 +1,3603 @@
+DefId(0:0 ~ compiler_binding_fixture[243c]) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: Crate(
+            Mod {
+                spans: ModSpans {
+                    inner_span: probe.rs:1:1: 28:61 (#0),
+                    inject_use_span: probe.rs:2:1: 2:1 (#0),
+                },
+                item_ids: [
+                    ItemId {
+                        owner_id: DefId(0:1 ~ compiler_binding_fixture[243c]::std),
+                    },
+                    ItemId {
+                        owner_id: DefId(0:2 ~ compiler_binding_fixture[243c]::{use#0}),
+                    },
+                    ItemId {
+                        owner_id: DefId(0:3 ~ compiler_binding_fixture[243c]::alpha),
+                    },
+                    ItemId {
+                        owner_id: DefId(0:9 ~ compiler_binding_fixture[243c]::beta),
+                    },
+                    ItemId {
+                        owner_id: DefId(0:14 ~ compiler_binding_fixture[243c]::{use#1}),
+                    },
+                    ItemId {
+                        owner_id: DefId(0:15 ~ compiler_binding_fixture[243c]::facade),
+                    },
+                    ItemId {
+                        owner_id: DefId(0:17 ~ compiler_binding_fixture[243c]::outer),
+                    },
+                    ItemId {
+                        owner_id: DefId(0:19 ~ compiler_binding_fixture[243c]::other),
+                    },
+                    ItemId {
+                        owner_id: DefId(0:21 ~ compiler_binding_fixture[243c]::qualified),
+                    },
+                    ItemId {
+                        owner_id: DefId(0:22 ~ compiler_binding_fixture[243c]::Choose),
+                    },
+                    ItemId {
+                        owner_id: DefId(0:24 ~ compiler_binding_fixture[243c]::{impl#0}),
+                    },
+                    ItemId {
+                        owner_id: DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic),
+                    },
+                    ItemId {
+                        owner_id: DefId(0:27 ~ compiler_binding_fixture[243c]::unicode),
+                    },
+                    ItemId {
+                        owner_id: DefId(0:28 ~ compiler_binding_fixture[243c]::Options),
+                    },
+                    ItemId {
+                        owner_id: DefId(0:30 ~ compiler_binding_fixture[243c]::Mode),
+                    },
+                    ItemId {
+                        owner_id: DefId(0:35 ~ compiler_binding_fixture[243c]::generic),
+                    },
+                ],
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+    ],
+    bodies: {},
+    opt_hash: Some(
+        Fingerprint(
+            10461034459997714053,
+            9876049802331713069,
+        ),
+    ),
+}
+DefId(0:1 ~ compiler_binding_fixture[243c]::std) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: Item(
+            Item {
+                owner_id: DefId(0:1 ~ compiler_binding_fixture[243c]::std),
+                kind: ExternCrate(
+                    None,
+                    std#1,
+                ),
+                span: no-location (#1),
+                vis_span: no-location (#1),
+                eii: false,
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+    ],
+    bodies: {},
+    opt_hash: Some(
+        Fingerprint(
+            13497563485672745357,
+            5986271099020661824,
+        ),
+    ),
+}
+DefId(0:2 ~ compiler_binding_fixture[243c]::{use#0}) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: Item(
+            Item {
+                owner_id: DefId(0:2 ~ compiler_binding_fixture[243c]::{use#0}),
+                kind: Use(
+                    Path {
+                        span: no-location (#1),
+                        res: PerNS {
+                            value_ns: Some(
+                                Err,
+                            ),
+                            type_ns: Some(
+                                Err,
+                            ),
+                            macro_ns: Some(
+                                Err,
+                            ),
+                        },
+                        segments: [
+                            PathSegment {
+                                ident: std#1,
+                                hir_id: HirId(DefId(0:2 ~ compiler_binding_fixture[243c]::{use#0}).1),
+                                res: Err,
+                                args: None,
+                                infer_args: false,
+                                delegation_child_segment: false,
+                            },
+                            PathSegment {
+                                ident: prelude#1,
+                                hir_id: HirId(DefId(0:2 ~ compiler_binding_fixture[243c]::{use#0}).2),
+                                res: Err,
+                                args: None,
+                                infer_args: false,
+                                delegation_child_segment: false,
+                            },
+                            PathSegment {
+                                ident: rust_2024#1,
+                                hir_id: HirId(DefId(0:2 ~ compiler_binding_fixture[243c]::{use#0}).3),
+                                res: Err,
+                                args: None,
+                                infer_args: false,
+                                delegation_child_segment: false,
+                            },
+                        ],
+                    },
+                    Glob,
+                ),
+                span: no-location (#1),
+                vis_span: no-location (#1),
+                eii: false,
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+        (1, 0),
+        (2, 0),
+        (3, 0),
+    ],
+    bodies: {},
+    opt_hash: Some(
+        Fingerprint(
+            6101543696677889476,
+            13763863865212452850,
+        ),
+    ),
+}
+DefId(0:3 ~ compiler_binding_fixture[243c]::alpha) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: Item(
+            Item {
+                owner_id: DefId(0:3 ~ compiler_binding_fixture[243c]::alpha),
+                kind: Mod(
+                    alpha#0,
+                    Mod {
+                        spans: ModSpans {
+                            inner_span: probe.rs:3:5: 6:2 (#0),
+                            inject_use_span: probe.rs:3:5: 3:5 (#0),
+                        },
+                        item_ids: [
+                            ItemId {
+                                owner_id: DefId(0:4 ~ compiler_binding_fixture[243c]::alpha::Worker),
+                            },
+                            ItemId {
+                                owner_id: DefId(0:6 ~ compiler_binding_fixture[243c]::alpha::{impl#0}),
+                            },
+                            ItemId {
+                                owner_id: DefId(0:8 ~ compiler_binding_fixture[243c]::alpha::helper),
+                            },
+                        ],
+                    },
+                ),
+                span: probe.rs:2:1: 6:2 (#0),
+                vis_span: probe.rs:2:1: 2:1 (#0),
+                eii: false,
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+    ],
+    bodies: {},
+    opt_hash: Some(
+        Fingerprint(
+            2961404149897668897,
+            2195061176571688831,
+        ),
+    ),
+}
+DefId(0:4 ~ compiler_binding_fixture[243c]::alpha::Worker) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: Item(
+            Item {
+                owner_id: DefId(0:4 ~ compiler_binding_fixture[243c]::alpha::Worker),
+                kind: Struct(
+                    Worker#0,
+                    Generics {
+                        params: [],
+                        predicates: [],
+                        has_where_clause_predicates: false,
+                        where_clause_span: probe.rs:3:22: 3:22 (#0),
+                        span: probe.rs:3:22: 3:22 (#0),
+                    },
+                    Unit(
+                        HirId(DefId(0:4 ~ compiler_binding_fixture[243c]::alpha::Worker).1),
+                        DefId(0:5 ~ compiler_binding_fixture[243c]::alpha::Worker::{constructor#0}),
+                    ),
+                ),
+                span: probe.rs:3:5: 3:23 (#0),
+                vis_span: probe.rs:3:5: 3:8 (#0),
+                eii: false,
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+        (1, 0),
+    ],
+    bodies: {},
+    opt_hash: Some(
+        Fingerprint(
+            18098953435262895571,
+            12561887278846188679,
+        ),
+    ),
+}
+DefId(0:6 ~ compiler_binding_fixture[243c]::alpha::{impl#0}) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: Item(
+            Item {
+                owner_id: DefId(0:6 ~ compiler_binding_fixture[243c]::alpha::{impl#0}),
+                kind: Impl(
+                    Impl {
+                        generics: Generics {
+                            params: [],
+                            predicates: [],
+                            has_where_clause_predicates: false,
+                            where_clause_span: probe.rs:4:16: 4:16 (#0),
+                            span: probe.rs:4:9: 4:9 (#0),
+                        },
+                        of_trait: None,
+                        self_ty: Ty {
+                            hir_id: HirId(DefId(0:6 ~ compiler_binding_fixture[243c]::alpha::{impl#0}).1),
+                            span: probe.rs:4:10: 4:16 (#0),
+                            kind: Path(
+                                Resolved(
+                                    None,
+                                    Path {
+                                        span: probe.rs:4:10: 4:16 (#0),
+                                        res: Def(
+                                            Struct,
+                                            DefId(0:4 ~ compiler_binding_fixture[243c]::alpha::Worker),
+                                        ),
+                                        segments: [
+                                            PathSegment {
+                                                ident: Worker#0,
+                                                hir_id: HirId(DefId(0:6 ~ compiler_binding_fixture[243c]::alpha::{impl#0}).2),
+                                                res: Def(
+                                                    Struct,
+                                                    DefId(0:4 ~ compiler_binding_fixture[243c]::alpha::Worker),
+                                                ),
+                                                args: None,
+                                                infer_args: false,
+                                                delegation_child_segment: false,
+                                            },
+                                        ],
+                                    },
+                                ),
+                            ),
+                        },
+                        items: [
+                            ImplItemId {
+                                owner_id: DefId(0:7 ~ compiler_binding_fixture[243c]::alpha::{impl#0}::run),
+                            },
+                        ],
+                        constness: NotConst,
+                    },
+                ),
+                span: probe.rs:4:5: 4:47 (#0),
+                vis_span: probe.rs:4:5: 4:5 (#0),
+                eii: false,
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+        (1, 0),
+        (2, 1),
+    ],
+    bodies: {},
+    opt_hash: Some(
+        Fingerprint(
+            12611975346128623901,
+            1146395064339140539,
+        ),
+    ),
+}
+DefId(0:8 ~ compiler_binding_fixture[243c]::alpha::helper) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: Item(
+            Item {
+                owner_id: DefId(0:8 ~ compiler_binding_fixture[243c]::alpha::helper),
+                kind: Fn {
+                    sig: FnSig {
+                        header: FnHeader {
+                            safety: Normal(
+                                Safe,
+                            ),
+                            constness: NotConst,
+                            asyncness: NotAsync,
+                            abi: Rust,
+                        },
+                        decl: FnDecl {
+                            inputs: [],
+                            output: Return(
+                                Ty {
+                                    hir_id: HirId(DefId(0:8 ~ compiler_binding_fixture[243c]::alpha::helper).4),
+                                    span: probe.rs:5:24: 5:27 (#0),
+                                    kind: Path(
+                                        Resolved(
+                                            None,
+                                            Path {
+                                                span: probe.rs:5:24: 5:27 (#0),
+                                                res: PrimTy(
+                                                    Uint(
+                                                        u32,
+                                                    ),
+                                                ),
+                                                segments: [
+                                                    PathSegment {
+                                                        ident: u32#0,
+                                                        hir_id: HirId(DefId(0:8 ~ compiler_binding_fixture[243c]::alpha::helper).5),
+                                                        res: PrimTy(
+                                                            Uint(
+                                                                u32,
+                                                            ),
+                                                        ),
+                                                        args: None,
+                                                        infer_args: false,
+                                                        delegation_child_segment: false,
+                                                    },
+                                                ],
+                                            },
+                                        ),
+                                    ),
+                                },
+                            ),
+                            fn_decl_kind: FnDeclFlags(
+                                "ImplicitSelfKind(None)",
+                                "NoLifetimeElision",
+                            ),
+                        },
+                        span: probe.rs:5:5: 5:27 (#0),
+                    },
+                    ident: helper#0,
+                    generics: Generics {
+                        params: [],
+                        predicates: [],
+                        has_where_clause_predicates: false,
+                        where_clause_span: probe.rs:5:27: 5:27 (#0),
+                        span: probe.rs:5:18: 5:18 (#0),
+                    },
+                    body: BodyId {
+                        hir_id: HirId(DefId(0:8 ~ compiler_binding_fixture[243c]::alpha::helper).3),
+                    },
+                    has_body: true,
+                },
+                span: probe.rs:5:5: 5:33 (#0),
+                vis_span: probe.rs:5:5: 5:8 (#0),
+                eii: false,
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+        (1, 3),
+        (2, 1),
+        (3, 0),
+        (4, 0),
+        (5, 4),
+    ],
+    bodies: {
+        3: Body {
+            params: [],
+            value: Expr {
+                hir_id: HirId(DefId(0:8 ~ compiler_binding_fixture[243c]::alpha::helper).3),
+                kind: Block(
+                    Block {
+                        stmts: [],
+                        expr: Some(
+                            Expr {
+                                hir_id: HirId(DefId(0:8 ~ compiler_binding_fixture[243c]::alpha::helper).2),
+                                kind: Lit(
+                                    Spanned {
+                                        node: Int(
+                                            Pu128(
+                                                7,
+                                            ),
+                                            Unsuffixed,
+                                        ),
+                                        span: probe.rs:5:30: 5:31 (#0),
+                                    },
+                                ),
+                                span: probe.rs:5:30: 5:31 (#0),
+                            },
+                        ),
+                        hir_id: HirId(DefId(0:8 ~ compiler_binding_fixture[243c]::alpha::helper).1),
+                        rules: DefaultBlock,
+                        span: probe.rs:5:28: 5:33 (#0),
+                        targeted_by_break: false,
+                    },
+                    None,
+                ),
+                span: probe.rs:5:28: 5:33 (#0),
+            },
+        },
+    },
+    opt_hash: Some(
+        Fingerprint(
+            8496931903586560120,
+            14515916049882139215,
+        ),
+    ),
+}
+DefId(0:9 ~ compiler_binding_fixture[243c]::beta) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: Item(
+            Item {
+                owner_id: DefId(0:9 ~ compiler_binding_fixture[243c]::beta),
+                kind: Mod(
+                    beta#0,
+                    Mod {
+                        spans: ModSpans {
+                            inner_span: probe.rs:8:5: 10:2 (#0),
+                            inject_use_span: probe.rs:8:5: 8:5 (#0),
+                        },
+                        item_ids: [
+                            ItemId {
+                                owner_id: DefId(0:10 ~ compiler_binding_fixture[243c]::beta::Worker),
+                            },
+                            ItemId {
+                                owner_id: DefId(0:12 ~ compiler_binding_fixture[243c]::beta::{impl#0}),
+                            },
+                        ],
+                    },
+                ),
+                span: probe.rs:7:1: 10:2 (#0),
+                vis_span: probe.rs:7:1: 7:1 (#0),
+                eii: false,
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+    ],
+    bodies: {},
+    opt_hash: Some(
+        Fingerprint(
+            7120742215061168568,
+            7210427486652081379,
+        ),
+    ),
+}
+DefId(0:10 ~ compiler_binding_fixture[243c]::beta::Worker) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: Item(
+            Item {
+                owner_id: DefId(0:10 ~ compiler_binding_fixture[243c]::beta::Worker),
+                kind: Struct(
+                    Worker#0,
+                    Generics {
+                        params: [],
+                        predicates: [],
+                        has_where_clause_predicates: false,
+                        where_clause_span: probe.rs:8:22: 8:22 (#0),
+                        span: probe.rs:8:22: 8:22 (#0),
+                    },
+                    Unit(
+                        HirId(DefId(0:10 ~ compiler_binding_fixture[243c]::beta::Worker).1),
+                        DefId(0:11 ~ compiler_binding_fixture[243c]::beta::Worker::{constructor#0}),
+                    ),
+                ),
+                span: probe.rs:8:5: 8:23 (#0),
+                vis_span: probe.rs:8:5: 8:8 (#0),
+                eii: false,
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+        (1, 0),
+    ],
+    bodies: {},
+    opt_hash: Some(
+        Fingerprint(
+            8583581670800572278,
+            10650992710107708312,
+        ),
+    ),
+}
+DefId(0:12 ~ compiler_binding_fixture[243c]::beta::{impl#0}) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: Item(
+            Item {
+                owner_id: DefId(0:12 ~ compiler_binding_fixture[243c]::beta::{impl#0}),
+                kind: Impl(
+                    Impl {
+                        generics: Generics {
+                            params: [],
+                            predicates: [],
+                            has_where_clause_predicates: false,
+                            where_clause_span: probe.rs:9:16: 9:16 (#0),
+                            span: probe.rs:9:9: 9:9 (#0),
+                        },
+                        of_trait: None,
+                        self_ty: Ty {
+                            hir_id: HirId(DefId(0:12 ~ compiler_binding_fixture[243c]::beta::{impl#0}).1),
+                            span: probe.rs:9:10: 9:16 (#0),
+                            kind: Path(
+                                Resolved(
+                                    None,
+                                    Path {
+                                        span: probe.rs:9:10: 9:16 (#0),
+                                        res: Def(
+                                            Struct,
+                                            DefId(0:10 ~ compiler_binding_fixture[243c]::beta::Worker),
+                                        ),
+                                        segments: [
+                                            PathSegment {
+                                                ident: Worker#0,
+                                                hir_id: HirId(DefId(0:12 ~ compiler_binding_fixture[243c]::beta::{impl#0}).2),
+                                                res: Def(
+                                                    Struct,
+                                                    DefId(0:10 ~ compiler_binding_fixture[243c]::beta::Worker),
+                                                ),
+                                                args: None,
+                                                infer_args: false,
+                                                delegation_child_segment: false,
+                                            },
+                                        ],
+                                    },
+                                ),
+                            ),
+                        },
+                        items: [
+                            ImplItemId {
+                                owner_id: DefId(0:13 ~ compiler_binding_fixture[243c]::beta::{impl#0}::run),
+                            },
+                        ],
+                        constness: NotConst,
+                    },
+                ),
+                span: probe.rs:9:5: 9:47 (#0),
+                vis_span: probe.rs:9:5: 9:5 (#0),
+                eii: false,
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+        (1, 0),
+        (2, 1),
+    ],
+    bodies: {},
+    opt_hash: Some(
+        Fingerprint(
+            7538716747776772153,
+            16497612470326264182,
+        ),
+    ),
+}
+DefId(0:14 ~ compiler_binding_fixture[243c]::{use#1}) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: Item(
+            Item {
+                owner_id: DefId(0:14 ~ compiler_binding_fixture[243c]::{use#1}),
+                kind: Use(
+                    Path {
+                        span: probe.rs:11:9: 11:22 (#0),
+                        res: PerNS {
+                            value_ns: Some(
+                                Def(
+                                    Ctor(
+                                        Struct,
+                                        Const,
+                                    ),
+                                    DefId(0:5 ~ compiler_binding_fixture[243c]::alpha::Worker::{constructor#0}),
+                                ),
+                            ),
+                            type_ns: Some(
+                                Def(
+                                    Struct,
+                                    DefId(0:4 ~ compiler_binding_fixture[243c]::alpha::Worker),
+                                ),
+                            ),
+                            macro_ns: None,
+                        },
+                        segments: [
+                            PathSegment {
+                                ident: alpha#0,
+                                hir_id: HirId(DefId(0:14 ~ compiler_binding_fixture[243c]::{use#1}).1),
+                                res: Def(
+                                    Mod,
+                                    DefId(0:3 ~ compiler_binding_fixture[243c]::alpha),
+                                ),
+                                args: None,
+                                infer_args: false,
+                                delegation_child_segment: false,
+                            },
+                            PathSegment {
+                                ident: Worker#0,
+                                hir_id: HirId(DefId(0:14 ~ compiler_binding_fixture[243c]::{use#1}).2),
+                                res: Err,
+                                args: None,
+                                infer_args: false,
+                                delegation_child_segment: false,
+                            },
+                        ],
+                    },
+                    Single(
+                        PublicWorker#0,
+                    ),
+                ),
+                span: probe.rs:11:1: 11:39 (#0),
+                vis_span: probe.rs:11:1: 11:4 (#0),
+                eii: false,
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+        (1, 0),
+        (2, 0),
+    ],
+    bodies: {},
+    opt_hash: Some(
+        Fingerprint(
+            11149433619968349372,
+            2719978470993641522,
+        ),
+    ),
+}
+DefId(0:15 ~ compiler_binding_fixture[243c]::facade) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: Item(
+            Item {
+                owner_id: DefId(0:15 ~ compiler_binding_fixture[243c]::facade),
+                kind: Mod(
+                    facade#0,
+                    Mod {
+                        spans: ModSpans {
+                            inner_span: probe.rs:12:14: 12:40 (#0),
+                            inject_use_span: probe.rs:12:14: 12:14 (#0),
+                        },
+                        item_ids: [
+                            ItemId {
+                                owner_id: DefId(0:16 ~ compiler_binding_fixture[243c]::facade::{use#0}),
+                            },
+                        ],
+                    },
+                ),
+                span: probe.rs:12:1: 12:40 (#0),
+                vis_span: probe.rs:12:1: 12:1 (#0),
+                eii: false,
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+    ],
+    bodies: {},
+    opt_hash: Some(
+        Fingerprint(
+            17063111142572910004,
+            15931599812816600083,
+        ),
+    ),
+}
+DefId(0:16 ~ compiler_binding_fixture[243c]::facade::{use#0}) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: Item(
+            Item {
+                owner_id: DefId(0:16 ~ compiler_binding_fixture[243c]::facade::{use#0}),
+                kind: Use(
+                    Path {
+                        span: probe.rs:12:22: 12:34 (#0),
+                        res: PerNS {
+                            value_ns: None,
+                            type_ns: Some(
+                                Def(
+                                    Mod,
+                                    DefId(0:3 ~ compiler_binding_fixture[243c]::alpha),
+                                ),
+                            ),
+                            macro_ns: None,
+                        },
+                        segments: [
+                            PathSegment {
+                                ident: super#0,
+                                hir_id: HirId(DefId(0:16 ~ compiler_binding_fixture[243c]::facade::{use#0}).1),
+                                res: Err,
+                                args: None,
+                                infer_args: false,
+                                delegation_child_segment: false,
+                            },
+                            PathSegment {
+                                ident: alpha#0,
+                                hir_id: HirId(DefId(0:16 ~ compiler_binding_fixture[243c]::facade::{use#0}).2),
+                                res: Def(
+                                    Mod,
+                                    DefId(0:3 ~ compiler_binding_fixture[243c]::alpha),
+                                ),
+                                args: None,
+                                infer_args: false,
+                                delegation_child_segment: false,
+                            },
+                        ],
+                    },
+                    Glob,
+                ),
+                span: probe.rs:12:14: 12:38 (#0),
+                vis_span: probe.rs:12:14: 12:17 (#0),
+                eii: false,
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+        (1, 0),
+        (2, 0),
+    ],
+    bodies: {},
+    opt_hash: Some(
+        Fingerprint(
+            9390465472536154718,
+            3228672943096484503,
+        ),
+    ),
+}
+DefId(0:17 ~ compiler_binding_fixture[243c]::outer) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: Item(
+            Item {
+                owner_id: DefId(0:17 ~ compiler_binding_fixture[243c]::outer),
+                kind: Fn {
+                    sig: FnSig {
+                        header: FnHeader {
+                            safety: Normal(
+                                Safe,
+                            ),
+                            constness: NotConst,
+                            asyncness: NotAsync,
+                            abi: Rust,
+                        },
+                        decl: FnDecl {
+                            inputs: [],
+                            output: Return(
+                                Ty {
+                                    hir_id: HirId(DefId(0:17 ~ compiler_binding_fixture[243c]::outer).12),
+                                    span: probe.rs:13:19: 13:22 (#0),
+                                    kind: Path(
+                                        Resolved(
+                                            None,
+                                            Path {
+                                                span: probe.rs:13:19: 13:22 (#0),
+                                                res: PrimTy(
+                                                    Uint(
+                                                        u32,
+                                                    ),
+                                                ),
+                                                segments: [
+                                                    PathSegment {
+                                                        ident: u32#0,
+                                                        hir_id: HirId(DefId(0:17 ~ compiler_binding_fixture[243c]::outer).13),
+                                                        res: PrimTy(
+                                                            Uint(
+                                                                u32,
+                                                            ),
+                                                        ),
+                                                        args: None,
+                                                        infer_args: false,
+                                                        delegation_child_segment: false,
+                                                    },
+                                                ],
+                                            },
+                                        ),
+                                    ),
+                                },
+                            ),
+                            fn_decl_kind: FnDeclFlags(
+                                "ImplicitSelfKind(None)",
+                                "NoLifetimeElision",
+                            ),
+                        },
+                        span: probe.rs:13:1: 13:22 (#0),
+                    },
+                    ident: outer#0,
+                    generics: Generics {
+                        params: [],
+                        predicates: [],
+                        has_where_clause_predicates: false,
+                        where_clause_span: probe.rs:13:22: 13:22 (#0),
+                        span: probe.rs:13:13: 13:13 (#0),
+                    },
+                    body: BodyId {
+                        hir_id: HirId(DefId(0:17 ~ compiler_binding_fixture[243c]::outer).11),
+                    },
+                    has_body: true,
+                },
+                span: probe.rs:13:1: 16:2 (#0),
+                vis_span: probe.rs:13:1: 13:4 (#0),
+                eii: false,
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+        (1, 11),
+        (2, 1),
+        (3, 1),
+        (4, 3),
+        (5, 4),
+        (6, 5),
+        (7, 3),
+        (8, 7),
+        (9, 8),
+        (10, 8),
+        (11, 0),
+        (12, 0),
+        (13, 12),
+    ],
+    bodies: {
+        11: Body {
+            params: [],
+            value: Expr {
+                hir_id: HirId(DefId(0:17 ~ compiler_binding_fixture[243c]::outer).11),
+                kind: Block(
+                    Block {
+                        stmts: [
+                            Stmt {
+                                hir_id: HirId(DefId(0:17 ~ compiler_binding_fixture[243c]::outer).2),
+                                kind: Item(
+                                    ItemId {
+                                        owner_id: DefId(0:18 ~ compiler_binding_fixture[243c]::outer::nested),
+                                    },
+                                ),
+                                span: probe.rs:14:5: 14:48 (#0),
+                            },
+                        ],
+                        expr: Some(
+                            Expr {
+                                hir_id: HirId(DefId(0:17 ~ compiler_binding_fixture[243c]::outer).3),
+                                kind: Binary(
+                                    Spanned {
+                                        node: Add,
+                                        span: probe.rs:15:14: 15:15 (#0),
+                                    },
+                                    Expr {
+                                        hir_id: HirId(DefId(0:17 ~ compiler_binding_fixture[243c]::outer).4),
+                                        kind: Call(
+                                            Expr {
+                                                hir_id: HirId(DefId(0:17 ~ compiler_binding_fixture[243c]::outer).5),
+                                                kind: Path(
+                                                    Resolved(
+                                                        None,
+                                                        Path {
+                                                            span: probe.rs:15:5: 15:11 (#0),
+                                                            res: Def(
+                                                                Fn,
+                                                                DefId(0:18 ~ compiler_binding_fixture[243c]::outer::nested),
+                                                            ),
+                                                            segments: [
+                                                                PathSegment {
+                                                                    ident: nested#0,
+                                                                    hir_id: HirId(DefId(0:17 ~ compiler_binding_fixture[243c]::outer).6),
+                                                                    res: Def(
+                                                                        Fn,
+                                                                        DefId(0:18 ~ compiler_binding_fixture[243c]::outer::nested),
+                                                                    ),
+                                                                    args: None,
+                                                                    infer_args: true,
+                                                                    delegation_child_segment: false,
+                                                                },
+                                                            ],
+                                                        },
+                                                    ),
+                                                ),
+                                                span: probe.rs:15:5: 15:11 (#0),
+                                            },
+                                            [],
+                                        ),
+                                        span: probe.rs:15:5: 15:13 (#0),
+                                    },
+                                    Expr {
+                                        hir_id: HirId(DefId(0:17 ~ compiler_binding_fixture[243c]::outer).7),
+                                        kind: Call(
+                                            Expr {
+                                                hir_id: HirId(DefId(0:17 ~ compiler_binding_fixture[243c]::outer).8),
+                                                kind: Path(
+                                                    Resolved(
+                                                        None,
+                                                        Path {
+                                                            span: probe.rs:15:16: 15:30 (#0),
+                                                            res: Def(
+                                                                Fn,
+                                                                DefId(0:8 ~ compiler_binding_fixture[243c]::alpha::helper),
+                                                            ),
+                                                            segments: [
+                                                                PathSegment {
+                                                                    ident: facade#0,
+                                                                    hir_id: HirId(DefId(0:17 ~ compiler_binding_fixture[243c]::outer).9),
+                                                                    res: Def(
+                                                                        Mod,
+                                                                        DefId(0:15 ~ compiler_binding_fixture[243c]::facade),
+                                                                    ),
+                                                                    args: None,
+                                                                    infer_args: true,
+                                                                    delegation_child_segment: false,
+                                                                },
+                                                                PathSegment {
+                                                                    ident: helper#0,
+                                                                    hir_id: HirId(DefId(0:17 ~ compiler_binding_fixture[243c]::outer).10),
+                                                                    res: Def(
+                                                                        Fn,
+                                                                        DefId(0:8 ~ compiler_binding_fixture[243c]::alpha::helper),
+                                                                    ),
+                                                                    args: None,
+                                                                    infer_args: true,
+                                                                    delegation_child_segment: false,
+                                                                },
+                                                            ],
+                                                        },
+                                                    ),
+                                                ),
+                                                span: probe.rs:15:16: 15:30 (#0),
+                                            },
+                                            [],
+                                        ),
+                                        span: probe.rs:15:16: 15:32 (#0),
+                                    },
+                                ),
+                                span: probe.rs:15:5: 15:32 (#0),
+                            },
+                        ),
+                        hir_id: HirId(DefId(0:17 ~ compiler_binding_fixture[243c]::outer).1),
+                        rules: DefaultBlock,
+                        span: probe.rs:13:23: 16:2 (#0),
+                        targeted_by_break: false,
+                    },
+                    None,
+                ),
+                span: probe.rs:13:23: 16:2 (#0),
+            },
+        },
+    },
+    opt_hash: Some(
+        Fingerprint(
+            6344192850362684267,
+            17401152981676268268,
+        ),
+    ),
+}
+DefId(0:18 ~ compiler_binding_fixture[243c]::outer::nested) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: Item(
+            Item {
+                owner_id: DefId(0:18 ~ compiler_binding_fixture[243c]::outer::nested),
+                kind: Fn {
+                    sig: FnSig {
+                        header: FnHeader {
+                            safety: Normal(
+                                Safe,
+                            ),
+                            constness: NotConst,
+                            asyncness: NotAsync,
+                            abi: Rust,
+                        },
+                        decl: FnDecl {
+                            inputs: [],
+                            output: Return(
+                                Ty {
+                                    hir_id: HirId(DefId(0:18 ~ compiler_binding_fixture[243c]::outer::nested).9),
+                                    span: probe.rs:14:20: 14:23 (#0),
+                                    kind: Path(
+                                        Resolved(
+                                            None,
+                                            Path {
+                                                span: probe.rs:14:20: 14:23 (#0),
+                                                res: PrimTy(
+                                                    Uint(
+                                                        u32,
+                                                    ),
+                                                ),
+                                                segments: [
+                                                    PathSegment {
+                                                        ident: u32#0,
+                                                        hir_id: HirId(DefId(0:18 ~ compiler_binding_fixture[243c]::outer::nested).10),
+                                                        res: PrimTy(
+                                                            Uint(
+                                                                u32,
+                                                            ),
+                                                        ),
+                                                        args: None,
+                                                        infer_args: false,
+                                                        delegation_child_segment: false,
+                                                    },
+                                                ],
+                                            },
+                                        ),
+                                    ),
+                                },
+                            ),
+                            fn_decl_kind: FnDeclFlags(
+                                "ImplicitSelfKind(None)",
+                                "NoLifetimeElision",
+                            ),
+                        },
+                        span: probe.rs:14:5: 14:23 (#0),
+                    },
+                    ident: nested#0,
+                    generics: Generics {
+                        params: [],
+                        predicates: [],
+                        has_where_clause_predicates: false,
+                        where_clause_span: probe.rs:14:23: 14:23 (#0),
+                        span: probe.rs:14:14: 14:14 (#0),
+                    },
+                    body: BodyId {
+                        hir_id: HirId(DefId(0:18 ~ compiler_binding_fixture[243c]::outer::nested).8),
+                    },
+                    has_body: true,
+                },
+                span: probe.rs:14:5: 14:48 (#0),
+                vis_span: probe.rs:14:5: 14:5 (#0),
+                eii: false,
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+        (1, 8),
+        (2, 1),
+        (3, 2),
+        (4, 6),
+        (5, 6),
+        (6, 3),
+        (7, 3),
+        (8, 0),
+        (9, 0),
+        (10, 9),
+    ],
+    bodies: {
+        8: Body {
+            params: [],
+            value: Expr {
+                hir_id: HirId(DefId(0:18 ~ compiler_binding_fixture[243c]::outer::nested).8),
+                kind: Block(
+                    Block {
+                        stmts: [],
+                        expr: Some(
+                            Expr {
+                                hir_id: HirId(DefId(0:18 ~ compiler_binding_fixture[243c]::outer::nested).2),
+                                kind: Call(
+                                    Expr {
+                                        hir_id: HirId(DefId(0:18 ~ compiler_binding_fixture[243c]::outer::nested).3),
+                                        kind: Path(
+                                            TypeRelative(
+                                                Ty {
+                                                    hir_id: HirId(DefId(0:18 ~ compiler_binding_fixture[243c]::outer::nested).6),
+                                                    span: probe.rs:14:26: 14:39 (#0),
+                                                    kind: Path(
+                                                        Resolved(
+                                                            None,
+                                                            Path {
+                                                                span: probe.rs:14:26: 14:39 (#0),
+                                                                res: Def(
+                                                                    Struct,
+                                                                    DefId(0:4 ~ compiler_binding_fixture[243c]::alpha::Worker),
+                                                                ),
+                                                                segments: [
+                                                                    PathSegment {
+                                                                        ident: alpha#0,
+                                                                        hir_id: HirId(DefId(0:18 ~ compiler_binding_fixture[243c]::outer::nested).4),
+                                                                        res: Def(
+                                                                            Mod,
+                                                                            DefId(0:3 ~ compiler_binding_fixture[243c]::alpha),
+                                                                        ),
+                                                                        args: None,
+                                                                        infer_args: true,
+                                                                        delegation_child_segment: false,
+                                                                    },
+                                                                    PathSegment {
+                                                                        ident: Worker#0,
+                                                                        hir_id: HirId(DefId(0:18 ~ compiler_binding_fixture[243c]::outer::nested).5),
+                                                                        res: Def(
+                                                                            Struct,
+                                                                            DefId(0:4 ~ compiler_binding_fixture[243c]::alpha::Worker),
+                                                                        ),
+                                                                        args: None,
+                                                                        infer_args: true,
+                                                                        delegation_child_segment: false,
+                                                                    },
+                                                                ],
+                                                            },
+                                                        ),
+                                                    ),
+                                                },
+                                                PathSegment {
+                                                    ident: run#0,
+                                                    hir_id: HirId(DefId(0:18 ~ compiler_binding_fixture[243c]::outer::nested).7),
+                                                    res: Err,
+                                                    args: None,
+                                                    infer_args: true,
+                                                    delegation_child_segment: false,
+                                                },
+                                            ),
+                                        ),
+                                        span: probe.rs:14:26: 14:44 (#0),
+                                    },
+                                    [],
+                                ),
+                                span: probe.rs:14:26: 14:46 (#0),
+                            },
+                        ),
+                        hir_id: HirId(DefId(0:18 ~ compiler_binding_fixture[243c]::outer::nested).1),
+                        rules: DefaultBlock,
+                        span: probe.rs:14:24: 14:48 (#0),
+                        targeted_by_break: false,
+                    },
+                    None,
+                ),
+                span: probe.rs:14:24: 14:48 (#0),
+            },
+        },
+    },
+    opt_hash: Some(
+        Fingerprint(
+            1585493307987118415,
+            4673280409903627462,
+        ),
+    ),
+}
+DefId(0:19 ~ compiler_binding_fixture[243c]::other) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: Item(
+            Item {
+                owner_id: DefId(0:19 ~ compiler_binding_fixture[243c]::other),
+                kind: Fn {
+                    sig: FnSig {
+                        header: FnHeader {
+                            safety: Normal(
+                                Safe,
+                            ),
+                            constness: NotConst,
+                            asyncness: NotAsync,
+                            abi: Rust,
+                        },
+                        decl: FnDecl {
+                            inputs: [],
+                            output: Return(
+                                Ty {
+                                    hir_id: HirId(DefId(0:19 ~ compiler_binding_fixture[243c]::other).7),
+                                    span: probe.rs:17:19: 17:22 (#0),
+                                    kind: Path(
+                                        Resolved(
+                                            None,
+                                            Path {
+                                                span: probe.rs:17:19: 17:22 (#0),
+                                                res: PrimTy(
+                                                    Uint(
+                                                        u32,
+                                                    ),
+                                                ),
+                                                segments: [
+                                                    PathSegment {
+                                                        ident: u32#0,
+                                                        hir_id: HirId(DefId(0:19 ~ compiler_binding_fixture[243c]::other).8),
+                                                        res: PrimTy(
+                                                            Uint(
+                                                                u32,
+                                                            ),
+                                                        ),
+                                                        args: None,
+                                                        infer_args: false,
+                                                        delegation_child_segment: false,
+                                                    },
+                                                ],
+                                            },
+                                        ),
+                                    ),
+                                },
+                            ),
+                            fn_decl_kind: FnDeclFlags(
+                                "ImplicitSelfKind(None)",
+                                "NoLifetimeElision",
+                            ),
+                        },
+                        span: probe.rs:17:1: 17:22 (#0),
+                    },
+                    ident: other#0,
+                    generics: Generics {
+                        params: [],
+                        predicates: [],
+                        has_where_clause_predicates: false,
+                        where_clause_span: probe.rs:17:22: 17:22 (#0),
+                        span: probe.rs:17:13: 17:13 (#0),
+                    },
+                    body: BodyId {
+                        hir_id: HirId(DefId(0:19 ~ compiler_binding_fixture[243c]::other).6),
+                    },
+                    has_body: true,
+                },
+                span: probe.rs:17:1: 20:2 (#0),
+                vis_span: probe.rs:17:1: 17:4 (#0),
+                eii: false,
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+        (1, 6),
+        (2, 1),
+        (3, 1),
+        (4, 3),
+        (5, 4),
+        (6, 0),
+        (7, 0),
+        (8, 7),
+    ],
+    bodies: {
+        6: Body {
+            params: [],
+            value: Expr {
+                hir_id: HirId(DefId(0:19 ~ compiler_binding_fixture[243c]::other).6),
+                kind: Block(
+                    Block {
+                        stmts: [
+                            Stmt {
+                                hir_id: HirId(DefId(0:19 ~ compiler_binding_fixture[243c]::other).2),
+                                kind: Item(
+                                    ItemId {
+                                        owner_id: DefId(0:20 ~ compiler_binding_fixture[243c]::other::nested),
+                                    },
+                                ),
+                                span: probe.rs:18:5: 18:47 (#0),
+                            },
+                        ],
+                        expr: Some(
+                            Expr {
+                                hir_id: HirId(DefId(0:19 ~ compiler_binding_fixture[243c]::other).3),
+                                kind: Call(
+                                    Expr {
+                                        hir_id: HirId(DefId(0:19 ~ compiler_binding_fixture[243c]::other).4),
+                                        kind: Path(
+                                            Resolved(
+                                                None,
+                                                Path {
+                                                    span: probe.rs:19:5: 19:11 (#0),
+                                                    res: Def(
+                                                        Fn,
+                                                        DefId(0:20 ~ compiler_binding_fixture[243c]::other::nested),
+                                                    ),
+                                                    segments: [
+                                                        PathSegment {
+                                                            ident: nested#0,
+                                                            hir_id: HirId(DefId(0:19 ~ compiler_binding_fixture[243c]::other).5),
+                                                            res: Def(
+                                                                Fn,
+                                                                DefId(0:20 ~ compiler_binding_fixture[243c]::other::nested),
+                                                            ),
+                                                            args: None,
+                                                            infer_args: true,
+                                                            delegation_child_segment: false,
+                                                        },
+                                                    ],
+                                                },
+                                            ),
+                                        ),
+                                        span: probe.rs:19:5: 19:11 (#0),
+                                    },
+                                    [],
+                                ),
+                                span: probe.rs:19:5: 19:13 (#0),
+                            },
+                        ),
+                        hir_id: HirId(DefId(0:19 ~ compiler_binding_fixture[243c]::other).1),
+                        rules: DefaultBlock,
+                        span: probe.rs:17:23: 20:2 (#0),
+                        targeted_by_break: false,
+                    },
+                    None,
+                ),
+                span: probe.rs:17:23: 20:2 (#0),
+            },
+        },
+    },
+    opt_hash: Some(
+        Fingerprint(
+            13099494350559206733,
+            5635551590013531749,
+        ),
+    ),
+}
+DefId(0:20 ~ compiler_binding_fixture[243c]::other::nested) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: Item(
+            Item {
+                owner_id: DefId(0:20 ~ compiler_binding_fixture[243c]::other::nested),
+                kind: Fn {
+                    sig: FnSig {
+                        header: FnHeader {
+                            safety: Normal(
+                                Safe,
+                            ),
+                            constness: NotConst,
+                            asyncness: NotAsync,
+                            abi: Rust,
+                        },
+                        decl: FnDecl {
+                            inputs: [],
+                            output: Return(
+                                Ty {
+                                    hir_id: HirId(DefId(0:20 ~ compiler_binding_fixture[243c]::other::nested).9),
+                                    span: probe.rs:18:20: 18:23 (#0),
+                                    kind: Path(
+                                        Resolved(
+                                            None,
+                                            Path {
+                                                span: probe.rs:18:20: 18:23 (#0),
+                                                res: PrimTy(
+                                                    Uint(
+                                                        u32,
+                                                    ),
+                                                ),
+                                                segments: [
+                                                    PathSegment {
+                                                        ident: u32#0,
+                                                        hir_id: HirId(DefId(0:20 ~ compiler_binding_fixture[243c]::other::nested).10),
+                                                        res: PrimTy(
+                                                            Uint(
+                                                                u32,
+                                                            ),
+                                                        ),
+                                                        args: None,
+                                                        infer_args: false,
+                                                        delegation_child_segment: false,
+                                                    },
+                                                ],
+                                            },
+                                        ),
+                                    ),
+                                },
+                            ),
+                            fn_decl_kind: FnDeclFlags(
+                                "ImplicitSelfKind(None)",
+                                "NoLifetimeElision",
+                            ),
+                        },
+                        span: probe.rs:18:5: 18:23 (#0),
+                    },
+                    ident: nested#0,
+                    generics: Generics {
+                        params: [],
+                        predicates: [],
+                        has_where_clause_predicates: false,
+                        where_clause_span: probe.rs:18:23: 18:23 (#0),
+                        span: probe.rs:18:14: 18:14 (#0),
+                    },
+                    body: BodyId {
+                        hir_id: HirId(DefId(0:20 ~ compiler_binding_fixture[243c]::other::nested).8),
+                    },
+                    has_body: true,
+                },
+                span: probe.rs:18:5: 18:47 (#0),
+                vis_span: probe.rs:18:5: 18:5 (#0),
+                eii: false,
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+        (1, 8),
+        (2, 1),
+        (3, 2),
+        (4, 6),
+        (5, 6),
+        (6, 3),
+        (7, 3),
+        (8, 0),
+        (9, 0),
+        (10, 9),
+    ],
+    bodies: {
+        8: Body {
+            params: [],
+            value: Expr {
+                hir_id: HirId(DefId(0:20 ~ compiler_binding_fixture[243c]::other::nested).8),
+                kind: Block(
+                    Block {
+                        stmts: [],
+                        expr: Some(
+                            Expr {
+                                hir_id: HirId(DefId(0:20 ~ compiler_binding_fixture[243c]::other::nested).2),
+                                kind: Call(
+                                    Expr {
+                                        hir_id: HirId(DefId(0:20 ~ compiler_binding_fixture[243c]::other::nested).3),
+                                        kind: Path(
+                                            TypeRelative(
+                                                Ty {
+                                                    hir_id: HirId(DefId(0:20 ~ compiler_binding_fixture[243c]::other::nested).6),
+                                                    span: probe.rs:18:26: 18:38 (#0),
+                                                    kind: Path(
+                                                        Resolved(
+                                                            None,
+                                                            Path {
+                                                                span: probe.rs:18:26: 18:38 (#0),
+                                                                res: Def(
+                                                                    Struct,
+                                                                    DefId(0:10 ~ compiler_binding_fixture[243c]::beta::Worker),
+                                                                ),
+                                                                segments: [
+                                                                    PathSegment {
+                                                                        ident: beta#0,
+                                                                        hir_id: HirId(DefId(0:20 ~ compiler_binding_fixture[243c]::other::nested).4),
+                                                                        res: Def(
+                                                                            Mod,
+                                                                            DefId(0:9 ~ compiler_binding_fixture[243c]::beta),
+                                                                        ),
+                                                                        args: None,
+                                                                        infer_args: true,
+                                                                        delegation_child_segment: false,
+                                                                    },
+                                                                    PathSegment {
+                                                                        ident: Worker#0,
+                                                                        hir_id: HirId(DefId(0:20 ~ compiler_binding_fixture[243c]::other::nested).5),
+                                                                        res: Def(
+                                                                            Struct,
+                                                                            DefId(0:10 ~ compiler_binding_fixture[243c]::beta::Worker),
+                                                                        ),
+                                                                        args: None,
+                                                                        infer_args: true,
+                                                                        delegation_child_segment: false,
+                                                                    },
+                                                                ],
+                                                            },
+                                                        ),
+                                                    ),
+                                                },
+                                                PathSegment {
+                                                    ident: run#0,
+                                                    hir_id: HirId(DefId(0:20 ~ compiler_binding_fixture[243c]::other::nested).7),
+                                                    res: Err,
+                                                    args: None,
+                                                    infer_args: true,
+                                                    delegation_child_segment: false,
+                                                },
+                                            ),
+                                        ),
+                                        span: probe.rs:18:26: 18:43 (#0),
+                                    },
+                                    [],
+                                ),
+                                span: probe.rs:18:26: 18:45 (#0),
+                            },
+                        ),
+                        hir_id: HirId(DefId(0:20 ~ compiler_binding_fixture[243c]::other::nested).1),
+                        rules: DefaultBlock,
+                        span: probe.rs:18:24: 18:47 (#0),
+                        targeted_by_break: false,
+                    },
+                    None,
+                ),
+                span: probe.rs:18:24: 18:47 (#0),
+            },
+        },
+    },
+    opt_hash: Some(
+        Fingerprint(
+            5701391056433118920,
+            12398054494441571005,
+        ),
+    ),
+}
+DefId(0:21 ~ compiler_binding_fixture[243c]::qualified) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: Item(
+            Item {
+                owner_id: DefId(0:21 ~ compiler_binding_fixture[243c]::qualified),
+                kind: Fn {
+                    sig: FnSig {
+                        header: FnHeader {
+                            safety: Normal(
+                                Safe,
+                            ),
+                            constness: NotConst,
+                            asyncness: NotAsync,
+                            abi: Rust,
+                        },
+                        decl: FnDecl {
+                            inputs: [],
+                            output: Return(
+                                Ty {
+                                    hir_id: HirId(DefId(0:21 ~ compiler_binding_fixture[243c]::qualified).16),
+                                    span: probe.rs:21:23: 21:26 (#0),
+                                    kind: Path(
+                                        Resolved(
+                                            None,
+                                            Path {
+                                                span: probe.rs:21:23: 21:26 (#0),
+                                                res: PrimTy(
+                                                    Uint(
+                                                        u32,
+                                                    ),
+                                                ),
+                                                segments: [
+                                                    PathSegment {
+                                                        ident: u32#0,
+                                                        hir_id: HirId(DefId(0:21 ~ compiler_binding_fixture[243c]::qualified).17),
+                                                        res: PrimTy(
+                                                            Uint(
+                                                                u32,
+                                                            ),
+                                                        ),
+                                                        args: None,
+                                                        infer_args: false,
+                                                        delegation_child_segment: false,
+                                                    },
+                                                ],
+                                            },
+                                        ),
+                                    ),
+                                },
+                            ),
+                            fn_decl_kind: FnDeclFlags(
+                                "ImplicitSelfKind(None)",
+                                "NoLifetimeElision",
+                            ),
+                        },
+                        span: probe.rs:21:1: 21:26 (#0),
+                    },
+                    ident: qualified#0,
+                    generics: Generics {
+                        params: [],
+                        predicates: [],
+                        has_where_clause_predicates: false,
+                        where_clause_span: probe.rs:21:26: 21:26 (#0),
+                        span: probe.rs:21:17: 21:17 (#0),
+                    },
+                    body: BodyId {
+                        hir_id: HirId(DefId(0:21 ~ compiler_binding_fixture[243c]::qualified).15),
+                    },
+                    has_body: true,
+                },
+                span: probe.rs:21:1: 21:73 (#0),
+                vis_span: probe.rs:21:1: 21:4 (#0),
+                eii: false,
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+        (1, 15),
+        (2, 1),
+        (3, 2),
+        (4, 3),
+        (5, 7),
+        (6, 7),
+        (7, 4),
+        (8, 4),
+        (9, 2),
+        (10, 9),
+        (11, 13),
+        (12, 13),
+        (13, 10),
+        (14, 10),
+        (15, 0),
+        (16, 0),
+        (17, 16),
+    ],
+    bodies: {
+        15: Body {
+            params: [],
+            value: Expr {
+                hir_id: HirId(DefId(0:21 ~ compiler_binding_fixture[243c]::qualified).15),
+                kind: Block(
+                    Block {
+                        stmts: [],
+                        expr: Some(
+                            Expr {
+                                hir_id: HirId(DefId(0:21 ~ compiler_binding_fixture[243c]::qualified).2),
+                                kind: Binary(
+                                    Spanned {
+                                        node: Add,
+                                        span: probe.rs:21:50: 21:51 (#0),
+                                    },
+                                    Expr {
+                                        hir_id: HirId(DefId(0:21 ~ compiler_binding_fixture[243c]::qualified).3),
+                                        kind: Call(
+                                            Expr {
+                                                hir_id: HirId(DefId(0:21 ~ compiler_binding_fixture[243c]::qualified).4),
+                                                kind: Path(
+                                                    TypeRelative(
+                                                        Ty {
+                                                            hir_id: HirId(DefId(0:21 ~ compiler_binding_fixture[243c]::qualified).7),
+                                                            span: probe.rs:21:29: 21:42 (#0),
+                                                            kind: Path(
+                                                                Resolved(
+                                                                    None,
+                                                                    Path {
+                                                                        span: probe.rs:21:29: 21:42 (#0),
+                                                                        res: Def(
+                                                                            Struct,
+                                                                            DefId(0:4 ~ compiler_binding_fixture[243c]::alpha::Worker),
+                                                                        ),
+                                                                        segments: [
+                                                                            PathSegment {
+                                                                                ident: alpha#0,
+                                                                                hir_id: HirId(DefId(0:21 ~ compiler_binding_fixture[243c]::qualified).5),
+                                                                                res: Def(
+                                                                                    Mod,
+                                                                                    DefId(0:3 ~ compiler_binding_fixture[243c]::alpha),
+                                                                                ),
+                                                                                args: None,
+                                                                                infer_args: true,
+                                                                                delegation_child_segment: false,
+                                                                            },
+                                                                            PathSegment {
+                                                                                ident: Worker#0,
+                                                                                hir_id: HirId(DefId(0:21 ~ compiler_binding_fixture[243c]::qualified).6),
+                                                                                res: Def(
+                                                                                    Struct,
+                                                                                    DefId(0:4 ~ compiler_binding_fixture[243c]::alpha::Worker),
+                                                                                ),
+                                                                                args: None,
+                                                                                infer_args: true,
+                                                                                delegation_child_segment: false,
+                                                                            },
+                                                                        ],
+                                                                    },
+                                                                ),
+                                                            ),
+                                                        },
+                                                        PathSegment {
+                                                            ident: run#0,
+                                                            hir_id: HirId(DefId(0:21 ~ compiler_binding_fixture[243c]::qualified).8),
+                                                            res: Err,
+                                                            args: None,
+                                                            infer_args: true,
+                                                            delegation_child_segment: false,
+                                                        },
+                                                    ),
+                                                ),
+                                                span: probe.rs:21:29: 21:47 (#0),
+                                            },
+                                            [],
+                                        ),
+                                        span: probe.rs:21:29: 21:49 (#0),
+                                    },
+                                    Expr {
+                                        hir_id: HirId(DefId(0:21 ~ compiler_binding_fixture[243c]::qualified).9),
+                                        kind: Call(
+                                            Expr {
+                                                hir_id: HirId(DefId(0:21 ~ compiler_binding_fixture[243c]::qualified).10),
+                                                kind: Path(
+                                                    TypeRelative(
+                                                        Ty {
+                                                            hir_id: HirId(DefId(0:21 ~ compiler_binding_fixture[243c]::qualified).13),
+                                                            span: probe.rs:21:52: 21:64 (#0),
+                                                            kind: Path(
+                                                                Resolved(
+                                                                    None,
+                                                                    Path {
+                                                                        span: probe.rs:21:52: 21:64 (#0),
+                                                                        res: Def(
+                                                                            Struct,
+                                                                            DefId(0:10 ~ compiler_binding_fixture[243c]::beta::Worker),
+                                                                        ),
+                                                                        segments: [
+                                                                            PathSegment {
+                                                                                ident: beta#0,
+                                                                                hir_id: HirId(DefId(0:21 ~ compiler_binding_fixture[243c]::qualified).11),
+                                                                                res: Def(
+                                                                                    Mod,
+                                                                                    DefId(0:9 ~ compiler_binding_fixture[243c]::beta),
+                                                                                ),
+                                                                                args: None,
+                                                                                infer_args: true,
+                                                                                delegation_child_segment: false,
+                                                                            },
+                                                                            PathSegment {
+                                                                                ident: Worker#0,
+                                                                                hir_id: HirId(DefId(0:21 ~ compiler_binding_fixture[243c]::qualified).12),
+                                                                                res: Def(
+                                                                                    Struct,
+                                                                                    DefId(0:10 ~ compiler_binding_fixture[243c]::beta::Worker),
+                                                                                ),
+                                                                                args: None,
+                                                                                infer_args: true,
+                                                                                delegation_child_segment: false,
+                                                                            },
+                                                                        ],
+                                                                    },
+                                                                ),
+                                                            ),
+                                                        },
+                                                        PathSegment {
+                                                            ident: run#0,
+                                                            hir_id: HirId(DefId(0:21 ~ compiler_binding_fixture[243c]::qualified).14),
+                                                            res: Err,
+                                                            args: None,
+                                                            infer_args: true,
+                                                            delegation_child_segment: false,
+                                                        },
+                                                    ),
+                                                ),
+                                                span: probe.rs:21:52: 21:69 (#0),
+                                            },
+                                            [],
+                                        ),
+                                        span: probe.rs:21:52: 21:71 (#0),
+                                    },
+                                ),
+                                span: probe.rs:21:29: 21:71 (#0),
+                            },
+                        ),
+                        hir_id: HirId(DefId(0:21 ~ compiler_binding_fixture[243c]::qualified).1),
+                        rules: DefaultBlock,
+                        span: probe.rs:21:27: 21:73 (#0),
+                        targeted_by_break: false,
+                    },
+                    None,
+                ),
+                span: probe.rs:21:27: 21:73 (#0),
+            },
+        },
+    },
+    opt_hash: Some(
+        Fingerprint(
+            8107815113191725395,
+            3406271523795105568,
+        ),
+    ),
+}
+DefId(0:22 ~ compiler_binding_fixture[243c]::Choose) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: Item(
+            Item {
+                owner_id: DefId(0:22 ~ compiler_binding_fixture[243c]::Choose),
+                kind: Trait {
+                    impl_restriction: ImplRestriction {
+                        kind: Unrestricted,
+                        span: probe.rs:22:5: 22:5 (#0),
+                    },
+                    constness: NotConst,
+                    is_auto: No,
+                    safety: Safe,
+                    ident: Choose#0,
+                    generics: Generics {
+                        params: [],
+                        predicates: [],
+                        has_where_clause_predicates: false,
+                        where_clause_span: probe.rs:22:17: 22:17 (#0),
+                        span: probe.rs:22:17: 22:17 (#0),
+                    },
+                    bounds: [],
+                    items: [
+                        TraitItemId {
+                            owner_id: DefId(0:23 ~ compiler_binding_fixture[243c]::Choose::pick),
+                        },
+                    ],
+                },
+                span: probe.rs:22:1: 22:44 (#0),
+                vis_span: probe.rs:22:1: 22:4 (#0),
+                eii: false,
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+    ],
+    bodies: {},
+    opt_hash: Some(
+        Fingerprint(
+            3638924385462141447,
+            5335455293419831722,
+        ),
+    ),
+}
+DefId(0:24 ~ compiler_binding_fixture[243c]::{impl#0}) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: Item(
+            Item {
+                owner_id: DefId(0:24 ~ compiler_binding_fixture[243c]::{impl#0}),
+                kind: Impl(
+                    Impl {
+                        generics: Generics {
+                            params: [],
+                            predicates: [],
+                            has_where_clause_predicates: false,
+                            where_clause_span: probe.rs:23:30: 23:30 (#0),
+                            span: probe.rs:23:5: 23:5 (#0),
+                        },
+                        of_trait: Some(
+                            TraitImplHeader {
+                                safety: Safe,
+                                polarity: "positive",
+                                defaultness: Final,
+                                defaultness_span: None,
+                                trait_ref: TraitRef {
+                                    path: Path {
+                                        span: probe.rs:23:6: 23:12 (#0),
+                                        res: Def(
+                                            Trait,
+                                            DefId(0:22 ~ compiler_binding_fixture[243c]::Choose),
+                                        ),
+                                        segments: [
+                                            PathSegment {
+                                                ident: Choose#0,
+                                                hir_id: HirId(DefId(0:24 ~ compiler_binding_fixture[243c]::{impl#0}).1),
+                                                res: Def(
+                                                    Trait,
+                                                    DefId(0:22 ~ compiler_binding_fixture[243c]::Choose),
+                                                ),
+                                                args: None,
+                                                infer_args: false,
+                                                delegation_child_segment: false,
+                                            },
+                                        ],
+                                    },
+                                    hir_ref_id: HirId(DefId(0:24 ~ compiler_binding_fixture[243c]::{impl#0}).2),
+                                },
+                            },
+                        ),
+                        self_ty: Ty {
+                            hir_id: HirId(DefId(0:24 ~ compiler_binding_fixture[243c]::{impl#0}).3),
+                            span: probe.rs:23:17: 23:30 (#0),
+                            kind: Path(
+                                Resolved(
+                                    None,
+                                    Path {
+                                        span: probe.rs:23:17: 23:30 (#0),
+                                        res: Def(
+                                            Struct,
+                                            DefId(0:4 ~ compiler_binding_fixture[243c]::alpha::Worker),
+                                        ),
+                                        segments: [
+                                            PathSegment {
+                                                ident: alpha#0,
+                                                hir_id: HirId(DefId(0:24 ~ compiler_binding_fixture[243c]::{impl#0}).4),
+                                                res: Def(
+                                                    Mod,
+                                                    DefId(0:3 ~ compiler_binding_fixture[243c]::alpha),
+                                                ),
+                                                args: None,
+                                                infer_args: false,
+                                                delegation_child_segment: false,
+                                            },
+                                            PathSegment {
+                                                ident: Worker#0,
+                                                hir_id: HirId(DefId(0:24 ~ compiler_binding_fixture[243c]::{impl#0}).5),
+                                                res: Def(
+                                                    Struct,
+                                                    DefId(0:4 ~ compiler_binding_fixture[243c]::alpha::Worker),
+                                                ),
+                                                args: None,
+                                                infer_args: false,
+                                                delegation_child_segment: false,
+                                            },
+                                        ],
+                                    },
+                                ),
+                            ),
+                        },
+                        items: [
+                            ImplItemId {
+                                owner_id: DefId(0:25 ~ compiler_binding_fixture[243c]::{impl#0}::pick),
+                            },
+                        ],
+                        constness: NotConst,
+                    },
+                ),
+                span: probe.rs:23:1: 23:63 (#0),
+                vis_span: probe.rs:23:1: 23:1 (#0),
+                eii: false,
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+        (1, 2),
+        (2, 0),
+        (3, 0),
+        (4, 3),
+        (5, 3),
+    ],
+    bodies: {},
+    opt_hash: Some(
+        Fingerprint(
+            6849197380518805084,
+            11885914649671930054,
+        ),
+    ),
+}
+DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: Item(
+            Item {
+                owner_id: DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic),
+                kind: Fn {
+                    sig: FnSig {
+                        header: FnHeader {
+                            safety: Normal(
+                                Safe,
+                            ),
+                            constness: NotConst,
+                            asyncness: NotAsync,
+                            abi: Rust,
+                        },
+                        decl: FnDecl {
+                            inputs: [
+                                Ty {
+                                    hir_id: HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).15),
+                                    span: probe.rs:24:23: 24:34 (#0),
+                                    kind: Ref(
+                                        Lifetime {
+                                            hir_id: HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).10),
+                                            ident: '_#0,
+                                            kind: Param(
+                                                DefId(0:39 ~ compiler_binding_fixture[243c]::dynamic::'_),
+                                            ),
+                                            source: Reference,
+                                            syntax: Implicit,
+                                        },
+                                        MutTy {
+                                            ty: Ty {
+                                                hir_id: HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).14),
+                                                span: probe.rs:24:24: 24:34 (#0),
+                                                kind: TraitObject(
+                                                    [
+                                                        PolyTraitRef {
+                                                            bound_generic_params: [],
+                                                            modifiers: TraitBoundModifiers {
+                                                                constness: Never,
+                                                                polarity: Positive,
+                                                            },
+                                                            trait_ref: TraitRef {
+                                                                path: Path {
+                                                                    span: probe.rs:24:28: 24:34 (#0),
+                                                                    res: Def(
+                                                                        Trait,
+                                                                        DefId(0:22 ~ compiler_binding_fixture[243c]::Choose),
+                                                                    ),
+                                                                    segments: [
+                                                                        PathSegment {
+                                                                            ident: Choose#0,
+                                                                            hir_id: HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).11),
+                                                                            res: Def(
+                                                                                Trait,
+                                                                                DefId(0:22 ~ compiler_binding_fixture[243c]::Choose),
+                                                                            ),
+                                                                            args: None,
+                                                                            infer_args: false,
+                                                                            delegation_child_segment: false,
+                                                                        },
+                                                                    ],
+                                                                },
+                                                                hir_ref_id: HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).12),
+                                                            },
+                                                            span: probe.rs:24:28: 24:34 (#0),
+                                                        },
+                                                    ],
+                                                    TaggedRef {
+                                                        pointer: Lifetime {
+                                                            hir_id: HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).13),
+                                                            ident: '_#0,
+                                                            kind: ImplicitObjectLifetimeDefault,
+                                                            source: Other,
+                                                            syntax: Implicit,
+                                                        },
+                                                        tag: Dyn,
+                                                    },
+                                                ),
+                                            },
+                                            mutbl: Not,
+                                        },
+                                    ),
+                                },
+                            ],
+                            output: Return(
+                                Ty {
+                                    hir_id: HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).16),
+                                    span: probe.rs:24:39: 24:42 (#0),
+                                    kind: Path(
+                                        Resolved(
+                                            None,
+                                            Path {
+                                                span: probe.rs:24:39: 24:42 (#0),
+                                                res: PrimTy(
+                                                    Uint(
+                                                        u32,
+                                                    ),
+                                                ),
+                                                segments: [
+                                                    PathSegment {
+                                                        ident: u32#0,
+                                                        hir_id: HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).17),
+                                                        res: PrimTy(
+                                                            Uint(
+                                                                u32,
+                                                            ),
+                                                        ),
+                                                        args: None,
+                                                        infer_args: false,
+                                                        delegation_child_segment: false,
+                                                    },
+                                                ],
+                                            },
+                                        ),
+                                    ),
+                                },
+                            ),
+                            fn_decl_kind: FnDeclFlags(
+                                "ImplicitSelfKind(None)",
+                                "LifetimeElisionAllowed",
+                            ),
+                        },
+                        span: probe.rs:24:1: 24:42 (#0),
+                    },
+                    ident: dynamic#0,
+                    generics: Generics {
+                        params: [
+                            GenericParam {
+                                hir_id: HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).9),
+                                def_id: DefId(0:39 ~ compiler_binding_fixture[243c]::dynamic::'_),
+                                name: Fresh,
+                                span: probe.rs:24:23: 24:24 (#0),
+                                pure_wrt_drop: false,
+                                kind: Lifetime {
+                                    kind: Elided(
+                                        Ampersand,
+                                    ),
+                                },
+                                colon_span: None,
+                                source: Generics,
+                            },
+                        ],
+                        predicates: [],
+                        has_where_clause_predicates: false,
+                        where_clause_span: probe.rs:24:42: 24:42 (#0),
+                        span: probe.rs:24:15: 24:15 (#0),
+                    },
+                    body: BodyId {
+                        hir_id: HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).8),
+                    },
+                    has_body: true,
+                },
+                span: probe.rs:24:1: 24:59 (#0),
+                vis_span: probe.rs:24:1: 24:4 (#0),
+                eii: false,
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+        (1, 0),
+        (2, 1),
+        (3, 8),
+        (4, 3),
+        (5, 4),
+        (6, 4),
+        (7, 6),
+        (8, 0),
+        (9, 0),
+        (10, 15),
+        (11, 12),
+        (12, 14),
+        (13, 14),
+        (14, 15),
+        (15, 0),
+        (16, 0),
+        (17, 16),
+    ],
+    bodies: {
+        8: Body {
+            params: [
+                Param {
+                    hir_id: HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).1),
+                    pat: Pat {
+                        hir_id: HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).2),
+                        kind: Binding(
+                            BindingMode(
+                                No,
+                                Not,
+                            ),
+                            HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).2),
+                            value#0,
+                            None,
+                        ),
+                        span: probe.rs:24:16: 24:21 (#0),
+                        default_binding_modes: true,
+                    },
+                    ty_span: probe.rs:24:23: 24:34 (#0),
+                    span: probe.rs:24:16: 24:34 (#0),
+                },
+            ],
+            value: Expr {
+                hir_id: HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).8),
+                kind: Block(
+                    Block {
+                        stmts: [],
+                        expr: Some(
+                            Expr {
+                                hir_id: HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).4),
+                                kind: MethodCall(
+                                    PathSegment {
+                                        ident: pick#0,
+                                        hir_id: HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).5),
+                                        res: Err,
+                                        args: None,
+                                        infer_args: true,
+                                        delegation_child_segment: false,
+                                    },
+                                    Expr {
+                                        hir_id: HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).6),
+                                        kind: Path(
+                                            Resolved(
+                                                None,
+                                                Path {
+                                                    span: probe.rs:24:45: 24:50 (#0),
+                                                    res: Local(
+                                                        HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).2),
+                                                    ),
+                                                    segments: [
+                                                        PathSegment {
+                                                            ident: value#0,
+                                                            hir_id: HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).7),
+                                                            res: Local(
+                                                                HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).2),
+                                                            ),
+                                                            args: None,
+                                                            infer_args: true,
+                                                            delegation_child_segment: false,
+                                                        },
+                                                    ],
+                                                },
+                                            ),
+                                        ),
+                                        span: probe.rs:24:45: 24:50 (#0),
+                                    },
+                                    [],
+                                    probe.rs:24:51: 24:57 (#0),
+                                ),
+                                span: probe.rs:24:45: 24:57 (#0),
+                            },
+                        ),
+                        hir_id: HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).3),
+                        rules: DefaultBlock,
+                        span: probe.rs:24:43: 24:59 (#0),
+                        targeted_by_break: false,
+                    },
+                    None,
+                ),
+                span: probe.rs:24:43: 24:59 (#0),
+            },
+        },
+    },
+    opt_hash: Some(
+        Fingerprint(
+            12275539966627751633,
+            15775263473838652515,
+        ),
+    ),
+}
+DefId(0:27 ~ compiler_binding_fixture[243c]::unicode) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: Item(
+            Item {
+                owner_id: DefId(0:27 ~ compiler_binding_fixture[243c]::unicode),
+                kind: Fn {
+                    sig: FnSig {
+                        header: FnHeader {
+                            safety: Normal(
+                                Safe,
+                            ),
+                            constness: NotConst,
+                            asyncness: NotAsync,
+                            abi: Rust,
+                        },
+                        decl: FnDecl {
+                            inputs: [],
+                            output: Return(
+                                Ty {
+                                    hir_id: HirId(DefId(0:27 ~ compiler_binding_fixture[243c]::unicode).11),
+                                    span: probe.rs:25:21: 25:24 (#0),
+                                    kind: Path(
+                                        Resolved(
+                                            None,
+                                            Path {
+                                                span: probe.rs:25:21: 25:24 (#0),
+                                                res: PrimTy(
+                                                    Uint(
+                                                        u32,
+                                                    ),
+                                                ),
+                                                segments: [
+                                                    PathSegment {
+                                                        ident: u32#0,
+                                                        hir_id: HirId(DefId(0:27 ~ compiler_binding_fixture[243c]::unicode).12),
+                                                        res: PrimTy(
+                                                            Uint(
+                                                                u32,
+                                                            ),
+                                                        ),
+                                                        args: None,
+                                                        infer_args: false,
+                                                        delegation_child_segment: false,
+                                                    },
+                                                ],
+                                            },
+                                        ),
+                                    ),
+                                },
+                            ),
+                            fn_decl_kind: FnDeclFlags(
+                                "ImplicitSelfKind(None)",
+                                "NoLifetimeElision",
+                            ),
+                        },
+                        span: probe.rs:25:1: 25:24 (#0),
+                    },
+                    ident: unicode#0,
+                    generics: Generics {
+                        params: [],
+                        predicates: [],
+                        has_where_clause_predicates: false,
+                        where_clause_span: probe.rs:25:24: 25:24 (#0),
+                        span: probe.rs:25:15: 25:15 (#0),
+                    },
+                    body: BodyId {
+                        hir_id: HirId(DefId(0:27 ~ compiler_binding_fixture[243c]::unicode).10),
+                    },
+                    has_body: true,
+                },
+                span: probe.rs:25:1: 25:62 (#0),
+                vis_span: probe.rs:25:1: 25:4 (#0),
+                eii: false,
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+        (1, 10),
+        (2, 1),
+        (3, 4),
+        (4, 2),
+        (5, 4),
+        (6, 1),
+        (7, 6),
+        (8, 7),
+        (9, 7),
+        (10, 0),
+        (11, 0),
+        (12, 11),
+    ],
+    bodies: {
+        10: Body {
+            params: [],
+            value: Expr {
+                hir_id: HirId(DefId(0:27 ~ compiler_binding_fixture[243c]::unicode).10),
+                kind: Block(
+                    Block {
+                        stmts: [
+                            Stmt {
+                                hir_id: HirId(DefId(0:27 ~ compiler_binding_fixture[243c]::unicode).2),
+                                kind: Let(
+                                    LetStmt {
+                                        super_: None,
+                                        pat: Pat {
+                                            hir_id: HirId(DefId(0:27 ~ compiler_binding_fixture[243c]::unicode).5),
+                                            kind: Binding(
+                                                BindingMode(
+                                                    No,
+                                                    Not,
+                                                ),
+                                                HirId(DefId(0:27 ~ compiler_binding_fixture[243c]::unicode).5),
+                                                _text#0,
+                                                None,
+                                            ),
+                                            span: probe.rs:25:31: 25:36 (#0),
+                                            default_binding_modes: true,
+                                        },
+                                        ty: None,
+                                        init: Some(
+                                            Expr {
+                                                hir_id: HirId(DefId(0:27 ~ compiler_binding_fixture[243c]::unicode).3),
+                                                kind: Lit(
+                                                    Spanned {
+                                                        node: Str(
+                                                            "💡é",
+                                                            Cooked,
+                                                        ),
+                                                        span: probe.rs:25:39: 25:43 (#0),
+                                                    },
+                                                ),
+                                                span: probe.rs:25:39: 25:43 (#0),
+                                            },
+                                        ),
+                                        els: None,
+                                        hir_id: HirId(DefId(0:27 ~ compiler_binding_fixture[243c]::unicode).4),
+                                        span: probe.rs:25:27: 25:44 (#0),
+                                        source: Normal,
+                                    },
+                                ),
+                                span: probe.rs:25:27: 25:44 (#0),
+                            },
+                        ],
+                        expr: Some(
+                            Expr {
+                                hir_id: HirId(DefId(0:27 ~ compiler_binding_fixture[243c]::unicode).6),
+                                kind: Call(
+                                    Expr {
+                                        hir_id: HirId(DefId(0:27 ~ compiler_binding_fixture[243c]::unicode).7),
+                                        kind: Path(
+                                            Resolved(
+                                                None,
+                                                Path {
+                                                    span: probe.rs:25:45: 25:58 (#0),
+                                                    res: Def(
+                                                        Fn,
+                                                        DefId(0:8 ~ compiler_binding_fixture[243c]::alpha::helper),
+                                                    ),
+                                                    segments: [
+                                                        PathSegment {
+                                                            ident: alpha#0,
+                                                            hir_id: HirId(DefId(0:27 ~ compiler_binding_fixture[243c]::unicode).8),
+                                                            res: Def(
+                                                                Mod,
+                                                                DefId(0:3 ~ compiler_binding_fixture[243c]::alpha),
+                                                            ),
+                                                            args: None,
+                                                            infer_args: true,
+                                                            delegation_child_segment: false,
+                                                        },
+                                                        PathSegment {
+                                                            ident: helper#0,
+                                                            hir_id: HirId(DefId(0:27 ~ compiler_binding_fixture[243c]::unicode).9),
+                                                            res: Def(
+                                                                Fn,
+                                                                DefId(0:8 ~ compiler_binding_fixture[243c]::alpha::helper),
+                                                            ),
+                                                            args: None,
+                                                            infer_args: true,
+                                                            delegation_child_segment: false,
+                                                        },
+                                                    ],
+                                                },
+                                            ),
+                                        ),
+                                        span: probe.rs:25:45: 25:58 (#0),
+                                    },
+                                    [],
+                                ),
+                                span: probe.rs:25:45: 25:60 (#0),
+                            },
+                        ),
+                        hir_id: HirId(DefId(0:27 ~ compiler_binding_fixture[243c]::unicode).1),
+                        rules: DefaultBlock,
+                        span: probe.rs:25:25: 25:62 (#0),
+                        targeted_by_break: false,
+                    },
+                    None,
+                ),
+                span: probe.rs:25:25: 25:62 (#0),
+            },
+        },
+    },
+    opt_hash: Some(
+        Fingerprint(
+            11117886180059839933,
+            9463230824587589303,
+        ),
+    ),
+}
+DefId(0:28 ~ compiler_binding_fixture[243c]::Options) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: Item(
+            Item {
+                owner_id: DefId(0:28 ~ compiler_binding_fixture[243c]::Options),
+                kind: Struct(
+                    Options#0,
+                    Generics {
+                        params: [],
+                        predicates: [],
+                        has_where_clause_predicates: false,
+                        where_clause_span: probe.rs:26:19: 26:19 (#0),
+                        span: probe.rs:26:19: 26:19 (#0),
+                    },
+                    Struct {
+                        fields: [
+                            FieldDef {
+                                span: probe.rs:26:22: 26:36 (#0),
+                                vis_span: probe.rs:26:22: 26:25 (#0),
+                                mut_restriction: MutRestriction {
+                                    kind: Unrestricted,
+                                    span: no-location (#0),
+                                },
+                                ident: count#0,
+                                hir_id: HirId(DefId(0:28 ~ compiler_binding_fixture[243c]::Options).3),
+                                def_id: DefId(0:29 ~ compiler_binding_fixture[243c]::Options::count),
+                                ty: Ty {
+                                    hir_id: HirId(DefId(0:28 ~ compiler_binding_fixture[243c]::Options).1),
+                                    span: probe.rs:26:33: 26:36 (#0),
+                                    kind: Path(
+                                        Resolved(
+                                            None,
+                                            Path {
+                                                span: probe.rs:26:33: 26:36 (#0),
+                                                res: PrimTy(
+                                                    Uint(
+                                                        u32,
+                                                    ),
+                                                ),
+                                                segments: [
+                                                    PathSegment {
+                                                        ident: u32#0,
+                                                        hir_id: HirId(DefId(0:28 ~ compiler_binding_fixture[243c]::Options).2),
+                                                        res: PrimTy(
+                                                            Uint(
+                                                                u32,
+                                                            ),
+                                                        ),
+                                                        args: None,
+                                                        infer_args: false,
+                                                        delegation_child_segment: false,
+                                                    },
+                                                ],
+                                            },
+                                        ),
+                                    ),
+                                },
+                                safety: Safe,
+                                default: None,
+                            },
+                        ],
+                        recovered: No,
+                    },
+                ),
+                span: probe.rs:26:1: 26:38 (#0),
+                vis_span: probe.rs:26:1: 26:4 (#0),
+                eii: false,
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+        (1, 3),
+        (2, 1),
+        (3, 0),
+    ],
+    bodies: {},
+    opt_hash: Some(
+        Fingerprint(
+            6281241167730119853,
+            9796205717482153182,
+        ),
+    ),
+}
+DefId(0:30 ~ compiler_binding_fixture[243c]::Mode) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: Item(
+            Item {
+                owner_id: DefId(0:30 ~ compiler_binding_fixture[243c]::Mode),
+                kind: Enum(
+                    Mode#0,
+                    Generics {
+                        params: [],
+                        predicates: [],
+                        has_where_clause_predicates: false,
+                        where_clause_span: probe.rs:27:14: 27:14 (#0),
+                        span: probe.rs:27:14: 27:14 (#0),
+                    },
+                    EnumDef {
+                        variants: [
+                            Variant {
+                                ident: First#0,
+                                hir_id: HirId(DefId(0:30 ~ compiler_binding_fixture[243c]::Mode).1),
+                                def_id: DefId(0:31 ~ compiler_binding_fixture[243c]::Mode::First),
+                                data: Unit(
+                                    HirId(DefId(0:30 ~ compiler_binding_fixture[243c]::Mode).2),
+                                    DefId(0:32 ~ compiler_binding_fixture[243c]::Mode::First::{constructor#0}),
+                                ),
+                                disr_expr: None,
+                                span: probe.rs:27:17: 27:22 (#0),
+                            },
+                            Variant {
+                                ident: Named#0,
+                                hir_id: HirId(DefId(0:30 ~ compiler_binding_fixture[243c]::Mode).3),
+                                def_id: DefId(0:33 ~ compiler_binding_fixture[243c]::Mode::Named),
+                                data: Struct {
+                                    fields: [
+                                        FieldDef {
+                                            span: probe.rs:27:32: 27:42 (#0),
+                                            vis_span: probe.rs:27:32: 27:32 (#0),
+                                            mut_restriction: MutRestriction {
+                                                kind: Unrestricted,
+                                                span: no-location (#0),
+                                            },
+                                            ident: value#0,
+                                            hir_id: HirId(DefId(0:30 ~ compiler_binding_fixture[243c]::Mode).6),
+                                            def_id: DefId(0:34 ~ compiler_binding_fixture[243c]::Mode::Named::value),
+                                            ty: Ty {
+                                                hir_id: HirId(DefId(0:30 ~ compiler_binding_fixture[243c]::Mode).4),
+                                                span: probe.rs:27:39: 27:42 (#0),
+                                                kind: Path(
+                                                    Resolved(
+                                                        None,
+                                                        Path {
+                                                            span: probe.rs:27:39: 27:42 (#0),
+                                                            res: PrimTy(
+                                                                Uint(
+                                                                    u32,
+                                                                ),
+                                                            ),
+                                                            segments: [
+                                                                PathSegment {
+                                                                    ident: u32#0,
+                                                                    hir_id: HirId(DefId(0:30 ~ compiler_binding_fixture[243c]::Mode).5),
+                                                                    res: PrimTy(
+                                                                        Uint(
+                                                                            u32,
+                                                                        ),
+                                                                    ),
+                                                                    args: None,
+                                                                    infer_args: false,
+                                                                    delegation_child_segment: false,
+                                                                },
+                                                            ],
+                                                        },
+                                                    ),
+                                                ),
+                                            },
+                                            safety: Safe,
+                                            default: None,
+                                        },
+                                    ],
+                                    recovered: No,
+                                },
+                                disr_expr: None,
+                                span: probe.rs:27:24: 27:44 (#0),
+                            },
+                        ],
+                    },
+                ),
+                span: probe.rs:27:1: 27:46 (#0),
+                vis_span: probe.rs:27:1: 27:4 (#0),
+                eii: false,
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+        (1, 0),
+        (2, 1),
+        (3, 0),
+        (4, 6),
+        (5, 4),
+        (6, 3),
+    ],
+    bodies: {},
+    opt_hash: Some(
+        Fingerprint(
+            3732999961730218948,
+            9905603053908296368,
+        ),
+    ),
+}
+DefId(0:35 ~ compiler_binding_fixture[243c]::generic) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: Item(
+            Item {
+                owner_id: DefId(0:35 ~ compiler_binding_fixture[243c]::generic),
+                kind: Fn {
+                    sig: FnSig {
+                        header: FnHeader {
+                            safety: Normal(
+                                Safe,
+                            ),
+                            constness: NotConst,
+                            asyncness: NotAsync,
+                            abi: Rust,
+                        },
+                        decl: FnDecl {
+                            inputs: [
+                                Ty {
+                                    hir_id: HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).19),
+                                    span: probe.rs:28:34: 28:36 (#0),
+                                    kind: Ref(
+                                        Lifetime {
+                                            hir_id: HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).16),
+                                            ident: '_#0,
+                                            kind: Param(
+                                                DefId(0:40 ~ compiler_binding_fixture[243c]::generic::'_),
+                                            ),
+                                            source: Reference,
+                                            syntax: Implicit,
+                                        },
+                                        MutTy {
+                                            ty: Ty {
+                                                hir_id: HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).17),
+                                                span: probe.rs:28:35: 28:36 (#0),
+                                                kind: Path(
+                                                    Resolved(
+                                                        None,
+                                                        Path {
+                                                            span: probe.rs:28:35: 28:36 (#0),
+                                                            res: Def(
+                                                                TyParam,
+                                                                DefId(0:36 ~ compiler_binding_fixture[243c]::generic::T),
+                                                            ),
+                                                            segments: [
+                                                                PathSegment {
+                                                                    ident: T#0,
+                                                                    hir_id: HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).18),
+                                                                    res: Def(
+                                                                        TyParam,
+                                                                        DefId(0:36 ~ compiler_binding_fixture[243c]::generic::T),
+                                                                    ),
+                                                                    args: None,
+                                                                    infer_args: false,
+                                                                    delegation_child_segment: false,
+                                                                },
+                                                            ],
+                                                        },
+                                                    ),
+                                                ),
+                                            },
+                                            mutbl: Not,
+                                        },
+                                    ),
+                                },
+                            ],
+                            output: Return(
+                                Ty {
+                                    hir_id: HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).20),
+                                    span: probe.rs:28:41: 28:44 (#0),
+                                    kind: Path(
+                                        Resolved(
+                                            None,
+                                            Path {
+                                                span: probe.rs:28:41: 28:44 (#0),
+                                                res: PrimTy(
+                                                    Uint(
+                                                        u32,
+                                                    ),
+                                                ),
+                                                segments: [
+                                                    PathSegment {
+                                                        ident: u32#0,
+                                                        hir_id: HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).21),
+                                                        res: PrimTy(
+                                                            Uint(
+                                                                u32,
+                                                            ),
+                                                        ),
+                                                        args: None,
+                                                        infer_args: false,
+                                                        delegation_child_segment: false,
+                                                    },
+                                                ],
+                                            },
+                                        ),
+                                    ),
+                                },
+                            ),
+                            fn_decl_kind: FnDeclFlags(
+                                "ImplicitSelfKind(None)",
+                                "LifetimeElisionAllowed",
+                            ),
+                        },
+                        span: probe.rs:28:1: 28:44 (#0),
+                    },
+                    ident: generic#0,
+                    generics: Generics {
+                        params: [
+                            GenericParam {
+                                hir_id: HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).14),
+                                def_id: DefId(0:36 ~ compiler_binding_fixture[243c]::generic::T),
+                                name: Plain(
+                                    T#0,
+                                ),
+                                span: probe.rs:28:16: 28:17 (#0),
+                                pure_wrt_drop: false,
+                                kind: Type {
+                                    default: None,
+                                    synthetic: false,
+                                },
+                                colon_span: Some(
+                                    probe.rs:28:17: 28:18 (#0),
+                                ),
+                                source: Generics,
+                            },
+                            GenericParam {
+                                hir_id: HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).15),
+                                def_id: DefId(0:40 ~ compiler_binding_fixture[243c]::generic::'_),
+                                name: Fresh,
+                                span: probe.rs:28:34: 28:35 (#0),
+                                pure_wrt_drop: false,
+                                kind: Lifetime {
+                                    kind: Elided(
+                                        Ampersand,
+                                    ),
+                                },
+                                colon_span: None,
+                                source: Generics,
+                            },
+                        ],
+                        predicates: [
+                            WherePredicate {
+                                hir_id: HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).11),
+                                span: probe.rs:28:17: 28:25 (#0),
+                                kind: BoundPredicate(
+                                    WhereBoundPredicate {
+                                        origin: GenericParam,
+                                        bound_generic_params: [],
+                                        bounded_ty: Ty {
+                                            hir_id: HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).13),
+                                            span: probe.rs:28:16: 28:17 (#0),
+                                            kind: Path(
+                                                Resolved(
+                                                    None,
+                                                    Path {
+                                                        span: probe.rs:28:16: 28:17 (#0),
+                                                        res: Def(
+                                                            TyParam,
+                                                            DefId(0:36 ~ compiler_binding_fixture[243c]::generic::T),
+                                                        ),
+                                                        segments: [
+                                                            PathSegment {
+                                                                ident: T#0,
+                                                                hir_id: HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).12),
+                                                                res: Def(
+                                                                    TyParam,
+                                                                    DefId(0:36 ~ compiler_binding_fixture[243c]::generic::T),
+                                                                ),
+                                                                args: None,
+                                                                infer_args: true,
+                                                                delegation_child_segment: false,
+                                                            },
+                                                        ],
+                                                    },
+                                                ),
+                                            ),
+                                        },
+                                        bounds: [
+                                            Trait(
+                                                PolyTraitRef {
+                                                    bound_generic_params: [],
+                                                    modifiers: TraitBoundModifiers {
+                                                        constness: Never,
+                                                        polarity: Positive,
+                                                    },
+                                                    trait_ref: TraitRef {
+                                                        path: Path {
+                                                            span: probe.rs:28:19: 28:25 (#0),
+                                                            res: Def(
+                                                                Trait,
+                                                                DefId(0:22 ~ compiler_binding_fixture[243c]::Choose),
+                                                            ),
+                                                            segments: [
+                                                                PathSegment {
+                                                                    ident: Choose#0,
+                                                                    hir_id: HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).9),
+                                                                    res: Def(
+                                                                        Trait,
+                                                                        DefId(0:22 ~ compiler_binding_fixture[243c]::Choose),
+                                                                    ),
+                                                                    args: None,
+                                                                    infer_args: false,
+                                                                    delegation_child_segment: false,
+                                                                },
+                                                            ],
+                                                        },
+                                                        hir_ref_id: HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).10),
+                                                    },
+                                                    span: probe.rs:28:19: 28:25 (#0),
+                                                },
+                                            ),
+                                        ],
+                                    },
+                                ),
+                            },
+                        ],
+                        has_where_clause_predicates: false,
+                        where_clause_span: probe.rs:28:44: 28:44 (#0),
+                        span: probe.rs:28:15: 28:26 (#0),
+                    },
+                    body: BodyId {
+                        hir_id: HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).8),
+                    },
+                    has_body: true,
+                },
+                span: probe.rs:28:1: 28:61 (#0),
+                vis_span: probe.rs:28:1: 28:4 (#0),
+                eii: false,
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+        (1, 0),
+        (2, 1),
+        (3, 8),
+        (4, 3),
+        (5, 4),
+        (6, 4),
+        (7, 6),
+        (8, 0),
+        (9, 10),
+        (10, 11),
+        (11, 0),
+        (12, 13),
+        (13, 11),
+        (14, 0),
+        (15, 0),
+        (16, 19),
+        (17, 19),
+        (18, 17),
+        (19, 0),
+        (20, 0),
+        (21, 20),
+    ],
+    bodies: {
+        8: Body {
+            params: [
+                Param {
+                    hir_id: HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).1),
+                    pat: Pat {
+                        hir_id: HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).2),
+                        kind: Binding(
+                            BindingMode(
+                                No,
+                                Not,
+                            ),
+                            HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).2),
+                            value#0,
+                            None,
+                        ),
+                        span: probe.rs:28:27: 28:32 (#0),
+                        default_binding_modes: true,
+                    },
+                    ty_span: probe.rs:28:34: 28:36 (#0),
+                    span: probe.rs:28:27: 28:36 (#0),
+                },
+            ],
+            value: Expr {
+                hir_id: HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).8),
+                kind: Block(
+                    Block {
+                        stmts: [],
+                        expr: Some(
+                            Expr {
+                                hir_id: HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).4),
+                                kind: MethodCall(
+                                    PathSegment {
+                                        ident: pick#0,
+                                        hir_id: HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).5),
+                                        res: Err,
+                                        args: None,
+                                        infer_args: true,
+                                        delegation_child_segment: false,
+                                    },
+                                    Expr {
+                                        hir_id: HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).6),
+                                        kind: Path(
+                                            Resolved(
+                                                None,
+                                                Path {
+                                                    span: probe.rs:28:47: 28:52 (#0),
+                                                    res: Local(
+                                                        HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).2),
+                                                    ),
+                                                    segments: [
+                                                        PathSegment {
+                                                            ident: value#0,
+                                                            hir_id: HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).7),
+                                                            res: Local(
+                                                                HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).2),
+                                                            ),
+                                                            args: None,
+                                                            infer_args: true,
+                                                            delegation_child_segment: false,
+                                                        },
+                                                    ],
+                                                },
+                                            ),
+                                        ),
+                                        span: probe.rs:28:47: 28:52 (#0),
+                                    },
+                                    [],
+                                    probe.rs:28:53: 28:59 (#0),
+                                ),
+                                span: probe.rs:28:47: 28:59 (#0),
+                            },
+                        ),
+                        hir_id: HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).3),
+                        rules: DefaultBlock,
+                        span: probe.rs:28:45: 28:61 (#0),
+                        targeted_by_break: false,
+                    },
+                    None,
+                ),
+                span: probe.rs:28:45: 28:61 (#0),
+            },
+        },
+    },
+    opt_hash: Some(
+        Fingerprint(
+            478057719654057400,
+            2562579235739948431,
+        ),
+    ),
+}
+DefId(0:23 ~ compiler_binding_fixture[243c]::Choose::pick) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: TraitItem(
+            TraitItem {
+                ident: pick#0,
+                owner_id: DefId(0:23 ~ compiler_binding_fixture[243c]::Choose::pick),
+                generics: Generics {
+                    params: [
+                        GenericParam {
+                            hir_id: HirId(DefId(0:23 ~ compiler_binding_fixture[243c]::Choose::pick).1),
+                            def_id: DefId(0:37 ~ compiler_binding_fixture[243c]::Choose::pick::'_),
+                            name: Fresh,
+                            span: probe.rs:22:28: 22:29 (#0),
+                            pure_wrt_drop: false,
+                            kind: Lifetime {
+                                kind: Elided(
+                                    Ampersand,
+                                ),
+                            },
+                            colon_span: None,
+                            source: Generics,
+                        },
+                    ],
+                    predicates: [],
+                    has_where_clause_predicates: false,
+                    where_clause_span: probe.rs:22:41: 22:41 (#0),
+                    span: probe.rs:22:27: 22:27 (#0),
+                },
+                kind: Fn(
+                    FnSig {
+                        header: FnHeader {
+                            safety: Normal(
+                                Safe,
+                            ),
+                            constness: NotConst,
+                            asyncness: NotAsync,
+                            abi: Rust,
+                        },
+                        decl: FnDecl {
+                            inputs: [
+                                Ty {
+                                    hir_id: HirId(DefId(0:23 ~ compiler_binding_fixture[243c]::Choose::pick).5),
+                                    span: probe.rs:22:28: 22:33 (#0),
+                                    kind: Ref(
+                                        Lifetime {
+                                            hir_id: HirId(DefId(0:23 ~ compiler_binding_fixture[243c]::Choose::pick).2),
+                                            ident: '_#0,
+                                            kind: Param(
+                                                DefId(0:37 ~ compiler_binding_fixture[243c]::Choose::pick::'_),
+                                            ),
+                                            source: Reference,
+                                            syntax: Implicit,
+                                        },
+                                        MutTy {
+                                            ty: Ty {
+                                                hir_id: HirId(DefId(0:23 ~ compiler_binding_fixture[243c]::Choose::pick).4),
+                                                span: probe.rs:22:29: 22:33 (#0),
+                                                kind: Path(
+                                                    Resolved(
+                                                        None,
+                                                        Path {
+                                                            span: probe.rs:22:29: 22:33 (#0),
+                                                            res: SelfTyParam {
+                                                                trait_: DefId(0:22 ~ compiler_binding_fixture[243c]::Choose),
+                                                            },
+                                                            segments: [
+                                                                PathSegment {
+                                                                    ident: Self#0,
+                                                                    hir_id: HirId(DefId(0:23 ~ compiler_binding_fixture[243c]::Choose::pick).3),
+                                                                    res: SelfTyParam {
+                                                                        trait_: DefId(0:22 ~ compiler_binding_fixture[243c]::Choose),
+                                                                    },
+                                                                    args: None,
+                                                                    infer_args: true,
+                                                                    delegation_child_segment: false,
+                                                                },
+                                                            ],
+                                                        },
+                                                    ),
+                                                ),
+                                            },
+                                            mutbl: Not,
+                                        },
+                                    ),
+                                },
+                            ],
+                            output: Return(
+                                Ty {
+                                    hir_id: HirId(DefId(0:23 ~ compiler_binding_fixture[243c]::Choose::pick).6),
+                                    span: probe.rs:22:38: 22:41 (#0),
+                                    kind: Path(
+                                        Resolved(
+                                            None,
+                                            Path {
+                                                span: probe.rs:22:38: 22:41 (#0),
+                                                res: PrimTy(
+                                                    Uint(
+                                                        u32,
+                                                    ),
+                                                ),
+                                                segments: [
+                                                    PathSegment {
+                                                        ident: u32#0,
+                                                        hir_id: HirId(DefId(0:23 ~ compiler_binding_fixture[243c]::Choose::pick).7),
+                                                        res: PrimTy(
+                                                            Uint(
+                                                                u32,
+                                                            ),
+                                                        ),
+                                                        args: None,
+                                                        infer_args: false,
+                                                        delegation_child_segment: false,
+                                                    },
+                                                ],
+                                            },
+                                        ),
+                                    ),
+                                },
+                            ),
+                            fn_decl_kind: FnDeclFlags(
+                                "ImplicitSelfKind(RefImm)",
+                                "LifetimeElisionAllowed",
+                            ),
+                        },
+                        span: probe.rs:22:20: 22:42 (#0),
+                    },
+                    Required(
+                        [
+                            Some(
+                                self#0,
+                            ),
+                        ],
+                    ),
+                ),
+                span: probe.rs:22:20: 22:42 (#0),
+                defaultness: Default {
+                    has_value: false,
+                },
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+        (1, 0),
+        (2, 5),
+        (3, 4),
+        (4, 5),
+        (5, 0),
+        (6, 0),
+        (7, 6),
+    ],
+    bodies: {},
+    opt_hash: Some(
+        Fingerprint(
+            15918591491328532855,
+            16819815262518630093,
+        ),
+    ),
+}
+DefId(0:7 ~ compiler_binding_fixture[243c]::alpha::{impl#0}::run) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: ImplItem(
+            ImplItem {
+                ident: run#0,
+                owner_id: DefId(0:7 ~ compiler_binding_fixture[243c]::alpha::{impl#0}::run),
+                generics: Generics {
+                    params: [],
+                    predicates: [],
+                    has_where_clause_predicates: false,
+                    where_clause_span: probe.rs:4:38: 4:38 (#0),
+                    span: probe.rs:4:29: 4:29 (#0),
+                },
+                kind: Fn(
+                    FnSig {
+                        header: FnHeader {
+                            safety: Normal(
+                                Safe,
+                            ),
+                            constness: NotConst,
+                            asyncness: NotAsync,
+                            abi: Rust,
+                        },
+                        decl: FnDecl {
+                            inputs: [],
+                            output: Return(
+                                Ty {
+                                    hir_id: HirId(DefId(0:7 ~ compiler_binding_fixture[243c]::alpha::{impl#0}::run).4),
+                                    span: probe.rs:4:35: 4:38 (#0),
+                                    kind: Path(
+                                        Resolved(
+                                            None,
+                                            Path {
+                                                span: probe.rs:4:35: 4:38 (#0),
+                                                res: PrimTy(
+                                                    Uint(
+                                                        u32,
+                                                    ),
+                                                ),
+                                                segments: [
+                                                    PathSegment {
+                                                        ident: u32#0,
+                                                        hir_id: HirId(DefId(0:7 ~ compiler_binding_fixture[243c]::alpha::{impl#0}::run).5),
+                                                        res: PrimTy(
+                                                            Uint(
+                                                                u32,
+                                                            ),
+                                                        ),
+                                                        args: None,
+                                                        infer_args: false,
+                                                        delegation_child_segment: false,
+                                                    },
+                                                ],
+                                            },
+                                        ),
+                                    ),
+                                },
+                            ),
+                            fn_decl_kind: FnDeclFlags(
+                                "ImplicitSelfKind(None)",
+                                "NoLifetimeElision",
+                            ),
+                        },
+                        span: probe.rs:4:19: 4:38 (#0),
+                    },
+                    BodyId {
+                        hir_id: HirId(DefId(0:7 ~ compiler_binding_fixture[243c]::alpha::{impl#0}::run).3),
+                    },
+                ),
+                impl_kind: Inherent {
+                    vis_span: probe.rs:4:19: 4:22 (#0),
+                },
+                span: probe.rs:4:19: 4:45 (#0),
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+        (1, 3),
+        (2, 1),
+        (3, 0),
+        (4, 0),
+        (5, 4),
+    ],
+    bodies: {
+        3: Body {
+            params: [],
+            value: Expr {
+                hir_id: HirId(DefId(0:7 ~ compiler_binding_fixture[243c]::alpha::{impl#0}::run).3),
+                kind: Block(
+                    Block {
+                        stmts: [],
+                        expr: Some(
+                            Expr {
+                                hir_id: HirId(DefId(0:7 ~ compiler_binding_fixture[243c]::alpha::{impl#0}::run).2),
+                                kind: Lit(
+                                    Spanned {
+                                        node: Int(
+                                            Pu128(
+                                                11,
+                                            ),
+                                            Unsuffixed,
+                                        ),
+                                        span: probe.rs:4:41: 4:43 (#0),
+                                    },
+                                ),
+                                span: probe.rs:4:41: 4:43 (#0),
+                            },
+                        ),
+                        hir_id: HirId(DefId(0:7 ~ compiler_binding_fixture[243c]::alpha::{impl#0}::run).1),
+                        rules: DefaultBlock,
+                        span: probe.rs:4:39: 4:45 (#0),
+                        targeted_by_break: false,
+                    },
+                    None,
+                ),
+                span: probe.rs:4:39: 4:45 (#0),
+            },
+        },
+    },
+    opt_hash: Some(
+        Fingerprint(
+            18418524821058286637,
+            7451466037006875306,
+        ),
+    ),
+}
+DefId(0:13 ~ compiler_binding_fixture[243c]::beta::{impl#0}::run) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: ImplItem(
+            ImplItem {
+                ident: run#0,
+                owner_id: DefId(0:13 ~ compiler_binding_fixture[243c]::beta::{impl#0}::run),
+                generics: Generics {
+                    params: [],
+                    predicates: [],
+                    has_where_clause_predicates: false,
+                    where_clause_span: probe.rs:9:38: 9:38 (#0),
+                    span: probe.rs:9:29: 9:29 (#0),
+                },
+                kind: Fn(
+                    FnSig {
+                        header: FnHeader {
+                            safety: Normal(
+                                Safe,
+                            ),
+                            constness: NotConst,
+                            asyncness: NotAsync,
+                            abi: Rust,
+                        },
+                        decl: FnDecl {
+                            inputs: [],
+                            output: Return(
+                                Ty {
+                                    hir_id: HirId(DefId(0:13 ~ compiler_binding_fixture[243c]::beta::{impl#0}::run).4),
+                                    span: probe.rs:9:35: 9:38 (#0),
+                                    kind: Path(
+                                        Resolved(
+                                            None,
+                                            Path {
+                                                span: probe.rs:9:35: 9:38 (#0),
+                                                res: PrimTy(
+                                                    Uint(
+                                                        u32,
+                                                    ),
+                                                ),
+                                                segments: [
+                                                    PathSegment {
+                                                        ident: u32#0,
+                                                        hir_id: HirId(DefId(0:13 ~ compiler_binding_fixture[243c]::beta::{impl#0}::run).5),
+                                                        res: PrimTy(
+                                                            Uint(
+                                                                u32,
+                                                            ),
+                                                        ),
+                                                        args: None,
+                                                        infer_args: false,
+                                                        delegation_child_segment: false,
+                                                    },
+                                                ],
+                                            },
+                                        ),
+                                    ),
+                                },
+                            ),
+                            fn_decl_kind: FnDeclFlags(
+                                "ImplicitSelfKind(None)",
+                                "NoLifetimeElision",
+                            ),
+                        },
+                        span: probe.rs:9:19: 9:38 (#0),
+                    },
+                    BodyId {
+                        hir_id: HirId(DefId(0:13 ~ compiler_binding_fixture[243c]::beta::{impl#0}::run).3),
+                    },
+                ),
+                impl_kind: Inherent {
+                    vis_span: probe.rs:9:19: 9:22 (#0),
+                },
+                span: probe.rs:9:19: 9:45 (#0),
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+        (1, 3),
+        (2, 1),
+        (3, 0),
+        (4, 0),
+        (5, 4),
+    ],
+    bodies: {
+        3: Body {
+            params: [],
+            value: Expr {
+                hir_id: HirId(DefId(0:13 ~ compiler_binding_fixture[243c]::beta::{impl#0}::run).3),
+                kind: Block(
+                    Block {
+                        stmts: [],
+                        expr: Some(
+                            Expr {
+                                hir_id: HirId(DefId(0:13 ~ compiler_binding_fixture[243c]::beta::{impl#0}::run).2),
+                                kind: Lit(
+                                    Spanned {
+                                        node: Int(
+                                            Pu128(
+                                                29,
+                                            ),
+                                            Unsuffixed,
+                                        ),
+                                        span: probe.rs:9:41: 9:43 (#0),
+                                    },
+                                ),
+                                span: probe.rs:9:41: 9:43 (#0),
+                            },
+                        ),
+                        hir_id: HirId(DefId(0:13 ~ compiler_binding_fixture[243c]::beta::{impl#0}::run).1),
+                        rules: DefaultBlock,
+                        span: probe.rs:9:39: 9:45 (#0),
+                        targeted_by_break: false,
+                    },
+                    None,
+                ),
+                span: probe.rs:9:39: 9:45 (#0),
+            },
+        },
+    },
+    opt_hash: Some(
+        Fingerprint(
+            542276338156715123,
+            10473146591666357637,
+        ),
+    ),
+}
+DefId(0:25 ~ compiler_binding_fixture[243c]::{impl#0}::pick) => OwnerNodes {
+    node: ParentedNode {
+        parent: 4294967040,
+        node: ImplItem(
+            ImplItem {
+                ident: pick#0,
+                owner_id: DefId(0:25 ~ compiler_binding_fixture[243c]::{impl#0}::pick),
+                generics: Generics {
+                    params: [
+                        GenericParam {
+                            hir_id: HirId(DefId(0:25 ~ compiler_binding_fixture[243c]::{impl#0}::pick).6),
+                            def_id: DefId(0:38 ~ compiler_binding_fixture[243c]::{impl#0}::pick::'_),
+                            name: Fresh,
+                            span: probe.rs:23:41: 23:42 (#0),
+                            pure_wrt_drop: false,
+                            kind: Lifetime {
+                                kind: Elided(
+                                    Ampersand,
+                                ),
+                            },
+                            colon_span: None,
+                            source: Generics,
+                        },
+                    ],
+                    predicates: [],
+                    has_where_clause_predicates: false,
+                    where_clause_span: probe.rs:23:54: 23:54 (#0),
+                    span: probe.rs:23:40: 23:40 (#0),
+                },
+                kind: Fn(
+                    FnSig {
+                        header: FnHeader {
+                            safety: Normal(
+                                Safe,
+                            ),
+                            constness: NotConst,
+                            asyncness: NotAsync,
+                            abi: Rust,
+                        },
+                        decl: FnDecl {
+                            inputs: [
+                                Ty {
+                                    hir_id: HirId(DefId(0:25 ~ compiler_binding_fixture[243c]::{impl#0}::pick).10),
+                                    span: probe.rs:23:41: 23:46 (#0),
+                                    kind: Ref(
+                                        Lifetime {
+                                            hir_id: HirId(DefId(0:25 ~ compiler_binding_fixture[243c]::{impl#0}::pick).7),
+                                            ident: '_#0,
+                                            kind: Param(
+                                                DefId(0:38 ~ compiler_binding_fixture[243c]::{impl#0}::pick::'_),
+                                            ),
+                                            source: Reference,
+                                            syntax: Implicit,
+                                        },
+                                        MutTy {
+                                            ty: Ty {
+                                                hir_id: HirId(DefId(0:25 ~ compiler_binding_fixture[243c]::{impl#0}::pick).9),
+                                                span: probe.rs:23:42: 23:46 (#0),
+                                                kind: Path(
+                                                    Resolved(
+                                                        None,
+                                                        Path {
+                                                            span: probe.rs:23:42: 23:46 (#0),
+                                                            res: SelfTyAlias {
+                                                                alias_to: DefId(0:24 ~ compiler_binding_fixture[243c]::{impl#0}),
+                                                                is_trait_impl: true,
+                                                            },
+                                                            segments: [
+                                                                PathSegment {
+                                                                    ident: Self#0,
+                                                                    hir_id: HirId(DefId(0:25 ~ compiler_binding_fixture[243c]::{impl#0}::pick).8),
+                                                                    res: SelfTyAlias {
+                                                                        alias_to: DefId(0:24 ~ compiler_binding_fixture[243c]::{impl#0}),
+                                                                        is_trait_impl: true,
+                                                                    },
+                                                                    args: None,
+                                                                    infer_args: true,
+                                                                    delegation_child_segment: false,
+                                                                },
+                                                            ],
+                                                        },
+                                                    ),
+                                                ),
+                                            },
+                                            mutbl: Not,
+                                        },
+                                    ),
+                                },
+                            ],
+                            output: Return(
+                                Ty {
+                                    hir_id: HirId(DefId(0:25 ~ compiler_binding_fixture[243c]::{impl#0}::pick).11),
+                                    span: probe.rs:23:51: 23:54 (#0),
+                                    kind: Path(
+                                        Resolved(
+                                            None,
+                                            Path {
+                                                span: probe.rs:23:51: 23:54 (#0),
+                                                res: PrimTy(
+                                                    Uint(
+                                                        u32,
+                                                    ),
+                                                ),
+                                                segments: [
+                                                    PathSegment {
+                                                        ident: u32#0,
+                                                        hir_id: HirId(DefId(0:25 ~ compiler_binding_fixture[243c]::{impl#0}::pick).12),
+                                                        res: PrimTy(
+                                                            Uint(
+                                                                u32,
+                                                            ),
+                                                        ),
+                                                        args: None,
+                                                        infer_args: false,
+                                                        delegation_child_segment: false,
+                                                    },
+                                                ],
+                                            },
+                                        ),
+                                    ),
+                                },
+                            ),
+                            fn_decl_kind: FnDeclFlags(
+                                "ImplicitSelfKind(RefImm)",
+                                "LifetimeElisionAllowed",
+                            ),
+                        },
+                        span: probe.rs:23:33: 23:54 (#0),
+                    },
+                    BodyId {
+                        hir_id: HirId(DefId(0:25 ~ compiler_binding_fixture[243c]::{impl#0}::pick).5),
+                    },
+                ),
+                impl_kind: Trait {
+                    defaultness: Final,
+                    trait_item_def_id: Ok(
+                        DefId(0:23 ~ compiler_binding_fixture[243c]::Choose::pick),
+                    ),
+                },
+                span: probe.rs:23:33: 23:61 (#0),
+            },
+        ),
+    },
+    parents: [
+        (0, 4294967040),
+        (1, 0),
+        (2, 1),
+        (3, 5),
+        (4, 3),
+        (5, 0),
+        (6, 0),
+        (7, 10),
+        (8, 9),
+        (9, 10),
+        (10, 0),
+        (11, 0),
+        (12, 11),
+    ],
+    bodies: {
+        5: Body {
+            params: [
+                Param {
+                    hir_id: HirId(DefId(0:25 ~ compiler_binding_fixture[243c]::{impl#0}::pick).1),
+                    pat: Pat {
+                        hir_id: HirId(DefId(0:25 ~ compiler_binding_fixture[243c]::{impl#0}::pick).2),
+                        kind: Binding(
+                            BindingMode(
+                                No,
+                                Not,
+                            ),
+                            HirId(DefId(0:25 ~ compiler_binding_fixture[243c]::{impl#0}::pick).2),
+                            self#0,
+                            None,
+                        ),
+                        span: probe.rs:23:41: 23:46 (#0),
+                        default_binding_modes: true,
+                    },
+                    ty_span: probe.rs:23:41: 23:46 (#0),
+                    span: probe.rs:23:41: 23:46 (#0),
+                },
+            ],
+            value: Expr {
+                hir_id: HirId(DefId(0:25 ~ compiler_binding_fixture[243c]::{impl#0}::pick).5),
+                kind: Block(
+                    Block {
+                        stmts: [],
+                        expr: Some(
+                            Expr {
+                                hir_id: HirId(DefId(0:25 ~ compiler_binding_fixture[243c]::{impl#0}::pick).4),
+                                kind: Lit(
+                                    Spanned {
+                                        node: Int(
+                                            Pu128(
+                                                13,
+                                            ),
+                                            Unsuffixed,
+                                        ),
+                                        span: probe.rs:23:57: 23:59 (#0),
+                                    },
+                                ),
+                                span: probe.rs:23:57: 23:59 (#0),
+                            },
+                        ),
+                        hir_id: HirId(DefId(0:25 ~ compiler_binding_fixture[243c]::{impl#0}::pick).3),
+                        rules: DefaultBlock,
+                        span: probe.rs:23:55: 23:61 (#0),
+                        targeted_by_break: false,
+                    },
+                    None,
+                ),
+                span: probe.rs:23:55: 23:61 (#0),
+            },
+        },
+    },
+    opt_hash: Some(
+        Fingerprint(
+            17600384109890483704,
+            9252535531382515137,
+        ),
+    ),
+}

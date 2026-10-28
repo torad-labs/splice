@@ -14,11 +14,20 @@ internal class NativeEvents {
     private val leases = ConcurrentHashMap<Pair<String, String>, NativeCellLease>()
     private val expected = ConcurrentHashMap<Long, NativeOwnership>()
     private val earlyCompletions = ConcurrentHashMap.newKeySet<Pair<String, String>>()
-
-    @Volatile private var failure: IOException? = null
+    private val receivers = NativeDelegateReceivers()
 
     fun cell(sessionId: String, id: String): Channel<JsonObject> = cells.computeIfAbsent(sessionId to id) {
-        Channel<JsonObject>(Channel.UNLIMITED).also { channel -> failure?.let(channel::close) }
+        Channel<JsonObject>(
+            Channel.UNLIMITED,
+        ).also { channel -> receivers.failure(sessionId)?.let(channel::close) }
+    }
+
+    fun attach(sessionId: String, id: String, consumer: NativeDelegatePump) {
+        receivers.attach(sessionId, id, consumer)
+    }
+
+    fun detach(sessionId: String, id: String, consumer: NativeDelegatePump) {
+        receivers.detach(sessionId, id, consumer)
     }
 
     fun deliver(frame: JsonObject) {
@@ -79,12 +88,13 @@ internal class NativeEvents {
         val key = sessionId to id
         // Keep the receipt until cell/closed arrives, so an older terminal cell cannot consume a newer start's slot.
         leases[key]?.close()
+        receivers.release(key)
         cells.remove(key)?.close()
         delegates.entries.removeIf { it.value == key }
     }
 
     fun fail(error: IOException) {
-        failure = error
+        receivers.fail(error)
         cells.values.forEach { it.close(error) }
         leases.values.forEach(NativeCellLease::close)
         leases.clear()
@@ -94,6 +104,7 @@ internal class NativeEvents {
     }
 
     fun failSession(sessionId: String, error: IOException) {
+        receivers.failSession(sessionId, error)
         cells.forEach { (key, channel) -> if (key.first == sessionId) channel.close(error) }
         leases.entries.forEach { (key, lease) ->
             if (key.first == sessionId && leases.remove(key, lease)) lease.close()

@@ -2,9 +2,9 @@
 package splice.provider.codex.state
 
 import splice.core.util.LogSink
-import splice.provider.codex.CODE_MODE_RECORD_LOG_CHARS
 import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.CodexCodeModeRegistry
+import splice.provider.codex.state.diagnostics.CODE_MODE_RECORD_LOG_CHARS
 import splice.upstream.codemode.CodeModeResult
 import java.util.concurrent.ConcurrentHashMap
 

@@ -49,13 +49,6 @@ internal class CodeModeGatewayInterruptedPost(
     private fun checkBoundary(input: JsonArray) {
         val callId = checkNotNull(JsonScalars.str(interruption, "callId"))
         CodeModeGatewayNativeResults.cell(input, callId)
-        val notification = checkNotNull(JsonScalars.str(interruption, "notification"))
-        val owned = input.mapNotNull { it as? JsonObject }.filter { JsonScalars.str(it, "call_id") == callId }
-        check(
-            owned.any { value ->
-                JsonScalars.str(value, "name") == "exec" && JsonScalars.str(value, "output") == notification
-            },
-        ) { "The actual native guest did not deliver its bound interruption notification" }
     }
 }
 

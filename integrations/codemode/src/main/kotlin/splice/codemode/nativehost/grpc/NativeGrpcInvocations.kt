@@ -47,6 +47,7 @@ internal object NativeGrpcInvocations {
     fun notification(message: DynamicMessage): JsonObject = buildJsonObject {
         put("type", "notification/send")
         put("cellId", NativeGrpcFields.identifier(message, "cell_id"))
+        put("callId", NativeGrpcFields.identifier(message, "call_id"))
         put("text", NativeGrpcFields.text(message, "text"))
     }
 

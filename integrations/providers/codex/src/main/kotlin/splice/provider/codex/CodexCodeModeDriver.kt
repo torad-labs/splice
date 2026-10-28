@@ -8,7 +8,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
-import splice.core.turn.noRequestUsage
 import splice.provider.codex.history.CodeModeUpstreamHistory
 import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.CodeModeOutcomeAccumulator
@@ -16,7 +15,6 @@ import splice.provider.codex.stream.CodeModeRecordFactory
 import splice.provider.codex.stream.CodeModeRedirectablePost
 import splice.provider.codex.stream.CodeModeRuntimeRun
 import splice.provider.codex.stream.CodeModeRuntimeStarter
-import splice.provider.codex.stream.CodeModeSourceState
 import splice.provider.codex.stream.CodeModeStreams
 import splice.provider.codex.stream.batch.CodeModeAdmissionBodies
 import splice.provider.codex.stream.batch.CodeModeBatchDispatch
@@ -89,10 +87,8 @@ internal class CodexCodeModeDriver(
                 CodeModeSourceAdmission.PENDING,
             )?.let { error(it) }
             context.scripts++
-            val pending = TurnOutcome.Success(false, false, noRequestUsage)
-            val record = checkNotNull(factory.create(context, call, admissionBody, pending, clientStart))
+            val record = factory.pending(context, call, admissionBody, clientStart)
             record.postedOn = sent.newest(context)
-            record.sourceState = CodeModeSourceState()
             check(registry.add(record)) { "code-mode registry capacity reached" }
             record
         }
@@ -289,5 +285,3 @@ internal class CodexCodeModeDriver(
         record to starter.failed(record, null)
     }
 }
-
-internal const val CODE_MODE_RECORD_LOG_CHARS: Int = 8

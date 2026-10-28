@@ -11,11 +11,15 @@ import splice.upstream.codemode.CodeModeManual
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeResultDisposition
 import splice.upstream.codemode.CodeModeToolOutputs
+import splice.upstream.codemode.NativeCodeModeNotificationDelivery
 import splice.upstream.codemode.NativeCodeModeOptions
 import java.math.BigInteger
 
 private const val NATIVE_METHOD: String = "method"
 private const val NATIVE_SESSION_ID: String = "sessionId"
+
+// why: tool and notification delegate responses share the same success/error envelope field.
+private const val NATIVE_RESULT_STATUS = "status"
 
 internal object NativeRequests {
     fun control(type: String, id: Long): JsonObject = buildJsonObject {
@@ -121,10 +125,10 @@ internal object NativeRequests {
             "result",
             buildJsonObject {
                 if (result.isError && result.disposition == CodeModeResultDisposition.REJECT) {
-                    put("status", "error")
+                    put(NATIVE_RESULT_STATUS, "error")
                     put("message", result.output)
                 } else {
-                    put("status", "ok")
+                    put(NATIVE_RESULT_STATUS, "ok")
                     put(
                         "value",
                         buildJsonObject {
@@ -137,14 +141,25 @@ internal object NativeRequests {
         )
     }
 
-    fun notified(id: JsonElement): JsonObject = buildJsonObject {
+    fun notified(
+        id: JsonElement,
+        delivered: NativeCodeModeNotificationDelivery = NativeCodeModeNotificationDelivery.Delivered,
+    ): JsonObject = buildJsonObject {
         put("type", "delegate/response")
         put("id", id)
         put(
             "result",
             buildJsonObject {
-                put("status", "ok")
-                put("value", buildJsonObject { put("type", "notification/delivered") })
+                when (delivered) {
+                    NativeCodeModeNotificationDelivery.Delivered -> {
+                        put(NATIVE_RESULT_STATUS, "ok")
+                        put("value", buildJsonObject { put("type", "notification/delivered") })
+                    }
+                    is NativeCodeModeNotificationDelivery.Rejected -> {
+                        put(NATIVE_RESULT_STATUS, "error")
+                        put("message", delivered.message)
+                    }
+                }
             },
         )
     }

@@ -96,6 +96,9 @@ internal class CodexCodeModeRegistry(
     }
     val source = CodeModeSourceRecords(access, records, history, store, contexts)
     val changes = CodeModeRecordChanges(access, records, history, store, cells, startup, config)
+    val notifications = splice.provider.codex.stream.notifications.CodeModeConversationNotifications(
+        splice.provider.codex.state.notification.CodeModeNotificationRecords(access, records, changes),
+    )
     val interruptionRecords = splice.provider.codex.state.interrupt.CodeModeInterruptedRecords(access, records, changes)
     private val admissions = startup.entries
     val retainedCells = CodeModeCellRetention(config, access, records, cells, admissions, endSession)

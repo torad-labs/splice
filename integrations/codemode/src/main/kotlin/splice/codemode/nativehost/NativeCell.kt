@@ -12,7 +12,6 @@ import kotlinx.coroutines.yield
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.Cancellables
 import splice.upstream.codemode.CodeModeInvocationAction
-import splice.upstream.codemode.CodeModeManual
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 import splice.upstream.codemode.NativeCodeModeCell
@@ -26,15 +25,15 @@ internal class NativeCell(
     private val connection: NativeConnection,
     private val scope: CoroutineScope,
     initial: NativeOperation,
-    definitions: List<CodeModeManual.NestedTool>,
+    private val callbacks: NativeCallbacks,
     private val lease: NativeCellLease,
 ) : NativeCodeModeCell {
     override val cellId: String = "${connection.generation}:$wireCellId"
     private val closed = AtomicBoolean()
     private val advancing = Mutex()
-    private val callbacks = NativeCallbacks(connection, scope, definitions)
     private val readySteps = ArrayDeque<CodeModeStep>()
     private val observations = NativeObservations(connection, scope, sessionId, wireCellId, initial)
+    private val delegates = NativeDelegatePump(connection, scope, sessionId, wireCellId, callbacks)
 
     override suspend fun advance(results: List<CodeModeResult>): CodeModeStep {
         submitResults(results)
@@ -67,7 +66,7 @@ internal class NativeCell(
             val response = observations.response(yieldTimeMs)
             while (readySteps.isEmpty()) {
                 select<Unit> {
-                    connection.events.cell(sessionId, wireCellId).onReceiveCatching { received ->
+                    delegates.ready.onReceiveCatching { received ->
                         consumeDelegate(received, response)
                     }
                     response.onAwait { frame ->
@@ -110,7 +109,7 @@ internal class NativeCell(
     private suspend fun batchCalls(first: CodeModeStep.Calls): CodeModeStep.Calls {
         yield()
         val calls = first.calls.toMutableList()
-        val channel = connection.events.cell(sessionId, wireCellId)
+        val channel = delegates.ready
         var draining = true
         while (draining) {
             val frame = channel.tryReceive().getOrNull()
@@ -149,6 +148,7 @@ internal class NativeCell(
             if (step !is CodeModeStep.Yielded) {
                 closed.set(true)
                 callbacks.close()
+                delegates.close()
                 lease.close()
                 if (!advancing.isLocked) connection.events.release(sessionId, wireCellId)
             }
@@ -158,6 +158,7 @@ internal class NativeCell(
     private fun release() {
         closed.set(true)
         callbacks.close()
+        delegates.close()
         lease.close()
         connection.events.release(sessionId, wireCellId)
     }
@@ -165,6 +166,7 @@ internal class NativeCell(
     override fun close() {
         if (closed.compareAndSet(false, true)) {
             callbacks.close()
+            delegates.close()
             scope.launch {
                 Cancellables.runCatchingBestEffort {
                     observations.abandon()

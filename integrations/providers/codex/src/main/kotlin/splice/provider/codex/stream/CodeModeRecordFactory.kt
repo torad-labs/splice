@@ -3,6 +3,7 @@ package splice.provider.codex.stream
 
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
+import splice.core.turn.noRequestUsage
 import splice.provider.codex.CODE_MODE_METADATA_VERSION
 import splice.provider.codex.CodeModeBaseline
 import splice.provider.codex.CodeModeBody
@@ -26,6 +27,17 @@ internal fun interface CodeModeStreamAdmission {
 }
 
 internal class CodeModeRecordFactory(private val config: CodeModeBridgeConfig, private val wire: CodexCodeModeWire) {
+    /** Stream admission reserves the same record identity before any source or response usage is complete. */
+    fun pending(
+        context: CodeModeRunContext,
+        outer: GatewayCustomCall,
+        body: CodeModeBody,
+        client: CodeModeClientStart?,
+    ): CodeModeRecord = checkNotNull(
+        create(context, outer, body, TurnOutcome.Success(false, false, noRequestUsage), client),
+    )
+        .also { it.sourceState = CodeModeSourceState() }
+
     fun create(
         context: CodeModeRunContext,
         outer: GatewayCustomCall,

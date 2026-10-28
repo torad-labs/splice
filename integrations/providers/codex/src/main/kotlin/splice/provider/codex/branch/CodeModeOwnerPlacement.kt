@@ -2,13 +2,13 @@ package splice.provider.codex.branch
 
 import splice.core.util.LogSink
 import splice.provider.codex.CODE_MODE_ABANDONED
-import splice.provider.codex.CODE_MODE_RECORD_LOG_CHARS
 import splice.provider.codex.CodeModeBody
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.CodexCodeModeMachine
 import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.CodexCodeModeWire
+import splice.provider.codex.state.diagnostics.CODE_MODE_RECORD_LOG_CHARS
 import splice.provider.codex.state.diagnostics.CodeModeHistoryLog
 import splice.provider.codex.state.diagnostics.CodeModeNativeRejection
 import splice.upstream.codemode.CodeModeResult

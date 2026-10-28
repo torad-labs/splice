@@ -2,7 +2,6 @@
 package splice.provider.codex.state.diagnostics
 
 import splice.core.util.LogSink
-import splice.provider.codex.CODE_MODE_RECORD_LOG_CHARS
 import splice.provider.codex.CodeModeOmission
 import splice.provider.codex.CodeModeRewrite
 import java.util.concurrent.ConcurrentHashMap

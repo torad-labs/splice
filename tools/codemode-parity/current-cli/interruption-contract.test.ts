@@ -48,6 +48,7 @@ test("a user-interrupt plan requires the actual owned PTY abort and resumed user
     expect(() => gatewayInput(interruptionScenario)).toThrow("PTY");
     const session = `session-${owned.source.nonce}`, conversation = `parity-${owned.source.nonce}`;
     const candidate: ObjectValue = { outcomes: ["Cancelled", "Success"], posted: owned.source.observations.map(value => value.input),
+      nativeNotifications: [interruptionScenario.interruption!.notification],
       interruption: { ...sourceInterruption(owned.source), cancelled: true, resumed: true },
       interruptControl: { boundary: "authenticated-production-control-http", method: "POST",
         path: `/api/heads/native-interrupt-probe/sessions/${session}/interrupt`, request: { conversation_key: conversation },

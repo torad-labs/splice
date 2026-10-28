@@ -54,6 +54,7 @@ export function compareInterruption(source: CliRun, candidate: ObjectValue): voi
   const expected = sourceInterruption(source);
   assert.deepEqual(candidate.interruption, { ...expected, cancelled: true, resumed: true });
   assert.deepEqual(candidate.outcomes, ["Cancelled", "Success"]);
+  assert.deepEqual(candidate.nativeNotifications, [expected.notification], "The actual native notification must reach the active client while its yielded model continuation is held");
   assert.ok(Array.isArray(candidate.posted) && candidate.posted.length === 5, "Candidate must cancel its actual post-yield request then continue the same conversation");
   const held = candidate.posted[2];
   assert.ok(Array.isArray(held) && held.every(item => item !== null && typeof item === "object" && !Array.isArray(item)), "Candidate interruption needs its own actual held model input");

@@ -2,10 +2,12 @@ package splice.codemode
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import splice.codemode.nativehost.NativeCallbacks
 import splice.codemode.nativehost.NativeCell
 import splice.codemode.nativehost.NativeCellAdmission
 import splice.codemode.nativehost.NativeCellLease
 import splice.codemode.nativehost.NativeFrames
+import splice.codemode.nativehost.NativeNotificationReceiver
 import splice.codemode.nativehost.NativePendingStart
 import splice.codemode.nativehost.NativePreparedSession
 import splice.codemode.nativehost.NativeRequests
@@ -57,7 +59,11 @@ internal class NativeCellStarter(
             )
             val accepted = NativeFrames.value(operation.response.await())
             val cellId = JsonScalars.str(accepted, "cellId") ?: throw IOException("Native host did not accept a cell")
-            val raw = NativeCell(cellId, sessionId, host, scope, operation, definitions, lease)
+            val notifications = options.notifications?.let {
+                NativeNotificationReceiver(sessionKey, prepared.binding.publicCellId(cellId), cellId, it)
+            }
+            val callbacks = NativeCallbacks(host, scope, definitions, notifications)
+            val raw = NativeCell(cellId, sessionId, host, scope, operation, callbacks, lease)
             return NativeLogicalCell(raw, prepared.owner, prepared.binding, cellId).also {
                 transferred = true
             }

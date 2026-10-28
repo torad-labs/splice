@@ -7,11 +7,13 @@ import splice.core.util.JsonScalars
 import splice.dialect.responses.request.ResponsesCodeModeInput
 import splice.provider.codex.CODE_MODE_FIELD_ROLE
 import splice.provider.codex.CODE_MODE_FIELD_TYPE
-import splice.provider.codex.CODE_MODE_RECORD_LOG_CHARS
 import splice.provider.codex.CodeModeNativeSegment
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeHistoryCodec
 import splice.provider.codex.state.CodeModeHistoryIndex
+
+// why: diagnostics show a short record identity while retaining enough prefix to recognize related history lines.
+internal const val CODE_MODE_RECORD_LOG_CHARS: Int = 8
 
 internal enum class CodeModeNativeBranch(val wire: String) {
     NATIVE_ORDER("nativeOrder"),

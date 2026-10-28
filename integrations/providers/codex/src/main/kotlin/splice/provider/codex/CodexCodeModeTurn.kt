@@ -77,6 +77,7 @@ internal class CodexCodeModeTurn(
             input.recovery,
         )
         val watched = driver.streams.watchCuts(key)
+        val notificationOwner = registry.notifications.open(context)
         return try {
             val outcome = try {
                 // An identical request is served before retention can trim its recorded step.
@@ -90,6 +91,7 @@ internal class CodexCodeModeTurn(
             // The one exit every client-facing step takes, so none tells Claude Code its context is zero.
             registry.contexts.report(key, driver.streams.billCuts(watched, context.postedSources, billed))
         } finally {
+            registry.notifications.close(notificationOwner)
             // A refusal or cancellation has no returned outcome, but the cutting turn still owns its perf row.
             val cuts = driver.streams.takeCuts(watched, context.postedSources)
             input.post.perf?.add(PerfKeys.CUT_SOURCE_ROUNDS, cuts)

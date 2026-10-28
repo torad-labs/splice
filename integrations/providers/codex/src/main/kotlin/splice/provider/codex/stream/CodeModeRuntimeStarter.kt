@@ -9,7 +9,6 @@ import splice.core.failure.Position
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
-import splice.provider.codex.CODE_MODE_RECORD_LOG_CHARS
 import splice.provider.codex.CODE_MODE_WAIT_TOOL_NAME
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModePhase
@@ -17,6 +16,7 @@ import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.CodexCodeModeMachine
 import splice.provider.codex.CodexCodeModeRegistry
+import splice.provider.codex.state.diagnostics.CODE_MODE_RECORD_LOG_CHARS
 import splice.provider.codex.stream.native.CodeModeNativeStartup
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeRuntime

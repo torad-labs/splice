@@ -15,12 +15,12 @@ import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodexCodeModeBridge
-import splice.provider.codex.diagnostics.CodeModeGatewayBridgeSink
 import splice.provider.codex.diagnostics.CodeModeGatewayProbeSupport
 import splice.provider.codex.diagnostics.CodeModeInterruptControl
 import splice.upstream.BuiltTurn
 import splice.upstream.RoundResult
 import splice.upstream.codemode.NativeCodeModeLifecycle
+import splice.upstream.sse.WireSink
 import java.security.MessageDigest
 
 // why: a source-attested native notification must arrive within this bounded diagnostic turn.
@@ -37,28 +37,41 @@ internal class CodeModeGatewayInterruptedProbe(
         val plan = CodeModeGatewayScenarioPlan(specification, fixture.json)
         val requests = CodeModeGatewayScenarioRequests(fixture, specification)
         val interruption = specification.getValue("interruption").jsonObject
+        val sink = CodeModeGatewayInterruptedSink(checkNotNull(JsonScalars.str(interruption, "notification")))
         val post = CodeModeGatewayInterruptedPost(fixture, plan, interruption)
         val first = requests.prepare(manager, emptyList())
         try {
-            val interrupted = async { intercept(first, post) }
-            withTimeout(INTERRUPTED_PROBE_READY_MS) { post.held.await() }
+            val interrupted = async { intercept(first, sink, post) }
+            withTimeout(INTERRUPTED_PROBE_READY_MS) {
+                post.held.await()
+                sink.ready.await()
+            }
             interrupted.cancelAndJoin()
             check(interrupted.isCancelled) { "The owned request did not actually cancel" }
             val controlled = interruptControl.interrupt(manager, "session-${fixture.nonce}", fixture.key)
             val prompt = checkNotNull(JsonScalars.str(interruption, "resumePrompt"))
             val resumed = requests.prepare(manager, emptyList(), prompt)
-            val result = intercept(resumed, post)
+            val result = intercept(resumed, sink, post)
             plan.checkComplete()
-            JsonObject(report(bytes, interruption, post, result) + ("interruptControl" to controlled))
+            JsonObject(
+                report(bytes, interruption, post, result) + mapOf(
+                    "interruptControl" to controlled,
+                    "nativeNotifications" to JsonArray(sink.notifications.map(::JsonPrimitive)),
+                ),
+            )
         } finally {
             manager.onProviderStop()
         }
     }
 
-    private suspend fun intercept(request: BuiltTurn, post: CodeModeGatewayInterruptedPost): RoundResult =
+    private suspend fun intercept(
+        request: BuiltTurn,
+        sink: WireSink,
+        post: CodeModeGatewayInterruptedPost,
+    ): RoundResult =
         checkNotNull(request.roundInterceptor).intercept(
             JsonWire.string(request.requestBody),
-            CodeModeGatewayBridgeSink(),
+            sink,
             post,
         )
 

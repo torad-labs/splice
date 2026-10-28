@@ -24,12 +24,23 @@ internal class NativeCallbacks(
     private val connection: NativeConnection,
     private val scope: CoroutineScope,
     definitions: List<CodeModeManual.NestedTool>,
+    private val notifications: NativeNotificationReceiver? = null,
 ) {
     private val closed = AtomicBoolean()
     private val submitting = Mutex()
     private val pending = ConcurrentHashMap<String, NativeCallbackPending>()
     private val tools = definitions.associateBy {
         (it.metadata.namespace?.takeIf(String::isNotEmpty) ?: "functions") to it.name
+    }
+
+    fun handlesNotification(frame: JsonObject): Boolean = notifications != null &&
+        JsonScalars.str(frame["request"] as? JsonObject, "type") == "notification/send"
+
+    suspend fun notify(frame: JsonObject) {
+        val id = frame.getValue("id")
+        val delivered = checkNotNull(notifications).deliver(frame.getValue("request").jsonObject)
+        connection.send(NativeRequests.notified(id, delivered))
+        connection.events.answered(id.toString())
     }
 
     suspend fun submit(results: List<CodeModeResult>): Unit = submitting.withLock {

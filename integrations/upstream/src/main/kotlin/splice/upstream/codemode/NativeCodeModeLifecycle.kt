@@ -5,7 +5,26 @@ import java.math.BigInteger
 // why: The keyless compatibility API has always shared this session; addressed callers supply their own key.
 private const val NATIVE_UNADDRESSED_SESSION_KEY = "unaddressed-native-runtime"
 
-/** Foreground observation budgets passed unchanged to the pinned native runtime. */
+/** An actual native notification, addressed to the execution's logical session and public cell generation. */
+public data class NativeCodeModeNotification(
+    val sessionKey: String,
+    val cellId: String,
+    val callId: String,
+    val text: String,
+)
+
+/** Notification delivery settles independently of foreground observation and ordinary tool permissions. */
+public sealed class NativeCodeModeNotificationDelivery {
+    public data object Delivered : NativeCodeModeNotificationDelivery()
+    public data class Rejected(val message: String) : NativeCodeModeNotificationDelivery()
+}
+
+/** The provider resolves the current delivery owner when called; it must not retain a former wire sink. */
+public fun interface NativeCodeModeNotifications {
+    public suspend fun deliver(notification: NativeCodeModeNotification): NativeCodeModeNotificationDelivery
+}
+
+/** Execution metadata and foreground budgets; the notification receiver is local and never serialized to the host. */
 public data class NativeCodeModeOptions(
     val yieldTimeMs: Long = 10_000,
     val maxOutputTokens: Long = 10_000,
@@ -14,6 +33,8 @@ public data class NativeCodeModeOptions(
     val unsignedMaxOutputTokens: BigInteger? = null,
     /** The model's outer exec identity, retained by host notifications and callback tracing. */
     val toolCallId: String? = null,
+    /** A session-owned receiver keeps notifications live after a foreground yield or cancellation. */
+    val notifications: NativeCodeModeNotifications? = null,
 ) {
     init {
         require(yieldTimeMs >= 0) { "Native observation time must be nonnegative" }

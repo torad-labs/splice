@@ -2,10 +2,10 @@
 package splice.provider.codex.stream
 
 import splice.core.util.JsonWire
-import splice.provider.codex.CODE_MODE_RECORD_LOG_CHARS
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeValidation
+import splice.provider.codex.state.diagnostics.CODE_MODE_RECORD_LOG_CHARS
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeResult
 import java.util.concurrent.ConcurrentHashMap

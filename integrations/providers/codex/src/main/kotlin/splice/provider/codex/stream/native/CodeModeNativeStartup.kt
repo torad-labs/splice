@@ -48,9 +48,12 @@ internal class CodeModeNativeStartup(private val registry: CodexCodeModeRegistry
             )
         }
         val held = if (waiting) {
-            retained(host, record, invocation, owner).also { (it.cell as? CodeModeSearchCell)?.update(context.turn) }
+            retained(host, record, invocation, owner).also {
+                registry.notifications.bind(owner, it.notificationCallId, context)
+                (it.cell as? CodeModeSearchCell)?.update(context.turn)
+            }
         } else {
-            val cell = execute(host, owner, invocation, context, record.origin.outerCallId)
+            val cell = execute(host, owner, invocation, context, record)
             CodeModeHeldNativeCell(cell, record.origin.outerCallId)
         }
         registry.nativeCells.trackSession(record.key, owner, context.turn.sessionId)
@@ -71,9 +74,12 @@ internal class CodeModeNativeStartup(private val registry: CodexCodeModeRegistry
         owner: String,
         invocation: CodeModeNativeInvocation,
         context: CodeModeRunContext,
-        toolCallId: String,
+        record: CodeModeRecord,
     ): splice.upstream.codemode.NativeCodeModeCell {
-        val options = invocation.options.copy(toolCallId = toolCallId)
+        val options = invocation.options.copy(
+            toolCallId = record.origin.outerCallId,
+            notifications = registry.notifications.receiver(record, context, owner),
+        )
         return if (context.turn.toolDefinitions.isEmpty()) {
             host.startNativeSession(
                 owner,

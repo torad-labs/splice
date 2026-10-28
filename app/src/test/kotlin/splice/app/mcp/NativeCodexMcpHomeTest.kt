@@ -9,6 +9,7 @@ import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -22,7 +23,10 @@ class NativeCodexMcpHomeTest {
     fun `a fresh registration can reach its private native configuration`(@TempDir directory: Path) = runBlocking {
         val home = directory.resolve("new-account").resolve(".codex")
         connect(home)
-        assertEquals("rwx------", PosixFilePermissions.toString(Files.getPosixFilePermissions(home)))
+        assertTrue(Files.isDirectory(home))
+        if ("posix" in home.fileSystem.supportedFileAttributeViews()) {
+            assertEquals("rwx------", PosixFilePermissions.toString(Files.getPosixFilePermissions(home)))
+        }
     }
 
     @Test

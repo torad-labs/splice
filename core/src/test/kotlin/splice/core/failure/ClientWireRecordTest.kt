@@ -371,7 +371,7 @@ class ClientWireRecordTest {
         return when (Section11.of(cause)) {
             Fam.L -> handedOverMiss(answer, cause, otherLogin, resent, told)
             Fam.H -> if (resent != false) "H re-sent: $told" else null
-            else -> null
+            Fam.R, Fam.P, Fam.T, Fam.LOGIN, null -> null
         }
     }
 

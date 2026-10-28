@@ -38,7 +38,7 @@ class DoctorConfigChecksTest {
             port = 1,
             discoveryPrefix = "p--",
             pinnedModel = "m",
-            overrides = mapOf("streamIdleMs" to "soon"),
+            overrides = mapOf("maxInflight" to "soon"),
         )
         val topology = Topology(defaults = mapOf("streamIdelMs" to "1000"), heads = mapOf("one" to head))
 
@@ -49,7 +49,7 @@ class DoctorConfigChecksTest {
         assertEquals(
             listOf(
                 "setting 'streamIdelMs' is ignored (unknown key); the knob keeps its default",
-                "setting 'heads.one.streamIdleMs' is ignored (not a valid number); the knob keeps its default",
+                "setting 'heads.one.maxInflight' is ignored (not a valid number); the knob keeps its default",
             ),
             rows.map { it.detail },
         )

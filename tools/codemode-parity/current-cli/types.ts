@@ -1,5 +1,7 @@
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type ObjectValue = { [key: string]: Json };
+export type AvailabilityToolMode = "direct" | "code_mode" | "code_mode_only";
+export type NativeHostExpectation = { kind: "required" } | { kind: "disabled"; feature: "code_mode_host" };
 
 export type CliAction =
   | { kind: "exec"; source: string; followingSources?: string[] }
@@ -14,6 +16,7 @@ export interface CliScenario {
   completionHoldMs?: number;
   applyPatch?: true;
   interruption?: { notification: string; resumePrompt: string; actionIndex?: number };
+  availability?: { host: "disabled"; toolMode: AvailabilityToolMode };
 }
 
 export interface CliReference {

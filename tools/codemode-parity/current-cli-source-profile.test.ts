@@ -52,6 +52,10 @@ test("an unrelated local dependency or duplicated package cannot enter the overl
 test("mandatory source cases retain exact action bytes and typed MCP routes", () => {
   const plans = sourceCliPlans();
   for (const id of ["control", "terminate", "notify", "outer-batch", "empty-yield", "silent", "mcp", "mcp-search", "mcp-rpc-error", "freeform-patch", "user-interrupt"]) expect(plans.some(plan => plan.caseId === `cli-source/${id}`)).toBe(true);
+  expect(plans.filter(plan => plan.scenario.availability).map(plan => plan.scenario.availability)).toEqual([
+    { host: "disabled", toolMode: "direct" }, { host: "disabled", toolMode: "code_mode" }, { host: "disabled", toolMode: "code_mode_only" },
+  ]);
+  expect(plans.filter(plan => !plan.scenario.availability).length).toBe(11);
   expect(new Set(plans.map(plan => plan.caseId)).size).toBe(plans.length);
   for (const plan of plans) {
     expect(plan.inputSha256).toBe(sha256(JSON.stringify(plan.scenario)));

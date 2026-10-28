@@ -6,6 +6,7 @@ import { compareFreeformBoundary, freeformGatewayFields, sourceFreeformTranscrip
 import { compareInterruption, sourceInterruption } from "./interruption-contract";
 import { canonicalMcpSearchPackets } from "./mcp-search-contract";
 import { canonicalSelectedMcpCall, mcpSearchCallbackPlan, selectedMcpTranscript } from "./mcp-search-call";
+import { compareAvailabilityBoundary } from "./availability-contract";
 
 const callTypes = new Set(["function_call", "custom_tool_call", "function_call_output", "custom_tool_call_output"]);
 const status = /^(Script (?:completed|failed|terminated|running with cell ID [^\n]+)\n)Wall time [0-9]+\.[0-9] seconds\nOutput:\n$/;
@@ -49,6 +50,7 @@ export function compareControlPackets(source: CliRun, candidate: ObjectValue, ca
     compareFreeformBoundary(sourceFreeformTranscript(source), candidate, candidateDirectory);
   }
   if (source.scenario.interruption) compareInterruption(source, candidate);
+  if (source.scenario.availability) compareAvailabilityBoundary(source, candidate);
 }
 
 export function candidateOutcomesMatch(source: CliRun, candidate: ObjectValue): boolean {
@@ -83,6 +85,7 @@ export function gatewayInput(scenario: CliScenario, mcp?: McpTranscript, freefor
     ...(freeform ? freeformGatewayFields(freeform) : {}),
     ...(interruption ? { interruption } : {}),
     ...(scenario.rankedSearch ? { rankedSearch: true } : {}),
+    ...(scenario.availability ? { availability: scenario.availability } : {}),
   };
 }
 

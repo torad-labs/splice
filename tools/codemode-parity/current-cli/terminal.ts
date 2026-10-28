@@ -3,8 +3,10 @@ import { closeSync, mkdirSync, openSync, readFileSync, readlinkSync, readdirSync
 import { basename, dirname, join, resolve } from "node:path";
 import xterm from "@xterm/headless";
 import { nativeCompletion, nativeInterruption } from "./native-events";
-import type { CliProcess, NativeCompletion } from "./types";
+import type { CliProcess, NativeCompletion, NativeHostExpectation } from "./types";
 import { fileIdentity } from "./file-identity";
+import { captureTerminalWarnings } from "./terminal-warnings";
+import { nativeReviewCompletion } from "./review-native-events";
 
 interface TerminalOptions {
   argv: string[];
@@ -13,8 +15,12 @@ interface TerminalOptions {
   directory: string;
   expectedHostSha256: string;
   expectedCliSha256: string;
+  hostExpectation: NativeHostExpectation;
   timeoutMs: number;
   sourceProfilePattern?: string;
+  onAttested?: (identity: Omit<CliProcess, "exit">) => void;
+  onHostAttested?: (identity: { pid: number; sha256: string }) => void;
+  review?: { expectedFinalText: string };
   interruption?: { notification: string; resumePrompt: string; callId: string; ready(): boolean };
 }
 
@@ -42,6 +48,7 @@ export async function runTerminal(options: TerminalOptions): Promise<{
 }> {
   if (process.platform !== "linux") throw Error("Current executable/child attestation requires Linux /proc");
   if (typeof Bun.Terminal !== "function") throw Error("A Bun.Terminal-compatible runtime is required");
+  if (options.review && (options.interruption || options.hostExpectation.kind !== "required")) throw Error("Native review requires its own completed two-conversation case and a pinned host");
   const profilePattern = options.sourceProfilePattern;
   if (profilePattern && (resolve(profilePattern) !== profilePattern || !profilePattern.startsWith(dirname(resolve(options.directory)) + "/") || basename(profilePattern) !== "%p.profraw")) throw Error("Source profile output escaped its disposable scenario");
   mkdirSync(options.directory, { recursive: true, mode: 0o700 });
@@ -70,6 +77,7 @@ export async function runTerminal(options: TerminalOptions): Promise<{
   let sentExit = false, confirmedExit = false;
   let interrupted = false, resumed = false;
   const hosts = new Map<number, string>();
+  const observedHosts = new Set<number>();
   const started = Date.now();
   const screen = () => {
     const buffer = emulator.buffer.active;
@@ -82,15 +90,21 @@ export async function runTerminal(options: TerminalOptions): Promise<{
     const sha256 = (await fileIdentity(`/proc/${child.pid}/exe`)).sha256;
     if (!startTicks || !/^[0-9]+$/.test(startTicks) || sha256 !== options.expectedCliSha256) throw Error("Actual interactive CLI process identity differs");
     cliIdentity = { pid: child.pid, sha256, startTicks };
+    record("cli_process_attested", JSON.stringify(cliIdentity));
+    options.onAttested?.(cliIdentity);
     while (child.exitCode === null) {
       for (const pid of descendants(child.pid)) {
         if (hosts.has(pid)) continue;
+        let attestedHost: { pid: number; sha256: string } | undefined;
         try {
           if (!basename(readlinkSync(`/proc/${pid}/exe`)).startsWith("codex-code-mode-host")) continue;
+          observedHosts.add(pid);
           const sha256 = createHash("sha256").update(readFileSync(`/proc/${pid}/exe`)).digest("hex");
-          if (sha256 === options.expectedHostSha256) hosts.set(pid, sha256);
+          if (sha256 === options.expectedHostSha256) { hosts.set(pid, sha256); attestedHost = { pid, sha256 }; }
         } catch { /* Observation is retried while the controlled client owns its child. */ }
+        if (attestedHost) { record("native_host_attested", JSON.stringify(attestedHost)); options.onHostAttested?.(attestedHost); }
       }
+      if (options.hostExpectation.kind === "disabled" && observedHosts.size) throw Error("Controlled disabled-host case exposed a native host child");
       if (options.interruption && !completedAt) {
         const state = nativeInterruption(options.home, options.interruption.callId, options.interruption.notification);
         if (!interrupted && state?.notified && hosts.size && options.interruption.ready()) {
@@ -104,11 +118,20 @@ export async function runTerminal(options: TerminalOptions): Promise<{
         }
       }
       if (!completedAt) {
-        completion = nativeCompletion(options.home);
+        completion = options.review ? nativeReviewCompletion(options.home, options.cwd, options.review.expectedFinalText) : nativeCompletion(options.home);
         if (completion) {
           completedAt = Date.now();
           await Bun.sleep(150);
-          if (child.exitCode === null && !terminal.closed) { record("exit_after_native_completion", "\x04"); terminal.write("\x04"); sentExit = true; }
+          if (options.hostExpectation.kind === "disabled") {
+            await captureTerminalWarnings({ directory: options.directory, pid: child.pid, completion,
+              write: value => terminal!.write(value), record, alive: () => child!.exitCode === null,
+              flush: () => new Promise<void>(resolve => emulator.write("", resolve)),
+              rows: () => { const buffer = emulator.buffer.active; return Array.from({ length: 40 }, (_, row) => {
+                const line = buffer.getLine(buffer.baseY + row); return { text: line?.translateToString(true) ?? "", wrapped: line?.isWrapped ?? false };
+              }); } });
+            completedAt = Date.now();
+          }
+          if (!options.review && child.exitCode === null && !terminal.closed) { record("exit_after_native_completion", "\x04"); terminal.write("\x04"); sentExit = true; }
         } else if (Date.now() - started > options.timeoutMs) throw Error("No authentic completed native turn before timeout");
       } else {
         if (sentExit && !confirmedExit && screen().includes("Press Ctrl-D again to exit")) {
@@ -119,11 +142,16 @@ export async function runTerminal(options: TerminalOptions): Promise<{
       await Bun.sleep(50);
     }
     const exit = await child.exited;
+    if (!completion && options.review) completion = nativeReviewCompletion(options.home, options.cwd, options.review.expectedFinalText);
     if (!completion || exit !== 0) throw Error(`Client exit ${exit} without a successful native turn`);
     if (options.interruption && (!interrupted || !resumed)) throw Error("The PTY did not interrupt and resume the owned native turn");
-    if (!hosts.size) throw Error("The actual client did not expose a child executing the pinned native host bytes");
+    if (options.hostExpectation.kind === "required" && !hosts.size) throw Error("The actual client did not expose a child executing the pinned native host bytes");
     await new Promise<void>(resolve => emulator.write("", resolve));
     writeFileSync(join(options.directory, "terminal-screen.txt"), screen() + "\n", { mode: 0o600 });
+    const buffer = emulator.buffer.active;
+    writeFileSync(join(options.directory, "terminal-rows.json"), JSON.stringify(Array.from({ length: buffer.length }, (_, index) => {
+      const line = buffer.getLine(index); return { text: line?.translateToString(true) ?? "", wrapped: line?.isWrapped ?? false };
+    })) + "\n", { mode: 0o600 });
     return { completion, hostProcesses: [...hosts].map(([pid, sha256]) => ({ pid, sha256 })), cliProcess: { ...cliIdentity, exit } };
   } finally {
     if (child && child.exitCode === null) {

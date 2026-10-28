@@ -7,6 +7,8 @@ import { capturedCommand } from "./current-command";
 import { llvmSourceEntries, type ClientProfileProof } from "./current-client-profile";
 import { controlScenarios, mcpScenarios } from "./current-cli/cases";
 import { runCliScenario } from "./current-cli/run";
+import { availabilityCatalog, availabilityScenario } from "./current-cli/availability-contract";
+import { assertTerminalWarnings } from "./current-cli/terminal-warning-proof";
 import { compareGatewayScenario } from "./current-cli/gateway";
 import { candidateOutcomesMatch, compareControlPackets, sourceGatewayInputBytes } from "./current-cli/compare";
 import { expectedTaskRequests, isTitleRequest } from "./current-cli/scripted-upstream";
@@ -41,7 +43,7 @@ type Metadata = { workspace_root: string; packages: Array<{ name: string; versio
 const sourceNames = ["case-input.json", "catalog.json", "launch.json", "requests.json", "frames.json", "observations.json", "native-events.jsonl", "client-state/config.toml", "terminal/terminal.raw", "terminal/terminal-events.jsonl", "terminal/terminal-screen.txt", "terminal/process.json"];
 const candidateNames = ["scenario.json", "launch.json", "process.json", "stderr.txt", "comparison.json"];
 function sourceFileNames(source: Pick<CliRun, "scenario">): string[] {
-  return [...sourceNames, ...(source.scenario.mcp ? ["mcp-peer.jsonl"] : []), ...(source.scenario.applyPatch ? [`workspace/${freeformFile}`] : []), ...(source.scenario.interruption ? ["interruption-hold.json"] : [])];
+  return [...sourceNames, ...(source.scenario.mcp ? ["mcp-peer.jsonl"] : []), ...(source.scenario.applyPatch ? [`workspace/${freeformFile}`] : []), ...(source.scenario.interruption ? ["interruption-hold.json"] : []), ...(source.scenario.availability ? ["availability-catalog-projection.json", "terminal/availability-warning-view.json", "terminal/terminal-rows.json"] : [])];
 }
 function candidateFileNames(source: CliRun, candidate: any): string[] {
   if (!source.scenario.applyPatch) return candidateNames;
@@ -51,7 +53,8 @@ function candidateFileNames(source: CliRun, candidate: any): string[] {
 }
 
 export function sourceCliPlans() {
-  return [...controlScenarios, ...mcpScenarios, freeformScenario, interruptionScenario].map(scenario => ({ caseId: `cli-source/${scenario.id}`, inputSha256: sha256(JSON.stringify(scenario)),
+  return [...controlScenarios, ...mcpScenarios, freeformScenario, interruptionScenario,
+    ...(["direct", "code_mode", "code_mode_only"] as const).map(availabilityScenario)].map(scenario => ({ caseId: `cli-source/${scenario.id}`, inputSha256: sha256(JSON.stringify(scenario)),
     productionEntrypoint: "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run", scenario }));
 }
 export function sourceCliCaseArtifacts(witness: CliSourceCaseWitness): Artifact[] {
@@ -201,14 +204,22 @@ export async function sourceCliWitnessFindings(cases: CliSourceCaseWitness[], in
     assert.equal(launch.argv[0], build.binary.path); assert.ok(launch.argv.includes("--no-daemon") && launch.argv.includes("--no-alt-screen") && !launch.argv.includes("exec") && !launch.argv.includes("app-server"), "source proof requires the real interactive PTY entrypoint");
     assert.equal(launch.modelBackend, "deterministic-loopback-no-inference"); assert.deepEqual(launch.terminal, { implementation: "Bun.Terminal", emulator: "@xterm/headless@5.5.0" });
     assert.equal(launch.nonce, source.nonce); assert.equal(launch.inputSha256, plan.inputSha256); assert.equal(launch.catalogSha256, sha256(await sourceFile("catalog.json")));
-    assert.equal((await sourceFile("catalog.json")).toString(), await git(build.sourceRepository, "show", `${inventory.sourceRevision}:codex-rs/models-manager/models.json`));
+    const officialCatalog = Buffer.from(await git(build.sourceRepository, "show", `${inventory.sourceRevision}:codex-rs/models-manager/models.json`));
+    if (source.scenario.availability) {
+      const catalog = availabilityCatalog(officialCatalog, "gpt-6.1-sol", source.scenario.availability.toolMode);
+      assert.equal((await sourceFile("catalog.json")).toString(), Buffer.from(catalog.bytes).toString());
+      assert.deepEqual(JSON.parse((await sourceFile("availability-catalog-projection.json")).toString()), catalog.projection);
+    } else assert.equal((await sourceFile("catalog.json")).toString(), officialCatalog.toString());
     assert.equal(launch.sourceProfilePattern, resolve(source.directory, "source-profile/%p.profraw"));
     assert.deepEqual(launch.freeformTool, source.freeformTool);
     const config = (await sourceFile("client-state/config.toml")).toString(); assert.match(config, /base_url = "http:\/\/127\.0\.0\.1:\d+\/v1"/); assert.ok(config.includes("requires_openai_auth = false"));
+    assert.equal((Bun.TOML.parse(config) as any).features.code_mode_host, !source.scenario.availability, "actual source host availability differs from the explicit input");
     const processProof = JSON.parse((await sourceFile("terminal/process.json")).toString());
     assert.ok(Number.isSafeInteger(source.cliProcess.pid) && source.cliProcess.pid > 0); assert.equal(source.cliProcess.exit, 0); assert.match(source.cliProcess.startTicks, /^\d+$/); assert.equal(source.cliProcess.sha256, build.binary.sha256);
     for (const key of ["pid", "sha256", "startTicks", "exit"] as const) assert.equal(processProof[key], source.cliProcess[key]);
-    assert.ok(source.hostProcesses.length && source.hostProcesses.every(host => host.pid > 0 && host.sha256 === lock.nativeHostSha256));
+    if (source.scenario.availability) assert.deepEqual(source.hostProcesses, [], "unavailable source launched a native host");
+    else assert.ok(source.hostProcesses.length && source.hostProcesses.every(host => host.pid > 0 && host.sha256 === lock.nativeHostSha256));
+    if (source.scenario.availability) await assertTerminalWarnings(resolve(source.directory, "terminal"), JSON.parse((await sourceFile("terminal/availability-warning-view.json")).toString()));
     assert.deepEqual(nativeCompletion(resolve(source.directory, "client-state")), source.completion); assert.equal(source.completion.finalText, `CODEMODE_CURRENT_${source.nonce}`);
     assert.ok((await sourceFile("native-events.jsonl")).equals(await readFile(source.completion.sourceFile)));
     const requests = JSON.parse((await sourceFile("requests.json")).toString()), tasks = requests.filter((body: any) => !isTitleRequest(body));
@@ -222,8 +233,10 @@ export async function sourceCliWitnessFindings(cases: CliSourceCaseWitness[], in
     assert.deepEqual(candidateLaunch.jar, candidateJar); assert.equal(sha256(await readFile(candidateJar.path)), candidateJar.sha256); assert.equal(candidateLaunch.nonce, source.nonce);
     assert.deepEqual(candidateLaunch.argv.slice(1), candidateCommand("java", candidateJar.path, "--native-gateway-fixture", "runtime.current-scenario", source.nonce, candidateDirectory, source.reference.host.path).slice(1));
     assert.equal(candidateProcess.exitCode, 0); assert.equal(candidateProcess.failure, undefined); assert.ok(Number.isSafeInteger(candidateProcess.pid) && candidateProcess.pid > 0); assert.equal(candidate.pid, candidateProcess.pid);
-    assert.equal(candidate.caseId, "runtime.current-scenario"); assert.equal(candidate.scope, "real-native-runtime-through-production-gateway"); assert.ok(candidateOutcomesMatch(source, candidate));
-    const stderr = (await candidateFile("stderr.txt")).toString(); assert.ok(stderr.split("\n").some(line => { try { const event = JSON.parse(line); return event.type === "parity/identity" && Number.isSafeInteger(event.nativeHostPid) && event.nativeHostPid > 0; } catch { return false; } }));
+    assert.equal(candidate.caseId, "runtime.current-scenario"); assert.equal(candidate.scope, source.scenario.availability ? "production-gateway-unavailable-provider" : "real-native-runtime-through-production-gateway"); assert.ok(candidateOutcomesMatch(source, candidate));
+    const stderr = (await candidateFile("stderr.txt")).toString(), launches = stderr.split("\n").flatMap(line => { try { const event = JSON.parse(line); return event.type === "parity/identity" ? [event] : []; } catch { return []; } });
+    if (source.scenario.availability) assert.deepEqual(launches, [], "unavailable candidate launched a native host");
+    else assert.ok(launches.some(event => Number.isSafeInteger(event.nativeHostPid) && event.nativeHostPid > 0));
     compareControlPackets(source, candidate, candidateDirectory);
     assert.deepEqual(witness.referenceValues, [...cliResponseMemberValues(source, candidate, inventory), ...cliSearchMemberValues(source, candidate, inventory)], "CLI DTO claims differ from raw compared model input values");
     const profile: ClientProfileProof = JSON.parse((await checked(witness.profile)).toString()); assert.equal(profile.schema, 1);

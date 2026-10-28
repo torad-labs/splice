@@ -14,6 +14,7 @@ import java.security.MessageDigest
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
+/** A receipt read/modify/write performed while both the JVM mutex and the native-compatible POSIX lock are held. */
 internal fun interface McpResultFileAction<T> {
     fun run(): T
 }

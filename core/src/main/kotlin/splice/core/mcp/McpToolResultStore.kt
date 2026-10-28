@@ -220,5 +220,8 @@ public class McpToolResultStore(
     private data class Conflict(val schema: Int, val callbackId: String, val conflict: Boolean, val capturedAtMs: Long)
 }
 
+// why: a bounded 256 MiB retained-receipt store evicts old complete results before admitting new ones.
 private const val MCP_RESULT_DEFAULT_TOTAL_BYTES = 256L * 1024 * 1024
+
+// why: one receipt can retain both 64 MiB wire arguments and result, plus 64 KiB of identity/envelope overhead.
 private const val MCP_RESULT_DEFAULT_ENTRY_BYTES = 128L * 1024 * 1024 + 65_536

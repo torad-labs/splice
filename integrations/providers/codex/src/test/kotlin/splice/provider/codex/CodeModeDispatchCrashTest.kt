@@ -145,7 +145,7 @@ class CodeModeDispatchCrashTest {
         private val driver =
             CodexCodeModeDriver(config, run, registry, wire, validation, machine, CodeModeUpstreamHistory(Json))
         private val resume = CodexCodeModeResume(registry, wire, validation, machine, driver)
-        private val controller = CodexCodeModeTurn(registry, wire, driver, resume, machine, validation, config.log)
+        private val controller = CodexCodeModeTurn(registry, wire, driver, resume, machine, validation, config)
 
         fun interceptor(turn: CodexCodeModeBridge.Turn) =
             CodeModeRoundInterceptor(turn, null, false, wire, controller, driver.streams)

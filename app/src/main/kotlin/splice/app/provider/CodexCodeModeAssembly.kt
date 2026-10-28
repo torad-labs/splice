@@ -6,12 +6,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import splice.app.provider.codex.CodeModeMcpCatalogs
 import splice.app.provider.codex.CodeModeMcpReplies
+import splice.app.provider.codex.CodeModeNativeRuntimes
 import splice.app.provider.codex.CodeModeSessionLiveness
 import splice.app.provider.codex.HeadCodeModeControls
 import splice.codemode.DEFAULT_HEAP_MB
 import splice.codemode.DEFAULT_MAX_WORKERS
 import splice.codemode.DEFAULT_POOL_MEMORY_MB
-import splice.codemode.NativeCodeModeRuntime
 import splice.codemode.host.PoolLimits
 import splice.core.config.CODE_MODE_DIR
 import splice.core.config.CODE_MODE_STATE_SUFFIX
@@ -57,7 +57,7 @@ internal class CodexCodeModeAssembly(
     internal val catalogs: CodeModeMcpCatalogs = CodeModeMcpCatalogs()
 
     fun wiring(ctx: ProviderBuild): CodexCodeModeWiring = CodexCodeModeWiring(
-        bridge = codeModeBridge(ctx)?.also { codeModeHeads += ctx.key },
+        bridge = codeModeBridge(ctx).also { if (ctx.providerCfg.codeModeEnabled) codeModeHeads += ctx.key },
         models = ctx.providerCfg.quirks.codeModeModels,
         onlyModels = backendCodeModeOnly(ctx),
         originalImageModels = CodeModeOriginalImageModels {
@@ -94,47 +94,41 @@ internal class CodexCodeModeAssembly(
         return port
     }
 
-    private fun codeModeBridge(ctx: ProviderBuild): CodexCodeModeBridge? =
-        if (ctx.providerCfg.codeModeEnabled) {
-            CodexCodeModeBridge(
-                CodeModeBridgeConfig(
-                    runtimes = {
-                        NativeCodeModeRuntime(
-                            limits = PoolLimits(
-                                maxWorkers = ctx.providerCfg.quirks.codeModeWorkers ?: DEFAULT_MAX_WORKERS,
-                                memoryBudgetMb = ctx.providerCfg.quirks.codeModeMemoryMb ?: DEFAULT_POOL_MEMORY_MB,
-                            ),
-                            cellHeapMb = ctx.providerCfg.quirks.codeModeHeapMb ?: DEFAULT_HEAP_MB,
-                        )
-                    },
-                    state = CodeModeStateLocation(
-                        dir = statePaths.headsDir.resolve(ctx.key).resolve(CODE_MODE_DIR),
-                        legacyFile = statePaths.stateDir.resolve("${ctx.key}$CODE_MODE_STATE_SUFFIX"),
-                        journaling = CodeModeJournaling { ctx.cfg.current().keepCodeModeWork },
-                        replayReasoning = CodeModeReplayReasoning { ctx.cfg.current().replayReasoning },
-                        mcpResults = CodeModeMcpReplies(
-                            McpToolResultStore(statePaths),
-                            HeadScopedLogs.headScopedLog(ctx.key, log),
-                        ),
-                        mcpSearch = catalogs.forHead(ctx.key),
+    private fun codeModeBridge(ctx: ProviderBuild): CodexCodeModeBridge =
+        CodexCodeModeBridge(
+            CodeModeBridgeConfig(
+                runtimes = CodeModeNativeRuntimes(
+                    enabled = ctx.providerCfg.codeModeEnabled,
+                    limits = PoolLimits(
+                        maxWorkers = ctx.providerCfg.quirks.codeModeWorkers ?: DEFAULT_MAX_WORKERS,
+                        memoryBudgetMb = ctx.providerCfg.quirks.codeModeMemoryMb ?: DEFAULT_POOL_MEMORY_MB,
                     ),
-                    log = HeadScopedLogs.headScopedLog(ctx.key, log),
-                    cellLease = CodeModeCellLease(sessionAlive = sessionAlive, sessionIdle = sessionIdle),
+                    cellHeapMb = ctx.providerCfg.quirks.codeModeHeapMb ?: DEFAULT_HEAP_MB,
                 ),
-            ).also { bridge ->
-                controls.register(ctx.key, bridge)
-                checkNotNull(probeScope.coroutineContext[Job]).invokeOnCompletion {
-                    controls.remove(ctx.key, bridge)
-                    Cancellables.runCatchingBestEffort { bridge.onProviderStop() }.exceptionOrNull()?.let { failure ->
-                        HeadScopedLogs.headScopedLog(ctx.key, log).invoke(
-                            "[code-mode] terminal save needs its retained retry owner " +
-                                "(${SafeFailureText.render(failure)})",
-                        )
-                    }
+                state = CodeModeStateLocation(
+                    dir = statePaths.headsDir.resolve(ctx.key).resolve(CODE_MODE_DIR),
+                    legacyFile = statePaths.stateDir.resolve("${ctx.key}$CODE_MODE_STATE_SUFFIX"),
+                    journaling = CodeModeJournaling { ctx.cfg.current().keepCodeModeWork },
+                    replayReasoning = CodeModeReplayReasoning { ctx.cfg.current().replayReasoning },
+                    mcpResults = CodeModeMcpReplies(
+                        McpToolResultStore(statePaths),
+                        HeadScopedLogs.headScopedLog(ctx.key, log),
+                    ),
+                    mcpSearch = catalogs.forHead(ctx.key),
+                ),
+                log = HeadScopedLogs.headScopedLog(ctx.key, log),
+                cellLease = CodeModeCellLease(sessionAlive = sessionAlive, sessionIdle = sessionIdle),
+            ),
+        ).also { bridge ->
+            controls.register(ctx.key, bridge.takeIf { ctx.providerCfg.codeModeEnabled })
+            checkNotNull(probeScope.coroutineContext[Job]).invokeOnCompletion {
+                controls.remove(ctx.key, bridge)
+                Cancellables.runCatchingBestEffort { bridge.onProviderStop() }.exceptionOrNull()?.let { failure ->
+                    HeadScopedLogs.headScopedLog(ctx.key, log).invoke(
+                        "[code-mode] terminal save needs its retained retry owner " +
+                            "(${SafeFailureText.render(failure)})",
+                    )
                 }
             }
-        } else {
-            controls.register(ctx.key, null)
-            null
         }
 }

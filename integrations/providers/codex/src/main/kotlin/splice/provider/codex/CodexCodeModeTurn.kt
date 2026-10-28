@@ -7,7 +7,7 @@ import splice.core.perf.PerfKeys
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.HeadStopKey
 import splice.core.turn.TurnOutcome
-import splice.core.util.LogSink
+import splice.provider.codex.availability.CodeModeAvailabilityPolicy
 import splice.provider.codex.branch.CodeModeOwnerPlacement
 import splice.provider.codex.branch.CodeModePlacedOwner
 import splice.provider.codex.branch.CodexCodeModeBranch
@@ -35,8 +35,10 @@ internal class CodexCodeModeTurn(
     private val resume: CodexCodeModeResume,
     private val machine: CodexCodeModeMachine,
     private val validation: CodexCodeModeValidation,
-    private val log: LogSink,
+    config: CodeModeBridgeConfig,
 ) {
+    private val log = config.log
+    val availability = CodeModeAvailabilityPolicy(config)
     private val identity = CodeModeTurnIdentity()
     private val notes = CodeModeTurnNotes(registry, log)
     private val branch = CodexCodeModeBranch(registry, driver, machine, validation, log)
@@ -76,6 +78,7 @@ internal class CodexCodeModeTurn(
             currentCoroutineContext()[HeadStopKey],
             input.recovery,
         )
+        availability.announce(context)
         val watched = driver.streams.watchCuts(key)
         val notificationOwner = registry.notifications.open(context, driver.sent.notifications)
         return try {

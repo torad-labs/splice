@@ -13,6 +13,7 @@ import splice.provider.codex.stream.CodeModeRuntimeRun
 import splice.upstream.RoundInterceptor
 import splice.upstream.codemode.CodeModeManual
 import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.availability.CodeModeAvailabilityPlan
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
@@ -70,7 +71,7 @@ public class CodexCodeModeBridge(
             CodeModeUpstreamHistory(json, config.state, config.log, config.retention.bytes),
         )
     internal val resume = CodexCodeModeResume(registry, wire, validation, machine, driver)
-    internal val controller = CodexCodeModeTurn(registry, wire, driver, resume, machine, validation, config.log)
+    internal val controller = CodexCodeModeTurn(registry, wire, driver, resume, machine, validation, config)
 
     init {
         require(config.retention.perConversation?.let { it > 0 } != false) {
@@ -99,10 +100,13 @@ public class CodexCodeModeBridge(
     }
 
     public fun injectTool(request: JsonObject, clientTools: Set<String>): JsonObject =
-        wire.injectTool(request, clientTools)
+        injectTool(request, clientTools, CodeModeToolPolicy())
 
     public fun injectTool(request: JsonObject, clientTools: Set<String>, policy: CodeModeToolPolicy): JsonObject =
-        wire.injectTool(request, clientTools, policy)
+        if (availability(policy).codeMode) wire.injectTool(request, clientTools, policy) else request
+
+    /** The same typed preflight used by dispatch, without starting a host or touching conversation history. */
+    public fun availability(policy: CodeModeToolPolicy): CodeModeAvailabilityPlan = controller.availability.plan(policy)
 
     /** Explicit authenticated user action; foreground cancellation alone never calls this operation. */
     public suspend fun interruptActiveCells(sessionId: String, conversationKey: String): CodeModeInterruptOutcome =
@@ -117,6 +121,7 @@ public class CodexCodeModeBridge(
         } finally {
             // Head stop releases child JVM workers even when the final durable write needs a retry.
             // The reusable provider opens a fresh runtime after its next start.
+            controller.availability.clear()
             run.end()
         }
     }

@@ -17,6 +17,7 @@ import splice.upstream.BuiltTurn
 import splice.upstream.codemode.CodeModeManual
 import splice.upstream.codemode.CodeModeToolDefinitions
 import splice.upstream.codemode.CodeModeToolSearch
+import splice.upstream.codemode.availability.CodeModeToolMode
 
 /** One current tool catalog and its model facts are captured before starting an execution. */
 internal class CodeModeTurnCatalogs(
@@ -56,6 +57,7 @@ internal class CodeModeTurnCatalogs(
         body: AnthropicTurnBody,
         built: BuiltTurn,
         availability: ResponsesDynamicToolChanges.Availability = ResponsesDynamicToolChanges.availability(body.typed),
+        toolMode: CodeModeToolMode = CodeModeToolMode.CODE_MODE_ONLY,
     ): CodeModeToolPolicy {
         val request = built.requestBody
         val input = (request[CODE_MODE_FIELD_INPUT] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
@@ -80,6 +82,7 @@ internal class CodeModeTurnCatalogs(
                 defaultExecYieldTimeMs = settings.defaultExecYieldTimeMs,
                 modelMessages = metadata?.messages,
                 imageDetailVisible = !unifiedImageBudget,
+                toolMode = toolMode,
             ),
         )
     }

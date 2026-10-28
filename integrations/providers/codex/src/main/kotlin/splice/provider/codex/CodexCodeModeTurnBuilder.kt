@@ -4,7 +4,6 @@ package splice.provider.codex
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import splice.core.client.AgentConversationKey
 import splice.core.parse.AnthropicTurnBody
 import splice.core.util.JsonScalars
@@ -13,9 +12,10 @@ import splice.dialect.responses.request.ResponsesToolResultMedia
 import splice.provider.codex.branch.CodeModeClearedCandidates
 import splice.provider.codex.callbacks.CodeModeClientResults
 import splice.provider.codex.catalog.CodeModeCatalogMessages
-import splice.provider.codex.request.CodexCodeModeInstructions
+import splice.provider.codex.request.CodeModePreparedSurface
 import splice.upstream.BuiltTurn
 import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.availability.CodeModeToolMode
 
 /** [media] is the dialect's own tool_result image renderer (V4-179): the bridge renders a result's
  *  follow-ups ONCE with the same policy the ordinary path applies, persists them on the record and
@@ -49,7 +49,7 @@ internal class CodexCodeModeTurnBuilder(
         require(!sessionId.isNullOrBlank()) { "code mode requires a client session id" }
         val cleared = CodeModeClearedCandidates.read(body)
         val loaded = CodeModeLoadedTools(body, availability)
-        val toolPolicy = catalogs.policy(body, built, availability)
+        val toolPolicy = catalogs.policy(body, built, availability, requestedMode(built.meta.route.upstreamModel))
             .copy(loadedNames = loaded.names(results.blocks(body)))
         val messages = CodeModeCatalogMessages(toolPolicy.modelMessages)
         val definitions = catalogs.definitions(body, built.requestBody, availability)
@@ -72,15 +72,7 @@ internal class CodexCodeModeTurnBuilder(
             ),
         )
         val disableParallel = body.typed.toolChoice?.disableParallelToolUse == true
-        // Initial declarations remain historical. Current nested membership is enforced by turn.tools.
-        val surface = manager.injectTool(built.requestBody, body.typed.tools.map { it.name }.toSet(), turn.toolPolicy)
-        val choice = JsonPrimitive(if (body.typed.toolChoice?.type == "any") "required" else "auto")
-        val native = JsonObject(surface + ("tool_choice" to choice))
-        return built.copy(
-            meta = built.meta.copy(tools = built.meta.tools.copy(codeMode = true)),
-            requestBody = CodexCodeModeInstructions.append(native, disableParallel),
-            roundInterceptor = manager.interceptor(turn = turn, disableParallel = disableParallel),
-        )
+        return CodeModePreparedSurface.prepare(manager, body, built, turn, disableParallel)
     }
 
     // 2026-09-21 (cache law, QuirksConfig.compactEffort): a compaction is built EXACTLY like a turn.
@@ -110,6 +102,13 @@ internal class CodexCodeModeTurnBuilder(
     private fun runsCodeMode(upstreamModel: String): Boolean =
         CodexCodeModeModels.eligible(upstreamModel, operatorModels) ||
             CodexCodeModeModels.eligible(upstreamModel, CodexCodeModeModels.normalize(codeModeOnly.ids()))
+
+    private fun requestedMode(upstreamModel: String): CodeModeToolMode =
+        if (CodexCodeModeModels.eligible(upstreamModel, CodexCodeModeModels.normalize(codeModeOnly.ids()))) {
+            CodeModeToolMode.CODE_MODE_ONLY
+        } else {
+            CodeModeToolMode.CODE_MODE
+        }
 
     private fun isLiteRequest(request: JsonObject): Boolean {
         val input = request[FIELD_INPUT] as? JsonArray ?: return false

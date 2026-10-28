@@ -12,6 +12,7 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
 import splice.core.util.JsonWire
 import splice.provider.codex.CodeModeBridgeConfig
+import splice.provider.codex.CodeModeRuntimes
 import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.diagnostics.CodeModeGatewayBridgeSink
 import splice.provider.codex.diagnostics.CodeModeGatewayProbeSupport
@@ -27,6 +28,7 @@ internal class CodeModeGatewayScenarioProbe(
     private val fixture: CodeModeGatewayProbeSupport,
     private val runtime: NativeCodeModeLifecycle,
     private val interruptControl: CodeModeInterruptControl? = null,
+    private val availabilityRuntimes: CodeModeRuntimes? = null,
 ) {
     suspend fun run(directory: Path): JsonObject {
         val bytes = Files.readAllBytes(directory.resolve("scenario.json"))
@@ -37,8 +39,12 @@ internal class CodeModeGatewayScenarioProbe(
             }
             return CodeModeGatewayInterruptedProbe(fixture, runtime, control).run(bytes, specification)
         }
+        return scenario(bytes, specification, directory)
+    }
+
+    private suspend fun scenario(bytes: ByteArray, specification: JsonObject, directory: Path): JsonObject {
         val plan = CodeModeGatewayScenarioPlan(specification, fixture.json)
-        val manager = CodexCodeModeBridge(CodeModeBridgeConfig({ runtime }, fixture.location, log = fixture.log))
+        val manager = manager(specification)
         val requests = CodeModeGatewayScenarioAdapter(fixture, specification, directory)
         val trace = Trace()
         try {
@@ -75,6 +81,15 @@ internal class CodeModeGatewayScenarioProbe(
         } finally {
             manager.onProviderStop()
         }
+    }
+
+    private fun manager(specification: JsonObject): CodexCodeModeBridge {
+        val runtimes = if (specification.containsKey("availability")) {
+            CodeModeGatewayAvailability(fixture, specification).runtimes(availabilityRuntimes)
+        } else {
+            CodeModeRuntimes { runtime }
+        }
+        return CodexCodeModeBridge(CodeModeBridgeConfig(runtimes, fixture.location, log = fixture.log))
     }
 
     private fun report(

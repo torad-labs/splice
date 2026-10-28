@@ -27,13 +27,14 @@ import splice.upstream.codemode.CodeModeToolSearch
 internal class CodeModeGatewayTypedRequests(
     private val fixture: CodeModeGatewayProbeSupport,
     specification: JsonObject,
+    requestedPolicy: CodeModeToolPolicy? = null,
 ) {
     private val model = "fixture-current-typed-model"
     private val declarations = specification.getValue("declarations").jsonArray
     val definitions = CodeModeToolDefinitions.collect(declarations)
     private val names = definitions.map { it.codeModeName }.toSet()
     private val ranked = specification["rankedSearch"] == JsonPrimitive(true)
-    private val policy = CodeModeToolPolicy(deferredNames = if (ranked) names else emptySet())
+    private val policy = requestedPolicy ?: CodeModeToolPolicy(deferredNames = if (ranked) names else emptySet())
     private val mcpSearch = CodeModeGatewayMcpSearch.read(specification)
 
     fun prepare(manager: CodexCodeModeBridge, callbacks: List<JsonObject>, results: List<CodeModeResult>): BuiltTurn {

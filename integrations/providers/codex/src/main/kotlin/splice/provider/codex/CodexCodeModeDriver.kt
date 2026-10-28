@@ -258,7 +258,7 @@ internal class CodexCodeModeDriver(
         context: CodeModeRunContext,
         stream: CodeModeLiveRound? = null,
     ): Pair<CodeModeRecord, TurnOutcome> = try {
-        val selected = starter.select(record, stream)
+        val selected = starter.select(record, stream, context.turn.toolPolicy)
         if (selected.id != record.id) {
             val round = checkNotNull(stream)
             streams.keep(selected, round, record)

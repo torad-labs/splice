@@ -14,6 +14,12 @@ internal class CodeModeGatewayScenarioAdapter(
     directory: Path,
 ) {
     private val ordinary = CodeModeGatewayScenarioRequests(fixture, specification)
+    private val availability = if (specification.containsKey("availability")) {
+        CodeModeGatewayAvailability(fixture, specification)
+    } else {
+        null
+    }
+    private val unavailable = availability?.let { CodeModeGatewayTypedRequests(fixture, specification, it.policy) }
     private val mcp = if (JsonScalars.str(specification, "boundary") == "typed-mcp-delegate") {
         CodeModeGatewayMcpRequests(fixture, specification)
     } else {
@@ -29,8 +35,9 @@ internal class CodeModeGatewayScenarioAdapter(
         freeform?.prepare(
             manager,
             callbacks,
-        ) ?: mcp?.prepare(manager, callbacks) ?: ordinary.prepare(manager, callbacks)
+        ) ?: mcp?.prepare(manager, callbacks) ?: unavailable?.prepare(manager, callbacks, emptyList())
+            ?: ordinary.prepare(manager, callbacks)
 
     fun report(manager: CodexCodeModeBridge, report: JsonObject): JsonObject =
-        freeform?.report(manager, report) ?: mcp?.report(manager, report) ?: report
+        freeform?.report(manager, report) ?: mcp?.report(manager, report) ?: availability?.report(report) ?: report
 }

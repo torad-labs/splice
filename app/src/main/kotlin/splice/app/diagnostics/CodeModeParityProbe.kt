@@ -3,12 +3,16 @@ package splice.app.diagnostics
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.app.provider.codex.CodeModeNativeRuntimes
+import splice.codemode.DEFAULT_HEAP_MB
 import splice.codemode.NativeCodeModeRuntime
 import splice.codemode.WorkerSpawn
+import splice.codemode.host.PoolLimits
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.core.util.JsonWire
 import splice.daemonclient.DaemonSettings
+import splice.provider.codex.diagnostics.CodeModeGatewayControls
 import splice.provider.codex.diagnostics.CodeModeGatewayNativeProbe
 import splice.provider.codex.diagnostics.CodeModeGatewayProbe
 import java.nio.file.Files
@@ -72,7 +76,10 @@ internal object CodeModeParityProbe {
                 details[1],
                 state,
                 native,
-                interruptControl = CodeModeHttpInterruptProbe(state),
+                controls = CodeModeGatewayControls(
+                    interrupt = CodeModeHttpInterruptProbe(state),
+                    availability = CodeModeNativeRuntimes(false, PoolLimits(), DEFAULT_HEAP_MB),
+                ),
             )
             CodeModeParityText.write(System.out, JsonWire.string(result))
         }

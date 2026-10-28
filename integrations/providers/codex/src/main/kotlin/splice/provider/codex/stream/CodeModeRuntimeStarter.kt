@@ -14,6 +14,7 @@ import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext
+import splice.provider.codex.CodeModeToolPolicy
 import splice.provider.codex.CodexCodeModeMachine
 import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.state.diagnostics.CODE_MODE_RECORD_LOG_CHARS
@@ -21,6 +22,7 @@ import splice.provider.codex.stream.native.CodeModeNativeStartup
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeRuntime
 import splice.upstream.codemode.NativeCodeModeLifecycle
+import splice.upstream.codemode.availability.CodeModeAvailabilityPlan
 import splice.upstream.failure.CodeModeCapacityException
 import splice.upstream.failure.CodeModeStartException
 import splice.upstream.failure.CodeModeToolException
@@ -93,7 +95,14 @@ internal class CodeModeRuntimeStarter(
         }
     }
 
-    suspend fun select(record: CodeModeRecord, stream: CodeModeLiveRound?): CodeModeRecord {
+    suspend fun select(
+        record: CodeModeRecord,
+        stream: CodeModeLiveRound?,
+        policy: CodeModeToolPolicy = CodeModeToolPolicy(),
+    ): CodeModeRecord {
+        CodeModeAvailabilityPlan(config.runtimes.availability(), policy.presentation.toolMode).rejection?.let {
+            throw CodeModeArgumentException(it)
+        }
         if (stream == null || runtime() !is NativeCodeModeLifecycle) return record
         return stream.select(record) ?: throw IOException("Native source did not complete")
     }

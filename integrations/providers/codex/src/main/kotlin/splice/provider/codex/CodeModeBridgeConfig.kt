@@ -8,6 +8,7 @@ import splice.provider.codex.state.lease.CodeModeCellLease
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeRuntime
+import splice.upstream.codemode.availability.CodeModeAvailability
 import java.nio.file.Path
 import java.time.Clock
 import kotlin.time.Duration
@@ -23,6 +24,9 @@ private const val DEFAULT_MAX_OUTPUT_CHARS: Int = 1_048_576
  *  (its workers are child JVMs), so a restarted head needs a new one (V4-107). */
 public fun interface CodeModeRuntimes {
     public fun open(): CodeModeRuntime
+
+    /** Checks provider readiness only. Opening or running a healthy provider may still fail honestly. */
+    public fun availability(): CodeModeAvailability = CodeModeAvailability.Available
 }
 
 // Decoded JSON, strings and transient serialization buffers need several times the stored bytes.

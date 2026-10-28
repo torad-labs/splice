@@ -14,6 +14,7 @@ import splice.core.util.JsonWire
 import splice.provider.codex.CODE_MODE_FIELD_INPUT
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeRetention
+import splice.provider.codex.CodeModeRuntimes
 import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe
 import splice.upstream.RoundResult
@@ -29,6 +30,12 @@ public fun interface CodeModeInterruptControl {
     ): JsonObject
 }
 
+/** Explicit application-owned capabilities; ordinary native probes do not replace either boundary. */
+public data class CodeModeGatewayControls(
+    val interrupt: CodeModeInterruptControl? = null,
+    val availability: CodeModeRuntimes? = null,
+)
+
 /** Real native engines through production gateway history, wait ownership and record retention. */
 public object CodeModeGatewayNativeProbe {
     public suspend fun run(
@@ -36,7 +43,7 @@ public object CodeModeGatewayNativeProbe {
         nonce: String,
         stateDirectory: Path,
         runtime: NativeCodeModeLifecycle,
-        interruptControl: CodeModeInterruptControl? = null,
+        controls: CodeModeGatewayControls = CodeModeGatewayControls(),
     ): JsonObject {
         require(Regex("[a-f0-9]{32}").matches(nonce)) { "Expected a fresh 128-bit probe nonce" }
         val fixture = CodeModeGatewayProbeSupport(nonce, stateDirectory)
@@ -44,7 +51,8 @@ public object CodeModeGatewayNativeProbe {
             "runtime.current-scenario" -> CodeModeGatewayScenarioProbe(
                 fixture,
                 runtime,
-                interruptControl,
+                controls.interrupt,
+                controls.availability,
             ).run(stateDirectory)
             "runtime.deferred-search" -> CodeModeGatewaySearchProbe(fixture, runtime).run()
             "runtime.head-settings" -> CodeModeGatewaySettingsProbe(fixture, runtime).run()

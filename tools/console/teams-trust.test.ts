@@ -1,8 +1,10 @@
 // Marlin's trust ruling of Oct 12, in fin's words and hitstop's drawing (da3d8b2), through the real Teams page against a
 // stub daemon answering in the routes' own shapes (TeamStart, TeamScreen, SessionDrive.offered, Refusals.reply). A member
-// stopped at Claude Code's folder trust question reads Needs you with the client's question, its folder and its two
-// options verbatim; nothing is answered until a click, and the click sends the choice with its label; a start that timed
-// out with nothing asked reads Not started, its screen behind the Last screen door, never the daemon's sentence.
+// stopped at Claude Code's folder trust question reads Needs you with the client's question, its folder (a chip naming the
+// last two folders, the whole path under the pointer) and its two options verbatim, each leading with the number the client
+// gives it (Teams' goal, Oct 28: numbered answer rows); nothing is answered until a click, and the click sends the choice
+// with its label; a start that timed out with nothing asked reads Not started, its screen behind the Last screen door,
+// never the daemon's sentence.
 import { afterAll, beforeAll, expect as bunExpect, test } from "bun:test";
 import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { existsSync, mkdirSync } from "node:fs";
@@ -96,8 +98,10 @@ test("a member stopped at the trust question reads Needs you, with the client's 
     await expect(card.locator(".word")).toHaveText("Needs you", { timeout: 20_000 });
     await expect(card).toHaveClass(/\bneeds\b/);
     await expect(card.locator(".ask .q")).toHaveText("Quick safety check: Is this a project you created or one you trust?");
-    await expect(card.locator(".ask .cmd")).toHaveText("/work/website");
-    await expect(card.locator(".answers .act")).toHaveText(["No, exit", "Yes, I trust this folder"]);
+    await expect(card.locator(".ask .folder .where")).toHaveText("work/website");
+    await expect(card.locator(".ask .folder .where")).toHaveAttribute("title", "/work/website");
+    await expect(card.locator(".answers .act .n")).toHaveText(["1", "2"]);
+    await expect(card.locator(".answers .act span")).toHaveText(["No, exit", "Yes, I trust this folder"]);
     await expect(card).not.toContainText("Accessing workspace");
     await expect(card).not.toContainText("Security guide");
     bunExpect(answered).toHaveLength(0);
@@ -125,7 +129,8 @@ test("No closes the terminal: the member reads Not started and Terminal closed, 
   await shoot("no", async (p) => {
     await reviewer(p).locator(".answers .act", { hasText: "No, exit" }).click({ timeout: 20_000 });
     await expect(reviewer(p).locator(".word")).toHaveText("Not started", { timeout: 20_000 });
-    await expect(reviewer(p).locator(".cmd")).toHaveText("/work/website");
+    await expect(reviewer(p).locator(".folder .where")).toHaveText("work/website");
+    await expect(reviewer(p).locator(".folder .where")).toHaveAttribute("title", "/work/website");
     // why it did not come up, in the console's words, never the daemon's sentence (marlin p223, fin, Oct 13)
     await expect(reviewer(p)).toContainText("Terminal closed");
     await expect(reviewer(p)).not.toContainText("has closed");

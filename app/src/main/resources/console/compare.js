@@ -31,8 +31,9 @@ const LIST = { whole: 10, first: 6 };
 const VENDORS = 6, VENDOR_LIST = { whole: 8, first: 6 };
 // an opened list longer than OPEN_ROWS takes one more board column for every PER_COLUMN rows, so no list runs down one column
 const OPEN_ROWS = 12, PER_COLUMN = 8;
-// a board column and an answer's narrowest lane, in rem: six columns and four lanes at 3822, two of each at 1440
-const COL_REM = 38, LANE_REM = 40;
+// a board column and an answer's narrowest lane, in rem: the board's column is Accounts' (five at 3822, four at his 2548,
+// two at 1440), and the answers stand four across at 3822, two at 1440
+const COL_REM = 40, LANE_REM = 40;
 const TICK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg>';
 const CLOCK = G('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>', 'aria-hidden="true"');
 const PENCIL = G('<path d="M4.5 19.5l.9-4 10.6-10.6a1.8 1.8 0 0 1 2.6 0l.5.5a1.8 1.8 0 0 1 0 2.6L8.5 18.6z"/><path d="M13.8 6.7l3.5 3.5"/>', 'aria-hidden="true"');
@@ -51,7 +52,7 @@ const still = () => window.matchMedia("(prefers-reduced-motion: reduce)").matche
 const ui = {
   editing: false, prompt: "", panes: [], cmds: null, blocked: [], error: null, reading: false, restored: false, add: null,
   q: "", open: new Set(), unfold: null, finished: 0, back: 0, uid: 0, opened: false, swap: false, done: false, ax: null, t: null, fit: null,
-  marks: "",
+  marks: "", heroAt: null, sort: "window",
 };
 try { ui.prompt = sessionStorage.getItem(KEPT) ?? ""; } catch { /* no storage: the field starts empty */ }
 const keep = () => { try { sessionStorage.setItem(KEPT, ui.prompt); } catch { /* nothing to keep it in */ } };
@@ -337,6 +338,7 @@ const stopTicker = () => { if (ticker && !busy()) { clearInterval(ticker); ticke
 async function run(panes) {
   for (const p of panes) measure(p);
   ui.add = false; ui.editing = false;
+  if (!askedOnes().length) ui.heroAt = performance.now(); // the round's figure is about to open for the first time
   if (panes.length === ui.panes.length) { ui.finished = 0; ui.back = 0; } // a new round: the order starts again
   const all = panes.map((p) => ask(p).then(() => land(p)));
   render();
@@ -538,8 +540,12 @@ function heroHtml() {
     { label: `${done} of ${a.length} answered, ${failed} failed, ${out} still out` });
   const clock = `<span class="pd-stat">${CLOCK}<span><b data-clock>${DRAW.ms(roundMs())}</b><small>to the last answer</small></span></span>`;
   const bad = failed ? `<span class="pg-failt">${DRAW.statTile(ICON.bang, DRAW.n(failed), "failed")}</span>` : "";
-  return `<div class="pg-round${a.every(stale) ? " stale" : ""}${ui.done ? " landed" : ""}"><div class="pg-hero">${DRAW.hero({ figure: DRAW.n(done), level, of: `of ${DRAW.n(a.length)} answered`, key: "round" })}</div>`
-    + `${bar}<div class="pd-stats pg-rtiles">${clock}${bad}</div></div>`;
+  // the round opens from nothing the first time it is drawn, so what stands under it moves down instead of jumping; a redraw
+  // while it is still opening carries on from where the opening has got to
+  const opening = ui.heroAt != null && performance.now() - ui.heroAt < 520;
+  const phase = opening ? ` style="animation-delay:-${Math.round(performance.now() - ui.heroAt)}ms"` : "";
+  return `<div class="pg-roundw${opening ? " unfold" : ""}"${phase}><div class="pg-roundin"><div class="pg-round${a.every(stale) ? " stale" : ""}${ui.done ? " landed" : ""}"><div class="pg-hero">${DRAW.hero({ figure: DRAW.n(done), level, of: `of ${DRAW.n(a.length)} answered`, key: "round" })}</div>`
+    + `${bar}<div class="pd-stats pg-rtiles">${clock}${bad}</div></div></div></div>`;
 }
 // the kicker's line: the four places, each chosen one in its provider's colour, then the keys to what the table draws,
 // each said once
@@ -880,10 +886,10 @@ function reqHtml(p) {
   const c = cmdOf(p.key), ts = new Date(+p.at + p.ms);
   const r = { id: `${p.key}:${p.id}:${p.uid}`, cmd: c?.command ?? p.key, provider: c?.family, model: "", ts, total: p.ms, in: p.tin, out: p.tout, cached: 0, attempts: 1 };
   p.RV ??= REQVIEW.view(() => p.rv);
-  return `<div class="pg-req${p.reqNew ? " unfold" : ""}${p.rvSwap ? " swap" : ""}" id="rq-${p.uid}"><div class="pg-reqin"><p class="pg-reqat">Asked<time>${REQVIEW.dayOf(p.at)}${REQVIEW.clockS(p.at)}</time></p>`
+  return `<div class="pg-req${p.reqNew ? " unfold" : ""}${p.rvSwap ? " swap" : ""}" id="rq-${p.uid}"><div class="pg-reqin"><div class="pg-reqcard"><p class="pg-reqat">Asked<time>${REQVIEW.dayOf(p.at)}${REQVIEW.clockS(p.at)}</time></p>`
     // a finished answer's words stand above this record in the same pane, so the Returned tab keeps what only the record
     // knows (its status, how the stream ended, its tool calls and its frames) and the words are set once
-    + `${p.RV.paneHtml(r, { head: false, st: "kept", tr: () => p.trace, cells: [], rail: false, reply: p.st !== "done", names: { head: r.cmd, model: modelOf(p)?.label } })}</div></div>`;
+    + `${p.RV.paneHtml(r, { head: false, st: "kept", tr: () => p.trace, cells: [], rail: false, reply: p.st !== "done", names: { head: r.cmd, model: modelOf(p)?.label } })}</div></div></div>`;
 }
 // the answer's shape while it is out: as many lines as the last answer here ran to, else a short answer's
 function waitHtml(p) {
@@ -891,10 +897,10 @@ function waitHtml(p) {
   return `<div class="ghost-lines" aria-hidden="true">${Array.from({ length: n }, (_, k) => `<i class="ghost" style="width:${k === n - 1 ? 38 : 72 + ((k * 13) % 26)}%"></i>`).join("")}</div>`;
 }
 function bodyHtml(p) {
-  const rec = p.req && p.trace ? reqHtml(p) : "";
   if (p.st === "sending") return waitHtml(p);
-  if (p.st === "failed") return fixHtml(p) + rec;
-  if (p.st === "done") return `<div class="msg agent"><div class="body pg-mdx pg-ans">${mdPlan(p.text)}</div></div>${rec}`;
+  if (p.st === "failed") return fixHtml(p);
+  // as many columns as the reply has text for: about 450 characters to a column, four at most
+  if (p.st === "done") return `<div class="msg agent"><div class="body pg-mdx pg-ans" style="--cc:${Math.max(1, Math.min(4, Math.floor(p.text.length / 450)))}">${mdPlan(p.text)}</div></div>`;
   // a pane chosen after the others were asked is an empty slot the size of its neighbours, where its answer will land
   return ui.panes.some((o) => o.st !== "idle") ? `<div class="pg-idle" role="img" aria-label="Not asked yet"></div>` : "";
 }
@@ -907,12 +913,13 @@ function spanOf(i) {
 }
 function paneHtml(p, i) {
   const c = cmdOf(p.key), span = spanOf(i), meta = metaHtml(p, c);
-  // a pane that stands alone in its row (one model, or the last of an uneven row) has a whole row to itself; an answer
-  // fills it with columns, a failure's lines would not, so a failure keeps to a reading width there
+  // a pane that stands alone in its row (one model, or the last of an uneven row) has a whole row to itself and fills it
+  // with columns; the only pane there is stands as wide as one of two on a wide page (.solo), where it would otherwise be a
+  // line of text across the whole screen
   const alone = span > 1 || lanesOf() === 1;
-  return `<article class="pgp is-${p.st}${alone ? " alone" : ""}${stale(p) ? " stale" : ""}${p.fresh ? " landed" : ""}" id="ans-${p.uid}" data-u="${p.uid}" style="--c:${colorOf(c?.family)}${span > 1 ? `;grid-column:span ${span}` : ""}" aria-label="${esc(p.label)}">`
-    + `<header class="pg-head">${sockHtml(p)}<div class="pg-nm"><h3 class="pg-model">${esc(p.label)}</h3>${c ? DRAW.chip({ text: c.command }) : ""}</div>${meta ? `<div class="pg-meta">${meta}</div>` : ""}${actsHtml(p)}${stripHtml(p)}</header>`
-    + `<div class="pg-body${p.pop ? " rise" : ""}">${bodyHtml(p)}</div></article>`;
+  return `<article class="pgp is-${p.st}${alone ? " alone" : ""}${ui.panes.length === 1 ? " solo" : ""}${stale(p) ? " stale" : ""}${p.fresh ? " landed" : ""}" id="ans-${p.uid}" data-u="${p.uid}" style="--c:${colorOf(c?.family)}${span > 1 ? `;grid-column:span ${span}` : ""}" aria-label="${esc(p.label)}">`
+    + `<div class="pgc"><header class="pg-head">${sockHtml(p)}<div class="pg-nm"><h3 class="pg-model">${esc(p.label)}</h3>${c ? DRAW.chip({ text: c.command }) : ""}</div>${meta ? `<div class="pg-meta">${meta}</div>` : ""}${actsHtml(p)}${stripHtml(p)}</header>`
+    + `<div class="pg-body${p.pop ? " rise" : ""}">${bodyHtml(p)}</div></div>${p.req && p.trace ? reqHtml(p) : ""}</article>`;
 }
 function answersHtml() {
   if (ui.cmds === null) return ui.error ? "" : ghostAnswersHtml();
@@ -948,7 +955,10 @@ const colsFor = (n, rows) => (n > 1 && rows > OPEN_ROWS ? Math.min(n, Math.ceil(
 // its own column names.
 function listHtml(c, list, k, sc, { whole, first }, name, n) {
   const long = list.length > whole, open = ui.open.has(k);
-  const sorted = list.map((m, i) => ({ m, i })).sort((a, b) => (b.m.window ?? -1) - (a.m.window ?? -1) || a.i - b.i).map((x) => x.m);
+  // the order he chose to read them in: the largest window first, or the cheapest price in first (a model with no price last)
+  const widest = (a, b) => (b.m.window ?? -1) - (a.m.window ?? -1);
+  const order = ui.sort === "price" ? (a, b) => (a.m.rates?.input ?? Infinity) - (b.m.rates?.input ?? Infinity) || widest(a, b) : widest;
+  const sorted = list.map((m, i) => ({ m, i })).sort((a, b) => order(a, b) || a.i - b.i).map((x) => x.m);
   const shown = long && !open ? sorted.slice(0, first) : sorted;
   const cols = open && long ? colsFor(n, shown.length) : 1, per = Math.ceil(shown.length / cols);
   const data = ` data-k="${esc(k)}"`;
@@ -1029,11 +1039,13 @@ const countHtml = () => (terms().length ? `<b>${DRAW.n(matched())}</b> of ${DRAW
 function pickerHtml() {
   // four chosen: the lock stands where the rows went off, in the board's own head
   const full = ui.panes.length >= MAX_PANES ? DRAW.lock(`${MAX_PANES} of ${MAX_PANES} chosen`, { pop: true }) : "";
-  const head = `<div class="pg-find"><label class="search pg-search">${FIND}<input class="field" id="find" type="search" placeholder="Find a model" value="${esc(ui.q)}" autocomplete="off" spellcheck="false" aria-label="Find a model"></label>`
-    + `<span class="pg-count" aria-live="polite">${countHtml()}</span>${full}`
-    + `<span class="pg-unit">Prices per M tokens</span>`
-    + `<button class="icon pg-shut" type="button" data-act="shut" aria-label="Close the models">${ICON.close}</button></div>`;
-  return `<div class="plate pg-pick${ui.opened ? " opening" : ""}" id="pick" role="group" aria-label="Models to compare">${head}<div class="pg-board">${boardHtml()}</div></div>`;
+  // the kicker carries what the board counts, what is full and the price unit, once, with the close at its end
+  const aside = `<span class="pg-pa"><span class="pg-count" aria-live="polite">${countHtml()}</span>${full}`
+    + `<span class="pg-sortsw">${DRAW.switcher([["window", "Most context"], ["price", "Cheapest"]], ui.sort, "sort", "Order the models by")}</span><span class="pg-unit">Prices per M tokens</span>`
+    + `<button class="icon pg-shut" type="button" data-act="shut" aria-label="Close the models">${ICON.close}</button></span>`;
+  const find = `<div class="pg-find"><label class="search pg-search">${FIND}<input class="field" id="find" type="search" placeholder="Find a model" value="${esc(ui.q)}" autocomplete="off" spellcheck="false" aria-label="Find a model"></label></div>`;
+  return `<div class="plate pg-pick${ui.opened ? " opening" : ""}" id="pick" role="group" aria-label="Models to compare">`
+    + `${DRAW.section("Choose models", `${find}<div class="pg-board">${boardHtml()}</div>`, { aside, head: "pg-pickhead", cls: "pg-picks" })}</div>`;
 }
 function paintBoard() {
   const b = root.querySelector(".pg-board"), n = root.querySelector(".pg-count");
@@ -1055,14 +1067,15 @@ function ghostPickHtml() {
   if (keptModels().length >= MAX_PANES) return "";
   const prov = (rows, i) => `<div class="pg-pb"><section class="titled pg-prov ghosted" style="--i:${i % 3}" aria-hidden="true"><header>${GHOST.bar(9, "big")}</header>`
     + `${GHOST.card([15, ...Array.from({ length: rows }, (_, k) => 17 + ((k * 7 + i * 3) % 6))], 0, "pg-cmd")}</section></div>`;
-  return `<div class="plate pg-pick" aria-hidden="true"><div class="pg-find">${GHOST.bar(24, "chip")}${GHOST.bar(6)}</div>`
-    + `<div class="pg-board">${DRAW.masonry([8, 6, 7, 9, 2, 9, 3, 1, 1].map(prov), COL_REM, { n: boardFit() })}</div></div>`;
+  return `<div class="plate pg-pick" aria-hidden="true">${DRAW.section("Choose models", `<div class="pg-find">${GHOST.bar(24, "chip")}</div>`
+    + `<div class="pg-board">${DRAW.masonry([8, 6, 7, 9, 2, 9, 3, 1, 1].map(prov), COL_REM, { n: boardFit() })}</div>`,
+  { aside: `<span class="pg-pa">${GHOST.bar(6)}</span>`, head: "pg-pickhead", cls: "pg-picks" })}</div>`;
 }
 function ghostAnswersHtml() {
   const kept = keptModels().length;
   if (!kept) return "";
-  const pane = (i) => `<article class="pgp ghosted" style="--i:${i}" aria-hidden="true"><header class="pg-head"><span class="pg-sock tlamp"></span>`
-    + `<div class="pg-nm">${GHOST.bar(13, "big")}${GHOST.chip(5.5)}</div><div class="pg-meta">${GHOST.bar(12)}</div></header><div class="pg-body"></div></article>`;
+  const pane = (i) => `<article class="pgp ghosted" style="--i:${i}" aria-hidden="true"><div class="pgc"><header class="pg-head"><span class="pg-sock tlamp"></span>`
+    + `<div class="pg-nm">${GHOST.bar(13, "big")}${GHOST.chip(5.5)}</div><div class="pg-meta">${GHOST.bar(12)}</div></header><div class="pg-body"></div></div></article>`;
   return `<section class="pg-answers" aria-hidden="true"><div class="sechead pg-ahead"><h2 class="kicker">Answers</h2></div>`
     + `<div class="pg-lanes" style="--lanes:${Math.min(kept, lanesFit())}">${Array.from({ length: kept }, (_, i) => pane(i)).join("")}</div></section>`;
 }
@@ -1317,6 +1330,16 @@ document.addEventListener("click", (e) => {
     }
     case "retry": if (p && ui.prompt.trim() && p.st !== "sending") run([p]); return;
     case "reread": reread(); return;
+    // the models read in another order: the lists are drawn again in it and fade in where they stand
+    case "sort": {
+      if (ui.sort === t.dataset.v) return;
+      ui.sort = t.dataset.v;
+      for (const b of root.querySelectorAll('[data-act="sort"]')) b.setAttribute("aria-pressed", String(b.dataset.v === ui.sort));
+      const board = root.querySelector(".pg-board");
+      paintBoard();
+      if (board && !still()) { board.classList.remove("swap"); void board.offsetWidth; board.classList.add("swap"); }
+      return;
+    }
     case "more": case "vendor": {
       const k = t.dataset.k;
       flip(ui.open, k);

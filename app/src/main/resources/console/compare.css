@@ -71,7 +71,7 @@
 .pg-mdx ul.tasks li { display: flex; align-items: flex-start; gap: .7rem; }
 .pg-mdx code { font: 500 .9em/1 var(--font-data); background: var(--obj-high); border-radius: .25rem; padding: .12rem .3rem; }
 .pg-mdx pre { margin: 0 0 .65rem; padding: .75rem .9rem; overflow-x: auto; background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); break-inside: avoid; }
-.pg-mdx pre code { background: none; padding: 0; border-radius: 0; font: 500 .88rem/1.55 var(--font-data); white-space: pre; }
+.pg-mdx pre code { background: none; padding: 0; border-radius: 0; font: 500 .88rem/1.55 var(--font-data); white-space: pre-wrap; overflow-wrap: anywhere; }
 .pg-mdx hr { margin: 1rem 0; border: 0; border-top: .08rem solid var(--hair); }
 .pg-mdx table { display: block; max-width: 100%; overflow-x: auto; margin: 0 0 .8rem; border-collapse: collapse; font: 500 .95rem/1.4 var(--font-name); break-inside: avoid; }
 .pg-mdx th, .pg-mdx td { padding: .45rem 1rem .45rem 0; text-align: left; vertical-align: top; border-bottom: .08rem solid var(--hair); }
@@ -120,6 +120,11 @@
 /* THE ROUND: how many answered of how many were asked leads the plate, the round's split is one bar beside it, and the
    time to the last answer and the failures are tiles at its end; a hairline, with 4u over and under it, divides it from the
    table. Beside the table's width the three stand on one line, narrower they stack. */
+/* the round's first appearance: it opens from nothing, so the table and the answers under it move down rather than jump */
+.pg-roundw { display: grid; grid-template-rows: 1fr; }
+.pg-roundin { min-width: 0; min-height: 0; }
+.pg-roundw.unfold { animation: pg-unfold var(--t-move) var(--e-out) both; }
+.pg-roundw.unfold > .pg-roundin { overflow: hidden; }
 .pg-round { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: calc(2 * var(--u)) calc(4 * var(--u)); margin-bottom: calc(4 * var(--u)); padding-bottom: calc(4 * var(--u)); border-bottom: .08rem solid var(--hair); transition: opacity var(--t-snap) var(--e-out); }
 @container plate (min-width: 64rem) { .pg-round { grid-template-columns: auto minmax(18rem, 1fr) auto; } }
 .pg-round.stale { opacity: .58; }
@@ -233,14 +238,24 @@
 .pg-ahead { align-items: center; }
 .pg-oldleg { display: inline-flex; align-items: center; gap: .5rem; font: 500 .88rem/1 var(--font-name); color: var(--text-body); }
 .pg-oldleg .sw { width: 1.6rem; height: .9rem; border-radius: .25rem; background: var(--obj); border: .12rem solid var(--ink); opacity: .58; }
-/* each pane takes two of the grid's rows (its head, its answer) as a subgrid, so the heads of a row of panes end on
-   one line and the answers start on one; the space under a row is the panes' own margin */
+/* each pane takes three of the grid's rows (its head, its answer, its request) as a subgrid, so the heads of a row of panes
+   end on one line and the answers start on one */
 .pg-lanes { --lanes: 1; display: grid; grid-template-columns: repeat(var(--lanes), minmax(0, 1fr)); column-gap: var(--gap-col); row-gap: 0; }
-.pgp {
-  --c: var(--text-mute); grid-row: span 2; display: grid; grid-template-rows: subgrid; row-gap: 0; min-width: 0; margin-bottom: 2.4rem;
+/* a pane is three rows of its lane row: its card (the head and the answer on one surface, two rows), and under it the request
+   it opened, a card of its own. Only the panes that opened a request fill the third row, so an open request never stretches
+   the cards beside it. The space under the pane is the pane's own, so every lane row ends 2.4rem under its last card. */
+.pgp { --c: var(--text-mute); grid-row: span 3; display: grid; grid-template-rows: subgrid; row-gap: 0; min-width: 0; }
+.pgp::after { content: ""; grid-row: 3; grid-column: 1; margin-bottom: 2.4rem; }
+.pgc {
+  grid-row: 1 / span 2; grid-column: 1; display: grid; grid-template-rows: subgrid; row-gap: 0; min-width: 0;
   background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
   box-shadow: var(--cast) var(--cast) 0 var(--c), var(--cast) var(--cast) 0 var(--ink-w) var(--ink);
 }
+/* the only pane there is, on a page wide enough for two, stands as wide as one of two: its answer keeps the measure its
+   columns give it and its figures keep the length of a bar that can be read against its label */
+@container (min-width: 150rem) { .pgp.solo { max-width: calc(50% - var(--gap-col) / 2); } }
+.pgp.landed { animation: none; }
+.pgp.landed > .pgc { animation: pulseOnce var(--t-pulse) var(--e-out) 1; }  /* the pulse rings the card, not the three rows the pane spans */
 /* the head: the socket, the model's name with its command and the pane's acts on its line, under them whose it is, and
    under both the answer's own figures, each a bar on the table's scale */
 .pg-head {
@@ -249,7 +264,7 @@
   background: var(--obj-high); border-bottom: .12rem solid var(--ink);
   border-radius: calc(var(--r-obj) - var(--ink-w)) calc(var(--r-obj) - var(--ink-w)) 0 0;
 }
-.pgp:has(> .pg-body:empty) > .pg-head { border-bottom: 0; border-radius: calc(var(--r-obj) - var(--ink-w)); }
+.pgc:has(> .pg-body:empty) > .pg-head { border-bottom: 0; border-radius: calc(var(--r-obj) - var(--ink-w)); }
 .pg-head > .pg-sock { grid-area: sock; align-self: start; margin-top: .05rem; }
 .pg-nm { grid-area: nm; display: flex; align-items: center; flex-wrap: wrap; gap: .35rem .8rem; min-width: 0; min-height: 2.2rem; }
 .pg-head .pg-meta { grid-area: meta; margin-top: .35rem; }
@@ -278,7 +293,6 @@
 /* the answer's own figures: time, cost and tokens each way, each a bar on the same scale as its column of the table, so the
    answer is never read apart from what it cost; empty before the send, striped while it is out */
 .pg-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: calc(1.5 * var(--u)) calc(2.5 * var(--u)); margin-top: calc(2 * var(--u)); padding-top: calc(2 * var(--u)); border-top: .08rem solid var(--hair); transition: opacity var(--t-snap) var(--e-out); }
-.pgp.alone .pg-strip { max-width: 70rem; }
 .pg-sc { min-width: 0; display: flex; flex-direction: column; gap: .4rem; }
 .pg-scl { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; min-width: 0; }
 .pg-scl em { font: 500 .8rem/1.2 var(--font-name); font-style: normal; color: var(--text-mute); white-space: nowrap; }
@@ -293,11 +307,13 @@
 .pgp.stale .pg-strip { opacity: .58; }
 
 /* the answer: the model's reply in the plan's face, flowing into as many columns of a reading measure as its pane holds */
-.pg-body { min-width: 0; padding: calc(3 * var(--u)); }
+.pg-body { container: pbody / inline-size; min-width: 0; padding: calc(3 * var(--u)); }
 .pg-body:empty { display: none; }
 .pg-body:has(> .pg-idle) { display: flex; }
 .pg-body .msg.agent { max-width: none; align-self: stretch; }
-.pg-ans { font: 400 1.12rem/1.62 var(--font-name); columns: 34rem 4; column-gap: 2.6rem; column-rule: .08rem solid var(--hair); }
+/* a reading measure is about 50 characters a line, so a pane holds as many 24rem columns as it has room for, and a short reply
+   (--cc, from its length) never splits into more columns than it has text for */
+.pg-ans { font: 400 1.12rem/1.62 var(--font-name); columns: 24rem var(--cc, 4); column-gap: 2.6rem; column-rule: .08rem solid var(--hair); }
 .pg-ans li, .pg-ans pre, .pg-ans table { break-inside: avoid; }
 .pg-ans table { column-span: all; }
 .pg-body.rise > * { animation: pg-rise var(--t-snap) var(--e-out) 1; }
@@ -312,8 +328,14 @@
 
 /* a failure: its word as a shape (the window at its limit, the day's budget spent), the act that fixes it, then what the
    provider, or splice, said, one line until opened */
-.pgp.is-failed.alone:not(:has(.pg-req)) { max-width: 46rem; }  /* a failure alone in its row: one line, so not a whole row's width */
 .pg-fix { display: flex; flex-direction: column; align-items: flex-start; gap: calc(2 * var(--u)); min-width: 0; }
+/* a pane that stands wide holds its failure on one line, left to right: the word, the meter, the acts; narrower, they stack.
+   The pane's own body is the container, so a failed pane is as wide as the lanes make it and never stretches one line across it */
+@container pbody (min-width: 64rem) {
+  .pg-fix { flex-direction: row; flex-wrap: wrap; align-items: center; column-gap: calc(4 * var(--u)); }
+  .pg-fix > .pg-wrow { align-self: center; flex: 1 1 28rem; max-width: 52rem; }
+  .pg-fix > .pg-said { flex: 1 1 100%; }
+}
 .pg-fixrow { display: flex; align-items: center; flex-wrap: wrap; gap: .8rem calc(3 * var(--u)); }
 .pg-fixrow .state { font-size: 1.02rem; white-space: normal; }
 .pg-fixrow .state.limit .lockico { display: inline-grid; }
@@ -336,17 +358,22 @@
 .pg-said:not(.open) .pg-saidd q { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pg-said.open .pg-saidd q { overflow-wrap: anywhere; }
 
-/* the request: Requests' own open request (reqview.css), at its pane's foot under the answer, its record alone. It opens
-   and folds by its rows growing from and shrinking to nothing, so the answers across a row stay on one line and the
-   panes move rather than jump. The hairline and the 4u over and under it are the record's own, so they fold with it. */
-.pg-req { display: grid; grid-template-rows: 1fr; container-type: inline-size; min-width: 0; }
+/* the request: Requests' own open request (reqview.css), its record alone, hanging under its pane as a card of its own.
+   It opens and folds by its rows growing from and shrinking to nothing, so the answers across a row stay on one line, the
+   cards beside it keep their height and the page moves rather than jumps. */
+.pg-req { grid-row: 3; grid-column: 1; display: grid; grid-template-rows: 1fr; min-width: 0; margin-bottom: 2.4rem; }
 .pg-reqin { min-width: 0; min-height: 0; }
+/* the request is a card of its own under its pane, in the same colour edge; its gap to the pane sits inside what folds */
+.pg-reqcard {
+  container-type: inline-size; margin: 1.2rem 0 0; padding: calc(3 * var(--u)); background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
+  box-shadow: var(--cast) var(--cast) 0 var(--c), var(--cast) var(--cast) 0 var(--ink-w) var(--ink);
+}
 .pg-req.unfold { animation: pg-unfold var(--t-move) var(--e-out) both; }
 .pg-req.fold { animation: pg-fold var(--t-snap) var(--e-io) both; }
 .pg-req.unfold > .pg-reqin, .pg-req.fold > .pg-reqin { overflow: hidden; }
 @keyframes pg-unfold { from { grid-template-rows: 0fr; opacity: 0; } to { grid-template-rows: 1fr; opacity: 1; } }
 @keyframes pg-fold { from { grid-template-rows: 1fr; opacity: 1; } to { grid-template-rows: 0fr; opacity: 0; } }
-.pg-reqat { display: flex; align-items: baseline; gap: .7rem; margin: calc(4 * var(--u)) 0 calc(2 * var(--u)); padding-top: calc(4 * var(--u)); border-top: .08rem solid var(--hair); font: 600 var(--kicker)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
+.pg-reqat { display: flex; align-items: baseline; gap: .7rem; margin: 0 0 calc(2 * var(--u)); font: 600 var(--kicker)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
 .pg-reqat time { font: 500 .92rem/1 var(--font-data); letter-spacing: 0; text-transform: none; color: var(--text-body); }
 .pg-req .pane.rqpane { display: flex; flex-direction: column; height: auto; overflow: visible; border: 0; border-radius: 0; box-shadow: none; background: none; }
 .pg-req .rqpane .scroll { overflow: visible; padding: 0; }
@@ -357,19 +384,23 @@
 .pg-req.swap .bodies { animation: pg-fade var(--t-snap) var(--e-out) 1; }
 
 /* ---------- the board: providers balanced into equal columns, each command a card, each model a row of figures ---------- */
-.pg-pick { gap: calc(3 * var(--u)); }
 .pg-pick.opening { animation: pg-open var(--t-snap) var(--e-out) 1; }
 @keyframes pg-open { from { opacity: 0; transform: translateY(-.6rem); } }
-.pg-find { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem 1.8rem; }
+/* the board's kicker carries what it counts, what is full and the price unit, with the close at its end; the find field
+   stands under it */
+.pg-pickhead { align-items: center; min-height: 2.2rem; }
+.pg-pa { flex: 1; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: .5rem calc(2 * var(--u)); }
+.pg-find { display: flex; align-items: center; flex-wrap: wrap; }
 .pg-search { flex: 0 1 32rem; width: auto; min-width: 18rem; }
 .pg-search .field { padding-block: .75rem; font-size: 1rem; }
 .pg-search .field:focus { border-color: var(--text-mute); }
 .pg-count { font: 500 .95rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
 .pg-count b { font: 600 1.05rem/1 var(--font-data); color: var(--text); margin-right: .2rem; }
-.pg-find > .state .lockico { display: inline-grid; }
+.pg-pa > .state .lockico { display: inline-grid; }
 .pg-unit { margin-left: auto; font: 500 .88rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
 .pg-shut { margin-left: 0; }
 .pg-board { min-width: 0; }
+.pg-board.swap .pg-rows { animation: pg-fade var(--t-snap) var(--e-out) 1; }  /* the models read in another order: they fade in where they stand */
 .pg-prov .stack-cards { gap: var(--gap-card); }
 /* a provider no model matches stays as its title over an empty slot, so the search narrows the board and never empties it */
 .pg-prov.void > header { opacity: .5; }
@@ -393,7 +424,7 @@
 .pg-rcols { display: grid; grid-template-columns: repeat(var(--k, 1), minmax(0, 1fr)); column-gap: calc(var(--gap-col) + 1rem); align-items: start; }
 .pg-rc { min-width: 0; display: flex; flex-direction: column; }
 /* a model list's columns, said once over its rows: the tick, the name, the window, the two prices */
-.pg-mh, .pg-mrow { display: grid; grid-template-columns: 1.25rem minmax(0, 1fr) 5.4rem 4.6rem 4.6rem; align-items: center; column-gap: .7rem; }
+.pg-mh, .pg-mrow { display: grid; grid-template-columns: 1.25rem minmax(14rem, 2fr) repeat(3, minmax(5.4rem, 1fr)); align-items: center; column-gap: .7rem; }
 .pg-mh { align-items: end; padding: 0 .45rem .45rem; font: 500 .78rem/1.2 var(--font-name); color: var(--text-mute); border-bottom: .08rem solid var(--hair); }
 .pg-mh .pg-h { font: inherit; white-space: nowrap; }
 .pg-rows { display: flex; flex-direction: column; gap: .1rem; padding-top: .35rem; }
@@ -410,7 +441,7 @@
 /* a model's name is read whole: a name longer than its column takes a second line rather than losing its end */
 .pg-mn { min-width: 0; overflow-wrap: anywhere; }
 .pg-mf { display: flex; align-items: center; gap: .5rem; min-width: 0; }
-.pg-mf .vbar { height: .45rem; min-width: .8rem; }
+.pg-mf .vbar { height: .55rem; min-width: .8rem; }
 .pg-mf .v { flex: none; min-width: 2.5rem; text-align: right; font: 500 .9rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
 .pg-mf .v .nr { font: 500 .9rem/1 var(--font-data); }
 .pg-mrow:hover .pg-mf .vbar b, .pg-mrow[aria-pressed="true"] .pg-mf .vbar b { background: color-mix(in oklab, var(--text) 60%, transparent); }
@@ -441,7 +472,7 @@
 .pg-tr.ghosted .ghost.track { width: 100%; }
 .pg-tr.ghosted .pg-tv { display: flex; justify-content: flex-end; }
 .pg-add.ghosted { justify-content: flex-start; cursor: default; }
-.pgp.ghosted { box-shadow: var(--cast) var(--cast) 0 var(--wall-low), var(--cast) var(--cast) 0 var(--ink-w) var(--ink); }
+.pgp.ghosted > .pgc { box-shadow: var(--cast) var(--cast) 0 var(--wall-low), var(--cast) var(--cast) 0 var(--ink-w) var(--ink); }
 .pgp.ghosted .pg-nm > .ghost.big { margin-block: .155rem; }  /* the name's line, 1.61rem */
 .pgp.ghosted .pg-nm .ghost.chip { height: 1.68rem; box-shadow: 0 0 0 .12rem var(--track-line); }
 .pg-prov.ghosted .ghost.big { width: 9rem; }
@@ -462,7 +493,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .pg-pick.opening, .pg-body.rise > *, .pg-fix.again, .pg-sock.pop, .pg-acts.armed > .act, .pg-md.swap > *, .pg-req.swap .bodies, .pg-req.unfold, .pg-req.fold,
-  .pg-vfold.unfold, .pg-rows.unfold, .pg-send span.rise, .pg-mdx ins, .pg-mdx del { animation: none; }
+  .pg-vfold.unfold, .pg-rows.unfold, .pg-send span.rise, .pg-mdx ins, .pg-mdx del, .pg-roundw.unfold, .pg-board.swap .pg-rows { animation: none; }
   .pg-tr.is-sending .pg-trk > i, .pg-tr > .barcell.is-wait .vbar, .pg-sc.is-run .vbar b, .pg-sc.is-wait .vbar, .pg-round .pd-seg.nt { animation: none; }
   .pg-trk > i, .pg-tr, .pgp .pg-body, .pg-tr > .pg-c, .pg-strip, .pg-round, .pg-edit { transition: none; }
 }

@@ -392,7 +392,7 @@ function thruCells(s, mx, isKey, out = false, has = true) {
   const rows = isKey ? 3 : 2;
   if (reading()) return out && !has ? "" : `<footer class="thru">${Array.from({ length: rows }, () => GHOST.row([GHOST.bar(4.2), GHOST.track(), GHOST.bar(3.2)])).join("")}</footer>`;
   if (!s.requests) return out ? "" : `<footer class="thru none${isKey ? " key" : ""}">${DRAW.nothing("No requests")}</footer>`;
-  const missing = (label) => `<span class="barcell gone"><em>${label}</em><span class="vbar gone" aria-hidden="true"></span><b class="v">${DRAW.dash}</b></span>`;
+  const missing = (label) => DRAW.unread.cell({ label });
   const cells = [];
   if (isKey) {
     const spent = spentOf(s), why = noCostWhy(s);
@@ -402,11 +402,10 @@ function thruCells(s, mx, isKey, out = false, has = true) {
   }
   if (noTokens(s)) cells.push(missing("Tokens"));
   else {
-    const total = tokensOf(s), w = barW(total, mx.tok).toFixed(1);
+    const total = tokensOf(s), w = barW(total, mx.tok);
     const cached = s.noIn < s.requests && total > 0 ? Math.min(100, (s.cached / total) * 100) : 0;
     if (cached) splitDrawn = true;
-    cells.push(`<span class="barcell"${cached ? ` title="${esc(`${tok(s.cached)} of ${tok(total)} read from the cache`)}"` : ""}><em>Tokens</em>`
-      + `<span class="vbar split" aria-hidden="true"><b data-tw="" data-w="${w}" style="width:${w}%"><i style="width:${cached.toFixed(1)}%"></i></b></span><b class="v" data-tn="">${tok(total)}</b></span>`);
+    cells.push(DRAW.barCell({ w, text: tok(total), label: "Tokens", split: cached, title: cached ? `${tok(s.cached)} of ${tok(total)} read from the cache` : "" }));
   }
   cells.push(DRAW.barCell({ w: barW(s.requests, mx.req), text: n0(s.requests), label: "Requests" }));
   return `<footer class="thru">${cells.join("")}</footer>`;
@@ -434,11 +433,19 @@ const cardH = (kind, rows, out, lines = 0, s = null) => {
   return 4.9 + body + foot + 1.9 * lines;
 };
 
+// the logins at their limit as the last board drew them (null before the first draw), so a lock pops in only on a login
+// that has just reached its limit
+let heldKnown = null, heldNow = new Set();
+/** The windows a login reports, as its card draws them. */
+const windowsOf = (row) => [windowOf(row.five_hour_used_percent, row.five_hour_reset_epoch_seconds, row.five_hour_window_seconds, "short", row.five_hour_current),
+  windowOf(row.seven_day_used_percent, row.seven_day_reset_epoch_seconds, row.seven_day_window_seconds, "long", row.seven_day_current)].filter(Boolean);
+/** A login with a window at its limit: its row in Where it went carries the lock its card has. */
+const heldRow = (row) => Boolean(row) && !signedOut(row) && windowsOf(row).some((w) => w.used >= 100);
 function planCard(row, mx) {
-  const windows = [windowOf(row.five_hour_used_percent, row.five_hour_reset_epoch_seconds, row.five_hour_window_seconds, "short", row.five_hour_current),
-    windowOf(row.seven_day_used_percent, row.seven_day_reset_epoch_seconds, row.seven_day_window_seconds, "long", row.seven_day_current)].filter(Boolean);
+  const windows = windowsOf(row);
   const idx = accountIdx(row), out = signedOut(row), heads = row.heads || [];
   const mine = usageOfPlan(row), s = sumOf(mine), held = windows.some((w) => w.used >= 100);
+  if (held) heldNow.add(idx);
   const rows = [];
   for (const w of windows) {
     rows.push(winRow(w));
@@ -467,7 +474,8 @@ function planCard(row, mx) {
       + `<header>${canName(row) ? nameSlot(row, idx, "card") : `<span class="nm">${esc(planName(row))}</span>`}`
       + `${row.plan && !planName(row).toLowerCase().includes(row.plan.toLowerCase()) ? `<span class="pv">${esc(row.plan.charAt(0).toUpperCase() + row.plan.slice(1))}</span>` : ""}`
       + headEnd(withChips ? heads : [], out) + `</header>`
-      + (held ? `<p class="heldline">${DRAW.lock(until?.resetMs ? `Limit reached until ${backWord(new Date(until.resetMs))}` : "Limit reached")}${ran}</p>` : ran ? `<p class="heldline">${ran}</p>` : "")
+      // the lock pops in over the kit's pop time only on a login that has just reached its limit, never on a redraw
+      + (held ? `<p class="heldline">${DRAW.lock(until?.resetMs ? `Limit reached until ${backWord(new Date(until.resetMs))}` : "Limit reached", { pop: heldKnown != null && !heldKnown.has(idx) })}${ran}</p>` : ran ? `<p class="heldline">${ran}</p>` : "")
       + body
       + thruCells(s, mx, false, out, false) + (lead ? `<span class="drill" aria-hidden="true">${DOWN}</span>` : "") + `</article>` };
 }
@@ -527,6 +535,7 @@ function moneyHtml() {
     ...gone.map((g) => sumOf(!D.all ? [] : [D.all.accounts.get(acctKeyOf(g.head, g.label))].filter(Boolean)))];
   const mx = { tok: Math.max(1, ...sums.map(tokensOf)), req: Math.max(1, ...sums.map((s) => s.requests)), spend: Math.max(1e-9, ...sums.map((s) => spentOf(s) ?? 0)) };
   if (!reading()) splitDrawn = false;
+  heldNow = new Set();
   const cards = [...plans.map((row) => planCard(row, mx)), ...gone.map((g) => goneCard(g, mx)), ...keyRows.map(({ k, print, seen, replaced }) => keyCard(k, print, seen, replaced, mx))];
   const groups = new Map();
   for (const c of cards) {
@@ -544,14 +553,16 @@ function moneyHtml() {
     g.chips = shared ? chipsOf(g.cards[0].heads) : "";
     for (const c of g.cards) c.html = c.make(!shared);
   }
+  // a card's html is made above, against the logins the last board held; this board is the next one's last
+  heldKnown = heldNow;
   keepShape(ordered);
   return boardHead() + DRAW.masonry(planBoard(ordered, boardCols()).map(groupHtml), 38, { cls: "plans" });
 }
 /** One column of a provider's cards, as a block of the balanced board: the first column of a provider carries its name, the
- *  ones after it a space of the same height, so the cards of one provider start on one line wherever the board puts the
- *  groups that come after them. */
-const groupHtml = (it) => `<section class="ugroup" data-cols="1" style="--c:${colorOf(it.g.prov)}">${it.first
-  ? `<h3><i class="blot" aria-hidden="true"></i>${esc(it.g.name)}${it.g.chips ? `<span class="cmds">${it.g.chips}</span>` : ""}</h3>` : `<div class="hspace" aria-hidden="true"></div>`}`
+ *  ones after it continue it (data-cont: the board leaves the room the name took), so the cards of one provider start on
+ *  one line wherever the board puts the groups that come after them. */
+const groupHtml = (it) => `<section class="ugroup" data-cols="1"${it.first ? "" : " data-cont"} style="--c:${colorOf(it.g.prov)}">${it.first
+  ? `<h3><i class="blot" aria-hidden="true"></i>${esc(it.g.name)}${it.g.chips ? `<span class="cmds">${it.g.chips}</span>` : ""}</h3>` : ""}`
   + `<div class="gcol">${it.col.map((card) => card.html).join("")}</div></section>`;
 // whether the last read drew a cache share inside a card's tokens bar, so the legend names the lighter part only then
 let splitDrawn = false;
@@ -582,8 +593,30 @@ function planBoard(gs, n) {
   const GAP = 1, HEAD = 3.73, BETWEEN = 2.4; // rem: between cards, a provider's head, between blocks in a column
   const whole = (g) => ({ g, col: g.cards, first: true });
   const heightOf = (cards) => HEAD + cards.reduce((t, c) => t + c.h + GAP, -GAP);
+  // the board as the grid fills it: the provider's columns side by side at the top, then each other provider, in the order
+  // the markup lists them, under the shortest column
+  const tallest = (cols, seq) => {
+    const h = Array(n).fill(0);
+    cols.forEach((c, i) => { h[i] = heightOf(c); });
+    for (const g of seq) { const i = h.indexOf(Math.min(...h)); h[i] += (h[i] ? BETWEEN : 0) + heightOf(g.cards); }
+    return Math.max(...h);
+  };
+  // the order the other providers are listed in decides which column each lands under, so it is the one that leaves the
+  // board shortest (the first order is the board's own, and another is taken only where it saves room worth a card's
+  // line); with many providers the tallest block goes first, which the grid fills evenly enough
+  const orders = (items) => {
+    if (items.length > 7) return [items, [...items].sort((a, b) => heightOf(b.cards) - heightOf(a.cards))];
+    const out = [], pick = (left, got) => { if (!left.length) out.push(got); else left.forEach((x, i) => pick([...left.slice(0, i), ...left.slice(i + 1)], [...got, x])); };
+    pick(items, []);
+    return out;
+  };
+  const place = (cols, items) => {
+    let seq = items, t = tallest(cols, items);
+    for (const o of orders(items)) { const v = tallest(cols, o); if (v < t - 1.9) { t = v; seq = o; } }
+    return { t, seq };
+  };
   const big = n > 1 && gs[0].cards.length >= 2 ? gs[0] : null;
-  if (!big) return gs.map(whole);
+  if (!big) return (n > 1 && gs.length > 2 ? place([], gs).seq : gs).map(whole);
   const rest = gs.slice(1);
   const cards = big.cards, m = cards.length, kMax = Math.min(n, m);
   const pre = [0];
@@ -597,16 +630,9 @@ function planBoard(gs, n) {
     if (v < best[j][i]) { best[j][i] = v; cut[j][i] = p; }
   }
   const split = (j) => { const cols = []; for (let c = j, i = m; c > 0; i = cut[c][i], c--) cols.unshift(cards.slice(cut[c][i], i)); return cols; };
-  // the board as the grid fills it: the provider's columns side by side at the top, then each other provider under the shortest column
-  const tallest = (cols) => {
-    const h = Array(n).fill(0);
-    cols.forEach((c, i) => { h[i] = heightOf(c); });
-    for (const g of rest) { const i = h.indexOf(Math.min(...h)); h[i] += (h[i] ? BETWEEN : 0) + heightOf(g.cards); }
-    return Math.max(...h);
-  };
-  let cols = split(1), least = Infinity;
-  for (let j = 1; j <= kMax; j++) { const c = split(j), t = tallest(c); if (t <= least + 1e-6) { least = t; cols = c; } }
-  return [...cols.map((col, i) => ({ g: big, col, first: i === 0 })), ...rest.map(whole)];
+  let cols = split(1), seq = rest, least = Infinity;
+  for (let j = 1; j <= kMax; j++) { const c = split(j), p = place(c, rest); if (p.t <= least + 1e-6) { least = p.t; cols = c; seq = p.seq; } }
+  return [...cols.map((col, i) => ({ g: big, col, first: i === 0 })), ...seq.map(whole)];
 }
 /** A card before splice has answered at all: the card's own shape in striped bars, at the height the card itself will
  *  stand, so nothing under the board moves when it lands. [rows] is the window lines the card drew last time (-1 is a
@@ -640,7 +666,7 @@ const lastShape = () => {
 const ghostBoard = () => { let i = 0;
   const groups = lastShape().map((cards) => ({ cards: cards.map(([rows, h]) => ({ rows, h })) }));
   return DRAW.masonry(planBoard(groups, boardCols()).map((it) =>
-    `<section class="ugroup" data-cols="1">${it.first ? `<h3>${GHOST.bar(5)}</h3>` : `<div class="hspace" aria-hidden="true"></div>`}<div class="gcol">${it.col.map((card) => ghostCard(i++, card.rows, card.h)).join("")}</div></section>`), 38, { cls: "plans" });
+    `<section class="ugroup" data-cols="1"${it.first ? "" : " data-cont"}>${it.first ? `<h3>${GHOST.bar(5)}</h3>` : ""}<div class="gcol">${it.col.map((card) => ghostCard(i++, card.rows, card.h)).join("")}</div></section>`), 38, { cls: "plans" });
 };
 
 // ---------- what a value can be grouped by; opening one goes a step down with its filter added ----------
@@ -782,7 +808,8 @@ function chartHtml() {
     if (!total) return `<div class="cstack ${k}" style="height:0%"></div>`;
     return `<div class="cstack ${k}" style="height:${((total / top) * 100).toFixed(2)}%"><span class="cfig">${fmt(total)}</span>`
       + parts.map(([h, v]) => `<a class="${k === "val" ? "hatch" : alt.has(h) ? "alt" : ""}" href="${reqUrl({ cmd: cmdOf(h), from: x.from, to: x.to })}" style="--c:${colorOf(providerOfHead(h))};flex:${((v / total) * 1000).toFixed(2)} 1 0" aria-label="${esc(`${cmdOf(h)} ${fmt(v)}`)}">`
-        + `<span class="sl"><span class="nm">${esc(cmdOf(h))}</span> <b>${fmt(v)}</b></span></a>`).join("") + `</div>`;
+        // a column of one part carries its figure once, over the column; a part inside it says whose it is
+        + `<span class="sl"><span class="nm">${esc(cmdOf(h))}</span>${parts.length > 1 ? ` <b>${fmt(v)}</b>` : ""}</span></a>`).join("") + `</div>`;
   };
   // a column carries its own tip, drawn with it and shown by hover or focus, so the pointer moving across the chart
   // redraws nothing and a keyboard reaches every column
@@ -938,8 +965,10 @@ function byHtml() {
     // and the way back in beside it, as its card would offer it: signing in again happens on Accounts
     const outWord = (e.gone && !/signed.out/i.test(plain(e.label)) ? `<span class="state">Signed out</span>` : "")
       + (e.gone ? `<a class="act small signin" href="accounts.html?head=${encodeURIComponent([...e.heads][0] ?? "")}">Sign in${OPEN}</a>` : "");
-    return line + `<div class="brow${e.gone ? " gone" : ""}" data-key="by-${ui.by}-${esc(e.k)}" data-act="pick" data-d="${ui.by}" data-v="${esc(e.k)}" style="--c:${colorOf(providerOfHead([...e.heads][0]))}" role="button" tabindex="0">`
-      + `<span class="who">${dot}${name}${e.sub ? `<span class="sb">${e.sub}</span>` : ""}${outWord}`
+    // a login at its limit carries the lock its card has, so a row finds its state as well as its card
+    const held = heldRow(e.row) ? `<span class="rowlock" role="img" aria-label="At its limit" data-tip="At its limit">${ICON.lock}</span>` : "";
+    return line + `<div class="brow${e.gone ? " gone" : ""}" data-key="by-${ui.by}-${esc(e.k)}"${DRAW.flip(`by-${ui.by}-${e.k}`)} data-act="pick" data-d="${ui.by}" data-v="${esc(e.k)}" style="--c:${colorOf(providerOfHead([...e.heads][0]))}" role="button" tabindex="0">`
+      + `<span class="who">${dot}${name}${held}${e.sub ? `<span class="sb">${e.sub}</span>` : ""}${outWord}`
       + `${size === 1 ? `<span class="cmds">${rowChipsOf(e.heads)}</span>` : ""}</span>`
       + tokCell(e.s, mx.tok)
       + (e.many ? `<span class="cell req num">${reqFig}</span>` : `<a class="cell req num open" href="${reqUrl({ ...extra, order: "price" }, f)}">${reqFig}${OPEN}</a>`)
@@ -986,14 +1015,18 @@ const ghostRows = (n, cells, head = "") => `<div class="card btable ghosted">${h
 // ---------- each command's tokens: one bar per command, split as its provider counted them ----------
 // Input holds what was read from the cache and what was written to it, as every provider here reports it. A figure no
 // request reported is a dash, never 0: a provider that never reports a cache write (OpenAI's Responses) sends 0 on every
-// request, so a window of input with no write at all is that silence, and Written reads as a dash.
+// request, so a window of input with no write at all is that silence: its bar has no written part, and says on hover that
+// the provider reports none, so the absence never reads as nothing written.
 function tokensHtml() {
-  const legend = `<span class="pd-leg tk"><i class="sw s1"></i>Cached<i class="sw s2"></i>Written<i class="sw s3"></i>Fresh</span>`;
-  const head = (body, lead = "") => `<div class="bandhead"><h2>Tokens by command</h2>${hwin()}${legend}</div>${lead}${body}`;
-  const cols = `<div class="trow thead"><span>Command</span><span class="cell">Input</span><span class="cell">Written</span><span class="cell">Output</span><span class="cell">No count</span><span class="cell">Cold turns</span></div>`;
+  // the legend names the three parts of an input bar and, only where a command has the mark, the glyph of its turns that ran
+  // cache-cold after an account switch
+  const legendOf = (cold) => `<span class="pd-leg tk"><i class="sw s1"></i>Cached<i class="sw s2"></i>Written<i class="sw s3"></i>Fresh`
+    + `${cold ? `<span class="coldkey">${DRAW.glyph.cold}</span>After a switch` : ""}</span>`;
+  const head = (body, lead = "", cold = false) => `<div class="bandhead"><h2>Tokens by command</h2>${hwin()}${legendOf(cold)}</div>${lead}${body}`;
+  const cols = `<div class="trow thead"><span>Command</span><span class="cell">Input</span><span class="cell">Output</span><span class="cell">No count</span></div>`;
   // the table is kept while the window reads, every row a striped bar the size its figures land at, its columns named
   if (reading()) return head(`<div class="card ttable ghosted">${cols}${Array.from({ length: Math.max(3, lastRows("tok", 7)) }, (_, i) =>
-    `<div class="gtrow" style="--i:${i}"><span class="who">${GHOST.bar(7, "chip")}</span>${[0, 1, 2, 3, 4].map(() => `<span class="cell">${GHOST.track()}</span>`).join("")}</div>`).join("")}</div>`,
+    `<div class="gtrow" style="--i:${i}"><span class="who">${GHOST.bar(7, "chip")}</span>${[0, 1, 2].map(() => `<span class="cell">${GHOST.track()}</span>`).join("")}</div>`).join("")}</div>`,
   `<div class="figline sub cachelead">${GHOST.ring("focal")}${GHOST.fig(2.6)}${GHOST.bar(9)}</div>`);
   const w = D.scoped, rd = D.reading ?? new Set();
   // the command with the most input leads, so the column the rows are read by is the order they are in
@@ -1001,41 +1034,49 @@ function tokensHtml() {
     .sort((a, b) => (rd.has(a[0]) - rd.has(b[0])) || (b[1]?.in ?? 0) - (a[1]?.in ?? 0));
   if (list.length || !uncounted()) keepRows("tok", list.length || 1);
   if (!list.length) return head(`<div class="card ttable"><div class="bnone">${DRAW.nothing(uncounted() ? "Nothing counted yet" : "No requests")}</div></div>`);
-  const mx = { in: Math.max(1, ...list.map(([, s]) => s?.in ?? 0)), out: Math.max(1, ...list.map(([, s]) => s?.out ?? 0)), write: Math.max(1, ...list.map(([, s]) => s?.write ?? 0)), cold: Math.max(1, ...list.map(([, s]) => s?.cold ?? 0)),
+  const mx = { in: Math.max(1, ...list.map(([, s]) => s?.in ?? 0)), out: Math.max(1, ...list.map(([, s]) => s?.out ?? 0)),
     // the share of a command's requests that carried no count, on one scale across the commands, so the one that differs reads first
     miss: Math.max(1, ...list.map(([, s]) => (s && s.requests ? share(Math.max(s.noIn, s.noOut), s.requests) : 0))) };
   const tin = list.reduce((a, [, s]) => a + (s?.in ?? 0), 0), tcached = list.reduce((a, [, s]) => a + (s?.cached ?? 0), 0);
   // the share of the input read from the cache is drawn first, as the ring Results' Cache hit draws, then written
   const lead = `<div class="figline sub cachelead">${tin > 0 ? `${DRAW.ring(tcached / tin, { size: "focal", label: `${DRAW.pct(tcached / tin)} of input read from cache` })}<b class="fig-focal">${DRAW.pct(tcached / tin)}</b><span class="cap">of <b>${tok(tin)}</b> input read from cache</span>` : `${DRAW.ring(0, { size: "focal" })}<b class="fig-focal">${DRAW.dash}</b><span class="cap">input read from cache</span>`}</div>`;
+  let coldAny = false;
   const rows = list.map(([h, s]) => {
-    if (rd.has(h)) return `<div class="trow"><span class="who">${chip(h)}</span>${[0, 1, 2, 3, 4].map(() => `<span class="cell">${GHOST.track()}</span>`).join("")}</div>`;
+    if (rd.has(h)) return `<div class="trow"><span class="who">${chip(h)}</span>${[0, 1, 2].map(() => `<span class="cell">${GHOST.track()}</span>`).join("")}</div>`;
     const noIn = s.noIn >= s.requests, counted = s.requests - Math.max(s.noIn, s.noOut);
     const fresh = Math.max(0, s.in - s.cached - s.write);
-    const segs = [["s1", "Cached", s.cached], ["s2", "Written", s.write], ["s3", "Fresh", fresh]];
+    const segs = [["s1", s.cached], ["s2", s.write], ["s3", fresh]];
     const stackW = barW(s.in, mx.in);
+    // The input bar is the one place the cache split is drawn: what was read from the cache, what was written to it and
+    // what was fresh. A part with room carries its figure; every part's figure, and the share each is, is on the bar's hover
+    // and read aloud. A provider that reports no cache write sends none on any request, so the bar has no written part and
+    // its hover says the provider reports none: never that nothing was written.
+    const said = [`Cached ${tok(s.cached)}`, s.write > 0 ? `Written ${tok(s.write)}` : null, `Fresh ${tok(fresh)}`].filter(Boolean).join(" · ")
+      + (s.write > 0 ? "" : ` · its provider reports no cache writes`);
     const inCell = noIn ? `<span class="cell inp"><span class="ttrack empty"></span><b class="v">${DRAW.dash}</b></span>`
-      : `<span class="cell inp"><span class="ttrack"><span class="tstack" style="width:${stackW.toFixed(1)}%">`
-        + segs.map(([cls, word, v]) => (v > 0 ? `<i class="${cls}" style="width:${((v / s.in) * 100).toFixed(2)}%" title="${esc(`${word} ${tok(v)} · ${DRAW.pct(v / s.in)} of input`)}"><b>${tok(v)}</b></i>` : "")).join("")
+      : `<span class="cell inp"><span class="ttrack" role="img" aria-label="${esc(`Input ${tok(s.in)}: ${said}`)}" data-tip="${esc(said)}"><span class="tstack" style="width:${stackW.toFixed(1)}%">`
+        + segs.map(([cls, v]) => (v > 0 ? `<i class="${cls}" style="width:${((v / s.in) * 100).toFixed(2)}%"><b>${tok(v)}</b></i>` : "")).join("")
         + `</span></span><b class="v">${tok(s.in)}</b></span>`;
-    // a provider that reports no cache write sends none on any request: the dash says it was not reported, never that
-    // nothing was written
-    const wrCell = s.write > 0 ? `<span class="cell wr">${DRAW.vbar(barW(s.write, mx.write))}<b class="v">${tok(s.write)}</b></span>`
-      : `<span class="cell wr"><span class="vbar gone" aria-hidden="true"></span><b class="v"><i class="nr" title="Its provider reports no cache writes">—</i></b></span>`;
     const outCell = s.noOut >= s.requests ? `<span class="cell"><span class="vbar gone" aria-hidden="true"></span><b class="v">${DRAW.dash}</b></span>`
       : `<span class="cell">${DRAW.vbar(barW(s.out, mx.out))}<b class="v">${tok(s.out)}</b></span>`;
     const missing = s.requests - counted;
     const countCell = `<span class="cell rep" title="${esc(`${n0(missing)} of ${n0(s.requests)} requests carried no count`)}">${DRAW.vbar(share(missing, s.requests) > 0 ? Math.max(1.1, share(missing, s.requests) / mx.miss * 100) : 0)}<b class="v" data-tn="">${DRAW.pct(missing / s.requests)}</b></span>`;
     const accts = [...w.accounts.values()].filter((a) => a.head === h && (a.cold > 0 || a.coldUn > 0)).sort((a, b) => b.cold - a.cold || b.coldUn - a.coldUn);
     const open = ui.cold.has(h) && accts.length > 0;
-    const unmarked = s.coldUn > 0 ? `<small class="um">${n0(s.coldUn)} not marked</small>` : "";
-    const coldBar = s.cold > 0 ? `<span class="vbar" aria-hidden="true"><b style="width:${barW(s.cold, mx.cold).toFixed(1)}%"></b></span><b class="v">${n0(s.cold)}</b>` : "";
-    const coldCell = accts.length
-      ? `<button class="cell cold disc" type="button" data-act="cold" data-k="${esc(h)}" aria-expanded="${open}" aria-controls="cold-${esc(h)}">${DRAW.chev}${coldBar}${unmarked}</button>`
-      : `<span class="cell cold">${coldBar}${unmarked}</span>`;
-    return `<div class="trow${open ? " open" : ""}" data-key="tok-${esc(h)}" style="--c:${colorOf(providerOfHead(h))}"><span class="who">${chip(h)}</span>${inCell}${wrCell}${outCell}${countCell}${coldCell}</div>`
+    // TURNS THAT RAN CACHE-COLD AFTER AN ACCOUNT SWITCH are a mark on the command they belong to, drawn only where there are
+    // any (as the drill-down's glyph tiles are): its glyph, the count, and the turns splice could not tie to an account. A
+    // command with logins to name opens them in place.
+    const cold = s.cold > 0 || s.coldUn > 0;
+    if (cold) coldAny = true;
+    const mark = `${DRAW.glyph.cold}${s.cold > 0 ? `<b class="v">${n0(s.cold)}</b>` : ""}${s.coldUn > 0 ? `<small class="um">${n0(s.coldUn)} not marked</small>` : ""}`;
+    const sayCold = `${s.cold > 0 ? `${n0(s.cold)} turns sent again after an account switch` : "Turns after an account switch"}${s.coldUn > 0 ? `, ${n0(s.coldUn)} not marked to an account` : ""}`;
+    const coldMark = !cold ? "" : accts.length
+      ? `<button class="cold disc" type="button" data-act="cold" data-k="${esc(h)}" aria-expanded="${open}" aria-controls="cold-${esc(h)}" aria-label="${esc(sayCold)}">${DRAW.chev}${mark}</button>`
+      : `<span class="cold" role="img" aria-label="${esc(sayCold)}">${mark}</span>`;
+    return `<div class="trow${open ? " open" : ""}" data-key="tok-${esc(h)}" style="--c:${colorOf(providerOfHead(h))}"><span class="who">${chip(h)}${coldMark}</span>${inCell}${outCell}${countCell}</div>`
       + (open ? coldPlate(h, s, accts) : "");
   }).join("");
-  return head(`<div class="card ttable">${cols}${rows}</div>`, lead);
+  return head(`<div class="card ttable">${cols}${rows}</div>`, lead, coldAny);
 }
 /** The turns of one command that ran cache-cold after splice switched its account, account by account: how many, the
  *  input each sent again with what it is a share of, and the turns splice could not mark. */
@@ -1129,6 +1170,24 @@ function renderBand(name, grow = false) {
   if (name === "money" || name === "tok") DRAW.paint(el, { grow: grow ? "all" : null, reading: false });
   if (name === "chart" || name === "tok") fitParts(el);
   if (name === "by") fitChips(el);
+  if (name === "by" || name === "tok" || name === "perf") settleLower();
+}
+/** The three tables' board, laid where the last of them landed: Tokens stands under the shorter column, so when a table
+ *  grows or shrinks (a Results row opens, Find narrows the list, a window holds fewer accounts) it may change columns,
+ *  and it travels to its new place over the kit's move time rather than appearing there. One pass per draw, after every
+ *  band the draw touched. */
+let lowerQueued = false;
+function settleLower() {
+  if (lowerQueued) return;
+  lowerQueued = true;
+  queueMicrotask(() => {
+    lowerQueued = false;
+    const box = document.getElementById("lower");
+    if (!box) return;
+    DRAW.lay(box);
+    const tok = document.getElementById("band-tok");
+    if (tok) flipMove(tok);
+  });
 }
 // The project tiles are known only once the transcripts have been listed. Until then the line holds the shape it last
 // landed in, hollow: a tile's own box per tile at a wide page, the picker's chip at a narrow one. It drew nothing, and
@@ -1159,7 +1218,10 @@ function render(grow = false) {
   }
   if (!document.getElementById("band-money")) {
     root.innerHTML = `<section class="band money" id="band-money"></section><div class="scopeline" id="scope"></div><section class="band chart" id="band-chart"></section>`
-      + `<div class="lower"><section class="band by" id="band-by"></section><div class="lcol"><section class="band tokens" id="band-tok"></section><div class="band perf" id="band-perf"></div></div></div>`;
+      // the three tables lie on the kit's balanced board, in this order: the third goes under whichever column is shorter,
+      // so a Results row that opens leaves Tokens under Where it went and no column stands beside a hole
+      + `<div class="lower mason" id="lower"><section class="band by" id="band-by"></section><div class="band perf" id="band-perf"></div>`
+      + `<section class="band tokens" id="band-tok" data-flip="usage-tok"></section></div>`;
   }
   renderScope();
   for (const name of ["money", "chart", "by", "tok", "perf"]) renderBand(name, grow);

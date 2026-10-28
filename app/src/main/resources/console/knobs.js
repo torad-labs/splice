@@ -23,6 +23,8 @@ const createKnobs = (scope) => {
   const dur = (ms) => (ms % HR === 0 ? `${ms / HR} h` : ms % MIN === 0 ? `${ms / MIN} min` : ms % SEC === 0 ? `${ms / SEC} s` : `${ms} ms`);
   const tok = (n) => (n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${+(n / 1e3).toFixed(1)}K` : `${n}`);
   const PLUS = G('<path d="M12 5v14M5 12h14"/>');
+  // an arrow that turns back: the way to the value every command uses
+  const BACK = G('<path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>');
   const LOCK = G('<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>');
   // ONLY AN EXCEPTION CARRIES A MARK (the polish pass, Oct 26): a setting at splice's default that a change reaches at
   // once is the ordinary case and says nothing. "Default" and "Live" stood on 45 and 38 rows and told him nothing a
@@ -32,14 +34,14 @@ const createKnobs = (scope) => {
     restart: G('<path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v5h-5"/>'),
     toml: G('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>'),
     shell: G('<path d="M4 6l5 6-5 6M12 18h8"/>'),
-    changed: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5" fill="currentColor"/></svg>',
+    changed: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6" fill="currentColor"/></svg>',
     unsaved: G('<circle cx="12" cy="12" r="6" stroke-dasharray="3 3"/>'),
     lock: LOCK,
     // the dashed slot with its plus: where a value for ONE command is set, at the end of a row (rowHtml's add)
     one: G('<rect x="3" y="3" width="18" height="18" rx="4.5" stroke-dasharray="3.4 2.8"/><path d="M12 8v8M8 12h8"/>'),
   };
   const MARK_WORD = {
-    changed: "Changed from the default", restart: "Takes a restart", toml: "Set in splice.toml",
+    changed: "Changed from the default", restart: "Takes a restart", toml: "Set in your settings file",
     shell: "Set in your shell", unsaved: "Gone at the next start", lock: "Locked", one: "A value for one command",
   };
   const MARK_ORDER = ["one", "changed", "restart", "toml", "shell", "unsaved", "lock"];
@@ -94,30 +96,32 @@ const createKnobs = (scope) => {
     // the no-progress limit, the one wall that ends a turn: every model, tool or reasoning event renews it, so it bounds a
     // silence, never a turn's length (Watchdog.kt:6-7, :148-155, :390-398). The three tiers under it ask whether the
     // provider is alive and never end a turn on their own (Knob.kt:237-300)
-    K("upstreamTimeoutMs", "Give up after no progress for", { k: "dur", opts: [10 * MIN, 15 * MIN, 20 * MIN, 30 * MIN, HR, 2 * HR], unit: "min" }, 15 * MIN, { cmd: true, home: "silent", also: "timeout limit cut off long turn wedged stuck" }),
-    K("firstByteTimeoutMs", "Check the connection if no output arrives for", { k: "dur", opts: [30 * SEC, 60 * SEC, 90 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 90 * SEC,
-      { cmd: true, home: "silent", also: "ask if a silent start is alive after first word first byte" }),
-    K("streamIdleMs", "Check a stalled answer is alive after", { k: "dur", opts: [30 * SEC, 60 * SEC, 90 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 90 * SEC, { cmd: true, home: "silent", also: "silence idle hang" }),
+    K("upstreamTimeoutMs", "Give up after", { k: "dur", opts: [10 * MIN, 15 * MIN, 20 * MIN, 30 * MIN, HR, 2 * HR], unit: "min" }, 15 * MIN, { cmd: true, home: "silent", also: "give up after no progress for timeout limit cut off long turn wedged stuck" }),
+    K("firstByteTimeoutMs", "Check connection after", { k: "dur", opts: [30 * SEC, 60 * SEC, 90 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 90 * SEC,
+      { cmd: true, home: "silent", also: "check the connection after check the connection if no output arrives for ask if a silent start is alive after first word first byte" }),
+    K("streamIdleMs", "Check silence after", { k: "dur", opts: [30 * SEC, 60 * SEC, 90 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 90 * SEC, { cmd: true, home: "silent", also: "check a quiet answer after check a stalled answer is alive after silence idle hang" }),
     // arms only on a provider measured to resume from a prefill (HeadBuildInputs.kt:168-171)
-    K("stallReanchorMs", "Resume a stalled answer after", { k: "dur", opts: [10 * SEC, 20 * SEC, 30 * SEC, 60 * SEC], unit: "s" }, 20 * SEC,
-      { cmd: true, home: "silent", also: "resume", only: [] }),
+    K("stallReanchorMs", "Resume after", { k: "dur", opts: [10 * SEC, 20 * SEC, 30 * SEC, 60 * SEC], unit: "s" }, 20 * SEC,
+      { cmd: true, home: "silent", also: "resume resume a stalled answer after", only: [] }),
     // admission per command (Knob.kt:186-194); attempts, the first included
     K("maxInflight", "Requests at once", { k: "count", opts: [4, 8, 12, 16, 24, 32, 100, 0], none: "Unlimited" }, 12, { cmd: true, also: "concurrent parallel per command" }),
-    K("maxQueued", "Requests waiting in line", { k: "count", opts: [128, 256, 512, 1024, 0], none: "Unlimited" }, 512, { cmd: true, also: "queue full" }),
+    K("maxQueued", "Waiting in line", { k: "count", opts: [128, 256, 512, 1024, 0], none: "Unlimited" }, 512, { cmd: true, also: "requests waiting in line queue full" }),
     K("quotaPoll", "Read plan limits", { k: "pick", names: { auto: "On", off: "Off" } }, "auto", { home: "plan", also: "quota" }),
-    K("quotaPollIntervalMs", "Check plan usage every", { k: "dur", opts: [MIN, 2 * MIN, 5 * MIN, 10 * MIN, 15 * MIN], unit: "min" }, 5 * MIN,
-      { home: "plan", also: "read plan limits every quota poll" }),
-    K("usageWarnPct", "Warn when a plan reaches", { k: "count", opts: [50, 70, 80, 90, 95], unit: "%" }, 80, { home: "plan", also: "warning" }),
-    K("usageWarnTokens5h", "5-hour limit if none is reported", { k: "count", opts: [0, 1e6, 5e6, 10e6, 25e6], none: "Off", tok: true, unit: "tokens out" }, 0,
-      { home: "plan", also: "warning" }),
+    K("quotaPollIntervalMs", "Read every", { k: "dur", opts: [MIN, 2 * MIN, 5 * MIN, 10 * MIN, 15 * MIN], unit: "min" }, 5 * MIN,
+      { home: "plan", also: "check plan usage every read plan limits every quota poll" }),
+    // NAMES OF ONE TO THREE WORDS (Oct 28): the control beside a name carries the rest (the unit, the bar on its scale), and the
+    // words a name used to have stay as search words, so a search for the old name still lands on the row
+    K("usageWarnPct", "Warn at", { k: "count", opts: [50, 70, 80, 90, 95], unit: "%" }, 80, { home: "plan", also: "warning warn when a plan reaches" }),
+    K("usageWarnTokens5h", "Fallback 5-hour limit", { k: "count", opts: [0, 1e6, 5e6, 10e6, 25e6], none: "Off", tok: true, unit: "tokens out" }, 0,
+      { home: "plan", also: "warning 5-hour limit if none is reported" }),
     // what a budget made without an action of its own does once it is spent (PUT /api/budgets, Knob.kt BUDGET_DEFAULT_ACTION)
-    K("budgetDefaultAction", "When a budget runs out", { k: "pick", names: { warn: "Warns", block: "Blocks" } }, "warn",
-      { home: "plan", also: "spend money new budget spent" }),
+    K("budgetDefaultAction", "Spent budget", { k: "pick", names: { warn: "Warns", block: "Blocks" } }, "warn",
+      { home: "plan", also: "when a budget runs out spend money new budget spent" }),
     K("effort", "Reasoning effort", { k: "pick", unset: "Model's own", names: { none: "None", minimal: "Minimal", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" } }, null),
     // how long a GPT head's answers run: text.verbosity on each of its turns, as Codex's model_verbosity (Knob.kt
     // VERBOSITY, fix 5 of Oct 27). Read as the head is built, so it takes a restart, and a command can hold its own.
-    K("verbosity", "How long answers run", { k: "pick", unset: "Model's own", names: { low: "Short", medium: "Medium", high: "Long" } }, null,
-      { cmd: true, adv: "reasoning", also: "verbosity answer length text verbosity model_verbosity gpt responses short long" }),
+    K("verbosity", "Answer length", { k: "pick", unset: "Model's own", names: { low: "Short", medium: "Medium", high: "Long" } }, null,
+      { cmd: true, adv: "reasoning", also: "how long answers run verbosity answer length text verbosity model_verbosity gpt responses short long" }),
     // A NAME SAYS WHAT THE CONTROL DOES, AND NOTHING UNDER IT EXPLAINS (Marlin, Oct 12, ACCEPTANCE.md): a control he
     // cannot read is renamed first, then shown as an element where the fact exists, and only then given a sentence he
     // approves. The old names stay in `also` so a search for "summaries" still lands on the row that was renamed.
@@ -128,22 +132,22 @@ const createKnobs = (scope) => {
     // OFF THE PAGE, NOT OFF THE DAEMON (Marlin, Oct 12): on by default for every head since Oct 23 (Knob.kt), and
     // turning it off is an environment or TOML choice, so it serves no job on the page. No `home`:
     // SettingsCoverageTest carries it in offPage with that reason.
-    K("replayReasoning", "Send earlier reasoning back", { k: "flag" }, true, { also: "thinking replay" }),
-    K("progressLine", "Waiting line in the terminal", { k: "flag" }, true,
-      { home: "reasoning", also: "progress line while it thinks waiting status" }),
+    K("replayReasoning", "Send earlier reasoning back", { k: "flag" }, true, { home: "data", also: "thinking replay reasoning between requests inside your conversations" }),
+    K("progressLine", "Terminal waiting line", { k: "flag" }, true,
+      { home: "reasoning", also: "waiting line in the terminal progress line while it thinks waiting status" }),
     // foldReasoningModels and foldMaxContinue retired in 0.4.0 (failure-handling slice 4): splice continues a codex
     // answer whose reasoning the backend cut on its own, so there is no setting to draw, and the daemon refuses the keys.
     // a request too large for splice gets a 413 before any turn exists (AdmissionResponses.kt:34)
     K("maxRequestBytes", "Largest request", { k: "count", opts: [8 * MB, 16 * MB, 32 * MB, 64 * MB], unit: "MB", per: MB }, 32 * MB, { home: "busy", also: "too large image size 413" }),
     // how long the daemon waits for a client to send a request body (RequestReadBudgetMs)
-    K("requestReadTimeoutMs", "Drop a request still arriving after", { k: "dur", opts: [10 * SEC, 30 * SEC, 60 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 30 * SEC, { adv: "busy", also: "slow client body timeout longest wait for a request to arrive" }),
+    K("requestReadTimeoutMs", "Slow request limit", { k: "dur", opts: [10 * SEC, 30 * SEC, 60 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 30 * SEC, { adv: "busy", also: "drop a request still arriving after slow client body timeout longest wait for a request to arrive" }),
     // 0 is the daemon working the budget out from its own heap (Knob.kt:434-444), as maxInflight's 0 is Unlimited
-    K("materializationHeapBytes", "Memory for reading requests", { k: "count", opts: [0, 256 * MB, 512 * MB, 1024 * MB, 2048 * MB], none: "Automatic", unit: "MB", per: MB }, 0, { adv: "busy", also: "heap memory large requests" }),
+    K("materializationHeapBytes", "Request memory", { k: "count", opts: [0, 256 * MB, 512 * MB, 1024 * MB, 2048 * MB], none: "Automatic", unit: "MB", per: MB }, 0, { adv: "busy", also: "memory for reading requests heap memory large requests" }),
     // upstreamRetries and the three retryBackoff* waits retired in 0.4.0 (failure-handling slice 4): splice decides how
     // often and how soon a failed request is sent again from what failed, and the daemon refuses the keys. The
     // per-command test in tools/console/settings-per-command.test.ts used upstreamRetries as its second row; it moves to
     // another per-command row on the same page.
-    K("traceRetentionDays", "Keep prompts and answers for", { k: "count", opts: [1, 3, 7, 14, 30], unit: "days" }, 7, { home: "data" }),
+    K("traceRetentionDays", "Keep requests for", { k: "count", opts: [1, 3, 7, 14, 30], unit: "days" }, 7, { home: "data", also: "keep prompts and answers for" }),
     K("traceMaxBodyChars", "Longest saved prompt", { k: "count", opts: [4 * MB, 8 * MB, 16 * MB, 32 * MB], unit: "M characters", per: MB }, 16 * MB, { home: "data" }),
     // one setting for the usage and request history (the hourly totals and the request records), what Usage and
     // Requests can look back on: 35 days on a fresh install, Forever a real choice (Marlin, Oct 10, from Marcos: "it
@@ -151,15 +155,17 @@ const createKnobs = (scope) => {
     // back), and Today only is 0, a choice never typed:
     // a daily budget needs today's spend, so it keeps today and drops it at midnight. A Custom field takes whole days
     // from 1. A shorter window waits for the page's yes (ask), since it deletes what falls outside it.
-    K("historyRetentionDays", "Keep usage and request history for", { k: "count", opts: [0, 7, 14, 35, 90, 365, "forever"], unit: "days", none: "Forever", zero: "Today only", min: 1 }, 35,
-      { home: "data", ask: true, also: "history retention disk space forever usage requests records month year" }),
-    K("activityRetentionDays", "Keep what each agent was doing for", { k: "count", opts: [7, 30, 90, 180, 365], unit: "days", min: 1 }, 90, { home: "data", also: "activity labels teams agents file names commands" }),
+    K("historyRetentionDays", "Keep history for", { k: "count", opts: [0, 7, 14, 35, 90, 365, "forever"], unit: "days", none: "Forever", zero: "Today only", min: 1 }, 35,
+      { home: "data", ask: true, also: "keep usage and request history for history retention disk space forever usage requests records month year" }),
+    K("activityRetentionDays", "Keep activity for", { k: "count", opts: [7, 30, 90, 180, 365], unit: "days", min: 1 }, 90, { home: "data", also: "keep what each agent was doing for activity labels teams agents file names commands" }),
     K("messageEdges", "Save messages between agents", { k: "flag" }, true, { home: "data" }),
-    K("transcriptView", "Read your Claude Code conversations", { k: "flag" }, true, { home: "data" }),
-    K("keepTranscriptCopies", "Keep a copy before moving a conversation to another model", { k: "flag" }, true, { home: "data", also: "transcript copies originals continue on another model resume" }),
+    // [offCost] is what turning it off costs, said on the Off button before it is pressed and under the switch once it is
+    K("transcriptView", "Read conversations", { k: "flag" }, true,
+      { home: "data", also: "read your claude code conversations transcripts", offCost: "When off, Sessions, Requests and Teams show no conversations · Questions are answered in the terminal · Nothing is deleted" }),
+    K("keepTranscriptCopies", "Copy before moving", { k: "flag" }, true, { home: "data", also: "keep a copy before moving a conversation to another model transcript copies originals continue on another model resume" }),
     K("transcriptCopyDays", "Keep transcript copies for", { k: "count", opts: [7, 14, 30, 90, 365], unit: "days", min: 1 }, 30, { home: "data", also: "transcript copies originals retention days" }),
-    K("keepCompactionSummaries", "Keep compaction summaries for a retry", { k: "flag" }, true, { home: "data", also: "compaction summary retry parked" }),
-    K("keepCodeModeWork", "Keep code mode's journal on disk", { k: "flag" }, true, { home: "data", also: "code mode journal work scripts restart" }),
+    K("keepCompactionSummaries", "Keep compaction summaries", { k: "flag" }, true, { home: "data", also: "keep compaction summaries for a retry compaction summary retry parked" }),
+    K("keepCodeModeWork", "Code mode journal", { k: "flag" }, true, { home: "data", also: "keep code mode's journal on disk code mode journal work scripts restart" }),
     K("mcpMaxServers", "Run at most", { k: "count", opts: [8, 16, 32, 64], unit: "servers" }, 32,
       { home: "mcp", also: "most servers at once ceiling" }),
     // THE SERVER IS SAID ONCE, ON THE KICKER (Oct 26): the three timers sit under "Server limits" in the MCP servers
@@ -182,6 +188,10 @@ const createKnobs = (scope) => {
       { home: "projects", also: "projects folder folders group grouping workspace monorepo" }),
   ];
   const KNOB = Object.fromEntries(LIST.map((k) => [k.key, k]));
+  // the topics Settings files the settings under, in its rail's order, for a menu that lists settings it does not hold yet
+  const TOPIC_WORD = { silent: "Stalled answers", busy: "Many agents at once", reasoning: "Reasoning", plan: "Plan limits", mcp: "MCP servers", projects: "Projects", data: "Your data", more: "More" };
+  const TOPIC_ORDER = ["silent", "busy", "reasoning", "plan", "mcp", "projects", "data", "more"];
+  const TOPIC_OF = { maxInflight: "busy", maxQueued: "busy", effort: "reasoning" };
 
   // What the daemon answered for GET /api/config, the menu or Custom field a click opened, and what each change did.
   // `perCommand` is whether a page offers "One command" on a setting's row. A command's own value is written by
@@ -226,9 +236,24 @@ const createKnobs = (scope) => {
     return src ? { v: knob.value, src, name: k.key } : { v: knob?.value ?? defOf(k), src: "default" };
   }
   const val = (key) => valueOf(KNOB[key]).v;
+  /** WHAT A COUNT, A SIZE OR A NUMBER OF DAYS IS A LENGTH OF (Oct 28): { kind, value } for a setting a page may draw as a bar
+   *  on one linear scale shared by the settings of its kind: "days" (retention), "bytes" (a size in bytes or characters) and
+   *  "count:<unit>" (a count with a unit of its own). null for a setting that is not such a length: a wait (the log axis is
+   *  that one), a share, a port, a count with no unit, and a value that is no figure (0 as a word, "forever"). [v] is the
+   *  value to read, the setting's own by default and a command's own where the page holds one. */
+  function scaleOf(key, v) {
+    const k = KNOB[key], c = k?.c;
+    if (c?.k !== "count" || c.plain || c.tok || c.unit === "%") return null;
+    const n = Number(v === undefined ? valueOf(k).v : v);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    const kind = c.unit === "days" ? "days" : c.per || c.unit === "bytes" ? "bytes" : c.unit ? `count:${c.unit}` : null;
+    return kind ? { kind, value: n } : null;
+  }
   // A models setting is a comma list of the ids a command serves; the page names each by the label GET /api/models gives it.
   // `st.models` is every model the commands that take this setting serve, a page fills it from that route.
   const idsOf = (v) => String(v ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  // A LIST SETTING THE DAEMON KEEPS AS ONE TEXT (statuslineGitRoots): its entries in order, split where the daemon splits them
+  const listOf = (k, v) => String(v ?? "").split(k.c.sep ?? ",").map((x) => x.trim()).filter(Boolean);
   const labelOf = (id) => st.models.find((m) => m.id === id)?.label ?? id;
   // A PICK'S WORDS ARE THE DAEMON'S (gap 458): a knob that sends its words (GET /api/config, KnobWords.kt) offers exactly
   // those, each by fin's name for it where the page has one and by the word itself where it has none, so a word the
@@ -244,11 +269,14 @@ const createKnobs = (scope) => {
     if (c.k === "count") {
       const n = v === null || v === "forever" ? null : Number(v);
       return n === 0 && c.zero ? c.zero : (n === 0 || n === null) && c.none ? c.none : n === 1 && c.unit === "days" ? "1 day"
-        : c.tok ? `${tok(n)} ${c.unit}` : `${c.pre || ""}${fmt(n / (c.per || 1))}${c.unit ? (c.unit === "%" ? "%" : ` ${c.unit}`) : ""}`;
+        : c.tok ? `${tok(n)} ${c.unit}` : `${c.pre || ""}${c.plain ? n : fmt(n / (c.per || 1))}${c.unit ? (c.unit === "%" ? "%" : ` ${c.unit}`) : ""}`;
     }
     if (c.k === "pick") return (pickOpts(k).find(([o]) => String(o) === String(v)) || [, String(v)])[1];
     if (c.k === "flag") return v === true || v === "true" ? "On" : "Off";
     if (c.k === "models") return idsOf(v).map(labelOf).join(", ");
+    if (c.k === "list") return listOf(k, v).join(", ") || (c.none || "");
+    // the commands a setting reaches: "*" is every one, a comma list some of them, and an empty value none
+    if (c.k === "heads") return String(v) === "*" ? c.star : idsOf(v).map((h) => st.commandOf[h] || h).join(", ") || "No command";
     // a text setting that holds "*" for all reads as the word its own control gives that value, wherever it is read
     return v === null || v === undefined ? (c.none || "") : c.star && String(v) === "*" ? c.star : String(v);
   }
@@ -314,6 +342,25 @@ const createKnobs = (scope) => {
         + (left.length ? `<span class="menuwrap"><button class="act quiet small" data-kmenu="model:${id}" aria-expanded="${mopen}">${PLUS}Add model</button>`
           + (mopen ? `${menuTag()}${left.map((m) => `<button role="menuitem" data-kact="model" data-key="${k.key}" data-m="${esc(m.id)}">${esc(m.id)}${m.label && m.label !== m.id ? `<span class="mmeta">${esc(m.label)}</span>` : ""}</button>`).join("")}</div>` : "") + "</span>" : "") + "</span>";
     }
+    // THE COMMANDS A SETTING REACHES ARE THEIR CHIPS, EACH ONE A SWITCH (Oct 28): a list typed into a field said "Every command"
+    // inside the field and made him write the names the page already draws. A lit chip is a command it reaches; all lit is "*".
+    if (c.k === "heads") {
+      const on = new Set(String(v) === "*" ? st.cmds : idsOf(v));
+      return `<span class="hchips" role="group" aria-label="${esc(k.label)}">${st.cmds.map((h) => `<button class="chip hpick" type="button" style="--c:${colorOf(st.providerOf[h])}" data-kact="head" data-key="${k.key}" data-m="${esc(h)}" aria-pressed="${on.has(h)}"${bad}>${esc(st.commandOf[h] || h)}</button>`).join("")}</span>`;
+    }
+    // A LIST IS ITS ENTRIES (Oct 28): each folder a chip with the glyph that removes it, and at the end of the list the dashed tile
+    // where the next one lands, as Add header and Add model are drawn beside it; with none yet the tile is the whole control,
+    // where an empty text box stood among rows that are ruled and drawn. Pressing the tile turns it into the field that takes
+    // the next path, saved on Enter (the Custom field's own keys).
+    if (c.k === "list") {
+      const items = listOf(k, v), adding = st.custom === id;
+      const chips = items.map((p) => `<span class="mchip lchip" title="${esc(p)}"><span class="lp">${esc(p)}</span>`
+        + `<button class="icon" data-kact="unlist" data-key="${k.key}" data-m="${esc(p)}" aria-label="Remove ${esc(p)}">${ICON.close}</button></span>`).join("");
+      const tail = adding
+        ? `<span class="custom wide"><input class="field" data-kcustom="${id}" placeholder="/absolute/folder" spellcheck="false" autocomplete="off" aria-label="${esc(c.add)}"${bad}></span>`
+        : DRAW.addTile({ word: c.add, act: "", cls: "inline", data: ` data-kact="listadd" data-key="${k.key}"` });
+      return `<span class="mlist">${chips}${tail}</span>`;
+    }
     if (c.k === "text") { // a text the daemon reads as it is: a field, applied like a number's
       const star = c.star && String(v) === "*";
       const text = st.typing[id] ?? (v === null || v === undefined || star ? "" : String(v));
@@ -354,14 +401,53 @@ const createKnobs = (scope) => {
   // a setting no change here reaches: its value, and why in a word. Forced in code reads as a lock; a per-command one names
   // where it is set. The daemon's sentence goes to the console log (fin, Marlin, Oct 13)
   const warned = new Set();
-  function fixedHtml(k, label, hl, lit, el = "") {
+  /** The commands that hold a value of their own as chips, those that agree grouped under the one value (a row, and a locked row's exceptions). */
+  function ownerChips(k, held, hl = esc) {
+    const groups = new Map();
+    for (const c of held) {
+      const v = word(k, ownValue(k.key, c));
+      groups.set(v, [...(groups.get(v) ?? []), c]);
+    }
+    const chip = (c, v) => `<a class="chip own" style="--c:${colorOf(st.providerOf[c])}" `
+      + `href="models.html?cmd=${encodeURIComponent(c)}&setting=${encodeURIComponent(k.key)}">${hl(st.commandOf[c] || c)}${v ? ` <span class="v">${esc(v)}</span>` : ""}</a>`;
+    return [...groups].map(([v, cs]) => cs.length === 1 ? chip(cs[0], v)
+      : `<span class="ogrp"><b class="v">${esc(v)}</b>${cs.map((c) => chip(c, null)).join("")}</span>`).join("");
+  }
+  /** A VALUE THAT CANNOT MOVE IS THE CONTROL IT WOULD BE, HELD (Oct 28): a setting that is a choice among words reads as one of
+   *  its choices, dimmed and pressing nothing, never as a stray word standing where a control would. An on-or-off, and a pick of
+   *  up to three, is its segmented switch with the held one lit; a longer pick, and a count that reads as a word ("Automatic",
+   *  "Unlimited"), is its menu's button; a list is its folders as chips, or the dashed empty slot. A figure stays a figure, and a
+   *  text with nothing in it is the dash. The lock or the shell mark beside it says why it cannot move. */
+  function heldHtml(k, v, label = k.label) {
+    const c = k.c;
+    if (c.k === "flag" || (c.k === "pick" && pickOpts(k).length <= 3)) {
+      const opts = c.k === "flag" ? [[true, "On"], [false, "Off"]] : pickOpts(k);
+      const now = c.k === "flag" ? v === true || v === "true" : v;
+      return `<span class="switch held" role="group" aria-label="${esc(label)}">${opts.map(([o, w]) => `<button type="button" disabled aria-pressed="${String(o) === String(now)}">${esc(w)}</button>`).join("")}</span>`;
+    }
+    const wordy = (c.k === "count" || c.k === "dur") && (c.none || c.zero) && (v === null || v === undefined || v === "forever" || Number(v) === 0);
+    if (c.k === "pick" || wordy) {
+      return `<span class="menuwrap held"><button type="button" class="pickbtn" disabled aria-label="${esc(`${label}: ${word(k, v)}`)}">${esc(word(k, v))}${ICON.caret}</button></span>`;
+    }
+    if (c.k === "list" || c.k === "paths") {
+      const items = c.k === "list" ? listOf(k, v) : [];
+      if (items.length) return `<span class="mlist held">${items.map((p) => `<span class="mchip lchip" title="${esc(p)}"><span class="lp">${esc(p)}</span></span>`).join("")}</span>`;
+      if (!word(k, v)) return DRAW.unread.object("None");
+    }
+    const text = word(k, v);
+    return `<span class="fixed">${text ? esc(text) : DRAW.dash}</span>`;
+  }
+  function fixedHtml(k, label, hl, lit, el = "", tag = "") {
     const knob = st.cfg.knobs[k.key];
     if (knob.read_only_reason && !warned.has(k.key)) { warned.add(k.key); console.warn(`${k.key}: ${knob.read_only_reason}`); }
     // the lock, and the marks every other row carries: a locked row is the one place the value cannot move, so the mark
     // for it is the lock itself (v0.4.0 section 9, Resolved: every knob shows where its value comes from)
     const why = knob.read_only === "pinned" ? markHtml("lock") : markHtml("lock", "Set per command in splice.toml");
-    return `<div class="lbl${lit}" data-row="${k.key}">${hl(label)}</div><div class="ctl"><span class="fixed">${esc(word(k, valueOf(k).v))}</span>`
-      + `<span class="marks">${why}${marksOf(k.key).filter((m) => m !== "toml").map((m) => markHtml(m)).join("")}</span></div>${el}`;
+    // A LOCKED SETTING IS THE CONTROL IT WOULD BE, HELD: its value is read where its control shows it, and the lock beside it says it cannot move
+    const value = heldHtml(k, valueOf(k).v, label);
+    const held = ownersOf(k.key).filter((c) => String(ownValue(k.key, c)) !== String(valueOf(k).v)), own = held.length ? `<span class="owners">${ownerChips(k, held, hl)}</span>` : "";
+    return `<div class="lbl${lit}" data-row="${k.key}">${tag}${hl(label)}</div><div class="ctl">${value}`
+      + `<span class="marks">${why}${marksOf(k.key).filter((m) => m !== "toml").map((m) => markHtml(m)).join("")}</span>${own}</div>${el}`;
   }
   // a setting that does nothing on this machine right now: its value, read-only, dimmed with every other row's marks,
   // and the one line saying why, so every setting still shows and nothing offers a change that would reach nothing
@@ -369,11 +455,11 @@ const createKnobs = (scope) => {
   // A REASON THAT IS ANOTHER SETTING POINTS AT IT (Oct 27): [why] { text, see } names the setting that turns this one
   // on, as a button a page answers by bringing that row into view (Settings' "seerow"); a bare string is a reason
   // no setting on the page changes. Only the value dims, so the pointer reads as the way out it is.
-  function inertHtml(k, label, hl, lit, why, el = "") {
+  function inertHtml(k, label, hl, lit, why, el = "", tag = "") {
     const see = why && typeof why === "object" && KNOB[why.see]
       ? ` <button class="seerow" type="button" data-act="seerow" data-key="${esc(why.see)}">${esc(KNOB[why.see].label)}</button>` : "";
     const text = why && typeof why === "object" ? why.text : why;
-    return `<div class="lbl off${lit}" data-row="${k.key}">${hl(label)}</div><div class="ctl col"><div class="line off"><span class="fixed">${esc(word(k, valueOf(k).v))}</span>${restHtml(k.key)}</div>`
+    return `<div class="lbl off${lit}" data-row="${k.key}">${tag}${hl(label)}</div><div class="ctl col"><div class="line off"><span class="fixed">${esc(word(k, valueOf(k).v))}</span>${restHtml(k.key)}</div>`
       + `<span class="note">${esc(text)}${see}</span></div>${el}`;
   }
   // A command's own value: its control, what the change did, and the way back to the value every other command uses.
@@ -385,8 +471,12 @@ const createKnobs = (scope) => {
     const shared = valueOf(k).v, own = ownValue(k.key, c);
     // a line picked a moment ago holds nothing yet and reads the shared value, so it too follows every command: "512 ·
     // Back to 512" on a fresh line was the Oct 13 confusion over again (Models, Oct 26)
-    const words = own === undefined || String(own) === String(shared) ? "Follow every command" : `Back to ${word(k, shared)}`;
-    return `<button class="back" data-kact="back" data-key="${k.key}" data-cmd="${esc(c)}">${esc(words)}</button>`;
+    const follows = own === undefined || String(own) === String(shared);
+    const words = follows ? "Follow every command" : `Back to ${word(k, shared)}`;
+    // THE WAY BACK IS THE BACK GLYPH (Oct 28): "Follow every command" read as a placeholder box on every line, so it is the
+    // glyph alone and its words open on the pointer or the keyboard, as the one-command slot's do. "Back to 512" names a value
+    // he may want to see before he presses, so that one keeps its words.
+    return `<button class="back${follows ? " bare" : ""}" data-kact="back" data-key="${k.key}" data-cmd="${esc(c)}" aria-label="${esc(words)}"${follows ? ` title="${esc(words)}"` : ""}>${BACK}<span class="bw">${esc(words)}</span></button>`;
   };
   function overHtml(k, c, hl = esc) {
     const own = ownValue(k.key, c);
@@ -413,23 +503,34 @@ const createKnobs = (scope) => {
     const find = left.length > 12
       ? `<div class="kfind"><input class="field" data-kfind="own:${cmd}" value="${esc(st.find)}" placeholder="Find a setting" autocomplete="off" spellcheck="false" aria-label="Find a setting">`
         + `<span class="pd-count"><b>${DRAW.n(found.length)}</b> of ${DRAW.n(left.length)}</span></div>` : "";
-    const items = found.length ? found.map((key) => `<button role="menuitem" data-kact="over" data-key="${key}" data-cmd="${cmd}">${esc(KNOB[key].label)}<span class="mmeta">${esc(word(KNOB[key], valueOf(KNOB[key]).v))}</span></button>`).join("")
-      : `<p class="kfnone">No setting matches</p>`;
+    // THE MENU IS GROUPED BY THE TOPIC SETTINGS FILES EACH SETTING UNDER, and a setting that waits for a restart or cannot be
+    // changed carries the same mark its row will (MARK), so what a pick will do is read before it is made
+    const marksIn = (key) => (st.cfg?.knobs?.[key]?.editable === false ? markHtml("lock") : "") + (needsRestart(key) ? markHtml("restart") : "");
+    const itemOf = (key) => `<button role="menuitem" data-kact="over" data-key="${key}" data-cmd="${cmd}">${esc(KNOB[key].label)}<span class="mmeta">${esc(word(KNOB[key], valueOf(KNOB[key]).v))}${marksIn(key)}</span></button>`;
+    const topics = new Map();
+    for (const key of found) {
+      const t = TOPIC_OF[key] ?? KNOB[key].home ?? KNOB[key].adv ?? "more";
+      topics.set(t, [...(topics.get(t) ?? []), key]);
+    }
+    const items = found.length ? [...topics].sort(([a], [b]) => TOPIC_ORDER.indexOf(a) - TOPIC_ORDER.indexOf(b)).map(([t, keys]) => {
+      const name = TOPIC_WORD[t] ?? "More";
+      return `<div class="mgroup" role="group" aria-label="${esc(name)}"><span class="mgh" aria-hidden="true">${esc(name)}</span>${keys.map(itemOf).join("")}</div>`;
+    }).join("") : `<p class="kfnone">No setting matches</p>`;
     const add = left.length ? `<div class="lbl"></div><div class="ctl"><span class="menuwrap">`
       + DRAW.addTile({ word: "Add setting", act: "", cls: "row", data: ` data-kmenu="own:${cmd}" aria-expanded="${open}" aria-haspopup="menu"` })
       + (open ? `${menuTag("kadd")}${find}${items}</div>` : "") + "</span></div>" : "";
     return rows + add;
   }
   // a setting's row in a form: its name, its control, what the change did, and the commands that hold their own value
-  function rowHtml(k, { hl = esc, lit = "", label = k.label, el = "", inert = null } = {}) {
+  function rowHtml(k, { hl = esc, lit = "", label = k.label, el = "", inert = null, tag = "" } = {}) {
     // every shape of row ends in the page's element, so a page that lays rows on a grid of columns keeps its columns
-    if (inert) return inertHtml(k, label, hl, lit, inert, el);
+    if (inert) return inertHtml(k, label, hl, lit, inert, el, tag);
     const s = valueOf(k);
     if (s.src === "env") { // set in the person's shell: read here, changed there, the variables named as the way to change it
-      return `<div class="lbl${lit}" data-row="${k.key}">${hl(label)}</div><div class="ctl"><span class="fixed">${esc(word(k, s.v))}</span><span class="from">${(st.cfg?.knobs?.[k.key]?.env_names ?? [k.key]).map((n) => `<code>${esc(n)}</code>`).join(" or ")}</span>`
+      return `<div class="lbl${lit}" data-row="${k.key}">${tag}${hl(label)}</div><div class="ctl">${heldHtml(k, s.v, label)}<span class="from">${(st.cfg?.knobs?.[k.key]?.env_names ?? [k.key]).map((n) => `<code>${esc(n)}</code>`).join(" or ")}</span>`
         + `<span class="marks">${markHtml("shell")}${needsRestart(k.key) ? markHtml("restart") : ""}</span></div>${el}`;
     }
-    if (st.cfg?.knobs?.[k.key]?.editable === false) return fixedHtml(k, label, hl, lit, el);
+    if (st.cfg?.knobs?.[k.key]?.editable === false) return fixedHtml(k, label, hl, lit, el, tag);
     const owners = [...ownersOf(k.key), ...(st.adding[k.key] ?? []).filter((c) => !ownersOf(k.key).includes(c))];
     // EVERY COMMAND IS IN THE PICKER (Oct 26): one that already holds its own value is listed with that value, and
     // picking it opens its line here, so changing an exception no longer means leaving for Models. A command whose
@@ -442,15 +543,7 @@ const createKnobs = (scope) => {
     // shape of the exception not once. A group of two or more hangs its commands under the one value they share.
     const setting = st.adding[k.key] ?? [];
     const held = owners.filter((c) => !setting.includes(c));
-    const groups = new Map();
-    for (const c of held) {
-      const v = word(k, ownValue(k.key, c));
-      groups.set(v, [...(groups.get(v) ?? []), c]);
-    }
-    const chip = (c, v) => `<a class="chip own" style="--c:${colorOf(st.providerOf[c])}" `
-      + `href="models.html?cmd=${encodeURIComponent(c)}&setting=${encodeURIComponent(k.key)}">${hl(st.commandOf[c] || c)}${v ? ` <span class="v">${esc(v)}</span>` : ""}</a>`;
-    const chips = [...groups].map(([v, cs]) => cs.length === 1 ? chip(cs[0], v)
-      : `<span class="ogrp"><b class="v">${esc(v)}</b>${cs.map((c) => chip(c, null)).join("")}</span>`).join("");
+    const chips = ownerChips(k, held, hl);
     const lines = (chips ? `<div class="owners">${chips}</div>` : "") + owners.filter((c) => setting.includes(c)).map((c) => overHtml(k, c, hl)).join("");
     const perCmd = st.cfg?.knobs?.[k.key]?.per_command ?? Boolean(k.cmd);
     // the way to make an exception is an empty slot at the end of the row's own chips, dashed as every "add" on the
@@ -481,7 +574,7 @@ const createKnobs = (scope) => {
     // THE SLOT UNDER A CONTROL HOLDS AN ELEMENT, NEVER A SENTENCE (Marlin, Oct 12): the page passes what it already
     // knows — the last read, the mark on a bar, the providers reporting nothing, how many servers run — and passes
     // nothing where that fact is not on the wire. A row with no element is its name and its control.
-    return `<div class="lbl${lit}" data-row="${k.key}">${hl(label)}</div><div class="ctl col"><div class="line">${ctlHtml(k, s.v)}${only}${saidHtml(k.key, { rest: false })}${add}${restHtml(k.key)}</div>${lines}</div>${el}`;
+    return `<div class="lbl${lit}" data-row="${k.key}">${tag}${hl(label)}</div><div class="ctl col"><div class="line">${ctlHtml(k, s.v, null, k.offCost ? { titles: { false: k.offCost.replace(/ · /g, ". ") } } : {})}${only}${saidHtml(k.key, { rest: false })}${restHtml(k.key)}${add}</div>${lines}</div>${el}`;
   }
 
   // ---------- changing a setting: PATCH /api/config with the one key ----------
@@ -575,6 +668,12 @@ const createKnobs = (scope) => {
   function fromField(id, raw) {
     const [key] = id.split("@"), c = KNOB[key].c, s = String(raw).trim();
     if (c.k === "text") return s === "" ? null : s; // an emptied text setting goes back to splice's default
+    // a folder added to a list: the daemon reads absolute folders only (it drops a relative entry), so anything else is refused
+    // here as it would be there; a folder already in the list is the list as it stands
+    if (c.k === "list") {
+      const items = listOf(KNOB[key], valueOf(KNOB[key]).v);
+      return !s.startsWith("/") ? NaN : [...new Set([...items, s.replace(/\/+$/, "") || "/"])].join(c.sep);
+    }
     if (s === "") return c.none && !c.min ? 0 : defOf(KNOB[key]);
     const n = Number(s.replace(/,/g, ""));
     if (!Number.isFinite(n) || n < 0 || (c.min && n < c.min)) return NaN;
@@ -596,6 +695,20 @@ const createKnobs = (scope) => {
       const v = JSON.parse(d.v);
       if (v === "__custom") st.custom = d.kpick;
       else sent(d.kpick, v, render);
+      return true;
+    }
+    if (d.kact === "head") {
+      const v = String(valueOf(KNOB[d.key]).v), on = new Set(v === "*" ? st.cmds : idsOf(v));
+      if (on.has(d.m)) on.delete(d.m); else on.add(d.m);
+      sent(d.key, st.cmds.every((h) => on.has(h)) ? "*" : st.cmds.filter((h) => on.has(h)).join(","), render);
+      return true;
+    }
+    // a list's tile turns into the field for its next entry; a chip's glyph takes that entry out (the last one out returns the
+    // setting to splice's default, as an emptied text does)
+    if (d.kact === "listadd") { st.custom = d.key; return true; }
+    if (d.kact === "unlist") {
+      const k = KNOB[d.key], rest = listOf(k, valueOf(k).v).filter((x) => x !== d.m);
+      sent(d.key, rest.length ? rest.join(k.c.sep) : null, render);
       return true;
     }
     if (d.kact === "model" || d.kact === "unmodel") {
@@ -651,7 +764,12 @@ const createKnobs = (scope) => {
     });
     root.addEventListener("keydown", (e) => {
       const d = e.target.dataset;
-      if (e.key === "Enter" && d.kcustom) { const id = d.kcustom; st.custom = null; sent(id, fromField(id, e.target.value), render); render(); }
+      if (e.key === "Enter" && d.kcustom) {
+        const id = d.kcustom; st.custom = null;
+        // nothing typed in a list's field adds nothing: the tile comes back
+        if (KNOB[id.split("@")[0]].c.k === "list" && !e.target.value.trim()) { render(); return; }
+        sent(id, fromField(id, e.target.value), render); render();
+      }
       if (e.key === "Escape" && (d.kcustom || st.menu)) { st.custom = null; st.menu = null; render(); }
       if (e.key === "Enter" && d.kfield) e.target.blur();
       if (e.key === "Escape" && d.kfield) { delete st.typing[d.kfield]; e.target.dataset.kfield = ""; render(); }
@@ -693,26 +811,29 @@ const createKnobs = (scope) => {
   // A name that changed keeps the words it had as search words (the third entry), so a search for the old name still
   // lands on the row.
   const NAMES = {
-    ingressReadIdleMs: ["Drop a request that stops arriving for", { k: "dur", unit: "s" }, "longest pause while a request arrives"],
-    authCacheMs: ["Read the sign-in files again after", { k: "dur", unit: "s" }],
-    mirrorReasoning: ["Write a reasoning summary into the conversation", { k: "flag" }],
+    ingressReadIdleMs: ["Drop a request that pauses for", { k: "dur", unit: "s" }, "drop a request that stops arriving for longest pause while a request arrives"],
+    authCacheMs: ["Reread sign-in files after", { k: "dur", unit: "s" }, "read the sign-in files again after"],
+    mirrorReasoning: ["Summary in the conversation", { k: "flag" }, "write a reasoning summary into the conversation"],
     // MCP servers (Knob.kt MCP_SLICE, TOOL_SURFACE): the system group a hosted server starts in, whose memory ceiling
     // keeps one server from eating the machine, and the one-way switch back to every tool on every request
     mcpSlice: ["Group that caps their memory", { k: "text" }],
     toolSurface: ["Tools sent with a request", { k: "pick", names: { auto: "As each provider sets", off: "All, every time" } }],
     // Projects (STATUSLINE_GIT_ROOTS): only $HOME and /tmp are trusted for the status line's branch until named here
-    statuslineGitRoots: ["Show the git branch for repos under", { k: "text" }],
+    // a list of absolute folders the daemon reads as one colon-separated text: each is a chip, and the empty list is the dashed
+    // tile where the first one lands
+    statuslineGitRoots: ["Git branch folders", { k: "list", sep: ":", add: "Add folder" }, "show the git branch for repos under"],
     // Your data (ACTIVITY_STORE_HEADS, DEBUG, TRACE, WIRE_TAP, the old usage archive)
     // an asterisk is the daemon's word for every command, which the field says in his, as a blank field where it holds it
-    activityStoreHeads: ["Commands that save what each agent is doing", { k: "text", star: "Every command" }],
+    activityStoreHeads: ["Commands saving activity", { k: "heads", star: "Every command" }, "commands that save what each agent is doing"],
     debug: ["Debug logging", { k: "flag" }],
     trace: ["Save prompts and answers", { k: "flag" }],
-    wireTap: ["Last requests kept in memory", { k: "count", none: "None" }],
-    perfArchiveRetentionDays: ["Keep the old usage archive for", { k: "count", unit: "days" }],
+    wireTap: ["Requests in memory", { k: "count", none: "None" }, "last requests kept in memory"],
+    perfArchiveRetentionDays: ["Old usage archive", { k: "count", unit: "days" }, "keep the old usage archive for"],
     // the rest land under Version: the ChatGPT and Grok commands' own plumbing, and splice's own
-    port: ["Listens on port", { k: "count" }],
-    controlPort: ["Console's port", { k: "count" }],
-    grokPort: ["claude-grok listens on port", { k: "count" }],
+    // a port is spelled with no thousands separator: it names a place, it is not a quantity
+    port: ["Listens on port", { k: "count", plain: true }],
+    controlPort: ["Console's port", { k: "count", plain: true }],
+    grokPort: ["claude-grok listens on port", { k: "count", plain: true }],
     chatgptApiBase: ["ChatGPT address", { k: "text" }],
     xaiApiBase: ["xAI address", { k: "text" }],
     codexAuthPath: ["ChatGPT sign-in file", { k: "text" }],
@@ -730,9 +851,15 @@ const createKnobs = (scope) => {
     wsIdleCloseMs: ["Close an idle websocket after", { k: "dur", unit: "min" }],
     wsMaxAgeMs: ["Retire an idle websocket older than", { k: "dur", unit: "min" }],
   };
+  // SETTINGS SPLICE NO LONGER HAS (0.4.0): it decides when to send a failed request again, and when to continue an answer
+  // whose reasoning was cut, from what happened, so there is nothing to set. A daemon from before 0.4.0 still reports
+  // their keys, and every setting on the wire with no entry of its own is drawn under its key: this is where the kit
+  // decides what the wire's keys become, so a retired one is left out HERE and no page, panel or gear can offer it.
+  const RETIRED = new Set(["upstreamRetries", "retryBackoffBaseMs", "retryBackoffCapMs", "retryBackoffJitterPct", "foldReasoningModels",
+    "foldMaxContinue", "foldMarkerText", "foldMaxTier"]);
   function others() {
     const wire = st.cfg?.knobs ?? {}, drawn = new Set(LIST.map((k) => k.key));
-    return Object.keys(wire).filter((key) => !drawn.has(key)).sort().map((key) => {
+    return Object.keys(wire).filter((key) => !drawn.has(key) && !RETIRED.has(key)).sort().map((key) => {
       const kind = wire[key].kind;
       const [name, c, was = ""] = NAMES[key] ?? [key, kind === "bool" ? { k: "flag" } : kind === "number" ? { k: "count" } : { k: "text" }];
       KNOB[key] ??= K(key, name, c, layer("defaults")[key] ?? null, { adv: ADV_HOME[key] ?? "version", also: `${key} ${was}`.trim() });
@@ -742,8 +869,8 @@ const createKnobs = (scope) => {
   const focusCustom = (root) => { const f = root.querySelector("[data-kcustom]"); if (f) { f.focus(); f.select(); } };
 
   return {
-    fmt, SEC, MIN, HR, MB, dur, tok, LIST, KNOB, st, load, valueOf, val, word, needsRestart, ownersOf, ownValue,
-    cmdChip, ctlHtml, saidHtml, backHtml, rowHtml, commandRowsHtml, patch, sent, click, wire, focusCustom, others,
-    legendHtml, markHtml,
+    fmt, SEC, MIN, HR, MB, dur, tok, LIST, KNOB, st, load, valueOf, val, word, scaleOf, needsRestart, ownersOf, ownValue,
+    cmdChip, ctlHtml, heldHtml, saidHtml, backHtml, rowHtml, commandRowsHtml, patch, sent, click, wire, focusCustom, others,
+    legendHtml, markHtml, RETIRED,
   };
 };

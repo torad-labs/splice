@@ -1,7 +1,7 @@
 /* Teams: the members are cel cards in their command's colour with their session's lamp in the socket; their messages to
-   each other are a script beside them, and the activity under them is what each one did, as a tool's mark and its
-   object. Built for the wide screen first: the MEMBERS take the width, because they are the work, and the chat keeps a
-   reading measure beside them.
+   each other are a script beside them, and the activity under them is what each one did, as a lane of ticks and a log of a
+   tool's mark and its object. Built for the wide screen first: the MEMBERS take the width, because they are the work, and
+   the chat keeps a reading measure beside them.
 
    THE PAGE IS ITS OWN CONTAINER. Every width below is read off #teams, so the layout answers to the room it has and not
    to the window: at 115rem (1440 px) the members take two columns with the chat beside them, at 184rem (his screen)
@@ -16,17 +16,18 @@
    latest few and a count of the rest, which opens them in place (teams.js fitChat, DRAW.more). The chat is contained to
    the column beside it and holds the messages that fit there.
 
-   ONE JOB PER COLOUR. The key light is spent once on this page, on Start team in the new-team form, and nowhere else:
-   not the current tab, not the pressed view, not a focused field, not the Lead toggle, not an answer. A member who
-   needs him is --needs, which is its own colour. --limit is a limit, a refusal or an armed cut, and nothing else. The
-   two ways a request was paid take two chart hues; what was never priced stays neutral, because it is an absence.
+   ONE JOB PER COLOUR. The key light is spent once on this page, on Start team in the team form, and nowhere else: not the
+   current tab, not the pressed view, not a focused field, not the Lead choice, not an answer. A member who needs him
+   (and a field the form still needs) is --needs, which is its own colour. --limit is a limit, a refusal or an armed cut,
+   and nothing else. The ways a request was paid are steps of the text's own ink, because no chart hue is free of a
+   provider's, and an absence is a dashed outline.
 
    THE SESSION LANGUAGE Sessions and Teams share — the lamp, a card's meta line, what a member is waiting on — is
    sessions.css, which this page links beside console.css. */
 .teams { container: teams / inline-size; }
 
 /* ---------- the toolbar: which team on the left, how to read it at the row's right end ---------- */
-/* ONE ROW: the tabs, the archived fold and New team, then the views and the day pushed to the row's end. When the row
+/* ONE ROW: the tabs, New team and the archived fold, then the views and the day pushed to the row's end. When the row
    wraps, the views take the next line's end. */
 .tbar { display: flex; align-items: center; flex-wrap: wrap; gap: .9rem calc(4 * var(--u)); margin: 0 0 calc(3 * var(--u)); }
 .tbar > .views { margin-left: auto; }
@@ -44,8 +45,7 @@
 .tab .blots { display: inline-flex; gap: .3rem; }
 .tab .blots i { width: .75rem; height: .75rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); }
 .tab .blots i.open { background: transparent; box-shadow: inset 0 0 0 .14rem var(--c); }
-/* A MEMBER WHO NEEDS HIM IS THE NEEDS COLOUR, not the key light: the key marks one thing per view and a state is never
-   that (sessions.css lamps still take the key; the request to move them is filed). */
+/* A MEMBER WHO NEEDS HIM IS THE NEEDS COLOUR, not the key light: the key marks one thing per view and a state is never that */
 .tab.needs::before { content: ""; width: .7rem; height: .7rem; border-radius: 50%; background: var(--needs); box-shadow: 0 0 .7rem .1rem color-mix(in oklab, var(--needs) 50%, transparent); }
 .plus { width: 1.2rem; height: 1.2rem; border-radius: 50%; border: .14rem solid currentColor; display: grid; place-items: center; font: 500 .95rem/1 var(--font-data); }
 /* where the next team lands: the console's own dashed add tile, sized to sit in the row beside the tabs */
@@ -53,17 +53,27 @@
 .tabs .add.tnew .plus { width: 1.2rem; height: 1.2rem; font-size: .95rem; }
 .tabs .add.tnew[aria-pressed="true"] { border-style: solid; border-color: var(--text-mute); color: var(--text); }
 .tabs .rule { width: .16rem; height: 1.49rem; background: var(--track-line); border-radius: .1rem; margin: 0 .3rem; }
-/* the archived teams' own fold, beside the tabs it extends: its count on it and its chevron turning as it opens */
+/* the archived teams' own fold, after New team: its count on it and its chevron turning as it opens */
 .tabs .act.fold { color: var(--text-mute); }
 .tabs .act.fold:hover { color: var(--text); }
-/* a project's teams sit together under its muted name, in Sessions' group order (PROJECTS.md); the pick line above */
+/* a project's teams sit together under its muted name, in Sessions' group order; the pick line above */
 .tabs .tcluster { display: inline-flex; align-items: center; gap: .9rem; flex-wrap: wrap; margin-right: 1.05rem; }
 .tabs .tproj { font: 500 .95rem/1 var(--font-name); color: var(--text-mute); margin-right: .1rem; }
 #teams > .lhead, #teams > .ptiles, .loading > .lhead, .loading > .ptiles { margin: 0 0 calc(3 * var(--u)); }
 #teams > .lhead + .tbar, #teams > .ptiles + .tbar { margin-top: 0; }
-/* when the page last read, beside Read again: the one place a reader looks for it (console.css .read sets its face) */
+/* when the page last read, beside Read again: the lamp's wave is drawn dim and a trace runs along it once on each read that
+   lands, so the five-second re-read is felt; the time is its words (data-tip), and a failed read is the sentence in the limit
+   red (console.css .read sets its face) */
 .head .read .readat:empty { display: none; }
 .head .read .readat.limit { color: var(--limit); }
+.head .read .readlamp[hidden] { display: none; }
+.head .read .readlamp { color: var(--live); cursor: default; }
+.head .read .readlamp svg { width: 1.5rem; height: 1.5rem; stroke-width: 3.6; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
+.head .read .readlamp .base { opacity: .42; }
+.head .read .readlamp .beat { opacity: 0; stroke-dasharray: 16 64; }
+.head .read .readlamp.tick .beat { animation: readtrace var(--t-pulse) linear 1; }
+@keyframes readtrace { from { opacity: 1; stroke-dashoffset: 80; } 85% { opacity: 1; } to { opacity: 0; stroke-dashoffset: 0; } }
+.head .read .readlamp:focus-visible { outline: .14rem solid var(--text); outline-offset: .2rem; }
 /* a board kept from the last good read, while splice is not answering: the head says since when, the board waits */
 .team.stale { opacity: .55; transition: opacity var(--t-snap) var(--e-out); }
 
@@ -78,24 +88,31 @@
 .band .named > .chip.where { flex: 0 1 auto; min-width: 0; }
 .band .named .acts { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: .7rem; }
 .band .named .acts .act svg { width: 1rem; height: 1rem; }
-.band .goal { margin: 0; font: 400 1rem/1.45 var(--font-name); color: var(--text-body); max-width: 56rem; }
+.band .goal { margin: calc(2 * var(--u)) 0 0; font: 400 1rem/1.45 var(--font-name); color: var(--text-body); max-width: 56rem; }
 /* a folder as an object: its last folders on a chip with the folder's mark, the whole path on hover */
 .chip.where { --c: var(--track-line); max-width: 100%; }
 .chip.where > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .chip.where.unset { border-style: dashed; border-color: var(--track-line); box-shadow: none; color: var(--text-mute); }
 /* a count or a legend on the kicker's baseline, which is where a section's scope is said once */
-.sec-aside { font: 500 .85rem/1.2 var(--font-data); color: var(--text-mute); font-variant-numeric: tabular-nums; }
-/* the hero and its focal figures on one baseline: three figures of one whole read as one line */
+.sec-aside { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: .3rem 1.1rem; font: 500 .85rem/1.2 var(--font-data); color: var(--text-mute); font-variant-numeric: tabular-nums; }
+/* THE HERO IS THE ONE FOCAL FIGURE of the section; the tokens and the price stand one step below it, muted, on a line of
+   their own, so three figures of one whole read as a figure and what it was made of */
 .figrow { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem calc(4 * var(--u)); }
 .figrow > .pd-sub { margin: 0; }
-/* HOW THE TEAM'S REQUESTS WERE PAID, as one whole: two ways they were paid, in two chart hues, and two absences in
-   neutral tones. None of them is a failure, so none takes the limit red and none takes the kit's "nt". */
-.pd-seg.plan, .pd-sw.plan { background: var(--splice-chart-2); }
-.pd-seg.priced, .pd-sw.priced { background: var(--splice-chart-4); }
-.pd-seg.noprice, .pd-sw.noprice { background: color-mix(in oklab, var(--text) 30%, transparent); }
-.pd-seg.none, .pd-sw.none { background: color-mix(in oklab, var(--text) 14%, transparent); }
-.pd-seg.plan, .pd-seg.priced { color: var(--on-fill); }
-.pd-seg.noprice, .pd-seg.none { color: var(--text); }
+.figsub { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem calc(4 * var(--u)); margin-top: calc(-.5 * var(--u)); }
+.figsub .pd-sub b { font-size: calc(var(--fig-focal) * .78); font-weight: 500; color: var(--text-body); }
+/* the share of the tokens that came from the cache, as the ring beside them: centred on the figure's line, its figure and its
+   word at the size of the tile's own */
+.figsub .figcache { align-self: center; display: inline-flex; }
+/* HOW THE TEAM'S REQUESTS WERE PAID, as one whole: steps of the text's own ink from the part that is paid for by a plan
+   down to the part nothing priced, then a dashed outline where no token was reported. No chart hue is used because every
+   one of them sits beside a provider's, and none of these is a failure, so none takes the limit red. */
+.pd-seg.plan, .pd-sw.plan { background: color-mix(in oklab, var(--text) 68%, transparent); }
+.pd-seg.priced, .pd-sw.priced { background: color-mix(in oklab, var(--text) 40%, transparent); }
+.pd-seg.noprice, .pd-sw.noprice { background: color-mix(in oklab, var(--text) 22%, transparent); }
+.pd-seg.none, .pd-sw.none { background: none; outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }
+.pd-seg.plan { color: var(--obj); }
+.pd-seg.priced, .pd-seg.noprice, .pd-seg.none { color: var(--text); }
 /* the same whole cut by member: each segment carries its own member's colour, which the kit's stack writes from the ink
    the caller gives it (DRAW.stack's `ink`, console.css .pd-seg.ink). A member who LEFT keeps its colour and is hatched,
    so its share reads as history without a word on the bar. */
@@ -121,12 +138,21 @@
   }
 }
 
-/* ---------- the views: Board, By command, By role, Timeline (web-console §4.13; marlin, Oct 13) ---------- */
+/* ---------- the views: Board, By command, By role, Timeline ---------- */
 /* one segmented switch, not four loose buttons, and the day the board stands on right beside it: its name is printed
    once on the page and not over each panel. They stand at the toolbar's end (.tbar). */
 .views { display: flex; flex-wrap: wrap; align-items: center; gap: .9rem calc(3 * var(--u)); }
 .day { display: flex; align-items: center; gap: .3rem; }
 .day .dname { font: 500 .95rem/1 var(--font-name); min-width: 5.4rem; text-align: center; }
+/* THE WEEK ON THE DAY STEPPER: seven bars, the oldest first and today last, each as tall as its day's tool work on one shared
+   scale, the day he is on in the text's ink and the others muted; a day with nothing is a flat dash. Each is a door. */
+.week { display: flex; align-items: flex-end; gap: .1rem; height: 1.8rem; padding: 0 .3rem; border-bottom: .12rem solid var(--track-line); }
+.dayb { flex: none; width: 1rem; height: 100%; padding: 0; display: flex; align-items: flex-end; justify-content: center; background: none; border: 0; cursor: pointer; }
+.dayb i { display: block; width: .55rem; min-height: .14rem; border-radius: .15rem .15rem 0 0; background: color-mix(in oklab, var(--text) 38%, transparent); transition: height var(--t-snap) var(--e-out), background-color var(--t-hover) var(--e-out); }
+.dayb.none i { height: .14rem !important; background: var(--track-line); }
+.dayb:hover i { background: var(--text-body); }
+.dayb[aria-pressed="true"] i { background: var(--text); }
+.dayb:focus-visible { outline: .14rem solid var(--text); outline-offset: .1rem; border-radius: .2rem; }
 
 /* ---------- the room: the members take the width, the chat keeps a reading measure beside them ---------- */
 .room { display: grid; gap: calc(4 * var(--u)) var(--gap-col); grid-template-columns: minmax(0, 1fr); grid-template-areas: "members" "talk" "feed"; align-items: start; }
@@ -141,6 +167,12 @@
 .bays { display: flex; flex-wrap: wrap; align-items: flex-start; gap: calc(2 * var(--u)) var(--gap-col); min-width: 0; }
 .bays > .titled { --n: 1; flex: var(--n) 1 calc(var(--n) * 33rem + (var(--n) - 1) * var(--gap-col)); min-width: min(100%, 33rem);
   max-width: min(100%, calc(var(--n) * 48rem + (var(--n) - 1) * var(--gap-col))); }
+/* a group's own figure, at its header's end: how many requests its members made */
+.titled > header .gfig { margin-left: auto; display: inline-flex; align-items: center; gap: .3rem; font: 500 .9rem/1 var(--font-name); color: var(--text-mute); }
+/* its share of the team's requests, as the bar before the count: the command's own colour, the fill of a meter */
+.gfig .gbar { flex: none; width: 8rem; height: .5rem; margin-right: .6rem; border-radius: .25rem; overflow: hidden; background: color-mix(in oklab, var(--text) 8%, transparent); }
+.gfig .gbar i { display: block; height: 100%; border-radius: inherit; background: var(--c, color-mix(in oklab, var(--text) 56%, transparent)); }
+.titled > header .gfig b { font: 600 1.05rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); margin-right: .2rem; }
 /* THE CHAT RUNS THE HEIGHT OF THE COLUMN BESIDE IT, AND NO TALLER: it spans both rows, its size is contained, and
    teams.js keeps the messages that fit in it, so no hole opens under either side and nothing scrolls inside itself. */
 @container teams (min-width: 72rem) {
@@ -151,40 +183,40 @@
   .room.tl { grid-template-areas: "members talk"; grid-template-rows: auto; }
 }
 
-/* ---------- the members: one row of cards reads across, their figures level ---------- */
-/* THE CARDS IN A ROW STAND EQUAL, so the figures of one row start level and two members compare by eye: each card is a
-   subgrid of the four rows its neighbours share (headline, what it runs, what it is doing, what it used). A column is
-   33rem with the lamp's socket (teams.js CARD_REM): four cards beside the chat on his 2548, five at 3822, two at
-   1440. The grid is never wider than its --n cards at 48rem each (teams.js sets --n to the members it holds), so a team
-   of two reads as two cards and not two banners. Row gap is nil and the space between cards is the card's own bottom margin. */
+/* ---------- the members: each card its own height ---------- */
+/* THE CARDS STAND IN COLUMNS AT THEIR OWN HEIGHT: a card that asks a question or waits on a seat is as tall as what it holds
+   and no taller, so no card carries a blank under its buttons. A column is 33rem with the lamp's socket (teams.js
+   CARD_REM): four cards beside the chat on his 2548, five at 3822, two at 1440. The grid is never wider than its --n cards
+   at 48rem each (teams.js sets --n to the members it holds), so a team of two reads as two cards and not two banners. */
 .members { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 33rem), 1fr)); max-width: calc(var(--n) * 48rem + (var(--n) - 1) * var(--gap-col)); column-gap: var(--gap-col); row-gap: 0; align-items: start; }
-.members > .card.m {
-  grid-row: span 4; display: grid; grid-template-rows: subgrid; row-gap: 0;
-  margin: 0 0 calc(2 * var(--gap-card)) 2.7rem;
-}
-.members > .card.m > .top { grid-row: 1; }
-.members > .card.m > .meta { grid-row: 2; }
-.members > .card.m > .body { grid-row: 3; }
-.members > .card.m > .use { grid-row: 4; }
-@supports not (grid-template-rows: subgrid) {
-  .members > .card.m { grid-row: auto; display: flex; flex-direction: column; }
-}
+.members > .card.m { display: flex; flex-direction: column; margin: 0 0 calc(2 * var(--gap-card)) 2.7rem; }
 /* the lamp sits in its socket left of the card (sessions.css .lamp at -2.7rem, which the card's own margin makes room
    for), as on Sessions: no rail stub, which joined no other card */
 /* the members that left, under the cards and across them: each on one line with its command, when it left and what it
    did while it was on the team (spec §14). A left member is history, so it is a strip and never a card. */
 .leftm { margin: 0; }
 .leftm > .kicker { margin: 0 0 calc(2 * var(--u)); }
-.leftm ul { display: grid; gap: .8rem calc(3 * var(--u)); margin: 0; padding: 0; list-style: none; }
-.leftm li { display: grid; grid-template-columns: minmax(8rem, max-content) max-content minmax(7rem, max-content) minmax(12rem, 36.7rem); justify-content: start; align-items: center; gap: .5rem calc(2 * var(--u)); color: var(--text-mute); }
+/* ONE ROW PER MEMBER, ON THE COLUMNS THE CARDS' TABLES USE: name, command, when it left, then a bar and its figure each for
+   requests, tokens and (where any were priced) price, on the team's own scales. Each row is a subgrid of the list's columns,
+   so two who left line up, and the heads say each unit once. */
+.leftm ul { display: grid; justify-content: start; align-items: center; column-gap: calc(2 * var(--u)); row-gap: .8rem; margin: 0; padding: 0; list-style: none;
+  grid-template-columns: minmax(6rem, max-content) max-content minmax(6.5rem, max-content) minmax(3.5rem, 22rem) minmax(4.6rem, max-content) minmax(3.5rem, 22rem) minmax(3.4rem, max-content); }
+.leftm ul.p3 { grid-template-columns: minmax(6rem, max-content) max-content minmax(6.5rem, max-content) minmax(3.5rem, 22rem) minmax(4.6rem, max-content) minmax(3.5rem, 22rem) minmax(3.4rem, max-content) minmax(3.5rem, 22rem) minmax(3.8rem, max-content); }
+.leftm li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; color: var(--text-mute); }
 .leftm time { font: 500 .95rem/1 var(--font-data); }
-.leftm .mreq { opacity: .72; }
-@container teams (max-width: 52rem) {
-  .leftm li { grid-template-columns: minmax(0, 1fr); }
-}
+.leftm li.mth > .mh { grid-column: span 2; font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
+.leftm li > .v { font: 500 .95rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); text-align: right; white-space: nowrap; }
+.leftm li > .v.rf { position: relative; padding-right: 1.1rem; }
+.leftm li > .v.rf .go { position: absolute; right: 0; top: 50%; margin-top: -.4rem; }
+.leftm .vbar { min-width: 0; height: .5rem; border-radius: .25rem; }
+.leftm .mbar { height: .5rem; border-radius: .25rem; }
+.leftm li.grow .mbar > span, .leftm li.grow .vbar b { transform-origin: left; animation: seg-grow var(--t-snap) var(--e-out) both; }
+@media (prefers-reduced-motion: reduce) { .leftm li.grow .mbar > span, .leftm li.grow .vbar b { animation: none; } }
 
 /* ---------- a member ---------- */
-.card.m { min-width: 0; }
+/* the card's own lift (console.css) plus its face: the door's hover tint and a member's needs tint arrive over the same
+   moment, never in one frame */
+.card.m { min-width: 0; transition: top var(--t-hover) var(--e-out), left var(--t-hover) var(--e-out), --cast var(--t-hover) var(--e-out), background-color var(--t-hover) var(--e-out); }
 /* A MEMBER WHOSE WORD JUST CHANGED pulses once in its own colour: the read every five seconds is a change he can see,
    and the ring is drawn on a layer of its own so the card keeps its cel edge. */
 @keyframes mjust { from { box-shadow: 0 0 0 .26rem color-mix(in oklab, var(--c) 72%, transparent); } to { box-shadow: 0 0 0 .26rem transparent; } }
@@ -196,6 +228,8 @@
 /* a member who needs him is tinted in the needs colour, which is what the lamp and the tab dot use */
 .card.m.needs { background: color-mix(in oklab, var(--obj) 88%, var(--needs)); }
 .card.m.vacant { background: var(--obj); border-style: dashed; border-color: var(--track-line); box-shadow: none; }
+/* a seat whose session ended is history on the seat: the same dashed shape, quieter */
+.card.m.vacant.ended .role { color: var(--text-body); }
 .card.m > .top { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem .8rem; min-height: 2rem; }
 .role { font: 500 1.1rem/1.1 var(--font-name); color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* the Lead tag is a label, not a selection: neutral ink on the card's own sunk fill, never the key light */
@@ -208,17 +242,20 @@
 .card.m .top .word.needs { color: var(--needs); }
 .card.m .top .word.starting { display: inline-flex; align-items: center; gap: .45rem; }
 .card.m .top .word.starting .wait { width: .96rem; height: .96rem; }
+/* a member held at its plan's limit carries the lock where an idle word would stand */
+.card.m .top .word.limit { display: inline-flex; align-items: center; gap: .4rem; }
+.word .lockico { display: inline-flex; }
+.word .lockico svg { width: 1.05rem; height: 1.05rem; }
 .card.m .top .detail { flex: none; display: inline-flex; align-items: center; gap: .35rem; white-space: nowrap; font: 500 .95rem/1 var(--font-data); color: var(--limit); }
 .card.m .top .detail svg { width: 1rem; height: 1rem; }
-.card.m .top .detail.resumes { color: var(--live); }   /* splice has it: the working colour, not the stalled one (fin) */
+.card.m .top .detail.resumes { color: var(--live); }   /* splice has it: the working colour, not the stalled one */
 .card.m .top .detail.retried { color: var(--needs); }  /* splice gave up re-sending: a state that wants him, not the key */
+/* how long the running turn has run: a counter in the working colour, counting on each second between reads */
+.card.m .top .detail.age { color: var(--live); font-variant-numeric: tabular-nums; }
 /* what may be done to the member rides the end of its own headline, so two cards' acts stand in one column */
 .card.m .top > .acts { flex: none; display: inline-flex; align-items: center; flex-wrap: wrap; gap: .5rem; margin-left: auto; }
 .lamp.open { background: var(--obj-sunk); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .16rem var(--track-line); }
 /* what the member runs and where, as objects: its command and its model are chips with the provider's edge */
-/* The row is shared with the cards beside it (a subgrid), so a neighbour's taller row, such as its open Edit form, must
-   not spread this card's lines apart: the run keeps to the row's top. */
-.card.m > .top, .card.m > .meta, .card.m > .body { align-self: start; align-content: flex-start; }
 .card.m > .meta { flex-wrap: wrap; gap: .5rem .8rem; margin-top: calc(1.5 * var(--u)); align-items: center; }
 .card.m > .meta > .chip { flex: none; }
 .card.m > .meta .acct { color: var(--text-body); }
@@ -226,11 +263,17 @@
    time never wraps alone onto a line of its own */
 .card.m > .meta > .seen { flex: 1 0 100%; display: flex; align-items: baseline; gap: .5rem .8rem; min-width: 0; }
 .card.m > .meta .where { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.card.m > .meta .also { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the session it is on is a door to that session */
+.card.m a.where.door { display: inline-flex; align-items: center; gap: .3rem; font: 500 .95rem/1.2 var(--font-data); color: var(--text-body); text-decoration: none; }
+.card.m a.where.door:hover { color: var(--text); text-decoration: underline; }
+.card.m a.where.door .go { flex: none; width: .8rem; height: .8rem; color: var(--text-mute); }
+/* the other team this member is also on, a door to that team */
+.card.m .also { min-width: 0; padding: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: none; border: 0; cursor: pointer; font: 500 .9rem/1.2 var(--font-name); color: var(--text-mute); }
+.card.m .also:hover { color: var(--text); text-decoration: underline; }
 .card.m > .meta .when { flex: none; margin-left: auto; white-space: nowrap; }
-/* an answer as long as a sentence reads as one, from its left edge, when it takes a second line */
-.card.m .answers .act { text-align: left; justify-content: flex-start; }
-/* what the member is doing, asking or waiting on: the card's own middle, which takes the slack in a row of cards */
+/* Name it, beside a login nobody named, is the small quiet act at the size of the words beside it */
+.nameit { padding: .15rem .5rem; font-size: .8rem; }
+/* what the member is doing, asking or waiting on: the card's own middle */
 .card.m > .body { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); margin-top: calc(1.5 * var(--u)); }
 .card.m > .body:empty { display: none; }
 .card.m > .body > :first-child { margin-top: 0; }
@@ -244,28 +287,48 @@
 .card.m .now svg, .what svg { width: 1.1rem; height: 1.1rem; flex: none; }
 .obj { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 /* the line under a card's headline, and the terminal's own last lines keep their breaks. BODY COLOUR, NOT
-   THE LIMIT COLOUR: this class carries three different sentences, and only one of them is bad news. A
-   permission prompt's own description ("Run the tax tests") and the fallback telling the person where to
-   answer are ordinary prose, and painting them the failure red said a turn had gone wrong when none had. */
+   THE LIMIT COLOUR: this class carries three different sentences, and only one of them is bad news. */
 .card.m .why { margin: 0; font: 400 .95rem/1.45 var(--font-name); color: var(--text-body); white-space: pre-line; overflow-wrap: anywhere; }
 .refusal { font: 400 .95rem/1.2 var(--font-name); color: var(--limit); min-width: 0; overflow-wrap: anywhere; }
 /* a start that did not come up is the one that reads as a fault, because it is one */
 .card.m .why.limit { color: var(--limit); }
+/* a seat's start against the time splice gives it, drawn as the meter it fills; a start that gave up shows the meter full */
+.wait45 { width: 100%; max-width: 22rem; }
+/* THE LIMIT, DRAWN IN THE HEAD AND SAID BELOW IT: the lock with when the member is back, and the act that moves it to a
+   login that has room */
+.heldline { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem calc(2 * var(--u)); }
+.heldline .state.limit { font: 500 1rem/1.2 var(--font-name); }
+.heldline .lockico svg { width: 1.05rem; height: 1.05rem; }
 /* what the team's own economics say about this member's figures, where the figures are */
 .card.m .checks { margin: 0; font: 500 .9rem/1.35 var(--font-name); color: var(--text-mute); }
-/* WHAT JOINING BY RULE TAKES, DRAWN BY ITS PARTS: a session on this command, in this folder, joins this member while it
-   has none of its own running. The three parts are objects and the words between them are the sentence's joints. */
+/* WHAT JOINING BY RULE TAKES, DRAWN BY ITS PARTS: a session on this command, in this folder, joins this member. The three
+   parts are objects and the word between them is the sentence's joint. */
 .rulemark { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem .7rem; }
 .rulemark .kicker { flex: none; }
 .rulemark .said { font: 400 .95rem/1.2 var(--font-name); color: var(--text-mute); }
 
+/* ---------- what a waiting member asks: the client's own question, its command boxed, the answers as numbered rows ---------- */
+.card.m .ask { margin-top: 0; }
+.card.m .ask > * + * { margin-top: calc(1.5 * var(--u)); }
+.card.m .ask .cmd { margin-top: 0; }
+.card.m .ask .cmd + .why { margin-top: .5rem; }
+.card.m .folder { display: flex; margin-top: calc(1.5 * var(--u)); }
+.card.m .folder .chip.where { max-width: 100%; }
+/* a list of answers starts where the question above it starts: Sessions' own `.list` pads its rows to clear the lamp's rail,
+   and the lamp stands outside this card, so the padding would set the answers in from the card's text edge */
+.card.m .answers.list { display: flex; flex-direction: column; flex-wrap: nowrap; gap: .5rem; margin-top: calc(1.5 * var(--u)); padding-left: 0; }
+/* each answer leads with the key it presses, as the client's own menu numbers them, and reads from its left edge */
+.card.m .act.choice { display: grid; grid-template-columns: 1.7rem minmax(0, 1fr); align-items: start; justify-content: stretch; gap: .75rem; width: 100%; padding: .55rem .8rem .55rem .6rem; text-align: left; font-weight: 500; line-height: 1.35; }
+.act.choice > span { min-width: 0; overflow-wrap: anywhere; padding-top: .1rem; }
+.act.choice .n { display: grid; place-items: center; width: 1.7rem; height: 1.7rem; border-radius: .4rem; background: var(--obj-sunk); box-shadow: inset 0 0 0 .12rem var(--track-line); font: 600 .9rem/1 var(--font-data); color: var(--text-mute); transition: color var(--t-hover) var(--e-out); }
+.act.choice:hover:not(:disabled) .n { color: var(--text); }
+.act.choice.answering .n svg { width: 1.1rem; height: 1.1rem; --c: currentColor; }
+.card.m .answers .scope { margin: 0; }
+
 /* ---------- a member's own figures: one small table, then the windows of each plan account it used ---------- */
 .card.m > .use, .leftm .mreq { margin-top: calc(2 * var(--u)); }
-/* at the TOP of the row it shares, so every card's figures in a row of cards start on one line: bottom-aligned, a
-   member with no plan pushed its figures down and the row lost its level */
-.card.m > .use { padding-top: calc(2 * var(--u)); border-top: .12rem solid var(--track); display: flex; flex-direction: column; gap: calc(2 * var(--u)); align-self: start; }
+.card.m > .use { padding-top: calc(2 * var(--u)); border-top: .12rem solid var(--track); display: flex; flex-direction: column; gap: calc(2 * var(--u)); }
 .card.m > .use:empty { display: none; border-top: 0; padding-top: 0; }
-.use > .mnone { margin: 0; font: 500 .95rem/1.2 var(--font-data); color: var(--text-mute); font-variant-numeric: tabular-nums; }
 /* THE TABLE: a column of row heads, then a bar and its figure for each column, Requests and Tokens, and Priced as a
    figure alone on a team where a request was priced. Each row is a subgrid of the table's columns, so the bars of a
    column start and end together and every figure of a column ends on one right edge; the figure tracks hold any usual
@@ -274,31 +337,39 @@
   display: grid; align-items: center; min-width: 0; column-gap: .6rem; row-gap: .6rem;
   grid-template-columns: minmax(4.4rem, max-content) minmax(1.5rem, 1fr) minmax(4.6rem, max-content) minmax(1.5rem, 1fr) minmax(3.4rem, max-content);
 }
-.mtab.p3 { grid-template-columns: minmax(4.4rem, max-content) minmax(1.5rem, 1fr) minmax(4.6rem, max-content) minmax(1.5rem, 1fr) minmax(3.4rem, max-content) minmax(3.8rem, max-content); }
+.mtab.p3 { grid-template-columns: minmax(4.4rem, max-content) minmax(1.5rem, 1fr) minmax(4.6rem, max-content) minmax(1.5rem, 1fr) minmax(3.4rem, max-content) minmax(1.5rem, 1fr) minmax(3.8rem, max-content); }
 .mtr { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; }
 /* the next column stands off the figure before it */
 .mtr > :nth-child(4), .mtr > :nth-child(6), .mth > .mh + .mh { margin-left: .9rem; }
 .mth > .mh { grid-column: span 2; font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
-.mth > .mh.pr { grid-column: span 1; text-align: right; }
 .mtr > .ms { font: 500 .9rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
 .mtr > .v { font: 500 .95rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); text-align: right; white-space: nowrap; }
 .mtr.plan > .v { color: var(--text-body); }
+/* TOTAL LEADS: it is the member's whole, so its label, its figures and its bar are heavier than the two spans under it */
+.mtr.total > .ms { font-weight: 600; color: var(--text); }
+.mtr.total > .v { font-size: 1.1rem; font-weight: 600; }
+.mtr.total .mbar { height: .7rem; border-radius: .35rem; }
+/* THE SPANS NEST UNDER TOTAL: they are parts of the plan's use inside it, so each hangs from Total by a short elbow */
+.mtr.plan > .ms { position: relative; padding-left: 1rem; }
+.mtr.plan > .ms::before { content: ""; position: absolute; left: .25rem; top: -.95rem; bottom: 50%; width: .5rem; border-left: .12rem solid var(--track-line); border-bottom: .12rem solid var(--track-line); border-bottom-left-radius: .3rem; }
 /* the count that opens exactly its requests: its arrow rides past the figure's edge, so the digits of the rows under it
    still end on the column's edge */
 .mtr > .v.rf { position: relative; padding-right: 1.1rem; }
 .mtr > .v.rf .go { position: absolute; right: 0; top: 50%; margin-top: -.4rem; }
 .mtab .vbar { min-width: 0; height: .5rem; border-radius: .25rem; }
-.mtab .vbar.plan b { background: var(--splice-chart-2); }
+.mtab .vbar.plan b { background: color-mix(in oklab, var(--text) 68%, transparent); }
+/* tokens nobody reported: the bar is the dashed track and the figure is the dash, never a bar of nothing */
+.mtab .vbar.unread { height: .5rem; }
 /* A MEMBER'S REQUESTS AS ONE BAR ON THE TEAM'S SCALE, cut into how they were paid in the payment bar's own tones */
 .mreq { display: flex; flex-direction: column; gap: calc(1.2 * var(--u)); min-width: 0; }
-.mbar { display: block; height: .62rem; border-radius: .3rem; background: color-mix(in oklab, var(--text) 10%, transparent); overflow: hidden; min-width: 0; }
+.mbar { display: block; height: .62rem; border-radius: .3rem; background: color-mix(in oklab, var(--text) 8%, transparent); overflow: hidden; min-width: 0; }
 .mtab .mbar { height: .5rem; border-radius: .25rem; }
 .mbar > span { display: flex; height: 100%; border-radius: inherit; overflow: hidden; }
 .mbar i { display: block; flex: 0 1 auto; min-width: 0; }
-.mbar i.plan { background: var(--splice-chart-2); }
-.mbar i.priced { background: var(--splice-chart-4); }
-.mbar i.noprice { background: color-mix(in oklab, var(--text) 30%, transparent); }
-.mbar i.none { background: color-mix(in oklab, var(--text) 14%, transparent); }
+.mbar i.plan { background: color-mix(in oklab, var(--text) 68%, transparent); }
+.mbar i.priced { background: color-mix(in oklab, var(--text) 40%, transparent); }
+.mbar i.noprice { background: color-mix(in oklab, var(--text) 22%, transparent); }
+.mbar i.none { background: none; box-shadow: inset 0 0 0 .1rem var(--track-line); }
 /* the team's figures grow in once, on the draw they landed, and never on a re-read */
 .mreq.grow .mbar > span, .mtab.grow .mbar > span, .mtab.grow .vbar b { transform-origin: left; animation: seg-grow var(--t-snap) var(--e-out) both; }
 @media (prefers-reduced-motion: reduce) { .mreq.grow .mbar > span, .mtab.grow .mbar > span, .mtab.grow .vbar b { animation: none; } }
@@ -309,15 +380,26 @@
 .rq .go { width: .8rem; height: .8rem; align-self: center; color: var(--text-mute); }
 /* EACH PLAN ACCOUNT'S OWN WINDOWS, as Accounts and Usage draw them: the account's name, then each window's name, meter,
    "NN% used" and the ring with when it refills. Each row is a subgrid of the account's columns, so the meters and the
-   percents line up, and the name column is the table's, so the meters start where the bars above them start. */
+   percents line up, and the name column is the table's, so the meters start where the bars above them start. Where the
+   member used two logins, a last column holds its own requests and tokens on that login for that span. */
 .pacc { display: grid; grid-template-columns: minmax(4.4rem, max-content) minmax(3rem, 1fr) max-content max-content; column-gap: .6rem; row-gap: .5rem; align-items: center; min-width: 0; }
-.pacc .pacct { grid-column: 1 / -1; font: 500 .9rem/1.2 var(--font-name); font-style: normal; color: var(--text-mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pacc.multi { grid-template-columns: minmax(4.4rem, max-content) minmax(3rem, 1fr) max-content max-content max-content; }
+.pacc .pacct { grid-column: 1 / -1; display: flex; align-items: center; gap: .3rem .6rem; min-width: 0; font: 500 .9rem/1.2 var(--font-name); color: var(--text-mute); }
+.pacc .pacct em { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: normal; color: var(--text-body); }
+.pacc .pacct .lk { flex: none; display: inline-flex; }
+.pacc .pacct .lk .state.limit { font-size: .85rem; }
+.pacc .pacct .lk .lockico svg { width: .95rem; height: .95rem; }
+.pacc .pacct .mh { flex: none; margin-left: auto; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); white-space: nowrap; }
 .pacc .prow { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; }
 .pacc .pwin { font: 500 .9rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
+.pacc .prow.held .pwin { color: var(--limit); }
 .pacc .pct { margin-left: .3rem; font: 500 .95rem/1 var(--font-data); color: var(--text-body); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .pacc .pct .used { margin-left: .25rem; font: 500 .8rem/1 var(--font-name); color: var(--text-mute); }
 .pacc .pct.limit { color: var(--limit); }
 .pacc .when { display: inline-flex; align-items: center; gap: .4rem; margin-left: .3rem; font: 500 .85rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; min-width: 0; }
+.pacc .mine { display: inline-flex; align-items: baseline; justify-content: flex-end; gap: .5rem; margin-left: .6rem; font: 500 .9rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); white-space: nowrap; }
+.pacc .mine b { font-weight: 600; color: var(--text); }
+.pacc .mine > span { color: var(--text-mute); }
 @supports not (grid-template-columns: subgrid) {
   .mtab, .mtr, .pacc .prow { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .9rem; }
   .mtab .vbar, .mtab .mbar, .pacc .prow > .bar { flex: 1 1 4rem; }
@@ -332,13 +414,17 @@
 .mchange .macts .refusal { margin-right: auto; }
 .slot-acts { display: flex; align-items: center; flex-wrap: wrap; gap: .7rem; position: relative; }
 .menu.use { left: 0; right: auto; top: calc(100% + .5rem); }
-.menu.use button { display: flex; align-items: baseline; justify-content: space-between; gap: 1.35rem; }
+.menu.use button { display: flex; align-items: center; justify-content: space-between; gap: 1.35rem; }
+.menu.use button > span:nth-child(2) { margin-right: auto; }
 .mmeta { font: 500 .9rem/1 var(--font-data); color: var(--text-mute); }
 
 /* ---------- a member to a member, or to a session outside the team ---------- */
 .party { display: inline-flex; align-items: center; gap: .4rem; font: 500 .95rem/1 var(--font-name); color: var(--text); white-space: nowrap; min-width: 0; }
 .party i { width: .7rem; height: .7rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); flex: none; }
 .party.out { font: 500 .95rem/1 var(--font-data); color: var(--text-body); }
+/* a member's badge: the first letter of its name on its command's colour, so a row is told by whose it is */
+.mb { flex: none; display: inline-grid; place-items: center; min-width: 1.5rem; height: 1.5rem; padding: 0 .3rem; border-radius: .45rem; background: var(--c); color: var(--on-cable); box-shadow: 0 0 0 .1rem var(--ink); font: 700 .8rem/1 var(--font-data); letter-spacing: .01em; }
+
 /* ---------- the two panels: the chat beside the members, the activity under them ---------- */
 /* both are plates, the section's own ground, with the same kicker and the same count on its baseline, so neither is
    named while the other is not */
@@ -355,25 +441,26 @@
 .tm .who { display: flex; align-items: center; gap: .55rem; min-width: 0; }
 .tm .who > svg { width: 1rem; height: 1rem; color: var(--text-mute); flex: none; }
 .tm .who time { margin-left: .6rem; font: 500 .85rem/1 var(--font-data); color: var(--text-mute); }
+/* THE OLDER MESSAGES LIE FLAT and the newest lifts off the page in its sender's colour; one that touches a member who needs
+   him takes the needs colour, so what a waiting member was told, or said, is found before the rest */
 .tm .body {
   width: fit-content; max-width: 100%; overflow-wrap: anywhere; padding: .75rem .79rem;
   font: 400 1rem/1.55 var(--font-name); color: var(--text); background: var(--obj-high);
-  border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: .3rem .3rem 0 var(--c), .3rem .3rem 0 var(--ink-w) var(--ink);
+  border: var(--ink-w) solid var(--track-line); border-radius: var(--r-obj);
 }
+.tm.latest .body { border-color: var(--ink); box-shadow: .3rem .3rem 0 var(--c), .3rem .3rem 0 var(--ink-w) var(--ink); }
+.tm.outside.latest .body { box-shadow: .3rem .3rem 0 var(--wall-low), .3rem .3rem 0 var(--ink-w) var(--ink); }
+.tm.asks .body { border-color: var(--needs); background: color-mix(in oklab, var(--obj-high) 86%, var(--needs)); }
+.tm.asks.latest .body { box-shadow: .3rem .3rem 0 var(--needs), .3rem .3rem 0 var(--ink-w) var(--ink); }
 .tm .body p { margin: 0 0 .5rem; }
 .tm .body p:last-child { margin-bottom: 0; }
 .tm .body ul, .tm .body ol { margin: .2rem 0 .5rem; padding-left: .98rem; }
 .tm .body code { font: 500 .95em/1 var(--font-data); background: var(--obj-sunk); border-radius: .25rem; padding: .12rem .3rem; }
 .tm .body pre.code { margin: .3rem 0 .5rem; padding: .6rem .7rem; overflow-x: auto; font: 500 .9rem/1.45 var(--font-data); background: var(--obj-sunk); border-radius: var(--r-in); }
-.tm.outside .body { box-shadow: .3rem .3rem 0 var(--wall-low), .3rem .3rem 0 var(--ink-w) var(--ink); }
-/* a message whose text its sender's transcript no longer holds keeps its own dashed shape where the bubble would be */
-.tm.bare { flex-direction: row; align-items: center; gap: .8rem; }
-.tm .notext { flex: none; align-self: flex-start; padding: .22rem .5rem; font: 500 .85rem/1 var(--font-data); color: var(--text-mute); border: .12rem dashed var(--track-line); border-radius: var(--r-in); }
-/* and how much of the day's talk is still held, drawn once over the thread */
-.kshare { width: 100%; }
-.kshare .pd-seg.kept, .kshare .pd-sw.kept { background: color-mix(in oklab, var(--text) 62%, transparent); }
-.kshare .pd-seg.kept { color: var(--on-fill); }
-.kshare .pd-seg.notext, .kshare .pd-sw.notext { background: transparent; box-shadow: inset 0 0 0 .12rem var(--track-line); color: var(--text-mute); }
+/* a message whose text its sender's transcript no longer holds is the bubble's own dashed outline with nothing in it; the
+   panel's head names that mark once */
+.tm .body.void { min-width: 7rem; min-height: 2.4rem; padding: 0; background: none; border: .12rem dashed var(--track-line); box-shadow: none; }
+.lgvoid { display: inline-block; flex: none; width: 1.1rem; height: .75rem; border: .12rem dashed var(--text-mute); border-radius: .25rem; }
 .cut { display: flex; align-items: center; gap: .8rem; margin: 0; font: 500 .9rem/1 var(--font-data); color: var(--text-mute); width: 100%; max-width: none; }
 .cut::before, .cut::after { content: ""; flex: 1; height: .12rem; background: var(--track-line); border-radius: .1rem; }
 .cut > span { max-width: 30.8rem; line-height: 1.4; text-align: center; }
@@ -381,12 +468,15 @@
    broke "Builder → Reviewer" and its time onto three lines, because a pair of names is wider than any margin that
    leaves the bubble a reading measure. */
 .tm .who { flex-wrap: nowrap; }
-/* THE ACTIVITY FLOWS DOWN COLUMNS, so an object reads whole and the panel never runs past the fold: the latest twelve,
-   and the rest behind one pill that opens them in place. */
+/* THE ACTIVITY: a lane for each member with a tick for each tool call across the day, and under the lanes the log, flowed
+   down columns so an object reads whole: the latest twelve, and the rest behind one pill that opens them in place. */
 .flow { display: flex; flex-direction: column; gap: calc(2 * var(--u)); min-width: 0; }
 .flow > ol { list-style: none; margin: 0; padding: 0; columns: 32rem auto; column-gap: var(--gap-col); }
-.flow li { break-inside: avoid; display: grid; grid-template-columns: 5.4rem max-content minmax(0, 1fr); align-items: start; gap: .75rem; margin-bottom: .8rem; font: 500 .95rem/1.3 var(--font-data); color: var(--text-body); }
+/* the lanes and the log are two sections of one panel: 4u, a hairline, 4u between them, as the band's sections stand */
+.flow > .lanes + ol { margin-top: calc(2 * var(--u)); padding-top: calc(4 * var(--u)); border-top: .08rem solid var(--hair); }
+.flow li { break-inside: avoid; display: grid; grid-template-columns: 4.6rem 1.9rem minmax(0, 1fr); align-items: start; gap: .75rem; margin-bottom: .8rem; font: 500 .95rem/1.3 var(--font-data); color: var(--text-body); }
 .flow li time { color: var(--text-mute); }
+.flow li .mb { margin-top: -.1rem; }
 /* an object takes the lines it needs rather than being cut: this column is where the work is named */
 .flow .what { align-items: flex-start; }
 .flow .what svg { margin-top: .1rem; }
@@ -395,29 +485,36 @@
 .feed .empty, .talk .empty { margin: 0; font: 500 .9rem/1.3 var(--font-name); color: var(--text-mute); }
 .feed .empty.limit, .talk .empty.limit { color: var(--limit); }
 
-/* ---------- between members: who talked to whom, and when ---------- */
-/* ONE TIME RAIL EVERY PAIR SHARES, from the hour of the day's first message to the hour after its last, each message a
-   mark on it: a run of marks says when they talked before a time is read, and the busiest pair is the first row. */
-.plate.between .pairs { list-style: none; margin: 0; padding: 0; max-width: 104rem; display: grid; grid-template-columns: max-content minmax(8rem, 1fr) max-content max-content; column-gap: calc(2 * var(--u)); row-gap: .8rem; align-items: center; }
-.pairs li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; }
-.pairs .pair { display: inline-flex; align-items: center; gap: .5rem; min-width: 0; }
+/* ---------- one time rail every lane and every pair shares ---------- */
+/* ONE TIME RAIL EVERY ROW SHARES, from the hour of the first mark to the hour after the last, each message or tool call a
+   tick on it: a run of ticks says when it happened before a time is read, and the busiest row is the first. */
+.plate.between .pairs, .flow .lanes { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: max-content minmax(8rem, 1fr) max-content max-content; column-gap: calc(2 * var(--u)); row-gap: .8rem; align-items: center; }
+.flow .lanes { padding-bottom: calc(1 * var(--u)); }
+.pairs li, .lanes li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; }
+.pairs .pair, .lanes .pair { display: inline-flex; align-items: center; gap: .5rem; min-width: 0; }
 .pairs .pair > svg { width: 1rem; height: 1rem; color: var(--text-mute); flex: none; }
-/* the pair's time track: its own class, since the console's .rail is the accounts' socket rail and drew its dark bar
-   at the start of every track */
-.pairs .ptrack { position: relative; height: 1.5rem; border-radius: .3rem; background: var(--obj-high); box-shadow: inset 0 0 0 var(--ink-w) var(--track-line); }
-.pairs .ptrack i { position: absolute; top: .3rem; bottom: .3rem; width: .3rem; margin-left: -.15rem; border-radius: .15rem; background: var(--c); }
-.pairs .n { font: 500 .95rem/1 var(--font-data); color: var(--text); font-variant-numeric: tabular-nums; text-align: right; }
-.pairs time { font: 500 .9rem/1 var(--font-data); color: var(--text-mute); }
-.pairs .hours { position: relative; height: 1.2rem; }
-.pairs .hours .ticks { position: relative; }
-.pairs .hours span span { position: absolute; top: 0; transform: translateX(-50%); font: 500 .85rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
-.pairs .hours span span:first-child { transform: none; }
-.pairs .hours span span:last-child { transform: translateX(-100%); }
+.lanes .pname { font: 500 .95rem/1 var(--font-name); color: var(--text); white-space: nowrap; }
+/* the track: its own class, since the console's .rail is the accounts' socket rail and drew its dark bar at the start of
+   every track */
+.pairs .ptrack, .lanes .ptrack { position: relative; height: 1.5rem; border-radius: .3rem; background: var(--obj-high); box-shadow: inset 0 0 0 var(--ink-w) var(--track-line); }
+.pairs .ptrack i, .lanes .ptrack i { position: absolute; top: .3rem; bottom: .3rem; width: .26rem; margin-left: -.13rem; border-radius: .15rem; background: var(--c); }
+/* two members who talked both ways are one row: whoever spoke first rides the rail's upper half in its colour, the other
+   the lower half in its own */
+.pairs .ptrack i.up { background: var(--m, var(--c)); bottom: 50%; margin-bottom: .04rem; top: .2rem; }
+.pairs .ptrack i.dn { background: var(--m, var(--c)); top: 50%; margin-top: .04rem; bottom: .2rem; }
+.pairs .ptrack:not(:has(i.dn)) i.up { top: .3rem; bottom: .3rem; margin-bottom: 0; }
+.pairs .n, .lanes .n { font: 500 .95rem/1 var(--font-data); color: var(--text); font-variant-numeric: tabular-nums; text-align: right; }
+.pairs time, .lanes time { font: 500 .9rem/1 var(--font-data); color: var(--text-mute); }
+.pairs .hours, .lanes .hours { position: relative; height: 1.2rem; }
+.pairs .hours .ticks, .lanes .hours .ticks { position: relative; }
+.pairs .hours span span, .lanes .hours span span { position: absolute; top: 0; transform: translateX(-50%); font: 500 .85rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
+.pairs .hours span span:first-child, .lanes .hours span span:first-child { transform: none; }
+.pairs .hours span span:last-child, .lanes .hours span span:last-child { transform: translateX(-100%); }
 .plate.between .empty { margin: 0; font: 500 .95rem/1.3 var(--font-name); color: var(--text-mute); }
 @supports not (grid-template-columns: subgrid) {
-  .plate.between .pairs { display: flex; flex-direction: column; }
-  .pairs li { display: flex; flex-wrap: wrap; gap: .5rem calc(2 * var(--u)); }
-  .pairs .ptrack { flex: 1 1 10rem; }
+  .plate.between .pairs, .flow .lanes { display: flex; flex-direction: column; }
+  .pairs li, .lanes li { display: flex; flex-wrap: wrap; gap: .5rem calc(2 * var(--u)); }
+  .pairs .ptrack, .lanes .ptrack { flex: 1 1 10rem; }
 }
 
 /* ---------- Timeline: the day down the page, one column per member ---------- */
@@ -426,10 +523,23 @@
 .tlhead { grid-row: 1; align-self: stretch; display: flex; flex-direction: column; gap: .35rem; min-width: 0; padding: .5rem .2rem .7rem; border-bottom: .22rem solid var(--c); }
 .tlhead .party { overflow: hidden; text-overflow: ellipsis; }
 .tlhead .mreq { gap: .4rem; }
-.tlhead .none { font: 500 .9rem/1 var(--font-name); color: var(--text-mute); }
+/* a member with nothing on this day keeps its column: its head is dimmed and the lane under it is empty, which says so */
+.tlhead.idle { border-bottom-color: color-mix(in oklab, var(--c) 40%, transparent); }
+.tlhead.idle .party, .tlhead.idle .mreq { opacity: .5; }
 .tlact, .tlnote { display: flex; align-items: center; gap: .4rem; min-width: 0; font: 400 .95rem/1.2 var(--font-name); color: var(--text-body); border-left: .25rem solid var(--c); padding-left: .45rem; }
 .tlact .obj, .tlnote span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tlact svg, .tlnote svg { flex: none; }
+.tlnote.void { border-left-style: dashed; }
+/* THE DAY'S CLOCK AS A RULE: a hairline with the hour on it at each new hour, so the log-scaled silences between calls sit
+   on real time */
+.tlhr { grid-column: 1 / -1; display: flex; align-items: center; gap: .8rem; margin: .7rem 0 .35rem; font: 600 .8rem/1 var(--font-data); letter-spacing: .06em; color: var(--text-mute); }
+.tlhr::after { content: ""; flex: 1; height: .08rem; background: var(--hair); }
+/* A RUN OF ONE MEMBER'S TOOL CALLS is one mark that opens in place: the tools it used, how many, and the chevron turning */
+.tlrun { display: inline-flex; align-items: center; gap: .5rem; min-width: 0; justify-self: start; max-width: 100%; padding: .3rem .65rem .3rem .45rem; font: 500 .9rem/1.2 var(--font-name); color: var(--text-body); text-align: left; background: var(--obj-sunk); border: 0; border-left: .25rem solid var(--c); border-radius: 0 var(--r-in) var(--r-in) 0; cursor: pointer; transition: background-color var(--t-hover) var(--e-out), color var(--t-hover) var(--e-out); }
+.tlrun:hover { color: var(--text); background: var(--obj-high); }
+.tlrun .tools { display: inline-flex; gap: .3rem; }
+.tlrun .tools svg { width: 1rem; height: 1rem; }
+.tlrun b { font: 600 .9rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); margin-right: -.25rem; }
 /* a message is an arrow from its sender's column to its receiver's, carrying its first line where the span has room */
 .tlmsg { position: relative; min-height: 1.3rem; display: flex; align-items: center; justify-content: center; padding: 0 1rem; }
 .tlmsg::before { content: ""; position: absolute; left: .3rem; right: .3rem; top: 50%; height: .22rem; margin-top: -.11rem; background: var(--c); border-radius: .11rem; }
@@ -440,49 +550,89 @@
   padding: .1rem .45rem; font: 400 .9rem/1.3 var(--font-name); color: var(--text-body);
   background: var(--wall); border-radius: .25rem;
 }
-/* a message with no text carries the chat's own dashed mark, on its arrow or beside its note */
-.tl .notext { flex: none; padding: .2rem .45rem; font: 500 .85rem/1 var(--font-data); color: var(--text-mute); background: var(--wall); border: .12rem dashed var(--track-line); border-radius: var(--r-in); }
+/* a message with no text is the same arrow dashed, as the chat's dashed bubble is */
+.tlmsg.void::before { height: 0; background: none; border-top: .22rem dashed var(--c); border-radius: 0; }
 /* A SILENCE IS DRAWN AS SPACE, in proportion to how long it ran (teams.js quietRem): a long quiet stands visibly taller
    than a short one with no word on it, and past half an hour a dashed rule crosses it. */
 .tlq { grid-column: 1 / -1; }
 .tlq.brk { display: flex; align-items: center; }
 .tlq.brk::after { content: ""; flex: 1; border-top: .12rem dashed var(--track-line); }
-.tlcol > .empty { margin: 0; font: 500 .95rem/1.3 var(--font-name); color: var(--text-mute); }
+.tlcol > .nothing { align-self: flex-start; }
 .tlcol > .cut { margin-bottom: calc(2 * var(--u)); }
 
-/* ---------- the composer, in a modal over the page: the wall dims and the page stays still behind it ---------- */
-html:has(#sheet .scrim) { overflow: hidden; }
-.scrim { position: fixed; inset: 0; z-index: 40; display: flex; justify-content: center; align-items: flex-start; padding: 7vh 1.65rem; overflow: auto; background: color-mix(in srgb, var(--wall-low) 78%, transparent); }
-.compose > h2 { margin-bottom: 1.35rem; }
-/* the form is as wide as a member row needs to stand on one line, and its cast is neutral: the key light in this
-   dialog is spent on Start team alone */
-.compose {
-  --c: var(--track-line); width: min(82rem, 100%); flex: none; padding: 1.1rem 1.35rem 1.2rem; background: var(--obj);
-  border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
-  box-shadow: var(--cast) var(--cast) 0 var(--wall-low), var(--cast) var(--cast) 0 var(--ink-w) var(--ink);
-  animation: compose-in var(--t-pop) var(--e-out) both;
+/* ---------- no team here: the sessions that already run, offered as a first team ---------- */
+/* each project a titled group, its sessions rows he presses to pick; the groups are laid in as many columns as the width
+   holds (DRAW.masonry), so the plate is as full as the page is wide */
+.gather .gsessions { display: flex; flex-direction: column; gap: .7rem; min-width: 0; }
+.gsess {
+  position: relative; display: grid; grid-template-columns: 1.2rem 1.7rem minmax(0, 1fr) max-content; align-items: center; gap: .8rem;
+  width: 100%; min-width: 0; padding: .6rem .9rem .6rem .8rem; text-align: left; cursor: pointer;
+  font: 500 1rem/1.2 var(--font-name); color: var(--text); background: var(--obj);
+  border: var(--ink-w) solid var(--track-line); border-radius: var(--r-obj);
+  transition: background-color var(--t-hover) var(--e-out), border-color var(--t-hover) var(--e-out), box-shadow var(--t-hover) var(--e-out);
 }
-@keyframes compose-in { from { opacity: 0; transform: translateY(-.8rem) scale(.99); } }
-@media (prefers-reduced-motion: reduce) { .compose { animation: none; } }
-/* the team's own fields, then its members, with 4u + a hairline + 4u between them (console.css .psec) */
+.gsess:hover:not(:disabled) { background: var(--obj-high); border-color: var(--text-mute); }
+/* a session whose command splice does not have: in the list, dashed, and not to be picked */
+.gsess:disabled { cursor: default; background: none; border-style: dashed; color: var(--text-body); }
+.gsess:disabled .gtick { border-style: dashed; border-color: var(--track-line); }
+.gsess .tlamp { width: 1.7rem; height: 1.7rem; }
+.gsess .tlamp svg { width: 1rem; height: 1rem; }
+.gsess .tlamp svg.wave { width: 1.25rem; height: 1.25rem; }
+.gsess .gtext { display: flex; flex-direction: column; gap: .3rem; min-width: 0; }
+.gsess .gname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gsess .gmeta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 .85rem/1.2 var(--font-data); color: var(--text-mute); }
+/* the pick is the console's selected look: raised in the text's ink with its rule down the left edge, never the key light */
+.gsess.on { background: var(--sel-face); border-color: var(--sel-line); box-shadow: inset .22rem 0 0 var(--sel-ink), inset 0 0 0 .1rem var(--sel-line); }
+.gtick { position: relative; width: 1.2rem; height: 1.2rem; border-radius: .35rem; border: .14rem solid var(--text-mute); transition: background-color var(--t-hover) var(--e-out), border-color var(--t-hover) var(--e-out); }
+.gsess.on .gtick { background: var(--sel-ink); border-color: var(--sel-ink); }
+.gsess.on .gtick::after { content: ""; position: absolute; left: .32rem; top: .08rem; width: .3rem; height: .58rem; border: solid var(--sel-face); border-width: 0 .16rem .16rem 0; transform: rotate(45deg); }
+.gsess:focus-visible { outline: .18rem solid var(--text); outline-offset: .15rem; }
+.gather .morepill { align-self: flex-start; }
+.gfoot { display: flex; align-items: center; flex-wrap: wrap; gap: .8rem calc(3 * var(--u)); margin-top: calc(3 * var(--u)); }
+.gpicked { font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
+.gpicked b { font: 600 1.05rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); margin-right: .2rem; }
+.gather .titled > header { margin-bottom: calc(1.5 * var(--u)); }
+
+/* ---------- the team form: where the board stands, never over it ---------- */
+/* it is a plate like the band, with the page's toolbar above it and the team's own tab lit, so Cancel is the board coming
+   back. Its cast is neutral: the key light in this form is spent on Start team alone. */
+.compose { --c: var(--track-line); }
+.compose > h2 { margin: 0 0 calc(3 * var(--u)); font: 400 1.4rem/1.1 var(--font-lead); letter-spacing: normal; }
+.compose > .psec { gap: calc(2 * var(--u)); }
 .compose > .psec + .psec { margin-top: calc(4 * var(--u)); padding-top: calc(4 * var(--u)); border-top: .08rem solid var(--hair); }
-.compose .psec { gap: calc(2 * var(--u)); }
+/* where the page is wide, the team's own fields stand at the left and the members, who are the work, take the rest, each
+   with a hairline between: the form is as wide as the page and not a narrow column in the middle of it */
+@container teams (min-width: 120rem) {
+  .compose { display: grid; grid-template-columns: minmax(30rem, 42rem) minmax(0, 118rem); grid-template-areas: "title title" "team members" "foot foot"; column-gap: calc(4 * var(--u)); align-items: start; }
+  .compose > h2 { grid-area: title; }
+  .compose > .psec:nth-of-type(1) { grid-area: team; }
+  .compose > .psec:nth-of-type(2) { grid-area: members; margin-top: 0; padding-top: 0; border-top: 0; padding-left: calc(4 * var(--u)); border-left: .08rem solid var(--hair); }
+  .compose > footer { grid-area: foot; }
+}
 /* one right edge: the fields run to it, as the member rows do, and a refusal sits on its own line under them */
 .frow { display: grid; grid-template-columns: 6rem minmax(0, 1fr); align-items: center; gap: .9rem; }
 .frow > .state { grid-column: 2; }
-/* the modal's refusal sits on Repo's row, ending at the modal's right edge */
+/* the form's refusal sits on Repo's row, ending at the form's right edge */
 .frow .withword { display: flex; align-items: center; gap: .9rem; min-width: 0; }
 .frow .withword .field { flex: 1 1 10rem; min-width: 0; }
 .frow .withword .state { flex: 0 1 auto; max-width: 55%; margin-left: auto; text-align: right; overflow-wrap: anywhere; }
 .frow label { font: 500 .9rem/1 var(--font-name); color: var(--text-body); }
 .frow textarea { font: 400 1rem/1.45 var(--font-name); resize: vertical; }
 #t-name { font: 500 1.1rem/1 var(--font-name); }
+/* WHAT THE FORM STILL NEEDS IS MARKED ON THE FIELD: a dashed outline in the needs colour on the empty name, on a repo a rule
+   waits for, and on a member's command picker; the one legend for the mark stands beside the acts that wait on it */
+.field.need, .pickbtn.need { border: .12rem dashed var(--needs); box-shadow: none; }
+.lgneed { display: inline-block; flex: none; width: 1.1rem; height: .75rem; border: .12rem dashed var(--needs); border-radius: .25rem; }
+.sechead .legend { margin-left: .4rem; }
+.sechead .legend .tlamp { width: 1.4rem; height: 1.4rem; }
+.sechead .legend .tlamp svg { width: .9rem; height: .9rem; }
+.sechead .legend .tlamp svg.wave { width: 1.1rem; height: 1.1rem; }
+.sechead .sec-aside:last-child:not(:first-child) { margin-left: auto; }
 .rows { display: flex; flex-direction: column; gap: .98rem; }
 .card.slot-row { padding: .75rem .9rem; display: flex; flex-direction: column; gap: .9rem; }
 /* a member row is a fixed grid: each picker owns its column, empty until chosen, so a choice never widens the row,
-   wraps it or moves the row under it. Join by rule rides the same line as the rest, where it used to grow the row a
-   second line for one control. */
-.slot-row .top { display: grid; grid-template-columns: minmax(6rem, 1fr) 11rem 12rem 11rem auto auto auto auto auto; align-items: center; gap: .7rem; position: relative; }
+   wraps it or moves the row under it. Join by rule rides the same line as the rest. */
+.slot-row .top { display: grid; grid-template-columns: minmax(6rem, 1fr) 12rem 15rem 13rem auto auto auto auto auto; align-items: center; gap: .7rem; position: relative; }
 .slot-row .top .pickbtn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .slot-row .top .pickbtn[data-what="head"] { grid-column: 2; }
 .slot-row .top .pickbtn[data-what="model"] { grid-column: 3; }
@@ -490,51 +640,63 @@ html:has(#sheet .scrim) { overflow: hidden; }
 .slot-row .top [data-act="lead"] { grid-column: 5; }
 .slot-row .top [data-act="rule"] { grid-column: 6; }
 .slot-row .top [data-act="instr"] { grid-column: 7; }
-.slot-row .top .willstart { grid-column: 8; }
+.slot-row .top .lampcell { grid-column: 8; display: inline-grid; place-items: center; }
+.slot-row .top .lampcell .tlamp { width: 1.7rem; height: 1.7rem; }
+.slot-row .top .lampcell .tlamp svg { width: 1rem; height: 1rem; }
+.slot-row .top .lampcell .tlamp svg.wave { width: 1.25rem; height: 1.25rem; }
 .slot-row .top [data-act="rm"] { grid-column: 9; }
-@media (max-width: 825px) { .slot-row .top { display: flex; flex-wrap: wrap; } }
+@container teams (max-width: 96rem) { .slot-row .top { display: flex; flex-wrap: wrap; } }
 .role-in { min-width: 0; font: 500 .95rem/1 var(--font-name); }
 .blot { width: .8rem; height: .8rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); display: inline-block; flex: none; }
-/* a toggle pressed is a selection, and a selection is neutral: the key light is Start team's alone */
+/* LEAD IS ONE CHOICE among the rows: pressing it takes it from the member that had it. A choice pressed is a selection, and a
+   selection is neutral: the key light is Start team's alone. */
 .leadtog { font: 600 .9rem/1 var(--font-data); padding: .55rem .7rem; border-radius: var(--r-in); cursor: pointer; background: transparent; color: var(--text-mute); border: .12rem dashed var(--track-line); white-space: nowrap; transition: color var(--t-hover) var(--e-out), border-color var(--t-hover) var(--e-out); }
 .leadtog:hover { color: var(--text); border-color: var(--text-mute); }
 .leadtog[aria-pressed="true"] { background: var(--sel-face); color: var(--sel-ink); border: .12rem solid var(--sel-line); }
-/* what Start team would start, on each row it would start */
-.willstart { font: 500 .9rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
-.willstart.on { color: var(--live); }
 /* a member whose instructions are written says so on the toggle, so he need not open each row to find out */
 .slot-row [data-act="instr"].written::after { content: ""; width: .45rem; height: .45rem; border-radius: 50%; background: var(--text); }
 .slot-row .instr { width: 100%; font: 400 .95rem/1.45 var(--font-name); resize: vertical; animation: unfold var(--t-snap) var(--e-out) both; }
 @media (prefers-reduced-motion: reduce) { .slot-row .instr { animation: none; } }
 /* a picker's menu opens under its own picker: the grid area of its column is its containing block */
-.pick-menu { left: 0; right: auto; top: calc(100% + .5rem); min-width: 100%; max-height: 18rem; overflow: auto; grid-row: 1; animation: unfold var(--t-snap) var(--e-out) both; }
+.pick-menu { left: 0; right: auto; top: calc(100% + .5rem); min-width: 100%; max-height: 22rem; overflow: auto; grid-row: 1; animation: unfold var(--t-snap) var(--e-out) both; }
 @media (prefers-reduced-motion: reduce) { .pick-menu { animation: none; } }
 .pick-menu button { display: flex; align-items: center; gap: .6rem; }
 .pick-menu .empty { margin: 0; padding: .7rem .9rem; font: 500 1rem/1.35 var(--font-name); color: var(--text-mute); }
-/* what a command can do now, and what a model holds: the mark rides the item's right edge */
+/* what a command can do now, and what a model is: the mark rides the item's right edge */
 .pick-menu .hmark { margin-left: auto; padding-left: .9rem; font: 500 .85rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
 .pick-menu .hmark.limit { color: var(--limit); }
 .pick-menu .hmark:empty { display: none; }
+/* A MODEL'S CONTEXT IS DRAWN against the largest of the command's models, the word said once in the menu's head */
+.pick-menu .mhead { display: flex; align-items: center; justify-content: space-between; gap: .9rem; padding: .5rem .9rem .35rem; font: 600 var(--kicker)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
+.pick-menu .mhead span:last-child { width: 10rem; flex: none; }
+.pick-menu .mname { min-width: 0; margin-right: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-menu .ctx { flex: none; width: 10rem; display: flex; align-items: center; gap: .7rem; }
+.pick-menu .ctx i { flex: 1; height: .5rem; border-radius: .25rem; background: color-mix(in oklab, var(--text) 10%, transparent); overflow: hidden; }
+.pick-menu .ctx i b { display: block; height: 100%; border-radius: inherit; background: color-mix(in oklab, var(--text) 56%, transparent); }
+.pick-menu .ctx b.v { flex: none; min-width: 2.8rem; text-align: right; font: 500 .9rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
+.pick-menu .hmark + .ctx { margin-left: 0; }
 /* both lines of each picker's menu: an absolutely placed grid item's auto end is the grid's edge */
 .pick-menu[data-what="head"] { grid-column: 2 / 3; }
-.pick-menu[data-what="model"] { grid-column: 3 / 4; }
+.pick-menu[data-what="model"] { grid-column: 3 / 4; min-width: 30rem; }
 .pick-menu[data-what="account"] { grid-column: 4 / 5; }
-.compose footer { display: flex; align-items: center; justify-content: flex-end; gap: .8rem; margin-top: 1.35rem; }
+.mchange .pick-menu[data-what="model"] { min-width: min(100%, 30rem); }
+.compose footer { display: flex; align-items: center; justify-content: flex-end; gap: .8rem; margin-top: calc(4 * var(--u)); }
 .compose footer > .state { margin-right: auto; }
-/* WHAT SAVE AND START TEAM WAIT FOR, where they wait: the form's own rules, and only the ones not met yet */
-.compose footer > .waits { margin-right: auto; font: 500 .95rem/1.3 var(--font-name); color: var(--text-mute); }
+/* the one legend of what the marked fields stand for, on the left of the acts that wait on them */
+.compose footer > .waits { margin-right: auto; }
+.compose footer > .waits:empty { display: none; }
 
 /* a member stopped at Claude Code's own question before it came up (its folder trust question): a needs card in the
-   family of a member's ask, holding the client's question, its folder and its two options (Marlin, Oct 12; hitstop da3d8b2) */
-.card.m .ask { margin-top: 0; }
+   family of a member's ask, holding the client's question, its folder and its options */
 .card.m.trust .ask .cmd { margin-top: .6rem; }
-/* "Last screen": the client's screen as splice last read it, opened on his press, in a sunk mono well (fin; hitstop da3d8b2) */
+/* "Last screen": the client's screen as splice last read it, opened on his press, in a sunk mono well */
 .slot-acts .screen { flex-basis: 100%; margin: .2rem 0 0; font: 400 .95rem/1.45 var(--font-data); color: var(--text-body); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); padding: .7rem .9rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 /* the door on an ask that cannot be answered here: its session, or the switch that turned reading off */
 .ask .why .door { display: inline-flex; align-items: center; gap: .3rem; }
 
-/* End armed: what ending would lose, then the danger End and Keep running, Restart's pattern on Settings (fin, Marlin p218) */
+/* End armed: what ending would lose, then the danger End and Keep running, Restart's pattern on Settings */
 .card.m .armed.end, .band .armed.end { display: flex; flex-wrap: wrap; align-items: center; gap: .55rem; }
+.band .armed.end { margin-top: calc(2 * var(--u)); }
 .armed.end .said { font: 500 1rem/1 var(--font-name); color: var(--text-body); }
 .armed.end .unsent { font: 400 1rem/1.4 var(--font-data); color: var(--text-mute); overflow-wrap: anywhere; flex: 1 1 10rem; min-width: 0; }
 .armed.end .word.working { display: inline-flex; align-items: center; gap: .4rem; }
@@ -550,9 +712,13 @@ html:has(#sheet .scrim) { overflow: hidden; }
 .plate.band .ghost-lines { padding: 0; }
 .loading .mtr > .ghost.v { justify-self: end; }
 .loading .pacc > .ghost { grid-column: 1 / -1; }
-/* NO TEAM YET: the band, the first card's place, the chat and the activity as dashed outlines in the layout's own grid, so
-   the page is as wide as the team will be and the first team lands where its outline stood. Dashed, never striped: an
-   absence is not a read in progress. */
+.loading .gsess { box-shadow: none; }
+.loading .gsess .ghost.gtick { width: 1.2rem; height: 1.2rem; border: 0; border-radius: .35rem; }
+.loading .gsess .gtext { gap: .5rem; }
+.loading .gsessions { display: flex; flex-direction: column; gap: .7rem; }
+/* NO TEAM AND NO SESSION TO OFFER: the band, the first card's place, the chat and the activity as dashed outlines in the
+   layout's own grid, so the page is as wide as the team will be and the first team lands where its outline stood. Dashed,
+   never striped: an absence is not a read in progress. */
 .team.bare .plate.band, .team.bare .plate.talk, .team.bare .plate.feed { background: transparent; border: var(--ink-w) dashed var(--track-line); border-radius: var(--r-obj); }
 .band.bare .named h2 { color: var(--text-mute); }
 .hole { display: block; border: var(--ink-w) dashed var(--track-line); border-radius: var(--r-in); }

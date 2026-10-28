@@ -1,7 +1,8 @@
 // Marlin's Teams-by-project walk of Oct 12 (78056fbbd), fin's cuts and hitstop's eye pass, through the real Teams page
 // against a stub daemon answering in the routes' own shapes: a member last heard on another day reads that day's weekday;
-// a role that already reads Lead carries no Lead tag; a member with no requests draws no table and so no tokens (the unit is
-// the Tokens column's head, said once, over the member that has requests); an empty activity
+// a role that already reads Lead carries no Lead tag; a member with no requests draws its Total as a 0 on an empty bar with
+// a dash for its tokens, never a token figure (the unit is the Tokens column's head, said once, and a sentence told what
+// the bar row shows: Teams' goal, Oct 28); an empty activity
 // panel is as tall as its one line, and an empty chat only as tall as the column beside it; and a tab's needs dot takes
 // the needs-you ink in either theme, never the key light.
 import { afterAll, beforeAll, expect as bunExpect, test } from "bun:test";
@@ -77,10 +78,14 @@ test("a role that already reads Lead carries no Lead tag", () => onTeams(async (
   await expect(member(p, "lead").locator(".lead")).toHaveCount(0);
 }), 60_000);
 
-test("a member with no requests shows no tokens, and one with requests does", () => onTeams(async (p) => {
-  await expect(member(p, "lead").locator(".use")).toContainText("0 requests");
-  await expect(member(p, "lead").locator(".mtab")).toHaveCount(0);
-  await expect(member(p, "lead").locator(".use")).not.toContainText("Tokens");
+test("a member with no requests shows a 0 on an empty bar and no tokens, and one with requests does", () => onTeams(async (p) => {
+  const idle = member(p, "lead").locator(".use .mtab .mtr.total");
+  await expect(idle.locator(".rf")).toHaveText("0");
+  await expect(idle.locator(".mbar > span")).toHaveAttribute("data-w", "0.00");
+  // its tokens are one dash on an unread track: no figure, no K
+  await expect(idle.locator(".vbar.unread")).toHaveCount(1);
+  await expect(idle.locator(".nr")).toHaveText("—");
+  await expect(idle.locator('[data-tn$=":tok:n"]')).toHaveCount(0);
   // with requests the unit is the column's head, and the Total row carries the member's 1,000 in and 200 out under it
   const table = member(p, "builder").locator(".use .mtab");
   await expect(table.locator(".mth")).toContainText("Tokens");

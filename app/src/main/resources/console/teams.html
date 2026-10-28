@@ -28,8 +28,10 @@
     <header class="head">
       <h1>Teams</h1>
       <div class="read">
-        <!-- when the page last read: it re-reads itself every five seconds, and teams.js markRead writes the time here,
-             and writes "Not answering since 10:37 AM" here when a read fails after the board landed -->
+        <!-- when the page last read: it re-reads itself every five seconds. teams.js markRead draws the lamp that traces on each
+             read, with the time of the last one as its words, and writes "Not answering since 10:37 AM" in the time when a
+             read fails after the board landed -->
+        <span class="tlamp readlamp" role="img" tabindex="0" hidden></span>
         <time class="readat"></time>
         <!-- the act's own word is in its span, so markRead can read Try again once a read has failed -->
         <button class="act quiet small" data-act="read">
@@ -40,7 +42,6 @@
     <div class="teams" id="teams" aria-live="polite"></div>
   </main>
 </div>
-<div id="sheet"></div>
 <script src="kit.js"></script>
 <script src="api.js"></script>
 <script src="reqview.js"></script>

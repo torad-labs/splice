@@ -215,7 +215,7 @@ const CONSOLE = (() => {
    *  caches. The line stood over the page he was still on, as its first row, so that page's title dropped 63 px the
    *  moment it landed and "Teams didn't open" read as a fact about Accounts. It hangs under the link he pressed, over
    *  the page, so nothing on the page moves; the next page that opens takes it away. The link he pressed carries the
-   *  failure on itself too, a red mark after its name, so the bar shows which page it was while the line says what
+   *  failure on itself too, a red mark where its glyph stood, so the bar shows which page it was while the line says what
    *  happened. A failure with no link of its own still hangs from the bar's left, never as a row at the top of the page,
    *  which pushed the title and everything under it down. The class is kept: it is what the manager's eyes read to see
    *  that a page did not open (pilot.js). */
@@ -233,21 +233,19 @@ const CONSOLE = (() => {
     });
     // a page with no bar at all has nowhere to hang it from: the top of the page, as before
     if (!nav) { document.querySelector("main.page")?.prepend(note); return; }
-    if (link) link.insertAdjacentHTML("beforeend", `<span class="nfail" aria-hidden="true">${ICON.bang}</span>`);
+    // the mark takes the place of the link's own glyph, so no link beside it moves
+    if (link) { link.classList.add("nfailed"); link.insertAdjacentHTML("afterbegin", `<span class="nfail" aria-hidden="true">${ICON.bang}</span>`); }
     nav.append(note);
-    placeNote = () => {
-      // under the link's own name, held inside the window when the link stands near its right edge
-      const room = document.documentElement.clientWidth - nav.getBoundingClientRect().left - note.offsetWidth - 16;
-      note.style.left = `${Math.max(0, Math.min(link?.offsetLeft ?? 0, room))}px`;
-    };
-    placeNote();
-    addEventListener("resize", placeNote);
+    // it hangs from the link's left edge; --x is where that edge stands in the window, for the stylesheet to slide it back
+    // along the bar when the link stands near the window's right edge (console.css .nav > .route-error)
+    const from = (link ?? nav).getBoundingClientRect().left;
+    note.style.left = `${from - nav.getBoundingClientRect().left}px`;
+    note.style.setProperty("--x", `${from}px`);
   }
-  let placeNote = null;
   function clearRouteError() {
     document.querySelector(".route-error")?.remove();
     for (const mark of document.querySelectorAll(".nav a .nfail")) mark.remove();
-    if (placeNote) { removeEventListener("resize", placeNote); placeNote = null; }
+    for (const link of document.querySelectorAll(".nav a.nfailed")) link.classList.remove("nfailed");
   }
   window.addEventListener("click", (event) => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;

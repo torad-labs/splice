@@ -41,7 +41,7 @@
 }
 .cmp-tab:hover { color: var(--text); background: var(--obj-high); }
 .cmp-tab .cmp-lamp { margin: 0; }
-.cmp-tabword { writing-mode: vertical-rl; letter-spacing: .03em; white-space: nowrap; }
+.cmp-tab > svg { flex: none; width: 1.25rem; height: 1.25rem; }
 body.locked .cmp, body:has(.scrim) .cmp, body.locked .cmp-tab, body:has(.scrim) .cmp-tab { display: none; }  /* a locked console sends nothing; a sheet has the stage */
 /* a narrow window's margin is 1.4rem (console.css), so the tab is the margin's width and stands against the edge */
 @media (max-width: 825px) { .cmp-tab { width: 1.4rem; right: 0; } }
@@ -189,7 +189,7 @@ body.locked .cmp-dim, body:has(.scrim) .cmp-dim { display: none; }
 .cmp-card {
   display: flex; flex-direction: column; gap: calc(2 * var(--u)); padding: calc(3 * var(--u)) calc(3 * var(--u)) calc(3 * var(--u));
   background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: .3rem .3rem 0 var(--ink);
-  animation: cmp-rise var(--t-hover) var(--e-out);
+  animation: cmp-rise var(--t-snap) var(--e-out);
 }
 .cmp-card[hidden] { display: none; }
 /* THE CARD'S HEAD IS ONE ROW (Oct 28): the manager's lamp, the title and the one way to put it off, where the title stood alone
@@ -198,28 +198,29 @@ body.locked .cmp-dim, body:has(.scrim) .cmp-dim { display: none; }
 .cmp-top h2 { flex: 1 1 auto; }
 .cmp-card h2 { margin: 0; font: 400 1.7rem/1.1 var(--font-lead); color: var(--text); }
 /* THREE GLYPH TILES, NOT THREE LABELLED ROWS (Oct 28): where it works, what it reads and what it changes, each a glyph over
-   the few words of its fact on a sunk tile of its own. The labels stay for a reader that cannot see the glyph. */
+   the few words of its fact on a sunk tile of its own. Each tile's name is its accessible name and shows on hover. */
 .cmp-facts { margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: calc(1.5 * var(--u)); }
-.cmp-fact { margin: 0; display: flex; }
-.cmp-fact dt { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.cmp-fact dd {
-  margin: 0; flex: 1 1 auto; display: flex; flex-direction: column; justify-content: flex-start; gap: var(--u);
+.cmp-fact {
+  margin: 0; display: flex; flex-direction: column; justify-content: flex-start; gap: var(--u);
   padding: calc(1.5 * var(--u)) calc(2 * var(--u)); font: 500 1rem/1.3 var(--font-name); color: var(--text-body);
   background: var(--obj-sunk); border: .12rem solid var(--track-line); border-radius: var(--r-in);
 }
 .cmp-fg { display: flex; align-items: center; gap: .5rem; color: var(--text); }
 .cmp-fg svg { flex: none; width: 1.7rem; height: 1.7rem; }
-.cmp-card > .kicker { margin: var(--u) 0 calc(-1 * var(--u)); }
-/* the commands it can run on fill the card in equal columns, so the choice reads as one set across the width */
-.cmp-heads { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: var(--u); }
-.cmp-heads > .cmp-hd { width: 100%; }
-/* the rest, under one kicker per state they are in, dimmed, on the same columns */
-.cmp-off { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); }
-.cmp-offgroup { display: flex; flex-direction: column; gap: var(--u); }
+/* WHERE IT RUNS: the commands that can carry it fill the card in equal columns, so the choice reads as one set across the
+   width; the rest stand under one kicker per reason, side by side, each group as wide as its widest name needs, so no
+   name wraps to make room for a reason and the way out of a missing command stands in its own group */
+.cmp-runs { display: flex; flex-direction: column; gap: calc(2 * var(--u)); }
+.cmp-runs > .kicker { margin: 0; }
+.cmp-heads, .cmp-card .cmp-offrow { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: var(--u); }
+.cmp-heads > .cmp-hd, .cmp-card .cmp-offrow > .cmp-hd { width: 100%; min-width: 0; }
+.cmp-card .cmp-hd > span:not(.cmp-blot) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmp-off { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: calc(2 * var(--u)) calc(3 * var(--u)); align-items: start; }
+.cmp-offgroup { display: flex; flex-direction: column; gap: var(--u); min-width: 0; }
 .cmp-offgroup > .kicker { margin: 0; }
-.cmp-card .cmp-offrow { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: var(--u); }
-.cmp-card .cmp-offrow > .cmp-hd { width: 100%; }
-.cmp-card .cmp-go { display: flex; gap: .6rem; align-items: center; margin-top: var(--u); }
+.cmp-card .cmp-offrow { grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); }
+.cmp-card .cmp-offrow > .cmp-hd:disabled { border-style: dashed; }
+.cmp-card .cmp-go { display: flex; gap: .6rem; align-items: center; justify-content: flex-end; }
 
 /* a command: its colour's blot and its name */
 .cmp-hd {
@@ -232,8 +233,8 @@ body.locked .cmp-dim, body:has(.scrim) .cmp-dim { display: none; }
    one provider's colour made the pick read as that provider's own mark, where every other selection on the console is
    the neutral face, ink and line. The foot's chip keeps its tint: it names what runs, it does not choose. */
 .cmp-hd[aria-checked="true"] { color: var(--sel-ink); background: var(--sel-face); border-color: var(--sel-line); }
-.cmp-install { display: flex; align-items: center; gap: var(--u); }
-.cmp-install code { font: 500 1rem/1.2 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .1rem solid var(--track-line); border-radius: .3rem; padding: .3rem .6rem; }
+.cmp-install { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u); }
+.cmp-install code { min-width: 0; overflow-wrap: anywhere; font: 500 1rem/1.2 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .1rem solid var(--track-line); border-radius: .3rem; padding: .3rem .6rem; }
 .cmp-hd:disabled { cursor: default; opacity: .55; }
 .cmp-blot { flex: none; width: .62rem; height: .62rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); }
 
@@ -314,10 +315,9 @@ body.locked .cmp-dim, body:has(.scrim) .cmp-dim { display: none; }
 /* a message from another session: the sender in NEUTRAL ink and a door to that session, where the label was drawn in
    the key light, which marks the one place to act and not who spoke (the colour pass, Oct 26) */
 .cmp-m.peer { padding-left: .8rem; border-left: .2rem solid var(--track-line); }
-.cmp-from { display: flex; align-items: baseline; gap: .5rem; margin-bottom: .3rem; font: 600 1rem/1.2 var(--font-name); color: var(--text); }
-.cmp-from .cmp-who { display: inline-flex; align-items: center; gap: .25rem; color: var(--text); text-decoration: none; }
-.cmp-from a.cmp-who:hover { text-decoration: underline; }
-.cmp-from .cmp-who svg { width: .7rem; height: .7rem; color: var(--text-mute); }
+.cmp-from { display: flex; align-items: center; gap: .6rem; margin-bottom: .5rem; font: 600 1rem/1.2 var(--font-name); color: var(--text); }
+.cmp-from .cmp-sender { font-size: .88rem; padding: .22rem .5rem; }
+.cmp-from a.cmp-sender:hover { border-color: var(--track-line); }
 .cmp-from .cmp-via { font: 400 .88rem/1.2 var(--font-data); color: var(--text-mute); }
 .cmp-m > :first-child, .cmp-m .cmp-md > :first-child { margin-top: 0; }
 .cmp-m > :last-child, .cmp-m .cmp-md > :last-child { margin-bottom: 0; }
@@ -391,11 +391,14 @@ body.locked .cmp-dim, body:has(.scrim) .cmp-dim { display: none; }
 .cmp-mk.live i { width: .5rem; height: .5rem; border-radius: 50%; background: var(--live); animation: cmp-breathe 2.8s ease-in-out infinite; display: block; }
 .cmp-to { flex: none; max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* the burst's counts: one glyph tile per kind, and the failed count in the limit red */
-.cmp-tiles { display: inline-flex; align-items: center; flex-wrap: wrap; gap: .3rem .8rem; min-width: 0; }
-.cmp-t { display: inline-flex; align-items: center; gap: .35rem; white-space: nowrap; }
-.cmp-t svg, .cmp-mk svg { flex: none; width: .95rem; height: .95rem; }
-.cmp-t b { font-variant-numeric: tabular-nums; }
-.cmp-t.bad, .cmp-t.bad b, .cmp-t.bad svg { color: var(--limit); }
+.cmp-tiles { display: inline-flex; align-items: center; flex-wrap: wrap; gap: .3rem 1rem; min-width: 0; }
+/* a tile of the kit (DRAW.statTile) at the size of a row: the glyph in its disc, the count over its word */
+.cmp-tiles .pd-stat { gap: .5rem; white-space: nowrap; }
+.cmp-tiles .pd-stat > svg:not(.pd-ring) { width: 1.7rem; height: 1.7rem; padding: .34rem; }
+.cmp-tiles .pd-stat > span { gap: .1rem; }
+.cmp-tiles .pd-stat b { font-size: .92rem; }
+.cmp-tiles .pd-stat small { font-size: .74rem; }
+.cmp-mk svg { flex: none; width: .95rem; height: .95rem; }
 .cmp-who { display: inline-flex; align-items: center; flex-wrap: wrap; gap: .3rem; min-width: 0; }
 .cmp-who .cmp-more { font: 500 .8rem/1.2 var(--font-data); color: var(--text-mute); }
 /* THE DETAIL OPENS IN PLACE OVER 240 ms (Oct 26), where it used to appear at its full height in one frame and shove the
@@ -416,7 +419,7 @@ body.locked .cmp-dim, body:has(.scrim) .cmp-dim { display: none; }
 
 /* the manager asks: its question, what it wants it for, the command, and its choices (Sessions' needs-you card) */
 .cmp-ask {
-  flex: none; display: flex; flex-direction: column; gap: calc(1.2 * var(--u)); padding: calc(1.5 * var(--u)) var(--pad) calc(1.6 * var(--u));
+  flex: none; display: flex; flex-direction: column; gap: calc(1.2 * var(--u)); padding: calc(1.5 * var(--u)) var(--pad);
   border-top: .12rem solid var(--track-line); background: var(--obj-high);
 }
 .cmp-ask[hidden] { display: none; }
@@ -430,9 +433,10 @@ body.locked .cmp-dim, body:has(.scrim) .cmp-dim { display: none; }
 .cmp-ask .cmp-why { font: 400 .88rem/1.4 var(--font-name); color: var(--text-mute); padding-left: 1.05rem; }
 /* ONE CHOICE PER ROW, ON A NUMBERED RAIL (Oct 27): each choice its own row with its number in a socket at its left, in
    the order the screen numbers them, so three choices never wrap two to a row and one under */
-.cmp-ask .cmp-choices { display: flex; flex-direction: column; align-items: flex-start; gap: var(--u); }
+/* the choices are one column of one width, the widest answer's, so their numbers and their words line up */
+.cmp-ask .cmp-choices { display: grid; grid-template-columns: minmax(0, max-content); justify-content: start; max-width: 100%; gap: var(--u); }
 .cmp-ask .cmp-choices.shook { animation: shake 300ms var(--e-out) 1; }
-.cmp .cmp-ask .cmp-choice { display: inline-flex; align-items: center; gap: .6rem; max-width: 100%; text-align: left; line-height: 1.25; }
+.cmp .cmp-ask .cmp-choice { display: flex; align-items: center; gap: .6rem; max-width: 100%; text-align: left; line-height: 1.25; }
 .cmp-ask .cmp-n {
   flex: none; width: 1.45rem; height: 1.45rem; display: grid; place-items: center; border-radius: 50%;
   font: 600 .8rem/1 var(--font-data); background: color-mix(in oklab, currentColor 12%, transparent); box-shadow: inset 0 0 0 .1rem currentColor;
@@ -484,7 +488,7 @@ body.locked .cmp-dim, body:has(.scrim) .cmp-dim { display: none; }
 /* the foot of the sheet: the command it runs on, what it answers with, Stop, and the way to its full view, one row on
    the small act's height */
 .cmp-foot {
-  flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: .45rem .6rem; min-height: 2.9rem; padding: var(--u) var(--pad);
+  flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: .45rem .6rem; padding: calc(1.5 * var(--u)) var(--pad);
   border-top: .12rem solid var(--track-line);
 }
 .cmp-foot .cmp-menuwrap > .cmp-hd { min-height: 1.9rem; padding: .2rem .6rem .2rem .5rem; }
@@ -566,18 +570,7 @@ body.locked .cmp-dim, body:has(.scrim) .cmp-dim { display: none; }
   .cmp .cmp-send[aria-busy="true"]::after, .cmp-ch[aria-busy="true"]::after { animation: none; transition: none; }
 }
 
-/* A PLACE IS A FILE CHIP (Oct 28): a path the manager wrote on a line of its own, and the file a call touched, as the file's
-   name in full ink with the folder it is in beside it, muted, so the line is found by its name and the folder is there when
-   it is needed. It was the whole path in one run of mono. */
-.cmp-file {
-  display: inline-flex; align-items: center; flex-wrap: wrap; gap: .1rem .5rem; max-width: 100%; padding: .3rem .65rem;
-  font: 500 .95rem/1.3 var(--font-name); color: var(--text); background: var(--obj-sunk);
-  border: .1rem solid var(--track-line); border-radius: var(--r-in); overflow-wrap: anywhere;
-}
-.cmp-file svg { flex: none; width: 1rem; height: 1rem; color: var(--text-mute); }
-.cmp-file b { font-weight: 600; font-family: var(--font-data); }
-.cmp-file span { font: 400 .88rem/1.3 var(--font-data); color: var(--text-mute); }
-/* what a call was sent, under its words: a command in the code face, a place as its chip */
+/* what a call was sent, under its words: a command in the code face, a place as the kit's file chip (DRAW.file) */
 .cmp-dropin > pre.cmp-raw { margin: .35rem 0 0; border-left: .2rem solid var(--track-line); color: var(--text); }
 .cmp-dropin > .cmp-rawpath { margin: .35rem 0 0; }
 /* a row that arrives eases in, as everything else that lands on the console does */
@@ -593,3 +586,6 @@ body.locked .cmp-dim, body:has(.scrim) .cmp-dim { display: none; }
   animation: spin 800ms linear infinite;
 }
 @media (prefers-reduced-motion: reduce) { .cmp-log > .rise, .cmp-older[aria-busy="true"]::after { animation: none; } }
+/* THE BAR'S STATE CHANGES EASE (Oct 28): live, not answering, waiting and the words they bring rise in over --t-snap where they
+   were swapped in one frame (composer.js drawPill marks the pill .shift on a change of state) */
+.cmp-pill.shift > :is(.cmp-said, .cmp-field, .cmp-door, .cmp-send, .cmp-wait) { animation: cmp-rise var(--t-snap) var(--e-out) 1; }

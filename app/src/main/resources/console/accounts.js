@@ -132,9 +132,11 @@ async function readAll({ asks = true } = {}) {
   askSessions();
   const [st, ac, ks, bg, md, hd, au] = await Promise.all(["/api/status", "/api/accounts", "/api/keys", "/api/budgets", "/api/models", "/api/heads", "/api/auth"].map((p) => API.get(p)));
   // each login's name by every label its pool knows it by on a head (its pool label and its selector, "native:claude"
-  // for Claude Code's own sign-in), so a session's last switch reads in Accounts' names and never as an id
+  // for Claude Code's own sign-in), so a session's last switch reads in Accounts' names and never as an id; a name a person
+  // gave is kept here, and every login with a card takes the card's own title below (the console's name rule)
   for (const r of ac.body?.accounts || []) for (const h of r.heads || []) {
-    for (const l of [r.account_labels?.[h], r.label, r.selector_key]) if (l) LOGIN_NAME.set(`${h}|${l}`, r.display_name || r.label || l);
+    const own = DRAW.ownName(r.display_name);
+    for (const l of [r.account_labels?.[h], r.label, r.selector_key]) if (l && own) LOGIN_NAME.set(`${h}|${l}`, own);
   }
   if (version !== loadVersion) return newestRead;
   if (revision !== accountRevision || ui.orderSaving || ui.removing) return;
@@ -148,7 +150,7 @@ async function readAll({ asks = true } = {}) {
     askAgainSoon();
     return;
   }
-  unheard = null; readOnce = true;
+  unheard = null;
   const ec = economics || { ok: true, body: { heads: (st.body?.registry || []).map((h) => ({ key: h.key, read_pending: true })) } };
   const budgets = new Map((bg.body?.budgets || []).map((b) => [b.head, b]));
   DAY_RESETS_AT = bg.body?.day_resets_at_epoch_ms ?? null;
@@ -264,31 +266,8 @@ async function readAll({ asks = true } = {}) {
     if (p.kind === "plan") {
       for (const row of ac.body.accounts || []) {
         if (!(row.heads || []).some((x) => heads.has(x))) continue;
-        const windows = [windowOf(row.five_hour_used_percent, row.five_hour_reset_epoch_seconds, row.five_hour_window_seconds, "short", row.five_hour_current),
-          windowOf(row.seven_day_used_percent, row.seven_day_reset_epoch_seconds, row.seven_day_window_seconds, "long", row.seven_day_current)].filter(Boolean);
-        // a login held at its limit carries the limit's own sentence as its refusal, and it is held, not signed out
-        const out = !row.token_renews && (!row.credential_present || row.auth_exclusion_reason === "credential_missing" || (!!row.refusal && !windows.some(atLimit)));
-        // Claude Code's own login place that holds no account is no account (Marlin, Oct 10): signed out, no proved
-        // account, no reading. Its Sign in only adds an account, as Add account does, and the place still read Signed out
-        // after it (claude-splice's "Account", Oct 27). One that was signed in and expired keeps its account, and shows.
-        if (row.login_place && out && !row.identity_verified && !row.observed_at_epoch_seconds) continue;
-        const models = (row.seven_day_models || []).map((m) => ({ name: m.model,
-          ...windowOf(m.used_percent, m.resets_at, LEN.Week * 60, "long", modelCurrent(row.seven_day_current, m)) }));
-        // a session names its login by the label the pool gave it on its head; a login answers to that, its selector or its
-        // own label, and a single login with none is the primary
-        const namesOn = (head) => { const n = [row.account_labels?.[head], row.selector_key, row.label].filter(Boolean); return n.length ? n : ["primary"]; };
-        const sessionsOn = () => (liveSessions ? liveSessions.filter((x) => (row.heads || []).includes(x.head) && namesOn(x.head).includes(x.account)) : null);
-        p.accounts.push({ id: acctId(row), row, name: row.display_name, email: row.email || null, plan: plainPlan(row.plan), windows, sessions: sessionsOn(), sessionsOn, namesOn,
-          // one observation time behind every bar, so the read line shows as soon as ANY bar drawn here is stale
-          staleAt: [...windows, ...models].some((w) => w.stale) && row.observed_at_epoch_seconds ? row.observed_at_epoch_seconds * 1000 : null,
-          // an expired token its own command renews on its next run is not a sign-out: the card keeps its readings
-          renews: !!row.token_renews,
-          out,
-          canRename: !!row.can_rename, canRemove: !!row.can_remove, native: !!row.carrying_request,
-          // the provider answered with no usage for this account: no bars, never an older reading drawn as today's
-          noUsage: !windows.length && !!row.no_usage_at_epoch_seconds,
-          // each model's own weekly window, drawn under the week (Claude's Opus and Sonnet)
-          models });
+        const login = planAccount(row);
+        if (login) p.accounts.push(login);
       }
     } else if (p.kind === "key") {
       for (const k of keyRows) {
@@ -330,6 +309,14 @@ async function readAll({ asks = true } = {}) {
   // An earlier reading must not undo a removal or order that is still being saved.
   if (revision !== accountRevision || ui.orderSaving || ui.removing) return;
   data = [...provs.values()];
+  // read means the board's data is held: a draw that the day's figures or the sessions start while the orders are still
+  // being read keeps the ghosts, never an empty board offering Add provider
+  readOnce = true;
+  // a move names a login as its card is titled, never by its address
+  for (const p of data) if (p.kind === "plan") for (const a of p.accounts) {
+    const named = shownName(p, a);
+    for (const h of a.row?.heads || []) for (const l of a.namesOn(h)) LOGIN_NAME.set(`${h}|${l}`, named);
+  }
   // the board's one scale for the hours: the busiest hour any command had today, its opening hour included
   const days = data.flatMap((p) => p.cmds).filter((c) => !c.local);
   HOUR_MAX = Math.max(1, ...days.flatMap((c) => (c.allUnread ? [] : [...(c.hours || []).filter((h) => !h.unread).map((h) => h.all), c.opening?.turns || 0])));
@@ -343,6 +330,36 @@ async function readAll({ asks = true } = {}) {
   }
 }
 
+// A plan login as the page holds it, from one row of /api/accounts: the board reads it, and a first visit's ghosts size and
+// order their cards from the same function, so both cut a wide rail at the same card. Null for no login at all.
+function planAccount(row) {
+  const windows = [windowOf(row.five_hour_used_percent, row.five_hour_reset_epoch_seconds, row.five_hour_window_seconds, "short", row.five_hour_current),
+    windowOf(row.seven_day_used_percent, row.seven_day_reset_epoch_seconds, row.seven_day_window_seconds, "long", row.seven_day_current)].filter(Boolean);
+  // a login held at its limit carries the limit's own sentence as its refusal, and it is held, not signed out
+  const out = !row.token_renews && (!row.credential_present || row.auth_exclusion_reason === "credential_missing" || (!!row.refusal && !windows.some(atLimit)));
+  // Claude Code's own login place that holds no account is no account (Marlin, Oct 10): signed out, no proved
+  // account, no reading. Its Sign in only adds an account, as Add account does, and the place still read Signed out
+  // after it. One that was signed in and expired keeps its account, and shows.
+  if (row.login_place && out && !row.identity_verified && !row.observed_at_epoch_seconds) return null;
+  const models = (row.seven_day_models || []).map((m) => ({ name: m.model,
+    ...windowOf(m.used_percent, m.resets_at, LEN.Week * 60, "long", modelCurrent(row.seven_day_current, m)) }));
+  // a session names its login by the label the pool gave it on its head; a login answers to that, its selector or its
+  // own label, and a single login with none is the primary
+  const namesOn = (head) => { const n = [row.account_labels?.[head], row.selector_key, row.label].filter(Boolean); return n.length ? n : ["primary"]; };
+  const sessionsOn = () => (liveSessions ? liveSessions.filter((x) => (row.heads || []).includes(x.head) && namesOn(x.head).includes(x.account)) : null);
+  return { id: acctId(row), row, name: row.display_name, email: row.email || null, plan: plainPlan(row.plan), windows, sessions: sessionsOn(), sessionsOn, namesOn,
+    // one observation time behind every bar, so the read line shows as soon as ANY bar drawn here is stale
+    staleAt: [...windows, ...models].some((w) => w.stale) && row.observed_at_epoch_seconds ? row.observed_at_epoch_seconds * 1000 : null,
+    // an expired token its own command renews on its next run is not a sign-out: the card keeps its readings
+    renews: !!row.token_renews,
+    out,
+    canRename: !!row.can_rename, canRemove: !!row.can_remove, native: !!row.carrying_request,
+    // the provider answered with no usage for this account: no bars, never an older reading drawn as today's
+    noUsage: !windows.length && !!row.no_usage_at_epoch_seconds,
+    // each model's own weekly window, drawn under the week (Claude's Opus and Sonnet)
+    models };
+}
+
 let data = [];
 // SPLICE NOT ANSWERING: since when, while the board it last drew stays (readAll). Null while it answers. readOnce is a
 // board read this visit, so a splice that never answered draws the ghost board and never an empty one offering Add.
@@ -350,6 +367,9 @@ let unheard = null, readOnce = false, againTimer = null;
 // it asks again on its own every 5 s until splice answers, so he never has to keep pressing
 function askAgainSoon() {
   clearTimeout(againTimer);
+  // the head's ring fills over these 5 s, and starts over with each ask
+  const ring = document.querySelector("#unheard .asking");
+  if (ring) { ring.classList.remove("go"); void ring.getBoundingClientRect(); ring.classList.add("go"); }
   againTimer = setTimeout(async () => { await load(); render({ flip: true }); }, 5000);
 }
 const FRESH_UI = () => ({ lane: {}, signin: {}, editor: null, addProv: null, menu: null, armed: null, removeErr: null, rename: null, renameErr: null, renameDraft: null, replace: null, pulse: null, naming: null,
@@ -357,7 +377,8 @@ const FRESH_UI = () => ({ lane: {}, signin: {}, editor: null, addProv: null, men
 // why: the Day rows whose Not read reason is open; reasons: the refusals whose reason splice gave is open under their
 // word; doors: the logins whose every session door is out; enter: the one form or menu just opened, which rises into
 // place once and never again on a later redraw; shook: the refusal just drawn, which shakes once and then stands still
-const ui = { probing: false, grow: null, why: new Set(), reasons: new Set(), doors: new Set(), enter: null, shook: null, ...FRESH_UI() };
+// moves: the moves whose reason and sessions are open under their line
+const ui = { probing: false, checking: null, stillDown: null, grow: null, why: new Set(), reasons: new Set(), doors: new Set(), moves: new Set(), enter: null, shook: null, ...FRESH_UI() };
 const board = document.getElementById("board");
 let drag = null;
 // ---------- time: what a person reads ----------
@@ -455,9 +476,6 @@ const GLYPH = {
   pin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M9 3.5h6l-1.2 6 3.7 3.5h-11l3.7-3.5z"/><path d="M12 13v7.5"/></svg>',
   more: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
   wait: '<svg class="wait" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="15"/></svg>',
-  // a move onto this login, and one off it (movesHtml)
-  into: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4v7a4 4 0 0 0 4 4h10"/><path d="M15 11l4 4-4 4"/></svg>',
-  away: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13"/><path d="M13 7l5 5-5 5"/></svg>',
   // an expired token its command renews on its next run, on that command's chip
   renew: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.5v4h-4"/></svg>',
 };
@@ -483,7 +501,10 @@ const bar = (v, cls = "") => DRAW.meter(v, cls);
 // "Ended" and that time (Marlin's Accounts walk, Oct 12: "Reset" over an empty bar misread), with no ring: there is nothing left to fill, and "Week 93% used" beside an empty
 // cell read as a live week at 93% when it was the ended week's figure (fin's word, Oct 10). A window that reported no
 // reset at all keeps the empty cell, because there the page genuinely knows nothing to say.
-const resets = (w) => (w.left != null ? `<span class="when">${ring(w)}Resets ${at(w.resetMs)}</span>`
+// what the ring's arc is, said under the pointer: how long the window has left
+const leftWord = (m) => (m < 60 ? `${Math.max(1, m)} min` : m < 2880 ? `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`
+  : `${Math.floor(m / 1440)} days${Math.floor((m % 1440) / 60) ? ` ${Math.floor((m % 1440) / 60)} h` : ""}`);
+const resets = (w) => (w.left != null ? `<span class="when" data-tip="${leftWord(w.left)} left">${ring(w)}Resets ${at(w.resetMs)}</span>`
   : w.rolledMs != null ? `<span class="when rolled">Ended ${at(w.rolledMs)}</span>` : "<span></span>");
 // A window whose reset went by is closed, and Claude opens the next only on the next request, so it can stay closed for
 // hours. Its row keeps its shape: the dashed track a window with no reading since its reset draws (console.css .bar.gone,
@@ -497,7 +518,7 @@ const closed = (w, sub = false) => `${bar(null, `gone${sub ? " sub" : ""}`)}<spa
 function refills(day) {
   const at0 = new Date(day.resetMs);
   const midnightHere = at0.getHours() === 0 && at0.getMinutes() === 0;
-  return `<span class="when">${ring(day)}Resets ${midnightHere ? "midnight" : at(day.resetMs)}</span>`;
+  return `<span class="when" data-tip="${leftWord(Math.max(1, day.left))} left">${ring(day)}Resets ${midnightHere ? "midnight" : at(day.resetMs)}</span>`;
 }
 
 // A WINDOW'S LABEL IS THE DOOR TO WHAT USED IT (Oct 27): the 5 hours and the Week open Usage on that window, filtered to
@@ -509,7 +530,7 @@ const USAGE_WIN = { "5 hours": "5h", Week: "7d" };
 const usageDoor = (a, c) => (c ? (label) => (USAGE_WIN[label] ? `usage.html?win=${USAGE_WIN[label]}&account=${encodeURIComponent(`${c.head}|${a.row?.ref ?? labelOn(a, c.head)}`)}` : null) : null);
 // the login a line names, as a door to its card on this board with the socket it has on the rail (a move, the Next row)
 const loginDoor = (name, id, sock) => (id ? `<button class="mlogin" type="button" data-act="goto" data-a="${esc(id)}" title="Show ${esc(name)}'s card">`
-  + `${sock ? `<span class="msock" aria-hidden="true">${sock}</span>` : ""}<b>${esc(name)}</b></button>` : `<b>${esc(name)}</b>`);
+  + `${sock ? `<span class="msock" aria-hidden="true">${sock}</span>` : ""}<b class="nname">${esc(name)}</b></button>` : `<b class="nname">${esc(name)}</b>`);
 function windowsHtml(a, next = null, left = null, door = null, nextSock = 0) {
   // a held login says so on its own line under the header, where a narrow card wraps it instead of cutting its name
   let rows = held(a) ? `<span class="heldline">${heldUntil(a)}</span>` : "";
@@ -571,8 +592,11 @@ function meterHtml(c, pick = null) {
   const opens = !c.local && !reading && !c.unread && c.turns > 0 && DAY_FROM != null;
   const label = opens ? `<a class="label door" href="${requestsAt(c, { from: DAY_FROM })}" aria-label="Today's ${esc(c.cmd)} requests">Day${DRAW.go}</a>`
     : `<span class="label">Day</span>`;
-  return `<div class="meter day${spend ? " spend" : ""}" data-meter="${esc(c.cmd)}"${reading ? ' aria-busy="true"' : ""}>`
-    + `${tag}${label}<div class="dayline">${words}${act}</div>${spend}${hoursHtml(c)}${fill && !editing ? "" : refills(day)}</div>`;
+  // a day with no request has nothing to draw hour by hour: its strip is one row, its chip, "No requests" and when the day
+  // resets, and it grows into the hours the moment a request lands
+  const idle = !!c.hours && !c.local && !reading && !c.unread && !c.budget && !c.turns && !c.opening;
+  return `<div class="meter day${spend ? " spend" : ""}${idle ? " idle" : ""}" data-meter="${esc(c.cmd)}"${reading ? ' aria-busy="true"' : ""}>`
+    + `${tag}${label}<div class="dayline">${words}${act}</div>${spend}${idle ? "" : hoursHtml(c)}${fill && !editing ? "" : refills(day)}</div>`;
 }
 // a door to one command's requests on Requests, every project, over a stretch of today (requests.js applyAddress)
 const requestsAt = (c, { from, to = null, outcome = null }) => `requests.html?${new URLSearchParams({ project: "", cmd: c.cmd, from: String(from),
@@ -590,7 +614,7 @@ const noPrice = (c, lead = false) => `${leadNum(c.unpriced, lead)} ${c.unpriced 
 // to exactly those requests; that they cost nothing (marlin p229, Oct 12: a count alone left him unsure) is said on
 // the door, which is where he asks it.
 const failedDoor = (c, n) => (DAY_FROM == null ? `<span class="failed-n">${n0(n)} failed</span>`
-  : `<a class="failed-n" href="${requestsAt(c, { from: DAY_FROM, outcome: "fail" })}" title="${n === 1 ? "It reported" : "They reported"} no usage, so nothing was charged">${n0(n)} failed</a>`);
+  : `<a class="failed-n" href="${requestsAt(c, { from: DAY_FROM, outcome: "fail" })}">${n0(n)} failed</a>`);
 // the swatch that ties a phrase to its colour in the hours drawn under it: no price muted, failed in the limit red
 const sw = (k) => `<i class="sw ${k}" aria-hidden="true"></i>`;
 // what the figure leaves out, each phrase with its swatch where the hours are drawn
@@ -603,11 +627,13 @@ const ownLine = (parts) => (parts.length ? `<span class="unpriced own">${parts.m
 // the day itself, so only a reason the drawing cannot show opens here. Where no day on the board was read, the page
 // head says so once (dayState) and each strip keeps only the dash where its figure goes.
 function notRead(c) {
-  if (DAY_UNREAD) return DRAW.dash;
-  if (!c.unreadWhy) return `<em class="nr-day">${DAY_NOT_READ}</em>`;
+  // the figure is the dash; the reason splice kept for it, this command's own or the one every day on the board shares,
+  // opens from the dash
+  const why = c.unreadWhy || DAY_UNREAD?.why || "";
+  if (!why) return `<span class="nr-day">${DRAW.unread.fig}</span>`;
   const open = ui.why.has(c.cmd);
-  return DRAW.disc({ open, act: "why", data: ` data-c="${esc(c.cmd)}"`, inner: `<em class="nr-day">${DAY_NOT_READ}</em>` })
-    + (open ? `<span class="state why${ui.enter === "why" ? " unfold" : ""}">${esc(c.unreadWhy)}</span>` : "");
+  return DRAW.disc({ open, act: "why", data: ` data-c="${esc(c.cmd)}" aria-label="Not read, why"`, inner: `<span class="nr-day">${DRAW.unread.fig}</span>` })
+    + (open ? `<span class="state why${ui.enter === "why" ? " unfold" : ""}">${esc(why)}</span>` : "");
 }
 // a day at or past its budget: its figure in the limit red, as its bar's overage is
 const pastCap = (c) => !!c.budget && c.spent != null && c.spent >= c.budget.cap;
@@ -652,7 +678,7 @@ function splitWords(c, s, keyed) {
   if (s.plan) parts.push(many(s.plan, "on your plan"));
   if (s.keyUnpriced) parts.push(`${keyed ? sw("np") : ""}${many(s.keyUnpriced, "with no price")}`);
   if (c.failed) parts.push(`${keyed ? sw("fl") : ""}${failedDoor(c, c.failed)}`);
-  if (s.old) parts.push(many(s.old, "not split into plan and key"));
+  if (s.old) parts.push(many(s.old, "earlier, unsorted"));
   return lead || parts.length ? line(lead) : `<span class="money"><em>No requests</em></span>`;
 }
 // What the budget's meter fills with: today's spend against the cap, the spend's ghost while splice still reads it, or
@@ -668,11 +694,15 @@ function capFill(c, split) {
 // cap is the mark across the track, what stayed under it fills in the provider's colour and what went over in the limit
 // red, and the percent is never held at 100 (a Warn budget lets the day run on past it). [capUsd] is the cap drawn: the
 // budget's own, or the amount typed in its editor.
-function capHtml(c, f, capUsd = c.budget.cap) {
+// [fixed] is the editor's track: it runs from nothing to the largest of $100, the cap and the spend, so a preset moves the cap's
+// line along it, the presets stand on it as ticks, and the line names the amount it marks
+const PRESETS = [5, 10, 25, 50, 100];
+function capHtml(c, f, capUsd = c.budget.cap, fixed = false) {
   if (f.pending) return `<div class="capbox">${GHOST.track()}</div><span class="pct">${GHOST.fig(4.2)}</span>`;
-  const usd = f.usd || 0, scale = Math.max(capUsd, usd), at = (v) => +((v / scale) * 100).toFixed(2);
+  const usd = f.usd || 0, scale = fixed ? Math.max(PRESETS.at(-1), capUsd, usd) : Math.max(capUsd, usd), at = (v) => +((v / scale) * 100).toFixed(2);
   const fill = usd > capUsd ? `<b class="past" data-v="${at(usd)}"></b><b data-v="${at(capUsd)}"></b>` : `<b data-v="${at(usd)}"></b>`;
-  return `<div class="capbox"><div class="bar spend">${fill}</div><i class="capline" style="left:calc(${at(capUsd)}% - .08rem)"></i></div>`
+  const marks = fixed ? `${PRESETS.filter((v) => v <= scale).map((v) => `<i class="tick" style="left:${at(v)}%"></i>`).join("")}<span class="capnum" style="left:${at(capUsd)}%">${cap(capUsd)}</span>` : "";
+  return `<div class="capbox${fixed ? " scaled" : ""}"><div class="bar spend">${fill}</div>${marks}<i class="capline" style="left:calc(${at(capUsd)}% - .08rem)"></i></div>`
     + `<span class="pct${usd >= capUsd ? " limit" : ""}">${Math.round((usd / capUsd) * 100)}%<span class="used">used</span></span>`;
 }
 // what a budget on this command would cap today: the key's money, which a plan never adds to; null where nothing is
@@ -740,24 +770,35 @@ function hoursHtml(c) {
 // The budget editor, between today's figure and its hours: the amount, five presets, Warn or Block, the cap drawn against
 // today's spend as he types it, and the acts. A save splice refused says so beside the acts with its reason one press
 // away, and the editor shakes once.
+// Two fixed rows, so the editor never wraps its parts onto a third line: the amount, its presets and Warn or Block; then
+// the cap on today's spend with the acts at the row's end.
 function editorHtml(c) {
   const ed = ui.editor, spend = cappable(c);
-  const presets = [5, 10, 25, 50, 100].map((v) => `<button data-act="preset" data-v="${v}" aria-pressed="${ed.cap === v}">$${v}</button>`).join("");
-  const preview = spend == null ? "" : `<span class="edpreview" aria-hidden="true">${capHtml(c, { usd: spend }, ed.cap)}</span>`;
-  return `<div class="editor${ed.err && ui.shook === "editor" ? " failed" : ""}${ui.enter === "editor" ? " enter" : ""}"><span class="money-in">$<input class="field" id="cap-in" inputmode="decimal" value="${ed.cap}" aria-label="Budget cap"></span>`
+  const presets = PRESETS.map((v) => `<button data-act="preset" data-v="${v}" aria-pressed="${ed.cap === v}">$${v}</button>`).join("");
+  const preview = `<span class="edpreview" aria-hidden="true">${spend == null ? "" : capHtml(c, { usd: spend }, ed.cap, true)}</span>`;
+  return `<div class="editor${ed.err && ui.shook === "editor" ? " failed" : ""}${ui.enter === "editor" ? " enter" : ""}"><div class="edrow"><span class="money-in">$<input class="field" id="cap-in" inputmode="decimal" value="${ed.cap}" aria-label="Budget cap"></span>`
     + `<span class="presets">${presets}</span>`
-    + `<span class="mode"><button data-act="bmode" data-v="warn" aria-pressed="${!ed.block}">${GLYPH.bell}Warn</button><button data-act="bmode" data-v="block" aria-pressed="${ed.block}">${GLYPH.stop}Block</button></span>`
-    + `${preview}<span class="edacts"><button class="act primary" data-act="save-budget" data-c="${esc(c.cmd)}">Set budget</button>`
+    + `<span class="mode"><button data-act="bmode" data-v="warn" aria-pressed="${!ed.block}">${GLYPH.bell}Warn</button><button data-act="bmode" data-v="block" aria-pressed="${ed.block}">${GLYPH.stop}Block</button></span></div>`
+    + `<div class="edrow">${preview}<span class="edacts"><button class="act primary" data-act="save-budget" data-c="${esc(c.cmd)}">Set budget</button>`
     + `${c.budget ? `<button class="act quiet" data-act="remove-budget" data-c="${esc(c.cmd)}">Remove budget</button>` : ""}<button class="act quiet" data-act="cancel-budget">Cancel</button>`
-    + `${ed.err ? refusalHtml(ed.err, "editor") : ""}</span>${ed.err ? reasonHtml(ed.err, "editor") : ""}</div>`;
+    + `${ed.err ? refusalHtml(ed.err, "editor") : ""}</span></div>${ed.err ? reasonHtml(ed.err, "editor") : ""}</div>`;
 }
 // the editor's drawing of its cap against today's spend, redrawn in place as he types, so the field keeps its focus
 function previewCap(field) {
   const box = field.closest(".editor")?.querySelector(".edpreview"), { c } = findCmd(ui.editor?.c);
   const spend = c && cappable(c);
   if (!box || spend == null || !(ui.editor.cap > 0)) return;
-  box.innerHTML = capHtml(c, { usd: spend }, ui.editor.cap);
+  // the cap's line and its amount travel from where they stood to where the new cap puts them
+  const before = ["capline", "capnum"].map((k) => box.querySelector(`.${k}`)?.style.left);
+  box.innerHTML = capHtml(c, { usd: spend }, ui.editor.cap, true);
   DRAW.paint(box);
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  ["capline", "capnum"].forEach((k, i) => {
+    const el = box.querySelector(`.${k}`), to = el?.style.left;
+    if (!el || !before[i] || before[i] === to) return;
+    el.style.transition = "none"; el.style.left = before[i]; void el.offsetWidth;
+    el.style.transition = "left var(--t-snap) var(--e-out)"; el.style.left = to;
+  });
 }
 
 // ---------- sign-in: one element wherever an account signs in, with the step its provider really asks for ----------
@@ -892,7 +933,8 @@ function slotHtml(p, c, a, serves) {
     const cmd = p.cmds.find((x) => (a.row?.heads || []).includes(x.head))?.cmd;
     return `<span class="state mute">Token expired</span>${cmd ? `<span class="chip renew" title="Renews when ${esc(cmd)} next runs">${GLYPH.renew}${esc(cmd)}</span>` : ""}`;
   }
-  if (p.kind === "key" && !a.has) return `<span class="state">No key</span>`;
+  // a key that is missing leaves its commands without one: each is a chip here, with no live dot, so the card says which
+  if (p.kind === "key" && !a.has) return `<span class="state">No key</span>${p.cmds.filter((x) => (a.heads || []).includes(x.head)).map((x) => `<span class="chip">${esc(x.cmd)}</span>`).join("")}`;
   if (held(a)) return `${err}${pin}${locked(false, "")}`;
   if (p.kind === "plan" && c) {
     // armed, Use now waits in the row under the card's head, beside the sessions it would cut (armRow)
@@ -925,7 +967,7 @@ function menuItems(p, a) {
 function menuHtml(p, a, spot) {
   const armed = ui.armed === spot, refused = ui.removeErr && ui.removeErr.spot === spot, key = `remove:${spot}`;
   const on = a.sessions?.length || 0; // sessions on it sign in again or move to another login once it is gone
-  return `<div class="menu${refused && ui.shook === key ? " failed" : ""}${ui.enter === "menu" ? " enter" : ""}" role="menu">${menuItems(p, a).map(([act, label]) => {
+  return `<div class="menu${refused && ui.shook === key ? " failed" : ""}" role="menu">${menuItems(p, a).map(([act, label]) => {
     const text = act === "remove" && armed ? `Remove ${p.kind === "key" ? "API key" : a.name}${on ? ` · ${on === 1 ? "1 session uses it" : `${on} sessions use it`}` : ""}` : label;
     return `<button role="menuitem" class="${act === "remove" ? `danger${armed ? " armed" : ""}` : ""}" data-act="${act}" data-p="${p.id}" data-a="${a.id}" data-s="${spot}"${act === "remove" && ui.removing === spot ? " disabled" : ""}>${act === "remove" && ui.removing === spot ? "Removing…" : esc(text)}</button>`;
   }).join("")}${refused ? `<div class="menu-state">${refusalHtml(ui.removeErr, key)}${reasonHtml(ui.removeErr, key)}</div>` : ""}</div>`;
@@ -946,7 +988,9 @@ function nameHtml(p, a, spot) {
   const err = ui.renameErr;
   // one visible way to finish and one to leave, as the key field's Save and Cancel: both walkers had to guess Enter
   // (p153, p154). A refusal reads under it (cardHtml).
-  return `<input class="field rename${ui.enter === "rename" ? " enter" : ""}" data-a="${a.id}" data-s="${spot}" value="${esc(ui.renameDraft ?? a.name)}" placeholder="${esc(a.name)}" aria-label="Name" spellcheck="false"${err ? ' aria-invalid="true" aria-describedby="rename-err"' : ""}>`
+  // the field never opens holding an address, which no name may hold: it opens on the name he gave, or empty with the
+  // name splice shows now as its placeholder
+  return `<input class="field rename${ui.enter === "rename" ? " enter" : ""}" data-a="${a.id}" data-s="${spot}" value="${esc(ui.renameDraft ?? (/\S@\S/.test(a.name ?? "") ? "" : a.name))}" placeholder="${esc(shownName(p, a))}" aria-label="Name" spellcheck="false"${err ? ' aria-invalid="true" aria-describedby="rename-err"' : ""}>`
     + `<button class="act primary small" data-act="finish-rename">Save</button><button class="act quiet small" data-act="cancel-rename">Cancel</button>`;
 }
 // c is the command whose order the rail shows on a plan provider, and null for a key or this computer. Each account shows
@@ -955,7 +999,7 @@ function nameHtml(p, a, spot) {
 const SESS_SHOWN = 4;
 const LOGIN_NAME = new Map();
 // a login by the name Accounts gives it; one splice never listed keeps a plain word, never its selector or an id
-const loginOf = (head, label) => LOGIN_NAME.get(`${head}|${label}`) ?? (String(label ?? "").startsWith("native:") ? "Claude Code's own sign-in" : label);
+const loginOf = (head, label) => LOGIN_NAME.get(`${head}|${label}`) ?? (String(label ?? "").startsWith("native:") ? "Claude Code's own sign-in" : "Another login");
 const at24 = (ms) => backWord(new Date(ms));
 // a session's own last switch and splice's reason, and whether it is pinned to this login alone (spec section 11); its
 // pane on Sessions carries Use and Unpin for it
@@ -968,11 +1012,11 @@ function sessWhy(x) {
 // HOW MANY DOORS EACH LOGIN HAD, kept from the last answer and the last visit, so while /api/sessions is read (4 s and
 // more on his machine) each card stands at the size it will land at, its doors drawn as their ghosts
 const DOORS_SEEN = new Map();
-function sessionsHtml(p, a) {
+function sessionsHtml(p, a, sock, live) {
   if (a.sessions === null) return ghostDoors(Math.min(SESS_SHOWN, DOORS_SEEN.get(a.id) ?? 0));
   const on = a.sessions || [];
   DOORS_SEEN.set(a.id, on.length);
-  const marks = movesHtml(p, a);
+  const marks = movesHtml(p, a, sock, live);
   if (!on.length) return marks;
   // each name carries the lamp Sessions gives a running session (kit.js look), so it reads as an agent on this login now
   const lamp = (x) => (/^(working|busy)$/.test(x.status) ? `<span class="lamp working" aria-hidden="true">${ICON.trace}</span>` : `<span class="lamp idle" aria-hidden="true"><i></i></span>`);
@@ -1001,7 +1045,7 @@ function startedAt(x) {
 // commands moved off one login read as two moves and he can tell which command went where. The command's last move
 // (spec 11h, AccountPoolJson last_switch) and each session's own (account_switch) read alike, merged when they say the
 // same move; a session move names how many when not every door on the card moved.
-function movesHtml(p, a) {
+function movesHtml(p, a, sock = 0, live = false) {
   if (p.kind !== "plan" || !a.namesOn) return "";
   const many = p.cmds.length > 1, cmdOf = (head) => (many ? p.cmds.find((c) => c.head === head)?.cmd ?? null : null);
   const heads = a.row?.heads || [], mine = (head, label) => heads.includes(head) && a.namesOn(head).includes(label);
@@ -1019,7 +1063,7 @@ function movesHtml(p, a) {
     if (!m) continue;
     const cmd = cmdOf(c.head);
     if (mine(c.head, m.to)) add(into, `${cmd}|${loginOf(c.head, m.from)}|${m.reason}`, { cmd, other: login(c.head, m.from), why: movedWhy(m.reason) }, null, m.at_epoch_millis);
-    else if (mine(c.head, m.from)) add(away, `${cmd}|${loginOf(c.head, m.to)}`, { cmd, other: login(c.head, m.to) }, null, m.at_epoch_millis);
+    else if (mine(c.head, m.from)) add(away, `${cmd}|${loginOf(c.head, m.to)}`, { cmd, other: login(c.head, m.to), why: movedWhy(m.reason) }, null, m.at_epoch_millis);
   }
   for (const x of a.sessions || []) {
     const sw = x.account_switch, cmd = cmdOf(x.head);
@@ -1027,25 +1071,44 @@ function movesHtml(p, a) {
   }
   for (const x of liveSessions || []) {
     const sw = x.account_switch, cmd = cmdOf(x.head);
-    if (sw?.from && mine(x.head, sw.from) && !mine(x.head, x.account)) add(away, `${cmd}|${loginOf(x.head, x.account)}`, { cmd, other: login(x.head, x.account) }, x, sw.at_epoch_millis);
+    if (sw?.from && mine(x.head, sw.from) && !mine(x.head, x.account)) add(away, `${cmd}|${loginOf(x.head, x.account)}`, { cmd, other: login(x.head, x.account), why: movedWhy(sw.reason) }, x, sw.at_epoch_millis);
   }
-  // why and when stand in columns of their own, so a card's moves read down as a small table: the reasons start on one
-  // line and the times end on the card's edge, where its resets end
-  const tail = (g) => `<span class="mwhy">${g.why ? esc(g.why) : ""}</span><span class="mat">${g.at ? at24(g.at) : ""}</span>`;
-  const chip = (g) => (g.cmd ? `<span class="chip" data-key="move:${esc(g.cmd)}">${esc(g.cmd)}</span>` : "");
-  const other = ({ name, id, sock }, word) => `<span class="mother">${word} ${loginDoor(name, id, sock)}</span>`;
+  // A MOVE IS DRAWN AS THE SOCKETS IT RAN BETWEEN: the login the traffic left and the one it came to, each as the number it
+  // has on the rail, the arrow between them, the command's chip where the provider serves two or more, how many sessions it
+  // carried as a lamp and a count, and its time at the card's edge. A login this board holds no card for is an empty
+  // socket. The other login is a door to its card. Why it moved, and the sessions by name, open under the line.
+  const here = { id: a.id, sock, name: shownName(p, a), on: live };
+  const socket = (x, door) => (x.id && door
+    ? `<button class="mlogin" type="button" data-act="goto" data-a="${esc(x.id)}" aria-label="Show ${esc(x.name)}, login ${x.sock}"><span class="msock">${x.sock}</span></button>`
+    : x.sock ? `<span class="msock${x.on ? " on" : ""}" role="img" aria-label="${esc(x.name)}, login ${x.sock}">${x.sock}</span>`
+      : `<span class="msock none" role="img" aria-label="${esc(x.name)}"></span>`);
   // the sessions a move carried, the first two by name as doors to them on Sessions and the rest counted; the command's
-  // own move, which carried no one session, reads from or to the login alone
+  // own move, which carried no one session, names none
   const who = (g) => {
     if (!g.who.length) return "";
     const named = g.who.slice(0, 2).map((x) => `<a class="mdoor" href="sessions.html#${encodeURIComponent(x.session_id)}">${esc(sessNameOf(x))}</a>`).join(", ");
     return `${named}${g.who.length > 2 ? ` +${n0(g.who.length - 2)}` : ""}`;
   };
-  const line = (g, glyph, word) => `<p class="moveline">${glyph}<span class="mwho">${chip(g)}${who(g)}</span>`
-    + `${other(g.other, g.who.length ? word : word[0].toUpperCase() + word.slice(1))}${tail(g)}</p>`;
-  const lines = [...[...into.values()].map((g) => line(g, GLYPH.into, "from")), ...[...away.values()].map((g) => line(g, GLYPH.away, "to"))];
-  return lines.length ? `<div class="moves">${lines.join("")}</div>` : "";
+  const line = (g, dir) => {
+    const key = `move:${a.id}|${dir}|${g.cmd ?? ""}|${g.other.id ?? g.other.name}|${g.why ?? ""}`;
+    const said = [!g.other.id ? `${dir === "from" ? "From" : "To"} ${esc(g.other.name)}` : "", g.why ? esc(g.why) : "", who(g)].filter(Boolean).join(" · ");
+    const open = !!said && ui.moves.has(key), time = g.at ? at24(g.at) : "";
+    const from = dir === "from" ? g.other : here, to = dir === "from" ? here : g.other;
+    const when = `<span class="mat">${time}</span>`;
+    const end = said ? DRAW.disc({ open, act: "move-why", inner: when, data: ` data-k="${esc(key)}" aria-label="Why it moved${time ? `, ${time}` : ""}"` }) : when;
+    return `<div class="moveline${movesPrimed && !MOVES_SEEN.has(key) ? " fresh" : ""}" data-key="${esc(key)}"><span class="mpath">${socket(from, from !== here)}${MOVE_ARROW}${socket(to, to !== here)}</span>`
+      + `${g.cmd ? `<span class="chip">${esc(g.cmd)}</span>` : ""}${g.who.length ? `<span class="mcarry" title="${n0(g.who.length)} ${g.who.length === 1 ? "session" : "sessions"} moved"><span class="lamp idle" aria-hidden="true"><i></i></span><b>${n0(g.who.length)}</b></span>` : ""}${end}</div>`
+      + (open ? `<p class="mwhy${ui.enter === `move:${key}` ? " unfold" : ""}">${said}</p>` : "");
+  };
+  const lines = [...[...into.values()].map((g) => line(g, "from")), ...[...away.values()].map((g) => line(g, "to"))];
+  return lines.length ? `<div class="moves"><span class="mkick">Moved</span>${lines.join("")}</div>` : "";
 }
+// the arrow a move draws between its two sockets
+const MOVE_ARROW = '<svg class="marrow" viewBox="0 0 30 12" aria-hidden="true"><path d="M1 6h26M22 1.6 27.6 6 22 10.4"/></svg>';
+// the moves already drawn, so one that arrives while the page is open pops in once and the rest stand still; primed once a
+// board with every login's sessions has been drawn, so the moves a visit opens on are never new
+const MOVES_SEEN = new Set();
+let movesPrimed = false;
 // how many rows a card's windows draw, so a login being read for the first time stands at the height it will land at
 const WINDOW_GHOST = () => `${GHOST.bar(3.4)}${GHOST.track()}<span class="pct">${GHOST.fig(4.2)}</span><span class="when">${GHOST.ring()}${GHOST.bar(6.2)}</span>`;
 function cardHtml(p, c, a, i, serves) {
@@ -1064,7 +1127,7 @@ function cardHtml(p, c, a, i, serves) {
   const nameIt = a.row?.label_default && a.row?.can_rename && ui.rename !== spot
     ? `<button class="act quiet small name-it" data-act="rename" data-s="${spot}">Name it</button>` : "";
   // the address the provider proved for this login, under its name; a login named by its email already shows it
-  const mail = a.email && ui.rename !== spot && a.name !== a.email && !String(a.name ?? "").startsWith(`${a.email} (`)
+  const mail = a.email && shownName(p, a) !== a.email
     ? `<span class="email" title="${esc(a.email)}">${esc(a.email)}</span>` : "";
   const more = menuItems(p, a).length
     ? `<button class="icon more" data-act="menu" data-p="${p.id}" data-a="${a.id}" data-s="${spot}" aria-label="More" aria-haspopup="menu" aria-expanded="${ui.menu === spot}">${GLYPH.more}</button>` : "";
@@ -1106,7 +1169,11 @@ function cardHtml(p, c, a, i, serves) {
     body = windowsHtml(a, next, first ? c.lastLeft : null, usageDoor(a, c), next ? ordered(p, c).indexOf(next) + 1 : 0) + signRow;
   } else {
     // the model it serves, and the door to its command on Models, where its log and its model are
-    body = `<div class="local-model"><span class="mname">${esc(a.model)}</span><a class="door" href="models.html?cmd=${encodeURIComponent(a.id)}">Models${DRAW.go}</a></div>`;
+    // a server that does not answer offers the act that asks it again, on its own card, beside the door to its command
+    const checking = ui.checking === a.id;
+    const still = a.down && ui.stillDown === a.id && !checking ? `<span class="again-err${ui.shook === `recheck:${a.id}` ? " failed" : ""}">${DRAW.result("Still not answering", "bad")}</span>` : "";
+    const again = a.down ? DRAW.act({ word: checking ? "Checking" : "Check again", act: "recheck", cls: "quiet small", busy: checking, disabled: checking, data: ` data-a="${esc(a.id)}"` }) : "";
+    body = `<div class="local-model"><span class="mname">${esc(a.model)}</span><span class="lacts">${still}${again}<a class="act quiet small door" href="models.html?cmd=${encodeURIComponent(a.id)}">Models${DRAW.go}</a></span></div>`;
   }
   // a key read from the environment or a file says so on its name line, as a plan login's tier does; one in splice's
   // store is the plain case and carries no tag
@@ -1118,7 +1185,7 @@ function cardHtml(p, c, a, i, serves) {
     + `${nameHtml(p, a, spot)}${nameIt}${sub}${src}<div class="slot${slotErr && ui.shook === slotKey(a, c) ? " failed" : ""}">${slotHtml(p, c, a, serves)}</div>${more}</div>`
     + `${slotErr ? reasonHtml(slotErr, slotKey(a, c), "onslot") : ""}${armRow(p, c, a)}`
     + `${mail}${renameErr ? `<div class="rename-err${ui.shook === "rename" ? " failed" : ""}" id="rename-err">${refusalHtml(renameErr, "rename")}${reasonHtml(renameErr, "rename")}</div>` : ""}`
-    + `${ui.menu === spot ? menuHtml(p, a, spot) : ""}${body}${sessionsHtml(p, a)}</article>`;
+    + `${ui.menu === spot ? menuHtml(p, a, spot) : ""}${body}${sessionsHtml(p, a, i + 1, !!live)}</article>`;
 }
 const KEY_FROM = { environment: "Environment", file: "File" };
 const asErr = (e) => (typeof e === "string" ? { word: e, why: "" } : e);
@@ -1245,29 +1312,35 @@ function addProviderHtml() {
 // The placement holds until the width or the set of providers changes, so opening an editor never throws a provider
 // into the next column.
 let layout = null;
-// HOW TALL EACH PART STANDS, in rem, from the rules that draw it (console.css .card, .windows, .onlogin, .rail, .provider,
-// .meter; accounts.css .moveline): a card from the rows, doors and lines its own drawing carries, so the board packs on
-// what it will show (a serving login with its Next row, doors and moves stands twice as tall as a signed-out one); a
-// provider from its head, its days and its rail. Doors wrap at the width a card has in a column of the board.
-const REM = { card: 4.65, email: 1.4, row: 2.05, doors: 2.55, doorLine: 2.2, move: 2.05, outbox: 3.3, line: 1.9, gap: 1, add: 3.35,
-  head: 3.7, strip: 10.66, prov: 2.4, addProv: 4.6 };
-function cardRem(html, inner) {
-  const n = (re) => (html.match(re) || []).length;
-  // a row per window, model and Next row, and one for a held line, a not-read line or a read-at line
-  const rows = n(/class="pct[" ]/g) + n(/class="next[" ]/g) + n(/class="(?:heldline|unproved|stale-at)"/g);
-  // a door is its lamp and its name; a door still being read (its ghost) counts as a name of middling length
-  const doors = [...html.matchAll(/<a class="sdoor"[^>]*>([\s\S]*?)<\/a>/g)].reduce((w, m) => w + 2.6 + .46 * m[1].replace(/<[^>]+>/g, "").length,
-    n(/class="morepill/g) * 2.6 + n(/class="sdoor gdoor"/g) * 9);
-  return REM.card + n(/class="email"/g) * REM.email + rows * REM.row + (doors ? REM.doors + (Math.ceil(doors / inner) - 1) * REM.doorLine : 0)
-    + n(/class="moveline"/g) * REM.move + n(/class="outbox/g) * REM.outbox + n(/class="(?:keysrc|local-model)"/g) * REM.line;
+// HOW TALL EACH PART STANDS, in rem, from the rules that draw it (console.css .card, .windows, .rail, .provider, .meter): a
+// login's card from its own reading alone (its rows, its held line, its address, its Next row), a provider from its head, its
+// days and its rail. WHAT THE SESSIONS ANSWER LATER IS NEVER COUNTED (which doors and which moves a card holds): they arrive
+// seconds after the board, so a packing that counted them cut a wide rail at one card before they landed and at the next
+// after, and cards hopped columns as the page settled. Everything counted here is known from /api/accounts and /api/status,
+// which the ghosts of a first visit read too, so the ghosts and the landed board cut at the same card. `serving` is the one
+// allowance made for what is not known yet: the login that serves carries the sessions it serves, so its card stands taller
+// than a held one by the hairline over its Next row and its row of doors. It is the same number before the sessions answer
+// and after, so it moves nothing, and it keeps the first run of a wide rail from standing a card taller than the second.
+const REM = { card: 4.65, email: 1.4, row: 2.05, outbox: 3.3, line: 1.9, gap: 1, add: 3.35, head: 3.7, strip: 10.66, prov: 2.4, addProv: 4.6, serving: 6.6 };
+// a plan login's height; [next] is the serving login, which carries the Next row
+function loginRem(a, next) {
+  const top = REM.card + (a.email ? REM.email : 0);
+  if (a.out) return top + REM.outbox;
+  if (a.noUsage) return top + REM.line;
+  if (!a.windows.length) return top + 3 * REM.row; // not read: its line and the provider's windows drawn empty
+  const rows = a.windows.length + (a.windows.some((w) => w.label === "Week") ? a.models.length : 0) + (held(a) ? 1 : 0) + (a.staleAt != null ? 1 : 0) + (next ? 1 : 0);
+  return top + rows * REM.row + (next ? REM.serving : 0);
 }
-// the width a card has inside a column of n, in rem: the column, less the rail's inset and the card's own padding
-const innerRem = (n) => Math.max(16, (board.clientWidth / parseFloat(getComputedStyle(document.documentElement).fontSize) - (n - 1) * 2) / n - 5.25);
 const runRem = (hs) => hs.reduce((t, h) => t + h, 0) + Math.max(0, hs.length - 1) * REM.gap;
-// a provider's cards as heights, Add account last on a plan's rail
-const railRems = (p, inner) => (p.kind === "plan" ? railCards(p, laneOf(p)).map((h, i, all) => (i === all.length - 1 ? REM.add : cardRem(h, inner)))
-  : p.accounts.map((a) => cardRem(cardHtml(p, null, a, 0, []), inner)));
+// a provider's cards as heights, Add account last on a plan's rail; a key and a model on this computer are one line each
+const railRems = (p) => {
+  if (p.kind !== "plan") return p.accounts.map(() => REM.card + REM.line);
+  const rail = ordered(p, laneOf(p));
+  return [...rail.map((a, i) => loginRem(a, i === 0 && rail.length > 1)), REM.add];
+};
 const stripsOf = (p) => (p.kind === "local" ? p.cmds.filter((c) => c.budget).length : p.cmds.length);
+// a provider as the packing weighs it: the board and a first visit's ghosts hand it the same shape
+const packItem = (p) => ({ id: p.id, plan: p.kind === "plan", strips: stripsOf(p), hs: railRems(p) });
 // THE CUTS THAT SPLIT A WIDE RAIL into k runs in its order, each two cards or more, the tallest run as short as it can be.
 // Split by count, a rail of cards of different heights stood one column 600 px longer than the next at 3822 (Oct 27): the
 // serving login with its doors and moves at the top of the first, a signed-out one at the foot of the second.
@@ -1306,7 +1379,7 @@ function colCount() { return DRAW.colsFit(board, 40); }
 // cards' rows have grown or shrunk since; a provider or a card added or gone packs the board again, and the providers
 // slide to their new columns (render).
 const PACK_KEY = "splice-accounts-packing";
-const PACK_RULE = 3; // a packing kept from an older rule packs again
+const PACK_RULE = 5; // a packing or a ghost shape kept from an older rule packs again
 function keptPacking(n, ids) {
   let kept = null;
   try { kept = JSON.parse(localStorage.getItem(PACK_KEY) || "null"); } catch { kept = null; }
@@ -1316,19 +1389,14 @@ function columns() {
   const n = colCount();
   // laid out again when the width, the providers or a plan provider's count of cards changes, never for an open editor
   const ids = data.map((p) => p.id).join() + "|" + data.map((p) => (p.kind === "plan" ? laneAccts(p, laneOf(p)).length : 0)).join();
-  // a packing made before the sessions were read counts no doors or moves on the cards, so it holds only until they land,
-  // then the board packs once more and keeps that one (a first visit cut Claude's rail at 3 where 4 was even)
-  const rough = data.some((p) => p.accounts.some((a) => a.sessions === null));
-  if (!layout || layout.n !== n || layout.ids !== ids || (layout.rough && !rough)) {
-    layout = keptPacking(n, ids) || { ...packed(n, ids), rough };
-    if (!layout.rough) try { localStorage.setItem(PACK_KEY, JSON.stringify(layout)); } catch { /* a full store packs again next visit */ }
+  // the packing weighs nothing the sessions answer, so it is the same before they land and after
+  if (!layout || layout.n !== n || layout.ids !== ids) {
+    layout = keptPacking(n, ids) || packed(n, ids);
+    try { localStorage.setItem(PACK_KEY, JSON.stringify(layout)); } catch { /* a full store packs again next visit */ }
   }
   return layout;
 }
-function packed(n, ids) {
-  const inner = innerRem(n);
-  return { rule: PACK_RULE, n, ids, ...packShape(data.map((p) => ({ id: p.id, plan: p.kind === "plan", strips: stripsOf(p), hs: railRems(p, inner) })), n) };
-}
+const packed = (n, ids) => ({ rule: PACK_RULE, n, ids, ...packShape(data.map(packItem), n) });
 // The packing rule on providers given as heights ({ id, plan, strips, hs: each card's rem, Add account last on a plan's
 // rail}), shared by the board and by a first visit's ghosts, so the ghosts stand where the board will land
 function packShape(items, n) {
@@ -1373,13 +1441,13 @@ function shapeOf(L) {
       const over = (el?.querySelector(":scope > .email") ? 1 : 0) + (el?.querySelector(".windows > .heldline") ? 1 : 0);
       return [rows, Math.min(SESS_SHOWN, doors(a)), remOf(el), over, el?.querySelectorAll(":scope > .moves > .moveline").length || 0];
     };
-    return { k: p.kind, d: [...(sec?.querySelectorAll(".meter.day") || [])].map(remOf), a: (p.kind === "plan" ? ordered(p, laneOf(p)) : p.accounts).map(card) };
+    return { id: p.id, k: p.kind, d: [...(sec?.querySelectorAll(".meter.day") || [])].map(remOf), a: (p.kind === "plan" ? ordered(p, laneOf(p)) : p.accounts).map(card) };
   };
-  return { n: L.n, wide: L.wide ? { k: L.wide.k, cuts: L.wide.cuts, p: prov(findProv(L.wide.id)) } : null, cols: L.cols.map((ids) => ids.map((id) => prov(findProv(id)))),
+  return { rule: PACK_RULE, n: L.n, wide: L.wide ? { k: L.wide.k, cuts: L.wide.cuts, p: prov(findProv(L.wide.id)) } : null, cols: L.cols.map((ids) => ids.map((id) => prov(findProv(id)))),
     doors: Object.fromEntries(data.flatMap((p) => p.accounts).map((a) => [a.id, doors(a)]).filter(([, k]) => k > 0)) };
 }
 // the board at rest: an open form, menu, reason or list of doors is not the shape the next visit lands on
-const atRest = () => !(ui.menu || ui.rename || ui.replace || ui.editor || ui.naming || ui.addProv || ui.moving || Object.keys(ui.signin).length || ui.why.size || ui.doors.size);
+const atRest = () => !(ui.menu || ui.rename || ui.replace || ui.editor || ui.naming || ui.addProv || ui.moving || Object.keys(ui.signin).length || ui.why.size || ui.doors.size || ui.moves.size);
 const tall = (h) => (h ? `;min-height:${h}rem` : "");
 const ghostDoors = (n) => (n ? `<div class="onlogin" aria-hidden="true">${Array.from({ length: n }, (_, j) => `<span class="sdoor gdoor"><i class="ghost lampg"></i>${GHOST.bar(4.2 + (j % 3) * 1.3)}</span>`).join("")}</div>` : "");
 function ghostCard(kind, [rows, doors, h, over = 0, moves = 0], k) {
@@ -1388,22 +1456,28 @@ function ghostCard(kind, [rows, doors, h, over = 0, moves = 0], k) {
     : rows ? `<div class="windows">${lines(Math.max(0, over - 1), 12, "heldline")}${Array.from({ length: rows }, WINDOW_GHOST).join("")}</div>` : `<div class="outbox">${GHOST.bar(5.4, "chip")}</div>`;
   return `<article class="card gcard ghosted" style="--i:${Math.min(k, 3)}${tall(h)}">${kind === "plan" ? `<span class="socket"></span>` : ""}`
     + `<div class="top">${GHOST.bar(7.4, "big")}<span class="slot">${GHOST.bar(6.2, "chip")}</span></div>${over ? lines(1, 9.5, "email") : ""}${body}${ghostDoors(doors)}`
-    + `${moves ? `<div class="moves">${Array.from({ length: moves }, () => `<p class="moveline">${GHOST.bar(15)}</p>`).join("")}</div>` : ""}</article>`;
+    + `${moves ? `<div class="moves"><span class="mkick">${GHOST.bar(3.2)}</span>${Array.from({ length: moves }, () => `<div class="moveline">${GHOST.bar(15)}</div>`).join("")}</div>` : ""}</article>`;
 }
-const ghostStrip = (h) => `<div class="meter day ghosted" style="${tall(h).slice(1)}"><span class="label">Day</span><span class="money">${GHOST.fig(4.6)} ${GHOST.bar(9.5)}</span>`
-  + `<span class="dayrun">${GHOST.track()}</span><span class="when">${GHOST.ring()}${GHOST.bar(6.2)}</span></div>`;
+// a day with no request is one row on the board (meterHtml), so its ghost is one row; the height the strip kept says which it was
+const ghostStrip = (h) => (h && h < 7
+  ? `<div class="meter day ghosted idle" style="${tall(h).slice(1)}"><span class="label">Day</span><span class="money">${GHOST.bar(9.5)}</span><span class="when">${GHOST.ring()}${GHOST.bar(6.2)}</span></div>`
+  : `<div class="meter day ghosted" style="${tall(h).slice(1)}"><span class="label">Day</span><span class="money">${GHOST.fig(4.6)} ${GHOST.bar(9.5)}</span>`
+    + `<span class="dayrun">${GHOST.track()}</span><span class="when">${GHOST.ring()}${GHOST.bar(6.2)}</span></div>`);
 function ghostProvider(g, span = 1, cuts = null) {
   // a shape kept before the heights were (a count of strips) still draws, at the plain height
   const strips = (Array.isArray(g.d) ? g.d : Array.from({ length: g.d || 0 }, () => 0)).map((h) => ghostStrip(h)).join(""), cards = (g.a || []).map((x, k) => ghostCard(g.k, x, k));
   const head = `<header><h2><span class="blot"></span>${GHOST.bar(6.4, "big")}</h2></header>`;
-  if (g.k !== "plan") return `<section class="provider ghostp">${head}${strips}<div class="rail plain">${cards.join("")}</div></section>`;
+  // a ghost provider carries the key its landed provider will, so the board that lands over it slides each provider from
+  // where its ghost stood to where it settles (render) and nothing is moved in one frame
+  const key = g.id ? ` data-key="prov:${esc(g.id)}"` : "";
+  if (g.k !== "plan") return `<section class="provider ghostp"${key}>${head}${strips}<div class="rail plain">${cards.join("")}</div></section>`;
   cards.push(`<div class="add ghosted" style="--i:3"><span class="socket"></span>${GHOST.bar(7)}</div>`); // Add account
   // a wide rail's ghosts are cut where its cards were
   const rail = span > 1 ? `<div class="rails" style="--span:${span}">${runs(cards, cuts, span).map((x) => `<div class="rail">${x.join("")}</div>`).join("")}</div>`
     : `<div class="rail">${cards.join("")}</div>`;
   // its days spread over the width as the board's do (providerHtml), so each ghost strip stands as wide as its day
   const across = Math.max(1, Math.min(span, Array.isArray(g.d) ? g.d.length : g.d || 0));
-  return `<section class="provider ghostp${span > 1 ? ` wide" style="--span:${span}` : ""}">${head}${span > 1 ? `<div class="meters" style="--span:${across}">${strips}</div>` : strips}${rail}</section>`;
+  return `<section class="provider ghostp${span > 1 ? ` wide" style="--span:${span}` : ""}"${key}>${head}${span > 1 ? `<div class="meters" style="--span:${across}">${strips}</div>` : strips}${rail}</section>`;
 }
 // A FIRST VISIT, or a width the last one never drew, has no kept shape: its ghosts come from splice's own list of commands
 // as soon as that answers (it answers well before the rest), one provider per family with a strip per command. Where the
@@ -1412,30 +1486,38 @@ function ghostProvider(g, span = 1, cuts = null) {
 // (packShape), so the ghosts stand where the board lands; without it, two cards per plan command. Until the list
 // answers, one plain provider per column.
 let registry = null, logins = null, askedRegistry = false;
-function loginGhost(r) {
-  const ws = [r.five_hour_used_percent, r.seven_day_used_percent].filter((v) => v != null);
-  // Claude Code's own login place that holds no account is no card (readAll)
-  if (r.login_place && !r.credential_present && !r.identity_verified && !r.observed_at_epoch_seconds) return null;
-  if (!r.credential_present && !r.token_renews) return [0, 0, 0, 0, 0];
-  const rows = Math.max(1, ws.length + (r.seven_day_models || []).length), over = (r.email && r.email !== r.display_name ? 1 : 0) + (ws.some((v) => v >= 100) ? 1 : 0);
-  return [rows, 0, 0, over, 0];
+// each login of a plan provider as a ghost card, in the order the board draws them, from the same login and the same height
+// rule the board packs on: [rows of windows, doors, its own height, lines over the rows, moves, packing height]
+function ghostRail(p) {
+  const rail = ordered(p, laneOf(p));
+  return rail.map((a, i) => {
+    const next = i === 0 && rail.length > 1;
+    const rows = a.out ? 0 : Math.max(1, a.windows.length + (a.windows.some((w) => w.label === "Week") ? a.models.length : 0) + (next ? 1 : 0));
+    return [rows, 0, 0, (a.email ? 1 : 0) + (held(a) ? 1 : 0), 0, loginRem(a, next)];
+  });
 }
-const ghostRem = (k, [rows, , , over]) => (k === "plan" ? REM.card + over * REM.email + (rows ? rows * REM.row : REM.outbox) : REM.card + REM.line);
 function shapeFromRegistry(n) {
   const provs = new Map();
   for (const h of registry) {
     const id = (FAMILY[h.family] || { id: h.family || h.key }).id;
-    const k = h.family === "local" || h.family === "vast" ? "local" : h.authKind === "api-key" ? "key" : "plan";
-    const p = provs.get(id) || { id, k, cmds: 0, heads: new Set() };
-    p.cmds++; p.heads.add(h.key); provs.set(id, p);
+    const kind = h.family === "local" || h.family === "vast" ? "local" : h.authKind === "api-key" ? "key" : "plan";
+    const p = provs.get(id) || { id, kind, cmds: [], accounts: [] };
+    p.cmds.push({ cmd: h.label || h.key, head: h.key, mode: "soonest", pin: null, budget: null, order: [] });
+    provs.set(id, p);
   }
-  const ps = [...provs.values()].map(({ id, k, cmds, heads }) => {
-    const mine = k === "plan" && logins ? logins.filter((r) => (r.heads || []).some((x) => heads.has(x))).map(loginGhost).filter(Boolean) : null;
-    const a = mine?.length ? mine : Array.from({ length: k === "plan" ? cmds + 1 : cmds }, () => (k === "plan" ? [2, 0, 0, 0, 0] : [0, 0]));
-    return { id, k, d: Array.from({ length: k === "local" ? 0 : cmds }, () => 0), a };
+  const ps = [...provs.values()].map((p) => {
+    const cmds = p.cmds.length, heads = new Set(p.cmds.map((c) => c.head));
+    let a;
+    if (p.kind === "plan" && logins) {
+      for (const row of logins) if ((row.heads || []).some((x) => heads.has(x))) { const login = planAccount(row); if (login) p.accounts.push(login); }
+      for (const c of p.cmds) c.order = p.accounts.filter((x) => (x.row.heads || []).includes(c.head)).map((x) => x.id);
+      a = ghostRail(p);
+    } else if (p.kind === "plan") a = Array.from({ length: cmds + 1 }, () => [2, 0, 0, 0, 0, REM.card + 2 * REM.row]);
+    else a = p.cmds.map(() => [0, 0, 0, 0, 0, REM.card + REM.line]);
+    return { id: p.id, k: p.kind, d: Array.from({ length: p.kind === "local" ? 0 : cmds }, () => 0), a };
   });
   const L = packShape(ps.map((g) => ({ id: g.id, plan: g.k === "plan", strips: g.d.length,
-    hs: [...g.a.map((x) => ghostRem(g.k, x)), ...(g.k === "plan" ? [REM.add] : [])] })), n);
+    hs: [...g.a.map((x) => x[5]), ...(g.k === "plan" ? [REM.add] : [])] })), n);
   const byId = (id) => ps.find((g) => g.id === id);
   return { n, wide: L.wide ? { k: L.wide.k, cuts: L.wide.cuts, p: byId(L.wide.id) } : null, cols: L.cols.map((ids) => ids.map(byId)) };
 }
@@ -1443,7 +1525,7 @@ function ghostBoard() {
   let shape = null;
   try { shape = JSON.parse(localStorage.getItem(SHAPE_KEY) || "null"); } catch { shape = null; }
   const n = colCount();
-  if (!shape || shape.n !== n || !Array.isArray(shape.cols)) {
+  if (!shape || shape.n !== n || shape.rule !== PACK_RULE || !Array.isArray(shape.cols)) {
     shape = registry?.length ? shapeFromRegistry(n) : null;
     if (!registry) {
       // nothing is drawn for the moment the list takes, so the ghosts do not land twice; a list that is slow to come
@@ -1480,16 +1562,17 @@ function headState() {
   const at = unheard ? String(unheard.at) : "";
   if (say.dataset.at !== at) { // once per stretch of silence, so a redraw never plays its arrival again
     say.dataset.at = at; say.hidden = !unheard;
-    say.innerHTML = unheard ? `${ICON.bang}<span>splice not answering</span><span class="since">since <b>${clock(new Date(unheard.at))}</b></span>` : "";
+    say.innerHTML = unheard ? `${ICON.bang}<span>splice not answering</span><span class="since">since <b>${clock(new Date(unheard.at))}</b></span>`
+      + `<svg class="asking go" viewBox="0 0 24 24" aria-hidden="true"><circle class="trk" cx="12" cy="12" r="9" pathLength="100"/><circle class="arc" cx="12" cy="12" r="9" pathLength="100"/></svg>` : "";
   }
   const w = btn.querySelector(".w");
   if (w) w.textContent = unheard ? "Try again" : "Read again";
   // no day on the board read: said here once, beside the act that reads again, with splice's reason; while splice is not
   // answering at all, the line above already says why
-  const day = document.getElementById("dayunread"), why = DAY_UNREAD && !unheard ? DAY_UNREAD.why : null;
-  if (day && day.dataset.why !== String(why)) {
-    day.dataset.why = String(why); day.hidden = why == null;
-    day.innerHTML = why == null ? "" : `${ICON.bang}<span>Day not read</span>${why ? `<span class="since">${esc(why)}</span>` : ""}`;
+  const day = document.getElementById("dayunread"), said = !!DAY_UNREAD && !unheard;
+  if (day && day.dataset.said !== String(said)) {
+    day.dataset.said = String(said); day.hidden = !said;
+    day.innerHTML = said ? `${ICON.bang}<span>Day not read</span>` : "";
   }
 }
 
@@ -1600,6 +1683,10 @@ function render({ flip = false } = {}) {
   ui.grow = null;
   ui.enter = null; // a form or a menu rises in on the draw that opened it, and stands still on every later one
   ui.shook = null; // a refusal shakes on the draw that first said it, and stands still on every later one
+  // a move rises once: the ones drawn by now are known, and only one that arrives while the page is open pops, never the
+  // moves of the first landing (the doors under them are still being asked until the sessions answer)
+  for (const el of board.querySelectorAll(".moveline[data-key]")) MOVES_SEEN.add(el.dataset.key);
+  if (!movesPrimed && data.every((p) => p.accounts.every((a) => a.sessions !== null))) movesPrimed = true;
   watchForRoll(); // whatever is drawn now, the page knows when the soonest of these windows rolls
   if (ui.pulse) { board.querySelectorAll(`.card[data-a="${ui.pulse}"]`).forEach((el) => el.classList.add("pulse-once")); ui.pulse = null; }
   const menu = board.querySelector(".menu"); // a menu that would cross the bottom of the window opens upward
@@ -1986,6 +2073,10 @@ document.addEventListener("click", async (e) => {
     case "reason":
       if (!ui.reasons.delete(t.dataset.k)) { ui.reasons.add(t.dataset.k); ui.enter = `reason:${t.dataset.k}`; }
       render(); break;
+    // why a move happened and which sessions it carried open under its line, and fold back
+    case "move-why":
+      if (!ui.moves.delete(t.dataset.k)) { ui.moves.add(t.dataset.k); ui.enter = `move:${t.dataset.k}`; }
+      render(); break;
     // a move names the other login as a door to its card on this board, which comes into view and pulses once
     case "goto": {
       const el = board.querySelector(`.card[data-a="${CSS.escape(t.dataset.a)}"]`);
@@ -1994,6 +2085,17 @@ document.addEventListener("click", async (e) => {
     }
     case "theme": toggleTheme(); break;
     case "probe": probe(); break;
+    // a server that does not answer is asked again on its own card: the act spins while splice reads the servers again, and
+    // says so once beside itself when the server still does not answer
+    case "recheck": {
+      if (ui.checking || !a) break;
+      ui.checking = a.id; ui.stillDown = null; ui.shook = null; render();
+      await load();
+      ui.checking = null;
+      if (findAcct(a.id)?.down) { ui.stillDown = a.id; ui.shook = `recheck:${a.id}`; }
+      render({ flip: true });
+      break;
+    }
     // Soonest reset is no order of his own (AccountPool.kt:101, :259); My order keeps the order shown, as his.
     case "mode": {
       const order = t.dataset.v === "mine" ? ruled(p, k) : [];
@@ -2075,7 +2177,16 @@ document.addEventListener("click", async (e) => {
       const block = k.budget ? k.budget.block : (await API.get("/api/config")).body?.knobs?.budgetDefaultAction?.value === "block";
       ui.editor = { c: k.cmd, cap: k.budget ? k.budget.cap : 10, block }; ui.enter = "editor"; render(); document.getElementById("cap-in")?.focus(); break;
     }
-    case "preset": ui.editor.cap = Number(t.dataset.v); ui.editor.err = null; render(); break;
+    // a preset sets the amount and moves the cap's line along the track where it stands; a refusal on show is cleared by a redraw
+    case "preset": {
+      const refused = !!ui.editor.err, field = document.getElementById("cap-in");
+      ui.editor.cap = Number(t.dataset.v); ui.editor.err = null;
+      if (refused || !field) { render(); break; }
+      field.value = String(ui.editor.cap);
+      t.parentElement.querySelectorAll('[data-act="preset"]').forEach((b) => b.setAttribute("aria-pressed", String(b === t)));
+      previewCap(field);
+      break;
+    }
     case "bmode": ui.editor.cap = Number(document.getElementById("cap-in").value) || ui.editor.cap; ui.editor.block = t.dataset.v === "block"; ui.editor.err = null; render(); break;
     // splice keeps the whole set of budgets (BudgetRoutes.kt:71): every other command's goes back unchanged. A set splice
     // refused keeps the editor open as he left it, says so beside its acts, and shakes once.

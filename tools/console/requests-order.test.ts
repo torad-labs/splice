@@ -1,9 +1,9 @@
 // Requests orders Newest or Highest price (fin's words, hitstop 20bfada; Marlin took price over tokens). Through the real
 // page against a daemon that keeps each command's highest priced when asked order=price and says so in `order`
 // (splice-builder): the list runs dearest first with unpriced last, no hour marks and a day on each row, a plan row draws
-// its worth at API prices in its cost column, hollow, with the list's key saying once what hollow means, and the footer
-// says the highest priced were kept. A daemon that does not echo the order kept the newest, and the page says Newest over
-// them, never Highest price.
+// its worth at API prices in its cost column, hollow, with the list's key saying once what hollow means, and the held
+// line (a meter and "N highest priced of M requests", its rule under the pointer) says the highest priced were kept. A
+// daemon that does not echo the order kept the newest, and the page says Newest over them, never Highest price.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -63,7 +63,8 @@ async function look(query: string) {
       planCost: await page.locator('article[data-open="alpha:plan"] .co.plan .v').innerText(),
       key: await page.locator(".lkey").innerText(),
       costHead: await page.getByText("Est. cost", { exact: true }).count(),
-      foot: await page.locator(".foot.held").innerText(),
+      foot: (await page.locator(".foot.held").innerText()).replace(/\s+/g, " "),
+      footRule: await page.locator(".foot.held").getAttribute("title"),
     };
   } finally {
     await page.close();
@@ -81,7 +82,8 @@ test("Highest price runs dearest first, unpriced last, with no hour marks, a pla
   expect(seen.planCost).toBe("$0.500"); // no "≈" on the cell: its column's head says the cost is estimated
   expect(seen.costHead).toBeGreaterThan(0);
   expect(seen.key).toContain("On your plan, at API prices");
-  expect(seen.foot).toContain("highest priced of each command");
+  expect(seen.foot).toBe("4 highest priced of 2,400 requests");
+  expect(seen.footRule).toBe("The highest priced 2,000 of each command");
 }, 30_000);
 
 test("Newest keeps time order, its hour marks and one line on a plan row", async () => {

@@ -13,11 +13,14 @@ const COMMAND_KNOBS = Object.values(KNOBS.KNOB).filter((k) => k.cmd).map((k) => 
 const TIERS = ["opus", "sonnet", "haiku", "fable"];
 const tierName = (t) => t[0].toUpperCase() + t.slice(1);
 // A model is named the way its catalog names it ("GPT-6 Sol"); a vendor's id with no catalog name is dressed the same
-// way, never printed raw ("gpt-6-sol"). Digits that follow a digit join with a dot, those after "GPT" with a dash.
-const nameOf = (m) => {
+// way, never printed raw ("gpt-6-sol"). Digits that follow a digit join with a dot, those after "GPT" with a dash. A command
+// of a provider the console names ([dress]) has its lower-case slugs dressed the same way ("muse-spark-1.3-contributor"), where
+// a model a person pulled to this computer keeps the id he knows it by.
+const nameOf = (m, dress = false) => {
   if (m.label && m.label !== m.id) return m.label;
   const id = String(m.id).split("/").pop();
-  if (!/^(gpt|claude|codex|grok|gemini|o\d)/i.test(id)) return m.id; // a local model has no catalog name but its own
+  const slug = dress && /^[a-z][a-z0-9.]*(-[a-z0-9.]+)+$/.test(id);
+  if (!slug && !/^(gpt|claude|codex|grok|gemini|o\d)/i.test(id)) return m.id; // a local model has no catalog name but its own
   const out = [];
   for (const p of id.split("-")) {
     const prev = out[out.length - 1];
@@ -138,19 +141,20 @@ function commandsOf() {
   return data.heads.filter((h) => !ui.gone.has(h.key)).map((h) => {
     const key = h.key, cfg = hs[key] ?? {}, provKey = cfg.provider ?? "", pcfg = ps[provKey] ?? {};
     const row = data.models.find((r) => r.head === key);
+    const family = PROVIDER_FAMILY[provKey] ?? familyByCmd(h.label || cfg.claude?.command || key) ?? provKey;
+    const dress = Boolean(PROVIDER_NAME[family]) && family !== "local" && family !== "vast";
     const models = (row?.models ?? []).filter((m) => m.resolved).map((m) => ({
-      id: m.id, label: nameOf(m), window: window_(m), max: m.max_context_window ?? null, rates: m.rates ?? null, slot: m.slot ?? null,
+      id: m.id, label: nameOf(m, dress), window: window_(m), max: m.max_context_window ?? null, rates: m.rates ?? null, slot: m.slot ?? null,
     }));
     // a declared model that resolved to nothing keeps its row and its tier, with the route's reason, never dropped
     // (web-console.md, GET /api/models): the tier the operator is missing is the one thing this page must show
-    const missing = (row?.models ?? []).filter((m) => !m.resolved).map((m) => ({ id: m.id, label: nameOf(m), slot: m.slot ?? null, reason: m.reason ?? "" }));
+    const missing = (row?.models ?? []).filter((m) => !m.resolved).map((m) => ({ id: m.id, label: nameOf(m, dress), slot: m.slot ?? null, reason: m.reason ?? "" }));
     const slots = {};
     for (const m of [...models, ...missing]) if (m.slot && TIERS.includes(m.slot)) slots[m.slot] = m.id;
     for (const [slot, id] of Object.entries(cfg.model_slots ?? {})) slots[String(slot).toLowerCase()] ??= id;
     const defaults = defaultTiers(models.map((m) => m.id), row?.pinned_model || null);
     const first = TIERS.map((s) => slots[s]).find((id) => models.some((m) => m.id === id)) ?? defaults.opus ?? row?.pinned_model ?? models[0]?.id;
     const shown = models.find((m) => m.id === first);
-    const family = PROVIDER_FAMILY[provKey] ?? familyByCmd(h.label || cfg.claude?.command || key) ?? provKey;
     const lives = data.sessions.filter((s) => s.head === key && (s.status === "working" || s.status === "busy")).length;
     return {
       key, cmd: h.label || cfg.claude?.command || key, provKey, family, mainId: first ?? null, prov: PROVIDER_NAME[family] ?? runtimeName(provKey) ?? provKey,
@@ -327,12 +331,13 @@ function cardHtml(c) {
     ? `<div class="cload" data-meter="card:${esc(c.key)}" title="${esc(`${DRAW.n(ld.flight)} requests in flight${ld.max ? ` of ${DRAW.n(ld.max)} allowed at once` : ""}`)}">`
       + `${ld.max ? DRAW.meter(Math.min(100, (ld.flight / ld.max) * 100), ld.flight >= ld.max ? "full" : "") : ""}`
       + `<span class="cfig"><b data-fig="card:${esc(c.key)}">${DRAW.n(ld.flight)}</b>${ld.max ? ` of ${DRAW.n(ld.max)}` : " in flight"}</span></div>` : "";
-  // a runtime that does not answer names where splice expects it, which is what he has to start
-  const where = c.down && c.url ? `<span class="caddr">${esc(hostPort(c.url))}</span>` : "";
+  // a runtime that does not answer says where splice expects it once, in the open command's header; the rail keeps it on the
+  // model's hover so the list reads as commands and models
+  const where = c.down && c.url ? ` title="${esc(`Expected at ${hostPort(c.url)}`)}"` : "";
   return `<article class="card h ${k.cls}${ui.shook === c.key ? " shook" : ""}${ui.fx?.landed === c.key ? " landed" : ""}" style="--c:${colorOf(c.family)}" data-open="${esc(c.key)}" aria-current="${mine}">`
     + `<span class="lamp ${k.cls}" aria-hidden="true">${k.lamp}</span>`
     + `<div class="top">${DRAW.chip({ text: c.cmd, live: c.running > 0 && !s })}${provSaid(c) ? "" : `<span class="prov">${esc(c.prov)}</span>`}${slot}</div>`
-    + `<div class="meta"><span class="cmodel">${esc(c.model)}</span>${where}`
+    + `<div class="meta"><span class="cmodel"${where}>${esc(c.model)}</span>`
     + `${c.window ? `<span class="cwbar">${winBar(c.window, null, railScale)}</span><b class="cwin">${big(c.window)}</b>` : ""}</div>${load}${fix}${mine ? "" : signHtml(c)}</article>`;
 }
 
@@ -593,6 +598,27 @@ function takeDraft(c) {
   return ui.draft;
 }
 const typedIn = () => Boolean(ui.draft) && JSON.stringify(ui.draft) !== ui.draftBase;
+// HOW TALL A PLATE STANDS, REMEMBERED, in rem: a plate whose data is still being read keeps the height it landed at last, and
+// the first frame's ghost plates take the same heights, so what lands moves no plate to another column. -1 is a plate this
+// command did not draw; a first visit draws the plates a command usually has at the heights they usually stand at.
+const PLATE_TYPICAL = { added: -1, now: 29.5, log: 35.7, models: 26.6, client: 12.2, prices: 32.8, where: 17.1, signin: 14, behaviour: 36, running: 14.8, settings: 18, prompt: 11.7, projects: 10 };
+const plateRem = (id) => GHOST.count(`plate:${id}`, PLATE_TYPICAL[id]);
+const settling = (id, c) => (id === "log" ? !logsOf(c.key) && !ui.logWhy[c.key] : id === "client" ? pending("sessions") : id === "settings" ? pending("knobs") : id === "signin" ? pending("doctor") : false);
+function plateOf(id, html, c) {
+  const wait = settling(id, c), last = plateRem(id), h = wait ? (last > 0 ? last : Math.max(0, PLATE_TYPICAL[id])) : 0;
+  return DRAW.plate(html, "pcol").replace(/^<div /, `<div data-pl="${id}"${wait ? ' data-wait="1"' : ""}${h > 0 ? ` style="min-height:${h}rem"` : ""} `);
+}
+/** What each plate of the open command stands as tall as, once it holds what it will hold, for the next first frame. */
+function rememberPlates() {
+  const pc = root.querySelector(".cmds .pane .pcols");
+  if (!pc) return;
+  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16, seen = new Set();
+  for (const p of pc.querySelectorAll(":scope > [data-pl]")) {
+    seen.add(p.dataset.pl);
+    if (!p.dataset.wait && p.offsetHeight > 0) GHOST.remember(`plate:${p.dataset.pl}`, Math.round((p.offsetHeight / rem) * 10) / 10);
+  }
+  for (const id of PANE_ORDER) if (!seen.has(id)) GHOST.remember(`plate:${id}`, -1);
+}
 function paneHtml() {
   if (ui.add) return addPaneHtml();
   const c = cmdByKey(ui.open);
@@ -601,7 +627,7 @@ function paneHtml() {
   const d = ui.draft, st = draftState(c);
   const n = Math.min(3, Math.max(1, ui.cols || 1));
   // a section with nothing in it draws nothing, so no plate stands empty
-  const plates = PANE_ORDER.map((id) => tagSec(SEC_OF[id] ?? id, SECTION_DRAW[id](c, d, st))).filter((html) => html.trim()).map((html) => DRAW.plate(html, "pcol"));
+  const plates = PANE_ORDER.map((id) => [id, tagSec(SEC_OF[id] ?? id, SECTION_DRAW[id](c, d, st))]).filter(([, html]) => html.trim()).map(([id, html]) => plateOf(id, html, c));
   // every setting, opened from Settings' disclosure, takes the pane's own columns under the sections: forty-odd rows in
   // one column would stand beside two that end far above it
   const every = ui.effOpen && !data.knobsErr && !pending("knobs") ? `<div class="everywrap${ui.fx?.eff ? " unfold" : ""}" id="every-settings">${everySetHtml(c, n)}</div>` : "";
@@ -750,6 +776,8 @@ function modelsSection(c, d, st) {
   const mosts = rows.filter((r) => r.id).map((r) => r.most);
   const oneMost = mosts.length > 1 && mosts[0] != null && mosts.every((v) => v === mosts[0]) && !rows.some((r) => r.facts.now) ? mosts[0] : null;
   const sorted = [...c.models].sort((a, b) => (b.window ?? 0) - (a.window ?? 0) || a.label.localeCompare(b.label));
+  // a column of ceilings nobody reports is not drawn: a dash on every row says nothing the empty track beside it does not
+  const anyMost = rows.some((r) => r.most) || dshown.some((x) => x.max);
   // FOUR TIERS ON ONE MODEL ARE ONE ROW. Where every tier answers with the same model at the same window (a local
   // runtime serving one model, or a command set that way), the tiers read as one row, Every tier, whose picker and
   // window set all four; Set each tier splits it back into four rows, which is how one tier is given another model.
@@ -812,7 +840,7 @@ function modelsSection(c, d, st) {
       !named ? `<span class="said limit">Subagents on it fail</span>` : "",
       wrong ? `<span class="said limit">Not a window</span>` : "",
       merged ? DRAW.act({ word: "Set each tier", act: "splittiers", cls: "quiet small" }) : ""].filter(Boolean).join("");
-    const mostCell = oneMost != null ? "" : most ? `${big(most)}${facts.now ? '<small class="srv">now</small>' : ""}` : id ? DASH : "";
+    const mostCell = oneMost != null ? "" : most ? `${big(most)}${facts.now ? '<small class="srv">now</small>' : ""}` : id && anyMost ? DASH : "";
     return `<div class="tier" role="group" aria-labelledby="tl-${t}"><span class="lbl" id="tl-${t}">${label}</span>`
       + `<div class="ctl menuwrap"><button class="pickbtn${picked || lost ? "" : asDefault ? " dflt-tier" : " empty"}" type="button" data-act="tierpick" data-t="${t}" aria-haspopup="menu" aria-expanded="${open}" style="--c:${colorOf(c.family)}"${named ? ` title="${esc(named.label)}"` : ""}${lost || !named ? ' aria-invalid="true"' : ""}>${face}${ICON.caret}</button>`
       + `${open ? `<div class="menu mpick${ui.fx?.menu ? " unfold" : ""}" role="menu">${items}</div>` : ""}</div>`
@@ -823,11 +851,11 @@ function modelsSection(c, d, st) {
       + `${marks ? `<span class="marks">${marks}</span>` : ""}</div>`;
   };
   const dRows = dshown.map((x) => `<div class="tier other"><span class="lbl oname">${esc(x.name)}</span><span class="pd-n wv">${x.win ? big(x.win) : DASH}</span>`
-    + `<span class="wcell">${winBar(x.win, x.max, scale)}</span><span class="pd-n">${oneMost != null && x.max === oneMost ? "" : x.max ? big(x.max) : DASH}</span></div>`).join("");
+    + `<span class="wcell">${winBar(x.win, x.max, scale)}</span><span class="pd-n">${oneMost != null && x.max === oneMost ? "" : x.max ? big(x.max) : anyMost ? DASH : ""}</span></div>`).join("");
   const drest = declared.length - dshown.length;
   const dmore = drest > 0 || dopen ? DRAW.more(drest, { word: drest === 1 ? "more model" : "more models", act: "more", data: ` data-m="${esc(did)}"`, open: dopen }) : "";
   const heads = `<div class="tier thead"><span></span><span class="chead">Model</span><span></span><span class="chead">Window</span><span></span>`
-    + `<span class="chead">Most it takes${oneMost != null ? ` <b>${big(oneMost)}</b>` : ""}</span></div>`;
+    + `<span class="chead">${anyMost ? `Most it takes${oneMost != null ? ` <b>${big(oneMost)}</b>` : ""}` : ""}</span></div>`;
   // the windows are the provider's, which every command on it shares: the others are named once, under the tiers
   const shared = rows.some((r) => r.picked) ? sharedHtml(c) : "";
   const other = dRows ? `<div class="tier thead osub"><span class="chead">Other models</span></div>${dRows}` : "";
@@ -934,7 +962,14 @@ function whereSection(c, d, st) {
       + `${prest > 0 || popen ? DRAW.more(prest, { word: prest === 1 ? "more port" : "more ports", act: "more", data: ` data-m="${esc(pid)}"`, open: popen }) : ""}`;
   const preview = c.mainId
     ? `<span class="prev"><span class="plbl">Claude Code shows</span><code>${esc(d.prefix)}${esc(c.mainId)}</code></span>` : "";
-  return DRAW.section("Where it goes", '<div class="form">'
+  // the route as it runs, drawn from the fields below as they are typed: Claude Code reaches the command on its port here,
+  // and the command reaches the provider at its address
+  const hostNow = st.url.ok ? hostPort(d.url) : "";
+  const route = '<div class="route"><span class="rnode client">Claude Code</span><span class="rline" aria-hidden="true"></span>'
+    + `<span class="rnode cmdn">${DRAW.chip({ text: c.cmd, data: ` style="--c:${colorOf(c.family)}"` })}<b class="rport">${s.port && String(d.port).trim() ? `:${esc(String(d.port).trim())}` : DASH}</b></span>`
+    + '<span class="rline" aria-hidden="true"></span>'
+    + `<span class="rnode prov"><span class="rpn">${esc(c.prov)}</span><span class="rhost">${hostNow ? esc(hostNow) : DASH}</span></span></div>`;
+  return DRAW.section("Where it goes", route + '<div class="form">'
     + `<span class="lbl">Sends to</span><div class="ctl"><input class="field url${dirt(d.url !== c.url)}" id="h-url" value="${esc(d.url)}" spellcheck="false" autocomplete="off" aria-label="Sends to"${st.url.ok ? "" : ' aria-invalid="true"'}>`
     + `${st.url.ok ? "" : `<span class="said limit">Not an address</span>`}${sharedHtml(c)}</div>`
     + `<span class="lbl">Port on this computer</span><div class="ctl"><input class="field num${dirt(d.port !== was.port)}" id="h-port" value="${esc(d.port)}" inputmode="numeric" spellcheck="false" autocomplete="off" aria-label="Port"${s.port ? "" : ' aria-invalid="true"'}>${bad(s.port, "Not a port")}<span class="ports">${taken}</span></div>`
@@ -963,26 +998,29 @@ function signInSection(c, d, st) {
   const open = ui.pick === "kind";
   const items = kinds.map((x) => `<button role="menuitem" data-act="kind" data-v="${esc(x.kind)}"${x.kind === d.kind ? ' aria-current="true"' : ""}>${kindFace(x.kind)}<span>${esc(kindWords(x.label))}</span></button>`).join("");
   const a = authLook(c);
-  // its state leads the section on the kicker's line, in words, with its lamp
-  const lamp = !a ? "" : a.ghost
-    ? `<span class="raside">${GHOST.state()}</span>`
-    : `<span class="raside"><span class="lamp inline ${a.ok ? "ready" : "stalled"}" aria-hidden="true">${a.ok ? "<i></i>" : ICON.signout}</span><span class="said${a.ok ? "" : " limit"}">${esc(a.word)}</span></span>`;
+  // its state leads the section at the lead figure's size, with its lamp; the limit red only when it cannot sign in
+  const lead = !a ? "" : a.ghost
+    ? `<div class="pd-sub signlead">${GHOST.state()}</div>`
+    : `<div class="pd-sub signlead${a.ok ? "" : " bad"}"><span class="lamp inline ${a.ok ? "ready" : "stalled"}" aria-hidden="true">${a.ok ? "<i></i>" : ICON.signout}</span><b>${esc(a.word)}</b></div>`;
   const env = d.kind === "api-key"
     ? `<span class="lbl">Key variable</span><div class="ctl"><input class="field mono env${dirt(d.env !== was.env)}" id="h-env" value="${esc(d.env)}" placeholder="${esc(`${c.provKey.toUpperCase()}_API_KEY`)}" spellcheck="false" autocomplete="off" aria-label="Key variable"${s.env ? "" : ' aria-invalid="true"'}>${bad(s.env, "Not a variable name")}</div>` : "";
   const rows = d.headers.map((x, i) => `<div class="hdr">${x.fresh ? `<input class="field mono" id="hn-${i}" data-hn="${i}" value="${esc(x.name)}" placeholder="Name" spellcheck="false" autocomplete="off" aria-label="Header name">` : `<span class="hname">${esc(x.name)}</span>`}`
     + `<input class="field mono${dirt(x.fresh || x.value !== MASKED)}" type="password" id="hv-${i}" data-hv="${i}" value="${x.value === MASKED ? "" : esc(x.value)}" placeholder="${x.value === MASKED ? "••••" : "Value"}" autocomplete="off" aria-label="${esc(x.name || "Header")} value">`
     + `<button class="icon" data-act="hdr-rm" data-i="${i}" aria-label="Remove ${esc(x.name || "header")}">${GL.close}</button>${bad(s.header[i], "Needs a name and a value")}</div>`).join("");
   const door = `<a class="pd-count door" href="accounts.html">Accounts${DRAW.go}</a>`;
-  return DRAW.section("Sign-in", '<div class="form">'
+  return DRAW.section("Sign-in", lead + '<div class="form">'
     + `<span class="lbl">Signs in with</span><div class="ctl menuwrap"><button class="pickbtn kindbtn" type="button" data-act="kindpick" aria-haspopup="menu" aria-expanded="${open}"><span class="pf">${kindFace(d.kind)}${esc(kindName(d.kind))}</span>${ICON.caret}</button>`
     + `${open ? `<div class="menu kmenu${ui.fx?.menu ? " unfold" : ""}" role="menu">${items}</div>` : ""}${sharedHtml(c)}</div>`
     + env
     + `<span class="lbl">Headers</span><div class="ctl col">${rows}${DRAW.addTile({ word: "Add header", act: "hdr-add", cls: "row" })}</div>`
-    + `</div>${secSave(c, "signin", st)}`, { aside: lamp + door });
+    + `</div>${secSave(c, "signin", st)}`, { aside: door });
 }
 /** INSTRUCTIONS: the system prompt this command adds to, replaces or strips, from a file or written here. */
 function promptSection(c, d, st) {
-  return DRAW.section("Instructions", '<div class="form">'
+  // what this command does to Claude Code's own system prompt leads the section, at the lead figure's size, as Sign-in's state does
+  const none = d.mode === "append" && !d.file && !String(d.text ?? "").trim();
+  const lead = `<div class="pd-sub signlead"><b>${none ? "Claude Code's own" : { append: "Added", replace: "Replaced", strip: "Stripped" }[d.mode] ?? tierName(d.mode)}</b></div>`;
+  return DRAW.section("Instructions", lead + '<div class="form">'
     + `<span class="lbl">System prompt</span><div class="ctl col">${modeSwitch("head", d.mode)}`
     + `${d.file ? pfile(d.file) : `<textarea class="field ptext" id="h-text" rows="3" placeholder="Nothing added">${esc(d.text)}</textarea>`}</div></div>`
     + secSave(c, "prompt", st));
@@ -1046,8 +1084,11 @@ function settingsSection(c) {
   }
   // what this command holds its own value for, with the marks those values carry said once on the kicker's line
   const own = COMMAND_KNOBS.filter((k) => KNOBS.KNOB[k] && KNOBS.ownValue(k, c.key) !== undefined);
-  const aside = own.length ? `<span class="kn">${KNOBS.legendHtml(own)}</span>` : "";
-  return DRAW.section("Settings", `<div class="form kn">${KNOBS.commandRowsHtml(c.key, COMMAND_KNOBS)}</div>${effHtml()}`, { aside });
+  // every row here is this command's own, which the lead figure says; the legend names only the marks a row can carry beyond it
+  const aside = own.length ? `<span class="kn">${KNOBS.legendHtml(own, { one: false })}</span>` : "";
+  // the section leads with how many of the settings it can hold are this command's own, so a quiet one reads as quiet
+  const lead = DRAW.focal(`${DRAW.n(own.length)} of ${DRAW.n(COMMAND_KNOBS.filter((k) => KNOBS.KNOB[k]).length)}`, "set for this command alone", `own:${c.key}`);
+  return DRAW.section("Settings", `${lead}<div class="form kn">${KNOBS.commandRowsHtml(c.key, COMMAND_KNOBS)}</div>${effHtml(c)}`, { aside });
 }
 /** LOG: this command's own lines from the daemon's log, drawn. Each turn it took is a row: how long it took as a bar on
  *  ONE log axis, what it wrote as a bar, how much of its input came from cache; the cache hit of them all leads as a ring.
@@ -1083,17 +1124,23 @@ function turnsHtml(c, all) {
     + DRAW.statTile(DRAW.glyph.retry, DRAW.n(all.length), all.length === 1 ? "Turn" : "Turns") + "</div>";
   const ax = DRAW.axis(shown.map((t) => t.ms), shown.map((t) => t.ms));
   const maxOut = Math.max(1, ...shown.map((t) => t.out));
+  // a column no shown turn has a figure for is not drawn: the page's one unread shape stands in a cell of a column that
+  // has figures elsewhere, and a column of them says nothing the missing header does not
+  const anyHit = shown.some((t) => t.input > 0);
+  // a turn that reported neither what it wrote nor its cache stands as ONE unread cell over both columns, not one in each
   const rows = shown.map((t) => '<div class="trn' + (t.ok ? "" : " bad") + '"><time>' + esc(ampm(t.at)) + "</time>"
     + DRAW.range(ax, t.ms, t.ms) + '<b class="pd-n">' + DRAW.ms(t.ms) + "</b>"
-    + (t.out > 0 ? DRAW.barCell({ w: (t.out / maxOut) * 100, text: DRAW.big(t.out), key: "trn:" + c.key + ":" + t.at }) : DRAW.unread.cell())
-    + '<b class="pd-n hitf">' + (t.input > 0 ? DRAW.pct(t.cached / t.input) : DRAW.dash) + "</b></div>").join("");
+    + (t.out <= 0 && anyHit && !(t.input > 0) ? DRAW.unread.cell({ cls: "both" })
+      : (t.out > 0 ? DRAW.barCell({ w: (t.out / maxOut) * 100, text: DRAW.big(t.out), key: "trn:" + c.key + ":" + t.at }) : DRAW.unread.cell())
+        + (anyHit ? (t.input > 0 ? DRAW.barCell({ w: (t.cached / t.input) * 100, text: DRAW.pct(t.cached / t.input), key: "hit:" + c.key + ":" + t.at }) : DRAW.unread.cell()) : ""))
+    + "</div>").join("");
   const axis = '<div class="trn trax"><span></span><span class="pd-ax">'
     + ax.ticks.map((v, i) => '<span class="pd-tk' + (i === 0 ? " pd-t-first" : i === ax.ticks.length - 1 ? " pd-t-last" : "") + '" style="left:' + ax.at(v).toFixed(2) + '%">' + DRAW.tickWord(v) + "</span>").join("")
     + "</span></div>";
-  const head = '<div class="trn trhead"><span></span><span>Time, log scale</span><span>Output</span><span>Cache hit</span></div>';
+  const head = '<div class="trn trhead"><span></span><span>Time, log scale</span><span>Output</span>' + (anyHit ? "<span>Cache hit</span>" : "") + "</div>";
   const tail = rest > 0 ? DRAW.more(rest, { word: rest === 1 ? "earlier turn" : "earlier turns", act: "moren", data: ' data-m="' + esc(id) + '" data-base="' + TURNS_SHOWN + '"' })
     : cap > TURNS_SHOWN ? DRAW.more(0, { act: "moren", data: ' data-m="' + esc(id) + '" data-less="1"', open: true }) : "";
-  return stats + '<div class="turns' + (ui.fx?.more === id ? " unfold" : "") + '">' + head + rows + axis + "</div>" + tail;
+  return stats + '<div class="turns' + (anyHit ? "" : " nohit") + (ui.fx?.more === id ? " unfold" : "") + '">' + head + rows + axis + "</div>" + tail;
 }
 function logSection(c) {
   const q = ui.logq.trim().toLowerCase(), hit = (l) => !q || l.raw.toLowerCase().includes(q);
@@ -1128,12 +1175,12 @@ function logSection(c) {
       : '<li class="rawend"><span class="pd-count"><b>' + DRAW.n(left) + "</b> older " + (left === 1 ? "line stays" : "lines stay") + " in " + esc(file) + "</span></li>") : "";
   const inner = '<ol class="rawlines' + (ui.fx?.raw ? " unfold" : "") + '">' + older
     + tail.map((l) => '<li title="' + esc(l.raw) + '"><span>' + marked(l.raw, q) + "</span></li>").join("") + "</ol>";
-  const disc = '<div class="rawwrap">' + DRAW.disc({ open: rawOpen, act: "rawtoggle",
-    inner: "<span>Raw log</span><span class=\"mmeta\">" + DRAW.n(raw.length) + " " + (raw.length === 1 ? "line" : "lines") + "</span>" })
-    + (rawOpen ? inner : "") + "</div>";
-  // the file the lines come from is named on the kicker's line by its own name, its full place on the name's title
+  // the file the lines come from is named where the lines are, by its own name, its full place on the name's title
   const fileTag = path ? '<span class="pfile logfile" title="' + esc(homeRel(path)) + '">' + GL.file + "<span>" + esc(path.split("/").pop()) + "</span></span>" : "";
-  return DRAW.section("Log", top + body + (raw.length ? disc : ""), { cls: "hlog", aside: fileTag });
+  const disc = '<div class="rawwrap">' + DRAW.disc({ open: rawOpen, act: "rawtoggle",
+    inner: "<span>Raw log</span><span class=\"mmeta\">" + DRAW.n(raw.length) + " " + (raw.length === 1 ? "line" : "lines") + "</span>" + fileTag })
+    + (rawOpen ? inner : "") + "</div>";
+  return DRAW.section("Log", top + body + (raw.length ? disc : ""), { cls: "hlog" });
 }
 /** The term he searched for, marked in a line of the raw log. */
 function marked(text, q) {
@@ -1254,8 +1301,17 @@ const settingName = (k) => (k.label && k.label !== k.key ? k.label
 // on restart" on each of 31 rows): a change read only when splice starts wears the restart glyph, named once in its
 // group's legend, and a value this command holds for itself carries the way back to the shared one on its own row
 // (v0.4.0 section 9, Resolved: source and disposition inline).
-function effHtml() {
-  return `<div class="everyset">${DRAW.disc({ open: ui.effOpen, act: "eff", controls: "every-settings", inner: "<span>Every setting as this command runs it</span>" })}</div>`;
+// the settings this command shows a value for: the shared list, less the retired ones and the other providers' plumbing
+function settingKeysOf(c) {
+  const K = KNOBS, wire = K.st.cfg?.knobs;
+  if (!wire) return [];
+  return [...K.LIST.map((k) => k.key), ...K.others().map((k) => k.key)]
+    .filter((key, i, all) => wire[key] && !RETIRED.has(key) && all.indexOf(key) === i && (!PLUMBING[key] || PLUMBING[key] === c.provKey));
+}
+function effHtml(c) {
+  const n = settingKeysOf(c).length;
+  return `<div class="everyset">${DRAW.disc({ open: ui.effOpen, act: "eff", controls: "every-settings", cls: "door", data: ' title="Every setting as this command runs it"',
+    inner: `<span>All settings</span>${n ? `<span class="mmeta">${DRAW.n(n)}</span>` : ""}` })}</div>`;
 }
 // The jobs Settings draws its settings under, in its order and its words (settings.js TOPICS), so a setting is found
 // here under the same name it has there.
@@ -1269,8 +1325,8 @@ const topicOfKnob = (k) => k?.home || k?.adv || (BUSY_KEYS.has(k?.key) ? "busy" 
 const PLUMBING = { grokPort: "xai", grokModel: "xai", grokAuthPath: "xai", xaiApiBase: "xai", chatgptApiBase: "codex", codexAuthPath: "codex" };
 // Retired in 0.4.0: splice decides when to send a failed request again and when to continue a cut answer from what
 // happened, so these have nothing to set. A daemon from before 0.4.0 still reports them; the pane draws no row for them.
-const RETIRED = new Set(["upstreamRetries", "retryBackoffBaseMs", "retryBackoffCapMs", "retryBackoffJitterPct", "foldReasoningModels",
-  "foldMaxContinue", "foldMarkerText", "foldMaxTier"]);
+// The list is the settings kit's (KNOBS.RETIRED), so a setting is retired in one place.
+const RETIRED = { has: (key) => KNOBS.RETIRED.has(key) };
 /** Every setting as this command runs it, opened in place under its disclosure: grouped by the job Settings draws it
  *  under, each group under its kicker with its legend, ruled off from the next, one setting to a row so no control
  *  wraps under its own value. A group that holds times draws each as a bar on ONE log axis shared by the whole list,
@@ -1278,13 +1334,19 @@ const RETIRED = new Set(["upstreamRetries", "retryBackoffBaseMs", "retryBackoffC
 function everySetHtml(c, n = 1) {
   const K = KNOBS, wire = K.st.cfg?.knobs;
   if (!wire) return DRAW.plate(DRAW.result("Not read", "bad"));
-  const keys = [...K.LIST.map((k) => k.key), ...K.others().map((k) => k.key)]
-    .filter((key, i, all) => wire[key] && !RETIRED.has(key) && all.indexOf(key) === i && (!PLUMBING[key] || PLUMBING[key] === c.provKey));
+  const keys = settingKeysOf(c);
   const own = (key) => K.ownValue(key, c.key) !== undefined;
   const valueOfKey = (key) => (own(key) ? K.ownValue(key, c.key) : K.valueOf(K.KNOB[key]).v);
   const timeOf = (key) => { const k = K.KNOB[key], v = Number(valueOfKey(key)); return k?.c?.k === "dur" && v > 0 ? v : null; };
   const times = keys.map(timeOf).filter((v) => v != null);
   const ax0 = times.length ? DRAW.axis(times, times) : null;
+  // RETENTION, SIZES AND COUNTS ARE LENGTHS TOO: each kind (days, bytes, count) on one linear scale of its own, as long as the
+  // largest of its kind says, so a setting is read against the others of its kind the way a wait is against the axis above
+  // (a kind with one setting in the view has nothing to be read against, so it draws no bar)
+  const lengthOf = (key) => (timeOf(key) == null ? K.scaleOf(key, valueOfKey(key)) : null);
+  const tops = {}, members = {};
+  for (const key of keys) { const s = lengthOf(key); if (s) { tops[s.kind] = Math.max(tops[s.kind] ?? 0, s.value); members[s.kind] = (members[s.kind] ?? 0) + 1; } }
+  const lineOf = (key) => { const s = lengthOf(key); return s && members[s.kind] >= 2 ? s : null; };
   // the shared axis spaces its labels for a wide track; this one is a single column of a group, so only the labels that
   // fit it stay: the first and the last (the axis always ends on its longest time) always, and none within a few percent
   // of another
@@ -1303,9 +1365,9 @@ function everySetHtml(c, n = 1) {
     // the marks the foundation gives a value a reader could not guess at (takes a restart); their words are said once
     // in the group's legend, never on every row
     const restartMark = K.needsRestart(key) ? K.markHtml("restart") : "";
-    // a value with no control of its own, and one the daemon sends empty, is still read: the word, or a dash, never
-    // a hole in the column
-    const said = `<span class="fixed">${esc(K.word(k, K.valueOf(k).v)) || DASH}</span>`;
+    // a value with no control of its own is the control it would be, held and dimmed, so a word reads as one of its choices and
+    // not as a stray value; a figure stays a figure, and one the daemon sends empty is the dash, never a hole in the column
+    const said = K.heldHtml(k, K.valueOf(k).v, settingName(k));
     const editable = wire[key].per_command && wire[key].editable !== false
       ? `${K.ctlHtml(k, mine ? K.ownValue(key, c.key) : K.valueOf(k).v, c.key)}${K.saidHtml(id, { rest: false })}${mine ? K.backHtml(k, c.key) : ""}`
       : "";
@@ -1313,11 +1375,13 @@ function everySetHtml(c, n = 1) {
     const locked = wire[key].editable === false;
     const ctl = editable.trim() ? editable : said;
     const marks = locked || restartMark ? `<span class="marks">${locked ? K.markHtml("lock") : ""}${restartMark}</span>` : "";
-    const t = timeOf(key);
+    const t = timeOf(key), line = lineOf(key);
     // a text field with no time of its own takes the time column too, so an address or a path is read whole
     const wide = t == null && editable.trim() !== "" && k?.c?.k === "text";
+    // a length of its own kind: a bar as long as the value is of the largest of its kind in the view
+    const lin = line ? DRAW.range({ at: (x) => Math.max(0, Math.min(100, (x / tops[line.kind]) * 100)) }, line.value, line.value) : "";
     return `<div class="lbl" data-row="${key}">${esc(settingName(k))}</div><div class="ctl${wide ? " span" : ""}"><div class="line">${ctl}${marks}</div></div>`
-      + `${wide ? "" : `<span class="etime">${t != null ? DRAW.range(ax, t, t).replace(/<\/span>$/, `${ax.ticks.map((v) => `<u class="atk" style="left:${ax.at(v).toFixed(2)}%"></u>`).join("")}</span>`) : ""}</span>`}`;
+      + `${wide ? "" : `<span class="etime">${t != null ? DRAW.range(ax, t, t).replace(/<\/span>$/, `${ax.ticks.map((v) => `<u class="atk" style="left:${ax.at(v).toFixed(2)}%"></u>`).join("")}</span>`) : lin}</span>`}`;
   };
   const groups = new Map();
   for (const key of keys) {
@@ -1327,19 +1391,19 @@ function everySetHtml(c, n = 1) {
   }
   const order = [...Object.keys(TOPIC_NAME), "other"].filter((t) => groups.has(t));
   const blocks = order.map((t) => {
-    const list = groups.get(t), timed = list.some((key) => timeOf(key) != null);
+    const list = groups.get(t), timed = list.some((key) => timeOf(key) != null), barred = timed || list.some((key) => lineOf(key));
     // its height in rows: the head, each setting, the axis when it draws one. THE AXIS IS DRAWN ONCE PER PLATE, under the last
     // timed group in it; each track carries faint marks at the axis's own ticks, so every group reads against it
     const axis = (on) => (timed && on ? `<span></span><span></span><div class="eaxis">${DRAW.axisRow(ax, "")}</div>` : "");
     return { w: 2 + list.length + (timed ? 2 : 0), timed, html: (on) => `<div class="egroup"><div class="sechead sub"><h4 class="kicker">${esc(TOPIC_NAME[t] ?? "More")}</h4>`
       + `<span class="pd-count"><b>${DRAW.n(list.length)}</b></span></div>`
-      + `<div class="effgrid${timed ? " timed" : ""}">${list.map(row).join("")}${axis(on)}</div></div>` };
+      + `<div class="effgrid${barred ? " timed" : ""}">${list.map(row).join("")}${axis(on)}</div></div>` };
   });
   // the groups go down as many plates as the sections above stand in, each into the shortest so far, so the plates line
   // up under the ones above and end near one height
   const plates = DRAW.packCols(blocks, n, (b) => b.w).map((col) => (col.items.length
     ? DRAW.plate(`<div class="kn everycol">${col.items.map((b, i) => b.html(i === col.items.map((x) => x.timed).lastIndexOf(true))).join("")}</div>`, "pcol") : ""));
-  const head = `<div class="everyhead"><p class="kicker on-wall">Every setting as this command runs it</p>`
+  const head = `<div class="everyhead"><p class="kicker on-wall" title="Every setting as this command runs it">All settings</p>`
     // THE MARKS ARE SAID ONCE, FOR THE WHOLE VIEW (Oct 28): they were said on every group's kicker ("Takes a restart" on eight
     // of them), so the one legend of every mark any group draws stands here, over the groups
     + `<span class="pd-count"><b>${DRAW.n(keys.length)}</b></span>${K.legendHtml(keys, { one: false })}${DRAW.act({ word: "Hide", act: "eff", cls: "quiet small" })}</div>`;
@@ -1425,7 +1489,7 @@ function runningParts(c, d, st) {
   const items = vocab().share ?? [];
   const shares = items.filter((x) => !d.isolate.includes(x)).length;
   const share = items.length
-    ? `<div class="sechead sub"><h4 class="kicker">Shares with Claude Code</h4><span class="pd-count"><b>${DRAW.n(shares)}</b> of ${DRAW.n(items.length)}</span></div>`
+    ? DRAW.focal(`${DRAW.n(shares)} of ${DRAW.n(items.length)}`, "shared with Claude Code", `shares:${c.key}`)
       + `<div class="chips tog" role="group" aria-label="Shares with Claude Code">${items.map((x) => `<button class="chip tg" type="button" data-act="share" data-v="${esc(x)}" aria-pressed="${!d.isolate.includes(x)}">${esc(shareName(x))}</button>`).join("")}</div>`
     : "";
   const moved = (q) => JSON.stringify(was[q.name]) !== JSON.stringify(d.quirks[q.name]);
@@ -1459,7 +1523,7 @@ function runningParts(c, d, st) {
   const set = qs.filter((q) => was[q.name] !== undefined), rest = qs.filter((q) => was[q.name] === undefined);
   const mine = set.length ? '<div class="qgrid">' + narrowFirst(set).map(qtile).join("") + rel + "</div>" : "";
   const theirs = rest.length
-    ? '<div class="qrest">' + DRAW.disc({ open: ui.qOpen, act: "qopen", inner: "<span><b>" + DRAW.n(rest.length) + "</b> follow the provider</span>" })
+    ? '<div class="qrest">' + DRAW.disc({ open: ui.qOpen, act: "qopen", cls: "door", inner: "<span><b>" + DRAW.n(rest.length) + "</b> follow the provider</span>" })
       + (ui.qOpen ? '<div class="qgrid' + (ui.fx?.q ? " unfold" : "") + '">' + narrowFirst(rest).map(qtile).join("") + "</div>" : "") + "</div>"
     : "";
   const backs = qs.some((q) => back(q));
@@ -1828,12 +1892,14 @@ function tierMap(c) {
   return Object.fromEntries(TIERS.map((t) => [t, (declared ? c.slots[t] : c.defaults[t]) ?? null]));
 }
 const TIER_LETTER = { opus: "O", sonnet: "S", haiku: "H", fable: "F" };
-/** The four tiers as four places in one strip, each lit where the command sends that tier to this model. */
+/** The tiers a command sends to this model, as one lit place each in Claude's own order, beside the name: a model on one
+ *  tier carries one, a model on every tier carries all four, and one that serves none carries nothing. Only the places
+ *  that are true are drawn, so the strip never takes the room of the name for places that are dark. */
 function tierStrip(id, tiers) {
   const on = TIERS.filter((t) => tiers[t] === id);
   if (!on.length) return "";
   const said = on.length === TIERS.length ? "Every tier" : on.map(tierName).join(", ");
-  return `<span class="tstrip" role="img" aria-label="${esc(said)}" title="${esc(said)}">${TIERS.map((t) => `<i${on.includes(t) ? ' class="on"' : ""}>${TIER_LETTER[t]}</i>`).join("")}</span>`;
+  return `<span class="tstrip" role="img" aria-label="${esc(said)}" title="${esc(said)}">${on.map((t) => `<i class="on">${TIER_LETTER[t]}</i>`).join("")}</span>`;
 }
 // the maker a router's roster names before a colon ("Maker: Model"), and the model's own name after it
 const makerSplit = (label) => { const m = /^([^:]{1,32}):\s+(.+)$/.exec(label ?? ""); return m ? { maker: m[1], name: m[2] } : null; };
@@ -1983,13 +2049,15 @@ function everyCard(c, hits, gone, sc, drawn, terms) {
   const html = `<article class="card em-card" style="--c:${colorOf(c.family)}" data-cmd="${esc(c.key)}">`
     + `<header class="em-head">${DRAW.chip({ text: c.cmd, live: c.running > 0, href: `models.html?cmd=${encodeURIComponent(c.key)}`, title: "Open this command", data: ` data-act="opencmd" data-h="${esc(c.key)}"` })}${count}</header>`
     + `${body ? `<div class="em-rows">${body}</div>` : `<div class="em-rows">${DRAW.nothing("No models", { slot: true })}</div>`}${foot}</article>`;
-  // its height in rows, as drawn: a name that wraps beside its tier strip takes more than one line. It only decides how the
-  // board splits a provider across columns (everyBlocks); the drawing itself wraps by its own rules.
-  const NAME_LINE = 30, STRIP_CHARS = 12;
-  const units = flat.slice(0, cap).reduce((a, x) => {
-    const strip = !x.gone && TIERS.some((t) => tiers[t] === x.m.id), len = (x.name ?? x.m.label).length + (strip ? STRIP_CHARS : 0);
+  // its height in rows as it first stands, before a rate card or more rows are opened in it: a name that wraps beside its tier
+  // places takes more than one line. It decides how the board splits a provider and which column each part stands in
+  // (everyBlocks, everyBoard), so what a press opens pushes down only what is under it; the drawing wraps by its own rules.
+  const NAME_LINE = 32, STRIP_CHARS = 4;
+  const first = folds ? Math.min(all, terms.length ? EVERY_FIND : EVERY_SHOWN) : all;
+  const units = flat.slice(0, first).reduce((a, x) => {
+    const lit = x.gone ? 0 : TIERS.filter((t) => tiers[t] === x.m.id).length, len = (x.name ?? x.m.label).length + lit * STRIP_CHARS;
     return a + 1 + 0.55 * (Math.ceil(len / NAME_LINE) - 1) + (x.maker ? 0.6 : 0);
-  }, 0) + (next ? 1 : 0);
+  }, 0) + (folds && first < all ? 1 : 0);
   return { html, rows: Math.min(all, cap), units };
 }
 // the provider a card stands under: the kit's one name for it, a local runtime under This computer, else the provider's
@@ -1999,7 +2067,7 @@ const groupOf = (c) => ({ key: PROVIDER_NAME[c.family] ? c.family : autoLocal(c)
 const boardN = () => ui.everyN ?? Math.max(1, Math.floor((root.clientWidth / (parseFloat(getComputedStyle(document.documentElement).fontSize) || 16) + 2) / (EVERY_COL_REM + 2)));
 /** How many board columns the board's own width holds; true when that changed since the last draw. */
 function fitEvery() {
-  const b = root.querySelector(".every > .em-board");
+  const b = root.querySelector(".every .em-board");
   if (!b) return false;
   const n = DRAW.colsFit(b, EVERY_COL_REM), moved = n !== ui.everyN;
   ui.everyN = n;
@@ -2027,8 +2095,15 @@ function everyBlocks(order, n, block) {
       parts.at(-1).push(x);
       sum += weigh(x);
     }
-    return parts.map((cards, i) => block(g, cards, i));
+    // a block's size in rows: its cards, its title, and the gap under it
+    return parts.map((cards, i) => ({ html: block(g, cards, i), w: cards.reduce((a, x) => a + weigh(x), 0) + 1.45 }));
   });
+}
+/** The board's blocks laid down [n] columns once, each into the shortest column by its first size, so a card that opens a rate
+ *  card or twenty more rows pushes down only what stands under it and no provider changes column on the press. */
+function everyBoard(blocks, n) {
+  const cols = DRAW.packCols(blocks, n, (b) => b.w);
+  return `<div class="em-board" style="--n:${n}">${cols.map((c) => `<div class="em-col">${c.items.map((b) => b.html).join("")}</div>`).join("")}</div>`;
 }
 function everyHtml() {
   const cs = commandsOf(), sc = boardScales(cs);
@@ -2062,15 +2137,17 @@ function everyHtml() {
   const hero = terms.length
     ? DRAW.hero({ figure: DRAW.n(found), of: `of ${DRAW.n(total)} models on ${DRAW.n(cards)} ${cards === 1 ? "command" : "commands"}`, key: "every" })
     : DRAW.hero({ figure: DRAW.n(total), of: `models on ${DRAW.n(cs.length)} commands`, key: "every" });
-  const bar = `<div class="em-bar">${searchBox("q", ui.q, "Search models", "clearq")}${hero}</div>`;
-  if (!order.length) return `<div class="every">${bar}<div class="nomatch"><span class="state">No model matches <b>${esc(ui.q.trim())}</b></span>${DRAW.act({ word: "Clear", act: "clearq", cls: "quiet" })}</div></div>`;
+  // the search, the one figure and the key of the marks stand on one line while the width holds them, the key under the
+  // figure when it does not: the key is read with the figure, and the screen beside them is not left empty
+  const bar = (keys = "") => `<div class="em-bar">${searchBox("q", ui.q, "Search models", "clearq")}${hero}${keys}</div>`;
+  if (!order.length) return `<div class="every">${bar()}<div class="nomatch"><span class="state">No model matches <b>${esc(ui.q.trim())}</b></span>${DRAW.act({ word: "Clear", act: "clearq", cls: "quiet" })}</div></div>`;
   const n = boardN();
   const asBlocks = everyBlocks(order, n, (g, cards, i) => DRAW.group({ name: g.name, c: g.c, key: i ? "" : g.key, body: DRAW.cards(cards.map((x) => x.html)) }));
   const heads = `<div class="em-heads" style="--n:${n}">${Array.from({ length: Math.min(n, asBlocks.length) }, () => everyHead(sc)).join("")}</div>`;
   const tiersOf = new Map(cs.map((c) => [c.key, tierMap(c)]));
   const keys = `<div class="em-keys">${everyKeys(cs, tiersOf)}</div>`;
-  const board = DRAW.masonry(asBlocks, EVERY_COL_REM, { cls: "em-board", gap: "2.4rem", n });
-  return `<div class="every" style="--wtk:${sc.wtick.toFixed(3)}%;--ptk:${sc.ptick.toFixed(3)}%">${bar}<div class="em-wall">${keys}${heads}${board}</div></div>`;
+  const board = everyBoard(asBlocks, n);
+  return `<div class="every" style="--wtk:${sc.wtick.toFixed(3)}%;--ptk:${sc.ptick.toFixed(3)}%">${bar(keys)}<div class="em-wall">${heads}${board}</div></div>`;
 }
 
 // ---------- Projects: compaction's rules for this project and command, edited in place (spec 7 Resolved) ----------
@@ -2238,7 +2315,7 @@ const projLegend = (has = {}) => `<div class="pj-legend">${DRAW.legend([{ mark: 
 
 // ----- a project's files: a tile each, and the one open rendered under them -----
 const lineCount = (text) => String(text ?? "").replace(/\s+$/, "").split("\n").length;
-const FILE_FOLD = 40;
+const FILE_FOLD = 14;  // the lines of an open file shown before the rest wait behind a count
 // an instructions or memory file as it reads: headings, lists, quotes, code and rules, with `code` and **bold** inline
 const inl = (s) => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
 function mdDoc(text) {
@@ -2284,9 +2361,12 @@ function frontOf(text) {
 function filePreview(f) {
   const { front, body } = frontOf(f.text);
   const lines = body.replace(/\s+$/, "").split("\n"), all = ui.fileAll === ui.shownFile;
-  const folds = lines.length > FILE_FOLD + 8;
-  const shown = folds && !all ? lines.slice(0, FILE_FOLD) : lines;
-  const more = folds ? DRAW.more(lines.length - FILE_FOLD, { word: "more lines", act: "fileall", open: all, less: "Fewer lines" }) : "";
+  // the first lines, cut where a paragraph, a list item or a section ends, never inside a sentence
+  let cut = Math.min(FILE_FOLD, lines.length);
+  while (cut < lines.length && lines[cut].trim() && !/^\s*(?:[-*+]|\d+[.)])\s|^#{1,6}\s|^\s*```/.test(lines[cut])) cut++;
+  const folds = lines.length - cut > 3;
+  const shown = folds && !all ? lines.slice(0, cut) : lines;
+  const more = folds ? DRAW.more(lines.length - cut, { word: "more lines", act: "fileall", open: all, less: "Fewer lines" }) : "";
   const fields = front.length ? `<dl class="ffront">${front.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${inl(v)}</dd>`).join("")}</dl>` : "";
   const n = lineCount(f.text);
   return `<div class="fprev${ui.fx?.file ? " pj-grow" : ""}"><div class="fhead"><span class="fname">${esc(f.path.split("/").pop())}</span><span class="pd-count"><b>${DRAW.n(n)}</b> ${n === 1 ? "line" : "lines"}</span></div>`
@@ -2349,7 +2429,7 @@ function promptRail(p, c) {
     const tag = l.k !== "base" && on ? `<i class="mtag">${esc(tierName(l.mode))}</i>` : "";
     const val = l.k === "base" || !on ? "" : l.file ? pfileOf(l.file) : l.text ? textOf(l.text, `pt:${p.root}:${c.key}:${l.k}`) : "";
     const door = l.door ? DRAW.act({ word: per ? "Edit" : "Add", act: "perdoor", cls: "quiet small", data: ` data-h="${esc(c.key)}" data-p="${esc(p.root)}"` }) : "";
-    return `<li class="rung${on && !hidden ? " on" : ""}${hidden ? " cut" : ""}${on ? "" : " unset"}"><span class="rdot" aria-hidden="true"></span>`
+    return `<li class="rung${on && !hidden ? " on" : ""}${hidden ? " cut" : ""}${on ? "" : " unset"}"><span class="rdot" aria-hidden="true">${i + 1}</span>`
       + `<div class="rwho">${l.who}${tag}${door}</div>${val ? `<div class="rval">${val}</div>` : ""}</li>`;
   }).join("");
   const aside = railKey([cut > 0 && { mark: `<i class="rl-cut"></i>`, word: "Not sent" }, L.some((l) => !set(l)) && { mark: `<i class="rl-unset"></i>`, word: "Not set" }]);
@@ -2406,7 +2486,7 @@ function compRail(p, c) {
     const shown = k === "base" || cx ? "" : value(k);
     const body = k === "base" ? "" : cx ? `<div class="rval redit">${field(k)}</div>` : shown ? `<div class="rval">${shown}</div>` : "";
     return `<li class="rung${on ? " on lit" : ""}${k !== "base" && !rules(k) ? " unset" : ""}${dirty ? " dirty" : ""}" data-k="${k}">`
-      + `<span class="rdot" aria-hidden="true"></span><div class="rwho">${who[k]}${dirty ? `<i class="dmark" title="Changed">Changed</i>` : ""}</div>${body}</li>`;
+      + `<span class="rdot" aria-hidden="true">${["base", ...keys].indexOf(k) + 1}</span><div class="rwho">${who[k]}${dirty ? `<i class="dmark" title="Changed">Changed</i>` : ""}</div>${body}</li>`;
   };
   const rail = `<ol class="rrail cx${ui.fx?.landed === "comp" ? " landed" : ""}">${["base", ...keys].map(rung).join("")}</ol>`;
   const changed = cx ? keys.filter((k) => cxDirty(cx, k)).length : 0;
@@ -2440,7 +2520,7 @@ function ghostProjectsHtml() {
   return `<div class="pj" aria-busy="true"><div class="pj-side"><div class="pj-bar"><i class="ghost pj-gsearch" aria-hidden="true"></i>${GHOST.bar(5)}</div>${projLegend()}`
     + `<div class="proj-list">${folders.map(group).join("")}</div></div>`
     + `<section class="pane pj-pane" aria-hidden="true"><header class="pj-head">${GHOST.bar(12, "big")}${GHOST.bar(20)}</header><div class="body pj-body">`
-    + `<div class="pj-cmd"><div class="pj-run">${sec(`${GHOST.focal(9)}<i class="ghost pj-gsplit"></i><div class="pj-chips">${Array.from({ length: GHOST.count("pj-chips", 3) }, pick).join("")}</div>`)}</div>`
+    + `<div class="pj-cmd"><div class="pj-run">${sec(`${GHOST.hero()}<i class="ghost pj-gsplit"></i><div class="pj-chips">${Array.from({ length: GHOST.count("pj-chips", 3) }, pick).join("")}</div>`)}</div>`
     + `<div class="pj-for">${GHOST.chip(8)}${Array.from({ length: 3 }, () => `<i class="ghost pj-gstat"></i>`).join("")}</div>`
     + `<div class="pj-cols">${rail(4)}${rail(5).replace("</ol>", `</ol><div class="pj-gwin"><i class="ghost"></i></div>`)}</div></div>`
     + `<div class="plate pj-files">${sec(tiles(GHOST.count("pj-fi", 1)))}${sec(tiles(GHOST.count("pj-fm", 1)))}<section class="psec"><div class="fprev"><div class="fhead">${GHOST.bar(6)}${GHOST.bar(3)}</div><div class="fdoc pj-gdoc">${GHOST.lines(lines)}</div></div></section></div></div></section></div>`;
@@ -2475,7 +2555,7 @@ function runByHtml(cs, c, s) {
   const outside = used.filter((x) => !room(x));
   GHOST.remember("pj-chips", outside.length + rest.length + (other ? 1 : 0));
   // the figure in every part and chip is a count of these sessions, said once by the figure that leads the section
-  const lead = all ? DRAW.focal(DRAW.n(all), `${all === 1 ? "session" : "sessions"} here, by ${used.length + (other ? 1 : 0)} ${used.length + (other ? 1 : 0) === 1 ? "command" : "commands"}`, "pj-all") : "";
+  const lead = all ? DRAW.hero({ figure: DRAW.n(all), of: `${all === 1 ? "session" : "sessions"} here, by ${used.length + (other ? 1 : 0)} ${used.length + (other ? 1 : 0) === 1 ? "command" : "commands"}`, key: "pj-all" }) : "";
   const chips = `${outside.map(pick).join("")}${unk}${rest.length ? `<span class="pj-idle">${rest.map(pick).join("")}</span>` : ""}`;
   return `<div class="pj-run">${DRAW.section("As run by", `${lead}${split}${chips ? `<div class="pj-chips">${chips}</div>` : ""}`)}</div>`;
 }
@@ -2492,7 +2572,7 @@ function projSummary(p, c, got, instr, memory) {
   ].filter(Boolean));
   return `<div class="pj-for">${cmdChip(c)}${tiles}</div>`;
 }
-function projPane(p, cs, st) {
+function projPane(p, cs, st, place = "") {
   const s = st.get(p.id) ?? NO_STATS, c = pickCmd(cs, s);
   // what the pane shows, for the acts pressed in it (Edit, Read again)
   ui.shownProj = p.id; ui.shownCmd = c?.key ?? null;
@@ -2507,7 +2587,7 @@ function projPane(p, cs, st) {
   const live = s.live ? `<span class="pt-live" title="Live now"><i></i><b>${DRAW.n(s.live)}</b></span>` : "";
   // the project's files are one read: when it fails it is said once, here, with the act that reads them again
   const failed = got?.err ? `<span class="pj-fail">${DRAW.lock(got.err)}${DRAW.act({ word: "Read again", act: "refiles", cls: "quiet small" })}</span>` : "";
-  const head = `<header class="pj-head"><h2 class="pj-name">${esc(p.label || p.name)}</h2><span class="ppath" title="${esc(p.root)}"><bdo dir="ltr">${esc(homeRel(p.root))}</bdo></span>${failed}<span class="pj-door">${live}${door}</span></header>`;
+  const head = `<header class="pj-head"><h2 class="pj-name" title="${esc(homeRel(p.root))}">${esc(p.label || p.name)}</h2>${place ? `<span class="ppath" title="${esc(p.root)}"><bdo dir="ltr">${esc(place)}</bdo></span>` : ""}${failed}<span class="pj-door">${live}${door}</span></header>`;
   const plates = c ? `${projSummary(p, c, got, instr, memory)}<div class="pj-cols${ui.fx?.cmd ? " pj-grow" : ""}"><div class="plate">${promptRail(p, c)}</div><div class="plate">${compRail(p, c)}</div></div>` : "";
   // THE OPEN PROJECT IS IN THE PAGE'S ONE SCROLL: no height of its own and no scroll inside it. What each command does
   // here leads; the files every command reads follow, beside it where the pane is wide.
@@ -2538,21 +2618,32 @@ function projectsHtml() {
     return `<p class="pj-gh" title="${esc(at || "Projects in no shared folder")}"><span class="gat">${esc(g.dir ? at.slice(at.lastIndexOf("/") + 1) : "Elsewhere")}</span>`
       + `${live ? `<span class="pt-live"><i></i><b>${DRAW.n(live)}</b></span>` : ""}<b class="gn">${total ? DRAW.n(total) : DASH}</b></p>`;
   };
-  if (!terms.length) { GHOST.remember("pj-groups", groups.length); groups.forEach((g, i) => GHOST.remember(`pj-g${i}`, g.list.length)); }
-  const wall = groups.map((g) => {
-    const list = g.list.filter(hit);
+  // A folder's projects with sessions are its tiles; the ones with none, drawn as a name and no bar, stand behind one count
+  // ("7 more projects") so the rail is as long as what was used. A search, the open project and a press on the count show them.
+  const idle = (x) => !(st.get(x.id) ?? NO_STATS).total && x.id !== p.id;
+  const folders = groups.map((g) => {
+    const list = g.list.filter(hit), key = `pjq:${g.dir || "_"}`, wide = terms.length > 0 || ui.more.has(key);
+    const shown = wide ? list : list.filter((x) => !idle(x));
+    return { g, key, shown, hid: list.length - shown.length, folds: !terms.length && list.some(idle) && ui.more.has(key), list };
+  });
+  if (!terms.length) { GHOST.remember("pj-groups", folders.length); folders.forEach((f, i) => GHOST.remember(`pj-g${i}`, f.shown.length + (f.hid || f.folds ? 1 : 0))); }
+  const wall = folders.map(({ g, key, shown, hid, folds, list }) => {
     found += list.length;
     if (!list.length) return "";
-    for (const x of list) { const mk = marksOf(x, x.id === p.id); for (const k of Object.keys(mk)) has[k] ||= mk[k]; }
-    // a project in no shared folder carries its place; in a folder, the folder's head says where it sits
-    const tiles = list.map((x) => projTile(x, g.dir ? "" : homeRel(x.root), st.get(x.id) ?? NO_STATS, maxTotal, x.id === p.id)).join("");
-    return `<section class="pj-group">${folderHead(g)}<div class="pj-tiles">${tiles}</div></section>`;
+    for (const x of shown) { const mk = marksOf(x, x.id === p.id); for (const k of Object.keys(mk)) has[k] ||= mk[k]; }
+    // a project in no shared folder carries its place, unless its name already is the last word of it; in a folder, the
+    // folder's head says where it sits
+    const placeOf = (x) => (g.dir || String(x.root).split("/").filter(Boolean).pop() === (x.label || x.name) ? "" : homeRel(x.root));
+    const tiles = shown.map((x) => projTile(x, placeOf(x), st.get(x.id) ?? NO_STATS, maxTotal, x.id === p.id)).join("");
+    const more = hid ? DRAW.more(hid, { word: "more projects", one: "more project", act: "more", data: ` data-m="${key}"` })
+      : folds ? DRAW.more(0, { act: "more", data: ` data-m="${key}"`, open: true, less: "Fewer" }) : "";
+    return `<section class="pj-group">${folderHead(g)}<div class="pj-tiles">${tiles}${more ? `<div class="pj-morerow">${more}</div>` : ""}</div></section>`;
   }).join("");
   const count = `<span class="pd-count">${terms.length ? `<b>${DRAW.n(found)}</b> of ${DRAW.n(ps.length)}` : `<b>${DRAW.n(ps.length)}</b>`} projects</span>`;
   const none = `<div class="nomatch"><span class="state">No project matches <b>${esc(ui.pq.trim())}</b></span>${DRAW.act({ word: "Clear", act: "clearpq", cls: "quiet" })}</div>`;
   // a later read that failed keeps the list it had, dimmed, so figures from before read as held, not as fresh
   return `<div class="pj"><div class="pj-side"><div class="pj-bar">${searchBox("pq", ui.pq, "Filter projects", "clearpq")}${count}${fail}</div>${projLegend(has)}`
-    + `<nav class="proj-list${fail ? " stale" : ""}" aria-label="Projects">${wall || none}</nav></div>${projPane(p, cs, st)}</div>`;
+    + `<nav class="proj-list${fail ? " stale" : ""}" aria-label="Projects">${wall || none}</nav></div>${projPane(p, cs, st, groups.find((g) => g.list.includes(p))?.dir ? "" : homeRel(p.root))}</div>`;
 }
 
 // ---------- claude: plain `claude`, through splice or direct ----------
@@ -2578,10 +2669,12 @@ function claudeHtml() {
     ? `<span class="raside" title="${esc(`${what}: ${homeRel(to)}`)}"><span class="lamp inline ${kind}" role="img" aria-label="${esc(what)}">${kind === "stalled" ? GL.notstarted : "<i></i>"}</span>`
       + `${shadowed ? `<span class="rname limit">${esc(what)}</span>` : ""}</span>`
     : DRAW.lock("No claude on your PATH");
+  // THE TWO CHOICES SAY WHAT THE SWITCH DOES, so no label stands before it in the header: which command it is for is the words
+  // on the switch under the pointer and on the keyboard (data-tip), and the group's name for a screen reader
   const switcher = can
     ? DRAW.switcher([["wrap", "Through splice"], ["unwrap", "Straight to Anthropic"]], through ? "wrap" : "unwrap", "claude", "Your claude command")
     : DRAW.lock("splice has no launcher on disk");
-  return `<span class="clabel">Your claude command</span>${switcher}${runs}${said}${due}`;
+  return `<span class="cswitch" data-tip="Your claude command">${switcher}</span>${runs}${said}${due}`;
 }
 async function setClaude(v) {
   const res = await API.post(`/api/claude-head/${v}`);
@@ -2660,7 +2753,7 @@ function addPaneHtml() {
     const tiles = data.profiles.map((x) => {
       const fam = famOf(x), live = taken(x) ? commandsOf().find((h) => h.key === x.head_key || h.cmd === x.command) : null;
       const tchip = live ? DRAW.chip({ text: live.cmd, live: live.running > 0, data: ` style="--c:${colorOf(live.family)}"` })
-        : x.command ? DRAW.chip({ text: x.command, cls: "ghost" }) : "";
+        : x.command ? DRAW.chip({ text: x.command, cls: "ghost" }) : `<span class="chip tobe"><span>claude-</span><i class="slot" aria-hidden="true"></i></span>`;
       const glyph = kindGlyph(x.auth_kind);
       return `<button class="pick tpl" style="--c:${colorOf(fam)}" data-act="tpl" data-t="${esc(x.name)}" title="${esc(`${tplName(x)}: ${kindName(x.auth_kind)}`)}">`
         + `<span class="ttop"><span class="blot"></span><span class="tname">${esc(tplName(x))}</span>${glyph ? `<span class="tkind">${glyph}</span>` : ""}</span>${tchip}</button>`;
@@ -2961,25 +3054,38 @@ function ghostEveryHtml() {
   }) }));
   const n = boardN();
   const blocks = everyBlocks(order, n, (g, cards) => `<section class="titled" aria-hidden="true"><header><h2>${GHOST.bar(7, "big")}</h2></header><div class="stack-cards">${cards.map((x) => x.html).join("")}</div></section>`);
-  return `<div class="every" aria-busy="true"><div class="em-bar"><i class="ghost pj-gsearch em-gsearch" aria-hidden="true"></i>${GHOST.hero()}</div>`
-    + `<div class="em-wall"><div class="em-keys" aria-hidden="true">${GHOST.bar(38)}</div>`
+  return `<div class="every" aria-busy="true"><div class="em-bar"><i class="ghost pj-gsearch em-gsearch" aria-hidden="true"></i>${GHOST.hero()}<div class="em-keys" aria-hidden="true">${GHOST.bar(38)}</div></div>`
+    + `<div class="em-wall">`
     + `<div class="em-heads" style="--n:${n}">${Array.from({ length: Math.min(n, blocks.length) }, () => `<div class="em-hc"><div class="em-row em-colhead" aria-hidden="true"><span></span>${GHOST.bar(6)}<span></span>${GHOST.bar(6)}${GHOST.bar(1.6)}${GHOST.bar(1.8)}</div></div>`).join("")}</div>`
-    + `${DRAW.masonry(blocks, EVERY_COL_REM, { cls: "em-board", gap: "2.4rem", n })}</div></div>`;
+    + `${everyBoard(blocks, n)}</div></div>`;
 }
 // the open command's place while the first read is out: the rail has as many cards as it last had, and each ghost plate holds
 // the sections a plate holds, so the page does not jump when the commands land
-const ghostPlate = () => `<div class="plate pcol">${[
-  [GHOST.bar(7), GHOST.hero(), GHOST.track()],
-  [GHOST.bar(9), GHOST.focal(8), GHOST.lines([16, 13, 15])],
-  [GHOST.bar(7), GHOST.lines([14, 16, 11, 15])],
-  [GHOST.bar(8), GHOST.lines([16, 12, 14, 9])],
-].map((parts) => `<div class="gsec">${parts.join("")}</div>`).join("")}</div>`;
+// ONE GHOST PLATE PER PLATE THE OPEN COMMAND LAST DREW, in the order they are drawn in and at the height each stood at, so
+// the columns the plates fall into are the columns they land in. A plate's lines fill its height; a plate not drawn last
+// time (-1) is left out.
+const GHOST_WIDTHS = [16, 13, 15, 11, 14, 12];
+const ghostPlate = (id) => {
+  const h = plateRem(id), lines = Math.max(1, Math.min(18, Math.round((h - 8) / 2.1)));
+  return `<div class="plate pcol" style="min-height:${h}rem"><div class="gsec">${GHOST.bar(8)}${id === "now" || id === "log" ? GHOST.hero() : GHOST.focal(8)}`
+    + `${GHOST.lines(Array.from({ length: lines }, (_, i) => GHOST_WIDTHS[i % GHOST_WIDTHS.length]))}</div></div>`;
+};
+const ghostPlates = () => PANE_ORDER.filter((id) => plateRem(id) > 0).map(ghostPlate);
+// how many columns the ghost pane holds: the rule the real pane follows, read from the ghost's own width
+let ghostN = 1;
+function fitGhost() {
+  const g = root.querySelector(".gpane .gcols");
+  if (!g) return false;
+  const n = Math.min(3, DRAW.colsFit(g, PANE_COL_REM)), moved = n !== ghostN;
+  ghostN = n;
+  return moved;
+}
 const ghostCmdsBody = () => `<div class="cmds"><div class="list rail">${Array.from({ length: GHOST.count("rail", 7) }, (_, i) => GHOST.card([9, 13, 7], Math.min(i, 5))).join("")}`
   + `<i class="ghost card-tile" aria-hidden="true"></i></div>`
   // beside the rail, where the open command lands on a wide screen: its header, then its columns of sections, as
   // many as the pane's width holds (the same rule the pane itself follows)
   + `<div class="gpane" aria-hidden="true"><div class="ghost-row">${GHOST.bar(2, "big")}${GHOST.bar(12, "big")}${GHOST.bar(6)}</div>`
-  + `<div class="gcols">${[0, 1, 2].map(ghostPlate).join("")}</div></div></div>`;
+  + `<div class="gbody">${DRAW.masonry(ghostPlates(), 0, { cls: "gcols", gap: "var(--gap-col)", n: ghostN })}</div></div></div>`;
 const ghostCommandsHtml = () => `${ghostViews()}${ghostCmdsBody()}`;
 // The first read failed: the tabs, the lock in the limit colour with the act that asks again, and the page that would
 // have arrived, held still, since nothing is on its way until Read again is pressed or the next round answers.
@@ -3036,8 +3142,7 @@ function settle(was) {
     if (from != null && from !== el.textContent) el.animate([{ opacity: 0.3, transform: "translateY(-.2em)" }, { opacity: 1, transform: "none" }], how);
   }
 }
-// the kit lays a drawn board once the markup is in, one microtask on; a field focused before that scrolls the page to where its
-// block stood while the board was unlaid, so every focus after a redraw waits for it
+// a press that redraws focuses the field it drew once the redraw has landed (the board is laid inside the draw, DRAW.paint)
 const focusLater = (find) => queueMicrotask(() => find()?.focus());
 function render() {
   KNOBS.save?.();
@@ -3050,7 +3155,11 @@ function render() {
   // a round that failed after the page loaded: what is drawn is what splice last answered, and it reads as held
   root.classList.toggle("stale", Boolean(data.loaded && data.err));
   if (!data.loaded) {
-    root.innerHTML = data.err ? firstFailHtml() : ghostPageHtml();
+    const first = () => { root.innerHTML = data.err ? firstFailHtml() : ghostPageHtml(); };
+    first();
+    // the arriving pane holds as many columns as the landed one will
+    if (fitGhost()) first();
+    DRAW.paint(root);
     return;
   }
   // a section that holds a change it did not hold on the last draw opens its Save row with its own motion
@@ -3059,10 +3168,6 @@ function render() {
   const fresh = dirtyNow.find((s) => !(ui.dirtyWas ?? []).includes(s));
   if (fresh) ui.fx = { ...(ui.fx ?? {}), saveRow: fresh };
   ui.dirtyWas = dirtyNow;
-  // the board's blocks take their heights only once DRAW.paint has measured them, so a page drawn anew is shorter for a
-  // moment; holding the height it had keeps a press near the bottom where it was instead of throwing the page to the top
-  const kept = root.offsetHeight;
-  root.style.minHeight = `${kept}px`;
   const draw = () => { root.innerHTML = viewsHtml() + (ui.view === "commands" ? commandsHtml() : ui.view === "every" ? everyHtml() : projectsHtml()); };
   draw();
   // the open pane's columns, and the board's, come from their own width, read once they are in the page: a count that
@@ -3073,8 +3178,7 @@ function render() {
   if (ui.view === "projects") rememberDoc();
   // the meters and bars take their widths once the markup is in; they grow from nothing only when the pane just opened
   DRAW.paint(root, { grow: ui.grow ? "all" : null });
-  // the board lays itself again as its blocks settle, one frame on: the held height goes once it has
-  requestAnimationFrame(() => requestAnimationFrame(() => { root.style.minHeight = ""; }));
+  if (ui.view === "commands") rememberPlates();
   if (!ui.grow) settle(shown);
   ui.grow = false;
   flip(was);

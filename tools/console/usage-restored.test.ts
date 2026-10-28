@@ -5,7 +5,8 @@
 //     command's unmarked turns on its row even when none of its turns were marked cold
 //  3. a command that could not be read says Not read, apart from the ones still being counted
 //  4. Where it went can be ranked by cost
-//  5. Written to cache reads as not reported for a provider that never reports a cache write, never as nothing written
+//  5. the cache write reads as not reported for a provider that never reports one, never as nothing written: the input
+//     bar draws no written part and its words say so (Usage's goal, Oct 28: the Written column became a part of the bar)
 import { afterAll, beforeAll, test } from "bun:test";
 import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -156,13 +157,21 @@ test("Usage: Where it went ranks by cost when asked, so a costly key with few to
   }
 }, 60_000);
 
-test("Usage: Written to cache reads as not reported for a provider that sends no cache write", async () => {
+test("Usage: the cache write reads as not reported for a provider that sends none, and as its figure for one that does", async () => {
   mode = "base";
   const p = await open();
   try {
     const plan = p.locator("#band-tok .trow", { hasText: "plan" }).first();
-    await expect(plan.locator(".cell.wr")).toHaveText("—", { timeout: 20_000 });
-    await expect(p.locator("#band-tok .trow", { hasText: "keyed" }).first().locator(".cell.wr")).toContainText("5K");
+    const input = plan.locator(".cell.inp .ttrack");
+    // no written part is drawn, and the bar says why under the pointer and to a screen reader, never "Written 0"
+    await expect(input).toHaveAttribute("aria-label", /its provider reports no cache writes/, { timeout: 20_000 });
+    await expect(input).toHaveAttribute("data-tip", /its provider reports no cache writes/);
+    await expect(input.locator(".s2")).toHaveCount(0);
+    expect(await input.getAttribute("aria-label")).not.toMatch(/Written/);
+    // the keyed command does report one: the part is drawn and its figure is in the words
+    const keyed = p.locator("#band-tok .trow", { hasText: "keyed" }).first().locator(".cell.inp .ttrack");
+    await expect(keyed.locator(".s2")).toHaveCount(1);
+    await expect(keyed).toHaveAttribute("aria-label", /Written 5K/);
   } finally {
     await p.context().close();
   }

@@ -1,7 +1,8 @@
 // What Teams must show again (round 2's integrity check, Oct 27), through the real page against a stub daemon that
 // answers in the routes' own shapes:
-// - a member row of the team form whose Join by rule is on says what the rule takes: the row's command, the team's
-//   folder, and that such a session joins only while the member has none running;
+// - a member row of the team form whose Join by rule is on draws what the rule takes: the row's command and the team's
+//   folder as chips, and under the pointer that such a session joins only while the member has none running (Teams' goal,
+//   Oct 28: a sentence on the row became the rule's mark);
 // - a member's own plan-window figures are a row headed by the span they were counted over, "7 days", with its count
 //   under the Requests column, and the plan's own long window is named on the plan's meter row ("Month" on a 30-day plan,
 //   "Week" on a 7-day one), with its share.
@@ -90,7 +91,7 @@ const rowOf = (scope: Locator, text: RegExp) => scope.getByText(text).first().lo
 // a member's own row of plan figures for one span, headed by it: "7 days", its requests under the Requests column
 const spanRow = (scope: Locator, span: string) => scope.locator(".mtab .mtr.plan").filter({ hasText: span });
 
-test("a form row with Join by rule on says what the rule takes: its command, the team's folder, and the condition", () => onTeams(async (p) => {
+test("a form row with Join by rule on draws what the rule takes: its command, the team's folder, and the condition under the pointer", () => onTeams(async (p) => {
   await p.locator('[data-act="new"]').first().click();
   await p.locator("#t-name").fill("Crew");
   await p.locator("#t-repo").fill("/work/website");
@@ -98,15 +99,19 @@ test("a form row with Join by rule on says what the rule takes: its command, the
   await row.locator('[data-what="head"]').click();
   await p.locator('.pick-menu button[data-v="alpha"]').click();
   await row.getByRole("button", { name: "Join by rule" }).click();
-  await expect(row).toContainText("claude-alpha");
-  await expect(row).toContainText("website");
-  await expect(row).toContainText(/only while it has none running/i);
+  const rule = row.locator(".rulemark");
+  await expect(rule.locator(".kicker")).toHaveText("Joins by rule");
+  await expect(rule.locator(".hcmd")).toHaveText("claude-alpha");
+  await expect(rule.locator(".where")).toHaveText("website");
+  await expect(rule.locator(".where")).toHaveAttribute("title", "/work/website");
+  await expect(rule).toHaveAttribute("title", /only while the member has none running/i);
   // the folder it watches is the one the form names now: typed after the toggle, it follows
   await p.locator("#t-repo").fill("/work/shop");
-  await expect(row).toContainText("shop");
-  // turned off, the row no longer promises a rule
+  await expect(rule.locator(".where")).toHaveText("shop");
+  await expect(rule.locator(".where")).toHaveAttribute("title", "/work/shop");
+  // turned off, the row no longer carries the rule's mark
   await row.getByRole("button", { name: "Join by rule" }).click();
-  await expect(row).not.toContainText(/none running/i);
+  await expect(row.locator(".rulemark")).toHaveCount(0);
 }), 60_000);
 
 test("a member's own plan figures are headed 7 days, and the plan's long window is named on its meter row with its share", () => onTeams(async (p) => {

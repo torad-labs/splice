@@ -75,7 +75,9 @@ test("with no folder saved the row offers Add and the rail says the rule in forc
   }
 }, 30_000);
 
-test("each saved path stands as typed, with the projects it makes under it", async () => {
+// Every project is one table (Settings' goal, Oct 28), a folder's colour on the ones that folder makes; a folder's own
+// projects open under its line when its count is pressed.
+test("each saved path stands as typed, every project is in one table, and a folder's count lists the projects it makes", async () => {
   const page = await pane("~/code", {
     folders: [{ path: "~/code", found: true }],
     projects: [
@@ -87,7 +89,15 @@ test("each saved path stands as typed, with the projects it makes under it", asy
   try {
     await expect(page.locator(".pane .ppath")).toHaveCount(1);
     await expect(page.locator(".pane .ppath")).toContainText("~/code");
-    const makes = page.locator(".pane .pmakes");
+    // the table lists all three; the folder's colour marks the two it makes, and a repo-mode project has none
+    const all = page.locator(".pane .pmakes.pall .prj:not(.head)");
+    await expect(all).toHaveCount(3);
+    await expect(all.filter({ hasText: "billing-api" }).locator(".psw")).toHaveCount(1);
+    await expect(all.filter({ hasText: "website" }).locator(".psw")).toHaveCount(1);
+    await expect(all.filter({ hasText: "other" }).locator(".psw")).toHaveCount(0);
+    // the folder's count opens its own projects under its line
+    await page.locator(".pane .prow", { hasText: "~/code" }).getByRole("button", { name: /2 projects/ }).click();
+    const makes = page.locator(".pane .pmakes:not(.pall)");
     await expect(makes).toContainText("billing-api");
     await expect(makes).toContainText("website");
     await expect(makes).not.toContainText("other"); // a repo-mode project belongs to no saved folder

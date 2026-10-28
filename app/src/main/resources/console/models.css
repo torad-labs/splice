@@ -7,7 +7,7 @@
    1440, and nothing here asks how big the screen is. Built for 3822 first, read at 1440 in both themes. */
 
 .head .claude { display: flex; align-items: center; flex-wrap: wrap; gap: .9rem; }
-.clabel { font: 500 .88rem/1 var(--font-data); color: var(--text-body); }
+.head .claude .cswitch { display: inline-flex; align-items: center; }
 .head .claude .rname { font-family: var(--font-name); }
 .switch button:disabled { cursor: default; opacity: .45; }
 .views { margin: 0 0 1.5rem; }
@@ -21,6 +21,10 @@
 .mmeta { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); }
 /* a name and a state beside a kicker or a switch: the lamp, the name, then what is wrong with it */
 .raside { display: inline-flex; align-items: center; gap: .55rem; min-width: 0; }
+/* a section that leads with a figure or its state: 2u between the lead and what it leads */
+.pane .psec > .pd-sub { margin-bottom: calc(2 * var(--u)); }
+.signlead { align-items: center; gap: calc(1.5 * var(--u)); }
+.signlead.bad b { color: var(--limit); }
 .lamp.inline { position: static; width: 1.6rem; height: 1.6rem; flex: none; }
 .lamp.inline svg { width: 1rem; height: 1rem; }
 .lamp.inline .wait { width: 1rem; height: 1rem; }
@@ -45,19 +49,15 @@
 /* the open command's place while the first read is out: its header and as many columns as the pane will hold, by the
    rule the pane follows (kit colsFit over models.js PANE_COL_REM, 58rem a column beside the 32rem rail) */
 .gpane { display: none; }
-.gcols { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gap-col); }
 .gpane .plate.pcol { gap: calc(2 * var(--u)); align-items: flex-start; }
 /* the pane arrives inside its own frame, its header ruled off above the columns, as the open command lands */
 .cmds .gpane { border: var(--ink-w) solid var(--track-line); border-radius: var(--r-obj); background: var(--obj); padding: 0 0 calc(3 * var(--u)); }
 .gpane > .ghost-row { padding: calc(2 * var(--u)) calc(3 * var(--u)); border-bottom: .08rem solid var(--hair); }
-.gpane > .gcols { padding: 0 calc(3 * var(--u)); }
+.gpane > .gbody { padding: 0 calc(3 * var(--u)); }
+/* the ghost plates are laid like the plates they stand for: as many columns as the pane holds, each into the shortest */
 @container (min-width: 90rem) {
   .cmds .gpane { display: flex; flex: 1 1 0; min-width: 0; flex-direction: column; gap: calc(3 * var(--u)); }
 }
-@container (max-width: 156.4rem) { .gcols > .pcol:nth-child(n+2) { display: none; } }
-@container (min-width: 156.5rem) { .gcols { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@container (min-width: 156.5rem) and (max-width: 216.4rem) { .gcols > .pcol:nth-child(3) { display: none; } }
-@container (min-width: 216.5rem) { .gcols { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 
 /* ---------- commands: the rail and the open one ---------- */
 .cmds .pane { display: none; }
@@ -101,7 +101,8 @@
 .card.h .top > .cstate, .card.h .top > .ghost.state { margin-left: auto; }
 .cstate { font: 500 .95rem/1.1 var(--font-name); color: var(--text); white-space: nowrap; }
 .card.h .meta { gap: .4rem .9rem; }
-.card.h .cmodel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-body); }
+/* a model's name can carry what tells two instances apart at its end, so it wraps whole where the rail is narrow and is never cut */
+.card.h .cmodel { min-width: 0; overflow-wrap: anywhere; line-height: 1.3; color: var(--text-body); }
 .card.h .caddr { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); }
 .card.h .cwin { margin-left: auto; font: 500 .95rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
 /* its requests in flight against the most it lets in at once, the meter in its provider's colour */
@@ -149,6 +150,15 @@
 /* in a column of the open command every section's labels take one width, so the controls of Where it goes, Sign-in,
    Running and Settings start on one edge down the plate */
 .pane .pcol .form { grid-template-columns: 13rem minmax(0, 1fr); }
+/* where it goes, drawn: Claude Code, the command on its port here, the provider and its address, joined by the line a request takes */
+.route { display: flex; align-items: center; gap: calc(1.5 * var(--u)); margin-bottom: calc(3 * var(--u)); min-width: 0; }
+.rnode { flex: none; display: inline-flex; align-items: center; gap: .6rem; min-width: 0; padding: calc(1.2 * var(--u)) calc(2 * var(--u)); background: var(--obj-sunk); border-radius: var(--r-in); font: 500 .9rem/1.2 var(--font-name); color: var(--text-body); }
+.rnode.prov { flex: 0 1 auto; flex-direction: column; align-items: flex-start; gap: .25rem; }
+.rnode .rpn { font: 600 .95rem/1.2 var(--font-name); color: var(--text); }
+.rnode .rhost { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 .85rem/1.2 var(--font-data); color: var(--text-mute); }
+.rnode .rport { font: 600 .95rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.rline { position: relative; flex: 1 1 1.5rem; min-width: 1rem; height: .14rem; background: var(--track-line); }
+.rline::after { content: ""; position: absolute; right: 0; top: 50%; width: .5rem; height: .5rem; border-top: .14rem solid var(--track-line); border-right: .14rem solid var(--track-line); transform: translate(0, -50%) rotate(45deg); transform-origin: center; }
 .ctl { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem .9rem; min-width: 0; }
 .ctl.col { flex-direction: column; align-items: stretch; }
 .ctl.col > .act, .ctl.col > .menuwrap, .ctl.col > .switch, .ctl.col > .add { align-self: flex-start; }
@@ -314,6 +324,7 @@
 .chip.tg:hover { border-color: var(--c); }
 .qrest { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); margin-top: calc(1.5 * var(--u)); }
 .qrest .disc b { font-family: var(--font-data); color: var(--text); }
+.qrest > .disc.door { align-self: flex-start; }
 .form .unit { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); }
 /* a quirk that follows the provider lights no segment of its switch: neither value is set here */
 .switch.unlit button { color: var(--text-mute); }
@@ -381,8 +392,9 @@
 /* the search keeps its width whatever the count beside it says, so typing never moves the field under the caret */
 .loghead .search { flex: 0 1 26rem; width: auto; min-width: 12rem; }
 .loghead .act[data-act="logpause"] { margin-left: 0; }
-/* the file the lines come from, by its own name, on the kicker's line */
-.pfile.logfile { gap: .4rem; font-size: .85rem; color: var(--text-mute); }
+/* the file the lines come from, by its own name, beside the count of the lines read from it */
+.pfile.logfile { gap: .4rem; margin-left: .7rem; font-size: .85rem; color: var(--text-mute); }
+.pfile.logfile svg { color: var(--text-mute); }
 .events { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 5.6rem minmax(0, 1fr) minmax(4rem, 10rem); gap: .4rem .9rem; align-items: center; }
 .events li { display: contents; }
 .events time { font: 500 .9rem/1.3 var(--font-data); color: var(--text-mute); }
@@ -510,6 +522,8 @@ code.launch { font: 500 .95rem/1 var(--font-data); color: var(--text); padding: 
 .every { display: flex; flex-direction: column; gap: calc(4 * var(--u)); }
 .em-bar { display: flex; flex-wrap: wrap; align-items: center; gap: calc(2 * var(--u)) calc(6 * var(--u)); }
 .em-bar .search { width: 28rem; max-width: 100%; }
+/* the key of the marks stands beside the search and the figure while the width holds all three, under them when it does not */
+.em-bar > .em-keys { flex: 1 1 70rem; min-width: 0; }
 /* a search's clear cross, inside the field at its end, while something is typed */
 .search .sclear { position: absolute; right: .35rem; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 1.9rem; height: 1.9rem; padding: 0; border: 0; border-radius: var(--r-in); background: none; color: var(--text-mute); cursor: pointer; transition: color var(--t-hover) var(--e-out), background-color var(--t-hover) var(--e-out); }
 .search .sclear:hover { color: var(--text); background: var(--obj-high); }
@@ -529,10 +543,10 @@ code.launch { font: 500 .95rem/1 var(--font-data); color: var(--text); padding: 
 .sw.none, .ptrk.none, .wtrk.none { background: repeating-linear-gradient(135deg, color-mix(in oklab, var(--text) 18%, transparent) 0 .14rem, transparent .14rem .42rem); box-shadow: inset 0 0 0 .08rem color-mix(in oklab, var(--text) 16%, transparent); }
 .mdot { flex: none; width: .72rem; height: .72rem; border-radius: 50%; background: var(--text); }
 /* the tiers a command sends to a model: four places in a strip, lit where it does, in the page's neutral selected look */
-.tstrip { flex: none; display: inline-flex; gap: .2rem; }
-.tstrip i { display: grid; place-items: center; width: 1.55rem; height: 1.55rem; border-radius: .34rem; font: 600 .76rem/1 var(--font-data); font-style: normal; color: var(--text-mute); box-shadow: inset 0 0 0 .08rem var(--track-line); }
-.tstrip i.on { background: var(--text-body); color: var(--obj); box-shadow: none; }
-.tstrip.key { gap: .2rem; }
+/* the tiers a command sends to a model: one capsule, a lit place for each tier that lands on the model, in Claude's order */
+.tstrip { flex: none; display: inline-flex; overflow: hidden; border-radius: .34rem; background: var(--text-body); }
+.tstrip i { display: grid; place-items: center; min-width: 1.4rem; height: 1.55rem; font: 600 .76rem/1 var(--font-data); font-style: normal; color: var(--obj); }
+.tstrip i + i { box-shadow: inset .08rem 0 0 color-mix(in oklab, var(--obj) 32%, transparent); }
 /* the column names, once over each column of the board, on the card's own grid so every name stands over its track */
 .em-heads { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); column-gap: var(--gap-col); }
 .em-hc { min-width: 0; container: emcard / inline-size; padding: 0 calc(3 * var(--u)); border-inline: var(--ink-w) solid transparent; }
@@ -541,6 +555,10 @@ code.launch { font: 500 .95rem/1 var(--font-data); color: var(--text); padding: 
 .em-colhead .axh { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; white-space: nowrap; }
 .em-colhead .axh b { font-weight: 500; }
 .em-colhead .axh i { font: 500 .82rem/1.2 var(--font-data); font-style: normal; font-variant-numeric: tabular-nums; }
+/* the board: one column per 56rem the width holds, each a stack of provider groups with 2.4rem between them. The groups are
+   put in their columns when the board is drawn (models.js everyBoard), so opening a card never moves a group to another column. */
+.em-board { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); column-gap: var(--gap-col); align-items: start; }
+.em-col { min-width: 0; display: flex; flex-direction: column; gap: 2.4rem; }
 .em-board .titled > header { margin-bottom: calc(2 * var(--u)); }
 .em-card { display: flex; flex-direction: column; gap: calc(2 * var(--u)); padding: calc(2.5 * var(--u)) calc(3 * var(--u)) calc(3 * var(--u)); container: emcard / inline-size; }
 .em-head { display: flex; align-items: center; gap: .9rem; min-height: 2.2rem; }
@@ -553,8 +571,8 @@ code.launch { font: 500 .95rem/1 var(--font-data); color: var(--text); padding: 
 .em-rows > .em-item:first-child, .em-maker + .em-item { border-top: 0; }
 .em-item:hover, .em-item.open { background: color-mix(in oklab, var(--text) 4.5%, transparent); }
 .em-row {
-  display: grid; grid-template-columns: minmax(0, 1fr) minmax(4rem, 7.5rem) 3.8rem minmax(4rem, 7.5rem) 4.6rem 4.8rem;
-  align-items: center; column-gap: calc(2 * var(--u)); padding: .55rem 0 .55rem .6rem; min-height: var(--row-h);
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(4rem, 8.5rem) 3.8rem minmax(4rem, 8.5rem) 4.3rem 4.5rem;
+  align-items: center; column-gap: var(--u); padding: .55rem 0 .55rem .6rem; min-height: var(--row-h);
 }
 /* a router's roster: one head per maker, its count beside it */
 .em-maker { margin: calc(1.5 * var(--u)) 0 .2rem; padding: 0 0 .3rem .6rem; display: flex; align-items: baseline; gap: .55rem; font: 600 .84rem/1.2 var(--font-name); letter-spacing: .04em; color: var(--text-body); border-bottom: .08rem solid var(--hair); }
@@ -562,7 +580,9 @@ code.launch { font: 500 .95rem/1 var(--font-data); color: var(--text); padding: 
 .em-row.gone .gonelock { grid-column: 4 / -1; justify-self: start; }
 .em-name { min-width: 0; display: flex; align-items: center; gap: .65rem; }
 .em-name.still { padding-left: 1.45rem; }
-.em-name .nm { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .8rem; }
+/* the name takes the room that is left and wraps inside its own cell; the tiers it carries stay at its end on the line, so a row
+   keeps the row height of every other row */
+.em-name .nm { min-width: 0; display: flex; align-items: center; gap: .6rem; }
 .em-name .mnm { min-width: 0; display: inline-flex; align-items: center; gap: .55rem; }
 .em-name .mname { font: 500 1.05rem/1.25 var(--font-name); color: var(--text); overflow-wrap: anywhere; }
 .em-name .mk { font: 500 .92rem/1.25 var(--font-name); color: var(--text-mute); }
@@ -656,6 +676,9 @@ code.launch { font: 500 .95rem/1 var(--font-data); color: var(--text); padding: 
   font: inherit; color: var(--text-body); text-align: left; cursor: pointer; transition: background-color var(--t-hover) var(--e-out), box-shadow var(--t-snap) var(--e-out);
 }
 .proj-tab:last-child { box-shadow: none; }
+/* the projects with no sessions, behind one count: a row as tall as a tile, under the hairline the tile above it draws */
+.pj-morerow { display: flex; align-items: center; min-height: 2.8rem; padding: 0 calc(1.5 * var(--u)); }
+.pj-morerow .morepill { align-self: center; }
 .proj-tab:hover { background: var(--obj-high); }
 .proj-tab:focus-visible { outline: .14rem solid var(--text); outline-offset: -.3rem; }
 .proj-tab[aria-current="true"] { background: var(--obj-high); box-shadow: inset .3rem 0 0 var(--text), inset 0 -.08rem 0 var(--track-line); }
@@ -740,6 +763,7 @@ code.launch { font: 500 .95rem/1 var(--font-data); color: var(--text); padding: 
 .pj-pick.idle:not(.on) .chip { color: var(--text-mute); border-color: var(--track-line); }
 .pj-idle { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: var(--u); }
 .pj-run .pd-sub { margin-bottom: calc(1.5 * var(--u)); }
+.pj-run .pd-top { margin-bottom: calc(2 * var(--u)); }
 /* what Claude Code gets here from the picked command: its chip, then a tile for each thing it receives */
 .pj-for { display: flex; flex-wrap: wrap; align-items: center; gap: calc(1.5 * var(--u)) calc(4 * var(--u)); }
 .pj-for > .chip { flex: none; }
@@ -806,13 +830,14 @@ code.launch { font: 500 .95rem/1 var(--font-data); color: var(--text); padding: 
    and its value under it. A layer that is sent fills its dot; a layer a Replace keeps from being sent dims, and its
    stretch of the rail is dashed. In compaction one rule is in force, and its dot is ringed. */
 .rrail { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.pj .rung { position: relative; display: grid; grid-template-columns: 1.4rem minmax(0, 1fr); column-gap: calc(1.5 * var(--u)); row-gap: .5rem; padding: .6rem 0; }
-.pj .rung::before { content: ""; position: absolute; left: .7rem; top: 0; bottom: 0; width: .14rem; margin-left: -.07rem; background: var(--track-line); }
-.pj .rung:first-child::before { top: 1.15rem; }
-.pj .rung:last-child::before { bottom: auto; height: 1.15rem; }
+.pj .rung { position: relative; display: grid; grid-template-columns: 1.7rem minmax(0, 1fr); column-gap: calc(1.5 * var(--u)); row-gap: .5rem; padding: .6rem 0; }
+.pj .rung::before { content: ""; position: absolute; left: .85rem; top: 0; bottom: 0; width: .14rem; margin-left: -.07rem; background: var(--track-line); }
+.pj .rung:first-child::before { top: 1.45rem; }
+.pj .rung:last-child::before { bottom: auto; height: 1.45rem; }
 .pj .rung:only-child::before { display: none; }
-.rdot { grid-row: 1 / span 2; grid-column: 1; justify-self: center; position: relative; z-index: 1; width: .85rem; height: .85rem; margin-top: .28rem; border-radius: 50%; background: var(--obj); box-shadow: 0 0 0 .14rem var(--track-line); }
-.pj .rung.on .rdot { background: var(--text-body); box-shadow: 0 0 0 .14rem var(--text-body); }
+/* a rung's socket carries its place in the order, widest rule first: filled where it is sent, hollow where it is not set */
+.rdot { grid-row: 1 / span 2; grid-column: 1; justify-self: center; position: relative; z-index: 1; display: grid; place-items: center; width: 1.7rem; height: 1.7rem; margin-top: -.15rem; border-radius: 50%; background: var(--obj); box-shadow: 0 0 0 .14rem var(--track-line); font: 600 .78rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
+.pj .rung.on .rdot { background: var(--text-body); box-shadow: 0 0 0 .14rem var(--text-body); color: var(--obj); }
 .rwho { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; min-width: 0; min-height: 1.4rem; font: 500 .95rem/1.2 var(--font-name); color: var(--text); }
 .rwho > .act { margin-left: auto; }
 .rval { grid-column: 2; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .8rem; }
@@ -826,13 +851,14 @@ code.launch { font: 500 .95rem/1 var(--font-data); color: var(--text); padding: 
 .pj .rung.cut > .rwho, .pj .rung.cut > .rval { opacity: .45; }
 .pj .rung:not(:has(.rval)) { row-gap: 0; }
 .pj .rung.cut::before, .legend i.rl-cut { background: repeating-linear-gradient(to bottom, var(--text-mute) 0 .3rem, transparent .3rem .55rem); }
-.pj .rung.cut .rdot { background: var(--obj); box-shadow: 0 0 0 .14rem var(--text-mute); }
+.pj .rung.cut .rdot { background: var(--obj); box-shadow: 0 0 0 .14rem var(--text-mute); color: var(--text-mute); }
 .legend i.rl-cut { flex: none; width: .14rem; height: 1.1rem; border-radius: 0; }
-.legend i.rl-unset { flex: none; width: .85rem; height: .85rem; border-radius: 50%; background: var(--obj); box-shadow: 0 0 0 .14rem var(--track-line); margin: 0 .15rem; }
+.legend i.rl-unset { flex: none; width: .95rem; height: .95rem; border-radius: 50%; background: var(--obj); box-shadow: 0 0 0 .14rem var(--track-line); margin: 0 .2rem; }
 /* compaction: the rule in force is ringed; a rule it overrides fills quieter than it */
-.rrail.cx .rung:not(.lit):not(.unset) .rdot { background: var(--text-mute); box-shadow: 0 0 0 .14rem var(--text-mute); }
+.rrail.cx .rung:not(.lit):not(.unset) .rdot { background: var(--text-mute); box-shadow: 0 0 0 .14rem var(--text-mute); color: var(--obj); }
 .rrail.cx .rung.lit .rdot, .legend i.rl-lit { background: var(--text); box-shadow: 0 0 0 .14rem var(--text), 0 0 0 .42rem color-mix(in oklab, var(--text) 18%, transparent); }
-.legend i.rl-lit { flex: none; width: .62rem; height: .62rem; margin: 0 .3rem; border-radius: 50%; }
+.rrail.cx .rung.lit .rdot { color: var(--obj); }
+.legend i.rl-lit { flex: none; width: .72rem; height: .72rem; margin: 0 .35rem; border-radius: 50%; }
 .redit { flex-direction: column; align-items: stretch; gap: .6rem; }
 .redit > .switch { align-self: flex-start; flex-wrap: wrap; }
 .redit > .field.ptext { min-height: 5.5rem; font: 400 .9rem/1.45 var(--font-data); }
@@ -862,14 +888,16 @@ code.launch { font: 500 .95rem/1 var(--font-data); color: var(--text); padding: 
 
 /* ---------- Log: each turn a row, its time a bar on one log axis ---------- */
 .turnstats { margin-bottom: calc(3 * var(--u)); }
-.turns { display: grid; grid-template-columns: 5.6rem minmax(0, 1fr) 5.2rem minmax(0, 9rem) 4.2rem; column-gap: calc(2 * var(--u)); row-gap: calc(1.2 * var(--u)); align-items: center; }
+.turns { display: grid; grid-template-columns: 5.6rem minmax(0, 1fr) 5.2rem minmax(0, 9rem) minmax(0, 9rem); column-gap: calc(2 * var(--u)); row-gap: calc(1.2 * var(--u)); align-items: center; }
+.turns.nohit { grid-template-columns: 5.6rem minmax(0, 1fr) 5.2rem minmax(0, 9rem); }
+.trn .barcell { --v-w: 3.4rem; }
+.trn .barcell.both { grid-column: span 2; }
 .trn { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; }
 .trn time { font: 500 .9rem/1.3 var(--font-data); color: var(--text-mute); }
 .trn .pd-n { text-align: right; font-variant-numeric: tabular-nums; }
 .trn .barcell { min-width: 0; }
 .trhead span { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
 .trhead span:nth-child(2) { grid-column: 2 / 4; }
-.trhead span:nth-child(4) { text-align: right; }
 .trn.bad .pd-trk .mid, .trn.bad .pd-trk .hi { background: var(--limit); }
 .trax { margin-top: calc(-.4 * var(--u)); }
 .trax .pd-ax { grid-column: 2; }

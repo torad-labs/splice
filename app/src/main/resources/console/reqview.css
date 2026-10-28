@@ -110,8 +110,10 @@
    from the cache, in the same ink the list's token column uses for it. */
 .rqpane .fig:has(.fbar) { width: clamp(9rem, 10cqi, 16rem); }  /* on a wide table the bars grow with it, so their lengths read */
 .fbar { display: block; width: 100%; height: .5rem; border-radius: .25rem; background: color-mix(in oklab, var(--text) 8%, transparent); }
+.fbar.unread { background: none; outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }  /* no counts reported: the track, empty and dashed */
 .fbar > b { position: relative; display: block; height: 100%; border-radius: .25rem; background: color-mix(in oklab, var(--text) 55%, transparent); overflow: hidden; }
 .fbar > b > i { position: absolute; left: 0; top: 0; bottom: 0; background: color-mix(in oklab, var(--text) 22%, var(--obj)); }
+.fbar.plan > b { background: none; box-shadow: inset 0 0 0 .12rem color-mix(in oklab, var(--text) 48%, transparent); }  /* a plan request's worth, hollow as the list's cost column draws it */
 
 /* ---------- the Record: Sent, Attempts, Returned ---------- */
 .tabs { align-self: flex-start; }
@@ -198,10 +200,21 @@
 .attempt.fail { box-shadow: inset .3rem 0 0 var(--limit); }
 .attempt > h3 { display: flex; align-items: center; gap: .8rem; margin-bottom: .7rem; }
 .attempt .an { width: 1.7rem; height: 1.7rem; border-radius: 50%; display: grid; place-items: center; flex: none; font: 600 .88rem/1 var(--font-data); color: var(--splice-cream); background: var(--socket); box-shadow: 0 0 0 .12rem var(--ink), inset 0 0 0 .14rem var(--rail); }  /* the socket is dark in both themes: day's --text sank into it, so the number keeps night's ink */
-.attempt .url { font: 500 .92rem/1.2 var(--font-data); color: var(--text); overflow-wrap: anywhere; min-width: 0; }
+/* a send is headed by who it went to, its dot in the provider's colour; the address is the first line of its headers fold */
+.attempt .to { display: inline-flex; align-items: center; gap: .55rem; min-width: 0; font: 600 1rem/1.2 var(--font-name); color: var(--text); }
+.attempt .pdot { flex: none; width: .7rem; height: .7rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); }
+.addr { margin: .5rem 0 0; display: flex; flex-wrap: wrap; gap: .3rem .8rem; font: 500 .92rem/1.4 var(--font-data); color: var(--text); overflow-wrap: anywhere; }
+.addr > span { color: var(--text-mute); font-family: var(--font-name); }
 .attempt .status { font-size: .95rem; margin-left: auto; }
 /* an attempt's time reads as one figure ("17 ms") beside its status; in a pane narrower than its address, the address wraps */
 .attempt .ams { font: 500 .92rem/1 var(--font-data); color: var(--text-body); white-space: nowrap; }
+.attempt .host { font: 500 .88rem/1.2 var(--font-data); color: var(--text-mute); overflow-wrap: anywhere; }
+/* WHEN A SEND RAN IS A LENGTH: its bar on the axis the whole request spans, in the provider's colour (the pane's --c), a failed one in the limit red */
+.attempt .atl { margin: -.15rem 0 .85rem 2.5rem; }
+.attempt .atk { position: relative; display: block; height: var(--meter-h-sub, .62rem); border-radius: .31rem; background: color-mix(in oklab, var(--text) 10%, transparent); }
+.attempt .atk > i { position: absolute; top: 0; bottom: 0; border-radius: .31rem; background: var(--c); }
+.attempt .atk > i.bad { background: var(--limit); }
+.attempt .ate { display: flex; justify-content: space-between; margin-top: .35rem; font: 500 .8rem/1 var(--font-data); color: var(--text-mute); font-variant-numeric: tabular-nums; }
 .attempt .why { margin: -.25rem 0 .7rem 2.5rem; font: 500 .92rem/1 var(--font-data); color: var(--limit); display: flex; align-items: center; gap: .4rem; }
 .attempt .why svg { width: 1rem; height: 1rem; flex: none; }  /* a spent window: the lock, then when it comes back */
 .attempt .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .9rem; }

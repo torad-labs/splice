@@ -280,7 +280,7 @@ const REQVIEW = (() => {
         // a stream that ended on an error event: its type and its sentence where the stop reason would be
         + `${err ? `<p class="stopr err"><span class="chip" title="${esc(err.error.type)}">${esc(errWord(err.error.type))}</span><span class="state limit">${esc(err.error.message)}</span></p>` : ""}</div>`;
     }
-    // frames, the consecutive pieces of one answer gathered into one line
+    // events (what the provider calls what it streams), the consecutive pieces of one answer gathered into one line
     function framesHtml(fr, key) {
       const groups = [];
       for (const f of fr) {
@@ -290,7 +290,7 @@ const REQVIEW = (() => {
       }
       const open = s().nodes.has(`${key}:frames`);
       const list = open ? `<ol class="frames">${groups.map((g) => `<li><span class="ev">${esc(g.event)}</span>${g.n > 1 ? `<span class="times">${g.n} times</span>` : ""}${g.n === 1 ? `<span class="fd">${typeof g.data === "object" ? prev(g.data) : prim(g.data)}</span>` : ""}</li>`).join("")}</ol>` : "";
-      return `<button class="framefold" data-act="frames" data-k="${key}" aria-expanded="${open}">${ICON.caret}${n0(fr.length)} ${fr.length === 1 ? "frame" : "frames"}</button>${list}`;
+      return `<button class="framefold" data-act="frames" data-k="${key}" aria-expanded="${open}">${ICON.caret}${n0(fr.length)} ${fr.length === 1 ? "event" : "events"}</button>${list}`;
     }
     // A STATUS IN THE CONSOLE'S WORDS, ITS CODE BESIDE IT (Oct 27): "Status 200" was the wire's word for what the pane
     // above already says in his. An answer is a tick and "Answered"; a refusal is its outcome word in the limit red, as
@@ -326,16 +326,19 @@ const REQVIEW = (() => {
     // tr: { sent: {headers, body}, attempts: [{url, start, ms, status, headers, body, resHeaders?, frames? | raw?, failure?, lock?}],
     // returned: {status, frames | body} }. st: the records' state, kept or cut; every other state never reaches here.
     // A fold that keeps a list of headers to one line until he opens it: the count says how many it holds.
-    function headFold(h, key) {
+    // [url] is where the send went: the fold's first line, so the heading above can name the provider instead of an address
+    function headFold(h, key, url = null) {
       const n = Object.values(h || {}).filter((v) => v != null).length, open = s().nodes.has(`${key}:frames`);
-      if (!n) return "";
-      return `<button class="framefold" data-act="frames" data-k="${key}" aria-expanded="${open}">${ICON.caret}${n0(n)} ${n === 1 ? "header" : "headers"}</button>${open ? headersHtml(h) : ""}`;
+      if (!n && !url) return "";
+      const word = n ? `${n0(n)} ${n === 1 ? "header" : "headers"}` : "Address";
+      const to = url ? `<p class="addr"><span>Sent to</span>${esc(url)}</p>` : "";
+      return `<button class="framefold" data-act="frames" data-k="${key}" aria-expanded="${open}">${ICON.caret}${word}</button>${open ? to + (n ? headersHtml(h) : "") : ""}`;
     }
     // h: the pane's options, for { reply } (false: the reply's words are the host's) and { names } (the Sent tab's names)
     function bodiesHtml(r, tr, st, h = {}) {
       // a kept trace that holds no record for a piece: that piece was not reported, which is not the request missing
       const tab = s().tab, cut = st === "cut", gone = !tr;
-      const absent = `<p class="unavail">${DRAW.nothing("Not reported")}</p>`;
+      const absent = `<p class="unavail">${DRAW.unread.object("Not reported")}</p>`;
       // what Claude Code sent: its headers folded to their count, credentials redacted inside, then the body
       if (tab === "sent") return gone ? absent : `${headFold(tr.sent.headers, `${r.id}:sh`)}${isPlaySend(tr.sent.body) ? playSendHtml(r, tr.sent.body, h.names) : bodyTree(tr.sent.body, `${r.id}.sent`)}${cut ? `<p class="cut">Cut at 16M characters</p>` : ""}`;
       if (tab === "returned") {
@@ -356,17 +359,29 @@ const REQVIEW = (() => {
         : a.frames || a.raw ? `<div>${blockHtml("Response", answer(a, i))}</div>` : "");
       // A send is headed by where it went. A websocket round records no address and no status: the frames went over a
       // connection splice had already opened (TurnTrace.wsAttempt), and its heading says so in those words.
-      const sendTo = (a) => (a.url ? esc(a.url) : a.transport === "ws" ? `<span class="nr">Over the open connection</span>` : "");
+      const toWord = PROVIDER_NAME[r.provider] ?? r.cmd ?? "";
+      // the provider and the host it answered from; the whole address is under the pointer and behind the headers' disclosure
+      const hostOf = (url) => { try { return new URL(url).host; } catch { return ""; } };
+      const sendTo = (a) => `<span class="to" title="${esc(a.url ?? (a.transport === "ws" ? "Over the open connection" : ""))}"><i class="pdot" style="--c:${colorOf(r.provider)}" aria-hidden="true"></i>${esc(toWord)}${a.url && hostOf(a.url) ? `<span class="host">${esc(hostOf(a.url))}</span>` : ""}</span>`;
+      // WHEN EACH SEND RAN, AS A LENGTH: every attempt is a bar on the one axis the whole request spans, from where it started
+      // to where it ended, in the provider's colour, a failed one in the limit red, the axis's two ends named under it
+      const reach = r.total > 0 ? r.total : Math.max(0, ...tr.attempts.map((a) => (a.start || 0) + (a.ms || 0)));
+      const track = (a) => {
+        if (!(reach > 0) || !(a.ms >= 0)) return "";
+        const from = Math.max(0, Math.min(100, ((a.start || 0) / reach) * 100)), long = Math.max(0, Math.min(100 - from, (a.ms / reach) * 100));
+        const bad = a.failure || a.status >= 400;
+        return `<div class="atl" role="img" aria-label="${esc(`From ${secs(a.start || 0)} to ${secs((a.start || 0) + a.ms)} of ${secs(reach)}`)}"><span class="atk"><i${bad ? ` class="bad"` : ""} style="left:${from.toFixed(2)}%;width:max(${long.toFixed(2)}%, .3rem)"></i></span><span class="ate" aria-hidden="true"><small>0</small><small>${secs(reach)}</small></span></div>`;
+      };
       // why it failed, in words; a send that failed as an earlier one did says which, rather than the same line again
       const why = (a, i) => {
         if (!a.failure) return "";
         const same = tr.attempts.slice(0, i).findIndex((b) => b.failure === a.failure);
         return `<p class="why" title="${esc(a.failure)}">${a.lock ? ICON.lock : ""}${same >= 0 ? `Same failure as ${same + 1}` : esc(failureWords(a.failure))}</p>`;
       };
-      return tr.attempts.map((a, i) => `<section class="attempt${a.failure ? " fail" : ""}"><h3><span class="an">${i + 1}</span><span class="url">${sendTo(a)}</span>${a.status ? statusHtml(a.status, { lock: Boolean(a.lock) }) : ""}<span class="ams">${secs(a.ms)}</span></h3>`
-        + why(a, i)
-        + `<div class="two${resHtml(a, i) ? "" : " one"}"><div>${i && a.headers === tr.attempts[0].headers && a.body === tr.attempts[0].body ? `<p class="same">Same as 1</p>`
-          : `${blockHtml("Request", headFold(a.headers, `${r.id}:a${i}h`))}${a.body === tr.sent.body ? `<p class="same">Unchanged</p>` : blockHtml("Body", bodyTree(a.body, `${r.id}.a${i}`))}`}</div>`
+      return tr.attempts.map((a, i) => `<section class="attempt${a.failure ? " fail" : ""}"><h3><span class="an">${i + 1}</span>${sendTo(a)}${a.status ? statusHtml(a.status, { lock: Boolean(a.lock) }) : ""}<span class="ams">${secs(a.ms)}</span></h3>`
+        + track(a) + why(a, i)
+        + `<div class="two${resHtml(a, i) ? "" : " one"}"><div>${i && a.headers === tr.attempts[0].headers && a.body === tr.attempts[0].body ? `<p class="same">Same as 1</p>${a.url && a.url !== tr.attempts[0].url ? headFold({}, `${r.id}:a${i}h`, a.url) : ""}`
+          : `${blockHtml("Request", headFold(a.headers, `${r.id}:a${i}h`, a.url))}${a.body === tr.sent.body ? `<p class="same">Unchanged</p>` : blockHtml("Body", bodyTree(a.body, `${r.id}.a${i}`))}`}</div>`
         + `${resHtml(a, i)}</div></section>`).join("");
     }
     // THE TIME RAIL (the redesign, Oct 26): each send a bar from its start to its end, hatched to its first byte, a failed
@@ -449,11 +464,14 @@ const REQVIEW = (() => {
       const most = Math.max(r.in ?? 0, r.write ?? 0, r.out ?? 0);
       const bar = (v, inner = "") => (most > 0 ? `<span class="fbar" aria-hidden="true">${v > 0 ? `<b style="width:${Math.max(1.5, (v / most) * 100).toFixed(1)}%">${inner}</b>` : ""}</span>` : "");
       const cachedPart = r.in > 0 && r.cached > 0 ? `<i style="width:${Math.min(100, (r.cached / r.in) * 100).toFixed(1)}%"></i>` : "";
+      // the cost as a bar where the page gives it a place on its own cost scale (h.costAt, 0 to 100): hollow where the plan
+      // paid it, as the list's cost column draws it; a page with no such scale (Compare) draws the figure alone
+      const costBar = h.costAt != null ? `<span class="fbar cost${h.costPlan ? " plan" : ""}" aria-hidden="true"><b style="width:${Math.max(1.5, h.costAt).toFixed(1)}%"></b></span>` : "";
       const of = {
         in: () => cell("Tokens in", r.in == null ? DRAW.dash : n0(r.in), share == null && r.cached && r.in ? `${Math.round((r.cached / r.in) * 100)}% cached` : "", bar(r.in, cachedPart)),
         write: () => (r.write > 0 ? cell("Cache write", n0(r.write), "", bar(r.write)) : ""),
         out: () => cell("Tokens out", r.out == null ? DRAW.dash : n0(r.out), "", bar(r.out)),
-        cost: () => cell("Cost", h.cost || DRAW.dash, h.costSub),
+        cost: () => cell("Cost", h.cost || DRAW.dash, h.costSub, costBar),
         attempts: () => (r.attempts === 0 ? cell("Attempts", "0") : ""),
       };
       // a request splice ended before any attempt (over budget, no quota, too many at once) asked no provider, so it has
@@ -462,11 +480,12 @@ const REQVIEW = (() => {
       // when reported)
       const shown = r.attempts === 0 ? cells.filter((k) => !tok.includes(k))
         : none ? cells.filter((k, i) => !tok.includes(k) || cells.findIndex((c) => tok.includes(c)) === i) : cells;
-      if (none) of.in = of.write = of.out = () => cell("Tokens", `<span class="nr">Not reported</span>`);
+      // a figure nobody reported is one dash on one dashed track, said once for the three; its reason is under the pointer
+      if (none) of.in = of.write = of.out = () => cell("Tokens", DRAW.unread.fig, "", `<span class="fbar unread" aria-hidden="true"></span>`);
       const told = shown.some((k) => tok.includes(k)), priced = shown.includes("cost");
       const drawn = shown.map((k) => of[k]()).filter(Boolean);
       // a Cost section holding its figure alone: the kicker already names it, so the figure carries no second "Cost"
-      const figs = !told && priced && drawn.length === 1 ? cell("", h.cost || DRAW.dash, h.costSub) : drawn.join("");
+      const figs = !told && priced && drawn.length === 1 ? cell("", h.cost || DRAW.dash, h.costSub, costBar) : drawn.join("");
       const ring = share != null ? DRAW.statTile(DRAW.ring(share, { size: "focal", label: `${DRAW.pct(share)} of tokens in came from the cache` }), DRAW.pct(share), "Cache hit", { focal: true }) : "";
       return DRAW.section(told && priced ? "Tokens and cost" : told ? "Tokens" : "Cost", `<div class="rquse">${ring}<div class="figs">${figs}</div></div>`, { cls: "rqfigs", aside });
     }

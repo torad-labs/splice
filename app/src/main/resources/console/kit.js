@@ -112,11 +112,17 @@ function modelName(labels, id) {
 // and plan; a key: the variable that holds it), never an id, a hex run, an address as a title or the bare word "Account";
 // and where two unnamed things would read the same, an ordinal in the order they are drawn. The ACT to name it
 // (DRAW.nameIt) stands beside the name, so a placeholder is always one press from being his.
-const ID_LIKE = /^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}|[0-9a-f]{6,}|[a-z]+[_-][0-9a-f]{6,}|\S+@\S+)$/i;
+// a client's own name for a session is often a word and a whole id ("codex-<uuid>", "claude_<uuid>"): that is an id too
+const UUID_SHAPE = "[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}";
+const ID_LIKE = new RegExp(`^(?:${UUID_SHAPE}|[0-9a-f]{6,}|[a-z]+[_-][0-9a-f]{6,}|[a-z]+[_-]${UUID_SHAPE}|\\S+@\\S+)$`, "i");
 const PLACEHOLDER = /^(?:signed-out\s+)?(?:account|login|session|unnamed)(?:\s+\d+)?$/i;
 /** The name a person gave, or "" where there is none: an id, a hex run, an address or a placeholder is not a name. */
-// an id fragment the daemon appends to tell two default names apart ("Max · 1a2b3c4d") is not part of the name
-const ownName = (s) => { const t = String(s ?? "").replace(/\s*[·(]\s*[0-9a-f]{6,}\)?\s*$/i, "").trim(); return t && !ID_LIKE.test(t) && !PLACEHOLDER.test(t) ? t : ""; };
+// an id fragment the daemon appends to tell two default names apart ("Max · 1a2b3c4d") is not part of the name, and neither
+// is a tag a relay puts first, with an id in it ("[review 1f2e3d4c] Fix the login")
+const ownName = (s) => {
+  const t = String(s ?? "").replace(/^\s*\[[^\]]*\b(?=[0-9a-f]*\d)[0-9a-f]{6,}\b[^\]]*\]\s*/i, "").replace(/\s*[·(]\s*[0-9a-f]{6,}\)?\s*$/i, "").trim();
+  return t && !ID_LIKE.test(t) && !PLACEHOLDER.test(t) ? t : "";
+};
 /** What to call [o], of [kind] "session", "login" or "key". Returns { text, own }: [own] is true when the user named it, so
  *  a page knows whether to draw the act that names it. A session reads { name, command, project }, a login { name,
  *  provider (a PROVIDER_NAME key), plan }, a key { name, variable }. */
@@ -271,6 +277,12 @@ const ICON = {
   moon: G('<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>', 'class="moon" aria-hidden="true"'),
   // something went wrong where a person was going: the route error's mark (console.js)
   bang: G('<circle cx="12" cy="12" r="9"/><path d="M12 7.6v5.2M12 16.2h0"/>', 'aria-hidden="true"'),
+  // a speech bubble: a conversation, as the manager's tab stands for it
+  chat: G('<path d="M4 5h16v11h-9l-4.5 3.5V16H4z"/><path d="M8 9.5h8M8 12.5h5"/>', 'aria-hidden="true"'),
+  // a page of paper with its corner turned: what a file is (DRAW.file)
+  file: G('<path d="M5 4.5h9l5 5V19.5H5z"/><path d="M14 4.5v5h5"/>', 'aria-hidden="true"'),
+  // a bin with its lid: a delete that sits on the row it empties (the button names the act for a screen reader)
+  trash: G('<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>', 'aria-hidden="true"'),
 };
 // A refused Stop, in fin's words, by the refusal's reason key and never its sentence (SessionDrive.Refusal). Ended and
 // a head's 404 draw no line: the card's re-read state says it. A closed pane splice opened says only that, because
@@ -330,7 +342,9 @@ const GHOST = {
   tiles(n = GHOST.count("tiles")) {
     if (!(n > 0)) return "";
     if (!tilesWide()) return `<div class="lhead" aria-hidden="true">${GHOST.chip(13)}</div>`;
-    const one = () => `<span class="ptile ghosted-tile"><span class="ptop">${GHOST.bar(7)}${GHOST.fig(3)}</span><i class="ghost pshare"></i><span class="plamps"></span></span>`;
+    // the lamp row is held only when the last read drew one (a tile with no lamps is shorter), so the ghost row is the row that lands
+    const lamps = GHOST.count("tilelamps") ? " hold" : "";
+    const one = () => `<span class="ptile ghosted-tile"><span class="ptop">${GHOST.bar(7)}${GHOST.fig(3)}</span><i class="ghost pshare"></i><span class="plamps${lamps}"></span></span>`;
     return `<nav class="ptiles" aria-hidden="true"><div class="ptgrid">${Array.from({ length: n }, one).join("")}</div></nav>`;
   },
   /** HOW MUCH LANDS IS HOW MUCH LANDED LAST (Oct 28). A ghost is the size and count of what it waits for, so a page asks
@@ -483,6 +497,16 @@ const NICE = [1, 3, 10, 30, 100, 300, 1e3, 3e3, 1e4, 3e4, 6e4, 18e4, 6e5];
 // an axis label: a round figure, never a table's two-part reading (60 000 ms is "1 min", not "1 min 0 s"). Past ten minutes
 // the axis ends on the longest time itself (axis below), which is not a round figure: whole minutes.
 const tickWord = (ms) => (ms < 1000 ? `${ms} ms` : ms < 60000 ? `${ms / 1000} s` : `${Math.round(ms / 60000)} min`);
+// THE FIXED TIME AXIS (DRAW.timeAxis): one second to four weeks on a log scale no data moves, with its ticks at a minute, an
+// hour, a day and a week. The ticks' places are written once on the document root, where every bar that wears them and the
+// legend's own track read them (console.css, .timed).
+const TIME_LO = 1000, TIME_HI = 28 * 86_400_000;
+const TIME_AXIS = {
+  lo: TIME_LO, hi: TIME_HI,
+  at: (ms) => Math.max(0, Math.min(100, ((Math.log(Math.max(ms, TIME_LO)) - Math.log(TIME_LO)) / (Math.log(TIME_HI) - Math.log(TIME_LO))) * 100)),
+  ticks: [[60_000, "1 min"], [3_600_000, "1 h"], [86_400_000, "1 d"], [604_800_000, "1 w"]],
+};
+TIME_AXIS.ticks.forEach(([ms], i) => document.documentElement.style.setProperty(`--tk${i + 1}`, `${TIME_AXIS.at(ms).toFixed(2)}%`));
 
 const DRAW = {
   // ---------- how a figure is written: one spelling per kind, everywhere ----------
@@ -529,8 +553,19 @@ const DRAW = {
   unread: {
     fig: `<i class="nr" title="Not reported">—</i>`,
     track: (cls = "") => `<div class="bar unread${cls ? ` ${cls}` : ""}"></div>`,
-    cell: ({ cls = "", role = "" } = {}) => `<span class="barcell unread${cls ? ` ${cls}` : ""}"${role ? ` role="${role}"` : ""}><span class="vbar unread" aria-hidden="true"></span><b class="v"><i class="nr" title="Not reported">—</i></b></span>`,
+    cell: ({ cls = "", role = "", label = "", title = "" } = {}) => `<span class="barcell unread${cls ? ` ${cls}` : ""}"${role ? ` role="${role}"` : ""}${title ? ` title="${esc(title)}"` : ""}>${label ? `<em>${esc(label)}</em>` : ""}<span class="vbar unread" aria-hidden="true"></span><b class="v"><i class="nr" title="Not reported">—</i></b></span>`,
     object: (word, opts) => DRAW.nothing(word, { slot: true, ...opts }),
+  },
+  /** A PLACE IS A FILE CHIP (Oct 28): a path, and the file a call touched, as the file's name in full ink with the folder it
+   *  is in beside it, muted, so a line is found by its name and its folder is there when it is needed. It wraps where the
+   *  line ends and never cuts; the whole path, with the home folder as "~", is its hover. A path is a place, never a run
+   *  of mono among prose. Returns "" for a path that is empty. */
+  file(path) {
+    const text = String(path ?? "").trim();
+    if (!text) return "";
+    const where = text.replace(/^\/(?:home|Users)\/[^/]+/, "~"), cut = where.lastIndexOf("/");
+    const name = cut >= 0 ? where.slice(cut + 1) : where, dir = cut > 0 ? where.slice(0, cut) : "";
+    return `<span class="filechip" title="${esc(where)}">${ICON.file}<b>${esc(name || where)}</b>${dir ? `<span>${esc(dir)}</span>` : ""}</span>`;
   },
   /** ONE LEGEND PER VIEW, for every mark or dot a view draws without a word on it (Oct 28). [items] is [{ mark, word }]:
    *  the mark is the drawing itself (a lamp, a dot, a glyph, DRAW.unread.fig), the word what it means. A view draws this
@@ -607,6 +642,8 @@ const DRAW = {
         tweenBar(b);
       }
     }
+    // the balanced boards in what was just drawn are laid here, so a page that focuses a field or reads a height next sees them whole
+    DRAW.lay(root);
   },
   /** THE RING: a share drawn as an arc from 12 o'clock. "reset" is Accounts' 24.3 px ring beside a meter (how soon the
    *  window refills, in the provider's colour); "focal" is the Usage drill-down's 50 px ring, the figure a section leads with. */
@@ -636,13 +673,15 @@ const DRAW = {
    *     it read "Neither answered nor failed 6: Stopped 6" — the same count twice behind a sentence about a class.
    *   - { restWord } is the caller's own word for the lead over two or more quiet blocks.
    *  { small } draws the shorter 1.4rem bar, for a second whole under a hero bar. { grow } grows it in over 240 ms.
-   *  { label } reads the whole bar aloud; { tail } rides the end of the legend row.
+   *  { label } reads the whole bar aloud; { tail } rides the end of the legend row. { key } names the bar for a page that
+   *  redraws it on a re-read: every part then moves from its old share to the new one over --t-snap (data-tw), where
+   *  without a key the parts are drawn in place.
    *
    *  WHICH LABELS FIT INSIDE IS MEASURED ON THE BAR AS DRAWN (Oct 27, fitStack below). The words and counts are first
    *  placed by a guess from a bar { bw } rem wide (40 by default), and once the bar is laid out each part keeps its label
    *  only where the label fits, and a part the guess left outside takes its label in where it fits. The guess assumed
    *  a 606 px bar everywhere, so on a wider bar a 273 px part lost its label to the row below. */
-  stack(segs, total, { small = false, grow = false, restWord = "Neither answered nor failed", label = null, tail = "", bw = BW } = {}) {
+  stack(segs, total, { small = false, grow = false, restWord = "Neither answered nor failed", label = null, tail = "", bw = BW, key = "" } = {}) {
     const blocks = [], legend = [];
     // every part that can carry its label is paired with its item in the row by its rank, largest first, which is the
     // row's own order, so fitStack can move a label between the two and keep the row in order
@@ -657,7 +696,11 @@ const DRAW = {
       const inside = !quiet && w >= (labelRem(text) / (0.9 * bw)) * 100;
       const tag = s.href ? "a" : "span", href = s.href ? ` href="${s.href}"` : "";
       const style = `${s.ink ? `--c:${s.ink};` : ""}width:max(${w.toFixed(3)}%, .16rem)`;
-      blocks.push(`<${tag} class="${classOf(s)}"${href}${pair(s)} style="${style}" title="${esc(text)}">`
+      // [key] names the bar where a page redraws it on a re-read: each part is known by its place in the list the caller
+      // passes, and moves from its old share to the new one over --t-snap (the tween below); a part keeps a hairline of
+      // its own (data-min) while it moves, as it does when it stands still
+      const tween = key ? ` data-tw="stack:${esc(key)}:${segs.indexOf(s)}" data-w="${w.toFixed(3)}" data-min=".16rem"` : "";
+      blocks.push(`<${tag} class="${classOf(s)}"${href}${pair(s)}${tween} style="${style}" title="${esc(text)}">`
         + `${inside ? `<span>${esc(s.word)} <b>${figure(s)}</b></span>` : ""}</${tag}>`);
       if (!inside) legend.push(s);
     }
@@ -679,13 +722,35 @@ const DRAW = {
   /** A bar on its column's shared scale with its figure after it, so every row's figure ends on ONE right edge and the
    *  biggest and the worst are found before a digit is read. [w] is this row's percent of the column's largest.
    *  [label] is the column's own word, drawn only where the table is too narrow for its header. */
-  vbar: (w, key = "") => { const v = Math.round(Math.max(0, Math.min(100, w)) * 10) / 10; return `<span class="vbar" aria-hidden="true"><b data-tw="${esc(key)}" data-w="${v}" style="width:${v}%"></b></span>`; },
+  vbar: (w, key = "", split = null) => {
+    const v = Math.round(Math.max(0, Math.min(100, w)) * 10) / 10;
+    // [split] is a part of the bar's own length (0 to 100) drawn at its end in a lighter tone of the bar: the cached share of
+    // a token count, the part of a spend that was a plan's. The page names what it is in the cell's title and its legend.
+    const cut = split == null ? 0 : Math.round(Math.max(0, Math.min(100, split)) * 10) / 10;
+    return `<span class="vbar${cut ? " split" : ""}" aria-hidden="true"><b data-tw="${esc(key)}" data-w="${v}" style="width:${v}%">${cut ? `<i style="width:${cut}%"></i>` : ""}</b></span>`;
+  },
   /** [role] "cell" when the bar cell is a cell of a role="table" (the Usage Results rows). [key] names this cell for the value
    *  helper (the kit's tween, below), so a re-read that changes the bar and its figure moves them from the old value to
    *  the new over 240 ms; without one the cell is known by where it stands in the row that holds it. A figure that is
-   *  a plain number moves with its bar (the helper reads its digits). */
-  barCell: ({ w, text, label = "", cls = "", level = "", role = "", key = "" }) =>
-    `<span class="barcell${cls ? ` ${cls}` : ""}${level ? ` lv-${level}` : ""}"${role ? ` role="${role}"` : ""}>${label ? `<em>${esc(label)}</em>` : ""}${DRAW.vbar(w, key)}<b class="v" data-tn="${esc(key)}">${text}</b></span>`,
+   *  a plain number moves with its bar (the helper reads its digits). [split] is the lighter part at the bar's end (vbar
+   *  above) and [title] the words that name it, on the cell. */
+  barCell: ({ w, text, label = "", cls = "", level = "", role = "", key = "", split = null, title = "" }) =>
+    `<span class="barcell${cls ? ` ${cls}` : ""}${level ? ` lv-${level}` : ""}"${role ? ` role="${role}"` : ""}${title ? ` title="${esc(title)}"` : ""}>${label ? `<em>${esc(label)}</em>` : ""}${DRAW.vbar(w, key, split)}<b class="v" data-tn="${esc(key)}">${text}</b></span>`,
+
+  // ---------- a limit on its scale ----------
+  /** A LIMIT IS DRAWN ON ITS SCALE (Oct 28): a thick track with its ends and its marks named under it. [fill] 0 to 1 is what
+   *  holds it now ([full] in the limit red), [zone] the share from which it is past a warn line (hatched), [dots] the marks
+   *  a page lays on it (`<i class="ldot" style="--at:%;--lane:n;--c:colour">`, [lanes] tall), [ticks] [[0 to 1, word]] its
+   *  scale (the words "0" and [end] at its ends by default), [now] the reading at its end and [said] its words for a screen
+   *  reader. A track whose reading did not come is the empty dashed one ([unread]). */
+  scale({ end, fill = null, full = false, zone = null, dots = "", lanes = 1, ticks = null, now = "", said, unread = false }) {
+    const pct = (x) => Math.max(0, Math.min(100, x * 100)).toFixed(2);
+    const f = fill == null ? "" : `<i class="lfill${full ? " full" : ""}" data-tw="" data-w="${pct(fill)}" style="width:${pct(fill)}%"></i>`;
+    const z = zone == null ? "" : `<i class="wzone" style="--at:${pct(zone)}"></i>`;
+    const ax = (ticks ?? [[0, "0"], [1, end]]).map(([p, w], i, all) => `<span class="lt${i === 0 ? " lt-first" : i === all.length - 1 ? " lt-last" : ""}" style="left:${pct(p)}%">${esc(w)}</span>`).join("");
+    return `<span class="stk"><span class="stb${unread ? " unread" : ""}" style="--lanes:${lanes}" role="img" aria-label="${esc(said)}">${f}${z}${dots}</span>`
+      + `<span class="lax" aria-hidden="true">${ax}</span></span>${now ? `<b class="lnow">${now}</b>` : ""}`;
+  },
 
   // ---------- times: range bars on ONE log axis ----------
   /** The axis every range bar on a page shares, from a round figure under the smallest typical to one over the largest
@@ -724,12 +789,22 @@ const DRAW = {
     + `${ax.ticks.map((v, i) => `<span class="pd-tk${i === 0 ? " pd-t-first" : i === ax.ticks.length - 1 ? " pd-t-last" : ""}" style="left:${ax.at(v).toFixed(2)}%">${tickWord(v)}</span>`).join("")}`
     + `</span>${tail}</div>`,
   tickWord,
+  /** A TIME THAT MEANS THE SAME LENGTH ON EVERY VISIT (Oct 28): the axis above rescales to the data and ends at ten minutes, so
+   *  a bar's length meant different times on different visits. This one is fixed, one second to four weeks on a log scale, so
+   *  12 s and 3 d are lengths on one line and the same length is the same time on every row. Returns { lo, hi, at(ms) → percent
+   *  of the track, ticks: [[ms, word]] }. A cell of DRAW.vbar wears the ticks under its bar with the class "timed". */
+  timeAxis: TIME_AXIS,
+  /** What a bar of that axis measures, drawn once for the view: its name and the axis itself, with the same ticks that stand
+   *  under every bar, so a length is read against them and nothing is said in words but the name. */
+  timeLegend: (word = "Time in state") => `<span class="axleg" title="${esc(word)}, one second to four weeks, on one scale"><span class="axname">${esc(word)}</span>`
+    + `<span class="axtrack" role="img" aria-label="${esc(word)}: one second to four weeks, ticks at a minute, an hour, a day and a week">`
+    + `<small class="axt" style="left:0">1 s</small>${TIME_AXIS.ticks.map(([ms, tick]) => `<small class="axt" style="left:${TIME_AXIS.at(ms).toFixed(2)}%">${tick}</small>`).join("")}</span></span>`,
 
   // ---------- stat and glyph tiles: ONLY above zero ----------
   /** One tile: a ring or a glyph, its figure and its name on one baseline. A tile is drawn only when its count is above
    *  zero — a strip of tiles lists what happened, never a row of noughts. */
-  statTile: (icon, number, label, { title = null, focal = false } = {}) =>
-    `<span class="pd-stat${focal ? " focal" : ""}"${title ? ` title="${esc(title)}"` : ""}>${icon}<span><b>${number}</b><small>${esc(label)}</small></span></span>`,
+  statTile: (icon, number, label, { title = null, focal = false, bad = false } = {}) =>
+    `<span class="pd-stat${focal ? " focal" : ""}${bad ? " bad" : ""}"${title ? ` title="${esc(title)}"` : ""}>${icon}<span><b>${number}</b><small>${esc(label)}</small></span></span>`,
   /** The strip: [{icon, n, label, title, focal}], the ones above zero, in the order the section reads them. */
   tiles(items) {
     // a string is a tile its caller has already judged; an object with a numeric count is drawn only above zero
@@ -737,6 +812,13 @@ const DRAW = {
     return drawn.length ? `<div class="pd-stats">${drawn.map((t) => (typeof t === "string" ? t : DRAW.statTile(t.icon, t.n, t.label, t))).join("")}</div>` : "";
   },
   glyph: GLYPH,
+  /** LAY EVERY BALANCED BOARD IN [root] NOW, where the markup has just landed. The kit lays a board from its observer, after
+   *  the code that drew it has returned, so code that draws and then focuses a field or reads a height in the same call saw
+   *  a board with every block one pixel high (the page about 940 px short, and a focus() that scrolled to where the block
+   *  stood unlaid). A page calls this at the end of its draw; the observer lays the same board again to the same result. */
+  lay(root = document) {
+    for (const box of [...(root.matches?.(".mason") ? [root] : []), ...root.querySelectorAll(".mason")]) layMason(box);
+  },
 
   // ---------- small multiples: one card per thing, every card on the same scales ----------
   /** A card that holds one thing's figures on the scales its siblings use, so the cards compare by eye. Only the worst
@@ -849,9 +931,12 @@ const DRAW = {
   boardCols: (cols) => cols.map(({ body, span = 1 }) => `<div class="col${span > 1 ? " wide" : ""}"${span > 1 ? ` style="--span:${span}"` : ""}>${body}</div>`).join(""),
   /** A list's tail: the top few at full size, the rest behind one pill. Never a column that runs past the fold.
    *  { one } is the word for a count of one ("1 more line"), so no caller has to spell the singular itself; without
-   *  it the one word serves every count. */
-  more: (n, { word = "more", one = null, act = "", data = "", pill = false, open = false, less = "Fewer" } = {}) =>
-    `<button class="${pill ? "morepill pill" : "morepill"}" type="button" data-act="${esc(act)}"${data}>${open ? esc(less) : `${pill ? `<b>+${DRAW.n(n)}</b>` : `<b>${DRAW.n(n)}</b> ${esc(n === 1 && one != null ? one : word)}`}`}</button>`,
+   *  it the one word serves every count. { pill } draws the tail as a button with an edge, "+3" beside a chip list;
+   *  { keepWord } keeps the words in that button ("3 more logins"), for a tail that ends a list of rows or cards. */
+  more(n, { word = "more", one = null, act = "", data = "", pill = false, keepWord = false, open = false, less = "Fewer" } = {}) {
+    const said = `<b>${DRAW.n(n)}</b> ${esc(n === 1 && one != null ? one : word)}`;
+    return `<button class="${pill ? `morepill pill${keepWord ? " worded" : ""}` : "morepill"}" type="button" data-act="${esc(act)}"${data}>${open ? esc(less) : pill && !keepWord ? `<b>+${DRAW.n(n)}</b>` : said}</button>`;
+  },
   /** A row that opens its own detail under itself: the chevron turns over 240 ms and the detail lands in place, so the
    *  row keeps its context and the panel needs no title. */
   disc: ({ open, controls, inner, cls = "", act = "", data = "" }) =>
@@ -933,17 +1018,24 @@ function fitStack(pop) {
 }
 const fitStacks = (root = document) => { for (const pop of root.querySelectorAll(".pd-pop")) fitStack(pop); };
 new MutationObserver((records) => {
-  const boards = new Set();
+  const boards = new Set(), menus = [];
+  let menuGone = false;
   for (const r of records) {
     // a block added to a balanced board, or one that grew inside it, lays the board again
     const box = r.target.nodeType === 1 ? r.target.closest(".mason") : r.target.parentElement?.closest(".mason");
     if (box) boards.add(box);
+    for (const n of r.removedNodes) if (n.nodeType === 1 && (n.matches(".menu") || n.querySelector(".menu"))) menuGone = true;
     for (const n of r.addedNodes) {
       if (n.nodeType !== 1) continue;
       if (n.matches(".pd-pop")) fitStack(n); else if (n.firstElementChild) fitStacks(n);
+      if (n.matches(".menu")) menus.push(n); else if (n.firstElementChild) menus.push(...n.querySelectorAll(".menu"));
       settle(n);
     }
   }
+  // A MENU OPENS ONCE, WITH ONE MOTION: a menu that appears where none was taken away in the same change has just been
+  // opened, and rises in (console.css .menu.opening). A page that redraws an open menu removes the old one in the same
+  // change, so a redraw finds it standing and nothing replays.
+  if (!menuGone) for (const m of menus) if (m.isConnected) m.classList.add("opening");
   for (const box of boards) layMason(box);
   watchGhosts();
 }).observe(document.documentElement, { childList: true, subtree: true });
@@ -985,9 +1077,11 @@ function tweenBar(b) {
   TW.set(key, cur);
   if (prev == null || Math.abs(prev - cur) < (ring ? 0.0005 : 0.05) || reducedMotion()) return;
   if (ring) { b.style.strokeDasharray = `${(RING_C * prev).toFixed(2)} ${RING_C.toFixed(2)}`; b.getBoundingClientRect(); b.style.strokeDasharray = `${(RING_C * cur).toFixed(2)} ${RING_C.toFixed(2)}`; return; }
-  b.style.width = `${prev}%`;
+  // a bar with a floor (data-min: a stacked part keeps a hairline) moves between two widths that both keep it
+  const wide = (p) => (b.dataset.min ? `max(${p}%, ${b.dataset.min})` : `${p}%`);
+  b.style.width = wide(prev);
   b.getBoundingClientRect();   // the old width is what the transition starts from
-  b.style.width = `${cur}%`;
+  b.style.width = wide(cur);
 }
 const TW_NUM = /^([^\d-]*)(-?[\d,]*\.?\d+)([^\d]*)$/;
 /** A figure that is one number with its unit counts from the last number drawn there to this one, in the same spelling:
@@ -1043,7 +1137,7 @@ function settle(root) {
 // and the grid's own auto-placement puts the next block in the topmost free place, which is the shortest column. A block
 // that cannot fit a narrow board's columns takes the board's whole width instead. Blocks are measured again whenever one
 // changes size, so a card that opens or a column that wraps relays the board, and the first block of every column is
-// marked (.mtop) so a rule above each other block starts after the gap, not at the column's head.
+// marked (.col-top) so a rule above each other block starts after the gap, not at the column's head.
 const MASON_RO = new ResizeObserver((entries) => { for (const e of entries) { const box = e.target.parentElement; if (box) layMason(box); } });
 function layMason(box) {
   if (!box.isConnected) return;
@@ -1058,8 +1152,10 @@ function layMason(box) {
     it.style.setProperty("--span-eff", String(Math.min(want, cols)));
     it.style.setProperty("--rows", String(Math.max(1, Math.ceil(it.getBoundingClientRect().height + gap))));
   }
-  const top = box.getBoundingClientRect().top;
-  for (const it of items) it.classList.toggle("mtop", it.getBoundingClientRect().top - top < 1);
+  // a column's first block starts at the box's CONTENT edge (inside its border and padding), so a topic that a page dresses
+  // from outside, with padding and a rule on its own box, still has its first blocks marked
+  const box0 = box.getBoundingClientRect(), top = box0.top + (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.borderTopWidth) || 0);
+  for (const it of items) it.classList.toggle("col-top", it.getBoundingClientRect().top - top < 1);
 }
 const MASON_SEEN = new WeakSet();
 
@@ -1346,9 +1442,12 @@ function drawNav() {
   const nav = document.createElement("nav");
   nav.className = "nav";
   nav.setAttribute("aria-label", "Pages");
-  // ONE LINE UNDER THE PAGE HE IS ON, AND IT TRAVELS (Oct 27): each link drew its own line and faded it in place, so a
-  // page change blinked one line out and another in. The line is one object now, moved to the new link's place.
-  nav.innerHTML = `${links}<span class="nav-line" aria-hidden="true"></span>`;
+  // THE LINKS ARE THE CONSOLE'S OWN SEGMENTED SWITCH, AND ITS LIT SEGMENT TRAVELS (Oct 27, Oct 28): all eight pages stand in one
+  // sunk track as every other view switch on the console does, the page he is on raised in the neutral selected look, and
+  // the raised face is one object moved to the next link's place over --t-move, so a page change reads as one move along
+  // the bar and not as one mark blinking out and another in. What belongs beside the track (the settings act) stands
+  // after it, inside the nav.
+  nav.innerHTML = `<span class="navset">${links}<span class="nav-line" aria-hidden="true"></span></span>`;
   side.insertBefore(nav, side.querySelector(".foot"));
   navLine(false);
   new ResizeObserver(() => navLine(false)).observe(nav);
@@ -1475,6 +1574,18 @@ addEventListener("DOMContentLoaded", () => {
 drawTheme();
 document.querySelector('.side [data-act="theme"]')?.addEventListener("click", toggleTheme);
 
+// THE HEADER SEARCH TAKES ITS TEXT BACK FROM INSIDE (Oct 28): a `.clr[data-clears]` button after the field in its `.search`
+// label (console.css; shown only while there is text) empties the field, tells the page it changed as typing would, and hands
+// the caret back to the field. A page whose own search already clears itself marks its button otherwise and is left alone.
+document.addEventListener("click", (e) => {
+  const mark = e.target.closest?.(".search .clr[data-clears]");
+  const field = mark?.closest(".search")?.querySelector(".field");
+  if (!field) return;
+  field.value = "";
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+  field.focus();
+});
+
 // THE STALE MARK (web-console.md:385, :397; gap 460): splice.toml on disk no longer matches what the daemon booted with,
 // so a change written there, by this console or by hand, waits on a restart. /health says so as topologyStale; the
 // mark sits on the Settings link of the top bar, on every page, and is absent while the two match. Read once the page's scripts have
@@ -1535,7 +1646,7 @@ function drawStale() {
   if (!mark) {
     mark = document.createElement("span");
     mark.className = "stale";
-    link.after(mark);
+    (link.closest(".navset") ?? link).after(mark);
     mark.addEventListener("click", async (e) => {
       const act = e.target.closest("[data-act]")?.dataset.act;
       if (act === "restart") pressRestart();
@@ -1568,12 +1679,6 @@ function drawStale() {
       + (restarting?.out ? waitRing() : "");
   mark.innerHTML = inline + hung;
   mark.classList.toggle("hang", Boolean(hung));
-  // the panel hangs from the mark's left and slides back along the bar only as far as it needs to stay inside the window
-  const panel = mark.querySelector(".stale-panel");
-  if (panel) {
-    const over = panel.getBoundingClientRect().right - (document.documentElement.clientWidth - 16);
-    if (over > 0) panel.style.left = `${-Math.min(over, mark.getBoundingClientRect().left - 16)}px`;
-  }
   // a refusal shakes what the press was on; the press is gone by then (its word stands in its place), so the mark shakes
   if (restarting?.shook) { (mark.querySelector(".act") || mark).classList.add("shook"); restarting.shook = false; }
 }
@@ -1707,6 +1812,7 @@ const sumCounts = (lists) => ["needs", "stalled", "working"].map((k) => [k, list
  *  last value to the new one (data-tw, data-tn). */
 function tilesHtml(items, pick, show = showCount, unit = "") {
   GHOST.remember("tiles", items.length);
+  GHOST.remember("tilelamps", items.some(([, , counts, total]) => total !== 0 && counts.some(([, n]) => n)) ? 1 : 0);
   const all = items.find(([k]) => k === "")?.[3];
   const tiles = items.map(([k, label, counts, total, words]) => {
     const on = (pick ?? "") === k, every = k === "", zero = total === 0 && !every;

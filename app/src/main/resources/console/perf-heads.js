@@ -100,7 +100,7 @@ const createPerfHeads = (scope, helpers) => {
 
   // The panel's shapes are the KIT's now (kit.js DRAW, console.css's drawings block): this file names the figures and
   // the words, and DRAW draws them. Each is drawn from the summary's own figures; an absent or zero figure draws nothing.
-  const STEP = ["f0", "f1", "f2"];   // failure blocks by rank: the largest is the full limit red, the rest step down
+  const STEP = ["f0", "f1", "f2", "f3", "f4", "f5"];   // failure blocks by rank: the largest is the full limit red, the rest step down, then take patterns of it
   const GLYPH = DRAW.glyph;
   // The counts the stat strip carries, each shown only above zero, in the order the panel reads them.
   const FACTS = [
@@ -204,7 +204,8 @@ const createPerfHeads = (scope, helpers) => {
     // cards shown, after the busiest, so the model that hurts is never behind "N more".
     const worst = ms.reduce((w, e) => (e[1].failure_share > (w?.[1].failure_share ?? 0) ? e : w), null);
     const loud = worst && level(worst[1].failure_share) !== "ok" ? worst[0] : null;
-    const top = ms.slice(0, SHOWN_MODELS);
+    // a command with four models shows four, never three and "1 more": a card standing alone under a row of three reads as lost
+    const top = ms.slice(0, ms.length <= SHOWN_MODELS + 1 ? ms.length : SHOWN_MODELS);
     if (loud && !top.some(([id]) => id === loud)) top.push(worst);
     const open = st.models.has(h.key), shown = open ? ms : top, rest = ms.length - top.length;
     const most = Math.max(1, ms[0][1].count);
@@ -223,7 +224,7 @@ const createPerfHeads = (scope, helpers) => {
       return DRAW.multiCard({ name: modelWord(id), level: lv, loud: id === loud, body });
     }).join("");
     const more = rest > 0 ? DRAW.more(rest, { word: `more ${rest === 1 ? "model" : "models"}`, act: "perfmods", data: ` data-k="${esc(h.key)}"`, open, less: "Fewer models" }) : "";
-    return DRAW.section("Models", `<div class="pd-cards">${cards}</div>${more}`, { aside: DRAW.rangeLegend });
+    return DRAW.section("Models", `<div class="pd-cards" style="--k:${Math.min(shown.length, 4)}">${cards}</div>${more}`, { aside: DRAW.rangeLegend });
   };
 
   /** What the record behind a row could not cover, in the fewest words, as marks on the Outcomes line the counts belong
@@ -277,7 +278,8 @@ const createPerfHeads = (scope, helpers) => {
     const win = winNow();
     if (st.readFor !== win || (!st.body && !st.error && !st.reading)) { st.body = null; st.error = null; read(); }
     const sw = DRAW.switcher(Object.entries(WINDOWS), win, "perfwin", "Window");
-    const scoped = ui.project != null || hasFilter() ? `<span class="hn">Every project, no filter</span>` : "";
+    // the project and filters picked above do not narrow this table: a pill says it, and its title says why
+    const scoped = ui.project != null || hasFilter() ? `<span class="hn" title="The project and filters picked above do not narrow this table">All requests</span>` : "";
     const header = `<div class="bandhead"><h2>Results by command</h2>${scoped}${sw}</div>`;
     if (st.error) {
       return `<section class="perf-heads">${header}<div class="errline" role="alert">${ICON.bang}<span><b>Results didn't load</b> <span class="why">${esc(st.error)}</span></span>`
@@ -292,7 +294,7 @@ const createPerfHeads = (scope, helpers) => {
         `<div class="prow pcols gprow" style="--i:${i}"><span class="pf cmd">${GHOST.bar(8)}</span>`
         + `<span class="pf">${GHOST.track()}</span><span class="pf">${GHOST.track()}</span><span class="pf num">${GHOST.bar(3)}</span><span class="pf num">${GHOST.bar(3.4)}</span></div>`).join("");
       const quietGhost = st.quiet ? `<p class="quiet-heads" aria-hidden="true">${GHOST.bar(11)}${[6.5, 8, 9.5].map((w) => GHOST.chip(w)).join("")}</p>` : "";
-      return `<section class="perf-heads" aria-busy="true">${header}<div class="ptable card ghosted">${COLS}${rows}</div>${quietGhost}</section>`;
+      return `<section class="perf-heads" aria-busy="true">${header}<div class="figline sub" aria-hidden="true">${GHOST.fig(2.6)}${GHOST.bar(9)}</div><div class="ptable card ghosted">${COLS}${rows}</div>${quietGhost}</section>`;
     }
     const heads = st.body.heads || [];
     // the one that is hurting reads first: the highest failure rate, then the busiest
@@ -300,6 +302,12 @@ const createPerfHeads = (scope, helpers) => {
     const idle = heads.filter((h) => !(h.count > 0));
     if (used.length) keepShape(used.length, idle.length > 0);
     const ctx = { max: Math.max(0, ...used.map((h) => h.count)), facts: FACTS.filter((c) => used.some(c.has)) };
+    // THE TABLE'S ANSWER: the share of every request in the window that failed, and a door to those failures
+    const all = used.reduce((a, h) => a + h.count, 0), bad = used.reduce((a, h) => a + failedOf(h), 0);
+    const lead = used.length
+      ? `<div class="figline sub"><b class="fig-focal${bad / all >= BAD ? " lv-bad" : ""}" data-tn="">${rate(bad / all) ?? "0%"}</b>`
+        + (bad > 0 ? `<a class="cap" href="requests.html?${new URLSearchParams({ win, project: "", outcome: "fail" })}"><span><b>${n0(bad)}</b> failed of <b>${n0(all)}</b> requests</span>${OPEN}</a>`
+          : `<span class="cap">No failures in <b>${n0(all)}</b> requests</span>`) + `</div>` : "";
     const table = used.length
       ? `<div class="ptable card" role="table">${COLS}${used.map((h) => item(h, ctx)).join("")}</div>`
       : `<div class="card ptable pnone">${DRAW.nothing(`No requests in the last ${WINDOWS[win]}`)}</div>`;
@@ -312,7 +320,7 @@ const createPerfHeads = (scope, helpers) => {
     const quiet = used.length && idle.length
       ? `<p class="quiet-heads"><span>No requests in the last ${WINDOWS[win]}</span>${idle.map((h) => DRAW.chip({ text: cmdOf(h.key), href: door(h.key, { win: "7d" }), data: ` style="--c:${colorOf(providerOfHead(h.key))}"` })).join("")}</p>`
       : "";
-    return `<section class="perf-heads">${header}${table}${quiet}</section>`;
+    return `<section class="perf-heads">${header}${lead}${table}${quiet}</section>`;
   }
 
   document.addEventListener("click", (e) => {

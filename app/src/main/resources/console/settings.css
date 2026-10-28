@@ -39,13 +39,18 @@
   .jobs .pane, .jobs.open .pane { display: flex; flex: 1 1 0; min-width: 0; }
   .pane .close { display: none; }
   /* the open card is the one beside it, in neutral ink: the key light marks one thing per view and never a selection */
-  .card.job[aria-current="true"] { --c: var(--track-line); border-color: var(--text-mute); background: var(--obj-high); }
+  .card.job[aria-current="true"] { --c: var(--text-mute); border-color: var(--text-mute); background: var(--obj-high); box-shadow: var(--cast) var(--cast) 0 var(--c), var(--cast) var(--cast) 0 var(--ink-w) var(--ink); }
+  .card.job.needs[aria-current="true"] { border-color: var(--limit); }
 }
 /* the topics are a plain list of cards, with no rail bar and no socket: a topic has no order to keep and no live state
    to light, so the glyph in its name line is what tells it apart (sessions.css .list, console.css .rail) */
 .jobs .list.rail.plain { padding-left: 0; }
-.card.job { --c: var(--track-line); --quiet: .4; cursor: pointer; }
-.card.job:hover { background: var(--obj-high); }
+/* A RAIL CARD CASTS NO SHADOW OF ITS OWN (Oct 28): eight cards each throwing a hard edge said "object" eight times and nothing about which
+   one mattered. The open card alone is raised, in neutral ink (below); a topic holding a limit hit or a failure wears the limit
+   red on its edge, since that is what the red is for */
+.card.job { --c: var(--track-line); --quiet: .4; cursor: pointer; box-shadow: none; }
+.card.job:hover { background: var(--obj-high); top: 0; left: 0; }
+.card.job.needs { border-color: var(--limit); }
 .jname { font: 500 1.08rem/1.15 var(--font-name); color: var(--text); }
 /* a topic the search did not reach keeps its place and goes quiet: the page never empties under him */
 .card.job.dim { opacity: var(--quiet); }
@@ -87,15 +92,11 @@
    THE OPEN TOPIC IS A PLATE, NOT A CARD (console.css's rhythm): a wash and 4u of inset, no ink border and no cast,
    because a card is for objects and a topic is a ground for them. Its sections sit 4u, a hairline and 4u apart. */
 /* overflow: visible undoes the shell's clip: this pane has no ring or cast to clip to, and a clipping box is a scroll
-   container as far as sticky goes, so the settings beside a longer half and the "More below" cue would have stuck to
+   container as far as sticky goes, so the settings beside a longer half would have stuck to
    the pane's own edge instead of riding the window. */
 .pane { --c: var(--track-line); height: auto; overflow: visible; flex-direction: column; background: none; border: 0; box-shadow: none; }
 .pane > header { min-height: 0; padding: 0 0 calc(2 * var(--u)); border-bottom: 0; background: none; align-items: center; }
 .pane > header .name { font: 500 1.45rem/1.1 var(--font-name); color: var(--text); }
-/* the cue that the topic runs past the fold, on the pane's own lower edge; the page is what scrolls */
-.pane.more::after { content: "More below"; position: sticky; bottom: 0; margin: -3.4rem 0 0; height: 3.4rem; display: flex; align-items: flex-end; justify-content: center; padding-bottom: .7rem; pointer-events: none;
-  font: 600 .92rem/1 var(--font-name); letter-spacing: .04em; color: var(--text-body); z-index: 2;
-  background: linear-gradient(transparent, color-mix(in oklab, var(--obj) 86%, transparent) 72%); }
 /* the plate asks its own width, so the parts of a topic pair up only once it holds both of them whole */
 .pane .body { flex: 1; min-width: 0; }
 /* another topic's pane rises into place once (settings.js turn), and a redraw in that moment carries the rise on */
@@ -105,7 +106,15 @@
 /* EVERY PART OF THIS PAGE TAKES THE PLATE'S RHYTHM, however it is built: DRAW.section's .psec and the pairs of them
    (.pair), so one page has one rhythm — 4u, a hairline, 4u — and one kicker. */
 .plate > :is(.psec, .pair) + :is(.psec, .pair) { margin-top: calc(4 * var(--u)); padding-top: calc(4 * var(--u)); border-top: .08rem solid var(--hair); }
-.plate .sechead { justify-content: space-between; }
+/* a pair that follows a section carries no padding or rule of its own: the kit marks the first block of each of its columns by where it starts, so
+   the hairline over the pair is the bottom of the block above it, and the pair keeps the 4u of space under that */
+.plate > :is(.psec, .pair) + .pair { padding-top: 0; border-top: 0; }
+.plate > :is(.psec, .pair):has(+ .pair) { padding-bottom: calc(4 * var(--u)); border-bottom: .08rem solid var(--hair); }
+/* every kicker stands in a line of one height, centred in it, so the two columns of a topic begin on one line however tall the
+   marks and figures that ride beside a kicker are */
+.plate .sechead { justify-content: space-between; align-items: center; align-content: flex-start; min-height: 1.9rem; }
+/* the kicker is that line itself, so when its marks wrap under it the kicker keeps the first line */
+.plate .sechead > :is(h2, h3, .kicker) { display: flex; align-items: center; min-height: 1.9rem; }
 .plate .sechead:empty { display: none; }
 /* a figure that rides a kicker is data, not a kicker: "4 of 9 at 80% or more" keeps its own case and its own face */
 .sechead .hn { font: 500 .88rem/1.2 var(--font-name); color: var(--text-mute); }
@@ -130,8 +139,11 @@
    the connection if no output arrives for" (a little over 24rem in the name face) stands whole beside its control
    where a 15rem column broke four names of one section in two. The control column is as wide as its widest control and
    the commands under it, and the drawing takes the rest, never less than a track a value can be read on. */
-.krows { display: grid; grid-template-columns: fit-content(28rem) fit-content(26rem) minmax(14rem, 1fr); column-gap: calc(3 * var(--u)); }
-.krows > :is(.krow, .khead, .kaxis) { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; padding-inline: var(--u); }
+/* THE NAMES START WHERE THE KICKER STARTS: a row keeps 1u of wash around its content for the hover, and the grid steps out by that
+   1u on both sides, so a name stands under its kicker as the hero and the tables of the other column do, and the row's hairline
+   (::before below) is the one line the width of the section */
+.krows { display: grid; grid-template-columns: fit-content(28rem) fit-content(26rem) minmax(14rem, 1fr); column-gap: calc(3 * var(--u)); margin-inline: calc(-1 * var(--u)); }
+.krows :is(.krow, .khead, .kaxis) { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; padding-inline: var(--u); }
 /* A SECTION WITH NO DRAWING TO MAKE divides its settings over the width in columns of name and control, as a form does,
    rather than standing them in the left third of the plate with two thirds of wash beside them (Advanced at 3822).
    Every column is one name track and one control track shared by the rows under it, so the controls of a column start
@@ -139,7 +151,11 @@
    after" at its hyphen. The plate's width decides how many columns stand, and a section never has more columns than
    rows (n2, n3: settings.js krowsHtml). */
 .krows.flat { --fc: 1; grid-template-columns: repeat(var(--fc), fit-content(28rem) minmax(0, 1fr)); column-gap: calc(3 * var(--u)); }
-.krows.flat > .krow { grid-column: span 2; }
+.krows.flat .krow { grid-column: span 2; }
+/* A GRID THAT HOLDS ITS ADVANCED has its name column at one width whether the Advanced is shut or open, so pressing the button never
+   moves the controls of the settings above it: a name longer than the column wraps on two lines instead of widening it */
+.krows:has(> .adv) { grid-template-columns: minmax(14rem, 17rem) fit-content(26rem) minmax(14rem, 1fr); }
+.krows.flat:has(> .adv) { grid-template-columns: repeat(var(--fc), minmax(14rem, 17rem) minmax(0, 1fr)); }
 /* two columns from a plate of 100rem (his 2548 at 150% is 154rem), three from 140rem, where a column of name, control
    and the control's commands still has the 45rem it takes; these name the classes outright, as the base rule does, so
    the wider plate wins over `--fc: 1` above */
@@ -148,7 +164,8 @@
 /* beside what happened, a topic's settings are one column at every width: at 3822 the column held two tracks and
    Reasoning's three settings stood two and one, the third 700 px to the right of the other two */
 .pcol .krows.flat { --fc: 1; }
-.krow { --quiet: .38; position: relative; padding-block: calc(1.5 * var(--u)); border-top: .08rem solid var(--hair); border-radius: var(--r-in); transition: background var(--t-hover) var(--e-out), opacity var(--t-hover) var(--e-out); }
+.krow::before { content: ""; position: absolute; top: 0; left: var(--u); right: var(--u); border-top: .08rem solid var(--hair); }
+.krow { --quiet: .38; position: relative; padding-block: calc(1.5 * var(--u)); border-radius: var(--r-in); transition: background var(--t-hover) var(--e-out), opacity var(--t-hover) var(--e-out); }
 /* a row the search did not reach keeps its place and fades to quiet, as a rail card does (.turning above) */
 .krow.miss { opacity: var(--quiet); }
 .krow.miss:hover { opacity: .8; }
@@ -172,20 +189,25 @@
 .kfacts { display: flex; flex-direction: column; align-items: flex-start; gap: .55rem; min-width: 0; padding-block: .3rem; }
 .kchips { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; min-width: 0; }
 .kdraw .kmeter { display: flex; align-items: center; gap: var(--u); width: 100%; font: 500 1rem/1.3 var(--font-data); color: var(--text-body); }
-.kdraw .kmeter .bar { --c: color-mix(in oklab, var(--text) 60%, transparent); flex: 1 1 auto; min-width: 4rem; height: var(--meter-h-sub); }
+.kdraw .kmeter .bar { --c: color-mix(in oklab, var(--text) 60%, transparent); flex: 1 1 auto; min-width: 4rem; }
 .kdraw .kmeter > span { flex: none; white-space: nowrap; }
 .kdraw .kmeter b { font-weight: 500; color: var(--text); font-variant-numeric: tabular-nums; }
 
 /* ---------- waits on one axis ----------
    A section whose settings are lengths of time draws them on ONE log axis, so "90 s" and "15 min" read as lengths on
    one line and the order they act in is seen rather than worked out. The axis is said once, under the rows. */
-.dtrk { position: relative; display: block; width: 100%; min-width: 6rem; height: var(--meter-h-sub); border-radius: .31rem; background: color-mix(in oklab, var(--text) 8%, transparent); }
+.dtrk { position: relative; display: block; width: 100%; min-width: 6rem; height: var(--meter-h); border-radius: .31rem; background: color-mix(in oklab, var(--text) 8%, transparent); }
 .dfill { position: absolute; inset: 0 auto 0 0; border-radius: .31rem; background: color-mix(in oklab, var(--text) 42%, transparent); }
 /* a command holding its own value, at that value, in its provider's colour */
-.dtk { position: absolute; top: -.28rem; bottom: -.28rem; width: .2rem; margin-left: -.1rem; border-radius: .1rem; background: var(--c); }
+.dtk { position: absolute; top: -.2rem; bottom: -.2rem; width: .2rem; margin-left: -.1rem; border-radius: .1rem; background: var(--c); }
+/* a wait's name, its control and its track stand on the control's line, and the longest-stall line runs the row's whole height, so
+   a row that holds commands under its control (Give up after) keeps the three on one line instead of centring each in the row */
+.krow:has(.dtrk) { align-items: start; }
+.krow:has(.dtrk) > .kdraw { align-self: stretch; align-items: flex-start; }
+.kdraw .dtrk { margin-block: calc((var(--ctl-h) - var(--meter-h)) / 2); }
 .kaxis { padding-top: .2rem; }
 .kaw { justify-self: end; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); text-align: right; }
-.krows > .kaxis > .pd-ax { align-self: start; }
+.krows .kaxis > .pd-ax { align-self: start; }
 /* A FIGURE THIS PAGE READ, ON THE AXIS THE SETTINGS SIT ON (Oct 27): the longest stall of the week as one upright line
    through every wait, with its door above them, so each wait is read against what actually happened. */
 .khead { padding-bottom: calc(1.5 * var(--u)); }
@@ -227,41 +249,50 @@ a.oseg:hover { box-shadow: inset 0 0 0 999px color-mix(in oklab, var(--text) 16%
 .olast a:hover { color: var(--text); text-decoration: underline; }
 /* the read did not answer: the row keeps its place and goes quiet, with Not read where its count would be */
 .orow.unread .ow { color: var(--text-mute); }
-/* the outcomes that did not happen this week, named once together under the table, never a row of noughts */
-.ozero { display: flex; flex-wrap: wrap; align-items: baseline; gap: .4rem .9rem; margin: 0; padding-block: calc(1.25 * var(--u)) 0; border-top: .08rem solid var(--hair); font: 500 .98rem/1.3 var(--font-name); color: var(--text-mute); }
-.otab + .ozero { margin-top: 0; }
-.ozero .ozl { color: var(--text-body); }
-.ozero .ozw + .ozw::before { content: "·"; margin-right: .9rem; }
+/* an outcome that did not happen this week keeps its row: an empty track and a quiet 0, so the table is the same five rows every week */
+.orow.none .ow { color: var(--text-mute); }
+.nz { font: 500 1.08rem/1.2 var(--font-data); color: var(--text-mute); font-variant-numeric: tabular-nums; }
 #st .r { text-align: right; justify-self: end; }
 
 /* ---------- Many agents at once: today, one row per command on shared scales ----------
    The most requests it held at once against its own limit, when in the day that was, how many it sent and how many
    waited in line, each figure a door to those requests. */
-.peaks { display: grid; grid-template-columns: max-content minmax(9rem, 1fr) max-content minmax(7rem, 1.1fr) minmax(6rem, 1fr) max-content; column-gap: calc(2 * var(--u)); }
+/* the meter and its figure are two columns of the table, so every meter ends on one line and the figures end on another */
+.peaks { display: grid; grid-template-columns: max-content minmax(9rem, 1fr) max-content max-content minmax(7rem, 1.1fr) minmax(6rem, 1fr) max-content; column-gap: calc(2 * var(--u)); }
 /* a day when nothing waited in line has no column for it: the kicker line says "None waited in line today" once */
-.peaks.noq { grid-template-columns: max-content minmax(9rem, 1fr) max-content minmax(7rem, 1.1fr) minmax(6rem, 1fr); }
+.peaks.noq { grid-template-columns: max-content minmax(9rem, 1fr) max-content max-content minmax(7rem, 1.1fr) minmax(6rem, 1fr); }
 .peaks > .pk { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; padding-block: calc(1.25 * var(--u)); border-top: .08rem solid var(--hair); }
 .peaks > .ph { padding-block: 0 var(--u); border-top: 0; }
 .ph > span { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
-.ph > .pdh { grid-column: span 2; }  /* the clock and the day's track are one column of heads: "Busiest at" */
+.ph > .pdh, .ph > .plh { grid-column: span 2; }  /* the clock and the day's track are one column of heads ("Busiest at"), as the meter and its figure are ("At once") */
 .peaks > .pt { padding-block: 0; border-top: 0; }
-.pt > .pdax { grid-column: 4; align-self: start; }
+.pt > .pdax { grid-column: 5; align-self: start; }
 .pcmd { text-decoration: none; }
 /* how many at once against the limit set for it, as a meter on that ceiling in the command's own colour */
 .pm { display: flex; align-items: center; gap: var(--u); min-width: 0; }
-.pm .bar { flex: 1 1 auto; min-width: 3rem; height: var(--meter-h-sub); }
+.pm .bar { flex: 1 1 auto; min-width: 3rem; }
 /* the meter not read yet is its empty track across the cell, as the meter that lands will be */
 .pm > .ghost.track { flex: 1 1 auto; min-width: 3rem; }
-.pmv { flex: none; display: flex; align-items: baseline; gap: .4rem; white-space: nowrap; }
+.pmv { justify-self: end; display: flex; align-items: baseline; gap: .4rem; white-space: nowrap; }
+/* the Requests column is a shared scale: every figure takes the room of the widest (--v-w, set from the table's own figures) */
+.peaks .barcell { min-width: 0; }
 .pmv b { font: 600 1.08rem/1 var(--font-data); color: var(--text); font-variant-numeric: tabular-nums; }
 .pmv i { font: 500 .88rem/1 var(--font-name); font-style: normal; color: var(--text-mute); }
 .pmv.lv-bad b { color: var(--limit); }
 .pclk { font: 500 .98rem/1.2 var(--font-data); color: var(--text-body); white-space: nowrap; font-variant-numeric: tabular-nums; }
 /* the day as a track from midnight to midnight, the peak a dot on it and the hours still to come hatched, so the
    times of every command read against each other and against now */
-.pday { position: relative; display: block; min-width: 0; height: var(--meter-h-sub); border-radius: .31rem; background: color-mix(in oklab, var(--text) 7%, transparent); }
+.pday { position: relative; display: block; min-width: 0; height: var(--meter-h); border-radius: .31rem; background: color-mix(in oklab, var(--text) 7%, transparent); }
 .pfut { position: absolute; top: 0; bottom: 0; right: 0; border-radius: 0 .31rem .31rem 0; background: repeating-linear-gradient(135deg, transparent 0 .2rem, color-mix(in oklab, var(--text) 9%, transparent) .2rem .4rem); }
-.pdot { position: absolute; top: 50%; width: .5rem; height: .5rem; margin: -.25rem 0 0 -.25rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--obj); }
+.pdot { position: absolute; top: 50%; width: .72rem; height: .72rem; margin: -.36rem 0 0 -.36rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--obj); }
+/* commands with nothing to show stand in the table under one word said once, and the rest behind a count; a group the read could not
+   fill stands under its own word in the limit red, with the dashed track for what was not read */
+.peaks > .pg { padding-block: calc(2.5 * var(--u)) 0; border-top: 0; }
+.pg > :is(span, .state) { grid-column: 1 / -1; font: 500 .95rem/1.2 var(--font-name); color: var(--text-body); }
+.pg > .state.limit { color: var(--limit); }
+.peaks > .quiet .pcmd { opacity: .85; }
+.peaks > .pm2 { padding-block: var(--u) 0; border-top: 0; }
+.pm2 > * { grid-column: 1 / -1; justify-self: start; }
 .pidle { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem .8rem; margin: 1.05rem 0 0; font: 500 .92rem/1.3 var(--font-name); color: var(--text-body); }
 /* ---------- Providers today: what each kind of pushback cost, and each command's share of it ---------- */
 .pb { display: flex; flex-direction: column; gap: var(--u); }
@@ -283,9 +314,11 @@ a.pbfig:hover { color: var(--text-body); }
 
 /* ---------- Reasoning: the terminal it lands in ----------
    Nothing on the wire counts what a reasoning setting did, so this topic opens on the thing itself, drawn from the
-   live values as shapes and never as sample words (Marcos, Oct 25: "no made-up data"). Each line a setting decides is
-   named in the margin by that setting's own name, and pointing at either lights the other, so a choice is read as the
-   line it adds, moves or takes away. A line a setting takes away keeps its place, dashed, with the value that took it. */
+   live values as shapes and never as sample words (Marcos, Oct 25: "no made-up data"). Each line a setting decides
+   carries that setting's number in the margin, the same number that stands on its row, and pointing at either lights the
+   other, so a choice is read as the line it adds, moves or takes away. A line a setting takes away keeps its place,
+   dashed, with the value that took it. THE THREE KINDS OF LINE LOOK APART: the model's thinking is hatched, the reply
+   solid, and the waiting line dots. */
 .term { display: grid; grid-template-columns: minmax(0, 1fr) max-content; column-gap: calc(3 * var(--u)); row-gap: .3rem;
   padding: calc(1.5 * var(--u)) calc(2 * var(--u)) calc(2 * var(--u)); border-radius: var(--r-obj); background: var(--obj-sunk); box-shadow: inset 0 0 0 .08rem var(--hair); }
 /* the window's three dots: it says "this is your terminal" with no sentence saying it */
@@ -297,13 +330,16 @@ a.pbfig:hover { color: var(--text-body); }
 .pr { font-weight: 600; color: var(--text-mute); }
 .tl.think > .tx { color: var(--text-mute); }
 .bul { font-size: .7em; line-height: 1; color: var(--text-mute); }
-/* in the thinking block the reasoning is indented under Thinking and quiet; in the reply it is the reply's own text */
-.tl.rs.in > .tx { padding-left: 1.7rem; }
+/* in the thinking block the reasoning is indented under Thinking and ruled off at the left as a block of its own; in the
+   reply it is the reply's own text, solid, and opens with the bullet the reply opens with */
+.tl.rs.in > .tx { margin: -.15rem 0 -.15rem .7rem; padding: .15rem 0 .15rem 1rem; box-shadow: inset .14rem 0 0 var(--track-line); }
 .tl.rs.out > .tx { color: var(--text-body); }
+.tl.rs.out .wire, .tl.reply .wire { background: color-mix(in oklab, var(--text) 30%, transparent); }
+.tl.rs.out .bul, .tl.reply .bul { color: var(--text); }
 /* a line of model text, as the length it is and not as words we made up */
 .wire { flex: none; height: .5rem; border-radius: .25rem; background: color-mix(in oklab, var(--text) 15%, transparent); }
 .wire.short { height: .4rem; }
-.tl.reply .wire { background: color-mix(in oklab, var(--text) 30%, transparent); }
+.wire.think { background: repeating-linear-gradient(135deg, color-mix(in oklab, var(--text) 28%, transparent) 0 .16rem, transparent .16rem .32rem); }
 .sep { color: var(--text-mute); }
 /* the waiting line's own dot: flat, because this is a drawing of a terminal and nothing here is running */
 .spin { flex: none; width: .5rem; height: .5rem; border-radius: 50%; background: color-mix(in oklab, var(--text) 30%, transparent); }
@@ -312,6 +348,11 @@ a.pbfig:hover { color: var(--text-body); }
 .tl.gone > .tx::after { content: ""; display: block; width: 40%; height: .5rem; border-radius: .25rem; outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }
 .tl.gone.rs > .tx::after { width: 62%; }
 .tl.gone.rs > .tx { padding-left: 1.7rem; }
+/* the number a setting's row and its line share: the row's name starts with it, the line's margin ends with it */
+.knum { display: inline-grid; place-items: center; flex: none; width: 1.4rem; height: 1.4rem; border-radius: 50%; font: 600 .8rem/1 var(--font-data); font-style: normal; color: var(--text); font-variant-numeric: tabular-nums; background: color-mix(in oklab, var(--text) 12%, transparent); box-shadow: inset 0 0 0 .08rem var(--track-line); transition: background-color var(--t-hover) var(--e-out); }
+#st .krows .lbl .knum { margin-right: .65rem; vertical-align: .08rem; }
+/* in a grid where some names wear a number, the names that wear none start where the numbered names' words start */
+#st .krows:has(.knum) .lbl:not(:has(.knum)) { padding-left: calc(1.4rem + .65rem); }
 .tie { justify-self: end; display: flex; align-items: baseline; gap: .5rem; text-align: right; font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); transition: color var(--t-hover) var(--e-out); }
 .tie em { font-style: normal; color: var(--text-body); }
 /* the line and its setting are one thing: pointing at either brightens both, so the drawing and the control are read
@@ -319,14 +360,22 @@ a.pbfig:hover { color: var(--text-body); }
 .pair:has(.krow[data-key="showReasoning"]:hover) .tl[data-tie="showReasoning"],
 .pair:has(.krow[data-key="summary"]:hover) .tl[data-tie="summary"],
 .pair:has(.krow[data-key="progressLine"]:hover) .tl[data-tie="progressLine"],
+.pair:has(.krow[data-key="verbosity"]:hover) .tl[data-tie="verbosity"],
 .tl:hover { background: color-mix(in oklab, var(--text) 7%, transparent); }
 .pair:has(.krow[data-key="showReasoning"]:hover) .tl[data-tie="showReasoning"] .tie,
 .pair:has(.krow[data-key="summary"]:hover) .tl[data-tie="summary"] .tie,
 .pair:has(.krow[data-key="progressLine"]:hover) .tl[data-tie="progressLine"] .tie,
+.pair:has(.krow[data-key="verbosity"]:hover) .tl[data-tie="verbosity"] .tie,
 .tl:hover .tie { color: var(--text); }
+.pair:has(.krow[data-key="showReasoning"]:hover) .tl[data-tie="showReasoning"] .knum,
+.pair:has(.krow[data-key="summary"]:hover) .tl[data-tie="summary"] .knum,
+.pair:has(.krow[data-key="progressLine"]:hover) .tl[data-tie="progressLine"] .knum,
+.pair:has(.krow[data-key="verbosity"]:hover) .tl[data-tie="verbosity"] .knum,
+.tl:hover .knum { background: color-mix(in oklab, var(--text) 26%, transparent); }
 .pair:has(.tl[data-tie="showReasoning"]:hover) .krow[data-key="showReasoning"],
 .pair:has(.tl[data-tie="summary"]:hover) .krow[data-key="summary"],
-.pair:has(.tl[data-tie="progressLine"]:hover) .krow[data-key="progressLine"] { background: color-mix(in oklab, var(--text) 7%, transparent); }
+.pair:has(.tl[data-tie="progressLine"]:hover) .krow[data-key="progressLine"],
+.pair:has(.tl[data-tie="verbosity"]:hover) .krow[data-key="verbosity"] { background: color-mix(in oklab, var(--text) 7%, transparent); }
 
 /* ---------- Plan limits: where each login stands, in Accounts' own window rows ----------
    The meter for how much is used, the percent, and the ring for how soon it refills, read from /api/accounts as
@@ -335,33 +384,41 @@ a.pbfig:hover { color: var(--text-body); }
 .plog { display: flex; flex-direction: column; min-width: 0; padding: calc(1.5 * var(--u)) calc(2 * var(--u)) calc(2 * var(--u)); border-radius: var(--r-obj); background: var(--obj); border: var(--ink-w) solid var(--ink); }
 .plog > header { display: flex; align-items: center; gap: .7rem; min-width: 0; }
 .plog .blot { flex: none; width: .75rem; height: .75rem; border-radius: 50%; background: var(--c); }
-/* the way to this login's card on Accounts, where a limit is dealt with: a door at the header's far end, the same word and
-   arrow as the store cards' doors, in the same place on every card */
-.plog > header .plogdoor { margin-left: auto; flex: none; }
+/* the way to this login's card on Accounts, where a limit is dealt with: one mark at the header's far end, in the same place on every card */
+.plog > header .plogdoor { margin-left: auto; flex: none; width: 1.9rem; height: 1.9rem; }
+.plog > header .plogdoor svg { width: 1rem; height: 1rem; }
 .pmoreline { margin-top: calc(2 * var(--u)); }
 .plog .pln { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 1.04rem/1.2 var(--font-name); color: var(--text); }
-/* every login's windows stand on the same four tracks, the reset's as wide as its longest words ("Resets Wed 12:50 AM"
-   with its ring), so the meters of all the cards begin and end at one x instead of each card giving its own reset
-   column what its own words need */
-.plog .windows { grid-template-columns: 4.2rem minmax(0, 1fr) 5.2rem 13.2rem; margin-top: calc(1.5 * var(--u)); }
+/* A WINDOW IS A LABEL LINE OVER A METER THE CARD'S WHOLE WIDTH (Oct 28): which window and what is used on the left, when it
+   refills on the right, and under them the meter at the width of the card, so a meter is never a sliver beside its figure */
+.plog .windows { display: flex; flex-direction: column; align-items: stretch; gap: calc(2 * var(--u)); margin-top: calc(2 * var(--u)); }
+.pw { display: flex; flex-direction: column; gap: .6rem; min-width: 0; }
+.pl { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .4rem calc(2 * var(--u)); min-width: 0; }
+.pl .label { font: 500 .98rem/1.2 var(--font-name); color: var(--text-body); }
+.pl .pr { display: inline-flex; align-items: center; flex-wrap: wrap; gap: .4rem calc(2 * var(--u)); min-width: 0; }
+.pl .pct { min-width: 0; font-size: 1.08rem; color: var(--text); }
+.pl .pct.limit { color: var(--limit); }
+.pl .when { min-width: 0; }
+.pl .when.rolled { padding-left: 0; }
+.psigned { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(3 * var(--u)); margin-top: calc(2 * var(--u)); }
+.psi { display: inline-flex; align-items: center; gap: .7rem; }
 /* the warn line as a tick on the meter it acts on, so the per-cent he picks is read where he will meet it */
-.wmeter { position: relative; min-width: 0; }
+.wmeter { position: relative; display: block; min-width: 0; }
+.wmeter > .bar { width: 100%; }
 .wmk { position: absolute; top: -.25rem; bottom: -.25rem; width: .16rem; margin-left: -.08rem; border-radius: .08rem; background: var(--text-mute); }
-.plog.ghosted > header { min-height: 1.5rem; }
-/* THE WARN LINE ON THE WHOLE IT MARKS, with every login a dot at its highest running window: the setting is read as a
-   line among the figures it acts on rather than as a number in a box. Dots that would touch take a lane under the one
-   before, so each stays a dot of its own. */
-/* A share's place runs from the track's start to its end less one dot (--at, 0 to 100), so a dot at 100% stands inside
-   the end and never half past it; the warn zone starts at the same place a dot at the warn share would be centred. */
-.wtrk { --dot: .5rem; --step: .8rem; position: relative; display: block; width: 100%; min-width: 8rem; height: calc(.62rem + (var(--lanes, 1) - 1) * var(--step)); }
-.wtrk::before { content: ""; position: absolute; inset: 0 0 auto 0; height: .62rem; border-radius: .31rem; background: color-mix(in oklab, var(--text) 8%, transparent); }
-.wzone { position: absolute; top: 0; right: 0; left: calc((100% - var(--dot)) * var(--at) / 100 + var(--dot) / 2); height: .62rem; border-radius: 0 .31rem .31rem 0; background: repeating-linear-gradient(135deg, transparent 0 .18rem, color-mix(in oklab, var(--limit) 26%, transparent) .18rem .36rem); }
-.ldot { position: absolute; top: calc(.06rem + var(--lane, 0) * var(--step)); left: calc((100% - var(--dot)) * var(--at) / 100); width: var(--dot); height: var(--dot); border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--obj); }
-.ldot.atlimit { box-shadow: 0 0 0 .07rem var(--obj), 0 0 0 .16rem color-mix(in oklab, var(--limit) 55%, transparent); }
-/* the logins no lane had room for, as their count on a lane under their crowd: it ends where its dots stand, and from
-   the track's first half it starts there instead, so it never leaves the track */
-.lmore { position: absolute; top: calc(var(--lane, 0) * var(--step) - .12rem); left: calc((100% - var(--dot)) * var(--at) / 100 + var(--dot)); transform: translateX(-100%); font: 600 .78rem/1 var(--font-data); font-style: normal; color: var(--text-body); white-space: nowrap; }
-.lmore.lo { left: calc((100% - var(--dot)) * var(--at) / 100); transform: none; }
+.plog.ghosted > header { min-height: 1.9rem; }
+.plog.ghosted .pl { min-height: 1.4rem; }
+.kdraw:has(.stk) { align-items: flex-start; gap: calc(2 * var(--u)); }
+/* the warn line's zone is hatched in the page's neutral ink: it is where splice speaks, not a limit that was reached */
+#st .wzone { background: repeating-linear-gradient(135deg, transparent 0 .18rem, color-mix(in oklab, var(--text) 18%, transparent) .18rem .36rem); }
+/* a window's figure and its refill time stand in a width of their own on every card, whether or not the window has a refill to show */
+.pl .pct { min-width: calc(9ch + .35rem); }
+.pl .when { min-width: calc(19ch + 2.1rem); }
+.pl .pr:not(:has(.when))::after { content: ""; flex: none; min-width: calc(19ch + 2.1rem); font: 500 .95rem/1 var(--font-data); }
+.krow:has(.stk) { align-items: start; }
+/* what the marks on a limit's track are, said once on the kicker line */
+.lg-fill { display: inline-block; width: 1.1rem; height: .5rem; border-radius: .2rem; background: color-mix(in oklab, var(--text) 42%, transparent); }
+.lg-dot { display: inline-block; width: .62rem; height: .62rem; border-radius: 50%; background: var(--text-body); }
 
 /* ---------- Your data: what splice keeps, as one figure and one bar split by store, then a card per store ----------
    Rebuilt Oct 26 in the drawings' language: the total is the topic's hero, the bar under it is split by store in the
@@ -379,60 +436,97 @@ a.pbfig:hover { color: var(--text-body); }
 .dstop .dwho { display: inline-flex; flex-wrap: wrap; gap: .45rem; }
 .dstop .dwhy { font: 500 .92rem/1.3 var(--font-name); color: var(--text-body); }
 .dstop .dthen { font: 500 .88rem/1.3 var(--font-name); color: var(--text-mute); }
-/* the group's own line: "Your prompts" said once for every card under it, the group's size, and its marks */
+/* the group's own line: "Word for word" said once for every store under it, the group's size and its share of all, and its marks */
 .gaside { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: .3rem calc(2 * var(--u)); }
 .gaside > .hn { font: 500 .92rem/1.2 var(--font-data); color: var(--text-body); font-variant-numeric: tabular-nums; }
+.gaside > .gof { font: 500 .88rem/1.2 var(--font-name); color: var(--text-mute); }
 /* a tag, not a light: the key marks one thing per view and this is a fact about the group */
 .yours { display: inline-block; white-space: nowrap; padding: .25rem .5rem; font: 500 .85rem/1 var(--font-name); color: var(--text-body); border: .12rem solid var(--track-line); border-radius: .35rem; }
-/* flex, not a grid of fixed tracks: wrapped flex items share the row they land on, so the last row is never part
-   empty (three stores at 1440 sat two to a row with the third in the left half of an empty one) */
-.dcards { display: flex; flex-wrap: wrap; gap: var(--gap-card); align-items: stretch; }
-.dcards > .dcard, .dcards > .gcard { flex: 1 1 25rem; min-width: 0; }
-.dcards > .gcard { box-shadow: none; }
-/* a store's card before its reads land stands as tall as the one that comes (the text cards' two rows between them, the records' chart), so nothing under them moves */
-.dcards.text > .dghost { min-height: 15rem; }
-.dcards.records > .dghost { min-height: 22rem; }
-/* Cards of a row stand level, whatever one of them holds (a chart makes one taller), so their bottoms meet and their Save
-   and Keep for sit on one line (.dctl's margin-top: auto). In Conversation text a card with no "when off" line also
-   reserves that line, so a row's labels still meet */
-.dcards.text .dcard:not(:has(.offcost)) .din::after { content: ""; min-height: 1.25rem; }
-/* a card whose commands are open takes the row to itself and lays them out along it, so its eleven switches never
-   stand the cards beside it as tall as the list (Your data at 1440, Oct 26) */
-.dcards > .dcard:has(> .din > .dmore) { flex-basis: 100%; }
-.dcard { display: flex; flex-direction: column; container: dcard / inline-size; padding: 1.2rem 1.27rem 1.27rem; border-radius: var(--r-obj); background: var(--obj); border: var(--ink-w) solid var(--ink); }
-.dcard.lit { box-shadow: inset .3rem 0 0 var(--key-light); }
-.din { flex: 1 1 auto; display: flex; flex-direction: column; gap: .9rem; min-width: 0; }
-.dtop { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem; }
-.dtop .nm { font: 500 1.08rem/1.2 var(--font-name); color: var(--text); }
-.dtop .tlamp { width: 1.6rem; height: 1.6rem; }
-.dtop .tlamp svg { width: 1rem; height: 1rem; }
-/* the door to where the store is read sits at the card's far edge, out of the name's way */
-.dtop .link { margin-left: auto; font-size: 1rem; }
+/* A GROUP'S STORES ARE ONE TABLE (Oct 28), the way a command is one row of Usage's results: the columns are named once over
+   it and every store is a row on them, so the sizes are read down one scale, the Save switches stand in one column and
+   the Keep for tracks start and end at one x. The Save and the Delete columns take what their widest cell needs. */
+.dwrap { container: dtab / inline-size; min-width: 0; }
+.dtab { --dkc: 11.5rem; display: grid; grid-template-columns: minmax(12rem, 1.15fr) minmax(11rem, 1fr) minmax(9rem, .8fr) 20rem minmax(21rem, 1.7fr) 9rem; column-gap: calc(3 * var(--u)); }
+.dtab > :is(.dhead, .drow, .dfoot) { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; padding-inline: var(--u); }
+.dhead { padding-bottom: var(--u); }
+.dhead > span { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.dhead > .dcant { text-align: right; }
+.drow { position: relative; min-height: var(--row-h); padding-block: var(--u); row-gap: var(--u); border-top: .08rem solid var(--hair); }
+.drow > :is(.offcost, .dchart, .dmore, .dstop) { grid-column: 1 / -1; }
+.dn { display: flex; flex-direction: column; gap: .25rem; min-width: 0; }
+.dnm { display: flex; align-items: center; flex-wrap: wrap; gap: .25rem .6rem; min-width: 0; }
+.dnm .nm { font: 500 1.05rem/1.25 var(--font-name); color: var(--text); }
+.dnm .link { font-size: .9rem; color: var(--text-mute); }
+.dnm .link:hover { color: var(--key-ink); }
+.dnm .tlamp { width: 1.5rem; height: 1.5rem; }
+.dnm .tlamp svg { width: .95rem; height: .95rem; }
+.dmeta { font: 500 .85rem/1.3 var(--font-data); color: var(--text-mute); font-variant-numeric: tabular-nums; }
+.dz, .dr { min-width: 0; }
+.dz .barcell, .dr .barcell { font: 500 .92rem/1.2 var(--font-data); color: var(--text); }
+.dz .vbar, .dz .vbar b, .dr .vbar, .dr .vbar b { height: var(--meter-h-sub); border-radius: .31rem; }
+.dz .barcell .v, .dr .barcell .v { min-width: 8ch; text-align: right; }
+.dr .barcell.none { justify-content: flex-end; color: var(--text-mute); }
+.dheld { font: 500 .92rem/1.2 var(--font-name); color: var(--text-body); }
+.dheld b { margin-right: .4rem; font: 600 1.05rem/1 var(--font-data); color: var(--text); font-variant-numeric: tabular-nums; }
+.ds { display: flex; align-items: center; flex-wrap: wrap; gap: .3rem .7rem; }
+.dk { display: grid; grid-template-columns: var(--dkc) minmax(0, 1fr); align-items: center; column-gap: calc(2 * var(--u)); min-width: 0; }
+.dkc { display: flex; align-items: center; flex-wrap: wrap; gap: .3rem .9rem; min-width: 0; }
+.drow .dtrk { height: var(--meter-h-sub); }
+/* one store is one colour wherever it stands: its size is a bar in its colour, as its part of the bar over the table is; how long it keeps and how fast it grows are lengths of another kind and stay neutral */
+.drow { --k: color-mix(in oklab, var(--text) 42%, transparent); }
+.drow .dz .vbar b { background: color-mix(in oklab, var(--c, var(--text)) 80%, transparent); }
+.drow .dfill { background: var(--k); }
+.drow .dtrk.keep[aria-hidden="true"] { background: none; }
+/* kept with no end: the track runs out past its last tick in hatching, not in a fill that would read as two years */
+.drow .dtrk.keep.open .dfill { background: linear-gradient(90deg, var(--k) 0 72%, transparent 72%), repeating-linear-gradient(135deg, var(--k) 0 .18rem, transparent .18rem .42rem); }
+.dx { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: .4rem .7rem; min-width: 0; }
+/* Delete is the trash on the row it empties, under the column that says it cannot be undone: a glyph in the button's own box, the way a row's close mark is */
+.dx .act.del { display: inline-flex; align-items: center; justify-content: center; width: 2.3rem; height: 2.3rem; padding: 0; }
+.dx .act.del svg { width: 1.05rem; height: 1.05rem; }
+.dx.landed { animation: pulseOnce var(--t-pulse) var(--e-out) 1; border-radius: var(--r-in); }
+/* armed, the question is a line of the row's own, ended at the right: the button names what it deletes, so it needs the width */
+.drow:has(.dx .armed) > .dx { grid-column: 1 / -1; }
+.dfoot { padding-top: var(--u); }
+.dfoot .dkc { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.dfoot .pd-ax { align-self: start; }
+.dfoot { border-top: .08rem solid var(--hair); }
+.drow.dghost { pointer-events: none; }
+/* the store's switch, and what Off costs, under its row; the Off cost is the state he is in, so it reads brighter than the dimmed name */
+.offcost { margin: 0; font: 500 .92rem/1.35 var(--font-name); color: var(--text-mute); }
+.offcost.now { color: var(--text-body); }
+/* a phrase keeps its dot with it (the join puts a no-break space before each "·", so a line never opens with one) and wraps
+   inside its row when it is longer than the row */
+.offcost .whole { white-space: normal; }
+/* a table that is narrower than its columns need reads as lines of three: the store and its Delete, then its size, growth
+   and Save, then how long it keeps. The column names stand over each figure in the row instead of over the table. */
+@container dtab (max-width: 96rem) {
+  .dtab { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) max-content; }
+  .dtab > .dhead { display: none; }
+  .drow { row-gap: calc(1.5 * var(--u)); padding-block: calc(2 * var(--u)); }
+  .drow > .dn { grid-column: 1 / span 3; grid-row: 1; }
+  .drow > .dx { grid-column: 4; grid-row: 1; }
+  .drow:has(.dx .armed) > .dx { grid-column: 1 / -1; grid-row: auto; }
+  .drow > .dz { grid-column: 1; grid-row: 2; }
+  .drow > .dr { grid-column: 2; grid-row: 2; }
+  .drow > .ds { grid-column: 3 / -1; grid-row: 2; }
+  .drow > .dk { grid-column: 1 / -1; grid-row: 3; }
+  .drow > :is(.dz, .dr, .ds, .dk)::before { content: attr(data-l); display: block; margin-bottom: .35rem; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+  .drow > .ds::before, .drow > .dk::before { flex: 0 0 100%; grid-column: 1 / -1; }
+  .dk { grid-template-columns: minmax(8rem, 13rem) minmax(0, 1fr); }
+  .dtab > .dfoot { grid-template-columns: minmax(0, 1fr); }
+  .dfoot > span:not(.dk) { display: none; }
+  .dfoot > .dk { grid-column: 1; }
+}
 .link { display: inline-flex; align-items: center; gap: .35rem; font: 500 .98rem/1 var(--font-name); color: var(--text-body); text-decoration: none; }
 .link svg { width: .95rem; height: .95rem; }
 .link:hover { color: var(--key-ink); }
-.dfig { display: flex; flex-direction: column; gap: .5rem; }
-.dfig .dgrow { font: 500 .92rem/1.35 var(--font-name); color: var(--text-body); }
-.dctl { display: flex; flex-wrap: wrap; gap: .9rem 1.21rem; margin-top: auto; padding-top: .9rem; border-top: .12rem solid var(--track); }
-.dc { display: flex; flex-direction: column; gap: .55rem; min-width: 0; }
-.dcl { font: 500 .92rem/1 var(--font-name); color: var(--text-mute); }
-.dcv { display: flex; align-items: center; flex-wrap: wrap; gap: .7rem; }
-/* A CARD WITH A ROW TO ITSELF READS ALONG IT (Records at 3822, three cards of 70rem): its figure at the left and its
-   controls at the right, where stacked they left two thirds of every card empty beside a 1.7rem figure */
-@container dcard (min-width: 48rem) {
-  .din { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; align-content: start; column-gap: calc(4 * var(--u)); row-gap: .9rem; }
-  .din > * { grid-column: 1 / -1; }
-  .din > .dtop { grid-row: 1; }
-  .din > .dfig { grid-row: 2; grid-column: 1; }
-  .din > .dctl { grid-row: 2; grid-column: 2; margin-top: 0; padding-top: 0; border-top: 0; }
-}
 .count { display: inline-flex; align-items: center; white-space: nowrap; gap: .45rem; padding: .3rem 0; font: 500 .98rem/1 var(--font-data); color: var(--text-body); background: none; border: 0; }
 button.count { cursor: pointer; }
 button.count:hover { color: var(--text); }
 .count svg { width: .95rem; height: .95rem; color: var(--text-mute); transition: transform var(--t-snap); }
 .count[aria-expanded="true"] svg { transform: rotate(90deg); }
 /* every command saving, a dot in its provider's colour, hollow where it is off: "9 of 11" seen before it is read */
-.cdots { display: inline-flex; flex-wrap: wrap; gap: .22rem; max-width: 9rem; }
+.cdots { display: inline-flex; gap: .22rem; }
 .cdots i { width: .55rem; height: .55rem; border-radius: 50%; background: var(--c); }
 .cdots i.off { background: transparent; box-shadow: inset 0 0 0 .12rem var(--c); }
 .armed { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .5rem; }  /* Restart splice armed names every agent it would cut, so its row wraps */
@@ -443,14 +537,6 @@ button.count:hover { color: var(--text); }
 .tap { display: inline-flex; align-items: center; gap: .5rem; }
 .tap .fixed { padding: 0; font-size: 1rem; }
 .tap .icon { width: 1.6rem; height: 1.6rem; }
-/* every Delete together, away from the readings, each store's size on one scale in its own colour. The rows divide
-   evenly, as a section's settings do (--n from perRow): seven at 3822 stood five and then two with three columns empty,
-   so a column is never narrower than an even share of --n, and never narrower than the 34rem a row needs whole. */
-.dfree .dfrows { grid-template-columns: repeat(auto-fill, minmax(min(100%, max(34rem, calc((100% - (var(--n, 4) - 1) * var(--gap-col)) / var(--n, 4)))), 1fr)); row-gap: 0; }
-.dfrow { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(6rem, 1fr) auto; align-items: center; column-gap: calc(2 * var(--u)); min-height: calc(var(--ctl-h) + 2 * var(--u)); padding-block: var(--u); border-top: .08rem solid var(--hair); }
-.dfrow .nm { display: inline-flex; align-items: center; gap: .6rem; min-width: 0; font: 500 .95rem/1.25 var(--font-name); color: var(--text); }
-.dfrow .barcell { font: 500 .92rem/1.2 var(--font-data); color: var(--text-body); }
-.dfrow .dfa { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: .7rem; }
 
 /* ---------- MCP servers ---------- */
 /* THE SHARED SERVERS ON COLUMNS NAMED ONCE (Oct 26): the lamp, the name and where it is declared, the sessions on it,
@@ -488,6 +574,9 @@ button.count:hover { color: var(--text); }
 .srv .fig.mem .barcell { flex: 1 1 auto; min-width: 0; font: 500 .92rem/1.2 var(--font-data); color: var(--text); --v-w: 6.5ch; }
 .srv .fig.mem .vbar, .srv .fig.mem .vbar b { height: var(--meter-h-sub); border-radius: .31rem; }
 .srv .fig.mem .n { flex: none; font: 500 .88rem/1.2 var(--font-data); color: var(--text-mute); }
+/* a web address has no copy here, so its memory and both times are one dash under the column names, the acts staying in the last column */
+.srv .fig.none { grid-column: 4 / 7; text-align: left; color: var(--text-mute); }
+.srvs:not(.out) > .srv > .acts { grid-column: 7; }
 /* a server nothing runs here is a mark in the figure's slot: a globe at a web address, an unlit socket not running. The
    section's line names each once, so no row says it in words. */
 .srv .fig.mem:has(> .idle) { justify-content: flex-end; }
@@ -513,13 +602,13 @@ button.count:hover { color: var(--text); }
 .srv .said svg { width: 1rem; height: 1rem; }
 /* NOT SHARED, A CARD PER REASON (Oct 26): the reason and its count once on the card, the line it carries once under
    it, then each server with the value that decides it, four of them and the rest behind one pill */
-.mcards { display: flex; flex-wrap: wrap; gap: var(--gap-card); align-items: stretch; }
-.mcard { flex: 1 1 26rem; min-width: 0; display: flex; flex-direction: column; gap: var(--u); padding: calc(2 * var(--u)); border-radius: var(--r-in); background: color-mix(in oklab, var(--text) 2.5%, transparent); box-shadow: inset 0 0 0 .08rem var(--hair); }
+.mcard { min-width: 0; display: flex; flex-direction: column; gap: var(--u); padding: calc(2 * var(--u)); border-radius: var(--r-in); background: color-mix(in oklab, var(--text) 2.5%, transparent); box-shadow: inset 0 0 0 .08rem var(--hair); }
 .mcard > .morepill { align-self: flex-start; }  /* the pill ends its own card's list, opened or not, however tall the row is */
-.mcards > .mcard[aria-hidden="true"] { min-height: 22rem; }  /* before the servers are read a card stands as tall as the cards of a typical machine */
-.mtop { display: flex; align-items: baseline; justify-content: space-between; gap: calc(2 * var(--u)); }
-.mtop .mw { font: 600 1rem/1.2 var(--font-name); color: var(--text); }
-.mtop .mn { font: 600 1.15rem/1 var(--font-data); font-variant-numeric: tabular-nums; letter-spacing: -.01em; color: var(--text); }
+.mcards > .mcard[aria-hidden="true"] { min-height: 14rem; }  /* before the servers are read a card stands as tall as the cards of a typical machine */
+/* a card's top line: scoped to the card, so no rule of this name reaches a block outside it */
+.mcard > .mtop { display: flex; align-items: baseline; justify-content: space-between; gap: calc(2 * var(--u)); }
+.mcard > .mtop .mw { font: 600 1rem/1.2 var(--font-name); color: var(--text); }
+.mcard > .mtop .mn { font: 600 1.15rem/1 var(--font-data); font-variant-numeric: tabular-nums; letter-spacing: -.01em; color: var(--text); }
 .mcard .ml { margin: 0; font: 500 .88rem/1.3 var(--font-name); color: var(--text-mute); }
 .srvs.out { display: flex; flex-direction: column; }
 .srv.out { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-auto-flow: dense; align-items: center; column-gap: calc(2 * var(--u)); row-gap: .45rem; padding-block: var(--u); }
@@ -538,16 +627,22 @@ button.count:hover { color: var(--text); }
 .why .wl { font: 500 .88rem/1.3 var(--font-name); color: var(--text-body); }
 /* what sharing saves: the saving as the focal figure, then each server's copies now beside one copy of it, every bar
    on one scale, the columns named once over them and the sum on the last line */
-.msave { display: grid; grid-template-columns: minmax(9rem, 16rem) minmax(8rem, 1fr) max-content minmax(8rem, 1fr); column-gap: calc(3 * var(--u)); max-width: 96rem; }
+.msave { display: grid; grid-template-columns: minmax(8rem, 14rem) minmax(8rem, 1fr) max-content max-content max-content; column-gap: calc(2.5 * var(--u)); }
 .msrv { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; padding-block: var(--u); border-top: .08rem solid var(--hair); }
 .msrv.head { border-top: 0; padding-block: 0 var(--u); }
 .msrv.head > span { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
 .msrv .nm { font: 500 .95rem/1.2 var(--font-name); color: var(--text); overflow-wrap: anywhere; }
 .msrv .n { font: 500 .88rem/1.2 var(--font-data); color: var(--text-mute); white-space: nowrap; }
-.msrv .barcell { font: 500 .92rem/1.2 var(--font-data); color: var(--text); }
-.msrv .vbar, .msrv .vbar b { height: var(--meter-h-sub); border-radius: .31rem; }
-.msrv.sum .nm, .msrv.sum .v { font-weight: 600; }
-.msrv.sum .barcell { justify-content: flex-end; }
+.msrv .fig { font: 500 .92rem/1.2 var(--font-data); color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
+.msrv.head > span:nth-child(n+3) { text-align: right; }
+.msrv .dtrk.save { height: var(--meter-h-sub); }
+.msrv .dtrk.save .dfill { background: var(--text-mute); }
+/* what sharing frees is the hatched part of the server's own bar, after the one copy sharing would keep */
+.msrv .sgap { position: absolute; top: 0; bottom: 0; border-radius: 0 .31rem .31rem 0; background: repeating-linear-gradient(135deg, var(--text-mute) 0 .18rem, transparent .18rem .42rem); }
+.msrv.head .hl { display: inline-flex; align-items: center; flex-wrap: wrap; gap: .3rem .5rem; }
+.msrv.head .sw { display: inline-block; width: .9rem; height: .6rem; border-radius: .15rem; background: var(--text-mute); }
+.msrv.head .sw.gap { margin-left: .6rem; background: repeating-linear-gradient(135deg, var(--text-mute) 0 .18rem, transparent .18rem .42rem); }
+.msrv.sum .nm, .msrv.sum .fig { font-weight: 600; }
 .msave > .morepill { grid-column: 1 / -1; justify-self: start; margin-block: var(--u); }
 /* the switch on the Sharing kicker's line, with what the change did beside it */
 .mshare { display: inline-flex; align-items: center; gap: var(--u); }
@@ -556,8 +651,18 @@ button.count:hover { color: var(--text); }
 /* ---------- Version: the versions in the order they came out, the one he runs at the hero's size between them ----------
    A card per version there is: Previous when a release is on this machine to go back to, Running always, Newest when a
    check found one he does not run. Each act sits on the card of the version it would take him to. */
-.vline { container: vline / inline-size; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: var(--gap-card); align-items: stretch; }
+.vline { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: var(--gap-card); align-items: stretch; }
 .vcard { display: flex; flex-direction: column; gap: var(--u); min-width: 0; padding: calc(2 * var(--u)) calc(2.5 * var(--u)); border-radius: var(--r-in); background: color-mix(in oklab, var(--text) 2.5%, transparent); box-shadow: inset 0 0 0 .08rem var(--hair); }
+/* THE VERSIONS STAND ON ONE RAIL, in the order they came out (Previous, Running, Newest): each card has its socket on the rail over
+   it, the one he runs lit as the account serving now is on Accounts, and a version he could move to drawn as an empty socket */
+.vline { padding-top: calc(3.2 * var(--u)); }
+.vcard { position: relative; }
+.vcard::before { content: ""; position: absolute; top: calc(-1.9 * var(--u) - .15rem); left: calc(var(--gap-card) / -2); right: calc(var(--gap-card) / -2); height: .3rem; border-radius: .15rem; background: var(--track-line); }
+.vcard:first-child::before { left: 0; }
+.vcard:last-child::before { right: 0; }
+.vsock { position: absolute; top: calc(-1.9 * var(--u) - .55rem); left: calc(2.5 * var(--u)); width: 1.1rem; height: 1.1rem; border-radius: 50%; background: var(--obj); box-shadow: inset 0 0 0 .16rem var(--text-mute); }
+.vcard.now .vsock { background: var(--key-light); box-shadow: 0 0 0 .16rem var(--ink), 0 0 .9rem color-mix(in oklab, var(--key-light) 60%, transparent); }
+.vcard.next .vsock { background: transparent; }
 /* the one he runs is the object: the cel card's ink, where the others are tiles on the plate */
 .vcard.now { background: var(--obj); box-shadow: none; border: var(--ink-w) solid var(--ink); }
 .vk { font: 600 var(--kicker)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
@@ -575,17 +680,11 @@ button.count:hover { color: var(--text); }
 #st .vacts .act .wait { --c: currentColor; }  /* the ring while his tap reads, in the button's own ink */
 .vghost { display: flex; flex-direction: column; gap: var(--u); min-height: 9.3rem;  /* as tall as a tile holding a version beside its acts */  padding: calc(2 * var(--u)) calc(2.5 * var(--u)); border-radius: var(--r-in); box-shadow: inset 0 0 0 .08rem var(--hair); }
 .vghost .ghost.fig { height: var(--fig-focal); }
-/* on a row wide enough to read along, a card holds its version at one end and its acts at the other, instead of a
-   number and two buttons in the top corner of a 100rem box (Version at 3822) */
-@container vline (min-width: 120rem) {
-  .vcard { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-auto-flow: dense; align-content: center; column-gap: calc(4 * var(--u)); }
-  .vcard > * { grid-column: 1; }
-  .vcard > .vacts { grid-column: 2; grid-row: 1 / span 3; align-self: center; justify-content: flex-end; margin: 0; padding: 0; }
-}
-/* Files: where splice keeps them, one tile each, the name quiet and the path whole (section 9: computed paths) */
-.vfiles { display: flex; flex-wrap: wrap; gap: var(--gap-card); }
-.vfile { flex: 1 1 24rem; min-width: 0; display: flex; flex-direction: column; gap: .45rem; padding: calc(1.5 * var(--u)) calc(2 * var(--u)); border-radius: var(--r-in); background: color-mix(in oklab, var(--text) 2.5%, transparent); box-shadow: inset 0 0 0 .08rem var(--hair); }
-.vfile .nm { font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
+/* Files: where splice keeps them, a row each with the name quiet and the path whole (computed paths are shown, never edited) */
+.vfiles { display: flex; flex-direction: column; }
+.vfile { display: grid; grid-template-columns: minmax(6rem, 9rem) minmax(0, 1fr); align-items: baseline; column-gap: calc(2 * var(--u)); min-height: var(--row-h); padding: var(--u) calc(2 * var(--u)) var(--u) var(--u); border-top: .08rem solid var(--hair); align-content: center; }
+.vfile:first-child { border-top: 0; }
+.vfile .nm { font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); }
 #st .vfile code { font: 500 1rem/1.35 var(--font-data); color: var(--text); background: none; padding: 0; overflow-wrap: anywhere; }
 /* a run that failed carries the limit red on its edge, beside the steps it reached */
 .run.bad { box-shadow: inset .25rem 0 0 var(--limit); }
@@ -646,11 +745,6 @@ button.count:hover { color: var(--text); }
 .dmore .cs > .said { grid-column: 1 / -1; grid-row: 3; font: 500 .9rem/1 var(--font-name); color: var(--text-mute); }
 .dmore .cs > .said.limit { color: var(--limit); }
 .dmore .cs.off .chip { color: var(--text-mute); box-shadow: none; border-color: var(--track-line); }
-.dcard .offcost { margin: 0; font: 500 .92rem/1.35 var(--font-name); color: var(--text-mute); }  /* what Off costs, under the switch (fin) */
-.dcard .offcost.now { color: var(--text-body); }  /* the switch is Off: the cost is in force, brighter than the dimmed row name (hitstop 98d8d07) */
-/* a phrase keeps its dot with it (the join puts a no-break space before each "·", so a line never opens with one) and
-   wraps inside the card when it is longer than the card: nowrap here ran the first phrase past the edge at 1440 */
-.dcard .offcost .whole { white-space: normal; }
 /* usage history's own days, the one series the daemon measures, in its store's hue: the biggest day named over its own
    column, the first day kept and today at the ends */
 .dchart { display: flex; flex-direction: column; gap: .35rem; margin-top: .5rem; }
@@ -677,19 +771,15 @@ button.count:hover { color: var(--text); }
    The folder list is drawn here rather than by the kit: a list of paths is not one of its controls. Each path stands as
    it was typed, with the way to drop it, which arms in place; under it, the projects the daemon says it makes; beside
    it, "Not found" when the folder has gone, which never stops splice (its sessions fall back to the git-repo rule). */
-/* THE PROJECTS AND THE FOLDER THAT MAKES THEM SHARE A WIDE PLATE (Oct 26): stacked, the two sat in the top-left fifth of
-   it at 3822. Once it holds two 50rem columns they stand side by side, and the hairline between them stands upright. */
-.pcols { container: pcols / inline-size; min-width: 0; }
-.pin { display: grid; grid-template-columns: minmax(0, 1fr); }
-.pin > .psec { min-width: 0; display: flex; flex-direction: column; gap: calc(2 * var(--u)); }
-.pin > .psec + .psec { margin-top: calc(4 * var(--u)); padding-top: calc(4 * var(--u)); border-top: .08rem solid var(--hair); }
-@container pcols (min-width: 104rem) {
-  /* the projects take the larger share: their rows are bars that read by length, where the folder side holds one tile */
-  .pin { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); column-gap: calc(4 * var(--u)); }
-  .pin > .psec + .psec { margin-top: 0; padding-top: 0; border-top: 0; padding-left: calc(4 * var(--u)); border-left: .08rem solid var(--hair); }
-}
 #st .plist { display: grid; gap: calc(1.5 * var(--u)); width: 100%; }
 #st .prow { display: flex; align-items: center; flex-wrap: wrap; gap: var(--u) calc(1.5 * var(--u)); }
+/* a folder wears the colour its projects wear in the table and on the bar over it; the git-repo rule wears the bar's grey */
+.psw { flex: none; width: .8rem; height: .8rem; border-radius: .2rem; background: var(--c); }
+.psw.rest { background: color-mix(in oklab, var(--text) 24%, transparent); }
+#st .prj .nm { display: inline-flex; align-items: center; gap: .6rem; }
+#st .pn { font: 500 .92rem/1.2 var(--font-name); color: var(--text-body); }
+#st .pn b { font: 600 1rem/1 var(--font-data); color: var(--text); font-variant-numeric: tabular-nums; margin-right: .3rem; }
+#st .prow > .pn { margin-left: auto; }
 #st .ppath { display: inline-flex; align-items: center; gap: .3rem; padding: .4rem .3rem .4rem .8rem; background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); transition: border-color var(--t-hover) var(--e-out); }
 #st .ppath code { background: none; padding: 0; font: 500 1.04rem/1.4 var(--font-data); color: var(--text); }
 #st .ppath .icon { width: 1.8rem; height: 1.8rem; }
@@ -712,7 +802,13 @@ button.count:hover { color: var(--text); }
 #st .prj .nm { font: 500 1rem/1.25 var(--font-name); overflow-wrap: anywhere; }
 #st .prj .barcell { font: 500 .92rem/1.2 var(--font-data); color: var(--text); }
 #st .prj .vbar, #st .prj .vbar b { height: var(--meter-h-sub); border-radius: .31rem; }
-#st .prj .t { font: 500 .92rem/1.2 var(--font-data); color: var(--text-body); text-align: right; white-space: nowrap; }
+#st .prj .t { font: 500 .92rem/1.2 var(--font-data); color: var(--text-body); white-space: nowrap; }
+#st .prj .t, #st .prj.head .trh { display: flex; align-items: center; justify-content: flex-end; gap: calc(1.5 * var(--u)); }
+#st .prj .tw { min-width: 17ch; text-align: right; }
+.rec { position: relative; flex: none; width: 9rem; height: var(--meter-h-sub); border-radius: .31rem; background: color-mix(in oklab, var(--text) 8%, transparent); }
+.rec i { position: absolute; top: 50%; width: .75rem; height: .75rem; margin: -.375rem 0 0 -.375rem; border-radius: 50%; background: var(--text-body); }
+.rec.ax { display: flex; justify-content: space-between; align-items: center; height: auto; background: none; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.rec.ax b { font-weight: 500; }
 #st .pmakes > .morepill { align-self: flex-start; }
 #st .prule { font: 500 1rem/1.3 var(--font-name); color: var(--text-body); }
 #st .pmakes .mchip.quiet { padding: .45rem .8rem; font: 500 1.04rem/1 var(--font-name); color: var(--text-body); border-color: var(--track-line); background: transparent; }
@@ -735,6 +831,13 @@ button.count:hover { color: var(--text); }
 #st .adv .advin:not([hidden]) { margin-top: calc(2 * var(--u)); }
 .advg > .krows + .krows { margin-top: calc(2 * var(--u)); }
 #st .adv .advin[hidden] { display: none; }
+/* AN ADVANCED INSIDE A SETTINGS GRID (the four topics that stand beside what they act on) is the grid's last block: its button, and
+   under it rows in the section's own columns, so a name, a control and a drawing keep one x from the first setting to the last */
+#st .krows > .adv { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; margin-top: calc(2 * var(--u)); }
+#st .krows > .adv > .sechead { grid-column: 1 / -1; padding-inline: var(--u); }
+#st .krows .adv .advin { grid-column: 1 / -1; grid-template-columns: subgrid; grid-template-rows: none; }
+#st .krows .adv .advin:not([hidden]) { margin-top: 0; }
+#st .krows .adv .advin[hidden] { display: none; }
 /* it unfolds once, as it opens (.turning, settings.js turn), and every later drawing finds it already there: the rule
    it replaced ran the unfold again on every redraw, so a read landing made the open rows flicker */
 #st .adv .advin.turning > * { animation: advin var(--t-snap) var(--e-out) var(--turn-at, 0ms) 1 both; }
@@ -747,6 +850,19 @@ button.count:hover { color: var(--text); }
 .rfig { display: flex; align-items: baseline; gap: .55rem; margin: 0; font: 500 .92rem/1.2 var(--font-name); color: var(--text-mute); }
 .rfig b { font: 600 1.05rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
 .rfig b.lv-bad { color: var(--limit); }
+.rfig b.nil { color: var(--text-mute); }
+/* every login as one dot, in the order the plans run out: the ones at the warn line lit, the ones at their limit in the limit
+   red, the rest an empty ring, with how many of them stand at the line beside the dots */
+.rlogins { display: flex; align-items: center; gap: .9rem; min-width: 0; }
+.rdots { display: flex; align-items: center; gap: .25rem; min-width: 0; }
+.ld { flex: 0 1 .62rem; min-width: .3rem; aspect-ratio: 1; border-radius: 50%; box-shadow: inset 0 0 0 .12rem var(--track-line); }
+.ld.over { background: var(--text-body); box-shadow: none; }
+.ld.full { background: var(--limit); box-shadow: none; }
+/* the terminal in miniature: the reasoning line (hatched, solid or a dashed slot), then the reply, then the settings in words */
+.rterm { display: flex; flex-direction: column; gap: .4rem; margin-bottom: .62rem; padding: .6rem .75rem; border-radius: var(--r-in); background: var(--obj-sunk); box-shadow: inset 0 0 0 .08rem var(--hair); }
+.rterm .wire.reply { background: color-mix(in oklab, var(--text) 30%, transparent); }
+.rterm .wire.gone { background: none; outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }
+.rterm .wire.ghost { background: var(--track); }
 /* the second half's rail cards: two figures side by side, the stores' split in their hues, and Saving stopped */
 .rfigs { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem 1.2rem; }
 .rfigs > .meta { margin-top: 0; }
@@ -762,7 +878,22 @@ button.count:hover { color: var(--text); }
 /* Version's Advanced in groups: each group's name once over its rows, in the kicker's face one step quieter, with the
    section's rhythm between groups */
 .advg + .advg { margin-top: calc(4 * var(--u)); }
+/* every group stands on the same columns: a name is 21rem wide in each, so the controls of ChatGPT and Grok, of Code mode and of
+   splice itself start at one x down the whole Advanced, however long a group's longest name is */
+.advg .krows.flat { grid-template-columns: repeat(var(--fc), 21rem minmax(0, 1fr)); }
+/* a text value (an address, a sign-in file) is read whole, so a group stands in two columns until the plate holds three of 70rem */
+@container plate (min-width: 140rem) { .advg .krows.flat.n3 { --fc: 2; } }
+@container plate (min-width: 200rem) { .advg .krows.flat.n3 { --fc: 3; } }
+.advg .krows:not(.flat) { grid-template-columns: 21rem fit-content(26rem) minmax(14rem, 1fr); }
 .advk { margin: 0 0 var(--u); font: 600 .78rem/1.2 var(--font-name); letter-spacing: .08em; text-transform: uppercase; color: var(--text-mute); }
 /* a bar's figure holds one width down its column, so every track on the scale is one length whatever its figure */
 #st .prj .barcell .v { min-width: 4ch; text-align: right; }
 #st .msrv .barcell .v { min-width: 8ch; text-align: right; }
+
+/* a setting that is locked or fixed draws its value and its marks on one line: the marks stand at the value's centre, not at its top */
+#st .kn .ctl > .marks { align-self: center; }
+
+/* a folder's projects open under its line, indented to its path, in the same table form as the projects above */
+#st .pfolder { display: flex; flex-direction: column; gap: var(--u); }
+#st .pfold { padding-left: calc(3 * var(--u)); }
+#st .prow > .pn { padding: 0; }

@@ -91,9 +91,11 @@ test("a mixed command shows the key's money for the key's requests and the plan'
   bunExpect(text).toContain("Set budget");
 }, 30_000);
 
-test("on a mixed command an hour from before the split is counted as not split, never as money", async () => {
+// the requests from before the split cannot be sorted into plan and key; the line counts them as "earlier, unsorted"
+// (Accounts' goal, Oct 28), a count and never money
+test("on a mixed command an hour from before the split is counted as earlier and unsorted, never as money", async () => {
   const { text } = await dayOf("mixed-before");
-  bunExpect(text).toContain("≈$12.40 for 300 requests · 23,259 on your plan · 50 not split into plan and key");
+  bunExpect(text).toContain("≈$12.40 for 300 requests · 23,259 on your plan · 50 earlier, unsorted");
   bunExpect(text).not.toContain("15.40");
 }, 30_000);
 

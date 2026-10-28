@@ -88,7 +88,11 @@ test("Requests: picking a project asks the daemon for its requests, in time orde
     await expect(p.locator("#pickline .ppick .pname")).toHaveText("Every project");
     await p.locator("#pickline .ppick").click();
     await p.locator(".pmenu button", { hasText: "temple" }).click();
-    await expect(card(p, "t-web")).toHaveCount(0, { timeout: 10_000 });
+    // the page draws its loading rows until the daemon answers, so the rows are read once the project's own are drawn, not
+    // when the old row leaves
+    await expect(card(p, "t-old")).toBeVisible({ timeout: 10_000 });
+    await expect(card(p, "t-ask")).toBeVisible({ timeout: 10_000 });
+    await expect(card(p, "t-web")).toHaveCount(0);
     expect(asked.at(-1)).toBe("/work/temple");
     expect(await p.locator("article.card.rq").evaluateAll((els) => els.map((e) => e.getAttribute("data-open")))).toEqual(["alpha:t-old", "alpha:t-ask"]);
     await expect(p.locator(".pgroup")).toHaveCount(0);

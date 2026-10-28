@@ -24,7 +24,7 @@
 "use strict";
 
 (() => {
-  const OPEN_MS = 3_000, CLOSED_MS = 15_000, SAID_MS = 4_000, PAGE = 50, FOLLOW_PX = 40, TYPED_MS = 120_000, EXIT_MS = 60_000;
+  const OPEN_MS = 3_000, CLOSED_MS = 15_000, SAID_MS = 4_000, PAGE = 50, FOLLOW_PX = 40, TYPED_MS = 120_000, EXIT_MS = 60_000, SILENT_MS = 30_000;
   // A meter turns the limit red where Accounts' own row does, at the limit (kit.js DRAW.meter "full"): at 85 the same
   // 7-day window read red here and in its provider's colour on Accounts.
   const LIMITS_MS = 30_000, MODELS_MS = 60_000, WANT_MS = 12_000, WANT_POLL_MS = 1_200, CRITICAL_PCT = 100;
@@ -167,7 +167,10 @@
     if (st.reading) return;
     st.reading = true;
     try {
-      const res = await API.get("/api/manager");
+      // A READ THAT NEVER LANDS BECOMES A SPLICE THAT DOES NOT ANSWER: the bar says it is slow once (drawPill, after six
+      // seconds), and when the read is still out after SILENT_MS it says so for what it is, with Try again, where the
+      // stripes would otherwise run for as long as the read hangs
+      const res = await Promise.race([API.get("/api/manager"), new Promise((done) => setTimeout(() => done({ ok: false, status: 0, body: null }), SILENT_MS))]);
       if (st.phase) return; // a start or a move is out: its own answer is the state
       if (res.ok && res.body?.state) { st.gone = null; apply(res.body); }
       else {
@@ -414,6 +417,15 @@
     send.classList.toggle("primary", lit);
     send.classList.toggle("quiet", !lit);
     send.setAttribute("aria-busy", String(st.busy || st.retrying));
+    // a change of what the bar says (live, not answering, waiting, a manager to start) eases in; a send in flight is not one
+    const stance = [door1, first, label, dead ?? "", answering, st.busy ? "Send" : send.textContent, field.hidden, send.hidden].join("|");
+    if (drawn.stance != null && drawn.stance !== stance) {
+      pill.classList.remove("shift");
+      void pill.offsetWidth;
+      pill.classList.add("shift");
+      setTimeout(() => pill.classList.remove("shift"), 400);
+    }
+    drawn.stance = stance;
   }
   function headChip(x, on, role) {
     return `<button type="button" class="cmp-hd" role="${role}" aria-checked="${on}" data-act="${role === "radio" ? "pick" : "head"}" data-head="${h(x.key)}"`
@@ -453,19 +465,22 @@
     // THREE GLYPH TILES WHERE THREE LABELLED FACTS STOOD (Oct 28): a folder for where it works, the pages it reads drawn as
     // the top bar's own glyphs, a pencil for what it changes. The label is the tile's name for a reader that cannot see
     // the glyph, and the title says it on hover; the words beside the glyph are the fact's own.
-    const fact = (name, glyphs, words) => `<div class="cmp-fact" title="${name}"><dt>${name}</dt><dd><span class="cmp-fg" aria-hidden="true">${glyphs}</span><span>${words}</span></dd></div>`;
+    const fact = (name, glyphs, words) => `<div class="cmp-fact" role="group" aria-label="${name}" title="${name}"><span class="cmp-fg" aria-hidden="true">${glyphs}</span><span>${words}</span></div>`;
+    // THE COMMANDS IT CAN RUN ON ARE ONE ROW; THE REST STAND DIMMED UNDER ONE KICKER PER REASON, side by side, so each reason is
+    // said once over the commands in it and a name never has to wrap to make room for it. A command that is not installed
+    // carries the command that installs it, with Copy, in its own group: the way out stands where the reason is.
     const parts = headsHtml(st.pick, "radio");
     const html = `<div class="cmp-top"><span class="cmp-lamp ${lampOf()}" aria-hidden="true"><i></i></span>`
       + `<h2 id="cmp-card-h">${verb} the splice manager</h2>`
       + `<button type="button" class="act quiet small" data-act="later">Not now</button></div>`
-      + `<dl class="cmp-facts">`
+      + `<div class="cmp-facts">`
       + fact("Works in", KIND.folder.icon, "splice's settings folder")
       + fact("Reads", ["models.html", "accounts.html", "sessions.html"].map((f) => NAV_GLYPH[f]).join(""), "commands, accounts, sessions")
       + fact("Changes", KIND.write.icon, "settings, once you approve")
-      + `</dl>`
-      + `<p class="kicker" id="cmp-heads-l">${ready.length ? "Runs on" : "No command can run it"}</p>`
-      + `<div class="cmp-heads" role="radiogroup" aria-labelledby="cmp-heads-l">${parts.ready}</div>`
-      + (parts.off ? `<div class="cmp-off">${parts.off}</div>` : "")
+      + `</div>`
+      + `<section class="cmp-runs" role="radiogroup" aria-labelledby="cmp-heads-l"><p class="kicker" id="cmp-heads-l">${ready.length ? "Runs on" : "No command can run it"}</p>`
+      + `<div class="cmp-heads">${parts.ready}</div>`
+      + (parts.off ? `<div class="cmp-off">${parts.off}</div>` : "") + `</section>`
       + `<div class="cmp-go"><button type="button" class="act primary" data-act="start"${st.pick ? "" : " disabled"}>${verb}</button></div>`;
     if (html !== drawn.card) { card.innerHTML = html; drawn.card = html; }
   }
@@ -693,7 +708,7 @@
     const out = [];
     let para = [], list = null, code = null, table = null;
     const endPara = () => { if (para.length) out.push(para.length === 1 && PATH_ONLY.test(para[0].trim())
-      ? `<p class="cmp-path">${fileChip(para[0].trim())}</p>` : `<p>${para.map(inline).join("<br>")}</p>`); para = []; };
+      ? `<p class="cmp-path">${DRAW.file(para[0].trim())}</p>` : `<p>${para.map(inline).join("<br>")}</p>`); para = []; };
     const endList = () => { if (list) out.push(`<${list.tag}>${list.items.map((x) => `<li>${inline(x)}</li>`).join("")}</${list.tag}>`); list = null; };
     const endTable = () => {
       if (!table) return;
@@ -804,6 +819,17 @@
     }
     return { at, hidden: Math.max(1, hidden) };
   }
+  /** WHAT A COMMAND WITHOUT A DESCRIPTION WAS, IN WORDS: read off the program it starts, after any `cd` and variables before
+   *  it, and only where the program names the kind of thing it does. Anything else is "a command": a stand-in that is
+   *  true beats a guess, and the line itself is drawn under the row. */
+  const COMMAND_KINDS = [[/^(?:rg|grep|egrep|fgrep|ag|ack)$/, "a search"], [/^(?:ls|tree|find|fd)$/, "a file listing"],
+    [/^git$/, "git"], [/^(?:pytest|vitest|jest)$/, "tests"]];
+  function commandWords(command) {
+    const first = String(command).split(/\s*(?:&&|;|\n)\s*/).map((part) => part.trim()).filter((part) => part && !/^cd\s/.test(part))[0] ?? "";
+    const words = first.split(/\s+/).filter((w) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(w)), program = (words[0] ?? "").split("/").pop();
+    if (/^(?:bun|npm|pnpm|yarn|cargo|go|gradle|\.\/gradlew|make)$/.test(program) && words.slice(1, 3).includes("test")) return "tests";
+    return COMMAND_KINDS.find(([re]) => re.test(program))?.[1] ?? "a command";
+  }
   /** What a call was about, from its input as the transcript keeps it (Sessions' callSummary); a path in the manager's
    *  own folder reads from there. A message's own summary is what it was about; who it went to is drawn as that
    *  session's own chip, so no row has to spell a socket path. */
@@ -825,7 +851,8 @@
     if (input.summary) return said(oneLine(input.summary));
     if (input.command) {
       const raw = String(input.command).trim();
-      return input.description ? { say: oneLine(input.description), raw } : { say: oneLine(raw), raw: null };
+      // a command that wrote no description is said by what kind of command it is, never by its line: the line is one press under
+      return { say: input.description ? oneLine(input.description) : commandWords(raw), raw, own: Boolean(input.description) };
     }
     if (input.file_path || input.notebook_path) {
       const path = input.file_path || input.notebook_path;
@@ -840,11 +867,6 @@
     }
     if (input.to && input.message) return said(oneLine(input.message));
     return { say: oneLine(Object.values(input).find((v) => typeof v === "string" && v.trim()) ?? ""), raw: null };
-  }
-  /** A place the way a file chip draws it: its name first, in full ink, and the folder it is in beside it, muted. */
-  function fileChip(path) {
-    const text = String(path).trim(), cut = text.lastIndexOf("/"), dir = cut > 0 ? home(text.slice(0, cut)) : "", name = cut >= 0 ? text.slice(cut + 1) : text;
-    return `<span class="cmp-file" title="${h(home(text))}">${KIND.read.icon}<b>${h(name || text)}</b>${dir ? `<span>${h(dir)}</span>` : ""}</span>`;
   }
   /** Who a call reached, when splice knows that session: its name, as a door to its own page. */
   function callTo(m) {
@@ -862,12 +884,13 @@
     // a failure is red once, on its own mark: the word and the glyph keep the ink every other row has
     const mark = bad ? `<span class="cmp-mk bad">${ICON.bang}Failed</span>`
       : !out && live ? `<span class="cmp-mk live" role="img" aria-label="Still going"><i></i></span>` : "";
-    const word = kind === "step" ? (m.tool || k.word) : k.word;
+    // a command that wrote its own description reads as that sentence ("Run the tests"), never behind a kind word that would say it twice
+    const word = about.own ? "" : kind === "step" ? (m.tool || k.word) : k.word;
     // what was sent, whole, one press under the words: a command in the code face, a place as its file chip
-    const raw = !about.raw ? "" : typeof about.raw === "string" ? `<pre class="cmp-raw">${h(about.raw)}</pre>` : `<p class="cmp-rawpath">${fileChip(about.raw.path)}</p>`;
+    const raw = !about.raw ? "" : typeof about.raw === "string" ? `<pre class="cmp-raw">${h(about.raw)}</pre>` : `<p class="cmp-rawpath">${DRAW.file(about.raw.path)}</p>`;
     return `<div class="cmp-call${bad ? " bad" : ""}" data-k="${h(key)}">`
       + `<button class="disc cmp-cb" type="button" aria-expanded="${open}" aria-controls="cmp-r-${h(key)}" data-act="call" data-k="${h(key)}">`
-      + `${DRAW.chev}${k.icon}<b>${h(word)}</b><span class="cmp-sum">${h(about.say)}</span>${who ? chipOfWho(who) : ""}${mark}</button>`
+      + `${DRAW.chev}${k.icon}${word ? `<b>${h(word)}</b>` : ""}<span class="cmp-sum">${h(about.say)}</span>${who ? chipOfWho(who) : ""}${mark}</button>`
       + `<div class="cmp-drop" id="cmp-r-${h(key)}" data-open="${open}"><div class="cmp-dropin">${raw}${resultHtml(key, result)}</div></div></div>`;
   }
   /** A result, bounded to its first lines with the rest behind a count: left whole, an opened result was a scroller of
@@ -891,8 +914,9 @@
       kinds.set(kind, (kinds.get(kind) ?? 0) + 1);
     }
     const bad = calls.filter((c) => failedResult(c.result)).length;
-    const tiles = [...kinds].map(([kind, n]) => `<span class="cmp-t">${KIND[kind].icon}<b>${n}</b> ${h(KIND[kind].many)}</span>`).join("")
-      + (bad ? `<span class="cmp-t bad">${ICON.bang}<b>${bad}</b> failed</span>` : "");
+    // the kit's glyph tile, one per kind above zero, and the failed count in the limit red
+    const tiles = [...kinds].map(([kind, n]) => DRAW.statTile(KIND[kind].icon, DRAW.n(n), KIND[kind].many)).join("")
+      + (bad ? DRAW.statTile(ICON.bang, DRAW.n(bad), "failed", { bad: true }) : "");
     const who = [...new Map(calls.map((c) => callTo(c.m)).filter(Boolean).map((x) => [x.id, x])).values()];
     const chips = who.slice(0, CHIPS_SHOWN).map(chipOfWho).join("")
       + (who.length > CHIPS_SHOWN ? `<span class="cmp-more">+${who.length - CHIPS_SHOWN}</span>` : "");
@@ -902,7 +926,7 @@
       + `<div class="cmp-drop" id="cmp-b-${h(key)}" data-open="${open}"><div class="cmp-dropin">`
       + `${open ? calls.map((c) => callRow(`${key}-${c.key}`, c.m, c.result, live)).join("") : ""}</div></div></div>`;
   }
-  /** The relay a note came through, and who wrote it: "[eli-dispatch e801f85a from eli] …" is plumbing in the middle of
+  /** The relay a note came through, and who wrote it: "[relay a1b2c3d4 from writer] …" is plumbing in the middle of
    *  a conversation, so the tag comes off, the writer takes the label, and the relay is said once beside it. */
   const ENVELOPE = /^\s*\[([a-z0-9][a-z0-9-]*)\s+[0-9a-f]{6,}\s+from\s+([^\]]{1,60})]\s*/i;
   // the same tag in the middle of a note (a relay that wrote its own tag after the first paragraph) is plumbing too
@@ -914,7 +938,8 @@
     const wrote = (seal ? seal[2] : m.from) || "another session";
     const relay = seal && m.from && oneLine(m.from) !== oneLine(wrote) ? oneLine(m.from) : "";
     const who = whoIs(wrote);
-    const name = who ? `<a class="cmp-who" href="sessions.html#${encodeURIComponent(who.id)}" data-act="go">${h(who.name)}${DRAW.go}</a>` : `<span class="cmp-who">${h(wrote)}</span>`;
+    // the writer is a session, drawn as a session is everywhere else in the sheet: a chip, and a door to its own page when splice knows it
+    const name = who ? `<a class="chip cmp-sender" href="sessions.html#${encodeURIComponent(who.id)}" data-act="go">${h(who.name)}</a>` : `<span class="chip cmp-sender">${h(wrote)}</span>`;
     return `<div class="cmp-m peer" data-k="${h(key)}"><span class="cmp-from">${name}${relay ? `<span class="cmp-via">via ${h(relay)}</span>` : ""}</span>`
       + body(key, said) + `</div>`;
   }
@@ -1517,8 +1542,10 @@
     tab = document.createElement("button");
     tab.type = "button";
     tab.className = "cmp-tab";
-    tab.title = `The splice manager · ${KEYS}`;
-    tab.innerHTML = `<span class="cmp-lamp off" aria-hidden="true"><i></i></span><span class="cmp-tabword">Manager</span>`;
+    // the manager's lamp over its glyph; its name and key are said on hover and focus (console.css [data-tip]) and to a screen reader
+    tab.dataset.tip = `The splice manager · ${KEYS}`;
+    tab.setAttribute("aria-label", `The splice manager, ${KEYS}`);
+    tab.innerHTML = `<span class="cmp-lamp off" aria-hidden="true"><i></i></span>${ICON.chat}`;
     tabLamp = tab.querySelector(".cmp-lamp");
     document.body.append(dim, dock, tab);
 

@@ -143,12 +143,14 @@ test("the open session names its project, the same name its group wears", async 
   }
 }, 60_000);
 
-// In no project the folder is the only clue, so that card names it, from home, as the daemon spells it.
-test("a session in no project names its folder from home on its card", async () => {
+// In no project the folder is the only clue, so that card names it, by the folder's own name and never a path (Sessions'
+// goal, Oct 28: "A folder reads as its own name"); the path from home, as the daemon spells it, is under the pointer.
+test("a session in no project names its folder by its own name on its card, its path from home under the pointer", async () => {
   const p = await page([...THREE.slice(0, 4), row("l-1", "stray", null, { place: "~/notes" })]);
   try {
     const loose = p.locator(".pgroup", { hasText: "No project" }).first();
-    await expect(loose.locator(".card.s .where")).toHaveText("~/notes");
+    await expect(loose.locator(".card.s .where")).toHaveText("notes");
+    await expect(loose.locator(".card.s .where")).toHaveAttribute("title", "~/notes");
     await expect(p.locator(".pgroup", { hasText: "temple" }).first().locator(".card.s .where")).toHaveCount(0);
   } finally {
     await p.close();

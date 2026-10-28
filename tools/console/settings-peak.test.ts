@@ -1,8 +1,9 @@
 // Settings' "Many agents at once": a busy command's day holds more requests than one read returns, so the daemon works
 // out its peak over the whole day and the page draws that figure. Today is one table, a row per command that ran, the
-// limit said once in the column's head; the commands that held nothing collapse to one line (Marcos's verdict on this
-// pane, Oct 11), and the commands that hold their own value for a setting read as chips that lie across its row and wrap
-// inside it, never cut (gap 457, Oct 13). Through the real page against a stub daemon.
+// limit said once in the column's head; the commands that held nothing stand together under one "No requests" label, each
+// a quiet row with the empty meter it is (Settings' goal, Oct 28: a list of names says nothing a table's shape does not),
+// and the commands that hold their own value for a setting read as chips that lie across its row and wrap inside it, never
+// cut (gap 457, Oct 13). Through the real page against a stub daemon.
 import { afterAll, beforeAll, test } from "bun:test";
 import { chromium, expect, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -81,15 +82,27 @@ test("a command whose day holds more requests than one read returns still shows 
   }
 }, 30_000);
 
-test("a command that held nothing today is named on one line, with no row and no bar of its own", async () => {
+test("a command that held nothing today stands under one No requests label as a quiet row with an empty meter and no figure", async () => {
   const page = await open(1440, 900);
   try {
     const today = section(page, "Today");
-    // the words are fin's, under Marlin's order: the line says what there was, and the chips say which commands
-    await expect(today.locator(".pidle")).toContainText("No requests today");
-    await expect(today.locator(".pidle")).toContainText("gamma");
-    expect(await today.locator(".pk[data-grow]").count()).toBe(2); // alpha and beta, never gamma
-    await expect(today.locator(".pk[data-grow]").filter({ hasText: "gamma" })).toHaveCount(0);
+    // the label is said once, over the commands that held nothing, after the ones that did
+    await expect(today.locator(".pk.pg")).toHaveText("No requests");
+    const quiet = today.locator(".pk.quiet");
+    await expect(quiet).toHaveCount(1);
+    await expect(quiet).toContainText("gamma");
+    // its meter is empty and it states no peak, no time and no count
+    await expect(quiet.locator(".pm .bar b")).toHaveAttribute("data-v", "0");
+    await expect(quiet.locator(".pmv")).toHaveText("");
+    await expect(quiet.locator(".pclk")).toHaveText("");
+    // alpha and beta, which held requests, draw their figures and stand above the label
+    await expect(today.locator(".pk:not(.quiet)[data-grow]")).toHaveCount(2);
+    const y = await today.evaluate((el) => {
+      const top = (sel: string) => el.querySelector(sel)!.getBoundingClientRect().top;
+      return { beta: top('.pk[data-grow="peak-beta"]'), label: top(".pk.pg"), gamma: top('.pk[data-grow="peak-gamma"]') };
+    });
+    expect(y.beta).toBeLessThan(y.label);
+    expect(y.label).toBeLessThan(y.gamma);
   } finally {
     await page.close();
   }

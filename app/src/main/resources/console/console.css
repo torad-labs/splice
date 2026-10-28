@@ -55,6 +55,9 @@
   --fig-focal: 1.7rem;                /* a figure that leads a part of a section: 25.77 px */
   --kicker: .8rem;                    /* a two-word uppercase kicker: 12.13 px, +.09em */
   --row-h: var(--splice-row-h);       /* one row pitch for a list of objects: Usage's tables and Sessions' rows */
+  --win-when: 13.2rem;                /* the reset column of a window row on a board of cards, wide enough for its longest reset words,
+                                         so every card's meter tracks end on one x (a row that sizes the column to its own words
+                                         ends where its words do: Accounts' cards) */
 
   /* MOTION, one token per job, all of them tokens.css's, so prefers-reduced-motion zeroes every one at once (tokens.css's
      last line) and the global rule below stops every animation, the stripes included. Write the token, never the ms:
@@ -167,46 +170,42 @@ html { scroll-padding-top: calc(var(--bar-h) + 1rem); }
 .mark .lockup.day { display: none; }
 [data-theme="day"] .mark .lockup.night { display: none; }
 [data-theme="day"] .mark .lockup.day { display: block; }
-/* THE LINKS LEAD THE BAR (Oct 28): they were body text at 1rem under a page title twice their size, in the left third of a
-   bar that stood otherwise empty. They are one step up the ladder now (names run 14 to 17 px), each with its page's own
-   glyph, and --nav-pad is the one inset the line under the current link and its hover line share. */
-.nav { --nav-pad: 1rem; flex: none; display: flex; align-self: stretch; gap: .2rem; position: relative; }
+/* THE LINKS ARE THE CONSOLE'S SEGMENTED SWITCH (Oct 28): all eight pages stand in one sunk track with an ink border and the radius
+   every switch has, the page he is on raised in the neutral selected look, and that one raised face travels to the next link
+   over --t-move (kit.js navLine). They lead the bar: one step up the ladder from body text, each with its page's own glyph, so a
+   page is found by its shape before its word is read. --nav-pad is the one inset every link keeps, and it and the link's type grow gently with the window so the targets keep their proportion to the screen they are read on. A SELECTED VIEW IS
+   NEUTRAL, never the key light: the page he is on is not where he should look next (the colour pass, Oct 26). */
+.nav { flex: none; display: flex; align-items: center; align-self: stretch; gap: .8rem; position: relative; }
+.navset { --nav-pad: clamp(.9rem, 1.1vw, 2.2rem); position: relative; display: flex; align-items: center; gap: .1rem; padding: .2rem; border-radius: var(--r-obj); background: var(--obj-sunk); border: var(--ink-w) solid var(--ink); }
 .nav a {
-  display: flex; align-items: center; gap: .6rem; padding: 0 var(--nav-pad); position: relative; white-space: nowrap;
-  font: 500 1.1rem/1 var(--font-name); color: var(--text-body); text-decoration: none;
-  transition: color var(--t-hover) var(--e-out);
+  position: relative; z-index: 1; display: flex; align-items: center; gap: .55rem; height: 2.1rem; padding: 0 var(--nav-pad); border-radius: calc(var(--r-obj) - .15rem);
+  white-space: nowrap; font: 500 clamp(1.05rem, .35vw + .55rem, 1.3rem)/1 var(--font-name); color: var(--text-body); text-decoration: none; transition: color var(--t-hover) var(--e-out);
 }
-.nav a > svg:first-child { flex: none; width: 1.2rem; height: 1.2rem; color: var(--text-mute); transition: color var(--t-hover) var(--e-out); }
-.nav a:hover > svg:first-child, .nav a[aria-current="page"] > svg:first-child { color: var(--text); }
-/* a page that did not open marks its own link (console.js routeFailed): the bang in the failure's red, arriving once */
-.nav a .nfail { display: inline-flex; color: var(--limit); animation: pop var(--t-pop) var(--e-out) 1; }
-.nav a .nfail svg { width: 1.05rem; height: 1.05rem; }
-/* the page he is on: its name in full ink and a line of the same ink under it; hover draws the line in the track's ink,
-   so the bar says where a press goes before it goes. A SELECTED VIEW IS NEUTRAL, never the key light: the page he is on
-   is not where he should look next (the colour pass, Oct 26). */
-.nav a::before {
-  content: ""; position: absolute; left: var(--nav-pad); right: var(--nav-pad); bottom: -.1rem; height: .22rem; border-radius: .2rem .2rem 0 0;
-  background: var(--track-line); opacity: 0; transform: scaleX(.5);
-  transition: opacity var(--t-hover) var(--e-out), transform var(--t-hover) var(--e-out);
-}
+.nav a > svg:first-child { flex: none; width: 1.15em; height: 1.15em; color: var(--text-mute); transition: color var(--t-hover) var(--e-out); }
 .nav a:hover { color: var(--text); }
-.nav a:hover::before { opacity: 1; transform: none; }
-.nav a[aria-current="page"] { color: var(--text); }
-.nav a[aria-current="page"]::before { opacity: 0; }
-/* THE CURRENT-PAGE LINE IS ONE OBJECT THAT TRAVELS (Oct 27): kit.js navLine puts it under the current link's name and
-   moves it to the next link's over --t-move, so a page change reads as one move along the bar, not a blink. */
+.nav a:hover > svg:first-child, .nav a[aria-current="page"] > svg:first-child { color: var(--text); }
+.nav a[aria-current="page"] { color: var(--sel-ink); }
+/* the raised face behind the current link: one object, moved and sized to the link by kit.js navLine */
 .nav-line {
-  position: absolute; left: 0; bottom: -.1rem; height: .22rem; border-radius: .2rem .2rem 0 0; pointer-events: none;
-  background: var(--text); transform-origin: left; clip-path: inset(0 var(--nav-pad));
+  position: absolute; z-index: 0; left: 0; top: .2rem; bottom: .2rem; border-radius: calc(var(--r-obj) - .15rem); pointer-events: none;
+  background: var(--sel-face); box-shadow: inset 0 0 0 .1rem var(--sel-line);
   transition: transform var(--t-move) var(--e-io), width var(--t-move) var(--e-io), opacity var(--t-hover) var(--e-out);
 }
 .nav-line.still { transition: none; }
 .nav-line.off { opacity: 0; }
-.nav a:focus-visible { outline-offset: -.4rem; border-radius: var(--r-in); }
+.nav a:focus-visible { outline-offset: -.15rem; }
+/* a page that did not open marks its own link (console.js routeFailed): the failure's red bang stands where the link's glyph
+   stood, arriving once, so the link keeps its width and nothing beside it moves */
+.nav a.nfailed > svg:first-of-type { display: none; }
+.nav a .nfail { display: inline-flex; flex: none; color: var(--limit); animation: pop var(--t-pop) var(--e-out) 1; }
+.nav a .nfail svg { width: 1.15em; height: 1.15em; }
 /* WHAT WAITS BEHIND A LINK, DRAWN AS THE TILES DRAW IT (kit.js markNav): the lamp's socket and glyph in its state's
    colour, its count in the data face beside it, inside the link, so the mark is the door. */
 .nmarks { display: inline-flex; align-items: center; gap: .7rem; }
-.nmarks.pop { animation: pop var(--t-pop) var(--e-out) 1; }
+/* what waits behind a link arrives by growing into its place, so the links after it slide over --t-pop and never jump */
+.nmarks { interpolate-size: allow-keywords; }
+.nmarks.pop { animation: marks-in var(--t-pop) var(--e-out) 1; }
+@keyframes marks-in { from { width: 0; margin-left: -.55rem; opacity: 0; transform: scale(.5); } }
 .nav .pc.big { gap: .35rem; font: 600 .95rem/1 var(--font-data); font-variant-numeric: tabular-nums; }
 .nav .tlamp { width: 1.55rem; height: 1.55rem; }
 .nav .tlamp svg { width: .95rem; height: .95rem; }
@@ -225,11 +224,11 @@ body.locked .nav .nmarks, body.locked .nav > .stale { display: none; }
    stands right after that link, the console's small act. What the act has to say beyond itself hangs under the link in a
    panel of its own (the sessions a restart would cut, the command that restarts splice when it cannot): nothing in the bar
    moves for it. */
-.nav > .stale { position: relative; align-self: stretch; display: inline-flex; align-items: center; gap: .6rem; margin-left: .3rem; font: 500 .95rem/1.2 var(--font-name); white-space: nowrap; }
+.nav > .stale { position: relative; align-self: stretch; display: inline-flex; align-items: center; gap: .6rem; font: 500 .95rem/1.2 var(--font-name); white-space: nowrap; }
 .nav > .stale .result { font-size: .95rem; }
 .nav > .stale.shook, .nav > .stale .shook { animation: shake 300ms var(--e-out) 1; }
 .stale-panel {
-  position: absolute; top: calc(100% + 2 * var(--u)); left: 0; z-index: 2; width: max-content; max-width: min(46rem, 90vw);
+  position: absolute; top: calc(100% + 2 * var(--u)); right: 0; z-index: 2; width: max-content; max-width: min(56rem, calc(100vw - 2rem));
   display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(2 * var(--u)); white-space: normal;
   padding: calc(1.5 * var(--u)) calc(2.5 * var(--u)); border-radius: var(--r-in); background: var(--obj-high);
   border: .12rem solid var(--ink); box-shadow: .2rem .2rem 0 var(--ink); animation: hung-in var(--t-snap) var(--e-out) 1;
@@ -421,6 +420,8 @@ a.act { text-decoration: none; }  /* an act that happens to be a link still look
 }
 .chip i { width: .7rem; height: .7rem; border-radius: 50%; background: var(--live); box-shadow: 0 0 .5rem var(--live); }
 a.chip { text-decoration: none; }  /* a chip that opens something (a session it names) is still a chip, never an underlined link */
+/* a chip that can be pressed changes over --t-hover when the pointer arrives or leaves, where a chip that only names stays still */
+a.chip, button.chip { transition: color var(--t-hover) var(--e-out), border-color var(--t-hover) var(--e-out), box-shadow var(--t-hover) var(--e-out); }
 .chip svg { flex: none; width: 1em; height: 1em; }  /* a glyph in a chip is the chip's own size, never its box's */
 /* THE QUIET CHIP, for a list where the chip repeats on every row (Oct 26): same box, same face, same live dot, with
    the loud edge spent down to 1 px of the command's colour. On 21 rows at 3822 the ink border and the offset edge made
@@ -665,6 +666,13 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 .menu .danger.armed, .menu .danger.armed:hover { background: var(--text); color: var(--obj-high); box-shadow: none; border-radius: .35rem; }
 .menu .menu-state { display: block; max-width: 19rem; white-space: normal; line-height: 1.35; padding: .6rem .75rem; margin-top: .3rem; box-shadow: 0 -.1rem 0 var(--track-line); }
 .menu button:disabled { cursor: wait; opacity: .6; }
+/* A MENU OPENS ONCE, WITH ONE MOTION: it rises in over --t-pop. The kit marks a menu that has just appeared .opening (a page that
+   redraws an open menu removes the old one in the same change, so a redraw never replays it); a page may also write the class
+   itself, with --menu-at to delay it. A menu that opens upward rises from below. */
+.menu.opening { animation: menu-open var(--t-pop) var(--e-out) var(--menu-at, 0ms) 1 both; transform-origin: top left; }
+.menu.up.opening { animation-name: menu-open-up; transform-origin: bottom left; }
+@keyframes menu-open { from { opacity: 0; transform: translateY(-.35rem) scale(.98); } }
+@keyframes menu-open-up { from { opacity: 0; transform: translateY(.35rem) scale(.98); } }
 .field.rename { flex: 0 1 14rem; min-width: 7rem; font: 500 1.1rem/1.15 var(--font-name); padding: .3rem .5rem; }
 .field.rename + .act { flex: none; }  /* Save keeps its width beside the name */
 .field.add-name { font: 500 1.1rem/1.15 var(--font-name); }  /* a new login is named in the type its card will show */
@@ -748,7 +756,9 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
    so a few of them still fill the row and a wrapped line has the same columns as the first); the empty ones stand
    together on a line after them, each as wide as its own name and 0 (.pzeros, .ptile.zero below). */
 .ptiles { width: 100%; display: flex; flex-direction: column; gap: var(--gap-card); }
-.ptgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); align-items: stretch; gap: var(--gap-card); }
+/* A TILE IS AS TALL AS WHAT IT HOLDS: a project with no live session has no lamp row, so its tile is the shorter box and
+   not a box with a blank strip where the lamps would stand; the tiles share their columns and their top edge */
+.ptgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); align-items: start; gap: var(--gap-card); }
 .ptgrid:empty { display: none; }
 .ptiles > .pzeros { display: flex; flex-wrap: wrap; gap: var(--gap-card); }
 .ptiles > .pzeros > .ptile { flex: 0 0 auto; }
@@ -763,9 +773,14 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 /* picked by its look, no word (fin): the Teams tab's raised card, in NEUTRAL ink (the colour pass, Oct 26: a selection
    never takes the key light, so the key is free to mark the one place to act) */
 .ptile.on { color: var(--text); background: var(--obj); border-color: var(--ink); box-shadow: .3rem .3rem 0 var(--text), .3rem .3rem 0 var(--ink-w) var(--ink); }
-.ptop { display: flex; align-items: baseline; gap: .6rem; min-width: 0; }
-.ptile .tname { flex: 0 1 auto; min-width: 0; font: 500 1.1rem/1.1 var(--font-name); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ptile .ptotal { flex: none; color: var(--text-body); font: 500 .95rem/1 var(--font-data); font-variant-numeric: tabular-nums; }
+/* THE NAME NEVER GIVES WAY TO THE FIGURE: when the two do not fit one line the figure stands under the name, so the project
+   is always read whole (the name of the tile that means "no filter" lost three letters to a one-pixel shortfall); a name
+   longer than the tile itself is still cut, with the whole name as the tile's title */
+.ptop { display: flex; flex-wrap: wrap; align-items: baseline; gap: .15rem .6rem; min-width: 0; }
+.ptile .tname { flex: 0 0 auto; min-width: 0; max-width: 100%; font: 500 1.1rem/1.1 var(--font-name); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* THE TILE'S TOTAL LEADS IT: the project's figure is the focal size (--fig-focal) in the data face, the name keeps its own, so a
+   row of nine tiles reads figure first and the picked project's name second, where one small size made it a flat row of labels */
+.ptile .ptotal { flex: none; color: var(--text); font: 600 var(--fig-focal)/1 var(--font-data); letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
 /* WHAT THE FIGURE COUNTS, SAID ONCE ON THE TILE (Oct 27): "2,127 requests", the unit muted on the figure's baseline. It
    was a kicker over the row, which under the page's own title read as the title again ("TEAMS" under "Teams"). */
 .ptile .pfigs { flex: none; white-space: nowrap; }
@@ -780,18 +795,21 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 .ptile.on .pshare > i { background: color-mix(in oklab, var(--text) 58%, transparent); }
 .ptile.on .pshare.whole > i { background: color-mix(in oklab, var(--text) 72%, transparent); }
 .ptile .pshare.unread { background: none; box-shadow: none; outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }
-.plamps { display: flex; flex-wrap: wrap; align-items: center; gap: .55rem calc(2 * var(--u)); min-height: 2rem; margin-top: auto; }  /* a project with nothing live keeps the row, empty */
+.plamps { display: flex; flex-wrap: wrap; align-items: center; gap: .55rem calc(2 * var(--u)); min-height: 2rem; margin-top: auto; }
+.plamps:empty { display: none; }   /* a project with nothing live draws no lamp row: the tile ends under its bar */
 .ptile .pc.big { gap: .3rem; font: 600 1rem/1 var(--font-data); }
 /* each lamp's count says what it counts, in the muted words the lamp stands for ("1 needs you", "3 working") */
 .ptile .pc .pw { margin-left: .1rem; font: 500 .88rem/1 var(--font-name); color: var(--text-body); }
 /* A PROJECT WITH NOTHING IN THIS WINDOW keeps its tile, because the tile is how he picks it, but says so as a quiet
    object: the name and its 0 muted, no share to draw, a dashed rim, as an add tile says "nothing here yet". */
 .ptile.zero { color: var(--text-mute); border-style: dashed; background: transparent; flex-direction: row; align-items: center; gap: calc(2 * var(--u)); padding: .55rem .95rem; }
-.ptile.zero .ptotal { color: var(--text-mute); }
+.ptile.zero .ptotal { color: var(--text-mute); font: 500 .95rem/1 var(--font-data); letter-spacing: 0; }
 .ptile.zero.on { background: var(--obj); border-style: solid; }
-.ptile.zero .plamps:empty { display: none; }
-/* the tile while its project is read: the tile's own parts, hollow, so the row stands the height it will (GHOST.tiles) */
+/* the tile while its project is read: the tile's own parts, hollow, so the row stands the height it will (GHOST.tiles). The
+   top row is as tall as the figure that lands in it, and the lamp row is held only when the last read drew one */
 .ptile.ghosted-tile { cursor: default; pointer-events: none; animation: ghost-in var(--t-move) var(--e-out) both; }
+.ptile.ghosted-tile .ptop { min-height: var(--fig-focal); align-items: center; }
+.ptile.ghosted-tile .plamps.hold:empty { display: flex; }
 /* a card's lamp, standing in the line: the socket, its ink ring and its glyph in the state's colour (sessions.css .lamp) */
 .tlamp { flex: none; width: 2rem; height: 2rem; border-radius: 50%; display: grid; place-items: center; color: var(--socket-ink);
   background: var(--socket); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .15rem var(--rail); }
@@ -838,33 +856,28 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
    code chip with no lock, and a two-word kicker says where the command goes, so no sentence has to. */
 /* every page keeps its title, Compare's included, whose title stands inside its .titles with the line under it */
 body.locked main.page > :not(.head):not(.lockedby), body.locked main.page > .head > :not(h1):not(.titles) { display: none; }
-/* AND THE STATE OWNS THE EMPTY PAGE (Oct 26, at 3822): left-aligned under the title it was a 300 px speck in the
-   corner of an otherwise blank screen, with the one act he has left almost invisible. It sits on a plate now, the
-   console's own panel, centred in the page's width and a screen-height down from the title, so the lock, the word and
-   the command land where the eye goes at 1440 and at 3822 alike. */
-/* AND IT KEEPS ITS PRESENCE AS THE SCREEN GROWS (Oct 27): a 26rem plate is 394 px of a 3822 px screen holding nothing
-   else, so the one thing left to read was a speck. Its width grows with the window between those bounds. */
-/* THE LOCK IS THE ONE FOCAL MARK (Oct 28): the plate was a 667 x 240 px speck on a blank 3822 x 1860 screen with the lock
-   drawn as a word's glyph. The lock stands in a focal ring beside the state at the page title's size, the command under
-   it is read at the size a command is typed, and the plate keeps the rhythm of any plate: 4u round it, 2u from kicker
-   to content. Its width grows with the window, and it stands a seventh of the window's height down. */
+/* THE LOCKED PAGE IS ONE PLATE THAT HOLDS THE PAGE'S PLACE: a small plate stood as a speck on a blank screen, so it spans the
+   page's width and stands as tall as the page would have been (the window less the bar, the title, the page's own padding and the
+   room the manager's bar reserves), with a dashed rim, the console's mark for a place whose reading is withheld. The lock, the
+   state and the command to type are centred in it, the lock in a focal ring beside the state, the command read at the size a
+   command is typed, and 2u from kicker to content as in any plate. */
 .lockedby {
-  display: flex; flex-direction: column; align-items: center; text-align: center; gap: calc(2 * var(--u));
-  width: min(100%, clamp(30rem, 36vw, 78rem)); margin: clamp(calc(4 * var(--u)), 14vh, 16rem) auto 0;
-  padding: calc(4 * var(--u)) calc(4 * var(--u)); border-radius: var(--r-in);
-  background: color-mix(in oklab, var(--text) 4%, transparent);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: calc(2 * var(--u));
+  width: 100%; min-height: max(22rem, calc(100vh - 15rem - var(--cmp-room, 3.4rem) - 4 * var(--u))); margin: 0;
+  padding: calc(4 * var(--u)); border-radius: var(--r-in);
+  background: color-mix(in oklab, var(--text) 4%, transparent); border: .12rem dashed color-mix(in oklab, var(--text) 22%, transparent);
 }
-.lockedby .state.limit { align-items: center; margin-bottom: var(--u); font: 400 clamp(2.6rem, 2.3vw, 3.8rem)/1.05 var(--font-lead); gap: calc(2 * var(--u)); }
+.lockedby .state.limit { align-items: center; margin-bottom: var(--u); font: 400 clamp(3rem, 3vw, 7rem)/1.05 var(--font-lead); gap: calc(2.5 * var(--u)); }
 .lockedby .state.limit .lockico {
-  width: clamp(4.4rem, 3.6vw, 6.2rem); height: clamp(4.4rem, 3.6vw, 6.2rem); flex: none; display: grid; place-items: center; border-radius: 50%;
+  width: clamp(5.5rem, 5vw, 12rem); height: clamp(5.5rem, 5vw, 12rem); flex: none; display: grid; place-items: center; border-radius: 50%;
   box-shadow: inset 0 0 0 .3rem color-mix(in oklab, var(--limit) 40%, transparent);
 }
-.lockedby .state.limit .lockico svg { width: clamp(2rem, 1.6vw, 2.8rem); height: clamp(2rem, 1.6vw, 2.8rem); }
-.lockedby .word { margin: 0; font: 400 clamp(2.6rem, 2.3vw, 3.8rem)/1.05 var(--font-lead); color: var(--limit); }
+.lockedby .state.limit .lockico svg { width: clamp(2.4rem, 2.2vw, 5.4rem); height: clamp(2.4rem, 2.2vw, 5.4rem); }
+.lockedby .word { margin: 0; font: 400 clamp(3rem, 3vw, 7rem)/1.05 var(--font-lead); color: var(--limit); }
 .lockedby .kicker { margin: 0; }
 .lockedby .way { display: flex; align-items: center; gap: calc(1.5 * var(--u)); }
 .lockedby code {
-  display: inline-flex; align-items: center; height: var(--ctl-h); padding: 0 calc(1.5 * var(--u)); font: 500 clamp(1.25rem, 1.1vw, 1.7rem)/1 var(--font-data);
+  display: inline-flex; align-items: center; min-height: var(--ctl-h); padding: .4em calc(1.5 * var(--u)); font: 500 clamp(1.25rem, 1.1vw, 2.2rem)/1 var(--font-data);
   color: var(--text); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in);
 }
 .lockedby .way .act { height: var(--ctl-h); }
@@ -888,7 +901,8 @@ body.locked main.page > :not(.head):not(.lockedby), body.locked main.page > .hea
    pressed, over the page rather than in it, so the page under it keeps its place. Over the page it needs a ground of
    its own: the limit's tint on the raised face, an ink rim and the hard shadow a popover casts. */
 .nav > .route-error {
-  position: absolute; top: calc(100% + 2 * var(--u)); left: 0; z-index: 1; width: max-content; max-width: min(40rem, 90vw); margin: 0;
+  position: absolute; top: calc(100% + 2 * var(--u)); left: 0; z-index: 1; width: max-content; max-width: min(40rem, calc(100vw - 2rem)); margin: 0;
+  translate: min(0px, calc(100vw - 100% - var(--x, 0px) - 1rem)) 0;
   white-space: nowrap; background: color-mix(in oklab, var(--limit) 12%, var(--obj-high));
   border: .12rem solid var(--ink); box-shadow: inset 0 0 0 .1rem color-mix(in oklab, var(--limit) 45%, transparent), .2rem .2rem 0 var(--ink);
 }
@@ -981,7 +995,10 @@ a.pd-count:hover { color: var(--text); text-decoration: underline; }
 .pd-pop { display: flex; flex-direction: column; gap: calc(2 * var(--u)); }
 .pd-pop.sm { --bh: 1.4rem; }                       /* a second whole under a hero bar, as Compactions sits under Outcomes */
 .pd-bar { display: flex; height: var(--bh, var(--stack-h)); border-radius: .3rem; overflow: hidden; }
-.pd-seg { flex: none; box-sizing: border-box; display: flex; align-items: center; min-width: 0; padding: 0; overflow: hidden; white-space: nowrap; font: 600 .8rem/1 var(--font-name); color: var(--obj); text-decoration: none; }
+/* a part too small to see keeps a hairline wider than its share, so the parts can add up to a little over the bar: they give the
+   difference back in proportion to their size, and the hairlines (whose size is next to nothing) stay drawn inside it */
+.pd-seg { flex: 0 1 auto; box-sizing: border-box; display: flex; align-items: center; min-width: 0; padding: 0; overflow: hidden; white-space: nowrap; font: 600 .8rem/1 var(--font-name); color: var(--obj); text-decoration: none; }
+.pd-seg[data-tw] { transition: width var(--t-snap) var(--e-out); }   /* a bar a page keys (DRAW.stack's key) moves to its new share on a re-read */
 .pd-seg > span { padding-inline: .6rem; }
 .pd-seg b { font: 600 .8rem/1 var(--font-data); font-variant-numeric: tabular-nums; }
 .pd-seg.ok, .pd-sw.ok { background: color-mix(in oklab, var(--text) 66%, transparent); }
@@ -1115,12 +1132,22 @@ a.pd-lb:hover { color: var(--text); text-decoration: underline; }
 .plink:hover, .morepill:hover { color: var(--text); text-decoration: underline; }
 .plink:focus-visible, .morepill:focus-visible { outline: .14rem solid var(--text); outline-offset: .2rem; border-radius: .2rem; }
 .morepill.pill { padding: .28rem .6rem; border: .12rem solid var(--track-line); border-radius: var(--r-in); background: var(--obj-sunk); }
+.morepill.pill.worded { padding: .28rem .8rem; }   /* the pill that keeps its words ("3 more logins") is wider than "+3" */
 .morepill.pill:hover { color: var(--text); border-color: var(--text-mute); text-decoration: none; }
 .morepill b { font: 500 .88rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; }
 
 /* ---------- a disclosure: its chevron turns over 240 ms and its detail opens in place, under the row ---------- */
 .disc { display: inline-flex; align-items: center; gap: .65rem; min-width: 0; max-width: 100%; padding: .45rem 0; margin-block: -.45rem; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .disc:focus-visible { outline: .14rem solid var(--text); outline-offset: .25rem; border-radius: .3rem; }
+/* A FOLD THAT STANDS ON A FOOT LINE IS A DOOR WITH AN EDGE (Oct 28): "47 ended" or "6 idle" as a line of small words was the
+   smallest press target on the page, 13 px tall. A door keeps the chevron and its words, takes the track's edge and the
+   object radius, and raises its fill and edge as the pointer arrives. */
+.disc.door { gap: .5rem; margin-block: 0; padding: .4rem .85rem .4rem .6rem; border: .08rem solid var(--track-line); border-radius: var(--r-in);
+  font: 500 .88rem/1 var(--font-name); color: var(--text-mute);
+  transition: background var(--t-hover) var(--e-out), border-color var(--t-hover) var(--e-out), color var(--t-hover) var(--e-out); }
+.disc.door:hover { background: var(--obj-high); border-color: var(--text-mute); color: var(--text); }
+.disc.door:focus-visible { border-radius: var(--r-in); }
+.disc.door b { font: 500 .88rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
 .chev { flex: none; width: .8rem; height: .8rem; fill: none; stroke: var(--text-mute); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; transition: transform var(--t-snap) var(--e-out); }
 [aria-expanded="true"] > .chev, .open > .disc > .chev, .pitem.open .chev { transform: rotate(90deg); }
 /* the detail a disclosure opens lands in place under its row as the chevron turns: a page adds .unfold to it on the
@@ -1206,7 +1233,7 @@ a.pd-lb:hover { color: var(--text); text-decoration: underline; }
    A grid of 1 px rows: the kit measures each block and sets --rows to its height plus the gap under it, and the grid's own
    auto-placement (dense) puts the next block in the topmost free place, which is the shortest column. data-cols="k" makes
    a block k columns wide (clamped to the columns the board holds, --span-eff), "all" the whole row. The first block of
-   every column carries .mtop, so a rule above the others starts after the gap. No block's height is guessed. */
+   every column carries .col-top, so a rule above the others starts after the gap. No block's height is guessed. */
 @property --mason-gap { syntax: "<length>"; inherits: false; initial-value: 2.4rem; }   /* a registered length, so the kit reads it as pixels whatever it was written in */
 .mason { --mason-gap: 2.4rem; min-width: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--col-min, 26rem)), 1fr)); column-gap: var(--gap-col); grid-auto-rows: 1px; grid-auto-flow: dense; align-items: start; margin-bottom: calc(-1 * var(--mason-gap)); }  /* the last block of a column carries the gap under it: taken back, so the board ends at its tallest block */
 .mason > * { min-width: 0; grid-column: span var(--span-eff, 1); grid-row-end: span var(--rows, 1); }
@@ -1214,7 +1241,7 @@ a.pd-lb:hover { color: var(--text); text-decoration: underline; }
    and 4u + a hairline + 4u between one block and the next, the plate's rhythm. A block marked col 1 or col 2 keeps that side. */
 .topic { --mason-gap: 2.668rem;  /* 4u, written in rem because the kit reads it as a number */  grid-template-columns: minmax(0, 1fr); column-gap: calc(4 * var(--u)); }
 .topic > [data-side] { grid-column: 1; }
-.topic > .pcol:not(.mtop) { padding-top: calc(4 * var(--u)); border-top: .08rem solid var(--hair); }
+.topic > .pcol:not(.col-top) { padding-top: calc(4 * var(--u)); border-top: .08rem solid var(--hair); }
 @container plate (min-width: 110rem) {
   .topic { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .topic.lead { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
@@ -1242,10 +1269,114 @@ a.pd-lb:hover { color: var(--text); text-decoration: underline; }
 
 /* ---------- absence as a shape (kit DRAW.unread, DRAW.nothing) ---------- */
 .nothing.slot { display: inline-flex; align-items: center; padding: .3rem .8rem; border-radius: var(--r-in); outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }
-.vbar.unread { background: none; outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }
-.barcell.unread > .v { color: var(--text-mute); }
+/* a bar whose figure nobody reported is the one dashed empty track; .gone is the name a page's own markup may carry for it */
+.vbar.unread, .vbar.gone { background: none; outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }
+.barcell.unread > .v, .barcell.gone > .v { color: var(--text-mute); }
+/* the same mark as a legend swatch: the page's .sw gives it its size */
+.sw.gone { background: none; outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }
+/* a bar with a part of its own length drawn lighter at its end (DRAW.vbar's split): the cached share of a token count. The
+   lighter tone is one value, --split-tone, for the bar and for the legend swatch a page draws to name it. */
+:root { --split-tone: color-mix(in oklab, var(--text) 18%, var(--obj)); }
+.vbar.split > b { position: relative; }
+.vbar.split > b > i { position: absolute; top: 0; right: 0; bottom: 0; background: var(--split-tone); }
 
 /* ---------- a view's legend, said once (kit DRAW.legend; the knob marks' legend is the same row) ---------- */
 .legend { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0 1.1rem; }
 .legend .lg { display: inline-flex; align-items: center; gap: .4rem; font: 500 .85rem/1.4 var(--font-name); color: var(--text-mute); white-space: nowrap; }
 .legend .lg svg { flex: none; width: 1rem; height: 1rem; }
+
+/* ---------- a value said in words under the pointer (data-tip) ----------
+   A small raised word that eases in over --t-hover, 120 ms after the pointer arrives (and at once on keyboard focus), above
+   the right edge of the element that carries it: the reset ring's "3 h 20 min left". A native title waits a second and cannot
+   be styled, and carries a figure nobody sees without the pointer, so a page that draws a value puts it here. The element
+   must not use its own ::after. The positioning is :where, so any class that places the element keeps its own. */
+:where([data-tip]) { position: relative; }
+[data-tip]::after {
+  content: attr(data-tip); position: absolute; right: 0; bottom: calc(100% + .45rem); z-index: 4; padding: .4rem .6rem;
+  border: var(--ink-w) solid var(--ink); border-radius: var(--r-in); background: var(--obj-high); box-shadow: .2rem .2rem 0 var(--ink);
+  font: 500 .84rem/1 var(--font-data); color: var(--text); white-space: nowrap; opacity: 0; transform: translateY(.2rem); pointer-events: none;
+  transition: opacity var(--t-hover) var(--e-out), transform var(--t-hover) var(--e-out);
+}
+/* the header sits right under the sticky top bar, so its words open downward, never up under the bar */
+.head [data-tip]::after { bottom: auto; top: calc(100% + .45rem); }
+/* a group of controls carries its words too: focus on any control inside it (by keyboard) shows them, a press with the pointer does not */
+[data-tip]:hover::after, [data-tip]:focus-visible::after, [data-tip]:has(:focus-visible)::after { opacity: 1; transform: none; transition-delay: .12s; }
+
+/* ---------- a block that continues the block before it (data-cont on a block of DRAW.masonry) ----------
+   A titled group that is too long for one column goes down several, each a block of the board. The grid lays a continuation
+   in the next free column at the same top, and it leaves the room the first block's head took (a control tall, 2u under it),
+   so the objects of every column of the group start on one line. */
+.mason > [data-cont]::before { content: ""; display: block; min-height: var(--ctl-h); margin-bottom: calc(2 * var(--u)); }
+
+/* ---------- the header search takes its text back from inside (a `.clr` button after the field in `.search`) ----------
+   The mark stands at the field's right end and shows only while there is text; it hands the caret back to the field. The field
+   keeps room for it. Pressing it is the kit's (kit.js, `[data-clears]`) or the page's own. */
+.head .search .field { padding-right: 2.5rem; }
+.search .clr { position: absolute; right: .4rem; top: 50%; translate: 0 -50%; width: 1.8rem; height: 1.8rem; display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--r-in); background: transparent; color: var(--text-mute); cursor: pointer; transition: color var(--t-hover) var(--e-out), background-color var(--t-hover) var(--e-out); }
+.search .clr svg { position: static; width: .95rem; height: .95rem; color: inherit; }
+.search .clr:hover { color: var(--text); background: var(--track); }
+.search .field:placeholder-shown ~ .clr { visibility: hidden; }
+.search .field::-webkit-search-cancel-button { display: none; -webkit-appearance: none; }   /* the mark above is the one way back */
+
+/* ---------- a place is a file chip (kit DRAW.file) ----------
+   The file's name in full ink and the folder it is in beside it, muted, after a file glyph. It wraps where the line ends
+   and never cuts a word; the whole path is its hover. */
+.filechip {
+  display: inline-flex; align-items: center; flex-wrap: wrap; gap: .1rem .5rem; max-width: 100%; padding: .3rem .65rem;
+  font: 500 .95rem/1.3 var(--font-name); color: var(--text); background: var(--obj-sunk);
+  border: .1rem solid var(--track-line); border-radius: var(--r-in); overflow-wrap: anywhere;
+}
+.filechip svg { flex: none; width: 1rem; height: 1rem; color: var(--text-mute); }
+.filechip b { font-weight: 600; font-family: var(--font-data); }
+.filechip span { font: 400 .88rem/1.3 var(--font-data); color: var(--text-mute); }
+
+/* ---------- the fixed time axis (kit DRAW.timeAxis, DRAW.timeLegend) ----------
+   A bar of a cell with the class "timed" is as long as the time says on the one scale, one second to four weeks, and its ticks
+   stand under it at a minute, an hour, a day and a week (their places are --tk1 to --tk4 on the document root, written by the kit).
+   The legend draws the same axis once for the view, with the ticks' words under it. */
+.barcell.timed > .vbar { position: relative; overflow: visible; }
+.barcell.timed > .vbar::after, .axtrack::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 100%; height: .4rem; margin-top: .12rem; pointer-events: none; opacity: .9;
+  background:
+    linear-gradient(var(--text-mute), var(--text-mute)) var(--tk1) 0 / .12rem 100% no-repeat,
+    linear-gradient(var(--text-mute), var(--text-mute)) var(--tk2) 0 / .12rem 100% no-repeat,
+    linear-gradient(var(--text-mute), var(--text-mute)) var(--tk3) 0 / .12rem 100% no-repeat,
+    linear-gradient(var(--text-mute), var(--text-mute)) var(--tk4) 0 / .12rem 100% no-repeat;
+}
+.axleg { display: inline-flex; align-items: center; gap: .7rem; font: 500 .88rem/1 var(--font-name); color: var(--text-mute); }
+.axtrack { position: relative; flex: none; display: block; width: 22rem; height: .62rem; margin-bottom: 1.15rem; border-radius: .31rem; background: color-mix(in oklab, var(--text) 10%, transparent); }
+.axtrack > .axt { position: absolute; top: 100%; margin-top: .5rem; transform: translateX(-50%); font: 500 .82rem/1 var(--font-data); white-space: nowrap; color: var(--text-mute); }
+.axtrack > .axt:first-child { transform: none; }
+
+/* ---------- a limit on its scale (kit DRAW.scale) ---------- */
+/* A LIMIT IS DRAWN ON ITS SCALE (Oct 28): a thick track with its ends and its marks named under it, the fill what is
+   running or held now, the dots the busiest each command reached today, the hatch the stretch past the warn line. A
+   dot at 100% stands inside the end and never half past it; dots that would touch take a lane under the one before.
+   A figure the page cannot read is the dashed empty track. */
+.stk { flex: 1 1 auto; min-width: 9rem; display: block; margin-top: calc((var(--ctl-h) - var(--meter-h)) / 2); }
+.stb { --dot: .72rem; --step: 1rem; position: relative; display: block; width: 100%; height: calc(var(--meter-h) + (var(--lanes, 1) - 1) * var(--step)); }
+.stb::before { content: ""; position: absolute; inset: 0 0 auto 0; height: var(--meter-h); border-radius: .3rem; background: color-mix(in oklab, var(--text) 8%, transparent); }
+.stb.unread::before { background: none; outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }
+.lfill { position: absolute; left: 0; top: 0; height: var(--meter-h); min-width: .18rem; border-radius: .3rem; background: color-mix(in oklab, var(--text) 42%, transparent); }
+.lfill.full { background: var(--limit); }
+.wzone { position: absolute; top: 0; right: 0; left: calc((100% - var(--dot)) * var(--at) / 100 + var(--dot) / 2); height: var(--meter-h); border-radius: 0 .3rem .3rem 0; background: repeating-linear-gradient(135deg, transparent 0 .18rem, color-mix(in oklab, var(--limit) 28%, transparent) .18rem .36rem); }
+.ldot { position: absolute; top: calc(var(--lane, 0) * var(--step) + (var(--meter-h) - var(--dot)) / 2); left: calc((100% - var(--dot)) * var(--at) / 100); width: var(--dot); height: var(--dot); border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--obj); }
+.ldot.atlimit { box-shadow: 0 0 0 .07rem var(--obj), 0 0 0 .16rem color-mix(in oklab, var(--limit) 55%, transparent); }
+/* the logins no lane had room for, as their count on a lane under their crowd: it ends where its dots stand, and from the
+   track's first half it starts there instead, so it never leaves the track */
+.lmore { position: absolute; top: calc(var(--lane, 0) * var(--step) + .1rem); left: calc((100% - var(--dot)) * var(--at) / 100 + var(--dot)); transform: translateX(-100%); font: 600 .78rem/1 var(--font-data); font-style: normal; color: var(--text-body); white-space: nowrap; }
+.lmore.lo { left: calc((100% - var(--dot)) * var(--at) / 100); transform: none; }
+.lax { position: relative; display: block; height: 1.2rem; margin-top: .55rem; }
+.lt { position: absolute; top: .5rem; transform: translateX(-50%); font: 500 .8rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.lt::before { content: ""; position: absolute; left: 50%; top: -.5rem; width: .08rem; height: .38rem; margin-left: -.04rem; background: var(--track-line); }
+.lt-first { transform: none; }
+.lt-first::before { left: 0; margin-left: 0; }
+.lt-last { transform: translateX(-100%); }
+.lt-last::before { left: auto; right: 0; margin-left: 0; }
+/* what is running now, as the number at the track's end; the row is as tall as the control beside it. The figure has a
+   width of its own (2.4rem, right-aligned), so tracks stacked down a column end on one edge whether a row reads "0" or
+   "100" */
+.lnow { flex: none; align-self: flex-start; display: inline-flex; align-items: center; justify-content: flex-end; min-width: 2.4rem; height: var(--ctl-h); font: 600 1.08rem/1 var(--font-data); color: var(--text); font-variant-numeric: tabular-nums; }
+/* a count that is a failure: the tile's glyph and figure in the limit red (the kit's one red, for a limit or a failure) */
+.pd-stat.bad > svg:not(.pd-ring) { stroke: var(--limit); background: color-mix(in oklab, var(--limit) 14%, transparent); }
+.pd-stat.bad b { color: var(--limit); }

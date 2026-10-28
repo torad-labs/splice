@@ -16,7 +16,7 @@
 .fwrap { position: relative; display: inline-flex; }
 .fbtn {
   display: inline-flex; align-items: center; gap: .55rem; font: 500 .92rem/1 var(--font-name); color: var(--text-body); white-space: nowrap;
-  background: var(--obj-sunk); border: .12rem solid var(--track-line); border-radius: var(--r-in); padding: .55rem .8rem; cursor: pointer;
+  background: var(--obj-sunk); border: .12rem solid var(--track-line); border-radius: var(--r-in); box-sizing: border-box; height: var(--ctl-h); padding: 0 .8rem; cursor: pointer;
   transition: border-color var(--t-snap) var(--e-out), color var(--t-snap) var(--e-out);
 }
 .fbtn:hover { color: var(--text); border-color: var(--text-mute); }
@@ -40,7 +40,7 @@
 .fmenu button[aria-checked="true"]::before { content: ""; position: absolute; left: -.4rem; top: .5rem; bottom: .5rem; width: .22rem; background: var(--text); border-radius: 0 .15rem .15rem 0; }
 /* an item's count with its share of the menu's largest, so the busiest is found before a digit is read */
 .fmenu .mc { display: inline-flex; align-items: center; gap: .6rem; margin-left: auto; padding-left: 1.4rem; }
-.fmenu .mc .vbar { flex: none; width: 3.6rem; }
+.fmenu .mc .vbar { flex: none; width: 7rem; }
 .fmenu .mn { min-width: 2.6rem; text-align: right; font: 500 .86rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
 .fmenu button.idle { color: var(--text-mute); }  /* a command with nothing in the window: last, and quiet */
 .fmenu .blots { display: inline-flex; gap: .25rem; width: 1.6rem; flex: none; }
@@ -50,7 +50,18 @@
 .fmenu .mgroup:first-of-type { margin-top: .35rem; }
 .fmenu .mgroup + button, .fmenu .ingroup { padding-left: 1.6rem; }
 .fmenu .mfoot { margin: .35rem .2rem .1rem; font: 500 .88rem/1.3 var(--font-data); color: var(--text-mute); }
-.fmenu .swhen { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); margin-left: 1.2rem; }
+.fmenu .swhen { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); margin-left: 1.2rem; min-width: 5rem; text-align: right; }
+/* a login's state and the act that fixes it share its row: the item takes the width, the act stands at its end */
+.fmenu .mrow { display: flex; align-items: center; gap: .4rem; }
+.fmenu .mrow > button { flex: 1 1 auto; min-width: 0; }
+.fmenu .mrow > .act { flex: none; margin-right: .3rem; text-decoration: none; }
+/* the commands with nothing in the window: dimmed chips on one wrapping row under a word said once */
+.fmenu .idlerow { display: flex; flex-wrap: wrap; gap: .35rem .4rem; margin: .1rem .2rem .45rem; max-width: 28rem; }
+.fmenu button.idlechip { flex: none; gap: .45rem; padding: .32rem .65rem; border: .1rem solid var(--track-line); border-radius: 99rem; font: 500 .84rem/1.1 var(--font-name); color: var(--text-mute); background: none; opacity: .8; }
+.fmenu button.idlechip:hover { opacity: 1; color: var(--text); border-color: var(--text-mute); }
+.fmenu button.idlechip[aria-checked="true"] { opacity: 1; color: var(--sel-ink); border-color: var(--sel-line); background: var(--sel-face); }
+.fmenu button.idlechip[aria-checked="true"]::before { display: none; }
+.fmenu .morepill { margin: .4rem .2rem .2rem; }
 /* Up to: a day and time to list the requests up to, under the windows it chooses between (Marlin, desk c, Oct 12) */
 .fmenu .goto { display: flex; align-items: center; gap: .6rem; margin: .45rem .2rem .15rem; padding-top: .55rem; border-top: .08rem solid var(--track-line); }
 .fmenu .goto label { font: 500 .88rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
@@ -64,11 +75,10 @@
 /* a toggle is a control like the pickers, so its rim is solid; a dashed rim on this console means "add" */
 .ftog {
   display: inline-flex; align-items: center; gap: .55rem; font: 500 .92rem/1 var(--font-name); color: var(--text-body); white-space: nowrap;
-  background: none; border: .12rem solid var(--track-line); border-radius: var(--r-in); padding: .55rem .8rem; cursor: pointer;
+  background: none; border: .12rem solid var(--track-line); border-radius: var(--r-in); box-sizing: border-box; height: var(--ctl-h); padding: 0 .8rem; cursor: pointer;
   transition: border-color var(--t-snap) var(--e-out), color var(--t-snap) var(--e-out);
 }
 .ftog svg { width: 1.1rem; height: 1.1rem; flex: none; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }  /* the rows' own marks, drawn as the lamp draws them */
-.ftog i.tick { width: .22rem; height: 1.1rem; margin: 0 .3rem; border-radius: .1rem; background: currentColor; flex: none; }
 .ftog:hover { color: var(--text); border-color: var(--text-mute); }
 .ftog.none:not([aria-pressed="true"]) { color: var(--text-mute); border-color: color-mix(in oklab, var(--track-line) 60%, transparent); }  /* none in the window: quiet, still there */
 .ftog[aria-pressed="true"] { color: var(--sel-ink); background: var(--sel-face); border-color: var(--sel-line); }  /* a filter that is on is the selected look */
@@ -111,8 +121,12 @@
 .rqband .pd-stats { row-gap: calc(2 * var(--u)); }
 /* the kinds of failure: each a door, its count on one scale with the others, the commonest first; the kind he pressed
    in the selected look */
-.rqband .kinds { display: flex; flex-direction: column; gap: .1rem; }
-.kr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(7rem, 1.15fr); align-items: center; column-gap: calc(2 * var(--u)); margin: 0 -.45rem; padding: .3rem .45rem; border-radius: var(--r-in); color: inherit; text-decoration: none; transition: background var(--t-hover) var(--e-out); }
+/* the names share one column as wide as the longest of them (to 13rem), and every bar starts at one edge right after it,
+   so a short name is never followed by a long empty run before its bar */
+.rqband .kinds { display: grid; grid-template-columns: fit-content(13rem) minmax(7rem, 1fr); column-gap: calc(2 * var(--u)); row-gap: .1rem; }
+.rqband .kinds > .kr { grid-column: 1 / -1; grid-template-columns: subgrid; }
+.rqband .kinds > .morepill { grid-column: 1 / -1; }
+.kr { display: grid; grid-template-columns: minmax(0, 13rem) minmax(7rem, 1fr); align-items: center; column-gap: calc(2 * var(--u)); margin: 0 -.45rem; padding: .3rem .45rem; border-radius: var(--r-in); color: inherit; text-decoration: none; transition: background var(--t-hover) var(--e-out); }
 a.kr:hover { background: var(--track); }
 a.kr:hover .kn { color: var(--text); }
 .kr .kn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 .9rem/1.25 var(--font-name); color: var(--text-body); }
@@ -138,11 +152,21 @@ a.byr:hover { background: var(--track); }
 a.byr:hover .bn { color: var(--text); }
 .byr .bn { min-width: 0; font: 500 .92rem/1.2 var(--font-name); color: var(--text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .byr .bb { display: flex; align-items: center; gap: .16rem; min-width: 0; }
-.byr .bb b, .byr .bb i { height: .5rem; border-radius: .25rem; }
+.byr .bb b, .byr .bb i { transition: width var(--t-snap) var(--e-out); }
+.byr .bb b, .byr .bb i { height: .62rem; border-radius: .31rem; }
 .byr .bb b { background: color-mix(in oklab, var(--text) 55%, transparent); }
-.byr .bb i { box-shadow: inset 0 0 0 .12rem color-mix(in oklab, var(--text) 48%, transparent); }
+.byr .bb i { box-shadow: inset 0 0 0 .14rem color-mix(in oklab, var(--text) 62%, transparent); }
 .byr .bv { text-align: right; font: 500 .9rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
 .byr.rest .bv { color: var(--text-mute); }
+/* the requests that took the most, each a button that opens it in the list below */
+button.byr { width: calc(100% + .9rem); border: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
+button.byr:hover { background: var(--track); }
+button.byr:hover .bn { color: var(--text); }
+.bys.hits { margin-top: calc(2 * var(--u)); }
+/* a kicker's qualifier: the estimate said once, with the plan's mark where plan is in it */
+.lg.qual { margin-left: auto; font-size: .84rem; }
+.lg.qual .sw { width: 1rem; height: .5rem; }
+.kr.still { cursor: default; }
 /* while it is read, each part is its own shape at the size that lands, so nothing moves when it does */
 .rqband.ghosts .psec { gap: calc(2 * var(--u)); }
 .rqband .ghost-row { min-height: var(--ring-focal); }
@@ -153,15 +177,21 @@ a.byr:hover .bn { color: var(--text); }
 
 /* ---------- the list: its head line, then one table ---------- */
 .requests { display: block; }
-.requests .list { display: flex; flex-direction: column; gap: calc(2 * var(--u)); min-width: 0; padding-left: 0; }  /* on the band's left edge */
+.requests .list { container: rqt / inline-size; display: flex; flex-direction: column; gap: calc(2 * var(--u)); min-width: 0; padding-left: 0; }  /* on the band's left edge */
 /* the list's head: how much of the window it holds, what the bars' parts mean, and the order, at its end */
 .lline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(4 * var(--u)); min-height: var(--ctl-h); }
 .list .foot { margin: 0; font: 500 .88rem/1.4 var(--font-data); color: var(--text-mute); }
 .list .foot b { font-weight: 500; color: var(--text-body); }
-.foot.held { display: inline-flex; align-items: center; gap: var(--u); }
-.foot.held .vbar { flex: none; width: 7rem; }
-.lkey { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(3 * var(--u)); margin-left: auto; }
-.lline > .switch.order { flex: none; }
+.foot.held, .foot.reach { display: inline-flex; align-items: center; gap: var(--u); }
+.foot.held .vbar, .foot.reach .vbar { flex: none; width: 7rem; }
+.lline > .switch.order { flex: none; margin-left: auto; }
+/* WHAT THE BARS' PARTS MEAN stands on the table's first line, each mark over the column it explains. Narrow, the marks
+   run as one wrapped line; in the wide table the line is on the table's own grid (see the container rule with the
+   columns), so the cache's shading stands over Tokens, the hatch and the slow tick over Duration, the plan's hollow over
+   Cost, and the relations between rows over the session columns. */
+.lkey { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(3 * var(--u)); margin: 0 -.6rem; padding: .7rem .6rem .1rem; }
+.lkey > .kg { display: contents; }
+.filters > .switch, .lline > .switch { box-sizing: border-box; height: var(--ctl-h); align-items: stretch; }
 .lg { display: inline-flex; align-items: center; gap: .5rem; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); white-space: nowrap; }
 .sw { flex: none; display: inline-block; width: 1.3rem; height: .62rem; border-radius: .15rem; }
 .sw.cached { background: color-mix(in oklab, var(--text) 22%, transparent); }
@@ -178,7 +208,7 @@ a.byr:hover .bn { color: var(--text); }
 
 /* THE TABLE: one card, as Usage's results are, its rows on hairlines at its row height. The card's padding is that
    table's, so the two pages' tables read as one kind of thing. */
-.rqtable { --c: var(--track-line); container: rqt / inline-size; display: flex; flex-direction: column; min-width: 0; padding: .35rem 1rem .5rem; }
+.rqtable { --c: var(--track-line); --t: 6.6rem; display: flex; flex-direction: column; min-width: 0; padding: .35rem 1rem .5rem; }
 /* nothing to list: the table keeps its header, and one muted line stands where the rows go, with its acts */
 .rqtable .nomatch { display: flex; width: auto; max-width: none; align-items: center; gap: calc(2 * var(--u)); min-height: 3.7rem; padding: .6rem 0; border: 0; }
 .rqtable .nomatch .state { font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); }
@@ -190,12 +220,11 @@ a.byr:hover .bn { color: var(--text); }
    it was and how long and how much over where it ran and what it used. The rows reach .6rem past the columns so their
    hover wash has room round the text, as Usage's rows do. */
 .rq, .rqg, .rqhead, .rqburst {
-  --t: 6.6rem;
   display: grid; align-items: center; column-gap: 1rem; row-gap: .3rem; margin: 0 -.6rem; padding: .6rem;
   grid-template-columns: .8rem 1.9rem var(--t) minmax(0, 1fr) minmax(10rem, 14rem) 7.4rem;
   grid-template-areas: "ch lp t who du co" ". . . meta tk tk";
 }
-.list.priced :is(.rq, .rqhead, .rqburst) { --t: 9.4rem; }  /* in Highest price each row says its own day too */
+.list.priced .rqtable { --t: 9.4rem; }  /* in Highest price each row says its own day too */
 .rq .top, .rqg .top, .rqhead .top { display: contents; }
 .rq .meta, .rqg .meta, .rqhead .meta { grid-area: meta; display: flex; align-items: center; gap: calc(1.5 * var(--u)); min-width: 0; margin: 0; font: 500 .88rem/1.2 var(--font-data); color: var(--text-mute); }
 :is(.rq, .rqg, .rqhead, .rqburst) > .chev, .rqhead > .ch, .rqg > .ch { grid-area: ch; }
@@ -207,20 +236,30 @@ a.byr:hover .bn { color: var(--text); }
 :is(.rq, .rqg, .rqhead) .co { grid-area: co; }
 .rqburst .bcmd { grid-area: meta; }
 .rqburst .bsess { grid-area: tk; }
-@container rqt (min-width: 92rem) {
-  .rq, .rqg, .rqhead, .rqburst {
-    /* the bars take the room, so a row's tokens, time and cost compare by length; the session keeps room for its name
-       and what happened to it; a model keeps room for names that differ only at their end, and an account for a whole
-       login name */
-    grid-template-columns: .8rem 1.9rem var(--t) minmax(13rem, 1fr) minmax(8.5rem, .5fr) minmax(11rem, .8fr) minmax(9rem, .7fr) minmax(11rem, 1fr) minmax(13rem, 1.3fr) minmax(9rem, .85fr);
-    grid-template-areas: "ch lp t who cmd mdl acc tk du co";
+@container rqt (min-width: 94rem) {
+  /* the table is ONE GRID and every row takes its columns from it (subgrid): a text column is as wide as the longest word
+     it holds, to a cap, and the bars take the rest, so no run of empty width sits between two words and the bars of
+     every row start and end on the same two edges */
+  .rqtable {
+    display: grid; column-gap: 1rem; align-content: start;
+    grid-template-columns: .8rem 1.9rem var(--t) minmax(10rem, max-content) minmax(7rem, max-content) minmax(9rem, max-content) minmax(8rem, max-content) minmax(11rem, 1fr) minmax(13rem, 1.3fr) minmax(9rem, .85fr);
   }
+  .rqtable > * { grid-column: 1 / -1; }
+  .rq, .rqg, .rqhead, .rqburst { grid-template-columns: subgrid; grid-template-areas: "ch lp t who cmd mdl acc tk du co"; }
   .rq .meta, .rqg .meta, .rqhead .meta { display: contents; }
-  :is(.rq, .rqg, .rqhead) .meta > :nth-child(1) { grid-area: cmd; }
-  :is(.rq, .rqg, .rqhead) .meta > :nth-child(2) { grid-area: mdl; }
-  :is(.rq, .rqg, .rqhead) .meta > :nth-child(3) { grid-area: acc; }
+  :is(.rq, .rqg, .rqhead) .meta > :nth-child(1) { grid-area: cmd; max-width: 12rem; }
+  :is(.rq, .rqg, .rqhead) .meta > :nth-child(2) { grid-area: mdl; max-width: 17rem; }
+  :is(.rq, .rqg, .rqhead) .meta > :nth-child(3) { grid-area: acc; max-width: 15rem; }
+  :is(.rq, .rqg, .rqhead) .who { max-width: 26rem; }
   .rqburst .bcmd { grid-area: cmd; }
   .rqburst .bsess { grid-area: auto; grid-column: mdl-start / co-end; }
+  /* the key on the same grid as the header and the rows */
+  .lkey { display: grid; grid-template-columns: subgrid; grid-template-areas: "ch lp t who cmd mdl acc tk du co"; column-gap: 1rem; row-gap: 0; align-items: center; }
+  .lkey > .kg { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(3 * var(--u)); min-width: 0; }
+  .lkey > .kg.s { grid-column: who-start / acc-end; }
+  .lkey > .kg.tk { grid-area: tk; }
+  .lkey > .kg.du { grid-area: du; }
+  .lkey > .kg.co { grid-area: co; }
 }
 .rq .meta > *, .rqg .meta > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rq .meta > .chip { justify-self: start; max-width: 100%; }
@@ -238,7 +277,7 @@ a.byr:hover .bn { color: var(--text); }
 .rq > .chev, .rqburst > .chev { justify-self: center; }
 .rq[aria-current="true"] > .chev { transform: rotate(90deg); stroke: var(--text); }  /* its request is open under it */
 :is(.rq, .rqburst, .rqg) > .lamp { position: static; width: 1.9rem; height: 1.9rem; margin: 0; }
-.rq time, .rqburst time { font: 500 .92rem/1 var(--font-data); color: var(--text-mute); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rq time, .rqburst time { font: 500 .95rem/1 var(--font-data); color: var(--text-mute); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .rq .who, .rqburst .who { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem calc(1.2 * var(--u)); min-width: 0; }  /* the name keeps its line; what happened wraps under it where both do not fit */
 .rq .name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 1rem/1.2 var(--font-name); color: var(--text); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
 .rq .who .word, .rq .who .detail, .rq .who .door, .rq .who .note, .rqburst .who .word, .rqburst .who .note, .rqburst .bsess .detail { flex: none; white-space: nowrap; font: 500 .88rem/1.2 var(--font-data); }
@@ -252,18 +291,33 @@ a.byr:hover .bn { color: var(--text); }
 .rq .who .door:hover { color: var(--text); text-decoration-style: solid; }
 .rq .mdl { color: var(--text-body); }
 .rq .acc { color: var(--text-mute); }
-a.acct { color: inherit; text-decoration: none; }  /* the login opens its Accounts card; it reads as the same words, underlined only under the pointer */
-.rq .meta .acct { display: inline; color: inherit; }  /* inline, so a login longer than its column ends in an ellipsis, never cut mid-letter */
-a.acct:hover { text-decoration: underline; }
+/* A MODEL AND A LOGIN ARE SMALL OBJECTS, never a bare word: the model carries its provider's dot, the login a monogram
+   in its provider's colour (the lock where its limit turned the request away, the sign-out mark where it is signed
+   out). The login opens its Accounts card; where nobody named a login, the Account column's header carries the act that
+   names it, once. */
+.rq .mtag::before { content: ""; display: inline-block; width: .6rem; height: .6rem; margin-right: .55rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); vertical-align: .05rem; }
+a.acct { color: inherit; text-decoration: none; }
+.rq .meta .acct.login { display: inline-flex; align-items: center; gap: .55rem; max-width: 100%; color: inherit; }
+.login .an { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+a.acct.login:hover .an { color: var(--text); text-decoration: underline; text-underline-offset: .22em; }
+.mono { flex: none; display: inline-grid; place-items: center; width: 1.4rem; height: 1.4rem; border-radius: 50%; font: 600 .74rem/1 var(--font-name); font-style: normal; color: var(--text); background: color-mix(in oklab, var(--c, var(--text-mute)) 22%, transparent); box-shadow: inset 0 0 0 .1rem color-mix(in oklab, var(--c, var(--text-mute)) 70%, transparent); }
+.mono svg { width: .85rem; height: .85rem; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.mono.held { color: var(--limit); background: none; box-shadow: inset 0 0 0 .1rem color-mix(in oklab, var(--limit) 60%, transparent); }
+.mono.out { color: var(--text-mute); background: none; box-shadow: inset 0 0 0 .1rem var(--track-line); }
+/* the relations between rows: a glyph in the row, its door where the other request is listed, its words in the list's key */
+.rq .who .mk { flex: none; display: inline-flex; align-items: center; gap: .15rem; padding: .2rem; border: 0; border-radius: .3rem; background: none; color: var(--text-mute); font: 500 .8rem/1 var(--font-data); }
+.rq .who .mk svg { width: .95rem; height: .95rem; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.rq .who button.mk { cursor: pointer; }
+.rq .who button.mk:hover { color: var(--text); background: var(--track); }
 .rq .nr { color: var(--text-mute); font-style: normal; }
 /* the rows of a burst he opened, marked as one run by a rule down their left */
 .rq.inburst { box-shadow: inset .2rem 0 0 var(--track-line); }
 
 /* the figures' columns: a bar on the column's shared scale, then its figures, which end on one right edge */
-.tk { display: grid; grid-template-columns: minmax(2.5rem, 1fr) 3.6rem 3.2rem; column-gap: calc(1.2 * var(--u)); align-items: center; min-width: 0; }
-.du { display: grid; grid-template-columns: minmax(4rem, 1fr) 5.2rem; column-gap: calc(1.2 * var(--u)); align-items: center; min-width: 0; }
-.co { display: grid; grid-template-columns: minmax(1.5rem, 1fr) 4.6rem; column-gap: var(--u); align-items: center; min-width: 0; }
-.rq .v { text-align: right; white-space: nowrap; font: 500 .9rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.tk { display: grid; grid-template-columns: minmax(2.5rem, 1fr) 3.8rem 3.4rem; column-gap: calc(1.2 * var(--u)); align-items: center; min-width: 0; }
+.du { display: grid; grid-template-columns: minmax(4rem, 1fr) 5.8rem; column-gap: calc(1.2 * var(--u)); align-items: center; min-width: 0; }
+.co { display: grid; grid-template-columns: minmax(1.5rem, 1fr) 4.8rem; column-gap: var(--u); align-items: center; min-width: 0; }
+.rq .v { text-align: right; white-space: nowrap; font: 500 .95rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
 .rq .tk .v + .v { color: var(--text-body); }  /* tokens out, after tokens in */
 .tbar, .cbar, .dtrk { position: relative; display: block; height: .5rem; border-radius: .25rem; background: color-mix(in oklab, var(--text) 8%, transparent); }
 .tbar > b, .cbar > b { position: absolute; left: 0; top: 0; bottom: 0; border-radius: .25rem; background: color-mix(in oklab, var(--text) 55%, transparent); overflow: hidden; }
@@ -271,7 +325,7 @@ a.acct:hover { text-decoration: underline; }
 .rq .co.plan { font: inherit; color: inherit; }  /* .card .plan is Accounts' plan word; here it only says the bar is hollow */
 .rq .co.plan .cbar > b { background: none; box-shadow: inset 0 0 0 .12rem color-mix(in oklab, var(--text) 48%, transparent); }
 .rq .co.plan .v { color: var(--text-mute); }
-.rq .co.gap .cbar { visibility: hidden; }  /* no price, no track: the dash says it */
+.rq .co.gap .cbar, .rq .tk.none .tbar { visibility: hidden; }  /* nothing reported, no track: the dash says it */
 /* the time on the band's log axis: hatched to the first byte, solid to the end, and a tick where its model's slowest 5% begins */
 .dtrk { overflow: visible; }
 .dtrk > .run { position: absolute; left: 0; top: 0; bottom: 0; min-width: .2rem; border-radius: .25rem; background: color-mix(in oklab, var(--text) 55%, transparent); overflow: hidden; }
@@ -282,6 +336,9 @@ a.acct:hover { text-decoration: underline; }
 .rqhead { min-height: 0; padding-block: .9rem .8rem; border-bottom: .12rem solid var(--track); font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
 .rqhead .h { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rqhead .h.v { text-align: right; }
+/* where a login in the list is nobody's own name, the one act that names it stands by the column that shows it */
+.rqhead .h.acc { display: inline-flex; align-items: center; gap: .7rem; overflow: visible; }
+.rqhead .nameit { flex: none; height: 1.6rem; min-height: 0; padding: 0 .6rem; font-size: .8rem; text-decoration: none; }
 .rqhead .who { display: block; }
 .dax { position: relative; display: block; height: 1rem; }
 .dax i { position: absolute; top: 0; transform: translateX(-50%); font: 400 .74rem/1 var(--font-data); font-style: normal; font-variant-numeric: tabular-nums; color: var(--text-mute); white-space: nowrap; }
@@ -289,18 +346,16 @@ a.acct:hover { text-decoration: underline; }
 .dax i.tail { transform: translateX(-100%); }  /* not .last, which is Sessions' quoted line (sessions.css) */
 /* the axis names its two ends wherever it stands, and the marks between them where the column is long enough to space
    them, so a narrow column (two-line rows) never prints one tick's word over the next */
-.rqhead .du { container: rqdu / inline-size; }
+/* each axis is measured by its own length: the marks between its ends appear only where the bars are long enough to space
+   them (tokens, time and cost alike), so a column's name never runs into its first mark */
+.rqhead .dax { container: rqax / inline-size; }
 .dax i.mid { display: none; }
-@container rqdu (min-width: 19rem) { .dax i.mid { display: block; } }
-/* the cost column names its powers of ten the same way, over its own bars */
-.rqhead .co { container: rqco / inline-size; }
-@container rqco (min-width: 15rem) { .dax i.mid { display: block; } }
+@container rqax (min-width: 14rem) { .dax i.mid { display: block; } }
+@container rqax (max-width: 6rem) { .dax i:not(.nm) { display: none; } }  /* an axis too short to space two marks names neither */
 
 /* what the search found, in the body it was found in */
 .match { grid-column: who-start / -1; margin: .1rem 0 0; font: 500 .9rem/1.35 var(--font-data); color: var(--text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .match .where { font: 500 .88rem/1 var(--font-name); color: var(--text-mute); margin-right: .6rem; }
-/* how far back a search read when it stopped early: the table's last row, under a dashed rule, since the list goes on */
-.rqtable > .foot.searched { display: flex; align-items: center; min-height: 3.2rem; margin: 0 -.6rem; padding: .6rem; border-top: .12rem dashed var(--track-line); font: 500 .88rem/1.4 var(--font-data); color: var(--text-mute); }
 
 /* ---------- a burst: a run of failures with one cause, as one row that opens to its rows ---------- */
 .rqburst .bn { font: 600 1rem/1.2 var(--font-name); color: var(--text); white-space: nowrap; }
@@ -322,10 +377,12 @@ a.acct:hover { text-decoration: underline; }
 .hbar .ok { background: color-mix(in oklab, var(--text) 45%, transparent); }
 .hbar .nt { background: color-mix(in oklab, var(--text) 25%, transparent); }
 .hbar .f { background: var(--limit); }
-.hour .act { margin-left: auto; margin-block: -.14rem; }  /* the day before, at the right end of the oldest day's heading, never taller than the tag */
-/* a stretch with no requests between two hours: a dashed rule across the table, and how long it lasted */
-.hgap { display: flex; align-items: center; gap: calc(2 * var(--u)); min-height: 2.4rem; margin: 0 -.6rem; padding: 0 .6rem; font: 500 .84rem/1.2 var(--font-name); color: var(--text-mute); }
-.hgap::after { content: ""; flex: 1 1 auto; border-top: .12rem dashed var(--track-line); }
+.hour .act { margin-block: -.14rem; }  /* the day before sits by the oldest day's heading, never taller than the tag */
+/* a quiet stretch between two hours is drawn as one: a hatched band as tall as it was long (--h hours, held to twelve),
+   its length as a figure under the time column */
+.hgap { position: relative; display: flex; align-items: center; box-sizing: border-box; margin: .35rem 0; padding: 0 1rem 0 calc(.8rem + 1.9rem + 2rem); min-height: calc(1.9rem + var(--h, 1) * .2rem); border-block: .12rem dashed var(--track-line); border-radius: var(--r-in);
+  background: repeating-linear-gradient(-45deg, color-mix(in oklab, var(--text) 6%, transparent) 0 .16rem, transparent .16rem .52rem); font: 500 .84rem/1.2 var(--font-name); color: var(--text-mute); }
+.hgap b { font: 500 .88rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
 .list .more { display: flex; align-items: center; gap: calc(2 * var(--u)); }
 .list .more .count { display: inline-flex; align-items: center; gap: var(--u); font: 500 .9rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
 .list .more .vbar { width: 8rem; flex: none; }
@@ -348,6 +405,13 @@ a.acct:hover { text-decoration: underline; }
 /* the rows a new order or outcome lands with rise in once, so the list reads as the answer to the press */
 .rqtable.arrive > :is(.rq, .rqburst, .hour, .hgap, .nomatch) { animation: rq-arrive var(--t-pop) var(--e-out) both; }
 @keyframes rq-arrive { from { opacity: 0; transform: translateY(.4rem); } }
+/* the rows a "more" or a new read adds rise in once, so they read as arriving and the rows already read stay still */
+.rq.rise { animation: rq-arrive var(--t-pop) var(--e-out) both; }
+/* the band's four parts rise in as they replace their shapes, each a beat after the one before it */
+.rqband.arrive .psec { animation: rq-arrive var(--t-pop) var(--e-out) both; }
+.rqband.arrive .pd-stages { animation-delay: var(--t-hit); }
+.rqband.arrive .rqtok { animation-delay: calc(var(--t-hit) * 2); }
+.rqband.arrive .rqcost { animation-delay: calc(var(--t-hit) * 3); }
 
 /* the outcome as an element, and the lamp of a request that answered after more than one send: the retries glyph,
    in the lamp's own ink, so a failure's red stays the only colour in the table */
@@ -355,11 +419,22 @@ a.acct:hover { text-decoration: underline; }
 
 @media (prefers-reduced-motion: reduce) {
   .rq, .rqburst, .fbtn, .ftog, .kr, .byr { transition: none; }
-  .fmenu, .rqtable.arrive > :is(.rq, .rqburst, .hour, .hgap, .nomatch) { animation: none; }
+  .fmenu, .rq.rise, .rqtable.arrive > :is(.rq, .rqburst, .hour, .hgap, .nomatch), .rqband.arrive .psec { animation: none; }
 }
 
 /* the pick line and the filters while they are read: the tiles or the picker, and the filters' own row, hollow */
-.lhead > .ghost.chip { height: 2.4rem; }
-.filters > .ghost.chip { height: 2.29rem; }
-.filters > .ghost.chip.gsw { height: 2.54rem; }  /* the outcome switch, the row's tallest */
-.filters > .ghost.chip.gtg { height: 2.44rem; }
+.lhead > .ghost.chip { height: var(--ctl-h); }
+.filters > .ghost.chip, .filters > .ghost.chip.gsw, .filters > .ghost.chip.gtg { height: var(--ctl-h); }
+/* the cap's meter, a line of its own under the time axis */
+.rqband p.meas { display: flex; align-items: center; gap: var(--u); margin: calc(1.5 * var(--u)) 0 0; font: 500 .88rem/1.2 var(--font-data); color: var(--text-mute); }
+.rqband p.meas .vbar { flex: none; width: 7rem; }
+.rqband p.meas b { font-weight: 500; color: var(--text-body); }
+/* a door's name and, where it is told from others by its time, the time: side by side where the column is wide enough,
+   and the time under the name where it is not, so the name is never cut to two letters to make room for it */
+.byr .bn { display: flex; align-items: baseline; gap: .7rem; }
+.byr .bn .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.byr .bn small { flex: none; font: 500 .8rem/1 var(--font-data); color: var(--text-mute); }
+.bys.hits { container: hits / inline-size; }
+@container hits (max-width: 30rem) { .byr .bn { flex-direction: column; align-items: flex-start; gap: .25rem; } }
+/* two sessions of one name: the second carries its place among them, muted */
+.ord { margin-left: .35rem; font: 500 .8rem/1 var(--font-data); font-style: normal; color: var(--text-mute); }

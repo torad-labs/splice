@@ -12,14 +12,15 @@ import { layout } from "../gate/src/lib/repo.ts";
 
 const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 let reads = 0;
-const row = (id: string, name: string, text: string, ts: number) => ({
+const row = (id: string, name: string, text: string, ts: number, tool: string | null = null) => ({
   session_id: id, name, head: "alpha", route: "head", availability: "live", status: "idle", cwd: "/work/desk",
-  last: { role: "assistant", tool: null, text, ts },
+  last: { role: "assistant", tool, text, ts },
 });
-// "ticker" says a new line on every read: the line on screen tells the test that a read was drawn
+// "ticker" last ran a command with a new target on every read: a row draws the tool's mark and the target of its last call,
+// so the target on screen tells the test that a read was drawn
 const sessions = () => ({
   sessions: [
-    row("s-ticker", "ticker", `Read number ${reads} is in.`, 3_000),
+    row("s-ticker", "ticker", `echo read ${reads}`, 3_000, "Bash"),
     row("s-builder", "builder", "builder said its last line.", 2_000),
     row("s-keeper", "keeper", "keeper said its last line.", 1_000),
   ],
@@ -54,12 +55,13 @@ afterAll(async () => {
 const card = (page: Page, name: string) => page.locator(".card.s", { has: page.locator(".name", { hasText: name }) });
 const paneName = (page: Page) => page.locator("section.pane header .who .name");
 
-/** Waits until the page has drawn a read made after this call: ticker's card no longer shows the line it showed. */
+/** Waits until the page has drawn a read made after this call: ticker's card no longer shows the target it showed. */
 async function nextReadDrawn(page: Page) {
-  const line = card(page, "ticker").locator(".last");
-  const shown = (await line.innerText()).match(/Read number \d+ is in\./)?.[0] ?? "";
-  await expect(line).toContainText(/Read number \d+ is in\./, { timeout: 15_000 });
-  await expect(line).not.toContainText(shown, { timeout: 15_000 });
+  const target = card(page, "ticker").locator(".last .tgt");
+  await expect(target).toHaveText(/^echo read \d+$/, { timeout: 15_000 });
+  const shown = await target.innerText();
+  await expect(target).not.toHaveText(shown, { timeout: 15_000 });
+  await expect(target).toHaveText(/^echo read \d+$/, { timeout: 15_000 });
 }
 
 async function sessionsPage() {

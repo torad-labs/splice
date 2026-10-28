@@ -80,18 +80,46 @@ async function dayOf(command: string) {
   }
 }
 
-test("a day that holds an hour splice could not read says Not read, not the sum of the hours it could", async () => {
-  const day = await dayOf("torn-day");
-  expect(day).toContain("Not read");
-  expect(day).not.toContain("$1.50");
+/** What a command's strip draws for a day it could not read whole: the figure's place, and the hours it hatches as unread. */
+async function tornDay(command: string) {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await page.goto(`http://127.0.0.1:${server.port}/accounts.html`);
+    const meter = page.locator(`[data-meter="${command}"]`);
+    await expect(meter).toBeVisible({ timeout: 15_000 });
+    await expect(meter).not.toHaveAttribute("aria-busy", "true", { timeout: 15_000 });
+    return {
+      text: (await meter.innerText()).replace(/\s+/g, " "),
+      // the figure's place holds the dash and nothing else: no money, no count
+      figure: ((await meter.locator(".dayline").innerText()) ?? "").replace(/\s+/g, " ").trim(),
+      dashes: await meter.locator(".dayline .nr-day .nr").count(),
+      // the hour splice could not read is drawn hatched, and its words stand under the pointer
+      unreadHours: await meter.locator(".dayrun .hours i.unread").evaluateAll((els) => els.map((e) => e.getAttribute("data-said"))),
+    };
+  } finally {
+    await page.close();
+  }
+}
+
+// Absence is a shape (Accounts' goal, Oct 28): a day that holds an hour splice could not read draws a dash where its
+// figure goes and that hour hatched, never the word "Not read" in a figure's place and never the sum of the hours it could.
+test("a day that holds an hour splice could not read is a dash in its figure's place and that hour hatched, not the sum of the hours it could", async () => {
+  const day = await tornDay("torn-day");
+  expect(day.dashes).toBe(1);
+  expect(day.figure).toBe("—");
+  expect(day.unreadHours.length).toBe(1);
+  expect(day.unreadHours[0]).toContain("Not read");
+  expect(day.text).not.toContain("$1.50");
 }, 30_000);
 
-test("a day with an unread hour is the one word Not read: no money and no requests-on-your-plan count from its readable hours", async () => {
-  const day = await dayOf("plan-torn");
-  expect(day).toContain("Not read");
-  expect(day).not.toContain("on your plan");
-  expect(day).not.toContain("$");
-  expect(day).not.toMatch(/\d+ requests/);
+test("a day with an unread hour is one dash: no money and no requests-on-your-plan count from its readable hours", async () => {
+  const day = await tornDay("plan-torn");
+  expect(day.dashes).toBe(1);
+  expect(day.figure).toBe("—");
+  expect(day.unreadHours.length).toBe(1);
+  expect(day.text).not.toContain("on your plan");
+  expect(day.text).not.toContain("$");
+  expect(day.text).not.toMatch(/\d+ requests/);
 }, 30_000);
 
 test("a day whose hours were all read shows its figure", async () => {

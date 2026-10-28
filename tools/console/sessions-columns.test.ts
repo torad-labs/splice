@@ -83,10 +83,11 @@ test("a session opens in place under the rows before it, across its block, and t
 }, 30_000);
 
 // His project tiles at 3394 (splice-lead, Oct 12; marlin, Oct 13): the tiles stand in equal columns that fill the row,
-// each carrying its bar of states on the scale every tile shares, the unit said once on Every project (the whole), and a name is cut only when its own column
-// cannot hold it, with the whole name in the tile's title. A tile on a wrapped line is the width of the tiles above it, and
-// every line starts at the row's left edge.
-test("in a crowded tile row the tiles are equal columns that fill the row, each with its bar and the unit said once on Every project, a cut name whole in its title", async () => {
+// each carrying its bar of states on the scale every tile shares, and a name is cut only when its own column cannot hold
+// it, with the whole name in the tile's title. A tile on a wrapped line is the width of the tiles above it, and every line
+// starts at the row's left edge. What the figures count is said once for the page, in the head line's legend ("live / all"),
+// and no tile repeats a unit word (Sessions' goal, Oct 28: "Words are said once").
+test("in a crowded tile row the tiles are equal columns that fill the row, each with its bar and no unit word, the legend saying live / all once, a cut name whole in its title", async () => {
   const twelve = ["temple", "splice", "grailseeker-backend", "Splice-CPO", "hostshield", "assistant", "Splice-Animator",
     "Splice-Writer", "twork", "qgre-engine-labs", "grailseeker-console"];
   const names = [...twelve, ...twelve.map((p) => `${p}-two`)];
@@ -96,9 +97,10 @@ test("in a crowded tile row the tiles are equal columns that fill the row, each 
   try {
     await page.goto(`http://127.0.0.1:${server.port}/sessions.html`);
     await page.locator(".ptile").nth(names.length + 1).waitFor({ timeout: 15_000 }); // Every project, each one, No project
-    const { rowBox, tiles } = await page.evaluate(() => {
+    const { rowBox, tiles, legend } = await page.evaluate(() => {
       const bounds = (e: Element) => { const r = e.getBoundingClientRect(); return { left: r.left, right: r.right }; };
       return {
+        legend: [...document.querySelectorAll(".legend")].map((l) => (l as HTMLElement).innerText.replace(/\s+/g, " ").trim()),
         rowBox: bounds(document.querySelector(".ptiles")!),
         tiles: [...document.querySelectorAll<HTMLElement>(".ptile")].map((t) => {
           const n = t.querySelector(".tname")!;
@@ -109,7 +111,9 @@ test("in a crowded tile row the tiles are equal columns that fill the row, each 
           const own = t.getBoundingClientRect().width;
           t.style.width = t.style.maxWidth = "";
           return { name: n.textContent!, title: t.getAttribute("title"), cut: n.scrollWidth > n.clientWidth + 1, width: box.width, own, top: box.top, left: box.left, right: box.right,
-            unit: !!t.querySelector(".punit"), bar: !!t.querySelector(".pmix") };
+            // the letters a tile writes besides its name: none, since its two figures are a pair the legend names
+            words: (t.textContent!.replace(n.textContent!, "").match(/[A-Za-z]+/g) ?? []).join(" "), figures: t.querySelectorAll(".plive, .ptotal").length,
+            bar: !!t.querySelector(".pmix") };
         }),
       };
     });
@@ -117,7 +121,9 @@ test("in a crowded tile row the tiles are equal columns that fill the row, each 
     expect(lines.length).toBeGreaterThan(1); // the row is crowded enough to wrap
     expect(tiles.filter((t) => Math.abs(t.width - tiles[0]!.width) > 1).map((t) => t.name)).toEqual([]); // equal columns on every line
     expect(Math.max(...tiles.filter((t) => t.top === lines[0]).map((t) => t.right))).toBeGreaterThan(rowBox.right - tiles[0]!.width * 0.1); // the first line fills the row
-    expect(tiles.filter((t) => t.unit).map((t) => t.name)).toEqual(["Every project"]); // what the row counts is said once, on the whole
+    expect(tiles.filter((t) => t.words).map((t) => `${t.name}: ${t.words}`)).toEqual([]); // no tile writes a unit word
+    expect(tiles.filter((t) => t.figures !== 2).map((t) => t.name)).toEqual([]); // each carries its pair of figures
+    expect(legend).toEqual(["Working live / all"]); // what the pair counts is said once, in the head line
     expect(tiles.filter((t) => !t.bar).map((t) => t.name)).toEqual([]);
     expect(tiles.filter((t) => t.title !== t.name).map((t) => t.name)).toEqual([]); // the whole name is in the title
     expect(tiles.filter((t) => t.own <= t.width + 1 && t.cut).map((t) => t.name)).toEqual([]); // cut only when its column cannot hold it

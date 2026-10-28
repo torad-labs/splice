@@ -75,13 +75,21 @@ async function onPage(check: (page: Page) => Promise<void>) {
 }
 const card = (page: Page, name: string) => page.locator("article.card").filter({ has: page.locator(".name", { hasText: new RegExp(`^${name}$`) }) });
 
+// A move is drawn, not written (Accounts' goal, Oct 28): the login the traffic left and the one it came to are two numbered
+// sockets with an arrow between, the command is its chip, and the login it left is a door to its card whose spoken name is
+// the login's name.
 test("when two commands share the logins, each move names its command, on a line of its own", () => onPage(async (page) => {
   const lines = card(page, "Second").locator(".moveline");
   await expect(lines).toHaveCount(2);
-  const said = (await lines.allInnerTexts()).map((t) => t.replace(/\s+/g, " "));
-  bunExpect(said.filter((t) => t.includes("claude-splice"))).toHaveLength(1);
-  bunExpect(said.filter((t) => t.includes("claude-work"))).toHaveLength(1);
-  for (const t of said) bunExpect(t).toContain("First");
+  const commands = await lines.locator(".chip").allInnerTexts();
+  bunExpect(commands.filter((t) => t === "claude-splice")).toHaveLength(1);
+  bunExpect(commands.filter((t) => t === "claude-work")).toHaveLength(1);
+  for (let i = 0; i < 2; i++) {
+    const line = lines.nth(i);
+    // it left First, the login the order puts third, and came to this card, Second, the first
+    await expect(line.getByRole("button", { name: /^Show First/ })).toHaveCount(1);
+    await expect(line.getByRole("img", { name: /^Second/ })).toHaveCount(1);
+  }
 }), 30_000);
 
 test("a Remove splice refuses says Not removed and shows splice's reason on the card", () => onPage(async (page) => {

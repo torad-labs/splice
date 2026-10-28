@@ -1,7 +1,7 @@
-// Settings' counts: an outcome that did not happen this week is never a row of the table with a 0 and an empty bar; the
-// ones that did not happen are named together on one quiet line under it, and the outcome that happened keeps its row and
-// its doors. Through the real page against a stub daemon that answers only what Settings reads: each figure's count is
-// the daemon's answer to that figure's ask, as Settings asks it of /api/perf/turns.
+// Settings' counts: the table of how this week's stalls ended has the same five rows every week (Settings' goal, Oct 28);
+// an outcome that did not happen is its row with an empty track and a quiet 0, and the outcome that happened keeps its
+// bar, its count as a door and its command's door. Through the real page against a stub daemon that answers only what
+// Settings reads: each figure's count is the daemon's answer to that figure's ask, as Settings asks it of /api/perf/turns.
 import { afterAll, beforeAll, test } from "bun:test";
 import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -64,38 +64,39 @@ async function stalledAnswers(counts: Record<string, number>): Promise<Page> {
   return page;
 }
 
-/** The outcomes the table names, as the quiet line names those that did not happen. */
+/** The outcomes the table names, in its order: two that ended early, then three that kept going. */
 const OUTCOMES = ["splice restarted", "Given up", "Waited out", "Resumed", "Started over"];
 
-test("Ended early at zero with Waited out above zero: the zero is one quiet line, the outcome that happened keeps its row and doors", async () => {
+test("Ended early at zero with Waited out above zero: each zero is its row with an empty track, the outcome that happened keeps its bar and doors", async () => {
   const page = await stalledAnswers({ waited: 7 });
   try {
     const table = page.locator(".otab[role=table]");
-    // the one outcome that happened is the table's one row: its count is a door, and the command it happened on is one
-    await expect(table.locator(".orow:not(.oh):not(.og)")).toHaveCount(1, { timeout: 15_000 });
+    // every outcome has its row, under its two groups, in the same order every week
+    await expect(table.locator(".orow:not(.oh):not(.og) .ow")).toHaveText(OUTCOMES, { timeout: 15_000 });
+    await expect(table.locator(".og")).toHaveText(["Ended early", "Kept going"]);
+    // the one outcome that happened has a bar, its count is a door, and the command it happened on is one
     const waited = table.locator(".orow", { hasText: "Waited out" });
+    await expect(waited.locator(".ofill")).toHaveCount(1);
     await expect(waited.locator(".on a")).toHaveText("7");
     await expect(waited.locator(".cdoor")).toHaveCount(1);
-    // a group none of whose outcomes happened draws no header over nothing
-    await expect(table.locator(".og")).toHaveCount(1);
-    await expect(table.locator(".og")).toContainText("Kept going");
-    // the outcomes that did not happen are named together on one line, and the one that did is not among them
-    const none = page.locator(".ozero");
-    await expect(none).toHaveCount(1);
-    await expect(none).toContainText("None this week");
-    await expect(none.locator(".ozw")).toHaveText(OUTCOMES.filter((w) => w !== "Waited out"));
+    // the four that did not happen are a quiet 0 on an empty track, with no door
+    const none = table.locator(".orow.none");
+    await expect(none.locator(".ow")).toHaveText(OUTCOMES.filter((w) => w !== "Waited out"));
+    await expect(none.locator(".on .nz")).toHaveText(["0", "0", "0", "0"]);
+    await expect(none.locator(".ofill, a")).toHaveCount(0);
   } finally {
     await page.close();
   }
 }, 30_000);
 
-test("every figure at zero: no table on the page, one quiet line naming every outcome", async () => {
+test("every figure at zero: the table stands with its five rows, each an empty track and a quiet 0", async () => {
   const page = await stalledAnswers({});
   try {
-    const none = page.locator(".ozero");
-    await expect(none).toHaveCount(1, { timeout: 15_000 });
-    await expect(none.locator(".ozw")).toHaveText(OUTCOMES);
-    await expect(page.locator(".otab")).toHaveCount(0);
+    const table = page.locator(".otab[role=table]");
+    await expect(table.locator(".orow.none .ow")).toHaveText(OUTCOMES, { timeout: 15_000 });
+    await expect(table.locator(".orow.none .on .nz")).toHaveText(["0", "0", "0", "0", "0"]);
+    await expect(table.locator(".orow:not(.oh):not(.og):not(.none)")).toHaveCount(0);
+    await expect(table.locator(".ofill, .orow a")).toHaveCount(0);
   } finally {
     await page.close();
   }

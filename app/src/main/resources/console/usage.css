@@ -1,6 +1,6 @@
 /* Usage, in the console language (console.css and the drawings every page shares). Five bands down one page: the board
-   of plans and keys, the scope a drill narrowed the page to, the window's columns, and then where it went, each
-   command's tokens and how each command answered, side by side across the width.
+   of plans and keys, the scope a drill narrowed the page to, the window's columns, and then, laid on a balanced board
+   two across where the width allows, where it went, how each command answered and each command's tokens.
 
    THE RHYTHM IS THE ONE UNIT (console.css --u = .667rem): 2u between a band's head and its drawing, 4u + a hairline +
    4u between bands, --gap-card between cards, 2.4rem between groups, --gap-col between columns.
@@ -50,8 +50,8 @@
 /* the board's two kinds of bar, in the shape each takes on a card: the window meter, and the thin bar under the rule */
 .usage .sw.lim { height: var(--meter-h); border-radius: .3rem; background: var(--track); box-shadow: inset 0 0 0 .08rem var(--track-line); }
 .usage .sw.cnt { height: .4rem; border-radius: .2rem; background: color-mix(in oklab, var(--text) 38%, transparent); }
-.usage .sw.gone { height: .4rem; border-radius: .2rem; background: none; outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }
-.usage .sw.cached { height: .4rem; border-radius: .2rem; background: color-mix(in oklab, var(--text) 18%, var(--obj)); box-shadow: inset 0 0 0 .08rem var(--track-line); }
+.usage .sw.gone { height: .4rem; border-radius: .2rem; }   /* its dashed look is the console's (.sw.gone) */
+.usage .sw.cached { height: .4rem; border-radius: .2rem; background: var(--split-tone); box-shadow: inset 0 0 0 .08rem var(--track-line); }
 
 /* each command still being read, and apart from them the ones that could not be read, each by its chip */
 .rdg { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(3 * var(--u)); }
@@ -71,9 +71,8 @@
 .ugroup > h3 { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem; min-height: var(--ctl-h); margin: 0 0 calc(2 * var(--u)); font: 400 1.4rem/1.1 var(--font-lead); color: var(--text); }
 .ugroup > h3 .blot { flex: none; width: .8rem; height: .8rem; border-radius: 50%; background: var(--c, var(--text-mute)); box-shadow: 0 0 0 .14rem var(--ink); }
 .ugroup > h3 .cmds { display: inline-flex; flex-wrap: wrap; gap: .45rem; margin-left: calc(2 * var(--u)); }
-/* a provider's column of cards is one block of the board; the columns after the first leave the head's room empty, so the
-   cards of one provider start on one line */
-.ugroup > .hspace { min-height: var(--ctl-h); margin: 0 0 calc(2 * var(--u)); }
+/* a provider's column of cards is one block of the board; a column after the first is marked data-cont, and the board leaves the
+   head's room empty (console.css), so the cards of one provider start on one line */
 .gcol { min-width: 0; display: flex; flex-direction: column; gap: var(--gap-card); }
 
 .pcard, .kcard { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); }
@@ -90,8 +89,8 @@
 .kcard .nm .var { font: 500 .95rem/1.15 var(--font-data); letter-spacing: .01em; }
 .pcard .pv, .kcard .pv { font: 500 .9rem/1 var(--font-name); color: var(--text-mute); }
 .pcard > header .cmds, .kcard > header .cmds { display: inline-flex; flex-wrap: wrap; gap: .45rem; margin-left: auto; }
-/* the reset column has a width of its own, so every card's meter tracks end on one x whatever its reset words say */
-.pcard .windows { margin-top: 0; grid-template-columns: 5.2rem minmax(0, 1fr) 5.2rem 13.2rem; }
+/* the reset column has a width of its own (console.css --win-when), so every card's meter tracks end on one x whatever its reset words say */
+.pcard .windows { margin-top: 0; grid-template-columns: 5.2rem minmax(0, 1fr) 5.2rem var(--win-when); }
 .pcard .windows .when { white-space: nowrap; }
 /* a header's right end: the commands that reach the login, and a signed-out login's state, as Accounts puts it */
 .pcard > header .hend, .kcard > header .hend { display: inline-flex; align-items: center; flex-wrap: wrap; gap: .45rem .9rem; margin-left: auto; }
@@ -119,11 +118,6 @@
 /* (its content box holds three rows as they draw, 1.25rem each, and their two gaps; padding and rule sit outside it) */
 .thru.none { justify-content: center; box-sizing: content-box; min-height: calc(2 * 1.25rem + var(--u)); }
 .thru.none.key { min-height: calc(3 * 1.25rem + 2 * var(--u)); }
-/* a bar with its cached share inside it: the lighter part, at the bar's end, is what was read from the cache */
-.vbar.split > b { position: relative; }
-.vbar.split > b > i { position: absolute; top: 0; right: 0; bottom: 0; background: color-mix(in oklab, var(--text) 18%, var(--obj)); }
-/* a figure nobody reported: its track dashed and empty, and the dash where the figure goes */
-.barcell.gone .vbar, .cell .vbar.gone { background: none; outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }
 /* a figure with no price: the reason in words in the bar's place, on a dashed empty track, and the dash */
 .whyw { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; height: 1.2rem; padding: 0 .5rem; border-radius: .2rem; outline: .1rem dashed var(--track-line); outline-offset: -.1rem;
   font: 500 .8rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -232,12 +226,14 @@
 .cstack.gh { border: 0; border-radius: .3rem .3rem 0 0; background-color: var(--obj-sunk);
   background-image: repeating-linear-gradient(-45deg, transparent 0 .45rem, var(--track) .45rem .9rem); background-size: 200% 100%; animation: ghost-stripes var(--t-stripe) linear infinite; }
 
-/* ---------- the three tables, side by side across the width ---------- */
-.lower { display: grid; grid-template-columns: minmax(0, 1fr); column-gap: var(--gap-col); align-items: start; }
-.lcol { min-width: 0; display: flex; flex-direction: column; }
-.lower > .band { margin-top: 0; padding-top: 0; border-top: 0; }
-.lower > .lcol { margin-top: calc(4 * var(--u)); padding-top: calc(4 * var(--u)); border-top: .08rem solid var(--hair); }
-.lower .band { container: lower / inline-size; }
+/* ---------- the three tables on the kit's balanced board (.mason) ---------- */
+/* One column, or two from 125rem; the third table goes under whichever column is shorter when it is laid, so a short list
+   (a 5-hour window holds two accounts) or a Results row that opens never leaves a column beside a hole. Bands that stand
+   one over the other keep the page's rhythm: 4u, a hairline, 4u. */
+/* the gap is 4u (the board reads it as plain rem, so it is written as a length: 4 x .667rem) */
+.lower { --mason-gap: 2.668rem; grid-template-columns: minmax(0, 1fr); }
+.lower > .band { margin-top: 0; padding-top: 0; border-top: 0; container: lower / inline-size; }
+.lower > .band:not(.col-top) { padding-top: calc(4 * var(--u)); border-top: .08rem solid var(--hair); }
 .byhead { display: flex; align-items: center; flex-wrap: wrap; gap: var(--u) calc(2 * var(--u)); margin-bottom: calc(2 * var(--u)); }
 .byhead .findbox { margin-left: auto; }
 .findbox { display: inline-flex; align-items: center; gap: .6rem; }
@@ -270,6 +266,9 @@
 .brow .who .nm .var { font: 500 .92rem/1.2 var(--font-data); letter-spacing: .01em; }
 .brow .who .sb { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
 .brow .who .state { flex: none; font-size: .88rem; color: var(--text-mute); }
+/* a login at its limit: the lock its card draws, in the limit red, and nothing else about the row is red */
+.brow .who .rowlock { flex: none; display: inline-flex; color: var(--limit); }
+.brow .who .rowlock svg { width: .95rem; height: .95rem; }
 .brow .who .act.signin { flex: none; display: inline-flex; align-items: center; gap: .45rem; }
 /* a row's own commands sit at the cell's end and give way to the name: the box clips rather than draw over the bars
    beside it, and the chips that do not fit leave for one "+N" that names them, which then holds its room */
@@ -301,13 +300,14 @@
 .bnone { display: flex; align-items: center; min-height: 3.7rem; padding: .45rem 0; border-top: .08rem solid var(--hair); }
 
 /* ---------- each command's tokens ---------- */
-.trow, .gtrow { display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(10rem, 2.2fr) minmax(5.5rem, .8fr) minmax(5.5rem, .8fr) minmax(5.5rem, .8fr) minmax(6.5rem, .9fr); column-gap: calc(2 * var(--u)); align-items: center;
+/* four columns, each one a bar on its own scale: the command, its input split, its output, the share with no count */
+.trow, .gtrow { display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(12rem, 3fr) minmax(7rem, 1.1fr) minmax(7rem, 1fr); column-gap: calc(2 * var(--u)); align-items: center;
   min-height: 3.7rem; padding: .45rem 0; border-top: .08rem solid var(--hair); }
 .ttable > :is(.trow, .gtrow):first-child { border-top: 0; }
 .trow.thead { min-height: 0; padding: .6rem 0 .5rem; border-top: 0; font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
 .trow.thead .cell { justify-content: flex-end; }
 .trow.thead + .trow { border-top: 0; }
-.trow .who { display: flex; align-items: center; min-width: 0; }
+.trow .who { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem .8rem; min-width: 0; }
 .trow .cell { display: flex; align-items: center; gap: .6rem; min-width: 0; padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-align: left; }
 .trow .cell > .v { flex: none; min-width: 3.2rem; text-align: right; font: 500 .92rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
 .trow .cell > .vbar { flex: 1 1 auto; min-width: 1.2rem; }
@@ -321,21 +321,32 @@
 .tstack > i + i { box-shadow: inset .12rem 0 0 var(--obj); }
 .tstack > i > b { flex: none; padding-inline: .5rem; font: 600 .78rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--obj); white-space: nowrap; }
 .tstack > i > b .w { font-family: var(--font-name); }
-.tstack > i.s1, .pd-leg.tk .sw.s1 { background: var(--splice-chart-2); }
-.tstack > i.s2, .pd-leg.tk .sw.s2 { background: var(--splice-chart-1); }
-.tstack > i.s3, .pd-leg.tk .sw.s3 { background: var(--splice-chart-5); }
-.tstack > i > b { color: var(--on-cable); }
+/* The three parts are in the console's neutral ink, in three looks that cannot be taken for each other: read from the
+   cache the brightest, written to it striped, fresh the dimmest. No provider's colour is on an input bar, so a part is never
+   taken for a command. */
+.tstack > i.s1, .pd-leg.tk .sw.s1 { background: color-mix(in oklab, var(--text) 62%, transparent); }
+.tstack > i.s2, .pd-leg.tk .sw.s2 { background: repeating-linear-gradient(135deg, color-mix(in oklab, var(--text) 62%, transparent) 0 .3rem, color-mix(in oklab, var(--text) 22%, transparent) .3rem .6rem); }
+.tstack > i.s3, .pd-leg.tk .sw.s3 { background: color-mix(in oklab, var(--text) 22%, transparent); }
+.tstack > i.s1 > b { color: var(--obj); }
+.tstack > i.s2 > b { margin-inline: .25rem; padding: .12rem .3rem; border-radius: .2rem; background: var(--obj); color: var(--text); }
+.tstack > i.s3 > b { color: var(--text); }
 .pd-leg.tk .sw { height: .7rem; }
-/* turns that ran cache-cold after an account switch: the row opens its accounts in place */
+.pd-leg.tk .coldkey { display: inline-flex; align-items: center; margin-left: calc(2 * var(--u)); color: var(--text-mute); }
+/* the kit draws its glyphs as bare paths: the stroke is the mark's own */
+.pd-leg.tk .coldkey svg, .trow .cold > svg:not(.chev) { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.pd-leg.tk .coldkey svg { width: 1rem; height: 1rem; }
 /* the band's answer: the share of the input read from the cache as the drill-down's 50 px ring, then its figure */
 .cachelead > .pd-ring, .cachelead > .ghost.ring { flex: none; align-self: center; width: var(--ring-focal); height: var(--ring-focal); margin-right: calc(.5 * var(--u)); }
 .cachelead > .ghost.ring { border-radius: 50%; }
-.trow .cell.cold { flex-wrap: wrap; justify-content: flex-end; row-gap: .2rem; }
-.trow button.cell.cold { cursor: pointer; border-radius: .3rem; transition: background-color var(--t-hover) var(--e-out); }
-.trow button.cell.cold:hover { background: var(--track); }
-.trow button.cell.cold:focus-visible { outline: .14rem solid var(--text); outline-offset: .15rem; }
-.trow .cell.cold > .vbar { flex: 1 1 2rem; }
-.um { flex: 1 0 100%; text-align: right; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+/* turns that ran cache-cold after an account switch are a mark beside the command that has them (its glyph, its count),
+   and a command with logins to name opens them in place under its row */
+.trow .cold { display: inline-flex; align-items: center; gap: .45rem; padding: .2rem .6rem .2rem .35rem; border: 0; border-radius: var(--r-in); background: none; font: 500 .9rem/1.2 var(--font-data); color: var(--text-body); }
+.trow button.cold { cursor: pointer; transition: background-color var(--t-hover) var(--e-out); }
+.trow button.cold:hover { background: var(--track); }
+.trow button.cold:focus-visible { outline: .14rem solid var(--text); outline-offset: .15rem; }
+.trow .cold > svg:not(.chev) { flex: none; width: 1.1rem; height: 1.1rem; color: var(--text-body); }
+.trow .cold > .v { font: 600 .92rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.um { flex: none; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
 .trow.open { border-bottom: 0; }
 .tdetail { margin: 0 0 calc(2 * var(--u)) 2rem; }
 .ctable { display: flex; flex-direction: column; }
@@ -382,14 +393,13 @@
   /* 32rem holds an agent's title, its project and its first command's chip side by side: at 26rem the longest agent
      names kept only "+3", which names nothing until hovered */
   .brow, .gbrow { grid-template-columns: minmax(12rem, 32rem) minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr); }
-  .trow, .gtrow { grid-template-columns: minmax(9rem, 14rem) minmax(0, 2.6fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, .9fr) minmax(0, 1fr); }
+  .trow, .gtrow { grid-template-columns: minmax(12rem, 18rem) minmax(0, 3fr) minmax(0, 1.2fr) minmax(0, 1fr); }
 }
-/* Two columns of tables where each still has room for its bars, three where all three do; under that the tables keep
-   the whole width, one over the other. Two columns at 1440 left the Tokens table 56rem for six columns, where the
-   written, output and reported bars drew 22 px and a figure wrapped under its own header. */
+/* Two columns of tables where each still has room for its bars; under that the tables keep the whole width, one over
+   the other. Two columns narrower than this left the Tokens table too little room for its input bar, and a figure
+   wrapped under its own header. */
 @container (min-width: 125rem) {
   .lower { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .lower > .lcol { margin-top: 0; padding-top: 0; border-top: 0; }
 }
 /* a table too narrow for its columns: the name leads its row and the figures pair under it */
 @container (max-width: 46rem) {

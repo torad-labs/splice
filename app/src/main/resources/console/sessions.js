@@ -26,6 +26,7 @@ CONSOLE.page("sessions.html", (scope) => {
   "use strict";
   const { document, window, API, setTimeout, clearTimeout, setInterval, clearInterval, requestAnimationFrame, cancelAnimationFrame, addEventListener, removeEventListener } = scope;
 
+const NAMES_KEY = "splice.sessions.names";
 // `screens`: what a session's own prompt shows, by session id, read only for sessions splice opened (GET .../screen
 // answers 200 for those and refuses the rest). A session with a screen is one splice can drive: it gets the Message
 // field and its answers are buttons. One it can't keeps what its transcript says and draws no act it couldn't carry.
@@ -46,8 +47,20 @@ const ui = { ending: new Map(), armedEnd: new Map(), armedStop: new Set(), open:
   // said Copied, and the ended namesakes folded under each row
   logOpen: new Set(), sys: new Set(), lines: new Set(), namesakes: new Set(), allModels: new Set(), copied: new Map(), earlier: new Map(),
   // the session whose plate just opened (it unfolds once), whether to bring it on screen, and the board's columns
-  unfold: null, reveal: false, cols: 1, blockAt: null, focusSay: false };
+  unfold: null, reveal: false, cols: 1, blockAt: null, focusSay: false,
+  // the names he gave sessions here (kept in this browser), the session whose name he is typing, and the projects with nothing
+  // live whose ended sessions he opened
+  names: loadNames(), renaming: null, looseOpen: new Set(JSON.parse(sessionStorage.getItem("splice.loose") || "[]")) };
 const remember = (key, set) => sessionStorage.setItem(key, JSON.stringify([...set]));
+/** THE NAMES HE GAVE (DRAW.nameIt): splice keeps the name a client registered and has no route to change it, so a name he
+ *  types here is kept in this browser, by the session's id, and wins over the registered one on this page. */
+function loadNames() {
+  try { return new Map(Object.entries(JSON.parse(localStorage.getItem(NAMES_KEY) || "{}"))); } catch { return new Map(); }
+}
+function keepName(id, name) {
+  if (name) ui.names.set(id, name); else ui.names.delete(id);
+  try { localStorage.setItem(NAMES_KEY, JSON.stringify(Object.fromEntries(ui.names))); } catch { /* storage off: the name lasts until the tab closes */ }
+}
 const root = document.getElementById("sessions");
 
 /** A refused call's word on the page (fin, Oct 13): [word] for a refusal, "Not answering" when splice did not answer at
@@ -139,7 +152,7 @@ const sendLine = (s) => `SendMessage(to="${sendTo(s).replace(/\\/g, "\\\\").repl
 // it reads as a quiet fact in the chip's slot, never as a chip: a chip claims a command (hitstop)
 const UNPLACED = "unknown head";
 // a session that never went through splice has no command to name: its row's route says direct, and the card says
-// "direct", the spec's word for it (Reading, Oct 10), never "unknown head" (splice-lead, Oct 11: the telegram bridge)
+// "direct", the spec's word for it (Reading, Oct 10), never "unknown head" (Oct 11: a bridge that talks to splice)
 const DIRECT = "direct";
 const QUIET = new Set([UNPLACED, DIRECT]);
 // THE WIRE'S WORDS ARE NOT HIS WORDS (the words pass, Oct 26): "direct" and "unknown head" are the route and the head
@@ -267,15 +280,26 @@ async function readNewerNow(s) {
 }
 
 // ---------- what the page says about a session (look() and the lamp are kit.js's) ----------
-// THE FOLDER NEVER TITLES A CARD INSIDE A GROUP (Marlin, Oct 11: he knows a session by what he asked it, and the
-// header already says where it is). Named, it is its name; unnamed, the first line of its first message as the
-// daemon read it (SessionsRoutes `title`), then its worktree, then its tag. Flat, the folder still titles it, which
-// is the page as it was before projects. Reading off leaves both name and title null, and a group falls to the
-// worktree or the tag rather than to a folder the header would repeat.
-// With none of those, the console's one name rule (kit DRAW.name): its command and project, never the first eight characters
-// of its id.
-const title = (s) => DRAW.ownName(s.name) || (ui.grouped ? s.first || s.wt : s.repo)
-  || DRAW.name("session", { command: s.cmd, project: projName(s) }).text;
+// A SESSION IS CALLED BY WHAT HE WOULD CALL IT (Marcos, Oct 28: names are the user's words, never a machine id): the name he
+// gave it here, else the name its client registered, else the first line of its first message as the daemon read it
+// (SessionsRoutes `title`), then its worktree, then its folder where the page is flat. A name a client built from an id
+// ("codex-1f2e3d4c-...") is an id however it is spelled, and the kit's rule reads a word and a whole UUID as a name; a
+// session nothing can name reads as its command and project, with an ordinal where two would read alike.
+const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+const registered = (name) => { const own = DRAW.ownName(name); return own && !UUID.test(own) ? own : ""; };
+/** Words a person can read: a leading tag that carries an id ("[eli-dispatch 1f2e3d4c]") and any UUID come out. */
+const readable = (text) => String(text ?? "").replace(/^\s*\[[^\]]*[0-9a-f]{6,}[^\]]*\]\s*/i, "").replace(UUID, "").replace(/\s+/g, " ").trim();
+const ownOf = (s) => ui.names.get(s.id) || registered(s.name);
+const label = (s) => ownOf(s) || (ui.grouped ? readable(s.first) || (s.wt && !ID_PART.test(s.wt) ? s.wt : "") : s.repo) || readable(s.first);
+const generic = (s) => ({ command: QUIET.has(s.cmd) ? "" : s.cmd, project: projName(s) });
+const title = (s) => label(s) || ui.generic?.get(s.id) || DRAW.name("session", generic(s)).text;
+/** The sessions still running that nothing names, told apart by an ordinal in the order the client lists them: ended ones
+ *  by the hundred would number into noise, so they keep the plain reading. */
+function nameRows() {
+  const lone = state.rows.filter((s) => s.state !== "ended" && !label(s));
+  const named = DRAW.names("session", lone.map(generic));
+  ui.generic = new Map(lone.map((s, i) => [s.id, named[i].text]));
+}
 const color = (s) => colorOf(s.provider);
 
 const FOLDER = G('<path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>');
@@ -288,14 +312,14 @@ const FOLDER = G('<path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0
 /** A folder in a row's own width: whole while it fits, else its last two parts, so the folder's own name is what
  *  survives rather than the home prefix every path shares. A part that is an id reads as an ellipsis: it names
  *  nothing he would know the folder by, and the whole path is the folder's title. */
-const PLACE_FIT = 24;
 const ID_PART = /^(?:[0-9a-f]{8,}|[0-9a-f]{8}-[0-9a-f-]{4,}|.*[0-9a-f]{12,}.*)$/i;
 const placeWords = (place) => String(place).split("/").map((p) => (ID_PART.test(p) ? "…" : p)).join("/").replace(/(…\/)+…/g, "…");
+/** A folder on a row or in a reason is its own name, which is what he knows it by, never a stretch of its path (the path is
+ *  the mark's hover and the open session's facts); the home folder itself reads Home. */
 function shortPlace(place) {
   const said = placeWords(place);
-  if (said.length <= PLACE_FIT) return said;
-  const parts = said.split("/").filter(Boolean);
-  return parts.length > 2 ? `…/${parts.slice(-2).join("/")}` : said;
+  const named = said.split("/").filter((p) => p && p !== "…" && p !== "~");
+  return named.length ? named[named.length - 1] : said.startsWith("~") ? "Home" : said;
 }
 function whereHtml(s, inPlate) {
   if (s.project) return inPlate ? `<span>${esc(projName(s))}</span>` : (!ui.grouped || ui.by !== "project") && s.name && s.repo ? `<span>${esc(s.repo)}</span>` : "";
@@ -350,7 +374,10 @@ function stateCell(s, L, inPlate = false) {
   else if (inPlate && k === "silent") words.push(`<span class="word limit">Stalled</span>`);
   else if (s.state === "working" && t?.phase == null && s.wait) words.push(`<span class="word">In line</span>`);
   else if (s.state === "working" && t?.compact) words.push(`<span class="word">Compacting</span>`);
-  else if (s.state === "working" && t?.phase === "connect") words.push(`<span class="detail soft">No output yet</span>`);
+  // waiting for the model's first output: three dots that pulse on a row (its words on hover and for a screen reader), the
+  // words on the open title line, where there is room
+  else if (s.state === "working" && t?.phase === "connect") words.push(inPlate ? `<span class="detail soft">No output yet</span>`
+    : `<span class="detail soft awaiting" role="img" aria-label="No output yet" title="No output yet"><i></i><i></i><i></i></span>`);
   else if (inPlate && s.row.availability === "stale" && !s.turn) words.push(`<span class="detail soft">Not heard from</span>`);
   // a stop in flight leads the words, while the wait ring alone holds Stop's place in the act track
   if (ui.stopping.has(s.id)) words.unshift(`<span class="word">Stopping</span>`);
@@ -370,19 +397,15 @@ function spanWord(ms) {
 }
 /** How long the row has been in its state: from when that state began (sinceOf). */
 const spanOf = (s, now = Date.now()) => Math.max(0, now - s.since);
-// A LOG SCALE, SO 12 s AND 3 d READ AS LENGTHS ON ONE LINE (the Usage drill-down's range bars). From one second to the longest span
-// the list holds, at least a minute, so one row never fills the column on its own.
-function spanAxis(list) {
-  const lo = 1000, now = Date.now();
-  const hi = Math.max(60_000, ...list.map((s) => spanOf(s, now)));
-  const span = Math.log(hi) - Math.log(lo) || 1;
-  return { lo, hi, at: (x) => Math.max(0, Math.min(100, ((Math.log(Math.max(x, lo)) - Math.log(lo)) / span) * 100)) };
-}
-/** The duration cell: the bar on the page's scale and the figure after it, so every row's figure ends on one edge. */
-function spanCell(s, ax) {
+// ONE FIXED LOG AXIS, 1 s TO 4 w (Marcos: "show, don't tell"): the bar's length is the time in state on a scale no data
+// moves, so 12 s and 3 d read as lengths on one line and the same length is the same time on every row and every visit.
+// Its ticks stand under every bar and in the legend, so a length is read against them without a figure (the kit's axis).
+const AXIS = DRAW.timeAxis;
+/** The duration cell: the bar on the one axis and the figure after it, so every row's figure ends on one edge. */
+function spanCell(s) {
   const ms = spanOf(s), level = s.state === "needs" || gaveUpNeeds(s) ? "watch" : stalled(s) ? "bad" : "";
-  return `<span class="barcell age${level ? ` lv-${level}` : ""}"${s.state === "ended" ? "" : ` data-span="${esc(s.id)}"`}>`
-    + `${DRAW.vbar(ax.at(ms))}<b class="v">${spanWord(ms)}</b></span>`;
+  return `<span class="barcell age timed${level ? ` lv-${level}` : ""}"${s.state === "ended" ? "" : ` data-span="${esc(s.id)}"`}>`
+    + `${DRAW.vbar(AXIS.at(ms))}<b class="v">${spanWord(ms)}</b></span>`;
 }
 
 // What a waiting session asks, and answering it where it waits. A question's words and options come off its transcript
@@ -421,20 +444,23 @@ function askHtml(s, where = "card") {
   if (!state.reading) return `<div class="ask"><p class="why">${READING_OFF_ASK}${where === "pane" ? "" : ` · <a class="door" href="settings.html#data">Reading off${ICON.door}</a>`}</p></div>`;
   const a = s.ask, offer = going?.offer ?? state.screens[s.id], can = going ? true : drivable(s);
   const busy = going || ui.sending.has(s.id) ? " disabled" : "";
+  // a question splice cannot answer is answered in the terminal it runs in: said once, on the question itself
+  const term = can ? "" : `<p class="interm">${TOOL_GLYPH.term}In its terminal</p>`;
   const pick = (choice, label, i) => going?.choice === choice
     ? `<button class="act answering" disabled>${ICON.wait}${esc(label)}</button>`
     : `<button class="act${i ? "" : " primary"}" data-act="answer" data-s="${esc(s.id)}" data-i="${choice}"${busy}>${esc(label)}</button>`;
   if (a.asked) {
     const opts = a.asked.options || [];
-    // where splice cannot answer, the options are words: what he will choose from in its terminal (the act track says where)
+    // where splice cannot answer, the options are the numbered words he will choose from in its terminal, drawn as text and
+    // never as buttons that do nothing; where it is answered is said once, under them
     const answers = !opts.length ? "" : can && !a.asked.multi ? `<div class="answers">${opts.map((o, i) => pick(i + 1, o, i)).join("")}</div>`
-      : `<div class="answers words">${opts.map((o) => `<span class="scope">${esc(o)}</span>`).join("")}</div>`;
-    return `<div class="ask"><p class="q">${esc(a.asked.question)}</p>${answers}</div>`;
+      : `<ol class="opts">${opts.map((o, i) => `<li><b>${i + 1}</b>${esc(o)}</li>`).join("")}</ol>`;
+    return `<div class="ask"><p class="q">${esc(a.asked.question)}</p>${answers}${term}</div>`;
   }
   // what it wants to do, off its transcript, then the question its screen puts
   const call = a.call?.tool ? `<p class="cmd head"><span class="tname">${esc(DRAW.toolWord(a.call.tool))}</span></p>${cmdBox(`c:${s.id}`, unframe(a.call.text || ""))}` : "";
   const q = offer?.asked ? `<p class="q">${esc(unframe(offer.asked))}</p>` : "";
-  if (!offer?.choices?.length) return call ? `<div class="ask">${call}</div>` : "";
+  if (!offer?.choices?.length) return call ? `<div class="ask">${call}${term}</div>` : "";
   // in the open session the refusal is the Message field's Deny, which also carries what to do instead
   const deny = where === "pane" && composerHtml(s) ? denyOf(s) : null;
   const choices = offer.choices.filter((c) => c !== deny);
@@ -475,34 +501,77 @@ const lampName = (L) => L.name ?? String(L.word ?? "").replace(/<[^>]*>/g, "").s
 const lampHtml = (L) => `<span class="lamp ${L.cls}" role="img" aria-label="${esc(lampName(L))}" title="${esc(lampName(L))}">${L.lamp}</span>`;
 // a worktree whose folder is an id names nothing he would know it by: it reads as a worktree, its folder its title
 const wtWord = (wt) => (ID_PART.test(wt) ? "Worktree" : wt);
+/** WHAT A SESSION IS DOING, AS A GLYPH AND ITS TARGET (Marcos: "show, don't tell"), never a sentence cut at the row's edge: the
+ *  tool it last ran as the mark its own user would know it by, its word, and the file or command it was on, whole or not
+ *  at all. A sentence it last said stands only where it is short enough to stand whole; its words, whole, are on the row's
+ *  title and in the conversation one press away. */
+const TOOL_GLYPH = {
+  term: G('<path d="M4 6l6 6-6 6M12 18h8"/>'), file: G('<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>'), pen: G('<path d="M4 20l1-4L16 5l3 3L8 19z"/>'),
+  find: G('<circle cx="11" cy="11" r="6"/><path d="M16 16l4 4"/>'), agent: ICON.team, send: ICON.send,
+  web: G('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>'), other: G('<circle cx="12" cy="12" r="3"/>'),
+};
+const LAYERS = G('<path d="M12 4l9 5-9 5-9-5z"/><path d="M3 14l9 5 9-5"/>');
+const toolKind = (tool) => (/bash|shell|exec|terminal/i.test(tool) ? "term" : /^(?:read|view|notebookread)/i.test(tool) ? "file" : /^(?:edit|write|multiedit|notebookedit|apply)/i.test(tool) ? "pen"
+  : /grep|glob|search|find|^ls$/i.test(tool) ? "find" : /agent|task/i.test(tool) ? "agent" : /message|send/i.test(tool) ? "send" : /^web|fetch/i.test(tool) ? "web" : "other");
+const SAID_FIT = 28;
+/** The file a call was on by its own name, or the command or search whole where it is short; else nothing. */
+function targetOf(text) {
+  const line = String(text ?? "").split("\n")[0].trim();
+  if (/^(?:~|\.{0,2})?\/\S*$/.test(line) || /^[\w.-]+\/[\w./-]+$/.test(line)) return line.split("/").filter(Boolean).pop() ?? "";
+  return line.length <= SAID_FIT ? line : "";
+}
+/** What the row says it is doing is the mark and target of the call it last ran. A sentence it last said never stands in a
+ *  track every row of the page shares, since one short sentence set the width of all of them: it is the row's own hover and
+ *  the last words of the conversation one press away. */
+function saidOf(s) {
+  const last = lastOf(s);
+  if (s.state === "needs" || !last?.text) return { html: "", full: "" };
+  if (last.tool) {
+    const word = DRAW.toolWord(last.tool), target = targetOf(last.text);
+    return { full: `${word} ${last.text}`, html: `<span class="tdo"><span class="tg" aria-hidden="true">${TOOL_GLYPH[toolKind(last.tool)]}</span><span class="tname">${esc(word)}</span>${target ? `<span class="tgt">${hi(target)}</span>` : ""}</span>` };
+  }
+  return { full: last.text.replace(/`/g, "").replace(/\s+/g, " ").trim(), html: "" };
+}
+/** A way forward on the row itself: a signed-out session's sign-in or key, and a session at its limit's door to Accounts, on
+ *  its command, where the login that ran out is switched or waited for. */
+function doorHtml(s) {
+  const k = s.stall?.kind;
+  if (k === "signout" && s.stall.fix) return `<a class="act quiet small" href="${esc(s.stall.fix.href)}">${esc(s.stall.fix.word)}</a>`;
+  if (k === "limit" && s.head) return `<a class="act quiet small" href="accounts.html?head=${encodeURIComponent(s.head)}">Accounts${ICON.door}</a>`;
+  return "";
+}
+/** The name's own field, in the title line where the name stood: Enter keeps it, Escape or Cancel leaves it as it was, and an
+ *  empty one gives the session back the name its client registered. */
+const renameHtml = (s) => `<form class="rename" data-s="${esc(s.id)}" data-rename="1"><input class="field" id="nm" aria-label="Name this session" placeholder="${esc(title(s))}" maxlength="80" autocomplete="off" value="${esc(ui.drafts[`n:${s.id}`] ?? ownOf(s))}">`
+  + `<button class="act primary small" type="submit">Save</button><button class="act quiet small" type="button" data-act="rename-no" data-s="${esc(s.id)}">Cancel</button><span class="kept">Kept in this browser</span></form>`;
 /** THE ROW'S LINE, on the tracks every row of the page shares: who it is (the chevron that opens it in place, its name,
  *  its branch), its words (where it is when the block does not say, what the lamp cannot say, then what it last said
  *  or ran), how long it has been in that state as a bar on one scale, its command, and its act (Marcos, Oct 26: "the
  *  row style just does not look good"). The open session's title bar is this same line. */
 function lineHtml(s, L, inPlate) {
-  const ax = ui.ax ?? spanAxis(state.rows), last = lastOf(s);
   const stop = stopHtml(s, "act quiet small", ICON.stop, true);
-  const fix = !stop && s.stall?.kind === "signout" && s.stall.fix
-    ? `<a class="act quiet small" href="${esc(s.stall.fix.href)}">${esc(s.stall.fix.word)}</a>` : "";
-  // a question splice cannot answer is answered in its own terminal: said once, where the row's act stands
-  const elsewhere = s.state === "needs" && state.reading && !drivable(s) && !ui.answered.has(s.id) ? `<span class="answ">In its terminal</span>` : "";
-  const wt = s.wt ? `<span class="wt" title="${esc(s.wt)}">${ICON.branch}<span>${esc(wtWord(s.wt))}</span></span>` : "";
+  const door = stop ? "" : doorHtml(s);
+  // the worktree is a mark, never a cut name: its folder is on the mark's hover and among the open session's facts
+  const wt = s.wt ? `<span class="wt" role="img" aria-label="${esc(`Worktree ${s.wt}`)}" title="${esc(`Worktree ${s.wt}`)}">${ICON.branch}</span>` : "";
   const more = (ui.earlier.get(s.id) || []).length;
-  const also = more ? `<span class="also" title="${esc(`${more} ended ${more === 1 ? "session" : "sessions"} with this name`)}">+${DRAW.n(more)}</span>` : "";
-  // ONE LINE OF WORDS in one face and one line box, a tool line and a sentence alike: the tool is named in the words its
-  // own user would say (kit DRAW.toolWord) and never louder than the words after it
+  const said = `${more} ended ${more === 1 ? "session" : "sessions"} with this name`;
+  const also = more ? `<span class="also" role="img" aria-label="${esc(said)}" title="${esc(said)}">${LAYERS}${DRAW.n(more)}</span>` : "";
   const place = inPlate ? "" : whereHtml(s, false);
   const word = stateCell(s, L, inPlate);
-  const text = s.state === "needs" || !last?.text ? "" : hi(last.tool ? last.text : last.text.replace(/`/g, ""));
-  const tool = text && last.tool ? `<span class="tname">${esc(DRAW.toolWord(last.tool))}</span>` : "";
-  const bare = !place && !word && !text;
-  const said = `<p class="last${place && !word && !text ? " only" : ""}">${place ? `<span class="place">${place}</span>` : ""}${word}${tool}${text}</p>`;
+  const did = saidOf(s);
+  const bare = !place && !word && !did.html;
+  const doing = `<p class="last${place && !word && !did.html ? " only" : ""}">${place ? `<span class="place">${place}</span>` : ""}${word}${did.html}</p>`;
   const tag = inPlate ? "header" : "div";
+  const name = inPlate && ui.renaming === s.id ? renameHtml(s)
+    : `<button class="name" data-open="${esc(s.id)}" aria-expanded="${inPlate}" title="${esc(title(s))}">${DRAW.chev}${hi(title(s))}</button>`;
+  // NAME IT STANDS BESIDE A LIVE SESSION NOBODY NAMED, where the name is missing (the Accounts card's own place for it):
+  // its press opens the session with the name's field in the title line
+  const nameIt = !inPlate && s.state !== "ended" && !ownOf(s) ? DRAW.nameIt({ data: ` data-s="${esc(s.id)}"` }) : "";
   // a row with no words gives their track to its name, so no name is cut beside an empty track
-  return `<${tag} class="top${bare ? " bare" : ""}"><span class="who"><button class="name" data-open="${esc(s.id)}" aria-expanded="${inPlate}" title="${esc(title(s))}">${DRAW.chev}${hi(title(s))}</button>${also}${wt}</span>`
+  return `<${tag} class="top${bare ? " bare" : ""}"${did.full ? ` title="${esc(did.full)}"` : ""}><span class="who">${name}${also}${wt}${nameIt}</span>`
     // the command keeps its name, its live dot and its provider's colour as one 1 px edge (.chip.edge), so down a block
     // the commands read as a quiet column under the names and the words
-    + `${said}${spanCell(s, ax)}<span class="cmd">${cmdCell(s, "edge", !inPlate)}</span><span class="doing">${stop}${fix}${elsewhere}</span></${tag}>`;
+    + `${doing}${spanCell(s)}<span class="cmd">${cmdCell(s, "edge", !inPlate)}</span><span class="doing">${stop}${door}</span></${tag}>`;
 }
 /** A SESSION IN THE LIST: its line, and a session that needs him opens under its line to what it asks and the answers it
  *  takes, so nothing waiting on him is a click away. */
@@ -522,9 +591,9 @@ function cardHtml(s) {
 const stranded = (s) => s.state === "ended" && ui.failed.get(s.id)?.unmoved === true && !ui.failed.get(s.id).back;
 // a move that failed here is this page's own fact, so it lifts the card only here; the rest is the kit's rank
 const RANK = (s) => (stranded(s) ? 0 : rankOf(s));
-// a project's name matches every session in it, so typing "temple" keeps that whole group rather than the one card
+// a project's name matches every session in it, so typing a project's name keeps that whole group rather than the one card
 // whose folder happens to be spelled that way (Marlin); the open session stays on the page whatever he types
-const matches = (s) => !ui.q || s.id === ui.open || [s.name, s.first, s.repo, s.cmd, s.row.repo?.root, s.row.cwd, s.project?.label, s.project?.name]
+const matches = (s) => !ui.q || s.id === ui.open || [ui.names.get(s.id), s.name, s.first, s.repo, s.cmd, s.row.repo?.root, s.row.cwd, s.project?.label, s.project?.name]
   .some((v) => v && v.toLowerCase().includes(ui.q));
 function sorted() { // what waits on him: the longest waiting first; the rest: the latest first
   const list = state.rows.filter((s) => (s.state !== "ended" || stranded(s)) && matches(s) && inPick(s))
@@ -542,7 +611,7 @@ function sorted() { // what waits on him: the longest waiting first; the rest: t
  *  running agents are two rows. */
 function foldNamesakes(live, ended) {
   ui.earlier = new Map();
-  const keyOf = (s) => (s.name || s.first ? `${groupKey(s)}\u0000${s.name || s.first}` : null);
+  const keyOf = (s) => { const own = ownOf(s) || readable(s.first); return own ? `${groupKey(s)}\u0000${own}` : null; };
   const firsts = new Map();
   for (const s of live) { const k = keyOf(s); if (k && !firsts.has(k)) firsts.set(k, s); }
   const kept = [];
@@ -558,7 +627,7 @@ function foldNamesakes(live, ended) {
  *  is folded under, since its plate is drawn there. */
 const holdsOpen = (s) => s.id === ui.open || (ui.earlier.get(s.id) || []).some((x) => x.id === ui.open);
 // ---------- by project (Marcos, Oct 11: "If we don't separate sessions per project, it'll be really hard to
-// navigate"): the grouping serves finding "the temple-code one", and must never cost seeing who is stuck on him ----
+// navigate"): the grouping serves finding the one for a project, and must never cost seeing who is stuck on him ----
 // The project is the daemon's answer on the row (ProjectWire), the same one Teams and Requests read; this page never
 // resolves a path itself. A session in no project is "No project", which is a group like any other but always last.
 const NO_PROJECT = "-";
@@ -655,9 +724,9 @@ function rowPieces(key, g, ended) {
   const room = Math.max(0, HANDFUL - up.length), hidden = idle.length - room;
   const folds = hidden > 0, open = !folds || ui.idle.has(key) || Boolean(ui.q);
   const idleRows = open ? pagePieces(`i:${key}`, idle) : [...idle.slice(0, room), ...idle.slice(room).filter(holdsOpen)].map(rowPiece);
-  const idleFold = folds ? DRAW.disc({ open, act: "idle", data: ` data-p="${esc(key)}"`, cls: "pidle", inner: `<span><b>${DRAW.n(hidden)}</b> idle</span>` }) : "";
+  const idleFold = folds ? DRAW.disc({ open, act: "idle", data: ` data-p="${esc(key)}"`, cls: "pidle door", inner: `<span><b>${DRAW.n(hidden)}</b> idle</span>` }) : "";
   const restOpen = ended.length && (ui.rest.has(key) || Boolean(ui.q) || ended.some(holdsOpen));
-  const rest = ended.length ? DRAW.disc({ open: restOpen, act: "rest", data: ` data-p="${esc(key)}"`, cls: "prest", inner: `<span><b>${DRAW.n(ended.length)}</b> ended</span>` }) : "";
+  const rest = ended.length ? DRAW.disc({ open: restOpen, act: "rest", data: ` data-p="${esc(key)}"`, cls: "prest door", inner: `<span><b>${DRAW.n(ended.length)}</b> ended</span>` }) : "";
   const foot = idleFold || rest ? [{ html: `<div class="pfoot">${idleFold}${rest}</div>`, w: 1, foot: true }] : [];
   const rested = restOpen ? pagePieces(`r:${key}`, ended) : [];
   return [...up.map(rowPiece), ...idleRows, ...foot, ...(rested.length ? [{ html: REST_OPEN, w: 0, wrap: 1 }, ...rested, { html: REST_SHUT, w: 0, wrap: -1 }] : [])];
@@ -673,12 +742,13 @@ function groupBlock([key, g], ended, { loose = false } = {}) {
   // words repeated on every block
   const go = key === NO_PROJECT || ui.by !== "project" ? ""
     : `<a class="pgo" href="requests.html?project=${encodeURIComponent(key)}" aria-label="${esc(`${name} on Requests`)}" title="${esc(`${name} on Requests`)}">${ICON.door}</a>`;
-  const tot = `<span class="ptot"><b class="ptotal" data-f="t:${esc(key)}">${DRAW.n(total)}</b><span class="punit">${total === 1 ? "session" : "sessions"}</span></span>`;
+  // its live sessions out of all of them: the count says which, once, in the head line's legend
+  const tot = `<span class="ptot">${loose ? "" : `<b class="plive" data-f="l:${esc(key)}">${DRAW.n(liveOf(g))}</b><i class="sl" aria-hidden="true">/</i>`}<b class="ptotal" data-f="t:${esc(key)}">${DRAW.n(total)}</b></span>`;
   const pieces = shut ? g.filter((s) => RANK(s) === 0 || holdsOpen(s)).map(rowPiece) : loose ? pagePieces(`l:${key}`, ended, HANDFUL) : rowPieces(key, g, ended);
   const why = key === NO_PROJECT && ui.by === "project" ? noProjectWhy([...g, ...ended]) : "";
   const open = pieces.some((p) => p.plate);
   const section = (body, wide = 0) => `<section class="pgroup${shut ? " shut" : ""}${loose ? " loose" : ""}${wide ? " opened" : ""}"${wide ? ` data-cols="${wide}"` : ""} data-key="g:${esc(key)}${loose ? ":l" : ""}" aria-label="${esc(`${name}, ${countWords(counts, total, "session")}`)}">`
-    + `<header class="phead"><button class="pfold" data-act="fold" data-p="${esc(key)}" aria-expanded="${!shut}">${ICON.caret}<span class="pname">${esc(name)}</span></button>`
+    + `<header class="phead"><button class="pfold" data-act="${loose ? "loose" : "fold"}" data-p="${esc(key)}" aria-expanded="${!shut}">${ICON.caret}<span class="pname">${esc(name)}</span></button>`
     + `${loose ? "" : `<span class="pcounts">${counts.map((c) => bigCount(c, key)).join("")}</span>${mixHtml(g, ui.maxLive)}`}${tot}${go}</header>${why}${body}</section>`;
   return {
     key: `${key}${loose ? ":l" : ""}`, open, html: section(pieces.map(pieceHtml).join("")),
@@ -736,13 +806,14 @@ function noProjectWhy(rows) {
   for (const s of rows) {
     const r = s.row.repo?.reason;
     if (!r) continue;
-    const word = reasonWord(r), place = shortPlace(s.row.place || s.repo || "");
-    if (!why.has(word)) why.set(word, new Set());
-    if (place) why.get(word).add(place);
+    const whole = s.row.place || s.repo || "", word = reasonWord(r), place = shortPlace(whole);
+    if (!why.has(word)) why.set(word, new Map());
+    if (place && !why.get(word).has(place)) why.get(word).set(place, whole);
   }
+  // each folder is a chip with its own name, its path on its hover; the rest behind a count
   return [...why].map(([word, places]) => {
     const all = [...places], said = all.slice(0, FOLDERS_SAID), more = all.length - said.length;
-    return `<p class="note why"><span class="rw">${esc(word)}</span><span class="rf">${said.map((p) => `<span>${esc(p)}</span>`).join("")}${more > 0 ? `<b>+${DRAW.n(more)}</b>` : ""}</span></p>`;
+    return `<p class="note why"><span class="rw">${esc(word)}</span><span class="rf">${said.map(([p, whole]) => `<span title="${esc(whole)}">${esc(p)}</span>`).join("")}${more > 0 ? `<b>+${DRAW.n(more)}</b>` : ""}</span></p>`;
   }).join("");
 }
 /** Every project in the groups' order, and the ones with someone waiting: what the picker lists and the doors are. */
@@ -758,12 +829,16 @@ function pickOptions() {
 function projTotal(key, liveInIt) {
   return liveInIt.length + state.rows.filter((s) => s.state === "ended" && !stranded(s) && groupKey(s) === key).length;
 }
-/** What every row's bar measures, said once for the page, its sample bar drawn from the shortest to the longest time
- *  the list holds, so the scale's two ends are read off the legend rather than guessed. */
-function axisLegend() {
-  const ax = ui.ax;
-  const ends = ax ? `<small>${spanWord(ax.lo)}</small><i aria-hidden="true"></i><small>${spanWord(ax.hi)}</small>` : `<i aria-hidden="true"></i>`;
-  return `<span class="axleg"><span>Time in state</span>${ends}</span>`;
+/** WHAT EVERY ROW'S BAR MEASURES, DRAWN ONCE FOR THE PAGE: the axis itself, from one second on, with the same ticks that stand
+ *  under every bar, so a length is read against them and nothing is said in words but its name. */
+const axisLegend = () => DRAW.timeLegend("Time in state");
+/** THE LAMPS AND THE COUNT, SAID ONCE FOR THE PAGE: a lamp on a tile or a block's header carries only its count, and the lamp is
+ *  the word; the count beside a block's name is its live sessions out of all of them, the ended ones too. */
+const LAMP_WORDS = [["needs", "Needs you"], ["stalled", "Stalled"], ["working", "Working"]];
+function lampLegend(live) {
+  const lamps = LAMP_WORDS.filter((_, i) => live.some((s) => RANK(s) === i)).map(([k, word]) => ({ mark: DRAW.lamp(k), word }));
+  const count = grouped() ? [{ mark: `<span class="lgn"><b>live</b><i>/</i><span>all</span></span>`, word: "" }] : [];
+  return DRAW.legend([...lamps, ...count]);
 }
 function listHead() {
   const live = state.rows.filter((s) => s.state !== "ended" || stranded(s));
@@ -771,8 +846,10 @@ function listHead() {
   // one project and nothing outside it: no picker and no headers, its name where the picker would be (Marlin)
   const by = live.length >= 2 ? byHtml() : ""; // the grouping switch, once there are two sessions to group
   const found = ui.q ? `<span class="found"><b>${DRAW.n(ui.shownCount ?? 0)}</b> ${ui.shownCount === 1 ? "match" : "matches"}</span>` : "";
-  // what the rows' bars measure, what a query found, and the grouping switch at the line's right end
-  const ctl = `<div class="lctl">${quietLegend()}${axisLegend()}${found}${by}</div>`;
+  // grouped by something nothing has (no team in any session), the list stays one block: the switch says so beside itself
+  const empty = !grouped() && ui.by !== "project" ? DRAW.nothing(ui.by === "team" ? "No teams" : "One command", { slot: true }) : "";
+  // the legends at the line's left, what a query found and the grouping switch at its right end
+  const ctl = `<div class="lctl"><div class="lleg">${lampLegend(live)}${quietLegend()}${axisLegend()}</div><div class="lact">${found}${empty}${by}</div></div>`;
   if (!grouped()) {
     const solo = live[0].project && ui.by === "project" ? `<span class="pname solo">${esc(projName(live[0]))}</span>` : "";
     return `<div class="lhead">${solo}${ctl}</div>`;
@@ -786,7 +863,7 @@ function listHead() {
 /** THE TILES, in the groups' order after Every project (the kit's picker at a wide page, drawn here with the live
  *  sessions leading). Each tile leads with its live sessions as its figure over one bar of their states, on the scale of
  *  every live session, so the tiles compare by eye; the total with its ended sessions is the quiet figure after it, the
- *  number its block's header says. The lamps with their words name the states that are waiting or moving. */
+ *  number its block's header says. The lamps carry their counts alone: the head line's legend names them once. */
 function sessionTiles() {
   const live = state.rows.filter((s) => s.state !== "ended" || stranded(s));
   const all = state.rows.length;
@@ -795,9 +872,9 @@ function sessionTiles() {
     const words = `${n} live, ${countWords(counts, total, "session")}`;
     return `<button class="ptile${on ? " on" : ""}" data-key="t:${esc(k)}" data-act="pickproj" data-p="${esc(k)}" aria-pressed="${on}" aria-label="${esc(`${label}, ${words}`)}" title="${esc(label)}">`
       + `<span class="ptop"><span class="tname">${esc(label)}</span></span>`
-      + `<span class="plead"><b class="plive" data-f="l:${esc(k)}">${DRAW.n(n)}</b><span class="pw">live</span><span class="pof">of <b class="ptotal" data-f="tt:${esc(k)}">${DRAW.n(total)}</b>${k === "" ? ` <span class="punit">${total === 1 ? "session" : "sessions"}</span>` : ""}</span></span>`
+      + `<span class="plead"><b class="plive" data-f="l:${esc(k)}">${DRAW.n(n)}</b><i class="sl" aria-hidden="true">/</i><b class="ptotal" data-f="tt:${esc(k)}">${DRAW.n(total)}</b></span>`
       + mixHtml(g, live.length)
-      + `<span class="plamps">${counts.map((c) => tlampHtml(c, true)).join("")}</span></button>`;
+      + `<span class="plamps">${counts.map((c) => tlampHtml(c)).join("")}</span></button>`;
   };
   GHOST.remember("tiles", groupsOf(live).length + 1);
   return `<nav class="ptiles" aria-label="Projects"><div class="ptgrid">${tile("", "Every project", live, all)}${groupsOf(live).map(([k, g]) => tile(k, projName(g[0]), g, projTotal(k, g))).join("")}</div></nav>`;
@@ -805,9 +882,9 @@ function sessionTiles() {
 // WHAT IS NOT IN THE LIST, WITHIN REACH AND NOT UNDER EVERY LIST (gap: a standing method footnote under 2,536 px of
 // rows, in the CLI's flag). Headless runs never register, so the fact lives behind one disclosure on the list's foot
 // line, and beside No sessions, where it answers why the list is empty (§4 Resolved).
-const HEADLESS_WHY = "Headless runs never register";
+const HEADLESS_WHY = "Runs started from a script never appear here";
 const headlessHtml = () => `<div class="foothead">`
-  + DRAW.disc({ open: ui.headless, inner: `<span>Not listed</span>`, act: "headless", cls: "quiet" })
+  + DRAW.disc({ open: ui.headless, inner: `<span>Not listed</span>`, act: "headless", cls: "quiet door" })
   + (ui.headless ? `<p class="note unfold">${esc(HEADLESS_WHY)}</p>` : "") + `</div>`;
 /** A read that did not answer: the rows he has stay, dimmed, under one line that says so, when it last read, and the
  *  act that asks again (gap: the whole list was replaced by one word in a dashed box). */
@@ -816,23 +893,25 @@ function failStripHtml() {
   return `<div class="readfail"><span class="state limit">${esc(state.error)}</span>${at}`
     + `<button class="act small" data-act="retry">Try again</button></div>`;
 }
-// WHILE THE FIRST READ IS OUT the list draws its own blocks hollow, in the columns they will land in: a block's header,
-// then rows on the row's own tracks (the name, the words, the duration's track, the command chip, the act's empty
-// place), striped and fading down the page, so the sessions land where the eye already is (splice-lead, gap 384b).
-const GHOST_CARDS = [[12, 5, 22], [9, 6, 18], [14, 5, 26], [10, 6, 20], [11, 5, 16]];
+// WHILE THE FIRST READ IS OUT the list draws its own blocks hollow, in the columns they will land in: the tiles, the legend line,
+// then blocks of rows on the row's own tracks (the name, the words, the bar's track and its figure, the command chip, the act's
+// empty place), striped and fading down the page, so the sessions land where the eye already is. Their number is what this
+// page last drew (GHOST.count), so the first frame stands as tall as the list that lands and nothing below it moves; a
+// first visit, with nothing drawn yet, draws a plain full page of them.
+const GHOST_CARDS = [[12, 5, 14], [9, 6, 10], [14, 5, 18], [10, 6, 12], [11, 5, 8]];
 const ghostRow = ([name, chip, last], i) => `<article class="card s ghosted" style="--i:${i}" aria-hidden="true">`
   + `<span class="lamp"></span><div class="top"><span class="who">${GHOST.bar(name, "nm")}</span>`
-  + `<span class="last">${GHOST.bar(last)}</span><span class="barcell age">${GHOST.track()}</span>`
+  + `<span class="last">${GHOST.bar(last)}</span>${GHOST.cell().replace("barcell", "barcell age")}`
   + `<span class="cmd">${GHOST.bar(chip, "chip")}</span><span class="doing"></span></div></article>`;
-// The blocks and the tiles it draws are the count and size the page last drew (GHOST.count), so the first frame stands as
-// tall as the list that lands; a first visit, with nothing drawn yet, shows one block a column and no tiles.
+const GHOST_BLOCKS = 6, GHOST_ROWS = 4, GHOST_TILES = 7;
 function ghostListHtml() {
-  const n = ui.cols, blocks = Math.max(1, GHOST.count("blocks", n)), rows = Math.max(1, GHOST.count("rows", 3));
-  const block = (j) => `<section class="pgroup ghosted" aria-hidden="true"><header class="phead">${GHOST.bar(9 + (j % 3) * 2, "nm")}</header>`
-    + Array.from({ length: rows }, (_, i) => GHOST_CARDS[i % GHOST_CARDS.length]).map(ghostRow).join("") + `</section>`;
-  const tiles = tilesWide() ? GHOST.tiles() : "";
-  return `<div class="list ghosts" aria-busy="true" aria-label="Reading sessions">${tiles ? `<div class="lhead wide">${tiles}</div>` : ""}`
-    + `<div class="board sboard">${Array.from({ length: n }, (_, c) => `<div class="col">${Array.from({ length: blocks }, (_, j) => j).filter((j) => j % n === c).map(block).join("")}</div>`).join("")}</div></div>`;
+  const blocks = Math.max(1, GHOST.count("blocks", GHOST_BLOCKS)), rows = Math.max(1, GHOST.count("rows", GHOST_ROWS));
+  const block = (j) => ({ key: `g${j}`, html: `<section class="pgroup ghosted" aria-hidden="true"><header class="phead">${GHOST.bar(9 + (j % 3) * 2, "nm")}${GHOST.bar(6)}</header>`
+    + Array.from({ length: rows }, (_, i) => GHOST_CARDS[(i + j) % GHOST_CARDS.length]).map(ghostRow).join("") + `</section>` });
+  const tiles = GHOST.tiles(GHOST.count("tiles", GHOST_TILES));
+  const legend = `<div class="lctl" aria-hidden="true"><div class="lleg">${GHOST.bar(9)}${GHOST.bar(12)}</div><div class="lact">${GHOST.bar(14)}</div></div>`;
+  const head = tilesWide() ? `<div class="lhead wide">${tiles}${legend}</div>` : `<div class="lhead">${tiles ? "" : GHOST.chip(13)}${legend}</div>`;
+  return `<div class="list ghosts" aria-busy="true" aria-label="Reading sessions">${head}${boardHtml(Array.from({ length: blocks }, (_, j) => block(j)), "ghosts")}</div>`;
 }
 /** THE BLOCKS ON THE KIT'S BALANCED BOARD (DRAW.masonry): each block goes where the board is shortest at that point,
  *  measured on what is drawn, so no column stands as a tall wall beside empty ones and the groups' order runs across the
@@ -860,8 +939,10 @@ function boardHtml(blocks, cls = "") {
 function flatBoard(key, live, ended) {
   const pieces = rowPieces(key, live, ended);
   if (ui.cols >= 2 && pieces.some((p) => p.plate)) return `<div class="board sboard opened"><div class="rows">${spreadHtml(pieces, ui.cols)}</div></div>`;
+  // the board's whole width is used: a column takes about three rows, so a list of ten rows stands in three columns and
+  // not in one beside two thirds of an empty screen
   const weight = pieces.reduce((a, p) => a + p.w, 0);
-  const n = Math.max(1, Math.min(ui.cols, Math.floor(weight / HANDFUL) || 1));
+  const n = Math.max(1, Math.min(ui.cols, Math.ceil(weight / 3.4)));
   // the rested rows stay with their wrapper: a column never starts inside it
   const cols = Array.from({ length: n }, () => []), per = weight / n;
   let c = 0, w = 0, inRest = false;
@@ -879,16 +960,17 @@ function listHtml() {
   const missing = ui.missing ? missingHtml(ui.missing) : "";
   const list = sorted(); ui.order = list.map((s) => s.id);
   const ended = foldNamesakes(list, state.rows.filter((s) => s.state === "ended" && !stranded(s) && matches(s) && inPick(s)).sort((a, b) => b.at - a.at));
-  // every row's bar on one scale, and every block's live sessions on one scale: both read across the whole page
-  ui.ax = spanAxis([...list, ...ended]);
   ui.shownCount = list.length + ended.length;
   const fail = state.error ? failStripHtml() : "";
   const head = listHead();
   if (!list.length && !ended.length) {
     // a picked project with nothing in it says so plainly, and its doors stay in the head (fin)
-    const box = ui.q ? `<div class="nomatch"><span class="state">No match</span><span class="why">${hi(ui.q)}</span><button class="act quiet" data-act="clear">Clear</button></div>`
-      : `<div class="nomatch"><span class="state">No sessions</span><span class="why">${esc(HEADLESS_WHY)}</span></div>`;
-    return `<div class="list">${fail}${missing}${head}${box}</div>`;
+    // the empty list is the row that would stand in it, drawn dashed, with the one fact it has; why a run may be missing from
+    // it is the Not listed line under it
+    const slot = `<span class="nrow" aria-hidden="true"><i class="nl"></i><i class="nb"></i><i class="nb s"></i></span>`;
+    const box = ui.q ? `<div class="nomatch">${slot}<span class="state">No match</span><span class="why">${hi(ui.q)}</span><button class="act quiet" data-act="clear">Clear</button></div>`
+      : `<div class="nomatch">${slot}<span class="state">No sessions</span></div>`;
+    return `<div class="list">${fail}${missing}${head}${box}${headlessHtml()}</div>`;
   }
   const dim = state.error ? " dim" : ""; // the rows he has, held while splice is not answering
   let board, loose = ended;
@@ -907,17 +989,31 @@ function listHtml() {
   }
   return `<div class="list${dim}">${fail}${missing}${head}${board}${looseHtml(loose)}${headlessHtml()}</div>`;
 }
-/** THE ENDED SESSIONS OF PROJECTS WITH NOTHING LIVE, at the list's foot behind one line, closed until he opens it, and
- *  open as each project's own block, newest first, so a row's project is always on screen. */
+/** THE PROJECTS WITH NOTHING LIVE ARE TILES AT THE LIST'S FOOT, each with its ended sessions counted and drawn as a share of the
+ *  most, and each opens on its own where it stands, as its project's block, newest first, so a row's project is always on
+ *  screen: one press shows one project's sessions, never all of them at once (the one line that opened 18 projects grew the
+ *  page by 3,500 px). A search opens every one it matched, because no fold may hide a match. Flat, with no groups to tile,
+ *  they stay one line that opens them. */
 function looseHtml(loose) {
   if (!loose.length) return "";
+  if (!ui.grouped) {
+    const fold = DRAW.disc({ open: ui.ended, act: "ended", cls: "lfold door", inner: `<span><b>${DRAW.n(loose.length)}</b> ended</span>` });
+    return `<div class="lfoot">${fold}</div>${ui.ended ? `<div class="board sboard loose unfold"><div class="col"><div class="rows">${pagePieces("loose", loose).map((p) => p.html).join("")}</div></div></div>` : ""}`;
+  }
   const m = new Map();
   for (const s of loose) { const k = groupKey(s); if (!m.has(k)) m.set(k, []); m.get(k).push(s); }
-  const where = ui.grouped ? (m.size === 1 ? ` in ${esc(groupName(loose[0]))}` : ` in <b>${DRAW.n(m.size)}</b> more ${ui.by === "head" ? "commands" : ui.by === "team" ? "teams" : "projects"}`) : "";
-  const fold = DRAW.disc({ open: ui.ended, act: "ended", cls: "lfold", inner: `<span><b>${DRAW.n(loose.length)}</b> ended${where}</span>` });
-  if (!ui.ended) return `<div class="lfoot">${fold}</div>`;
-  const blocks = [...m].sort(([, a], [, b]) => b[0].at - a[0].at).map(([k, rows]) => groupBlock([k, []], rows, { loose: true }));
-  return `<div class="lfoot">${fold}</div>${ui.grouped ? boardHtml(blocks, "loose unfold") : `<div class="board sboard loose unfold"><div class="col"><div class="rows">${pagePieces("loose", loose).map((p) => p.html).join("")}</div></div></div>`}`;
+  const groups = [...m].sort(([, a], [, b]) => b[0].at - a[0].at);
+  const count = (rows) => rows.length + rows.reduce((a, s) => a + (ui.earlier.get(s.id)?.length ?? 0), 0);
+  const most = Math.max(...groups.map(([, rows]) => count(rows)));
+  const shown = (k) => ui.ended || ui.looseOpen.has(k);
+  const tiles = groups.map(([k, rows]) => {
+    const n = count(rows), name = groupName(rows[0]), on = shown(k), share = ((n / most) * 100).toFixed(1);
+    return `<button class="ptile ltile${on ? " on" : ""}" data-act="loose" data-p="${esc(k)}" aria-expanded="${on}" aria-label="${esc(`${name}, ${DRAW.n(n)} ended`)}"${DRAW.flip(`lt:${k}`)}>`
+      + `<span class="ptop"><span class="tname">${esc(name)}</span><span class="pfigs"><span class="ptotal" data-f="lt:${esc(k)}">${DRAW.n(n)}</span></span></span>`
+      + `<span class="pshare" aria-hidden="true"><i data-tw="" data-w="${share}" style="width:${share}%"></i></span></button>`;
+  });
+  const blocks = groups.filter(([k]) => shown(k)).map(([k, rows]) => groupBlock([k, []], rows, { loose: true }));
+  return `<div class="lfoot loose">${DRAW.kicker("Ended")}<nav class="ptiles ltiles" aria-label="Projects with nothing running"><div class="ptgrid">${tiles.join("")}</div></nav></div>${boardHtml(blocks, "loose unfold")}`;
 }
 
 // ---------- the open session ----------
@@ -970,7 +1066,7 @@ const senderColor = (name, s) => color(state.rows.find((x) => x.name && x.name =
 /** A teammate's name is a door to its own conversation, when this page holds it (gap: the name was plain text). */
 function fromHtml(name, s) {
   const peer = name && state.rows.find((x) => x.name && x.name === name);
-  const inner = `<i aria-hidden="true"></i>${esc(name || "A teammate")}`;
+  const inner = `<i aria-hidden="true"></i>${esc(registered(name) || "A teammate")}`;
   return peer ? `<a class="from" href="#${encodeURIComponent(peer.id)}" data-open="${esc(peer.id)}">${inner}</a>` : `<p class="from">${inner}</p>`;
 }
 // ---------- the agent's own text, as it wrote it ----------
@@ -980,7 +1076,9 @@ function fromHtml(name, s) {
 // A LONG MESSAGE FOLDS AFTER ITS FIRST LINES (one page, one scroll): a summary or a report a screen long stood between him
 // and everything after it. Its first lines stand, and the rest is one press away, in place.
 const CLAMP_LINES = 28, CLAMP_SHOWN = 14, CLAMP_CHARS = 3600;
-function bodyHtml(s, m, text = m.text) {
+/** The tag a dispatch puts before its words, with its id inside ("[eli-dispatch 1f2e3d4c]"), is a machine's note, not his words. */
+const untagged = (text) => String(text ?? "").replace(/^\s*\[[^\]]*[0-9a-f]{6,}[^\]]*\]\s*/i, "");
+function bodyHtml(s, m, text = m.role === "assistant" ? m.text : untagged(m.text)) {
   const key = `m:${s.id}:${m.index}`, lines = String(text).split("\n");
   const tall = lines.length > CLAMP_LINES, wide = !tall && text.length > CLAMP_CHARS;
   if (!tall && !wide) return DRAW.md(text);
@@ -1146,13 +1244,14 @@ function logHtml(s) {
   const newest = held.at ? `<button class="act quiet small earlier" data-act="newest" data-s="${esc(s.id)}">Show newest</button>` : "";
   return `<div class="log">${head.length ? `<div class="loghead">${head.join("")}</div>` : ""}${body.join("")}${newest}</div>`;
 }
-/** A RUN OF CALLS IS ONE QUIET TRAIL (Marcos, Oct 26: "the tool call ui is very busy"): one line per call on one grid,
- *  the tool word's track as wide as the calls it shows, and a run of more than four shows its newest three under one
- *  count line that opens the rest in place. It stays open while a call it hides is opened or has its result open. */
-const TRAIL_SHOWN = 3;
+/** A RUN OF CALLS IS ONE QUIET LINE (Marcos, Oct 26: "the tool call ui is very busy"): a run of one or two calls shows them,
+ *  one line each on one grid; a longer run is one line, its count with the tools it used as marks and counts, and under it
+ *  the newest call, which is what the session is doing now. One press opens the rest in place, and it stays open while a call
+ *  it hides is opened or has its result open. */
+const TRAIL_FLAT = 2;
 function trailHtml(s, calls, results, out, working) {
   const keyOf = (m) => `${s.id}:${m.index}`;
-  const hidden = calls.length > TRAIL_SHOWN + 1 ? calls.slice(0, -TRAIL_SHOWN) : [];
+  const hidden = calls.length > TRAIL_FLAT ? calls.slice(0, -1) : [];
   const open = hidden.some((m) => ui.trails.has(keyOf(m)) || ui.results.has(keyOf(m)));
   const shown = open ? calls : calls.slice(hidden.length);
   // the tool word's track is as wide as the run's usual words: one long word among short ones (Send message among Bash
@@ -1161,15 +1260,16 @@ function trailHtml(s, calls, results, out, working) {
   const typical = sorted[Math.floor((sorted.length - 1) / 2)] ?? 4, fits = (n) => n <= Math.max(typical + 2, typical * 1.5);
   const tw = Math.min(14, Math.max(4, ...lens.filter(fits)));
   const count = !hidden.length ? "" : DRAW.disc({ open, cls: "tmore", act: "trail", data: ` data-ks="${esc(hidden.map(keyOf).join(" "))}"`,
-    inner: `<span><b>${DRAW.n(hidden.length)}</b> earlier calls${open ? "" : `<span class="tally">${esc(tally(hidden))}</span>`}</span>` });
+    inner: `<span><b>${DRAW.n(hidden.length)}</b> earlier calls${open ? "" : tally(hidden)}</span>` });
   return `<div class="trail" style="--tw:${tw}">${count}${shown.map((m) => callHtml(s, m, results, out, working, !fits(DRAW.toolWord(m.tool).length))).join("")}</div>`;
 }
-/** What a folded run held, by tool, the commonest first, every tool it used so the parts add up to the count:
- *  "Bash 7 · Read 4 · Edit 2". */
+/** What a folded run held, by tool, the commonest first, every tool it used so the parts add up to the count: each tool's
+ *  mark, its word and its number. */
 function tally(calls) {
   const by = new Map();
-  for (const m of calls) { const w = DRAW.toolWord(m.tool); by.set(w, (by.get(w) || 0) + 1); }
-  return [...by].sort((a, b) => b[1] - a[1]).map(([w, n]) => `${w} ${DRAW.n(n)}`).join(" · ");
+  for (const m of calls) { const w = DRAW.toolWord(m.tool), at = by.get(w) ?? { n: 0, kind: toolKind(m.tool) }; at.n += 1; by.set(w, at); }
+  return `<span class="tally">${[...by].sort((a, b) => b[1].n - a[1].n)
+    .map(([w, at]) => `<span class="tk"><span class="tg" aria-hidden="true">${TOOL_GLYPH[at.kind]}</span>${esc(w)} <b>${DRAW.n(at.n)}</b></span>`).join("")}</span>`;
 }
 /** ONE CALL, ONE LINE: the mark, the tool in plain words, what it did, and No output at the line's end when it printed
  *  nothing (Marlin p164), never on a second line. Opened: its whole input when the line showed something else, then its
@@ -1218,16 +1318,13 @@ function jointHtml(mv) {
  *  the whole session; then whatever must be seen or answered (an armed act, a refusal, what it asks), the details,
  *  which fold away so the conversation comes up under the acts (Marcos, Oct 26: "we should be able to collapse the top
  *  component"), the conversation, and the Message field. */
-const BRIEF_ITEMS = 6;
 function plateHtml(s) {
   const L = movingLook(s) || look(s);
   const failed = ui.failed.get(s.id);
   const ask = s.state === "needs" ? askHtml(s, "pane") : "";
-  // the details and the conversation share one body: stacked in a narrow plate, side by side in a wide one (sessions.css),
-  // unless the conversation is too short to stand beside them
-  const held = state.logs[s.id];
-  const brief = held != null && (held.off || !held.messages || held.messages.filter((m) => m.text && m.role !== "tool" && !m.tool).length < BRIEF_ITEMS);
-  return `<section class="pane s ${L.cls}${ui.unfold === s.id ? " unfold" : ""}${ui.topShut ? " topshut" : ""}${brief ? " brief" : ""}" style="--c:${color(s)}" data-key="p:${esc(s.id)}" aria-label="${esc(title(s))}">`
+  // the conversation and the details share one body: the details in a rail beside it where the plate has the room, over it
+  // where it has not (sessions.css), the same layout whatever the conversation holds, so nothing re-flows when it is read
+  return `<section class="pane s ${L.cls}${ui.unfold === s.id ? " unfold" : ""}${ui.topShut ? " topshut" : ""}" style="--c:${color(s)}" data-key="p:${esc(s.id)}" aria-label="${esc(title(s))}">`
     + lampHtml(L) + lineHtml(s, L, true) + toolsHtml(s)
     + `${armedStopHtml(s, false)}${armedEndHtml(s)}${failedHtml(s, failed, true)}${ask ? `<div class="askbox">${ask}</div>` : ""}`
     + `<div class="pbody">${detailsHtml(s)}<div class="talk">${logHtml(s)}${composerHtml(s)}</div></div></section>`;
@@ -1244,7 +1341,9 @@ function toolsHtml(s) {
     : `<button class="act stopping" disabled>${ICON.wait}Continuing on</button>`;
   const close = `<button class="act quiet" data-act="close">Close</button>`;
   const under = go ? (ui.menu === s.id ? choicesHtml(s) : heldHtml(s)) : "";
-  return `<div class="tools">${fold}<div class="acts">${endHtml(s)}${cont}${close}</div></div>${under}`;
+  // THE ACT THAT NAMES IT (DRAW.nameIt): on a session nobody named it stands as Name it, on one that is named as Rename
+  const rename = ui.renaming === s.id ? "" : DRAW.act({ word: ownOf(s) ? "Rename" : "Name it", act: "rename", cls: "quiet", data: ` data-s="${esc(s.id)}"` });
+  return `<div class="tools">${fold}<div class="acts">${rename}${endHtml(s)}${cont}${close}</div></div>${under}`;
 }
 /** THE DETAILS: the facts that say which session it is, then what it did today, what it holds and where it sends, as
  *  drawings in two columns, then the lines to paste. They fold to nothing and back over 240 ms. */
@@ -1271,8 +1370,10 @@ function factsHtml(s) {
   const all = ui.namesakes.has(s.id), shown = all ? before : before.slice(0, NAMESAKES_SHOWN), left = before.length - NAMESAKES_SHOWN;
   const more = left > 0 ? DRAW.more(left, { word: "more", act: "namesakes", data: ` data-s="${esc(s.id)}"`, open: all, less: "Fewer" }) : "";
   const earlier = before.length ? fact("Earlier", shown.map((x) => `<a class="chip quiet" href="#${esc(x.id)}" data-open="${esc(x.id)}">${x.state === "ended" ? "Ended" : "Live"} ${esc(backWord(x.at))}</a>`).join("") + more, "earlier") : "";
+  // the worktree's own folder, which the row draws as a mark alone
+  const tree = s.wt && wtWord(s.wt) !== "Worktree" ? fact("Worktree", `<span class="where" title="${esc(s.wt)}">${ICON.branch}<span>${esc(s.wt)}</span></span>`) : "";
   return `<dl class="meta facts">${fact(s.project ? "Project" : "Folder", (whereHtml(s, true) || "") + reason, s.project ? "" : "folder")}${fact("Command", cmdCell(s, "edge"))}`
-    + `${fact("Turns", turns)}${fact("Started", started)}${fact("Team", team)}${fact("Claude Code", s.row.version ? esc(s.row.version) : "")}${earlier}</dl>`;
+    + `${fact("Turns", turns)}${fact("Started", started)}${tree}${fact("Team", team)}${fact("Claude Code", s.row.version ? esc(s.row.version) : "")}${earlier}</dl>`;
 }
 /** The row an ended namesake is folded under, when this session is one of them: its link back to the newest. */
 function namesakeOf(s) {
@@ -1293,7 +1394,8 @@ const EMPTY_SPLIT = `<div class="pd-pop sm"><div class="pd-bar empty" aria-hidde
 function todayHtml(s) {
   const u = state.usage[s.id];
   if (u === undefined) return GHOST.hero() + GHOST.stack();
-  if (!u?.requests) return `<div class="pd-top">${DRAW.nothing("No requests today")}</div>${EMPTY_SPLIT}`;
+  // none today is the figure 0 over the split's empty track; a read no command answered is the dash
+  if (!u?.requests) return u === null ? `<div class="pd-top"><b class="pd-rate">${DRAW.unread.fig}</b></div>${EMPTY_SPLIT}` : `${DRAW.hero({ figure: "0", of: "requests today" })}${EMPTY_SPLIT}`;
   const href = `requests.html?${new URLSearchParams({ session: s.id, from: String(u.from) })}`;
   const hero = DRAW.hero({ figure: DRAW.n(u.requests), of: u.requests === 1 ? "request today" : "requests today", href });
   const segs = [{ n: u.plan, word: "On your plan", cls: "s1" }, { n: u.priced, word: "At API prices", cls: "s2" },
@@ -1332,7 +1434,7 @@ function contextHtml(s) {
   // nothing has gone out yet: the window's empty track; the newest request's figure with no room to measure it against
   // (a model splice was never told the size of): a dashed track with the figure that went in
   if (!u?.ctx?.in) return `${model}<div class="meterline">${DRAW.meter(null)}<span class="pct">${DRAW.dash}</span></div>`;
-  if (!win) return `${model}<div class="meterline">${DRAW.meter(null)}${DRAW.focal(DRAW.big(u.ctx.in), "in · room unknown")}</div>`;
+  if (!win) return `${model}<div class="meterline" title="The size of its window is not known">${DRAW.meter(null)}${DRAW.focal(DRAW.big(u.ctx.in), "in")}</div>`;
   const share = Math.min(1, u.ctx.in / win);
   return `${model}<div class="meterline" data-meter="x:${esc(s.id)}">${DRAW.meter(share * 100, share >= 1 ? "full" : "")}`
     + `<span class="pct">${DRAW.pct(share)}<span class="used">used</span></span>${DRAW.focal(DRAW.big(u.ctx.in), `of ${DRAW.big(win)}`)}</div>`;
@@ -1358,7 +1460,7 @@ function missingHtml(id) {
   const close = `<button class="act quiet" data-act="close">Close</button>`;
   // nothing about it can be read, so the one thing it can offer is the search for its name among the rest
   const search = `<button class="act small" data-act="findmissing" data-p="${esc(String(id).slice(0, 8))}">Search for it</button>`;
-  return `<section class="pane missing" data-key="m:${esc(id)}" aria-label="Session"><header class="mtop"><div class="who"><span class="name">Session ${esc(String(id).slice(0, 8))}</span></div>`
+  return `<section class="pane missing" data-key="m:${esc(id)}" aria-label="Session"><header class="mtop"><div class="who"><span class="name">Session</span></div>`
     + `<span class="pstate"><span class="word ended">Not listed</span></span><div class="acts">${search}${close}</div></header>`
     + `<div class="log"><p class="empty">No transcript</p></div></section>`;
 }
@@ -1466,8 +1568,10 @@ function render(opts = {}) {
   const active = document.activeElement;
   const named = active?.matches?.("button.name[data-open]") ? active.dataset.open : null;
   const say = active?.id === "say" ? [active.selectionStart, active.selectionEnd] : null;
+  const naming = active?.id === "nm" ? [active.selectionStart, active.selectionEnd] : null;
   root.className = "sessions";
   ui.grouped = grouped(); // before anything draws: the cards and the plate read it, and one session has one name on every page
+  nameRows();
   ui.wide = ui.grouped && ui.by === "project" && !state.loading && tilesWide();
   ui.cols = colCount();
   morph(root, listHtml());
@@ -1484,6 +1588,12 @@ function render(opts = {}) {
     field.focus({ preventScroll: !ui.focusSay });
     if (say) field.setSelectionRange(...say);
     ui.focusSay = false;
+  }
+  const nameField = root.querySelector("#nm");
+  if (nameField && (ui.focusName || (naming && document.activeElement !== nameField))) {
+    nameField.focus({ preventScroll: !ui.focusName });
+    if (naming) nameField.setSelectionRange(...naming); else nameField.select();
+    ui.focusName = false;
   }
   // the conversation he opened is in the address, on the door Teams and Requests use, so Back returns to it; while the
   // first read is out nothing is open yet, and the door he came by stays in the address (round 2's bug list)
@@ -1545,30 +1655,40 @@ function foldTop() {
   render();
 }
 /** THE ROW'S TRACKS ARE AS WIDE AS WHAT THEY HOLD (Marcos, Oct 26: "we're wasting a lot of horizontal space"): the name
- *  track is the widest name in the list with its branch mark, up to 18rem, the command track the widest command, and
+ *  track is the widest name in the list with its branch mark, up to 30rem, the command track the widest command, and
  *  the act track the widest act, none at all when no row has one, so the words start one gap after the widest name and
- *  get the rest. A row with no words is not measured: its name takes the words' track too. Written on the list's root
+ *  get the rest. A row with no words runs its name over the words' track, and the name track grows only by what that track cannot hold. The words' track steps in whole 3rem, so a changing tool name seldom shifts the columns. Written on the list's root
  *  only when a width changes, so a draw that changes nothing moves nothing. */
 function fitTracks() {
+  // the open session's title line is a row of the same tracks: its command chip and its Stop are measured with the rest, or
+  // a Stop standing only on the open session has no track and draws over its command
   const rows = root.querySelectorAll(".list:not(.ghosts) .s > .top");
   if (!rows.length) return;
   const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
-  let name = 0, cmd = 0, act = 0;
+  let name = 0, bareName = 0, doing = 0, cmd = 0, act = 0;
+  // EACH CELL IS MEASURED AT THE WIDTH ITS OWN CONTENT ASKS FOR (sessions.css .fit): measured inside the track it already
+  // has, a name that did not fit read as the width it was squeezed to, and the track caught up only on a later read, so
+  // a name stood cut for seconds. All the rows are laid out so in this one pass, then the class comes off before a paint.
+  root.classList.add("fit");
   for (const top of rows) {
-    if (!top.classList.contains("bare")) {
-      const who = top.querySelector(".who"), gap = parseFloat(getComputedStyle(who).columnGap) || 0;
-      let w = 0, n = 0;
-      for (const c of who.children) { w += c.classList.contains("wt") ? Math.min(c.scrollWidth, 10 * rem) : c.scrollWidth; n += 1; }
-      name = Math.max(name, w + gap * Math.max(0, n - 1));
+    // the open title line grows its own name track (sessions.css), so only its command and act count here
+    if (!top.parentElement.classList.contains("pane")) {
+      const who = top.querySelector(".who");
+      if (top.classList.contains("bare")) bareName = Math.max(bareName, who.offsetWidth); else name = Math.max(name, who.offsetWidth);
+      const last = top.querySelector(".last");
+      if (last?.children.length) doing = Math.max(doing, last.offsetWidth);
     }
     const c = top.querySelector(".cmd > *");
-    if (c) cmd = Math.max(cmd, c.scrollWidth);
+    if (c) cmd = Math.max(cmd, c.offsetWidth);
     const d = top.querySelector(".doing");
-    if (d?.children.length) { let w = 0; for (const x of d.children) w += x.offsetWidth; act = Math.max(act, w + (d.children.length - 1) * .4 * rem); }
+    if (d?.children.length) act = Math.max(act, d.offsetWidth);
   }
+  root.classList.remove("fit");
+  // a row with no words lets its name run over the words' track: the name track grows only by what that track cannot hold
+  name = Math.max(name, bareName - (doing ? doing + 2 * .667 * rem : 0));
   // a whole pixel over, since a width is read rounded and a name one pixel short would end in an ellipsis
   const w = (px, lo, hi) => `${Math.min(hi, Math.max(lo, Math.ceil(((px + 1) / rem) * 10) / 10))}rem`;
-  for (const [prop, value] of [["--name-w", w(name, 4, 18)], ["--cmd-w", w(cmd, cmd ? 3 : 0, 11)], ["--act-w", act ? w(act, 2, 10) : "0rem"]]) {
+  for (const [prop, value] of [["--name-w", w(name, 4, 30)], ["--doing-w", doing ? `${Math.min(24, Math.max(4, Math.ceil((doing + 1) / rem / 3) * 3))}rem` : "0rem"], ["--cmd-w", w(cmd, cmd ? 3 : 0, 11)], ["--act-w", act ? w(act, 2, 10) : "0rem"]]) {
     if (root.style.getPropertyValue(prop) !== value) root.style.setProperty(prop, value);
   }
 }
@@ -1634,11 +1754,12 @@ function opening(key) {
 function bringEnded(s) {
   if (!s || s.state !== "ended" || state.rows.some((x) => (ui.earlier.get(x.id) || []).some((e) => e.id === s.id))) return;
   if (state.rows.some((x) => x.state !== "ended" && groupKey(x) === groupKey(s))) ui.rest.add(groupKey(s));
+  else if (ui.grouped) { ui.looseOpen.add(groupKey(s)); remember("splice.loose", ui.looseOpen); }
   else ui.ended = true;
 }
 /** Open a session in place: its plate unfolds under its row, comes on screen, and reads what it holds. */
 function open(id, { reveal: show = true } = {}) {
-  if (ui.open !== id) { ui.unfold = id; ui.menu = null; ui.lopen.clear(); }
+  if (ui.open !== id) { ui.unfold = id; ui.menu = null; ui.renaming = null; ui.lopen.clear(); }
   ui.open = id; ui.missing = null; ui.reveal = show;
   bringEnded(find(id));
   render({ settle: true });
@@ -1649,7 +1770,7 @@ function open(id, { reveal: show = true } = {}) {
   if (s?.head && !(s.head in ui.logins)) readLogins(s.head);
 }
 function close() {
-  ui.open = null; ui.missing = null; ui.menu = null; ui.lopen.clear();
+  ui.open = null; ui.missing = null; ui.menu = null; ui.renaming = null; ui.lopen.clear();
   render({ settle: true });
 }
 
@@ -1663,8 +1784,9 @@ async function readLogins(head) {
   // EVERY LOGIN'S ROOM COMES WITH IT (gap: six Use buttons that switched logins blind). Its nearest-full window, as
   // Accounts draws one: what is used of it, and how soon it refills. A command with one login draws it just the same:
   // the room it sends on is the fact, and only the act to switch needs a pool.
-  ui.logins[head] = rows.map((r) => ({
-    label: r.account_labels?.[head] || r.label, name: r.display_name || r.label, plan: r.plan ? r.plan.charAt(0).toUpperCase() + r.plan.slice(1) : null,
+  const names = DRAW.names("login", rows.map((r) => ({ name: r.display_name || r.label, provider: state.providerOf[head], plan: r.plan })));
+  ui.logins[head] = rows.map((r, i) => ({
+    label: r.account_labels?.[head] || r.label, name: names[i].text, plan: r.plan ? r.plan.charAt(0).toUpperCase() + r.plan.slice(1) : null,
     ready: !!r.credential_present && !r.refusal, windows: windowsOf(r),
   }));
   ui.canSwitch[head] = rows.length > 1 && order.ok; // a pool splice switches: its order route answered
@@ -1713,7 +1835,7 @@ function switchHtml(s, r) {
   const sw = r.account_switch;
   if (!sw) return "";
   const from = loginName(s.head, sw.from), to = loginName(s.head, sw.to), when = backWord(new Date(sw.at_epoch_millis));
-  return `<p class="moved"><b>${esc(from)}</b>${ICON.caret}<b>${esc(to)}</b><span class="reason">${esc(sw.reason)}</span><span class="stamp">${esc(when)}</span></p>`;
+  return `<p class="moved"><span class="chip quiet">${esc(from)}</span>${ICON.caret}<span class="chip quiet">${esc(to)}</span><span class="reason">${esc(sw.reason)}</span><span class="stamp">${esc(when)}</span></p>`;
 }
 /** Every login this command can send on, as Accounts draws an account's windows: its name and plan, its fullest window
  *  used, how soon that window refills, and its one act in the same place on every row. A login at its limit keeps
@@ -2042,6 +2164,11 @@ function copy(act, s, text) {
 }
 // Escape on the in-prompt card is its Cancel: nothing sent, nothing cleared, his message stays in the field (fin)
 document.addEventListener("keydown", (e) => {
+  // the search is one key away from anywhere on the page, as it is in a console
+  if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && !/^(?:INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? "")) {
+    e.preventDefault(); document.getElementById("q").focus(); return;
+  }
+  if (e.key === "Escape" && ui.renaming) { stopRename(ui.renaming); return; }
   if (e.key === "Escape" && (ui.armedEnd.size || ui.armedStop.size)) {
     ui.armedEnd.clear(); ui.armedStop.clear(); render(); return;
   }
@@ -2051,14 +2178,27 @@ document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || ui.open == null || ui.leftover[ui.open] == null) return;
   delete ui.leftover[ui.open]; ui.focusSay = true; render();
 });
+/** The name he was typing is kept or let go, and the title line shows the session's name again. */
+function stopRename(id) {
+  ui.renaming = null; delete ui.drafts[`n:${id}`];
+  render();
+}
 root.addEventListener("submit", (e) => {
   e.preventDefault();
+  if (e.target.dataset.rename) {
+    const named = find(e.target.dataset.s);
+    if (named) { keepName(named.id, e.target.querySelector("#nm").value.trim()); stopRename(named.id); }
+    return;
+  }
   const s = find(e.target.dataset.s), text = e.target.querySelector("#say").value.trim();
   if (!s || ui.sending.has(s.id)) return;
   if (!text && !(s.state === "needs" && denyOf(s))) { e.target.querySelector("#say").focus(); return; }
   if (e.target.dataset.note) note(s, text); else send(s, text);
 });
-root.addEventListener("input", (e) => { if (e.target.id === "say") ui.drafts[e.target.closest("form").dataset.s] = e.target.value; });
+root.addEventListener("input", (e) => {
+  if (e.target.id === "say") ui.drafts[e.target.closest("form").dataset.s] = e.target.value;
+  else if (e.target.id === "nm") ui.drafts[`n:${e.target.closest("form").dataset.s}`] = e.target.value;
+});
 
 let pastAsk = 0;
 /** A search opens the ended sessions it matched, since a match folded away reads as no match, and clearing it closes
@@ -2078,7 +2218,7 @@ document.getElementById("q").addEventListener("input", (e) => {
   }), 300);
   if (ui.q) openedBySearch(state.rows.some((s) => s.state === "ended" && matches(s)));
   else if (ui.endedBySearch) { ui.ended = false; ui.endedBySearch = false; }
-  render();
+  render({ slide: true });
 });
 document.addEventListener("click", (e) => {
   // a press anywhere but the menu or its button closes Continue on's menu, as a console menu does
@@ -2102,7 +2242,7 @@ document.addEventListener("click", (e) => {
       if (ui.open && !inPick(find(ui.open) ?? {})) ui.open = null;
       render({ slide: true }); break; }
     // a group he folded, and a project's Ended line he opened, stay that way across every reload of this tab
-    case "by": { const to = el.dataset.by || el.dataset.v; ui.by = BY.includes(to) ? to : "project"; sessionStorage.setItem("splice.by", ui.by); render(); break; }
+    case "by": { const to = el.dataset.by || el.dataset.v; ui.by = BY.includes(to) ? to : "project"; sessionStorage.setItem("splice.by", ui.by); for (const r of state.rows) ui.landing.add(r.id); render(); break; }
     case "fold": { const p = el.dataset.p; ui.shut.has(p) ? ui.shut.delete(p) : ui.shut.add(p); remember("splice.shut", ui.shut); opening(p); render(); break; }
     case "rest": { const p = el.dataset.p; ui.rest.has(p) ? ui.rest.delete(p) : ui.rest.add(p); remember("splice.rest", ui.rest); opening(p); render(); break; }
     case "idle": { const p = el.dataset.p; ui.idle.has(p) ? ui.idle.delete(p) : ui.idle.add(p); remember("splice.idle", ui.idle); opening(p); render(); break; }
@@ -2115,6 +2255,10 @@ document.addEventListener("click", (e) => {
     case "findmissing": { const q = document.getElementById("q"); q.value = el.dataset.p; q.dispatchEvent(new Event("input")); q.focus(); break; }
     case "clear": { const q = document.getElementById("q"); q.value = ""; q.dispatchEvent(new Event("input")); q.focus(); break; }
     case "close": close(); break;
+    case "loose": { const p = el.dataset.p; ui.looseOpen.has(p) ? ui.looseOpen.delete(p) : ui.looseOpen.add(p); remember("splice.loose", ui.looseOpen); opening(p); render({ settle: true }); break; }
+    // from a row's Name it the session opens in place first, since the name's field is its title line
+    case "rename": if (s) { if (ui.open !== s.id) open(s.id); ui.renaming = s.id; ui.focusName = true; render(); } break;
+    case "rename-no": if (s) stopRename(s.id); break;
     case "stop": if (s) { ui.armedStop.add(s.id); render(); } break;
     case "stop-now": if (s) { ui.armedStop.delete(s.id); stop(s); } break;
     case "stop-keep": if (s) { ui.armedStop.delete(s.id); render(); } break;
@@ -2216,7 +2360,7 @@ setInterval(() => {
     const ms = spanOf(f), word = spanWord(ms), fig = el.matches("b") ? el : el.querySelector("b.v");
     if (fig && fig.textContent !== word) fig.textContent = word;
     const bar = el.querySelector(".vbar > b");
-    if (bar && ui.ax) bar.style.width = `${Math.round(ui.ax.at(ms) * 10) / 10}%`;
+    if (bar) bar.style.width = `${Math.round(AXIS.at(ms) * 10) / 10}%`;
   }
 }, 1000);
 

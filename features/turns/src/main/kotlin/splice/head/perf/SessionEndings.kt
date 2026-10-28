@@ -13,6 +13,7 @@ import kotlinx.serialization.json.longOrNull
 import splice.core.perf.OutcomeTag
 import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfKeys
+import java.util.concurrent.CopyOnWriteArraySet
 
 /** One request's ending: its outcome tag, the account it ran on, when a spent window comes back (epoch seconds,
  *  null when the provider named none), the row's own time, and the model splice last served the session: this
@@ -36,8 +37,14 @@ private const val MAX_SESSION_ENDINGS = 2_000
 /** The endings where splice re-sent a request until it gave up, which open a run of refusals (Marlin, Oct 11). */
 private val GAVE_UP = setOf(OutcomeTag.UPSTREAM_FAILED.wire, OutcomeTag.TURN_CAP.wire)
 
+/** A newly recorded ending, after its state is published, so its reset can be scheduled without polling. */
+public fun interface SessionEndingChanged {
+    public fun changed(sessionTag: String, ending: SessionEnding)
+}
+
 public class SessionEndings {
     private val lock = Any()
+    private val listeners = CopyOnWriteArraySet<SessionEndingChanged>()
 
     // Guarded by [lock]. Insertion order is recency: a session is re-inserted on each of its rows.
     private val newest = LinkedHashMap<String, SessionEnding>()
@@ -46,21 +53,29 @@ public class SessionEndings {
      *  late) does not replace it. */
     public fun note(sessionTag: String, ending: SessionEnding) {
         if (sessionTag.isEmpty()) return
-        synchronized(lock) {
+        val recorded = synchronized(lock) {
             val held = newest.remove(sessionTag)
             newest[sessionTag] = when {
                 held != null && held.ts > ending.ts -> held.copy(model = held.model ?: ending.model)
                 else -> ending.copy(model = ending.model ?: held?.model, runSince = runSince(held, ending))
             }
             while (newest.size > MAX_SESSION_ENDINGS) newest.remove(newest.keys.first())
+            newest.getValue(sessionTag)
         }
+        listeners.forEach { it.changed(sessionTag, recorded) }
+    }
+
+    /** Observes future changes; closing the subscription leaves the retained ending state intact. */
+    public fun observe(listener: SessionEndingChanged): AutoCloseable {
+        listeners += listener
+        return AutoCloseable { listeners -= listener }
     }
 
     /** The rows already on disk, noted as if they had just been appended: the file's tail is how a restarted daemon
      *  learns each session's newest ending. A row without a session, an outcome or a time is not an ending. */
     public fun restore(rows: List<JsonObject>) {
         rows.forEach { row ->
-            val session = text(row, "session") ?: return@forEach
+            val session = text(row, "session_id") ?: text(row, "session") ?: return@forEach
             val outcome = text(row, "outcome") ?: return@forEach
             val ts = (row["ts"] as? JsonPrimitive)?.longOrNull ?: return@forEach
             val reset = (row[PerfKeys.EARLIEST_RESET_EPOCH_SECONDS] as? JsonPrimitive)?.longOrNull
@@ -82,12 +97,13 @@ public class SessionEndings {
     private fun text(row: JsonObject, key: String): String? =
         (row[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
 
-    /** [sessionId]'s newest ending, matched the way PerfStats matches a row: the stored tag is a truncation of the
-     *  id the caller holds. Null for a session with no row in the tail the daemon read at boot or since. */
+    /** Full ids keep sessions with the same display tag apart. Older rows without one retain their unique tag lookup. */
     public fun endingFor(sessionId: String): SessionEnding? {
         if (sessionId.isEmpty()) return null
         return synchronized(lock) {
-            newest.entries.firstOrNull { (tag, _) -> sessionId.startsWith(tag) }?.value
+            newest[sessionId] ?: newest.entries.singleOrNull { (tag, _) ->
+                tag.length < sessionId.length && sessionId.startsWith(tag)
+            }?.value
         }
     }
 }

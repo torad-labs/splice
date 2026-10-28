@@ -30,6 +30,7 @@ import splice.core.turn.TurnMeta
 import splice.core.util.ElapsedClock
 import splice.core.util.JsonWire
 import splice.core.util.MonoClock
+import splice.head.hold.HoldRegistry
 import splice.head.wire.TurnIdMint
 import splice.upstream.retry.InflightGate
 import java.io.OutputStream
@@ -124,13 +125,16 @@ internal fun interface ResumeReading {
 }
 
 /** One live turn as the console lists it. [session] is the client's full session id when it sent one;
- *  [stopped] is true between the stop and the slot's release, which is the seal's few milliseconds. */
+ *  [stopped] is true between the stop and the slot's release, which is the seal's few milliseconds. [state] says
+ *  whether the turn runs or is held. */
 public data class LiveTurn(
     val id: String,
     val session: String?,
     val model: String,
     val stopped: Boolean,
     val silence: TurnSilence,
+    /** Running, or held in its own request until its cause lifts (failure-handling slice 5). */
+    val state: TurnState = TurnState.Running,
 )
 
 /** One head's live turns and its unused stop marks. [ids] mints a whole random UUID per turn, so no
@@ -140,6 +144,10 @@ public class LiveTurns(
     private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
     private val ids: TurnIdMint = TurnIdMint { UUID.randomUUID().toString() },
 ) {
+    /** The head's held turns, by the login each waits on: what wakes them, probes them and lets the console try a held
+     *  login now (failure-handling slice 5). One per head, beside the turns it holds. */
+    public val holds: HoldRegistry = HoldRegistry()
+
     /** One listed turn, and the one place its job and its stop meet: whichever of [driving] and a stop
      *  comes second cancels the job, so a stop never misses a drive that was starting. */
     private class Live(
@@ -161,6 +169,9 @@ public class LiveTurns(
         private val jobs: MutableSet<Job> = ConcurrentHashMap.newKeySet()
         private val stopped = AtomicBoolean(false)
         private val lastByte = AtomicLong(since)
+
+        /** What the turn is doing: running, or held until its cause lifts (slice 5). */
+        @Volatile var state: TurnState = TurnState.Running
 
         /** Set once, on the provider's first byte. Not derived from [lastByte] against [since]: a byte
          *  that lands in the same millisecond as admission would read as no byte at all, and on a fast
@@ -201,6 +212,7 @@ public class LiveTurns(
                 retries = perf.count(PerfKeys.RETRIES).toInt(),
                 willResume = resume?.now(perf) == true,
             ),
+            state,
         )
     }
 
@@ -248,6 +260,11 @@ public class LiveTurns(
      *  arrived before the drive started cancels it here. */
     internal fun driving(slot: InflightGate.Slot, job: Job) {
         bySlot[slot.countedSlot]?.driving(job)
+    }
+
+    /** The turn on [slot] is now in [state]: held until its cause lifts, or running again (slice 5). */
+    internal fun state(slot: InflightGate.Slot, state: TurnState) {
+        bySlot[slot.countedSlot]?.state = state
     }
 
     /** Oldest first, the order the turns were admitted in. */

@@ -18,8 +18,6 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.long
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -30,19 +28,16 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
-import splice.core.perf.OutcomeTag
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.core.util.AsyncFileIo
-import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
 import splice.dialect.responses.ReasoningSettings
 import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.MockChatGptUpstream
-import splice.head.admission.CLIENT_RECHECK_SECONDS
 import splice.head.awaitListening
 import splice.head.headDeps
 import splice.head.headStores
@@ -63,10 +58,6 @@ import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.transport.UpstreamClient
 import java.nio.file.Files
 import java.nio.file.Path
-import java.time.Instant
-import java.time.ZoneId
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
 import java.util.TimeZone
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
@@ -75,33 +66,6 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
 
 class AccountTurnSelectionTest(@param:TempDir private val root: Path) {
-    private val imfFixdate = Regex("""[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT""")
-
-    /** V4-77: a client deadline is a HOLD FROM NOW — positive, and inside V4-61's clamp — never the
-     *  provider's window. Shared by the two exhaustion arms so the law is stated once. */
-
-    /** V4-84 (7): the CEILING is measured from [receivedAtSeconds], the FLOOR from [sentAtSeconds].
-     *
-     *  The server stamps its deadline at refusal time, somewhere inside the round trip, so measuring
-     *  the ceiling from the moment the request LEFT adds that trip to the hold and reads 121s against
-     *  a 120s clamp whenever the second boundary falls inside the reply — the flake this pins. The
-     *  later instant is the exact statement, and a second cannot rescue the defect: a three-day
-     *  provider window is 259_200s against a 120s ceiling. The floor still runs from [sentAtSeconds],
-     *  because a deadline must be in the future of the request that earned it. Same split, same
-     *  reasoning, as HeadServerCapacityTest.assertBoundedRejectedRefusal. */
-    private fun assertBoundedHold(retryAfter: String, sentAtSeconds: Long, receivedAtSeconds: Long) {
-        val deadlineSeconds = ZonedDateTime.parse(retryAfter, DateTimeFormatter.RFC_1123_DATE_TIME).toEpochSecond()
-        assertTrue(
-            deadlineSeconds - sentAtSeconds > 0L,
-            "a deadline already in the past is not a deadline, got: $retryAfter",
-        )
-        val holdSeconds = deadlineSeconds - receivedAtSeconds
-        assertTrue(
-            holdSeconds <= CLAMP_SECONDS,
-            "the client deadline is the cooldown lift, at most ${CLAMP_SECONDS}s — got ${holdSeconds}s",
-        )
-    }
-
     @Test
     fun `the next turn switches credentials and quota while the session routing stays intact`() = runTest {
         val rig = AccountTurnRig(root)
@@ -140,7 +104,11 @@ class AccountTurnSelectionTest(@param:TempDir private val root: Path) {
                 rig.authHeaders(),
             )
             assertEquals(listOf("primary-id", "primary-id", "backup-id", "backup-id"), rig.accountHeaders())
-            assertEquals(HttpStatusCode.TooManyRequests, next.status, "no login is left free for the next turn")
+            assertEquals(
+                HttpStatusCode.Forbidden,
+                next.status,
+                "the held login is unavailable; the client must not retry",
+            )
         } finally {
             rig.close()
         }
@@ -161,7 +129,7 @@ class AccountTurnSelectionTest(@param:TempDir private val root: Path) {
                 rig.authHeaders(),
             )
             assertEquals(listOf("primary-id", "backup-id", "backup-id"), rig.accountHeaders())
-            assertEquals(HttpStatusCode.TooManyRequests, next.status, "the backup was refused too: no login is free")
+            assertEquals(HttpStatusCode.Forbidden, next.status, "the backup was refused too: no credential is usable")
         } finally {
             rig.close()
         }
@@ -217,24 +185,10 @@ class AccountTurnSelectionTest(@param:TempDir private val root: Path) {
         }
     }
 
-    // V4-77 REWRITE of `all exhausted records a local refusal with literal IMF-fixdate`, whose
-    // Retry-After assertion was the literal 2035 reset. It was RED against this row and had to be:
-    // it pinned the client deadline to the provider's window, which is what V4-61 reversed on the
-    // cooldown branch and what V4-77 reverses here (a non-persistent Claude Code ABORTS on a
-    // Retry-After past 60s; a persistent one sleeps through it). What this arm is ABOUT is
-    // unchanged and still asserted: the refusal is local, it is an IMF-fixdate — the format is
-    // still pinned, by shape — and it names the provider's real reset. What moved is WHICH instant
-    // the header carries: a bounded hold from now instead of the window.
-
-    /** V4-84 (4): the refusal's quota family comes from the SELECTED account's tracker, not the
-     *  primary's. deps.quota is ONE tracker per label — the primary's — so a pooled head whose
-     *  session is sticky to backup shipped primary's bars on the 429, and the client's utilization
-     *  jumped to the other account's number. The window is identified by its RESET here rather than
-     *  its utilization, because the provider holds both accounts and only the reset
-     *  can then tell the two trackers apart. Mutation: restoring deps.quota returns the primary's
-     *  reset and this fails. */
+    // Slice 6: a fully held pool selects its earliest eligible reset and asks that provider. The account that actually
+    // serves the turn owns its usage headers, regardless of which login served the session before the limit.
     @Test
-    fun `an exhausted refusal carries the SELECTED account's quota windows, not the primary's`() = runTest {
+    fun `when every quota window is held the turn asks the earliest reset login and carries its windows`() = runTest {
         val rig = AccountTurnRig(root)
         try {
             rig.start()
@@ -246,84 +200,53 @@ class AccountTurnSelectionTest(@param:TempDir private val root: Path) {
             val nowSeconds = System.currentTimeMillis() / MS_PER_SECOND
             rig.exhaustAllWithDistinctWindows(nowSeconds + 3_600L, nowSeconds + 86_400L)
             val wrong = rig.primaryFiveHourReset()
-            val refused = rig.messages().also { it.bodyAsText() }
+            val served = rig.messages().also { it.bodyAsText() }
 
-            assertEquals(HttpStatusCode.TooManyRequests, refused.status)
-            val reset = refused.headers["anthropic-ratelimit-unified-5h-reset"]
-            assertTrue(
-                reset != wrong.toString(),
-                "the refusal shipped the PRIMARY's window ($wrong) on a session routed to backup",
-            )
+            assertEquals(HttpStatusCode.OK, served.status, "the provider still decides whether the turn can run")
+            val reset = served.headers["anthropic-ratelimit-unified-5h-reset"]
             assertEquals(
-                (nowSeconds + 86_400L).toString(),
+                wrong.toString(),
                 reset,
-                "the refusal must carry the SELECTED account's window; the primary's is $wrong",
+                "the earliest-reset primary served this turn, so its window rides the answer",
             )
+            assertEquals("Bearer primary-token", rig.authHeaders().last())
+            assertEquals("primary", rig.poolView().selectedLabel)
         } finally {
             rig.close()
         }
     }
 
     @Test
-    fun `all exhausted refuses with an IMF-fixdate Retry-After bounded by the clamp`() = runTest {
+    fun `held quota readings never invent an admission refusal before the provider can answer`() = runTest {
         // The machine's zone is Tokyo when the head is built, which is when its voice reads the zone.
         val rig = inZone(TOKYO) { AccountTurnRig(root) }
         try {
             rig.start()
             val resetEpochSeconds = 2_077_951_777L
-            val reset = Instant.ofEpochSecond(rig.exhaustAll(resetEpochSeconds)).toString()
-            val said = LocalTimeText(ZoneId.of(TOKYO)).at(resetEpochSeconds)
-            val sentAtSeconds = System.currentTimeMillis() / MS_PER_SECOND
+            rig.exhaustAll(resetEpochSeconds)
+            val response = inZone(TOKYO) { rig.messages() }.also { it.bodyAsText() }
 
-            // V4-433: the client's sentence says the reset in the machine's zone; the journal keeps the ISO instant.
-            val response = inZone(TOKYO) { rig.messages() }.also { body ->
-                assertTrue(body.bodyAsText().contains("[splice] claudex is at its usage limit until $said."))
-            }
-            val receivedAtSeconds = System.currentTimeMillis() / MS_PER_SECOND
-
-            assertEquals(HttpStatusCode.TooManyRequests, response.status)
-            val retryAfter = checkNotNull(response.headers["Retry-After"])
-            assertTrue(imfFixdate.matches(retryAfter), "Retry-After must stay IMF-fixdate, got: $retryAfter")
-            assertBoundedHold(retryAfter, sentAtSeconds, receivedAtSeconds)
-            assertEquals(1L, rig.localErrors())
+            assertEquals(HttpStatusCode.OK, response.status)
+            assertEquals(0L, rig.localErrors())
             assertEquals(0L, rig.providerErrors())
-            assertTrue(rig.authHeaders().isEmpty(), "an exhausted pool must not contact upstream")
-            assertTrue(rig.logs().any { it.contains("all-accounts-exhausted") && it.contains("earliest_reset=$reset") })
-            assertTrue(rig.perfText().contains("\"outcome\":\"error:all-accounts-exhausted\""))
-            val row = exhaustedRow(rig)
-            assertEquals(resetEpochSeconds, row["earliest_reset_epoch_seconds"]?.jsonPrimitive?.long)
-            assertFalse(row.getValue("earliest_reset_epoch_seconds").jsonPrimitive.isString)
+            assertEquals(listOf("Bearer primary-token"), rig.authHeaders())
+            assertFalse("all-accounts-exhausted" in rig.perfText())
         } finally {
             rig.close()
         }
     }
 
-    // V4-77 REWRITE of `... with a formatter-safe Retry-After`, RED for the same reason as the arm
-    // above. Its SUBJECT survives intact and gains reach: an absurd upstream reset must not break
-    // the refusal. It used to prove that through the formatter alone; now it also proves the
-    // clamp arithmetic does not overflow on the same hostile number before bounding it, and the
-    // formatter-safe 9999 instant is still asserted where it now lives, in the message.
     @Test
-    fun `oversized exhausted reset stays rate limited with a bounded Retry-After`() = runTest {
+    fun `an oversized held quota reset cannot prevent the provider from serving the turn`() = runTest {
         val rig = inZone(TOKYO) { AccountTurnRig(root) }
         try {
             rig.start()
             val oversizedReset = Long.MAX_VALUE - 10_000_000_000_000_000L
             rig.exhaustAll(oversizedReset)
-            val sentAtSeconds = System.currentTimeMillis() / MS_PER_SECOND
-
             val response = inZone(TOKYO) { rig.messages() }
-            val receivedAtSeconds = System.currentTimeMillis() / MS_PER_SECOND
-
-            assertEquals(HttpStatusCode.TooManyRequests, response.status)
-            assertBoundedHold(checkNotNull(response.headers["Retry-After"]), sentAtSeconds, receivedAtSeconds)
-            // The clamp is the 9999 instant; in Tokyo it reads as the morning of the next January 1.
-            val said = "[splice] claudex is at its usage limit until Jan 1, 8:59 AM JST."
-            assertTrue(response.bodyAsText().contains(said))
-            assertTrue(rig.authHeaders().isEmpty(), "an exhausted pool must not contact upstream")
-            val row = exhaustedRow(rig)
-            assertEquals(oversizedReset, row["earliest_reset_epoch_seconds"]?.jsonPrimitive?.long)
-            assertFalse(row.getValue("earliest_reset_epoch_seconds").jsonPrimitive.isString)
+            response.bodyAsText()
+            assertEquals(HttpStatusCode.OK, response.status)
+            assertEquals(listOf("Bearer primary-token"), rig.authHeaders())
         } finally {
             rig.close()
         }
@@ -335,30 +258,22 @@ class AccountTurnSelectionTest(@param:TempDir private val root: Path) {
     }
 
     @Test
-    fun `all exhausted without reset evidence asks the client back within the recheck`() = runTest {
+    fun `a pool with no usable credentials names a login failure without a rate limit deadline`() = runTest {
         val rig = AccountTurnRig(root, credentialPresent = false)
         try {
             rig.start()
-            val sentAtSeconds = System.currentTimeMillis() / MS_PER_SECOND
-
             val response = rig.messages().also { it.bodyAsText() }
-            val receivedAtSeconds = System.currentTimeMillis() / MS_PER_SECOND
-
-            assertEquals(HttpStatusCode.TooManyRequests, response.status)
-            assertBoundedHold(checkNotNull(response.headers["Retry-After"]), sentAtSeconds, receivedAtSeconds)
+            assertEquals(HttpStatusCode.Forbidden, response.status)
+            assertEquals(null, response.headers["Retry-After"])
+            assertEquals("false", response.headers["x-should-retry"])
             assertEquals(1L, rig.localErrors())
             assertEquals(0L, rig.providerErrors())
             assertTrue(rig.authHeaders().isEmpty())
-            assertFalse("earliest_reset_epoch_seconds" in exhaustedRow(rig))
+            assertFalse("earliest_reset_epoch_seconds" in rig.perfText())
         } finally {
             rig.close()
         }
     }
-
-    private fun exhaustedRow(rig: AccountTurnRig) =
-        rig.perfText().lineSequence().filter { it.isNotBlank() }
-            .map { Json.parseToJsonElement(it).jsonObject }
-            .single { it.getValue("outcome").jsonPrimitive.content == OutcomeTag.ALL_ACCOUNTS_EXHAUSTED.wire }
 
     @Test
     fun `head restart clears the cooldown authority used by pooled turns`() = runTest {
@@ -629,6 +544,3 @@ private inline fun <T> inZone(zone: String, block: () -> T): T {
         TimeZone.setDefault(saved)
     }
 }
-
-// The ceiling on the client-facing deadline: the client recheck (Oct 12).
-private const val CLAMP_SECONDS: Long = CLIENT_RECHECK_SECONDS

@@ -145,7 +145,7 @@ class HeadServerReviewTest {
                 InflightGate(maxInflight = { 4 }),
                 RequestMaterializationGate(),
                 tmp.resolve("rl-progress-$compact.json"),
-                HeadDeps.HeadSeams(ticker = ticker, clock = ElapsedClock(elapsed::get)),
+                HeadDeps.HeadSeams(ticks = HeadDeps.HeadTicks(client = ticker), clock = ElapsedClock(elapsed::get)),
             )
             head.start()
             mock.resetStartHold()

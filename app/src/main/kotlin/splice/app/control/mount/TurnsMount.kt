@@ -9,6 +9,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import splice.app.control.ConsolePorts
+import splice.app.control.HoldTryNowRoute
 import splice.app.control.ManagedHead
 import splice.app.control.TurnsHeadAdapter
 import splice.app.control.api.HeadResolver
@@ -67,5 +68,7 @@ internal class TurnsMount(
                 liveTurnsRoutes.stop(call.parameters["head"].orEmpty(), call.parameters["id"].orEmpty()).send(call)
             }
         }
+        // Failure-handling slice 5: the console's try-now on a held login.
+        HoldTryNowRoute(liveTurnsRoutes, guard).register(route)
     }
 }

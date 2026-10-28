@@ -68,4 +68,9 @@ public class UpstreamFailed(
     public val planLimit: PlanLimit? = null,
     /** The provider's own 429, relayed whole to a client that reads it natively (the passthrough dialect). */
     public val native: NativeReply? = null,
-) : UpstreamEnding()
+    /** A hold on [cause] that ended without the turn going on (failure-handling slice 5): the turn ends as it. */
+    public val outlasted: FailureCause.Splice.HoldOutlasted? = null,
+) : UpstreamEnding() {
+    /** What the turn ends as: the outlasted hold where one ended it, else the provider's answer. */
+    public val ending: FailureCause get() = outlasted ?: cause
+}

@@ -9,6 +9,7 @@ import splice.core.auth.RefreshOutcome
 import splice.core.failure.FailureCause
 import splice.core.failure.LoginOwner
 import splice.core.failure.Moment
+import splice.core.failure.Outlast
 import splice.core.failure.Position
 import splice.core.failure.Tear
 import splice.core.perf.PerfKeys
@@ -16,6 +17,8 @@ import splice.core.perf.TurnPerfTiming
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.WallClock
 import splice.upstream.retry.Exchange
+import splice.upstream.retry.HoldAsk
+import splice.upstream.retry.HoldEnd
 import splice.upstream.retry.How
 import splice.upstream.retry.MAX_AMENDS
 import splice.upstream.retry.MAX_ATTEMPTS_OUTSIDE_HOLDS
@@ -23,6 +26,7 @@ import splice.upstream.retry.RetryEngine
 import splice.upstream.retry.RetryStep
 import splice.upstream.retry.Spend
 import splice.upstream.retry.TurnFacts
+import splice.upstream.transport.notes.RetryNotes
 import java.io.IOException
 import java.time.Instant
 import kotlin.coroutines.cancellation.CancellationException
@@ -52,7 +56,7 @@ internal class RetrySteps(
         val moment = if (ctx.recovery.clientFrameEmitted()) Moment.MID_CONTENT else Moment.BEFORE_COMMIT
         val at = Position(moment, streamBegan = false)
         val step = next(cause, at, ctx, state)
-        noteFailed(ctx, failed, step, state)
+        RetryNotes.failed(ctx, failed, step, state)
         return take(step, Asked(cause, at, failed), ctx, state)
     }
 
@@ -71,7 +75,7 @@ internal class RetrySteps(
         if (step !is RetryStep.Again || step.how != How.SAME) throw e
         // A stream torn after its handoff is sent fresh, never as a send that may have reached the provider twice.
         val phase = transportFailures.phaseOf(e).takeUnless { streamHandedOff }
-        noteThrown(e, ctx, state, phase)
+        RetryNotes.thrown(e, ctx, state, phase)
         state.lastThrown = e
         state.lastTear = null
         val kind = if (phase == TransportFailurePhase.POST_SEND) RetryKind.POST_SEND else RetryKind.ORDINARY
@@ -106,17 +110,21 @@ internal class RetrySteps(
     private fun next(cause: FailureCause, at: Position, ctx: PostContext, state: RetryState): RetryStep {
         val facts = TurnFacts(
             pooled = ctx.pooled,
-            // The account handoff knows which login is free; a pooled post hands the turn to it, and the handoff
-            // ends the turn where none is.
-            freeLogin = ctx.pooled,
+            // The account handoff knows which login is free: a pooled post hands the turn to it, and holds where none is.
+            freeLogin = ctx.pooled && ctx.limits.otherLoginFree?.invoke(cause) != false,
             warmWaitLeftMs = state.warmWaitLeftMs(ctx),
             // The head's round runner continues a cut answer; a post never does.
             continuesReasoning = false,
             canContinue = false,
-            wallLeftMs = budget.leftMs(ctx, state.t0),
+            deadlines = TurnFacts.Deadlines(
+                minOf(budget.leftMs(ctx, state.t0), state.retry.waits.holdWallLeftMs()),
+                state.retry.waits.holdWallLeftMs(),
+            ),
             earliestLift = null,
         )
-        return RetryEngine.next(cause, at, state.ledger, facts, Instant.ofEpochMilli(wall()))
+        val now = Instant.ofEpochMilli(wall())
+        state.ledger.metAfterHold(now)
+        return RetryEngine.next(cause, at, state.ledger, facts, now)
     }
 
     /** What the engine is asked about [failed]: a credential this provider named dead behind another status, which a
@@ -138,9 +146,38 @@ internal class RetrySteps(
             }
             RetryStep.SwitchLogin -> LoopStep.Done(UpstreamPost.Refused(endings.ended(asked.failed, null, state, ctx)))
             is RetryStep.End -> endings.done(asked.failed, step.cause, state, ctx)
-            // Until slice 5 holds a turn, a hold ends it at once with today's retryable wire and the interim line.
-            is RetryStep.Hold, RetryStep.Keep -> endings.done(asked.failed, null, state, ctx)
+            is RetryStep.Hold -> hold(step, asked, ctx, state)
+            RetryStep.Keep -> endings.done(asked.failed, null, state, ctx)
         }
+
+    /** A hold, kept by the turn's waits (failure-handling slice 5): the request goes again when it ends on a reset, a
+     *  probe or a wake; a login that joined takes the turn where the account handoff can move it; the session's wall
+     *  and the hold's seven days end the turn as the hold it was. A reset that passed without its cause lifting was
+     *  counted before the engine chose this hold (RetryLedger.metAfterHold), so it ends the third. */
+    private suspend fun hold(
+        step: RetryStep.Hold,
+        asked: Asked,
+        ctx: PostContext,
+        state: RetryState,
+    ): LoopStep<Nothing> {
+        val ledger = state.ledger
+        val now = wall()
+        ledger.held(step.until, now)
+        val ask = HoldAsk(asked.cause, asked.at, step.until, step.probes, ledger.login, ledger.heldSinceMs ?: now)
+        return when (state.retry.waits.hold(ask)) {
+            HoldEnd.RESUME -> {
+                state.pendingRetry = RetryKind.ORDINARY
+                LoopStep.Continue
+            }
+            HoldEnd.LOGIN_JOINED -> LoopStep.Done(UpstreamPost.Refused(endings.ended(asked.failed, null, state, ctx)))
+            HoldEnd.WALL -> endings.done(asked.failed, outlasted(Outlast.WALL, step, asked), state, ctx)
+            HoldEnd.MAX_HOLD -> endings.done(asked.failed, outlasted(Outlast.MAX_HOLD, step, asked), state, ctx)
+            HoldEnd.UNSUPPORTED, HoldEnd.CLIENT_GONE -> endings.done(asked.failed, null, state, ctx)
+        }
+    }
+
+    private fun outlasted(why: Outlast, step: RetryStep.Hold, asked: Asked): FailureCause =
+        FailureCause.Splice.HoldOutlasted(why, asked.cause, step.until)
 
     /** The step's wait, through the turn's waits, then the same request again. A wait a limit or a spent account
      *  asks for is spent from the warm session's own allowance, so the engine reads what is left of it. */
@@ -205,45 +242,6 @@ internal class RetrySteps(
         state.ledger.took(RetryStep.Again(0L, How.AMEND_REASONING), failed.cause)
         ctx.onRetry("amending request body after $status and retrying once")
         return LoopStep.Amend(amended)
-    }
-
-    /** The log's line for a send that threw: a stream torn after its handoff as a reissue, a path that broke before
-     *  any answer by its [phase], a send that may have reached the provider named a possible duplicate. */
-    private fun noteThrown(e: Throwable, ctx: PostContext, state: RetryState, phase: TransportFailurePhase?) {
-        val n = "${state.ledger.attempts}/$MAX_ATTEMPTS_OUTSIDE_HOLDS"
-        val line = TransportFaultLine.of(e, ctx.url).take(ERR_SNIPPET)
-        val note = when (phase) {
-            null -> "stream torn before first client frame, reissue $n: ${e::class.simpleName} $line"
-            TransportFailurePhase.POST_SEND -> "transport-possible-duplicate ${e::class.simpleName} attempt $n: $line"
-            TransportFailurePhase.CONNECT -> "transport ${e::class.simpleName} attempt $n: $line"
-        }
-        ctx.onRetry(note)
-    }
-
-    /** The log's line for a failed answer, in the words the doctor report masks the provider's body after
-     *  (DoctorLogPayloads): an answer sent again by its attempt, and one that is not by what it was read as. A body
-     *  that quotes a header of its own loses that value here (fix 4, Oct 27: a refusal that quotes the request's
-     *  headers would otherwise write the turn state into the daemon log). */
-    private fun noteFailed(ctx: PostContext, failed: RetryOutcome.Failed, step: RetryStep, state: RetryState) {
-        val snippet = HeaderRedaction.redactText(failed.evidence.body.orEmpty()).take(ERR_SNIPPET)
-        val stale = (failed.cause as? FailureCause.Provider.Rejected)?.staleReasoning == true
-        val status = failed.evidence.status
-        val line = when {
-            step is RetryStep.Again ->
-                "upstream $status attempt ${state.ledger.attempts}/$MAX_ATTEMPTS_OUTSIDE_HOLDS: $snippet"
-            stale -> "upstream rejected this turn's stale reasoning, an encrypted_content error (no retry): $snippet"
-            else -> "upstream $status ${failed.cause} (no retry: ${stepWords(step)}): $snippet"
-        }
-        ctx.onRetry(line)
-    }
-
-    /** What a step that sends nothing again does with the post, in the log's words. */
-    private fun stepWords(step: RetryStep): String = when (step) {
-        is RetryStep.Again -> "sent again"
-        RetryStep.SwitchLogin -> "moved to another login"
-        is RetryStep.Hold -> "held for its reset"
-        is RetryStep.End -> "ended"
-        RetryStep.Keep -> "kept"
     }
 
     /** One failure asked of the engine: the cause it was asked as, where the turn stood, and the answer it read,

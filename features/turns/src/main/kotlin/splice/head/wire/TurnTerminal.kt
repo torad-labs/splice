@@ -112,6 +112,10 @@ internal interface TurnTerminal : WireSink {
      *  shows one line per recovery episode; the non-stream sink has no incremental wire, so its default says nothing. */
     public suspend fun recovering(wait: WaitLine) {}
 
+    /** The turn holds for its cause to lift ([on]), or goes on ([on] false) (failure-handling slice 5): its hold line
+     *  already says when it continues, so a quiet wire carries only pings while it holds, never a status line. */
+    public fun holding(on: Boolean) {}
+
     /** splice's own status line for a turn that has gone quiet: a short sentence about the wait,
      *  appended to one thinking block per quiet stretch so a user watching a long silent turn can see
      *  it is being HELD rather than hung (gpt-6-astra reasons for 5-12 minutes before its first

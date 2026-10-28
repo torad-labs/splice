@@ -124,7 +124,7 @@ class ClaudeNativePoolWiringTest {
     }
 
     @Test
-    fun `a weekly limit with an expired standby preserves native refusal typing and names its remedy`() = runBlocking {
+    fun `a weekly limit and expired standby preserve credentials and the true reset`() = runBlocking {
         limitControl(expiredStandby = true)
     }
 
@@ -143,8 +143,7 @@ class ClaudeNativePoolWiringTest {
                 val first = nativeTurn(client, rig)
                 val second = nativeTurn(client, rig)
                 if (expiredStandby) {
-                    // Each turn asks the provider itself (Marcos, Oct 26): the second turn is sent too, and the
-                    // limit that still holds reaches it in the provider's words, the same way as the first.
+                    // Each turn asks the provider itself; buffered requests cannot wait a weekly reset and answer L.
                     assertWeeklyRefusal(first)
                     assertWeeklyRefusal(second)
                     assertEquals(listOf("Bearer synthetic-native", "Bearer synthetic-native"), sent)
@@ -169,15 +168,17 @@ class ClaudeNativePoolWiringTest {
         }
     }
 
-    /** The weekly refusal Claude Code reads: the provider's 429, its type and words, and splice's remedy. */
+    /** Family L retains the real weekly reset while the client rechecks the pool, whose standby may be renewed. */
     private suspend fun assertWeeklyRefusal(turn: HttpResponse) {
         assertEquals(HttpStatusCode.TooManyRequests, turn.status)
         val error = Json.parseToJsonElement(turn.bodyAsText()).jsonObject.getValue("error").jsonObject
         assertEquals("rate_limit_error", error.getValue("type").jsonPrimitive.content)
         val message = error.getValue("message").jsonPrimitive.content
-        assertTrue(message.contains("synthetic weekly limit"))
-        assertTrue(message.contains("claude-splice cannot take over") && message.contains("expired"))
-        assertTrue(message.contains("Run claude-splice once and Claude Code renews it."))
+        assertTrue(message.startsWith("[splice] "), message)
+        assertEquals("30", turn.headers["retry-after"], "a standby that is renewed can serve the next recheck")
+        val reset = checkNotNull(turn.headers["anthropic-ratelimit-unified-7d-reset"]).toLong()
+        val recheck = checkNotNull(turn.headers["anthropic-ratelimit-unified-reset"]).toLong()
+        assertTrue(reset > recheck, "the per-window member retains the true reset")
     }
 
     private suspend fun nativeTurn(client: HttpClient, rig: ClaudeNativePoolFixture.Rig): HttpResponse =

@@ -26,6 +26,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.CredentialKey
+import splice.core.client.CLIENT_WALL_HEADER
 import splice.core.client.SESSION_HEADER
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -50,6 +51,9 @@ import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -169,8 +173,10 @@ class ForwardedRateLimitTest {
         }
     }
 
+    // Slice 5: a limit a day away does not fit this session's 960 s, so it is handed to Claude Code (family L) as a
+    // 429 naming the true reset, since no other login could serve it; the provider's own reply is no longer relayed.
     @Test
-    fun `native refusals keep their limit headers and bring their deadlines within the recheck`() = runBlocking {
+    fun `a refused credential's weekly limit reaches its client as a 429 naming the true reset`() = runBlocking {
         for (stream in listOf(false, true)) {
             val rig = LimitRig(directory.resolve(stream.toString()))
             rig.head.start()
@@ -178,12 +184,7 @@ class ForwardedRateLimitTest {
                 repeat(2) {
                     val (status, body, headers) = rig.turn("synthetic-refused", stream)
                     assertEquals(HttpStatusCode.TooManyRequests, status)
-                    assertEquals(LIMIT_BODY, body)
-                    rig.assertRelayed(headers)
-                    assertEquals(
-                        listOf("opaque-first", "opaque-second"),
-                        headers.getAll("anthropic-ratelimit-unified-extra"),
-                    )
+                    rig.assertHandedOver(body, headers)
                 }
                 assertEquals(2, rig.requests.size, "the same credential's next turn asks the provider itself")
             } finally {
@@ -192,27 +193,55 @@ class ForwardedRateLimitTest {
         }
     }
 
-    // The turn that meets a headerless 429 gets it natively once its burst schedule is spent (section 8). A later turn
-    // asks the provider itself: no turn waits on another's hold (Marcos, Oct 26).
+    // A short-wall buffered request hands the unstated limit to its client as family L. A streamed request with
+    // enough wall for the burst commits its retry notice and ends in band. Neither blocks a different credential.
     @Test
-    fun `headerless 429 reaches the client natively once spent, holding no other login`() = runBlocking {
-        val rig = LimitRig(directory, limits = false)
-        rig.head.start()
-        try {
-            val (status, body, headers) = rig.turn("synthetic-refused")
-            assertEquals(HttpStatusCode.TooManyRequests, status)
-            assertEquals(HEADERLESS_LIMIT_BODY, body)
-            assertEquals("true", headers["x-should-retry"])
-            assertEquals(null, headers["retry-after"])
-            assertEquals(null, headers["anthropic-ratelimit-unified-status"])
-            assertEquals(BURST_SENDS, rig.refused.size, "the burst schedule is spent before the client hears it")
-        } finally {
-            rig.close()
+    fun `headerless 429 exhausts its burst and ends honestly without holding another login`() = runBlocking {
+        for (stream in listOf(false, true)) {
+            val rig = LimitRig(directory.resolve(stream.toString()), limits = false)
+            rig.head.start()
+            try {
+                val sentAtSeconds = System.currentTimeMillis() / 1_000
+                val wallMs = if (stream) 60_000L else 20_000L
+                val (status, body, headers) = rig.turn("synthetic-refused", stream, wallMs = wallMs)
+                val receivedAtSeconds = System.currentTimeMillis() / 1_000
+                if (stream) {
+                    assertEquals(HttpStatusCode.OK, status)
+                    val events = body.lineSequence().filter { it.startsWith("data: ") }
+                        .map { Json.parseToJsonElement(it.removePrefix("data: ")).jsonObject }.toList()
+                    val error = events.single { it["type"]?.jsonPrimitive?.content == "error" }
+                        .getValue("error").jsonObject
+                    assertEquals("overloaded_error", error.getValue("type").jsonPrimitive.content)
+                    assertTrue("without saying when it resets" in error.getValue("message").jsonPrimitive.content)
+                    assertTrue("tries again in 15 seconds" in body, "the retry notice committed the stream")
+                    assertTrue(events.none { it["type"]?.jsonPrimitive?.content == "message_stop" })
+                    assertEquals(null, headers["retry-after"])
+                    assertEquals(null, headers["anthropic-ratelimit-unified-status"])
+                    assertEquals(BURST_SENDS, rig.refused.size, "the stream exhausts its burst before the handoff")
+                } else {
+                    assertEquals(HttpStatusCode.TooManyRequests, status)
+                    val error = Json.parseToJsonElement(body).jsonObject.getValue("error").jsonObject
+                    assertEquals("rate_limit_error", error.getValue("type").jsonPrimitive.content)
+                    val line = error.getValue("message").jsonPrimitive.content
+                    assertTrue(line.startsWith("[splice] ") && "without saying when it resets" in line, line)
+                    assertFalse(headers["x-should-retry"] == "false", "the client can retry family L")
+                    assertEquals("30", headers["retry-after"])
+                    assertEquals("rejected", headers["anthropic-ratelimit-unified-status"])
+                    val reset = checkNotNull(headers["anthropic-ratelimit-unified-reset"]).toLong()
+                    assertTrue(reset in (sentAtSeconds + 30)..(receivedAtSeconds + 31), "a thirty-second recheck")
+                    assertEquals(null, headers["anthropic-ratelimit-unified-5h-reset"])
+                    assertEquals(null, headers["anthropic-ratelimit-unified-7d-reset"])
+                    assertEquals(1, rig.refused.size, "the short client wall cannot fit the burst's first wait")
+                }
+                assertEquals(HttpStatusCode.OK, rig.turn("synthetic-healthy", stream).first)
+            } finally {
+                rig.close()
+            }
         }
     }
 
     @Test
-    fun `restart retains the scoped native refusal for status, and each later turn asks the provider`() =
+    fun `restart retains the scoped weekly reset, and each later turn asks the provider`() =
         runBlocking {
             val first = LimitRig(directory)
             first.head.start()
@@ -228,11 +257,9 @@ class ForwardedRateLimitTest {
             try {
                 assertEquals("seven_day", restarted.upstream.planHold?.claim)
                 assertTrue(restarted.upstream.providerResetForMs > 0L)
-                assertTrue(restarted.upstream.rateLimitedForMs > 0L, "startup retains the native credential's refusal")
                 val (status, body, headers) = restarted.turn("synthetic-refused")
                 assertEquals(HttpStatusCode.TooManyRequests, status)
-                assertEquals(LIMIT_BODY, body)
-                first.assertRelayed(headers)
+                first.assertHandedOver(body, headers)
                 assertEquals(listOf("synthetic-refused"), restarted.requests, "the refused credential's turn is sent")
                 assertEquals(HttpStatusCode.OK, restarted.turn("synthetic-new-login").first)
                 assertEquals(listOf("synthetic-refused", "synthetic-new-login"), restarted.requests)
@@ -262,7 +289,6 @@ class ForwardedRateLimitTest {
             val healthy = requireNotNull(
                 CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer synthetic-healthy")),
             )
-            assertEquals(LIMIT_BODY, restored.forCredential(refused).load()?.rateLimitReply?.body)
             assertEquals(
                 rig.limitHeaders["anthropic-ratelimit-unified-7d-reset"]?.toLong(),
                 restored.forCredential(refused).load()?.plan?.resetEpochSeconds,
@@ -295,19 +321,26 @@ private class LimitRig(
         "anthropic-ratelimit-unified-5h-utilization" to "0.125",
         "anthropic-ratelimit-unified-5h-reset" to (reset - 43_200).toString(),
         "anthropic-ratelimit-unified-overage-disabled-reason" to "synthetic-budget",
-        "retry-after" to "86400",
+        // Every refusal names the same instant, including Retry-After, rather than another day from each send.
+        "retry-after" to DateTimeFormatter.RFC_1123_DATE_TIME
+            .format(Instant.ofEpochSecond(reset).atOffset(ZoneOffset.UTC)),
     )
 
-    /** The provider's limit headers as the client gets them: each as sent, except the two deadlines Claude Code's
-     *  retry sleeps on, which name the recheck instead of a reset a day away. The 7d-reset still names that reset. */
-    fun assertRelayed(headers: Headers) {
-        val deadlines = setOf("anthropic-ratelimit-unified-reset", "retry-after")
-        limitHeaders.filterKeys { it !in deadlines }
-            .forEach { (name, value) -> assertEquals(value, headers[name], name) }
-        assertEquals(CLIENT_RECHECK_SECONDS.toString(), headers["retry-after"])
-        val clientReset = checkNotNull(headers["anthropic-ratelimit-unified-reset"]).toLong()
-        val now = System.currentTimeMillis() / 1_000
-        assertTrue(clientReset in (now + 1)..(now + CLIENT_RECHECK_SECONDS), "back within the recheck: $clientReset")
+    /** The weekly limit as a session that cannot hold it gets it (family L, one login): splice's line naming the
+     *  weekly limit, and the deadlines Claude Code's retry sleeps on naming the true reset, so the session re-asks
+     *  then. Claude Code is not told to stop retrying. */
+    fun assertHandedOver(body: String, headers: Headers) {
+        val error = Json.parseToJsonElement(body).jsonObject.getValue("error").jsonObject
+        assertEquals("rate_limit_error", error.getValue("type").jsonPrimitive.content, body)
+        val line = error.getValue("message").jsonPrimitive.content
+        assertTrue(line.startsWith("[splice] ") && "weekly limit" in line, line)
+        assertEquals("rejected", headers["anthropic-ratelimit-unified-status"])
+        assertEquals(reset.toString(), headers["anthropic-ratelimit-unified-reset"])
+        assertEquals(reset.toString(), headers["anthropic-ratelimit-unified-7d-reset"])
+        val retryAfter = checkNotNull(headers["retry-after"]).toLong()
+        val untilReset = reset - System.currentTimeMillis() / 1_000
+        assertTrue(retryAfter in (untilReset - 5)..(untilReset + 1), "retry-after names the reset: $retryAfter")
+        assertFalse(headers["x-should-retry"] == "false", "Claude Code is not told to stop: $headers")
     }
 
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
@@ -378,9 +411,12 @@ private class LimitRig(
         credential: String,
         stream: Boolean = true,
         session: String? = null,
+        /** The session's client timeout, as a launched session names it; none reads as the old 960 s. */
+        wallMs: Long? = null,
     ): Triple<HttpStatusCode, String, Headers> {
         val response = client.post("http://127.0.0.1:${head.port}/v1/messages") {
             header("Authorization", "Bearer $credential")
+            if (wallMs != null) header(CLIENT_WALL_HEADER, wallMs.toString())
             if (session != null) header(SESSION_HEADER, session)
             header("Content-Type", "application/json")
             setBody(

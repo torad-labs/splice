@@ -45,9 +45,6 @@ public data class PostContext(
     /** Why each attempt is retried or given up, as the post's observers hear it. */
     public val onRetry: RetryNotice get() = observers.onRetry
 
-    /** True only for the passthrough dialect, whose client understands the provider's native 429. */
-    public var relayRateLimitReplies: Boolean = false
-
     /** Another transport already refused this exact body as too large: the Responses WebSocket peer closed the
      *  round's socket with 1009 (RFC 6455: message too big) before its first event. A 4xx for the same body is
      *  then the second refusal of the same bytes, never retried, and read as an overflow (WsSizeRefusal). */
@@ -56,9 +53,6 @@ public data class PostContext(
     /** A login from a pool, which a refusal waiting cannot fix leaves for another login before any byte reaches the
      *  client: the native wire and a translated one alike (the Oct deviation of §11). */
     internal val pooled: Boolean get() = limits.rateLimitCooldown != null
-
-    /** A pooled login whose client understands the provider's native 429, which is handed off with no wait. */
-    internal val nativePool: Boolean get() = relayRateLimitReplies && pooled
 
     /** Delivered only after the provider accepts the HTTP request, before consuming its stream. */
     public var upstreamAccepted: splice.upstream.StreamStart = splice.upstream.StreamStart {}

@@ -10,6 +10,7 @@ package splice.core.failure
 /** The leaves splice decides itself. */
 internal class SpliceSentences(private val spoken: Spoken) {
     private val declines = DeclineSentences(spoken)
+    private val holds = HoldSentences(spoken)
 
     fun said(cause: FailureCause.Splice, facts: LineFacts): Said = when (cause) {
         is FailureCause.Splice.NoLogin -> noLogin(cause.loginCommand ?: facts.loginCommand, facts.head)
@@ -19,7 +20,7 @@ internal class SpliceSentences(private val spoken: Spoken) {
         )
         is FailureCause.Splice.Declined -> declines.said(cause.why, facts)
         is FailureCause.Splice.TurnBudgetSpent -> budgetSpent(cause, facts.head)
-        is FailureCause.Splice.HoldOutlasted -> outlasted(cause, facts.head)
+        is FailureCause.Splice.HoldOutlasted -> holds.outlasted(cause, facts)
         is FailureCause.Splice.Stopped, is FailureCause.Splice.Protocol, is FailureCause.Splice.Internal,
         FailureCause.Splice.CompactionUnfinished,
         -> stopped(cause, facts)
@@ -37,6 +38,8 @@ internal class SpliceSentences(private val spoken: Spoken) {
     private fun budgetSpent(cause: FailureCause.Splice.TurnBudgetSpent, head: String): Said = Said(
         if (cause.beforeFirstAttempt) {
             "$head could not start this turn within ${spoken.span(cause.budgetMs)}"
+        } else if (cause.atWall) {
+            "$head made no progress before this session's time limit"
         } else {
             "$head made no progress for ${spoken.span(cause.budgetMs)}"
         },
@@ -69,15 +72,6 @@ internal class SpliceSentences(private val spoken: Spoken) {
         ProtocolFault.CODE_MODE_STATE -> Said("$head's code-mode run lost its state, so this turn stopped")
         ProtocolFault.DIALECT_UNSUPPORTED -> Said("$head sent something splice cannot translate, so this turn stopped")
     }
-
-    /** A hold that outlasted its cause. Slice 5 words each held cause's own outlasting. */
-    private fun outlasted(cause: FailureCause.Splice.HoldOutlasted, head: String): Said = Said(
-        when (cause.why) {
-            Outlast.MISSED_RESETS -> "$head did not recover at the times it stated"
-            Outlast.MAX_HOLD -> "$head did not recover while this turn waited"
-        },
-        next = Next.Resend(cause.nextReset?.let { "Its next stated reset is ${spoken.at(it)}." } ?: SEND_LATER),
-    )
 }
 
 /** Why splice refused a request before any provider saw it. */

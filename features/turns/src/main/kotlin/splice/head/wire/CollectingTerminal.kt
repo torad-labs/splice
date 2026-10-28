@@ -61,6 +61,10 @@ internal class CollectingTerminal(
     private var degraded: String? = null
     private var written: SpliceLine? = null
 
+    /** The answer [fail] gave, which a handed-over limit's headers are read from (HandOverHeaders, slice 5). */
+    var answered: WireAnswer? = null
+        private set
+
     // DR-87: the emit-time Success->error rewrites below were invisible to the caller — StreamFinish
     // returned "ok" and health/log/perf all read green while the client got this 502.
     override val degradedReason: String? get() = degraded
@@ -171,6 +175,7 @@ internal class CollectingTerminal(
     private fun fail(cause: FailureCause, usage: JsonObject?, streamBegan: Boolean = true) {
         val at = Position(Moment.NON_STREAM, streamBegan)
         val answer = voice.answer(cause, at)
+        answered = answer
         val line = voice.ending(cause, at, answer)
         written = line
         body = errorEnvelope(answer.type.wireName, line.text, usage)

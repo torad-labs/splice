@@ -10,9 +10,10 @@ import io.ktor.server.application.ApplicationCall
 import splice.core.auth.CredentialKey
 import splice.core.failure.EndingHeard
 import splice.core.failure.RequestFacts
+import splice.core.memory.HeapLease
 import splice.core.turn.LiveWatchdogBudget
-import splice.core.util.WallClock
 import splice.head.HeadDeps
+import splice.head.hold.ClientWallHeader
 import splice.head.hold.ResendLedger
 import splice.head.turn.Preparation
 import splice.head.turn.SESSION_TAG_CHARS
@@ -33,13 +34,8 @@ internal class HeadAdmission(
     private val responses: AdmissionResponses,
     private val driver: TurnDriver,
 ) {
-    // V4-50 reads a WALL instant because a reset is a calendar fact the client must be told in epoch
-    // seconds; [HeadDeps.clock] is an ElapsedClock and cannot answer that. The admission below takes the
-    // clock as its own parameter, which is where a test injects one to refuse without sleeping.
-    private val wallClock = WallClock(System::currentTimeMillis)
     private val keyAccounts = KeyAccount(preparation.provider.auth, deps.quotaBundle)
-    private val exhaustedAccounts = ExhaustedAccountAdmission(deps, responses, driver, wallClock)
-    private val refusals = PreDriveRefusals(deps, admission, responses, driver)
+    private val refusals = PreDriveRefusals(deps, admission, responses, driver, preparation.provider.loginCommand)
 
     // Failure-handling slice 4: the requests whose turn ended with an answer Claude Code sends again, so the identical
     // request after one is told as its re-send (RequestFacts.repeated) and ends for good if it fails the same way.
@@ -66,7 +62,15 @@ internal class HeadAdmission(
         try {
             // Prepared request trees survive decode and may belong to a detached compaction.
             // Their heap lease follows the same slot that already owns that drive's lifetime.
-            val owner = MaterializationOwner { admitted.materializedEnd = it }
+            val owner = object : MaterializationOwner {
+                override fun onRelease(release: TurnEnd) {
+                    admitted.materializedEnd = release
+                }
+
+                override fun leased(lease: HeapLease) {
+                    admitted.heapLease = lease
+                }
+            }
             val leaseStart = telemetry.arrivalTime()
             val prepared = admission.materializeBodyOrRespond(
                 call,
@@ -166,7 +170,7 @@ internal class HeadAdmission(
             null -> null
             is Selection.Chosen -> selection.account
             is Selection.Exhausted -> {
-                exhaustedAccounts.refuse(call, prepared, admitted, selection, trace)
+                refusals.refuseNoLogin(call, prepared, admitted, selection, trace)
                 return
             }
         }
@@ -208,13 +212,19 @@ internal class HeadAdmission(
             compaction = prepared.built.meta.compact,
             firstExchange = !prepared.hasPriorExchange,
             repeated = resends.repeated(scope.sessionId, scope.messagesHash),
+            otherLogin = (deps.quotaBundle.activePool?.members?.size ?: 0) > 1,
         )
+        // A hold handed to the client (family L) is not an ending to repeat: its re-send holds anew (slice 5).
         val heard = EndingHeard { answer ->
-            if (answer.clientResends) resends.endedForResend(scope.sessionId, scope.messagesHash)
+            if (answer.clientResends && !answer.handedOver) resends.endedForResend(scope.sessionId, scope.messagesHash)
         }
         val inputs = TurnInputs(
             prepared.built,
-            TurnSlot(admitted.slot) { admitted.markHandedOff() },
+            TurnSlot(
+                admitted.slot,
+                clientWallMs = ClientWallHeader.ms(call),
+                heapLease = admitted.heapLease,
+            ) { admitted.markHandedOff() },
             admitted.t0,
             admitted.perf,
             trace = trace,
@@ -224,6 +234,3 @@ internal class HeadAdmission(
         if (prepared.stream) driver.stream(call, inputs) else driver.collect(call, inputs)
     }
 }
-
-// Seconds on the HTTP retry wire use the same conversion in both credential and exhausted-pool refusals.
-internal const val MILLIS_PER_SECOND = 1000L

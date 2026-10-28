@@ -28,7 +28,6 @@ import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
 import splice.upstream.Waiter
-import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
 import java.net.InetSocketAddress
 import java.util.concurrent.CopyOnWriteArrayList
@@ -36,6 +35,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import splice.upstream.testing.OpenAiTestReplies as OpenAiReplies
 
 class UpstreamWriteTimingTest {
     @Test

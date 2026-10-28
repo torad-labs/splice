@@ -57,7 +57,15 @@ public data class PostLimits(
      *  turn's every other post and round. Null for a post with no turn around it, which gets a ledger of its own and
      *  waits on its client's pacing. */
     val retry: TurnRetry? = null,
+    /** Whether the failure can move to a free login, or, once all are held, to an earlier-reset login. The cause supplies
+     *  the just-received reset before it is persisted for account selection. Null preserves a standalone post's policy. */
+    val otherLoginFree: OtherLoginFree? = null,
 )
+
+/** Whether another login can take this failure before content is committed. */
+public fun interface OtherLoginFree {
+    public operator fun invoke(cause: splice.core.failure.FailureCause): Boolean
+}
 
 /** What listens to a post without changing it: the turn's timing row, the wire recorder, the refresh observer and
  *  the retry notice. */

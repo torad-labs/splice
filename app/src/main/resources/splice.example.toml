@@ -674,9 +674,9 @@ models = [{ id = "k3[1m]", slot = "opus" }, { id = "k3-256k", slot = "sonnet" },
 [heads.claude-kimi.claude]
 command = "claude-kimi"
 # PER-HEAD KNOBS. Keys are the knob names from ConfigService's Knob enum (maxInflight, maxQueued,
-# upstreamTimeoutMs, streamIdleMs, firstByteTimeoutMs, ...), always as STRINGS. The same names work
-# in an optional top-level [defaults] table, which this example deliberately omits: a knob put there
-# governs EVERY head, which is the exact problem per-head overrides exist to solve. Precedence:
+# effort, ...), always as STRINGS. Timing bounds are daemon-wide: upstreamTimeoutMs, streamIdleMs,
+# firstByteTimeoutMs and stallReanchorMs belong only in [defaults], never in a head's overrides.
+# A live connection is held to the session's own wall, so slow models keep reasoning. Precedence:
 #   knob defaults <- [defaults] <- [heads.<key>.overrides] <- state config.json <- env <- PATCH
 #
 # maxInflight is the one that matters most: it is the concurrency the UPSTREAM ACCOUNT tolerates,
@@ -688,9 +688,7 @@ command = "claude-kimi"
 # Start near the observed-good ceiling and raise only with perf-jsonl evidence.
 [heads.claude-kimi.overrides]
 maxInflight = "8"
-# kimi K3 reasons 10-20 min; keep the long cap HERE instead of [defaults], where it also handed
-# codex and grok a 40-min ceiling (a wedged turn holds its inflight slot for the whole budget).
-upstreamTimeoutMs = "2400000"
+# Kimi's 10-20 minute reasoning uses the same daemon-wide bounds as every other head.
 
 [heads.claude-muse]
 provider = "muse"
@@ -904,7 +902,9 @@ command = "claude-splice"
 # traceMaxBodyChars = "16777216"                            # chars; a longer body is cut and the record says so
 # retired: retryBackoffBaseMs, retryBackoffCapMs and retryBackoffJitterPct — since 0.4.0 splice decides how soon a
 #     failed request is sent again from what failed; boot refuses the keys, SPLICE_RETRY_BACKOFF_* and a saved value
-# firstByteTimeoutMs = "90000"                              # ms; (HOT, per turn; through WatchdogBudget) the watchdog's
+# upstreamTimeoutMs = "1800000"                            # ms; (RESTART, daemon-wide) progress renews the cap;
+#                                                           #     a live connection is held to its session's wall.
+# firstByteTimeoutMs = "90000"                              # ms; (HOT, daemon-wide; through WatchdogBudget) the watchdog's
 #                                                           #     FIRST-OUTPUT tier: silence before the first frame
 #                                                           #     past this is a PROBE, like streamIdleMs below.
 #                                                           #     Not a socket timeout: a read waits up to
@@ -915,27 +915,25 @@ command = "claude-splice"
 #                                                           #     before the backend ends every socket at 60 minutes;
 #                                                           #     held at 3540000 or less. The conversation's next round
 #                                                           #     opens a new socket and sends its whole input
-# streamIdleMs = "90000"                                    # ms; (HOT, per turn) stream silence before the stall watchdog ASKS.
+# streamIdleMs = "90000"                                    # ms; (HOT, daemon-wide) stream silence before the stall watchdog ASKS.
 #                                                           #     A breach is a PROBE, not a verdict:
 #                                                           #     the round's path is asked whether it is alive, a live
-#                                                           #     path is HELD (polled on, never reaped short of
-#                                                           #     upstreamTimeoutMs) and only a path that cannot answer
+#                                                           #     path is HELD to its session's wall and only a path that cannot answer
 #                                                           #     is reaped at all. So this buys how long you wait
 #                                                           #     before splice starts healing, NOT how long a silent
 #                                                           #     backend is tolerated — which is why 90s replaced the
 #                                                           #     old 300s. That 300s was pinned to codex-rs parity
 #                                                           #     after the idle tier ended 129 compactions in one day
 #                                                           #     (2026-09-01) at 180s; it was safe then because a
-#                                                           #     breach was fatal. It no longer is. A head that
-#                                                           #     genuinely needs the long wait names 300000 here.
-# stallReanchorMs = "20000"                                 # ms; (HOT, per turn) mid-output silence (content already delivered)
+#                                                           #     breach was fatal. It no longer is.
+# stallReanchorMs = "20000"                                 # ms; (HOT, daemon-wide) mid-output silence (content already delivered)
 #                                                           #     before splice CANCELS the round and re-anchors it
 #                                                           #     itself (re-POST from the salvage). Only arm it for a
 #                                                           #     head whose upstream is MEASURED to continue from an
 #                                                           #     assistant prefill (reanchor_prefill); a head that
 #                                                           #     cannot be prefilled has nothing to resume into, so
 #                                                           #     streamIdleMs stays its floor. Not consulted before the
-#                                                           #     first content frame. 0 disables the tier for this head.
+#                                                           #     first content frame. 0 disables the tier.
 # authCacheMs = "60000"                                     # ms; how long an OAuth snapshot is reused
 # debug = "false"                                           # bool; verbose logging
 # contextWindowOverride = "200000"                          # tokens; unset by default, pins the client window

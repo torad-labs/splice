@@ -83,12 +83,26 @@ private fun spliceCauses(): List<FailureCause> = buildList {
     BOOLS.forEach { escaped -> BOOLS.forEach { add(FailureCause.Splice.Internal(escaped, permanent = it)) } }
 }
 
-private val CAUSES: List<FailureCause> = providerCauses() + pathCauses() + spliceCauses()
+/** Failure-handling slice 5: a hold that ended without the turn going on, for each way it ends and each cause it held. */
+private fun heldCauses(): List<FailureCause> = buildList {
+    val reset = Instant.parse("2026-10-26T18:00:00Z")
+    val held = listOf(
+        FailureCause.Provider.Limited(LIFTS[1], LimitWindow.FIVE_HOUR),
+        FailureCause.Provider.Limited(Lift.Unstated, null),
+        FailureCause.Provider.Overloaded(LIFTS[1], loading = false),
+        FailureCause.Provider.NeedsPayment(Lift.Unstated, subscription = false),
+    )
+    Outlast.entries.forEach { why ->
+        held.forEach { cause -> listOf(reset, null).forEach { add(FailureCause.Splice.HoldOutlasted(why, cause, it)) } }
+    }
+}
+
+private val CAUSES: List<FailureCause> = providerCauses() + pathCauses() + spliceCauses() + heldCauses()
 
 private val POSITIONS: List<Position> = Moment.entries.flatMap { moment -> BOOLS.map { Position(moment, it) } }
 
 /** The families of section 11 this test checks, with the login causes apart: they are P, with a login status. */
-private enum class Fam { R, P, LOGIN, T }
+private enum class Fam { R, P, LOGIN, T, L, H }
 
 /** Section 11's table, as this file reads it. Null for a cause outside R, P and T: a held turn's ending (slice 5), a
  *  request that took too long to arrive (408, its own row), and a cut round, which never ends a turn. A limit and a
@@ -118,7 +132,7 @@ private object Section11 {
         is FailureCause.Splice.Declined -> declined(cause.why)
         is FailureCause.Splice.Stopped -> permanent(cause.by == StoppedBy.CONSOLE)
         is FailureCause.Splice.Protocol -> permanent(cause.fault != ProtocolFault.CODE_MODE_START)
-        is FailureCause.Splice.HoldOutlasted -> null
+        is FailureCause.Splice.HoldOutlasted -> outlasted(cause)
         // A failure inside splice the same request earns again is permanent, whatever its words (V4-81's base_url).
         is FailureCause.Splice.Internal -> permanent(cause.permanent)
         is FailureCause.Splice.AtCapacity, is FailureCause.Splice.TurnBudgetSpent,
@@ -140,6 +154,14 @@ private object Section11 {
     }
 
     private fun permanent(stops: Boolean): Fam = if (stops) Fam.P else Fam.R
+
+    /** A hold that ended takes its held cause's family, and one the session's wall cut short is handed to the client. */
+    private fun outlasted(cause: FailureCause.Splice.HoldOutlasted): Fam = when {
+        cause.why == Outlast.WALL -> Fam.L
+        cause.held is FailureCause.Provider.Limited -> Fam.H
+        cause.held is FailureCause.Provider.NeedsPayment -> Fam.P
+        else -> Fam.R
+    }
 }
 
 /** One case of the record: its verdict on whether the client sent the request again, and how many times. */
@@ -194,11 +216,14 @@ private val HTTP_CASES: Map<Int, Pair<String?, String?>> = mapOf(
 
 /** The record's case for an answer that is an HTTP status. */
 private fun httpCase(answer: WireAnswer, at: Position): String? {
-    if (answer.status == HttpStatus.OVERLOADED) {
-        return if (at.moment == Moment.NON_STREAM) "http-529-non-stream" else "http-529-stream"
+    val trueReset = !answer.recheck && answer.resetsAt != null
+    return when {
+        answer.status == HttpStatus.OVERLOADED ->
+            if (at.moment == Moment.NON_STREAM) "http-529-non-stream" else "http-529-stream"
+        // Family L with its true reset: the client sleeps until that reset and sends again (http-429-reset-hours-away).
+        answer.handedOver && trueReset -> "http-429-reset-hours-away"
+        else -> HTTP_CASES[answer.status]?.let { rows -> if (answer.shouldRetry == false) rows.second else rows.first }
     }
-    val rows = HTTP_CASES[answer.status] ?: return null
-    return if (answer.shouldRetry == false) rows.second else rows.first
 }
 
 /** The record's name for an in-band error type, as its case ids spell it. */
@@ -263,8 +288,8 @@ private fun familyMiss(case: Answered): String? {
     val after = case.at.moment == Moment.MID_CONTENT
     val said = "(record: $resent): $case"
     return when (case.family) {
-        Fam.R -> if (after || resent == true) null else "R not re-sent $said"
-        Fam.P, Fam.T -> if (stopped(resent, after)) null else "${case.family} not stopped $said"
+        Fam.R, Fam.L -> if (after || resent == true) null else "${case.family} not re-sent $said"
+        Fam.P, Fam.T, Fam.H -> if (stopped(resent, after)) null else "${case.family} not stopped $said"
         Fam.LOGIN -> loginMiss(case)
         null -> null
     }
@@ -283,7 +308,7 @@ private fun unrecorded(case: Answered): String? {
 }
 
 /** The families whose every answer must be a row of the record. */
-private val RECORDED = setOf(Fam.R, Fam.P, Fam.T)
+private val RECORDED = setOf(Fam.R, Fam.P, Fam.T, Fam.L, Fam.H)
 
 /** Whether a P or T answer stopped the turn. After content the record's own verdict is mixed for overloaded_error
  *  ("1 after thinking alone; none after text"), and the design leaves the type alone there, so the only breach after
@@ -319,6 +344,50 @@ class ClientWireRecordTest {
             }
         }
         assertEquals(emptyList<String>(), misses, "${misses.size} answers misread")
+    }
+
+    /** Failure-handling slice 5: a limit the session cannot wait out is answered 429 with no x-should-retry, naming the
+     *  true reset on a head with one login and a time RECHECK_SECONDS away on a pooled one, and the record says the
+     *  client sleeps until that time and sends the turn again. A limit too far to wait for, or one that did not lift,
+     *  stops: its answer is a row the record says the client does not send again. */
+    @Test
+    fun `the L answer is re-asked at the time it names, and the H answer is not re-sent`() {
+        val beforeCommit = Position(Moment.BEFORE_COMMIT, streamBegan = false)
+        val held = ANSWERED.map { it.cause }.filterIsInstance<FailureCause.Splice.HoldOutlasted>().distinct()
+        val misses = held.flatMap { cause ->
+            BOOLS.mapNotNull { otherLogin -> heldMiss(cause, beforeCommit, otherLogin) }
+        }
+        assertTrue(
+            held.any { Section11.of(it) == Fam.L } && held.any { Section11.of(it) == Fam.H },
+            "both families met",
+        )
+        assertEquals(emptyList<String>(), misses, "${misses.size} held endings break their promise")
+    }
+
+    private fun heldMiss(cause: FailureCause.Splice.HoldOutlasted, at: Position, otherLogin: Boolean): String? {
+        val answer = ClientWire.answer(cause, at, otherLogin = otherLogin)
+        val resent = recordResent(answer, at)
+        val told = "$cause, other login $otherLogin: $answer (record: $resent)"
+        return when (Section11.of(cause)) {
+            Fam.L -> handedOverMiss(answer, cause, otherLogin, resent, told)
+            Fam.H -> if (resent != false) "H re-sent: $told" else null
+            else -> null
+        }
+    }
+
+    private fun handedOverMiss(
+        answer: WireAnswer,
+        cause: FailureCause.Splice.HoldOutlasted,
+        otherLogin: Boolean,
+        resent: Boolean?,
+        told: String,
+    ): String? = when {
+        answer.status != HttpStatus.TOO_MANY_REQUESTS || answer.shouldRetry == false ->
+            "L is not a 429 the client retries: $told"
+        resent != true -> "L not re-asked: $told"
+        answer.resetsAt != cause.nextReset -> "L names another reset: $told"
+        answer.recheck != otherLogin -> "L rechecks where no other login serves: $told"
+        else -> null
     }
 
     /** A repeated R is the exception: where its own type is overloaded_error, which the client sends once more after

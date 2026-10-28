@@ -15,7 +15,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import splice.upstream.RetryNotice
-import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
 import splice.upstream.transport.PostContext
 import splice.upstream.transport.PostObservers
@@ -26,6 +25,7 @@ import splice.upstream.transport.fakeAuth
 import splice.upstream.transport.postOnce
 import splice.upstream.transport.posted
 import java.util.concurrent.atomic.AtomicInteger
+import splice.upstream.testing.OpenAiTestReplies as OpenAiReplies
 
 class OverflowNotRetriedTest {
 

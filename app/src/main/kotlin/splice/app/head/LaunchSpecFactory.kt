@@ -22,13 +22,10 @@ import splice.launch.LaunchModels
 import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
 import splice.launch.ModelTiers
+import splice.upstream.retry.CLIENT_WALL_GRACE_MS
+import splice.upstream.retry.MAX_HOLD_MS
 import java.nio.file.Path
 import java.nio.file.Paths
-
-/** How much longer than the daemon's whole-turn cap Claude Code waits before giving up on a
- *  request. Large enough to cover the cancellation seal's travel, small enough that a hung proxy
- *  still surfaces within a minute of its own wall. */
-private const val CLIENT_TIMEOUT_GRACE_MS = 60_000L
 
 internal class LaunchSpecFactory(
     private val topology: Topology,
@@ -120,8 +117,10 @@ internal class LaunchSpecFactory(
                 // reinterpreting the declaration. See ManagedHeadFactory.forwardClientAuth.
                 forwardClientAuth = forwardClientAuth,
                 // The client's request timeout is DERIVED from the head's whole-turn cap (never a
-                // second hand-maintained number): the proxy's wall is the one that names the verdict.
-                apiTimeoutMs = ctx.faultPlan.watchdog.totalCap.inWholeMilliseconds + CLIENT_TIMEOUT_GRACE_MS,
+                // second hand-maintained number): the proxy's wall is the one that names the verdict. Failure-handling
+                // slice 5: and from the longest hold, so a turn held in its own request until a reset up to seven days
+                // away is still the client's request when the reset comes.
+                apiTimeoutMs = ctx.faultPlan.watchdog.totalCap.inWholeMilliseconds + MAX_HOLD_MS + CLIENT_WALL_GRACE_MS,
                 // The bearer rides in a 0600 header FILE curl reads (`-H @file`), never inline: an inline
                 // header sat in settings.json and in curl's argv, which /proc shows every local user.
                 statuslineCommand = "curl -sS -H ${shellSingleQuote("@${turnKey.headerFile()}")} " +

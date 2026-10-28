@@ -241,7 +241,7 @@ internal class ControlPlane(
         srv.ports.claudeLogins = claudeLogin.owner
         srv.ports.quotaReadFailures = quotaReadFailures
         srv.ports.lifecycle.keyRotation = KeyRotation(daemon.mgmtKey, daemon.mcpAccess, statePaths, log)
-        providerAssembly.claudePoolChanges.onJoined = LoginJoined { head -> srv.limitResume?.joined(head) }
+        providerAssembly.claudePoolChanges.onJoined = LoginJoined { head -> srv.sessionWake?.joined(head) }
         providerAssembly.claudePoolChanges.watch(probeScope, log)
         srv.ports.budgetSpending = console.budgets
         srv.ports.mcpInventory = mcp.inventory

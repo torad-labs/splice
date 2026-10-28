@@ -10,8 +10,14 @@ import java.time.Instant
 /** What a line knows of the request it answers. A compaction and a first exchange that are too long say so in their
  *  own words, never with the phrase that makes Claude Code compact (final-design.md section 11). [repeated]: the
  *  request's identical predecessor already ended in a failure Claude Code re-sends (the ResendLedger), so this one
- *  ends for good. */
-public data class RequestFacts(val compaction: Boolean, val firstExchange: Boolean, val repeated: Boolean = false)
+ *  ends for good. [otherLogin]: the head's pool holds another login, so a limit handed to the client (family L)
+ *  names a time 30 s away and says the client checks again then (failure-handling slice 5). */
+public data class RequestFacts(
+    val compaction: Boolean,
+    val firstExchange: Boolean,
+    val repeated: Boolean = false,
+    val otherLogin: Boolean = false,
+)
 
 /** What a line names besides its failure: [head], the head's launch command and the subject of most lines;
  *  [loginCommand], the command that signs the head in, null where the client signs itself in; [providerName], the
@@ -39,6 +45,10 @@ public sealed class Recovery {
 
     /** It moves to another of the head's logins. */
     public data object OtherLogin : Recovery()
+
+    /** It holds until [until], the reset its cause stated, or until a probe finds it lifted where none was stated:
+     *  [soft] says a probe may find it lifted before [until] (failure-handling slice 5). */
+    public data class Hold(val until: Instant?, val soft: Boolean) : Recovery()
 }
 
 /** A line written while a turn recovers: the failure it met, and what it does next. One opens each recovery episode
@@ -50,7 +60,7 @@ public data class WaitLine(val cause: FailureCause, val next: Recovery)
 public data class QuietTurn(val elapsedMs: Long, val answering: Boolean, val again: Boolean)
 
 /** A note splice sends a session that is waiting on it. */
-public enum class SessionNote { NEW_LOGIN, }
+public enum class SessionNote { NEW_LOGIN, RESET }
 
 /** Composes every [SpliceLine]: one line of one or two sentences, at most [MAX_LINE] characters, that says what
  *  happened and what happens next. Times read through [time], in the machine's zone with its abbreviation. */
@@ -58,6 +68,7 @@ internal class SpliceLines(time: LocalTimeText = LocalTimeText()) {
     private val spoken = Spoken(time)
     private val providers = ProviderSentences(spoken)
     private val splices = SpliceSentences(spoken)
+    private val holds = HoldSentences(spoken)
 
     /** The line a failed turn ends with. [answer] is what the client is told (ClientWire.answer): a line says Claude
      *  Code sends the turn again only when [WireAnswer.clientResends] says it does, and otherwise says what to do. */
@@ -81,8 +92,14 @@ internal class SpliceLines(time: LocalTimeText = LocalTimeText()) {
     private fun stopsForGood(facts: LineFacts, answer: WireAnswer): Boolean =
         facts.request.repeated && !answer.clientResends
 
-    /** The line that opens a recovery episode: what the turn met, and what it does about it. It quotes no provider. */
+    /** The line that opens a recovery episode: what the turn met, and what it does about it. It quotes no provider,
+     *  but for a spent account's hold, whose line names what the person settles (section 10). */
     fun waiting(wait: WaitLine, facts: LineFacts): SpliceLine {
+        val hold = wait.next as? Recovery.Hold
+        if (hold != null) {
+            val said = holds.holding(wait.cause, hold, facts)
+            return fit(said.what, said.quote, (said.next as? Next.Then)?.text)
+        }
         val resumes = wait.next == Recovery.Resume
         val at = Position(if (resumes) Moment.MID_CONTENT else Moment.BEFORE_COMMIT, streamBegan = resumes)
         val next = when (val then = wait.next) {
@@ -90,6 +107,7 @@ internal class SpliceLines(time: LocalTimeText = LocalTimeText()) {
             Recovery.Resume -> "This turn continues from where it stopped."
             Recovery.AskAgain -> "This turn asks again."
             Recovery.OtherLogin -> "Another ${facts.head} login is free, so this turn continues there."
+            is Recovery.Hold -> null
         }
         return fit(said(wait.cause, at, facts, ongoing = true).what, null, next)
     }
@@ -109,6 +127,7 @@ internal class SpliceLines(time: LocalTimeText = LocalTimeText()) {
     /** The note a waiting session reads. */
     fun note(note: SessionNote, facts: LineFacts): SpliceLine = when (note) {
         SessionNote.NEW_LOGIN -> fit("${facts.head} has a new login", null, "Continue where you left off.")
+        SessionNote.RESET -> fit("${facts.head}'s stated reset has passed", null, "Continue where you left off.")
     }
 
     private fun said(cause: FailureCause, at: Position, facts: LineFacts, ongoing: Boolean): Said = when (cause) {

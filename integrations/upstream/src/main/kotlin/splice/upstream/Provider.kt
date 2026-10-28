@@ -109,9 +109,6 @@ public interface Provider : ProviderIdentity {
      *  the misreading this port exists to end. */
     public val replies: Replies
 
-    /** The Anthropic-compatible client owns retry and fallback for a native rate-limit response. */
-    public val relayRateLimitReplies: Boolean get() = false
-
     /** A caller constraint this provider cannot honor, answered at admission as its cause decides.
      *  Null preserves normal admission. This is evaluated before building or sending an upstream turn. */
     public fun requestRefusal(body: AnthropicTurnBody): RequestRefusal? = null

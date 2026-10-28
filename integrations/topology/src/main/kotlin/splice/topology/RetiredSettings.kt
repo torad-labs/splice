@@ -30,13 +30,15 @@ public class RetiredSettings(private val env: EnvReader) {
     }
 
     private fun saved(topology: Topology?): List<TopologyFinding> {
-        val file = TopologyStatePaths(env).of(topology).configFile
-        return SavedSettings(file).keys().mapNotNull(retiredKnobsByKey::get).map { knob ->
+        val paths = TopologyStatePaths(env).of(topology)
+        val file = paths.configFile
+        val retired = SavedSettings(file).keys().mapNotNull(retiredKnobsByKey::get).map { knob ->
             TopologyFinding(
                 knob.key,
                 "is saved in $file and ${knob.retired}; clear it there, which the fix session does for you",
                 origin = TopologyFinding.Origin.Saved(file, knob.key),
             )
         }
+        return retired + ScopedSettings.findings(paths, topology?.heads?.keys.orEmpty())
     }
 }

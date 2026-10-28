@@ -35,10 +35,11 @@ internal object AccountAvailability {
     /** The logins held on their plan that could otherwise serve, nearest reset first; ties keep [order]. */
     fun nearestHeld(order: List<PoolAccount>, at: Long): List<PoolAccount> =
         order.filter { account ->
-            val held = account.cooldown.planHold.live() != null ||
+            val held = account.quotaHeld || account.cooldown.providerUnavailableForMs() > 0L ||
+                account.cooldown.planHold.live() != null ||
                 (account.cooldown.rateLimitReply != null && account.cooldown.remainingMs() > 0L)
-            held && account.credentialStatus(at).selectable && account.cooldown.unavailableForMs() <= 0L
-        }.sortedBy { maxOf(it.cooldown.providerUnavailableForMs(), it.cooldown.remainingMs()) }
+            held && account.credentialStatus(at).selectable
+        }.sortedBy { blockedUntil(it, at) ?: Long.MAX_VALUE }
 
     /** Held only by the provider's short rate limit, its plan named spent by neither a hold nor a full reading: admission
      *  waits that hold out on the same login (CredentialHoldAdmission), so it is no exhausted login. A pool flipped from

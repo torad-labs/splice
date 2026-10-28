@@ -59,6 +59,7 @@
 // `.claude-` literal); a blank key (test shims) parks as `.from-head`.
 package splice.client.wrap
 
+import splice.client.wrap.projects.ProjectsMigrationPlan
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
@@ -88,32 +89,6 @@ private object ProcessProjectsFs : ProjectsFs {
     override fun createLink(link: Path, existing: Path): Path = Files.createLink(link, existing)
 
     override fun createSymbolicLink(link: Path, target: Path): Path = Files.createSymbolicLink(link, target)
-}
-
-/** Everything the preflight decided before the first link: the global dirs to create, the hardlinks
- *  (global name -> head file) and symlinks (global name -> target string) in walk order with every
- *  collision already redirected to its parked name, and the parked names for the log. */
-private class MigrationPlan {
-    val newGlobalDirs = mutableListOf<Path>()
-    val hardLinks = mutableListOf<Pair<Path, Path>>()
-    val symLinks = mutableListOf<Pair<Path, Path>>()
-    val parked = mutableListOf<Path>()
-
-    /** Dirs first, then every link in order, appending each global name to [created] as it lands so a
-     *  failure part-way knows exactly what to unlink. */
-    fun apply(fs: ProjectsFs, created: MutableList<Path>) {
-        newGlobalDirs.forEach { Files.createDirectories(it) }
-        hardLinks.forEach { (link, existing) -> created.add(fs.createLink(link, existing)) }
-        symLinks.forEach { (link, target) -> created.add(fs.createSymbolicLink(link, target)) }
-    }
-
-    /** Whether [path] is already a symlink to [dest]: the entry the plan skips as done. */
-    fun sameLink(path: Path, dest: Path): Boolean = path.isSymbolicLink() && Files.readSymbolicLink(path) == dest
-
-    fun parkedLine(globalProjects: Path): String =
-        "[projects] ${parked.size} entries already existed in $globalProjects; kept the global copy, " +
-            "parked this head's beside it: " +
-            parked.joinToString(", ") { globalProjects.relativize(it).toString() } + "\n"
 }
 
 // The aside tree's name marker: `.projects.migrating-<uuid>` beside the link. A sweep that could not
@@ -260,8 +235,8 @@ internal class ProjectsLink(
      *  Declining is never silent (DR-1): a refusal or a rollback lands in the daemon log with its
      *  cause. */
     private fun migrateAndReplace(dst: Path, globalProjects: Path, staged: Path, log: LogSink): Boolean {
-        val plan = MigrationPlan()
-        val refusal = preflight(dst, globalProjects, plan)
+        val plan = ProjectsMigrationPlan(parkSuffix)
+        val refusal = plan.preflight(dst, globalProjects)
         if (refusal != null) {
             log(
                 "[projects] REFUSED to migrate $dst into $globalProjects ($refusal), so " +
@@ -289,66 +264,6 @@ internal class ProjectsLink(
         if (plan.parked.isNotEmpty()) log(plan.parkedLine(globalProjects))
         sweepAside(aside, globalProjects, log)
         return true
-    }
-
-    /** Walk [head] against [global] filling [plan]; the first unexpected entry is the decline cause. */
-    private fun preflight(head: Path, global: Path, plan: MigrationPlan): String? {
-        val entries = Files.newDirectoryStream(head).use { stream ->
-            stream.toList().sortedBy { it.fileName.toString() }
-        }
-        for (entry in entries) {
-            val target = global.resolve(entry.fileName)
-            val cause = when {
-                entry.isSymbolicLink() -> preflightSymlink(entry, target, plan)
-                Files.isDirectory(entry, NOFOLLOW_LINKS) -> preflightDir(entry, target, plan)
-                Files.isRegularFile(entry, NOFOLLOW_LINKS) -> preflightFile(entry, target, plan)
-                else -> "unexpected entry '${entry.fileName}' (neither file, directory nor symlink)"
-            }
-            if (cause != null) return cause
-        }
-        return null
-    }
-
-    // Divergence A: a directory both sides hold is merged into; an absent global one is created.
-    private fun preflightDir(entry: Path, target: Path, plan: MigrationPlan): String? {
-        if (Files.exists(target, NOFOLLOW_LINKS) && !Files.isDirectory(target, NOFOLLOW_LINKS)) {
-            return "'${entry.fileName}' is a directory here but not in the global projects"
-        }
-        if (!Files.exists(target, NOFOLLOW_LINKS)) plan.newGlobalDirs.add(target)
-        return preflight(entry, target, plan)
-    }
-
-    // Divergence B: the global name gets this file's inode when free; a same-named file that already
-    // IS this inode is done; any other collision parks the inode under the head's suffix instead.
-    private fun preflightFile(entry: Path, target: Path, plan: MigrationPlan): String? {
-        val parked = target.resolveSibling("${target.fileName}$parkSuffix")
-        return when {
-            !Files.exists(target, NOFOLLOW_LINKS) -> null.also { plan.hardLinks.add(target to entry) }
-            Files.isSameFile(target, entry) -> null
-            !Files.exists(parked, NOFOLLOW_LINKS) -> null.also {
-                plan.hardLinks.add(parked to entry)
-                plan.parked.add(parked)
-            }
-            Files.isSameFile(parked, entry) -> null
-            else -> "'${target.fileName}' and its parked copy '${parked.fileName}' both already exist globally"
-        }
-    }
-
-    // Divergence C: a symlink is recreated with its target string verbatim; one already there with
-    // the identical target is done; a different one parks, like a file.
-    private fun preflightSymlink(entry: Path, target: Path, plan: MigrationPlan): String? {
-        val dest = Files.readSymbolicLink(entry)
-        val parked = target.resolveSibling("${target.fileName}$parkSuffix")
-        return when {
-            !Files.exists(target, NOFOLLOW_LINKS) -> null.also { plan.symLinks.add(target to dest) }
-            plan.sameLink(target, dest) -> null
-            !Files.exists(parked, NOFOLLOW_LINKS) -> null.also {
-                plan.symLinks.add(parked to dest)
-                plan.parked.add(parked)
-            }
-            plan.sameLink(parked, dest) -> null
-            else -> "'${target.fileName}' and its parked copy '${parked.fileName}' both already exist globally"
-        }
     }
 
     /** A failure BEFORE the aside rename never moved anything: this run's global links and the empty
@@ -386,9 +301,9 @@ internal class ProjectsLink(
      *  failure here is logged with the aside path and NOT rolled back: the leftover is harmless, and
      *  the next launch finds it by name (sweepLeftovers) and retries. */
     private fun sweepAside(aside: Path, globalProjects: Path, log: LogSink) {
-        val plan = MigrationPlan()
+        val plan = ProjectsMigrationPlan(parkSuffix)
         val outcome = Cancellables.runCatchingCancellable {
-            preflight(aside, globalProjects, plan)?.let { refusal ->
+            plan.preflight(aside, globalProjects)?.let { refusal ->
                 throw FileSystemException(aside.toString(), null, refusal)
             }
             plan.apply(fs, mutableListOf())

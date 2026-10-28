@@ -125,7 +125,7 @@ class ResponsesTerminalCancellationTest {
             assertTrue(outcome.cause.permanent)
             // Failure-handling slice 4: the salvage rides every in-band failure, and the engine ends a permanent one
             // even where the head could continue from it, so billing never turns it into a re-anchor.
-            val facts = TurnFacts(false, false, 0L, false, true, Long.MAX_VALUE, null)
+            val facts = TurnFacts(false, false, 0L, false, true, TurnFacts.Deadlines(Long.MAX_VALUE), null)
             val step = RetryEngine.next(outcome.cause, outcome.at, RetryLedger(), facts, Instant.EPOCH)
             assertTrue(step is RetryStep.End, "billing must not turn a permanent ending into a re-anchor: $step")
         }

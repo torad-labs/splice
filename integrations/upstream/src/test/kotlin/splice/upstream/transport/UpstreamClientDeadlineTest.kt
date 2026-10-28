@@ -25,11 +25,11 @@ import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
 import splice.upstream.StreamRead
 import splice.upstream.Waiter
-import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
 import splice.upstream.retry.OVERLOAD_FIRST_WAIT_MS
 import java.net.ConnectException
 import java.util.concurrent.atomic.AtomicInteger
+import splice.upstream.testing.OpenAiTestReplies as OpenAiReplies
 
 class UpstreamClientDeadlineTest {
 

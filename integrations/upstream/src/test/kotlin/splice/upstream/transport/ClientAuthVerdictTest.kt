@@ -20,8 +20,8 @@ import org.junit.jupiter.api.Test
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.RefreshableAuthProvider
 import splice.upstream.Waiter
-import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
+import splice.upstream.testing.OpenAiTestReplies as OpenAiReplies
 
 class ClientAuthVerdictTest {
 

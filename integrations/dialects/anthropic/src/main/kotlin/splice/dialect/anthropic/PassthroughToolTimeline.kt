@@ -10,6 +10,13 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
+import splice.core.wire.ClaudeCodeToolChanges
+import splice.core.wire.ClaudeCodeToolChanges.FIELD_DEFINITION
+import splice.core.wire.ClaudeCodeToolChanges.FIELD_TOOL
+import splice.core.wire.ClaudeCodeToolChanges.TOOL_ADDITION
+import splice.core.wire.ClaudeCodeToolChanges.TOOL_DEFINITION
+import splice.core.wire.ClaudeCodeToolChanges.TOOL_REFERENCE
+import splice.core.wire.ClaudeCodeToolChanges.TOOL_REMOVAL
 import splice.core.wire.UnknownBlock
 
 /** One walk of a conversation in order, for the head whose allowlist is [allowlist]. */
@@ -55,7 +62,7 @@ internal class PassthroughToolTimeline(allowlist: Set<String>?) {
         private fun known(name: String): Boolean = name in client || name in definitions
 
         fun message(message: JsonObject) {
-            val system = JsonScalars.str(message, ROLE) == ROLE_SYSTEM
+            val system = ClaudeCodeToolChanges.carriesChanges(message)
             (message[CONTENT] as? JsonArray)?.forEach { element -> (element as? JsonObject)?.let { block(system, it) } }
         }
 
@@ -115,12 +122,3 @@ internal class PassthroughToolTimeline(allowlist: Set<String>?) {
         }
     }
 }
-
-private const val ROLE = "role"
-private const val ROLE_SYSTEM = "system"
-private const val TOOL_ADDITION = "tool_addition"
-private const val TOOL_REMOVAL = "tool_removal"
-private const val TOOL_REFERENCE = "tool_reference"
-private const val TOOL_DEFINITION = "tool_definition"
-private const val FIELD_TOOL = "tool"
-private const val FIELD_DEFINITION = "definition"

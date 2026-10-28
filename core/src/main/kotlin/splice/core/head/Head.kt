@@ -54,7 +54,21 @@ public interface Head {
     /** V4-452: the window the provider's current reading names fully used, null when none is. A reading, not a
      *  refusal: the head stays ready beside it. */
     public fun quotaFull(): QuotaFull? = null
+
+    /** Failure-handling slice 5: the turns this head holds in their own requests until their cause lifts, oldest first.
+     *  Empty on a head that holds none. */
+    public fun heldTurns(): List<HeldTurnReading> = emptyList()
 }
+
+/** One held turn as status and the console show it: the reset it waits for (epoch seconds, null where none was
+ *  stated), the login it waits on, what it met ("limit", "overload", "credit") and the bytes its request keeps in
+ *  memory while it waits. */
+public data class HeldTurnReading(
+    val untilEpochSeconds: Long?,
+    val login: String,
+    val cause: String,
+    val heapBytes: Long,
+)
 
 /** HTTP headers or a WebSocket response frame, never body completion or a local failure. No identifiers. */
 public data class ProviderAnswer(

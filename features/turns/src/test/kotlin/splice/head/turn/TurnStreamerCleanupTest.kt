@@ -365,7 +365,7 @@ class TurnStreamerCleanupTest {
                     )
                 },
             ),
-            slot = TurnSlot(slot, HandoffMark { handedOff.set(true) }),
+            slot = TurnSlot(slot, markHandedOff = HandoffMark { handedOff.set(true) }),
             t0 = 0L,
             perf = perf,
             trace = null,

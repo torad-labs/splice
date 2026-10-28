@@ -23,11 +23,11 @@ import splice.core.usage.PlanLimits
 import splice.core.util.ElapsedClock
 import splice.upstream.Waiter
 import splice.upstream.failure.FailedReply
-import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.ProviderDeviation
 import splice.upstream.failure.Replies
 import splice.upstream.retry.BURST_WAITS
 import java.util.concurrent.atomic.AtomicInteger
+import splice.upstream.testing.OpenAiTestReplies as OpenAiReplies
 
 private const val MS = 1_000L
 private const val SIX_DAYS_S = 6L * 24 * 3_600

@@ -70,12 +70,18 @@ public class AccountPool(
             return membership.get()
         }
 
-    /** Publishes membership only. Existing session choices, order, cooldown objects and leased turns survive. */
+    /** Hears a login join the pool: the head's held turns may move to it (failure-handling slice 5). */
+    @Volatile
+    public var onJoined: Runnable? = null
+
+    /** Publishes membership only. Existing session choices, order, cooldown objects and leased turns survive. A label
+     *  the pool did not hold before is a login that joined, and [onJoined] hears it. */
     public var members: List<PoolAccount>
         get() = membership.get().accounts
         set(accounts) {
             val updated = AccountMembership(accounts)
-            synchronized(membershipMonitor) { membership.set(updated) }
+            val before = synchronized(membershipMonitor) { membership.getAndSet(updated) }
+            if (updated.byLabel.keys.any { it !in before.byLabel }) onJoined?.run()
         }
 
     /** A forwarded caller alone is the legacy path, not a choice between stored logins. */
@@ -385,11 +391,9 @@ public class AccountPool(
         return (listOfNotNull(pin) + policy).distinctBy { it.label }
     }
 
-    /** The first free login in [candidates] order, else a held one with plan room, nearest first. When every selectable
-     *  login of a pool is held on its plan and each hold is armed, none: the turn is answered with the pool's own "earliest reset" refusal (splice-lead, Oct 12), and the
-     *  client's recheck (ClientRecheck) brings it back to admission. A held login whose horizon has lifted is the
-     *  probe that notices a top-up (V4-47), nearest reset first. A head with one login answers with that login's own
-     *  refusal while its horizon is armed, as it always did. */
+    /** The first free login in [candidates] order; when none is free, the credential-selectable login whose hold
+     *  resets first. Admission does not invent a quota refusal: the selected login's own answer holds the turn.
+     *  An in-turn handoff [excluded] takes only a free login, so it cannot bounce among exhausted logins. */
     private fun choose(
         previous: SessionAccount?,
         at: Long,
@@ -410,15 +414,9 @@ public class AccountPool(
         val stay = caller.stays(previous, current.byLabel, preference, at)?.takeIf { it.label !in excluded }
         val free = AccountAvailability.preferredFree(order, at)
         val held = AccountAvailability.nearestHeld(order, at)
-        val eligible = listOfNotNull(stay) + when {
+        val eligible = listOfNotNull(stay.takeIf { free.isNotEmpty() }) + when {
             excluded.isNotEmpty() -> free
-            current.accounts.count { it.credentialStatus(at).selectable } <= 1 -> free.ifEmpty { held }
-            // A login with plan room waits out its short hold at admission and serves; a login held on its plan is
-            // only a probe, so it is taken when no login has room (section 11: a session stays put until a limit).
-            else -> free.ifEmpty {
-                held.filter { AccountAvailability.planRoom(it, at) }
-                    .ifEmpty { held.filter { it.cooldown.remainingMs() <= 0L } }
-            }
+            else -> free.ifEmpty { held }
         }
         // A login its provider blocked until its owner acts is asked last, and only by a turn that no other login took
         // from: a turn that moved off a login asks only a free one.

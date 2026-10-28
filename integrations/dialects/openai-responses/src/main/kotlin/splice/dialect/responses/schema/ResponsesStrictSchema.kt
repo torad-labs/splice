@@ -1,7 +1,7 @@
 // NEW: a caller's output schema rewritten into a vendor's strict subset, and the answer brought back to the caller's
 // schema (2026-10-27). The subset is the vendor's fact (StrictSchemaSubset, stated in its provider module); this file
 // only knows JSON Schema.
-package splice.dialect.responses.request
+package splice.dialect.responses.schema
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -9,22 +9,22 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
+import splice.core.wire.FIELD_TYPE
+import splice.core.wire.JsonSchemaKeywords.ANY_OF
+import splice.core.wire.JsonSchemaKeywords.ARRAY
+import splice.core.wire.JsonSchemaKeywords.DEFINITIONS
+import splice.core.wire.JsonSchemaKeywords.DEFS
+import splice.core.wire.JsonSchemaKeywords.ENUM
+import splice.core.wire.JsonSchemaKeywords.ITEMS
+import splice.core.wire.JsonSchemaKeywords.OBJECT
+import splice.core.wire.JsonSchemaKeywords.PROPERTIES
+import splice.core.wire.JsonSchemaKeywords.REF
 import splice.dialect.responses.StrictSchemaSubset
 
-private const val TYPE = "type"
-private const val PROPERTIES = "properties"
 private const val REQUIRED = "required"
 private const val ADDITIONAL = "additionalProperties"
-private const val ITEMS = "items"
-private const val ENUM = "enum"
 private const val CONST = "const"
-private const val ANY_OF = "anyOf"
-private const val REF = "\$ref"
-private const val DEFS = "\$defs"
-private const val DEFINITIONS = "definitions"
 private const val NULL = "null"
-private const val OBJECT = "object"
-private const val ARRAY = "array"
 
 internal object ResponsesStrictSchema {
     /** JSON Schema annotations: they describe a value without constraining it, so dropping one keeps its meaning. */
@@ -59,7 +59,7 @@ internal object ResponsesStrictSchema {
      *  optional that the answer set to null is left out. */
     fun restore(value: JsonElement, schema: JsonObject): JsonElement = Restore(schema).of(value, schema)
 
-    private fun types(schema: JsonObject): List<String> = when (val type = schema[TYPE]) {
+    private fun types(schema: JsonObject): List<String> = when (val type = schema[FIELD_TYPE]) {
         is JsonPrimitive -> listOfNotNull(type.takeIf { it.isString }?.content)
         is JsonArray -> type.mapNotNull { (it as? JsonPrimitive)?.content }
         is JsonObject, null -> emptyList()
@@ -222,9 +222,11 @@ internal object ResponsesStrictSchema {
             val types = types(node)
             val scalar = types.isNotEmpty() && OBJECT !in types && ARRAY !in types && ENUM !in node && CONST !in node
             return if (scalar) {
-                JsonObject(node + (TYPE to JsonArray((types + NULL).map(::JsonPrimitive))))
+                JsonObject(node + (FIELD_TYPE to JsonArray((types + NULL).map(::JsonPrimitive))))
             } else {
-                JsonObject(mapOf(ANY_OF to JsonArray(listOf(node, JsonObject(mapOf(TYPE to JsonPrimitive(NULL)))))))
+                JsonObject(
+                    mapOf(ANY_OF to JsonArray(listOf(node, JsonObject(mapOf(FIELD_TYPE to JsonPrimitive(NULL)))))),
+                )
             }
         }
 

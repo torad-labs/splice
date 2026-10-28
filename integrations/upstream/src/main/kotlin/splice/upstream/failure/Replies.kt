@@ -12,17 +12,16 @@ import splice.core.usage.PlanLimit
 import splice.core.wire.HttpStatus
 
 /** [standard] reads what [deviation] does not claim. */
-public class Replies(private val standard: ReplyReader, private val deviation: ProviderDeviation? = null) :
-    ReplyReader {
-    override fun http(reply: FailedReply): FailureCause.Provider =
+public class Replies(private val standard: ReplyReader, private val deviation: ProviderDeviation? = null) {
+    public fun http(reply: FailedReply): FailureCause.Provider =
         foreignKey(reply) ?: deviation?.http(reply) ?: standard.http(reply)
 
-    override fun event(event: FailedEvent): FailureCause.Provider = deviation?.event(event) ?: standard.event(event)
+    public fun event(event: FailedEvent): FailureCause.Provider = deviation?.event(event) ?: standard.event(event)
 
     /** Whether this provider names [reply] a dead credential though its status is not 401 (ProviderDeviation). */
     public fun deadCredential(reply: FailedReply): Boolean = deviation?.deadCredential(reply) == true
 
-    override fun planLimit(reply: FailedReply): PlanLimit? = deviation?.planLimit(reply) ?: standard.planLimit(reply)
+    public fun planLimit(reply: FailedReply): PlanLimit? = deviation?.planLimit(reply) ?: standard.planLimit(reply)
 
     /** A round [model] completed, read for a cut its standard reads as a finished round: the provider's declared
      *  deviation alone names one (ProviderDeviation.completed), and null is a round finished whole. */

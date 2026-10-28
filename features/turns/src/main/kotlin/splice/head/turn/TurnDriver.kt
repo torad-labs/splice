@@ -101,7 +101,7 @@ internal class TurnDriver(
         telemetry,
         health,
         TurnConnEnd(provider, log, telemetry, failures, health),
-        TurnKnownEnd(provider, log, telemetry, health, deps.turnQuota),
+        TurnKnownEnd(provider, log, telemetry, health),
     )
     private val usageStamp = TurnUsageStamp(deps.stores.usageStore, log, telemetry)
     private val cancellationSeal = CancellationSeal(provider, log, telemetry, health, usageStamp)
@@ -150,6 +150,7 @@ internal class TurnDriver(
         deps.turnQuota,
         detachOwner,
         deps.stores.clientWindows,
+        deps.traffic.upstream.retryWall,
     )
 
     /** G20: passive health snapshot for HeadServer.healthSnapshot() — the control-plane's

@@ -25,6 +25,7 @@
 // here; only the socket write waits.
 package splice.head.wire
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
@@ -123,6 +124,10 @@ internal class ClientChannel(
     /** Frames that reached the socket: the pinger's silence gauge (unchanged tick after tick =
      *  a silent wire, time for a heartbeat). */
     val socketFrames = AtomicLong(0)
+
+    /** Completes when a turn that outlives its client (a compaction) loses it: a held turn ends there, since no one
+     *  waits for its answer (failure-handling slice 5). An ordinary turn's lost client cancels the turn instead. */
+    val lost: CompletableDeferred<Unit> = CompletableDeferred()
 
     /** V4-456: holds a burst's deltas for [launchPacer]'s loop; inert until that loop runs. */
     private val pacer = DeltaPacer()
@@ -282,6 +287,7 @@ internal class ClientChannel(
         if (recording == null) return false
         clientGone.set(true)
         detached.set(true)
+        lost.complete(Unit)
         return true
     }
 

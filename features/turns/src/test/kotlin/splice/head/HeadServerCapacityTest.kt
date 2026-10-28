@@ -19,7 +19,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -28,15 +27,14 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.client.CLIENT_WALL_HEADER
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
-import splice.core.util.LocalTimeText
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.dialect.responses.ReasoningSettings
-import splice.head.admission.CLIENT_RECHECK_SECONDS
 import splice.head.usage.QuotaTracker
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
@@ -49,8 +47,6 @@ import splice.upstream.retry.InflightGate
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.transport.UpstreamClient
 import java.nio.file.Path
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
 import kotlin.time.Duration.Companion.seconds
 
 private class CapacityFakeAuth : RefreshableAuthProvider {
@@ -230,6 +226,8 @@ class HeadServerCapacityTest {
         // status and account steering read; a control-plane restart must clear it, not keep it.
         client.post("http://127.0.0.1:$port/v1/messages") {
             header("Content-Type", "application/json")
+            // A session whose client timeout cannot hold a limit (slice 5): the limit reaches its client at once.
+            header(CLIENT_WALL_HEADER, "10000")
             setBody(
                 """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,
                     "system":"You are a test. SCENARIO:quota429",
@@ -237,15 +235,13 @@ class HeadServerCapacityTest {
             )
         }.also { response ->
             // Precondition (review #94, F156): pin that the quota429 scenario actually fired, or a
-            // mock drift and a broken cooldown read identically at the next assert. The head relays
-            // upstream failures as a 200 + SSE error event (never an HTTP error status mid-stream).
-            // V4-71: the FIRST pre-content 429 turn now rides the wire as overloaded_error (the one
-            // in-band type Claude Code retries), and since failure-handling slice 2 its words are the
-            // head's line for a usage limit, which is what says the quota429 scenario fired.
+            // mock drift and a broken cooldown read identically at the next assert. The client's
+            // short wall cannot fit the hold, so slice 5 hands the limit back as a 429 before commit.
+            assertEquals(429, response.status.value)
             val body = response.bodyAsText()
             assertTrue(
-                body.contains("[splice] claudex is at its usage limit") && body.contains("overloaded_error"),
-                "the quota429 scenario must surface a retryable rate-limit event, got: ${body.take(200)}",
+                body.contains("[splice] claudex is at its usage limit") && body.contains("rate_limit_error"),
+                "the quota429 scenario must hand the usage limit to the client, got: ${body.take(200)}",
             )
         }
         assertTrue(upstreamClient.rateLimitedForMs > 0L, "the 429 should have armed the cooldown")
@@ -253,110 +249,38 @@ class HeadServerCapacityTest {
         assertEquals(0L, upstreamClient.rateLimitedForMs, "restart must clear the armed horizon")
     }
 
-    // V4-77: a head whose every OAuth account is blocked refuses at admission with a 429. That part
-    // was already true, and since Oct 26 it is the only admission refusal a limit causes (a whole pool
-    // out waits for the failure-handling redesign's resume-at-reset). But it used to hand the client AllAccountsExhausted.earliestResetEpochSeconds RAW: the quota
-    // resetsAt / provider unavailability, bounded only by seven days. Three days on the wire is the
-    // turn dying either way (a non-persistent Claude Code aborts past 60s, a persistent one sleeps),
-    // which is exactly what V4-61 reversed on the cooldown branch and what this arm now pins here.
-    //
-    // WHY THE ASSERTION IS A DELTA AND NOT A LITERAL DATE: the deadline is a hold from NOW, so the
-    // only stable statement about it is its distance from now — positive (a real deadline, not an
-    // already-expired one) and inside the clamp. The provider's own three-day reset is asserted
-    // where it does belong, in the refusal MESSAGE, so this arm fails just as loudly if a later
-    // change bounds the header by dropping the fact instead of by moving it.
-    //
-    // Its own head, its own port, its own pool: the shared head above must stay pool-free or every
-    // other test in this class would route through account selection.
+    // A locally held login remains eligible when no login is free. The provider's actual answer decides the turn.
     @Test
-    fun `an exhausted pool refuses with a Retry-After bounded by the cooldown clamp`() = runBlocking {
+    fun `a pool with every eligible login held still asks the provider`() = runBlocking {
         val cooldown = RateLimitCooldown(ProcessElapsedNow())
         val pooled = pooledHead(cooldown)
         pooled.start()
         val pooledPort = pooled.port
         try {
             awaitListening(pooledPort)
-            // BLOCKED AFTER start(), NEVER BEFORE — HeadServer.start() resets the pool (NF-01's
-            // restart escape hatch clears every account's cooldown), so an account blocked before
-            // the head came up is selectable again and the turn simply succeeds. It did: this arm
-            // read 200 instead of 429 until the order was fixed.
-            // Three days out, the muse-shaped case: markUnavailable keeps SELECTION blocked for the
-            // bounded 120s and reports the full provider window, which is what earliestReset reads.
+            // Start clears cooldowns, so install the provider hold after the head is listening.
             cooldown.markUnavailable(THREE_DAYS_MS)
-            val sentAtSeconds = System.currentTimeMillis() / MS_PER_S
+            assertTrue(cooldown.providerUnavailableForMs > 0L, "the login is held before admission")
+            val upstreamBefore = mock.upstreamBodies.size
 
-            val refused = client.post("http://127.0.0.1:$pooledPort/v1/messages") {
+            val response = client.post("http://127.0.0.1:$pooledPort/v1/messages") {
                 header("Content-Type", "application/json")
                 setBody(
                     """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,
                         "messages":[{"role":"user","content":"go"}]}""",
                 )
             }
-            val receivedAtSeconds = System.currentTimeMillis() / MS_PER_S
 
-            assertEquals(RATE_LIMITED_STATUS, refused.status.value)
-            val said = refused.bodyAsText()
-            // The provider's reset is three days from when it was marked, a second this request's round trip brackets.
-            val lines = (sentAtSeconds - 2..receivedAtSeconds + 1).map {
-                "[splice] claudex is at its usage limit until ${LocalTimeText().at(it + THREE_DAYS_MS / MS_PER_S)}. " +
-                    "Claude Code sends this turn again."
-            }
-            assertTrue(
-                lines.any { it in said },
-                "the provider's own reset still rides in the message; only the wire deadline is bounded: $said",
-            )
-            // V4-433: said as a person reads it (LocalTimeText), never as the ISO instant the journal keeps.
-            assertFalse(Regex("""\d{4}-\d{2}-\d{2}T\d{2}:\d{2}""").containsMatchIn(said), said)
-            assertBoundedRejectedRefusal(refused, sentAtSeconds, receivedAtSeconds)
+            assertEquals(200, response.status.value)
+            val body = response.bodyAsText()
+            assertTrue("message_stop" in body, "the provider serves the held login's request: $body")
+            assertEquals(upstreamBefore + 1, mock.upstreamBodies.size, "admission must ask the provider")
         } finally {
             pooled.stop()
         }
     }
 
-    /** EVERY DEADLINE THE REFUSAL STATES, PINNED TOGETHER — extracted (V4-80) so the arm above stays
-     *  inside detekt's LongMethod ceiling while saying more, not less.
-     *
-     *  V4-77'S HALF: Retry-After is the bounded client hold, never the provider window. The ceiling
-     *  is measured from [receivedAtSeconds], AFTER the reply — the server stamps now+clamp at
-     *  refusal time, somewhere inside the round trip, so measuring from [sentAtSeconds] adds that
-     *  trip to the hold and read 121s on a cold pooled head (observed 2026-09-17). The later
-     *  instant is the exact statement and a second cannot rescue the defect it pins: a three-day
-     *  provider window is 259_200s against a 120s ceiling. The floor still runs from
-     *  [sentAtSeconds], because a deadline must be in the future of the request that earned it.
-     *
-     *  V4-80'S HALF: THE REFUSAL MUST NOT CONTRADICT ITSELF IN ITS OWN HEADERS. V4-77 bounded the
-     *  pooled deadline but left this branch emitting NO quota family, so a pooled head with a
-     *  tracker answered `anthropic-ratelimit-unified-status: allowed` on the very response that
-     *  refused the turn — the same lie V4-51 fixed for the cooldown branch, alive on the branch
-     *  V4-51 did not open. The plain `-reset` is the member Claude Code's withRetry reads off a
-     *  429, so what is worth pinning is that the two deadlines in one response name the SAME
-     *  instant — the bounded hold; re-deriving it from the provider window would read three days
-     *  out and fail by the same margin the ceiling catches. */
-    private fun assertBoundedRejectedRefusal(refused: HttpResponse, sentAtSeconds: Long, receivedAtSeconds: Long) {
-        val retryAfter = checkNotNull(refused.headers["Retry-After"]) {
-            "an exhausted pool must still name a deadline the client can wait on"
-        }
-        val deadlineEpoch = ZonedDateTime.parse(retryAfter, DateTimeFormatter.RFC_1123_DATE_TIME).toEpochSecond()
-        assertTrue(deadlineEpoch > sentAtSeconds, "a deadline already in the past is not a deadline, got: $retryAfter")
-        assertTrue(
-            deadlineEpoch - receivedAtSeconds <= CLAMP_SECONDS,
-            "the client deadline is the cooldown lift, at most ${CLAMP_SECONDS}s — " +
-                "got ${deadlineEpoch - receivedAtSeconds}s from $retryAfter",
-        )
-        assertEquals(
-            "rejected",
-            refused.headers["anthropic-ratelimit-unified-status"],
-            "a refusal asserting `allowed` in its own quota headers contradicts its own 429",
-        )
-        assertEquals(
-            deadlineEpoch.toString(),
-            refused.headers["anthropic-ratelimit-unified-reset"],
-            "the plain unified-reset must name the bounded client deadline, the same instant as " +
-                "Retry-After ($retryAfter) — never the provider window",
-        )
-    }
-
-    /** The V4-77 head: one OAuth account, on [cooldown], which the caller blocks after start(). */
+    /** One pooled OAuth account whose local provider hold the caller sets after start(). */
     private fun pooledHead(cooldown: RateLimitCooldown): HeadServer {
         val account = PoolAccount(
             label = "only",
@@ -391,10 +315,6 @@ class HeadServerCapacityTest {
     }
 }
 
-private const val MS_PER_S = 1_000L
 private const val POLL_MS = 100L
-
-// The ceiling on the client-facing deadline: the client recheck (Oct 12).
-private const val CLAMP_SECONDS: Long = CLIENT_RECHECK_SECONDS
 
 private const val THREE_DAYS_MS = 3L * 24 * 60 * 60 * 1_000

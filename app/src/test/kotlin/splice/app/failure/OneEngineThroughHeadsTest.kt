@@ -30,12 +30,8 @@ import splice.oauth.codex.CodexRefresh
 import splice.provider.codex.CodexProvider
 import splice.provider.codex.auth.CodexAuthProvider
 import java.nio.file.Path
-import java.time.Instant
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
 import kotlin.io.path.writeText
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
@@ -48,9 +44,6 @@ private const val RESENDS = "Claude Code sends this turn again."
 /** What a repeated ending says: Claude Code already sent the turn again once, so the turn stopped. */
 private const val STOPPED = "after Claude Code sent this turn again, so this turn stopped"
 
-/** Where the scripted virtual wall clock starts (VirtualTime's default). */
-private val START: Instant = Instant.parse("2026-10-26T12:00:00Z")
-
 private const val UNAUTHORIZED = 401
 private const val TOO_MANY_REQUESTS = 429
 private const val TEAPOT = 418
@@ -60,12 +53,6 @@ private const val UNNAMED_SERVER_ERROR = 520
 
 /** llama-server's answer while it loads a model (its unavailable_error), as LocalRuntimeReplies reads it. */
 private const val LLAMA_LOADING = """{"error":{"code":503,"message":"Loading model","type":"unavailable_error"}}"""
-
-/** Kimi's 5-hour limit, verbatim from the 429 of Oct 23, 3:41:54 PM CT (audit-maps.md:1075). */
-private const val KIMI_FIVE_HOUR =
-    "You've reached your 5-hour usage limit. Your quota will reset when the current 5-hour window ends. " +
-        "To continue now, purchase extra usage or upgrade your plan: " +
-        "https://www.kimi.com/membership/subscription?tab=quota"
 
 /** Where the renewing head's login exchanges its refresh token: the scripted provider answers any path. */
 private const val TOKEN_PATH = "/oauth/token"
@@ -140,18 +127,8 @@ class OneEngineThroughHeadsTest {
             val told = lines(answer)
             assertEquals(1, told.size, "one line for the episode, written when the first wait of 10 s began: $told")
             assertTrue(WAITS_15_S in told.single(), told.single())
-            // The line is written when its wait starts and staged through PendingSse, as the slice's goal says, so
-            // the client reads it when the status commits: here with the answer, 30 s after the wait it names began.
-            // Slice 5 commits the status while the wait runs, and this is the row that says so when it does.
-            assertEquals(
-                answer.arrivals.firstOrNull(),
-                answer.noticeArrival(WAITS_15_S),
-                "a staged line reaches the client with the first frame of the committed status",
-            )
-            assertTrue(
-                (answer.noticeArrival(WAITS_15_S) ?: Duration.ZERO) > provider.requests[4].at,
-                "and not while the wait it names runs, which is slice 5's",
-            )
+            // When the line reaches the client, as its wait starts, is HoldsThroughHeadsTest's: it needs the clock moved by
+            // hand, and this head's waits pass at once.
         }
     }
 
@@ -261,27 +238,14 @@ class OneEngineThroughHeadsTest {
     }
 
     @Test
-    fun `a reset stated hours away ends at once with the interim line, and Claude Code sends the turn again`(
-        @TempDir tmp: Path,
-    ) = runTest {
-        withScriptedHeads(tmp) {
-            provider.script(limitedUntil(START.plusSeconds(3.hours.inWholeSeconds)))
-            val head = chat()
-
-            val answer = head.client.send()
-
-            assertEquals(1, provider.requests.size, "a hold ends the turn on its first answer until slice 5")
-            assertLine(answer, RESENDS)
-        }
-    }
-
-    @Test
     fun `a request whose identical predecessor ended for Claude Code to send again stops, and says so`(
         @TempDir tmp: Path,
     ) = runTest {
         withScriptedHeads(tmp) {
-            provider.script(limitedUntil(START.plusSeconds(3.hours.inWholeSeconds)))
-            val head = chat()
+            // A 200 with no event in it ends R once its fresh re-sends are spent (slice 5 holds a stated limit instead).
+            val loginPage = reply { body(PROXY_LOGIN_PAGE) }
+            provider.script(*Array(3 + 3) { loginPage })
+            val head = anthropic()
             val turn = ClientRequest(session = "sess-resent-by-claude-code")
 
             val first = head.client.send(turn)
@@ -290,21 +254,6 @@ class OneEngineThroughHeadsTest {
             assertLine(first, RESENDS)
             assertLine(again, STOPPED)
             assertFalse(RESENDS in lineOf(again), "the re-send ends with an answer Claude Code does not send again")
-        }
-    }
-
-    @Test
-    fun `Kimi's 5-hour limit ends the turn after one provider request`(@TempDir tmp: Path) = runTest {
-        withScriptedHeads(tmp) {
-            provider.script(reply { status(TOO_MANY_REQUESTS); anthropicErrorBody("rate_limit_error", KIMI_FIVE_HOUR) })
-            val kimi = anthropic(replies = HeadReplies.kimi)
-
-            val answer = kimi.client.send()
-
-            // A named window with no time stated is long: no wait, no second request. The passthrough head still
-            // relays the provider's own 429 until slice 5 writes the window's line on it.
-            assertEquals(1, provider.requests.size, answer.describe())
-            assertEquals(TOO_MANY_REQUESTS, answer.status, answer.describe())
         }
     }
 
@@ -410,8 +359,7 @@ class OneEngineThroughHeadsTest {
             val answer = head.client.send()
 
             // Section 8's Limited row with no time stated: four burst waits wherever the limit is met, and after the
-            // answer began each continuation carries what arrived. The fifth limit would hold the turn, which ends it
-            // until slice 5 holds one.
+            // answer began each continuation carries what arrived. The fifth limit holds the turn (HoldsThroughHeadsTest).
             assertEquals(listOf(2, 4, 8, 15).map { it.seconds }, gaps(provider.requests), answer.describe())
             assertTrue(provider.requests.drop(1).all { "partial words" in it.body }, answer.describe())
             assertTrue(answer.contentBeforeError, answer.describe())
@@ -532,13 +480,6 @@ class OneEngineThroughHeadsTest {
     private fun overloaded(): ScriptedReply = reply {
         status(SERVICE_UNAVAILABLE)
         openAiErrorBody("server_error", "The server is overloaded.", "overloaded")
-    }
-
-    /** A 429 whose Retry-After names [resetsAt] in its date form (RFC 7231), which every reader reads. */
-    private fun limitedUntil(resetsAt: Instant): ScriptedReply = reply {
-        status(TOO_MANY_REQUESTS)
-        header("Retry-After", DateTimeFormatter.RFC_1123_DATE_TIME.format(resetsAt.atOffset(ZoneOffset.UTC)))
-        openAiErrorBody("rate_limit_error", "Rate limit reached for this plan.", "rate_limit_exceeded")
     }
 
     /** A Responses stream that completes with nothing in it: no message, no tool call, no reasoning. */

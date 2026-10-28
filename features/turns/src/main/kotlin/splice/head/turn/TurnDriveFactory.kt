@@ -12,12 +12,18 @@ import splice.core.perf.PerfKeys
 import splice.head.HeadDeps
 import splice.head.HeadHealthCounters
 import splice.head.admission.KeyNaming
+import splice.head.hold.ClientWallHeader
+import splice.head.hold.HeldTurn
 import splice.head.hold.TurnWaitsAtHead
+import splice.head.hold.resources.HoldSurfaces
+import splice.head.hold.resources.SessionWall
+import splice.head.hold.resources.TurnHold
 import splice.head.transport.TurnAccountHandoff
 import splice.head.wire.ClientChannel
 import splice.head.wire.TurnTerminal
 import splice.upstream.Provider
 import splice.upstream.TurnRetry
+import splice.upstream.retry.NON_STREAM_HOLD_MS
 import splice.upstream.retry.RetryLedger
 import splice.upstream.retry.TurnWatchdog
 import splice.upstream.transport.RemainingTurnWait
@@ -40,12 +46,25 @@ internal class TurnDriveFactory(
         KeyNaming.None -> if (provider.auth is ClientAuthProvider) "claude-code" else "primary"
     }
 
+    /** The session's wall for this request (failure-handling slice 5): the client timeout its session named, a
+     *  compaction's own timer where that is sooner, and the few seconds a non-stream request may wait with nothing
+     *  written, counted from the request's admission. */
+    private fun sessionWall(inputs: TurnInputs): SessionWall {
+        val compaction = if (inputs.built.meta.compact) {
+            ClientWallHeader.compactionTimerMs(inputs.built.requestBody.toString().length.toLong())
+        } else {
+            Long.MAX_VALUE
+        }
+        return SessionWall(deps.seams.clock, inputs.t0 + minOf(inputs.clientWallMs, compaction))
+    }
+
     /** Assemble the per-turn drive around a terminal (SseEmitter for stream, CollectingTerminal for
      *  collect) and its channel — everything else (watchdog, pipeline, headers) is shape-neutral. */
     fun assembleDrive(
         inputs: TurnInputs,
         emitter: TurnTerminal,
         channel: ClientChannel,
+        stream: Boolean = true,
     ): TurnDrive {
         val built = inputs.built
         val perf = inputs.perf
@@ -59,7 +78,25 @@ internal class TurnDriveFactory(
         // WatchdogBudget.forCompact for the live evidence. Normal turns keep the provider budget.
         val live = deps.traffic.watchdog?.invoke() ?: provider.watchdog
         val budget = if (meta.compact) live.forCompact() else live
-        val watchdog = TurnWatchdog(budget, deps.seams.clock, log = { deps.log("[${provider.key}] $it") })
+        // Paced on the head's watchdog ticker, so the wall and the cap fall on the head's own clock.
+        val watchdog = TurnWatchdog(
+            budget,
+            deps.seams.clock,
+            deps.seams.watchdogTicker,
+            log = { deps.log("[${provider.key}] $it") },
+        )
+        val wall = sessionWall(inputs)
+        watchdog.wallAt(wall.capAtMs())
+        // A collected request may wait silently for a short limit, but generation keeps the session's own wall.
+        val holdWall = if (stream) {
+            wall
+        } else {
+            SessionWall(
+                deps.seams.clock,
+                minOf(wall.capAtMs(), inputs.t0 + NON_STREAM_HOLD_MS),
+                marginMs = 0L,
+            )
+        }
         // Retry admission shares the watchdog's renewal, rather than a second elapsed-time cap.
         // The origin remains after admission and preparation, never the time spent queued.
         val remainingTurnWait = RemainingTurnWait(watchdog::remainingMs)
@@ -79,9 +116,39 @@ internal class TurnDriveFactory(
             drive.route = provider.route(meta)
             // One ledger for the turn's every post, its waits where the head's client sleeps a retry, told on the turn's
             // own wire.
-            drive.retry = TurnRetry(RetryLedger(), TurnWaitsAtHead(deps.traffic.upstream.retryWaiter, emitter))
-            drive.sourceRoundStarted =
-                TurnDrive.SourceRoundStarted { job -> deps.traffic.liveTurns.driving(inputs.slot.held, job) }
+            attachRetry(drive, holdWall)
         }
+    }
+
+    /** A drive's retained wait owns its slot, watchdog, wire and request memory together. */
+    private fun attachRetry(drive: TurnDrive, holdWall: SessionWall) {
+        val inputs = drive.inputs
+        val emitter = drive.emitter
+        val watchdog = drive.watchdog
+        val channel = drive.channel
+        val built = inputs.built
+        val waiter = deps.traffic.upstream.retryWaiter
+        val hold = TurnHold(
+            HeldTurn(deps.traffic.liveTurns.holds, waiter, deps.traffic.upstream.retryWall)
+                .also { held -> inputs.slot.held.onRelease { deps.traffic.liveTurns.holds.leave(held) } },
+            HoldSurfaces(
+                emitter,
+                inputs.slot.held,
+                watchdog,
+                deps.traffic.liveTurns,
+                channel.lost,
+                inputs.heapLease,
+            ),
+            holdWall,
+            deps.traffic.upstream.retryWall,
+        ) { built.requestBody.toString().length.toLong() }
+        val ledger = RetryLedger()
+        drive.retry = TurnRetry(ledger, TurnWaitsAtHead(waiter, emitter, hold))
+        drive.holdServed = Runnable {
+            deps.traffic.liveTurns.holds.served(ledger.login)
+            ledger.served()
+        }
+        drive.sourceRoundStarted =
+            TurnDrive.SourceRoundStarted { job -> deps.traffic.liveTurns.driving(inputs.slot.held, job) }
     }
 }

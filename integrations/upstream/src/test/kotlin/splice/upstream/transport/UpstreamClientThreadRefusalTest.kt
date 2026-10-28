@@ -36,7 +36,6 @@ import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.upstream.RetryNotice
 import splice.upstream.codemode.ProcessElapsedNow
-import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
 import splice.upstream.retry.MAX_ATTEMPTS_OUTSIDE_HOLDS
 import java.io.FilterInputStream
@@ -51,6 +50,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import javax.net.SocketFactory
 import kotlin.concurrent.thread
+import splice.upstream.testing.OpenAiTestReplies as OpenAiReplies
 
 /** The JDK's own text for a thread start the host refused (HotSpot, Linux, JDK 21). */
 private const val NATIVE_THREAD_REFUSED =

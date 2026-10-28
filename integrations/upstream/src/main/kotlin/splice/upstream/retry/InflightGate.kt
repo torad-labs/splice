@@ -20,28 +20,29 @@
 // appears, and a waiter cancelled while queued never reaches either.
 package splice.upstream.retry
 
-import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.suspendCancellableCoroutine
 import splice.core.head.GateCounts
-import splice.core.head.GatePhase
 import splice.core.head.GateSlot
 import splice.core.head.GateWait
 import splice.core.util.ElapsedClock
 import splice.core.util.MonoClock
 import splice.upstream.TurnEnd
-import splice.upstream.Waiter
+import splice.upstream.retry.gate.InflightCapacity
 import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
+import splice.upstream.retry.gate.GateAdmission as Turn
+import splice.upstream.retry.gate.GateWaiter as Waiter
 
 public class InflightGate(
     private val maxInflight: LiveLimit,
-    private val maxQueued: LiveLimit = LiveLimit { 0 },
+    maxQueued: LiveLimit = LiveLimit { 0 },
     // Default is monotonic — wall-clock jumps must not invent idle timeouts or freeze slots.
     private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
 ) {
     private val lock = Any()
+    private val capacity = InflightCapacity(maxInflight, maxQueued)
     private var inflight = 0
     private val queue = ArrayDeque<Waiter>()
     private val sources = ConcurrentHashMap<String, Slot>()
@@ -57,33 +58,6 @@ public class InflightGate(
     private var waited = 0L
     private var waitMsTotal = 0L
     private var refused = 0L
-
-    // A resumable FIFO cell. Its identity IS its meaning: queue.remove() matches the one cell a
-    // waiter parked, and structural equality over these mutable fields would remove a different
-    // waiter's cell that happens to hold equal values — the bug the prior version undid by bolting
-    // on a synthetic `id`. So the cell declares reference equality itself, below, rather than
-    // inheriting a data class's. `resumed`/`continuation` are coordination, not data.
-    private class Waiter(
-        var resumed: Boolean = false,
-        var continuation: CancellableContinuation<Boolean>? = null,
-        /** When it entered the queue, on the gate's clock: its wait is measured from here. */
-        var queuedAt: Long = 0L,
-        val session: String? = null,
-        /** A ready source loan uses its existing counted permit, not an inflight increment. */
-        var borrowed: Slot? = null,
-    ) {
-        /** One parked waiter is one cell: never another cell holding equal values (see above). */
-        override fun equals(other: Any?): Boolean = this === other
-
-        override fun hashCode(): Int = System.identityHashCode(this)
-
-        fun turn(admitted: Boolean, immediate: Boolean, now: Long): Turn = when {
-            !admitted -> Turn.Refused
-            borrowed != null -> Turn.Borrowed(checkNotNull(borrowed))
-            immediate -> Turn.Immediate
-            else -> Turn.Queued(now - queuedAt)
-        }
-    }
 
     public data class Snapshot(
         val inflight: Int,
@@ -110,7 +84,7 @@ public class InflightGate(
                 avgWaitMs = if (waited == 0L) 0L else (waitMsTotal + waited / 2) / waited,
                 refused = refused,
             ),
-            live = live.map { it.reading(now) },
+            live = live.map { it.readingState.reading(now) },
             waiting = queue.map { GateWait(it.session, now - it.queuedAt) },
         )
     }
@@ -144,7 +118,7 @@ public class InflightGate(
         val (toResume, borrowed, admitted) = synchronized(lock) {
             val drained = drainAdmissibleLocked()
             val held = resumeSource(session)
-            val canSelfAdmit = held == null && hasCapacityLocked() && queue.isEmpty()
+            val canSelfAdmit = held == null && capacity.admits(inflight) && queue.isEmpty()
             if (canSelfAdmit) inflight += 1
             Triple(drained, held, canSelfAdmit)
         }
@@ -154,25 +128,9 @@ public class InflightGate(
         return turn.answer(this)
     }
 
-    /** How [awaitTurn] ended: refused by the bounded queue, admitted on its recheck without
-     *  queueing, or admitted after waiting in the queue for [Queued.waitedMs]. */
-    private sealed class Turn {
-        data object Refused : Turn()
-        data object Immediate : Turn()
-        data class Queued(val waitedMs: Long) : Turn()
-        data class Borrowed(val slot: Slot) : Turn()
-
-        fun answer(gate: InflightGate): Admission = when (this) {
-            Refused -> Admission.AtCapacity
-            Immediate -> Admission.Acquired(gate.deliver(null))
-            is Queued -> Admission.Acquired(gate.deliver(waitedMs))
-            is Borrowed -> Admission.Acquired(slot)
-        }
-    }
-
     /** A delivered permit becomes a live slot: counted, its wait added when it queued, and listed
      *  until it is released. Only a caller that got its permit reaches here. */
-    private fun deliver(waitedMs: Long?): Slot {
+    internal fun deliver(waitedMs: Long?): Slot {
         val slot = Slot(this, clock, heldMs = waitedMs)
         synchronized(lock) {
             acquired += 1
@@ -197,13 +155,6 @@ public class InflightGate(
         }
     }
 
-    private fun hasCapacityLocked(): Boolean {
-        val limit = maxInflight()
-        return limit <= 0 || inflight < limit
-    }
-
-    private fun hasQueueCapacityLocked(): Boolean = maxQueued().let { it <= 0 || queue.size < it }
-
     /** Whether, and how, this waiter came to hold a permit ([Turn]). */
     private suspend fun awaitTurn(session: String?): Turn {
         val waiter = Waiter(session = session)
@@ -216,11 +167,11 @@ public class InflightGate(
                 if (waiter.borrowed != null) {
                     waiter.resumed = true
                     admittedNow = true
-                } else if (hasCapacityLocked() && queue.isEmpty()) {
+                } else if (capacity.admits(inflight) && queue.isEmpty()) {
                     inflight += 1
                     waiter.resumed = true
                     admittedNow = true
-                } else if (hasQueueCapacityLocked()) {
+                } else if (capacity.queues(queue.size)) {
                     waiter.continuation = cont
                     waiter.queuedAt = clock()
                     queue.addLast(waiter)
@@ -256,10 +207,38 @@ public class InflightGate(
         return waiter.turn(admitted, admittedNow, clock())
     }
 
-    /** A delivered slot ends: it leaves the live list, is counted, and its permit goes back. */
-    internal fun release(slot: Slot) {
+    /** A delivered slot ends: it leaves the live list, is counted, and its permit goes back, unless a hold already gave
+     *  it back ([yieldPermit]). */
+    internal fun release(slot: Slot, yielded: Boolean = false) {
+        if (yielded) {
+            synchronized(lock) { if (live.remove(slot)) released += 1 }
+            return
+        }
         returnPermit {
             if (live.remove(slot)) released += 1
+        }
+    }
+
+    /** A held turn gives its permit back while it waits, so a new turn on a full head is admitted (failure-handling
+     *  slice 5). The slot stays listed: the turn is still live, only not counted against the limit. */
+    internal fun yieldPermit() {
+        returnPermit {}
+    }
+
+    /** A held turn takes a permit again before it sends: it waits in the queue like any request, and is never refused
+     *  for a full queue, since it was admitted once already. */
+    internal suspend fun retakePermit() {
+        val (toResume, admitted) = synchronized(lock) {
+            val drained = drainAdmissibleLocked()
+            val now = capacity.admits(inflight) && queue.isEmpty()
+            if (now) inflight += 1
+            drained to now
+        }
+        resumeAll(toResume)
+        if (admitted) return
+        when (awaitTurn(null)) {
+            Turn.Refused -> synchronized(lock) { inflight += 1 }
+            Turn.Immediate, is Turn.Queued, is Turn.Borrowed -> Unit
         }
     }
 
@@ -291,7 +270,7 @@ public class InflightGate(
         while (iterator.hasNext()) {
             val next = iterator.next()
             val borrowed = resumeSource(next.session)
-            if (borrowed == null && !hasCapacityLocked()) continue
+            if (borrowed == null && !capacity.admits(inflight)) continue
             iterator.remove()
             next.borrowed = borrowed
             // DR-149: the `if (!next.resumed)` guard here was tautological — `resumed` is only ever
@@ -318,6 +297,7 @@ public class InflightGate(
     ) {
         private val released = AtomicBoolean(false)
         private val state: InflightSlotState = original?.state ?: InflightSlotState(clock)
+        internal val readingState: InflightSlotState get() = state
 
         /** A borrowed handle has its own release claim, but shares the source's one live permit. */
         public val resumedSource: Boolean get() = original != null
@@ -358,15 +338,6 @@ public class InflightGate(
 
         public fun idleForMs(): Long = clock() - state.lastTouch.get()
 
-        internal fun reading(now: Long): GateSlot = GateSlot(
-            label = state.label,
-            compact = state.compact,
-            phase = if (state.streaming) GatePhase.STREAMING else GatePhase.CONNECT,
-            ageMs = now - state.admittedAt,
-            idleMs = now - state.lastTouch.get(),
-            turnId = state.upstreamBytes?.turnId,
-        )
-
         /** A raw source round keeps admission and the materialized request heap until it really ends. */
         public fun retain(): Lease = retainSource(null)
 
@@ -405,6 +376,22 @@ public class InflightGate(
             if (released.compareAndSet(false, true)) releaseOwner(continuation = resumedSource)
         }
 
+        /** Gives the permit back while the turn holds for its cause to lift (failure-handling slice 5): the head admits
+         *  another turn in its place, and this one takes a permit again with [retakePermit] before it sends. A slot
+         *  released while it holds no permit returns none. */
+        public fun yieldPermit() {
+            val root = original ?: this
+            if (!released.get() && root.state.yielded.compareAndSet(false, true)) gate.yieldPermit()
+        }
+
+        /** Takes a permit again after a hold, waiting its turn in the gate's queue. */
+        public suspend fun retakePermit() {
+            val root = original ?: this
+            if (!root.state.yielded.get()) return
+            gate.retakePermit()
+            root.state.yielded.set(false)
+        }
+
         private fun releaseOwner(session: String? = null, continuation: Boolean = false) {
             val root = original ?: this
             val last = synchronized(state.ownership) {
@@ -414,8 +401,8 @@ public class InflightGate(
                 (state.owners == 0).also { if (it) state.finalized = true }
             }
             if (last) {
-                gate.release(root)
-                drainOnRelease()
+                gate.release(root, yielded = root.state.yielded.getAndSet(false))
+                state.drainOnRelease()
             } else {
                 gate.sourceAvailable()
             }
@@ -428,11 +415,7 @@ public class InflightGate(
          *  entry is polled off the queue by whichever drain reaches it first. */
         public fun onRelease(end: TurnEnd) {
             state.onRelease.add(end)
-            if (state.finalized) drainOnRelease()
-        }
-
-        private fun drainOnRelease() {
-            generateSequence { state.onRelease.poll() }.forEach { it.ended() }
+            if (state.finalized) state.drainOnRelease()
         }
     }
 }

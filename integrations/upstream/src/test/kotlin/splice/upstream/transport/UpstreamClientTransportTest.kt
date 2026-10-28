@@ -44,7 +44,6 @@ import splice.upstream.ClientFrameEmitted
 import splice.upstream.RetryNotice
 import splice.upstream.StreamRead
 import splice.upstream.Waiter
-import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
 import java.io.IOException
 import java.net.ConnectException
@@ -54,6 +53,7 @@ import java.net.UnknownHostException
 import java.nio.channels.UnresolvedAddressException
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.cancellation.CancellationException
+import splice.upstream.testing.OpenAiTestReplies as OpenAiReplies
 
 /** Long enough for the whole unreachable schedule: its eight waits come to 121 s. */
 private const val WHOLE_SCHEDULE_MS = 600_000L

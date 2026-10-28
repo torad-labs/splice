@@ -8,4 +8,7 @@ public enum class StoppedBy { RESTART, CONSOLE, HEAD_STOPPING }
  *  [CODE_MODE_STATE]: its recorded state cannot go on, which no re-send changes. */
 public enum class ProtocolFault { CODE_MODE_START, CODE_MODE_STATE, DIALECT_UNSUPPORTED }
 
-public enum class Outlast { MISSED_RESETS, MAX_HOLD }
+/** Why a hold ended without the turn going on (failure-handling slice 5): [MISSED_RESETS], its cause did not lift at
+ *  three times it stated; [MAX_HOLD], it held seven days; [TOO_FAR], the stated reset lies past seven days, so no hold
+ *  begins; [WALL], the session cannot wait for it, so Claude Code is told the reset and waits itself. */
+public enum class Outlast { MISSED_RESETS, MAX_HOLD, TOO_FAR, WALL }

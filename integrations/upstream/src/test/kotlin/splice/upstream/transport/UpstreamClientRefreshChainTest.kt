@@ -30,10 +30,10 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.upstream.Waiter
-import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
+import splice.upstream.testing.OpenAiTestReplies as OpenAiReplies
 
 /** A provider-shaped auth: [credentials] serves the CURRENT token and [refresh] rotates it, which
  *  is what every real provider's single-flight refresh does to its cache. [rotated] = null models a

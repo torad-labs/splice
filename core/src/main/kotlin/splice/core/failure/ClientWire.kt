@@ -10,8 +10,10 @@
 // causes take a login status (final-design.md section 11).
 package splice.core.failure
 
+import splice.core.failure.policy.FailureFamilies
 import splice.core.turn.ErrorType
 import splice.core.wire.HttpStatus
+import java.time.Instant
 
 /** The client's answer to a failure: the HTTP [status] while the answer is still a status (null once the stream is
  *  open, where the failure is an in-band error event), the error [type] the client reads, and the x-should-retry
@@ -21,14 +23,23 @@ public data class WireAnswer(
     val type: ErrorType,
     val shouldRetry: Boolean?,
     val afterContent: Boolean = false,
+    /** The held wait handed to the client, with the reset and window its next request resumes. */
+    val handoff: Handoff? = null,
 ) {
-    /** Whether Claude Code sends the request again on this answer, which is when a line may say so (SpliceLines). It
-     *  reads the client reaction record (tools/e2e/fixtures/client-reactions/2.1.310.toml):
-     *  - in band, only overloaded_error is sent again, before content and after splice's notice alone
-     *    (inband-overloaded-before-content, inband-signed-notice); after text nothing is (inband-*-after-content),
-     *    and an invalid_request_error after a notice is printed and not sent again;
-     *  - a status with x-should-retry false is sent again only when it is a 429 (http-429-should-retry-false);
-     *  - otherwise every status is sent again but a 403 and a 413 (http-403, http-413). */
+    public data class Handoff(
+        val resetsAt: Instant? = null,
+        val recheck: Boolean = false,
+        val window: LimitWindow? = null,
+    )
+
+    /** Family L keeps its true reset beside a pooled head's earlier recheck. */
+    public val resetsAt: Instant? get() = handoff?.resetsAt
+    public val recheck: Boolean get() = handoff?.recheck == true
+    public val window: LimitWindow? get() = handoff?.window
+    public val handedOver: Boolean get() = handoff != null
+
+    /** Whether Claude Code sends this answer again, from the 2.1.310 reaction record. In band it re-sends an overload
+     *  before content only. A 429 is re-sent even with x-should-retry false; a 403 and 413 are not. */
     public val clientResends: Boolean
         get() = when {
             status == null -> type == ErrorType.OVERLOADED && !afterContent
@@ -37,14 +48,18 @@ public data class WireAnswer(
         }
 }
 
-/** How Claude Code acts on an ending (final-design.md section 11). [KEPT] answers as before slice 4, through [Kept]:
- *  a held turn's ending, whose family is slice 5's; a request too slow to reach splice, which keeps its own 408; and
- *  the refusal of a session's own splice key at the door, which keeps its 401 with no x-should-retry, since 2.1.310
- *  answers a 401 by re-reading its key helper and sending what it returns (http-401) — the recovery a rotated key
- *  needs. */
-private enum class WireFamily { R, P, CLIENT_LOGIN, HELD_LOGIN, T, KEPT }
+/** How soon a client told family L comes back where another login could serve the head: ClientRecheck's bound, which
+ *  the L row keeps (final-design.md section 9, "When a hold does not fit"). */
+public const val RECHECK_SECONDS: Long = 30L
 
 public object ClientWire {
+    /** How Claude Code acts on an ending (final-design.md section 11). [KEPT] answers as before slice 4, through [Kept]:
+     *  a held turn's ending, whose family is slice 5's; a request too slow to reach splice, which keeps its own 408; and
+     *  the refusal of a session's own splice key at the door, which keeps its 401 with no x-should-retry, since 2.1.310
+     *  answers a 401 by re-reading its key helper and sending what it returns (http-401) — the recovery a rotated key
+     *  needs. */
+    internal enum class Family { R, P, CLIENT_LOGIN, HELD_LOGIN, T, H, L, KEPT }
+
     /** P's status, where a re-send of the same bytes meets the same verdict: x-should-retry false stops the client
      *  (http-400-should-retry-false), and the line prints with no login label in front. T takes it too, and its line
      *  says the words Claude Code compacts on. */
@@ -63,35 +78,64 @@ public object ClientWire {
     private val RESEND = WireAnswer(HttpStatus.OVERLOADED, ErrorType.OVERLOADED, null)
     private val RESEND_LIMITED = WireAnswer(HttpStatus.TOO_MANY_REQUESTS, ErrorType.RATE_LIMIT, null)
 
+    /** A limit the session cannot wait out, handed to the client (family L): a 429 with no x-should-retry, which
+     *  Claude Code sleeps on until the time it names and then sends again (http-429-retry-after-30s,
+     *  http-429-reset-hours-away). */
+    private val HANDED_OVER = WireAnswer(HttpStatus.TOO_MANY_REQUESTS, ErrorType.RATE_LIMIT, null)
+
     /** What the client is told about [cause] at [at]. [repeated]: the request's identical predecessor already ended R
-     *  (RequestFacts.repeated, the ResendLedger), so an R ending is told as P. */
-    public fun answer(cause: FailureCause, at: Position, repeated: Boolean = false): WireAnswer {
+     *  (RequestFacts.repeated, the ResendLedger), so an R ending is told as P. [otherLogin]: the head's pool holds
+     *  another login, so an L answer names a time [RECHECK_SECONDS] away rather than the true reset. */
+    public fun answer(
+        cause: FailureCause,
+        at: Position,
+        repeated: Boolean = false,
+        otherLogin: Boolean = false,
+    ): WireAnswer {
         val family = family(cause, repeated)
-        if (family == WireFamily.KEPT) return Kept.answer(cause, at)
-        return when (at.moment) {
-            Moment.ADMISSION, Moment.BEFORE_COMMIT, Moment.NON_STREAM -> status(cause, family, at)
+        if (family == ClientWire.Family.KEPT) return Kept.answer(cause, at)
+        val told = when (at.moment) {
+            Moment.ADMISSION, Moment.BEFORE_COMMIT, Moment.NON_STREAM ->
+                if (family == ClientWire.Family.L) handedOver(cause, otherLogin) else status(cause, family, at)
             Moment.COMMITTED -> inBand(committedType(cause, family))
             Moment.MID_CONTENT -> afterContent(cause, repeated)
         }
+        return if (family == ClientWire.Family.L) told.copy(handoff = told.handoff ?: WireAnswer.Handoff()) else told
     }
+
+    /** L's status, with the reset it names: the held cause's true reset, or a recheck where another login could serve
+     *  the head. */
+    private fun handedOver(cause: FailureCause, otherLogin: Boolean): WireAnswer =
+        (cause as? FailureCause.Splice.HoldOutlasted).let { outlasted ->
+            HANDED_OVER.copy(
+                handoff = WireAnswer.Handoff(
+                    resetsAt = outlasted?.nextReset,
+                    recheck = otherLogin,
+                    window = (outlasted?.held as? FailureCause.Provider.Limited)?.window,
+                ),
+            )
+        }
 
     /** The type [cause] reads as once content reached the client, and in a stream=false body. */
     public fun ownType(cause: FailureCause): ErrorType = OwnTypes.of(cause)
 
-    private fun family(cause: FailureCause, repeated: Boolean): WireFamily {
-        val family = Families.of(cause)
-        return if (repeated && family == WireFamily.R) WireFamily.P else family
+    private fun family(cause: FailureCause, repeated: Boolean): ClientWire.Family {
+        val family = FailureFamilies.of(cause)
+        return if (repeated && family == ClientWire.Family.R) ClientWire.Family.P else family
     }
 
     /** While the status is splice's to choose. */
-    private fun status(cause: FailureCause, family: WireFamily, at: Position): WireAnswer = when (family) {
-        WireFamily.R -> resend(cause, at)
+    private fun status(cause: FailureCause, family: ClientWire.Family, at: Position): WireAnswer = when (family) {
+        ClientWire.Family.R -> resend(cause, at)
         // A request too large keeps its 413 wherever it is found, which 2.1.310 does not send again (http-413).
-        WireFamily.P -> if (tooLarge(cause)) Kept.refusal(cause) else STOPPED
-        WireFamily.T -> STOPPED
-        WireFamily.CLIENT_LOGIN -> CLIENT_LOGIN_REFUSED
-        WireFamily.HELD_LOGIN -> HELD_LOGIN_REFUSED
-        WireFamily.KEPT -> Kept.answer(cause, at)
+        ClientWire.Family.P -> if (tooLarge(cause)) Kept.refusal(cause) else STOPPED
+        // H stops on a limit too far to wait for. The record shows 2.1.310 sends a 429 again even with x-should-retry
+        // false (http-429-should-retry-false), so H takes P's status and its line names the true reset.
+        ClientWire.Family.T, ClientWire.Family.H -> STOPPED
+        ClientWire.Family.L -> handedOver(cause, otherLogin = false)
+        ClientWire.Family.CLIENT_LOGIN -> CLIENT_LOGIN_REFUSED
+        ClientWire.Family.HELD_LOGIN -> HELD_LOGIN_REFUSED
+        ClientWire.Family.KEPT -> Kept.answer(cause, at)
     }
 
     /** R before commit is today's eager preamble: the stream opens and an overloaded_error follows, which the client
@@ -105,11 +149,14 @@ public object ClientWire {
     /** Committed with only splice's notice shown: overloaded_error is sent again after a notice, and
      *  invalid_request_error is printed and not (inband-signed-notice). The client's own refused login keeps
      *  authentication_error, which is never remapped. */
-    private fun committedType(cause: FailureCause, family: WireFamily): ErrorType = when (family) {
-        WireFamily.R -> ErrorType.OVERLOADED
-        WireFamily.CLIENT_LOGIN -> ErrorType.AUTHENTICATION
-        WireFamily.P, WireFamily.T, WireFamily.HELD_LOGIN -> ErrorType.INVALID_REQUEST
-        WireFamily.KEPT -> Kept.answer(cause, Position(Moment.COMMITTED, streamBegan = true)).type
+    private fun committedType(cause: FailureCause, family: ClientWire.Family): ErrorType = when (family) {
+        // L in band is an overload the client sends again at once, and the re-send meets L's 429 before commit.
+        ClientWire.Family.R, ClientWire.Family.L -> ErrorType.OVERLOADED
+        ClientWire.Family.CLIENT_LOGIN -> ErrorType.AUTHENTICATION
+        ClientWire.Family.P, ClientWire.Family.T, ClientWire.Family.H,
+        ClientWire.Family.HELD_LOGIN,
+        -> ErrorType.INVALID_REQUEST
+        ClientWire.Family.KEPT -> Kept.answer(cause, Position(Moment.COMMITTED, streamBegan = true)).type
     }
 
     /** After content the type is the cause's own: the client keeps what it holds and sends nothing again
@@ -191,56 +238,6 @@ private object Kept {
 
 /** Each leaf's family (final-design.md section 11). A limit and a spent account end through a hold step, which keeps
  *  today's R wire until slice 5 brings holds; a cut round never ends a turn, and reads as R were it asked. */
-private object Families {
-    fun of(cause: FailureCause): WireFamily = when (cause) {
-        is FailureCause.Provider -> provider(cause)
-        is FailureCause.Path -> WireFamily.R
-        is FailureCause.Splice -> splice(cause)
-    }
-
-    private fun provider(cause: FailureCause.Provider): WireFamily = when (cause) {
-        is FailureCause.Provider.TooLong -> WireFamily.T
-        is FailureCause.Provider.AuthRejected ->
-            if (cause.owner == LoginOwner.CLIENT) WireFamily.CLIENT_LOGIN else WireFamily.HELD_LOGIN
-        is FailureCause.Provider.Forbidden, is FailureCause.Provider.Rejected, is FailureCause.Provider.ModelMissing,
-        is FailureCause.Provider.Refused,
-        -> WireFamily.P
-        is FailureCause.Provider.Unrecognized -> if (cause.clientError) WireFamily.P else WireFamily.R
-        is FailureCause.Provider.Limited, is FailureCause.Provider.Overloaded, is FailureCause.Provider.ServerError,
-        is FailureCause.Provider.NeedsPayment, is FailureCause.Provider.Empty, is FailureCause.Provider.ToolTear,
-        is FailureCause.Provider.ReasoningCut,
-        -> WireFamily.R
-    }
-
-    private fun splice(cause: FailureCause.Splice): WireFamily = when (cause) {
-        is FailureCause.Splice.NoLogin -> WireFamily.HELD_LOGIN
-        is FailureCause.Splice.Declined -> declined(cause.why)
-        is FailureCause.Splice.HoldOutlasted -> WireFamily.KEPT
-        is FailureCause.Splice.Stopped -> again(cause.by != StoppedBy.CONSOLE)
-        is FailureCause.Splice.Protocol -> again(cause.fault == ProtocolFault.CODE_MODE_START)
-        // A failure inside splice that the same request earns again is P, not R: an unparseable base_url throws
-        // identically on every send (V4-81), and R's promise is that a re-send can heal it. Section 11 lists
-        // Internal in R alone; the goal's "permanent kinds are never re-sent" decides the permanent one.
-        is FailureCause.Splice.Internal -> again(!cause.permanent)
-        is FailureCause.Splice.AtCapacity, is FailureCause.Splice.TurnBudgetSpent,
-        FailureCause.Splice.CompactionUnfinished,
-        -> WireFamily.R
-    }
-
-    /** R where a re-send can heal this ending ([heals]), P where the same request earns it again. */
-    private fun again(heals: Boolean): WireFamily = if (heals) WireFamily.R else WireFamily.P
-
-    private fun declined(why: Decline): WireFamily = when (why) {
-        Decline.HeapBusy -> WireFamily.R
-        // The caller's own credential at splice's door is a login cause: its 401 is what makes the session read its
-        // key helper again, so a rotated key strands nobody (ClientWire.KEPT, record http-401).
-        Decline.ReadTimeout, Decline.BadLocalKey, is Decline.SpliceKeyAsLogin -> WireFamily.KEPT
-        is Decline.Preflight -> WireFamily.T
-        is Decline.TooLarge, is Decline.Unfit, is Decline.Budget, is Decline.BadBody, is Decline.UnknownModel,
-        Decline.ForeignHost, Decline.LivenessProbe, Decline.NoSharedLogin, is Decline.Untranslatable,
-        -> WireFamily.P
-    }
-}
 
 /** Each leaf's own type: what the site that decides it wrote before slice 1. */
 private object OwnTypes {

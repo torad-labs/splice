@@ -17,8 +17,6 @@ import splice.core.failure.ClientWire
 import splice.core.failure.Decline
 import splice.core.failure.FailureCause
 import splice.core.failure.HeadVoice
-import splice.core.failure.Lift
-import splice.core.failure.LiftSource
 import splice.core.failure.Moment
 import splice.core.failure.Position
 import splice.core.failure.SpliceLine
@@ -27,10 +25,6 @@ import splice.core.failure.WireAnswer
 import splice.core.wire.ErrorEnvelope
 import splice.core.wire.HttpStatus
 import splice.http.ingress.IngressErrorBody
-import splice.upstream.credentials.AccountResetText
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 /** Shared pre-turn HTTP bodies: what was declined, said in [voice]'s line (failure-handling slice 2), in the envelope
  *  every refusal before a turn takes. The real response status owns retry semantics, not the SSE rule. */
@@ -51,9 +45,6 @@ private val AT_ADMISSION = Position(Moment.ADMISSION, streamBegan = false)
  *  before a turn exists (400, 401, 403, 408, 413, 429, 503, 529). The words of each are the head's [voice]
  *  (failure-handling slice 2): a site names what it refused, never what the client reads. */
 internal class AdmissionResponses(private val voice: HeadVoice) {
-    private val retryAfterFormat = DateTimeFormatter.ofPattern("EEE, dd MMM uuuu HH:mm:ss 'GMT'", Locale.US)
-        .withZone(ZoneOffset.UTC)
-
     // V4-102: the shape lives in core (splice.core.wire.ErrorEnvelope) so :upstream can build the same envelope, and
     // AdmissionErrorBody is the one place a refusal before a turn is put in it, here and at the heap ingress.
     private val bodies = AdmissionErrorBody(voice)
@@ -94,19 +85,6 @@ internal class AdmissionResponses(private val voice: HeadVoice) {
         call.response.header(HttpHeaders.Connection, "close")
         respondRefusal(call, FailureCause.Splice.Stopped(StoppedBy.HEAD_STOPPING))
     }
-
-    /** Every login of the head is at its limit: [resetEpochSeconds] is the earliest reset, when one is known, which the
-     *  line names, and [retryEpochSeconds] is when the client is told to come back (its Retry-After). */
-    suspend fun respondRateLimited(call: ApplicationCall, resetEpochSeconds: Long?, retryEpochSeconds: Long?) {
-        retryEpochSeconds?.let { call.response.header(HttpHeaders.RetryAfter, retryAfterDate(it)) }
-        val lift = resetEpochSeconds?.let {
-            Lift.At(AccountResetText.normalizedInstant(it), firm = true, source = LiftSource.RESET_HEADER)
-        } ?: Lift.Unstated
-        respondRefusal(call, FailureCause.Provider.Limited(lift, window = null))
-    }
-
-    private fun retryAfterDate(resetEpochSeconds: Long): String =
-        retryAfterFormat.format(AccountResetText.normalizedInstant(resetEpochSeconds))
 
     /** A body over the head's [limit]. Both cap arms answer these same bytes (V4-440), and the arm that refuses a
      *  frame into the read never learns the body's size, so the line names the limit alone. */

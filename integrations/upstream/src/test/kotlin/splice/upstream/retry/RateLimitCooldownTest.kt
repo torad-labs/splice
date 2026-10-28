@@ -24,7 +24,6 @@ import splice.upstream.RetryNotice
 import splice.upstream.RoundBody
 import splice.upstream.StreamRead
 import splice.upstream.Waiter
-import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
 import splice.upstream.transport.PostContext
 import splice.upstream.transport.PostLimits
@@ -41,6 +40,7 @@ import splice.upstream.transport.fakeAuth
 import splice.upstream.transport.posted
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
+import splice.upstream.testing.OpenAiTestReplies as OpenAiReplies
 
 class RateLimitCooldownTest {
     // Failure-handling slice 4: whether a 429 is waited out, held or handed to another login is RetryEngine's

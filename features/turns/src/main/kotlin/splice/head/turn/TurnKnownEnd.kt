@@ -10,7 +10,6 @@ import splice.core.turn.ErrorType
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.LogSink
 import splice.head.HeadHealthCounters
-import splice.head.admission.TurnQuota
 import splice.head.perf.PerfFailure
 import splice.upstream.Provider
 import splice.upstream.transport.HeaderRedaction
@@ -21,7 +20,6 @@ internal class TurnKnownEnd(
     private val log: LogSink,
     private val telemetry: TurnTelemetry,
     private val health: HeadHealthCounters,
-    private val quotas: TurnQuota? = null,
 ) {
 
     /** The local credentials were missing: no upstream call ever happened. The line names the login command. */
@@ -40,7 +38,8 @@ internal class TurnKnownEnd(
      *  rule is in that reading: a 401 naming a credential the failing attempt did not send is the upstream's own
      *  failure, never the user's sign-in (ForeignCredential). */
     suspend fun emitFailed(drive: TurnDrive, e: UpstreamFailed) {
-        val cause = e.cause
+        // A hold that ended without the turn going on ends the turn as itself (failure-handling slice 5).
+        val cause = e.ending
         val type = ClientWire.ownType(cause)
         val status = e.evidence.status
         // The words the upstream failed in, with a header it quoted of its own losing that value (fix 4, Oct 27: a
@@ -50,16 +49,13 @@ internal class TurnKnownEnd(
         val outcome = endingTag(drive, e)
         log(telemetry.errTurn(outcome.wire, drive, detail))
         // The provider's words stay in the log above and on the row below; the client reads the line the emitter's
-        // voice composes for the cause (failure-handling slice 2). A relayed native refusal keeps its standby note.
-        val standby = if (type == ErrorType.RATE_LIMIT) quotas?.standbyRefusal(drive.account) else null
+        // voice composes for the cause (failure-handling slice 2).
         // The emitter first decides the pending HTTP status. Record the resulting trace and
         // perf row in finally, so a dead-client write still counts the exact failure, its cause,
         // and the retry loop's attempt count. The pre-commit 400 must not leave a 200 trace.
         accountFailure(e, type)
-        e.native?.let { reply -> drive.rateLimitRelay?.relay(quotas?.withStandby(reply, standby) ?: reply) }
         // V4-81: the emitter asks ClientWire for the wire type, which keeps a permanent cause's own.
-        // Native 429s choose HTTP refusal above while status remains uncommitted; classified
-        // context overflow before client content can still choose HTTP 400.
+        // Classified context overflow before client content can still choose HTTP 400.
         try {
             drive.emitter.emitError(cause)
         } finally {

@@ -14,9 +14,9 @@ import org.junit.jupiter.api.Test
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
-import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
 import java.util.concurrent.atomic.AtomicInteger
+import splice.upstream.testing.OpenAiTestReplies as OpenAiReplies
 
 class UpstreamClientStatusTest {
 

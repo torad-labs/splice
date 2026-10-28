@@ -36,7 +36,6 @@ import kotlinx.coroutines.withContext
 import splice.core.perf.PerfKeys
 import splice.head.ClientWindowWitness
 import splice.head.HeadDeps
-import splice.head.admission.ClientRecheck
 import splice.head.compaction.CompactionReplay
 import splice.head.turn.detached.DetachedCompaction
 import splice.head.turn.stream.PendingSse
@@ -69,7 +68,6 @@ internal class TurnStreamer(
     },
 ) {
     private val emitters = SseEmitterFactory()
-    private val recheck = ClientRecheck()
     private val wiring = TurnWiring()
     private val clientWindow = ClientWindowWitness(deps.stores.clientWindows)
     private val driveDispatcher = ProcessDispatchers().io()
@@ -128,8 +126,6 @@ internal class TurnStreamer(
             val channel = pending.channel
             val emitter = streamingEmitter(call, inputs, pending)
             val drive = driveFactory.assembleDrive(inputs, emitter, channel)
-            drive.rateLimitRelay = TurnDrive.RateLimitRelay(pending::refuse)
-            drive.upstreamAccepted = splice.upstream.StreamStart(pending::accepted)
             // Ktor's SseResponse body previously ran blocking Writer calls on its IO bridge.
             // The drive now starts before respond, so use the process IO adapter instead of Netty.
             val running = async(driveDispatcher) {
@@ -167,12 +163,13 @@ internal class TurnStreamer(
         deps.seams.clock,
         inputs.trace,
         recording,
-        holdMs = if (provider.relayRateLimitReplies) provider.watchdog.totalCap.inWholeMilliseconds else 120_000L,
-        commitProgress = !provider.relayRateLimitReplies,
+        wall = deps.traffic.upstream.retryWall,
     )
 
+    /** The quota windows the client reads. The turn's login is fixed once the provider accepted a request on it
+     *  (SseRoundPost), not here: a held turn commits its stream with its line, and a login that joins during the hold
+     *  still takes it (failure-handling slice 5). */
     private fun applyQuotaHeaders(call: ApplicationCall, drive: TurnDrive) {
-        drive.accountHandoff?.commit()
         drive.quota?.clientHeaders()?.forEach { (name, value) -> call.response.header(name, value) }
     }
 
@@ -196,20 +193,9 @@ internal class TurnStreamer(
                     },
                 )
             }
-            is PendingSse.Decision.Refused -> {
-                running.await()
-                // The provider's own 429, told to come back within the recheck so a login added meanwhile serves it.
-                recheck.reply(choice.reply).headers.forEach { (name, values) ->
-                    values.forEach { call.response.header(name, it) }
-                }
-                call.respondText(
-                    choice.reply.body,
-                    ContentType.Application.Json,
-                    HttpStatusCode.fromValue(choice.reply.status),
-                )
-            }
             is PendingSse.Decision.Overflow -> {
                 running.await()
+                choice.headers.forEach { (name, value) -> call.response.header(name, value) }
                 choice.shouldRetry?.let { call.response.header("x-should-retry", it.toString()) }
                 call.respondText(choice.body, ContentType.Application.Json, HttpStatusCode.fromValue(choice.status))
             }

@@ -22,6 +22,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.client.CLIENT_WALL_HEADER
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
@@ -38,6 +39,9 @@ import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
+
+/** A client timeout too short to hold any limit, so a limit is handed to the client rather than held. */
+private const val SHORT_WALL_MS = 10_000L
 
 private class OneLoginAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer("tok-one", "acct-one")
@@ -88,6 +92,8 @@ private class OneLoginHead(tmp: Path) {
     /** A streamed turn; [scenario] tells the mock provider how to answer it, null for a plain answer. */
     suspend fun turn(scenario: String?): HttpResponse = client.post("http://127.0.0.1:${head.port}/v1/messages") {
         header("Content-Type", "application/json")
+        // A session whose client timeout cannot hold a limit (slice 5): the limit reaches its client at once.
+        header(CLIENT_WALL_HEADER, SHORT_WALL_MS.toString())
         val system = scenario?.let { ""","system":"You are a test. SCENARIO:$it"""" } ?: ""
         setBody(
             """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64$system,

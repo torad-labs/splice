@@ -16,6 +16,7 @@ import splice.core.failure.LiftSource
 import splice.core.failure.LimitWindow
 import splice.core.failure.LoginOwner
 import splice.core.failure.Moment
+import splice.core.failure.Outlast
 import splice.core.failure.Position
 import splice.core.failure.ProtocolFault
 import splice.core.failure.RefusedBy
@@ -69,9 +70,13 @@ internal object PlanModel {
     private fun hold(lift: Lift.At): RetryStep =
         RetryStep.Hold(lift.at, if (lift.firm) Probes.FIRM else Probes.SOFT_LIFT)
 
-    /** Over the floor: past a week another login takes it or it ends, a warm session waits, else a login or a hold. */
+    private fun tooFar(met: Met, lift: Lift.At): RetryStep =
+        RetryStep.End(FailureCause.Splice.HoldOutlasted(Outlast.TOO_FAR, met.cause, lift.at))
+
+    /** Over the floor: past a week another login takes it or it ends as a hold too far to wait, in its cause's family
+     *  (slice 5), a warm session waits, else a login or a hold. */
     private fun stated(met: Met, lift: Lift.At, ms: Long): RetryStep = when {
-        ms > WEEK -> switchOr(met, end(met))
+        ms > WEEK -> switchOr(met, tooFar(met, lift))
         met.facts.warmWaitLeftMs >= ms -> again(How.SAME, ms)
         else -> switchOr(met, hold(lift))
     }
@@ -283,7 +288,7 @@ internal class Failures(private val random: Random) {
             warmWaitLeftMs = pick(listOf(0L, 30_000L, 600_000L)),
             continuesReasoning = random.nextBoolean(),
             canContinue = random.nextBoolean(),
-            wallLeftMs = pick(listOf(Long.MAX_VALUE, 3_600_000L, 20_000L, 1_000L)),
+            deadlines = TurnFacts.Deadlines(pick(listOf(Long.MAX_VALUE, 3_600_000L, 20_000L, 1_000L))),
             earliestLift = null,
         )
     }

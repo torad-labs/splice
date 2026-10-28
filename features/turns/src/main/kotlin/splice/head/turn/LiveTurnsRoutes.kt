@@ -3,6 +3,7 @@
 // GET  /api/heads/{head}/turns/live      -> {turns: [{id, session, model, idle_ms, seen_output, resumes,
 //                                           retries, will_resume, stopped}]}
 // POST /api/heads/{head}/turns/{id}/stop -> {}
+// POST /api/heads/{head}/holds/try-now[?login=] -> {probed} (slice 5: a held login probed at once)
 //
 // Read in process from the registry HeadServerFactory fills as it builds each head (LiveTurnsByHead),
 // as the wire tap's route reads its ring. An unknown head is a 400 naming it, never a 404: the console
@@ -11,6 +12,7 @@
 package splice.head.turn
 
 import io.ktor.http.HttpStatusCode
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -58,6 +60,7 @@ public class LiveTurnsRoutes(
                             put("retries", turn.silence.retries)
                             put("will_resume", turn.silence.willResume)
                             put("stopped", turn.stopped)
+                            held(this, turn.state)
                             slots[turn.id]?.let { slot ->
                                 put("phase", slot.phase.name.lowercase())
                                 put("age_ms", slot.ageMs)
@@ -82,6 +85,17 @@ public class LiveTurnsRoutes(
         JsonReply(HttpStatusCode.OK, JsonWire.string(body))
     }
 
+    /** The console's try-now (failure-handling slice 5): the turn held longest on [login], or on every login when null,
+     *  probes at once. Answers how many logins it probed; none is a 404, since nothing on the head is held there. */
+    public fun tryNow(head: String, login: String?): JsonReply = resolved(head) { key, turns ->
+        val probed = turns.holds.tryNow(login?.ifBlank { null })
+        if (probed > 0) {
+            JsonReply(HttpStatusCode.OK, JsonWire.string(buildJsonObject { put("probed", probed) }))
+        } else {
+            refuse(HttpStatusCode.NotFound, "no turn is held on head $key" + login?.let { " for login $it" }.orEmpty())
+        }
+    }
+
     public fun stop(head: String, id: String): JsonReply = resolved(head) { key, turns ->
         if (turns.stop(id)) {
             JsonReply(HttpStatusCode.OK, "{}")
@@ -104,6 +118,17 @@ public class LiveTurnsRoutes(
             turns == null -> refuse(HttpStatusCode.ServiceUnavailable, "head $key registered no live turns")
             else -> answer.on(key, turns)
         }
+    }
+
+    /** A held turn's reset, login, cause and heap share; nothing for a running one. */
+    private fun held(json: JsonObjectBuilder, state: TurnState) {
+        if (state !is TurnState.Held) return
+        json.put("held", true)
+        json.put("held_cause", state.cause)
+        json.put("held_login", state.login)
+        json.put("held_since", state.since.toString())
+        state.until?.let { json.put("held_until", it.toString()) }
+        json.put("heap_bytes", state.heapBytes)
     }
 
     private fun refuse(status: HttpStatusCode, message: String) =

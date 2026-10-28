@@ -4,6 +4,7 @@ package splice.head.admission
 import io.ktor.server.application.ApplicationCall
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import splice.core.memory.HeapLease
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.head.turn.Preparation
@@ -19,6 +20,9 @@ internal class AdmittedTurn(
 ) {
     private val handedOff = AtomicBoolean(false)
     var materializedEnd: TurnEnd? = null
+
+    /** The heap lease the request's trees are charged to, once it is materialized: a held turn marks it queued. */
+    var heapLease: HeapLease? = null
 
     /** The header permits bounded parsing. Only provider proof can retain the borrowed source permit. */
     suspend fun settle(call: ApplicationCall, prepared: Preparation, admission: AdmissionGate): Boolean {

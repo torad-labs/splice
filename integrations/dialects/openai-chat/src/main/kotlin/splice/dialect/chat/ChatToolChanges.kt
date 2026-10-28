@@ -4,21 +4,18 @@ package splice.dialect.chat
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
 import splice.core.wire.AnthropicRequest
+import splice.core.wire.ClaudeCodeToolChanges.CHANGE_ROLE
+import splice.core.wire.ClaudeCodeToolChanges.FIELD_DEFINITION
+import splice.core.wire.ClaudeCodeToolChanges.FIELD_TOOL
+import splice.core.wire.ClaudeCodeToolChanges.TOOL_ADDITION
+import splice.core.wire.ClaudeCodeToolChanges.TOOL_DEFINITION
+import splice.core.wire.ClaudeCodeToolChanges.TOOL_REFERENCE
+import splice.core.wire.ClaudeCodeToolChanges.TOOL_REMOVAL
 import splice.core.wire.ContentBlock
+import splice.core.wire.FIELD_TYPE
 import splice.core.wire.ToolDefinition
 import splice.core.wire.ToolResultBlock
 import splice.core.wire.UnknownBlock
-
-/** The role of the messages that carry Claude Code's tool changes. */
-private const val CHANGE_ROLE = "system"
-private const val TOOL_ADDITION = "tool_addition"
-private const val TOOL_REMOVAL = "tool_removal"
-private const val FIELD_TOOL = "tool"
-private const val FIELD_TYPE = "type"
-private const val FIELD_NAME = "name"
-private const val FIELD_DEFINITION = "definition"
-private const val TOOL_DEFINITION = "tool_definition"
-private const val TOOL_REFERENCE = "tool_reference"
 
 /**
  * Claude Code adds a tool mid-conversation with a `tool_addition` block in a system message and removes one with a
@@ -45,8 +42,8 @@ internal class ChatToolChanges {
         if (block.type != TOOL_ADDITION && block.type != TOOL_REMOVAL) return null
         val tool = block.raw[FIELD_TOOL] as? JsonObject ?: return null
         return when (JsonScalars.str(tool, FIELD_TYPE)) {
-            TOOL_DEFINITION -> JsonScalars.str(tool[FIELD_DEFINITION] as? JsonObject, FIELD_NAME)
-            TOOL_REFERENCE -> JsonScalars.str(tool, FIELD_NAME)
+            TOOL_DEFINITION -> JsonScalars.str(tool[FIELD_DEFINITION] as? JsonObject, NAME)
+            TOOL_REFERENCE -> JsonScalars.str(tool, NAME)
             else -> null
         }
     }

@@ -20,11 +20,11 @@ import org.junit.jupiter.api.assertThrows
 import splice.core.util.ElapsedClock
 import splice.upstream.BodyAmendment
 import splice.upstream.Waiter
-import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
 import splice.upstream.sse.WireAttempt
 import splice.upstream.sse.WireObserver
 import java.io.IOException
+import splice.upstream.testing.OpenAiTestReplies as OpenAiReplies
 
 /** Holds the unreachable schedule's first wait (1 s) and not its second (2 s): two sends. */
 private const val ONE_UNREACHABLE_WAIT_MS = 1_500L

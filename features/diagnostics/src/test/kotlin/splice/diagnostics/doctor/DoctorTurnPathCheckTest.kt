@@ -18,7 +18,7 @@ class DoctorTurnPathCheckTest {
         // the wedge's own numbers: everything "ready" while nothing works
         heads = DaemonProbe.HealthHeads(total = 4, ready = 4, failed = 0),
         ok = ok,
-        turnPathStalled = stalled,
+        turns = DaemonProbe.HealthTurns(stalled = stalled),
     )
 
     @Test

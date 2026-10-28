@@ -20,6 +20,7 @@ import splice.app.control.controlServerFor
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderBuild
 import splice.app.provider.UpstreamFaultPlan
+import splice.client.ClaudeConfigMaterializer
 import splice.core.auth.CLIENT_AUTH_KIND
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
@@ -36,13 +37,18 @@ import splice.core.topology.HeadModel
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.turn.WatchdogBudget
+import splice.core.util.EnvReader
 import splice.launch.GatewayBearer
+import splice.launch.HeadTrees
+import splice.launch.LaunchOutcome
+import splice.launch.recipe.LaunchService
 import java.net.Socket
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.LockSupport
+import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.seconds
 
 class LaunchSpecClientAuthTest {
@@ -95,12 +101,29 @@ class LaunchSpecClientAuthTest {
         cfg = ConfigService(StatePaths(baseOverride = tmp)).getConfig(),
     )
 
-    // The client's request timeout is derived from the head's whole-turn cap, not a second number
-    // kept by hand: 600s cap here -> 660s for Claude Code (2026-09-01 compaction client_aborts).
+    // Failure-handling slice 5 (2026-10-27): a turn that meets a limit holds in its own request, up to seven days,
+    // so the client's request timeout outlives the head's whole-turn cap (600 s here) and the longest hold together.
+    // Every request names that timeout to the head in its wall header, so a hold fits inside it; the person's own
+    // custom headers ride along, and a wall header of theirs gives way to the launch's.
     @Test
-    fun `the client's request timeout outlives the head's whole-turn cap`(@TempDir tmp: Path) {
-        val spec = factory(tmp).launchSpecFor(build(tmp, Dialect.OPENAI_RESPONSES), 3099, forwardClientAuth = false)
-        assertEquals(600_000L + 60_000L, spec.gateway.apiTimeoutMs)
+    fun `every launch plants a client timeout longer than the longest hold, and the wall`(@TempDir tmp: Path) {
+        val built = factory(tmp).launchSpecFor(build(tmp, Dialect.OPENAI_RESPONSES), 3099, forwardClientAuth = false)
+        val spec = built.copy(trees = HeadTrees(tmp.resolve(".claude-held")))
+        val ambient = "x-team: blue\nx-splice-client-wall-ms: 5"
+        val service = LaunchService(
+            ClaudeConfigMaterializer(tmp.resolve("home")),
+            envReader = EnvReader { name -> ambient.takeIf { name == "ANTHROPIC_CUSTOM_HEADERS" } },
+        )
+
+        val launched = service.launchOutcome(spec, emptyList(), dangerouslySkipPermissions = false)
+        val env = (launched as LaunchOutcome.Ready).recipe.env
+
+        val timeout = env.getValue("API_TIMEOUT_MS").toLong()
+        assertTrue(timeout > 600_000L + 7.days.inWholeMilliseconds, "timeout $timeout")
+        assertEquals(
+            listOf("x-team: blue", "x-splice-client-wall-ms: $timeout"),
+            env.getValue("ANTHROPIC_CUSTOM_HEADERS").lines(),
+        )
     }
 
     @Test

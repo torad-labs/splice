@@ -27,6 +27,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.client.CLIENT_WALL_HEADER
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.model.TurnPrice
@@ -69,6 +70,9 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
+
+/** A client timeout too short to hold any limit, so a limit is handed to the client rather than held. */
+private const val SHORT_WALL_MS = 10_000L
 
 private class EconomicsFakeAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer("tok-test", "acct-test")
@@ -129,6 +133,8 @@ private class EconomicsRig(tmp: Path) {
     suspend fun turn(scenario: String): String =
         client.post("http://127.0.0.1:$port/v1/messages") {
             header("Content-Type", "application/json")
+            // A session whose client timeout cannot hold a limit (slice 5): the limit reaches its client at once.
+            header(CLIENT_WALL_HEADER, SHORT_WALL_MS.toString())
             setBody(
                 """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":8000,
                     "system":"You are a test. SCENARIO:$scenario",

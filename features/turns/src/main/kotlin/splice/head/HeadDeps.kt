@@ -213,6 +213,12 @@ public data class HeadDeps(
 
         /** A forwarded caller alone uses the legacy path until a stored member is published. */
         val activePool: AccountPool? get() = accountPool?.takeIf { it.active }
+
+        /** Every tracker of this head hears a reading turn allowed through [listener]: the head's held turns may go on
+         *  (failure-handling slice 5). */
+        internal fun onAllowed(listener: Runnable) {
+            (listOfNotNull(quota) + accountQuotas.values).forEach { it.onAllowed = listener }
+        }
     }
 
     /** A proved account name for the effective credential digest, never the credential or a head alias.
@@ -231,14 +237,24 @@ public data class HeadDeps(
     public data class HeadSeams(
         val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
         val waiter: Waiter = ProcessWaiter(),
-        val ticker: Ticker = ProcessTicker(),
+        val ticks: HeadTicks = HeadTicks(),
         val requestMaterializationGate: RequestMaterializationGate = RequestMaterializationGate(),
         val clientVersions: ClientVersionTracker = ClientVersionTracker(),
         val session: SessionSeams = SessionSeams(),
-        /** V4-134: where this head reports its turns, messages and label queries for the console. The
-         *  default reports to nobody, like every seam in this bundle; HeadServerFactory gives every
-         *  production head a real one, and HeadEventsTest fails if a served turn stops reaching it. */
+        /** A production head reports to its console; a head without one reports to nobody. */
         val events: HeadEvents = NoHeadEvents,
+    ) {
+        public val ticker: Ticker get() = ticks.client
+        public val watchdogTicker: Ticker get() = ticks.watchdog
+    }
+
+    /** Separate ticking consumers keep the pinger's cadence independent of watchdog progress. */
+    public data class HeadTicks(
+        val client: Ticker = ProcessTicker(),
+        /** What paces a turn's watchdog: its idle tiers, its no-progress cap and the session's wall (slice 5).
+         *  Apart from [client], which only the client pinger reads, so a test that hands the pinger its ticks one
+         *  by one keeps them; a virtual-time head gives both its one clock. */
+        val watchdog: Ticker = ProcessTicker(),
     )
 
     /** What a head resolves per client session: its working directory, the team-slot text appended after its layers

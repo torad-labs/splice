@@ -19,16 +19,14 @@ import splice.client.TrustedLaunch
 import splice.client.mcp.HubLaunchArgs
 import splice.client.mcp.HubLaunchFor
 import splice.client.mcp.McpHubLaunch
-import splice.client.resume.CallingRoster
-import splice.client.resume.HeadBoundedContinue
 import splice.client.resume.MovingTrust
 import splice.client.resume.ResumeAcrossHeads
-import splice.client.resume.SessionAdoption
 import splice.client.resume.TranscriptModelRewrite
 import splice.client.wrap.ClaudeToRun
 import splice.client.wrap.WrapStateRead
 import splice.client.wrap.WrappedHead
 import splice.client.wrap.WrappedLaunch
+import splice.core.client.CLIENT_WALL_HEADER
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
 import splice.core.util.EnvReader
@@ -82,11 +80,8 @@ public class LaunchService(
      *  Assigned by the daemon before routes serve requests; null launches heads only. */
     public var remotes: RemoteCommands? = null
 
-    /** V4-183: a bare -c resolves to this head's own newest session in the launch cwd. */
-    private val headBoundedContinue = HeadBoundedContinue()
-
-    // why: the shape of the id Claude Code gives every session; a -r word of another shape is a name or a search
-    private val sessionUuid = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+    /** V4-183 and V4-115: what a launch resumes, and what the operator is told about it. */
+    private val resume = LaunchResume(resumeAcrossHeads, moving)
 
     /** The resume hook shares the launch's rewrite and selected original-store root. */
     public val transcriptRewriter: TranscriptModelRewrite
@@ -143,7 +138,7 @@ public class LaunchService(
         // V4-283: the folder-trust records the operator granted for this cwd, in any head, are carried in, and for
         // the resume of a move in flight, the folder it is moving out of: the one way home is ever trusted.
         val trust = caller.absoluteCwd()
-            ?.let { TrustedLaunch(it, effective.trees.siblings, movingFolder(extraArgs)) }
+            ?.let { TrustedLaunch(it, effective.trees.siblings, resume.movingFolder(extraArgs)) }
         // V4-232: a head's presented rows enter its OWN settings.json only. V4-445: a wrapped launch materializes
         // NOTHING: it runs over the operator's own ~/.claude and ~/.claude.json, which stay as they are, and
         // carries the head's settings as a --settings overlay below.
@@ -161,8 +156,8 @@ public class LaunchService(
         // V4-183 BEFORE the adoption: a bounded -c becomes a named resume, and a named resume is what
         // adoptResume judges. Read from the head's own index, a wrapped launch's too (round 6 of #247): the hook
         // route records every session of the head there, and nothing records one under ~/.claude.
-        val bounded = headBoundedContinue.resolve(keyed.trees.own, extraArgs, cwd)
-        val adoption = adoptResume(held, bounded.args, cwd)
+        val bounded = resume.bounded(keyed.trees.own, extraArgs, cwd)
+        val adoption = resume.adopt(held, bounded.args, cwd)
         // V4-445: Claude Code reads ~/.claude.json only while CLAUDE_CONFIG_DIR is unset. Set to the vanilla dir it
         // reads ~/.claude/.claude.json, a file that holds none of the operator's mcpServers, projects or account.
         val environment = launchEnvironment(spec, held, slots, wrapped, caller.inheritedConfigDir)
@@ -181,9 +176,10 @@ public class LaunchService(
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
             // picker (populated by the materialized bare-id roster) can freely switch. Forcing it locked the row.
             // V4-169 (the President, Oct 13): a session another head wrote goes on as the copy the client resumes.
-            addAll(headBoundedContinue.resumingAs(bounded.args, (adoption as? SessionAdoption.Copied)?.copyId))
+            addAll(resume.resumingAs(bounded.args, adoption))
         }
-        val warning = launchWarning(spec, dangerouslySkipPermissions, adoption, bounded.warning, hub.warning)
+        val adopted = resume.warning(adoption)
+        val warning = launchWarning(spec, dangerouslySkipPermissions, adopted, bounded.warning, hub.warning)
         return LaunchOutcome.Ready(environment.recipe(argv, warning))
     }
 
@@ -229,29 +225,6 @@ public class LaunchService(
         if (wrapped == null) materializer.materialize(spec, trust, modelOverrides, keyHelper)
     }
 
-    /** The folder the move of this launch's session is in flight out of, or null when it names no session or no
-     *  move of its is in flight. */
-    private fun movingFolder(extraArgs: List<String>): Path? =
-        headBoundedContinue.requestedSessionId(extraArgs)?.let(moving::folderOf)
-
-    /** Resolve a launch's `-r SESSION_ID` against the other heads' transcript trees, then plain claude's (V4-115). Null
-     *  when the launch named no id — which is every `-c`, every plain launch, and every `-r` with NO
-     *  id: the picker is head-bounded by construction, and this is where that stays true. */
-    private fun adoptResume(spec: LaunchSpec, extraArgs: List<String>, cwd: String?): SessionAdoption? {
-        val sessionId = headBoundedContinue.requestedSessionId(extraArgs) ?: return null
-        return resumeAcrossHeads.adopt(
-            spec.trees.own,
-            spec.trees.siblings + listOfNotNull(spec.trees.vanilla),
-            sessionId,
-            CallingRoster(
-                spec.models.pinnedModel,
-                spec.models.availableModelIds.takeUnless { spec.gateway.clientModels },
-                spec.signIn.headKey.ifBlank { null },
-                cwd,
-            ),
-        )
-    }
-
     /** Everything the operator must be told about this launch, in one sentence. A cross-head adoption
      *  is ANNOUNCED (it is an explicit act on one named session, not a shared tree); a resume that
      *  found nothing is refused in words before Claude Code refuses the id itself. Every id these
@@ -260,7 +233,7 @@ public class LaunchService(
     private fun launchWarning(
         spec: LaunchSpec,
         dangerouslySkipPermissions: Boolean,
-        adoption: SessionAdoption?,
+        adoptionWarning: String?,
         continueWarning: String?,
         hubWarning: String?,
     ): String? {
@@ -270,38 +243,9 @@ public class LaunchService(
         } else {
             null
         }
-        return listOfNotNull(danger, adoptionWarning(adoption), continueWarning, hubWarning)
+        return listOfNotNull(danger, adoptionWarning, continueWarning, hubWarning)
             .takeIf { it.isNotEmpty() }
             ?.joinToString("; ")
-    }
-
-    /** THE RETRY LAW: no refusal is bare and none invents a cause. Each sentence says what happened,
-     *  what is still true (nothing copied / that tree untouched), and the operator's next action. */
-    private fun adoptionWarning(adoption: SessionAdoption?): String? = when (adoption) {
-        // a word no session id can be (a name with a space, a search word with a dot) is Claude Code's to resolve too
-        null, is SessionAdoption.HeadOwned, is SessionAdoption.Invalid ->
-            null
-        is SessionAdoption.Copied ->
-            "session ${adoption.sessionId} goes on here as its copy ${adoption.copyId}, with " +
-                "${adoption.modelsRewritten} assistant rows on this head's model; the original is left as it was"
-        is SessionAdoption.Adopted ->
-            "resumed session ${adoption.sessionId} copied into this head from ${adoption.from}, and " +
-                "${adoption.modelsRewritten} assistant rows now name this head's model"
-        // Claude Code resumes a session by the name -n gave it, or opens its picker on a search word, so a -r
-        // word that is not an id is its to resolve, never a refusal (Oct 12: "temple-studio" was warned as an id)
-        is SessionAdoption.Absent -> adoption.takeIf { sessionUuid.matches(it.sessionId) }?.let {
-            "session ${it.sessionId} is in no transcript tree: searched " +
-                "${it.searchedHeads.size} heads (${it.searchedHeads.joinToString(", ")}). " +
-                "Nothing was copied, so Claude Code will refuse the id: check the id, or start a new " +
-                "session in this head"
-        }
-        is SessionAdoption.Empty ->
-            "session ${adoption.sessionId}'s transcript exists but is empty at ${adoption.transcript}. " +
-                "Nothing was copied; choose another session or start a new one"
-        is SessionAdoption.Refused ->
-            "session ${adoption.sessionId} could not be copied out of ${adoption.from} " +
-                "(${adoption.cause}). That tree is untouched: retry the launch, or resume the session " +
-                "on the head that owns it"
     }
 
     /** Vars a launched head must SCRUB from the inherited environment: app/src/main/dist/bin/splice-launch execs
@@ -395,6 +339,10 @@ public class LaunchService(
             // the head's wall speaks first. CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK would only
             // delete a recovery path.
             put("API_TIMEOUT_MS", spec.gateway.apiTimeoutMs.toString())
+            // Failure-handling slice 5: the same timeout, told to the head on every request, so a turn held for a reset
+            // fits the session that sent it (a session launched before this reads as the 960 s every session had).
+            // Merged with any custom headers the shell already names, which Claude Code reads one per line.
+            put("ANTHROPIC_CUSTOM_HEADERS", customHeaders(spec))
             // V4-72: PERSISTENT RETRY. Without this the client gives up after its default 10 retries
             // (~2-3 min of backoff), so a rate-limit hold longer than that ENDS THE SESSION instead
             // of resuming when the window reopens. Verified in the Claude Code 2.1.257 binary: QI()
@@ -431,6 +379,13 @@ public class LaunchService(
             if (!spec.gateway.reachesAnthropic) put("CLAUDE_CODE_AUTO_MODE_SERVER", "0")
             put("SPLICE", "1")
         }
+    }
+
+    /** The ambient ANTHROPIC_CUSTOM_HEADERS, without a wall header of its own, and the session's client wall. */
+    private fun customHeaders(spec: LaunchSpec): String {
+        val ambient = envReader("ANTHROPIC_CUSTOM_HEADERS").orEmpty().lines()
+            .filter { it.isNotBlank() && !it.trim().startsWith("$CLIENT_WALL_HEADER:", ignoreCase = true) }
+        return (ambient + "$CLIENT_WALL_HEADER: ${spec.gateway.apiTimeoutMs}").joinToString("\n")
     }
 
     /** The ambient NO_PROXY with loopback added, and for a command another machine serves (LAN share) that machine's

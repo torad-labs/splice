@@ -28,8 +28,6 @@ import io.ktor.http.isSuccess
 import splice.core.failure.FailureEvidence
 import splice.core.perf.UpstreamAttemptTiming
 import splice.core.util.WallClock
-import splice.core.wire.HttpStatus
-import splice.core.wire.NativeReply
 import splice.upstream.RoundBody
 import splice.upstream.StreamStart
 import splice.upstream.UpstreamHandler
@@ -149,7 +147,7 @@ internal class UpstreamRequest(
             // The vendor hears every answer that is not a stream; whether its route survives the answer is its call.
             ctx.recovery.route?.answered(reply)
 
-            val failed = failure(reply, resp, ctx, wire)
+            val failed = failure(reply, ctx, wire)
             ctx.observeQuotaRefusal(failed, answeredAt)
             failed
         }
@@ -163,7 +161,6 @@ internal class UpstreamRequest(
      *  above reads a status or a body again (failure-handling slice 3, final-design.md section 7). */
     private fun failure(
         reply: FailedReply,
-        resp: HttpResponse,
         ctx: PostContext,
         wire: AttemptWire,
     ): RetryOutcome.Failed {
@@ -182,21 +179,7 @@ internal class UpstreamRequest(
                 retryAfterMs = ReplyFacts.retryAfterMs(reply),
             ),
             planLimit = ctx.replies.planLimit(reply),
-            native = nativeReply(resp, ctx, reply.body),
             deadCredential = ctx.replies.deadCredential(reply),
-        )
-    }
-
-    /** The provider's own 429 with the headers a native client reads, kept for the passthrough dialect only. */
-    private fun nativeReply(resp: HttpResponse, ctx: PostContext, text: String): NativeReply? {
-        if (!ctx.relayRateLimitReplies || resp.status.value != HttpStatus.TOO_MANY_REQUESTS) return null
-        return NativeReply(
-            text,
-            resp.headers.entries().filter { (name, _) ->
-                name.equals("retry-after", ignoreCase = true) ||
-                    name.equals("x-should-retry", ignoreCase = true) ||
-                    name.startsWith("anthropic-ratelimit-", ignoreCase = true)
-            }.associate { (name, values) -> name to values.toList() },
         )
     }
 }

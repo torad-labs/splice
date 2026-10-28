@@ -124,13 +124,17 @@ class OneEngineLoginsAndEndingsTest {
     @Test
     fun `credit, forbidden and budget endings carry no login status`(@TempDir tmp: Path) = runTest {
         withScriptedHeads(tmp) {
+            // Slice 5: the spent account holds, probed every 5 minutes, until the session's wall, so each turn gets a
+            // script of its own and the budget's turn is counted on its own.
             provider.script(
                 reply { status(PAYMENT_REQUIRED); openAiErrorBody("insufficient_quota", NO_CREDIT, NO_QUOTA) },
+            )
+            val credit = chat().client.send()
+            provider.script(
                 reply { status(FORBIDDEN); openAiErrorBody("permission_error", NOT_IN_PLAN, "model_not_allowed") },
             )
-
-            val credit = chat().client.send()
             val forbidden = chat().client.send()
+            val asked = provider.requests.size
             val budget = budgetedChat(SpentBudget).client.send()
 
             // A login status makes Claude Code print a login label in front of the line, and none of these is about a
@@ -140,7 +144,7 @@ class OneEngineLoginsAndEndingsTest {
                 assertFalse(answer.error?.type in LOGIN_TYPES, answer.describe())
                 assertTrue(lineOf(answer).startsWith(PREFIX), answer.describe())
             }
-            assertEquals(2, provider.requests.size, "the budget refused its turn before the provider was asked")
+            assertEquals(asked, provider.requests.size, "the budget refused its turn before the provider was asked")
         }
     }
 

@@ -26,27 +26,43 @@ internal class TranscriptLimitEnding(
     private val config: ConfigService,
     private val transcripts: SessionTranscripts,
     private val roots: TranscriptRoots,
-) : LimitTurnEnded {
+) : SessionTurnEnded {
     private val spoken = setOf(TranscriptRole.USER, TranscriptRole.ASSISTANT)
 
-    override fun endedAtLimit(record: SessionRecord): Boolean {
+    override fun untouched(record: SessionRecord, endedAtMs: Long): Boolean {
         // reading off, splice opens no conversation: the perf row's ending and the console's own marks decide alone
-        if (!config.getConfig().transcriptView) return true
-        val id = record.sessionId ?: return false
+        return if (!config.getConfig().transcriptView) {
+            true
+        } else {
+            record.sessionId?.let { id ->
+                messages(record, id)?.let { ended(it, endedAtMs) }
+            } ?: false
+        }
+    }
+
+    private fun messages(record: SessionRecord, id: String): List<TranscriptMessage>? {
         val page = transcripts.pageBefore(id, roots.treesFor(record.head), null, LIMIT_TAIL, record.process.cwd)
-        return ended((page as? TranscriptLookup.Found)?.page?.messages.orEmpty())
+        return (page as? TranscriptLookup.Found)?.page?.messages
     }
 
-    private fun ended(messages: List<TranscriptMessage>): Boolean {
+    private fun ended(messages: List<TranscriptMessage>, endedAtMs: Long): Boolean {
+        val anchor = anchor(messages, endedAtMs)
+        return messages.withIndex().none { (i, message) -> spokenAfter(message, i, anchor) }
+    }
+
+    private data class EndingAnchor(val cutoff: Long, val errorIndex: Int?)
+
+    private fun anchor(messages: List<TranscriptMessage>, endedAtMs: Long): EndingAnchor {
         val at = messages.indexOfLast { it.role == TranscriptRole.SYSTEM && it.text.startsWith(LIMIT_ERROR, true) }
-        if (at < 0) return false
-        val error = messages[at]
-        return messages.withIndex().none { (i, m) -> m.role in spoken && later(m, i, error, at) }
+        val errorAt = messages.getOrNull(at)?.ts
+        val relevantError = at >= 0 && current(errorAt, endedAtMs)
+        val cutoff = if (relevantError && errorAt != null) errorAt else endedAtMs
+        return EndingAnchor(cutoff, at.takeIf { relevantError })
     }
 
-    private fun later(m: TranscriptMessage, i: Int, error: TranscriptMessage, at: Int): Boolean {
-        val mine = m.ts
-        val its = error.ts
-        return if (mine != null && its != null) mine > its else i > at
-    }
+    private fun current(errorAt: Long?, endedAtMs: Long): Boolean = errorAt == null || errorAt >= endedAtMs
+
+    private fun spokenAfter(message: TranscriptMessage, index: Int, anchor: EndingAnchor): Boolean =
+        message.role in spoken &&
+            (message.ts?.let { it > anchor.cutoff } ?: anchor.errorIndex?.let { index > it } ?: true)
 }

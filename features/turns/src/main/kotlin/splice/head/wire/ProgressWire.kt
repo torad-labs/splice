@@ -72,12 +72,22 @@ internal class ProgressWire(
 
     /** Append the line that opens a recovery episode, unless one is open: a failure that follows another before model
      *  content reaches the client again tells the person nothing new (final-design.md section 8, rules 3 and 4). The
-     *  caller holds [lock]. The line never commits the response: before the status commits, the channel stages it
-     *  (PendingSse) and shows it when the status does, as it staged a retry's line before slice 2. */
+     *  caller holds [lock]. The line commits the response as it is written (PendingSse, slice 5). */
     suspend fun writeEpisodeLocked(line: SpliceLine) {
         if (episode) return
         episode = true
         appendLocked(separated(line), commits = false)
+    }
+
+    /** A hold's line (failure-handling slice 5) is a finished notice at once: the turn may wait for hours, and the client
+     *  shows a notice when its block closes. The episode stays open, so a hold entered again after a probe that did not
+     *  lift it says nothing new. The caller holds [lock]. */
+    suspend fun closeEpisodeLocked() {
+        notice?.let { index ->
+            blocks.signatureDelta(index, SpliceNotice.SIGNATURE)
+            blocks.closeBlock(index)
+        }
+        notice = null
     }
 
     /** [line] as the block takes it: on its own when it opens the block, after a line break when another is there. */

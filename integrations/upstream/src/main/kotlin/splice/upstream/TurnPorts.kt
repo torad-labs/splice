@@ -33,6 +33,8 @@ package splice.upstream
 import splice.core.auth.Credentials
 import splice.core.failure.FailureCause
 import splice.core.failure.Position
+import splice.upstream.retry.HoldAsk
+import splice.upstream.retry.HoldEnd
 import splice.upstream.retry.RetryLedger
 import splice.upstream.retry.WatchdogFired
 import splice.upstream.transport.UpstreamResponse
@@ -134,6 +136,14 @@ public fun interface CredentialHeaders {
 public fun interface TurnWaits {
     /** Waits [afterMs] out, the wait of a step taken for [cause], met where the turn stood at [at]. */
     public suspend fun wait(afterMs: Long, cause: FailureCause, at: Position)
+
+    /** Holds the turn as [ask] says until its cause lifts, its session's wall or its seven days come, or a wake
+     *  (failure-handling slice 5). Waits with no turn around them hold nothing, and the turn ends as it did before. */
+    public suspend fun hold(ask: HoldAsk): HoldEnd = HoldEnd.UNSUPPORTED
+
+    /** Usable wait time left before the session's wall, with its response margin reserved, or the non-stream wait
+     *  bound when sooner. Unbounded where nothing holds. */
+    public fun holdWallLeftMs(): Long = Long.MAX_VALUE
 }
 
 /** One turn's retries: the [ledger] every post and round of the turn spends, and where its [waits] happen. */

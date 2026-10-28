@@ -36,7 +36,6 @@ import splice.core.util.ElapsedClock
 import splice.core.util.LocalTimeText
 import splice.upstream.Waiter
 import splice.upstream.failure.FailedReply
-import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.ProviderDeviation
 import splice.upstream.failure.Replies
 import splice.upstream.retry.BURST_WAITS
@@ -44,6 +43,7 @@ import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import splice.upstream.testing.OpenAiTestReplies as OpenAiReplies
 
 class UpstreamClientPlanLimitTest {
 

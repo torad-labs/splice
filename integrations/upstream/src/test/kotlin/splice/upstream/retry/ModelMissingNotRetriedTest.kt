@@ -19,7 +19,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.failure.FailureCause
 import splice.upstream.RetryNotice
-import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
 import splice.upstream.transport.PostContext
 import splice.upstream.transport.PostObservers
@@ -28,6 +27,7 @@ import splice.upstream.transport.assertEnds
 import splice.upstream.transport.clientOver
 import splice.upstream.transport.fakeAuth
 import splice.upstream.transport.posted
+import splice.upstream.testing.OpenAiTestReplies as OpenAiReplies
 
 class ModelMissingNotRetriedTest {
 

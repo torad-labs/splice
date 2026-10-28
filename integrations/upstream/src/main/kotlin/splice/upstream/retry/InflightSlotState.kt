@@ -2,9 +2,12 @@
 // limit sits beside it, moved out of InflightGate.kt unchanged, so the gate file declares the gate alone.
 package splice.upstream.retry
 
+import splice.core.head.GatePhase
+import splice.core.head.GateSlot
 import splice.core.util.ElapsedClock
 import splice.upstream.TurnEnd
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 internal class InflightSlotState(clock: ElapsedClock) {
@@ -26,6 +29,22 @@ internal class InflightSlotState(clock: ElapsedClock) {
     @Volatile var compact: Boolean = false
 
     @Volatile var streaming: Boolean = false
+
+    /** The permit was given back while the turn holds for its cause to lift, and not yet taken again (slice 5). */
+    val yielded = AtomicBoolean(false)
+
+    fun reading(now: Long): GateSlot = GateSlot(
+        label = label,
+        compact = compact,
+        phase = if (streaming) GatePhase.STREAMING else GatePhase.CONNECT,
+        ageMs = now - admittedAt,
+        idleMs = now - lastTouch.get(),
+        turnId = upstreamBytes?.turnId,
+    )
+
+    fun drainOnRelease() {
+        generateSequence { onRelease.poll() }.forEach { it.ended() }
+    }
 }
 
 /**

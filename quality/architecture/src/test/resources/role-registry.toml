@@ -241,12 +241,13 @@ while the hub serves. Readiness asks whether a just-started hosted child reached
 # ── 13 names, () -> Long (TWO MORE ARE DUPLICATES AND ARE NOT LISTED) ─────────────────────────────
 [[groups]]
 signature = "()->Long"
-dated = "2026-10-21"
+dated = "2026-10-27"
 names = [
     "ElapsedClock",
     "HeadPerfSkipSource",
     "HostClock",
     "IngressReadIdleMs",
+    "KeptBytes",
     "MaterializationBudgetBytes",
     "MaterializedByteCap",
     "QuotaIntervalMs",
@@ -299,6 +300,10 @@ ceilings is expected it would give that operation five minutes to finish by defa
 would poll the provider's usage endpoint as often as one request is allowed to take, which is the hammering \
 ConfigCoercion's floor exists to prevent. \
 IngressReadIdleMs (Oct 11) is the third CONFIGURED CEILING in milliseconds, and the one that sits between the two: how long the control listener lets a request body go SILENT after its headers before it closes the connection, re-armed at every chunk so a PATCH of ingressReadIdleMs bounds the next one. It is not RequestReadBudgetMs, which bounds how long a head spends reading one whole body, and it is not WriteBoundMs, which bounds splice's own write outward: this one is a gap between two chunks, so a slow upload that keeps sending is never cut by it. \
+KeptBytes (failure-handling slice 5, 2026-10-27) reads the bytes of one request whose turn is held, for the \
+live held-turn row and its heap share. It measures what this turn retains; neither a configured materialization \
+budget nor its effective ingress ceiling is that reading. A clock substituted here would report an arbitrary \
+instant as memory, and a byte ceiling would report capacity instead of retained request size. \
 ServerRequestId (added 2026-10-21) allocates the numeric identifier passed to the hosted child's reply writer for each reverse request; it identifies an exchange, not a time or budget, so a clock-shaped substitute would silently change the protocol identifier. DELIBERATELY ABSENT: ElapsedNow (upstream/RuntimeSeams.kt:40) is ElapsedClock's role in a \
 second module, and AccountNow (upstream/credentials/AccountSelection.kt:22) is WallClock's. Both are red \
 by name until the fix row reconciles them; listing them here would be a lie that closes the wall."""

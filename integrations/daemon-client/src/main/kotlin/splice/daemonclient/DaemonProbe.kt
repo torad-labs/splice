@@ -5,25 +5,23 @@ package splice.daemonclient
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.longOrNull
 import splice.core.auth.CredentialVerdict
-import splice.core.auth.CredentialVerdictRead
+import splice.core.head.HeldTurnReading
 import splice.core.usage.QuotaFull
-import splice.core.usage.QuotaFullWindow
 import splice.core.util.Cancellables
 import splice.core.util.FormEncoding
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
+import splice.daemonclient.health.DaemonAuthReading
+import splice.daemonclient.health.DaemonHealthReading
+import splice.daemonclient.http.DaemonConnection
 import java.net.ConnectException
 import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
-import java.net.URI
 
 /**
  * HTTP probes of a running daemon — the lock loser health-checks the winner, and doctor/restart
@@ -43,10 +41,19 @@ public object DaemonProbe {
         public val ok: Boolean? = null,
         public val heads: HealthHeads,
         public val topology: HealthTopology = HealthTopology(),
-        public val turnPathStalled: List<String> = emptyList(),
         public val client: HealthClient = HealthClient(),
-        /** V4-452: the two quota facts /health names apart, per head. */
+        public val turns: HealthTurns = HealthTurns(),
+    ) {
+        public val turnPathStalled: List<String> get() = turns.stalled
+        public val quota: HealthQuota get() = turns.quota
+        public val held: Map<String, List<HeldTurnReading>> get() = turns.held
+    }
+
+    /** Per-head current turn health: stalled paths, quota readings, and retained holds. */
+    public data class HealthTurns(
+        public val stalled: List<String> = emptyList(),
         public val quota: HealthQuota = HealthQuota(),
+        public val held: Map<String, List<HeldTurnReading>> = emptyMap(),
     )
 
     /** What /health says about the Claude Code sessions the daemon serves: [versionWarning], the aggregate version
@@ -125,7 +132,7 @@ public object DaemonProbe {
      *  daemon: restart must be able to stop one. */
     public fun healthProbe(port: Int): HealthProbe =
         Cancellables.runCatchingCancellable {
-            val connection = open("http://127.0.0.1:$port/health")
+            val connection = DaemonConnection.open("http://127.0.0.1:$port/health", PROBE_TIMEOUT_MS)
             try {
                 val status = connection.responseCode
                 val text = if (status in HttpURLConnection.HTTP_OK until HttpURLConnection.HTTP_MULT_CHOICE) {
@@ -161,47 +168,9 @@ public object DaemonProbe {
     /** A /health body, read the one way the probe and the daemon's own doctor both read it. str()
      *  (JsonNull-filtering) keeps a foreign listener's {"version": null} from reading back as the
      *  literal string "null". */
-    public fun parseHealth(body: String): HealthView {
-        val obj = json.parseToJsonElement(body).jsonObject
-        return HealthView(
-            version = JsonScalars.str(obj, "version"),
-            ok = (obj["ok"] as? JsonPrimitive)?.booleanOrNull,
-            heads = HealthHeads(
-                total = JsonScalars.int(obj, "heads"),
-                ready = JsonScalars.int(obj, "readyHeads"),
-                failed = JsonScalars.int(obj, "failedHeads"),
-                failedReasons = (obj["failedHeadReasons"] as? JsonObject)
-                    ?.mapNotNull { (key, reason) -> JsonScalars.str(reason)?.let { key to it } }
-                    ?.toMap()
-                    .orEmpty(),
-            ),
-            topology = HealthTopology(
-                digest = JsonScalars.str(obj, "topologyDigest"),
-                stale = (obj["topologyStale"] as? JsonPrimitive)?.booleanOrNull,
-            ),
-            turnPathStalled = (obj["turnPathStalled"] as? JsonArray)
-                ?.mapNotNull { JsonScalars.str(it) }
-                .orEmpty(),
-            client = HealthClient(
-                versionWarning = JsonScalars.str(obj, "clientVersionWarning"),
-                mcpHub = when (JsonScalars.str(obj, "mcpHub")) {
-                    "on" -> HealthMcpHub(on = true)
-                    "off" -> HealthMcpHub(on = false, offReason = JsonScalars.str(obj, "mcpHubOffReason"))
-                    else -> null
-                },
-            ),
-            quota = HealthQuota(
-                refusedUntil = (obj["quotaResetAtEpochSeconds"] as? JsonObject)
-                    ?.mapNotNull { (key, reset) -> (reset as? JsonPrimitive)?.longOrNull?.let { key to it } }
-                    ?.toMap()
-                    .orEmpty(),
-                full = (obj["quotaFull"] as? JsonObject)
-                    ?.mapNotNull { (key, reading) -> QuotaFullReading.parse(reading as? JsonObject)?.let { key to it } }
-                    ?.toMap()
-                    .orEmpty(),
-            ),
-        )
-    }
+    public fun parseHealth(body: String): HealthView = DaemonHealthReading.parse(body)
+
+    /** One held turn off /health, or null where it names no login. */
 
     public fun healthVersion(port: Int): String? = healthView(port)?.version
 
@@ -263,25 +232,10 @@ public object DaemonProbe {
 
     /** An /api/auth body's per-head credential state. */
     public fun parseAuthSeen(body: String): Map<String, HeadAuthSeen> =
-        json.parseToJsonElement(body).jsonObject.mapValues { (_, v) -> headAuthSeen(v.jsonObject) }
+        json.parseToJsonElement(body).jsonObject.mapValues { (_, v) -> DaemonAuthReading.read(v.jsonObject) }
 
     /** A verdict that is sent but unreadable (a newer word, a dated state with no date) is not "nothing to
      *  verify": only a daemon that sent none predates verdicts (V4-293). */
-    private fun headAuthSeen(head: JsonObject): HeadAuthSeen {
-        val sent = head["verdict"]?.takeUnless { it is JsonNull }
-        val verdict = sent as? JsonObject
-        val read = CredentialVerdictRead().of(
-            JsonScalars.str(verdict, "state"),
-            JsonScalars.long(verdict, "at_epoch_ms"),
-        )
-        return HeadAuthSeen(
-            present = head["present"]?.jsonPrimitive?.booleanOrNull == true,
-            verdict = when (sent) {
-                null -> CredentialVerdict.Held
-                is JsonPrimitive, is JsonObject, is JsonArray -> read ?: CredentialVerdict.Unverified
-            },
-        )
-    }
 
     internal fun <T> request(
         url: String,
@@ -289,7 +243,7 @@ public object DaemonProbe {
         bearer: String? = null,
         read: ResponseRead<T>,
     ): T? {
-        val connection = open(url, method, bearer)
+        val connection = DaemonConnection.open(url, PROBE_TIMEOUT_MS, method, bearer)
         return try {
             // 2xx (the shutdown endpoint answers 202 Accepted); anything else is a miss.
             val ok = connection.responseCode in HttpURLConnection.HTTP_OK until HttpURLConnection.HTTP_MULT_CHOICE
@@ -297,15 +251,6 @@ public object DaemonProbe {
         } finally {
             connection.disconnect()
         }
-    }
-
-    private fun open(url: String, method: String = "GET", bearer: String? = null): HttpURLConnection {
-        val connection = URI(url).toURL().openConnection() as HttpURLConnection
-        connection.requestMethod = method
-        bearer?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
-        connection.connectTimeout = PROBE_TIMEOUT_MS
-        connection.readTimeout = PROBE_TIMEOUT_MS
-        return connection
     }
 
     internal fun body(connection: HttpURLConnection): String =
@@ -334,14 +279,3 @@ public class TraceConfigProbe {
 }
 
 private const val PROBE_TIMEOUT_MS = 400
-
-/** The parse of one head's `quotaFull` entry from /health: a pure read with no probe state, so it sits
- *  beside [DaemonProbe] rather than in its function budget. */
-private object QuotaFullReading {
-    /** The reading, or null when it names no known window or no reset. */
-    fun parse(reading: JsonObject?): QuotaFull? {
-        val wire = reading?.let { JsonScalars.str(it, "window") }
-        val window = QuotaFullWindow.entries.firstOrNull { it.wire == wire } ?: return null
-        return JsonScalars.long(reading, "resetsAtEpochSeconds")?.let { QuotaFull(window, it) }
-    }
-}

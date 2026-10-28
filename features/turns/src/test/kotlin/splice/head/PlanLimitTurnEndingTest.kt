@@ -34,6 +34,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.client.CLIENT_WALL_HEADER
 import splice.core.failure.FailureCause
 import splice.core.failure.Lift
 import splice.core.failure.LiftSource
@@ -80,6 +81,9 @@ private fun usageLimitBody(reset: Long) =
         """"resets_in_seconds":$SIX_DAYS_S,"limit_window_minutes":10080}}"""
 
 private const val BURST_BODY = """{"error":{"type":"rate_limit_exceeded","message":"slow down"}}"""
+
+/** A client timeout too short to hold any limit, so a limit is handed to the client rather than held. */
+private const val SHORT_WALL_MS = 10_000L
 
 private class SpentPlanAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer("tok", "acct")
@@ -163,6 +167,8 @@ private class LimitedHead(tmp: Path, upstreamBody: String, retryAfterSeconds: In
 
     suspend fun turn(): HttpResponse = client.post("http://127.0.0.1:${head.port}/v1/messages") {
         header("Content-Type", "application/json")
+        // A session whose client timeout cannot hold a limit (slice 5): the limit reaches its client at once.
+        header(CLIENT_WALL_HEADER, SHORT_WALL_MS.toString())
         setBody(
             """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,
                 "messages":[{"role":"user","content":"go"}]}""",

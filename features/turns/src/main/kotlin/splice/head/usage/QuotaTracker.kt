@@ -53,16 +53,29 @@ public class QuotaTracker(
     @Volatile
     public var credentialListener: CredentialQuotaListener? = null
 
+    /** Hears a reading turn allowed, one naming no spent window after one that did or after none: a limit a turn holds
+     *  for may have lifted (failure-handling slice 5). */
+    @Volatile
+    public var onAllowed: Runnable? = null
+
     public fun snapshot(): QuotaSnapshot? = latest.get()
 
     /** Latest wins. Persisted at once: a snapshot arrives at most once per round or per poll. A provider's answer
      *  that it has no usage for the account ([QuotaSnapshot.answeredEmpty]) replaces the older reading rather than
      *  leaving it drawn as current, and keeps its time so a page can say the provider sends none (Oct 10, 2026). */
     public fun record(reading: QuotaSnapshot) {
+        val before = latest.get()
         when {
             reading.answeredEmpty -> keep(QuotaSnapshot(updatedAt = reading.updatedAt))
             reading.isEmpty -> return
             else -> keep(reading.keepingModelsOf(latest.get()))
+        }
+        // A reading turns allowed when the one before it named a spent window, or there was none to name one.
+        val now = clock()
+        val wasFull = before?.currentAt(now) == null || before.fullAt(now) != null
+        val nowAllowed = !reading.isEmpty && reading.currentAt(now) != null && reading.fullAt(now) == null
+        if (wasFull && nowAllowed) {
+            onAllowed?.run()
         }
     }
 

@@ -20,6 +20,7 @@ import splice.core.failure.ServerFault
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
+import splice.upstream.testing.OpenAiTestReplies as OpenAiReplies
 
 class ForeignCredentialTest {
     private val bearer = Credentials.Bearer("eyFakeSignInToken.v4242", "acct-v4242")

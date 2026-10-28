@@ -28,7 +28,6 @@ import org.junit.jupiter.api.condition.OS
 import org.junit.jupiter.api.io.TempDir
 import splice.core.util.LogSink
 import splice.upstream.RetryNotice
-import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
 import splice.upstream.retry.UNREACHABLE_FIRST_WAIT_MS
 import java.io.BufferedInputStream
@@ -53,6 +52,7 @@ import javax.net.ssl.SSLSocket
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 import kotlin.concurrent.thread
+import splice.upstream.testing.OpenAiTestReplies as OpenAiReplies
 
 /** The head's firstByteTimeout in this rig: how long a write may take none of the request. */
 private const val WRITE_TIMEOUT_MS = 1_000L

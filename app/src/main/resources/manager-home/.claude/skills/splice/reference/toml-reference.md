@@ -128,11 +128,16 @@ default, `[defaults]`, `[heads.<key>.overrides]`, the state dir's `config.json`,
 PATCH. A knob in splice.toml applies at the next restart whatever its marking. HOT means a console change or
 PATCH reaches the running daemon at its next use. Env aliases: the example file, lines 934-978.
 
+`upstreamTimeoutMs`, `firstByteTimeoutMs`, `streamIdleMs` and `stallReanchorMs` are daemon-wide. Set them under
+`[defaults]` or through the shared settings layer. Boot lists every such key under a head's overrides or saved
+head settings and refuses to start until those entries are removed. Slow models use the same bounds: progress
+renews the cap, and a live connection is held to the session's client timeout.
+
 | knob | default | HOT | what |
 |---|---|---|---|
 | `maxInflight` | `12` | yes | concurrent turns per head; the rest queue. 0 = unlimited. Set it to what the upstream account tolerates |
 | `maxQueued` | `512` | yes | admission queue cap; 0 = unlimited |
-| `upstreamTimeoutMs` | `900000` | no | the longest one upstream round may take |
+| `upstreamTimeoutMs` | `1800000` | no | daemon-wide no-progress cap; progress renews it and a live path is held |
 | `firstByteTimeoutMs` | `90000` | yes | silence before the first frame before the watchdog probes |
 | `streamIdleMs` | `90000` | yes | mid-stream silence before the watchdog probes; a live path is held |
 | `stallReanchorMs` | `20000` | yes | mid-output silence before a re-anchor; only for a `reanchor_prefill` head; 0 off |
@@ -181,7 +186,7 @@ the head's own fields instead.
 Source: core/src/main/kotlin/splice/core/config/Knob.kt (defaults and restartRequired, for example lines 191-200,
 246-251); TopologyKnobLayer.kt (lines 53-96); splice.example.toml (lines 644-662, 799-932).
 The example's line 825 says `maxInflight` defaults to `"0"` (unlimited). The code's default is 12 (Knob.kt:199).
-`upstreamTimeoutMs` is missing from the example's knob reference; its default is 900000 and it needs a restart.
+`upstreamTimeoutMs` defaults to 1800000 and needs a restart; it is included in the example's knob reference.
 
 ## 5. [providers.<key>]
 

@@ -49,6 +49,9 @@ private const val CARRIES_ON = "This turn continues from where it stopped."
 /** What a line says where the record shows Claude Code sending the turn again itself. */
 private const val RESENDS = "Claude Code sends this turn again."
 
+/** What a limit handed to Claude Code with its reset says (family L, one login). */
+private const val HANDED_OVER = "Claude Code retries at that time."
+
 /** The phrase that makes Claude Code compact, which only a plain prompt-too-long line may carry. */
 private const val COMPACT_TRIGGER = "prompt is too long"
 
@@ -224,7 +227,7 @@ class LinesThroughHeadsTest {
     }
 
     @Test
-    fun `a stated reset reads as a clock time in the machine's zone and says the client sends the turn again`(
+    fun `a stated reset reads as a clock time in the machine's zone and says the client retries at that time`(
         @TempDir tmp: Path,
     ) = runTest {
         withScriptedHeads(tmp, VirtualTime(autoAdvance = true, startWall = MUSE_ANSWERED)) {
@@ -233,23 +236,28 @@ class LinesThroughHeadsTest {
 
             val answer = head.client.send()
 
+            // Slice 5: this session carries no wall, so its 960 s cannot hold two hours; the limit is handed to
+            // Claude Code with its reset (family L), and the line says the time and that Claude Code retries then.
             assertLine(answer, MUSE_RESET_READS)
-            assertLine(answer, RESENDS)
+            assertLine(answer, HANDED_OVER)
         }
     }
 
     @Test
-    fun `a limit with no stated time ends with the interim line that gives no time`(@TempDir tmp: Path) = runTest {
-        withScriptedHeads(tmp) {
-            provider.script(limited(null))
-            val head = chat()
+    fun `a limit with no stated time ends at the session's wall with a line that gives no time`(@TempDir tmp: Path) =
+        runTest {
+            withScriptedHeads(tmp) {
+                provider.script(limited(null))
+                val head = chat()
 
-            val answer = head.client.send()
+                val answer = head.client.send()
 
-            assertLine(answer, "did not say when it resets")
-            assertLine(answer, RESENDS)
+                // Slice 5: the limit holds after its bursts, probed, until the session's wall; the line gives no
+                // time, and Claude Code's re-send holds again.
+                assertLine(answer, "without saying when it resets")
+                assertLine(answer, RESENDS)
+            }
         }
-    }
 
     @Test
     fun `a spent account ends with the credit line naming the provider, and the client's re-send reaches it`(
@@ -261,9 +269,8 @@ class LinesThroughHeadsTest {
 
             val answer = head.client.send()
 
-            // Ends at once: a spent account with no stated reset is a hold, which until slice 5 ends the turn on its
-            // first answer, so the person reads the credit line after one provider request, not after a wait.
-            assertEquals(1, provider.requests.size, "the first send asked the provider once")
+            // Slice 5: a spent account holds, probed every 5 minutes, until the session's wall; the line names the
+            // provider and its words, and Claude Code's re-send holds again.
             assertLine(answer, "DeepSeek account cannot pay for this turn")
             assertLine(answer, "Insufficient Balance")
             assertLine(answer, RESENDS)

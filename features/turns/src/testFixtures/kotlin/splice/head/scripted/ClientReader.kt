@@ -66,7 +66,8 @@ private const val DESCRIBE_CHARS = 300
 private const val DEFAULT_MAX_TOKENS = 1024
 
 /** What the client sends: one user message, streamed unless [stream] is false, in session [session]. [extra] adds
- *  top-level body fields, such as an output format or a tool choice, and [bearer] replaces the head's own token. */
+ *  top-level body fields, such as an output format or a tool choice, and [bearer] replaces the head's own token.
+ *  [headers] are sent besides the ones Claude Code always sends, such as the client timeout a launched session names. */
 public data class ClientRequest(
     val text: String = "Say something.",
     val stream: Boolean = true,
@@ -74,6 +75,7 @@ public data class ClientRequest(
     val maxTokens: Int = DEFAULT_MAX_TOKENS,
     val extra: JsonObject = JsonObject(emptyMap()),
     val bearer: String = INFERENCE_TOKEN,
+    val headers: Map<String, String> = emptyMap(),
 )
 
 /** One server-sent event as the client parsed it. [name] is null for a data-only event. */
@@ -364,6 +366,7 @@ public class ClientReader(
                 header("anthropic-version", ANTHROPIC_VERSION)
                 header("User-Agent", CLIENT_AGENT)
                 header(SESSION_HEADER, request.session)
+                request.headers.forEach { (name, value) -> header(name, value) }
                 header("Content-Type", ContentType.Application.Json.toString())
                 setBody(body(request))
             }.execute { response -> readAnswer(response, stream) }

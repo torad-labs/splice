@@ -15,11 +15,13 @@ import splice.core.failure.Decline
 import splice.core.failure.FailureCause
 import splice.core.failure.PreflightKind
 import splice.core.perf.OutcomeTag
+import splice.core.perf.OutcomeTags
 import splice.head.HeadDeps
 import splice.head.transport.CallerCredential
 import splice.head.turn.Preparation
 import splice.head.turn.TurnDriver
 import splice.head.wire.TurnTrace
+import splice.upstream.credentials.Selection
 
 internal data class LocalRefusal(
     val tag: String,
@@ -33,7 +35,34 @@ internal class PreDriveRefusals(
     private val admission: AdmissionGate,
     private val responses: AdmissionResponses,
     private val driver: TurnDriver,
+    private val loginCommand: String,
 ) {
+    /** Selection can fail only because no credential is usable, or an owner action is already being probed.
+     *  Provider limits select their earliest-reset login and are handled by that turn's retry engine. */
+    suspend fun refuseNoLogin(
+        call: ApplicationCall,
+        prepared: Preparation.Ready,
+        admitted: AdmittedTurn,
+        selection: Selection.Exhausted,
+        trace: TurnTrace?,
+    ) {
+        val blocked = selection.blocked
+        val cause = if (blocked == null) {
+            FailureCause.Splice.NoLogin(loginCommand)
+        } else {
+            FailureCause.Provider.Forbidden(block = blocked)
+        }
+        val sentence = responses.lineOf(cause).sentence
+        driver.recordLocalRefusal(
+            prepared.built.meta,
+            admitted.perf,
+            admitted.t0,
+            LocalRefusal(OutcomeTags.failure(cause), sentence, trace, blocked?.login),
+        )
+        admitted.close()
+        responses.respondRefusal(call, cause)
+    }
+
     /** A 400 before SSE, so the installed client's conditional size-error path can compact.
      * This is an estimated-input bound with a measured append delta, plus empirical p99 output. */
     suspend fun refuseIfOversized(

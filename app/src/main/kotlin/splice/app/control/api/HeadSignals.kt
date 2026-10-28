@@ -9,6 +9,7 @@ import kotlinx.serialization.json.put
 import splice.app.control.ManagedHead
 import splice.app.control.RuntimeNotAnswering
 import splice.app.control.RuntimeUnread
+import splice.core.head.HeldTurnReading
 import splice.core.usage.QuotaFull
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionSource
@@ -46,6 +47,12 @@ internal class HeadSignals(
     fun quotaFull(): Map<String, QuotaFull> =
         heads.filterValues { it.head.healthSnapshot().running }
             .mapNotNull { (key, managed) -> managed.head.quotaFull()?.let { key to it } }.toMap()
+
+    /** Failure-handling slice 5: for each running head that holds turns until their cause lifts, those turns. */
+    fun heldTurns(): Map<String, List<HeldTurnReading>> =
+        heads.filterValues { it.head.healthSnapshot().running }
+            .mapValues { (_, managed) -> managed.head.heldTurns() }
+            .filterValues { it.isNotEmpty() }
 
     /** One head's full reading as the wire carries it, on /health and on the heads route alike. */
     fun quotaFullJson(reading: QuotaFull): JsonObject = buildJsonObject {

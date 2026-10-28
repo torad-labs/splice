@@ -9,6 +9,7 @@ package splice.sessions.http
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.perf.OutcomeTag
 import splice.sessions.registry.SessionRecord
 
 /** How the session's newest request ended, when that ending holds it back: the outcome tag, the account it was on,
@@ -23,7 +24,19 @@ public data class SessionEnding(
     val head: String? = null,
     val retries: Long = 0,
     val runSinceMs: Long? = null,
-)
+) {
+    /** A held request cut by restart can be taken up at its retained reset. */
+    public val resumeAtMs: Long? get() = resetMs.takeIf { outcome == OutcomeTag.RESTARTED.wire }
+
+    internal fun json() = buildJsonObject {
+        put("outcome", outcome)
+        account?.let { put("account", it) }
+        resetMs?.let { put("reset_ms", it) }
+        resumeAtMs?.let { put("resume_at_ms", it) }
+        if (retries > 0) put("retries", retries)
+        runSinceMs?.let { put("run_since_ms", it) }
+    }
+}
 
 /** The daemon's newest ending per session, read per row. Null = nothing holds the session back. */
 public fun interface SessionEndingOf {
@@ -34,16 +47,7 @@ public fun interface SessionEndingOf {
         val ending = record.sessionId?.let { endingOf(it) } ?: return
         // a head's limit holds the session only while it runs there: moved onto another command, it is that one's
         if (record.head != (ending.head ?: record.head)) return
-        target.put(
-            "ended_by",
-            buildJsonObject {
-                put("outcome", ending.outcome)
-                ending.account?.let { put("account", it) }
-                ending.resetMs?.let { put("reset_ms", it) }
-                if (ending.retries > 0) put("retries", ending.retries)
-                ending.runSinceMs?.let { put("run_since_ms", it) }
-            },
-        )
+        target.put("ended_by", ending.json())
     }
 }
 

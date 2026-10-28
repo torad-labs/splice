@@ -30,6 +30,10 @@ internal val headOnlyKnobKeys: Set<String> = Knob.entries.filter { it.headOnly }
  *  keeps (Marlin, Oct 10), so both are refused per command too. Every other restart-only knob outside this list was
  *  traced to a per-head reader on Oct 12 and stays settable per command. */
 public val daemonWideKnobs: Set<Knob> = setOf(
+    Knob.UPSTREAM_TIMEOUT_MS,
+    Knob.FIRST_BYTE_TIMEOUT_MS,
+    Knob.STREAM_IDLE_MS,
+    Knob.STALL_REANCHOR_MS,
     Knob.INGRESS_READ_IDLE_MS,
     Knob.MATERIALIZATION_HEAP_BYTES,
     Knob.MCP_IDLE_TIMEOUT_MS,
@@ -50,3 +54,6 @@ public val daemonWideKnobs: Set<Knob> = setOf(
     Knob.MCP_SLICE,
     Knob.ACTIVITY_STORE_HEADS,
 )
+
+/** Per-head values for these knobs cannot create a different timing or daemon policy. */
+internal const val DAEMON_WIDE_OVERRIDE: String = "is daemon-wide; set it under [defaults] instead"

@@ -78,8 +78,13 @@ public sealed class WatchdogFired {
         public var limitMs: Long = elapsedMs
             internal set
 
+        /** The session's own wall ended the turn, 30 s before the client's timeout, rather than its no-progress cap
+         *  (failure-handling slice 5): a path that stays alive is held to the wall, then ended. */
+        public var atWall: Boolean = false
+            internal set
+
         override val cause: FailureCause
-            get() = FailureCause.Splice.TurnBudgetSpent(limitMs, beforeFirstAttempt = false)
+            get() = FailureCause.Splice.TurnBudgetSpent(limitMs, beforeFirstAttempt = false, atWall = atWall)
 
         /** Shared by the stream outcome and cancellation seal on every transport. */
         public val retryMessage: String
@@ -106,12 +111,34 @@ public class TurnWatchdog(
     private val firedRef = AtomicReference<WatchdogFired?>(null)
     private val heldRef = AtomicReference<WatchdogHeld?>(null)
 
-    /** The path of the round open now, which the progress cap asks before it ends the turn; null between rounds. */
+    /** The current round's live-path evidence; a completed round must not keep the next gap alive. */
     private val roundPath = AtomicReference<PathLiveness?>(null)
     private val capHeld = AtomicBoolean(false)
+
     private val startedAt = clock()
     private val progressLock = Any()
     private var progressedAt = startedAt
+
+    // Failure-handling slice 5: a turn held for its cause to lift makes no progress and spends none of its cap.
+    private val holding = AtomicBoolean(false)
+
+    @Volatile private var wallAtMs: Long = Long.MAX_VALUE
+
+    /** The turn holds for its cause to lift: its cap waits until [holdEnded]. */
+    public fun holdStarted() {
+        holding.set(true)
+    }
+
+    /** The hold ended: the cap counts again from now. */
+    public fun holdEnded() {
+        synchronized(progressLock) { progressedAt = maxOf(progressedAt, clock()) }
+        holding.set(false)
+    }
+
+    /** The session's wall falls at [atMs] on this watchdog's clock, less the margin: a live path is held no later. */
+    public fun wallAt(atMs: Long) {
+        wallAtMs = atMs
+    }
 
     /** Only protocol progress renews this deadline, never transport pings or client keepalives. */
     public fun progress(): Unit = synchronized(progressLock) {
@@ -180,8 +207,8 @@ public class TurnWatchdog(
      * gpt-5.6-sol turns were reaped at exactly the 300 s first-output tier, with the socket's last
      * server ping 5-20 s old on every close line, and each re-POSTed cold from the client; the
      * model's own answers on that head take 300-750 s of silence before the first delta. Idle is a
-     * stall detector, not a budget (operator, DR-7): a held round is walled by [launchTotalCap] only once its
-     * path dies too; while it lives, the client's own timeout decides.
+     * stall detector, not a budget (operator, DR-7): a live round is held to the session's wall,
+     * which [launchTotalCap] ends before the client's own timeout.
      *
      * V4-125 — EVERY TRANSPORT PASSES A PULSE NOW, and this paragraph used to end by saying the SSE
      * path passed none and judged exactly as before. That was the defect: with no pulse the default
@@ -268,8 +295,7 @@ public class TurnWatchdog(
             "upstream connection open, no read error; keepalive ends a dead peer within ${KEEPALIVE_DEAD_PEER_S}s"
     }
 
-    /** Whether the open round's path is alive past the protocol-progress cap, so the cap holds and the client's own
-     *  timeout decides (splice-lead's ruling, Oct 12). No round open means no path to hold for: the cap stands. */
+    /** Whether the current round proves its path is alive, so silence waits for the session's wall. */
     private suspend fun capHolds(): Boolean {
         val path = roundPath.get() ?: return false
         val pingAgo = path.pingAgoMs()
@@ -277,7 +303,7 @@ public class TurnWatchdog(
         if (capHeld.compareAndSet(false, true)) {
             log(
                 "no protocol progress past the ${budget.totalCap.inWholeSeconds}s cap on a live path " +
-                    "(${proof(path.evidence, pingAgo)}); holding the turn, the client's own timeout decides\n",
+                    "(${proof(path.evidence, pingAgo)}); holding the turn until its session's wall\n",
             )
         }
         return true
@@ -285,6 +311,7 @@ public class TurnWatchdog(
 
     /** The final turn deadline, also armed while no stream is open. Only protocol progress
      *  renews it, so headers-wait, retries, refresh and between-round gaps remain bounded.
+     *  A live round holds to the session's wall; a cause hold pauses its progress budget.
      *  The legacy name is retained for callers. [launchIn] still owns round-level idle tiers.
      *  The typed sentinel is set before cancellation, and both client and independent-source
      *  pollers read this same renewal state. */
@@ -297,29 +324,36 @@ public class TurnWatchdog(
                 pollInterval().inWholeMilliseconds,
                 capThird.coerceIn(MIN_POLL_MS, MAX_POLL_MS),
             ).milliseconds
-            while (isActive) {
-                // Same coercion floor (250ms) as launchIn, so this is delay(interval)'s exact value.
-                if (!ticker.awaitTick(interval.inWholeMilliseconds)) return@launch
-                if (!progressLapsed() || capHolds()) continue
-                if (progressExpired()) {
+            // Same coercion floor (250ms) as launchIn, so this is delay(interval)'s exact value.
+            while (isActive && ticker.awaitTick(interval.inWholeMilliseconds)) {
+                if (totalCapExpired()) {
                     target.cancel()
                     return@launch
                 }
             }
         }
 
-    private fun progressLapsed(): Boolean = synchronized(progressLock) {
-        clock() - progressedAt >= budget.totalCap.inWholeMilliseconds
+    private suspend fun totalCapExpired(): Boolean {
+        if (holding.get()) return false
+        val atWall = clock() >= wallAtMs
+        val due = atWall || (progressLapsed && !capHolds())
+        return due && progressExpired(atWall)
     }
 
+    private val progressLapsed: Boolean
+        get() = synchronized(progressLock) {
+            !holding.get() && clock() - progressedAt >= budget.totalCap.inWholeMilliseconds
+        }
+
     /** Renewal and expiry share a lock: an observed event cannot race a stale clock sample. */
-    private fun progressExpired(): Boolean = synchronized(progressLock) {
+    private fun progressExpired(atWall: Boolean): Boolean = synchronized(progressLock) {
         val now = clock()
         val idle = now - progressedAt
-        if (idle < budget.totalCap.inWholeMilliseconds) return@synchronized false
+        if (!atWall && idle < budget.totalCap.inWholeMilliseconds) return@synchronized false
         val cap = WatchdogFired.TotalCap(now - startedAt).also {
             it.idleMs = idle
             it.limitMs = budget.totalCap.inWholeMilliseconds
+            it.atWall = atWall
         }
         firedRef.updateAndGet { previous -> previous as? WatchdogFired.TotalCap ?: cap }
         true

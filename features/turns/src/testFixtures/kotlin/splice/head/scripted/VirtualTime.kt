@@ -43,7 +43,7 @@ public class VirtualTime(
     private data class Alarm(val dueMs: Long, val action: () -> Unit)
 
     /** One parked wait: woken with true when the clock reaches its due time, with false when the clock closes. */
-    private class Sleeper(private val dueMs: Long) {
+    private class Sleeper(val dueMs: Long) {
         private val woken = CompletableDeferred<Boolean>()
 
         fun isDue(nowMs: Long): Boolean = dueMs <= nowMs
@@ -91,6 +91,15 @@ public class VirtualTime(
     /** Waits until the clock reads [passed] since it was made: true when it got there, false when the clock closed
      *  first. */
     public suspend fun sleepUntil(passed: Duration): Boolean = spendUntil(passed.inWholeMilliseconds)
+
+    /** When the earliest parked wait or pending [at] action falls due, as time passed since the clock was made; null
+     *  when nothing waits. A test that steps the clock from one due time to the next never overshoots a deadline. */
+    public fun nextDue(): Duration? = synchronized(lock) {
+        (sleepers.map { it.dueMs } + alarms.map { it.dueMs }).minOrNull()?.milliseconds
+    }
+
+    /** How many waits are parked on this clock now. */
+    public fun parkedNow(): Int = parked.value
 
     /** Returns once at least [count] waits are parked on this clock. */
     public suspend fun awaitParked(count: Int = 1) {

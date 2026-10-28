@@ -20,6 +20,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.client.CLIENT_WALL_HEADER
 import splice.core.failure.FailureCause
 import splice.core.failure.Lift
 import splice.core.failure.LiftSource
@@ -51,6 +52,9 @@ import kotlin.time.Duration.Companion.seconds
 private const val PLAN_BODY = """{"error":{"type":"usage_limit_reached","message":"synthetic plan spent"}}"""
 private const val BURST_BODY = """{"error":{"type":"rate_limit_exceeded","message":"synthetic burst"}}"""
 private const val FAILURE_BODY = """{"error":{"type":"server_error","message":"synthetic upstream failure"}}"""
+
+/** A client timeout too short to hold any limit, so a limit is handed to the client rather than held. */
+private const val SHORT_WALL_MS = 10_000L
 
 private class SyntheticAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer("synthetic-token")
@@ -116,12 +120,15 @@ private class FailedHead(tmp: Path, status: Int, body: String) {
             val response = client.post("http://127.0.0.1:${head.port}/v1/messages") {
                 bearerAuth("test-inference-token")
                 header("Content-Type", "application/json")
+                // A session whose client timeout cannot hold a limit (slice 5): the limit reaches its client at once.
+                header(CLIENT_WALL_HEADER, SHORT_WALL_MS.toString())
                 setBody(
                     """{"model":"claude-synthetic--synthetic-model","stream":true,"max_tokens":64,
                         "messages":[{"role":"user","content":"synthetic request"}]}""",
                 )
             }.bodyAsText()
-            assertTrue("event: error" in response, response)
+            // Its client reads one [splice] line: in band, or as a 429 the session re-asks at the reset (family L).
+            assertTrue("[splice]" in response, response)
             assertTrue(AsyncFileIo.drain(), "the perf append must finish")
             val perf = Files.readAllLines(perfFile).single()
             val outcome = Json.parseToJsonElement(perf).jsonObject.getValue("outcome").jsonPrimitive.content

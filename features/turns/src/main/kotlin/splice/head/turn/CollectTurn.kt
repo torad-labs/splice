@@ -26,10 +26,10 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import splice.core.model.ClientWindows
 import splice.core.util.JsonWire
-import splice.core.wire.NativeReply
+import splice.core.util.WallClock
 import splice.head.ClientWindowWitness
-import splice.head.admission.ClientRecheck
 import splice.head.admission.TurnQuota
+import splice.head.hold.HandOverHeaders
 import splice.head.turn.delivery.CollectedReply
 import splice.head.turn.detached.DetachedCompaction
 import splice.head.turn.detached.HeldCollectAnswer
@@ -51,9 +51,10 @@ internal class CollectTurn(
     /** One bundle for the four seams every detached collect needs; shared with the streaming path. */
     private val detachOwner: DetachOwner,
     private val clientWindows: ClientWindows = ClientWindows(),
+    /** The wall clock a handed-over limit's reset is told against: the head's retry wall. */
+    private val wall: WallClock = WallClock(System::currentTimeMillis),
 ) {
     private val wiring = TurnWiring()
-    private val recheck = ClientRecheck()
     private val clientWindow = ClientWindowWitness(clientWindows)
 
     /** Non-stream sibling of TurnDriver.stream: Claude Code sends stream:false on some internal
@@ -103,19 +104,13 @@ internal class CollectTurn(
         channel: ClientChannel,
     ) {
         val built = inputs.built
-        var nativeReply: NativeReply? = null
         inputs.trace?.collectedAnswer {
             ClientAnswer(
-                nativeReply?.status ?: terminal.httpStatus(),
-                nativeReply?.body ?: terminal.responseBody().let(JsonWire::string),
+                terminal.httpStatus(),
+                terminal.responseBody().let(JsonWire::string),
             )
         }
-        val drive = driveFactory.assembleDrive(inputs, terminal, channel)
-        // The provider's own 429, told to come back within the recheck, as the streamed relay tells it.
-        drive.rateLimitRelay = TurnDrive.RateLimitRelay { reply ->
-            nativeReply = recheck.reply(reply)
-            true
-        }
+        val drive = driveFactory.assembleDrive(inputs, terminal, channel, stream = false)
         drive.collectPerf.defer()
         coroutineScope {
             val parent = coroutineContext[Job]
@@ -138,7 +133,7 @@ internal class CollectTurn(
                 } else {
                     runHeldCollect(drive, inputs, heldKey, terminal, channel)
                 }
-                respond(call, inputs, drive, terminal, nativeReply)
+                respond(call, inputs, drive, terminal)
             } finally {
                 watch?.cancel()
                 withContext(NonCancellable) { drive.collectPerf.publish(drive) }
@@ -194,19 +189,20 @@ internal class CollectTurn(
         inputs: TurnInputs,
         drive: TurnDrive,
         terminal: CollectingTerminal,
-        nativeReply: NativeReply?,
     ) {
-        val headers = nativeReply?.headers
-        if (headers == null) {
+        // A limit handed to the client names its reset in the headers Claude Code sleeps on (slice 5); every other answer
+        // carries the quota windows the client reads.
+        val handedOver = terminal.answered?.let { HandOverHeaders.of(it, wall()) }.orEmpty()
+        if (handedOver.isEmpty()) {
             turnQuota.forSession(inputs.built.meta.scope.sessionId, drive.account)
                 ?.clientHeaders()?.forEach { (name, value) -> call.response.header(name, value) }
         } else {
-            headers.forEach { (name, values) -> values.forEach { call.response.header(name, it) } }
+            handedOver.forEach { (name, value) -> call.response.header(name, value) }
         }
         call.respond(
             CollectedReply(
-                nativeReply?.body ?: terminal.responseBody().let(JsonWire::string),
-                HttpStatusCode.fromValue(nativeReply?.status ?: terminal.httpStatus()),
+                terminal.responseBody().let(JsonWire::string),
+                HttpStatusCode.fromValue(terminal.httpStatus()),
                 drive.perf,
             ),
         )

@@ -1,0 +1,23 @@
+id: kt-wire-type-single-source
+valid:
+  - 'val answer = ClientWire.answer(cause, at)'
+  - 'val limited = type == ErrorType.RATE_LIMIT'
+  - 'val retried = type != ErrorType.INVALID_REQUEST'
+  - 'val label = when (type) { ErrorType.OVERLOADED -> "overload"; else -> "other" }'
+  - 'val recorded = row.outcome == OutcomeTags.failure(ErrorType.OVERLOADED)'
+  - |
+    package splice.core.failure
+    public object ClientWire { fun answer() = ErrorType.OVERLOADED }
+invalid:
+  - 'val type = ErrorType.OVERLOADED'
+  - 'val type = splice.core.turn.ErrorType.OVERLOADED'
+  - 'val same = choose(ErrorType.OVERLOADED) == result'
+  - 'import splice.core.turn.ErrorType.OVERLOADED'
+  - 'import splice.core.turn.ErrorType as WireType'
+  - 'typealias WireType = ErrorType'
+  - 'typealias WireType = splice.core.turn.ErrorType'
+  - 'fun answer() = WireAnswer(429, ErrorType.RATE_LIMIT, null)'
+  - 'fun answer() = if (retryable) ErrorType.OVERLOADED else ErrorType.API_ERROR'
+  - |
+    package splice.head.wire
+    object ClientWire { fun answer() = ErrorType.OVERLOADED }

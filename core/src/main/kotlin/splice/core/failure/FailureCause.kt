@@ -30,6 +30,9 @@ public sealed class FailureCause {
      *  ending's sentence, and before content it keeps its real type like a [permanent] one. */
     public open val deterministic: Boolean get() = false
 
+    /** A provider-stated reset the session may resume at, including one too distant for an in-request hold. */
+    public open val resumeAt: Instant? get() = null
+
     /** The provider answered, and the answer was a failure. [said] waits for slice 2's ProviderWordsFilter. */
     public sealed class Provider : FailureCause() {
         public abstract val said: ProviderWords?
@@ -43,6 +46,7 @@ public sealed class FailureCause {
         ) : Provider() {
             override val persisted: PersistedCause get() = PersistedCause.VENDOR_RATE_LIMITED
             override val permanent: Boolean get() = true
+            override val resumeAt: Instant? get() = (lift as? Lift.At)?.at
         }
 
         /** The provider is over capacity: a 502, or a code that spells an overload. */
@@ -52,6 +56,7 @@ public sealed class FailureCause {
             override val said: ProviderWords? = null,
         ) : Provider() {
             override val persisted: PersistedCause get() = PersistedCause.UPSTREAM_STATUS_5XX
+            override val resumeAt: Instant? get() = (lift as? Lift.At)?.at
         }
 
         /** A 5xx that is no overload, or [ServerFault.FOREIGN_KEY]: a 401 naming a masked key the login never sent,
@@ -73,6 +78,7 @@ public sealed class FailureCause {
         ) : Provider() {
             override val persisted: PersistedCause get() = PersistedCause.VENDOR_QUOTA_EXHAUSTED
             override val permanent: Boolean get() = true
+            override val resumeAt: Instant? get() = (lift as? Lift.At)?.at
         }
 
         /** The provider refuses this account the request: a model its plan leaves out, or, with [block], the account
@@ -196,15 +202,29 @@ public sealed class FailureCause {
                 get() = if (why is Decline.TooLarge) PersistedCause.REQUEST_TOO_LARGE else PersistedCause.DECLINED
         }
 
-        /** The turn spent its whole budget without progress. */
-        public data class TurnBudgetSpent(val budgetMs: Long, val beforeFirstAttempt: Boolean) : Splice() {
+        /** The turn spent its whole budget without progress. [atWall]: a live path was held past that budget to the
+         *  session's own time limit, and ended 30 s before it (failure-handling slice 5). */
+        public data class TurnBudgetSpent(
+            val budgetMs: Long,
+            val beforeFirstAttempt: Boolean,
+            val atWall: Boolean = false,
+        ) : Splice() {
             override val persisted: PersistedCause get() = PersistedCause.UPSTREAM_STALLED
         }
 
         /** A held turn outlasted its bound. [held]: the cause it held on, which its family comes from: whether the
          *  provider reported it and whether a re-send can change it are [held]'s. */
         public data class HoldOutlasted(val why: Outlast, val held: FailureCause, val nextReset: Instant?) : Splice() {
-            override val persisted: PersistedCause get() = PersistedCause.HOLD_OUTLASTED
+            override val resumeAt: Instant? get() = nextReset ?: held.resumeAt
+
+            /** A hold that never began, its reset too far or past the session's wall,
+             *  is the held cause's own ending. */
+            override val persisted: PersistedCause
+                get() = if (why == Outlast.TOO_FAR || why == Outlast.WALL) {
+                    held.persisted
+                } else {
+                    PersistedCause.HOLD_OUTLASTED
+                }
             override val providerReported: Boolean get() = held.providerReported
             override val permanent: Boolean get() = held.permanent
             override val deterministic: Boolean get() = held.deterministic

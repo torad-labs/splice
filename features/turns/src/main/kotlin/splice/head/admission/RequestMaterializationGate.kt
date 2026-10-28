@@ -72,6 +72,7 @@ public class RequestMaterializationGate(
         var retained = false
         return try {
             owner?.onRelease(release)
+            owner?.leased(lease)
             val materialized = block()
             retained = owner != null
             materialized
@@ -84,4 +85,7 @@ public class RequestMaterializationGate(
 /** A retained request's owner releases its charge only when its request trees are no longer live. */
 internal fun interface MaterializationOwner {
     fun onRelease(release: TurnEnd)
+
+    /** The lease the retained request is charged to, which a held turn marks queued while it waits (slice 5). */
+    fun leased(lease: HeapLease) = Unit
 }

@@ -8,15 +8,8 @@
 // while six siblings kept the old shape. This file is the single place the decision lives.
 package splice.head.admission
 
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import splice.core.auth.REFUSAL_FIELD
 import splice.core.usage.QuotaFull
-import splice.core.util.Cancellables
-import splice.core.util.JsonScalars
-import splice.core.util.JsonWire
-import splice.core.wire.NativeReply
 import splice.head.usage.QuotaTracker
 import splice.head.usage.TrackedAccountQuota
 import splice.upstream.credentials.AccountPool
@@ -50,18 +43,6 @@ internal class TurnQuota(
             "$command cannot take over: $reason."
         }
         return reasons.takeIf { it.isNotEmpty() }?.joinToString(" ")
-    }
-
-    /** Preserve the provider status, error type and headers. Only its JSON message gains the takeover explanation. */
-    fun withStandby(reply: NativeReply?, sentence: String?): NativeReply? {
-        if (reply == null || sentence == null) return reply
-        return Cancellables.runCatchingCancellable {
-            val body = Json.parseToJsonElement(reply.body) as? JsonObject ?: return@runCatchingCancellable reply
-            val error = body["error"] as? JsonObject ?: return@runCatchingCancellable reply
-            val message = JsonScalars.str(error, "message") ?: return@runCatchingCancellable reply
-            val changed = JsonObject(error + ("message" to JsonPrimitive("$message $sentence")))
-            reply.copy(body = JsonWire.string(JsonObject(body + ("error" to changed))))
-        }.fold(onSuccess = { it }, onFailure = { reply })
     }
 
     /** V4-452: the head's full reading by the providers' own CURRENT readings, null when there is none. A head

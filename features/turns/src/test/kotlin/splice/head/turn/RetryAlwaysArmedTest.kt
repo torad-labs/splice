@@ -66,6 +66,7 @@ import splice.core.model.ModelEntry
 import splice.core.turn.ErrorType
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.core.util.WallClock
 import splice.dialect.responses.ReasoningSettings
 import splice.head.HeadServer
 import splice.head.MockChatGptUpstream
@@ -79,6 +80,7 @@ import splice.upstream.retry.InflightGate
 import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
 
 /** Excluded CLIENT-side after splice's own retries are EXHAUSTED — never "we did not retry". V4-62
@@ -127,10 +129,18 @@ class RetryAlwaysArmedTest {
 
     private lateinit var head: HeadServer
 
-    // The engine waits a burst 429 out at 2, 4, 8 and 15 s (section 8), in REAL time on a process waiter, which
-    // outlived this test client's request timeout. The sweep needs the ending that follows the spent schedule
-    // (:upstream pins the schedule), so the waits are taken at once.
-    private val upstreamClient = UpstreamClient(totalTimeoutMs = 30_000, pacing = RetryPacing(waiter = Waiter { }))
+    // The engine waits a burst 429 out at 2, 4, 8 and 15 s (section 8), and holds a stated limit to its reset (slice 5),
+    // in REAL time on a process waiter, which outlived this test client's request timeout. The sweep needs the ending
+    // that follows the spent schedule (:upstream pins the schedule), so the waits are taken at once, and the wall clock
+    // a hold reads moves by each wait, as it would had the wait been slept.
+    private val waited = AtomicLong(0L)
+    private val upstreamClient = UpstreamClient(
+        totalTimeoutMs = 30_000,
+        pacing = RetryPacing(
+            waiter = Waiter { ms -> waited.addAndGet(ms) },
+            wall = WallClock { System.currentTimeMillis() + waited.get() },
+        ),
+    )
     private lateinit var tmp: java.nio.file.Path
 
     private val catalog = ModelCatalog(
@@ -259,41 +269,26 @@ class RetryAlwaysArmedTest {
     }
 
     @Test
-    fun `the FIRST persistent-429 turn reaches the client retryable, and so does the next`() = runBlocking {
-        // V4-71. The wall's RATE_LIMIT row is driven as quota429+quota429, and drive() deliberately
-        // returns only the SECOND reply — so until now the FIRST 429 turn was never asserted on, and
-        // it was the broken one. It reached the client as an in-stream rate_limit_error, which Claude
-        // Code NEVER retries (in-band errors are retried only when they carry overloaded_error), so
-        // the operator's very first encounter with a persistent 429 died terminally. This asserts the
-        // first turn on its own.
-        upstreamClient.clearRateLimitCooldown()
-        val (firstStatus, firstBody) = request("quota429")
+    fun `the FIRST persistent-429 turn holds to each stated reset, and a limit that never lifts ends saying so`() =
+        runBlocking {
+            // V4-71 asked that the first persistent-429 turn reach the client in a shape it acts on, where it used to
+            // die as an in-stream rate_limit_error. Failure-handling slice 5 (Oct 27) answers it inside splice: a
+            // stated limit holds the turn in its own request, which goes again 2 s after each reset the provider
+            // names. A limit that did not lift at three of the times it stated ends in the held cause's family, H
+            // (final-design.md section 11): the line says the limit did not lift and the turn stopped, and the
+            // answer is one this law's exclusions name, since splice already waited out every reset it was told.
+            upstreamClient.clearRateLimitCooldown()
+            val (firstStatus, firstBody) = request("quota429")
 
-        // The 200 is committed at TurnStreamer.stream before the upstream connect, so this turn
-        // cannot carry a real status — which is exactly why the wire TYPE is the only lever here.
-        assertEquals(200, firstStatus, "the 200 is committed before the upstream is reached")
-        assertTrue(
-            firstBody.contains("overloaded_error"),
-            "the FIRST 429 turn must be retryable, got: ${firstBody.take(240)}",
-        )
-        assertTrue(
-            !firstBody.contains("\"type\":\"rate_limit_error\""),
-            "an in-stream rate_limit_error is never retried by the client: ${firstBody.take(240)}",
-        )
-        // (b) the WORDS do not move: the operator must still be told it was a rate limit, in the head's
-        // line for a usage limit (failure-handling slice 2 retired the V4-59 code with FailureText).
-        assertTrue(
-            firstBody.contains(USAGE_LIMIT),
-            "the wording must stay rate-limit even though the wire type is overload: ${firstBody.take(240)}",
-        )
+            assertEquals(200, firstStatus, "the hold's line committed the stream: ${firstBody.take(240)}")
+            assertTrue(firstBody.contains(OUTLASTED_LIMIT), "the limit's own line: ${firstBody.take(400)}")
+            assertTrue(classify(firstStatus, firstBody) != "UNRECOVERABLE", "an answer the law names: $firstBody")
 
-        // (c) and this is what makes the first turn's shape matter: the same head's next turn asks the
-        // provider itself (Marcos, Oct 26), so when the limit still holds it ends in that same shape.
-        val (nextStatus, nextBody) = request("quota429")
-        assertEquals(200, nextStatus, "the next turn is sent and committed like the first: ${nextBody.take(240)}")
-        assertTrue(nextBody.contains("overloaded_error"), "the next 429 turn is retryable too: ${nextBody.take(240)}")
-        assertTrue(nextBody.contains(USAGE_LIMIT), "and still a rate limit: ${nextBody.take(240)}")
-    }
+            // The next turn asks the provider itself (Marcos, Oct 26), so a limit that still holds is held again.
+            val (nextStatus, nextBody) = request("quota429")
+            assertEquals(200, nextStatus, "the next turn is held and committed like the first: ${nextBody.take(240)}")
+            assertTrue(nextBody.contains(OUTLASTED_LIMIT), "and ends the same way: ${nextBody.take(400)}")
+        }
 
     @Test
     fun `the collect path answers the FIRST persistent-429 turn with a real 429, still a rate limit in words`() =
@@ -322,6 +317,9 @@ class RetryAlwaysArmedTest {
 
 /** The head's words for a usage limit, whatever reset it states (final-design.md section 10). */
 private const val USAGE_LIMIT = "is at its usage limit"
+
+/** The head's words for a usage limit a hold outlasted (final-design.md section 10, HoldOutlasted). */
+private const val OUTLASTED_LIMIT = "did not lift at the times it stated"
 
 /** Statuses Claude Code retries on: 429, 408, and 5xx except 501. */
 private val RETRYABLE_STATUSES = setOf(408, 429, 500, 502, 503, 504, 529)

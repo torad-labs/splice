@@ -19,6 +19,15 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
+import splice.core.wire.JsonSchemaKeywords.ANY_OF
+import splice.core.wire.JsonSchemaKeywords.ARRAY
+import splice.core.wire.JsonSchemaKeywords.DEFINITIONS
+import splice.core.wire.JsonSchemaKeywords.DEFS
+import splice.core.wire.JsonSchemaKeywords.ENUM
+import splice.core.wire.JsonSchemaKeywords.ITEMS
+import splice.core.wire.JsonSchemaKeywords.OBJECT
+import splice.core.wire.JsonSchemaKeywords.PROPERTIES
+import splice.core.wire.JsonSchemaKeywords.REF
 
 public object MfjsSanitizer {
 
@@ -129,20 +138,11 @@ public object MfjsSanitizer {
     // different purpose from the two client-JSON walk guards and cannot be unified with them.
     private const val SCHEMA_DEPTH_CAP = 10
 
-    private const val REF = "\$ref"
     private const val TYPE = "type"
-    private const val PROPERTIES = "properties"
-    private const val ITEMS = "items"
     private const val ADDITIONAL_PROPERTIES = "additionalProperties"
-    private const val ANY_OF = "anyOf"
     private const val ONE_OF = "oneOf"
     private const val ALL_OF = "allOf"
-    private const val DEFS = "\$defs"
-    private const val DEFINITIONS = "definitions"
-    private const val ENUM = "enum"
 
-    private const val OBJECT = "object"
-    private const val ARRAY = "array"
     private const val STRING = "string"
     private const val BOOLEAN = "boolean"
     private const val INTEGER = "integer"

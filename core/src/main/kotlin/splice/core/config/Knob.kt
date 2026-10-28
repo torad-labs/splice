@@ -246,7 +246,7 @@ public enum class Knob(
     UPSTREAM_TIMEOUT_MS(
         "upstreamTimeoutMs",
         listOf("CLAUDEX_UPSTREAM_TIMEOUT_MS"),
-        KnobDefault.Count(900_000L),
+        KnobDefault.Count(1_800_000L),
         restartRequired = true,
     ),
 
@@ -294,9 +294,8 @@ public enum class Knob(
     // machinery already owns. The 129 died because 180_000 was the last word anyone said about them.
     // 90_000 is a question, asked sooner, of a watchdog that no longer ends turns: it buys how long
     // the operator waits before the proxy starts healing rather than how long a silent backend is
-    // tolerated, and five minutes of the former is experienced as a hang. Lower it per head for a
-    // tighter stall; a head that genuinely needs the long wait names 300_000 in its own config with
-    // a reason, which is the honest place for it now.
+    // tolerated, and five minutes of the former is experienced as a hang. The bound is daemon-wide;
+    // a live path is held to its session's wall, so slow models do not need a different timeout.
     STREAM_IDLE_MS(
         "streamIdleMs",
         listOf("CLAUDEX_STREAM_IDLE_MS"),

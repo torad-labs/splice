@@ -699,7 +699,7 @@ class ResponsesReanchorPartialTest {
      *  the head's rule could continue from what arrived. */
     private fun assertNeverSentAgain(failure: TurnOutcome.Failure) {
         val canContinue = controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0)) != null
-        val facts = TurnFacts(false, false, 0L, false, canContinue, Long.MAX_VALUE, null)
+        val facts = TurnFacts(false, false, 0L, false, canContinue, TurnFacts.Deadlines(Long.MAX_VALUE), null)
         val step = RetryEngine.next(failure.cause, failure.at, RetryLedger(), facts, Instant.EPOCH)
         assertTrue(step is RetryStep.End, "a deterministic failure is never re-POSTed: $step")
     }

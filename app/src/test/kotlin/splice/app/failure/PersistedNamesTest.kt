@@ -151,8 +151,8 @@ class PersistedNamesTest {
     @Test
     fun `a turn the no-progress limit ended writes no cause and counts in Given up`(@TempDir tmp: Path) = runTest {
         withScriptedHeads(tmp) {
-            // No round is open while the head waits for the status, so nothing holds the limit (Watchdog.capHolds),
-            // and CancellationSeal records the turn cap with no cause. TurnsTest counts that tag as Given up.
+            // The head makes no protocol progress while it waits for the status, so the turn cap expires and
+            // CancellationSeal records it with no cause. TurnsTest counts that tag as Given up.
             provider.script(reply { hold(); chatAnswer("too late") })
             val head = chat(HeadShape(progressCap = FIRST_OUTPUT))
             val stream = head.client.open()

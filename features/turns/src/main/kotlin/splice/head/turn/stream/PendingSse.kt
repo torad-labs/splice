@@ -10,7 +10,8 @@ import splice.core.failure.Position
 import splice.core.failure.WireAnswer
 import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
-import splice.core.wire.NativeReply
+import splice.core.util.WallClock
+import splice.head.hold.HandOverHeaders
 import splice.head.wire.ClientAnswer
 import splice.head.wire.FrameRecording
 import splice.head.wire.TurnTrace
@@ -25,15 +26,19 @@ internal class PendingSse(
     private val trace: TurnTrace?,
     recording: FrameRecording?,
     private val holdMs: Long = 120_000L,
-    commitProgress: Boolean = true,
+    private val wall: WallClock = WallClock(System::currentTimeMillis),
 ) {
     internal sealed class Decision {
         data object Stream : Decision()
-        data class Overflow(val body: String, val status: Int, val shouldRetry: Boolean?) : Decision()
-        data class Refused(val reply: NativeReply) : Decision()
-    }
 
-    @Volatile private var progressAccepted = commitProgress
+        /** An answer while the status is still splice's: [headers] carry a handed-over limit's reset (HandOverHeaders). */
+        data class Overflow(
+            val body: String,
+            val status: Int,
+            val shouldRetry: Boolean?,
+            val headers: Map<String, String> = emptyMap(),
+        ) : Decision()
+    }
 
     private val choice = CompletableDeferred<Decision>()
     private val output = PendingSseWriter(perf, clock, trace, recording, choice)
@@ -52,7 +57,10 @@ internal class PendingSse(
      *  says: a compaction's and a first message's lines leave out the words a client compacts on (final-design.md
      *  section 11), and they keep today's 400. Once the stream is chosen, [frame] goes out in band like any other. */
     suspend fun ending(frame: String, unsent: WireAnswer, body: String) {
-        settle(frame, unsent.status?.let { Decision.Overflow(body, it, unsent.shouldRetry) })
+        settle(
+            frame,
+            unsent.status?.let { Decision.Overflow(body, it, unsent.shouldRetry, HandOverHeaders.of(unsent, wall())) },
+        )
     }
 
     /** Chooses the stream unless [overflow] answers first, and writes [frame] when the stream is the answer. */
@@ -71,29 +79,18 @@ internal class PendingSse(
         // silent model still speaks at the heartbeat; structural pings and comments stay held.
         val visible = frame.startsWith("event: content_block_delta\n") &&
             frame.contains("\"type\":\"thinking_delta\"")
-        if (progressAccepted && visible) choice.complete(Decision.Stream)
+        if (visible) choice.complete(Decision.Stream)
         if (output.stageProgress(frame)) return
         if (choice.await() !is Decision.Stream) return
         output.writeProgress(frame)
     }
 
-    /** Stage retry reasons without choosing HTTP 200 over a later size or native quota refusal. */
+    /** A recovery line, a visible wait's or a hold's (failure-handling slice 5): it commits the stream at once, so
+     *  the client reads it while the wait it names runs. */
     suspend fun retryProgress(frame: String) {
-        if (output.stageProgress(frame)) return
+        choice.complete(Decision.Stream)
         if (choice.await() !is Decision.Stream) return
         output.writeProgress(frame)
-    }
-
-    /** A successful upstream HTTP response permits liveness progress without hiding a native refusal. */
-    fun accepted() {
-        progressAccepted = true
-    }
-
-    /** The provider's status remains ours until a client-visible stream has actually been chosen. */
-    fun refuse(reply: NativeReply): Boolean {
-        val selected = choice.complete(Decision.Refused(reply))
-        if (selected) trace?.collectedAnswer { ClientAnswer(reply.status, reply.body) }
-        return selected
     }
 
     suspend fun decide(): Decision {

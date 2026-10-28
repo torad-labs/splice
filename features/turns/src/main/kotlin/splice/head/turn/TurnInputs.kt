@@ -4,6 +4,7 @@
 package splice.head.turn
 
 import splice.core.failure.TurnVoice
+import splice.core.memory.HeapLease
 import splice.core.perf.TurnPerf
 import splice.head.admission.KeyNaming
 import splice.head.usage.QuotaTracker
@@ -11,6 +12,7 @@ import splice.head.wire.TurnTrace
 import splice.upstream.BuiltTurn
 import splice.upstream.credentials.AccountSelection
 import splice.upstream.retry.InflightGate
+import splice.upstream.retry.OLD_CLIENT_WALL_MS
 
 /** The hand-off seam, NAMED (kt-no-lambda-seam, V4-99 item 3).
  *
@@ -46,12 +48,18 @@ internal data class TurnInputs(
      *  the request's own facts (a compaction, a first exchange). REQUIRED, NO DEFAULT: a turn that spoke in some
      *  other turn's voice would say the wrong thing about its own request. */
     val voice: TurnVoice,
-)
+) {
+    val clientWallMs: Long get() = slot.clientWallMs
+    val heapLease: HeapLease? get() = slot.heapLease
+}
 
 /** The admission slot a turn holds and the mark its drive calls when a detached compaction takes that slot with it.
  *  One value because the mark speaks only of this slot (grouped when slice 2's voice joined [TurnInputs]). */
 internal data class TurnSlot(
     val held: InflightGate.Slot,
+    /** The client deadline and retained request travel with this admission slot until it is released. */
+    val clientWallMs: Long = OLD_CLIENT_WALL_MS,
+    val heapLease: HeapLease? = null,
     /** Called by TurnStreamer when a detached compaction takes [held] with it: the drive releases
      *  the slot when the upstream turn ends, and HeadAdmission's finally must then leave it alone.
      *

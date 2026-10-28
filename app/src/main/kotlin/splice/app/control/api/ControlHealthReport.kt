@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.app.control.TopologyDigest
 import splice.configuration.topology.TopologyStale
@@ -50,6 +51,7 @@ internal class ControlHealthReport(
             putFailedHeadReasons(this, head.reasons)
             putQuotaResets(this, nowEpochMillis)
             putQuotaFull(this)
+            putHeldTurns(this)
             // JW-04: the booted config identity — an edited splice.toml used to be silently inert
             // (topology loads once by design; nothing anywhere compared disk to boot). Stale is
             // recomputed per request and fails OPEN on an unreadable file. V4-162: the digest is the
@@ -75,6 +77,29 @@ internal class ControlHealthReport(
         val resets = signals.quotaResets(nowEpochMillis)
         if (resets.isEmpty()) return
         into.putJsonObject("quotaResetAtEpochSeconds") { resets.forEach { (key, reset) -> put(key, reset) } }
+    }
+
+    /** Failure-handling slice 5: each head's held turns, oldest first, as `heldTurns: {head: [{until, login, cause,
+     *  heapBytes}]}`; absent when no turn is held, so a quiet daemon's shape is unchanged. */
+    private fun putHeldTurns(into: JsonObjectBuilder) {
+        val held = signals.heldTurns()
+        if (held.isEmpty()) return
+        into.putJsonObject("heldTurns") {
+            held.forEach { (key, turns) ->
+                putJsonArray(key) {
+                    turns.forEach { turn ->
+                        add(
+                            buildJsonObject {
+                                turn.untilEpochSeconds?.let { put("untilEpochSeconds", it) }
+                                put("login", turn.login)
+                                put("cause", turn.cause)
+                                put("heapBytes", turn.heapBytes)
+                            },
+                        )
+                    }
+                }
+            }
+        }
     }
 
     /** V4-452: [HeadSignals.quotaFull] as /health's object, one `{window, resetsAtEpochSeconds}` per head;

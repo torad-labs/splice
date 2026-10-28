@@ -4,21 +4,22 @@
 package splice.head.transport
 
 import kotlinx.coroutines.flow.emptyFlow
-import splice.core.auth.CredentialKey
-import splice.core.auth.Credentials
 import splice.core.failure.FailureCause
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
 import splice.head.admission.TurnQuota
+import splice.head.transport.headers.SseRoundHeaders
 import splice.head.usage.TurnProviderAnswers
 import splice.head.usage.UsageStore
 import splice.upstream.Provider
 import splice.upstream.RetryNotice
 import splice.upstream.RoundResult
 import splice.upstream.TurnSignals
+import splice.upstream.credentials.AccountSelection
 import splice.upstream.retry.WatchdogFired
 import splice.upstream.transport.AuthRefreshObserver
+import splice.upstream.transport.OtherLoginFree
 import splice.upstream.transport.PostContext
 import splice.upstream.transport.PostLimits
 import splice.upstream.transport.PostObservers
@@ -36,36 +37,7 @@ internal class SseRoundPost(
     private val consume: SseRoundConsume,
     private val onRetry: RetryNotice,
 ) {
-    /** codex-rs client.rs:2336-2340 validates HTTP echoes; WS retains the untouched raw snapshot. */
-    private fun httpRoutingHeaders(inputs: WsRoundInputs): Map<String, String> {
-        val holder = inputs.drive.meta.upstreamHeaders
-        return holder.snapshot().filterValues { value ->
-            // OkHttp's request builder accepts only TAB or printable ASCII, stricter than Ktor's check.
-            val valid = value.all { it == '\t' || it in ' '..'~' }
-            if (!valid && holder.claimHttpOmissionNotice()) onRetry("omitting invalid upstream turn-state HTTP header")
-            valid
-        }
-    }
-
-    /** The account's headers ride ON TOP of the provider's, never instead of them. */
-    private suspend fun sendHeaders(
-        inputs: WsRoundInputs,
-        answers: TurnProviderAnswers,
-        creds: Credentials,
-    ): Map<String, String> {
-        val drive = inputs.drive
-        val account = drive.account?.account?.extraHeaders?.invoke(creds).orEmpty()
-        val caller = CallerCredential.over(drive.turnHeaders, creds)
-        val headers = provider.extraHeaders(creds) + ListValuedHeaders.over(account, caller) +
-            httpRoutingHeaders(inputs)
-        val key = CredentialKey.fromHeaders(
-            CredentialKey.headers(creds, headers),
-            (creds as? Credentials.ApiKey)?.header,
-        )
-        answers.sent(key)
-        drive.accountLabel.observe(key, drive.meta.scope.sessionId)
-        return headers
-    }
+    private val headers = SseRoundHeaders(provider, onRetry)
 
     suspend fun post(inputs: WsRoundInputs): RoundResult {
         val prepared = upstream.preparation(inputs.body)
@@ -108,7 +80,7 @@ internal class SseRoundPost(
             PostContext(
                 url = provider.upstreamUrl,
                 auth = sender,
-                extraHeaders = { creds -> sendHeaders(inputs, answers, creds) },
+                extraHeaders = { creds -> headers.send(inputs, answers, creds) },
                 replies = provider.replies,
                 observers = PostObservers(
                     perf = drive.perf,
@@ -122,22 +94,14 @@ internal class SseRoundPost(
                     amendBodyOnFailure = provider::amendBodyOnFailure,
                     route = drive.route,
                 ),
-                limits = PostLimits(
-                    rateLimitCooldown = account?.cooldown,
-                    remainingTurnWait = drive.remainingTurnWait,
-                    // A warm session waits a rate limit out on its login rather than rebuild its cache elsewhere, in
-                    // one budget the turn shares with admission and its other posts.
-                    warmWait = selection?.warmWait,
-                    // The turn's one ledger, which every post of the turn spends, and its waits at the head.
-                    retry = drive.retry,
-                ),
+                limits = postLimits(inputs, selection),
             ).also { context ->
                 context.providerAnswerObserver = answers
-                context.relayRateLimitReplies = provider.relayRateLimitReplies
                 context.bodyRefusedAsTooLarge = inputs.refusedAsTooLarge()
                 context.upstreamAccepted = splice.upstream.StreamStart {
                     drive.accountHandoff?.commit()
                     drive.upstreamAccepted?.invoke()
+                    drive.holdServed?.run()
                 }
             },
             prepared,
@@ -151,6 +115,20 @@ internal class SseRoundPost(
             activeQuota?.let(resp::observeQuota)
             consume.consume(inputs, resp)
         }
+    }
+
+    /** The selected login's cooldown and the turn's remaining wait share one retry admission decision. */
+    private fun postLimits(inputs: WsRoundInputs, selection: AccountSelection?): PostLimits {
+        val drive = inputs.drive
+        return PostLimits(
+            rateLimitCooldown = selection?.account?.cooldown,
+            remainingTurnWait = drive.remainingTurnWait,
+            warmWait = selection?.warmWait,
+            retry = drive.retry,
+            otherLoginFree = drive.accountHandoff?.let { handoff ->
+                OtherLoginFree { cause -> handoff.otherFree(drive, cause) }
+            },
+        )
     }
 
     /** No response arrived. The existing translator owns the total-cap terminal and its no-continuation policy. */

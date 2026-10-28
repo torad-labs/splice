@@ -8,7 +8,7 @@ package splice.upstream.retry
 internal const val HOLD_FLOOR_MS: Long = 15_000L
 
 /** The longest a stated reset is held for: a reset further away is past any session's use, so the turn ends. */
-internal const val MAX_HOLD_MS: Long = 604_800_000L
+public const val MAX_HOLD_MS: Long = 604_800_000L
 
 /** A wait this long or longer is told when it starts; a shorter one is waited in silence (section 8, "Lines from
  *  waits"). */
@@ -74,3 +74,51 @@ internal const val MAX_ATTEMPTS_OUTSIDE_HOLDS: Int = 24
 
 /** How long the ResendLedger remembers a request that ended R: past an hour a re-send is the person's own. */
 public const val RESEND_TTL_MS: Long = 3_600_000L
+
+/** A soft hold, whose stated reset may come sooner, is probed 15 s and 30 s in, then at 1, 2, 4, 8 and 16 minutes, then
+ *  every 30 minutes: Muse's two rescues came 15 to 20 s after a 429 naming a reset two hours out. */
+internal const val SOFT_LIFT_FIRST_PROBE_MS: Long = 15_000L
+internal const val SOFT_LIFT_LAST_DOUBLING_MS: Long = 960_000L // why: the doubling stops at 16 minutes
+
+/** A hold with no time stated is probed at 1, 2, 4, 8 and 16 minutes, then every 30 minutes: Kimi's 5-hour window
+ *  states no time. */
+internal const val UNSTATED_FIRST_PROBE_MS: Long = 60_000L
+internal const val UNSTATED_LAST_DOUBLING_MS: Long = 960_000L // why: the doubling stops at 16 minutes
+
+/** Past its doublings, a soft or unstated hold is probed every 30 minutes. */
+internal const val PROBE_CEILING_MS: Long = 1_800_000L
+
+/** A firm hold is probed hourly, so a top-up or a reset before the stated time is noticed (V4-47). */
+public const val FIRM_PROBE_MS: Long = 3_600_000L
+
+/** A spent account is probed every 5 minutes, so credit added is noticed (V4-73). */
+internal const val CREDIT_PROBE_MS: Long = 300_000L
+
+/** A hold whose cause does not lift at three of the times it stated ends. */
+internal const val MAX_MISSED_RESETS: Int = 3
+
+/** A turn woken at a reset continues 2 s after it, plus 1 s for each turn held longer on the same login, so a login's
+ *  held turns do not all reach the provider at once. A turn woken by a signal waits the 1 s steps alone. */
+public const val WAKE_STAGGER_MS: Long = 2_000L
+public const val WAKE_STAGGER_STEP_MS: Long = 1_000L // why: each turn held longer on the login goes 1 s earlier
+
+/** A hold, and a live path held past the cap, ends this long before the client's own timeout, so the client reads
+ *  splice's ending rather than its own abort. */
+public const val WALL_MARGIN_MS: Long = 30_000L
+
+/** The client timeout LaunchService plants is the whole-turn budget plus [MAX_HOLD_MS] plus this, so a new session
+ *  outlasts every hold within 7 days. */
+public const val CLIENT_WALL_GRACE_MS: Long = 60_000L
+
+/** A request without the wall header has the client timeout every session had before slice 5: the 900 s budget plus
+ *  60 s (LaunchServiceTest's API_TIMEOUT_MS row). */
+public const val OLD_CLIENT_WALL_MS: Long = 960_000L
+
+/** Claude Code aborts a compaction on its own timer, 1.5 ms per token of the conversation, from 600 s to 1 h
+ *  (CompactionWait, measured on 2.1.296; the 2.1.310 record's compaction-timer case). A held compaction fits it. */
+public const val COMPACTION_TIMER_MICROS_PER_TOKEN: Long = 1_500L
+public const val COMPACTION_TIMER_MIN_MS: Long = 600_000L // why: the timer's floor
+public const val COMPACTION_TIMER_MAX_MS: Long = 3_600_000L // why: the timer's ceiling
+
+/** A non-stream request writes nothing while it waits, so it holds no longer than [HOLD_FLOOR_MS]. */
+public const val NON_STREAM_HOLD_MS: Long = 15_000L

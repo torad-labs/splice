@@ -26,7 +26,6 @@ import splice.core.util.WallClock
 import splice.upstream.RoundBody
 import splice.upstream.StreamRead
 import splice.upstream.Waiter
-import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
 import splice.upstream.retry.MAX_ATTEMPTS_OUTSIDE_HOLDS
 import splice.upstream.retry.OVERLOAD_FIRST_WAIT_MS
@@ -39,6 +38,7 @@ import java.net.UnknownHostException
 import java.nio.channels.UnresolvedAddressException
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
+import splice.upstream.testing.OpenAiTestReplies as OpenAiReplies
 
 private val NOW_MS = Instant.parse("2026-10-27T15:00:00Z").toEpochMilli()
 

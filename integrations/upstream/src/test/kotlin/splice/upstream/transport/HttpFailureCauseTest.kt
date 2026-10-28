@@ -33,10 +33,10 @@ import splice.core.util.ElapsedClock
 import splice.upstream.Waiter
 import splice.upstream.failure.ErrorMessage
 import splice.upstream.failure.FailedReply
-import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.ProviderDeviation
 import splice.upstream.failure.Replies
 import java.util.concurrent.atomic.AtomicInteger
+import splice.upstream.testing.OpenAiTestReplies as OpenAiReplies
 
 private const val TOO_MANY_REQUESTS = 429
 private const val PAYMENT_REQUIRED = 402

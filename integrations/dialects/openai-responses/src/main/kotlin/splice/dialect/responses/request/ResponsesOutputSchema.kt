@@ -15,6 +15,7 @@ import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesOutputSchemaPolicy
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.admission.ResponsesRequestControls
+import splice.dialect.responses.schema.ResponsesStrictSchema
 import splice.upstream.RequestRefusal
 
 /** Claude Code's schema tool: returned schema text must reach the client as this tool's JSON input. */

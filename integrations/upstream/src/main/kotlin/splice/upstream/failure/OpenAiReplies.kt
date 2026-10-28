@@ -21,9 +21,9 @@ import java.time.Duration
 /** Reads an OpenAI-shaped failure by its status, refined by its error object's code: the rows OpenAI's two APIs
  *  share, which each of their standards reads before adding its own, and the reading a provider that declared none of
  *  its own gets ([splice.upstream.Provider.replies]). */
-public object OpenAiReplies : ReplyReader {
+public object OpenAiReplies {
     /** An HTTP reply, by its status and the error object its body carries (a body that is no JSON is its message). */
-    override fun http(reply: FailedReply): FailureCause.Provider {
+    public fun http(reply: FailedReply): FailureCause.Provider {
         val error = OpenAiErrorEnvelope.of(reply.body) ?: OpenAiError("", "", reply.body)
         return row(reply.status, error, reply.owner, Stated(reply))
     }
@@ -39,7 +39,7 @@ public object OpenAiReplies : ReplyReader {
     }
 
     /** An in-band failure, by the error object the event carries, wherever the event keeps it. */
-    override fun event(event: FailedEvent): FailureCause.Provider =
+    public fun event(event: FailedEvent): FailureCause.Provider =
         inBand(OpenAiErrorEnvelope.of(event.payload), event.owner)
 
     /** The status [error] stands for: llama-server's own status written as a numeric code, else the status OpenAI

@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.auth.claude.ClaudePoolChanges
 import splice.app.auth.claude.LoginJoined
+import splice.app.control.wake.SessionWakePolicy
 import splice.app.provider.WiredAccount
 import splice.app.provider.WiredAccountQuota
 import splice.core.auth.AuthDescription
@@ -27,7 +28,7 @@ import splice.sessions.registry.SessionStatus
 import splice.upstream.LifecycleScope
 import java.nio.file.Path
 
-class LimitResumeTest {
+class SessionWakeTest {
     private class Auth : RefreshableAuthProvider {
         override suspend fun credentials(): Credentials = Credentials.Bearer("t")
         override suspend fun refresh(): Credentials = credentials()
@@ -53,7 +54,7 @@ class LimitResumeTest {
     private fun join(dir: Path, listed: List<SessionRecord>, endings: Map<String, SessionEnding>): Joined {
         val sent = mutableListOf<Pair<String?, String>>()
         val logged = mutableListOf<String>()
-        val resume = LimitResume(
+        val resume = SessionWake(
             object : SessionSource {
                 override fun read() = listed
 
@@ -66,8 +67,7 @@ class LimitResumeTest {
             },
             LifecycleScope(Dispatchers.Unconfined),
             { logged += it },
-            LimitTurnEnded { it.sessionId != "escaped" }, // Escape in its terminal: its prompt is last, not the limit
-            clock = { NOW },
+            SessionWakePolicy(SessionTurnEnded { record, _ -> record.sessionId != "escaped" }, clock = { NOW }),
         )
         resume.acted("stopped")
         val pool = ClaudePoolChanges().also { it.onJoined = LoginJoined(resume::joined) }
@@ -102,16 +102,18 @@ class LimitResumeTest {
         assertEquals(listOf("a" to note, "b" to note, "c" to note), joined.sent)
         assertEquals(
             listOf(
-                "[limit-resume] released a on claude",
-                "[limit-resume] released b on claude",
-                "[limit-resume] could not reach c after a new login: no messaging socket",
+                "[session-wake] released a on claude",
+                "[session-wake] released b on claude",
+                "[session-wake] could not reach c: no messaging socket",
             ),
             joined.logged,
         )
     }
 
     @Test
-    fun `a session in its own retry, or escaped by its person, is left alone and logged once`(@TempDir dir: Path) {
+    fun `a pooled session in its own retry, or escaped by its person, is left alone when logins join`(
+        @TempDir dir: Path,
+    ) {
         val listed = listOf(session("waiting", "claude", state = "busy"), session("escaped", "claude"))
         val endings = listed.associate { it.sessionId!! to ending(OutcomeTag.PLAN_LIMIT, "claude") }
 
@@ -120,8 +122,10 @@ class LimitResumeTest {
         assertEquals(emptyList<Pair<String?, String>>(), joined.sent)
         assertEquals(
             listOf(
-                "[limit-resume] left waiting to its own retry on claude",
-                "[limit-resume] left escaped to the person who took it up on claude",
+                "[session-wake] left waiting to its own retry on claude",
+                "[session-wake] left escaped to the person who took it up on claude",
+                "[session-wake] left waiting to its own retry on claude",
+                "[session-wake] left escaped to the person who took it up on claude",
             ),
             joined.logged,
         )

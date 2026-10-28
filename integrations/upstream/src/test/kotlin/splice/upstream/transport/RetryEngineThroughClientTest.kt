@@ -76,7 +76,7 @@ private data class Scenario(
         warmWaitLeftMs = 0L,
         continuesReasoning = false,
         canContinue = false,
-        wallLeftMs = wallMs,
+        deadlines = TurnFacts.Deadlines(wallMs),
         earliestLift = null,
     )
 

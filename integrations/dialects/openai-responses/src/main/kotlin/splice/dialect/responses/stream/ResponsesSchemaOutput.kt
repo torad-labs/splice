@@ -4,7 +4,7 @@ package splice.dialect.responses.stream
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import splice.dialect.responses.ResponsesTurnState
-import splice.dialect.responses.request.ResponsesStrictSchema
+import splice.dialect.responses.schema.ResponsesStrictSchema
 import splice.upstream.sse.WireSink
 import java.util.UUID
 

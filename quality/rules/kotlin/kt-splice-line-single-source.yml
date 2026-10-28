@@ -1,0 +1,27 @@
+# Failure-handling slice 8: only the line's value and composer spell its prefix.
+# The declaration/package exception is checked against the canonical file by FailureReadersLawTest;
+# it is not a path ignore, so a new source set remains governed.
+id: kt-splice-line-single-source
+language: kotlin
+severity: error
+message: "SpliceLine and SpliceLines author every [splice] line; ask the head's voice for the line instead of spelling it here."
+files:
+  - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
+rule:
+  kind: string_literal
+  regex: '\[splice\]'
+  not:
+    inside:
+      kind: source_file
+      stopBy: end
+      all:
+        - has:
+            pattern: package splice.core.failure
+            stopBy: end
+        - has:
+            kind: class_declaration
+            stopBy: end
+            has:
+              kind: type_identifier
+              regex: '^SpliceLines?$'

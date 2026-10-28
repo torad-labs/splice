@@ -15,9 +15,11 @@ import splice.core.budget.NoHeadBudget
 import splice.core.failure.FailureCause
 import splice.core.failure.Lift
 import splice.core.failure.VoiceFacts
+import splice.core.head.HeldTurnReading
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.WatchdogBudget
+import splice.core.usage.QuotaSnapshot
 import splice.core.util.LogSink
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
@@ -32,6 +34,7 @@ import splice.head.headDeps
 import splice.head.headStores
 import splice.head.quotaFor
 import splice.head.turn.LiveTurns
+import splice.head.usage.QuotaTracker
 import splice.upstream.Provider
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
@@ -146,6 +149,10 @@ public class ScriptedHead internal constructor(
         ClientReader(it, model, clock = waiter::passed)
     }
 
+    /** The turns the head holds until their cause lifts, as status reads them off /health (failure-handling
+     *  slice 5). */
+    public fun heldTurns(): List<HeldTurnReading> = server.heldTurns()
+
     /** Lines the head logged, in order. */
     public val log: List<String> get() = lines.toList()
 
@@ -155,6 +162,18 @@ public class ScriptedHead internal constructor(
     /** The relay between the head and the provider; a test makes it refuse new connections. Fails on a head built
      *  without [HeadShape.relayed]. */
     public val relay: PathRelay get() = checkNotNull(wiring.relay) { "this head was built without a relay" }
+
+    /** Records [reading] as the head's quota poller would, on a head built to track its quota. */
+    public fun quotaReading(reading: QuotaSnapshot) {
+        checkNotNull(wiring.quota) { "this head was built without a quota tracker" }.record(reading)
+    }
+
+    /** Adds the login [name] to this pooled head, last in its order, as an operator adding an account does. */
+    public fun addLogin(name: String) {
+        val pool = checkNotNull(wiring.pool) { "this head was built without a pool" }
+        pool.members = pool.members + wiring.login(name)
+        pool.order = pool.order + name
+    }
 
     /** Returns once [count] requests wait in the gate's queue. The gate signals nothing when one joins, so this
      *  looks again each time the test's coroutine runs. */
@@ -191,8 +210,15 @@ public class ScriptedHead internal constructor(
     }
 }
 
-/** Where a head's records go and the relay it reaches the provider through, when it has one. */
-internal data class HeadWiring(val perfFile: Path, val relay: PathRelay?)
+/** Where a head's records go, the relay it reaches the provider through, when it has one, the quota tracker a test
+ *  records a reading into and the pool a test adds a login to. */
+internal data class HeadWiring(
+    val perfFile: Path,
+    val relay: PathRelay?,
+    val quota: QuotaTracker? = null,
+    val pool: AccountPool? = null,
+    val login: (String) -> PoolAccount = { error("this head holds no pool") },
+)
 
 /** The scripted provider's credential: always there, never refused. Each renewal mints the next token
  *  ([ScriptedLogin.renewed]), as a provider's token exchange does, and the requests after it carry that one. */
@@ -272,23 +298,27 @@ internal data class HeadAccounts(
     val login: HeadLogin = HeadLogin.SCRIPTED,
     val pool: List<String> = emptyList(),
     val budget: HeadBudget? = null,
+    val tracksQuota: Boolean = false,
 ) {
     /** The pool the head holds its named logins in, on [time]'s clocks, or null for a head with one login: the first is
      *  the primary, and a turn takes the first free one in this order (AccountPool.order). */
     fun loginPool(time: VirtualTime): AccountPool? = pool.takeIf { it.isNotEmpty() }?.let { logins ->
         AccountPool(
             logins.mapIndexed { index, name ->
-                PoolAccount(
-                    label = name,
-                    primary = index == 0,
-                    auth = PooledLogin(name),
-                    quota = AccountQuotaSource { null },
-                    cooldown = RateLimitCooldown(time.elapsed, time.wall),
-                )
+                login(name, primary = index == 0, time)
             },
             time.wall,
         ).also { it.order = logins }
     }
+
+    /** The pooled login [name], signing with its own token, on [time]'s clocks. */
+    fun login(name: String, primary: Boolean, time: VirtualTime): PoolAccount = PoolAccount(
+        label = name,
+        primary = primary,
+        auth = PooledLogin(name),
+        quota = AccountQuotaSource { null },
+        cooldown = RateLimitCooldown(time.elapsed, time.wall),
+    )
 }
 
 /** Builds heads of each API type in front of one [provider], on [time], storing what they keep under [tmp]. */
@@ -300,13 +330,15 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
     private val built = AtomicInteger()
 
     /** An Anthropic Messages passthrough head. [replies] is how it reads its own failures: a vendor's own reading
-     *  (Kimi's, Claude's) where a test names one, and the Anthropic standard otherwise. */
+     *  (Kimi's, Claude's) where a test names one, and the Anthropic standard otherwise. [tracksQuota] gives it the
+     *  quota tracker its poller records into ([ScriptedHead.quotaReading]). */
     public suspend fun anthropic(
         shape: HeadShape = HeadShape(),
         replies: Replies = Replies(AnthropicReplies),
         says: HeadSays = HeadSays(),
+        tracksQuota: Boolean = false,
     ): ScriptedHead =
-        head("anthropic", shape, says = says) { tuning, _ ->
+        head("anthropic", shape, HeadAccounts(tracksQuota = tracksQuota), says) { tuning, _ ->
             PassthroughProvider(tuning, PassthroughQuirks(tuning.key), replies = replies)
         }
 
@@ -434,14 +466,16 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
             pacing = RetryPacing(waiter = time.waiter, wall = time.wall),
             clock = time.elapsed,
         )
-        val base = headDeps(tmp, upstream, log, gate, HeadDeps.HeadSeams(time.elapsed, waiter, time.ticker))
+        val seams = HeadDeps.HeadSeams(time.elapsed, waiter, HeadDeps.HeadTicks(time.ticker, time.ticker))
+        val base = headDeps(tmp, upstream, log, gate, seams)
         val suffix = "-$key-${built.incrementAndGet()}"
         val pool = accounts.loginPool(time)
+        val quota = if (accounts.tracksQuota) QuotaTracker(tmp.resolve("quota$suffix.json"), time.wall) else null
         val deps = base.copy(
             traffic = base.traffic.copy(liveTurns = liveTurns),
             stores = headStores(tmp, suffix = suffix),
             policy = base.policy.copy(stopDrainMs = 0, forwardClientAuth = accounts.login == HeadLogin.FORWARDED),
-            quotaBundle = quotaFor(null, pool, budget = accounts.budget ?: NoHeadBudget),
+            quotaBundle = quotaFor(quota, pool, budget = accounts.budget ?: NoHeadBudget),
         )
         val relay = if (shape.relayed) PathRelay(URI(provider.baseUrl).port) else null
         val baseUrl = relay?.let { "http://127.0.0.1:${it.port}" } ?: provider.baseUrl
@@ -452,7 +486,9 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
             deps = deps,
             voiceFacts = VoiceFacts(says.providerName, local = kind == LOCAL_KIND, zone = LINE_ZONE),
         )
-        val wiring = HeadWiring(tmp.resolve("perf$suffix.jsonl"), relay)
+        val wiring = HeadWiring(tmp.resolve("perf$suffix.jsonl"), relay, quota, pool) { name ->
+            accounts.login(name, primary = false, time)
+        }
         val head = ScriptedHead(server, waiter, "claude-$key--${shape.model}", liveTurns, gate, lines, wiring)
         heads += head
         head.start()

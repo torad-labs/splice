@@ -11,10 +11,12 @@ import splice.core.failure.FailureCause
 import splice.core.failure.Lift
 import splice.core.failure.LoginOwner
 import splice.core.failure.Moment
+import splice.core.failure.Outlast
 import splice.core.failure.Position
 import splice.core.failure.ProtocolFault
 import splice.core.failure.Stall
 import splice.core.failure.Tear
+import splice.upstream.retry.limits.RetryLimits
 import java.time.Instant
 
 /** What the engine knows of a turn besides its ledger. [pooled]: the head has more than one login; [freeLogin]:
@@ -22,20 +24,29 @@ import java.time.Instant
  *  [continuesReasoning]: the provider continues an answer that only reasoned (Muse). [canContinue]: the head's
  *  re-anchor rule can continue from what arrived at this position (PassthroughReanchorPolicy and its siblings).
  *  [wallLeftMs]: what is left of the lowest wall that applies, the session's, a compaction's timer or the non-stream
- *  bound. [earliestLift]: the first reset among the head's logins, for slice 5's holds. */
+ *  bound. [earliestLift]: the first reset among the head's logins. [holdWallLeftMs]: usable wait time left before the
+ *  session's wall or a compaction's timer, with its response margin reserved; a non-stream request instead has its
+ *  short silent wait allowance. A hold that cannot fit is handed to the client. */
 public data class TurnFacts(
     val pooled: Boolean,
     val freeLogin: Boolean,
     val warmWaitLeftMs: Long,
     val continuesReasoning: Boolean,
     val canContinue: Boolean,
-    val wallLeftMs: Long,
+    val deadlines: Deadlines,
     val earliestLift: Instant?,
-)
+) {
+    /** The progress deadline and usable hold allowance are separate readings of the same turn's bounds. */
+    public data class Deadlines(val wallLeftMs: Long, val holdWallLeftMs: Long = Long.MAX_VALUE)
+
+    public val wallLeftMs: Long get() = deadlines.wallLeftMs
+    public val holdWallLeftMs: Long get() = deadlines.holdWallLeftMs
+}
 
 public object RetryEngine {
-    /** The step after [cause] met at [at]. Every turn ends within [MAX_ATTEMPTS_OUTSIDE_HOLDS] sends, and a wait
-     *  the turn's wall cannot hold ends it instead. */
+    /** The step after [cause] met at [at]. Every turn ends within [MAX_ATTEMPTS_OUTSIDE_HOLDS] sends outside holds, a
+     *  wait the turn's wall cannot hold ends it instead, and a hold ends within its seven days and three missed
+     *  resets, or is handed to the client where the session's wall cannot hold it (Holds). */
     public fun next(
         cause: FailureCause,
         at: Position,
@@ -44,8 +55,12 @@ public object RetryEngine {
         now: Instant,
     ): RetryStep {
         if (ledger.attempts >= MAX_ATTEMPTS_OUTSIDE_HOLDS) return RetryStep.End(cause)
-        val step = Rows.plan(Turn(cause, at, ledger, facts, now))
-        return if (step is RetryStep.Again && step.afterMs > facts.wallLeftMs) RetryStep.End(cause) else step
+        val turn = RetryTurn(cause, at, ledger, facts, now)
+        return when (val step = Rows.plan(turn)) {
+            is RetryStep.Again -> Holds.waitBounded(turn, step)
+            is RetryStep.Hold -> Holds.bounded(turn, step)
+            is RetryStep.SwitchLogin, is RetryStep.End, RetryStep.Keep -> step
+        }
     }
 
     /** The budget [step] spends for [cause], given what [ledger] already spent. */
@@ -86,7 +101,7 @@ public object RetryEngine {
 }
 
 /** One question to the engine, and the moves every row of the table is made of. */
-private class Turn(
+internal class RetryTurn(
     val cause: FailureCause,
     val at: Position,
     val ledger: RetryLedger,
@@ -120,11 +135,15 @@ private class Turn(
     }
 
     fun hold(lift: Lift.At): RetryStep = RetryStep.Hold(lift.at, if (lift.firm) Probes.FIRM else Probes.SOFT_LIFT)
+
+    /** The end of a hold that did not, or cannot, go on: [why], with the reset it would have waited for. */
+    fun outlasted(why: Outlast, reset: Instant?): RetryStep =
+        RetryStep.End(FailureCause.Splice.HoldOutlasted(why, cause, reset))
 }
 
 /** The table's rows, by leaf. */
 private object Rows {
-    fun plan(turn: Turn): RetryStep = when (val cause = turn.cause) {
+    fun plan(turn: RetryTurn): RetryStep = when (val cause = turn.cause) {
         is FailureCause.Provider -> provider(turn, cause)
         is FailureCause.Path -> path(turn, cause)
         is FailureCause.Splice ->
@@ -136,10 +155,10 @@ private object Rows {
     }
 
     /** The leaves a wait or a login can change; the request's own verdicts go to [verdict]. */
-    private fun provider(turn: Turn, cause: FailureCause.Provider): RetryStep = when (cause) {
-        is FailureCause.Provider.Limited -> Limits.limited(turn, cause.lift, named = cause.window != null)
-        is FailureCause.Provider.Overloaded -> Limits.overloaded(turn, cause)
-        is FailureCause.Provider.NeedsPayment -> Limits.payment(turn, cause.lift)
+    private fun provider(turn: RetryTurn, cause: FailureCause.Provider): RetryStep = when (cause) {
+        is FailureCause.Provider.Limited -> RetryLimits.limited(turn, cause.lift, named = cause.window != null)
+        is FailureCause.Provider.Overloaded -> RetryLimits.overloaded(turn, cause)
+        is FailureCause.Provider.NeedsPayment -> RetryLimits.payment(turn, cause.lift)
         is FailureCause.Provider.ServerError -> Streams.server(turn)
         is FailureCause.Provider.Forbidden -> turn.switchOr(turn.end)
         is FailureCause.Provider.AuthRejected -> Logins.rejected(turn, cause)
@@ -149,7 +168,7 @@ private object Rows {
         -> verdict(turn, cause)
     }
 
-    private fun verdict(turn: Turn, cause: FailureCause.Provider): RetryStep = when (cause) {
+    private fun verdict(turn: RetryTurn, cause: FailureCause.Provider): RetryStep = when (cause) {
         is FailureCause.Provider.Rejected ->
             if (cause.staleReasoning) turn.once(Spend.AMEND, MAX_AMENDS, How.AMEND_REASONING) else turn.end
         is FailureCause.Provider.Empty -> Logins.empty(turn, cause.reasoningOnly)
@@ -164,7 +183,7 @@ private object Rows {
         -> provider(turn, cause)
     }
 
-    private fun path(turn: Turn, cause: FailureCause.Path): RetryStep = when (cause) {
+    private fun path(turn: RetryTurn, cause: FailureCause.Path): RetryStep = when (cause) {
         is FailureCause.Path.Unreachable -> unreachable(turn)
         is FailureCause.Path.Torn -> torn(turn, cause)
         // A first byte that never came is sent fresh; a stream that went quiet mid-answer continues from what
@@ -174,7 +193,7 @@ private object Rows {
     }
 
     /** A path that did not answer: waited out while the waits last, about two minutes in all. */
-    private fun unreachable(turn: Turn): RetryStep {
+    private fun unreachable(turn: RetryTurn): RetryStep {
         val n = turn.ledger.count(Spend.UNREACHABLE)
         val waitMs = minOf(UNREACHABLE_FIRST_WAIT_MS shl n, UNREACHABLE_WAIT_CAP_MS)
         return if (n < UNREACHABLE_WAITS) turn.wait(waitMs) else turn.end
@@ -182,68 +201,10 @@ private object Rows {
 
     /** A stream that broke: a swept-shut tool block and an event too large to read cannot be continued, a stream
      *  that carried no event is sent fresh, and anything else continues from what arrived. */
-    private fun torn(turn: Turn, cause: FailureCause.Path.Torn): RetryStep = when {
+    private fun torn(turn: RetryTurn, cause: FailureCause.Path.Torn): RetryStep = when {
         cause.toolOpen || cause.why == Tear.OVERSIZED_EVENT -> turn.end
         cause.why == Tear.NO_EVENTS -> Streams.fresh(turn)
         else -> Streams.recovered(turn)
-    }
-}
-
-/** A limit, an overload and a spent account: waited, moved or held by what the provider stated. */
-private object Limits {
-    /** A burst: waited 2, 4, 8 and 15 s, and never less than [soonMs], a time stated inside the floor, which is
-     *  waited out rather than held. Then the turn moves to a free login, or holds with nothing stated to go on and
-     *  [probes] to find the lift. */
-    private fun bursts(turn: Turn, soonMs: Long, probes: Probes): RetryStep {
-        val n = turn.ledger.count(Spend.BURST)
-        val waitMs = maxOf(soonMs, minOf(BURST_FIRST_WAIT_MS shl n, BURST_WAIT_CAP_MS))
-        return if (n < BURST_WAITS) turn.wait(waitMs) else turn.switchOr(RetryStep.Hold(null, probes))
-    }
-
-    fun limited(turn: Turn, lift: Lift, named: Boolean): RetryStep {
-        val stated = turn.pastFloor(lift)
-        return when {
-            stated != null -> stated(turn, stated)
-            // A named window with no time stated is long: Kimi's 5-hour 429 recovered on none of 62 retried turns.
-            lift is Lift.Unstated && named -> turn.switchOr(RetryStep.Hold(null, Probes.UNSTATED))
-            else -> bursts(turn, turn.insideFloor(lift) ?: 0L, Probes.UNSTATED)
-        }
-    }
-
-    fun overloaded(turn: Turn, cause: FailureCause.Provider.Overloaded): RetryStep {
-        val stated = turn.pastFloor(cause.lift)
-        if (stated != null) return stated(turn, stated)
-        val n = turn.ledger.count(Spend.OVERLOAD)
-        val liftMs = (cause.lift as? Lift.At)?.let(turn::waitFor) ?: 0L
-        val doubled = minOf(OVERLOAD_FIRST_WAIT_MS shl n, OVERLOAD_WAIT_CAP_MS)
-        val scheduled = if (n == OVERLOAD_WAITS - 1) OVERLOAD_LAST_WAIT_MS else doubled
-        if (n < OVERLOAD_WAITS) return turn.wait(maxOf(liftMs, scheduled))
-        val waited = turn.ledger.waited(Spend.OVERLOAD) + turn.ledger.waited(Spend.LOADING)
-        val loading = cause.loading && waited + LOADING_WAIT_MS <= LOADING_PATIENCE_MS
-        return if (loading) turn.wait(LOADING_WAIT_MS) else turn.end
-    }
-
-    /** A spent account: a stated reset takes the same plan as a limit's, and with none stated the turn moves to a
-     *  free login or holds for credit (V4-73). */
-    fun payment(turn: Turn, lift: Lift): RetryStep {
-        val stated = turn.pastFloor(lift)
-        val soon = turn.insideFloor(lift)
-        return when {
-            stated != null -> stated(turn, stated)
-            soon != null -> bursts(turn, soon, Probes.CREDIT)
-            else -> turn.switchOr(RetryStep.Hold(null, Probes.CREDIT))
-        }
-    }
-
-    /** A stated lift past the floor: a reset past a week moves the turn to a free login or ends it; a warm session
-     *  waits it out on its own login; otherwise another login takes the turn, or it is held to the stated time. */
-    private fun stated(turn: Turn, lift: Lift.At): RetryStep {
-        val waitMs = turn.waitFor(lift)
-        return when {
-            waitMs > MAX_HOLD_MS -> turn.switchOr(turn.end)
-            turn.facts.warmWaitLeftMs >= waitMs -> turn.wait(waitMs)
-            else -> turn.switchOr(turn.hold(lift))
-        }
     }
 }
 
@@ -251,7 +212,7 @@ private object Limits {
 private object Streams {
     /** A server error: re-sent three times while the provider's stream never began, and continued from what
      *  arrived once it did. */
-    fun server(turn: Turn): RetryStep {
+    fun server(turn: RetryTurn): RetryStep {
         if (turn.at.streamBegan) return recovered(turn)
         val n = turn.ledger.count(Spend.SERVER_RESEND)
         return if (n < SERVER_RESENDS) turn.wait(SERVER_FIRST_RESEND_MS shl n) else turn.end
@@ -259,16 +220,16 @@ private object Streams {
 
     /** A stream that broke: it continues from what arrived where it began and the head can continue it, on one
      *  budget shared by every recovery of the turn; where nothing arrived, the request is sent fresh. */
-    fun recovered(turn: Turn): RetryStep {
+    fun recovered(turn: RetryTurn): RetryStep {
         if (!turn.at.streamBegan) return fresh(turn)
         val left = turn.ledger.count(Spend.STREAM_RECOVERY) < MAX_STREAM_RECOVERIES
         return if (turn.facts.canContinue && left) turn.again(How.REANCHOR) else turn.end
     }
 
-    fun fresh(turn: Turn): RetryStep = turn.once(Spend.FRESH_REISSUE, MAX_FRESH_REISSUES, How.SAME)
+    fun fresh(turn: RetryTurn): RetryStep = turn.once(Spend.FRESH_REISSUE, MAX_FRESH_REISSUES, How.SAME)
 
     /** Tried once more by where it stood: sent again before the stream began, continued after it where the head can. */
-    fun unrecognized(turn: Turn): RetryStep = when {
+    fun unrecognized(turn: RetryTurn): RetryStep = when {
         turn.ledger.count(Spend.UNRECOGNIZED) >= MAX_UNRECOGNIZED_RETRIES -> turn.end
         !turn.at.streamBegan -> turn.again(How.SAME)
         turn.facts.canContinue -> turn.again(How.REANCHOR)
@@ -280,12 +241,12 @@ private object Streams {
 private object Logins {
     /** A refused login: the client's own ends the turn at once, since splice never renews a login it only forwards
      *  (ClientAuthProvider), and one splice holds is renewed. */
-    fun rejected(turn: Turn, cause: FailureCause.Provider.AuthRejected): RetryStep =
+    fun rejected(turn: RetryTurn, cause: FailureCause.Provider.AuthRejected): RetryStep =
         if (cause.owner == LoginOwner.CLIENT) turn.end else refused(turn, cause)
 
     /** Renewed once, its token exchange asked again 2 s and 4 s later while the token endpoint cannot answer, then
      *  another login, then the login's own ending. */
-    private fun refused(turn: Turn, cause: FailureCause.Provider): RetryStep {
+    private fun refused(turn: RetryTurn, cause: FailureCause.Provider): RetryStep {
         val ledger = turn.ledger
         if (!ledger.refreshStarted) return turn.again(How.REFRESH_LOGIN)
         val exchanges = ledger.exchangesForLogin
@@ -295,10 +256,66 @@ private object Logins {
         return turn.switchOr(RetryStep.End(FailureCause.Provider.AuthRejected(LoginOwner.SPLICE, cause.said)))
     }
 
-    fun empty(turn: Turn, reasoningOnly: Boolean): RetryStep =
+    fun empty(turn: RetryTurn, reasoningOnly: Boolean): RetryStep =
         if (reasoningOnly && turn.facts.continuesReasoning) {
             turn.once(Spend.CONTINUE_REASONING, MAX_EMPTY_RETRIES, How.CONTINUE_REASONING)
         } else {
             turn.once(Spend.EMPTY, MAX_EMPTY_RETRIES, How.SAME)
         }
+}
+
+/** The bounds every hold keeps (final-design.md section 9): a cause that did not lift at three of the times it stated
+ *  ends, as does a hold that reached its seven days, each with the held cause's family; a hold the session's wall
+ *  cannot hold to its end, its reset and stagger or its first probe, is handed to the client with the reset (L). */
+private object Holds {
+    /** A collected request spends at most its short wait allowance. A limit it cannot wait out is handed to the
+     *  client with the reset, rather than becoming an unqualified permanent refusal. */
+    fun waitBounded(turn: RetryTurn, step: RetryStep.Again): RetryStep {
+        val limited = turn.cause as? FailureCause.Provider.Limited
+        return when {
+            step.afterMs <= turn.facts.wallLeftMs -> step
+            turn.facts.holdWallLeftMs > turn.facts.wallLeftMs -> turn.end
+            limited == null -> turn.end
+            else -> turn.outlasted(Outlast.WALL, (limited.lift as? Lift.At)?.at)
+        }
+    }
+
+    fun bounded(turn: RetryTurn, hold: RetryStep.Hold): RetryStep {
+        val ledger = turn.ledger
+        val nowMs = turn.now.toEpochMilli()
+        val since = ledger.heldSinceMs
+        return when {
+            ledger.missedResets >= MAX_MISSED_RESETS ->
+                turn.outlasted(Outlast.MISSED_RESETS, hold.until)
+            since != null && nowMs - since >= MAX_HOLD_MS -> turn.outlasted(Outlast.MAX_HOLD, hold.until)
+            endsInMs(turn, hold) > turn.facts.holdWallLeftMs -> turn.outlasted(Outlast.WALL, hold.until)
+            else -> hold
+        }
+    }
+
+    /** How long from now the hold ends at the latest: its reset and the first stagger, or its first probe. */
+    private fun endsInMs(turn: RetryTurn, hold: RetryStep.Hold): Long {
+        val reset = hold.until?.let { it.toEpochMilli() - turn.now.toEpochMilli() + WAKE_STAGGER_MS }
+        return reset ?: ProbeSchedule.firstMs(hold.probes)
+    }
+}
+
+/** When a login's held turns are probed, by what the hold probes: the [n]th probe, counted from 0, comes this long
+ *  after the one before it, the first after the hold began. */
+public object ProbeSchedule {
+    public fun gapMs(probes: Probes, n: Int): Long = when (probes) {
+        Probes.FIRM -> FIRM_PROBE_MS
+        Probes.CREDIT -> CREDIT_PROBE_MS
+        Probes.SOFT_LIFT -> doubling(SOFT_LIFT_FIRST_PROBE_MS, SOFT_LIFT_LAST_DOUBLING_MS, n)
+        Probes.UNSTATED -> doubling(UNSTATED_FIRST_PROBE_MS, UNSTATED_LAST_DOUBLING_MS, n)
+        Probes.NONE -> Long.MAX_VALUE
+    }
+
+    internal fun firstMs(probes: Probes): Long = gapMs(probes, 0)
+
+    /** [first] doubled [n] times while it stays within [last], then [PROBE_CEILING_MS]. */
+    private fun doubling(first: Long, last: Long, n: Int): Long {
+        val doubled = if (n < Long.SIZE_BITS - 2) first shl n else Long.MAX_VALUE
+        return if (doubled in 1..last) doubled else PROBE_CEILING_MS
+    }
 }

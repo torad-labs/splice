@@ -110,6 +110,9 @@ internal class TurnTelemetry(
         failure: PerfFailure,
         cause: FailureCause?,
     ) {
+        cause?.resumeAt?.epochSecond?.let { reset ->
+            drive.perf.setCount(PerfKeys.EARLIEST_RESET_EPOCH_SECONDS, reset)
+        }
         drive.perf.mark(PerfKeys.TOTAL)
         drive.perf.setCount(PerfKeys.ATTEMPTS, drive.perfCounter(PerfKeys.ATTEMPTS))
         val ending = RowEnding(outcomeTag, rateLimited, failure, perfStats.clock(), cause)

@@ -27,7 +27,6 @@ import splice.core.util.WallClock
 import splice.core.wire.NativeReply
 import splice.upstream.Waiter
 import splice.upstream.failure.FailedReply
-import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.ProviderDeviation
 import splice.upstream.failure.Replies
 import splice.upstream.retry.FileProviderHoldStore
@@ -37,6 +36,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
+import splice.upstream.testing.OpenAiTestReplies as OpenAiReplies
 
 private const val MS = 1_000L
 private const val SIX_DAYS_S = 6L * 24 * 3_600
@@ -100,12 +100,12 @@ class UpstreamClientProviderHoldRestartTest {
             },
             extraHeaders = { emptyMap() },
             replies = bodyPlan,
-        ).also { it.relayRateLimitReplies = true }
+        )
         val refusing = MockEngine {
             respond(native, HttpStatusCode.TooManyRequests, headersOf("x-should-retry", listOf("true", "false")))
         }
         val original = client(dir, refusing)
-        val observer = assertEnds<UpstreamFailed> { original.posted(context("synthetic-a"), "{}") { "unreachable" } }
+        assertEnds<UpstreamFailed> { original.posted(context("synthetic-a"), "{}") { "unreachable" } }
         assertEquals(1, refusing.requestHistory.size, "a named plan window is never re-sent before its reset (V4-233)")
         val key = requireNotNull(CredentialKey.fromHeaders(mapOf("x-api-key" to "synthetic-a")))
         assertTrue(Files.exists(dir.resolve("hold-$key.json")))
@@ -118,11 +118,6 @@ class UpstreamClientProviderHoldRestartTest {
         val restarted = client(dir, recovered)
         restarted.clearRateLimitCooldown()
 
-        assertEquals(
-            observer.native,
-            restarted.credentialCooldown(mapOf("x-api-key" to "synthetic-a"))?.rateLimitReply,
-            "the provider's word survives the restart",
-        )
         assertEquals("ok", restarted.posted(context("synthetic-a"), "{}") { "ok" })
         assertEquals(listOf("synthetic-a"), attempts, "the credential's next turn asks the provider itself, at once")
         assertFalse(Files.exists(dir.resolve("hold-$key.json")), "provider acceptance clears the native statement")

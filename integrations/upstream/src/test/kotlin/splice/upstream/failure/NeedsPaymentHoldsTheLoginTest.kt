@@ -33,6 +33,7 @@ import splice.upstream.transport.UpstreamFailed
 import splice.upstream.transport.assertEnds
 import splice.upstream.transport.posted
 import java.util.concurrent.atomic.AtomicInteger
+import splice.upstream.testing.OpenAiTestReplies as OpenAiReplies
 
 /** A billing 403 body the way grok spelled it before xAI moved it to a 402. */
 private const val SPENDING_LIMIT_BODY =

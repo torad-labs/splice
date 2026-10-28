@@ -151,7 +151,10 @@ public class PerfStats(
         meta.session?.let { session ->
             val reset = snap.counters[PerfKeys.EARLIEST_RESET_EPOCH_SECONDS]
             val retries = snap.counters.getOrDefault(PerfKeys.RETRIES, 0L)
-            endings.note(session, SessionEnding(meta.outcome, meta.account.label, reset, ts, meta.model, retries))
+            endings.note(
+                meta.transcript.sessionId ?: session,
+                SessionEnding(meta.outcome, meta.account.label, reset, ts, meta.model, retries),
+            )
             Cancellables.discard(
                 Cancellables.runCatchingCancellable { meta.model?.let { totals?.add(session, it, snap.counters, ts) } },
                 "telemetry is best-effort; a turn must never fail on its session's running total",

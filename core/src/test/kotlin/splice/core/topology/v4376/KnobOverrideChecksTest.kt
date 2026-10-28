@@ -132,10 +132,12 @@ class KnobOverrideChecksTest {
 
     @Test
     fun `false and a number boot reads still land`() {
-        val overrides = mapOf(TRACE to "false", TIMEOUT to "600000")
-        assertEquals(emptyMap<String, String>(), boot(head = overrides), "boot reads both")
-        val result = write(topology(overrides))
+        val overrides = mapOf(TRACE to "false")
+        val defaults = mapOf(TIMEOUT to "600000")
+        assertEquals(emptyMap<String, String>(), boot(head = overrides, global = defaults), "boot reads both")
+        val result = write(topology(overrides, defaults = defaults))
         assertTrue(result is TopologyWriteResult.Written, "expected the write to land: $result")
         assertTrue(Files.readString(file).contains(TRACE), "the write reached splice.toml")
+        assertTrue(Files.readString(file).contains(TIMEOUT), "the daemon-wide timeout reached the defaults table")
     }
 }

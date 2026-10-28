@@ -21,8 +21,8 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.upstream.Waiter
-import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
+import splice.upstream.testing.OpenAiTestReplies as OpenAiReplies
 
 class UpstreamClientAmendTest {
 

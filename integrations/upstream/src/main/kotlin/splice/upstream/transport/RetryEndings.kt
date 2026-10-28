@@ -19,6 +19,17 @@ internal class RetryEndings {
      *  marks its login limited (RateLimitCooldown.limitLeft); a long pushback on a failure waiting can heal marks it
      *  too, so the turns after this one steer away. With no answer at all, the post was never sent. */
     fun ended(last: RetryOutcome.Failed?, cause: FailureCause?, state: RetryState, ctx: PostContext): UpstreamFailed {
+        val failed = answered(last, cause, state, ctx)
+        val outlasted = cause as? FailureCause.Splice.HoldOutlasted ?: return failed
+        return UpstreamFailed(failed.cause, failed.evidence, failed.layers, failed.planLimit, failed.native, outlasted)
+    }
+
+    private fun answered(
+        last: RetryOutcome.Failed?,
+        cause: FailureCause?,
+        state: RetryState,
+        ctx: PostContext,
+    ): UpstreamFailed {
         val layers = state.ledger.attempts
         if (last == null) return UpstreamFailed(NO_ANSWER, FailureEvidence(NO_ANSWER_MESSAGE), layers)
         if (last.limited) return limitFailure(last, state, ctx)

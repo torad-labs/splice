@@ -91,10 +91,12 @@ class HeadServerHeartbeatTest {
                 // the ticker's only consumer (ClientChannel.launchClientPinger), so each tick sent is
                 // one cadence step, with no wall-clock pacing at all.
                 seams = HeadDeps.HeadSeams(
-                    ticker = Ticker {
-                        ticks.receive()
-                        true
-                    },
+                    ticks = HeadDeps.HeadTicks(
+                        client = Ticker {
+                            ticks.receive()
+                            true
+                        },
+                    ),
                 ),
             ).copy(policy = HeadDeps.HeadPolicy(progressLine = ProgressLineOn { statusLineOn })),
         )

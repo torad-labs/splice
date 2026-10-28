@@ -541,10 +541,8 @@ class WatchdogProgressRoundTest {
     @ParameterizedTest
     @ValueSource(
         strings = [
-            // A websocket keepalive on a live path holds the cap now (idle is a probe, Oct 12), so only SSE keeps the
-            // keepalive cases: there no round path is open in this rig and the cap stands.
-            "ws-reasoning", "ws-text", "sse-reasoning", "sse-text",
-            "sse-ping", "sse-empty", "sse-metadata", "sse-rate-limits",
+            "ws-reasoning", "ws-text", "ws-ping", "ws-empty", "ws-metadata", "ws-rate-limits",
+            "sse-reasoning", "sse-text", "sse-ping", "sse-empty", "sse-metadata", "sse-rate-limits",
         ],
     )
     fun `protocol progress survives the elapsed cap on both transports`(

@@ -498,6 +498,49 @@ class WatchdogTest {
         }
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `continuous socket pings hold both owners beyond the progress cap until the session wall`() = runTest {
+        val clock = ElapsedClock { testScheduler.currentTime }
+        val gate = InflightGate({ 0 }, clock = clock)
+        val slot = gate.admittedSlot()
+        val dog = TurnWatchdog(budget(firstByteMs = 10_000, idleMs = 5_000, capMs = 600), clock = clock)
+        dog.wallAt(2_000L)
+        val client = Job()
+        val reader = Job()
+        val roundPoller = dog.launchIn(
+            this,
+            slot,
+            client,
+            ClientFrameEmitted { false },
+            PathLiveness(WsPathPulse { 0 }),
+        )
+        val clientCap = dog.launchTotalCap(this, client)
+        val readerCap = dog.launchTotalCap(this, reader)
+        try {
+            advanceTimeBy(750)
+            runCurrent()
+            assertNull(dog.fired, "a live path must not be reaped while the model thinks in silence")
+            assertTrue(client.isActive)
+            assertTrue(reader.isActive)
+            advanceTimeBy(1_250)
+            runCurrent()
+            val fired = dog.fired as WatchdogFired.TotalCap
+            assertTrue(fired.atWall, "the session's wall owns this ending")
+            assertTrue(fired.elapsedMs >= 2_000L, "the live path ended before the session's wall: $fired")
+            assertEquals(600L, fired.limitMs)
+            assertTrue(client.isCancelled)
+            assertTrue(reader.isCancelled)
+        } finally {
+            roundPoller.cancel()
+            clientCap.cancel()
+            readerCap.cancel()
+            client.cancel()
+            reader.cancel()
+            slot.release()
+        }
+    }
+
     @Test
     fun `turn-scoped cap poller reaps with no open stream`() {
         runBlocking {

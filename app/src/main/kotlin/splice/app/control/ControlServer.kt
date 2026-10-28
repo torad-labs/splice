@@ -142,7 +142,7 @@ internal class ControlServer(
     private val sessionWiring = SessionsWiring(sessions, heads, config, ports, log)
 
     /** What a login added after a plan limit does for the sessions it stopped (ControlPlane hooks the pool to it). */
-    internal val limitResume: LimitResume? get() = sessionWiring.limitResume
+    internal val sessionWake: SessionWake? get() = sessionWiring.sessionWake
     private val sessionMount = SessionsMount(sessions, sessionWiring, heads, config, guard, ports, launchService)
     private val teams = TeamsMount(sessionWiring, sessions, heads, ports, guard)
     private val projects = ProjectsMount(sessionWiring, sessions, config, ports, guard)
@@ -222,7 +222,7 @@ internal class ControlServer(
         ControlMount(consolePilot::register),
         ControlMount(console::register),
     ) + listOfNotNull(peers?.let { ControlMount(it::register) }, mcp)
-    private val resources: List<BoundResource> = listOfNotNull(mcp)
+    private val resources: List<BoundResource> = listOfNotNull(mcp, sessionWake)
 
     @Volatile
     private var server: EmbeddedServer<NettyApplicationEngine, *>? = null

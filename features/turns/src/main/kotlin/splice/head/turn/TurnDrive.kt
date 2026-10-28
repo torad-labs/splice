@@ -11,7 +11,6 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.noRequestUsage
-import splice.core.wire.NativeReply
 import splice.head.perf.SourceRowHold
 import splice.head.pipeline.TurnPipeline
 import splice.head.round.RoundUsage
@@ -146,12 +145,11 @@ internal data class TurnDrive(
     val sourceRow = SourceRowHold()
     var sourceRoundStarted: SourceRoundStarted? = null
 
-    /** Chooses an HTTP refusal only while the responder still owns an uncommitted status. */
-    fun interface RateLimitRelay {
-        fun relay(reply: NativeReply): Boolean
-    }
-    var rateLimitRelay: RateLimitRelay? = null
     var upstreamAccepted: splice.upstream.StreamStart? = null
+
+    /** Told when the provider accepts one of this turn's requests: the turns held on the same login go on (failure-handling
+     *  slice 5). Set once, by the factory that assembles the drive. */
+    var holdServed: Runnable? = null
     var accountHandoff: TurnAccountHandoff? = null
 
     /** Where the provider routes this turn's requests ([splice.upstream.Provider.route]): set once, by the factory that

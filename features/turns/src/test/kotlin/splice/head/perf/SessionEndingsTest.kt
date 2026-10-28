@@ -120,4 +120,33 @@ class SessionEndingsTest {
 
         assertEquals(first, restarted.endings.endingFor("aaaa1111-full-id")?.runSince)
     }
+
+    @Test
+    fun `sessions sharing a display tag keep their own resets live and after restart`() {
+        val first = "01a10000-0000-7000-8000-000000000001"
+        val second = "01a10000-0000-7000-8000-000000000002"
+        val heard = mutableListOf<String>()
+        val watch = stats.endings.observe { id, _ -> heard += id }
+        for ((id, reset) in listOf(first to 100L, second to 200L)) {
+            stats.record(
+                PerfRowMeta(
+                    "test",
+                    "error:plan-limit",
+                    compact = false,
+                    session = id.take(8),
+                    transcript = PerfTranscriptIds(sessionId = id),
+                ),
+                PerfSnapshot(emptyMap(), mapOf(PerfKeys.EARLIEST_RESET_EPOCH_SECONDS to reset)),
+            )
+            now += 1_000
+        }
+        assertEquals(listOf(first, second), heard)
+        assertEquals(100L, stats.endings.endingFor(first)?.resetEpochSeconds)
+        assertEquals(200L, stats.endings.endingFor(second)?.resetEpochSeconds)
+        AsyncFileIo.drain()
+        val restarted = PerfStats(tmp.resolve("perf.jsonl"), clock = { now })
+        assertEquals(100L, restarted.endings.endingFor(first)?.resetEpochSeconds)
+        assertEquals(200L, restarted.endings.endingFor(second)?.resetEpochSeconds)
+        watch.close()
+    }
 }

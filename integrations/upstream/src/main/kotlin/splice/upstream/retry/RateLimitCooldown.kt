@@ -246,4 +246,4 @@ internal const val MAX_RATE_LIMIT_COOLDOWN_MS: Long = 120_000L
 
 // A saturated or hostile header must not poison reset reporting after the local re-probe opens.
 // Seven days preserves legitimate multi-day resets while bounding the reporting-only state too.
-private const val MAX_PROVIDER_RESET_MS = 604_800_000L
+private const val MAX_PROVIDER_RESET_MS = MAX_HOLD_MS

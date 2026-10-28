@@ -6,6 +6,7 @@ package splice.app.control
 import splice.app.sources.PerfStatsSource
 import splice.client.resume.ModelMoves
 import splice.core.perf.OutcomeTag
+import splice.core.perf.OutcomeTags
 import splice.core.util.WallClock
 import splice.sessions.http.SessionAccountOf
 import splice.sessions.http.SessionEnding
@@ -70,19 +71,42 @@ internal class SessionPerfFacts(
         )
             .mapTo(HashSet()) { it.wire }
 
-    fun endingOf(): SessionEndingOf = SessionEndingOf { id ->
+    fun endingOf(includeExpired: Boolean = false): SessionEndingOf = SessionEndingOf { id ->
         heads.mapNotNull { (key, head) ->
             (head.sources.perf as? PerfStatsSource)?.sessionEndings?.endingFor(id)?.let { key to it }
         }
             .maxByOrNull { (_, ended) -> ended.ts }
-            ?.takeIf { (_, ended) -> ended.outcome in holdingEndings }
-            ?.let { (head, ended) ->
-                val resetMs = ended.resetEpochSeconds?.let(TimeUnit.SECONDS::toMillis)
-                // in the Accounts roster's words: a client head's row carries the login's identity, not its label
-                val account = ended.account?.let { ports.claudeLogins?.accountLabel(head, it) ?: it }
-                SessionEnding(ended.outcome, account, resetMs, ended.ts, head, ended.retries, ended.runSince)
+            ?.takeIf { (_, ended) ->
+                !OutcomeTags.isClean(ended.outcome) &&
+                    (ended.outcome in holdingEndings || ended.resetEpochSeconds != null)
             }
-            ?.takeIf { ending -> ending.resetMs?.let { it > clock() } != false }
+            ?.let { (head, ended) -> ending(head, ended) }
+            ?.takeIf { ending -> includeExpired || ending.resetMs?.let { it > clock() } != false }
+    }
+
+    /** The same persisted reset feeds the row and the session wake after restart. */
+    fun ending(head: String, ended: splice.head.perf.SessionEnding): SessionEnding {
+        val resetMs = ended.resetEpochSeconds?.takeUnless {
+            OutcomeTags.isClean(ended.outcome) || ended.outcome == OutcomeTag.CLIENT_ABORT.wire ||
+                ended.outcome == OutcomeTags.error("stopped")
+        }?.let(TimeUnit.SECONDS::toMillis)
+        val account = ended.account?.let { ports.claudeLogins?.accountLabel(head, it) ?: it }
+        return SessionEnding(
+            ended.outcome,
+            account,
+            resetMs,
+            ended.ts,
+            head,
+            ended.retries,
+            ended.runSince,
+        )
+    }
+
+    /** Each head's published endings, with the same head name and account projection the row reads. */
+    fun observe(listener: SessionWakeEvent): List<AutoCloseable> = heads.mapNotNull { (head, managed) ->
+        (managed.sources.perf as? PerfStatsSource)?.sessionEndings?.observe { tag, ended ->
+            listener.ended(tag, ending(head, ended))
+        }
     }
 
     /** The model splice last served the session, newest across every head, unless Continue on moved it since: then

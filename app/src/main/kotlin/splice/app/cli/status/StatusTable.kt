@@ -3,6 +3,7 @@
 package splice.app.cli.status
 
 import splice.app.cli.auth.CliSignIn
+import splice.core.head.HeldTurnReading
 import splice.core.terminal.CliPalette
 import splice.core.terminal.ColorDepthProbe
 import splice.core.topology.AuthKind
@@ -107,7 +108,7 @@ internal class StatusTable(
         // "wrapper missing" and "not signed in" to act on first. V4-394: the running daemon's word
         // outranks both, because a head it could not build serves nothing however it is set up.
         val action = bootFailure?.let { palette.paint(palette.strain, "not running: $it") }
-            ?: action(ready(selfManaged, word), authed, wrapped, command, refusal)
+            ?: (action(ready(selfManaged, word), authed, wrapped, command, refusal) + held(word.held))
         val configured = authed && wrapped && refusal == null
         val glyph = if (bootFailure == null && configured) {
             palette.paint(palette.live, LIVE_GLYPH)
@@ -142,6 +143,19 @@ internal class StatusTable(
             QuotaFullWindow.SEVEN_DAY -> "week"
         }
         return "$ready · $window at 100%, resets ${times.at(full.resetsAtEpochSeconds)}"
+    }
+
+    /** Failure-handling slice 5: the turns the head holds in their own requests, when it holds any: how many, when the
+     *  first goes on, and the memory their requests keep while they wait. */
+    private fun held(turns: List<HeldTurnReading>): String {
+        val first = turns.firstOrNull() ?: return ""
+        val count = if (turns.size == 1) "1 turn held" else "${turns.size} turns held"
+        val until = first.untilEpochSeconds?.let { " until ${times.at(it)}" } ?: " until its limit lifts"
+        val lead = if (turns.size == 1) until else ", the first$until"
+        val heap = turns.sumOf { it.heapBytes }
+        return palette.paint(palette.quiet, " · ") +
+            palette.paint(palette.strain, "$count$lead") +
+            palette.paint(palette.quiet, " (${Mebibytes.of(heap)} kept)")
     }
 
     /** A head whose provider the topology cannot resolve, or that only the daemon knows: it cannot
@@ -232,12 +246,19 @@ internal class StatusReadings(
     private val quotaResetAtEpochSeconds: Map<String, Long> = emptyMap(),
     private val runtimeNotAnswering: Map<String, String> = emptyMap(),
     private val quotaFull: Map<String, QuotaFull> = emptyMap(),
+    private val held: Map<String, List<HeldTurnReading>> = emptyMap(),
 ) {
     /** The heads the daemon names failed that [known] does not hold, in key order. */
     fun failedOutside(known: Set<String>): Map<String, String> = failedHeads.filterKeys { it !in known }.toSortedMap()
 
     fun wordFor(key: String): HeadWord =
-        HeadWord(failedHeads[key], quotaResetAtEpochSeconds[key], runtimeNotAnswering[key], quotaFull[key])
+        HeadWord(
+            failedHeads[key],
+            quotaResetAtEpochSeconds[key],
+            runtimeNotAnswering[key],
+            quotaFull[key],
+            held[key].orEmpty(),
+        )
 }
 
 internal data class HeadWord(
@@ -245,10 +266,19 @@ internal data class HeadWord(
     val quotaResetAtEpochSeconds: Long?,
     val runtimeEndpoint: String?,
     val quotaFull: QuotaFull? = null,
+    /** Failure-handling slice 5: the turns the head holds until their cause lifts, oldest first. */
+    val held: List<HeldTurnReading> = emptyList(),
 )
 
 /** The labelled columns, in order. A row's cells line up with these by index. */
 private val COLUMNS = listOf("head", "command", "port", "upstream")
+
+/** How a held turn's memory reads: in MiB, to one decimal. */
+private object Mebibytes {
+    private const val MEBIBYTE_BYTES = 1_048_576.0
+
+    fun of(bytes: Long): String = "%.1f MB".format(java.util.Locale.ROOT, bytes / MEBIBYTE_BYTES)
+}
 
 // Why 3: with no rules between columns, whitespace is the only separator, and cells are free text
 // whose own words are one space apart ("local runtime (OpenAI-compatible)", "codex / ChatGPT"). A

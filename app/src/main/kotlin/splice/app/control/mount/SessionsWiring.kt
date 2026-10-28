@@ -4,11 +4,13 @@
 package splice.app.control.mount
 
 import splice.app.control.ConsolePorts
-import splice.app.control.LimitResume
 import splice.app.control.ManagedHead
 import splice.app.control.SessionAccountLabels
 import splice.app.control.SessionHeadAdapter
+import splice.app.control.SessionHeadPooled
 import splice.app.control.SessionPerfFacts
+import splice.app.control.SessionWake
+import splice.app.control.SessionWakeObservers
 import splice.app.control.TranscriptLimitEnding
 import splice.client.resume.ModelMoves
 import splice.client.resume.MovingTrust
@@ -76,7 +78,7 @@ internal class SessionsWiring(
      *  A session splice did not open is reached through the pane its own launch recorded, while its process runs. */
     val drive = SessionDrive(
         TerminalSource { ports.sessionDriver },
-        acted = SessionActed { limitResume?.acted(it) },
+        acted = SessionActed { sessionWake?.acted(it) },
         launched = LaunchedTerminals { id ->
             sessions?.read()
                 ?.firstOrNull { it.sessionId == id && it.availability != SessionAvailability.GONE }
@@ -92,10 +94,23 @@ internal class SessionsWiring(
     )
 
     /** What a login added after a plan limit does for the sessions it stopped. Null with no session registry. */
-    val limitResume = sessions?.let {
+    val sessionWake = sessions?.let {
         val io = ProcessDispatchers().io()
         val ended = TranscriptLimitEnding(config, TranscriptReader(), TranscriptRoots(sessionHeads))
-        LimitResume(it, perfFacts.endingOf(), PeerNoteSocket(io), LifecycleScope(io), log, ended)
+        SessionWake(
+            it,
+            perfFacts.endingOf(includeExpired = true),
+            PeerNoteSocket(io),
+            LifecycleScope(io),
+            log,
+            splice.app.control.wake.SessionWakePolicy(
+                ended,
+                pooled = SessionHeadPooled { head ->
+                    (heads[head]?.authSurface?.accountPool?.view(null)?.accounts?.size ?: 0) > 1
+                },
+            ),
+            observers = SessionWakeObservers(perfFacts::observe),
+        )
     }
 
     /** Where each session's moves are kept: the transcript route serves them and Continue on completes them. The

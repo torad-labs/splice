@@ -24,6 +24,7 @@ import kotlinx.serialization.json.putJsonObject
 import splice.core.failure.FailureCause
 import splice.core.failure.Moment
 import splice.core.failure.Position
+import splice.core.failure.Recovery
 import splice.core.failure.SpliceLine
 import splice.core.failure.TurnVoice
 import splice.core.failure.WaitLine
@@ -154,8 +155,17 @@ internal class SseEmitter(
      *  visible line was the terse follow-up form (found by splice-astra in the combined run,
      *  2026-09-06). The same laziness makes the line's clauses true when WRITTEN rather than when
      *  called, which is what TurnProgressLine's own contract already claimed. */
+
+    /** True while the turn holds: its hold line is said, and the quiet wire carries pings alone. */
+    @Volatile private var held = false
+
+    override fun holding(on: Boolean) {
+        held = on
+    }
+
     override suspend fun progress(line: ProgressLine) {
         if (seal.get() != SealState.OPEN) return
+        if (held) return
         if (!start.hasOpened) return
         progress.lock.withLock {
             if (seal.get() == SealState.OPEN) progress.writeNoticeLocked(line)
@@ -166,13 +176,16 @@ internal class SseEmitter(
      *  what the round met and what the turn does next, in this turn's voice, appended to the notice block the way a
      *  status line is, under the same seal and lock. ProgressWire shows one per episode, so a failure that follows
      *  another before model content reaches the client again says nothing it has not said. The turn is opened first,
-     *  as a retry's line always opened it, and the line never commits the response: before the status commits, the
-     *  channel stages it (PendingSse) and shows it when the status does. */
+     *  as a retry's line always opened it. Slice 5: the line commits the response as it is written (PendingSse), so
+     *  the client reads it while the wait it names runs, and a hold's line is a finished notice at once. */
     override suspend fun recovering(wait: WaitLine) {
         if (seal.get() != SealState.OPEN) return
         ensureStarted()
         progress.lock.withLock {
-            if (seal.get() == SealState.OPEN) progress.writeEpisodeLocked(voice.waiting(wait.cause, wait.next))
+            if (seal.get() == SealState.OPEN) {
+                progress.writeEpisodeLocked(voice.waiting(wait.cause, wait.next))
+                if (wait.next is Recovery.Hold) progress.closeEpisodeLocked()
+            }
         }
     }
 

@@ -20,11 +20,11 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.util.ElapsedClock
 import splice.upstream.StreamStart
 import splice.upstream.Waiter
-import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
 import splice.upstream.retry.BURST_WAITS
 import splice.upstream.retry.RateLimitCooldown
 import java.util.concurrent.atomic.AtomicInteger
+import splice.upstream.testing.OpenAiTestReplies as OpenAiReplies
 
 class NativeRateLimitHeadersTest {
 
@@ -83,7 +83,7 @@ class NativeRateLimitHeadersTest {
     }
 
     @Test
-    fun `a native refusal past the floor ends at once and relays its rate-limit headers verbatim`() = runTest {
+    fun `a refusal past the floor ends at once where nothing holds the turn`() = runTest {
         val native = """{"type":"error","error":{"type":"rate_limit_error","message":"synthetic refusal"}}"""
         val retained = linkedMapOf(
             "Anthropic-Ratelimit-Requests-Limit" to listOf("50"),
@@ -118,11 +118,10 @@ class NativeRateLimitHeadersTest {
             auth = fakeAuth,
             extraHeaders = { emptyMap() },
             replies = Replies(OpenAiReplies),
-        ).also { it.relayRateLimitReplies = true }
+        )
         val failure = assertEnds<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
         assertEquals(429, failure.evidence.status)
         assertEquals(native, failure.evidence.body)
-        assertEquals(retained, failure.native?.headers)
         // 60 s is past the 15 s floor: the turn is held to the stated reset, which ends it at once until slice 5 holds it.
         assertEquals(emptyList<Long>(), waiter.waits, "a stated reset past the floor is not waited out on the turn")
         assertEquals(1, attempts, "one send")
@@ -183,7 +182,7 @@ class UpstreamClientRateLimitTest {
             auth = fakeAuth,
             extraHeaders = { emptyMap() },
             replies = Replies(OpenAiReplies),
-        ).also { it.relayRateLimitReplies = true }
+        )
         val answers = mutableListOf<Pair<Int, Long>>()
         fun observedContext() = context().also {
             it.providerAnswerObserver = ProviderAnswerObserver { status, at -> answers += status to at }
@@ -207,9 +206,6 @@ class UpstreamClientRateLimitTest {
         )
         assertTrue(answers.all { it.second > 0L })
         assertTrue(answers[1].second >= answers[0].second)
-        val kept = client.credentialCooldown(mapOf("x-api-key" to "k"))?.rateLimitReply
-        assertEquals(native, kept?.body, "completion is not a newer provider acceptance")
-        assertEquals(listOf("true"), kept?.headers?.get("x-should-retry"))
         assertTrue(client.rateLimitedForMs > 0L, "the login still reads limited after the older body finishes")
     }
 

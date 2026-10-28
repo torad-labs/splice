@@ -11,14 +11,23 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import splice.core.failure.ClientWire
+import splice.core.failure.FailureCause
+import splice.core.failure.Lift
+import splice.core.failure.LiftSource
+import splice.core.failure.LimitWindow
+import splice.core.failure.Moment
+import splice.core.failure.Outlast
+import splice.core.failure.Position
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
-import splice.core.wire.NativeReply
+import splice.core.util.WallClock
 import splice.head.wire.FrameRecording
 import java.io.IOException
 import java.io.StringWriter
 import java.io.Writer
+import java.time.Instant
 
 class PendingSseTest {
     private fun gate(holdMs: Long = 1L): PendingSse = PendingSse(
@@ -87,49 +96,6 @@ class PendingSseTest {
     }
 
     @Test
-    fun `native refusal outranks staged progress and never records a compaction answer`() = runTest {
-        val recording = FrameRecording()
-        val pending = PendingSse(
-            TurnPerf { 0L },
-            ElapsedClock { 0L },
-            null,
-            recording,
-            120_000L,
-            commitProgress = false,
-        )
-        pending.model("event: message_start\ndata: {}\n\n")
-        pending.progress(progressLine())
-        val reply = NativeReply("synthetic refusal", mapOf("retry-after" to listOf("86400")))
-        assertTrue(pending.refuse(reply))
-        pending.model("event: error\ndata: {}\n\n")
-        pending.finish()
-        assertEquals(PendingSse.Decision.Refused(reply), pending.decide())
-        assertTrue(pending.detachForRecording())
-        assertTrue(recording.frames().isEmpty(), "an HTTP refusal is not a replayable SSE answer")
-        assertEquals(0L, pending.channel.socketFrames.get())
-    }
-
-    @Test
-    fun `accepted native HTTP restores liveness progress while an unanswered request cannot commit`() = runTest {
-        val pending = PendingSse(TurnPerf { 0L }, ElapsedClock { 0L }, null, null, commitProgress = false)
-        pending.progress(progressLine())
-        pending.accepted()
-        val writing = async { pending.progress(progressLine()) }
-        assertEquals(PendingSse.Decision.Stream, withTimeout(1_000) { pending.decide() })
-        pending.attach(StringWriter())
-        writing.await()
-    }
-
-    @Test
-    fun `native refusal cannot replace an already committed stream`() = runTest {
-        val pending = gate()
-        pending.finish()
-        pending.attach(StringWriter())
-        assertFalse(pending.refuse(NativeReply("synthetic refusal", emptyMap())))
-        assertEquals(PendingSse.Decision.Stream, pending.decide())
-    }
-
-    @Test
     fun `upstream size error before commitment discards the undelivered opening`() = runTest {
         val perf = TurnPerf { 0L }
         val pending = PendingSse(perf, ElapsedClock { 0L }, null, null, 1L)
@@ -180,19 +146,41 @@ class PendingSseTest {
         assertEquals(0L, pending.channel.socketFrames.get())
     }
 
+    // Failure-handling slice 5: a recovery line (a visible wait's, a hold's) is the client's at once, so it reads the
+    // line while the wait it names runs; nothing stages it behind a later refusal any more.
     @Test
-    fun `overflow after a visible line stays inside committed SSE`() = runTest {
+    fun `a recovery line commits the stream at once, and a later overflow stays inside it`() = runTest {
         val pending = gate(120_000L)
         pending.model("event: message_start\ndata: {}\n\n")
-        pending.progress("event: content_block_start\ndata: {}\n\n")
-        val writing = async { pending.progress(progressLine()) }
+        val writing = async { pending.retryProgress(progressLine()) }
         assertEquals(PendingSse.Decision.Stream, withTimeout(1_000) { pending.decide() })
         val wire = StringWriter()
         pending.attach(wire)
         writing.await()
         pending.model(overflowFrame("prompt is too long"))
-        assertTrue(wire.toString().contains("[splice] holding this turn open"))
+        assertTrue(wire.toString().indexOf("message_start") < wire.toString().indexOf("holding this turn open"))
         assertTrue(wire.toString().contains("event: error"))
+    }
+
+    @Test
+    fun `a limit handed to the client before any line answers 429 naming its reset`() = runTest {
+        val now = Instant.parse("2026-10-26T12:00:00Z")
+        val reset = now.plusSeconds(7_200L)
+        val clock = WallClock { now.toEpochMilli() }
+        val pending = PendingSse(TurnPerf { 0L }, ElapsedClock { 0L }, null, null, 120_000L, clock)
+        val outlasted = FailureCause.Splice.HoldOutlasted(
+            Outlast.WALL,
+            FailureCause.Provider.Limited(Lift.At(reset, firm = true, LiftSource.RESET_HEADER), LimitWindow.FIVE_HOUR),
+            reset,
+        )
+        val answer = ClientWire.answer(outlasted, Position(Moment.BEFORE_COMMIT, streamBegan = false))
+        pending.ending("event: error\ndata: {}\n\n", answer, "{}")
+        val selected = pending.decide() as PendingSse.Decision.Overflow
+        assertEquals(429, selected.status)
+        assertEquals("7200", selected.headers["retry-after"])
+        assertEquals(reset.epochSecond.toString(), selected.headers["anthropic-ratelimit-unified-reset"])
+        assertEquals(reset.epochSecond.toString(), selected.headers["anthropic-ratelimit-unified-5h-reset"])
+        assertEquals(0L, pending.channel.socketFrames.get())
     }
 
     @Test

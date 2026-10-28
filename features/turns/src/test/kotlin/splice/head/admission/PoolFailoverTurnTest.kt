@@ -196,7 +196,8 @@ class PoolFailoverTurnTest {
         )
         rig.start()
         try {
-            assertEquals(HttpStatusCode.TooManyRequests, rig.turn().first, "the held login's own refusal ends it")
+            val answer = rig.turn(stream = false)
+            assertEquals(HttpStatusCode.TooManyRequests, answer.first, "the held login's reset is handed to the client")
             assertEquals(listOf("one"), rig.requests, "the node's word must never reach the vendor")
             assertTrue(own.describe().present, "the head's own sign-in is not marked rejected")
         } finally {
@@ -232,7 +233,7 @@ class PoolFailoverTurnTest {
     }
 
     @Test
-    fun `with every login held the client gets the pool's earliest reset with no upstream request`() =
+    fun `with every login held each turn asks the earliest reset login and hands a long reset to the client`() =
         runBlocking {
             val resets = mapOf("one" to 3 * HOUR_S, "two" to HOUR_S, "three" to 2 * HOUR_S)
             val rig = FailoverRig(directory, limited = resets)
@@ -241,18 +242,25 @@ class PoolFailoverTurnTest {
                 val before = System.currentTimeMillis() / 1_000
                 assertEquals(HttpStatusCode.TooManyRequests, rig.turn().first)
                 val after = System.currentTimeMillis() / 1_000
-                assertEquals(listOf("one", "two", "three"), rig.requests, "each login meets its own limit once")
+                assertEquals(
+                    listOf("one", "two", "three", "two"),
+                    rig.requests,
+                    "the turn returns to the earliest reset",
+                )
 
                 val held = rig.turn()
 
                 assertEquals(HttpStatusCode.TooManyRequests, held.first)
                 // The earliest reset is login two's: an hour from the second it answered during the first turn.
                 val lines = (before..after).map {
-                    "[splice] synthetic is at its usage limit until ${LocalTimeText().at(it + HOUR_S)}. " +
-                        "Claude Code sends this turn again."
+                    LocalTimeText().at(it + HOUR_S)
                 }
                 assertTrue(lines.any { it in held.second }, held.second)
-                assertEquals(listOf("one", "two", "three"), rig.requests, "replayed at admission, no upstream request")
+                assertEquals(
+                    listOf("one", "two", "three", "two", "two"),
+                    rig.requests,
+                    "admission asks the earliest login",
+                )
             } finally {
                 rig.close()
             }

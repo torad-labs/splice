@@ -36,6 +36,8 @@ internal object CodeModeCallbackReceipts {
         covered: List<JsonElement>,
         inherited: Map<String, CodeModeCallbackReceipt>,
     ): Map<String, CodeModeCallbackReceipt> {
+        // Every receipt requires a current result. Without one, neither history scan can admit a receipt.
+        if (context.turn.toolResults.isEmpty()) return emptyMap()
         val calls = items(covered, "function_call")
         val outputs = items(covered, "function_call_output")
         val results = context.turn.toolResults.groupBy { it.id }

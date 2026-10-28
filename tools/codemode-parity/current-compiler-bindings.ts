@@ -3,6 +3,7 @@ import type { CompilerBindingIndex, CompilerDeclaration, CompilerNamespace, Comp
 
 export type { CompilerBindingIndex, CompilerDeclaration, CompilerExpectation, CompilerImmutableFile, CompilerNamespace, CompilerProof, CompilerRange, CompilerReference, CompilerSourceIdentity } from "./current-compiler-types";
 export { loadCompilerBindings } from "./current-compiler-proof";
+export type { CompilerDriverProof } from "./current-compiler-driver";
 
 function namespace(kind: string, parents: readonly CompilerFrame[]): CompilerNamespace {
   const explicit = parents.findLast(frame => ["type_ns", "value_ns", "macro_ns"].includes(frame.key ?? ""))?.key;

@@ -5,28 +5,14 @@ import { isAbsolute, posix, relative } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { createGunzip } from "node:zlib";
 import { parseCompilerBindings } from "./current-compiler-bindings";
+import { loadCompilerDriverBindings } from "./current-compiler-driver";
+import { compilerArray as array, compilerArtifact as artifact, compilerHash as hash, compilerObject as object, compilerString as string, compilerStrings as strings, freezeCompilerFacts as freeze, verifyCompilerArtifact as verifyArtifact } from "./current-compiler-evidence";
 import type { CompilerSpan } from "./current-compiler-format";
-import type { CompilerArtifact, CompilerBindingIndex, CompilerExpectation, CompilerImmutableFile, CompilerIrArtifact, CompilerProof, CompilerRange } from "./current-compiler-types";
+import type { CompilerBindingIndex, CompilerExpectation, CompilerImmutableFile, CompilerIrArtifact, CompilerProof, CompilerRange } from "./current-compiler-types";
 
 const MAX_IR_BYTES = 128 * 1024 * 1024;
 const MAX_GZIP_BYTES = 512 * 1024 * 1024;
 const MAX_DECODED_BYTES = 2 * 1024 * 1024 * 1024;
-const hash = (bytes: string | Uint8Array) => createHash("sha256").update(bytes).digest("hex");
-function object(value: unknown): Record<string, unknown> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("compiler proof requires an object");
-  return value as Record<string, unknown>;
-}
-function string(value: unknown): string { if (typeof value !== "string" || !value) throw new Error("compiler proof requires a string"); return value; }
-function strings(value: unknown): string[] {
-  if (!Array.isArray(value) || value.some(item => typeof item !== "string")) throw new Error("compiler proof requires a string array");
-  return value as string[];
-}
-function array(value: unknown): unknown[] { if (!Array.isArray(value)) throw new Error("compiler proof requires an array"); return value; }
-function artifact(value: unknown): CompilerArtifact {
-  const row = object(value), path = string(row.path), sha256 = string(row.sha256), bytes = row.bytes;
-  if (!isAbsolute(path) || !/^[a-f0-9]{64}$/.test(sha256) || typeof bytes !== "number" || !Number.isSafeInteger(bytes) || bytes < 0) throw new Error("invalid compiler artifact identity");
-  return { path, sha256, bytes };
-}
 function irArtifact(value: unknown): CompilerIrArtifact {
   const row = object(value), identity = artifact(value);
   if (row.encoding === undefined && row.decoded === undefined) return identity;
@@ -81,12 +67,6 @@ export async function* verifiedCompilerLines(file: CompilerIrArtifact): AsyncIte
   if (pending) yield pending;
   if (bytes !== decoded.bytes || digest.digest("hex") !== decoded.sha256 || encodedBytes !== file.bytes || encodedDigest.digest("hex") !== file.sha256) throw new Error("compiler IR hash differs");
 }
-async function verifyArtifact(file: CompilerArtifact): Promise<void> {
-  if ((await stat(file.path)).size !== file.bytes) throw new Error("compiler input size differs");
-  const digest = createHash("sha256"); let bytes = 0;
-  for await (const chunk of createReadStream(file.path)) { bytes += (chunk as Buffer).length; digest.update(chunk as Buffer); }
-  if (bytes !== file.bytes || digest.digest("hex") !== file.sha256) throw new Error("compiler input hash differs");
-}
 function validateArgs(args: string[], crate: CompilerProof["crates"][number], mode: string): void {
   const index = args.indexOf("--crate-name");
   if (index < 0 || args[index + 1] !== crate.crate || !args.includes(`-Zunpretty=${mode}`)) throw new Error("compiler analysis argv differs");
@@ -130,20 +110,14 @@ function range(span: CompilerSpan | undefined, cwd: string, prefix: string, file
   return { file, start, end };
 }
 
-function freeze<T>(value: T): T {
-  if (value && typeof value === "object" && !Object.isFrozen(value)) {
-    for (const child of Object.values(value)) freeze(child);
-    Object.freeze(value);
-  }
-  return value;
-}
-
 export async function loadCompilerBindings(proofPath: string, expected: CompilerExpectation, files: ReadonlyMap<string, CompilerImmutableFile>): Promise<CompilerBindingIndex> {
   const bytes = await readFile(proofPath);
   if (bytes.length > 1024 * 1024) throw new Error("compiler proof exceeds its bound");
   const proofSha256 = hash(bytes);
   if (expected.proofSha256 !== proofSha256) throw new Error("compiler proof hash differs");
-  const value = proof(JSON.parse(bytes.toString("utf8")));
+  const parsed: unknown = JSON.parse(bytes.toString("utf8"));
+  if (object(parsed).format === "rustc-driver-v1") return loadCompilerDriverBindings(parsed, expected, files, proofSha256);
+  const value = proof(parsed);
   for (const key of ["revision", "tree", "originalCargoLockSha256", "buildCargoLockSha256"] as const) {
     if (value.source[key] !== expected[key]) throw new Error("compiler source identity differs");
   }

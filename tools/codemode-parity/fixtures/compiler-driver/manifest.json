@@ -1,0 +1,81 @@
+{
+  "schema": 1,
+  "scope": "actual rustc1.99.1 synthetic source/external-metadata reader fixture; no CodeMode behavior or current-source coverage",
+  "sourceRoot": "/home/marcos/Documents/dev/projects/splice/repo/tools/codemode-parity/fixtures/compiler-driver",
+  "compiler": {
+    "path": "/home/marcos/Documents/dev/projects/splice/artifacts/session-completion-2026-10-27/reference-0.165.0/compiler-binding-pilot/compiler-driver-overlay/sysroot/bin/rustc",
+    "bytes": 648536,
+    "sha256": "b53b780f77f952062f8ca8a3b70aef2390b1e45ad91939be94afdc9543026853"
+  },
+  "driver": {
+    "path": "/home/marcos/Documents/dev/projects/splice/artifacts/session-completion-2026-10-27/reference-0.165.0/compiler-binding-pilot/compiler-driver-overlay/source-binding-driver-v4",
+    "bytes": 397712,
+    "sha256": "f836d1186c7741a38a0df61104f97bcc54370ac891c14ef6eae28ca42eff6ca5"
+  },
+  "driverSource": {
+    "path": "/home/marcos/Documents/dev/projects/splice/artifacts/session-completion-2026-10-27/reference-0.165.0/compiler-binding-pilot/compiler-driver-overlay/driver-v4.rs",
+    "bytes": 8458,
+    "sha256": "5b665566375ca619df1391141eb05c38ba0cdfecf91d5dc826bbd643e72ec885"
+  },
+  "sources": [
+    {
+      "path": "/home/marcos/Documents/dev/projects/splice/repo/tools/codemode-parity/fixtures/compiler-driver/probe.rs",
+      "bytes": 739,
+      "sha256": "ac3f89465291c686029fe4f059d71ce3cf65d9d9a8ad619a293c19ad7cd3b978"
+    },
+    {
+      "path": "/home/marcos/Documents/dev/projects/splice/repo/tools/codemode-parity/fixtures/compiler-driver/remote.rs",
+      "bytes": 149,
+      "sha256": "a756f8ccd7e16ee629073e9d6b87974f632bcbf910cfd4dc423cb465be534b39"
+    }
+  ],
+  "external": {
+    "path": "/home/marcos/Documents/dev/projects/splice/artifacts/session-completion-2026-10-27/reference-0.165.0/compiler-binding-pilot/compiler-driver-overlay/fixture-build-v4/libexternal_fixture.rmeta",
+    "bytes": 2787,
+    "sha256": "f312c196daa4e69ede5eeca030f68ae13562734f105c6e8f02b97790b5b8b869"
+  },
+  "output": {
+    "path": "/home/marcos/Documents/dev/projects/splice/repo/tools/codemode-parity/fixtures/compiler-driver/facts.jsonl",
+    "bytes": 72420,
+    "sha256": "1ccb0e84175e23f374c1114a3ff4d079c2a4a235bf42ca2a715d55c895e73790"
+  },
+  "commands": [
+    [
+      "/home/marcos/Documents/dev/projects/splice/artifacts/session-completion-2026-10-27/reference-0.165.0/compiler-binding-pilot/compiler-driver-overlay/sysroot/bin/rustc",
+      "--sysroot",
+      "/home/marcos/Documents/dev/projects/splice/artifacts/session-completion-2026-10-27/reference-0.165.0/compiler-binding-pilot/compiler-driver-overlay/sysroot",
+      "--crate-name",
+      "external_fixture",
+      "--edition=2024",
+      "remote.rs",
+      "--crate-type",
+      "lib",
+      "--emit=metadata",
+      "-o",
+      "/home/marcos/Documents/dev/projects/splice/artifacts/session-completion-2026-10-27/reference-0.165.0/compiler-binding-pilot/compiler-driver-overlay/fixture-build-v4/libexternal_fixture.rmeta"
+    ],
+    [
+      "/home/marcos/Documents/dev/projects/splice/artifacts/session-completion-2026-10-27/reference-0.165.0/compiler-binding-pilot/compiler-driver-overlay/source-binding-driver-v4",
+      "--sysroot",
+      "/home/marcos/Documents/dev/projects/splice/artifacts/session-completion-2026-10-27/reference-0.165.0/compiler-binding-pilot/compiler-driver-overlay/sysroot",
+      "--crate-name",
+      "compiler_driver_fixture",
+      "--edition=2024",
+      "probe.rs",
+      "--crate-type",
+      "lib",
+      "--emit=metadata",
+      "--extern",
+      "external_fixture=/home/marcos/Documents/dev/projects/splice/artifacts/session-completion-2026-10-27/reference-0.165.0/compiler-binding-pilot/compiler-driver-overlay/fixture-build-v4/libexternal_fixture.rmeta",
+      "--out-dir",
+      "/home/marcos/Documents/dev/projects/splice/artifacts/session-completion-2026-10-27/reference-0.165.0/compiler-binding-pilot/compiler-driver-overlay/fixture-build-v4",
+      "-Zno-steal-thir=yes"
+    ]
+  ],
+  "completion": {
+    "tag": "complete",
+    "declarations": 33,
+    "references": 69,
+    "behavioralCoverage": false
+  }
+}

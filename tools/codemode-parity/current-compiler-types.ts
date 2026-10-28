@@ -5,7 +5,7 @@ export type CompilerDeclaration = { owner: string; parentOwner?: string; kind: s
 export type CompilerRange = { file: string; start: number; end: number };
 export type CompilerReference = {
   owner: string; span?: CompilerSpan; range?: CompilerRange; namespace: CompilerNamespace;
-  kind: "path" | "import" | "typed-value" | "call"; target?: string; resolution: string; fnSpan?: CompilerSpan;
+  kind: "path" | "import" | "typed-value" | "call" | "callee"; target?: string; resolution: string; fnSpan?: CompilerSpan;
 };
 export type CompilerRawIndex = { definitions: CompilerDef[]; declarations: CompilerDeclaration[]; references: CompilerReference[] };
 export type CompilerArtifact = { path: string; sha256: string; bytes: number };

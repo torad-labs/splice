@@ -1,6 +1,6 @@
 /** The pinned rustc pretty-debug format is parsed structurally; Rust source names are never searched. */
-// crateHash is rustc's shortened Debug suffix. Only a proof-scoped key is an identity across files.
-export type CompilerDef = { key: string; raw: string; crate: string; crateHash: string; crateNumber: number; index: number; path: string };
+// Legacy IR has rustc's shortened Debug suffix; the driver records its full queried hash. Keys stay proof-scoped.
+export type CompilerDef = { key: string; raw: string; crate: string; crateHash: string; crateNumber: number; index: number; path: string; stableCrateId?: string };
 export type CompilerSpan = { file: string; line: number; column: number; endLine: number; endColumn: number; context: number };
 export type CompilerFrame = {
   indent: number; type: string; key?: string; close: string; owner: CompilerDef;

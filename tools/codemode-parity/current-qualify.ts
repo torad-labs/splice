@@ -12,6 +12,7 @@ import { runInstalledCase } from "./installed-case";
 import { appendCurrentApiFlows } from "./current-api-flows";
 import { runCurrentClient } from "./current-client";
 import { appendCurrentCli } from "./current-cli-proof";
+import { runCurrentSourceCli } from "./current-core-cli";
 
 /** Explicit qualification runs real production drivers; readiness only validates their sealed raw evidence. */
 export async function qualifyCurrent(options: Map<string, string>): Promise<void> {
@@ -51,6 +52,7 @@ export async function qualifyCurrent(options: Map<string, string>): Promise<void
   await appendCurrentDiscovery(java, candidateJar.path, candidateNativeHost.path, evidence, runId, core);
   await appendCurrentApiFlows(java, candidateJar.path, candidateNativeHost.path, evidence, runId, core);
   executions.push(core);
+  executions.push(await runCurrentSourceCli({ java, jar: candidateJar, nativeHost: candidateNativeHost, lock, inventory, build: await artifact(required("--source-cli-build")), evidence, runId }));
   await appendCurrentCli(java, candidateJar, reference, evidence, runId, lock, executions.find(item => item.id === "current.gateway-history")!);
   const receipt: CurrentReceipt = { schema: 2, claim: "current-complete-CodeMode", runId, startedAt: floor.startedAt, finishedAt: new Date().toISOString(),
     sourceRevision: lock.sourceRevision, inventorySha256: inventory.denominatorSha256, ...inputs.hashes, reference, candidateJar, candidateNativeHost,

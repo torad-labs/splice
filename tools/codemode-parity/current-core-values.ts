@@ -5,7 +5,7 @@ import type { FunctionWitness, InstrumentedSource } from "./current-witness";
 import { sha256 } from "./qualification";
 
 export type CoreValueWitness = {
-  id: string; sha256: string; relation: "rendered-source-value-v1" | "typed-source-shape-v1";
+  id: string; sha256: string; relation: "rendered-source-value-v1" | "typed-source-shape-v1" | "parsed-source-value-v1";
   path: Array<string | number>; valueSha256: string; fragmentSha256?: string;
 };
 export async function originalCoreSources(manifest: { sources: InstrumentedSource[] }, inventory: CurrentInventory): Promise<Map<string, Buffer>> {
@@ -124,6 +124,45 @@ export function coreValueWitnesses(input: any, result: any, functions: FunctionW
       }
       const kind=descriptionUnits.find(unit=>unit.kind==="enum_item"&&unit.label==="CodeModeToolKind");
       if(kind)for(const variant of descriptionUnits.filter(unit=>unit.kind==="enum_variant"&&kind.start<=unit.start&&unit.end<=kind.end))if(row.kind===variant.label.toLowerCase()){add(kind,"typed-source-shape-v1",["prepared",index,"kind"]);add(variant,"typed-source-shape-v1",["prepared",index,"kind"]);}
+    }
+  }
+  const argumentFile = input.operation === "wait_arguments" ? "codex-rs/core/src/tools/code_mode/wait_handler.rs" : descriptionFile;
+  const argumentUnits = units.filter(unit => unit.file === argumentFile);
+  const parseName = input.operation === "wait_arguments" ? "parse_arguments" : "parse_exec_source";
+  const enteredParser = ["exec_arguments", "wait_arguments"].includes(input.operation) && argumentUnits.some(unit => unit.kind === "function_item" && unit.label === parseName && entered.has(unit.id));
+  if (enteredParser) {
+    const wait = input.operation === "wait_arguments", raw = wait ? input.arguments : input.source;
+    const firstLine = typeof raw === "string" ? raw.split("\n", 1)[0]!.trimStart() : "";
+    const pragmaPrefix = rawConstant("CODE_MODE_PRAGMA_PREFIX"), hasPragma = !wait && pragmaPrefix && firstLine.startsWith(pragmaPrefix);
+    let supplied: Record<string, unknown> = {};
+    try { supplied = JSON.parse(wait ? raw : hasPragma ? firstLine.slice(pragmaPrefix!.length).trim() : "{}"); } catch { /* Invalid input has no parsed member witness. */ }
+    if (!result.error && supplied && typeof supplied === "object" && !Array.isArray(supplied)) {
+      for (const ownerName of wait ? ["ExecWaitArgs"] : hasPragma ? ["CodeModeExecPragma", "ParsedExecSource"] : ["ParsedExecSource"]) {
+        const owner = argumentUnits.find(unit => unit.kind === "struct_item" && unit.label === ownerName); if (!owner) continue;
+        let observed = false;
+        for (const member of argumentUnits.filter(unit => unit.kind === "field_declaration" && owner.start <= unit.start && unit.end <= owner.end)) {
+          const name = member.label, output = name === "code" ? "source" : name === "max_tokens" ? "max_output_tokens" : name;
+          const value = name === "code" ? hasPragma ? raw.slice(raw.indexOf("\n") + 1) : raw : supplied[name];
+          if (value === null || value === undefined || name !== "code" && typeof value === "object") continue;
+          const expected = ["yield_time_ms", "max_output_tokens", "max_tokens"].includes(name) ? String(value) : value;
+          if (Object.hasOwn(result, output) && result[output] === expected) { add(member, "parsed-source-value-v1", [output]); observed = true; }
+        }
+        if (observed) add(owner, "parsed-source-value-v1", []);
+      }
+      if (hasPragma && result.source === raw.slice(raw.indexOf("\n") + 1)) {
+        const prefix = constant("CODE_MODE_PRAGMA_PREFIX"); if (prefix) add(prefix, "parsed-source-value-v1", ["source"]);
+      }
+    }
+    const maximum = constant("MAX_JS_SAFE_INTEGER");
+    const shift = maximum && text(maximum).match(/=\s*\(1_u64\s*<<\s*(\d+)\)\s*-\s*1\s*;/)?.[1];
+    if (hasPragma && maximum && shift) {
+      const bound = (1n << BigInt(shift)) - 1n;
+      for (const name of ["yield_time_ms", "max_output_tokens"]) {
+        const literal = firstLine.match(new RegExp(`"${name}"\\s*:\\s*(\\d+)\\s*(?=[,}])`))?.[1]; if (!literal) continue;
+        const value = BigInt(literal), path = value === bound && result[name] === bound.toString() ? [name]
+          : value === bound + 1n && typeof result.error === "string" && result.error.includes("safe integer") ? ["error"] : undefined;
+        if (path) add(maximum, "parsed-source-value-v1", path);
+      }
     }
   }
   return values.sort((a,b)=>a.id.localeCompare(b.id)||JSON.stringify(a.path).localeCompare(JSON.stringify(b.path)));

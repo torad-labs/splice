@@ -14,6 +14,7 @@ import { coreCorpusFindings } from "./current-core-corpus";
 import { apiWitnessFindings, type ApiCaseWitness } from "./current-core-api-witness";
 import { cliControlFindings } from "./current-cli-proof";
 import { currentHistoryFindings } from "./current-history";
+import { sourceCliWitnessFindings, type CliSourceCaseWitness } from "./current-cli-source-profile";
 
 const directory = import.meta.dir, repo = resolve(directory, "../..");
 export type CurrentReference = {
@@ -113,6 +114,7 @@ export async function inspectCurrentReceipt(receipt: CurrentReceipt | undefined,
   findings.push(...await coreCorpusFindings(receipt.executions?.find(execution => execution.id === "current.tools-and-description"), receipt.runId));
   findings.push(...await executedCaseWitnessFindings(caseWitnesses.filter(witness => witness.producer === undefined || witness.producer === "core-source") as CoreCaseWitness[], inventory, receipt.runId));
   findings.push(...await apiWitnessFindings(caseWitnesses.filter(witness => witness.producer === "core-api-llvm") as ApiCaseWitness[], inventory, receipt.runId, receipt.candidateJar));
+  findings.push(...await sourceCliWitnessFindings(caseWitnesses.filter(witness => witness.producer === "core-cli-llvm") as CliSourceCaseWitness[], inventory, receipt.runId, receipt.candidateJar, lock));
   findings.push(...await clientWitnessFindings(caseWitnesses.filter(witness => witness.producer === "rust-client-llvm") as ClientCaseWitness[], inventory, receipt.runId, receipt.candidateJar, { execution: receipt.executions?.find(entry => entry.id === "current.rust-client")?.known_soft_spots ?? [], receipt: receipt.known_soft_spots ?? [] }));
   findings.push(...await cliControlFindings(receipt.executions?.find(entry => entry.id === "current.gateway-history"), receipt.runId, lock, receipt.candidateJar, receipt.reference, inventory));
   findings.push(...await evidenceFindings(receipt.nativeProvenance, "native provenance"), ...await evidenceFindings(receipt.regressionFloor, "current regression floor"));

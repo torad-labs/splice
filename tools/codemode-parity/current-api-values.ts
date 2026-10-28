@@ -67,6 +67,14 @@ export async function apiMemberValues(jobs: ApiJob[], expected: any[], actual: a
   };
   const rename = (name: string, attributes: string, all = "") => attributes.match(/\brename\s*=\s*"([^"]+)"/)?.[1] ??
     (all === "lowercase" ? name.toLowerCase() : all === "snake_case" ? name.replace(/[A-Z]/g, (char, index) => (index ? "_" : "") + char.toLowerCase()) : name);
+  const memberType = async (member: SourceUnit, tuple = false): Promise<{ text: string; type?: SourceUnit }> => {
+    const text = (await source(member.file)).subarray(member.start, member.end).toString(); assert.equal(sha256(text), member.sha256);
+    const typeText = tuple ? text.slice(1, -1) : text.slice(text.indexOf(":") + 1);
+    const names = [...typeText.matchAll(/(?:[A-Za-z_]\w*::)*[A-Z][A-Za-z_0-9]*/g)].map(match => match[0]);
+    const resolved = await Promise.all(names.map(name => resolveType(name, member.file)));
+    const types = [...new Map(resolved.filter((unit): unit is SourceUnit => !!unit).map(unit => [unit.id, unit])).values()];
+    return { text: typeText, ...(types.length === 1 ? { type: types[0] } : {}) };
+  };
   for (const [index, job] of jobs.entries()) {
     assert.equal(job.observations?.length ?? 0, 0, "manual API member claims cannot replace a derived typed value path");
     const emit = (unit: SourceUnit, path: Path) => {
@@ -82,25 +90,43 @@ export async function apiMemberValues(jobs: ApiJob[], expected: any[], actual: a
       if (type.kind === "enum_item") {
         const attrs = await attributes(type), tag = attrs.match(/\btag\s*=\s*"([^"]+)"/)?.[1], all = attrs.match(/\brename_all\s*=\s*"([^"]+)"/)?.[1];
         const discriminator = typeof value === "string" ? value : tag ? value[tag] : undefined;
-        if (typeof discriminator !== "string") return;
         const matches: SourceUnit[] = [];
-        for (const variant of children(type, ["enum_variant"])) if (rename(variant.label, await attributes(variant, type), all) === discriminator) matches.push(variant);
+        for (const variant of children(type, ["enum_variant"])) {
+          if (typeof discriminator === "string" && rename(variant.label, await attributes(variant, type), all) === discriminator) matches.push(variant);
+          // ImageReference is an untagged record enum. Require a unique variant's
+          // actual required serialized keys; a sibling's type name grants nothing.
+          else if (/\buntagged\b/.test(attrs) && value && typeof value === "object" && !Array.isArray(value)) {
+            const fields = children(variant, ["field_declaration"]), required: string[] = [];
+            for (const field of fields) {
+              const fieldAttributes = await attributes(field, variant), fieldType = await memberType(field);
+              if (!/\b(?:default|skip|skip_serializing|flatten)\b/.test(fieldAttributes) && !/\bOption\s*</.test(fieldType.text)) required.push(rename(field.label, fieldAttributes));
+            }
+            if (required.length && required.every(key => Object.hasOwn(value, key))) matches.push(variant);
+          }
+        }
         if (matches.length !== 1) return;
         owner = matches[0]!; emit(owner, path);
       }
       if (typeof value !== "object" || Array.isArray(value)) return;
+      const tuples = children(owner, ["ordered_field_declaration_list"]);
+      if (tuples.length === 1) {
+        const payload = await memberType(tuples[0]!, true);
+        // A single typed newtype payload shares its tagged variant's object.
+        // Multi-element tuple encodings need their own observation mechanism.
+        if (payload.type && !payload.text.includes(",")) { emit(tuples[0]!, path); await walk(payload.type, value, path, depth + 1); }
+      }
       for (const member of children(owner, ["field_declaration"])) {
-        const key = rename(member.label, await attributes(member, owner)); if (!Object.hasOwn(value, key)) continue;
-        const memberPath = [...path, key]; emit(member, memberPath);
-        const text = (await source(member.file)).subarray(member.start, member.end).toString(); assert.equal(sha256(text), member.sha256);
-        const typeText = text.slice(text.indexOf(":") + 1), names = [...typeText.matchAll(/(?:[A-Za-z_]\w*::)*[A-Z][A-Za-z_0-9]*/g)].map(match => match[0]);
-        const resolved = await Promise.all(names.map(name => resolveType(name, member.file)));
-        const nested = [...new Map(resolved.filter((unit): unit is SourceUnit => !!unit).map(unit => [unit.id, unit])).values()];
-        if (nested.length !== 1) continue;
+        const memberAttributes = await attributes(member, owner);
+        if (/\b(?:skip|skip_serializing)\b/.test(memberAttributes)) continue;
+        const nested = await memberType(member), flattened = /\bflatten\b/.test(memberAttributes);
+        const key = rename(member.label, memberAttributes); if (!flattened && !Object.hasOwn(value, key)) continue;
+        const memberPath = flattened ? path : [...path, key]; emit(member, memberPath);
+        if (!nested.type) continue;
+        if (flattened) { await walk(nested.type, value, path, depth + 1); continue; }
         const child = value[key];
-        if (/\bVec\s*</.test(typeText) && Array.isArray(child)) for (const [childIndex, item] of child.entries()) await walk(nested[0]!, item, [...memberPath, childIndex], depth + 1);
-        else if (/\b(?:BTreeMap|HashMap)\s*</.test(typeText) && child && typeof child === "object") for (const [childKey, item] of Object.entries(child)) await walk(nested[0]!, item, [...memberPath, childKey], depth + 1);
-        else await walk(nested[0]!, child, memberPath, depth + 1);
+        if (/\bVec\s*</.test(nested.text) && Array.isArray(child)) for (const [childIndex, item] of child.entries()) await walk(nested.type, item, [...memberPath, childIndex], depth + 1);
+        else if (/\b(?:BTreeMap|HashMap)\s*</.test(nested.text) && child && typeof child === "object") for (const [childKey, item] of Object.entries(child)) await walk(nested.type, item, [...memberPath, childKey], depth + 1);
+        else await walk(nested.type, child, memberPath, depth + 1);
       }
     };
     if (job.reference_input.operation === "protocol_shape" && job.reference_path[0] === "value") {
@@ -117,7 +143,7 @@ export async function apiMemberValues(jobs: ApiJob[], expected: any[], actual: a
     }
     if (job.reference_input.operation === "model_metadata" && job.reference_path[0] === "models" && typeof job.reference_path[1] === "number") {
       const model = await resolveType("codex_protocol::openai_models::ModelInfo"); assert.ok(model);
-      for (const [wire, field] of [["supports_original", "supports_image_detail_original"], ["use_responses_lite", "use_responses_lite"]]) if (job.reference_path.length === 3 && job.reference_path[2] === wire) {
+      for (const [wire, field] of [["id", "slug"], ["supports_original", "supports_image_detail_original"], ["use_responses_lite", "use_responses_lite"], ["model_messages", "model_messages"]]) if (job.reference_path.length === 3 && job.reference_path[2] === wire) {
         assert.ok(main.includes(`"${wire}":m.${field}`), "metadata projection no longer reads the actual source model field");
         const member: SourceUnit | undefined = children(model, ["field_declaration"]).find(unit => unit.label === field); assert.ok(member); emit(member, job.reference_path);
       }
@@ -125,6 +151,17 @@ export async function apiMemberValues(jobs: ApiJob[], expected: any[], actual: a
       // model roster or prompt fields sharing ModelMessages/ModelInfo.
       const messagePath: Path = ["models", job.reference_path[1]!, "model_messages", "tools", "code_mode"], messages = await resolveType("codex_protocol::openai_models::CodeModeToolMessages");
       assert.ok(main.includes('"model_messages":m.model_messages')); if (messages && at(expected[index].result, messagePath) !== undefined) await walk(messages, at(expected[index].result, messagePath), messagePath);
+      const completePath: Path = ["models", job.reference_path[1]!, "model_messages"];
+      if (JSON.stringify(job.reference_path) === JSON.stringify(completePath)) {
+        const complete = await resolveType("codex_protocol::openai_models::ModelMessages"); assert.ok(complete);
+        await walk(complete, at(expected[index].result, completePath), completePath);
+      }
+    }
+    if (job.reference_input.operation === "tool_spec_shape" && job.reference_path[0] === "prepared_by_spec" && typeof job.reference_path[1] === "number") {
+      assert.ok(main.includes('"prepared_by_spec":prepared_by_spec') && main.includes("prepare_code_mode_tool_definitions(None"), "prepared definitions must come from the actual typed source collector");
+      const definition = await resolveType("codex_code_mode::ToolDefinition"); assert.ok(definition);
+      const definitionsPath: Path = ["prepared_by_spec", job.reference_path[1]], definitions = at(expected[index].result, definitionsPath);
+      if (Array.isArray(definitions)) for (const [item, value] of definitions.entries()) await walk(definition, value, [...definitionsPath, item]);
     }
   }
   return [...values.values()].sort((a, b) => a.id.localeCompare(b.id));

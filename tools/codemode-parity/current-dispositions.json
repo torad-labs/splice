@@ -18433,10 +18433,25 @@
       "id": "codex-rs/code-mode-protocol/src/description.rs#const_item@525",
       "sha256": "e9e0b691fac47b62ab9e2e11706f81f02edea3e5100b75a4a56e07c62fce1a8b",
       "scopeSha256": "f5f215a2113c3efc5316f15140422eeb19e4ec18a76a929d652908a60252b51d",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/exec_arguments/432a015860702e0b187e",
+          "inputSha256": "432a015860702e0b187ed6ce39fc34672119d8f957793b0f5364378eb5bf82f3",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.CodeModeArgumentsProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/code-mode-protocol/src/description.rs#const_item@525"
+        },
+        {
+          "caseId": "core/exec_arguments/4925ce6d0afaaf6b8776",
+          "inputSha256": "4925ce6d0afaaf6b877613f8d1e0d3e8b4619a9ae3dfc692f2713fbe4a3a73ec",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.CodeModeArgumentsProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/code-mode-protocol/src/description.rs#const_item@525"
+        }
+      ],
+      "reason": "Exact parser member/constant is observed in the mandatory current source argument case through the actual invoked parser and a matching returned value. Fresh paired production evaluation is required; source-only plan discovery is not conformance or qualification."
     },
     {
       "id": "codex-rs/code-mode-protocol/src/description.rs#const_item@577",
@@ -18478,10 +18493,19 @@
       "id": "codex-rs/code-mode-protocol/src/description.rs#const_item@7573",
       "sha256": "68c69d763e17cf1568f2404ba6b9c34afe76fb06de47d266bb587a382e2461a9",
       "scopeSha256": "9b145fb8d2adc79e3c05f67875dfe88d422acec4d210e7acfddf82d1ddf98e77",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/exec_arguments/0374bdfce874d3407491",
+          "inputSha256": "0374bdfce874d340749169e141a38bb26b1a654b3db10dda08b5604259308b66",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.CodeModeArgumentsProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/code-mode-protocol/src/description.rs#const_item@7573"
+        }
+      ],
+      "reason": "Exact parser member/constant is observed in the mandatory current source argument case through the actual invoked parser and a matching returned value. Fresh paired production evaluation is required; source-only plan discovery is not conformance or qualification."
     },
     {
       "id": "codex-rs/code-mode-protocol/src/description.rs#const_item@880",
@@ -18838,46 +18862,91 @@
       "id": "codex-rs/code-mode-protocol/src/description.rs#field_declaration@8512",
       "sha256": "f690470a3d9f774e7e218298a863580ce809d62e128f9c6f8b5247e865e36e59",
       "scopeSha256": "39859fb4627377a7c48d287890f8da7def30ee08c8b15bc65d33683b6c5981c2",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/exec_arguments/8c9765c3287676fa53ab",
+          "inputSha256": "8c9765c3287676fa53abe236ef40be5645c635f7a275dfb662f139e8d0c7aba1",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.CodeModeArgumentsProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/code-mode-protocol/src/description.rs#field_declaration@8512"
+        }
+      ],
+      "reason": "Exact parser member/constant is observed in the mandatory current source argument case through the actual invoked parser and a matching returned value. Fresh paired production evaluation is required; source-only plan discovery is not conformance or qualification."
     },
     {
       "id": "codex-rs/code-mode-protocol/src/description.rs#field_declaration@8566",
       "sha256": "48b59230055c23ec73469895e473fc57b97b1b5c55d35731e7e6fa1049047703",
       "scopeSha256": "851d3925c2aca53aec0cdbe162051e7a6fdd462868dd18f5d6620c4aafa6a128",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/exec_arguments/37d22d97ef9d30fdb205",
+          "inputSha256": "37d22d97ef9d30fdb2050982affe3c6d63986b77b7d41a8ca738908c320f43ee",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.CodeModeArgumentsProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/code-mode-protocol/src/description.rs#field_declaration@8566"
+        }
+      ],
+      "reason": "Exact parser member/constant is observed in the mandatory current source argument case through the actual invoked parser and a matching returned value. Fresh paired production evaluation is required; source-only plan discovery is not conformance or qualification."
     },
     {
       "id": "codex-rs/code-mode-protocol/src/description.rs#field_declaration@8669",
       "sha256": "ae1e07357658f323d165163c4f204790fca4596e72445ea698be4b4cd2478cad",
       "scopeSha256": "cc422f7143305d20db05b6c10b409536769d534ef86d90d17612e5dfd1fe6445",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/exec_arguments/0374bdfce874d3407491",
+          "inputSha256": "0374bdfce874d340749169e141a38bb26b1a654b3db10dda08b5604259308b66",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.CodeModeArgumentsProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/code-mode-protocol/src/description.rs#field_declaration@8669"
+        }
+      ],
+      "reason": "Exact parser member/constant is observed in the mandatory current source argument case through the actual invoked parser and a matching returned value. Fresh paired production evaluation is required; source-only plan discovery is not conformance or qualification."
     },
     {
       "id": "codex-rs/code-mode-protocol/src/description.rs#field_declaration@8691",
       "sha256": "491327b5e1805de90537f8057eadb05c251a86570a76d398b298ab6d7ae85d79",
       "scopeSha256": "39859fb4627377a7c48d287890f8da7def30ee08c8b15bc65d33683b6c5981c2",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/exec_arguments/8c9765c3287676fa53ab",
+          "inputSha256": "8c9765c3287676fa53abe236ef40be5645c635f7a275dfb662f139e8d0c7aba1",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.CodeModeArgumentsProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/code-mode-protocol/src/description.rs#field_declaration@8691"
+        }
+      ],
+      "reason": "Exact parser member/constant is observed in the mandatory current source argument case through the actual invoked parser and a matching returned value. Fresh paired production evaluation is required; source-only plan discovery is not conformance or qualification."
     },
     {
       "id": "codex-rs/code-mode-protocol/src/description.rs#field_declaration@8727",
       "sha256": "cdf5c3a7b686b0bbed155206839312eacfc37b21419ec5c39e3a029b8b1f464d",
       "scopeSha256": "851d3925c2aca53aec0cdbe162051e7a6fdd462868dd18f5d6620c4aafa6a128",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/exec_arguments/37d22d97ef9d30fdb205",
+          "inputSha256": "37d22d97ef9d30fdb2050982affe3c6d63986b77b7d41a8ca738908c320f43ee",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.CodeModeArgumentsProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/code-mode-protocol/src/description.rs#field_declaration@8727"
+        }
+      ],
+      "reason": "Exact parser member/constant is observed in the mandatory current source argument case through the actual invoked parser and a matching returned value. Fresh paired production evaluation is required; source-only plan discovery is not conformance or qualification."
     },
     {
       "id": "codex-rs/code-mode-protocol/src/description.rs#function_item@11704",
@@ -19144,19 +19213,37 @@
       "id": "codex-rs/code-mode-protocol/src/description.rs#struct_item@8458",
       "sha256": "89cb78a71641419e5289fcaa64fdd7c1fb1e3c62a823ac58095256cc40d095fb",
       "scopeSha256": "e540e53378a3d7003bf475a333da1b2a51f1b4724a1dae329296c084b21dd2ce",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/exec_arguments/8c9765c3287676fa53ab",
+          "inputSha256": "8c9765c3287676fa53abe236ef40be5645c635f7a275dfb662f139e8d0c7aba1",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.CodeModeArgumentsProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/code-mode-protocol/src/description.rs#struct_item@8458"
+        }
+      ],
+      "reason": "Exact parser member/constant is observed in the mandatory current source argument case through the actual invoked parser and a matching returned value. Fresh paired production evaluation is required; source-only plan discovery is not conformance or qualification."
     },
     {
       "id": "codex-rs/code-mode-protocol/src/description.rs#struct_item@8635",
       "sha256": "f565e630ce224c28ba51936c1e623671eff1d778c8c181da24fe812e80d758eb",
       "scopeSha256": "65d162211f2794e7d89d74e9000b20351cea79bb9c6c1323f2f8165d34e49f8f",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/exec_arguments/0374bdfce874d3407491",
+          "inputSha256": "0374bdfce874d340749169e141a38bb26b1a654b3db10dda08b5604259308b66",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.CodeModeArgumentsProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/code-mode-protocol/src/description.rs#struct_item@8635"
+        }
+      ],
+      "reason": "Exact parser member/constant is observed in the mandatory current source argument case through the actual invoked parser and a matching returned value. Fresh paired production evaluation is required; source-only plan discovery is not conformance or qualification."
     },
     {
       "id": "codex-rs/code-mode-protocol/src/description.rs#typescript-property_signature@6125",
@@ -61306,19 +61393,37 @@
       "id": "codex-rs/core/src/tools/code_mode/wait_handler.rs#field_declaration@1034",
       "sha256": "4c24cd239831af1917d56ad70c994e70eff41a64cbb02f33138391524bc78370",
       "scopeSha256": "083cffeee0998b93f1dfc165c69b254a47069047e03823f2811ce4035ab9d0c6",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/wait_arguments/c92d4a6d2859ae573f0e",
+          "inputSha256": "c92d4a6d2859ae573f0eb02e6546b9ab2dce8d758656665072072f7e186f9e11",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.CodeModeArgumentsProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/wait_handler.rs#field_declaration@1034"
+        }
+      ],
+      "reason": "Exact parser member/constant is observed in the mandatory current source argument case through the actual invoked parser and a matching returned value. Fresh paired production evaluation is required; source-only plan discovery is not conformance or qualification."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/wait_handler.rs#field_declaration@1087",
       "sha256": "59d7881fe56f287a7e8d9b70d1a7d7bd98459f654dc27f2ffb60a8e0a53abd38",
       "scopeSha256": "e40d1246f2ca5dea2c88191ad4ad9c64ef90abc895c87a000fd16a96dbc89796",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/wait_arguments/d00b325f94970d189ff9",
+          "inputSha256": "d00b325f94970d189ff941b489c57589dc812ddde544bfbf603e474f781ef8a5",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.CodeModeArgumentsProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/wait_handler.rs#field_declaration@1087"
+        }
+      ],
+      "reason": "Exact parser member/constant is observed in the mandatory current source argument case through the actual invoked parser and a matching returned value. Fresh paired production evaluation is required; source-only plan discovery is not conformance or qualification."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/wait_handler.rs#field_declaration@839",
@@ -61333,19 +61438,37 @@
       "id": "codex-rs/core/src/tools/code_mode/wait_handler.rs#field_declaration@914",
       "sha256": "8dac9a9fac81b120729b6939b6002c0533b2e83475bc60975257edce619e40e8",
       "scopeSha256": "30be96ac78fc15afd1d4561ac450e0a90b29852f65103426a9ca7d05a2c34731",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/wait_arguments/0e7a4fbc848fe67c1a38",
+          "inputSha256": "0e7a4fbc848fe67c1a382c195bd380939507d2aacc73509373a4425882fea82c",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.CodeModeArgumentsProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/wait_handler.rs#field_declaration@914"
+        }
+      ],
+      "reason": "Exact parser member/constant is observed in the mandatory current source argument case through the actual invoked parser and a matching returned value. Fresh paired production evaluation is required; source-only plan discovery is not conformance or qualification."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/wait_handler.rs#field_declaration@988",
       "sha256": "12b8ad70b1dfb4bacf9663a47b223cae38f6a41c7d47410449c82bff6c6ba7ae",
       "scopeSha256": "7f09d338c46adc209f45d9927d295ccc6cc1f1fda81b6678f5f3147fbdbb8b3e",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/wait_arguments/7d11ca997a7130f7290b",
+          "inputSha256": "7d11ca997a7130f7290ba26d2fb24986ab4dab89f7dbc41b718780cc9f349031",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.CodeModeArgumentsProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/wait_handler.rs#field_declaration@988"
+        }
+      ],
+      "reason": "Exact parser member/constant is observed in the mandatory current source argument case through the actual invoked parser and a matching returned value. Fresh paired production evaluation is required; source-only plan discovery is not conformance or qualification."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/wait_handler.rs#function_item@1107",
@@ -61495,10 +61618,19 @@
       "id": "codex-rs/core/src/tools/code_mode/wait_handler.rs#struct_item@888",
       "sha256": "1a107f55b2ed011329bf5c02aa639649dc5a910db7f9e534797c041f32c1d128",
       "scopeSha256": "f2c7b48251c0b774e434410ebbcfb4e28ef170939b59cdc9aa5ba0c8d49aa4ab",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/wait_arguments/0e7a4fbc848fe67c1a38",
+          "inputSha256": "0e7a4fbc848fe67c1a382c195bd380939507d2aacc73509373a4425882fea82c",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.CodeModeArgumentsProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/core/src/tools/code_mode/wait_handler.rs#struct_item@888"
+        }
+      ],
+      "reason": "Exact parser member/constant is observed in the mandatory current source argument case through the actual invoked parser and a matching returned value. Fresh paired production evaluation is required; source-only plan discovery is not conformance or qualification."
     },
     {
       "id": "codex-rs/core/src/tools/code_mode/wait_spec.rs#function_item@124",
@@ -95104,10 +95236,19 @@
       "id": "codex-rs/protocol/src/models.rs#enum_item@32368",
       "sha256": "a1f397c2d2d96da963d0e99ebac58937a08e32f66bbe414218d8886e82ba9849",
       "scopeSha256": "b3d60cbdd5b797d865f9b733c0d407abe00a736d949b11f5524a93a00d9e4850",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/api_core/a588dc4d2030b498593e",
+          "inputSha256": "a588dc4d2030b498593e0f803b70e0cfa4ea0cd934453c3dba21cfba8b51c17e",
+          "productionEntrypoint": "splice.upstream.codemode.diagnostics.CodeModeCoreProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/protocol/src/models.rs#enum_item@32368"
+        }
+      ],
+      "reason": "ImageReference serialized untagged Inline value at the real output adapter’s compared image path. The mandatory actual-crate typed observation must rederive this exact source member from equal production output; this plan grants no current execution PASS."
     },
     {
       "id": "codex-rs/protocol/src/models.rs#enum_item@32586",
@@ -95500,10 +95641,19 @@
       "id": "codex-rs/protocol/src/models.rs#enum_variant@32398",
       "sha256": "e096a0d97c8279f0bf7452fc3c81c42ff3d748a99a318f78609097a3ae2519b6",
       "scopeSha256": "1ca35b9bdd57406f9854eacd35de9f8394b24308d068cdf2d721731f65e700db",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/api_core/a588dc4d2030b498593e",
+          "inputSha256": "a588dc4d2030b498593e0f803b70e0cfa4ea0cd934453c3dba21cfba8b51c17e",
+          "productionEntrypoint": "splice.upstream.codemode.diagnostics.CodeModeCoreProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/protocol/src/models.rs#enum_variant@32398"
+        }
+      ],
+      "reason": "Inline is uniquely selected by present required image_url in the compared adapted output. The mandatory actual-crate typed observation must rederive this exact source member from equal production output; this plan grants no current execution PASS."
     },
     {
       "id": "codex-rs/protocol/src/models.rs#enum_variant@32432",
@@ -96427,10 +96577,19 @@
       "id": "codex-rs/protocol/src/models.rs#field_declaration@32407",
       "sha256": "5a964ba5b5afcc5db09f08a6c326ec6dc62a15f14f4796cba5a12e6bebc56ef6",
       "scopeSha256": "c8ccd7c579d5467830ae6fe29117f654cee57cc1d39ad5ae864742c33fdbf3a7",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/api_core/a588dc4d2030b498593e",
+          "inputSha256": "a588dc4d2030b498593e0f803b70e0cfa4ea0cd934453c3dba21cfba8b51c17e",
+          "productionEntrypoint": "splice.upstream.codemode.diagnostics.CodeModeCoreProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/protocol/src/models.rs#field_declaration@32407"
+        }
+      ],
+      "reason": "Inline.image_url is present and equal in the source-adapted and candidate emitted content item. The mandatory actual-crate typed observation must rederive this exact source member from equal production output; this plan grants no current execution PASS."
     },
     {
       "id": "codex-rs/protocol/src/models.rs#field_declaration@32439",
@@ -97525,10 +97684,19 @@
       "id": "codex-rs/protocol/src/models.rs#field_declaration@81858",
       "sha256": "ebc77ed5e8f5f8aafa4c63be8a6cc5ac9966f407710dd68b9041170cb7735094",
       "scopeSha256": "0951b5050fc4e4ca552a0c6cd476a2a51bbbf578da52a1eb3b91aa131f049eec",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/api_core/a588dc4d2030b498593e",
+          "inputSha256": "a588dc4d2030b498593e0f803b70e0cfa4ea0cd934453c3dba21cfba8b51c17e",
+          "productionEntrypoint": "splice.upstream.codemode.diagnostics.CodeModeCoreProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/protocol/src/models.rs#field_declaration@81858"
+        }
+      ],
+      "reason": "InputImage.image is flattened into the compared actual protocol output by the immutable serde(flatten) source attribute. The mandatory actual-crate typed observation must rederive this exact source member from equal production output; this plan grants no current execution PASS."
     },
     {
       "id": "codex-rs/protocol/src/models.rs#field_declaration@81980",
@@ -100135,10 +100303,19 @@
       "id": "codex-rs/protocol/src/openai_models.rs#field_declaration@12877",
       "sha256": "7d2c010b2677adefe18088ce2ce56ce48a944ff17969ebd709c1985071521586",
       "scopeSha256": "2f7d333369d93f5da45f548554c4ba6acbfe2c766526da6504dd8854eda7abc4",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/api_metadata/cd9b7de1bb85c8a1d1a1",
+          "inputSha256": "cd9b7de1bb85c8a1d1a101b005a82198623bc552c29e70fcda34663f030c7a07",
+          "productionEntrypoint": "splice.models.discovery.ModelMetadataProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/protocol/src/openai_models.rs#field_declaration@12877"
+        }
+      ],
+      "reason": "The source driver projects ModelInfo.slug to models[N].id and the actual metadata route compares the same slug after parse/cache. The mandatory actual-crate typed observation must rederive this exact source member from equal production output; this plan grants no current execution PASS."
     },
     {
       "id": "codex-rs/protocol/src/openai_models.rs#field_declaration@12899",
@@ -100375,8 +100552,8 @@
       ],
       "witnesses": [
         {
-          "caseId": "core/api_metadata/bd84037e98ae44a54ab6",
-          "inputSha256": "bd84037e98ae44a54ab6a955279ccb3a54124dea954994cababb90bf3efde915",
+          "caseId": "core/api_metadata/cd9b7de1bb85c8a1d1a1",
+          "inputSha256": "cd9b7de1bb85c8a1d1a101b005a82198623bc552c29e70fcda34663f030c7a07",
           "productionEntrypoint": "splice.models.discovery.ModelMetadataProbe.evaluate",
           "referenceEntrypoint": "codex-rs/protocol/src/openai_models.rs#field_declaration@14656"
         }
@@ -100807,8 +100984,8 @@
       ],
       "witnesses": [
         {
-          "caseId": "core/api_metadata/bd84037e98ae44a54ab6",
-          "inputSha256": "bd84037e98ae44a54ab6a955279ccb3a54124dea954994cababb90bf3efde915",
+          "caseId": "core/api_metadata/cd9b7de1bb85c8a1d1a1",
+          "inputSha256": "cd9b7de1bb85c8a1d1a101b005a82198623bc552c29e70fcda34663f030c7a07",
           "productionEntrypoint": "splice.models.discovery.ModelMetadataProbe.evaluate",
           "referenceEntrypoint": "codex-rs/protocol/src/openai_models.rs#field_declaration@25293"
         }
@@ -100987,8 +101164,8 @@
       ],
       "witnesses": [
         {
-          "caseId": "core/api_metadata/bd84037e98ae44a54ab6",
-          "inputSha256": "bd84037e98ae44a54ab6a955279ccb3a54124dea954994cababb90bf3efde915",
+          "caseId": "core/api_metadata/cd9b7de1bb85c8a1d1a1",
+          "inputSha256": "cd9b7de1bb85c8a1d1a101b005a82198623bc552c29e70fcda34663f030c7a07",
           "productionEntrypoint": "splice.models.discovery.ModelMetadataProbe.evaluate",
           "referenceEntrypoint": "codex-rs/protocol/src/openai_models.rs#field_declaration@29483"
         }
@@ -101005,8 +101182,8 @@
       ],
       "witnesses": [
         {
-          "caseId": "core/api_metadata/bd84037e98ae44a54ab6",
-          "inputSha256": "bd84037e98ae44a54ab6a955279ccb3a54124dea954994cababb90bf3efde915",
+          "caseId": "core/api_metadata/cd9b7de1bb85c8a1d1a1",
+          "inputSha256": "cd9b7de1bb85c8a1d1a101b005a82198623bc552c29e70fcda34663f030c7a07",
           "productionEntrypoint": "splice.models.discovery.ModelMetadataProbe.evaluate",
           "referenceEntrypoint": "codex-rs/protocol/src/openai_models.rs#field_declaration@29661"
         }
@@ -101023,8 +101200,8 @@
       ],
       "witnesses": [
         {
-          "caseId": "core/api_metadata/bd84037e98ae44a54ab6",
-          "inputSha256": "bd84037e98ae44a54ab6a955279ccb3a54124dea954994cababb90bf3efde915",
+          "caseId": "core/api_metadata/cd9b7de1bb85c8a1d1a1",
+          "inputSha256": "cd9b7de1bb85c8a1d1a101b005a82198623bc552c29e70fcda34663f030c7a07",
           "productionEntrypoint": "splice.models.discovery.ModelMetadataProbe.evaluate",
           "referenceEntrypoint": "codex-rs/protocol/src/openai_models.rs#field_declaration@29905"
         }
@@ -101041,8 +101218,8 @@
       ],
       "witnesses": [
         {
-          "caseId": "core/api_metadata/bd84037e98ae44a54ab6",
-          "inputSha256": "bd84037e98ae44a54ab6a955279ccb3a54124dea954994cababb90bf3efde915",
+          "caseId": "core/api_metadata/cd9b7de1bb85c8a1d1a1",
+          "inputSha256": "cd9b7de1bb85c8a1d1a101b005a82198623bc552c29e70fcda34663f030c7a07",
           "productionEntrypoint": "splice.models.discovery.ModelMetadataProbe.evaluate",
           "referenceEntrypoint": "codex-rs/protocol/src/openai_models.rs#field_declaration@30293"
         }
@@ -101689,8 +101866,8 @@
       ],
       "witnesses": [
         {
-          "caseId": "core/api_metadata/bd84037e98ae44a54ab6",
-          "inputSha256": "bd84037e98ae44a54ab6a955279ccb3a54124dea954994cababb90bf3efde915",
+          "caseId": "core/api_metadata/cd9b7de1bb85c8a1d1a1",
+          "inputSha256": "cd9b7de1bb85c8a1d1a101b005a82198623bc552c29e70fcda34663f030c7a07",
           "productionEntrypoint": "splice.models.discovery.ModelMetadataProbe.evaluate",
           "referenceEntrypoint": "codex-rs/protocol/src/openai_models.rs#function_item@11060"
         }
@@ -102247,8 +102424,8 @@
       ],
       "witnesses": [
         {
-          "caseId": "core/api_metadata/bd84037e98ae44a54ab6",
-          "inputSha256": "bd84037e98ae44a54ab6a955279ccb3a54124dea954994cababb90bf3efde915",
+          "caseId": "core/api_metadata/cd9b7de1bb85c8a1d1a1",
+          "inputSha256": "cd9b7de1bb85c8a1d1a101b005a82198623bc552c29e70fcda34663f030c7a07",
           "productionEntrypoint": "splice.models.discovery.ModelMetadataProbe.evaluate",
           "referenceEntrypoint": "codex-rs/protocol/src/openai_models.rs#struct_item@29098"
         }

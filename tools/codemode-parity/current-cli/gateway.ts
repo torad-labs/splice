@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { candidateCommand } from "../candidate-command";
-import { compareControlPackets, gatewayInputBytes } from "./compare";
+import { compareControlPackets, sourceGatewayInputBytes } from "./compare";
 import type { CliRun, ObjectValue } from "./types";
 
 const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
@@ -16,7 +16,7 @@ export async function compareGatewayScenario(options: {
   if (!/^[a-f0-9]{64}$/.test(options.jar.sha256) || digest(await readFile(options.jar.path)) !== options.jar.sha256) throw Error("Candidate JAR identity differs");
   if (digest(await readFile(options.source.reference.host.path)) !== options.source.reference.host.sha256) throw Error("Reference host identity differs");
   await mkdir(directory, { recursive: false, mode: 0o700 });
-  await writeFile(resolve(directory, "scenario.json"), gatewayInputBytes(options.source.scenario), { mode: 0o600 });
+  await writeFile(resolve(directory, "scenario.json"), sourceGatewayInputBytes(options.source), { mode: 0o600 });
   const argv = candidateCommand(options.java, resolve(options.jar.path), "--native-gateway-fixture", "runtime.current-scenario", options.source.nonce, directory, options.source.reference.host.path);
   const environment: Record<string, string | undefined> = { ...process.env };
   for (const name of ["JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS", "CLASSPATH"]) delete environment[name];
@@ -56,6 +56,6 @@ export async function compareGatewayScenario(options: {
   if (!identities.some(value => typeof value.nativeHostPid === "number" && value.nativeHostPid > 0)) throw Error("Packaged gateway did not attest its verified native-host launch");
   if (digest(await readFile(options.jar.path)) !== options.jar.sha256) throw Error("Candidate JAR changed during execution");
   compareControlPackets(options.source, candidate);
-  await writeFile(resolve(directory, "comparison.json"), JSON.stringify({ schema: 1, sourceRun: options.source.directory, sourceInputSha256: options.source.inputSha256, candidateJar: options.jar, candidateProcess: child.pid, nonce: options.source.nonce, comparison: "exact control-call/result sequence; only generated output-item IDs and first-header measurements bound", equal: true }, null, 2) + "\n", { mode: 0o600 });
+  await writeFile(resolve(directory, "comparison.json"), JSON.stringify({ schema: 1, sourceRun: options.source.directory, sourceInputSha256: options.source.inputSha256, candidateJar: options.jar, candidateProcess: child.pid, nonce: options.source.nonce, comparison: "exact control-call/result sequence; only generated output-item IDs and first-header measurements bound", ...(options.source.scenario.mcp ? { boundary: "typed-mcp-delegate", frontendRawMcpEnvelope: "not-certified-generic-client-text-is-a-distinct-unresolved-path" } : {}), equal: true }, null, 2) + "\n", { mode: 0o600 });
   return { candidate, directory };
 }

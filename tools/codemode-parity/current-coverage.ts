@@ -11,7 +11,7 @@ import type { CliControlCase } from "./current-cli-proof";
 import { declarationContextReason } from "./current-declaration-context";
 
 export const currentVerifierIds = [
-  "current.native-protocol", "current.tools-and-description", "current.output-and-media", "current.gateway-history", "current.interactive-delivery", "current.packaged-identities", "current.rust-client",
+  "current.native-protocol", "current.tools-and-description", "current.output-and-media", "current.gateway-history", "current.interactive-delivery", "current.packaged-identities", "current.rust-client", "current.core-gateway",
 ] as const;
 export type CurrentVerifierId = typeof currentVerifierIds[number];
 export type Disposition = { id: string; sha256: string; scopeSha256: string; disposition: "native-reuse" | "verify" | "context" | "unsupported";
@@ -88,12 +88,13 @@ export function dispositionFindings(inventory: CurrentInventory, dispositions: D
     if (!Array.isArray(item.witnesses)) findings.push(`missing explicit named source witnesses: ${item.id}`);
     if (item.disposition === "verify") {
       const observableMember = ["const_item", "struct_item", "enum_item", "enum_variant", "field_declaration", "ordered_field_declaration_list"].includes(unit.kind) || unit.kind.startsWith("typescript-");
-      if (item.verifiers.length !== 1 || !["current.tools-and-description", "current.rust-client"].includes(item.verifiers[0]!) || !item.witnesses?.length ||
+      if (item.verifiers.length !== 1 || !["current.tools-and-description", "current.rust-client", "current.core-gateway"].includes(item.verifiers[0]!) || !item.witnesses?.length ||
         unit.kind !== "function_item" && (!observableMember || item.verifiers[0] !== "current.tools-and-description")) findings.push(`uncovered ported source unit; no supported per-unit invocation/value witness: ${item.id}`);
       for (const witness of item.witnesses ?? []) {
         const source = /^core\/[a-z_]+\/[a-f0-9]{20}$/.test(witness.caseId) && /^(?:splice\.upstream\.codemode\.diagnostics\.CodeModeCoreProbe|splice\.provider\.codex\.diagnostics\.CodeMode(?:Arguments|Catalog)Probe|splice\.models\.discovery\.ModelMetadataProbe)\.evaluate$/.test(witness.productionEntrypoint) && item.verifiers[0] === "current.tools-and-description";
         const client = /^rust-client(?:-fault)?\/(?:[a-z0-9-]+\/)?[a-z0-9-]+$/.test(witness.caseId) && /^(?:splice\.codemode\.nativehost\.NativeConnection\.operation|splice\.codemode\.NativeCodeModeRuntime\.(?:startNativeSession|controlNativeSession|openNativeSession))$/.test(witness.productionEntrypoint) && item.verifiers[0] === "current.rust-client";
-        if (witness.referenceEntrypoint !== item.id || !/^[a-f0-9]{64}$/.test(witness.inputSha256) || (!source && !client)) findings.push(`misassigned or unknown named source/case witness: ${item.id}`);
+        const gateway = /^cli-source\/[a-z0-9-]+$/.test(witness.caseId) && witness.productionEntrypoint === "splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe.run" && item.verifiers[0] === "current.core-gateway";
+        if (witness.referenceEntrypoint !== item.id || !/^[a-f0-9]{64}$/.test(witness.inputSha256) || (!source && !client && !gateway)) findings.push(`misassigned or unknown named source/case witness: ${item.id}`);
         if (!planned(witness)) findings.push(`named source witness has no matching mandatory executable case/input/entrypoint: ${item.id}: ${witness.caseId}`);
       }
     } else if (item.witnesses?.length) findings.push(`non-executable source context/native ownership cannot claim a case coverage PASS: ${item.id}`);
@@ -129,8 +130,8 @@ export function executionFindings(inventory: CurrentInventory, dispositions: Dis
     if (!Array.isArray(entry.artifacts) || !entry.artifacts.length || entry.artifacts.some(item => typeof item.path !== "string" || !/^[a-f0-9]{64}$/.test(item.sha256) || !Number.isSafeInteger(item.bytes) || item.bytes < 0)) findings.push(`${entry.id}: raw executed evidence is absent`);
     if (["pass", "status", "skipped", "sourceInspected"].some(key => key in entry)) findings.push(`${entry.id}: manually asserted or source-only evidence is forbidden`);
     for (const case_ of entry.cases ?? []) {
-      const values = case_.producer === "rust-client-llvm" ? [] : case_.referenceValues ?? [];
-      if ((case_.producer === "rust-client-llvm" ? entry.id !== "current.rust-client" : entry.id !== "current.tools-and-description") || !Array.isArray(case_.referenceFunctions) ||
+      const values = case_.producer === "rust-client-llvm" || case_.producer === "core-cli-llvm" ? [] : case_.referenceValues ?? [];
+      if ((case_.producer === "core-cli-llvm" ? entry.id !== "current.core-gateway" : case_.producer === "rust-client-llvm" ? entry.id !== "current.rust-client" : entry.id !== "current.tools-and-description") || !Array.isArray(case_.referenceFunctions) ||
         !case_.referenceFunctions.length && !values.length) findings.push(`${entry.id}: unknown/unlinked named case producer: ${case_.caseId}`);
       for (const proof of caseWitnessArtifacts(case_)) if (!proof || !entry.artifacts.some(artifact => artifact.path === proof.path && artifact.sha256 === proof.sha256 && artifact.bytes === proof.bytes)) findings.push(`${entry.id}: named case evidence is not bound to the actual verifier artifacts: ${case_.caseId}`);
     }
@@ -141,7 +142,7 @@ export function executionFindings(inventory: CurrentInventory, dispositions: Dis
   for (const item of dispositions.units.filter(item => item.disposition === "verify")) for (const required of item.witnesses ?? []) {
     const found = cases.find(witness => witness.caseId === required.caseId && witness.inputSha256 === required.inputSha256 && witness.productionEntrypoint === required.productionEntrypoint);
     const function_ = inventory.units.find(unit => unit.id === item.id)?.kind === "function_item";
-    const observed = found && (function_ ? found.referenceFunctions : found.producer === "rust-client-llvm" ? [] : found.referenceValues ?? []).some(unit => unit.id === item.id && unit.sha256 === item.sha256);
+    const observed = found && (function_ ? found.referenceFunctions : found.producer === "rust-client-llvm" || found.producer === "core-cli-llvm" ? [] : found.referenceValues ?? []).some(unit => unit.id === item.id && unit.sha256 === item.sha256);
     if (!observed) findings.push(`${item.id}: named case did not ${function_ ? "invoke" : "observe"} this exact source unit and production entrypoint: ${required.caseId}`);
   }
   return [...new Set(findings)];

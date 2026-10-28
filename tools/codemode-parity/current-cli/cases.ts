@@ -31,6 +31,7 @@ export const mcpScenarios: readonly CliScenario[] = [
   { schema: 1, id: "mcp", mcp: true, actions: [
     { kind: "exec", source: 'text({tag:"mcp-echo",value:await tools.mcp__parity__echo({value:"alpha"})});' },
     { kind: "exec", source: 'try{text({tag:"mcp-failure",resolved:await tools.mcp__parity__ordinary_failure({value:"beta"})});}catch(e){text({tag:"mcp-failure",rejected:String(e)});}' },
+    { kind: "exec", source: 'text({tag:"mcp-structured",value:await tools.mcp__parity__structured({value:"gamma"})});' },
   ] },
   { schema: 1, id: "mcp-search", mcp: true, rankedSearch: true, actions: [
     { kind: "exec", source: 'text({tag:"ranked-search",value:await tools.tool_search({query:"quasar-zephyr",limit:1})});' },

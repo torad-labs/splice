@@ -4,6 +4,7 @@ import { sha256, type Artifact } from "./qualification";
 import type { CurrentInventory, SourceUnit } from "./current-inventory";
 import type { ClientCaseWitness } from "./current-client-profile";
 import type { ApiCaseWitness } from "./current-core-api-witness";
+import { sourceCliCaseArtifacts, type CliSourceCaseWitness } from "./current-cli-source-profile";
 import { coreValueWitnesses, originalCoreSources, type CoreValueWitness } from "./current-core-values";
 
 export type FunctionWitness = { id: string; sha256: string };
@@ -14,9 +15,10 @@ export type CoreCaseWitness = {
   referenceValues?: CoreValueWitness[];
   input: Artifact; reference: Artifact; candidate: Artifact; sourceManifest: Artifact;
 };
-export type ExecutedCaseWitness = CoreCaseWitness | ClientCaseWitness | ApiCaseWitness;
+export type ExecutedCaseWitness = CoreCaseWitness | ClientCaseWitness | ApiCaseWitness | CliSourceCaseWitness;
 export function caseWitnessArtifacts(witness: ExecutedCaseWitness): Artifact[] {
-  return witness.producer === "rust-client-llvm" ? [witness.input, witness.reference, witness.candidate, witness.build, witness.profile, ...Object.values(witness.peerTrace)]
+  return witness.producer === "core-cli-llvm" ? sourceCliCaseArtifacts(witness)
+    : witness.producer === "rust-client-llvm" ? [witness.input, witness.reference, witness.candidate, witness.build, witness.profile, ...Object.values(witness.peerTrace)]
     : witness.producer === "core-api-llvm" ? [witness.input, witness.reference, witness.candidate, witness.build, witness.profile]
     : [witness.input, witness.reference, witness.candidate, witness.sourceManifest];
 }

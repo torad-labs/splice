@@ -30,7 +30,7 @@ async function checked(proof: Artifact): Promise<Buffer> {
 }
 async function catalogBytes(lock: CurrentReference): Promise<Buffer> {
   const source = await resolveCurrentSource(lock, lock.sourceRepositoryDefault ?? undefined);
-  const command = await capturedCommand(["git", "-C", source, "show", `${lock.sourceRevision}:codex-rs/core/models.json`], import.meta.dir);
+  const command = await capturedCommand(["git", "-C", source, "show", `${lock.sourceRevision}:codex-rs/models-manager/models.json`], import.meta.dir);
   assert.equal(command.exitCode, 0, command.stderr); return Buffer.from(command.stdout);
 }
 async function verifiedCli(lock: CurrentReference, cli: Identity): Promise<void> {

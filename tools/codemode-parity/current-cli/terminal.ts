@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { closeSync, mkdirSync, openSync, readFileSync, readlinkSync, readdirSync, writeFileSync, writeSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import xterm from "@xterm/headless";
 import { nativeCompletion } from "./native-events";
 import type { CliProcess, NativeCompletion } from "./types";
@@ -13,6 +13,7 @@ interface TerminalOptions {
   expectedHostSha256: string;
   expectedCliSha256: string;
   timeoutMs: number;
+  sourceProfilePattern?: string;
 }
 
 function descendants(pid: number): number[] {
@@ -39,6 +40,8 @@ export async function runTerminal(options: TerminalOptions): Promise<{
 }> {
   if (process.platform !== "linux") throw Error("Current executable/child attestation requires Linux /proc");
   if (typeof Bun.Terminal !== "function") throw Error("A Bun.Terminal-compatible runtime is required");
+  const profilePattern = options.sourceProfilePattern;
+  if (profilePattern && (resolve(profilePattern) !== profilePattern || !profilePattern.startsWith(dirname(resolve(options.directory)) + "/") || basename(profilePattern) !== "%p.profraw")) throw Error("Source profile output escaped its disposable scenario");
   mkdirSync(options.directory, { recursive: true, mode: 0o700 });
   const raw = openSync(join(options.directory, "terminal.raw"), "w", 0o600);
   const events = openSync(join(options.directory, "terminal-events.jsonl"), "w", 0o600);
@@ -56,6 +59,8 @@ export async function runTerminal(options: TerminalOptions): Promise<{
   const environment: Record<string, string | undefined> = { ...process.env, CODEX_HOME: options.home, TERM: "xterm-256color" };
   // The owned provider has no auth and talks only to loopback; do not give the reference inherited API credentials.
   for (const name of ["OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_INTERNAL_API_KEY", "OPENAI_BASE_URL", "CHATGPT_BASE_URL"]) delete environment[name];
+  delete environment.LLVM_PROFILE_FILE;
+  if (profilePattern) environment.LLVM_PROFILE_FILE = profilePattern;
   let child: Bun.Subprocess | undefined;
   let cliIdentity: Omit<CliProcess, "exit"> | undefined;
   let completion: NativeCompletion | null = null;

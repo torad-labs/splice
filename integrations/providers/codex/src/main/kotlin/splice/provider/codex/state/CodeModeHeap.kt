@@ -18,14 +18,11 @@ import splice.provider.codex.CodeModePending
 import splice.provider.codex.CodeModePersistedState
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRecordSnapshot
+import splice.provider.codex.state.heap.CodeModeStoredText
 import splice.provider.codex.stream.batch.CodeModeBatchWeight
 import splice.upstream.memory.JvmHeap
-import java.lang.management.ManagementFactory
 import java.lang.ref.WeakReference
 import java.util.IdentityHashMap
-import javax.management.JMException
-import javax.management.ObjectName
-import javax.management.openmbean.CompositeData
 
 // why: scalar fields, mutable collections, source-state metadata and bounded transition bookkeeping.
 private const val RECORD_METADATA_BYTES = 4096L
@@ -42,38 +39,6 @@ private const val SNAPSHOT_ENTRY_BYTES = 64L
 // why: a snapshot copies each issued step and native segment it shares into a list slot of its own.
 private const val SNAPSHOT_SLOT_BYTES = 8L
 
-// why: a String and the JSON primitive that holds it, around the array that stores its characters.
-private const val TEXT_OWNER_BYTES = 64L
-
-// why: a byte array's header in front of the characters it stores.
-private const val ARRAY_HEADER_BYTES = 16L
-
-// why: every heap object is padded to a multiple of eight bytes.
-private const val OBJECT_ALIGNMENT = 8L
-
-// why: the highest code point a compact string stores in one byte.
-private const val LATIN1_MAX = 0xFF
-
-/** How the running JVM stores text. Compact strings keep Latin-1 text at one byte a character, and G1 stores an array
- *  of half a region or more in whole regions of its own. The daemon runs G1 with no fixed -Xmx (splice-launch's
- *  SPLICE_JVM_OPTS), so the region size follows the machine's RAM (32 MiB on a 120 GiB host, where a string of 16 MiB
- *  or more takes whole regions). The options are read
- *  from the HotSpot diagnostic bean by its object name, the string form a class literal would otherwise name. A JVM
- *  without that bean is weighed at two bytes a character with no regions. */
-private object CodeModeTextLayout {
-    private val server = ManagementFactory.getPlatformMBeanServer()
-    private val diagnostic = ObjectName("com.sun.management:type=HotSpotDiagnostic")
-    val compactStrings: Boolean = option("CompactStrings") == "true"
-    val regionBytes: Long = if (option("UseG1GC") == "true") option("G1HeapRegionSize")?.toLongOrNull() ?: 0L else 0L
-
-    private fun option(name: String): String? = try {
-        val option = server.invoke(diagnostic, "getVMOption", arrayOf(name), arrayOf("java.lang.String"))
-        (option as? CompositeData)?.get("value") as? String
-    } catch (_: JMException) {
-        null
-    }
-}
-
 /** How a payload is weighed. A save or decode stage reserves its peak on UTF-16 text, the estimate its factor was
  *  sized on, and releases it. A retained graph, and each growth of one, is charged what it occupies. */
 internal enum class CodeModeWeight {
@@ -83,10 +48,7 @@ internal enum class CodeModeWeight {
         override fun json(value: JsonElement): Long = HeapJson.bytes(value)
     },
     STORED {
-        override fun text(value: String): Long {
-            val width = if (CodeModeTextLayout.compactStrings && value.all { it.code <= LATIN1_MAX }) 1L else 2L
-            return HeapJson.add(TEXT_OWNER_BYTES, array(HeapJson.add(ARRAY_HEADER_BYTES, value.length * width)))
-        }
+        override fun text(value: String): Long = CodeModeStoredText.bytes(value)
 
         /** HeapJson's objects, entries and references, with each text it holds at its stored width. */
         override fun json(value: JsonElement): Long {
@@ -100,14 +62,6 @@ internal enum class CodeModeWeight {
             is JsonArray -> value.sumOf(::widths)
             is JsonObject -> value.entries.sumOf { (key, child) -> text(key) - HeapJson.text(key) + widths(child) }
         }
-
-        private fun array(bytes: Long): Long {
-            val aligned = padded(bytes, OBJECT_ALIGNMENT)
-            val region = CodeModeTextLayout.regionBytes
-            return if (region > 0 && aligned >= region / 2) padded(aligned, region) else aligned
-        }
-
-        private fun padded(bytes: Long, unit: Long): Long = HeapJson.add(bytes, unit - 1) / unit * unit
     },
     ;
 

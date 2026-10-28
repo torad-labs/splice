@@ -1,7 +1,7 @@
 package splice.app.diagnostics
 
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
+import io.ktor.client.engine.java.Java
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -39,7 +39,7 @@ internal class CodeModeHttpInterruptProbe(private val directory: Path) : CodeMod
         server.ports.turns.codeMode = controls
         val body = buildJsonObject { put("conversation_key", conversationKey) }
         val path = "/api/heads/$INTERRUPT_PROBE_HEAD/sessions/${sessionId.encodeURLPathPart()}/interrupt"
-        val client = HttpClient(CIO) { expectSuccess = false }
+        val client = HttpClient(Java) { expectSuccess = false }
         try {
             server.start()
             val url = "http://127.0.0.1:${server.listeningPort}$path"

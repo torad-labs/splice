@@ -17,10 +17,19 @@ internal class FailedInterruptNativeRuntime(
     override suspend fun startNativeSession(
         sessionKey: String,
         source: String,
+        tools: Set<String>,
+        descriptions: Map<String, String>,
+        options: NativeCodeModeOptions,
+    ): NativeCodeModeCell = decorate(native.startNativeSession(sessionKey, source, tools, descriptions, options))
+
+    override suspend fun startNativeSession(
+        sessionKey: String,
+        source: String,
         definitions: List<CodeModeManual.NestedTool>,
         options: NativeCodeModeOptions,
-    ): NativeCodeModeCell {
-        val cell = native.startNativeSession(sessionKey, source, definitions, options)
+    ): NativeCodeModeCell = decorate(native.startNativeSession(sessionKey, source, definitions, options))
+
+    private fun decorate(cell: NativeCodeModeCell): NativeCodeModeCell {
         if (!first) return cell
         first = false
         return object : NativeCodeModeCell by cell {

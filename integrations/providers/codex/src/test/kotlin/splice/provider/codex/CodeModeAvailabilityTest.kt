@@ -43,7 +43,13 @@ class CodeModeAvailabilityTest : CodeModeBridgeTestSupport() {
                 .prepare(toolBody(), "session", original)
             assertTrue(required.meta.tools.codeMode)
             val tools = required.requestBody.getValue("input").jsonArray.first().jsonObject.getValue("tools").jsonArray
-            assertEquals(listOf("exec", "wait"), tools.map { JsonScalars.str(it.jsonObject, "name") })
+            val namespace = tools.single().jsonObject
+            assertEquals("namespace", JsonScalars.str(namespace, "type"))
+            assertEquals("functions", JsonScalars.str(namespace, "name"))
+            assertEquals(
+                listOf("exec", "wait"),
+                namespace.getValue("tools").jsonArray.map { JsonScalars.str(it.jsonObject, "name") },
+            )
         } finally {
             manager.onProviderStop()
         }

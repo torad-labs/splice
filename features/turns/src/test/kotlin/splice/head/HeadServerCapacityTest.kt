@@ -260,7 +260,7 @@ class HeadServerCapacityTest {
             awaitListening(pooledPort)
             // Start clears cooldowns, so install the provider hold after the head is listening.
             cooldown.markUnavailable(THREE_DAYS_MS)
-            assertTrue(cooldown.providerUnavailableForMs > 0L, "the login is held before admission")
+            assertTrue(cooldown.providerUnavailableForMs() > 0L, "the login is held before admission")
             val upstreamBefore = mock.upstreamBodies.size
 
             val response = client.post("http://127.0.0.1:$pooledPort/v1/messages") {

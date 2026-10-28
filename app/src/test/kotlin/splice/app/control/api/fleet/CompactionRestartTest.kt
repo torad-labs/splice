@@ -39,6 +39,7 @@ import splice.app.control.controlServerFor
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.config.ConfigService
+import splice.core.config.Knob
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.head.GateHealth
@@ -64,7 +65,7 @@ private const val POLL_MS = 25L
 private const val SETTLE_MS = 1_500L
 private const val HEAD_KEY = "claudex"
 private const val TWO_MINUTES_TEN_MS = 130_000L
-private const val PAST_THE_CAP_MS = 900_000L
+private val PAST_THE_CAP_MS = Knob.UPSTREAM_TIMEOUT_MS.count() + 1L
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class CompactionRestartTest {
@@ -173,7 +174,7 @@ class CompactionRestartTest {
     }
 
     @Test
-    fun `a compaction past the daemon's 900 s turn cap is not waited for`() = runBlocking {
+    fun `a compaction past the daemon's default turn cap is not waited for`() = runBlocking {
         awaitPort()
         inFlight = slot(compact = true, ageMs = PAST_THE_CAP_MS)
         post("/api/daemon/restart")

@@ -122,10 +122,16 @@ class HeadOverrideWriteTest {
     }
 
     @Test
-    fun `the answer names a knob read once at start as restart required`() {
+    fun `daemon timing refuses a head override and the global write names its required restart`() {
         serve { patch, _ ->
-            // port is the legacy codex port, refused on a head it does not reach (d23baf884), so the knob is one every head reads
-            val reply = json(patch(ROUTE, """{"maxInflight":"3","upstreamTimeoutMs":"120000"}""").bodyAsText())
+            val refused = patch(ROUTE, """{"upstreamTimeoutMs":"120000"}""")
+            assertEquals(400, refused.status.value)
+            assertTrue(json(refused.bodyAsText()).getValue("rejected").jsonObject.containsKey("upstreamTimeoutMs"))
+            assertEquals(TOML, Files.readString(file))
+
+            val accepted = patch("/api/config", """{"upstreamTimeoutMs":"120000"}""")
+            assertEquals(200, accepted.status.value)
+            val reply = json(accepted.bodyAsText())
             val restart = reply.getValue("restart_required").jsonArray.map { it.jsonPrimitive.content }
             assertTrue("upstreamTimeoutMs" in restart, restart.toString())
         }

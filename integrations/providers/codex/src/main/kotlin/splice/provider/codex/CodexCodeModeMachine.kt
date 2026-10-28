@@ -4,13 +4,7 @@ package splice.provider.codex
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
-import splice.core.failure.FailureCause
-import splice.core.failure.FailureEvidence
-import splice.core.failure.Moment
-import splice.core.failure.Position
-import splice.core.failure.ProtocolFault
 import splice.core.turn.TurnOutcome
-import splice.core.turn.noRequestUsage
 import splice.provider.codex.callbacks.CodeModeCallIssuanceGuard
 import splice.provider.codex.callbacks.CodeModeCallIssuerEmitter
 import splice.provider.codex.callbacks.CodeModeCallIssuerPoison
@@ -26,6 +20,7 @@ import splice.provider.codex.stream.CodeModeNativeSteps
 import splice.provider.codex.stream.CodeModeNativeWallTime
 import splice.provider.codex.stream.CodeModeOversizedCalls
 import splice.provider.codex.stream.CodeModeRecoveryHistory
+import splice.provider.codex.stream.CodeModeRejection
 import splice.provider.codex.stream.CodeModeRuntimeFailures
 import splice.provider.codex.stream.CodeModeSourceInterruptedException
 import splice.provider.codex.stream.CodeModeStreamingCell
@@ -113,12 +108,7 @@ internal class CodexCodeModeMachine(
         val previous = record.issued.firstOrNull { it.requestDigest == record.progress.lastDigest }
         val served = previous?.calls ?: calls
         if (served.isEmpty()) {
-            return TurnOutcome.Failure(
-                cause = FailureCause.Splice.Protocol(ProtocolFault.CODE_MODE_STATE),
-                at = Position(Moment.MID_CONTENT, streamBegan = true),
-                evidence = FailureEvidence("code-mode has no client calls to emit"),
-                salvagedUsage = noRequestUsage,
-            )
+            return CodeModeRejection.state("code-mode has no client calls to emit")
         }
         if (previous == null) {
             val streaming = cell as? CodeModeStreamingCell

@@ -163,7 +163,7 @@ internal class CodeModeRecordChanges(
     ) = access.withKey(record.key) {
         // The prior issuance is already durable. New results and the worker's next step commit together.
         if (records.none { it === record }) return@withKey
-        val fresh = supplied.filterKeys { !record.accepted.holds(it) }
+        val fresh = record.accepted.changes(supplied)
         CodeModeHeap.grow(record, record.accepted.heapGrowth(fresh, media, clientOutputDigests)) { kept ->
             record.accepted.kept(kept, fresh)
         }

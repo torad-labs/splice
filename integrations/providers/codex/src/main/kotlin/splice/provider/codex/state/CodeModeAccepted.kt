@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonElement
 import splice.provider.codex.CodeModeAcceptedResult
 import splice.provider.codex.CodeModeRecordSnapshot
 import splice.provider.codex.CodeModeResultSnapshot
+import splice.provider.codex.state.heap.CodeModeAcceptedWeight
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeResultDisposition
 import splice.upstream.codemode.CodeModeResultOrigin
@@ -13,6 +14,7 @@ import java.util.Collections
 /** Acceptance order is durable sequence order. A result and its media never disagree on keys. */
 internal class CodeModeAccepted(entries: Map<String, CodeModeAcceptedResult> = emptyMap()) {
     private val entries: MutableMap<String, CodeModeAcceptedResult> = LinkedHashMap(entries)
+    private val weight = CodeModeAcceptedWeight(this.entries)
 
     val results: Map<String, CodeModeResult> get() = entries.mapValues { (_, entry) -> entry.result }
 
@@ -20,6 +22,12 @@ internal class CodeModeAccepted(entries: Map<String, CodeModeAcceptedResult> = e
     fun ids(): Set<String> = Collections.unmodifiableSet(entries.keys)
 
     fun holds(id: String): Boolean = id in entries
+
+    /** Transport receipts stay immutable; ordinary generic replacements retain their existing acceptance policy. */
+    fun changes(supplied: Map<String, CodeModeResult>): Map<String, CodeModeResult> = supplied.filter { (id, result) ->
+        val prior = entries[id]?.result
+        prior?.origin != CodeModeResultOrigin.MCP && (prior == null || result.origin != CodeModeResultOrigin.MCP)
+    }
 
     /** Whether any of [ids] was accepted, walking the smaller side so neither a long turn nor a long record copies. */
     fun holdsAny(ids: Set<String>): Boolean =
@@ -48,34 +56,13 @@ internal class CodeModeAccepted(entries: Map<String, CodeModeAcceptedResult> = e
         supplied: Map<String, CodeModeResult>,
         media: Map<String, List<JsonElement>>,
         clientOutputDigests: Map<String, String> = emptyMap(),
-    ): Long =
-        supplied.entries.sumOf { (id, result) ->
-            val prior = entries[id]
-            val before = prior?.let { acceptedBytes(it.result, it.media.orEmpty(), it.clientOutputDigest) } ?: 0L
-            val after = acceptedBytes(result, media[id].orEmpty(), clientOutputDigests[id]) +
-                if (prior == null) CodeModeWeight.STORED.text(id) else 0L
-            (after - before).coerceAtLeast(0L)
-        }
+    ): Long = weight.growth(supplied, media, clientOutputDigests)
 
     /** What [snapshot] still holds of the prior results that accepting [supplied] replaces. */
-    fun kept(snapshot: CodeModeRecordSnapshot, supplied: Map<String, CodeModeResult>): Long =
-        supplied.keys.sumOf { id ->
-            val prior = entries[id]
-            val held = snapshot.results[id]
-            if (prior == null || held == null) return@sumOf 0L
-            val output = if (held.output === prior.result.output) CodeModeWeight.STORED.text(held.output) else 0L
-            val media = if (held.media === prior.media) held.media.orEmpty().sumOf(CodeModeWeight.STORED::json) else 0L
-            val proof = CodeModeWeight.STORED.clientOutputDigest(
-                held.clientOutputDigest?.takeIf { it === prior.clientOutputDigest },
-            )
-            val payload = held.payload?.takeIf { it === prior.result.payload }?.let(CodeModeWeight.STORED::json) ?: 0L
-            output + media + proof + payload
-        }
-
-    private fun acceptedBytes(result: CodeModeResult, media: List<JsonElement>, clientOutputDigest: String?): Long =
-        CodeModeWeight.STORED.text(result.output) + media.sumOf(CodeModeWeight.STORED::json) +
-            CodeModeWeight.STORED.clientOutputDigest(clientOutputDigest) +
-            (result.payload?.let(CodeModeWeight.STORED::json) ?: 0L)
+    fun kept(
+        snapshot: CodeModeRecordSnapshot,
+        supplied: Map<String, CodeModeResult>,
+    ): Long = weight.kept(snapshot, supplied)
 
     fun copy(): CodeModeAccepted = CodeModeAccepted(entries)
 

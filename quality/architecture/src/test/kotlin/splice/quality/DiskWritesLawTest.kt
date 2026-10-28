@@ -310,6 +310,11 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "app/src/main/kotlin/splice/app/cli/status/ConsoleCommand.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/config/ConfigService.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/retired/RetiredHeads.kt" to mapOf("writeAtomic0600(" to 1),
+    // The private MCP receipt row: two platform branches create the same lock, one atomic publication writes each entry.
+    "core/src/main/kotlin/splice/core/mcp/McpToolResultFiles.kt" to mapOf(
+        "FileChannel.open(" to 2,
+        "writeAtomic0600(" to 1,
+    ),
     // The MCP roots verdicts, digests only, documented in the mcp-roots-bound README row.
     "integrations/claude-code/src/main/kotlin/splice/client/mcp/McpRootsVerdicts.kt" to mapOf("writeAtomic0600(" to 1),
     // The hub's kept listings, holder records, generation-specific retirement evidence and durable drain pins,

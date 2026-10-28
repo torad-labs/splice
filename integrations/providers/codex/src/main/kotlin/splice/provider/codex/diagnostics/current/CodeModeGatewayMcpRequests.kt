@@ -5,7 +5,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
@@ -16,15 +15,10 @@ import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.provider.codex.CodeModeToolPolicy
 import splice.provider.codex.CodexCodeModeBridge
-import splice.provider.codex.callbacks.mcp.CodeModeMcpRpcErrors
 import splice.provider.codex.catalog.CodeModeTurnCatalog
 import splice.provider.codex.diagnostics.CodeModeGatewayProbeSupport
 import splice.upstream.BuiltTurn
-import splice.upstream.codemode.CodeModeResult
-import splice.upstream.codemode.CodeModeResultDisposition
-import splice.upstream.codemode.CodeModeResultOrigin
 import splice.upstream.codemode.CodeModeToolDefinitions
-import splice.upstream.codemode.CodeModeToolOutputs
 import splice.upstream.codemode.CodeModeToolSearch
 
 /** Typed MCP clients enter through the existing bridge API after ordinary catalog-checked permission callbacks.
@@ -37,11 +31,12 @@ internal class CodeModeGatewayMcpRequests(
     private val declarations = specification.getValue("declarations").jsonArray
     private val definitions = CodeModeToolDefinitions.collect(declarations)
     private val names = definitions.map { it.codeModeName }.toSet()
+    private val replies = CodeModeGatewayMcpResults(names)
     private val ranked = specification["rankedSearch"] == JsonPrimitive(true)
     private val policy = CodeModeToolPolicy(deferredNames = if (ranked) names else emptySet())
 
     fun prepare(manager: CodexCodeModeBridge, callbacks: List<JsonObject>): BuiltTurn {
-        val results = callbacks.map(::result)
+        val results = replies.accepted(callbacks)
         val input = JsonArray(
             listOf(
                 buildJsonObject {
@@ -90,47 +85,6 @@ internal class CodeModeGatewayMcpRequests(
         )
     }
 
-    private fun result(callback: JsonObject): CodeModeResult {
-        check(JsonScalars.str(callback, "name") in names) { "MCP result has no advertised permission tool" }
-        val value = value(callback)
-        check(value["content"] is JsonArray) { "MCP result omitted CallToolResult.content" }
-        return CodeModeResult(
-            checkNotNull(JsonScalars.str(callback, "id")),
-            JsonWire.string(value),
-            value["isError"] == JsonPrimitive(true),
-            payload = value,
-            disposition = CodeModeResultDisposition.TOOL_OUTPUT,
-            origin = CodeModeResultOrigin.MCP,
-        )
-    }
-
-    private fun value(callback: JsonObject): JsonObject {
-        if (JsonScalars.str(callback, "origin") == "MCP") {
-            check(callback["rpcError"] == null) { "A successful MCP result cannot also claim an RPC failure" }
-            return callback.getValue("result").jsonObject
-        }
-        check(JsonScalars.str(callback, "origin") == "MCP_RPC_ERROR") { "MCP callback has no typed origin" }
-        check(callback["result"] == null) { "An RPC failure cannot also claim a successful MCP result" }
-        val server = checkNotNull(JsonScalars.str(callback, "server"))
-        val tool = checkNotNull(JsonScalars.str(callback, "tool"))
-        check(server == "parity" && JsonScalars.str(callback, "name") == "mcp__${server}__$tool")
-        return checkNotNull(CodeModeMcpRpcErrors.result(server, tool, callback.getValue("rpcError").jsonObject))
-    }
-
     /** Observe actual accepted gateway values, independently of the callback plan's expected payloads. */
-    fun report(manager: CodexCodeModeBridge, report: JsonObject): JsonObject = JsonObject(
-        report + mapOf("boundary" to JsonPrimitive("typed-mcp-delegate"), "toolResults" to retained(manager)),
-    )
-
-    private fun retained(manager: CodexCodeModeBridge): JsonArray = JsonArray(
-        manager.registry.records.toList().flatMap { record ->
-            record.results.values.filter { it.origin == CodeModeResultOrigin.MCP }.map { result ->
-                buildJsonObject {
-                    put("id", result.id); put("origin", result.origin.name)
-                    put("disposition", result.disposition.name); put("isError", result.isError)
-                    put("payload", checkNotNull(result.payload)); put("value", CodeModeToolOutputs.value(result))
-                }
-            }
-        },
-    )
+    fun report(manager: CodexCodeModeBridge, report: JsonObject): JsonObject = replies.report(manager, report)
 }

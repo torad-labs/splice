@@ -208,8 +208,13 @@ private suspend fun drive(
 
 /** The ciphertext of the reasoning item the built request carries right before [callId]'s
  *  function_call, or null when that call goes out with no reasoning in front of it. */
-private fun reasoningBefore(provider: ResponsesProvider, session: String?, callId: String): String? {
-    val input = provider.buildTurn(afterCall(callId), compact = false, sessionId = session)
+private fun reasoningBefore(
+    provider: ResponsesProvider,
+    session: String?,
+    callId: String,
+    agentId: String? = null,
+): String? {
+    val input = provider.buildTurn(afterCall(callId).copy(agentId = agentId), compact = false, sessionId = session)
         .requestBody.getValue("input").jsonArray.map { it.jsonObject }
     val at = input.indexOfFirst {
         it["type"]?.jsonPrimitive?.content == "function_call" && it["call_id"]?.jsonPrimitive?.content == callId
@@ -259,6 +264,40 @@ class ReasoningCacheRestartTest(@param:TempDir private val state: Path) {
 
         assertEquals(null, reasoningBefore(daemon, "session-b", "call_1"), "session-b was handed session-a's reasoning")
         assertEquals("cipher-a", reasoningBefore(daemon, "session-a", "call_1"))
+    }
+
+    @Test
+    fun `same-opening subagents recover only their own reasoning after a head restart`() = runTest {
+        val daemon = heads.start()
+        assertTrue(drive(daemon, "session", toolRound("call_1", "cipher-main")) is TurnOutcome.Success)
+        assertTrue(
+            drive(daemon, "session", toolRound("call_1", "cipher-a"), body = opening.copy(agentId = "agent-a"))
+                is TurnOutcome.Success,
+        )
+        assertTrue(
+            drive(daemon, "session", toolRound("call_1", "cipher-b"), body = opening.copy(agentId = "agent-b"))
+                is TurnOutcome.Success,
+        )
+
+        val restarted = heads.restart()
+        assertEquals("cipher-main", reasoningBefore(restarted, "session", "call_1"))
+        assertEquals("cipher-a", reasoningBefore(restarted, "session", "call_1", "agent-a"))
+        assertEquals("cipher-b", reasoningBefore(restarted, "session", "call_1", "agent-b"))
+        assertEquals(null, reasoningBefore(restarted, "session", "call_1", "agent-new"))
+        assertEquals(null, reasoningBefore(restarted, "other-session", "call_1", "agent-a"))
+    }
+
+    @Test
+    fun `a sessionless subagent recovers its own persisted reasoning`() = runTest {
+        assertTrue(
+            drive(heads.start(), null, toolRound("call_1", "cipher-a"), body = opening.copy(agentId = "agent-a"))
+                is TurnOutcome.Success,
+        )
+
+        val restarted = heads.restart()
+        assertEquals("cipher-a", reasoningBefore(restarted, null, "call_1", "agent-a"))
+        assertEquals(null, reasoningBefore(restarted, null, "call_1"))
+        assertEquals(null, reasoningBefore(restarted, null, "call_1", "agent-b"))
     }
 
     @Test

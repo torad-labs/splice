@@ -42,7 +42,14 @@ internal class ReasoningCachePolicy {
      *  class. The session id is a client header, so only its digest reaches a key (and a file name).
      *  The capture (ResponsesTurnSeams) and the lookup (ResponsesTurnOptions) both key through here. */
     fun conversationKey(sessionId: String?, opening: String?): String? {
-        val conversation = opening?.takeIf { it.isNotEmpty() } ?: return null
+        val identity = opening?.takeIf { it.isNotEmpty() } ?: return null
+        // Agent-qualified openings contain NUL separators. Keep those bytes in the live turn identity,
+        // and use a bounded filename-safe digest only at this reasoning/phase persistence boundary.
+        val conversation = if ('\u0000' in identity) {
+            HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(identity.toByteArray(Charsets.UTF_8)))
+        } else {
+            identity
+        }
         val session = sessionId?.takeIf { it.isNotEmpty() } ?: return conversation
         val digest = MessageDigest.getInstance("SHA-256").digest(session.toByteArray(Charsets.UTF_8))
         return "$conversation-${HexFormat.of().formatHex(digest, 0, SESSION_DIGEST_BYTES)}"

@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import splice.core.client.AgentConversationKey
 import splice.core.parse.AnthropicTurnBody
 import splice.core.util.JsonScalars
 import splice.core.wire.ContentBlock
@@ -65,7 +66,7 @@ internal class CodexCodeModeTurnBuilder(
         val messages = CodeModeCatalogMessages(toolPolicy.modelMessages)
         val turn = CodexCodeModeBridge.Turn(
             sessionId = sessionId,
-            conversationKey = built.meta.scope.conversationKey.orEmpty(),
+            conversationKey = built.meta.scope.conversationKey ?: AgentConversationKey.of("", body.agentId),
             model = built.meta.route.upstreamModel,
             tools = availability.currentCatalog.map { it.name }.toSet(),
             toolResults = toolResults(body, loaded),

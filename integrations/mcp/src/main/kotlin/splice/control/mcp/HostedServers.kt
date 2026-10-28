@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonObject
 import splice.client.mcp.McpServerSpec
 import splice.client.mcp.McpSharing
 import splice.control.mcp.hosted.HostedServerLifecycle
+import splice.control.mcp.hosted.HostedSharedCatalog
 import splice.core.util.LogSink
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -130,6 +131,7 @@ internal class HostedServers(
     private val stops = McpProcessStop()
     private val launches = McpLaunchBarrier()
     val replacements = HostedReplacements(store, sharing, global, sessions, ::create)
+    val catalogs = HostedSharedCatalog(store)
 
     fun get(name: String): HostedServer? = synchronized(lock) { bindings[name]?.let(servers::get) }
 

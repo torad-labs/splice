@@ -47,4 +47,7 @@ internal class ToolsListCache(
     fun drop() {
         state.set(State(null))
     }
+
+    /** Observes the current child's exact listing without starting it or issuing a request. */
+    fun snapshot(): JsonObject? = state.get().kept?.get("result") as? JsonObject
 }

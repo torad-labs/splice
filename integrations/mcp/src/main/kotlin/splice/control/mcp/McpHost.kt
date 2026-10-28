@@ -166,6 +166,10 @@ public class McpHost(
 
     /** `/api/mcp`. */
     public fun statusJson(): String = status.json()
+
+    /** Exact cached listings for this head's currently shared declarations; per-session servers never enter it. */
+    public fun sharedTools(headKey: String): Map<String, JsonObject> =
+        servers.catalogs.read(sharing.plan(global.inputs(), headKey).hosted)
 }
 
 /** Keeps admission, initialization, and session routing below McpHost's lifecycle surface. */

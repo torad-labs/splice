@@ -184,6 +184,12 @@ function nativeOwnership(file: string): boolean {
   return /^codex-rs\/code-mode-(?:host|runtime)\//.test(file) ||
     /^codex-rs\/code-mode-protocol\//.test(file) && !/\/(?:description|json_schema_types)\.rs$/.test(file);
 }
+/** The public session/delegate facade is shared with the ported frontend, even when a native backend calls it. */
+export function requiresPortedSessionContract(unit: Pick<SourceUnit,"file"|"kind"|"start"|"end">,
+  declarations: readonly Pick<Match,"ruleId"|"text"|"range">[]): boolean {
+  return unit.file==="codex-rs/code-mode-protocol/src/session.rs"&&unit.kind==="function_signature_item"&&declarations.some(owner=>
+    owner.ruleId==="trait_item"&&/^\s*pub\s+(?:unsafe\s+)?trait\b/.test(owner.text)&&owner.range.byteOffset.start<=unit.start&&owner.range.byteOffset.end>=unit.end);
+}
 export function inventoryDigest(inventory: Pick<CurrentInventory, "sourceRevision" | "sourceTree" | "files" | "units" | "grpcMethods" | "globalHelpers" | "foreignScopeDiagnostics" | "generatedScopeResolutions" | "compilerBindings" | "compilerScopeResolutions" | "compilerScopeFallbacks">): string {
   return sha256(JSON.stringify({ sourceRevision: inventory.sourceRevision, sourceTree: inventory.sourceTree, files: inventory.files,
     units: inventory.units, grpcMethods: inventory.grpcMethods, globalHelpers: inventory.globalHelpers, foreignScopeDiagnostics: inventory.foreignScopeDiagnostics ?? [], generatedScopeResolutions: inventory.generatedScopeResolutions ?? [],
@@ -297,7 +303,7 @@ export async function generateCurrentInventory(sourceRepo: string, revision: str
       };
       const emit = (kind: string, text: string, start: number, end: number, line: number) => units.push({
         id: `${file.path}#${kind}@${start}`, file: file.path, kind, label: unitLabel(kind, text), line, start, end,
-        sha256: sha256(text), ownership: (nativeOwnership(file.path) && (!/^codex-rs\/code-mode-protocol\/src\/.*\.rs$/.test(file.path) || nativeSelection.selections.get(`${file.path}#${kind}@${start}`)?.state === "required")) || discovery === "dependency" && dependencies.get(file.path)?.owners.size === 1 && dependencies.get(file.path)?.owners.has("native-host") && nativeSelection.selections.get(`${file.path}#${kind}@${start}`)?.state === "required" ? "native-host" : "ported",
+        sha256: sha256(text), ownership: !requiresPortedSessionContract({file:file.path,kind,start,end},scoped)&&((nativeOwnership(file.path) && (!/^codex-rs\/code-mode-protocol\/src\/.*\.rs$/.test(file.path) || nativeSelection.selections.get(`${file.path}#${kind}@${start}`)?.state === "required")) || discovery === "dependency" && dependencies.get(file.path)?.owners.size === 1 && dependencies.get(file.path)?.owners.has("native-host") && nativeSelection.selections.get(`${file.path}#${kind}@${start}`)?.state === "required") ? "native-host" : "ported",
         ...(discovery === "dependency" ? { requiredBy: [...dependencies.get(file.path)!.roots].sort() } : {}),
         ...(["dependency", "consumer"].includes(discovery) && foreignScopes.has(`${file.path}#${kind}@${start}`) ? { foreignScope: foreignScopes.get(`${file.path}#${kind}@${start}`)! } : {}),
         ...(foreignSelection.representations.has(`${file.path}#${kind}@${start}`) ? { representation: foreignSelection.representations.get(`${file.path}#${kind}@${start}`)! } : {}),

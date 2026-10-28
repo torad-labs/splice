@@ -29,6 +29,8 @@ internal class CodexResponsesArm(
     /** Code mode's half of the arm: each head's bridge and model lists, and the daemon's one liveness poller. */
     private val codeMode: CodexCodeModeAssembly = CodexCodeModeAssembly(statePaths, probeScope, log),
 ) {
+    internal val codeModeControls get() = codeMode.controls
+
     private val quirksOverlay = QuirksOverlay()
     private val accountFiles = OAuthAccountFiles()
 

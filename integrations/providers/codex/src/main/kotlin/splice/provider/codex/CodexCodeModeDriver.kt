@@ -32,7 +32,6 @@ import splice.provider.codex.stream.batch.CodeModeRuntimeDispatch
 import splice.provider.codex.stream.drive.CodeModeDriveProtocol
 import splice.provider.codex.stream.drive.CodeModeDriveState
 import splice.upstream.failure.CodeModeCapacityException
-import splice.upstream.failure.CodeModeToolException
 import java.io.IOException
 
 internal class CodexCodeModeDriver(
@@ -272,14 +271,14 @@ internal class CodexCodeModeDriver(
             dispatch.start(record, context, stream)
         }
     } catch (error: CancellationException) {
-        cancelledStart(record, error)
+        starter.cancelled(record, error)
         throw error
     } catch (error: CodeModePersistenceException) {
         throw error
     } catch (error: CodeModeCapacityException) {
         record to starter.capacity(record, error, machine)
     } catch (error: IOException) {
-        record to failedStart(record, stream, error)
+        record to starter.failed(record, stream, error)
     } catch (error: splice.provider.codex.stream.CodeModeArgumentException) {
         registry.complete(record, error.message.orEmpty())
         record to splice.provider.codex.stream.CodeModeLocalOutcome.success()
@@ -288,29 +287,6 @@ internal class CodexCodeModeDriver(
         record to protocol.failure(record.error.orEmpty())
     } catch (_: RuntimeException) {
         record to starter.failed(record, null)
-    }
-
-    private fun cancelledStart(record: CodeModeRecord, error: CancellationException) {
-        // An admitted record reads LOST with no error until its cell attaches: that is admission's no-rerun proof,
-        // not a settled loss. The cancelled client step owns it (the reader stands down), so it saves why.
-        val admitted = record.phase == CodeModePhase.LOST && record.error == null
-        if (record.phase != CodeModePhase.ACTIVE && !admitted) return
-        // A native foreground observation may be preempted after its cell was safely adopted.
-        if (record.nativeRuntime && registry.cell(record) != null) return
-        registry.lose(record, "code-mode runtime start cancelled; source was not rerun", error)
-    }
-
-    private suspend fun failedStart(
-        record: CodeModeRecord,
-        stream: CodeModeLiveRound?,
-        error: IOException,
-    ): TurnOutcome = when {
-        error is CodeModeToolException -> {
-            registry.complete(record, error.diagnostic)
-            splice.provider.codex.stream.CodeModeLocalOutcome.success()
-        }
-        stream?.sourceInterrupted == true -> stream.outcome()
-        else -> starter.failed(record, error)
     }
 }
 

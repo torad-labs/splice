@@ -10,7 +10,6 @@ import splice.core.failure.Moment
 import splice.core.failure.Position
 import splice.core.failure.ProtocolFault
 import splice.core.turn.TurnOutcome
-import splice.core.turn.UsageField
 import splice.core.turn.noRequestUsage
 import splice.provider.codex.callbacks.CodeModeCallIssuanceGuard
 import splice.provider.codex.callbacks.CodeModeCallIssuerEmitter
@@ -148,27 +147,13 @@ internal class CodexCodeModeMachine(
     /** Emit the prior recorded calls without touching the runtime's consumed cursor. */
     suspend fun replay(calls: List<CodeModePending>, sink: WireSink, cell: CodeModeCell? = null): TurnOutcome {
         CodeModeClientCalls.emit(calls, sink, cell)
-        return TurnOutcome.Success(
-            hasToolUse = true,
-            incomplete = false,
-            usage = noRequestUsage.copy(
-                origin = noRequestUsage.origin.copy(localStep = true),
-                reported = UsageField.entries.toSet(),
-            ),
-        )
+        return CodeModeLocalOutcome.success(hasToolUse = true)
     }
 
     fun interrupt(record: CodeModeRecord, detail: String = "additional client content arrived"): TurnOutcome {
         val output = CodeModeExecOutput.terminated(record, detail, wallMillis(record), config.bounds.maxOutputChars)
         registry.complete(record, output)
-        return TurnOutcome.Success(
-            hasToolUse = false,
-            incomplete = false,
-            usage = noRequestUsage.copy(
-                origin = noRequestUsage.origin.copy(localStep = true),
-                reported = UsageField.entries.toSet(),
-            ),
-        )
+        return CodeModeLocalOutcome.success()
     }
 
     /** The script's wall time so far; its stamp goes with it, since the record is terminal after this. */

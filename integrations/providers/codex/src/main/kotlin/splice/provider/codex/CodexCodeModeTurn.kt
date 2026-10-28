@@ -6,7 +6,6 @@ import kotlinx.coroutines.runInterruptible
 import splice.core.perf.PerfKeys
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.HeadStopKey
-import splice.core.turn.HeadStopSignal
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
 import splice.provider.codex.branch.CodeModeOwnerPlacement
@@ -16,54 +15,11 @@ import splice.provider.codex.state.CodeModeTurnIdentity
 import splice.provider.codex.state.CodeModeTurnLocks
 import splice.provider.codex.state.CodeModeTurnNotes
 import splice.provider.codex.state.diagnostics.CodeModeNativeRejection
-import splice.provider.codex.stream.CodeModeLiveRound
-import splice.provider.codex.stream.CodeModeRecoveryHistory
 import splice.provider.codex.stream.CodeModeRejection
 import splice.provider.codex.stream.CodeModeRunInput
-import splice.provider.codex.stream.CodeModeUpstreamPost
 import splice.provider.codex.stream.batch.CodeModeBatchHistory
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.ProcessDispatchers
-import splice.upstream.sse.WireSink
-internal data class CodeModeRunContext(
-    val turn: CodexCodeModeBridge.Turn,
-    val disableParallel: Boolean,
-    val key: String,
-    val digest: String,
-    val link: CodeModeRoundLink,
-    val headStop: HeadStopSignal? = null,
-    val recovery: CodeModeRecoveryHistory? = null,
-) {
-    /** The request as the client sent it, which every post of this step extends the last post with. */
-    val client: CodeModeBody? get() = link.client
-
-    /** One filtered history for this request, extended only by its own completed scripts. */
-    val completed: MutableList<CodeModeRecord> = java.util.concurrent.CopyOnWriteArrayList()
-
-    /** Sources posted by this step can be cut before it ever parks or holds a billing row. */
-    val postedSources: MutableList<CodeModeLiveRound> = mutableListOf()
-
-    /** Placement rejection removes execution, not the abandoning step's ownership of its source bill. */
-    val abandonedSources: MutableList<CodeModeRecord> = mutableListOf()
-    var scripts: Int = 0
-
-    /** Records whose accepted result this request changed (a fork): their calls stay the client's. */
-    var conflicts: Set<String> = emptySet()
-
-    /** The upstream post this request last kept. A sibling branch of the conversation can post while this one is
-     *  answered, so a script and its output follow this post, never the conversation's newest. */
-    var postId: Long? = null
-}
-
-/** The client-facing [sink] a round streams to, the [post] that sends its request upstream, and the request the
- *  [client] sent, which a copy of the round keeps. */
-internal data class CodeModeRoundLink(
-    val sink: WireSink,
-    val post: CodeModeUpstreamPost,
-    var client: CodeModeBody? = null,
-    /** Delivery already recorded when this request began; copies attaching a resumed sink keep it. */
-    var priorDeliveryCounts: Map<String, Int> = emptyMap(),
-)
 
 /**
  * History that no longer lines up with a record is DEGRADED, never refused. The status quo before

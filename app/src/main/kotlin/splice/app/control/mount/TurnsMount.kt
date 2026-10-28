@@ -13,6 +13,7 @@ import splice.app.control.HoldTryNowRoute
 import splice.app.control.ManagedHead
 import splice.app.control.TurnsHeadAdapter
 import splice.app.control.api.HeadResolver
+import splice.app.control.codemode.CodeModeInterruptRoute
 import splice.core.config.ConfigService
 import splice.core.topology.TopologyWriterSource
 import splice.head.compact.CompactPayloads
@@ -32,12 +33,13 @@ internal class TurnsMount(
     private val guard: ControlGuard,
 ) {
     private val turnsLookup = TurnsHeadAdapter.lookup(resolver)
+    private val codeModeInterrupt = CodeModeInterruptRoute(resolver, ports, guard)
     private val compactPayloads = CompactPayloads(TurnsHeadAdapter.heads(heads))
     private val compactionRoute = CompactionInstructionsRoute(turnsLookup)
     private val captureRoutes = CaptureRoutes(turnsLookup, config, TopologyWriterSource { ports.topology })
     private val liveTurnsRoutes = LiveTurnsRoutes(
         turnsLookup,
-        LiveTurnsSource { ports.liveTurns },
+        LiveTurnsSource { ports.turns.live },
         LiveGateSource { key -> heads[key]?.head?.healthSnapshot()?.gate },
     )
 
@@ -70,5 +72,6 @@ internal class TurnsMount(
         }
         // Failure-handling slice 5: the console's try-now on a held login.
         HoldTryNowRoute(liveTurnsRoutes, guard).register(route)
+        codeModeInterrupt.register(route)
     }
 }

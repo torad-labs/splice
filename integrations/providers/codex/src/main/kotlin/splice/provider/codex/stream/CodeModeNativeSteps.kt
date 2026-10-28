@@ -90,8 +90,8 @@ internal object CodeModeFunctionOutput {
 }
 
 internal object CodeModeLocalOutcome {
-    fun success(): TurnOutcome.Success = TurnOutcome.Success(
-        hasToolUse = false,
+    fun success(hasToolUse: Boolean = false): TurnOutcome.Success = TurnOutcome.Success(
+        hasToolUse = hasToolUse,
         incomplete = false,
         usage = noRequestUsage.copy(
             origin = noRequestUsage.origin.copy(localStep = true),

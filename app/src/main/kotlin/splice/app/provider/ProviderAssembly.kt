@@ -40,6 +40,7 @@ internal class ProviderAssembly(
     private val grokResponsesArm = GrokResponsesArm(probeScope, log, grokRefresh, statePaths)
     private val apiKeyResponsesArm = ApiKeyResponsesArm(statePaths)
     private val codexResponsesArm = CodexResponsesArm(statePaths, probeScope, log, refreshCall)
+    internal val codeModeControls get() = codexResponsesArm.codeModeControls
     private val responsesArm = ResponsesArm(grokResponsesArm, apiKeyResponsesArm, codexResponsesArm)
     private val legacyMuseDialectLogged = AtomicBoolean()
     private val legacyMuseBaseLogged = AtomicBoolean()

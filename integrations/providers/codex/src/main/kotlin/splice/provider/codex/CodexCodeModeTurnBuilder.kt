@@ -8,27 +8,14 @@ import kotlinx.serialization.json.JsonPrimitive
 import splice.core.client.AgentConversationKey
 import splice.core.parse.AnthropicTurnBody
 import splice.core.util.JsonScalars
-import splice.core.wire.ContentBlock
-import splice.core.wire.DocumentBlock
-import splice.core.wire.ImageBlock
-import splice.core.wire.MediaSource
-import splice.core.wire.RedactedThinkingBlock
-import splice.core.wire.TextBlock
-import splice.core.wire.ThinkingBlock
-import splice.core.wire.ToolResultBlock
-import splice.core.wire.ToolUseBlock
-import splice.core.wire.UnknownBlock
-import splice.dialect.responses.request.ImageDisposition
 import splice.dialect.responses.request.ResponsesDynamicToolChanges
 import splice.dialect.responses.request.ResponsesToolResultMedia
 import splice.provider.codex.branch.CodeModeClearedCandidates
-import splice.provider.codex.callbacks.CodeModeClientToolValues
-import splice.provider.codex.callbacks.CodeModeLegacyMarkers
+import splice.provider.codex.callbacks.CodeModeClientResults
 import splice.provider.codex.catalog.CodeModeCatalogMessages
 import splice.provider.codex.request.CodexCodeModeInstructions
 import splice.upstream.BuiltTurn
 import splice.upstream.codemode.CodeModeResult
-import splice.upstream.codemode.CodeModeResultDisposition
 
 /** [media] is the dialect's own tool_result image renderer (V4-179): the bridge renders a result's
  *  follow-ups ONCE with the same policy the ordinary path applies, persists them on the record and
@@ -36,7 +23,7 @@ import splice.upstream.codemode.CodeModeResultDisposition
  *  what it would see for one outside it, and in the same place. */
 internal class CodexCodeModeTurnBuilder(
     private val bridge: CodexCodeModeBridge?,
-    private val media: ResponsesToolResultMedia,
+    media: ResponsesToolResultMedia,
     models: Collection<String>? = null,
     private val codeModeOnly: CodeModeOnlyModels = NoCodeModeOnlyModels,
     private val originalImageModels: CodeModeOriginalImageModels = NoCodeModeOriginalImageModels,
@@ -44,6 +31,7 @@ internal class CodexCodeModeTurnBuilder(
 ) {
     private val catalogs = splice.provider.codex.catalog.CodeModeTurnCatalogs(settings, originalImageModels)
     private val operatorModels: Set<String> = CodexCodeModeModels.normalize(models.orEmpty())
+    private val results = CodeModeClientResults(media)
 
     /** The provider's compaction flag is deliberately absent: the bridge rides a compaction exactly as it rides a
      *  turn, so a preparation that could read the flag could also diverge on it (see [eligible]). */
@@ -62,7 +50,7 @@ internal class CodexCodeModeTurnBuilder(
         val cleared = CodeModeClearedCandidates.read(body)
         val loaded = CodeModeLoadedTools(body, availability)
         val toolPolicy = catalogs.policy(body, built, availability)
-            .copy(loadedNames = loaded.names(bridgeResults(body)))
+            .copy(loadedNames = loaded.names(results.blocks(body)))
         val messages = CodeModeCatalogMessages(toolPolicy.modelMessages)
         val turn = CodexCodeModeBridge.Turn(
             sessionId = sessionId,
@@ -138,18 +126,7 @@ internal class CodexCodeModeTurnBuilder(
     internal fun toolResults(
         body: AnthropicTurnBody,
         loaded: CodeModeLoadedTools = CodeModeLoadedTools(body),
-    ): List<CodeModeResult> = bridgeResults(body).map { block ->
-        val dispositions = media.followUps(block).dispositions.iterator()
-        val output = block.content.joinToString("") { part -> resultText(loaded, block.toolUseId, part, dispositions) }
-        val value = CodeModeClientToolValues.value(block)
-        CodeModeResult(
-            id = block.toolUseId,
-            output = output,
-            isError = block.isError == true,
-            disposition = CodeModeResultDisposition.TOOL_OUTPUT,
-            payload = value?.takeUnless { it == output }?.let(::JsonPrimitive),
-        )
-    }
+    ): List<CodeModeResult> = results.read(body, loaded)
 
     /** V4-388: each client tool's `ALL_TOOLS` description as codex's augment_tool_definition writes it —
      *  with its TypeScript declaration, so a tool the manual defers still shows the cell its arguments. */
@@ -157,77 +134,12 @@ internal class CodexCodeModeTurnBuilder(
 
     /** V4-179: each bridge result's follow-up items, rendered once here and nowhere else. */
     internal fun toolMedia(body: AnthropicTurnBody): Map<String, List<JsonElement>> =
-        bridgeResults(body).associate { block -> block.toolUseId to media.followUps(block).items }
+        results.media(body)
 
     /** V4-179: the same results as the daemon before this row rendered them — for replay identity
      *  against a record that daemon persisted (CodexCodeModeValidation.conflicts), never for the model. */
-    internal fun legacyResults(body: AnthropicTurnBody): List<CodeModeResult> = bridgeResults(body).map { block ->
-        CodeModeResult(
-            id = block.toolUseId,
-            output = block.content.joinToString("") { part -> legacy.resultText(block.toolUseId, part) },
-            isError = block.isError == true,
-        )
-    }
-
-    private val legacy = CodeModeLegacyMarkers()
-
-    private fun bridgeResults(body: AnthropicTurnBody): List<ToolResultBlock> = body.typed.messages
-        .flatMap { it.content }
-        .filterIsInstance<ToolResultBlock>()
-        .filter { it.toolUseId.startsWith(CODE_MODE_CLIENT_ID_PREFIX) }
-
-    /** V4-178: what a splice_exec script reads back for one part of a client tool result.
-     *
-     *  Text is the text. Anything else is a MARKER, never a refusal and never a silent drop: this
-     *  was `require(part is TextBlock)` (V4-114, chosen over a `filterIsInstance` that would have
-     *  shipped the text half as the whole result), and the refusal reached Claude Code as an error
-     *  terminal on a screenshot that agent-browser returned inside a code-mode call — and then on
-     *  every turn after it, because the image stays in the client's history until compaction
-     *  drops it (session 22d0cee0, 2026-09-20). A wedge is worse than either shape V4-114 weighed.
-     *
-     *  V4-179: the marker now tells the truth about where the pixels WENT. [dispositions] is the
-     *  renderer's verdict per image, in content order: a delivered image reached the model beside
-     *  this script's output, and the marker says so; an omitted one carries the renderer's own
-     *  reason (unsupported source, below the vendor floor), in the renderer's words. Either way the
-     *  script itself reads text only — function_call_output.output is string-only and a script
-     *  return is a string. */
-    private fun resultText(
-        loaded: CodeModeLoadedTools,
-        toolUseId: String,
-        part: ContentBlock,
-        dispositions: Iterator<ImageDisposition>,
-    ): String = when (part) {
-        is TextBlock -> part.text
-        is ImageBlock -> imageMarker(toolUseId, part.source, dispositions.next())
-        is DocumentBlock -> omitted(toolUseId, "document", part.source, DOCUMENT_REASON)
-        is UnknownBlock -> loaded.text(part)
-            ?: omitted(toolUseId, "non-text content", null, DOCUMENT_REASON)
-        is RedactedThinkingBlock, is ThinkingBlock, is ToolResultBlock, is ToolUseBlock ->
-            omitted(toolUseId, "non-text content", null, DOCUMENT_REASON)
-    }
-
-    private fun imageMarker(toolUseId: String, source: MediaSource?, disposition: ImageDisposition): String =
-        if (disposition.delivered) {
-            "[image from tool_result $toolUseId: ${describe("image", source)}, delivered to the model " +
-                "beside this script's output; a splice_exec script itself reads tool results as text only]"
-        } else {
-            omitted(toolUseId, "image", source, disposition.reason.orEmpty())
-        }
-
-    private fun omitted(toolUseId: String, kind: String, source: MediaSource?, why: String): String =
-        "[$kind omitted by splice code-mode from tool_result $toolUseId: ${describe(kind, source)} ($why); " +
-            "a splice_exec script reads tool results as text only]"
-
-    private fun describe(kind: String, source: MediaSource?): String {
-        val media = source?.mediaType?.takeIf { it.isNotEmpty() } ?: kind
-        val size = (source?.data?.length?.let { ", $it base64 chars" } ?: source?.url?.let { ", url $it" }).orEmpty()
-        return "$media$size"
-    }
+    internal fun legacyResults(body: AnthropicTurnBody): List<CodeModeResult> = results.legacy(body)
 }
-
-/** A document (or an unknown block) has no wire shape on this path at all — not the ordinary one
- *  either — so its marker names that rather than a delivery that did not happen. */
-private const val DOCUMENT_REASON = "this content type cannot ride to the model on this path"
 
 /**
  * Which upstream models are offered the runner. A model runs code mode when the BACKEND marks it

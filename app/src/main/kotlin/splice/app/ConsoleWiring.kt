@@ -69,7 +69,7 @@ internal object ConsoleWiring {
         srv.ports.traceDir = statePaths.traceDir
         srv.ports.turnStatistics = statePaths
         srv.ports.wires = console.wires
-        srv.ports.liveTurns = console.liveTurns
+        srv.ports.turns.live = console.liveTurns
     }
 
     /** V4-130: the daemon's ONE pair of activity stores, under the state dir's activity directory. The edge window and

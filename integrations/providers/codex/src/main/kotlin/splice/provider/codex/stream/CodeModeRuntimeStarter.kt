@@ -12,6 +12,7 @@ import splice.core.turn.noRequestUsage
 import splice.provider.codex.CODE_MODE_RECORD_LOG_CHARS
 import splice.provider.codex.CODE_MODE_WAIT_TOOL_NAME
 import splice.provider.codex.CodeModeBridgeConfig
+import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.CodexCodeModeMachine
@@ -22,6 +23,7 @@ import splice.upstream.codemode.CodeModeRuntime
 import splice.upstream.codemode.NativeCodeModeLifecycle
 import splice.upstream.failure.CodeModeCapacityException
 import splice.upstream.failure.CodeModeStartException
+import splice.upstream.failure.CodeModeToolException
 import java.io.IOException
 internal class CodeModeRuntimeStarter(
     private val run: CodeModeRuntimeRun,
@@ -116,6 +118,25 @@ internal class CodeModeRuntimeStarter(
             evidence = FailureEvidence(detail),
             salvagedUsage = noRequestUsage,
         )
+    }
+
+    /** Cancellation after native adoption preserves the cell; earlier admission retains why it could not start. */
+    fun cancelled(record: CodeModeRecord, error: CancellationException) {
+        // LOST without an error is admission's no-rerun proof until the cell attaches.
+        val admitted = record.phase == CodeModePhase.LOST && record.error == null
+        if (record.phase != CodeModePhase.ACTIVE && !admitted) return
+        if (record.nativeRuntime && registry.cell(record) != null) return
+        registry.lose(record, "code-mode runtime start cancelled; source was not rerun", error)
+    }
+
+    /** Source and tool failures keep their established outcome before the generic startup policy is applied. */
+    suspend fun failed(record: CodeModeRecord, stream: CodeModeLiveRound?, error: IOException): TurnOutcome = when {
+        error is CodeModeToolException -> {
+            registry.complete(record, error.diagnostic)
+            CodeModeLocalOutcome.success()
+        }
+        stream?.sourceInterrupted == true -> stream.outcome()
+        else -> failed(record, error)
     }
 
     fun capacity(record: CodeModeRecord, error: CodeModeCapacityException, machine: CodexCodeModeMachine): TurnOutcome {

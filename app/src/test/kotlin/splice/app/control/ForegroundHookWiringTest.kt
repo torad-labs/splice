@@ -66,7 +66,7 @@ class ForegroundHookWiringTest {
                     val beforeWiring = callback(client, url, mgmt, START)
                     assertEquals(200, beforeWiring.status.value, beforeWiring.bodyAsText())
                     assertEquals(SessionAvailability.STALE, registry.read().single().availability)
-                    server.ports.foreground = tools
+                    server.ports.turns.foreground = tools
                     val accepted = callback(client, url, mgmt, START)
                     assertEquals(200, accepted.status.value, accepted.bodyAsText())
                     now += 45 * 60_000L

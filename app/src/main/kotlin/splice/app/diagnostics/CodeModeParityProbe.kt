@@ -66,7 +66,14 @@ internal object CodeModeParityProbe {
         require(args.size == GATEWAY_PROBE_ARGUMENTS) { "Expected native gateway case, nonce, state and host identity" }
         val details = args.drop(1)
         runtime(Path.of(details.last())).use { native ->
-            val result = CodeModeGatewayNativeProbe.run(details[0], details[1], Path.of(details[2]), native)
+            val state = Path.of(details[2])
+            val result = CodeModeGatewayNativeProbe.run(
+                details[0],
+                details[1],
+                state,
+                native,
+                interruptControl = CodeModeHttpInterruptProbe(state),
+            )
             CodeModeParityText.write(System.out, JsonWire.string(result))
         }
     }

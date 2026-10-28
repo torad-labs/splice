@@ -6,6 +6,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import splice.app.provider.codex.CodeModeMcpReplies
 import splice.app.provider.codex.CodeModeSessionLiveness
+import splice.app.provider.codex.HeadCodeModeControls
 import splice.codemode.DEFAULT_HEAP_MB
 import splice.codemode.DEFAULT_MAX_WORKERS
 import splice.codemode.DEFAULT_POOL_MEMORY_MB
@@ -51,6 +52,8 @@ internal class CodexCodeModeAssembly(
     private val sessionIdle: CodeModeSessionIdle =
         (sessionAlive as? CodeModeSessionLiveness)?.idle ?: CodeModeSessionIdle { false },
 ) {
+    internal val controls: HeadCodeModeControls = HeadCodeModeControls()
+
     fun wiring(ctx: ProviderBuild): CodexCodeModeWiring = CodexCodeModeWiring(
         bridge = codeModeBridge(ctx)?.also { codeModeHeads += ctx.key },
         models = ctx.providerCfg.quirks.codeModeModels,
@@ -116,7 +119,9 @@ internal class CodexCodeModeAssembly(
                     cellLease = CodeModeCellLease(sessionAlive = sessionAlive, sessionIdle = sessionIdle),
                 ),
             ).also { bridge ->
+                controls.register(ctx.key, bridge)
                 checkNotNull(probeScope.coroutineContext[Job]).invokeOnCompletion {
+                    controls.remove(ctx.key, bridge)
                     Cancellables.runCatchingBestEffort { bridge.onProviderStop() }.exceptionOrNull()?.let { failure ->
                         HeadScopedLogs.headScopedLog(ctx.key, log).invoke(
                             "[code-mode] terminal save needs its retained retry owner " +
@@ -126,6 +131,7 @@ internal class CodexCodeModeAssembly(
                 }
             }
         } else {
+            controls.register(ctx.key, null)
             null
         }
 }

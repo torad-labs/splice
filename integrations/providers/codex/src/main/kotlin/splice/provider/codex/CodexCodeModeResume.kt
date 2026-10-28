@@ -2,16 +2,11 @@
 // reads what else the client sent while a script was parked.
 package splice.provider.codex
 
-import splice.core.failure.FailureCause
-import splice.core.failure.FailureEvidence
-import splice.core.failure.Moment
-import splice.core.failure.Position
-import splice.core.failure.ProtocolFault
 import splice.core.turn.TurnOutcome
-import splice.core.turn.noRequestUsage
 import splice.provider.codex.branch.CodeModeClientOutputDigests
 import splice.provider.codex.callbacks.CodeModeResumeResults
 import splice.provider.codex.callbacks.CodexCodeModeIncrementalOutcomes
+import splice.provider.codex.stream.CodeModeRejection
 import splice.provider.codex.stream.CodeModeSourceReset
 import splice.provider.codex.stream.reader.CodeModeReaderTermination
 import splice.upstream.codemode.CodeModeResult
@@ -230,13 +225,7 @@ internal class CodexCodeModeResume(
         return machine.emit(record, pending, sink)
     }
 
-    private fun failure(message: String): TurnOutcome.Failure =
-        TurnOutcome.Failure(
-            cause = FailureCause.Splice.Protocol(ProtocolFault.CODE_MODE_STATE),
-            at = Position(Moment.MID_CONTENT, streamBegan = true),
-            evidence = FailureEvidence(message),
-            salvagedUsage = noRequestUsage,
-        )
+    private fun failure(message: String): TurnOutcome.Failure = CodeModeRejection.state(message)
 }
 
 /**

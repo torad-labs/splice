@@ -236,7 +236,8 @@ internal class ControlPlane(
      *  playground probe, and V4-239's [ConsoleWiring.wireVerbReads] for the models, trace and wire reads. */
 
     private fun wireConsolePorts(srv: ControlServer) {
-        srv.ports.foreground = foregroundTools
+        srv.ports.turns.codeMode = providerAssembly.codeModeControls
+        srv.ports.turns.foreground = foregroundTools
         srv.ports.compaction = compactionInstructions
         srv.ports.claudeLogins = claudeLogin.owner
         srv.ports.quotaReadFailures = quotaReadFailures

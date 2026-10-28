@@ -9,7 +9,7 @@ import splice.sessions.registry.SessionSource
 import splice.sessions.teams.TeamRuleBinding
 
 internal class LaunchSessions(val source: SessionSource?, ports: ConsolePorts, val statePaths: StatePaths) {
-    val activity: ForegroundToolActivity = ForegroundToolActivity { call -> ports.foreground?.record(call) }
+    val activity: ForegroundToolActivity = ForegroundToolActivity { call -> ports.turns.foreground?.record(call) }
 
     /** A session's start, for Teams' binding by rule; the store is read when the hook fires, as it is wired late. */
     val starts: SessionStarts = SessionStarts { head, session, cwd ->

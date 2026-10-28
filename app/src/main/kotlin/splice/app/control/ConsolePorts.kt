@@ -9,7 +9,6 @@ import splice.app.sources.mcp.McpAttached
 import splice.client.mcp.McpInventory
 import splice.client.mcp.McpSharing
 import splice.configuration.add.AddConsole
-import splice.core.client.ForegroundToolActivity
 import splice.core.compaction.CompactionInstructions
 import splice.core.config.KeyStore
 import splice.core.config.StatePaths
@@ -18,7 +17,6 @@ import splice.core.usage.QuotaReadFailureSource
 import splice.diagnostics.doctor.DoctorFixes
 import splice.diagnostics.doctor.DoctorReport
 import splice.diagnostics.playground.PlaygroundProbe
-import splice.head.turn.LiveTurnsByHead
 import splice.head.wire.WireTaps
 import splice.models.list.LocalRuntimes
 import splice.models.roster.DeclaredHeads
@@ -52,8 +50,8 @@ import java.nio.file.Path
  *  A DEFAULT INSTANCE IS NOT AVAILABLE for any of these: the one time one was, a fresh event bus here meant the
  *  route streamed a daemon that looked quiet forever while every head reported to a different bus. */
 public class ConsolePorts {
-    /** Optional local tool callbacks. Unwired keeps the existing unknown or stale session policy. */
-    public var foreground: ForegroundToolActivity? = null
+    /** Live turn observation and explicit turn actions share the provider's running ownership. */
+    internal val turns: ConsoleTurnPorts = ConsoleTurnPorts()
 
     /** V4-136: how /api/compaction/instructions reaches the daemon's ONE compaction resolver.
      *
@@ -178,8 +176,4 @@ public class ConsolePorts {
     /** V4-239: the daemon's ONE wire-tap registry, the one HeadServerFactory registers each head's tap
      *  in, behind GET /api/heads/{head}/wire. Null answers a named 503, never "the tap is off". */
     public var wires: WireTaps? = null
-
-    /** V4-319: the daemon's ONE live-turn registry, the one HeadServerFactory registers each head's turns
-     *  in, behind GET /api/heads/{head}/turns/live and the stop. Null answers a named 503. */
-    public var liveTurns: LiveTurnsByHead? = null
 }

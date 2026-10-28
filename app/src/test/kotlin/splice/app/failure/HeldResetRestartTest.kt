@@ -25,13 +25,16 @@ import java.time.format.DateTimeFormatter
 
 class HeldResetRestartTest {
     @Test
-    fun `a head restart retains the held reset on disk and a served retry clears it`(@TempDir tmp: Path) = runTest {
+    fun `a head restart retains retry timing on disk and a served retry clears it`(@TempDir tmp: Path) = runTest {
         withScriptedHeads(tmp, VirtualTime()) {
-            val reset = Instant.parse("2026-10-26T13:00:00Z")
+            val resumeAt = Instant.parse("2026-10-26T13:00:00Z")
             provider.script(
                 reply {
                     status(429)
-                    header("Retry-After", DateTimeFormatter.RFC_1123_DATE_TIME.format(reset.atOffset(ZoneOffset.UTC)))
+                    header(
+                        "Retry-After",
+                        DateTimeFormatter.RFC_1123_DATE_TIME.format(resumeAt.atOffset(ZoneOffset.UTC)),
+                    )
                     openAiErrorBody("rate_limit_error", "Rate limit reached for this plan.", "rate_limit_exceeded")
                 },
                 reply { chatAnswer("the retry was served") },
@@ -50,7 +53,8 @@ class HeldResetRestartTest {
             AsyncFileIo.drain()
             val restored = PerfStats(head.perfFile).endings.endingFor(id)
             assertEquals(OutcomeTag.RESTARTED.wire, restored?.outcome)
-            assertEquals(reset.epochSecond, restored?.resetEpochSeconds)
+            assertEquals(resumeAt.epochSecond, restored?.resumeEpochSeconds)
+            assertNull(restored?.resetEpochSeconds, "Retry-After alone does not state a spent-window reset")
             assertEquals(1, provider.requests.size, "a restart does not send the held request again")
 
             val answered = head.client.send(request)
@@ -59,7 +63,8 @@ class HeldResetRestartTest {
             AsyncFileIo.drain()
             val after = PerfStats(head.perfFile).endings.endingFor(id)
             assertEquals(OutcomeTag.OK.wire, after?.outcome)
-            assertNull(after?.resetEpochSeconds, "a served retry leaves no reset for a future daemon to wake")
+            assertNull(after?.resumeEpochSeconds, "a served retry clears its persisted retry horizon")
+            assertNull(after?.resetEpochSeconds, "a served retry leaves no quota reset")
         }
     }
 }

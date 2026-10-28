@@ -18424,10 +18424,19 @@
       "id": "codex-rs/code-mode-protocol/src/description.rs#const_item@5147",
       "sha256": "d7f47b86e8b3155aaddeff41c82d83991bbea9c4c0ca15cb05280be6c900fece",
       "scopeSha256": "4b4c292a2e04c250bbf2f134fe0e52600c97632e84e4ae92c7ad26b81c6f9292",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/api_catalog/b199da40bfe2e342a99c",
+          "inputSha256": "b199da40bfe2e342a99c5f118e753f1494e4dd7558912c3686b8b22ce0e88cdc",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.CodeModeCatalogProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/code-mode-protocol/src/description.rs#const_item@5147"
+        }
+      ],
+      "reason": "The actual source create_wait_tool returns this typed ToolSpec/Responses API declaration, and its exact serialized member or bundled template fragment is compared through the production catalog wait declaration factory. The complete mandatory API batch is required; unused api/lite output and parent entry counters grant no member credit."
     },
     {
       "id": "codex-rs/code-mode-protocol/src/description.rs#const_item@525",
@@ -131416,19 +131425,37 @@
       "id": "codex-rs/tools/src/responses_api.rs#field_declaration@1003",
       "sha256": "cd3b23e5ad87d17f9d4154d6f351ed0508124a9ed77a6dec3625f336d3653487",
       "scopeSha256": "4b73ed631884e589d668ea46c4e67dad2c699bbf0d1e10ab426135c802974336",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/api_catalog/b199da40bfe2e342a99c",
+          "inputSha256": "b199da40bfe2e342a99c5f118e753f1494e4dd7558912c3686b8b22ce0e88cdc",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.CodeModeCatalogProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/tools/src/responses_api.rs#field_declaration@1003"
+        }
+      ],
+      "reason": "The actual source create_wait_tool returns this typed ToolSpec/Responses API declaration, and its exact serialized member or bundled template fragment is compared through the production catalog wait declaration factory. The complete mandatory API batch is required; unused api/lite output and parent entry counters grant no member credit."
     },
     {
       "id": "codex-rs/tools/src/responses_api.rs#field_declaration@1233",
       "sha256": "5a2ea913ebf6a742dbcee1261580399385431a007b2546ce3b379b4638318674",
       "scopeSha256": "b0e81feb39effacc7698cd678f9da5d4b4637d1699e3c4c66584c300d0a2ace9",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/api_catalog/b199da40bfe2e342a99c",
+          "inputSha256": "b199da40bfe2e342a99c5f118e753f1494e4dd7558912c3686b8b22ce0e88cdc",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.CodeModeCatalogProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/tools/src/responses_api.rs#field_declaration@1233"
+        }
+      ],
+      "reason": "The actual source create_wait_tool returns this typed ToolSpec/Responses API declaration, and its exact serialized member or bundled template fragment is compared through the production catalog wait declaration factory. The complete mandatory API batch is required; unused api/lite output and parent entry counters grant no member credit."
     },
     {
       "id": "codex-rs/tools/src/responses_api.rs#field_declaration@1309",
@@ -131443,10 +131470,19 @@
       "id": "codex-rs/tools/src/responses_api.rs#field_declaration@1346",
       "sha256": "4c128aadcf248fe90aaddc34df28aba24a9e86f665bb11782eb9ace1ee826485",
       "scopeSha256": "127a4cefaf1669efbea8b815448b63a4d1d9064379f405f26aeaebed1b5ba142",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/api_catalog/b199da40bfe2e342a99c",
+          "inputSha256": "b199da40bfe2e342a99c5f118e753f1494e4dd7558912c3686b8b22ce0e88cdc",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.CodeModeCatalogProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/tools/src/responses_api.rs#field_declaration@1346"
+        }
+      ],
+      "reason": "The actual source create_wait_tool returns this typed ToolSpec/Responses API declaration, and its exact serialized member or bundled template fragment is compared through the production catalog wait declaration factory. The complete mandatory API batch is required; unused api/lite output and parent entry counters grant no member credit."
     },
     {
       "id": "codex-rs/tools/src/responses_api.rs#field_declaration@1397",
@@ -131551,10 +131587,19 @@
       "id": "codex-rs/tools/src/responses_api.rs#field_declaration@981",
       "sha256": "cb33212189385fa76c731a9c3d9bcf496b8436ef30c8a0372dd4218881257de6",
       "scopeSha256": "824c3c05abbca4d660a8e559b394c6a2d5e106e201262b484269243630b3a80f",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/api_catalog/b199da40bfe2e342a99c",
+          "inputSha256": "b199da40bfe2e342a99c5f118e753f1494e4dd7558912c3686b8b22ce0e88cdc",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.CodeModeCatalogProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/tools/src/responses_api.rs#field_declaration@981"
+        }
+      ],
+      "reason": "The actual source create_wait_tool returns this typed ToolSpec/Responses API declaration, and its exact serialized member or bundled template fragment is compared through the production catalog wait declaration factory. The complete mandatory API batch is required; unused api/lite output and parent entry counters grant no member credit."
     },
     {
       "id": "codex-rs/tools/src/responses_api.rs#function_item@1927",
@@ -131695,10 +131740,19 @@
       "id": "codex-rs/tools/src/responses_api.rs#struct_item@947",
       "sha256": "26b0ca3c3992c0a82523f900d0f879a5b807581cce29d3e896faaeb5f5d6b34e",
       "scopeSha256": "5781b36c690d6c17ab79876922754a2851b9f05f2b8212f465bb5f619c475a7c",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/api_catalog/b199da40bfe2e342a99c",
+          "inputSha256": "b199da40bfe2e342a99c5f118e753f1494e4dd7558912c3686b8b22ce0e88cdc",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.CodeModeCatalogProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/tools/src/responses_api.rs#struct_item@947"
+        }
+      ],
+      "reason": "The actual source create_wait_tool returns this typed ToolSpec/Responses API declaration, and its exact serialized member or bundled template fragment is compared through the production catalog wait declaration factory. The complete mandatory API batch is required; unused api/lite output and parent entry counters grant no member credit."
     },
     {
       "id": "codex-rs/tools/src/tool_call.rs#enum_item@4646",
@@ -133657,10 +133711,19 @@
       "id": "codex-rs/tools/src/tool_spec.rs#enum_item@810",
       "sha256": "94609d065aee267054cdb61b0c8552f3861efd5c28c611a54757d40478694645",
       "scopeSha256": "e766e10b05f5ff0f7fd39e3b8c59c5d7bc47490d53f688074c3e63628e735059",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/api_catalog/b199da40bfe2e342a99c",
+          "inputSha256": "b199da40bfe2e342a99c5f118e753f1494e4dd7558912c3686b8b22ce0e88cdc",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.CodeModeCatalogProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/tools/src/tool_spec.rs#enum_item@810"
+        }
+      ],
+      "reason": "The actual source create_wait_tool returns this typed ToolSpec/Responses API declaration, and its exact serialized member or bundled template fragment is compared through the production catalog wait declaration factory. The complete mandatory API batch is required; unused api/lite output and parent entry counters grant no member credit."
     },
     {
       "id": "codex-rs/tools/src/tool_spec.rs#enum_variant@1010",
@@ -133693,10 +133756,19 @@
       "id": "codex-rs/tools/src/tool_spec.rs#enum_variant@868",
       "sha256": "9bf9e08e16d8e38e22fe6c4d55c66a355af3e313d1c26c7573ebcce967c599f3",
       "scopeSha256": "e349dab9f60787926789543797961a4566ee00d6967f48651ecae16a1a7aaab5",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/api_catalog/b199da40bfe2e342a99c",
+          "inputSha256": "b199da40bfe2e342a99c5f118e753f1494e4dd7558912c3686b8b22ce0e88cdc",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.CodeModeCatalogProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/tools/src/tool_spec.rs#enum_variant@868"
+        }
+      ],
+      "reason": "The actual source create_wait_tool returns this typed ToolSpec/Responses API declaration, and its exact serialized member or bundled template fragment is compared through the production catalog wait declaration factory. The complete mandatory API batch is required; unused api/lite output and parent entry counters grant no member credit."
     },
     {
       "id": "codex-rs/tools/src/tool_spec.rs#enum_variant@935",
@@ -133963,10 +134035,19 @@
       "id": "codex-rs/tools/src/tool_spec.rs#ordered_field_declaration_list@876",
       "sha256": "064775d1e4f3f67990cac503bbd170da2d9170cdbabaaafc532a00c3880a513c",
       "scopeSha256": "b65b8268c82aacb4814a5f1c0dfdc0e201b261b18354be6b431f230558b225a4",
-      "disposition": "unsupported",
-      "verifiers": [],
-      "witnesses": [],
-      "reason": "No reviewed exact source entry/value witness or applicable nonbehavior predicate exists. This source obligation blocks complete qualification until its observable behavior is implemented and bound to a mandatory named production case."
+      "disposition": "verify",
+      "verifiers": [
+        "current.tools-and-description"
+      ],
+      "witnesses": [
+        {
+          "caseId": "core/api_catalog/b199da40bfe2e342a99c",
+          "inputSha256": "b199da40bfe2e342a99c5f118e753f1494e4dd7558912c3686b8b22ce0e88cdc",
+          "productionEntrypoint": "splice.provider.codex.diagnostics.CodeModeCatalogProbe.evaluate",
+          "referenceEntrypoint": "codex-rs/tools/src/tool_spec.rs#ordered_field_declaration_list@876"
+        }
+      ],
+      "reason": "The actual source create_wait_tool returns this typed ToolSpec/Responses API declaration, and its exact serialized member or bundled template fragment is compared through the production catalog wait declaration factory. The complete mandatory API batch is required; unused api/lite output and parent entry counters grant no member credit."
     },
     {
       "id": "codex-rs/tools/src/tool_spec.rs#ordered_field_declaration_list@944",

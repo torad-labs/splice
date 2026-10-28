@@ -115,7 +115,7 @@ export async function assertSourceCliBuild(build: CliSourceBuildProof, inventory
   assert.equal(await git(build.sourceDirectory, "diff", "--binary", "--", "codex-rs/Cargo.lock"), (await checked(build.overlay.patch)).toString());
 }
 
-async function exportSourceProfile(source: CliRun, build: CliSourceBuildProof, inventory: CurrentInventory, directory: string): Promise<{ proof: Artifact; functions: FunctionWitness[] }> {
+export async function exportSourceProfile(source: CliRun, build: CliSourceBuildProof, inventory: CurrentInventory, directory: string): Promise<{ proof: Artifact; functions: FunctionWitness[] }> {
   const rawDirectory = resolve(source.directory, "source-profile"), rawPath = resolve(rawDirectory, `${source.cliProcess.pid}.profraw`);
   assert.deepEqual((await readdir(rawDirectory)).sort(), [basename(rawPath)], "source counter input is not isolated to the attested CLI PID");
   const merged = resolve(directory, "profile.profdata");

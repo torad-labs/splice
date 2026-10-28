@@ -59,8 +59,8 @@ export async function apiMemberValues(jobs: ApiJob[], expected: any[], actual: a
     }
     return candidates.length === 1 ? candidates[0] : undefined;
   };
-  const children = (owner: SourceUnit, kinds: string[]) => inventory.units.filter(unit => unit.file === owner.file && unit.start > owner.start && unit.end < owner.end && kinds.includes(unit.kind) &&
-    !inventory.units.some(parent => parent.file === owner.file && parent.id !== owner.id && ["struct_item", "enum_item", "enum_variant"].includes(parent.kind) && parent.start > owner.start && parent.start < unit.start && parent.end > unit.end && parent.end < owner.end));
+  const children = (owner: SourceUnit, kinds: string[]) => inventory.units.filter(unit => unit.file === owner.file && unit.start > owner.start && unit.end <= owner.end && kinds.includes(unit.kind) &&
+    !inventory.units.some(parent => parent.file === owner.file && parent.id !== owner.id && ["struct_item", "enum_item", "enum_variant"].includes(parent.kind) && parent.start > owner.start && parent.start < unit.start && parent.end >= unit.end && parent.end < owner.end));
   const attributes = async (unit: SourceUnit, owner?: SourceUnit) => {
     const bytes = await source(unit.file), before = inventory.units.filter(previous => previous.file === unit.file && previous.end <= unit.start && previous.start >= (owner?.start ?? 0)).reduce((end, previous) => Math.max(end, previous.end), owner?.start ?? 0);
     return bytes.subarray(before, unit.start).toString();
@@ -77,11 +77,12 @@ export async function apiMemberValues(jobs: ApiJob[], expected: any[], actual: a
   };
   for (const [index, job] of jobs.entries()) {
     assert.equal(job.observations?.length ?? 0, 0, "manual API member claims cannot replace a derived typed value path");
-    const emit = (unit: SourceUnit, path: Path) => {
+    const emit = (unit: SourceUnit, path: Path, fragment?: string) => {
       if (!prefix(path, job.reference_path)) return;
       const targetPath = [...job.candidate_path, ...path.slice(job.reference_path.length)], sourceValue = at(expected[index].result, path), targetValue = at(actual[index].result, targetPath);
       assert.notEqual(sourceValue, undefined); assert.deepEqual(targetValue, sourceValue); assertObservableJsonKeyOrder(targetValue, sourceValue);
-      if (!values.has(unit.id)) values.set(unit.id, { id: unit.id, sha256: unit.sha256, relation: "typed-source-shape-v1", path: [job.id, ...path], valueSha256: sha256(JSON.stringify(sourceValue)) });
+      if (fragment !== undefined && (typeof sourceValue !== "string" || !fragment.length || !sourceValue.includes(fragment))) return;
+      if (!values.has(unit.id)) values.set(unit.id, { id: unit.id, sha256: unit.sha256, relation: fragment === undefined ? "typed-source-shape-v1" : "rendered-source-value-v1", path: [job.id, ...path], valueSha256: sha256(JSON.stringify(sourceValue)), ...(fragment === undefined ? {} : { fragmentSha256: sha256(fragment) }) });
     };
     const walk = async (type: SourceUnit, value: any, path: Path, depth = 0): Promise<void> => {
       if (depth > 40 || value === null || value === undefined || rawNumber(value) || !prefix(path, job.reference_path) && !prefix(job.reference_path, path)) return;
@@ -162,6 +163,23 @@ export async function apiMemberValues(jobs: ApiJob[], expected: any[], actual: a
       const definition = await resolveType("codex_code_mode::ToolDefinition"); assert.ok(definition);
       const definitionsPath: Path = ["prepared_by_spec", job.reference_path[1]], definitions = at(expected[index].result, definitionsPath);
       if (Array.isArray(definitions)) for (const [item, value] of definitions.entries()) await walk(definition, value, [...definitionsPath, item]);
+    }
+    if (job.reference_input.operation === "catalog_wait" && (!job.reference_path.length || job.reference_path[0] === "declaration")) {
+      assert.ok(main.includes('"declaration":tools::wait_spec::create_wait_tool'), "wait wire observations require the actual typed source factory");
+      const factory = build.driverSources.find(proof => proof.path.endsWith("/src/wait_spec.rs")); assert.ok(factory);
+      const bytes = await readFile(factory.path); assert.equal(sha256(bytes), factory.sha256);
+      assert.match(bytes.toString(), /fn\s+create_wait_tool\s*\([^]*?\)\s*->\s*ToolSpec\s*\{/);
+      const type = await resolveType("codex_tools::ToolSpec"); assert.ok(type);
+      await walk(type, expected[index].result.declaration, ["declaration"]);
+      const override = job.reference_input.model_messages?.tools?.code_mode?.wait?.description;
+      if (override == null && bytes.toString().includes("codex_code_mode::build_wait_tool_description().trim()")) {
+        const constant = inventory.units.find(unit => unit.file === "codex-rs/code-mode-protocol/src/description.rs" && unit.kind === "const_item" && unit.label === "WAIT_DESCRIPTION_TEMPLATE");
+        if (constant) {
+          const literal = (await source(constant.file)).subarray(constant.start, constant.end); assert.equal(sha256(literal), constant.sha256);
+          const raw = literal.toString().match(/=\s*r(#{0,16})"([\s\S]*)"\1\s*;/); assert.ok(raw, "wait template literal changed representation");
+          if (typeof expected[index].result.declaration?.description === "string") emit(constant, ["declaration", "description"], raw[2]!.trim());
+        }
+      }
     }
   }
   return [...values.values()].sort((a, b) => a.id.localeCompare(b.id));

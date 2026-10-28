@@ -18,7 +18,10 @@ function validateScenario(scenario: CliScenario): void {
     if (action.kind === "wait" && action.yieldTimeMs !== undefined && (!Number.isSafeInteger(action.yieldTimeMs) || action.yieldTimeMs < 0)) throw Error("Invalid wait budget");
   }
   if (scenario.completionHoldMs !== undefined && (!Number.isSafeInteger(scenario.completionHoldMs) || scenario.completionHoldMs < 0 || scenario.completionHoldMs > 10000)) throw Error("Invalid controlled completion hold");
-  if (scenario.interruption && (!scenario.interruption.notification || !scenario.interruption.resumePrompt || scenario.actions[0]?.kind !== "exec" || scenario.actions.length < 2)) throw Error("Invalid owned interruption boundary");
+  if (scenario.interruption) {
+    const index = scenario.interruption.actionIndex ?? 0;
+    if (!Number.isSafeInteger(index) || index < 0 || !scenario.interruption.notification || !scenario.interruption.resumePrompt || scenario.actions[index]?.kind !== "exec" || scenario.actions.length < index + 2) throw Error("Invalid owned interruption boundary");
+  }
 }
 
 /** Runs the signed reference's actual interactive client against only a deterministic loopback model. */
@@ -70,7 +73,7 @@ export async function runCliScenario(options: {
     const argv = [resolve(reference.cli.path), "--no-daemon", "--no-alt-screen", "-C", workspace, "--", "Run the fixed local CodeMode qualification probe in this disposable workspace."];
     await writeFile(resolve(directory, "launch.json"), JSON.stringify({ argv, nonce, inputSha256, reference, catalogSha256: digest(catalog), modelBackend: "deterministic-loopback-no-inference", terminal: { implementation: "Bun.Terminal", emulator: "@xterm/headless@5.5.0" }, ...(sourceProfilePattern ? { sourceProfilePattern } : {}), ...(freeformTool ? { freeformTool } : {}) }, null, 2) + "\n", { mode: 0o600 });
     const terminal = await runTerminal({ argv, cwd: workspace, home: cliHome, directory: resolve(directory, "terminal"), expectedHostSha256: reference.host.sha256, expectedCliSha256: reference.cli.sha256, timeoutMs: options.timeoutMs ?? 45000, sourceProfilePattern,
-      ...(scenario.interruption ? { interruption: { ...scenario.interruption, callId: `probe-${scenario.id}-0`, ready: upstream.interruptionReady } } : {}) });
+      ...(scenario.interruption ? { interruption: { ...scenario.interruption, callId: `probe-${scenario.id}-${scenario.interruption.actionIndex ?? 0}`, ready: upstream.interruptionReady } } : {}) });
     const counts = upstream.counts();
     if (counts.failure) throw Error(counts.failure);
     if (counts.taskRequests !== expectedTaskRequests(scenario)) throw Error("The actual client did not consume every scripted action exactly once");

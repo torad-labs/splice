@@ -85,8 +85,9 @@ export function startScriptedUpstream(scenario: CliScenario, directory: string, 
         const input = (Array.isArray(body.input) ? body.input.map(object).filter(Boolean) : []) as ObjectValue[];
         if (!title) observations.push({ request: sequence, input });
         let stream = event("response.created", { response: { id, status: "in_progress", output: [] } });
-        if (!title && scenario.interruption && sequence === 2) {
-          const cellId = yieldedCell(input, callId(scenario, 0));
+        const interruptionRequest = (scenario.interruption?.actionIndex ?? 0) + 2;
+        if (!title && scenario.interruption && sequence === interruptionRequest) {
+          const cellId = yieldedCell(input, callId(scenario, scenario.interruption.actionIndex ?? 0));
           const receipt = { schema: 1, request: sequence, cellId, startedAt: Date.now(), abortedAt: undefined as number | undefined };
           const save = () => writeFile(resolve(directory, "interruption-hold.json"), JSON.stringify(receipt) + "\n");
           await persist(); await save();
@@ -98,7 +99,7 @@ export function startScriptedUpstream(scenario: CliScenario, directory: string, 
             cancel() { aborted(); },
           }), { headers: { "content-type": "text/event-stream", "x-request-id": id } });
         }
-        const actionIndex = sequence - 1 - (scenario.interruption && sequence > 2 ? 1 : 0);
+        const actionIndex = sequence - 1 - (scenario.interruption && sequence > interruptionRequest ? 1 : 0);
         const items = title ? [] : actionItems(scenario, actionIndex, input, lastExecId);
         if (!title && scenario.actions[actionIndex]?.kind === "exec") {
           lastExecId = String(items.at(-1)!.call_id);

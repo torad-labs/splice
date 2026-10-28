@@ -13,7 +13,7 @@ export interface CliScenario {
   mcp?: boolean;
   completionHoldMs?: number;
   applyPatch?: true;
-  interruption?: { notification: string; resumePrompt: string };
+  interruption?: { notification: string; resumePrompt: string; actionIndex?: number };
 }
 
 export interface CliReference {

@@ -4,6 +4,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import splice.core.turn.RoundHandoffs
@@ -27,7 +28,10 @@ internal class CodeModeGatewayInterruptedPost(
     override suspend fun invoke(bodyJson: String): RoundResult {
         val input = fixture.json.parseToJsonElement(bodyJson).jsonObject.getValue("input").jsonArray
         posted += input
-        if (posted.size == 2) {
+        check(
+            interruption["actionIndex"] == JsonPrimitive(1),
+        ) { "Interruption fixture needs its completed baseline cell" }
+        if (posted.size == INTERRUPTED_POST_SEQUENCE) {
             checkBoundary(input)
             held.complete(Unit)
             awaitCancellation()
@@ -54,3 +58,6 @@ internal class CodeModeGatewayInterruptedPost(
         ) { "The actual native guest did not deliver its bound interruption notification" }
     }
 }
+
+// why: one baseline execution and one yielded execution precede the held model continuation.
+private const val INTERRUPTED_POST_SEQUENCE = 3

@@ -20,6 +20,7 @@ import { assertApplyPatchBuild, freeformFile, freeformScenario, type FreeformToo
 import { verifyArtifact } from "./current-cli/file-identity";
 import { interruptionScenario } from "./current-cli/interruption-contract";
 import { cliResponseMemberValues } from "./current-cli-response-values";
+import { cliSearchMemberValues } from "./current-cli-search-values";
 import type { CoreValueWitness } from "./current-core-values";
 
 export const sourceCliFlags = ["-Cinstrument-coverage", "-Cdebuginfo=1", "-Copt-level=0", "-Cdebug-assertions=no", "-Coverflow-checks=no"];
@@ -164,7 +165,7 @@ export async function executeSourceCliWitnesses(options: { java: string; jar: Id
     const { candidate } = await compareGatewayScenario({ java: options.java, jar: options.jar, source, directory: candidateDirectory });
     const profile = await exportSourceProfile(source, build, options.inventory, directory);
     const witness: CliSourceCaseWitness = { producer: "core-cli-llvm", caseId: plan.caseId, inputSha256: plan.inputSha256, productionEntrypoint: plan.productionEntrypoint,
-      referenceFunctions: profile.functions, referenceValues: cliResponseMemberValues(source, candidate, options.inventory),
+      referenceFunctions: profile.functions, referenceValues: [...cliResponseMemberValues(source, candidate, options.inventory), ...cliSearchMemberValues(source, candidate, options.inventory)],
       input: await artifact(resolve(sourceDirectory, "case-input.json")), reference: await artifact(resolve(sourceDirectory, "result.json")), candidate: await artifact(resolve(candidateDirectory, "stdout.json")),
       build: options.build, profile: profile.proof, sourceFiles: await Promise.all(sourceFileNames(source).map(name => artifact(resolve(sourceDirectory, name)))), candidateFiles: await Promise.all(candidateFileNames(source, candidate).map(name => artifact(resolve(candidateDirectory, name)))),
       ...(source.freeformTool ? { freeformTool: source.freeformTool } : {}) };
@@ -224,7 +225,7 @@ export async function sourceCliWitnessFindings(cases: CliSourceCaseWitness[], in
     assert.equal(candidate.caseId, "runtime.current-scenario"); assert.equal(candidate.scope, "real-native-runtime-through-production-gateway"); assert.ok(candidateOutcomesMatch(source, candidate));
     const stderr = (await candidateFile("stderr.txt")).toString(); assert.ok(stderr.split("\n").some(line => { try { const event = JSON.parse(line); return event.type === "parity/identity" && Number.isSafeInteger(event.nativeHostPid) && event.nativeHostPid > 0; } catch { return false; } }));
     compareControlPackets(source, candidate, candidateDirectory);
-    assert.deepEqual(witness.referenceValues, cliResponseMemberValues(source, candidate, inventory), "CLI DTO claims differ from raw compared model input values");
+    assert.deepEqual(witness.referenceValues, [...cliResponseMemberValues(source, candidate, inventory), ...cliSearchMemberValues(source, candidate, inventory)], "CLI DTO claims differ from raw compared model input values");
     const profile: ClientProfileProof = JSON.parse((await checked(witness.profile)).toString()); assert.equal(profile.schema, 1);
     assert.equal(profile.profraw.path, resolve(source.directory, `source-profile/${source.cliProcess.pid}.profraw`));
     for (const proof of [profile.profraw, profile.profdata, profile.mappings, profile.exported]) await checked(proof);

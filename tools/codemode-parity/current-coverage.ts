@@ -11,6 +11,7 @@ import type { CliControlCase } from "./current-cli-proof";
 import { declarationContextReason } from "./current-declaration-context";
 import { effectiveLayoutContextReason } from "./current-effective-layout-context";
 import { reviewedCliResponseMember } from "./current-cli-response-values";
+import { reviewedCliSearchMember } from "./current-cli-search-values";
 
 export const currentVerifierIds = [
   "current.native-protocol", "current.tools-and-description", "current.output-and-media", "current.gateway-history", "current.interactive-delivery", "current.packaged-identities", "current.rust-client", "current.core-gateway",
@@ -93,7 +94,7 @@ export function dispositionFindings(inventory: CurrentInventory, dispositions: D
     if (item.disposition === "verify") {
       const observableMember = ["const_item", "struct_item", "enum_item", "enum_variant", "field_declaration", "ordered_field_declaration_list"].includes(unit.kind) || unit.kind.startsWith("typescript-");
       const valueVerifier = item.verifiers[0] === "current.tools-and-description" ||
-        item.verifiers[0] === "current.core-gateway" && reviewedCliResponseMember(unit, inventory);
+        item.verifiers[0] === "current.core-gateway" && (reviewedCliResponseMember(unit, inventory) || reviewedCliSearchMember(unit, inventory));
       if (item.verifiers.length !== 1 || !["current.tools-and-description", "current.rust-client", "current.core-gateway"].includes(item.verifiers[0]!) || !item.witnesses?.length ||
         unit.kind !== "function_item" && (!observableMember || !valueVerifier)) findings.push(`uncovered ported source unit; no supported per-unit invocation/value witness: ${item.id}`);
       for (const witness of item.witnesses ?? []) {

@@ -72,7 +72,7 @@ class TurnStopWiringTest {
 
     @Test
     fun `the routes read the head's own registry, name an unknown head, and 404 a turn that is not live`() {
-        serve(ports = { it.liveTurns = LiveTurnsByHead().apply { put("codex", LiveTurns()) } }) { calls ->
+        serve(ports = { it.turns.live = LiveTurnsByHead().apply { put("codex", LiveTurns()) } }) { calls ->
             val live = calls.get("/api/heads/codex/turns/live")
             assertEquals(200, live.status.value, live.bodyAsText())
             assertEquals(json("""{"turns":[],"waiting":[]}"""), json(live.bodyAsText()))

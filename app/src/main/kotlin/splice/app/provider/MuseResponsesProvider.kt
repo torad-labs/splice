@@ -43,6 +43,6 @@ internal class MuseResponsesProvider(
      *  key is off or the turn names no conversation, and then no route is pinned. */
     private fun conversation(meta: TurnMeta): String? {
         if (options.quirks.backend.promptCache.key == CacheKeyStrategy.OFF) return null
-        return meta.scope.sessionId?.let { "${options.quirks.providerTag}:$it" } ?: meta.scope.conversationKey
+        return meta.scope.sessionId?.let { "${options.quirks.providerTag}:$it" } ?: meta.scope.upstreamConversationKey
     }
 }

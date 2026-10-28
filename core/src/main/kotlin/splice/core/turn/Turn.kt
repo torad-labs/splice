@@ -43,13 +43,13 @@ public data class TurnReasoning(
 
 /** The conversation and session a turn belongs to, and the summary-dedup state its rounds share. */
 public data class TurnScope(
-    /** Stable per-conversation scope key (responses dialect: first-message hash) — partitions the
-     *  gateway reasoning cache so concurrent conversations on one head can never cross-inject
+    /** Internal continuity identity (responses dialect: agent-qualified first-message hash) — partitions the
+     *  gateway reasoning cache so concurrent agents and conversations on one head can never cross-inject
      *  (review 2026-07-24, RC-2's eli-risk-8 keying). Null (chat/passthrough) = one shared scope. */
     val conversationKey: String? = null,
-    /** The client's session id when it sent one (ws-transport WS-3). [conversationKey] alone is a
-     *  hash of the first user message's TEXT, so two conversations that open with identical words
-     *  share it BY DESIGN — harmless for a cache miss, but fatal as a previous_response_id chain
+    /** The client's session id when it sent one (ws-transport WS-3). [conversationKey] alone can be
+     *  shared by separate sessions whose agents open with identical words — harmless for a cache miss,
+     *  but fatal as a previous_response_id chain
      *  anchor, where it would hand one conversation's server-side context to another. Null when
      *  the client sends no session id; consumers must mix BOTH, never either alone. */
     val sessionId: String? = null,
@@ -72,6 +72,8 @@ public data class TurnScope(
     val reasoningHistory: splice.core.reasoning.ReasoningHistory? = null,
     /** Canonical opener identity for server history; independent of the established upstream prompt cache key. */
     val reasoningStorageKey: String? = null,
+    /** Unqualified opening identity for upstream cache and routing affinity; never includes the client agent id. */
+    val upstreamConversationKey: String? = null,
 )
 
 /** Tool-surface partition sizes for THIS turn's request; both null when deferral was not in play.

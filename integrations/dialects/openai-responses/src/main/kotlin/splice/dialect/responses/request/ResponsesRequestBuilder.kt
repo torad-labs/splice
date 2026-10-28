@@ -168,6 +168,7 @@ internal class ResponsesRequestBuilder(
                 sessionId = opts.sessionId,
                 reasoningHistory = opts.reasoningHistory.copy(),
                 reasoningStorageKey = ids.reasoningStorageKey(body)?.let { AgentConversationKey.of(it, opts.agentId) },
+                upstreamConversationKey = parts.conversationKey,
                 // summaryParts is NOT passed: TurnScope's default constructs the turn's one instance.
                 // Every continuation round reuses this meta object (continuationRequest bypasses
                 // build()), so the dedup state it carries is genuinely turn-scoped.

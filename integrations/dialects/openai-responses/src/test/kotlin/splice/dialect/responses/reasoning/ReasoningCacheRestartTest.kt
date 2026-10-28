@@ -9,6 +9,7 @@ package splice.dialect.responses.reasoning
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
@@ -384,6 +385,76 @@ class ReasoningCacheRestartTest(@param:TempDir private val state: Path) {
     }
 }
 
+private fun proseFollowup(text: String): splice.core.parse.AnthropicTurnBody = AnthropicParse.parseAnthropicBody(
+    """{"model":"gpt-5.6-sol","messages":[{"role":"user","content":"$OPENING"},
+        {"role":"assistant","content":"$text"},{"role":"user","content":"Continue."}],$TOOLS}""",
+)
+
+private fun replayOrder(items: List<JsonObject>): List<String?> = items.map {
+    it["id"]?.jsonPrimitive?.content ?: it["role"]?.jsonPrimitive?.content ?: it["type"]?.jsonPrimitive?.content
+}
+
+class AgentReasoningPositionRestartTest(@param:TempDir private val state: Path) {
+    private val heads = RestartHeads(state)
+
+    @AfterEach
+    fun stopHeads() = heads.stopAll()
+
+    @Test
+    fun `same-opening agents restore isolated phases and positioned reasoning after restart`() = runTest {
+        val daemon = heads.start(replay = true)
+        val text = "Shared answer."
+        val scopes = listOf(
+            Triple(null, "main", "commentary"),
+            Triple("agent-a", "a", "final_answer"),
+            Triple("agent-b", "b", "commentary"),
+        )
+        for ((agentId, id, phase) in scopes) {
+            val message = ev(
+                """{"type":"message","id":"msg_$id","role":"assistant","phase":"$phase",""" +
+                    """"content":[{"type":"output_text","text":"$text"}]}""",
+            )
+            val reasoning = ev(
+                """{"type":"reasoning","id":"rs_$id","encrypted_content":"cipher-$id","summary":[]}""",
+            )
+            val started = JsonObject(message + ("content" to JsonArray(emptyList())))
+            val frames = listOf(
+                ev("""{"type":"response.output_item.added","output_index":0,"item":$started}"""),
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"$text"}"""),
+                ev("""{"type":"response.output_item.done","output_index":0,"item":$message}"""),
+                ev("""{"type":"response.output_item.done","output_index":1,"item":$reasoning}"""),
+                ev(
+                    """{"type":"response.completed","response":{"status":"completed",""" +
+                        """"output":[$message,$reasoning]}}""",
+                ),
+            )
+            assertTrue(
+                drive(daemon, "session", frames, body = opening.copy(agentId = agentId)) is TurnOutcome.Success,
+            )
+        }
+
+        val restarted = heads.restart(replay = true)
+        fun restored(agentId: String?): Pair<String?, List<String?>> {
+            val input = restarted.buildTurn(
+                proseFollowup(text).copy(agentId = agentId),
+                compact = false,
+                sessionId = "session",
+            ).requestBody.getValue("input").jsonArray.map { it.jsonObject }
+            val assistant = input.single { it["role"]?.jsonPrimitive?.content == "assistant" }
+            return assistant["phase"]?.jsonPrimitive?.content to replayOrder(input)
+        }
+
+        for ((agentId, id, phase) in scopes) {
+            assertEquals(
+                phase to listOf("user", "assistant", "rs_$id", "user"),
+                restored(agentId),
+                "restored scope $agentId",
+            )
+        }
+        assertEquals("final_answer" to listOf("user", "assistant", "user"), restored("fresh-agent"))
+    }
+}
+
 /** The visible transcript contains no opaque carriers. Its exact positions restore server-owned reasoning. */
 class ReasoningPositionRestartTest(@param:TempDir private val state: Path) {
     private val heads = RestartHeads(state)
@@ -559,15 +630,6 @@ class ReasoningPositionRestartTest(@param:TempDir private val state: Path) {
         assertEquals("Before.", sink.text.toString())
         assertEquals(0, sink.opaqueBlocks)
         assertEquals(listOf(message, reason), success.handoffs.nativePrefix)
-    }
-
-    private fun proseFollowup(text: String): splice.core.parse.AnthropicTurnBody = AnthropicParse.parseAnthropicBody(
-        """{"model":"gpt-5.6-sol","messages":[{"role":"user","content":"$OPENING"},
-            {"role":"assistant","content":"$text"},{"role":"user","content":"Continue."}],$TOOLS}""",
-    )
-
-    private fun replayOrder(items: List<JsonObject>): List<String?> = items.map {
-        it["id"]?.jsonPrimitive?.content ?: it["role"]?.jsonPrimitive?.content ?: it["type"]?.jsonPrimitive?.content
     }
 
     @Test

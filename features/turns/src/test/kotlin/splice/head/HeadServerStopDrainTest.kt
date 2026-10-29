@@ -59,6 +59,7 @@ import splice.upstream.codemode.ProcessWaiter
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
 import java.net.InetSocketAddress
+import java.net.Socket
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
@@ -81,6 +82,13 @@ private const val INFLIGHT_POLL_MS = 100L
 // why 10ms: the paced tail leaves the head within about a second of the slot releasing, so the stop must be
 // issued inside that window and a 100ms poll would spend a tenth of it.
 private const val RELEASE_POLL_MS = 10L
+
+// why 500ms: the stop closes admission before anything else, so half a second puts the request well inside a drain
+// the held turn keeps open for 6.5s.
+private const val DRAINING_SETTLE_MS = 500L
+
+// why 10s: a closed connection ends the read at once; this only bounds a head that answered nothing and kept it open.
+private const val RAW_READ_TIMEOUT_MS = 10_000
 
 // why 600: a burst this size is paced over the head's whole one-second window, not written in one go.
 private const val BURST_DELTAS = 600
@@ -287,6 +295,48 @@ class HeadServerStopDrainTest {
             rig.mock.releaseHold()
             rig.close()
         }
+    }
+
+    // Eli, Oct 28 (Simon's report): restart drains moved Haiku and Sonnet sessions onto their Opus fallbacks for good.
+    // Claude Code 2.1.312 moves a session with a fallback model onto it after three overloaded answers in a row, and at
+    // once after any other 5xx, but it never changes model on a connection error, which it retries ten times. A request
+    // that reaches a draining head therefore meets a closed connection and no HTTP answer at all, and its retry reaches
+    // the next daemon. Nothing reached the upstream for it, so nothing is lost or done twice.
+    @Test
+    fun `a request that reaches a draining head meets a closed connection and no HTTP answer`(
+        @TempDir tmp: Path,
+    ): Unit = runBlocking {
+        val rig = Rig(tmp, WatchdogBudget(600.seconds, 600.seconds, 900.seconds), stopDrainMs = DRAIN_HOLD_MS)
+        rig.start()
+        try {
+            val held = async(Dispatchers.IO) { runCatching { rig.heldTurn().bodyAsText() } }
+            assertTrue(rig.awaitInflight(), "precondition: a held turn keeps the head draining")
+            val stopping = async(Dispatchers.IO) { rig.head.stop() }
+            delay(DRAINING_SETTLE_MS)
+            val answer = rawRequest(rig.port)
+            assertEquals("", answer, "a draining head must answer with no status at all, got: ${answer.take(200)}")
+            rig.mock.releaseHold()
+            stopping.await()
+            held.await()
+        } finally {
+            rig.mock.releaseHold()
+            rig.close()
+        }
+    }
+
+    /** POST /v1/messages over a bare socket: every byte the head wrote back before it closed the connection. */
+    private fun rawRequest(port: Int): String = Socket("127.0.0.1", port).use { socket ->
+        socket.soTimeout = RAW_READ_TIMEOUT_MS
+        val body = """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":8,""" +
+            """"messages":[{"role":"user","content":"go"}]}"""
+        val request = "POST /v1/messages HTTP/1.1\r\nHost: 127.0.0.1:$port\r\n" +
+            "Authorization: Bearer test-inference-token\r\nContent-Type: application/json\r\n" +
+            "Content-Length: ${body.toByteArray().size}\r\n\r\n$body"
+        socket.getOutputStream().apply {
+            write(request.toByteArray())
+            flush()
+        }
+        socket.getInputStream().readAllBytes().toString(Charsets.UTF_8)
     }
 
     @Test

@@ -69,9 +69,9 @@ internal class HeadLifecycle(
         closeLocked()
     }
 
-    /** The half of a stop that keeps the port LISTENING: new turns are refused (529, which a client
-     *  retries) while the running ones finish, so nothing is ever answered with a refused connection
-     *  by a head that is still up. Idempotent — a stop after a drain closes without draining twice. */
+    /** The half of a stop that keeps the port LISTENING while the running turns finish: a new turn meets a closed
+     *  connection with no answer (AdmissionResponses.respondStopping), which Claude Code retries on a new connection
+     *  without changing model. Idempotent — a stop after a drain closes without draining twice. */
     private suspend fun drainLocked() {
         if (drained) return
         // Refuse new turns FIRST so the drain can actually converge, then drain in-flight turns

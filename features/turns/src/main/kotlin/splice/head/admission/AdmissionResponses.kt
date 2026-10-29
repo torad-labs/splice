@@ -10,8 +10,11 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.netty.NettyApplicationCall
 import io.ktor.server.response.header
 import io.ktor.server.response.respondText
+import io.ktor.server.routing.RoutingCall
+import io.ktor.server.routing.RoutingPipelineCall
 import splice.core.budget.BudgetBlock
 import splice.core.failure.ClientWire
 import splice.core.failure.Decline
@@ -79,11 +82,26 @@ internal class AdmissionResponses(private val voice: HeadVoice) {
         respondRefusal(call, FailureCause.Splice.AtCapacity(limit))
     }
 
-    /** The refusal of a request that reaches a head that is stopping. The connection closes after it, so the client's
-     *  retry opens a new one, and a new one waits for the next daemon instead of coming back to this one. */
+    /** The refusal of a request that reaches a head that is stopping: its connection is closed with no HTTP answer.
+     *  Claude Code 2.1.312 moves a session with a fallback model onto it after three overloaded answers in a row, and
+     *  at once after any other 5xx, but never on a connection error, which it retries up to ten times; that retry opens
+     *  a new connection and reaches the next daemon (Eli, Oct 28: restart drains moved Haiku and Sonnet sessions onto
+     *  their Opus fallbacks). Nothing went upstream for the request, so nothing is lost or done twice. Every head runs
+     *  on Netty; an engine with no connection to drop, such as Ktor's test engine, still answers the stopping 529. */
     suspend fun respondStopping(call: ApplicationCall) {
+        val connection = nettyCall(call)?.context?.channel()
+        if (connection != null) {
+            connection.close()
+            return
+        }
         call.response.header(HttpHeaders.Connection, "close")
         respondRefusal(call, FailureCause.Splice.Stopped(StoppedBy.HEAD_STOPPING))
+    }
+
+    private fun nettyCall(call: ApplicationCall): NettyApplicationCall? {
+        val pipeline = (call as? RoutingCall)?.pipelineCall ?: call
+        val engine = (pipeline as? RoutingPipelineCall)?.engineCall ?: pipeline
+        return engine as? NettyApplicationCall
     }
 
     /** A body over the head's [limit]. Both cap arms answer these same bytes (V4-440), and the arm that refuses a

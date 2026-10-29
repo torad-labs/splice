@@ -1135,7 +1135,7 @@ code.launch { font: 500 .95rem/1 var(--font-data); color: var(--text); padding: 
 .list.rail.rl-led { --rl-hero: 5rem; }
 .list.rail.rl-led::before { top: calc(var(--rl-hero) + var(--gap-card) + 1.1rem); }
 .rl-hero { display: grid; grid-template-columns: 3.4rem minmax(0, 1fr); grid-template-rows: 3.4rem 1rem; gap: calc(1.2 * var(--u)) calc(1.5 * var(--u)); align-items: center; height: var(--rl-hero); margin-left: -2.667rem; }
-.rl-hn { display: grid; place-items: center; height: 3.4rem; border-radius: var(--r-obj); border: var(--ink-w) solid var(--ink); background: var(--key-light); color: var(--splice-ink-day, #1b1408); font: 600 1.9rem/1 var(--font-data); font-variant-numeric: tabular-nums; box-shadow: .25rem .25rem 0 var(--ink); }
+.rl-hn { display: grid; place-items: center; height: 3.4rem; border-radius: var(--r-obj); border: var(--ink-w) solid var(--ink); background: var(--key-light); color: var(--splice-ink-day); font: 600 1.9rem/1 var(--font-data); font-variant-numeric: tabular-nums; box-shadow: .25rem .25rem 0 var(--ink); }
 .rl-hn.ok { background: var(--live); }
 .rl-ht { display: flex; flex-direction: column; gap: .25rem; min-width: 0; }
 .rl-ht b { font: 500 1.4rem/1.1 var(--font-lead); color: var(--text); }

@@ -8,7 +8,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 internal const val PEER_USAGE =
-    "register <name> [--cwd DIR] [--send-to A,B] | list [--json] | revoke <name> [--purge] | rotate <name> | " +
+    "register <name> [--cwd DIR] [--send-to A,B] [--owner PID] | list [--json] | revoke <name> [--purge] | " +
+        "rotate <name> | " +
         "webhook set <name> <url> [--bearer-file F] | webhook clear <name> | webhook test <name> | " +
         "limit <name> <per-minute> <burst> | limit <name> --default | " +
         "send --as <name> [--id ID] [--pid P [--proc-start S]] <to> <text|-> | " +

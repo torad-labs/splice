@@ -23,6 +23,17 @@ withdraws its registry entry and socket when the owner ends, and the supervisor 
 of restarting it. Daemon restarts do not end the owner. Registrations from an ordinary shell, and older peers
 without an owner binding, remain persistent until revoked; Splice does not infer an owner for them.
 
+Anything can be a peer: a bot, a script, another agent harness. Claude Code sessions are peers on their own; anything
+else registers by hand and reads its inbox or a webhook, as below. A program that wants its peer to live and die with
+it passes `--owner <pid>`: the CLI reads that process's kernel start time and binds the peer to it exactly as it binds a
+`codex` or `claude` ancestor. A pid that names no running process is refused before the daemon is called.
+
+Register is safe to run every time a program starts. A register that repeats one already there answers that peer,
+`200` instead of `201`, with the same session id and key file, so the key a program saved still works. When the new
+register asks for another `--cwd` or `--send-to`, the peer takes them and its helper restarts. A peer whose owner
+process ended passes to the new owner. A name a running process still owns stays refused, and so does a peer with no
+owner asked for by a process.
+
 A management `POST /api/peers` can supply `owner: {pid, procStart, pidDomain}`. All three values must identify the
 same live local process. An incomplete, stale or reused-pid tuple is refused before a peer is registered.
 
@@ -35,6 +46,7 @@ Options:
 
 - `--cwd DIR` sets the working directory the peer's registry record shows. It defaults to your home folder.
 - `--send-to A,B,…` limits who the peer may send to, by name or session id. The default is anyone.
+- `--owner PID` binds the peer to that running process instead of a `codex` or `claude` ancestor.
 
 ## Read what it receives
 
@@ -178,7 +190,19 @@ it, is `cwd`. Those are the fields on `SessionStart`, `UserPromptSubmit` and `Se
 (`codex-rs/hooks/src/schema.rs`). `$CODEX_HOME` (else `~/.codex`) is still the Codex home. An argument or either
 environment variable, when a caller did set one, names the thread instead of stdin.
 
-`~/.codex/hooks.json` runs attach when a thread starts and on each prompt, and detach when it ends:
+`splice setup` offers to write these hooks when it finds a Codex home (`$CODEX_HOME`, else `~/.codex`) whose
+`hooks.json` does not run `splice peer codex hook` yet. A yes adds `splice peer codex hook` to `SessionStart`,
+`UserPromptSubmit`, `PostToolUse`, `Stop` and `SessionEnd`, removes hand-written `splice peer codex attach` and
+`detach` entries, keeps every other hook, and saves the old file beside it as `hooks.json.bak-splice-<millis>`.
+
+`splice peer codex hook` is the one command for every event. It reads the event's name from stdin's
+`hook_event_name`. SessionStart attaches. UserPromptSubmit attaches and adds the messages waiting for the thread to
+the prompt's context. PostToolUse adds the ones that arrived during the turn. Stop, when messages wait, keeps the turn
+going with them as its reason. SessionEnd detaches. It always exits 0, and a daemon that is down only costs the turn
+its messages until the next hook.
+
+The older form, attach on start and on each prompt and detach on end, still works for threads an app-server holds.
+In `~/.codex/hooks.json` it reads:
 
 ```json
 {
@@ -218,9 +242,19 @@ line on stderr. A daemon that is down, or that answers 404 or any other refusal,
 that command's usual code. Exit 2 is the usage code at a terminal; Codex and Claude Code both treat it as "block this
 turn", so a hook never exits 2.
 
-An attach that finds the peer as asked changes nothing and answers once its helper runs. Attach is refused when no
-Codex app-server listens on the home's `app-server-control/app-server-control.sock` (or the daemon its
-`app-server-daemon/daemon.pid` names), because no message could reach the thread then.
+An attach that finds the peer as asked changes nothing and answers once its helper runs. Attach is refused only when
+no Codex app-server listens on the home's `app-server-control/app-server-control.sock` (or the daemon its
+`app-server-daemon/daemon.pid` names) and no `codex` process owns the thread either, because no message could reach
+it then.
+
+### A Codex thread no app-server holds
+
+A `codex` run in a terminal holds its thread itself, and no app-server can start a turn on it. Its helper then
+delivers through the hooks instead: each message is written to a 0600 file under the peer's state folder,
+`codex-hook/`, and the next `splice peer codex hook` claims it by an atomic rename and hands it to the thread. The
+journal records the hand-over as for an app-server thread, with `next-hook` as its turn. A message is claimed by one
+hook only, so it never arrives twice. An idle thread reads its messages at its next hook: the next prompt, tool call
+or turn end. Nothing wakes a Codex thread that sits idle.
 
 Attach looks up its own ancestry for the nearest process running `codex`. When it finds one, the peer's registry
 record carries a `lifecycleBinding` (version 1) naming that process as the thread's native owner and the peer's

@@ -51,9 +51,16 @@ public data class PeerRequest(
 /** Why a register was refused: a request that can never succeed, or a name that is reserved or taken (400 and 409). */
 public enum class PeerRefusal { INVALID, TAKEN }
 
-/** The answer to a register: the new peer and its key file, or why not. */
+/** What a register did to the peer it answers: made it, brought the one there up to date, or found it as asked. */
+public enum class RegisterOutcome { CREATED, UPDATED, SAME }
+
+/** The answer to a register: the peer and its key file, or why not. */
 public sealed class PeerRegistration {
-    public data class Registered(val config: PeerConfig, val keyFile: Path) : PeerRegistration()
+    public data class Registered(
+        val config: PeerConfig,
+        val keyFile: Path,
+        val outcome: RegisterOutcome = RegisterOutcome.CREATED,
+    ) : PeerRegistration()
 
     public data class Refused(val why: PeerRefusal, val reason: String) : PeerRegistration()
 }
@@ -79,6 +86,7 @@ public class PeerStore(
     private val keys = PeerKeys(random)
     private val rules = PeerRules()
     private val codexPeers = CodexPeers()
+    private val reregister = PeerRegisterAgain()
     private val mutation = Mutex()
 
     public val root: Path get() = folder.root
@@ -170,12 +178,24 @@ public class PeerStore(
 
     /**
      * Registers [request]'s peer: peer.key, then peer.json. [liveNames] are the names running registry records carry
-     * now, which a new peer may not take (2.1).
+     * now, which a new peer may not take (2.1). A register that repeats one already there answers that peer (Oct 28,
+     * 2026): see [PeerRegisterAgain].
      */
     public suspend fun register(request: PeerRequest, liveNames: Set<String>): PeerRegistration =
         mutation.withLock {
             val handNamed = peers.keys.filterNot(codexPeers::isPeer).toSet()
-            val refused = rules.malformed(request) ?: rules.taken(request, liveNames, handNamed, folder)
+            rules.malformed(request)?.let { return@withLock it }
+            val existing = folder.read(request.name)?.takeIf { request.name in handNamed }
+            if (existing != null) {
+                return@withLock when (val again = reregister.decide(existing, request)) {
+                    is RegisterAgain.Refused -> again.answer
+                    is RegisterAgain.Keep -> {
+                        if (again.outcome == RegisterOutcome.UPDATED) folder.write(again.file)
+                        PeerRegistration.Registered(publish(again.file), folder.keyFile(request.name), again.outcome)
+                    }
+                }
+            }
+            val refused = rules.taken(request, liveNames, handNamed, folder)
             if (refused != null) return@withLock refused
             val key = keys.mint()
             val now = clock.millis()

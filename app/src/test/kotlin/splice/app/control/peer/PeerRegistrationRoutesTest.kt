@@ -1,4 +1,7 @@
-// Oct 28, 2026: POST /api/peers/codex, as the daemon mounts it, over a real peer store. A Codex home where no
+// Oct 28, 2026: POST /api/peers and POST /api/peers/codex, as the daemon mounts them, over a real peer store.
+// A register that repeats one already there answers it with 200 and the same session id and key file, where it
+// was refused.
+// POST /api/peers/codex: A Codex home where no
 // app-server listens used to refuse every attach, which kept a thread that `codex resume --no-daemon` serves in its own
 // process off the registry. A thread hosted by a Codex process that runs is attached anyway, since its messages reach
 // it at its next hook; a thread with no such process and no app-server is still refused, since nothing could reach it.
@@ -15,6 +18,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -31,6 +35,7 @@ import splice.core.config.Knob
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.failure.HeadVoice
+import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.head.admission.AdmissionErrorBody
 import splice.http.ingress.HeapIngress
@@ -52,7 +57,7 @@ private const val THREAD = "019a2f6c-4b1e-7c3d-9e8f-0a1b2c3d4e5f"
 // why: the stat field after the command name that holds a process's kernel start (field 22 of /proc/<pid>/stat).
 private const val START_FIELD = 19
 
-class PeerCodexRouteTest {
+class PeerRegistrationRoutesTest {
     private val log = LogSink { }
 
     /** No helper starts here: the route's answer is what this checks, not the helper's life. */
@@ -100,6 +105,29 @@ class PeerCodexRouteTest {
         assertNotNull(store.get("codex-$THREAD"), "the thread is the peer codex-<thread>")
     }
 
+    @Test
+    fun `a register that repeats one answers 200 with the same peer, and the first answers 201`(
+        @TempDir dir: Path,
+    ) = testApplication {
+        val store = PeerStore(dir.resolve("settings"))
+        val key = MgmtKey(StatePaths(baseOverride = dir.resolve("control")))
+        val mount = PeersMount(parts(dir, store), guard(key, store))
+        application { routing { mount.register(this) } }
+        val body = buildJsonObject {
+            put("name", "grokbot")
+            put("cwd", dir.toString())
+        }.toString()
+
+        val first = post(client, key.get(), "/api/peers", body)
+        assertEquals(HttpStatusCode.Created, first.first, first.second)
+        val again = post(client, key.get(), "/api/peers", body)
+        assertEquals(HttpStatusCode.OK, again.first, again.second)
+        val session = { reply: String -> JsonScalars.str(JsonScalars.objectOrNull(Json, reply), "sessionId") }
+        assertEquals(session(first.second), session(again.second))
+        val keyFile = JsonScalars.str(JsonScalars.objectOrNull(Json, again.second), "keyFile")
+        assertEquals(store.keyFile("grokbot").toString(), keyFile)
+    }
+
     private fun parts(dir: Path, store: PeerStore): PeerParts {
         val sessions = Files.createDirectories(dir.resolve("sessions"))
         val services = PeerServices(NoHelpers(), PeerMailbox(store, dir.resolve("state"), log))
@@ -141,8 +169,16 @@ class PeerCodexRouteTest {
         if (owner != null) putJsonObject("owner") { owner.forEach { (name, value) -> put(name, value) } }
     }.toString()
 
-    private suspend fun attach(client: HttpClient, key: String, body: String): Pair<HttpStatusCode, String> {
-        val reply = client.post("/api/peers/codex") {
+    private suspend fun attach(client: HttpClient, key: String, body: String): Pair<HttpStatusCode, String> =
+        post(client, key, "/api/peers/codex", body)
+
+    private suspend fun post(
+        client: HttpClient,
+        key: String,
+        path: String,
+        body: String,
+    ): Pair<HttpStatusCode, String> {
+        val reply = client.post(path) {
             header(HttpHeaders.Authorization, "Bearer $key")
             contentType(ContentType.Application.Json)
             setBody(body)

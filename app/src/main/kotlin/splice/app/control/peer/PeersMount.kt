@@ -35,6 +35,7 @@ import splice.sessions.peer.store.PeerRefusal
 import splice.sessions.peer.store.PeerRegistration
 import splice.sessions.peer.store.PeerRequest
 import splice.sessions.peer.store.PeerStore
+import splice.sessions.peer.store.RegisterOutcome
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionSource
 
@@ -167,21 +168,31 @@ internal class PeerManagementRoutes(
                 if (outcome.why == PeerRefusal.INVALID) HttpStatusCode.BadRequest else HttpStatusCode.Conflict,
                 outcome.reason,
             )
-            is PeerRegistration.Registered -> {
-                val pid = parts.helpers?.start(name)
-                parts.log("[peers] registered ${LogSafe.str(name)}\n")
-                PeerReplies.ok(
-                    HttpStatusCode.Created,
-                    buildJsonObject {
-                        put("name", name)
-                        put("sessionId", outcome.config.sessionId)
-                        put("keyFile", outcome.keyFile.toString())
-                        put("socket", parts.helpers?.running(name)?.socket)
-                        put("pid", pid)
-                    },
-                )
-            }
+            is PeerRegistration.Registered -> answered(name, outcome)
         }
+    }
+
+    /** The answer to a register that went through: 201 for a new peer, 200 for one already there. */
+    private suspend fun answered(name: String, outcome: PeerRegistration.Registered): PeerAnswer {
+        // A register that changed a peer already there restarts its helper on the new cwd, scope and owner.
+        if (outcome.outcome == RegisterOutcome.UPDATED) parts.helpers?.stop(name)
+        val pid = parts.helpers?.start(name)
+        val created = outcome.outcome == RegisterOutcome.CREATED
+        if (created) {
+            parts.log("[peers] registered ${LogSafe.str(name)}\n")
+        } else {
+            parts.log("[peers] registered ${LogSafe.str(name)} again\n")
+        }
+        return PeerReplies.ok(
+            if (created) HttpStatusCode.Created else HttpStatusCode.OK,
+            buildJsonObject {
+                put("name", name)
+                put("sessionId", outcome.config.sessionId)
+                put("keyFile", outcome.keyFile.toString())
+                put("socket", parts.helpers?.running(name)?.socket)
+                put("pid", pid)
+            },
+        )
     }
 
     private suspend fun revoked(name: String, purge: Boolean): PeerAnswer {

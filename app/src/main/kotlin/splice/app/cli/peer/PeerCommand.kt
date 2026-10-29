@@ -42,7 +42,7 @@ internal class PeerCommand(
 
     /** The verbs that present the management key. */
     private fun manage(verb: String, rest: List<String>): Int? = when (verb) {
-        "register" -> register(rest)
+        "register" -> PeerRegisterVerb(call, out, err).run(rest)
         "list" -> list(rest)
         "revoke" -> revoke(rest)
         "rotate" -> rotate(rest)
@@ -54,24 +54,6 @@ internal class PeerCommand(
         "send" -> send(rest)
         "inbox" -> reader.inbox(rest)
         else -> reader.status(rest)
-    }
-
-    private fun register(args: List<String>): Int? {
-        val parsed = PeerArgsParser(setOf("--cwd", "--send-to"), emptySet()).parse(args)
-        val name = parsed?.words?.singleOrNull() ?: return null
-        val key = call.managementKey() ?: return PeerExit.REFUSED
-        val body = PeerRegistrationBody.build(name, parsed.values)
-        return when (val answer = call.call("POST", "/api/peers", key, body)) {
-            is PeerAnswer.Exit -> answer.code
-            is PeerAnswer.Ok -> {
-                val reply = answer.body
-                out.line("registered ${JsonScalars.str(reply, "name")}")
-                out.line("  session id  ${JsonScalars.str(reply, "sessionId")}")
-                out.line("  key file    ${JsonScalars.str(reply, "keyFile")}")
-                out.line("  socket      ${JsonScalars.str(reply, "socket") ?: "not yet: the peer is still starting"}")
-                PeerExit.DONE
-            }
-        }
     }
 
     private fun list(args: List<String>): Int? {

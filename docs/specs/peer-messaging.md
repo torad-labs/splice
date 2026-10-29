@@ -296,7 +296,7 @@ suspend fun peerGuarded(call: ApplicationCall, block: suspend (PeerPrincipal) ->
 
 | Method and path | Body | Success | Errors |
 |---|---|---|---|
-| POST /api/peers | `{"name":"gary","cwd":"/abs/dir"?,"sendTo":["*"]?}` | 201 `{"name","sessionId","keyFile","socket","pid"}` | 400 bad name, cwd or sendTo; 409 name taken, reserved, or held by a live session |
+| POST /api/peers | `{"name":"gary","cwd":"/abs/dir"?,"sendTo":["*"]?,"owner":{"pid","procStart","pidDomain"}?}` | 201 `{"name","sessionId","keyFile","socket","pid"}`; 200 with the same body when the register repeats one already there (same session id and key; a changed cwd or sendTo is taken and the helper restarts; a peer whose owner ended passes to the new owner) | 400 bad name, cwd or sendTo; 409 name reserved, held by a live session, owned by another live process, or ownerless and asked for by a process |
 | GET /api/peers | none | 200 `{"peers":[{"name","sessionId","pid","alive","socket","sendTo","webhook":{"url","enabled","lastOutcome"}\|null,"inbox":{"total","unread"}}]}` | none |
 | DELETE /api/peers/{name}?purge=true\|false | none | 200 `{"revoked":"gary","purged":false}` | 404 |
 | POST /api/peers/{name}/rotate | none | 200 `{"keyFile"}` | 404 |
@@ -450,7 +450,8 @@ The helper entry is a separate main class (4.1), not a verb.
 
 | Verb | Prints on success |
 |---|---|
-| `splice peer register <name> [--cwd DIR] [--send-to A,B,…]` | name, session id, key file path, socket. Never the key. |
+| `splice peer register <name> [--cwd DIR] [--send-to A,B,…] [--owner PID]` | name, session id, key file path, socket. Never the key. `--owner` binds the peer to that running process (exit 2 when none runs); without it, the nearest `codex` or `claude` ancestor. Safe to run at every start of the program that registers. |
+| `splice peer codex hook` | nothing on most events; on UserPromptSubmit and PostToolUse the waiting messages as `additionalContext`, on Stop a `block` decision with them as the reason. Always exits 0. Codex's hooks run it for SessionStart, UserPromptSubmit, PostToolUse, Stop and SessionEnd; `splice setup` offers to write them. |
 | `splice peer list [--json]` | one line per peer: name, alive or down, pid, send scope, webhook host or none, unread count |
 | `splice peer revoke <name> [--purge]` | `revoked <name>` |
 | `splice peer rotate <name>` | the key file path |

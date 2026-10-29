@@ -273,8 +273,11 @@ class HeadServerReviewTest {
             setBody("""{"model":"claude-codex--gpt-5.6-sol","messages":[{"role":"user","content":"estimate"}]}""")
         }
 
+    // Decided change, Oct 28 (Eli: restart drains moved Haiku and Sonnet sessions onto Opus fallbacks): a stopping head
+    // answered a promoted waiter 529, and Claude Code moves a session with a fallback model after three of those. It now
+    // meets a closed connection, which Claude Code retries on the same model; it is still bounced, never run.
     @Test
-    fun `a waiter promoted during the stop drain is bounced with 529 head-is-stopping`() = runBlocking {
+    fun `a waiter promoted during the stop drain is bounced with a closed connection and never runs`() = runBlocking {
         val gate = InflightGate(maxInflight = { 1 }, maxQueued = { 1 })
         // The stop drain's FIRST wait is the event "accepting is already false": HeadServer.stopLocked
         // closes the window before its drain loop ever waits. Armed only for the restart, because the
@@ -300,7 +303,7 @@ class HeadServerReviewTest {
             val req1 = async(Dispatchers.IO) { turn(port, "hold").bodyAsText() }
             assertTrue(waitFor(5_000) { gate.snapshot().inflight == 1 }, "req1 should hold the slot")
             // req2 passes the accepting front-door (still accepting), then queues on the full gate.
-            val req2 = async(Dispatchers.IO) { turn(port, "basic") }
+            val req2 = async(Dispatchers.IO) { runCatching { turn(port, "basic") } }
             assertTrue(waitFor(5_000) { gate.snapshot().queued == 1 }, "req2 should fill the queue")
 
             // Restart flips accepting=false and drains; once the drain is WAITING (the flag is set),
@@ -310,11 +313,10 @@ class HeadServerReviewTest {
             withTimeout(10_000) { draining.await() }
             mock.holdRelease.countDown()
 
-            val resp = req2.await()
-            assertEquals(529, resp.status.value)
-            val body = resp.bodyAsText()
-            assertTrue(body.contains("overloaded_error"), "expected overloaded_error in: $body")
-            assertTrue(body.contains("[splice] claudex is shutting down. Claude Code sends this turn again."), body)
+            val bounced = req2.await()
+            assertTrue(bounced.isFailure, "a draining head answers no HTTP status, got ${bounced.getOrNull()?.status}")
+            val upstream = mock.upstreamBodies.map { (_, body) -> body }
+            assertTrue(upstream.none { it.contains("SCENARIO:basic") }, "the bounced turn never went upstream")
 
             req1.await()
             restart.await()

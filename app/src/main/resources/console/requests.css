@@ -185,6 +185,9 @@ a.byr:hover { background: var(--track); }
 a.byr:hover .bn { color: var(--text); }
 .byr .bn { min-width: 0; font: 500 .92rem/1.2 var(--font-name); color: var(--text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .byr .bb { display: flex; align-items: center; gap: 0.333rem; min-width: 0; }
+/* each bar sits on a faint track across its column, as the band's other bar rows do, so a share of a few percent reads as
+   the start of a bar and never as a lone "0" beside its figure (lead walk of the installed console, Oct 29, at 1440) */
+.byr .bb:not(:empty) { height: .62rem; border-radius: .31rem; background: var(--track); }
 .byr .bb b, .byr .bb i { transition: width var(--t-snap) var(--e-out); }
 .byr .bb b, .byr .bb i { height: .62rem; border-radius: .31rem; }
 .byr .bb b { background: color-mix(in oklab, var(--text) 55%, transparent); }

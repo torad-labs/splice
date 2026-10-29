@@ -1766,22 +1766,26 @@ function fitTracks() {
   root.classList.remove("fit");
   // a row with no words lets its name run over the words' track: the name track grows only by what that track cannot hold
   name = Math.max(name, bareName - (doing ? doing + 2 * .667 * rem : 0));
-  // a whole pixel over, since a width is read rounded and a name one pixel short would end in an ellipsis
-  const w = (px, lo, hi) => `${Math.min(hi, Math.max(lo, Math.ceil(((px + 1) / rem) * 10) / 10))}rem`;
-  // the bar keeps at least BAR_MIN of the row: what the name and the words ask for beyond what is left gives way, the words first
+  // each track in rem as it is written: a whole pixel over, since a width is read rounded and a name one pixel short would
+  // end in an ellipsis; the words' track in steps of 3rem
+  const fit = (px, lo, hi) => Math.min(hi, Math.max(lo, Math.ceil(((px + 1) / rem) * 10) / 10));
+  let nameW = fit(name, 4, 30), doingW = doing ? Math.min(24, Math.max(4, Math.ceil((doing + 1) / rem / 3) * 3)) : 0;
+  const cmdW = fit(cmd, cmd ? 3 : 0, 11), actW = act ? fit(act, 2, 10) : 0;
+  // the bar keeps at least BAR_MIN of the row: what the name and the words ask for beyond what is left gives way, the words
+  // first, and a name never takes more than it asks for. The squeeze works on the widths as written, so no rounding after
+  // it takes the bar's room back (lead walk, Oct 29: the words were squeezed to 15rem and written as 18, and every bar on
+  // his board fell to 12.8rem under an axis cut to "s min h d w")
   const BAR_MIN = 16;
   const widths = [...rows].filter((t) => !t.parentElement.classList.contains("pane")).map((t) => t.getBoundingClientRect().width / rem).filter(Boolean);
   if (widths.length) {
-    const gap = 4 * 1.333, fixed = (cmd ? Math.min(11, cmd / rem + 0.1) : 0) + (act ? Math.min(10, act / rem + 0.1) : 0);
-    const room = Math.min(...widths) - gap - fixed - BAR_MIN;
-    let nm = Math.min(30, name / rem + 0.1), dg = doing ? Math.min(24, Math.ceil((doing + 1) / rem / 3) * 3) : 0;
-    if (nm + dg > room && room > 0) {
-      dg = Math.min(dg, Math.max(0, Math.floor((room * 0.4) / 3) * 3));
-      nm = Math.max(8, room - dg);
-      name = nm * rem; doing = dg ? dg * rem : 0;
+    const gap = 4 * 1.333;
+    const room = Math.min(...widths) - gap - cmdW - actW - BAR_MIN;
+    if (nameW + doingW > room && room > 0) {
+      if (doingW) doingW = Math.min(doingW, Math.max(4, Math.floor((room * 0.4) / 3) * 3));
+      nameW = Math.max(8, Math.min(nameW, Math.floor((room - doingW) * 10) / 10));
     }
   }
-  for (const [prop, value] of [["--name-w", w(name, 4, 30)], ["--doing-w", doing ? `${Math.min(24, Math.max(4, Math.ceil((doing + 1) / rem / 3) * 3))}rem` : "0rem"], ["--cmd-w", w(cmd, cmd ? 3 : 0, 11)], ["--act-w", act ? w(act, 2, 10) : "0rem"]]) {
+  for (const [prop, value] of [["--name-w", `${nameW}rem`], ["--doing-w", `${doingW}rem`], ["--cmd-w", `${cmdW}rem`], ["--act-w", `${actW}rem`]]) {
     if (root.style.getPropertyValue(prop) !== value) root.style.setProperty(prop, value);
   }
 }

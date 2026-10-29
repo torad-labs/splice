@@ -69,6 +69,23 @@ class PeerCodexHookTest {
         assertEquals("purge=false", deleted.query)
     }
 
+    // A hook line with no --codex-home attaches the thread to the home its own Codex process runs in, $CODEX_HOME, so
+    // two homes that share one hooks.json each reach their own app-server.
+    @Test
+    fun `an attach with no --codex-home names the home in CODEX_HOME, and the flag wins over it`(@TempDir dir: Path) {
+        val hits = mutableListOf<Hit>()
+        withDaemon(dir, handler = { exchange ->
+            val body = exchange.requestBody.readBytes().decodeToString()
+            hits += Hit(exchange.requestMethod, exchange.requestURI.path, null, body)
+            ATTACHED.encodeToByteArray()
+        }) { env ->
+            val own = env + (CODEX_HOME_VAR to RECOVERY_HOME)
+            assertQuiet(run(verb(ATTACH), hook(SESSION_START), own))
+            assertQuiet(run(verb(ATTACH, "--codex-home", FLAG_HOME), hook(SESSION_START), own))
+        }
+        assertEquals(listOf(absolute(RECOVERY_HOME), absolute(FLAG_HOME)), hits.map { field(it.body, "home") })
+    }
+
     @Test
     fun `a missing id is a no-op and never usage`(@TempDir dir: Path) {
         val env = daemonEnv(dir, closedPort())
@@ -280,6 +297,9 @@ private const val SESSION_END: String = "SessionEnd"
 private const val USAGE: String = "usage:"
 private const val CODEX_PATH: String = "/api/peers/codex"
 private const val FLAG_CWD: String = "/from/flag"
+private const val CODEX_HOME_VAR: String = "CODEX_HOME"
+private const val RECOVERY_HOME: String = "/homes/recovery"
+private const val FLAG_HOME: String = "/homes/flag"
 private const val THREAD: String = "019a2f6c-4b1e-7c3d-9e8f-0a1b2c3d4e5f"
 private const val ATTACHED: String = """{"name":"codex-$THREAD","sessionId":"$THREAD"}"""
 private const val OTHER_THREAD: String = "019a2f6c-4b1e-7c3d-9e8f-0a1b2c3d4e60"

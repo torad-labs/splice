@@ -197,14 +197,19 @@ What `splice restart` does, in order:
    terminal it offers the fix session first; from your shell it does not.
 2. Without `--now`, waits for compactions in flight, up to the upstream timeout (900 s by default). It does not
    wait for ordinary turns. `--now` skips only this wait.
-3. Stops the old daemon. Each head stops taking new turns and gives the turns in flight up to 45 s to finish.
-   The stop polls for about 60 s, then sends SIGTERM, then SIGKILL.
+3. Stops the old daemon. Each head stops taking new turns and ends the turns in flight at once. The stop polls
+   for about 60 s, then sends SIGTERM, then SIGKILL.
 4. Starts the new daemon and waits up to about a minute for it to answer with the expected version. When a
-   systemd user unit runs the daemon, `systemctl restart` does steps 3 and 4.
+   systemd user unit runs the daemon, `systemctl restart` does steps 3 and 4, and systemd holds splice's ports
+   in between: `splice restart` lays one socket unit per port from splice.toml (`splice-control.socket`,
+   `splice-head-<key>.socket`) and starts them. The first restart that lays them, or one after a head or port
+   changed, stops the daemon first so systemd can take the ports.
 
 What it cuts, and how sessions come back:
 
-- A new turn that arrives while a head drains is refused with a 529, which Claude Code retries.
+- A request that arrives while the daemon restarts waits, and the new daemon answers it: Claude Code shows no
+  error and no session changes model. Without systemd's sockets, as on a machine with no user unit, it meets a
+  closed connection, and Claude Code retries it.
 - A turn still running is ended at once, without waiting for it, and its session sees "splice restarted during
   this turn." A turn whose text had begun says "Send the message again." A buffered one says Claude Code sends it
   again, and Claude Code does.

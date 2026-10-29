@@ -91,9 +91,11 @@ class ListenerInventoryTest {
             assertEquals("false", native.getValue("available").jsonPrimitive.content)
             assertTrue(native.getValue("cause").jsonPrimitive.content.startsWith("native_unavailable: "))
         }
-        assertTrue(
-            body.getValue("refuses").jsonArray.map { it.jsonPrimitive.content }.contains("native_unavailable"),
-            "a manager must be able to expect the refusal it will be given",
-        )
+        val refuses = body.getValue("refuses").jsonArray.map { it.jsonPrimitive.content }
+        assertTrue("native_unavailable" in refuses, "a manager must be able to expect the refusal it will be given")
+        // A socket for a listener splice.toml no longer names, or on a port it no longer names, boots the daemon and
+        // stays with the manager (Oct 29, 2026), so the report must not promise a refusal for it.
+        assertTrue("extra" !in refuses, "an unknown listener's socket is no refusal: $refuses")
+        assertEquals("left-with-manager", body.getValue("stale_socket").jsonPrimitive.content)
     }
 }

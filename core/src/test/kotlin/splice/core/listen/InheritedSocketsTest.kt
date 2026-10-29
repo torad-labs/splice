@@ -37,9 +37,19 @@ class InheritedSocketsTest {
     fun `every defect is listed at once`() {
         val result = plan("LISTEN_PID" to "42", "LISTEN_FDS" to "3", "LISTEN_FDNAMES" to "head-a:head-a:other")
         val reasons = (result as InheritedPlan.Refuse).reasons
-        assertEquals(3, reasons.size)
-        assertTrue(reasons.any { it.startsWith("duplicate") } && reasons.any { it.startsWith("extra") })
-        assertTrue(reasons.any { it.startsWith("missing") })
+        assertEquals(2, reasons.size, "duplicate and missing control, while an unknown name is no defect: $reasons")
+        assertTrue(reasons.any { it.startsWith("duplicate") } && reasons.any { it.startsWith("missing") })
+    }
+
+    // Splice lays its sockets from splice.toml at each `splice restart`, so a head removed from the file between two
+    // restarts can still be handed over after a crash or a reboot. That daemon boots, and the socket stays with systemd.
+    @Test
+    fun `a socket for a head splice toml no longer names is left with the manager, and the rest are adopted`() {
+        val result = plan("LISTEN_PID" to "42", "LISTEN_FDS" to "3", "LISTEN_FDNAMES" to "control:head-gone:head-a")
+
+        val adopt = result as? InheritedPlan.Adopt ?: error("a stale head's socket refused the boot: $result")
+        assertEquals(mapOf("control" to 3, "head-a" to 5), adopt.fds)
+        assertTrue(adopt.left.single().contains("'head-gone'"), "the stale socket is not named: ${adopt.left}")
     }
 
     @Test

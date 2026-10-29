@@ -54,7 +54,14 @@ internal object LifecycleWiring {
             launchJar,
             repair = ConfigRepair { ConfigFixOffer().offer() },
             runtimes = LocalRowBootFindings(EnvReader(System::getenv)),
-        ).restart(expectedVersion, waitForCompactions)
+        ).let { command ->
+            val sockets = InstallWiring.listenerSockets(EnvReader(System::getenv))
+            if (sockets == null) {
+                command.restart(expectedVersion, waitForCompactions)
+            } else {
+                command.restart(expectedVersion, waitForCompactions, sockets)
+            }
+        }
 
     fun ensureDaemon(port: Int): Boolean =
         DaemonColdStart(output, errors, EnvReader(System::getenv), jar).ensureDaemon(port)

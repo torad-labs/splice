@@ -28,7 +28,8 @@ private const val PAUSE_WAIT_MS = 2_000L
 
 /** What a socket manager handed over, once it has been checked, or why it was refused. */
 public sealed class Adoption {
-    public data class Ready(val listeners: AdoptedListeners) : Adoption()
+    /** [left] names each descriptor left with the manager, unserved, so its listener binds its own port. */
+    public data class Ready(val listeners: AdoptedListeners, val left: List<String> = emptyList()) : Adoption()
 
     public data class Refused(val reasons: List<String>) : Adoption()
 }
@@ -106,22 +107,30 @@ public class DescriptorAdoption {
 
     /**
      * [fds] is listener name to descriptor number and [ports] is listener name to the port the boot parse resolved for
-     * it. Every defect is listed at once, and no descriptor is wrapped unless all of them pass.
+     * it. Every defect is listed at once, and no descriptor is wrapped unless all of them pass. A loopback socket on a
+     * port other than the resolved one is no defect: it is left with the manager, and its listener binds its own port.
      */
     public fun adopt(fds: Map<String, Int>, ports: Map<String, Int>): Adoption {
         val reasons = mutableListOf<String>()
+        val left = linkedMapOf<String, String>()
         if (!Epoll.isAvailable()) reasons += nativeUnavailable()
         fds.forEach { (name, fd) ->
             val facts = inspector.inspect(fd)
             when {
                 facts == null -> reasons += "malformed: descriptor $fd for '$name' is not an IPv4 TCP socket"
-                facts.address != LOOPBACK || facts.port != ports[name] ->
+                facts.address != LOOPBACK ->
                     reasons += "wrong_endpoint: '$name' is ${facts.address}:${facts.port}, " +
                         "expected $LOOPBACK:${ports[name]}"
+                // A port splice.toml moved since `splice restart` last laid the sockets: the old socket stays with
+                // the manager, and the listener binds the port the file names now.
+                facts.port != ports[name] ->
+                    left[name] = "wrong_endpoint: '$name' is on port ${facts.port}, " +
+                        "splice.toml names ${ports[name]}, so it binds its own port"
                 !facts.listening -> reasons += "non_listening: '$name' on port ${facts.port} is not listening"
             }
         }
-        return if (reasons.isEmpty()) Adoption.Ready(AdoptedListeners(fds)) else Adoption.Refused(reasons)
+        if (reasons.isNotEmpty()) return Adoption.Refused(reasons)
+        return Adoption.Ready(AdoptedListeners(fds - left.keys), left.values.toList())
     }
 
     /**

@@ -28,8 +28,9 @@ public sealed class InheritedPlan {
     /** Nothing was passed to this process: every listener binds its own port, exactly as before. */
     public data object None : InheritedPlan()
 
-    /** [fds] maps a listener name to its descriptor; a head absent from it binds its own port. */
-    public data class Adopt(val fds: Map<String, Int>) : InheritedPlan()
+    /** [fds] maps a listener name to its descriptor; a head absent from it binds its own port. [left] names each
+     *  descriptor left with the manager, unserved: one for a listener splice.toml no longer has. */
+    public data class Adopt(val fds: Map<String, Int>, val left: List<String> = emptyList()) : InheritedPlan()
 
     /** The manager's hand-off cannot be trusted; the daemon refuses to boot and lists every reason at once. */
     public data class Refuse(val reasons: List<String>) : InheritedPlan()
@@ -40,8 +41,8 @@ public class InheritedSockets(private val pid: Long) {
 
     /**
      * [env] is LISTEN_PID / LISTEN_FDS / LISTEN_FDNAMES as the process saw them; [expected] is every listener name the
-     * boot parse produced (control first). A hand-off that names something not in [expected], names one twice, or
-     * leaves control out is refused; a missing head simply binds itself.
+     * boot parse produced (control first). A hand-off that names one twice or leaves control out is refused; a missing
+     * head simply binds itself, and a name not in [expected] is left with the manager.
      */
     public fun plan(env: EnvReader, expected: Set<String>): InheritedPlan {
         val count = env(LISTEN_FDS)?.trim().orEmpty()
@@ -67,15 +68,18 @@ public class InheritedSockets(private val pid: Long) {
             )
         }
         val reasons = mutableListOf<String>()
+        val left = mutableListOf<String>()
         val fds = LinkedHashMap<String, Int>()
         handed.forEachIndexed { index, name ->
             when {
                 name in fds -> reasons += "duplicate: '$name' is passed twice"
-                name !in expected -> reasons += "extra: '$name' is not a splice listener"
+                // `splice restart` lays the sockets from splice.toml, so a head removed between two restarts is still
+                // handed over after a crash or a reboot. Its socket stays with the manager, unserved.
+                name !in expected -> left += "extra: '$name' is not in splice.toml, so it stays with the manager"
                 else -> fds[name] = LISTEN_FDS_START + index
             }
         }
         if (names.control !in fds) reasons += "missing: control is not passed, so the daemon cannot be reached"
-        return if (reasons.isEmpty()) InheritedPlan.Adopt(fds) else InheritedPlan.Refuse(reasons)
+        return if (reasons.isEmpty()) InheritedPlan.Adopt(fds, left) else InheritedPlan.Refuse(reasons)
     }
 }

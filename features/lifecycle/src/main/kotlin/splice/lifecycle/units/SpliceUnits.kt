@@ -66,6 +66,23 @@ public class SpliceUnits(
             systemctl(listOf("show", "-p", "DropInPaths", "--value", name)) == ""
     }
 
+    /** The names of the files in splice's own folder. */
+    internal fun laid(): List<String> = Cancellables.runCatchingBestEffort {
+        if (!Files.isDirectory(unitDir)) return@runCatchingBestEffort emptyList()
+        Files.list(unitDir).use { files -> files.map { it.fileName.toString() }.toList() }
+    }.getOrNull().orEmpty()
+
+    /** splice's own file for [name] holds [bytes]. */
+    internal fun holds(name: String, bytes: ByteArray): Boolean =
+        held(unitDir.resolve(name))?.contentEquals(bytes) == true
+
+    /** Removes splice's own file for [name], and says so where it cannot. */
+    internal fun remove(name: String) {
+        val gone = Cancellables.runCatchingBestEffort { Files.deleteIfExists(unitDir.resolve(name)) }
+        gone.exceptionOrNull()?.let { output.line("splice: could not remove $name from $unitDir: ${it.message}") }
+        if (gone.isSuccess) output.line("splice: removed $name from $unitDir")
+    }
+
     /** A unit file, a link or a mask of [name] is in either folder. */
     internal fun present(name: String): Boolean =
         listOf(unitDir, overrideDir).any { Files.exists(it.resolve(name), LinkOption.NOFOLLOW_LINKS) }

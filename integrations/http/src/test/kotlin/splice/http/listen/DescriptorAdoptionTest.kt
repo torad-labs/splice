@@ -17,6 +17,7 @@ import io.netty.channel.epoll.EpollIoHandler
 import io.netty.channel.epoll.EpollServerSocketChannel
 import io.netty.channel.socket.SocketProtocolFamily
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -311,15 +312,27 @@ class DescriptorAdoptionTest {
         }
     }
 
+    // Splice lays its sockets from splice.toml at each `splice restart`, so a head whose port changed between two
+    // restarts can still be handed its old port after a crash or a reboot. That daemon boots: the stale socket stays
+    // with systemd, and the listener binds the port splice.toml names now.
     @Test
-    fun `a hand-off that is not a listening loopback socket on the resolved port is refused, with the reason`() {
+    fun `a socket on a port splice toml no longer names is left out, so its listener binds its own port`() {
         val manager = Manager()
         try {
-            val wrongPort = DescriptorAdoption()
-                .adopt(mapOf(CONTROL to manager.fd), mapOf(CONTROL to manager.port + 1))
-            assertEquals(1, assertInstanceOf<Adoption.Refused>(wrongPort).reasons.size)
-            assertTrue(assertInstanceOf<Adoption.Refused>(wrongPort).reasons.single().startsWith("wrong_endpoint"))
+            val moved = DescriptorAdoption().adopt(mapOf(CONTROL to manager.fd), mapOf(CONTROL to manager.port + 1))
 
+            val ready = assertInstanceOf<Adoption.Ready>(moved)
+            assertFalse(ready.listeners.has(CONTROL), "the stale socket would serve the listener on its old port")
+            assertTrue(ready.left.single().startsWith("wrong_endpoint"), "the stale socket is not named: ${ready.left}")
+        } finally {
+            manager.close()
+        }
+    }
+
+    @Test
+    fun `a hand-off that is not a listening loopback socket is refused, with the reason`() {
+        val manager = Manager()
+        try {
             // Descriptor 0 is this JVM's stdin: a real descriptor, not a socket, which is the shape a manager that
             // passed the wrong thing produces.
             val notASocket = DescriptorAdoption().adopt(mapOf(CONTROL to 0), mapOf(CONTROL to 1))

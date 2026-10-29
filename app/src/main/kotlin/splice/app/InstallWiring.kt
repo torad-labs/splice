@@ -15,6 +15,7 @@ import splice.launch.install.InstallCommand
 import splice.lifecycle.hub.HubUnits
 import splice.lifecycle.units.DAEMON_UNIT_NAME
 import splice.lifecycle.units.DaemonUnit
+import splice.lifecycle.units.ListenerSockets
 import splice.lifecycle.units.SpliceUnits
 import splice.topology.TopologyLoader
 import splice.topology.TopologyStatePaths
@@ -41,6 +42,14 @@ internal object InstallWiring {
         val unit = daemon.bytes()
         if (unit == null) daemon.refusal()?.let(output::line)
         folder.lay(if (unit == null) hub else hub + (DAEMON_UNIT_NAME to unit))
+    }
+
+    /** The daemon's listening sockets as systemd units, which `splice restart` lays and starts so systemd holds
+     *  splice's ports across a restart; null off Linux, where there is no systemd to hold them. */
+    fun listenerSockets(env: EnvReader): ListenerSockets? {
+        if (!linux()) return null
+        val output = TerminalOutput(::println)
+        return ListenerSockets(unitFolder(env, output), output)
     }
 
     /** The MCP hub's units, on Linux with the hub's front installed beside the jar; null anywhere else. */

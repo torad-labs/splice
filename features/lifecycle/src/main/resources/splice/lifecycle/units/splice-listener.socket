@@ -1,0 +1,14 @@
+# splice-owned unit: `splice restart` lays this file from splice.toml and replaces it whenever the port changes, so an
+# edit here does not last. A unit of the same name in ~/.config/systemd/user overrides it.
+[Unit]
+Description=Splice's @NAME@ port, held across daemon restarts so a request waits for the next daemon
+
+[Socket]
+# systemd holds the port, so a client that connects while the daemon restarts waits in the kernel's accept queue and
+# the next daemon answers it. The daemon finds this socket by its name, never by its position.
+ListenStream=127.0.0.1:@PORT@
+FileDescriptorName=@NAME@
+Service=splice.service
+
+[Install]
+WantedBy=sockets.target

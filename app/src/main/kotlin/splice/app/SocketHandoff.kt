@@ -39,10 +39,14 @@ internal class SocketHandoff(
             is InheritedPlan.Refuse -> Handoff.Refused(plan.reasons)
             is InheritedPlan.Adopt -> when (val result = adoption.adopt(plan.fds, ports)) {
                 is Adoption.Refused -> Handoff.Refused(result.reasons)
-                is Adoption.Ready -> Handoff.Adopted(
-                    result.listeners,
-                    "socket-activation: inherited=${plan.fds.size} self-bound=${ports.size - plan.fds.size}",
-                )
+                is Adoption.Ready -> {
+                    val served = plan.fds.size - result.left.size
+                    val left = (plan.left + result.left).joinToString("") { "; left: $it" }
+                    Handoff.Adopted(
+                        result.listeners,
+                        "socket-activation: inherited=$served self-bound=${ports.size - served}$left",
+                    )
+                }
             }
         }
     }

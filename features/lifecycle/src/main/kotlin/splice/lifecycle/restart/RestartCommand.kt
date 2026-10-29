@@ -7,6 +7,7 @@ package splice.lifecycle.restart
 
 import splice.core.GATEWAY_VERSION
 import splice.core.config.RunningJar
+import splice.core.listen.ListenerNames
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.daemonclient.DaemonProbe
@@ -15,6 +16,7 @@ import splice.daemonclient.MgmtKeyFile
 import splice.daemonclient.MgmtKeyRead
 import splice.daemonclient.Reading
 import splice.lifecycle.start.DaemonColdStart
+import splice.lifecycle.units.RestartSockets
 import splice.lifecycle.upgrade.CompactionWait
 import splice.lifecycle.upgrade.JdkUpgradeInflight
 import splice.topology.LocalRowFindings
@@ -44,8 +46,14 @@ public class RestartCommand(
 
     /** [expectedVersion] is what the restarted daemon must report: this CLI's own, or the release an
      *  upgrade just activated (the old CLI running `splice upgrade` is not the version coming up).
-     *  [waitForCompactions] false is `--now`, and the upgrade's own call, which has waited already. */
-    public fun restart(expectedVersion: String = GATEWAY_VERSION, waitForCompactions: Boolean = true): Boolean {
+     *  [waitForCompactions] false is `--now`, and the upgrade's own call, which has waited already. [sockets] hands
+     *  splice's ports to systemd before a restart through splice.service, so that restart and every later one queue
+     *  the requests that arrive while the daemon is down (ListenerSockets). */
+    public fun restart(
+        expectedVersion: String = GATEWAY_VERSION,
+        waitForCompactions: Boolean = true,
+        sockets: RestartSockets = RestartSockets { _, _ -> },
+    ): Boolean {
         // Load topology once: controlPort AND the FALLBACK head ports come from it. The head ports feed
         // the stop check so a restart never declares success while a head port is still bound (F3).
         // A file that cannot serve stops the verb here, before anything is stopped: the daemon that
@@ -55,13 +63,11 @@ public class RestartCommand(
 
         // V4-395: before any stop or unit verb. A unit that is another home's is never this verb's to touch.
         val refusal = coldStart.foreignUnitRefusal(port)
+        val names = ListenerNames()
+        val heads = topology.heads.map { (key, head) -> names.head(key) to head.port }
+        val listeners = mapOf(names.control to port) + heads
         return if (refusal == null) {
-            restartOwn(
-                topology.heads.values.map { it.port },
-                port,
-                expectedVersion,
-                waitForCompactions,
-            )
+            restartOwn(listeners, port, expectedVersion, waitForCompactions, sockets)
         } else {
             output.line(refusal)
             false
@@ -71,13 +77,21 @@ public class RestartCommand(
     /** The daemon on [port] is this home's, or no unit claims it: restart it through its unit when the
      *  unit runs it, else stop it here (the head ports [tomlPorts] must free too) and cold-start. */
     private fun restartOwn(
-        tomlPorts: List<Int>,
+        listeners: Map<String, Int>,
         port: Int,
         expectedVersion: String,
         waitForCompactions: Boolean,
+        sockets: RestartSockets,
     ): Boolean {
         val unit = coldStart.activeUnit()
-        if (unit != null) return restartThroughUnit(unit, port, expectedVersion, waitForCompactions)
+        if (unit != null) {
+            if (waitForCompactions && DaemonProbe.healthVersion(port) != null) {
+                CompactionWait(output, JdkUpgradeInflight(env, port)).await()
+            }
+            sockets.prepare(unit, listeners)
+            return restartThroughUnit(unit, port, expectedVersion)
+        }
+        val tomlPorts = listeners.filterKeys { it != ListenerNames().control }.values.toList()
         return if (stopIfRunning(port, tomlPorts, waitForCompactions)) {
             coldStart.ensureDaemon(port, expectedVersion).also { started ->
                 if (started) output.line("splice: daemon restarted")
@@ -91,16 +105,8 @@ public class RestartCommand(
      *  unit reached a unit still active in its shutdown tail, a no-op, and the daemon's exit then
      *  waited out the unit's restart backoff (46 s at the sixth restart, 2026-09-25). systemd's stop
      *  drains the in-flight turns the way the shutdown route does, so only the compaction wait stays
-     *  here, and it runs only when a daemon answers. */
-    private fun restartThroughUnit(
-        unit: String,
-        port: Int,
-        expectedVersion: String,
-        waitForCompactions: Boolean,
-    ): Boolean {
-        if (waitForCompactions && DaemonProbe.healthVersion(port) != null) {
-            CompactionWait(output, JdkUpgradeInflight(env, port)).await()
-        }
+     *  in restartOwn, and it runs only when a daemon answers, before the sockets are handed to systemd. */
+    private fun restartThroughUnit(unit: String, port: Int, expectedVersion: String): Boolean {
         val restarted = coldStart.restartUnit(unit, port, expectedVersion)
         if (restarted) output.line("splice: daemon restarted")
         return restarted

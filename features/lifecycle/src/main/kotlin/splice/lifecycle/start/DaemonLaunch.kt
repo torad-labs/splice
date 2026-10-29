@@ -118,7 +118,8 @@ internal class DaemonLaunch(
      *  46 s at the sixth automatic restart (2026-09-25). */
     internal fun restartUnit(unit: String, port: Int, expectedVersion: String): Boolean {
         output.line(
-            "splice: restarting $unit; in-flight turns finish first (a held turn is the feature, not a hang)…",
+            "splice: restarting $unit; a running turn ends with the restart line, and new requests wait for " +
+                "the next daemon…",
         )
         val up = supervised.restart(unit) && waitUntilUp(port, expectedVersion)
         if (!up) {

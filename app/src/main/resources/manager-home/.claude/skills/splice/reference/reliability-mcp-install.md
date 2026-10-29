@@ -96,7 +96,7 @@ provider's raw JSON. The Requests page words (the "Requests word" column) come f
 | refusal, content filter, context overflow, bad request | `invalid_request_error` | Invalid request | not retried. An overflow before the answer makes Claude Code compact |
 | over a daily budget set to block | HTTP 403, outcome `error:budget-blocked` | Over budget | answered 403 so Claude Code does not retry. Raise the budget or wait |
 | head queue full | HTTP 529 `gateway at capacity` | Too many at once | `maxInflight` (12) turns run, `maxQueued` (512) wait. Claude Code retries |
-| daemon draining for a restart | HTTP 529, outcome `error:restarted` | splice restarted | Claude Code retries (1.7) |
+| daemon restarting | no answer: the request waits for the next daemon | none | the next daemon answers it (1.7) |
 | cause splice cannot name | `overloaded_error` | Internal error | offered to Claude Code as retryable. Read `splice logs` |
 | code mode failure | `invalid_request_error` | a line `splice [code] reason` | 3.3 |
 | local 401, `invalid local gateway credentials` | HTTP 401 | n/a | the session's local key is not one this daemon accepts. Relaunch the session (cause unverified) |
@@ -145,8 +145,9 @@ Source: `Knob.kt` 12-49, 192-200, 219-305; `app/src/main/resources/splice.exampl
 - `splice restart` first waits for running compactions, up to 900 s, unless `--now`. Then the daemon ends every
   ordinary turn still running at once, each with the line "splice restarted during this turn.", and the next
   daemon takes over.
-- While it drains, a head on its own port answers a new turn with 529 `error:restarted`, which Claude Code
-  retries. Under socket activation the request waits in the kernel queue for the next daemon.
+- systemd holds splice's ports (`splice-control.socket`, `splice-head-<key>.socket`, laid by `splice restart`), so a
+  request that arrives during the restart waits in the kernel queue and the next daemon answers it. A head on its
+  own port, with no such socket, closes the connection instead, and Claude Code retries on a new one.
 - Claude Code does not retry a turn that was cut after its text began, so a restart can cost the person that message: the line asks them to send it again. A buffered turn's 529 is one Claude Code re-sends itself.
 - Run `splice restart` in the background, never in the foreground. Never run `splice logs --follow`.
 - A finished compaction whose client hung up is kept on disk for two hours, so the retry gets the same bytes.

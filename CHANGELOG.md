@@ -262,10 +262,14 @@ origin.
   for a model list and uses the one that answers; if several do, it names them and asks for `--base-url`. A model the
   runtime itself reports cannot call tools is refused when the row is checked, read from Ollama's and LM Studio's
   capability lists, without `--live`; a runtime that reports nothing is trusted.
-- **A restart can queue clients instead of refusing them.** Under socket activation the manager keeps the listening
-  socket and the daemon serves on the descriptor it was handed, so a client that connects while the daemon restarts
-  waits in the kernel's accept queue. `splice capabilities` says whether the native transport loads on this machine,
-  so a manager learns a hand-off would be refused before it stops the daemon.
+- **A restart fails no request.** systemd holds splice's ports: `splice restart` lays one socket unit per port from
+  splice.toml (`splice-control.socket`, `splice-head-<key>.socket`) beside splice.service and starts them, and the
+  daemon serves on the sockets it is handed, so a client that connects while the daemon restarts waits in the
+  kernel's accept queue and the next daemon answers it. Claude Code prints no connection error and no session moves
+  to its fallback model. The first restart that lays them, or one after a head or port changed, stops the daemon
+  first so systemd can take the ports. A socket for a head splice.toml no longer has stays with systemd and never
+  refuses the boot. `splice capabilities` says whether the native transport loads on this machine, so a manager
+  learns a hand-off would be refused before it stops the daemon.
 - **A session joins its command by the launch splice made,** read from the launch roster. The process environment
   only tells a session splice never launched (`direct`) from one it cannot place (`unknown head`).
 - **A slash command reads as what the person typed.** In a session's conversation `/rename notes` shows as their

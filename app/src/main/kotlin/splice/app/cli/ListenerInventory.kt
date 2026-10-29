@@ -84,9 +84,12 @@ internal class ListenerInventory(
 }
 
 /** Every reason a hand-off is refused, in the order a reader meets them: what the boot parse finds in the
- *  environment, what the descriptor check finds in /proc, and what the machine itself decides. */
+ *  environment, what the descriptor check finds in /proc, and what the machine itself decides. A socket for a
+ *  listener splice.toml no longer names, or on a loopback port it no longer names, is no refusal since Oct 29, 2026:
+ *  it stays with the manager and the listener binds its own port (`stale_socket`). wrong_endpoint is now only a
+ *  socket that is not on loopback. */
 private val refusals: List<String> =
-    listOf("extra", "duplicate", "malformed", "wrong_endpoint", "non_listening", "native_unavailable")
+    listOf("duplicate", "malformed", "wrong_endpoint", "non_listening", "native_unavailable")
 
 /** What this jar can do about inherited sockets, so a manager asks instead of guessing from a version. */
 internal class CapabilityReport(
@@ -108,6 +111,7 @@ internal class CapabilityReport(
                         put("matches_by", LISTEN_FDNAMES)
                         put("control_required", true)
                         put("missing_head", "self-bind")
+                        put("stale_socket", "left-with-manager")
                         put(
                             "native_transport",
                             buildJsonObject {

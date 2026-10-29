@@ -83,6 +83,16 @@ public class SpliceUnits(
         if (gone.isSuccess) output.line("splice: removed $name from $unitDir")
     }
 
+    /** The names of the files in splice's own folder that splice laid: each starts with splice's marker line, so a file
+     *  another program put in the same folder is never among them. */
+    internal fun marked(): List<String> = laid().filter { name ->
+        held(unitDir.resolve(name))?.let { bytes -> bytes.decodeToString().startsWith(SPLICE_UNIT_MARKER) } == true
+    }
+
+    /** The user's own file for [name] in [overrideDir], which systemd runs instead of splice's; null where none is. */
+    internal fun overriding(name: String): Path? =
+        overrideDir.resolve(name).takeIf { Files.exists(it, LinkOption.NOFOLLOW_LINKS) }
+
     /** A unit file, a link or a mask of [name] is in either folder. */
     internal fun present(name: String): Boolean =
         listOf(unitDir, overrideDir).any { Files.exists(it.resolve(name), LinkOption.NOFOLLOW_LINKS) }
@@ -161,4 +171,7 @@ public class SpliceUnits(
 
 // why: the bound on one systemctl --user call; a call still running past it is killed and reads as no answer.
 private const val TIMEOUT_MS = 15_000L
+
+// why: the first line of every unit splice lays; it tells splice's files from another program's in a shared folder.
+private const val SPLICE_UNIT_MARKER = "# splice-owned unit"
 private val UNIT_MODE = PosixFilePermissions.fromString("rw-r--r--")

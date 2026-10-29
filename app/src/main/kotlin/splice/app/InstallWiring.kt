@@ -17,6 +17,7 @@ import splice.lifecycle.units.DAEMON_UNIT_NAME
 import splice.lifecycle.units.DaemonUnit
 import splice.lifecycle.units.ListenerSockets
 import splice.lifecycle.units.SpliceUnits
+import splice.lifecycle.units.UninstallUnits
 import splice.topology.TopologyLoader
 import splice.topology.TopologyStatePaths
 import java.nio.file.Files
@@ -42,6 +43,16 @@ internal object InstallWiring {
         val unit = daemon.bytes()
         if (unit == null) daemon.refusal()?.let(output::line)
         folder.lay(if (unit == null) hub else hub + (DAEMON_UNIT_NAME to unit))
+    }
+
+    /** After `splice uninstall --all` on Linux: the units splice laid are stopped, disabled and removed (UninstallUnits),
+     *  so neither the daemon nor the MCP hub starts again from the jar left on disk, and no socket holds splice's ports.
+     *  Uninstalling one head's command leaves them, since splice.toml still names that head. */
+    fun retireUnits(target: String?, env: EnvReader) {
+        if (target != null && target != "--all") return
+        if (!linux()) return
+        val output = TerminalOutput(::println)
+        UninstallUnits(unitFolder(env, output), output).retire()
     }
 
     /** The daemon's listening sockets as systemd units, which `splice restart` lays and starts so systemd holds

@@ -104,9 +104,12 @@ public sealed class Command {
         }
     }
     public data class Uninstall(val target: String?) : Command() {
-        override suspend fun run(): Int = outcomeExitCode(
-            InstallWiring.command().uninstall(target, EnvReader(System::getenv)),
-        )
+        override suspend fun run(): Int {
+            val env = EnvReader(System::getenv)
+            val removed = InstallWiring.command().uninstall(target, env)
+            if (removed) InstallWiring.retireUnits(target, env)
+            return outcomeExitCode(removed)
+        }
     }
 
     /** v0.4.0 (FEATURES.md §11): `--label <name>` signs in a further account of the head's kind; on a

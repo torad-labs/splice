@@ -463,10 +463,15 @@ Source: `install.sh` 398-446, 505-543; `README.md` 114, 602-603; `UpgradeActivat
 
 ### 5.5 Uninstall
 
-`splice uninstall [<head>|--all]` removes the wrapper symlinks only. `--all` includes `splice` itself. It refuses
-a name that is not a bare link under `~/.local/bin`. It never touches the jar, config, keys or state. Removing
-those is the person's own decision and needs their explicit yes, with a backup, per `operations.md`.
-Source: `features/launch/.../install/UninstallCommand.kt` 17-50.
+`splice uninstall [<head>|--all]` removes the wrapper symlinks. `--all` includes `splice` itself. It refuses
+a name that is not a bare link under `~/.local/bin`. On Linux, `--all` (or no argument) also stops, disables and
+removes every systemd user unit splice laid in `~/.local/share/systemd/user`, each one known by its
+`# splice-owned unit` first line: the daemon's, the MCP hub's and the listener sockets, sockets first so no request
+starts the daemon again. That stops the daemon. A unit of the same name in `~/.config/systemd/user` is the person's
+override and stays, running; the command names it. One head's uninstall leaves the units, since splice.toml still
+names the head. It never touches the jar, config, keys or state. Removing those is the person's own decision and
+needs their explicit yes, with a backup, per `operations.md`.
+Source: `features/launch/.../install/UninstallCommand.kt`, `features/lifecycle/.../units/UninstallUnits.kt`.
 
 ## 6. Logs and the troubleshooting playbook
 

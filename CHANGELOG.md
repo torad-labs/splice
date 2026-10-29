@@ -271,6 +271,10 @@ origin.
   first so systemd can take the ports. A socket for a head splice.toml no longer has stays with systemd and never
   refuses the boot. `splice capabilities` says whether the native transport loads on this machine, so a manager
   learns a hand-off would be refused before it stops the daemon.
+- **`splice uninstall --all` takes away splice's systemd units.** It stops, disables and removes the daemon's unit,
+  the MCP hub's and every listener socket splice laid, sockets first, so the daemon no longer starts again at the
+  next login or the next request from the jar left on disk. Another program's unit in the same folder, and your own
+  unit of the same name in `~/.config/systemd/user`, stay as they are.
 - **A session joins its command by the launch splice made,** read from the launch roster. The process environment
   only tells a session splice never launched (`direct`) from one it cannot place (`unknown head`).
 - **A slash command reads as what the person typed.** In a session's conversation `/rename notes` shows as their

@@ -6,6 +6,10 @@
 // it holds no account to sign in again (one that proved its account keeps its card, as Marlin ruled on Oct 10).
 // Changed Oct 29 by the accounts-login-cards pass: splice's reason is no longer folded behind its word; it is printed in place
 // beside the refused act (the word alone where splice gave no reason, never an invented one), so it reads with no press.
+// Changed Oct 29 by the console-wide naming fix (anchors of accounts-login-cards, requests-filters and teams-member-cards): a login
+// nobody named reads "Account" (a muted ordinal where two read alike), never its provider's word, so the command's own signed-out
+// login is found by that word, with the number the one roster gives it (the login place that never proved an account is
+// numbered after it and drawn nowhere here), and the card that was never drawn is told apart by there being no second one.
 import { afterAll, beforeAll, expect as bunExpect, test } from "bun:test";
 import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -37,7 +41,7 @@ const answers: Record<string, unknown> = {
     // an account added to claude-splice, signed in
     login("work", { ...windows, label: "account-2", selector_key: "account-2" }),
     // the plain claude command's own login: it proved its account, then its token went. Its name is its address, which
-    // the console never uses as a title, so its card reads by provider ("Claude")
+    // the console never uses as a title, so its card reads "Account"
     login("me@example.invalid", { ...windows, label: "claude", selector_key: "native:claude", email: "me@example.invalid",
       refusal: noToken("claude"), login_place: { id: "claude" }, edit_target: { kind: "native", id: "claude" } }),
     // claude-splice's own login: its file is there with no token in it, and no profile ever proved an account
@@ -92,17 +96,18 @@ async function onPage(check: (page: Page) => Promise<void>, width = 1440) {
     await context.close();
   }
 }
-const card = (page: Page, name: string) => page.locator("article.card").filter({ has: page.locator(".name", { hasText: new RegExp(`^${name}$`) }) });
+const card = (page: Page, name: string) => page.locator("article.card").filter({ has: page.locator(".name", { hasText: new RegExp(`^${name}(?: \\d+)?$`) }) });
 
 test("a command's own login that is signed out and never proved an account draws no card; one that proved its account keeps its card", () => onPage(async (page) => {
-  await expect(card(page, "Claude")).toContainText("Signed out");
-  await expect(card(page, "Claude").getByRole("button", { name: "Sign in" })).toBeVisible();
-  await expect(card(page, "Account")).toHaveCount(0);
+  await expect(card(page, "Account")).toContainText("Signed out");
+  await expect(card(page, "Account").getByRole("button", { name: "Sign in" })).toBeVisible();
+  // the unproved login draws no card: of the two logins the daemon names Account, exactly one is drawn
+  await expect(card(page, "Account")).toHaveCount(1);
   await expect(page.locator("article.card", { hasText: "Signed out" })).toHaveCount(1);
 }), 30_000);
 
 test("a Sign in splice refuses on a login's card says its word there, and splice's reason is printed under it", () => onPage(async (page) => {
-  const there = card(page, "Claude");
+  const there = card(page, "Account");
   await there.getByRole("button", { name: "Sign in" }).click();
   const word = there.locator(".result", { hasText: "Config error" });
   await expect(word).toBeVisible({ timeout: 10_000 });

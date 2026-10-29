@@ -6,7 +6,7 @@ import { layout } from "../gate/src/lib/repo.ts";
 
 // Goal: a request's branches and tabs reveal their own document on demand, never loading the unseen contents.
 // Changed 2026-10-29 by the shared request view's pass (round 4): the Sent body is one closed "Body" row until it is
-// pressed, so a test opens it first; what each branch then reveals is unchanged.
+// pressed, and the Returned tab's answer is one closed "Response" row, so a test opens each first; what each branch then reveals is unchanged.
 const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const now = Date.now();
 const sent = {
@@ -73,6 +73,8 @@ test("request branches and tabs reveal their own document without loading the un
     await expect(messages).toContainText("message-0");
     await expect(messages).not.toContainText("message-119");
     await pane.getByRole("tab", { name: "Returned", exact: true }).click();
+    await expect(pane).not.toContainText("returned-document-marker");
+    await pane.getByRole("button", { name: "Response", exact: true }).click();
     await expect(pane).toContainText("returned-document-marker");
     expect(errors).toEqual([]);
     await page.screenshot({ path: "/tmp/splice-request-document-dark.png", fullPage: true });

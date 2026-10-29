@@ -108,10 +108,11 @@ function modelName(labels, id) {
 // ---------- what to call a thing nobody named (Oct 28): ONE RULE FOR EVERY PAGE ----------
 // Nine of twenty-six live sessions were titled by a UUID, the serving login by his own address, and three logins by the
 // bare word "Account" — each page fell back to whatever identity it held. The rule: the user's own name if he set one;
-// otherwise a short readable name drawn from what the thing IS (a session: its command and project; a login: its provider
-// and plan; a key: the variable that holds it), never an id, a hex run, an address as a title or the bare word "Account";
-// and where two unnamed things would read the same, an ordinal in the order they are drawn. The ACT to name it
-// (DRAW.nameIt) stands beside the name, so a placeholder is always one press from being his.
+// otherwise a short readable name drawn from what the thing IS (a session: its command and project; a key: the variable
+// that holds it; a login: "Account", since a provider's word is already on the heading over it and an address is private),
+// never an id, a hex run or an address as a title; and where two unnamed things would read the same, a muted ordinal in the
+// order they are drawn, counted over the whole list or menu in view. The ACT to name it (DRAW.nameIt) stands beside the
+// name, so a placeholder is always one press from being his.
 // a client's own name for a session is often a word and a whole id ("codex-<uuid>", "claude_<uuid>"): that is an id too
 const UUID_SHAPE = "[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}";
 const ID_LIKE = new RegExp(`^(?:${UUID_SHAPE}|[0-9a-f]{6,}|[a-z]+[_-][0-9a-f]{6,}|[a-z]+[_-]${UUID_SHAPE}|\\S+@\\S+)$`, "i");
@@ -123,6 +124,37 @@ const ownName = (s) => {
   const t = String(s ?? "").replace(/^\s*\[[^\]]*\b(?=[0-9a-f]*\d)[0-9a-f]{6,}\b[^\]]*\]\s*/i, "").replace(/\s*[·(]\s*[0-9a-f]{6,}\)?\s*$/i, "").trim();
   return t && !ID_LIKE.test(t) && !PLACEHOLDER.test(t) ? t : "";
 };
+// ONE ORDINAL FOR ONE LOGIN, ON EVERY PAGE. The daemon's accounts list is the one order: every unnamed login in it is counted
+// once, in that order, and a page that names a login finds it there by any of the names the daemon knows it by (its ref, its
+// label, its selector, its place in a command's pool), so a page that groups logins by provider, by command or by menu still
+// reads the same login by the same name. Where only one login is unnamed it reads plain "Account". api.js hands the list over
+// each time the daemon answers it.
+let LOGIN_ROSTER = new Map(), LOGIN_UNNAMED = 0;
+// a pool slot such as "primary" is the same word on every command, so each name also stands with its command ("claude|primary")
+const loginIds = (a) => {
+  const own = [a?.selector_key, a?.label, a?.edit_target?.id, ...Object.values(a?.account_labels ?? {})].filter((x) => typeof x === "string" && x);
+  const at = (a?.heads ?? []).flatMap((h) => [...own, a?.account_labels?.[h]].filter((x) => typeof x === "string" && x).map((x) => `${h}|${x}`));
+  return [a?.ref, ...at, ...own].filter((x) => typeof x === "string" && x);
+};
+function loginRoster(rows) {
+  if (!Array.isArray(rows)) return;
+  // a name two logins answer to (a pool slot such as "primary" is on every command's first login) names neither
+  const book = new Map(), shared = new Set();
+  // a command's own login place that never proved an account is drawn by few pages, so it is numbered after the others and
+  // never moves their numbers
+  const placeOnly = (a) => a?.login_place && !a.identity_verified && !a.observed_at_epoch_seconds && !a.token_renews && (!a.credential_present || a.auth_exclusion_reason === "credential_missing" || a.refusal);
+  const unnamed = rows.filter((a) => a?.kind !== "api-key" && !ownName(a?.display_name));
+  const ordered = [...unnamed.filter((a) => !placeOnly(a)), ...unnamed.filter(placeOnly)];
+  ordered.forEach((a, k) => {
+    for (const id of new Set(loginIds(a))) { if (book.has(id)) shared.add(id); else book.set(id, k + 1); }
+  });
+  // an id a NAMED login answers to is shared too
+  for (const a of rows) if (a?.kind !== "api-key" && ownName(a?.display_name)) for (const id of loginIds(a)) if (book.has(id)) shared.add(id);
+  for (const id of shared) book.delete(id);
+  LOGIN_ROSTER = book; LOGIN_UNNAMED = ordered.length;
+}
+/** The unnamed login [ids] name in the roster: { pos, total }, or null where the roster does not hold it. */
+const rosterHit = (ids) => { for (const id of ids ?? []) if (LOGIN_ROSTER.has(id)) return { pos: LOGIN_ROSTER.get(id), total: LOGIN_UNNAMED }; return null; };
 /** What to call [o], of [kind] "session", "login" or "key". Returns { text, own }: [own] is true when the user named it, so
  *  a page knows whether to draw the act that names it. A session reads { name, command, project }, a login { name,
  *  provider (a PROVIDER_NAME key), plan }, a key { name, variable }. */
@@ -131,22 +163,28 @@ function displayName(kind, o = {}) {
   if (own) return { text: own, own: true };
   if (kind === "session") return { text: [o.command, o.project].filter(Boolean).join(" · ") || ownName(o.title) || "Session", own: false };
   if (kind === "key") return { text: o.variable || "Key", own: false };
-  const provider = o.provider ? (PROVIDER_NAME[o.provider] ?? o.provider) : "";
-  // the number the daemon gave a login it could not name stays, so two of them are still two
+  const hit = rosterHit(o.ids);
+  if (hit) return hit.total > 1 ? { text: `Account ${hit.pos}`, base: "Account", ord: hit.pos, own: false, rostered: true } : { text: "Account", base: "Account", ord: 0, own: false, rostered: true };
+  // the number the daemon gave a login it could not name stays where a login is named alone; a list tells them apart itself
   const num = /^(?:signed-out\s+)?(?:account|login)\s+(\d+)$/i.exec(String(o.name ?? "").trim())?.[1] ?? "";
-  return { text: [provider, o.plan, num].filter(Boolean).join(" ") || "Login", own: false };
+  return { text: num ? `Account ${num}` : "Account", base: "Account", ord: num ? Number(num) : 0, own: false };
 }
 /** [list] named by displayName in the order given, with two unnamed things that would read alike told apart by an ordinal
- *  in that order ("Claude Max", "Claude Max 2"): a name he gave is never changed. Returns [{ text, own }]. */
+ *  in that order ("Account", "Account 2"): a name he gave is never changed. Returns [{ text, own, base, ord }], where [ord]
+ *  is the ordinal alone (0 where none) so a page can draw it muted (DRAW.nameHtml). */
 function displayNames(kind, list) {
-  const named = list.map((o) => displayName(kind, o)), seen = new Map();
+  const named = list.map((o) => {
+    const n = displayName(kind, o);
+    // a number the daemon counted inside one command means nothing over a longer list
+    return kind === "login" && !n.own && !n.rostered ? { text: n.base, base: n.base, ord: 0, own: false } : n;
+  }), seen = new Map();
   const count = new Map();
-  for (const n of named) if (!n.own) count.set(n.text, (count.get(n.text) ?? 0) + 1);
+  for (const n of named) if (!n.own && !n.rostered) count.set(n.text, (count.get(n.text) ?? 0) + 1);
   return named.map((n) => {
-    if (n.own || count.get(n.text) < 2) return n;
+    if (n.own || n.rostered || count.get(n.text) < 2) return n;
     const at = (seen.get(n.text) ?? 0) + 1;
     seen.set(n.text, at);
-    return at === 1 ? n : { ...n, text: `${n.text} ${at}` };
+    return at === 1 ? n : { ...n, text: `${n.text} ${at}`, base: n.base ?? n.text, ord: at };
   });
 }
 
@@ -350,7 +388,10 @@ const GHOST = {
     // the projects with nothing to count stand after the tiles in their own small chips, as many as the last row held
     const zeros = GHOST.count("tilezeros", 0), zl = GHOST.count("tilezerolamps", 0) > 0;
     const none = zeros > 0 ? `<span class="pzeros">${Array.from({ length: zeros }, () => `<span class="ptile zero ghosted-tile"><span class="ptop">${GHOST.bar(5)}${GHOST.bar(1)}</span>${zl ? `<span class="plamps hold"></span>` : ""}</span>`).join("")}</span>` : "";
-    return `<nav class="ptiles${lamps}${GHOST.count("tilestack", 0) > 0 ? " stack" : ""}" aria-hidden="true"><div class="ptgrid">${Array.from({ length: n }, one).join("")}</div>${none}</nav>`;
+    // a first visit, with no count ever drawn here, holds the row's height with hollow tiles (dashed, no stripes): what lands
+    // there is not known yet, so nothing in them claims a shape
+    const hollow = GHOST.count("tiles", -1) < 0 ? " ptv-hollow" : "";
+    return `<nav class="ptiles${lamps}${hollow}${GHOST.count("tilestack", 0) > 0 ? " stack" : ""}" aria-hidden="true"><div class="ptgrid">${Array.from({ length: n }, one).join("")}</div>${none}</nav>`;
   },
   /** HOW MUCH LANDS IS HOW MUCH LANDED LAST (Oct 28). A ghost is the size and count of what it waits for, so a page asks
    *  what it last drew before it guesses: [key] names a kind of thing on this page ("tiles", "rows:ended", "cards") and
@@ -1008,11 +1049,18 @@ const DRAW = {
    *  EVERY PILL CARRIES A CHEVRON, pointing down while the list is folded and up while it is open, and its word sits in
    *  .mp-lab so the old word fades out before the new one fades in. { host } names the list it opens (the same id on the
    *  list's data-mp-host): the kit then eases the rows open and shut over --t-snap (kit.js "a list behind N more").
-   *  { pill, plus } draws "+3 models": the count with its plus and the word, with the chevron. Its words stay while it is open
+   *  { tile } draws the dashed tile of the list's foot instead: "N more models", { nextN } "Next 20", { peek } the names that
+   *  come first, and (open) the word { less } with the chevron up. { pill, plus } draws "+3 models": the count with its plus and the word, with the chevron. Its words stay while it is open
    *  and only the chevron turns, because what it opens is what it names, never "Fewer". */
-  more(n, { word = "more", one = null, act = "", data = "", pill = false, plus = false, keepWord = false, open = false, less = "Fewer", host = "" } = {}) {
+  more(n, { word = "more", one = null, act = "", data = "", pill = false, plus = false, keepWord = false, open = false, less = "Fewer", host = "", tile = false, peek = [], nextN = 0 } = {}) {
     const words = esc(n === 1 && one != null ? one : word);
     const said = `<b>${DRAW.n(n)}</b> ${words}`;
+    if (tile) {
+      // THE TILE: a dashed bar across the list's foot that says how many are behind it, which come first, and (open) Fewer
+      const mpt = host ? ` data-mp="${esc(host)}"${open ? " data-mp-fold" : ""}` : "";
+      return `<button class="mp-tile" type="button" data-act="${esc(act)}"${data}${mpt}><span class="mp-lab">${open ? esc(less) : said}</span>`
+        + (open ? "" : `${nextN ? `<span class="mp-nextw">Next ${DRAW.n(nextN)}</span>` : ""}${peek.length ? `<span class="mp-peek">${peek.map((x) => `<span class="mp-nx">${esc(x)}</span>`).join("")}</span>` : ""}`) + `${DRAW.mpChev(open)}</button>`;
+    }
     if (pill && plus) {
       return `<button class="morepill pill worded" type="button" data-act="${esc(act)}"${data}${host ? ` data-mp="${esc(host)}"${open ? " data-mp-fold" : ""}` : ""}>`
         + `<span class="mp-lab"><b>+${DRAW.n(n)}</b> ${words}</span>${DRAW.mpChev(open)}</button>`;
@@ -1046,12 +1094,10 @@ const DRAW = {
    *  with a dash; an ended one is a dashed track, a dash, and "Ended" with its time and no ring. [warn] is the share the
    *  warn line stands at, a tick on every meter; null draws none. A day's budget is a row { label, spent, cap, resetMs, frac }:
    *  its meter is the share of the cap spent, and its percent column reads "$spent of $cap", so a list with one gives that
-   *  column the width the two amounts need. A login held at its limit says when it is back once, on its DRAW.loginHeld line, so the
-   *  window that holds it keeps its ring and not the words "Resets" and the same time again; the other windows say their own.
+   *  column the width the two amounts need. A login held at its limit says when it is back once, on its DRAW.loginHeld line; every window
+   *  still says when it refills, on its own row.
    *  Call DRAW.paint on the page once it lands. */
   loginWins(rows, { warn = null } = {}) {
-    // the moment the held line names: the last of the running windows at their limit to refill
-    const back = Math.max(0, ...rows.filter((w) => w.rolledMs == null && w.used != null && w.used >= 100).map((w) => w.resetMs ?? 0));
     const tick = warn == null ? "" : `<i class="lw-tick" style="left:${Math.max(0, Math.min(100, warn))}%"></i>`;
     const line = (w) => {
       const label = `<span class="label">${esc(w.label)}</span>`;
@@ -1066,9 +1112,8 @@ const DRAW = {
       }
       if (w.used == null) return `${label}<span class="lw-m">${DRAW.meter(null)}${tick}</span><span class="pct">${DRAW.dash}</span><span class="when"></span>`;
       const full = w.used >= 100;
-      const said = full && back > 0 && w.resetMs === back;
       const when = w.resetMs != null && w.frac != null
-        ? `<span class="when">${DRAW.ring(w.frac)}${said ? "" : `Resets ${esc(backWord(new Date(w.resetMs)))}`}</span>` : `<span class="when"></span>`;
+        ? `<span class="when">${DRAW.ring(w.frac)}Resets ${esc(backWord(new Date(w.resetMs)))}</span>` : `<span class="when"></span>`;
       return `${label}<span class="lw-m">${DRAW.meter(Math.min(100, w.used), `${full ? "full" : ""}${w.stale ? " stale" : ""}`)}${tick}</span>`
         + `<span class="pct${full ? " limit" : ""}">${w.used}%<span class="used">used</span></span>${when}`;
     };
@@ -1084,7 +1129,11 @@ const DRAW = {
   result: (word, tone = "") => `<span class="result${tone ? ` ${tone}` : ""}" role="status">${esc(word)}</span>`,
   /** WHAT TO CALL A THING NOBODY NAMED: displayName(kind, o) → { text, own }, displayNames(kind, list) for a list that tells
    *  two alike apart, and ownName(s) for the name a person gave or "". The rule is above, with its reasons. */
-  name: displayName, names: displayNames, ownName,
+  name: displayName, names: displayNames, ownName, loginRoster, loginIds,
+  /** How many unnamed logins the daemon lists: the number a login outside the list continues from, so its ordinal never repeats one inside it. */
+  rosterSize: () => LOGIN_UNNAMED,
+  /** A name from DRAW.name(s) as markup: the ordinal of an unnamed thing stands muted after its word. */
+  nameHtml: (n) => (n.ord && !n.own ? `${esc(n.base ?? n.text)} <span class="nm-ord">${n.ord}</span>` : esc(n.text)),
   /** The act that names it, beside the placeholder name: "Name it", the console's small quiet act. A page that draws a
    *  name where { own } is false draws this beside it, whatever the object. */
   nameIt: ({ act = "rename", data = "", word = "Name it" } = {}) => DRAW.act({ word, act, cls: "quiet small", data }),
@@ -2170,6 +2219,11 @@ function drawStale() {
     link.setAttribute("aria-label", "Settings, changed since splice started");
     navLine(false);
   }
+  // the lamp counts what the list under it names, as "3 changed", so the number is on the bar before the list is opened
+  const changed = (savedRead()?.saves ?? []).length + (staleOutside ? 1 : 0);
+  const lampHtml = `<span class="tlamp needs" aria-hidden="true">${ICON.retries}</span>${changed ? `<span class="nm-chg"><b>${DRAW.n(changed)}</b> changed</span>` : ""}`;
+  const lampEl = link.querySelector(".nstale");
+  if (lampEl && lampEl.innerHTML !== lampHtml) lampEl.innerHTML = lampHtml;
   if (!link.dataset.stale) {
     link.dataset.stale = "on";
     for (const [on, off] of [["mouseenter", "mouseleave"], ["focus", "blur"]]) { link.addEventListener(on, () => openStaleList(true)); link.addEventListener(off, () => openStaleList(false)); }

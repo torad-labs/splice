@@ -888,6 +888,13 @@ input.field { height: var(--ctl-h); }
 /* the tile while its project is read: the tile's own parts, hollow, so the row stands the height it will (GHOST.tiles). The
    top row is as tall as the figure that lands in it, and the lamp row is held only when the last read drew one */
 .ptile.ghosted-tile { cursor: default; pointer-events: none; animation: ghost-in var(--t-move) var(--e-out) both; }
+.ptiles.ptv-hollow .ptile.ghosted-tile { background: transparent; border-style: dashed; border-color: var(--track-line); box-shadow: none; }
+.ptiles.ptv-hollow .ptile.ghosted-tile .ghost { visibility: hidden; }
+/* a row read with a count remembered: each tile is one striped face at the size it will land, its parts held inside */
+.ptiles:not(.ptv-hollow) .ptile.ghosted-tile:not(.zero) { background-color: var(--obj-sunk);
+  background-image: repeating-linear-gradient(-45deg, transparent 0 .45rem, var(--track) .45rem .9rem); background-size: 200% 100%;
+  animation: ghost-in var(--t-move) var(--e-out) both, ghost-stripes var(--t-stripe) linear infinite; }
+.ptiles:not(.ptv-hollow) .ptile.ghosted-tile:not(.zero) .ghost { visibility: hidden; }
 .ptile.ghosted-tile .ptop { min-height: var(--fig-focal); align-items: center; }
 .ptile.ghosted-tile .plamps.hold:empty { display: flex; }
 /* a card's lamp, standing in the line: the socket, its ink ring and its glyph in the state's colour (sessions.css .lamp) */
@@ -962,35 +969,54 @@ body.locked main.page > :not(.head):not(.lockedby), body.locked main.page > .hea
 }
 .lockedby .way .act { height: var(--ctl-h); }
 
-/* ---------- the locked page's plate: the state, the one way back, and what follows it ---------- */
-.lockedby .shl-state { display: flex; align-items: center; justify-content: center; gap: calc(3 * var(--u)); flex-wrap: wrap; }
-.lockedby .shl-state .state.limit { margin-bottom: 0; }
-.lockedby .shl-wait { margin: 0; display: inline-flex; align-items: center; gap: calc(1.5 * var(--u)); font: 500 clamp(1.1rem, 1vw, 2rem)/1.2 var(--font-name); color: var(--text-mute); }
-.lockedby .shl-ring {
-  flex: none; width: 1.4em; height: 1.4em; border-radius: 50%; box-sizing: border-box;
-  border: .22em solid color-mix(in oklab, var(--text) 18%, transparent); border-top-color: var(--text); animation: spin 1.1s linear infinite;
+/* the Settings lamp counts what changed since splice started, beside the lamp */
+.nstale .nm-chg { margin-left: calc(.5 * var(--u)); font: 400 .8rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
+.nstale .nm-chg b { font-weight: 500; font-size: 1rem; color: var(--needs); }
+
+/* ---------- the locked page's plate: one row, the state and then the way back as three steps ---------- */
+body.locked .lockedby {
+  flex-direction: row; align-items: center; justify-content: flex-start; text-align: left; gap: calc(4 * var(--u));
+  min-height: 0; padding: calc(4 * var(--u)); border-width: .14rem; border-radius: var(--r-obj);
 }
-.lockedby .shl-run { display: flex; flex-direction: column; align-items: center; gap: calc(2 * var(--u)); }
-.lockedby .shl-steps {
-  list-style: none; margin: var(--u) 0 0; padding: 0; width: min(100%, clamp(60rem, 50vw, 150rem));
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: calc(2 * var(--u)); text-align: left; counter-reset: shl;
+.lockedby .shl-hero { flex: none; display: flex; align-items: center; gap: calc(2 * var(--u)); }
+.lockedby .shl-ring { flex: none; width: clamp(8rem, 6vw, 16rem); height: clamp(8rem, 6vw, 16rem); overflow: visible; }
+.lockedby .shl-r0 { fill: none; stroke: var(--limit); stroke-opacity: .35; stroke-width: 2.4; }
+.lockedby .shl-arc {
+  fill: none; stroke: var(--limit); stroke-width: 2.8; stroke-linecap: round; stroke-dasharray: 56 296;
+  transform-box: view-box; transform-origin: 60px 60px; animation: spin 1.2s linear infinite;
 }
-.lockedby .shl-step {
-  position: relative; display: flex; align-items: center; gap: calc(1.5 * var(--u)); min-width: 0; padding: calc(2.5 * var(--u)) calc(3 * var(--u));
-  background: var(--obj); border: .12rem solid var(--track-line); border-radius: var(--r-in); color: var(--text);
+.lockedby .shl-glyph { fill: none; stroke: var(--limit); stroke-width: .6; stroke-linecap: round; stroke-linejoin: round; }
+.lockedby .shl-word { margin: 0; font: 400 clamp(4.4rem, 4vw, 9rem)/1 var(--font-lead); color: var(--limit); white-space: nowrap; }
+.lockedby .shl-wait { margin: calc(1.5 * var(--u)) 0 0; font: 400 1.05rem/1.3 var(--font-name); color: var(--text-body); white-space: nowrap; }
+.lockedby .shl-path { flex: 1 1 auto; min-width: 0; display: flex; align-items: stretch; }
+.lockedby .shl-node {
+  flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: calc(1.5 * var(--u));
+  padding: calc(2 * var(--u)); box-sizing: border-box; border-radius: var(--r-obj); background: var(--obj-high); box-shadow: inset 0 0 0 .1rem var(--track-line);
 }
-/* an arrow between the cards says they follow one another */
-.lockedby .shl-step + .shl-step::before {
-  content: ""; position: absolute; left: calc(-1.6 * var(--u)); top: 50%; width: .7rem; height: .7rem; transform: translateY(-50%) rotate(45deg);
-  border-top: .16rem solid var(--text-mute); border-right: .16rem solid var(--text-mute);
+.lockedby .shl-path > .shl-node:first-child { flex-grow: 1.6; }
+.lockedby .shl-link { flex: 0 0 4.4rem; position: relative; }
+.lockedby .shl-link::before { content: ""; position: absolute; left: .6rem; right: 1.2rem; top: 50%; border-top: .14rem dashed var(--track-line); }
+.lockedby .shl-link::after {
+  content: ""; position: absolute; right: 1.2rem; top: calc(50% - .36rem); width: .6rem; height: .6rem;
+  border-top: .14rem solid var(--track-line); border-right: .14rem solid var(--track-line); transform: rotate(45deg);
 }
-.lockedby .shl-sico svg { display: block; width: clamp(2rem, 1.7vw, 4rem); height: clamp(2rem, 1.7vw, 4rem); color: var(--text-mute); }
-.lockedby .shl-stxt { display: flex; flex-direction: column; gap: calc(.5 * var(--u)); min-width: 0; }
-.lockedby .shl-stxt b { font: 500 clamp(1.05rem, .95vw, 2.1rem)/1.2 var(--font-name); }
-.lockedby .shl-stxt small { font: 500 clamp(.9rem, .8vw, 1.8rem)/1.25 var(--font-name); color: var(--text-mute); }
-.lockedby .shl-stxt code { min-height: 0; padding: .1rem .4rem; font: 500 clamp(.9rem, .8vw, 1.8rem)/1.3 var(--font-data); border-width: .1rem; border-color: var(--track-line); }
-@media (max-width: 52rem) { .lockedby .shl-steps { grid-template-columns: minmax(0, 1fr); } .lockedby .shl-step + .shl-step::before { display: none; } }
-@media (prefers-reduced-motion: reduce) { .lockedby .shl-ring { animation-duration: 3s; } }
+.lockedby .shl-row { display: flex; align-items: center; flex-wrap: wrap; gap: calc(1.5 * var(--u)); }
+.lockedby .shl-row > svg { flex: none; width: 1.2rem; height: 1.2rem; color: var(--text-mute); }
+.lockedby .shl-row > .kicker { white-space: nowrap; }
+.lockedby .shl-row code {
+  min-height: 0; padding: .8rem 1rem; border: 0; background: var(--obj-sunk);
+  font: 400 clamp(1.2rem, 1.4vw, 3.2rem)/1.2 var(--font-data); white-space: nowrap;
+}
+.lockedby .shl-say { margin: 0; font: 400 1rem/1.3 var(--font-name); color: var(--text-body); white-space: nowrap; }
+.lockedby .shl-say.pending { color: var(--text-mute); }
+@media (max-width: 70rem) {
+  body.locked .lockedby { flex-direction: column; align-items: stretch; }
+  .lockedby .shl-path { flex-direction: column; }
+  .lockedby .shl-link { flex: 0 0 2.4rem; }
+  .lockedby .shl-link::before { left: 50%; right: auto; top: .4rem; bottom: 1.2rem; border-top: 0; border-left: .14rem dashed var(--track-line); }
+  .lockedby .shl-link::after { right: auto; left: calc(50% - .3rem); top: auto; bottom: 1rem; transform: rotate(135deg); }
+}
+@media (prefers-reduced-motion: reduce) { .lockedby .shl-arc { animation-duration: 3s; } }
 
 /* A page that did not open (console.js): where it would have been, in its own words, with the act that opens it again.
    It had no rule of its own and rendered as a bare paragraph that told him to try the link again. */
@@ -1248,6 +1274,14 @@ a.pd-lb:hover { color: var(--text); text-decoration: underline; }
 .plink:hover, .morepill:hover { color: var(--text); text-decoration: underline; }
 .plink:focus-visible, .morepill:focus-visible { outline: .14rem solid var(--text); outline-offset: .2rem; border-radius: .2rem; }
 .morepill.pill { min-height: var(--ctl-h); padding: 0 .6rem; border: .12rem solid var(--track-line); border-radius: var(--r-in); background: var(--obj-sunk); }
+/* the foot of a folded list: one dashed tile that says how many stand behind it, how many a press brings, and which come first */
+.mp-tile { flex: 1 1 0; width: 100%; min-width: 0; display: flex; align-items: center; gap: calc(1.5 * var(--u)); min-height: calc(3 * var(--u)); padding: var(--u) calc(2 * var(--u)); text-align: left; background: transparent; border: .16rem dashed var(--track-line); border-radius: var(--r-in); color: var(--text); font: 500 .95rem/1.2 var(--font-name); cursor: pointer; overflow: hidden; transition: background-color var(--t-hover) var(--e-out); }
+.mp-tile:hover { background: var(--track); }
+.mp-tile .mp-lab { flex: none; }
+.mp-tile .mp-chev { margin-left: auto; flex: none; }
+.mp-nextw { flex: none; font: 500 .8rem/1 var(--font-name); color: var(--text-mute); }
+.mp-peek { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: var(--u); overflow: hidden; -webkit-mask-image: linear-gradient(90deg, black calc(100% - 1.5rem), transparent); mask-image: linear-gradient(90deg, black calc(100% - 1.5rem), transparent); }
+.mp-nx { flex: none; white-space: nowrap; padding: .2rem .5rem; font: 500 .82rem/1.2 var(--font-data); color: var(--text-body); border: .1rem solid var(--track-line); border-radius: var(--r-in); }
 .morepill.pill.worded { padding: 0 .8rem; }   /* the pill that keeps its words ("3 more logins") is wider than "+3" */
 .morepill.pill:hover { color: var(--text); border-color: var(--text-mute); text-decoration: none; }
 .morepill b { font: 500 .88rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; }
@@ -1523,3 +1557,5 @@ a.pd-lb:hover { color: var(--text); text-decoration: underline; }
 .slr-ring.slr-sm em { font-size: .64rem; }
 .slr-pop { animation: slr-pop var(--t-pop) var(--e-out) both; }
 @keyframes slr-pop { from { opacity: 0; transform: scale(.6); } }
+/* the ordinal that tells two unnamed things alike apart stands muted after their word, so the word still reads first */
+.nm-ord { color: var(--text-mute); font-variant-numeric: tabular-nums; }

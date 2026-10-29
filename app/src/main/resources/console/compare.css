@@ -450,7 +450,7 @@
 .pg-prov .stack-cards { gap: var(--gap-card); }
 /* a provider whose cards stand in one board column names the figures once, in its title line, over the columns of its rows */
 .pg-prov { --rowoff: calc(var(--ink-w) + 2.5 * var(--u) - .333rem + .45rem); }
-.pg-prov.lead > header { display: grid; grid-template-columns: 1.25rem minmax(14rem, 2fr) repeat(3, minmax(6.6rem, 1fr)); column-gap: 0.667rem; align-items: end; padding-inline: var(--rowoff); }
+.pg-prov.lead > header { display: grid; grid-template-columns: 1.25rem minmax(16rem, 2fr) repeat(3, minmax(6rem, 1fr)); column-gap: 0.667rem; align-items: end; padding-inline: var(--rowoff); }
 .pg-prov.lead > header > h2 { grid-column: 1 / span 2; margin-left: calc(-1 * var(--rowoff)); }
 .pg-gh { display: contents; }
 .pg-gh > span { font: 500 .78rem/1.2 var(--font-name); color: var(--text-mute); text-align: right; white-space: nowrap; }
@@ -478,15 +478,15 @@
 .pg-st a.act { text-decoration: none; }
 /* a command that is not answering is one row: its chip, its account, its state, the act that fixes it and the pill that opens its models */
 .pg-cmd.down { padding: calc(.75 * var(--u)) calc(2 * var(--u)); gap: calc(1.5 * var(--u)); }
-.pg-dn { display: flex; align-items: center; gap: var(--u); min-height: var(--ctl-h); }
+.pg-dn { display: flex; align-items: center; flex-wrap: wrap; gap: var(--u); min-height: var(--ctl-h); }
 .pg-dn > * { flex: none; }
-.pg-dn > .pg-key, .pg-dn > .pg-an { flex: 0 1 auto; min-width: 0; }
+.pg-dn > .pg-key, .pg-dn > .pg-an { flex: none; }
 .pg-dn .pg-key { overflow: hidden; flex-wrap: nowrap; gap: 0.333rem; }
 .pg-dn .pg-tail { flex: none; white-space: nowrap; }
 .pg-dn .pg-an.var { font-size: .8rem; }
 .pg-dn .act.small { padding-inline: .6rem; }
 .pg-dn .morepill { padding-inline: .6rem; margin-left: auto; }
-.pg-dn .pg-an.var { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.pg-dn .pg-an.var { white-space: nowrap; }
 .pg-dn .nothing { white-space: nowrap; }
 .pg-dn .chip { flex: none; }
 .pg-da { display: inline-flex; align-items: center; gap: var(--u); }
@@ -501,7 +501,7 @@
 .pg-rcols { display: grid; grid-template-columns: repeat(var(--k, 1), minmax(0, 1fr)); column-gap: calc(4 * var(--u)); align-items: start; }
 .pg-rc { min-width: 0; display: flex; flex-direction: column; }
 /* a model list's columns, said once over its rows: the tick, the name, the window, the two prices */
-.pg-mh, .pg-mrow { display: grid; grid-template-columns: 1.25rem minmax(14rem, 2fr) repeat(3, minmax(6.6rem, 1fr)); align-items: center; column-gap: 0.667rem; }
+.pg-mh, .pg-mrow { display: grid; grid-template-columns: 1.25rem minmax(16rem, 2fr) repeat(3, minmax(6rem, 1fr)); align-items: center; column-gap: 0.667rem; }
 .pg-mh { align-items: end; padding: 0 .45rem .45rem; font: 500 .78rem/1.2 var(--font-name); color: var(--text-mute); border-bottom: .08rem solid var(--hair); }
 .pg-mh > span:nth-child(n+3) { text-align: right; }
 .pg-mh .pg-h { font: inherit; white-space: nowrap; }
@@ -544,6 +544,10 @@
 .pg-vfold.unfold { animation: pg-unfold var(--t-snap) var(--e-out) both; }
 .pg-vfold.unfold > .pg-vin { overflow: hidden; }
 .pg-vends > .morepill { align-self: flex-start; margin: 0.333rem 0.333rem 0; }
+/* a vendor list on a provider that stands several columns wide lays its vendors across them, an opened vendor taking the whole row */
+.pg-prov[style*="--k"] .pg-vends { display: grid; grid-template-columns: repeat(var(--k), minmax(0, 1fr)); column-gap: calc(4 * var(--u)); align-items: start; }
+.pg-prov[style*="--k"] .pg-vends > :not(.pg-vend), .pg-prov[style*="--k"] .pg-vends > .pg-vend.open { grid-column: 1 / -1; }
+.pg-prov[style*="--k"] .pg-vends > .morepill { justify-self: start; }
 
 /* ---------- while the reads run, and when they fail ---------- */
 .pg-c > .barcell { width: 100%; }

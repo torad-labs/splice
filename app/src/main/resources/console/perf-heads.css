@@ -32,7 +32,7 @@
 .pf { min-width: 0; }
 .pf > em { display: none; }
 .pf.num, .pthead .pf.num { text-align: right; white-space: nowrap; }
-.pf.tm.slow { color: var(--key-ink); font-weight: 600; }  /* slow today: the one colour a time ever takes */
+.pf.tm.slow { color: var(--text); font-weight: 600; }  /* slow today: the time takes the weight of a figure to look at, not a colour */
 
 /* the command: its place in the order, a disclosure (the kit's .disc and .chev), the provider's dot, its name */
 .pf.cmd { display: flex; align-items: center; gap: .667rem; }
@@ -101,10 +101,6 @@
 /* the model cards are as many as there are, up to four, and share the plate's width, so none stands alone in a row */
 @container perf (min-width: 56rem) {
   .pd-cards { grid-template-columns: repeat(var(--k, 3), minmax(0, 1fr)); }
-}
-/* wide enough for two columns of the detail, the cards fill the width in units of at least 20rem */
-@container perf (min-width: 86rem) {
-  .pd-cards { grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); }
 }
 .perf-heads .pd-stages > .sechead .pd-n { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
 

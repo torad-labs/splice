@@ -68,12 +68,13 @@ test("a plan request draws its API-price worth hollow, the list's key says Plan 
     const fill = (turn: string) => card(turn).locator(".co .cbar > b").evaluate((b) => getComputedStyle(b).backgroundColor);
     await expect(card("onplan").locator(".co .v")).toHaveText("$0.053");
     expect(await card("onplan").locator(".co.plan").count()).toBe(1);
-    expect(await fill("onplan")).toBe("rgba(0, 0, 0, 0)");
+    // the list redraws on its poll, so a single read can land on a row being replaced and read no colour: read until settled
+    await expect.poll(() => fill("onplan")).toBe("rgba(0, 0, 0, 0)");
     await expect(page.locator(".lkey")).toContainText("Plan cost");
     expect(((await page.locator(".lkey").innerText()).match(/Plan cost/g) ?? []).length).toBe(1);
     await expect(card("onkey").locator(".co .v")).toHaveText("$0.120");
     expect(await card("onkey").locator(".co.plan").count()).toBe(0);
-    expect(await fill("onkey")).not.toBe("rgba(0, 0, 0, 0)");
+    await expect.poll(() => fill("onkey")).toMatch(/^(?!rgba\(0, 0, 0, 0\)$)\S/);
 
     const cost = page.locator(".rqpane .rvw-col").filter({ has: page.locator(".rvw-ch span", { hasText: "Cost" }) });
     await card("onplan").click();

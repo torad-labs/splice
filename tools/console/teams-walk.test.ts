@@ -129,3 +129,18 @@ for (const [theme, ink, key] of [["day", "rgb(156, 84, 16)", "rgb(138, 90, 18)"]
     bunExpect(await read()).not.toBe(key);
   }, theme, 1440), 60_000);
 }
+
+// A NEW MEMBER ROW WAITS FOR ITS COMMAND (Teams' new-team form, Oct 29): until a command is picked the Model and Account
+// pickers have nothing to offer, so they stand dimmed and cannot be opened; the Command picker stays at full strength.
+test("a member row with no command dims its Model and Account pickers and leaves Command live", () => onTeams(async (p) => {
+  await p.locator('[data-act="new"]').first().click();
+  const row = p.locator(".slot-row").first();
+  const head = row.locator('.pickbtn[data-what="head"]'), model = row.locator(".ntf-picks .pickbtn", { hasText: "Model" }), account = row.locator(".ntf-picks .pickbtn", { hasText: "Account" });
+  await expect(head).toBeEnabled();
+  await expect(model).toBeDisabled();
+  await expect(account).toBeDisabled();
+  const opacity = (l: typeof head) => l.evaluate((e) => Number(getComputedStyle(e).opacity));
+  bunExpect(await opacity(head)).toBe(1);
+  bunExpect(await opacity(model)).toBeLessThan(1);
+  bunExpect(await opacity(account)).toBeLessThan(1);
+}), 60_000);

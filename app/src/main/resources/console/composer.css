@@ -131,6 +131,25 @@ body.locked .cmp-dim, body:has(.scrim) .cmp-dim { display: none; }
 }
 .cmp .cmp-send.shook { animation: shake 300ms var(--e-out) 1; }
 
+/* THE BAR'S LAMP IS A MEDAL (Oct 29): the manager's state is the biggest thing on the bar, a socket holding a ring and a lit dot, with the
+   field a sunk row beside it. When he has typed, the field says what it is for in a small line above his words. The open sheet
+   keeps its own small lamp and sunk row (below). */
+.cmp-fw { position: relative; flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.cmp-fw:has(> .cmp-field[hidden]) { display: none; }
+.cmp-flabel { display: none; }
+.cmp:not(.sheeted) .cmp-pill { align-items: center; gap: 1rem; min-height: 6.6rem; padding: .45rem .5rem .45rem .6rem; }
+.cmp:not(.sheeted) .cmp-pill > .cmp-lamp { width: 5.4rem; height: 5.4rem; margin-bottom: 0; position: relative; }
+.cmp:not(.sheeted) .cmp-pill > .cmp-lamp i { width: 1.9rem; height: 1.9rem; }
+.cmp:not(.sheeted) .cmp-pill > .cmp-lamp::before {
+  content: ""; position: absolute; width: 3.4rem; height: 3.4rem; border-radius: 50%; box-shadow: inset 0 0 0 .14rem currentColor; opacity: .4;
+}
+.cmp:not(.sheeted) .cmp-fw { min-height: 3.4rem; padding: .3rem .75rem; border-radius: var(--r-in); background: var(--obj-sunk); box-shadow: inset 0 0 0 .1rem var(--track-line); }
+.cmp:not(.sheeted) .cmp-field { min-height: 1.7rem; padding: .2rem 0; }
+.cmp:not(.sheeted) .cmp-fw:has(> .cmp-field:not(:placeholder-shown)) > .cmp-flabel {
+  display: block; font: 400 .8rem/1.2 var(--font-name); color: var(--text-mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cmp:not(.sheeted) .cmp-send { height: 3.4rem; margin-bottom: 0; }
+.cmp:not(.sheeted) .cmp-said, .cmp:not(.sheeted) .cmp-door, .cmp:not(.sheeted) .cmp-wait { height: 3.4rem; }
 /* ---------- the lamp: a dark socket with an ink ring, lit in the state's colour (Sessions' .lamp, small) ---------- */
 .cmp-lamp {
   flex: none; width: 1.05rem; height: 1.05rem; border-radius: 50%; display: grid; place-items: center;

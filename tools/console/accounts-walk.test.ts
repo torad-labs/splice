@@ -4,6 +4,10 @@
 // one line on its card; a window whose reset went by
 // reads "Ended"; a plan card with no reading reads "Not read", and "No limits reported" only when the provider answered
 // with none; the order rail's numbers keep night's ink in day theme, where their socket is still dark.
+// Changed Oct 29 by the console-wide naming fix (anchors of accounts-login-cards): a login nobody named reads "Account", not its
+// provider's word, so the unnamed card is found by that word.
+// Changed Oct 29 by the console-wide naming fix (anchors of accounts-login-cards): a login nobody named reads "Account", not its
+// provider's word, so the unnamed card is found by that word.
 import { afterAll, beforeAll, expect as bunExpect, test } from "bun:test";
 import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -123,10 +127,10 @@ test("the key in use shows its masked tail, a date only where its variable has h
 test("a window whose reset went by reads Ended, and a card with no reading reads Not read", () => onPage(async (page) => {
   await expect(card(page, "work")).toContainText("Ended");
   await expect(card(page, "work")).not.toContainText(/\bReset\b/);
-  await expect(card(page, "Claude")).toContainText("Not read");
-  await expect(card(page, "Claude")).not.toContainText("No limits reported");
-  await expect(card(page, "Claude").locator(".name-it")).toHaveCount(0);
-  await expect(card(page, "Claude")).toContainText("Use now");
+  await expect(card(page, "Account")).toContainText("Not read");
+  await expect(card(page, "Account")).not.toContainText("No limits reported");
+  await expect(card(page, "Account").locator(".name-it")).toHaveCount(0);
+  await expect(card(page, "Account")).toContainText("Use now");
   await expect(card(page, "quiet")).toContainText("No limits reported");
 }), 30_000);
 

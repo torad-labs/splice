@@ -311,3 +311,27 @@ a.rvw-login:hover { text-decoration: underline; text-underline-offset: .2em; }
 .rvw-tags:has(.msg, .call) > .reply { flex: 1 1 100%; }
 .rvw-tag { display: inline-flex; align-items: center; padding: .35rem .8rem; border: .1rem solid var(--track-line); border-radius: 999px; font: 500 .85rem/1 var(--font-name); color: var(--text-body); }
 .rvw-money + .rvw-part { margin-top: calc(4 * var(--u)); }
+
+/* the top line's lamp is a dot: the colour of how the request ended, green answered, red failed, neutral otherwise */
+.rqpane > header.rvw-head > .lamp { position: static; flex: none; width: 1.2rem; height: 1.2rem; background: none; border: 0; box-shadow: none; display: grid; place-items: center; color: var(--text-body); }
+.rqpane > header.rvw-head > .lamp > * { display: none; }
+.rqpane > header.rvw-head > .lamp::after { content: ""; width: .7rem; height: .7rem; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 .22rem color-mix(in oklab, currentColor 22%, transparent); }
+.rqpane > header.rvw-head > .lamp.clean { color: var(--live); }
+.rqpane > header.rvw-head > .lamp.fail { color: var(--limit); }
+/* a first byte or first token that stands alone is named over the rail, at its mark */
+.rail-t .mk.up > span { top: auto; bottom: calc(100% + .55rem); left: -.1rem; padding-left: 0; border-left: 0; font-weight: 600; font-size: .85rem; }
+.rail-t .mk.up.late > span { left: auto; right: -.1rem; padding: 0; border-right: 0; }
+/* the meters sit on a sunk track; tokens out against tokens in on the Returned tab takes the cache's blue */
+.rvw-trk { background: var(--obj-sunk); box-shadow: inset 0 0 0 .1rem var(--ink); }
+.rvw-scales .rvw-trk.out > i { background: var(--splice-chart-2); }
+.rvw-costrow { display: flex; align-items: center; gap: calc(2 * var(--u)); }
+.rvw-costrow > .rvw-trk { flex: 1 1 auto; min-width: 0; }
+.rvw-planmark { flex: none; width: 1.9rem; height: 1.9rem; border-radius: 50%; box-shadow: inset 0 0 0 .16rem color-mix(in oklab, var(--text) 48%, transparent); }
+/* an answer is said in the live green, as the tag it is */
+.status.s2, .attempt .status.s2 { color: var(--live); }
+.rvw-tags > .rstat .status.s2 { border-color: color-mix(in oklab, var(--live) 60%, transparent); }
+.rvw-unrep { display: flex; align-items: center; min-height: var(--stack-h); padding: 0 .8rem; background: var(--obj-sunk); border-radius: .3rem; font: 500 .88rem/1.2 var(--font-data); color: var(--text-body); }
+.rvw-inrow .pd-ring .rv { stroke: var(--splice-chart-2); }
+.rvw-inrow .pd-ring .rt { stroke: color-mix(in oklab, var(--splice-chart-2) 22%, transparent); }
+.attempt .rvw-tags { margin: 0 0 calc(1.5 * var(--u)); }
+.rvw-tag b { margin-left: .35rem; font: 600 .88rem/1 var(--font-data); color: var(--text); }

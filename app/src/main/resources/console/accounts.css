@@ -35,7 +35,8 @@
 .ads-fig.dash { color: var(--text-mute); font-weight: 500; }
 .ads-fig.dash .disc { margin-block: 0; padding-block: 0; }
 .ads-fig .nr-day { font-style: normal; }
-.ads-unit { min-width: 0; white-space: normal; text-wrap: balance; font: 400 .95rem/1.2 var(--font-name); color: var(--text-mute); }
+/* the words beside the hero take what room the row leaves and wrap inside their own box, so they stay on the hero's baseline however narrow the strip */
+.ads-unit { flex: 1 1 6rem; min-width: 0; white-space: normal; text-wrap: balance; font: 400 .95rem/1.2 var(--font-name); color: var(--text-mute); }
 /* a cap ("of $10") is one phrase beside its figure and never breaks */
 .ads-of { flex: none; white-space: nowrap; }
 .ads-unit em { font-style: normal; }
@@ -141,6 +142,13 @@
 .meter.day .editor .edpreview > .capbox { flex: 1 1 auto; }
 .meter.day .editor .edacts { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.667rem; margin-left: auto; }
 .meter.day .editor > .reason { margin: 0; text-align: right; }
+/* the cap drawn on today's spend stands on the strip's own columns: its bar is the bar column's width and starts where every
+   bar on the board starts, its percent in the percent column, and the acts at the row's end */
+.meter.day .editor > .edrow:has(> .edpreview) { display: grid; grid-template-columns: var(--lab-w) minmax(0, var(--bar-w)) minmax(var(--pct-w), 1fr) auto; column-gap: var(--col-gap); align-items: center; }
+.meter.day .editor > .edrow:has(> .edpreview) > .edpreview { display: contents; }
+.meter.day .editor > .edrow:has(> .edpreview) .capbox { grid-column: 2; }
+.meter.day .editor > .edrow:has(> .edpreview) .pct { grid-column: 3; justify-self: start; }
+.meter.day .editor > .edrow:has(> .edpreview) > .edacts { grid-column: 4; margin-left: 0; justify-self: end; }
 /* the editor's track runs on a fixed scale: the presets stand on it as ticks, and the cap's line, with its amount over it,
    travels along it as the amount changes */
 .capbox.scaled { margin-top: 1rem; }
@@ -153,6 +161,8 @@
 .meter.day.idle > .when { align-self: center; }
 .meter.day.idle > :is(.label, .dayline, .when) { align-self: center; }
 .meter.day.idle > .dayline { min-height: var(--ctl-h); align-items: center; }
+/* an idle day's ghost stands at the one row it lands as: its figure is no taller than the act that will stand there */
+.meter.day.idle .ads-ghost { height: var(--ctl-h); }
 
 /* a wide provider's column: its strips, then its run of cards */
 .rails > .abl-col { min-width: 0; }
@@ -296,7 +306,8 @@
 /* THE ORDER SWITCH: its two choices stand on equal halves, and the lit part is one shape that slides from the choice it stood on to
    the one it now stands on over 240 ms (render sets --abl-x to the old place for one frame), so the switch moves with what it ordered */
 .board .provider > header .switch.abl-sw { position: relative; display: inline-grid; grid-template-columns: 1fr 1fr; --abl-x: 0%; }
-.abl-sw[data-at="mine"] { --abl-x: 100%; }
+/* as specific as the rule above, or the choice it names never wins */
+.board .provider > header .switch.abl-sw[data-at="mine"] { --abl-x: 100%; }
 .abl-sw::before { content: ""; position: absolute; top: .2rem; bottom: .2rem; left: .2rem; width: calc(50% - .2rem); border-radius: calc(var(--r-obj) - .15rem);
   background: var(--sel-face); box-shadow: inset 0 0 0 .1rem var(--sel-line); transform: translateX(var(--abl-x)); transition: transform var(--t-snap) var(--e-out); }
 .abl-sw button { position: relative; z-index: 1; white-space: nowrap; }
@@ -305,7 +316,11 @@
 .board .provider > header .order-err { margin: 0 0 0 auto; }
 /* the refusal and splice's reason beside it, on at most two lines, in the header's own band: the band is as tall as two lines of the
    reason, so the groups under it never move when a refusal comes */
-.board .provider > header .abl-refusal { display: flex; align-items: center; gap: var(--u); flex: 1 1 0; max-width: 38rem; min-width: 0; }
+.board .provider > header .abl-refusal { display: flex; align-items: center; justify-content: flex-end; gap: var(--u); flex: 1 1 0; max-width: 38rem; min-width: 0; margin-right: var(--u); }
+/* an order being saved: a turning ring and its words, on the switch's own side of the header */
+.board .provider > header .abl-busy { display: flex; align-items: center; gap: .5rem; margin: 0 var(--u) 0 auto; font: .85rem/1.2 var(--font-data); color: var(--text-body); white-space: nowrap; }
+.abl-spin { flex: none; width: .95rem; height: .95rem; box-sizing: border-box; border-radius: 50%; border: .15rem solid var(--track-line); border-top-color: var(--text); animation: spin .9s linear infinite; }
+.board .provider > header .abl-busy + .switch { margin-left: 0; }
 .board .provider > header .abl-refusal > .result { flex: none; white-space: nowrap; }
 .board .provider > header .abl-why { min-width: 0; font: 500 .9rem/1.3 var(--font-name); color: var(--text-body); }
 .board .provider > header .order-err + .switch { margin-left: 0; }

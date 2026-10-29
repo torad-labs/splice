@@ -128,7 +128,22 @@ const createPerfHeads = (scope, helpers) => {
     const hero = DRAW.hero(n > 0
       ? { figure: rate(share) ?? "0%", level: lv, count: n, word: "failed", of: `of ${n0(h.count)} requests`, href: door(h.key, { outcome: "fail" }) }
       : { figure: "0%", level: lv, of: `No failures of ${n0(h.count)} requests` });
-    return DRAW.section("Outcomes", hero + DRAW.stack(segs, h.count), { cls: "pd-hero", aside: marks });
+    // Every request is one bar: the answered part carries its word where it fits, the failed requests are one block in the
+    // limit red (the lead above says how many), the rest is quiet. Under it the failed requests are a whole of their own,
+    // split by kind, so a kind that is a sliver of every request still reads as its share of the failures, with its word and
+    // count inside where they fit and in the row under it where they do not. What neither answered nor failed is named there too.
+    const kinds = kindsOf(h);
+    if (!(n > 0) || !kinds.length || !(h.count > 0)) return DRAW.section("Outcomes", hero + DRAW.stack(segs, h.count), { cls: "pd-hero", aside: marks });
+    const shareOfAll = (k) => (k / h.count) * 100, block = (cls, k, href, text) => `<${href ? "a" : "span"} class="pd-seg ${cls}"${href ? ` href="${href}"` : ""} style="width:max(${shareOfAll(k).toFixed(3)}%, .16rem)" title="${esc(text)}">${text && cls === "ok" && shareOfAll(k) >= 25 ? `<span>${esc(PLAIN.ok)} <b>${DRAW.n(k)}</b></span>` : ""}</${href ? "a" : "span"}>`;
+    const whole = `<div class="pd-pop"><div class="pd-bar" role="img" aria-label="${esc(`${n0(ok)} answered, ${n0(n)} failed of ${n0(h.count)} requests`)}">`
+      + block("ok", ok, door(h.key, { tag: "ok" }), `${PLAIN.ok} ${DRAW.n(ok)}`)
+      + others.map(([t, k]) => block("nt", k, door(h.key, { tag: t }), `${OUTCOME_WORD[t] || PLAIN[t] || t.replace(/_/g, " ")} ${DRAW.n(k)}`)).join("")
+      + block("f0", n, door(h.key, { outcome: "fail" }), `Failed ${DRAW.n(n)}`) + `</div></div>`;
+    const quiet = others.map(([t, k]) => `<a class="pd-lb" href="${door(h.key, { tag: t })}">${esc(OUTCOME_WORD[t] || PLAIN[t] || t.replace(/_/g, " "))} <b>${DRAW.n(k)}</b></a>`);
+    const lone = shareOfAll(ok) < 25 ? `<a class="pd-lb" href="${door(h.key, { tag: "ok" })}"><i class="pd-sw ok"></i>${esc(PLAIN.ok)} <b>${DRAW.n(ok)}</b></a>` : "";
+    const neither = others.length ? `<div class="pd-lgrp"><span class="pd-neither"><i class="pd-sw nt"></i>Neither <b>${DRAW.n(others.reduce((a, [, k]) => a + k, 0))}</b>:</span> ${quiet.join(`<span class="pd-comma">, </span>`)}</div>` : "";
+    const split = DRAW.stack(kinds.map((k, i) => ({ n: k.n, word: k.word, cls: STEP[Math.min(i, STEP.length - 1)], href: door(h.key, { tag: k.tags.join(",") }) })), kinds.reduce((a, k) => a + k.n, 0), { tail: lone + neither });
+    return DRAW.section("Outcomes", hero + whole + split, { cls: "pd-hero", aside: marks });
   };
 
   /** The stat strip: the cache hit as a ring, then the counts that are above zero, each a small glyph, its number and its
@@ -249,7 +264,13 @@ const createPerfHeads = (scope, helpers) => {
     return out;
   }
   /** Slow or failing today, as the Commands cards said it; only with no pick, since the rows behind it follow the pick. */
-  const flagFor = (h) => (ui.project != null || hasFilter() ? null : flagOf(h.key));
+  // a failing burst is named only when it falls inside the window the table reads, so the flag never names failures the table's own rate shows as none
+  const SPAN = { "1h": 3600e3, "24h": 86400e3, "7d": 604800e3 };
+  const flagFor = (h) => {
+    if (ui.project != null || hasFilter()) return null;
+    const f = flagOf(h.key);
+    return f?.kind === "failing" && f.to < Date.now() - SPAN[winNow()] ? null : f;
+  };
 
   function detail(h, facts) {
     const f = flagFor(h), marks = gaps(h).map((x) => `<span class="pgap">${DRAW.glyph.gap}${esc(x)}</span>`).join("");

@@ -94,21 +94,21 @@ function whyNot(a, next, listed) {
 // A key shows its masked tail beside its variable, as Accounts draws it ("…9c21" from api_key_masked), so commands whose
 // keys share one variable can be told apart; a key too short to mask is masked "set" and shows no tail.
 const tailOf = (masked) => (typeof masked === "string" && masked.includes("…") ? `…${masked.split("…").pop()}` : null);
-// A login is named by the console's one name rule (kit DRAW.name): the name its owner gave, else its provider and plan,
-// never its address or the bare word "Account"; two unnamed ones that would read alike are told apart by an ordinal.
+// A login is named by the console's one name rule (kit DRAW.name): the name its owner gave, else "Account", never its
+// address; two unnamed ones that would read alike are told apart by an ordinal.
 // acctOf only gathers what the rule reads ({ kind: "login", given, plan }); read() names them all together.
 function acctOf(a, known, next) {
   if (a?.env_var) return { kind: "key", var: a.env_var, tail: tailOf(a.api_key_masked) };
-  if (known) return { kind: "login", given: known.label_default && known.can_rename ? "" : known.display_name ?? known.label ?? "", plan: cap(known.plan) };
-  return next ? { kind: "login", given: next, plan: "" } : { kind: "none" };
+  if (known) return { kind: "login", given: known.label_default && known.can_rename ? "" : known.display_name ?? known.label ?? "", plan: cap(known.plan), ids: DRAW.loginIds(known) };
+  return next ? { kind: "login", given: next, plan: "", ids: [next] } : { kind: "none" };
 }
 function nameLogins(cmds) {
   const logins = cmds.filter((c) => c.acct.kind === "login");
-  const named = DRAW.names("login", logins.map((c) => ({ name: c.acct.given, provider: c.family, plan: c.acct.plan })));
+  const named = DRAW.names("login", logins.map((c) => ({ name: c.acct.given, provider: c.family, plan: c.acct.plan, ids: c.acct.ids })));
   logins.forEach((c, i) => { c.acct = { kind: named[i].own ? "named" : "unnamed", name: named[i].text, plan: named[i].own ? c.acct.plan : "", head: c.acct.head }; });
   // a command's other logins are named by the same rule, so "Use another login" says what Accounts says
   for (const c of cmds) {
-    const names = DRAW.names("login", c.others.map((o) => ({ name: o.given, provider: c.family, plan: o.plan })));
+    const names = DRAW.names("login", c.others.map((o) => ({ name: o.given, provider: c.family, plan: o.plan, ids: o.ids })));
     c.others = c.others.map((o, i) => ({ label: o.label, name: names[i].text }));
   }
 }
@@ -151,7 +151,7 @@ async function read() {
     // the pool's other logins that can send now, each as its owner would name it (nameOthers)
     const others = (a.account_pool?.accounts ?? []).filter((x) => x.label !== name && x.credential_present && x.available !== false && x.auth?.kind !== "client").map((x) => {
       const r = rows.find((y) => (y.heads || []).includes(row.head) && (y.label === x.label || `native:${y.label}` === x.label || y.display_name === x.label));
-      return { label: x.label, given: r ? (r.label_default && r.can_rename ? "" : r.display_name ?? r.label ?? "") : x.label, plan: cap(r?.plan) };
+      return { label: x.label, given: r ? (r.label_default && r.can_rename ? "" : r.display_name ?? r.label ?? "") : x.label, plan: cap(r?.plan), ids: r ? DRAW.loginIds(r) : [x.label] };
     });
     const labelled = list.map((m) => ({ id: m.id, label: modelName({ [m.id]: m.label }, m.id) }));
     const vendor = vendorsOf(labelled);
@@ -1122,19 +1122,21 @@ const PROV_COLS = `<span class="pg-gh" aria-hidden="true"><span>Context</span><s
 // A list's models, the largest window first; a long list shows its first rows and the rest behind "+N". Each press of "+N"
 // reveals the next STEP rows, laid in columns of COLUMN across as many of the board's columns as there are ({ need } tells
 // the provider how wide to stand), and "Fewer" folds it back.
-const STEP = 12, COLUMN = 6;
+const STEP = 12, COLUMN = 6, ONE_COLUMN = 9; // a list of nine rows or fewer stays in its card's one column, a longer one is laid in columns of six
 function listHtml(c, list, k, sc, { first }, name, n) {
   const long = list.length > first, extra = ui.shown.get(k) ?? 0;
   // the order he chose to read them in: the largest window first, or the cheapest price in first (a model with no price last)
   const widest = (a, b) => (b.m.window ?? -1) - (a.m.window ?? -1);
   const order = ui.sort === "price" ? (a, b) => (a.m.rates?.input ?? Infinity) - (b.m.rates?.input ?? Infinity) || widest(a, b) : widest;
   const sorted = list.map((m, i) => ({ m, i })).sort((a, b) => order(a, b) || a.i - b.i).map((x) => x.m);
-  const count = long ? Math.min(list.length, first + extra) : list.length, shown = sorted.slice(0, count), left = list.length - count;
-  const cols = long && count > first ? Math.min(Math.max(1, n), Math.ceil(count / COLUMN)) : 1, per = Math.ceil(shown.length / cols);
+  // a model he has chosen stays in view whatever the order or the "+N" stands at: it is shown where the order puts it, among the rows
+  const upTo = long ? Math.min(list.length, first + extra) : list.length;
+  const shown = sorted.filter((m, i) => i < upTo || paneOf(c.key, m.id)), count = shown.length, left = list.length - count;
+  const cols = long && count > ONE_COLUMN ? Math.min(Math.max(1, n), Math.ceil(count / COLUMN)) : 1, per = Math.ceil(shown.length / cols);
   const data = ` data-k="${esc(k)}"`;
-  const pills = !long ? "" : `<div class="pg-pills">${left > 0 ? DRAW.more(left, { pill: true, act: "more", data }) : ""}${count > first ? DRAW.more(0, { pill: true, open: true, less: "Fewer", act: "fewer", data }) : ""}</div>`;
+  const pills = !long ? "" : `<div class="pg-pills">${left > 0 ? DRAW.more(left, { pill: true, act: "more", data }) : ""}${extra > 0 ? DRAW.more(0, { pill: true, open: true, less: "Fewer", act: "fewer", data }) : ""}</div>`;
   const chunks = Array.from({ length: cols }, (_, i) => shown.slice(i * per, (i + 1) * per)).filter((x) => x.length);
-  const rc = chunks.map((ms) => `<div class="pg-rc">${MH}<div class="pg-rows${ui.unfold === k ? " unfold" : ""}">${ms.map((m) => mrowHtml(c, m, name, sc)).join("")}</div></div>`).join("");
+  const rc = chunks.map((ms) => `<div class="pg-rc">${MH}<div class="pg-rows">${ms.map((m) => mrowHtml(c, m, name, sc)).join("")}</div></div>`).join("");
   return { html: `<div class="pg-rcols" style="--k:${chunks.length}">${rc}</div>${pills}`, need: chunks.length };
 }
 // a command whose models come from three vendors or more (OpenRouter) is grouped by vendor, found or not
@@ -1235,48 +1237,67 @@ const lanesFit = () => fit(root.clientWidth, LANE_REM);
 const providerBlock = (pv, k, body, lead = false) => `<div class="pg-pb" data-cols="${k}" data-pv="${esc(pv.title)}">${DRAW.group({ name: pv.title, c: colorOf(pv.family), cls: `titled pg-prov${body ? "" : " void"}${lead ? " lead" : ""}`, style: k > 1 ? `--k:${k}` : "", end: lead ? PROV_COLS : "", body: body ?? `<div class="pg-void" aria-hidden="true"></div>` })}</div>`;
 // THE BOARD DEALT BY HEIGHT. The kit's board puts each group into whichever column is shortest at that point, in order, which
 // can leave one column far past the others when a tall group (a held card with its strip and the login it can move to) comes
-// late. Once the groups are on the page and measured, every way of dealing them into the columns is weighed: the columns that
-// end level come first, and among those within a hand's breadth of the most level, the one that keeps the groups reading as
-// they were sorted (ready commands, then held, then down; across the top and then down). Each group stays whole and each column
-// keeps its groups in their order. When the width's full count of columns cannot end level (nine groups in five columns leave
-// one column a group short), fewer columns are tried, down to half, and the most columns that end level stand. A board with fewer groups than
-// columns, or too many to weigh, keeps the kit's rule.
-const DEAL_SLACK = 30, DEAL_LEVEL = 60, DEAL_LIMIT = 400000, DEAL_NODES = 3000000;
+// late. Once the groups are on the page and measured, every way of dealing them into the columns is weighed: first that no
+// column is left with a hole above a wide group, then that the columns end level, then that the groups read as they were
+// sorted (ready commands, then held, then down; across the top and then down). Each group stays whole and each column keeps
+// its groups in their order. When the width's full count of columns cannot end level (nine groups in five columns leave one
+// column a group short), fewer columns are tried, down to half, and the most columns that end level stand.
+// Once dealt, a board keeps its places: a card that opens, folds or fills in moves the groups under it in their own column and
+// never to another, a find leaves each group that stays where it stood, and the next visit lands as it was left, so the page
+// never loses its place. It deals again only when the groups, the width, or a hole above a wide group calls for it.
+const DEAL_SLACK = 30, DEAL_LEVEL = 60, DEAL_HOLE = 40, DEAL_LIMIT = 300000, DEAL_NODES = 600000, DEAL_KEPT = "splice.compare.deal";
+// how a dealing stands: the hole above each wide group (what a column leaves empty while the group waits for its neighbours)
+// and how far apart the columns end, groups laid in their sorted order, each into the place its column says
+function dealStand(H, K, n, cols) {
+  const bot = Array(n).fill(0), top = [];
+  let hole = 0;
+  cols.forEach((c, i) => {
+    let y = 0;
+    for (let j = c; j < c + K[i]; j++) y = Math.max(y, bot[j]);
+    for (let j = c; j < c + K[i]; j++) { hole += y - bot[j]; bot[j] = y + H[i]; }
+    top.push(y);
+  });
+  const used = bot.filter((b) => b > 0);
+  return { hole, spread: Math.max(...bot) - Math.min(...used) + (n - used.length) * 1e5, top };
+}
+const dealOrder = (top, cols) => { let pen = 0; for (let i = 0; i < top.length; i++) for (let j = i + 1; j < top.length; j++) if (top[i] > top[j] + 0.5 || (Math.abs(top[i] - top[j]) <= 0.5 && cols[i] > cols[j])) pen++; return pen; };
 function dealBest(H, K, n) {
   const m = H.length, bot = Array(n).fill(0), col = Array(m).fill(0), top = Array(m).fill(0);
   // groups one column wide are interchangeable between columns until one is opened, so only the next unopened column is tried
   // (the columns then read in the order their first groups were sorted); a wider group tries every place it fits
   const plain = K.every((k) => k === 1);
   if (m < n || (!plain && n ** m > DEAL_LIMIT)) return null;
-  let least = Infinity, cand = [], nodes = 0;
-  const settle = () => {
-    let hi = 0, lo = Infinity, empty = 0;
-    for (const b of bot) { hi = Math.max(hi, b); if (b > 0) lo = Math.min(lo, b); else empty++; }
-    const spread = hi - lo + empty * 1e5;
-    if (spread > least + DEAL_SLACK) return;
-    let pen = 0;
-    for (let i = 0; i < m; i++) for (let j = i + 1; j < m; j++) if (top[i] > top[j] + 0.5 || (Math.abs(top[i] - top[j]) <= 0.5 && col[i] > col[j])) pen++;
-    if (spread < least) least = spread;
-    cand.push({ spread, pen, col: col.slice() });
-  };
-  const deal = (i) => {
-    if (i === m) return settle();
+  let fewest = Infinity, cand = [], nodes = 0;
+  const deal = (i, hole) => {
+    if (hole > fewest + DEAL_HOLE) return;
+    if (i === m) {
+      let hi = 0, lo = Infinity, empty = 0;
+      for (const b of bot) { hi = Math.max(hi, b); if (b > 0) lo = Math.min(lo, b); else empty++; }
+      fewest = Math.min(fewest, hole);
+      cand.push({ hole, spread: hi - lo + empty * 1e5, col: col.slice(), top: top.slice() });
+      return;
+    }
     if (++nodes > DEAL_NODES) return;
     const reach = plain ? Math.min(n, bot.filter((b) => b > 0).length + 1) : n - K[i] + 1;
     for (let c = 0; c < reach; c++) {
-      let y = 0;
+      let y = 0, gap = 0;
       for (let j = c; j < c + K[i]; j++) y = Math.max(y, bot[j]);
+      for (let j = c; j < c + K[i]; j++) gap += y - bot[j];
       const was = bot.slice(c, c + K[i]);
       for (let j = c; j < c + K[i]; j++) bot[j] = y + H[i];
       col[i] = c; top[i] = y;
-      deal(i + 1);
+      deal(i + 1, hole + gap);
       for (let j = 0; j < K[i]; j++) bot[c + j] = was[j];
     }
   };
-  deal(0);
+  deal(0, 0);
   if (nodes > DEAL_NODES || !cand.length) return null;
-  return cand.filter((x) => x.spread <= least + DEAL_SLACK).sort((a, b) => a.pen - b.pen || a.spread - b.spread)[0];
+  const whole = cand.filter((x) => x.hole <= fewest + DEAL_HOLE), level = Math.min(...whole.map((x) => x.spread));
+  for (const x of whole) x.pen = dealOrder(x.top, x.col);
+  const pick = whole.filter((x) => x.spread <= level + DEAL_SLACK).sort((a, b) => a.pen - b.pen || a.spread - b.spread)[0];
+  return { col: pick.col, hole: pick.hole, spread: pick.spread };
 }
+const dealKept = () => { try { const v = JSON.parse(localStorage.getItem(DEAL_KEPT) ?? "null"); return v && Array.isArray(v.ids) && Array.isArray(v.cols) && v.ids.length === v.cols.length ? v : null; } catch { return null; } };
 function dealMason(box) {
   const items = [...box.children].filter((el) => el.classList.contains("pg-pb"));
   const cs = getComputedStyle(box), full = Math.max(1, ui.fit?.board ?? boardFit());
@@ -1284,19 +1305,55 @@ function dealMason(box) {
   const gap = gapRaw.endsWith("px") ? parseFloat(gapRaw) : parseFloat(gapRaw) * rootPx;
   const H = items.map((el) => el.getBoundingClientRect().height + gap);
   const want = items.map((el) => Math.max(1, Number(el.dataset.cols) || 1));
-  const solve = (n) => (n < 2 ? null : dealBest(H, want.map((k) => Math.min(n, k)), n));
-  const keep = () => { box.style.gridTemplateColumns = `repeat(${full},minmax(0,1fr))`; for (const el of items) el.style.gridColumn = ""; };
-  let n = full, pick = solve(n);
-  if (!pick) return keep();
-  // a find leaves the board's columns where they are; the page's own width and data decide otherwise
-  if (pick.spread > DEAL_LEVEL && !terms().length) {
-    for (let k = full - 1; k >= Math.max(2, Math.ceil(full / 2)) && pick.spread > DEAL_LEVEL; k--) {
-      const fewer = solve(k);
-      if (fewer && fewer.spread < pick.spread - DEAL_SLACK) { n = k; pick = fewer; }
+  const ids = items.map((el, i) => el.dataset.pv ?? `#${i}`), ghost = items.some((el) => el.dataset.pv == null), searching = terms().length > 0;
+  const widths = (n) => want.map((k) => Math.min(n, k));
+  const lay = (n, cols) => {
+    box.style.gridTemplateColumns = `repeat(${n},minmax(0,1fr))`;
+    items.forEach((el, i) => { const k = Math.min(n, want[i]), c = Math.min(cols[i], n - k); el.style.setProperty("--span-eff", String(k)); el.style.gridColumn = `${c + 1} / span ${k}`; });
+  };
+  // the places the groups last stood: this visit's, or where the last visit left them (a loading ghost is only ever the second)
+  let was = ui.deal && ui.deal.full === full ? ui.deal : null, fromVisit = Boolean(was);
+  if (!was) { const d = dealKept(); if (d && d.full === full && (ghost ? d.ids.length === ids.length : true)) was = { full, n: d.n, cols: new Map(d.ids.map((id, i) => [id, d.cols[i]])), ordered: d.cols, count: d.ids.length }; }
+  if (was) {
+    const n = Math.min(was.n, full), K = widths(n), cols = [];
+    const seen = items.map((_, i) => (ghost ? was.ordered?.[i] : was.cols.get(ids[i])));
+    // a group it has no place for (new on the page) goes where the columns are shortest
+    const bot = Array(n).fill(0);
+    seen.forEach((c, i) => {
+      let at = c == null ? -1 : Math.min(c, n - K[i]);
+      if (at < 0) { let y = Infinity; for (let j = 0; j + K[i] <= n; j++) { const top = Math.max(...bot.slice(j, j + K[i])); if (top < y) { y = top; at = j; } } }
+      cols.push(at);
+      const y = Math.max(...bot.slice(at, at + K[i]));
+      for (let j = at; j < at + K[i]; j++) bot[j] = y + H[i];
+    });
+    const st = dealStand(H, K, n, cols);
+    // kept while no column holds a hole; a visit's own places are kept as the page reshapes, the last visit's only while they still end level
+    const mine = fromVisit && ui.touched; // places he has been working with stay whatever a card opening does to the ends
+    if ((mine || searching) ? true : st.hole <= DEAL_HOLE && st.spread <= DEAL_LEVEL + DEAL_SLACK) {
+      lay(n, cols);
+      if (!searching && !ghost) { ui.deal = { full, n, cols: new Map(ids.map((id, i) => [id, cols[i]])) }; dealSave(full, n, ids, cols, ghost); }
+      return;
     }
   }
-  box.style.gridTemplateColumns = `repeat(${n},minmax(0,1fr))`;
-  items.forEach((el, i) => { const k = Math.min(n, want[i]); el.style.setProperty("--span-eff", String(k)); el.style.gridColumn = `${pick.col[i] + 1} / span ${k}`; });
+  const solve = (n) => (n < 2 ? null : dealBest(H, widths(n), n));
+  let n = full, pick = solve(n);
+  if (!pick) { box.style.gridTemplateColumns = `repeat(${full},minmax(0,1fr))`; for (const el of items) el.style.gridColumn = ""; return; }
+  // a find leaves the board's columns where they are; the page's own width and data decide otherwise
+  if (pick.spread > DEAL_LEVEL && !searching) {
+    // the cost of a count: the empty room it leaves above groups plus how far apart the columns end; more columns win a near tie
+    const cost = (x) => x.hole + x.spread;
+    for (let k = full - 1; k >= Math.max(2, Math.ceil(full / 2)) && cost(pick) > DEAL_LEVEL; k--) {
+      const fewer = solve(k);
+      if (fewer && cost(fewer) < cost(pick) - DEAL_SLACK) { n = k; pick = fewer; }
+    }
+  }
+  lay(n, pick.col);
+  if (!searching && !ghost) { ui.deal = { full, n, cols: new Map(ids.map((id, i) => [id, pick.col[i]])) }; dealSave(full, n, ids, pick.col, ghost); }
+}
+// the places the groups stand in, kept for the next visit's ghost and first landing (a ghost keeps nothing of its own)
+function dealSave(full, n, ids, cols, ghost) {
+  if (ghost) return;
+  try { localStorage.setItem(DEAL_KEPT, JSON.stringify({ full, n, ids, cols })); } catch { /* nothing to keep it in */ }
 }
 const dealBoard = () => { for (const box of root.querySelectorAll(".pg-board > .mason")) dealMason(box); };
 // the shape the board last landed in, so the next first read stands a ghost of the same height: per provider, each card's kind and
@@ -1376,6 +1433,7 @@ const leave = (board, old, at, cls) => {
 function paintOpened(k) {
   const card = () => root.querySelector(`.pg-board [data-k="${CSS.escape(k)}"]`)?.closest(".pg-cmd");
   const was = card()?.getBoundingClientRect().height;
+  ui.follow = true; // the groups under the card come with its height, laid by the board each frame, so they are not slid as well
   paintBoard();
   const el = card(), now = el?.getBoundingClientRect().height;
   if (!el || !was || !now || still() || Math.abs(now - was) < 1) return;
@@ -1384,20 +1442,25 @@ function paintOpened(k) {
   move.onfinish = move.oncancel = () => { el.style.overflow = ""; };
 }
 function paintBoard() {
+  const follow = ui.follow; ui.follow = false;
+  ui.touched = true; // from here the board is his: a press never sends a group to another column
   const b = root.querySelector(".pg-board"), n = root.querySelector(".pg-count");
-  const rows = new Map(), groups = new Map(), at = b && placeOf(b), moving = b && !still();
+  const rows = new Map(), groups = new Map(), at = b && placeOf(b), moving = b && !still(), tall = b ? b.getBoundingClientRect().height : 0;
   if (moving) {
     for (const g of b.querySelectorAll(".pg-pb[data-pv]:not(.pg-fold)")) groups.set(g.dataset.pv, { box: placeOf(g), node: g.cloneNode(true) });
     for (const r of b.querySelectorAll(".pg-pb:not(.pg-fold) .pg-mrow:not(.pg-out)")) rows.set(rowKey(r), { box: placeOf(r), node: r.cloneNode(true), pv: r.closest(".pg-pb")?.dataset.pv });
   }
   if (b) { b.innerHTML = boardHtml(); DRAW.lay(b); dealBoard(); }
   if (n) n.innerHTML = countHtml();
+  // a board that gets shorter lets go of its old height as the groups leave, so what leaves is over the board and what stands
+  // below it comes up with it, never under a group that is still folding
+  if (moving && rows.size) { const h = b.getBoundingClientRect().height; if (h < tall - 1) b.animate([{ height: `${tall}px` }, { height: `${h}px` }], { duration: 240, easing: "cubic-bezier(.2, .8, .2, 1)" }); }
   if (!moving || !rows.size) return;
   const here = new Set([...b.querySelectorAll(".pg-pb[data-pv]")].map((g) => g.dataset.pv)), seen = new Set(), moves = [];
   // every new place is read before anything is moved, so a group sliding does not shift what is measured inside it
   for (const g of b.querySelectorAll(".pg-pb[data-pv]")) {
     const old = groups.get(g.dataset.pv);
-    if (old) moves.push([g, old.box, placeOf(g)]); else g.classList.add("pg-in");
+    if (old) { if (!follow) moves.push([g, old.box, placeOf(g)]); } else g.classList.add("pg-in");
   }
   for (const r of b.querySelectorAll(".pg-mrow")) {
     const k = rowKey(r), old = rows.get(k), pv = r.closest(".pg-pb")?.dataset.pv, g = groups.get(pv);

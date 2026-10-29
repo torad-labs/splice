@@ -449,15 +449,19 @@ a.mam-tile:hover { background: var(--obj-high); }
    The meter for how much is used, the percent, and the ring for how soon it refills, read from /api/accounts as
    Accounts reads them (the kit's DRAW.loginWins, console.css .lw-wins), with the warn line these settings set as a tick
    on every meter. A command is said once, on the head of the logins that stand under it. */
-.plogs { align-items: start; }
+/* up to three cards stand in a row, each at least 41rem so its meter keeps 13rem; the cards sit 1.5u apart as cards do on a board */
+.plogs { align-items: start; gap: var(--gap-card); grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--col-min, 41rem)), 1fr)); }
+/* the plan's settings stand narrower beside the cards than the other topics' second column, so the cards have the width */
+@container plate (min-width: 110rem) { .topic.lead.plan { grid-template-columns: minmax(0, 1fr) minmax(36rem, 46rem); } }
 .plog { display: flex; flex-direction: column; gap: var(--u); min-width: 0; padding: calc(1.5 * var(--u)) calc(2 * var(--u)) calc(2 * var(--u)); border-radius: var(--r-obj); background: var(--obj); border: var(--ink-w) solid var(--ink); }
 .plog > header { display: flex; align-items: center; gap: 0.667rem; min-width: 0; }
 .plog .blot { flex: none; width: .75rem; height: .75rem; border-radius: 50%; background: var(--c); }
 /* the way to this login's card on Accounts, where a limit is dealt with: one mark at the header's far end, in the same place on every card */
-.plog > header .plogdoor { margin-left: auto; flex: none; width: 1.9rem; height: 1.9rem; }
+.plog > header .plogdoor { margin-left: auto; flex: none; width: var(--ctl-h); height: var(--ctl-h); border-color: var(--track-line); }
 .plog > header .plogdoor svg { width: 1rem; height: 1rem; }
 .pmoreline { margin-top: calc(2 * var(--u)); }
 .plog .pln { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 1.04rem/1.2 var(--font-name); color: var(--text); }
+.lw-nr { display: flex; align-items: center; justify-content: space-between; gap: var(--u); }
 .plog .lw-none { margin: 0; font: 500 1rem/1.2 var(--font-name); color: var(--text-mute); }
 /* a command's head: its chip in its provider's colour and a rule running on to the group's end */
 .lw-gh { display: flex; align-items: center; gap: calc(1.5 * var(--u)); min-height: var(--ctl-h); }
@@ -466,8 +470,10 @@ a.mam-tile:hover { background: var(--obj-high); }
 .lw-first > .plog { flex: 1 1 auto; }
 .lw-cmd { flex: none; }
 .lw-rule { flex: 1 1 auto; height: .12rem; border-radius: .06rem; background: var(--track-line); }
-.psigned { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(3 * var(--u)); margin-top: calc(2 * var(--u)); }
-.psi { display: inline-flex; align-items: center; gap: 0.667rem; }
+/* a login signed out stands in a strip across the cards: the word, then its name, then the act that signs it in at the strip's end */
+.psigned { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: var(--u) calc(2 * var(--u)); margin-top: calc(2 * var(--u)); padding: var(--u) calc(2 * var(--u)); border: var(--ink-w) solid var(--track-line); border-radius: var(--r-obj); }
+.psigned > .state { grid-column: 1; }
+.psi { grid-column: 2; display: flex; align-items: center; justify-content: space-between; gap: 0.667rem; }
 .plog.ghosted > header { min-height: 1.9rem; }
 .plog.ghosted .lw-wins { align-items: center; }
 .kdraw:has(.stk) { align-items: flex-start; gap: calc(2 * var(--u)); }
@@ -997,9 +1003,8 @@ button.count:hover { color: var(--text); }
 /* every group stands on the same columns: a name is 21rem wide in each, so the controls of ChatGPT and Grok, of Code mode and of
    splice itself start at one x down the whole Advanced, however long a group's longest name is */
 .advg .krows.flat { grid-template-columns: repeat(var(--fc), 21rem minmax(0, 1fr)); }
-/* a text value (an address, a sign-in file) is read whole, so a group stands in two columns until the plate holds three of 70rem */
-@container plate (min-width: 140rem) { .advg .krows.flat.n3 { --fc: 2; } }
-@container plate (min-width: 200rem) { .advg .krows.flat.n3 { --fc: 3; } }
+/* a value is a word with its text one press away, so a group stands in three columns once the plate holds them */
+@container plate (min-width: 130rem) { .advg .krows.flat.n3 { --fc: 3; } }
 .advg .krows:not(.flat) { grid-template-columns: 21rem fit-content(26rem) minmax(14rem, 1fr); }
 .advk { margin: 0 0 var(--u); font: 600 .78rem/1.2 var(--font-name); letter-spacing: .08em; text-transform: uppercase; color: var(--text-mute); }
 /* a bar's figure holds one width down its column, so every track on the scale is one length whatever its figure */
@@ -1059,7 +1064,7 @@ a.nsess:hover { color: var(--text); text-decoration: underline; }
 .vcard .v.dash { color: var(--text-mute); }
 .vcard { min-height: 12rem; }
 /* the files: a glyph tile and the file's name, the path behind a press that turns its chevron */
-.vfile { grid-template-columns: 2.4rem minmax(0, 1fr) 2.4rem; align-items: center; column-gap: calc(1.5 * var(--u)); }
+.vfile { grid-template-columns: minmax(0, 1fr) 2.4rem 2.4rem; align-items: center; column-gap: var(--u); }
 .vglyph { display: grid; place-items: center; width: 2.4rem; height: 2.4rem; border-radius: var(--r-in); background: var(--obj-sunk); box-shadow: inset 0 0 0 .08rem var(--track-line); color: var(--text-body); }
 .vglyph svg { width: 1.05rem; height: 1.05rem; }
 .vfile .nm { color: var(--text-body); }
@@ -1067,7 +1072,7 @@ a.nsess:hover { color: var(--text); text-decoration: underline; }
 .vpath:hover { color: var(--text); background: color-mix(in oklab, var(--text) 8%, transparent); }
 .vpath svg { width: .95rem; height: .95rem; transition: transform var(--t-snap); }
 .vpath[aria-expanded="true"] svg { transform: rotate(90deg); }
-.vfile .vcode { grid-column: 2 / -1; margin-top: var(--u); animation: ver-in var(--t-snap) ease-out; }
+.vfile .vcode { grid-column: 1 / -1; margin-top: var(--u); animation: ver-in var(--t-snap) ease-out; }
 @keyframes ver-in { from { opacity: 0; transform: translateY(-.333rem); } to { opacity: 1; transform: none; } }
 /* the restart wait: a ring filling toward the two minutes the page waits */
 @property --ver-p { syntax: "<percentage>"; inherits: false; initial-value: 0%; }
@@ -1169,3 +1174,96 @@ a.nsess:hover { color: var(--text); text-decoration: underline; }
 .advg .krow:is([data-key="codeModeToolDescriptionFirst"], [data-key="codeModeShowCellOverhead"], [data-key="codeModeUnifiedImageBudget"]) .switch::before { content: ""; width: .75rem; height: .75rem; border-radius: 50%; flex: none;
   box-shadow: inset 0 0 0 .12rem var(--text-mute); transition: background var(--t-pulse, .3s) var(--e-out, ease), box-shadow var(--t-pulse, .3s) var(--e-out, ease); }
 .advg .krow:is([data-key="codeModeToolDescriptionFirst"], [data-key="codeModeShowCellOverhead"], [data-key="codeModeUnifiedImageBudget"]) .switch:has(button:first-child[aria-pressed="true"])::before { background: var(--key-ink); box-shadow: 0 0 .7rem var(--key-ink); }
+
+/* ADVANCED, ONE WELL UNDER EACH NAME: a setting's name stands on the left with its marks, reset and add on the right, and
+   its value sits in a well of one height that ends where the column ends, so every row is one pitch and every well one x.
+   A value that is a word (an address, a sign-in file, a service) reads as that word, and its chevron opens the full text under
+   it to edit in place. */
+.advg .krows.flat { align-items: start; row-gap: calc(2 * var(--u)); }
+.advg .krows.flat .krow { display: grid; grid-template-columns: minmax(0, 1fr) repeat(6, auto); align-items: center; column-gap: .5rem; row-gap: .5rem; min-height: 0; padding: 0 var(--u); }
+.advg .krows.flat .krow::after { content: ""; grid-row: 2; grid-column: 1 / -1; min-height: 2.9rem; border-radius: var(--r-in); background: var(--obj-sunk); box-shadow: inset 0 0 0 .08rem var(--track-line); pointer-events: none; }
+.advg .krows.flat .krow :is(.ctl, .line) { display: contents; }
+.advg .krows.flat .krow > .lbl { grid-row: 1; grid-column: 1; min-height: 2.3rem; display: flex; align-items: center; }
+.advg .krows.flat .krow :is(.ctl, .line) > * { grid-row: 1; }
+.advg .krows.flat .krow :is(.custom, .switch, .fixed, .adv-box, .menuwrap:has(.pickbtn)) { grid-row: 2; grid-column: 1 / -1; z-index: 1; margin-inline: var(--u); }
+.advg .krows.flat .krow :is(.switch, .fixed, .menuwrap:has(.pickbtn)) { justify-self: start; }
+.advg .krows.flat .krow :is(.custom, .adv-box) { justify-self: stretch; display: flex; align-items: center; gap: .667rem; }
+.advg .krows.flat .krow .custom .field { flex: 1 1 auto; min-width: 0; background: none; box-shadow: none; }
+.advg .krows.flat .krow .marks:has(.mk.lock) { grid-row: 2; grid-column: 1 / -1; justify-self: end; z-index: 1; margin-right: var(--u); }
+/* the value as a word, and the way to its full text */
+.advg .krow.adv-shaped:not(.adv-edit) .custom { display: none; }
+.advg .krow.adv-shaped.adv-edit .custom { grid-row: 3; margin-inline: 0; border-radius: var(--r-in); box-shadow: inset 0 0 0 .08rem var(--track-line); }
+.advg .krow.adv-shaped.adv-edit .custom .field { padding-left: 2.7rem; }
+.adv-v { display: inline-flex; align-items: center; gap: .6rem; min-width: 0; font: 500 .95rem/1.2 var(--font-name); color: var(--text-body); overflow-wrap: anywhere; }
+.adv-g { display: inline-grid; place-items: center; width: 1.05rem; height: 1.05rem; color: var(--text-mute); flex: none; }
+.adv-g svg { width: 100%; height: 100%; }
+.adv-v.host { padding: .3rem .9rem .3rem .8rem; border-radius: 99rem; box-shadow: inset 0 0 0 .08rem var(--track-line), inset .25rem 0 0 var(--pc, var(--text-mute)); font: 500 .92rem/1.2 var(--font-data); color: var(--text); }
+.adv-open { width: 2rem; height: 2rem; margin-left: auto; box-shadow: none; flex: none; }
+.ver-fix { display: inline-flex; align-items: center; gap: .6rem; }
+.ver-under { display: inline-flex; align-items: center; gap: .667rem; flex-basis: 100%; }
+.ver-min { font: 500 .85rem/1 var(--font-data); color: var(--text-mute); }
+/* a chevron turns over its own length as the detail opens or shuts: the page draws whole on each press, so the turn is
+   an animation from the state it had, never a transition on an element that is new each time */
+@keyframes verChevOpen { from { transform: rotate(0deg); } }
+@keyframes verChevShut { from { transform: rotate(90deg); } }
+.ver-chev.turning[aria-expanded="true"] svg { animation: verChevOpen var(--ver-chev-t, 240ms) var(--e-out) var(--turn-at, 0ms) 1 both; }
+.ver-chev.turning[aria-expanded="false"] svg { animation: verChevShut var(--ver-chev-t, 240ms) var(--e-out) var(--turn-at, 0ms) 1 both; }
+@media (prefers-reduced-motion: reduce) { .ver-chev.turning svg { animation: none; } }
+.advg .krow[data-key="contextWindowOverride"] .custom .field { text-align: left; }
+
+/* THE WEEK'S COUNTS AND THE WAITS STAND ONE UNDER THE OTHER until the plate is wide enough to hold them side by side: each is a
+   full-width table, so a plate under 2600 px keeps them in one column and wider holds two. */
+@container plate (max-width: 2600px) {
+  .topic:has(.stl-scale) { grid-template-columns: minmax(0, 1fr); }
+  .topic:has(.stl-scale) > [data-side="2"] { grid-column: 1; }
+}
+
+/* the terminal's lines spread down its height, and it ends on its prompt with a caret */
+.rsn-cols > .psec:first-child > .term { align-content: space-between; row-gap: calc(2 * var(--u)); }
+.term .tl.you.end { margin-top: auto; }
+.caret-blink { display: inline-block; width: .6rem; height: 1.1rem; margin-left: .333rem; background: var(--text-mute); vertical-align: middle; animation: rsnCaret 1.1s steps(2, start) infinite; }
+@keyframes rsnCaret { to { visibility: hidden; } }
+@media (prefers-reduced-motion: reduce) { .caret-blink { animation: none; } }
+
+/* a store's Delete says its word where the column is wide enough to hold it, and is the trash alone where the table is squeezed */
+.dx .act.del .delw { display: none; }
+@container dtab (min-width: 110rem) {
+  .dx .act.del { width: auto; gap: .5rem; padding: 0 .9rem; }
+  .dx .act.del .delw { display: inline; font: 500 .9rem/1 var(--font-name); }
+}
+.taps .tap { white-space: nowrap; }
+
+/* a card's share of the servers not shared, as a short bar under its name */
+.mcp-cb { display: block; height: .4rem; margin: .5rem 0 var(--u); border-radius: .2rem; background: var(--obj-sunk); box-shadow: inset 0 0 0 .08rem var(--track-line); overflow: hidden; }
+.mcp-cb b { display: block; height: 100%; border-radius: .2rem; background: var(--text-mute); transition: width var(--t-snap) var(--e-out); }
+
+.omore-row { flex: 0 0 100%; display: flex; }
+
+/* the logins' rings are spaced along the card and the count stands at its right edge */
+.rlogins { justify-content: space-between; }
+.rdots { gap: .75rem; flex: 0 1 auto; }
+.rlogins .rfig { margin-left: auto; white-space: nowrap; }
+.rdots .ld { flex: 0 0 1.15rem; }
+
+/* THE LIMITS' TRACKS RUN THE WIDTH OF THE CONTROL: a limit's track stands under its value on a line of its own, from the
+   control's left edge to the column's right, with its figure at the end, so the busiest command is read against a long
+   scale and not a stub beside the box */
+.krow:is([data-key="maxInflight"], [data-key="maxQueued"], [data-key="maxRequestBytes"]) { row-gap: .5rem; }
+.krow:is([data-key="maxInflight"], [data-key="maxQueued"], [data-key="maxRequestBytes"]) > .kdraw { grid-column: 2 / -1; grid-row: 2; }
+.krow:is([data-key="maxInflight"], [data-key="maxQueued"], [data-key="maxRequestBytes"]) > .lbl { grid-row: 1 / span 2; align-self: start; padding-top: .4rem; }
+
+/* A GROUP'S FILE AND ADD MARKS STAND ON ITS TITLE LINE, at the right of its name, with its choices under them */
+.rsn-set .krow { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; column-gap: .5rem; row-gap: var(--u); }
+.rsn-set .krow > .lbl { grid-row: 1; grid-column: 1; }
+.rsn-set .krow :is(.ctl, .ctl.col, .line) { display: contents; }
+.rsn-set .krow .rsn-radios { grid-row: 2; grid-column: 1 / -1; }
+.rsn-set .krow .marks { grid-row: 1; grid-column: 2; }
+.rsn-set .krow .menuwrap { grid-row: 1; grid-column: 3; }
+.rsn-set .krow .line ~ *, .rsn-set .krow .line > .said, .rsn-set .krow > .said { grid-row: 3; grid-column: 1 / -1; }
+
+/* a setting's track, before it is read, is a hatched bar to the end of its cell, as the track it lands as */
+.kdraw > .ghost.track { flex: 1 1 auto; min-width: 3rem; }
+
+.krow:is([data-ghost="maxInflight"], [data-ghost="maxQueued"], [data-ghost="maxRequestBytes"]) { row-gap: .5rem; }
+.krow:is([data-ghost="maxInflight"], [data-ghost="maxQueued"], [data-ghost="maxRequestBytes"]) > .kdraw { grid-column: 2 / -1; grid-row: 2; }
+.krow:is([data-ghost="maxInflight"], [data-ghost="maxQueued"], [data-ghost="maxRequestBytes"]) > .lbl { grid-row: 1 / span 2; align-self: start; padding-top: .4rem; }

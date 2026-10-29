@@ -1022,20 +1022,21 @@ function menuHtml(p, a, spot) {
   }).join("")}${refused ? `<div class="menu-state">${refusalHtml(ui.removeErr, key)}${reasonHtml(ui.removeErr, key)}</div>` : ""}</div>`;
 }
 const keyDayWord = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" }); // a key card's day, "Oct 12"
-/** What a login is called on its card: the name he gave it, else the console's one rule (kit DRAW.name), its provider and plan,
- *  with two that read alike told apart by a number. A default name carries an id fragment in the daemon's spelling, and an id
- *  is never a title. */
-function shownName(p, a) {
-  if (p.kind !== "plan") return a.name;
-  const named = DRAW.names("login", p.accounts.map((x) => ({ name: x.name, provider: p.name ?? p.id, plan: x.plan })));
-  return named[p.accounts.indexOf(a)]?.text ?? a.name;
+/** What a login is called on its card: the name he gave it, else the console's one rule (kit DRAW.name), "Account", with two
+ *  that read alike told apart by a muted number over the provider's whole list. A default name carries an id fragment in the
+ *  daemon's spelling, and an id is never a title. */
+function namedLogin(p, a) {
+  if (p.kind !== "plan") return { text: a.name, own: true };
+  const named = DRAW.names("login", p.accounts.map((x) => ({ name: x.name, provider: p.name ?? p.id, plan: x.plan, ids: DRAW.loginIds(x.row) })));
+  return named[p.accounts.indexOf(a)] ?? { text: a.name, own: true };
 }
+const shownName = (p, a) => namedLogin(p, a).text;
 function nameHtml(p, a, spot) {
   // a key is named by its variable and, when it replaced another, the day splice first saw it
   if (p.kind === "key") return `<span class="name"><span class="var">${esc(a.env)}</span>${a.tail ? ` <span class="tail">${esc(a.tail)}</span>` : ""}${a.has && a.seen && a.twins ? ` · ${keyDayWord(a.seen)}` : ""}</span>`;
   // a model on this computer is told by its command, as the chip every command is drawn as, lit while the server answers
   if (p.kind === "local") return `<span class="lmc-cmd"><span class="chip">${a.down || a.unread ? "" : "<i></i>"}${esc(a.name)}</span></span>`;
-  if (ui.rename !== spot) return `<span class="name">${esc(shownName(p, a))}</span>`;
+  if (ui.rename !== spot) return `<span class="name">${DRAW.nameHtml(namedLogin(p, a))}</span>`;
   const err = ui.renameErr;
   // one visible way to finish and one to leave, as the key field's Save and Cancel: both walkers had to guess Enter
   // (p153, p154). A refusal reads under it (cardHtml).
@@ -1356,6 +1357,7 @@ function lastLeftOf(pool) {
 // to make room for it. The order goes back to the one splice still holds. The next press clears it.
 function providerHtml(p, span = 1) {
   const refusal = (c) => (ui.orderErr && c && ui.orderErr.cmd === c.cmd ? ui.orderErr : null), key = (c) => `order:${c.cmd}`;
+  const saving = (c) => (ui.orderSaving === c.cmd ? `<span class="abl-busy" role="status"><i class="abl-spin" aria-hidden="true"></i>Saving order</span>` : "");
   const said = (c) => (refusal(c) ? `<span class="order-err abl-refusal${ui.shook === key(c) ? " failed" : ""}">${refusalHtml(refusal(c))}${refusal(c).why ? `<span class="abl-why">${esc(refusal(c).why)}</span>` : ""}</span>` : "");
   const group = (end, body) => DRAW.group({ name: p.name, c: colorOf(p.id), key: `prov:${p.id}`, cls: `provider${span > 1 ? " wide" : ""}`,
     style: span > 1 ? `--span:${span}` : "", end, body });
@@ -1372,7 +1374,7 @@ function providerHtml(p, span = 1) {
   // over k columns the strips are dealt down the columns, one column wide each, and a provider with fewer commands than columns
   // leaves the columns beside them to their cards
   const dealt = span > 1 ? Array.from({ length: span }, (_, i) => meters.filter((_, k) => k % span === i)) : null;
-  return group(said(c) + switchHtml(p, c), `${span > 1 ? "" : meters.join("")}${railHtml(p, c, span, layout?.wide?.id === p.id ? layout.wide.cuts : null, dealt)}`);
+  return group(said(c) + saving(c) + switchHtml(p, c), `${span > 1 ? "" : meters.join("")}${railHtml(p, c, span, layout?.wide?.id === p.id ? layout.wide.cuts : null, dealt)}`);
 }
 function addProviderHtml() {
   const have = new Set(data.map((p) => p.id));
@@ -1531,7 +1533,7 @@ function colCount() { return DRAW.colsFit(board, 40); }
 // cards' rows have grown or shrunk since; a provider or a card added or gone packs the board again, and the providers
 // slide to their new columns (render).
 const PACK_KEY = "splice-accounts-packing";
-const PACK_RULE = 16; // a packing or a ghost shape kept from an older rule packs again
+const PACK_RULE = 17; // a packing or a ghost shape kept from an older rule packs again
 function keptPacking(n, ids) {
   let kept = null;
   try { kept = JSON.parse(localStorage.getItem(PACK_KEY) || "null"); } catch { kept = null; }
@@ -1612,7 +1614,9 @@ function shapeOf(L) {
     // held line) and the move lines under its doors
     const card = (a) => {
       const el = sec?.querySelector(`[data-key="card:${CSS.escape(`${p.id}/${a.id}`)}"]`);
-      const rows = p.kind !== "plan" || a.out ? 0 : Math.max(1, (a.windows?.length || 0) + (a.models?.length || 0)) + (el?.querySelector(".windows > .next") ? 1 : 0);
+      // a login with no window at all is the one line "No limits reported" (-1), a signed-out one its outbox (0)
+      const wins = (a.windows?.length || 0) + (a.models?.length || 0);
+      const rows = p.kind !== "plan" || a.out ? 0 : wins ? wins + (el?.querySelector(".windows > .next") ? 1 : 0) : -1;
       const over = (el?.querySelector(":scope > .email") ? 1 : 0) + (el?.querySelector(".windows > .heldline") ? 1 : 0);
       return [rows, Math.min(SESS_SHOWN, doors(a)), remOf(el), over, el?.querySelectorAll(":scope > .moves > .moveline").length || 0];
     };
@@ -1627,7 +1631,7 @@ const tall = (h) => (h ? `;min-height:${h}rem` : "");
 const ghostDoors = (n) => (n ? `<div class="onlogin" aria-hidden="true">${Array.from({ length: n }, (_, j) => `<span class="sdoor gdoor"><i class="ghost lampg"></i>${GHOST.bar(4.2 + (j % 3) * 1.3)}</span>`).join("")}</div>` : "");
 function ghostCard(kind, [rows, doors, h, over = 0, moves = 0], k) {
   const lines = (n, w, cls) => Array.from({ length: n }, () => `<span class="${cls}">${GHOST.bar(w)}</span>`).join("");
-  const body = kind === "key" ? `<div class="keysrc">${GHOST.bar(13)}</div>` : kind === "local" ? `<div class="local-model lmc-body"><div class="lmc-row">${GHOST.bar(12)}</div><div class="lmc-foot">${GHOST.bar(7.6, "chip")}${GHOST.bar(5.5, "chip")}</div></div>`
+  const body = kind === "key" || rows < 0 ? `<div class="keysrc">${GHOST.bar(13)}</div>` : kind === "local" ? `<div class="local-model lmc-body"><div class="lmc-row">${GHOST.bar(12)}</div><div class="lmc-foot">${GHOST.bar(7.6, "chip")}${GHOST.bar(5.5, "chip")}</div></div>`
     : rows ? `<div class="windows">${lines(Math.max(0, over - 1), 12, "heldline")}${Array.from({ length: rows }, WINDOW_GHOST).join("")}</div>` : `<div class="outbox">${GHOST.bar(5.4, "chip")}</div>`;
   return `<article class="card gcard ghosted" style="--i:${Math.min(k, 3)}${tall(h)}">${kind === "plan" ? `<span class="socket"></span>` : ""}`
     + `<div class="top">${GHOST.bar(7.4, "big")}<span class="slot">${GHOST.bar(6.2, "chip")}</span></div>${over ? lines(1, 9.5, "email") : ""}${body}${ghostDoors(doors)}`
@@ -1638,7 +1642,7 @@ const ghostStrip = (h) => {
   const kicker = (w) => `<span class="label ads-k">${w}</span>`, row = (w) => `${kicker(w)}<div class="bar ads-req">${GHOST.track()}</div><span class="ads-words">${GHOST.bar(7.4)}</span>`;
   if (h && h < 7) return `<div class="meter day ghosted idle" style="${tall(h).slice(1)}"><span class="label">Day</span><div class="dayline"><span class="ads-fig ads-ghost">${GHOST.bar(9.5)}</span></div><span class="when">${GHOST.ring()}${GHOST.bar(6.2)}</span></div>`;
   return `<div class="meter day ghosted" style="${tall(h).slice(1)}"><span class="label">Day</span><div class="dayline"><span class="ads-fig ads-ghost">${GHOST.fig(5.6)}</span><span class="ads-unit">${GHOST.bar(9.5)}</span></div>`
-    + `<span class="when">${GHOST.ring()}${GHOST.bar(6.2)}</span>${row("Requests")}${h > REM.strip - 1 ? row("Dollars") : ""}<span class="dayrun">${GHOST.track()}</span></div>`;
+    + `<span class="when">${GHOST.ring()}${GHOST.bar(6.2)}</span>${row("Requests")}${!h || h > REM.strip - 1 ? row("Dollars") : ""}<span class="dayrun">${GHOST.track()}</span></div>`;
 };
 function ghostProvider(g, span = 1, cuts = null) {
   // a shape kept before the heights were (a count of strips) still draws, at the plain height
@@ -1667,11 +1671,12 @@ function ghostRail(p) {
   const rail = ordered(p, laneOf(p));
   return rail.map((a, i) => {
     const next = i === 0 && rail.length > 1;
-    const rows = a.out ? 0 : Math.max(1, a.windows.length + (a.windows.some((w) => w.label === "Week") ? a.models.length : 0) + (next ? 1 : 0));
+    const wins = a.windows.length + (a.windows.some((w) => w.label === "Week") ? a.models.length : 0);
+    const rows = a.out ? 0 : wins ? wins + (next ? 1 : 0) : -1;
     return [rows, 0, 0, (a.email ? 1 : 0) + (held(a) ? 1 : 0), 0, loginRem(a, next)];
   });
 }
-function shapeFromRegistry(n) {
+function shapeFromRegistry(n, kept = new Map()) {
   const provs = new Map();
   for (const h of registry) {
     const id = (FAMILY[h.family] || { id: h.family || h.key }).id;
@@ -1689,19 +1694,33 @@ function shapeFromRegistry(n) {
       a = ghostRail(p);
     } else if (p.kind === "plan") a = Array.from({ length: cmds + 1 }, () => [2, 0, 0, 0, 0, REM.card + 2 * REM.row]);
     else a = p.cmds.map(() => [0, 0, 0, 0, 0, p.kind === "local" ? REM.local : REM.card + REM.line]);
-    return { id: p.id, k: p.kind, d: Array.from({ length: p.kind === "local" ? 0 : cmds }, () => 0), a };
+    // the strips' heights a visit at another width kept stand for the same commands here: an idle command is one row on the board
+    const was = kept.get(p.id), count = p.kind === "local" ? 0 : cmds;
+    return { id: p.id, k: p.kind, d: was?.length === count ? was : Array.from({ length: count }, () => 0), a };
   });
-  const L = packShape(ps.map((g) => ({ id: g.id, plan: g.k === "plan", sh: g.d.map(() => REM.strip),
+  const L = packShape(ps.map((g) => ({ id: g.id, plan: g.k === "plan", sh: g.d.map((h) => h || REM.strip),
     hs: [...g.a.map((x) => x[5]), ...(g.k === "plan" ? [REM.add] : [])] })), n);
   const byId = (id) => ps.find((g) => g.id === id);
   return { n, wide: L.wide ? { k: L.wide.k, cuts: L.wide.cuts, p: byId(L.wide.id) } : null, cols: L.cols.map((ids) => ids.map(byId)) };
+}
+// A first visit that has heard nothing yet draws the board most logins land as: the first plan provider is the longest and
+// stands two columns wide on a wide screen (its strip over the first, its cards read down both), and the providers after it
+// stack in the columns beside it, a plan's card or a model on this computer or a key under each. It is one honest guess at the
+// shape, drawn only for the moment the daemon's own list takes, and replaced by the shape that list gives.
+function plainShape(n) {
+  const plan = (cards) => ({ k: "plan", d: [0], a: Array.from({ length: cards }, () => [2, 0]) });
+  const key = { k: "key", d: [0], a: [[0, 0]] }, local = { k: "local", d: [], a: [[0, 0], [0, 0]] };
+  if (n < 4) return { n, wide: null, cols: Array.from({ length: n }, (_, i) => [i % 2 ? key : plan(2)]) };
+  const stacks = [[plan(1), local], [plan(1), plan(1), plan(1)], [key, key, local]];
+  return { n, wide: { k: 2, cuts: [3], p: plan(5) }, cols: Array.from({ length: n - 2 }, (_, i) => stacks[i % stacks.length]) };
 }
 function ghostBoard() {
   let shape = null;
   try { shape = JSON.parse(localStorage.getItem(SHAPE_KEY) || "null"); } catch { shape = null; }
   const n = colCount();
   if (!shape || shape.n !== n || shape.rule !== PACK_RULE || !Array.isArray(shape.cols)) {
-    shape = registry?.length ? shapeFromRegistry(n) : null;
+    const kept = new Map([...(shape?.wide ? [shape.wide.p] : []), ...(shape?.cols || []).flat()].filter((g) => g?.id && Array.isArray(g.d)).map((g) => [g.id, g.d]));
+    shape = registry?.length ? shapeFromRegistry(n, kept) : null;
     if (!registry) {
       // nothing is drawn for the moment the list takes, so the ghosts do not land twice; a list that is slow to come
       // leaves the plain shape
@@ -1719,9 +1738,7 @@ function ghostBoard() {
       return;
     }
   }
-  if (!shape) {
-    shape = { n, wide: null, cols: Array.from({ length: n }, (_, i) => [i % 2 ? { k: "key", d: [0], a: [[0, 0]] } : { k: "plan", d: [0], a: [[2, 0], [2, 0]] }]) };
-  }
+  if (!shape) shape = plainShape(n);
   for (const [id, k] of Object.entries(shape.doors || {})) if (!DOORS_SEEN.has(id)) DOORS_SEEN.set(id, k);
   board.innerHTML = DRAW.boardCols([...(shape.wide ? [{ span: shape.wide.k, body: ghostProvider(shape.wide.p, shape.wide.k, shape.wide.cuts) }] : []),
     ...shape.cols.map((ps) => ({ body: ps.map((g) => ghostProvider(g)).join("") }))]);

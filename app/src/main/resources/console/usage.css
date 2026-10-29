@@ -477,7 +477,7 @@
 .flag { margin: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.333rem calc(2 * var(--u)); }
 .flag a { display: inline-flex; align-items: center; gap: 0.333rem; font: 500 1.05rem/1.1 var(--font-name); color: var(--limit); text-decoration: none; }
 .flag a .go { width: 1.05rem; height: 1.05rem; }
-.flag.slow a { color: var(--key-ink); }   /* slow is where to look; a failing run is the limit red */
+.flag.slow a { color: var(--text); }   /* slow is where to look, in plain ink; a failing run is the limit red */
 .flag a:hover { text-decoration: underline; }
 .flag .vs { font: 500 .88rem/1 var(--font-name); color: var(--text-mute); }
 .flag .vs b { font: 600 .9rem/1 var(--font-data); color: var(--text); }

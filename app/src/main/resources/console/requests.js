@@ -95,7 +95,7 @@ const besideOf = (r, row = false, resetSaid = false) => {
   const mend = r.resumed && !said ? `<span class="detail mend">${WHY[why].word}</span>` : "";
   // on a row the retries are the lamp's retries glyph and their count, named once in the list's key, so a long session
   // name and what happened to it keep one line; the open request, which has the room, says them in words
-  const tries = !r.retries ? "" : row ? `<span class="detail mend rt">${ICON.retries}${r.retries}</span>`
+  const tries = !r.retries ? "" : row ? ""
     : `<span class="detail mend">${r.retries} ${r.retries === 1 ? "retry" : "retries"}</span>`;
   return mend + tries;
 };
@@ -110,8 +110,9 @@ const keyNameOf = (account) => { const s = String(account ?? ""), at = s.lastInd
 // A key reads as its provider, the heading Accounts draws over it and the name Continue on uses; its variable joins
 // only when two keys of that provider feed the same command, so the line says which one it sent (fin).
 const acctHtml = (r) => {
-  // a login reads the name he gave it, else the console's one rule (kit DRAW.name): never an email, an id or the bare word Account
-  if (r.acctLabel) return esc(DRAW.name("login", { name: r.acctLabel, provider: r.provider }).text);
+  // a login reads the name he gave it, else the console's one rule (kit DRAW.name): "Account", never an email or an id; the
+  // number the daemon counted inside one command is not kept, the menu counts over the whole list (acctNames)
+  if (r.acctLabel) { const n = DRAW.name("login", { name: r.acctLabel, provider: r.provider, ids: [r.account, `${r.head}|${r.account}`] }); return esc(n.own ? n.text : n.base); }
   const key = state.keySeen[r.account], name = key?.name ?? keyNameOf(r.account), provider = PROVIDER_NAME[r.provider];
   const isKey = Boolean(key) || /^[A-Z0-9_]+$/.test(name);
   if (!isKey || !provider) return key ? `<span class="var">${esc(key.name)}</span> · ${dayWord(key.seen)}${key.replaced ? `<span class="detail">Replaced</span>` : ""}` : esc(state.soleAccount?.[r.head] ?? (name || r.account));
@@ -139,12 +140,13 @@ function acctGroups() {
 const acctNames = () => {
   const info = new Map(state.facets.accounts.map(([k, { head, account, label }]) => [k, acctInfo({ account, acctLabel: label, head: head.key, provider: state.providerOf[head.key] })]));
   const groups = acctGroups(), out = new Map(), ordinals = new Map(), unnamed = new Map();
-  for (const g of groups) for (const k of g.keys) { const i = info.get(k); if (!i.own) unnamed.set(i.html, (unnamed.get(i.html) ?? 0) + 1); }
+  for (const g of groups) for (const k of g.keys) { const i = info.get(k); if (!i.own && !i.rostered) unnamed.set(i.html, (unnamed.get(i.html) ?? 0) + 1); }
   for (const g of groups) {
     const seen = new Map();
     for (const k of g.keys) {
       const i = info.get(k);
       let at = 0;
+      if (i.rostered) { out.set(k, i.html); continue; }
       if (!i.own) { if (unnamed.get(i.html) > 1) at = (ordinals.get(i.html) ?? 0) + 1; ordinals.set(i.html, at || ordinals.get(i.html) || 0); }
       else {
         const same = g.keys.filter((x) => info.get(x).html === i.html).length;
@@ -160,8 +162,10 @@ const acctNames = () => {
 // that names a login nobody named stands once in the Account menu and on the open request, never on every row.
 const acctInfo = (r) => {
   if (!r.acctLabel) return { html: acctHtml(r), own: true, out: false };
-  const n = DRAW.name("login", { name: r.acctLabel, provider: r.provider });
-  return { html: esc(n.text), own: n.own, out: /^signed-out/i.test(r.acctLabel) };
+  const n = DRAW.name("login", { name: r.acctLabel, provider: r.provider, ids: [r.account, `${r.head}|${r.account}`] });
+  // a login the roster holds reads by its one ordinal wherever it is named, the ordinal in its own muted mark
+  const html = n.own ? esc(n.text) : n.rostered && n.ord ? `${esc(n.base)}<i class="ord"> ${n.ord}</i>` : esc(n.base);
+  return { html, own: n.own, out: /^signed-out/i.test(r.acctLabel), rostered: Boolean(n.rostered) };
 };
 const monogram = (html) => (String(html).replace(/<[^>]*>/g, "").trim()[0] ?? "·").toUpperCase();
 const loginMark = (r, info) => (r.reset ? `<i class="mono held" title="At its limit">${ICON.lock}</i>`
@@ -703,14 +707,19 @@ const isRetried = (r) => answered(r) && r.attempts > 1;
  *  [row], a word the filter he set already says (its chip, or its pressed toggle) is not said again on every row. */
 function stateOf(r, row = false, resetSaid = false) {
   const o = outcomeOf(r), retried = isRetried(r);
-  const said = row && ((ui.tag && ui.tag.split(",").includes(r.outcome)) || (OUTCOME_WHYS.has(ui.why) && WHY[ui.why].has(r)));
-  const word = o.word ? (said ? "" : `<span class="word ${o.cls}">${o.word}</span>`)
-    : r.compact ? (row && ui.compact ? "" : `<span class="word">Compaction</span>`) : retried && !r.retries ? `<span class="word">Retried</span>` : "";
+  // ON A ROW THE OUTCOME IS THE LAMP'S, never a word said again on every line: the lamp and the list's key name it, the filter
+  // he set says it once, and its words ride the lamp's tooltip. Only a search that matched the word keeps it, marked, so the
+  // match can be seen where it was found.
+  const hitWord = row && ui.q && o.word && o.word.toLowerCase().includes(ui.q.toLowerCase());
+  const word = row && !hitWord ? "" : o.word ? `<span class="word ${o.cls}">${o.word}</span>`
+    : r.compact ? `<span class="word">Compaction</span>` : retried && !r.retries ? `<span class="word">Retried</span>` : "";
   return {
     o, retried,
-    lamp: r.compact ? GLYPH.compact : o.glyph ? GLYPH[o.glyph] : retried ? GLYPH.retries : "<i></i>",
+    // the retries splice ran are the lamp's own count where the lock is not what the row says
+    lamp: r.compact ? GLYPH.compact : row && r.retries > 0 && o.glyph !== "limit" ? `${GLYPH.retries}<b>${r.retries}</b>` : o.glyph ? GLYPH[o.glyph] : retried ? GLYPH.retries : "<i></i>",
     lampCls: `${o.cls}${r.compact ? " compact" : ""}${retried ? " retried" : ""}`,
-    word: word + besideOf(r, row, resetSaid),
+    word: word + besideOf(r, row, row || resetSaid),
+    title: [o.word || (r.compact ? "Compaction" : retried ? "Retried" : ""), r.reset ? resetWord(r) : ""].filter(Boolean).join(" · "),
   };
 }
 // THE WATERFALL'S COUNTERS (web-console.md, Turn waterfall): what the bar alone cannot say, each drawn only when it
@@ -1048,7 +1057,7 @@ function menuHtml(key) {
     const names = rows.map(([sid, { head }]) => sessHtml(sid, { cmd: head.command }));
     const list = rows.map(([sid, { head, last }], i) => item(sid, `<span class="sname">${names[i]}</span><span class="swhen">${when(last)}</span>`, ui.sid === sid,
       { extra: `<span class="blots"><i class="blot" style="--c:${colorOf(state.providerOf[head.key])}"></i></span>`, n: c?.of(sid) ?? null, most })).join("");
-    const foot = open ? `<p class="mfoot"><b>${n0(rows.length)}</b> of <b>${n0(all.length)}</b> sessions${rest > 0 && served("sessions.html") ? ` · <a href="sessions.html">The rest on Sessions</a>` : ""}</p>` : "";
+    const foot = open ? `<p class="mfoot"><b>${n0(rows.length)}</b> of <b>${n0(all.length)}</b> sessions${rest > 0 && served("sessions.html") ? `<a class="mfoot-door" href="sessions.html">${n0(all.length - rows.length)} more in Sessions</a>` : ""}</p>` : "";
     return `<div class="menu fmenu sessions-menu${open ? " open" : ""}" role="menu">${every("Every session", !ui.sid)}<div class="${open ? "mcols" : "mlist"}">${list}</div>`
       + (rest > 0 || open ? DRAW.more(rest, { word: "more", act: "sidall", open }) : "") + `${foot}</div>`;
   }
@@ -1105,7 +1114,7 @@ function filtersHtml() {
     + (ui.to && !ui.from ? `<span class="fwrap"><span class="fbtn on">Up to ${dayOf(new Date(ui.to))}${clock(new Date(ui.to))}</span><button class="fclear" data-act="unset" data-m="to" aria-label="Clear">${ICON.close}</button></span>` : "")
     + (ui.tag ? `<span class="fwrap"><span class="fbtn on">${esc(OUTCOME_WORD[ui.tag.split(",")[0]] || tagWord(ui.tag.split(",")[0]) || "Failed")}</span><button class="fclear" data-act="unset" data-m="tag" aria-label="Clear">${ICON.close}</button></span>` : "")
     + (ui.why && ui.why !== "startedover" ? `<span class="fwrap"><span class="fbtn on">${esc(WHY[ui.why].word)}</span><button class="fclear" data-act="unset" data-m="why" aria-label="Clear">${ICON.close}</button></span>` : "")
-    + `${sw}${over}${tog("compact", "Compactions", ui.compact)}</div></div>`;
+    + `<i class="fbreak" aria-hidden="true"></i>${sw}${over}${tog("compact", "Compactions", ui.compact)}</div></div>`;
 }
 
 // ---------- the list: the newest first, on the rail, an hour mark where the hour turns ----------
@@ -1184,7 +1193,7 @@ const markQ = (text) => {
 };
 const stamp = (r, lead = false) => `${lead ? (r.ts.toDateString() === NOW.toDateString() ? "Today · " : `${dayWordShort(r.ts)} · `) : state.order === "price" ? dayOf(r.ts) : ""}${clockS(r.ts)}`;
 function rowHtml(r, S, burst = null, rise = false, { lead = false } = {}) {
-  const { o, lamp, lampCls, word } = stateOf(r, true, Boolean(burst?.reset)), h = r.said, open = !lead && ui.open === r.id;
+  const { o, lamp, lampCls, word, title: lampTitle } = stateOf(r, true, Boolean(burst?.reset)), h = r.said, open = !lead && ui.open === r.id;
   // THE RELATIONS BETWEEN ROWS ARE MARKS, never a phrase on every row: where a cut request's tokens went and what the
   // carrier's count holds (linkCuts), and the request splice cut when it restarted with the client's re-send of it
   // (linkRetries). Each is a door to the other request where both are listed, its words under the pointer, and the
@@ -1210,7 +1219,7 @@ function rowHtml(r, S, burst = null, rise = false, { lead = false } = {}) {
   const door = r.outcome === "error:plan-limit" ? switchDoor(r.head) : "";
   // the chevron first, as every disclosure row on the console has it: it turns as the request opens under the row
   return `<article class="card rq ${o.cls}${rise ? " rise" : ""}${r.compact ? " compact" : ""}${burst ? " inburst" : ""}${burst && unfolding === burst.id ? " unfold" : ""}${lead ? " lead" : ""}" style="--c:${colorOf(r.provider)}" data-open="${esc(r.id)}" aria-current="${open}">`
-    + `${DRAW.chev}<span class="lamp ${lampCls}" aria-hidden="true">${lamp}</span>`
+    + `${DRAW.chev}<span class="lamp ${lampCls}"${lampTitle ? ` title="${esc(lampTitle)}"` : ""}>${lamp}</span>`
     + `<div class="top"><time>${stamp(r, lead)}</time><div class="who"><button class="name" data-open="${esc(r.id)}" aria-expanded="${open}">${r.compare ? esc(COMPARE_LABEL) : sessHtml(r.sid, r, true)}</button>${hit}${shownWord}${marks}</div></div>`
     + `<div class="meta">${headChip(r, true)}${r.model ? `<span class="mdl mtag" title="${esc(r.model)}">${esc(r.model)}</span>` : `<span class="mdl">${none("model")}</span>`}<span class="acc">${r.account ? `${acctTag(r)}${nameTile(r)}` : none("account")}</span></div>`
     + `${cells}${door}</article>`;
@@ -1371,12 +1380,12 @@ function burstHtml(b, open, S, { grouped = false, lead = false } = {}) {
   if (o.glyph === "limit" || b.reset) S.lamps.add("limit");
   const cmds = uniq(b.rows.map((r) => r.cmd)), models = uniq(b.rows.map((r) => r.model).filter(Boolean)), accts = uniq(b.rows.map((r) => r.account).filter(Boolean));
   const chip = (cmd) => `<span class="chip" style="--c:${colorOf(providerOfCmd(cmd))}">${esc(cmd)}</span>`;
-  const said = grouped ? "" : `<span class="word fail">${esc(o.word)}</span>${b.reset ? `<span class="detail">${ICON.lock}${esc(b.reset)}</span>` : ""}`;
+  const lampTitle = [o.word, b.reset].filter(Boolean).join(" · ");
   const door = !grouped && o.word === "Plan limit" ? switchDoor(newest.head) : "";
   const none = (what) => `<i class="nr" title="No ${what}">—</i>`;
   return `<article class="card rq rqburst ${o.cls}${lead ? " lead" : ""}" style="--c:${colorOf(newest.provider)}" data-act="burst" data-v="${esc(b.id)}" aria-expanded="${open}">`
-    + `${DRAW.chev}<span class="lamp ${lampCls}" aria-hidden="true">${lamp}</span>`
-    + `<div class="top"><time>${stamp(newest, lead)}</time><div class="who"><button class="name bn" type="button" data-act="burst" data-v="${esc(b.id)}" aria-expanded="${open}" title="${span >= 1000 ? `in ${secs(span)}` : "within a second"}">${n0(b.rows.length)} requests</button>${said}</div></div>`
+    + `${DRAW.chev}<span class="lamp ${lampCls}"${lampTitle ? ` title="${esc(lampTitle)}"` : ""}>${lamp}</span>`
+    + `<div class="top"><time>${stamp(newest, lead)}</time><div class="who"><button class="name bn" type="button" data-act="burst" data-v="${esc(b.id)}" aria-expanded="${open}" title="${span >= 1000 ? `in ${secs(span)}` : "within a second"}">${n0(b.rows.length)} requests</button></div></div>`
     + `<div class="meta"><span class="bcmd">${cmds.map(chip).join("")}</span>`
     + `${models.length === 1 ? `<span class="mdl mtag" title="${esc(models[0])}">${esc(models[0])}</span>` : models.length ? `<span class="mdl">${n0(models.length)} models</span>` : `<span class="mdl">${none("model")}</span>`}`
     + `<span class="acc">${accts.length === 1 ? `${acctTag(newest)}${nameTile(newest)}` : accts.length ? `${n0(accts.length)} accounts` : none("account")}</span></div>`
@@ -1387,8 +1396,8 @@ function burstHtml(b, open, S, { grouped = false, lead = false } = {}) {
 function groupHtml(bursts, S) {
   const newest = bursts[0].rows[0], { lamp, o } = stateOf(newest, true), n = bursts.reduce((x, b) => x + b.rows.length, 0), reset = bursts[0].reset;
   const segs = bursts.map((b) => `<i style="flex:${b.rows.length}" title="${n0(b.rows.length)} requests"></i>`).join("");
-  return `<div class="rqgroup" role="group" aria-label="${esc(o.word)}"><span class="gl"><i class="gk" aria-hidden="true">${lamp}</i><b>${esc(o.word)}</b>${reset ? `<span class="gr"> · ${esc(reset)}</span>` : ""}</span>`
-    + `<span class="gs" aria-hidden="true">${segs}</span><span class="gc"><span class="gchip"><b>${n0(bursts.length)}</b> bursts</span><span class="gchip"><b>${n0(n)}</b> requests</span></span>`
+  return `<div class="rqgroup" role="group" data-g="${esc(bursts[0].id)}" aria-label="${esc(o.word)}"><span class="gl"><i class="gk" aria-hidden="true">${lamp}</i><b>${esc(o.word)}</b>${reset ? `<span class="gr"> · ${esc(reset)}</span>` : ""}</span>`
+    + `<span class="gs" aria-hidden="true">${segs}</span><span class="gc"><button class="gchip door" type="button" data-act="grp" data-v="bursts" data-g="${esc(bursts[0].id)}" title="Show these bursts"><b>${n0(bursts.length)}</b> bursts</button><button class="gchip door" type="button" data-act="grp" data-v="requests" data-g="${esc(bursts[0].id)}" data-ids="${esc(bursts.map((b) => b.id).join("|"))}" title="Show these requests"><b>${n0(n)}</b> requests</button></span>`
     + `<span class="ga">${o.word === "Plan limit" ? switchDoor(newest.head) : ""}</span></div>`;
 }
 /** THE LEAD STRIP: the worst up to three of the rows drawn, ranked failed burst, then failed request, then stopped, then
@@ -1436,7 +1445,7 @@ function listHtml(pane = "") {
   const S = scalesOf(rows, [...new Set(lastBursts.values())]);
   const lead = shown.length ? leadOf(shown) : [];
   // nothing to list keeps the table and its header, and says so once where the rows go, with the act that finds some
-  const table = (body, tail = "") => `<section class="list titled rql${priced ? " priced" : ""}"><header>${`<h2><span class="blot"></span>Requests</h2><span class="rql-count">${listCount(rows)}</span>`}${heldFoot()}${searchFoot()}${orderHtml()}</header>${trouble}`
+  const table = (body, tail = "") => `<section class="list titled rql${priced ? " priced" : ""}"><header>${`<h2><span class="blot"></span>Requests</h2><button class="rql-count door" type="button" data-act="listtop" title="Show these requests">${listCount(rows)}</button>`}${heldFoot()}${searchFoot()}${orderHtml()}</header>${trouble}`
     + `<div class="rqtable card${arrive ? " arrive" : ""}${lead.length ? " has-lead" : ""}">${keyHtml(S)}${headHtml(S)}${body}</div>${tail}</section>`;
   const empty = (word, acts = "") => `<div class="nomatch"><span class="state">${word}</span>${acts}</div>`;
   if (state.error) return table(`<div class="nomatch"><span class="state limit">${esc(state.error)}</span>${DRAW.act({ word: "Read again", act: "reread", cls: "quiet small" })}</div>`);
@@ -1936,6 +1945,8 @@ const loginActs = (r) => {
   return info.out ? { signIn: `<a class="act primary" href="${href}">Sign in</a>`, nameIt: "" }
     : { signIn: "", nameIt: info.own ? "" : `<a class="act quiet small" href="${href}">Name it</a>` };
 };
+// the login's name alone on the open request's top line, the link to its card on Accounts where that page is served
+const loginName = (r) => (served("accounts.html") ? `<a class="rvw-login" href="${accountsHref(r.head)}">${acctInfo(r).html}</a>` : `<span class="rvw-login">${acctInfo(r).html}</span>`);
 const openSession = (r) => (r.sid && PAGES.some(([file]) => file === "sessions.html")
   ? `<a class="act" href="sessions.html?at=${+r.ts}#${esc(r.sid)}">Open session</a>` : "");
 
@@ -2010,7 +2021,7 @@ function paneHtml() {
   // acts ride the Record's kicker line. Timing sets the request beside this model's typical and slowest 5% on this
   // command, so one request reads as fast or slow against its own kind (slowLines).
   const c = costOf(r), price = priceOf(r), cax = price != null ? scalesOf(filtered()).cax : null, act = loginActs(r);
-  return RV.paneHtml(r, { said: said + noteHtml(r), lampCls, lamp, who: `<span class="rq-pname">${r.compare ? esc(COMPARE_LABEL) : sessHtml(r.sid, r)}</span>${r.account ? acctTag(r) : headChip(r)}`, nameIt: act.nameIt,
+  return RV.paneHtml(r, { said: said + noteHtml(r), lampCls, lamp, who: `<span class="rq-pname">${r.compare ? esc(COMPARE_LABEL) : sessHtml(r.sid, r)}</span>${r.account ? loginName(r) : headChip(r)}`, nameIt: act.nameIt,
     costAt: cax ? cax.at(price) : null, costPlan: r.cost == null && r.planValue != null, unbilled,
     acts: `${act.signIn}${openSession(r)}<button class="icon close" data-act="close" aria-label="Close">${ICON.close}</button>`, recActs: recordActs(r, st),
     st, gone: RV_KEPT(st) || st === "reading" ? "" : goneHtml(r, st),
@@ -2177,6 +2188,15 @@ document.addEventListener("click", async (e) => {
       const holds = lastBursts.get(v)?.rows.some((r) => r.id === ui.open);
       if (ui.bursts.has(v) || holds) { ui.bursts.delete(v); if (holds) ui.open = null; } else { ui.bursts.add(v); unfolding = v; }
       render(); break;
+    }
+    // the chip beside the title and the pills on a group line are doors to what they count: the first brings the table's head
+    // under the top bar, the group's "bursts" brings its line there, and its "requests" opens each of its bursts
+    case "listtop": root.querySelector(".rqtable")?.scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" }); break;
+    case "grp": {
+      if (v === "requests") { for (const id of (el.dataset.ids || "").split("|").filter(Boolean)) ui.bursts.add(id); render(); }
+      const g = root.querySelector(`.rqgroup[data-g="${CSS.escape(el.dataset.g)}"]`);
+      g?.scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+      break;
     }
     case "kinds": ui.kindsOpen = !ui.kindsOpen; render(); break;
     case "sidall": ui.sidAll = !ui.sidAll; render(); break;

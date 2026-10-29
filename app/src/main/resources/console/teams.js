@@ -563,12 +563,12 @@ function planOf(head, label) {
   return p ? { five_hour_used_percent: p.five, five_hour_reset_epoch_seconds: p.fiveAt, seven_day_used_percent: p.seven, seven_day_reset_epoch_seconds: p.sevenAt } : null;
 }
 /** A LOGIN'S NAME BY THE CONSOLE'S ONE RULE (kit DRAW.name, as Usage and Accounts name one): the name he gave it, else its
- *  provider and plan, two that read alike told apart by a number in the roster's order. An address or an id the daemon
+ *  "Account", two that read alike told apart by a muted number in the roster's order. An address or an id the daemon
  *  keeps for a login with no name is never drawn as its name; { own } false says nobody named it, and the card then
  *  offers Name it, a door to Accounts where it is named. */
 let nameBook = null;
 const capital = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : "");
-const loginFacts = (a, fallback) => ({ name: a.ref ? a.display_name : a.display_name || fallback,
+const loginFacts = (a, fallback) => ({ name: a.ref ? a.display_name : a.display_name || fallback, ids: [...DRAW.loginIds(a), ...(fallback ? [fallback] : [])],
   provider: state.providerOf[(a.heads || [])[0]], plan: capital(a.plan) });
 function loginName(head, label) {
   const row = planRowOf(head, label);
@@ -579,9 +579,10 @@ function loginName(head, label) {
     }
     return nameBook.by.get(row) ?? DRAW.name("login", loginFacts(row, label));
   }
-  return DRAW.name("login", { name: label, provider: state.providerOf[head] });
+  return DRAW.name("login", { name: label, provider: state.providerOf[head], ids: [`${head}|${label}`, label] });
 }
 const accountName = (head, label) => loginName(head, label).text;
+const accountHtml = (head, label) => DRAW.nameHtml(loginName(head, label));
 /** A LOGIN'S WINDOWS AS THE KIT DRAWS THEM (DRAW.loginWins): a window with a reading is its meter, its share and its reset ring;
  *  one not read, or one that refilled since it was read, is the dashed track and the dash, the refilled one saying "Ended"
  *  with its time. [plan] null is a login splice has no reading for: both rows dashed, as the member's card draws it. */
@@ -605,7 +606,7 @@ function acctMenu(head, current, attrs) {
     const back = full.length ? Math.max(...full.map((w) => w.resetMs ?? 0)) : undefined;
     const cur = current != null && String(current).toLowerCase() === String(a).toLowerCase();
     return `<button class="lw-mrow${cur ? " cur" : ""}" ${attrs(a)}${cur ? ` aria-current="true"` : ""} style="--c:${headColor(head)}">`
-      + `<span class="lw-mname"><span class="blot"></span><span class="lw-mn">${esc(accountName(head, a))}</span></span>`
+      + `<span class="lw-mname"><span class="blot"></span><span class="lw-mn">${accountHtml(head, a)}</span></span>`
       + (back !== undefined ? DRAW.loginHeld(back > 0 ? back : null) : "") + DRAW.loginWins(rs) + `</button>`;
   });
   return `<div class="menu pick-menu lw-menu" data-what="account"><div class="lw-mhead"><span>Logins</span><b>${DRAW.n(list.length)}</b></div>`
@@ -677,7 +678,7 @@ function acctsHtml(tm, slotId, hold = null) {
     // WHERE A MEMBER USED TWO LOGINS, each one carries that member's own requests and tokens on it for each span, under one
     // column head said once on the login's name line; with one login the 7 days and 5 hours rows above are that login's
     const mine = (win) => (multi ? uses.find((x) => x.head === u.head && x.account === u.account && x.window === win) || { turns: 0, tokens: 0 } : null);
-    const head = `<div class="pacct"><em>${esc(name.text)}</em>${name.own ? "" : nameIt(u.head, u.account)}${held && !hold ? `<span class="lk">${DRAW.lock("")}</span>` : ""}` +
+    const head = `<div class="pacct"><em>${DRAW.nameHtml(name)}</em>${name.own ? "" : nameIt(u.head, u.account)}${held && !hold ? `<span class="lk">${DRAW.lock("")}</span>` : ""}` +
       `${multi ? `<span class="mh">Requests · Tokens</span>` : ""}</div>`;
     return `<div class="pacc${multi ? " multi" : ""}" style="--c:${headColor(u.head)}">${head}` +
       `${Object.keys(PLAN_WINDOWS).map((win) => windowRow(plan, win, `${tm.id}/${slotId}/${u.head}/${u.account}/${win}`, mine(win), win === holder)).join("")}</div>`;
@@ -926,7 +927,7 @@ function changeHtml(ch) {
     `${val ? label : word}${GLYPH.caret}</button>`;
   const head = btn("head", ch.head, `<span class="blot" style="--c:${headColor(ch.head)}"></span>${esc(commandOf(ch.head))}`, "Command");
   const model = btn("model", ch.model, esc(modelLabel(ch.head, ch.model)), "Model");
-  const account = (state.accounts[ch.head] || []).length ? btn("account", ch.account, esc(accountName(ch.head, ch.account || "")), "Account") : "";
+  const account = (state.accounts[ch.head] || []).length ? btn("account", ch.account, accountHtml(ch.head, ch.account || ""), "Account") : "";
   const why = ch.error ? `<span class="refusal" role="status">${esc(ch.error)}</span>` : "";
   const save = ch.saving ? `<button class="act small stopping" disabled>${ICON.wait}Saving</button>`
     : `<button class="act small" data-act="change-save"${ch.head ? "" : " disabled"}>Save</button>`;
@@ -1106,7 +1107,7 @@ function vacantHtml(tm, slot, { key, ro, lead, chip, model, sc, ended = false, h
         `<span class="mmeta">${esc(x.model ? modelLabel(x.head, x.model) : commandOf(x.head))}${turnsOf(x)}</span></button>`).join("")}</div>`;
     }
   }
-  const account = slot.account ? `<span class="acct">${esc(accountName(slot.head, slot.account))}</span>${nameIt(slot.head, slot.account)}` : "";
+  const account = slot.account ? `<span class="acct">${accountHtml(slot.head, slot.account)}</span>${nameIt(slot.head, slot.account)}` : "";
   const edit = editAct(tm, slot, key);
   return `<article class="card m ${asked && !ro && !ui.starting.has(key) ? "needs trust" : `vacant${ended ? " ended" : ""}`}"${DRAW.flip(`card:${key}`)} style="--c:${headColor(slot.head)}" data-key="m:${esc(slot.id)}" aria-label="${esc(nameOf(tm, slot))}">` +
     lamp +
@@ -1204,7 +1205,7 @@ function chatHtml(tm, key) {
   // A message whose text is not in its sender's transcript is drawn as who and when, with no box (marlin, Oct 13).
   // splice keeps no message text of its own: it reads the sender's transcript.
   const open = ui.chatOpen.has(key);
-  const more = `<button class="morepill" type="button" data-act="chat-more" data-k="${esc(key)}"${open ? "" : " hidden"}>${open ? "Fewer" : "<b>0</b> earlier"}</button>`;
+  const more = `<button class="morepill pill worded" type="button" data-act="chat-more" data-k="${esc(key)}"${open ? "" : " hidden"}><span class="mp-lab">${open ? "Fewer" : "<b>0</b> earlier"}</span>${DRAW.mpChev(open)}</button>`;
   // THE KEY LIGHT MARKS ONE MESSAGE: the latest sent by a member who is waiting on him now, and it goes out when the wait ends.
   // Every other message keeps neutral ink with its sender's colour on its edge; the newest of all lifts off the page.
   const waiting = new Set(tm.slots.filter((s) => sessOf(s)?.waiting_for).map((s) => s.id));
@@ -1306,7 +1307,7 @@ function feedHtml(tm, key) {
   // nothing to show keeps the outline of what the panel would hold, a lane and three log rows, its state said once in its head
   if (!rows.length) return `${panel.state === "partially_kept" ? keptHtml(panel) : ""}<div class="tca-hollows" aria-hidden="true"><span class="tca-hollane"></span>${`<span class="tca-hollow row"></span>`.repeat(3)}</div>`;
   const open = ui.feedOpen.has(key), shown = open ? rows : rows.slice(0, FEED_LATEST);
-  const more = rows.length > FEED_LATEST ? DRAW.more(rows.length - FEED_LATEST, { word: "earlier", act: "feed-more", data: ` data-k="${esc(key)}"`, open, less: "Fewer" }) : "";
+  const more = rows.length > FEED_LATEST ? DRAW.more(rows.length - FEED_LATEST, { word: "earlier", act: "feed-more", data: ` data-k="${esc(key)}"`, open, less: "Fewer", pill: true, keepWord: true }) : "";
   // A MEMBER IS NAMED ONCE ON ITS LANE ABOVE and again at the end of its row, as its colour's dot and its name, so a row of
   // the log is told by whose it is
   return `${lanesHtml(tm, rows)}<ol>${shown.map((a) => {
@@ -1790,8 +1791,14 @@ function gatherScale(max, top) {
   if (!(top > 0)) return "";
   const decades = Array.from({ length: Math.floor(Math.log10(Math.max(1, max))) + 1 }, (_, i) => 10 ** i);
   const ticks = decades.filter((_, i) => i % (decades.length > 3 ? 2 : 1) === 0);
-  const at = (v) => gatherP(v, top).toFixed(2);
-  return `<span class="tgb-scale"><span>Requests, log scale</span><span class="tgb-axis" aria-hidden="true">${ticks.map((v) => `<i style="right:${at(v)}%"></i><span style="right:${at(v)}%">${DRAW.n(v)}</span>`).join("")}</span></span>`;
+  return `<span class="tgb-scale"><span>Requests, log scale</span>${gatherAxis(ticks, top)}</span>`;
+}
+const gatherAxis = (ticks, top) => `<span class="tgb-axis" aria-hidden="true">${ticks.map((v) => `<i style="right:${gatherP(v, top).toFixed(2)}%"></i><span style="right:${gatherP(v, top).toFixed(2)}%">${DRAW.n(v)}</span>`).join("")}</span>`;
+/** the same axis once over each group's rows, ending where the bars end, so a bar is read against it where it stands */
+function gatherGroupAxis(max, top) {
+  if (!(top > 0)) return "";
+  const decades = Array.from({ length: Math.floor(Math.log10(Math.max(1, max))) + 1 }, (_, i) => 10 ** i);
+  return `<div class="tgb-gaxis" aria-hidden="true">${gatherAxis(decades.filter((_, i) => i % (decades.length > 3 ? 2 : 1) === 0), top)}</div>`;
 }
 const GATHER_STATES = { working: "Working", needs: "Needs you", idle: "Idle", stopped: "Stopped" };
 function gatherHtml() {
@@ -1818,9 +1825,9 @@ function gatherHtml() {
     const open = ui.gatherOpen.has(g.key), shown = open ? rows : rows.slice(0, GATHER_SHOWN);
     const ids = rows.filter(pickable).map((x) => x.session_id), all = ids.every((id) => ui.gather.has(id));
     const end = ids.length ? `<button type="button" class="act quiet small" data-act="gather-all" data-sids="${esc(ids.join(" "))}">${all ? "Clear" : "Pick all"}</button>` : "";
-    const more = rows.length > GATHER_SHOWN ? DRAW.more(rows.length - GATHER_SHOWN, { word: "more", act: "gather-more", data: ` data-k="${esc(g.key)}"`, open, host: `gather:${g.key}` }) : "";
+    const more = rows.length > GATHER_SHOWN ? DRAW.more(rows.length - GATHER_SHOWN, { word: "more", act: "gather-more", data: ` data-k="${esc(g.key)}"`, open, host: `gather:${g.key}`, tile: true, peek: rows.slice(GATHER_SHOWN, GATHER_SHOWN + 3).map((x) => named.get(x) ?? sessWord(x)) }) : "";
     // the rows past the folded few exist only while the group is open, and fold away in motion
-    return DRAW.group({ name: g.name, end, key: `gather:${g.key}`, body: `<div class="gsessions" data-mp-host="${esc(`gather:${g.key}`)}">${shown.map((x, i) => (i >= GATHER_SHOWN ? DRAW.tail(row(x)) : row(x))).join("")}${more}</div>` });
+    return DRAW.group({ name: g.name, end, key: `gather:${g.key}`, body: `<div class="gsessions" data-mp-host="${esc(`gather:${g.key}`)}">${rows.some((x) => Number.isInteger(x.turns)) ? gatherGroupAxis(busiest, top) : ""}${shown.map((x, i) => (i >= GATHER_SHOWN ? DRAW.tail(row(x)) : row(x))).join("")}${more}</div>` });
   });
   const head = state.teams.length ? "No team in this project" : "No teams yet";
   // the plate's one legend: the lamps the rows below carry, the dashed chip, and the scale the bars are drawn on
@@ -1838,6 +1845,7 @@ function gatherHtml() {
   const ring = `<svg class="tgb-ring" viewBox="0 0 40 40" aria-hidden="true"><circle class="tgb-rtrk" cx="20" cy="20" r="15"/><circle class="tgb-rarc" cx="20" cy="20" r="15" transform="rotate(-90 20 20)" stroke-dasharray="${(circ * frac).toFixed(2)} ${circ.toFixed(2)}"/></svg>`;
   const foot = `<div class="gfoot"><button type="button" class="act${picks.length ? " primary" : ""}" data-act="gather-team"${picks.length ? "" : " disabled"}>New team from them</button>` +
     `<span class="gpicked">${ring}<span><b data-tn="gather-picked">${DRAW.n(picks.length)}</b> picked</span></span></div>`;
+  rememberGatherShape(Array.from(byKey.values(), (g) => Math.min(g.rows.length, GATHER_SHOWN + (g.rows.length > GATHER_SHOWN ? 1 : 0))));
   return `<div class="plate gather" data-held="gather">${DRAW.section(head, "", { aside, head: "tgb-sechead" })}${DRAW.section("", hero)}${DRAW.section("", DRAW.masonry(groups, 34, { cls: "gboard" }) + foot)}</div>`;
 }
 /** what stands under the toolbar where the picked project has no active team: the offer, then any archived team he opened;
@@ -1937,7 +1945,7 @@ function slotRowHtml(c, s, i) {
   const waiting = (what, word) => `<button class="pickbtn unset" data-what="${what}" disabled>${word}${GLYPH.caret}</button>`;
   const head = btn("head", s.head, `<span class="blot" style="--c:${headColor(s.head)}"></span>${esc(commandOf(s.head) || "")}`);
   const model = s.head ? btn("model", s.model, esc(modelLabel(s.head, s.model))) : waiting("model", "Model");
-  const account = s.head ? ((state.accounts[s.head] || []).length ? btn("account", s.account, esc(s.account ? accountName(s.head, s.account) : "")) : "")
+  const account = s.head ? ((state.accounts[s.head] || []).length ? btn("account", s.account, s.account ? accountHtml(s.head, s.account) : "") : "")
     : waiting("account", "Account");
   // a member Start team would start is one with no session running now, which is what the start route itself decides:
   // its lamp is the session's own where one runs, and hollow where Start team will open one
@@ -1980,12 +1988,12 @@ function composerHtml() {
   return `<section class="plate compose" data-key="compose" aria-labelledby="t-title">` +
     `<h2 id="t-title">${c.id ? esc(state.teams.find((t) => t.id === c.id)?.name) : "New team"}</h2>` +
     `<section class="psec"><div class="sechead"><h3 class="kicker">The team</h3></div>` +
-    `<div class="frow"><label for="t-name">Name</label><input class="field${needs.includes("name") ? " need" : ""}" id="t-name" value="${esc(c.name)}" autocomplete="off" spellcheck="false"></div>` +
-    `<div class="frow"><label for="t-goal">Goal</label><textarea class="field" id="t-goal" rows="3">${esc(c.goal)}</textarea></div>` +
-    `<div class="frow"><label for="t-repo">Repo</label><div class="withword"><span class="ntf-repo">${GLYPH.folder}<input class="field${needs.includes("repo") ? " need" : ""}" id="t-repo" value="${esc(c.repo)}" list="repos" autocomplete="off" spellcheck="false"${repoRefused ? ' aria-invalid="true"' : ""}></span>${word}</div></div></section>` +
+    `<div class="frow"><label for="t-name">Name</label><input class="field${needs.includes("name") ? " need" : ""}" id="t-name" value="${esc(c.name)}" placeholder="Name" autocomplete="off" spellcheck="false"></div>` +
+    `<div class="frow"><label for="t-goal">Goal</label><textarea class="field" id="t-goal" rows="3" placeholder="Goal">${esc(c.goal)}</textarea></div>` +
+    `<div class="frow"><label for="t-repo">Repo</label><div class="withword"><span class="ntf-repo">${GLYPH.folder}<input class="field${needs.includes("repo") ? " need" : ""}" id="t-repo" value="${esc(c.repo)}" placeholder="Pick a folder" list="repos" autocomplete="off" spellcheck="false"${repoRefused ? ' aria-invalid="true"' : ""}></span>${word}</div></div></section>` +
     `<section class="psec"><div class="sechead"><h3 class="kicker">Members</h3>${legend}` +
     `<span class="ntf-count" title="${esc(plural(c.slots.length, "member"))}">${DRAW.n(c.slots.length)}</span></div>` +
-    `<div class="rows">${c.slots.map((s, i) => slotRowHtml(c, s, i)).join("")}` +
+    `<div class="rows" style="--n:${c.slots.length}">${c.slots.map((s, i) => slotRowHtml(c, s, i)).join("")}` +
     `${DRAW.addTile({ word: "Add member", act: "add-slot" })}</div></section>` +
     `<datalist id="roles"><option value="builder"><option value="reviewer"><option value="researcher"></datalist>` +
     `<datalist id="repos">${folders.map((f) => `<option value="${esc(f)}">`).join("")}</datalist>` +
@@ -2005,6 +2013,19 @@ function composerHtml() {
  *  tiles as the last page drew (none on a first visit), or the empty page's own shape where the last read found no team;
  *  the moment the team list answers, the frame follows it. So the page under it stays where it is when the data lands. */
 const SHAPE_STORE = "splice-teams-shape";
+/** the gather board's own shape, the rows each project group drew folded, so the frame's groups come as many and as tall as
+ *  the last board was (a first visit has none: a few groups of a few rows) */
+const GATHER_SHAPE_STORE = "splice-teams-gather-shape";
+function gatherShapeGuess() {
+  try {
+    const v = JSON.parse(localStorage.getItem(GATHER_SHAPE_STORE) || "null");
+    if (Array.isArray(v) && v.length && v.every((n) => Number.isInteger(n) && n > 0)) return v.slice(0, 12);
+  } catch { /* storage off or unreadable: nothing remembered */ }
+  return [4, 3, 3, 2, 2, 1];
+}
+function rememberGatherShape(sizes) {
+  try { const v = JSON.stringify(sizes.slice(0, 12)); if (localStorage.getItem(GATHER_SHAPE_STORE) !== v) localStorage.setItem(GATHER_SHAPE_STORE, v); } catch { /* storage off */ }
+}
 function shapeGuess() {
   try {
     const v = localStorage.getItem(SHAPE_STORE);
@@ -2021,12 +2042,12 @@ function loadingHtml() {
   const guess = shapeGuess();
   if (state.known === 0 || (state.known == null && guess.none)) {
     // no team yet lands as the sessions that run, so the frame holds their place: a toolbar with the one tile, then a plate of
-    // two project groups each with its session rows
+    // the project groups the last board drew, each with its session rows
     const sess = () => `<div class="gsess ghosted" aria-hidden="true"><i class="ghost gtick"></i>${GHOST.bar(1.1, "chip")}<span class="tgb-txt">${GHOST.bar(9)}${GHOST.chip(6)}${GHOST.bar(7)}${GHOST.bar(8)}</span></div>`;
     const grp = (n) => `<section class="titled"><header>${GHOST.bar(9, "big")}</header><div class="gsessions">${Array.from({ length: n }, sess).join("")}</div></section>`;
     return `<div class="loading" role="status" aria-busy="true" aria-label="Reading teams">${GHOST.tiles()}<div class="tbar" aria-hidden="true"><nav class="tabs">${GHOST.bar(9, "tabg")}</nav></div>` +
       `<div class="plate gather" aria-hidden="true" style="${GHOST.held("gather")}"><section class="psec"><div class="sechead tgb-sechead">${GHOST.bar(8)}${GHOST.bar(30)}</div></section><section class="psec">${GHOST.hero()}${GHOST.stack()}</section>` +
-      `<section class="psec"><div class="mason gboard" style="--col-min:34rem">${grp(4)}${grp(3)}</div></section></div></div>`;
+      `<section class="psec"><div class="mason gboard" style="--col-min:34rem">${gatherShapeGuess().map(grp).join("")}</div></section></div></div>`;
   }
   const tiles = guess.none ? 0 : guess.tiles;
   // a card's figures as they will land: the column heads, the total row and the two span rows, then an account's name

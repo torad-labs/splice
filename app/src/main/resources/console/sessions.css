@@ -567,7 +567,7 @@
 .sessions .foothead .note { margin: 0; padding-left: 1.45rem; font: 400 .88rem/1.4 var(--font-name); color: var(--text-mute); }
 .sessions .nomatch .why { font: 500 .92rem/1 var(--font-data); color: var(--text-mute); }
 /* an empty list is the row that would stand in it, drawn dashed: the lamp's socket and the bar's track, with the one fact beside them */
-.sessions .nomatch { display: flex; width: 100%; max-width: 72rem; box-sizing: border-box; min-height: var(--row-h, 3.7rem); gap: calc(2 * var(--u)); padding: var(--u) calc(1.5 * var(--u)); }
+.sessions .nomatch { display: flex; width: 100%; box-sizing: border-box; min-height: var(--row-h, 3.7rem); gap: calc(2 * var(--u)); padding: var(--u) calc(1.5 * var(--u)); }
 .sessions .nrow { display: inline-flex; flex: none; align-items: center; gap: calc(1.5 * var(--u)); }
 .sessions .nrow .nl { width: 2rem; height: 2rem; border-radius: 50%; border: .12rem dashed var(--track-line); }
 .sessions .nrow .nb { width: 9rem; height: var(--meter-h-sub, .62rem); border-radius: .31rem; border: .1rem dashed var(--track-line); }
@@ -603,10 +603,10 @@
   padding: var(--u) calc(1.5 * var(--u)) 0 calc(1.5 * var(--u) + 2rem + .667rem);
 }
 .sessions .sx-axis { container: sxax / inline-size; grid-column: 3; position: relative; height: 1rem; margin-right: calc(3.4rem + .667rem); }
-.sessions .sx-axis > small { position: absolute; top: 0; transform: translateX(-50%); font: 500 var(--kicker)/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
+.sessions .sx-axis > small { position: absolute; top: 0; transform: translateX(-50%); letter-spacing: -.03em; font: 500 .8rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
 .sessions .sx-axis > small:first-child { transform: none; }
 .sessions .sx-axis > small > b { font-weight: inherit; }
-@container sxax (max-width: 20rem) { .sessions .sx-axis > small > b { display: none; } }
+@container sxax (max-width: 11rem) { .sessions .sx-axis > small > b { display: none; } }
 .sessions .sx-axisrow > .ghost { grid-column: 3; height: .8rem; width: 100%; }
 /* a fold's count is drawn on the block's own scale */
 .sessions .sx-fb { flex: none; display: block; width: 6.5rem; height: var(--meter-h-sub); border-radius: .31rem; background: var(--track); overflow: hidden; }
@@ -975,3 +975,13 @@
 .sessions .pane.missing .acts { margin-left: auto; display: flex; align-items: center; gap: var(--u); }
 .sessions .pane.missing .log { flex: none; height: auto; overflow: visible; padding: 0; }
 .sessions .pane.missing .log .empty { margin: 0; font: 500 .95rem/1.4 var(--font-name); }
+
+/* a search that matches nothing is the row that would stand there, across the board, with Clear at its end */
+.sessions .nomatch > .act { margin-left: auto; }
+/* the ended strip's tiles read name at the left, count at the right */
+.sessions .ltile .ptop { justify-content: space-between; }
+/* a question's or permission's card holds the note field under what it waits on */
+.sessions .s > .ask .composer.note { margin-top: var(--u); }
+.sessions .nomatch { max-width: none; }
+.sessions .s > .ask .composer.note { display: flex; align-items: center; gap: var(--u); width: 100%; max-width: none; }
+.sessions .s > .ask .composer.note .field { flex: 1 1 auto; min-width: 0; }

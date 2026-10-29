@@ -181,6 +181,16 @@
    the behaviours in groups, each tile shaped by what it holds. */
 .qplate > .pd-sub { margin-bottom: calc(1.5 * var(--u)); }
 .qplate .rt-segs { margin-bottom: calc(2.5 * var(--u)); }
+/* the lead: how many it sets beside the strip of every one it could, a pip each, in the command's colour */
+.bh-lead { display: flex; align-items: center; gap: calc(2 * var(--u)); margin-bottom: calc(2.5 * var(--u)); }
+.bh-lead > .pd-sub { flex: none; margin: 0; }
+.bh-lead > .pd-sub b { color: var(--c); }
+.bh-lead.over > .pd-sub b { color: var(--limit); }
+.qplate .bh-lead .rt-segs.bh-pips { display: flex; flex-wrap: wrap; gap: .2rem; margin: 0 0 0 auto; justify-content: flex-end; }
+.bh-pips > i { width: .5rem; height: 1.05rem; border-radius: .1rem; background: transparent; box-shadow: inset 0 0 0 .08rem var(--track-line); }
+.bh-pips > i.on { background: var(--c); box-shadow: none; }
+.bh-group > .kicker { display: flex; align-items: center; gap: calc(1.2 * var(--u)); }
+.bh-group > .kicker::after { content: ""; flex: 1; height: .08rem; background: var(--hair); }
 .bh-groups { display: flex; flex-direction: column; gap: calc(3 * var(--u)); }
 .bh-group { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); min-width: 0; }
 .bh-group > .kicker { margin: 0; }

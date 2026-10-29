@@ -337,7 +337,7 @@ function whereHtml(s, inPlate) {
 // and the mark's own name for a screen reader, keep the words.
 const QUIET_MARK = {
   [DIRECT]: `<svg viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><path d="M2 12C3.5 5 12.5 5 14 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="2.2 2.4"/><circle cx="8" cy="12" r="1.6" fill="currentColor"/></svg>`,
-  [UNPLACED]: `<svg viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><path d="M5.6 6a2.5 2.5 0 1 1 3.4 2.3c-.7.3-1 .8-1 1.5v.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="12.6" r="1" fill="currentColor"/></svg>`,
+  [UNPLACED]: `<svg viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><path d="M3.5 8h9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`,
 };
 const quietMark = (cmd) => `<span class="nocmd mark" data-q="${cmd === DIRECT ? "d" : "u"}" role="img" aria-label="${esc(QUIET_WORD[cmd])}" title="${esc(QUIET_WORD[cmd])}">${QUIET_MARK[cmd]}</span>`;
 /** The head line's legend for the empty command's marks the list draws now, each said once for the page: render reads
@@ -435,6 +435,8 @@ function runHtml(s, call, offer) {
     + `<p class="cmd head"><span class="tname">${esc(call?.tool ? DRAW.toolWord(call.tool) : unframe(panel[0].text))}</span></p>${cmdBox(`c:${s.id}`, run)}`;
 }
 const READING_OFF_ASK = "Answer it in the terminal it runs in";
+/** a waiting session splice cannot press an answer for takes his words on its own card: the note field, and where it is answered */
+const askNote = (s) => (notable(s) && !drivable(s) ? noteHtml(s) : "");
 function askHtml(s, where = "card") {
   // from his press until the session moves on, the answer he pressed keeps its words with the wait ring and the rest
   // wait disabled, drawn from the choices he saw: never "answer it in the terminal" meanwhile (Marlin p165, hitstop 8a04273)
@@ -458,12 +460,12 @@ function askHtml(s, where = "card") {
     const answers = !opts.length ? "" : can && !a.asked.multi ? `<div class="answers">${opts.map((o, i) => pick(i + 1, o, i)).join("")}</div>`
       // where splice cannot press them, the options keep their shape as numbered answers with no press in them, and the line under says where they are answered
       : `<div class="answers sx-said">${opts.map((o, i) => `<span class="sx-ao">${num(i + 1)}${esc(o)}</span>`).join("")}${reach}</div>`;
-    return `<div class="ask"><p class="q">${esc(a.asked.question)}</p>${answers}${term}</div>`;
+    return `<div class="ask"><p class="q">${esc(a.asked.question)}</p>${answers}${term}${where === "card" ? askNote(s) : ""}</div>`;
   }
   // what it wants to do, off its transcript, then the question its screen puts
   const call = a.call?.tool ? `<p class="cmd head"><span class="tname">${esc(DRAW.toolWord(a.call.tool))}</span></p>${cmdBox(`c:${s.id}`, unframe(a.call.text || ""))}` : "";
   const q = offer?.asked ? `<p class="q">${esc(unframe(offer.asked))}</p>` : "";
-  if (!offer?.choices?.length) return call ? `<div class="ask">${call}${term}</div>` : "";
+  if (!offer?.choices?.length) return call ? `<div class="ask">${call}${term}${where === "card" ? askNote(s) : ""}</div>` : "";
   // in the open session the refusal is the Message field's Deny, which also carries what to do instead
   const deny = where === "pane" && composerHtml(s) ? denyOf(s) : null;
   const choices = offer.choices.filter((c) => c !== deny);
@@ -696,10 +698,13 @@ const liveOf = (g) => g.filter((s) => s.state !== "ended" || stranded(s)).length
 // A FOLD NEVER OPENS MORE THAN A PAGE OF ROWS (gap: one click grew the page from 1,974 to 28,458 px with 608 rows in one
 // column). An open fold shows its newest page, newest first, and the rest stand behind one pill that pages on.
 const PAGE_ROWS = 24;
-const shownOf = (key, first = PAGE_ROWS) => ui.shown.get(key) ?? first;
+/** an opened fold of ended or idle rows shows a handful at full size, then the exact rest behind one count, so opening one never stretches the board */
+const FOLD_ROWS = 4;
+const firstRows = (key) => (/^[ri]:/.test(key) ? FOLD_ROWS : key.startsWith("l:") ? HANDFUL : PAGE_ROWS);
+const shownOf = (key, first = firstRows(key)) => ui.shown.get(key) ?? first;
 /** The page of [rows] a fold shows, as pieces, with the pill for what is left under it. The open session is drawn
  *  wherever it stands in the fold, so a door to it never lands behind a pill. */
-function pagePieces(key, rows, first = PAGE_ROWS) {
+function pagePieces(key, rows, first = firstRows(key)) {
   const n = shownOf(key, first), shown = rows.slice(0, n);
   const open = rows.slice(n).find(holdsOpen);
   if (open) shown.push(open);
@@ -753,12 +758,17 @@ function groupBlock([key, g], ended, { loose = false } = {}) {
   const pieces = shut ? g.filter((s) => RANK(s) === 0 || holdsOpen(s)).map(rowPiece) : loose ? pagePieces(`l:${key}`, ended, HANDFUL) : rowPieces(key, g, ended);
   const why = key === NO_PROJECT && ui.by === "project" ? noProjectWhy([...g, ...ended]) : "";
   const open = pieces.some((p) => p.plate);
+  // one axis names the ticks the block's row bars wear, so it stands directly over the first of them: under the open session's plate when that leads the block, never alone above a plate with no bars
+  const piecesHtml = (ps) => {
+    const at = ps.findIndex((p) => p.html && !p.wrap && !p.foot), first = at >= 0 ? at : ps.findIndex((p) => p.html);
+    return ps.map((p, i) => (i === first ? axisRowHtml() : "") + pieceHtml(p)).join("");
+  };
   const section = (body, wide = 0) => `<section class="pgroup${shut ? " shut" : ""}${loose ? " loose" : ""}${wide ? " opened" : ""}"${wide ? ` data-cols="${wide}"` : ""} data-key="g:${esc(key)}${loose ? ":l" : ""}" aria-label="${esc(`${name}, ${countWords(counts, total, "session")}`)}">`
     + `<header class="phead"><button class="pfold" data-act="${loose ? "loose" : "fold"}" data-p="${esc(key)}" aria-expanded="${!shut}">${ICON.caret}<span class="sx-dot" aria-hidden="true"></span><span class="pname">${esc(name)}</span></button>`
     // the head says its lamps, its live sessions on the board's one scale, and live out of all, whether or not tiles stand above
-    + `${loose ? "" : `<span class="pcounts">${counts.map((c) => bigCount(c, key)).join("")}</span>${mixHtml(g, ui.maxLive)}`}${tot}${go}</header>${why}${wide || !pieces.some((p) => p.html) ? "" : axisRowHtml()}${body}</section>`;
+    + `${loose ? "" : `<span class="pcounts">${counts.map((c) => bigCount(c, key)).join("")}</span>${mixHtml(g, ui.maxLive)}`}${tot}${go}</header>${why}${body}</section>`;
   return {
-    key: `${key}${loose ? ":l" : ""}`, open, html: section(pieces.map(pieceHtml).join("")),
+    key: `${key}${loose ? ":l" : ""}`, open, html: section(piecesHtml(pieces)),
     w: 1.6 + (why ? 0.8 : 0) + pieces.reduce((a, p) => a + p.w, 0),
     // the block that holds the open session, drawn across [n] of the board's columns (boardHtml)
     wide: (n) => section(spreadHtml(pieces, n), n),
@@ -849,6 +859,8 @@ const axisRowHtml = () => `<div class="sx-axisrow" aria-hidden="true"><span clas
 function heroHtml() {
   const live = state.rows.filter((s) => s.state !== "ended" || stranded(s));
   if (!live.length) return "";
+  // a search's figure takes the live figure's place: how many it found, and for what
+  if (ui.q) return `<div class="sx-hero"><b class="sx-hfig" data-f="hero">${DRAW.n(ui.shownCount ?? 0)}</b><span class="sx-hword">${ui.shownCount === 1 ? "match" : "matches"} for <b>${esc(ui.q)}</b></span></div>`;
   const parts = MIX.map(([k, word], i) => [k, word, live.filter((s) => Math.min(3, RANK(s)) === i).length]).filter(([, , x]) => x);
   const level = parts.some(([k]) => k === "stalled") ? "bad" : parts.some(([k]) => k === "needs") ? "watch" : "ok";
   const seg = ([k, word, x]) => `<i class="${k}" style="flex:${x} 1 0" title="${esc(`${x} ${word}`)}"><em>${k === "idle" ? `${DRAW.n(x)} idle` : DRAW.n(x)}</em></i>`;
@@ -868,7 +880,7 @@ function listHead() {
   if (!live.length) return "";
   // one project and nothing outside it: no picker and no headers, its name where the picker would be (Marlin)
   const by = live.length >= 2 ? byHtml() : ""; // the grouping switch, once there are two sessions to group
-  const found = ui.q ? `<span class="found"><b>${DRAW.n(ui.shownCount ?? 0)}</b> ${ui.shownCount === 1 ? "match" : "matches"}</span>` : "";
+  const found = "";
   // grouped by something nothing has (no team in any session), the list stays one block: the switch says so beside itself
   const empty = !grouped() && ui.by !== "project" ? DRAW.nothing(ui.by === "team" ? "No teams" : "One command", { slot: true }) : "";
   // ONE CARD for what the page's marks mean and how it is grouped: the switch first, then each legend; what a query found stands beside it
@@ -930,11 +942,16 @@ const ghostRow = ([name, chip, last], i) => `<article class="card s ghosted" sty
   + `<span class="lamp"></span><div class="top"><span class="who">${GHOST.bar(name, "nm")}</span>`
   + `<span class="last">${GHOST.bar(last)}</span>${GHOST.cell().replace("barcell", "barcell age")}`
   + `<span class="cmd">${GHOST.bar(chip, "chip")}</span><span class="doing"></span></div></article>`;
-const GHOST_BLOCKS = 6, GHOST_ROWS = 4, GHOST_TILES = 7, GHOST_ENDED = 6;
+const GHOST_BLOCKS = 8, GHOST_ROWS = 4, GHOST_TILES = 10, GHOST_ENDED = 16;
+// a block's rows come in as many as it holds, so the blocks stand at their own heights; a first draw uses a typical run of them
+const GHOST_TYPICAL = [3, 1, 2, 4, 1, 6, 1, 2];
+const packRows = (counts) => counts.reduce((a, n, i) => a + Math.min(6, n) * 7 ** i, 0);
+const unpackRows = (code, n) => Array.from({ length: n }, (_, i) => Math.max(1, Math.floor(code / 7 ** i) % 7));
 function ghostListHtml() {
-  const blocks = Math.max(1, GHOST.count("blocks", GHOST_BLOCKS)), rows = Math.max(1, GHOST.count("rows", GHOST_ROWS));
+  const blocks = Math.max(1, GHOST.count("blocks", GHOST_BLOCKS)), code = GHOST.count("rowcode", 0);
+  const counts = code && blocks <= 15 ? unpackRows(code, blocks) : Array.from({ length: blocks }, (_, i) => GHOST_TYPICAL[i % GHOST_TYPICAL.length]);
   const block = (j) => ({ key: `g${j}`, html: `<section class="pgroup ghosted" aria-hidden="true"><header class="phead">${GHOST.bar(9 + (j % 3) * 2, "nm")}${GHOST.bar(6)}</header><div class="sx-axisrow"><i class="ghost sx-gax"></i></div>`
-    + Array.from({ length: rows }, (_, i) => GHOST_CARDS[(i + j) % GHOST_CARDS.length]).map(ghostRow).join("") + `<div class="pfoot">${GHOST.bar(9, "chip")}${GHOST.bar(9, "chip")}</div></section>` });
+    + Array.from({ length: counts[j] }, (_, i) => GHOST_CARDS[(i + j) % GHOST_CARDS.length]).map(ghostRow).join("") + `<div class="pfoot">${GHOST.bar(9, "chip")}${GHOST.bar(9, "chip")}</div></section>` });
   const tiles = GHOST.tiles(GHOST.count("tiles", GHOST_TILES));
   const legend = `<div class="lctl" aria-hidden="true"><div class="sx-legend">${GHOST.bar(12, "chip")}${GHOST.bar(9)}${GHOST.bar(12)}${GHOST.bar(7)}</div><div class="lact"></div></div>`;
   // the figure line, the card of legends, the ended strip and the Not listed line each stand where they will land, so nothing below them moves
@@ -1016,6 +1033,7 @@ function listHtml() {
     board = boardHtml(groups.map(([k, g]) => groupBlock([k, g], ended.filter((s) => groupKey(s) === k))));
     GHOST.remember("blocks", groups.length);
     GHOST.remember("rows", Math.max(1, Math.round(groups.reduce((a, [, g]) => a + Math.min(g.length, HANDFUL), 0) / groups.length)));
+    GHOST.remember("rowcode", groups.length <= 15 ? packRows(groups.map(([, g]) => g.length)) : 0);
     loose = ended.filter((s) => !keys.has(groupKey(s))); // a project with nothing open today keeps its ended at the foot
   }
   return `<div class="list${dim}" data-held="list">${fail}${missing}${head}${board}${looseHtml(loose)}${headlessHtml()}</div>`;
@@ -1750,6 +1768,19 @@ function fitTracks() {
   name = Math.max(name, bareName - (doing ? doing + 2 * .667 * rem : 0));
   // a whole pixel over, since a width is read rounded and a name one pixel short would end in an ellipsis
   const w = (px, lo, hi) => `${Math.min(hi, Math.max(lo, Math.ceil(((px + 1) / rem) * 10) / 10))}rem`;
+  // the bar keeps at least BAR_MIN of the row: what the name and the words ask for beyond what is left gives way, the words first
+  const BAR_MIN = 16;
+  const widths = [...rows].filter((t) => !t.parentElement.classList.contains("pane")).map((t) => t.getBoundingClientRect().width / rem).filter(Boolean);
+  if (widths.length) {
+    const gap = 4 * 1.333, fixed = (cmd ? Math.min(11, cmd / rem + 0.1) : 0) + (act ? Math.min(10, act / rem + 0.1) : 0);
+    const room = Math.min(...widths) - gap - fixed - BAR_MIN;
+    let nm = Math.min(30, name / rem + 0.1), dg = doing ? Math.min(24, Math.ceil((doing + 1) / rem / 3) * 3) : 0;
+    if (nm + dg > room && room > 0) {
+      dg = Math.min(dg, Math.max(0, Math.floor((room * 0.4) / 3) * 3));
+      nm = Math.max(8, room - dg);
+      name = nm * rem; doing = dg ? dg * rem : 0;
+    }
+  }
   for (const [prop, value] of [["--name-w", w(name, 4, 30)], ["--doing-w", doing ? `${Math.min(24, Math.max(4, Math.ceil((doing + 1) / rem / 3) * 3))}rem` : "0rem"], ["--cmd-w", w(cmd, cmd ? 3 : 0, 11)], ["--act-w", act ? w(act, 2, 10) : "0rem"]]) {
     if (root.style.getPropertyValue(prop) !== value) root.style.setProperty(prop, value);
   }
@@ -1846,7 +1877,7 @@ async function readLogins(head) {
   // EVERY LOGIN'S ROOM COMES WITH IT (gap: six Use buttons that switched logins blind). Its nearest-full window, as
   // Accounts draws one: what is used of it, and how soon it refills. A command with one login draws it just the same:
   // the room it sends on is the fact, and only the act to switch needs a pool.
-  const names = DRAW.names("login", rows.map((r) => ({ name: r.display_name || r.label, provider: state.providerOf[head], plan: r.plan })));
+  const names = DRAW.names("login", rows.map((r) => ({ name: r.display_name || r.label, provider: state.providerOf[head], plan: r.plan, ids: DRAW.loginIds(r) })));
   ui.logins[head] = rows.map((r, i) => ({
     label: r.account_labels?.[head] || r.label, name: names[i].text, plan: r.plan ? r.plan.charAt(0).toUpperCase() + r.plan.slice(1) : null,
     ready: !!r.credential_present && !r.refusal, windows: windowsOf(r),
@@ -2312,7 +2343,7 @@ document.addEventListener("click", (e) => {
     case "rest": { const p = el.dataset.p; ui.rest.has(p) ? ui.rest.delete(p) : ui.rest.add(p); remember("splice.rest", ui.rest); opening(p); render(); break; }
     case "idle": { const p = el.dataset.p; ui.idle.has(p) ? ui.idle.delete(p) : ui.idle.add(p); remember("splice.idle", ui.idle); opening(p); render(); break; }
     // one more page of what a fold holds, so a fold never opens 608 rows in one click
-    case "more": { const p = el.dataset.p; ui.shown.set(p, shownOf(p, p.startsWith("l:") ? HANDFUL : PAGE_ROWS) + PAGE_ROWS); opening(p.replace(/^[ril]:/, "")); render(); break; }
+    case "more": { const p = el.dataset.p; ui.shown.set(p, shownOf(p) + PAGE_ROWS); opening(p.replace(/^[ril]:/, "")); render(); break; }
     case "full": { const k = el.dataset.k; ui.full.has(k) ? ui.full.delete(k) : ui.full.add(k); render(); break; }
     case "logins": if (s) { ui.lopen.has(s.id) ? ui.lopen.delete(s.id) : ui.lopen.add(s.id); for (const l of ui.logins[s.head] || []) ui.grow.add(`l:${s.id}:${l.label}`); render(); } break;
     case "headless": ui.headless = !ui.headless; render(); break;

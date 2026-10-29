@@ -402,3 +402,21 @@ test("a failed upgrade marks the step it stopped on, and its full log is a door"
     await page.close();
   }
 }, 30_000);
+
+// A restart nothing is set to start again from offers its fix beside the words (Settings' version finish pass, Oct 29): the
+// service that runs splice, opened in place in Advanced, where the unit is set. The other failures stay words.
+test("a restart nothing will start again offers the service that runs splice, open in place", async () => {
+  answers["/api/config"] = { layers: {}, knobs: { supervisorUnit: { value: "splice.service", scope: "default" } } };
+  const page = await version(NEVER_CHECKED);
+  try {
+    const pane = page.locator(".pane");
+    restartReply = { status: 503, body: { error: "nothing will restart this daemon" } };
+    await pane.getByRole("button", { name: "Restart splice" }).click();
+    await expect(pane.locator(".vcard .said")).toHaveText("Nothing is set to start it again", { timeout: 10_000 });
+    await pane.getByRole("button", { name: "Service that runs splice" }).click();
+    await expect(pane.locator('.krow[data-key="supervisorUnit"] .custom .field')).toBeVisible({ timeout: 10_000 });
+  } finally {
+    answers["/api/config"] = { layers: {} };
+    await page.close();
+  }
+}, 30_000);

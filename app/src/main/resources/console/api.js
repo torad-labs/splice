@@ -34,12 +34,13 @@ const API = (() => {
   // pressable after a failure. The moment this browser's key is kept (the tab the command opens trades its code and stores
   // the key, which every other tab of this browser hears as a storage event) the lock lifts and the page reads again where it
   // stood, with no reload.
-  const GLYPH = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
-  const LOCK_STEPS = [
-    [GLYPH('<rect x="3.5" y="5" width="17" height="14" rx="2.4"/><path d="m7.5 10 3 2.4-3 2.4M13 15h4"/>'), "Run in a terminal", "splice console"],
-    [GLYPH('<rect x="3.5" y="5" width="17" height="14" rx="2.4"/><path d="M3.5 9.5h17"/>'), "A tab opens", "Signs this browser in"],
-    [GLYPH('<rect x="5" y="10.8" width="14" height="9.7" rx="2.2"/><path d="M8.2 10.8V8a3.8 3.8 0 0 1 6.9-2.3"/>'), "The lock lifts", "Page reads again"],
-  ];
+  const GLYPH = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+  const LOCK_PATH = '<rect x="5" y="10.8" width="14" height="9.7" rx="2.2"/><path d="M8.2 10.8V8a3.8 3.8 0 0 1 7.6 0v2.8"/>';
+  const STEP_ICON = {
+    run: GLYPH('<rect x="3" y="4.5" width="18" height="15" rx="2.2"/><path d="M7.5 9.5l3 2.5-3 2.5M12.8 14.8h4"/>'),
+    tab: GLYPH('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9.5h18M7 5v4.5"/>'),
+    lift: GLYPH('<rect x="5" y="10.8" width="14" height="9.7" rx="2.2"/><path d="M8.2 10.8V7.6a3.8 3.8 0 0 1 7.6 0"/>'),
+  };
   function unlock(box) {
     box.remove();
     document.body.classList.remove("locked");
@@ -52,13 +53,15 @@ const API = (() => {
     const box = document.createElement("section");
     box.className = "lockedby";
     box.setAttribute("role", "alert");
-    box.innerHTML = `<div class="shl-state">${DRAW.lock("Locked", { pop: true })}`
-      + `<p class="shl-wait"><span class="shl-ring" aria-hidden="true"></span>Waiting for sign-in</p></div>`
-      + `<div class="shl-run"><p class="kicker">Run in a terminal</p>`
+    // one row across the plate: the lock with its word and what it waits on, then the three steps joined by dashed arrows
+    box.innerHTML = `<div class="shl-hero"><svg class="shl-ring" viewBox="0 0 120 120" aria-hidden="true"><circle class="shl-r0" cx="60" cy="60" r="56"/><circle class="shl-arc" cx="60" cy="60" r="56"/>`
+      + `<g class="shl-glyph" transform="translate(60 60) scale(3.6) translate(-12 -12)">${LOCK_PATH}</g></svg>`
+      + `<div><p class="shl-word">Locked</p><p class="shl-wait">Waiting for sign-in</p></div></div>`
+      + `<div class="shl-path"><div class="shl-node"><div class="way shl-row">${STEP_ICON.run}<p class="kicker">Run in a terminal</p><code>splice console</code>`
       // the one act left on the page stands at the console's own act height, never the small one
-      + `<div class="way"><code>splice console</code><button class="act quiet" type="button">Copy</button></div></div>`
-      + `<ol class="shl-steps">${LOCK_STEPS.map(([icon, title, then], i) => `<li class="shl-step"><span class="shl-sico">${icon}</span>`
-        + `<span class="shl-stxt"><b>${title}</b><small>${i === 0 ? `<code>${then}</code>` : then}</small></span></li>`).join("")}</ol>`;
+      + `<button class="act quiet" type="button">Copy</button></div></div><span class="shl-link" aria-hidden="true"></span>`
+      + `<div class="shl-node"><div class="shl-row">${STEP_ICON.tab}<p class="kicker">A tab opens</p></div><p class="shl-say">Signs this browser in</p></div><span class="shl-link" aria-hidden="true"></span>`
+      + `<div class="shl-node"><div class="shl-row">${STEP_ICON.lift}<p class="kicker">The lock lifts</p></div><p class="shl-say pending">Page reads again</p></div></div>`;
     const copy = box.querySelector("button"), way = box.querySelector(".way");
     copy.addEventListener("click", async (e) => {
       e.stopPropagation();
@@ -111,6 +114,7 @@ const API = (() => {
       if (res.status === 401 && !signal?.aborted) lock();
       const answer = { ok: res.ok, status: res.status, body: parsed };
       if (method === "GET") hear(path, answer);
+      if (method === "GET" && res.ok && path === "/api/accounts" && typeof DRAW !== "undefined") DRAW.loginRoster(parsed?.accounts);
       return answer;
     } catch {
       return { ok: false, status: 0, body: null };

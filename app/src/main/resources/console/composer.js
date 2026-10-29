@@ -444,6 +444,8 @@
     // the field's words and the act's share one verb: Message and Send, Resume and Resume, Answer and Answer
     const verb = answering ? "answer" : m?.state === "resumable" && !words ? "resume" : "message";
     field.placeholder = dead ? "" : SAY[verb][st.shortHint ? 1 : 0];
+    // once he has typed, the placeholder is gone and the field says what it is for in a small line above his words
+    field.previousElementSibling.textContent = dead ? "" : SAY[verb][0];
     field.setAttribute("aria-label", dead ?? SAY[verb][0]);
     // the folded tab reads the bar's own words in the state the bar is in
     const tabWord = `${first ? SAY.message[0] : dead ?? (door1 ? `${m.state === "resumable" ? "Resume" : "Start"} the splice manager` : SAY[verb][0])} · ${KEYS}`;
@@ -1007,9 +1009,12 @@
     const whole = String(text).trim();
     const open = st.opened.has(`b${key}`);
     const small = whole.length < 420 && whole.split("\n").length <= BODY_LINES;
-    if (open || small) return `<div class="cmp-md">${md(whole, { lead })}</div>`;
+    if (small) return `<div class="cmp-md">${md(whole, { lead })}</div>`;
+    // opened, the pill that opened it is the way back: its words change and its chevron turns
+    if (open) return `<div class="cmp-md">${md(whole, { lead })}</div>`
+      + `<button class="morepill pill" type="button" data-act="more" data-k="${h(key)}"><span class="mp-lab">Fewer lines</span>${DRAW.mpChev(true)}</button>`;
     return `<div class="cmp-md cmp-clamp">${md(whole, { lead })}</div>`
-      + `<button class="morepill pill" type="button" data-act="more" data-k="${h(key)}" hidden><b></b> more lines</button>`;
+      + `<button class="morepill pill" type="button" data-act="more" data-k="${h(key)}" hidden><span class="mp-lab"><b></b> more lines</span>${DRAW.mpChev(false)}</button>`;
   }
   /** What a clamped body is hiding, measured on the block itself: with nothing hidden the pill is not drawn at all.
    *
@@ -1030,7 +1035,7 @@
       if (!cut) { block.classList.remove("cmp-clamp"); continue; }
       block.style.maxHeight = `${cut.at}px`;
       pill.querySelector("b").textContent = `+${cut.hidden}`;
-      pill.lastChild.textContent = cut.hidden === 1 ? " more line" : " more lines";
+      pill.querySelector(".mp-lab").lastChild.textContent = cut.hidden === 1 ? " more line" : " more lines";
     }
   }
   /** Where a clamped block can end, and how many lines lie under that edge; null when every line fits. A line of text, a
@@ -1219,7 +1224,7 @@
     // sheet he was in. It reads the page before the oldest one drawn and puts it above, with the view held where it was.
     if (held?.earlier && st.sid) {
       const first = msgs.find((m) => m.ts)?.ts, before = first ? when(first, null) : "";
-      out.push({ key: "earlier", html: `<button class="cmp-older morepill pill" type="button" data-act="older" data-mp-up${st.older ? ' aria-busy="true"' : ""}><span class="mp-lab">Earlier messages</span>${before ? `<em>before ${h(before)}</em>` : ""}${DRAW.mpChev(true)}</button>` });
+      out.push({ key: "earlier", html: `<button class="cmp-older morepill pill" type="button" data-act="older" data-mp-up${before ? ` title="Before ${h(before)}"` : ""}${st.older ? ' aria-busy="true"' : ""}><span class="mp-lab">Earlier messages</span><em>Next ${PAGE} messages</em>${DRAW.mpChev(true)}</button>` });
     }
     const results = new Map(msgs.filter((m) => m.role === "tool" && m.tool_use_id).map((m) => [m.tool_use_id, m.text]));
     const moves = (held?.moves || []).slice().sort((a, b) => a.moved_at - b.moved_at);
@@ -1404,7 +1409,7 @@
   function toggle(key) {
     if (!key) return;
     const opening = !st.opened.has(key);
-    const shown = opening && key.startsWith("b") ? bodyOf(key.slice(1))?.clientHeight : 0;
+    const shown = key.startsWith("b") ? bodyOf(key.slice(1))?.clientHeight : 0;
     if (opening) st.opened.add(key); else st.opened.delete(key);
     // a detail opening or closing never moves the view to the foot: the page stays on the row he pressed
     st.hold = true;
@@ -1429,7 +1434,9 @@
     const root = getComputedStyle(document.documentElement);
     const ms = parseFloat(root.getPropertyValue("--t-snap")) || 0;
     if (!md || !ms || !md.animate) return;
-    md.animate([{ maxHeight: `${from}px`, overflow: "hidden" }, { maxHeight: `${md.scrollHeight}px`, overflow: "hidden" }],
+    // opening ends at the whole message, folding at the lines it shows (the block's own bound once measured)
+    const to = md.classList.contains("cmp-clamp") ? (parseFloat(md.style.maxHeight) || md.clientHeight) : md.scrollHeight;
+    md.animate([{ maxHeight: `${from}px`, overflow: "hidden" }, { maxHeight: `${to}px`, overflow: "hidden" }],
       { duration: ms, easing: root.getPropertyValue("--e-out").trim() || "ease-out" });
   }
   function openSheet() {
@@ -1801,7 +1808,7 @@
       + `<button type="button" class="cmp-door" hidden><span>Start the splice manager</span><kbd>${KEYS}</kbd></button>`
       + `<span class="cmp-wait" aria-hidden="true" hidden>${GHOST.bar(16)}</span>`
       + `<span class="cmp-said" hidden></span>`
-      + `<textarea class="cmp-field" rows="1" aria-label="Message the splice manager" autocomplete="off"></textarea>`
+      + `<div class="cmp-fw"><span class="cmp-flabel" aria-hidden="true"></span><textarea class="cmp-field" rows="1" aria-label="Message the splice manager" autocomplete="off"></textarea></div>`
       + `<kbd class="cmp-k" aria-hidden="true">${KEYS}</kbd>`
       + `<button type="submit" class="act primary cmp-send" disabled>Send</button></form></div>`
       + `<button type="button" class="cmp-new morepill pill" data-act="newest" hidden></button>`;

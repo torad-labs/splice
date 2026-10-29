@@ -308,19 +308,22 @@ const planRowOf = (head, label) => S.accounts.find((a) => (a.heads || []).includ
   // the pool slot a login sits in (edit_target.id) is one of its names too: a sole login on a command reaches splice
   // as "primary", and three rows read that word where the account's own name belongs
   && (a.ref ? a.ref === label : [a.account_labels?.[head], a.selector_key, a.label, a.display_name, a.edit_target?.id].some((x) => x && String(x).toLowerCase() === String(label).toLowerCase())));
-/** What a login is called, by the console's one rule (kit DRAW.name): the name he gave it, else its provider and plan, with
- *  two that read alike told apart by a number in the roster's order. A word the daemon uses where it has no name ("Account", an
- *  address, an id) is not a name, so it is not drawn as one. */
+/** What a login is called, by the console's one rule (kit DRAW.name): the name he gave it, else "Account", with
+ *  two that read alike told apart by a muted number in the roster's order. An address or an id is not a name, so it is not
+ *  drawn as one. */
 let nameBook = null;
-const loginFacts = (a, fallback) => ({ name: a.ref ? a.display_name : a.display_name || fallback, provider: providerOfHead((a.heads || [])[0]),
+const loginFacts = (a, fallback) => ({ name: a.ref ? a.display_name : a.display_name || fallback, provider: providerOfHead((a.heads || [])[0]), ids: DRAW.loginIds(a),
   plan: a.plan ? a.plan.charAt(0).toUpperCase() + a.plan.slice(1) : "" });
-function planName(row, fallback) {
+function planNamed(row, fallback) {
   if (nameBook?.src !== S.accounts) {
     const plans = S.accounts.filter((a) => a.kind !== "api-key"), named = DRAW.names("login", plans.map((a) => loginFacts(a)));
-    nameBook = { src: S.accounts, by: new Map(plans.map((a, i) => [a, named[i].text])) };
+    nameBook = { src: S.accounts, by: new Map(plans.map((a, i) => [a, named[i]])) };
   }
-  return nameBook.by.get(row) ?? DRAW.name("login", loginFacts(row, fallback)).text;
+  return nameBook.by.get(row) ?? DRAW.name("login", loginFacts(row, fallback));
 }
+const planName = (row, fallback) => planNamed(row, fallback).text;
+/** The same name as markup, its ordinal muted. */
+const planNameHtml = (row, fallback) => DRAW.nameHtml(planNamed(row, fallback));
 /** A key by its variable and the day splice first saw it, in the same words on its card, its rows, its filter chip and
  *  its cold plate: a key that replaced another carries the same variable, and the day is what tells the two apart. */
 const keyWord = (name, seen) => `<span class="var">${esc(name)}</span>${seen ? ` · ${dayWord(new Date(seen * 1000))}` : ""}`;
@@ -329,18 +332,32 @@ const keyWord = (name, seen) => `<span class="var">${esc(name)}</span>${seen ? `
  *  its row, the filter it sets. */
 function acctLabel(head, label, name) {
   const plan = planRowOf(head, label);
-  if (plan) return esc(planName(plan, label));
+  if (plan) return planNameHtml(plan, label);
   const key = keyRecord(label);
   if (key) return keyWord(key.name, key.seen);
-  return esc(goneName(head, label, name));
+  return DRAW.nameHtml(goneNamed(head, label, name));
 }
-/** What a login splice carried requests for but the roster no longer holds is called: the daemon's number for it under
- *  the provider's name, and never a name a login on the roster already has. */
-function goneName(head, label, name) {
-  const text = DRAW.name("login", { name: name ?? label, provider: providerOfHead(head) }).text;
-  const held = S.accounts.some((a) => a.kind !== "api-key" && planName(a) === text);
-  return held ? `${text} (signed out)` : text;
+/** What a login splice carried requests for but the roster no longer holds is called: the name its owner gave it, else "Account"
+ *  numbered on after the daemon's listed logins, in the order of the refs that identify them (so each keeps its number between
+ *  reads). No "(signed out)" is added, since its card and its rows already say Signed out, and no number the daemon kept for
+ *  it is drawn, since it would read as one of the roster's. */
+let goneBook = null;
+function goneOrder() {
+  const src = D.all ?? null;
+  if (goneBook?.src !== src || goneBook.size !== DRAW.rosterSize()) {
+    const keys = [...new Set(goneLogins().filter((g) => !DRAW.ownName(g.name)).map((g) => acctKeyOf(g.head, g.label)))].sort();
+    goneBook = { src, size: DRAW.rosterSize(), keys };
+  }
+  return goneBook;
 }
+function goneNamed(head, label, name) {
+  const n = DRAW.name("login", { name: name ?? label, provider: providerOfHead(head) });
+  if (n.own) return n;
+  const { keys, size } = goneOrder(), at = keys.indexOf(acctKeyOf(head, label));
+  if (at < 0 || size + keys.length < 2) return { text: n.base, base: n.base, ord: 0, own: false };
+  return { text: `${n.base} ${size + at + 1}`, base: n.base, ord: size + at + 1, own: false };
+}
+const goneName = (head, label, name) => goneNamed(head, label, name).text;
 /** The logins the daemon read requests for that no roster row holds (an 8-hex id with no login), in the window's order,
  *  and as last seen while a window is being read, so the board keeps their cards between reads. */
 const GONE_KEY = "splice-usage-gone";
@@ -471,7 +488,7 @@ function nameSlot(row, idx, at) {
       + DRAW.act({ word: "Cancel", act: "namestop", cls: "small quiet" })
       + `${ui.nameErr ? DRAW.result(ui.nameErr, "bad") : ""}</span>`;
   }
-  return `<span class="nm">${esc(planName(row) || "Account")}</span>`
+  return `<span class="nm">${planNameHtml(row)}</span>`
     + DRAW.act({ word: "Name it", act: "name", cls: `small${ui.shook === idx ? " shook" : ""}`, data: ` data-k="${idx}" data-at="${at}"` });
 }
 
@@ -526,7 +543,7 @@ function planCard(row, mx) {
     rows: lines, h: cardH("plan", lines, out, held || ran ? 1 : 0, s),
     make: (withChips) => `<article class="card pcard${held ? " held" : ""}${out ? " out" : ""}${picked ? " picked" : ""}${ui.landed === idx ? " landed" : ""}" data-a="plan-${idx}" style="--c:${colorOf(providerOfHead(heads[0]))}"${door}>`
       + topRow(fig, headEnd(withChips ? heads : [], out))
-      + `<header>${canName(row) ? nameSlot(row, idx, "card") : `<span class="nm">${esc(planName(row))}</span>`}`
+      + `<header>${canName(row) ? nameSlot(row, idx, "card") : `<span class="nm">${planNameHtml(row)}</span>`}`
       + `${row.plan && !planName(row).toLowerCase().includes(row.plan.toLowerCase()) ? `<span class="pv">${esc(row.plan.charAt(0).toUpperCase() + row.plan.slice(1))}</span>` : ""}</header>`
       // the lock pops in over the kit's pop time only on a login that has just reached its limit, never on a redraw
       + (held ? `<p class="heldline">${DRAW.lock(until?.resetMs ? `Limit reached until ${backWord(new Date(until.resetMs))}` : "Limit reached", { pop: heldKnown != null && !heldKnown.has(idx) })}${ran}</p>` : ran ? `<p class="heldline">${ran}</p>` : "")
@@ -851,7 +868,7 @@ function idleOf(by, active) {
   if (by === "account") {
     const named = new Set(active.map((e) => e.row).filter(Boolean));
     const usedKey = (name) => [...D.scoped.accounts.values()].some((e) => keyRecord(e.label)?.name === name);
-    for (const a of S.accounts) if (a.kind !== "api-key" && !named.has(a) && !(a.heads || []).some((h) => unsure.has(h))) idle(`${(a.heads || []).join(",")}|${a.ref ?? a.display_name ?? a.label}`, esc(planName(a)));
+    for (const a of S.accounts) if (a.kind !== "api-key" && !named.has(a) && !(a.heads || []).some((h) => unsure.has(h))) idle(`${(a.heads || []).join(",")}|${a.ref ?? a.display_name ?? a.label}`, planNameHtml(a));
     for (const k of S.keys) if (!unsure.size && !usedKey(k.name)) idle(`key|${k.name}|${k.fingerprint}`, keyWord(k.name, k.first_seen_epoch_seconds));
   } else if (by === "project") {
     for (const g of S.groups) if (!have.has(g.key)) idle(g.key, esc(g.label));
@@ -1531,10 +1548,10 @@ function render(grow = false) {
   }
   if (!document.getElementById("band-money")) {
     root.innerHTML = `<section class="band money" id="band-money"></section><div class="scopeline" id="scope"></div><section class="band chart" id="band-chart"></section>`
-      // the three tables lie on the kit's balanced board, in this order: the third goes under whichever column is shorter,
-      // so a Results row that opens leaves Tokens under Where it went and no column stands beside a hole
+      // the first two tables stand side by side where the page is wide, and Tokens by command takes the whole row under
+      // them, so a Results row that opens or a list that grows never moves Tokens to another column
       + `<div class="lower mason" id="lower"><section class="band by" id="band-by"></section><div class="band perf" id="band-perf"></div>`
-      + `<section class="band tokens" id="band-tok" data-flip="usage-tok"></section></div>`;
+      + `<section class="band tokens" id="band-tok" data-cols="all" data-flip="usage-tok"></section></div>`;
   }
   renderScope();
   for (const name of ["money", "chart", "by", "tok", "perf"]) renderBand(name, grow);

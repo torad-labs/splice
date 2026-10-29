@@ -285,7 +285,7 @@ const REQVIEW = (() => {
         + `${err ? `<p class="stopr err"><span class="chip" title="${esc(err.error.type)}">${esc(errWord(err.error.type))}</span><span class="state limit">${esc(err.error.message)}</span></p>` : ""}</div>`;
     }
     // events (what the provider calls what it streams), the consecutive pieces of one answer gathered into one line
-    function framesHtml(fr, key, lead = "") {
+    function framesHtml(fr, key, lead = "", wide = false) {
       const groups = [];
       for (const f of fr) {
         const g = groups.at(-1), pc = pieceOf(f);
@@ -294,7 +294,7 @@ const REQVIEW = (() => {
       }
       const open = s().nodes.has(`${key}:frames`);
       const list = open ? `<ol class="frames">${groups.map((g) => `<li><span class="ev">${esc(g.event)}</span>${g.n > 1 ? `<span class="times">${g.n} times</span>` : ""}${g.n === 1 ? `<span class="fd">${typeof g.data === "object" ? prev(g.data) : prim(g.data)}</span>` : ""}</li>`).join("")}</ol>` : "";
-      return `<div class="rvw-fd${open ? " open" : ""}"><button class="framefold" data-act="frames" data-k="${key}" aria-expanded="${open}">${ICON.caret}${lead}${n0(fr.length)} ${fr.length === 1 ? "event" : "events"}</button>${list}</div>`;
+      return `<div class="rvw-fd${open ? " open" : ""}${wide ? " wide" : ""}"><button class="framefold" data-act="frames" data-k="${key}" aria-expanded="${open}">${ICON.caret}${wide ? "Response" : `${lead}${n0(fr.length)} ${fr.length === 1 ? "event" : "events"}`}</button>${list}</div>`;
     }
     // A STATUS IN THE CONSOLE'S WORDS, ITS CODE BESIDE IT (Oct 27): "Status 200" was the wire's word for what the pane
     // above already says in his. An answer is a tick and "Answered"; a refusal is its outcome word in the limit red, as
@@ -340,7 +340,7 @@ const REQVIEW = (() => {
     // and no others. A write the row did not report is no part; a write it reported as none is said, with its zero.
     const PART_INK = { cached: "var(--splice-chart-2)", write: "var(--splice-chart-1)", fresh: "var(--splice-chart-3)" };
     function inHtml(r) {
-      if (r.in == null) return `<div class="rvw-part"><p class="kicker">Tokens in</p><div class="rvw-dashed">Not reported</div></div>`;
+      if (r.in == null) return `<div class="rvw-part"><p class="kicker">Tokens in</p><div class="rvw-unrep">Not reported</div></div>`;
       const cached = Math.min(r.cached || 0, r.in), write = Math.min(r.write || 0, r.in - cached), fresh = r.in - cached - write;
       const segs = [{ n: cached, word: "Cached", ink: PART_INK.cached }, { n: write, word: "Cache write", ink: PART_INK.write }, { n: fresh, word: "New", ink: PART_INK.fresh }];
       // a write the row reported as none stands in the row as a part of no length, so it is said where it would have been
@@ -391,14 +391,15 @@ const REQVIEW = (() => {
         const note = cut ? `<p class="cut">Cut at 16M characters</p>` : "";
         if (isPlaySend(tr.sent.body)) return `${partsHtml(r, tr.sent.body, h.names)}${bodyOf(`${r.id}:body`, tr.sent.body, `${r.id}.sent`, true)}${note}`;
         const model = r.model ? `<b class="rvw-mname">${esc(r.model)}</b>` : "";
-        return `${(h.cells || []).length ? inHtml(r) : ""}${countedHtml(r)}<div class="rvw-wordline">${model}${headFold(tr.sent.headers, `${r.id}:sh`)}</div>`
+        const line = `<div class="rvw-wordline">${model}${headFold(tr.sent.headers, `${r.id}:sh`)}</div>`, tin = (h.cells || []).length ? inHtml(r) : "";
+        return (r.in != null ? line + tin + countedHtml(r) : tin + countedHtml(r) + line)
           + `${bodyOf(`${r.id}:body`, tr.sent.body, `${r.id}.sent`, true)}${note}`;
       }
       if (tab === "returned") {
         if (gone) return absent;
         const rt = tr.returned;
         const reply = rt.frames ? replyHtml(rt.frames, r.provider, h.reply !== false) : "";
-        const tail = rt.frames ? framesHtml(rt.frames, `${r.id}:ret`, "Response · ") : (unsavedHtml(rt.body) ?? `<div class="json">${tree(rt.body, `${r.id}.ret`, 0, () => true)}</div>`);
+        const tail = rt.frames ? framesHtml(rt.frames, `${r.id}:ret`, "", true) : (unsavedHtml(rt.body) ?? folded(`${r.id}:retbody`, "Response", `<div class="json">${tree(rt.body, `${r.id}.ret`, 0, () => true)}</div>`, true));
         // a 200 whose stream ends on an error event keeps its true status, out of the success colour, so the eye lands on the
         // ending (fin, after p88 read Claude's in-stream Overloaded as a success)
         const last = rt.frames?.at(-1), ended = last?.event === "error" ? last.data?.error?.type ?? "api_error"
@@ -428,6 +429,8 @@ const REQVIEW = (() => {
         const pre = !bad && into > 0 && a.ms > 0 ? `<b class="pre" style="width:${Math.min(100, (into / a.ms) * 100).toFixed(2)}%"></b>` : "";
         return `<div class="atl" role="img" aria-label="${esc(`From ${secs(a.start || 0)} to ${secs((a.start || 0) + a.ms)} of ${secs(reach)}`)}"><span class="atk"><i${bad ? ` class="bad"` : ""} style="left:${from.toFixed(2)}%;width:max(${long.toFixed(2)}%, .3rem)">${pre}</i></span><span class="ate" aria-hidden="true"><small>0</small><small>${secs(reach)}</small></span></div>`;
       };
+      // the answer's first byte, as the time into this send it came
+      const firstByte = (a) => { const into = r.ttfb != null ? r.ttfb - (a.start || 0) : null; return !(a.failure || a.status >= 400) && into > 0 && a.ms > 0 ? `<p class="rvw-tags"><span class="rvw-tag">First byte <b>${secs(into)}</b></span></p>` : ""; };
       // why it failed, in words; a send that failed as an earlier one did says which, rather than the same line again
       const why = (a, i) => {
         if (!a.failure) return "";
@@ -442,7 +445,7 @@ const REQVIEW = (() => {
         return `<div class="rvw-folds">${request}${res(a, i)}</div>`;
       };
       return tr.attempts.map((a, i) => `<section class="attempt${a.failure ? " fail" : ""}"><h3><span class="an">${i + 1}</span>${sendTo(a)}${a.status ? statusHtml(a.status, { lock: Boolean(a.lock) }) : ""}<span class="ams">${secs(a.ms)}</span></h3>`
-        + `${track(a)}${why(a, i)}${parts(a, i)}</section>`).join("");
+        + `${track(a)}${firstByte(a)}${why(a, i)}${parts(a, i)}</section>`).join("");
     }
     // THE TIME RAIL (the redesign, Oct 26): each send a bar from its start to its end, hatched to its first byte, a failed
     // one in the limit red; the waits between them the dashed rail; the first byte and the first token marked where they
@@ -472,8 +475,9 @@ const REQVIEW = (() => {
       // a mark past the middle hangs its label to the left, so it never runs off the rail's end
       const mark = (ms, label, cls) => (ms == null ? "" : `<span class="mk ${cls}${at(ms) > 60 ? " late" : ""}" style="left:${pct(ms)}"><span>${label}</span></span>`);
       const together = r.ttfb != null && r.ftok != null && Math.abs(r.ftok - r.ttfb) <= 0.08 * span;
-      const marks = together ? mark(r.ttfb, `First byte ${secs(r.ttfb)} · first token ${secs(r.ftok)}`, "fb")
-        : mark(r.ttfb, `First byte ${secs(r.ttfb)}`, "fb") + mark(r.ftok, `First token ${secs(r.ftok)}`, r.ttfb != null ? "ft" : "fb");
+      const below = r.ttfb != null && r.ftok != null && !together;
+      const marks = together ? mark(r.ttfb, `First byte ${secs(r.ttfb)} · first token ${secs(r.ftok)}`, "fb up")
+        : mark(r.ttfb, `First byte ${secs(r.ttfb)}`, below ? "fb" : "fb up") + mark(r.ftok, `First token ${secs(r.ftok)}`, r.ttfb != null ? "ft" : "fb up");
       // a stretch nothing came through, neutral and dashed, named over the rail: the time the gate held it behind a full
       // limit before splice sent it (admit_held_ms), and a silence splice waited out mid-answer
       const band = (from, ms, label) => `<span class="quiet${at(from) > 60 ? " late" : ""}" style="left:${pct(from)};width:${pct(ms)}"><span>${label}</span></span>`;
@@ -488,7 +492,7 @@ const REQVIEW = (() => {
       for (let t = 0; t <= span * 1.0001; t += step) ticks.push(t);
       const axis = `<span class="rax" aria-hidden="true">${ticks.map((t, i) => `<span class="${i === 0 ? "first" : at(t) > 96 ? "tail" : ""}" style="left:${pct(t)}">${t ? tickWord(t) : "0"}</span>`).join("")}</span>`;
       const tall = Boolean(r.resumed && r.resumedAt && r.silent);
-      return `<div class="trail${tall ? " tall" : ""}${marks || line || quiet || resumed ? "" : " bare"}${!together && r.ttfb != null && r.ftok != null ? " two" : ""}${many ? " socked" : ""}">${labels}${socks}<div class="rail-t">${refs}${gaps}${sends}${line}${quiet}${resumed}${marks}${axis}</div></div>`;
+      return `<div class="trail${tall ? " tall" : ""}${below ? "" : " bare"}${below ? " two" : ""}${many ? " socked" : ""}">${labels}${socks}<div class="rail-t">${refs}${gaps}${sends}${line}${quiet}${resumed}${marks}${axis}</div></div>`;
     }
     // an axis label: a round figure, minutes and seconds past the first minute ("1 min 20 s", never "1.33 min")
     const tickWord = (ms) => (ms < 1000 ? `${ms} ms` : ms < 60000 ? `${ms / 1000} s` : ms % 60000 ? `${Math.floor(ms / 60000)} min ${(ms % 60000) / 1000} s` : `${ms / 60000} min`);
@@ -552,9 +556,9 @@ const REQVIEW = (() => {
       }
       let cost = "";
       if (wants("cost")) {
-        const plan = h.costPlan, bar = h.costAt != null ? `<span class="rvw-trk cost${plan ? " plan" : ""}" aria-hidden="true"><i style="width:${Math.max(1.5, h.costAt).toFixed(1)}%"></i></span>` : "";
+        const plan = h.costPlan, bar = h.costAt != null ? `<span class="rvw-costrow"><span class="rvw-trk cost${plan ? " plan" : ""}" aria-hidden="true"><i style="width:${Math.max(1.5, h.costAt).toFixed(1)}%"></i></span>${plan ? `<i class="rvw-planmark" aria-hidden="true"></i>` : ""}</span>` : "";
         // a request nothing answered was not charged: its cost is said as the fact it is, on the empty slot the figure would fill
-        cost = h.unbilled ? `<div class="rvw-col"><div class="rvw-ch"><span>Cost</span></div><div class="rvw-dashed nc" title="${esc(h.cost ?? "")}">Not charged</div>${h.costSub ? `<small>${h.costSub}</small>` : ""}</div>`
+        cost = h.unbilled ? `<div class="rvw-col">${tokens ? `<div class="rvw-ch"><span>Cost</span></div>` : ""}<div class="rvw-dashed nc" title="${esc(h.cost ?? "")}">Not charged</div>${h.costSub ? `<small>${h.costSub}</small>` : ""}</div>`
           : `<div class="rvw-col"><div class="rvw-ch"><span>Cost</span><b>${h.cost || DRAW.dash}</b></div>${bar || (h.cost ? "" : `<span class="rvw-trk unread" aria-hidden="true"></span>`)}${h.costSub ? `<small>${h.costSub}</small>` : ""}</div>`;
       }
       const attempts = !sent && wants("attempts") ? `<div class="rvw-col"><div class="rvw-ch"><span>Attempts</span><b>0</b></div></div>` : "";
@@ -562,7 +566,7 @@ const REQVIEW = (() => {
       if (!body) return "";
       // the tokens in, by part, under the two figures where the Record has no tabs to hold them
       const under = tokens && !inRecord && !none ? inHtml(r) : "";
-      return DRAW.section(cost ? "Tokens and cost" : "Tokens", `<div class="rvw-money${tokens && cost ? " two" : ""}">${body}</div>${under}`, { cls: "rqfigs" });
+      return DRAW.section(tokens && cost ? "Tokens and cost" : tokens ? "Tokens" : "Cost", `<div class="rvw-money${tokens && cost ? " two" : ""}">${body}</div>${under}`, { cls: "rqfigs" });
     }
     // the open request's top line: the login that made it, with the one act that names it where nobody did, and the page's
     // acts at the line's end, in the same place whatever the request did

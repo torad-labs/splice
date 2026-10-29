@@ -96,7 +96,7 @@
 .band .goal { margin: 0; padding: var(--u) calc(2 * var(--u)); border-radius: .3rem; border-left: .25rem solid var(--text-mute); background: color-mix(in oklab, var(--text) 6%, transparent); font: 400 1rem/1.45 var(--font-name); color: var(--text-body); max-width: 56rem; overflow-wrap: anywhere; }
 .tbd-refusals { display: flex; flex-wrap: wrap; gap: .333rem var(--u); }
 /* what may be done to the team is ONE group of equal buttons: Edit and Archive side by side, End all under them across both */
-.tbd-acts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--u); max-width: 36rem; }
+.tbd-acts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--u); grid-auto-rows: minmax(3rem, auto); }
 .tbd-acts .act { width: 100%; justify-content: center; }
 .tbd-acts .act svg { width: 1rem; height: 1rem; }
 .tbd-acts > :nth-child(3) { grid-column: 1 / -1; }
@@ -246,14 +246,7 @@
    and no taller, so no card carries a blank under its buttons. A column is 33rem with the lamp's socket (teams.js
    CARD_REM): four cards beside the chat on his 2548, five at 3822, two at 1440. The grid is never wider than its --n cards
    at 48rem each (teams.js sets --n to the members it holds), so a team of two reads as two cards and not two banners. */
-.members { --cols: min(var(--n), 3); display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, max(33rem, calc((100% - 2 * var(--gap-col)) / 3))), 1fr)); max-width: calc(var(--cols) * 48rem + (var(--cols) - 1) * var(--gap-col)); column-gap: var(--gap-col); row-gap: 0; align-items: stretch; }
-/* a member with no session is a slim strip under the cards, across the row, so an open seat never leaves a blank block
-   beside a tall card: its name and state, what it will run, then its acts at the right */
-.members > .card.m.vacant:not(.needs, .ghosted) { grid-column: 1 / -1; flex-direction: row; align-items: center; flex-wrap: wrap; gap: var(--u) calc(2 * var(--u)); }
-.members > .card.m.vacant:not(.needs, .ghosted) > .top { display: contents; }
-.members > .card.m.vacant:not(.needs, .ghosted) > .top > .acts { order: 9; margin-left: 0; }
-.members > .card.m.vacant:not(.needs, .ghosted) > .meta { margin-top: 0; }
-.members > .card.m.vacant:not(.needs, .ghosted) > .body { flex-direction: row; align-items: center; gap: var(--u) calc(2 * var(--u)); flex-wrap: wrap; justify-content: flex-end; margin: 0 0 0 auto; order: 8; }
+.members { --cols: min(var(--n), 4); display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, max(33rem, calc((100% - 3 * var(--gap-col)) / 4))), 1fr)); max-width: calc(var(--cols) * 48rem + (var(--cols) - 1) * var(--gap-col)); column-gap: var(--gap-col); row-gap: 0; align-items: stretch; }
 .members > .card.m { display: flex; flex-direction: column; margin: 0 0 calc(2 * var(--gap-card)) 2.667rem; }
 /* the lamp sits in its socket left of the card (sessions.css .lamp at -2.667rem, which the card's own margin makes room
    for), as on Sessions: no rail stub, which joined no other card */
@@ -556,7 +549,7 @@
 /* THE ACTIVITY: a lane for each member with a tick for each tool call across the day, and under the lanes the log, flowed
    down columns so an object reads whole: the latest twelve, and the rest behind one pill that opens them in place. */
 .flow { display: flex; flex-direction: column; gap: calc(2 * var(--u)); min-width: 0; }
-.flow > ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 32rem), 1fr)); gap: var(--u) var(--gap-card); }
+.flow > ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, max(32rem, calc((100% - var(--gap-card)) / 2))), 1fr)); gap: var(--u) var(--gap-card); }
 /* the lanes and the log are two sections of one panel: 4u, a hairline, 4u between them, as the band's sections stand */
 .flow > .lanes + ol { margin-top: calc(2 * var(--u)); padding-top: calc(4 * var(--u)); border-top: .08rem solid var(--hair); }
 .flow li { display: grid; grid-template-columns: 4.6rem minmax(0, 1fr) auto; align-items: center; gap: 0.667rem; min-height: 3.2rem; padding: .5rem .8rem; background: var(--obj-high); border-radius: var(--r-in); font: 500 .95rem/1.3 var(--font-data); color: var(--text-body); min-width: 0; }
@@ -690,11 +683,11 @@
 /* a row's text: its name and its command's chip on one line, its model and its requests under them, the bar ending at the
    row's right edge so every row's bar ends on one column */
 .tgb-txt { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.333rem 0.8rem; min-width: 0; }
-.gsess .gname { justify-self: start; min-width: 0; overflow-wrap: anywhere; }
+.gsess .gname { justify-self: start; min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .tgb-chip { justify-self: end; }
 /* a command splice does not have: the outline of a chip with nothing in it, said once in the plate's legend */
 .tgb-nochip { justify-self: end; display: inline-block; width: 7.4rem; height: 1.7rem; border: .1rem dashed var(--track-line); border-radius: var(--r-in); }
-.gsess .gmeta { justify-self: start; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 .85rem/1.2 var(--font-data); color: var(--text-mute); }
+.gsess .gmeta { justify-self: start; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 .85rem/1.2 var(--font-data); color: var(--text-mute); }
 /* the requests on a log scale: the fill grows leftwards from the track's right end, and its count stands at the fill's start */
 .tgb-cnt { position: relative; justify-self: end; width: calc(var(--tgb-track) + 4rem); height: 1.1rem; }
 .tgb-trk { position: absolute; right: 0; top: 0; bottom: 0; width: var(--tgb-track); border-radius: .3rem; background: var(--track); box-shadow: inset 0 0 0 .1rem var(--track-line); overflow: hidden; }
@@ -710,6 +703,9 @@
 .tgb-dashsw { display: inline-block; flex: none; width: 2.2rem; height: .95rem; border: .1rem dashed var(--text-mute); border-radius: .3rem; }
 .tgb-scale { margin-left: auto; display: inline-flex; align-items: center; gap: calc(2 * var(--u)); font: 500 .9rem/1.2 var(--font-name); color: var(--text-body); white-space: nowrap; }
 .tgb-axis { position: relative; flex: none; width: var(--tgb-track); height: 1.7rem; margin-left: 1.6rem; margin-right: .45rem; }
+/* over a group's rows, ending on the column where every bar ends */
+.tgb-gaxis { display: flex; justify-content: flex-end; padding-right: calc(.9rem + var(--ink-w)); }
+.tgb-gaxis .tgb-axis { margin: 0; }
 .tgb-axis::after { content: ""; position: absolute; left: 0; right: 0; bottom: .3rem; height: .08rem; background: var(--track-line); }
 .tgb-axis > i { position: absolute; bottom: .3rem; width: .08rem; height: .42rem; background: var(--text-mute); transform: translateX(50%); }
 .tgb-axis > span { position: absolute; top: 0; transform: translateX(50%); font: 500 .8rem/1 var(--font-data); color: var(--text-mute); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -785,7 +781,8 @@
 /* how many members the team has, as a tile at the head's end */
 .ntf-count { margin-left: auto; min-width: 2.6rem; height: 2.6rem; padding: 0 .6rem; box-sizing: border-box; display: grid; place-items: center; border-radius: var(--r-in); background: var(--obj-sunk); border: var(--ink-w) solid var(--track-line); font: 600 1rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
 /* THE MEMBERS STAND IN AS MANY COLUMNS AS THE ROOM HOLDS, each row as tall as its neighbour's, and Add member across all of them */
-.rows { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 40rem), 1fr)); gap: calc(2 * var(--u)); align-items: stretch; }
+/* each row is at least 40rem wide, and where the room holds them all in one line each takes an equal share of it, so no column stands empty beside the rows */
+.rows { --n: 1; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, max(40rem, calc((100% - (var(--n) - 1) * 2 * var(--u)) / var(--n)))), 1fr)); gap: calc(2 * var(--u)); align-items: stretch; }
 .rows > .add { grid-column: 1 / -1; }
 .card.slot-row { padding: calc(1.5 * var(--u)) calc(1.7 * var(--u)) calc(1.6 * var(--u)); display: flex; flex-direction: column; gap: calc(1.2 * var(--u)); min-width: 0; }
 /* a row: its number and its role, then the three pickers each in its own column, then the row's own controls */
@@ -798,10 +795,12 @@
 /* a row is a fixed grid: each picker owns its column, empty until chosen, so a choice never widens the row, wraps it or moves
    the row under it */
 .ntf-picks { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--u); align-items: center; }
-.ntf-picks .pickbtn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ntf-picks .pickbtn { justify-content: space-between; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ntf-picks .pickbtn[data-what="head"] { grid-column: 1; }
 .ntf-picks .pickbtn[data-what="model"] { grid-column: 2; }
 .ntf-picks .pickbtn[data-what="account"] { grid-column: 3; }
+/* a picker with nothing to offer yet (Model and Account before a command is picked) stands dimmed */
+.ntf-picks .pickbtn:disabled { opacity: .45; cursor: default; }
 .role-in { min-width: 0; font: 500 .95rem/1 var(--font-name); }
 .blot { width: .8rem; height: .8rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); display: inline-block; flex: none; }
 .ntf-tools { display: flex; align-items: center; flex-wrap: wrap; gap: var(--u); }

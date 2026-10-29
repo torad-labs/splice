@@ -1872,8 +1872,10 @@ function render({ flip = false } = {}) {
   if (!ui.probing && grown !== "all") slideBars(barsBefore, grown);
   // the logins at their limit ride Accounts' link on every page (kit.js navMark), each until its window comes back
   if (!unheard) {
-    const all = data.flatMap((p) => p.accounts), out = all.filter(held);
-    navMark("accounts.html", out.length, "limit", out.map((a) => Math.max(0, ...a.windows.filter(atLimit).map((w) => w.resetMs ?? 0)) || null), all.length);
+    // counted against the logins whose limits splice reads, as Usage and Settings count them (lead look, Oct 29: the bar read
+    // "of 17" with keys and local servers in it, beside "of 14" on Usage and "of 9" on Settings)
+    const read = data.flatMap((p) => p.accounts).filter((a) => !a.out && (a.windows || []).length), out = read.filter(held);
+    navMark("accounts.html", out.length, "limit", out.map((a) => Math.max(0, ...a.windows.filter(atLimit).map((w) => w.resetMs ?? 0)) || null), read.length);
   }
   // a day's hours rise in with the bars, when the fresh reading lands (ui.grow), and a day that lands after it rises on
   // first sight; while the page is still asking the providers they stand, as the striped bars do

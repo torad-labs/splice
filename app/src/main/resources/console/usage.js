@@ -339,9 +339,12 @@ function acctLabel(head, label, name) {
 }
 /** What a login splice carried requests for but the roster no longer holds is called: the name its owner gave it, else "Account"
  *  numbered on after the daemon's listed logins, in the order of the refs that identify them (so each keeps its number between
- *  reads). No "(signed out)" is added, since its card and its rows already say Signed out, and no number the daemon kept for
+ *  reads). No "(signed out)" is added, since its card and its rows say it is no longer in splice, and no number the daemon kept for
  *  it is drawn, since it would read as one of the roster's. */
 let goneBook = null;
+// what a login splice carried requests for but no longer holds says it is, on its card and its row: never Signed out, which
+// is a login of the roster to sign in again (lead look at the installed console, Oct 29)
+const GONE_WORD = "No longer in splice";
 function goneOrder() {
   const src = D.all ?? null;
   if (goneBook?.src !== src || goneBook.size !== DRAW.rosterSize()) {
@@ -582,11 +585,13 @@ function goneCard(g, mx) {
   const mine = D.all ? [D.all.accounts.get(key)].filter(Boolean) : [], s = sumOf(mine);
   const door = mine.length ? ` data-act="pick" data-d="account" data-v="${esc(key)}" role="button" tabindex="0" aria-label="${esc(`${plain(label)}: where its requests went`)}"` : "";
   const pk = pickedAccount(), picked = Boolean(pk && pk.head === g.head && pk.labels.includes(g.label));
-  return { prov: providerOfHead(g.head), kind: "plan", name: plain(label), used: -1, s, heads: new Set([g.head]), rows: 0, h: cardH("plan", 0, true, 0, s),
+  return { prov: providerOfHead(g.head), kind: "plan", gone: true, name: plain(label), used: -1, s, heads: new Set([g.head]), rows: 0, h: cardH("plan", 0, true, 0, s),
     make: (withChips) => `<article class="card pcard out gone${picked ? " picked" : ""}" data-a="gone-${esc(key)}" style="--c:${colorOf(providerOfHead(g.head))}"${door}>`
-      + topRow(leadFig(s, [], { out: true }), headEnd(withChips ? [g.head] : [], true))
+      + topRow(leadFig(s, [], { out: true }), headEnd(withChips ? [g.head] : [], false))
       + `<header><span class="nm">${label}</span></header>`
-      + signInBox(`gone-${g.head}|${g.label}`) + noReq(s) + thruCells(s, mx, false) + (mine.length ? `<span class="drill" aria-hidden="true">${DRAW.go}</span>` : "") + `</article>` };
+      // where a signed-out login has its Sign in, the plain fact: splice holds this login no more, so there is nothing to sign
+      // in again here, and what it sent stays below (lead look at the installed console, Oct 29)
+      + `<div class="outbox"><span class="state mute">${GONE_WORD}</span></div>` + noReq(s) + thruCells(s, mx, false) + (mine.length ? `<span class="drill" aria-hidden="true">${DRAW.go}</span>` : "") + `</article>` };
 }
 
 function keyCard(k, print, seen, replaced, mx) {
@@ -664,8 +669,11 @@ let splitDrawn = false;
  *  has not read is a dashed rung. Before the first read it is the same shape in stripes. */
 const boardHead = (cards = null) => {
   if (!cards) return `<div class="bandhead upb-head"><div class="upb-lead"><h2>Plans and keys</h2><p class="upb-hero">${GHOST.bar(9)}</p><p class="upb-key"><span><i class="lim" aria-hidden="true"></i>Limits</span><span><i aria-hidden="true"></i>Counted by splice</span></p></div><div class="upb-lad" aria-hidden="true"><p class="kicker">Highest used</p><div class="upb-rungs">${Array.from({ length: 14 }, () => `<i class="upb-rung gh"></i>`).join("")}</div></div></div>`;
-  const plans = cards.filter((c) => c.kind === "plan"), held = plans.filter((c) => c.used >= 100).length;
-  const hero = plans.length ? `<p class="upb-hero"><b${held ? ` class="lim"` : ""} data-tn="">${held}</b><span>of ${plans.length} ${plans.length === 1 ? "login" : "logins"} at their limit</span></p>` : "";
+  // ONE WHOLE ON EVERY PAGE (lead look, Oct 29): the logins whose limits splice reads, as the top bar and Settings count them,
+  // so a signed-out login, one whose provider reports no limits and one splice no longer holds are not in it. The ladder
+  // keeps a dashed rung for a login of the roster with no reading; a login splice no longer holds has no rung.
+  const plans = cards.filter((c) => c.kind === "plan" && !c.gone), read = plans.filter((c) => c.used >= 0), held = read.filter((c) => c.used >= 100).length;
+  const hero = read.length ? `<p class="upb-hero"><b${held ? ` class="lim"` : ""} data-tn="">${held}</b><span>of ${read.length} ${read.length === 1 ? "login" : "logins"} at their limit</span></p>` : "";
   const rungs = plans.slice().sort((a, b) => b.used - a.used).map((c) => (c.used < 0 ? `<i class="upb-rung none" title="${esc(c.name)}"></i>`
     : `<i class="upb-rung${c.used >= 100 ? " full" : ""}" title="${esc(`${c.name}: ${c.used}%`)}"><b style="height:${Math.max(1, Math.min(100, c.used))}%;--c:${colorOf(c.prov)}"></b></i>`)).join("");
   return `<div class="bandhead upb-head"><div class="upb-lead"><h2>Plans and keys</h2>${hero}<p class="upb-key"><span><i class="lim" aria-hidden="true"></i>Limits</span><span><i aria-hidden="true"></i>Counted by splice</span></p></div>`
@@ -1132,10 +1140,9 @@ function byHtml() {
     const name = naming ? nameSlot(e.row, e.nameIdx, "row") : `<span class="nm${e.none ? " nomodel" : ""}"${e.tip ? ` title="${esc(e.tip)}"` : ""}>${e.label}</span>`;
     const line = first && size > 1 ? `<div class="bgrp"><span class="cmds">${chipsOf(e.heads)}</span></div>` : "";
     const dot = ui.by === "project" ? "" : `<i class="dot-c" aria-hidden="true"></i>`;
-    // the daemon may already name such a login by its state ("Signed-out account N"): the state is then said once
-    // and the way back in beside it, as its card would offer it: signing in again happens on Accounts
-    const outWord = (e.gone && !/signed.out/i.test(plain(e.label)) ? `<span class="state">Signed out</span>` : "")
-      + (e.gone ? `<a class="act small signin" href="accounts.html?head=${encodeURIComponent([...e.heads][0] ?? "")}">Sign in${OPEN}</a>` : "");
+    // a login splice no longer holds says so, as its card does; it has no way back in to offer, since nothing here is
+    // signed out (a login of the roster that is signs in again on its card and on Accounts)
+    const outWord = e.gone ? `<span class="state">${GONE_WORD}</span>` : "";
     // a login at its limit carries the lock its card has, so a row finds its state as well as its card
     const held = heldRow(e.row) ? `<span class="rowlock" role="img" aria-label="At its limit" data-tip="At its limit">${ICON.lock}</span>` : "";
     return line + `<div class="brow${e.gone ? " gone" : ""}${e.row && ui.landed != null && S.accounts[ui.landed] === e.row ? " landed" : ""}" data-key="by-${ui.by}-${esc(e.k)}"${DRAW.flip(`by-${ui.by}-${e.k}`)} data-act="pick" data-d="${ui.by}" data-v="${esc(e.k)}" style="--c:${colorOf(providerOfHead([...e.heads][0]))}" role="button" tabindex="0">`

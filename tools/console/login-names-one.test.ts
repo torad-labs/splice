@@ -118,14 +118,15 @@ test("where only one login is unnamed it reads plain Account, never an ordinal",
   }
 }, 40_000);
 
-test("signed-out logins the roster no longer holds are numbered on after its logins, and no two share a name", async () => {
+test("logins the roster no longer holds are numbered on after its logins, and no two share a name", async () => {
   goneRefs = ["eeee5555", "ffff6666"];
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1600 } });
     try {
       await page.goto(`http://127.0.0.1:${server.port}/usage.html`);
-      await expect(page.getByText("Signed out").first()).toBeVisible({ timeout: 20_000 });
-      const read = () => page.evaluate(() => [...document.querySelectorAll("article.pcard.out .nm")].map((n) => (n.textContent ?? "").replace(/\s+/g, " ").trim()));
+      // goal changed Oct 29 (lead look at the installed console): such a login reads "No longer in splice", never Signed out
+      await expect(page.getByText("No longer in splice").first()).toBeVisible({ timeout: 20_000 });
+      const read = () => page.evaluate(() => [...document.querySelectorAll("article.pcard.gone .nm")].map((n) => (n.textContent ?? "").replace(/\s+/g, " ").trim()));
       await expect.poll(async () => (await read()).length, { timeout: 20_000 }).toBeGreaterThanOrEqual(2);
       const names = (await read()).sort();
       expect(new Set(names).size).toBe(names.length);

@@ -1298,7 +1298,9 @@ function tweenFigure(el) {
   el.textContent = write(from);
   const step = (t) => {
     if (!el.isConnected) return;
-    const p = Math.min(1, (t - t0) / 240);
+    // a frame Chrome stamps before the count began (the page was busy as it drew) is the count's start, never a step back:
+    // read below zero, the easing threw the figure past where it started, to negative dollars between two positive ones
+    const p = Math.max(0, Math.min(1, (t - t0) / 240));
     el.textContent = p >= 1 ? text : write(from + (cur - from) * (1 - (1 - p) ** 3));
     if (p < 1) requestAnimationFrame(step);
   };

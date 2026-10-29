@@ -271,6 +271,9 @@ origin.
   first so systemd can take the ports. A socket for a head splice.toml no longer has stays with systemd and never
   refuses the boot. `splice capabilities` says whether the native transport loads on this machine, so a manager
   learns a hand-off would be refused before it stops the daemon.
+- **A restart no longer leaves a copy of the code-mode host in /tmp.** Each splice JVM unpacks the pinned host,
+  about 77 MB, into its own temporary folder, and the daemon never removed it: 246 of them had piled up since
+  Oct 24. The JVM now removes its folder when it exits, normally or on SIGTERM.
 - **`splice uninstall --all` takes away splice's systemd units.** It stops, disables and removes the daemon's unit,
   the MCP hub's and every listener socket splice laid, sockets first, so the daemon no longer starts again at the
   next login or the next request from the jar left on disk. Another program's unit in the same folder, and your own

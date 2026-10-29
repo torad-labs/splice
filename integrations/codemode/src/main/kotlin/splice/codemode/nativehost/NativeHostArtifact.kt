@@ -29,6 +29,11 @@ public class NativeHostArtifact : AutoCloseable {
         directory = temporary
         val name = if (bundle.platform.startsWith("windows")) "codex-code-mode-host.exe" else "codex-code-mode-host"
         val target = temporary.resolve(name)
+        // Oct 29, 2026: the daemon never reaches close(), so every restart left its unpacked host in /tmp (246
+        // folders, 12.6 GB, since Oct 24). The JVM removes both at exit, a normal one or SIGTERM, in reverse order of
+        // registration: the host first, then its folder. A JVM killed outright still leaves them.
+        temporary.toFile().deleteOnExit()
+        target.toFile().deleteOnExit()
         unpack(bundle.payload, target, bundle.sha256)
         executable = target
         return target

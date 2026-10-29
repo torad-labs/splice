@@ -41,7 +41,9 @@ public class PeerStateFiles(stateDir: Path, name: String) {
 }
 
 /** Where a helper runs: its peer's name, the settings and state folders, the registry folders it registers in, the
- *  sockets it may bind, and the build it reports in helper.json. */
+ *  sockets it may bind, and the build it reports in helper.json. [anchor] is the pid the peer stands under when one
+ *  host process serves many peers (Oct 28, 2026): the registry, helper.json and the socket name that process, and
+ *  the peer ends when it does. Null is this process. */
 public data class HelperSetup(
     val name: String,
     val settingsDir: Path,
@@ -49,6 +51,7 @@ public data class HelperSetup(
     val registryDirs: List<Path>,
     val sockets: PeerSockets,
     val version: String,
+    val anchor: Long? = null,
 )
 
 /** How a helper start ended. */
@@ -91,7 +94,7 @@ public class PeerHelper(
 
     private fun bind(config: PeerConfig, peer: RecordPeer, files: PeerStateFiles, lock: HelperLock): HelperStart {
         val log = HelperLog(files.helperLog, clock)
-        val self = helpers.self(clock())
+        val self = setup.anchor?.let { helpers.of(it, clock()) } ?: helpers.self(clock())
         val socket = setup.sockets.pathFor(self.pid)
         return when (val bound = setup.sockets.bind(socket)) {
             is SocketBind.Bound -> {

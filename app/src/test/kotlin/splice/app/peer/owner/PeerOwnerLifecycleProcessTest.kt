@@ -13,10 +13,11 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.peer.HELPER_MAIN_CLASS
 import splice.app.peer.PEER_BUILD_FLAG
-import splice.app.peer.PEER_HELPER_COMMAND
+import splice.app.peer.PEER_HOST_COMMAND
 import splice.app.peer.PEER_SETTINGS_FLAG
 import splice.app.peer.PEER_STATE_FLAG
 import splice.app.peer.PeerBuild
+import splice.app.peer.PeerHostFiles
 import splice.app.peer.PeerPlaces
 import splice.app.peer.PeerSupervisor
 import splice.core.util.EnvReader
@@ -39,6 +40,7 @@ import java.util.concurrent.TimeUnit
 
 private const val PROCESS_PEER = "owner-fixture"
 private const val PROCESS_WAIT_MS = 15_000L
+private const val HOST_EXIT_WAIT_MS = 30_000L
 
 /** Two real, isolated processes; only these handles are ever destroyed by this fixture. */
 private class OwnedPeerProcesses(private val dir: Path) : AutoCloseable {
@@ -62,10 +64,12 @@ private class OwnedPeerProcesses(private val dir: Path) : AutoCloseable {
             store.register(PeerRequest(PROCESS_PEER, dir.toString(), listOf("*"), owner), emptySet())
                 is PeerRegistration.Registered,
         )
+        // Oct 28, 2026: one peer-host process serves every peer, so the fixture asks the host for this one.
+        PeerHostFiles(state).request(PROCESS_PEER, PeerBuild().current())
         val process = ProcessBuilder(
             ProcessHandle.current().info().command().orElse("java"),
             "-cp", System.getProperty("codeMode.testClasspath", System.getProperty("java.class.path")),
-            HELPER_MAIN_CLASS, PEER_HELPER_COMMAND, PROCESS_PEER,
+            HELPER_MAIN_CLASS, PEER_HOST_COMMAND,
             PEER_SETTINGS_FLAG, settings.toString(), PEER_STATE_FLAG, state.toString(),
             "--registry", registry.toString(), "--runtime", runtime.toString(), PEER_BUILD_FLAG, PeerBuild().current(),
         ).redirectErrorStream(true).redirectOutput(output.toFile()).start()
@@ -119,7 +123,8 @@ class PeerOwnerLifecycleProcessTest {
             assertTrue(Files.exists(key))
             fixture.harness.destroyForcibly()
             assertTrue(fixture.harness.waitFor(5, TimeUnit.SECONDS))
-            assertTrue(helper.waitFor(PROCESS_WAIT_MS, TimeUnit.MILLISECONDS), fixture.report())
+            // The host exits once it serves no peer, 10 s after this one ended.
+            assertTrue(helper.waitFor(HOST_EXIT_WAIT_MS, TimeUnit.MILLISECONDS), fixture.report())
             assertEquals(0, helper.exitValue(), fixture.report())
             assertFalse(Files.exists(record))
             assertFalse(Files.exists(key))

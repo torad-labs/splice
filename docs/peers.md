@@ -7,6 +7,9 @@ local journal, can push each message to a webhook, and can send to any session o
 Nothing here runs until you register a peer. With no peer registered there is no listener, no socket, no
 process, no file and no registry entry.
 
+One `peer-host` process serves every peer. Each peer still has a pid of its own, a small `cat` process the host
+started, so Claude Code lists one session per peer. The host leaves 10 s after its last peer ends.
+
 ## Register a peer
 
 ```
@@ -308,6 +311,8 @@ once. `splice peer codex detach` revokes one at once, and `--purge` deletes its 
 | `<state dir>/peers/<name>/journal.jsonl` | what the peer received, rotated at 50 MiB |
 | `<state dir>/peers/<name>/outbox.jsonl` | one line per send, with its id, the size and the SHA-256 of the text, never the text |
 | `<state dir>/peers/<name>/codex.cursor` | a codex peer's last message handed to its thread |
+| `<state dir>/peers/<name>/codex-hook/` | messages waiting for a Codex thread no app-server holds, until its next hook |
+| `<state dir>/peer-host/host.json`, `host.lock` and `start/<name>` | the one process that serves every peer, and the peers asked of it |
 | `~/.claude/sessions/<pid>.json` and its `.key` | the registry record that makes the peer visible to Claude Code |
 
 Folders are mode 0700 and files 0600, except the registry record, which is 0644 as Claude Code writes its own.

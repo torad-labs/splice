@@ -136,11 +136,13 @@ internal class PeerSupervisor(
         }
     }
 
-    /** Asks [name]'s helper to re-read peer.json and the webhook secret (SIGHUP); nothing when no helper runs. */
+    /** Asks the peer host to have every peer re-read peer.json and the webhook secret (SIGHUP); nothing when no host
+     *  runs. A peer whose files are unchanged is left as it is. */
     override fun reload(name: String) {
-        val helper = running(name) ?: return
+        if (running(name) == null) return
+        val host = launcher.hostPid() ?: return
         val sent = Cancellables.runCatchingCancellable {
-            ProcessBuilder("kill", "-HUP", helper.pid.toString())
+            ProcessBuilder("kill", "-HUP", host.toString())
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                 .redirectError(ProcessBuilder.Redirect.DISCARD)
                 .start()

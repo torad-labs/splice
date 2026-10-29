@@ -1,6 +1,7 @@
 // NEW: peer messaging, package B (docs/specs/peer-messaging.md 4.1 and 4.2) — what a started peer helper runs, moved
 // verbatim out of PeerHelperMain.kt: the inbox socket, the registry heartbeat every 30 s, the look at peer.json every
-// 10 s, and the webhook pusher, started again on a changed peer.json or a SIGHUP. A codex peer's helper (Oct 27, 2026)
+// 10 s, and the webhook pusher, started again on a changed peer.json or the host's SIGHUP. Since Oct 28, 2026 one
+// peer-host process runs these for every peer (PeerHost.kt). A codex peer's helper (Oct 27, 2026)
 // also hands its messages to its Codex thread, and stops once the thread can no longer be reached.
 // A persisted native owner supplies a cancellable process-exit event; neither the helper's parent nor the daemon does.
 package splice.app.peer
@@ -40,7 +41,6 @@ import splice.sessions.registry.SessionSource
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.codemode.ProcessTicker
 import splice.upstream.codemode.ProcessWaiter
-import sun.misc.Signal
 
 // why: grokbot's period, and well inside SessionRegistry's 30-minute stale window (spec 2.2).
 private const val HEARTBEAT_MS = 30_000L
@@ -100,7 +100,6 @@ internal class HelperLoops(
         PeerStore(setup.settingsDir).codexThreads[setup.name]?.let { binding ->
             scope.launch { codex(binding, CodexReturns(outbox, sender)) }
         }
-        listenForHangup()
         helper.heartbeat()
     }
 
@@ -116,7 +115,9 @@ internal class HelperLoops(
         stop.complete(Unit)
     }
 
-    private fun look() {
+    /** Looks at peer.json now: gone stops this helper, and a change restarts its webhook pusher. The host runs it on
+     *  a SIGHUP, the supervisor's reload; the 10 s look is the fallback. */
+    fun look() {
         when (helper.look()) {
             PeerFileState.GONE -> stop.complete(Unit)
             PeerFileState.CHANGED -> reloads.trySend(Unit)
@@ -140,13 +141,5 @@ internal class HelperLoops(
         val peerDir = PeerStore(setup.settingsDir).dir(setup.name)
         val wait = WebhookPusher.Wait { ms -> waiter.wait(ms) }
         return WebhookPusher(config, journal, peerDir, wait, sink).start(scope)
-    }
-
-    /** SIGHUP is the supervisor's reload; the 10 s look is the fallback when the signal cannot be handled here. */
-    private fun listenForHangup() {
-        val handled = Cancellables.runCatchingCancellable {
-            Signal.handle(Signal("HUP")) { reloads.trySend(Unit) }
-        }
-        handled.exceptionOrNull()?.let { log.error("SIGHUP", it) }
     }
 }

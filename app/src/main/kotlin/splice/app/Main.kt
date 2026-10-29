@@ -11,8 +11,8 @@ import splice.app.daemon.LockOutcome
 import splice.app.diagnostics.CODE_MODE_PARITY_COMMAND
 import splice.app.diagnostics.CodeModeParityProbe
 import splice.app.manager.ManagerHome
-import splice.app.peer.PEER_HELPER_COMMAND
-import splice.app.peer.PeerHelperRun
+import splice.app.peer.PEER_HOST_COMMAND
+import splice.app.peer.PeerHostRun
 import splice.app.provider.LocalRowBootFindings
 import splice.client.wrap.WrapGuard
 import splice.client.wrap.WrappedHead
@@ -66,7 +66,7 @@ public suspend fun main(args: Array<String>) {
     when (args.firstOrNull()) {
         CODE_MODE_PARITY_COMMAND -> CodeModeParityProbe.run(args.drop(1).toTypedArray())
         null, "daemon" -> DaemonProcess(args.toList()).runDaemon()
-        PEER_HELPER_COMMAND -> exitProcess(PeerHelperRun(args.drop(1)).run())
+        PEER_HOST_COMMAND -> exitProcess(PeerHostRun(args.drop(1)).run())
         "start" -> LifecycleWiring.startThroughUnit()?.let(::exitProcess) ?: DaemonProcess(args.toList()).runDaemon()
         else -> exitProcess(splice.app.cli.Cli().runCli(args))
     }

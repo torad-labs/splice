@@ -351,19 +351,29 @@ All of these are named constants, each with a `// why:` line, as the silent-cons
 
 ### 4.1 Lifecycle (B)
 
-- **One helper per peer.** The registry is keyed by pid, so two peers can never share one process. The
-  helper is the splice jar run as
-  `java -Xmx48m -XX:+UseSerialGC -cp <splice.jar> splice.app.MainKt peer-helper <name> --settings … --state …`,
+- **One host for every peer** (Oct 28, 2026, replacing one JVM per peer; Marcos: "yeah replcace the java process per
+  peer"). A JVM per peer cost 80 to 110 MB of memory each. One process now serves every peer of a state folder: the
+  splice jar run as
+  `java -Xmx128m -XX:+UseSerialGC -cp <splice.jar> splice.app.MainKt peer-host --settings … --state …`,
   with `--registry`, `--runtime` and `--build` after them. It enters through `Main.kt`, because the architecture
-  law allows one `main` in `:app`, and `peer-helper` hands it to `PeerHelperRun`.
-  `java` is the daemon's own binary, from `ProcessHandle.current().info().command()`. The helper is started
-  detached in its own session, so a daemon restart, which happens many times a day, never takes a peer
-  offline. `helper.json` records the helper's `version`. At adoption, the supervisor restarts a helper whose
-  version differs from the daemon's, so an upgrade reaches the helpers too.
+  law allows one `main` in `:app`, and `peer-host` hands it to `PeerHostRun`. It holds
+  `<state dir>/peer-host/host.lock`, so a second host for the same folder leaves at once, and writes `host.json` with
+  its pid, procStart and build. The daemon asks it for a peer by writing `peer-host/start/<name>` holding the build;
+  a host serves only the requests of its own build, so a host of an older build never takes a peer it is about to
+  drop. The host exits 10 s after it last served a peer, so nothing runs while no peer is registered.
+- **Each peer keeps a pid of its own.** The registry is keyed by pid, so for each peer the host starts an anchor:
+  `/bin/sh -c "trap '' HUP; exec cat"`, reading a pipe only the host writes to. The peer's registry record, key file,
+  socket name and `helper.json` all name the anchor's pid and procStart, so ListAgents and SendMessage see one live
+  session per peer as before. A SIGTERM to that pid ends that peer alone: the host sees the anchor exit and removes
+  the peer's files. A host that dies closes every pipe, so every anchor ends with it and no peer looks alive with
+  nothing behind it. A daemon restart, which happens many times a day, never takes a peer offline. At adoption, the
+  supervisor restarts a peer whose `helper.json` version differs from the daemon's: the new build's host starts,
+  after the older host is asked to stop and has let go of its lock.
 - **The supervisor** runs in the daemon, owned by B and wired by D. At daemon start, for each
   `peers/<name>/peer.json`, it adopts a helper whose `helper.json` pid is alive with a matching procStart.
   Otherwise it starts one. Every 10 s it reconciles, restarting a dead helper after `min(60 s, 2^(n-1) s)`.
-  It exposes `start`, `stop`, `reload` and `status`.
+  It exposes `start`, `stop`, `reload` and `status`. `reload` sends SIGHUP to the host, and every peer looks at its
+  `peer.json` at once; a peer whose files are unchanged keeps running as it was.
 - **Helper start,** in this order:
   1. Read `peer.json`, and exit 78 if it is missing.
   2. Create the sockets folder at 0700 if absent, unlink a stale socket at its own path, bind, and chmod

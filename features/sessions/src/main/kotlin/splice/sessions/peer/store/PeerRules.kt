@@ -12,7 +12,8 @@ internal const val NAME_PATTERN = "^[a-z][a-z0-9-]{1,31}$"
 // why: a sendTo entry is a name or a session id (a uuid); both fit this, and it keeps quotes and brackets out.
 private const val SEND_TO_ENTRY_PATTERN = "^[A-Za-z0-9-]{1,64}$"
 
-// why: the spec's peers-per-user limit (3.4); each peer is a resident JVM of about 48 MB.
+// why: the spec's peers-per-user limit (3.4). Since Oct 28, 2026 one host process serves every peer, each under an
+// anchor of about 1 MB, so the limit no longer stands for memory; it stays as the spec states it.
 private const val MAX_PEERS = 16
 
 internal const val ANY_TARGET = "*"

@@ -59,10 +59,11 @@ public class HelperFiles(
     public fun live(process: NativeProcess): Boolean = owners.live(process)
 
     /** This process as a registry record names it. */
-    public fun self(now: Long): HelperIdentity {
-        val pid = ProcessHandle.current().pid()
-        return HelperIdentity(pid, identity.procStart(pid), identity.hostDomain(), identity.startedAt(pid) ?: now)
-    }
+    public fun self(now: Long): HelperIdentity = of(ProcessHandle.current().pid(), now)
+
+    /** The process [pid] as a registry record names it. */
+    public fun of(pid: Long, now: Long): HelperIdentity =
+        HelperIdentity(pid, identity.procStart(pid), identity.hostDomain(), identity.startedAt(pid) ?: now)
 }
 
 /** The file lock remains owned until the running helper has withdrawn its files and socket. */

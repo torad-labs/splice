@@ -435,6 +435,9 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     // A peer helper's helper.json, helper.log and helper.lock (package B), in the README's state/peers row. The lock is
     // PeerHelper.kt's; helper.json went to HelperFiles.kt and helper.log to HelperLog.kt on Oct 27, 2026, unchanged.
     "features/sessions/src/main/kotlin/splice/sessions/peer/helper/HelperFiles.kt" to mapOf("writeAtomic0600(" to 1),
+    // Oct 28, 2026: the one peer host's host.lock, host.json and start requests, in the peer-host README row.
+    "app/src/main/kotlin/splice/app/peer/PeerHostFiles.kt" to mapOf("writeAtomic0600(" to 2),
+    "app/src/main/kotlin/splice/app/peer/PeerHostRun.kt" to mapOf("FileChannel.open(" to 1),
     // Oct 28, 2026: a message waiting for a Codex thread no app-server holds, and its claim, in the codex-hook row.
     "features/sessions/src/main/kotlin/splice/sessions/peer/codex/CodexHookMailbox.kt" to mapOf(
         "Files.move(" to 1,

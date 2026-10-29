@@ -1,4 +1,8 @@
-// NEW: real HeadServer drain ordering keeps a code-mode child alive until its admitted turn ends.
+// NEW: a real HeadServer restart ends a code-mode turn with its restart line before it closes the worker.
+//
+// Since Oct 29, 2026 a restart does not wait for a running turn (Marcos: "we already send a message saying the server
+// is restarting and so the user knows about it, then we just have the new daemon take over"). The order still
+// matters: the client reads the restart line, and only then is the code-mode child closed.
 package splice.app.provider
 
 import kotlinx.coroutines.CompletableDeferred
@@ -6,7 +10,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.yield
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -72,10 +75,13 @@ import kotlin.time.Duration.Companion.seconds
 import splice.codemode.LegacyCodeModeRuntime as JvmCodeModeRuntime
 import splice.codemode.LegacyHostLaunch as HostLaunch
 
+/** The head's line for a restart, as the client reads it. */
+private const val RESTART_SAID = "[splice] splice restarted during this turn."
+
 @Timeout(45)
 internal class CodeModeDrainTest {
     @Test
-    fun `a draining stop keeps the real worker until its admitted turn completes`(@TempDir tmp: Path) = runBlocking {
+    fun `a restart tells a code-mode turn splice restarted, then closes its worker`(@TempDir tmp: Path) = runBlocking {
         val process = CompletableDeferred<Process>()
         val real = JvmCodeModeRuntime(
             launch = HostLaunch(
@@ -97,17 +103,14 @@ internal class CodeModeDrainTest {
             HttpClient.newHttpClient().use { client ->
                 val answer = client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                 withTimeout(10_000) { runtime.entered.await() }
-                val child = process.await()
-                val stopping = async { head.stop() }
-                yield()
-                assertFalse(stopping.isCompleted, "the admitted turn is inside the drain")
-                assertTrue(child.isAlive, "drain cannot close the child before its turn ends")
+                process.await()
                 assertFalse(provider.stopped)
-                runtime.release.complete(Unit)
+                // The worker is still held mid-turn: the restart must not wait for it.
+                val stopping = async { head.stop() }
                 val response = withTimeout(10_000) { answer.await() }
-                stopping.await()
-                assertTrue(response.body().contains("message_stop"), response.body())
-                assertFalse(response.body().contains("event: error"), response.body())
+                withTimeout(10_000) { stopping.await() }
+                assertTrue(response.body().contains(RESTART_SAID), response.body())
+                assertFalse(response.body().contains("message_stop"), response.body())
                 assertTrue(provider.stopped)
             }
         } finally {

@@ -73,6 +73,8 @@ internal class HookLook(
     val sessionId: String?,
     private val cwd: String?,
     private val err: TerminalOutput,
+    /** The payload's `hook_event_name`, only once the bytes are a hook payload. */
+    val event: String? = null,
 ) {
     /** The payload's working directory, only once the bytes are a hook payload. */
     val directory: String? get() = if (active) cwd else null
@@ -117,7 +119,7 @@ internal class HarnessHook(
         val active = forced || payload.event != null || payload.sessionId != null
         val session = if (active) payload.sessionId else null
         val cwd = if (active) payload.cwd else null
-        return HookLook(active, piped = true, session, cwd, err)
+        return HookLook(active, piped = true, session, cwd, err, payload.event.takeIf { active })
     }
 
     private fun read(text: String): HookFields {

@@ -69,10 +69,6 @@ internal class SetupCommand(
     private val frame = prompts.frame
     private val menu = SetupMenu(frame, profiles)
     private val mcpShare = SetupMcpShare(frame, InstallWiring.units(env))
-    private val codexHooks = SetupCodexHooks(frame, env)
-
-    /** The answer to the Codex hooks offer, carried from the questions to the install. */
-    private var codexAnswer: Boolean? = null
     private val headChoices = SetupHeadChoices(prompts, profiles)
 
     /** The post-install OAuth tail, in splice.app.cli.setup since V4-156 (concentration). */
@@ -102,10 +98,8 @@ internal class SetupCommand(
         val lane = lanes.ask(heads)
         val local = localModel.offer(path)
         val share = mcpShare.ask(path)
-        codexAnswer = codexHooks.ask(prompts.hasConsole())
         val summary = menu.summaryLines(start, path, bin, heads, lanes.summaryLine(lane)) +
-            choices.values.map { it.summary } + localModel.summary(local) + mcpShare.summary(share) +
-            codexHooks.summary(codexAnswer)
+            choices.values.map { it.summary } + localModel.summary(local) + mcpShare.summary(share)
         frame.note("Summary", summary)
         if (!frame.confirm("Install now?", true)) return WizardAnswer.Cancelled("not installing")
         effects.choose(choices)
@@ -127,7 +121,6 @@ internal class SetupCommand(
         val topology = TopologyLoader.loadOrMaterialize(plan.path)
         mcpShare.save(plan.path, plan.share)
         mcpShare.hub(plan.path, plan.share)
-        codexHooks.save(codexAnswer)
         val ok = signIn.signInPendingHeads(topology)
         headChoices.checkLive(landed, topology, env)
         signIn.printNextSteps(topology)

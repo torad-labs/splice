@@ -23,7 +23,6 @@ import splice.core.testing.TestPorts
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.core.wire.HttpStatus
-import splice.sessions.peer.codex.CodexHookMailbox
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
@@ -162,85 +161,6 @@ class PeerCodexHookTest {
         assertTrue(err.toString().contains("no Codex thread id"), err.toString())
     }
 
-    // A Codex thread no app-server holds gets its messages from its own hooks: Codex 0.159 adds a PostToolUse or
-    // UserPromptSubmit hook's hookSpecificOutput.additionalContext to the model's context, and a Stop hook's
-    // {"decision":"block","reason"} keeps the turn going with the reason as its next input. Each message goes once.
-    @Test
-    fun `a hook hands the thread each message left for it once, as context or as a reason to go on`(
-        @TempDir dir: Path,
-    ) {
-        val env = daemonEnv(dir, closedPort())
-        val mailbox = CodexHookMailbox(dir.resolve("state/peers/codex-$THREAD"))
-        mailbox.leave("first")
-        mailbox.leave("second")
-        val tool = run(verb(HOOK), hook(POST_TOOL), env)
-        assertEquals(PeerExit.DONE, tool.code, tool.err)
-        assertEquals(context(POST_TOOL, "first\n\nsecond"), tool.out.trim())
-        assertEquals("", run(verb(HOOK), hook(POST_TOOL), env).out, "a message is handed over once")
-        mailbox.leave("third")
-        val stop = run(verb(HOOK), hook(STOP), env)
-        assertEquals(PeerExit.DONE, stop.code, stop.err)
-        val decision = JsonScalars.objectOrNull(json, stop.out.trim())
-        assertEquals("block", JsonScalars.str(decision, "decision"))
-        assertEquals("third", JsonScalars.str(decision, "reason"))
-        assertEquals("", run(verb(HOOK), hook(STOP), env).out, "a Stop with nothing waiting lets the turn end")
-    }
-
-    @Test
-    fun `a hook attaches at the start and at each prompt, hands over at the prompt, and detaches at the end`(
-        @TempDir dir: Path,
-    ) {
-        val hits = mutableListOf<Hit>()
-        withDaemon(dir, handler = { exchange ->
-            hits += Hit(exchange.requestMethod, exchange.requestURI.path, exchange.requestURI.query, "")
-            val _ = exchange.requestBody.readBytes()
-            if (exchange.requestMethod == "DELETE") "{}".encodeToByteArray() else ATTACHED.encodeToByteArray()
-        }) { env ->
-            assertQuiet(run(verb(HOOK), hook(SESSION_START, extra = mapOf("source" to "startup")), env))
-            CodexHookMailbox(dir.resolve("state/peers/codex-$THREAD")).leave("hello")
-            val prompt = run(verb(HOOK), hook(USER_PROMPT, extra = promptFields, prompt = "go"), env)
-            assertEquals(PeerExit.DONE, prompt.code, prompt.err)
-            assertEquals(context(USER_PROMPT, "hello"), prompt.out.trim())
-            assertQuiet(run(verb(HOOK), hook(SESSION_END, extra = mapOf("reason" to "other")), env))
-        }
-        assertEquals(listOf("POST", "POST", "DELETE"), hits.map { it.method })
-        assertEquals(listOf(CODEX_PATH, CODEX_PATH, "/api/peers/codex-$THREAD"), hits.map { it.path })
-    }
-
-    // A thread can be mid-turn when its hooks are first written, or start while the daemon is down: its next hook is
-    // a tool call or a stop, and that hook attaches it so messages can reach it. Once its peer is served, a tool call
-    // asks the daemon nothing.
-    @Test
-    fun `a thread with no peer yet attaches at its next tool call or stop, and a served one asks nothing`(
-        @TempDir dir: Path,
-    ) {
-        val hits = mutableListOf<Hit>()
-        val peerDir = dir.resolve("state/peers/codex-$THREAD")
-        withDaemon(dir, handler = { exchange ->
-            hits += Hit(exchange.requestMethod, exchange.requestURI.path, exchange.requestURI.query, "")
-            val _ = exchange.requestBody.readBytes()
-            ATTACHED.encodeToByteArray()
-        }) { env ->
-            assertQuiet(run(verb(HOOK), hook(POST_TOOL), env))
-            assertQuiet(run(verb(HOOK), hook(STOP), env))
-            Files.createDirectories(peerDir)
-            Files.writeString(peerDir.resolve("helper.json"), "{}")
-            assertQuiet(run(verb(HOOK), hook(POST_TOOL), env))
-            assertQuiet(run(verb(HOOK), hook(STOP), env))
-        }
-        assertEquals(listOf(CODEX_PATH, CODEX_PATH), hits.map { it.path })
-    }
-
-    @Test
-    fun `a hook whose daemon is down still hands over and still exits 0`(@TempDir dir: Path) {
-        val env = daemonEnv(dir, closedPort())
-        CodexHookMailbox(dir.resolve("state/peers/codex-$THREAD")).leave("hello")
-        val prompt = run(verb(HOOK), hook(USER_PROMPT, prompt = "go"), env)
-        assertEquals(PeerExit.DONE, prompt.code, prompt.err)
-        assertEquals(context(USER_PROMPT, "hello"), prompt.out.trim())
-        assertEquals(PeerExit.DONE, run(verb(HOOK), hook(SESSION_END), env).code)
-    }
-
     @Test
     fun `an argument and --cwd win over the payload and stdout stays empty`(@TempDir dir: Path) {
         val hits = mutableListOf<Hit>()
@@ -339,17 +259,6 @@ private fun daemonEnv(dir: Path, port: Int): Map<String, String> {
     )
 }
 
-/** The line a PostToolUse or UserPromptSubmit hook prints to add [text] to the model's context. */
-private fun context(event: String, text: String): String = buildJsonObject {
-    put(
-        "hookSpecificOutput",
-        buildJsonObject {
-            put("hookEventName", event)
-            put("additionalContext", text)
-        },
-    )
-}.toString()
-
 private data class Ran(val code: Int, val out: String, val err: String)
 
 private data class Hit(val method: String, val path: String, val query: String?, val body: String)
@@ -364,9 +273,6 @@ private val promptFields: Map<String, String> = mapOf(
 
 private const val CODEX: String = "codex"
 private const val ATTACH: String = "attach"
-private const val HOOK: String = "hook"
-private const val POST_TOOL: String = "PostToolUse"
-private const val STOP: String = "Stop"
 private const val DETACH: String = "detach"
 private const val USER_PROMPT: String = "UserPromptSubmit"
 private const val SESSION_START: String = "SessionStart"

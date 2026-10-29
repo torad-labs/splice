@@ -1,9 +1,7 @@
 // NEW: Oct 27, 2026 (docs/peers.md, "A Codex thread as a peer"): POST /api/peers/codex, behind the management key, the
 // route `splice peer codex attach` calls. It registers a native Codex thread as the peer `codex-<thread id>`, or brings
 // the one there up to date, then starts its helper and answers once the helper's record is on the registry, as a
-// register does. A Codex home with no app-server listening is refused unless a Codex process above the attach hosts
-// the thread (Oct 28): that thread gets its messages at its next hook (CodexHookMailbox), and no message could reach
-// one with neither.
+// register does. A Codex home with no app-server listening is refused: no message could reach the thread.
 package splice.app.control.peer
 
 import io.ktor.http.HttpStatusCode
@@ -39,12 +37,10 @@ internal class PeerCodexRoutes(private val parts: PeerParts) {
     private suspend fun attached(body: JsonObject?): PeerAnswer {
         val request = request(body) ?: return PeerReplies.refuse(HttpStatusCode.BadRequest, ATTACH_SHAPE)
         val home = request.binding.home
-        // A thread its Codex process hosts gets its messages at its next hook when no app-server holds it.
-        if (request.binding.owner == null && endpoints.find(Path.of(home)) == null) {
+        if (endpoints.find(Path.of(home)) == null) {
             return PeerReplies.refuse(
                 HttpStatusCode.Conflict,
-                "no Codex app-server listens for $home and no Codex process above the attach hosts the thread, " +
-                    "so no message could reach it",
+                "no Codex app-server listens for $home, so no message could reach the thread",
             )
         }
         return when (val outcome = parts.store.attachCodex(request)) {

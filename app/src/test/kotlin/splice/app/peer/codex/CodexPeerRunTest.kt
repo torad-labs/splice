@@ -10,7 +10,6 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -25,7 +24,6 @@ import splice.sessions.peer.PeerSender
 import splice.sessions.peer.SendOutcome
 import splice.sessions.peer.SenderCheck
 import splice.sessions.peer.codex.CodexBinding
-import splice.sessions.peer.codex.CodexHookMailbox
 import splice.sessions.peer.codex.CodexRequest
 import splice.sessions.peer.codex.CodexReturns
 import splice.sessions.peer.codex.NativeProcess
@@ -103,54 +101,6 @@ class CodexPeerRunTest {
         Files.createDirectories(link.parent)
         Files.createSymbolicLink(link, real)
         assertDelivered(dir, home, real)
-    }
-
-    // Oct 28: Eli's Codex seats run `codex resume --no-daemon`, which serves its thread in-process and listens on no
-    // socket, so every message to them ended with "the app-server has not loaded the thread" and the peer was revoked.
-    // A thread no app-server holds, hosted by a Codex process that still runs, keeps its peer: each message waits for
-    // the thread's next hook, which takes it once.
-    @Test
-    fun `a thread no app-server holds keeps its peer and leaves each message for its next hook, once`(
-        @TempDir dir: Path,
-    ) {
-        val binding = CodexBinding(THREAD, dir.resolve("codex").toString(), owner())
-        val settings = dir.resolve("settings")
-        runBlocking { PeerStore(settings).attachCodex(CodexRequest(binding, dir.toString())) }
-        val registry = Files.createDirectories(dir.resolve("registry"))
-        val uid = (Files.getAttribute(Path.of("/proc/self"), "unix:uid") as Int).toLong()
-        val sockets = PeerSockets(dir.resolve("run"), uid, System.getProperty("user.name"))
-        val setup = HelperSetup("codex-$THREAD", settings, dir.resolve("state"), listOf(registry), sockets, "test")
-        val start = PeerHelper(setup, WallClock { System.currentTimeMillis() }).start()
-        val helper = assertInstanceOf(HelperStart.Started::class.java, start).helper
-        try {
-            val journal = PeerJournal(helper.files.dir, log)
-            val sender = PeerSender(helper.parts.socket.toString(), "codex-$THREAD")
-            runBlocking {
-                val gary = SenderCheck("gary", "s-gary", GARY, "gary", registered = true)
-                PeerInbox(journal, Senders(), sender, log)
-                    .onMessage(InboundFrame.Message("m-1", GARY, "gary", "run the gate"), gary)
-            }
-            val parts = CodexPeerParts(helper, journal, CodexReturns(Senders(), sender), log)
-            val ended = CompletableFuture<String>()
-            Thread { ended.complete(runBlocking { CodexPeerRun(binding, parts).run(Dispatchers.IO) }) }
-                .apply { isDaemon = true }.start()
-
-            val mailbox = CodexHookMailbox(helper.files.dir)
-            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_S)
-            var taken = mailbox.take()
-            val waiting = { !ended.isDone && System.nanoTime() < deadline }
-            while (taken.isEmpty() && waiting()) {
-                Thread.onSpinWait()
-                taken = mailbox.take()
-            }
-            assertFalse(ended.isDone, "the peer ended: ${ended.getNow(null)}")
-            val envelope = "<cross-session-message from=\"$GARY\" from-name=\"gary\">\nrun the gate\n" +
-                "</cross-session-message>"
-            assertEquals(listOf(envelope), taken)
-            assertEquals(emptyList<String>(), mailbox.take(), "a message is taken once")
-        } finally {
-            helper.close()
-        }
     }
 
     /** A codex peer whose thread lives in [home], its app-server listening on [socket]: the message it journals reaches

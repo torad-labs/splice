@@ -1,10 +1,9 @@
 // Oct 28, 2026: POST /api/peers and POST /api/peers/codex, as the daemon mounts them, over a real peer store.
 // A register that repeats one already there answers it with 200 and the same session id and key file, where it
 // was refused.
-// POST /api/peers/codex: A Codex home where no
-// app-server listens used to refuse every attach, which kept a thread that `codex resume --no-daemon` serves in its own
-// process off the registry. A thread hosted by a Codex process that runs is attached anyway, since its messages reach
-// it at its next hook; a thread with no such process and no app-server is still refused, since nothing could reach it.
+// POST /api/peers/codex: a Codex home where no app-server listens refuses every attach, a thread its Codex process
+// hosts included, since no message could reach it. Rewritten Oct 28, 2026, when Marcos dropped the hook route that
+// had let a `--no-daemon` thread attach anyway.
 package splice.app.control.peer
 
 import io.ktor.client.HttpClient
@@ -24,7 +23,6 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -86,7 +84,7 @@ class PeerRegistrationRoutesTest {
     }
 
     @Test
-    fun `a thread its Codex process hosts attaches where no app-server listens, and one with no process does not`(
+    fun `no thread attaches where no app-server listens, even one its Codex process hosts`(
         @TempDir dir: Path,
     ) = testApplication {
         val store = PeerStore(dir.resolve("settings"))
@@ -101,8 +99,8 @@ class PeerRegistrationRoutesTest {
         assertNull(store.get("codex-$THREAD"), "a thread nothing could reach is not registered")
 
         val hosted = attach(client, key.get(), body(home, cwd, owner = owner()))
-        assertEquals(HttpStatusCode.Created, hosted.first, hosted.second)
-        assertNotNull(store.get("codex-$THREAD"), "the thread is the peer codex-<thread>")
+        assertEquals(HttpStatusCode.Conflict, hosted.first, hosted.second)
+        assertNull(store.get("codex-$THREAD"), "a thread only its own process holds is not registered")
     }
 
     @Test

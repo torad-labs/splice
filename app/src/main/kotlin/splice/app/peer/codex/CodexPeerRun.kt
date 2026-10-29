@@ -2,10 +2,7 @@
 // opens its thread on the app-server, shows the thread's status in the peer's record (`busy` while a turn runs, `idle`
 // otherwise), and hands the thread each message the inbox journals. It ends when the thread closes or unloads, when the
 // app-server closes the connection, or when a hand-over cannot go out; the helper then journals `ended` and stops, and
-// the daemon revokes the peer. A thread that loads again attaches again from its next hook. A thread no app-server holds
-// (Oct 28: `codex resume --no-daemon` serves its thread in its own process and listens on no socket) whose Codex process
-// still runs keeps its peer: each message waits in CodexHookMailbox for the thread's next hook, and the peer ends with
-// that process, as every native-owned peer does.
+// the daemon revokes the peer. A thread that loads again attaches again from its next hook.
 package splice.app.peer.codex
 
 import kotlinx.coroutines.CoroutineDispatcher
@@ -17,8 +14,6 @@ import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.sessions.peer.codex.CodexBinding
 import splice.sessions.peer.codex.CodexDelivery
-import splice.sessions.peer.codex.CodexHookMailbox
-import splice.sessions.peer.codex.CodexHookThread
 import splice.sessions.peer.codex.CodexReturns
 import splice.sessions.peer.helper.RunningHelper
 import splice.sessions.peer.journal.PeerJournal
@@ -35,28 +30,18 @@ internal data class CodexPeerParts(
     val log: LogSink,
 )
 
-/** How a run on the app-server ended: why, and whether the app-server ever held the thread. */
-private data class AppServerEnd(val why: String, val held: Boolean)
-
 internal class CodexPeerRun(private val binding: CodexBinding, private val parts: CodexPeerParts) {
-    /** Runs until the thread can no longer be reached; why. A thread no app-server holds, hosted by a Codex process,
-     *  gets its messages at its next hook instead, for as long as that process runs. */
-    suspend fun run(io: CoroutineDispatcher): String {
-        val ended = when (val opened = CodexAppServers(io).open(binding)) {
-            is CodexOpen.Gone -> AppServerEnd(opened.reason, held = false)
+    /** Runs until the thread can no longer be reached; why. */
+    suspend fun run(io: CoroutineDispatcher): String =
+        when (val opened = CodexAppServers(io).open(binding)) {
+            is CodexOpen.Gone -> opened.reason
             is CodexOpen.Open -> serve(opened.thread)
         }
-        if (ended.held || binding.owner == null) return ended.why
-        parts.log("[peers] ${ended.why}, so each message waits for the thread's next hook\n")
-        parts.helper.busy(false)
-        val mailbox = CodexHookMailbox(parts.helper.files.dir)
-        return CodexDelivery(parts.journal, CodexHookThread(mailbox), parts.returns, parts.log).run()
-    }
 
-    private suspend fun serve(thread: CodexAppThread): AppServerEnd = coroutineScope {
+    private suspend fun serve(thread: CodexAppThread): String = coroutineScope {
         val reading = async { thread.read() }
         val ended = when (val greeting = thread.greet()) {
-            is CodexGreeting.Refused -> AppServerEnd(greeting.reason, held = false)
+            is CodexGreeting.Refused -> greeting.reason
             is CodexGreeting.Loaded -> {
                 parts.helper.busy(greeting.status == ACTIVE)
                 val handing = async { CodexDelivery(parts.journal, thread, parts.returns, parts.log).run() }
@@ -67,7 +52,7 @@ internal class CodexPeerRun(private val binding: CodexBinding, private val parts
                 }
                 handing.cancel()
                 watching.cancel()
-                AppServerEnd(why, held = true)
+                why
             }
         }
         thread.close()

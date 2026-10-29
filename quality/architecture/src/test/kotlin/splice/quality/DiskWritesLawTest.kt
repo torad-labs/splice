@@ -365,8 +365,6 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     // The non-secret launcher declaration documented in the launch-owners README row.
     "core/src/main/kotlin/splice/core/process/LaunchOwners.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/cli/ConfigFixOffer.kt" to mapOf("writeAtomic0600(" to 1),
-    // Oct 28, 2026: setup's yes to the Codex hooks offer writes hooks.json after its backup, in the hooks.json row.
-    "app/src/main/kotlin/splice/app/cli/setup/SetupCodexHooks.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/cli/ConfigFixSession.kt" to mapOf("writeAtomic0600(" to 1),
     // Failure-handling slice 4: the fix session clears a retired knob saved in config.json, after its backup, in the
     // config.json README row.
@@ -438,11 +436,6 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     // Oct 28, 2026: the one peer host's host.lock, host.json and start requests, in the peer-host README row.
     "app/src/main/kotlin/splice/app/peer/PeerHostFiles.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/peer/PeerHostRun.kt" to mapOf("FileChannel.open(" to 1),
-    // Oct 28, 2026: a message waiting for a Codex thread no app-server holds, and its claim, in the codex-hook row.
-    "features/sessions/src/main/kotlin/splice/sessions/peer/codex/CodexHookMailbox.kt" to mapOf(
-        "Files.move(" to 1,
-        "writeAtomic0600(" to 1,
-    ),
     "features/sessions/src/main/kotlin/splice/sessions/peer/helper/HelperLog.kt" to mapOf(
         "JsonlSink.appendLine(" to 1,
         "createNew0600(" to 1,

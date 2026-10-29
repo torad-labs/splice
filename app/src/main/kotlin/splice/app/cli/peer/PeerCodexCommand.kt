@@ -1,8 +1,6 @@
-// NEW: Oct 27, 2026 (docs/peers.md, "A Codex thread as a peer"): `splice peer codex attach` and `detach`, and since
-// Oct 28 `hook`, the one command a Codex hook runs for every event (PeerCodexHook.kt). Attach makes
+// NEW: Oct 27, 2026 (docs/peers.md, "A Codex thread as a peer"): `splice peer codex attach` and `detach`. Attach makes
 // a native Codex thread the peer `codex-<thread id>` and starts its helper; a Codex hook runs it on SessionStart,
-// UserPromptSubmit and SessionEnd, and on PostToolUse or Stop while no host serves the peer yet, and it returns at once
-// once the peer stands as asked. The thread is the argument,
+// UserPromptSubmit and SessionEnd, and it returns at once once the peer stands as asked. The thread is the argument,
 // else $CODEX_THREAD_ID or $CODEX_SESSION_ID when a caller set them. A hook sets neither: Codex writes `session_id`
 // and `cwd` on stdin (HarnessHook). The home is $CODEX_HOME, and the Codex process the record binds is the one above
 // the command, found in its own ancestry.
@@ -26,10 +24,7 @@ import java.nio.file.Path
 
 internal const val CODEX_THREAD_ENV = "CODEX_THREAD_ID"
 private const val CODEX_SESSION_ENV = "CODEX_SESSION_ID"
-
-/** The variable that names a Codex home, which Codex itself reads. */
-internal const val CODEX_HOME_ENV = "CODEX_HOME"
-private val NONE: List<String> = emptyList()
+private const val CODEX_HOME_ENV = "CODEX_HOME"
 
 /** `splice peer codex <attach|detach>`. */
 internal class PeerCodexCommand(
@@ -45,16 +40,8 @@ internal class PeerCodexCommand(
     fun run(args: List<String>): Int? = when (args.firstOrNull()) {
         "attach" -> attach(args.drop(1))
         "detach" -> detach(args.drop(1))
-        "hook" -> PeerCodexHook(out, env, hooks, { named(NONE, it) }, ::attached, ::detached).run(args.drop(1))
         else -> null
     }
-
-    /** The attach a hook runs for [thread], with no flags; its exit code. */
-    private fun attached(thread: String, look: HookLook): Int = post(thread, checkNotNull(attachArgs.parse(NONE)), look)
-
-    /** The detach a hook runs for [thread], keeping the journal; its exit code. */
-    private fun detached(thread: String, look: HookLook): Int =
-        delete(thread, checkNotNull(detachArgs.parse(NONE)), look)
 
     /** `attach [<thread>] [--cwd DIR] [--codex-home DIR] [--json] [--hook]`. */
     private fun attach(args: List<String>): Int? {

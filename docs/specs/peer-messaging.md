@@ -461,7 +461,6 @@ The helper entry is a separate main class (4.1), not a verb.
 | Verb | Prints on success |
 |---|---|
 | `splice peer register <name> [--cwd DIR] [--send-to A,B,…] [--owner PID]` | name, session id, key file path, socket. Never the key. `--owner` binds the peer to that running process (exit 2 when none runs); without it, the nearest `codex` or `claude` ancestor. Safe to run at every start of the program that registers. |
-| `splice peer codex hook` | nothing on most events; on UserPromptSubmit and PostToolUse the waiting messages as `additionalContext`, on Stop a `block` decision with them as the reason. Always exits 0. Codex's hooks run it for SessionStart, UserPromptSubmit, PostToolUse, Stop and SessionEnd; `splice setup` offers to write them. |
 | `splice peer list [--json]` | one line per peer: name, alive or down, pid, send scope, webhook host or none, unread count |
 | `splice peer revoke <name> [--purge]` | `revoked <name>` |
 | `splice peer rotate <name>` | the key file path |

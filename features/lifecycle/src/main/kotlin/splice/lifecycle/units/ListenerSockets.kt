@@ -37,7 +37,7 @@ public class ListenerSockets(
     /** Unit name to splice's bytes for each listener's socket. A listener whose name a unit name cannot carry gets
      *  none, and binds its own port as it does without systemd. */
     public fun templates(listeners: Map<String, Int>): Map<String, ByteArray> {
-        val template = javaClass.getResourceAsStream(TEMPLATE)?.use { it.readBytes().decodeToString() }
+        val template = javaClass.getResourceAsStream(LISTENER_TEMPLATE)?.use { it.readBytes().decodeToString() }
             ?: return emptyMap()
         val carried = listeners.filter { (name, port) -> CARRIED.matches(name) && port in PORTS }
         return carried.entries.associate { (name, port) ->
@@ -101,7 +101,7 @@ public class ListenerSockets(
     private fun isListenerSocket(name: String): Boolean = name == unitName(CONTROL) || HEAD_SOCKET.matches(name)
 }
 
-private const val TEMPLATE = "/splice/lifecycle/units/splice-listener.socket"
+private const val LISTENER_TEMPLATE = "/splice/lifecycle/units/splice-listener.socket"
 private const val PREFIX = "splice-"
 private const val CONTROL = "control"
 private const val NAME_SLOT = "@NAME@"
@@ -110,6 +110,8 @@ private val SLOT = Regex("@NAME@|@PORT@")
 
 // why: a unit name and a FileDescriptorName both carry these as written; anything else would be escaped or refused.
 private val CARRIED = Regex("[A-Za-z0-9_.-]{1,200}")
+
+// why: the highest TCP port; a socket unit for a port past it would be refused by systemd, so none is laid.
 private const val HIGHEST_PORT = 65_535
 private val PORTS = 1..HIGHEST_PORT
 private const val UNIT_CGROUP = "/$DAEMON_UNIT_NAME"

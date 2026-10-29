@@ -185,7 +185,7 @@ class HeadServerCompactionReplayTest(@param:TempDir private val tmp: Path) {
                 assertTrue(waitFor { mock.upstreamBodies.size > before })
                 socket.close()
                 assertTrue(waitFor { logged("compaction continues detached", mark) })
-                val recording = runningRecording()
+                val recording = runningRecording(mark)
                 // Detach can be noticed on an earlier frame's write while the parked "held" delta is still on its
                 // way to the recording; reserving the heap before it lands refuses the drive's own append, and then
                 // nothing is held.
@@ -211,7 +211,15 @@ class HeadServerCompactionReplayTest(@param:TempDir private val tmp: Path) {
         assertTrue(waitFor { logged("the retry cost no upstream turn", mark) }, lines.drop(mark).joinToString())
     }
 
-    private fun runningRecording(): FrameRecording = head.compactionReplay.held().single()
+    /** The one recording in flight. On Oct 29, 2026 a loaded gate found none here after the detach line, and the run
+     *  kept no log, so a miss now names what the head logged since [since]. */
+    private fun runningRecording(since: Int): FrameRecording {
+        val held = head.compactionReplay.held()
+        return checkNotNull(held.singleOrNull()) {
+            "expected one recording in flight, held ${held.size}; the head logged: " +
+                lines.drop(since).joinToString("")
+        }
+    }
 
     private suspend fun post(json: String): String =
         client.post("http://127.0.0.1:$port/v1/messages") {

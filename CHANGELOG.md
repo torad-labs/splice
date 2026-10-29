@@ -184,7 +184,8 @@ origin.
   process per peer journals each message with a delivery receipt, labels each sender `registered` or
   `unregistered` by whether its address names a live session, and can push each message to a webhook signed with
   HMAC-SHA256. `splice peer send --as <name>` sends under the peer's own name, which Splice writes itself, so a
-  recipient can reply; `inbox` and `status` read what came back. Each peer has its own key, which opens only its
+  recipient can reply; `inbox` and `status` read what came back, and `status --json` prints a send's stored record
+  and receipt for a program to read. Each peer has its own key, which opens only its
   own routes, and the management key cannot send as a peer. A user who never registers one gets no process, socket
   or file. Guide: `docs/peers.md`.
 - **The splice manager can drive the console.** `splice console <action>` works on the console page the person has

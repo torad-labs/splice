@@ -17,6 +17,9 @@ private const val FOLLOW_INTERVAL_MS = 2_000L
 // why: an inbox read without --limit sends none, and the daemon's own default page size applies.
 private const val NO_LIMIT = 0L
 
+// why: inbox and status both take it, to print the daemon's answer as one line of JSON instead of text.
+private const val JSON_SWITCH = "--json"
+
 /** The `--as` verbs that read: `inbox` and `status`. */
 internal class PeerReader(
     private val call: PeerCall,
@@ -28,7 +31,7 @@ internal class PeerReader(
 
     /** `inbox --as <name> [--after N] [--limit N] [--ack] [--json] [--follow]`. */
     suspend fun inbox(args: List<String>): Int? {
-        val parsed = PeerArgsParser(setOf("--as", "--after", "--limit"), setOf("--ack", "--json", "--follow"))
+        val parsed = PeerArgsParser(setOf("--as", "--after", "--limit"), setOf("--ack", JSON_SWITCH, "--follow"))
             .parse(args)?.takeIf { it.words.isEmpty() }
         val window = parsed?.let { window(it.values) }
         if (parsed == null || window == null) return null
@@ -36,16 +39,17 @@ internal class PeerReader(
         return poll(InboxRead(key, window.after, window.limit, parsed.switches))
     }
 
-    /** `status --as <name> <msgId>`: the send's outcome, then its receipt or `no problem reported`. */
+    /** `status --as <name> <msgId> [--json]`: the send's outcome, then its receipt or `no problem reported`. `--json`
+     *  prints the record the daemon stored for the send, as it answered it, on one line. */
     fun status(args: List<String>): Int? {
-        val parsed = PeerArgsParser(setOf("--as"), emptySet()).parse(args)
+        val parsed = PeerArgsParser(setOf("--as"), setOf(JSON_SWITCH)).parse(args)
         val msgId = parsed?.words?.singleOrNull() ?: return null
         val key = call.peerKey(parsed.values["--as"]) ?: return PeerExit.REFUSED
         val path = "/api/peers/self/sent/${URLEncoder.encode(msgId, Charsets.UTF_8)}"
         return when (val answer = call.call("GET", path, key)) {
             is PeerAnswer.Exit -> answer.code
             is PeerAnswer.Ok -> {
-                lines.status(answer.body)
+                if (JSON_SWITCH in parsed.switches) out.line(answer.body.toString()) else lines.status(answer.body)
                 PeerExit.DONE
             }
         }
@@ -90,7 +94,7 @@ internal class PeerReader(
     /** Prints one page and acks it when asked; the exit code when the read is over, or null to keep following. */
     private fun show(read: InboxRead, page: JsonObject, next: Long): Int? {
         val items = (page["items"] as? JsonArray).orEmpty().map { it.jsonObject }
-        if ("--json" in read.switches) out.line(page.toString()) else items.forEach { lines.record(it) }
+        if (JSON_SWITCH in read.switches) out.line(page.toString()) else items.forEach { lines.record(it) }
         val refused = if ("--ack" in read.switches && items.isNotEmpty()) acknowledge(read.key, next) else null
         return refused ?: if ("--follow" in read.switches) null else PeerExit.DONE
     }

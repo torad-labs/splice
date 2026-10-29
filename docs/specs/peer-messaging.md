@@ -469,7 +469,7 @@ The helper entry is a separate main class (4.1), not a verb.
 | `splice peer webhook test <name>` | the outcome and the HTTP status |
 | `splice peer send --as <name> <to> <text \| ->` | the msg id. `-` reads the text from stdin. |
 | `splice peer inbox --as <name> [--after N] [--limit N] [--ack] [--json] [--follow]` | one block per record. `--follow` polls every 2 s. |
-| `splice peer status --as <name> <msgId>` | the outcome, then the receipt status and its time, or `no problem reported` |
+| `splice peer status --as <name> <msgId> [--json]` | the outcome, then the receipt status and its time, or `no problem reported`. `--json` prints the stored record `sent/{msgId}` answers, on one line; a refused read prints nothing on stdout and exits non-zero. |
 
 - **`--as <name>`** reads `<settings dir>/peers/<name>/peer.key`. Setting `SPLICE_PEER_KEY_FILE=<path>`
   replaces `--as` for scripts. The key is sent as `Authorization: Bearer`, and never printed or put in argv.

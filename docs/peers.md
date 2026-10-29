@@ -88,6 +88,11 @@ reply. Nothing in the request can change them.
 `splice peer status` shows the send's outcome, then a receipt if one came back. A Claude Code recipient sends a
 receipt only when it holds, expires or drops a message, so the usual answer is `no problem reported`.
 
+`splice peer status --as gary <msgId> --json` prints the same record as one line of JSON: the message id, its
+target, when it went, the outcome, and the receipt, or `null` when none came back. Only a receipt whose status is
+`delivered` means the recipient accepted the message. A read the daemon refuses, such as an id this peer never sent,
+prints nothing on stdout and exits non-zero.
+
 A text is at most 32,768 bytes. A peer may send 20 messages at once and 60 a minute after that, enough for a program
 that tells a whole team at once. `splice peer limit <name> <per-minute> <burst>` gives one peer its own limit, from 1
 to 600 a minute and a burst of 1 to 100, and `splice peer limit <name> --default` gives it the default back.

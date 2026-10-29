@@ -23,7 +23,7 @@ internal class RateLimitStore(
     private val writeLock: UsageWriteLock,
     private val log: LogSink = LogSink(DaemonLog::write),
 ) {
-    // Latest-wins pending ratelimit payload; consumed by the coalesced lane, flushNow, or a read.
+    // Latest-wins pending ratelimit payload; cleared by the flush that writes it (the coalesced lane or flushNow).
     private val pendingRateLimit = AtomicReference<PendingRateLimit?>(null)
     private val rlWriteScheduled = AtomicBoolean(false)
 
@@ -49,34 +49,34 @@ internal class RateLimitStore(
     }
 
     /** Write the newest pending ratelimit payload, if any — flag cleared BEFORE the payload is
-     *  consumed so a concurrent persistRateLimit always lands in a (re)scheduled flush, and the
-     *  payload is consumed INSIDE writeLock so two racing flushers (the 1s lane vs a synchronous
-     *  flushNow) serialize consume+write as one unit — consuming outside the lock let a
-     *  descheduled flusher commit an OLDER payload over a newer one (review 2026-07-22). Widened
-     *  from private to internal (HD-24): UsageStore.flushNow calls it from a different file. */
+     *  read so a concurrent persistRateLimit always lands in a (re)scheduled flush, and the
+     *  payload is read and written INSIDE writeLock so two racing flushers (the 1s lane vs a
+     *  synchronous flushNow) serialize as one unit — taking it outside the lock let a descheduled
+     *  flusher commit an OLDER payload over a newer one (review 2026-07-22). Widened from private
+     *  to internal (HD-24): UsageStore.flushNow calls it from a different file. */
     internal fun flushRateLimit() {
         rlWriteScheduled.set(false)
         Cancellables.runCatchingCancellable {
             synchronized(writeLock) {
-                val pending = pendingRateLimit.getAndSet(null) ?: return@synchronized
-                // DR-127: the write OUTCOME decides the payload's fate. getAndSet-then-write
-                // discarded the NEWEST snapshot when the disk write threw — no log, no retention,
-                // statusline/HUD stale until the next round carried headers. On failure the
-                // payload goes back through the same freshness gate persistRateLimit uses (a
-                // concurrent persist may have installed a newer one while we held this), and the
-                // failure logs once per streak — the UsageRingFile.persistSnapshot idiom.
+                val pending = pendingRateLimit.get() ?: return@synchronized
+                // The payload stays pending until its file is written: readRateLimit serves pending
+                // first, so a read that lands mid-write still answers this round. Taking it out
+                // before the write left that read neither, null on the first write and the round
+                // before on every later one (pre-push gate, 2026-10-29). Only a successful write
+                // clears it, and only if no fresher round replaced it meanwhile; that round's persist
+                // has already scheduled the next flush. DR-127 holds as before: a failed write keeps
+                // the newest snapshot in memory and logs once per streak, the
+                // UsageRingFile.persistSnapshot idiom.
                 val failure = Cancellables.runCatchingCancellable { file.write(pending.encoded) }.exceptionOrNull()
                 if (failure == null) {
+                    pendingRateLimit.compareAndSet(pending, null)
                     flushFailureLogged = false
-                } else {
-                    keepFresher(pending)
-                    if (!flushFailureLogged) {
-                        flushFailureLogged = true
-                        log(
-                            "[usage] ratelimit flush FAILED (${SafeFailureText.render(failure)}); " +
-                                "newest snapshot retained in memory until a later flush succeeds\n",
-                        )
-                    }
+                } else if (!flushFailureLogged) {
+                    flushFailureLogged = true
+                    log(
+                        "[usage] ratelimit flush FAILED (${SafeFailureText.render(failure)}); " +
+                            "newest snapshot retained in memory until a later flush succeeds\n",
+                    )
                 }
             }
         }
@@ -84,8 +84,7 @@ internal class RateLimitStore(
 
     /** Freshness-gated install: keep [candidate] unless the current pending is strictly fresher
      *  — accumulateAndGet is the atomic-max idiom UpstreamClient.rateLimitedUntilMs already uses
-     *  for the same shape of problem (USG-003). Shared by the header path and the failed-flush
-     *  restore (DR-127) so the two cannot drift; ties favor [candidate], matching the original
+     *  for the same shape of problem (USG-003). Ties favor [candidate], matching the original
      *  persist-path behavior. The accumulator's second arg is typed PendingRateLimit? (the
      *  AtomicReference's nullable T) and no null-guard smart-casts it, so [candidate] — the same
      *  instance accumulateAndGet passes in, non-null by construction — is read directly instead
@@ -109,7 +108,8 @@ internal class RateLimitStore(
     // An unreadable file is logged by RateLimitFile.read, which answers null for it; nothing here can throw.
     public fun readRateLimit(): RateLimitState? {
         val pending = pendingRateLimit.get()
-        // A flusher may already own the pending payload. Return the last atomic commit without waiting.
+        // A flush clears pending only after its file is written, so a null pending means the file
+        // already holds the newest commit. Read it without waiting on the writer.
         return pending?.parsed ?: file.read()?.let { headers.rateLimitStateFrom(it) }
     }
 }

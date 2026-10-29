@@ -2,14 +2,11 @@
 // observer (DaemonStopOrderTest, in :app) can only read, not run. Both drive the REAL production
 // path, not a mirror of the policy:
 //
-//   (b) a detached compaction is DRAINED WITHIN THE BUDGET, not ended before it. A compaction whose
-//       client hung up outlives its client (5f3df5cb): its handed-off slot travels with the drive,
-//       and the drain budget belongs to that feature — a detached compaction that finishes inside
-//       the budget releases its slot and keeps its recording for the retry. stopDetached ends only
-//       what is STILL running once the budget is spent. An earlier audit premise claimed a detached
-//       compaction BURNS the budget and asserted the opposite order; that premise was wrong and is
-//       corrected here. The assertion drives a REAL detached compaction, releases its upstream
-//       INSIDE the drain, and requires the recording to be kept — and the drain not to time out.
+//   (b) a restart does not wait for a detached compaction. A compaction whose client hung up outlives its
+//       client (5f3df5cb), and its handed-off slot travels with the drive. Since Oct 29, 2026 the stop's drain is
+//       0 (Marcos: "then we just have the new daemon take over"), so stopDetached ends it at once and releases its
+//       slot, and the next daemon is not held. A console restart still waits for compactions first
+//       (RestartAfterCompactions); `splice restart --now` does not.
 //
 //   (d) stopDetached ends the compactions (cancelChildren) and LEAVES THE SCOPE ALIVE for a restart,
 //       so a compaction after a head stop+start can still detach (the compaction-outlives-its-client
@@ -19,12 +16,10 @@
 package splice.head
 
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -56,6 +51,10 @@ import kotlin.time.Duration.Companion.seconds
 
 // why 50ms: the precondition polls (a slot held, a detach logged) flip at human speed; a 50ms
 // interval keeps a 20s deadline from busy-spinning while still catching a quick flip promptly.
+// why 10s: ending the compaction and stopping the engine take a few seconds at most; the old drain held the next
+// daemon for up to 45s.
+private const val TAKEOVER_BOUND_MS = 10_000L
+
 private const val POLL_INTERVAL_MS = 50L
 
 private class DetachedStopOrderAuth : RefreshableAuthProvider {
@@ -160,7 +159,7 @@ class HeadServerDetachedStopOrderTest {
     }
 
     @Test
-    fun `a detached compaction finishes inside the drain budget and keeps its recording`(
+    fun `a restart ends a detached compaction at once instead of waiting for it`(
         @TempDir tmp: Path,
     ) = runBlocking {
         val mock = MockChatGptUpstream()
@@ -180,25 +179,13 @@ class HeadServerDetachedStopOrderTest {
             openDetachedCompaction(mock, gate, lines, port)
             assertTrue(gate.snapshot().inflight == 1, "the slot travels with the detached drive")
 
-            // Stop on its own lane, then release the upstream once the drain is RUNNING: the detached
-            // compaction must be allowed to finish and keep its recording, not be cut off first.
-            val stopping = async { head.stop() }
-            assertTrue(
-                waitFor(5_000) { waiter.polls.get() > 0 },
-                "precondition: the drain must start before the upstream is released",
-            )
-            mock.releaseHold()
-            stopping.await()
+            // The upstream stays held for the whole stop: nothing the compaction does may hold the next daemon.
+            val began = System.nanoTime()
+            head.stop()
+            val stoppedMs = (System.nanoTime() - began) / 1_000_000
 
-            assertTrue(
-                waitFor(5_000) { lines.any { it.contains("held for a byte-identical retry") } },
-                "the detached compaction must finish inside the drain and keep its recording, or a " +
-                    "retry re-runs upstream: ${lines.joinToString("")}",
-            )
-            assertFalse(
-                lines.any { it.contains("draining timed out") },
-                "the drain must converge once the detached compaction finishes: ${lines.joinToString("")}",
-            )
+            assertTrue(stoppedMs < TAKEOVER_BOUND_MS, "the stop waited $stoppedMs ms on a detached compaction")
+            assertTrue(gate.snapshot().inflight == 0, "the ended compaction must release its slot")
         } finally {
             mock.releaseHold() // never leave a parked upstream thread behind
             head.stop()

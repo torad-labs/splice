@@ -31,9 +31,10 @@ import splice.lifecycle.StopRungPolls
 
 class DaemonStopBudgetTest {
 
-    /** The innermost link, owned by :daemon-head's HeadServer. Kept in step with that constant by
-     *  HeadServerStopDrainTest, which asserts its value directly where it is declared. */
-    private val drainMs = 45_000L
+    /** The innermost link, owned by :daemon-head's HeadServer: 0 since Oct 29, 2026, when a restart stopped waiting
+     *  for running turns. Kept in step with that constant by HeadServerStopDrainTest, which asserts the takeover's
+     *  time where it is declared. */
+    private val drainMs = 0L
 
     /** The host unit's TimeoutStopSec (75s, under systemd's 90s default): the outer bound nothing in this
      *  process may reach. */

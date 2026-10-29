@@ -63,10 +63,13 @@ internal val defaultMaxRequestBytes: Int = Knob.MAX_REQUEST_BYTES.count().toInt(
 
 internal val defaultRequestReadTimeoutMs: Long = Knob.REQUEST_READ_TIMEOUT_MS.count()
 
-/** How long a stop waits for in-flight turns to finish before it cuts them: above a 16s deepseek turn, and the
- *  innermost budget of the daemon's stop ladder (see DaemonStopBudgetTest for the ordering that keeps each link
- *  below the next). A test passes a short one through [HeadDeps.HeadPolicy.stopDrainMs]. */
-internal const val DEFAULT_STOP_DRAIN_MS = 45_000L
+/** How long a stop waits for in-flight turns to finish before it cuts them: none. A restart cuts each running turn
+ *  at once with the head's restart line, and the next daemon takes over (Marcos, Oct 29, 2026: "we already send a
+ *  message saying the server is restarting and so the user knows about it, then we just have the new daemon take
+ *  over"). The old 45s wait cut every longer turn anyway and bounced every new request while it waited. Still the
+ *  innermost link of the daemon's stop ladder (DaemonStopBudgetTest). A test passes its own through
+ *  [HeadDeps.HeadPolicy.stopDrainMs]. */
+internal const val DEFAULT_STOP_DRAIN_MS = 0L
 
 /** Collaborators the head needs, bundled to keep the constructor lean. */
 public data class HeadDeps(

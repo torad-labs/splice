@@ -130,15 +130,15 @@ class CompactionRestartTest {
         assertEquals("draining", after["status"]!!.jsonPrimitive.content, "and the status says so")
     }
 
-    /** Settings' armed Restart says how long agents mid-request get before a restart cuts them, in the daemon's own
-     *  number: the route names the drain cap in every phase, so the page has it before any restart is asked for (fin and
-     *  Marlin, Oct 12). The phase itself is whatever the class's earlier tests left, so it is not asserted here. */
+    /** The route names the drain in the daemon's own number, in every phase. Since Oct 29, 2026 it is 0: a restart
+     *  tells a request in flight that splice restarted and ends it at once, so Settings' armed Restart promises no time
+     *  to finish (Marcos: "then we just have the new daemon take over"). The phase is whatever earlier tests left. */
     @Test
-    fun `the status names how long a drain lets a request in flight finish`() = runBlocking {
+    fun `the status says a restart gives a request in flight no time to finish`() = runBlocking {
         awaitPort()
         val status = json.parseToJsonElement(get("/api/daemon/restart").bodyAsText()).jsonObject
         val drainMs = status["drain_ms"]?.jsonPrimitive?.content?.toLongOrNull()
-        assertTrue(drainMs != null && drainMs > 0, "a drain cap the console can say: $status")
+        assertTrue(drainMs == 0L, "a restart that waits for no request: $status")
     }
 
     @Test

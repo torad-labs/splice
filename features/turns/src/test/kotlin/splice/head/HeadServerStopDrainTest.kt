@@ -1,20 +1,13 @@
-// NEW (V4-74): a stop() while a turn is MID-STREAM must DRAIN, not tear the client's socket.
+// NEW (V4-74): a stop() while a turn is MID-STREAM must never tear the client's socket.
 //
-// The measured bug: on a daemon restart the client printed "API Error: Connection lost mid-response"
-// and did not retry. The cause was not the restart itself but Ktor's own per-engine JVM shutdown
-// hook disposing the application scope concurrently with the daemon's ordered stop, so the SSE write
-// failed and the turn ended as a conn-reset AFTER content — plus a drain budget (5s) that could not
-// outlive the operator's 7-16s deepseek turns even when it did get to run.
+// The measured bug: on a daemon restart the client printed "API Error: Connection lost mid-response". The cause
+// was Ktor's own per-engine JVM shutdown hook disposing the application scope concurrently with the daemon's
+// ordered stop, so the SSE write failed and the turn ended as a conn-reset AFTER content.
 //
-// The assertions are on WHAT THE CLIENT RECEIVED, never on splice's internal call counts: the row's
-// root-cause lesson is that policy-mirroring tests ratified every regression they were written to
-// prevent. So the test holds a turn, calls stop(), releases the turn INSIDE the drain window, and
-// requires the client's read to complete with a terminal event instead of throwing.
-//
-// WHY THE HOLD IS LONGER THAN THE OLD DRAIN: this test is also the mutation proof for the ladder.
-// Set DEFAULT_STOP_DRAIN_MS back to 5s and the 6.5s hold outlives it, the drain times out, the engine stops
-// mid-turn and the client's read tears — recorded in the row note with its hash. Under the fixed
-// 45s ladder the turn finishes comfortably inside the drain.
+// The assertions are on WHAT THE CLIENT RECEIVED, never on splice's internal call counts. Since Oct 29, 2026 a
+// restart does not wait for a running turn: it hands it the restart line at once, so the next daemon takes over in
+// seconds (Marcos: "we already send a message saying the server is restarting and so the user knows about it, then
+// we just have the new daemon take over").
 package splice.head
 
 import com.sun.net.httpserver.HttpServer
@@ -66,10 +59,13 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
 
-// why 6.5s: it must OUTLIVE the old 5s DEFAULT_STOP_DRAIN_MS so reverting the ladder to 5s makes the
-// drain time out and this test fail (the ladder's mutation proof); under the fixed 45s ladder
-// the turn still finishes inside the drain.
+// why 6.5s: a drain this test sets itself, long enough that a request sent half a second into it still meets the
+// draining head.
 private const val DRAIN_HOLD_MS = 6_500L
+
+// why 10s: the cut's seal waits at most 2s and the engine stop about 2.5s; 10s leaves room for a loaded host and is
+// still far below the 45s wait a restart used to hold the next daemon for.
+private const val TAKEOVER_BOUND_MS = 10_000L
 
 // why 1.5s: a turn held past the drain is cut when the budget is spent, so the budget is the test's wait; 1.5s
 // is long enough for the stop to start draining before it gives up, and short enough to cost the run nothing.
@@ -189,7 +185,7 @@ class HeadServerStopDrainTest {
                 gate = gate,
                 seams = HeadDeps.HeadSeams(waiter = waiter),
                 log = { line ->
-                    if (line.contains("draining timed out")) cutAt.compareAndSet(0L, System.nanoTime())
+                    if (line.contains("with the restart line")) cutAt.compareAndSet(0L, System.nanoTime())
                 },
             ).copy(policy = HeadDeps.HeadPolicy(stopDrainMs = stopDrainMs)),
         )
@@ -353,8 +349,13 @@ class HeadServerStopDrainTest {
         }
     }
 
+    // Marcos, Oct 29, 2026: "we already send a message saying the server is restarting and so the user knows about
+    // it, then we just have the new daemon take over". A restart cuts a running turn at once with the restart line,
+    // under the head's own default policy, so the next daemon can take over in seconds. The old 45s wait cut every
+    // turn longer than itself anyway, and bounced every new request while it waited (155 at the 9:48 PM CT install
+    // of Oct 28).
     @Test
-    fun `a stop during a held turn drains it to its terminal instead of tearing the socket`(
+    fun `a restart hands a running turn the restart line at once instead of waiting for it`(
         @TempDir tmp: Path,
     ) = runBlocking {
         val rig = Rig(tmp)
@@ -363,24 +364,18 @@ class HeadServerStopDrainTest {
             val turn = async(Dispatchers.IO) { rig.heldTurn().bodyAsText() }
             assertTrue(rig.awaitInflight(), "precondition: the turn must be holding a slot")
 
-            // THE STOP, issued while the turn is mid-stream, on its own dispatcher so the drain and
-            // the turn overlap the way they do under SIGTERM.
+            val began = System.nanoTime()
             val stopping = async(Dispatchers.IO) { rig.head.stop() }
-
-            // The turn finishes INSIDE the drain window, and the hold outlives the OLD 5s drain on
-            // purpose: that is what makes this test the ladder's mutation proof.
-            delay(DRAIN_HOLD_MS)
-            rig.mock.releaseHold()
-
             val body = turn.await() // a torn socket fails HERE, by throwing
+            val receivedMs = (System.nanoTime() - began) / 1_000_000
             stopping.await()
+            val stoppedMs = (System.nanoTime() - began) / 1_000_000
 
-            assertTrue(
-                body.contains("message_stop") || body.contains("event: error"),
-                "the drained turn must reach the client as a real terminal, not a cut stream; got: " +
-                    body.take(300),
-            )
+            assertTrue(body.contains("$RESTART_SAID $PERSON_RESENDS"), "the client must be told: ${body.take(300)}")
+            assertTrue(receivedMs < TAKEOVER_BOUND_MS, "the restart line took $receivedMs ms to reach the client")
+            assertTrue(stoppedMs < TAKEOVER_BOUND_MS, "the stop took $stoppedMs ms, so the next daemon waited")
         } finally {
+            rig.mock.releaseHold()
             rig.close()
         }
     }

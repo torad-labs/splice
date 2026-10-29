@@ -10,20 +10,19 @@ import splice.head.turn.TurnDriver
 import splice.upstream.Provider
 import java.util.concurrent.TimeUnit
 
-// Wait for in-flight SSE turns to finish (or cancel cleanly) before tearing the engine.
+// End in-flight SSE turns with an honest terminal before tearing the engine.
 //
-// V4-74: 45s, and the reason is a MEASURED turn length rather than a round number — the operator's
-// deepseek turns run 7 to 16s, so the old 5s drain could not outlive even a short one and every
-// restart cut the turn mid-stream, which Claude Code does NOT retry after content (it prints
-// "API Error: Connection lost mid-response"). This is the INNERMOST budget of a five-link ladder;
-// see Main.kt's STOP_DEADLINE_MS comment for the whole chain, and DaemonStopBudgetTest for the
-// ordering that keeps each link below the next.
+// The drain's budget is HeadDeps' DEFAULT_STOP_DRAIN_MS, now 0: a restart cuts each running turn at once with the
+// head's restart line rather than waiting for it, so the next daemon takes over in seconds (Marcos, Oct 29, 2026).
+// The cut is sealed while the client socket is still open, so the client reads the line, never a torn stream. This
+// is the INNERMOST budget of a five-link ladder; see Main.kt's STOP_DEADLINE_MS comment for the whole chain, and
+// DaemonStopBudgetTest for the ordering that keeps each link below the next.
 private const val STOP_DRAIN_POLL_MS = 50L
 
 // The cut turn's seal AND its reply must land before Netty is torn down: a collect turn writes its 529 only after
 // the seal (CollectTurn.respond), and the slot releases after that. 250ms came from a 34ms cut on an idle machine and
 // lost the reply under a 21-minute parallel gate run (2026-10-09, HeadServerStopDrainTest [false]). 2s is sized for a
-// loaded host and still fits the ladder: 45s drain + 2s seal + 2.5s engine stop < HEAD_STOP_BUDGET_MS (50s).
+// loaded host and still fits the ladder: drain + 2s seal + 2.5s engine stop < HEAD_STOP_BUDGET_MS (50s).
 // Empty heads skip this wait entirely, and a released slot ends it early.
 private const val STOP_SEAL_NS = 2_000_000_000L
 
@@ -85,12 +84,11 @@ internal class HeadLifecycle(
             inflight = gate.snapshot().inflight
         }
         if (inflight > 0) {
-            log("[${provider.key}] stop: draining timed out with inflight=$inflight; forcing engine stop\n")
+            log("[${provider.key}] stop: cutting inflight=$inflight with the restart line; forcing engine stop\n")
         }
-        // A detached compaction OUTLIVES ITS CLIENT (TurnStreamer): its handed-off slot travels with
-        // the drive, and the drain budget above belongs to that feature — a detached compaction that
-        // finishes inside the budget releases its slot and keeps its recording for the retry. End
-        // only what is STILL driving once the budget is spent.
+        // A detached compaction OUTLIVES ITS CLIENT (TurnStreamer): its handed-off slot travels with the drive. One
+        // that finished inside the budget released its slot and kept its recording for the retry. End only what is
+        // STILL driving once the budget is spent.
         driver.stopActive()
         driver.stopDetached()
         val sealDeadlineNs = System.nanoTime() + STOP_SEAL_NS

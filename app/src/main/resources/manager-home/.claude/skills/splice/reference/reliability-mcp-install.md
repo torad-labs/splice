@@ -142,11 +142,12 @@ Source: `Knob.kt` 12-49, 192-200, 219-305; `app/src/main/resources/splice.exampl
 
 - There is one daemon JVM. `splice restart` cuts the turns in flight on every head and every session on the
   machine, the manager's own included.
-- `splice restart` first waits for running compactions, up to 900 s, unless `--now`. Then the daemon drains
-  ordinary turns for up to 45 s. A turn still streaming after that is cut.
+- `splice restart` first waits for running compactions, up to 900 s, unless `--now`. Then the daemon ends every
+  ordinary turn still running at once, each with the line "splice restarted during this turn.", and the next
+  daemon takes over.
 - While it drains, a head on its own port answers a new turn with 529 `error:restarted`, which Claude Code
   retries. Under socket activation the request waits in the kernel queue for the next daemon.
-- Claude Code does not retry a turn that was cut after its text began, so the 45 s drain can cost the person that message: they re-send it. Whether Claude Code retries a turn cut before any text began: the CHANGELOG says only that splice can retry such a turn itself (unverified for the drain cut).
+- Claude Code does not retry a turn that was cut after its text began, so a restart can cost the person that message: the line asks them to send it again. A buffered turn's 529 is one Claude Code re-sends itself.
 - Run `splice restart` in the background, never in the foreground. Never run `splice logs --follow`.
 - A finished compaction whose client hung up is kept on disk for two hours, so the retry gets the same bytes.
 - Code mode scripts in flight are lost and never rerun (3.3).

@@ -205,8 +205,9 @@ What `splice restart` does, in order:
 What it cuts, and how sessions come back:
 
 - A new turn that arrives while a head drains is refused with a 529, which Claude Code retries.
-- A turn still running after the 45 s drain is ended, and its session sees an error for that turn. Claude Code
-  retries a failed request on its own (unverified in this repo for a turn cut mid-stream).
+- A turn still running is ended at once, without waiting for it, and its session sees "splice restarted during
+  this turn." A turn whose text had begun says "Send the message again." A buffered one says Claude Code sends it
+  again, and Claude Code does.
 - A compaction in flight detaches from its client instead of being cancelled, and its finished answer is kept
   on disk for up to two hours, so an identical retry gets it without a second upstream turn.
 - Code-mode JavaScript that was pending is lost and never rerun.

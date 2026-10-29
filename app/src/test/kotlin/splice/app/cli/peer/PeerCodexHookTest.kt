@@ -207,6 +207,30 @@ class PeerCodexHookTest {
         assertEquals(listOf(CODEX_PATH, CODEX_PATH, "/api/peers/codex-$THREAD"), hits.map { it.path })
     }
 
+    // A thread can be mid-turn when its hooks are first written, or start while the daemon is down: its next hook is
+    // a tool call or a stop, and that hook attaches it so messages can reach it. Once its peer is served, a tool call
+    // asks the daemon nothing.
+    @Test
+    fun `a thread with no peer yet attaches at its next tool call or stop, and a served one asks nothing`(
+        @TempDir dir: Path,
+    ) {
+        val hits = mutableListOf<Hit>()
+        val peerDir = dir.resolve("state/peers/codex-$THREAD")
+        withDaemon(dir, handler = { exchange ->
+            hits += Hit(exchange.requestMethod, exchange.requestURI.path, exchange.requestURI.query, "")
+            val _ = exchange.requestBody.readBytes()
+            ATTACHED.encodeToByteArray()
+        }) { env ->
+            assertQuiet(run(verb(HOOK), hook(POST_TOOL), env))
+            assertQuiet(run(verb(HOOK), hook(STOP), env))
+            Files.createDirectories(peerDir)
+            Files.writeString(peerDir.resolve("helper.json"), "{}")
+            assertQuiet(run(verb(HOOK), hook(POST_TOOL), env))
+            assertQuiet(run(verb(HOOK), hook(STOP), env))
+        }
+        assertEquals(listOf(CODEX_PATH, CODEX_PATH), hits.map { it.path })
+    }
+
     @Test
     fun `a hook whose daemon is down still hands over and still exits 0`(@TempDir dir: Path) {
         val env = daemonEnv(dir, closedPort())

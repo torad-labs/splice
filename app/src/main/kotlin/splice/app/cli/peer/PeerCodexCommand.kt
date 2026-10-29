@@ -1,7 +1,8 @@
 // NEW: Oct 27, 2026 (docs/peers.md, "A Codex thread as a peer"): `splice peer codex attach` and `detach`, and since
 // Oct 28 `hook`, the one command a Codex hook runs for every event (PeerCodexHook.kt). Attach makes
 // a native Codex thread the peer `codex-<thread id>` and starts its helper; a Codex hook runs it on SessionStart,
-// UserPromptSubmit and SessionEnd, and it returns at once once the peer stands as asked. The thread is the argument,
+// UserPromptSubmit and SessionEnd, and on PostToolUse or Stop while no host serves the peer yet, and it returns at once
+// once the peer stands as asked. The thread is the argument,
 // else $CODEX_THREAD_ID or $CODEX_SESSION_ID when a caller set them. A hook sets neither: Codex writes `session_id`
 // and `cwd` on stdin (HarnessHook). The home is $CODEX_HOME, and the Codex process the record binds is the one above
 // the command, found in its own ancestry.

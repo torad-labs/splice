@@ -5,6 +5,8 @@
 //   PostToolUse        hands over the waiting messages as context;
 //   Stop               hands them over as the reason to keep the turn going, so a message that came during the turn is
 //                      read before the thread goes idle, and lets the turn end when none waits;
+//   either of those    also attaches a thread whose peer no host serves yet: one mid-turn when its hooks were first
+//                      written, or one that started while the daemon was down, has no SessionStart or prompt to come;
 //   SessionEnd         detaches it.
 // The waiting messages are the ones the peer's helper left in CodexHookMailbox because no app-server holds the thread.
 // Codex 0.159 reads a PostToolUse or UserPromptSubmit hook's `hookSpecificOutput.additionalContext` into the model's
@@ -22,7 +24,9 @@ import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.sessions.peer.codex.CodexHookMailbox
 import splice.sessions.peer.codex.CodexNames
+import splice.sessions.peer.helper.PeerStateFiles
 import splice.topology.TopologyStatePaths
+import java.nio.file.Files
 
 private const val CODEX_SESSION_START = "SessionStart"
 private const val USER_PROMPT = "UserPromptSubmit"
@@ -79,8 +83,14 @@ internal class PeerCodexHook(
                 val _ = attach.run(id, look)
                 context(USER_PROMPT, waiting)
             }
-            POST_TOOL -> context(POST_TOOL, take(id))
-            STOP -> keepGoing(take(id))
+            POST_TOOL -> {
+                served(id, look)
+                context(POST_TOOL, take(id))
+            }
+            STOP -> {
+                served(id, look)
+                keepGoing(take(id))
+            }
             SESSION_END -> {
                 val _ = detach.run(id, look)
             }
@@ -88,11 +98,17 @@ internal class PeerCodexHook(
         }
     }
 
-    /** The messages waiting for [id]'s peer, joined; empty when none waits. */
-    private fun take(id: String): String {
-        val peerDir = TopologyStatePaths(env).current().stateDir.resolve("peers").resolve(names.peer(id))
-        return CodexHookMailbox(peerDir).take().joinToString(BETWEEN)
+    /** Attaches [id] when no host has written its peer's helper.json yet; a served peer asks the daemon nothing. */
+    private fun served(id: String, look: HookLook) {
+        if (Files.exists(files(id).helperJson)) return
+        val _ = attach.run(id, look)
     }
+
+    /** The messages waiting for [id]'s peer, joined; empty when none waits. */
+    private fun take(id: String): String = CodexHookMailbox(files(id).dir).take().joinToString(BETWEEN)
+
+    private fun files(id: String): PeerStateFiles =
+        PeerStateFiles(TopologyStatePaths(env).current().stateDir, names.peer(id))
 
     private fun context(event: String, text: String) {
         if (text.isEmpty()) return

@@ -201,8 +201,9 @@ environment variable, when a caller did set one, names the thread instead of std
 `splice peer codex hook` is the one command for every event. It reads the event's name from stdin's
 `hook_event_name`. SessionStart attaches. UserPromptSubmit attaches and adds the messages waiting for the thread to
 the prompt's context. PostToolUse adds the ones that arrived during the turn. Stop, when messages wait, keeps the turn
-going with them as its reason. SessionEnd detaches. It always exits 0, and a daemon that is down only costs the turn
-its messages until the next hook.
+going with them as its reason. SessionEnd detaches. PostToolUse and Stop also attach a thread whose peer no host serves
+yet, so a thread already mid-turn when its hooks were written, or one that started while the daemon was down, joins at
+its next tool call. It always exits 0, and a daemon that is down only costs the turn its messages until the next hook.
 
 The older form, attach on start and on each prompt and detach on end, still works for threads an app-server holds.
 In `~/.codex/hooks.json` it reads:

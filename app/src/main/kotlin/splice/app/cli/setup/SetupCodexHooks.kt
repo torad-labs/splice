@@ -16,6 +16,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import splice.app.cli.peer.CODEX_HOME_ENV
 import splice.core.config.UserHome
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
@@ -26,9 +27,8 @@ import splice.terminal.WizardFrame
 import java.nio.file.Files
 import java.nio.file.Path
 
-private const val CODEX_HOME_ENV = "CODEX_HOME"
 private const val HOOK_VERB = " peer codex hook"
-private const val HOOKS = "hooks"
+private const val CODEX_HOOKS_KEY = "hooks"
 private val REPLACED = listOf("splice peer codex attach", "splice peer codex detach")
 private val EVENTS = listOf("SessionStart", "UserPromptSubmit", "PostToolUse", "Stop", "SessionEnd")
 
@@ -81,27 +81,27 @@ internal class SetupCodexHooks(private val frame: WizardFrame, env: EnvReader) {
 
     /** [root] with the hook on every event it answers, splice's hand-written hooks out, and everything else kept. */
     private fun merged(root: JsonObject): JsonObject {
-        val events = (root[HOOKS] as? JsonObject ?: JsonObject(emptyMap()))
+        val events = (root[CODEX_HOOKS_KEY] as? JsonObject ?: JsonObject(emptyMap()))
             .mapValues { (_, groups) -> withoutReplaced(groups) }
         val hooks = events.filterValues { it.isNotEmpty() }.toMutableMap()
         EVENTS.forEach { event -> hooks[event] = JsonArray(list(hooks[event]) + group()) }
-        return JsonObject(root + (HOOKS to JsonObject(hooks)))
+        return JsonObject(root + (CODEX_HOOKS_KEY to JsonObject(hooks)))
     }
 
     /** The event's groups with each hand-written splice attach and detach taken out, and a group left empty gone. */
     private fun withoutReplaced(groups: JsonElement): JsonArray = JsonArray(
         list(groups).mapNotNull { group ->
             val entry = group as? JsonObject ?: return@mapNotNull group
-            val kept = list(entry[HOOKS]).filterNot { hook ->
+            val kept = list(entry[CODEX_HOOKS_KEY]).filterNot { hook ->
                 val line = JsonScalars.str(hook as? JsonObject, "command").orEmpty()
                 REPLACED.any(line::contains)
             }
-            if (kept.isEmpty()) null else JsonObject(entry + (HOOKS to JsonArray(kept)))
+            if (kept.isEmpty()) null else JsonObject(entry + (CODEX_HOOKS_KEY to JsonArray(kept)))
         },
     )
 
     private fun group(): JsonObject = buildJsonObject {
-        putJsonArray(HOOKS) {
+        putJsonArray(CODEX_HOOKS_KEY) {
             add(
                 buildJsonObject {
                     put("type", "command")

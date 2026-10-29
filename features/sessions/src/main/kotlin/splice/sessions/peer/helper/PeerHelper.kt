@@ -1,6 +1,6 @@
 // NEW: peer messaging, package B (docs/specs/peer-messaging.md 2, 4.1) — a peer helper's start and exit, the files it
 // keeps under <state dir>/peers/<name>/, and how anyone tells a live helper from a dead one. Start runs in the spec's
-// order: read peer.json (none: the peer is not registered, exit 78), bind the inbox socket, mint the peerToken, write the
+// order: read peer.json (none: the peer is not registered), bind the inbox socket, mint the peerToken, write the
 // key file and the record into each registry directory, then helper.json. Exit runs the other way: the record, the key
 // file, the socket, helper.json. helper.json and the liveness check are in HelperFiles.kt, helper.log in HelperLog.kt.
 // One helper per peer holds helper.lock, so a second start for the same peer stops at once instead of registering the
@@ -25,9 +25,6 @@ import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.security.SecureRandom
 import java.util.HexFormat
-
-/** The exit code of a helper whose peer is not registered: EX_CONFIG from sysexits.h, as the spec names it. */
-public const val HELPER_UNREGISTERED_EXIT: Int = 78
 
 // why: 16 random bytes as hex is the 32-character peerToken Claude Code itself mints (spec 2.2).
 private const val PEER_TOKEN_BYTES = 16
@@ -58,7 +55,7 @@ public data class HelperSetup(
 public sealed class HelperStart {
     public data class Started(val helper: RunningHelper) : HelperStart()
 
-    /** No peer.json for the name: exit [HELPER_UNREGISTERED_EXIT]. */
+    /** No peer.json for the name: the peer is not registered, and nothing starts. */
     public data object Unregistered : HelperStart()
 
     /** Another helper holds this peer's lock: it is already running. */

@@ -62,7 +62,7 @@ public class HelperFiles(
     public fun self(now: Long): HelperIdentity = of(ProcessHandle.current().pid(), now)
 
     /** The process [pid] as a registry record names it. */
-    public fun of(pid: Long, now: Long): HelperIdentity =
+    internal fun of(pid: Long, now: Long): HelperIdentity =
         HelperIdentity(pid, identity.procStart(pid), identity.hostDomain(), identity.startedAt(pid) ?: now)
 }
 

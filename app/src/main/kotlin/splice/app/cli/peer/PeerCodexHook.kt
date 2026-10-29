@@ -24,7 +24,7 @@ import splice.sessions.peer.codex.CodexHookMailbox
 import splice.sessions.peer.codex.CodexNames
 import splice.topology.TopologyStatePaths
 
-private const val SESSION_START = "SessionStart"
+private const val CODEX_SESSION_START = "SessionStart"
 private const val USER_PROMPT = "UserPromptSubmit"
 private const val POST_TOOL = "PostToolUse"
 private const val STOP = "Stop"
@@ -71,7 +71,7 @@ internal class PeerCodexHook(
      *  always exits 0. */
     private fun answer(id: String, look: HookLook) {
         when (look.event) {
-            SESSION_START -> {
+            CODEX_SESSION_START -> {
                 val _ = attach.run(id, look)
             }
             USER_PROMPT -> {

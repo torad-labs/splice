@@ -375,7 +375,7 @@ All of these are named constants, each with a `// why:` line, as the silent-cons
   It exposes `start`, `stop`, `reload` and `status`. `reload` sends SIGHUP to the host, and every peer looks at its
   `peer.json` at once; a peer whose files are unchanged keeps running as it was.
 - **Helper start,** in this order:
-  1. Read `peer.json`, and exit 78 if it is missing.
+  1. Read `peer.json`; without one the peer is not registered and nothing starts.
   2. Create the sockets folder at 0700 if absent, unlink a stale socket at its own path, bind, and chmod
      the socket to 0600.
   3. Mint the `peerToken`.

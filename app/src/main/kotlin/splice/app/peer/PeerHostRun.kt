@@ -41,7 +41,7 @@ private const val HOST_USAGE_EXIT = 64
 private const val STOP_WAIT_MS = 15_000L
 
 // why: a host of an older build that is making way finishes its stop within this; past it this one leaves.
-private const val LOCK_WAIT_MS = 20_000L
+private const val HOST_LOCK_WAIT_MS = 20_000L
 
 // why: how soon a peer asked of the host starts; a listing of one small folder four times a second costs nothing.
 private const val POLL_MS = 250L
@@ -145,7 +145,7 @@ internal class PeerHostRun(private val args: List<String>) {
         if (SecureFile.ownerOnlyDirectory(files.dir) != null) return null
         val mode = SecureFile.CREATE_0600 ?: return null
         val channel = FileChannel.open(files.lock, setOf(StandardOpenOption.CREATE, StandardOpenOption.WRITE), mode)
-        val deadline = clock() + LOCK_WAIT_MS
+        val deadline = clock() + HOST_LOCK_WAIT_MS
         var held = channel.tryLock()
         while (held == null && clock() < deadline) {
             waiter.wait(POLL_MS)

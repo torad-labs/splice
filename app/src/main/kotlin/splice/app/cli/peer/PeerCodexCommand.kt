@@ -25,7 +25,9 @@ import java.nio.file.Path
 
 internal const val CODEX_THREAD_ENV = "CODEX_THREAD_ID"
 private const val CODEX_SESSION_ENV = "CODEX_SESSION_ID"
-private const val CODEX_HOME_ENV = "CODEX_HOME"
+
+/** The variable that names a Codex home, which Codex itself reads. */
+internal const val CODEX_HOME_ENV = "CODEX_HOME"
 private val NONE: List<String> = emptyList()
 
 /** `splice peer codex <attach|detach>`. */

@@ -6,6 +6,7 @@
 // folder, which the helper keeps owner-only, and each file is 0600.
 package splice.sessions.peer.codex
 
+import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import java.io.IOException
 import java.nio.file.Files
@@ -15,9 +16,9 @@ import java.nio.file.StandardCopyOption
 import java.util.concurrent.atomic.AtomicLong
 
 /** The turn a message left for the thread's next hook is journaled under. */
-public const val HOOK_TURN: String = "next-hook"
+internal const val HOOK_TURN: String = "next-hook"
 
-private const val FOLDER = "codex-hook"
+private const val HOOK_FOLDER = "codex-hook"
 private const val LEFT = ".msg"
 private const val TAKEN = ".taken-"
 
@@ -27,7 +28,7 @@ private const val NAME_FORMAT = "%013d-%09d"
 
 /** A thread's waiting messages, in `<peer state dir>/codex-hook/`. */
 public class CodexHookMailbox(peerDir: Path) {
-    private val dir = peerDir.resolve(FOLDER)
+    private val dir = peerDir.resolve(HOOK_FOLDER)
     private val count = AtomicLong()
 
     /** Leaves [text] for the thread's next hook. */
@@ -68,7 +69,8 @@ public class CodexHookThread(private val mailbox: CodexHookMailbox) : CodexThrea
         mailbox.leave(text)
         TurnStart.Started(HOOK_TURN)
     } catch (failure: IOException) {
-        TurnStart.Refused("the message could not be left for the thread's next hook: ${failure.message}")
+        val why = SafeFailureText.render(failure)
+        TurnStart.Refused("the message could not be left for the thread's next hook: $why")
     }
 
     /** A message left for a hook is never handed over twice, so an interrupted one is not looked for. */

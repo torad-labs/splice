@@ -89,7 +89,9 @@ reply. Nothing in the request can change them.
 receipt only when it holds, expires or drops a message, so the usual answer is `no problem reported`.
 
 `splice peer status --as gary <msgId> --json` prints the same record as one line of JSON: the message id, its
-target, when it went, the outcome, and the receipt, or `null` when none came back. Only a receipt whose status is
+target, when it went, the outcome, and the receipt, or `null` when none came back. The target is the session the
+send resolved to, as `{"name","sessionId"}`, the same pair the send answered with, so a program matches it by
+the session id rather than the name it typed. Only a receipt whose status is
 `delivered` means the recipient accepted the message. A read the daemon refuses, such as an id this peer never sent,
 prints nothing on stdout and exits non-zero.
 

@@ -1,9 +1,10 @@
 // What the comparison marks and how the prompt reads, as he sees them on a wide screen. A column's best is the figure
 // as the table writes it: two windows that both read 1M are starred alike and a 500K beside them is not. After the
-// answers, an edit that only adds words keys only "Added" beside the prompt. His plan reads from its box's top, and a
-// plan longer than the box scrolls inside it instead of stretching the first row and leaving the models plate half
-// empty beside it. Through the real page against a stub daemon, at a width where the prompt and the models plate share
-// the first row.
+// answers, an edit that only adds words keys only "Added" beside the prompt. His plan reads from its box's top.
+// GOAL CHANGED on 2026-10-29 by the compare-prompt section's pass: a plan longer than the box used to scroll inside it;
+// now the box grows to hold the whole plan with no inner scroll, and the models plate beside it stands as tall as the
+// prompt plate, so the two share one bottom edge. Through the real page against a stub daemon, at a width where the
+// prompt and the models plate share the first row.
 import { afterAll, beforeAll, test } from "bun:test";
 import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -98,7 +99,7 @@ test("after answers, an edit that only adds words keys only Added beside the pro
   }
 }, 60_000);
 
-test("the plan reads from its box's top, and a long plan scrolls in its box beside the models plate", async () => {
+test("the plan reads from its box's top, and a long plan grows its box with no inner scroll while the models plate stands level beside it", async () => {
   const page = await open();
   try {
     await page.locator("#prompt").fill("Compare the three");
@@ -109,11 +110,12 @@ test("the plan reads from its box's top, and a long plan scrolls in its box besi
     await page.locator("#prompt").fill(Array.from({ length: 80 }, (_, i) => `- step ${i + 1} of the plan`).join("\n"));
     await page.locator("#prompt").press("Escape");
     const out = page.locator(".pg-md-out");
-    expect(await out.evaluate((el) => el.scrollHeight > el.clientHeight + 100)).toBe(true); // the rest of the plan is in the box, below
-    const plate = (await page.locator("#cmp").boundingBox())!, table = (await page.locator("#cmp .pg-table").boundingBox())!;
-    expect(plate.y + plate.height - (table.y + table.height)).toBeLessThan(120); // no empty block under the table
-    await out.evaluate((el) => { el.scrollTop = el.scrollHeight; });
-    await expect(page.locator(".pg-md-out li").last()).toBeInViewport();
+    expect(await out.evaluate((el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true); // the box holds the whole plan: nothing to scroll to
+    const grown = (await page.locator(".pg-md").boundingBox())!, last = (await page.locator(".pg-md-out li").last().boundingBox())!;
+    expect(grown.height).toBeGreaterThan(box.height + 500); // eighty steps made the box taller, not a scroller
+    expect(last.y + last.height).toBeLessThanOrEqual(grown.y + grown.height + 1); // the last step stands inside the box
+    const ask = (await page.locator(".pg-ask").boundingBox())!, plate = (await page.locator("#cmp").boundingBox())!;
+    expect(Math.abs(ask.y + ask.height - (plate.y + plate.height))).toBeLessThan(2); // the two plates end on one edge
   } finally {
     await page.close();
   }

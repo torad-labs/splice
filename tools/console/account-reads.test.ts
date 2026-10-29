@@ -52,7 +52,7 @@ test("Teams offers a pooled command's own logins, and no account pick on a comma
     await page.locator('.pick-menu button[data-v="claude"]').click();
     await slot.locator('button.pickbtn[data-what="account"]').click();
     // each login by the name Accounts shows for it (home has one), and by its id where no name is read (work)
-    expect(await page.locator('.pick-menu[data-what="account"] button').allInnerTexts()).toEqual(["work", "Home login"]);
+    expect(await page.locator('.pick-menu[data-what="account"] button .lw-mn').allInnerTexts()).toEqual(["work", "Home login"]);
     await slot.locator('button.pickbtn[data-what="head"]').click();
     await page.locator('.pick-menu button[data-v="codex"]').click();
     expect(await slot.locator('button.pickbtn[data-what="account"]').count()).toBe(0);

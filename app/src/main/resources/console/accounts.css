@@ -3,63 +3,76 @@
 
 /* ---------- one reset column for the whole board ----------
    render() sets --when-n to the longest reset written on the board, in characters of the data face (.57rem each at
-   .95rem), plus the ring and its gap: every card's bars and every Day row's end on one line in their column, whatever
-   each one's own reset says. A column holding something wider still takes what that needs. */
-.board { --when-w: calc(2.1rem + var(--when-n, 15) * .57rem + .1rem); }
-.board .windows { grid-template-columns: 5.2rem minmax(0, 1fr) 5.2rem minmax(var(--when-w), max-content); }
+   .86rem), plus the ring and its gap: every card's bars and every Day strip's end on one line in their column, whatever
+   each one's own reset says. --bar-w is the one width every bar and the hour track draw at, so a strip and a window row
+   end at the same offsets in every column; where the column is narrower the bar gives way before the words do. */
+.board { --when-w: calc(2.1rem + var(--when-n, 15) * 0.57rem + .1rem); --bar-w: 19.42rem; --lab-w: 4.6rem; --pct-w: 4.9rem; --col-gap: .667rem; --alc-row: 2.7rem; }
+/* A LOGIN'S WINDOWS STAND ON ONE ROW PITCH (2.7rem, 41 px at 3822): each row is as tall as its label's door, with no gap between rows
+   but the door's own height, so the label that opens Usage on that window is a target the height of its row, never the line of
+   its text. The meter, its figure and its reset stand centred on the row. */
+.board .windows { grid-template-columns: var(--lab-w) minmax(0, var(--bar-w)) minmax(var(--pct-w), 1fr) var(--when-w); column-gap: var(--col-gap); row-gap: 0; margin-top: var(--u); }
+.board .windows > .label { min-height: var(--alc-row); display: flex; align-items: center; }
+.board .windows > :is(.heldline, .stale-at, .unproved) { padding-block: var(--u); }
 
-/* ---------- a command's day: one strip on the cards' own columns ----------
-   Row one: "Day", the day's figure with its words, and the budget's act at the row's end. Under it: spend against the
-   budget beside when the day resets, where a budget caps the command, and the day hour by hour. */
-.meter.day { display: grid; grid-template-columns: 5.2rem minmax(0, 1fr) 5.2rem minmax(var(--when-w), max-content); column-gap: .9rem; row-gap: .8rem; align-items: center; }
-/* "Day", the figure and the act stand on one baseline */
-.meter.day > .label { grid-row: 1; grid-column: 1; align-self: baseline; font: 400 .95rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
+/* ---------- a command's day: one strip, one grid, the same on every strip ----------
+   Row one: "Day", the day's figure at the hero size in a cell of one width (so what follows it starts at one x on every
+   strip), the budget's act at the end, and when the day resets. Under it each quantity is a labelled bar on the scale the whole
+   board shares, then the hours on one width per hour. A strip is as tall as what it holds, and an idle one is the first row only. */
+.meter.day { display: grid; grid-template-columns: var(--lab-w) minmax(0, var(--bar-w)) minmax(var(--pct-w), 1fr) var(--when-w); column-gap: var(--col-gap); row-gap: 1.333rem; align-items: center; }
+.meter.day > * { min-width: 0; }
+.meter.day.idle { row-gap: 0; }
+/* "Day" and the kickers over the bars are one kind of word: small, upper-case, quiet */
+.meter.day > .label { grid-column: 1; align-self: baseline; font: 500 var(--kicker, .8rem)/1 var(--font-name); letter-spacing: .07em; text-transform: uppercase; color: var(--text-mute); white-space: nowrap; }
 /* a day with requests is the door to them on Requests, its arrow as the local cards' door to Models draws it */
-.meter.day > a.label { justify-self: start; display: inline-flex; align-items: baseline; gap: .3rem; text-decoration: none; }
-.meter.day > a.label .go { flex: none; align-self: center; width: .85rem; height: .85rem; color: var(--text-mute); transition: transform var(--t-snap) var(--e-out); }
-.meter.day > a.label:hover { color: var(--text); text-decoration: underline; }
+.meter.day > a.label { justify-self: start; display: inline-flex; align-items: baseline; gap: 0.333rem; text-decoration: none; }
+.meter.day > a.label .go { flex: none; align-self: center; width: .8rem; height: .8rem; color: var(--text-mute); transition: transform var(--t-snap) var(--e-out); }
+.meter.day > a.label:hover { color: var(--text); }
 .meter.day > a.label:hover .go { color: var(--text); transform: translate(.1rem, -.1rem); }
-/* the words take the whole row before they wrap, and the act keeps the row's end on every strip that has one */
-.meter.day > .dayline { grid-row: 1; grid-column: 2 / -1; align-self: baseline; display: flex; align-items: baseline; gap: .9rem; min-width: 0; min-height: var(--ctl-h); }
-.meter.day .dayline > .money { flex: 1 1 auto; min-width: 0; white-space: normal; line-height: 1.5; }
+/* the hero row: the figure right-aligned in its cell, its words on its baseline, the act at the row's end */
+.meter.day > .dayline { grid-column: 2 / 4; align-self: baseline; display: flex; align-items: baseline; gap: .4rem .5rem; flex-wrap: wrap; min-width: 0; min-height: var(--fig-hero, 2.9rem); white-space: nowrap; }
+.ads-fig { flex: none; box-sizing: border-box; width: 11rem; text-align: right; font: 600 var(--fig-hero, 2.9rem)/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.ads-fig.over { color: var(--limit); }  /* a day at or past its budget */
+.ads-fig.dash { color: var(--text-mute); font-weight: 500; }
+.ads-fig.dash .disc { margin-block: 0; padding-block: 0; }
+.ads-fig .nr-day { font-style: normal; }
+.ads-unit { min-width: 0; white-space: normal; text-wrap: balance; font: 400 .95rem/1.2 var(--font-name); color: var(--text-mute); }
+/* a cap ("of $10") is one phrase beside its figure and never breaks */
+.ads-of { flex: none; white-space: nowrap; }
+.ads-unit em { font-style: normal; }
+.ads-ghost { display: inline-flex; justify-content: flex-end; align-items: center; height: var(--fig-hero, 2.9rem); }
+.ads-ghost .ghost.fig { height: 2rem; }
 .meter.day .dayline > .act, .meter.day .dayline > .act-ghost { flex: none; margin-left: auto; }
-.meter.day .dayline > .act { display: inline-flex; align-items: center; gap: .45rem; white-space: nowrap; }
+.meter.day .dayline > .act { display: inline-flex; align-items: center; gap: 0.333rem; white-space: nowrap; }
 .meter.day .dayline > .act .glyph { width: 1rem; height: 1rem; color: currentColor; }
 .meter.day .dayline > .act-ghost { display: flex; align-items: center; min-height: var(--ctl-h); }
 .meter.day .dayline > .act-ghost .ghost { height: calc(var(--ctl-h) - .1rem); border-radius: var(--r-obj); }
-.meter.day > .capbox { grid-row: 2; grid-column: 2; }
-.meter.day > .pct { grid-row: 2; grid-column: 3; }
-.meter.day > .when { grid-row: 2; grid-column: 4; }
-.meter.day > .editor { grid-row: 2; grid-column: 1 / -1; margin-top: 0; }  /* the editor takes the whole strip, under its label */
-.meter.day > .dayrun { grid-row: 2; grid-column: 2 / 4; }
-.meter.day.spend > .dayrun, .meter.day.spend > .dayrun ~ .when { grid-row: 3; }  /* an open editor keeps the reset beside the hours */
-
-/* the figure leads at the focal size in the data face, its words on its baseline, each phrase whole */
-.meter.day .money .lead { font: 600 var(--fig-focal)/1 var(--font-data); color: var(--text); font-variant-numeric: tabular-nums; }
-.meter.day .money .lead.over { color: var(--limit); }  /* a day at or past its budget */
-.meter.day .money .ghost.fig { height: 1.45rem; }  /* the figure's ghost stands as tall as the figure that lands */
-.meter.day .dayline > .money > em, .meter.day .money .unpriced.own .part { white-space: nowrap; }
-.meter.day .dayline > .money > .unpriced.own { width: auto; margin-left: 0; }
-.meter.day .dayline > .money > .unpriced.own:first-child { margin-top: 0; }
-/* the split line: a phrase that opens a wrapped line opens it with no dot, since every line of the run starts one "· "
-   (2ch of the data face) left of the box, where the box clips it; clipped, never scrolled, so the line keeps the
-   baseline the row stands on */
-.meter.day .dayline > .money.line { overflow: clip; }
-.meter.day .dayline > .money.line > .run { display: block; margin-left: -2ch; }
-.meter.day .dayline > .money.line .part { display: inline-block; white-space: nowrap; }
-.meter.day .dayline > .money.line .part:first-child { padding-left: 2ch; }
-.meter.day .dayline > .money.line .sep { white-space: pre; }
+.meter.day > .when { grid-column: 4; }
+/* a bar's row: its kicker, the bar on the board's scale, and its words beside it */
+.meter.day > .ads-k { grid-column: 1; }
+.meter.day > .bar.ads-req, .meter.day > .bar.ads-usd, .meter.day > .capbox { grid-column: 2; }
+.meter.day > .ads-words { grid-column: 3 / 5; display: flex; align-items: center; gap: .333rem 1rem; flex-wrap: wrap; min-width: 0; font: 400 .95rem/1.25 var(--font-name); color: var(--text-body); }
+.meter.day > .ads-words .part { white-space: nowrap; }
+.meter.day > .pct { grid-column: 3 / 5; justify-self: start; }
+.ads-mo { font: 600 .95rem/1 var(--font-data); color: var(--text); font-variant-numeric: tabular-nums; margin-right: .5rem; }
+.ads-mute { color: var(--text-mute); }
+/* the requests bar is cut in its parts: what went through, what had no price, what failed; a part that exists is never under 3 px */
+.bar.ads-req > b, .bar.ads-usd > b { border-right: 0; border-radius: 0; min-width: 3px; }
+.bar.ads-req > b.ok, .bar.ads-usd > b { background: var(--c); }
+.bar.ads-req > b.np { background: var(--text-mute); }
+.bar.ads-req > b.fl { background: var(--limit); }
+.meter.day > .editor { grid-column: 1 / -1; margin-top: 0; }  /* the editor takes the whole strip, under its label */
+.meter.day > .dayrun { grid-column: 2; }
 /* the failed requests: in the limit red the hours draw them in, and a door to exactly those requests */
-.meter.day .money .failed-n { color: var(--limit); text-decoration: none; }
-.meter.day .money a.failed-n:hover { text-decoration: underline; }
+.meter.day .failed-n { color: var(--limit); text-decoration: none; }
+.meter.day a.failed-n:hover { text-decoration: underline; }
 /* the swatch that ties a phrase to its colour in the hours drawn under it */
-.meter.day .sw { display: inline-block; width: .6rem; height: .6rem; margin-right: .4rem; border-radius: .12rem; vertical-align: .02rem; }
+.meter.day .sw { display: inline-block; width: .6rem; height: .6rem; margin-right: 0.4rem; border-radius: .15rem; vertical-align: .02rem; }
 .meter.day .sw.np { background: var(--text-mute); }
 .meter.day .sw.fl { background: var(--limit); }
-/* Not read is the row's state; the reason splice kept for it opens under the word */
+/* Not read is the strip's state; the reason splice kept for it opens under the word */
 .meter.day .nr-day { font-style: normal; color: var(--text-body); }
-.meter.day .money .disc { gap: .45rem; }
-.meter.day .money .state.why { display: block; margin-top: .4rem; white-space: normal; overflow-wrap: anywhere; font: 500 .9rem/1.35 var(--font-name); color: var(--text-mute); }
+.meter.day .disc { gap: 0.333rem; }
+.meter.day .ads-unit .state.why { display: block; margin-top: 0.333rem; white-space: normal; overflow-wrap: anywhere; font: 500 .9rem/1.35 var(--font-name); color: var(--text-mute); }
 
 /* SPEND AGAINST THE CAP: the track is scaled to the larger of the two, the cap a mark across it, what went past the cap
    in the limit red under the provider's colour that stayed inside it */
@@ -70,10 +83,10 @@
    provider's colour, no price muted, failed in the limit red; an hour splice could not read hatched. The busiest hour's
    count stands on its top, and the quarter days under the track. A label never passes the strip's edge: it is held
    inside the strip's own width (cqw). */
-.meter.day > .dayrun { --track-h: 2.2rem; --above: 1rem; --below: 1.15rem; position: relative; min-width: 0; container-type: inline-size;
+.meter.day > .dayrun { --track-h: 2.2rem; --above: .9rem; --below: 1.15rem; position: relative; min-width: 0; container-type: inline-size;
   height: calc(var(--above) + var(--track-h) + var(--below)); }
 .dayrun > .ghost.track { position: absolute; left: 0; right: 0; top: var(--above); width: auto; height: var(--track-h); }
-.dayrun > .hours { position: absolute; left: 0; right: 0; top: var(--above); height: var(--track-h); display: flex; gap: .14rem; overflow: hidden;
+.dayrun > .hours { position: absolute; left: 0; right: 0; top: var(--above); height: var(--track-h); display: flex; gap: 0.333rem; overflow: hidden;
   border-radius: .3rem; background: linear-gradient(90deg, var(--track) calc(var(--at) * 100%), transparent 0); box-shadow: inset 0 0 0 .08rem var(--track-line); }
 .dayrun > .hours > * { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column-reverse; text-decoration: none; }
 .dayrun > .hours > * > b { flex: none; display: block; width: 100%; }
@@ -89,14 +102,13 @@
 .dayrun > .now { position: absolute; top: calc(var(--above) - .3rem); height: calc(var(--track-h) + .6rem); left: min(calc(var(--at) * 100%), calc(100% - .14rem));
   width: .14rem; border-radius: .07rem; background: var(--text); pointer-events: none; }
 .dayrun > .marks { position: absolute; inset: 0; pointer-events: none; }
-/* the busiest hour's count stands over the track, above its own column, never inside the track: at 19 requests against a
-   board whose busiest hour had 3,886 the column is a sliver, and a count on its top would sit on the track's own foot */
-.dayrun .peak { position: absolute; left: calc((var(--i) + .5) / var(--n) * 100%); bottom: calc(var(--below) + var(--track-h) + .2rem);
-  translate: clamp(calc((var(--i) + .5) / var(--n) * -100cqw), -50%, calc((var(--n) - var(--i) - .5) / var(--n) * 100cqw - 100%));
-  font: 600 .76rem/1 var(--font-data); color: var(--text-body); white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* the busiest hour is a line across the track at its height, its count at the line's end beside the track */
+.dayrun .peak { position: absolute; left: 0; right: 0; top: calc(var(--above) + var(--track-h) * (1 - var(--y) / 100)); height: 0; }
+.dayrun .peak > i { position: absolute; inset: 0; border-top: .1rem solid var(--text-body); }
+.dayrun .peak > b { position: absolute; left: calc(100% + .5rem); top: -.4rem; font: 600 .8rem/1 var(--font-data); color: var(--text-body); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .dayrun .tick { position: absolute; left: calc(var(--i) / var(--n) * 100%); top: calc(var(--above) + var(--track-h)); }
 .dayrun .tick::before { content: ""; position: absolute; left: -.04rem; top: .12rem; width: .08rem; height: .3rem; background: var(--track-line); }
-.dayrun .tick > b { position: absolute; top: .5rem; left: 0; font: 500 .74rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap;
+.dayrun .tick > b { position: absolute; top: .5rem; left: 0; font: 500 .7rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap;
   translate: clamp(calc(var(--i) / var(--n) * -100cqw), -50%, calc((var(--n) - var(--i)) / var(--n) * 100cqw - 100%)); }
 /* the hour under the pointer or the arrow keys: what it holds over its column, where the busiest hour's count stood, and
    the column outlined as a hovered one is */
@@ -119,55 +131,65 @@
 /* the budget editor, between the figure and the hours, on two fixed rows so it never wraps onto a third: the amount, its
    presets and Warn or Block; then the cap drawn on today's spend, taking the room the acts leave, and the acts with a
    refusal at the row's end. One control height throughout. */
-.meter.day .editor { display: grid; gap: .8rem; }
-.meter.day .editor > .edrow { display: flex; flex-wrap: wrap; align-items: center; gap: .7rem .9rem; min-width: 0; }
+.meter.day .editor { display: grid; gap: 0.667rem; }
+.meter.day .editor > .edrow { display: flex; flex-wrap: wrap; align-items: center; gap: 0.667rem 1rem; min-width: 0; }
 .meter.day .editor :is(.field, .presets button, .mode button, .act) { box-sizing: border-box; height: var(--ctl-h); }
-.meter.day .editor :is(.presets, .mode) { gap: .35rem; }
+.meter.day .editor :is(.presets, .mode) { gap: 0.333rem; }
 .meter.day .editor :is(.presets, .mode) button { padding-inline: .6rem; }
 .meter.day .editor .money-in .field { width: 5.4rem; }
-.meter.day .editor .edpreview { flex: 1 1 14rem; min-width: 9rem; display: flex; align-items: center; gap: .9rem; }
+.meter.day .editor .edpreview { flex: 1 1 14rem; min-width: 9rem; display: flex; align-items: center; gap: 1rem; }
 .meter.day .editor .edpreview > .capbox { flex: 1 1 auto; }
-.meter.day .editor .edacts { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .6rem; margin-left: auto; }
+.meter.day .editor .edacts { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.667rem; margin-left: auto; }
 .meter.day .editor > .reason { margin: 0; text-align: right; }
 /* the editor's track runs on a fixed scale: the presets stand on it as ticks, and the cap's line, with its amount over it,
    travels along it as the amount changes */
-.capbox.scaled { margin-top: 1.1rem; }
+.capbox.scaled { margin-top: 1rem; }
 .capbox.scaled .tick { position: absolute; top: calc(100% + .1rem); width: .1rem; height: .35rem; margin-left: -.05rem; background: var(--track-line); }
 .capbox.scaled .capnum { position: absolute; bottom: calc(100% + .35rem); translate: -50% 0; font: 600 .8rem/1 var(--font-data); color: var(--text); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 /* a day with no request is one row: its chip, "Day", "No requests" and when the day resets, with Set budget where it has one;
    there is nothing to draw hour by hour, and the strip grows into its hours the moment a request lands */
 .meter.day.idle { padding-block: .95rem; }
-.meter.day.idle > .dayline { grid-column: 2 / 4; }
-.meter.day.idle > .when { grid-row: 1; grid-column: 4; align-self: center; }
+.meter.day.idle > .when { align-self: center; }
+.meter.day.idle > :is(.label, .dayline, .when) { align-self: center; }
+.meter.day.idle > .dayline { min-height: var(--ctl-h); align-items: center; }
+
+/* a wide provider's column: its strips, then its run of cards */
+.rails > .abl-col { min-width: 0; }
 
 /* the command tab that picks a rail's order eases between its pressed and quiet looks as the pointer arrives */
 .meter > button.chip.tag { transition: color var(--t-hover) var(--e-out), border-color var(--t-hover) var(--e-out), box-shadow var(--t-hover) var(--e-out); }
 
 /* ---------- a refusal: its word where the act was, splice's reason one press away ---------- */
-.board .disc.refusal { gap: .4rem; }
+.board .disc.refusal { gap: 0.333rem; }
 .board .disc.refusal .chev { color: var(--limit); }
-.board .reason { margin: .45rem 0 0; max-width: 34rem; font: 500 .9rem/1.35 var(--font-name); color: var(--text-body); white-space: normal; overflow-wrap: anywhere; }
+.board .reason { margin: 0.333rem 0 0; max-width: 34rem; font: 500 .9rem/1.35 var(--font-name); color: var(--text-body); white-space: normal; overflow-wrap: anywhere; }
 .card > .reason.onslot { margin-left: auto; text-align: right; }
 /* a name refused under its field: the word whole on its line, the reason under it */
 .card > .rename-err { flex-wrap: wrap; align-items: baseline; }
 .card > .rename-err > .result { flex: none; white-space: nowrap; }
 .card > .rename-err > .reason { flex: 1 0 100%; }
 /* a sign-in refused on its card or in its add tile: the word whole beside its acts, the reason on its own line under it */
-.board :is(.outbox, .add.signing):has(> .reason) { flex-wrap: wrap; row-gap: .45rem; }
+.board :is(.outbox, .add.signing):has(> .reason) { flex-wrap: wrap; row-gap: 0.333rem; }
 .board :is(.outbox, .add.signing) > .result { flex: none; white-space: nowrap; }
 .board :is(.outbox, .add.signing) > .reason { flex: 1 0 100%; max-width: none; margin-top: 0; }
 .menu .menu-state > .reason { max-width: 19rem; }
-.board .provider > .reason.onhead { margin: -.45rem 0 1rem auto; text-align: right; }
+/* what an armed Remove cuts, under the item it filled */
+.menu .alc-armnote { margin: 0; padding: var(--u) calc(1.5 * var(--u)) calc(1.5 * var(--u)); max-width: 19rem; font: 400 .9rem/1.35 var(--font-name); color: var(--text-body); }
+.menu .menu-state { padding: var(--u) calc(1.5 * var(--u)) calc(1.5 * var(--u)); }
+.board .provider > .reason.onhead { margin: -0.333rem 0 1rem auto; text-align: right; }
 
 /* ---------- an account ---------- */
 /* a window's label is the door to what used that login over that window, on Usage; its arrow comes up under the pointer
    or the keys, as the Day's door draws its own */
-.windows > a.wdoor { justify-self: start; display: inline-flex; align-items: baseline; gap: .3rem; color: inherit; text-decoration: none; }
-.windows > a.wdoor .go { flex: none; align-self: center; width: .8rem; height: .8rem; color: var(--text-mute); opacity: 0;
+.windows > a.wdoor { align-self: stretch; justify-self: stretch; margin-inline: calc(-.8 * var(--u)); padding-inline: calc(.8 * var(--u)); gap: 0.333rem; color: inherit; text-decoration: none;
+  border-radius: .35rem; transition: background-color var(--t-hover) var(--e-out), color var(--t-hover) var(--e-out); }
+.windows > a.wdoor.sub { padding-left: calc(.8 * var(--u) + .9rem); }
+.windows > a.wdoor .go { flex: none; align-self: center; width: .8rem; height: .8rem; color: var(--text-mute); opacity: .55;
   transition: opacity var(--t-hover) var(--e-out), transform var(--t-snap) var(--e-out); }
-.windows > a.wdoor:hover { color: var(--text); text-decoration: underline; }
-.windows > a.wdoor:is(:hover, :focus-visible) .go { opacity: 1; transform: translate(.1rem, -.1rem); }
+.windows > a.wdoor:hover { color: var(--text); background: var(--track); }
+.windows > a.wdoor:is(:hover, :focus-visible) .go { opacity: 1; transform: translate(.1rem, -.1rem); color: var(--text); }
+.windows > a.wdoor:focus-visible { outline: .14rem solid var(--text); outline-offset: .1rem; }
 /* where the command goes next when no other login has room: an empty socket where a name would be, and the lock */
 .windows .next .who .nosock { display: inline-block; vertical-align: middle; width: 1.35rem; height: 1.35rem; border-radius: 50%; border: .12rem dashed var(--track-line); }
 .windows .next .nextlock { display: flex; justify-content: flex-end; }
@@ -177,7 +199,7 @@
 .card .slot .chip.renew { color: var(--text-body); }
 .card .slot .chip.renew svg { color: var(--text-mute); }
 /* Use now asked once, with the sessions it would move: its own row under the card's head, at the card's right */
-.card > .armrow { display: flex; justify-content: flex-end; margin-top: .75rem; }
+.card > .armrow { display: flex; justify-content: flex-end; margin-top: 0.667rem; }
 .card > .armrow .cutask { justify-content: flex-end; }
 .card .cutask .said { font: 500 .92rem/1.3 var(--font-name); color: var(--text-body); }
 /* THE MOVES ON A CARD, DRAWN ON THE RAIL'S OWN SOCKETS (Oct 28): a move is two sockets and the arrow between them, the one
@@ -185,25 +207,26 @@
    The command's chip says which command moved where the provider serves two or more, a lamp and a count say how many
    sessions it carried, and the time ends at the card's edge, where the resets end. The block stands one step under the
    card's doors behind a hairline, and the kicker is said once for every line under it. */
-.card > .moves { display: flex; flex-direction: column; gap: .5rem; margin-top: calc(2 * var(--u)); padding-top: calc(2 * var(--u)); border-top: 1px solid var(--hair); color: var(--text-mute); }
-.card > .moves > .mkick { margin-bottom: calc(.7 * var(--u)); font: 600 var(--kicker)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
-.card > .moves > .moveline { display: flex; align-items: center; gap: .9rem; min-height: 1.9rem; margin: 0; }
-.moveline > .mpath { display: inline-flex; align-items: center; gap: .45rem; flex: none; }
+.card > .moves { display: grid; grid-template-columns: max-content max-content minmax(0, 1fr); column-gap: 1rem; row-gap: 0.667rem; margin-top: calc(2 * var(--u)); padding-top: calc(2 * var(--u)); border-top: 1px solid var(--hair); color: var(--text-mute); }
+.card > .moves > .mkick { grid-column: 1 / -1; margin-bottom: var(--u); font: 600 var(--kicker)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
+/* a line is the path cell, as wide as the widest path on the card, then the time: the grid's own columns are shared with every
+   line (subgrid), so the time starts at one x on all of them and sits one gap after the longest path */
+.card > .moves > .moveline { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; min-height: 1.9rem; margin: 0; }
+.moveline > .mpath { display: inline-flex; align-items: center; gap: var(--u); min-width: 0; }
 .moveline .marrow { flex: none; width: 1.9rem; height: .8rem; fill: none; stroke: var(--text-mute); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 /* the time ends on one edge on every line, with or without the chevron that opens why it moved */
 .moveline > .mat, .moveline > .disc > .mat { font: 500 .86rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.moveline > .mat { margin-left: auto; margin-right: 1.45rem; }
-.moveline > .disc { margin-left: auto; gap: .65rem; color: inherit; }
+.moveline > .disc { justify-self: start; gap: var(--u); color: inherit; }
 .moveline > .disc > .chev { order: 2; }
 .moveline > .disc:hover > .mat { color: var(--text); }
-.moveline .mcarry { display: inline-flex; align-items: center; gap: .4rem; font: 600 .86rem/1 var(--font-data); color: var(--text-body); font-variant-numeric: tabular-nums; }
+.moveline .mcarry { display: inline-flex; align-items: center; gap: 0.333rem; font: 600 .86rem/1 var(--font-data); color: var(--text-body); font-variant-numeric: tabular-nums; }
 .moveline .mcarry .lamp { display: grid; place-items: center; width: 1.4rem; height: 1.4rem; border-radius: 50%; color: var(--text-mute); background: var(--socket);
   box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .12rem var(--rail); }
 .moveline .mcarry .lamp i { width: .45rem; height: .45rem; border-radius: 50%; background: currentColor; }
 /* why it moved and the sessions it carried, under the line, one step in from the card's edge */
-.card > .moves > .mwhy { margin: 0 0 .15rem; font: 500 .92rem/1.35 var(--font-name); color: var(--text-body); overflow-wrap: anywhere; }
+.card > .moves > .mwhy { grid-column: 1 / -1; margin: 0 0 0; font: 500 .92rem/1.35 var(--font-name); color: var(--text-body); overflow-wrap: anywhere; }
 /* a login that is a door to its card: its socket, and in the Next row its name beside it */
-.card .mlogin { display: inline-flex; align-items: center; gap: .55rem; max-width: 100%; min-width: 0; padding: 0; border: 0; border-radius: .3rem; background: none; font: inherit; color: inherit; cursor: pointer; }
+.card .mlogin { display: inline-flex; align-items: center; gap: 0.667rem; max-width: 100%; min-width: 0; padding: 0; border: 0; border-radius: .3rem; background: none; font: inherit; color: inherit; cursor: pointer; }
 .card .mlogin .msock { flex: none; transition: box-shadow var(--t-hover) var(--e-out), transform var(--t-hover) var(--e-out); }
 .card .mlogin:hover .msock, .card .mlogin:focus-visible .msock { box-shadow: 0 0 0 var(--ink-w) var(--ink), 0 0 0 calc(var(--ink-w) + .16rem) var(--text-mute), inset 0 0 0 .1rem var(--rail); transform: scale(1.08); }
 .card .mlogin:hover .nname { color: var(--text); text-decoration: underline; }
@@ -225,41 +248,66 @@
 /* ONE STEP BETWEEN THE PARTS OF A CARD (2u): the windows, the Next row, the session doors and the moves each stand under a
    hairline, so a serving login reads as four parts and never as a stack. The Next row is a row of the windows' own grid, so
    its hairline is the grid's first item and spans the row. */
-.windows .next::before { content: ""; grid-column: 1 / -1; height: 1px; margin-block: .3rem; background: var(--hair); }
+.windows .next::before { content: ""; grid-column: 1 / -1; height: 1px; margin-block: 0.333rem; background: var(--hair); }
 .card > .onlogin { margin-top: calc(2 * var(--u)); padding-top: calc(2 * var(--u)); border-top: 1px solid var(--hair); }
 /* the doors on a login and the pill that opens the rest stand at one height */
 .card .onlogin .sdoor { min-height: 1.75rem; }
-.card .onlogin .morepill { box-sizing: border-box; height: 1.75rem; display: inline-flex; align-items: center; align-self: center; }
+.card .onlogin .morepill { box-sizing: border-box; height: var(--ctl-h); display: inline-flex; align-items: center; align-self: center; }
 /* two sessions of one name are told apart by their folder, quieter than the name */
 .card .onlogin .sdoor .apart { font: 500 .82rem/1 var(--font-data); color: var(--text-mute); }
 .card .onlogin .sdoor:hover .apart { text-decoration: none; }
 /* a server on this computer wears an unlit lamp while it does not answer, as Sessions draws a session that is not running */
 .card .slot .tlamp { width: 1.6rem; height: 1.6rem; }
 .card .slot .tlamp > i { width: .42rem; height: .42rem; border-radius: 50%; background: currentColor; opacity: .5; }
-/* the model's whole name stands on the card, wrapping beside the acts rather than being cut short by them */
-.local-model .mname { min-width: 0; overflow-wrap: anywhere; line-height: 1.3; }
-/* the door to its command on Models, where its log and its model are, a small act that is a link; a server that does not answer
-   puts the act that asks it again beside the door, and says once when it still does not */
-.local-model .lacts { flex: none; margin-left: auto; display: flex; align-items: center; gap: .6rem; }
-.local-model .lacts .door { flex: none; }
-.local-model .again-err { font-size: .95rem; white-space: nowrap; }
-.local-model .door .go { width: .95rem; height: .95rem; transition: transform var(--t-snap) var(--e-out); }
-.local-model .door:hover .go { transform: translate(.1rem, -.1rem); }
+/* A MODEL ON THIS COMPUTER (a local card): its command as the chip every command is, with its lamp and state word at the
+   head's end; under it the model by the name he would say, the instance words that tell two of one model apart, and how far
+   it is compressed in a muted tag; the acts have a row of their own at the foot, Models at the row's end and Check again
+   beside it, held in place where the server answers, so Models never moves from one card to the next. Every label stands on
+   one line; a column too narrow for all three lets the last drop under the others whole, never cut. */
+.lmc-cmd { min-width: 0; display: inline-flex; }
+.card .slot .tlamp.lmc-lit { color: var(--live); }
+.card .slot .tlamp.lmc-lit > i { opacity: 1; box-shadow: 0 0 0 .22rem color-mix(in oklab, var(--live) 24%, transparent); }
+.card .slot .lmc-live { color: var(--live); }
+.local-model.lmc-body { display: grid; gap: calc(1.5 * var(--u)); margin-top: var(--u); font: inherit; }
+.lmc-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--u) calc(1.5 * var(--u)); min-width: 0; }
+.lmc-name { font: 600 1.08rem/1.25 var(--font-name); color: var(--text); white-space: nowrap; }
+.lmc-qual { font: 400 .95rem/1.25 var(--font-name); color: var(--text-body); white-space: nowrap; }
+.lmc-qual::before { content: "\00b7"; margin-right: var(--u); color: var(--text-mute); }
+.lmc-tag { flex: none; padding: .1rem .55rem; border: .12rem solid var(--track-line); border-radius: .3rem; font: 400 .85rem/1.35 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.lmc-foot { display: flex; align-items: center; justify-content: flex-end; gap: var(--u); }
+.lmc-foot .act { white-space: nowrap; }
+.lmc-again, .lmc-hold { flex: none; min-width: 7.6rem; box-sizing: border-box; }
+.lmc-hold { height: var(--ctl-h); }
+.local-model .lmc-still { margin: 0; text-align: right; }
+.local-model .lmc-still .result { font: 500 .95rem/1.2 var(--font-name); white-space: nowrap; }
+.lmc-foot .door .go { width: .95rem; height: .95rem; transition: transform var(--t-snap) var(--e-out); }
+.lmc-foot .door:hover .go { transform: translate(.1rem, -.1rem); }
+.card.gcard .local-model.lmc-body { margin-top: var(--u); }
 /* a name being given: the field takes the room the row leaves, and its acts stand at its height */
 .card .top .field.rename { flex: 1 1 18rem; max-width: 26rem; box-sizing: border-box; height: var(--ctl-h); }
 .card .top .field.rename ~ .act { flex: none; box-sizing: border-box; height: var(--ctl-h); }
 
 /* a provider being added, once it has a name: its key field or sign-in stands where its strips and cards will land, under
    its head on their inset, never out at the head's edge */
-.board .provider[data-key="addprov"] > header:has(h2) + .add { margin-left: 2.7rem; width: calc(100% - 2.7rem); }
+.board .provider[data-key="addprov"] > header:has(h2) + .add { margin-left: 2.667rem; width: calc(100% - 2.667rem); }
 
 /* ---------- a provider's head: one height with or without its switch, so the columns' first strips line up ---------- */
 .board .provider > header { min-height: calc(var(--ctl-h) + .2rem); }
-/* a provider over k columns keeps its days in a grid, where a strip's top margin no longer folds into the head's: the
-   grid gives that margin back, so its first strip and its first card stand at the same y as its neighbours' (13 px
-   lower at 3822 before) */
-.board .provider.wide > .meters { margin-top: -.85rem; }
+/* THE ORDER SWITCH: its two choices stand on equal halves, and the lit part is one shape that slides from the choice it stood on to
+   the one it now stands on over 240 ms (render sets --abl-x to the old place for one frame), so the switch moves with what it ordered */
+.board .provider > header .switch.abl-sw { position: relative; display: inline-grid; grid-template-columns: 1fr 1fr; --abl-x: 0%; }
+.abl-sw[data-at="mine"] { --abl-x: 100%; }
+.abl-sw::before { content: ""; position: absolute; top: .2rem; bottom: .2rem; left: .2rem; width: calc(50% - .2rem); border-radius: calc(var(--r-obj) - .15rem);
+  background: var(--sel-face); box-shadow: inset 0 0 0 .1rem var(--sel-line); transform: translateX(var(--abl-x)); transition: transform var(--t-snap) var(--e-out); }
+.abl-sw button { position: relative; z-index: 1; white-space: nowrap; }
+.abl-sw button[aria-pressed="true"] { background: transparent; box-shadow: none; }
+.abl-sw button:disabled { cursor: default; }
 .board .provider > header .order-err { margin: 0 0 0 auto; }
+/* the refusal and splice's reason beside it, on at most two lines, in the header's own band: the band is as tall as two lines of the
+   reason, so the groups under it never move when a refusal comes */
+.board .provider > header .abl-refusal { display: flex; align-items: center; gap: var(--u); flex: 1 1 0; max-width: 38rem; min-width: 0; }
+.board .provider > header .abl-refusal > .result { flex: none; white-space: nowrap; }
+.board .provider > header .abl-why { min-width: 0; font: 500 .9rem/1.3 var(--font-name); color: var(--text-body); }
 .board .provider > header .order-err + .switch { margin-left: 0; }
 /* the refusal is a word to act on, so it reads at the body's size and not at the switch's label size */
 .board .provider > header .order-err :is(.result, .disc) { font-size: 1rem; }
@@ -269,7 +317,7 @@
 /* a ghost line is as tall as the line it stands for, so the card's content never outgrows the height it kept */
 .card.gcard > .email { display: flex; align-items: center; height: 1.08rem; }
 /* the name field is taller than the name it replaces, so the address under it keeps its distance */
-.card:has(.field.rename) > .email { margin-top: .45rem; }
+.card:has(.field.rename) > .email { margin-top: 0.333rem; }
 .card.gcard .windows > .heldline { display: flex; align-items: center; height: 1.28rem; }
 .card.gcard > .moves > .moveline { display: flex; align-items: center; height: 1.9rem; }
 .card.gcard > .moves > .mkick { display: flex; align-items: center; height: .96rem; }
@@ -280,14 +328,15 @@
 .local-model i.ghost { height: .95rem; border-radius: .3rem; background-color: var(--obj-sunk);
   background-image: repeating-linear-gradient(-45deg, transparent 0 .45rem, var(--track) .45rem .9rem); }
 /* a ghost strip stands where the real one will: the figure and its words on row one, the hours and the reset under them */
-.meter.day.ghosted.idle > .money { grid-column: 2 / 4; }  /* a one-row day: its figure's place holds the words' ghost, the reset stays at the right */
-.meter.day.ghosted > .money { grid-row: 1; grid-column: 2 / -1; display: flex; align-items: center; gap: .7rem; min-height: var(--ctl-h); }
+.meter.day.ghosted .ads-unit .ghost { display: block; }
+.meter.day.ghosted > .ads-words .ghost { display: block; }
+.meter.day.ghosted .bar .ghost.track { position: absolute; inset: 0; width: auto; height: auto; }
 /* the first board after the ghosts comes up where they stood */
 .board.landing > .col > .provider { animation: acc-land var(--t-move) var(--e-out) both; }
 @keyframes acc-land { from { opacity: .35; } }
 
 /* ---------- said once in the head: splice not answering, or no day read; the board it last drew kept ---------- */
-.read .unheard { display: inline-flex; align-items: center; gap: .5rem; margin-right: .3rem; font: 500 .95rem/1 var(--font-name); color: var(--text); animation: pop var(--t-pop) var(--e-out) 1; }
+.read .unheard { display: inline-flex; align-items: center; gap: 0.667rem; margin-right: 0.333rem; font: 500 .95rem/1 var(--font-name); color: var(--text); animation: pop var(--t-pop) var(--e-out) 1; }
 .read .unheard[hidden] { display: none; }
 .read .unheard > svg { flex: none; width: 1.1rem; height: 1.1rem; color: var(--limit); }
 .read .unheard .since { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); }

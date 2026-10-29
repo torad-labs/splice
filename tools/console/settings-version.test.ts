@@ -117,18 +117,27 @@ async function version(
 // The card is a state and an act, never a sentence (Marlin's ruling on the Settings words, Oct 12). "Not checked" sits in
 // the small line where "Checked" and its time would, so the version stays the largest thing on the card (Marlin with
 // hitstop, Oct 12). The releases page is not a door yet: until a check has found a newer version there is no news.
-test("a daemon that has never checked shows its own version, the state and the act, with no empty second card", async () => {
+// THE GOAL CHANGED (Oct 29, Settings' version pass, from the passed prototype): the versions sit on one numbered rail, and
+// where no newest version is known the Newest place is a dashed card that says what it is (a dash and "Not checked yet")
+// and holds the one act, Check. It is never an empty card: it has no number, no sentence and no door. Only the Running card
+// carries a version here, and "Not checked" is said once, on the Newest card, not again under Running.
+test("a daemon that has never checked shows its own version, and a dashed Newest card that says it is not checked and holds the act", async () => {
   const page = await version(NEVER_CHECKED);
   try {
     const pane = page.locator(".pane");
-    await expect(page.locator(".vcard")).toHaveCount(1);
-    await expect(page.locator(".vcard .v")).toHaveText("0.4.0");
-    await expect(page.locator(".vcard .kel")).toHaveText("Not checked");
-    await expect(page.locator(".vcard .state")).toHaveCount(0);
-    await expect(pane.getByRole("button", { name: "Check" })).toBeEnabled();
+    const running = page.locator(".vcard", { hasText: "Running" });
+    const newest = page.locator(".vcard.none");
+    await expect(page.locator(".vcard:not(.none)")).toHaveCount(1);
+    await expect(newest).toHaveCount(1);
+    await expect(running.locator(".v")).toHaveText("0.4.0");
+    await expect(running).not.toContainText("Not checked");
+    await expect(newest).toContainText("Newest");
+    await expect(newest.locator(".v")).toHaveText(/^[—–-]$/);
+    await expect(newest.locator(".state")).toHaveText("Not checked yet");
+    await expect(newest.getByRole("button", { name: "Check" })).toBeEnabled();
     await expect(pane.getByRole("link", { name: /Releases/ })).toHaveCount(0);
-    // no empty second card, no sentence, and none of the daemon's own words about fetching and verifying
-    for (const gone of ["Newest", "None", "fetching and verifying", "no upgrade check", "See releases for"]) {
+    // no sentence, and none of the daemon's own words about fetching and verifying
+    for (const gone of ["None", "fetching and verifying", "no upgrade check", "See releases for"]) {
       await expect(pane).not.toContainText(gone);
     }
     expect(posts).toEqual([]); // opening the page reads nothing: only his tap does
@@ -198,7 +207,9 @@ test("a tap refused because one is already running is said beside the act", asyn
     await pane.getByRole("button", { name: "Check" }).click();
     await expect(pane.locator(".vcard .said")).toHaveText("Already checking", { timeout: 10_000 });
     await expect(pane).not.toContainText("already running"); // the daemon's sentence stays in the log
-    await expect(page.locator(".vcard .kel")).toHaveText("Not checked"); // and nothing on the card moved
+    // and nothing moved: the Newest card still says it is not checked (the goal changed with Settings' version pass, Oct 29)
+    await expect(page.locator(".vcard.none .state")).toHaveText("Not checked yet");
+    await expect(page.locator(".vcard.none .v")).toHaveText(/^[—–-]$/);
   } finally {
     await page.close();
   }
@@ -310,10 +321,11 @@ test("a restart nothing is set to start again from is refused in the console's w
   }
 }, 30_000);
 
+// A card for every version there is: the dashed Newest place holds no version, so it is not counted (Oct 29, Settings' version pass).
 test("a machine with an earlier release on it shows that version too, with the way back", async () => {
   const page = await version({ ...NEVER_CHECKED, rollback_target: "0.3.2" });
   try {
-    await expect(page.locator(".vcard")).toHaveCount(2);
+    await expect(page.locator(".vcard:not(.none)")).toHaveCount(2);
     const previous = page.locator(".vcard", { hasText: "Previous" });
     await expect(previous.locator(".v")).toHaveText("0.3.2");
     await expect(previous.getByRole("button", { name: "Go back to 0.3.2" })).toBeVisible();

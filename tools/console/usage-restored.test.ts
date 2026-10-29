@@ -5,8 +5,10 @@
 //     command's unmarked turns on its row even when none of its turns were marked cold
 //  3. a command that could not be read says Not read, apart from the ones still being counted
 //  4. Where it went can be ranked by cost
-//  5. the cache write reads as not reported for a provider that never reports one, never as nothing written: the input
-//     bar draws no written part and its words say so (Usage's goal, Oct 28: the Written column became a part of the bar)
+//  5. the cache write reads as not reported for a provider that never reports one, never as nothing written: its words say
+//     so (Usage's goal, Oct 28: the Written column became a part of the bar)
+//     Goal changed Oct 29 (the tokens band pass): every input bar draws all three parts, so a provider that reports no
+//     cache write has its Written part drawn with a dash for its figure, where the bar once left the part out
 import { afterAll, beforeAll, test } from "bun:test";
 import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -163,14 +165,15 @@ test("Usage: the cache write reads as not reported for a provider that sends non
   try {
     const plan = p.locator("#band-tok .trow", { hasText: "plan" }).first();
     const input = plan.locator(".cell.inp .ttrack");
-    // no written part is drawn, and the bar says why under the pointer and to a screen reader, never "Written 0"
+    // the Written part's figure is a dash, and the bar says why under the pointer and to a screen reader, never "Written 0"
+    const written = ".tstack > i.s2 b, .tout .tl:has(.s2) b";
     await expect(input).toHaveAttribute("aria-label", /its provider reports no cache writes/, { timeout: 20_000 });
     await expect(input).toHaveAttribute("data-tip", /its provider reports no cache writes/);
-    await expect(input.locator(".s2")).toHaveCount(0);
+    await expect(input.locator(written)).toHaveText("—");
     expect(await input.getAttribute("aria-label")).not.toMatch(/Written/);
-    // the keyed command does report one: the part is drawn and its figure is in the words
+    // the keyed command does report one: the part is drawn, its figure is the figure and it is in the words
     const keyed = p.locator("#band-tok .trow", { hasText: "keyed" }).first().locator(".cell.inp .ttrack");
-    await expect(keyed.locator(".s2")).toHaveCount(1);
+    await expect(keyed.locator(written)).toHaveText("5K");
     await expect(keyed).toHaveAttribute("aria-label", /Written 5K/);
   } finally {
     await p.context().close();

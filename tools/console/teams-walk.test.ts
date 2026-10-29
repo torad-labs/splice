@@ -98,8 +98,8 @@ test("a member with no requests shows a 0 on an empty bar and no tokens, and one
 // the activity under them.
 for (const width of [3828, 1440]) {
   test(`at ${width} an empty chat runs only the height of the column beside it, and an empty activity panel is its one line`, () => onTeams(async (p) => {
-    await expect(p.locator(".talk .empty")).toHaveText("No messages");
-    await expect(p.locator(".feed .flow > .empty")).toBeVisible();
+    await expect(p.locator(".talk .tca-state")).toHaveText("No messages");
+    await expect(p.locator(".feed .flow > .tca-hollows")).toBeVisible();
     const m = await p.evaluate(() => {
       const box = (s: string) => {
         const b = document.querySelector(s)!.getBoundingClientRect();

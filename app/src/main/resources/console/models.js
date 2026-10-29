@@ -168,28 +168,26 @@ function commandsOf() {
     };
   });
 }
-// a command's state, as the daemon's doctor reports it: unlinked, signed out or not started carry their fix
-// doctor's row for a command's own link names the command in quotes, so one command's name inside another's never matches
-// (marlin p228: claude-openrouter took claude-openrouter-side-project's row, two lamps named Command on one pane)
-const wrapperOf = (x, c) => x.id === "installation/wrapper" && Boolean(x.detail?.startsWith(`'${c.cmd}'`));
+// a command's state, as the daemon's doctor reports it: unlinked, signed out or not started carry their fix, which the kit chooses
+// (DRAW.commandFix) so every page that offers it offers the same one
 function stateOf(c) {
   const checks = data.doctor?.checks ?? [];
+  const fix = DRAW.commandFix(c, checks);
   const mine = checks.filter((x) => x.id === `auth/${c.key}` || x.id === `daemon/head ${c.key}` || wrapperOf(x, c));
   const bad = mine.find((x) => x.status === "fail" || x.status === "warn");
-  if (!c.live) return { state: "stopped", word: "Not started", fix: bad?.fix_id ? { id: bad.fix_id, label: "Start" } : { head: c.key, label: "Start" } };
+  if (!c.live) return { state: "stopped", word: "Not started", fix };
   // a local head whose runtime does not answer is not Ready, whatever its checks say: nothing listens on its port
   // (the walk at 3828, Oct 13: four local heads read Ready with 8099-8102 closed)
   // its act is to ask again: splice cannot start someone else's runtime, but the card can say whether it answers now
-  if (c.down) return { state: "runtime", word: "Not answering", fix: { recheck: true, label: "Check again" } };
-  if (c.unread) return { state: "checking", word: "Checking runtime", fix: null };
+  if (c.down) return { state: "runtime", word: "Not answering", fix };
+  if (c.unread) return { state: "checking", word: "Checking runtime", fix };
   // doctor still being read is the page's one reading mark beside the tabs: a command that heads show running and healthy
   // keeps its own state on its card meanwhile, and only a sign-in problem doctor finds later moves it
   if (!bad) return null;
-  const auth = bad.id.startsWith("auth/"), keyed = /key/i.test(c.auth), refused = /refus|reject|invalid|401/i.test(bad.detail ?? "");
+  const auth = bad.id.startsWith("auth/");
   // one word for one state wherever it shows: the card, the header and the Sign-in section all read authWord
   const word = auth ? authWord(c, bad) : bad.id === "installation/wrapper" ? "Command not found" : "Not started";
-  const label = auth ? (keyed ? (refused ? "Replace key" : "Add key") : "Sign in") : bad.id === "installation/wrapper" ? "Restore" : "Start";
-  return { state: bad.id, word, fix: auth ? { signin: true, label } : bad.fix_id ? { id: bad.fix_id, label } : null };
+  return { state: bad.id, word, fix };
 }
 const cmdByKey = (k) => commandsOf().find((c) => c.key === k);
 // a model a request names, by the name the command's roster gives it, or dressed the way the catalog would name it
@@ -265,7 +263,7 @@ const sessLabel = (s, c) => DRAW.name("session", { name: s?.name, command: c?.cm
 function winBar(win, max, scale, over = false) {
   const w = scale > 0 && win ? Math.min(100, (win / scale) * 100) : 0;
   const tick = scale > 0 && max ? Math.min(100, (max / scale) * 100) : null;
-  return `<span class="wbar${over ? " over" : ""}" aria-hidden="true"><i style="width:${w.toFixed(2)}%"></i>`
+  return `<span class="wbar${over ? " over" : ""}${win ? "" : " none"}" aria-hidden="true"><i style="width:${w.toFixed(2)}%"></i>`
     + `${tick == null ? "" : `<u style="left:${tick.toFixed(2)}%"></u>`}</span>`;
 }
 
@@ -291,12 +289,18 @@ function look(c) {
 const provSaid = (c) => c.cmd.replace(/^claude-?/i, "").toLowerCase().includes(String(c.prov).toLowerCase());
 // where a local command expects its runtime, as host and port: what he has to start when it does not answer
 const hostPort = (url) => { try { const u = new URL(url); return u.host; } catch { return url; } };
-// the gate's load right now: requests in flight against the most it lets in at once (null when it sets no limit)
-function loadOf(c) {
-  const g = data.heads.find((x) => x.key === c.key)?.gate;
+/** What the gate holds and what it has taken, for one command: requests in flight against the most it lets in at once (null
+ *  when it sets no limit), and everything it took since it started, split by how it ended. Null before the gate is read. The
+ *  open command's Right now and its card on the rail draw the same numbers. */
+function outcomeOf(c) {
+  const h = data.heads.find((x) => x.key === c.key), g = h?.gate;
   if (!g) return null;
+  const e = h.health ?? {};
   const max = g.max === "unlimited" ? null : Number(g.max) || null;
-  return { flight: Number(g.inflight) || 0, max };
+  const flight = Number(g.inflight) || 0, acq = Number(g.acquired) || 0, refused = Number(g.refused) || 0;
+  const le = Number(e.localOriginErrors) || 0, pe = Number(e.providerErrors) || 0;
+  const served = Math.max(acq, le + pe + flight), total = served + refused, failed = le + pe + refused;
+  return { g, e, max, flight, refused, le, pe, served, total, failed, share: total > 0 ? failed / total : null };
 }
 const order = (cs) => [...cs.filter((c) => stateOf(c)), ...cs.filter((c) => !stateOf(c))];
 function signHtml(c) {
@@ -312,6 +316,27 @@ function signHtml(c) {
     + `${sg.code ? `<button class="usercode" data-act="copy-code">${esc(sg.code)}</button><span class="code-hint">Enter this code on the sign-in page</span>` : ""}`
     + `${sg.url ? `<button class="act" data-act="open-signin">Open sign-in</button>` : ""}<button class="act quiet" data-act="cancel-signin">Cancel</button></div>`;
 }
+/** THE STRIP UNDER A READY CARD: how its command is doing, drawn. Its requests in flight against the most it lets in at once
+ *  (an empty track when idle; with no limit set, a dot for each request in the dashed track), and under it the share of what
+ *  it took that failed: answered in the command's colour, failed in the limit red, hatched, and never thinner than a few
+ *  pixels, so 1 failure in 7,402 and 127 in 454 differ by eye while the figure states the true count. A command that has
+ *  taken nothing says so once, and keeps both tracks. */
+function railStrip(c) {
+  const o = outcomeOf(c), key = esc(c.key);
+  const idle = !o || (o.total === 0 && o.flight === 0);
+  const words = !o ? "Requests not read"
+    : `${DRAW.n(o.flight)}${o.max ? ` of ${DRAW.n(o.max)}` : ""} requests in flight${o.total ? `; ${DRAW.n(o.failed)} of ${DRAW.n(o.total)} failed` : ""}`;
+  const line = !o ? `<span class="rl-none">${DRAW.dash}</span>`
+    : idle ? `<span class="rl-none">No requests</span>`
+    : `<span class="rl-fl"><b data-fig="card:${key}">${DRAW.n(o.flight)}</b>${o.max ? ` / ${DRAW.n(o.max)}` : ""} in flight</span>`
+      + (o.failed > 0 ? `<span class="rl-fail"><i class="rl-hatch" aria-hidden="true"></i><b>${DRAW.n(o.failed)}</b> failed of ${DRAW.n(o.total)}</span>`
+        : o.total > 0 ? `<span class="rl-tot">${DRAW.n(o.total)} requests</span>` : "");
+  const track = !o ? `<div class="flow"><div class="bar unread"></div></div>` : flightTrack(o.flight, o.max, `card:${key}`);
+  const share = o?.share;
+  const mix = share == null ? "" : `<i class="rl-ok"></i>${o.failed > 0 ? `<i class="rl-bad" style="flex-basis:${(share * 100).toFixed(2)}%"></i>` : ""}`;
+  return `<div class="rl-strip" title="${esc(words)}">${line ? `<div class="rl-line">${line}</div>` : ""}${track}`
+    + `<div class="rl-share${share == null ? " none" : ""}" role="img" aria-label="${esc(share == null ? "No requests yet" : `${DRAW.n(o.failed)} of ${DRAW.n(o.total)} requests failed`)}">${mix}</div></div>`;
+}
 // A card is the command as an object: its lamp in the socket, its name as the one chip (with the live dot while
 // sessions run on it), its provider where the name does not say it, then the model it serves with its window at the
 // card's right edge. A command that needs him says its state ONCE, in the card's top-right slot in the text's own ink,
@@ -319,23 +344,21 @@ function signHtml(c) {
 // The fix and the sign-in box live here only while the command's pane is not open beside it, so no act is drawn twice.
 // the largest window any command's card draws, so every card's window bar is on one scale
 let railScale = 0;
-function cardHtml(c) {
+function cardHtml(c, n = 0) {
   const k = look(c), s = stateOf(c), mine = ui.open === c.key && !ui.add;
   const said = ui.fixSaid?.key === c.key ? DRAW.result(ui.fixSaid.word, "bad") : "";
   const fix = s?.fix && !mine && !ui.fixing[c.key] && ui.sign?.key !== c.key && ui.keyin?.key !== c.key
     ? `<div class="fix"><button class="act ${s.fix.recheck ? "quiet small" : "primary"}" data-act="fix" data-h="${esc(c.key)}">${esc(s.fix.label)}</button>${said}</div>` : "";
   // the open command's header beside the rail says its state, so its card keeps the lamp and drops the word
   const slot = k.ghost ? GHOST.state() : k.word && !mine ? `<span class="cstate">${esc(k.word)}</span>` : "";
-  const ld = !s && c.live ? loadOf(c) : null;
-  const load = ld?.flight
-    ? `<div class="cload" data-meter="card:${esc(c.key)}" title="${esc(`${DRAW.n(ld.flight)} requests in flight${ld.max ? ` of ${DRAW.n(ld.max)} allowed at once` : ""}`)}">`
-      + `${ld.max ? DRAW.meter(Math.min(100, (ld.flight / ld.max) * 100), ld.flight >= ld.max ? "full" : "") : ""}`
-      + `<span class="cfig"><b data-fig="card:${esc(c.key)}">${DRAW.n(ld.flight)}</b>${ld.max ? ` of ${DRAW.n(ld.max)}` : " in flight"}</span></div>` : "";
+  // a command that is fine says how it is doing in one strip of the same height on every card: what it holds against what it
+  // lets in, then how much of what it took failed
+  const load = !s && c.live ? railStrip(c) : "";
   // a runtime that does not answer says where splice expects it once, in the open command's header; the rail keeps it on the
   // model's hover so the list reads as commands and models
   const where = c.down && c.url ? ` title="${esc(`Expected at ${hostPort(c.url)}`)}"` : "";
   return `<article class="card h ${k.cls}${ui.shook === c.key ? " shook" : ""}${ui.fx?.landed === c.key ? " landed" : ""}" style="--c:${colorOf(c.family)}" data-open="${esc(c.key)}" aria-current="${mine}">`
-    + `<span class="lamp ${k.cls}" aria-hidden="true">${k.lamp}</span>`
+    + `<span class="lamp ${k.cls}" aria-hidden="true">${(k.cls === "working" && k.word) || !n ? k.lamp : `<b class="rl-num">${n}</b>`}</span>`
     + `<div class="top">${DRAW.chip({ text: c.cmd, live: c.running > 0 && !s })}${provSaid(c) ? "" : `<span class="prov">${esc(c.prov)}</span>`}${slot}</div>`
     + `<div class="meta"><span class="cmodel"${where}>${esc(c.model)}</span>`
     + `${c.window ? `<span class="cwbar">${winBar(c.window, null, railScale)}</span><b class="cwin">${big(c.window)}</b>` : ""}</div>${load}${fix}${mine ? "" : signHtml(c)}</article>`;
@@ -463,6 +486,7 @@ async function armRemove(key) {
   if (ui.rm?.key === key && res.ok) { ui.rm.info = res.body; render(); }
 }
 async function removeCommand(key) {
+  const label = commandsOf().find((c) => c.key === key)?.cmd ?? key;
   ui.rm = { key, busy: true };
   render();
   const res = await API.del(`/api/heads/${encodeURIComponent(key)}`);
@@ -480,6 +504,7 @@ async function removeCommand(key) {
   ui.rm = null;
   ui.gone.add(key);
   ui.restartDue = true;
+  DRAW.savedSettings([{ name: `${label} removed`, href: "models.html" }]);
   data.listsAt = 0; // the next tick reads the lists again, now without it
   Object.assign(ui, { open: null, draft: null, said: null });
   render();
@@ -660,34 +685,55 @@ function paneHead(c) {
   return `<header style="--c:${colorOf(c.family)}"><span class="lamp ${k.cls}" aria-hidden="true">${k.lamp}</span>`
     + `<div class="who"><div class="top"><span class="name">${esc(c.cmd)}</span>${provSaid(c) ? "" : `<span class="prov">${esc(c.prov)}</span>`}</div>`
     + `${word || fix || said ? `<div class="meta">${word}${fix}${said}</div>` : ""}</div>`
-    + `<div class="acts">${headActsHtml(c)}${removeHtml(c)}<button class="icon close" data-act="close" aria-label="Close">${GL.close}</button></div>`
+    + `<div class="acts">${headActsHtml(c)}${removeHtml(c)}</div><button class="icon close" data-act="close" aria-label="Close">${GL.close}</button>`
     + `${sign ? `<div class="hask signrow">${sign}</div>` : ""}${ask ? `<div class="hask${ui.fx?.ask ? " unfold" : ""}">${ask}</div>` : ""}${removeAskHtml(c)}</header>`;
 }
-/** RIGHT NOW: what the command's gate holds this second, who is on it, and what it has taken since it started (GET
- *  /api/heads' gate and health). The hero is the requests in flight against the limit, over its meter; each session on
- *  it is one row, its oldest request's time held as a range bar on one log axis with a tick per request it has in
- *  flight; and everything it took since it started is ONE outcome bar, answered, in flight, errors in splice, errors
- *  from the provider and refused, each failure a door to those requests. A count that is zero draws nothing. */
+/** RIGHT NOW: how the command is doing, this second and since it started (GET /api/heads' gate and health). It leads with
+ *  the share of what it took that failed, the one 2.9rem figure, drawn on a scale that ends on the first round percent
+ *  above it and said as "N failed of M", each a door to those requests. The requests in flight against the most it lets
+ *  in at once stand under it on the same three columns. Each session holding a request is one row, its oldest request's
+ *  time a range bar on one log axis with a tick per request it has in flight, and everything it took since it started is
+ *  ONE outcome bar whose failures are doors to the failed requests. A count of zero draws nothing, and a command that
+ *  takes nothing now draws the same shapes unread. */
+const SHARE_ENDS = [0.5, 1, 2, 5, 10, 20, 50, 100];
+// a failure share as one figure: a decimal under 10%, so 1.9% and 0.4% never both read as a whole percent
+const shareWord = (x) => (!(x > 0) ? "0%" : x < 0.001 ? "<0.1%" : x >= 0.0995 ? `${Math.round(x * 100)}%` : `${(x * 100).toFixed(1)}%`);
+/** Requests in flight against the most a command lets in at once, as a meter in its column; a command with no limit has
+ *  nothing to fill, so each request in flight is a dot in the dashed track. [key] names the meter for the redraw's motion. */
+function flightTrack(flight, max, key) {
+  if (max) return `<div class="flow" data-meter="${key}">${DRAW.meter(Math.min(100, (flight / max) * 100), flight >= max ? "full" : "")}</div>`;
+  const dots = Array.from({ length: Math.min(flight, 24) }, () => "<i></i>").join("");
+  return `<div class="flow"><div class="bar unread rn-nolim" title="No limit set">${dots}</div></div>`;
+}
 function nowSection(c) {
-  const h = data.heads.find((x) => x.key === c.key), g = h?.gate, e = h?.health ?? {};
-  const max = !g || g.max === "unlimited" ? null : Number(g.max) || null;
-  // a command that takes nothing now (its runtime does not answer, or it is not running) is a dash over a hatched
-  // track, against the limit it would hold when one is set: the header already names what is wrong with it, so the
-  // figure does not say it a third time. A running command with no gate read yet is the unread track.
-  // The hero says what it counts on its own baseline, "4 in flight of 100 allowed at once", so the meter under it needs
-  // no label of its own and runs the column's full width, ending where the outcome bar under it ends.
-  const heroOf = (figure, level, tail) => `<div class="pd-top"><b class="pd-rate lv-${level}" data-fig="now:${esc(c.key)}">${esc(figure)}</b>`
-    + `<span class="pd-failed">in flight${tail}</span></div>`;
-  const limitWords = max ? ` of <b>${DRAW.n(max)}</b> allowed at once` : "";
-  const still = (cls) => DRAW.section("Right now", heroOf("—", "ok", cls === "down" ? "" : max ? limitWords : `<span>, nothing read yet</span>`)
-    + `<div class="flow">${DRAW.meter(null, cls)}</div>`, { cls: "snow" });
-  if (c.down || !c.live) return still("down");
-  if (!g) return still("");
-  const flight = Number(g.inflight) || 0, frac = max ? Math.min(1, flight / max) : 0;
-  const level = max && frac >= 0.8 ? "bad" : max && frac >= 0.5 ? "watch" : "ok";
-  const hero = heroOf(DRAW.n(flight), level, max ? limitWords : "<span>, no limit set</span>");
-  const meter = max
-    ? `<div class="flow" data-meter="now:${esc(c.key)}">${DRAW.meter(frac * 100, frac >= 1 ? "full" : "")}</div>` : "";
+  const o = outcomeOf(c), g = o?.g, e = o?.e, max = o?.max ?? null;
+  const key = esc(c.key);
+  // THREE COLUMNS, ONE GRID: the failure share's figure, track and count, then in flight's label, track and count, so
+  // both tracks start and end on the same edges whatever the figures say
+  const grid = (fig, track, cap, meter, count) => `<div class="rn-grid">${fig}<div class="rn-share">${track}</div>${cap}`
+    + `<span class="rn-l">In flight</span>${meter}${count}</div>`;
+  // a command that takes nothing now (its runtime does not answer, or it is not running, or its gate is not read yet) is a
+  // dash over empty tracks, against the limit it would hold when one is set: the header says what is wrong with it
+  if (c.down || !c.live || !g) {
+    return DRAW.section("Right now", grid(`<b class="pd-rate rn-fig quiet" data-fig="now:${key}">${DRAW.dash}</b>`,
+      DRAW.scale({ unread: true, ticks: [[0, "0"], [1, "—"]], said: "Failures not read" }), `<span class="rn-cap"></span>`,
+      `<div class="flow" data-meter="flight:${key}">${DRAW.meter(null, "down")}</div>`,
+      `<span class="rn-f quiet">${DRAW.dash}${max ? ` of ${DRAW.n(max)}` : ""}</span>`)
+      + `<div class="nowall"><div class="pd-bar none down" role="img" aria-label="Requests not read"></div></div>`, { cls: "snow" });
+  }
+  // what it took since it started: every request, split by how it ended; one in flight now has not ended, so it is its
+  // own quiet part, and the failures are the limit red by size
+  const { flight, refused, le, pe, served, total, failed, share } = o;
+  const level = share == null || share === 0 ? "ok" : share >= 0.05 ? "bad" : share >= 0.01 ? "watch" : "ok";
+  const end = share ? SHARE_ENDS.find((v) => v >= share * 100) ?? 100 : null;
+  const fig = `<b class="pd-rate rn-fig lv-${level}${share ? "" : " quiet"}" data-fig="now:${key}">${share == null ? DRAW.dash : esc(shareWord(share))}</b>`;
+  const track = share
+    ? DRAW.scale({ end: `${end}%`, fill: (share * 100) / end, said: `${shareWord(share)} of ${DRAW.n(total)} requests failed, on a scale that ends at ${end}%` })
+    : DRAW.scale({ ticks: [[0, "0"]], said: share === 0 ? `None of ${DRAW.n(total)} requests failed` : "No requests yet" });
+  const cap = share == null ? `<span class="rn-cap">${DRAW.nothing("No requests yet")}</span>`
+    : `<span class="rn-cap">${failed > 0 ? `<a class="rn-door" href="${failDoor(c)}"><b>${DRAW.n(failed)}</b> failed</a>` : "None failed"} of `
+      + `<a class="rn-door" href="${cmdDoor(c)}"><b data-fig="total:${key}">${DRAW.n(total)}</b></a></span>`;
+  const count = `<span class="rn-f${flight ? "" : " quiet"}"><b data-fig="flight:${key}">${DRAW.n(flight)}</b>${max ? ` of ${DRAW.n(max)}` : " in flight"}</span>`;
   // the requests the gate holds, one row per session that sent them, the session holding the oldest first
   const bySess = new Map();
   for (const t of g.live ?? []) {
@@ -720,18 +766,12 @@ function nowSection(c) {
   const rest = groups.length - 4;
   const tail = rest > 0 ? DRAW.more(rest, { word: rest === 1 ? "more session" : "more sessions", act: "more", data: ` data-m="${esc(lid)}"`, open: lopen }) : "";
   const onIt = groups.length ? `<div class="nowon${ui.fx?.more === lid ? " unfold" : ""}">${rows}${DRAW.axisRow(ax, "Held for")}${tail}</div>` : "";
-  // SINCE IT STARTED, as one whole: every request it took, split by how it ended. A request in flight now has not
-  // ended, so it is its own quiet part; the failures are the limit red by size, each a door to the failed requests.
-  const acq = Number(g.acquired) || 0, refused = Number(g.refused) || 0;
-  const le = Number(e.localOriginErrors) || 0, pe = Number(e.providerErrors) || 0;
-  const served = Math.max(acq, le + pe + flight), total = served + refused;
   const fails = [{ n: le, word: "Errors in splice" }, { n: pe, word: "Errors from the provider" }, { n: refused, word: "Refused" }]
     .sort((a, b) => b.n - a.n).map((s, i) => ({ ...s, cls: `f${i}`, href: failDoor(c) }));
   const whole = total > 0
-    ? `<div class="pd-sub"><b data-fig="total:${esc(c.key)}">${DRAW.n(total)}</b>${total === 1 ? "request since it started" : "requests since it started"}</div>`
-      + `<div data-stack="out:${esc(c.key)}">` + DRAW.stack([{ n: Math.max(0, served - le - pe - flight), word: "Answered", cls: "ok", href: cmdDoor(c) },
-        { n: flight, word: "In flight", cls: "nt" }, ...fails], total, { grow: Boolean(ui.grow), label: `${DRAW.n(total)} requests since it started` }) + "</div>"
-    :`<div class="pd-pop"><div class="pd-bar none"></div><div class="pd-legend">${DRAW.nothing("No requests yet")}</div></div>`;
+    ? `<div data-stack="out:${key}">` + DRAW.stack([{ n: Math.max(0, served - le - pe - flight), word: "Answered", cls: "ok", href: cmdDoor(c) },
+      { n: flight, word: "In flight", cls: "nt" }, ...fails], total, { grow: Boolean(ui.grow), label: `${DRAW.n(total)} requests since it started` }) + "</div>"
+    : `<div class="pd-bar none" role="img" aria-label="No requests yet"></div>`;
   // what waited and what was held back, as tiles that exist only above zero; the turn counts are turns, not requests,
   // so they stay tiles beside the whole rather than parts of it
   const since = DRAW.tiles([
@@ -741,7 +781,7 @@ function nowSection(c) {
     tile({ icon: DRAW.glyph.cold, n: e.provider_rate_limit_turns, label: "turns rate limited", bad: true, href: failDoor(c) }),
     tile({ icon: DRAW.glyph.cold, n: e.cooldown_held_turns, label: "turns held in cooldown", bad: true, href: failDoor(c) }),
   ]);
-  return DRAW.section("Right now", `${hero}${meter}${onIt}<div class="nowall">${whole}</div>${since}`, { cls: "snow" });
+  return DRAW.section("Right now", `${grid(fig, track, cap, flightTrack(flight, max, `now:${key}`), count)}${onIt}<div class="nowall">${whole}</div>${since}`, { cls: "snow" });
 }
 /** MODELS: which model answers each of Claude Code's four tiers, the window each is given drawn against the most that
  *  model takes, and the provider's other declared windows under them, all on ONE scale: the largest window or ceiling
@@ -883,7 +923,7 @@ function clientSection(c) {
   // counting against less than the model is given reads short of the tick before a figure is read
   const main = c.models.find((m) => m.id === c.mainId) ?? null;
   const scale = Math.max(...by.keys(), main?.window ?? 0, main?.max ?? 0);
-  const body = [...by.entries()].sort((a, b) => b[0] - a[0]).map(([w, ss]) => {
+  const body = [...by.entries()].sort((a, b) => b[0] - a[0]).map(([w, ss], gi) => {
     // sessions of one name are one chip with their count; the chip opens the first of them, a live one first
     const names = new Map();
     for (const s of [...ss].sort((a, b) => Number(live(b)) - Number(live(a)))) {
@@ -898,13 +938,13 @@ function clientSection(c) {
       + `${g.n > 1 ? `<b class="cnt" title="${g.n} sessions">${g.n}</b>` : ""}</span>`).join("");
     // the pill counts the sessions behind it, not the names: sessions that share a name are one chip with a count
     const hidden = list.slice(cap).reduce((a, g) => a + g.n, 0);
-    const pill = rest > 0 ? DRAW.more(hidden, { word: hidden === 1 ? "more session" : "more sessions", act: "moren", data: ` data-m="${esc(id)}"` })
+    const pill = rest > 0 ? DRAW.more(hidden, { word: "more", act: "moren", data: ` data-m="${esc(id)}"` })
       : cap > 4 ? DRAW.more(0, { act: "moren", data: ` data-m="${esc(id)}" data-less="1"`, open: true }) : "";
-    return `<div class="wgroup"><div class="wline"><b class="wfig">${esc(big(w))}</b><span class="wcell">${winBar(w, main?.window ?? null, scale)}</span>`
-      + `<span class="pd-count"><b>${DRAW.n(ss.length)}</b> ${ss.length === 1 ? "session" : "sessions"}</span></div>`
+    return `<div class="wgroup"><div class="wline"><b class="wfig${gi === 0 ? " lead" : ""}">${esc(big(w))}</b><span class="wcell">${winBar(w, main?.window ?? null, scale)}</span>`
+      + `<span class="pd-count wn" title="${ss.length === 1 ? "1 session" : `${DRAW.n(ss.length)} sessions`}"><b>${DRAW.n(ss.length)}</b></span></div>`
       + `<div class="chips${ui.fx?.more === id ? " unfold" : ""}">${chips}${pill}</div></div>`;
   }).join("");
-  return DRAW.section("Claude Code's window", body);
+  return DRAW.section("Claude Code's window", body, { aside: `<span class="pd-count">sessions</span>` });
 }
 /** PRICES: what splice charges a token at on this command, each price a bar on its column's scale so the dearest
  *  model is found by eye. The models its tiers answer with and the priced ones lead; the rest wait behind one count,
@@ -946,11 +986,13 @@ function pricesSection(c, d, st) {
   return DRAW.section("Prices", `${lead0}${find}${rows ? `<div class="prices${ui.fx?.more === id ? " unfold" : ""}">${heads}${rows}</div>` : none}${pill}${secSave(c, "prices", st)}`,
     { aside: `<span class="pd-count">$ per 1M tokens</span>` });
 }
-/** WHERE IT GOES: the address this command sends to, the port Claude Code reaches it on here, and the prefix each of
- *  its models wears in Claude Code's picker, with the name it will read. The ports every other command holds are
- *  drawn beside it, so "each command needs its own" needs no sentence, and a clash names the command that holds it. */
+/** WHERE IT GOES: the route a request takes, drawn as three nodes it passes through, each holding the field that sets it:
+ *  Claude Code, then the command on the port Claude Code reaches it on here with the prefix its models wear in Claude
+ *  Code's picker and the model that reads as, then the provider with the address the command sends to. The ports every
+ *  other command holds stand under the route, so "each command needs its own" needs no sentence, and a clash names the
+ *  command that holds it. */
 function whereSection(c, d, st) {
-  const was = fieldsOf(c), s = st.own;
+  const was = fieldsOf(c), s = st.own, k = look(c);
   const others = commandsOf().filter((x) => x.key !== c.key)
     .map((x) => ({ cmd: x.cmd, fam: x.family, port: fieldsOf(x).port })).filter((x) => x.port);
   const clash = others.find((x) => x.port === String(d.port).trim());
@@ -958,23 +1000,23 @@ function whereSection(c, d, st) {
   const seen = popen ? others : others.slice(0, 3), prest = others.length - seen.length;
   const taken = clash
     ? `<span class="said limit">Taken by</span>${DRAW.chip({ text: clash.cmd, data: ` style="--c:${colorOf(clash.fam)}"` })}`
-    : `${seen.map((x) => DRAW.chip({ text: `${x.cmd} ${x.port}`, data: ` style="--c:${colorOf(x.fam)}"` })).join("")}`
+    : seen.map((x) => `<span class="chip rt-pchip" style="--c:${colorOf(x.fam)}">${esc(x.cmd)}<b class="rt-tag">${esc(x.port)}</b></span>`).join("")
       + `${prest > 0 || popen ? DRAW.more(prest, { word: prest === 1 ? "more port" : "more ports", act: "more", data: ` data-m="${esc(pid)}"`, open: popen }) : ""}`;
-  const preview = c.mainId
-    ? `<span class="prev"><span class="plbl">Claude Code shows</span><code>${esc(d.prefix)}${esc(c.mainId)}</code></span>` : "";
-  // the route as it runs, drawn from the fields below as they are typed: Claude Code reaches the command on its port here,
-  // and the command reaches the provider at its address
   const hostNow = st.url.ok ? hostPort(d.url) : "";
-  const route = '<div class="route"><span class="rnode client">Claude Code</span><span class="rline" aria-hidden="true"></span>'
-    + `<span class="rnode cmdn">${DRAW.chip({ text: c.cmd, data: ` style="--c:${colorOf(c.family)}"` })}<b class="rport">${s.port && String(d.port).trim() ? `:${esc(String(d.port).trim())}` : DASH}</b></span>`
-    + '<span class="rline" aria-hidden="true"></span>'
-    + `<span class="rnode prov"><span class="rpn">${esc(c.prov)}</span><span class="rhost">${hostNow ? esc(hostNow) : DASH}</span></span></div>`;
-  return DRAW.section("Where it goes", route + '<div class="form">'
-    + `<span class="lbl">Sends to</span><div class="ctl"><input class="field url${dirt(d.url !== c.url)}" id="h-url" value="${esc(d.url)}" spellcheck="false" autocomplete="off" aria-label="Sends to"${st.url.ok ? "" : ' aria-invalid="true"'}>`
-    + `${st.url.ok ? "" : `<span class="said limit">Not an address</span>`}${sharedHtml(c)}</div>`
-    + `<span class="lbl">Port on this computer</span><div class="ctl"><input class="field num${dirt(d.port !== was.port)}" id="h-port" value="${esc(d.port)}" inputmode="numeric" spellcheck="false" autocomplete="off" aria-label="Port"${s.port ? "" : ' aria-invalid="true"'}>${bad(s.port, "Not a port")}<span class="ports">${taken}</span></div>`
-    + `<span class="lbl">Model prefix</span><div class="ctl"><input class="field mono prefix${dirt(d.prefix !== was.prefix)}" id="h-prefix" value="${esc(d.prefix)}" spellcheck="false" autocomplete="off" aria-label="Model prefix"${s.prefix ? "" : ' aria-invalid="true"'}>${bad(s.prefix, "Needs a prefix")}${preview}</div>`
-    + `</div>${secSave(c, "where", st)}`);
+  // what the prefix makes a model read as in Claude Code's own picker: the model by its name, the prefixed id on its hover
+  const shown = c.mainId ? `<span class="rt-model" title="${esc(`Claude Code shows ${d.prefix}${c.mainId}`)}">${esc(c.model)}</span>` : "";
+  const route = `<div class="rt-route"><div class="rt-node rt-client"><span class="rt-nn">Claude Code</span></div><span class="rt-rail" aria-hidden="true"></span>`
+    + `<div class="rt-node rt-cmd" style="--c:${colorOf(c.family)}"><div class="rt-nh"><span class="lamp inline ${k.cls}" aria-hidden="true">${k.lamp}</span>`
+    + `<input class="field num rt-port${dirt(d.port !== was.port)}" id="h-port" value="${esc(d.port)}" inputmode="numeric" spellcheck="false" autocomplete="off" aria-label="Port on this computer"${s.port ? "" : ' aria-invalid="true"'}>`
+    + `${bad(s.port, "Not a port")}</div>`
+    + `<div class="rt-pfxrow"><input class="field mono rt-pfx${dirt(d.prefix !== was.prefix)}" id="h-prefix" value="${esc(d.prefix)}" spellcheck="false" autocomplete="off" aria-label="Model prefix"${s.prefix ? "" : ' aria-invalid="true"'}>`
+    + `${shown ? `<span class="rt-arrow" aria-hidden="true">${GL.maps}</span>${shown}` : ""}${bad(s.prefix, "Needs a prefix")}</div></div>`
+    + `<span class="rt-rail" aria-hidden="true"></span>`
+    + `<div class="rt-node rt-prov" style="--c:${colorOf(c.family)}"><span class="rt-nn">${esc(c.prov)}</span><span class="rt-host">${hostNow ? esc(hostNow) : DASH}</span>${dialectHtml(c)}`
+    + `<input class="field url rt-url${dirt(d.url !== c.url)}" id="h-url" value="${esc(d.url)}" spellcheck="false" autocomplete="off" aria-label="Sends to" title="${esc(d.url)}"${st.url.ok ? "" : ' aria-invalid="true"'}>`
+    + `${st.url.ok ? "" : `<span class="said limit">Not an address</span>`}${sharedHtml(c)}</div></div>`;
+  return DRAW.section("Where it goes", `<div class="pd-sub signlead"><b class="rt-title">${esc(c.cmd)}</b></div>${route}`
+    + `${taken ? `<div class="rt-ports">${taken}</div>` : ""}${secSave(c, "where", st)}`, { cls: "rtsec" });
 }
 /** SIGN-IN: whether this command can reach its provider, read from doctor's own check, then how it signs in, the
  *  variable its key is read from and the headers it sends. The sign-in box and the key form open in the header,
@@ -1004,9 +1046,9 @@ function signInSection(c, d, st) {
     : `<div class="pd-sub signlead${a.ok ? "" : " bad"}"><span class="lamp inline ${a.ok ? "ready" : "stalled"}" aria-hidden="true">${a.ok ? "<i></i>" : ICON.signout}</span><b>${esc(a.word)}</b></div>`;
   const env = d.kind === "api-key"
     ? `<span class="lbl">Key variable</span><div class="ctl"><input class="field mono env${dirt(d.env !== was.env)}" id="h-env" value="${esc(d.env)}" placeholder="${esc(`${c.provKey.toUpperCase()}_API_KEY`)}" spellcheck="false" autocomplete="off" aria-label="Key variable"${s.env ? "" : ' aria-invalid="true"'}>${bad(s.env, "Not a variable name")}</div>` : "";
-  const rows = d.headers.map((x, i) => `<div class="hdr">${x.fresh ? `<input class="field mono" id="hn-${i}" data-hn="${i}" value="${esc(x.name)}" placeholder="Name" spellcheck="false" autocomplete="off" aria-label="Header name">` : `<span class="hname">${esc(x.name)}</span>`}`
+  const rows = d.headers.map((x, i) => `<div class="rt-hwrap${ui.fx?.hdr === i ? " rt-in" : ""}"><div class="hdr rt-hdr${s.header[i] ? "" : " bad"}">${x.fresh ? `<input class="field mono" id="hn-${i}" data-hn="${i}" value="${esc(x.name)}" placeholder="Name" spellcheck="false" autocomplete="off" aria-label="Header name">` : `<span class="hname">${esc(x.name)}</span>`}`
     + `<input class="field mono${dirt(x.fresh || x.value !== MASKED)}" type="password" id="hv-${i}" data-hv="${i}" value="${x.value === MASKED ? "" : esc(x.value)}" placeholder="${x.value === MASKED ? "••••" : "Value"}" autocomplete="off" aria-label="${esc(x.name || "Header")} value">`
-    + `<button class="icon" data-act="hdr-rm" data-i="${i}" aria-label="Remove ${esc(x.name || "header")}">${GL.close}</button>${bad(s.header[i], "Needs a name and a value")}</div>`).join("");
+    + `<button class="icon" data-act="hdr-rm" data-i="${i}" aria-label="Remove ${esc(x.name || "header")}">${GL.close}</button>${bad(s.header[i], "Needs a name and a value")}</div></div>`).join("");
   const door = `<a class="pd-count door" href="accounts.html">Accounts${DRAW.go}</a>`;
   return DRAW.section("Sign-in", lead + '<div class="form">'
     + `<span class="lbl">Signs in with</span><div class="ctl menuwrap"><button class="pickbtn kindbtn" type="button" data-act="kindpick" aria-haspopup="menu" aria-expanded="${open}"><span class="pf">${kindFace(d.kind)}${esc(kindName(d.kind))}</span>${ICON.caret}</button>`
@@ -1017,12 +1059,11 @@ function signInSection(c, d, st) {
 }
 /** INSTRUCTIONS: the system prompt this command adds to, replaces or strips, from a file or written here. */
 function promptSection(c, d, st) {
-  // what this command does to Claude Code's own system prompt leads the section, at the lead figure's size, as Sign-in's state does
-  const none = d.mode === "append" && !d.file && !String(d.text ?? "").trim();
-  const lead = `<div class="pd-sub signlead"><b>${none ? "Claude Code's own" : { append: "Added", replace: "Replaced", strip: "Stripped" }[d.mode] ?? tierName(d.mode)}</b></div>`;
-  return DRAW.section("Instructions", lead + '<div class="form">'
-    + `<span class="lbl">System prompt</span><div class="ctl col">${modeSwitch("head", d.mode)}`
-    + `${d.file ? pfile(d.file) : `<textarea class="field ptext" id="h-text" rows="3" placeholder="Nothing added">${esc(d.text)}</textarea>`}</div></div>`
+  // the section leads with what it holds, the system prompt, with the file it is read from beside the title; the switch under
+  // it says what the command does to Claude Code's own prompt, so no word repeats what the pressed choice says
+  const lead = `<div class="pd-sub signlead"><b class="rt-title">System prompt</b>${d.file ? pfile(d.file) : ""}</div>`;
+  return DRAW.section("Instructions", lead + `<div class="ctl col">${modeSwitch("head", d.mode)}`
+    + `${d.file ? "" : `<textarea class="field ptext" id="h-text" rows="3" placeholder="Nothing added">${esc(d.text)}</textarea>`}</div>`
     + secSave(c, "prompt", st));
 }
 /** PROJECTS: the prompt this command adds inside one project, by project, and the dashed place the next one lands. */
@@ -1087,7 +1128,9 @@ function settingsSection(c) {
   // every row here is this command's own, which the lead figure says; the legend names only the marks a row can carry beyond it
   const aside = own.length ? `<span class="kn">${KNOBS.legendHtml(own, { one: false })}</span>` : "";
   // the section leads with how many of the settings it can hold are this command's own, so a quiet one reads as quiet
-  const lead = DRAW.focal(`${DRAW.n(own.length)} of ${DRAW.n(COMMAND_KNOBS.filter((k) => KNOBS.KNOB[k]).length)}`, "set for this command alone", `own:${c.key}`);
+  const held = COMMAND_KNOBS.filter((k) => KNOBS.KNOB[k]).length;
+  const lead = DRAW.focal(`${DRAW.n(own.length)} of ${DRAW.n(held)}`, "set for this command alone", `own:${c.key}`)
+    + `<div class="rt-segs" role="img" aria-label="${own.length} of ${held} set for this command alone">${Array.from({ length: held }, (_, i) => `<i${i < own.length ? ' class="on"' : ""}></i>`).join("")}</div>`;
   return DRAW.section("Settings", `${lead}<div class="form kn">${KNOBS.commandRowsHtml(c.key, COMMAND_KNOBS)}</div>${effHtml(c)}`, { aside });
 }
 /** LOG: this command's own lines from the daemon's log, drawn. Each turn it took is a row: how long it took as a bar on
@@ -1111,6 +1154,8 @@ function turnsOf(lines) {
   }
   return out;
 }
+// a figure a turn did not report is one dash in its cell, no track drawn for what was not measured
+const trnNone = (cls = "") => `<span class="trnnone${cls}" title="Not reported">${DRAW.dash}</span>`;
 function turnsHtml(c, all) {
   if (!all.length) return "";
   const id = "turns:" + c.key, cap = ui.moreN?.[id] ?? TURNS_SHOWN;
@@ -1130,9 +1175,9 @@ function turnsHtml(c, all) {
   // a turn that reported neither what it wrote nor its cache stands as ONE unread cell over both columns, not one in each
   const rows = shown.map((t) => '<div class="trn' + (t.ok ? "" : " bad") + '"><time>' + esc(ampm(t.at)) + "</time>"
     + DRAW.range(ax, t.ms, t.ms) + '<b class="pd-n">' + DRAW.ms(t.ms) + "</b>"
-    + (t.out <= 0 && anyHit && !(t.input > 0) ? DRAW.unread.cell({ cls: "both" })
-      : (t.out > 0 ? DRAW.barCell({ w: (t.out / maxOut) * 100, text: DRAW.big(t.out), key: "trn:" + c.key + ":" + t.at }) : DRAW.unread.cell())
-        + (anyHit ? (t.input > 0 ? DRAW.barCell({ w: (t.cached / t.input) * 100, text: DRAW.pct(t.cached / t.input), key: "hit:" + c.key + ":" + t.at }) : DRAW.unread.cell()) : ""))
+    + (t.out <= 0 && anyHit && !(t.input > 0) ? trnNone(" both")
+      : (t.out > 0 ? DRAW.barCell({ w: (t.out / maxOut) * 100, text: DRAW.big(t.out), key: "trn:" + c.key + ":" + t.at }) : trnNone())
+        + (anyHit ? (t.input > 0 ? DRAW.barCell({ w: (t.cached / t.input) * 100, text: DRAW.pct(t.cached / t.input), key: "hit:" + c.key + ":" + t.at }) : trnNone()) : ""))
     + "</div>").join("");
   const axis = '<div class="trn trax"><span></span><span class="pd-ax">'
     + ax.ticks.map((v, i) => '<span class="pd-tk' + (i === 0 ? " pd-t-first" : i === ax.ticks.length - 1 ? " pd-t-last" : "") + '" style="left:' + ax.at(v).toFixed(2) + '%">' + DRAW.tickWord(v) + "</span>").join("")
@@ -1168,15 +1213,20 @@ function logSection(c) {
     : q ? (raw.length ? "" : DRAW.nothing("No lines match"))
     : DRAW.nothing("Nothing logged yet");
   const nraw = Math.min(ui.rawN ?? RAW_FIRST, RAW_CAP);
-  const tail = raw.slice(-nraw), left = raw.length - tail.length;
-  const file = path ? path.split("/").pop() : "the log file";
-  const older = left > 0
-    ? (nraw < RAW_CAP ? "<li>" + DRAW.more(left, { word: left === 1 ? "older line" : "older lines", act: "rawmore" }) + "</li>"
-      : '<li class="rawend"><span class="pd-count"><b>' + DRAW.n(left) + "</b> older " + (left === 1 ? "line stays" : "lines stay") + " in " + esc(file) + "</span></li>") : "";
-  const inner = '<ol class="rawlines' + (ui.fx?.raw ? " unfold" : "") + '">' + older
-    + tail.map((l) => '<li title="' + esc(l.raw) + '"><span>' + marked(l.raw, q) + "</span></li>").join("") + "</ol>";
+  // THE WINDOW IS BOUNDED, THE LOG IS NOT: it holds at most RAW_CAP lines, the newest at first, and the way back moves it to the
+  // lines before it a window at a time until the oldest line read; the way forward, or Newest, moves it back
+  const back = Math.min(ui.rawBack ?? 0, Math.max(0, raw.length - 1)), end = raw.length - back;
+  const tail = raw.slice(Math.max(0, end - nraw), end), left = Math.max(0, end - nraw);
   // the file the lines come from is named where the lines are, by its own name, its full place on the name's title
   const fileTag = path ? '<span class="pfile logfile" title="' + esc(homeRel(path)) + '">' + GL.file + "<span>" + esc(path.split("/").pop()) + "</span></span>" : "";
+  // the lines beyond the cap are said once, as a count and the file they stay in, the same words the disclosure carries
+  const older = left > 0
+    ? (nraw < RAW_CAP ? "<li>" + DRAW.more(left, { word: "older", act: "rawmore" }) + "</li>"
+      : '<li class="rawend">' + DRAW.more(left, { word: "older", act: "rawolder" }) + fileTag + "</li>") : "";
+  const newer = back > 0
+    ? '<li class="rawend">' + DRAW.more(back, { word: "newer", act: "rawnewer" }) + DRAW.act({ word: "Newest", act: "rawnewest", cls: "quiet small" }) + "</li>" : "";
+  const inner = '<ol class="rawlines' + (ui.fx?.raw ? " unfold" : "") + '">' + older
+    + tail.map((l) => '<li title="' + esc(l.raw) + '"><span>' + marked(l.raw, q) + "</span></li>").join("") + newer + "</ol>";
   const disc = '<div class="rawwrap">' + DRAW.disc({ open: rawOpen, act: "rawtoggle",
     inner: "<span>Raw log</span><span class=\"mmeta\">" + DRAW.n(raw.length) + " " + (raw.length === 1 ? "line" : "lines") + "</span>" + fileTag })
     + (rawOpen ? inner : "") + "</div>";
@@ -1390,23 +1440,24 @@ function everySetHtml(c, n = 1) {
     groups.get(t).push(key);
   }
   const order = [...Object.keys(TOPIC_NAME), "other"].filter((t) => groups.has(t));
+  const most = Math.max(1, ...[...groups.values()].map((l) => l.length));
   const blocks = order.map((t) => {
     const list = groups.get(t), timed = list.some((key) => timeOf(key) != null), barred = timed || list.some((key) => lineOf(key));
     // its height in rows: the head, each setting, the axis when it draws one. THE AXIS IS DRAWN ONCE PER PLATE, under the last
     // timed group in it; each track carries faint marks at the axis's own ticks, so every group reads against it
     const axis = (on) => (timed && on ? `<span></span><span></span><div class="eaxis">${DRAW.axisRow(ax, "")}</div>` : "");
     return { w: 2 + list.length + (timed ? 2 : 0), timed, html: (on) => `<div class="egroup"><div class="sechead sub"><h4 class="kicker">${esc(TOPIC_NAME[t] ?? "More")}</h4>`
-      + `<span class="pd-count"><b>${DRAW.n(list.length)}</b></span></div>`
+      + `<span class="pd-count"><b>${DRAW.n(list.length)}</b></span><span class="gbar" role="img" aria-label="${list.length} of ${keys.length}"><i style="width:${((list.length / most) * 100).toFixed(1)}%"></i></span></div>`
       + `<div class="effgrid${barred ? " timed" : ""}">${list.map(row).join("")}${axis(on)}</div></div>` };
   });
   // the groups go down as many plates as the sections above stand in, each into the shortest so far, so the plates line
   // up under the ones above and end near one height
   const plates = DRAW.packCols(blocks, n, (b) => b.w).map((col) => (col.items.length
     ? DRAW.plate(`<div class="kn everycol">${col.items.map((b, i) => b.html(i === col.items.map((x) => x.timed).lastIndexOf(true))).join("")}</div>`, "pcol") : ""));
-  const head = `<div class="everyhead"><p class="kicker on-wall" title="Every setting as this command runs it">All settings</p>`
+  const head = `<div class="everyhead"><h3 class="everyttl" title="Every setting as this command runs it">All settings <b>${DRAW.n(keys.length)}</b></h3>`
     // THE MARKS ARE SAID ONCE, FOR THE WHOLE VIEW (Oct 28): they were said on every group's kicker ("Takes a restart" on eight
     // of them), so the one legend of every mark any group draws stands here, over the groups
-    + `<span class="pd-count"><b>${DRAW.n(keys.length)}</b></span>${K.legendHtml(keys, { one: false })}${DRAW.act({ word: "Hide", act: "eff", cls: "quiet small" })}</div>`;
+    + `${K.legendHtml(keys, { one: false })}${DRAW.act({ word: "Hide", act: "eff", cls: "quiet small" })}</div>`;
   return `${head}<div class="ecols" style="--n:${n}">${plates.join("")}</div>`;
 }
 
@@ -1417,6 +1468,14 @@ function everySetHtml(c, n = 1) {
 const MASKED = "********"; // GET /api/topology serves each extra_headers value as this; sent back, it keeps the stored one
 const vocab = () => data.topo?.vocab ?? {};
 const cmdDialect = (c) => data.heads.find((x) => x.key === c.key)?.dialect ?? "";
+/** The wire the command speaks to its provider, by the name the provider's own docs give it, said once on the provider's node
+ *  of the route; splice.toml's own spelling rides it as its title, for the one who has to write it there (GET /api/heads' dialect). */
+const DIALECT_NAME = { "openai-responses": "OpenAI Responses", "openai-chat": "OpenAI Chat", "anthropic-messages": "Anthropic Messages",
+  "anthropic-passthrough": "Anthropic pass-through", anthropic: "Anthropic" };
+const dialectHtml = (c) => {
+  const d = cmdDialect(c);
+  return d ? `<span class="rt-wire" title="${esc(d)}">${esc(DIALECT_NAME[d] ?? d)}</span>` : "";
+};
 const numText = (n) => (n == null ? "" : String(n));
 function fieldsOf(c) {
   const t = topology(), h = t.heads?.[c.key] ?? {}, p = t.providers?.[c.provKey] ?? {};
@@ -1465,10 +1524,12 @@ const SHARE_NAME = { settings: "Settings", mcps: "MCP servers", skills: "Skills"
   plugins: "Plugins", claude_md: "CLAUDE.md", sessions: "Sessions", projects: "Transcripts" };
 const shareName = (x) => SHARE_NAME[x] ?? x;
 // the daemon's own phrase for Claude Code's login reads as the user's: the client is Claude Code
-const kindWords = (label) => String(label ?? "").replace(/client's own login/i, "Claude Code's own login");
+const kindWords = (label) => String(label ?? "").replace(/client's own login/i, "Claude Code's own login").replace(/^Codex \((.+)\)$/, "$1");
 const kindName = (k) => kindWords((vocab().auth_kinds ?? []).find((x) => x.kind === k)?.label ?? k);
 // how it signs in is drawn before it is worded: the same key and browser glyphs the templates carry
-const kindFace = (k) => `<span class="kg" aria-hidden="true">${kindGlyph(k)}</span>`;
+// each way to sign in wears the colour of the provider it signs in to; a key belongs to none
+const KIND_FAMILY = { "chatgpt-oauth": "gpt", "grok-oauth": "grok", "kimi-oauth": "kimi", "muse-oauth": "muse", client: "claude" };
+const kindFace = (k) => `<span class="rt-kg" style="--c:${KIND_FAMILY[k] ? colorOf(KIND_FAMILY[k]) : "var(--track-line)"}" aria-hidden="true"></span>`;
 // a model priced nowhere has no cache price either: once its row is priced, Cache read shows beside it, filled with the In
 // price splice charges a cache read at until a real one is typed (marlin, Oct 13: overcount, but never hide it)
 const unpriced = (c, id) => !c.models.find((m) => m.id === id)?.rates && !topology().heads?.[c.key]?.rates?.[id];
@@ -1489,7 +1550,8 @@ function runningParts(c, d, st) {
   const items = vocab().share ?? [];
   const shares = items.filter((x) => !d.isolate.includes(x)).length;
   const share = items.length
-    ? DRAW.focal(`${DRAW.n(shares)} of ${DRAW.n(items.length)}`, "shared with Claude Code", `shares:${c.key}`)
+    ? DRAW.focal(`${DRAW.n(shares)} of ${DRAW.n(items.length)}`, "", `shares:${c.key}`)
+      + `<div class="rt-segs" role="img" aria-label="${shares} of ${items.length} shared with Claude Code">${items.map((x) => `<i${d.isolate.includes(x) ? "" : ' class="on"'}></i>`).join("")}</div>`
       + `<div class="chips tog" role="group" aria-label="Shares with Claude Code">${items.map((x) => `<button class="chip tg" type="button" data-act="share" data-v="${esc(x)}" aria-pressed="${!d.isolate.includes(x)}">${esc(shareName(x))}</button>`).join("")}</div>`
     : "";
   const moved = (q) => JSON.stringify(was[q.name]) !== JSON.stringify(d.quirks[q.name]);
@@ -1509,31 +1571,45 @@ function runningParts(c, d, st) {
   const qtile = (q) => {
     const v = d.quirks[q.name], wide = wideQ(q), u = unitOf(q, v);
     return '<div class="qtile' + (v === undefined ? "" : " own") + (wide ? " wide" : "") + '"><div class="qhead"><span class="lbl" title="' + esc(q.name) + '">' + esc(quirkName(q.name)) + "</span>" + back(q) + "</div>"
-      + '<div class="ctl">' + quirkCtl(q, v, moved(q)) + (u ? '<span class="unit">' + u + "</span>" : "") + bad(s.quirk[q.name], "Not a value") + "</div></div>";
+      + '<div class="ctl">' + (QPIC[q.name] ? '<span class="qpic">' + QPIC[q.name] + "</span>" : "") + quirkCtl(q, v, moved(q)) + (u ? '<span class="unit">' + u + "</span>" : "") + bad(s.quirk[q.name], "Not a value") + "</div></div>";
   };
   // the memory the workers can use, against the memory the command is given in all: three numbers whose product is one drawing
   const num = (n) => (typeof d.quirks[n] === "number" ? d.quirks[n] : null);
   const w = num("code_mode_workers"), h = num("code_mode_heap"), mem = num("code_mode_memory_mb");
-  const rel = w != null && h != null && mem ? (() => {
-    const use = w * h, pct = Math.min(100, (use / mem) * 100);
-    return '<div class="qtile wide qrel"><div class="qhead"><span class="lbl">Workers can use</span><span class="qfig"><b>' + DRAW.n(use) + "</b> of " + DRAW.n(mem) + " MB</span></div>"
-      + DRAW.meter(pct, use > mem ? "full" : "") + "</div>";
-  })() : "";
   const qs = quirksOf(c);
   const set = qs.filter((q) => was[q.name] !== undefined), rest = qs.filter((q) => was[q.name] === undefined);
-  const mine = set.length ? '<div class="qgrid">' + narrowFirst(set).map(qtile).join("") + rel + "</div>" : "";
+  // THE MEMORY BUDGET is drawn only where this command sets all three numbers itself: what the workers can use, as a bar
+  // on the plate's full width against the memory it is given in all, with the three fields under it
+  const memNames = ["code_mode_workers", "code_mode_heap", "code_mode_memory_mb"];
+  const budget = w != null && h != null && mem && memNames.every((n) => set.some((q) => q.name === n));
+  const rel = budget ? (() => {
+    const use = w * h, pct = Math.min(100, (use / mem) * 100);
+    return `<div class="qrel" data-meter="qmem:${esc(c.key)}"><div class="qhead"><span class="lbl">Workers can use</span><span class="qfig${use > mem ? " over" : ""}"><b>${DRAW.n(use)}</b> of ${DRAW.n(mem)} MB</span></div>`
+      + DRAW.meter(pct, use > mem ? "full" : "") + `<div class="qmem">${memNames.map((n) => qtile(qs.find((q) => q.name === n))).join("")}</div></div>`;
+  })() : "";
+  // the behaviours stand in groups of what they do, a one-word kicker each; a group this command has nothing in is not drawn
+  const groups = (list) => ["Wire", "Reasoning", "Code mode", "Blocks"].map((g) => {
+    const l = narrowFirst(list.filter((q) => quirkGroup(q.name) === g && !(budget && memNames.includes(q.name))));
+    return l.length ? `<div class="bh-group"><h4 class="kicker">${g}</h4><div class="qgrid">${l.map(qtile).join("")}</div></div>` : "";
+  }).join("");
+  const mine = set.length ? `${rel}<div class="bh-groups">${groups(set)}</div>` : "";
   const theirs = rest.length
     ? '<div class="qrest">' + DRAW.disc({ open: ui.qOpen, act: "qopen", cls: "door", inner: "<span><b>" + DRAW.n(rest.length) + "</b> follow the provider</span>" })
-      + (ui.qOpen ? '<div class="qgrid' + (ui.fx?.q ? " unfold" : "") + '">' + narrowFirst(rest).map(qtile).join("") + "</div>" : "") + "</div>"
+      + (ui.qOpen ? '<div class="bh-groups' + (ui.fx?.q ? " unfold" : "") + '">' + groups(rest) + "</div>" : "") + "</div>"
     : "";
+  // the plate leads with how many of its settings this command sets itself, drawn as one segment each
+  const lead = qs.length
+    ? DRAW.focal(`${DRAW.n(set.length)} of ${DRAW.n(qs.length)}`, " set here", `qset:${c.key}`)
+      + `<div class="rt-segs" role="img" aria-label="${set.length} of ${qs.length} set here">${qs.map((q) => `<i${was[q.name] === undefined ? "" : ' class="on"'}></i>`).join("")}</div>` : "";
   const backs = qs.some((q) => back(q));
   // the behaviours are a section of their own, so the board can set it where there is room beside the others; its Save is
   // Running's, the section they both write (SECTION_FIELDS.running). Where a command has none, Running holds the Save.
   const behave = qs.length
-    ? DRAW.section("Provider behaviour", `${mine}${theirs}${secSave(c, "running", st)}`, {
-      aside: `${set.length ? `<span class="pd-count"><b>${DRAW.n(set.length)}</b> set here</span>` : ""}${backs ? `<span class="leg qleg">${GL.back}Provider's own</span>` : ""}` })
+    ? DRAW.section("Provider behaviour", `${lead}${mine}${theirs}${secSave(c, "running", st)}`, {
+      aside: backs ? `<span class="leg qleg">${GL.back}Provider's own</span>` : "", cls: "qplate" })
     : "";
-  const run = local || share ? DRAW.section("Running", `${local ? `<div class="form">${local}</div>` : ""}${share}${qs.length ? "" : secSave(c, "running", st)}`) : "";
+  const run = local || share ? DRAW.section("Running", `${local ? `<div class="form">${local}</div>` : ""}${share}${qs.length ? "" : secSave(c, "running", st)}`,
+    { aside: share ? `<span class="pd-count">shared with Claude Code</span>` : "" }) : "";
   return { run, behave };
 }
 const dirt = (on) => (on ? " dirty" : "");
@@ -1549,6 +1625,17 @@ const QUIRK_NAME = {
   block_allowlist: "Block types allowed", strip_cache_control: "Remove cache markers", synthesize_signatures: "Sign thinking blocks",
   map_thinking_adaptive: "Map thinking to Kimi's effort", strip_sampling_params: "Remove sampling settings",
   reanchor_prefill: "Resume a broken stream", tool_name_cap: "Longest tool name", zstd_request_body: "Compress requests",
+};
+// what a behaviour does, in one word: the way it speaks to the provider, how it reasons, code mode, or the blocks it lets through
+const quirkGroup = (n) => (/^code_mode|^tool_surface$/.test(n) ? "Code mode" : /summary|effort|reasoning|thinking|signature/.test(n) ? "Reasoning" : n === "block_allowlist" ? "Blocks" : "Wire");
+// the wire behaviours a picture says faster than their name: who is named in the request, which way it travels, how it is packed
+const QPIC = {
+  account_id_header: G('<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M6.5 16c.6-1.6 4.4-1.6 5 0M14 10h4M14 13.5h3"/>', 'aria-hidden="true"'),
+  websocket: G('<rect x="2" y="8" width="4" height="8" rx="1"/><rect x="18" y="8" width="4" height="8" rx="1"/><path d="M8 10h8M14 8l2 2-2 2M16 14H8M10 12l-2 2 2 2"/>', 'aria-hidden="true"'),
+  zstd_request_body: G('<path d="M3 8h10M3 12h6M3 16h10"/><path d="M15 12h6M18.5 9.5 21 12l-2.5 2.5"/>', 'aria-hidden="true"'),
+  slot_affinity: G('<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M12 8v6M9.5 12 12 14.5 14.5 12M8 17h8"/>', 'aria-hidden="true"'),
+  store: G('<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/>', 'aria-hidden="true"'),
+  parallel_tool_calls: G('<path d="M4 8h14M15 5l3 3-3 3M4 16h14M15 13l3 3-3 3"/>', 'aria-hidden="true"'),
 };
 const QUIRK_UNIT = { code_mode_timeout_ms: "ms", code_mode_heap: "MB", code_mode_memory_mb: "MB" };
 const quirkName = (k) => QUIRK_NAME[k] ?? k;
@@ -1801,6 +1888,8 @@ async function save(sec) {
   if (!c || !d || !SECTION_FIELDS[sec] || ui.saving) return;
   ui.saving = sec; ui.said = null; ui.shook = null; render();
   const next = applyDraft(topology(), c, d, new Set([sec]));
+  // the settings this save changes, named for the list under the Settings link: the ones splice reads only when it starts
+  const named = changesOf(c, sec).filter((x) => !x.live).map((x) => ({ name: `${c.cmd}: ${x.name}`, href: `models.html?cmd=${encodeURIComponent(c.key)}` }));
   const res = await API.put("/api/topology", { topology: next });
   ui.saving = null;
   if (!res.ok || !res.body?.ok) {
@@ -1813,6 +1902,7 @@ async function save(sec) {
     return;
   }
   const kept = waiting(c, sec);
+  if (res.body.restart_required) DRAW.savedSettings(named);
   if (res.body.restart_required) { ui.pending = true; ui.pendingAt = { key: c.key, sec }; }
   ui.said = { sec, word: res.body.restart_required ? "Saved" : "Applied" };
   ui.fx = { landed: sec };
@@ -1876,7 +1966,8 @@ const notServed = (m) => `<span class="said limit">Not served${m.reason ? `: ${e
 // once on the board's key. A tier is a place in a strip of four, lit where the command sends that tier to the model, so
 // "every tier" and "two of four" are shapes. A figure the route does not send is absent, never a 0: an unpriced model keeps
 // its row and a hatched track, and a card holds only the rows it has.
-const EVERY_SHOWN = 6;      // a card's first models at full size; the rest twenty at a time behind one pill
+const EVERY_SHOWN = 4;      // a card's first models at full size; the rest twenty at a time behind one pill
+const EVERY_FOLD = 7;       // a card of this many models or fewer shows them all; a longer one folds past its first few
 const EVERY_STEP = 20;
 const EVERY_FIND = 24;      // a search shows every match up to this many rows on a card before it folds them
 const EVERY_COL_REM = 56;   // a board column: a model's name, its window and its price side by side at full size
@@ -1958,9 +2049,10 @@ function everyKeys(cs, tiers) {
   ].filter(Boolean));
 }
 /** The columns' names, once over each column of cards: the window scale's end over its track, the price scale's two ends over its own. */
-const everyHead = (sc) => `<div class="em-hc"><div class="em-row em-colhead" aria-hidden="true"><span></span>`
+const everyHead = (sc) => `<div class="em-hc"><div class="em-row em-colhead" aria-hidden="true"><span class="mh">Model</span>`
   + `<span class="axh"><b>Window</b><i>${big(sc.win)}</i></span><span></span>`
   + `<span class="axh"><i>${priceTick(sc.lo)}</i><i>${priceTick(sc.hi)}</i></span><span class="ch">In</span><span class="ch">Out</span></div></div>`;
+const LEADER = `<i class="em-ld" aria-hidden="true"></i>`;
 const rateId = (c, m) => `rate-${`${c.key}-${m.id}`.replace(/[^A-Za-z0-9_-]/g, "_")}`;
 const RATE_KINDS = [["input", "In"], ["output", "Out"], ["cache_read", "Cache read"], ["cache_write", "Cache write"], ["cache_write_1h", "Cache write, 1 h"]];
 // the rates a row has that its own figures do not already show: the cache rates, and with a long-context price every rate
@@ -1991,12 +2083,12 @@ function everyRow(c, m, tiers, sc, fresh, i, terms, name = m.label, maker = "") 
   const dot = m.id === c.pinned ? `<i class="mdot" title="Main model"></i>` : "";
   const label = `<span class="nm"><span class="mnm">${dot}${maker ? `<span class="mk">${esc(maker)}</span>` : ""}<span class="mname" title="${esc(m.label)}">${marked(name, terms)}</span></span>${tierStrip(m.id, tiers)}</span>`;
   const lead = opens
-    ? DRAW.disc({ open, controls: id, act: "rate", data: ` data-r="${esc(k)}"`, cls: `em-name${turned ? (open ? " turn-on" : " turn-off") : ""}`, inner: label })
-    : `<span class="em-name still">${label}</span>`;
+    ? DRAW.disc({ open, controls: id, act: "rate", data: ` data-r="${esc(k)}"`, cls: `em-name${turned ? (open ? " turn-on" : " turn-off") : ""}`, inner: `${label}${LEADER}` })
+    : `<span class="em-name still">${label}${LEADER}</span>`;
   const r = m.rates, i0 = rateOf(r, "input"), o0 = rateOf(r, "output");
   const price = r && (i0 != null || o0 != null) ? `${priceTrack(i0 ?? o0, o0, sc)}<b class="v">${per1m(i0)}</b><b class="v">${per1m(o0)}</b>`
     : `<span class="ptrk none" aria-hidden="true"></span><b class="v">${DASH}</b><b class="v"></b>`;
-  return `<div class="em-item${open ? " open" : ""}"><div class="em-row${m.id === c.pinned ? " main" : ""}${fresh ? " arrive" : ""}" style="--i:${Math.min(i, 8)}">`
+  return `<div class="em-item${open ? " open" : ""}" data-rk="${esc(k)}"><div class="em-row${m.id === c.pinned ? " main" : ""}${fresh ? " arrive" : ""}" style="--i:${Math.min(i, 8)}">`
     + `${lead}${winTrack(m, sc, `win:${k}`)}<b class="v">${m.window ? big(m.window) : DASH}</b>${price}</div>${open ? rateCard(m, id, turned, sc) : ""}</div>`;
 }
 // a model the provider does not serve leads its card: its name, and the lock where its price would be; the route's
@@ -2005,10 +2097,10 @@ function goneRow(c, m, tiers, fresh, i, terms) {
   const k = `${c.key}|${m.id}`, open = ui.rates.has(k), id = rateId(c, m), turned = ui.fx?.turn === k;
   const label = `<span class="nm"><span class="mnm"><span class="mname">${marked(m.label, terms)}</span></span>${tierStrip(m.id, tiers)}</span>`;
   const name = m.reason
-    ? DRAW.disc({ open, controls: id, act: "rate", data: ` data-r="${esc(k)}"`, cls: `em-name${turned ? (open ? " turn-on" : " turn-off") : ""}`, inner: label })
-    : `<span class="em-name still">${label}</span>`;
+    ? DRAW.disc({ open, controls: id, act: "rate", data: ` data-r="${esc(k)}"`, cls: `em-name${turned ? (open ? " turn-on" : " turn-off") : ""}`, inner: `${label}${LEADER}` })
+    : `<span class="em-name still">${label}${LEADER}</span>`;
   const why = open && m.reason ? `<div class="em-rate${turned ? " grow" : ""}" id="${id}"><p class="gonewhy">${esc(m.reason)}</p></div>` : "";
-  return `<div class="em-item"><div class="em-row gone${fresh ? " arrive" : ""}" style="--i:${Math.min(i, 8)}">${name}`
+  return `<div class="em-item" data-rk="${esc(k)}"><div class="em-row gone${fresh ? " arrive" : ""}" style="--i:${Math.min(i, 8)}">${name}`
     + `<span class="wtrk none" aria-hidden="true"></span><b class="v">${DASH}</b><span class="gonelock">${DRAW.lock("Not served")}</span></div>${why}</div>`;
 }
 function everyCard(c, hits, gone, sc, drawn, terms) {
@@ -2029,31 +2121,42 @@ function everyCard(c, hits, gone, sc, drawn, terms) {
   const all = flat.length, k = `every:${c.key}`;
   // a pill that would hide three rows or fewer takes about the room those rows take: they are drawn instead; a search
   // shows every match up to EVERY_FIND, so its result never takes a second press
-  const folds = all > (terms.length ? EVERY_FIND : EVERY_SHOWN + 3);
-  const cap = folds ? Math.min(all, ui.moreN?.[k] ?? EVERY_SHOWN) : all;
+  const folds = all > (terms.length ? EVERY_FIND : EVERY_FOLD);
+  // the first few rows, and past them the main model and every model a tier sends to, so what the command uses is never
+  // behind the pill
+  const lastUsed = flat.reduce((a, x, i) => (!x.gone && chosen(x.m) ? i + 1 : a), 0);
+  const base = Math.min(all, Math.max(EVERY_SHOWN, lastUsed));
+  const cap = folds ? Math.min(all, ui.moreN?.[k] ?? base) : all;
   const seen = (id) => { const key = `${c.key}|${id}`; drawn.add(key); return !ui.seenRows?.has(key); };
   const body = flat.slice(0, cap).map((x, i) => {
     const head = x.maker ? `<p class="em-maker">${esc(x.maker.word)}<b>${DRAW.n(x.maker.n)}</b></p>` : "";
-    if (x.gone) return goneRow(c, x.m, tiers, seen(x.m.id), i, terms);
+    // the rows past the folded few exist only while the card is open, and fold away in motion
+    const tail = folds && i >= base ? DRAW.tail : (html) => html;
+    if (x.gone) return tail(goneRow(c, x.m, tiers, seen(x.m.id), i, terms));
     const s = makers && !x.maker && x.name === x.m.label ? makerSplit(x.m.label) : null;
-    return `${head}${everyRow(c, x.m, tiers, sc, seen(x.m.id), i, terms, s ? s.name : x.name, s?.maker ?? "")}`;
+    return `${tail(head)}${tail(everyRow(c, x.m, tiers, sc, seen(x.m.id), i, terms, s ? s.name : x.name, s?.maker ?? ""))}`;
   }).join("");
   const n = c.models.length + c.missing.length;
   // a command with one model is its chip and that model's row: a count of one says nothing the row does not
-  const count = n > 1 ? `<span class="pd-count">${terms.length ? `<b>${DRAW.n(all)}</b> of ${DRAW.n(n)}` : `<b>${DRAW.n(n)}</b>`} models</span>` : "";
-  const opened = folds && cap > EVERY_SHOWN;
-  const less = DRAW.act({ word: "Fewer", act: "moren", cls: "quiet small", data: ` data-m="${esc(k)}" data-less="1"` });
+  const said = `${terms.length ? `<b>${DRAW.n(all)}</b> of ${DRAW.n(n)}` : `<b>${DRAW.n(n)}</b>`} models`;
+  const opened = folds && cap > base;
+  // a card that folds says its count on the control that opens and folds it, with a chevron that turns
+  const count = n > 1 ? (folds && !terms.length
+    ? `<button class="em-cnt${opened ? " open" : ""}" type="button" data-act="cardcount" data-m="${esc(k)}" aria-expanded="${opened}">${said}<svg class="em-cch" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>`
+    : `<span class="pd-count">${said}</span>`) : "";
+  // Fewer and the pill both name the card's rows, so the rows ease open and shut whichever is pressed (kit.js, "a list behind N more")
+  const less = `<button class="act quiet small mp-fewer" type="button" data-act="moren" data-m="${esc(k)}" data-less="1" data-mp="${esc(k)}" data-mp-fold><span class="mp-lab">Fewer</span>${DRAW.mpChev(true)}</button>`;
   const next = folds && cap < all
-    ? `<button class="morepill pill" type="button" data-act="moren" data-m="${esc(k)}" data-base="${EVERY_SHOWN}" data-step="${EVERY_STEP}"><b>${DRAW.n(all - cap)}</b> more ${all - cap === 1 ? "model" : "models"}</button>` : "";
-  const foot = next || opened ? `<div class="em-foot">${next}${opened ? less : ""}</div>` : "";
+    ? DRAW.more(all - cap, { word: "more models", one: "more model", act: "moren", data: ` data-m="${esc(k)}" data-base="${base}" data-step="${EVERY_STEP}"`, pill: true, keepWord: true, host: k }) : "";
+  const foot = next || opened ? `<div class="em-foot mp-skip">${next}${opened ? less : ""}</div>` : "";
   const html = `<article class="card em-card" style="--c:${colorOf(c.family)}" data-cmd="${esc(c.key)}">`
     + `<header class="em-head">${DRAW.chip({ text: c.cmd, live: c.running > 0, href: `models.html?cmd=${encodeURIComponent(c.key)}`, title: "Open this command", data: ` data-act="opencmd" data-h="${esc(c.key)}"` })}${count}</header>`
-    + `${body ? `<div class="em-rows">${body}</div>` : `<div class="em-rows">${DRAW.nothing("No models", { slot: true })}</div>`}${foot}</article>`;
+    + `${body ? `<div class="em-rows" data-mp-host="${esc(k)}">${body}</div>` : `<div class="em-rows">${DRAW.nothing("No models", { slot: true })}</div>`}${foot}</article>`;
   // its height in rows as it first stands, before a rate card or more rows are opened in it: a name that wraps beside its tier
   // places takes more than one line. It decides how the board splits a provider and which column each part stands in
   // (everyBlocks, everyBoard), so what a press opens pushes down only what is under it; the drawing wraps by its own rules.
   const NAME_LINE = 32, STRIP_CHARS = 4;
-  const first = folds ? Math.min(all, terms.length ? EVERY_FIND : EVERY_SHOWN) : all;
+  const first = folds ? Math.min(all, terms.length ? EVERY_FIND : base) : all;
   const units = flat.slice(0, first).reduce((a, x) => {
     const lit = x.gone ? 0 : TIERS.filter((t) => tiers[t] === x.m.id).length, len = (x.name ?? x.m.label).length + lit * STRIP_CHARS;
     return a + 1 + 0.55 * (Math.ceil(len / NAME_LINE) - 1) + (x.maker ? 0.6 : 0);
@@ -2132,7 +2235,7 @@ function everyHtml() {
   if (!terms.length) {
     GHOST.remember("every-groups", order.length);
     let j = 0;
-    order.forEach((g, i) => { GHOST.remember(`every-g${i}`, g.cards.length); for (const x of g.cards) GHOST.remember(`every-r${j++}`, x.rows); });
+    order.forEach((g, i) => { GHOST.remember(`every-g${i}`, g.cards.length); for (const x of g.cards) GHOST.remember(`every-r${j++}`, Math.max(1, Math.round(x.units))); });
   }
   const hero = terms.length
     ? DRAW.hero({ figure: DRAW.n(found), of: `of ${DRAW.n(total)} models on ${DRAW.n(cards)} ${cards === 1 ? "command" : "commands"}`, key: "every" })
@@ -2140,14 +2243,19 @@ function everyHtml() {
   // the search, the one figure and the key of the marks stand on one line while the width holds them, the key under the
   // figure when it does not: the key is read with the figure, and the screen beside them is not left empty
   const bar = (keys = "") => `<div class="em-bar">${searchBox("q", ui.q, "Search models", "clearq")}${hero}${keys}</div>`;
-  if (!order.length) return `<div class="every">${bar()}<div class="nomatch"><span class="state">No model matches <b>${esc(ui.q.trim())}</b></span>${DRAW.act({ word: "Clear", act: "clearq", cls: "quiet" })}</div></div>`;
+  if (!order.length) return `<div class="every">${bar()}<div class="nomatch${ui.fx?.find ? " em-in" : ""}"><span class="state">No model matches <b>${esc(ui.q.trim())}</b></span>${DRAW.act({ word: "Clear", act: "clearq", cls: "quiet" })}</div></div>`;
   const n = boardN();
-  const asBlocks = everyBlocks(order, n, (g, cards, i) => DRAW.group({ name: g.name, c: g.c, key: i ? "" : g.key, body: DRAW.cards(cards.map((x) => x.html)) }));
+  // a provider's place in the board's order is its number: the order is the one the groups are sorted by, so the first is the one
+  // that needs a look, and a part of a provider split across columns carries its title without the number
+  const asBlocks = everyBlocks(order, n, (g, cards, i) => {
+    const html = DRAW.group({ name: g.name, c: g.c, key: i ? "" : g.key, body: DRAW.cards(cards.map((x) => x.html)) });
+    return i ? html : html.replace("<h2>", `<h2><span class="em-no">${String(order.indexOf(g) + 1).padStart(2, "0")}</span>`);
+  });
   const heads = `<div class="em-heads" style="--n:${n}">${Array.from({ length: Math.min(n, asBlocks.length) }, () => everyHead(sc)).join("")}</div>`;
   const tiersOf = new Map(cs.map((c) => [c.key, tierMap(c)]));
   const keys = `<div class="em-keys">${everyKeys(cs, tiersOf)}</div>`;
   const board = everyBoard(asBlocks, n);
-  return `<div class="every" style="--wtk:${sc.wtick.toFixed(3)}%;--ptk:${sc.ptick.toFixed(3)}%">${bar(keys)}<div class="em-wall">${heads}${board}</div></div>`;
+  return `<div class="every" data-held="every" style="--wtk:${sc.wtick.toFixed(3)}%;--ptk:${sc.ptick.toFixed(3)}%">${bar(keys)}<div class="em-wall">${heads}${board}</div></div>`;
 }
 
 // ---------- Projects: compaction's rules for this project and command, edited in place (spec 7 Resolved) ----------
@@ -2227,6 +2335,7 @@ async function compSave() {
   }
   ui.comp = null; ui.files = {};
   ui.pending = Boolean(res.body.restart_required); ui.restartDue = ui.pending;
+  if (ui.pending) DRAW.savedSettings([{ name: "Compaction", href: "models.html?view=projects" }]);
   await readAll();
   ui.fx = { landed: "comp" };
   render();
@@ -2515,12 +2624,12 @@ function ghostProjectsHtml() {
   const pick = () => `<i class="ghost pj-gpick" style="width:9rem" aria-hidden="true"></i>`;
   // the side holds the loaded side's shape: the filter's box and its count, the key, then the folders, as many tiles as the
   // last visit landed, so the rail does not jump to three times its height
-  const folders = Array.from({ length: GHOST.count("pj-groups", 6) }, (_, i) => GHOST.count(`pj-g${i}`, [9, 5, 4, 3, 12, 3][i] ?? 3));
-  const lines = Array.from({ length: GHOST.count("pj-doc", 14) }, (_, i) => [34, 40, 26, 38, 22, 36][i % 6]);
+  const folders = Array.from({ length: GHOST.count("pj-groups", 6) }, (_, i) => GHOST.count(`pj-g${i}`, [10, 4, 6, 2, 3, 3][i] ?? 3));
+  const lines = Array.from({ length: GHOST.count("pj-doc", 15) }, (_, i) => [34, 40, 26, 38, 22, 36][i % 6]);
   return `<div class="pj" aria-busy="true"><div class="pj-side"><div class="pj-bar"><i class="ghost pj-gsearch" aria-hidden="true"></i>${GHOST.bar(5)}</div>${projLegend()}`
     + `<div class="proj-list">${folders.map(group).join("")}</div></div>`
     + `<section class="pane pj-pane" aria-hidden="true"><header class="pj-head">${GHOST.bar(12, "big")}${GHOST.bar(20)}</header><div class="body pj-body">`
-    + `<div class="pj-cmd"><div class="pj-run">${sec(`${GHOST.hero()}<i class="ghost pj-gsplit"></i><div class="pj-chips">${Array.from({ length: GHOST.count("pj-chips", 3) }, pick).join("")}</div>`)}</div>`
+    + `<div class="pj-cmd"><div class="pj-run">${sec(`<div class="prj-row"><div class="prj-lead">${GHOST.hero()}</div><div class="prj-bar"><i class="ghost pj-gsplit"></i><div class="pj-chips">${Array.from({ length: GHOST.count("pj-chips", 3) }, pick).join("")}</div></div></div>`)}</div>`
     + `<div class="pj-for">${GHOST.chip(8)}${Array.from({ length: 3 }, () => `<i class="ghost pj-gstat"></i>`).join("")}</div>`
     + `<div class="pj-cols">${rail(4)}${rail(5).replace("</ol>", `</ol><div class="pj-gwin"><i class="ghost"></i></div>`)}</div></div>`
     + `<div class="plate pj-files">${sec(tiles(GHOST.count("pj-fi", 1)))}${sec(tiles(GHOST.count("pj-fm", 1)))}<section class="psec"><div class="fprev"><div class="fhead">${GHOST.bar(6)}${GHOST.bar(3)}</div><div class="fdoc pj-gdoc">${GHOST.lines(lines)}</div></div></section></div></div></section></div>`;
@@ -2554,10 +2663,13 @@ function runByHtml(cs, c, s) {
   const unk = other ? `<span class="pj-unk"><i class="sw unk" aria-hidden="true"></i>Command not known<b class="pc-n">${DRAW.n(other)}</b></span>` : "";
   const outside = used.filter((x) => !room(x));
   GHOST.remember("pj-chips", outside.length + rest.length + (other ? 1 : 0));
-  // the figure in every part and chip is a count of these sessions, said once by the figure that leads the section
-  const lead = all ? DRAW.hero({ figure: DRAW.n(all), of: `${all === 1 ? "session" : "sessions"} here, by ${used.length + (other ? 1 : 0)} ${used.length + (other ? 1 : 0) === 1 ? "command" : "commands"}`, key: "pj-all" }) : "";
+  // the sessions are counted once, on the door in the pane's head; this section leads with how many of his commands ran here
+  // (the sessions tied to no command are no command), and each part and chip carries its own command's count
+  const lead = all ? DRAW.hero({ figure: DRAW.n(used.length), of: used.length === 1 ? "command" : "commands", key: "pj-all" }) : "";
   const chips = `${outside.map(pick).join("")}${unk}${rest.length ? `<span class="pj-idle">${rest.map(pick).join("")}</span>` : ""}`;
-  return `<div class="pj-run">${DRAW.section("As run by", `${lead}${split}${chips ? `<div class="pj-chips">${chips}</div>` : ""}`)}</div>`;
+  // a project no command has run in lights no command: the picked one is named on the line under, with what it sends
+  const body = `<div class="prj-row${lead ? "" : " solo"}">${lead ? `<div class="prj-lead">${lead}</div>` : ""}<div class="prj-bar">${split}${chips ? `<div class="pj-chips${all ? "" : " prj-none"}">${chips}</div>` : ""}</div></div>`;
+  return `<div class="pj-run">${DRAW.section("As run by", body)}</div>`;
 }
 /** What Claude Code gets here from the picked command, drawn: its chip, then a tile for the layers of its system prompt that
  *  are sent, the compaction rules set, and the files read. A count of nothing draws no tile. */
@@ -2634,10 +2746,11 @@ function projectsHtml() {
     // a project in no shared folder carries its place, unless its name already is the last word of it; in a folder, the
     // folder's head says where it sits
     const placeOf = (x) => (g.dir || String(x.root).split("/").filter(Boolean).pop() === (x.label || x.name) ? "" : homeRel(x.root));
-    const tiles = shown.map((x) => projTile(x, placeOf(x), st.get(x.id) ?? NO_STATS, maxTotal, x.id === p.id)).join("");
-    const more = hid ? DRAW.more(hid, { word: "more projects", one: "more project", act: "more", data: ` data-m="${key}"` })
-      : folds ? DRAW.more(0, { act: "more", data: ` data-m="${key}"`, open: true, less: "Fewer" }) : "";
-    return `<section class="pj-group">${folderHead(g)}<div class="pj-tiles">${tiles}${more ? `<div class="pj-morerow">${more}</div>` : ""}</div></section>`;
+    // a project with no session stands behind the count, so it is a tail row: it eases in and out with the list
+    const tiles = shown.map((x) => { const t = projTile(x, placeOf(x), st.get(x.id) ?? NO_STATS, maxTotal, x.id === p.id); return !terms.length && idle(x) ? DRAW.tail(t) : t; }).join("");
+    const more = hid ? DRAW.more(hid, { word: "more projects", one: "more project", act: "more", data: ` data-m="${key}"`, host: key })
+      : folds ? DRAW.more(0, { act: "more", data: ` data-m="${key}"`, open: true, less: "Fewer", host: key }) : "";
+    return `<section class="pj-group">${folderHead(g)}<div class="pj-tiles" data-mp-host="${esc(key)}">${tiles}${more ? `<div class="pj-morerow mp-skip">${more}</div>` : ""}</div></section>`;
   }).join("");
   const count = `<span class="pd-count">${terms.length ? `<b>${DRAW.n(found)}</b> of ${DRAW.n(ps.length)}` : `<b>${DRAW.n(ps.length)}</b>`} projects</span>`;
   const none = `<div class="nomatch"><span class="state">No project matches <b>${esc(ui.pq.trim())}</b></span>${DRAW.act({ word: "Clear", act: "clearpq", cls: "quiet" })}</div>`;
@@ -2705,8 +2818,12 @@ function staleHtml() {
 // spinner for it. Each command draws the state its own data gives it while the slower reads (sessions, sign-ins, projects,
 // local runtimes, settings) land.
 const readingHtml = () => (data.loaded && data.pending?.size && !data.err ? `<span class="vread" role="status" aria-label="Still reading">${GHOST.bar(8)}</span>` : "");
+// THE THREE VIEWS ARE ONE SWITCH WITH ONE LIT CAPSULE under the pressed word; a press slides it from the old word to the new
+// one (tabMotion), the words and the page's title standing still
+const tabsHtml = () => `<div class="switch mt-switch" role="group" aria-label="What to show" style="--mt-i:${Math.max(0, VIEWS.findIndex(([v]) => v === ui.view))}"><i class="mt-cap" aria-hidden="true"></i>`
+  + `${VIEWS.map(([v, word]) => `<button type="button" data-act="view" data-v="${esc(v)}" aria-pressed="${ui.view === v}">${esc(word)}</button>`).join("")}</div>`;
 function viewsHtml() {
-  return `<div class="views">${DRAW.switcher(VIEWS, ui.view, "view", "What to show")}${staleHtml()}${readingHtml()}</div>`;
+  return `<div class="views">${tabsHtml()}${staleHtml()}${readingHtml()}</div>`;
 }
 
 // ---------- a new command: a template, what it asks, its sign-in, splice's checks, then Save and the restart ----------
@@ -2736,16 +2853,26 @@ function toBe(p, a) {
   const chip = cmd ? DRAW.chip({ text: cmd }) : `<span class="chip tobe"><span>${esc(stem)}</span><i class="slot" aria-hidden="true"></i></span>`;
   return { cmd, stem, chip };
 }
+/** THE COMMAND ADD WILL MAKE is the dashed slot at the end of the rail, lit in its provider's colour: its chip (the name's place
+ *  dashed until one is typed), its provider, the first model typed with its window, and the address it sends to. It spins
+ *  while Add works, rests in the limit red when a check refused it, and shakes once on a refusal. A stem joins it to the
+ *  chip at the head of the form (fitStem). */
+function addSlotHtml(p, a) {
+  const { chip, cmd, stem } = toBe(p, a), fam = famOf(p);
+  const m0 = a.rows.find((r) => r.id.trim()), w0 = m0 ? parseWindow(m0.win) : null;
+  const host = hostPort((showsUrl(p, a) && a.url.trim()) || p.base_url || "");
+  const working = a.busy || a.sign || a.saved, refused = Boolean(a.checks?.some((x) => !x.ok && !SOFT.has(x.name)) || (a.said && !a.busy));
+  return `<article class="card h newcard${working ? " working" : ""}${refused ? " refused" : ""}${ui.shook === "add" ? " shook" : ""}" data-slot style="--c:${colorOf(fam)}" aria-label="The command Add makes">`
+    + `<span class="lamp ${working ? "working" : refused ? "stalled" : "unchecked"}" aria-hidden="true">${working ? WAIT : refused ? GL.notstarted : "<i></i>"}</span>`
+    + `<div class="top">${chip}${provSaid({ cmd: cmd || stem, prov: tplName(p) }) ? "" : `<span class="prov">${esc(tplName(p))}</span>`}</div>`
+    + `<div class="meta">${m0 ? `<span class="cmodel">${esc(m0.id.trim())}</span>` : ""}${host ? `<span class="caddr">${esc(host)}</span>` : ""}`
+    + `${w0 ? `<span class="cwbar">${winBar(w0, null, Math.max(railScale, w0))}</span><b class="cwin">${big(w0)}</b>` : ""}</div></article>`;
+}
 function addPaneHtml() {
   const a = ui.add;
   const p = a.profile && data.profiles.find((x) => x.name === a.profile);
   const back = p && !a.busy && !a.saved && !a.sign ? `<button class="back tback" type="button" data-act="tpl-back">${GL.back}<span>Start from</span></button>` : "";
-  const { cmd, stem, chip } = p ? toBe(p, a) : { cmd: "", stem: "", chip: "" };
-  // the template it starts from rides the header beside the title, as an open command's provider does, with how it
-  // signs in drawn by its glyph; the command it will make is its card, beside the form
-  const kind = p && kindGlyph(p.auth_kind) ? `<span class="tsub" title="${esc(kindName(p.auth_kind))}">${kindGlyph(p.auth_kind)}<span>${kindGlyph(p.auth_kind) === GL.key ? "A key" : "Signs in on its own page"}</span></span>` : "";
-  const head = `<header style="--c:${p ? colorOf(famOf(p)) : "var(--key-light)"}"><div class="who"><div class="top"><span class="name">New command</span>`
-    + `${p ? `<span class="prov">${esc(tplName(p))}</span>` : ""}</div>${p || back ? `<div class="meta">${kind}${back}</div>` : ""}</div>`
+  const head = `<header style="--c:${p ? colorOf(famOf(p)) : "var(--key-light)"}"><div class="who"><div class="top"><span class="name">New command</span></div></div>`
     + `<div class="acts"><button class="icon close" data-act="cancel-add" aria-label="Close">${GL.close}</button></div></header>`;
   if (!p) {
     // each template says what it is and how it signs in, by its glyph, named once in the legend on the kicker's line;
@@ -2765,12 +2892,18 @@ function addPaneHtml() {
       + `<div class="tpls">${tiles}</div>${none}</div></div>`;
   }
   const asks = (k) => p.asks.includes(k);
+  const fam = famOf(p), { stem, chip } = toBe(p, a);
   // a field Add still waits for wears a dashed edge until it is filled, so the word beside Add points at something
-  const field = (id, lbl, val, extra = "", wants = false) => `<label class="lbl" for="${id}">${lbl}</label><div class="ctl"><input class="field${id === "a-url" ? " url" : ""}${wants && !String(val).trim() ? " need" : ""}" id="${id}" value="${esc(val)}" spellcheck="false" autocomplete="off" ${extra}></div>`;
-  let f = "";
-  if (asks("name") || second(p)) f += field("a-name", "Name", a.name, "", true);
+  const field = (id, lbl, val, extra = "", wants = false, lead = "") => `<div class="addfld"><label class="lbl" for="${id}">${lbl}</label><div class="ctl">${lead}<input class="field${id === "a-url" ? " url" : ""}${wants && !String(val).trim() ? " need" : ""}" id="${id}" value="${esc(val)}" spellcheck="false" autocomplete="off" ${extra}></div></div>`;
+  // THREE GROUPS, ONE COLUMN EACH: what the command is called and whose it is, how it reaches the provider, and which models
+  // it serves. A group the template does not ask is not drawn, and the columns it leaves stand equal.
+  const prov = `<div class="addfld"><span class="lbl">Provider</span><div class="ctl"><span class="addprov" style="--c:${colorOf(fam)}"><i class="blot" aria-hidden="true"></i>${esc(tplName(p))}</span></div></div>`;
+  let nm = "";
+  if (asks("name") || second(p)) nm += field("a-name", "Name", a.name, "", true, stem ? `<span class="astem">${esc(stem)}</span>` : "");
+  let cn = nm ? "" : prov;
+  if (nm) nm += prov;
   // the address the template sends to by default is the field's hint, so an empty field reads as what it falls back to
-  if (showsUrl(p, a)) f += field("a-url", "URL", a.url, p.base_url ? `placeholder="${esc(p.base_url)}"` : "", true);
+  if (showsUrl(p, a)) cn += field("a-url", "URL", a.url, p.base_url ? `placeholder="${esc(p.base_url)}"` : "", true);
   if (asksWhichKey(p, a)) {
     // the provider's key is drawn as the key it is: the variable it is read from and the commands that send with it
     const twin = commandsOf().find((x) => x.key === p.head_key || x.cmd === p.command);
@@ -2778,13 +2911,16 @@ function addPaneHtml() {
     const users = twin ? commandsOf().filter((x) => x.provKey === twin.provKey) : [];
     const keyFact = !a.newKey && (env || users.length)
       ? `<span class="keyfact">${GL.key}${env ? `<code>${esc(env)}</code>` : ""}${users.map((x) => DRAW.chip({ text: x.cmd, live: x.running > 0, data: ` style="--c:${colorOf(x.family)}"` })).join("")}</span>` : "";
-    f += `<span class="lbl">Key</span><div class="ctl"><div class="switch" role="radiogroup" aria-label="Key">`
+    cn += `<div class="addfld"><span class="lbl">Key</span><div class="ctl"><div class="switch" role="radiogroup" aria-label="Key">`
       + `<button data-act="keychoice" data-v="provider" role="radio" aria-pressed="${!a.newKey}" aria-checked="${!a.newKey}">${esc(tplName(p))}'s key</button>`
-      + `<button data-act="keychoice" data-v="new" role="radio" aria-pressed="${Boolean(a.newKey)}" aria-checked="${Boolean(a.newKey)}">A new key</button></div>${keyFact}</div>`;
+      + `<button data-act="keychoice" data-v="new" role="radio" aria-pressed="${Boolean(a.newKey)}" aria-checked="${Boolean(a.newKey)}">A new key</button></div>${keyFact}</div></div>`;
   }
   if (!sharesKey(p, a) && (p.requires_key || (p.auth_kind === "api-key" && p.asks.length))) {
-    f += field("a-key", asksWhichKey(p, a) ? "" : "Key", a.key, 'type="password" aria-label="Key"');
+    cn += field("a-key", asksWhichKey(p, a) ? "" : "Key", a.key, 'type="password" aria-label="Key"');
+  } else if (kindGlyph(p.auth_kind) === GL.browser) {
+    cn += `<div class="addfld"><span class="lbl">Sign-in</span><div class="ctl"><span class="tsub" title="${esc(kindName(p.auth_kind))}">${GL.browser}<span>Signs in on its own page</span></span></div></div>`;
   }
+  let md = "";
   if (asks("models")) {
     // each window typed is a bar on one scale with every window his commands already serve, so a new row reads
     // against the ones he knows; the scale's end is said once over the bars
@@ -2795,10 +2931,11 @@ function addPaneHtml() {
       + `<span class="wcell">${winBar(parseWindow(r.win), null, scale)}</span>`
       + `${a.rows.length > 1 ? `<button class="icon" data-act="rmrow" data-i="${i}" aria-label="Remove this model">${GL.close}</button>` : ""}`
       + `${r.win.trim() && !parseWindow(r.win) ? `<span class="said limit">Not a window</span>` : ""}</div>`).join("");
-    f += `<span class="lbl"></span><div class="ctl col"><div class="mrow labels"><span>Model</span><span>Window</span>${scale ? `<span class="mscale">to ${big(scale)}</span>` : ""}</div>${rows}`
-      + `${DRAW.addTile({ word: "Add model", act: "addrow", cls: "row" })}</div>`;
+    md = `<div class="addfld wide"><div class="ctl col"><div class="mrow labels"><span>Model</span><span>Window</span>${scale ? `<span class="mscale">to ${big(scale)}</span>` : ""}</div>${rows}`
+      + `${DRAW.addTile({ word: "Add model", act: "addrow", cls: "row" })}</div></div>`;
   }
-  const fam = famOf(p);
+  const groups = [["Command", nm], ["Connection", cn], ["Models", md]].filter(([, body]) => body)
+    .map(([word, body]) => `<div class="addgrp"><h3 class="kicker">${word}</h3>${body}</div>`);
   const checkRow = (c) => {
     const soft = !c.ok && SOFT.has(c.name);
     const cls = c.ok ? "ready" : soft ? "unchecked" : "stalled";
@@ -2833,18 +2970,11 @@ function addPaneHtml() {
     ? `<div class="foot"><span class="said">Saved</span><span class="waitbox" role="status">${ICON.wait}<span class="sr">Restarting</span></span><span class="said">Restarting splice</span></div>`
     : `<div class="foot">${DRAW.act({ word: a.busy ? "Adding" : "Add", act: "add", cls: `primary${ui.shook === "add" ? " shook" : ""}`, busy: a.busy, disabled: !ready || a.busy })}`
       + `${DRAW.act({ word: "Cancel", act: "cancel-add", cls: "quiet" })}${said}${waits}</div>`;
-  // WHAT ADD MAKES, drawn as the card it will be on the rail: its chip, its name's place dashed until one is typed, its
-  // provider, the first model typed with its window and the address it sends to; once Add runs, splice's checks of it
-  // stand under it, and the sign-in box where it signs in
-  const m0 = a.rows.find((r) => r.id.trim()), w0 = m0 ? parseWindow(m0.win) : null;
-  const host = hostPort((showsUrl(p, a) && a.url.trim()) || p.base_url || "");
-  const card = `<article class="card h newcard" style="--c:${colorOf(fam)}" aria-label="The command Add makes"><span class="lamp" aria-hidden="true"></span>`
-    + `<div class="top">${chip}${provSaid({ cmd: cmd || stem, prov: tplName(p) }) ? "" : `<span class="prov">${esc(tplName(p))}</span>`}</div>`
-    + `<div class="meta">${m0 ? `<span class="cmodel">${esc(m0.id.trim())}</span>` : ""}${host ? `<span class="caddr">${esc(host)}</span>` : ""}`
-    + `${w0 ? `<b class="cwin">${big(w0)}</b>` : ""}</div></article>`;
-  const made = `<div class="addmade">${DRAW.kicker("On the rail")}${card}${checks}${sign}</div>`;
-  return `<div class="pane add-pane${ui.fx?.add ? " unfold" : ""}" style="--c:${colorOf(fam)}">${head}<div class="body"><div class="addcols">`
-    + `<div class="addform">${f ? `<section class="form">${f}</section>` : ""}${foot}</div>${made}</div></div></div>`;
+  // the checks, the sign-in wait and what Add says stand in one band under the columns; where the template asks one group the
+  // band stands beside it
+  return `<div class="pane add-pane${ui.fx?.add ? " unfold" : ""}" style="--c:${colorOf(fam)}">${head}<div class="body">`
+    + `<div class="addhead"><span class="addchip">${chip}</span>${back}</div>`
+    + `<div class="addcols n${groups.length}">${groups.join("")}<div class="addband">${checks}${sign}${foot}</div></div></div></div>`;
 }
 const CHECK_NAME = { credential: "Key", "base url": "URL", models: "Models", windows: "Windows", "live turn": "Live request" };
 // what a provider's HTTP status means for him, in words; the number itself stays on the word's title and in the log
@@ -2988,20 +3118,20 @@ async function fix(key) {
   // so once beside the act when the runtime still does not answer
   if (s.fix.recheck) {
     ui.fixing[key] = "Checking"; ui.fixSaid = null; render();
+    const res = await DRAW.fixCommand(key, s.fix);
     await readAll();
     delete ui.fixing[key];
-    const now = cmdByKey(key);
-    if (now && stateOf(now)?.state === "runtime") { ui.fixSaid = { key, word: "Still not answering" }; ui.shook = key; }
+    if (!res.ok) { ui.fixSaid = { key, word: res.word }; ui.shook = key; }
     render();
     return;
   }
   ui.fixing[key] = s.fix.label === "Start" ? "Starting" : s.fix.label === "Restore" ? "Restoring" : "Signing in";
   ui.fixSaid = null;
   render();
-  const res = s.fix.id ? await API.post(`/api/doctor/fix/${encodeURIComponent(s.fix.id)}`, {}) : await API.post(`/api/heads/${encodeURIComponent(key)}/start`, {});
+  const res = await DRAW.fixCommand(key, s.fix);
   delete ui.fixing[key];
   // a refused fix says so on the command it was pressed on, which shakes once, never in another part of the page
-  if (!res.ok) { ui.fixSaid = { key, word: "Not done" }; ui.shook = key; }
+  if (!res.ok) { ui.fixSaid = { key, word: res.word }; ui.shook = key; }
   await readAll();
   render();
 }
@@ -3015,18 +3145,21 @@ const commandsHtml = () => {
   railScale = Math.max(0, ...cs.map((x) => x.window ?? 0));
   const needs = cs.filter((c) => stateOf(c)), fine = cs.filter((c) => !stateOf(c));
   const split = needs.length > 0 && fine.length > 0;
-  // while a new command is being made, the rail's tile is where it will land: it holds the chip it will be and its
-  // provider, so the rail shows the coming card in its place
+  // while a new command is being made from a template, the rail's last place is the card it will be, lit in its provider's colour
   const tp = ui.add?.profile ? data.profiles.find((x) => x.name === ui.add.profile) : null;
-  const tile = DRAW.addTile({ word: "New command", act: "new", socket: true, pressed: Boolean(ui.add),
-    body: tp ? `<span class="tland" style="--c:${colorOf(famOf(tp))}">${toBe(tp, ui.add).chip}<span class="prov">${esc(tplName(tp))}</span></span>` : null });
+  const tile = tp ? addSlotHtml(tp, ui.add) : DRAW.addTile({ word: "New command", act: "new", socket: true, pressed: Boolean(ui.add) });
   const open = ui.open || ui.add;
-  const group = (word, list) => (list.length ? `${split ? `<div class="rhead">${DRAW.kicker(word)}<span class="pd-count"><b>${DRAW.n(list.length)}</b></span></div>` : ""}${list.map(cardHtml).join("")}` : "");
+  // the rail is numbered in the order it stands: the commands that need him first, then the ones that are fine
+  const group = (word, list, from) => (list.length ? `${split ? `<div class="rhead">${DRAW.kicker(word)}<span class="pd-count"><b>${DRAW.n(list.length)}</b></span></div>` : ""}${list.map((c, i) => cardHtml(c, from + i)).join("")}` : "");
+  // the rail leads with how many need him of all of them, and one segment per command in its own colour, those that need him in amber
+  const hero = cs.length
+    ? `<div class="rl-hero"><b class="rl-hn${needs.length ? "" : " ok"}">${DRAW.n(needs.length)}</b><span class="rl-ht"><b>need you</b><small>of ${DRAW.n(cs.length)} ${cs.length === 1 ? "command" : "commands"}</small></span>`
+      + `<div class="rl-segs" role="group" aria-label="The commands, those that need you first">${[...needs, ...fine].map((c) => `<button type="button" class="rl-seg${stateOf(c) ? " need" : ""}" data-open="${esc(c.key)}" style="--c:${colorOf(c.family)}" title="${esc(c.cmd)}" aria-label="${esc(c.cmd)}"></button>`).join("")}</div></div>` : "";
   // no command yet: the rail says so where the first card lands, just above the tile that adds it, at every width
   const none = cs.length ? "" : DRAW.nothing("No commands yet");
   GHOST.remember("rail", cs.length);
-  return `<div class="cmds${open ? " open" : ""}"><div class="list rail">`
-    + `${group("Needs you", needs)}${group("Ready", fine)}${none}${tile}</div>${open ? paneHtml() : ""}</div>`;
+  return `<div class="cmds${open ? " open" : ""}" data-held="cmds"><div class="list rail${hero ? " rl-led" : ""}">`
+    + `${hero}${group("Needs you", needs, 1)}${group("Ready", fine, needs.length + 1)}${none}${tile}</div>${open ? paneHtml() : ""}</div>`;
 };
 // THE FIRST READ DRAWS AS THE PAGE THAT IS ARRIVING, not as the word "Reading": the tabs, a rail of ghost cards the
 // size of the cards that land and a ghost pane beside them, so nothing moves when the commands answer. A read that
@@ -3034,7 +3167,7 @@ const commandsHtml = () => {
 // The other two tabs arrive as their own shapes when the address opens on them (?view=every, ?view=projects): the
 // board's command cards, or the projects' wall and pane.
 // The tabs need no read, so they are drawn as they are and answer at once: another tab shows its own arriving shape.
-const ghostViews = () => `<div class="views">${DRAW.switcher(VIEWS, ui.view, "view", "What to show")}</div>`;
+const ghostViews = (beside = "") => `<div class="views">${tabsHtml()}${beside}</div>`;
 const ghostPageHtml = () => (ui.view === "every"
   ? `${ghostViews()}${ghostEveryHtml()}`
   : ui.view === "projects" ? `${ghostViews()}${ghostProjectsHtml()}` : ghostCommandsHtml());
@@ -3045,16 +3178,19 @@ function ghostEveryHtml() {
   const row = (w) => `<div class="em-item"><div class="em-row" aria-hidden="true">${GHOST.bar(w)}<i class="ghost gtrk"></i>${GHOST.bar(2.6)}<i class="ghost gtrk"></i>${GHOST.bar(2.6)}${GHOST.bar(2.6)}</div></div>`;
   const card = (n, i) => `<article class="card em-card ghosted" style="--i:${Math.min(i, 5)}" aria-hidden="true"><header class="em-head">${GHOST.chip(9)}</header>`
     + `<div class="em-rows">${Array.from({ length: n }, (_, j) => row([11, 9, 13, 10, 8, 12][j % 6])).join("")}</div></article>`;
-  // as many groups, cards and rows as the last board held; a first visit draws a board of the usual size
-  const gs = GHOST.count("every-groups", 4);
+  // as many groups, cards and rows as the last board held. A first visit has no board to copy, so it draws what the page can
+  // know before the read lands: a card per command when the command count was remembered from an earlier visit, a typical
+  // count otherwise, two cards to a provider and each card at the size a long card folds to
+  const cmds = GHOST.count("rail", 6);
+  const gs = GHOST.count("every-groups", Math.ceil(cmds / 2));
   let j = 0;
-  const order = Array.from({ length: gs }, (_, i) => ({ cards: Array.from({ length: GHOST.count(`every-g${i}`, i === 0 ? 2 : 1) }, () => {
-    const rows = GHOST.count(`every-r${j}`, 6);
+  const order = Array.from({ length: gs }, (_, i) => ({ cards: Array.from({ length: GHOST.count(`every-g${i}`, Math.min(2, cmds - 2 * i)) }, () => {
+    const rows = GHOST.count(`every-r${j}`, EVERY_SHOWN);
     return { rows, units: rows, html: card(rows, j++) };
   }) }));
   const n = boardN();
   const blocks = everyBlocks(order, n, (g, cards) => `<section class="titled" aria-hidden="true"><header><h2>${GHOST.bar(7, "big")}</h2></header><div class="stack-cards">${cards.map((x) => x.html).join("")}</div></section>`);
-  return `<div class="every" aria-busy="true"><div class="em-bar"><i class="ghost pj-gsearch em-gsearch" aria-hidden="true"></i>${GHOST.hero()}<div class="em-keys" aria-hidden="true">${GHOST.bar(38)}</div></div>`
+  return `<div class="every" aria-busy="true" style="${GHOST.pin("every")}"><div class="em-bar"><i class="ghost pj-gsearch em-gsearch" aria-hidden="true"></i>${GHOST.hero()}<div class="em-keys" aria-hidden="true">${GHOST.bar(38)}</div></div>`
     + `<div class="em-wall">`
     + `<div class="em-heads" style="--n:${n}">${Array.from({ length: Math.min(n, blocks.length) }, () => `<div class="em-hc"><div class="em-row em-colhead" aria-hidden="true"><span></span>${GHOST.bar(6)}<span></span>${GHOST.bar(6)}${GHOST.bar(1.6)}${GHOST.bar(1.8)}</div></div>`).join("")}</div>`
     + `${everyBoard(blocks, n)}</div></div>`;
@@ -3080,7 +3216,7 @@ function fitGhost() {
   ghostN = n;
   return moved;
 }
-const ghostCmdsBody = () => `<div class="cmds"><div class="list rail">${Array.from({ length: GHOST.count("rail", 7) }, (_, i) => GHOST.card([9, 13, 7], Math.min(i, 5))).join("")}`
+const ghostCmdsBody = () => `<div class="cmds" style="${GHOST.pin("cmds")}"><div class="list rail">${Array.from({ length: GHOST.count("rail", 7) }, (_, i) => GHOST.card([9, 13, 7], Math.min(i, 5))).join("")}`
   + `<i class="ghost card-tile" aria-hidden="true"></i></div>`
   // beside the rail, where the open command lands on a wide screen: its header, then its columns of sections, as
   // many as the pane's width holds (the same rule the pane itself follows)
@@ -3089,17 +3225,35 @@ const ghostCmdsBody = () => `<div class="cmds"><div class="list rail">${Array.fr
 const ghostCommandsHtml = () => `${ghostViews()}${ghostCmdsBody()}`;
 // The first read failed: the tabs, the lock in the limit colour with the act that asks again, and the page that would
 // have arrived, held still, since nothing is on its way until Read again is pressed or the next round answers.
-const firstFailHtml = () => `${ghostViews()}<div class="firstread" role="alert">${DRAW.lock(data.err)}${DRAW.act({ word: "Read again", act: "reread-all", cls: "quiet" })}</div>`
-  + (ui.view === "commands" ? `<div class="held" aria-hidden="true">${ghostCmdsBody()}</div>` : "");
+// the failed read is said beside the tabs, as a stale round is, so the page that would have arrived stands where it lands
+const firstFailHtml = () => ghostViews(`<span class="firstread" role="alert">${DRAW.lock(data.err)}${DRAW.act({ word: "Read again", act: "reread-all", cls: "quiet small" })}</span>`)
+  + (ui.view === "commands" ? `<div class="held" aria-hidden="true">${ghostCmdsBody()}</div>` : ui.view === "every" ? `<div class="held" aria-hidden="true">${ghostEveryHtml()}</div>` : `<div class="held" aria-hidden="true">${ghostProjectsHtml()}</div>`);
 /** A card that changed place slides to its new one at the kit's --t-snap, so a command that starts or fails is followed
  *  by eye rather than appearing somewhere else (the kit's own FLIP; the token is zero where he asked for no motion). */
 const snapMotion = () => {
   const css = getComputedStyle(document.documentElement), v = css.getPropertyValue("--t-snap").trim(), n = parseFloat(v);
   return { duration: Number.isFinite(n) ? (v.endsWith("ms") ? n : n * 1000) : 0, easing: css.getPropertyValue("--e-out").trim() || "ease-out" };
 };
+/** The line from the dashed card at the rail's end to the chip at the head of the form it is made by: out of the card's
+ *  right edge, along the gap between rail and pane, into the chip's left. Drawn only where the rail stands beside the pane. */
+function fitStem() {
+  for (const x of root.querySelectorAll(".addstem")) x.remove();
+  const cm = root.querySelector(".cmds"), slot = cm?.querySelector("[data-slot]"), chip = cm?.querySelector(".addhead .addchip"), pane = cm?.querySelector(".add-pane");
+  if (!cm || !slot || !chip || !pane) return;
+  const o = cm.getBoundingClientRect(), a = slot.getBoundingClientRect(), b = chip.getBoundingClientRect(), p = pane.getBoundingClientRect();
+  if (a.right > p.left - 4) return;
+  const x1 = a.right - o.left, y1 = a.top + 24 - o.top, x2 = b.left - o.left - 4, y2 = b.top + b.height / 2 - o.top;
+  const xm = p.left - 9 - o.left, r = Math.min(10, Math.abs(y2 - y1) / 2, Math.abs(xm - x1));
+  const dir = y2 < y1 ? -1 : 1;
+  const d = `M${x1} ${y1}H${xm - r}Q${xm} ${y1} ${xm} ${y1 + dir * r}V${y2 - dir * r}Q${xm} ${y2} ${xm + r} ${y2}H${x2}`;
+  cm.insertAdjacentHTML("beforeend", `<svg class="addstem" width="${o.width}" height="${o.height}" aria-hidden="true"><path d="${d}"/><circle cx="${x1}" cy="${y1}" r="4"/><circle cx="${x2}" cy="${y2}" r="4"/></svg>`);
+}
+window.addEventListener("resize", () => { if (ui.view === "commands") fitStem(); });
 function cardTops() {
   const m = new Map();
   for (const el of root.querySelectorAll(".card.h[data-open]")) m.set(el.dataset.open, el.getBoundingClientRect().top);
+  // the open command's plates too, so a plate that stands lower because the one above it grew glides to its place
+  for (const el of root.querySelectorAll(".pcols [data-pl]")) m.set(`pl:${ui.open}:${el.dataset.pl}`, el.getBoundingClientRect().top);
   return m;
 }
 function flip(was) {
@@ -3111,6 +3265,13 @@ function flip(was) {
     if (from == null) continue;
     const dy = from - el.getBoundingClientRect().top;
     if (Math.abs(dy) < 2) continue;
+    el.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], how);
+  }
+  for (const el of root.querySelectorAll(".pcols [data-pl]")) {
+    const from = was.get(`pl:${ui.open}:${el.dataset.pl}`);
+    if (from == null) continue;
+    const dy = from - el.getBoundingClientRect().top;
+    if (Math.abs(dy) < 2 || Math.abs(dy) > 900) continue;
     el.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], how);
   }
 }
@@ -3142,6 +3303,116 @@ function settle(was) {
     if (from != null && from !== el.textContent) el.animate([{ opacity: 0.3, transform: "translateY(-.2em)" }, { opacity: 1, transform: "none" }], how);
   }
 }
+// ---------- the tabs' and the board's motion ----------
+const calm = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+/** The view he is leaving, as it stands: its markup and where it stands in the tab, and the height the tab has. */
+function tabShot() {
+  const base = root.getBoundingClientRect();
+  return { from: ui.view, h: root.offsetHeight, old: [...root.children].filter((k) => !k.matches(".views")).map((k) => ({ el: k.cloneNode(true), top: k.getBoundingClientRect().top - base.top })) };
+}
+/** A press on another view: the capsule slides from the old word to the new over --t-snap while the words and the page's title
+ *  stand still; the view he leaves fades faster than the new one rises (a rise of .4rem, its cards 24 ms apart), so two views
+ *  are never both legible, and the tab's height eases from the old view's to the new one's, so nothing below jumps. */
+function tabMotion(t) {
+  if (!t || calm()) return;
+  const how = snapMotion();
+  if (!how.duration) return;
+  const T = how.duration, cap = root.querySelector(".mt-cap"), now = [...root.children].filter((k) => !k.matches(".views"));
+  if (cap) {
+    const at = (v) => `translateX(${Math.max(0, VIEWS.findIndex(([x]) => x === v)) * 100}%)`;
+    cap.animate([{ transform: at(t.from) }, { transform: at(ui.view) }], how);
+  }
+  const lost = root.style.position;
+  root.style.position = "relative";
+  for (const o of t.old) {
+    o.el.classList.add("mt-leaving");
+    o.el.style.top = `${o.top}px`;
+    o.el.setAttribute("inert", "");
+    root.append(o.el);
+    o.el.animate([{ opacity: 1 }, { opacity: 0.1, offset: 0.5 }, { opacity: 0 }], { duration: T, easing: "linear" }).finished.then(() => o.el.remove(), () => o.el.remove());
+  }
+  const rise = [{ opacity: 0, transform: "translateY(.4rem)" }, { opacity: 0.25, transform: "translateY(.25rem)", offset: 0.5 }, { opacity: 1, transform: "none" }];
+  for (const k of now) {
+    k.animate(rise, { duration: T, easing: "linear" });
+    [...k.querySelectorAll(".card.h, .em-card, .pj-group, .pj-pane, .cmds > .pane, .gpane")].slice(0, 12).forEach((el, i) => el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: Math.max(60, T - i * 24), delay: i * 24, easing: how.easing, fill: "backwards" }));
+  }
+  const h1 = root.offsetHeight;
+  if (Math.abs(h1 - t.h) > 1) {
+    root.style.overflow = "clip";
+    root.style.overflowClipMargin = "1.5rem";
+    root.animate([{ height: `${t.h}px` }, { height: `${h1}px` }], { duration: T, easing: how.easing }).finished.then(done, done);
+  } else setTimeout(done, T);
+  function done() { root.style.position = lost; root.style.overflow = ""; root.style.overflowClipMargin = ""; }
+}
+/** A model's name that does not fit its cell stands alone on its row's first line, with the tracks on the second, for that row
+ *  only: nothing is wrapped in its cell or cut. Read in one pass, written in the next, so measuring never moves a row. */
+function everyFitRows() {
+  const rows = [...root.querySelectorAll(".every .em-row:not(.em-colhead)")].filter((r) => r.querySelector(".nm"));
+  for (const r of rows) r.classList.remove("em-wide");
+  const wide = rows.filter((r) => { const nm = r.querySelector(".nm"), mnm = r.querySelector(".mnm"); return nm.scrollWidth > nm.clientWidth + 1 || (mnm && mnm.scrollWidth > mnm.clientWidth + 1); });
+  for (const r of wide) r.classList.add("em-wide");
+}
+/** Fills grow from nothing over --t-snap where the board has just landed. */
+function everyGrow() {
+  const how = snapMotion();
+  if (!how.duration || calm()) return;
+  for (const el of root.querySelectorAll(".every:not([aria-busy]) .wtrk i, .every:not([aria-busy]) .ptrk i")) {
+    const w = el.style.width;
+    if (w) el.animate([{ width: "0%" }, { width: w }], how);
+  }
+}
+/** The board's groups, cards and rows as they stand, to carry a search from one board to the next. */
+function everyShot() {
+  if (ui.view !== "every" || !root.querySelector(".em-board")) return null;
+  const base = root.getBoundingClientRect(), items = new Map();
+  for (const el of root.querySelectorAll(".em-board .titled[data-key], .em-card[data-cmd], .em-item[data-rk]")) {
+    const r = el.getBoundingClientRect();
+    items.set(everyId(el), { el: el.cloneNode(true), x: r.left - base.left, y: r.top - base.top, w: r.width, h: r.height });
+  }
+  return items;
+}
+const everyId = (el) => (el.matches(".titled") ? `g:${el.dataset.key}` : el.matches(".em-card") ? `c:${el.dataset.cmd}` : `r:${el.dataset.rk}`);
+/** A typed search: what stops matching fades where it stood, what stays slides to its new place, and the no-match line comes in
+ *  over the board that folded away; each over --t-snap, from the board as it was, so nothing is rebuilt in one frame. */
+function everyMotion(shot) {
+  const how = snapMotion();
+  if (!shot || !how.duration || calm()) return;
+  const base = root.getBoundingClientRect(), now = new Map(), moved = new Map();
+  const hosts = ".em-board .titled[data-key], .em-card[data-cmd], .em-item[data-rk]";
+  for (const el of root.querySelectorAll(hosts)) now.set(everyId(el), el);
+  for (const [id, el] of now) {
+    const was = shot.get(id);
+    if (!was) continue;
+    const r = el.getBoundingClientRect(), up = el.parentElement?.closest(hosts), by = up ? moved.get(up) : null;
+    const dx = was.x - (r.left - base.left) - (by?.dx ?? 0), dy = was.y - (r.top - base.top) - (by?.dy ?? 0);
+    moved.set(el, { dx: dx + (by?.dx ?? 0), dy: dy + (by?.dy ?? 0) });
+    if (Math.abs(dx) + Math.abs(dy) >= 2) el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], how);
+  }
+  const every = root.querySelector(".every");
+  const lost = root.style.position, gone = [];
+  root.style.position = "relative";
+  for (const [id, was] of shot) {
+    if (now.has(id)) continue;
+    // a card or row inside a group that left goes with the group
+    if (!id.startsWith("g:") && [...shot].some(([k, o]) => k.startsWith("g:") && !now.has(k) && was.x >= o.x - 1 && was.y >= o.y - 1 && was.x + was.w <= o.x + o.w + 1 && was.y + was.h <= o.y + o.h + 1)) continue;
+    if (id.startsWith("r:") && [...shot].some(([k, o]) => k.startsWith("c:") && !now.has(k) && was.y >= o.y - 1 && was.y + was.h <= o.y + o.h + 1 && was.x >= o.x - 1 && was.x + was.w <= o.x + o.w + 1)) continue;
+    const wrap = document.createElement("div");
+    wrap.className = "every em-leaving";
+    wrap.setAttribute("style", `${every?.getAttribute("style") ?? ""};left:${was.x}px;top:${was.y}px;width:${was.w}px`);
+    wrap.setAttribute("aria-hidden", "true");
+    wrap.setAttribute("inert", "");
+    const board = document.createElement("div");
+    board.className = "em-board";
+    board.style.setProperty("--n", "1");
+    board.append(was.el);
+    wrap.append(board);
+    root.append(wrap);
+    gone.push(wrap);
+    wrap.animate([{ opacity: 1 }, { opacity: 0 }], how).finished.then(() => wrap.remove(), () => wrap.remove());
+  }
+  setTimeout(() => { root.style.position = lost; }, how.duration + 40);
+}
+
 // a press that redraws focuses the field it drew once the redraw has landed (the board is laid inside the draw, DRAW.paint)
 const focusLater = (find) => queueMicrotask(() => find()?.focus());
 function render() {
@@ -3151,6 +3422,7 @@ function render() {
   // a key being pasted lives only in its field until Add is pressed, so it is carried across the redraw
   if (ui.keyin) { const k = document.getElementById("k-in"); if (k) ui.keyin.val = k.value; }
   const was = cardTops();
+  const counts = new Map([...root.querySelectorAll(".em-cnt")].map((x) => [x.dataset.m, x.classList.contains("open")]));
   document.getElementById("claude").innerHTML = data.loaded ? claudeHtml() : "";
   // a round that failed after the page loaded: what is drawn is what splice last answered, and it reads as held
   root.classList.toggle("stale", Boolean(data.loaded && data.err));
@@ -3160,6 +3432,9 @@ function render() {
     // the arriving pane holds as many columns as the landed one will
     if (fitGhost()) first();
     DRAW.paint(root);
+    ui.everyGrown = false;
+    tabMotion(ui.tab);
+    ui.tab = null;
     return;
   }
   // a section that holds a change it did not hold on the last draw opens its Save row with its own motion
@@ -3172,13 +3447,26 @@ function render() {
   draw();
   // the open pane's columns, and the board's, come from their own width, read once they are in the page: a count that
   // changed draws once more
+  const wasGrown = ui.everyGrown;
   if (ui.view === "commands" && fitCols()) draw();
   if (ui.view === "every" && fitEvery()) draw();
   if (ui.view === "projects" && fitSplit()) draw();
   if (ui.view === "projects") rememberDoc();
   // the meters and bars take their widths once the markup is in; they grow from nothing only when the pane just opened
   DRAW.paint(root, { grow: ui.grow ? "all" : null });
-  if (ui.view === "commands") rememberPlates();
+  if (ui.view === "every") {
+    everyFitRows();
+    everyMotion(ui.shot);
+    // the board's fills grow from nothing where the board has just landed or been switched to; a re-read moves them from their old length
+    if (!wasGrown) everyGrow();
+    ui.everyGrown = true;
+    for (const x of root.querySelectorAll(".em-cnt")) if (counts.has(x.dataset.m) && counts.get(x.dataset.m) !== x.classList.contains("open")) x.querySelector(".em-cch")?.animate([{ transform: counts.get(x.dataset.m) ? "none" : "rotate(-90deg)" }, { transform: counts.get(x.dataset.m) ? "rotate(-90deg)" : "none" }], snapMotion());
+    DRAW.unfoldRows([...root.querySelectorAll(".em-rate.grow")]);
+  } else ui.everyGrown = false;
+  ui.shot = null;
+  tabMotion(ui.tab);
+  ui.tab = null;
+  if (ui.view === "commands") { rememberPlates(); fitStem(); }
   if (!ui.grow) settle(shown);
   ui.grow = false;
   flip(was);
@@ -3206,16 +3494,16 @@ function fitSplit() {
 }
 // a pane that is now wider or narrower holds another number of columns: drawn again once the resize settles
 let refit = 0;
-window.addEventListener("resize", () => { clearTimeout(refit); refit = setTimeout(() => { const a = fitCols(), b = fitEvery(), d = fitSplit(); if (a || b || d) render(); }, 120); });
+window.addEventListener("resize", () => { clearTimeout(refit); refit = setTimeout(() => { const a = fitCols(), b = fitEvery(), d = fitSplit(); if (a || b || d) render(); else if (ui.view === "every") everyFitRows(); }, 120); });
 function openCmd(key) {
-  Object.assign(ui, { open: key, add: null, draft: null, said: null, pick: null, grow: true, changesOpen: false, split: null, qedit: null });
+  Object.assign(ui, { open: key, add: null, draft: null, said: null, pick: null, grow: true, changesOpen: false, split: null, qedit: null, rawBack: 0 });
   readLog(key);
 }
 function onClick(e) {
   if (KNOBS.click?.(e, render)) { render(); return; }
   const b = e.target.closest("[data-act]");
   if (!b) {
-    const card = e.target.closest(".card.h[data-open]");
+    const card = e.target.closest(".card.h[data-open], .rl-seg[data-open]");
     if (card) { openCmd(card.dataset.open); render(); } else if (ui.pick && !e.target.closest(".menu")) { ui.pick = null; render(); }
     return;
   }
@@ -3226,8 +3514,16 @@ function onClick(e) {
   // a menu, a disclosure or a list's tail opens with its own motion, on the draw that opens it only
   const opens = (on, fx) => { if (on) ui.fx = fx; };
   switch (d.act) {
-    case "view": ui.view = d.v; ui.pick = null; ui.seenRows = null; ui.fx = { pane: true }; viewToUrl(); if (ui.view === "commands" && !ui.wide) Object.assign(ui, { open: null, add: null, draft: null, said: null }); render(); break;
-    case "rate": { if (ui.rates.has(d.r)) ui.rates.delete(d.r); else ui.rates.add(d.r); ui.fx = { turn: d.r }; render(); break; }
+    case "view": ui.tab = d.v === ui.view ? null : tabShot(); ui.view = d.v; ui.pick = null; ui.seenRows = null; ui.fx = { pane: true }; viewToUrl(); if (ui.view === "commands" && !ui.wide) Object.assign(ui, { open: null, add: null, draft: null, said: null }); render(); break;
+    // a rate card grows from its row and folds back into it, its chevron turning with it
+    case "rate": {
+      const was = ui.rates.has(d.r), box = was ? document.getElementById(b.getAttribute("aria-controls") ?? "") : null;
+      const turn = () => { if (was) ui.rates.delete(d.r); else { ui.rates.add(d.r); ui.fx = { turn: d.r }; } render(); };
+      if (box && !calm()) { b.classList.add("turn-off"); DRAW.unfoldRows([box], { out: true }).then(turn); } else turn();
+      break;
+    }
+    // a card's count is a door to the same list as its pill and its Fewer: it presses whichever the card is showing
+    case "cardcount": root.querySelector(`.em-card [data-act="moren"][data-m="${CSS.escape(d.m ?? "")}"]${b.classList.contains("open") ? "[data-less]" : ":not([data-less])"}`)?.click(); break;
     // a command's chip on its card is the door to that command's own page, its models and settings
     case "opencmd": e.preventDefault(); ui.view = "commands"; viewToUrl(); openCmd(d.h); render(); window.scrollTo(0, 0); break;
     case "everynew": ui.view = "commands"; viewToUrl(); Object.assign(ui, { open: null, draft: null, add: { profile: null, name: "", url: "", key: "", rows: [{ id: "", win: "" }], checks: null } }); render(); break;
@@ -3282,7 +3578,7 @@ function onClick(e) {
     case "discard": discard(d.sec); ui.pick = null; render(); break;
     case "kindpick": ui.pick = ui.pick === "kind" ? null : "kind"; opens(ui.pick, { menu: true }); render(); break;
     case "kind": ui.draft.kind = d.v; ui.pick = null; edited(); render(); break;
-    case "hdr-add": ui.draft.headers.push({ name: "", value: "", fresh: true }); render(); focusLater(() => document.getElementById(`hn-${ui.draft.headers.length - 1}`)); break;
+    case "hdr-add": ui.draft.headers.push({ name: "", value: "", fresh: true }); ui.fx = { hdr: ui.draft.headers.length - 1 }; render(); focusLater(() => document.getElementById(`hn-${ui.draft.headers.length - 1}`)); break;
     case "hdr-rm": ui.draft.headers.splice(+d.i, 1); edited(); render(); break;
     case "local": ui.draft.local = localPick(cmdByKey(ui.open), d.v === "yes"); edited(); render(); break;
     case "share": { const iso = ui.draft.isolate, i = iso.indexOf(d.v); if (i < 0) iso.push(d.v); else iso.splice(i, 1); edited(); render(); break; }
@@ -3321,6 +3617,9 @@ function onClick(e) {
     case "qedit": ui.qedit = d.q; render(); focusLater(() => document.getElementById(`q-${d.q}`)); break;
     case "rawtoggle": ui.rawOpen = !ui.rawOpen; opens(ui.rawOpen, { raw: true }); render(); break;
     case "rawmore": ui.rawN = Math.min(RAW_CAP, (ui.rawN ?? RAW_FIRST) + RAW_STEP); render(); break;
+    case "rawolder": ui.rawBack = (ui.rawBack ?? 0) + RAW_CAP; ui.fx = { raw: true }; render(); break;
+    case "rawnewer": ui.rawBack = Math.max(0, (ui.rawBack ?? 0) - RAW_CAP); ui.fx = { raw: true }; render(); break;
+    case "rawnewest": ui.rawBack = 0; ui.fx = { raw: true }; render(); break;
     case "reread-all": readAll({ draw: () => render() }).then(render); break;
     case "logpause": ui.logPaused = !ui.logPaused; if (!ui.logPaused && ui.open) readLog(ui.open); else render(); break;
     // another project or command keeps a compaction edit in hand where it was made: it waits there, marked on its tile
@@ -3364,9 +3663,9 @@ function onClick(e) {
 }
 function onInput(e) {
   const t = e.target, a = ui.add;
-  if (t.id === "q") { ui.q = t.value; render(); return; }
+  if (t.id === "q") { ui.shot = everyShot(); ui.q = t.value; ui.fx = { find: true }; render(); return; }
   if (t.id === "pq") { ui.pq = t.value; render(); return; }
-  if (t.id === "logq") { ui.logq = t.value; render(); return; }
+  if (t.id === "logq") { ui.logq = t.value; ui.rawBack = 0; render(); return; }
   if (t.id === "mq") { ui.mq = t.value; render(); return; }
   if (t.id === "prq") { ui.prq = t.value; render(); return; }
   if (t.id === "ppq") { ui.ppq = t.value; render(); return; }

@@ -31,7 +31,7 @@ const NAMES_KEY = "splice.sessions.names";
 // answers 200 for those and refuses the rest). A session with a screen is one splice can drive: it gets the Message
 // field and its answers are buttons. One it can't keeps what its transcript says and draws no act it couldn't carry.
 const state = { rows: [], past: new Map(), heads: [], retired: [], providerOf: {}, modelLabel: {}, window: {}, live: {}, logs: {}, screens: {}, usage: {}, error: null, readAt: null, loading: true };
-const ui = { ending: new Map(), armedEnd: new Map(), armedStop: new Set(), open: null, missing: null, q: "", ended: false, endedBySearch: false, results: new Set(), full: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set(), hold: false, order: [], looks: new Map(), answered: new Map(), leftover: {}, menu: null, choices: {}, moving: new Map(), held: {}, noted: new Map(), logins: {}, pinning: null,
+const ui = { ending: new Map(), armedEnd: new Map(), armedStop: new Set(), open: null, missing: null, q: "", ended: false, endedBySearch: false, results: new Set(), full: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set(), hold: false, order: [], looks: new Map(), answered: new Map(), leftover: {}, menu: null, choices: {}, moving: new Map(), held: {}, logInfo: new Map(), noted: new Map(), logins: {}, pinning: null,
   // what a press just opened, so only that lands with motion on the next draw, and figures that changed move to their new value
   shown: new Map(), landing: new Set(), figs: new Map(), grow: new Set(), lopen: new Set(), canSwitch: {},
   // which groups he has folded, and whose Ended line he has opened: his, across a reload, until he closes the tab
@@ -446,15 +446,18 @@ function askHtml(s, where = "card") {
   const busy = going || ui.sending.has(s.id) ? " disabled" : "";
   // a question splice cannot answer is answered in the terminal it runs in: said once, on the question itself
   const term = can ? "" : `<p class="interm">${TOOL_GLYPH.term}In its terminal</p>`;
+  const num = (n) => `<span class="sx-ao-n" aria-hidden="true">${n}</span>`;
   const pick = (choice, label, i) => going?.choice === choice
-    ? `<button class="act answering" disabled>${ICON.wait}${esc(label)}</button>`
-    : `<button class="act${i ? "" : " primary"}" data-act="answer" data-s="${esc(s.id)}" data-i="${choice}"${busy}>${esc(label)}</button>`;
+    ? `<button class="act sx-ao answering" disabled>${ICON.wait}${esc(label)}</button>`
+    : `<button class="act sx-ao${i ? "" : " primary"}" data-act="answer" data-s="${esc(s.id)}" data-i="${choice}"${busy}>${num(i + 1)}${esc(label)}</button>`;
   if (a.asked) {
     const opts = a.asked.options || [];
     // where splice cannot answer, the options are the numbered words he will choose from in its terminal, drawn as text and
     // never as buttons that do nothing; where it is answered is said once, under them
+    const reach = !can && sendTo(s) ? `<span class="sx-ao-sep" aria-hidden="true"></span><button class="act small sx-reach" data-act="copy-send" data-s="${esc(s.id)}">${ui.copied.get(`copy-send:${s.id}`) > Date.now() ? "Copied" : "Reach it"}</button>` : "";
     const answers = !opts.length ? "" : can && !a.asked.multi ? `<div class="answers">${opts.map((o, i) => pick(i + 1, o, i)).join("")}</div>`
-      : `<ol class="opts">${opts.map((o, i) => `<li><b>${i + 1}</b>${esc(o)}</li>`).join("")}</ol>`;
+      // where splice cannot press them, the options keep their shape as numbered answers with no press in them, and the line under says where they are answered
+      : `<div class="answers sx-said">${opts.map((o, i) => `<span class="sx-ao">${num(i + 1)}${esc(o)}</span>`).join("")}${reach}</div>`;
     return `<div class="ask"><p class="q">${esc(a.asked.question)}</p>${answers}${term}</div>`;
   }
   // what it wants to do, off its transcript, then the question its screen puts
@@ -721,12 +724,15 @@ const HANDFUL = 6;
 const FLAT = "*";
 function rowPieces(key, g, ended) {
   const up = g.filter((s) => RANK(s) < 3), idle = g.filter((s) => RANK(s) === 3);
+  // a fold's count is drawn on the block's own scale: its share of every session the block holds, the ended ones folded under a name included
+  const whole = Math.max(1, g.length + ended.length + [...g, ...ended].reduce((a, s) => a + (ui.earlier.get(s.id)?.length ?? 0), 0));
+  const share = (n) => `<i class="sx-fb" aria-hidden="true"><i style="width:${Math.max(3, Math.min(100, (n / whole) * 100)).toFixed(1)}%"></i></i>`;
   const room = Math.max(0, HANDFUL - up.length), hidden = idle.length - room;
   const folds = hidden > 0, open = !folds || ui.idle.has(key) || Boolean(ui.q);
   const idleRows = open ? pagePieces(`i:${key}`, idle) : [...idle.slice(0, room), ...idle.slice(room).filter(holdsOpen)].map(rowPiece);
-  const idleFold = folds ? DRAW.disc({ open, act: "idle", data: ` data-p="${esc(key)}"`, cls: "pidle door", inner: `<span><b>${DRAW.n(hidden)}</b> idle</span>` }) : "";
+  const idleFold = folds ? DRAW.disc({ open, act: "idle", data: ` data-p="${esc(key)}"`, cls: "pidle door", inner: `<span><b>${DRAW.n(hidden)}</b> idle</span>${share(hidden)}` }) : "";
   const restOpen = ended.length && (ui.rest.has(key) || Boolean(ui.q) || ended.some(holdsOpen));
-  const rest = ended.length ? DRAW.disc({ open: restOpen, act: "rest", data: ` data-p="${esc(key)}"`, cls: "prest door", inner: `<span><b>${DRAW.n(ended.length)}</b> ended</span>` }) : "";
+  const rest = ended.length ? DRAW.disc({ open: restOpen, act: "rest", data: ` data-p="${esc(key)}"`, cls: "prest door", inner: `<span><b>${DRAW.n(ended.length)}</b> ended</span>${share(ended.length)}` }) : "";
   const foot = idleFold || rest ? [{ html: `<div class="pfoot">${idleFold}${rest}</div>`, w: 1, foot: true }] : [];
   const rested = restOpen ? pagePieces(`r:${key}`, ended) : [];
   return [...up.map(rowPiece), ...idleRows, ...foot, ...(rested.length ? [{ html: REST_OPEN, w: 0, wrap: 1 }, ...rested, { html: REST_SHUT, w: 0, wrap: -1 }] : [])];
@@ -748,8 +754,9 @@ function groupBlock([key, g], ended, { loose = false } = {}) {
   const why = key === NO_PROJECT && ui.by === "project" ? noProjectWhy([...g, ...ended]) : "";
   const open = pieces.some((p) => p.plate);
   const section = (body, wide = 0) => `<section class="pgroup${shut ? " shut" : ""}${loose ? " loose" : ""}${wide ? " opened" : ""}"${wide ? ` data-cols="${wide}"` : ""} data-key="g:${esc(key)}${loose ? ":l" : ""}" aria-label="${esc(`${name}, ${countWords(counts, total, "session")}`)}">`
-    + `<header class="phead"><button class="pfold" data-act="${loose ? "loose" : "fold"}" data-p="${esc(key)}" aria-expanded="${!shut}">${ICON.caret}<span class="pname">${esc(name)}</span></button>`
-    + `${loose ? "" : `<span class="pcounts">${counts.map((c) => bigCount(c, key)).join("")}</span>${mixHtml(g, ui.maxLive)}`}${tot}${go}</header>${why}${body}</section>`;
+    + `<header class="phead"><button class="pfold" data-act="${loose ? "loose" : "fold"}" data-p="${esc(key)}" aria-expanded="${!shut}">${ICON.caret}<span class="sx-dot" aria-hidden="true"></span><span class="pname">${esc(name)}</span></button>`
+    // the head says its lamps, its live sessions on the board's one scale, and live out of all, whether or not tiles stand above
+    + `${loose ? "" : `<span class="pcounts">${counts.map((c) => bigCount(c, key)).join("")}</span>${mixHtml(g, ui.maxLive)}`}${tot}${go}</header>${why}${wide || !pieces.some((p) => p.html) ? "" : axisRowHtml()}${body}</section>`;
   return {
     key: `${key}${loose ? ":l" : ""}`, open, html: section(pieces.map(pieceHtml).join("")),
     w: 1.6 + (why ? 0.8 : 0) + pieces.reduce((a, p) => a + p.w, 0),
@@ -821,7 +828,7 @@ function pickOptions() {
   const live = state.rows.filter((s) => s.state !== "ended" || stranded(s));
   const groups = groupsOf(live);
   return {
-    projects: groups.map(([k, g]) => [k, projName(g[0]), projTotal(k, g)]),
+    projects: groups.map(([k, g]) => [k, projName(g[0]), projTotal(k, g), countsOf(g)]),
     doors: groups.map(([k, g]) => [k, projName(g[0]), g.filter((s) => RANK(s) === 0).length]),
   };
 }
@@ -831,7 +838,23 @@ function projTotal(key, liveInIt) {
 }
 /** WHAT EVERY ROW'S BAR MEASURES, DRAWN ONCE FOR THE PAGE: the axis itself, from one second on, with the same ticks that stand
  *  under every bar, so a length is read against them and nothing is said in words but its name. */
-const axisLegend = () => DRAW.timeLegend("Time in state");
+const axisLegend = () => `<span class="axleg" title="Time in state, one second to four weeks, on one scale"><span class="axname">Time in state</span></span>`;
+/** THE AXIS UNDER A BLOCK'S HEAD: the four ticks every row's bar wears, named once over the bars' own column, so a length is
+ *  read against a word without a figure. It stands on the row's tracks, so each label sits over the place its tick is under every bar. */
+/** the unit under each tick; where the bar is too short for the numbers they step aside and the units stay (sessions.css sx-axis) */
+const axisWord = (w) => /^1 /.test(w) ? `<b>1 </b>${w.slice(2)}` : w;
+const axisRowHtml = () => `<div class="sx-axisrow" aria-hidden="true"><span class="sx-axis"><small style="left:0">${axisWord("1 s")}</small>${AXIS.ticks.map(([, word], i) => `<small style="left:var(--tk${i + 1})">${axisWord(word)}</small>`).join("")}</span></div>`;
+/** THE LIVE SESSIONS AGAINST ALL OF THEM, THE PAGE'S ONE FIGURE: how many are live, of how many there are, and one bar of the live
+ *  ones by state on one scale, the count inside each part. Coloured by the worst state any of them is in. */
+function heroHtml() {
+  const live = state.rows.filter((s) => s.state !== "ended" || stranded(s));
+  if (!live.length) return "";
+  const parts = MIX.map(([k, word], i) => [k, word, live.filter((s) => Math.min(3, RANK(s)) === i).length]).filter(([, , x]) => x);
+  const level = parts.some(([k]) => k === "stalled") ? "bad" : parts.some(([k]) => k === "needs") ? "watch" : "ok";
+  const seg = ([k, word, x]) => `<i class="${k}" style="flex:${x} 1 0" title="${esc(`${x} ${word}`)}"><em>${k === "idle" ? `${DRAW.n(x)} idle` : DRAW.n(x)}</em></i>`;
+  return `<div class="sx-hero"><b class="sx-hfig lv-${level}" data-f="hero">${DRAW.n(live.length)}</b><span class="sx-hword">live of <b>${DRAW.n(state.rows.length)}</b> sessions</span>`
+    + `<span class="sx-stack" role="img" aria-label="${esc(parts.map(([, word, x]) => `${x} ${word}`).join(", "))}">${parts.map(seg).join("")}</span></div>`;
+}
 /** THE LAMPS AND THE COUNT, SAID ONCE FOR THE PAGE: a lamp on a tile or a block's header carries only its count, and the lamp is
  *  the word; the count beside a block's name is its live sessions out of all of them, the ended ones too. */
 const LAMP_WORDS = [["needs", "Needs you"], ["stalled", "Stalled"], ["working", "Working"]];
@@ -848,17 +871,17 @@ function listHead() {
   const found = ui.q ? `<span class="found"><b>${DRAW.n(ui.shownCount ?? 0)}</b> ${ui.shownCount === 1 ? "match" : "matches"}</span>` : "";
   // grouped by something nothing has (no team in any session), the list stays one block: the switch says so beside itself
   const empty = !grouped() && ui.by !== "project" ? DRAW.nothing(ui.by === "team" ? "No teams" : "One command", { slot: true }) : "";
-  // the legends at the line's left, what a query found and the grouping switch at its right end
-  const ctl = `<div class="lctl"><div class="lleg">${lampLegend(live)}${quietLegend()}${axisLegend()}</div><div class="lact">${found}${empty}${by}</div></div>`;
+  // ONE CARD for what the page's marks mean and how it is grouped: the switch first, then each legend; what a query found stands beside it
+  const ctl = `<div class="lctl"><div class="sx-legend">${by}<div class="lleg">${lampLegend(live)}${quietLegend()}${axisLegend()}</div></div><div class="lact">${found}${empty}</div></div>`;
   if (!grouped()) {
     const solo = live[0].project && ui.by === "project" ? `<span class="pname solo">${esc(projName(live[0]))}</span>` : "";
     return `<div class="lhead">${solo}${ctl}</div>`;
   }
   // the tiles are the project picker and its doors, and the list's own head line; by command or team there is no pick
-  if (ui.wide) return `<div class="lhead wide"><div id="ptiles">${sessionTiles()}</div>${ctl}</div>`;
+  if (ui.wide) return `<div class="lhead wide"><div id="ptiles">${sessionTiles()}</div>${heroHtml()}${ctl}</div>`;
   if (ui.by !== "project") return `<div class="lhead">${ctl}</div>`;
   const { projects, doors } = pickOptions();
-  return `<div class="lhead">${pickerHtml(projects, picked(), ui.pmenu, doors, state.rows.length)}${ctl}</div>`;
+  return `<div class="lhead">${pickerHtml(projects, picked(), ui.pmenu, doors, state.rows.length, undefined, sumCounts(projects.map((p) => p[3])))}${heroHtml()}${ctl}</div>`;
 }
 /** THE TILES, in the groups' order after Every project (the kit's picker at a wide page, drawn here with the live
  *  sessions leading). Each tile leads with its live sessions as its figure over one bar of their states, on the scale of
@@ -871,13 +894,17 @@ function sessionTiles() {
     const on = (picked() ?? "") === k, counts = countsOf(g), n = liveOf(g);
     const words = `${n} live, ${countWords(counts, total, "session")}`;
     return `<button class="ptile${on ? " on" : ""}" data-key="t:${esc(k)}" data-act="pickproj" data-p="${esc(k)}" aria-pressed="${on}" aria-label="${esc(`${label}, ${words}`)}" title="${esc(label)}">`
-      + `<span class="ptop"><span class="tname">${esc(label)}</span></span>`
-      + `<span class="plead"><b class="plive" data-f="l:${esc(k)}">${DRAW.n(n)}</b><i class="sl" aria-hidden="true">/</i><b class="ptotal" data-f="tt:${esc(k)}">${DRAW.n(total)}</b></span>`
+      + `<span class="ptop"><span class="tname">${esc(label)}</span><span class="pfigs"><b class="plive" data-f="l:${esc(k)}">${DRAW.n(n)}</b><i class="sl" aria-hidden="true">/</i><b class="ptotal" data-f="tt:${esc(k)}">${DRAW.n(total)}</b></span></span>`
+      // two tracks, each on one scale for every tile: the total on Every project's total, the live sessions on every live one,
+      // so a tile with one live of 619 reads as a long first track over a short second, and the two figures only label them
+      + `<span class="pshare${k === "" ? " whole" : ""}" aria-hidden="true"><i data-tw="" data-w="${(all > 0 ? Math.min(100, (total / all) * 100) : 0).toFixed(1)}" style="width:${(all > 0 ? Math.min(100, (total / all) * 100) : 0).toFixed(1)}%"></i></span>`
       + mixHtml(g, live.length)
       + `<span class="plamps">${counts.map((c) => tlampHtml(c)).join("")}</span></button>`;
   };
   GHOST.remember("tiles", groupsOf(live).length + 1);
-  return `<nav class="ptiles" aria-label="Projects"><div class="ptgrid">${tile("", "Every project", live, all)}${groupsOf(live).map(([k, g]) => tile(k, projName(g[0]), g, projTotal(k, g))).join("")}</div></nav>`;
+  const lamped = [live, ...groupsOf(live).map(([, g]) => g)].some((g) => countsOf(g).length);
+  GHOST.remember("tilelamps", lamped ? 1 : -1);
+  return `<nav class="ptiles${lamped ? " hold" : ""}" aria-label="Projects"><div class="ptgrid">${tile("", "Every project", live, all)}${groupsOf(live).map(([k, g]) => tile(k, projName(g[0]), g, projTotal(k, g))).join("")}</div></nav>`;
 }
 // WHAT IS NOT IN THE LIST, WITHIN REACH AND NOT UNDER EVERY LIST (gap: a standing method footnote under 2,536 px of
 // rows, in the CLI's flag). Headless runs never register, so the fact lives behind one disclosure on the list's foot
@@ -903,15 +930,19 @@ const ghostRow = ([name, chip, last], i) => `<article class="card s ghosted" sty
   + `<span class="lamp"></span><div class="top"><span class="who">${GHOST.bar(name, "nm")}</span>`
   + `<span class="last">${GHOST.bar(last)}</span>${GHOST.cell().replace("barcell", "barcell age")}`
   + `<span class="cmd">${GHOST.bar(chip, "chip")}</span><span class="doing"></span></div></article>`;
-const GHOST_BLOCKS = 6, GHOST_ROWS = 4, GHOST_TILES = 7;
+const GHOST_BLOCKS = 6, GHOST_ROWS = 4, GHOST_TILES = 7, GHOST_ENDED = 6;
 function ghostListHtml() {
   const blocks = Math.max(1, GHOST.count("blocks", GHOST_BLOCKS)), rows = Math.max(1, GHOST.count("rows", GHOST_ROWS));
-  const block = (j) => ({ key: `g${j}`, html: `<section class="pgroup ghosted" aria-hidden="true"><header class="phead">${GHOST.bar(9 + (j % 3) * 2, "nm")}${GHOST.bar(6)}</header>`
-    + Array.from({ length: rows }, (_, i) => GHOST_CARDS[(i + j) % GHOST_CARDS.length]).map(ghostRow).join("") + `</section>` });
+  const block = (j) => ({ key: `g${j}`, html: `<section class="pgroup ghosted" aria-hidden="true"><header class="phead">${GHOST.bar(9 + (j % 3) * 2, "nm")}${GHOST.bar(6)}</header><div class="sx-axisrow"><i class="ghost sx-gax"></i></div>`
+    + Array.from({ length: rows }, (_, i) => GHOST_CARDS[(i + j) % GHOST_CARDS.length]).map(ghostRow).join("") + `<div class="pfoot">${GHOST.bar(9, "chip")}${GHOST.bar(9, "chip")}</div></section>` });
   const tiles = GHOST.tiles(GHOST.count("tiles", GHOST_TILES));
-  const legend = `<div class="lctl" aria-hidden="true"><div class="lleg">${GHOST.bar(9)}${GHOST.bar(12)}</div><div class="lact">${GHOST.bar(14)}</div></div>`;
-  const head = tilesWide() ? `<div class="lhead wide">${tiles}${legend}</div>` : `<div class="lhead">${tiles ? "" : GHOST.chip(13)}${legend}</div>`;
-  return `<div class="list ghosts" aria-busy="true" aria-label="Reading sessions">${head}${boardHtml(Array.from({ length: blocks }, (_, j) => block(j)), "ghosts")}</div>`;
+  const legend = `<div class="lctl" aria-hidden="true"><div class="sx-legend">${GHOST.bar(12, "chip")}${GHOST.bar(9)}${GHOST.bar(12)}${GHOST.bar(7)}</div><div class="lact"></div></div>`;
+  // the figure line, the card of legends, the ended strip and the Not listed line each stand where they will land, so nothing below them moves
+  const hero = `<div class="sx-hero" aria-hidden="true">${GHOST.fig(3.4)}${GHOST.bar(14)}<i class="ghost sx-gstack"></i></div>`;
+  const head = tilesWide() ? `<div class="lhead wide">${tiles}${hero}${legend}</div>` : `<div class="lhead">${tiles ? "" : GHOST.chip(13)}${hero}${legend}</div>`;
+  const ended = Math.max(1, GHOST.count("loose", GHOST_ENDED));
+  const strip = `<div class="lfoot loose" aria-hidden="true">${GHOST.bar(3.5)}<nav class="ptiles ltiles"><div class="ptgrid">${Array.from({ length: ended }, () => `<span class="ptile ltile ghosted-tile"><span class="ptop">${GHOST.bar(7)}${GHOST.fig(2)}</span><i class="ghost pshare"></i></span>`).join("")}</div></nav></div>`;
+  return `<div class="list ghosts" aria-busy="true" aria-label="Reading sessions" style="${GHOST.pin("list")}">${head}${boardHtml(Array.from({ length: blocks }, (_, j) => block(j)), "ghosts")}${strip}<div class="foothead" aria-hidden="true">${GHOST.bar(8, "chip")}</div></div>`;
 }
 /** THE BLOCKS ON THE KIT'S BALANCED BOARD (DRAW.masonry): each block goes where the board is shortest at that point,
  *  measured on what is drawn, so no column stands as a tall wall beside empty ones and the groups' order runs across the
@@ -987,7 +1018,7 @@ function listHtml() {
     GHOST.remember("rows", Math.max(1, Math.round(groups.reduce((a, [, g]) => a + Math.min(g.length, HANDFUL), 0) / groups.length)));
     loose = ended.filter((s) => !keys.has(groupKey(s))); // a project with nothing open today keeps its ended at the foot
   }
-  return `<div class="list${dim}">${fail}${missing}${head}${board}${looseHtml(loose)}${headlessHtml()}</div>`;
+  return `<div class="list${dim}" data-held="list">${fail}${missing}${head}${board}${looseHtml(loose)}${headlessHtml()}</div>`;
 }
 /** THE PROJECTS WITH NOTHING LIVE ARE TILES AT THE LIST'S FOOT, each with its ended sessions counted and drawn as a share of the
  *  most, and each opens on its own where it stands, as its project's block, newest first, so a row's project is always on
@@ -1003,6 +1034,7 @@ function looseHtml(loose) {
   const m = new Map();
   for (const s of loose) { const k = groupKey(s); if (!m.has(k)) m.set(k, []); m.get(k).push(s); }
   const groups = [...m].sort(([, a], [, b]) => b[0].at - a[0].at);
+  GHOST.remember("loose", groups.length);
   const count = (rows) => rows.length + rows.reduce((a, s) => a + (ui.earlier.get(s.id)?.length ?? 0), 0);
   const most = Math.max(...groups.map(([, rows]) => count(rows)));
   const shown = (k) => ui.ended || ui.looseOpen.has(k);
@@ -1146,16 +1178,16 @@ function takenBack(s, m) {
 // a trail of calls at their own pitch, hollow and striped, where the word "Reading" stood alone in a 1,375 px box.
 const GHOST_LOG = `<div class="log ghosts" aria-busy="true"><div class="msg his"><div class="body">${GHOST.lines([16, 9])}</div></div>`
   + `<div class="msg agent"><div class="body">${GHOST.lines([30, 26, 18])}</div></div>`
-  + `<div class="trail" style="--tw:6">${[16, 22, 12].map((w) => `<div class="tline">${GHOST.bar(w)}</div>`).join("")}</div>`
   + `<div class="msg agent"><div class="body">${GHOST.lines([24, 12])}</div></div></div>`;
+const GHOST_CALLS = `<div class="sx-calls ghosts" aria-hidden="true"><div class="trail" style="--tw:6">${[16, 22, 12].map((w) => `<div class="tline">${GHOST.bar(w)}</div>`).join("")}</div></div>`;
 // THE CONVERSATION STANDS IN THE PAGE (one page, one scroll): its newest items, and the older ones it read behind one
 // count at its top, which opens them in place; Show earlier then reads the page before.
 const LOG_SHOWN = 12;
 function logHtml(s) {
   const held = state.logs[s.id];
-  if (!held) return GHOST_LOG;
-  if (held.off) return `<div class="log"><p class="empty"><a class="door" href="settings.html#data">Reading off${ICON.door}</a></p></div>`;
-  if (!held.messages) return `<div class="log"><p class="empty">${esc(held.error ?? "No transcript")}</p></div>`;
+  if (!held) return { log: GHOST_LOG, calls: GHOST_CALLS, pending: true };
+  if (held.off) return { log: `<div class="log"><p class="empty"><a class="door" href="settings.html#data">Reading off${ICON.door}</a></p></div>`, calls: "" };
+  if (!held.messages) return { log: `<div class="log"><p class="empty">${esc(held.error ?? "No transcript")}</p></div>`, calls: "" };
   // each item draws itself with its time, which stands once a minute: [ts] is its moment, [sep] a turn's hairline
   const items = [];
   // A call and what came back are two rows on the wire, the call's (result: false, its input as text) and the
@@ -1179,7 +1211,7 @@ function logHtml(s) {
   let pressed = null, exit = EXIT_LOOKING;
   // A RUN is every call drawn between two things that are not calls: it lands as one trail when the next thing comes
   let run = [];
-  const flush = () => { if (run.length) { const calls = run; items.push({ ts: calls.at(-1).ts, draw: () => trailHtml(s, calls, results, out, working) }); } run = []; };
+  const flush = () => { if (run.length) { const calls = run; items.push({ ts: calls.at(-1).ts, trail: calls.length, draw: () => trailHtml(s, calls, results, out, working) }); } run = []; };
   const put = (ts, draw, sep = false) => { flush(); items.push({ ts, draw, sep }); };
   const markUpTo = (ts) => {
     while (marks.length && (ts == null || marks[0].moved_at <= ts)) { const mv = marks.shift(); pressed = mv.moved_at; exit = EXIT_LOOKING; put(null, () => jointHtml(mv)); }
@@ -1224,10 +1256,10 @@ function logHtml(s) {
   let from = 0;
   if (!open) {
     let counted = 0;
-    for (from = items.length; from > 0 && counted < LOG_SHOWN; ) { from -= 1; if (!items[from].sep) counted += 1; }
+    for (from = items.length; from > 0 && counted < LOG_SHOWN; ) { from -= 1; if (!items[from].sep && !items[from].trail) counted += 1; }
     while (from < items.length && items[from].sep) from += 1;
   }
-  const hidden = items.slice(0, from).filter((it) => !it.sep).length;
+  const hidden = items.slice(0, from).filter((it) => !it.sep && !it.trail).length;
   const head = [];
   if (hidden) head.push(DRAW.disc({ open: false, act: "logopen", data: ` data-s="${esc(s.id)}"`, cls: "logmore", inner: `<span><b>${DRAW.n(hidden)}</b> earlier</span>` }));
   else if (held.earlier) head.push(`<button class="act quiet small earlier" data-act="earlier" data-s="${esc(s.id)}">Show earlier</button>`);
@@ -1236,13 +1268,19 @@ function logHtml(s) {
   if (held.error) head.push(`<p class="note">${esc(held.error)}</p>`);
   // A TIME ONCE A MINUTE: a message's time stands when its minute is not the one the last time said
   let said = null;
-  const body = items.slice(from).map((it) => {
+  const standing = items.slice(from);
+  const body = standing.filter((it) => !it.trail).map((it) => {
     let at = "";
     if (it.ts) { const c = clock(new Date(it.ts)); if (c !== said) { at = `<time>${c}</time>`; said = c; } }
     return it.draw(at);
   });
+  // the runs of calls leave the conversation for the rail beside it, in the order they were made
+  const runs = standing.filter((it) => it.trail);
   const newest = held.at ? `<button class="act quiet small earlier" data-act="newest" data-s="${esc(s.id)}">Show newest</button>` : "";
-  return `<div class="log">${head.length ? `<div class="loghead">${head.join("")}</div>` : ""}${body.join("")}${newest}</div>`;
+  return { log: `<div class="log">${head.length ? `<div class="loghead">${head.join("")}</div>` : ""}${body.join("")}${newest}</div>`,
+    calls: runs.length ? `<div class="sx-calls" id="calls-${esc(s.id)}">${runs.map((it) => it.draw()).join("")}</div>` : "",
+    // what the strip's figures can open: the messages folded behind the count or the page before, and the calls a run folded
+    hidden, earlier: Boolean(held.earlier), more: hidden > 0 || Boolean(held.earlier), callsMore: runs.some((it) => it.trail > TRAIL_FLAT) };
 }
 /** A RUN OF CALLS IS ONE QUIET LINE (Marcos, Oct 26: "the tool call ui is very busy"): a run of one or two calls shows them,
  *  one line each on one grid; a longer run is one line, its count with the tools it used as marks and counts, and under it
@@ -1313,67 +1351,91 @@ function jointHtml(mv) {
     + `<p class="jat">${at}</p></div>`;
 }
 
-/** THE OPEN SESSION, IN PLACE (round 2): a plate under its own row, inside its block. Its title bar is the row's own line,
- *  raised in the selection's ink, and its name folds it away. Under it one line holds the details' fold and the acts on
- *  the whole session; then whatever must be seen or answered (an armed act, a refusal, what it asks), the details,
- *  which fold away so the conversation comes up under the acts (Marcos, Oct 26: "we should be able to collapse the top
- *  component"), the conversation, and the Message field. */
+/** THE OPEN SESSION, IN PLACE: a plate under its own row, inside its block. Its title line is the row's own line, with the acts on
+ *  the whole session after it and the details' fold at its end. Under it the session's strip: when it started, and its turns and
+ *  its calls as two bars on one log axis. Then whatever must be seen or answered (an armed act, a refusal, what it asks), and the
+ *  body: the conversation with its Message field, beside the rail that holds the calls it made, Today, Tokens, Context, Login,
+ *  its facts and the lines to paste. The rail folds away over 240 ms and the conversation takes the whole width. */
 function plateHtml(s) {
   const L = movingLook(s) || look(s);
   const failed = ui.failed.get(s.id);
   const ask = s.state === "needs" ? askHtml(s, "pane") : "";
-  // the conversation and the details share one body: the details in a rail beside it where the plate has the room, over it
-  // where it has not (sessions.css), the same layout whatever the conversation holds, so nothing re-flows when it is read
+  const talk = logHtml(s);
+  ui.logInfo.set(s.id, talk);
+  const tools = toolsHtml(s);
   return `<section class="pane s ${L.cls}${ui.unfold === s.id ? " unfold" : ""}${ui.topShut ? " topshut" : ""}" style="--c:${color(s)}" data-key="p:${esc(s.id)}" aria-label="${esc(title(s))}">`
-    + lampHtml(L) + lineHtml(s, L, true) + toolsHtml(s)
-    + `${armedStopHtml(s, false)}${armedEndHtml(s)}${failedHtml(s, failed, true)}${ask ? `<div class="askbox">${ask}</div>` : ""}`
-    + `<div class="pbody">${detailsHtml(s)}<div class="talk">${logHtml(s)}${composerHtml(s)}</div></div></section>`;
+    + `<div class="sx-bar">${lampHtml(L)}${lineHtml(s, L, true)}${tools.acts}${tools.fold}</div>${tools.under}`
+    + `${armedStopHtml(s, false)}${armedEndHtml(s)}${failedHtml(s, failed, true)}${stripHtml(s, talk)}`
+    // what waits on him leads the conversation's column, so a long conversation never pushes the question out of sight
+    + `<div class="pbody">${detailsHtml(s)}${talk.calls}<div class="talk">${ask ? `<div class="askbox">${ask}</div>` : ""}${talk.log}${composerHtml(s)}</div></div></section>`;
 }
-/** THE LINE OF ACTS ON THE WHOLE SESSION: the details' fold first, in the block folds' own disc, then End, Continue on
- *  and Close, which the name also is. Continue on's menu, and the prompt a move holds back, open in place on their own
- *  line under it, so the line of acts keeps its height wherever it stands. */
+/** THE ACTS ON THE WHOLE SESSION, which follow its title: Rename, End, Continue on and Close, which the name also is; and the
+ *  details' fold, in the block folds' own disc, at the line's end. Continue on's menu, and the prompt a move holds back, open
+ *  in place on their own line under the title, so the title keeps its height wherever it stands. */
 function toolsHtml(s) {
   const shut = ui.topShut;
   const fold = `<button class="topfold disc" type="button" data-act="top" aria-expanded="${!shut}" aria-controls="panetop-${esc(s.id)}">${DRAW.chev}<span>Details</span></button>`;
   const go = movable(s) && !ui.moving.has(s.id);
   const cont = !movable(s) ? "" : go
-    ? `<button class="act" data-act="menu" data-s="${esc(s.id)}" aria-haspopup="menu" aria-expanded="${ui.menu === s.id}">Continue on</button>`
+    ? `<button class="act sx-lit" data-act="menu" data-s="${esc(s.id)}" aria-haspopup="menu" aria-expanded="${ui.menu === s.id}">Continue on</button>`
     : `<button class="act stopping" disabled>${ICON.wait}Continuing on</button>`;
   const close = `<button class="act quiet" data-act="close">Close</button>`;
   const under = go ? (ui.menu === s.id ? choicesHtml(s) : heldHtml(s)) : "";
   // THE ACT THAT NAMES IT (DRAW.nameIt): on a session nobody named it stands as Name it, on one that is named as Rename
-  const rename = ui.renaming === s.id ? "" : DRAW.act({ word: ownOf(s) ? "Rename" : "Name it", act: "rename", cls: "quiet", data: ` data-s="${esc(s.id)}"` });
-  return `<div class="tools">${fold}<div class="acts">${rename}${endHtml(s)}${cont}${close}</div></div>${under}`;
+  const rename = ui.renaming === s.id ? "" : DRAW.act({ word: ownOf(s) ? "Rename" : "Name it", act: "rename", data: ` data-s="${esc(s.id)}"` });
+  return { acts: `<div class="acts">${rename}${endHtml(s)}${cont}${close}</div>`, fold, under };
 }
-/** THE DETAILS: the facts that say which session it is, then what it did today, what it holds and where it sends, as
- *  drawings in two columns, then the lines to paste. They fold to nothing and back over 240 ms. */
+/** THE SESSION'S STRIP: when it started, and how long it has run in turns and in calls, each as a bar on one log axis from 1 to
+ *  10,000 that every plate shares, so two sessions compare by eye, each figure at the bar's end. A figure the daemon does not send
+ *  is a dash over a dashed track; the calls are counted off the conversation read so far, and a "+" says older ones are unread. */
+const STRIP_TICKS = [1, 10, 100, 1000, 10000];
+const decade = (n) => (n > 0 ? Math.max(0, Math.min(100, ((Math.log10(n) + 1) / 5) * 100)) : 0);
+function stripHtml(s, talk) {
+  const r = s.row, held = state.logs[s.id];
+  const turns = r.turns == null ? null : r.turns;
+  const calls = !held ? undefined : held.messages ? held.messages.filter((m) => m.tool && m.role !== "tool").length : null;
+  const started = r.started_at ? backWord(new Date(r.started_at)) : "";
+  const track = (n, cls) => (n === undefined ? `<div class="sx-track ${cls}" aria-hidden="true"><i class="ghost track"></i></div>`
+    : n == null ? `<div class="sx-track ${cls} nr" aria-hidden="true"></div>`
+    : `<div class="sx-track ${cls}" role="img" aria-label="${esc(`${DRAW.n(n)} ${cls === "t" ? "turns" : "calls"}`)}"><i class="sx-run" data-w="${decade(n).toFixed(1)}" style="width:${decade(n).toFixed(1)}%"></i></div>`);
+  const fig = (cls, n, plus, one, many, act, open) => {
+    if (n === undefined) return `<span class="sx-end ${cls}" aria-hidden="true">${GHOST.bar(5)}</span>`;
+    const inner = `<b>${n == null ? DRAW.dash : `${DRAW.n(n)}${plus ? "+" : ""}`}</b> ${n === 1 && !plus ? one : many}`;
+    return open ? `<button type="button" class="sx-end lnk ${cls}" data-act="${act}" data-s="${esc(s.id)}">${inner}${DRAW.chev}</button>` : `<span class="sx-end ${cls}">${inner}</span>`;
+  };
+  const partial = Boolean(held?.earlier);
+  return `<div class="sx-strip${s.state === "working" ? "" : " quiet"}"><span class="sx-start"><small>Started</small>${started ? esc(started) : DRAW.dash}</span>`
+    + `${track(turns, "t")}${fig("t", turns, Boolean(r.turns_partial), "turn", "turns", "turns", talk.more)}`
+    + `${track(calls, "c")}${fig("c", calls, partial, "call", "calls", "calls", talk.callsMore)}`
+    + `<div class="sx-sax" aria-hidden="true">${STRIP_TICKS.map((n) => `<i style="left:${decade(n)}%">${DRAW.n(n)}</i>`).join("")}</div></div>`;
+}
+/** THE RAIL: what it did today, what it holds, the room its conversation has and the login it sends on, as four sections in a
+ *  row, then its facts and the lines to paste. It folds to nothing and back over 240 ms. */
 function detailsHtml(s) {
-  const shut = ui.topShut;
+  const shut = ui.topShut, copy = copiesHtml(s);
   return `<div class="panetop${shut ? " shut" : ""}" id="panetop-${esc(s.id)}"><div class="panetop-in"${shut ? " inert" : ""}>`
-    + factsHtml(s)
     + `<div class="secs">${DRAW.section("Today", todayHtml(s), { cls: "today" })}${DRAW.section("Tokens", tokensHtml(s), { cls: "tokens" })}`
     + `${DRAW.section("Context", contextHtml(s), { cls: "context" })}${DRAW.section("Login", accountHtml(s), { cls: "login" })}</div>`
-    + copiesHtml(s) + `</div></div>`;
+    + `<div class="sx-foot">${factsHtml(s)}${copy.acts}${copy.lines}</div></div></div>`;
 }
-/** THE FACTS OF ONE SESSION, EACH UNDER ITS OWN LABEL, a dash for any the daemon does not send: where it is (its project,
- *  or its folder with the reason it is in none), its command, how many turns it ran, when it started, its team, its
- *  Claude Code, and the ended sessions that carried its name before it. */
+/** THE FACTS OF ONE SESSION, each one chip, a dash for any the daemon does not send: where it is (its project, or its folder with
+ *  the reason it is in none), its worktree, its command, its team, its Claude Code, and the sessions that carried its name before
+ *  it. When it started and how many turns it ran are on the strip. */
 const NAMESAKES_SHOWN = 3;
 function factsHtml(s) {
-  const fact = (label, value, cls = "") => `<div class="fact${cls ? ` ${cls}` : ""}"><dt>${esc(label)}</dt><dd>${value || DRAW.dash}</dd></div>`;
-  const team = s.team ? `<span class="team">${ICON.team}${esc(s.team)}</span>` : "";
-  const started = s.row.started_at ? esc(backWord(new Date(s.row.started_at))) : "";
-  const turns = s.row.turns == null ? "" : `${DRAW.n(s.row.turns)}${s.row.turns_partial ? "+" : ""}`;
-  const reason = !s.project && s.row.repo?.reason ? `<span class="reason">${esc(reasonWord(s.row.repo.reason))}</span>` : "";
+  const chip = (html, cls = "") => `<span class="sx-chip${cls ? ` ${cls}` : ""}">${html}</span>`;
+  const where = whereHtml(s, true);
+  const place = chip(where || DRAW.dash, "folder");
+  const reason = !s.project && s.row.repo?.reason ? chip(esc(reasonWord(s.row.repo.reason)), "note") : "";
+  const tree = s.wt && wtWord(s.wt) !== "Worktree" ? chip(`${ICON.branch}<span>${esc(s.wt)}</span>`) : "";
+  const team = chip(`${ICON.team}<span>Team</span> ${s.team ? esc(s.team) : DRAW.dash}`);
+  const version = chip(`Claude Code ${s.row.version ? esc(s.row.version) : DRAW.dash}`, "mono");
   // the sessions that carried its name, the newest three standing and the rest behind one count that opens them in place
   const before = (ui.earlier.get(s.id) || []).concat(namesakeOf(s) ? [namesakeOf(s)] : []).filter((x) => x.id !== s.id);
   const all = ui.namesakes.has(s.id), shown = all ? before : before.slice(0, NAMESAKES_SHOWN), left = before.length - NAMESAKES_SHOWN;
   const more = left > 0 ? DRAW.more(left, { word: "more", act: "namesakes", data: ` data-s="${esc(s.id)}"`, open: all, less: "Fewer" }) : "";
-  const earlier = before.length ? fact("Earlier", shown.map((x) => `<a class="chip quiet" href="#${esc(x.id)}" data-open="${esc(x.id)}">${x.state === "ended" ? "Ended" : "Live"} ${esc(backWord(x.at))}</a>`).join("") + more, "earlier") : "";
-  // the worktree's own folder, which the row draws as a mark alone
-  const tree = s.wt && wtWord(s.wt) !== "Worktree" ? fact("Worktree", `<span class="where" title="${esc(s.wt)}">${ICON.branch}<span>${esc(s.wt)}</span></span>`) : "";
-  return `<dl class="meta facts">${fact(s.project ? "Project" : "Folder", (whereHtml(s, true) || "") + reason, s.project ? "" : "folder")}${fact("Command", cmdCell(s, "edge"))}`
-    + `${fact("Turns", turns)}${fact("Started", started)}${tree}${fact("Team", team)}${fact("Claude Code", s.row.version ? esc(s.row.version) : "")}${earlier}</dl>`;
+  const earlier = before.length ? `<span class="sx-earlier fact"><span class="sx-elbl">Earlier</span>${shown.map((x) => `<a class="sx-chip ended${x.state === "ended" ? "" : " live"}" href="#${esc(x.id)}" data-open="${esc(x.id)}" title="${x.state === "ended" ? "Ended" : "Live"} ${esc(backWord(x.at))}"><i class="sx-ering" aria-hidden="true"></i>${esc(backWord(x.at))}</a>`).join("")}${more}</span>` : "";
+  return `<section class="psec sx-factsec"><div class="sechead"><h3 class="kicker">Facts</h3></div><div class="sx-chips meta facts">${place}${reason}${tree}${team}${version}${cmdCell(s, "edge")}${earlier}</div></section>`;
 }
 /** The row an ended namesake is folded under, when this session is one of them: its link back to the newest. */
 function namesakeOf(s) {
@@ -1395,7 +1457,7 @@ function todayHtml(s) {
   const u = state.usage[s.id];
   if (u === undefined) return GHOST.hero() + GHOST.stack();
   // none today is the figure 0 over the split's empty track; a read no command answered is the dash
-  if (!u?.requests) return u === null ? `<div class="pd-top"><b class="pd-rate">${DRAW.unread.fig}</b></div>${EMPTY_SPLIT}` : `${DRAW.hero({ figure: "0", of: "requests today" })}${EMPTY_SPLIT}`;
+  if (!u?.requests) return u === null ? `<div class="pd-top"><b class="pd-rate">${DRAW.unread.fig}</b></div>${EMPTY_SPLIT}` : `<p class="sx-zero"><b>0</b> requests today</p>${EMPTY_SPLIT}`;
   const href = `requests.html?${new URLSearchParams({ session: s.id, from: String(u.from) })}`;
   const hero = DRAW.hero({ figure: DRAW.n(u.requests), of: u.requests === 1 ? "request today" : "requests today", href });
   const segs = [{ n: u.plan, word: "On your plan", cls: "s1" }, { n: u.priced, word: "At API prices", cls: "s2" },
@@ -1414,7 +1476,7 @@ function tokensHtml(s) {
   const u = state.usage[s.id];
   if (u === undefined) return `<div class="tokhead">${GHOST.ring("focal")}${GHOST.focal(6)}</div>${GHOST.stack()}`;
   // nothing went in or out today: the section keeps its figures' places, each a dash, over the split's empty track
-  if (!u?.requests || (!u.tin && !u.tout)) return `<div class="tokhead"><div class="io">${DRAW.focal("—", "in")}${DRAW.focal("—", "out")}</div></div>${EMPTY_SPLIT}`;
+  if (!u?.requests || (!u.tin && !u.tout)) return `<div class="tokhead"><span class="sx-ringnone" aria-hidden="true"></span><div class="io">${DRAW.focal("—", "in")}${DRAW.focal("—", "out")}</div></div>${EMPTY_SPLIT}`;
   const share = u.tin > 0 ? u.cached / u.tin : null;
   const ring = share == null ? "" : DRAW.statTile(DRAW.ring(share, { size: "focal", label: `${DRAW.pct(share)} from the cache` }), DRAW.pct(share), "from cache", { focal: true });
   const io = `${DRAW.focal(u.noIn < u.requests ? DRAW.big(u.tin) : "—", "in")}${DRAW.focal(u.noOut < u.requests ? DRAW.big(u.tout) : "—", "out")}`;
@@ -1441,17 +1503,17 @@ function contextHtml(s) {
 }
 /** THE LINES TO PASTE: what another session types to reach this one, what a terminal types to resume it, and where its
  *  conversation lives on disk (gap 423), as three Copy acts in his words, and the three lines whole behind one
- *  disclosure, so no line is ever cut and no id or path stands on the screen unasked. */
+ *  disclosure under the facts, so no line is ever cut and no id or path stands on the screen unasked. */
 function copiesHtml(s) {
   const held = state.logs[s.id];
   const items = [["copy-send", "Reach it", sendTo(s) ? sendLine(s) : ""], ["copy-r", "Resume it", resumeLine(s)], ["copy-path", "Its file", held == null ? null : held.path || ""]];
   const open = ui.lines.has(s.id);
   const acts = items.map(([act, word, v]) => (v === "" ? "" : v == null ? GHOST.bar(5.5, "chip")
     : `<button class="act small copy" data-act="${act}" data-s="${esc(s.id)}">${ui.copied.get(`${act}:${s.id}`) > Date.now() ? "Copied" : esc(word)}</button>`)).join("");
-  if (!acts) return "";
+  if (!acts) return { acts: "", lines: "" };
   const disc = DRAW.disc({ open, act: "lines", data: ` data-s="${esc(s.id)}"`, cls: "quiet linesdisc", inner: `<span>${open ? "Lines" : "Show lines"}</span>` });
   const lines = open ? `<dl class="clines unfold">${items.filter(([, , v]) => v).map(([, word, v]) => `<div><dt>${esc(word)}</dt><dd><code>${esc(v)}</code></dd></div>`).join("")}</dl>` : "";
-  return `<div class="copies"><h3 class="kicker">Copy</h3><div class="cacts">${acts}</div>${disc}${lines}</div>`;
+  return { acts: `<section class="psec sx-copysec copies"><div class="sechead"><h3 class="kicker">Copy</h3></div><div class="cacts">${acts}${disc}</div></section>`, lines };
 }
 
 // A door to a session splice no longer lists, by link or address: a compact plate at the list's top says Not listed,
@@ -1553,9 +1615,9 @@ function morph(target, html) {
   tpl.innerHTML = html;
   morphChildren(target, tpl.content);
 }
-/** How many columns of blocks the list's width holds: a row's columns need about 72rem for the session's own words to
- *  read (Oct 26), so three at 3822, two at 2548 and one at 1440. */
-const COL_REM = 72;
+/** How many columns of blocks the list's width holds: a row's columns need about 64rem for the session's own words to
+ *  read, so three at 3822, two at 2548 and one at 1440. */
+const COL_REM = 64;
 function colCount() {
   const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
   const gap = (parseFloat(getComputedStyle(root).getPropertyValue("--gap-col")) || 2) * rem;
@@ -1818,7 +1880,10 @@ function windowHtml(win) {
  *  that opens every login it could move to, in place under it. */
 function accountHtml(s) {
   const logins = ui.logins[s.head], r = s.row;
-  if (!r.account) return `<p class="lname">${DRAW.dash}</p>`;
+  if (!r.account) {
+    const fix = s.stall?.kind === "signout" ? s.stall.fix : null;
+    return `<div class="meterline">${DRAW.meter(null)}${fix ? `<a class="act small primary" href="${esc(fix.href)}">${esc(fix.word)}</a>` : `<span class="pct">${DRAW.dash}</span>`}</div>`;
+  }
   if (logins == null) return `<p class="lname">${GHOST.bar(7)}</p><div class="meterline">${GHOST.track()}${GHOST.fig(3)}</div>`;
   const pin = r.account_pin, own = Boolean(pin) && pin !== r.account_pin_head;
   const now = logins.find((l) => l.label === r.account);
@@ -1936,7 +2001,7 @@ async function stop(s) {
 // With nothing to lose it goes on the first press; a turn mid-work or unsent words arm it, Restart's pattern.
 const endHtml = (s) => !drivable(s) || ui.armedEnd.has(s.id) ? ""
   : ui.ending.has(s.id) ? `<button class="act stopping" disabled>${ICON.wait}Ending · ${Math.floor((Date.now() - ui.ending.get(s.id)) / 1000)} s</button>`
-  : `<button class="act" data-act="end" data-s="${esc(s.id)}">End</button>`;
+  : `<button class="act sx-danger" data-act="end" data-s="${esc(s.id)}">End</button>`;
 function armedEndHtml(s) {
   const armed = ui.armedEnd.get(s.id);
   if (!armed) return "";
@@ -2285,6 +2350,15 @@ document.addEventListener("click", (e) => {
     case "result": { const k = el.dataset.k; ui.results.has(k) ? ui.results.delete(k) : ui.results.add(k); render(); break; }
     case "sys": { const k = el.dataset.k; ui.sys.has(k) ? ui.sys.delete(k) : ui.sys.add(k); render(); break; }
     case "top": foldTop(); break;
+    // the strip's turns open what the conversation folded: the messages behind its count, else the page before
+    case "turns": if (s) { const info = ui.logInfo.get(s.id), held = state.logs[s.id];
+      if (info?.hidden > 0) { ui.logOpen.add(s.id); render(); } else if (held?.earlier) { ui.logOpen.add(s.id); readLog(s, held.earlier); } } break;
+    // and its calls open every run the rail folded, or fold them again
+    case "calls": if (s) {
+      const keys = (state.logs[s.id]?.messages || []).filter((m) => m.tool && m.role !== "tool").map((m) => `${s.id}:${m.index}`);
+      const every = keys.every((k) => ui.trails.has(k));
+      for (const k of keys) { if (every) { ui.trails.delete(k); ui.results.delete(k); } else { ui.trails.add(k); ui.landing.add(k); } }
+      render(); } break;
     // a run's count line: its hidden calls open in place, under his pointer, and fold away again
     case "trail": {
       const ks = (el.dataset.ks || "").split(" ").filter(Boolean);

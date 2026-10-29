@@ -36,7 +36,9 @@ const q = (xs, p) => { if (!xs.length) return null; const s = xs.slice().sort((a
 const failed = (r) => isFailed(r.outcome);
 const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone; // the daemon folds days in the viewer's zone
 const HOUR = 3600e3;
-const WINDOWS = { "5h": { label: "5 hours", word: "last 5 hours" }, "7d": { label: "7 days", word: "last 7 days" } };
+const WINDOWS = { "5h": { label: "5 hours" }, "7d": { label: "7 days" }, "30d": { label: "30 days" } };
+// the calendar days a day-column window holds
+const DAYS = { "7d": 7, "30d": 30 };
 const SEP = "\u001f"; // one account can carry several labels (its email, its selector name); a merged key joins them after the head
 const MAX_HELD = 2000; // the most rows one read of a command carries (PerfRoutes.kt MAX_TURNS)
 const LEN = { "5 hours": 300, Week: 10080, Month: 43200 };
@@ -59,14 +61,14 @@ const WHY_NOT = { 500: "splice failed to send it", 502: "splice is not ready", 5
 const uncounted = () => (D.reading?.size ?? 0) + D.errors.length > 0;
 
 const ui = { win: "7d", measure: "tokens", by: "account", rank: "tokens", f: {}, shown: CUT, from: null, project: PICK.get(), pmenu: false,
-  find: "", cold: new Set(), coldNew: null, naming: null, nameAt: "card", nameErr: null, nameDraft: "", nameBusy: false, landed: null, shook: null };
+  find: "", cold: new Set(), coldNew: null, naming: null, nameAt: "card", nameErr: null, nameDraft: "", nameBusy: false, landed: null, shook: null, signing: {}, signShook: null };
 const root = document.getElementById("usage");
 
 // ---------- what splice has told this page ----------
-const S = { heads: [], providerOf: {}, labels: {}, sessions: {}, sessionsPending: true, keys: [], accounts: [], registry: [], groups: [], stood: false, error: null };
+const S = { heads: [], providerOf: {}, labels: {}, declared: new Map(), sessionRows: [], liveHead: {}, sessions: {}, sessionsPending: true, keys: [], accounts: [], registry: [], groups: [], stood: false, error: null };
 // one window's reads: the totals the daemon folded, and the newest rows. [all] is the window with the project pick alone
 // (the plan and key cards), [scoped] the same under the filters opened below the cards.
-const D = { loading: true, pending: false, every: null, all: null, scoped: null, rows: [], held: new Set(), errors: [], gen: 0 };
+const D = { loading: true, stale: false, pending: false, every: null, all: null, scoped: null, rows: [], held: new Set(), errors: [], gen: 0 };
 
 const providerOfHead = (key) => S.providerOf[key];
 const cmdOf = (key) => S.heads.find((h) => h.key === key)?.command ?? key;
@@ -74,8 +76,6 @@ const sessTitle = (tag, fallback) => {
   const s = S.sessions[tag];
   return s?.name || s?.title || fallback || `Session ${tag}`;
 };
-/** The window (and the project) a band reads, beside its title: every band but Results reads the page's pick. */
-const hwin = () => `<span class="hwin">${projectWord() ? `${esc(projectWord())} · ` : ""}${WINDOWS[ui.win].word}</span>`;
 const hasFilter = () => Object.keys(ui.f).length > 0;
 const projectWord = () => (ui.project == null ? null : ui.project === NO_PROJECT_KEY ? "No project" : S.groups.find((g) => g.key === ui.project)?.label ?? ui.project);
 
@@ -91,6 +91,7 @@ async function readStanding() {
   for (const row of models.body?.heads || []) {
     S.providerOf[row.head] = FAMILY[row.provider] ?? (local(row.provider) ? "local" : row.provider);
     learnModels(S.labels, row);
+    for (const m of row.models || []) if (m.id && !S.declared.has(modelKey(m.id))) S.declared.set(modelKey(m.id), m.id);
   }
   S.keys = keys.body?.keys || [];
   S.accounts = accounts.body?.accounts || [];
@@ -101,6 +102,8 @@ async function readStanding() {
     const rows = sessions.body?.sessions || [], turns = {};
     for (const s of rows) if (s.session_id) { S.sessions[s.session_id] = s; S.sessions[String(s.session_id).slice(0, 8)] = s; }
     S.heads.forEach((h, i) => { for (const t of lives[i].body?.turns || []) if (t.session && !t.stopped) turns[t.session] = { head: h.key, ...t }; });
+    S.sessionRows = rows;
+    for (const [sid, t] of Object.entries(turns)) S.liveHead[String(sid).slice(0, 8)] = t.head;
     S.sessionsPending = false;
     S.groups = projectGroups(rows, turns, S.heads);
     const before = ui.project;
@@ -110,22 +113,25 @@ async function readStanding() {
 }
 
 // ---------- the daemon's questions, one per command ----------
-// the window's columns: twenty quarter hours ending at the next quarter, or the seven calendar days ending today
+// the window's columns: twenty quarter hours ending at the next quarter, or the calendar days (7 or 30) ending today
 function slices() {
   if (ui.win === "5h") {
     const end = Math.ceil(+NOW / 900e3) * 900e3;
     return Array.from({ length: 20 }, (_, i) => { const to = end - (19 - i) * 900e3; return { from: to - 900e3, to, label: new Date(to - 900e3).getMinutes() === 0 ? hourWord(new Date(to - 900e3)) : "", now: i === 19 }; });
   }
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() - (6 - i));
+  const n = DAYS[ui.win];
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() - (n - 1 - i));
     const next = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
-    return { from: +d, to: +next, day: d.toLocaleDateString("en-CA"), label: i === 6 ? "Today" : DAY[d.getDay()], now: i === 6 };
+    // a month of columns is named by its date, and by its month where the month begins; a week by its weekdays
+    const label = n > 7 ? (d.getDate() === 1 || i === 0 ? d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : String(d.getDate())) : i === n - 1 ? "Today" : DAY[d.getDay()];
+    return { from: +d, to: +next, day: d.toLocaleDateString("en-CA"), label, now: i === n - 1 };
   });
 }
 const since = () => slices()[0].from;
-function filterParams(p, f, label) {
+function filterParams(p, f, label, model) {
   if (label != null) p.set("account", label);
-  if (f.model) p.set("model", f.model);
+  if (model ?? f.model) p.set("model", model ?? f.model);
   if (f.agent) p.set("session", String(f.agent).slice(0, 8));
   // No project is a pick of its own: the daemon reads it as project=none (TurnsFilter.kt), the way Requests asks. Sent
   // as nothing, it would show every project's figures under its name.
@@ -133,14 +139,24 @@ function filterParams(p, f, label) {
   return p;
 }
 // each 15-minute column of the 5-hour window is one more question on the same read (`ask`), so the whole window is read once
-function turnsUrl(head, held, f, label) {
-  const p = filterParams(new URLSearchParams({ head: head.key, since: String(since()), time_zone: ZONE, n: String(held), local: "0" }), f, label);
+function turnsUrl(head, held, f, label, model) {
+  const p = filterParams(new URLSearchParams({ head: head.key, since: String(since()), time_zone: ZONE, n: String(held), local: "0" }), f, label, model);
   if (held > 1) p.set("usage", "0");
-  else if (ui.win === "5h") for (const sl of slices()) p.append("ask", filterParams(new URLSearchParams({ n: "1", local: "0", from: String(sl.from + 1), until: String(sl.to) }), f, label).toString());
+  else if (ui.win === "5h") for (const sl of slices()) p.append("ask", filterParams(new URLSearchParams({ n: "1", local: "0", from: String(sl.from + 1), until: String(sl.to) }), f, label, model).toString());
   return `/api/perf/turns?${p}`;
 }
 /** The labels one account filter reads: the daemon matches one label exactly, so an account with several is asked once per label and summed. */
 const labelsOf = (f) => (f.account ? f.account.split("|").slice(1).join("|").split(SEP) : [null]);
+/** The daemon keeps a request when its model is the id asked, exactly, and requests carry the id with the date or window a vendor
+ *  stamps on it. A model filter named without them (an address from Accounts) asks for every id the window holds under that
+ *  name, each one read and summed; a name that is an id the window holds, or that none holds, is asked as it stands. */
+const bareModel = (id) => modelKey(id).replace(DATED, "");
+function modelIdsOf(name, held) {
+  const ids = [...held];
+  if (ids.includes(name)) return [name];
+  const same = ids.filter((id) => bareModel(id) === bareModel(name));
+  return same.length ? same : [name];
+}
 const headsFor = (f) => S.heads.filter((h) => !f.account || f.account.split("|")[0] === h.key);
 
 const ZERO = () => ({ requests: 0, in: 0, cached: 0, write: 0, out: 0, noIn: 0, noOut: 0, cold: 0, coldIn: 0, coldUn: 0, cost: null, plan: 0, planValue: null, uncounted: 0, undeclared: 0, local: 0, unanswered: 0, failed: 0, limited: 0 });
@@ -183,11 +199,23 @@ function foldWindow(reads, heads) {
 async function readWindow() {
   const gen = ++D.gen;
   const wide = { wide: true }; // every project, for the tiles' figures
-  const scopes = [...(hasFilter() ? [ui.f, {}] : [{}]), ...(ui.project ? [wide] : [])];
-  const asks = scopes.flatMap((f) => headsFor(f).flatMap((h) => labelsOf(f).map((label) => ({ f, h, held: 1, label }))));
-  const rowAsks = headsFor(ui.f).flatMap((h) => labelsOf(ui.f).map((label) => ({ f: ui.f, h, held: MAX_HELD, label })));
+  const open = {}, read = new Map();
+  const scopes = [...(hasFilter() ? [ui.f, open] : [open]), ...(ui.project ? [wide] : [])];
+  const get = (a) => { const url = turnsUrl(a.h, a.held, a.f, a.label, a.model); if (!read.has(url)) read.set(url, API.getReady(url)); return read.get(url); };
+  // a model asked by its name is asked by every id the window holds under it: the unfiltered read says which
+  let ids = null;
+  if (ui.f.model) {
+    const early = headsFor(open).map((h) => ({ f: open, h, held: 1, label: null }));
+    const seen = foldWindow(await Promise.all(early.map(get)), early.map((a) => a.h)).models;
+    if (gen !== D.gen) return;
+    ids = modelIdsOf(ui.f.model, seen.keys());
+  }
+  D.modelIds = ids;
+  const modelsOf = (f) => (f.model && ids ? ids : [null]);
+  const asks = scopes.flatMap((f) => headsFor(f).flatMap((h) => labelsOf(f).flatMap((label) => modelsOf(f).map((model) => ({ f, h, held: 1, label, model })))));
+  const rowAsks = headsFor(ui.f).flatMap((h) => labelsOf(ui.f).flatMap((label) => modelsOf(ui.f).map((model) => ({ f: ui.f, h, held: MAX_HELD, label, model }))));
   // Count first. The multi-megabyte trails fill in after the totals and chart are already usable.
-  const totals = await Promise.all(asks.map((a) => API.getReady(turnsUrl(a.h, a.held, a.f, a.label))));
+  const totals = await Promise.all(asks.map(get));
   if (gen !== D.gen) return;
   const split = (scope) => { const idx = asks.map((a, i) => (a.f === scope ? i : -1)).filter((i) => i >= 0); return foldWindow(idx.map((i) => totals[i]), idx.map((i) => asks[i].h)); };
   D.scoped = split(scopes[0]);
@@ -196,9 +224,13 @@ async function readWindow() {
   D.rows = []; D.held = new Set(); D.errors = [...D.scoped.errors];
   let pending = D.scoped.pending || D.all.pending || D.every.pending;
   const reading = new Set([...D.scoped.reading, ...D.all.reading, ...D.every.reading]);
-  D.pending = pending; D.reading = reading; D.loading = false;
-  render(true);
-  const rows = await Promise.all(rowAsks.map((a) => API.getReady(turnsUrl(a.h, a.held, a.f, a.label))));
+  D.pending = pending; D.reading = reading; D.loading = false; D.stale = false; markStale();
+  // the band moves with whatever above it changed height in the same landing; the rows travel only for their own change of place
+  const bandTop = () => (document.getElementById("band-by")?.getBoundingClientRect().top ?? 0) + scrollY, topWas = bandTop();
+  landing = true; render(true); landing = false;
+  const shift = bandTop() - topWas;
+  if (Number.isFinite(shift) && Math.abs(shift) > 0.5) for (const [place, at] of TWF) if (place.includes("|by-")) TWF.set(place, { x: at.x, y: at.y + shift });
+  const rows = await Promise.all(rowAsks.map(get));
   if (gen !== D.gen) return;
   rowAsks.forEach((a, i) => {
     const answer = (rows[i].body?.heads || []).find((x) => x.key === a.h.key);
@@ -207,7 +239,7 @@ async function readWindow() {
     D.held.add(a.h.key);
     for (const row of answer.rows || []) D.rows.push(mapRow(a.h, row));
   });
-  if (rowAsks.length > headsFor(ui.f).length) { // several labels: keep the newest MAX_HELD of what they returned together, so the trail's axis is one reading
+  if (rowAsks.length > headsFor(ui.f).length) { // several labels or model ids: keep the newest MAX_HELD of what they returned together, so the trail's axis is one reading
     D.rows.sort((x, y) => y.ts - x.ts);
     for (const head of D.held) {
       const mine = D.rows.filter((r) => r.head === head);
@@ -382,39 +414,59 @@ function winRow(w) {
  *  dash in its figure's place, so the card keeps its rows instead of collapsing to one word (console.css .bar.gone). */
 const unreadRow = (label) => `<span class="label">${esc(label)}</span><div class="bar gone"></div><span class="pct">${DRAW.dash}</span><span></span>`;
 
+// the three things a card's footer counts, each by its own mark: the group's key names them once, so no card repeats a word
+const MARK = {
+  spent: `<i class="upb-mk sp" aria-hidden="true">$</i>`,
+  tok: `<i class="upb-mk tk" aria-hidden="true"><svg viewBox="0 0 16 16"><rect x="2" y="2.4" width="12" height="2.8" rx="1.4"/><rect x="2" y="6.6" width="8.4" height="2.8" rx="1.4"/><rect x="2" y="10.8" width="5" height="2.8" rx="1.4"/></svg></i>`,
+  req: `<i class="upb-mk rq" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M4 12 12 4M6 4h6v6"/></svg></i>`,
+};
+const GONE_TRACK = `<span class="vbar gone" aria-hidden="true"></span>`;
+/** One row of a card's footer: its mark, its bar on the board's shared scale, its figure ending on the board's one edge. A row
+ *  with no figure to draw keeps its dashed empty track; the reason a money row has no figure stands in the row's own label. */
+const thruRow = (kind, track, fig, label = "", title = "") => `<div class="upb-r"${title ? ` title="${esc(title)}"` : ""}>${MARK[kind]}${label ? `<span class="lab">${esc(label)}</span>` : ""}${track}<b class="v"${fig && fig !== BARE_DASH ? ` data-tn=""` : ""}>${fig}</b></div>`;
 /** What splice itself sent through a login in the window: bars on scales the whole board shares, so the busiest login is
  *  found before a digit is read. Tokens is one bar whose lighter part is what was read from the cache, so a cache that
- *  saves little shows as a bar that is mostly dark, and the share is drawn instead of repeated as a row of its own that
- *  read 97% on every card. While the window reads each cell keeps its track, striped. A login with nothing in the window
- *  keeps one slot that says so once, a signed-out one none at all. A figure nobody reported is a dashed track and a dash;
- *  a key whose money has no figure says why in the row's label, never inside the figure's cell. */
-function thruCells(s, mx, isKey, out = false, has = true) {
+ *  saves little shows as a bar that is mostly dark. While the window reads each row keeps its track, striped. A login with
+ *  nothing in the window keeps all its rows as empty tracks and says so once, on the card. A figure nobody reported is a
+ *  dashed track and a dash; a key whose money has no figure says why in the row's label, never inside the figure's cell. */
+function thruCells(s, mx, isKey) {
   const rows = isKey ? 3 : 2;
-  if (reading()) return out && !has ? "" : `<footer class="thru">${Array.from({ length: rows }, () => GHOST.row([GHOST.bar(4.2), GHOST.track(), GHOST.bar(3.2)])).join("")}</footer>`;
-  if (!s.requests) return out ? "" : `<footer class="thru none${isKey ? " key" : ""}">${DRAW.nothing("No requests")}</footer>`;
-  const missing = (label) => DRAW.unread.cell({ label });
+  if (reading()) return `<footer class="thru upb-thru">${Array.from({ length: rows }, () => GHOST.row([GHOST.bar(1.3), GHOST.track(), GHOST.bar(3.2)])).join("")}</footer>`;
+  // a card nothing was sent through says so once above and keeps the height its rows would take, with nothing drawn in it
+  if (!s.requests) return `<footer class="thru upb-thru upb-held" style="--k:${isKey ? 3 : 2}"></footer>`;
   const cells = [];
   if (isKey) {
     const spent = spentOf(s), why = noCostWhy(s);
-    cells.push(spent == null
-      ? `<span class="barcell gone"><em>${esc(why === "Not reported" ? "Spent" : why)}</em><span class="vbar gone" aria-hidden="true"></span><b class="v">${BARE_DASH}</b></span>`
-      : DRAW.barCell({ w: barW(spent, mx.spend), text: usd(spent), label: "Spent" }));
+    cells.push(spent == null ? thruRow("spent", GONE_TRACK, BARE_DASH, why === "Not reported" ? "Not priced" : why, "Not priced") : thruRow("spent", DRAW.vbar(barW(spent, mx.spend)), usd(spent)));
   }
-  if (noTokens(s)) cells.push(missing("Tokens"));
+  if (noTokens(s)) cells.push(thruRow("tok", GONE_TRACK, BARE_DASH));
   else {
-    const total = tokensOf(s), w = barW(total, mx.tok);
-    const cached = s.noIn < s.requests && total > 0 ? Math.min(100, (s.cached / total) * 100) : 0;
+    const total = tokensOf(s), cached = s.noIn < s.requests && total > 0 ? Math.min(100, (s.cached / total) * 100) : 0;
     if (cached) splitDrawn = true;
-    cells.push(DRAW.barCell({ w, text: tok(total), label: "Tokens", split: cached, title: cached ? `${tok(s.cached)} of ${tok(total)} read from the cache` : "" }));
+    cells.push(thruRow("tok", DRAW.vbar(barW(total, mx.tok), "", cached), tok(total), "", cached ? `${tok(s.cached)} of ${tok(total)} read from the cache` : ""));
   }
-  cells.push(DRAW.barCell({ w: barW(s.requests, mx.req), text: n0(s.requests), label: "Requests" }));
-  return `<footer class="thru">${cells.join("")}</footer>`;
+  cells.push(thruRow("req", DRAW.vbar(barW(s.requests, mx.req)), n0(s.requests)));
+  return `<footer class="thru upb-thru">${cells.join("")}</footer>`;
+}
+/** The line a card with nothing counted in the window says once, on itself. */
+const noReq = (s) => (!reading() && !s.requests ? `<p class="upb-nores">No requests</p>` : "");
+/** What a card leads with, at 1.7rem on its own baseline: a plan with a window read, its highest used share by level with
+ *  that window's name beside it; a plan with no limits to read, a signed-out login and a key, what splice counted (a key its
+ *  spend first); a card with nothing to report leads with its name and draws no figure. */
+function leadFig(s, windows, { key = false, out = false } = {}) {
+  const hi = !key && !out && windows.length ? windows.filter((w) => !w.sub).reduce((a, w) => (a == null || w.used > a.used ? w : a), null) : null;
+  if (hi) return `<p class="upb-fig${hi.used >= 100 ? " lim" : hi.used >= 80 ? " lvl" : ""}"><b data-tn="">${hi.used}%</b><span class="q">${esc(hi.label)} used</span></p>`;
+  if (reading()) return `<p class="upb-fig">${GHOST.bar(6)}</p>`;
+  if (!s.requests) return "";
+  const spent = key ? spentOf(s) : null;
+  if (spent != null) return `<p class="upb-fig">${MARK.spent}<b data-tn="">${usd(spent)}</b></p>`;
+  return noTokens(s) ? "" : `<p class="upb-fig">${MARK.tok}<b data-tn="">${tok(tokensOf(s))}</b></p>`;
 }
 /** The name of a login with no name: "Account", and the act that gives it one, in place, wherever it was pressed (its
  *  card or its row in Where it went). */
 function nameSlot(row, idx, at) {
   if (ui.naming === idx && ui.nameAt === at) {
-    return `<span class="namebox"><input class="field nmfield" type="text" maxlength="48" aria-label="Name this account" value="${esc(ui.nameDraft ?? "")}" placeholder="Name">`
+    return `<span class="namebox${ui.shook === idx ? " shook" : ""}"><input class="field nmfield" type="text" maxlength="48" aria-label="Name this account" value="${esc(ui.nameDraft ?? "")}" placeholder="Name">`
       + DRAW.act({ word: "Save", act: "namesave", cls: `small primary${ui.shook === idx ? " shook" : ""}`, busy: ui.nameBusy, data: ` data-k="${idx}"` })
       + DRAW.act({ word: "Cancel", act: "namestop", cls: "small quiet" })
       + `${ui.nameErr ? DRAW.result(ui.nameErr, "bad") : ""}</span>`;
@@ -424,13 +476,14 @@ function nameSlot(row, idx, at) {
 }
 
 /** A card's height in rem, from what it is built of and never from its figures, so the board's columns are chosen the
- *  same way whatever the window says: its name, its window lines (or the one line that stands for them), the lines it
- *  carries over them (a limit, the request that spent the window) and its footer of bars, which is one height whether
- *  the login sent anything or not. The numbers are this card as it draws (measured at 2548 and 1440). */
+ *  same way whatever the window says: the figure it leads with, its name, its window lines (or the one line that stands for
+ *  them), the lines it carries over them (a limit, the request that spent the window) and its footer of bars, which is one
+ *  height whether the login sent anything or not. The numbers are this card as it draws. */
 const cardH = (kind, rows, out, lines = 0, s = null) => {
-  const foot = kind === "key" ? 7 : out && !s?.requests ? 0 : 5.14;
+  const foot = kind === "key" ? 7 : 5.14;
   const body = kind === "key" ? 1.9 : out ? 3.35 : rows > 0 ? 2.345 * rows : 1.9;
-  return 4.9 + body + foot + 1.9 * lines;
+  const lead = kind === "key" || rows > 0 || out ? 2.9 : 0;
+  return 4.9 + body + foot + lead + 1.9 * lines + (s && !s.requests ? 1.9 : 0);
 };
 
 // the logins at their limit as the last board drew them (null before the first draw), so a lock pops in only on a login
@@ -457,7 +510,7 @@ function planCard(row, mx) {
   const until = held ? windows.filter((w) => w.used >= 100 && w.resetMs).sort((a, b) => b.resetMs - a.resetMs)[0] : null;
   // a provider that answered with no limits says so once, in one muted line with no track beside it; a login with no
   // window read at all is two dashed tracks and their dashes, which say it without a word
-  const body = out ? signInBox(heads[0])
+  const body = out ? signInBox(`plan-${idx}`)
     : rows.length ? `<div class="windows">${rows.join("")}</div>`
       : row.no_usage_at_epoch_seconds ? `<p class="nolimit">No limits reported</p>`
         : `<div class="windows">${unreadRow("5 hours")}${unreadRow("Week")}</div>`;
@@ -468,19 +521,37 @@ function planCard(row, mx) {
   // a login with no window read still draws its unread rows (two, or the one line that says it has no limits)
   const lines = out ? 0 : rows.length || (row.no_usage_at_epoch_seconds ? 0 : 2);
   const ran = ranOut ? `<a class="ranout" href="requests.html?win=7d#${encodeURIComponent(ranOut.id)}">Ran out ${dayClock(new Date(ranOut.ts))}${OPEN}</a>` : "";
-  return { prov: providerOfHead(heads[0]), kind: "plan", name: planName(row) || "Account", used: Math.max(0, ...windows.map((w) => w.used)), s, heads: new Set(heads),
+  const fig = leadFig(s, windows, { out });
+  return { prov: providerOfHead(heads[0]), kind: "plan", name: planName(row) || "Account", used: out || !windows.length ? -1 : Math.max(0, ...windows.filter((w) => !w.sub).map((w) => w.used)), s, heads: new Set(heads),
     rows: lines, h: cardH("plan", lines, out, held || ran ? 1 : 0, s),
     make: (withChips) => `<article class="card pcard${held ? " held" : ""}${out ? " out" : ""}${picked ? " picked" : ""}${ui.landed === idx ? " landed" : ""}" data-a="plan-${idx}" style="--c:${colorOf(providerOfHead(heads[0]))}"${door}>`
+      + topRow(fig, headEnd(withChips ? heads : [], out))
       + `<header>${canName(row) ? nameSlot(row, idx, "card") : `<span class="nm">${esc(planName(row))}</span>`}`
-      + `${row.plan && !planName(row).toLowerCase().includes(row.plan.toLowerCase()) ? `<span class="pv">${esc(row.plan.charAt(0).toUpperCase() + row.plan.slice(1))}</span>` : ""}`
-      + headEnd(withChips ? heads : [], out) + `</header>`
+      + `${row.plan && !planName(row).toLowerCase().includes(row.plan.toLowerCase()) ? `<span class="pv">${esc(row.plan.charAt(0).toUpperCase() + row.plan.slice(1))}</span>` : ""}</header>`
       // the lock pops in over the kit's pop time only on a login that has just reached its limit, never on a redraw
       + (held ? `<p class="heldline">${DRAW.lock(until?.resetMs ? `Limit reached until ${backWord(new Date(until.resetMs))}` : "Limit reached", { pop: heldKnown != null && !heldKnown.has(idx) })}${ran}</p>` : ran ? `<p class="heldline">${ran}</p>` : "")
-      + body
-      + thruCells(s, mx, false, out, false) + (lead ? `<span class="drill" aria-hidden="true">${DOWN}</span>` : "") + `</article>` };
+      + body + noReq(s)
+      + thruCells(s, mx, false) + (lead ? `<span class="drill" aria-hidden="true">${DRAW.go}</span>` : "") + `</article>` };
 }
-/** Where a signed-out login's bars would be: the one way back in, as the card's own button. */
-const signInBox = (head) => `<div class="outbox"><a class="act primary" href="accounts.html?head=${encodeURIComponent(head ?? "")}">Sign in${OPEN}</a></div>`;
+/** The top line of a card: the figure it leads with at the start, and at the end the commands that reach it where the group
+ *  does not say them once, and a signed-out login's state. A card with neither has no top line. */
+const topRow = (fig, end) => (fig || end ? `<div class="upb-top">${fig}${end}</div>` : "");
+/** Where a signed-out login's bars would be: the one way back in, as the card's own button, which works on the card (signStart). */
+function signInBox(target) {
+  const g = ui.signing[target];
+  const data = ` data-t="${esc(target)}"`;
+  if (!g) return `<div class="outbox"><button class="act primary" type="button" data-act="signin"${data}>Sign in</button></div>`;
+  const stop = DRAW.act({ word: "Cancel", act: "signstop", cls: "small quiet", data });
+  if (g.state === "fail") {
+    return `<div class="upb-login bad${ui.signShook === target ? " shook" : ""}"><p class="run why">Not completed</p>${g.why ? `<p class="upb-why">${esc(g.why)}</p>` : ""}`
+      + `<div class="upb-loginrow">${DRAW.act({ word: "Try again", act: "signin", cls: "small primary", data })}${stop}</div></div>`;
+  }
+  return `<div class="upb-login"><p class="run"><i class="upb-spin" aria-hidden="true"></i>Signing in</p>`
+    + (g.code ? `<button class="upb-code" type="button" data-act="signcopy"${data} aria-label="Copy the code">${esc(g.code)}</button><p class="upb-hint">Enter this code on the sign-in page</p>` : "")
+    + `<div class="upb-loginrow">${g.url ? DRAW.act({ word: "Open sign-in", act: "signopen", cls: "small", data }) : ""}`
+    + (g.by === "paste" ? `<input class="field upb-codein" type="text"${data} placeholder="Paste code" aria-label="Paste code" autocomplete="off" spellcheck="false">` : "")
+    + `${stop}</div></div>`;
+}
 /** The end of a card's header: the commands that reach it where the group does not say them once, and a signed-out
  *  login's state, as Accounts puts it, at the right. */
 const headEnd = (heads, out) => (heads.length || out
@@ -496,8 +567,9 @@ function goneCard(g, mx) {
   const pk = pickedAccount(), picked = Boolean(pk && pk.head === g.head && pk.labels.includes(g.label));
   return { prov: providerOfHead(g.head), kind: "plan", name: plain(label), used: -1, s, heads: new Set([g.head]), rows: 0, h: cardH("plan", 0, true, 0, s),
     make: (withChips) => `<article class="card pcard out gone${picked ? " picked" : ""}" data-a="gone-${esc(key)}" style="--c:${colorOf(providerOfHead(g.head))}"${door}>`
-      + `<header><span class="nm">${label}</span>${headEnd(withChips ? [g.head] : [], true)}</header>`
-      + signInBox(g.head) + thruCells(s, mx, false, true) + (mine.length ? `<span class="drill" aria-hidden="true">${DOWN}</span>` : "") + `</article>` };
+      + topRow(leadFig(s, [], { out: true }), headEnd(withChips ? [g.head] : [], true))
+      + `<header><span class="nm">${label}</span></header>`
+      + signInBox(`gone-${g.head}|${g.label}`) + noReq(s) + thruCells(s, mx, false) + (mine.length ? `<span class="drill" aria-hidden="true">${DRAW.go}</span>` : "") + `</article>` };
 }
 
 function keyCard(k, print, seen, replaced, mx) {
@@ -508,11 +580,11 @@ function keyCard(k, print, seen, replaced, mx) {
   const pk = pickedAccount(), picked = Boolean(pk && heads.includes(pk.head) && pk.labels.includes(label));
   return { prov: providerOfHead(heads[0]), kind: "key", name: k.name, used: -1, s, heads: new Set(heads), rows: -1, h: cardH("key", 0, false, 0, s),
     make: (withChips) => `<article class="card kcard${picked ? " picked" : ""}" data-a="key-${esc(label)}" style="--c:${colorOf(providerOfHead(heads[0]))}"${door}>`
-      + `<header><span class="nm">${keyWord(k.name, seen)}</span>`
-      + `${replaced ? `<span class="pv">Replaced</span>` : ""}${headEnd(withChips ? [...new Set(heads)] : [], false)}</header>`
+      + topRow(leadFig(s, [], { key: true }), headEnd(withChips ? [...new Set(heads)] : [], false))
+      + `<header><span class="nm">${keyWord(k.name, seen)}</span>${replaced ? `<span class="pv">Replaced</span>` : ""}</header>`
       // a key's provider sends no plan window: its limits read as not reported, never a zero (spec section 11)
-      + `<p class="nolimit">Limits not reported by provider</p>`
-      + thruCells(s, mx, true) + (door ? `<span class="drill" aria-hidden="true">${DOWN}</span>` : "") + `</article>` };
+      + `<p class="nolimit">Limits not reported by provider</p>` + noReq(s)
+      + thruCells(s, mx, true) + (door ? `<span class="drill" aria-hidden="true">${DRAW.go}</span>` : "") + `</article>` };
 }
 
 /** The board: every plan login and every key, each a card, grouped under its provider's name and dot, the group with
@@ -556,23 +628,32 @@ function moneyHtml() {
   // a card's html is made above, against the logins the last board held; this board is the next one's last
   heldKnown = heldNow;
   keepShape(ordered);
-  return boardHead() + DRAW.masonry(planBoard(ordered, boardCols()).map(groupHtml), 38, { cls: "plans" });
+  return boardHead(cards) + DRAW.masonry(planBoard(ordered, boardCols()).map(groupHtml), 38, { cls: "plans" });
 }
-/** One column of a provider's cards, as a block of the balanced board: the first column of a provider carries its name, the
- *  ones after it continue it (data-cont: the board leaves the room the name took), so the cards of one provider start on
- *  one line wherever the board puts the groups that come after them. */
-const groupHtml = (it) => `<section class="ugroup" data-cols="1"${it.first ? "" : " data-cont"} style="--c:${colorOf(it.g.prov)}">${it.first
-  ? `<h3><i class="blot" aria-hidden="true"></i>${esc(it.g.name)}${it.g.chips ? `<span class="cmds">${it.g.chips}</span>` : ""}</h3>` : ""}`
-  + `<div class="gcol">${it.col.map((card) => card.html).join("")}</div></section>`;
-// whether the last read drew a cache share inside a card's tokens bar, so the legend names the lighter part only then
+/** One column of a provider's cards, as a block of the balanced board. Every column of a provider is headed by its dot and
+ *  name, so no column starts headless; the first also carries the commands that reach the whole group and the key to the
+ *  footer's marks in words, and each next column carries the same marks alone. */
+const groupHtml = (it) => {
+  const g = it.g, keyed = g.cards.some((c) => c.kind === "key"), word = (w) => (it.first ? `<span>${w}</span>` : "");
+  const keys = `<span class="upb-keys">${keyed ? `<span class="upb-kk">${MARK.spent}${word("Spent")}</span>` : ""}<span class="upb-kk">${MARK.tok}${word("Tokens")}</span>`
+    + `${it.first && splitDrawn ? `<span class="upb-kk"><i class="sw cached" aria-hidden="true"></i><span>Cached</span></span>` : ""}<span class="upb-kk">${MARK.req}${word("Requests")}</span></span>`;
+  return `<section class="ugroup" data-cols="1" style="--c:${colorOf(g.prov)}"><h3><i class="blot" aria-hidden="true"></i>${esc(g.name)}${it.first && g.chips ? `<span class="cmds">${g.chips}</span>` : ""}${keys}</h3>`
+    + `<div class="gcol">${it.col.map((card) => card.html).join("")}</div></section>`;
+};
+// whether the last read drew a cache share inside a card's tokens bar, so the key names the lighter part only then
 let splitDrawn = false;
-/** A card draws two kinds of bar, and whose count each one is belongs to the band, not to every card: the window meters
- *  are each provider's limits, the bars under the rule are what splice itself sent, in the window and the project read,
- *  and the lighter part of a tokens bar is what was read from the cache. */
-const boardHead = () => `<div class="bandhead"><h2>Plans and keys</h2>`
-  + `<span class="pd-leg"><i class="sw lim"></i>Limits`
-  + `<i class="sw cnt"></i>Counted by splice · ${projectWord() ? `${esc(projectWord())} · ` : ""}${WINDOWS[ui.win].word}`
-  + `${splitDrawn ? `<i class="sw cached"></i>Cached` : ""}</span></div>`;
+/** The band's head: how many of the plan logins stand at their limit, with each login's highest used share as one rung of a
+ *  ladder (the one nearest its limit first), so the board's answer is read before a card is. A login whose limits splice
+ *  has not read is a dashed rung. Before the first read it is the same shape in stripes. */
+const boardHead = (cards = null) => {
+  if (!cards) return `<div class="bandhead upb-head"><div class="upb-lead"><h2>Plans and keys</h2><p class="upb-hero">${GHOST.bar(9)}</p><p class="upb-key"><span><i class="lim" aria-hidden="true"></i>Limits</span><span><i aria-hidden="true"></i>Counted by splice</span></p></div><div class="upb-lad" aria-hidden="true"><p class="kicker">Highest used</p><div class="upb-rungs">${Array.from({ length: 14 }, () => `<i class="upb-rung gh"></i>`).join("")}</div></div></div>`;
+  const plans = cards.filter((c) => c.kind === "plan"), held = plans.filter((c) => c.used >= 100).length;
+  const hero = plans.length ? `<p class="upb-hero"><b${held ? ` class="lim"` : ""} data-tn="">${held}</b><span>of ${plans.length} ${plans.length === 1 ? "login" : "logins"} at their limit</span></p>` : "";
+  const rungs = plans.slice().sort((a, b) => b.used - a.used).map((c) => (c.used < 0 ? `<i class="upb-rung none" title="${esc(c.name)}"></i>`
+    : `<i class="upb-rung${c.used >= 100 ? " full" : ""}" title="${esc(`${c.name}: ${c.used}%`)}"><b style="height:${Math.max(1, Math.min(100, c.used))}%;--c:${colorOf(c.prov)}"></b></i>`)).join("");
+  return `<div class="bandhead upb-head"><div class="upb-lead"><h2>Plans and keys</h2>${hero}<p class="upb-key"><span><i class="lim" aria-hidden="true"></i>Limits</span><span><i aria-hidden="true"></i>Counted by splice</span></p></div>`
+    + (plans.length ? `<div class="upb-lad"><p class="kicker">Highest used</p><div class="upb-rungs" role="img" aria-label="Each login's highest used share, the nearest its limit first">${rungs}</div></div>` : "") + `</div>`;
+};
 /** How many columns of cards the board can hold at this width: a card wants 38rem, the gap between columns 2rem, and
  *  the board never runs past six. Measured on the page's own content box, as the project tiles measure theirs, so every
  *  width is the page's and never the window's. */
@@ -637,10 +718,10 @@ function planBoard(gs, n) {
 /** A card before splice has answered at all: the card's own shape in striped bars, at the height the card itself will
  *  stand, so nothing under the board moves when it lands. [rows] is the window lines the card drew last time (-1 is a
  *  key, whose one line says its limits are not reported) and [h] the height it drew at. */
-const ghostCard = (i, rows = 2, h = 0) => `<article class="card pcard ghosted" style="--i:${i}${h ? `;min-height:${h}rem` : ""}"><header>${GHOST.bar(7)}${GHOST.bar(2.6)}</header>`
+const ghostCard = (i, rows = 2, h = 0) => `<article class="card pcard ghosted" style="--i:${i}${h ? `;min-height:${h}rem` : ""}"><div class="upb-top"><p class="upb-fig">${GHOST.bar(6)}</p></div><header>${GHOST.bar(7)}</header>`
   + (rows > 0 ? `<div class="windows">${Array.from({ length: rows }, () => `${GHOST.bar(3.2)}${GHOST.track()}${GHOST.bar(3)}${GHOST.bar(6)}`).join("")}</div>`
     : `<p class="nolimit">${GHOST.bar(12)}</p>`)
-  + `<footer class="thru">${Array.from({ length: rows < 0 ? 3 : 2 }, () => GHOST.row([GHOST.bar(4.2), GHOST.track(), GHOST.bar(3.2)])).join("")}</footer></article>`;
+  + `<footer class="thru upb-thru">${Array.from({ length: rows < 0 ? 3 : 2 }, () => GHOST.row([GHOST.bar(1.3), GHOST.track(), GHOST.bar(3.2)])).join("")}</footer></article>`;
 // The board's own shape, kept from the last read: each provider's group, in the board's order, with every card's window
 // lines and height. The columns they fall in are worked out again for the width at hand, so a window of another width
 // still opens on the board it will land as. Shapes only: no figure is kept and none is drawn.
@@ -666,10 +747,45 @@ const lastShape = () => {
 const ghostBoard = () => { let i = 0;
   const groups = lastShape().map((cards) => ({ cards: cards.map(([rows, h]) => ({ rows, h })) }));
   return DRAW.masonry(planBoard(groups, boardCols()).map((it) =>
-    `<section class="ugroup" data-cols="1"${it.first ? "" : " data-cont"}>${it.first ? `<h3>${GHOST.bar(5)}</h3>` : ""}<div class="gcol">${it.col.map((card) => ghostCard(i++, card.rows, card.h)).join("")}</div></section>`), 38, { cls: "plans" });
+    `<section class="ugroup" data-cols="1"><h3>${GHOST.bar(5)}</h3><div class="gcol">${it.col.map((card) => ghostCard(i++, card.rows, card.h)).join("")}</div></section>`), 38, { cls: "plans" });
 };
 
 // ---------- what a value can be grouped by; opening one goes a step down with its filter added ----------
+/** A model by the name its command declares; one nobody declared by its id without the trailing date a vendor stamps on it (the
+ *  date stays on hover), and a request that named none says so. */
+const NO_MODEL = new Set(["", "?", "unknown", "none"]);
+const DATED = /-\d{8}$/;
+function modelLabel(id) {
+  if (id == null || NO_MODEL.has(String(id).trim().toLowerCase())) return { text: "No model named", tip: "", none: true };
+  const known = S.labels[id] ?? S.labels[modelKey(id)];
+  if (known) return { text: known, tip: "" };
+  return { text: modelName(S.labels, String(id).replace(DATED, "")), tip: DATED.test(String(id)) ? String(id) : "" };
+}
+/** Agents named by the console's one rule (command · project, the name the user gave winning), two that read alike told apart
+ *  by an ordinal in the order they started and, under the name, the time each started. The live ones that have sent
+ *  nothing are named in the same pass, so a name never changes when a window holds more of them. */
+function agentBook() {
+  const byRow = rowProjects(), sent = new Set([...(D.scoped?.sessions.keys() ?? [])].map((k) => String(k).slice(0, 8)));
+  const items = [...(D.scoped?.sessions.values() ?? [])].map((e) => ({ sid: e.sid, head: [...e.heads][0], idle: false }));
+  for (const r of S.sessionRows) {
+    const tag = String(r.session_id ?? "").slice(0, 8);
+    if (tag && r.availability !== "gone" && !sent.has(tag)) items.push({ sid: r.session_id, head: S.liveHead[tag] ?? null, idle: true });
+  }
+  const facts = items.map((it) => {
+    const row = S.sessions[it.sid] ?? S.sessions[String(it.sid).slice(0, 8)] ?? {}, p = projectOfSid(it.sid, byRow);
+    return { name: row.name, title: row.title, command: it.head ? cmdOf(it.head) : "", project: p.key === NO_PROJECT_KEY || p.key === COMPARE_KEY ? "" : p.label, started: row.started_at ?? null };
+  });
+  const named = facts.map((f) => DRAW.name("session", f));
+  const book = new Map(), alike = new Map();
+  named.forEach((n, i) => (alike.get(n.text) ?? alike.set(n.text, []).get(n.text)).push(i));
+  // two that read alike are told apart by when each started; a name the user gave is never numbered, an unnamed one is
+  for (const idx of alike.values()) if (idx.length > 1) idx.sort((a, b) => +new Date(facts[a].started ?? 0) - +new Date(facts[b].started ?? 0)).forEach((i, n) => { named[i] = { ...named[i], text: named[i].own ? named[i].text : `${named[i].text} ${n + 1}`, alike: true }; });
+  items.forEach((it, i) => {
+    const f = facts[i], sub = named[i].alike && f.started && !Number.isNaN(+new Date(f.started)) ? `since ${backWord(new Date(f.started))}` : "";
+    book.set(String(it.sid).slice(0, 8), { text: it.sid === COMPARE_KEY ? COMPARE_LABEL : named[i].text, sub, idle: it.idle, sid: it.sid, head: it.head });
+  });
+  return book;
+}
 const DIMS = {
   account: { word: "Accounts", one: "Account" },
   project: { word: "Projects", one: "Project" },
@@ -683,7 +799,7 @@ function reqUrl(extra = {}, f = ui.f) {
   const p = new URLSearchParams({ win: ui.win });
   if (ui.project) p.set("project", ui.project);
   if (f.account) p.set("account", f.account.split(SEP)[0]);
-  if (f.model) p.set("model", f.model);
+  if (f.model) p.set("model", f.model === ui.f.model && D.modelIds?.length === 1 ? D.modelIds[0] : f.model);
   if (f.agent) p.set("session", String(f.agent).slice(0, 8));
   for (const [k, v] of Object.entries(extra)) p.set(k, v);
   return `requests.html?${p}`;
@@ -711,15 +827,42 @@ function groupsOf(by) {
         gone: !row && isPlanHead(lead.head) && REF_SHAPE.test(String(lead.label)) };
     });
   }
-  if (by === "model") return [...w.models.values()].map((e) => ({ k: e.id, label: esc(modelName(S.labels, e.id)), sub: "", heads: e.heads, s: e }));
+  if (by === "model") return [...w.models.values()].map((e) => { const m = modelLabel(e.id); return { k: e.id, label: esc(m.text), tip: m.tip, none: m.none, sub: "", heads: e.heads, s: e }; });
   const byRow = rowProjects();
-  if (by === "agent") return [...w.sessions.values()].map((e) => ({ k: e.sid, label: esc(sessTitle(String(e.sid).slice(0, 8))), sub: esc(projectOfSid(e.sid, byRow).label), heads: e.heads, s: e }));
+  if (by === "agent") { const book = agentBook(); return [...w.sessions.values()].map((e) => { const a = book.get(String(e.sid).slice(0, 8)); return { k: e.sid, label: esc(a?.text ?? sessTitle(String(e.sid).slice(0, 8))), sub: esc(a?.sub ?? ""), heads: e.heads, s: e }; }); }
   const m = new Map();
   for (const e of w.sessions.values()) {
     const p = projectOfSid(e.sid, byRow), g = m.get(p.key) ?? { k: p.key, label: esc(p.label), sub: "", heads: new Set(), s: ZERO() };
     fold2(g.s, e); g.heads = unionHeads(g.heads, e.heads); m.set(p.key, g);
   }
   return [...m.values()];
+}
+/** What the list knows of and the window never saw: every login and key the roster holds, every project with a live session, every
+ *  model a command declares, every live agent that sent nothing. Only the unfiltered list has them: under a filter, the
+ *  rest of the roster is not what the list is about. Each reads as an item of its own with no figures. */
+function idleOf(by, active) {
+  if (hasFilter() || ui.project != null) return [];
+  // a command still being counted, or one that could not be read, has not said what went through it: nothing it serves is
+  // said to have had no requests until it has answered
+  const unsure = new Set([...(D.reading ?? []), ...D.errors.map((cmd) => S.heads.find((h) => h.command === cmd)?.key).filter(Boolean)]);
+  if (unsure.size && by !== "account") return [];
+  const have = new Set(active.map((e) => e.k)), out = [];
+  const idle = (k, label, extra = {}) => out.push({ k: `idle:${k}`, label, sub: "", heads: new Set(), s: ZERO(), idle: true, ...extra });
+  if (by === "account") {
+    const named = new Set(active.map((e) => e.row).filter(Boolean));
+    const usedKey = (name) => [...D.scoped.accounts.values()].some((e) => keyRecord(e.label)?.name === name);
+    for (const a of S.accounts) if (a.kind !== "api-key" && !named.has(a) && !(a.heads || []).some((h) => unsure.has(h))) idle(`${(a.heads || []).join(",")}|${a.ref ?? a.display_name ?? a.label}`, esc(planName(a)));
+    for (const k of S.keys) if (!unsure.size && !usedKey(k.name)) idle(`key|${k.name}|${k.fingerprint}`, keyWord(k.name, k.first_seen_epoch_seconds));
+  } else if (by === "project") {
+    for (const g of S.groups) if (!have.has(g.key)) idle(g.key, esc(g.label));
+  } else if (by === "model") {
+    const seen = new Set(active.map((e) => modelKey(e.k).replace(DATED, "")));
+    for (const [key, id] of S.declared) if (!seen.has(key.replace(DATED, ""))) idle(id, esc(modelLabel(id).text));
+  } else if (by === "agent") {
+    const book = agentBook();
+    for (const a of book.values()) if (a.idle) idle(a.sid, esc(a.text), { sub: esc(a.sub) });
+  }
+  return out.sort((a, b) => plain(a.label).localeCompare(plain(b.label)));
 }
 const niceTop = (v) => { const p = 10 ** Math.floor(Math.log10(Math.max(v, 1e-9))), m = v / p; return ([1, 1.5, 2, 3, 4, 5, 6, 8, 10].find((x) => m <= x) ?? 10) * p; };
 const headsOrder = () => S.heads.map((h) => h.key);
@@ -749,8 +892,8 @@ const sumParts = (xs) => xs.reduce((a, [, v]) => a + v, 0);
 function chartHtml() {
   const money = ui.measure === "cost";
   const sw = DRAW.switcher([["tokens", "Tokens"], ["cost", "Cost"]], ui.measure, "measure", "Measure");
-  const headOf = (note) => `<div class="bandhead"><h2>${money ? "Cost" : "Tokens"} · ${WINDOWS[ui.win].word}</h2>${note}${sw}</div>`;
-  const n = ui.win === "5h" ? 20 : 7;
+  const headOf = (note) => `<div class="bandhead"><h2>${money ? "Cost" : "Tokens"}</h2>${note}${sw}</div>`;
+  const n = ui.win === "5h" ? 20 : DAYS[ui.win];
   const xrow = (sl) => `<div class="xrow" style="--n:${n}">${(sl ?? Array.from({ length: n }, () => ({ label: "" }))).map((x) => `<span class="cx${x.now ? " part" : ""}">${esc(x.label)}</span>`).join("")}</div>`;
   // reading: the band keeps its head, its switch and its own shape, each column a striped bar of one height, so the
   // page under it never moves when the window's figures arrive, and no shape it invented reads as the window's own
@@ -795,25 +938,25 @@ function chartHtml() {
     + (money && kinds.includes("val") ? `<span class="key kind"><i class="hatch" style="--c:var(--text-mute)"></i>On your plan</span>` : "")
     + (money && kinds.includes("mon") ? `<span class="key kind"><i style="--c:var(--text-mute)"></i>Spent on keys</span>` : "")
     // the last column is the one still filling: its top edge is open and its parts lighter, and the legend says so once
-    + `<span class="key part"><i aria-hidden="true"></i>${ui.win === "7d" ? "Today, so far" : "This quarter hour, so far"}</span>`;
+    + `<span class="key part"><i aria-hidden="true"></i>${ui.win === "5h" ? "This quarter hour, so far" : "Today, so far"}</span>`;
   // an empty window keeps its frame, its slots and its days, and says so once inside the plot
   if (!(peak > 0)) {
-    const why = !reqs ? (uncounted() ? "Nothing counted yet" : `No requests in the ${WINDOWS[ui.win].word}`) : money ? "Nothing priced" : "No tokens counted";
+    const why = !reqs ? (uncounted() ? "Nothing counted yet" : "No requests") : money ? "Nothing priced" : "No tokens counted";
     return head + lead + `<div class="plot empty"><div class="cbars" style="--n:${n}">${sl.map((x) => `<div class="cbar${x.now ? " part" : ""}"><span class="slot"></span></div>`).join("")}</div>`
       + `<p class="plotnone">${DRAW.nothing(why)}</p></div>${xrow(sl)}${flane}<div class="legend">${keys}</div>`;
   }
   const top = niceTop(peak);
-  const stackOf = (x, k) => {
-    const parts = x[k], total = sumParts(parts);
-    if (!total) return `<div class="cstack ${k}" style="height:0%"></div>`;
-    return `<div class="cstack ${k}" style="height:${((total / top) * 100).toFixed(2)}%"><span class="cfig">${fmt(total)}</span>`
+  const stackOf = (x, k, i) => {
+    const parts = x[k], total = sumParts(parts), at = `${i}:${k === "mon" ? "m" : "p"}`;
+    if (!total) return `<div class="cstack ${k}" data-ck="${at}" style="height:0%"></div>`;
+    return `<div class="cstack ${k}" data-ck="${at}" style="height:${((total / top) * 100).toFixed(2)}%"><span class="cfig">${fmt(total)}</span>`
       + parts.map(([h, v]) => `<a class="${k === "val" ? "hatch" : alt.has(h) ? "alt" : ""}" href="${reqUrl({ cmd: cmdOf(h), from: x.from, to: x.to })}" style="--c:${colorOf(providerOfHead(h))};flex:${((v / total) * 1000).toFixed(2)} 1 0" aria-label="${esc(`${cmdOf(h)} ${fmt(v)}`)}">`
         // a column of one part carries its figure once, over the column; a part inside it says whose it is
         + `<span class="sl"><span class="nm">${esc(cmdOf(h))}</span>${parts.length > 1 ? ` <b>${fmt(v)}</b>` : ""}</span></a>`).join("") + `</div>`;
   };
   // a column carries its own tip, drawn with it and shown by hover or focus, so the pointer moving across the chart
   // redraws nothing and a keyboard reaches every column
-  const bars = sl.map((x, i) => `<div class="cbar${kinds.length > 1 ? " pair" : ""}${x.now ? " part" : ""}" data-i="${i}" tabindex="0" role="group" aria-label="${esc(`${tipWhen(x)}: ${kinds.map((k) => fmt(sumParts(x[k]))).join(", ")}`)}">${kinds.map((k) => stackOf(x, k)).join("")}${tipHtml(x, i, sl.length, kinds, fmt)}</div>`).join("");
+  const bars = sl.map((x, i) => `<div class="cbar${kinds.length > 1 ? " pair" : ""}${x.now ? " part" : ""}" data-i="${i}" data-href="${reqUrl({ from: x.from, to: x.to })}" tabindex="0" role="link" aria-label="${esc(`${tipWhen(x)}: ${kinds.map((k) => fmt(sumParts(x[k]))).join(", ")}`)}">${kinds.map((k) => stackOf(x, k, i)).join("")}${tipHtml(x, i, sl.length, kinds, fmt)}</div>`).join("");
   // the axis is drawn at round values, so its money reads in whole dollars: cents of zero on a gridline say nothing
   const grid = [1, .5].map((f) => `<div class="gl" style="bottom:${f * 100}%"><span>${money ? fmt(top * f).replace(/\.00$/, "") : fmt(top * f)}</span></div>`).join("");
   return head + lead + `<div class="plot">${grid}<div class="cbars" style="--n:${n}">${bars}</div></div>${xrow(sl)}${flane}<div class="legend">${keys}</div>`;
@@ -822,7 +965,7 @@ function chartHtml() {
  *  the legend and each part's own label for assistive tech still carry both. The figures over the columns stay only
  *  while no two of them touch: on narrow slots they would run into each other, and the tip carries them. */
 function fitParts(el) {
-  for (const s of el.querySelectorAll(".cstack > a > .sl, .tstack > i > b")) {
+  for (const s of el.querySelectorAll(".cstack > a > .sl")) {
     const part = s.parentElement, fits = () => s.offsetWidth <= part.clientWidth - 6 && s.offsetHeight <= part.clientHeight;
     if (fits()) continue;
     s.querySelector(".nm, .w")?.remove();
@@ -868,7 +1011,7 @@ function fitChips(el) {
 }
 // a slice's failed requests, and the rate-limited ones among them, in words: what a door to them reads aloud
 const failWords = (x) => `${n0(x.failed)} failed of ${n0(x.n)} requests${x.limited ? `, ${n0(x.limited)} of them rate-limited` : ""}`;
-const tipWhen = (x) => (ui.win === "5h" ? `${clock(new Date(x.from))} to ${clock(new Date(x.to))}` : x.label === "Today" ? "Today, so far" : `${x.label} ${new Date(x.from).getDate()}`);
+const tipWhen = (x) => (ui.win === "5h" ? `${clock(new Date(x.from))} to ${clock(new Date(x.to))}` : x.now ? "Today, so far" : new Date(x.from).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }));
 function tipHtml(x, i, n, kinds, fmt) {
   const span = tipWhen(x);
   const part = (k) => {
@@ -920,6 +1063,8 @@ function costCell(s, max) {
  *  track and a dash, never 0. */
 const tokCell = (s, max) => (noTokens(s) ? `<span class="cell tok"><span class="vbar gone" aria-hidden="true"></span><b class="v num">${DRAW.dash}</b></span>`
   : `<span class="cell tok">${DRAW.vbar(barW(tokensOf(s), max))}<b class="v num" data-tn="">${tok(tokensOf(s))}</b></span>`);
+/** The share of an input bar's track the longest bar takes: the names of the parts too narrow to carry their figure stand after its end. */
+const SPAN = 0.7;
 const ROWS_KEY = "splice-usage-rows";
 const lastRows = (k, fallback) => { try { return JSON.parse(localStorage.getItem(ROWS_KEY) || "{}")[k] ?? fallback; } catch { return fallback; } };
 const keepRows = (k, n) => { try { const all = JSON.parse(localStorage.getItem(ROWS_KEY) || "{}"); all[k] = n; localStorage.setItem(ROWS_KEY, JSON.stringify(all)); } catch { /* the ghost keeps its default size */ } };
@@ -928,7 +1073,7 @@ const rankBy = (e) => (ui.rank === "cost" ? Math.max(spentOf(e.s) ?? 0, planValu
 function byHtml() {
   // the legend names the marks the rows draw: a window where no row has key money draws no solid mark, so it names none
   // the head carries what the list is grouped by and, from 14 rows, its Find, so the list starts right under it
-  const headOf = (money, plan, unpriced, extra = "") => `<div class="bandhead"><h2>Where it went</h2>${hwin()}`
+  const headOf = (money, plan, unpriced, extra = "") => `<div class="bandhead"><h2>Where it went</h2>`
     + (money || plan || unpriced ? `<span class="pd-leg">${money ? `<i class="sw money"></i>Spent` : ""}${plan ? `<i class="sw plan"></i>On your plan, at API prices` : ""}${unpriced ? `<i class="sw gone"></i>Not priced` : ""}</span>` : "")
     + extra + DRAW.switcher(Object.entries(DIMS).map(([k, v]) => [k, v.word]), ui.by, "by", "Group by") + `</div>`;
   // the head row's columns are doors that rank the rows; the column the rows are ranked by carries the arrow
@@ -940,25 +1085,34 @@ function byHtml() {
   const waiting = () => headOf(true, true, false) + `<div class="figline sub">${GHOST.fig(2.6)}${GHOST.bar(8)}</div>` + ghostRows(lastRows(`by-${ui.by}`, CUT + 2), 4, colsOf("gbrow"));
   if (reading()) return waiting();
   if ((ui.by === "project" || ui.by === "agent") && S.sessionsPending) return waiting();
-  const every = groupsOf(ui.by).sort((a, b) => rankBy(b) - rankBy(a) || b.s.requests - a.s.requests || tokensOf(b.s) - tokensOf(a.s));
+  const sent = groupsOf(ui.by).sort((a, b) => rankBy(b) - rankBy(a) || b.s.requests - a.s.requests || tokensOf(b.s) - tokensOf(a.s));
+  const every = [...sent, ...idleOf(ui.by, sent)];
   const find = ui.find.trim().toLowerCase();
   const list = find ? every.filter((e) => plain(e.label).toLowerCase().includes(find) || plain(e.sub).toLowerCase().includes(find)) : every;
+  const live = list.filter((e) => !e.idle);
   // Rows that ran on the same commands stand together under one line of chips, said once, whatever the ranking: the groups
   // stand in the order of their best row and the rows inside each keep their rank. A row with no neighbour on its commands
   // keeps its chips on itself.
   const sets = new Map();
-  for (const e of list) { const k = [...e.heads].sort().join(" "); (sets.get(k) ?? sets.set(k, []).get(k)).push(e); }
+  for (const e of live) { const k = [...e.heads].sort().join(" "); (sets.get(k) ?? sets.set(k, []).get(k)).push(e); }
   const order = [];
   for (const rows of sets.values()) rows.forEach((e, i) => order.push({ e, first: i === 0, size: rows.length }));
-  const mx = { tok: Math.max(1, ...list.map((e) => tokensOf(e.s))), req: Math.max(1, ...list.map((e) => e.s.requests)),
-    cost: Math.max(1e-9, ...list.map((e) => Math.max(spentOf(e.s) ?? 0, planValueOf(e.s) ?? 0))) };
+  // what no request reached stands after everything one did, in the list's own order
+  for (const e of list) if (e.idle) order.push({ e, first: false, size: 1 });
+  const mx = { tok: Math.max(1, ...live.map((e) => tokensOf(e.s))), req: Math.max(1, ...live.map((e) => e.s.requests)),
+    cost: Math.max(1e-9, ...live.map((e) => Math.max(spentOf(e.s) ?? 0, planValueOf(e.s) ?? 0))) };
   const cut = order.length <= ui.shown + 1 ? order.length : ui.shown;
   const shown = order.slice(0, cut), tail = order.slice(cut).map((o) => o.e);
-  const row = ({ e, first, size }) => {
+  const row = ({ e, first, size }, at) => {
+    const rank = `<span class="upl-rank" aria-hidden="true">${at + 1}</span>`;
+    if (e.idle) {
+      const none = `<span class="cell"><span class="vbar gone" aria-hidden="true"></span></span>`;
+      return `<div class="brow idle" data-key="by-${ui.by}-${esc(e.k)}"><span class="who">${rank}${ui.by === "project" ? "" : `<i class="dot-c idle" aria-hidden="true"></i>`}<span class="nm">${e.label}</span>${e.sub ? `<span class="sb">${e.sub}</span>` : ""}<span class="state">No requests</span></span>${none}${none}${none}</div>`;
+    }
     const f = ui.by === "project" ? ui.f : { ...ui.f, [ui.by]: e.k }, extra = ui.by === "project" ? { project: e.k } : {};
     const reqFig = `<span class="vbar" aria-hidden="true"><b data-tw="" data-w="${barW(e.s.requests, mx.req).toFixed(1)}" style="width:${barW(e.s.requests, mx.req).toFixed(1)}%"></b></span><b class="v" data-tn="">${n0(e.s.requests)}</b>`;
     const naming = e.nameIdx != null && e.row;
-    const name = naming ? nameSlot(e.row, e.nameIdx, "row") : `<span class="nm">${e.label}</span>`;
+    const name = naming ? nameSlot(e.row, e.nameIdx, "row") : `<span class="nm${e.none ? " nomodel" : ""}"${e.tip ? ` title="${esc(e.tip)}"` : ""}>${e.label}</span>`;
     const line = first && size > 1 ? `<div class="bgrp"><span class="cmds">${chipsOf(e.heads)}</span></div>` : "";
     const dot = ui.by === "project" ? "" : `<i class="dot-c" aria-hidden="true"></i>`;
     // the daemon may already name such a login by its state ("Signed-out account N"): the state is then said once
@@ -967,8 +1121,8 @@ function byHtml() {
       + (e.gone ? `<a class="act small signin" href="accounts.html?head=${encodeURIComponent([...e.heads][0] ?? "")}">Sign in${OPEN}</a>` : "");
     // a login at its limit carries the lock its card has, so a row finds its state as well as its card
     const held = heldRow(e.row) ? `<span class="rowlock" role="img" aria-label="At its limit" data-tip="At its limit">${ICON.lock}</span>` : "";
-    return line + `<div class="brow${e.gone ? " gone" : ""}" data-key="by-${ui.by}-${esc(e.k)}"${DRAW.flip(`by-${ui.by}-${e.k}`)} data-act="pick" data-d="${ui.by}" data-v="${esc(e.k)}" style="--c:${colorOf(providerOfHead([...e.heads][0]))}" role="button" tabindex="0">`
-      + `<span class="who">${dot}${name}${held}${e.sub ? `<span class="sb">${e.sub}</span>` : ""}${outWord}`
+    return line + `<div class="brow${e.gone ? " gone" : ""}${e.row && ui.landed != null && S.accounts[ui.landed] === e.row ? " landed" : ""}" data-key="by-${ui.by}-${esc(e.k)}"${DRAW.flip(`by-${ui.by}-${e.k}`)} data-act="pick" data-d="${ui.by}" data-v="${esc(e.k)}" style="--c:${colorOf(providerOfHead([...e.heads][0]))}" role="button" tabindex="0">`
+      + `<span class="who">${rank}${dot}${name}${held}${e.sub ? `<span class="sb">${e.sub}</span>` : ""}${outWord}`
       + `${size === 1 ? `<span class="cmds">${rowChipsOf(e.heads)}</span>` : ""}</span>`
       + tokCell(e.s, mx.tok)
       + (e.many ? `<span class="cell req num">${reqFig}</span>` : `<a class="cell req num open" href="${reqUrl({ ...extra, order: "price" }, f)}">${reqFig}${OPEN}</a>`)
@@ -978,6 +1132,12 @@ function byHtml() {
   const tailRow = tail.length ? (() => {
     const s = tail.reduce((t, e) => fold2(t, e.s), ZERO());
     const more = Math.min(MORE_STEP, tail.length);
+    // a tail of items no request reached has no figure to add up: its three cells are the empty tracks the rows themselves draw
+    if (tail.every((e) => e.idle)) {
+      const gone = `<span class="cell"><span class="vbar gone" aria-hidden="true"></span></span>`;
+      return `<div class="brow btail" data-act="more" role="button" tabindex="0" aria-label="${esc(`Show ${more} more ${DIMS[ui.by].word.toLowerCase()}`)}">`
+        + `<span class="who"><span class="nm">${DRAW.n(tail.length)} more</span><span class="sb">${esc(tail.length === 1 ? DIMS[ui.by].one.toLowerCase() : DIMS[ui.by].word.toLowerCase())}</span>${DRAW.chev}</span>${gone}${gone}${gone}</div>`;
+    }
     return `<div class="brow btail" data-act="more" role="button" tabindex="0" aria-label="${esc(`Show ${more} more ${DIMS[ui.by].word.toLowerCase()}`)}">`
       + `<span class="who"><span class="nm">${DRAW.n(tail.length)} more</span><span class="sb">${esc(tail.length === 1 ? DIMS[ui.by].one.toLowerCase() : DIMS[ui.by].word.toLowerCase())}</span>${DRAW.chev}</span>`
       + tokCell(s, mx.tok)
@@ -999,12 +1159,12 @@ function byHtml() {
     + (spent != null ? `<span class="mfig"><i class="sw money" aria-hidden="true"></i><b class="fig-focal">${usd(spent)}</b></span>` : "")
     + (value == null && spent == null ? `<b class="fig-focal">${noTokens(tot) || !tot.requests ? DRAW.dash : tok(tokensOf(tot))}</b><span class="cap">tokens${many ? ` across ${many}` : ""}</span>` : `<span class="cap">across ${many}</span>`)
     + `</div>`;
-  const rowsHtml = list.length ? shown.map(row).join("") + tailRow
+  const rowsHtml = list.length ? shown.map((o, i) => row(o, i)).join("") + tailRow
     : `<div class="bnone">${DRAW.nothing(find ? "Nothing by that name" : uncounted() ? "Nothing counted yet" : "No requests")}</div>`;
   // a list still being counted, or narrowed by Find, is not the size the next read lands at: its ghost keeps the last
   // whole count
   if (!find && (list.length || !uncounted())) keepRows(`by-${ui.by}`, list.length ? shown.length + (tail.length ? 1 : 0) + shown.filter((o) => o.first && o.size > 1).length * .6 : 1);
-  const head = headOf(every.some((e) => spentOf(e.s) != null), every.some((e) => planValueOf(e.s) != null), every.some((e) => spentOf(e.s) == null && planValueOf(e.s) == null), finder);
+  const head = headOf(sent.some((e) => spentOf(e.s) != null), sent.some((e) => planValueOf(e.s) != null), sent.some((e) => spentOf(e.s) == null && planValueOf(e.s) == null), finder);
   return head + lead + `<div class="card btable">${colsOf("brow")}${rowsHtml}</div>${fewer}`;
 }
 /** Rows the size of the rows that will land, so the column keeps its height while the window reads. They are not
@@ -1022,8 +1182,10 @@ function tokensHtml() {
   // cache-cold after an account switch
   const legendOf = (cold) => `<span class="pd-leg tk"><i class="sw s1"></i>Cached<i class="sw s2"></i>Written<i class="sw s3"></i>Fresh`
     + `${cold ? `<span class="coldkey">${DRAW.glyph.cold}</span>After a switch` : ""}</span>`;
-  const head = (body, lead = "", cold = false) => `<div class="bandhead"><h2>Tokens by command</h2>${hwin()}${legendOf(cold)}</div>${lead}${body}`;
-  const cols = `<div class="trow thead"><span>Command</span><span class="cell">Input</span><span class="cell">Output</span><span class="cell">No count</span></div>`;
+  const head = (body, lead = "", cold = false) => `<div class="bandhead"><h2>Tokens by command</h2>${legendOf(cold)}</div>${lead}${body}`;
+  const heads = (mx) => `<div class="trow thead"><span>Command</span>${[["Input", mx ? `0 to ${tok(mx.in)}` : ""], ["Output", mx ? `0 to ${tok(mx.out)}` : ""], ["No count", mx ? `% of requests, 0 to ${DRAW.pct(mx.miss / 100) ?? ""}` : ""]]
+    .map(([w, end]) => `<span class="cell hh"><b>${w}</b>${end ? `<small>${end}</small>` : ""}</span>`).join("")}</div>`;
+  const cols = heads(null);
   // the table is kept while the window reads, every row a striped bar the size its figures land at, its columns named
   if (reading()) return head(`<div class="card ttable ghosted">${cols}${Array.from({ length: Math.max(3, lastRows("tok", 7)) }, (_, i) =>
     `<div class="gtrow" style="--i:${i}"><span class="who">${GHOST.bar(7, "chip")}</span>${[0, 1, 2].map(() => `<span class="cell">${GHOST.track()}</span>`).join("")}</div>`).join("")}</div>`,
@@ -1035,17 +1197,18 @@ function tokensHtml() {
   if (list.length || !uncounted()) keepRows("tok", list.length || 1);
   if (!list.length) return head(`<div class="card ttable"><div class="bnone">${DRAW.nothing(uncounted() ? "Nothing counted yet" : "No requests")}</div></div>`);
   const mx = { in: Math.max(1, ...list.map(([, s]) => s?.in ?? 0)), out: Math.max(1, ...list.map(([, s]) => s?.out ?? 0)),
-    // the share of a command's requests that carried no count, on one scale across the commands, so the one that differs reads first
-    miss: Math.max(1, ...list.map(([, s]) => (s && s.requests ? share(Math.max(s.noIn, s.noOut), s.requests) : 0))) };
+    // the share of a command's requests that carried no count, on one scale across the commands that counted some, so the
+    // one that differs reads first; a command that counted none has no share to draw
+    miss: Math.max(1, ...list.map(([, s]) => (s && s.requests && !noTokens(s) ? share(Math.max(s.noIn, s.noOut), s.requests) : 0))) };
   const tin = list.reduce((a, [, s]) => a + (s?.in ?? 0), 0), tcached = list.reduce((a, [, s]) => a + (s?.cached ?? 0), 0);
   // the share of the input read from the cache is drawn first, as the ring Results' Cache hit draws, then written
   const lead = `<div class="figline sub cachelead">${tin > 0 ? `${DRAW.ring(tcached / tin, { size: "focal", label: `${DRAW.pct(tcached / tin)} of input read from cache` })}<b class="fig-focal">${DRAW.pct(tcached / tin)}</b><span class="cap">of <b>${tok(tin)}</b> input read from cache</span>` : `${DRAW.ring(0, { size: "focal" })}<b class="fig-focal">${DRAW.dash}</b><span class="cap">input read from cache</span>`}</div>`;
   let coldAny = false;
-  const rows = list.map(([h, s]) => {
-    if (rd.has(h)) return `<div class="trow"><span class="who">${chip(h)}</span>${[0, 1, 2].map(() => `<span class="cell">${GHOST.track()}</span>`).join("")}</div>`;
-    const noIn = s.noIn >= s.requests, counted = s.requests - Math.max(s.noIn, s.noOut);
+  const rows = list.map(([h, s], at) => {
+    if (rd.has(h)) return `<div class="trow"><span class="who"><span class="upl-rank" aria-hidden="true">${at + 1}</span>${chip(h)}</span>${[0, 1, 2].map(() => `<span class="cell">${GHOST.track()}</span>`).join("")}</div>`;
+    const none = noTokens(s), noIn = s.noIn >= s.requests, counted = s.requests - Math.max(s.noIn, s.noOut);
     const fresh = Math.max(0, s.in - s.cached - s.write);
-    const segs = [["s1", s.cached], ["s2", s.write], ["s3", fresh]];
+    const segs = [["s1", s.cached, "Cached"], ["s2", s.write, "Written"], ["s3", fresh, "Fresh"]];
     const stackW = barW(s.in, mx.in);
     // The input bar is the one place the cache split is drawn: what was read from the cache, what was written to it and
     // what was fresh. A part with room carries its figure; every part's figure, and the share each is, is on the bar's hover
@@ -1053,14 +1216,16 @@ function tokensHtml() {
     // its hover says the provider reports none: never that nothing was written.
     const said = [`Cached ${tok(s.cached)}`, s.write > 0 ? `Written ${tok(s.write)}` : null, `Fresh ${tok(fresh)}`].filter(Boolean).join(" · ")
       + (s.write > 0 ? "" : ` · its provider reports no cache writes`);
-    const inCell = noIn ? `<span class="cell inp"><span class="ttrack empty"></span><b class="v">${DRAW.dash}</b></span>`
-      : `<span class="cell inp"><span class="ttrack" role="img" aria-label="${esc(`Input ${tok(s.in)}: ${said}`)}" data-tip="${esc(said)}"><span class="tstack" style="width:${stackW.toFixed(1)}%">`
-        + segs.map(([cls, v]) => (v > 0 ? `<i class="${cls}" style="width:${((v / s.in) * 100).toFixed(2)}%"><b>${tok(v)}</b></i>` : "")).join("")
-        + `</span></span><b class="v">${tok(s.in)}</b></span>`;
-    const outCell = s.noOut >= s.requests ? `<span class="cell"><span class="vbar gone" aria-hidden="true"></span><b class="v">${DRAW.dash}</b></span>`
+    const inCell = noIn || none ? `<span class="cell inp"><span class="ttrack empty"></span><b class="v">${DRAW.dash}</b></span>`
+      // every part is drawn and named: a part with room carries its figure, a narrower one is named after the bar's end; a
+      // part its provider never reports (a cache write) is a dash there
+      : `<span class="cell inp"><span class="ttrack" role="img" aria-label="${esc(`Input ${tok(s.in)}: ${said}`)}" data-tip="${esc(said)}"><span class="tstack" data-tw="tin:${esc(h)}" data-w="${(stackW * SPAN).toFixed(2)}" style="width:${(stackW * SPAN).toFixed(2)}%">`
+        + segs.map(([cls, v, word]) => `<i class="${cls}${v > 0 ? "" : " nil"}" data-part="${word}" style="width:${s.in > 0 ? ((v / s.in) * 100).toFixed(2) : 0}%"><b>${v > 0 || cls !== "s2" ? tok(v) : DRAW.dash}</b></i>`).join("")
+        + `</span><span class="tout"></span></span><b class="v">${tok(s.in)}</b></span>`;
+    const outCell = none || s.noOut >= s.requests ? `<span class="cell"><span class="vbar gone" aria-hidden="true"></span><b class="v">${DRAW.dash}</b></span>`
       : `<span class="cell">${DRAW.vbar(barW(s.out, mx.out))}<b class="v">${tok(s.out)}</b></span>`;
     const missing = s.requests - counted;
-    const countCell = `<span class="cell rep" title="${esc(`${n0(missing)} of ${n0(s.requests)} requests carried no count`)}">${DRAW.vbar(share(missing, s.requests) > 0 ? Math.max(1.1, share(missing, s.requests) / mx.miss * 100) : 0)}<b class="v" data-tn="">${DRAW.pct(missing / s.requests)}</b></span>`;
+    const countCell = none ? `<span class="cell rep"><span class="vbar gone" aria-hidden="true"></span><b class="v">${DRAW.dash}</b></span>` : `<span class="cell rep" title="${esc(`${n0(missing)} of ${n0(s.requests)} requests carried no count`)}">${DRAW.vbar(share(missing, s.requests) > 0 ? Math.max(1.1, share(missing, s.requests) / mx.miss * 100) : 0)}<b class="v" data-tn="">${DRAW.pct(missing / s.requests)}</b></span>`;
     const accts = [...w.accounts.values()].filter((a) => a.head === h && (a.cold > 0 || a.coldUn > 0)).sort((a, b) => b.cold - a.cold || b.coldUn - a.coldUn);
     const open = ui.cold.has(h) && accts.length > 0;
     // TURNS THAT RAN CACHE-COLD AFTER AN ACCOUNT SWITCH are a mark on the command they belong to, drawn only where there are
@@ -1073,28 +1238,28 @@ function tokensHtml() {
     const coldMark = !cold ? "" : accts.length
       ? `<button class="cold disc" type="button" data-act="cold" data-k="${esc(h)}" aria-expanded="${open}" aria-controls="cold-${esc(h)}" aria-label="${esc(sayCold)}">${DRAW.chev}${mark}</button>`
       : `<span class="cold" role="img" aria-label="${esc(sayCold)}">${mark}</span>`;
-    return `<div class="trow${open ? " open" : ""}" data-key="tok-${esc(h)}" style="--c:${colorOf(providerOfHead(h))}"><span class="who">${chip(h)}${coldMark}</span>${inCell}${outCell}${countCell}</div>`
+    return `<div class="trow${open ? " open" : ""}" data-key="tok-${esc(h)}" style="--c:${colorOf(providerOfHead(h))}"><span class="who"><span class="upl-rank" aria-hidden="true">${at + 1}</span>${chip(h)}${none ? `<span class="state">No counts</span>` : ""}${coldMark}</span>${inCell}${outCell}${countCell}</div>`
       + (open ? coldPlate(h, s, accts) : "");
   }).join("");
-  return head(`<div class="card ttable">${cols}${rows}</div>`, lead, coldAny);
+  return head(`<div class="card ttable">${heads(mx)}${rows}</div>`, lead, coldAny);
 }
 /** The turns of one command that ran cache-cold after splice switched its account, account by account: how many, the
  *  input each sent again with what it is a share of, and the turns splice could not mark. */
 function coldPlate(h, s, accts) {
-  const mx = { cold: Math.max(1, ...accts.map((a) => a.cold)), in: Math.max(1, ...accts.map((a) => a.coldIn)) };
+  const mx = { cold: Math.max(1, ...accts.map((a) => a.cold)), resent: Math.max(1e-9, ...accts.map((a) => (a.in > 0 ? (a.coldIn / a.in) * 100 : 0))) };
   // the turns splice could not mark are a column of the plate only where a login has any: a column of nothing says
   // nothing, and the command's own row already carries the count where it has one
   const un = accts.some((a) => a.coldUn > 0);
   const gone = (a) => !planRowOf(h, a.label) && isPlanHead(h) && REF_SHAPE.test(String(a.label));
   const rows = accts.map((a) => `<div class="crow${un ? " un" : ""}"><span class="cn">${acctLabel(h, a.label, a.name)}${gone(a) ? `<span class="state">Signed out</span>` : ""}</span>`
     + `<span class="cell">${a.cold > 0 ? `${DRAW.vbar(barW(a.cold, mx.cold))}<b class="v">${n0(a.cold)}</b>` : ""}</span>`
-    + `<span class="cell">${a.coldIn > 0 ? `${DRAW.vbar(barW(a.coldIn, mx.in))}<b class="v">${tok(a.coldIn)}</b><small>of ${tok(a.in)}</small>` : ""}</span>`
+    + `<span class="cell"${a.coldIn > 0 ? ` title="${esc(`${tok(a.coldIn)} of ${tok(a.in)} input sent again`)}"` : ""}>${a.coldIn > 0 && a.in > 0 ? `${DRAW.vbar(barW((a.coldIn / a.in) * 100, mx.resent), `cold-${h}-${a.label}`)}<b class="v">${DRAW.pct(a.coldIn / a.in)}</b><small class="um">${tok(a.coldIn)}</small>` : ""}</span>`
     + (un ? `<span class="cell um">${a.coldUn > 0 ? `<b class="v">${n0(a.coldUn)}</b>` : ""}</span>` : "")    + `</div>`).join("");
   const lead = s.coldIn > 0 ? DRAW.focal(tok(s.coldIn), `input sent again, of ${tok(s.in)}`) : "";
   return `<div class="tdetail plate${ui.coldNew === h ? " unfold" : ""}" id="cold-${esc(h)}">`
     + DRAW.section("Account switches", lead
-      + `<div class="ctable"><div class="crow chead${un ? " un" : ""}"><span>Account</span><span class="cell">Cold turns</span><span class="cell">Input sent again</span>`
-      + `${un ? `<span class="cell um">Not marked</span>` : ""}</div>${rows}</div>`)
+      + `<div class="ctable"><div class="crow chead${un ? " un" : ""}"><span>Account</span><span class="cell hh"><b>Cold turns</b><small>0 to ${n0(mx.cold)}</small></span><span class="cell hh"><b>Input sent again, % of its input</b><small>0 to ${DRAW.pct(mx.resent / 100)}</small></span>`
+      + `${un ? `<span class="cell um hh"><b>Not marked</b></span>` : ""}</div>${rows}</div>`)
     + `</div>`;
 }
 
@@ -1127,9 +1292,10 @@ function flagOf(head) {
 }
 function flagHtml(head, f) {
   const href = reqUrl({ win: "24h", cmd: cmdOf(head), from: f.from, ...(f.to ? { to: f.to } : {}), outcome: f.kind === "failing" ? "fail" : "all" });
-  const word = f.kind === "slow" ? `Slow since ${clock(new Date(f.from))}` : `Today ${clock(new Date(f.from))} to ${clock(new Date(f.to))}`;
-  const vs = f.kind === "slow" ? `<span class="vs"><b>${secs(f.now)}</b> since then<span class="dot"></span><b>${secs(f.typ)}</b> before today</span>` : `<span class="vs"><b>${f.n}</b> failed</span>`;
-  return `<span class="flag"><a href="${href}">${word}${OPEN}</a>${vs}</span>`;
+  const word = f.kind === "slow" ? `Slow since ${clock(new Date(f.from))}` : `Failing ${clock(new Date(f.from))} to ${clock(new Date(f.to))}`;
+  // a slow run's two times are marks on the stages' axis; a failing burst says how many it was
+  const vs = f.kind === "slow" ? "" : `<span class="vs"><b>${f.n}</b> failed</span>`;
+  return `<span class="flag ${f.kind}"><a href="${href}">${word}${OPEN}</a>${vs}</span>`;
 }
 
 // ---------- the page ----------
@@ -1152,7 +1318,7 @@ function readNote() {
     + (errs.length ? `<span class="rdset bad">${errs.map(chip).join("")}<span class="why">${NOT_READ}</span></span>` : "")
     + `</span>`;
 }
-const PERF_HEADS = createPerfHeads(scope, { render: () => renderBand("perf"), chip, providerOfHead, cmdOf, flagOf, flagHtml, hasFilter, ui, S, n0, secs, OPEN, OUTCOME_WORD, tagWord, isFailed, NOT_READ });
+const PERF_HEADS = createPerfHeads(scope, { render: () => { renderBand("perf"); renderDoors(); }, chip, providerOfHead, cmdOf, flagOf, flagHtml, hasFilter, ui, S, n0, secs, OPEN, OUTCOME_WORD, tagWord, isFailed, NOT_READ });
 
 const BANDS = {
   money: { el: () => document.getElementById("band-money"), html: moneyHtml },
@@ -1161,16 +1327,132 @@ const BANDS = {
   tok: { el: () => document.getElementById("band-tok"), html: tokensHtml },
   perf: { el: () => document.getElementById("band-perf"), html: () => PERF_HEADS.html() },
 };
+/** A window change keeps every bar at the length it had, striped and with its figure left off, until the new window's read
+ *  lands; then each bar moves to its new length. The columns wait too: the chart is not drawn for a window whose figures
+ *  are not here yet. */
+function markStale() { document.querySelector(".page")?.classList.toggle("upl-stale", D.stale); }
+function winChange(v) {
+  ui.win = v; ui.shown = CUT; ui.find = "";
+  if (!D.scoped) { again(); return; }
+  D.stale = true; markStale(); renderWin();
+  readWindow();
+}
+/** The heights each column of the chart stands at, by the place it holds in the chart: the primary stack (tokens, or a plan's
+ *  value) and the key money stack, so a switch from Tokens to Cost moves the same column and a new window moves the first
+ *  columns both windows have. */
+const columnHeights = (el) => {
+  const box = el.querySelector(".cbars")?.getBoundingClientRect();
+  return new Map([...el.querySelectorAll(".cstack[data-ck]")].map((c) => {
+    const r = c.getBoundingClientRect();
+    return [c.dataset.ck, { h: c.style.height, left: box ? r.left - box.left : 0, width: r.width, px: r.height, node: c }];
+  }));
+};
+/** The columns a window change keeps move from their old height to the new, the ones it adds grow from nothing, and the ones
+ *  it no longer has fold down to nothing where they stood, all over the one move time. */
+function glideColumns(el, was) {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const stacks = [...el.querySelectorAll(".cstack[data-ck]")], kept = new Set(stacks.map((c) => c.dataset.ck));
+  for (const c of stacks) {
+    const to = c.style.height, from = was.get(c.dataset.ck)?.h ?? "0%";
+    if (from === to) continue;
+    c.style.transition = "none"; c.style.height = from;
+    c.getBoundingClientRect();
+    c.style.transition = "height var(--t-snap) var(--e-out)"; c.style.height = to;
+  }
+  const box = el.querySelector(".cbars"), leaving = [];
+  for (const [key, old] of was) {
+    if (kept.has(key) || !box || !(old.px > 0)) continue;
+    const ghost = old.node.cloneNode(true);
+    ghost.removeAttribute("data-ck");
+    ghost.classList.add("uch-leave");
+    Object.assign(ghost.style, { position: "absolute", left: `${old.left}px`, bottom: "0", width: `${old.width}px`, height: `${old.px}px`, transition: "none" });
+    box.append(ghost); leaving.push(ghost);
+  }
+  if (leaving.length) {
+    box.getBoundingClientRect();
+    for (const g of leaving) { g.style.transition = "height var(--t-snap) var(--e-out), opacity var(--t-snap) var(--e-out)"; g.style.height = "0px"; g.style.opacity = "0"; }
+  }
+  if (leaving.length) holdFold(el);
+  setTimeout(() => { for (const c of stacks) c.style.transition = ""; for (const g of leaving) g.remove(); }, FOLD_MS);
+}
 /** One band re-drawn on its own: a hover moves nothing else, and [grow] lets what changed grow into its new length. */
+const drawn = new WeakMap();
+// a band whose columns or rows are still folding away is drawn again once they have, never in the middle of it
+const FOLD_MS = 300;
+const folding = new WeakMap(), foldTimers = new Map();
+const holdFold = (el) => folding.set(el, performance.now() + FOLD_MS);
+/** The rows of a table by the thing each stands for, with where each stood. */
+const rowsOf = (el) => new Map([...el.querySelectorAll(".brow[data-key], .trow[data-key]")].map((node, at) => [node.dataset.key, { node, at, h: node.getBoundingClientRect().height }]));
+/** A new window's read lands on rows drawn for the old one: a row the new window brings arrives with its bars growing from
+ *  nothing, and a row it does not have folds down where it stood, over the one move time. The rows both have move their bars
+ *  by the kit's own tween. */
+function flowRows(el, was) {
+  if (!was?.size || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const now = rowsOf(el), after = [...now.values()];
+  for (const [key, row] of now) if (!was.has(key)) row.node.classList.add("arrive");
+  const folding = [];
+  for (const [key, old] of was) {
+    if (now.has(key)) continue;
+    const ghost = old.node.cloneNode(true);
+    ghost.removeAttribute("data-key"); ghost.removeAttribute("data-act"); ghost.removeAttribute("role"); ghost.removeAttribute("tabindex");
+    ghost.classList.add("leave");
+    ghost.style.height = `${old.h}px`;
+    const at = after[Math.min(old.at, after.length - 1)]?.node;
+    if (!at) continue;
+    old.at >= after.length ? at.after(ghost) : at.before(ghost);
+    folding.push(ghost);
+  }
+  if (!folding.length) return;
+  el.getBoundingClientRect();
+  for (const g of folding) g.classList.add("folds");
+  holdFold(el);
+  setTimeout(() => { for (const g of folding) g.remove(); }, FOLD_MS);
+}
+let landing = false;
 function renderBand(name, grow = false) {
   const el = BANDS[name].el();
-  if (!el) return;
-  el.classList.toggle("grow", Boolean(grow));
-  el.innerHTML = BANDS[name].html();
-  if (name === "money" || name === "tok") DRAW.paint(el, { grow: grow ? "all" : null, reading: false });
+  if (!el || (D.stale && name === "chart")) return;
+  const html = BANDS[name].html();
+  // a band drawn again with what it already shows is left as it stands, so columns and rows still folding away are not cut short
+  const wait = (folding.get(el) ?? 0) - performance.now();
+  if (wait > 0) {
+    clearTimeout(foldTimers.get(name));
+    foldTimers.set(name, setTimeout(() => renderBand(name, grow), wait + 20));
+    return;
+  }
+  const keeps = name === "chart" || name === "by" || name === "tok";
+  if (keeps && drawn.get(el) === html) return;
+  if (keeps) drawn.set(el, html);
+  const was = name === "chart" ? columnHeights(el) : null;
+  const before = landing && (name === "by" || name === "tok") ? rowsOf(el) : null;
+  el.classList.toggle("grow", Boolean(grow) && !was?.size && !before?.size); // what stood moves to its new length instead
+  el.innerHTML = html;
+  if (name === "money" || name === "tok") DRAW.paint(el, { grow: grow ? "all" : name === "money" && ui.landed != null ? new Set([`plan-${ui.landed}`]) : null, reading: false });
   if (name === "chart" || name === "tok") fitParts(el);
+  if (name === "tok") fitInput(el);
+  if (before) flowRows(el, before);
+  if (name === "chart" && was.size) glideColumns(el, was);
   if (name === "by") fitChips(el);
   if (name === "by" || name === "tok" || name === "perf") settleLower();
+}
+/** An input bar's parts: one at least 3rem wide carries its figure inside; a narrower one is named after the bar's end by its
+ *  swatch and figure, so every part of every bar is read where it is drawn. */
+function fitInput(el) {
+  const room = 3 * parseFloat(getComputedStyle(document.documentElement).fontSize);
+  for (const track of el.querySelectorAll(".ttrack")) {
+    const out = track.querySelector(".tout");
+    if (!out) continue;
+    out.textContent = "";
+    for (const part of track.querySelectorAll(".tstack > i")) {
+      const fig = part.querySelector("b");
+      if (!fig || part.offsetWidth >= room) continue;
+      const tag = document.createElement("span");
+      tag.className = "tl";
+      tag.innerHTML = `<i class="sw ${part.className.split(" ")[0]}" aria-hidden="true"></i>`;
+      tag.append(fig);
+      out.append(tag);
+    }
+  }
 }
 /** The three tables' board, laid where the last of them landed: Tokens stands under the shorter column, so when a table
  *  grows or shrinks (a Results row opens, Find narrows the list, a window holds fewer accounts) it may change columns,
@@ -1198,7 +1480,38 @@ function renderPick() {
   if (!S.sessionsPending) {
     GHOST.remember("tiles", S.groups.length >= 2 ? S.groups.length + 1 : 0);
   }
-  document.getElementById("win").innerHTML = DRAW.switcher(Object.entries(WINDOWS).map(([k, v]) => [k, v.label]), ui.win, "win", "Window");
+  renderWin();
+  renderDoors();
+}
+const renderWin = () => { document.getElementById("win").innerHTML = DRAW.switcher(Object.entries(WINDOWS).map(([k, v]) => [k, v.label]), ui.win, "win", "Window"); };
+/** The three lower bands each answer with one figure, and the header carries it as a door that scrolls to the band: the
+ *  spend, the failed share and the cache share are read on the first screen, whatever stands between it and the bands. */
+function renderDoors() {
+  const el = document.getElementById("doors");
+  if (!el) return;
+  const door = (to, word, body) => `<button class="upl-door" type="button" data-act="door" data-v="${to}" aria-label="${esc(word)}"><span class="upl-dk">${esc(word)}</span><span class="upl-dv">${body}</span>${DRAW.go}</button>`;
+  const wait = `${GHOST.bar(5)}`;
+  const out = [];
+  const w = D.scoped, read = !S.error && w && !reading();
+  let by = wait;
+  if (read) {
+    const tot = w.total, value = planValueOf(tot), spent = spentOf(tot);
+    by = value != null || spent != null
+      ? (value != null ? `<i class="sw plan" aria-hidden="true"></i><b class="upl-df" data-tn="door-plan">${usd(value)}</b>` : "") + (spent != null ? `<i class="sw money" aria-hidden="true"></i><b class="upl-df" data-tn="door-spent">${usd(spent)}</b>` : "")
+      : `<b class="upl-df" data-tn="door-tok">${noTokens(tot) || !tot.requests ? DRAW.dash : tok(tokensOf(tot))}</b><span class="upl-dq">tokens</span>`;
+  }
+  out.push(door("by", "Where it went", by));
+  const lead = PERF_HEADS.lead();
+  out.push(door("perf", "Results by command", !lead ? wait : lead.none ? `<span class="upl-dq">No requests</span>`
+    : `<b class="upl-df lv-${lead.level}" data-tn="door-failed">${lead.figure}</b><span class="upl-dq">failed</span>`));
+  let tk = wait;
+  if (read) {
+    const all = [...w.byHead.values()], tin = all.reduce((a, x) => a + x.in, 0), tc = all.reduce((a, x) => a + x.cached, 0);
+    tk = tin > 0 ? `${DRAW.ring(tc / tin, { size: "focal", label: `${DRAW.pct(tc / tin)} of input read from cache` })}<b class="upl-df" data-tn="door-cache">${DRAW.pct(tc / tin)}</b><span class="upl-dq">from cache</span>`
+      : `<b class="upl-df">${DRAW.dash}</b><span class="upl-dq">from cache</span>`;
+  }
+  out.push(door("tok", "Tokens by command", tk));
+  el.innerHTML = out.join("");
 }
 function renderScope() {
   const el = document.getElementById("scope");
@@ -1228,8 +1541,82 @@ function render(grow = false) {
 }
 // the figures on screen belong to the window and filters they were read under: a new one reads again and says so, never
 // drawing the old figures under the new heading
-const again = () => { D.loading = true; D.scoped = null; D.all = null; D.every = null; D.gen++; ui.find = ""; render(); readWindow(); };
+const again = () => { D.stale = false; markStale(); D.loading = true; D.scoped = null; D.all = null; D.every = null; D.gen++; ui.find = ""; render(); readWindow(); };
 async function boot() { render(); await readStanding(); render(); if (!S.error) await readWindow(); }
+
+// ---------- signing a login in again, on its own card ----------
+// The card's button becomes a box that runs the provider's own step (a code to type on its page, a code pasted back, or a page
+// that finishes by itself), then the card draws its meters once; a sign-in that does not complete says so in the box.
+function howFor(target) {
+  if (target.startsWith("plan-")) {
+    const row = S.accounts[Number(target.slice(5))], head = (row?.heads || [])[0];
+    if (!row || !head) return null;
+    if (row.login_place) return { start: `/api/claude-logins/${encodeURIComponent(row.login_place.id)}/login`, body: { label: null }, poll: head, native: true };
+    const label = row.account_labels?.[head] || row.label;
+    // a removed primary has no file to sign in to under its reserved name: signing in with no name is what makes it again
+    return { start: `/api/auth/${encodeURIComponent(head)}/login`, body: label && !(label === "primary" && !row.credential_present) ? { label } : {}, poll: head };
+  }
+  const head = target.slice(5).split("|")[0];
+  return head ? { start: `/api/auth/${encodeURIComponent(head)}/login`, body: {}, poll: head } : null;
+}
+const stopSign = (g) => clearTimeout(g?.timer);
+async function signStart(target) {
+  const how = howFor(target);
+  if (!how) return;
+  stopSign(ui.signing[target]);
+  const g = ui.signing[target] = { how, state: "wait", by: how.native ? "paste" : "browser", code: null, url: null, id: null, gen: (ui.signing[target]?.gen || 0) + 1 };
+  renderBand("money");
+  const res = await API.post(how.start, how.body || {});
+  if (ui.signing[target] !== g) return;
+  if (!res.ok || !res.body?.id) { signFail(target, res.body); return; }
+  g.id = res.body.id;
+  signSeen(target, res.body);
+}
+function signSeen(target, st) {
+  const g = ui.signing[target];
+  if (!g || g.state !== "wait") return;
+  if (st?.state === "failed") { signFail(target, st); return; }
+  if (st?.state === "signed_in" || st?.state === "live_after_restart") { signDone(target); return; }
+  const url = st?.verification_uri || st?.browser_url || null, by = st?.user_code ? "code" : g.how.native ? "paste" : "browser", code = st?.user_code || null;
+  const changed = url !== g.url || by !== g.by || code !== g.code;
+  Object.assign(g, { url, by, code });
+  if (changed) renderBand("money");
+  g.timer = setTimeout(async () => {
+    const res = await API.get(`/api/auth/${encodeURIComponent(g.how.poll)}/login/${encodeURIComponent(g.id)}`);
+    if (ui.signing[target] !== g) return;
+    if (!res.ok) { signFail(target, null); return; }
+    signSeen(target, res.body);
+  }, 1000);
+}
+function signFail(target, st) {
+  const g = ui.signing[target];
+  if (!g) return;
+  stopSign(g);
+  const why = st?.failure_reason ?? st?.error;
+  Object.assign(g, { state: "fail", why: typeof why === "string" ? why.trim() : "" });
+  ui.signShook = target;
+  renderBand("money");
+  setTimeout(() => { ui.signShook = null; }, 400);
+}
+async function signDone(target) {
+  stopSign(ui.signing[target]);
+  delete ui.signing[target];
+  const accounts = await API.get("/api/accounts");
+  if (accounts.ok) S.accounts = accounts.body?.accounts || [];
+  ui.landed = target.startsWith("plan-") ? Number(target.slice(5)) : null;
+  renderBand("money"); renderBand("by");
+  setTimeout(() => { ui.landed = null; }, 1000);
+}
+function signStop(target) { stopSign(ui.signing[target]); delete ui.signing[target]; renderBand("money"); }
+function signCode(field) {
+  const g = ui.signing[field.dataset.t];
+  if (!g?.id || !field.value.trim() || field.readOnly) return;
+  field.readOnly = true;
+  API.post(`/api/auth/${encodeURIComponent(g.how.poll)}/login/${encodeURIComponent(g.id)}/code`, { code: field.value.trim() }).then((res) => {
+    if (ui.signing[field.dataset.t] !== g) return;
+    if (!res.ok) signFail(field.dataset.t, res.body); else signSeen(field.dataset.t, res.body);
+  });
+}
 
 // ---------- naming a login, in place, on the card or the row it belongs to ----------
 // splice's own name for a login with a ref: any words up to 48, never an email (AccountNameStore.kt). A login without
@@ -1273,6 +1660,8 @@ const stopNaming = () => { Object.assign(ui, { naming: null, nameErr: null, name
 document.addEventListener("click", (e) => {
   if (ui.pmenu && !e.target.closest(".pmenu, [data-act=projmenu]")) { ui.pmenu = false; renderPick(); }
   if (e.target.closest("a")) return; // a link opens its requests
+  const col = e.target.closest(".cbar[data-href]"); // a column's own body opens exactly its slice, every command
+  if (col) { location.href = col.dataset.href; return; }
   if (e.target.closest(".namebox")) { // the field and its acts, never the card's or the row's door under them
     const act = e.target.closest("[data-act]");
     if (act?.dataset.act === "namesave") saveName(Number(act.dataset.k));
@@ -1287,8 +1676,9 @@ document.addEventListener("click", (e) => {
     case "reread": S.error = null; boot(); break;
     case "projmenu": ui.pmenu = !ui.pmenu; renderPick(); break;
     case "pickproj": ui.project = el.dataset.p || null; ui.pmenu = false; PICK.set(ui.project); ui.by = nextBy("project") === "project" ? "account" : ui.by; ui.shown = CUT; again(); break;
-    case "win": if (v === ui.win) break; ui.win = v; ui.shown = CUT; again(); break;
-    case "measure": if (v === ui.measure) break; ui.measure = v; renderBand("chart", true); break;
+    case "win": if (v === ui.win) break; winChange(v); break;
+    case "door": document.getElementById(`band-${v}`)?.scrollIntoView({ block: "start", behavior: "smooth" }); break;
+    case "measure": if (v === ui.measure) break; ui.measure = v; renderBand("chart"); break;
     case "by": if (v === ui.by) break; ui.by = v; ui.shown = CUT; ui.find = ""; renderBand("by", true); break;
     case "rank": if (v === ui.rank) break; ui.rank = v; ui.shown = CUT; renderBand("by", true); break;
     case "more": { // only the rows the tail let go of arrive; the rows already on screen stay still
@@ -1298,6 +1688,10 @@ document.addEventListener("click", (e) => {
     }
     case "fewer": ui.shown = CUT; renderBand("by"); BANDS.by.el()?.scrollIntoView({ block: "start", behavior: "smooth" }); break;
     case "cold": { const k = el.dataset.k; if (ui.cold.has(k)) { ui.cold.delete(k); ui.coldNew = null; } else { ui.cold.add(k); ui.coldNew = k; } renderBand("tok"); ui.coldNew = null; break; }
+    case "signin": signStart(el.dataset.t); break;
+    case "signstop": signStop(el.dataset.t); break;
+    case "signopen": { const g = ui.signing[el.dataset.t]; if (g?.url) window.open(g.url, "_blank", "noopener"); root.querySelector(`.upb-codein[data-t="${CSS.escape(el.dataset.t)}"]`)?.focus(); break; }
+    case "signcopy": { const g = ui.signing[el.dataset.t]; if (g?.code) navigator.clipboard?.writeText(g.code).catch(() => {}); break; }
     case "name": ui.naming = Number(el.dataset.k); ui.nameAt = el.dataset.at || "card"; ui.nameErr = null; ui.nameDraft = ""; renderNames();
       root.querySelector(".nmfield")?.focus(); break;
     case "pick": {
@@ -1324,12 +1718,14 @@ document.addEventListener("click", (e) => {
 // field inside it answers for itself
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && ui.pmenu) { ui.pmenu = false; renderPick(); return; }
+  if (e.target.matches?.(".upb-codein")) { if (e.key === "Enter") { e.preventDefault(); signCode(e.target); } return; }
   if (e.target.matches?.(".nmfield")) {
     if (e.key === "Enter") { e.preventDefault(); saveName(ui.naming); }
     if (e.key === "Escape") stopNaming();
     return;
   }
   if (e.key !== "Enter" && e.key !== " ") return;
+  if (e.target.matches?.(".cbar[data-href]")) { e.preventDefault(); location.href = e.target.dataset.href; return; }
   if (e.target.closest?.("button, a, input, textarea, select")) return;
   const el = e.target.closest?.("[role=button][data-act]");
   if (!el) return;
@@ -1347,10 +1743,10 @@ root.addEventListener("input", (e) => {
 // its name are the page's own width, so a resized window is drawn again for it; a name being typed or a search being
 // typed keeps its field
 let sized = null;
-const typing = () => ui.naming != null || document.activeElement?.matches?.(".bfind") === true;
+const typing = () => ui.naming != null || document.activeElement?.matches?.(".bfind, .upb-codein") === true;
 addEventListener("resize", () => {
   clearTimeout(sized);
-  sized = setTimeout(() => { if (ui.naming == null) { renderPick(); renderBand("money"); } renderBand("chart"); renderBand("tok"); if (!typing()) renderBand("by"); }, 200);
+  sized = setTimeout(() => { if (!typing()) { renderPick(); renderBand("money"); } renderBand("chart"); renderBand("tok"); if (!typing()) renderBand("by"); }, 200);
 });
 // what fits is measured in the console's own faces: once they have loaded, the bands that measure are drawn again
 document.fonts?.ready.then(() => { if (reading()) return; renderBand("chart"); renderBand("tok"); if (!typing()) renderBand("by"); });

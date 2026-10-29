@@ -12,10 +12,12 @@
 .filters-row { margin: 0 0 calc(3 * var(--u)); }
 /* the pick on its own line above the filters (PROJECTS.md): the picker where the filters start, the tiles page-wide */
 .pickline:not(:empty) { margin: 0 0 calc(1.5 * var(--u)); }
-.filters { display: flex; flex-wrap: wrap; align-items: center; gap: calc(1.2 * var(--u)); }
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u); }
 .fwrap { position: relative; display: inline-flex; }
+/* a menu that lays its items in columns is as wide as the row of filters, wherever its button stands */
+.fwrap.wide { position: static; }
 .fbtn {
-  display: inline-flex; align-items: center; gap: .55rem; font: 500 .92rem/1 var(--font-name); color: var(--text-body); white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 0.667rem; font: 500 .92rem/1 var(--font-name); color: var(--text-body); white-space: nowrap;
   background: var(--obj-sunk); border: .12rem solid var(--track-line); border-radius: var(--r-in); box-sizing: border-box; height: var(--ctl-h); padding: 0 .8rem; cursor: pointer;
   transition: border-color var(--t-snap) var(--e-out), color var(--t-snap) var(--e-out);
 }
@@ -23,7 +25,7 @@
 .fbtn .down { width: .95rem; height: .95rem; color: var(--text-mute); }
 .fbtn.on { color: var(--text); border-color: var(--text); padding-right: 2.4rem; }  /* a filter that is on is a selection: neutral ink */
 .fbtn.on .down { display: none; }
-.fbtn .pd-sw { margin-right: -.1rem; }  /* an outcome's chip carries its part's swatch from the band's bar */
+.fbtn .pd-sw { margin-right: 0; }  /* an outcome's chip carries its part's swatch from the band's bar */
 .fclear {
   position: absolute; right: .3rem; top: 50%; transform: translateY(-50%); width: 1.7rem; height: 1.7rem; display: grid; place-items: center;
   border: 0; background: none; color: var(--text-body); border-radius: .3rem; cursor: pointer;
@@ -31,58 +33,89 @@
 .fclear:hover { background: var(--track); color: var(--text); }
 .fclear svg { width: .95rem; height: .95rem; }
 .filters .blot, .fmenu .blot { display: inline-block; flex: none; width: .8rem; height: .8rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); }
-/* what each toggle would list, counted by the daemon over the window (requests.js filtersHtml) */
-.filters .n { margin-left: .5rem; font: 500 .84rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
-.filters [aria-pressed="true"] .n { color: var(--text-body); }
-.fmenu { left: 0; right: auto; top: calc(100% + .5rem); max-height: 34rem; overflow-y: auto; animation: menu-in var(--t-snap) var(--e-out) both; }
+.fmenu { left: 0; right: auto; top: calc(100% + .5rem); min-width: 24rem; padding: var(--u); animation: menu-in var(--t-snap) var(--e-out) both; }
+/* the menus that hold many items never scroll inside themselves: the top few stand at full size, and the rest open in
+   place in columns, as wide as the row of filters */
+.fmenu.macct, .fmenu.open { left: 0; right: 0; width: auto; max-width: 84rem; }
+.fmenu .mlist { display: flex; flex-direction: column; }
+.fmenu .mcols { columns: 2 26rem; column-gap: calc(3 * var(--u)); }
+.fmenu .mcols > button { width: 100%; break-inside: avoid; min-width: 0; overflow: hidden; }
+.fmenu .mfoot { margin: var(--u) 0 0; padding: var(--u) calc(1.5 * var(--u)) 0; border-top: .08rem solid var(--track-line); font: 500 .88rem/1.3 var(--font-data); color: var(--text-mute); }
+.fmenu .mfoot b { font-weight: 500; color: var(--text-body); }
+.fmenu .mfoot a { color: var(--text-body); }
+/* the command's menu rows: the chip in its provider's colour, as on every row, then its share */
+.fmenu .rqm-cmd .chip { flex: none; }
+/* the Account menu: a column a command, each login a small card of its own with its acts beside its name */
+.macct .mgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr)); gap: calc(2 * var(--u)); align-items: start; padding: var(--u) calc(.5 * var(--u)); }
+.macct .mgcol { display: flex; flex-direction: column; gap: var(--u); min-width: 0; }
+.macct .mgcol .mgroup { margin: 0 0 calc(.5 * var(--u)); }
+.macct .mlogin { display: flex; flex-direction: column; gap: var(--u); padding: var(--u) calc(1.5 * var(--u)) calc(1.5 * var(--u)); border-radius: var(--r-in); background: var(--obj-sunk); box-shadow: inset 0 0 0 .1rem var(--track-line); }
+.macct .mlogin.on { background: var(--sel-face); box-shadow: inset 0 0 0 .12rem var(--sel-line); }
+.macct .ml-top { display: flex; align-items: center; gap: var(--u); min-width: 0; }
+.macct .ml-top .act { flex: none; text-decoration: none; }
+.macct .mlogin button.ml-name { flex: 0 1 auto; min-width: 0; padding: .2rem 0; overflow: hidden; text-overflow: ellipsis; }
+.macct .mlogin button.ml-name:hover { background: none; text-decoration: underline; text-underline-offset: .22em; }
+.macct .mlogin button.ml-name::before { display: none; }
+.macct .ml-bar { cursor: pointer; }
+.macct .ml-bar .mc { margin: 0; padding: 0; width: 100%; }
+.macct .ml-bar .mc .vbar { flex: 1 1 auto; width: auto; }
 @keyframes menu-in { from { opacity: 0; transform: translateY(-.3rem); } }
-.fmenu button { display: flex; align-items: center; gap: .7rem; position: relative; }
+.fmenu button { display: flex; align-items: center; gap: 0.667rem; position: relative; }
 .fmenu button[aria-checked="true"]::before { content: ""; position: absolute; left: -.4rem; top: .5rem; bottom: .5rem; width: .22rem; background: var(--text); border-radius: 0 .15rem .15rem 0; }
 /* an item's count with its share of the menu's largest, so the busiest is found before a digit is read */
-.fmenu .mc { display: inline-flex; align-items: center; gap: .6rem; margin-left: auto; padding-left: 1.4rem; }
+.fmenu .mc { display: inline-flex; align-items: center; gap: 0.667rem; margin-left: auto; padding-left: 1.4rem; }
 .fmenu .mc .vbar { flex: none; width: 7rem; }
 .fmenu .mn { min-width: 2.6rem; text-align: right; font: 500 .86rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
 .fmenu button.idle { color: var(--text-mute); }  /* a command with nothing in the window: last, and quiet */
-.fmenu .blots { display: inline-flex; gap: .25rem; width: 1.6rem; flex: none; }
-.fmenu .sname { flex: 1; }
+.fmenu .blots { display: inline-flex; gap: 0.333rem; width: 1.6rem; flex: none; }
+.fmenu .sname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* the accounts under each command's name and dot, so the command is said once for its accounts */
-.fmenu .mgroup { display: flex; align-items: center; gap: .55rem; margin: .55rem .2rem .2rem; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
-.fmenu .mgroup:first-of-type { margin-top: .35rem; }
+.fmenu .mgroup { display: flex; align-items: center; gap: 0.667rem; margin: 0.667rem 0.333rem 0.333rem; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.fmenu .mgroup:first-of-type { margin-top: 0.333rem; }
 .fmenu .mgroup + button, .fmenu .ingroup { padding-left: 1.6rem; }
-.fmenu .mfoot { margin: .35rem .2rem .1rem; font: 500 .88rem/1.3 var(--font-data); color: var(--text-mute); }
-.fmenu .swhen { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); margin-left: 1.2rem; min-width: 5rem; text-align: right; }
+.fmenu .mfoot { margin: 0.333rem 0.333rem 0; font: 500 .88rem/1.3 var(--font-data); color: var(--text-mute); }
+.fmenu .swhen { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); margin-left: 1.333rem; min-width: 5rem; text-align: right; }
 /* a login's state and the act that fixes it share its row: the item takes the width, the act stands at its end */
-.fmenu .mrow { display: flex; align-items: center; gap: .4rem; }
+.fmenu .mrow { display: flex; align-items: center; gap: 0.333rem; }
 .fmenu .mrow > button { flex: 1 1 auto; min-width: 0; }
-.fmenu .mrow > .act { flex: none; margin-right: .3rem; text-decoration: none; }
+.fmenu .mrow > .act { flex: none; margin-right: 0.333rem; text-decoration: none; }
 /* the commands with nothing in the window: dimmed chips on one wrapping row under a word said once */
-.fmenu .idlerow { display: flex; flex-wrap: wrap; gap: .35rem .4rem; margin: .1rem .2rem .45rem; max-width: 28rem; }
-.fmenu button.idlechip { flex: none; gap: .45rem; padding: .32rem .65rem; border: .1rem solid var(--track-line); border-radius: 99rem; font: 500 .84rem/1.1 var(--font-name); color: var(--text-mute); background: none; opacity: .8; }
+.fmenu .idlerow { display: flex; flex-wrap: wrap; gap: 0.333rem 0.333rem; margin: 0 0.333rem 0.333rem; max-width: 28rem; }
+.fmenu button.idlechip { flex: none; gap: 0.333rem; padding: .32rem .65rem; border: .1rem solid var(--track-line); border-radius: 99rem; font: 500 .84rem/1.1 var(--font-name); color: var(--text-mute); background: none; opacity: .8; }
 .fmenu button.idlechip:hover { opacity: 1; color: var(--text); border-color: var(--text-mute); }
 .fmenu button.idlechip[aria-checked="true"] { opacity: 1; color: var(--sel-ink); border-color: var(--sel-line); background: var(--sel-face); }
 .fmenu button.idlechip[aria-checked="true"]::before { display: none; }
-.fmenu .morepill { margin: .4rem .2rem .2rem; }
+.fmenu .morepill { margin: 0.333rem 0.333rem 0.333rem; }
 /* Up to: a day and time to list the requests up to, under the windows it chooses between (Marlin, desk c, Oct 12) */
-.fmenu .goto { display: flex; align-items: center; gap: .6rem; margin: .45rem .2rem .15rem; padding-top: .55rem; border-top: .08rem solid var(--track-line); }
+.fmenu .goto { display: flex; align-items: center; gap: 0.667rem; margin: 0.333rem 0.333rem 0; padding-top: .55rem; border-top: .08rem solid var(--track-line); }
 .fmenu .goto label { font: 500 .88rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
 .fmenu .goto input { font: 500 .92rem/1 var(--font-data); color: inherit; background: var(--track); border: .08rem solid var(--track-line); border-radius: var(--r-in); padding: .4rem .55rem; }
 /* the field types and steps with the arrow keys; its calendar button is gone, because a pick there never reached the
    field (Marlin, p225) and the week's days below are one press each */
 .fmenu .goto input::-webkit-calendar-picker-indicator { display: none; }
-.fmenu .days { display: flex; flex-wrap: wrap; gap: .2rem .3rem; margin: .35rem 0 .1rem; max-width: 20rem; }
-.fmenu .days button { flex: none; padding: .5rem .6rem; }
+.fmenu .days { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--u); margin: var(--u) 0 0; padding: 0 .333rem; }
+.fmenu .days button { justify-content: center; padding: .55rem .4rem; border: .12rem solid var(--track-line); }
 .fmenu .days button[aria-checked="true"]::before { left: .5rem; right: .5rem; top: auto; bottom: .1rem; width: auto; height: .2rem; border-radius: .1rem; }  /* in a row the picked day is underlined, not barred on its left */
 /* a toggle is a control like the pickers, so its rim is solid; a dashed rim on this console means "add" */
 .ftog {
-  display: inline-flex; align-items: center; gap: .55rem; font: 500 .92rem/1 var(--font-name); color: var(--text-body); white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 0.667rem; font: 500 .92rem/1 var(--font-name); color: var(--text-body); white-space: nowrap;
   background: none; border: .12rem solid var(--track-line); border-radius: var(--r-in); box-sizing: border-box; height: var(--ctl-h); padding: 0 .8rem; cursor: pointer;
   transition: border-color var(--t-snap) var(--e-out), color var(--t-snap) var(--e-out);
 }
+/* a toggle that holds a count is a tile of two lines, its mark and count over the count's scale, since the scale is part of
+   what it says; with no count it is the quiet one-line control */
+.ftog .ft-l { display: inline-flex; align-items: center; gap: .667rem; }
+.ftog.tiled { flex-direction: column; align-items: flex-start; justify-content: center; gap: var(--u); height: auto; min-width: 11rem; padding: .7rem .9rem .8rem; }
+.ft-t { display: flex; }
+.ft-tile { display: inline-flex; align-items: center; gap: var(--u); height: 1.9rem; padding: 0 .7rem; border-radius: var(--r-in); background: var(--obj-sunk); box-shadow: inset 0 0 0 .1rem var(--track-line); font: 500 .95rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.ft-bar { display: block; width: 100%; height: .45rem; border-radius: .25rem; background: var(--track); overflow: hidden; }
+.ft-bar > i { display: block; height: 100%; min-width: .2rem; border-radius: .25rem; background: color-mix(in oklab, var(--text) 62%, transparent); transform-origin: left; animation: rq-grow var(--t-snap) var(--e-out) both; }
+@keyframes rq-grow { from { transform: scaleX(0); } }
 .ftog svg { width: 1.1rem; height: 1.1rem; flex: none; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }  /* the rows' own marks, drawn as the lamp draws them */
 .ftog:hover { color: var(--text); border-color: var(--text-mute); }
 .ftog.none:not([aria-pressed="true"]) { color: var(--text-mute); border-color: color-mix(in oklab, var(--track-line) 60%, transparent); }  /* none in the window: quiet, still there */
 .ftog[aria-pressed="true"] { color: var(--sel-ink); background: var(--sel-face); border-color: var(--sel-line); }  /* a filter that is on is the selected look */
-.head .tools { position: relative; display: flex; align-items: center; gap: .8rem; }
+.head .tools { position: relative; display: flex; align-items: center; gap: 0.667rem; }
 
 /* ---------- the band: did it go wrong, was it slow, what did it use ---------- */
 /* four sections side by side where they fit (from 110rem, so 1440 too: stacked two by two the band took half its
@@ -107,13 +140,13 @@
    answers under the axis. Wide, the kit's own four columns. */
 .rqband .pd-stages { container: rqtimes / inline-size; }
 @container rqtimes (max-width: 36rem) {
-  .rqband .pd-stages .pd-grid { grid-template-columns: minmax(0, 1fr) 4.2rem 4.6rem; row-gap: .45rem; }
+  .rqband .pd-stages .pd-grid { grid-template-columns: minmax(0, 1fr) 4.6rem; row-gap: 0.333rem; }
   .rqband .pd-stages .sechead > .pd-leg, .rqband .pd-stages .pd-st > .pd-trk, .rqband .pd-stages .pd-st > .ghost.range { grid-column: 1 / -1; grid-row: 2; }
   .rqband .pd-stages .pd-axis > .pd-ax { grid-column: 1 / -1; grid-row: 1; }
   .rqband .pd-stages .pd-axis > .pd-sl { grid-column: 1 / -1; grid-row: 2; padding-top: 0; }
   .rqband .pd-stages .pd-axis > span:empty { display: none; }
 }
-.rqband .sechead .miss { display: inline-flex; align-items: center; gap: .5rem; font: 500 .84rem/1.2 var(--font-name); color: var(--text-mute); }
+.rqband .sechead .miss { display: inline-flex; align-items: center; gap: 0.667rem; font: 500 .84rem/1.2 var(--font-name); color: var(--text-mute); }
 .rqband .sechead > .pd-count:first-of-type { margin-left: auto; }  /* what a section counts rides the kicker line's end */
 .rqband .pd-seg.on { box-shadow: inset 0 0 0 .16rem var(--text); }  /* the part the list is filtered to */
 .rqband .pd-lb:has(> .pd-sw.on) { color: var(--text); text-decoration: underline; text-underline-offset: .2em; }
@@ -123,17 +156,17 @@
    in the selected look */
 /* the names share one column as wide as the longest of them (to 13rem), and every bar starts at one edge right after it,
    so a short name is never followed by a long empty run before its bar */
-.rqband .kinds { display: grid; grid-template-columns: fit-content(13rem) minmax(7rem, 1fr); column-gap: calc(2 * var(--u)); row-gap: .1rem; }
+.rqband .kinds { display: grid; grid-template-columns: fit-content(13rem) minmax(7rem, 1fr); column-gap: calc(2 * var(--u)); row-gap: 0.333rem; }
 .rqband .kinds > .kr { grid-column: 1 / -1; grid-template-columns: subgrid; }
 .rqband .kinds > .morepill { grid-column: 1 / -1; }
-.kr { display: grid; grid-template-columns: minmax(0, 13rem) minmax(7rem, 1fr); align-items: center; column-gap: calc(2 * var(--u)); margin: 0 -.45rem; padding: .3rem .45rem; border-radius: var(--r-in); color: inherit; text-decoration: none; transition: background var(--t-hover) var(--e-out); }
+.kr { display: grid; grid-template-columns: minmax(0, 13rem) minmax(7rem, 1fr); align-items: center; column-gap: calc(2 * var(--u)); margin: 0 -0.333rem; padding: .3rem .45rem; border-radius: var(--r-in); color: inherit; text-decoration: none; transition: background var(--t-hover) var(--e-out); }
 a.kr:hover { background: var(--track); }
 a.kr:hover .kn { color: var(--text); }
 .kr .kn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 .9rem/1.25 var(--font-name); color: var(--text-body); }
 .kr .barcell > .v { min-width: 3.6rem; font: 500 .9rem/1.2 var(--font-data); }
 a.kr.on { background: var(--sel-face); box-shadow: inset 0 0 0 .12rem var(--sel-line); }
 a.kr.on .kn { color: var(--sel-ink); }
-.rqband .kinds > .morepill { margin: .35rem 0 0; }
+.rqband .kinds > .morepill { margin: 0.333rem 0 0; }
 /* the tokens: the cache ring beside one bar of every token, in the chart colours; none, the shape hollow */
 .tkband { display: flex; align-items: center; gap: calc(3 * var(--u)); min-width: 0; }
 .tkband > .pd-pop { flex: 1 1 auto; min-width: 0; }
@@ -142,16 +175,16 @@ a.kr.on .kn { color: var(--sel-ink); }
 /* the cost: a key's dollars solid, the plan's worth hollow, the two as the list's cost column draws them */
 .rqband .pd-seg.paid, .rqband .pd-sw.paid { background: color-mix(in oklab, var(--text) 62%, transparent); }
 .rqband .pd-seg.onplan, .rqband .pd-sw.onplan { background: none; box-shadow: inset 0 0 0 .12rem color-mix(in oklab, var(--text) 48%, transparent); color: var(--text-body); }
-.rqband .pd-seg.onplan + .pd-seg, .rqband .pd-seg + .pd-seg.onplan { margin-left: .16rem; }
+.rqband .pd-seg.onplan + .pd-seg, .rqband .pd-seg + .pd-seg.onplan { margin-left: 0; }
 .rqcost > .kr { margin-top: 0; }
 /* where it went: the sessions that cost the most on one scale, each line a door to its requests (requests.js bySessionHtml) */
-.bys { display: grid; grid-template-columns: minmax(0, max-content) minmax(6rem, 1fr) max-content; column-gap: calc(2 * var(--u)); row-gap: .1rem; margin-top: var(--u); }
-.byh { grid-column: 1 / -1; margin: 0 0 .25rem; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
-.byr { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; margin: 0 -.45rem; padding: .32rem .45rem; border-radius: .35rem; color: inherit; text-decoration: none; transition: background var(--t-hover) var(--e-out); }
+.bys { display: grid; grid-template-columns: minmax(0, max-content) minmax(6rem, 1fr) max-content; column-gap: calc(2 * var(--u)); row-gap: 0.333rem; margin-top: var(--u); }
+.byh { grid-column: 1 / -1; margin: 0 0 0.333rem; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.byr { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; margin: 0 -0.333rem; padding: .32rem .45rem; border-radius: .35rem; color: inherit; text-decoration: none; transition: background var(--t-hover) var(--e-out); }
 a.byr:hover { background: var(--track); }
 a.byr:hover .bn { color: var(--text); }
 .byr .bn { min-width: 0; font: 500 .92rem/1.2 var(--font-name); color: var(--text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.byr .bb { display: flex; align-items: center; gap: .16rem; min-width: 0; }
+.byr .bb { display: flex; align-items: center; gap: 0.333rem; min-width: 0; }
 .byr .bb b, .byr .bb i { transition: width var(--t-snap) var(--e-out); }
 .byr .bb b, .byr .bb i { height: .62rem; border-radius: .31rem; }
 .byr .bb b { background: color-mix(in oklab, var(--text) 55%, transparent); }
@@ -171,90 +204,104 @@ button.byr:hover .bn { color: var(--text); }
 .rqband.ghosts .psec { gap: calc(2 * var(--u)); }
 .rqband .ghost-row { min-height: var(--ring-focal); }
 .rqband .pd-stat > span > .ghost { display: block; }
-.rqband .pd-stat > span > .ghost.focalfig { margin-bottom: .2rem; }
+.rqband .pd-stat > span > .ghost.focalfig { margin-bottom: 0.333rem; }
 .rqband.ghosts .byr .bb .ghost { box-shadow: none; }                     /* a session's bar, striped, not the plan's hollow */
 .rqband .kr .kn > .ghost { vertical-align: middle; }
 
 /* ---------- the list: its head line, then one table ---------- */
 .requests { display: block; }
 .requests .list { container: rqt / inline-size; display: flex; flex-direction: column; gap: calc(2 * var(--u)); min-width: 0; padding-left: 0; }  /* on the band's left edge */
-/* the list's head: how much of the window it holds, what the bars' parts mean, and the order, at its end */
-.lline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(4 * var(--u)); min-height: var(--ctl-h); }
+/* the list's head: its title and what it counts, how much of the window it holds, and the order, at its end */
+.rql > header { margin-bottom: 0; gap: var(--u) calc(2 * var(--u)); }
+.rql > header > h2 + * { margin-left: 0; }
+.rql-count { padding: 0 calc(1.5 * var(--u)); display: inline-flex; align-items: center; height: calc(var(--ctl-h) * .72); border-radius: var(--r-in); box-shadow: inset 0 0 0 .1rem var(--track-line); font: 500 .9rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); white-space: nowrap; }
+.rql > header > .foot { margin-left: auto; }
+.rql > header > .switch.order { flex: none; }
+.rql > header > .foot ~ .switch.order, .rql > header > .rql-count ~ .switch.order:last-child { margin-left: 0; }
+.rql > header > .rql-count + .switch.order { margin-left: auto; }
 .list .foot { margin: 0; font: 500 .88rem/1.4 var(--font-data); color: var(--text-mute); }
 .list .foot b { font-weight: 500; color: var(--text-body); }
 .foot.held, .foot.reach { display: inline-flex; align-items: center; gap: var(--u); }
 .foot.held .vbar, .foot.reach .vbar { flex: none; width: 7rem; }
-.lline > .switch.order { flex: none; margin-left: auto; }
-/* WHAT THE BARS' PARTS MEAN stands on the table's first line, each mark over the column it explains. Narrow, the marks
-   run as one wrapped line; in the wide table the line is on the table's own grid (see the container rule with the
-   columns), so the cache's shading stands over Tokens, the hatch and the slow tick over Duration, the plan's hollow over
-   Cost, and the relations between rows over the session columns. */
-.lkey { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(3 * var(--u)); margin: 0 -.6rem; padding: .7rem .6rem .1rem; }
+/* WHAT THE MARKS MEAN stands on the table's first line, each over the column it explains. Narrow, the marks run as one
+   wrapped line; in the wide table the line is on the table's own grid (see the container rule with the columns), so the
+   cache's shading stands over Tokens, the hatch and the slow tick over Duration, the plan's hollow over Cost, and the
+   lamps and the relations between rows over the session columns. */
+.lkey { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(3 * var(--u)); margin: 0 -0.667rem; padding: 0 .6rem calc(2 * var(--u)); }
 .lkey > .kg { display: contents; }
 .filters > .switch, .lline > .switch { box-sizing: border-box; height: var(--ctl-h); align-items: stretch; }
-.lg { display: inline-flex; align-items: center; gap: .5rem; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.lg { display: inline-flex; align-items: center; gap: 0.667rem; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); white-space: nowrap; }
 .sw { flex: none; display: inline-block; width: 1.3rem; height: .62rem; border-radius: .15rem; }
 .sw.cached { background: color-mix(in oklab, var(--text) 22%, transparent); }
 .sw.pre { background: repeating-linear-gradient(-45deg, color-mix(in oklab, var(--text) 55%, transparent) 0 .18rem, transparent .18rem .36rem); box-shadow: inset 0 0 0 .08rem color-mix(in oklab, var(--text) 40%, transparent); }
 .sw.p95 { width: .18rem; height: 1rem; border-radius: .08rem; background: var(--text); }
 .sw.plan { box-shadow: inset 0 0 0 .12rem color-mix(in oklab, var(--text) 48%, transparent); }
-.rqpane .fig .fsub > .sw { margin-right: .45rem; vertical-align: -.02rem; }  /* the open request's plan mark, a space before its words */
+/* a lamp's mark in the key: the glyph the row draws, small */
+.kl { flex: none; display: inline-grid; place-items: center; width: 1rem; height: 1rem; font-style: normal; color: var(--text-body); }
+.kl svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.kl.limit { color: var(--limit); }
+.kl.stopped { width: .8rem; height: .8rem; border-radius: .15rem; background: var(--text-body); }
+.rqpane .fig .fsub > .sw { margin-right: 0.333rem; vertical-align: -.02rem; }  /* the open request's plan mark, a space before its words */
 /* A READ THAT REFUSED SAYS SO WHERE IT HAPPENED: the command and one word, above the rows it is missing from, or under
    the rows for a search; the reason goes to the browser's log (fin). One command that cannot answer is not an empty day. */
-.list-wait { display: flex; align-items: center; gap: .55rem; margin: 0; font: 500 .92rem/1.45 var(--font-data); color: var(--text-mute); }
+.list-wait { display: flex; align-items: center; gap: 0.667rem; margin: 0; font: 500 .92rem/1.45 var(--font-data); color: var(--text-mute); }
 .list-wait .wait { --c: var(--text-mute); width: 1.1rem; height: 1.1rem; }
 .list-wait.unread { color: var(--limit); }
 .list-wait .ghost.state { height: .9rem; }
 
-/* THE TABLE: one card, as Usage's results are, its rows on hairlines at its row height. The card's padding is that
-   table's, so the two pages' tables read as one kind of thing. */
-.rqtable { --c: var(--track-line); --t: 6.6rem; display: flex; flex-direction: column; min-width: 0; padding: .35rem 1rem .5rem; }
+/* THE TABLE: one card, as Usage's results are, its rows on hairlines at one row height. It is padded 4u on every side,
+   as the band above it is. */
+.rqtable { --c: var(--track-line); --t: 6.6rem; --ac: 2.4rem; display: flex; flex-direction: column; min-width: 0; padding: calc(4 * var(--u)); }
+.rqtable.has-lead, .list.priced .rqtable { --t: 11.8rem; }  /* a row that says its own day beside its time */
 /* nothing to list: the table keeps its header, and one muted line stands where the rows go, with its acts */
 .rqtable .nomatch { display: flex; width: auto; max-width: none; align-items: center; gap: calc(2 * var(--u)); min-height: 3.7rem; padding: .6rem 0; border: 0; }
 .rqtable .nomatch .state { font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); }
 .rqtable .nomatch .state.limit { color: var(--limit); }
 
 /* ---------- one grid for the header, every row, every burst and every hollow row ---------- */
-/* Wide (the table 92rem and up: 1440 and 3822 alike) a request is ONE LINE: its chevron and lamp, time, session,
-   command, model, account, then its tokens, its time and its cost as bars on shared scales. Narrower, it is two: what
-   it was and how long and how much over where it ran and what it used. The rows reach .6rem past the columns so their
-   hover wash has room round the text, as Usage's rows do. */
-.rq, .rqg, .rqhead, .rqburst {
-  display: grid; align-items: center; column-gap: 1rem; row-gap: .3rem; margin: 0 -.6rem; padding: .6rem;
-  grid-template-columns: .8rem 1.9rem var(--t) minmax(0, 1fr) minmax(10rem, 14rem) 7.4rem;
-  grid-template-areas: "ch lp t who du co" ". . . meta tk tk";
-}
-.list.priced .rqtable { --t: 9.4rem; }  /* in Highest price each row says its own day too */
+/* Wide (the table 94rem and up: 1440 and 3822 alike) a request is ONE LINE: its chevron and lamp, time, session,
+   command, model, account, then its tokens, its time and its cost as bars on shared scales, and at its end the door a
+   row may carry. Narrower, it is two: what it was and how long and how much over where it ran and what it used. The
+   rows reach .6rem past the columns so their hover wash has room round the text, as Usage's rows do. */
+.rq, .rqg, .rqhead { display: grid; align-items: center; column-gap: 1rem; row-gap: 0.333rem; margin: 0 -0.667rem; padding: .6rem;
+  grid-template-columns: .8rem 1.9rem var(--t) minmax(0, 1fr) minmax(10rem, 14rem) 7.4rem var(--ac);
+  grid-template-areas: "ch lp t who du co ac" ". . . meta tk tk tk"; }
 .rq .top, .rqg .top, .rqhead .top { display: contents; }
 .rq .meta, .rqg .meta, .rqhead .meta { grid-area: meta; display: flex; align-items: center; gap: calc(1.5 * var(--u)); min-width: 0; margin: 0; font: 500 .88rem/1.2 var(--font-data); color: var(--text-mute); }
-:is(.rq, .rqg, .rqhead, .rqburst) > .chev, .rqhead > .ch, .rqg > .ch { grid-area: ch; }
-:is(.rq, .rqg, .rqburst) > .lamp, .rqhead > .lp { grid-area: lp; }
-:is(.rq, .rqg, .rqhead, .rqburst) time, :is(.rq, .rqg, .rqhead) .top > :first-child { grid-area: t; }
-:is(.rq, .rqg, .rqhead, .rqburst) .who { grid-area: who; }
+:is(.rq, .rqg, .rqhead) > .chev, .rqhead > .ch, .rqg > .ch { grid-area: ch; }
+:is(.rq, .rqg) > .lamp, .rqhead > .lp { grid-area: lp; }
+:is(.rq, .rqg, .rqhead) time, :is(.rq, .rqg, .rqhead) .top > :first-child { grid-area: t; }
+:is(.rq, .rqg, .rqhead) .who { grid-area: who; }
 :is(.rq, .rqg, .rqhead) .tk { grid-area: tk; }
 :is(.rq, .rqg, .rqhead) .du { grid-area: du; }
 :is(.rq, .rqg, .rqhead) .co { grid-area: co; }
-.rqburst .bcmd { grid-area: meta; }
-.rqburst .bsess { grid-area: tk; }
+:is(.rq, .rqhead) > .rq-tile, .rqhead > .ac { grid-area: ac; }
 @container rqt (min-width: 94rem) {
   /* the table is ONE GRID and every row takes its columns from it (subgrid): a text column is as wide as the longest word
      it holds, to a cap, and the bars take the rest, so no run of empty width sits between two words and the bars of
      every row start and end on the same two edges */
   .rqtable {
     display: grid; column-gap: 1rem; align-content: start;
-    grid-template-columns: .8rem 1.9rem var(--t) minmax(10rem, max-content) minmax(7rem, max-content) minmax(9rem, max-content) minmax(8rem, max-content) minmax(11rem, 1fr) minmax(13rem, 1.3fr) minmax(9rem, .85fr);
+    grid-template-columns: .8rem 1.9rem var(--t) minmax(10rem, max-content) minmax(7rem, max-content) minmax(9rem, max-content) minmax(8rem, max-content) minmax(11rem, 1fr) minmax(13rem, 1.3fr) minmax(9rem, .85fr) var(--ac);
   }
   .rqtable > * { grid-column: 1 / -1; }
-  .rq, .rqg, .rqhead, .rqburst { grid-template-columns: subgrid; grid-template-areas: "ch lp t who cmd mdl acc tk du co"; }
+  .rq, .rqg, .rqhead, .rqgroup, .rqlead { grid-template-columns: subgrid; grid-template-areas: "ch lp t who cmd mdl acc tk du co ac"; }
   .rq .meta, .rqg .meta, .rqhead .meta { display: contents; }
   :is(.rq, .rqg, .rqhead) .meta > :nth-child(1) { grid-area: cmd; max-width: 12rem; }
   :is(.rq, .rqg, .rqhead) .meta > :nth-child(2) { grid-area: mdl; max-width: 17rem; }
   :is(.rq, .rqg, .rqhead) .meta > :nth-child(3) { grid-area: acc; max-width: 15rem; }
-  :is(.rq, .rqg, .rqhead) .who { max-width: 26rem; }
-  .rqburst .bcmd { grid-area: cmd; }
-  .rqburst .bsess { grid-area: auto; grid-column: mdl-start / co-end; }
+  :is(.rq, .rqg, .rqhead) .who { max-width: 28rem; }
+  /* the lead strip is a block of rows on the same columns; its kicker takes the whole line */
+  .rqlead { display: grid; align-items: stretch; row-gap: 0; margin: 0; }
+  .rqlead > * { grid-column: 1 / -1; }
+  /* the group line over a run of bursts on the same grid: the cause and the reset over the session columns, the strip of
+     its bursts over the tokens, its counts over the time, the act at the end */
+  .rqgroup > .gl { grid-column: lp-start / acc-end; }
+  .rqgroup > .gs { grid-area: tk; }
+  .rqgroup > .gc { grid-area: du; }
+  .rqgroup > .ga { grid-area: ac; }
   /* the key on the same grid as the header and the rows */
-  .lkey { display: grid; grid-template-columns: subgrid; grid-template-areas: "ch lp t who cmd mdl acc tk du co"; column-gap: 1rem; row-gap: 0; align-items: center; }
+  .lkey { display: grid; grid-template-columns: subgrid; grid-template-areas: "ch lp t who cmd mdl acc tk du co ac"; column-gap: 1rem; row-gap: 0; align-items: center; }
   .lkey > .kg { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(3 * var(--u)); min-width: 0; }
   .lkey > .kg.s { grid-column: who-start / acc-end; }
   .lkey > .kg.tk { grid-area: tk; }
@@ -263,29 +310,32 @@ button.byr:hover .bn { color: var(--text); }
 }
 .rq .meta > *, .rqg .meta > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rq .meta > .chip { justify-self: start; max-width: 100%; }
+.rq .meta > .acc { display: inline-flex; align-items: center; gap: var(--u); overflow: visible; }
+.rq .meta > .acc > .acct { min-width: 0; }
 
 /* ---------- a request: one row of the table ---------- */
 /* a row, not a card: .card's ink, cast and padding are a list object's. Hairlines between rows, a wash under the
-   pointer over the hover time, and the open one keeps the wash, which its request below it shares. */
-.rq, .rqburst { position: relative; min-height: 3.7rem; box-sizing: border-box; border-radius: var(--r-in); cursor: pointer; font: 500 .95rem/1.2 var(--font-data); color: var(--text-body); transition: background-color var(--t-hover) var(--e-out); }
+   pointer over the hover time, and the open one keeps the wash, which its request below it shares. EVERY ROW IS ONE LINE
+   AT ONE HEIGHT: a clean row, a failed row, a burst row and a search hit measure the same. */
+.rq { position: relative; min-height: 3.7rem; box-sizing: border-box; border-radius: var(--r-in); cursor: pointer; font: 500 .95rem/1.2 var(--font-data); color: var(--text-body); transition: background-color var(--t-hover) var(--e-out); }
 .rqtable .rq { border: 0; background: none; box-shadow: none; }
-.rqburst { width: auto; border: 0; background: none; text-align: left; }
-:is(.rq, .rqburst, .rqg, .rqpane) + :is(.rq, .rqburst, .rqg)::before { content: ""; position: absolute; left: .6rem; right: .6rem; top: -.06rem; height: .12rem; background: var(--track); pointer-events: none; }
-.rqtable .rq:hover, .rqburst:hover, .rqtable .rq[aria-current="true"] { background: color-mix(in oklab, var(--text) 4%, transparent); }
+:is(.rq, .rqg, .rqpane, .rqgroup) + :is(.rq, .rqg)::before { content: ""; position: absolute; left: .6rem; right: .6rem; top: -.06rem; height: .12rem; background: var(--track); pointer-events: none; }
+.rqtable .rq:hover, .rqtable .rq[aria-current="true"] { background: color-mix(in oklab, var(--text) 4%, transparent); }
 .rqtable .rq:focus-within { outline: none; }
-.rq, .rqburst { scroll-margin-top: calc(var(--bar-h) + 1rem); }  /* a row brought into view lands under the top bar, not behind it */
-.rq > .chev, .rqburst > .chev { justify-self: center; }
+.rq { scroll-margin-top: calc(var(--bar-h) + 1rem); }  /* a row brought into view lands under the top bar, not behind it */
+.rq > .chev { justify-self: center; }
 .rq[aria-current="true"] > .chev { transform: rotate(90deg); stroke: var(--text); }  /* its request is open under it */
-:is(.rq, .rqburst, .rqg) > .lamp { position: static; width: 1.9rem; height: 1.9rem; margin: 0; }
-.rq time, .rqburst time { font: 500 .95rem/1 var(--font-data); color: var(--text-mute); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.rq .who, .rqburst .who { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem calc(1.2 * var(--u)); min-width: 0; }  /* the name keeps its line; what happened wraps under it where both do not fit */
+:is(.rq, .rqg) > .lamp { position: static; width: 1.9rem; height: 1.9rem; margin: 0; }
+.rq time { font: 500 .95rem/1 var(--font-data); color: var(--text-mute); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rq .who { display: flex; flex-wrap: nowrap; align-items: center; gap: 0.333rem var(--u); min-width: 0; overflow: hidden; }  /* the name keeps its line, and what happened beside it is cut with an ellipsis before it wraps */
 .rq .name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 1rem/1.2 var(--font-name); color: var(--text); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
-.rq .who .word, .rq .who .detail, .rq .who .door, .rq .who .note, .rqburst .who .word, .rqburst .who .note, .rqburst .bsess .detail { flex: none; white-space: nowrap; font: 500 .88rem/1.2 var(--font-data); }
+.rq .name.bn { font-weight: 600; }
+.rq .who .word, .rq .who .detail, .rq .who .door { flex: none; white-space: nowrap; font: 500 .88rem/1.2 var(--font-data); }
+.rq .who .detail { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .rq .who .word { color: var(--text-body); }
-.rq .who .word.fail, .rqburst .who .word.fail { color: var(--limit); }
-.rq .who .note, .rqburst .who .note { color: var(--text-mute); }
+.rq .who .word.fail { color: var(--limit); }
 /* the retries splice ran: the lamp's retries glyph and the count, which the list's key names once */
-.rq .who .detail.rt { gap: .2rem; }
+.rq .who .detail.rt { gap: 0.333rem; }
 .rq .who .detail.rt svg, .lg > svg { flex: none; width: .95rem; height: .95rem; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .rq .who .door { background: none; border: 0; padding: 0; color: var(--text-body); cursor: pointer; text-decoration: underline dotted; text-underline-offset: .2em; }
 .rq .who .door:hover { color: var(--text); text-decoration-style: solid; }
@@ -293,19 +343,29 @@ button.byr:hover .bn { color: var(--text); }
 .rq .acc { color: var(--text-mute); }
 /* A MODEL AND A LOGIN ARE SMALL OBJECTS, never a bare word: the model carries its provider's dot, the login a monogram
    in its provider's colour (the lock where its limit turned the request away, the sign-out mark where it is signed
-   out). The login opens its Accounts card; where nobody named a login, the Account column's header carries the act that
-   names it, once. */
-.rq .mtag::before { content: ""; display: inline-block; width: .6rem; height: .6rem; margin-right: .55rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); vertical-align: .05rem; }
+   out). The login opens its Accounts card; a login nobody named carries the pencil that names it, directly after it. */
+.rq .mtag::before { content: ""; display: inline-block; width: .6rem; height: .6rem; margin-right: 0.667rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); vertical-align: .05rem; }
 a.acct { color: inherit; text-decoration: none; }
-.rq .meta .acct.login { display: inline-flex; align-items: center; gap: .55rem; max-width: 100%; color: inherit; }
+.rq .meta .acct.login { display: inline-flex; align-items: center; gap: 0.667rem; max-width: 100%; color: inherit; }
 .login .an { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 a.acct.login:hover .an { color: var(--text); text-decoration: underline; text-underline-offset: .22em; }
 .mono { flex: none; display: inline-grid; place-items: center; width: 1.4rem; height: 1.4rem; border-radius: 50%; font: 600 .74rem/1 var(--font-name); font-style: normal; color: var(--text); background: color-mix(in oklab, var(--c, var(--text-mute)) 22%, transparent); box-shadow: inset 0 0 0 .1rem color-mix(in oklab, var(--c, var(--text-mute)) 70%, transparent); }
 .mono svg { width: .85rem; height: .85rem; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .mono.held { color: var(--limit); background: none; box-shadow: inset 0 0 0 .1rem color-mix(in oklab, var(--limit) 60%, transparent); }
 .mono.out { color: var(--text-mute); background: none; box-shadow: inset 0 0 0 .1rem var(--track-line); }
+/* a small tile that is an act on its row: the pencil that names a login, the swap that switches a spent one */
+.rq-tile { flex: none; display: inline-grid; place-items: center; width: 1.7rem; height: 1.7rem; border-radius: .4rem; color: var(--text-body); text-decoration: none; box-shadow: inset 0 0 0 .1rem var(--track-line); transition: color var(--t-hover) var(--e-out), box-shadow var(--t-hover) var(--e-out); }
+.rq-tile svg { width: .95rem; height: .95rem; }
+.rq-tile:hover { color: var(--text); box-shadow: inset 0 0 0 .1rem var(--text-mute); }
+.rq-tile.rq-sw { justify-self: end; color: var(--limit); box-shadow: inset 0 0 0 .1rem color-mix(in oklab, var(--limit) 70%, transparent); }
+.rq-tile.rq-sw:hover { color: var(--limit); box-shadow: inset 0 0 0 .14rem var(--limit); }
+/* a search hit: where the words were found beside the words themselves, marked */
+.rq-hit { flex: none; display: inline-flex; align-items: center; gap: .4rem; }
+.rq-where { padding: .2rem .5rem; border-radius: .3rem; box-shadow: inset 0 0 0 .1rem var(--track-line); font: 500 .75rem/1 var(--font-name); color: var(--text-mute); }
+mark.rq-q { padding: .12rem .35rem; border-radius: .25rem; background: color-mix(in oklab, var(--text) 80%, transparent); color: var(--obj-high); font-style: normal; }
+.rq .name mark.rq-q, .rq .word mark.rq-q, .rq .chip mark.rq-q { padding: 0 .2rem; }
 /* the relations between rows: a glyph in the row, its door where the other request is listed, its words in the list's key */
-.rq .who .mk { flex: none; display: inline-flex; align-items: center; gap: .15rem; padding: .2rem; border: 0; border-radius: .3rem; background: none; color: var(--text-mute); font: 500 .8rem/1 var(--font-data); }
+.rq .who .mk { flex: none; display: inline-flex; align-items: center; gap: 0.333rem; padding: .2rem; border: 0; border-radius: .3rem; background: none; color: var(--text-mute); font: 500 .8rem/1 var(--font-data); }
 .rq .who .mk svg { width: .95rem; height: .95rem; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .rq .who button.mk { cursor: pointer; }
 .rq .who button.mk:hover { color: var(--text); background: var(--track); }
@@ -313,14 +373,21 @@ a.acct.login:hover .an { color: var(--text); text-decoration: underline; text-un
 /* the rows of a burst he opened, marked as one run by a rule down their left */
 .rq.inburst { box-shadow: inset .2rem 0 0 var(--track-line); }
 
-/* the figures' columns: a bar on the column's shared scale, then its figures, which end on one right edge */
-.tk { display: grid; grid-template-columns: minmax(2.5rem, 1fr) 3.8rem 3.4rem; column-gap: calc(1.2 * var(--u)); align-items: center; min-width: 0; }
-.du { display: grid; grid-template-columns: minmax(4rem, 1fr) 5.8rem; column-gap: calc(1.2 * var(--u)); align-items: center; min-width: 0; }
+/* the figures' columns: bars on the column's shared scale, then their figures, which end on one right edge. Tokens in and
+   out are two bars on one scale with their figures stacked beside them, so the row stays one line. */
+.tk { display: grid; grid-template-columns: minmax(2.5rem, 1fr) 3.8rem; column-gap: var(--u); align-items: center; min-width: 0; }
+.du { display: grid; grid-template-columns: minmax(4rem, 1fr) 5.8rem; column-gap: var(--u); align-items: center; min-width: 0; }
 .co { display: grid; grid-template-columns: minmax(1.5rem, 1fr) 4.8rem; column-gap: var(--u); align-items: center; min-width: 0; }
+.tbars { display: flex; flex-direction: column; gap: .5rem; min-width: 0; }
+.tfig { display: flex; flex-direction: column; gap: .2rem; }
+.tfig .v { line-height: 1.05; }
 .rq .v { text-align: right; white-space: nowrap; font: 500 .95rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
-.rq .tk .v + .v { color: var(--text-body); }  /* tokens out, after tokens in */
+.rq .tfig .v { font-size: .86rem; line-height: 1.1; }
+.rq .tfig .v + .v { color: var(--text-body); }  /* tokens out, under tokens in */
 .tbar, .cbar, .dtrk { position: relative; display: block; height: .5rem; border-radius: .25rem; background: color-mix(in oklab, var(--text) 8%, transparent); }
-.tbar > b, .cbar > b { position: absolute; left: 0; top: 0; bottom: 0; border-radius: .25rem; background: color-mix(in oklab, var(--text) 55%, transparent); overflow: hidden; }
+.tbar { height: .36rem; border-radius: .18rem; }
+.tbar > b, .cbar > b { position: absolute; left: 0; top: 0; bottom: 0; border-radius: inherit; background: color-mix(in oklab, var(--text) 55%, transparent); overflow: hidden; }
+.tbar.out > b { background: color-mix(in oklab, var(--text) 42%, transparent); }
 .tbar > b > i { position: absolute; left: 0; top: 0; bottom: 0; background: color-mix(in oklab, var(--text) 22%, var(--obj)); }  /* the part served from cache */
 .rq .co.plan { font: inherit; color: inherit; }  /* .card .plan is Accounts' plan word; here it only says the bar is hollow */
 .rq .co.plan .cbar > b { background: none; box-shadow: inset 0 0 0 .12rem color-mix(in oklab, var(--text) 48%, transparent); }
@@ -329,19 +396,17 @@ a.acct.login:hover .an { color: var(--text); text-decoration: underline; text-un
 /* the time on the band's log axis: hatched to the first byte, solid to the end, and a tick where its model's slowest 5% begins */
 .dtrk { overflow: visible; }
 .dtrk > .run { position: absolute; left: 0; top: 0; bottom: 0; min-width: .2rem; border-radius: .25rem; background: color-mix(in oklab, var(--text) 55%, transparent); overflow: hidden; }
+.rq.fail .dtrk > .run, .rqburst .dtrk > .run { background: var(--limit); }
 .dtrk .pre { position: absolute; left: 0; top: 0; bottom: 0; background: repeating-linear-gradient(-45deg, var(--obj) 0 .16rem, transparent .16rem .34rem); }
 .dtrk > .p95 { position: absolute; top: -.3rem; bottom: -.3rem; width: .14rem; margin-left: -.07rem; border-radius: .07rem; background: var(--text-mute); }
 
 /* the header: each column's name over what it names, muted and in sentence case, on the table's first hairline */
-.rqhead { min-height: 0; padding-block: .9rem .8rem; border-bottom: .12rem solid var(--track); font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
+.rqhead { min-height: 0; padding-block: .9rem .8rem; border-block: .12rem solid var(--track); font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
 .rqhead .h { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rqhead .h.v { text-align: right; }
-/* where a login in the list is nobody's own name, the one act that names it stands by the column that shows it */
-.rqhead .h.acc { display: inline-flex; align-items: center; gap: .7rem; overflow: visible; }
-.rqhead .nameit { flex: none; height: 1.6rem; min-height: 0; padding: 0 .6rem; font-size: .8rem; text-decoration: none; }
 .rqhead .who { display: block; }
 .dax { position: relative; display: block; height: 1rem; }
-.dax i { position: absolute; top: 0; transform: translateX(-50%); font: 400 .74rem/1 var(--font-data); font-style: normal; font-variant-numeric: tabular-nums; color: var(--text-mute); white-space: nowrap; }
+.dax i { position: absolute; top: 0; transform: translateX(-50%); font: 400 .8rem/1 var(--font-data); font-style: normal; font-variant-numeric: tabular-nums; color: var(--text-mute); white-space: nowrap; }
 .dax i.first { transform: none; }
 .dax i.tail { transform: translateX(-100%); }  /* not .last, which is Sessions' quoted line (sessions.css) */
 /* the axis names its two ends wherever it stands, and the marks between them where the column is long enough to space
@@ -353,46 +418,55 @@ a.acct.login:hover .an { color: var(--text); text-decoration: underline; text-un
 @container rqax (min-width: 14rem) { .dax i.mid { display: block; } }
 @container rqax (max-width: 6rem) { .dax i:not(.nm) { display: none; } }  /* an axis too short to space two marks names neither */
 
-/* what the search found, in the body it was found in */
-.match { grid-column: who-start / -1; margin: .1rem 0 0; font: 500 .9rem/1.35 var(--font-data); color: var(--text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.match .where { font: 500 .88rem/1 var(--font-name); color: var(--text-mute); margin-right: .6rem; }
-
-/* ---------- a burst: a run of failures with one cause, as one row that opens to its rows ---------- */
-.rqburst .bn { font: 600 1rem/1.2 var(--font-name); color: var(--text); white-space: nowrap; }
-.rqburst .bcmd { display: flex; align-items: center; gap: .5rem; min-width: 0; overflow: hidden; }
-.rqburst .bsess { display: flex; align-items: center; gap: calc(1.5 * var(--u)); min-width: 0; overflow: hidden; font: 500 .88rem/1.2 var(--font-name); color: var(--text-mute); }
-.rqburst .bsn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rqburst .bsn.more { flex: none; font-family: var(--font-data); }
+/* ---------- the lead strip, then a run of bursts under its group line ---------- */
+.rqlead { padding-bottom: calc(2 * var(--u)); border-bottom: .12rem solid var(--track); }
+@container rqt (max-width: 93.99rem) { .rqlead { display: flex; flex-direction: column; } }
+.rql-k { margin: 0; padding: calc(2 * var(--u)) 0 var(--u); font: 600 var(--kicker)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
+.rqgroup { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(2 * var(--u)); margin: var(--u) -0.667rem; padding: .6rem; box-sizing: border-box; min-height: 3.7rem; border-radius: var(--r-in); background: color-mix(in oklab, var(--limit) 7%, transparent); box-shadow: inset 0 0 0 .12rem color-mix(in oklab, var(--limit) 72%, transparent); font: 500 .95rem/1.2 var(--font-name); color: var(--text-body); }
+.rqgroup .gl { display: flex; align-items: center; gap: var(--u); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rqgroup .gl b { font-weight: 600; color: var(--limit); }
+.rqgroup .gl .gr { color: var(--text); }
+.rqgroup .gk { flex: none; display: inline-grid; place-items: center; width: 1.9rem; height: 1.9rem; color: var(--limit); font-style: normal; }
+.rqgroup .gk svg { width: 1.1rem; height: 1.1rem; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.rqgroup .gs { display: flex; gap: .25rem; height: .5rem; min-width: 8rem; flex: 1 1 8rem; }
+.rqgroup .gs > i { display: block; min-width: .3rem; border-radius: .2rem; background: var(--limit); }
+.rqgroup .gc { display: inline-flex; gap: var(--u); }
+.gchip { display: inline-flex; align-items: center; gap: .333rem; height: 1.6rem; padding: 0 .7rem; border-radius: 99rem; box-shadow: inset 0 0 0 .1rem var(--track-line); font: 500 .8rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
+.gchip b { font: 500 .82rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.rqgroup .ga { display: flex; justify-content: flex-end; }
+@container rqt (min-width: 94rem) {
+  .rqgroup { display: grid; flex-wrap: nowrap; gap: 0 1rem; }
+  .rqgroup .gs { min-width: 0; flex: none; }
+}
 
 /* ---------- the hour: the table's sub-head where it turns, with how many it held and how they ended ---------- */
-.hour { display: flex; align-items: center; gap: calc(2 * var(--u)); min-height: 2.6rem; margin: 0 -.6rem; padding: .9rem .6rem .45rem; }
+.hour { display: flex; align-items: center; gap: calc(2 * var(--u)); min-height: 2.6rem; margin: 0 -0.667rem; padding: calc(2 * var(--u)) .6rem var(--u); border-top: .08rem solid var(--track); }
+.rqlead + .hour, .rqhead + .hour { border-top: 0; }
 .hour .hw {
-  font: 600 .88rem/1 var(--font-data); color: var(--splice-cream); background: var(--socket); padding: .42rem .6rem; border-radius: .35rem; white-space: nowrap;  /* the socket is dark in both themes */
+  flex: none; font: 600 .88rem/1 var(--font-data); color: var(--splice-cream); background: var(--socket); padding: .42rem .6rem; border-radius: .35rem; white-space: nowrap;  /* the socket is dark in both themes */
   box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .14rem var(--rail);
 }
-.hour .hc { display: inline-flex; align-items: center; gap: var(--u); font: 500 .86rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
-.hour .hc b { font-weight: 500; color: var(--text-body); }
-.hbar { display: inline-flex; height: .5rem; border-radius: .25rem; overflow: hidden; gap: .1rem; }
-.hbar i { min-width: .16rem; }
-.hbar .ok { background: color-mix(in oklab, var(--text) 45%, transparent); }
-.hbar .nt { background: color-mix(in oklab, var(--text) 25%, transparent); }
-.hbar .f { background: var(--limit); }
-.hour .act { margin-block: -.14rem; }  /* the day before sits by the oldest day's heading, never taller than the tag */
+.hour .hn { flex: none; min-width: 3.4rem; font: 500 .9rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
+/* the hour's own track: as long as the hour was busy, failures in the limit's red */
+.hbt { flex: 1 1 auto; display: block; height: .5rem; min-width: 4rem; border-radius: .25rem; background: color-mix(in oklab, var(--text) 8%, transparent); overflow: hidden; }
+.hbf { display: flex; height: 100%; min-width: .3rem; border-radius: .25rem; overflow: hidden; gap: .16rem; }
+.hbf i { min-width: .16rem; }
+.hbf .ok { background: color-mix(in oklab, var(--text) 50%, transparent); }
+.hbf .nt { background: color-mix(in oklab, var(--text) 28%, transparent); }
+.hbf .f { background: var(--limit); }
+.hour .act { flex: none; margin-block: 0; }  /* the day before sits by the oldest day's heading, never taller than the tag */
 /* a quiet stretch between two hours is drawn as one: a hatched band as tall as it was long (--h hours, held to twelve),
    its length as a figure under the time column */
-.hgap { position: relative; display: flex; align-items: center; box-sizing: border-box; margin: .35rem 0; padding: 0 1rem 0 calc(.8rem + 1.9rem + 2rem); min-height: calc(1.9rem + var(--h, 1) * .2rem); border-block: .12rem dashed var(--track-line); border-radius: var(--r-in);
+.hgap { position: relative; display: flex; align-items: center; box-sizing: border-box; margin: 0.333rem 0; padding: 0 1rem 0 calc(.8rem + 1.9rem + 2rem); min-height: calc(1.9rem + var(--h, 1) * .2rem); border-block: .12rem dashed var(--track-line); border-radius: var(--r-in);
   background: repeating-linear-gradient(-45deg, color-mix(in oklab, var(--text) 6%, transparent) 0 .16rem, transparent .16rem .52rem); font: 500 .84rem/1.2 var(--font-name); color: var(--text-mute); }
 .hgap b { font: 500 .88rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
-.list .more { display: flex; align-items: center; gap: calc(2 * var(--u)); }
+.list .more { display: flex; align-items: center; gap: calc(2 * var(--u)); padding-top: calc(2 * var(--u)); }
 .list .more .count { display: inline-flex; align-items: center; gap: var(--u); font: 500 .9rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
 .list .more .vbar { width: 8rem; flex: none; }
 
-/* ---------- the open request: under its row, inside the table, one step in, on the row's wash ---------- */
-/* inset past the chevron as Usage's detail plate is, with no ink and no cast, and never a scroll of its own */
-.rqtable .rqpane {
-  display: flex; min-width: 0; margin: .15rem 0 calc(2 * var(--u)) 1.8rem; border: 0; border-radius: var(--r-in); box-shadow: none;
-  background: color-mix(in oklab, var(--text) 4%, transparent);
-}
+/* ---------- the open request: under its row, inside the table, as a card of its own ---------- */
+/* the card is reqview.css's; here only where it stands: a step in past the chevron, with room under it for its offset edge */
+.rqtable .rqpane { margin: var(--u) calc(2 * var(--u)) calc(4 * var(--u)) 2rem; }
 
 /* ---------- reading: the list's own shape, hollow (Marcos, Oct 12); the bars themselves are console.css's .ghost ---------- */
 .rqg { min-height: 3.7rem; box-sizing: border-box; position: relative; }
@@ -419,7 +493,7 @@ a.acct.login:hover .an { color: var(--text); text-decoration: underline; text-un
 
 @media (prefers-reduced-motion: reduce) {
   .rq, .rqburst, .fbtn, .ftog, .kr, .byr { transition: none; }
-  .fmenu, .rq.rise, .rqtable.arrive > :is(.rq, .rqburst, .hour, .hgap, .nomatch), .rqband.arrive .psec { animation: none; }
+  .fmenu, .ft-bar > i, .rq.rise, .rqtable.arrive > :is(.rq, .rqburst, .hour, .hgap, .nomatch), .rqband.arrive .psec { animation: none; }
 }
 
 /* the pick line and the filters while they are read: the tiles or the picker, and the filters' own row, hollow */
@@ -431,10 +505,69 @@ a.acct.login:hover .an { color: var(--text); text-decoration: underline; text-un
 .rqband p.meas b { font-weight: 500; color: var(--text-body); }
 /* a door's name and, where it is told from others by its time, the time: side by side where the column is wide enough,
    and the time under the name where it is not, so the name is never cut to two letters to make room for it */
-.byr .bn { display: flex; align-items: baseline; gap: .7rem; }
+.byr .bn { display: flex; align-items: baseline; gap: 0.667rem; }
 .byr .bn .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .byr .bn small { flex: none; font: 500 .8rem/1 var(--font-data); color: var(--text-mute); }
 .bys.hits { container: hits / inline-size; }
-@container hits (max-width: 30rem) { .byr .bn { flex-direction: column; align-items: flex-start; gap: .25rem; } }
+@container hits (max-width: 30rem) { .byr .bn { flex-direction: column; align-items: flex-start; gap: 0.333rem; } }
 /* two sessions of one name: the second carries its place among them, muted */
-.ord { margin-left: .35rem; font: 500 .8rem/1 var(--font-data); font-style: normal; color: var(--text-mute); }
+.ord { display: inline-grid; place-items: center; min-width: 1.35rem; height: 1.35rem; margin-left: 0.667rem; padding: 0 .3rem; box-sizing: border-box; border-radius: 99rem; box-shadow: inset 0 0 0 .1rem var(--track-line); font: 500 .75rem/1 var(--font-data); font-style: normal; color: var(--text-mute); vertical-align: .05rem; }
+
+/* ---------- the band's own marks: leader labels, the zoom, tiles on a log bar, a section with nothing counted ---------- */
+.rqb-stkw { --bh: var(--stack-h); position: relative; flex: 0 0 auto; min-width: 0; padding-bottom: var(--lead, 0rem); }
+.rqb-stkw.sm { --bh: 1.4rem; }
+.rqb-stkw > .pd-bar { height: var(--bh); background: var(--track); box-shadow: inset 0 0 0 .08rem var(--track-line); }
+.rqb-stkw .pd-seg.lead > .rqb-in { display: none; }
+.rqb-ld, .rqb-lb { display: none; }
+.rqb-ld.on { display: block; position: absolute; top: var(--bh); left: var(--x); width: .1rem; height: var(--d); background: var(--text-body); transform: translateX(-50%); }
+.rqb-lb.on { display: block; position: absolute; top: calc(var(--bh) + var(--d) - .62rem); right: calc(100% - var(--x) + .55rem); white-space: nowrap; font: 500 .84rem/1.24 var(--font-name); color: var(--text-body); text-decoration: none; }
+.rqb-lb.on.r { right: auto; left: calc(var(--x) + .55rem); }
+.rqb-lb b { font: 500 .84rem/1.24 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+a.rqb-lb:hover { color: var(--text); text-decoration: underline; text-underline-offset: .2em; }
+.rqb-zoom { display: flex; flex-direction: column; gap: .3rem; margin-top: var(--u); }
+.rqb-zax { display: flex; justify-content: space-between; font: 400 .8rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
+.rqb-tiles { display: grid; grid-template-columns: repeat(var(--n, 2), minmax(0, 1fr)); gap: calc(3 * var(--u)); margin-top: calc(2 * var(--u)); }
+.rqb-tile { min-width: 0; display: flex; flex-direction: column; gap: .4rem; }
+.rqb-tf { display: flex; align-items: center; flex-wrap: wrap; gap: .2rem .5rem; }
+.rqb-tf b { font: 600 var(--fig-focal)/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.rqb-tf small { font: 500 .84rem/1.2 var(--font-name); color: var(--text-mute); }
+.rqb-tig { flex: none; width: 1.7rem; height: 1.7rem; display: inline-grid; place-items: center; border-radius: 50%; background: color-mix(in oklab, var(--text) 8%, transparent); color: var(--text-body); }
+.rqb-tig svg { width: .95rem; height: .95rem; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.rqb-tlog { position: relative; display: block; height: .7rem; border-radius: .3rem; background: var(--track); box-shadow: inset 0 0 0 .08rem var(--track-line); }
+.rqb-tlog > i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: .3rem; background: color-mix(in oklab, var(--text) 62%, transparent); transition: width var(--t-snap) var(--e-out); }
+.rqb-tlog.end::after { content: ""; position: absolute; right: 0; top: -.18rem; bottom: -.18rem; width: .14rem; border-radius: .07rem; background: var(--text); }
+.rqb-tle { display: flex; justify-content: space-between; gap: .5rem; font: 400 .8rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); white-space: nowrap; }
+/* a section with nothing counted: its card and its heading stay, a dash stands where the figure would, and one muted line says so */
+.rqb-empty { display: flex; align-items: flex-start; gap: calc(3 * var(--u)); min-height: var(--ring-focal); }
+.rqb-slot { flex: none; font: 600 var(--fig-focal)/1 var(--font-data); color: var(--text-mute); }
+.rqb-quiet { margin: 0; padding-top: .3rem; font: 500 .88rem/1.35 var(--font-name); color: var(--text-mute); }
+.tkband > .rqb-stkw { flex: 1 1 auto; }
+.lkey:not(:has(.lg)) { display: none; }
+.fmenu .swhen, .fmenu .mc { flex: none; }
+
+/* ---------- what is in view, beside the filters that decide it ---------- */
+.fv { position: relative; display: flex; align-items: stretch; gap: calc(3 * var(--u)); flex-wrap: wrap; }
+.fv > .filters { flex: 1 1 40rem; min-width: 0; align-content: center; }
+.fv-card { flex: 0 1 34rem; min-width: 24rem; display: flex; flex-direction: column; justify-content: space-between; gap: var(--u); padding: calc(2 * var(--u)) calc(3 * var(--u)); border-radius: var(--r-obj); background: var(--obj); box-shadow: inset 0 0 0 .1rem var(--track-line); }
+.fv-k { margin: 0; font: 600 var(--kicker)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
+.fv-hero { margin: 0; display: flex; align-items: baseline; gap: var(--u); font: 600 var(--fig-hero)/1 var(--font-data); font-variant-numeric: tabular-nums; letter-spacing: -.01em; color: var(--text); white-space: nowrap; }
+.fv-hero small { font: 500 .95rem/1 var(--font-name); letter-spacing: 0; color: var(--text-body); }
+.fv-axis { position: relative; height: .7rem; border-radius: .3rem; background: var(--track); box-shadow: inset 0 0 0 .08rem var(--track-line); }
+.fv-axis > i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: .3rem; background: color-mix(in oklab, var(--text) 62%, transparent); transform-origin: left; animation: rq-grow var(--t-snap) var(--e-out) both; }
+.fv-axis > b { position: absolute; top: -.18rem; bottom: -.18rem; width: .14rem; margin-left: -.07rem; border-radius: .07rem; background: var(--text); }
+.fv-ticks { position: relative; height: 1rem; margin-top: .1rem; font: 400 .8rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
+.fv-ticks > span { position: absolute; top: 0; white-space: nowrap; transform: translateX(-50%); }
+.fv-ticks > span:first-child { transform: none; }
+.fv-ticks > span:last-child { transform: translateX(-100%); }
+.fv-card > .ghost { display: block; }
+.fv-ga { width: 100%; }
+
+/* the slowest tick of a time, named on a leader line under it */
+.rqb-rng { --bh: var(--meter-h); position: relative; display: block; padding-bottom: 1.5rem; min-width: 0; }
+.rqb-rng > .ghost { display: block; }
+.rqb-hold { display: flex; flex-direction: column; gap: calc(2 * var(--u)); min-width: 0; }
+.rqb-empty.rqb-hold { min-height: 9rem; }
+.rqband .pd-stages .pd-grid { grid-template-columns: minmax(0, 8.5rem) minmax(0, 1fr) 4.6rem; }
+.lkey { padding-bottom: var(--u); }
+.hbf { width: 100%; }
+.fv-axis.none { background: none; box-shadow: none; outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }

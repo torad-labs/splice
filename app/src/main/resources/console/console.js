@@ -200,15 +200,16 @@ const CONSOLE = (() => {
       routeFailed(file, error, address, options);
     }
   }
-  /** What happened, in splice's words and not the browser's: a fetch that never landed says so as "splice did not
-   *  answer", and a daemon that answered with a code says what the code means, never the number (a 503 is splice
-   *  still starting or stopping). Everything load() throws is already a sentence. */
-  const CODE_WORDS = { 404: "splice has no such page", 500: "splice failed to send it", 502: "splice is not ready", 503: "splice is not ready", 504: "splice did not answer" };
+  /** What happened, in splice's words and never the browser's or a number: a read that never landed, or a daemon that took too
+   *  long, is "splice not answering", as the page header says it; one that is still starting or stopping is "splice is not
+   *  ready"; a page it does not have is "splice has no such page"; every other answer, and any message the browser or the
+   *  loader raised, is "splice did not send it". One cause is said, and it is always one of these four. */
+  const CODE_WORDS = { 404: "splice has no such page", 502: "splice is not ready", 503: "splice is not ready", 504: "splice not answering" };
   function why(error) {
     const said = String(error?.message || "");
-    if (/failed to fetch|networkerror|load failed/i.test(said)) return "splice did not answer";
+    if (/failed to fetch|networkerror|load failed/i.test(said)) return "splice not answering";
     const code = /Section returned (\d+)/.exec(said);
-    return code ? CODE_WORDS[code[1]] ?? "splice did not send it" : said || "Something went wrong";
+    return (code && CODE_WORDS[code[1]]) || "splice did not send it";
   }
   /** A page that did not open, said on the link that failed (Oct 27): the page's name, what happened in splice's own
    *  words, and Try again beside them, which reads the page again from scratch because load() drops what failed from its
@@ -227,8 +228,13 @@ const CONSOLE = (() => {
     note.innerHTML = `${ICON.bang}<span><b>${esc(PAGES.find(([f]) => f === file)?.[1] || "That page")} didn't open</b> `
       + `<span class="why">${esc(why(error))}</span></span>`
       + `<button class="act small" type="button" data-act="retry">Try again</button>`;
-    note.querySelector('[data-act="retry"]').addEventListener("click", () => {
-      clearRouteError();
+    // Try again spins where it stands, at full ink, while the page reads again, and the line stays until the page opens (which takes it
+    // away) or fails again (which says so in its place), so a press is never answered by the line vanishing
+    const retry = note.querySelector('[data-act="retry"]');
+    retry.addEventListener("click", () => {
+      // busy, not disabled: a disabled act is drawn faded, and this one is the one thing on the line while it works
+      if (retry.getAttribute("aria-busy") === "true") return;
+      retry.setAttribute("aria-busy", "true");
       navigate(address, options);
     });
     // a page with no bar at all has nowhere to hang it from: the top of the page, as before

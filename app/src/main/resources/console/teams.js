@@ -42,6 +42,7 @@ const GLYPH = {
   trace: '<svg class="wave" viewBox="0 0 40 40" aria-hidden="true"><polyline class="base" points="5,20 13,20 16,12 20,28 24,15 27,20 35,20"/><polyline class="beat" points="5,20 13,20 16,12 20,28 24,15 27,20 35,20"/></svg>',
 };
 // Write and the notebook editor draw the same mark as their neighbours; a tool with no mark of its own gets the wrench.
+GLYPH.cross = G('<path d="M6 6l12 12M18 6L6 18"/>', 'aria-hidden="true"');
 GLYPH.Write = GLYPH.Edit;
 GLYPH.MultiEdit = GLYPH.Edit;
 GLYPH.NotebookEdit = GLYPH.Edit;
@@ -65,7 +66,7 @@ const plural = (n, word) => `${DRAW.n(n)} ${n === 1 ? word : `${word}s`}`;
 // ---------- what the page holds: the daemon's answers, and what he is doing to them ----------
 const state = {
   teams: [], sessions: {}, heads: [], models: {}, accounts: {}, pools: {}, providerOf: {}, modelLabel: {}, plans: [],
-  economics: {}, priceWhy: {}, chat: null, activity: null, today: null, live: {}, stalls: {},
+  economics: {}, whole: {}, priceWhy: {}, chat: null, activity: null, today: null, live: {}, stalls: {},
   // the last seven days' tool calls per day for the team on the page, so the day strip says which days had any
   week: null, turnSince: {},
   // What each waiting member's screen is offering, by slot id: read only for a member whose ask is not in
@@ -81,7 +82,7 @@ const state = {
 // [archived] is null until he presses the fold: a project whose only teams are archived shows them open, since nothing else is there
 // [gather] is the sessions he ticked on the empty page to start a team from, [turns] the turn groups he opened on the Timeline
 const ui = { words: new Map(), project: PICK.get(), pmenu: false, team: null, day: 0, menu: null, compose: null, pick: null, change: null, archived: null,
-  gather: new Set(), gatherOpen: new Set(), runs: new Set(),
+  gather: new Set(), gatherOpen: new Set(), runs: new Set(), hours: new Set(), tlSeen: new Map(), weekGrown: new Set(),
   starting: new Set(), startedAt: new Map(), unstarted: new Map(), trusting: new Map(), screenOpen: new Set(), ending: new Map(),
   armedEnd: new Map(), armedStop: new Set(), failed: new Map(), stopping: new Set(), answered: new Map(),
   // the day lists he opened past their latest few, by team and day; when each team's figures first landed, so its bars
@@ -306,6 +307,7 @@ async function readTeam() {
   state.chat = kept(chat, state.chat, `chat ${tm.id}`);
   state.activity = kept(activity, state.activity, `activity ${tm.id}`);
   if (!state.economics[tm.id].error && !ui.landed.has(tm.id)) ui.landed.set(tm.id, Date.now());
+  if (!state.economics[tm.id].error) readWhole(tm);
   state.today = day0 === 0 ? state.activity : await readToday(tm);
   if (gen !== teamRead.gen) return;
   render();
@@ -477,6 +479,34 @@ function totals(tm) {
     cached: us.reduce((a, u) => a + u.cached, 0),
   };
 }
+/** EVERY REQUEST THROUGH SPLICE over the span the team's figures cover, on every command: the whole the team's requests and
+ *  tokens are a share of. The span is from the team's oldest counted turn to now, which is where its own figures begin, and
+ *  it is the window total Usage reads (/api/perf/turns with `since` as the window's start, folded by the daemon over every
+ *  request the filters match; local=0 as Requests asks, a code-mode step being no request). A team with no counted turn has
+ *  no span, so no whole. It is read again at most once a minute and
+ *  only drawn when every command the team's own members run answered, since a missing one would make the whole smaller than the team's part. */
+const WHOLE_EVERY_MS = 60_000;
+async function readWhole(tm) {
+  const from = state.economics[tm.id]?.oldest_turn_epoch_millis;
+  if (!Number.isFinite(from) || !state.heads.length) return;
+  const had = state.whole[tm.id];
+  if (had && had.from === from && Date.now() - had.at < WHOLE_EVERY_MS) return;
+  state.whole[tm.id] = { ...(had && had.from === from ? had : {}), from, at: Date.now() };
+  const zone = encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const reads = await Promise.all(state.heads.map((h) => API.get(`/api/perf/turns?head=${encodeURIComponent(h.key)}&since=${from}&time_zone=${zone}&n=1&local=0`)));
+  const ours = new Set([...tm.slots, ...leftOf(tm)].map((s) => s.head));
+  let turns = 0, tokens = 0, every = true;
+  reads.forEach((r, i) => {
+    const a = (r.body?.heads || []).find((x) => x.key === state.heads[i].key);
+    if (!r.ok || !a || a.error || a.read_pending) { if (ours.has(state.heads[i].key)) every = false; return; }
+    const u = a.usage?.totals;
+    if (!u) return;
+    turns += u.requests || 0;
+    tokens += (u.input_tokens || 0) + (u.cached_tokens || 0) + (u.cache_write_tokens || 0) + (u.output_tokens || 0);
+  });
+  state.whole[tm.id] = { from, at: Date.now(), ...(every ? { turns, tokens } : {}) };
+  if (every) render();
+}
 /** The oldest turn the perf files still hold, named only when it is after the team was made. */
 function sinceOf(tm) {
   const oldest = state.economics[tm.id]?.oldest_turn_epoch_millis;
@@ -552,15 +582,34 @@ function loginName(head, label) {
   return DRAW.name("login", { name: label, provider: state.providerOf[head] });
 }
 const accountName = (head, label) => loginName(head, label).text;
-/** WHAT A LOGIN HAS LEFT, beside its name where one is chosen: at its limit with when it is back, else the most used of its two
- *  windows. A member held at its plan's limit picks another login by this, so the choice says which one has room. */
-function loginMark(head, label) {
-  const plan = planOf(head, label);
-  if (!plan) return "";
-  const ws = Object.keys(PLAN_WINDOWS).map((win) => windowOf(plan, win)), full = ws.filter((w) => w.full);
-  if (full.length) return `<small class="hmark limit">At limit · back ${esc(backWord(new Date(Math.max(...full.map((w) => w.resetMs ?? 0)))))}</small>`;
-  const used = ws.filter((w) => w.pct != null).map((w) => w.pct);
-  return used.length ? `<small class="hmark">${Math.max(...used)}% used</small>` : "";
+/** A LOGIN'S WINDOWS AS THE KIT DRAWS THEM (DRAW.loginWins): a window with a reading is its meter, its share and its reset ring;
+ *  one not read, or one that refilled since it was read, is the dashed track and the dash, the refilled one saying "Ended"
+ *  with its time. [plan] null is a login splice has no reading for: both rows dashed, as the member's card draws it. */
+function loginRows(plan) {
+  return Object.keys(PLAN_WINDOWS).map((win) => {
+    const { W, resetMs, left, pct } = windowOf(plan, win), label = W.plan(plan?.[W.len] ?? 0);
+    if (pct == null) return left != null && left <= 0 ? { label, used: null, rolledMs: resetMs } : { label, used: null };
+    const span = ((plan[W.len] || W.secs) ?? 0) * 1000;
+    // the ring is drawn to the hundredth of its window, as the member's own rows draw it
+    return { label, used: pct, stale: plan[W.now] === false, frac: left != null && span ? Math.round((left / span) * 100) / 100 : null, resetMs };
+  });
+}
+/** EVERY LOGIN OF A COMMAND AS A MENU, each one Accounts' own window rows: its name with its provider's dot, one red line
+ *  with the lock and the time it is back where it is held (said once for the login, never on each window), then a row a
+ *  window. A held login stays choosable. The list scrolls inside the menu and a login never splits. [attrs] is what each
+ *  row's button carries; [current] is the login the member is on now. */
+function acctMenu(head, current, attrs) {
+  const list = state.accounts[head] || [];
+  const rows = list.map((a) => {
+    const rs = loginRows(planOf(head, a)), full = rs.filter((w) => w.used != null && w.used >= 100);
+    const back = full.length ? Math.max(...full.map((w) => w.resetMs ?? 0)) : undefined;
+    const cur = current != null && String(current).toLowerCase() === String(a).toLowerCase();
+    return `<button class="lw-mrow${cur ? " cur" : ""}" ${attrs(a)}${cur ? ` aria-current="true"` : ""} style="--c:${headColor(head)}">`
+      + `<span class="lw-mname"><span class="blot"></span><span class="lw-mn">${esc(accountName(head, a))}</span></span>`
+      + (back !== undefined ? DRAW.loginHeld(back > 0 ? back : null) : "") + DRAW.loginWins(rs) + `</button>`;
+  });
+  return `<div class="menu pick-menu lw-menu" data-what="account"><div class="lw-mhead"><span>Logins</span><b>${DRAW.n(list.length)}</b></div>`
+    + `<div class="lw-mlist">${rows.join("")}</div></div>`;
 }
 /** Name it, as a door to the page where a login is named, drawn beside a name nobody gave. */
 const nameIt = (head, label) => (loginName(head, label).own ? "" : `<a class="act quiet small nameit" href="accounts.html">Name it</a>`);
@@ -585,7 +634,7 @@ function windowOf(plan, win) {
 /** What a member moved on one login in one span, as the row's last cell: its requests and its tokens, the dash where it had
  *  requests and no token reading. The cell is only drawn where the member used two or more logins. */
 const mineHtml = (m) => `<span class="mine"><b data-tn="">${DRAW.n(m.turns)}</b>${m.turns > 0 && !m.tokens ? DRAW.dash : `<span>${esc(DRAW.big(m.tokens))}</span>`}</span>`;
-function windowRow(plan, win, id, mine = null) {
+function windowRow(plan, win, id, mine = null, holds = false) {
   const { W, resetMs, left, pct, full } = windowOf(plan, win);
   const name = `<span class="pwin">${esc(W.plan(plan?.[W.len] ?? 0))}</span>`;
   const own = mine ? mineHtml(mine) : "";
@@ -598,7 +647,7 @@ function windowRow(plan, win, id, mine = null) {
   const span = ((plan[W.len] || W.secs) ?? 0) * 1000;
   // the ring is drawn to the hundredth of its window, which is as fine as its arc can show; a finer one would redraw the
   // card on every read for a change no eye could see. Its time is one word for the one event: when the window refills.
-  const ring = left != null && span ? `${DRAW.ring(Math.round((left / span) * 100) / 100)}<span>Resets ${backWord(new Date(resetMs))}</span>` : "";
+  const ring = left != null && span ? `${holds ? `<span class="lockico" aria-hidden="true">${ICON.lock}</span>` : ""}${DRAW.ring(Math.round((left / span) * 100) / 100)}<span>Resets ${backWord(new Date(resetMs))}</span>` : "";
   return `<div class="prow${full ? " held" : ""}" data-meter="${esc(id)}">${name}${DRAW.meter(Math.min(pct, 100), cls)}` +
     `<span class="pct${full ? " limit" : ""}">${pct}%<span class="used">used</span></span><span class="when">${ring}</span>${own}</div>`;
 }
@@ -618,18 +667,20 @@ function heldOf(tm, slotId) {
   });
   return backs.every((b) => b != null) ? { back: Math.min(...backs) } : null;
 }
-function acctsHtml(tm, slotId) {
+function acctsHtml(tm, slotId, hold = null) {
   const uses = econRow(tm, slotId)?.plan_windows || [], logins = loginsOf(tm, slotId), multi = logins.length > 1;
   return logins.map((u) => {
     const plan = planOf(u.head, u.account), name = loginName(u.head, u.account);
     const held = Object.keys(PLAN_WINDOWS).some((win) => windowOf(plan, win).full);
+    // the lock marks the one window that holds the member: the full window whose refill is the time it is back (the earliest of its logins')
+    const holder = hold ? Object.keys(PLAN_WINDOWS).find((win) => { const w = windowOf(plan, win); return w.full && w.resetMs === hold.back; }) : null;
     // WHERE A MEMBER USED TWO LOGINS, each one carries that member's own requests and tokens on it for each span, under one
     // column head said once on the login's name line; with one login the 7 days and 5 hours rows above are that login's
     const mine = (win) => (multi ? uses.find((x) => x.head === u.head && x.account === u.account && x.window === win) || { turns: 0, tokens: 0 } : null);
-    const head = `<div class="pacct"><em>${esc(name.text)}</em>${name.own ? "" : nameIt(u.head, u.account)}${held ? `<span class="lk">${DRAW.lock("")}</span>` : ""}` +
+    const head = `<div class="pacct"><em>${esc(name.text)}</em>${name.own ? "" : nameIt(u.head, u.account)}${held && !hold ? `<span class="lk">${DRAW.lock("")}</span>` : ""}` +
       `${multi ? `<span class="mh">Requests · Tokens</span>` : ""}</div>`;
     return `<div class="pacc${multi ? " multi" : ""}" style="--c:${headColor(u.head)}">${head}` +
-      `${Object.keys(PLAN_WINDOWS).map((win) => windowRow(plan, win, `${tm.id}/${slotId}/${u.head}/${u.account}/${win}`, mine(win))).join("")}</div>`;
+      `${Object.keys(PLAN_WINDOWS).map((win) => windowRow(plan, win, `${tm.id}/${slotId}/${u.head}/${u.account}/${win}`, mine(win), win === holder)).join("")}</div>`;
   }).join("");
 }
 /** What a member moved on its plan over each span splice counts, summed over the accounts it moved it on. The daemon
@@ -704,10 +755,12 @@ function figsHtml(tm, slot, u, sc, grow) {
 /** A MEMBER'S OWN FIGURES: its table, then the windows of each plan account it used. The scope, since joining, is said
  *  once on the team's band. A seat with no session and no requests has none to draw; a member with none since joining
  *  draws its Total as a zero on an empty bar, a figure and not a sentence. */
-function useHtml(tm, slot, sc, { vacant = false } = {}) {
+function useHtml(tm, slot, sc, { vacant = false, held = null } = {}) {
   const u = useOf(tm, slot.id);
   if (!u || (vacant && !u.turns)) return "";
-  return `<div class="use">${figsHtml(tm, slot, u, sc, growing(tm))}${acctsHtml(tm, slot.id)}</div>`;
+  // while this member's Account menu is open the menu IS the windows of its logins, so the card behind does not draw them a second time
+  const menuOpen = ui.change?.key === `${tm.id}/${slot.id}` && ui.change.pick === "account";
+  return `<div class="use">${figsHtml(tm, slot, u, sc, growing(tm))}${menuOpen ? "" : acctsHtml(tm, slot.id, held)}</div>`;
 }
 
 // ---------- the pick: Sessions' projects, one pick across the pages (kit PICK) ----------
@@ -809,8 +862,7 @@ function memberHtml(tm, slot, sc = scalesOf(tm), opts = {}) {
   // idle word would, the line under it says when it is back, and the act beside that moves it to another login
   const held = ro ? null : heldOf(tm, slot.id);
   const asleep = L.cls === "idle" || L.cls === "stopped";
-  const heldLine = held ? `<div class="heldline">${DRAW.lock(`Back ${backWord(new Date(held.back))}`)}${heldAct(slot)}</div>` : "";
-  const word = held && asleep ? `<span class="word limit"><span class="lockico" aria-hidden="true">${ICON.lock}</span>At limit</span>` : `<span class="word ${L.cls}">${L.word}</span>`;
+  const word = held && asleep ? `<span class="word limit">At limit</span>` : `<span class="word ${L.cls}">${L.word}</span>`;
   // HOW LONG THE TURN HAS RUN, where the daemon says: a counter beside the word, moving each second between reads
   const turn = L.cls === "working" ? state.live[slot.session] : null, since = turn?.id ? state.turnSince[turn.id] : null;
   const age = since ? `<span class="detail age" data-since="${since}">${counter(Math.max(0, (state.readAt || Date.now()) - since))}</span>` : "";
@@ -822,6 +874,7 @@ function memberHtml(tm, slot, sc = scalesOf(tm), opts = {}) {
   const also = alsoOn(tm, slot.session);
   const opens = slot.session ? ` go" tabindex="0" data-go="${esc(slot.session)}` : "";
   const edit = editAct(tm, slot, key);
+  const heldBody = held ? `<div class="heldline"><span class="lockico" aria-hidden="true">${ICON.lock}</span>${heldAct(slot)}</div>` : "";
   const acts = refusal || stop || end || edit ? `<span class="acts">${refusal}${stop}${end}${edit}</span>` : "";
   const door = where ? (slot.session ? `<a class="where door" href="sessions.html#${encodeURIComponent(slot.session)}">${esc(where)}${DRAW.go}</a>` : `<span class="where">${esc(where)}</span>`) : "";
   const alsoTo = also.map((t) => `<button class="also" type="button" data-act="team" data-t="${esc(t.id)}">Also on ${esc(t.name)}</button>`).join("");
@@ -832,8 +885,8 @@ function memberHtml(tm, slot, sc = scalesOf(tm), opts = {}) {
     `<div class="top">${opts.hideRole ? "" : `<span class="role">${esc(nameOf(tm, slot))}</span>`}${lead}${word}${L.detail ?? L.paneDetail ?? ""}${age}${acts}</div>` +
     (ui.change?.key === key ? changeHtml(ui.change) : `<div class="meta">${chip}${model ? DRAW.chip({ text: model, cls: "mdl" }) : ""}` +
     `${where || also.length || heard ? `<div class="seen">${door}${alsoTo}${heard ? `<span class="when">${backWord(new Date(heard))}</span>` : ""}</div>` : ""}</div>`) +
-    `<div class="body">${heldLine}${body}${liveNow(s) && !ro ? armedStopHtml(key, slot.id, now) : ""}${armedEndHtml(key, slot.id)}${checksHtml(tm, slot.id)}</div>` +
-    `${useHtml(tm, slot, sc)}</article>`;
+    `<div class="body">${body}${heldBody}${liveNow(s) && !ro ? armedStopHtml(key, slot.id, now) : ""}${armedEndHtml(key, slot.id)}${checksHtml(tm, slot.id)}</div>` +
+    `${useHtml(tm, slot, sc, { held })}</article>`;
 }
 /** The act beside a held member's limit line: another login of its command to use now, else the door to Accounts to add one. */
 const heldAct = (slot) => ((state.accounts[slot.head] || []).length > 1
@@ -841,23 +894,22 @@ const heldAct = (slot) => ((state.accounts[slot.head] || []).length > 1
   : `<a class="act small" href="accounts.html">Add a login</a>`);
 
 const secsSince = (t) => Math.floor((Date.now() - t) / 1000);
-/** Stop armed, End's pattern (Marlin, Oct 13): the first press names the turn it would end, by the member's last tool
- *  call, and only the second press stops it; Keep running, Escape or a tap elsewhere disarms it. */
+/** Stop armed, End's pattern: the first press asks "Stop?" beside the buttons, and only the second press stops the turn;
+ *  Keep running, Escape or a tap elsewhere disarms it. */
 function armedStopHtml(key, slotId, now) {
   if (!ui.armedStop.has(key)) return "";
-  const turn = now ? `Ends the turn on ${activityHtml(now)}` : "Ends the running turn";
-  return `<div class="armed end"><span class="word working">${ICON.wait}${turn}</span>` +
+  // the turn it would end is on the card's own line above; the question is one word beside the buttons
+  return `<div class="armed end"><span class="said">Stop?</span>` +
     `<button class="act danger small" data-act="stop-now" data-s="${esc(slotId)}">Stop</button>` +
     `<button class="act quiet small" data-act="stop-keep" data-s="${esc(slotId)}">Keep running</button></div>`;
 }
-/** End armed: what ending would lose, the Working word or his unsent words verbatim and muted, then the danger End and
- *  Restart's own no, Keep running. Nothing of ours is said: his words after Unsent say what goes (fin, Marlin p218). */
+/** End armed: the question, then one chip where his own unsent words would go with them, then the danger End and
+ *  Restart's own no, Keep running. The words are verbatim on the chip's hover. */
 function armedEndHtml(key, slotId) {
   const armed = ui.armedEnd.get(key);
   if (!armed) return "";
-  const lost = armed.draft != null ? `<span class="said">Unsent</span><span class="unsent">${esc(armed.draft)}</span>`
-    : `<span class="word working">${ICON.wait}Working</span>`;
-  return `<div class="armed end">${lost}<button class="act danger small" data-act="end-now" data-s="${esc(slotId)}">End</button>` +
+  const lost = armed.draft != null ? `<span class="chip udraft" tabindex="0" title="${esc(armed.draft)}">Unsent</span>` : "";
+  return `<div class="armed end"><span class="said">End?</span>${lost}<button class="act danger small" data-act="end-now" data-s="${esc(slotId)}">End</button>` +
     `<button class="act quiet small" data-act="end-keep" data-s="${esc(slotId)}">Keep running</button></div>`;
 }
 
@@ -892,8 +944,7 @@ function changeMenu(ch) {
     return `<div class="menu pick-menu" data-what="model">${modelRows(state.models[ch.head] || [], (m) => `data-act="cset" data-what="model" data-v="${esc(m.id)}"`)}</div>`;
   }
   if (ch.pick === "account") {
-    return `<div class="menu pick-menu" data-what="account">${(state.accounts[ch.head] || []).map((a) =>
-      `<button data-act="cset" data-what="account" data-v="${esc(a)}"><span class="mname">${esc(accountName(ch.head, a))}</span>${loginMark(ch.head, a)}</button>`).join("")}</div>`;
+    return acctMenu(ch.head, ch.account, (a) => `data-act="cset" data-what="account" data-v="${esc(a)}"`);
   }
   return "";
 }
@@ -1027,9 +1078,9 @@ function vacantHtml(tm, slot, { key, ro, lead, chip, model, sc, ended = false, h
     // a door that stays shut until he opens it (fin; hitstop da3d8b2)
     word = `<span class="word limit">Not started</span>`;
     // why it did not come up, on the card, as a given-up row says why (Marlin p223)
-    why = (unstarted.why ? `<p class="why limit">${esc(unstarted.why)}</p>` : "")
-      + (/^Waited /.test(unstarted.why || "") ? `<div class="wait45">${DRAW.meter(100, "full")}</div>` : "")
-      + (unstarted.path ? `<div class="folder">${folderChip(unstarted.path, 2)}</div>` : "");
+    // a start that gave up waiting is the wait and its last screen; any other reason keeps the folder it was started in beside it
+    why = (unstarted.why ? `<p class="why limit${/^Waited /.test(unstarted.why) ? " wait" : ""}">${esc(unstarted.why)}</p>` : "")
+      + (unstarted.path && !/^Waited /.test(unstarted.why || "") ? `<div class="folder">${folderChip(unstarted.path, 2)}</div>` : "");
     acts = ro ? "" : `<button class="act" data-act="start" data-s="${esc(slot.id)}">Try again</button>`;
     if (unstarted.screen) {
       const open = ui.screenOpen.has(key);
@@ -1098,7 +1149,29 @@ const activityRows = () => (state.activity?.entries || []);
 // the card's line is TODAY's latest tool work, whatever day the chat is showing (readTeam keeps today's own read)
 const todayRows = () => (state.today?.entries || []);
 const lastActivity = (slotId) => todayRows().filter((a) => a.slot === slotId && a.tool).at(-1) || null;
-const activityHtml = (a) => `${GLYPH[a.tool] || GLYPH.tool}<span class="obj">${esc(a.object || a.tool)}</span>`;
+/** WHAT A TOOL CALL SAYS ON A ROW, in a user's words: a file's base name for the tools that work on files, "Searched" for a
+ *  search (its pattern is on the row's hover), a program's name for a command, and a label the member wrote for its own work
+ *  as it wrote it. A symbol's name (camelCase, snake_case, dotted) is never a row's words, so a row that holds only one is the
+ *  tool's name in words. Everything it was given is on the hover. */
+const FILE_TOOLS = /^(?:Read|Write|Edit|MultiEdit|NotebookEdit|NotebookRead)$/, SEARCH_TOOLS = /^(?:Grep|Glob|WebSearch|ToolSearch)$/;
+function callWord(a) {
+  const tool = String(a.tool || ""), raw = String(a.object || "").trim();
+  const base = (s) => s.split("/").filter(Boolean).pop() || s;
+  const fileLike = (s) => /\.[A-Za-z0-9]{1,8}$/.test(s) && !/\s/.test(s);
+  const symbol = (s) => /^[\w$.:-]+$/.test(s) && /[a-z][A-Z]|_|\./.test(s) && !fileLike(base(s));
+  if (SEARCH_TOOLS.test(tool)) return "Searched";
+  if (!raw) return DRAW.toolWord(tool) || tool;
+  if (FILE_TOOLS.test(tool)) return base(raw);
+  if (tool === "SendMessage") { const tm = team(), s = tm ? slotOf(tm, raw) : null; return `Sent to ${s ? nameOf(tm, s) : raw}`; }
+  if (tool === "Bash" && !/^[A-Z]/.test(raw)) {
+    // a command, not a label: the program it ran
+    const first = raw.split(/&&|\|\||;|\|/).map((c) => c.trim().replace(/^(?:\w+=\S*\s+)+/, "")).find((c) => c && !/^cd\s/.test(c)) || raw;
+    return base(first.split(/\s+/)[0]);
+  }
+  if (raw.includes("/") && fileLike(base(raw))) return base(raw);
+  return symbol(raw) ? DRAW.toolWord(tool) || tool : raw;
+}
+const activityHtml = (a) => `${GLYPH[a.tool] || GLYPH.tool}<span class="obj"${a.object ? ` title="${esc(a.object)}"` : ""}>${esc(callWord(a))}</span>`;
 
 // ---------- the room: members, their messages to each other, what each did ----------
 // A day panel the history no longer holds says so in one word; the daemon's own sentence for why rides the word's hover.
@@ -1120,9 +1193,10 @@ const msgId = (m) => `${m.at}|${m.from_slot || m.from || ""}|${m.to_slot || m.to
 function chatHtml(tm, key) {
   const panel = state.chat;
   if (!panel) return GHOST.lines([22, 16, 19, 12]);
-  if (gone(panel)) return keptHtml(panel);
-  const msgs = panel.messages || [];
-  if (!msgs.length) return `<div class="empty">${DRAW.unread.object("No messages")}</div>`;
+  const msgs = gone(panel) ? [] : panel.messages || [];
+  // A PANEL WITH NOTHING TO SHOW KEEPS THE OUTLINE OF WHAT IT WOULD HOLD: three dashed bubbles at a usual bubble's height, its
+  // state said once, in the panel's head, and never again in the body
+  if (!msgs.length) return `${panel.state === "partially_kept" ? keptHtml(panel) : ""}${hollowBubbles(3)}`;
   // A MESSAGE THAT LANDS AFTER THE DAY WAS FIRST DRAWN RISES IN ONCE: the ones there on the first draw simply stand
   const now = Date.now(), first = !ui.firstSeen.has(key), seen = ui.firstSeen.get(key) || new Map();
   ui.firstSeen.set(key, seen);
@@ -1131,19 +1205,29 @@ function chatHtml(tm, key) {
   // splice keeps no message text of its own: it reads the sender's transcript.
   const open = ui.chatOpen.has(key);
   const more = `<button class="morepill" type="button" data-act="chat-more" data-k="${esc(key)}"${open ? "" : " hidden"}>${open ? "Fewer" : "<b>0</b> earlier"}</button>`;
-  // THE MESSAGES THAT TOUCH A MEMBER WHO NEEDS HIM stand out: their bubble takes the needs colour, so what a waiting member
-  // was told, or said, is found before the rest; the newest message is the one that lifts off the page, the older ones lie flat
+  // THE KEY LIGHT MARKS ONE MESSAGE: the latest sent by a member who is waiting on him now, and it goes out when the wait ends.
+  // Every other message keeps neutral ink with its sender's colour on its edge; the newest of all lifts off the page.
   const waiting = new Set(tm.slots.filter((s) => sessOf(s)?.waiting_for).map((s) => s.id));
+  const asking = msgs.reduce((at, m, n) => (waiting.has(m.from_slot) ? n : at), -1);
   return keptHtml(panel) + more + msgs.map((m, n) => {
     const from = m.from_slot ? slotOf(tm, m.from_slot) : null;
     const arrive = now - seen.get(msgId(m)) < ARRIVE_MS ? " arrive" : "";
-    const asks = waiting.has(m.from_slot) || waiting.has(m.to_slot) ? " asks" : "";
     // A MESSAGE WHOSE TEXT ITS SENDER'S TRANSCRIPT NO LONGER HOLDS is the bubble's own dashed outline with nothing in it,
     // said once in the panel's head, never a chip that says so on every one of them
     const body = m.text?.trim() ? `<div class="body">${md(m.text)}</div>` : `<div class="body void"></div>`;
-    return `<div class="tm${from ? "" : " outside"}${m.text?.trim() ? "" : " bare"}${asks}${n === msgs.length - 1 ? " latest" : ""}${arrive}" style="--c:${from ? headColor(from.head) : "var(--track-line)"}">` +
-      `<div class="who">${party(tm, m.from_slot, m.from)}${GLYPH.msg}${party(tm, m.to_slot, m.to)}<time>${hhmm(m.at)}</time></div>${body}</div>`;
+    const name = (slotId, address) => { const s = slotId ? slotOf(tm, slotId) : null; return s ? nameOf(tm, s) : partyWord(address); };
+    return `<div class="tm${from ? "" : " outside"}${m.text?.trim() ? "" : " bare"}${n === asking ? " key" : ""}${n === msgs.length - 1 ? " latest" : ""}${arrive}" style="--c:${from ? headColor(from.head) : "var(--track-line)"}">` +
+      `<div class="who"><b class="from">${esc(name(m.from_slot, m.from))}</b><span class="to">to ${esc(name(m.to_slot, m.to))}</span><time>${hhmm(m.at)}</time></div>${body}</div>`;
   }).join("");
+}
+/** a usual bubble's outline, dashed, where there is nothing to show */
+const hollowBubbles = (n) => `<div class="tca-hollows" aria-hidden="true">${Array.from({ length: n }, () => `<span class="tca-hollow"></span>`).join("")}</div>`;
+/** A PANEL'S STATE, said once in its head: a failed read in the limit red, the history's own word where it does not hold the day */
+function panelState(panel, none) {
+  if (!panel) return "";
+  if (panel.error) return `<span class="tca-state limit">${esc(panel.error)}</span>`;
+  if (KEPT_WORD[panel.state]) return `<span class="tca-state"${panel.reason ? ` title="${esc(panel.reason)}"` : ""}>${KEPT_WORD[panel.state]}</span>`;
+  return none ? `<span class="tca-state">${none}</span>` : "";
 }
 /** The latest messages that fit beside the members, as many as fit, and at least three; the rest behind "N earlier".
  *  Measured on the page as drawn, as the kit fits a stacked bar's labels: the column's height is the layout's own. */
@@ -1218,17 +1302,17 @@ function party(tm, slotId, address) {
 function feedHtml(tm, key) {
   const panel = state.activity;
   if (!panel) return GHOST.lines([18, 21, 14]);
-  if (gone(panel)) return keptHtml(panel);
-  const rows = activityRows().filter((a) => a.slot).reverse();
-  if (!rows.length) return `<div class="empty">${DRAW.unread.object("No activity")}</div>`;
+  const rows = gone(panel) ? [] : activityRows().filter((a) => a.slot).reverse();
+  // nothing to show keeps the outline of what the panel would hold, a lane and three log rows, its state said once in its head
+  if (!rows.length) return `${panel.state === "partially_kept" ? keptHtml(panel) : ""}<div class="tca-hollows" aria-hidden="true"><span class="tca-hollane"></span>${`<span class="tca-hollow row"></span>`.repeat(3)}</div>`;
   const open = ui.feedOpen.has(key), shown = open ? rows : rows.slice(0, FEED_LATEST);
   const more = rows.length > FEED_LATEST ? DRAW.more(rows.length - FEED_LATEST, { word: "earlier", act: "feed-more", data: ` data-k="${esc(key)}"`, open, less: "Fewer" }) : "";
-  // A MEMBER IS NAMED ONCE, on its lane above, and a row below carries only its badge in the member's colour: a role name
-  // on every row said who thirty-five times
+  // A MEMBER IS NAMED ONCE ON ITS LANE ABOVE and again at the end of its row, as its colour's dot and its name, so a row of
+  // the log is told by whose it is
   return `${lanesHtml(tm, rows)}<ol>${shown.map((a) => {
     const s = slotOf(tm, a.slot);
-    return `<li style="--c:${s ? headColor(s.head) : "var(--track-line)"}"><time>${hhmm(a.at)}</time>${s ? badgeOf(tm, s) : "<span></span>"}` +
-      `<span class="what">${activityHtml(a)}</span></li>`;
+    return `<li style="--c:${s ? headColor(s.head) : "var(--track-line)"}"><time>${hhmm(a.at)}</time><span class="what">${activityHtml(a)}</span>` +
+      `${s ? `<span class="tca-by"><i></i>${esc(nameOf(tm, s))}</span>` : "<span></span>"}</li>`;
   }).join("")}</ol>${more}${keptHtml(panel)}`;
 }
 /** A member's badge: the first letter of its name in its command's colour, so a row of the log is told by whose it is without
@@ -1285,14 +1369,20 @@ const viewsHtml = (tm) => `<div class="views">${DRAW.switcher(VIEWS, viewOf(tm),
  *  calls on one shared scale, the day he is on lit. A day with none is a flat dash, so stepping back goes to a day he can
  *  see held something. Each is a door to its day. */
 const dayHtml = () => {
-  const wk = state.week, top = wk ? Math.max(1, ...wk) : 1;
+  const wk = state.week, top = wk ? Math.max(1, ...wk) : 1, tm = team();
+  // the bars rise from nothing once, on the draw the week first landed for this team, and stand still on every re-read
+  const fresh = Boolean(wk && tm) && !ui.weekGrown.has(tm.id);
+  if (fresh && !weekTimer) weekTimer = setTimeout(() => { ui.weekGrown.add(tm.id); weekTimer = null; }, 900);
+  // each bar carries its day's tool calls as a figure under it, so a count is read without hover; a day with none is a flat dash
   const strip = wk ? `<div class="week" role="group" aria-label="Days">${[6, 5, 4, 3, 2, 1, 0].map((b) =>
     `<button type="button" class="dayb${wk[b] ? "" : " none"}" data-act="day-to" data-b="${b}" aria-pressed="${ui.day === b}" aria-label="${esc(`${dayName(b)}, ${plural(wk[b], "tool call")}`)}" title="${esc(`${dayName(b)} · ${plural(wk[b], "tool call")}`)}">` +
-    `<i style="height:${wk[b] ? Math.max(12, (wk[b] / top) * 100).toFixed(0) : 0}%"></i></button>`).join("")}</div>` : "";
+    `<span class="ttl-dbar"><i${fresh ? ' class="grow"' : ""} style="height:${wk[b] ? Math.max(12, (wk[b] / top) * 100).toFixed(0) : 0}%"></i></span>` +
+    `<span class="ttl-dfig">${wk[b] ? DRAW.n(wk[b]) : ""}</span></button>`).join("")}</div>` : "";
   return `<div class="day"><button class="icon" data-act="day" data-d="1" aria-label="Earlier day"${ui.day >= 6 ? " disabled" : ""}>${GLYPH.back}</button>` +
     `${strip}<span class="dname">${dayName(ui.day)}</span>` +
     `<button class="icon" data-act="day" data-d="-1" aria-label="Later day"${ui.day === 0 ? " disabled" : ""}>${GLYPH.next}</button></div>`;
 };
+let weekTimer = null;
 
 /** The day's messages from one member to another, oldest first: the hand-offs the views draw. */
 const handoffs = () => (state.chat?.messages || []).filter((m) => m.from_slot && m.to_slot && m.from_slot !== m.to_slot);
@@ -1361,16 +1451,16 @@ function byRoleHtml(tm) {
   }), { hideRole: true })}${betweenHtml(tm)}</div>`;
 }
 
-// a day of activity samples is hundreds of rows; the timeline draws the latest this many and says how many it left out
-const TIMELINE_ROWS = 400;
+// THE TIMELINE DRAWS THE LATEST TWELVE EVENTS OF THE DAY AT FULL SIZE, and folds each earlier hour to its rule: the hour, how
+// many events it holds and a chevron that opens them in place. A day with twelve or fewer folds nothing.
+const TL_FULL = 12;
 // A SILENCE IS DRAWN AS SPACE, IN PROPORTION TO ITS LENGTH: from two minutes of quiet on, a gap as tall as the log of its
 // minutes, halved (2 min is .5 rem, 5 min 1.2, half an hour 2.5, two hours 3.5), so a long quiet stands visibly taller than a
 // short one without a word; past half an hour a dashed rule crosses it, and the clock on either side says the span.
 const QUIET_MS = 2 * 60_000, BREAK_MS = 30 * 60_000;
 const quietRem = (ms) => Math.log2(ms / 60_000) * 0.5;
 /** WHAT A MESSAGE SAYS ON ITS ARROW: its first sentence, without the marks of a heading or a list, long enough to say
- *  something ("Pushed." alone runs on to the next one), and cut at a word with an ellipsis past 160 characters. The
- *  arrow itself cuts what its span cannot hold with an ellipsis, never mid-word without one. */
+ *  something ("Pushed." alone runs on to the next one), and cut at a whole word with an ellipsis past [max] characters. */
 function firstLine(text, max = 160) {
   const line = String(text || "").split("\n").map((l) => l.replace(/^[\s#>*\-\d.]+/, "").trim()).find(Boolean) || "";
   const said = line.match(/^.{24,}?[.!?](?=\s|$)/)?.[0] || line;
@@ -1380,6 +1470,14 @@ function firstLine(text, max = 160) {
 const ARROW_CHARS = 72;
 // a run this long of one member's tool calls is drawn as one mark
 const RUN_MIN = 3;
+const hourStart = (t) => { const d = new Date(t); d.setMinutes(0, 0, 0); return +d; };
+const hourWord = (t) => { const d = new Date(t); return `${d.getHours() % 12 || 12} ${d.getHours() < 12 ? "AM" : "PM"}`; };
+// a row's time cell carries only its minutes: the hour is printed once, on the rule at each new hour
+const minWord = (t) => `:${String(new Date(t).getMinutes()).padStart(2, "0")}`;
+const evKey = (e) => (e.m ? msgId(e.m) : `${e.a.at}|${e.a.slot}|${e.a.tool}|${e.a.object || ""}`);
+// the fold or run he just opened turns its chevron and unfolds once, and never on a re-read of the same markup
+let justOpened = null;
+const openedNow = (k) => justOpened === k;
 
 function timelineHtml(tm) {
   const cols = tm.slots;
@@ -1390,62 +1488,89 @@ function timelineHtml(tm) {
     ...(state.chat && !gone(state.chat) ? state.chat.messages || [] : []).filter((m) => col(m.from_slot) >= 0 || col(m.to_slot) >= 0).map((m) => ({ at: m.at, m })),
     ...activityRows().filter((a) => a.tool && col(a.slot) >= 0).map((a) => ({ at: a.at, a })),
   ].sort((x, y) => x.at - y.at);
-  const shown = events.slice(-TIMELINE_ROWS);
-  // a member with nothing on this day keeps its column, narrower, and says so at its head
-  const busy = new Set(shown.flatMap((e) => (e.a ? [col(e.a.slot)] : [col(e.m.from_slot), col(e.m.to_slot)])));
-  const tracks = cols.map((_, i) => (busy.has(i) || !shown.length ? "minmax(0, 1fr)" : "minmax(9rem, .4fr)")).join(" ");
-  // a member with nothing on this day keeps its column, its head dimmed: the empty lane under it says so, no word needed
+  const dayKey = `${tm.id}/${ui.day}`;
+  // AN EVENT THAT LANDS AFTER THE DAY WAS FIRST DRAWN RISES IN ONCE: the ones there on the first draw simply stand
+  const now = Date.now(), first = !ui.tlSeen.has(dayKey), seen = ui.tlSeen.get(dayKey) || new Map();
+  ui.tlSeen.set(dayKey, seen);
+  for (const e of events) if (!seen.has(evKey(e))) seen.set(evKey(e), first ? -Infinity : now);
+  // every lane stands as wide as the others, the members with nothing this day included: its head is dimmed and the empty
+  // lane under it says so
+  const busy = new Set(events.flatMap((e) => (e.a ? [col(e.a.slot)] : [col(e.m.from_slot), col(e.m.to_slot)])));
   const heads = cols.map((s, i) => {
     const u = useOf(tm, s.id);
-    return `<div class="tlhead${shown.length && !busy.has(i) ? " idle" : ""}" style="grid-column:${i + 2};--c:${headColor(s.head)}"><span class="party"><i></i>${esc(nameOf(tm, s))}</span>` +
+    return `<div class="ttl-head${events.length && !busy.has(i) ? " idle" : ""}" style="grid-column:${i + 2};--c:${headColor(s.head)}"><span class="party"><i></i>${esc(nameOf(tm, s))}</span>` +
       `${u ? reqHtml(tm, s, u, scale, { brief: true }) : ""}</div>`;
   }).join("");
-  const hourWord = (t) => { const d = new Date(t); return `${d.getHours() % 12 || 12} ${d.getHours() < 12 ? "AM" : "PM"}`; };
-  const rowOf = (e, row) => {
-    const time = `<time style="grid-row:${row}">${hhmm(e.at)}</time>`;
+
+  const rowOf = (e, time) => {
+    const land = now - seen.get(evKey(e)) < ARRIVE_MS ? " land" : "";
+    const clock = `<time title="${esc(hhmm(e.at))}">${time}</time>`;
     if (e.a) {
       const i = col(e.a.slot);
-      return `${time}<div class="tlact" style="grid-row:${row};grid-column:${i + 2};--c:${headColor(cols[i].head)}">${activityHtml(e.a)}</div>`;
+      return `<div class="ttl-row${land}">${clock}<div class="ttl-act" style="grid-column:${i + 2};--c:${headColor(cols[i].head)}">${activityHtml(e.a)}</div></div>`;
     }
     // a message's arrow carries only the opening of what was said; the chat beside it holds the whole message
     const f = col(e.m.from_slot), t = col(e.m.to_slot), said = firstLine(e.m.text, ARROW_CHARS), whole = firstLine(e.m.text);
+    const tip = whole ? ` title="${esc(whole)}"` : "";
     if (f >= 0 && t >= 0) {
-      const lo = Math.min(f, t), hi = Math.max(f, t);
-      return `${time}<div class="tlmsg${t < f ? " back" : ""}${said ? "" : " void"}" style="grid-row:${row};grid-column:${lo + 2} / ${hi + 3};--c:${headColor(cols[f].head)}"${whole ? ` title="${esc(whole)}"` : ""}>` +
-        `${said ? `<span>${esc(said)}</span>` : ""}</div>`;
+      const lo = Math.min(f, t), hi = Math.max(f, t), back = t < f, c = headColor(cols[f].head);
+      // the line runs from its sender's lane to its receiver's; the words start at its near end and run on over the empty
+      // lanes of the row, never cut by the span they sit on
+      return `<div class="ttl-row${land}">${clock}<div class="ttl-msg${back ? " back" : ""}${said ? "" : " void"}" style="grid-column:${lo + 2} / ${hi + 3};--c:${c}"${tip}></div>` +
+        `${said ? `<span class="ttl-say${back ? " back" : ""}" style="grid-column:${lo + 2} / -1;--c:${c}"${tip}><span>${esc(said)}</span></span>` : ""}</div>`;
     }
     const i = f >= 0 ? f : t;
     const other = partyWord(f >= 0 ? e.m.to : e.m.from);
-    return `${time}<div class="tlnote${said ? "" : " void"}" style="grid-row:${row};grid-column:${i + 2};--c:${headColor(cols[i].head)}"${whole ? ` title="${esc(whole)}"` : ""}>${GLYPH.msg}<span>${f >= 0 ? "to" : "from"} ${esc(other)}</span></div>`;
+    return `<div class="ttl-row${land}">${clock}<div class="ttl-note${said ? "" : " void"}" style="grid-column:${i + 2};--c:${headColor(cols[i].head)}"${tip}>${GLYPH.msg}<span>${f >= 0 ? "to" : "from"} ${esc(other)}</span></div></div>`;
   };
-  // THE DAY'S CLOCK, DRAWN AS A RULE: a hairline with the hour on it at each new hour, so the log-scaled silences between
-  // calls sit on real time. A RUN OF TOOL CALLS BY ONE MEMBER (three or more, none a silence apart) is one mark that opens in
-  // place, so a long burst is one line of the day and not forty.
-  let r = 1, wasHour = null;
-  const out = [];
-  for (let n = 0; n < shown.length;) {
-    const e = shown[n], gap = n ? e.at - shown[n - 1].at : 0, h = Math.floor(e.at / 3_600_000);
-    if (gap >= QUIET_MS) out.push(`<div class="tlq${gap >= BREAK_MS ? " brk" : ""}" style="grid-row:${++r};height:${quietRem(gap).toFixed(2)}rem" aria-hidden="true"></div>`);
-    if (h !== wasHour) { out.push(`<div class="tlhr" style="grid-row:${++r}" aria-hidden="true"><span>${hourWord(e.at)}</span></div>`); wasHour = h; }
-    let m = n + 1;
-    if (e.a) while (m < shown.length && shown[m].a && shown[m].a.slot === e.a.slot && shown[m].at - shown[m - 1].at < QUIET_MS) m++;
-    const run = e.a ? shown.slice(n, m) : [];
-    if (run.length >= RUN_MIN) {
-      const rk = `${tm.id}/${ui.day}/${e.at}/${e.a.slot}`, open = ui.runs.has(rk), i = col(e.a.slot), row = ++r;
-      const tools = [...new Set(run.map((x) => x.a.tool))].slice(0, 6).map((t) => GLYPH[t] || GLYPH.tool).join("");
-      out.push(`<time style="grid-row:${row}">${hhmm(e.at)}</time><button class="tlrun" type="button" data-act="run" data-k="${esc(rk)}" aria-expanded="${open}" ` +
-        `style="grid-row:${row};grid-column:${i + 2};--c:${headColor(cols[i].head)}">${DRAW.chev}<span class="tools">${tools}</span><b>${DRAW.n(run.length)}</b> tool calls</button>`);
-      if (open) for (const x of run) out.push(rowOf(x, ++r));
-      n = m;
-      continue;
+
+  /** A list of events as rows, in order: a silence as space (a dashed rule past half an hour), the hour once on its rule where
+   *  it changes, a row's minutes only where they differ from the row above, and a run of one member's tool calls (three or more,
+   *  none a silence apart) as one mark that opens in place, so a long burst is one line of the day and not forty. */
+  function rowsHtml(list, { rules = true, after = null, flat = false } = {}) {
+    const out = [];
+    // the hour the fold above ends in is already on its rule: it is not printed twice
+    let wasHour = after, wasMin = null;
+    for (let n = 0; n < list.length;) {
+      const e = list[n], gap = n ? e.at - list[n - 1].at : 0, h = hourStart(e.at);
+      if (gap >= QUIET_MS) out.push(`<div class="ttl-q${gap >= BREAK_MS ? " brk" : ""}" style="height:${quietRem(gap).toFixed(2)}rem" aria-hidden="true"></div>`);
+      if (rules && h !== wasHour) { out.push(`<div class="ttl-hr"><span class="ttl-hl">${hourWord(e.at)}</span><i class="ttl-hline"></i></div>`); wasHour = h; wasMin = null; }
+      const mw = minWord(e.at), time = mw === wasMin ? "" : mw;
+      wasMin = mw;
+      let m = n + 1;
+      if (e.a && !flat) while (m < list.length && list[m].a && list[m].a.slot === e.a.slot && list[m].at - list[m - 1].at < QUIET_MS) m++;
+      const run = e.a ? list.slice(n, m) : [];
+      if (run.length >= RUN_MIN) {
+        const rk = `${dayKey}/${e.at}/${e.a.slot}`, open = ui.runs.has(rk), i = col(e.a.slot), c = headColor(cols[i].head);
+        const tools = [...new Set(run.map((x) => x.a.tool))].slice(0, 6).map((t) => GLYPH[t] || GLYPH.tool).join("");
+        out.push(`<div class="ttl-row"><time title="${esc(hhmm(e.at))}">${time}</time><button class="ttl-run${open ? " open" : ""}${open && openedNow(rk) ? " fresh" : ""}" type="button" data-act="run" data-k="${esc(rk)}" aria-expanded="${open}" ` +
+          `style="grid-column:${i + 2};--c:${c}">${DRAW.chev}<span class="tools">${tools}</span><b>${DRAW.n(run.length)}</b> tool calls</button></div>`);
+        // the run's own calls stand under it while it is open, unfolding in place
+        out.push(`<div class="ttl-fold${open ? " open" : ""}${open && openedNow(rk) ? " fresh" : ""}"><div class="ttl-fold-in">${open ? rowsHtml(run, { rules: false, flat: true }) : ""}</div></div>`);
+        wasMin = null;
+        n = m;
+        continue;
+      }
+      out.push(rowOf(e, time));
+      n++;
     }
-    out.push(rowOf(e, ++r));
-    n++;
+    return out.join("");
   }
-  const cut = events.length > shown.length ? `<p class="cut"><span>The latest ${shown.length} of ${events.length}</span></p>` : "";
+
+  // the earlier hours fold to their rules; the hour the latest twelve begin in folds only what came before them
+  const late = events.slice(-TL_FULL), early = events.slice(0, events.length - late.length);
+  const byHour = new Map();
+  for (const e of early) { const h = hourStart(e.at); byHour.set(h, [...(byHour.get(h) || []), e]); }
+  const folded = [...byHour.entries()].map(([h, list]) => {
+    const hk = `${dayKey}/h${h}`, open = ui.hours.has(hk), part = hourStart(late[0].at) === h;
+    return `<div class="ttl-hr headfold${open ? " open" : ""}${open && openedNow(hk) ? " fresh" : ""}"><button type="button" class="ttl-hbtn" data-act="hour" data-k="${esc(hk)}" aria-expanded="${open}"><span class="ttl-hl">${hourWord(h)}</span>` +
+      `<span class="ttl-hc">${DRAW.chev}<b>${DRAW.n(list.length)}</b> ${part ? "earlier" : list.length === 1 ? "event" : "events"}</span><i class="ttl-hline"></i></button></div>` +
+      `<div class="ttl-fold${open ? " open" : ""}${open && openedNow(hk) ? " fresh" : ""}"><div class="ttl-fold-in">${open ? rowsHtml(list, { rules: false }) : ""}</div></div>`;
+  }).join("");
+  const cut = early.length ? `<p class="cut"><span>The latest ${DRAW.n(late.length)} of ${DRAW.n(events.length)}</span></p>` : "";
   // one absence, one phrasing: the day holds nothing
   const empty = waiting || (!events.length ? DRAW.unread.object("Nothing this day") : "");
-  return `<div class="mcol tlcol">${cut}<div class="tl" style="grid-template-columns:5.2rem ${tracks}">${heads}${out.join("")}</div>${empty}</div>`;
+  return `<div class="mcol tlcol">${cut}<div class="ttl" style="--ttl-cols:5.2rem repeat(${cols.length}, minmax(0, 1fr))"><div class="ttl-heads">${heads}</div>${folded}${rowsHtml(late, { after: early.length ? hourStart(early.at(-1).at) : null })}</div>${empty}</div>`;
 }
 
 /** The members as the chosen view draws them: on the Board, in the order that puts whoever needs him first. */
@@ -1491,12 +1616,29 @@ function leftHtml(tm, sc) {
 function memberStack(tm, T, held, grow) {
   const segs = held.map((s) => ({ s, u: useOf(tm, s.id) })).sort((a, b) => b.u.turns - a.u.turns)
     .map(({ s, u }) => ({ n: u.turns, word: nameOf(tm, s), ink: headColor(s.head), href: slotDoor(tm, s), cls: isLeft(tm, s) ? "went" : "" }));
-  return DRAW.stack(segs, T.turns, { small: true, grow, key: `band:${tm.id}:by` });
+  return DRAW.stack(segs, T.turns, { grow, key: `band:${tm.id}:by` });
 }
 
 /** WHAT THE TEAM HAS DONE SINCE ITS MEMBERS JOINED: one hero figure, its requests over the span they were counted from;
  *  its tokens and its price beside it; then the whole split twice, by how it was paid and by who did it. The scope is
  *  said here once, so no member card carries it again. */
+/** WHAT EACH MEMBER IS DOING, in two or three words under its name in the band: where its session stands, or why it is not
+ *  running (left the team on a date, no session, ended), and when a held member is back. */
+function memberWord(tm, slot) {
+  if (isLeft(tm, slot)) return { word: `left ${monthDay(slot.left_epoch_millis)}`, run: false };
+  const x = sessOf(slot);
+  if (!x) return { word: "no session", run: false };
+  if (x.availability === "gone") return { word: "ended", run: false };
+  const held = heldOf(tm, slot.id);
+  if (held) return { word: `at limit · back ${backWord(new Date(held.back))}`, run: true, limit: true };
+  const L = stallLook(slot, x) ?? stateOf(x);
+  // a state word may carry its mark (the lock before At limit): the band says the words alone
+  return { word: String(L.word).replace(/<[^>]*>/g, "").toLowerCase(), run: true, limit: L.cls === "stalled" };
+}
+/** THE TEAM'S WORK AND WHO DID IT. A request count is the one hero of its section, a door to its requests where one session
+ *  holds them all, turning limit red only while a member is held at its plan limit; the tokens stand one step under it with
+ *  the share of them that came from the cache drawn as a ring, then how the requests were paid as one bar, and under By
+ *  member each member as its own small bar with its words, the team's requests cut by member as the bar that closes it. */
 function workHtml(tm) {
   const econ = state.economics[tm.id];
   if (!econ) {
@@ -1511,20 +1653,38 @@ function workHtml(tm) {
   const since = sinceOf(tm) || tm.created_epoch_millis || null;
   // the window is said once, on the section's own kicker: "Since Oct 23", or "Since joining" where no date is known
   const kicker = since ? `Since ${monthDay(since)}` : "Since joining";
-  // the hero is the one figure the section answers with, and a door to exactly its requests where one session holds them all
-  const hero = DRAW.hero({ figure: DRAW.n(T.turns), key: `band:${tm.id}`, href: teamDoor(tm), of: T.turns === 1 ? "request" : "requests" });
+  const held = [...tm.slots, ...leftOf(tm)].filter((s) => (useOf(tm, s.id)?.turns || 0) > 0);
+  const stuck = !tm.archived && tm.slots.some((s) => heldOf(tm, s.id));
+  // what every request through splice came to over the same span (readWhole): the team's share is then drawn against it. A
+  // whole smaller than the part is no whole, so it draws nothing.
+  const whole = (n, part) => (Number.isFinite(n) && n >= part && n > 0 ? n : null);
+  const allTurns = whole(state.whole[tm.id]?.turns, T.turns), allTokens = whole(state.whole[tm.id]?.tokens, T.tokens);
+  const hero = DRAW.hero({ figure: DRAW.n(T.turns), level: stuck ? "bad" : "ok", key: `band:${tm.id}`, href: teamDoor(tm),
+    of: allTurns ? `of ${DRAW.n(allTurns)} requests` : T.turns === 1 ? "request" : "requests" });
+  const share = (n, all, label) => `<span class="tbd-share" role="img" aria-label="${esc(label)}"><i style="width:${Math.max(1, (n / all) * 100).toFixed(1)}%"></i></span>`;
   // the tokens stand one step below it, muted, so the hero is the only focal figure, and the share of them that came from the
   // cache is drawn as the ring beside them. TOKENS NOT REPORTED: requests with no token reading are the dash, never a 0.
   // The price rides the part of the payment bar it prices (splitStack's Priced); only a price splice could not read for
   // requests that WERE priced stands here, as the dash.
   const cached = T.readIn > 0 ? T.cached / T.readIn : null, cachedPct = cached == null ? 0 : Math.round(cached * 100);
   const cacheRing = cached == null ? "" : `<span class="figcache" data-key="band:${tm.id}:cache">` +
-    `${DRAW.statTile(DRAW.ring(cached, { size: "focal", label: `${cachedPct}% of what was read in came from the cache` }), `${cachedPct}%`, "cached")}</span>`;
-  const money = (T.turns ? focal(T.tokens ? DRAW.big(T.tokens) : null, "tokens", `band:${tm.id}:tok`) + (T.tokens ? cacheRing : "") : "") +
-    (T.priced > 0 && T.usd == null ? focal(null, "priced", `band:${tm.id}:usd`) : "");
-  const held = [...tm.slots, ...leftOf(tm)].filter((s) => (useOf(tm, s.id)?.turns || 0) > 0);
-  return DRAW.section(kicker, `<div class="figrow">${hero}</div>${money ? `<div class="figsub">${money}</div>` : ""}${T.turns ? splitStack(T, { grow, key: `band:${tm.id}:paid`, usd: T.usd }) : ""}`, { cls: "work" }) +
-    (held.length > 1 ? DRAW.section("By member", memberStack(tm, T, held, grow), { cls: "by" }) : "");
+    `${DRAW.statTile(DRAW.ring(cached, { size: "focal", label: `${cachedPct}% of what was read in came from the cache` }), `${cachedPct}%`, "cached", { focal: true })}</span>`;
+  // the tokens as one bar cut by member, each in its own colour, so who moved them is read before a figure is
+  const tokSegs = held.filter((s) => (useOf(tm, s.id)?.tokens || 0) > 0).map((s) => `<i class="${isLeft(tm, s) ? "went" : ""}" style="flex-grow:${useOf(tm, s.id).tokens};--c:${headColor(s.head)}" title="${esc(`${nameOf(tm, s)} ${DRAW.big(useOf(tm, s.id).tokens)}`)}"></i>`).join("");
+  const tokens = T.turns ? `<div class="tbd-tok"><div class="tbd-tokfig">${focal(T.tokens ? DRAW.big(T.tokens) : null, allTokens ? `of ${DRAW.big(allTokens)} tokens` : "tokens", `band:${tm.id}:tok`)}` +
+    `${T.tokens && held.length > 1 ? `<span class="tbd-tokbar" role="img" aria-label="Tokens by member">${tokSegs}</span>` : ""}</div>${T.tokens ? cacheRing : ""}</div>` : "";
+  const unpricedWord = T.priced > 0 && T.usd == null ? `<div class="figsub">${focal(null, "priced", `band:${tm.id}:usd`)}</div>` : "";
+  const work = DRAW.section(kicker, `<div class="figrow tbd-hero${stuck ? " stuck" : ""}">${stuck ? `<span class="lockico" aria-hidden="true">${ICON.lock}</span>` : ""}${hero}${allTurns ? share(T.turns, allTurns, `The team's share of all requests`) : ""}</div>${tokens}${unpricedWord}` +
+    `${T.turns ? `<div class="tbd-pay">${splitStack(T, { grow, key: `band:${tm.id}:paid`, usd: T.usd })}</div>` : ""}`, { cls: "work" });
+  if (held.length <= 1) return work;
+  const top = Math.max(1, ...held.map((s) => useOf(tm, s.id)?.tokens || 0));
+  const mems = held.map((s) => {
+    const u = useOf(tm, s.id), w = memberWord(tm, s);
+    return `<li class="tbd-mem${w.limit ? " limit" : ""}${isLeft(tm, s) ? " gone" : ""}" style="--c:${headColor(s.head)}"><div class="tbd-mh"><i class="tbd-dot${w.run ? "" : " open"}" aria-hidden="true"></i>` +
+      `<b>${esc(nameOf(tm, s))}</b><span class="tbd-ms">${esc(w.word)}</span><span class="tbd-mf">${u.tokens ? DRAW.big(u.tokens) : DRAW.dash}</span></div>` +
+      `<span class="tbd-mb" aria-hidden="true"><i style="width:${((u.tokens / top) * 100).toFixed(1)}%"></i></span></li>`;
+  }).join("");
+  return work + DRAW.section("By member", `<ul class="tbd-mems">${mems}</ul><div class="tbd-bymem">${memberStack(tm, T, held, grow)}</div>`, { cls: "by" });
 }
 /** The door of the team's own count: exactly its requests, when every request was made in one session, which Requests takes. A
  *  team of several sessions has no one address on Requests, so its count is a figure and its members' segments are the doors. */
@@ -1546,7 +1706,7 @@ function bandHtml(tm) {
   const endAll = ro || !started.length || armed ? ""
     : endingAll ? `<button class="act quiet stopping" disabled>${ICON.wait}Ending · ${secsSince(endingAll)} s</button>`
     : `<button class="act quiet" data-act="end-all">End all</button>`;
-  const armedRow = ro || !armed ? "" : `<div class="armed end">${armed.members.map((m) => { const x = tm.slots.find((y) => y.id === m.slot);
+  const armedRow = ro || !armed ? "" : `<div class="armed end"><span class="said">End all?</span>${armed.members.map((m) => { const x = tm.slots.find((y) => y.id === m.slot);
       return `<span class="chip${m.reason === "working" ? " live" : ""}" title="${m.reason === "draft" ? esc(`Unsent: ${m.draft || ""}`) : "Working"}"><i aria-hidden="true"></i>${esc(x ? nameOf(tm, x) : m.slot)}</span>`; }).join("")}` +
     `<button class="act danger small" data-act="end-all-now">End all</button><button class="act quiet small" data-act="end-all-keep">Keep running</button></div>`;
   // a refusal sits where it happened, as a word: End all's, Restore's with each member held and the team holding it
@@ -1559,11 +1719,15 @@ function bandHtml(tm) {
   // Archive stands on the line beside Edit: a menu holding one act is a click in front of that act.
   const acts = ro ? `<button class="act" data-act="restore">Restore</button>`
     : `<button class="act" data-act="edit">${GLYPH.Edit}Edit</button><button class="act quiet" data-act="archive">Archive</button>${endAll}`;
-  // the folder is the team's own object, so it rides the name's line with what may be done to the team, and the goal
-  // reads under them at a reading measure
-  const who = `<section class="psec who"><div class="named"><h2>${esc(tm.name)}</h2>${tm.repo ? folderChip(tm.repo, 2) : ""}` +
-    `<div class="acts">${refusals}${acts}</div></div>${armedRow}${tm.goal ? `<p class="goal">${esc(tm.goal)}</p>` : ""}</section>`;
-  return `<div class="plate band">${who}${workHtml(tm)}</div>`;
+  // the team's own lamp: limit red while a member is held at its plan limit, the live tone while any member works, hollow otherwise
+  const held = !ro && tm.slots.some((s) => heldOf(tm, s.id)), working = !ro && tm.slots.some((s) => { const x = sessOf(s); return x && (x.status === "working" || x.status === "busy"); });
+  const lampWord = ro ? "Archived" : held ? "A member is at its plan limit" : working ? "A member is working" : "No member is working";
+  // the folder is the team's own object, so it rides the name's line; the goal stands in its own box under them, and what may
+  // be done to the team is one group of equal buttons, so none reads as a lesser act
+  const who = `<section class="psec who"><div class="named"><i class="tbd-lamp${held ? " limit" : working ? " live" : ""}" role="img" aria-label="${esc(lampWord)}" title="${esc(lampWord)}"></i>` +
+    `<h2>${esc(tm.name)}</h2>${tm.repo ? folderChip(tm.repo, 2) : ""}</div>${tm.goal ? `<p class="goal">${esc(tm.goal)}</p>` : ""}` +
+    `${refusals ? `<div class="tbd-refusals">${refusals}</div>` : ""}<div class="tbd-acts${ro ? " solo" : ""}">${acts}</div>${armedRow}</section>`;
+  return `<div class="plate band" data-held="band">${who}${workHtml(tm)}</div>`;
 }
 
 function boardHtml(tm) {
@@ -1572,13 +1736,13 @@ function boardHtml(tm) {
   const calls = state.activity && !gone(state.activity) ? activityRows().filter((a) => a.slot).length : 0;
   // the dashed bubbles in the thread are named once, here: how many messages of the day have no text left in their sender's transcript
   const bare = msgs ? state.chat.messages.filter((m) => !m.text?.trim()).length : 0;
-  const lgvoid = bare ? DRAW.legend([{ mark: `<i class="lgvoid" aria-hidden="true"></i>`, word: `No text ${DRAW.n(bare)}` }]) : "";
-  const talk = `<section class="plate talk${ui.chatOpen.has(key) ? " open" : ""}" aria-label="Chat">${panelHead("Chat", msgs ? `${plural(msgs, "message")}${lgvoid}` : "")}` +
+  const lgvoid = bare ? DRAW.legend([{ mark: `<i class="lgvoid" aria-hidden="true"></i>`, word: `${DRAW.n(bare)} without text` }]) : "";
+  const talk = `<section class="plate talk${ui.chatOpen.has(key) ? " open" : ""}" aria-label="Chat">${panelHead("Chat", msgs ? `${plural(msgs, "message")}${lgvoid}` : panelState(state.chat, state.chat ? "No messages" : ""))}` +
     `<div class="chat" data-k="${esc(key)}">${chatHtml(tm, key)}</div></section>`;
-  const feed = view === "timeline" ? "" : `<section class="plate feed" aria-label="Activity">${panelHead("Activity", calls ? plural(calls, "tool call") : "")}` +
+  const feed = view === "timeline" ? "" : `<section class="plate feed" aria-label="Activity">${panelHead("Activity", calls ? plural(calls, "tool call") : panelState(state.activity, state.activity ? "No activity" : ""))}` +
     `<div class="flow">${feedHtml(tm, key)}</div></section>`;
   return `<section class="team${tm.archived ? " archived" : ""}${state.stale ? " stale" : ""}" data-key="team:${esc(tm.id)}">` +
-    `${bandHtml(tm)}<div class="room${view === "timeline" ? " tl" : ""}">${membersHtml(tm)}${talk}${feed}</div></section>`;
+    `${bandHtml(tm)}<div class="room${view === "timeline" ? " tl" : ""}" data-held="room">${membersHtml(tm)}${talk}${feed}</div></section>`;
 }
 
 // ---------- the sessions that already run, offered as a team ----------
@@ -1593,33 +1757,88 @@ function gatherable() {
 const GATHER_SHOWN = 6;
 // a session on a command splice does not have cannot be a member of anything: it stays in the list, not pickable
 const pickable = (x) => state.heads.some((h) => h.key === x.head);
+/** A SESSION'S NAME AS HE KNOWS IT: the name it carries; a session that carries none, or one that is only an id, takes its
+ *  folder's name; and where two of a group would still read alike each takes its place, oldest first. Never an id's
+ *  fragment: "assistant 1" and "assistant 2" tell two sessions apart where eight hex characters tell nothing. */
+const ID_LIKE = /[0-9a-f]{8}-[0-9a-f]{4}-|[0-9a-f]{12,}/i;
+function gatherNames(rows) {
+  const folder = (x) => (x.repo?.root || x.cwd || "").split("/").filter(Boolean).pop() || "";
+  const plain = (s) => (s && !ID_LIKE.test(s) ? s : "");
+  const base = new Map(rows.map((x) => [x, plain(String(x.name || "").trim()) || plain(folder(x)) || "session"]));
+  const same = new Map();
+  for (const x of rows) { const k = base.get(x).toLowerCase(); same.set(k, [...(same.get(k) || []), x]); }
+  const out = new Map();
+  for (const list of same.values()) {
+    const oldest = [...list].sort((a, b) => +new Date(a.started_at || 0) - +new Date(b.started_at || 0));
+    for (const x of list) out.set(x, list.length > 1 ? `${base.get(x)} ${oldest.indexOf(x) + 1}` : base.get(x));
+  }
+  return out;
+}
+/** A SESSION'S REQUESTS ON ONE LOG SCALE every group shares: a track of 8rem that every bar ends on at its right edge, the
+ *  fill growing leftwards from it, and the count at the fill's start. A session whose count nobody measured is the
+ *  dashed track and a dash. [top] is log10(1 + the busiest session's count). */
+const GATHER_TRACK_REM = 8;
+const gatherP = (n, top) => (top > 0 ? (Math.log10(1 + n) / top) * 100 : 0);
+function gatherCount(x, top) {
+  if (!Number.isInteger(x.turns)) return `<span class="tgb-cnt tgb-unread" title="Not reported"><span class="tgb-trk"><span class="tgb-dash">—</span></span></span>`;
+  const p = gatherP(x.turns, top), floor = x.turns_partial === true ? "+" : "";
+  return `<span class="tgb-cnt" style="--p:${p.toFixed(2)}" title="${esc(`${DRAW.n(x.turns)}${floor} ${x.turns === 1 && !floor ? "request" : "requests"}`)}"><span class="tgb-trk"><i></i></span><b class="tgb-val">${DRAW.n(x.turns)}${floor}</b></span>`;
+}
+/** the scale's own axis, said once in the plate's head: a tick at each of every second decade, on the same right-anchored
+ *  scale the bars use, so a bar's length is read against it */
+function gatherScale(max, top) {
+  if (!(top > 0)) return "";
+  const decades = Array.from({ length: Math.floor(Math.log10(Math.max(1, max))) + 1 }, (_, i) => 10 ** i);
+  const ticks = decades.filter((_, i) => i % (decades.length > 3 ? 2 : 1) === 0);
+  const at = (v) => gatherP(v, top).toFixed(2);
+  return `<span class="tgb-scale"><span>Requests, log scale</span><span class="tgb-axis" aria-hidden="true">${ticks.map((v) => `<i style="right:${at(v)}%"></i><span style="right:${at(v)}%">${DRAW.n(v)}</span>`).join("")}</span></span>`;
+}
+const GATHER_STATES = { working: "Working", needs: "Needs you", idle: "Idle", stopped: "Stopped" };
 function gatherHtml() {
   const free = gatherable();
   if (!free.length) return "";
   const picks = [...ui.gather].filter((id) => free.some((x) => x.session_id === id));
-  const row = (x) => {
-    const on = ui.gather.has(x.session_id);
-    const meta = [x.model ? modelLabel(x.head, x.model) : "", turnsOf(x).replace(/^ · /, "")].filter(Boolean).join(" · ");
-    return `<button type="button" class="gsess${on ? " on" : ""}" data-act="gather" data-sid="${esc(x.session_id)}" aria-pressed="${on}"${pickable(x) ? "" : " disabled"} style="--c:${headColor(x.head)}">` +
-      `<span class="gtick" aria-hidden="true"></span>${DRAW.lamp(stateOf(x).cls)}<span class="gtext"><span class="gname">${esc(sessWord(x))}</span>` +
-      `${meta ? `<span class="gmeta">${esc(meta)}</span>` : ""}</span>${DRAW.chip({ text: commandOf(x.head) || x.head, cls: "hcmd" })}</button>`;
-  };
+  const known = free.filter(pickable);
+  const busiest = Math.max(0, ...free.map((x) => (Number.isInteger(x.turns) ? x.turns : 0)));
+  const top = Math.log10(1 + busiest);
   const byKey = new Map();
   for (const x of free) { const k = rowProjKey(x); if (!byKey.has(k)) byKey.set(k, { key: k, name: rowProjName(x), rows: [] }); byKey.get(k).rows.push(x); }
+  const named = new Map();
+  for (const g of byKey.values()) for (const [x, n] of gatherNames(g.rows)) named.set(x, n);
+  const row = (x) => {
+    const on = ui.gather.has(x.session_id), can = pickable(x);
+    const chip = can ? DRAW.chip({ text: commandOf(x.head) || x.head, cls: "hcmd tgb-chip" }) : `<span class="tgb-nochip" role="img" aria-label="Command not known"></span>`;
+    return `<button type="button" class="gsess${on ? " on" : ""}${can ? "" : " tgb-dead"}" data-act="gather" data-sid="${esc(x.session_id)}" aria-pressed="${on}"${can ? "" : " disabled"} style="--c:${headColor(x.head)}">` +
+      `<span class="gtick" aria-hidden="true"></span>${DRAW.lamp(stateOf(x).cls)}<span class="tgb-txt"><span class="gname">${esc(named.get(x))}</span>${chip}` +
+      `<span class="gmeta">${can && x.model ? esc(modelLabel(x.head, x.model)) : ""}</span>${gatherCount(x, top)}</span></button>`;
+  };
   const order = groupsNow().map((g) => byKey.get(g.key)).filter(Boolean);
   const groups = (order.length ? order : [...byKey.values()]).map((g) => {
     const rows = g.rows.sort((a, b) => rowAt(b) - rowAt(a));
     const open = ui.gatherOpen.has(g.key), shown = open ? rows : rows.slice(0, GATHER_SHOWN);
     const ids = rows.filter(pickable).map((x) => x.session_id), all = ids.every((id) => ui.gather.has(id));
     const end = ids.length ? `<button type="button" class="act quiet small" data-act="gather-all" data-sids="${esc(ids.join(" "))}">${all ? "Clear" : "Pick all"}</button>` : "";
-    const more = rows.length > GATHER_SHOWN ? DRAW.more(rows.length - GATHER_SHOWN, { word: "more", act: "gather-more", data: ` data-k="${esc(g.key)}"`, open }) : "";
-    return DRAW.group({ name: g.name, end, key: `gather:${g.key}`, body: `<div class="gsessions">${shown.map(row).join("")}${more}</div>` });
+    const more = rows.length > GATHER_SHOWN ? DRAW.more(rows.length - GATHER_SHOWN, { word: "more", act: "gather-more", data: ` data-k="${esc(g.key)}"`, open, host: `gather:${g.key}` }) : "";
+    // the rows past the folded few exist only while the group is open, and fold away in motion
+    return DRAW.group({ name: g.name, end, key: `gather:${g.key}`, body: `<div class="gsessions" data-mp-host="${esc(`gather:${g.key}`)}">${shown.map((x, i) => (i >= GATHER_SHOWN ? DRAW.tail(row(x)) : row(x))).join("")}${more}</div>` });
   });
   const head = state.teams.length ? "No team in this project" : "No teams yet";
-  const aside = `<span class="sec-aside">${plural(free.length, "session")} running</span>`;
-  const foot = `<div class="gfoot"><button type="button" class="act" data-act="gather-team"${picks.length ? "" : " disabled"}>New team from them</button>` +
-    `<span class="gpicked"><b data-tn="gather-picked">${DRAW.n(picks.length)}</b> picked</span></div>`;
-  return `<div class="plate gather">${DRAW.section(head, DRAW.masonry(groups, 34, { cls: "gboard" }) + foot, { aside })}</div>`;
+  // the plate's one legend: the lamps the rows below carry, the dashed chip, and the scale the bars are drawn on
+  const states = [...new Set(free.map((x) => stateOf(x).cls))].filter((c) => GATHER_STATES[c]);
+  const legend = DRAW.legend([...states.map((c) => ({ mark: DRAW.lamp(c), word: GATHER_STATES[c] })),
+    ...(known.length < free.length ? [{ mark: `<i class="tgb-dashsw" aria-hidden="true"></i>`, word: "Dashed chip: command not known" }] : [])]);
+  const aside = `${legend}${gatherScale(busiest, top)}`;
+  // how many run, and how many of them can join: one bar, its dashed part the sessions on a command splice does not have
+  const cant = free.length - known.length;
+  const split = `<div class="tgb-split"><span class="tgb-can" style="flex-grow:${known.length}">${DRAW.n(known.length)} can join a team</span>` +
+    `${cant ? `<span class="tgb-nope" style="flex-grow:${cant}">${DRAW.n(cant)}</span>` : ""}</div>`;
+  const hero = `<div class="tgb-hero"><b class="tgb-fig" data-tn="gather-free">${DRAW.n(free.length)}</b><span class="tgb-words">${free.length === 1 ? "session" : "sessions"} running</span></div>${known.length ? split : ""}`;
+  // the picked share of those who can join, as a ring before the count
+  const circ = 2 * Math.PI * 15, frac = known.length ? Math.min(1, picks.length / known.length) : 0;
+  const ring = `<svg class="tgb-ring" viewBox="0 0 40 40" aria-hidden="true"><circle class="tgb-rtrk" cx="20" cy="20" r="15"/><circle class="tgb-rarc" cx="20" cy="20" r="15" transform="rotate(-90 20 20)" stroke-dasharray="${(circ * frac).toFixed(2)} ${circ.toFixed(2)}"/></svg>`;
+  const foot = `<div class="gfoot"><button type="button" class="act${picks.length ? " primary" : ""}" data-act="gather-team"${picks.length ? "" : " disabled"}>New team from them</button>` +
+    `<span class="gpicked">${ring}<span><b data-tn="gather-picked">${DRAW.n(picks.length)}</b> picked</span></span></div>`;
+  return `<div class="plate gather" data-held="gather">${DRAW.section(head, "", { aside, head: "tgb-sechead" })}${DRAW.section("", hero)}${DRAW.section("", DRAW.masonry(groups, 34, { cls: "gboard" }) + foot)}</div>`;
 }
 /** what stands under the toolbar where the picked project has no active team: the offer, then any archived team he opened;
  *  where any team of it is active the board is what he came for */
@@ -1660,7 +1879,17 @@ const waitsOf = (c) => [
 ].filter(Boolean);
 const ready = (c) => !waitsOf(c).length && c.slots.length > 0;
 /** the one legend of the marks the fields carry: what they stand for, said once beside the acts that wait on them */
-const waitsHtml = (c) => (waitsOf(c).length ? DRAW.legend([{ mark: `<i class="lgneed" aria-hidden="true"></i>`, word: "Needed to save" }]) : "");
+function waitsHtml(c) {
+  const needs = waitsOf(c);
+  if (!needs.length) return "";
+  const chip = (field, word) => `<button type="button" class="ntf-chip" data-act="need" data-f="${esc(field)}">${esc(word)}</button>`;
+  const chips = [
+    needs.includes("name") ? chip("name", "Name") : "",
+    ...c.slots.map((s, i) => (s.head ? "" : chip(`command:${i}`, `Command · ${s.role.trim() || `Member ${i + 1}`}`))),
+    needs.includes("repo") ? chip("repo", "Repo") : "",
+  ].join("");
+  return DRAW.legend([{ mark: `<i class="lgneed" aria-hidden="true"></i>`, word: "Needed to save" }]) + chips;
+}
 
 /** WHAT A COMMAND CAN DO NOW, where the choice is made: down, out of quota, still being checked, or at a window's
  *  limit, in the words the manager's own head menu uses. It is a mark, never a bar: a team saved today may be started
@@ -1697,8 +1926,7 @@ function pickHtml(c, i) {
     return `<div class="menu pick-menu" data-what="model">${modelRows(state.models[s.head] || [], (m) => `data-act="set" data-i="${i}" data-what="model" data-v="${esc(m.id)}"`)}</div>`;
   }
   // an account by its name, as Accounts shows it, never the pool's id for it
-  return `<div class="menu pick-menu" data-what="account">${(state.accounts[s.head] || []).map((a) =>
-    `<button data-act="set" data-i="${i}" data-what="account" data-v="${esc(a)}"><span class="mname">${esc(accountName(s.head, a))}</span>${loginMark(s.head, a)}</button>`).join("")}</div>`;
+  return acctMenu(s.head, s.account, (a) => `data-act="set" data-i="${i}" data-what="account" data-v="${esc(a)}"`);
 }
 
 function slotRowHtml(c, s, i) {
@@ -1716,14 +1944,21 @@ function slotRowHtml(c, s, i) {
   const live = state.sessions[s.session || s.bind];
   const running = live && live.availability !== "gone";
   const lamp = running ? DRAW.lamp(stateOf(live).cls) : DRAW.lamp("open");
+  const lead = Boolean(s.lead), rule = Boolean(s.bind_by_rule), written = Boolean(s.instructions?.trim());
+  // EACH CONTROL HAS ITS OWN SHAPE: Lead is one choice among the rows (a two-way switch lit in the text's ink), Join by rule a
+  // toggle with its own mark, Instructions a disclosure whose chevron turns and whose dot says it is written, Remove a cross
+  // with its word at the row's end
   return `<article class="card slot-row" style="--c:${s.head ? headColor(s.head) : "var(--track-line)"}" data-key="row:${i}">` +
-    `<div class="top"><input class="field role-in" data-i="${i}" value="${esc(s.role)}" placeholder="Role" aria-label="Role" list="roles" autocomplete="off" spellcheck="false">` +
-    `${head}${model}${account}<button class="leadtog" data-act="lead" data-i="${i}" aria-pressed="${Boolean(s.lead)}">Lead</button>` +
-    `<button class="leadtog" data-act="rule" data-i="${i}" aria-pressed="${Boolean(s.bind_by_rule)}" title="${esc(RULE_WHY)}">Join by rule</button>` +
-    `<button class="act quiet small${s.instructions?.trim() ? " written" : ""}" data-act="instr" data-i="${i}" aria-expanded="${s.open}">Instructions</button>` +
-    `<span class="lampcell" title="${running ? "Running" : "Starts with the team"}">${lamp}</span>` +
-    `<button class="act quiet small" data-act="rm" data-i="${i}"${c.slots.length < 2 ? " disabled" : ""}>Remove</button>${pickHtml(c, i)}</div>` +
-    (s.bind_by_rule ? ruleMark(c.repo, s.head) : "") +
+    `<div class="ntf-top"><span class="ntf-sock" aria-hidden="true">${i + 1}</span><input class="field role-in" data-i="${i}" value="${esc(s.role)}" placeholder="Role" aria-label="Role" list="roles" autocomplete="off" spellcheck="false">` +
+    `<span class="lampcell" title="${running ? "Running" : "Starts with the team"}">${lamp}</span></div>` +
+    `<div class="ntf-picks">${head}${model}${account}${pickHtml(c, i)}</div>` +
+    `<div class="ntf-tools"><span class="ntf-seg" role="group" aria-label="Lead">` +
+    `<button type="button" data-act="lead" data-v="1" data-i="${i}" aria-pressed="${lead}">Lead</button>` +
+    `<button type="button" data-act="lead" data-v="0" data-i="${i}" aria-pressed="${!lead}">Member</button></span>` +
+    `<button class="ntf-tog" type="button" data-act="rule" data-i="${i}" aria-pressed="${rule}" title="${esc(RULE_WHY)}">${GLYPH.Agent}Join by rule</button>` +
+    `<button class="ntf-disc${written ? " written" : ""}" type="button" data-act="instr" data-i="${i}" aria-expanded="${s.open}">${DRAW.chev}Instructions<i class="ntf-dot" aria-hidden="true"></i></button>` +
+    `<button class="ntf-rm" type="button" data-act="rm" data-i="${i}"${c.slots.length < 2 ? " disabled" : ""}>${GLYPH.cross}Remove</button></div>` +
+    (rule ? ruleMark(c.repo, s.head) : "") +
     (s.open ? `<textarea class="field instr" data-i="${i}" rows="4" aria-label="Instructions">${esc(s.instructions || "")}</textarea>` : "") +
     `</article>`;
 }
@@ -1746,10 +1981,10 @@ function composerHtml() {
     `<h2 id="t-title">${c.id ? esc(state.teams.find((t) => t.id === c.id)?.name) : "New team"}</h2>` +
     `<section class="psec"><div class="sechead"><h3 class="kicker">The team</h3></div>` +
     `<div class="frow"><label for="t-name">Name</label><input class="field${needs.includes("name") ? " need" : ""}" id="t-name" value="${esc(c.name)}" autocomplete="off" spellcheck="false"></div>` +
-    `<div class="frow"><label for="t-goal">Goal</label><textarea class="field" id="t-goal" rows="2">${esc(c.goal)}</textarea></div>` +
-    `<div class="frow"><label for="t-repo">Repo</label><div class="withword"><input class="field${needs.includes("repo") ? " need" : ""}" id="t-repo" value="${esc(c.repo)}" list="repos" autocomplete="off" spellcheck="false"${repoRefused ? ' aria-invalid="true"' : ""}>${word}</div></div></section>` +
+    `<div class="frow"><label for="t-goal">Goal</label><textarea class="field" id="t-goal" rows="3">${esc(c.goal)}</textarea></div>` +
+    `<div class="frow"><label for="t-repo">Repo</label><div class="withword"><span class="ntf-repo">${GLYPH.folder}<input class="field${needs.includes("repo") ? " need" : ""}" id="t-repo" value="${esc(c.repo)}" list="repos" autocomplete="off" spellcheck="false"${repoRefused ? ' aria-invalid="true"' : ""}></span>${word}</div></div></section>` +
     `<section class="psec"><div class="sechead"><h3 class="kicker">Members</h3>${legend}` +
-    `<span class="sec-aside">${DRAW.n(c.slots.length)}</span></div>` +
+    `<span class="ntf-count" title="${esc(plural(c.slots.length, "member"))}">${DRAW.n(c.slots.length)}</span></div>` +
     `<div class="rows">${c.slots.map((s, i) => slotRowHtml(c, s, i)).join("")}` +
     `${DRAW.addTile({ word: "Add member", act: "add-slot" })}</div></section>` +
     `<datalist id="roles"><option value="builder"><option value="reviewer"><option value="researcher"></datalist>` +
@@ -1776,7 +2011,8 @@ function shapeGuess() {
     if (v === "none") return { none: true, tiles: 0 };
     if (v != null) return { none: false, tiles: Math.max(0, parseInt(v, 10) || 0) };
   } catch { /* storage off: nothing remembered */ }
-  return { none: false, tiles: 0 };  // a first visit has drawn no tiles yet, so the frame draws none
+  // a first visit has seen no team: the frame is the gather board, the page every visit starts as until a team exists
+  return { none: true, tiles: 0 };
 }
 function rememberShape(v) {
   try { if (localStorage.getItem(SHAPE_STORE) !== String(v)) localStorage.setItem(SHAPE_STORE, String(v)); } catch { /* storage off */ }
@@ -1786,10 +2022,11 @@ function loadingHtml() {
   if (state.known === 0 || (state.known == null && guess.none)) {
     // no team yet lands as the sessions that run, so the frame holds their place: a toolbar with the one tile, then a plate of
     // two project groups each with its session rows
-    const sess = () => `<div class="gsess ghosted" aria-hidden="true"><i class="ghost gtick"></i>${GHOST.bar(1.1, "chip")}<span class="gtext">${GHOST.bar(9)}${GHOST.bar(7)}</span>${GHOST.chip(6)}</div>`;
+    const sess = () => `<div class="gsess ghosted" aria-hidden="true"><i class="ghost gtick"></i>${GHOST.bar(1.1, "chip")}<span class="tgb-txt">${GHOST.bar(9)}${GHOST.chip(6)}${GHOST.bar(7)}${GHOST.bar(8)}</span></div>`;
     const grp = (n) => `<section class="titled"><header>${GHOST.bar(9, "big")}</header><div class="gsessions">${Array.from({ length: n }, sess).join("")}</div></section>`;
-    return `<div class="loading" role="status" aria-busy="true" aria-label="Reading teams"><div class="tbar" aria-hidden="true"><nav class="tabs">${GHOST.bar(9, "tabg")}</nav></div>` +
-      `<div class="plate gather" aria-hidden="true"><div class="sechead">${GHOST.bar(8)}</div><div class="mason gboard" style="--col-min:34rem">${grp(4)}${grp(3)}</div></div></div>`;
+    return `<div class="loading" role="status" aria-busy="true" aria-label="Reading teams">${GHOST.tiles()}<div class="tbar" aria-hidden="true"><nav class="tabs">${GHOST.bar(9, "tabg")}</nav></div>` +
+      `<div class="plate gather" aria-hidden="true" style="${GHOST.held("gather")}"><section class="psec"><div class="sechead tgb-sechead">${GHOST.bar(8)}${GHOST.bar(30)}</div></section><section class="psec">${GHOST.hero()}${GHOST.stack()}</section>` +
+      `<section class="psec"><div class="mason gboard" style="--col-min:34rem">${grp(4)}${grp(3)}</div></section></div></div>`;
   }
   const tiles = guess.none ? 0 : guess.tiles;
   // a card's figures as they will land: the column heads, the total row and the two span rows, then an account's name
@@ -1801,15 +2038,16 @@ function loadingHtml() {
   const card = (i) => `<article class="card m vacant ghosted" style="--i:${i}" aria-hidden="true"><span class="lamp open"></span>` +
     `<div class="top">${GHOST.bar(7 + (i % 2) * 2)}${GHOST.state()}</div><div class="meta">${GHOST.chip()}${GHOST.chip(7)}</div>` +
     `<div class="body">${GHOST.bar(15 - i)}</div><div class="use">${figs}<div class="pacc">${GHOST.bar(8)}${win}${win}</div></div></article>`;
-  const band = `<div class="plate band" aria-hidden="true"><section class="psec who"><div class="named">${GHOST.bar(11, "big")}${GHOST.chip(9)}</div>` +
-    `${GHOST.lines([44, 30])}</section>` +
-    DRAW.section("Since joining", `<div class="figrow">${GHOST.hero()}</div><div class="figsub">${GHOST.focal(5)}${GHOST.focal(5)}</div>${GHOST.stack()}${GHOST.lines([9])}`, { cls: "work" }) +
-    DRAW.section("By member", `${GHOST.stack()}${GHOST.lines([7])}`, { cls: "by" }) + `</div>`;
+  const mem = `<li class="tbd-mem ghosted"><div class="tbd-mh">${GHOST.bar(7)}${GHOST.bar(3)}</div>${GHOST.bar(15)}</li>`;
+  const band = `<div class="plate band" aria-hidden="true" style="${GHOST.pin("band")}"><section class="psec who"><div class="named">${GHOST.bar(11, "big")}${GHOST.chip(9)}</div>` +
+    `${GHOST.lines([44, 30])}<div class="tbd-acts solo">${GHOST.chip(8)}${GHOST.chip(8)}</div></section>` +
+    DRAW.section("Since joining", `<div class="figrow tbd-hero">${GHOST.hero()}</div><div class="tbd-tok ghosted">${GHOST.focal(5)}</div><div class="tbd-pay">${GHOST.stack()}</div>`, { cls: "work" }) +
+    DRAW.section("By member", `<ul class="tbd-mems">${mem.repeat(4)}</ul><div class="tbd-bymem">${GHOST.stack()}</div>`, { cls: "by" }) + `</div>`;
   const panel = (cls, word, lines) => `<section class="plate ${cls}" aria-hidden="true">${panelHead(word)}<div class="${cls === "talk" ? "chat" : "flow"}">${GHOST.lines(lines)}</div></section>`;
-  return `<div class="loading" role="status" aria-busy="true" aria-label="Reading teams">${GHOST.tiles(tiles)}` +
+  return `<div class="loading" role="status" aria-busy="true" aria-label="Reading teams">${GHOST.tiles(tiles > 0 ? GHOST.count("tiles", tiles) : 0)}` +
     `<div class="tbar" aria-hidden="true"><nav class="tabs">${[9, 11, 7].map((w) => GHOST.bar(w + 3, "tabg")).join("")}</nav>` +
     `<div class="views">${GHOST.bar(26, "tabg")}${GHOST.bar(9)}</div></div>${band}` +
-    `<div class="room"><div class="members">${[0, 1, 2, 3].map(card).join("")}</div>` +
+    `<div class="room" style="${GHOST.pin("room")}"><div class="members">${[0, 1, 2, 3].map(card).join("")}</div>` +
     `${panel("talk", "Chat", [22, 16, 19, 12])}${panel("feed", "Activity", [18, 21, 14])}</div></div>`;
 }
 /** NO TEAM YET: the page keeps the shape of what a team will fill, each part a dashed outline where its figure or its
@@ -2174,7 +2412,13 @@ document.addEventListener("click", async (e) => {
     case "pickproj": { const was = ui.team; ui.project = b.dataset.p || null; ui.pmenu = false; PICK.set(ui.project);
       Object.assign(ui, { menu: null, pick: null }); render(); if (ui.team !== was) { ui.day = 0; await readTeam(); } break; }
     case "archived": ui.archived = !archivedOpen(); render(); break;
-    case "run": if (!ui.runs.delete(b.dataset.k)) ui.runs.add(b.dataset.k); render(); break;
+    case "run": case "hour": {
+      const set = b.dataset.act === "run" ? ui.runs : ui.hours, k = b.dataset.k;
+      justOpened = set.delete(k) ? null : (set.add(k), k);
+      render();
+      setTimeout(() => { justOpened = null; }, 400);
+      break;
+    }
     case "day-to": ui.day = Math.max(0, Math.min(6, +b.dataset.b)); render(); await readTeam(); break;
     case "view": if (tm) { setView(tm, b.dataset.v); render(); roomIn(); } break;
     case "chat-more": if (!ui.chatOpen.delete(b.dataset.k)) ui.chatOpen.add(b.dataset.k); render(); break;
@@ -2269,7 +2513,20 @@ document.addEventListener("click", async (e) => {
       break;
     }
     // a team has one lead: choosing a member takes it from the one that had it, and choosing it again leaves the team without
-    case "lead": { const was = c.slots[i].lead; for (const x of c.slots) x.lead = false; c.slots[i].lead = !was; render(); break; }
+    case "lead": {
+      const want = b.dataset.v == null ? !c.slots[i].lead : b.dataset.v === "1";
+      if (want) for (const x of c.slots) x.lead = false;
+      c.slots[i].lead = want;
+      render();
+      break;
+    }
+    case "need": {
+      const f = b.dataset.f || "", at = f.startsWith("command:") ? `.pickbtn[data-what="head"][data-i="${f.slice(8)}"]` : `#t-${f}`;
+      const el = root.querySelector(at);
+      el?.scrollIntoView({ block: "center", behavior: "smooth" });
+      el?.focus();
+      break;
+    }
     case "rule": c.slots[i].bind_by_rule = !c.slots[i].bind_by_rule; render(); break;
     case "instr":
       c.slots[i].open = !c.slots[i].open;

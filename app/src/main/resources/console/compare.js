@@ -25,15 +25,14 @@ CONSOLE.page("compare.html", (scope) => {
 const MAX_PANES = 4;
 const KEPT = "splice.compare.prompt";
 const KEPT_MODELS = "splice.compare.models";
-// a command's list shows up to WHOLE models; a longer one shows its first FIRST and the rest behind +N
-const LIST = { whole: 10, first: 6 };
+// a command's list longer than its first rows shows those and the rest behind +N
+const LIST = { first: 6 };
 // a list grouped by vendor (OpenRouter) shows its largest vendors, each opening its models in place, kept the same way
-const VENDORS = 6, VENDOR_LIST = { whole: 8, first: 6 };
-// an opened list longer than OPEN_ROWS takes one more board column for every PER_COLUMN rows, so no list runs down one column
-const OPEN_ROWS = 12, PER_COLUMN = 8;
-// a board column and an answer's narrowest lane, in rem: the board's column is Accounts' (five at 3822, four at his 2548,
-// two at 1440), and the answers stand four across at 3822, two at 1440
-const COL_REM = 40, LANE_REM = 40;
+const VENDORS = 6, VENDOR_LIST = { first: 6 };
+// a board column and an answer's narrowest lane, in rem: a command's card holds a model's name whole beside three figure bars
+// each at least 100 px, so the board stands five columns across at 3822, three at 2548 and two at 1440; the answers stand
+// four across at 3822, two at 1440
+const COL_REM = 45, LANE_REM = 40;
 const TICK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg>';
 const CLOCK = G('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>', 'aria-hidden="true"');
 const PENCIL = G('<path d="M4.5 19.5l.9-4 10.6-10.6a1.8 1.8 0 0 1 2.6 0l.5.5a1.8 1.8 0 0 1 0 2.6L8.5 18.6z"/><path d="M13.8 6.7l3.5 3.5"/>', 'aria-hidden="true"');
@@ -52,7 +51,7 @@ const still = () => window.matchMedia("(prefers-reduced-motion: reduce)").matche
 const ui = {
   editing: false, prompt: "", panes: [], cmds: null, blocked: [], error: null, reading: false, restored: false, add: null,
   q: "", open: new Set(), unfold: null, finished: 0, back: 0, uid: 0, opened: false, swap: false, done: false, ax: null, t: null, fit: null,
-  marks: "", heroAt: null, sort: "window",
+  marks: "", heroAt: null, sort: "window", shown: new Map(), fix: new Map(),
 };
 try { ui.prompt = sessionStorage.getItem(KEPT) ?? ""; } catch { /* no storage: the field starts empty */ }
 const keep = () => { try { sessionStorage.setItem(KEPT, ui.prompt); } catch { /* nothing to keep it in */ } };
@@ -61,6 +60,15 @@ const keptModels = () => {
   try { const v = JSON.parse(sessionStorage.getItem(KEPT_MODELS) ?? "[]"); return Array.isArray(v) ? v.filter((x) => x?.key && x?.id).slice(0, MAX_PANES) : []; } catch { return []; }
 };
 const keepModels = () => { try { sessionStorage.setItem(KEPT_MODELS, JSON.stringify(ui.panes.map((p) => ({ key: p.key, id: p.id })))); } catch { /* nothing to keep it in */ } };
+// the prompts last sent from this browser, newest first, kept here so one press puts an earlier one back in the field
+const RECENT = "splice.compare.recent", RECENT_SHOWN = 3;
+const recents = () => {
+  try { const v = JSON.parse(localStorage.getItem(RECENT) ?? "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "string" && x.trim()).slice(0, RECENT_SHOWN) : []; } catch { return []; }
+};
+const rememberSent = (text) => {
+  const next = [text, ...recents().filter((x) => x !== text)].slice(0, RECENT_SHOWN);
+  try { localStorage.setItem(RECENT, JSON.stringify(next)); } catch { /* nothing to keep it in */ }
+};
 
 // ---------- reading what can send ----------
 // The playground sends as the login a real turn would use next: the pool's next target and nothing else
@@ -98,6 +106,11 @@ function nameLogins(cmds) {
   const logins = cmds.filter((c) => c.acct.kind === "login");
   const named = DRAW.names("login", logins.map((c) => ({ name: c.acct.given, provider: c.family, plan: c.acct.plan })));
   logins.forEach((c, i) => { c.acct = { kind: named[i].own ? "named" : "unnamed", name: named[i].text, plan: named[i].own ? c.acct.plan : "", head: c.acct.head }; });
+  // a command's other logins are named by the same rule, so "Use another login" says what Accounts says
+  for (const c of cmds) {
+    const names = DRAW.names("login", c.others.map((o) => ({ name: o.given, provider: c.family, plan: o.plan })));
+    c.others = c.others.map((o, i) => ({ label: o.label, name: names[i].text }));
+  }
 }
 // OpenRouter spells its vendor into every label ("OpenAI: GPT-6 Sol"); the vendor is said once over its models instead
 function vendorsOf(models) {
@@ -135,11 +148,16 @@ async function read() {
     }
     const name = a.account_pool ? nextIn(a, next[row.head])?.label : null;
     const known = rows.find((r) => (r.heads || []).includes(row.head) && (!name || r.label === name || `native:${r.label}` === name || r.display_name === name));
+    // the pool's other logins that can send now, each as its owner would name it (nameOthers)
+    const others = (a.account_pool?.accounts ?? []).filter((x) => x.label !== name && x.credential_present && x.available !== false && x.auth?.kind !== "client").map((x) => {
+      const r = rows.find((y) => (y.heads || []).includes(row.head) && (y.label === x.label || `native:${y.label}` === x.label || y.display_name === x.label));
+      return { label: x.label, given: r ? (r.label_default && r.can_rename ? "" : r.display_name ?? r.label ?? "") : x.label, plan: cap(r?.plan) };
+    });
     const labelled = list.map((m) => ({ id: m.id, label: modelName({ [m.id]: m.label }, m.id) }));
     const vendor = vendorsOf(labelled);
     const reset = Number(h.quotaFull?.resetsAtEpochSeconds);
     return [{
-      key: row.head, command, family, title: titleOf(family, command), acct: { ...acctOf(a, known, name), head: row.head },
+      key: row.head, command, family, title: titleOf(family, command), acct: { ...acctOf(a, known, name), head: row.head }, others,
       models: list.map((m, i) => {
         const [v, short] = vendor(labelled[i]);
         return { id: m.id, label: labelled[i].label, short, vendor: v, window: m.context_window ?? null, rates: m.rates ?? null };
@@ -216,6 +234,7 @@ function readFrames(frames) {
   return { text, tin, tout, error };
 }
 const DOWN = "Not answering"; // a command whose runtime is not up, as Accounts and the board's card say it
+const SPLICE_GONE = "Splice not reachable"; // splice itself did not answer the page, which is not a command that is not answering
 const LIMIT = "Limit reached"; // a spent plan window, the lock's own word, on the pane and in its request alike
 // What went wrong, in the console's word for its kind: the provider's status or error type, else the sentence splice answered.
 function failWord(status, body, said) {
@@ -284,7 +303,7 @@ async function priceOf(p, reply) {
 // ---------- sending: one POST per pane, all at once, each answering on its own clock ----------
 async function ask(p) {
   const t0 = Date.now(), began = performance.now();
-  Object.assign(p, { st: "sending", t0, at: new Date(t0), asked: ui.prompt, fail: null, cost: null, text: "", tin: null, tout: null, trace: null, ms: null, order: null, seq: null, req: false, said: false, arm: false, tries: p.fail ? p.tries + 1 : 1 });
+  Object.assign(p, { st: "sending", t0, at: new Date(t0), asked: ui.prompt, fail: null, fx: null, cost: null, text: "", tin: null, tout: null, trace: null, ms: null, order: null, seq: null, req: false, said: false, arm: false, tries: p.fail ? p.tries + 1 : 1 });
   p.rv = { tab: "attempts", nodes: new Set(), q: "" }; p.RV = null;
   const sent = { head: p.key, prompt: ui.prompt, model: p.id };
   const res = await API.post("/api/playground", sent);
@@ -298,10 +317,11 @@ async function ask(p) {
     // the daemon's sentence names its files, so the pane says Over budget with the door to that command's budget instead
     console.warn(`compare: ${reply.error ?? "the budget refused the send"}`);
     Object.assign(p, { st: "failed", fail: { word: OUTCOME_WORD[reply.outcome] ?? OUTCOME_WORD["error:budget-blocked"], door: reply.head || p.key, splice: true, budget: budgetOf(reply.error) } });
+    readBudgetDay(p).then(() => { if (ui.panes.includes(p) && p.st === "failed") paintPane(p); });
     return;
   }
   if (!res.ok || !reply?.response) { // splice's own refusal, or a call that never reached the provider: splice said it, not the provider
-    if (res.status === 0) { Object.assign(p, { st: "failed", fail: { word: "splice not answering", retry: true } }); return; }
+    if (res.status === 0) { Object.assign(p, { st: "failed", fail: { word: SPLICE_GONE, splice: true, retry: true, said: "The page could not reach splice." } }); return; }
     const said = typeof reply?.error === "string" ? reply.error : "";
     if (!said) console.warn(`compare: /api/playground answered ${res.status}`);
     const word = failWord(0, null, said);
@@ -320,7 +340,8 @@ async function ask(p) {
     const word = spent ? LIMIT : /overloaded/.test(type) ? OUTCOME_WORD["failure:overloaded_error"] : failWord(got.error ? 0 : status, errBody, "");
     // a spent window's sentence says what its lock already draws ("try again after the window resets"); it stays in the
     // request's own record
-    Object.assign(p, { st: "failed", tin: got.tin, tout: got.tout, fail: { word, retry: !spent, spent, said: !spent && typeof told === "string" ? cut(told) : "" } });
+    const said = !spent && typeof told === "string" ? cut(told) : "";
+    Object.assign(p, { st: "failed", tin: got.tin, tout: got.tout, fail: { word, retry: !spent, spent, said, code: said ? null : status || null } });
     attempt.failure = word;
     if (spent) attempt.lock = true;
   } else if (!got.text.trim() && !(body && !frames)) {
@@ -338,6 +359,7 @@ const stopTicker = () => { if (ticker && !busy()) { clearInterval(ticker); ticke
 async function run(panes) {
   for (const p of panes) measure(p);
   ui.add = false; ui.editing = false;
+  rememberSent(ui.prompt);
   if (!askedOnes().length) ui.heroAt = performance.now(); // the round's figure is about to open for the first time
   if (panes.length === ui.panes.length) { ui.finished = 0; ui.back = 0; } // a new round: the order starts again
   const all = panes.map((p) => ask(p).then(() => land(p)));
@@ -394,8 +416,8 @@ const COLS = [
   { f: "tin", word: "Tokens in", sent: true, text: DRAW.n },
   { f: "tout", word: "Tokens out", sent: true, text: DRAW.n },
   { f: "win", word: "Context", best: "high", text: DRAW.big },
-  { f: "pin", word: "Price in", unit: "per M tokens", best: "low", text: rate },
-  { f: "pout", word: "Price out", unit: "per M tokens", best: "low", text: rate },
+  { f: "pin", word: "Price in", head: "In", best: "low", text: rate },
+  { f: "pout", word: "Price out", head: "Out", best: "low", text: rate },
 ];
 const RAIL = { failed: 0, done: 1, sending: 2, idle: 3 };
 // the rail's order: the sends that failed first (the row that needs a look reads first), then the answers in the order
@@ -481,15 +503,16 @@ function rowHtml(p, at, t, edge) {
     + `<span class="pg-c pg-rwho" role="cell"><button class="pg-rname" type="button" data-act="goto" data-u="${p.uid}"><i class="blot" aria-hidden="true"></i><span>${esc(p.label)}</span></button>${c ? DRAW.chip({ text: c.command }) : ""}</span>`
     + time + COLS.map((col) => cellHtml(p, col, x, t)).join("") + `</div>`;
 }
-// A column's name with its unit or qualifier under it, said once; the other columns carry no unit.
-const colHead = (word, unit = "") => `${word}${unit ? `<small>${unit}</small>` : ""}`;
+// A column's name with its qualifier beside it, said once; the price columns carry the unit over both (headHtml).
+const colHead = (c) => `${c.head ?? c.word}${c.unit ? `<small>${c.unit}</small>` : ""}`;
 // the column names, said once; over the time the axis's own marks, which the rows' tracks are read against
 // (the axis's ends and the rail's are named pg-a and pg-z: Sessions' stylesheet, loaded on this page, owns .last)
 function headHtml(ax) {
   const ticks = ticksOf(ax).map(([ms, w], i, a) => `<span class="${i === 0 ? "pg-a" : i === a.length - 1 ? "pg-z" : ""}" style="left:${axisAt(ms, ax).toFixed(2)}%">${w}</span>`).join("");
   return `<div class="pg-tr pg-th" role="row" style="grid-row:1"><span class="pg-c" role="columnheader"></span><span class="pg-c pg-h" role="columnheader">Model</span>`
     + `<span class="pg-c pg-axis" aria-hidden="true">${ticks}</span><span class="pg-c pg-h pg-timeh" role="columnheader">Time</span>`
-    + COLS.map((c) => `<span class="pg-c pg-h" role="columnheader">${colHead(c.word, c.unit)}</span>`).join("") + `</div>`;
+    + COLS.map((c) => `<span class="pg-c pg-h" role="columnheader"${c.head ? ` aria-label="${c.word}, per M tokens"` : ""}>${colHead(c)}</span>`).join("")
+    + `<span class="pg-c pg-phead" aria-hidden="true">Price, per M tokens</span></div>`;
 }
 // the dashed row where the next model lands, its socket the next one on the rail; its count of models sits beside its label
 const addHtml = () => `<button class="add pg-add" type="button" data-act="add" aria-expanded="${pickerOpen()}" aria-controls="pick">`
@@ -529,23 +552,31 @@ function tableHtml(t) {
   const open = n < MAX_PANES ? MAX_PANES - n - 1 : 0;
   return `<div class="pg-table" role="table" aria-label="The models compared">${headHtml(t.ax)}${rows}${grid(2, n)}${grid(n + 3, open)}${n < MAX_PANES ? placesHtml(n) : swapRow(n)}</div>`;
 }
-// the round's figure leads the plate: how many answered of how many asked, as the hero with its denominator, the round's
-// split as one bar (answered, failed, still out), and beside them the time to the last answer and how many failed
+// the round's figure leads the plate: how many answered of how many asked, as the hero with its denominator, and the clock
+// beside it while a send is out or once one answered. The round's split is one bar under them, as long as the round it
+// counts (a quarter of the table for each model asked), each part starting on a place of the table and carrying its own
+// glyph and count; "failed" is said by the bang and its count, in the bar alone.
+const CLOCKI = G('<circle cx="12" cy="12" r="9"/><path class="hand" d="M12 12V6.8"/><path d="M12 12h0"/>', 'aria-hidden="true"');
 function heroHtml() {
   const a = askedOnes();
   if (!a.length) return "";
   const done = a.filter((p) => p.st === "done").length, failed = a.filter((p) => p.st === "failed").length, out = a.filter((p) => p.st === "sending").length;
   const level = done === 0 && failed > 0 ? "bad" : "ok";
-  const bar = DRAW.stack([{ n: done, word: "Answered", cls: "ok" }, { n: failed, word: "Failed", cls: "f0" }, { n: out, word: "Still out", cls: "nt" }], a.length,
-    { label: `${done} of ${a.length} answered, ${failed} failed, ${out} still out` });
-  const clock = `<span class="pd-stat">${CLOCK}<span><b data-clock>${DRAW.ms(roundMs())}</b><small>to the last answer</small></span></span>`;
-  const bad = failed ? `<span class="pg-failt">${DRAW.statTile(ICON.bang, DRAW.n(failed), "failed")}</span>` : "";
+  const part = (n, cls, key, glyph, word) => {
+    if (!(n > 0)) return "";
+    const w = ((n / a.length) * 100).toFixed(3);
+    return `<span class="pd-seg ${cls}" data-tw="round:${key}" data-w="${w}" style="width:${w}%" title="${word} ${n}"><span class="pg-rseg">${glyph}<b>${DRAW.n(n)}</b></span></span>`;
+  };
+  const bar = `<div class="pd-pop pg-rbar" style="--asked:${a.length}"><div class="pd-bar" role="img" aria-label="${done} of ${a.length} answered, ${failed} failed, ${out} still out">`
+    + `${part(done, "ok", "ok", TICK, "Answered")}${part(failed, "f0", "fail", ICON.bang, "Failed")}${part(out, "nt", "out", ICON.trace, "Still out")}</div></div>`;
+  // a round that ended with no answer draws no clock: its rows keep their own time bars
+  const clock = out > 0 || done > 0 ? `<span class="pg-clock${out > 0 ? " run" : ""}">${CLOCKI}<b data-clock>${DRAW.ms(roundMs())}</b></span>` : "";
   // the round opens from nothing the first time it is drawn, so what stands under it moves down instead of jumping; a redraw
   // while it is still opening carries on from where the opening has got to
   const opening = ui.heroAt != null && performance.now() - ui.heroAt < 520;
   const phase = opening ? ` style="animation-delay:-${Math.round(performance.now() - ui.heroAt)}ms"` : "";
-  return `<div class="pg-roundw${opening ? " unfold" : ""}"${phase}><div class="pg-roundin"><div class="pg-round${a.every(stale) ? " stale" : ""}${ui.done ? " landed" : ""}"><div class="pg-hero">${DRAW.hero({ figure: DRAW.n(done), level, of: `of ${DRAW.n(a.length)} answered`, key: "round" })}</div>`
-    + `${bar}<div class="pd-stats pg-rtiles">${clock}${bad}</div></div></div></div>`;
+  return `<div class="pg-roundw${opening ? " unfold" : ""}"${phase}><div class="pg-roundin"><div class="pg-round${a.every(stale) ? " stale" : ""}${ui.done ? " landed" : ""}">`
+    + `<div class="pg-rtop"><div class="pg-hero">${DRAW.hero({ figure: DRAW.n(done), level, of: `of ${DRAW.n(a.length)} answered`, key: "round" })}</div>${clock}</div>${bar}</div></div></div>`;
 }
 // the kicker's line: the four places, each chosen one in its provider's colour, then the keys to what the table draws,
 // each said once
@@ -706,7 +737,7 @@ const writing = () => ui.editing || !ui.prompt.trim();
 const earlier = () => ui.panes.filter(stale).sort((a, b) => b.at - a.at)[0]?.asked ?? null;
 function fieldHtml() {
   ui.marks = "";
-  if (writing()) return `<textarea class="field" id="prompt" rows="5" placeholder="Write a question or a plan" aria-label="Prompt" spellcheck="false">${esc(ui.prompt)}</textarea>`;
+  if (writing()) return `<textarea class="field" id="prompt" rows="3" placeholder="Write a question or a plan" aria-label="Prompt" spellcheck="false">${esc(ui.prompt)}</textarea>`;
   const was = earlier(), html = was != null ? marked(was, ui.prompt) : mdPlan(ui.prompt);
   // the legend keys only the marks the plan carries: words added, words taken out, or both
   if (was != null) ui.marks = `${html.includes("<ins>") ? "<ins>Added</ins>" : ""}${html.includes("<del>") ? "<del>Removed</del>" : ""}`;
@@ -718,9 +749,24 @@ const mdHtml = () => `<div class="pg-md${writing() ? "" : " pg-read"}${ui.swap ?
 const diffLegend = () => (ui.marks ? `<span class="pg-dleg">${ui.marks}</span>` : "");
 // Send is the page's one warm control: the key light's one use in the view
 const sendHtml = () => `<button class="act primary pg-send" type="button" data-act="send" aria-keyshortcuts="Control+Enter Meta+Enter"${sendable() ? "" : " disabled"}${busy() ? ' aria-busy="true"' : ""}>${ICON.send}<span>${busy() ? "Sending" : "Send"}</span></button>`;
+// the earlier prompt stands under the field while answers to it stand: dimmed, two lines, and one press puts it back
+function earlierHtml(fresh = false) {
+  const was = earlier();
+  if (was == null) return "";
+  return `<div class="pg-early${fresh ? " unfold" : ""}"><div class="pg-earlyin"><div class="pg-pk"><h4 class="kicker">Earlier prompt</h4>`
+    + `<button class="act small pg-use" type="button" data-act="useearlier">Use it</button></div><div class="pg-old">${esc(was)}</div></div></div>`;
+}
+// the prompts last sent from this browser: up to three, one line each, and a dashed slot for each place not yet taken
+function recentHtml() {
+  const list = recents();
+  const rows = Array.from({ length: RECENT_SHOWN }, (_, i) => (list[i] != null
+    ? `<button class="pg-pr" type="button" data-act="recall" data-i="${i}" title="${esc(list[i])}">${CLOCK}<span>${esc(list[i])}</span></button>`
+    : `<div class="pg-rslot">Your last prompts stand here</div>`)).join("");
+  return `<div class="pg-rec"><h4 class="kicker">Recent prompts</h4><div class="pg-recs">${rows}</div></div>`;
+}
 function askHtml() {
   const go = `<div class="pg-go"><span class="pg-keys" aria-hidden="true"><kbd>Ctrl</kbd><kbd>Enter</kbd></span>${sendHtml()}</div>`;
-  return `<div class="plate pg-ask">${DRAW.section("Prompt", mdHtml() + go, { aside: `<span class="pg-paside">${diffLegend()}</span>`, cls: "pg-prompt" })}</div>`;
+  return `<div class="plate pg-ask">${DRAW.section("Prompt", `<div class="pg-pbox">${mdHtml()}${go}</div><div class="pg-earlyw">${earlierHtml()}</div>${recentHtml()}`, { aside: `<span class="pg-paside">${diffLegend()}</span>`, cls: "pg-prompt" })}</div>`;
 }
 // only the prompt is swapped, never the page: Send under the pointer must stay where it was pressed
 function paintPrompt() {
@@ -728,13 +774,24 @@ function paintPrompt() {
   if (md) md.outerHTML = mdHtml();
   if (aside) aside.innerHTML = diffLegend();
   ui.swap = false;
-  fadeMore();
 }
-// a plan longer than the box it reads in: the box's foot fades while more of the plan lies below, until he scrolls to
-// its end
-function fadeMore() {
-  const out = root.querySelector(".pg-md-out");
-  if (out) out.parentElement.classList.toggle("pg-more", out.scrollHeight - out.scrollTop - out.clientHeight > 2);
+// the earlier prompt appears and goes with the answers it belongs to; where it was not standing it unfolds in
+function paintEarly() {
+  const w = root.querySelector(".pg-earlyw");
+  if (!w) return;
+  const had = Boolean(w.firstElementChild), now = earlier() != null;
+  if (had && now) { const old = w.querySelector(".pg-old"); if (old) old.textContent = earlier(); return; }
+  w.innerHTML = earlierHtml(!had && !still());
+}
+// a recent prompt pressed goes back into the field, rendered, and the answers it was not asked for dim
+function recall(i) {
+  const text = recents()[i];
+  if (text == null) return;
+  const was = ui.panes.map(stale).join();
+  ui.prompt = text; keep(); ui.editing = false; ui.swap = true;
+  paintPrompt();
+  if (ui.panes.map(stale).join() !== was) paintStale();
+  paintEarly(); paintSend();
 }
 // the prompt changed under answers: the answers to the earlier one dim, with their rows and the round's figure
 const oldLegend = `<span class="pg-oldleg"><i class="sw" aria-hidden="true"></i>Earlier prompt</span>`;
@@ -748,10 +805,10 @@ function paintStale() {
   const head = root.querySelector(".pg-ahead");
   head?.querySelector(".pg-oldleg")?.remove();
   if (ui.panes.some(stale)) head?.insertAdjacentHTML("beforeend", oldLegend);
+  paintEarly();
 }
-// the field opens as tall as the plan read, so the plate doesn't jump under his click, and grows with what he writes;
-// its height is offered as --fit, which the stylesheet takes where the prompt stands alone and leaves where the prompt
-// shares its row with the models plate and takes that row's height (compare.css)
+// the field opens as tall as the plan read, so the plate doesn't jump under his click, and grows with what he writes, so
+// it is always as tall as its text and never scrolls inside; its height is offered as --fit (compare.css)
 function openField(h) {
   ui.editing = true; ui.swap = true; paintPrompt();
   const f = document.getElementById("prompt");
@@ -838,58 +895,166 @@ function actsHtml(p) {
   const rq = p.trace && p.st !== "sending" ? DRAW.disc({ open: p.req, controls: `rq-${p.uid}`, act: "req", cls: "pg-reqd", inner: "<span>Request</span>" }) : "";
   return `<div class="pg-acts">${rq}<button class="icon pg-x" type="button" data-act="close" aria-label="Remove ${esc(p.label)}">${ICON.close}</button></div>`;
 }
-// a failure's own acts: the one that fixes it, beside its word. What a retry cannot fix also offers another model, in place.
-const swapAct = `<button class="act quiet small" type="button" data-act="swap">Another model</button>`;
+// what a failure can do in place, and what it last said: p.fx = { act, data, busy, word, shook, code, url }. An act that works
+// spins where it stands, its result lands beside it in plain words, and a refusal shakes it once.
+const fx = (p) => (p.fx ??= {});
+function say(p, patch) { Object.assign(fx(p), patch); if (ui.panes.includes(p) && p.st === "failed") paintPane(p); }
+const refuse = (p, word) => say(p, { busy: false, word, shook: true });
+const fxAct = (p, word, act, { cls = "small", data = "" } = {}) => {
+  const f = fx(p), mine = f.act === act && (f.data ?? "") === data;
+  return `<button class="act ${cls}${mine && f.shook ? " shook" : ""}" type="button" data-act="${act}"${data}${mine && f.busy ? ` aria-busy="true"` : ""}>${esc(word)}</button>`;
+};
+const go = (href, word, cls = "small") => `<a class="act ${cls}" href="${href}">${word}${DRAW.go}</a>`;
+// a failure's own acts, in the order a person reaches for them: the one that fixes it, where it is fixed, then another model
 function fixActs(p) {
-  const f = p.fail;
-  if (f.spent) return `<a class="act small" href="accounts.html?head=${enc(p.key)}">Accounts${DRAW.go}</a>${swapAct}`;
-  if (f.door) return `<a class="act small" href="accounts.html?budget=${enc(f.door)}">Set budget${DRAW.go}</a>${swapAct}`;
-  // a refused or missing sign-in opens Accounts on what this command needs fixed (its ?head= door)
-  if (SIGNED.has(f.word)) return `<a class="act small" href="accounts.html?head=${enc(p.key)}">Accounts${DRAW.go}</a>${swapAct}`;
-  // a runtime that is not up starts from its command on Models (models.html?cmd= takes the head's key); once it runs,
-  // Try again asks this pane alone
-  if (f.word === DOWN) return `<a class="act small" href="models.html?cmd=${enc(p.key)}">Models${DRAW.go}</a><button class="act quiet small" type="button" data-act="retry">Try again</button>`;
-  if (f.reread) return DRAW.act({ word: "Read again", act: "reread", cls: "small", busy: ui.reading });
-  if (f.retry) return `<button class="act small" type="button" data-act="retry">Try again</button>`;
-  return "";
-}
-// a window's row as Accounts draws one: its word, the meter, what is used and, where it refills, the reset ring
-const winRow = (word, used, figure, tail = "") => `<div class="pg-wrow"><span class="pg-ww">${esc(word)}</span><div class="bar${used >= 100 ? " full" : ""}"><b data-v="${used.toFixed(1)}" style="width:${used.toFixed(1)}%"></b></div>`
-  + `<span class="pct limit">${figure}</span>${tail}</div>`;
-// a failure: its word, then what it is as a shape (a spent window's meter at its limit with the reset ring, a spent
-// budget's meter with its two amounts), the act that fixes it, then what the provider, or splice, said, folded to one
-// line until he opens it
-function fixHtml(p) {
-  const f = p.fail, c = cmdOf(p.key);
-  const tries = p.tries > 1 ? DRAW.statTile(DRAW.glyph.retry, DRAW.n(p.tries), "tries") : "";
-  let head, meter = "";
+  const f = p.fail, c = cmdOf(p.key), x = fx(p), accounts = go(`accounts.html?head=${enc(p.key)}`, "Accounts", "small quiet");
+  let acts = "";
   if (f.spent) {
-    const sp = f.spent, along = sp.secs ? Math.max(0, Math.min(1, 1 - (sp.until - Date.now()) / 1000 / sp.secs)) : null;
+    // the pool's other logins that can send: one act each, the next in its order first
+    const others = c?.others ?? [];
+    acts = others.length === 1 ? fxAct(p, "Use another login", "uselogin", { data: ` data-label="${esc(others[0].label)}"` })
+      : others.length ? `<span class="pg-usew">Use another login</span>${others.map((o) => fxAct(p, o.name, "uselogin", { cls: "small quiet", data: ` data-label="${esc(o.label)}"` })).join("")}`
+        : `<span class="pg-nologin">No other login ready</span>`;
+    acts += accounts;
+  } else if (f.door) {
+    const v = x.cap ?? f.cap ?? f.budget?.cap ?? "";
+    acts = `<label class="pg-capf"><span class="pg-capw" aria-hidden="true">$</span><input class="field pg-cap" id="cap-${p.uid}" type="text" inputmode="decimal" autocomplete="off" value="${esc(v === "" ? "" : String(v))}" aria-label="Daily budget for ${esc(c?.command ?? p.key)}, in dollars" placeholder="cap"></label>`
+      + fxAct(p, "Save", "savebudget", { cls: "small" }) + accounts + go(`accounts.html?budget=${enc(f.door)}`, "Set budget", "small quiet");
+  } else if (SIGNED.has(f.word)) {
+    acts = (c && c.acct.kind !== "key" ? fxAct(p, "Sign in", "signin") : "") + accounts;
+  } else if (f.word === DOWN) {
+    acts = go(`models.html?cmd=${enc(p.key)}`, "Models", "small quiet") + `<button class="act small" type="button" data-act="retry">Try again</button>`;
+  } else if (f.reread) {
+    acts = DRAW.act({ word: "Read again", act: "reread", cls: "small", busy: ui.reading });
+  } else if (f.retry) {
+    acts = `<button class="act small" type="button" data-act="retry">Try again</button>`;
+  }
+  // a sign-in under way: the code to type and the page to type it on, beside the act
+  const wait = x.act === "signin" && x.busy && (x.code || x.url) ? `<span class="pg-signing">${x.code ? `<b class="pg-code">${esc(x.code)}</b>` : ""}${x.url ? `<a class="act quiet small" href="${esc(x.url)}" target="_blank" rel="noopener">Open sign-in page${DRAW.go}</a>` : ""}</span>` : "";
+  const res = x.word ? DRAW.result(x.word, "bad") : "";
+  return `${wait}${res}${acts}${swapAct}`;
+}
+const swapAct = `<button class="act quiet small" type="button" data-act="swap">Another model</button>`;
+// a day's share still to run, for the ring of a window that refills
+const leftOf = (ms, secs) => Math.round(Math.max(0, Math.min(1, (ms - Date.now()) / 1000 / secs)) * 100) / 100;
+// the day's budget as Accounts draws a window: its word, the meter, what is spent of the cap and when the day rolls over
+function budgetRow(f) {
+  const b = f.budget;
+  if (!b) return "";
+  return DRAW.loginWins([{ label: "Today", spent: b.spent, cap: b.cap, resetMs: f.resetMs || null, frac: f.resetMs ? leftOf(f.resetMs, 86400) : null }]);
+}
+// a failure: its word at the left of one line and the acts that fix it at the right; under them the failure as a shape (a
+// spent window's meter at its limit with the reset ring, a spent budget's meter with its two amounts), then what the provider,
+// or splice, said, folded to one line until he opens it
+function fixHtml(p) {
+  const f = p.fail;
+  const tries = p.tries > 1 ? DRAW.statTile(DRAW.glyph.retry, DRAW.n(p.tries), "tries") : "";
+  let head, shape = "";
+  if (f.spent) {
+    const sp = f.spent;
     head = DRAW.lock(LIMIT, { pop: true });
-    meter = winRow(sp.word || "Window", 100, `100%<span class="used">used</span>`, `<span class="pg-reset">${along != null ? DRAW.ring(along) : ""}<span>Resets ${esc(backWord(sp.until))}</span></span>`);
+    shape = DRAW.loginWins([{ label: sp.word || "Window", used: 100, frac: sp.secs ? leftOf(+sp.until, sp.secs) : null, resetMs: +sp.until }]);
   } else {
     // "Not answering" is the command's state, in the same neutral ink its board card says it in; every other word is a failure
     head = `<span class="state${f.word === DOWN ? "" : " limit"} pg-word">${esc(f.word)}</span>`;
-    if (f.budget) meter = winRow("Today", Math.min(100, (f.budget.spent / f.budget.cap) * 100), `${DRAW.usd(f.budget.spent)}<span class="used">of ${DRAW.usd(f.budget.cap)}</span>`);
+    shape = budgetRow(f);
   }
-  const acts = fixActs(p);
-  const text = f.said || (f.code != null ? `Answered ${f.code} with no reason` : "");
-  const who = f.splice ? "splice" : titleOf(c?.family, c?.command ?? "");
-  const said = text ? `<div class="pg-said${p.said ? " open" : ""}">${DRAW.disc({ open: p.said, act: "said", cls: "pg-saidd", inner: `<span class="who">${esc(who)}</span><q>${esc(text)}</q>` })}</div>` : "";
-  return `<div class="pg-fix${p.tries > 1 ? " again" : ""}"><div class="pg-fixrow">${head}${tries}</div>${meter}${acts ? `<div class="pg-fixacts">${acts}</div>` : ""}${said}</div>`;
+  const text = f.said || (f.code != null ? `Answered ${f.code} with ${f.spent ? "a reset time" : "no reason"}` : "");
+  const who = f.splice ? "Splice said" : "Provider said";
+  const said = text ? `<div class="pg-said${p.said ? " open" : ""}">${DRAW.disc({ open: p.said, act: "said", cls: "pg-saidd", inner: `<span class="who">${who}</span><q>${esc(text)}</q>` })}</div>` : "";
+  const html = `<div class="pg-fix${p.tries > 1 ? " again" : ""}"><div class="pg-fixrow"><div class="pg-fixword">${head}${tries}</div><div class="pg-fixacts">${fixActs(p)}</div></div>${shape}${said}</div>`;
+  if (p.fx) p.fx.shook = false; // a shake is one turn: the next draw of this pane stands still
+  return html;
 }
-// ---------- the request, in Requests' own open request (reqview.js), at the foot of its own pane ----------
+
+// ---------- doing what a failure offers, in place ----------
+// the budget's day, read once a refusal has landed: when it rolls over, and the whole set a change to this cap goes back in
+async function readBudgetDay(p) {
+  const f = p.fail;
+  if (!f?.door) return;
+  const res = await API.get("/api/budgets");
+  if (!res.ok || p.fail !== f) return;
+  const set = res.body?.budgets ?? [], mine = set.find((b) => b.head === f.door);
+  f.resetMs = res.body?.day_resets_at_epoch_ms ?? null;
+  f.set = set;
+  if (mine) { f.cap = mine.daily_usd; f.action = mine.action; f.budget ??= mine.used_usd != null ? { spent: mine.used_usd, cap: mine.daily_usd } : null; }
+}
+// the cap changed and sent back as splice keeps it (the whole set), then this pane asks again
+async function saveBudget(p) {
+  const f = p.fail, x = fx(p), field = document.getElementById(`cap-${p.uid}`);
+  if (!f?.door || x.busy) return;
+  const v = Number(String(field?.value ?? "").replace(/[$,\s]/g, ""));
+  Object.assign(x, { act: "savebudget", data: "", cap: field?.value ?? "", busy: true, word: "", shook: false });
+  if (!(v > 0)) { refuse(p, "Enter an amount"); return; }
+  if (!f.set) { refuse(p, "Not saved"); return; }
+  say(p, {});
+  const set = f.set.some((b) => b.head === f.door) ? f.set.map((b) => (b.head === f.door ? { ...b, daily_usd: v } : b)) : [...f.set, { head: f.door, daily_usd: v, action: "block" }];
+  const res = await API.put("/api/budgets", { budgets: set.map((b) => ({ head: b.head, daily_usd: b.daily_usd, action: b.action })) });
+  if (!ui.panes.includes(p)) return;
+  if (!res.ok) { refuse(p, "Not saved"); return; }
+  p.fx = null;
+  if (ui.prompt.trim()) run([p]);
+}
+// the pool's order, this login first, then this pane asks again as it
+async function useLogin(p, label) {
+  const x = fx(p);
+  if (x.busy) return;
+  Object.assign(x, { act: "uselogin", data: ` data-label="${esc(label)}"`, busy: true, word: "", shook: false });
+  say(p, {});
+  const cur = await API.get(`/api/auth/${enc(p.key)}/order`);
+  const have = cur.body?.order?.length ? cur.body.order : cur.body?.effective_order ?? [];
+  if (!cur.ok) { refuse(p, "Not changed"); return; }
+  const res = await API.put(`/api/auth/${enc(p.key)}/order`, { order: [label, ...have.filter((l) => l !== label)] });
+  if (!ui.panes.includes(p)) return;
+  if (!res.ok) { refuse(p, "Not changed"); return; }
+  await read(); restore();
+  p.fx = null;
+  if (ui.prompt.trim()) run([p]); else { render(); }
+}
+// the command's own sign-in, from the page that failed: the code and page it needs stand beside the act while it waits, and the
+// pane asks again once the login is in
+async function signIn(p) {
+  const x = fx(p);
+  if (x.busy) return;
+  const gen = (x.gen ?? 0) + 1;
+  Object.assign(x, { act: "signin", data: "", busy: true, word: "", shook: false, code: null, url: null, gen });
+  say(p, {});
+  const res = await API.post(`/api/auth/${enc(p.key)}/login`, {});
+  if (!res.ok || !res.body?.id) { refuse(p, "Not completed"); return; }
+  for (let i = 0; i < 300; i++) {
+    if (!ui.panes.includes(p) || p.fx !== x || x.gen !== gen) return;
+    const st = (await API.get(`/api/auth/${enc(p.key)}/login/${enc(res.body.id)}`)).body ?? {};
+    if (st.state === "failed") { refuse(p, "Not completed"); return; }
+    if (st.state === "signed_in" || st.state === "live_after_restart") {
+      await read(); restore();
+      p.fx = null;
+      if (ui.prompt.trim()) run([p]); else render();
+      return;
+    }
+    const url = st.verification_uri || st.browser_url || null, code = st.user_code || null;
+    if (url !== x.url || code !== x.code) say(p, { url, code });
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  refuse(p, "Not completed");
+}
+// ---------- the request, in Requests' own open request (reqview.js), under the row of answers it was asked in ----------
 // The pane's head already names the model, its command and its account, and its strip draws the request's time, tokens
 // and cost on the shared scales, so reqview is asked for its record alone: no head (head: false), no figures (cells: []),
-// and no time rail (rail: false), which would be one bar, the playground's answer carrying no first-byte time.
+// and no time rail (rail: false), which would be one bar, the playground's answer carrying no first-byte time. The record
+// stands across all the lanes under the row that holds its pane, so its tabs and bodies have the width a record needs;
+// its line says when it was asked, folds the record to that line, and closes it.
 function reqHtml(p) {
   const c = cmdOf(p.key), ts = new Date(+p.at + p.ms);
   const r = { id: `${p.key}:${p.id}:${p.uid}`, cmd: c?.command ?? p.key, provider: c?.family, model: "", ts, total: p.ms, in: p.tin, out: p.tout, cached: 0, attempts: 1 };
   p.RV ??= REQVIEW.view(() => p.rv);
-  return `<div class="pg-req${p.reqNew ? " unfold" : ""}${p.rvSwap ? " swap" : ""}" id="rq-${p.uid}"><div class="pg-reqin"><div class="pg-reqcard"><p class="pg-reqat">Asked<time>${REQVIEW.dayOf(p.at)}${REQVIEW.clockS(p.at)}</time></p>`
-    // a finished answer's words stand above this record in the same pane, so the Returned tab keeps what only the record
-    // knows (its status, how the stream ended, its tool calls and its frames) and the words are set once
-    + `${p.RV.paneHtml(r, { head: false, st: "kept", tr: () => p.trace, cells: [], rail: false, reply: p.st !== "done", names: { head: r.cmd, model: modelOf(p)?.label } })}</div></div></div>`;
+  const lead = `<span class="pg-reqat">Asked<time>${REQVIEW.dayOf(p.at)}${REQVIEW.clockS(p.at)}</time><b>${esc(p.label)}</b></span>`;
+  const acts = DRAW.disc({ open: !p.recFold, controls: `rb-${p.uid}`, act: "recfold", cls: "pg-recd", inner: "", data: ` aria-label="${p.recFold ? "Open" : "Fold"} the record of ${esc(p.label)}"` })
+    + `<button class="icon" type="button" data-act="req" aria-label="Close the request of ${esc(p.label)}">${ICON.close}</button>`;
+  // a finished answer's words stand above this record in the same pane, so the Returned tab keeps what only the record
+  // knows (its status, how the stream ended, its tool calls and its frames) and the words are set once
+  return `<div class="pg-req${p.reqNew ? " unfold" : ""}${p.rvSwap ? " swap" : ""}" id="rq-${p.uid}" data-u="${p.uid}"><div class="pg-reqin">`
+    + p.RV.paneHtml(r, { head: false, lead, recActs: acts, folded: Boolean(p.recFold), st: "kept", tr: () => p.trace, cells: [], rail: false, reply: p.st !== "done", names: { head: r.cmd, model: modelOf(p)?.label } })
+    + `</div></div>`;
 }
 // the answer's shape while it is out: as many lines as the last answer here ran to, else a short answer's
 function waitHtml(p) {
@@ -902,7 +1067,7 @@ function bodyHtml(p) {
   // as many columns as the reply has text for: about 450 characters to a column, four at most
   if (p.st === "done") return `<div class="msg agent"><div class="body pg-mdx pg-ans" style="--cc:${Math.max(1, Math.min(4, Math.floor(p.text.length / 450)))}">${mdPlan(p.text)}</div></div>`;
   // a pane chosen after the others were asked is an empty slot the size of its neighbours, where its answer will land
-  return ui.panes.some((o) => o.st !== "idle") ? `<div class="pg-idle" role="img" aria-label="Not asked yet"></div>` : "";
+  return ui.panes.some((o) => o.st !== "idle") ? `<div class="pg-idle"><span class="pg-idlew">Not asked yet</span><div class="pg-idlel" aria-hidden="true">${Array.from({ length: 9 }, (_, k) => `<i style="width:${k === 8 ? 38 : 72 + ((k * 13) % 26)}%"></i>`).join("")}</div></div>` : "";
 }
 // how many of the answers stand across: as many as fit at LANE_REM, never more than there are; the last of an
 // uneven row takes the rest of its row, so no row ends in an empty lane
@@ -919,13 +1084,16 @@ function paneHtml(p, i) {
   const alone = span > 1 || lanesOf() === 1;
   return `<article class="pgp is-${p.st}${alone ? " alone" : ""}${ui.panes.length === 1 ? " solo" : ""}${stale(p) ? " stale" : ""}${p.fresh ? " landed" : ""}" id="ans-${p.uid}" data-u="${p.uid}" style="--c:${colorOf(c?.family)}${span > 1 ? `;grid-column:span ${span}` : ""}" aria-label="${esc(p.label)}">`
     + `<div class="pgc"><header class="pg-head">${sockHtml(p)}<div class="pg-nm"><h3 class="pg-model">${esc(p.label)}</h3>${c ? DRAW.chip({ text: c.command }) : ""}</div>${meta ? `<div class="pg-meta">${meta}</div>` : ""}${actsHtml(p)}${stripHtml(p)}</header>`
-    + `<div class="pg-body${p.pop ? " rise" : ""}">${bodyHtml(p)}</div></div>${p.req && p.trace ? reqHtml(p) : ""}</article>`;
+    + `<div class="pg-body${p.pop ? " rise" : ""}">${bodyHtml(p)}</div></div></article>`;
 }
+// the requests the panes of a lane row opened stand across the lanes under that row: after its last pane, in pane order
+const rowEnds = (i) => i === ui.panes.length - 1 || (i + 1) % lanesOf() === 0;
+const reqsOf = (end) => ui.panes.slice(end - (end % lanesOf()), end + 1).filter((p) => p.req && p.trace).map(reqHtml).join("");
 function answersHtml() {
   if (ui.cmds === null) return ui.error ? "" : ghostAnswersHtml();
   if (!ui.panes.length) return "";
   return `<section class="pg-answers" aria-label="Answers"><div class="sechead pg-ahead"><h2 class="kicker">Answers</h2>${ui.panes.some(stale) ? oldLegend : ""}</div>`
-    + `<div class="pg-lanes" style="--lanes:${lanesOf()}">${ui.panes.map((p, i) => paneHtml(p, i)).join("")}</div></section>`;
+    + `<div class="pg-lanes" style="--lanes:${lanesOf()}">${ui.panes.map((p, i) => paneHtml(p, i) + (rowEnds(i) ? reqsOf(i) : "")).join("")}</div></section>`;
 }
 
 
@@ -933,12 +1101,12 @@ function answersHtml() {
 const norm = (s) => String(s ?? "").toLowerCase();
 const terms = () => norm(ui.q).split(/\s+/).filter(Boolean);
 const hits = (c, m, t) => { const hay = norm(`${m.label} ${m.id} ${c.command} ${c.title} ${c.acct.name ?? ""} ${c.acct.var ?? ""}`); return t.every((w) => hay.includes(w)); };
-// a model: its tick and its name, then its own context window and its two prices as bars on the board's shared scales, so
-// it is chosen with its figures in view; four chosen leaves the rest off, the board's head saying why. A figure the
-// daemon did not send is a dash on a dashed track.
+// a model: its tick and its name, then its own context window and its two prices, each a bar on the board's shared scale with
+// its figure above the bar's end, so it is chosen with its figures in view; four chosen leaves the rest off, the board's head
+// saying why. A figure the daemon did not send is a dash over a dashed track.
 function mfig(v, max, text) {
-  if (v == null) return `<span class="pg-mf"><span class="vbar unread" aria-hidden="true"></span><b class="v">${dashHtml}</b></span>`;
-  return `<span class="pg-mf"><span class="vbar" aria-hidden="true"><b style="width:${share(v, max).toFixed(1)}%"></b></span><b class="v">${text(v)}</b></span>`;
+  if (v == null) return `<span class="pg-mf"><b class="v">${dashHtml}</b><span class="vbar unread" aria-hidden="true"></span></span>`;
+  return `<span class="pg-mf"><b class="v">${text(v)}</b><span class="vbar" aria-hidden="true"><b style="width:${share(v, max).toFixed(1)}%"></b></span></span>`;
 }
 function mrowHtml(c, m, name, sc) {
   const on = Boolean(paneOf(c.key, m.id)), off = !on && ui.panes.length >= MAX_PANES;
@@ -946,26 +1114,28 @@ function mrowHtml(c, m, name, sc) {
     + `<span class="pg-tick" aria-hidden="true">${TICK}</span><span class="pg-mn">${esc(name(m))}</span>`
     + `${mfig(m.window, sc.win, DRAW.big)}${mfig(m.rates?.input ?? null, sc.price, rate)}${mfig(m.rates?.output ?? null, sc.price, rate)}</button>`;
 }
-// the column names of a model list, said once over its rows; the price unit is said once for the whole board, in its head
-const MHEAD = `<div class="pg-mh" aria-hidden="true"><span></span><span></span><span>Context</span><span>Price in</span><span>Price out</span></div>`;
-// an opened list longer than OPEN_ROWS takes one more board column for each PER_COLUMN rows, never more than the board has
-const colsFor = (n, rows) => (n > 1 && rows > OPEN_ROWS ? Math.min(n, Math.ceil(rows / PER_COLUMN)) : 1);
-// A list's models, the largest window first; a long list shows its first rows and the rest behind "+N", opening in place
-// across as many of the board's columns as its length needs ({ need } tells the provider how wide to stand), each with
-// its own column names.
-function listHtml(c, list, k, sc, { whole, first }, name, n) {
-  const long = list.length > whole, open = ui.open.has(k);
+// the column names of a model list, said once over its rows: in the provider's title line where its cards stand in one board
+// column, and over each column where an opened list spans several. The price unit is said once for the whole board, in its head.
+const MH = "<!--mh-->";
+const MH_HTML = `<div class="pg-mh" aria-hidden="true"><span></span><span></span><span>Context</span><span>Price in</span><span>Price out</span></div>`;
+const PROV_COLS = `<span class="pg-gh" aria-hidden="true"><span>Context</span><span>Price in</span><span>Price out</span></span>`;
+// A list's models, the largest window first; a long list shows its first rows and the rest behind "+N". Each press of "+N"
+// reveals the next STEP rows, laid in columns of COLUMN across as many of the board's columns as there are ({ need } tells
+// the provider how wide to stand), and "Fewer" folds it back.
+const STEP = 12, COLUMN = 6;
+function listHtml(c, list, k, sc, { first }, name, n) {
+  const long = list.length > first, extra = ui.shown.get(k) ?? 0;
   // the order he chose to read them in: the largest window first, or the cheapest price in first (a model with no price last)
   const widest = (a, b) => (b.m.window ?? -1) - (a.m.window ?? -1);
   const order = ui.sort === "price" ? (a, b) => (a.m.rates?.input ?? Infinity) - (b.m.rates?.input ?? Infinity) || widest(a, b) : widest;
   const sorted = list.map((m, i) => ({ m, i })).sort((a, b) => order(a, b) || a.i - b.i).map((x) => x.m);
-  const shown = long && !open ? sorted.slice(0, first) : sorted;
-  const cols = open && long ? colsFor(n, shown.length) : 1, per = Math.ceil(shown.length / cols);
+  const count = long ? Math.min(list.length, first + extra) : list.length, shown = sorted.slice(0, count), left = list.length - count;
+  const cols = long && count > first ? Math.min(Math.max(1, n), Math.ceil(count / COLUMN)) : 1, per = Math.ceil(shown.length / cols);
   const data = ` data-k="${esc(k)}"`;
-  const more = !long ? "" : open ? DRAW.more(0, { pill: true, open: true, less: "Fewer", act: "more", data }) : DRAW.more(list.length - shown.length, { pill: true, act: "more", data });
+  const pills = !long ? "" : `<div class="pg-pills">${left > 0 ? DRAW.more(left, { pill: true, act: "more", data }) : ""}${count > first ? DRAW.more(0, { pill: true, open: true, less: "Fewer", act: "fewer", data }) : ""}</div>`;
   const chunks = Array.from({ length: cols }, (_, i) => shown.slice(i * per, (i + 1) * per)).filter((x) => x.length);
-  const rc = chunks.map((ms) => `<div class="pg-rc">${MHEAD}<div class="pg-rows${open && long && ui.unfold === k ? " unfold" : ""}">${ms.map((m) => mrowHtml(c, m, name, sc)).join("")}</div></div>`).join("");
-  return { html: `<div class="pg-rcols" style="--k:${chunks.length}">${rc}</div>${more}`, need: chunks.length };
+  const rc = chunks.map((ms) => `<div class="pg-rc">${MH}<div class="pg-rows${ui.unfold === k ? " unfold" : ""}">${ms.map((m) => mrowHtml(c, m, name, sc)).join("")}</div></div>`).join("");
+  return { html: `<div class="pg-rcols" style="--k:${chunks.length}">${rc}</div>${pills}`, need: chunks.length };
 }
 // a command whose models come from three vendors or more (OpenRouter) is grouped by vendor, found or not
 const vendorsIn = (models) => new Set(models.map((m) => m.vendor ?? "")).size;
@@ -988,31 +1158,152 @@ function vendorsHtml(c, list, sc, t, n) {
   }).join("");
   // the rest of the vendors behind the same "+N" every list uses
   const more = t.length || vendors.length <= VENDORS ? ""
-    : DRAW.more(ui.open.has(c.key) ? 0 : vendors.length - VENDORS, { pill: true, act: "more", data: ` data-k="${esc(c.key)}"`, open: ui.open.has(c.key), less: "Fewer" });
+    : DRAW.more(ui.open.has(c.key) ? 0 : vendors.length - VENDORS, { pill: true, act: "vendors", data: ` data-k="${esc(c.key)}"`, open: ui.open.has(c.key), less: "Fewer" });
   return { html: `${rows}${more}`, need };
 }
-function cardOf(c, list, sc, t, n) {
-  // a command out of quota or down says so once on its card, with the door to where it is fixed
-  const state = c.held ? `<div class="pg-st">${DRAW.lock(c.held.until ? `${LIMIT} until ${backWord(c.held.until)}` : LIMIT)}<a class="act small quiet" href="accounts.html?head=${enc(c.key)}">Accounts${DRAW.go}</a></div>`
-    : c.down ? `<div class="pg-st">${DRAW.nothing(DOWN)}<a class="act small quiet" href="models.html?cmd=${enc(c.key)}">Models${DRAW.go}</a></div>` : "";
-  // a vendor's name is said over its models, so a grouped list names each model by the rest of its label
-  const grouped = vendorsIn(c.models) >= 3;
-  const body = grouped ? vendorsHtml(c, list, sc, t, n) : listHtml(c, list, c.key, sc, LIST, (m) => m.label, n);
-  // a key has no name of its own to lead with: its card leads with the command, so two runtimes on one key variable are two
-  const chip = DRAW.chip({ text: c.command }), keyed = c.acct.kind === "key";
-  return {
-    html: `<article class="card pg-cmd${c.held ? " held" : ""}${c.down ? " down" : ""}" style="--c:${colorOf(c.family)}"><div class="pg-ch${keyed ? " keyed" : ""}">${keyed ? `${chip}${acctHtml(c.acct)}` : `${acctHtml(c.acct, { door: true })}${chip}`}</div>${state}<div class="pg-list${grouped ? " pg-vends" : ""}">${body.html}</div></article>`,
-    need: body.need,
-  };
+// what a command's card does in place, and what it last said: ui.fix[key] = { act, data, busy, word, shook }
+const fxCmd = (key) => ui.fix.get(key) ?? {};
+const cmdAct = (c, word, act, { cls = "small", data = "" } = {}) => {
+  const f = fxCmd(c.key), mine = f.act === act && (f.data ?? "") === data;
+  return `<button class="act ${cls}${mine && f.shook ? " shook" : ""}" type="button" data-act="${act}" data-key="${esc(c.key)}"${data}${mine && f.busy ? ` aria-busy="true"` : ""}>${esc(word)}</button>`;
+};
+const cmdLink = (href, word) => `<a class="act small quiet" href="${href}">${word}${DRAW.go}</a>`;
+// the pool's other logins that can send, said as the answers say them: one act, or one per login with the word before them
+function otherLogins(c) {
+  const os = c.others ?? [];
+  if (!os.length) return "";
+  if (os.length === 1) return cmdAct(c, "Use another login", "usecmd", { data: ` data-label="${esc(os[0].label)}"` });
+  return `<span class="pg-usew">Use another login</span>${os.map((o) => cmdAct(c, o.name, "usecmd", { cls: "small quiet", data: ` data-label="${esc(o.label)}"` })).join("")}`;
 }
+// a command's card: its login or key and its chip with the live dot (lit while it can send, unlit held or down), its status
+// said once with the act that fixes it beside it, and its models. A command that is not answering is one row that holds its
+// models behind "+N models", still pickable once opened.
+function cardOf(c, list, sc, t, n) {
+  const grouped = vendorsIn(c.models) >= 3, keyed = c.acct.kind === "key", f = fxCmd(c.key);
+  const chip = DRAW.chip({ text: c.command, live: true });
+  const models = () => (grouped ? vendorsHtml(c, list, sc, t, n) : listHtml(c, list, c.key, sc, LIST, (m) => m.label, n));
+  const res = f.word ? DRAW.result(f.word, "bad") : "";
+  let html, body = null;
+  if (c.down) {
+    const open = ui.open.has(`${c.key}|rows`) || t.length > 0;
+    body = open ? models() : null;
+    const pill = DRAW.more(list.length, { pill: true, plus: true, word: "models", one: "model", act: "downrows", data: ` data-k="${esc(c.key)}|rows"`, open });
+    html = `<article class="card pg-cmd down" style="--c:${colorOf(c.family)}"><div class="pg-dn">${chip}${acctHtml(c.acct)}${DRAW.nothing(DOWN)}<span class="pg-da">${cmdAct(c, "Start", "startcmd")}${cmdLink(`models.html?cmd=${enc(c.key)}`, "Models")}${res}</span>${t.length ? "" : pill}</div>${body ? `<div class="pg-list${grouped ? " pg-vends" : ""}">${body.html}</div>` : ""}</article>`;
+  } else {
+    body = models();
+    const state = c.held ? `<div class="pg-st">${DRAW.lock(c.held.until ? `${LIMIT} until ${backWord(c.held.until)}` : LIMIT)}<span class="pg-da">${otherLogins(c)}${cmdLink(`accounts.html?head=${enc(c.key)}`, "Accounts")}${res}</span></div>` : "";
+    const who = keyed ? `${acctHtml(c.acct)}<span class="pg-nolim">Limits not reported by provider</span>${chip}` : `${acctHtml(c.acct, { door: true })}${chip}`;
+    html = `<article class="card pg-cmd${c.held ? " held" : ""}" style="--c:${colorOf(c.family)}"><div class="pg-ch${keyed ? " keyed" : ""}">${who}</div>${state}<div class="pg-list${grouped ? " pg-vends" : ""}">${body.html}</div></article>`;
+  }
+  if (ui.fix.has(c.key)) ui.fix.get(c.key).shook = false; // a shake is one turn
+  return { html, need: body?.need ?? 1, rows: Boolean(body) && !grouped, vendors: grouped && Boolean(body), kind: c.down ? "down" : grouped ? "vendors" : "rows", count: c.models.length };
+}
+// Start, the fix Models offers a command that is not answering (DRAW.fixCommand), run from its card: it spins where it stands, the
+// commands are read again once it is up, and a refusal shakes it once and says so beside it
+async function startCmd(key) {
+  const c = cmdOf(key);
+  if (!c || fxCmd(key).busy) return;
+  ui.fix.set(key, { act: "startcmd", busy: true });
+  paintBoard();
+  const res = await DRAW.fixCommand(key);
+  if (!res.ok) { ui.fix.set(key, { act: "startcmd", word: res.word, shook: true }); paintBoard(); return; }
+  ui.fix.delete(key);
+  await read(); restore(); render();
+}
+// the login a held command sends as: this one first in its pool's order, then the commands are read again
+async function useCmd(key, label) {
+  const c = cmdOf(key), data = ` data-label="${esc(label)}"`;
+  if (!c || fxCmd(key).busy) return;
+  ui.fix.set(key, { act: "usecmd", data, busy: true });
+  paintBoard();
+  const cur = await API.get(`/api/auth/${enc(key)}/order`);
+  const have = cur.body?.order?.length ? cur.body.order : cur.body?.effective_order ?? [];
+  const res = cur.ok ? await API.put(`/api/auth/${enc(key)}/order`, { order: [label, ...have.filter((l) => l !== label)] }) : cur;
+  if (!res.ok) { ui.fix.set(key, { act: "usecmd", data, word: "Not changed", shook: true }); paintBoard(); return; }
+  ui.fix.delete(key);
+  await read(); restore(); render();
+}
+
 // how many of [rem] fit across [px], the board's column gap between them
 const remPx = () => parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
 const fit = (px, rem) => { const r = remPx(), gap = 2 * r; return Math.max(1, Math.floor((px + gap) / (rem * r + gap))); };
 const boardFit = () => fit(root.clientWidth - 8 * 0.667 * remPx(), COL_REM);
 const lanesFit = () => fit(root.clientWidth, LANE_REM);
 // A provider is a titled group on the balanced board (kit DRAW.masonry): each into the shortest column, measured, and a
-// provider whose opened list needs more columns stands that many columns wide.
-const providerBlock = (pv, k, body) => `<div class="pg-pb" data-cols="${k}">${DRAW.group({ name: pv.title, c: colorOf(pv.family), cls: `titled pg-prov${body ? "" : " void"}`, style: k > 1 ? `--k:${k}` : "", body: body ?? `<div class="pg-void" aria-hidden="true"></div>` })}</div>`;
+// provider whose opened list needs more columns stands that many columns wide. Its title line carries the figure names once
+// over its cards' columns.
+const providerBlock = (pv, k, body, lead = false) => `<div class="pg-pb" data-cols="${k}" data-pv="${esc(pv.title)}">${DRAW.group({ name: pv.title, c: colorOf(pv.family), cls: `titled pg-prov${body ? "" : " void"}${lead ? " lead" : ""}`, style: k > 1 ? `--k:${k}` : "", end: lead ? PROV_COLS : "", body: body ?? `<div class="pg-void" aria-hidden="true"></div>` })}</div>`;
+// THE BOARD DEALT BY HEIGHT. The kit's board puts each group into whichever column is shortest at that point, in order, which
+// can leave one column far past the others when a tall group (a held card with its strip and the login it can move to) comes
+// late. Once the groups are on the page and measured, every way of dealing them into the columns is weighed: the columns that
+// end level come first, and among those within a hand's breadth of the most level, the one that keeps the groups reading as
+// they were sorted (ready commands, then held, then down; across the top and then down). Each group stays whole and each column
+// keeps its groups in their order. When the width's full count of columns cannot end level (nine groups in five columns leave
+// one column a group short), fewer columns are tried, down to half, and the most columns that end level stand. A board with fewer groups than
+// columns, or too many to weigh, keeps the kit's rule.
+const DEAL_SLACK = 30, DEAL_LEVEL = 60, DEAL_LIMIT = 400000, DEAL_NODES = 3000000;
+function dealBest(H, K, n) {
+  const m = H.length, bot = Array(n).fill(0), col = Array(m).fill(0), top = Array(m).fill(0);
+  // groups one column wide are interchangeable between columns until one is opened, so only the next unopened column is tried
+  // (the columns then read in the order their first groups were sorted); a wider group tries every place it fits
+  const plain = K.every((k) => k === 1);
+  if (m < n || (!plain && n ** m > DEAL_LIMIT)) return null;
+  let least = Infinity, cand = [], nodes = 0;
+  const settle = () => {
+    let hi = 0, lo = Infinity, empty = 0;
+    for (const b of bot) { hi = Math.max(hi, b); if (b > 0) lo = Math.min(lo, b); else empty++; }
+    const spread = hi - lo + empty * 1e5;
+    if (spread > least + DEAL_SLACK) return;
+    let pen = 0;
+    for (let i = 0; i < m; i++) for (let j = i + 1; j < m; j++) if (top[i] > top[j] + 0.5 || (Math.abs(top[i] - top[j]) <= 0.5 && col[i] > col[j])) pen++;
+    if (spread < least) least = spread;
+    cand.push({ spread, pen, col: col.slice() });
+  };
+  const deal = (i) => {
+    if (i === m) return settle();
+    if (++nodes > DEAL_NODES) return;
+    const reach = plain ? Math.min(n, bot.filter((b) => b > 0).length + 1) : n - K[i] + 1;
+    for (let c = 0; c < reach; c++) {
+      let y = 0;
+      for (let j = c; j < c + K[i]; j++) y = Math.max(y, bot[j]);
+      const was = bot.slice(c, c + K[i]);
+      for (let j = c; j < c + K[i]; j++) bot[j] = y + H[i];
+      col[i] = c; top[i] = y;
+      deal(i + 1);
+      for (let j = 0; j < K[i]; j++) bot[c + j] = was[j];
+    }
+  };
+  deal(0);
+  if (nodes > DEAL_NODES || !cand.length) return null;
+  return cand.filter((x) => x.spread <= least + DEAL_SLACK).sort((a, b) => a.pen - b.pen || a.spread - b.spread)[0];
+}
+function dealMason(box) {
+  const items = [...box.children].filter((el) => el.classList.contains("pg-pb"));
+  const cs = getComputedStyle(box), full = Math.max(1, ui.fit?.board ?? boardFit());
+  const gapRaw = cs.getPropertyValue("--mason-gap").trim() || "2.4rem", rootPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  const gap = gapRaw.endsWith("px") ? parseFloat(gapRaw) : parseFloat(gapRaw) * rootPx;
+  const H = items.map((el) => el.getBoundingClientRect().height + gap);
+  const want = items.map((el) => Math.max(1, Number(el.dataset.cols) || 1));
+  const solve = (n) => (n < 2 ? null : dealBest(H, want.map((k) => Math.min(n, k)), n));
+  const keep = () => { box.style.gridTemplateColumns = `repeat(${full},minmax(0,1fr))`; for (const el of items) el.style.gridColumn = ""; };
+  let n = full, pick = solve(n);
+  if (!pick) return keep();
+  // a find leaves the board's columns where they are; the page's own width and data decide otherwise
+  if (pick.spread > DEAL_LEVEL && !terms().length) {
+    for (let k = full - 1; k >= Math.max(2, Math.ceil(full / 2)) && pick.spread > DEAL_LEVEL; k--) {
+      const fewer = solve(k);
+      if (fewer && fewer.spread < pick.spread - DEAL_SLACK) { n = k; pick = fewer; }
+    }
+  }
+  box.style.gridTemplateColumns = `repeat(${n},minmax(0,1fr))`;
+  items.forEach((el, i) => { const k = Math.min(n, want[i]); el.style.setProperty("--span-eff", String(k)); el.style.gridColumn = `${pick.col[i] + 1} / span ${k}`; });
+}
+const dealBoard = () => { for (const box of root.querySelectorAll(".pg-board > .mason")) dealMason(box); };
+// the shape the board last landed in, so the next first read stands a ghost of the same height: per provider, each card's kind and
+// how many models it holds
+const BOARD_SHAPE = "splice.compare.board";
+const rememberShape = (provs) => { try { localStorage.setItem(BOARD_SHAPE, JSON.stringify(provs.map((pv) => pv.cards.map((x) => [x.kind, x.count])))); } catch { /* nothing to keep it in */ } };
+const shapeKept = () => { try { const v = JSON.parse(localStorage.getItem(BOARD_SHAPE) ?? "null"); return Array.isArray(v) && v.length ? v : null; } catch { return null; } };
 function boardHtml() {
   const t = terms(), n = ui.fit?.board ?? boardFit();
   const models = ui.cmds.flatMap((c) => c.models);
@@ -1030,29 +1321,97 @@ function boardHtml() {
     pv.cards.push(cardOf(c, list, sc, t, n));
   }
   ui.unfold = null;
-  // nothing matches: every provider stands dimmed over an empty slot, the count already reading zero
-  if (!provs.length) return DRAW.masonry(all.map((pv) => providerBlock(pv, 1, null)), COL_REM, { n });
-  return DRAW.masonry(provs.map((pv) => providerBlock(pv, Math.max(1, ...pv.cards.map((x) => x.need)), DRAW.cards(pv.cards.map((x) => x.html)))), COL_REM, { n });
+  // nothing matches: every provider stands dimmed over an empty slot, and the empty state says so with the way back
+  if (!provs.length) return `<div class="pg-nomatch"><span>No model matches</span><button class="act small" type="button" data-act="clearfind">Clear</button></div>${DRAW.masonry(all.map((pv) => providerBlock(pv, 1, null)), COL_REM, { n })}`;
+  if (!t.length) rememberShape(provs);
+  return DRAW.masonry(provs.map((pv) => {
+    const k = Math.max(1, ...pv.cards.map((x) => x.need)), lead = k === 1 && pv.cards.some((x) => x.rows);
+    return providerBlock(pv, k, DRAW.cards(pv.cards.map((x) => x.html)).replaceAll(MH, lead ? "" : MH_HTML), lead);
+  }), COL_REM, { n });
 }
 const matched = () => { const t = terms(); return (ui.cmds || []).reduce((a, c) => a + c.models.filter((m) => !t.length || hits(c, m, t)).length, 0); };
 const countHtml = () => (terms().length ? `<b>${DRAW.n(matched())}</b> of ${DRAW.n(offered())}` : `<b>${DRAW.n(offered())}</b> models`);
+// the places chosen so far, each in its provider's colour, and how many of the four: full says so with the lock
+const chosenHtml = () => {
+  const n = ui.panes.length;
+  const pips = Array.from({ length: MAX_PANES }, (_, k) => { const p = ui.panes[k]; return p ? `<i class="on" style="--c:${colorOf(cmdOf(p.key)?.family)}"></i>` : "<i></i>"; }).join("");
+  return `<span class="pg-slots" aria-hidden="true">${pips}</span>`
+    + (n >= MAX_PANES ? DRAW.lock(`${MAX_PANES} of ${MAX_PANES} chosen`, { pop: true }) : `<span class="pg-chosen"><b>${n}</b> of ${MAX_PANES} chosen</span>`);
+};
 function pickerHtml() {
-  // four chosen: the lock stands where the rows went off, in the board's own head
-  const full = ui.panes.length >= MAX_PANES ? DRAW.lock(`${MAX_PANES} of ${MAX_PANES} chosen`, { pop: true }) : "";
-  // the kicker carries what the board counts, what is full and the price unit, once, with the close at its end
-  const aside = `<span class="pg-pa"><span class="pg-count" aria-live="polite">${countHtml()}</span>${full}`
+  // the kicker is one run from its title: what the board counts, how many are chosen, the order, the price unit once, and the close
+  const aside = `<span class="pg-pa"><span class="pg-count" aria-live="polite">${countHtml()}</span><span class="pg-chosenw">${chosenHtml()}</span>`
     + `<span class="pg-sortsw">${DRAW.switcher([["window", "Most context"], ["price", "Cheapest"]], ui.sort, "sort", "Order the models by")}</span><span class="pg-unit">Prices per M tokens</span>`
     + `<button class="icon pg-shut" type="button" data-act="shut" aria-label="Close the models">${ICON.close}</button></span>`;
-  const find = `<div class="pg-find"><label class="search pg-search">${FIND}<input class="field" id="find" type="search" placeholder="Find a model" value="${esc(ui.q)}" autocomplete="off" spellcheck="false" aria-label="Find a model"></label></div>`;
-  return `<div class="plate pg-pick${ui.opened ? " opening" : ""}" id="pick" role="group" aria-label="Models to compare">`
+  const find = `<div class="pg-find"><label class="search pg-search">${FIND}<input class="field" id="find" type="search" placeholder="Find a model" value="${esc(ui.q)}" autocomplete="off" spellcheck="false" aria-label="Find a model">`
+    + `<span class="pg-fkeys" aria-hidden="true"><kbd>↵</kbd><kbd>Esc</kbd></span><button class="clr" type="button" data-act="clearfind" aria-label="Clear the search">${ICON.close}</button></label></div>`;
+  return `<div class="plate pg-pick${ui.opened ? " opening" : ""}" data-held="pick" id="pick" role="group" aria-label="Models to compare">`
     + `${DRAW.section("Choose models", `${find}<div class="pg-board">${boardHtml()}</div>`, { aside, head: "pg-pickhead", cls: "pg-picks" })}</div>`;
+}
+// the board drawn again: a row or a group that stays slides from where it stood to its new place, a row that goes fades where it
+// stood, a group that loses every match folds shut where it stood, and what comes fades in; the board itself never fades
+const rowKey = (r) => `${r.dataset.key}|${r.dataset.model}`;
+const placeOf = (el) => { const r = el.getBoundingClientRect(); return { left: r.left + scrollX, top: r.top + scrollY, width: r.width, height: r.height }; };
+const slide = (el, was, now) => {
+  const dx = was.left - now.left, dy = was.top - now.top;
+  if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+  el.style.transition = "none"; el.style.transform = `translate(${dx}px, ${dy}px)`;
+  void el.offsetWidth;
+  el.style.transition = ""; el.style.transform = "";
+};
+// a copy of what is leaving, set where it stood over the board, so it can go in its own motion
+const leave = (board, old, at, cls) => {
+  const g = old.node;
+  g.classList.add(cls);
+  Object.assign(g.style, { position: "absolute", left: `${old.box.left - at.left}px`, top: `${old.box.top - at.top}px`, width: `${old.box.width}px`, height: `${old.box.height}px`, margin: "0" });
+  g.querySelectorAll("[data-act]").forEach((x) => x.removeAttribute("data-act"));
+  g.setAttribute("aria-hidden", "true");
+  board.appendChild(g);
+  // it goes when its own motion ends
+  g.addEventListener("animationend", () => g.remove(), { once: true });
+  setTimeout(() => g.remove(), 10000);
+};
+// a list opened or folded behind its pill: the card it stands in grows or shrinks by height over 240 ms while the groups under it
+// slide with it, and the pill's chevron turns
+function paintOpened(k) {
+  const card = () => root.querySelector(`.pg-board [data-k="${CSS.escape(k)}"]`)?.closest(".pg-cmd");
+  const was = card()?.getBoundingClientRect().height;
+  paintBoard();
+  const el = card(), now = el?.getBoundingClientRect().height;
+  if (!el || !was || !now || still() || Math.abs(now - was) < 1) return;
+  el.style.overflow = "hidden";
+  const move = el.animate([{ height: `${was}px` }, { height: `${now}px` }], { duration: 240, easing: "cubic-bezier(.2, .8, .2, 1)" });
+  move.onfinish = move.oncancel = () => { el.style.overflow = ""; };
 }
 function paintBoard() {
   const b = root.querySelector(".pg-board"), n = root.querySelector(".pg-count");
-  if (b) b.innerHTML = boardHtml();
+  const rows = new Map(), groups = new Map(), at = b && placeOf(b), moving = b && !still();
+  if (moving) {
+    for (const g of b.querySelectorAll(".pg-pb[data-pv]:not(.pg-fold)")) groups.set(g.dataset.pv, { box: placeOf(g), node: g.cloneNode(true) });
+    for (const r of b.querySelectorAll(".pg-pb:not(.pg-fold) .pg-mrow:not(.pg-out)")) rows.set(rowKey(r), { box: placeOf(r), node: r.cloneNode(true), pv: r.closest(".pg-pb")?.dataset.pv });
+  }
+  if (b) { b.innerHTML = boardHtml(); DRAW.lay(b); dealBoard(); }
   if (n) n.innerHTML = countHtml();
+  if (!moving || !rows.size) return;
+  const here = new Set([...b.querySelectorAll(".pg-pb[data-pv]")].map((g) => g.dataset.pv)), seen = new Set(), moves = [];
+  // every new place is read before anything is moved, so a group sliding does not shift what is measured inside it
+  for (const g of b.querySelectorAll(".pg-pb[data-pv]")) {
+    const old = groups.get(g.dataset.pv);
+    if (old) moves.push([g, old.box, placeOf(g)]); else g.classList.add("pg-in");
+  }
+  for (const r of b.querySelectorAll(".pg-mrow")) {
+    const k = rowKey(r), old = rows.get(k), pv = r.closest(".pg-pb")?.dataset.pv, g = groups.get(pv);
+    seen.add(k);
+    if (!g) continue;
+    if (!old) { r.classList.add("pg-in"); continue; }
+    // its place relative to its own group, before and after: a group that moved takes its rows along
+    const gnow = placeOf(r.closest(".pg-pb")), now = placeOf(r);
+    moves.push([r, { left: old.box.left - g.box.left + gnow.left, top: old.box.top - g.box.top + gnow.top }, now]);
+  }
+  for (const [el, was, now] of moves) slide(el, was, now);
+  for (const [pv, old] of groups) if (!here.has(pv)) leave(b, old, at, "pg-fold");
+  for (const [k, old] of rows) if (!seen.has(k) && here.has(old.pv)) leave(b, old, at, "pg-out");
 }
-
 
 // ---------- drawing: what stands in while the reads run, and when they fail ----------
 // each shape the size of what lands there: the rows kept from last time, the board's columns, the panes' heads
@@ -1063,12 +1422,21 @@ function ghostTableHtml() {
     + `<span class="pg-c pg-time">${GHOST.track()}</span><span class="pg-c pg-tv">${GHOST.fig(3)}</span>${COLS.map(() => `<span class="pg-c">${GHOST.cell()}</span>`).join("")}</div>`).join("");
   return `<div class="pg-table" aria-hidden="true">${headHtml(axisNow())}${rows}${kept < MAX_PANES ? placesHtml(kept, { ghost: true }) : swapRow(kept, { ghost: true })}</div>`;
 }
+// the board's ghost is the board as it last landed (its providers, each card's kind and how many rows it held), or the typical one
+// the first time: a card is its head and the rows it shows, a command that is not answering one row, a vendor list its six rows
+const TYPICAL_SHAPE = [[["rows", 8]], [["rows", 10]], [["rows", 6]], [["vendors", 40]], [["rows", 7]], [["rows", 6]], [["rows", 2]], [["down", 1], ["down", 1]], [["down", 1], ["down", 1]]];
 function ghostPickHtml() {
   if (keptModels().length >= MAX_PANES) return "";
-  const prov = (rows, i) => `<div class="pg-pb"><section class="titled pg-prov ghosted" style="--i:${i % 3}" aria-hidden="true"><header>${GHOST.bar(9, "big")}</header>`
-    + `${GHOST.card([15, ...Array.from({ length: rows }, (_, k) => 17 + ((k * 7 + i * 3) % 6))], 0, "pg-cmd")}</section></div>`;
-  return `<div class="plate pg-pick" aria-hidden="true">${DRAW.section("Choose models", `<div class="pg-find">${GHOST.bar(24, "chip")}</div>`
-    + `<div class="pg-board">${DRAW.masonry([8, 6, 7, 9, 2, 9, 3, 1, 1].map(prov), COL_REM, { n: boardFit() })}</div>`,
+  const lines = (k, i, vendor = false) => `<i class="ghost pg-gl${vendor ? " pg-gv" : ""}" style="width:${58 + ((k * 9 + i * 5) % 30)}%"></i>`;
+  const card = ([kind, count], i) => {
+    if (kind === "down") return `<div class="card pg-cmd down ghosted"><div class="pg-dn">${GHOST.bar(6, "chip")}${GHOST.bar(9)}${GHOST.bar(7)}</div></div>`;
+    const rows = Math.min(kind === "vendors" ? 6 : count, 6);
+    return `<div class="card pg-cmd ghosted"><div class="pg-ch">${GHOST.bar(9)}${GHOST.bar(6, "chip")}</div><div class="pg-list">${Array.from({ length: rows }, (_, k) => lines(k, i, kind === "vendors")).join("")}${(kind === "vendors" ? 60 : count) > 6 ? GHOST.bar(3, "chip") : ""}</div></div>`;
+  };
+  const prov = (cards, i) => `<div class="pg-pb"><section class="titled pg-prov ghosted" style="--i:${i % 3}" aria-hidden="true"><header>${GHOST.bar(9, "big")}</header>`
+    + `<div class="stack-cards">${cards.map((x) => card(x, i)).join("")}</div></section></div>`;
+  return `<div class="plate pg-pick" aria-hidden="true" style="${GHOST.pin("pick")}">${DRAW.section("Choose models", `<div class="pg-find">${GHOST.bar(24, "chip")}</div>`
+    + `<div class="pg-board">${DRAW.masonry((shapeKept() ?? TYPICAL_SHAPE).map(prov), COL_REM, { n: boardFit() })}</div>`,
   { aside: `<span class="pg-pa">${GHOST.bar(6)}</span>`, head: "pg-pickhead", cls: "pg-picks" })}</div>`;
 }
 function ghostAnswersHtml() {
@@ -1106,13 +1474,13 @@ function focused() {
   if (!a || !root.contains(a)) return null;
   const d = a.dataset ?? {}, q = (k, v) => (v == null ? "" : `[data-${k}="${CSS.escape(v)}"]`);
   const key = a.id ? `#${CSS.escape(a.id)}` : d.act ? `[data-act="${CSS.escape(d.act)}"]${q("key", d.key)}${q("model", d.model)}${q("k", d.k)}${q("v", d.v)}${q("p", d.p)}${q("u", d.u)}` : null;
-  const host = a.closest(".pgp");
-  return key && { key, sel: typeof a.selectionStart === "number" ? [a.selectionStart, a.selectionEnd] : null, host: host?.dataset.u ? `.pgp[data-u="${host.dataset.u}"]` : null };
+  const host = a.closest(".pgp, .pg-req");
+  return key && { key, sel: typeof a.selectionStart === "number" ? [a.selectionStart, a.selectionEnd] : null, host: host?.dataset.u ? `.${host.classList.contains("pg-req") ? "pg-req" : "pgp"}[data-u="${host.dataset.u}"]` : null, pane: host?.dataset.u ? `.pgp[data-u="${host.dataset.u}"]` : null };
 }
 // focus goes back to the same control, inside the same pane; a closed request gives it to its pane's Request
 function refocus(f) {
   if (!f) return;
-  const el = f.host ? root.querySelector(f.host)?.querySelector(f.key) ?? root.querySelector(f.host)?.querySelector('[data-act="req"]') : root.querySelector(f.key);
+  const el = f.host ? root.querySelector(f.host)?.querySelector(f.key) ?? root.querySelector(f.pane ?? f.host)?.querySelector('[data-act="req"]') : root.querySelector(f.key);
   if (!el) return;
   el.focus({ preventScroll: true });
   if (f.sel && el.setSelectionRange) el.setSelectionRange(...f.sel);
@@ -1121,6 +1489,8 @@ function refocus(f) {
 function grow() {
   requestAnimationFrame(() => requestAnimationFrame(() => {
     for (const b of root.querySelectorAll("[data-w]")) b.style.width = `${b.dataset.w}%`;
+    // the kit's meters (a window, the day's budget) take their share as they are drawn
+    for (const b of root.querySelectorAll(".pg-fix .bar > b[data-v]")) b.style.width = `${b.dataset.v}%`;
   }));
 }
 // a row that changed places travels there from where it stood (the rail's order as answers land)
@@ -1143,8 +1513,8 @@ function render() {
   ui.opened = false; ui.swap = false;
   for (const p of ui.panes) { p.fresh = false; p.reqNew = false; }
   refocus(f);
+  dealBoard();
   grow();
-  fadeMore();
 }
 // the models plate drawn again: its rows travel to their new places on the rail and their bars to the new scales
 function paintCmp() {
@@ -1162,11 +1532,23 @@ function measure(p) {
   const body = root.querySelector(`.pgp[data-u="${p.uid}"] .pg-ans`);
   if (body) p.lines = Math.round(body.getBoundingClientRect().height / (1.62 * 1.05 * remPx()));
 }
+// the pane's request stands under its lane row while it is open and is gone with it
+function syncReq(p) {
+  const has = root.querySelector(`.pg-req[data-u="${p.uid}"]`), want = Boolean(p.req && p.trace);
+  if (has && !want) { has.remove(); return; }
+  if (has) { has.outerHTML = reqHtml(p); return; }
+  if (!want) return;
+  const i = ui.panes.indexOf(p), lanes = lanesOf(), end = Math.min(ui.panes.length - 1, i - (i % lanes) + lanes - 1);
+  let at = root.querySelector(`.pgp[data-u="${ui.panes[end].uid}"]`);
+  while (at?.nextElementSibling?.classList.contains("pg-req") && ui.panes.findIndex((q) => String(q.uid) === at.nextElementSibling.dataset.u) < i) at = at.nextElementSibling;
+  at?.insertAdjacentHTML("afterend", reqHtml(p));
+}
 function paintPane(p) {
   const el = root.querySelector(`.pgp[data-u="${p.uid}"]`);
   if (!el) { render(); return; }
   const f = focused();
   el.outerHTML = paneHtml(p, ui.panes.indexOf(p));
+  syncReq(p);
   p.reqNew = false;
   refocus(f);
   grow();
@@ -1257,6 +1639,8 @@ root.addEventListener("keydown", (e) => {
   if (t.id === "prompt" && e.key === "Escape" && ui.prompt.trim()) { e.preventDefault(); closeField(); root.querySelector("[data-act=write]")?.focus(); return; }
   if (t.dataset?.act === "write" && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openField(t.offsetHeight); return; }
   if (e.key === "Escape" && t.closest?.(".pg-acts.armed")) { e.preventDefault(); const p = byUid(t.closest(".pgp").dataset.u); if (p) arm(p, false); return; }
+  // Enter in a budget's amount saves it, as its Save does
+  if (t.classList?.contains("pg-cap") && e.key === "Enter") { e.preventDefault(); const p = byUid(t.closest(".pgp")?.dataset.u); if (p?.st === "failed") saveBudget(p); return; }
   // Enter in the find field takes the first model it found
   if (t.id === "find" && e.key === "Enter") { e.preventDefault(); root.querySelector('.pg-board .pg-mrow[aria-pressed="false"]:not(:disabled)')?.click(); return; }
   if (t.id === "find" && e.key === "Escape" && ui.q) { e.preventDefault(); ui.q = ""; t.value = ""; paintBoard(); }
@@ -1277,10 +1661,21 @@ document.addEventListener("click", (e) => {
   if (e.target.classList?.contains("pg-md") && writing()) { document.getElementById("prompt")?.focus(); return; }
   const t = e.target.closest("[data-act]");
   if (!t || (t.dataset.act !== "theme" && !root.contains(t))) return;
-  const host = t.closest(".pgp"), p = host ? byUid(host.dataset.u) : null;
+  const host = t.closest(".pgp, .pg-req"), p = host ? byUid(host.dataset.u) : null;
   switch (t.dataset.act) {
     case "theme": toggleTheme(); return;
     case "write": openField(t.offsetHeight); return;
+    case "useearlier": { // the earlier prompt goes back in the field, and the answers are no longer dimmed
+      const was = earlier();
+      if (was == null) return;
+      const before = ui.panes.map(stale).join();
+      ui.prompt = was; keep(); ui.editing = false; ui.swap = true;
+      paintPrompt();
+      if (ui.panes.map(stale).join() !== before) paintStale();
+      paintSend();
+      return;
+    }
+    case "recall": recall(Number(t.dataset.i)); return;
     case "send": send(); return;
     case "add": { // Add model always leads to adding one: it opens the board, or goes to its find field when it is open
       if (!pickerOpen()) { ui.opened = true; ui.add = true; render(); }
@@ -1322,6 +1717,7 @@ document.addEventListener("click", (e) => {
       return;
     }
     case "said": if (p) { p.said = !p.said; paintPane(p); } return;
+    case "recfold": if (p) { p.recFold = !p.recFold; paintReq(p); } return;
     case "tab": case "node": case "frames": case "document": {
       if (!p?.RV?.click(t)) return;
       p.rvSwap = t.dataset.act === "tab"; // a new tab fades its body in; a fold opening in place moves on its own
@@ -1330,32 +1726,49 @@ document.addEventListener("click", (e) => {
     }
     case "retry": if (p && ui.prompt.trim() && p.st !== "sending") run([p]); return;
     case "reread": reread(); return;
+    case "uselogin": if (p && p.st === "failed") useLogin(p, t.dataset.label); return;
+    case "signin": if (p && p.st === "failed") signIn(p); return;
+    case "savebudget": if (p && p.st === "failed") saveBudget(p); return;
     // the models read in another order: the lists are drawn again in it and fade in where they stand
     case "sort": {
       if (ui.sort === t.dataset.v) return;
       ui.sort = t.dataset.v;
       for (const b of root.querySelectorAll('[data-act="sort"]')) b.setAttribute("aria-pressed", String(b.dataset.v === ui.sort));
-      const board = root.querySelector(".pg-board");
       paintBoard();
-      if (board && !still()) { board.classList.remove("swap"); void board.offsetWidth; board.classList.add("swap"); }
       return;
     }
-    case "more": case "vendor": {
+    // a vendor, the rest of the vendors and a command's rows behind "+N models" open and fold in place
+    case "vendors": case "vendor": case "downrows": {
       const k = t.dataset.k;
       flip(ui.open, k);
       ui.unfold = ui.open.has(k) ? k : null;
-      paintBoard(); root.querySelector(`.pg-board [data-k="${CSS.escape(k)}"]`)?.focus({ preventScroll: true });
+      paintOpened(k); root.querySelector(`.pg-board [data-k="${CSS.escape(k)}"]`)?.focus({ preventScroll: true });
+      return;
+    }
+    // "+N" reveals the next rows of a long list, "Fewer" folds it back to its first
+    case "more": case "fewer": {
+      const k = t.dataset.k;
+      if (t.dataset.act === "more") { ui.shown.set(k, (ui.shown.get(k) ?? 0) + STEP); ui.unfold = k; } else { ui.shown.delete(k); ui.unfold = null; }
+      paintOpened(k); root.querySelector(`.pg-board [data-k="${CSS.escape(k)}"]`)?.focus({ preventScroll: true });
+      return;
+    }
+    case "startcmd": startCmd(t.dataset.key); return;
+    case "usecmd": useCmd(t.dataset.key, t.dataset.label); return;
+    case "clearfind": {
+      ui.q = "";
+      const field = document.getElementById("find");
+      if (field) { field.value = ""; field.focus({ preventScroll: true }); }
+      paintBoard();
       return;
     }
     default: return;
   }
 });
-root.addEventListener("scroll", (e) => { if (e.target.classList?.contains("pg-md-out")) fadeMore(); }, { capture: true, passive: true });
 // a new width: the board takes its new count of columns and the answers theirs
 new ResizeObserver(() => {
-  fadeMore();
   if (!ui.fit) return;
   const b = boardFit(), l = lanesFit();
+  dealBoard();
   if (b !== ui.fit.board) { ui.fit.board = b; if (pickerOpen()) paintBoard(); }
   if (l !== ui.fit.lanes) { ui.fit.lanes = l; if (ui.panes.length) paintAnswers(); }
 }).observe(root);

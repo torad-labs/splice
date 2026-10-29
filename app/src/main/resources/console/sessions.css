@@ -5,19 +5,19 @@
    scoped, so a change here never reaches them. */
 
 .page { container-type: inline-size; }
-.search { display: flex; align-items: center; gap: .6rem; width: 22rem; position: relative; }
+.search { display: flex; align-items: center; gap: 0.667rem; width: 22rem; position: relative; }
 .search svg { position: absolute; left: .75rem; width: 1.05rem; height: 1.05rem; color: var(--text-mute); pointer-events: none; }
 .search .field { padding-left: 2.3rem; font-family: var(--font-name); font-size: .95rem; }
 /* the key that reaches the search from anywhere on the page, drawn at the field's end and gone while it is in use */
 .search kbd { position: absolute; right: .75rem; display: grid; place-items: center; min-width: 1.5rem; height: 1.5rem; padding: 0 .35rem; box-sizing: border-box; border: .08rem solid var(--track-line); border-radius: .35rem; font: 500 .8rem/1 var(--font-data); color: var(--text-mute); pointer-events: none; }
 .search:focus-within kbd, .search:has(.field:not(:placeholder-shown)) kbd { display: none; }
 
-.list { display: flex; flex-direction: column; gap: var(--gap-card); padding-left: 2.7rem; min-width: 0; }
+.list { display: flex; flex-direction: column; gap: var(--gap-card); padding-left: 2.667rem; min-width: 0; }
 .pane { display: none; }
 
 /* ---------- the lamp: the session's state as an element, in the socket at the card's left ---------- */
 .lamp {
-  position: absolute; left: -2.7rem; top: 1.1rem; width: 2rem; height: 2rem; border-radius: 50%;
+  position: absolute; left: -2.667rem; top: 1.1rem; width: 2rem; height: 2rem; border-radius: 50%;
   display: grid; place-items: center; color: var(--text-mute);
   background: var(--socket); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .15rem var(--rail);
 }
@@ -57,47 +57,47 @@
 /* THE CARD HE HAS OPEN is a selection, in the one neutral selected look (console.css :root --sel-*): where he IS,
    never where to look next, so the key light stays free for the one place to act in the view. */
 .s[aria-current="true"] { border-color: var(--sel-ink); }
-.s .top { display: flex; align-items: center; gap: .8rem; min-height: 2.2rem; }
+.s .top { display: flex; align-items: center; gap: 0.667rem; min-height: 2.2rem; }
 .s .name { font: 500 1.1rem/1.15 var(--font-name); color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
-.wt { display: inline-flex; align-items: center; gap: .35rem; font: 500 .9rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
+.wt { display: inline-flex; align-items: center; gap: 0.333rem; font: 500 .9rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
 .wt svg, .team svg, .where svg { width: 1rem; height: 1rem; flex: none; }
 .s .top .chip { margin-left: auto; }
 .s .top .state { margin-left: auto; }  /* "unknown head" takes the chip's place at the right edge (hitstop) */
-.meta { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem 1rem; margin-top: .3rem; font: 500 .95rem/1 var(--font-data); color: var(--text-mute); }
+.meta { display: flex; align-items: center; flex-wrap: wrap; gap: 0.333rem 1rem; margin-top: 0.333rem; font: 500 .95rem/1 var(--font-data); color: var(--text-mute); }
 .meta .word.stalled, .meta .word.limit { color: var(--limit); }
 .meta .word.needs { color: var(--needs); }
 .meta .detail.retried { color: var(--key-ink); }
-.meta .detail { font: 500 .95rem/1 var(--font-data); color: var(--limit); display: inline-flex; align-items: center; gap: .35rem; }
+.meta .detail { font: 500 .95rem/1 var(--font-data); color: var(--limit); display: inline-flex; align-items: center; gap: 0.333rem; }
 .meta .detail svg { width: 1rem; height: 1rem; }
 .meta .detail.resumes { color: var(--live); }  /* splice has it: the working colour, not the stalled one (fin) */
 .meta .detail.noresume { color: var(--limit); flex: none; white-space: nowrap; }  /* nothing will re-send it: the stalled colour, words only (hitstop) */
 .meta a.detail.fix { text-decoration: underline; text-underline-offset: .2em; }  /* Signed out's way back: a link to Accounts */
 .watch .hand { transform-origin: 12px 13.5px; transform-box: view-box; }  /* a duration: the hand runs with its seconds */
-.meta .team, .meta .where { display: inline-flex; align-items: center; gap: .35rem; }
+.meta .team, .meta .where { display: inline-flex; align-items: center; gap: 0.333rem; }
 .meta .when { margin-left: auto; min-width: 0; font-size: .95rem; color: var(--text-mute); }
 .meta .word svg { width: 1rem; height: 1rem; flex: none; }  /* .word's own gap sets it off */
 /* At limit names the plan that ran out as Compare and Accounts head it: the account, then its provider and plan dimmed */
-.meta .acct { display: inline-flex; align-items: baseline; gap: .45rem; color: var(--text); white-space: nowrap; }
+.meta .acct { display: inline-flex; align-items: baseline; gap: 0.333rem; color: var(--text); white-space: nowrap; }
 .meta .acct .pv { color: var(--text-mute); }
-.last { margin: .45rem 0 0; font: 400 1rem/1.4 var(--font-name); color: var(--text-body); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.last { margin: 0.333rem 0 0; font: 400 1rem/1.4 var(--font-name); color: var(--text-body); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 /* the last line is its last tool call: the transcript's chip, still, because on the card it opens the session, not the result */
 .last.tool { display: block; width: fit-content; max-width: 100%; cursor: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.last.tool b, .ask .tname { font-weight: 600; color: var(--text); margin-right: .55rem; }
+.last.tool b, .ask .tname { font-weight: 600; color: var(--text); margin-right: 0.667rem; }
 
 /* what it waits on, verbatim, with an act for every answer it takes */
-.ask { margin-top: .75rem; }
+.ask { margin-top: 0.667rem; }
 .ask .q { margin: 0; font: 500 1rem/1.4 var(--font-name); color: var(--text); }
 .ask .cmd, .unmoved .cmd { white-space: pre-wrap; margin: 0; font: 500 .95rem/1.4 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); padding: .55rem .75rem; overflow-wrap: anywhere; }
-.ask .why { margin: .45rem 0 0; font: 400 .95rem/1.4 var(--font-name); color: var(--text-body); }
-.answers { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .8rem; }
+.ask .why { margin: 0.333rem 0 0; font: 400 .95rem/1.4 var(--font-name); color: var(--text-body); }
+.answers { display: flex; flex-wrap: wrap; gap: 0.667rem; margin-top: 0.667rem; }
 .answers .act[aria-pressed="true"] { background: var(--limit); color: var(--on-limit); }
 .scope { font: 500 .88rem/1 var(--font-data); color: var(--text-body); background: var(--obj-sunk); border-radius: .3rem; padding: .3rem .45rem; }
 .act.primary .scope { background: rgba(36, 29, 20, .14); color: var(--splice-ink-day); }
-.answers .act.answering, .answers .act.answering:disabled { cursor: default; opacity: 1; gap: .5rem; }
+.answers .act.answering, .answers .act.answering:disabled { cursor: default; opacity: 1; gap: 0.667rem; }
 .answers .act.answering .wait { width: 1.1rem; height: 1.1rem; --c: currentColor; }
 
 /* ---------- a fold's line, shared by every page that folds a list ---------- */
-.fold { align-self: flex-start; display: inline-flex; align-items: center; gap: .45rem; font: 500 .95rem/1 var(--font-name); }
+.fold { align-self: flex-start; display: inline-flex; align-items: center; gap: 0.333rem; font: 500 .95rem/1 var(--font-name); }
 .fold .caret { width: .85rem; height: .85rem; color: var(--text-mute); transition: transform var(--t-snap) var(--e-out); }
 .fold[aria-expanded="true"] .caret { transform: rotate(90deg); }
 
@@ -108,68 +108,68 @@
   box-shadow: var(--cast) var(--cast) 0 var(--c), var(--cast) var(--cast) 0 var(--ink-w) var(--ink);
 }
 /* ONE HEADER OF ONE HEIGHT, whatever the item is (gap: it swung from 90 to 232 px and moved the log 142 px). */
-.pane > header { display: flex; align-items: center; gap: .85rem; min-height: 4.4rem; padding: .8rem 1.2rem; background: var(--obj-high); border-bottom: var(--ink-w) solid var(--ink); }
+.pane > header { display: flex; align-items: center; gap: 1rem; min-height: 4.4rem; padding: .8rem 1.2rem; background: var(--obj-high); border-bottom: var(--ink-w) solid var(--ink); }
 .pane > header .lamp { position: static; flex: none; }
-.pane > header .who { min-width: 0; flex: 0 1 auto; display: flex; align-items: baseline; gap: .7rem; }
+.pane > header .who { min-width: 0; flex: 0 1 auto; display: flex; align-items: baseline; gap: 0.667rem; }
 .pane > header .name { font: 400 1.3rem/1.2 var(--font-lead); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pane > header .pstate { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: .3rem .8rem; font: 500 .95rem/1 var(--font-data); color: var(--text-mute); }
-.pane > header .pstate .word { font: 500 .95rem/1 var(--font-data); display: inline-flex; align-items: center; gap: .4rem; }
+.pane > header .pstate { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 0.333rem 0.667rem; font: 500 .95rem/1 var(--font-data); color: var(--text-mute); }
+.pane > header .pstate .word { font: 500 .95rem/1 var(--font-data); display: inline-flex; align-items: center; gap: 0.333rem; }
 .pane > header .pstate .barcell.age { flex: none; margin-left: auto; }
-.pane > header .acts { display: flex; align-items: center; gap: .6rem; position: relative; flex: none; }
+.pane > header .acts { display: flex; align-items: center; gap: 0.667rem; position: relative; flex: none; }
 .pane .close { flex: none; }
 .act svg { width: 1rem; height: 1rem; }
-.act.stopping, .act.stopping:disabled { cursor: default; opacity: 1; color: var(--text-body); gap: .5rem; }
+.act.stopping, .act.stopping:disabled { cursor: default; opacity: 1; color: var(--text-body); gap: 0.667rem; }
 .act.stopping .wait { width: 1.1rem; height: 1.1rem; --c: var(--text-body); }
 
 /* the browser's own anchoring holds the line it picked when the window around a conversation changes height, which is
    how a pane that grew its band left him three lines short of the newest message: the page decides where it sits */
-.log { flex: 1; overflow-y: auto; overflow-anchor: none; padding: 1.2rem 1.2rem 1.1rem; display: flex; flex-direction: column; gap: .9rem; scroll-behavior: auto; }
+.log { flex: 1; overflow-y: auto; overflow-anchor: none; padding: 1.2rem 1.2rem 1.1rem; display: flex; flex-direction: column; gap: 1rem; scroll-behavior: auto; }
 /* a refusal from an act in the pane (Stop, Continue on), read where the conversation starts */
 .pane > .why { margin: 0; padding: .75rem 1.2rem 0; }
 /* a move that did not happen: the state line, the attempt's last lines while reading is on (the evidence), then the way
    forward: the resume command with Copy beside it when even the way back failed, then Try again (hitstop 899cb2e) */
-.pane > .unmoved { display: grid; justify-items: start; gap: .75rem; padding: .75rem 1.2rem 0; }
-.why.unline { margin: .6rem 0 0; color: var(--limit); display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .5rem; font: 400 .95rem/1.4 var(--font-name); }
+.pane > .unmoved { display: grid; justify-items: start; gap: 0.667rem; padding: .75rem 1.2rem 0; }
+.why.unline { margin: 0.667rem 0 0; color: var(--limit); display: flex; flex-wrap: wrap; align-items: center; gap: 0.333rem 0.667rem; font: 400 .95rem/1.4 var(--font-name); }
 .why.unline .chip { color: var(--text); }
 .unmoved .why.unline { margin: 0; }
 .unmoved .screen { margin: 0; justify-self: stretch; white-space: pre-wrap; font: 400 .9rem/1.45 var(--font-data); color: var(--text-body); background: var(--obj-sunk); border-radius: var(--r-in); padding: .6rem .8rem; }
-.unmoved .runline { justify-self: start; max-width: 100%; display: flex; align-items: flex-start; gap: .8rem; }
+.unmoved .runline { justify-self: start; max-width: 100%; display: flex; align-items: flex-start; gap: 0.667rem; }
 .unmoved .runline .cmd { flex: 0 1 auto; min-width: 0; }
 .log > * { max-width: 62rem; width: 100%; }
 .log .note { align-self: center; width: auto; font: 500 .9rem/1 var(--font-data); color: var(--text-mute); }
-.log .note time { margin-left: .5rem; }
-.log .cutoff { align-self: flex-end; display: inline-flex; align-items: center; gap: .5rem; width: auto; margin: 0; font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
+.log .note time { margin-left: 0.333rem; }
+.log .cutoff { align-self: flex-end; display: inline-flex; align-items: center; gap: 0.667rem; width: auto; margin: 0; font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
 .log .cutoff svg { width: .85rem; height: .85rem; fill: currentColor; stroke: none; }
-.log .cutoff time { margin-left: .3rem; font: 500 .85rem/1 var(--font-data); }
+.log .cutoff time { margin-left: 0.333rem; font: 500 .85rem/1 var(--font-data); }
 /* a teammate's message: who sent it, above its words */
 .msg.peer { align-self: flex-start; align-items: flex-start; max-width: 44rem; width: auto; }
-.msg.peer .from { display: inline-flex; align-items: center; gap: .45rem; margin: 0; font: 500 .95rem/1 var(--font-name); color: var(--text-body); }
+.msg.peer .from { display: inline-flex; align-items: center; gap: 0.333rem; margin: 0; font: 500 .95rem/1 var(--font-name); color: var(--text-body); }
 .msg.peer .from i { width: .7rem; height: .7rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); }
 .msg.peer .body { background: var(--obj-high); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); padding: .75rem 1rem; box-shadow: .3rem .3rem 0 var(--c), .3rem .3rem 0 var(--ink-w) var(--ink); }
 .log .earlier { align-self: center; width: auto; }
 .log .empty { margin: auto; width: auto; font: 500 1.1rem/1 var(--font-name); color: var(--text-mute); }
 /* his messages are objects he put on the table; the agent's words are the page */
-.msg { display: flex; flex-direction: column; gap: .35rem; }
+.msg { display: flex; flex-direction: column; gap: 0.333rem; }
 .msg .body { font: 400 1.05rem/1.55 var(--font-name); color: var(--text); overflow-wrap: anywhere; }
-.msg .body p { margin: 0 0 .55rem; }
+.msg .body p { margin: 0 0 0.667rem; }
 .msg .body p:last-child { margin-bottom: 0; }
-.msg .body ul { margin: .2rem 0 .55rem; padding-left: 1.2rem; }
+.msg .body ul { margin: 0.333rem 0 0.667rem; padding-left: 1.2rem; }
 .msg .body code { font: 500 .95em/1 var(--font-data); background: var(--obj-sunk); border-radius: .25rem; padding: .12rem .3rem; }
 .msg time { font: 500 .85rem/1 var(--font-data); color: var(--text-mute); }
 .msg.his { align-self: flex-end; align-items: flex-end; max-width: 44rem; width: auto; }
 .msg.his .body { background: var(--obj-high); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); padding: .75rem .9rem; box-shadow: .3rem .3rem 0 var(--key-light), .3rem .3rem 0 var(--ink-w) var(--ink); }
-.msg.his .unsent { display: flex; align-items: center; gap: .8rem; }
+.msg.his .unsent { display: flex; align-items: center; gap: 0.667rem; }
 .msg.his.failed .body { box-shadow: .3rem .3rem 0 var(--limit), .3rem .3rem 0 var(--ink-w) var(--ink); }
 .msg.agent { align-self: flex-start; max-width: 58rem; }
 /* his message Claude Code took back when he stopped it before any answer: marked in place, never drawn as sent */
 .msg.his.takenback .body { background: transparent; border-style: dashed; border-color: var(--text-mute); box-shadow: none; color: var(--text-body); }
-.msg .taken { align-self: flex-end; display: inline-flex; align-items: center; gap: .5rem; margin: 0; font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
+.msg .taken { align-self: flex-end; display: inline-flex; align-items: center; gap: 0.667rem; margin: 0; font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
 .msg .taken svg { width: .85rem; height: .85rem; fill: currentColor; stroke: none; }
-.msg .taken time { margin-left: .3rem; font: 500 .85rem/1 var(--font-data); }
+.msg .taken time { margin-left: 0.333rem; font: 500 .85rem/1 var(--font-data); }
 
 /* a tool call: its name and a line, and the result folded under it */
 .tool {
-  align-self: flex-start; display: inline-flex; align-items: center; gap: .6rem; max-width: 100%; cursor: pointer;
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 0.667rem; max-width: 100%; cursor: pointer;
   font: 500 .95rem/1 var(--font-data); color: var(--text-body); background: var(--obj-sunk);
   border: .12rem solid var(--ink); border-radius: var(--r-in); padding: .45rem .75rem; box-shadow: .16rem .16rem 0 var(--c);
 }
@@ -179,7 +179,7 @@
 .tool .caret { width: .8rem; height: .8rem; flex: none; transition: transform var(--t-snap) var(--e-out); }
 .tool:disabled { cursor: default; }
 .tool[aria-expanded="true"] .caret { transform: rotate(90deg); }
-.call { display: flex; flex-direction: column; align-items: flex-start; gap: .5rem; }
+.call { display: flex; flex-direction: column; align-items: flex-start; gap: 0.667rem; }
 .toolout {
   margin: 0; width: 100%; overflow: auto; white-space: pre-wrap; font: 400 .92rem/1.45 var(--font-data);
   color: var(--text-body); background: var(--obj-sunk); border-left: .22rem solid var(--track-line); border-radius: 0 .35rem .35rem 0; padding: .65rem .85rem;
@@ -191,10 +191,10 @@
 .joint::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: .5rem; transform: translateY(-50%); background: var(--rail); border-radius: .3rem; box-shadow: 0 0 0 var(--ink-w) var(--ink); }
 .joint > * { position: relative; }
 .joint .model { background: var(--obj); padding: .3rem .8rem; border-radius: .3rem; }
-.joint .model .left { margin-left: .8rem; color: var(--text-mute); }  /* what didn't come along, dimmed after the move */
+.joint .model .left { margin-left: 0.667rem; color: var(--text-mute); }  /* what didn't come along, dimmed after the move */
 [data-theme="day"] .joint::before { background: var(--obj-sunk); box-shadow: none; }  /* a quiet divider in day: night's dark rail and ink read as a weight on the light card (Marlin, p176; hitstop 9dd0f95) */
 /* the move's time under its line, where a message's time sits, with what didn't come along beside it (hitstop f38853e) */
-.log > .jwrap { display: flex; flex-direction: column; align-items: center; gap: .45rem; align-self: stretch; max-width: none; }  /* the divider crosses the whole conversation */
+.log > .jwrap { display: flex; flex-direction: column; align-items: center; gap: 0.333rem; align-self: stretch; max-width: none; }  /* the divider crosses the whole conversation */
 .jwrap > .joint { align-self: stretch; }
 .jat { margin: 0; font: 500 .85rem/1 var(--font-data); color: var(--text-mute); }
 .jat time { font: inherit; }
@@ -204,7 +204,7 @@
 .pane .askbox .ask { margin-top: 0; max-width: 62rem; }
 
 /* the Message field at the open item's foot; scoped to the pane, since the page's own composer is another element */
-.pane .composer { display: flex; align-items: center; gap: .7rem; padding: .75rem 1.2rem .95rem; border-top: var(--ink-w) solid var(--ink); background: var(--obj-high); }
+.pane .composer { display: flex; align-items: center; gap: 0.667rem; padding: .75rem 1.2rem .95rem; border-top: var(--ink-w) solid var(--ink); background: var(--obj-high); }
 .pane .composer .field { font: 400 1.05rem/1.3 var(--font-name); padding: .7rem .85rem; }
 .send { width: 2.5rem; height: 2.5rem; padding: 0; flex: none; display: grid; place-items: center; cursor: pointer; border-radius: var(--r-obj); background: var(--key-light); color: var(--splice-ink-day); border: var(--ink-w) solid var(--ink); box-shadow: .2rem .2rem 0 var(--ink); }
 .send svg { width: 1.15rem; height: 1.15rem; }
@@ -213,7 +213,7 @@
 /* a note handed over: said beside the field until it clears, since the client gives no receipt */
 .pane .composer .noted { flex: none; font-size: .95rem; color: var(--text-mute); }
 /* an empty result is a small object, not a band the width of the page: it sits where the first row would have landed */
-.nomatch { display: inline-flex; width: max-content; max-width: 34rem; align-items: center; gap: .8rem; min-height: 3.4rem; padding: .75rem 1.1rem; border: var(--ink-w) dashed var(--track-line); border-radius: var(--r-obj); }
+.nomatch { display: inline-flex; width: max-content; max-width: 34rem; align-items: center; gap: 0.667rem; min-height: 3.4rem; padding: .75rem 1.1rem; border: var(--ink-w) dashed var(--track-line); border-radius: var(--r-obj); }
 .list:has(> .nomatch)::before { content: none; }  /* nothing to dock: no rail beside an empty search */
 /* the empty list says why a claude -p run is not here, quietly beside No sessions (spec §4) */
 .nomatch .why { font-size: .95rem; color: var(--text-mute); }
@@ -227,16 +227,16 @@
 .menu.models .mgroup { display: grid; gap: var(--u); padding: calc(1.5 * var(--u)) 0; break-inside: avoid; }
 .menu.models .mhead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(1.5 * var(--u)); min-height: 2rem; }
 .menu.models .mhead .chip { flex: none; }
-.menu.models .acct { display: inline-flex; align-items: baseline; gap: .45rem; min-width: 0; font: 500 1rem/1.15 var(--font-name); color: var(--text); }
+.menu.models .acct { display: inline-flex; align-items: baseline; gap: 0.333rem; min-width: 0; font: 500 1rem/1.15 var(--font-name); color: var(--text); }
 .menu.models .acct .var { font: 500 .95rem/1.15 var(--font-data); letter-spacing: .01em; }
 .menu.models .acct .pv { font-size: .95rem; color: var(--text-mute); }
-.menu.models .room { display: inline-flex; align-items: center; gap: .6rem; margin-left: auto; }
+.menu.models .room { display: inline-flex; align-items: center; gap: 0.667rem; margin-left: auto; }
 .menu.models .room .bar { display: block; width: 5rem; }  /* Accounts' small bar (.bar.sub) */
 .menu.models .room .pct { min-width: 3rem; font-size: .95rem; }
-.menu.models .room.out { font: 500 .95rem/1 var(--font-data); color: var(--limit); gap: .35rem; }
+.menu.models .room.out { font: 500 .95rem/1 var(--font-data); color: var(--limit); gap: 0.333rem; }
 .menu.models .room.out svg { width: 1rem; height: 1rem; }
 /* each model one press, as wide as its name, wrapping under its command */
-.menu.models .mnames { display: flex; flex-wrap: wrap; gap: .5rem; }
+.menu.models .mnames { display: flex; flex-wrap: wrap; gap: 0.667rem; }
 .menu.models .line {
   display: inline-flex; align-items: center; min-height: 2.1rem; padding: .3rem .8rem; border: var(--ink-w) solid var(--track-line);
   border-radius: var(--r-in); background: none; font: 500 .95rem/1.2 var(--font-name); color: var(--text); text-align: left; cursor: pointer;
@@ -247,8 +247,8 @@
 .menu.models .line:disabled { cursor: default; border-style: dashed; }
 
 /* End armed: what ending would lose, then the danger End and Keep running (fin, Marlin p218) */
-.pane .armed.end { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; padding: .6rem 1.4rem; border-bottom: var(--ink-w) solid var(--ink); }
-.pane .armed.end .said { display: inline-flex; align-items: center; gap: .4rem; font: 500 .95rem/1 var(--font-name); color: var(--text-body); }
+.pane .armed.end { display: flex; flex-wrap: wrap; align-items: center; gap: 0.667rem; padding: .6rem 1.4rem; border-bottom: var(--ink-w) solid var(--ink); }
+.pane .armed.end .said { display: inline-flex; align-items: center; gap: 0.333rem; font: 500 .95rem/1 var(--font-name); color: var(--text-body); }
 .pane .armed.end .said svg { width: 1rem; height: 1rem; }
 .pane .armed.end .unsent { font: 400 .95rem/1.4 var(--font-data); color: var(--text-mute); overflow-wrap: anywhere; flex: 1 1 18rem; min-width: 0; }
 /* a card whose state changed rings once in the key light, where it stands (hitstop 9e95ae4) */
@@ -259,27 +259,27 @@
 .inprompt { position: relative; height: 0; }
 .inprompt-card {
   position: absolute; right: 1.4rem; bottom: .8rem; z-index: 6; width: 32rem; max-width: calc(100% - 2.8rem);
-  display: flex; flex-direction: column; gap: .65rem; padding: .85rem 1rem .95rem;
+  display: flex; flex-direction: column; gap: 0.667rem; padding: .85rem 1rem .95rem;
   background: var(--obj-high); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: .35rem .35rem 0 var(--ink);
 }
 .inprompt .lbl { margin: 0; font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
 .inprompt .words { margin: 0; min-width: 0; font: 500 1rem/1.4 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); padding: .55rem .75rem; white-space: pre-wrap; overflow-wrap: anywhere; }
-.inprompt .acts { display: flex; justify-content: flex-end; gap: .6rem; }
+.inprompt .acts { display: flex; justify-content: flex-end; gap: 0.667rem; }
 
 /* ---------- by project (Marlin and fin, Oct 11; one block per project, Oct 15) ----------
    A group's header reads at a glance: the fold, the name at the section-title size, then one lamp and its count for each
    live state present, then the muted total. No state words: the lamps are the words, and Idle and Ended are in the
    total. Its foot line holds the folds for what rests: its idle sessions past a handful, and its ended ones. */
 .pgroup { display: flex; flex-direction: column; gap: var(--gap-card); }
-.phead { display: flex; align-items: center; gap: .9rem; min-width: 0; min-height: 3rem; padding: .5rem .9rem; box-sizing: border-box; background: var(--obj-high); box-shadow: inset 0 calc(-1 * var(--ink-w)) 0 var(--ink); }
+.phead { display: flex; align-items: center; gap: 1rem; min-width: 0; min-height: 3rem; padding: .5rem .9rem; box-sizing: border-box; background: var(--obj-high); box-shadow: inset 0 calc(-1 * var(--ink-w)) 0 var(--ink); }
 .pgroup.shut > .phead:last-child { box-shadow: none; }
-.pfold { display: inline-flex; align-items: center; gap: .6rem; min-width: 0; background: none; border: 0; padding: 0; cursor: pointer; color: var(--text); }
+.pfold { display: inline-flex; align-items: center; gap: 0.667rem; min-width: 0; background: none; border: 0; padding: 0; cursor: pointer; color: var(--text); }
 .pfold .caret { flex: none; width: 1.7rem; height: 1.7rem; padding: .5rem; box-sizing: border-box; color: var(--text-body); background: var(--obj); border-radius: 50%; box-shadow: 0 0 0 .12rem var(--ink); transform: rotate(90deg); transition: transform var(--t-snap) var(--e-out); }
 .pgroup.shut .pfold .caret { transform: none; }
 .phead .pname { font: 400 1.4rem/1.1 var(--font-lead); letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pcounts { display: inline-flex; align-items: center; gap: .75rem; flex: none; font: 600 .95rem/1 var(--font-data); }
+.pcounts { display: inline-flex; align-items: center; gap: 0.667rem; flex: none; font: 600 .95rem/1 var(--font-data); }
 /* a count at a small lamp: the socket stands in the line */
-.pc.big { display: inline-flex; align-items: center; gap: .4rem; }
+.pc.big { display: inline-flex; align-items: center; gap: 0.333rem; }
 .pc.big .lamp { position: static; flex: none; }
 .pcounts .lamp { width: 1.5rem; height: 1.5rem; box-shadow: 0 0 0 .12rem var(--ink), inset 0 0 0 .12rem var(--rail); }
 .pcounts .lamp svg { width: .95rem; height: .95rem; }
@@ -287,15 +287,15 @@
 .pcounts .lamp.needs svg { width: .85rem; height: .85rem; }
 .ptotal { font: 500 1.35rem/1 var(--font-data); color: var(--text-mute); }
 .pcounts .ptotal { font-size: .95rem; }
-.pgo { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: .4rem; font: 500 .88rem/1 var(--font-name); color: var(--text-body); text-decoration: none; }
+.pgo { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 0.333rem; font: 500 .88rem/1 var(--font-name); color: var(--text-body); text-decoration: none; }
 .pgo:hover { color: var(--text); }
 .pgo svg { width: .9rem; height: .9rem; }
-.pfoot { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .8rem; min-height: 2.6rem; padding: .35rem .9rem; box-sizing: border-box; }
+.pfoot { display: flex; flex-wrap: wrap; align-items: center; gap: 0.333rem 0.667rem; min-height: 2.6rem; padding: .35rem .9rem; box-sizing: border-box; }
 .pfoot .fold { font-size: .88rem; padding: .35rem .6rem; }
 .rested { display: flex; flex-direction: column; box-shadow: inset 0 .08rem 0 var(--track-line); }
 /* the grouping switch says what it does: Project, Command and Team alone read as filters (splice-usage's walk, Oct 13) */
-.lhead .by { display: inline-flex; align-items: center; gap: .55rem; }
-.lhead .by .what { margin-right: .3rem; font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
+.lhead .by { display: inline-flex; align-items: center; gap: 0.667rem; }
+.lhead .by .what { margin-right: 0.333rem; font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
 
 /* ============================================================================================================
    THE PAGE AS IT IS DRAWN SINCE OCT 27: ONE PAGE, ONE SCROLL. The list stands in equal columns of project blocks,
@@ -333,11 +333,11 @@
   box-shadow: .3rem .3rem 0 var(--wall-low), .3rem .3rem 0 var(--ink-w) var(--ink);
 }
 /* ---------- a block's header: its name, a lamp per live state, its live sessions drawn, its total ---------- */
-.sessions .phead { gap: calc(1.5 * var(--u)); min-height: 3.6rem; padding: var(--u) calc(1.5 * var(--u)); }
+.sessions .phead { gap: calc(1.5 * var(--u)); min-height: 3.6rem; padding: var(--u) calc(1.5 * var(--u)); background: var(--wall-low); }
 .sessions .phead .pfold { flex: 1 1 auto; }
 .sessions .phead .pcounts, .sessions .phead .ptot { flex: none; }
 .sessions .phead .pmix { flex: 0 1 10rem; min-width: 3rem; height: var(--meter-h-sub, .62rem); border-radius: .31rem; }
-.sessions .ptot { display: inline-flex; align-items: baseline; gap: .35rem; }
+.sessions .ptot { display: inline-flex; align-items: baseline; gap: 0.333rem; }
 .sessions .ptot .ptotal { font: 500 1.15rem/1 var(--font-data); font-variant-numeric: tabular-nums; }
 .sessions .ptot .plive { font: 600 1.15rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
 .sessions .phead .pgo { margin-left: 0; width: 2rem; height: 2rem; display: grid; place-items: center; border-radius: var(--r-obj); }
@@ -359,12 +359,12 @@
 /* WHY A BLOCK'S SESSIONS ARE IN NO PROJECT: each reason once, in plain words, with the folders it holds, so the reason
    is what he acts on (gap: one sentence printed on eight rows, in the code's word for a folder) */
 .sessions .pgroup > .note.why {
-  display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem calc(1.5 * var(--u)); margin: 0;
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.333rem calc(1.5 * var(--u)); margin: 0;
   padding: var(--u) calc(1.5 * var(--u)); box-shadow: inset 0 -.08rem 0 var(--track-line);
   font: 500 .88rem/1.4 var(--font-name); color: var(--text-mute);
 }
 .sessions .note.why .rw { flex: none; color: var(--text-body); }
-.sessions .note.why .rf { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .35rem .5rem; min-width: 0; font: 500 .85rem/1.2 var(--font-data); color: var(--text-body); }
+.sessions .note.why .rf { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.333rem 0.667rem; min-width: 0; font: 500 .85rem/1.2 var(--font-data); color: var(--text-body); }
 .sessions .note.why .rf > span { padding: .2rem .55rem; border: .08rem solid var(--track-line); border-radius: var(--r-in); background: var(--obj-sunk); }
 .sessions .note.why .rf b { font: 500 .85rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
 .sessions .pfoot { gap: var(--u) calc(2 * var(--u)); min-height: 2.8rem; padding: var(--u) calc(1.5 * var(--u)); }
@@ -376,7 +376,7 @@
 /* one row pitch for every list of objects in the console (tokens.css --row-h), the pitch of Usage's Results table */
 .sessions .s {
   min-height: var(--row-h, 3.7rem);
-  display: grid; grid-template-columns: 2rem minmax(0, 1fr); column-gap: .75rem; align-items: center;
+  display: grid; grid-template-columns: 2rem minmax(0, 1fr); column-gap: 0.667rem; align-items: center;
   padding: var(--u) calc(1.5 * var(--u)); box-sizing: border-box;
   background: transparent; border: 0; border-radius: 0; box-shadow: inset 0 -.08rem 0 var(--track-line);
 }
@@ -407,17 +407,17 @@
 .sessions.fit .s .top .who { width: max-content; }
 .sessions.fit .s .name, .sessions.fit .s .top .cmd > *, .sessions.fit .s .top .last, .sessions.fit .s .top .last > .place { max-width: none; overflow: visible; }
 /* Name it, beside a live session nobody named: the Accounts card's own place for it, small and quiet */
-.sessions .s .who .act { flex: none; margin-left: .2rem; }
-.sessions .s .top .who { display: flex; align-items: center; gap: .55rem; min-width: 0; }
+.sessions .s .who .act { flex: none; margin-left: 0.333rem; }
+.sessions .s .top .who { display: flex; align-items: center; gap: 0.667rem; min-width: 0; }
 /* a row with no words gives their track to its name, so no name is cut beside an empty track */
 .sessions .s .top.bare .who { grid-column: 1 / span 2; }
 .sessions .s .top.bare .last { display: none; }
 /* the name is who it is: the chevron that opens it in place, then the name, then its branch mark, which gives way first */
-.sessions .s .name { flex: 0 1 auto; display: inline-flex; align-items: center; gap: .4rem; min-width: 0; max-width: 100%; font: 500 1.05rem/1.4rem var(--font-name); }
+.sessions .s .name { flex: 0 1 auto; display: inline-flex; align-items: center; gap: 0.333rem; min-width: 0; max-width: 100%; font: 500 1.05rem/1.4rem var(--font-name); }
 .sessions .s .name > .chev { stroke: var(--text-mute); }
 .sessions .s .name:hover > .chev { stroke: var(--text); }
 /* how many ended sessions carried this name: the layers mark and the count, never a bare plus */
-.sessions .s .who .also { flex: none; display: inline-flex; align-items: center; gap: .25rem; font: 500 .85rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
+.sessions .s .who .also { flex: none; display: inline-flex; align-items: center; gap: 0.333rem; font: 500 .85rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
 .sessions .s .who .also svg { width: .9rem; height: .9rem; }
 /* the worktree is a mark, never a cut name: its folder is on the mark's hover and among the open session's facts */
 .sessions .s .wt { flex: none; }
@@ -429,8 +429,8 @@
 .sessions .s.needs { box-shadow: inset .22rem 0 0 var(--needs), inset 0 -.08rem 0 var(--track-line); }
 .sessions .s.stalled { box-shadow: inset .22rem 0 0 var(--limit), inset 0 -.08rem 0 var(--track-line); }
 /* the name's own field, in the title line where the name stood, with the rest of the line giving way to it */
-.sessions .s .top:has(.rename) > :not(.who) { display: none; }
-.sessions .s .top:has(.rename) > .who { grid-column: 1 / -1; }
+.sessions .card.s .top:has(.rename) > :not(.who) { display: none; }
+.sessions .card.s .top:has(.rename) > .who { grid-column: 1 / -1; }
 .sessions .rename { display: flex; align-items: center; gap: var(--u); min-width: 0; flex: 1 1 auto; }
 .sessions .rename .field { flex: 1 1 16rem; min-width: 8rem; max-width: 28rem; padding: .35rem .65rem; font: 500 1.05rem/1.3 var(--font-name); }
 .sessions .rename .kept { flex: none; font: 400 .85rem/1 var(--font-name); color: var(--text-mute); }
@@ -446,41 +446,41 @@
 }
 .sessions .s .top .last.only > .place { max-width: 100%; margin-right: 0; }
 /* what it last ran: the tool's mark, its word, and the file or command it was on */
-.sessions .last .tdo { display: inline-flex; align-items: center; gap: .45rem; max-width: 100%; min-width: 0; vertical-align: top; }
+.sessions .last .tdo { display: inline-flex; align-items: center; gap: 0.333rem; max-width: 100%; min-width: 0; vertical-align: top; }
 .sessions .last .tdo .tg { display: inline-flex; flex: none; color: var(--text-mute); }
 .sessions .last .tdo .tg svg { width: 1rem; height: 1rem; }
 .sessions .last .tdo .tname { flex: none; margin: 0; font: 500 .88rem/1.4rem var(--font-data); color: var(--text-body); }
 .sessions .last .tdo .tgt { min-width: 0; overflow: hidden; text-overflow: ellipsis; font: 400 .92rem/1.4rem var(--font-data); color: var(--text); }
 /* what the lamp cannot say leads the words, in its own colours, and a row with nothing to add spends no room on it */
 .sessions .stw {
-  display: inline-flex; flex-wrap: nowrap; align-items: center; vertical-align: top; height: 1.4rem; gap: .45rem;
+  display: inline-flex; flex-wrap: nowrap; align-items: center; vertical-align: top; height: 1.4rem; gap: 0.333rem;
   margin: 0 var(--u) 0 0; overflow: visible; font: 500 .85rem/1.4rem var(--font-data);
 }
 .sessions .stw > * { flex: none; white-space: nowrap; }
-.sessions .stw .word { display: inline-flex; align-items: center; gap: .3rem; }
+.sessions .stw .word { display: inline-flex; align-items: center; gap: 0.333rem; }
 .sessions .stw .word svg { width: 1em; height: 1em; }
 .sessions .stw .word.limit { color: var(--limit); }
 .sessions .stw .word.needs { color: var(--needs); }
 .sessions .stw .word.moving { color: var(--live); }
-.sessions .stw .detail { display: inline-flex; align-items: center; gap: .3rem; color: var(--limit); }
+.sessions .stw .detail { display: inline-flex; align-items: center; gap: 0.333rem; color: var(--limit); }
 .sessions .stw .detail svg { width: 1em; height: 1em; }
 .sessions .stw .detail.soft { color: var(--text-mute); }
 .sessions .stw .detail.retried { color: var(--key-ink); }
 .sessions .stw .detail.resumes { color: var(--live); }
 /* a turn waiting for its first output is three dots handing a pulse along: it costs a row the width of the dots, not of a
    phrase, and the words stay on hover, to a screen reader and on the open title line */
-.sessions .stw .awaiting { gap: .22rem; }
+.sessions .stw .awaiting { gap: 0.333rem; }
 .sessions .stw .awaiting i { width: .3rem; height: .3rem; border-radius: 50%; background: currentColor; opacity: .35; animation: awaiting-dot 1.2s ease-in-out infinite; }
 .sessions .stw .awaiting i:nth-child(2) { animation-delay: .2s; }
 .sessions .stw .awaiting i:nth-child(3) { animation-delay: .4s; }
 @keyframes awaiting-dot { 0%, 70%, 100% { opacity: .35; } 35% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .sessions .stw .awaiting i { animation: none; opacity: .7; } }
-.sessions .stw .acct { display: inline-flex; align-items: baseline; gap: .35rem; color: var(--text); }
+.sessions .stw .acct { display: inline-flex; align-items: baseline; gap: 0.333rem; color: var(--text); }
 .sessions .stw .acct .pv { color: var(--text-mute); }
 .sessions .stw .chip { font-size: .8rem; }
 /* HOW LONG IT HAS BEEN IN ITS STATE: the bar on the one axis, as long as the time says, its ticks standing under it at a
    minute, an hour, a day and a week (the legend draws the same four), and the figure on one right edge */
-.sessions .barcell.age { display: flex; align-items: center; gap: .6rem; min-width: 0; }
+.sessions .barcell.age { display: flex; align-items: center; gap: 0.667rem; min-width: 0; }
 .sessions .barcell.age > .v { flex: none; min-width: 3.4rem; text-align: right; font: 500 .92rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
 .sessions .barcell.age .vbar {
   position: relative; flex: 1 1 auto; display: block; min-width: 3rem; height: var(--meter-h-sub, .62rem); border-radius: .31rem; overflow: visible;
@@ -490,7 +490,7 @@
 .sessions .barcell.age.lv-watch .vbar > b { background: var(--needs); }
 .sessions .barcell.age.lv-bad .vbar > b { background: var(--limit); }
 .sessions .s .top .cmd { display: flex; justify-content: flex-start; min-width: 0; }
-.sessions .s .top .cmd > * { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sessions .s .top .cmd > * { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; padding-right: .55rem; }
 .sessions .s .top .cmd > .nr { padding-left: calc(.55rem + .12rem); }
 /* the command as a quiet column is the kit's edge chip (console.css .chip.edge) */
 /* no command to name: the fact in the chip's place, in the words the page uses, on the same left edge, dashed */
@@ -507,24 +507,24 @@
 .sessions .livedot { display: inline-flex; align-items: center; justify-content: flex-start; }
 .sessions .livedot i { width: .7rem; height: .7rem; border-radius: 50%; background: var(--live); box-shadow: 0 0 .5rem var(--live); }
 /* THE ACT KEEPS ITS OWN COLUMN ON EVERY ROW (gap: Stop hid until hover, sat in no fixed spot and was clipped 12 px) */
-.sessions .s .top .doing { display: flex; justify-content: flex-end; align-items: center; gap: .4rem; }
+.sessions .s .top .doing { display: flex; justify-content: flex-end; align-items: center; gap: 0.333rem; }
 .sessions .s .top .doing > * { flex: none; }
 /* Stop stays on every row whose turn splice holds; its edge waits for the pointer or focus */
 .sessions .s .top .doing .act { border-color: transparent; }
 .sessions .s:hover .top .doing .act, .sessions .s:focus-within .top .doing .act { border-color: var(--track-line); }
 .sessions .s .top .doing .act:hover:not(:disabled) { transform: none; background: var(--track); }
 /* what a needs-you row asks opens under its line, with its answers */
-.sessions .s .ask { margin: .4rem 0 .25rem; }
+.sessions .s .ask { margin: 0.333rem 0 0.333rem; }
 .sessions .s .ask .q { font-size: .98rem; }
-.sessions .s .answers { margin-top: .55rem; gap: .5rem; }
+.sessions .s .answers { margin-top: 0.667rem; gap: 0.667rem; }
 /* where splice cannot answer, the options are numbered words, never buttons that do nothing, and where it is answered is said
    once, under them */
-.sessions .opts { margin: .55rem 0 0; padding: 0; list-style: none; display: grid; gap: .3rem; }
-.sessions .opts li { display: flex; align-items: baseline; gap: .6rem; font: 400 .95rem/1.35 var(--font-name); color: var(--text-body); }
+.sessions .opts { margin: 0.667rem 0 0; padding: 0; list-style: none; display: grid; gap: 0.333rem; }
+.sessions .opts li { display: flex; align-items: baseline; gap: 0.667rem; font: 400 .95rem/1.35 var(--font-name); color: var(--text-body); }
 .sessions .opts li b { flex: none; min-width: 1.1rem; text-align: right; font: 600 .85rem/1 var(--font-data); color: var(--text-mute); }
-.sessions .interm { display: inline-flex; align-items: center; gap: .45rem; margin: .6rem 0 0; font: 500 .88rem/1 var(--font-name); color: var(--text-mute); }
+.sessions .interm { display: inline-flex; align-items: center; gap: 0.333rem; margin: 0.667rem 0 0; font: 500 .88rem/1 var(--font-name); color: var(--text-mute); }
 .sessions .interm svg { width: 1rem; height: 1rem; }
-.sessions .s .armed.end, .sessions .s > .why { margin: .4rem 0 .2rem; }
+.sessions .s .armed.end, .sessions .s > .why { margin: 0.333rem 0 0.333rem; }
 /* a row whose state changed rings once, inside its block */
 .sessions .s.changed { animation: rowring 1.1s var(--e-out) 1; }
 @keyframes rowring { from { box-shadow: inset 0 0 0 .2rem var(--needs); } to { box-shadow: inset 0 0 0 .2rem transparent; } }
@@ -538,26 +538,28 @@
 .sessions .lleg, .sessions .lact { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(3 * var(--u)); min-width: 0; }
 .sessions .lact { margin-left: auto; }
 .sessions .lhead .found { font: 500 .92rem/1 var(--font-name); color: var(--text-mute); }
-.sessions .lhead .found b { font: 500 .95rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); margin-right: .3rem; }
+.sessions .lhead .found b { font: 500 .95rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); margin-right: 0.333rem; }
 /* the lamps and the live-of-all count: each said once for the page, here, with the mark itself standing for it */
-.sessions .lleg .legend { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(2.5 * var(--u)); font: 500 .88rem/1 var(--font-name); color: var(--text-mute); }
-.sessions .lleg .legend .lg { display: inline-flex; align-items: center; gap: .45rem; }
-.sessions .lgn { display: inline-flex; align-items: baseline; gap: .3rem; font: 500 .88rem/1 var(--font-name); }
+.sessions .lleg .legend { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--u) var(--gap-col); font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
+.sessions .lleg .legend .lg { display: inline-flex; align-items: center; gap: 0.333rem; }
+.sessions .lgn { display: inline-flex; align-items: baseline; gap: 0.333rem; font: 500 .95rem/1 var(--font-name); }
 .sessions .lgn b { font-weight: 600; color: var(--text); }
 .sessions .lgn i { font-style: normal; color: var(--text-mute); }
 
 /* ---------- the tiles: every project at once, each leading with its live sessions out of all of them ---------- */
 .sessions .ptile { gap: var(--u); }
-.sessions .ptile .plead { display: flex; align-items: baseline; gap: .4rem; min-width: 0; }
+.sessions .ptile .pfigs { display: inline-flex; align-items: baseline; gap: 0.333rem; }
 .sessions .ptile .plive { flex: none; font: 600 var(--fig-focal)/1 var(--font-data); font-variant-numeric: tabular-nums; letter-spacing: -.01em; color: var(--text); }
-.sessions .ptile .plead .ptotal { font: 500 1.05rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
+.sessions .ptile .pfigs .ptotal { font: 500 1.05rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
 .sessions .sl { font: 400 1.05rem/1 var(--font-data); font-style: normal; color: var(--text-mute); }
-.sessions .ptile .plamps { min-height: 0; }
+.sessions .ptile .pmix { height: var(--meter-h); border-radius: .3rem; }
+.sessions .ptile .pmix-in { border-radius: .3rem; }
+.sessions .ptile .pmix.none { background: none; }
 /* the projects with nothing live: the kit's own tiles, at the list's foot */
 .sessions .lfoot.loose { display: flex; flex-direction: column; align-items: stretch; gap: var(--u); }
 .sessions .lfoot.loose .kicker { margin: 0; }
 /* ---------- a read that did not answer: the rows he has stay, dimmed, under the line and the act ---------- */
-.sessions .readfail { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1.1rem; padding: .7rem 1rem; border: var(--ink-w) dashed var(--limit); border-radius: var(--r-obj); }
+.sessions .readfail { display: flex; flex-wrap: wrap; align-items: center; gap: 0.667rem 1rem; padding: .7rem 1rem; border: var(--ink-w) dashed var(--limit); border-radius: var(--r-obj); }
 .sessions .readfail .detail { font: 500 .92rem/1 var(--font-data); color: var(--text-mute); }
 .sessions .list.dim .sboard { opacity: .55; transition: opacity var(--t-snap) var(--e-out); }
 /* what is not in the list, within reach and not under every list */
@@ -573,9 +575,66 @@
 /* the ended sessions of projects with nothing live, behind one line at the list's foot */
 .sessions .lfoot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(2 * var(--u)); }
 
+/* ---------- the page's one figure: the live sessions of all of them, and one bar of the live ones by state ---------- */
+.sessions .sx-hero { flex: 1 1 100%; display: flex; align-items: center; gap: calc(2 * var(--u)); min-width: 0; }
+.sessions .sx-hfig { flex: none; font: 600 var(--fig-hero)/1 var(--font-data); font-variant-numeric: tabular-nums; letter-spacing: -.02em; color: var(--text); }
+.sessions .sx-hfig.lv-watch { color: var(--needs); }
+.sessions .sx-hfig.lv-bad { color: var(--limit); }
+.sessions .sx-hword { flex: none; font: 500 1.1rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
+.sessions .sx-hword b { font-weight: 500; font-variant-numeric: tabular-nums; color: var(--text-body); }
+.sessions .sx-stack { flex: 1 1 auto; display: flex; min-width: 12rem; height: var(--stack-h); box-sizing: border-box; border: var(--ink-w) solid var(--ink); border-radius: var(--r-in); background: var(--track); overflow: hidden; }
+.sessions .sx-stack > i { display: grid; place-items: center; min-width: 2.4rem; overflow: hidden; transition: flex-grow var(--t-snap) var(--e-out); }
+.sessions .sx-stack > i + i { box-shadow: inset .12rem 0 0 var(--ink); }
+.sessions .sx-stack em { padding: 0 var(--u); font: 600 .82rem/1 var(--font-data); font-style: normal; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--on-fill); }
+.sessions .sx-stack i.needs { background: var(--needs); }
+.sessions .sx-stack i.stalled { background: var(--limit); }
+.sessions .sx-stack i.working { background: var(--live); }
+.sessions .sx-stack i.idle { background: color-mix(in oklab, var(--text) 26%, var(--obj-sunk)); }
+.sessions .sx-stack i.idle em { color: var(--text); }
+/* ONE CARD for how the board is grouped and what its marks mean */
+.sessions .sx-legend { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(3 * var(--u)); max-width: 100%; box-sizing: border-box; padding: var(--u) calc(2 * var(--u)); background: var(--obj-sunk); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); }
+.sessions .sx-legend .by { gap: calc(1.5 * var(--u)); }
+.sessions .lhead .lctl { justify-content: flex-start; }
+.sessions .lhead .lctl .lact { margin-left: 0; }
+/* THE BLOCK'S NAME WEARS A DOT, and under its head one axis names the ticks every row's bar wears, over the bars' own column */
+.sessions .sx-dot { flex: none; width: .72rem; height: .72rem; border-radius: 50%; background: var(--splice-chart-2); }
+.sessions .sx-axisrow {
+  display: grid; grid-template-columns: var(--name-w, 14rem) var(--doing-w) minmax(10rem, 1fr) var(--cmd-w, 10rem) var(--act-w, 4.8rem); column-gap: calc(2 * var(--u));
+  padding: var(--u) calc(1.5 * var(--u)) 0 calc(1.5 * var(--u) + 2rem + .667rem);
+}
+.sessions .sx-axis { container: sxax / inline-size; grid-column: 3; position: relative; height: 1rem; margin-right: calc(3.4rem + .667rem); }
+.sessions .sx-axis > small { position: absolute; top: 0; transform: translateX(-50%); font: 500 var(--kicker)/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
+.sessions .sx-axis > small:first-child { transform: none; }
+.sessions .sx-axis > small > b { font-weight: inherit; }
+@container sxax (max-width: 20rem) { .sessions .sx-axis > small > b { display: none; } }
+.sessions .sx-axisrow > .ghost { grid-column: 3; height: .8rem; width: 100%; }
+/* a fold's count is drawn on the block's own scale */
+.sessions .sx-fb { flex: none; display: block; width: 6.5rem; height: var(--meter-h-sub); border-radius: .31rem; background: var(--track); overflow: hidden; }
+.sessions .sx-fb > i { display: block; height: 100%; border-radius: inherit; background: color-mix(in oklab, var(--text) 56%, transparent); transform-origin: 0 50%; animation: sx-grow var(--t-snap) var(--e-out) both; transition: width var(--t-snap) var(--e-out); }
+@keyframes sx-grow { from { transform: scaleX(0); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .sessions .sx-fb > i, .sessions .sx-run, .sessions .s > .ask { animation: none; } }
+/* WHAT A WAITING SESSION ASKS IS A CARD under its line, with an answer button for each option the client offers */
+.sessions .s > .ask {
+  grid-column: 1 / -1; display: grid; gap: var(--u); margin: calc(1.5 * var(--u)) 0 var(--u); padding: calc(2 * var(--u)); cursor: default;
+  background: var(--obj-sunk); border: var(--ink-w) solid var(--needs); border-radius: var(--r-in); box-shadow: .35rem .35rem 0 var(--ink);
+  animation: sx-pulse var(--t-pulse) var(--e-out) 1 both;
+}
+.sessions .s > .ask > * { margin: 0; }
+.sessions .s .ask .q { font: 500 1.02rem/1.45 var(--font-name); }
+@keyframes sx-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--needs) 55%, transparent), .35rem .35rem 0 var(--ink); }
+  100% { box-shadow: 0 0 0 1rem transparent, .35rem .35rem 0 var(--ink); }
+}
+.sessions .answers { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u); margin-top: var(--u); }
+.sessions .sx-ao { display: inline-flex; align-items: center; gap: calc(1.2 * var(--u)); padding: 0 .9rem 0 .5rem; font: 500 .98rem/1.2 var(--font-name); text-align: left; }
+.sessions span.sx-ao { min-height: var(--ctl-h); box-sizing: border-box; border: .12rem solid var(--track-line); border-radius: var(--r-in); color: var(--text); }
+.sessions .sx-ao-n { flex: none; display: inline-grid; place-items: center; min-width: 1.5rem; height: 1.5rem; border-radius: .3rem; background: var(--obj-sunk); border: .08rem solid var(--track-line); font: 500 .85rem/1 var(--font-data); color: var(--text); }
+.sessions .act.primary .sx-ao-n { background: var(--obj); border-color: var(--ink); }
+.sessions .sx-ao-sep { align-self: stretch; width: .08rem; margin: 0 var(--u); background: var(--hair); }
+
 /* ---------- a row still being read: the row's own tracks, striped, fading down the page ---------- */
 .sessions .s.ghosted { opacity: calc(1 - var(--i, 0) * .14); }
-.sessions .s.ghosted .barcell.age { display: flex; align-items: center; gap: .6rem; }
+.sessions .s.ghosted .barcell.age { display: flex; align-items: center; gap: 0.667rem; }
 .sessions .s.ghosted .barcell.age > .vtrack { flex: 1 1 auto; }
 .sessions .s.ghosted .lamp { background: var(--track); box-shadow: 0 0 0 var(--ink-w) var(--track-line); }
 .sessions .s.ghosted .barcell > .ghost.track { flex: 1 1 auto; }
@@ -588,28 +647,27 @@
    it also seems like we're wasting a lot of horizontal space, the row style just does not look good".
    ============================================================================================================ */
 .sessions .pane.s {
-  display: grid; align-items: start; height: auto; min-height: var(--row-h, 3.7rem); overflow: visible; cursor: default;
-  padding: calc(2 * var(--u)) calc(1.5 * var(--u)) calc(4 * var(--u));
+  display: block; height: auto; min-height: var(--row-h, 3.7rem); overflow: visible; cursor: default;
+  padding: calc(4 * var(--u));
   background: var(--sel-face); border: 0; border-radius: 0;
   box-shadow: inset .22rem 0 0 var(--sel-ink), inset 0 0 0 .08rem var(--sel-line), inset 0 -.08rem 0 var(--track-line);
 }
 .sessions .pane.s:hover { background: var(--sel-face); }
-.sessions .pane.s > .lamp { align-self: center; }
-/* the details and the conversation share one body, which lays itself out only in the widest plate (below): in a
-   narrower one its parts stand in the plate's own column, one under the other */
-.sessions .pane.s .pbody, .sessions .pane.s .talk { display: contents; }
-.sessions .pane.s .pbody > *, .sessions .pane.s .talk > * { grid-column: 2; }
-/* the title bar is the row's line, with no band of its own: the plate's fill is what says it is open */
-.sessions .pane.s > .top { background: none; border: 0; padding: 0; min-height: 2.2rem; grid-template-columns: minmax(var(--name-w, 14rem), max-content) minmax(var(--doing-w), max-content) minmax(10rem, 28rem) var(--cmd-w, 10rem) var(--act-w, 4.8rem); justify-content: start; }
-.sessions .pane.s > .top .name { font-weight: 600; color: var(--text); }
-/* ---------- the line of acts on the whole session: the details' fold, then End, Continue on and Close ---------- */
-.sessions .pane.s > .tools {
-  position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(2 * var(--u));
-  min-height: var(--ctl-h); margin-top: var(--u);
-}
-.sessions .topfold { font: 500 .88rem/1 var(--font-name); color: var(--text-mute); }
-.sessions .topfold:hover { color: var(--text); }
-.sessions .pane.s > .tools > .acts { position: relative; margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: var(--u); }
+/* the title line: the lamp, the row's own line, the acts on the whole session after it, and the details' fold at its end */
+.sessions .sx-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(2 * var(--u)); min-height: var(--ctl-h); }
+.sessions .sx-bar > .lamp { position: static; flex: none; }
+.sessions .sx-bar > .top { position: static; display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(2 * var(--u)); flex: 0 1 auto; min-width: 0; min-height: 2.2rem; padding: 0; background: none; border: 0; }
+.sessions .sx-bar > .top > * { min-width: 0; }
+.sessions .pane.s .sx-bar .name { font-size: 1.15rem; font-weight: 600; color: var(--text); }
+.sessions .sx-bar .top .last { max-width: 32rem; }
+.sessions .sx-bar .barcell.age { flex: none; width: 13rem; }
+.sessions .sx-bar .top .cmd, .sessions .sx-bar .top .doing { flex: none; }
+.sessions .sx-bar .top .doing .act { border-color: var(--track-line); }
+.sessions .sx-bar > .acts { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: var(--u); }
+.sessions .sx-bar > .topfold { margin-left: auto; font: 500 .88rem/1 var(--font-name); color: var(--text-mute); }
+.sessions .sx-bar > .topfold:hover { color: var(--text); }
+.sessions .act.sx-danger { color: var(--limit); border-color: var(--limit); }
+.sessions .act.sx-lit { border-color: var(--text); }
 /* the models menu and the in-prompt card open IN PLACE here, each on its own line under the acts: a block clips what
    hangs over it, and a menu that scrolls inside itself is a second scroll on the page */
 .sessions .pane.s > .menu.models { position: static; max-width: none; max-height: none; overflow: visible; margin-top: var(--u); }
@@ -620,44 +678,62 @@
 .sessions .pane.s > .armed.end { margin-top: var(--u); padding: var(--u) calc(1.5 * var(--u)); border: 0; border-radius: var(--r-in); background: var(--obj-high); }
 .sessions .pane.s > .why { margin-top: var(--u); padding: 0; }
 .sessions .pane.s > .unmoved { margin-top: var(--u); padding: 0; }
-.sessions .pane.s > .askbox {
-  margin-top: calc(2 * var(--u)); padding: calc(2 * var(--u)); border: 0; border-radius: var(--r-in);
-  background: color-mix(in oklab, var(--obj) 86%, var(--needs));
+.sessions .pane.s .askbox {
+  margin-bottom: calc(3 * var(--u)); padding: calc(2 * var(--u)) calc(2.5 * var(--u));
+  background: var(--obj-high); border: var(--ink-w) solid var(--ink); border-left: .3rem solid var(--needs); border-radius: var(--r-obj);
+  box-shadow: var(--cast) var(--cast) 0 var(--ink);
 }
-.sessions .pane.s > .askbox .ask { margin-top: 0; }
+.sessions .pane.s .askbox .ask { margin-top: 0; }
 .sessions .ask .cmd.head { background: none; border: 0; padding: 0; }
 .sessions .ask .tname { font-weight: 500; color: var(--text-mute); }
-.sessions .ask .morepill, .sessions .toolout + .morepill { margin-top: .4rem; }
+.sessions .ask .morepill, .sessions .toolout + .morepill { margin-top: 0.333rem; }
 
 /* ---------- the details, folding to nothing over 240 ms (Marcos: "collapse the top component") ---------- */
 .sessions .panetop { display: grid; grid-template-rows: 1fr; transition: grid-template-rows var(--t-snap) var(--e-out); }
 .sessions .panetop.shut { grid-template-rows: 0fr; }
-.sessions .panetop-in { min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: calc(3 * var(--u)); }
-.sessions .panetop:not(.shut) > .panetop-in { padding-top: calc(3 * var(--u)); }
+.sessions .panetop-in { container: sxrail / inline-size; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+.sessions .panetop:not(.shut) > .panetop-in { padding-bottom: calc(4 * var(--u)); }
 @media (prefers-reduced-motion: reduce) {
   .sessions .panetop, .sessions .chev, .sessions .pfold .caret { transition: none; }
 }
-/* the facts of one session, each under its own label, a dash for any the daemon does not send */
-.sessions .facts {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
-  gap: calc(2 * var(--u)) var(--gap-col); margin: 0; font: inherit;
-}
-.sessions .facts .fact { min-width: 0; display: flex; flex-direction: column; gap: .3rem; }
-.sessions .facts dt { font: 600 max(var(--kicker), .88rem)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
-.sessions .facts dd { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .75rem; min-width: 0; margin: 0; font: 500 .95rem/1.3 var(--font-data); color: var(--text); }
-.sessions .facts dd > .where, .sessions .facts dd > .team { display: inline-flex; align-items: center; gap: .35rem; min-width: 0; overflow-wrap: anywhere; }
-.sessions .facts .reason { font: 500 .85rem/1.3 var(--font-name); color: var(--text-mute); }
-.sessions .facts .chip.quiet { font-size: .85rem; text-decoration: none; }
-/* a folder is a path, which reads whole across two of the facts' columns, whenever the plate has the room for four */
-@container plate (min-width: 60rem) { .sessions .facts .fact.folder { grid-column: span 2; } }
-/* the sessions that carried its name before it, on one line across the facts, the rest behind their count */
-.sessions .facts .fact.earlier { grid-column: 1 / -1; }
-.sessions .facts .fact.earlier .morepill { font-size: .85rem; }
+/* the facts of one session, each one chip, a dash for any the daemon does not send */
+.sessions .sx-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u); margin: 0; }
+.sessions .sx-chip { display: inline-flex; align-items: center; gap: .4rem; min-width: 0; min-height: 1.7rem; padding: .2rem .6rem; box-sizing: border-box; background: var(--obj-sunk); border: .1rem solid var(--track-line); border-left: .3rem solid var(--text-mute); border-radius: var(--r-in); font: 500 .85rem/1.2 var(--font-data); color: var(--text); text-decoration: none; overflow-wrap: anywhere; }
+.sessions .sx-chip svg { flex: none; width: 1rem; height: 1rem; }
+.sessions .sx-chip .where { display: inline-flex; align-items: center; gap: .4rem; }
+.sessions .sx-chip.mono { font-variant-numeric: tabular-nums; }
+.sessions .sx-chip.note { border-style: dashed; color: var(--text-mute); font-family: var(--font-name); }
+.sessions .sx-chip.ended { border-left-color: var(--track-line); color: var(--text-mute); font-variant-numeric: tabular-nums; }
+.sessions a.sx-chip:hover { color: var(--text); border-color: var(--text-mute); }
+.sessions .sx-ering { flex: none; width: .6rem; height: .6rem; border-radius: 50%; box-shadow: inset 0 0 0 .12rem var(--text-mute); }
+.sessions .sx-chip.live .sx-ering { background: var(--live); box-shadow: none; }
+.sessions .sx-earlier { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--u); }
+.sessions .sx-elbl { margin-right: calc(.5 * var(--u)); font: 600 var(--kicker)/1 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
+.sessions .sx-earlier .morepill { font-size: .85rem; }
+.sessions .sx-foot { display: flex; flex-wrap: wrap; align-items: stretch; gap: calc(2 * var(--u)) calc(4 * var(--u)); margin-top: calc(4 * var(--u)); padding-top: calc(4 * var(--u)); box-shadow: inset 0 .08rem 0 var(--hair); }
+.sessions .sx-foot > .sx-factsec { flex: 1 1 22rem; min-width: 0; }
+.sessions .sx-foot > .sx-copysec { flex: none; padding-left: calc(4 * var(--u)); box-shadow: inset .08rem 0 0 var(--hair); }
+.sessions .sx-foot > .clines { flex: 1 1 100%; }
 /* what it did today, what it holds, the room its conversation has, and the login it sends on: four sections in columns */
-.sessions .secs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: calc(3 * var(--u)) var(--gap-col); align-items: start; }
+.sessions .secs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(4 * var(--u)) 0; align-items: start; }
+.sessions .secs > .psec { padding-right: calc(2 * var(--u)); }
+.sessions .secs > .psec:nth-child(even) { padding-left: calc(4 * var(--u)); padding-right: 0; box-shadow: inset .08rem 0 0 var(--hair); }
+.sessions .secs > .psec:nth-child(n + 3) { padding-top: calc(4 * var(--u)); box-shadow: inset 0 .08rem 0 var(--hair); }
+.sessions .secs > .psec:nth-child(n + 3):nth-child(even) { box-shadow: inset .08rem 0 0 var(--hair), inset 0 .08rem 0 var(--hair); }
+/* with the room for it the four sections stand in one row, on the rail's own width */
+@container sxrail (min-width: 54rem) {
+  .sessions .secs { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.5fr) minmax(15rem, 1fr) minmax(25rem, 1.1fr); gap: 0; }
+  .sessions .secs > .psec, .sessions .secs > .psec:nth-child(even), .sessions .secs > .psec:nth-child(n + 3), .sessions .secs > .psec:nth-child(n + 3):nth-child(even) { padding: 0 calc(3 * var(--u)) 0 calc(4 * var(--u)); box-shadow: inset .08rem 0 0 var(--hair); }
+  .sessions .secs > .psec:first-child { padding-left: 0; box-shadow: none; }
+  .sessions .secs > .psec:last-child { padding-right: 0; }
+}
+/* a day with nothing sent stays quiet, in its own shape: a muted line over the empty track, a dashed ring where the share would stand */
+.sessions .sx-zero { margin: 0; font: 500 .85rem/1.3 var(--font-data); color: var(--text-mute); }
+.sessions .sx-zero b { font-weight: 500; color: var(--text); }
+.sessions .sx-ringnone { flex: none; width: var(--ring-focal); height: var(--ring-focal); box-sizing: border-box; border-radius: 50%; border: .08rem dashed var(--track-line); }
 .sessions .secs .psec { gap: var(--u); min-width: 0; }
 .sessions .psec .kicker, .sessions .copies .kicker { font-size: max(var(--kicker), .88rem); }
-.sessions .secs .pd-top { gap: .3rem calc(1.5 * var(--u)); }
+.sessions .secs .pd-top { gap: 0.333rem calc(1.5 * var(--u)); }
 .sessions .secs .pd-bar.empty { background: none; outline: .1rem dashed var(--track-line); outline-offset: -.1rem; height: 1.4rem; }
 .sessions .secs .tokhead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(2 * var(--u)); }
 .sessions .secs .tokhead .io { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--u) calc(2 * var(--u)); }
@@ -666,40 +742,38 @@
 .sessions .meterline > .bar { flex: 1 1 4rem; min-width: 3rem; }
 .sessions .pct { flex: none; font: 500 1rem/1 var(--font-data); font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text); }
 .sessions .pct.limit { color: var(--limit); }
-.sessions .pct .used { margin-left: .25rem; font: 500 .8rem/1 var(--font-name); color: var(--text-mute); }
+.sessions .pct .used { margin-left: 0.333rem; font: 500 .8rem/1 var(--font-name); color: var(--text-mute); }
 .sessions .resets { flex: none; font: 500 .85rem/1 var(--font-name); color: var(--text-mute); }
 .sessions .ringpad { flex: none; width: var(--ring-sz); }
 /* the login it sends on, and every login it could send on, each with its own room (the Accounts page's window rows) */
 .sessions .lline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(1.5 * var(--u)); }
-.sessions .lname { display: inline-flex; align-items: baseline; gap: .4rem; min-width: 0; font: 500 .95rem/1.2 var(--font-name); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sessions .lname { display: inline-flex; align-items: baseline; gap: 0.333rem; min-width: 0; font: 500 .95rem/1.2 var(--font-name); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sessions .lname .pv { font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
 .sessions .lhead-row { width: auto; max-width: 100%; }
 /* its last switch: the two logins by name with a caret between, then splice's own reason and when */
-.sessions .moved { display: flex; flex-wrap: wrap; align-items: center; gap: .2rem .4rem; margin: var(--u) 0 0; min-width: 0; font: 500 .85rem/1.3 var(--font-name); color: var(--text-mute); }
+.sessions .moved { display: flex; flex-wrap: wrap; align-items: center; gap: 0.333rem 0.333rem; margin: var(--u) 0 0; min-width: 0; font: 500 .85rem/1.3 var(--font-name); color: var(--text-mute); }
 .sessions .moved b { font-weight: 500; color: var(--text-body); }
 .sessions .moved > svg { width: .7rem; height: .7rem; }
 .sessions .moved .chip { font-size: .85rem; }
-.sessions .moved > .reason { min-width: 0; margin-left: .25rem; }
-.sessions .lrows { display: grid; gap: .5rem; margin-top: calc(2 * var(--u)); }
-.sessions .lrow { display: grid; grid-template-columns: minmax(4rem, 1fr) minmax(3rem, 7rem) 4.4rem var(--ring-sz) minmax(0, max-content); align-items: center; gap: .6rem; }
+.sessions .moved > .reason { min-width: 0; margin-left: 0.333rem; }
+.sessions .lrows { display: grid; gap: 0.667rem; margin-top: calc(2 * var(--u)); }
+.sessions .lrow { display: grid; grid-template-columns: minmax(4rem, 1fr) minmax(3rem, 7rem) 4.4rem var(--ring-sz) minmax(0, max-content); align-items: center; gap: 0.667rem; }
 .sessions .lrow .pct { min-width: 0; font-size: .88rem; }
 .sessions .lrow .resets { display: none; }  /* the row's ring says how soon; the time is the section's own line */
-.sessions .lrow .lact { display: flex; justify-content: flex-end; align-items: center; gap: .4rem; }
+.sessions .lrow .lact { display: flex; justify-content: flex-end; align-items: center; gap: 0.333rem; }
 .sessions .lrow .lact .act.small { padding: .28rem .6rem; font-size: .85rem; }
 .sessions .lrow .state { font-size: .85rem; }
 .sessions .lrow.on .lname { font-weight: 600; }
 /* the lock in the act column keeps the column's width and its words small */
-.sessions .lrow .lact .state.limit { font-size: .85rem; gap: .35rem; }
+.sessions .lrow .lact .state.limit { font-size: .85rem; gap: 0.333rem; }
 .sessions .lrow .lact .lockico svg { width: .9rem; height: .9rem; }
-/* the three lines to paste: his words as the acts, and the lines themselves whole behind one disclosure, so no line is
+/* the three lines to paste: his words as the acts, and the lines themselves whole under the facts, so no line is
    ever cut and no id or path stands on the screen unasked */
-.sessions .copies { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(2 * var(--u)); }
-.sessions .copies .kicker { margin: 0; flex: none; }
 .sessions .copies .cacts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u); }
 .sessions .copies .linesdisc { font: 500 .88rem/1 var(--font-name); color: var(--text-mute); }
 .sessions .copies .linesdisc:hover { color: var(--text); }
-.sessions .clines { flex: 1 1 100%; display: grid; gap: var(--u); margin: 0; }
-.sessions .clines > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem calc(1.5 * var(--u)); }
+.sessions .clines { display: grid; gap: var(--u); margin: 0; }
+.sessions .clines > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.333rem calc(1.5 * var(--u)); }
 .sessions .clines dt { flex: none; min-width: 5rem; font: 600 max(var(--kicker), .88rem)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
 .sessions .clines dd { margin: 0; min-width: 0; }
 .sessions .clines code { font: 500 .9rem/1.5 var(--font-data); color: var(--text); background: var(--obj-sunk); border-radius: var(--r-in); padding: .15rem .5rem; overflow-wrap: anywhere; }
@@ -713,17 +787,15 @@
    his messages sit on the column's right edge, a teammate's on its left, the agent's across it, and a run of calls
    starts on its left edge and runs on to the conversation's right edge, as tables and code may. */
 .sessions .pane.s .talk > .log {
-  --col: 64rem; --gut: max(0px, calc((100% - var(--col)) / 2));
-  flex: none; height: auto; overflow: visible; overflow-anchor: auto;
-  margin-top: calc(3 * var(--u)); padding: calc(3 * var(--u)) 0 0; gap: calc(2 * var(--u));
-  box-shadow: inset 0 .08rem 0 var(--hair);
+  --col: 84rem; --gut: 0px;
+  flex: none; height: auto; max-width: var(--col); overflow: visible; overflow-anchor: auto; margin: 0; padding: 0; gap: calc(2 * var(--u)); box-shadow: none;
 }
 .sessions .log > :first-child { margin-top: 0; }
-.sessions .msg { gap: .5rem; }
+.sessions .msg { gap: 0.667rem; }
 .sessions .msg .body { line-height: 1.6; }
-.sessions .msg .body p { margin-bottom: .65rem; }
+.sessions .msg .body p { margin-bottom: 0.667rem; }
 .sessions .msg .body p:last-child { margin-bottom: 0; }
-.sessions .msg .body ul { margin: .3rem 0 .65rem; }
+.sessions .msg .body ul { margin: 0.333rem 0 0.667rem; }
 .sessions .msg.his .body { padding: .8rem 1rem; }
 /* his messages are objects on the table; the key light is for what waits on him, so their edge is the neutral ink */
 .sessions .msg.his .body, .sessions .msg.peer .body { box-shadow: .3rem .3rem 0 color-mix(in oklab, var(--text) 32%, transparent), .3rem .3rem 0 var(--ink-w) var(--ink); }
@@ -747,43 +819,45 @@
 .sessions .loghead .note { align-self: center; width: auto; margin: 0; }
 .sessions .log > .earlier { align-self: flex-start; margin-left: var(--gut); }
 /* the agent's own text, as it wrote it: headings, lists, tables, fenced code and links */
-.sessions .msg .body .mh { margin: .4rem 0 .35rem; font: 600 1.05rem/1.3 var(--font-name); color: var(--text); }
+.sessions .msg .body .mh { margin: 0.333rem 0 0.333rem; font: 600 1.05rem/1.3 var(--font-name); color: var(--text); }
 .sessions .msg .body .mh.h1, .sessions .msg .body .mh.h2 { font-size: 1.12rem; }
-.sessions .msg .body ol { margin: .3rem 0 .65rem; padding-left: 1.5rem; }
-.sessions .msg .body li { margin: .15rem 0; }
-.sessions .msg .body .code { margin: .45rem 0; padding: .7rem .85rem; overflow-x: auto; white-space: pre; font: 400 .9rem/1.5 var(--font-data); color: var(--text-body); background: var(--obj-sunk); border-left: .22rem solid var(--track-line); border-radius: 0 var(--r-in) var(--r-in) 0; }
-.sessions .msg .body .mdt { margin: .5rem 0; border-collapse: collapse; font: 500 .9rem/1.3 var(--font-data); }
+.sessions .msg .body ol { margin: 0.333rem 0 0.667rem; padding-left: 1.5rem; }
+.sessions .msg .body li { margin: 0 0; }
+.sessions .msg .body .code { margin: 0.333rem 0; padding: .7rem .85rem; overflow-x: auto; white-space: pre; font: 400 .9rem/1.5 var(--font-data); color: var(--text-body); background: var(--obj-sunk); border-left: .22rem solid var(--track-line); border-radius: 0 var(--r-in) var(--r-in) 0; }
+.sessions .msg .body .mdt { margin: 0.667rem 0; border-collapse: collapse; font: 500 .9rem/1.3 var(--font-data); }
 .sessions .msg .body .mdt th { text-align: left; font-weight: 600; color: var(--text-mute); padding: .3rem .8rem .3rem 0; border-bottom: .08rem solid var(--hair); white-space: nowrap; }
 .sessions .msg .body .mdt td { padding: .28rem .8rem .28rem 0; border-bottom: .08rem solid color-mix(in oklab, var(--hair) 60%, transparent); color: var(--text-body); font-variant-numeric: tabular-nums; }
 /* a message a screen long folds after its first lines, with the rest one press away in place */
-.sessions .msg .body + .morepill, .sessions .msg .body .morepill { margin-top: .3rem; }
+.sessions .msg .body + .morepill, .sessions .msg .body .morepill { margin-top: 0.333rem; }
 /* WHAT THE CLIENT PUT INTO THE CONVERSATION IS ONE LINE: a compaction's summary, a skill it loaded, a notice about a
    message between sessions. Each in plain words, opening in place, with no id or socket path on that line. */
 .sessions .log > .sysline {
-  display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem calc(1.5 * var(--u));
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.333rem calc(1.5 * var(--u));
   margin-inline: var(--gut); max-width: none; width: auto;
 }
 .sessions .sysline .sysdisc { font: 500 .92rem/1.4 var(--font-name); color: var(--text-mute); }
 .sessions .sysline .sysdisc:hover { color: var(--text-body); }
-.sessions .sysline .times { margin-left: .2rem; font: 500 .85rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
+.sessions .sysline .times { margin-left: 0.333rem; font: 500 .85rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
 .sessions .sysline > time { font: 500 .85rem/1.4 var(--font-data); color: var(--text-mute); }
 .sessions .sysline > .sysbody { flex: 1 1 100%; min-width: 0; padding-left: calc(.8rem + .65rem); font: 400 .98rem/1.55 var(--font-name); color: var(--text-body); }
 .sessions .sysline > .sysbody > :not(.code):not(.mdt) { max-width: 58rem; }
 /* where one turn ends and the next begins, with no words */
-.sessions .log .tsep { align-self: stretch; width: 100%; max-width: none; height: 0; border-top: .08rem solid var(--hair); margin: .5rem 0; }
+.sessions .log .tsep { align-self: stretch; width: 100%; max-width: none; height: 0; border-top: .08rem solid var(--hair); margin: 0.667rem 0; }
 /* a command he typed and what it printed: one event */
-.sessions .log .slash { align-self: flex-end; display: inline-flex; align-items: center; flex-wrap: wrap; gap: .5rem; width: auto; max-width: 44rem; margin: 0; }
+.sessions .log .slash { align-self: flex-end; display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0.667rem; width: auto; max-width: 44rem; margin: 0; }
 .sessions .log .slash .said { font: 400 .92rem/1.4 var(--font-name); color: var(--text-mute); }
 /* an opened result is bounded on the page, with the rest behind one pill: no box scrolling inside the page */
 .sessions .toolout { max-height: none; overflow: visible; line-height: 1.55; padding: .75rem .95rem; }
-.sessions .call { gap: .55rem; }
-.sessions .call .morepill { margin-left: .2rem; }
+.sessions .call { gap: 0.667rem; }
+.sessions .call .morepill { margin-left: 0.333rem; }
 .sessions .tool .nothing { font-size: .88rem; }
 /* A RUN OF CALLS IS ONE QUIET TRAIL (Marcos, Oct 26: "the tool call ui is very busy"): one line per call on one grid,
    the tool word's track as wide as the calls it shows, one hairline at the run's left as its one edge, and no call with
    a box, a fill, a shadow or a coloured edge. */
-.sessions .log > .trail {
-  max-width: none; width: auto; margin-left: var(--gut); padding-left: var(--u); box-shadow: inset .08rem 0 0 var(--hair);
+/* THE CALLS A SESSION MADE stand in the rail beside its conversation, a run to a block on one grid, the tool word's track as wide as the calls it shows */
+.sessions .sx-calls { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); min-width: 0; padding-bottom: calc(4 * var(--u)); }
+.sessions .sx-calls > .trail {
+  width: auto; padding-left: var(--u); box-shadow: inset .08rem 0 0 var(--hair);
   display: grid; grid-template-columns: .9rem calc(var(--tw, 6) * 1ch) minmax(0, 1fr); column-gap: var(--u); align-items: center;
   font: 400 .85rem/1.7rem var(--font-data); color: var(--text-body);
 }
@@ -803,7 +877,7 @@
 /* a tool word longer than the run's usual ones runs on into its own line's text instead of widening the track */
 .sessions .trail .tool.long { display: flex; column-gap: var(--u); }
 .sessions .trail .tool.long > .caret, .sessions .trail .tool.long > i { flex: none; }
-.sessions .trail .tool.long > .caret { width: .7rem; margin-inline: .1rem; }
+.sessions .trail .tool.long > .caret { width: .7rem; margin-inline: 0; }
 .sessions .trail .tool.long > .tname { flex: none; overflow: visible; }
 .sessions .trail .tool.long > .twhat { flex: 1 1 auto; }
 .sessions .trail .tsum { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -819,20 +893,20 @@
 }
 .sessions .trail .tmore b { font: 500 .88rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
 .sessions .trail .tally { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: calc(1.5 * var(--u)); min-width: 0; overflow: hidden; font: 400 .85rem/1.7rem var(--font-data); }
-.sessions .trail .tally .tk { display: inline-flex; flex: none; align-items: center; gap: .3rem; }
+.sessions .trail .tally .tk { display: inline-flex; flex: none; align-items: center; gap: 0.333rem; }
 .sessions .trail .tally .tg { display: inline-flex; color: var(--text-mute); }
 .sessions .trail .tally .tg svg { width: .85rem; height: .85rem; }
-.sessions .trail .tin, .sessions .trail .toolout, .sessions .trail .morepill { grid-column: 3 / -1; margin: .2rem 0 .5rem; }
+.sessions .trail .tin, .sessions .trail .toolout, .sessions .trail .morepill { grid-column: 3 / -1; margin: 0.333rem 0 0.667rem; }
 .sessions .trail .tin { white-space: pre-wrap; overflow-wrap: anywhere; font: 400 .88rem/1.5 var(--font-data); color: var(--text); }
 .sessions .trail .morepill { justify-self: start; margin-top: 0; }
-.sessions .log.ghosts > .trail > .tline { grid-column: 2 / -1; display: flex; align-items: center; height: 1.7rem; }
+.sessions .trail > .tline { grid-column: 2 / -1; display: flex; align-items: center; height: 1.7rem; }
 /* while a conversation is being read, the log draws the shape of what will land */
-.sessions .log.ghosts { gap: 1.3rem; }
+.sessions .log.ghosts { gap: 1.333rem; }
 .sessions .log.ghosts .msg .body { width: 100%; }
 /* the Message field at the plate's foot, in the page's flow */
 .sessions .pane.s .talk > .composer, .sessions .pane.s .talk > .composer.note {
-  margin-top: calc(2 * var(--u)); padding: calc(2 * var(--u)) 0 0; border: 0; background: none;
-  box-shadow: inset 0 .08rem 0 var(--hair); max-width: 64rem;
+  margin-top: calc(3 * var(--u)); padding: 0; border: 0; background: none;
+  box-shadow: none; max-width: 84rem;
 }
 .sessions .pane.s .talk > .composer .field { font: 400 1.05rem/1.3 var(--font-name); }
 /* a permission is refused with a word, not with the failure's red (catalog principle 3) */
@@ -840,57 +914,53 @@
 /* a move that did not happen: its last lines bounded on the page, with the rest one press away */
 .sessions .unmoved .screen { max-height: none; overflow: visible; }
 
-/* ---------- a plate with room: the details stand in a rail beside the conversation ----------
-   (Marcos, Oct 26: "scrolling on the chat gets crampped, so ideally we should be able to collapse the top component", "we're
-   wasting a lot of horizontal space"). From a plate 100rem wide the conversation takes the left, at a reading measure, and
-   the details take a rail on the right, under the acts on the whole session, between hairlines: the facts, then Today,
-   Tokens, Context and Login, then the lines to paste. A run of calls stands in the conversation's own column, under the
-   words it followed; from 150rem it stands beside them, on the line of the words it followed, so no band of empty
-   screen lies between the words and the rail. Details folds the rail
-   away over 240 ms and the conversation takes the whole width. The plate's own width decides, never the screen's. */
-@container plate (min-width: 100rem) {
-  .sessions .pane.s { --rail: minmax(34rem, 40rem); grid-template-columns: 2rem minmax(0, 1fr) var(--rail); column-gap: calc(3 * var(--u)); }
-  .sessions .pane.s > :not(.lamp), .sessions .pane.s .pbody > *, .sessions .pane.s .talk > * { grid-column: 2 / -1; }
-  .sessions .pane.s > .top { grid-column: 2; grid-row: 1; }
-  .sessions .pane.s > .tools { grid-column: 3; grid-row: 1; margin-top: 0; }
-  /* the prompt a move holds back opens under the acts, at the line's right end; the models menu takes the plate's width */
-  .sessions .pane.s > .inprompt.onmove { grid-column: 2 / -1; }
-  .sessions .pane.s > .askbox { grid-column: 2 / -1; max-width: 64rem; }
-  .sessions .pane.s .pbody {
-    display: grid; grid-column: 2 / -1; grid-template-columns: subgrid; align-items: start; row-gap: 0;
-    margin-top: calc(3 * var(--u)); box-shadow: inset 0 .08rem 0 var(--hair);
-  }
-  .sessions .pane.s .talk { display: flex; flex-direction: column; grid-column: 1; grid-row: 1; min-width: 0; padding-right: calc(3 * var(--u)); box-shadow: inset -.08rem 0 0 var(--hair); }
-  .sessions .pane.s .talk > .log { --gut: 0px; --col: 84rem; max-width: var(--col); margin-top: 0; box-shadow: none; }
-  .sessions .pane.s .pbody > .panetop { grid-column: 2; grid-row: 1; align-self: start; padding-left: calc(2 * var(--u)); }
-  .sessions .pane.s .panetop-in { gap: 0; }
-  .sessions .pane.s .panetop-in > * + * { margin-top: calc(4 * var(--u)); padding-top: calc(4 * var(--u)); box-shadow: inset 0 .08rem 0 var(--hair); }
-  .sessions .pane.s .secs { grid-template-columns: minmax(0, 1fr); gap: 0; }
-  .sessions .pane.s .secs > .psec + .psec { margin-top: calc(4 * var(--u)); padding-top: calc(4 * var(--u)); box-shadow: inset 0 .08rem 0 var(--hair); }
-  /* folded: the rail closes over 240 ms and the conversation takes the whole width under the title line */
-  .sessions .pane.s.topshut .talk { grid-column: 1 / -1; grid-row: 2; padding-right: 0; box-shadow: none; }
-  .sessions .pane.s.topshut .talk > .log { --col: 100%; }
-  .sessions .pane.s.topshut .pbody > .panetop { padding-left: 0; }
+/* ---------- the strip: when it started, and its turns and its calls as two bars on one log axis ---------- */
+.sessions .sx-strip { --dec: color-mix(in oklab, var(--text) 38%, transparent); display: grid; grid-template-columns: 7rem minmax(0, 1fr) 10rem; column-gap: calc(2 * var(--u)); row-gap: var(--u); align-items: center; margin: calc(3 * var(--u)) 0 calc(4 * var(--u)); }
+.sessions .sx-start { grid-column: 1; grid-row: 1 / span 2; align-self: center; font: 500 .9rem/1 var(--font-data); color: var(--text); white-space: nowrap; }
+.sessions .sx-start small { display: block; margin-bottom: .35rem; font: 600 var(--kicker)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
+.sessions .sx-track { grid-column: 2; position: relative; height: var(--meter-h); border-radius: .3rem; background: var(--track); }
+.sessions .sx-track.t, .sessions .sx-end.t { grid-row: 1; }
+.sessions .sx-track.c, .sessions .sx-end.c { grid-row: 2; }
+.sessions .sx-track::after {
+  content: ""; position: absolute; inset: 0; border-radius: .3rem; pointer-events: none;
+  background: linear-gradient(var(--dec), var(--dec)) 20% 0 / .08rem 100% no-repeat, linear-gradient(var(--dec), var(--dec)) 40% 0 / .08rem 100% no-repeat,
+    linear-gradient(var(--dec), var(--dec)) 60% 0 / .08rem 100% no-repeat, linear-gradient(var(--dec), var(--dec)) 80% 0 / .08rem 100% no-repeat,
+    linear-gradient(var(--dec), var(--dec)) 100% 0 / .08rem 100% no-repeat;
 }
-/* a plate 150rem wide gives the rail room for two sections a line: Today beside Tokens, Context beside Login */
-@container plate (min-width: 150rem) {
-  .sessions .pane.s { --rail: minmax(46rem, 56rem); }
-  .sessions .pane.s .talk > .log {
-    --col: 112rem; display: grid; grid-template-columns: minmax(0, 64rem) minmax(26rem, 44rem); align-items: start;
-    column-gap: calc(4 * var(--u)); row-gap: calc(2 * var(--u));
+.sessions .sx-run { position: absolute; inset: 0 auto 0 0; border-radius: .3rem; background: var(--live); transform-origin: 0 50%; animation: sx-grow var(--t-move) var(--e-out) both; transition: width var(--t-snap) var(--e-out); }
+.sessions .sx-track.c .sx-run { background: color-mix(in oklab, var(--live) 50%, transparent); }
+.sessions .sx-strip.quiet .sx-run { background: color-mix(in oklab, var(--text-mute) 80%, transparent); }
+.sessions .sx-strip.quiet .sx-track.c .sx-run { background: color-mix(in oklab, var(--text-mute) 45%, transparent); }
+.sessions .sx-track.nr { box-sizing: border-box; background: none; border: .08rem dashed var(--track-line); }
+.sessions .sx-track.nr::after { display: none; }
+.sessions .sx-track > .ghost { position: absolute; inset: 0; width: auto; height: auto; border-radius: .3rem; }
+.sessions .sx-end { grid-column: 3; justify-self: end; display: inline-flex; align-items: center; gap: .3rem; padding: 0; border: 0; background: none; font: 500 .9rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
+.sessions .sx-end b { font-weight: 500; font-variant-numeric: tabular-nums; color: var(--text); }
+.sessions .sx-end.lnk { cursor: pointer; }
+.sessions .sx-end .chev { width: .7rem; height: .7rem; transition: transform var(--t-hover) var(--e-out); }
+.sessions .sx-end.lnk:hover .chev { transform: translateX(.2rem); }
+.sessions .sx-end.lnk:hover b { text-decoration: underline; text-underline-offset: .2rem; }
+.sessions .sx-sax { grid-column: 2; grid-row: 3; position: relative; height: .9rem; margin-top: calc(-.4 * var(--u)); font: 500 var(--kicker)/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
+.sessions .sx-sax > i { position: absolute; top: 0; transform: translateX(-50%); font-style: normal; white-space: nowrap; }
+
+/* ---------- the body: the rail over the conversation where the plate is narrow; beside it where it has room ----------
+   The plate's own width decides, never the screen's. */
+.sessions .pane.s .pbody { display: flex; flex-direction: column; padding-top: calc(4 * var(--u)); box-shadow: inset 0 .08rem 0 var(--hair); }
+.sessions .pane.s .talk { display: flex; flex-direction: column; min-width: 0; }
+@container plate (min-width: 100rem) {
+  .sessions .pane.s .pbody { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); grid-template-rows: auto 1fr; column-gap: calc(4 * var(--u)); align-items: start; }
+  .sessions .pane.s .pbody > .talk { grid-column: 1; grid-row: 1 / span 2; }
+  .sessions .pane.s .pbody > .sx-calls { grid-column: 2; grid-row: 1; margin-bottom: calc(4 * var(--u)); border-bottom: .08rem solid var(--hair); }
+  .sessions .pane.s .pbody > .panetop { grid-column: 2; grid-row: 2; }
+  .sessions .pane.s:not(.topshut) .pbody > .sx-calls:last-child { border-bottom: 0; }
+  /* folded: the rail closes over 240 ms, the conversation takes the whole width and its calls close it as one band */
+  .sessions .pane.s.topshut .pbody { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto; }
+  .sessions .pane.s.topshut .pbody > .talk { grid-column: 1; grid-row: 1; }
+  .sessions .pane.s.topshut .pbody > .sx-calls {
+    grid-column: 1; grid-row: 2; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(1.5 * var(--u)) calc(4 * var(--u));
+    margin: calc(4 * var(--u)) 0 0; padding: calc(4 * var(--u)) 0 0; border: 0; box-shadow: inset 0 .08rem 0 var(--hair);
   }
-  .sessions .pane.s .talk > .log > * { grid-column: 1; max-width: 100%; }
-  .sessions .pane.s .talk > .log > .trail { grid-column: 2; margin-left: 0; }
-  .sessions .pane.s .talk > .log > .tsep, .sessions .pane.s .talk > .log > .loghead, .sessions .pane.s .talk > .log > .jwrap,
-  .sessions .pane.s .talk > .log > .note { grid-column: 1 / -1; }
-  .sessions .pane.s .talk > .log > .empty { justify-self: start; margin: 0; }
-  .sessions .pane.s .talk > .log > .msg.his, .sessions .pane.s .talk > .log > .slash, .sessions .pane.s .talk > .log > .cutoff { justify-self: end; }
-  .sessions .pane.s .talk > .log > .msg.peer, .sessions .pane.s .talk > .log > .earlier { justify-self: start; }
-  .sessions .pane.s.topshut .talk > .log { grid-template-columns: minmax(0, 64rem) minmax(0, 1fr); }
-  .sessions .pane.s .pbody > .panetop { position: sticky; top: calc(var(--bar-h, 3.2rem) + 1rem); }
-  .sessions .pane.s .secs { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--gap-col); }
-  .sessions .pane.s .secs > .psec + .psec { margin-top: 0; padding-top: 0; box-shadow: none; }
-  .sessions .pane.s .secs > .psec:nth-child(n + 3) { margin-top: calc(4 * var(--u)); padding-top: calc(4 * var(--u)); box-shadow: inset 0 .08rem 0 var(--hair); }
+  .sessions .pane.s.topshut .pbody > .panetop { grid-column: 1; grid-row: 3; }
 }
 
 /* ---------- a session splice no longer lists: a compact plate at the list's top ---------- */

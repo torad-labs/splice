@@ -4,6 +4,9 @@
 // its worth at API prices in its cost column, hollow, with the list's key saying once what hollow means, and the held
 // line (a meter and "N highest priced of M requests", its rule under the pointer) says the highest priced were kept. A
 // daemon that does not echo the order kept the newest, and the page says Newest over them, never Highest price.
+// Goal changed 2026-10-29 by the requests-list pass (build-from alt-3): the count of what is listed rides a chip beside the
+// list's title ("N highest priced of M", "N newest of M"), the held line is a meter (its share of the window) whose rule
+// stays under the pointer, and the key names a plan row's hollow bar "Plan cost" once.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -63,6 +66,7 @@ async function look(query: string) {
       planCost: await page.locator('article[data-open="alpha:plan"] .co.plan .v').innerText(),
       key: await page.locator(".lkey").innerText(),
       costHead: await page.getByText("Est. cost", { exact: true }).count(),
+      count: (await page.locator(".rql-count").innerText()).replace(/\s+/g, " "),
       foot: (await page.locator(".foot.held").innerText()).replace(/\s+/g, " "),
       footRule: await page.locator(".foot.held").getAttribute("title"),
     };
@@ -81,8 +85,10 @@ test("Highest price runs dearest first, unpriced last, with no hour marks, a pla
   expect(seen.hours).toBe(0);
   expect(seen.planCost).toBe("$0.500"); // no "≈" on the cell: its column's head says the cost is estimated
   expect(seen.costHead).toBeGreaterThan(0);
-  expect(seen.key).toContain("On your plan, at API prices");
-  expect(seen.foot).toBe("4 highest priced of 2,400 requests");
+  expect(seen.key).toContain("Plan cost");
+  expect((seen.key.match(/Plan cost/g) ?? []).length).toBe(1);
+  expect(seen.count).toBe("4 highest priced of 2,400");
+  expect(seen.foot).toBe("<1% of the matches"); // 4 of 2,400, the share the meter draws
   expect(seen.footRule).toBe("The highest priced 2,000 of each command");
 }, 30_000);
 
@@ -93,7 +99,7 @@ test("Newest keeps time order, its hour marks and one line on a plan row", async
   expect(seen.pressed).toBe("Newest");
   expect(seen.hours).toBeGreaterThan(0);
   expect(seen.plan).not.toContain("at API prices");
-  expect(seen.foot).toContain("newest");
+  expect(seen.count).toContain("newest");
 }, 30_000);
 
 test("a daemon that does not say it applied the order reads Newest over its newest rows", async () => {

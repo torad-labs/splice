@@ -2,8 +2,10 @@
 // replace it"). He pressed Sign in on claude-splice's card "Account", which read Signed out, and got a bare red "In use"
 // with nothing to act on. Through the real page against a stub daemon in the routes' own shapes: a sign-in splice
 // refuses says its word where it was pressed, on a login's card and on + Add account alike, and splice's own reason
-// opens under the word; and a command's own login that is signed out and never proved an account draws no card, since
+// stands printed under the word; and a command's own login that is signed out and never proved an account draws no card, since
 // it holds no account to sign in again (one that proved its account keeps its card, as Marlin ruled on Oct 10).
+// Changed Oct 29 by the accounts-login-cards pass: splice's reason is no longer folded behind its word; it is printed in place
+// beside the refused act (the word alone where splice gave no reason, never an invented one), so it reads with no press.
 import { afterAll, beforeAll, expect as bunExpect, test } from "bun:test";
 import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -99,29 +101,27 @@ test("a command's own login that is signed out and never proved an account draws
   await expect(page.locator("article.card", { hasText: "Signed out" })).toHaveCount(1);
 }), 30_000);
 
-test("a Sign in splice refuses on a login's card says its word there, and splice's reason opens under it", () => onPage(async (page) => {
+test("a Sign in splice refuses on a login's card says its word there, and splice's reason is printed under it", () => onPage(async (page) => {
   const there = card(page, "Claude");
   await there.getByRole("button", { name: "Sign in" }).click();
-  const word = there.getByRole("button", { name: "Config error" });
+  const word = there.locator(".result", { hasText: "Config error" });
   await expect(word).toBeVisible({ timeout: 10_000 });
   bunExpect(started).toEqual(["/api/claude-logins/claude/login"]);
-  // the reason starts folded under its word, and the word opens it
-  await expect(there).not.toContainText(WRAP_REASON);
-  await word.click();
+  // the reason stands printed under its word with no press, and the word is plain text, not an act
   await expect(there.locator(".reason")).toHaveText(WRAP_REASON);
+  await expect(there.getByRole("button", { name: "Config error" })).toHaveCount(0);
   // a config refusal fails again until it is fixed, so it offers no Try again, and Cancel closes it
   await expect(there.getByRole("button", { name: "Try again" })).toHaveCount(0);
   await there.getByRole("button", { name: "Cancel" }).click();
   await expect(there.getByRole("button", { name: "Sign in" })).toBeVisible();
 }), 30_000);
 
-test("+ Add account that signs in an account already there says Already added, and splice's reason opens under it", () => onPage(async (page) => {
+test("+ Add account that signs in an account already there says Already added, and splice's reason is printed under it", () => onPage(async (page) => {
   await page.locator(`[data-act="add"][data-c="${HEAD}"]`).click();
   await page.locator(`[data-act="add-go"][data-c="${HEAD}"]`).click();
   const tile = page.locator(`[data-key="add:${HEAD}"]`);
-  const word = tile.getByRole("button", { name: "Already added" });
+  const word = tile.locator(".result", { hasText: "Already added" });
   await expect(word).toBeVisible({ timeout: 10_000 });
   bunExpect(started).toEqual([`/api/auth/${HEAD}/login`]);
-  await word.click();
   await expect(tile.locator(".reason")).toHaveText(ADDED_REASON);
 }), 30_000);

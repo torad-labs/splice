@@ -79,7 +79,11 @@ async function open(query = ""): Promise<Page> {
 
 // "On your plan" and "at API prices" are said once, in the band's legend, and "Counted by splice" once, in the board's
 // head (Usage's goal, Oct 26: "Qualifiers said once: 'On your plan', 'at API prices', the window, splice's own count, in a
-// header or legend"), where each plan's cost cell and each card's footer said them
+// header or legend"), where each plan's cost cell and each card's footer said them.
+// Goal changed Oct 29 (the plans board and page layout passes): the window is no longer said in the board's head; the lit
+// switch beside the page's title is where a reader finds it, so the head says only what splice counted.
+// A window change keeps the page's shapes and strips only the figures (the page layout pass), where it once drew a reading
+// ghost in their place.
 test("Usage: a week's figures are the daemon's totals, not the rows returned; a plan draws its value hatched under the band's legend, a key reads money", async () => {
   const p = await open();
   try {
@@ -94,6 +98,7 @@ test("Usage: a week's figures are the daemon's totals, not the rows returned; a 
     const key = p.locator(".brow", { hasText: "OPENROUTER_API_KEY" }).first();
     await expect(key.locator(".cost .money")).toHaveText("$1.25");
     await expect(p.locator("#band-money .bandhead")).toContainText("Counted by splice");
+    await expect(p.locator("#band-money .bandhead")).not.toContainText("hours");
     await expect(p.locator(".pcard .thru")).toContainText("1,234,567");
   } finally {
     await p.context().close();
@@ -106,8 +111,10 @@ test("Usage: a window change draws its shapes until its figures land, never the 
     await expect(p.locator(".brow .num.open").first()).toContainText("1,234,567", { timeout: 20_000 });
     slowWeek = true;
     await p.locator("[data-act=win][data-v='5h']").click();
-    await expect(p.locator("#usage .ghost").first()).toBeVisible(); // the reading shape (Marcos, Oct 12), never the old figures
-    await expect(p.locator("#usage .brow")).toHaveCount(0);
+    // the rows stay as shapes (the old bars striped) and their figures are gone: never the old window's figures under the new heading
+    await expect(p.locator("#band-by .brow").first()).toBeVisible();
+    await expect(p.locator("#band-by .brow .num.open .v").first()).toBeHidden();
+    await expect(p.locator("[data-act=win][data-v='5h']")).toHaveAttribute("aria-pressed", "true");
     slowWeek = false;
     await expect(p.locator(".brow .num.open").first()).toContainText("1,234,567", { timeout: 20_000 });
   } finally {
@@ -161,14 +168,16 @@ test("Usage: a window change keeps the plans and the headings drawn and stripes 
     await p.locator("[data-act=win][data-v='5h']").click();
     await expect(p.locator(".pcard .cmds")).toBeVisible();
     await expect(p.locator(".pcard .windows")).toBeVisible();
-    // the footer stripes one row per figure it will hold (Usage's report, Oct 26), and the keys are cards on the same board
-    await expect(p.locator(".pcard .thru .ghost").first()).toBeVisible();
+    // the footer keeps its rows as shapes without their figures, and the keys are cards on the same board
+    await expect(p.locator(".pcard .thru").first()).toBeVisible();
+    await expect(p.locator(".pcard .thru .v").first()).toBeHidden();
     await expect(p.locator(".kcard")).toBeVisible();
     slowWeek = false;
-    // the window's own figures land in the footer, and the board's head names the window splice counted
-    await expect(p.locator(".pcard .thru .ghost")).toHaveCount(0, { timeout: 20_000 });
+    // the window's own figures land in the footer, and the lit switch names the window splice counted
+    await expect(p.locator(".pcard .thru .v").first()).toBeVisible({ timeout: 20_000 });
     await expect(p.locator(".pcard .thru")).toContainText("1,234,567");
-    await expect(p.locator("#band-money .bandhead")).toContainText("Counted by splice · last 5 hours");
+    await expect(p.locator("#band-money .bandhead")).toContainText("Counted by splice");
+    await expect(p.locator("[data-act=win][data-v='5h']")).toHaveAttribute("aria-pressed", "true");
   } finally {
     await p.context().close();
   }

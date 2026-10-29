@@ -136,7 +136,7 @@ test("in day theme the order rail's numbers keep night's ink in their dark socke
 }, "day"), 30_000);
 
 test("at 3828 a provider with seven accounts spreads over columns, its order carrying on; at 1440 it keeps one", async () => {
-  const wide = await onPage(async (page) => page.locator(".provider.wide .rails > .rail").evaluateAll((rails) =>
+  const wide = await onPage(async (page) => page.locator(".provider.wide .rails > .abl-col > .rail").evaluateAll((rails) =>
     rails.map((r) => [...r.querySelectorAll(".card .socket")].map((x) => Number(x.textContent)))), "night", 3828);
   bunExpect(wide.length).toBeGreaterThanOrEqual(2);
   bunExpect(wide.flat()).toEqual([1, 2, 3, 4, 5, 6, 7]);

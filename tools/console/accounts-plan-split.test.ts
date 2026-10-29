@@ -2,6 +2,12 @@
 // stub daemon that answers with the split fields of /api/economics: plan_turns, plan_value_usd, plan_unpriced_turns per
 // hour and all_accounts_on_plan per command. A bare "≈$" is key money only; a plan's share is a count "on your plan",
 // and a dollar on it says "at API prices".
+//
+// Changed Oct 29 by the accounts-day-strips pass: the Day is no longer one line of phrases joined by dots. The strip leads
+// with a hero figure and its muted words (a plan day's request count "requests on your plan"; a mixed day's key money "for N
+// requests"); under it a Requests row says what its parts are ("N on your plan", "N earlier, unsorted") and a Dollars row
+// draws a plan's value "at API prices" (a key's money "at the rate card"). The rules stay: key money is the only bare "≈$",
+// a plan's share is a count, and a phrase is never broken or opened by a separator.
 import { afterAll, beforeAll, expect as bunExpect, test } from "bun:test";
 import { chromium, expect, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -75,18 +81,21 @@ async function dayOf(command: string, width = 1440) {
 
 test("a command all on a plan counts its requests on the plan and names their value at API prices, with no Set budget", async () => {
   const { text } = await dayOf("all-plan");
-  bunExpect(text).toContain("23,559 requests on your plan · ≈$1,512 at API prices");
+  bunExpect(text).toContain("23,559 requests on your plan");
+  bunExpect(text).toContain("≈$1,512 at API prices");
   bunExpect(text).not.toContain("Set budget");
 }, 30_000);
 
 test("on a command all on a plan, an hour from before the split counts on the plan too, its value at API prices", async () => {
   const { text } = await dayOf("plan-before");
-  bunExpect(text).toContain("110 requests on your plan · ≈$6.00 at API prices");
+  bunExpect(text).toContain("110 requests on your plan");
+  bunExpect(text).toContain("≈$6.00 at API prices");
 }, 30_000);
 
 test("a mixed command shows the key's money for the key's requests and the plan's share as a count, never its value", async () => {
   const { text } = await dayOf("mixed");
-  bunExpect(text).toContain("≈$12.40 for 300 requests · 23,259 on your plan");
+  bunExpect(text).toContain("≈$12.40 for 300 requests");
+  bunExpect(text).toContain("23,259 on your plan");
   bunExpect(text).not.toContain("1,500");
   bunExpect(text).toContain("Set budget");
 }, 30_000);
@@ -95,7 +104,9 @@ test("a mixed command shows the key's money for the key's requests and the plan'
 // (Accounts' goal, Oct 28), a count and never money
 test("on a mixed command an hour from before the split is counted as earlier and unsorted, never as money", async () => {
   const { text } = await dayOf("mixed-before");
-  bunExpect(text).toContain("≈$12.40 for 300 requests · 23,259 on your plan · 50 earlier, unsorted");
+  bunExpect(text).toContain("≈$12.40 for 300 requests");
+  bunExpect(text).toContain("23,259 on your plan");
+  bunExpect(text).toContain("50 earlier, unsorted");
   bunExpect(text).not.toContain("15.40");
 }, 30_000);
 
@@ -105,7 +116,8 @@ test("a budget set before on a command all on a plan keeps its button, so he can
     await page.goto(`http://127.0.0.1:${server.port}/accounts.html`);
     const meter = page.locator(`[data-meter="plan-budget"]`);
     await expect(meter).toContainText("Budget $20", { timeout: 15_000 });
-    await expect(meter).toContainText("40 requests on your plan");
+    await expect(meter.locator(".dayline .ads-fig")).toHaveText("40");
+    await expect(meter.locator(".dayline .ads-unit")).toContainText("requests on your plan");
     await expect(meter).not.toContainText("Set budget");
     await meter.getByRole("button", { name: /Budget \$20/ }).click();
     await expect(page.locator(`[data-meter="plan-budget"]`).getByRole("button", { name: "Remove budget" })).toBeVisible();
@@ -122,29 +134,32 @@ for (const width of [3828, 1440]) {
   }, 60_000);
 }
 
-// A split Day line that wraps opens its next line with the phrase, never with the dot that joined it to the one before:
-// that dot is cut off at the card's edge, and every dot still drawn stands between two phrases on one line.
-test("a wrapped split Day line never opens a line with a dot", async () => {
+// A split Day's phrases wrap whole: a phrase is never broken across two lines, no dot or other separator joins them (so none
+// can open a line or be cut off at the card's edge), and the figure's words never leave the card.
+test("a wrapped split Day keeps each phrase whole and joins none with a separator", async () => {
   let wrapped = 0;
-  for (const width of [3828, 1440, 1280]) {
+  for (const width of [3828, 1440, 1280, 1024]) {
     const page = await browser.newPage({ viewport: { width, height: 1000 } });
     try {
       await page.goto(`http://127.0.0.1:${server.port}/accounts.html`);
-      await expect(page.locator(`[data-meter="long-plan"]`)).toContainText("on your plan", { timeout: 15_000 });
-      const seen = await page.evaluate(() => [...document.querySelectorAll(".money.line")].map((line) => {
-        const edge = line.getBoundingClientRect().left;
-        const parts = [...line.querySelectorAll(".part")].map((p) => p.getBoundingClientRect().top);
-        const leading = [...line.querySelectorAll(".sep")].filter((s) => {
-          const r = s.getBoundingClientRect();
-          return r.right > edge + 0.5 && r.left < edge + 2; // drawn, and at the line's start
-        }).length;
-        return { lines: new Set(parts.map(Math.round)).size, leading };
+      await expect(page.locator(`[data-meter="mixed-before"]`)).toContainText("earlier, unsorted", { timeout: 15_000 });
+      const seen = await page.evaluate(() => [...document.querySelectorAll(".meter.day")].flatMap((strip) => {
+        const box = strip.getBoundingClientRect();
+        return [...strip.querySelectorAll(".ads-words")].map((words) => {
+          const parts = [...words.querySelectorAll(".part")];
+          return {
+            broken: parts.filter((p) => p.getClientRects().length > 1).length,
+            lines: new Set(parts.map((p) => Math.round(p.getBoundingClientRect().top))).size,
+            joined: /[·•]/.test(words.textContent ?? ""),
+            past: parts.filter((p) => p.getBoundingClientRect().right > box.right + 1).length,
+          };
+        });
       }));
-      for (const s of seen) bunExpect(s.leading).toBe(0);
-      wrapped += seen.filter((s) => s.lines > 1).length;
+      for (const w of seen) { bunExpect(w.broken).toBe(0); bunExpect(w.joined).toBe(false); bunExpect(w.past).toBe(0); }
+      wrapped += seen.filter((w) => w.lines > 1).length;
     } finally {
       await page.close();
     }
   }
-  bunExpect(wrapped).toBeGreaterThan(0); // at least one line did wrap, so the rule was put to the test
-}, 60_000);
+  bunExpect(wrapped).toBeGreaterThan(0); // at least one row of phrases did wrap, so the rule was put to the test
+}, 90_000);

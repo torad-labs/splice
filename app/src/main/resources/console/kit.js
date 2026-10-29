@@ -339,13 +339,18 @@ const GHOST = {
    *  tiles on the tiles' own equal columns at a wide page (tilesWide), else the picker's chip. WITH NO [n] THE COUNT IS
    *  THE ONE LAST DRAWN ON THIS PAGE (GHOST.count), never a guess: a page that has never drawn tiles draws nothing.
    *  Each ghost is the tile's own parts (name, share, lamp row), so it stands the height the tile will. */
-  tiles(n = GHOST.count("tiles")) {
+  tiles(n = GHOST.count("tiles", TILES_TYPICAL)) {
     if (!(n > 0)) return "";
     if (!tilesWide()) return `<div class="lhead" aria-hidden="true">${GHOST.chip(13)}</div>`;
     // the lamp row is held only when the last read drew one (a tile with no lamps is shorter), so the ghost row is the row that lands
-    const lamps = GHOST.count("tilelamps") ? " hold" : "";
+    // with nothing remembered (a first visit) the row is the typical one: tiles that hold their lamp row, since a row where any
+    // project has someone live holds the row for every tile (tilesHtml), so the real row lands at this height
+    const lamps = GHOST.count("tilelamps", 1) > 0 ? " hold" : "";
     const one = () => `<span class="ptile ghosted-tile"><span class="ptop">${GHOST.bar(7)}${GHOST.fig(3)}</span><i class="ghost pshare"></i><span class="plamps${lamps}"></span></span>`;
-    return `<nav class="ptiles" aria-hidden="true"><div class="ptgrid">${Array.from({ length: n }, one).join("")}</div></nav>`;
+    // the projects with nothing to count stand after the tiles in their own small chips, as many as the last row held
+    const zeros = GHOST.count("tilezeros", 0), zl = GHOST.count("tilezerolamps", 0) > 0;
+    const none = zeros > 0 ? `<span class="pzeros">${Array.from({ length: zeros }, () => `<span class="ptile zero ghosted-tile"><span class="ptop">${GHOST.bar(5)}${GHOST.bar(1)}</span>${zl ? `<span class="plamps hold"></span>` : ""}</span>`).join("")}</span>` : "";
+    return `<nav class="ptiles${lamps}${GHOST.count("tilestack", 0) > 0 ? " stack" : ""}" aria-hidden="true"><div class="ptgrid">${Array.from({ length: n }, one).join("")}</div>${none}</nav>`;
   },
   /** HOW MUCH LANDS IS HOW MUCH LANDED LAST (Oct 28). A ghost is the size and count of what it waits for, so a page asks
    *  what it last drew before it guesses: [key] names a kind of thing on this page ("tiles", "rows:ended", "cards") and
@@ -353,7 +358,24 @@ const GHOST = {
    *  response shape to go by). [remember] is called by the draw that lands, so the next first frame is this one's size.
    *  Kept per page in localStorage; a browser with storage off simply never remembers. */
   count(key, fallback = 0) {
-    try { return Number(JSON.parse(localStorage.getItem(GHOST_STORE) || "{}")[`${location.pathname}:${key}`]) || fallback; } catch { return fallback; }
+    // a remembered 0 is an answer (a page that last drew nothing draws nothing); only a key never remembered takes the fallback
+    try { const v = JSON.parse(localStorage.getItem(GHOST_STORE) || "{}")[`${location.pathname}:${key}`]; return v != null && Number.isFinite(+v) ? +v : fallback; } catch { return fallback; }
+  },
+  /** THE HEIGHT OF A BLOCK THAT LANDED, KEPT BY NAME (Oct 29). A ghost is the size of what will land, and how tall a plate or a board
+   *  lands depends on the data (how many sessions run, how many rows an account holds), which only a past visit knew. A block
+   *  that lands marks itself `data-held="name"`; the kit keeps its height in rem (holdShapes); the ghost of that block asks
+   *  for it here as a minimum height, so the first frame stands as tall as the frame that lands. Nothing remembered gives
+   *  nothing: the ghost's own shape stands. [more] is any rem the ghost's own chrome adds above or below. */
+  held(key, more = 0) {
+    const h = GHOST.count(heldKey(key), 0);
+    return h > 0 ? `min-height:${(h + more).toFixed(1)}rem;` : "";
+  },
+  /** THE SAME HEIGHT, KEPT EXACTLY: where a block's own shape cannot know how tall its data lands (a board of sessions, a rail of
+   *  commands), the ghost stands as tall as the block last landed, shorter or taller, and clips what its stripes would
+   *  add past it, so the page under it does not move whichever way the read comes out. */
+  pin(key) {
+    const h = GHOST.count(heldKey(key), 0);
+    return h > 0 ? `height:${h.toFixed(1)}rem;overflow:hidden;` : "";
   },
   remember(key, n) {
     try {
@@ -363,6 +385,14 @@ const GHOST = {
   },
 };
 const GHOST_STORE = "splice-console-ghosts";
+// a block lands as tall as its columns make it, and the columns follow the page's width in rem, so what a block last
+// measured is kept for the width it was measured at, in steps of ten rem
+function heldKey(name) {
+  const page = document.querySelector("main.page"), rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  return `h:${name}@${page ? Math.round(page.clientWidth / rem / 10) * 10 : 0}`;
+}
+// the tiles a first visit draws before any read has said how many projects there are
+const TILES_TYPICAL = 6;
 const clock = (d) => {
   const h = d.getHours() % 12 || 12, m = d.getMinutes(), ap = d.getHours() < 12 ? "AM" : "PM";
   return `${h}:${String(m).padStart(2, "0")} ${ap}`;
@@ -507,6 +537,48 @@ const TIME_AXIS = {
   ticks: [[60_000, "1 min"], [3_600_000, "1 h"], [86_400_000, "1 d"], [604_800_000, "1 w"]],
 };
 TIME_AXIS.ticks.forEach(([ms], i) => document.documentElement.style.setProperty(`--tk${i + 1}`, `${TIME_AXIS.at(ms).toFixed(2)}%`));
+
+// ---------- the fix splice offers a command that is not working ----------
+// One routine for every page that offers it (Models' header act, Compare's Start on a card that is not answering), so the same
+// command gets the same press wherever it stands: Start, or Restore where its link is gone, each run through the fix the daemon's
+// doctor lists for it where one exists and through the plain start where none is; Check again where its runtime does not answer.
+// doctor's row for a command's own link names the command in quotes, so one command's name inside another's never matches
+const wrapperOf = (x, c) => x.id === "installation/wrapper" && Boolean(x.detail?.startsWith(`'${c.cmd}'`));
+/** What splice offers command [c] ({ key, cmd, live, down, unread, auth }) given doctor's [checks]: { id, label } for a doctor fix,
+ *  { head, label } for the plain start, { recheck, label } to read its runtime again, { signin, label } to sign it in, or null. */
+function commandFix(c, checks = []) {
+  const bad = checks.filter((x) => x.id === `auth/${c.key}` || x.id === `daemon/head ${c.key}` || wrapperOf(x, c))
+    .find((x) => x.status === "fail" || x.status === "warn");
+  if (!c.live) return bad?.fix_id ? { id: bad.fix_id, label: "Start" } : { head: c.key, label: "Start" };
+  // a local runtime that does not answer: splice cannot start someone else's runtime, but it can say whether it answers now
+  if (c.down) return { recheck: true, label: "Check again" };
+  if (c.unread || !bad) return null;
+  if (bad.id.startsWith("auth/")) {
+    const keyed = /key/i.test(c.auth), refused = /refus|reject|invalid|401/i.test(bad.detail ?? "");
+    return { signin: true, label: keyed ? (refused ? "Replace key" : "Add key") : "Sign in" };
+  }
+  return bad.fix_id ? { id: bad.fix_id, label: bad.id === "installation/wrapper" ? "Restore" : "Start" } : null;
+}
+/** Runs the fix for command [key] and says how it went: { ok, word }, the word being the one a refusal is told in beside the act.
+ *  [fix] is what commandFix gave the caller; left out, it is read from the daemon (its commands and doctor), as the page that
+ *  has not read them already needs. A sign-in is the page's own flow and is not run here. */
+async function fixCommand(key, fix) {
+  const refused = { ok: false, word: "Not done" };
+  const heads = async () => ((await API.get("/api/heads")).body?.heads ?? []).find((h) => h.key === key);
+  let todo = fix;
+  if (todo === undefined) {
+    const [h, doctor] = await Promise.all([heads(), API.get("/api/doctor")]);
+    if (!h) return refused;
+    todo = commandFix({ key, cmd: h.label || key, live: h.running, down: Boolean(h.runtimeNotAnswering), unread: Boolean(h.runtimeUnread), auth: h.authKind ?? "" }, doctor.body?.checks ?? []);
+  }
+  if (!todo || todo.signin) return refused;
+  if (todo.recheck) {
+    const h = await heads();
+    return h?.running && h.runtimeNotAnswering ? { ok: false, word: "Still not answering" } : { ok: true, word: "" };
+  }
+  const res = todo.id ? await API.post(`/api/doctor/fix/${encodeURIComponent(todo.id)}`, {}) : await API.post(`/api/heads/${encodeURIComponent(key)}/start`, {});
+  return res.ok ? { ok: true, word: "" } : refused;
+}
 
 const DRAW = {
   // ---------- how a figure is written: one spelling per kind, everywhere ----------
@@ -880,7 +952,7 @@ const DRAW = {
   groups: (items) => `<div class="groups">${items.join("")}</div>`,
   /** THE COLUMN SYSTEM: [items] in as many equal columns as the width holds, each at least [min] rem, so the row is
    *  always full (.cols); an item with the class "wide2", "wide3" or "full" takes more of the row. */
-  cols: (items, min = 26, cls = "") => `<div class="cols${cls ? ` ${cls}` : ""}" style="--col-min:${min}rem">${items.join("")}</div>`,
+  cols: (items, min = 26, cls = "", host = "") => `<div class="cols${cls ? ` ${cls}` : ""}" style="--col-min:${min}rem"${host ? ` data-mp-host="${esc(host)}"` : ""}>${items.join("")}</div>`,
   /** Groups of different heights flowed down columns at least [min] rem wide, the order running down each (.flow-cols). */
   flow: (items, min = 26) => `<div class="flow-cols" style="--col-min:${min}rem">${items.join("")}</div>`,
   /** THE BALANCED BOARD (Oct 28): plates or groups of any height laid in as many columns of at least [min] rem as the width
@@ -932,11 +1004,31 @@ const DRAW = {
   /** A list's tail: the top few at full size, the rest behind one pill. Never a column that runs past the fold.
    *  { one } is the word for a count of one ("1 more line"), so no caller has to spell the singular itself; without
    *  it the one word serves every count. { pill } draws the tail as a button with an edge, "+3" beside a chip list;
-   *  { keepWord } keeps the words in that button ("3 more logins"), for a tail that ends a list of rows or cards. */
-  more(n, { word = "more", one = null, act = "", data = "", pill = false, keepWord = false, open = false, less = "Fewer" } = {}) {
-    const said = `<b>${DRAW.n(n)}</b> ${esc(n === 1 && one != null ? one : word)}`;
-    return `<button class="${pill ? `morepill pill${keepWord ? " worded" : ""}` : "morepill"}" type="button" data-act="${esc(act)}"${data}>${open ? esc(less) : pill && !keepWord ? `<b>+${DRAW.n(n)}</b>` : said}</button>`;
+   *  { keepWord } keeps the words in that button ("3 more logins"), for a tail that ends a list of rows or cards.
+   *  EVERY PILL CARRIES A CHEVRON, pointing down while the list is folded and up while it is open, and its word sits in
+   *  .mp-lab so the old word fades out before the new one fades in. { host } names the list it opens (the same id on the
+   *  list's data-mp-host): the kit then eases the rows open and shut over --t-snap (kit.js "a list behind N more").
+   *  { pill, plus } draws "+3 models": the count with its plus and the word, with the chevron. Its words stay while it is open
+   *  and only the chevron turns, because what it opens is what it names, never "Fewer". */
+  more(n, { word = "more", one = null, act = "", data = "", pill = false, plus = false, keepWord = false, open = false, less = "Fewer", host = "" } = {}) {
+    const words = esc(n === 1 && one != null ? one : word);
+    const said = `<b>${DRAW.n(n)}</b> ${words}`;
+    if (pill && plus) {
+      return `<button class="morepill pill worded" type="button" data-act="${esc(act)}"${data}${host ? ` data-mp="${esc(host)}"${open ? " data-mp-fold" : ""}` : ""}>`
+        + `<span class="mp-lab"><b>+${DRAW.n(n)}</b> ${words}</span>${DRAW.mpChev(open)}</button>`;
+    }
+    const mp = host ? ` data-mp="${esc(host)}"${open ? " data-mp-fold" : ""}` : "";
+    return `<button class="${pill ? `morepill pill${keepWord ? " worded" : ""}` : "morepill"}" type="button" data-act="${esc(act)}"${data}${mp}>`
+      + `<span class="mp-lab">${open ? esc(less) : pill && !keepWord ? `<b>+${DRAW.n(n)}</b>` : said}</span>${DRAW.mpChev(open)}</button>`;
   },
+  /** The chevron of a pill that opens a list or folds it: down while folded, up while open (console.css .mp-chev). */
+  mpChev: (up = false) => `<svg class="mp-chev${up ? " up" : ""}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>`,
+  /** A row that exists only while its list is open: marked so the list folds it away in motion. */
+  tail: (html) => html.replace(/^(\s*<[a-z][\w-]*)/i, "$1 data-mp-tail"),
+  /** Rows that join or leave a list ease over --t-snap (see "a list behind N more"). */
+  unfoldRows,
+  /** The control that opened or folded a list, drawn again: its chevron turns half a turn and its word eases in. */
+  unfoldControl,
   /** A row that opens its own detail under itself: the chevron turns over 240 ms and the detail lands in place, so the
    *  row keeps its context and the panel needs no title. */
   disc: ({ open, controls, inner, cls = "", act = "", data = "" }) =>
@@ -945,6 +1037,45 @@ const DRAW = {
   /** The lock that takes the place of the act that no longer works, and pops in over 260 ms when it arrives. */
   lock: (word = "Limit reached", { pop = false } = {}) =>
     `<span class="state limit"><span class="lockico${pop ? " lock-pop" : ""}" aria-hidden="true">${ICON.lock}</span>${esc(word)}</span>`,
+  /** A LOGIN'S PLAN WINDOWS, drawn the way Accounts draws them, for every page that lists logins outside Accounts' own
+   *  cards (Settings' Plan limits, Teams' account menus): one line a window, holding its label, a meter, "NN% used" and a
+   *  reset ring with "Resets" and its time, every part in the same column on every login so meters end on one x.
+   *  Each of [rows] is { label, used, stale, frac, resetMs, rolledMs }: [used] the share used, null where splice has not
+   *  read the window; [frac] the share of the window still to run, which is the ring's arc (null draws no ring);
+   *  [resetMs] when it refills; [rolledMs] when a window that has ended did. A window not read is the dashed empty track
+   *  with a dash; an ended one is a dashed track, a dash, and "Ended" with its time and no ring. [warn] is the share the
+   *  warn line stands at, a tick on every meter; null draws none. A day's budget is a row { label, spent, cap, resetMs, frac }:
+   *  its meter is the share of the cap spent, and its percent column reads "$spent of $cap", so a list with one gives that
+   *  column the width the two amounts need. A login held at its limit says when it is back once, on its DRAW.loginHeld line, so the
+   *  window that holds it keeps its ring and not the words "Resets" and the same time again; the other windows say their own.
+   *  Call DRAW.paint on the page once it lands. */
+  loginWins(rows, { warn = null } = {}) {
+    // the moment the held line names: the last of the running windows at their limit to refill
+    const back = Math.max(0, ...rows.filter((w) => w.rolledMs == null && w.used != null && w.used >= 100).map((w) => w.resetMs ?? 0));
+    const tick = warn == null ? "" : `<i class="lw-tick" style="left:${Math.max(0, Math.min(100, warn))}%"></i>`;
+    const line = (w) => {
+      const label = `<span class="label">${esc(w.label)}</span>`;
+      if (w.cap != null) {
+        const share = w.cap > 0 ? Math.min(100, ((w.spent ?? 0) / w.cap) * 100) : 100, full = share >= 100;
+        const when = w.resetMs != null && w.frac != null ? `<span class="when">${DRAW.ring(w.frac)}Resets ${esc(backWord(new Date(w.resetMs)))}</span>` : `<span class="when"></span>`;
+        return `${label}<span class="lw-m">${DRAW.meter(share, full ? "full" : "")}${tick}</span>`
+          + `<span class="pct${full ? " limit" : ""}">${DRAW.usd(w.spent ?? 0)}<span class="used">of ${DRAW.usd(w.cap)}</span></span>${when}`;
+      }
+      if (w.rolledMs != null) {
+        return `${label}<span class="lw-m">${DRAW.meter(null, "gone")}${tick}</span><span class="pct">${DRAW.dash}</span><span class="when rolled">Ended ${esc(backWord(new Date(w.rolledMs)))}</span>`;
+      }
+      if (w.used == null) return `${label}<span class="lw-m">${DRAW.meter(null)}${tick}</span><span class="pct">${DRAW.dash}</span><span class="when"></span>`;
+      const full = w.used >= 100;
+      const said = full && back > 0 && w.resetMs === back;
+      const when = w.resetMs != null && w.frac != null
+        ? `<span class="when">${DRAW.ring(w.frac)}${said ? "" : `Resets ${esc(backWord(new Date(w.resetMs)))}`}</span>` : `<span class="when"></span>`;
+      return `${label}<span class="lw-m">${DRAW.meter(Math.min(100, w.used), `${full ? "full" : ""}${w.stale ? " stale" : ""}`)}${tick}</span>`
+        + `<span class="pct${full ? " limit" : ""}">${w.used}%<span class="used">used</span></span>${when}`;
+    };
+    return `<span class="windows lw-wins${rows.some((w) => w.cap != null) ? " lw-bud" : ""}">${rows.map(line).join("")}</span>`;
+  },
+  /** A login held at its plan's limit says so once, under its name: the lock and when it is back. */
+  loginHeld: (untilMs) => `<span class="lw-held">${DRAW.lock(untilMs != null ? `Limit reached until ${backWord(new Date(untilMs))}` : "Limit reached")}</span>`,
   /** An act, on the object it changes. While it works it spins where it stands; its result lands beside it in plain
    *  words, and a refusal shakes it once (add .shook for one turn). */
   act: ({ word, act, cls = "", busy = false, data = "", disabled = false }) =>
@@ -963,6 +1094,10 @@ const DRAW = {
   /** A press that cuts or moves someone asks ONCE, in place: what it does to them, each one a chip that opens its
    *  session, then the act and the way out. The second press acts. (kit armedAsk) */
   armed: (said, cut, act, keep, tail = "") => armedAsk(said, cut, act, keep, tail),
+  /** The fix splice offers a command that is not working, and its one press (see "the fix splice offers a command" above). */
+  commandFix, fixCommand,
+  /** Notes the settings a save to the settings file changed, [{ name, href }] (the list under the Settings link; see "what the list names"). */
+  savedSettings,
   go: GO,
   /** The attribute that lets an object (a row, a tile, a card) travel to its new place when a re-read reorders it, over
    *  --t-move: put it in the object's opening tag, with the key that is the same on every read ("row:<id>"). */
@@ -1037,6 +1172,8 @@ new MutationObserver((records) => {
   // change, so a redraw finds it standing and nothing replays.
   if (!menuGone) for (const m of menus) if (m.isConnected) m.classList.add("opening");
   for (const box of boards) layMason(box);
+  unfoldLanded();
+  settlePick();
   watchGhosts();
 }).observe(document.documentElement, { childList: true, subtree: true });
 addEventListener("resize", () => { fitStacks(); measureFlips(); for (const box of document.querySelectorAll(".mason")) layMason(box); });
@@ -1055,6 +1192,19 @@ document.fonts?.ready.then(() => { fitRound++; fitStacks(); for (const box of do
 const TW = new Map();   // place → the last value drawn there
 const TWF = new Map();  // place → where a movable object last stood (page coordinates)
 const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+// A PRESSED TILE ARRIVES AS THE PICKED ONE: pages redraw the whole row on a press, so the newly picked tile is a new element and its
+// look would swap in one frame. A row that has already shown another pick marks the new one once (console.css .ptile.pk-in:
+// the face and edge take the picked look over --t-pop and its share draws out again). A row's first drawing, a row still
+// being read, and a redraw that keeps the same pick mark nothing, so a re-read never replays it.
+const PICKED = new Map();
+function settlePick() {
+  for (const nav of document.querySelectorAll(".ptiles")) {
+    if (nav.querySelector(".ghosted-tile")) continue;
+    const on = nav.querySelector(".ptile.on"), now = on ? on.dataset.p ?? "" : null, was = PICKED.get(location.pathname);
+    PICKED.set(location.pathname, now);
+    if (on && was !== undefined && was !== now && !reducedMotion()) on.classList.add("pk-in");
+  }
+}
 const TW_HOST = "[data-key],[data-open],[data-p],[data-a],[data-meter],[data-grow],[data-f],[id]";
 function twKey(el, kind) {
   const own = el.getAttribute(kind === "n" ? "data-tn" : "data-tw");
@@ -1132,6 +1282,131 @@ function settle(root) {
   for (const el of find("[data-flip]")) flipMove(el);
 }
 
+// ---------- a list behind "N more" opens and folds over --t-snap (Oct 29) ----------
+// A page draws a list by replacing its markup, so a press on "N more" used to put every new row in one frame and push what
+// stood below it. The rows of a list stand in a host marked data-mp-host="id"; the pill that opens it and the Fewer that
+// folds it carry data-mp="id" (DRAW.more's host option), and a row that exists only while the list is open carries
+// data-mp-tail (DRAW.tail). The kit does the rest for every page the same way:
+//   opening   the page redraws; the rows that were not there grow from nothing to their height and fade in over --t-snap,
+//             so what stands below slides down with them, and the pressed control's chevron turns half a turn
+//   folding   the press waits --t-snap while the tail rows shrink to nothing and fade out, then the page redraws the folded list
+//   label     the old word of the control fades out before the new one fades in
+// Content above and beside the list never moves, since only the rows' own heights change.
+const UF = { pending: null, replay: false };
+const ufMs = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--t-snap")) || 240;
+const ufEase = () => getComputedStyle(document.documentElement).getPropertyValue("--e-out").trim() || "ease-out";
+const ufHost = (id) => document.querySelector(`[data-mp-host="${CSS.escape(id)}"]`);
+const ufKids = (host) => [...host.children].filter((k) => !k.matches(".morepill, .mp-skip"));
+const ufSig = (el) => JSON.stringify(Object.entries(el.dataset).filter(([k]) => k !== "mpFold").sort());
+/** Rows grow from nothing to their height and fade in over --t-snap (a row that leaves does the same backwards); resolves when
+ *  they are done. [scroller] holds the view on what it showed, from its scroll [top] and content height [h] before the rows
+ *  stood there: rows opened above it push nothing down. */
+function unfoldRows(rows, { out = false, scroller = null, top = null, h = null } = {}) {
+  const T = ufMs(), easing = ufEase();
+  if (!rows.length || reducedMotion()) return Promise.resolve();
+  const at = scroller ? { top: top ?? scroller.scrollTop, h: h ?? scroller.scrollHeight } : null;
+  const shut = { maxHeight: "0px", paddingTop: "0px", paddingBottom: "0px", marginTop: "0px", marginBottom: "0px", borderTopWidth: "0px", borderBottomWidth: "0px", opacity: 0 };
+  const anims = rows.map((el) => {
+    const natural = `${el.getBoundingClientRect().height}px`;
+    el.style.overflow = "clip";
+    const open = { maxHeight: natural, opacity: 1 };
+    const a = el.animate(out ? [open, shut] : [shut, open], { duration: T, easing, fill: out ? "forwards" : "none" });
+    a.finished.then(() => { if (!out) el.style.overflow = ""; }, () => { el.style.overflow = ""; });
+    return a;
+  });
+  if (at) {
+    const t0 = performance.now(), hold = () => {
+      scroller.scrollTop = at.top + (scroller.scrollHeight - at.h);
+      if (performance.now() - t0 < T + 60) requestAnimationFrame(hold);
+    };
+    requestAnimationFrame(hold);
+  }
+  return Promise.all(anims.map((a) => a.finished.catch(() => {})));
+}
+/** The list's own box eases between two heights, so the gaps between its rows open and close with the rows and nothing jumps at
+ *  the end; its sides stay unclipped, since a row's offset shadow stands outside the box. */
+function unfoldBox(host, from, to) {
+  if (reducedMotion() || Math.abs(from - to) < 1) return null;
+  host.style.clipPath = "inset(0 -1.5rem 0 -1.5rem)";
+  const a = host.animate([{ height: `${from}px` }, { height: `${to}px` }], { duration: ufMs(), easing: ufEase(), fill: "forwards" });
+  a.finished.then(() => { a.cancel(); host.style.clipPath = ""; }, () => { host.style.clipPath = ""; });
+  return a;
+}
+/** The pressed control, drawn again: its chevron turns half a turn and its old word fades out before the new one fades in. */
+function unfoldControl(el, was, folded = false) {
+  const T = ufMs(), easing = ufEase(), chev = el.querySelector(".mp-chev"), lab = el.querySelector(".mp-lab");
+  // a fold already turned the old chevron and faded the old word out, so the pill that replaces it only brings its word in
+  if (folded) { lab?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: Math.round(T * 0.6), easing: "linear" }); return; }
+  if (chev) {
+    const up = el.hasAttribute("data-mp-fold") || el.dataset.mpUp != null;
+    chev.animate([{ transform: `rotate(${up ? 0 : 180}deg)` }, { transform: `rotate(${up ? 180 : 0}deg)` }], { duration: T, easing });
+  }
+  if (!lab || !was || was === lab.textContent) return;
+  const out = Math.round(T * 0.4);
+  const ghost = document.createElement("span");
+  ghost.className = "mp-ghost";
+  ghost.textContent = was;
+  ghost.setAttribute("aria-hidden", "true");
+  ghost.style.cssText = `position:absolute;left:${lab.offsetLeft}px;top:${lab.offsetTop}px;white-space:nowrap;pointer-events:none`;
+  el.append(ghost);
+  ghost.animate([{ opacity: 1 }, { opacity: 0 }], { duration: out, easing: "linear", fill: "forwards" }).finished.then(() => ghost.remove(), () => ghost.remove());
+  lab.animate([{ opacity: 0 }, { opacity: 0, offset: out / T }, { opacity: 1 }], { duration: T, easing: "linear" });
+}
+document.addEventListener("click", (e) => {
+  if (UF.replay || reducedMotion()) return;
+  const ctl = e.target.closest?.("[data-mp]");
+  if (!ctl || ctl.disabled) return;
+  const host = ufHost(ctl.dataset.mp);
+  if (!host) return;
+  const was = ctl.querySelector(".mp-lab")?.textContent ?? "", sig = ufSig(ctl), id = ctl.dataset.mp;
+  if (ctl.hasAttribute("data-mp-fold")) {
+    // FOLDING WAITS FOR ITS MOTION: the tail rows leave first, then the page draws the folded list
+    const tail = [...host.children].filter((k) => k.hasAttribute("data-mp-tail"));
+    if (!tail.length) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const chev = ctl.querySelector(".mp-chev"), lab = ctl.querySelector(".mp-lab");
+    chev?.animate([{ transform: "rotate(180deg)" }, { transform: "rotate(0deg)" }], { duration: ufMs(), easing: ufEase(), fill: "forwards" });
+    lab?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: Math.round(ufMs() * 0.4), easing: "linear", fill: "forwards" });
+    const h0 = host.getBoundingClientRect().height;
+    for (const k of tail) k.style.display = "none";
+    const h1 = host.getBoundingClientRect().height;
+    for (const k of tail) k.style.display = "";
+    const box = unfoldBox(host, h0, h1);
+    unfoldRows(tail, { out: true }).then(() => {
+      box?.cancel();
+      host.style.clipPath = "";
+      const again = ctl.isConnected ? ctl : [...document.querySelectorAll("[data-mp][data-mp-fold]")].find((x) => x.dataset.mp === id && ufSig(x) === sig);
+      if (!again) return;
+      UF.pending = { id, sig, was, n: 0, keys: null, fold: true };
+      UF.replay = true;
+      try { again.click(); } finally { UF.replay = false; }
+    });
+    return;
+  }
+  UF.pending = { id, sig, was, keys: new Set(ufKids(host).map((k) => k.outerHTML)), h: host.getBoundingClientRect().height, at: performance.now() };
+}, true);
+/** Called whenever the page's markup changes: if a list a press was waiting on has been drawn again, its new rows ease in. */
+function unfoldLanded() {
+  const p = UF.pending;
+  if (!p) return;
+  if (p.at && performance.now() - p.at > 4000) { UF.pending = null; return; }
+  const host = ufHost(p.id);
+  if (!host) return;
+  const ctls = [...document.querySelectorAll("[data-mp]")].filter((x) => x.dataset.mp === p.id);
+  const now = ufKids(host);
+  if (!p.fold && !now.some((k) => !p.keys.has(k.outerHTML))) return;
+  UF.pending = null;
+  // the pill that was pressed, if it is still there, else the Fewer that took its place
+  const ctl = ctls.find((x) => ufSig(x) === p.sig) ?? ctls.find((x) => x.hasAttribute("data-mp-fold")) ?? ctls[0];
+  if (ctl) unfoldControl(ctl, p.was, !!p.fold);
+  if (!p.fold) {
+    const h1 = host.getBoundingClientRect().height;
+    unfoldBox(host, p.h, h1);
+    unfoldRows(now.filter((k) => !p.keys.has(k.outerHTML)));
+  }
+}
+
 // ---------- the balanced board: blocks of any height into the shortest column, measured (Oct 28) ----------
 // DRAW.masonry and DRAW.topic lay a grid of 1 px rows; each block spans as many rows as it is tall plus the gap under it,
 // and the grid's own auto-placement puts the next block in the topmost free place, which is the shortest column. A block
@@ -1161,27 +1436,136 @@ const MASON_SEEN = new WeakSet();
 
 // ---------- a read that is slow says so, once (Oct 28) ----------
 // A page that waits draws ghosts, which move at one stripe cycle a second whether the read is a moment old or has been
-// stuck for a minute, so a stuck read looked like a fresh one. When a ghost has stood on the page for SLOW_READ_MS without
-// the read landing, the page's header says it ONCE, in one muted line in the header's own row, and takes it back when
-// the first ghost goes. The words say the fact and nothing else.
-const SLOW_READ_MS = 6000;
-let ghostSince = 0;
+// stuck for a minute, so a stuck read looked like a fresh one. A read that has been out SLOW_READ_MS draws the wait on
+// the ghost it feeds: one elapsed ring on the LEADING ghost of its region (the first card, the hero figure, the table's
+// head), filling clockwise with the seconds since that read's ghost was drawn, a full turn at 60 s, labelled with the
+// seconds. The scale is a fixed one for elapsed time, because splice cannot know when a read will end, so the ring
+// never fills toward a promised finish. It steps once a second, never loops, and goes when its region's ghosts go,
+// even while another read on the page is still out. The words "Slow to read" stay only as its hover title and its
+// screen-reader label. Nothing is written into the page's header.
+const SLOW_READ_MS = 6000, SLOW_FULL_S = 60;
+const slowSeen = new Map();   // a region's place in the page -> when its ghost was first drawn there
+const slowPopped = new Set(); // the regions whose ring has already grown in, so a redraw of the ghost does not grow it again
+const SLOW_WORDS = "Slow to read";
+/** The elapsed ring: [sec] seconds read so far. A turn at SLOW_FULL_S, then it holds full and the count goes on. */
+const readLabel = (sec) => { const s = Math.max(0, Math.floor(sec)); return s < 100 ? `${s} s` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+function readRing(sec, { pop = false, cls = "" } = {}) {
+  const s = Math.max(0, Math.floor(sec)), label = readLabel(s);
+  return `<span class="slr-ring${pop ? " slr-pop" : ""}${cls ? ` ${cls}` : ""}" role="img" data-tip="${SLOW_WORDS}" aria-label="${SLOW_WORDS}, ${s} seconds" style="--s:${Math.min(s, SLOW_FULL_S)}"><em>${label}</em></span>`;
+}
+/** The reads a page is waiting on, each as the element that holds its ghosts. Walk down from the page while one child
+ *  holds the ghosts; where several children do, a set of like children (a board's columns, a rail's cards) is one read
+ *  and unlike children (a tile row beside a board) are one read each. */
+function ghostRegions(page) {
+  const waits = (el) => el.matches(".ghost, .ghosted") || Boolean(el.querySelector(".ghost, .ghosted"));
+  const kind = (el) => `${el.tagName}.${String(el.className).replace(/\b(ghosted|col-top|wide|hold|on|first|last)\b/g, "").replace(/\s+/g, " ").trim()}`;
+  let node = page, path = "";
+  for (let depth = 0; depth < 8; depth += 1) {
+    const kids = [...node.children].filter((c) => !c.matches(".head, .slr-ring, .lockedby") && waits(c));
+    if (kids.length === 0) return [];
+    if (kids.length === 1 && !kids[0].matches(".ghost, .ghosted")) { path += `/${kind(kids[0])}`; node = kids[0]; continue; }
+    if (new Set(kids.map(kind)).size === 1) return [{ key: `${path}/${kind(kids[0])}*`, el: node, within: kids }];
+    return kids.map((c, i) => ({ key: `${path}/${kind(c)}#${i}`, el: c, within: [c] }));
+  }
+  return [{ key: path, el: node, within: [node] }];
+}
+/** The leading ghost of a read is the first drawn object that waits (a ghost card, a ghost tile, a plate's hero), so the ring
+ *  stands on something with a body; a read that has only bars takes the first bar's row. */
+const GHOST_BODY = ".ghosted, .gcard, .ghosted-tile, .ghost-chart, .pd-top, .plate";
+function ghostHost(region) {
+  for (const c of region.within) {
+    const body = c.matches(GHOST_BODY) ? c : c.querySelector(GHOST_BODY);
+    if (body) return body;
+    // a row of control chips (the filters) is no read of its own: the ring would stand over its neighbours
+    const bar = c.matches(".ghost:not(.chip)") ? c : c.querySelector(".ghost:not(.chip)");
+    if (bar) return bar;
+  }
+  return null;
+}
+/** The rings stand in their own layer over the page, placed on the leading ghost's corner from its box, so a page that
+ *  rebuilds its ghosts or counts its own children never meets one. The layer scrolls with the page; the ring follows its
+ *  ghost once a second, and goes with it when the read lands. */
+function ringLayer() {
+  let layer = document.querySelector(".slr-layer");
+  if (!layer) { layer = document.createElement("div"); layer.className = "slr-layer"; document.body.append(layer); }
+  return layer;
+}
+/** The blocks that landed keep their height for the next first frame (GHOST.held). Only a block drawn for real is measured, never
+ *  a ghost, and only a change of half a rem or more is written, so a settled page writes nothing. Storage only: no DOM change. */
+function holdShapes() {
+  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+  for (const el of document.querySelectorAll("[data-held]")) {
+    if (el.closest(".ghost, .ghosted, .loading, [aria-busy='true']") || el.querySelector(".ghosted, [aria-busy='true']")) continue;
+    const h = el.getBoundingClientRect().height / rem, k = heldKey(el.dataset.held);
+    if (h > 1 && Math.abs(GHOST.count(k, 0) - h) >= 0.5) GHOST.remember(k, Math.round(h * 10) / 10);
+  }
+}
+/** ONE HEAD FOR EVERY TILE OF A ROW: when any tile's name and figure do not fit one line, every tile of the row stands the figure under
+ *  the name, so the tiles keep one height and their share tracks one line. Measured on what the tiles hold, written only on a
+ *  change, and kept so the next first frame draws its ghosts the same way. */
+function settleTiles() {
+  for (const row of document.querySelectorAll(".ptiles")) {
+    if (row.hasAttribute("aria-hidden")) continue;
+    let need = false;
+    for (const top of row.querySelectorAll(".ptile:not(.zero) .ptop")) {
+      const name = top.querySelector(".tname"), figs = top.querySelector(".pfigs");
+      if (!name || !figs) continue;
+      const gap = parseFloat(getComputedStyle(top).columnGap) || 0;
+      if (name.scrollWidth + gap + figs.getBoundingClientRect().width > top.clientWidth + 0.5) { need = true; break; }
+    }
+    if (row.classList.contains("stack") !== need) row.classList.toggle("stack", need);
+    GHOST.remember("tilestack", need ? 1 : 0);
+  }
+}
+/** The object (a tile, a card) a lone striped bar sits in, when it is clearly larger than the bar: the ring stands at that object's corner, not over the words beside the bar. */
+function ghostObject(bar) {
+  const own = bar.getBoundingClientRect();
+  for (let n = bar.parentElement; n && n !== document.body && !n.matches("main.page"); n = n.parentElement) {
+    const cs = getComputedStyle(n), r = n.getBoundingClientRect();
+    const drawn = (parseFloat(cs.borderTopWidth) > 0 && cs.borderTopStyle !== "none") || cs.boxShadow !== "none";
+    if (drawn && r.height > 2.5 * own.height && r.height > 3 * parseFloat(getComputedStyle(document.documentElement).fontSize)) return n;
+  }
+  return null;
+}
 function watchGhosts() {
+  settleTiles();
+  holdShapes();
   const page = document.querySelector("main.page");
-  if (!page) return;
-  const waiting = Boolean(page.querySelector(".ghost, .ghosted"));
-  const note = page.querySelector(".head > .slowread");
-  if (!waiting) { ghostSince = 0; note?.remove(); return; }
-  if (!ghostSince) ghostSince = Date.now();
-  if (note || Date.now() - ghostSince < SLOW_READ_MS) return;
-  const head = page.querySelector(".head");
-  if (!head) return;
-  const el = document.createElement("span");
-  el.className = "slowread";
-  el.setAttribute("role", "status");
-  el.textContent = "Slow to read";
-  const title = head.querySelector("h1, .titles");
-  if (title) title.after(el); else head.prepend(el);
+  const now = Date.now(), live = new Set(), layer = document.querySelector(".slr-layer");
+  const regions = page ? ghostRegions(page) : [];
+  for (const region of regions) {
+    live.add(region.key);
+    if (!slowSeen.has(region.key)) slowSeen.set(region.key, now);
+    const sec = (now - slowSeen.get(region.key)) / 1000;
+    const found = ghostHost(region), host = found?.matches(".ghost") ? (ghostObject(found) ?? found) : found;
+    const had = layer?.querySelector(`.slr-ring[data-read="${CSS.escape(region.key)}"]`);
+    if (sec * 1000 < SLOW_READ_MS || !host) { had?.remove(); continue; }
+    const box = host.getBoundingClientRect();
+    const ring = had ?? (() => {
+      ringLayer().insertAdjacentHTML("beforeend", readRing(sec, { pop: !slowPopped.has(region.key) }).replace("<span ", `<span data-read="${esc(region.key)}" `));
+      slowPopped.add(region.key);
+      return ringLayer().lastElementChild;
+    })();
+    // the ring steps once a second: its label and its arc are the only things that change
+    ring.style.setProperty("--s", String(Math.min(Math.floor(sec), SLOW_FULL_S)));
+    ring.setAttribute("aria-label", `${SLOW_WORDS}, ${Math.floor(sec)} seconds`);
+    // this runs on every change of the page as well as once a second (the kit's observer below), so it writes only what
+    // differs: a label written again would be a change of the page, and call this again
+    const label = readLabel(sec), word = ring.firstElementChild;
+    if (word.textContent !== label) word.textContent = label;
+    // on a short object (a tile) the ring is the small one and stands one unit in; on a tile it stands in the bottom corner, below the share track
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize), unit = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--u")) * rem;
+    const small = !host.matches(".ghost") && box.height < 10 * rem;
+    if (ring.classList.contains("slr-sm") !== small) ring.classList.toggle("slr-sm", small);
+    const size = ring.offsetWidth || 0, gap = (small ? 1 : 2) * unit;
+    // on a card or a plate the ring stands in its top right corner; on a lone striped bar it stands at the bar's end, centred on it
+    const bare = host.matches(".ghost");
+    const low = small && host.matches(".ptile");
+    ring.style.top = `${Math.round(bare ? box.top + scrollY + box.height / 2 - size / 2 : low ? box.bottom + scrollY - gap - size : box.top + scrollY + gap)}px`;
+    ring.style.left = `${Math.round(bare ? box.right + scrollX + gap : box.right + scrollX - gap - size)}px`;
+  }
+  if (layer) for (const ring of layer.querySelectorAll(".slr-ring")) if (!live.has(ring.dataset.read)) ring.remove();
+  for (const key of [...slowSeen.keys()]) if (!live.has(key)) { slowSeen.delete(key); slowPopped.delete(key); }
 }
 setInterval(watchGhosts, 1000);
 
@@ -1391,8 +1775,9 @@ async function midRequest(heads = null) {
   return ids.map((id) => ({ id, name: names.get(id) }));
 }
 /** The armed question: what the act does to them, their chips, then the act and the way out (both already drawn). */
+const cutChips = (cut) => cut.map((x) => `<a class="chip" href="sessions.html#${encodeURIComponent(x.id)}"><i aria-hidden="true"></i>${esc(x.name || x.id.slice(0, 8))}</a>`).join("");
 const armedAsk = (said, cut, act, keep, tail = "") => `<span class="armed cutask"><span class="said">${esc(said)}</span>`
-  + cut.map((x) => `<a class="chip" href="sessions.html#${encodeURIComponent(x.id)}"><i aria-hidden="true"></i>${esc(x.name || x.id.slice(0, 8))}</a>`).join("")
+  + cutChips(cut)
   + `${tail}${act}${keep}</span>`;
 /** THE TOGGLE SHOWS BOTH THEMES WITH THE ONE IN USE LIT (Oct 26), as every other two-state control on the console does:
  *  the sun and the moon side by side, the current one in full ink and the other muted, and the label says what the
@@ -1452,9 +1837,26 @@ function drawNav() {
   navLine(false);
   new ResizeObserver(() => navLine(false)).observe(nav);
 }
+/** THE MARKS' TRACKS NARROW ONLY AS FAR AS THE BAR NEEDS (Oct 29): every track is the same width on every mark, so counts compare by eye, and the
+ *  width steps down from its full size until the theme switch is back inside the bar, so a bar with every mark lit is never wider than
+ *  the window. A bar with room keeps the full width. */
+const MARK_TRACK_REM = [4.2, 3.4, 2.8, 2.3, 1.9, 1.5];
+function fitMarks() {
+  const side = document.querySelector(".side"), nav = side?.querySelector(".nav"), foot = side?.querySelector(".foot");
+  if (!nav || !foot) return;
+  const right = () => side.getBoundingClientRect().right - parseFloat(getComputedStyle(side).paddingRight);
+  for (const rem of MARK_TRACK_REM) {
+    nav.style.setProperty("--tw", `${rem}rem`);
+    if (!nav.querySelector(".nm-track") || (foot.lastElementChild ?? foot).getBoundingClientRect().right <= right() + 1) return;
+  }
+}
+addEventListener("resize", () => { fitMarks(); navLine(false); });
+// a mark arrives by growing into its place (console.css marks-in): the bar is measured again once it has its full width
+addEventListener("animationend", (e) => { if (e.animationName === "marks-in") fitMarks(); }, true);
 /** The current-page line under the link marked current: moved there over --t-move, or put there at once. */
 function navLine(travel = true) {
   const nav = document.querySelector(".side .nav"), line = nav?.querySelector(".nav-line");
+  fitMarks();
   if (!line) return;
   const on = nav.querySelector('a[aria-current="page"]');
   line.classList.toggle("off", !on);
@@ -1499,25 +1901,43 @@ async function markNav() {
     const turns = {};
     running.forEach((h, i) => { for (const t of lives[i].body?.turns || []) if (t.session && !t.stopped) turns[t.session] = { head: h.key, ...t }; });
     const every = sumCounts(projectGroups(sessions.body?.sessions || [], turns, heads).map((g) => g.counts));
-    drawNavMarks("sessions.html", "Sessions", every.filter(([k, n]) => NAV_MARKS.includes(k) && n > 0));
+    // the whole each count is read against: the sessions that are live, the ones a lamp can be lit for
+    const live = (sessions.body?.sessions || []).filter((r) => r.availability !== "gone").length;
+    drawNavMarks("sessions.html", "Sessions", every.filter(([k, n]) => NAV_MARKS.includes(k) && n > 0), live);
   } finally {
     navReading = false;
     if (navAgain) { navAgain = false; markNav(); }
   }
 }
-function drawNavMarks(file, name, counts) {
+// A MARK DRAWS ITS COUNT AGAINST ITS WHOLE (Oct 29): the number only labels a track, as every share on the console is drawn. The
+// track is the whole, one width on every mark, filled to the count's share of it in the count's ink, so 2 stalled and 3 stalled of 12 read
+// as well as 6 logins of 9 and two marks compare by eye; a count above zero fills at least 2 px, so it never reads empty. The whole is
+// said once after the marks ("of 9", "of 28 live"), and as
+// "N of M" in the link's spoken label and in the words that stand under it on hover. A whole that was not read is a dash, never a number.
+const NAV_LAMP = { limit: ICON.lock, needs: ICON.input, stalled: ICON.flat };
+const NAV_WORDS = {
+  limit: (n, m) => (m > 0 ? `${n} of ${m} ${m === 1 ? "login" : "logins"} at ${n === 1 ? "its" : "their"} limit` : `${n} at ${n === 1 ? "its" : "their"} limit`),
+  needs: (n, m) => `${n} of ${m} live ${m === 1 ? "session" : "sessions"} ${n === 1 ? "needs" : "need"} you`,
+  stalled: (n, m) => `${n} of ${m} stalled`,
+};
+const navTrack = (n, whole, tone) => `<span class="nm-track ${tone}" aria-hidden="true"><i style="--f:${Math.min(1, n / whole).toFixed(4)}"></i></span>`;
+const navMarkHtml = (tone, n, whole) => `<span class="pc big ${tone}"><span class="tlamp ${tone}" aria-hidden="true">${NAV_LAMP[tone]}</span><b>${DRAW.n(n)}</b>${whole > 0 ? navTrack(n, whole, tone) : ""}</span>`;
+const navWholeHtml = (whole, unit = "") => `<span class="nm-of">of ${whole > 0 ? DRAW.n(whole) : NOT_READ}${unit}</span>`;
+/** What a link's marks say, as one line each, drawn as the tip under the link on hover or focus: a dot in the mark's ink, then its words. */
+const navTipHtml = (marks) => `<span class="nm-tip" aria-hidden="true">${marks.map(([tone, said]) => `<span class="nm-tl ${tone}"><i></i>${esc(said)}</span>`).join("")}</span>`;
+function drawNavMarks(file, name, counts, whole = null) {
   const link = document.querySelector(`.side .nav a[href="${file}"]`);
   if (!link) return;
   let marks = link.querySelector(".nmarks");
-  const html = counts.map((c) => tlampHtml(c)).join("");
+  const html = counts.length ? counts.map(([k, n]) => navMarkHtml(k, n, whole)).join("") + navWholeHtml(whole, " live") + navTipHtml(counts.map(([k, n]) => [k, NAV_WORDS[k](n, whole)])) : "";
   if ((marks?.innerHTML ?? "") === html) return;
   if (!html) { marks?.remove(); link.removeAttribute("aria-label"); navLine(false); return; }
   const fresh = !marks;
   if (!marks) { marks = document.createElement("span"); marks.className = "nmarks"; link.append(marks); }
   marks.innerHTML = html;
   if (fresh) marks.classList.add("pop");
-  // read aloud as the tiles are: "Sessions, 2 needs you, 1 stalled"
-  link.setAttribute("aria-label", [name, ...counts.map(([k, n]) => `${n} ${STATE_WORDS[k]}`)].join(", "));
+  // read aloud as the tiles are, each count against its whole: "Sessions, 2 of 12 live sessions need you, 3 of 12 stalled"
+  link.setAttribute("aria-label", [name, ...counts.map(([k, n]) => NAV_WORDS[k](n, whole))].join(", "));
   navLine(false);
 }
 // A PAGE'S LINK CARRIES THE STATE THAT PAGE HOLDS (Oct 27). Accounts is the page that knows which logins are at their
@@ -1527,35 +1947,36 @@ function drawNavMarks(file, name, counts) {
 // reading, and a login drops out of the count at its own reset, the instant Accounts showed. A login held with no reset
 // reported stays counted until Accounts reads it again. Drawn only above zero, as the lamp the tiles draw for it.
 const NAV_MARK_KEY = "splice-nav-marks";
-const NAV_MARK = { limit: { lamp: ICON.lock, words: (n) => `${n} at ${n === 1 ? "its" : "their"} limit` } };
+const NAV_MARK = { limit: true };
 const navMarks = () => { try { return JSON.parse(localStorage.getItem(NAV_MARK_KEY) || "{}") || {}; } catch { return {}; } };
-/** [file]'s link carries [n] of [tone] ("limit"), the count its page holds; [until] is when each one comes back, null
- *  where no reset is known. A page calls this each time it draws the count. */
-function navMark(file, n, tone, until = null) {
+/** [file]'s link carries [n] of [tone] ("limit"), the count its page holds, out of [whole] (null where the page has not read it);
+ *  [until] is when each one comes back, null where no reset is known. A page calls this each time it draws the count. */
+function navMark(file, n, tone, until = null, whole = null) {
   const marks = navMarks();
-  if (n > 0) marks[file] = { tone, until: until ?? Array.from({ length: n }, () => null) }; else delete marks[file];
+  if (n > 0) marks[file] = { tone, whole, until: until ?? Array.from({ length: n }, () => null) }; else delete marks[file];
   try { localStorage.setItem(NAV_MARK_KEY, JSON.stringify(marks)); } catch { /* a blocked store keeps the mark on this page only */ }
-  drawNavMark(file, n, tone);
+  drawNavMark(file, n, tone, whole);
 }
 /** Every page: the marks its pages left, each counted at this moment against the resets they carry. */
 function drawStoredMarks() {
   const now = Date.now();
-  for (const [file, m] of Object.entries(navMarks())) if (NAV_MARK[m?.tone]) drawNavMark(file, (m.until || []).filter((t) => t == null || t > now).length, m.tone);
+  for (const [file, m] of Object.entries(navMarks())) if (NAV_MARK[m?.tone]) drawNavMark(file, (m.until || []).filter((t) => t == null || t > now).length, m.tone, m.whole ?? null);
 }
-function drawNavMark(file, n, tone) {
-  const link = document.querySelector(`.side .nav a[href="${file}"]`), kind = NAV_MARK[tone];
-  if (!link || !kind) return;
+function drawNavMark(file, n, tone, whole = null) {
+  const link = document.querySelector(`.side .nav a[href="${file}"]`);
+  if (!link || !NAV_MARK[tone]) return;
   let mark = link.querySelector(".nmark");
   const name = link.querySelector(".nname")?.textContent ?? "";
   if (!(n > 0)) { if (mark) { mark.remove(); link.removeAttribute("aria-label"); link.removeAttribute("title"); navLine(false); } return; }
-  const html = `<span class="pc big ${tone}"><span class="tlamp ${tone}" aria-hidden="true">${kind.lamp}</span><b>${DRAW.n(n)}</b></span>`;
+  const said = NAV_WORDS[tone](n, whole);
+  const html = navMarkHtml(tone, n, whole) + navWholeHtml(whole) + navTipHtml([[tone, said]]);
   if (mark?.innerHTML === html) return;
   const fresh = !mark;
   if (!mark) { mark = document.createElement("span"); mark.className = "nmarks nmark"; link.append(mark); }
   mark.innerHTML = html;
   if (fresh) mark.classList.add("pop");
-  link.setAttribute("aria-label", `${name}, ${kind.words(n)}`);
-  link.title = kind.words(n);
+  link.setAttribute("aria-label", `${name}, ${said}`);
+  link.removeAttribute("title");
   navLine(false);
 }
 let navTimer = 0;
@@ -1608,27 +2029,135 @@ const staleLink = () => document.querySelector('.side .nav a[href="settings.html
 const staleMark = () => document.querySelector(".side .nav > .stale");
 function clearStale() {
   staleMark()?.remove();
+  staleKind = "";
   const link = staleLink(), lamp = link?.querySelector(".nstale");
   if (!lamp) return;
   lamp.remove(); link.removeAttribute("aria-label"); link.removeAttribute("title");
   navLine(false);
 }
+// WHAT THE LIST UNDER THE SETTINGS LINK NAMES IS WHAT THIS CONSOLE SAVED (Oct 29). splice reports only that the settings file moved,
+// and never which setting, so every save the console makes to that file is noted where it is made (DRAW.savedSettings), by the
+// setting's name and the page it is set on, in this browser under the run of splice it was made in. The run is told by the digest of
+// the settings splice runs (/health topologyDigest), which a restart changes; a save made in a run that has since ended is not listed.
+// "Edited outside the console" stands in the list when the file moved and these saves do not account for it: the file as the daemon
+// reads it is fingerprinted after each save, and a file whose fingerprint is no longer that one was changed by something else too.
+const SAVED_KEY = "splice-settings-saved";
+const savedRead = () => { try { const v = JSON.parse(localStorage.getItem(SAVED_KEY) || "null"); return v && Array.isArray(v.saves) ? v : null; } catch { return null; } };
+const savedWrite = (v) => { try { if (v) localStorage.setItem(SAVED_KEY, JSON.stringify(v)); else localStorage.removeItem(SAVED_KEY); } catch { /* a blocked store lists nothing */ } };
+/** A short fingerprint of text (two 32-bit mixes joined), enough to tell one settings file from another. */
+function fingerprint(text) {
+  let a = 0xdeadbeef, b = 0x41c6ce57;
+  for (let i = 0; i < text.length; i++) { const c = text.charCodeAt(i); a = Math.imul(a ^ c, 2654435761); b = Math.imul(b ^ c, 1597334677); }
+  a = Math.imul(a ^ (a >>> 16), 2246822507) ^ Math.imul(b ^ (b >>> 13), 3266489909);
+  b = Math.imul(b ^ (b >>> 16), 2246822507) ^ Math.imul(a ^ (a >>> 13), 3266489909);
+  return (4294967296 * (2097151 & b) + (a >>> 0)).toString(16);
+}
+let seenRun = "", staleOutside = false;
+/** Notes the settings a save to the settings file just changed: [saves] is [{ name, href }], the setting's own name and the page and place it is set. */
+async function savedSettings(saves) {
+  if (!saves?.length) return;
+  const [health, file] = await Promise.all([API.get("/health"), API.get("/api/topology")]);
+  const run = health.body?.topologyDigest ?? "";
+  const was = savedRead();
+  // the run this browser last heard of, or the run just read, is the one the earlier notes were made in (a context window applied live moves the digest within it)
+  const same = was && (was.run === run || was.run === seenRun);
+  const kept = (same ? was.saves : []).filter((s) => !saves.some((x) => x.name === s.name));
+  seenRun = run;
+  savedWrite({ run, saves: [...kept, ...saves.map(({ name, href }) => ({ name, href }))], print: file.ok ? fingerprint(JSON.stringify(file.body?.topology ?? null)) : null });
+  markStale();
+}
 async function markStale() {
   const res = document.querySelector(".side .nav") ? await API.get("/health") : null;
   if (!res?.ok) return;
-  // the mark stays while a restart of its own is in flight or has a word to say, so the act never vanishes mid-press;
-  // a way out he was handed (the command) has done its work once splice runs the saved settings
-  if (res.body?.topologyStale !== true && restarting?.manual) restarting = null;
-  if (res.body?.topologyStale !== true && !restarting) { clearStale(); return; }
+  const stale = res.body?.topologyStale === true, run = res.body?.topologyDigest ?? "";
+  const noted = savedRead();
+  // nothing waits on a restart, or splice runs other settings than the ones noted: the notes are over
+  if (noted && (!stale || noted.run !== run)) { savedWrite(null); staleOutside = false; }
+  seenRun = run;
+  if (stale) await readOutside();
+  // a way out he was handed (the command) has done its work once splice runs the saved settings: it says so on its own
+  if (!stale && restarting?.manual) { saidRestarted(); return; }
+  // a refusal stays, with its act beside it, until the next press; with nothing left to apply it has nothing to say
+  if (!stale && restarting?.tone === "bad") restarting = null;
+  // the mark stays while a restart of its own is in flight or has a word to say, so the act never vanishes mid-press
+  if (!stale && !restarting) { clearStale(); return; }
   drawStale();
+}
+/** The file moved: it was edited outside the console when no save here was made in this run, or when the file is no longer the one the last save left. */
+async function readOutside() {
+  const noted = savedRead();
+  let outside = !noted?.saves.length;
+  if (!outside) {
+    const file = await API.get("/api/topology");
+    if (file.ok) outside = noted.print !== fingerprint(JSON.stringify(file.body?.topology ?? null));
+    else outside = staleOutside;
+  }
+  if (outside !== staleOutside) { staleOutside = outside; if (staleListOpen) drawStale(); }
+}
+/** splice runs the saved settings again: the good word, in the place of whatever the restart was saying, for a moment. */
+function saidRestarted() {
+  restarting = { said: "Restarted", tone: "good" };
+  drawStale();
+  setTimeout(() => { if (restarting?.tone === "good") { restarting = null; markStale(); } }, SAID_MS);
 }
 // THE WAIT FOR SPLICE TO COME BACK IS A RING THAT FILLS (Oct 28): it was a spinner and then the words "Not back yet". The
 // arc is the share of the wait spent, over the whole time the poll below gives splice, so it reads as progress and, full
-// and in the failure's red, as the end of it. The page's own animation carries it between redraws, from where it was.
+// and in the failure's red, as the end of it, with the seconds spent inside it. The page's own animation carries the arc
+// between redraws, from where it was; the seconds step once a second (staleTick).
 const RESTART_WINDOW_MS = RESTART_TRIES * RESTART_POLL_MS;
+const spentSecs = () => Math.min(RESTART_WINDOW_MS / 1000, Math.round((Date.now() - (restarting?.since ?? Date.now())) / 1000));
 function waitRing(over = false) {
   const spent = over ? 1 : Math.min(1, (Date.now() - (restarting?.since ?? Date.now())) / RESTART_WINDOW_MS);
-  return `<span class="stale-ring${over ? " over" : ""}" style="--span:${RESTART_WINDOW_MS / 1000}s;--late:-${(spent * RESTART_WINDOW_MS / 1000).toFixed(1)}s" role="img" aria-label="${over ? "Not back yet" : "Waiting for splice"}">${DRAW.ring(spent)}</span>`;
+  return `<span class="stale-ring${over ? " over" : ""}" style="--span:${RESTART_WINDOW_MS / 1000}s;--late:-${(spent * RESTART_WINDOW_MS / 1000).toFixed(1)}s" role="img" aria-label="${over ? "Not back yet" : "Waiting for splice"}">${DRAW.ring(spent)}<b class="rs-sec">${over ? RESTART_WINDOW_MS / 1000 : spentSecs()} s</b></span>`;
+}
+const RESTART_LINE = "splice restart";
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && staleListOpen) { staleListOpen = false; drawStale(); } });
+let staleKind = "", staleListOpen = false, staleListTimer = 0, staleSecs = 0, staleWatch = 0, pollId = 0;
+/** The list of what changed since splice started, in place under the Settings link while the link or the list is hovered or focused:
+ *  a row for each setting saved here (its name, a door to where it is set), and one for the file having moved by some other hand. */
+const staleList = () => {
+  const file = ICON.file.replace("<svg", '<svg class="doc"');
+  const rows = (savedRead()?.saves ?? []).map((s) => `<a class="chg-row" href="${esc(s.href)}">${file}<span>${esc(s.name)}</span>${ICON.door.replace("<svg", '<svg class="go"')}</a>`);
+  if (staleOutside) rows.push(`<div class="chg-row">${file}<span>Edited outside the console</span></div>`);
+  return `<p class="chg-kick">Changed since splice started</p>` + rows.join("");
+};
+/** The panel hung under the mark for the state the restart is in: [kind] says which, so one that stays the same is not drawn in again. */
+function stalePanel() {
+  const r = restarting, act = (word, name, busy, cls = "primary small") => DRAW.act({ word, act: name, cls, busy: Boolean(busy) });
+  const copy = r?.copied ? DRAW.result(r.copied, r.copied === "Copied" ? "good" : "bad") : DRAW.act({ word: "Copy", act: "copy-restart", cls: "quiet small" });
+  const command = `<code>${RESTART_LINE}</code>${copy}`;
+  if (r?.armed) {
+    const n = r.armed.length;
+    return { kind: "ask", html: `<div class="rs-head"><b class="rs-ttl">Restart now? ${n === 1 ? "One session is" : `${DRAW.n(n)} sessions are`} in flight</b></div>`
+      + `<div class="rs-chips">${cutChips(r.armed)}</div>`
+      + `<div class="rs-foot"><button class="act quiet small" type="button" data-act="keep">Keep running</button>${act("Restart splice", "restart-now")}</div>` };
+  }
+  if (r?.out) {
+    return { kind: "wait", html: `<div class="rs-head">${waitRing()}<b class="rs-ttl">Restarting</b><span class="rs-note">Back within ${RESTART_WINDOW_MS / 1000} s</span></div>` };
+  }
+  if (r?.manual && r.waited) {
+    return { kind: "late", bad: true, html: `<div class="rs-head">${waitRing(true)}<b class="rs-ttl bad">${esc(r.manual)}</b>${act("Restart splice", "restart-now", r.pressing)}</div>`
+      + `<div class="rs-row">${command}${act("Check again", "check-again", r.checking, "quiet small")}</div>` };
+  }
+  if (r?.manual) {
+    return { kind: "cant", bad: true, html: `<div class="rs-head"><b class="rs-ttl bad">${esc(r.manual)}</b></div>`
+      + `<div class="rs-row">${command}<span class="rs-wait"><span class="rs-spin" aria-hidden="true"></span>Waiting for splice to run it</span></div>` };
+  }
+  if (r?.said && r.tone === "good") {
+    return { kind: "done", html: `<div class="rs-head"><span class="rs-good"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><b class="rs-ttl good">${esc(r.said)}</b></span></div>` };
+  }
+  if (r?.said) {
+    return { kind: "failed", bad: true, html: `<div class="rs-head"><b class="rs-ttl bad">${esc(r.said)}</b>${act("Restart splice", "restart-now", r.pressing)}</div>` };
+  }
+  return staleListOpen ? { kind: "list", html: staleList() } : null;
+}
+/** The list opens and closes with the pointer or focus on the Settings link or on the list itself, after a breath so a pointer crossing
+ *  the gap between them does not close it. */
+function openStaleList(open) {
+  clearTimeout(staleListTimer);
+  if (open === staleListOpen) return;
+  if (open) { staleListOpen = true; drawStale(); return; }
+  staleListTimer = setTimeout(() => { staleListOpen = false; drawStale(); }, 180);
 }
 function drawStale() {
   const link = staleLink();
@@ -1639,18 +2168,27 @@ function drawStale() {
     lamp.innerHTML = `<span class="tlamp needs" aria-hidden="true">${ICON.retries}</span>`;
     link.append(lamp);
     link.setAttribute("aria-label", "Settings, changed since splice started");
-    link.title = "Settings changed since splice started";
     navLine(false);
+  }
+  if (!link.dataset.stale) {
+    link.dataset.stale = "on";
+    for (const [on, off] of [["mouseenter", "mouseleave"], ["focus", "blur"]]) { link.addEventListener(on, () => openStaleList(true)); link.addEventListener(off, () => openStaleList(false)); }
   }
   let mark = staleMark();
   if (!mark) {
     mark = document.createElement("span");
     mark.className = "stale";
+    mark.setAttribute("aria-live", "polite");
     (link.closest(".navset") ?? link).after(mark);
+    mark.addEventListener("mouseenter", () => openStaleList(true));
+    mark.addEventListener("mouseleave", () => openStaleList(false));
+    mark.addEventListener("focusin", () => openStaleList(true));
+    mark.addEventListener("focusout", () => openStaleList(false));
     mark.addEventListener("click", async (e) => {
       const act = e.target.closest("[data-act]")?.dataset.act;
       if (act === "restart") pressRestart();
       if (act === "restart-now") restartSplice();
+      if (act === "check-again") checkAgain();
       if (act === "keep") { restarting = null; drawStale(); }
       if (act === "copy-restart") {
         let ok = true;
@@ -1663,26 +2201,23 @@ function drawStale() {
   }
   // THE ACT IS ON THE MARK. What it does to others, or the way out where splice cannot restart itself, hangs under it.
   // SPLICE CANNOT BRING ITSELF BACK HERE, SO THE WAY OUT IS THE COMMAND THAT CAN (Oct 27): a refusal that said "Nothing is
-  // set to start it again" left nothing to press. `splice restart` stops it and starts it from a terminal.
-  const copied = restarting?.copied ? DRAW.result(restarting.copied, restarting.copied === "Copied" ? "good" : "bad")
-    : `<button class="act quiet small" type="button" data-act="copy-restart">Copy</button>`;
-  const hung = restarting?.manual
-    ? `<span class="stale-panel stale-way">${restarting.waited ? waitRing(true) : ""}<span class="said">${esc(restarting.manual)}</span><code>${RESTART_LINE}</code>${copied}</span>`
-    : restarting?.armed
-      ? `<span class="stale-panel">${armedAsk("Mid-request", restarting.armed, `<button class="act danger small" type="button" data-act="restart-now">Restart splice</button>`,
-        `<button class="act quiet small" type="button" data-act="keep">Keep running</button>`)}</span>`
-      : "";
-  const inline = hung ? "" : restarting?.said
-    ? DRAW.result(restarting.said, restarting.tone)
-    : DRAW.act({ word: restarting?.out ? "Restarting" : "Restart splice", act: "restart", cls: "quiet small",
-      busy: Boolean(restarting?.out || restarting?.reading), data: ` title="Settings changed since splice started"` })
-      + (restarting?.out ? waitRing() : "");
-  mark.innerHTML = inline + hung;
-  mark.classList.toggle("hang", Boolean(hung));
-  // a refusal shakes what the press was on; the press is gone by then (its word stands in its place), so the mark shakes
-  if (restarting?.shook) { (mark.querySelector(".act") || mark).classList.add("shook"); restarting.shook = false; }
+  // set to start it again" left nothing to press. `splice restart` stops it and starts it from a terminal. Every state that
+  // failed keeps an act in its panel, and the act spins where it stands while it works.
+  const panel = stalePanel();
+  const inline = panel && panel.kind !== "list" ? "" : DRAW.act({ word: "Restart splice", act: "restart", cls: "quiet small", busy: Boolean(restarting?.reading) });
+  const kind = panel?.kind ?? "";
+  mark.innerHTML = inline + (panel ? `<div class="stale-panel rs${panel.bad ? " bad" : ""}${kind !== staleKind ? " rs-in" : ""}">${panel.html}</div>` : "");
+  staleKind = kind;
+  // the seconds spent step once a second while splice is being waited for; a command that is the way out is watched more closely than the minute
+  if (restarting?.out && !staleSecs) staleSecs = setInterval(() => { const el = staleMark()?.querySelector(".stale-ring:not(.over) .rs-sec"); if (el && restarting?.out) el.textContent = `${spentSecs()} s`; }, 1000);
+  if (!restarting?.out && staleSecs) { clearInterval(staleSecs); staleSecs = 0; }
+  if (restarting?.manual && !restarting.waited && !staleWatch) staleWatch = setInterval(markStale, 3000);
+  if (!(restarting?.manual && !restarting.waited) && staleWatch) { clearInterval(staleWatch); staleWatch = 0; }
+  // a refusal shakes what the press was on; the press is gone by then (its word stands in its place), so the panel shakes
+  if (restarting?.shook) { (mark.querySelector(".stale-panel .act") || mark.querySelector(".stale-panel") || mark).classList.add("shook"); restarting.shook = false; }
+  // the act beside the link takes room of its own, and the marks give up cell width before the bar outgrows the window
+  fitMarks();
 }
-const RESTART_LINE = "splice restart";
 /** The first press reads which sessions have a request in flight; none, and it restarts at once. */
 async function pressRestart() {
   if (restarting?.out || restarting?.reading) return;
@@ -1694,36 +2229,43 @@ async function pressRestart() {
   drawStale();
 }
 async function restartSplice() {
-  restarting = { out: true, since: Date.now() };
+  if (restarting?.out || restarting?.pressing) return;
+  // pressed from a restart that failed, its act spins in its panel while splice is asked again; from anywhere else the wait begins at once
+  const again = restarting?.manual || restarting?.tone === "bad";
+  restarting = again ? { ...restarting, pressing: true, shook: false } : { out: true, since: Date.now() };
   drawStale();
   const res = await API.post("/api/daemon/restart", {});
   if (res.body?.error) console.warn(`restart: ${res.body.error}`);
   // one already under way is the same wait as his own: it says Restarted when splice is back
-  if (res.status === 409) { pollRestart(0); return; }
-  if (!res.ok) {
-    // 503 is the daemon saying nothing would bring it back, unwired or unsupervised: both mean the same to him here,
-    // and the way out is the command; any other refusal leaves the act to press again
-    restarting = res.status === 503 ? { manual: "Can't restart itself", shook: true } : { said: "Not restarted", tone: "bad", shook: true };
-    drawStale();
-    if (restarting.said) setTimeout(() => { if (restarting?.said) { restarting = null; markStale(); } }, SAID_MS);
-    return;
-  }
-  pollRestart(0);
+  if (res.status === 409 || res.ok) { restarting = { out: true, since: Date.now() }; drawStale(); pollRestart(0, ++pollId); return; }
+  // 503 is the daemon saying nothing would bring it back, unwired or unsupervised: both mean the same to him here,
+  // and the way out is the command; any other refusal leaves the act to press again
+  restarting = res.status === 503 ? { manual: "Can't restart itself", shook: true } : { said: "Not restarted", tone: "bad", shook: true };
+  drawStale();
+}
+/** Not back yet: reads splice at once, not at the next poll. */
+async function checkAgain() {
+  if (!restarting?.waited || restarting.checking) return;
+  restarting = { ...restarting, checking: true, shook: false };
+  drawStale();
+  const [res] = await Promise.all([API.get("/api/daemon/restart"), new Promise((r) => setTimeout(r, 600))]);
+  if (!restarting?.waited) return;
+  if (res.ok && res.body?.status === "idle") { saidRestarted(); return; }
+  restarting = { ...restarting, checking: false, shook: true };
+  drawStale();
 }
 /** Until the daemon answers again. Every call while it is down fails, which is the wait, not an error. Past two
- *  minutes the wait is said, with the command that brings it back, and the reading goes on at the mark's own pace. */
-function pollRestart(tries) {
+ *  minutes the wait is said, with the command that brings it back, and the reading goes on at the mark's own pace.
+ *  [id] is the wait it belongs to: a press that begins another wait ends this one. */
+function pollRestart(tries, id) {
   setTimeout(async () => {
+    if (id !== pollId || !(restarting?.out || restarting?.waited)) return;
     const res = await API.get("/api/daemon/restart");
-    if (res.ok && res.body?.status === "idle") {
-      restarting = { said: "Restarted", tone: "good" };
-      drawStale();
-      setTimeout(() => { restarting = null; markStale(); }, SAID_MS);
-      return;
-    }
+    if (id !== pollId) return;
+    if (res.ok && res.body?.status === "idle") { saidRestarted(); return; }
     if (tries === RESTART_TRIES) { restarting = { manual: "Not back yet", waited: true, shook: true }; drawStale(); }
-    if (tries >= RESTART_TRIES) { setTimeout(() => pollRestart(tries + 1), STALE_READ_MS - RESTART_POLL_MS); return; }
-    pollRestart(tries + 1);
+    if (tries >= RESTART_TRIES) { setTimeout(() => pollRestart(tries + 1, id), STALE_READ_MS - RESTART_POLL_MS); return; }
+    pollRestart(tries + 1, id);
   }, RESTART_POLL_MS);
 }
 addEventListener("DOMContentLoaded", () => { markStale(); setInterval(markStale, STALE_READ_MS); });
@@ -1760,11 +2302,15 @@ const NEEDS_LAMP = (n) => `<span class="pc needs"><span class="plamp" aria-hidde
 const showCount = (n) => n.toLocaleString("en-US");
 // a count whose read answered with a failure: the dash a figure splice has no reading for wears, said "Not read" on hover
 const NOT_READ = `<i class="nr" title="Not read">—</i>`;
-function pickerHtml(projects, pick, open, doors, all = null, show = showCount) {
+function pickerHtml(projects, pick, open, doors, all = null, show = showCount, allCounts = null) {
   const label = (k) => projects.find(([key]) => key === k)?.[1] ?? doors.find(([key]) => key === k)?.[1] ?? "Every project";
   const totalOf = (k) => (k === "" ? all : projects.find(([key]) => key === k)?.[2] ?? null);
   const fig = (n) => (n == null ? "" : `<span class="pfig">${n === false ? NOT_READ : show(n)}</span>`);
-  const item = (k, text) => `<button role="menuitemradio" aria-checked="${(pick ?? "") === k}" data-act="pickproj" data-p="${esc(k)}"><span class="pname">${esc(text)}</span>${fig(totalOf(k))}</button>`;
+  // each row draws its share on the one track every row has (Every project's own is the whole), so the menu compares by eye
+  const shareOf = (k) => { const n = totalOf(k), whole = all; return n == null || n === false || !(whole > 0) ? "" : `<span class="pshare${k === "" ? " whole" : ""}" aria-hidden="true"><i style="width:${Math.min(100, (n / whole) * 100).toFixed(1)}%"></i></span>`; };
+  // a project's lamps stand at the row's end in one column, each with its count, as on its tile; a row with none leaves the place empty
+  const lampsOf = (k) => { const c = (k === "" ? allCounts : projects.find(([key]) => key === k)?.[3]) ?? []; return `<span class="plamps">${c.filter(([, n]) => n).map((x) => tlampHtml(x)).join("")}</span>`; };
+  const item = (k, text) => `<button role="menuitemradio" aria-checked="${(pick ?? "") === k}" data-act="pickproj" data-p="${esc(k)}"><span class="pname">${esc(text)}</span>${shareOf(k)}${fig(totalOf(k))}${lampsOf(k)}</button>`;
   const menu = open ? `<div class="menu pmenu" role="menu">${item("", "Every project")}${projects.map(([k, l]) => item(k, l)).join("")}</div>` : "";
   const ways = pick == null ? "" : doors.filter(([k, , n]) => k !== pick && n)
     .map(([k, l, n]) => `<button class="pdoor" data-act="pickproj" data-p="${esc(k)}" aria-label="${esc(`${l}, ${n} needs you`)}"><span class="pname">${esc(l)}</span>${NEEDS_LAMP(n)}</button>`).join("");
@@ -1811,8 +2357,9 @@ const sumCounts = (lists) => ["needs", "stalled", "working"].map((k) => [k, list
  *  longer take half of it. Every tile may travel when the order changes (data-flip), and its figure and bar move from the
  *  last value to the new one (data-tw, data-tn). */
 function tilesHtml(items, pick, show = showCount, unit = "") {
-  GHOST.remember("tiles", items.length);
-  GHOST.remember("tilelamps", items.some(([, , counts, total]) => total !== 0 && counts.some(([, n]) => n)) ? 1 : 0);
+  // a row where any project has someone live holds the lamp row on every tile, so the tiles stand one height
+  const lamped = items.some(([k, , counts, total]) => (total !== 0 || k === "") && counts.some(([, n]) => n));
+  GHOST.remember("tilelamps", lamped ? 1 : -1);
   const all = items.find(([k]) => k === "")?.[3];
   const tiles = items.map(([k, label, counts, total, words]) => {
     const on = (pick ?? "") === k, every = k === "", zero = total === 0 && !every;
@@ -1838,7 +2385,11 @@ function tilesHtml(items, pick, show = showCount, unit = "") {
   // the tiles with something to count stand in equal columns that fill the row; those with nothing stand together after
   // them, each as wide as its own words, so a project with no requests never takes a full column
   const some = tiles.filter(([zero]) => !zero).map(([, html]) => html).join(""), none = tiles.filter(([zero]) => zero).map(([, html]) => html).join("");
-  return `<nav class="ptiles" aria-label="Projects"><div class="ptgrid">${some}</div>${none ? `<span class="pzeros">${none}</span>` : ""}</nav>`;
+  // what the next first frame holds a place for: the tiles in equal columns, and the small ones after them
+  GHOST.remember("tiles", tiles.filter(([zero]) => !zero).length);
+  GHOST.remember("tilezeros", tiles.filter(([zero]) => zero).length);
+  GHOST.remember("tilezerolamps", items.some(([k, , counts, total]) => k !== "" && total === 0 && counts.some(([, n]) => n)) ? 1 : 0);
+  return `<nav class="ptiles${lamped ? " hold" : ""}" aria-label="Projects"><div class="ptgrid">${some}</div>${none ? `<span class="pzeros">${none}</span>` : ""}</nav>`;
 }
 
 // ---------- the projects as Teams and Requests see them: off /api/sessions rows, in Sessions' group order ----------
@@ -1903,5 +2454,5 @@ function pickLineHtml(groups, pick, open, count) {
     const every = sumCounts(items.map((x) => x[2]));
     return tilesHtml([["", "Every project", every, count.all, words(every, count.all)], ...items], pick, show, count.unit);
   }
-  return `<div class="lhead">${pickerHtml(groups.map((g) => [g.key, g.label, count.of(g.key)]), pick, open, groups.map((g) => [g.key, g.label, g.counts[0][1]]), count.all, show)}</div>`;
+  return `<div class="lhead">${pickerHtml(groups.map((g) => [g.key, g.label, count.of(g.key), g.counts]), pick, open, groups.map((g) => [g.key, g.label, g.counts[0][1]]), count.all, show, sumCounts(groups.map((g) => g.counts)))}</div>`;
 }

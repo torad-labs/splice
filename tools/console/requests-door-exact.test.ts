@@ -1,6 +1,9 @@
 // A Settings tile that says 4,321 opens a list of exactly those requests. The page asks the daemon with the same test the
 // tile was counted by (test=waited), so its total is the daemon's count past the 2,000 a read carries, and it lists every row the
 // daemon sent, none dropped by a second, browser-side judgement. Through the real page against a stub daemon.
+// Changed 2026-10-29 by the Requests list's pass (round 4): the total is read in the chip beside the list's title ("3 of
+// 4,321"), the place the passed prototype draws it, and no longer in the meter's footer; the number must still be the
+// tile's count.
 import { afterAll, beforeAll, test } from "bun:test";
 import { chromium, expect, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -56,7 +59,7 @@ test("a Waited out door lists what the daemon tested and counted, and its total 
     await expect(card("w1")).toBeVisible({ timeout: 20_000 });
     for (const turn of ["w2", "w3"]) await expect(card(turn)).toBeVisible();
     await expect(card("decoy")).toHaveCount(0);
-    await expect(page.locator(".foot.held")).toContainText("4,321 requests");
+    await expect(page.locator(".rql-count")).toContainText("of 4,321");
     expect(asked.some((q) => q.get("test") === "waited" && q.get("silence_ms") === "60000")).toBe(true);
   } finally {
     await page.close();

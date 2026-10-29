@@ -2,6 +2,8 @@
 // request can be read against the load it entered: the daemon's in-flight count at admission, drawn beside the
 // request's attempts and waits. A request the daemon sends no count for draws none. Through the real Requests page
 // against a stub daemon.
+// Changed 2026-10-29 by the shared request view's pass (round 4): the count is a counter tile in the Timing section (the
+// request's load, beside its time), and the figures sit in Tokens and cost; what each says is unchanged.
 import { afterAll, beforeAll, test } from "bun:test";
 import { chromium, expect, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -53,7 +55,7 @@ for (const width of [1440, 3822]) {
       await page.locator(`article[data-open="alpha:t-busy"] .name`).click({ timeout: 15_000 });
       const said = page.locator(".pane").getByText(/in flight/i);
       await expect(said).toBeVisible({ timeout: 5_000 });
-      await expect(page.locator(".pane .pd-stat", { hasText: /in flight/i })).toContainText("21");
+      await expect(page.locator(".pane .rvw-cnt", { hasText: /in flight/i })).toContainText("21");
     } finally {
       await page.close();
     }
@@ -65,7 +67,7 @@ test("a request the daemon sends no in-flight count for says nothing about it", 
   try {
     await page.goto(`http://127.0.0.1:${server.port}/requests.html`);
     await page.locator(`article[data-open="alpha:t-unknown"] .name`).click({ timeout: 15_000 });
-    await expect(page.locator(".pane .figs")).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator(".pane .rvw-money")).toBeVisible({ timeout: 5_000 });
     await expect(page.locator(".pane")).not.toContainText(/in flight/i);
   } finally {
     await page.close();

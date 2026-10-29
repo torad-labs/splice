@@ -15,7 +15,7 @@
 .page { container-type: inline-size; }
 /* room under the page for the composer's bar, so whatever it covers can be scrolled clear of it */
 .usage { display: flex; flex-direction: column; padding-bottom: calc(var(--bar-h) + 2 * var(--u)); }
-.usage .dot { display: inline-block; width: .3rem; height: .3rem; border-radius: 50%; background: var(--text-mute); margin: 0 .6rem; vertical-align: .2rem; }
+.usage .dot { display: inline-block; width: .3rem; height: .3rem; border-radius: 50%; background: var(--text-mute); margin: 0 0.667rem; vertical-align: .2rem; }
 .usage .go { width: 1rem; height: 1rem; flex: none; }
 
 /* ---------- a band: its head, then its drawing; 4u, a hairline, 4u between any two ---------- */
@@ -33,7 +33,7 @@
 /* the window a band reads, beside its title in the mute type of its legend */
 .bandhead .hwin { font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); }
 /* what a band's marks mean, beside its name: across 3,749 px the right edge is another part of the screen */
-.bandhead .pd-leg { gap: .45rem; font-size: .9rem; }
+.bandhead .pd-leg { gap: 0.333rem; font-size: .9rem; }
 .pd-leg .sw ~ .sw { margin-left: calc(1.5 * var(--u)); }
 .figline { margin-bottom: calc(2 * var(--u)); }
 .figline.sub { margin-bottom: calc(2 * var(--u)); }
@@ -55,8 +55,8 @@
 
 /* each command still being read, and apart from them the ones that could not be read, each by its chip */
 .rdg { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(3 * var(--u)); }
-.rdset { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
-.rdset .rd { display: inline-flex; align-items: center; gap: .4rem; }
+.rdset { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.667rem; }
+.rdset .rd { display: inline-flex; align-items: center; gap: 0.333rem; }
 .rdset .why { font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
 .rdset.bad .why { color: var(--text-body); }
 
@@ -68,9 +68,9 @@
 .ugroup { min-width: 0; }
 /* a provider's name heads its set of cards: a 1.4rem title beside its colour dot, every head one height, so the first
    cards of side-by-side groups start on one line */
-.ugroup > h3 { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem; min-height: var(--ctl-h); margin: 0 0 calc(2 * var(--u)); font: 400 1.4rem/1.1 var(--font-lead); color: var(--text); }
+.ugroup > h3 { display: flex; align-items: center; flex-wrap: wrap; gap: 0.667rem; min-height: var(--ctl-h); margin: 0 0 calc(2 * var(--u)); font: 400 1.4rem/1.1 var(--font-lead); color: var(--text); }
 .ugroup > h3 .blot { flex: none; width: .8rem; height: .8rem; border-radius: 50%; background: var(--c, var(--text-mute)); box-shadow: 0 0 0 .14rem var(--ink); }
-.ugroup > h3 .cmds { display: inline-flex; flex-wrap: wrap; gap: .45rem; margin-left: calc(2 * var(--u)); }
+.ugroup > h3 .cmds { display: inline-flex; flex-wrap: wrap; gap: 0.333rem; margin-left: calc(2 * var(--u)); }
 /* a provider's column of cards is one block of the board; a column after the first is marked data-cont, and the board leaves the
    head's room empty (console.css), so the cards of one provider start on one line */
 .gcol { min-width: 0; display: flex; flex-direction: column; gap: var(--gap-card); }
@@ -84,49 +84,98 @@
   background: var(--sel-face);
   box-shadow: inset .22rem 0 0 var(--sel-ink), inset 0 0 0 .1rem var(--sel-line), var(--cast) var(--cast) 0 var(--c), var(--cast) var(--cast) 0 var(--ink-w) var(--ink);
 }
-.pcard > header, .kcard > header { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem .9rem; min-height: 2.2rem; margin: 0; }
+.pcard > header, .kcard > header { display: flex; align-items: center; flex-wrap: wrap; gap: 0.667rem 1rem; min-height: 2.2rem; margin: 0; }
 .pcard .nm, .kcard .nm { min-width: 0; overflow-wrap: anywhere; font: 500 1.1rem/1.15 var(--font-name); color: var(--text); }
 .kcard .nm .var { font: 500 .95rem/1.15 var(--font-data); letter-spacing: .01em; }
 .pcard .pv, .kcard .pv { font: 500 .9rem/1 var(--font-name); color: var(--text-mute); }
-.pcard > header .cmds, .kcard > header .cmds { display: inline-flex; flex-wrap: wrap; gap: .45rem; margin-left: auto; }
+.pcard .cmds, .kcard .cmds { display: inline-flex; flex-wrap: wrap; gap: 0.333rem; margin-left: auto; }
 /* the reset column has a width of its own (console.css --win-when), so every card's meter tracks end on one x whatever its reset words say */
 .pcard .windows { margin-top: 0; grid-template-columns: 5.2rem minmax(0, 1fr) 5.2rem var(--win-when); }
 .pcard .windows .when { white-space: nowrap; }
 /* a header's right end: the commands that reach the login, and a signed-out login's state, as Accounts puts it */
-.pcard > header .hend, .kcard > header .hend { display: inline-flex; align-items: center; flex-wrap: wrap; gap: .45rem .9rem; margin-left: auto; }
-.pcard > header .hend .cmds, .kcard > header .hend .cmds { margin-left: 0; }
-.pcard > header .hend .state { font-size: .9rem; }
+.pcard .hend, .kcard .hend { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0.333rem 1rem; margin-left: auto; }
+.pcard .hend .cmds, .kcard .hend .cmds { margin-left: 0; }
+.pcard .hend .state { font-size: .9rem; }
 /* a signed-out login: the one way back in stands where the bars would be */
 .pcard .outbox { display: flex; align-items: center; margin-top: 0; min-height: 2.6rem; }
-.pcard .outbox .act { display: inline-flex; align-items: center; gap: .45rem; text-decoration: none; }
+.pcard .outbox .act { display: inline-flex; align-items: center; gap: 0.333rem; text-decoration: none; }
 /* a login at its limit says so once, with the lock; the request that spent the week is a door on the same line */
-.pcard .heldline { display: flex; align-items: center; flex-wrap: wrap; gap: .3rem 1.2rem; margin: 0; }
+.pcard .heldline { display: flex; align-items: center; flex-wrap: wrap; gap: 0.333rem 1.333rem; margin: 0; }
 .pcard .heldline .state { font-size: .95rem; white-space: normal; }
-.pcard .heldline .ranout { display: inline-flex; align-items: center; gap: .4rem; font: 500 .9rem/1.2 var(--font-data); color: var(--limit); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--limit) 45%, transparent); text-underline-offset: .22rem; }
+.pcard .heldline .ranout { display: inline-flex; align-items: center; gap: 0.333rem; font: 500 .9rem/1.2 var(--font-data); color: var(--limit); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--limit) 45%, transparent); text-underline-offset: .22rem; }
 .pcard .heldline .ranout:hover { text-decoration-color: var(--limit); }
 .pcard .heldline .ranout svg { width: .9rem; height: .9rem; flex: none; }
 .pcard .nolimit, .kcard .nolimit { margin: 0; font: 400 .9rem/1.3 var(--font-name); color: var(--text-mute); }
 /* what splice itself sent through the login, on scales the whole board shares: its bars start where the meters above
-   start, and every figure ends on one edge. What they count is said once, over the board. */
+   start, and every figure ends on one edge. Each row is named by its mark; the group's key says the word once. */
 .thru { display: flex; flex-direction: column; gap: var(--u); margin-top: auto; padding-top: calc(1.5 * var(--u)); border-top: .08rem solid var(--hair); }
-.thru .barcell { gap: .9rem; min-height: 1.2rem; }
-.thru .barcell em { flex: none; width: 5.2rem; font: 500 .85rem/1.2 var(--font-name); font-style: normal; color: var(--text-mute); }
-.thru .barcell > .v { min-width: 4.4rem; font: 500 .92rem/1.2 var(--font-data); }
-.thru .ghost-row { gap: .9rem; min-height: 1.2rem; }
+.thru .ghost-row { gap: 1rem; min-height: 1.25rem; }
 .thru .ghost-row > .ghost.track { flex: 1 1 auto; height: .4rem; }
-/* a login with nothing in the window keeps the footer's height, so the board holds its shape from one window to the next */
-/* (its content box holds three rows as they draw, 1.25rem each, and their two gaps; padding and rule sit outside it) */
-.thru.none { justify-content: center; box-sizing: content-box; min-height: calc(2 * 1.25rem + var(--u)); }
-.thru.none.key { min-height: calc(3 * 1.25rem + 2 * var(--u)); }
-/* a figure with no price: the reason in words in the bar's place, on a dashed empty track, and the dash */
-.whyw { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; height: 1.2rem; padding: 0 .5rem; border-radius: .2rem; outline: .1rem dashed var(--track-line); outline-offset: -.1rem;
-  font: 500 .8rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.upb-r { display: flex; align-items: center; gap: .8rem; min-height: 1.25rem; }
+.upb-r .lab { flex: none; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.upb-r > .vbar { flex: 1 1 auto; height: .6rem; border-radius: .3rem; }
+.upb-r > .vbar > b { border-radius: .3rem; }
+.upb-r > .v { flex: none; min-width: 5.4rem; text-align: right; font: 500 .95rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
+.upb-mk { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 1.25rem; height: 1.25rem; font: 600 .85rem/1 var(--font-data); font-style: normal; color: var(--text-mute); }
+.upb-mk svg { width: 1rem; height: 1rem; }
+.upb-mk.tk svg { fill: currentColor; }
+.upb-mk.rq svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.upb-mk.sp { border-radius: 50%; box-shadow: inset 0 0 0 .1rem currentColor; }
+/* the figure a card leads with, 1.7rem, and what it is the share of */
+.upb-top { display: flex; align-items: center; justify-content: space-between; gap: .8rem; min-height: 2.6rem; }
+.upb-fig { margin: 0; display: flex; align-items: baseline; gap: .7rem; min-width: 0; }
+.upb-fig b { font: 600 var(--fig-focal)/1 var(--font-data); font-variant-numeric: tabular-nums; letter-spacing: -.01em; color: var(--text); }
+.upb-fig .q { font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); }
+.upb-fig.lim b { color: var(--limit); }
+.upb-fig.lvl b { color: var(--key-ink); }
+.upb-fig .upb-mk { align-self: center; width: 1.45rem; height: 1.45rem; }
+.upb-nores { margin: 0; font: 500 .9rem/1.2 var(--font-name); color: var(--text-mute); }
+/* the band's head: the count of logins at their limit, and each login's highest used share as a rung of one ladder */
+.upb-head { align-items: flex-end; justify-content: space-between; gap: var(--u) calc(3 * var(--u)); }
+.upb-lead { display: flex; flex-direction: column; gap: var(--u); }
+.upb-lead h2 { margin: 0; }
+.upb-hero { margin: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: .9rem; }
+.upb-hero b { font: 600 var(--fig-hero)/1 var(--font-data); font-variant-numeric: tabular-nums; letter-spacing: -.02em; color: var(--text); }
+.upb-hero b.lim { color: var(--limit); }
+.upb-hero span { font: 500 .95rem/1.3 var(--font-name); color: var(--text-mute); }
+/* what the board's two kinds of bar are: a login's limits come from its provider, the counts under them are splice's own */
+.upb-key { margin: 0; display: flex; flex-wrap: wrap; gap: calc(2 * var(--u)) calc(3 * var(--u)); font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
+.upb-key span { display: inline-flex; align-items: center; gap: .4rem; }
+.upb-key i { flex: none; width: .9rem; height: .55rem; border-radius: .15rem; background: var(--text-mute); }
+.upb-key i.lim { background: var(--limit); }
+.upb-lad { flex: none; width: min(40rem, 100%); }
+.upb-lad .kicker { margin: 0 0 calc(2 * var(--u)); }
+.upb-rungs { display: flex; align-items: flex-end; gap: .9rem; height: 4.6rem; border-bottom: .1rem solid var(--track-line); }
+.upb-rung { position: relative; flex: 1 1 0; min-width: 0; height: 100%; }
+.upb-rung > b { position: absolute; inset: auto 0 0 0; border-radius: .25rem .25rem 0 0; background: var(--c); }
+.upb-rung.full > b { background: var(--limit); }
+.upb-rung.none { border-radius: .25rem .25rem 0 0; outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }
+.upb-rung.gh { border-radius: .25rem .25rem 0 0; background: repeating-linear-gradient(-45deg, var(--track) 0 .45rem, transparent .45rem .9rem); background-size: 200% 100%; animation: ghost-stripes var(--t-stripe) linear infinite; }
+/* the key to a group's footer marks: the words once on the group's first column, the marks alone on the next */
+.upb-keys { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .4rem 1rem; margin-left: auto; font: 500 .9rem/1 var(--font-name); color: var(--text-mute); }
+.upb-kk { display: inline-flex; align-items: center; gap: .4rem; }
+.upb-kk .sw { height: .6rem; }
+/* signing a login in again, in place, on its card */
+.upb-login { display: flex; flex-direction: column; gap: var(--u); padding: calc(1.5 * var(--u)) calc(2 * var(--u)); border-radius: var(--r-in); background: var(--obj-sunk); box-shadow: inset 0 0 0 .1rem var(--track-line); animation: upb-in var(--t-snap) var(--e-out) 1; }
+.upb-login.bad { box-shadow: inset 0 0 0 .1rem var(--limit); }
+.upb-login.bad.shook { animation: shake 300ms var(--e-out) 1; }
+.upb-login .run { margin: 0; display: flex; align-items: center; gap: .6rem; font: 500 .95rem/1.2 var(--font-name); color: var(--text-body); }
+.upb-login .run.why { color: var(--limit); }
+.upb-why { margin: 0; font: 500 .9rem/1.3 var(--font-name); color: var(--text-body); }
+.upb-code { align-self: flex-start; padding: 0; border: 0; background: none; cursor: pointer; font: 600 1.35rem/1 var(--font-data); letter-spacing: .08em; color: var(--text); }
+.upb-hint { margin: 0; font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
+.upb-loginrow { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.upb-codein { flex: 1 1 9rem; min-width: 7rem; }
+.upb-spin { flex: none; width: .9rem; height: .9rem; border-radius: 50%; border: .18rem solid var(--track-line); border-top-color: var(--text); animation: spin var(--t-stripe) linear infinite; }
+@keyframes upb-in { from { opacity: 0; transform: translateY(-.25rem); } }
+.namebox.shook { animation: shake 300ms var(--e-out) 1; }
+
 /* where a card goes when pressed: the arrow alone, in a corner of its own beside the figures, and it lights with the card */
 .pcard[role=button] .thru, .kcard[role=button] .thru { padding-right: 1.1rem; }
 .pcard .drill, .kcard .drill { position: absolute; right: .55rem; bottom: .7rem; color: var(--text-mute); line-height: 0; transition: color var(--t-hover) var(--e-out); }
 .pcard[role=button]:hover .drill, .kcard[role=button]:hover .drill, .picked .drill { color: var(--text); }
 /* naming a login that has none, in place, on its card or its row */
-.namebox { display: inline-flex; align-items: center; flex-wrap: wrap; gap: .5rem; min-width: 0; flex: 1 1 14rem; }
+.namebox { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0.667rem; min-width: 0; flex: 1 1 14rem; }
 .namebox .nmfield { flex: 1 1 9rem; min-width: 7rem; }
 .pcard .act.small, .brow .act.small { flex: none; }
 
@@ -134,12 +183,12 @@
 .scopeline:empty { display: none; }
 .scopeline { display: flex; align-items: center; flex-wrap: wrap; gap: var(--u) calc(2 * var(--u)); scroll-margin-top: calc(var(--bar-h) + 2 * var(--u)); }
 .scopeline:not(:empty) + .band { margin-top: calc(4 * var(--u)); }
-.scopeline .fchips { display: flex; flex-wrap: wrap; gap: .7rem; }
+.scopeline .fchips { display: flex; flex-wrap: wrap; gap: 0.667rem; }
 .scopeline .sgap { width: calc(2 * var(--u)); }
-.scopeline .act { display: inline-flex; align-items: center; gap: .45rem; }
+.scopeline .act { display: inline-flex; align-items: center; gap: 0.333rem; }
 .fwrap { position: relative; display: inline-flex; }
 /* a set filter is the selected look, never the key light */
-.fbtn { display: inline-flex; align-items: center; gap: .6rem; min-height: var(--ctl-h); padding: .5rem 2.4rem .5rem .75rem; border-radius: var(--r-in);
+.fbtn { display: inline-flex; align-items: center; gap: 0.667rem; min-height: var(--ctl-h); padding: .5rem 2.4rem .5rem .75rem; border-radius: var(--r-in);
   background: var(--sel-face); box-shadow: inset 0 0 0 .1rem var(--sel-line); font: 500 .95rem/1 var(--font-name); color: var(--sel-ink); white-space: nowrap; }
 .fbtn em { font-style: normal; font-size: .85rem; color: var(--text-mute); }
 .fbtn .var { font: 500 .9rem/1 var(--font-data); }
@@ -151,11 +200,11 @@
 /* a column is as wide as most of its slot, up to 24rem: seven days across 3,822 px would draw 516 px slabs, which
    read as panels and not as a chart. The slot keeps the day's place, so the plot still spans the width. */
 .chart { --colw: min(88%, 26rem); }
-.plot { position: relative; height: 26rem; margin: calc(3 * var(--u)) 0 0 4.6rem; border-bottom: .14rem solid var(--track-line); }
+.plot { position: relative; height: 26rem; margin: calc(3 * var(--u)) 0 0 4rem; border-bottom: .14rem solid var(--track-line); }
 .gl { position: absolute; left: 0; right: 0; border-top: .1rem dashed var(--track); }
 .gl span { position: absolute; right: calc(100% + .8rem); top: 0; transform: translateY(-50%); font: 500 .85rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); white-space: nowrap; }
-.cbars { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: .55rem; align-items: end; }
-.cbar { position: relative; height: 100%; display: flex; align-items: flex-end; justify-content: center; gap: .3rem; }
+.cbars { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 0.667rem; align-items: end; }
+.cbar { position: relative; height: 100%; display: flex; align-items: flex-end; justify-content: center; gap: 0.333rem; }
 .cbar > .cstack { width: var(--colw); }
 /* the cost of a day is two columns side by side: the plans' value at API prices hatched, a key's money solid */
 .cbar.pair > .cstack { width: calc(var(--colw) / 2 - .15rem); }
@@ -173,7 +222,7 @@
 /* a second command of one provider is striped in that provider's colour; a plan's value is hatched over the wall */
 .cstack > a.alt, .legend .key i.alt, .tip p i.alt { background: repeating-linear-gradient(135deg, var(--c) 0 .5rem, color-mix(in srgb, var(--c) 68%, var(--ink)) .5rem .75rem); }
 .cstack > a.hatch, .legend .key i.hatch, .tip p i.hatch { background: repeating-linear-gradient(135deg, var(--c) 0 .32rem, color-mix(in srgb, var(--c) 30%, var(--obj)) .32rem .64rem); }
-.cstack > a.alt > .sl, .cstack > a.hatch > .sl { margin: 0 .2rem; border-radius: .2rem; background: var(--c); }
+.cstack > a.alt > .sl, .cstack > a.hatch > .sl { margin: 0 0.333rem; border-radius: .2rem; background: var(--c); }
 /* the column still filling: its top edge is open, and the legend names it once */
 .cbar.part > .cstack { border-style: dashed; border-bottom: 0; }
 /* a hover or focus is neutral ink, and opens the column's own tip */
@@ -182,20 +231,20 @@
 .cbar:hover { z-index: 6; }
 .cbar:focus-within { z-index: 6; }
 .cfig { position: absolute; bottom: calc(100% + .4rem); left: 50%; transform: translateX(-50%); font: 500 .85rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); white-space: nowrap; pointer-events: none; }
-.xrow { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: .55rem; margin: .7rem 0 0 4.6rem; }
+.xrow { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 0.667rem; margin: 0.667rem 0 0 4rem; }
 .cx { text-align: center; font: 500 .85rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
 .cx.part { color: var(--text-body); }
 /* each column's failures: their share of its requests on 0 to 100%, the rate beside it, a door to exactly those */
-.flane { position: relative; display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: .55rem; align-items: center; min-height: 1.3rem; margin: calc(1.5 * var(--u)) 0 0 4.6rem; }
+.flane { position: relative; display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 0.667rem; align-items: center; min-height: 1.3rem; margin: calc(1.5 * var(--u)) 0 0 4rem; }
 .flane .fl-k { position: absolute; right: calc(100% + .8rem); top: 50%; transform: translateY(-50%); font: 500 .8rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
-.cfl { justify-self: center; width: var(--colw); display: flex; align-items: center; gap: .5rem; text-decoration: none; color: var(--text-body); border-radius: .2rem; }
+.cfl { justify-self: center; width: var(--colw); display: flex; align-items: center; gap: 0.667rem; text-decoration: none; color: var(--text-body); border-radius: .2rem; }
 .cfl .ftrk { flex: 1 1 auto; min-width: .8rem; height: .4rem; border-radius: .2rem; overflow: hidden; background: color-mix(in oklab, var(--text) 10%, transparent); }
 .cfl .ftrk > i { display: block; height: 100%; min-width: .15rem; border-radius: .2rem; background: var(--limit); }
 .cfl > b { flex: none; font: 500 .85rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
 .cfl.lv-bad > b { color: var(--limit); }
 .cfl:hover > b { text-decoration: underline; }
-.legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(3 * var(--u)); margin: calc(3 * var(--u)) 0 0 4.6rem; }
-.legend .key { display: inline-flex; align-items: center; gap: .5rem; font: 500 .88rem/1 var(--font-data); color: var(--text-body); }
+.legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(3 * var(--u)); margin: calc(3 * var(--u)) 0 0 4rem; }
+.legend .key { display: inline-flex; align-items: center; gap: 0.667rem; font: 500 .88rem/1 var(--font-data); color: var(--text-body); }
 .legend .key.kind, .legend .key.part { font-family: var(--font-name); color: var(--text-mute); }
 .legend .key i, .tip p i:not(.tbar) { flex: none; width: .85rem; height: .85rem; border-radius: .2rem; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); }
 .legend .key.part i { width: 1.1rem; height: .55rem; background: none; box-shadow: none; border: .12rem dashed var(--text-body); border-bottom: 0; border-radius: .15rem .15rem 0 0; }
@@ -209,7 +258,7 @@
 }
 .tip.lefty { left: auto; right: calc(50% + var(--colw) / 2 + 1.1rem); }
 .cbar:hover > .tip, .cbar:focus-within > .tip { display: block; }
-.tip p { margin: 0; display: flex; align-items: center; gap: .6rem; font: 500 .88rem/1.7 var(--font-data); color: var(--text-body); }
+.tip p { margin: 0; display: flex; align-items: center; gap: 0.667rem; font: 500 .88rem/1.7 var(--font-data); color: var(--text-body); }
 .tip p > span { flex: none; }
 .tip p .tbar { height: .3rem; min-width: .15rem; margin-left: auto; border-radius: .15rem; background: color-mix(in oklab, var(--text) 32%, transparent); }
 .tip p .tbar.f { background: var(--limit); }
@@ -236,16 +285,16 @@
 .lower > .band:not(.col-top) { padding-top: calc(4 * var(--u)); border-top: .08rem solid var(--hair); }
 .byhead { display: flex; align-items: center; flex-wrap: wrap; gap: var(--u) calc(2 * var(--u)); margin-bottom: calc(2 * var(--u)); }
 .byhead .findbox { margin-left: auto; }
-.findbox { display: inline-flex; align-items: center; gap: .6rem; }
+.findbox { display: inline-flex; align-items: center; gap: 0.667rem; }
 .findbox .bfind { flex: 0 1 14rem; min-width: 8rem; }
 .findbox .found { font: 500 .85rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
-.mfig { display: inline-flex; align-items: baseline; gap: .55rem; }
+.mfig { display: inline-flex; align-items: baseline; gap: 0.667rem; }
 .mfig .sw { align-self: center; }
 
 .btable, .ttable { padding: .35rem 1.15rem .6rem; }
 /* ONE LINE PER ROW, every figure on its column's shared scale, every figure ending on one right edge */
 .brow, .gbrow { display: grid; grid-template-columns: minmax(10rem, 2fr) minmax(6rem, 1fr) minmax(5.5rem, .85fr) minmax(6.5rem, 1fr); column-gap: calc(2 * var(--u)); align-items: center;
-  min-height: 3.7rem; padding: .45rem .6rem; margin: 0 -.6rem; border-top: .08rem solid var(--hair); border-radius: .3rem; }
+  min-height: 3.7rem; padding: .45rem .6rem; margin: 0 -0.667rem; border-top: .08rem solid var(--hair); border-radius: .3rem; }
 .btable > :is(.brow, .gbrow):first-child, .btable > .bgrp + .brow { border-top: 0; }
 .brow[role=button] { cursor: pointer; transition: background-color var(--t-hover) var(--e-out); }
 .brow[role=button]:hover { background: color-mix(in oklab, var(--text) 5%, transparent); }
@@ -253,15 +302,19 @@
 .brow.bhead, .gbrow.bhead { min-height: 0; padding-block: .6rem .5rem; border-top: 0; font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
 .brow.bhead .cell { justify-content: flex-end; }
 /* the column heads rank the rows: the one they are ranked by stands in text ink with its arrow */
-.bhead .rank { justify-content: flex-end; gap: .3rem; padding: .2rem 0; border: 0; background: none; font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); cursor: pointer; }
+.bhead .rank { justify-content: flex-end; gap: 0.333rem; padding: .2rem 0; border: 0; background: none; font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); cursor: pointer; }
 .bhead .rank:hover { color: var(--text-body); text-decoration: underline; text-underline-offset: .2rem; }
 .bhead .rank.on { color: var(--text); font-weight: 600; }
 .bhead .rank .go { width: .85rem; height: .85rem; }
 .bhead .rank:focus-visible { outline: .14rem solid var(--text); outline-offset: .15rem; border-radius: .2rem; }
 /* rows next to each other on the same commands sit under one line of their chips */
-.bgrp { display: flex; align-items: center; flex-wrap: wrap; gap: .45rem; padding: .85rem 0 .3rem; border-top: .08rem solid var(--hair); }
+.bgrp { display: flex; align-items: center; flex-wrap: wrap; gap: 0.333rem; padding: .85rem 0 .3rem; border-top: .08rem solid var(--hair); }
 .btable > .bhead + .bgrp { border-top: 0; padding-top: .4rem; }
-.brow .who { display: flex; align-items: center; gap: .55rem; min-width: 0; }
+/* a row that changes rank travels inside its table and passes under the table's head, and the chip lines, which
+   do not travel: each stands above the moving rows on the table's own surface, so a row never draws over another part of the page */
+.btable > :is(.bhead, .bgrp), .ttable > .thead { position: relative; z-index: 2; background: var(--obj); }
+.btable > .bgrp { margin-inline: -0.667rem; padding-inline: 0.667rem; }
+.brow .who { display: flex; align-items: center; gap: 0.667rem; min-width: 0; }
 .brow .who .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 .98rem/1.2 var(--font-name); color: var(--text); }
 .brow .who .nm .var { font: 500 .92rem/1.2 var(--font-data); letter-spacing: .01em; }
 .brow .who .sb { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
@@ -269,25 +322,25 @@
 /* a login at its limit: the lock its card draws, in the limit red, and nothing else about the row is red */
 .brow .who .rowlock { flex: none; display: inline-flex; color: var(--limit); }
 .brow .who .rowlock svg { width: .95rem; height: .95rem; }
-.brow .who .act.signin { flex: none; display: inline-flex; align-items: center; gap: .45rem; }
+.brow .who .act.signin { flex: none; display: inline-flex; align-items: center; gap: 0.333rem; }
 /* a row's own commands sit at the cell's end and give way to the name: the box clips rather than draw over the bars
    beside it, and the chips that do not fit leave for one "+N" that names them, which then holds its room */
-.brow .who .cmds { display: inline-flex; flex: 0 1 auto; min-width: 0; overflow: hidden; gap: .4rem; margin-left: auto; padding-left: .4rem; }
+.brow .who .cmds { display: inline-flex; flex: 0 1 auto; min-width: 0; overflow: hidden; gap: 0.333rem; margin-left: auto; padding-left: .4rem; }
 .brow .who .cmds:has(> .more) { flex-shrink: 0; }
 .brow .who .cmds > .chip { flex: none; }
 .brow .who .cmds > .chip.more { --c: var(--track-line); color: var(--text-mute); cursor: default; }
 .brow .who .namebox { flex: 1 1 auto; }
-.brow .cell { display: flex; align-items: center; gap: .7rem; min-width: 0; text-decoration: none; color: var(--text); }
+.brow .cell { display: flex; align-items: center; gap: 0.667rem; min-width: 0; text-decoration: none; color: var(--text); }
 .brow .cell > .vbar, .cline > .vbar { flex: 1 1 auto; }
 .brow .cell > .v, .cline > .v { flex: none; min-width: 4.2rem; text-align: right; font: 500 .92rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
-.brow a.cell { margin: -.3rem -.4rem; padding: .3rem .4rem; border-radius: .3rem; transition: background-color var(--t-hover) var(--e-out); }
+.brow a.cell { margin: -0.333rem -0.333rem; padding: .3rem .4rem; border-radius: .3rem; transition: background-color var(--t-hover) var(--e-out); }
 .brow a.cell .go { color: var(--text-mute); }
 .brow a.cell:hover { background: var(--track); }
 .brow a.cell:hover .go { color: var(--text); }
 /* the cost column: a key's money solid, a plan's value at API prices hatched, each on its own line, named once in the
    band's legend, so no row repeats "On your plan" or "at API prices" */
-.cell.cost { flex-direction: column; align-items: stretch; justify-content: center; gap: .3rem; }
-.cline { display: flex; align-items: center; gap: .7rem; min-width: 0; }
+.cell.cost { flex-direction: column; align-items: stretch; justify-content: center; gap: 0.333rem; }
+.cline { display: flex; align-items: center; gap: 0.667rem; min-width: 0; }
 .cline .vbar b.plan { background: repeating-linear-gradient(135deg, color-mix(in oklab, var(--text) 46%, transparent) 0 .22rem, transparent .22rem .44rem); box-shadow: inset 0 0 0 .06rem color-mix(in oklab, var(--text) 30%, transparent); }
 .cline > .v.val { color: var(--text-body); }
 .cell.cost.none { flex-direction: row; align-items: center; }
@@ -307,8 +360,8 @@
 .trow.thead { min-height: 0; padding: .6rem 0 .5rem; border-top: 0; font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
 .trow.thead .cell { justify-content: flex-end; }
 .trow.thead + .trow { border-top: 0; }
-.trow .who { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem .8rem; min-width: 0; }
-.trow .cell { display: flex; align-items: center; gap: .6rem; min-width: 0; padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-align: left; }
+.trow .who { display: flex; align-items: center; flex-wrap: wrap; gap: 0.333rem 0.667rem; min-width: 0; }
+.trow .cell { display: flex; align-items: center; gap: 0.667rem; min-width: 0; padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-align: left; }
 .trow .cell > .v { flex: none; min-width: 3.2rem; text-align: right; font: 500 .92rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
 .trow .cell > .vbar { flex: 1 1 auto; min-width: 1.2rem; }
 /* input, split as its provider counted it: the bar's length is the command's input against the largest, and the split
@@ -328,7 +381,7 @@
 .tstack > i.s2, .pd-leg.tk .sw.s2 { background: repeating-linear-gradient(135deg, color-mix(in oklab, var(--text) 62%, transparent) 0 .3rem, color-mix(in oklab, var(--text) 22%, transparent) .3rem .6rem); }
 .tstack > i.s3, .pd-leg.tk .sw.s3 { background: color-mix(in oklab, var(--text) 22%, transparent); }
 .tstack > i.s1 > b { color: var(--obj); }
-.tstack > i.s2 > b { margin-inline: .25rem; padding: .12rem .3rem; border-radius: .2rem; background: var(--obj); color: var(--text); }
+.tstack > i.s2 > b { margin-inline: 0.333rem; padding: .12rem .3rem; border-radius: .2rem; background: var(--obj); color: var(--text); }
 .tstack > i.s3 > b { color: var(--text); }
 .pd-leg.tk .sw { height: .7rem; }
 .pd-leg.tk .coldkey { display: inline-flex; align-items: center; margin-left: calc(2 * var(--u)); color: var(--text-mute); }
@@ -340,7 +393,7 @@
 .cachelead > .ghost.ring { border-radius: 50%; }
 /* turns that ran cache-cold after an account switch are a mark beside the command that has them (its glyph, its count),
    and a command with logins to name opens them in place under its row */
-.trow .cold { display: inline-flex; align-items: center; gap: .45rem; padding: .2rem .6rem .2rem .35rem; border: 0; border-radius: var(--r-in); background: none; font: 500 .9rem/1.2 var(--font-data); color: var(--text-body); }
+.trow .cold { display: inline-flex; align-items: center; gap: 0.333rem; padding: .2rem .6rem .2rem .35rem; border: 0; border-radius: var(--r-in); background: none; font: 500 .9rem/1.2 var(--font-data); color: var(--text-body); }
 .trow button.cold { cursor: pointer; transition: background-color var(--t-hover) var(--e-out); }
 .trow button.cold:hover { background: var(--track); }
 .trow button.cold:focus-visible { outline: .14rem solid var(--text); outline-offset: .15rem; }
@@ -356,8 +409,8 @@
 .crow.chead .cell { justify-content: flex-end; }
 .crow .cn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 .95rem/1.2 var(--font-name); color: var(--text); }
 .crow .cn .var { font: 500 .9rem/1.2 var(--font-data); }
-.crow .cn .state { margin-left: .55rem; font-size: .85rem; color: var(--text-mute); }
-.crow .cell { display: flex; align-items: center; gap: .6rem; min-width: 0; }
+.crow .cn .state { margin-left: 0.667rem; font-size: .85rem; color: var(--text-mute); }
+.crow .cell { display: flex; align-items: center; gap: 0.667rem; min-width: 0; }
 .crow .cell > .vbar { flex: 1 1 auto; }
 .crow .cell > .v { flex: none; min-width: 3rem; text-align: right; font: 500 .92rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
 /* what the input sent again is a share of: its own column at the row's end, so the figures before it line up */
@@ -409,7 +462,7 @@
   .trow, .gtrow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); row-gap: var(--u); }
   .trow .who, .trow .cell.inp { grid-column: 1 / -1; }
   .trow.thead { display: none; }
-  .crow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); row-gap: .3rem; padding-block: .4rem; }
+  .crow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); row-gap: 0.333rem; padding-block: .4rem; }
   .crow .cn { grid-column: 1 / -1; }
   .crow.chead { display: none; }
 }
@@ -419,17 +472,81 @@
 .pickline:not(:empty) { margin: 0 0 calc(4 * var(--u)); }
 .pickline .lhead { margin-left: 0; }
 
-/* ---------- Results by command keeps its own file (perf-heads.css); these two things it shares with the page ---------- */
+/* ---------- Results by command keeps its own file (perf-heads.css); the flag it shares with the page ---------- */
 /* the command that is slow or failing today, with since when, at the top of its panel */
-.flag { margin: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: .5rem calc(2 * var(--u)); }
-.flag a { display: inline-flex; align-items: center; gap: .45rem; font: 500 1.05rem/1.1 var(--font-name); color: var(--limit); text-decoration: none; }
+.flag { margin: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.333rem calc(2 * var(--u)); }
+.flag a { display: inline-flex; align-items: center; gap: 0.333rem; font: 500 1.05rem/1.1 var(--font-name); color: var(--limit); text-decoration: none; }
 .flag a .go { width: 1.05rem; height: 1.05rem; }
+.flag.slow a { color: var(--key-ink); }   /* slow is where to look; a failing run is the limit red */
 .flag a:hover { text-decoration: underline; }
 .flag .vs { font: 500 .88rem/1 var(--font-name); color: var(--text-mute); }
 .flag .vs b { font: 600 .9rem/1 var(--font-data); color: var(--text); }
-.flag .vs .dot { display: inline-block; width: .3rem; height: .3rem; margin: 0 .6rem; border-radius: 50%; background: var(--text-mute); vertical-align: middle; }
-/* the commands with no request in the window: dimmed chips, each a door to its requests */
-.quiet-heads { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(2 * var(--u)); margin: calc(2 * var(--u)) 0 0; }
-.quiet-heads > span:first-child { font: 500 .9rem/1 var(--font-name); color: var(--text-mute); }
-.quiet-heads .chip { opacity: .72; transition: opacity var(--t-hover) var(--e-out); }
-.quiet-heads .chip:hover { opacity: 1; }
+.flag .vs .dot { display: inline-block; width: .3rem; height: .3rem; margin: 0 0.667rem; border-radius: 50%; background: var(--text-mute); vertical-align: middle; }
+
+/* ---------- the page: a door to each lower band in the header, a rank on each row, a window change that waits ---------- */
+.upl-tools { display: flex; align-items: center; flex-wrap: wrap; gap: var(--u) calc(3 * var(--u)); margin-left: auto; }
+.upl-doors { display: flex; flex-wrap: wrap; gap: calc(1.5 * var(--u)); }
+.upl-door { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto; column-gap: calc(2 * var(--u)); align-items: center; min-width: 11.5rem; padding: calc(1.25 * var(--u)) calc(1.75 * var(--u)) calc(1.25 * var(--u)) calc(2 * var(--u)); border: .08rem solid var(--hair); border-radius: var(--r-in); background: var(--obj); color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: border-color var(--t-hover) var(--e-out), transform var(--t-hover) var(--e-out); }
+.upl-door:hover, .upl-door:focus-visible { border-color: var(--text-mute); transform: translateY(-.1rem); }
+.upl-door:focus-visible { outline: .15rem solid var(--text); outline-offset: .15rem; }
+.upl-dk { grid-column: 1; font: 600 var(--kicker, .8rem)/1.2 var(--font-name); letter-spacing: .04em; text-transform: uppercase; color: var(--text-mute); }
+.upl-dv { grid-column: 1; grid-row: 2; display: flex; align-items: center; gap: .5rem; min-width: 0; }
+.upl-door > .go { grid-column: 2; grid-row: 1 / 3; width: 1.9rem; height: 1.9rem; padding: .45rem; box-sizing: border-box; border-radius: 50%; background: color-mix(in oklab, var(--text) 10%, transparent); stroke: currentColor; fill: none; stroke-width: 1.8; transition: background var(--t-hover) var(--e-out); }
+.upl-door:hover > .go, .upl-door:focus-visible > .go { background: color-mix(in oklab, var(--text) 22%, transparent); }
+.upl-df { font: 500 1.45rem/1.1 var(--font-data); font-variant-numeric: tabular-nums; }
+.upl-df.lv-watch { color: var(--key-ink); }
+.upl-df.lv-bad { color: var(--limit); }
+.upl-dq { font: 500 .85rem/1.1 var(--font-name); color: var(--text-mute); }
+.upl-dv .sw { flex: none; }
+.upl-dv .pd-ring { width: 1.6rem; height: 1.6rem; flex: none; }
+
+/* the order a list is read in, on the row itself */
+.upl-rank { flex: none; display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; box-shadow: inset 0 0 0 .08rem var(--track-line); font: 500 .78rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
+
+/* a window change: what is drawn stays at its length, striped and without its figures, until the new window's read lands */
+.upl-stale :is(#band-money, #band-by, #band-tok) :is(.vbar > b, .tstack, .ftrk > i),
+.upl-stale #band-chart .ftrk > i { background-image: repeating-linear-gradient(135deg, color-mix(in oklab, var(--text) 46%, transparent) 0 .3rem, color-mix(in oklab, var(--text) 14%, transparent) .3rem .6rem); background-size: 200% 100%; }
+.upl-stale #band-chart .cstack::after { content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit; background-image: repeating-linear-gradient(135deg, color-mix(in oklab, var(--obj) 62%, transparent) 0 .3rem, color-mix(in oklab, var(--obj) 20%, transparent) .3rem .6rem); }
+.upl-stale :is(#band-money, #band-chart, #band-by, #band-tok, #doors) :is(.v, .cfig, .sl, .cfl > b, .pd-rate, .pd-failed, .pd-sub, .fig-hero, .fig-focal, .upb-fig, .upl-df, .tstack > i > b, .cap, .tout, .hh > small, .hh + .hh > small) { visibility: hidden; }
+
+/* ---------- Where it went: an item no request reached keeps its row ---------- */
+.brow.idle .who .nm { color: var(--text-body); }
+.brow.idle .dot-c { opacity: .45; }
+.brow .who .nm.nomodel { color: var(--text-mute); }
+.brow.idle .cell > .vbar { min-width: 2rem; }
+.brow.idle .upl-rank, .trow .upl-rank { flex: none; }
+
+/* ---------- Tokens by command: every part of an input bar is named where it is drawn ---------- */
+.ttrack { display: flex; align-items: center; }
+.ttrack > .tstack { flex: none; align-self: stretch; }
+.tstack > i.nil { min-width: 0; box-shadow: none; }
+.tstack > i > b { padding-inline: .3rem; }
+.tout { flex: none; display: inline-flex; align-items: center; gap: .9rem; margin-left: .7rem; white-space: nowrap; }
+.tout:empty { display: none; }
+.tl { display: inline-flex; align-items: center; gap: .35rem; font: 600 .78rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
+.tl > .sw { flex: none; width: .9rem; height: .5rem; border-radius: .15rem; }
+.tl > .sw.s1 { background: color-mix(in oklab, var(--text) 62%, transparent); }
+.tl > .sw.s2 { background: repeating-linear-gradient(135deg, color-mix(in oklab, var(--text) 62%, transparent) 0 .2rem, color-mix(in oklab, var(--text) 22%, transparent) .2rem .4rem); }
+.tl > .sw.s3 { background: color-mix(in oklab, var(--text) 22%, transparent); }
+.tl > b { font: inherit; padding: 0; color: inherit; }
+.trow.thead .cell.hh, .crow.chead .cell.hh { flex-direction: column; align-items: flex-end; justify-content: flex-end; gap: .15rem; }
+.hh > b { font: 500 .85rem/1.2 var(--font-name); white-space: nowrap; color: var(--text-mute); }
+.hh > small { font: 500 .74rem/1.2 var(--font-data); white-space: nowrap; color: var(--text-mute); opacity: .8; }
+.trow .who .state { flex: none; font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
+
+/* what a card nothing was sent through keeps: the room its rows would take */
+.upb-thru.upb-held { box-sizing: border-box; height: calc(var(--k) * 1.25rem + (var(--k) - 1) * var(--u) + 1.5 * var(--u) + .08rem); }
+
+/* a column the new window no longer has folds down where it stood; it takes no pointer */
+.uch-leave { pointer-events: none; margin: 0; overflow: hidden; }
+
+/* a row a new window brings in grows its bars from nothing; a row it does not have folds down where it stood */
+.trow.arrive { animation: utip-in var(--t-pop) var(--e-out) both; }
+.trow.arrive .tstack, .trow.arrive .vbar > b { transform-origin: left; animation: ubar-grow var(--t-snap) var(--e-out) both; }
+.brow.leave, .trow.leave { overflow: hidden; pointer-events: none; box-sizing: border-box; transition: height var(--t-snap) var(--e-out), min-height var(--t-snap) var(--e-out), padding-block var(--t-snap) var(--e-out), opacity var(--t-snap) var(--e-out); }
+.brow.leave.folds, .trow.leave.folds { height: 0 !important; min-height: 0 !important; padding-block: 0 !important; opacity: 0; }
+.brow.leave .v, .trow.leave .v, .trow.leave .tout { visibility: hidden; }
+.brow.leave.folds .vbar > b, .trow.leave.folds .vbar > b, .trow.leave.folds .tstack { width: 0 !important; transition: width var(--t-snap) var(--e-out); }
+
+/* a refusal is said on its own line inside the field's box, under the field and its acts, never past the card's edge */
+.namebox > .result { flex: 1 0 100%; margin: 0; }

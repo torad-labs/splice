@@ -4,6 +4,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { layout } from "../gate/src/lib/repo.ts";
 
+// Goal: a request's branches and tabs reveal their own document on demand, never loading the unseen contents.
+// Changed 2026-10-29 by the shared request view's pass (round 4): the Sent body is one closed "Body" row until it is
+// pressed, so a test opens it first; what each branch then reveals is unchanged.
 const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const now = Date.now();
 const sent = {
@@ -58,6 +61,8 @@ test("request branches and tabs reveal their own document without loading the un
   try {
     await page.goto(`http://127.0.0.1:${server.port}/requests.html#alpha:document-turn`);
     const pane = page.locator(".rqpane");
+    await expect(pane).not.toContainText("start-marker-");
+    await pane.getByRole("button", { name: "Body", exact: true }).click();
     await expect(pane.locator('.tree.root > li > .key').filter({ hasText: /^messages$/ })).toBeVisible();
     await expect(pane).not.toContainText("message-119");
     await expect(pane).not.toContainText("returned-document-marker");
@@ -79,6 +84,7 @@ test("large request text keeps a bounded window and Download still contains the 
   try {
     await page.goto(`http://127.0.0.1:${server.port}/requests.html#alpha:document-turn`);
     const pane = page.locator(".rqpane");
+    await pane.getByRole("button", { name: "Body", exact: true }).click();
     const payload = pane.locator(".tree.root > li").filter({ has: page.locator(':scope > .key', { hasText: /^payload$/ }) });
     await payload.locator(":scope > .node").click();
     await expect(payload.locator(".doc-text")).toContainText("start-marker-");

@@ -207,13 +207,15 @@ test("on a wide Teams the tiles count teams, a team under every project it has a
     await p.context().close();
   }
 }, 60_000);
-test("on a wide Requests the tiles count the requests in the window, and the filters start where the tiles do", async () => {
+// Goal changed 2026-10-29 by the requests-filters pass (build-from alt-1): the filters now stand beside an "In view" card, so
+// it is the filters' section (the card and the controls together) that starts where the tiles do.
+test("on a wide Requests the tiles count the requests in the window, and the filters section starts where the tiles do", async () => {
   const p = await open("requests.html", "", 3828);
   try {
     await expect(p.locator(".ptiles .ptotal").first()).toHaveText("3", { timeout: 20_000 });
     expect(await tileTotals(p)).toEqual([["Every project", "3"], ["temple", "2"], ["website", "1"], ["No project", "0"]]);
     const left = (sel: string) => p.locator(sel).first().evaluate((e) => Math.round(e.getBoundingClientRect().left));
-    expect(await left(".filters")).toBe(await left(".ptiles"));
+    expect(await left(".fv")).toBe(await left(".ptiles"));
   } finally {
     await p.context().close();
   }

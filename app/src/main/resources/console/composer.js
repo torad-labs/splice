@@ -47,8 +47,18 @@
     + (ctx?.used > 0 ? `<span>Re-reads <b>${DRAW.big(ctx.used)}</b> tokens once</span>` : `<span>Re-reads the conversation once</span>`) + `</p>`;
   // the command that installs every command splice runs on, which a "Not installed" group carries beside it
   const INSTALL_LINE = "splice install --all";
-  // what the field is for, and the short form for a bar standing in a column too narrow for it (fitBar)
-  const HINT = "Message the splice manager", SHORT_HINT = "Message the manager";
+  // WHAT THE FIELD IS FOR, IN THE VERB ITS BUTTON SHARES (the bar's words): the field and its one act say the same thing in every
+  // state, so a manager that waits to be resumed reads "Resume the splice manager" over Resume, not a Message field over a Resume
+  // button. The short forms stand in a column too narrow for the whole line (fitBar).
+  const SAY = {
+    message: ["Message the splice manager", "Message the manager"],
+    resume: ["Resume the splice manager", "Resume the manager"],
+    answer: ["Answer the splice manager", "Answer the manager"],
+  };
+  const NOT_ANSWERING = "The splice manager isn't answering", NO_MANAGER = "No splice manager";
+  // splice itself, not the manager, did not answer: the one spelling the page headers use for it
+  const SPLICE_DOWN = "splice not answering";
+  const docEl = () => document.scrollingElement || document.documentElement;
   const X = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>`;
   const CARET = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>`;
   // WHAT A TOOL CALL DID, IN HIS WORDS AND WITH A SHAPE (Oct 26). Every call drew the same hairline chip labelled with
@@ -107,6 +117,7 @@
     names: null, namesOut: false, // the sessions a message was sent to, by address and by name { byAddr, byName, at }
     wantNames: false,           // the drawn log holds a recipient or a sender whose session is not named yet
     unread: 0,                  // replies that landed while he was reading further up
+    hold: false,                // a detail is opening or closing: the view stays on the row he pressed
     still: false,               // the next drawing of the log is older messages opening above: nothing in it eases in
     older: false,               // Earlier messages was pressed and the page before the oldest one is being read
     slow: false,                // the first read of the manager has been out longer than a read should take
@@ -116,8 +127,8 @@
     narrow: false, shortHint: false, keyW: 0,  // the room the bar has in the column it stands in (fitBar)
     sizing: false,              // the bar is folding or opening, so its width is a passing one
   };
-  let dock, dim, tab, tabLamp, card, sheet, log, ask, meters, foot, line, pill, lamp, door, said, field, send, lineTimer = 0;
-  const drawn = { card: "", ask: "", meters: "", foot: "", head: "", rows: [] };
+  let dock, dim, tab, tabLamp, card, sheet, log, ask, band, meters, calls, strip, newest, foot, line, pill, lamp, door, said, field, send, lineTimer = 0;
+  const drawn = { card: "", ask: "", meters: "", calls: "", strip: "", foot: "", head: "", rows: [] };
 
   // ---------- reading ----------
   const heads = () => st.m?.heads || [];
@@ -339,7 +350,7 @@
     if (!res.ok) { st.names = { byAddr: {}, byName: {}, at: Date.now() }; return; }
     const byAddr = {}, byName = {};
     for (const row of res.body?.sessions || []) {
-      const who = { id: row.session_id, name: row.name || row.title || null };
+      const who = { id: row.session_id, name: row.name || row.title || null, head: row.head || null };
       if (!who.id) continue;
       if (row.address) byAddr[row.address] = who;
       if (row.name) byName[row.name] = who;
@@ -353,7 +364,7 @@
     if (!text || !st.names) { st.wantNames = Boolean(text); return null; }
     const found = st.names.byAddr[text] ?? st.names.byName[text] ?? null;
     if (!found) return null;
-    return { id: found.id, name: found.name || text };
+    return { id: found.id, name: found.name || "Session", head: found.head };
   }
   /** The model menu's rows: this head's, read when the menu opens and again after a minute. */
   async function readModels() {
@@ -368,7 +379,10 @@
   // ---------- drawing ----------
   function draw() {
     drawPill(); drawCard(); drawSheet();
-    dock.classList.toggle("wide", st.open || st.card);
+    // the card stands over the bar; the open sheet is part of the page and carries the page's one scroll (composer.css .sheeted)
+    dock.classList.toggle("wide", st.card && !st.open);
+    dock.classList.toggle("sheeted", st.open);
+    document.body.classList.toggle("cmp-sheeted", st.open);
     // THE PAGE DIMS BEHIND AN OPEN SHEET OR CARD (Oct 27), so it reads as above the page, and a press outside it,
     // which closes it, is plainly the way back. Nothing under it stops working: the dim takes no presses.
     dim.classList.toggle("on", (st.open || st.card) && !locked());
@@ -379,6 +393,20 @@
    *  as the words "Reading the splice manager", where the catalog draws a shape. Now the lamp carries the state, the
    *  button says what the press does, the placeholder names the one thing the field is for, the shortcut is a key
    *  rather than a sentence, and a read not back yet is a striped ghost the size of the hint. */
+  /** The ring on the bar's own ghost: it stands once the first read has been out a slow read's time and steps once a second,
+   *  writing only what differs, so a settled bar changes nothing. */
+  function waitTick() {
+    const wait = pill.querySelector(".cmp-wait");
+    if (!wait || wait.hidden || !st.waitAt) return;
+    const sec = (Date.now() - st.waitAt) / 1000, ring = wait.querySelector(".slr-ring");
+    if (sec * 1000 < SLOW_READ_MS) ring?.remove();
+    else if (ring) {
+      ring.style.setProperty("--s", String(Math.min(Math.floor(sec), SLOW_FULL_S)));
+      if (ring.firstElementChild.textContent !== readLabel(sec)) ring.firstElementChild.textContent = readLabel(sec);
+      ring.setAttribute("aria-label", `Slow to read, ${Math.floor(sec)} seconds`);
+    } else wait.insertAdjacentHTML("beforeend", readRing(sec, { pop: true }));
+  }
+  setInterval(waitTick, 1000);
   function drawPill() {
     const m = st.m, door1 = Boolean(m) && unasked(m) && !st.phase, first = !m && !st.gone;
     const words = field.value.trim() !== "";
@@ -386,14 +414,22 @@
     // muted label beside the lamp that already draws it, with the one act that can help, where the placeholder held a
     // sentence and the only button was a Send that could not send. Words he had typed keep the field, and the open
     // sheet's header says the state instead.
-    const down = st.gone === "down" && !first;
-    // a first read out longer than a read takes says so once beside its stripes, as a page's header does
-    const dead = first ? (st.slow ? "Slow to read" : null) : door1 ? null : down ? "splice is not answering" : !m ? "This splice has no manager" : null;
+    // Splice itself not answering and the manager's own failure are two states with two names: the first is the page headers'
+    // spelling for splice, the second is named for the manager, because the board beside the bar still reads. Both keep the
+    // field's place for the one line and Try again.
+    const down = (st.gone === "down" || st.gone === "error") && !first;
+    // a first read out longer than a read takes is drawn on its own ghost as the elapsed ring a page's ghosts take (kit.js
+    // watchGhosts), counted from when this ghost was first drawn; no word stands beside the stripes
+    const dead = first ? null : door1 ? null : st.gone === "down" ? SPLICE_DOWN : down ? NOT_ANSWERING : !m ? NO_MANAGER : null;
     const label = Boolean(dead) && !words && !st.open;
     door.hidden = !door1; field.hidden = door1 || first || label;
     said.hidden = !label;
     if (label) said.textContent = dead;
-    pill.querySelector(".cmp-wait").hidden = !first;
+    const wait = pill.querySelector(".cmp-wait");
+    wait.hidden = !first;
+    if (!first) st.waitAt = 0;
+    else st.waitAt ||= Date.now();
+    waitTick();
     // the card says what the door says, so the door is not drawn under it: the title is read once
     pill.classList.toggle("beneath", st.card && door1);
     // the door's verb is the card's: Resume over a card that resumes, Start over one that starts
@@ -401,11 +437,17 @@
     lamp.className = `cmp-lamp ${lampOf()}`;
     tabLamp.className = lamp.className;
     field.readOnly = st.busy || Boolean(st.phase) || !m || down;
-    field.placeholder = dead ? "" : st.shortHint ? SHORT_HINT : HINT;
     // WHILE IT WAITS ON HIM THE BAR'S ONE ACT IS ANSWER (Oct 27). The button was lit for a waiting manager and also
     // disabled for an empty field, and a disabled act is drawn unlit, so the light it was given could never show.
     // Closed, it reads Answer and opens the sheet on the question; open, the question's own choices are the act.
     const answering = m?.state === "live" && m.status === "waiting" && !st.open && !down;
+    // the field's words and the act's share one verb: Message and Send, Resume and Resume, Answer and Answer
+    const verb = answering ? "answer" : m?.state === "resumable" && !words ? "resume" : "message";
+    field.placeholder = dead ? "" : SAY[verb][st.shortHint ? 1 : 0];
+    field.setAttribute("aria-label", dead ?? SAY[verb][0]);
+    // the folded tab reads the bar's own words in the state the bar is in
+    const tabWord = `${first ? SAY.message[0] : dead ?? (door1 ? `${m.state === "resumable" ? "Resume" : "Start"} the splice manager` : SAY[verb][0])} · ${KEYS}`;
+    if (tab.dataset.tip !== tabWord) { tab.dataset.tip = tabWord; tab.setAttribute("aria-label", tabWord.replace(" · ", ", ")); }
     send.hidden = door1 || first || (Boolean(dead) && !down);
     send.disabled = st.busy || st.retrying || Boolean(st.phase) || (!down && !answering && (!m || (m.state === "live" && !words)));
     send.textContent = st.busy ? "Sending" : down ? "Try again" : answering ? "Answer" : m?.state === "resumable" && !words ? "Resume" : "Send";
@@ -450,46 +492,98 @@
         + `</div>`).join(""),
     };
   }
-  /** THREE LABELLED FACTS WHERE A PARAGRAPH STOOD (Oct 26, Oct 27). The card opened with about 45 words naming a Claude
-   *  Code session, splice.toml and a folder path; then three sentences. Each fact is now its label and its few words:
-   *  where it works, what it reads, what it changes. The folder is named as he knows it, splice's settings folder (the
-   *  daemon's own: the parent of splice.toml, ManagerWiring), and its path stands on the manager's session on Sessions. */
+  /** Which account a command is read against: of those it serves with a sign-in, the one with the most room, whose fuller window is the
+   *  command's own limit. A command no account reports for has no limit to draw. */
+  function limitOf(key) {
+    const rows = (st.facts?.rows || []).filter((r) => (r.heads || []).includes(key) && r.credential_present);
+    let best = null;
+    for (const r of rows) {
+      const wins = [[r.five_hour_used_percent, r.five_hour_reset_epoch_seconds, 5 * 3600_000], [r.seven_day_used_percent, r.seven_day_reset_epoch_seconds, 7 * 86400_000]]
+        .filter(([pct, reset]) => pct != null && !(reset && reset * 1000 <= Date.now()));
+      if (!wins.length) continue;
+      const [pct, reset, len] = wins.reduce((a, b) => (b[0] > a[0] ? b : a));
+      if (!best || pct < best.pct) best = { pct, reset, len };
+    }
+    return best;
+  }
+  /** What the card needs of the console besides the manager: the accounts, for each command's limit and their count, and the sessions
+   *  it would read. Read once while the card is open and again after a minute; a count not read is the dash. */
+  async function readFacts() {
+    if (st.factsOut || (st.facts && Date.now() - st.facts.at < 60_000)) return;
+    st.factsOut = true;
+    const [a, s] = await Promise.all([API.get("/api/accounts"), API.get("/api/sessions")]);
+    st.factsOut = false;
+    const rows = a.ok ? a.body?.accounts || [] : null;
+    st.facts = { at: Date.now(), rows, accounts: rows ? rows.length : null,
+      sessions: s.ok ? (s.body?.sessions || []).filter((x) => x.availability === "live").length : null };
+    if (a.ok) learnTints(a);
+    drawCard();
+  }
+  const LOCK = `<svg class="cmp-lockm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><rect x="5" y="10.8" width="14" height="9.7" rx="2.2"/><path d="M8.2 10.8V8a3.8 3.8 0 0 1 7.6 0v2.8"/></svg>`;
+  /** A command on the card: its name with its colour's edge and dot, its limit as the kit's meter and its figure with the reset ring
+   *  under it. At its limit a red lock stands where the dot does and the meter is full; one that is not answering has a hollow dot
+   *  and stands dimmed; one that is not installed is a dashed outline holding the command that installs it, with Copy. */
+  function cardChip(x, on) {
+    const state = x.ready ? "ready" : headState(x), lim = limitOf(x.key), pct = lim ? Math.min(100, Math.round(lim.pct)) : null;
+    const hot = state === "At limit" || (pct != null && pct >= CRITICAL_PCT);
+    const style = `style="--c:${tint(x.key)}"`, name = `<span class="cmp-cname">${h(x.label || x.key)}</span>`;
+    if (state === "Not installed") {
+      return `<div class="cmp-chip off unin" ${style}><span class="cmp-c1"><span class="cmp-dot hollow" aria-hidden="true"></span>${name}</span>`
+        + `<span class="cmp-inst"><code>${INSTALL_LINE}</code><button type="button" class="act quiet small" data-act="copyinstall">Copy</button></span></div>`;
+    }
+    const ring = lim?.reset && lim.len > 0 ? `<span class="cmp-rs">${DRAW.ring(Math.max(0, Math.min(1, (lim.reset * 1000 - Date.now()) / lim.len)))}${h(resetWord(lim.reset))}</span>` : "";
+    const figure = pct != null ? `<span>${pct}% used</span>` : hot ? `<span>At its limit</span>` : `<span>No limits reported</span>`;
+    const mark = hot ? LOCK : `<span class="cmp-dot${x.ready ? "" : " hollow"}" aria-hidden="true"></span>`;
+    return `<button type="button" class="cmp-chip${x.ready ? "" : " off"}${hot ? " hot" : ""}" role="radio" aria-checked="${on}" data-act="pick" data-head="${h(x.key)}" ${style}${x.ready ? "" : " disabled"}>`
+      + `<span class="cmp-c1">${mark}${name}</span>`
+      // a command that is not answering has no limit worth drawing unless one was read for it
+      + (!x.ready && pct == null && !hot ? "" : `<span class="cmp-cm" data-grow="${h(x.key)}">${pct != null ? DRAW.meter(pct, hot ? "full" : "") : DRAW.meter(null)}</span><span class="cmp-c3">${figure}${ring}</span>`)
+      + `</button>`;
+  }
+  /** THE CARD (first run, or a resume that was never asked): what the manager is, in three tiles that each hold their own thing, and
+   *  the commands it can run on, each drawn from what that command is doing. The folder it works in, the three pages it reads with the
+   *  count of each, and the one thing it changes and what it waits on (Oct 29). */
   function drawCard() {
     card.hidden = !st.card;
     if (!st.card) return;
-    // a first run opens the card on its own, not through openCard, so the heads' colours are read here too
+    // a first run opens the card on its own, not through openCard, so the heads' colours and the accounts are read here too
     if (!st.tints) readTints();
+    readFacts();
     const list = heads(), ready = list.filter((x) => x.ready);
     if (!ready.some((x) => x.key === st.pick)) st.pick = ready.find((x) => x.key === st.m?.head)?.key ?? ready[0]?.key ?? null;
     const verb = st.m?.state === "resumable" ? "Resume" : "Start";
-    // THREE GLYPH TILES WHERE THREE LABELLED FACTS STOOD (Oct 28): a folder for where it works, the pages it reads drawn as
-    // the top bar's own glyphs, a pencil for what it changes. The label is the tile's name for a reader that cannot see
-    // the glyph, and the title says it on hover; the words beside the glyph are the fact's own.
-    const fact = (name, glyphs, words) => `<div class="cmp-fact" role="group" aria-label="${name}" title="${name}"><span class="cmp-fg" aria-hidden="true">${glyphs}</span><span>${words}</span></div>`;
-    // THE COMMANDS IT CAN RUN ON ARE ONE ROW; THE REST STAND DIMMED UNDER ONE KICKER PER REASON, side by side, so each reason is
-    // said once over the commands in it and a name never has to wrap to make room for it. A command that is not installed
-    // carries the command that installs it, with Copy, in its own group: the way out stands where the reason is.
-    const parts = headsHtml(st.pick, "radio");
+    const f = st.facts, count = (v) => (v == null ? DRAW.dash : DRAW.n(v));
+    const read = (page, n, word) => `<div class="cmp-gt"><span class="cmp-gtt">${NAV_GLYPH[page]}</span><b>${n}</b><small>${word}</small></div>`;
+    const off = new Map();
+    for (const x of list.filter((y) => !y.ready)) {
+      const s = headState(x);
+      if (!off.has(s)) off.set(s, []);
+      off.get(s).push(x);
+    }
     const html = `<div class="cmp-top"><span class="cmp-lamp ${lampOf()}" aria-hidden="true"><i></i></span>`
       + `<h2 id="cmp-card-h">${verb} the splice manager</h2>`
-      + `<button type="button" class="act quiet small" data-act="later">Not now</button></div>`
+      + `<button type="button" class="act quiet small cmp-xc" data-act="later" aria-label="Not now">${X}</button></div>`
       + `<div class="cmp-facts">`
-      + fact("Works in", KIND.folder.icon, "splice's settings folder")
-      + fact("Reads", ["models.html", "accounts.html", "sessions.html"].map((f) => NAV_GLYPH[f]).join(""), "commands, accounts, sessions")
-      + fact("Changes", KIND.write.icon, "settings, once you approve")
+      + `<div class="cmp-fact" role="group" aria-label="Works in"><p class="kicker">Works in</p><span class="cmp-folder">${KIND.folder.icon}splice's settings folder</span></div>`
+      + `<div class="cmp-fact" role="group" aria-label="Reads"><p class="kicker">Reads</p><div class="cmp-reads">`
+      + read("models.html", count(list.length), "commands") + read("accounts.html", count(f?.accounts), "accounts") + read("sessions.html", count(f?.sessions), "sessions")
+      + `</div></div>`
+      + `<div class="cmp-fact" role="group" aria-label="Changes"><p class="kicker">Changes</p><div class="cmp-edit">${KIND.write.icon}<span><b>Edits</b><small>settings, once you approve</small></span></div></div>`
       + `</div>`
       + `<section class="cmp-runs" role="radiogroup" aria-labelledby="cmp-heads-l"><p class="kicker" id="cmp-heads-l">${ready.length ? "Runs on" : "No command can run it"}</p>`
-      + `<div class="cmp-heads">${parts.ready}</div>`
-      + (parts.off ? `<div class="cmp-off">${parts.off}</div>` : "") + `</section>`
-      + `<div class="cmp-go"><button type="button" class="act primary" data-act="start"${st.pick ? "" : " disabled"}>${verb}</button></div>`;
-    if (html !== drawn.card) { card.innerHTML = html; drawn.card = html; }
+      + (ready.length ? `<div class="cmp-heads">${ready.map((x) => cardChip(x, x.key === st.pick)).join("")}</div>` : "")
+      + (off.size ? `<div class="cmp-off">${[...off].map(([s, xs]) => `<div class="cmp-offgroup"><p class="kicker">${h(s)}</p><div class="cmp-offrow">${xs.map((x) => cardChip(x, false)).join("")}</div></div>`).join("")}</div>` : "")
+      + `</section>`
+      + `<div class="cmp-go"><button type="button" class="act quiet" data-act="later">Not now</button><button type="button" class="act primary" data-act="start"${st.pick ? "" : " disabled"}>${verb}</button></div>`;
+    if (html !== drawn.card) { card.innerHTML = html; drawn.card = html; DRAW.paint(card, { grow: "all" }); }
   }
   /** The sheet's own header: the lamp, the name, and the ONE state word. It read "splice manager" beside the folder
    *  path in mono, a filesystem path as a panel's subtitle, while the state was said twice more below. */
   function drawHead() {
     const m = st.m, look = lampOf();
     const word = st.phase ? phaseWord()
-      : st.gone === "down" ? "splice is not answering"
+      : st.gone === "down" ? SPLICE_DOWN
+      : st.gone === "error" ? NOT_ANSWERING
       : m?.state === "live" ? WORD[m.status] ?? "Ready"
       : m?.state === "resumable" ? "Not running" : "";
     const html = `<span class="cmp-lamp ${look}" aria-hidden="true"><i></i></span><b>splice manager</b>`
@@ -497,25 +591,132 @@
       + `<button type="button" class="cmp-x" data-act="close" aria-label="Close the conversation">${X}</button>`;
     if (html !== drawn.head) { sheet.querySelector(".cmp-sh").innerHTML = html; drawn.head = html; }
   }
+  // ---------- where the open sheet stands: in the page's one scroll ----------
+  // The sheet is as tall as its conversation and the PAGE carries it: nothing inside it scrolls, so a wheel over the log moves
+  // the one scrollbar, and the document ends where the sheet ends (--cmp-doc clips the page behind it to the sheet's height).
+  const atFoot = () => docEl().scrollHeight - docEl().scrollTop - innerHeight < FOLLOW_PX;
+  const toFoot = (smooth = false) => scrollTo({ top: docEl().scrollHeight, behavior: smooth ? "smooth" : "instant" });
+  /** The page behind the sheet is cut at the sheet's own height, so the document never grows under it. */
+  function sizeDoc() {
+    const root = document.documentElement, px = st.open && dock ? `${Math.ceil(dock.offsetHeight)}px` : "";
+    if (root.style.getPropertyValue("--cmp-doc") === px) return;
+    if (px) root.style.setProperty("--cmp-doc", px); else root.style.removeProperty("--cmp-doc");
+  }
   function drawSheet() {
     const shown = !sheet.hidden;
     sheet.hidden = !st.open;
-    if (!st.open) { st.unread = 0; return; }
-    // a sheet just opened starts at its newest words (a hidden log forgets its scroll), and one he was reading at the
-    // foot stays there when a question opens under it and takes its room
-    const stick = !shown || log.scrollHeight - log.scrollTop - log.clientHeight < FOLLOW_PX;
-    drawHead(); drawLog(); drawAsk(); drawMeters(); drawFoot();
-    if (stick) { log.scrollTop = log.scrollHeight; st.unread = 0; }
-    edge();
+    if (!st.open) { st.unread = 0; drawUnread(); return; }
+    // a sheet just opened starts at its newest words, and one he was reading at the foot stays there when a question opens
+    // under it and takes its room
+    const stick = !shown || atFoot();
+    drawHead(); drawBand(); drawLog(); drawAsk(); drawFoot();
+    sizeDoc();
+    if (stick) { toFoot(); st.unread = 0; }
+    drawUnread();
+  }
+  // ---------- the band over the conversation: the context, the newest calls, the turns on a time strip ----------
+  /** The calls of each turn, in the order they were made: a run of calls with no words between them is one burst, as the log draws it. */
+  function callBursts(msgs) {
+    const results = new Map(msgs.filter((m) => m.role === "tool" && m.tool_use_id).map((m) => [m.tool_use_id, m.text]));
+    const out = [];
+    let cur = null;
+    for (const m of msgs) {
+      if (m.role === "tool") continue;
+      if (m.tool) {
+        if (!cur) { cur = { ts: m.ts, calls: [] }; out.push(cur); }
+        cur.calls.push({ m, result: results.get(m.tool_use_id) ?? null });
+      } else cur = null;
+    }
+    return out;
+  }
+  const kindCounts = (calls) => {
+    const kinds = new Map();
+    for (const c of calls) { const kind = TOOL_KIND[c.m.tool] ?? "step"; kinds.set(kind, (kinds.get(kind) ?? 0) + 1); }
+    return kinds;
+  };
+  /** The tiles of a burst: one per kind above zero and the failed count in the limit red, as the log's burst rows draw them. */
+  const callTiles = (kinds, bad) => [...kinds].map(([kind, n]) => DRAW.statTile(KIND[kind].icon, DRAW.n(n), KIND[kind].many)).join("")
+    + (bad ? DRAW.statTile(ICON.bang, DRAW.n(bad), "failed", { bad: true }) : "");
+  /** What the manager did in what the sheet has read: the kind of call it made most, as the figure the section leads with, and the
+   *  other kinds and the failures as glyph tiles under it. */
+  function drawCalls() {
+    const bursts = callBursts(st.log?.messages || []);
+    let html = "";
+    if (bursts.length) {
+      const all = bursts.flatMap((b) => b.calls);
+      const kinds = kindCounts(all), ranked = [...kinds].sort((a, b) => b[1] - a[1]);
+      const [top, n] = ranked[0];
+      const bad = all.filter((c) => failedResult(c.result)).length;
+      const at = bursts[0].ts ? when(bursts[0].ts, null) : "";
+      html = `<p class="kicker">Calls${at ? ` since ${h(at)}` : ""}</p>`
+        + `<div class="cmp-hero"><b class="cmp-fig">${DRAW.n(n)}</b><small>${h(KIND[top].many)}</small></div>`
+        + `<div class="cmp-tiles">${callTiles(new Map(ranked.slice(1)), bad)}</div>`;
+    }
+    calls.hidden = !html;
+    if (html !== drawn.calls) { calls.innerHTML = html; drawn.calls = html; }
+  }
+  /** The times the talk broke and started again, the same breaks the log's rules show. */
+  function groupTimes(msgs) {
+    const out = [];
+    let last = null;
+    for (const m of msgs) {
+      if (m.role === "tool" || !m.ts) continue;
+      if (!m.tool && (m.role === "system" || !String(m.text || "").trim())) continue;
+      if (when(m.ts, last)) out.push(m.ts);
+      last = m.ts;
+    }
+    return out;
+  }
+  /** Times that stand close on the strip read as one: "4:11 and 4:17 PM", the first one's period said once. */
+  function clusterWord(stamps) {
+    const at = stamps.map((t) => clock(new Date(t)));
+    const words = at.map((w, i) => (i < at.length - 1 && w.slice(-2) === at[i + 1].slice(-2) ? w.slice(0, -3) : w));
+    return at.length === 2 ? `${words[0]} and ${words[1]}` : `${words[0]} to ${words.at(-1)}`;
+  }
+  /** WHEN THE TURNS HAPPENED, ON ONE LINE (Oct 29): each group of the log is a mark on a time axis from the first to the newest
+   *  of what the sheet has read, so a day of talk is seen as its shape before any group is read; marks too close to tell apart
+   *  stand as one, and the first and last times are written under the ends. */
+  function drawStrip() {
+    const stamps = groupTimes(st.log?.messages || []);
+    let html = "";
+    if (stamps.length > 1) {
+      const t0 = stamps[0], t1 = stamps.at(-1), span = t1 - t0;
+      const marks = [];
+      for (const t of stamps) {
+        const at = (t - t0) / span, was = marks.at(-1);
+        if (was && at - was.to < 0.012) { was.to = at; was.stamps.push(t); } else marks.push({ from: at, to: at, stamps: [t] });
+      }
+      const sameDay = new Date(t0).toDateString() === new Date(t1).toDateString();
+      const kicker = sameDay ? `Turns on ${dayWord(new Date(t0))}` : `Turns ${dayWord(new Date(t0))} to ${dayWord(new Date(t1))}`;
+      let marked = -1, dots = "", words = "";
+      marks.forEach((k, i) => {
+        const at = (k.from + k.to) / 2, label = k.stamps.length > 1 ? clusterWord(k.stamps) : clock(new Date(k.stamps[0]));
+        dots += k.stamps.length > 1
+          ? `<i class="cl" style="left:${(k.from * 100).toFixed(2)}%;width:${((k.to - k.from) * 100).toFixed(2)}%" title="${h(label)}"></i>`
+          : `<i class="dt" style="left:${(at * 100).toFixed(2)}%" title="${h(label)}"></i>`;
+        // a time over the axis only where there is room for it, never over the ends, which are written under them
+        if (i > 0 && i < marks.length - 1 && at - marked >= 0.16 && at > 0.1 && at < 0.9) { words += `<span class="lb up" style="left:${(at * 100).toFixed(2)}%">${h(label)}</span>`; marked = at; }
+      });
+      const end = (t) => (sameDay ? clock(new Date(t)) : when(t, null));
+      html = `<p class="kicker">${h(kicker)}</p>`
+        + `<div class="cmp-axis" role="img" aria-label="${h(`${stamps.length} groups of talk, from ${end(t0)} to ${end(t1)}`)}"><span class="ax"></span>${dots}${words}`
+        + `<span class="lb dn" style="left:0">${h(end(t0))}</span><span class="lb dn rt" style="left:100%">${h(end(t1))}</span></div>`;
+    }
+    strip.hidden = !html;
+    if (html !== drawn.strip) { strip.innerHTML = html; drawn.strip = html; }
+  }
+  function drawBand() {
+    drawMeters(); drawCalls(); drawStrip();
+    band.hidden = meters.hidden && calls.hidden && strip.hidden;
   }
   /** One window as Accounts draws it: the kit's 16.7 px meter in the head's provider colour, its figure reading "NN% used",
-   *  and a reset ring with the time beside it. A share splice has not read is the empty track, striped; a figure it has
-   *  no reading for is the dash. Over the limit the fill is the limit red and nothing else is.
-   *  [row]: { name, pct, of, word, reset, len, act, pending, limit, even, lead }. [of] is the room the share is of,
-   *  said on the figure's baseline ("44% of 272K"); [word] what the share is when it is not "used"; [even] a share
-   *  where more is better, drawn in a neutral fill so it never reads as one more limit being spent; [lead] the share
-   *  the strip is here for, whose figure is the focal one the eye lands on, where every figure stood at body size. */
-  function meterRow({ name, pct, of = "", word = "used", reset = null, len = 0, act = "", pending = false, limit = true, even = false, lead = false, after = "" }) {
+   *  and a reset ring with the time beside it. A share splice has not read is the empty track; a figure it has no reading
+   *  for is the dash. Over the limit the fill is the limit red and nothing else is.
+   *  [row]: { name, pct, of, word, reset, len, pending, limit, even, lead }. [of] is the room the share is of, said on the
+   *  figure's baseline ("of 272K"); [word] what the share is when it is not "used"; [even] a share where more is better,
+   *  drawn in a neutral fill so it never reads as one more limit being spent; [lead] the share the strip is here for, whose
+   *  figure is the focal one the eye lands on, in the first column where the other rows keep their names. */
+  function meterRow({ name, pct, of = "", word = "used", reset = null, len = 0, pending = false, limit = true, even = false, lead = false }) {
     const known = typeof pct === "number" && isFinite(pct);
     const p = known ? Math.min(100, Math.max(0, Math.round(pct))) : null;
     // the limit red marks a limit being reached and nothing else: a cache that serves 92% is not a limit, it is good
@@ -525,34 +726,34 @@
     const bar = known ? DRAW.meter(p, `${hot ? "full" : ""}${pending ? " reading" : ""}`.trim()) : DRAW.meter(null);
     const back = reset ? resetWord(reset) : "";
     const ring = reset && len > 0 ? DRAW.ring(Math.max(0, Math.min(1, (reset * 1000 - Date.now()) / len))) : "";
-    const tail = of ? `<span class="cmp-of">${h(of)}</span>` : word ? `<span class="cmp-of">${h(word)}</span>` : "";
+    const first = lead
+      ? `<span class="cmp-lead">${known ? `<b class="cmp-fig${hot ? " hot" : ""}">${p}%</b>${of ? `<small>${h(of)}</small>` : ""}` : `<b class="cmp-fig quiet">${DRAW.dash}</b>`}</span>`
+      : `<span class="cmp-mname">${h(name)}</span>`;
+    const num = lead ? "" : known ? `<b>${p}%</b>${word ? `<span class="cmp-of">${h(word)}</span>` : ""}` : DRAW.dash;
     return `<div class="cmp-mrow${hot ? " hot" : ""}${even ? " even" : ""}${lead ? " lead" : ""}" data-meter="${h(name)}">`
-      + `<span class="cmp-mname">${h(name)}</span>`
-      + `<span class="cmp-mbar">${bar}</span>`
-      + `<span class="cmp-mnum">${known ? `<b>${p}%</b>${tail}` : after ? `<span class="cmp-of">${h(after)}</span>` : DRAW.dash}</span>`
-      + `<span class="cmp-mreset">${ring}${back ? `<span>${h(back)}</span>` : ""}</span>`
-      + `<span class="cmp-mact">${act}</span></div>`;
+      + `${first}<span class="cmp-mbar">${bar}</span><span class="cmp-mnum">${num}</span>`
+      + `<span class="cmp-mreset">${ring}${back ? `<span>${h(back)}</span>` : ""}</span></div>`;
   }
-  /** Over the foot: how full the manager's context is (with Compact on it), and how much of its account's 5 h and 7 d
-   *  windows is spent.
+  /** How full the manager's context is (with Compact on it), and how much of its account's 5 h and 7 d windows is spent.
    *
-   *  ACCOUNTS' ROWS, NOT .45rem SLIVERS WITH WORDS AFTER THEM (Oct 26). Every bar here was a 7 px sliver whose meaning
-   *  was carried by the text beside it, and a reading splice did not have yet was written out as "empty" or "shows
-   *  after its next turn". These are the meter rows on Accounts: one 16.7 px meter per window on a shared
-   *  column, "NN% used" beside it, a reset ring with the time it comes back, and the account's own name said once over
-   *  them. An unread window is its own striped track; a figure splice has no reading for is the dash. */
+   *  ACCOUNTS' ROWS, NOT .45rem SLIVERS WITH WORDS AFTER THEM (Oct 26). These are the meter rows on Accounts: one 16.7 px meter
+   *  per window on a shared column, "NN% used" beside it, a reset ring with the time it comes back, and the account's own name
+   *  said once over them. A context that is not reported yet is the dashed empty track with "After its next turn" said once
+   *  under it, never a word standing where the figure goes. */
   function drawMeters() {
     const ln = lineOf(), ctx = ln?.context, rows = [];
+    let head = "";
     if (st.m?.state === "live") {
       const pending = Boolean(st.compacting);
-      const compact = DRAW.act({ word: "Compact", act: "compact", cls: "quiet small",
-        disabled: !canSteer() || !(ctx?.used > 0), busy: pending });
-      // splice keeps the manager's last status-line reading, and an idle session posts none until something happens in
-      // it: no reading is the striped track, which says "not read" without a sentence.
+      // while a compaction runs the word stands where the button stood, so the press that started it cannot be made twice
+      const act = pending ? `<span class="cmp-word" role="status">Compacting</span>`
+        : DRAW.act({ word: "Compact", act: "compact", cls: "quiet small", disabled: !canSteer() || !(ctx?.used > 0) });
+      head = `<div class="cmp-ctxhd"><p class="kicker">Context</p>${act}</div>`;
       // THE SHARE IS READ AGAINST ITS ROOM (Oct 27): "44% of 272K", the window the status line itself reports, so it
-      // holds for a model splice's catalog has never listed; the row read "44% used" with the room drawn nowhere.
+      // holds for a model splice's catalog has never listed
       const room = ctx?.window > 0 ? ctx.window : null;
-      rows.push(meterRow({ name: "Context", pct: room ? ctx.percent : null, of: room ? `of ${DRAW.big(room)}` : "", act: compact, pending, lead: true, after: "After its next turn" }));
+      rows.push(meterRow({ name: "Context", pct: room ? ctx.percent : null, of: room ? `of ${DRAW.big(room)}` : "", pending, lead: true }));
+      if (!room) rows.push(`<p class="cmp-note">After its next turn</p>`);
       // the share of the newest input served from the cache: more is better, so it is drawn neutral, not as a limit
       if (ctx?.cache != null) rows.push(meterRow({ name: "From cache", pct: ctx.cache, word: "", limit: false, even: true }));
       const row = st.limits?.row, who = [row?.display_name, row?.plan].filter(Boolean).join(" · ");
@@ -560,10 +761,10 @@
         ["7 days", row?.seven_day_used_percent, row?.seven_day_reset_epoch_seconds, 7 * 86400_000]]
         // a window whose reset has gone by holds the ended window's figure, which Accounts drops too: it is not spent now
         .filter(([, pct, reset]) => pct != null && !(reset && reset * 1000 <= Date.now()));
-      if (windows.length && who) rows.push(`<p class="kicker">${h(who)}</p>`);
+      if (windows.length && who) rows.push(`<p class="kicker cmp-who-kick">${h(who)}</p>`);
       for (const [name, pct, reset, len] of windows) rows.push(meterRow({ name, pct, reset, len }));
     }
-    const html = rows.join("");
+    const html = rows.length ? head + rows.join("") : "";
     const first = !drawn.meters;   // the strip arriving grows its bars in once; a new reading slides to its width
     meters.hidden = !html;
     if (html !== drawn.meters) {
@@ -625,7 +826,25 @@
       ? DRAW.act({ word: st.stopping ? "Stopping" : "Stop", act: "stop", cls: "small", busy: st.stopping, disabled: st.stopping }) : "";
     const open = st.sid ? `<a class="act quiet small cmp-open" href="sessions.html#${encodeURIComponent(st.sid)}" data-act="go">Open on Sessions${DRAW.go}</a>` : "";
     const html = head + model + stop + open;
-    if (html !== drawn.foot) { foot.innerHTML = html; drawn.foot = html; }
+    if (html !== drawn.foot) {
+      // a menu that closes leaves the way it came, shrinking back toward its chip, so the list does not vanish between frames
+      const closing = [...foot.querySelectorAll(".cmp-menu:not([hidden]):not(.leaving)")];
+      foot.innerHTML = html;
+      drawn.foot = html;
+      for (const old of closing) {
+        if (matchMedia("(prefers-reduced-motion: reduce)").matches) break;
+        const wrapper = foot.querySelector(`.cmp-menu[data-for="${old.dataset.for}"]`)?.parentElement;
+        if (!wrapper || !wrapper.querySelector(".cmp-menu[hidden]")) continue;
+        const ghost = old.cloneNode(true);
+        ghost.classList.add("leaving");
+        ghost.setAttribute("aria-hidden", "true");
+        ghost.inert = true;
+        wrapper.append(ghost);
+        // it goes when its fade ends; the timer only covers a fade that never plays
+        ghost.addEventListener("animationend", () => ghost.remove(), { once: true });
+        setTimeout(() => ghost.remove(), 5000);
+      }
+    }
     flash();
   }
   function drawAsk() {
@@ -704,11 +923,37 @@
   const ROW = /^\s*\|(.+)\|\s*$/;
   const cells = (ln) => ROW.exec(ln)[1].split("|").map((c) => c.trim());
   const RULE = /^\s*\|[\s:|-]+\|\s*$/;
-  function md(text) {
+  /** THE FIRST SENTENCE LEADS (Oct 29): where a message opens on a plain paragraph, its first sentence is set as the line the
+   *  eye lands on and the rest steps down under it. The sentence ends at the first full stop, question or exclamation mark that
+   *  is followed by a space, outside a code span and outside a bold run, so a command or a version number is never cut. */
+  function sentence(text) {
+    let tick = false;
+    for (let i = 0; i < text.length - 1; i++) {
+      const c = text[i];
+      if (c === "`") tick = !tick;
+      else if (!tick && ".!?".includes(c) && /\s/.test(text[i + 1]) && (text.slice(0, i + 1).match(/\*\*/g) || []).length % 2 === 0) {
+        // a lone word such as "Assigned." or "Noted." is no line to lead with: the sentence after it joins it
+        if (i < 40 && text.slice(i + 1).trim()) continue;
+        const rest = text.slice(i + 1).trim();
+        return rest ? [text.slice(0, i + 1), rest] : [text, ""];
+      }
+    }
+    return [text, ""];
+  }
+  function md(text, { lead = false } = {}) {
     const out = [];
     let para = [], list = null, code = null, table = null;
-    const endPara = () => { if (para.length) out.push(para.length === 1 && PATH_ONLY.test(para[0].trim())
-      ? `<p class="cmp-path">${DRAW.file(para[0].trim())}</p>` : `<p>${para.map(inline).join("<br>")}</p>`); para = []; };
+    const lines = (v) => v.split("\n").map(inline).join("<br>");
+    const endPara = () => {
+      if (!para.length) return;
+      if (para.length === 1 && PATH_ONLY.test(para[0].trim())) out.push(`<p class="cmp-path">${DRAW.file(para[0].trim())}</p>`);
+      else if (lead && !out.length) {
+        const [first, rest] = sentence(para.join("\n"));
+        out.push(`<p class="cmp-focal">${lines(first)}</p>`);
+        if (rest) out.push(`<p>${lines(rest)}</p>`);
+      } else out.push(`<p>${para.map(inline).join("<br>")}</p>`);
+      para = [];
+    };
     const endList = () => { if (list) out.push(`<${list.tag}>${list.items.map((x) => `<li>${inline(x)}</li>`).join("")}</${list.tag}>`); list = null; };
     const endTable = () => {
       if (!table) return;
@@ -717,16 +962,16 @@
         + `<tbody>${body.map((r) => `<tr>${r.map((c) => `<td>${commandChip(c) ?? inline(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`);
       table = null;
     };
-    const lines = String(text).split("\n");
-    for (let i = 0; i < lines.length; i++) {
-      const ln = lines[i];
+    const rows = String(text).split("\n");
+    for (let i = 0; i < rows.length; i++) {
+      const ln = rows[i];
       if (code) {
         if (/^\s*```/.test(ln)) { out.push(`<pre><code>${h(code.join("\n"))}</code></pre>`); code = null; } else code.push(ln);
         continue;
       }
       if (/^\s*```/.test(ln)) { endPara(); endList(); endTable(); code = []; continue; }
       // a table is its header, its rule, and the rows under it: anything else ends it
-      if (ROW.test(ln) && (table || RULE.test(lines[i + 1] || ""))) {
+      if (ROW.test(ln) && (table || RULE.test(rows[i + 1] || ""))) {
         endPara(); endList();
         if (!table) { table = [cells(ln)]; i++; continue; }
         if (!RULE.test(ln)) table.push(cells(ln));
@@ -758,12 +1003,12 @@
    *  The bound is on the LINES HE SEES, not on the lines the sender typed: a message of two long paragraphs wraps to a
    *  dozen. The body is clamped by the stylesheet to six of them, and the count on the pill is measured off the drawn
    *  block once it lands (countLines), so "+7 lines" is seven lines he cannot see and never an estimate. */
-  function body(key, text) {
+  function body(key, text, lead = false) {
     const whole = String(text).trim();
     const open = st.opened.has(`b${key}`);
     const small = whole.length < 420 && whole.split("\n").length <= BODY_LINES;
-    if (open || small) return `<div class="cmp-md">${md(whole)}</div>`;
-    return `<div class="cmp-md cmp-clamp">${md(whole)}</div>`
+    if (open || small) return `<div class="cmp-md">${md(whole, { lead })}</div>`;
+    return `<div class="cmp-md cmp-clamp">${md(whole, { lead })}</div>`
       + `<button class="morepill pill" type="button" data-act="more" data-k="${h(key)}" hidden><b></b> more lines</button>`;
   }
   /** What a clamped body is hiding, measured on the block itself: with nothing hidden the pill is not drawn at all.
@@ -873,7 +1118,10 @@
     if (TOOL_KIND[m.tool] !== "send") return null;
     try { return whoIs(JSON.parse(m.text)?.to); } catch { return null; }
   }
-  const chipOfWho = (who) => `<a class="chip cmp-to" href="sessions.html#${encodeURIComponent(who.id)}" data-act="go">${h(who.name)}</a>`;
+  /** A session's colour is its command's (the head it runs on), the way every session is marked on its own page; one whose
+   *  command splice does not know stays in the muted ink. */
+  const hueOf = (who) => (who?.head && who.head !== "unknown head" ? tint(who.head) : "var(--text-mute)");
+  const chipOfWho = (who) => `<a class="cmp-sess" href="sessions.html#${encodeURIComponent(who.id)}" data-act="go" style="--c:${hueOf(who)}">${h(who.name)}</a>`;
   /** One call: its kind's glyph and word, what it was about, who it reached, and how it went. Its result opens under it,
    *  bounded, with no scroller of its own inside the log's. */
   function callRow(key, m, result, live) {
@@ -922,7 +1170,7 @@
       + (who.length > CHIPS_SHOWN ? `<span class="cmp-more">+${who.length - CHIPS_SHOWN}</span>` : "");
     return `<div class="cmp-burst" data-k="${h(key)}">`
       + `<button class="disc cmp-cb" type="button" aria-expanded="${open}" aria-controls="cmp-b-${h(key)}" data-act="call" data-k="${h(key)}">`
-      + `${DRAW.chev}<span class="cmp-tiles">${tiles}</span><span class="cmp-who">${chips}</span></button>`
+      + `${DRAW.chev}<span class="cmp-tiles">${tiles}</span><span class="cmp-whos">${chips}</span></button>`
       + `<div class="cmp-drop" id="cmp-b-${h(key)}" data-open="${open}"><div class="cmp-dropin">`
       + `${open ? calls.map((c) => callRow(`${key}-${c.key}`, c.m, c.result, live)).join("") : ""}</div></div></div>`;
   }
@@ -931,6 +1179,12 @@
   const ENVELOPE = /^\s*\[([a-z0-9][a-z0-9-]*)\s+[0-9a-f]{6,}\s+from\s+([^\]]{1,60})]\s*/i;
   // the same tag in the middle of a note (a relay that wrote its own tag after the first paragraph) is plumbing too
   const TAG_ANYWHERE = /\[[a-z0-9][a-z0-9-]*\s+[0-9a-f]{6,}\s+from\s+[^\]]{1,60}]\s*/gi;
+  const THOUGHT = /^\*\*([^*\n]{3,90})\*\*[ \t]*\n\s*\n([\s\S]+)$/;
+  /** A message that asks the manager for something, marked where it stands: its first paragraph is a question, or opens with "please". */
+  function asks(text) {
+    const first = String(text).trim().split(/\n\s*\n/)[0] ?? "";
+    return /\?(\s|$)/.test(first) || /^please\b/i.test(first);
+  }
   function peerRow(key, m) {
     const raw = String(m.text);
     const seal = ENVELOPE.exec(raw);
@@ -938,10 +1192,13 @@
     const wrote = (seal ? seal[2] : m.from) || "another session";
     const relay = seal && m.from && oneLine(m.from) !== oneLine(wrote) ? oneLine(m.from) : "";
     const who = whoIs(wrote);
-    // the writer is a session, drawn as a session is everywhere else in the sheet: a chip, and a door to its own page when splice knows it
-    const name = who ? `<a class="chip cmp-sender" href="sessions.html#${encodeURIComponent(who.id)}" data-act="go">${h(who.name)}</a>` : `<span class="chip cmp-sender">${h(wrote)}</span>`;
-    return `<div class="cmp-m peer" data-k="${h(key)}"><span class="cmp-from">${name}${relay ? `<span class="cmp-via">via ${h(relay)}</span>` : ""}</span>`
-      + body(key, said) + `</div>`;
+    // the writer is a session, drawn as a session is everywhere else in the sheet: a chip in its command's colour with a dot, and a
+    // door to its own page when splice knows it; a writer that is no session stays a muted chip
+    const name = who ? `<a class="cmp-who" href="sessions.html#${encodeURIComponent(who.id)}" data-act="go" style="--c:${hueOf(who)}"><i></i>${h(who.name)}</a>`
+      : `<span class="cmp-who" style="--c:var(--text-mute)"><i></i>${h(wrote)}</span>`;
+    const asking = asks(said);
+    return `<div class="cmp-m peer${asking ? " ask" : ""}" data-k="${h(key)}"><span class="cmp-from">${name}${relay ? `<span class="cmp-via">via ${h(relay)}</span>` : ""}`
+      + `${asking ? `<span class="cmp-asks">Asks</span>` : ""}</span>${body(key, said, true)}</div>`;
   }
   /** WHEN, SAID WHERE THE TALK BREAKS (Oct 26): the log carried no time at all, so a burst of calls could not be placed
    *  against the replies around it and a conversation that ran from the afternoon to midnight read as one stream. A
@@ -961,7 +1218,8 @@
     // EARLIER MESSAGES OPEN WHERE THEY ARE (Oct 28): the pill was a door to Sessions, so reading further back left the
     // sheet he was in. It reads the page before the oldest one drawn and puts it above, with the view held where it was.
     if (held?.earlier && st.sid) {
-      out.push({ key: "earlier", html: `<button class="cmp-older morepill pill" type="button" data-act="older"${st.older ? ' aria-busy="true"' : ""}>Earlier messages${CARET}</button>` });
+      const first = msgs.find((m) => m.ts)?.ts, before = first ? when(first, null) : "";
+      out.push({ key: "earlier", html: `<button class="cmp-older morepill pill" type="button" data-act="older" data-mp-up${st.older ? ' aria-busy="true"' : ""}><span class="mp-lab">Earlier messages</span>${before ? `<em>before ${h(before)}</em>` : ""}${DRAW.mpChev(true)}</button>` });
     }
     const results = new Map(msgs.filter((m) => m.role === "tool" && m.tool_use_id).map((m) => [m.tool_use_id, m.text]));
     const moves = (held?.moves || []).slice().sort((a, b) => a.moved_at - b.moved_at);
@@ -1004,7 +1262,16 @@
       stamp(m.ts);
       if (m.role === "peer") { out.push({ key, html: peerRow(key, m) }); continue; }
       if (m.role === "user") { out.push({ key, html: `<div class="cmp-m you">${h(String(m.text).trim())}</div>` }); continue; }
-      out.push({ key, html: `<div class="cmp-m ai" data-k="${h(key)}">${body(key, m.text)}</div>` });
+      // THE MODEL'S OWN REASONING IS FOLDED (Oct 29): a summary of what it weighed arrives as a reply that opens on a lone bold title, and
+      // stood in the full ink of the replies it sits between. It is one muted line, its title, and opens under it.
+      const mind = THOUGHT.exec(String(m.text).trim());
+      if (mind) {
+        const k = `th${key}`, open = st.opened.has(k);
+        out.push({ key, html: `<div class="cmp-m think" data-k="${h(key)}"><button class="disc cmp-cb" type="button" aria-expanded="${open}" aria-controls="cmp-r-${h(k)}" data-act="call" data-k="${h(k)}">`
+          + `${DRAW.chev}<span class="cmp-sum">${h(mind[1])}</span></button><div class="cmp-drop" id="cmp-r-${h(k)}" data-open="${open}"><div class="cmp-dropin"><div class="cmp-md">${md(mind[2])}</div></div></div></div>` });
+        continue;
+      }
+      out.push({ key, html: `<div class="cmp-m ai" data-k="${h(key)}">${body(key, m.text, true)}</div>` });
     }
     flush();
     for (const mv of moves) out.push(joint(mv)); // a move after the newest message
@@ -1034,8 +1301,8 @@
     let i = 0;
     while (i < old.length && i < next.length && old[i].key === next[i].key && old[i].html === next[i].html) i++;
     if (i === old.length && i === next.length) { countLines(); return; }  // a log drawn while the sheet was closed
-    const follow = log.scrollHeight - log.scrollTop - log.clientHeight < FOLLOW_PX || !old.length;
-    const top = log.scrollTop;
+    // the view follows the newest words only when he was at the foot, and never while a detail opens or older rows open above him
+    const live = !sheet.hidden, follow = live && ((atFoot() && !st.still && !st.hold) || !old.length);
     while (log.children.length > i) log.lastElementChild.remove();
     log.insertAdjacentHTML("beforeend", next.slice(i).map((r) => r.html).join(""));
     // A ROW THAT ARRIVES EASES IN (Oct 28), as every other thing that lands on the console does: only rows the log did not
@@ -1047,9 +1314,8 @@
     const grew = next.length > old.length && old.length > 0;
     drawn.rows = next;
     countLines();
-    if (follow) { log.scrollTop = log.scrollHeight; st.unread = 0; } else { log.scrollTop = top; if (grew) st.unread += next.length - old.length; }
+    if (follow) { toFoot(); st.unread = 0; } else if (grew) st.unread += next.length - old.length;
     drawUnread();
-    edge();
   }
   /** The page of the conversation before the oldest message drawn, put above it with the view held on what he was reading.
    *  A cursor the daemon did not give, or a read that fails, says so once, with the act that tries again. */
@@ -1068,27 +1334,27 @@
       say({ tone: "refused", text: "Earlier messages not read", acts: [{ word: "Try again", primary: true, run: () => { say(null); older(); } }] });
       return;
     }
-    const first = cur.messages[0]?.index ?? Infinity, before = log.scrollHeight, top = log.scrollTop;
+    const first = cur.messages[0]?.index ?? Infinity, before = docEl().scrollHeight, top = docEl().scrollTop;
     st.log = { ...cur, messages: [...res.body.messages.filter((m) => m.index < first), ...cur.messages], earlier: res.body.earlier || null };
     // rows that open above what he reads are older ones, never new ones: the count of what landed while he was up here stays
     const unread = st.unread;
+    // the older rows open above what he reads over --t-snap: they grow from nothing while the view is held on the message he
+    // was reading, which stays at the same height as they arrive, and the pill that opened them turns half a turn
+    const stood = new Set(log.children);
     st.still = true;
     drawLog();
     st.still = false;
     st.unread = unread;
     drawUnread();
-    log.scrollTop = top + (log.scrollHeight - before);
-    edge();
-  }
-  /** More of the conversation past either edge fades out at that edge, so a cut line reads as a scroll and never as
-   *  the end, or the start, of what the manager said. */
-  function edge() {
-    const more = log.scrollHeight - log.scrollTop - log.clientHeight > 2;
-    log.parentElement.classList.toggle("below", more);
-    log.parentElement.classList.toggle("above", log.scrollTop > 2);
+    // the page is the scroller: a shim lets the kit hold the view still on the page's own scroll while the rows grow
+    const page = { get scrollTop() { return docEl().scrollTop; }, set scrollTop(v) { scrollTo(0, v); }, get scrollHeight() { return docEl().scrollHeight; } };
+    DRAW.unfoldRows([...log.children].filter((el) => !stood.has(el)), { scroller: page, top, h: before });
+    const pillEl = log.querySelector(".cmp-older");
+    if (pillEl) DRAW.unfoldControl(pillEl, "");
+    scrollTo(0, top + (docEl().scrollHeight - before));
   }
   function drawUnread() {
-    const pillEl = sheet.querySelector(".cmp-new");
+    const pillEl = newest;
     const show = st.unread > 0 && st.open;
     pillEl.hidden = !show;
     if (show) pillEl.innerHTML = `<b>${st.unread}</b> new${st.unread > 1 ? " messages" : ""}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg>`;
@@ -1105,8 +1371,8 @@
     if (next?.title && next.title !== next.text) console.warn(`manager: ${next.title}`);
     if (next?.tone === "ok") lineTimer = setTimeout(() => { if (st.line === next) say(null); }, SAID_MS);
     line.hidden = !next;
-    const holder = st.open ? sheet : dock;
-    if (line.parentElement !== holder) (st.open ? sheet.insertBefore(line, foot) : dock.insertBefore(line, pill));
+    const holder = st.open ? sheet : pill.parentElement;
+    if (line.parentElement !== holder) (st.open ? sheet.insertBefore(line, foot) : pill.before(line));
     if (!next) { line.innerHTML = ""; return; }
     line.className = `cmp-line ${next.tone}${next.wrap ? " wrap" : ""}`;
     const words = next.html ?? h(next.text);
@@ -1140,9 +1406,10 @@
     const opening = !st.opened.has(key);
     const shown = opening && key.startsWith("b") ? bodyOf(key.slice(1))?.clientHeight : 0;
     if (opening) st.opened.add(key); else st.opened.delete(key);
-    const top = log.scrollTop;
+    // a detail opening or closing never moves the view to the foot: the page stays on the row he pressed
+    st.hold = true;
     drawLog();
-    log.scrollTop = top;
+    st.hold = false;
     if (shown) grow(key.slice(1), shown);
     if (opening) setTimeout(() => reveal(key), 260);
   }
@@ -1152,8 +1419,8 @@
   function reveal(key) {
     const row = log.querySelector(`[data-k="${CSS.escape(key)}"]`);
     if (!row || sheet.hidden) return;
-    const over = row.getBoundingClientRect().bottom - log.getBoundingClientRect().bottom + 16;
-    if (over > 0) log.scrollBy({ top: over, behavior: "smooth" });
+    const over = row.getBoundingClientRect().bottom + 16 - innerHeight;
+    if (over > 0) scrollBy({ top: over, behavior: "smooth" });
   }
   /** A LONG MESSAGE OPENS OVER --t-snap (Oct 27): it jumped from six lines to its whole height in one frame. It grows
    *  from the lines it showed [from] to its full height, in the console's own time and easing for a change in place. */
@@ -1167,6 +1434,7 @@
   }
   function openSheet() {
     if (!st.m || st.m.state === "off") return;
+    if (!st.open) st.pageAt = docEl().scrollTop;   // where the page stood, to give back when the sheet closes
     st.open = true; st.card = false;
     readTints();
     draw(); place();
@@ -1174,15 +1442,19 @@
   }
   function closeSheet() {
     if (!st.open && !st.menu) return;
+    const was = st.open;
     st.open = false; st.menu = null;
     draw(); place();
+    // the page is as long as it was before the sheet stood over it, and he is where he left it
+    if (was && st.pageAt != null) scrollTo({ top: st.pageAt, behavior: "instant" });
+    st.pageAt = null;
   }
   function openCard() {
     if (!st.m) return;
     st.card = true; st.open = false; st.menu = null;
     readTints();
     draw(); place();
-    (card.querySelector('.cmp-hd[aria-checked="true"]') || card.querySelector('[data-act="start"]'))?.focus();
+    (card.querySelector('.cmp-chip[aria-checked="true"]') || card.querySelector('[data-act="start"]'))?.focus();
   }
   function notNow() {
     st.notNow = true; st.card = false;
@@ -1223,8 +1495,8 @@
       case "folder_missing": plain("Not started · No settings folder"); return;
       default:
         if (res.status === 503) plain("Not started · No terminal");
-        else if (res.status === 404) plain("This splice has no manager", []);
-        else if (res.status === 0) plain("splice is not answering");
+        else if (res.status === 404) plain(NO_MANAGER, []);
+        else if (res.status === 0) plain(SPLICE_DOWN);
         else plain("Not started");
     }
   }
@@ -1271,13 +1543,13 @@
       case "draft": plain("Its prompt has unsent text", [{ word: "Open on Sessions", run: go }], "held"); return;
       case "not_installed": installLine(labelOf(key), why, [{ word: "Choose another command", run: () => { st.menu = "head"; drawFoot(); } }]); return;
       default:
-        plain(res.status === 0 ? `splice is not answering. It stays on ${labelOf(from)}` : `Not moved. It stays on ${labelOf(from)}`, [look]);
+        plain(res.status === 0 ? `${SPLICE_DOWN} · It stays on ${labelOf(from)}` : `Not moved. It stays on ${labelOf(from)}`, [look]);
     }
   }
   /** His message, whole, to the manager. A manager that is not running resumes first; words that did not go through stay
    *  in the field. */
   async function submit(clear = false) {
-    if (st.gone === "down") { retry(); return; }
+    if (st.gone === "down" || st.gone === "error") { retry(); return; }
     if (st.busy || st.phase || !st.m) return;
     const m = st.m, text = field.value.trim();
     if (unasked(m)) { openCard(); return; }
@@ -1306,7 +1578,7 @@
     st.retrying = true; drawPill();
     await readAll();
     st.retrying = false; draw();
-    if (st.gone === "down") mark(".cmp-send", "shook");
+    if (st.gone === "down" || st.gone === "error") mark(".cmp-send", "shook");
   }
   /** Types [text] into the manager's terminal as he would. False, with the reason on the line, when it did not go. */
   async function deliver(text, clear = false) {
@@ -1353,7 +1625,7 @@
       st.stopping = false;
       draw();
       mark('.cmp-foot [data-act="stop"]', "shook");
-      say({ tone: "refused", text: res.status === 0 ? "splice is not answering. Nothing was stopped" : "Not stopped",
+      say({ tone: "refused", text: res.status === 0 ? `${SPLICE_DOWN} · Nothing was stopped` : "Not stopped",
         title: res.body?.error || "", acts: [{ word: "Open on Sessions", run: go }] });
     }
     draw();
@@ -1397,7 +1669,7 @@
       case "pane_taken": plain("Not sent · Terminal reused", [look]); return;
       case "no_terminal": plain("Not sent · No terminal", [look]); return;
       case "refused": plain("Not sent · Terminal refused it", [look]); return;
-      default: plain(res.status === 0 ? "splice is not answering · Not sent" : "Not sent", [look]);
+      default: plain(res.status === 0 ? `${SPLICE_DOWN} · Not sent` : "Not sent", [look]);
     }
   }
   /** Press the numbered choice he picked, as Sessions' needs-you card does; the label guards against a menu that moved. */
@@ -1416,15 +1688,16 @@
     } else {
       draw();
       mark(`.cmp-ask [data-choice="${choice}"]`, "shook");
-      say({ tone: "refused", text: res.status === 0 ? "splice is not answering. Nothing was pressed" : "Not pressed",
+      say({ tone: "refused", text: res.status === 0 ? `${SPLICE_DOWN} · Nothing was pressed` : "Not pressed",
         title: res.body?.error || "", acts: [{ word: "Open on Sessions", run: go }] });
     }
     draw();
     setTimeout(tick, 600);
   }
-  function go() {
+  function go(href) {
     say(null); closeSheet();
-    const to = `sessions.html#${encodeURIComponent(st.sid || "")}`;
+    // a session's chip opens that session; the foot's door and a line's act open the manager's own
+    const to = typeof href === "string" && href ? href : `sessions.html#${encodeURIComponent(st.sid || "")}`;
     if (typeof CONSOLE !== "undefined") CONSOLE.navigate(to); else location.href = to;
   }
   function fit() {
@@ -1458,7 +1731,7 @@
   function tuck() {
     if (!dock || !field) return;
     // nor before the first read lands, whose striped hint is the only sign the bar is still being read, nor while the
-    // read fails: "splice is not answering" and its Try again, or a splice with no manager, stay said in full
+    // read fails: its one line and Try again, or a splice with no manager, stay said in full
     const m = st.m, idle = !st.open && !st.card && !st.menu && !st.line && !st.busy && !st.phase && !field.value.trim()
       && !(m?.state === "live" && m.status === "waiting") && Boolean(m) && !st.gone;
     const doc = document.scrollingElement || document.documentElement;
@@ -1484,7 +1757,7 @@
     const inner = pill.getBoundingClientRect().width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
     const room = inner - w(lamp) - w(send) - 2 * gap;
     const fs = getComputedStyle(field);
-    const need = textPx(HINT, fs) + parseFloat(fs.paddingLeft) + parseFloat(fs.paddingRight) + 2;
+    const need = textPx(SAY.message[0], fs) + parseFloat(fs.paddingLeft) + parseFloat(fs.paddingRight) + 2;
     const hideKey = room - (st.keyW || 0) - gap < need, short = room < need;
     if (hideKey !== st.narrow) { st.narrow = hideKey; dock.classList.toggle("narrow", hideKey); }
     if (short !== st.shortHint) { st.shortHint = short; drawPill(); }
@@ -1500,7 +1773,8 @@
    *  (the pill, or the sheet above it) to the bottom of the window. A page that is locked, or that hides the bar behind
    *  a sheet's scrim, reserves nothing. */
   function room() {
-    const hidden = locked() || document.querySelector(".scrim") || !dock.isConnected;
+    // an open sheet is the page's own end, so nothing is reserved under it
+    const hidden = locked() || document.querySelector(".scrim") || !dock.isConnected || st.open;
     const px = hidden ? 0 : Math.round(innerHeight - dock.getBoundingClientRect().top);
     const was = document.documentElement.style.getPropertyValue("--cmp-room");
     const now = `${Math.max(0, px)}px`;
@@ -1514,12 +1788,13 @@
     dock.setAttribute("role", "region");
     dock.setAttribute("aria-label", "The splice manager");
     dock.innerHTML = `<section class="cmp-card" role="dialog" aria-labelledby="cmp-card-h" hidden></section>`
+      + `<div class="cmp-frame">`
       + `<section class="cmp-sheet" aria-label="Conversation with the splice manager" hidden>`
       + `<header class="cmp-sh"></header>`
-      + `<div class="cmp-body"><div class="cmp-log" role="log" aria-live="polite" tabindex="0"></div>`
-      + `<button type="button" class="cmp-new morepill pill" data-act="newest" hidden></button></div>`
+      + `<div class="cmp-band" hidden><div class="cmp-bs cmp-ctx" role="group" aria-label="Context and limits" hidden></div>`
+      + `<div class="cmp-bs cmp-calls" hidden></div><div class="cmp-bs cmp-strip" hidden></div></div>`
+      + `<div class="cmp-body"><div class="cmp-log" role="log" aria-live="polite" tabindex="0"></div></div>`
       + `<div class="cmp-ask" role="group" aria-label="The manager asks" hidden></div>`
-      + `<div class="cmp-meters" role="group" aria-label="Context and limits" hidden></div>`
       + `<footer class="cmp-foot"></footer></section>`
       + `<div class="cmp-line" role="status" aria-live="polite" hidden></div>`
       + `<form class="cmp-pill" novalidate><span class="cmp-lamp off" aria-hidden="true"><i></i></span>`
@@ -1528,10 +1803,13 @@
       + `<span class="cmp-said" hidden></span>`
       + `<textarea class="cmp-field" rows="1" aria-label="Message the splice manager" autocomplete="off"></textarea>`
       + `<kbd class="cmp-k" aria-hidden="true">${KEYS}</kbd>`
-      + `<button type="submit" class="act primary cmp-send" disabled>Send</button></form>`;
+      + `<button type="submit" class="act primary cmp-send" disabled>Send</button></form></div>`
+      + `<button type="button" class="cmp-new morepill pill" data-act="newest" hidden></button>`;
     card = dock.querySelector(".cmp-card"); sheet = dock.querySelector(".cmp-sheet");
     log = dock.querySelector(".cmp-log");
-    ask = dock.querySelector(".cmp-ask"); meters = dock.querySelector(".cmp-meters"); foot = dock.querySelector(".cmp-foot"); line = dock.querySelector(".cmp-line");
+    ask = dock.querySelector(".cmp-ask"); band = dock.querySelector(".cmp-band"); meters = dock.querySelector(".cmp-ctx");
+    calls = dock.querySelector(".cmp-calls"); strip = dock.querySelector(".cmp-strip"); newest = dock.querySelector(".cmp-new");
+    foot = dock.querySelector(".cmp-foot"); line = dock.querySelector(".cmp-line");
     pill = dock.querySelector(".cmp-pill");
     lamp = dock.querySelector(".cmp-pill > .cmp-lamp"); door = dock.querySelector(".cmp-door"); said = dock.querySelector(".cmp-said");
     field = dock.querySelector(".cmp-field"); send = dock.querySelector(".cmp-send");
@@ -1581,12 +1859,12 @@
       if (lineAct) { st.line?.acts?.[+lineAct.dataset.i]?.run(); return; }
       if (!act) return;
       switch (act.dataset.act) {
-        case "pick": st.pick = act.dataset.head; drawCard(); card.querySelector(`.cmp-hd[data-head="${CSS.escape(st.pick)}"]`)?.focus(); return;
+        case "pick": st.pick = act.dataset.head; drawCard(); card.querySelector(`.cmp-chip[data-head="${CSS.escape(st.pick)}"]`)?.focus(); return;
         case "start": if (st.pick) start(st.pick, st.m?.state === "resumable" ? "resume" : "start"); return;
         case "later": notNow(); return;
         case "close": closeSheet(); field.focus(); return;
         case "said": say(null); return;                                   // a line he has read goes away where it stands
-        case "newest": log.scrollTop = log.scrollHeight; st.unread = 0; drawUnread(); return;
+        case "newest": toFoot(true); st.unread = 0; drawUnread(); return;
         case "older": older(); return;
         case "copyinstall": copyInstall(); return;
         // a call, a burst, a long body and a long result each open and close in place, and stay as he left them
@@ -1610,15 +1888,16 @@
         case "compact": compact(); return;
         case "stop": stop(); return;
         case "answer": answer(Number(act.dataset.choice), act.dataset.label); return;
-        case "go": e.preventDefault(); go(); return;
+        case "go": e.preventDefault(); go(act.getAttribute("href") ?? undefined); return;
         default:
       }
     });
     // what he opened stays open through every redraw; the log keeps its place when a detail opens above the fold
-    log.addEventListener("scroll", () => {
-      if (log.scrollHeight - log.scrollTop - log.clientHeight < FOLLOW_PX && st.unread) { st.unread = 0; drawUnread(); }
-      edge();
+    addEventListener("scroll", () => {
+      if (st.open && st.unread && atFoot()) { st.unread = 0; drawUnread(); }
     }, { passive: true });
+    // the sheet's height is the document's: the page behind it is cut where the sheet ends, whatever makes the sheet grow
+    new ResizeObserver(sizeDoc).observe(dock);
     // its keys are its own: Escape here never also closes what the page has open (Sessions' in-prompt card, a menu)
     dock.addEventListener("keydown", (e) => {
       e.stopPropagation();
@@ -1650,8 +1929,9 @@
     dock.addEventListener("transitionend", sizing(false));
     dock.addEventListener("transitioncancel", sizing(false));
     document.fonts?.ready.then(() => countLines(true));
-    // the first read of the manager has six seconds, the same a page's read has before it says it is slow (kit.js watchGhosts)
-    setTimeout(() => { if (!st.m && !st.gone) { st.slow = true; drawPill(); } }, 6_000);
+    // the first read of the manager has six seconds, the same a page's read has before it draws its ring (kit.js watchGhosts);
+    // the ring steps once a second while that read is out
+    setInterval(() => { if (!st.m && !st.gone) drawPill(); }, 1_000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) tick(); });
     draw();
     place();

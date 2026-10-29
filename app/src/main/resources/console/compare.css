@@ -23,61 +23,77 @@
 
 /* ---------- the prompt: one surface, his plan read as it renders, the field while he writes ---------- */
 .pg-ask > .psec { flex: 1; }
-.pg-md {
-  position: relative; flex: 1; display: grid; min-width: 0; min-height: 12rem; border-radius: var(--r-in); background: var(--obj-sunk);
+/* the field is as tall as its words (three lines at the least) and never scrolls inside; Send stands under it, in the same box,
+   and what the plate holds under that is the earlier prompt and the prompts last sent */
+.pg-pbox {
+  position: relative; flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; border-radius: var(--r-in); background: var(--obj-sunk);
   border: .12rem solid var(--track-line); cursor: text; transition: border-color var(--t-hover) var(--e-out);
 }
-.pg-md:focus-within, .pg-md.pg-read:hover { border-color: var(--text-mute); }
+.pg-pbox:focus-within, .pg-pbox:has(.pg-read):hover { border-color: var(--text-mute); }
+.pg-md { position: relative; flex: 1 1 auto; display: grid; align-content: start; min-width: 0; min-height: calc(3 * 1.05rem * 1.6 + 2.2rem); }
 /* the field and the plan it renders are set alike, so his words stay where they were when one turns into the other */
 .pg-md .field, .pg-md-out { min-width: 0; padding: 1.1rem 1.3rem; font: 400 1.05rem/1.6 var(--font-name); color: var(--text); }
-.pg-md .field { min-height: 12rem; height: var(--fit, auto); resize: none; overflow: hidden; border: 0; border-radius: var(--r-in); background: transparent; }
+.pg-md .field { min-height: calc(3 * 1.05rem * 1.6 + 2.2rem); height: var(--fit, auto); resize: none; overflow: hidden; border: 0; border-radius: var(--r-in); background: transparent; }
 .pg-md .field:focus, .pg-md .field:focus-visible { border: 0; outline: none; box-shadow: none; }
 .pg-md .field::placeholder { color: var(--text-mute); }
-.pg-md-out { overflow-wrap: anywhere; border-radius: var(--r-in); }
-.pg-md-out:focus-visible { outline: .14rem solid var(--text); outline-offset: .2rem; }
+.pg-md-out { overflow-wrap: anywhere; border-radius: var(--r-in); padding-right: 4rem; }
+.pg-md-out:focus-visible { outline: .14rem solid var(--text); outline-offset: -.2rem; }
 .pg-md-out > * { max-width: 72rem; }
 .pg-md.swap > * { animation: pg-fade var(--t-hover) var(--e-out) 1; }
 @keyframes pg-fade { from { opacity: .35; } }
 /* the pencil in a read plan's corner draws what a click does: it turns the plan into the field */
-.pg-edit { position: absolute; top: .8rem; right: .9rem; display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: var(--r-in); color: var(--text-mute); pointer-events: none; background: var(--obj-sunk); transition: color var(--t-hover) var(--e-out), transform var(--t-hover) var(--e-out); }
+.pg-edit { position: absolute; top: .8rem; right: .9rem; display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: var(--r-in); color: var(--text-mute); pointer-events: none; background: var(--obj-sunk); box-shadow: inset 0 0 0 .1rem var(--track-line); transition: color var(--t-hover) var(--e-out), transform var(--t-hover) var(--e-out); }
 .pg-edit svg { width: 1.15rem; height: 1.15rem; }
 .pg-md.pg-read:hover .pg-edit { color: var(--text); transform: translate(-.1rem, -.1rem) rotate(-8deg); }
-/* beside the models plate the prompt's box takes the row's height and never sets it: a plan longer than the box scrolls
-   inside it, read or written, so the models plate never stands half empty beside a long plan and the box keeps its size
-   when one mode turns into the other */
-@container (min-width: 150rem) {
-  .pg-md { flex: 1 1 0; grid-template-rows: minmax(0, 1fr); }
-  .pg-md .field { height: auto; }
-  .pg-md .field, .pg-md-out { overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--track-line) transparent; }
-  /* more of the plan lies below the box's foot: the foot fades into the box until he scrolls to the plan's end */
-  .pg-md.pg-more::after {
-    content: ""; position: absolute; left: 0; right: .9rem; bottom: 0; height: 3.4rem; pointer-events: none;
-    border-radius: 0 0 0 var(--r-in); background: linear-gradient(to bottom, transparent, var(--obj-sunk));
-  }
+
+/* the earlier prompt: the one the dimmed answers were asked, two lines of it, and the press that puts it back */
+.pg-earlyw { min-width: 0; }
+.pg-early { display: grid; grid-template-rows: 1fr; }
+.pg-earlyin { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: var(--u); }
+.pg-early.unfold { animation: pg-unfold var(--t-move) var(--e-out) both; }
+.pg-early.unfold > .pg-earlyin { overflow: hidden; }
+.pg-pk { display: flex; align-items: center; justify-content: space-between; gap: calc(2 * var(--u)); min-height: var(--ctl-h); }
+.pg-use { white-space: nowrap; }
+.pg-old {
+  box-sizing: border-box; padding: .6rem .9rem; border-radius: var(--r-in); box-shadow: inset 0 0 0 .1rem var(--track-line);
+  font: 400 .95rem/1.5 var(--font-name); color: var(--text-mute); overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
+/* the prompts last sent: each one line, each pressed back into the field; the places not yet taken are dashed slots */
+.pg-rec { display: flex; flex-direction: column; gap: var(--u); min-width: 0; }
+.pg-recs { display: flex; flex-direction: column; gap: calc(var(--u) / 2); }
+.pg-pr, .pg-rslot { box-sizing: border-box; display: flex; align-items: center; gap: calc(1.5 * var(--u)); width: 100%; min-height: 3.2rem; padding: 0 calc(1.5 * var(--u)); border-radius: var(--r-in); text-align: left; }
+.pg-pr { border: 0; background: color-mix(in oklab, var(--text) 5%, transparent); color: var(--text-body); font: 400 .98rem/1.2 var(--font-name); cursor: pointer; transition: background-color var(--t-hover) var(--e-out), color var(--t-hover) var(--e-out); }
+.pg-pr:hover { background: var(--track); color: var(--text); }
+.pg-pr:focus-visible { outline: .14rem solid var(--text); outline-offset: -.14rem; }
+.pg-pr svg { flex: none; width: 1.05rem; height: 1.05rem; color: var(--text-mute); }
+.pg-pr span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pg-rslot { border: .1rem dashed var(--track-line); font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+/* beside the models plate the two plates end level: what the prompt plate has over goes to its box, never to a band */
+@container (min-width: 150rem) { .pg-recs { flex: 1; } .pg-pr, .pg-rslot { flex: 1 1 3.2rem; max-height: 5.6rem; } }
 
 /* the markdown a plan and an answer are written in (compare.js mdPlan) */
 .pg-mdx > :first-child { margin-top: 0; }
 .pg-mdx > :last-child { margin-bottom: 0; }
-.pg-mdx p { margin: 0 0 .65rem; }
-.pg-mdx h3, .pg-mdx h4, .pg-mdx h5, .pg-mdx h6 { margin: 1.1rem 0 .55rem; font-weight: 400; line-height: 1.2; color: var(--text); break-after: avoid; }
+.pg-mdx p { margin: 0 0 0.667rem; }
+.pg-mdx h3, .pg-mdx h4, .pg-mdx h5, .pg-mdx h6 { margin: 1rem 0 0.667rem; font-weight: 400; line-height: 1.2; color: var(--text); break-after: avoid; }
 .pg-mdx h3 { font-family: var(--font-lead); font-size: 1.3rem; }
 .pg-mdx h4 { font-family: var(--font-lead); font-size: 1.15rem; }
 /* a heading is never smaller than the text under it */
 .pg-mdx h5, .pg-mdx h6 { font: 600 1.05rem/1.3 var(--font-name); }
 .pg-mdx h6 { color: var(--text-body); }
-.pg-mdx ul, .pg-mdx ol { display: flex; flex-direction: column; gap: .4rem; margin: 0 0 .65rem; padding-left: 1.25rem; }
+.pg-mdx ul, .pg-mdx ol { display: flex; flex-direction: column; gap: 0.333rem; margin: 0 0 0.667rem; padding-left: 1.25rem; }
 .pg-mdx ul.tasks { list-style: none; padding-left: 0; }
-.pg-mdx ul.tasks li { display: flex; align-items: flex-start; gap: .7rem; }
+.pg-mdx ul.tasks li { display: flex; align-items: flex-start; gap: 0.667rem; }
 .pg-mdx code { font: 500 .9em/1 var(--font-data); background: var(--obj-high); border-radius: .25rem; padding: .12rem .3rem; }
-.pg-mdx pre { margin: 0 0 .65rem; padding: .75rem .9rem; overflow-x: auto; background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); break-inside: avoid; }
+.pg-mdx pre { margin: 0 0 0.667rem; padding: .75rem .9rem; overflow-x: auto; background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); break-inside: avoid; }
 .pg-mdx pre code { background: none; padding: 0; border-radius: 0; font: 500 .88rem/1.55 var(--font-data); white-space: pre-wrap; overflow-wrap: anywhere; }
 .pg-mdx hr { margin: 1rem 0; border: 0; border-top: .08rem solid var(--hair); }
-.pg-mdx table { display: block; max-width: 100%; overflow-x: auto; margin: 0 0 .8rem; border-collapse: collapse; font: 500 .95rem/1.4 var(--font-name); break-inside: avoid; }
+.pg-mdx table { display: block; max-width: 100%; overflow-x: auto; margin: 0 0 0.667rem; border-collapse: collapse; font: 500 .95rem/1.4 var(--font-name); break-inside: avoid; }
 .pg-mdx th, .pg-mdx td { padding: .45rem 1rem .45rem 0; text-align: left; vertical-align: top; border-bottom: .08rem solid var(--hair); }
 .pg-mdx th { font-weight: 600; color: var(--text); border-bottom-color: var(--track-line); }
 /* a checkbox in a plan: a box, filled in the text's ink when it's done (the key light is Send's alone) */
-.pg-box { position: relative; width: 1.15rem; height: 1.15rem; flex: none; margin-top: .3rem; border: .14rem solid color-mix(in oklab, var(--text) 55%, transparent); border-radius: .3rem; background: var(--obj-high); }
+.pg-box { position: relative; width: 1.15rem; height: 1.15rem; flex: none; margin-top: 0.333rem; border: .14rem solid color-mix(in oklab, var(--text) 55%, transparent); border-radius: .3rem; background: var(--obj-high); }
 .pg-box.on { background: var(--text); border-color: var(--text); }
 .pg-box.on::after { content: ""; position: absolute; left: .3rem; top: .06rem; width: .3rem; height: .62rem; border: solid var(--obj); border-width: 0 .17rem .17rem 0; transform: rotate(45deg); }
 /* what changed since the prompt the dimmed answers were asked: the words added underlined on a wash, the words taken
@@ -86,15 +102,15 @@
 .pg-mdx del, .pg-dleg del { color: var(--text-body); text-decoration: line-through; text-decoration-thickness: .15rem; text-decoration-color: color-mix(in oklab, var(--text) 80%, transparent); background: color-mix(in oklab, var(--text) 6%, transparent); border-radius: .15rem; padding: 0 .12rem; }
 .pg-mdx ins, .pg-mdx del { animation: pg-mark var(--t-move) var(--e-out) 1 both; }
 @keyframes pg-mark { from { opacity: 0; } }
-.pg-dleg { display: inline-flex; align-items: baseline; gap: 1.2rem; font: 500 .88rem/1.2 var(--font-name); color: var(--text-body); }
+.pg-dleg { display: inline-flex; align-items: baseline; gap: 1.333rem; font: 500 .88rem/1.2 var(--font-name); color: var(--text-body); }
 
-.pg-go { display: flex; align-items: center; justify-content: flex-end; gap: 1.2rem; }
-.pg-keys { display: inline-flex; align-items: center; gap: .3rem; }
+.pg-go { display: flex; align-items: center; justify-content: flex-end; gap: calc(2 * var(--u)); padding: 0 calc(1.5 * var(--u)) calc(1.5 * var(--u)); cursor: default; }
+.pg-keys { display: inline-flex; align-items: center; gap: 0.333rem; }
 .pg-keys kbd {
   padding: .3rem .5rem; font: 500 .8rem/1 var(--font-data); color: var(--text-body); background: var(--obj-sunk);
   border: .12rem solid var(--track-line); border-bottom-width: .22rem; border-radius: .35rem;
 }
-.pg-send { display: inline-flex; align-items: center; gap: .6rem; padding: .75rem 1.35rem; font-size: 1rem; }
+.pg-send { display: inline-flex; align-items: center; gap: 0.667rem; padding: 0 1.35rem; font-size: 1rem; }
 .pg-send svg { width: 1.05rem; height: 1.05rem; }
 .pg-send span.rise { animation: pg-word var(--t-snap) var(--e-out) 1; }
 @keyframes pg-word { from { opacity: 0; transform: translateY(.45rem); } }
@@ -104,41 +120,54 @@
 .pg-cmp { container: plate / inline-size; }  /* the round's three parts stand on one line where the plate holds them */
 .pg-cmp > .psec { flex: 1; }
 .pg-cmps > .sechead { align-items: center; min-height: 2.2rem; }
-.pg-aside { flex: 1; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: .6rem 2.2rem; }
-.pg-slots { display: inline-flex; align-items: center; gap: .4rem; }
+.pg-aside { flex: 1; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 0.667rem 2.4rem; }
+.pg-slots { display: inline-flex; align-items: center; gap: 0.333rem; }
 .pg-slots i { width: .8rem; height: .8rem; border-radius: 50%; box-shadow: inset 0 0 0 .13rem var(--track-line); transition: background-color var(--t-snap) var(--e-out), box-shadow var(--t-snap) var(--e-out); }
 .pg-slots i.on { background: var(--c); box-shadow: 0 0 0 .13rem var(--ink); }
-.pg-legi { display: inline-flex; align-items: center; gap: .55rem; font: 500 .88rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
+.pg-legi { display: inline-flex; align-items: center; gap: 0.667rem; font: 500 .88rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
 .pg-note { font: 500 .88rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
 .pg-legi.pg-note .nr { font: 500 .95rem/1 var(--font-data); }
 .pg-bestk .pg-star { width: 1rem; height: 1rem; margin: 0; }
-.pg-costleg { display: inline-flex; align-items: center; flex-wrap: wrap; gap: .5rem 1.4rem; font: 500 .88rem/1 var(--font-name); color: var(--text-body); }
-.pg-costleg > span { display: inline-flex; align-items: center; gap: .5rem; white-space: nowrap; }
+.pg-costleg { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0.667rem 1.333rem; font: 500 .88rem/1 var(--font-name); color: var(--text-body); }
+.pg-costleg > span { display: inline-flex; align-items: center; gap: 0.667rem; white-space: nowrap; }
 .pg-costleg .sw { width: 1.6rem; height: .55rem; border-radius: .25rem; background: color-mix(in oklab, var(--text) 38%, transparent); }
 .pg-costleg .sw.plan { background: transparent; box-shadow: inset 0 0 0 .12rem color-mix(in oklab, var(--text) 70%, transparent); }
 
-/* THE ROUND: how many answered of how many were asked leads the plate, the round's split is one bar beside it, and the
-   time to the last answer and the failures are tiles at its end; a hairline, with 4u over and under it, divides it from the
-   table. Beside the table's width the three stand on one line, narrower they stack. */
+/* THE ROUND: how many answered of how many were asked leads the plate, the clock beside it, and the round's split is one bar
+   under them, a quarter of the table for each model asked; a hairline, with 4u over and under it, divides it from the table. */
 /* the round's first appearance: it opens from nothing, so the table and the answers under it move down rather than jump */
 .pg-roundw { display: grid; grid-template-rows: 1fr; }
 .pg-roundin { min-width: 0; min-height: 0; }
 .pg-roundw.unfold { animation: pg-unfold var(--t-move) var(--e-out) both; }
 .pg-roundw.unfold > .pg-roundin { overflow: hidden; }
-.pg-round { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: calc(2 * var(--u)) calc(4 * var(--u)); margin-bottom: calc(4 * var(--u)); padding-bottom: calc(4 * var(--u)); border-bottom: .08rem solid var(--hair); transition: opacity var(--t-snap) var(--e-out); }
-@container plate (min-width: 64rem) { .pg-round { grid-template-columns: auto minmax(18rem, 1fr) auto; } }
+.pg-round { display: flex; flex-direction: column; align-items: flex-start; gap: calc(2 * var(--u)); margin-bottom: calc(2 * var(--u)); padding-bottom: calc(2 * var(--u)); border-bottom: .08rem solid var(--hair); transition: opacity var(--t-snap) var(--e-out); }
 .pg-round.stale { opacity: .58; }
-.pg-round .pd-pop { min-width: 0; }
-.pg-rtiles { justify-content: flex-start; }
-.pg-failt .pd-stat > svg { color: var(--limit); stroke: var(--limit); background: color-mix(in oklab, var(--limit) 14%, transparent); }
-.pg-failt .pd-stat b { color: var(--limit); }
-.pg-round .pd-seg.nt { background-image: repeating-linear-gradient(-45deg, transparent 0 .45rem, rgba(7, 5, 10, .24) .45rem .9rem); background-size: 200% 100%; animation: ghost-stripes var(--t-stripe) linear infinite; }  /* answers still out: work in progress, striped */
+.pg-rtop { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--u) calc(4 * var(--u)); }
+.pg-hero { display: inline-flex; flex-direction: column; }
+.pg-hero .pd-top { flex-wrap: nowrap; white-space: nowrap; }
+.pg-clock { display: inline-flex; align-items: center; gap: calc(1.5 * var(--u)); align-self: center; }
+.pg-clock svg { flex: none; width: 1.9rem; height: 1.9rem; padding: .3rem; box-sizing: border-box; border-radius: 50%; background: var(--socket); color: var(--socket-ink); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .15rem var(--rail); stroke-width: 2.4; }
+.pg-clock .hand { transform-box: view-box; transform-origin: 12px 12px; }
+.pg-clock.run .hand { animation: pg-tick 2.4s linear infinite; }  /* work in progress: the hand turns while a send is out */
+@keyframes pg-tick { to { transform: rotate(360deg); } }
+.pg-clock b { font: 500 1rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
+.pg-rbar { width: calc(var(--asked) * 25%); max-width: 100%; }
+.pg-rbar .pd-bar { position: relative; }
+.pg-rbar .pd-bar::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(90deg, transparent 0, transparent calc(100% / var(--asked) - .14rem), var(--ink) calc(100% / var(--asked) - .14rem), var(--ink) calc(100% / var(--asked))); }
+.pg-rbar .pd-seg { flex: 0 0 auto; }
+.pg-rseg { display: inline-flex; align-items: center; gap: .3rem; padding-inline: .6rem; }
+.pg-rseg svg { flex: none; width: .95rem; height: .95rem; stroke-width: 2.6; }
+.pg-rseg b { font: 600 .9rem/1 var(--font-data); font-variant-numeric: tabular-nums; }
+.pg-rbar .pd-seg.f0 { color: var(--splice-ink-day); }
+.pg-round .pd-seg.nt { background-image: repeating-linear-gradient(-45deg, transparent 0 .45rem, rgba(7, 5, 10, .24) .45rem .9rem); background-size: 200% 100%; animation: ghost-stripes var(--t-stripe) linear infinite; color: var(--text); }  /* answers still out: work in progress, striped */
 
 /* THE TABLE: one row per model, its cells on the columns every row shares (a subgrid), so a figure is read down its
    column and a row across. The time on one log axis, then what the send brought, then what the model is. The model's
    column is as wide as its widest name asks, never more than 34rem, and the time takes the room left. */
 .pg-table {
-  position: relative; display: grid; align-items: stretch; column-gap: calc(2 * var(--u));
+  position: relative; flex: 1 1 auto; display: grid; align-items: stretch; align-content: start; column-gap: calc(2 * var(--u));
+  /* the plate's extra height goes to the model rows, each up to 4.23rem, and to nothing else: the head and the add row keep their own */
+  grid-template-rows: auto repeat(4, minmax(3.6rem, 4.23rem)) auto;
   grid-template-columns: 2rem fit-content(34rem) minmax(11rem, 2fr) minmax(4.6rem, max-content) repeat(6, minmax(6.2rem, 1fr));
 }
 .pg-tr { position: relative; grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; min-height: 3.6rem; transition: transform var(--t-move) var(--e-io); }
@@ -147,8 +176,11 @@
 .pg-tr:not(.pg-th)::after { content: ""; position: absolute; left: calc(2rem + 2 * var(--u)); right: 0; top: 0; height: .08rem; background: var(--hair); pointer-events: none; }
 .pg-c { min-width: 0; }
 .pg-th { min-height: 0; align-items: end; padding-bottom: .65rem; }
+.pg-th > .pg-c { grid-row: 2; }
 .pg-h { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); white-space: nowrap; }
-.pg-h small { display: block; margin-top: .15rem; font: 500 .76rem/1.2 var(--font-name); color: var(--text-mute); }
+.pg-h small { display: inline; margin-left: .3rem; font: 500 .76rem/1.2 var(--font-name); color: var(--text-mute); opacity: .8; }
+/* the price unit, said once over In and Out, with a rule under it that spans both */
+.pg-th > .pg-phead { grid-row: 1; grid-column: 9 / span 2; margin-bottom: .35rem; padding-bottom: .35rem; border-bottom: .08rem solid var(--track-line); font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); white-space: nowrap; }
 .pg-timeh { text-align: right; }
 /* the axis's own marks over the time column; the lines under them run down every row */
 .pg-axis { position: relative; align-self: end; height: 1rem; font: 500 .8rem/1 var(--font-data); color: var(--text-mute); }
@@ -173,9 +205,9 @@
 .pg-sock.mini b { font-size: .78rem; }
 
 /* a row's model: its provider's dot and its name, which opens its answer, then its command */
-.pg-rwho { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem .8rem; padding-block: .55rem; }
+.pg-rwho { display: flex; align-items: center; flex-wrap: wrap; gap: 0.333rem 0.667rem; padding-block: .55rem; }
 .pg-rname {
-  display: inline-flex; align-items: center; gap: .6rem; min-width: 0; margin-left: -.3rem; padding: .2rem .3rem; border: 0;
+  display: inline-flex; align-items: center; gap: 0.667rem; min-width: 0; margin-left: -0.333rem; padding: .2rem .3rem; border: 0;
   border-radius: .3rem; background: none; color: var(--text); font: 500 1.05rem/1.25 var(--font-name); text-align: left; cursor: pointer;
   transition: background-color var(--t-hover) var(--e-out);
 }
@@ -194,7 +226,7 @@
 .pg-tr.is-failed .pg-tv { color: var(--limit); }
 
 /* the figures: each a bar on its column's scale, the figures of a column ending on one line */
-.pg-tr > .barcell { gap: .6rem; }
+.pg-tr > .barcell { gap: 0.667rem; }
 .pg-tr > .barcell .vbar { height: .55rem; }
 .pg-tr > .barcell > .v { font: 500 .98rem/1 var(--font-data); color: var(--text-body); white-space: nowrap; }
 .pg-tr > .barcell > .v .nr { font: 500 .98rem/1 var(--font-data); }
@@ -217,12 +249,12 @@
 .pg-add .plus { flex: none; }
 .pg-addw { font: 500 1.02rem/1 var(--font-name); color: var(--text); }
 .pg-offer { font: 500 .9rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
-.pg-offer b { font: 600 .95rem/1 var(--font-data); color: var(--text-body); margin-right: .3rem; }
+.pg-offer b { font: 600 .95rem/1 var(--font-data); color: var(--text-body); margin-right: 0.333rem; }
 .pg-add .chev { margin-left: auto; }
 .pg-add[aria-expanded="true"] { border-color: var(--text-mute); color: var(--text); background: color-mix(in oklab, var(--text) 4%, transparent); }
 .pg-add[aria-expanded="true"] .chev { transform: rotate(90deg); }
-.pg-addrow > .pg-add { grid-column: 2 / -1; justify-self: start; width: min(100%, 46rem); margin-block: .6rem; }
-.pg-addrow > .pg-add.ghosted { width: min(100%, 46rem); }
+.pg-addrow > .pg-add { grid-column: 2 / -1; justify-self: stretch; width: 100%; margin-block: var(--u); }
+.pg-addrow > .pg-add.ghosted { width: 100%; }
 /* four chosen: a solid row, not the dashed place where a model lands, since none is left */
 .pg-add.pg-swap { border-style: solid; border-width: .12rem; min-height: 3rem; }
 .pg-add.pg-swap .plus svg { width: .95rem; height: .95rem; }
@@ -230,22 +262,21 @@
 .pg-nada, .pg-nada:hover { cursor: default; border-color: var(--track-line); background: transparent; color: var(--text-mute); }
 .pg-nada .pg-addw { color: var(--text-body); }
 .pg-nada .state { font-size: 1.02rem; }
-.pg-nada a.act { display: inline-flex; align-items: center; gap: .45rem; text-decoration: none; }
+.pg-nada a.act { display: inline-flex; align-items: center; gap: 0.333rem; text-decoration: none; }
 .pg-nada .act .go { width: .9rem; height: .9rem; }
 
 /* ---------- the answers: side by side, each pane opening its own request at its foot ---------- */
 .pg-answers { display: flex; flex-direction: column; gap: calc(2 * var(--u)); min-width: 0; }
 .pg-ahead { align-items: center; }
-.pg-oldleg { display: inline-flex; align-items: center; gap: .5rem; font: 500 .88rem/1 var(--font-name); color: var(--text-body); }
+.pg-oldleg { display: inline-flex; align-items: center; gap: 0.667rem; font: 500 .88rem/1 var(--font-name); color: var(--text-body); }
 .pg-oldleg .sw { width: 1.6rem; height: .9rem; border-radius: .25rem; background: var(--obj); border: .12rem solid var(--ink); opacity: .58; }
-/* each pane takes three of the grid's rows (its head, its answer, its request) as a subgrid, so the heads of a row of panes
-   end on one line and the answers start on one */
+/* each pane takes two of the grid's rows (its head and its answer) as a subgrid, so the heads of a row of panes end on one
+   line and the answers start on one */
 .pg-lanes { --lanes: 1; display: grid; grid-template-columns: repeat(var(--lanes), minmax(0, 1fr)); column-gap: var(--gap-col); row-gap: 0; }
-/* a pane is three rows of its lane row: its card (the head and the answer on one surface, two rows), and under it the request
-   it opened, a card of its own. Only the panes that opened a request fill the third row, so an open request never stretches
-   the cards beside it. The space under the pane is the pane's own, so every lane row ends 2.4rem under its last card. */
-.pgp { --c: var(--text-mute); grid-row: span 3; display: grid; grid-template-rows: subgrid; row-gap: 0; min-width: 0; }
-.pgp::after { content: ""; grid-row: 3; grid-column: 1; margin-bottom: 2.4rem; }
+/* a pane is the two rows of its lane row that its card takes (the head and the answer on one surface). A request a pane opened
+   stands across all the lanes under that row (.pg-req), so it never stretches the cards beside it. The space under the pane
+   is the pane's own, so every lane row ends 2.4rem under its last card. */
+.pgp { --c: var(--text-mute); grid-row: span 2; display: grid; grid-template-rows: subgrid; row-gap: 0; min-width: 0; margin-bottom: 2.4rem; }
 .pgc {
   grid-row: 1 / span 2; grid-column: 1; display: grid; grid-template-rows: subgrid; row-gap: 0; min-width: 0;
   background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
@@ -255,33 +286,33 @@
    columns give it and its figures keep the length of a bar that can be read against its label */
 @container (min-width: 150rem) { .pgp.solo { max-width: calc(50% - var(--gap-col) / 2); } }
 .pgp.landed { animation: none; }
-.pgp.landed > .pgc { animation: pulseOnce var(--t-pulse) var(--e-out) 1; }  /* the pulse rings the card, not the three rows the pane spans */
+.pgp.landed > .pgc { animation: pulseOnce var(--t-pulse) var(--e-out) 1; }  /* the pulse rings the card, not the two rows the pane spans */
 /* the head: the socket, the model's name with its command and the pane's acts on its line, under them whose it is, and
    under both the answer's own figures, each a bar on the table's scale */
 .pg-head {
-  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "sock nm acts" "sock meta meta" "strip strip strip";
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: auto auto 1fr; grid-template-areas: "sock nm acts" "sock meta meta" "strip strip strip";
   align-items: center; align-content: start; column-gap: 1rem; row-gap: 0; min-width: 0; padding: calc(2.5 * var(--u)) calc(2 * var(--u)) calc(2.5 * var(--u)) calc(3 * var(--u));
   background: var(--obj-high); border-bottom: .12rem solid var(--ink);
   border-radius: calc(var(--r-obj) - var(--ink-w)) calc(var(--r-obj) - var(--ink-w)) 0 0;
 }
 .pgc:has(> .pg-body:empty) > .pg-head { border-bottom: 0; border-radius: calc(var(--r-obj) - var(--ink-w)); }
 .pg-head > .pg-sock { grid-area: sock; align-self: start; margin-top: .05rem; }
-.pg-nm { grid-area: nm; display: flex; align-items: center; flex-wrap: wrap; gap: .35rem .8rem; min-width: 0; min-height: 2.2rem; }
-.pg-head .pg-meta { grid-area: meta; margin-top: .35rem; }
+.pg-nm { grid-area: nm; display: flex; align-items: center; flex-wrap: wrap; gap: 0.333rem 0.667rem; min-width: 0; min-height: 2.2rem; }
+.pg-head .pg-meta { grid-area: meta; margin-top: 0.333rem; }
 .pg-head .pg-acts { grid-area: acts; }
-.pg-head .pg-strip { grid-area: strip; }
+.pg-head .pg-strip { grid-area: strip; align-self: end; }
 .pg-model { margin: 0; font: 400 1.4rem/1.15 var(--font-lead); color: var(--text); overflow-wrap: anywhere; }
-.pg-meta { display: flex; align-items: center; flex-wrap: wrap; gap: .45rem .6rem; font: 500 .92rem/1.25 var(--font-name); color: var(--text-body); }
-.pg-meta > span { display: inline-flex; align-items: baseline; gap: .45rem; }
+.pg-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 0.333rem 0.667rem; font: 500 .92rem/1.25 var(--font-name); color: var(--text-body); }
+.pg-meta > span { display: inline-flex; align-items: baseline; gap: 0.333rem; }
 .pg-meta .sep { font-style: normal; color: var(--text-mute); }
 .pg-an { color: var(--text); }
 .pg-an.var { font: 500 .86rem/1.2 var(--font-data); color: var(--text-body); letter-spacing: .01em; }
-.pg-key { display: inline-flex; align-items: baseline; gap: .45rem; min-width: 0; }
+.pg-key { display: inline-flex; align-items: baseline; gap: 0.333rem; min-width: 0; }
 .pg-tail { font: 500 .86rem/1.2 var(--font-data); color: var(--text-mute); }
 .pg-plan { color: var(--text-mute); }
-.pg-acts { flex: none; display: flex; align-items: center; gap: .4rem; }
+.pg-acts { flex: none; display: flex; align-items: center; gap: 0.333rem; }
 .pg-reqd {
-  gap: .5rem; padding: .45rem .7rem; border: .12rem solid var(--track-line); border-radius: var(--r-in);
+  gap: 0.667rem; padding: .45rem .7rem; border: .12rem solid var(--track-line); border-radius: var(--r-in);
   font: 500 .9rem/1 var(--font-name); color: var(--text-body); transition: border-color var(--t-hover) var(--e-out), color var(--t-hover) var(--e-out);
 }
 .pg-reqd:hover, .pg-reqd[aria-expanded="true"] { color: var(--text); border-color: var(--text-mute); }
@@ -292,9 +323,10 @@
 
 /* the answer's own figures: time, cost and tokens each way, each a bar on the same scale as its column of the table, so the
    answer is never read apart from what it cost; empty before the send, striped while it is out */
-.pg-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: calc(1.5 * var(--u)) calc(2.5 * var(--u)); margin-top: calc(2 * var(--u)); padding-top: calc(2 * var(--u)); border-top: .08rem solid var(--hair); transition: opacity var(--t-snap) var(--e-out); }
-.pg-sc { min-width: 0; display: flex; flex-direction: column; gap: .4rem; }
-.pg-scl { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; min-width: 0; }
+.pg-head { container: phead / inline-size; }
+.pg-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(1.5 * var(--u)) var(--gap-col); margin-top: calc(2 * var(--u)); padding-top: calc(2 * var(--u)); border-top: .08rem solid var(--hair); transition: opacity var(--t-snap) var(--e-out); }
+.pg-sc { min-width: 0; display: flex; flex-direction: column; gap: 0.333rem; }
+.pg-scl { display: flex; align-items: baseline; justify-content: space-between; gap: 0.667rem; min-width: 0; }
 .pg-scl em { font: 500 .8rem/1.2 var(--font-name); font-style: normal; color: var(--text-mute); white-space: nowrap; }
 .pg-scl .v { font: 500 .98rem/1.1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); white-space: nowrap; }
 .pg-scl .v .nr { font: 500 .98rem/1.1 var(--font-data); }
@@ -304,6 +336,8 @@
 .pg-sc[data-f="ms"] .vbar b { background: var(--c); box-shadow: inset -.14rem 0 0 var(--ink); }
 .pg-strip.is-failed .pg-sc[data-f="ms"] .vbar b { background: var(--limit); }
 .pg-sc.is-run .vbar b { transition: width 250ms linear; background-image: repeating-linear-gradient(-45deg, transparent 0 .45rem, rgba(7, 5, 10, .28) .45rem .9rem); background-size: 200% 100%; animation: ghost-stripes var(--t-stripe) linear infinite; }
+.pg-strip.is-failed .pg-sc[data-f="ms"] .v { color: var(--limit); }
+@container phead (min-width: 44rem) { .pg-strip { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 .pgp.stale .pg-strip { opacity: .58; }
 
 /* the answer: the model's reply in the plan's face, flowing into as many columns of a reading measure as its pane holds */
@@ -313,72 +347,66 @@
 .pg-body .msg.agent { max-width: none; align-self: stretch; }
 /* a reading measure is about 50 characters a line, so a pane holds as many 24rem columns as it has room for, and a short reply
    (--cc, from its length) never splits into more columns than it has text for */
-.pg-ans { font: 400 1.12rem/1.62 var(--font-name); columns: 24rem var(--cc, 4); column-gap: 2.6rem; column-rule: .08rem solid var(--hair); }
+.pg-ans { font: 400 1.12rem/1.62 var(--font-name); columns: 24rem var(--cc, 4); column-gap: 2.667rem; column-rule: .08rem solid var(--hair); }
 .pg-ans li, .pg-ans pre, .pg-ans table { break-inside: avoid; }
 .pg-ans table { column-span: all; }
 .pg-body.rise > * { animation: pg-rise var(--t-snap) var(--e-out) 1; }
 .pg-body > .ghost-lines { padding: .2rem 0; }
 .pg-body > .ghost-lines .ghost { height: 1.05rem; }
 /* a pane chosen after the others were asked: an empty slot the size of its neighbours, where its answer will land */
-.pg-idle { flex: 1; min-height: 9rem; border: .14rem dashed var(--track-line); border-radius: var(--r-in); }
+.pg-idle { flex: 1; align-self: flex-start; display: flex; flex-direction: column; gap: calc(2 * var(--u)); padding: calc(2 * var(--u)); border: .14rem dashed var(--track-line); border-radius: var(--r-in); }
+.pg-idlew { font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); }
+.pg-idlel { display: flex; flex-direction: column; gap: .65rem; }
+.pg-idlel i { display: block; height: 1.05rem; border-radius: .3rem; background: var(--track); opacity: .55; }
 @keyframes pg-rise { from { opacity: 0; transform: translateY(.5rem); } }
 /* answers to an earlier prompt: dimmed, still readable, with their rows; the next Send asks again */
 .pgp .pg-body, .pg-tr > .pg-c:not(.pg-railc) { transition: opacity var(--t-snap) var(--e-out); }
 .pgp.stale .pg-body, .pg-tr.stale > .pg-c:not(.pg-railc) { opacity: .58; }
 
-/* a failure: its word as a shape (the window at its limit, the day's budget spent), the act that fixes it, then what the
-   provider, or splice, said, one line until opened */
-.pg-fix { display: flex; flex-direction: column; align-items: flex-start; gap: calc(2 * var(--u)); min-width: 0; }
-/* a pane that stands wide holds its failure on one line, left to right: the word, the meter, the acts; narrower, they stack.
-   The pane's own body is the container, so a failed pane is as wide as the lanes make it and never stretches one line across it */
-@container pbody (min-width: 64rem) {
-  .pg-fix { flex-direction: row; flex-wrap: wrap; align-items: center; column-gap: calc(4 * var(--u)); }
-  .pg-fix > .pg-wrow { align-self: center; flex: 1 1 28rem; max-width: 52rem; }
-  .pg-fix > .pg-said { flex: 1 1 100%; }
-}
-.pg-fixrow { display: flex; align-items: center; flex-wrap: wrap; gap: .8rem calc(3 * var(--u)); }
-.pg-fixrow .state { font-size: 1.02rem; white-space: normal; }
-.pg-fixrow .state.limit .lockico { display: inline-grid; }
-.pg-fixacts { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem; }
-.pg-fixacts .act { display: inline-flex; align-items: center; gap: .45rem; text-decoration: none; }
+/* a failure: its word at the left of one line and the acts that fix it at the right, the window or the day's budget as a full
+   row under them, then what the provider, or splice, said, one line until opened */
+.pg-fix { display: flex; flex-direction: column; align-items: stretch; gap: calc(2 * var(--u)); min-width: 0; }
+.pg-fixrow { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--u) calc(3 * var(--u)); min-height: var(--ctl-h); }
+.pg-fixword { display: flex; align-items: center; flex-wrap: wrap; gap: var(--u) calc(3 * var(--u)); min-width: 0; }
+.pg-fixword .state { font-size: 1.02rem; white-space: normal; }
+.pg-fixword .state.limit .lockico { display: inline-grid; }
+.pg-fixacts { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--u); margin-left: auto; min-width: 0; }
+.pg-fixacts .act { display: inline-flex; align-items: center; gap: 0.333rem; text-decoration: none; }
 .pg-fixacts .act .go { width: .9rem; height: .9rem; }
+.pg-usew, .pg-nologin { font: 500 .92rem/1.2 var(--font-name); color: var(--text-mute); }
+.pg-nologin { padding-inline: var(--u); }
+.pg-signing { display: inline-flex; align-items: center; gap: var(--u); }
+.pg-code { font: 700 1.05rem/1 var(--font-data); letter-spacing: .08em; padding: .35rem .6rem; border: .12rem solid var(--ink); border-radius: var(--r-in); background: var(--sunk, var(--obj-high)); color: var(--text); }
+.pg-capf { display: inline-flex; align-items: center; gap: 0.333rem; font: 600 .98rem/1 var(--font-data); color: var(--text-body); }
+.pg-capf .field { width: 7rem; min-width: 0; }
 .pg-fix.again { animation: pg-rise 300ms var(--e-out) 1; }
-/* a window as Accounts draws one: its word, the meter, what is used, and under the meter where it refills */
-.pg-wrow { align-self: stretch; display: grid; grid-template-columns: 4.6rem minmax(6rem, 1fr) auto; align-items: center; gap: .7rem .9rem; }
-.pg-ww { font: 400 .95rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
-.pg-wrow .bar { --c: var(--limit); }
-.pg-wrow .pct { min-width: 0; }
-.pg-reset { grid-column: 2 / -1; display: inline-flex; align-items: center; gap: .6rem; font: 500 .95rem/1 var(--font-data); color: var(--text-body); white-space: nowrap; }
-.pg-reset .ring .arc { stroke: var(--limit); }
+.pg-fix > .lw-wins { align-self: stretch; }
 .pg-said { align-self: stretch; padding-left: .8rem; border-left: .22rem solid var(--track-line); }
-.pg-saidd { width: 100%; align-items: flex-start; gap: .6rem; font: 500 .92rem/1.45 var(--font-data); color: var(--text-body); }
-.pg-saidd > .chev { margin-top: .35rem; }
+.pg-saidd { width: 100%; align-items: flex-start; gap: 0.667rem; font: 500 .92rem/1.45 var(--font-data); color: var(--text-body); }
+.pg-saidd > .chev { margin-top: 0.333rem; }
 .pg-saidd .who { flex: none; font: 600 .95rem/1.45 var(--font-name); color: var(--text); }
 .pg-saidd q { flex: 1; min-width: 0; }
 .pg-said:not(.open) .pg-saidd q { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pg-said.open .pg-saidd q { overflow-wrap: anywhere; }
 
-/* the request: Requests' own open request (reqview.css), its record alone, hanging under its pane as a card of its own.
+/* the request: Requests' own open request (reqview.css), its record alone, across all the lanes under the row it was asked in.
    It opens and folds by its rows growing from and shrinking to nothing, so the answers across a row stay on one line, the
    cards beside it keep their height and the page moves rather than jumps. */
-.pg-req { grid-row: 3; grid-column: 1; display: grid; grid-template-rows: 1fr; min-width: 0; margin-bottom: 2.4rem; }
-.pg-reqin { min-width: 0; min-height: 0; }
-/* the request is a card of its own under its pane, in the same colour edge; its gap to the pane sits inside what folds */
-.pg-reqcard {
-  container-type: inline-size; margin: 1.2rem 0 0; padding: calc(3 * var(--u)); background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
-  box-shadow: var(--cast) var(--cast) 0 var(--c), var(--cast) var(--cast) 0 var(--ink-w) var(--ink);
-}
+.pg-req { grid-column: 1 / -1; display: grid; grid-template-rows: 1fr; min-width: 0; margin-bottom: 2.4rem; }
+.pg-reqin { min-width: 0; min-height: 0; padding: 0 var(--cast) var(--cast) 0; }  /* room inside what folds for the card's offset edge */
 .pg-req.unfold { animation: pg-unfold var(--t-move) var(--e-out) both; }
 .pg-req.fold { animation: pg-fold var(--t-snap) var(--e-io) both; }
 .pg-req.unfold > .pg-reqin, .pg-req.fold > .pg-reqin { overflow: hidden; }
 @keyframes pg-unfold { from { grid-template-rows: 0fr; opacity: 0; } to { grid-template-rows: 1fr; opacity: 1; } }
 @keyframes pg-fold { from { grid-template-rows: 1fr; opacity: 1; } to { grid-template-rows: 0fr; opacity: 0; } }
-.pg-reqat { display: flex; align-items: baseline; gap: .7rem; margin: 0 0 calc(2 * var(--u)); font: 600 var(--kicker)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
+/* the record's line: when it was asked, then the record's tabs, and at its end the fold and the close */
+.pg-reqat { display: inline-flex; align-items: baseline; gap: 0.667rem; font: 600 var(--kicker)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
 .pg-reqat time { font: 500 .92rem/1 var(--font-data); letter-spacing: 0; text-transform: none; color: var(--text-body); }
-.pg-req .pane.rqpane { display: flex; flex-direction: column; height: auto; overflow: visible; border: 0; border-radius: 0; box-shadow: none; background: none; }
-.pg-req .rqpane .scroll { overflow: visible; padding: 0; }
-/* the tabs beside the record's kicker and each attempt's status beside its address, never across the pane */
-.pg-req .rqpane .sechead .switch.tabs { margin-left: 0; }
+.pg-req .rqpane > .scroll { margin-top: 0; padding-top: 0; border-top: 0; }
+.pg-req .racts { gap: 0.333rem; }
+.pg-reqat b { font: 600 .95rem/1 var(--font-name); letter-spacing: 0; text-transform: none; color: var(--text); }
+.pg-recd { flex: none; }
+.pg-req .rqrec.folded > .sechead { margin-bottom: 0; }
 .pg-req .attempt .status { margin-left: 0; }
 /* a tab changed: the record's body fades in where it stands, so a switch reads as a change and not a jump */
 .pg-req.swap .bodies { animation: pg-fade var(--t-snap) var(--e-out) 1; }
@@ -388,50 +416,100 @@
 @keyframes pg-open { from { opacity: 0; transform: translateY(-.6rem); } }
 /* the board's kicker carries what it counts, what is full and the price unit, with the close at its end; the find field
    stands under it */
-.pg-pickhead { align-items: center; min-height: 2.2rem; }
-.pg-pa { flex: 1; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: .5rem calc(2 * var(--u)); }
+.pg-pickhead { align-items: center; justify-content: flex-start; gap: calc(3 * var(--u)); min-height: var(--ctl-h); }
+.pg-pa { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 0.333rem calc(2 * var(--u)); }
 .pg-find { display: flex; align-items: center; flex-wrap: wrap; }
-.pg-search { flex: 0 1 32rem; width: auto; min-width: 18rem; }
+.pg-search { position: relative; flex: 0 1 32rem; width: auto; min-width: 18rem; }
+.pg-search .field { padding-right: 8.5rem; }
+.pg-search .field::-webkit-search-cancel-button { display: none; }
+.pg-search .pg-fkeys { position: absolute; right: 2.8rem; top: 50%; translate: 0 -50%; width: max-content; height: auto; display: inline-flex; align-items: center; gap: 0.333rem; pointer-events: none; }
+.pg-search .pg-fkeys kbd { position: static; font: 600 .74rem/1 var(--font-data); padding: .22rem .4rem; border: .1rem solid var(--track-line); border-radius: .3rem; color: var(--text-mute); }
+/* nothing matches the find: the way back stands in the empty state */
+.pg-nomatch { display: flex; align-items: center; gap: calc(2 * var(--u)); margin-bottom: calc(2 * var(--u)); font: 500 1rem/1.2 var(--font-name); color: var(--text-body); }
 .pg-search .field { padding-block: .75rem; font-size: 1rem; }
 .pg-search .field:focus { border-color: var(--text-mute); }
 .pg-count { font: 500 .95rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
-.pg-count b { font: 600 1.05rem/1 var(--font-data); color: var(--text); margin-right: .2rem; }
+.pg-count b { font: 600 1.05rem/1 var(--font-data); color: var(--text); margin-right: 0.333rem; }
 .pg-pa > .state .lockico { display: inline-grid; }
-.pg-unit { margin-left: auto; font: 500 .88rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.pg-chosenw { display: inline-flex; align-items: center; gap: var(--u); }
+.pg-chosen { font: 500 .95rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
+.pg-chosen b { font: 600 1.05rem/1 var(--font-data); color: var(--text); margin-right: 0.333rem; }
+.pg-unit { font: 500 .88rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
 .pg-shut { margin-left: 0; }
-.pg-board { min-width: 0; }
-.pg-board.swap .pg-rows { animation: pg-fade var(--t-snap) var(--e-out) 1; }  /* the models read in another order: they fade in where they stand */
+.pg-board { position: relative; min-width: 0; }
+/* the models read in another order or narrowed by a find: a row that stays slides to its place, one that leaves fades where it
+   stood, one that comes fades in; the board does not fade */
+.pg-pb { transition: transform var(--t-snap) var(--e-io); }
+.pg-pb.pg-in { animation: pg-fade var(--t-snap) var(--e-out) both; }
+/* a group that loses every match folds shut where it stood: its height goes to nothing as it fades, and the groups under it move up with it */
+.pg-pb.pg-fold { overflow: hidden; pointer-events: none; animation: pg-foldaway var(--t-snap) var(--e-io) forwards; }
+@keyframes pg-foldaway { to { height: 0; opacity: 0; } }
+.pg-mrow.pg-in { animation: pg-fade var(--t-snap) var(--e-out) both; }
+.pg-mrow.pg-out { animation: pg-fade-out var(--t-snap) var(--e-out) forwards; pointer-events: none; z-index: 1; }
+@keyframes pg-fade-out { to { opacity: 0; } }
 .pg-prov .stack-cards { gap: var(--gap-card); }
+/* a provider whose cards stand in one board column names the figures once, in its title line, over the columns of its rows */
+.pg-prov { --rowoff: calc(var(--ink-w) + 2.5 * var(--u) - .333rem + .45rem); }
+.pg-prov.lead > header { display: grid; grid-template-columns: 1.25rem minmax(14rem, 2fr) repeat(3, minmax(6.6rem, 1fr)); column-gap: 0.667rem; align-items: end; padding-inline: var(--rowoff); }
+.pg-prov.lead > header > h2 { grid-column: 1 / span 2; margin-left: calc(-1 * var(--rowoff)); }
+.pg-gh { display: contents; }
+.pg-gh > span { font: 500 .78rem/1.2 var(--font-name); color: var(--text-mute); text-align: right; white-space: nowrap; }
+.pg-gh > span:nth-child(1) { grid-column: 3; }
+.pg-gh > span:nth-child(2) { grid-column: 4; }
+.pg-gh > span:nth-child(3) { grid-column: 5; }
 /* a provider no model matches stays as its title over an empty slot, so the search narrows the board and never empties it */
 .pg-prov.void > header { opacity: .5; }
 .pg-void { min-height: 4.6rem; border: .14rem dashed var(--track-line); border-radius: var(--r-obj); }
 .pg-cmd { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); padding: calc(2 * var(--u)) calc(2.5 * var(--u)) calc(2.5 * var(--u)); }
-.pg-ch { display: flex; align-items: center; flex-wrap: wrap; gap: .45rem .7rem; min-height: 2.1rem; }
+.pg-ch { display: flex; align-items: center; flex-wrap: wrap; gap: 0.333rem 0.667rem; min-height: 2.1rem; }
 .pg-ch .pg-an { font: 500 1.08rem/1.2 var(--font-name); }
 .pg-ch .pg-an.var { font: 500 .9rem/1.2 var(--font-data); }
 .pg-ch .pg-tail { font-size: .9rem; }
 .pg-ch .pg-plan { font: 400 .95rem/1.2 var(--font-name); }
-.pg-ch:not(.keyed) .chip { margin-left: auto; }
+.pg-ch .chip { margin-left: auto; }
+.pg-nolim { font: 500 .86rem/1.2 var(--font-name); color: var(--text-mute); }
+/* the chip's dot is lit while the command can send, and unlit once it is held or down */
+.pg-cmd.held .chip i, .pg-cmd.down .chip i { background: transparent; box-shadow: inset 0 0 0 .14rem var(--text-mute); }
 .pg-nameit { padding: .3rem .55rem; text-decoration: none; }
 .pg-nameit .go { width: .85rem; height: .85rem; }
-.pg-st { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem 1rem; }
+.pg-st { display: flex; align-items: center; flex-wrap: wrap; gap: 0.667rem 1rem; }
 .pg-st .state { white-space: normal; }
 .pg-st .lockico { display: inline-grid; }
 .pg-st a.act { text-decoration: none; }
-.pg-cmd.down .pg-list { opacity: .72; }
-.pg-list { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); margin: 0 -.45rem; }
+/* a command that is not answering is one row: its chip, its account, its state, the act that fixes it and the pill that opens its models */
+.pg-cmd.down { padding: calc(.75 * var(--u)) calc(2 * var(--u)); gap: calc(1.5 * var(--u)); }
+.pg-dn { display: flex; align-items: center; gap: var(--u); min-height: var(--ctl-h); }
+.pg-dn > * { flex: none; }
+.pg-dn > .pg-key, .pg-dn > .pg-an { flex: 0 1 auto; min-width: 0; }
+.pg-dn .pg-key { overflow: hidden; flex-wrap: nowrap; gap: 0.333rem; }
+.pg-dn .pg-tail { flex: none; white-space: nowrap; }
+.pg-dn .pg-an.var { font-size: .8rem; }
+.pg-dn .act.small { padding-inline: .6rem; }
+.pg-dn .morepill { padding-inline: .6rem; margin-left: auto; }
+.pg-dn .pg-an.var { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.pg-dn .nothing { white-space: nowrap; }
+.pg-dn .chip { flex: none; }
+.pg-da { display: inline-flex; align-items: center; gap: var(--u); }
+.pg-da a.act { text-decoration: none; }
+.pg-st { flex-wrap: wrap; }
+.pg-st > .state { flex: none; }
+.pg-st .pg-da { margin-left: auto; flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
+.pg-pills { display: flex; align-items: center; gap: var(--u); margin: 0.333rem 0.333rem 0; }
+.pg-pills > .morepill { margin: 0; }
+.pg-list { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); margin: 0 -0.333rem; }
 /* a long list opened takes as many of the board's columns as its length needs, its rows flowing down each in turn */
-.pg-rcols { display: grid; grid-template-columns: repeat(var(--k, 1), minmax(0, 1fr)); column-gap: calc(var(--gap-col) + 1rem); align-items: start; }
+.pg-rcols { display: grid; grid-template-columns: repeat(var(--k, 1), minmax(0, 1fr)); column-gap: calc(4 * var(--u)); align-items: start; }
 .pg-rc { min-width: 0; display: flex; flex-direction: column; }
 /* a model list's columns, said once over its rows: the tick, the name, the window, the two prices */
-.pg-mh, .pg-mrow { display: grid; grid-template-columns: 1.25rem minmax(14rem, 2fr) repeat(3, minmax(5.4rem, 1fr)); align-items: center; column-gap: .7rem; }
+.pg-mh, .pg-mrow { display: grid; grid-template-columns: 1.25rem minmax(14rem, 2fr) repeat(3, minmax(6.6rem, 1fr)); align-items: center; column-gap: 0.667rem; }
 .pg-mh { align-items: end; padding: 0 .45rem .45rem; font: 500 .78rem/1.2 var(--font-name); color: var(--text-mute); border-bottom: .08rem solid var(--hair); }
+.pg-mh > span:nth-child(n+3) { text-align: right; }
 .pg-mh .pg-h { font: inherit; white-space: nowrap; }
-.pg-rows { display: flex; flex-direction: column; gap: .1rem; padding-top: .35rem; }
+.pg-rows { display: flex; flex-direction: column; gap: 0.333rem; padding-top: .35rem; }
 .pg-mrow {
-  padding: .5rem .45rem; border: 0; border-radius: var(--r-in); background: none; color: var(--text-body); cursor: pointer;
+  padding: .85rem .45rem; border: 0; border-radius: var(--r-in); background: none; color: var(--text-body); cursor: pointer;
   font: 500 .98rem/1.2 var(--font-name); text-align: left;
-  transition: background-color var(--t-hover) var(--e-out), color var(--t-hover) var(--e-out), box-shadow var(--t-hover) var(--e-out);
+  transition: transform var(--t-snap) var(--e-io), background-color var(--t-hover) var(--e-out), color var(--t-hover) var(--e-out), box-shadow var(--t-hover) var(--e-out);
 }
 .pg-mrow:hover { background: var(--track); color: var(--text); }
 .pg-mrow:focus-visible { outline: .14rem solid var(--text); outline-offset: -.14rem; }
@@ -440,32 +518,32 @@
 .pg-mrow:disabled:hover { background: none; color: var(--text-body); }
 /* a model's name is read whole: a name longer than its column takes a second line rather than losing its end */
 .pg-mn { min-width: 0; overflow-wrap: anywhere; }
-.pg-mf { display: flex; align-items: center; gap: .5rem; min-width: 0; }
-.pg-mf .vbar { height: .55rem; min-width: .8rem; }
-.pg-mf .v { flex: none; min-width: 2.5rem; text-align: right; font: 500 .9rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
+.pg-mf { display: flex; flex-direction: column; gap: .3rem; min-width: 0; }
+.pg-mf .vbar { display: block; width: 100%; height: .55rem; min-width: 6rem; }
+.pg-mf .vbar > b { background: var(--c); box-shadow: inset -.14rem 0 0 var(--ink); }
+.pg-mf .v { align-self: flex-end; text-align: right; font: 500 .9rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
 .pg-mf .v .nr { font: 500 .9rem/1 var(--font-data); }
-.pg-mrow:hover .pg-mf .vbar b, .pg-mrow[aria-pressed="true"] .pg-mf .vbar b { background: color-mix(in oklab, var(--text) 60%, transparent); }
 .pg-tick { display: grid; place-items: center; width: 1.25rem; height: 1.25rem; border-radius: .3rem; border: .14rem solid var(--track-line); transition: background-color var(--t-hover) var(--e-out), border-color var(--t-hover) var(--e-out); }
 .pg-tick svg { width: .8rem; height: .8rem; opacity: 0; transform: scale(.5); transition: opacity var(--t-hover) var(--e-out), transform var(--t-pop) var(--e-out); }
 .pg-mrow:hover .pg-tick { border-color: var(--text-mute); }
 .pg-mrow[aria-pressed="true"] .pg-tick { background: var(--text); border-color: var(--text); color: var(--obj); }
 .pg-mrow[aria-pressed="true"] .pg-tick svg { opacity: 1; transform: none; }
 .pg-rows.unfold { animation: unfold var(--t-snap) var(--e-out) both; }
-.pg-list > .morepill { align-self: flex-start; margin: .15rem .45rem 0; }
+.pg-list > .morepill { align-self: flex-start; margin: 0 0.333rem 0; }
 /* a list grouped by vendor: each vendor a row that opens its models in place, its count a bar on the largest's scale */
-.pg-vends { gap: .1rem; }
+.pg-vends { gap: 0.333rem; }
 .pg-vrow {
-  display: grid; grid-template-columns: .8rem minmax(8rem, 14rem) minmax(8rem, 16rem); align-items: center; justify-content: start; gap: .65rem 1rem; width: 100%; max-width: none;
+  display: grid; grid-template-columns: .8rem minmax(8rem, 14rem) minmax(8rem, 16rem); align-items: center; justify-content: start; gap: 0.667rem 1rem; width: 100%; max-width: none;
   padding: .55rem .45rem; border-radius: var(--r-in); font: 500 1rem/1.2 var(--font-name); color: var(--text); transition: background-color var(--t-hover) var(--e-out);
 }
 .pg-vrow:hover { background: var(--track); }
 .pg-vn { min-width: 0; overflow-wrap: anywhere; }
 .pg-vc > .v { min-width: 2.2rem; font: 500 .88rem/1 var(--font-data); color: var(--text-body); }
-.pg-vfold { display: grid; grid-template-rows: 1fr; margin: .1rem 0 .5rem 1.45rem; }
-.pg-vin { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: .55rem; }
-.pg-vfold.unfold { animation: pg-unfold var(--t-move) var(--e-out) both; }
+.pg-vfold { display: grid; grid-template-rows: 1fr; margin: 0 0 0.667rem 1.333rem; }
+.pg-vin { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 0.667rem; }
+.pg-vfold.unfold { animation: pg-unfold var(--t-snap) var(--e-out) both; }
 .pg-vfold.unfold > .pg-vin { overflow: hidden; }
-.pg-vends > .morepill { align-self: flex-start; margin: .35rem .45rem 0; }
+.pg-vends > .morepill { align-self: flex-start; margin: 0.333rem 0.333rem 0; }
 
 /* ---------- while the reads run, and when they fail ---------- */
 .pg-c > .barcell { width: 100%; }
@@ -473,19 +551,23 @@
 .pg-tr.ghosted .pg-tv { display: flex; justify-content: flex-end; }
 .pg-add.ghosted { justify-content: flex-start; cursor: default; }
 .pgp.ghosted > .pgc { box-shadow: var(--cast) var(--cast) 0 var(--wall-low), var(--cast) var(--cast) 0 var(--ink-w) var(--ink); }
-.pgp.ghosted .pg-nm > .ghost.big { margin-block: .155rem; }  /* the name's line, 1.61rem */
+.pgp.ghosted .pg-nm > .ghost.big { margin-block: 0; }  /* the name's line, 1.61rem */
 .pgp.ghosted .pg-nm .ghost.chip { height: 1.68rem; box-shadow: 0 0 0 .12rem var(--track-line); }
 .pg-prov.ghosted .ghost.big { width: 9rem; }
+.pg-gl { display: block; height: 2.36rem; margin-block: .75rem; }
+.pg-gv { height: 1.2rem; margin-block: .55rem; }
+.pg-cmd.ghosted { gap: calc(1.5 * var(--u)); }
+.pg-cmd.ghosted .pg-list { margin: 0; gap: 0.333rem; }
 .pg-prov.ghosted .ghost, .pgp.ghosted .ghost { max-width: 100%; }
-.pg-unread { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem 1.4rem; padding: 1.4rem 1.6rem; border: .14rem dashed var(--track-line); border-radius: var(--r-obj); }
+.pg-unread { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem 1.333rem; padding: 1.4rem 1.6rem; border: .14rem dashed var(--track-line); border-radius: var(--r-obj); }
 .pg-unread .state { font-size: 1.02rem; }
-.pg-unread a.act { display: inline-flex; align-items: center; gap: .45rem; text-decoration: none; }
+.pg-unread a.act { display: inline-flex; align-items: center; gap: 0.333rem; text-decoration: none; }
 .pg-unread .act .go { width: .9rem; height: .9rem; }
 /* nothing can send: the table's four places stand empty with the first one saying so, and under them each command that
    can't, why, and the page that fixes it, on shared columns */
 .pg-none { display: flex; flex-direction: column; gap: calc(4 * var(--u)); }
 .pg-none > a.act { align-self: flex-start; text-decoration: none; }
-.pg-blocked { display: grid; grid-template-columns: repeat(3, max-content); align-items: center; gap: .8rem 1.6rem; margin: 0; padding: 0; list-style: none; }
+.pg-blocked { display: grid; grid-template-columns: repeat(3, max-content); align-items: center; gap: 0.667rem 1.333rem; margin: 0; padding: 0; list-style: none; }
 .pg-blocked > li { display: contents; }
 .pg-blocked a.act { justify-self: start; text-decoration: none; }
 .pg-why { font: 500 .95rem/1.2 var(--font-name); color: var(--text-body); }
@@ -493,7 +575,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .pg-pick.opening, .pg-body.rise > *, .pg-fix.again, .pg-sock.pop, .pg-acts.armed > .act, .pg-md.swap > *, .pg-req.swap .bodies, .pg-req.unfold, .pg-req.fold,
-  .pg-vfold.unfold, .pg-rows.unfold, .pg-send span.rise, .pg-mdx ins, .pg-mdx del, .pg-roundw.unfold, .pg-board.swap .pg-rows { animation: none; }
+  .pg-vfold.unfold, .pg-rows.unfold, .pg-send span.rise, .pg-mdx ins, .pg-mdx del, .pg-roundw.unfold, .pg-mrow.pg-in, .pg-mrow.pg-out, .pg-pb.pg-in, .pg-pb.pg-fold { animation: none; }
   .pg-tr.is-sending .pg-trk > i, .pg-tr > .barcell.is-wait .vbar, .pg-sc.is-run .vbar b, .pg-sc.is-wait .vbar, .pg-round .pd-seg.nt { animation: none; }
   .pg-trk > i, .pg-tr, .pgp .pg-body, .pg-tr > .pg-c, .pg-strip, .pg-round, .pg-edit { transition: none; }
 }

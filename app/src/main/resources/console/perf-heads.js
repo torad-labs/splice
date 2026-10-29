@@ -35,21 +35,21 @@ const createPerfHeads = (scope, helpers) => {
   function lastShape() {
     try {
       const v = JSON.parse(localStorage.getItem("splice-usage-results") || "null");
-      if (v && v.rows > 0) return { rows: Math.min(Number(v.rows) || 6, 24), quiet: Boolean(v.quiet) };
+      if (v && v.rows > 0) return { rows: Math.min(Number(v.rows) || 6, 24), idle: Math.min(Number(v.idle ?? (v.quiet ? 4 : 0)) || 0, 24) };
     } catch { /* unreadable: the default shape */ }
     // a first visit has nothing remembered: a console with seven commands in use and a few idle ones under them
-    return { rows: 7, quiet: true };
+    return { rows: 7, idle: 4 };
   }
-  function keepShape(rows, quiet) {
-    if (rows === st.rows && quiet === st.quiet) return;
-    st.rows = rows; st.quiet = quiet;
-    try { localStorage.setItem("splice-usage-results", JSON.stringify({ rows, quiet })); } catch { /* a blocked store costs the ghost its shape */ }
+  function keepShape(rows, idle) {
+    if (rows === st.rows && idle === st.idle) return;
+    st.rows = rows; st.idle = idle;
+    try { localStorage.setItem("splice-usage-results", JSON.stringify({ rows, idle })); } catch { /* a blocked store costs the ghost its shape */ }
   }
-  const winNow = () => st.pick ?? (ui.win === "7d" ? "7d" : "24h");
+  const winNow = () => st.pick ?? (ui.win === "5h" ? "24h" : "7d");
   const SHOWN_MODELS = 3;
   // the table's column heads, known before any figure: the reading table carries them too, so it reads as itself
   const COLS = `<div class="pthead pcols" role="row"><span class="pf cmd">Command</span><span class="pf">Requests</span><span class="pf">Failed</span>`
-    + `<span class="pf num" title="Counts every request, failed ones included">Typical</span><span class="pf num" title="Counts every request, failed ones included">Slowest 5%</span></div>`;
+    + `<span class="pf ure-time">Time, log scale</span><span class="pf num" title="Counts every request, failed ones included">Typical</span><span class="pf num" title="Counts every request, failed ones included">Slowest 5%</span></div>`;
   // the failure rate that reads as hurting (red) and as worth a look (Key Light); below, the bar stays neutral
   const BAD = 0.05, WATCH = 0.01;
 
@@ -147,14 +147,17 @@ const createPerfHeads = (scope, helpers) => {
    *  behind its command's full limit, before splice sent it (queue_wait_ms, from admit_held_ms): only held requests carry
    *  it, so the times are theirs and the line under the name says how many waited. Each stage is its own subset of
    *  requests, so the stages are never drawn as adding up to the total. */
-  const stagesSection = (h) => {
+  const stagesSection = (h, flag = null) => {
     const q = h.queue_wait_ms, rows = [
       q?.p50 != null ? ["Waited in line", q, `${n0(q.count)} of ${n0(h.count)} requests`] : null,
       h.time_before_first_byte_ms?.p50 != null ? ["Before first byte", h.time_before_first_byte_ms] : null,
       h.time_streaming_ms?.p50 != null ? ["Streaming", h.time_streaming_ms] : null,
     ].filter(Boolean);
     if (!rows.length) return "";
-    const ax = DRAW.axis(rows.map(([, s]) => s.p50), rows.map(([, s]) => s.p95 ?? s.p50)), longest = Math.max(...rows.map(([, s]) => s.p50));
+    // a slow flag compares the command's typical time before today with the one since it began: both are marks on this axis,
+    // so the axis runs far enough to hold them
+    const marks = flag?.kind === "slow" && flag.typ && flag.now ? [[flag.typ, "before today", false], [flag.now, "since then", true]] : [];
+    const ax = DRAW.axis([...rows.map(([, s]) => s.p50), ...marks.map(([ms]) => ms)], [...rows.map(([, s]) => s.p95 ?? s.p50), ...marks.map(([ms]) => ms)]), longest = Math.max(...rows.map(([, s]) => s.p50));
     const body = rows.map(([label, s, sub]) => {
       const hi = s.p95 ?? s.p50;
       // the slowest cell's class was a bare "s", which console.css draws as a LIST CARD: it inherited a card's padding
@@ -164,7 +167,10 @@ const createPerfHeads = (scope, helpers) => {
         + DRAW.range(ax, s.p50, hi)
         + `<span class="pd-n t">${secs(s.p50)}</span><span class="pd-n hi5">${s.p95 == null ? dash : secs(s.p95)}</span></div>`;
     }).join("");
-    return DRAW.section("Stages", body + DRAW.axisRow(ax, "Time, log scale", "<span></span><span></span>"),
+    const mk = marks.map(([ms, word, now]) => `<i class="ure-mark${now ? " now" : ""}${ax.at(ms) > 60 ? " end" : ""}" style="left:${ax.at(ms).toFixed(2)}%"><b>${secs(ms)}<span> ${word}</span></b></i>`).join("");
+    const axis = DRAW.axisRow(ax, "Time, log scale", "<span></span><span></span>")
+      .replace(/<\/span><\/span><span><\/span><span><\/span><\/div>$/, `</span>${mk}</span><span></span><span></span></div>`);
+    return DRAW.section("Stages", body + axis,
       { cls: "pd-stages", head: "pd-grid", aside: `${DRAW.rangeLegend}<span class="pd-n">Typical</span><span class="pd-n">Slowest 5%</span>` });
   };
 
@@ -247,13 +253,16 @@ const createPerfHeads = (scope, helpers) => {
 
   function detail(h, facts) {
     const f = flagFor(h), marks = gaps(h).map((x) => `<span class="pgap">${DRAW.glyph.gap}${esc(x)}</span>`).join("");
-    const body = (f ? `<p class="pnote">${flagHtml(h.key, f)}</p>` : "") + heroSection(h, marks) + statStrip(h, facts)
-      + stagesSection(h) + turnsSection(h) + modelsSection(h);
+    // the figures stand in two columns where the plate holds two of them (what failed and how the cache did; what was
+    // compacted and how long the stages took), and the models run the whole width under both
+    const left = heroSection(h, marks) + statStrip(h, facts), right = turnsSection(h) + stagesSection(h, f);
+    const body = (f ? `<p class="pnote">${flagHtml(h.key, f)}</p>` : "")
+      + (right ? `<div class="pd-cols"><div class="pd-col">${left}</div><div class="pd-col">${right}</div></div>` : left) + modelsSection(h);
     // a panel rises in once, on the draw that opened it, never on a redraw
     return DRAW.plate(body, `pdetail${st.opened === h.key ? " unfold" : ""}`, `perf-${h.key}`);
   }
 
-  function item(h, ctx) {
+  function item(h, ctx, rank) {
     const open = st.open.has(h.key), share = shareOf(h), n = failedOf(h), lv = level(share), f = flagFor(h);
     const shownRate = n > 0 ? rate(share) ?? "0%" : "0%";
     const reqW = ctx.max > 0 ? Math.max(2, (h.count / ctx.max) * 100) : 0;
@@ -264,14 +273,20 @@ const createPerfHeads = (scope, helpers) => {
     const name = `<i class="dot-c" aria-hidden="true"></i><span class="nm">${esc(cmdOf(h.key))}</span>`;
     return `<div class="pitem${open ? " open" : ""}" role="rowgroup" style="--c:${colorOf(providerOfHead(h.key))}">`
       + `<div class="prow pcols" role="row" data-act="perfopen" data-k="${esc(h.key)}">`
-      + `<span class="pf cmd" role="cell">${DRAW.disc({ open, controls: `perf-${esc(h.key)}`, inner: name, cls: "plbl" })}</span>`
+      + `<span class="pf cmd" role="cell"><span class="upl-rank" aria-hidden="true">${rank}</span>${DRAW.disc({ open, controls: `perf-${esc(h.key)}`, inner: name, cls: "plbl" })}</span>`
       + DRAW.barCell({ w: reqW, text: n0(h.count), label: "Requests", cls: "pf req", role: "cell" })
       + DRAW.barCell({ w: failW, text: shownRate, label: "Failed", cls: "pf fail", level: lv, role: "cell" })
+      + `<span class="pf ure-time" role="cell"><em>Time, log scale</em>${typ == null ? `<span class="pd-trk ure-none"></span>` : DRAW.range(ctx.ax, typ, slow ?? typ)}</span>`
       + `<span class="pf num tm${f?.kind === "slow" ? " slow" : ""}" role="cell"><em>Typical</em>${typ == null ? dash : secs(typ)}</span>`
       + `<span class="pf num tm" role="cell"><em>Slowest 5%</em>${slow == null ? dash : secs(slow)}</span>`
       + `</div>${open ? detail(h, ctx.facts) : ""}</div>`;
   }
 
+  /** A command with no request in the window keeps its row, where its figures would be it says so once, and the row opens
+   *  that command's requests of the last 7 days. */
+  const idleRow = (h) => `<div class="pitem" role="rowgroup" style="--c:${colorOf(providerOfHead(h.key))}"><a class="prow pcols pidle" role="row" href="${door(h.key, { win: "7d" })}">`
+    + `<span class="pf cmd" role="cell"><span class="upl-rank" aria-hidden="true"></span><span class="ure-gap" aria-hidden="true"></span><i class="dot-c" aria-hidden="true"></i><span class="nm">${esc(cmdOf(h.key))}</span></span>`
+    + `<span class="pf ure-say" role="cell">No requests${OPEN}</span></a></div>`;
   function html() {
     // a window other than the one on screen reads again at once, and its rows are stripes until it lands, never the last
     // window's figures under the new one's switch
@@ -283,7 +298,8 @@ const createPerfHeads = (scope, helpers) => {
     const header = `<div class="bandhead"><h2>Results by command</h2>${scoped}${sw}</div>`;
     if (st.error) {
       return `<section class="perf-heads">${header}<div class="errline" role="alert">${ICON.bang}<span><b>Results didn't load</b> <span class="why">${esc(st.error)}</span></span>`
-        + `<button class="act small" type="button" data-act="perfretry">Try again</button></div></section>`;
+        + `<button class="act small" type="button" data-act="perfretry">Try again</button></div>`
+        + `<div class="ptable card ure-held" aria-hidden="true">${COLS}${Array.from({ length: 3 }, () => `<div class="prow pcols"><span class="pf cmd"><span class="vbar unread" style="max-width:9rem"></span></span><span class="pf"><span class="vbar unread"></span></span><span class="pf"><span class="vbar unread"></span></span><span class="pf"><span class="pd-trk ure-none"></span></span><span class="pf"><span class="vbar unread"></span></span><span class="pf"><span class="vbar unread"></span></span></div>`).join("")}</div></section>`;
     }
     // READING: the table's own rows in stripes, as many as it last held, so the column keeps its height and nothing
     // under it moves when the window's figures land (a generic four-bar card stood where a six-row table lands). The
@@ -292,35 +308,31 @@ const createPerfHeads = (scope, helpers) => {
     if (!st.body || !S.stood) {
       const rows = Array.from({ length: Math.max(3, st.rows) }, (_, i) =>
         `<div class="prow pcols gprow" style="--i:${i}"><span class="pf cmd">${GHOST.bar(8)}</span>`
-        + `<span class="pf">${GHOST.track()}</span><span class="pf">${GHOST.track()}</span><span class="pf num">${GHOST.bar(3)}</span><span class="pf num">${GHOST.bar(3.4)}</span></div>`).join("");
-      const quietGhost = st.quiet ? `<p class="quiet-heads" aria-hidden="true">${GHOST.bar(11)}${[6.5, 8, 9.5].map((w) => GHOST.chip(w)).join("")}</p>` : "";
-      return `<section class="perf-heads" aria-busy="true">${header}<div class="figline sub" aria-hidden="true">${GHOST.fig(2.6)}${GHOST.bar(9)}</div><div class="ptable card ghosted">${COLS}${rows}</div>${quietGhost}</section>`;
+        + `<span class="pf">${GHOST.track()}</span><span class="pf">${GHOST.track()}</span><span class="pf">${GHOST.track()}</span><span class="pf num">${GHOST.bar(3)}</span><span class="pf num">${GHOST.bar(3.4)}</span></div>`).join("");
+      const idleGhost = Array.from({ length: st.idle }, (_, i) => `<div class="prow pcols gprow pidle" style="--i:${st.rows + i}"><span class="pf cmd">${GHOST.bar(8)}</span><span class="pf ure-say">${GHOST.bar(5)}</span></div>`).join("");
+      return `<section class="perf-heads" aria-busy="true">${header}<div class="figline sub" aria-hidden="true">${GHOST.fig(2.6)}${GHOST.bar(9)}</div><div class="ptable card ghosted">${COLS}${rows}${idleGhost}</div></section>`;
     }
     const heads = st.body.heads || [];
     // the one that is hurting reads first: the highest failure rate, then the busiest
     const used = heads.filter((h) => h.count > 0).sort((a, b) => shareOf(b) - shareOf(a) || b.count - a.count);
     const idle = heads.filter((h) => !(h.count > 0));
-    if (used.length) keepShape(used.length, idle.length > 0);
-    const ctx = { max: Math.max(0, ...used.map((h) => h.count)), facts: FACTS.filter((c) => used.some(c.has)) };
+    if (used.length) keepShape(used.length, idle.length);
+    const timed = used.filter((h) => h.total_ms?.p50 != null);
+    const ctx = { max: Math.max(0, ...used.map((h) => h.count)), facts: FACTS.filter((c) => used.some(c.has)),
+      ax: timed.length ? DRAW.axis(timed.map((h) => h.total_ms.p50), timed.map((h) => h.total_ms.p95 ?? h.total_ms.p50)) : null };
     // THE TABLE'S ANSWER: the share of every request in the window that failed, and a door to those failures
     const all = used.reduce((a, h) => a + h.count, 0), bad = used.reduce((a, h) => a + failedOf(h), 0);
     const lead = used.length
-      ? `<div class="figline sub"><b class="fig-focal${bad / all >= BAD ? " lv-bad" : ""}" data-tn="">${rate(bad / all) ?? "0%"}</b>`
-        + (bad > 0 ? `<a class="cap" href="requests.html?${new URLSearchParams({ win, project: "", outcome: "fail" })}"><span><b>${n0(bad)}</b> failed of <b>${n0(all)}</b> requests</span>${OPEN}</a>`
-          : `<span class="cap">No failures in <b>${n0(all)}</b> requests</span>`) + `</div>` : "";
-    const table = used.length
-      ? `<div class="ptable card" role="table">${COLS}${used.map((h) => item(h, ctx)).join("")}</div>`
-      : `<div class="card ptable pnone">${DRAW.nothing(`No requests in the last ${WINDOWS[win]}`)}</div>`;
-    // The method footnote is gone (Oct 26): it was the old page's "Times count every request, failed ones included, so fast
-    // rejections pull a typical time down", a sentence under the table explaining how its figures were counted.
-    // The caveat still rides the two time columns, where it belongs.
-    // The idle commands are COMMANDS, so they are drawn as commands: dimmed chips, which usage.css already styles
-    // (.quiet-heads). They were five names joined by commas inside a sentence on the old page, where
-    // they lost their colour, could not be opened, and had to be read one by one.
-    const quiet = used.length && idle.length
-      ? `<p class="quiet-heads"><span>No requests in the last ${WINDOWS[win]}</span>${idle.map((h) => DRAW.chip({ text: cmdOf(h.key), href: door(h.key, { win: "7d" }), data: ` style="--c:${colorOf(providerOfHead(h.key))}"` })).join("")}</p>`
-      : "";
-    return `<section class="perf-heads">${header}${lead}${table}${quiet}</section>`;
+      ? `<div class="ure-lead">${DRAW.hero(bad > 0
+        ? { figure: rate(bad / all) ?? "0%", level: level(bad / all), count: bad, word: "failed", of: `of ${n0(all)} requests`, href: `requests.html?${new URLSearchParams({ win, project: "", outcome: "fail" })}`, key: "perf-lead" }
+        : { figure: "0%", level: "ok", of: `No failures in ${n0(all)} requests`, key: "perf-lead" })}</div>` : "";
+    // Every command keeps its row: the ones that answered in worst-first order, numbered, then the ones with no request,
+    // each saying so once where its figures would be. A window nothing answered in is those rows alone.
+    const rowsHtml = used.map((h, i) => item(h, ctx, i + 1)).join("") + idle.map(idleRow).join("");
+    const table = heads.length
+      ? `<div class="ptable card" role="table">${COLS}${rowsHtml}</div>`
+      : `<div class="card ptable pnone">${DRAW.nothing("No requests")}</div>`;
+    return `<section class="perf-heads">${header}${lead}${table}</section>`;
   }
 
   document.addEventListener("click", (e) => {
@@ -339,5 +351,14 @@ const createPerfHeads = (scope, helpers) => {
     st.pick = el.dataset.v; st.body = null; st.error = null; st.reading = false;
     render();
   });
-  return { html };
+  /** The table's answer as the header's door reads it, or null before it has been read: the failed share and its level, or that
+   *  there were no requests at all. */
+  function lead() {
+    if (!st.body || st.error || st.readFor !== winNow()) return null;
+    const used = (st.body.heads || []).filter((h) => h.count > 0);
+    if (!used.length) return { none: true };
+    const all = used.reduce((x, h) => x + h.count, 0), bad = used.reduce((x, h) => x + failedOf(h), 0);
+    return { figure: rate(bad / all) ?? "0%", level: level(bad / all) };
+  }
+  return { html, lead };
 };

@@ -49,7 +49,8 @@ test("the Context row shows the share and the window it is counted against, for 
   const field = page.locator(".cmp-field");
   await expect(field).toBeVisible({ timeout: 15_000 });
   await field.click();
-  const context = page.locator(".cmp-meters .cmp-mrow", { hasText: "Context" });
+  // the Context row is the band's lead row (its name stands on the kicker above it, since Oct 29)
+  const context = page.locator(".cmp-ctx .cmp-mrow.lead");
   await expect(context).toBeVisible({ timeout: 10_000 });
   // the share, then the room it is a share of, as the console writes token counts everywhere else
   await expect(context).toContainText(/44%[^0-9]*272K/);

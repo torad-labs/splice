@@ -225,6 +225,7 @@ async function readAll({ asks = true } = {}) {
   const down = new Set(headRows.filter((h) => h.runtimeNotAnswering).map((h) => h.key));
   // a local runtime the watch has no reading for yet, or any more: Checking, never the answering dot
   const unreadRt = new Set(headRows.filter((h) => h.runtimeUnread).map((h) => h.key));
+  MODEL_IDS = new Map((md.body?.heads || []).map((h) => [h.head, (h.models || []).filter((m) => m.id).map((m) => ({ id: m.id, label: m.label }))]));
   const pinnedModel = new Map((md.body?.heads || []).map((h) => [h.head, (h.models || []).find((m) => m.pinned)?.label || h.pinned_model]));
   const keyRows = ks.body?.keys || [];
   const provs = new Map();
@@ -320,6 +321,10 @@ async function readAll({ asks = true } = {}) {
   // the board's one scale for the hours: the busiest hour any command had today, its opening hour included
   const days = data.flatMap((p) => p.cmds).filter((c) => !c.local);
   HOUR_MAX = Math.max(1, ...days.flatMap((c) => (c.allUnread ? [] : [...(c.hours || []).filter((h) => !h.unread).map((h) => h.all), c.opening?.turns || 0])));
+  // the requests and the dollars each fill their bar for the busiest day on the board, so a quiet command reads as quiet beside a busy one
+  const drawn = days.map((c) => dayBars(c, c.split && !c.unread ? c.split : null));
+  REQ_MAX = Math.max(1, ...drawn.map((d) => d.req?.total || 0));
+  USD_MAX = Math.max(0.01, ...drawn.map((d) => d.usd?.v || 0));
   // no day read on the whole board is one thing gone wrong, said once (a budgeted day is read from its budget, so it
   // still has its figure)
   const free = days.filter((c) => !c.budget), whys = [...new Set(free.map((c) => c.unreadWhy).filter(Boolean))];
@@ -521,13 +526,25 @@ function refills(day) {
   return `<span class="when" data-tip="${leftWord(Math.max(1, day.left))} left">${ring(day)}Resets ${midnightHere ? "midnight" : at(day.resetMs)}</span>`;
 }
 
-// A WINDOW'S LABEL IS THE DOOR TO WHAT USED IT (Oct 27): the 5 hours and the Week open Usage on that window, filtered to
-// this login on the command the rail shows (usage.html?win=&account=head|label, the address Usage reads), so a week at
-// 92% leads to the projects and agents that spent it. A window Usage does not draw, such as a Month, stays a label.
-const USAGE_WIN = { "5 hours": "5h", Week: "7d" };
+// A WINDOW'S LABEL IS THE DOOR TO WHAT USED IT: the 5 hours, the Week and the Month open Usage on that window, filtered to this
+// login on the command the rail shows (usage.html?win=&account=head|label, the address Usage reads), so a week at 92% leads to
+// the projects and agents that spent it. A model's slice of the week opens that week filtered to the model as well.
+const USAGE_WIN = { "5 hours": "5h", Week: "7d", Month: "30d" };
+// The models each command declares, so a slice named by its family ("Fable") opens Usage on the model id that family is on
+// this command: Usage's model filter takes an id exactly.
+let MODEL_IDS = new Map();
+function modelIdOn(head, family) {
+  const want = String(family ?? "").toLowerCase(), words = (t) => String(t ?? "").toLowerCase().split(/[^a-z0-9]+/);
+  return (MODEL_IDS.get(head) || []).find((m) => words(m.id).includes(want) || words(m.label).includes(want))?.id ?? null;
+}
 // A login the daemon names carries a ref, which is what Usage matches its requests and its name by (usage.js planRowOf);
 // one without a ref goes by its label on that command
-const usageDoor = (a, c) => (c ? (label) => (USAGE_WIN[label] ? `usage.html?win=${USAGE_WIN[label]}&account=${encodeURIComponent(`${c.head}|${a.row?.ref ?? labelOn(a, c.head)}`)}` : null) : null);
+const usageDoor = (a, c) => (c ? (label, family = null) => {
+  if (!USAGE_WIN[label]) return null;
+  const q = new URLSearchParams({ win: USAGE_WIN[label], account: `${c.head}|${a.row?.ref ?? labelOn(a, c.head)}` }), id = family ? modelIdOn(c.head, family) : null;
+  if (id) q.set("model", id);
+  return `usage.html?${q}`;
+} : null);
 // the login a line names, as a door to its card on this board with the socket it has on the rail (a move, the Next row)
 const loginDoor = (name, id, sock) => (id ? `<button class="mlogin" type="button" data-act="goto" data-a="${esc(id)}" title="Show ${esc(name)}'s card">`
   + `${sock ? `<span class="msock" aria-hidden="true">${sock}</span>` : ""}<b class="nname">${esc(name)}</b></button>` : `<b class="nname">${esc(name)}</b>`);
@@ -545,7 +562,7 @@ function windowsHtml(a, next = null, left = null, door = null, nextSock = 0) {
     if (w.label === "Week" && a.models) {
       // A model's figure is a slice of the account week above it, read in the same observation, so once that week has
       // ended its slices have too — whether or not the model itself reported a reset (hitstop, Oct 10).
-      for (const m of a.models) rows += `<span class="label sub">${esc(m.name)}</span>`
+      for (const m of a.models) rows += (door?.("Week", m.name) ? `<a class="label sub wdoor" href="${door("Week", m.name)}" aria-label="${esc(m.name)}: what used this week, on Usage">${esc(m.name)}${DRAW.go}</a>` : `<span class="label sub">${esc(m.name)}</span>`)
         + (ended(m) || ended(w) ? closed(ended(m) ? m : w, true)
           : `${bar(m.used, `sub ${m.used >= 100 ? "full" : ""} ${m.stale ? "stale" : ""}`)}`
             + `<span class="pct">${m.used}%<span class="used">used</span></span>` + resets(m));
@@ -569,24 +586,35 @@ function windowsHtml(a, next = null, left = null, door = null, nextSock = 0) {
 }
 
 // ---------- a command's day ----------
-// ONE STRIP PER COMMAND, ON THE CARDS' OWN COLUMNS (Oct 26), so its bars end and its reset stands where theirs do. Row
-// one leads with the day's figure at the focal size, its words muted on the figure's baseline and the budget's act at
-// the row's end, the words taking the whole row before they wrap. Under it the day is drawn: spend against the budget
-// where one caps what the command is charged, beside when the day resets, then the day hour by hour on the scale every
-// strip on the board shares, which a budget never takes away. The command's tab names the strip, because one provider
-// can serve several commands; where a plan provider's commands share one rail, the tab is pressed to show that
+// ONE STRIP PER COMMAND, ONE COLUMN WIDE WHEREVER IT STANDS, ON THE CARDS' OWN LEFT AND RIGHT EDGES. Row one: "Day", the day's
+// figure at the hero size right-aligned in one cell, so the words after it start at one x on every strip, the budget's act at the
+// row's end, and when the day resets. Under it each quantity is drawn on a scale the whole board shares: the requests as a bar
+// (the busiest day fills the track; what had no price and what failed are cut from it in their own colours), the dollars as a bar
+// (the dearest day fills the track), then the day hour by hour on one width per hour. The command's tab names the strip, because
+// one provider can serve several commands; where a plan provider's commands share one rail, the tab is pressed to show that
 // command's order: pick is { p, on } there, and null everywhere else.
+// the busiest day's requests and dollars on the board, which fill their tracks; set once the board is read (readAll)
+let REQ_MAX = 1, USD_MAX = 1;
+// what a strip's two bars hold: the requests the day counted (and the share of them with no price and the share that failed), and
+// the dollars on the shared scale with the words that name them. A budget's dollars are its own bar, against the cap.
+function dayBars(c, split) {
+  if (c.local || c.unread || c.turns == null) return { req: null, usd: null };
+  const np = split ? (split.allPlan ? 0 : split.keyUnpriced) : c.onPlan ? 0 : c.unpriced;
+  const req = c.turns > 0 ? { total: c.turns, np: Math.min(np, c.turns), fail: Math.min(c.failed, c.turns) } : null;
+  let usd = null;
+  if (split?.allPlan) usd = split.planUsd > 0 ? { v: split.planUsd, word: "at API prices" } : null;
+  else if (!c.budget) { const v = split ? split.keyUsd : c.spent; usd = v > 0 ? { v, word: "at the rate card" } : null; }
+  return { req, usd };
+}
+const isIdle = (c) => !!c.hours && !c.local && c.unread !== DAY_READING && !c.unread && !c.budget && !c.turns && !c.opening;
 function meterHtml(c, pick = null) {
   const day = { ...dayReset(), len: LEN.Day };
   const tag = pick ? `<button class="chip tag" data-act="lane" data-p="${pick.p.id}" data-c="${esc(c.cmd)}" aria-pressed="${pick.on}">${esc(c.cmd)}</button>`
     : `<span class="chip tag">${esc(c.cmd)}</span>`;
   const reading = c.unread === DAY_READING, split = c.split && !c.unread ? c.split : null;
   const fill = capFill(c, split), keyed = !!c.hours && !c.local; // the hours are drawn, so the words' swatches name their colours
-  const words = c.local ? `<span class="money"></span>` : reading ? `<span class="money">${GHOST.fig(4.6)} ${GHOST.bar(9.5)}</span>`
-    : split ? splitWords(c, split, keyed) : plainWords(c, keyed);
   // the budget editor opens between the figure and the hours, so the day he caps stays drawn under it
   const editing = ui.editor && ui.editor.c === c.cmd, act = editing ? "" : budgetAct(c, split, reading);
-  const spend = editing ? editorHtml(c) : fill ? `${capHtml(c, fill)}${refills(day)}` : "";
   // the day is a door to exactly its requests on Requests, every project, from the hour its figures count from
   // (requests.js applyAddress reads cmd and from); a day with none, or one not read yet, has nothing to open
   const opens = !c.local && !reading && !c.unread && c.turns > 0 && DAY_FROM != null;
@@ -594,17 +622,81 @@ function meterHtml(c, pick = null) {
     : `<span class="label">Day</span>`;
   // a day with no request has nothing to draw hour by hour: its strip is one row, its chip, "No requests" and when the day
   // resets, and it grows into the hours the moment a request lands
-  const idle = !!c.hours && !c.local && !reading && !c.unread && !c.budget && !c.turns && !c.opening;
-  return `<div class="meter day${spend ? " spend" : ""}${idle ? " idle" : ""}" data-meter="${esc(c.cmd)}"${reading ? ' aria-busy="true"' : ""}>`
-    + `${tag}${label}<div class="dayline">${words}${act}</div>${spend}${idle ? "" : hoursHtml(c)}${fill && !editing ? "" : refills(day)}</div>`;
+  const idle = isIdle(c);
+  const hero = heroHtml(c, split, reading);
+  const bars = reading || idle || c.local ? "" : barsHtml(c, split, fill, keyed, editing);
+  const hours = idle || c.local ? "" : hoursHtml(c);
+  return `<div class="meter day${editing ? " spend" : ""}${idle || c.local ? " idle" : ""}" data-meter="${esc(c.cmd)}"${reading ? ' aria-busy="true"' : ""}>`
+    + `${tag}${label}<div class="dayline">${hero}${act}</div>${refills(day)}${bars}${editing ? editorHtml(c) : ""}${hours}</div>`;
 }
+// the day's figure at the hero size, and its denominator in muted words on its baseline: "of $10" where a budget caps the day,
+// else what the figure counts. A plan day has no cap or total splice can read, so its figure carries only its unit.
+function heroHtml(c, split, reading) {
+  const fig = (v, cls = "") => `<b class="ads-fig${cls}">${v}</b>`, unit = (t) => `<span class="ads-unit${/^of /.test(t) ? " ads-of" : ""}">${t}</span>`;
+  const ghost = (words = "") => `<span class="ads-fig ads-ghost">${GHOST.fig(5.6)}</span>${words ? unit(words) : unit(GHOST.bar(9.5))}`;
+  const none = unit("<em>No requests</em>"), over = pastCap(c) ? " over" : "";
+  const asked = (n, words) => fig(n0(n)) + unit(`${n === 1 ? "request" : "requests"} ${words}`);
+  if (c.local) return "";
+  if (reading) return ghost();
+  if (c.unread) {
+    const n = notRead(c);
+    return `<span class="ads-fig dash">${n.fig}</span>${unit(`${DAY_NOT_READ}${n.why}`)}`;
+  }
+  if (split?.allPlan) return split.plan ? asked(split.plan, "on your plan") : none;
+  if (split) {
+    const spent = c.budget ? c.spent : split.keyUsd, priced = split.keyPriced;
+    if (c.budget && spent == null) return ghost(`of ${cap(c.budget.cap)}`);
+    // a day of failed requests spent nothing and says so, "$0 of $5", never only the cap (Oct 12)
+    const counted = c.budget ? spent != null && (spent || priced || c.failed) : priced && spent != null;
+    if (counted) return fig(money(spent), over) + unit(c.budget ? `of ${cap(c.budget.cap)}` : split.plan || split.keyUnpriced || split.old ? `for ${reqs(priced)}` : "");
+    if (split.plan) return asked(split.plan, "on your plan");
+    if (split.keyUnpriced) return asked(split.keyUnpriced, "with no price");
+    return c.turns > 0 ? asked(c.turns, "counted") : none;
+  }
+  if (c.spent == null) return ghost(c.budget ? `of ${cap(c.budget.cap)}` : "");
+  // a day with no request yet says so in muted ink, never a figure of nothing
+  if (!c.priced && !c.unpriced && !c.failed && !c.budget) return none;
+  // with every request priced, the figure alone; with some, the figure for the priced ones; with none, only the count, which leads
+  const figure = !(c.unpriced && !c.priced);
+  if (!figure) return asked(c.unpriced, c.onPlan ? "on your plan" : "with no price");
+  const share = (c.unpriced || c.failed) && c.priced ? `for ${reqs(c.priced)}` : "";
+  return fig(money(c.spent), over) + unit(c.budget ? `of ${cap(c.budget.cap)}` : share);
+}
+// The rows under the figure: REQUESTS and DOLLARS, each a bar on its own scale and the words that say what its parts are. The
+// requests' parts are told by a swatch that matches the hours drawn below (no price muted, failed in the limit red); a budget's
+// dollars are the spend against its cap, with the cap a mark across the track.
+function barsHtml(c, split, fill, keyed, editing) {
+  const { req, usd } = dayBars(c, split);
+  const k = (w) => `<span class="label ads-k">${w}</span>`, pct = (n, of) => (n > 0 ? +((n / of) * 100).toFixed(3) : 0);
+  let rows = "";
+  if (c.turns != null) {
+    const total = pct(req?.total ?? 0, REQ_MAX), np = req ? pct(req.np, req.total) * total / 100 : 0, fl = req ? pct(req.fail, req.total) * total / 100 : 0;
+    const parts = req ? [["ok", total - np - fl, 0], ["np", np, total - np - fl], ["fl", fl, total - fl]].filter((x) => x[1] > 0 || (x[0] === "ok" && total === 0))
+      .map(([cls, v, at]) => `<b class="${cls}" data-v="${+v.toFixed(3)}" style="left:${+at.toFixed(3)}%"></b>`).join("") : "";
+    const words = [];
+    if (req) {
+      if (split && !split.allPlan) {
+        if (split.plan) words.push(`${n0(split.plan)} on your plan`);
+        if (split.keyUnpriced) words.push(`${keyed ? sw("np") : ""}${n0(split.keyUnpriced)} with no price`);
+        if (split.old) words.push(`${n0(split.old)} earlier, unsorted`);
+      } else if (!split && c.unpriced) words.push(`${keyed && !c.onPlan ? sw("np") : ""}${noPrice(c)}`);
+      if (c.failed) words.push(`${keyed ? sw("fl") : ""}${failedDoor(c, c.failed)}`);
+    }
+    rows += `${k("Requests")}<div class="bar ads-req">${parts}</div><span class="ads-words">${words.map((w) => `<span class="part">${w}</span>`).join("")}</span>`;
+  }
+  if (!editing) {
+    if (fill) rows += `${k("Dollars")}${capHtml(c, fill)}`;
+    else if (usd) rows += `${k("Dollars")}${bar(Math.max(pct(usd.v, USD_MAX), 0.0001), "ads-usd")}<span class="ads-words"><b class="ads-mo">${money(usd.v)}</b><span class="ads-mute">${usd.word}</span></span>`;
+  }
+  return rows;
+}
+// a count that leads its row is the row's figure, in the figure's weight; after a figure it is one of the words
+const leadNum = (n, lead) => (lead ? `<b class="lead">${n0(n)}</b>` : n0(n));
 // a door to one command's requests on Requests, every project, over a stretch of today (requests.js applyAddress)
 const requestsAt = (c, { from, to = null, outcome = null }) => `requests.html?${new URLSearchParams({ project: "", cmd: c.cmd, from: String(from),
   ...(to != null ? { to: String(to) } : {}), ...(outcome ? { outcome } : {}) })}`;
 const n0 = (n) => n.toLocaleString("en-US");
 const reqs = (n) => `${n0(n)} ${n === 1 ? "request" : "requests"}`;
-// a count that leads its row is the row's figure, in the figure's weight; after a figure it is one of the words
-const leadNum = (n, lead) => (lead ? `<b class="lead">${n0(n)}</b>` : n0(n));
 // A plan's turns read "on your plan": the plan covered them, and "with no price" would read as splice missing data.
 // Every other turn with no figure is a model with no rate card (fin's words, Marlin, Oct 10).
 const noPrice = (c, lead = false) => `${leadNum(c.unpriced, lead)} ${c.unpriced === 1 ? "request" : "requests"} ${c.onPlan ? "on your plan" : "with no price"}`;
@@ -617,70 +709,20 @@ const failedDoor = (c, n) => (DAY_FROM == null ? `<span class="failed-n">${n0(n)
   : `<a class="failed-n" href="${requestsAt(c, { from: DAY_FROM, outcome: "fail" })}">${n0(n)} failed</a>`);
 // the swatch that ties a phrase to its colour in the hours drawn under it: no price muted, failed in the limit red
 const sw = (k) => `<i class="sw ${k}" aria-hidden="true"></i>`;
-// what the figure leaves out, each phrase with its swatch where the hours are drawn
-const asides = (c, keyed, lead = false) => [c.unpriced ? `${keyed && !c.onPlan ? sw("np") : ""}${noPrice(c, lead)}` : "",
-  c.failed ? `${keyed ? sw("fl") : ""}${failedDoor(c, c.failed)}` : ""].filter(Boolean);
-// the line under the figure, its phrases kept whole: a narrow strip breaks it between them, never inside one, and each
-// dot is held to the phrase before it, so a wrapped line never opens on one
-const ownLine = (parts) => (parts.length ? `<span class="unpriced own">${parts.map((p) => `<span class="part">${p}</span>`).join("\u00a0· ")}</span>` : "");
 // Not read, and why when splice kept a sentence for it, behind the word: an hour it could not read is drawn hatched on
 // the day itself, so only a reason the drawing cannot show opens here. Where no day on the board was read, the page
-// head says so once (dayState) and each strip keeps only the dash where its figure goes.
+// head says so once (dayState) and each strip keeps only the dash where its figure goes. The dash is the figure; the
+// sentence, once opened, follows the word under the strip's figure.
 function notRead(c) {
-  // the figure is the dash; the reason splice kept for it, this command's own or the one every day on the board shares,
-  // opens from the dash
   const why = c.unreadWhy || DAY_UNREAD?.why || "";
-  if (!why) return `<span class="nr-day">${DRAW.unread.fig}</span>`;
+  if (!why) return { fig: `<span class="nr-day">${DRAW.unread.fig}</span>`, why: "" };
   const open = ui.why.has(c.cmd);
-  return DRAW.disc({ open, act: "why", data: ` data-c="${esc(c.cmd)}" aria-label="Not read, why"`, inner: `<span class="nr-day">${DRAW.unread.fig}</span>` })
-    + (open ? `<span class="state why${ui.enter === "why" ? " unfold" : ""}">${esc(why)}</span>` : "");
+  return { fig: DRAW.disc({ open, act: "why", data: ` data-c="${esc(c.cmd)}" aria-label="Not read, why"`, inner: `<span class="nr-day">${DRAW.unread.fig}</span>` }),
+    why: open ? `<span class="state why${ui.enter === "why" ? " unfold" : ""}">${esc(why)}</span>` : "" };
 }
 // a day at or past its budget: its figure in the limit red, as its bar's overage is
 const pastCap = (c) => !!c.budget && c.spent != null && c.spent >= c.budget.cap;
-// Marlin's mixed form (fin, Oct 10): with every request priced, the figure alone; with some, the figure for the priced
-// ones, "≈$0.84 for 50 requests", and the rest by why under it; with none, only the count, which then leads. Never
-// "$0.00" over all. A spend splice is still reading (spend_pending, used_usd null after a restart) is its figure's ghost:
-// it once threw here and left the whole board empty on the first open after a restart.
-function plainWords(c, keyed) {
-  if (c.unread) return `<span class="money">${notRead(c)}</span>`;
-  if (c.spent == null) return `<span class="money">${GHOST.fig(3.6)}${c.budget ? ` <em>of ${cap(c.budget.cap)}</em>` : ""}</span>`;
-  const figure = !(c.unpriced && !c.priced), lead = figure ? `<b class="lead${pastCap(c) ? " over" : ""}">${money(c.spent)}</b>` : "";
-  // a day with no request yet says so in muted ink, never a figure of nothing (hitstop's mock, fin)
-  if (!c.priced && !c.unpriced && !c.failed && !c.budget) return `<span class="money"><em>No requests</em></span>`;
-  // with a budget the priced share goes under the figure, since "≈$0.84 for 50 requests of $20" misreads (fin)
-  const share = figure && (c.unpriced || c.failed) && c.priced ? `for ${reqs(c.priced)}` : "";
-  if (c.budget && figure) return `<span class="money">${lead} <em>of ${cap(c.budget.cap)}</em>${ownLine([share, ...asides(c, keyed)].filter(Boolean))}</span>`;
-  return `<span class="money">${lead}${share ? ` <em>${share}</em>` : ""}${ownLine(asides(c, keyed, !figure))}</span>`;
-}
-// The Day row once splice splits plan from key (fin's words, Marlin's 5:52 PM ruling, Oct 11). A bare "≈$" is money at the
-// rate card on a key and nothing else; a plan's share is a count "on your plan", and a dollar on it says "at API prices".
-// All on a plan: "23,559 requests on your plan · ≈$1,512.40 at API prices", and no Set budget, since his limits there are
-// the account's own windows; a budget set before keeps its act so he can see and remove it. Key and plan mixed:
-// "≈$12.40 for 300 requests · 23,259 on your plan", the budget capping the key's money alone. An hour recorded before the
-// split, on a mixed command, cannot say which side its requests were on, so they are counted as not split, never as money.
-function splitWords(c, s, keyed) {
-  const parts = [];
-  // each phrase after the first carries its dot as text; the run sits one dot's width left inside a clipping box, so a
-  // phrase that starts a wrapped line has its dot cut off instead of leading the line with it (live walk of 54af50884)
-  const line = (lead) => `<span class="money line"><span class="run">${[lead, ...parts].filter(Boolean)
-    .map((p, i) => `<span class="part">${i ? `<span class="sep">· </span>` : ""}${p}</span>`).join(" ")}</span></span>`;
-  if (s.allPlan) {
-    if (s.plan) parts.push(`${leadNum(s.plan, true)} ${s.plan === 1 ? "request" : "requests"} on your plan`);
-    if (s.planUsd) parts.push(`${money(s.planUsd)} at API prices`);
-    return parts.length ? line("") : `<span class="money"><em>No requests</em></span>`;
-  }
-  const spent = c.budget ? c.spent : s.keyUsd, priced = s.keyPriced;
-  // a day of failed requests spent nothing and says so, "$0 of $5", never only the cap (Oct 12)
-  const counted = c.budget ? spent != null && (spent || priced || c.failed) : priced && spent != null;
-  const lead = !counted ? "" : c.budget ? `<b class="lead${pastCap(c) ? " over" : ""}">${money(spent)}</b> <em>of ${cap(c.budget.cap)}</em>`
-    : `<b class="lead">${money(spent)}</b>${s.plan || s.keyUnpriced || s.old ? ` <em>for ${reqs(priced)}</em>` : ""}`;
-  const many = (n, words) => (lead || parts.length ? `${n0(n)} ${words}` : `${leadNum(n, true)} ${n === 1 ? "request" : "requests"} ${words}`);
-  if (s.plan) parts.push(many(s.plan, "on your plan"));
-  if (s.keyUnpriced) parts.push(`${keyed ? sw("np") : ""}${many(s.keyUnpriced, "with no price")}`);
-  if (c.failed) parts.push(`${keyed ? sw("fl") : ""}${failedDoor(c, c.failed)}`);
-  if (s.old) parts.push(many(s.old, "earlier, unsorted"));
-  return lead || parts.length ? line(lead) : `<span class="money"><em>No requests</em></span>`;
-}
+
 // What the budget's meter fills with: today's spend against the cap, the spend's ghost while splice still reads it, or
 // nothing where no request today had a price to count against it. A budget on a command all on a plan caps nothing, so
 // its strip draws only the hours, as one with no budget does.
@@ -729,7 +771,7 @@ function budgetAct(c, split, reading) {
 // filled from the foot with what went through in the provider's colour, what had no price muted and what failed in the
 // limit red, and is a door to exactly that hour's requests on Requests. An hour splice could not read is hatched, an
 // hour with no requests is the flat track, and the hours to come are the track's outline past the now line. The
-// strip's busiest hour carries its count on its top, and 12 AM, 6 AM, 12 PM and 6 PM stand under their hours. In a zone
+// strip's busiest hour is a line across the track at its height, its count at the line's end, and 12 AM, 6 AM, 12 PM and 6 PM stand under their hours. In a zone
 // whose midnight is not on a UTC hour, the hour that holds the day's start opens the track hatched in the provider's
 // colour: its requests belong to two days, so they are kept out of the figure, and what they were is on the hour. While
 // the day is read, the row is its ghost.
@@ -758,9 +800,9 @@ function hoursHtml(c) {
   const ticks = [];
   for (let i = 0; i < n; i++) {
     const at = t0 + i * HOUR_MS, hour = new Date(at).getHours();
-    if (TICKS.has(hour) && (i === 0 || new Date(at - HOUR_MS).getHours() !== hour)) ticks.push(`<span class="tick" style="--i:${i}"><b>${hourWord(at)}</b></span>`);
+    if (TICKS.has(hour) && (i === 0 || new Date(at - HOUR_MS).getHours() !== hour)) ticks.push(`<span class="tick" style="--i:${i}"><b>${hourWord(at).replace(" ", "\u2009")}</b></span>`);
   }
-  const top = peak ? `<span class="peak" style="--i:${c.hours.indexOf(peak) + first}">${n0(peak.all)}</span>` : "";
+  const top = peak ? `<span class="peak" style="--y:${Math.min(100, (peak.all / HOUR_MAX) * 100).toFixed(2)}"><i></i><b>${n0(peak.all)}</b></span>` : "";
   const f = Math.min(1, Math.max(0, (now - t0) / (n * HOUR_MS)));
   // the arrow keys walk the hours from the track itself, one stop in the tab order however many hours it holds
   return `<div class="dayrun" role="group" tabindex="0" aria-label="Requests by hour since ${hourWord(t0)}" style="--n:${n};--at:${f.toFixed(4)}">`
@@ -923,6 +965,8 @@ function slotHtml(p, c, a, serves) {
   if (a.down) return `${DRAW.lamp("")}<span class="state">Not answering</span>`;
   // a server the watch has no reading for yet: the unlit lamp, and the state line's ghost until the watch reads it
   if (a.unread) return `${DRAW.lamp("")}${GHOST.state()}`;
+  // a server that answers wears its lamp lit and says so in its own word, where one that does not wears it unlit
+  if (p.kind === "local") return `${DRAW.lamp("lmc-lit")}<span class="state lmc-live">Answering</span>`;
   // a switch or an unpin splice refused, on the card it was pressed on, until the next press
   const err = c && ui.slotErr && ui.slotErr.a === a.id && ui.slotErr.c === c.cmd ? refusalHtml(ui.slotErr, slotKey(a, c)) : "";
   if (serves.length && (!c || serves.includes(c))) return `${err}${pin}${chips}`;
@@ -964,12 +1008,17 @@ function menuItems(p, a) {
 // Remove is in the text's ink like every other item, and armed it fills in that ink and names what it cuts: the limit red
 // is for limits and failures, never for an act. A refusal says so in plain words under it, its reason one press away,
 // and the menu shakes once.
+// what pressing Remove again cuts, said under the item it filled: the login and its sign-in, and the sessions on it by name
+function armNote(p, a, on) {
+  const who = (a.sessions || []).slice(0, 3).map(sessNameOf).join(", ");
+  return `<p class="alc-armnote">${p.kind === "key" ? `Removes the stored key for ${esc(a.env)}.` : `Removes ${esc(shownName(p, a))} and its sign-in.`}${on ? ` In use by ${esc(who)}${on > 3 ? ` and ${on - 3} more` : ""}.` : ""} Press Remove again to confirm.</p>`;
+}
 function menuHtml(p, a, spot) {
   const armed = ui.armed === spot, refused = ui.removeErr && ui.removeErr.spot === spot, key = `remove:${spot}`;
   const on = a.sessions?.length || 0; // sessions on it sign in again or move to another login once it is gone
   return `<div class="menu${refused && ui.shook === key ? " failed" : ""}" role="menu">${menuItems(p, a).map(([act, label]) => {
-    const text = act === "remove" && armed ? `Remove ${p.kind === "key" ? "API key" : a.name}${on ? ` · ${on === 1 ? "1 session uses it" : `${on} sessions use it`}` : ""}` : label;
-    return `<button role="menuitem" class="${act === "remove" ? `danger${armed ? " armed" : ""}` : ""}" data-act="${act}" data-p="${p.id}" data-a="${a.id}" data-s="${spot}"${act === "remove" && ui.removing === spot ? " disabled" : ""}>${act === "remove" && ui.removing === spot ? "Removing…" : esc(text)}</button>`;
+    const text = act === "remove" && armed ? `Remove ${p.kind === "key" ? "API key" : shownName(p, a)}${on ? ` · ${on === 1 ? "1 session uses it" : `${on} sessions use it`}` : ""}` : label;
+    return `<button role="menuitem" class="${act === "remove" ? `danger${armed ? " armed" : ""}` : ""}" data-act="${act}" data-p="${p.id}" data-a="${a.id}" data-s="${spot}"${act === "remove" && ui.removing === spot ? " disabled" : ""}>${act === "remove" && ui.removing === spot ? "Removing…" : esc(text)}</button>${act === "remove" && armed && !ui.removing ? armNote(p, a, on) : ""}`;
   }).join("")}${refused ? `<div class="menu-state">${refusalHtml(ui.removeErr, key)}${reasonHtml(ui.removeErr, key)}</div>` : ""}</div>`;
 }
 const keyDayWord = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" }); // a key card's day, "Oct 12"
@@ -984,6 +1033,8 @@ function shownName(p, a) {
 function nameHtml(p, a, spot) {
   // a key is named by its variable and, when it replaced another, the day splice first saw it
   if (p.kind === "key") return `<span class="name"><span class="var">${esc(a.env)}</span>${a.tail ? ` <span class="tail">${esc(a.tail)}</span>` : ""}${a.has && a.seen && a.twins ? ` · ${keyDayWord(a.seen)}` : ""}</span>`;
+  // a model on this computer is told by its command, as the chip every command is drawn as, lit while the server answers
+  if (p.kind === "local") return `<span class="lmc-cmd"><span class="chip">${a.down || a.unread ? "" : "<i></i>"}${esc(a.name)}</span></span>`;
   if (ui.rename !== spot) return `<span class="name">${esc(shownName(p, a))}</span>`;
   const err = ui.renameErr;
   // one visible way to finish and one to leave, as the key field's Save and Cancel: both walkers had to guess Enter
@@ -1075,7 +1126,8 @@ function movesHtml(p, a, sock = 0, live = false) {
   }
   // A MOVE IS DRAWN AS THE SOCKETS IT RAN BETWEEN: the login the traffic left and the one it came to, each as the number it
   // has on the rail, the arrow between them, the command's chip where the provider serves two or more, how many sessions it
-  // carried as a lamp and a count, and its time at the card's edge. A login this board holds no card for is an empty
+  // carried as a lamp and a count, all one path cell as wide as the widest path on the card, and its time right after it, at one
+  // x on every line, the chevron that opens why following the time. A login this board holds no card for is an empty
   // socket. The other login is a door to its card. Why it moved, and the sessions by name, open under the line.
   const here = { id: a.id, sock, name: shownName(p, a), on: live };
   const socket = (x, door) => (x.id && door
@@ -1096,8 +1148,8 @@ function movesHtml(p, a, sock = 0, live = false) {
     const from = dir === "from" ? g.other : here, to = dir === "from" ? here : g.other;
     const when = `<span class="mat">${time}</span>`;
     const end = said ? DRAW.disc({ open, act: "move-why", inner: when, data: ` data-k="${esc(key)}" aria-label="Why it moved${time ? `, ${time}` : ""}"` }) : when;
-    return `<div class="moveline${movesPrimed && !MOVES_SEEN.has(key) ? " fresh" : ""}" data-key="${esc(key)}"><span class="mpath">${socket(from, from !== here)}${MOVE_ARROW}${socket(to, to !== here)}</span>`
-      + `${g.cmd ? `<span class="chip">${esc(g.cmd)}</span>` : ""}${g.who.length ? `<span class="mcarry" title="${n0(g.who.length)} ${g.who.length === 1 ? "session" : "sessions"} moved"><span class="lamp idle" aria-hidden="true"><i></i></span><b>${n0(g.who.length)}</b></span>` : ""}${end}</div>`
+    return `<div class="moveline${movesPrimed && !MOVES_SEEN.has(key) ? " fresh" : ""}" data-key="${esc(key)}"><span class="mpath">${socket(from, from !== here)}${MOVE_ARROW}${socket(to, to !== here)}`
+      + `${g.cmd ? `<span class="chip">${esc(g.cmd)}</span>` : ""}${g.who.length ? `<span class="mcarry" title="${n0(g.who.length)} ${g.who.length === 1 ? "session" : "sessions"} moved"><span class="lamp idle" aria-hidden="true"><i></i></span><b>${n0(g.who.length)}</b></span>` : ""}</span>${end}</div>`
       + (open ? `<p class="mwhy${ui.enter === `move:${key}` ? " unfold" : ""}">${said}</p>` : "");
   };
   const lines = [...[...into.values()].map((g) => line(g, "from")), ...[...away.values()].map((g) => line(g, "to"))];
@@ -1110,7 +1162,7 @@ const MOVE_ARROW = '<svg class="marrow" viewBox="0 0 30 12" aria-hidden="true"><
 const MOVES_SEEN = new Set();
 let movesPrimed = false;
 // how many rows a card's windows draw, so a login being read for the first time stands at the height it will land at
-const WINDOW_GHOST = () => `${GHOST.bar(3.4)}${GHOST.track()}<span class="pct">${GHOST.fig(4.2)}</span><span class="when">${GHOST.ring()}${GHOST.bar(6.2)}</span>`;
+const WINDOW_GHOST = () => `<span class="label">${GHOST.bar(3.4)}</span>${GHOST.track()}<span class="pct">${GHOST.fig(4.2)}</span><span class="when">${GHOST.ring()}${GHOST.bar(6.2)}</span>`;
 function cardHtml(p, c, a, i, serves) {
   const spot = `${p.id}/${a.id}`;
   // a server on this computer that does not answer serves nothing, so it wears no serving tint and no lit socket
@@ -1171,9 +1223,13 @@ function cardHtml(p, c, a, i, serves) {
     // the model it serves, and the door to its command on Models, where its log and its model are
     // a server that does not answer offers the act that asks it again, on its own card, beside the door to its command
     const checking = ui.checking === a.id;
-    const still = a.down && ui.stillDown === a.id && !checking ? `<span class="again-err${ui.shook === `recheck:${a.id}` ? " failed" : ""}">${DRAW.result("Still not answering", "bad")}</span>` : "";
-    const again = a.down ? DRAW.act({ word: checking ? "Checking" : "Check again", act: "recheck", cls: "quiet small", busy: checking, disabled: checking, data: ` data-a="${esc(a.id)}"` }) : "";
-    body = `<div class="local-model"><span class="mname">${esc(a.model)}</span><span class="lacts">${still}${again}<a class="act quiet small door" href="models.html?cmd=${encodeURIComponent(a.id)}">Models${DRAW.go}</a></span></div>`;
+    const still = a.down && ui.stillDown === a.id && !checking ? `<p class="lmc-still again-err${ui.shook === `recheck:${a.id}` ? " failed" : ""}">${DRAW.result("Still not answering", "bad")}</p>` : "";
+    // Check again stands at one place on every local card: where the server answers its place is held, so Models never moves
+    const again = a.down ? DRAW.act({ word: checking ? "Checking" : "Check again", act: "recheck", cls: "quiet small lmc-again", busy: checking, disabled: checking, data: ` data-a="${esc(a.id)}"` })
+      : `<span class="lmc-hold" aria-hidden="true"></span>`;
+    const m = localModel(a.model);
+    body = `<div class="local-model lmc-body"><div class="lmc-row"><b class="lmc-name">${esc(m.name)}</b>${m.qual ? `<span class="lmc-qual">${esc(m.qual)}</span>` : ""}${m.tag ? `<span class="lmc-tag">${esc(m.tag)}</span>` : ""}</div>`
+      + `${still}<div class="lmc-foot">${again}<a class="act quiet small door" href="models.html?cmd=${encodeURIComponent(a.id)}">Models${DRAW.go}</a></div></div>`;
   }
   // a key read from the environment or a file says so on its name line, as a plan login's tier does; one in splice's
   // store is the plain case and carries no tag
@@ -1188,6 +1244,30 @@ function cardHtml(p, c, a, i, serves) {
     + `${ui.menu === spot ? menuHtml(p, a, spot) : ""}${body}${sessionsHtml(p, a, i + 1, !!live)}</article>`;
 }
 const KEY_FROM = { environment: "Environment", file: "File" };
+// A LOCAL MODEL AS ITS HEAD LABELS IT, "Name 7B (local, 1.72bpw)": the name he would say, the words that tell two
+// instances of one model apart, and how far it is compressed, in plain words. The group's header already says where it runs
+// ("local", "vast.ai"), and a file format or a quantisation code is the format's word, never the model's name.
+const LOCAL_WHERE = /^(?:local|vast(?:\.ai)?)$/i;
+const LOCAL_OPTION = /^lens$/i; // a runtime option the label spells after its instance words; it tells no instance apart
+const bitsWord = (n) => { const v = Math.round(n * 10) / 10; return `compressed to ${v} ${v === 1 ? "bit" : "bits"}`; };
+function localModel(label) {
+  const whole = String(label ?? "").trim(), inside = [];
+  let name = whole.replace(/\(([^)]*)\)/g, (_, g) => { inside.push(...g.split(",")); return " "; }), bits = null;
+  const take = (re, get) => { name = name.replace(re, (...m) => { bits ??= get(m); return " "; }); };
+  take(/\b(\d+(?:\.\d+)?)\s*bpw\b/i, (m) => +m[1]);
+  take(/\bI?Q(\d+)(?:_[A-Z0-9]+)*\b/, (m) => +m[1]);
+  take(/\bB?F(16|32)\b/, (m) => +m[1]);
+  name = name.replace(/\bGGUF\b/gi, " ").replace(/\s+/g, " ").replace(/[-\s]+$/, "").trim();
+  const quals = [];
+  for (const raw of inside) {
+    const w = raw.trim();
+    if (!w || LOCAL_WHERE.test(w) || LOCAL_OPTION.test(w)) continue;
+    const q = /^(\d+(?:\.\d+)?)\s*bpw$/i.exec(w);
+    if (q) { bits ??= +q[1]; continue; }
+    quals.push(w);
+  }
+  return { name: name || whole, qual: quals.join(", "), tag: bits != null ? bitsWord(bits) : "" };
+}
 const asErr = (e) => (typeof e === "string" ? { word: e, why: "" } : e);
 // the windows a provider's logins report, in their order, so a login with no reading draws the same rows empty; a
 // provider none of whose logins was read draws one row, unlabelled, rather than guess which windows it keeps
@@ -1214,22 +1294,27 @@ function addTileHtml(p, c) {
 function switchHtml(p, c) {
   if (laneAccts(p, c).length < 2) return "";
   const disabled = Boolean(ui.orderSaving || ui.removing || c.orderable.size < 2);
+  // the lit part is its own shape under the two words, so a redraw can slide it from the choice it stood on (render)
   return DRAW.switcher([["soonest", "Soonest reset"], ["mine", "My order"]], c.mode, "mode", `Account order${p.cmds.length > 1 ? `, ${c.cmd}` : ""}`,
-    { data: ` data-p="${p.id}" data-c="${c.cmd}"`, disabled });
+    { data: ` data-p="${p.id}" data-c="${c.cmd}"`, disabled })
+    .replace("<div class=\"switch\"", `<div class="switch abl-sw" data-sw="${esc(p.id)}|${esc(c.cmd)}" data-at="${c.mode}"`);
 }
 const railCards = (p, c) => {
   const srv = new Map(p.cmds.map((x) => [x, serving(p, x)]));
   return ordered(p, c).map((a, i) => cardHtml(p, c, a, i, p.cmds.filter((x) => srv.get(x) === a))).concat(addTileHtml(p, c));
 };
-function railHtml(p, c, span = 1, cuts = null) {
+function railHtml(p, c, span = 1, cuts = null, strips = null) {
   const cards = railCards(p, c);
   if (span < 2) return `<div class="rail" data-rail="${p.id}">${cards.join("")}</div>`;
   // a provider wider than one column reads its order down each column and on at the top of the next, each column on its
   // own length of rail, the numbers carrying on (1-5, 6-8 and Add account): still read top to bottom (hitstop 0360fc4).
   // Each column takes the run of cards that leaves the tallest column as short as it can be (cutRail), cut where the
   // board was packed, so a card whose rows grow later never hops to the next column
-  return `<div class="rails" data-rail="${p.id}" style="--span:${span}">${runs(cards, cuts, span).map((x) => `<div class="rail">${x.join("")}</div>`).join("")}</div>`;
+  return `<div class="rails" data-rail="${p.id}" style="--span:${span}">${wideCols(runs(cards, cuts, span), strips)}</div>`;
 }
+// each column of a wide provider: its strips (the commands dealt out down the columns in turn, each one column wide, so every strip
+// ends where every other strip on the board ends), then its run of cards on the rail
+const wideCols = (runs, strips) => runs.map((x, i) => `<div class="abl-col">${(strips?.[i] || []).join("")}<div class="rail">${x.join("")}</div></div>`).join("");
 // cards cut into runs at [cuts]; cuts that do not fit them (a card added since) cut them into even runs
 function runs(cards, cuts, span) {
   const at = Array.isArray(cuts) && cuts.length === span - 1 && cuts.every((x, i) => x > (cuts[i - 1] ?? 0) && x < cards.length) ? cuts
@@ -1266,13 +1351,12 @@ function lastLeftOf(pool) {
   const back = all.filter((a) => !open.includes(a)).map((a) => a.blocked_until_epoch_seconds).filter((s) => s != null && s > now);
   return { untilMs: back.length ? Math.min(...back) * 1000 : null };
 }
-// A refused order save says so in the provider's own header, beside the switch it came from, and shakes once there, so
-// nothing on the board moves down to make room for it; splice's reason opens under the head from the word, and the
-// order goes back to the one splice still holds. The next press clears it.
+// A refused order save says so in the provider's own header, beside the switch it came from, and shakes once there: the word,
+// and splice's reason beside it on at most two lines, in the room the header always holds, so nothing on the board moves down
+// to make room for it. The order goes back to the one splice still holds. The next press clears it.
 function providerHtml(p, span = 1) {
   const refusal = (c) => (ui.orderErr && c && ui.orderErr.cmd === c.cmd ? ui.orderErr : null), key = (c) => `order:${c.cmd}`;
-  const said = (c) => (refusal(c) ? `<span class="order-err${ui.shook === key(c) ? " failed" : ""}">${refusalHtml(refusal(c), key(c))}</span>` : "");
-  const why = (c) => (refusal(c) ? reasonHtml(refusal(c), key(c), "onhead") : "");
+  const said = (c) => (refusal(c) ? `<span class="order-err abl-refusal${ui.shook === key(c) ? " failed" : ""}">${refusalHtml(refusal(c))}${refusal(c).why ? `<span class="abl-why">${esc(refusal(c).why)}</span>` : ""}</span>` : "");
   const group = (end, body) => DRAW.group({ name: p.name, c: colorOf(p.id), key: `prov:${p.id}`, cls: `provider${span > 1 ? " wide" : ""}`,
     style: span > 1 ? `--span:${span}` : "", end, body });
   if (p.kind !== "plan") {
@@ -1284,12 +1368,11 @@ function providerHtml(p, span = 1) {
     return group("", `${meters}<div class="rail plain" data-rail="${p.id}">${p.accounts.map((a, i) => cardHtml(p, null, a, i, serves(a))).join("")}</div>`);
   }
   const c = laneOf(p), many = p.cmds.length > 1;
-  const meters = p.cmds.map((x) => meterHtml(x, many ? { p, on: x === c } : null)).join("");
-  // over k columns the strips take a column each, and a provider with fewer commands than columns spreads them over the
-  // whole width instead of leaving the columns beside them empty: its day's words then stand on one line and its hours
-  // are drawn at the width the cards under them have
-  const strips = span > 1 ? `<div class="meters" style="--span:${Math.min(span, p.cmds.length)}">${meters}</div>` : meters;
-  return group(said(c) + switchHtml(p, c), `${why(c)}${strips}${railHtml(p, c, span, layout?.wide?.id === p.id ? layout.wide.cuts : null)}`);
+  const meters = p.cmds.map((x) => meterHtml(x, many ? { p, on: x === c } : null));
+  // over k columns the strips are dealt down the columns, one column wide each, and a provider with fewer commands than columns
+  // leaves the columns beside them to their cards
+  const dealt = span > 1 ? Array.from({ length: span }, (_, i) => meters.filter((_, k) => k % span === i)) : null;
+  return group(said(c) + switchHtml(p, c), `${span > 1 ? "" : meters.join("")}${railHtml(p, c, span, layout?.wide?.id === p.id ? layout.wide.cuts : null, dealt)}`);
 }
 function addProviderHtml() {
   const have = new Set(data.map((p) => p.id));
@@ -1321,7 +1404,7 @@ let layout = null;
 // allowance made for what is not known yet: the login that serves carries the sessions it serves, so its card stands taller
 // than a held one by the hairline over its Next row and its row of doors. It is the same number before the sessions answer
 // and after, so it moves nothing, and it keeps the first run of a wide rail from standing a card taller than the second.
-const REM = { card: 4.65, email: 1.4, row: 2.05, outbox: 3.3, line: 1.9, gap: 1, add: 3.35, head: 3.7, strip: 10.66, prov: 2.4, addProv: 4.6, serving: 6.6 };
+const REM = { local: 10.4, card: 4.65, email: 1.4, row: 2.7, outbox: 3.3, line: 1.9, gap: 1, add: 2.4, head: 3.6, strip: 17.7, idle: 6.9, bar: 2.43, prov: 2.4, addProv: 4.6, serving: 6.6, doors: 5, doors2: 7.3 };
 // a plan login's height; [next] is the serving login, which carries the Next row
 function loginRem(a, next) {
   const top = REM.card + (a.email ? REM.email : 0);
@@ -1329,28 +1412,37 @@ function loginRem(a, next) {
   if (a.noUsage) return top + REM.line;
   if (!a.windows.length) return top + 3 * REM.row; // not read: its line and the provider's windows drawn empty
   const rows = a.windows.length + (a.windows.some((w) => w.label === "Week") ? a.models.length : 0) + (held(a) ? 1 : 0) + (a.staleAt != null ? 1 : 0) + (next ? 1 : 0);
-  return top + rows * REM.row + (next ? REM.serving : 0);
+  // the sessions it serves, as the last visit saw them (none before there was one), and what the serving login adds: the hairline, its moves
+  const doors = a.sessions === null ? DOORS_SEEN.get(a.id) ?? 0 : a.sessions?.length || 0;
+  return top + rows * REM.row + (doors > SESS_SHOWN - 1 ? REM.doors2 : doors ? REM.doors : 0) + (next ? REM.serving : 0);
 }
 const runRem = (hs) => hs.reduce((t, h) => t + h, 0) + Math.max(0, hs.length - 1) * REM.gap;
 // a provider's cards as heights, Add account last on a plan's rail; a key and a model on this computer are one line each
 const railRems = (p) => {
-  if (p.kind !== "plan") return p.accounts.map(() => REM.card + REM.line);
+  if (p.kind !== "plan") return p.accounts.map(() => (p.kind === "local" ? REM.local : REM.card + REM.line));
   const rail = ordered(p, laneOf(p));
   return [...rail.map((a, i) => loginRem(a, i === 0 && rail.length > 1)), REM.add];
 };
-const stripsOf = (p) => (p.kind === "local" ? p.cmds.filter((c) => c.budget).length : p.cmds.length);
+// a strip's height: the hero row and the hours, and a row for each bar the day draws (the requests; the dollars or the budget against its cap)
+const stripRem = (c) => {
+  if (isIdle(c)) return REM.idle;
+  const split = c.split && !c.unread ? c.split : null, { usd } = dayBars(c, split);
+  return REM.strip + REM.bar * ((c.turns != null && !c.local && c.unread !== DAY_READING ? 1 : 0) + (usd || capFill(c, split) ? 1 : 0) - 2);
+};
+const stripsOf = (p) => (p.kind === "local" ? p.cmds.filter((c) => c.budget) : p.cmds).map(stripRem);
 // a provider as the packing weighs it: the board and a first visit's ghosts hand it the same shape
-const packItem = (p) => ({ id: p.id, plan: p.kind === "plan", strips: stripsOf(p), hs: railRems(p) });
+const packItem = (p) => ({ id: p.id, plan: p.kind === "plan", sh: stripsOf(p), hs: railRems(p) });
 // THE CUTS THAT SPLIT A WIDE RAIL into k runs in its order, each two cards or more, the tallest run as short as it can be.
 // Split by count, a rail of cards of different heights stood one column 600 px longer than the next at 3822 (Oct 27): the
 // serving login with its doors and moves at the top of the first, a signed-out one at the foot of the second.
-function cutRail(hs, k, min = 2) {
-  const n = hs.length, run = (i, j) => runRem(hs.slice(i, j)), from = [];
-  let best = Array.from({ length: n + 1 }, (_, j) => (j >= min ? run(0, j) : Infinity)); // best[j]: the tallest run, first j cards
+// [lead]: what each column already holds above its run (its strips), so the cards are cut to level the columns, not the runs.
+function cutRail(hs, k, min = 2, lead = []) {
+  const n = hs.length, run = (i, j, m) => runRem(hs.slice(i, j)) + (lead[m] || 0), from = [];
+  let best = Array.from({ length: n + 1 }, (_, j) => (j >= min ? run(0, j, 0) : Infinity)); // best[j]: the tallest run, first j cards
   for (let m = 2; m <= k; m++) {
     const next = Array(n + 1).fill(Infinity), at = Array(n + 1).fill(-1);
     for (let j = m * min; j <= n; j++) for (let i = (m - 1) * min; i <= j - min; i++) {
-      const t = Math.max(best[i], run(i, j));
+      const t = Math.max(best[i], run(i, j, m - 1));
       if (t < next[j]) { next[j] = t; at[j] = i; }
     }
     from.push(at); best = next;
@@ -1367,10 +1459,70 @@ function cutRail(hs, k, min = 2) {
 // column each and 1440 (two columns) never splits. Split or not, that provider opens the board at the top of the first
 // column, so the one with the most logins stands in one place at every width (at 1440 it fell to the foot of the second
 // column, under the fold); the rest keep the order splice lists them in.
-function pack(ps, n, w) {
+// The board's columns should stand near one height: the shortest column is at least this share of the tallest, so no column
+// is left holding a third of the page beside walls of cards. A packing short of it costs more, in proportion to the miss.
+const LEVEL = 0.7;
+// Add provider stands under the shortest column while a provider is left to add; with all of them here it offers none
+const addLeft = () => !!ui.addProv || CATALOG.some((c) => !data.some((p) => p.id === c.id));
+const cost = (heights) => {
+  const tall = Math.max(...heights), low = Math.min(...heights);
+  // among the packings that are level enough, the shorter board wins, and then the more even one
+  return tall * (1 + 2 * Math.max(0, LEVEL - (tall ? low / tall : 1))) + (tall - low) * 0.01;
+};
+// [ps] packed down [n] columns. Each goes into the shortest column so far, then single moves and swaps between columns are
+// kept while they bring the board's columns (with [beside], the heights of columns that stand next to them) closer to level.
+// Within a column the providers keep the order splice lists them in. [pin]: the first provider stays at the top of the first column.
+function pack(ps, n, w, { beside = [], pin = false, add: withAdd = addLeft() } = {}) {
   const cols = DRAW.packCols(ps, n, w);
-  const add = cols.reduce((m, c) => (c.w < m.w ? c : m)); add.w += REM.addProv; // Add provider ends the shortest column
-  return { cols: cols.map((c) => c.items.map((p) => p.id)), add: cols.indexOf(add), tall: Math.max(...cols.map((c) => c.w)) };
+  const at = new Map(); // provider -> its column
+  cols.forEach((c, i) => c.items.forEach((p) => at.set(p, i)));
+  const heights = () => {
+    const h = Array(n).fill(0);
+    const held = Array(n).fill(0);
+    for (const [p, i] of at) { h[i] += w(p); held[i]++; }
+    for (let i = 0; i < n; i++) if (held[i]) h[i] -= REM.prov; // no gap under a column's last provider
+    if (withAdd) h[h.indexOf(Math.min(...h))] += REM.addProv; // Add provider ends the shortest column
+    return h;
+  };
+  const score = () => cost([...beside, ...heights()]);
+  let best = score(), better = true;
+  // few enough providers: every way of dealing them into the columns is weighed, and the most level one stands
+  const free = ps.filter((p, i) => !(pin && i === 0));
+  if (n > 1 && n ** free.length <= 400000) {
+    const keep = new Map(at);
+    const deal = (i) => {
+      if (i === free.length) { const sc = score(); if (sc < best - 1e-6) { best = sc; for (const [p, c] of at) keep.set(p, c); } return; }
+      for (let c = 0; c < n; c++) { at.set(free[i], c); deal(i + 1); }
+    };
+    deal(0);
+    for (const [p, c] of keep) at.set(p, c);
+    better = false;
+  }
+  const movable = ps.filter((p, i) => !(pin && i === 0));
+  while (better) {
+    better = false;
+    for (const p of movable) {
+      const from = at.get(p);
+      for (let to = 0; to < n; to++) {
+        if (to === from) continue;
+        at.set(p, to);
+        const s = score();
+        if (s < best - 1e-6) { best = s; better = true; break; }
+        at.set(p, from);
+      }
+      for (const q of movable) {
+        const a = at.get(p), b = at.get(q);
+        if (a === b || ps.indexOf(q) < ps.indexOf(p)) continue;
+        at.set(p, b); at.set(q, a);
+        const s = score();
+        if (s < best - 1e-6) { best = s; better = true; } else { at.set(p, a); at.set(q, b); }
+      }
+    }
+  }
+  const out = Array.from({ length: n }, () => ({ w: 0, items: [] }));
+  for (const p of ps) { const c = out[at.get(p)]; c.items.push(p); c.w += w(p); }
+  const add = out.reduce((m, c) => (c.w < m.w ? c : m)); if (withAdd) add.w += REM.addProv;
+  return { cols: out.map((c) => c.items.map((p) => p.id)), add: out.indexOf(add), heights: out.map((c) => c.w - (c.items.length ? REM.prov : 0)) };
 }
 // how many columns the board's width holds: one per 40rem with the gap between, the board's own rule at every width
 function colCount() { return DRAW.colsFit(board, 40); }
@@ -1379,11 +1531,31 @@ function colCount() { return DRAW.colsFit(board, 40); }
 // cards' rows have grown or shrunk since; a provider or a card added or gone packs the board again, and the providers
 // slide to their new columns (render).
 const PACK_KEY = "splice-accounts-packing";
-const PACK_RULE = 5; // a packing or a ghost shape kept from an older rule packs again
+const PACK_RULE = 16; // a packing or a ghost shape kept from an older rule packs again
 function keptPacking(n, ids) {
   let kept = null;
   try { kept = JSON.parse(localStorage.getItem(PACK_KEY) || "null"); } catch { kept = null; }
   return kept && kept.rule === PACK_RULE && kept.n === n && kept.ids === ids && Array.isArray(kept.cols) ? kept : null;
+}
+// THE PACKING, CHECKED AGAINST THE BOARD AS IT STANDS. The packing is made from heights worked out before anything is drawn; once the
+// sessions have landed and every provider stands at the height it will keep, each is measured and the board is dealt again on
+// those heights, so the columns end level (the shortest at least LEVEL of the tallest) whatever the estimates missed. It is done
+// once for a packing: the result is kept like any other, so the next visit lands there and nothing moves again.
+function settle(L) {
+  if (L.settled || unheard || !atRest() || ui.probing || !data.every((p) => p.accounts.every((a) => a.sessions !== null))) return false;
+  L.settled = true;
+  const px = parseFloat(getComputedStyle(document.documentElement).fontSize), sec = (id) => board.querySelector(`[data-key="prov:${CSS.escape(id)}"]`);
+  const rem = (el) => (el ? el.getBoundingClientRect().height / px : 0);
+  const big = L.wide ? findProv(L.wide.id) : null, wideEl = big ? sec(big.id) : null;
+  const beside = wideEl ? [...wideEl.querySelectorAll(":scope > .rails > .abl-col")].map((c) => (c.getBoundingClientRect().bottom - wideEl.getBoundingClientRect().top) / px) : [];
+  const items = data.filter((p) => p !== big).map((p) => ({ id: p.id })), at = new Map(data.map((p) => [p.id, rem(sec(p.id)) + REM.prov]));
+  const first = L.cols[0]?.[0], r = big ? pack(items, L.n - L.wide.k, (p) => at.get(p.id), { beside })
+    : pack([...items.filter((p) => p.id === first), ...items.filter((p) => p.id !== first)], L.n, (p) => at.get(p.id), { pin: true });
+  const now = JSON.stringify(L.cols);
+  if (JSON.stringify(r.cols) === now && r.add === L.addAt) { try { localStorage.setItem(PACK_KEY, JSON.stringify(L)); } catch { /* a full store packs again next visit */ } return false; }
+  layout = { ...L, cols: r.cols, addAt: r.add, settled: true };
+  try { localStorage.setItem(PACK_KEY, JSON.stringify(layout)); } catch { /* a full store packs again next visit */ }
+  return true;
 }
 function columns() {
   const n = colCount();
@@ -1400,17 +1572,20 @@ const packed = (n, ids) => ({ rule: PACK_RULE, n, ids, ...packShape(data.map(pac
 // The packing rule on providers given as heights ({ id, plan, strips, hs: each card's rem, Add account last on a plan's
 // rail}), shared by the board and by a first visit's ghosts, so the ghosts stand where the board will land
 function packShape(items, n) {
-  const w = (p) => REM.head + p.strips * REM.strip + runRem(p.hs) + REM.prov;
+  const w = (p) => REM.head + p.sh.reduce((t, h) => t + h, 0) + runRem(p.hs) + REM.prov;
   const big = items.filter((p) => p.plan).reduce((m, p) => (!m || runRem(p.hs) > runRem(m.hs) ? p : m), null);
   // a split is weighed against the board packed in splice's own order, as it always was; unsplit, the big one leads
-  let best = { k: 1, cuts: null, ...pack(big ? [big, ...items.filter((p) => p !== big)] : items, n, w) }, under = 0.85 * pack(items, n, w).tall;
+  const one = pack(big ? [big, ...items.filter((p) => p !== big)] : items, n, w, { pin: !!big });
+  let best = { k: 1, cuts: null, ...one, score: cost(one.heights) };
   if (big && n > 1) {
     const rest = items.filter((p) => p !== big), hs = big.hs;
     for (let k = 2; k <= Math.min(n - 1, Math.floor(hs.length / 2)); k++) {
-      // over k columns its days stand side by side, a row of them per k commands
-      const r = pack(rest, n - k, w), cut = cutRail(hs, k);
-      const tall = Math.max(REM.head + Math.ceil(big.strips / k) * REM.strip + cut.tall + REM.prov, r.tall);
-      if (tall < under) { best = { k, cuts: cut.cuts, ...r, tall }; under = tall; } // 15% shorter or no split
+      // over k columns its strips are dealt down them in turn, and each column carries its strips, then its run of cards
+      const lead = Array.from({ length: k }, (_, i) => big.sh.filter((_, j) => j % k === i).reduce((t, h) => t + h, 0)), cut = cutRail(hs, k, 2, lead), bounds = [0, ...cut.cuts, hs.length];
+      const wide = bounds.slice(1).map((e, i) => REM.head + lead[i] + runRem(hs.slice(bounds[i], e)));
+      const r = pack(rest, n - k, w, { beside: wide });
+      const score = cost([...wide, ...r.heights]);
+      if (score < best.score * 0.85) best = { k, cuts: cut.cuts, ...r, score }; // 15% better or no split
     }
   }
   return { wide: best.k > 1 ? { id: big.id, k: best.k, cuts: best.cuts } : null, cols: best.cols, addAt: best.add };
@@ -1452,20 +1627,22 @@ const tall = (h) => (h ? `;min-height:${h}rem` : "");
 const ghostDoors = (n) => (n ? `<div class="onlogin" aria-hidden="true">${Array.from({ length: n }, (_, j) => `<span class="sdoor gdoor"><i class="ghost lampg"></i>${GHOST.bar(4.2 + (j % 3) * 1.3)}</span>`).join("")}</div>` : "");
 function ghostCard(kind, [rows, doors, h, over = 0, moves = 0], k) {
   const lines = (n, w, cls) => Array.from({ length: n }, () => `<span class="${cls}">${GHOST.bar(w)}</span>`).join("");
-  const body = kind === "key" ? `<div class="keysrc">${GHOST.bar(13)}</div>` : kind === "local" ? `<div class="local-model">${GHOST.bar(11)}</div>`
+  const body = kind === "key" ? `<div class="keysrc">${GHOST.bar(13)}</div>` : kind === "local" ? `<div class="local-model lmc-body"><div class="lmc-row">${GHOST.bar(12)}</div><div class="lmc-foot">${GHOST.bar(7.6, "chip")}${GHOST.bar(5.5, "chip")}</div></div>`
     : rows ? `<div class="windows">${lines(Math.max(0, over - 1), 12, "heldline")}${Array.from({ length: rows }, WINDOW_GHOST).join("")}</div>` : `<div class="outbox">${GHOST.bar(5.4, "chip")}</div>`;
   return `<article class="card gcard ghosted" style="--i:${Math.min(k, 3)}${tall(h)}">${kind === "plan" ? `<span class="socket"></span>` : ""}`
     + `<div class="top">${GHOST.bar(7.4, "big")}<span class="slot">${GHOST.bar(6.2, "chip")}</span></div>${over ? lines(1, 9.5, "email") : ""}${body}${ghostDoors(doors)}`
     + `${moves ? `<div class="moves"><span class="mkick">${GHOST.bar(3.2)}</span>${Array.from({ length: moves }, () => `<div class="moveline">${GHOST.bar(15)}</div>`).join("")}</div>` : ""}</article>`;
 }
 // a day with no request is one row on the board (meterHtml), so its ghost is one row; the height the strip kept says which it was
-const ghostStrip = (h) => (h && h < 7
-  ? `<div class="meter day ghosted idle" style="${tall(h).slice(1)}"><span class="label">Day</span><span class="money">${GHOST.bar(9.5)}</span><span class="when">${GHOST.ring()}${GHOST.bar(6.2)}</span></div>`
-  : `<div class="meter day ghosted" style="${tall(h).slice(1)}"><span class="label">Day</span><span class="money">${GHOST.fig(4.6)} ${GHOST.bar(9.5)}</span>`
-    + `<span class="dayrun">${GHOST.track()}</span><span class="when">${GHOST.ring()}${GHOST.bar(6.2)}</span></div>`);
+const ghostStrip = (h) => {
+  const kicker = (w) => `<span class="label ads-k">${w}</span>`, row = (w) => `${kicker(w)}<div class="bar ads-req">${GHOST.track()}</div><span class="ads-words">${GHOST.bar(7.4)}</span>`;
+  if (h && h < 7) return `<div class="meter day ghosted idle" style="${tall(h).slice(1)}"><span class="label">Day</span><div class="dayline"><span class="ads-fig ads-ghost">${GHOST.bar(9.5)}</span></div><span class="when">${GHOST.ring()}${GHOST.bar(6.2)}</span></div>`;
+  return `<div class="meter day ghosted" style="${tall(h).slice(1)}"><span class="label">Day</span><div class="dayline"><span class="ads-fig ads-ghost">${GHOST.fig(5.6)}</span><span class="ads-unit">${GHOST.bar(9.5)}</span></div>`
+    + `<span class="when">${GHOST.ring()}${GHOST.bar(6.2)}</span>${row("Requests")}${h > REM.strip - 1 ? row("Dollars") : ""}<span class="dayrun">${GHOST.track()}</span></div>`;
+};
 function ghostProvider(g, span = 1, cuts = null) {
   // a shape kept before the heights were (a count of strips) still draws, at the plain height
-  const strips = (Array.isArray(g.d) ? g.d : Array.from({ length: g.d || 0 }, () => 0)).map((h) => ghostStrip(h)).join(""), cards = (g.a || []).map((x, k) => ghostCard(g.k, x, k));
+  const dayHs = Array.isArray(g.d) ? g.d : Array.from({ length: g.d || 0 }, () => 0), strips = dayHs.map((h) => ghostStrip(h)).join(""), cards = (g.a || []).map((x, k) => ghostCard(g.k, x, k));
   const head = `<header><h2><span class="blot"></span>${GHOST.bar(6.4, "big")}</h2></header>`;
   // a ghost provider carries the key its landed provider will, so the board that lands over it slides each provider from
   // where its ghost stood to where it settles (render) and nothing is moved in one frame
@@ -1473,11 +1650,9 @@ function ghostProvider(g, span = 1, cuts = null) {
   if (g.k !== "plan") return `<section class="provider ghostp"${key}>${head}${strips}<div class="rail plain">${cards.join("")}</div></section>`;
   cards.push(`<div class="add ghosted" style="--i:3"><span class="socket"></span>${GHOST.bar(7)}</div>`); // Add account
   // a wide rail's ghosts are cut where its cards were
-  const rail = span > 1 ? `<div class="rails" style="--span:${span}">${runs(cards, cuts, span).map((x) => `<div class="rail">${x.join("")}</div>`).join("")}</div>`
+  const rail = span > 1 ? `<div class="rails" style="--span:${span}">${wideCols(runs(cards, cuts, span), Array.from({ length: span }, (_, i) => dayHs.filter((_, k) => k % span === i).map((h) => ghostStrip(h))))}</div>`
     : `<div class="rail">${cards.join("")}</div>`;
-  // its days spread over the width as the board's do (providerHtml), so each ghost strip stands as wide as its day
-  const across = Math.max(1, Math.min(span, Array.isArray(g.d) ? g.d.length : g.d || 0));
-  return `<section class="provider ghostp${span > 1 ? ` wide" style="--span:${span}` : ""}"${key}>${head}${span > 1 ? `<div class="meters" style="--span:${across}">${strips}</div>` : strips}${rail}</section>`;
+  return `<section class="provider ghostp${span > 1 ? ` wide" style="--span:${span}` : ""}"${key}>${head}${span > 1 ? "" : strips}${rail}</section>`;
 }
 // A FIRST VISIT, or a width the last one never drew, has no kept shape: its ghosts come from splice's own list of commands
 // as soon as that answers (it answers well before the rest), one provider per family with a strip per command. Where the
@@ -1513,10 +1688,10 @@ function shapeFromRegistry(n) {
       for (const c of p.cmds) c.order = p.accounts.filter((x) => (x.row.heads || []).includes(c.head)).map((x) => x.id);
       a = ghostRail(p);
     } else if (p.kind === "plan") a = Array.from({ length: cmds + 1 }, () => [2, 0, 0, 0, 0, REM.card + 2 * REM.row]);
-    else a = p.cmds.map(() => [0, 0, 0, 0, 0, REM.card + REM.line]);
+    else a = p.cmds.map(() => [0, 0, 0, 0, 0, p.kind === "local" ? REM.local : REM.card + REM.line]);
     return { id: p.id, k: p.kind, d: Array.from({ length: p.kind === "local" ? 0 : cmds }, () => 0), a };
   });
-  const L = packShape(ps.map((g) => ({ id: g.id, plan: g.k === "plan", strips: g.d.length,
+  const L = packShape(ps.map((g) => ({ id: g.id, plan: g.k === "plan", sh: g.d.map(() => REM.strip),
     hs: [...g.a.map((x) => x[5]), ...(g.k === "plan" ? [REM.add] : [])] })), n);
   const byId = (id) => ps.find((g) => g.id === id);
   return { n, wide: L.wide ? { k: L.wide.k, cuts: L.wide.cuts, p: byId(L.wide.id) } : null, cols: L.cols.map((ids) => ids.map(byId)) };
@@ -1652,12 +1827,21 @@ function render({ flip = false } = {}) {
   const sliding = flip ? "[data-key]" : '[data-key^="prov:"]', before = new Map(), was = layout;
   for (const el of board.querySelectorAll(sliding)) before.set(el.dataset.key, el.getBoundingClientRect());
   const L = columns(), typed = keepFields(), barsBefore = barsNow(), entered = ui.enter, grown = ui.grow;
+  const switches = new Map([...board.querySelectorAll(".abl-sw[data-sw]")].map((e) => [e.dataset.sw, e.dataset.at]));
   drawing = true;
   // Add provider sits under the shortest column while a provider is left to add; with all of them here it has none to offer
-  const addable = ui.addProv || CATALOG.some((c) => !data.some((p) => p.id === c.id));
+  const addable = addLeft();
   board.innerHTML = DRAW.boardCols([...(L.wide ? [{ span: L.wide.k, body: providerHtml(findProv(L.wide.id), L.wide.k) }] : []),
     ...L.cols.map((ids, i) => ({ body: ids.map((id) => providerHtml(findProv(id))).join("") + (addable && i === L.addAt ? addProviderHtml() : "") }))]);
   drawing = false;
+  // the lit part of an order switch slides from the choice it stood on to the one it now stands on, over 240 ms
+  for (const sw of board.querySelectorAll(".abl-sw[data-sw]")) {
+    const was = switches.get(sw.dataset.sw);
+    if (!was || was === sw.dataset.at) continue;
+    sw.style.setProperty("--abl-x", was === "mine" ? "100%" : "0%");
+    void sw.offsetWidth;
+    sw.style.removeProperty("--abl-x");
+  }
   // the board it held, while splice does not answer: still there, quieter, under the line in the head that says so
   board.classList.toggle("unheard", !!unheard);
   // THE RESET COLUMN IS ONE WIDTH ON THE WHOLE BOARD: as wide as its longest time, so every card's bars and every Day
@@ -1671,8 +1855,8 @@ function render({ flip = false } = {}) {
   if (!ui.probing && grown !== "all") slideBars(barsBefore, grown);
   // the logins at their limit ride Accounts' link on every page (kit.js navMark), each until its window comes back
   if (!unheard) {
-    const out = data.flatMap((p) => p.accounts).filter(held);
-    navMark("accounts.html", out.length, "limit", out.map((a) => Math.max(0, ...a.windows.filter(atLimit).map((w) => w.resetMs ?? 0)) || null));
+    const all = data.flatMap((p) => p.accounts), out = all.filter(held);
+    navMark("accounts.html", out.length, "limit", out.map((a) => Math.max(0, ...a.windows.filter(atLimit).map((w) => w.resetMs ?? 0)) || null), all.length);
   }
   // a day's hours rise in with the bars, when the fresh reading lands (ui.grow), and a day that lands after it rises on
   // first sight; while the page is still asking the providers they stand, as the striped bars do
@@ -1696,6 +1880,7 @@ function render({ flip = false } = {}) {
   const opened = entered === "rename" ? board.querySelector(".field.rename")
     : entered === "key" ? board.querySelector(`.card[data-key="card:${CSS.escape(ui.replace ?? "")}"] #key-in`) ?? keyIn() : null;
   if (opened) { opened.focus(); opened.select?.(); } else putFields(typed);
+  if (settle(L)) { render({ flip }); return; }
   const shape = atRest() && !ui.probing ? JSON.stringify(shapeOf(L)) : shapeSaved;
   if (shape !== shapeSaved) { shapeSaved = shape; try { localStorage.setItem(SHAPE_KEY, shape); } catch { /* a full store keeps the last shape */ } }
   if (!flip && L === was) return;
@@ -1871,17 +2056,14 @@ function mutationError(res, word) {
   const why = res.status === 0 ? "splice did not answer" : typeof res.body?.error === "string" ? res.body.error.trim() : "";
   return { word, why };
 }
-// A refusal where it happened: its word in the limit red, and when splice gave a reason, the word is the door to it.
-// [key] names this refusal among the open reasons (ui.reasons); the reason itself is drawn by reasonHtml where the
-// object has room for a line.
-function refusalHtml(err, key) {
-  if (!err.why) return DRAW.result(err.word, "bad");
-  // the word is the button that opens splice's reason, inside the status that announces it: a status inside the button
-  // would leave the button with no name to be found or read by
-  return `<span class="result bad" role="status">${DRAW.disc({ open: ui.reasons.has(key), act: "reason", cls: "refusal", data: ` data-k="${esc(key)}"`, inner: esc(err.word) })}</span>`;
+// A refusal where it happened: its word in the limit red where the act was, and splice's own reason printed beside it in the
+// same place, readable with no press. Where splice gave no reason only the word shows, and none is made up. The reason is
+// drawn by reasonHtml where the object has room for a line; [key] names this refusal.
+function refusalHtml(err) {
+  return DRAW.result(err.word, "bad");
 }
-const reasonHtml = (err, key, cls = "") => (err?.why && ui.reasons.has(key)
-  ? `<p class="reason${cls ? ` ${cls}` : ""}${ui.enter === `reason:${key}` ? " unfold" : ""}">${esc(err.why)}</p>` : "");
+const reasonHtml = (err, key, cls = "") => (err?.why
+  ? `<p class="reason${cls ? ` ${cls}` : ""}${ui.shook === key ? " unfold" : ""}">${esc(err.why)}</p>` : "");
 async function saveOrder(c, list, mode, unpin = false) {
   if (ui.orderSaving || ui.removing) return;
   accountRevision++;
@@ -2252,7 +2434,11 @@ probe().then(() => {
   const card = ADDR.get("card") || (ADDR.get("head") && doorOf(ADDR.get("head")));
   if (!card) return;
   const el = board.querySelector(`[data-key^="card:${CSS.escape(card)}"]`);
-  if (el) { el.scrollIntoView({ block: "center", behavior: "instant" }); el.classList.add("pulse-once"); }
+  // the card pulses once on the draw that lands on it, so a later draw (the sessions answering) never cuts the pulse short
+  if (el?.dataset.a) {
+    ui.pulse = el.dataset.a; render();
+    board.querySelector(`.card[data-a="${CSS.escape(el.dataset.a)}"]`)?.scrollIntoView({ block: "center", behavior: "instant" });
+  }
 });
 
 });

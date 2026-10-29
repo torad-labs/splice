@@ -1,7 +1,9 @@
-// A request on a plan account costs the person nothing: the list's key says "On your plan, at API prices" once, and the
+// A request on a plan account costs the person nothing: the list's key says "Plan cost" once, beside the hollow mark, and the
 // opened request draws what it would have cost at API prices (plan_value_usd) as its figure with "On your plan" under it,
 // never as a price paid (Marlin, Oct 11 5:52 PM; Requests' goal, Oct 26). A request billed to a key keeps its dollars and
 // has no such line. Through the real page against a stub daemon.
+// Goal changed 2026-10-29 by the requests-list pass (build-from alt-3): the key names only drawn marks, each by a short word
+// beside its mark, so the hollow bar is named "Plan cost" where it said "On your plan, at API prices".
 import { afterAll, beforeAll, test } from "bun:test";
 import { chromium, expect, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -56,7 +58,7 @@ afterAll(async () => {
 // The list draws a plan request's worth at API prices in its cost column as a hollow bar with its figure muted, and its
 // key says once what hollow means (Requests' goal, Oct 26: "A plan row draws its worth at API prices as a hollow bar with
 // its figure muted. The list's key says once what hollow means."), where each plan row read "On your plan" and no "$".
-test("a plan request draws its API-price worth hollow, the list's key says On your plan once; a key request keeps its cost alone", async () => {
+test("a plan request draws its API-price worth hollow, the list's key says Plan cost once; a key request keeps its cost alone", async () => {
   // This walk closes its overlay; side-by-side panes intentionally hide that control.
   const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
   try {
@@ -67,20 +69,21 @@ test("a plan request draws its API-price worth hollow, the list's key says On yo
     await expect(card("onplan").locator(".co .v")).toHaveText("$0.053");
     expect(await card("onplan").locator(".co.plan").count()).toBe(1);
     expect(await fill("onplan")).toBe("rgba(0, 0, 0, 0)");
-    await expect(page.locator(".lkey")).toContainText("On your plan, at API prices");
+    await expect(page.locator(".lkey")).toContainText("Plan cost");
+    expect(((await page.locator(".lkey").innerText()).match(/Plan cost/g) ?? []).length).toBe(1);
     await expect(card("onkey").locator(".co .v")).toHaveText("$0.120");
     expect(await card("onkey").locator(".co.plan").count()).toBe(0);
     expect(await fill("onkey")).not.toBe("rgba(0, 0, 0, 0)");
 
-    const cost = page.locator(".rqpane .fig").filter({ hasText: "Cost" });
+    const cost = page.locator(".rqpane .rvw-col").filter({ has: page.locator(".rvw-ch span", { hasText: "Cost" }) });
     await card("onplan").click();
-    await expect(cost.locator(".v")).toHaveText("≈$0.053");
-    await expect(cost.locator(".fsub")).toHaveText("On your plan");
+    await expect(cost.locator(".rvw-ch b")).toHaveText("≈$0.053");
+    await expect(cost.locator("small")).toHaveText("On your plan");
 
     await page.locator('.rqpane [data-act="close"]').click();
     await card("onkey").click();
-    await expect(cost.locator(".v")).toHaveText("≈$0.120");
-    expect(await cost.locator(".fsub").count()).toBe(0);
+    await expect(cost.locator(".rvw-ch b")).toHaveText("≈$0.120");
+    expect(await cost.locator("small").count()).toBe(0);
   } finally {
     await page.close();
   }

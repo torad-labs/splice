@@ -1,9 +1,10 @@
 // An open session on Sessions as he reads it at his width (Oct 27; Marcos, Oct 26: "scrolling on the chat
 // gets crampped ... the tool call ui is very busy, it also seems like we're wasting a lot of horizontal space"). The
 // session he opens takes the board's whole width under its own row, so no block stands beside it and no column runs
-// empty beside it; in a plate with the room (150rem), each run of calls stands beside the words it followed, so the words
-// read down one column; in a plate from 100rem the details stand in a rail beside the conversation and the calls stand
-// under their words (Sessions' goal, Oct 28); and Earlier shows the newest few namesakes with the rest behind one count.
+// empty beside it; and Earlier shows the newest few namesakes with the rest behind one count. GOAL CHANGED (Oct 29, the
+// open-plate pass of Sessions, whose passed prototype collects the calls): the conversation reads down one column of words
+// with no run of calls between them; every call the session made stands together in one trail, in the plate's right column
+// above the details from 100rem, and above the conversation, under the details, in a narrower plate.
 // Through the real Sessions page against a stub daemon, measured in the rendered DOM.
 import { afterAll, beforeAll, expect as bunExpect, test } from "bun:test";
 import { chromium, expect, type Browser, type Page } from "@playwright/test";
@@ -142,16 +143,20 @@ test("at 3822 the open session takes every column but one, and the other blocks 
   }
 }, 40_000);
 
-test("at his width each run of calls stands beside the words it followed", async () => {
+test("at his width the calls stand together in the right column beside the words, and the words read straight on in one column", async () => {
   const page = await opened(2548, 1240, 1.5, "b-1");
   try {
     const words = await boxOf(page, '.pane .log .msg.agent:has-text("I will read the parser first.")');
-    const run = await boxOf(page, ".pane .log .trail");
-    bunExpect(run.left).toBeGreaterThanOrEqual(words.right - 1);
-    bunExpect(run.top).toBeGreaterThanOrEqual(words.top - 2);
-    bunExpect(run.top).toBeLessThan(words.bottom);
-    // the words that came after the run read straight on in the same column, under the words before it
     const next = await boxOf(page, '.pane .log .msg.agent:has-text("drops the last token")');
+    const calls = await boxOf(page, ".pane .sx-calls");
+    // no call stands between the words; all three are in the one trail
+    await expect(page.locator(".pane .log .trail")).toHaveCount(0);
+    // three calls: the two before the last stand folded under one count, the last by its own words
+    await expect(page.locator(".pane .sx-calls")).toContainText("2 earlier calls");
+    await expect(page.locator(".pane .sx-calls")).toContainText("Run the parser's tests");
+    bunExpect(calls.left).toBeGreaterThanOrEqual(words.right - 1);
+    bunExpect(calls.top).toBeLessThan(words.bottom);
+    // the words that came after read straight on in the same column, under the words before
     bunExpect(Math.abs(next.left - words.left)).toBeLessThanOrEqual(1);
     bunExpect(next.top).toBeGreaterThanOrEqual(words.bottom);
   } finally {
@@ -159,34 +164,40 @@ test("at his width each run of calls stands beside the words it followed", async
   }
 }, 40_000);
 
-// A plate under 150rem keeps the words in one column with each run of calls under the words it followed; from 100rem the
-// details stand in a rail beside that column, so the plate's width is used and no band of empty screen lies between them.
-test("at 1440 the details stand in a rail beside the conversation, and each run of calls stands under the words it followed", async () => {
+// From 100rem the plate's right column holds the calls, then the details under them, both beside the conversation, so the
+// plate's width is used and no band of empty screen lies between them.
+test("at 1440 the calls and then the details stand in a column beside the conversation", async () => {
   const page = await opened(1440, 1240, 1, "b-1");
   try {
     const words = await boxOf(page, '.pane .log .msg.agent:has-text("I will read the parser first.")');
-    const run = await boxOf(page, ".pane .log .trail");
     const next = await boxOf(page, '.pane .log .msg.agent:has-text("drops the last token")');
+    const calls = await boxOf(page, ".pane .sx-calls");
     const rail = await boxOf(page, ".pane .panetop");
-    bunExpect(Math.abs(run.left - words.left)).toBeLessThanOrEqual(1);
-    bunExpect(run.top).toBeGreaterThanOrEqual(words.bottom - 1);
-    // the words after the run read straight on in the same column, under the run
+    await expect(page.locator(".pane .log .trail")).toHaveCount(0);
+    await expect(page.locator(".pane .sx-calls")).toContainText("Run the parser's tests");
+    // the words read down one column
     bunExpect(Math.abs(next.left - words.left)).toBeLessThanOrEqual(1);
-    bunExpect(next.top).toBeGreaterThanOrEqual(run.bottom - 1);
-    // the rail stands to the right of the whole conversation, level with its top
-    bunExpect(rail.left).toBeGreaterThanOrEqual(Math.max(words.right, run.right, next.right) - 1);
-    bunExpect(rail.top).toBeLessThan(words.top);
+    bunExpect(next.top).toBeGreaterThanOrEqual(words.bottom - 1);
+    // the calls stand to the right of the whole conversation, and the details under the calls in the same column
+    bunExpect(calls.left).toBeGreaterThanOrEqual(Math.max(words.right, next.right) - 1);
+    bunExpect(rail.left).toBeGreaterThanOrEqual(Math.max(words.right, next.right) - 1);
+    bunExpect(Math.abs(rail.left - calls.left)).toBeLessThanOrEqual(1);
+    bunExpect(rail.top).toBeGreaterThanOrEqual(calls.bottom - 1);
   } finally {
     await page.close();
   }
 }, 40_000);
 
-test("where the plate is narrow, a run of calls stands under the words it followed", async () => {
+test("where the plate is narrow, the details and then the calls stand above the conversation, in its column", async () => {
   const page = await opened(1000, 900, 1, "b-1");
   try {
     const words = await boxOf(page, '.pane .log .msg.agent:has-text("I will read the parser first.")');
-    const run = await boxOf(page, ".pane .log .trail");
-    bunExpect(run.top).toBeGreaterThanOrEqual(words.bottom - 1);
+    const calls = await boxOf(page, ".pane .sx-calls");
+    const rail = await boxOf(page, ".pane .panetop");
+    await expect(page.locator(".pane .log .trail")).toHaveCount(0);
+    bunExpect(rail.bottom).toBeLessThanOrEqual(calls.top + 1);
+    bunExpect(calls.bottom).toBeLessThanOrEqual(words.top + 1);
+    bunExpect(Math.abs(calls.left - words.left)).toBeLessThanOrEqual(1);
   } finally {
     await page.close();
   }
@@ -195,13 +206,13 @@ test("where the plate is narrow, a run of calls stands under the words it follow
 test("Continue on names each command once, with its account and room said once and each of its models a press under it", async () => {
   const page = await opened(2548, 1240, 1.5, "n-1");
   try {
-    const title = await boxOf(page, "section.pane > .top");
+    const title = await boxOf(page, "section.pane .sx-bar");
     await page.getByRole("button", { name: "Continue on" }).click();
     const menu = page.locator("section.pane .menu.models");
     await expect(menu.getByRole("group", { name: "claude-alpha" }).getByRole("menuitem")).toHaveText(["Alpha One", "Alpha Two"]);
     await expect(menu.getByRole("group", { name: "claude-beta" }).getByRole("menuitem")).toHaveText(["Beta One", "Beta Two", "Beta Three"]);
     // the menu opens under the title line, which keeps its height
-    const after = await boxOf(page, "section.pane > .top");
+    const after = await boxOf(page, "section.pane .sx-bar");
     bunExpect(Math.abs((after.bottom - after.top) - (title.bottom - title.top))).toBeLessThanOrEqual(1);
     bunExpect((await boxOf(page, "section.pane .menu.models")).top).toBeGreaterThanOrEqual(after.bottom - 1);
     // each command once, and its account and the share of its window used once, however many models it offers

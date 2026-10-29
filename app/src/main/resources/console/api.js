@@ -27,10 +27,24 @@ const API = (() => {
     }
   }
   // A 401 means this browser holds no key splice takes: every page is locked the same way, its body set aside for the
-  // one way back, `splice console` with Copy, which signs this browser in again whatever lost it (fin, Marlin, Oct 12).
-  // THE STATE IS DRAWN, NOT SPELLED (Oct 26): the kit's lock pops in beside the word, as a reached limit does on
-  // Accounts, and a two-word kicker puts the command where it is run, so the page needs no sentence. Copy says what it
-  // did beside itself (DRAW.result) instead of renaming the button, so the act he pressed stays where he pressed it.
+  // one way back, `splice console` with Copy, which signs this browser in again whatever lost it.
+  // THE LOCK SHOWS WHAT IS HAPPENING, IN ORDER (Oct 29): the lock and its state, a ring turning beside "Waiting for sign-in"
+  // while no key has arrived, the command to run with Copy, and the three things that follow it as three cards in a row, so
+  // the page needs no sentence. Copy says what it did beside itself (DRAW.result) instead of renaming the button, and stays
+  // pressable after a failure. The moment this browser's key is kept (the tab the command opens trades its code and stores
+  // the key, which every other tab of this browser hears as a storage event) the lock lifts and the page reads again where it
+  // stood, with no reload.
+  const GLYPH = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+  const LOCK_STEPS = [
+    [GLYPH('<rect x="3.5" y="5" width="17" height="14" rx="2.4"/><path d="m7.5 10 3 2.4-3 2.4M13 15h4"/>'), "Run in a terminal", "splice console"],
+    [GLYPH('<rect x="3.5" y="5" width="17" height="14" rx="2.4"/><path d="M3.5 9.5h17"/>'), "A tab opens", "Signs this browser in"],
+    [GLYPH('<rect x="5" y="10.8" width="14" height="9.7" rx="2.2"/><path d="M8.2 10.8V8a3.8 3.8 0 0 1 6.9-2.3"/>'), "The lock lifts", "Page reads again"],
+  ];
+  function unlock(box) {
+    box.remove();
+    document.body.classList.remove("locked");
+    if (typeof CONSOLE !== "undefined") CONSOLE.navigate(location.href, { restore: true }); else location.reload();
+  }
   function lock() {
     const main = document.querySelector("main.page");
     if (!main || main.querySelector(".lockedby")) return;
@@ -38,10 +52,13 @@ const API = (() => {
     const box = document.createElement("section");
     box.className = "lockedby";
     box.setAttribute("role", "alert");
-    // the kicker says what to do with the command under it; "In a terminal" said only where it goes
-    box.innerHTML = `${DRAW.lock("Locked", { pop: true })}<p class="kicker">Run in a terminal</p>`
+    box.innerHTML = `<div class="shl-state">${DRAW.lock("Locked", { pop: true })}`
+      + `<p class="shl-wait"><span class="shl-ring" aria-hidden="true"></span>Waiting for sign-in</p></div>`
+      + `<div class="shl-run"><p class="kicker">Run in a terminal</p>`
       // the one act left on the page stands at the console's own act height, never the small one
-      + `<div class="way"><code>splice console</code><button class="act quiet" type="button">Copy</button></div>`;
+      + `<div class="way"><code>splice console</code><button class="act quiet" type="button">Copy</button></div></div>`
+      + `<ol class="shl-steps">${LOCK_STEPS.map(([icon, title, then], i) => `<li class="shl-step"><span class="shl-sico">${icon}</span>`
+        + `<span class="shl-stxt"><b>${title}</b><small>${i === 0 ? `<code>${then}</code>` : then}</small></span></li>`).join("")}</ol>`;
     const copy = box.querySelector("button"), way = box.querySelector(".way");
     copy.addEventListener("click", async (e) => {
       e.stopPropagation();
@@ -53,6 +70,11 @@ const API = (() => {
       setTimeout(() => way.querySelector(".result")?.remove(), 1600);
     });
     (main.querySelector(":scope > .head") || main.firstChild)?.after(box);
+    addEventListener("storage", function lifted(e) {
+      if (e.key !== STORE || !e.newValue) return;
+      removeEventListener("storage", lifted);
+      unlock(box);
+    });
   }
   // Calls a page has in flight, so the manager's acts (pilot.js) can wait for what a press started before saying what
   // it did. The pilot's own calls are not counted: its ask is always open.

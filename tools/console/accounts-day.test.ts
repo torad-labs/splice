@@ -90,8 +90,9 @@ async function tornDay(command: string) {
     await expect(meter).not.toHaveAttribute("aria-busy", "true", { timeout: 15_000 });
     return {
       text: (await meter.innerText()).replace(/\s+/g, " "),
-      // the figure's place holds the dash and nothing else: no money, no count
-      figure: ((await meter.locator(".dayline").innerText()) ?? "").replace(/\s+/g, " ").trim(),
+      // the figure's place holds the dash and nothing else: no money, no count; the muted words after it say why it is a dash
+      figure: ((await meter.locator(".dayline .ads-fig").innerText()) ?? "").replace(/\s+/g, " ").trim(),
+      unit: ((await meter.locator(".dayline .ads-unit").innerText()) ?? "").replace(/\s+/g, " ").trim(),
       dashes: await meter.locator(".dayline .nr-day .nr").count(),
       // the hour splice could not read is drawn hatched, and its words stand under the pointer
       unreadHours: await meter.locator(".dayrun .hours i.unread").evaluateAll((els) => els.map((e) => e.getAttribute("data-said"))),
@@ -103,10 +104,13 @@ async function tornDay(command: string) {
 
 // Absence is a shape (Accounts' goal, Oct 28): a day that holds an hour splice could not read draws a dash where its
 // figure goes and that hour hatched, never the word "Not read" in a figure's place and never the sum of the hours it could.
+// Changed Oct 29 by the accounts-day-strips pass: the dash is the strip's hero figure, and the muted words that follow a hero
+// on its baseline (as "requests on your plan" does) say "Not read" after it; the word still never stands in the figure's place.
 test("a day that holds an hour splice could not read is a dash in its figure's place and that hour hatched, not the sum of the hours it could", async () => {
   const day = await tornDay("torn-day");
   expect(day.dashes).toBe(1);
   expect(day.figure).toBe("—");
+  expect(day.unit).toBe("Not read");
   expect(day.unreadHours.length).toBe(1);
   expect(day.unreadHours[0]).toContain("Not read");
   expect(day.text).not.toContain("$1.50");
@@ -116,6 +120,7 @@ test("a day with an unread hour is one dash: no money and no requests-on-your-pl
   const day = await tornDay("plan-torn");
   expect(day.dashes).toBe(1);
   expect(day.figure).toBe("—");
+  expect(day.unit).toBe("Not read");
   expect(day.unreadHours.length).toBe(1);
   expect(day.text).not.toContain("on your plan");
   expect(day.text).not.toContain("$");
@@ -139,7 +144,7 @@ test("at 3828 the requests-on-your-plan line under a Day reading stays clear of 
     // left-of check alone failed whenever a longer reset label ("Resets Mon 7:00 PM", after 7 PM CT) moved it left
     const overlap = await page.evaluate(() => {
       const el = document.querySelector('[data-meter="plan-day"]')!;
-      const sub = el.querySelector(".unpriced.own .part")?.getBoundingClientRect();
+      const sub = el.querySelector(".dayline .ads-unit")?.getBoundingClientRect();
       const button = [...el.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Set budget")?.getBoundingClientRect();
       if (!sub || !button) return null;
       return Math.max(0, Math.min(sub.right, button.right) - Math.max(sub.left, button.left))
@@ -200,7 +205,7 @@ for (const width of [3828, 1440]) {
         const el = document.querySelector('[data-meter="big-day"]')!;
         const box = el.getBoundingClientRect();
         const lines = (e: Element | null) => (e ? e.getClientRects().length : 0);
-        const phrases = [el.querySelector(".money > em"), el.querySelector(".unpriced.own .part")];
+        const phrases = [el.querySelector(".dayline .ads-unit"), el.querySelector(".ads-words .part")];
         return {
           phraseLines: phrases.map(lines),
           past: [...el.querySelectorAll("*")].filter((e) => e.getBoundingClientRect().right > box.right + 1).length,

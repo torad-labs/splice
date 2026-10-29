@@ -16,6 +16,9 @@ const server = Bun.serve({
   port: 0,
   async fetch(req) {
     const path = new URL(req.url).pathname;
+    // the console's note that a tab came into view or left (pilot.js) is the page keeping its own place, sent as the page
+    // closes, not an act on a command: only the acts are counted
+    if (req.method === "POST" && path.startsWith("/api/console/pilot/")) return Response.json({ ok: true });
     if (req.method === "POST" && path.startsWith("/api/")) { writes.push(path); return Response.json({ ok: true }); }
     if (path === "/api/heads") return Response.json({ heads: [{ key: "local", label: "local", running: false, healthy: false, runtimeNotAnswering: true }] });
     if (path === "/api/models") return Response.json({ heads: [{ head: "local", provider: "local", models: [{ id: "tiny-m", label: "Tiny model" }] }] });

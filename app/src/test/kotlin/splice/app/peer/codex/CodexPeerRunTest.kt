@@ -83,9 +83,32 @@ class CodexPeerRunTest {
         @TempDir dir: Path,
     ) {
         val home = dir.resolve("codex")
+        assertDelivered(dir, home, home.resolve(CONTROL_SOCKET))
+    }
+
+    // The Codex home Eli runs its seats from, /home/marcos/.local/state/eli/codex-heads/native-recovery-bbo9r35v, puts
+    // its control socket past the 108 bytes a Unix socket path may hold, as a link to the short socket the app-server
+    // listens on; Oct 28 12:38 CT a codex peer ended there with "Unix domain path too long". The peer reaches its
+    // app-server through the socket the link leads to.
+    @Test
+    fun `a Codex home whose control socket path is too long for a Unix socket still reaches its app-server`(
+        @TempDir dir: Path,
+    ) {
+        val home = dir.resolve("state/eli/codex-heads/native-recovery-bbo9r35v/" + "deep/".repeat(LONG_HOME_DEPTH))
+        val link = home.resolve(CONTROL_SOCKET)
+        assertTrue(link.toString().toByteArray().size > UNIX_PATH_MAX, "precondition: the link's path is too long")
+        val real = dir.resolve("s.sock")
+        Files.createDirectories(link.parent)
+        Files.createSymbolicLink(link, real)
+        assertDelivered(dir, home, real)
+    }
+
+    /** A codex peer whose thread lives in [home], its app-server listening on [socket]: the message it journals reaches
+     *  the thread as a turn, its record shows the thread busy and bound, and the thread's close ends the run. */
+    private fun assertDelivered(dir: Path, home: Path, socket: Path) {
         val owner = owner()
         val binding = CodexBinding(THREAD, home.toString(), owner)
-        CodexStandInAppServer(home.resolve("app-server-control/app-server-control.sock"), THREAD).use { server ->
+        CodexStandInAppServer(socket, THREAD).use { server ->
             val settings = dir.resolve("settings")
             runBlocking { PeerStore(settings).attachCodex(CodexRequest(binding, dir.toString())) }
             val registry = Files.createDirectories(dir.resolve("registry"))
@@ -153,3 +176,11 @@ class CodexPeerRunTest {
 
 // why: one read of the journal in this test holds a few records; the journal's own cap is 200.
 private const val PAGE = 50
+
+private const val CONTROL_SOCKET = "app-server-control/app-server-control.sock"
+
+// why: sun_path holds 108 bytes on Linux, its terminating NUL included.
+private const val UNIX_PATH_MAX = 107
+
+// why: twelve more levels of "deep/" carry any temporary folder's path past 108 bytes.
+private const val LONG_HOME_DEPTH = 12

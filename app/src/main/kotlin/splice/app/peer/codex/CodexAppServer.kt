@@ -46,7 +46,9 @@ internal class CodexEndpoints {
     private val sockets = NativeCodexSocketPath()
     private val daemons = NativeCodexDaemonSocketDiscovery()
 
-    /** The control socket when it leads to a socket, else the daemon's listener; null when no app-server runs there. */
+    /** The socket the control socket leads to, else the daemon's listener; null when no app-server runs there. The
+     *  socket the link leads to, not the link: a Unix socket path holds 108 bytes, and a deep Codex home puts its link
+     *  past them while the socket itself sits in a short folder (Oct 28: "Unix domain path too long"). */
     fun find(home: Path): Path? {
         val control = home.resolve("app-server-control").resolve("app-server-control.sock")
         val resolved = try {
@@ -54,7 +56,7 @@ internal class CodexEndpoints {
         } catch (_: IOException) {
             null
         }
-        return if (resolved != null && sockets.present(resolved)) control else daemons.find(home)?.path
+        return if (resolved != null && sockets.present(resolved)) resolved else daemons.find(home)?.path
     }
 }
 

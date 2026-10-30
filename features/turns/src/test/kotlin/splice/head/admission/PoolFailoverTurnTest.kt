@@ -5,6 +5,11 @@
 // on the serving login. With every login held and armed, admission answers the pool's own "earliest reset" refusal
 // locally (splice-lead, Oct 12).
 // No login is retried within a request, and splice adds no retry words.
+//
+// PR #247 review, Oct 29 (security): the logins such a head holds serve only a caller proven to be splice's, a session
+// splice launched (it names the head's turn key in the launch proof header) or one that already forwards a login the
+// pool holds (a session launched before the proof existed). Any other caller on this machine, whatever it presents, is
+// refused at the head with a 401, and nothing of its turn reaches the vendor.
 package splice.head.admission
 
 import com.sun.net.httpserver.HttpServer
@@ -29,9 +34,11 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.ClientAuthProvider
+import splice.core.auth.CredentialKey
 import splice.core.auth.CredentialVerdict
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.client.LAUNCH_PROOF_HEADER
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.topology.SHARE_NODE_TOKEN
@@ -63,10 +70,13 @@ import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.random.Random
 import kotlin.time.Duration.Companion.seconds
 
 private const val HOUR_S = 3_600L
 private const val SESSION = "one-command"
+private const val SEED = 20_261_029L
+private const val CASES = 120
 
 class PoolFailoverTurnTest {
     @TempDir
@@ -205,6 +215,104 @@ class PoolFailoverTurnTest {
         }
     }
 
+    // PR #247 review, Oct 29: another account on this machine posting to the head's loopback port with any bearer of
+    // its own ran turns on the operator's held logins. Over generated credentials, in either carrier, with no proof or
+    // a proof that is not the head's turn key, the head answers 401 and the vendor hears nothing.
+    @Test
+    fun `a caller that proves nothing gets no turn on a held login, whatever it presents`() = runBlocking {
+        val rig = FailoverRig(directory, limited = emptyMap(), headAuth = ClientAuthProvider("own"))
+        rig.launched = false
+        rig.start()
+        try {
+            val random = Random(SEED)
+            val refused = (1..CASES).mapNotNull { case ->
+                val credential = generatedCredential(random)
+                val carrier = if (random.nextBoolean()) {
+                    "Authorization" to "Bearer $credential"
+                } else {
+                    "x-api-key" to credential
+                }
+                val proof = when (random.nextInt(3)) {
+                    0 -> emptyMap()
+                    1 -> mapOf(LAUNCH_PROOF_HEADER to generatedCredential(random))
+                    else -> mapOf(LAUNCH_PROOF_HEADER to "test-operator-token")
+                }
+                val status = rig.post(mapOf(carrier) + proof).status
+                "$carrier $proof -> $status".takeUnless { status == HttpStatusCode.Unauthorized }
+            }
+            assertEquals(emptyList<String>(), refused, "each of these was served")
+            assertEquals(emptyList<String>(), rig.requests, "nothing of a refused turn reaches the vendor")
+        } finally {
+            rig.close()
+        }
+    }
+
+    // The other machine's word is no proof either: the LAN share's relay adds the proof itself, and the word alone,
+    // posted straight to the head's port, opens nothing.
+    @Test
+    fun `the node's word alone, without the relay's proof, gets no turn on a held login`() = runBlocking {
+        val rig = FailoverRig(
+            directory,
+            limited = emptyMap(),
+            headAuth = ClientAuthProvider("own"),
+            bearer = SHARE_NODE_TOKEN,
+        )
+        rig.launched = false
+        rig.start()
+        try {
+            assertEquals(HttpStatusCode.Unauthorized, rig.turn().first)
+            assertEquals(emptyList<String>(), rig.requests)
+        } finally {
+            rig.close()
+        }
+    }
+
+    @Test
+    fun `a session splice launched runs on a held login whatever its own login is`() = runBlocking {
+        val rig = FailoverRig(directory, limited = emptyMap(), headAuth = ClientAuthProvider("own"), bearer = "gone")
+        rig.start()
+        try {
+            assertEquals(HttpStatusCode.OK, rig.turn().first)
+            assertEquals(listOf("one"), rig.requests, "the pool's login rides in place of the session's own")
+        } finally {
+            rig.close()
+        }
+    }
+
+    // A session launched before the proof existed holds no proof but forwards the login it signed in with, which is
+    // one the pool reads from the same file: it keeps working after the install, without a relaunch.
+    @Test
+    fun `a session that forwards a login the pool holds runs without the proof`() = runBlocking {
+        val rig = FailoverRig(
+            directory,
+            limited = emptyMap(),
+            headAuth = ClientAuthProvider("own"),
+            bearer = "two",
+        )
+        rig.launched = false
+        rig.start()
+        try {
+            assertEquals(HttpStatusCode.OK, rig.turn().first)
+            assertEquals(listOf("two"), rig.requests, "it runs on the login it forwards, which the pool holds")
+        } finally {
+            rig.close()
+        }
+    }
+
+    // A head that holds no login of its own forwards the caller's own as it is: nothing of the operator's is spent.
+    @Test
+    fun `a head holding no login of its own still forwards any caller's own login`() = runBlocking {
+        val rig = FailoverRig(directory, limited = emptyMap(), pooled = false, bearer = "three")
+        rig.launched = false
+        rig.start()
+        try {
+            assertEquals(HttpStatusCode.OK, rig.turn().first)
+            assertEquals(listOf("three"), rig.requests)
+        } finally {
+            rig.close()
+        }
+    }
+
     private suspend fun assertClientHeadAccepted(stream: Boolean) {
         val auth = ClientAuthProvider("synthetic")
         val rig = FailoverRig(directory, limited = mapOf("one" to 2 * HOUR_S), headAuth = auth)
@@ -276,6 +384,18 @@ private class SyntheticLogin(private val token: String) : RefreshableAuthProvide
     override suspend fun credentials(): Credentials = Credentials.Bearer(token)
     override suspend fun refresh(): Credentials = credentials()
     override suspend fun describe(): AuthDescription = AuthDescription(true, "synthetic")
+
+    // As a native login does: the key of the credential its file holds, read without a refresh.
+    override fun observedCredentialKey(): String? = CredentialKey.fromCredentials(Credentials.Bearer(token))
+}
+
+/** A credential no login holds: letters, digits and the punctuation a header value carries, or splice's own word. */
+private fun generatedCredential(random: Random): String {
+    if (random.nextInt(8) == 0) return SHARE_NODE_TOKEN
+    val alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~+/="
+    val drawn = (1..random.nextInt(1, 48)).map { alphabet[random.nextInt(alphabet.length)] }.joinToString("")
+    // The pool's own logins and the head's turn key prove the caller, so they are never drawn.
+    return drawn.takeUnless { it in setOf("one", "two", "three", "test-inference-token") } ?: "$drawn-x"
 }
 
 /** [limited] names each login the upstream refuses and how far out its five-hour reset is. */
@@ -288,6 +408,11 @@ private class FailoverRig(
     bearer: String = "one",
     private val fallsBackTo: RefreshableAuthProvider? = null,
 ) {
+    /** TRUE for a session splice launched: it names the head's turn key in the launch proof header, as the launch
+     *  plants it and the LAN share's relay sends it. Read for each request. */
+    @Volatile
+    var launched: Boolean = true
+
     val requests = CopyOnWriteArrayList<String>()
     val bodies = CopyOnWriteArrayList<String>()
     private val labels = listOf("one", "two", "three")
@@ -368,7 +493,13 @@ private class FailoverRig(
             policy = HeadDeps.HeadPolicy(forwardClientAuth = true),
         ).copy(stores = headStores(directory).copy(perfStats = PerfStats(perfFile))),
     )
-    private val client = HttpClient(CIO) { defaultRequest { bearerAuth(bearer) } }
+    private val client = HttpClient(CIO) {
+        defaultRequest {
+            bearerAuth(bearer)
+            if (launched) header(LAUNCH_PROOF_HEADER, "test-inference-token")
+        }
+    }
+    private val bare = HttpClient(CIO)
 
     suspend fun start() = head.start()
 
@@ -384,6 +515,18 @@ private class FailoverRig(
             header("x-claude-code-session-id", SESSION)
             setBody(
                 """{"model":"synthetic--model","stream":$stream,"max_tokens":16,""" +
+                    """"messages":[{"role":"user","content":"go"}]}""",
+            )
+        }
+
+    /** One streamed turn carrying exactly [headers]: no bearer and no proof but theirs. */
+    suspend fun post(headers: Map<String, String>): HttpResponse =
+        bare.post("http://127.0.0.1:${head.port}/v1/messages") {
+            headers.forEach { (name, value) -> header(name, value) }
+            header("Content-Type", "application/json")
+            header("x-claude-code-session-id", SESSION)
+            setBody(
+                """{"model":"synthetic--model","stream":true,"max_tokens":16,""" +
                     """"messages":[{"role":"user","content":"go"}]}""",
             )
         }
@@ -409,6 +552,7 @@ private class FailoverRig(
     suspend fun close() {
         head.stop()
         client.close()
+        bare.close()
         providerClient.close()
         server.stop(0)
     }

@@ -27,9 +27,11 @@ import splice.client.wrap.WrapStateRead
 import splice.client.wrap.WrappedHead
 import splice.client.wrap.WrappedLaunch
 import splice.core.client.CLIENT_WALL_HEADER
+import splice.core.client.LAUNCH_PROOF_HEADER
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
 import splice.core.util.EnvReader
+import splice.launch.GatewayBearer
 import splice.launch.LaunchGateway
 import splice.launch.LaunchOutcome
 import splice.launch.LaunchSpec
@@ -409,11 +411,17 @@ public class LaunchService(
         }
     }
 
-    /** The ambient ANTHROPIC_CUSTOM_HEADERS, without a wall header of its own, and the session's client wall. */
+    /** The ambient ANTHROPIC_CUSTOM_HEADERS, without a wall header or launch proof of its own, the session's client
+     *  wall, and on a head here that forwards the client's login, the launch's proof (PR #247 review, Oct 29). An outer
+     *  session's proof never rides along: it would reach a head it was not planted for, or another machine. */
     private fun customHeaders(spec: LaunchSpec): String {
+        val ours = listOf("$CLIENT_WALL_HEADER:", "$LAUNCH_PROOF_HEADER:")
         val ambient = envReader("ANTHROPIC_CUSTOM_HEADERS").orEmpty().lines()
-            .filter { it.isNotBlank() && !it.trim().startsWith("$CLIENT_WALL_HEADER:", ignoreCase = true) }
-        return (ambient + "$CLIENT_WALL_HEADER: ${spec.gateway.apiTimeoutMs}").joinToString("\n")
+            .filter { line -> line.isNotBlank() && ours.none { line.trim().startsWith(it, ignoreCase = true) } }
+        val wall = "$CLIENT_WALL_HEADER: ${spec.gateway.apiTimeoutMs}"
+        val forwarded = (spec.gateway.bearer as? GatewayBearer.Forwarded)?.takeIf { spec.gateway.remote == null }
+        val proof = forwarded?.let { "$LAUNCH_PROOF_HEADER: ${it.proof.key()}" }
+        return (ambient + wall + listOfNotNull(proof)).joinToString("\n")
     }
 
     /** The ambient NO_PROXY with loopback added, and for a command another machine serves (LAN share) that machine's

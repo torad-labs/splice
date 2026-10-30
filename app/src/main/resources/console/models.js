@@ -2839,9 +2839,9 @@ function projectsHtml() {
     const placeOf = (x) => (g.dir || String(x.root).split("/").filter(Boolean).pop() === (x.label || x.name) ? "" : homeRel(x.root));
     // a project with no session stands behind the count, so it is a tail row: it eases in and out with the list
     const tiles = shown.map((x) => { const t = projTile(x, placeOf(x), st.get(x.id) ?? NO_STATS, maxTotal, x.id === p.id); return !terms.length && idle(x) ? DRAW.tail(t) : t; }).join("");
-    const more = hid ? DRAW.more(hid, { word: "more projects", one: "more project", act: "more", data: ` data-m="${key}"`, host: key, tile: true,
+    const more = hid ? DRAW.more(hid, { word: "more projects", one: "more project", act: "more", data: ` data-m="${esc(key)}"`, host: key, tile: true,
       peek: list.filter((x) => !shown.includes(x)).slice(0, 3).map((x) => x.label || x.name) })
-      : folds ? DRAW.more(0, { act: "more", data: ` data-m="${key}"`, open: true, less: "Fewer", host: key, tile: true }) : "";
+      : folds ? DRAW.more(0, { act: "more", data: ` data-m="${esc(key)}"`, open: true, less: "Fewer", host: key, tile: true }) : "";
     return `<section class="pj-group">${folderHead(g)}<div class="pj-tiles" data-mp-host="${esc(key)}">${tiles}${more ? `<div class="pj-morerow mp-skip">${more}</div>` : ""}</div></section>`;
   }).join("");
   const count = `<span class="pd-count">${terms.length ? `<b>${DRAW.n(found)}</b> of ${DRAW.n(ps.length)}` : `<b>${DRAW.n(ps.length)}</b>`} projects</span>`;

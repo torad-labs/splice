@@ -21,6 +21,7 @@ import splice.launch.HeadTrees
 import splice.launch.LaunchEffort
 import splice.launch.LaunchGateway
 import splice.launch.LaunchModels
+import splice.launch.LaunchProof
 import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
 import splice.launch.ModelTiers
@@ -114,7 +115,9 @@ internal class LaunchSpecFactory(
                 statuslineCommand = "curl -sS -H ${shellSingleQuote("@${turnKey.headerFile()}")} " +
                     "--data-binary @- http://127.0.0.1:$controlPort/statusline/$key",
                 port = head.port,
-                bearer = keyHelper(),
+                // PR #247 review, Oct 29: a head that forwards the caller's login serves the logins it holds only to a
+                // caller proven splice's, so its session names the turn key as its launch proof.
+                bearer = if (forwardClientAuth) GatewayBearer.Forwarded(LaunchProof(turnKey::get)) else keyHelper(),
             ),
             policy = ClaudePolicy(share = topology.claude.share.toSet(), isolate = head.claude.isolate.toSet()),
             effort = launchEffort(ctx.cfg),

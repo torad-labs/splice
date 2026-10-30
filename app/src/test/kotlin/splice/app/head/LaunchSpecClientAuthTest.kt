@@ -126,6 +126,34 @@ class LaunchSpecClientAuthTest {
         )
     }
 
+    // PR #247 review, Oct 29 (security): a head that forwards the caller's own login and holds logins of its own
+    // serves only a caller proven splice's. A session launched on it names the head's turn key in the launch proof
+    // header, among its custom headers. A translated head's session, whose bearer is the turn key already, names
+    // none, and a proof an outer session passes down never rides along, on either.
+    @Test
+    fun `a session on a head that forwards its own login names the turn key as its proof, and no other`(
+        @TempDir tmp: Path,
+    ) {
+        val mgmt = MgmtKey(StatePaths(baseOverride = tmp))
+        val ambient = "x-team: blue\nx-splice-launch-proof: from-an-outer-session"
+        val service = LaunchService(
+            ClaudeConfigMaterializer(tmp.resolve("home")),
+            envReader = EnvReader { name -> ambient.takeIf { name == "ANTHROPIC_CUSTOM_HEADERS" } },
+        )
+        val proofs = { forward: Boolean ->
+            val spec = factory(tmp, mgmtKey = mgmt)
+                .launchSpecFor(build(tmp, Dialect.ANTHROPIC_PASSTHROUGH), 3099, forwardClientAuth = forward)
+                .copy(trees = HeadTrees(tmp.resolve(".claude-held")))
+            val launched = service.launchOutcome(spec, emptyList(), dangerouslySkipPermissions = false)
+            val headers = (launched as LaunchOutcome.Ready).recipe.env.getValue("ANTHROPIC_CUSTOM_HEADERS").lines()
+            assertTrue("x-team: blue" in headers, "the person's own headers ride along: $headers")
+            headers.filter { it.startsWith("x-splice-launch-proof", ignoreCase = true) }
+        }
+
+        assertEquals(listOf("x-splice-launch-proof: ${TurnKey(mgmt).get()}"), proofs(true))
+        assertEquals(emptyList<String>(), proofs(false))
+    }
+
     @Test
     fun `tier map reaches the launch spec without becoming a serving allowlist`(@TempDir tmp: Path) {
         val base = build(tmp, Dialect.OPENAI_CHAT)

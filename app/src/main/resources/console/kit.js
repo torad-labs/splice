@@ -336,7 +336,7 @@ const stopRefusal = (res) => {
 // there because the mock's data was always complete; a real route leaves a field out whenever splice does not
 // know it, and `String(undefined)` prints "undefined" on the screen as though splice knew that. Caught by
 // splice-builder3 reading teams.js against this file (Oct 10, 2026) before it reached a page.
-const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // WHAT IS NOT READ YET DRAWS AS ITS OWN SHAPE (Marcos, Oct 12: "we can do better than that reading indicator"): a
 // figure or a line is a striped bar the size of what will land there, a card a drawn card of such bars, a chart its
 // columns, so a page reads as arriving, never as empty or as a lone word. Widths are in rem; console.css draws them.

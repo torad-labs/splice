@@ -16,6 +16,10 @@ splice is a single-user daemon, and its security boundary is your Unix account.
 - **Two keys.** The management key (`<state>/mgmt-key`, 0600) opens the whole control plane. A
   launched session holds only a turn key, derived one-way from it. The turn key opens that
   install's head turns, status-line routes and resume hooks, but no management route.
+- **A Claude head serves its logins only to splice's own sessions.** A head that forwards the
+  caller's own Claude login and also holds logins of its own runs a turn on one of those only
+  for a caller that names the turn key in `x-splice-launch-proof`, as every session splice
+  launches does, or that already forwards one of those logins. Any other caller gets a 401.
 - **State is owner-only.** The state and log directories are 0700, and credentials are written
   0600 from the instant they exist.
 - **Out of scope:** a process running as your own user. It can read `mgmt-key`, as it can read

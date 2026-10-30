@@ -4,6 +4,7 @@ package splice.app.auth.claude
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.java.Java
 import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.client.LAUNCH_PROOF_HEADER
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -37,6 +39,7 @@ class ClaudeNativeLoginResumeTest {
     ): HttpResponse =
         client.post("http://127.0.0.1:${rig.head.head.port}/v1/messages") {
             bearerAuth(token)
+            header(LAUNCH_PROOF_HEADER, rig.proof)
             session?.let { headers.append("x-claude-code-session-id", it) }
             contentType(ContentType.Application.Json)
             setBody(

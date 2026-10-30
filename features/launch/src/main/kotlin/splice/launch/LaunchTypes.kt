@@ -225,6 +225,17 @@ public sealed class GatewayBearer {
      *  it again after a 401 and resends the turn, so a session whose key was rotated recovers on its own head with
      *  its draft intact (key rotation, Oct 26, read in the 2.1.310 binary). */
     public data class Helper(val command: String) : GatewayBearer()
+
+    /** A head that forwards the client's own login holds no bearer of the session's. It may hold logins of its own,
+     *  and serves those only to a caller proven splice's, so the session names [proof] in the launch proof header
+     *  (PR #247 review, Oct 29). */
+    public data class Forwarded(val proof: LaunchProof) : GatewayBearer()
+}
+
+/** The key a session on a head that forwards its own login names in the launch proof header (PR #247 review, Oct 29).
+ *  Read when the launch is built. A function, so no data class around it can print the key. */
+public fun interface LaunchProof {
+    public fun key(): String
 }
 
 /** How the launched client reaches this head's gateway: the port, the bearer, the request timeout and

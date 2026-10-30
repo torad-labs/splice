@@ -7,6 +7,7 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
@@ -34,6 +35,7 @@ import splice.accounts.pool.HeadAccountPinSource
 import splice.app.probe.UpstreamPlaygroundProbe
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.CredentialKey
+import splice.core.client.LAUNCH_PROOF_HEADER
 import splice.core.usage.PlanLimit
 import splice.diagnostics.playground.PlaygroundHead
 import splice.head.usage.CredentialQuotaFiles
@@ -184,6 +186,7 @@ class ClaudeNativePoolWiringTest {
     private suspend fun nativeTurn(client: HttpClient, rig: ClaudeNativePoolFixture.Rig): HttpResponse =
         client.post("http://127.0.0.1:${rig.head.head.port}/v1/messages") {
             bearerAuth("synthetic-caller")
+            header(LAUNCH_PROOF_HEADER, rig.proof)
             contentType(ContentType.Application.Json)
             setBody(
                 """{"model":"synthetic-model","stream":false,"max_tokens":32,""" +

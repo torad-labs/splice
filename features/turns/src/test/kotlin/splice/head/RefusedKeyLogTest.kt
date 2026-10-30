@@ -98,7 +98,8 @@ private const val REPEATERS = 8
 private val RETIRED = listOf("a key a rotation retired", "splice sessions relaunch")
 private val NO_CREDENTIAL = listOf("no credential")
 private val NOT_SPLICES = listOf("not one of splice's")
-private val REASONS = listOf(RETIRED, NO_CREDENTIAL, NOT_SPLICES)
+private val NOT_LAUNCHED = listOf("only to a session splice launched", "launch it with the head's command")
+private val REASONS = listOf(RETIRED, NO_CREDENTIAL, NOT_SPLICES, NOT_LAUNCHED)
 
 /** What a count line holds: the number of refusals counted so far. */
 private val COUNTED = Regex("counted.*?(\\d+) so far")
@@ -306,6 +307,7 @@ private class RefusalRun(private val random: Random, private val seen: RefusalCo
         KeyRefusal.RETIRED -> RETIRED
         KeyRefusal.NO_CREDENTIAL -> NO_CREDENTIAL
         KeyRefusal.NOT_SPLICES -> NOT_SPLICES
+        KeyRefusal.NOT_LAUNCHED -> NOT_LAUNCHED
     }
 }
 

@@ -31,6 +31,12 @@ internal enum class KeyRefusal(val says: String) {
 
     /** A credential that is none of splice's keys, in force or retired, such as a vendor's own key. */
     NOT_SPLICES("the credential it presented is not one of splice's keys"),
+
+    /** On a head that holds logins of its own: no proof of a launch, and none of those logins (PR #247 review). */
+    NOT_LAUNCHED(
+        "this head serves the logins it holds only to a session splice launched, and the request named no launch " +
+            "proof and forwarded none of those logins; launch it with the head's command",
+    ),
 }
 
 /**

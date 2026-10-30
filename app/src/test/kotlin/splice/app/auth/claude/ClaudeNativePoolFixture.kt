@@ -36,6 +36,7 @@ import splice.core.auth.CredentialKey
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.config.TurnKey
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.topology.Topology
@@ -278,6 +279,9 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
         val server: ControlServer,
         val key: MgmtKey,
     ) {
+        /** The launch proof a session splice launched on this head names (PR #247 review, Oct 29). */
+        val proof: String get() = TurnKey(key).get()
+
         suspend fun close() {
             server.stop()
             head.head.stop()

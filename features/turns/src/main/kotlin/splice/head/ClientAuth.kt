@@ -82,6 +82,9 @@ internal class ClientAuth(
     // this split can surface the key but never break it.
     private val authDelimiterRe = Regex("[\\s,=;'\"]+")
 
+    /** Who a head that holds logins of its own serves them to (PR #247 review, Oct 29). */
+    private val heldLogins = HeldLoginDoor(deps, responses, refusedKeys)
+
     /** Runs [handler] only when [call] opens [door]. A refused call is answered here, with the door's own status and
      *  body, and [handler] never runs: a route cannot reach its handler past a verdict it ignored
      *  (kt-control-route-guarded accepts this call alone as a head route's door). */
@@ -220,7 +223,8 @@ internal class ClientAuth(
                 matchesInferenceToken(it) || matchesOperatorToken(it) || deps.tokens.retired(it)
             }
         }.keys
-        if (carriers.isEmpty()) return true
+        // PR #247 review, Oct 29: past splice's own keys, a head holding logins of its own asks who the caller is.
+        if (carriers.isEmpty()) return heldLogins.opens(call, forwardedClientHeaders(call))
         val headers = carriers.joinToString(", ")
         val variables = carriers.map { FORWARDED_CLIENT_HEADERS[it] ?: "ANTHROPIC_CUSTOM_HEADERS" }.distinct()
         deps.log(

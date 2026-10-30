@@ -26,6 +26,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.io.readByteArray
+import splice.core.client.LAUNCH_PROOF_HEADER
 import splice.core.config.TurnKey
 import splice.core.topology.SHARE_NODE_TOKEN
 import splice.core.util.Cancellables
@@ -68,7 +69,10 @@ internal class ShareRelay(
         // A head that takes the caller's own login refuses this machine's turn key as a credential to send upstream.
         // It gets the node's word instead, which opens nothing: its pool sends a login it holds in that word's place.
         val bearer = if (head.forwardsClientAuth) SHARE_NODE_TOKEN else turnKey.get()
-        forward(call, URI.create("http://127.0.0.1:${head.port}$path"), body, silent, bearer)
+        // PR #247 review, Oct 29: that head serves its logins only to a caller proven splice's, and this relay is.
+        val proof = if (head.forwardsClientAuth) mapOf(LAUNCH_PROOF_HEADER to turnKey.get()) else emptyMap()
+        val signed = mapOf(HttpHeaders.Authorization to "Bearer $bearer") + proof
+        forward(call, URI.create("http://127.0.0.1:${head.port}$path"), body, silent, signed)
     }
 
     /** The control plane's statusline for [head], fed the session's JSON as Claude Code feeds its statusline, once
@@ -78,11 +82,19 @@ internal class ShareRelay(
         val refusal = withContext(io) { admission.refusal(body) }
         if (refusal != null) return ShareErrors.refuse(call, HttpStatus.BAD_REQUEST, refusal)
         val silent = "$machine's statusline for ${head.command} is not answering"
-        forward(call, URI.create("http://127.0.0.1:$controlPort/statusline/${head.key}"), body, silent, turnKey.get())
+        val signed = mapOf(HttpHeaders.Authorization to "Bearer ${turnKey.get()}")
+        forward(call, URI.create("http://127.0.0.1:$controlPort/statusline/${head.key}"), body, silent, signed)
     }
 
-    /** [body] to [target], signed with [bearer] in place of whatever the other machine sent. */
-    private suspend fun forward(call: ApplicationCall, target: URI, body: ByteArray, silent: String, bearer: String) {
+    /** [body] to [target], with the [signed] headers in place of whatever the other machine sent: the bearer, and for
+     *  a Claude head that holds logins, the launch proof. */
+    private suspend fun forward(
+        call: ApplicationCall,
+        target: URI,
+        body: ByteArray,
+        silent: String,
+        signed: Map<String, String>,
+    ) {
         val publisher = if (body.isEmpty()) {
             HttpRequest.BodyPublishers.noBody()
         } else {
@@ -92,7 +104,7 @@ internal class ShareRelay(
         call.request.headers.forEach { name, values ->
             if (name.lowercase() !in notForwarded) values.forEach { request.header(name, it) }
         }
-        request.header(HttpHeaders.Authorization, "Bearer $bearer")
+        signed.forEach { (name, value) -> request.header(name, value) }
         val streamed = HttpResponse.BodyHandlers.ofInputStream()
         val sent = withContext(io) { Cancellables.runCatchingCancellable { http.send(request.build(), streamed) } }
         val response = sent.getOrElse { failure ->
@@ -161,7 +173,7 @@ internal class ShareRelay(
     private val notForwarded = setOf(
         "host", "connection", "content-length", "transfer-encoding", "upgrade", "expect", "keep-alive", "te",
         "trailer", "proxy-authorization", "proxy-connection", "authorization", "x-api-key", "date", "via",
-        "warning", "from", "origin", "referer",
+        "warning", "from", "origin", "referer", LAUNCH_PROOF_HEADER,
     )
 
     // Framing the response re-chunks, and the type each answer sets itself.

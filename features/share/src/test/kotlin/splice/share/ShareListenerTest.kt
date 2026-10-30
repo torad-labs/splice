@@ -4,6 +4,7 @@
 // listener on loopback, with heads whose ports nothing listens on.
 package splice.share
 
+import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -15,12 +16,14 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.client.LAUNCH_PROOF_HEADER
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.config.TurnKey
 import splice.core.testing.TestPorts
 import splice.core.topology.ShareConfig
 import splice.launch.LaunchSpec
+import java.net.InetSocketAddress
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -33,7 +36,12 @@ internal class ShareListenerTest {
     private val http = HttpClient.newHttpClient()
     private lateinit var listener: ShareListener
 
-    private class Head(override val key: String, override val port: Int, private val up: Boolean) : SharedHead {
+    private class Head(
+        override val key: String,
+        override val port: Int,
+        private val up: Boolean,
+        override val forwardsClientAuth: Boolean = false,
+    ) : SharedHead {
         override val command: String = key
 
         override fun running(): Boolean = up
@@ -49,8 +57,23 @@ internal class ShareListenerTest {
         override fun requestReadTimeoutMs(): Long = 5_000
     }
 
+    /** A Claude head's port: it hears each relayed turn's credential and launch proof, and answers 200. */
+    private val claude = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
+        createContext("/") { exchange ->
+            heard += exchange.requestHeaders.getFirst("Authorization").orEmpty() to
+                exchange.requestHeaders[LAUNCH_PROOF_HEADER].orEmpty()
+            exchange.requestBody.use { it.readBytes() }
+            exchange.sendResponseHeaders(200, -1)
+            exchange.close()
+        }
+        start()
+    }
+    private val heard = java.util.concurrent.CopyOnWriteArrayList<Pair<String, List<String>>>()
+    private lateinit var turnKey: TurnKey
+
     @BeforeEach
     fun start(@TempDir state: Path) {
+        turnKey = TurnKey(MgmtKey(StatePaths(baseOverride = state)))
         listener = listening(StatePaths(baseOverride = state))
     }
 
@@ -62,6 +85,7 @@ internal class ShareListenerTest {
             override fun offered(): List<SharedHead> = listOf(
                 Head("stopped", TestPorts.reserve(), up = false),
                 Head("silent", TestPorts.reserve(), up = true),
+                Head("claude", claude.address.port, up = true, forwardsClientAuth = true),
             )
         },
         TurnKey(MgmtKey(state)),
@@ -71,12 +95,21 @@ internal class ShareListenerTest {
     ).also { it.start() }
 
     @AfterEach
-    fun stop() = listener.stop()
+    fun stop() {
+        listener.stop()
+        claude.stop(0)
+    }
 
-    private fun send(path: String, body: String? = null, type: String = "application/json"): Pair<Int, String> {
+    private fun send(
+        path: String,
+        body: String? = null,
+        type: String = "application/json",
+        extra: Map<String, String> = emptyMap(),
+    ): Pair<Int, String> {
         val request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:$sharePort$path"))
             .header("Content-Type", type)
             .header("X-Claude-Code-Session-Id", "mac-session")
+            .also { builder -> extra.forEach { (name, value) -> builder.header(name, value) } }
             .let { if (body == null) it.GET() else it.POST(HttpRequest.BodyPublishers.ofString(body)) }
             .build()
         val response = http.send(request, HttpResponse.BodyHandlers.ofString())
@@ -141,6 +174,17 @@ internal class ShareListenerTest {
                 assertTrue(message.contains("application/json"), "Content-Type '$type': $message")
             }
         }
+    }
+
+    // PR #247 review, Oct 29 (security): a Claude head that holds logins serves only a caller proven splice's. The
+    // relay is splice: it hands the head this machine's turn key as the launch proof beside the node's word, and a
+    // proof the other machine sent never passes, whatever it named.
+    @Test
+    fun `a relayed turn reaches a Claude head with this machine's proof and never the other machine's`() {
+        val (status, body) = send("/claude/v1/messages", turn, extra = mapOf(LAUNCH_PROOF_HEADER to "guessed"))
+
+        assertEquals(200, status, body)
+        assertEquals(listOf("Bearer splice-lan" to listOf(turnKey.get())), heard.toList())
     }
 
     @Test

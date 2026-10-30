@@ -32,6 +32,7 @@ import splice.app.control.controlServerFor
 import splice.app.sources.PerfRowsFileSource
 import splice.app.sources.PerfSessionAccountIndex
 import splice.core.auth.CredentialKey
+import splice.core.client.LAUNCH_PROOF_HEADER
 import splice.core.config.ConfigService
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
@@ -116,6 +117,7 @@ class ClaudeCarryingPoolUsageTest {
     private suspend fun send(client: HttpClient, rig: ClaudeNativePoolFixture.Rig, session: String) {
         val response = client.post("http://127.0.0.1:${rig.head.head.port}/v1/messages") {
             bearerAuth("synthetic-caller")
+            header(LAUNCH_PROOF_HEADER, rig.proof)
             header("x-claude-code-session-id", session)
             contentType(ContentType.Application.Json)
             setBody(
@@ -297,6 +299,7 @@ class ClaudeCarryingPoolUsageTest {
             HttpClient(Java).use { client ->
                 val turn = client.post("http://127.0.0.1:${rig.head.head.port}/v1/messages") {
                     bearerAuth("synthetic-caller")
+                    header(LAUNCH_PROOF_HEADER, rig.proof)
                     contentType(ContentType.Application.Json)
                     setBody(
                         """{"model":"synthetic-model","stream":false,"max_tokens":32,""" +

@@ -17,10 +17,12 @@ import splice.core.failure.PreflightKind
 import splice.core.perf.OutcomeTag
 import splice.core.perf.OutcomeTags
 import splice.head.HeadDeps
+import splice.head.HeldLoginVerdict
 import splice.head.transport.CallerCredential
 import splice.head.turn.Preparation
 import splice.head.turn.TurnDriver
 import splice.head.wire.TurnTrace
+import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.Selection
 
 internal data class LocalRefusal(
@@ -120,6 +122,33 @@ internal class PreDriveRefusals(
         )
         admitted.close()
         responses.respondBudgetBlocked(call, block)
+        return true
+    }
+
+    /** PR #247 review round 2, Oct 30 (security): on a head that forwards the caller's login, [pool], the one this
+     *  turn selects from, holds a login of the operator's, and the door did not prove the caller splice's. The door
+     *  let it through while the head held none, and one joined while its body arrived. It is refused as the door
+     *  refuses it, 401 with the way back, and nothing of it reaches the vendor. */
+    suspend fun refuseIfUnproven(
+        call: ApplicationCall,
+        prepared: Preparation.Ready,
+        admitted: AdmittedTurn,
+        trace: TurnTrace?,
+        pool: AccountPool?,
+    ): Boolean {
+        val heldForAnother = pool != null && deps.policy.forwardClientAuth
+        if (!heldForAnother || HeldLoginVerdict.proven(call)) return false
+        val cause = FailureCause.Splice.Declined(Decline.NotLaunched)
+        val sentence = responses.lineOf(cause).sentence
+        trace?.failureSentence(sentence)
+        driver.recordLocalRefusal(
+            prepared.built.meta,
+            admitted.perf,
+            admitted.t0,
+            LocalRefusal(OutcomeTags.failure(cause), sentence, trace),
+        )
+        admitted.close()
+        responses.respondNotLaunched(call)
         return true
     }
 

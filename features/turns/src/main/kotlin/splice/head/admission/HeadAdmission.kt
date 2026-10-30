@@ -157,10 +157,13 @@ internal class HeadAdmission(
         // answers None without a resolve.
         val keyAccount = keyAccounts.naming()
         if (refusals.refuseIfOverBudget(call, prepared, admitted, trace, keyAccount)) return
+        // One read of the pool decides both: whether this caller may hold a login of its own, and which login.
+        val pool = deps.quotaBundle.activePool
+        if (refusals.refuseIfUnproven(call, prepared, admitted, trace, pool)) return
         val callerKey = prepared.built.extraHeaders.takeIf { deps.policy.forwardClientAuth }
             ?.let(CredentialKey::fromHeaders)
         val selection = admitted.perf.timed(splice.core.perf.PerfKeys.ACCOUNT_CHECKS_MS) {
-            deps.quotaBundle.activePool?.awaitingEvidence?.select(
+            pool?.awaitingEvidence?.select(
                 prepared.built.meta.scope.sessionId,
                 excluded = emptySet(),
                 callerCredentialKey = callerKey,

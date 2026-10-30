@@ -8,6 +8,7 @@ package splice.head
 
 import io.ktor.http.HttpHeaders
 import io.ktor.server.application.ApplicationCall
+import io.ktor.util.AttributeKey
 import splice.core.auth.BearerScheme
 import splice.core.auth.CredentialKey
 import splice.core.auth.ForeignHostLog
@@ -301,6 +302,10 @@ internal class ClientAuth(
  * door is all that stands between a caller and the operator's logins. It stood open: another account on this machine
  * posting `Bearer x`, or the LAN share's word, to the head's loopback port ran turns on his logins with no key at all.
  * ClientAuth asks this door once a call has passed its own-key check.
+ *
+ * PR #247 review round 2, Oct 30 (security): the door reads the pool when the headers arrive, and the login is chosen
+ * once the body is read, so a login can join in between. The door's verdict rides on the call ([HeldLoginVerdict]),
+ * and admission refuses a turn it did not prove whenever the pool it selects from holds a login of its own.
  */
 internal class HeldLoginDoor(
     private val deps: HeadDeps,
@@ -315,11 +320,16 @@ internal class HeldLoginDoor(
         return false
     }
 
+    /** TRUE for a proven caller, which [HeldLoginVerdict] records, or for any caller while the head holds no login
+     *  of its own, which admission still refuses a held login unless it was proven. */
     private fun proven(call: ApplicationCall, forwarded: Map<String, String>): Boolean {
-        val pool = deps.quotaBundle.accountPool?.takeIf { it.active } ?: return true
+        val pool = deps.quotaBundle.accountPool ?: return true
+        val holds = pool.active
         val named = call.request.headers.getAll(LAUNCH_PROOF_HEADER).orEmpty().any { isTurnKey(it.trim()) }
         val presented = CredentialKey.fromHeaders(forwarded)
-        return named || presented != null && pool.members.any { it.auth.observedCredentialKey() == presented }
+        val proven = named || presented != null && pool.members.any { it.auth.observedCredentialKey() == presented }
+        if (proven) HeldLoginVerdict.prove(call)
+        return proven || !holds
     }
 
     /** Constant-time, as ClientAuth compares its keys: length first, since [MessageDigest.isEqual] is constant-time
@@ -329,4 +339,17 @@ internal class HeldLoginDoor(
         val bytes = presented.toByteArray(Charsets.UTF_8)
         return bytes.size == expected.size && MessageDigest.isEqual(bytes, expected)
     }
+}
+
+/** The held-login door's verdict, carried from the headers to account selection on the call itself, so a login that
+ *  joins while the body arrives serves only a caller the door proved (PR #247 review round 2, Oct 30). */
+internal object HeldLoginVerdict {
+    private val proven = AttributeKey<Unit>("splice.held-login-proven")
+
+    fun prove(call: ApplicationCall) {
+        call.attributes.put(proven, Unit)
+    }
+
+    /** Whether the door proved [call] splice's. A call no door saw is not proven. */
+    fun proven(call: ApplicationCall): Boolean = proven in call.attributes
 }

@@ -23,7 +23,9 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -60,6 +62,7 @@ import splice.head.quotaFor
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
+import splice.upstream.credentials.AccountMembershipRefresh
 import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountQuotaSource
 import splice.upstream.credentials.PoolAccount
@@ -68,9 +71,12 @@ import splice.upstream.retry.InflightGate
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.transport.UpstreamClient
 import java.net.InetSocketAddress
+import java.net.Socket
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 import kotlin.time.Duration.Companion.seconds
 
@@ -78,6 +84,7 @@ private const val HOUR_S = 3_600L
 private const val SESSION = "one-command"
 private const val SEED = 20_261_029L
 private const val CASES = 120
+private const val RACE_CASES = 24
 
 class PoolFailoverTurnTest {
     @TempDir
@@ -320,6 +327,44 @@ class PoolFailoverTurnTest {
         }
     }
 
+    // PR #247 review round 2, Oct 30 (security): the door reads the pool when a turn's headers arrive, and the login is
+    // chosen once its body is read. A caller that proves nothing, let through while the head held no login of its own,
+    // must not get one that joined while its body was still arriving. Over generated callers and both moments a login
+    // can join (before the headers, or between the door and the body's end), every caller that proves nothing is
+    // answered 401 and nothing reaches the vendor, while a session splice launched, in the same sequence, is served.
+    @Test
+    fun `a caller that proves nothing gets no held login that joins while its body arrives`() = runBlocking {
+        val own = ClientAuthProvider("own")
+        val rig = FailoverRig(directory, limited = emptyMap(), headAuth = own)
+        rig.launched = false
+        rig.start()
+        try {
+            val random = Random(SEED)
+            val wrong = (1..RACE_CASES).mapNotNull { case ->
+                rig.alone(own)
+                val credential = generatedCredential(random)
+                val carrier = if (random.nextBoolean()) {
+                    "Authorization" to "Bearer $credential"
+                } else {
+                    "x-api-key" to credential
+                }
+                val proven = random.nextInt(4) == 0
+                val proof = if (proven) mapOf(LAUNCH_PROOF_HEADER to "test-inference-token") else emptyMap()
+                val early = random.nextBoolean()
+                if (early) rig.join()
+                val before = rig.requests.size
+                val status = rig.postSplit(mapOf(carrier) + proof) { if (!early) rig.join() }
+                val reached = rig.requests.drop(before)
+                val expected = if (proven) 200 else 401
+                "case $case $carrier proven=$proven early=$early -> $status, vendor heard $reached"
+                    .takeUnless { status == expected && (proven || reached.isEmpty()) }
+            }
+            assertEquals(emptyList<String>(), wrong)
+        } finally {
+            rig.close()
+        }
+    }
+
     // A head that holds no login of its own forwards the caller's own as it is: nothing of the operator's is spent.
     @Test
     fun `a head holding no login of its own still forwards any caller's own login`() = runBlocking {
@@ -471,21 +516,27 @@ private class FailoverRig(
         }
         start()
     }
-    private val pool = AccountPool(
-        labels.map { label ->
-            PoolAccount(
-                label = label,
-                primary = label == "one",
-                auth = logins.getValue(label),
-                quota = AccountQuotaSource { null },
-                cooldown = RateLimitCooldown(
-                    ElapsedClock { 0L },
-                    store = FileProviderHoldStore(directory.resolve("$label-provider-hold.json"), LogSink {}),
-                ),
-            )
-        },
-        WallClock { System.currentTimeMillis() },
-    ).also { it.order = labels }
+    private val held = labels.map { label ->
+        PoolAccount(
+            label = label,
+            primary = label == "one",
+            auth = logins.getValue(label),
+            quota = AccountQuotaSource { null },
+            cooldown = RateLimitCooldown(
+                ElapsedClock { 0L },
+                store = FileProviderHoldStore(directory.resolve("$label-provider-hold.json"), LogSink {}),
+            ),
+        )
+    }
+    private val pool = AccountPool(held, WallClock { System.currentTimeMillis() }).also { it.order = labels }
+
+    /** Opened each time the pool's membership is read, which the head's door does when a turn's headers arrive. */
+    @Volatile
+    private var poolRead = CountDownLatch(1)
+
+    init {
+        pool.membershipRefresh = AccountMembershipRefresh { poolRead.countDown() }
+    }
     private val providerClient = HttpClient(CIO)
     private val perfFile = directory.resolve("perf.jsonl")
     private val head = HeadServer(
@@ -551,6 +602,46 @@ private class FailoverRig(
                     """"messages":[{"role":"user","content":"go"}]}""",
             )
         }
+
+    /** The head holding no login of its own, as [fallBack] leaves it. */
+    fun alone(own: RefreshableAuthProvider) = fallBack(own)
+
+    /** The head's three logins joined, as a sign-in in Accounts publishes them. */
+    fun join() {
+        pool.members = held
+        pool.order = labels
+    }
+
+    /** One streamed turn carrying exactly [headers], sent by hand: the headers and half the body, then, once the
+     *  head has read its pool, [between], then the rest of the body. Answers the response's status. */
+    suspend fun postSplit(headers: Map<String, String>, between: () -> Unit): Int = withContext(Dispatchers.IO) {
+        val body = (
+            """{"model":"synthetic--model","stream":true,"max_tokens":16,""" +
+                """"messages":[{"role":"user","content":"go"}]}"""
+            ).toByteArray(Charsets.UTF_8)
+        val lines = mapOf(
+            "Host" to "127.0.0.1:${head.port}",
+            "Content-Type" to "application/json",
+            "Content-Length" to body.size.toString(),
+            "Connection" to "close",
+            "x-claude-code-session-id" to SESSION,
+        ) + headers
+        val fields = lines.entries.joinToString("") { "${it.key}: ${it.value}\r\n" }
+        val start = "POST /v1/messages HTTP/1.1\r\n$fields\r\n"
+        Socket("127.0.0.1", head.port).use { socket ->
+            poolRead = CountDownLatch(1)
+            val out = socket.getOutputStream()
+            out.write(start.toByteArray(Charsets.UTF_8))
+            out.write(body, 0, body.size / 2)
+            out.flush()
+            check(poolRead.await(10, TimeUnit.SECONDS)) { "the head never read its pool" }
+            between()
+            out.write(body, body.size / 2, body.size - body.size / 2)
+            out.flush()
+            val status = socket.getInputStream().bufferedReader().readLine().orEmpty()
+            status.split(" ").getOrNull(1)?.toIntOrNull() ?: -1
+        }
+    }
 
     /** The pool left with no login of its own: only the head's own sign-in, as the membership publishes it. */
     private fun fallBack(own: RefreshableAuthProvider) {

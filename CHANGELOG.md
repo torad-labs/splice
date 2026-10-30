@@ -164,7 +164,7 @@ origin.
 - **Usage's Results by command counts every request, whatever the project or filters picked above.** It reads its own
   1 hour, 24 hours or 7 days: the page's 5 hours reads as 24 hours and its 30 days as 7 days. Its switch names the
   window it read, and with a project or filter picked its heading says "All requests". The header's door to it says
-  the same, as in "3% failed in 24 hours, all requests". Results for one project, or for the page's own 5 hours or
+  the same, as in "3.0% failed in 24 hours, all requests". Results for one project, or for the page's own 5 hours or
   30 days, are not built yet.
 - **splice is tested against Claude Code 2.1.296.** When a session runs a newer one, doctor and
   `splice status` report it; the status line warns once per session during the daemon's lifetime.

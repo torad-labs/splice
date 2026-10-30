@@ -86,7 +86,7 @@ internal class ResponsesLeadingReasoning(
     private suspend fun settlePrefix(held: HeldReasoningPrefix, sink: WireSink, discardEmpty: Boolean) {
         if (!held.text.readable && !discardEmpty) return
         if (held.summary) {
-            summaries.atBoundary(held.key)?.let { summaryWriter.write(held.key, it, sink) }
+            summaries.atBoundary(held.key, held.summaryIndex)?.let { summaryWriter.write(held.key, it, sink) }
         } else {
             remove(held.key)
             if (held.text.readable) writer.write(held.key, held.text.toString(), sink)

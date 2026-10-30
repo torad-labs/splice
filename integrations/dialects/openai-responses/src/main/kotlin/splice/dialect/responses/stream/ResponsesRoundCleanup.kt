@@ -2,6 +2,8 @@ package splice.dialect.responses.stream
 
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import splice.dialect.responses.ResponsesTurnState
 import splice.dialect.responses.reasoning.ResponsesReasoningFold
 import splice.dialect.responses.reasoning.ResponsesReasoningReplay
@@ -17,6 +19,7 @@ internal class ResponsesRoundCleanup(
     suspend fun close(itemFold: ResponsesItemFold, sink: WireSink, terminalSeen: Boolean) =
         withContext(NonCancellable) {
             try {
+                finishReasoning(sink)
                 ResponsesTerminalBackfill().harvestFallback(state)
                 replay.finish()
             } finally {
@@ -30,4 +33,14 @@ internal class ResponsesRoundCleanup(
                 )
             }
         }
+
+    /** Reconcile terminal-only summary tails before the harvest replaces the delivery buffer. */
+    private suspend fun finishReasoning(sink: WireSink) {
+        val output = state.finalResponse?.get("output") as? JsonArray ?: return
+        output.forEachIndexed { index, element ->
+            val item = element as? JsonObject ?: return@forEachIndexed
+            val oi = ResponsesFrameParse().intOr(item["index"]) ?: index
+            if (oi in reasoning.liveSummaryItems) reasoning.maybeEmitLateReasoning(item, oi, sink)
+        }
+    }
 }

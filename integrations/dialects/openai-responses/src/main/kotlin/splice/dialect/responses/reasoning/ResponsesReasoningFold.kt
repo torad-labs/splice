@@ -4,6 +4,7 @@
 // mirror-duplication invariant this file makes structurally unreachable rather than merely avoided).
 package splice.dialect.responses.reasoning
 
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.SharedSummaryParts
 import splice.core.util.JsonScalars
@@ -12,6 +13,7 @@ import splice.dialect.responses.StreamTurnContext
 import splice.dialect.responses.request.BlockState
 import splice.dialect.responses.stream.DELTA
 import splice.dialect.responses.stream.OUTPUT_INDEX
+import splice.dialect.responses.stream.ResponsesBufferBudget
 import splice.dialect.responses.stream.ResponsesFrameParse
 import splice.dialect.responses.stream.ResponsesHarvest
 import splice.dialect.responses.stream.SummaryDedup
@@ -26,6 +28,7 @@ internal class ResponsesReasoningFold(
     private val ctx: StreamTurnContext,
     private val state: ResponsesTurnState,
     summaryParts: SharedSummaryParts,
+    private val budget: ResponsesBufferBudget,
 ) {
 
     private val frames = ResponsesFrameParse()
@@ -35,6 +38,7 @@ internal class ResponsesReasoningFold(
     // dedup on thinkingBuf dropped a DISTINCT item whose text happened to be a substring of an
     // earlier one, diverging wire from mirror (audit 2026-07-18); track per item instead.
     private val emittedReasoningKeys = HashSet<Int>()
+    private val openedReasoningItems = HashSet<Int>()
 
     // sequential_cutoff restatement dedup — state + decision encapsulated in SummaryDedup.
     private val summaryDedup = SummaryDedup(ctx.summary.dedupeRepeatedParts, summaryParts)
@@ -42,14 +46,17 @@ internal class ResponsesReasoningFold(
     // Live summary delivery (every mode but cutoff): a header-only part is a status line, rendered
     // once per round per distinct text (V4-450).
     private val prefixSequence = ReasoningPrefixSequence()
-    private val statusHeaders = SummaryStatusHeaders(prefixSequence)
+    private val statusHeaders = SummaryStatusHeaders(prefixSequence, ResponsesTextOwner(state.thinkingBuf))
     val leadingText = ResponsesLeadingReasoning(
         ReasoningLiteralWriter { oi, text, sink -> append(oi, text, startsPart = false, sink) },
-        ReasoningSummaryWriter { oi, release, sink -> append(oi, release.text, release.startsPart, sink) },
+        ReasoningSummaryWriter { oi, release, sink ->
+            append(oi, release.text, release.startsPart, sink, release.delivered)
+        },
         statusHeaders,
         prefixSequence,
     )
     val pendingChars: Long get() = leadingText.pendingChars
+    val liveSummaryItems: Set<Int> get() = statusHeaders.liveKeys
 
     fun orderedSink(sink: WireSink): WireSink = leadingText.orderedSink(sink)
 
@@ -64,21 +71,19 @@ internal class ResponsesReasoningFold(
     /** The reducer's single reasoning-family arm: dispatch by event type. */
     suspend fun onReasoningEvent(evt: JsonObject, sink: WireSink) {
         when (JsonScalars.strOrEmpty(evt["type"])) {
-            "response.reasoning_summary_part.added" -> onSummaryPartAdded(evt, sink)
+            "response.reasoning_summary_part.added" -> {
+                // A part's first rendered text owns its paragraph break; empty parts leave none.
+                if (!ctx.summary.dedupeRepeatedParts) {
+                    val oi = frames.intOr(evt[OUTPUT_INDEX]) ?: 0
+                    render(oi, statusHeaders.partAdded(oi, frames.intOr(evt["summary_index"])), sink)
+                }
+            }
             "response.reasoning_summary_text.done" -> onSummaryTextDone(evt, sink)
+            "response.reasoning_summary_part.done" -> {
+                if (!ctx.summary.dedupeRepeatedParts) onSummaryTextDone(evt, sink)
+            }
             else -> onThinkingDelta(evt, sink)
         }
-    }
-
-    suspend fun onSummaryPartAdded(evt: JsonObject, sink: WireSink) {
-        // cutoff mode: part boundaries are rendered by the done path, never from part.added.
-        if (ctx.summary.dedupeRepeatedParts) return
-        // New summary part = new paragraph in the SAME thinking block (v24: closing per part
-        // truncated multi-part summaries — protocol violation, deltas after content_block_stop).
-        // The paragraph break rides the part's first rendered text, so a part that renders nothing
-        // leaves no break behind it.
-        val oi = frames.intOr(evt[OUTPUT_INDEX]) ?: 0
-        render(oi, statusHeaders.partAdded(oi), sink)
     }
 
     suspend fun onThinkingDelta(evt: JsonObject, sink: WireSink) {
@@ -91,7 +96,7 @@ internal class ResponsesReasoningFold(
             // `continue`s on ReasoningSummaryDelta). Raw reasoning_text deltas still stream live.
             ctx.summary.dedupeRepeatedParts && summary -> null
             summaryDedup.suppress(oi, delta) -> null
-            summary -> statusHeaders.delta(oi, delta)
+            summary -> statusHeaders.delta(oi, delta, frames.intOr(evt["summary_index"]))
             else -> SummaryRelease(delta, startsPart = false)
         }
         render(oi, release, sink)
@@ -100,11 +105,11 @@ internal class ResponsesReasoningFold(
     /** cutoff mode's ONLY summary render path (codex ReasoningSummaryDone arm): the completed
      *  part text, atomically, iff [renderableSummaryDone] admits it. */
     suspend fun onSummaryTextDone(evt: JsonObject, sink: WireSink) {
-        val text = JsonScalars.strOrEmpty(evt["text"])
+        val text = JsonScalars.str(evt, "text") ?: JsonScalars.str(evt["part"] as? JsonObject, "text") ?: return
         val oi = frames.intOr(evt[OUTPUT_INDEX]) ?: 0
         if (!ctx.summary.dedupeRepeatedParts) {
-            // Live delivery: the done event settles a part still held as a possible bare header.
-            render(oi, statusHeaders.done(oi, text), sink)
+            // A completed copy may extend the streamed prefix; deliver only its proven missing tail.
+            render(oi, statusHeaders.done(oi, text, frames.intOr(evt["summary_index"])), sink)
             return
         }
         if (!renderableSummaryDone(evt, text) || !statusHeaders.admitsLate(text)) return
@@ -126,10 +131,19 @@ internal class ResponsesReasoningFold(
         }
         // Concurrent reasoning items must not move an earlier held literal behind readable text.
         leadingText.settle(sink, discardEmpty = false)
-        append(oi, text, release.startsPart, sink)
+        append(oi, text, release.startsPart, sink, release.delivered)
     }
 
-    private suspend fun append(oi: Int, text: String, startsPart: Boolean, sink: WireSink) {
+    private suspend fun append(
+        oi: Int,
+        text: String,
+        startsPart: Boolean,
+        sink: WireSink,
+        delivered: ResponsesTextRanges? = null,
+    ) {
+        // Completion snapshots may contain bytes absent from every delta, including at terminal cleanup.
+        val separator = separatorChars(oi, startsPart)
+        if (budget.failure != null || !budget.within(state, pendingChars + text.length + separator)) return
         val b = ensureThinkingBlock(oi, sink)
         if (startsPart && b.sawDelta) {
             state.thinkingBuf.append(PART_SEPARATOR)
@@ -138,6 +152,15 @@ internal class ResponsesReasoningFold(
         b.sawDelta = true
         state.thinkingBuf.append(text)
         sink.thinkingDelta(b.index, text)
+        delivered?.append(text.length)
+    }
+
+    private fun separatorChars(oi: Int, startsPart: Boolean): Int {
+        val block = state.blocks[frames.reasoningKey(oi)]
+        if (block != null) return if (startsPart && block.sawDelta) PART_SEPARATOR.length else 0
+        if (oi in openedReasoningItems) return 0
+        val noBreak = state.thinkingBuf.isEmpty() || state.thinkingBuf.endsWith("\n")
+        return if (noBreak) 0 else PART_SEPARATOR.length
     }
 
     /** Two filters, one decision. First codex's (session/turn.rs ReasoningSummaryDone arm): the
@@ -165,7 +188,11 @@ internal class ResponsesReasoningFold(
         val key = frames.reasoningKey(oi)
         state.blocks[key]?.let { return it }
         // separate multiple reasoning ITEMS in the mirror buffer
-        if (state.thinkingBuf.isNotEmpty() && !state.thinkingBuf.endsWith("\n")) state.thinkingBuf.append("\n\n")
+        val newItem = openedReasoningItems.add(oi)
+        val needsBreak = state.thinkingBuf.isNotEmpty() && !state.thinkingBuf.endsWith("\n")
+        if (newItem && needsBreak) {
+            state.thinkingBuf.append("\n\n")
+        }
         val idx = sink.openThinking()
         state.emittedThinking = true // CX-09: reached the sink, so the client received it
         val blockState = BlockState(idx, sawDelta = false)
@@ -181,9 +208,13 @@ internal class ResponsesReasoningFold(
         // from completed items in this mode — a completed item that never went active is a
         // restatement carrier, and re-rendering it is the staircase this port kills).
         if (ctx.summary.dedupeRepeatedParts) return
-        // Its summary arrived live, so it is already rendered or decided: settle only a part the
-        // item ended on while still held as a possible bare header.
+        // Whole-item copies can carry a body or later part absent from the live deltas.
         if (statusHeaders.sawLive(oi)) {
+            (item["summary"] as? JsonArray)?.forEachIndexed { index, part ->
+                JsonScalars.str(part as? JsonObject, "text")?.let { text ->
+                    render(oi, statusHeaders.done(oi, text, index), sink)
+                }
+            }
             render(oi, statusHeaders.itemDone(oi), sink)
         } else {
             emitReasoningItemText(item, oi, sink)

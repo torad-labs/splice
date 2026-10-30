@@ -7,11 +7,18 @@
 // distinct text, and a part with a body streams live exactly as before.
 package splice.dialect.responses.reasoning
 
+import splice.upstream.transport.BufferCapacity
+
 private const val MARKDOWN_BOLD = "**"
 
 /** Summary text the fold renders now. [startsPart] marks a part's first rendered text, which takes
  *  the paragraph break when its thinking block already holds text. */
-internal data class SummaryRelease(val text: String, val startsPart: Boolean, val complete: Boolean = false) {
+internal data class SummaryRelease(
+    val text: String,
+    val startsPart: Boolean,
+    val complete: Boolean = false,
+    val delivered: ResponsesTextRanges? = null,
+) {
     /** A completed literal prefix cannot still become a comment placeholder. */
     fun canRender(held: ReasoningPrefixText): Boolean =
         if (complete) held.readable else !held.mayBeEmpty
@@ -20,95 +27,128 @@ internal data class SummaryRelease(val text: String, val startsPart: Boolean, va
 /** One round's header decisions, keyed by the fold's reasoning keys. Each item's current summary part
  *  is held only while it can still turn out to be a bare header; the first character of a body
  *  releases it to stream live. */
-internal class SummaryStatusHeaders(private val sequence: ReasoningPrefixSequence = ReasoningPrefixSequence()) {
+internal class SummaryStatusHeaders(
+    private val sequence: ReasoningPrefixSequence,
+    private val owner: ResponsesTextOwner,
+) {
 
-    private data class Part(var held: ReasoningPrefixText? = null, var live: Boolean = false)
+    private data class Part(val delivered: ResponsesTextRanges, var held: ReasoningPrefixText? = null)
+    private class Item {
+        val parts = LinkedHashMap<Int, Part>()
+        var active = 0
+        var next = 0
+    }
 
-    private val current = LinkedHashMap<Int, Part>()
+    private val items = LinkedHashMap<Int, Item>()
+    private var partCount = 0
     var pendingChars: Long = 0
         private set
     var revision: Long = 0
         private set
 
-    /** Only held text owns capacity; released parts keep their live identity without keeping another copy. */
+    /** Only held text owns capacity; delivery proofs borrow ranges of the existing thinking buffer. */
     private fun release(part: Part): String? {
         val held = part.held ?: return null
         part.held = null
-        part.live = true
         pendingChars -= held.length
         revision++
         return held.toString()
     }
 
     private val shown = HashSet<String>()
-    private val liveKeys = HashSet<Int>()
+    val liveKeys: Set<Int> get() = items.keys
 
-    /** Whether a summary event for [key] arrived live: the completed item's text is then already
-     *  decided and is not rendered a second time. */
-    fun sawLive(key: Int): Boolean = key in liveKeys
+    /** A completed item's parts must use the same delivery proofs as its live summary events. */
+    fun sawLive(key: Int): Boolean = key in items
 
     /** A new part begins: a previous part still held is decided first. */
-    fun partAdded(key: Int): SummaryRelease? {
-        liveKeys.add(key)
-        val previous = settle(key, doneText = null)
-        current[key] = Part()
+    fun partAdded(key: Int, index: Int?): SummaryRelease? {
+        val item = items.getOrPut(key) { Item() }
+        val previous = item.parts[item.active]?.let { settle(it, doneText = null) }
+        item.active = index ?: item.next
+        part(item, item.active)
         return previous
     }
 
-    fun delta(key: Int, text: String): SummaryRelease? {
-        liveKeys.add(key)
-        val part = current.getOrPut(key) { Part() }
-        if (part.live) return SummaryRelease(text, startsPart = false)
+    fun delta(key: Int, text: String, index: Int?): SummaryRelease? {
+        val item = items.getOrPut(key) { Item() }
+        if (index != null) item.active = index
+        val part = part(item, item.active)
+        if (part.delivered.length > 0) return SummaryRelease(text, startsPart = false, delivered = part.delivered)
         val held = part.held ?: ReasoningPrefixText(sequence.next()).also { part.held = it }
         held.append(text)
         pendingChars += text.length
         revision++
-        if (held.mayBeHeaderOnly) return null
-        return SummaryRelease(checkNotNull(release(part)), startsPart = true)
+        if (held.mayBeHeaderOnly || held.mayBeEmpty) return null
+        return SummaryRelease(checkNotNull(release(part)), startsPart = true, delivered = part.delivered)
     }
 
     /** The part's completed text, authoritative over what was held. */
-    fun done(key: Int, text: String): SummaryRelease? {
-        liveKeys.add(key)
-        return settle(key, text)
+    fun done(key: Int, text: String, index: Int?): SummaryRelease? {
+        val item = items.getOrPut(key) { Item() }
+        return settle(part(item, index ?: item.active), text)
     }
 
     /** The item ended with a part still held, one no done event reached. */
-    fun itemDone(key: Int): SummaryRelease? = settle(key, doneText = null)
+    fun itemDone(key: Int): SummaryRelease? = items[key]?.let { item ->
+        item.parts[item.active]?.let { settle(it, doneText = null) }
+    }
 
     /** A completed item's text when no summary for it arrived live: refused only for a bare header
      *  this round already showed. */
     fun admitsLate(text: String): Boolean = ReadableReasoning.hasText(text) &&
         (!HeaderShape.isHeaderOnly(text) || shown.add(text.trim()))
 
-    fun pending(): List<HeldReasoningPrefix> = current.mapNotNull { (key, part) ->
-        part.held?.let { HeldReasoningPrefix(key, summary = true, it) }
+    fun pending(): List<HeldReasoningPrefix> = items.flatMap { (key, item) ->
+        item.parts.mapNotNull { (index, part) ->
+            part.held?.let { HeldReasoningPrefix(key, summary = true, it, index) }
+        }
     }
 
     fun discardPending() {
-        current.clear()
+        items.clear()
+        partCount = 0
         pendingChars = 0
         revision++
     }
 
     /** A visible boundary settles a part but leaves it live for any subsequent body deltas. */
-    fun atBoundary(key: Int): SummaryRelease? = current[key]?.let { part -> release(part)?.let(::decide) }
+    fun atBoundary(key: Int, index: Int?): SummaryRelease? = items[key]?.let { item ->
+        item.parts[index ?: item.active]
+    }?.let { part ->
+        release(part)?.let { decide(it, part.delivered) }
+    }
 
-    private fun settle(key: Int, doneText: String?): SummaryRelease? {
-        val part = current.remove(key)
-        val wasLive = part?.live == true
-        val held = part?.let(::release)
+    private fun part(item: Item, index: Int): Part = item.parts.getOrPut(index) {
+        require(
+            index in 0 until BufferCapacity.MAX_TOOL_INDEX_ENTRIES &&
+                partCount < BufferCapacity.MAX_TOOL_INDEX_ENTRIES,
+        ) { "reasoning summary exceeds index capacity" }
+        partCount++
+        item.next = maxOf(item.next, index + 1)
+        Part(owner.borrow())
+    }
+
+    private fun settle(part: Part, doneText: String?): SummaryRelease? {
+        val held = release(part)
+        val text = doneText ?: held ?: return null
+        val delivered = part.delivered
         return when {
-            part == null -> doneText?.let { decide(it) }
-            wasLive -> null
-            else -> decide(doneText ?: held.orEmpty())
+            delivered.length == 0 -> decide(text, delivered)
+            !delivered.matchesPrefix(text) || text.length == delivered.length -> null
+            else -> SummaryRelease(
+                text.substring(delivered.length),
+                startsPart = false,
+                complete = true,
+                delivered = delivered,
+            )
         }
     }
 
-    private fun decide(text: String): SummaryRelease? = when {
+    private fun decide(text: String, delivered: ResponsesTextRanges): SummaryRelease? = when {
         !ReadableReasoning.hasText(text) -> null
         HeaderShape.isHeaderOnly(text) && !shown.add(text.trim()) -> null
-        else -> SummaryRelease(text, startsPart = true, complete = true)
+        else -> SummaryRelease(text, startsPart = true, complete = true, delivered = delivered)
     }
 }
 

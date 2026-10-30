@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
+import splice.upstream.transport.BufferCapacity
 
 // The nine headers of one gpt-6-sol round in the Oct 1 trace, and the order its 63 reasoning items
 // carried them in (one header-only summary part per item), as indices into the list.
@@ -87,7 +88,150 @@ private fun rawItem(oi: Int, delta: String, whole: String? = null): List<JsonObj
     )
 }
 
+private fun summaryItem(parts: List<String>): JsonObject = buildJsonObject {
+    put("type", "reasoning")
+    put("id", "rs_0")
+    put("encrypted_content", "opaque-reasoning")
+    put(
+        "summary",
+        JsonArray(
+            parts.map { text ->
+                buildJsonObject { put("type", "summary_text"); put("text", text) }
+            },
+        ),
+    )
+}
+
+private fun itemEvent(type: String, oi: Int, item: JsonObject): JsonObject = buildJsonObject {
+    put("type", type)
+    put("output_index", oi)
+    put("item", item)
+}
+
+private fun summaryPartDone(text: String): JsonObject = buildJsonObject {
+    put("type", "response.reasoning_summary_part.done")
+    put("output_index", 0)
+    put("part", buildJsonObject { put("type", "summary_text"); put("text", text) })
+}
+
+private fun terminalOutput(items: List<JsonObject>): JsonObject = buildJsonObject {
+    put("type", "response.completed")
+    put(
+        "response",
+        buildJsonObject {
+            put("id", "r1")
+            put("status", "completed")
+            put("output", JsonArray(items))
+        },
+    )
+}
+
+private fun visibleThinking(sink: RecordingSink): String =
+    sink.calls.filter { it.startsWith("think#") }.joinToString("") { it.substringAfter(':') }
+
 class SummaryStatusHeadersTest {
+
+    @Test
+    fun `an oversized terminal suffix never reaches the client`() = runTest {
+        val prefix = "**Checking**\n\nThe delivered paragraph."
+        val sink = RecordingSink()
+        val frames = listOf(
+            itemEvent("response.output_item.added", 0, summaryItem(emptyList())),
+            event("response.reasoning_summary_text.delta", 0, mapOf("delta" to prefix)),
+            terminalOutput(listOf(summaryItem(listOf(prefix + "x".repeat(BufferCapacity.MAX_BUFFERED_CHARS))))),
+        )
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(frames.asFlow(), sink)
+        assertTrue(outcome is TurnOutcome.Failure)
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals("upstream: response exceeded max buffered size; aborting", failure.evidence.message)
+        assertTrue(!failure.cause.providerReported)
+        assertEquals(prefix, visibleThinking(sink))
+    }
+
+    @Test
+    fun `sparse completions recover the paragraph after a code-mode boundary exactly once`() = runTest {
+        val header = "**Checking the request**"
+        val whole = "$header\n\nThe completed request retains every reasoning property."
+        val exec = ev(
+            """{"type":"custom_tool_call","id":"ct_1","call_id":"exec_1","name":"exec","input":"return 7;"}""",
+        )
+        for (carrier in listOf("text", "part", "item", "terminal")) {
+            val sink = RecordingSink()
+            val upstream = flow {
+                emit(itemEvent("response.output_item.added", 0, summaryItem(emptyList())))
+                emit(event("response.reasoning_summary_part.added", 0))
+                emit(event("response.reasoning_summary_text.delta", 0, mapOf("delta" to header)))
+                emit(itemEvent("response.output_item.added", 1, exec))
+                emit(itemEvent("response.output_item.done", 1, exec))
+                assertEquals(header, visibleThinking(sink))
+                if (carrier == "text") {
+                    repeat(2) { emit(event("response.reasoning_summary_text.done", 0, mapOf("text" to whole))) }
+                }
+                if (carrier == "part") {
+                    repeat(2) { emit(summaryPartDone(whole)) }
+                }
+                val item = summaryItem(listOf(if (carrier == "terminal") header else whole))
+                emit(itemEvent("response.output_item.done", 0, item))
+                emit(terminalOutput(listOf(summaryItem(listOf(whole)), exec)))
+            }
+            val context = ctx(
+                collect = true,
+            ).let { it.copy(reasoningCapture = it.reasoningCapture.copy(codeMode = true)) }
+            val outcome = ResponsesStreamTranslator(context).driveTurn(upstream, sink) as TurnOutcome.Success
+            assertEquals(whole, visibleThinking(sink), carrier)
+            assertEquals(whole, outcome.text.thinkingText, carrier)
+        }
+    }
+
+    @Test
+    fun `completed multi-part snapshots preserve each part once with explicit or implicit indices`() = runTest {
+        val parts = listOf("**Read**\n\nThe first paragraph.", "**Check**\n\nThe second paragraph.")
+        for (explicit in listOf(false, true)) {
+            val sink = RecordingSink()
+            val frames = buildList {
+                add(itemEvent("response.output_item.added", 0, summaryItem(emptyList())))
+                parts.forEachIndexed { index, text ->
+                    for ((type, field, value) in listOf(
+                        Triple("response.reasoning_summary_part.added", "", ""),
+                        Triple("response.reasoning_summary_text.delta", "delta", text.substringBefore("\n")),
+                        Triple("response.reasoning_summary_text.done", "text", text),
+                        Triple("response.reasoning_summary_text.done", "text", text),
+                    )) {
+                        add(
+                            buildJsonObject {
+                                put("type", type)
+                                put("output_index", 0)
+                                if (explicit) put("summary_index", index)
+                                if (field.isNotEmpty()) put(field, value)
+                            },
+                        )
+                    }
+                }
+                add(itemEvent("response.output_item.done", 0, summaryItem(parts)))
+                add(completed)
+            }
+            val outcome = ResponsesStreamTranslator(ctx()).driveTurn(frames.asFlow(), sink) as TurnOutcome.Success
+            val expected = parts.joinToString("\n\n")
+            assertEquals(expected, visibleThinking(sink))
+            assertEquals(expected, outcome.text.thinkingText)
+        }
+    }
+
+    @Test
+    fun `a divergent completed copy cannot rewrite already streamed reasoning`() = runTest {
+        val text = "**Checking**\n\nThe original model paragraph."
+        val sink = RecordingSink()
+        val frames = liveItem(0, listOf(text)).toMutableList()
+        frames.add(
+            3,
+            event("response.reasoning_summary_text.done", 0, mapOf("text" to "**Different**\n\nA replacement.")),
+        )
+        val outcome = ResponsesStreamTranslator(
+            ctx(),
+        ).driveTurn((frames + completed).asFlow(), sink) as TurnOutcome.Success
+        assertEquals(text, visibleThinking(sink))
+        assertEquals(text, outcome.text.thinkingText)
+    }
 
     @Test
     fun `incomplete comment prefixes are literal at summary completion or item completion`() = runTest {

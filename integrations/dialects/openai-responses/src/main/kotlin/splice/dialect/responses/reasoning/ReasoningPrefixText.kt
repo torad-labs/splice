@@ -11,7 +11,12 @@ internal class ReasoningPrefixSequence {
     fun next(): Long = next++
 }
 
-internal data class HeldReasoningPrefix(val key: Int, val summary: Boolean, val text: ReasoningPrefixText)
+internal data class HeldReasoningPrefix(
+    val key: Int,
+    val summary: Boolean,
+    val text: ReasoningPrefixText,
+    val summaryIndex: Int? = null,
+)
 
 /** Maintains trimmed bounds as new chars arrive; classification never copies an accumulated prefix. */
 internal class ReasoningPrefixText(val order: Long) {

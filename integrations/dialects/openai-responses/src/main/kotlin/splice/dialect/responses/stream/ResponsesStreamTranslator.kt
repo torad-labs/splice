@@ -106,7 +106,7 @@ internal class ResponsesStreamTranslator(
         summaryParts: SharedSummaryParts,
         state: ResponsesTurnState,
     ): TurnOutcome {
-        val reasoningFold = ResponsesReasoningFold(ctx, state, summaryParts)
+        val reasoningFold = ResponsesReasoningFold(ctx, state, summaryParts, bufferBudget)
         val orderedSink = reasoningFold.orderedSink(sink)
         val replay = ResponsesReasoningReplay(ctx, state, names)
         val itemFold = ResponsesItemFold(

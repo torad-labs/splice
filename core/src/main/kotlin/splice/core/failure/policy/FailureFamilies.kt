@@ -61,7 +61,8 @@ internal object FailureFamilies {
         Decline.HeapBusy -> ClientWire.Family.R
         // The caller's own credential at splice's door is a login cause: its 401 is what makes the session read its
         // key helper again, so a rotated key strands nobody (ClientWire.KEPT, record http-401).
-        Decline.ReadTimeout, Decline.BadLocalKey, is Decline.SpliceKeyAsLogin -> ClientWire.Family.KEPT
+        Decline.ReadTimeout, Decline.BadLocalKey, Decline.NotLaunched, is Decline.SpliceKeyAsLogin ->
+            ClientWire.Family.KEPT
         is Decline.Preflight -> ClientWire.Family.T
         is Decline.TooLarge, is Decline.Unfit, is Decline.Budget, is Decline.BadBody, is Decline.UnknownModel,
         Decline.ForeignHost, Decline.LivenessProbe, Decline.NoSharedLogin, is Decline.Untranslatable,

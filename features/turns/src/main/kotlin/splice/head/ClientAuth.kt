@@ -311,7 +311,7 @@ internal class HeldLoginDoor(
     suspend fun opens(call: ApplicationCall, forwarded: Map<String, String>): Boolean {
         if (proven(call, forwarded)) return true
         refusedKeys.refused(call.request.headers[SESSION_HEADER], KeyRefusal.NOT_LAUNCHED)
-        responses.respondUnauthorized(call)
+        responses.respondNotLaunched(call)
         return false
     }
 

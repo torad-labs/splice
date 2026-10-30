@@ -132,6 +132,11 @@ internal class AdmissionResponses(private val voice: HeadVoice) {
         respondRefusal(call, FailureCause.Splice.Declined(Decline.Budget(block.limit, block.resetsAt)))
     }
 
+    /** A head holding logins refused a caller that proved nothing (see HeldLoginDoor). */
+    suspend fun respondNotLaunched(call: ApplicationCall) {
+        respondRefusal(call, FailureCause.Splice.Declined(Decline.NotLaunched))
+    }
+
     /** The mgmt-key front door's refusal (see [ClientAuth.authorize]). */
     suspend fun respondUnauthorized(call: ApplicationCall) {
         respondRefusal(call, FailureCause.Splice.Declined(Decline.BadLocalKey))

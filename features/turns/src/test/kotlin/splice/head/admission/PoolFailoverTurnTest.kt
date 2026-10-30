@@ -28,6 +28,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -242,6 +243,26 @@ class PoolFailoverTurnTest {
             }
             assertEquals(emptyList<String>(), refused, "each of these was served")
             assertEquals(emptyList<String>(), rig.requests, "nothing of a refused turn reaches the vendor")
+        } finally {
+            rig.close()
+        }
+    }
+
+    // Oct 29, 21:30 CT: a hookd seat started before the proof existed, on a login token of its own, stopped on
+    // "This session's splice key is not valid", a key it never sent. The refused session is told why it got no turn and
+    // how to come back on this head's command, never that a splice key of its was wrong.
+    @Test
+    fun `a session refused for proving nothing reads why, and that the head's command brings it back`() = runBlocking {
+        val rig = FailoverRig(directory, limited = emptyMap(), headAuth = ClientAuthProvider("own"))
+        rig.launched = false
+        rig.start()
+        try {
+            val refused = rig.post(mapOf("Authorization" to "Bearer sk-ant-oat01-a-token-of-its-own"))
+            val body = refused.bodyAsText()
+            assertEquals(HttpStatusCode.Unauthorized, refused.status)
+            assertTrue("serves the logins it holds only to sessions splice started" in body, body)
+            assertTrue("Start this session again with the head's own command" in body, body)
+            assertFalse("splice key is not valid" in body, body)
         } finally {
             rig.close()
         }

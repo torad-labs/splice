@@ -146,7 +146,7 @@ private object Section11 {
         is Decline.Preflight -> Fam.T
         // The credential the session sent splice itself: a login cause, answered 401 so the client reads its key
         // helper again and sends the key it returns (http-401), which is how a rotated key strands no session.
-        Decline.BadLocalKey, is Decline.SpliceKeyAsLogin -> Fam.LOGIN
+        Decline.BadLocalKey, Decline.NotLaunched, is Decline.SpliceKeyAsLogin -> Fam.LOGIN
         is Decline.TooLarge, is Decline.Unfit, is Decline.Budget, is Decline.BadBody, is Decline.UnknownModel,
         Decline.ForeignHost, Decline.LivenessProbe, Decline.NoSharedLogin,
         is Decline.Untranslatable,

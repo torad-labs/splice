@@ -208,8 +208,8 @@ private object Kept {
         is Decline.TooLarge, is Decline.Unfit -> HttpStatus.CONTENT_TOO_LARGE
         Decline.ReadTimeout -> HttpStatus.REQUEST_TIMEOUT
         Decline.NoSharedLogin, Decline.HeapBusy, is Decline.Budget, is Decline.Preflight, is Decline.BadBody,
-        is Decline.UnknownModel, Decline.ForeignHost, Decline.BadLocalKey, is Decline.SpliceKeyAsLogin,
-        Decline.LivenessProbe, is Decline.Untranslatable,
+        is Decline.UnknownModel, Decline.ForeignHost, Decline.BadLocalKey, Decline.NotLaunched,
+        Decline.NotLaunched, is Decline.SpliceKeyAsLogin, Decline.LivenessProbe, is Decline.Untranslatable,
         -> null
     }
 
@@ -219,7 +219,7 @@ private object Kept {
         is Decline.Preflight -> false
         Decline.NoSharedLogin, is Decline.TooLarge, is Decline.Unfit, Decline.HeapBusy, is Decline.Budget,
         is Decline.BadBody, Decline.ReadTimeout, is Decline.UnknownModel, Decline.ForeignHost, Decline.BadLocalKey,
-        is Decline.SpliceKeyAsLogin, Decline.LivenessProbe, is Decline.Untranslatable,
+        Decline.NotLaunched, is Decline.SpliceKeyAsLogin, Decline.LivenessProbe, is Decline.Untranslatable,
         -> null
     }
 
@@ -296,7 +296,7 @@ private object OwnTypes {
      *  where its provider login belongs stays authentication_error: that credential is the one being refused. */
     private fun declined(why: Decline): ErrorType = when (why) {
         Decline.HeapBusy -> ErrorType.OVERLOADED
-        Decline.BadLocalKey, is Decline.SpliceKeyAsLogin -> ErrorType.AUTHENTICATION
+        Decline.BadLocalKey, Decline.NotLaunched, is Decline.SpliceKeyAsLogin -> ErrorType.AUTHENTICATION
         is Decline.TooLarge, is Decline.Unfit, is Decline.Preflight, is Decline.BadBody, Decline.ReadTimeout,
         is Decline.UnknownModel, Decline.LivenessProbe, is Decline.Untranslatable, is Decline.Budget,
         Decline.ForeignHost, Decline.NoSharedLogin,

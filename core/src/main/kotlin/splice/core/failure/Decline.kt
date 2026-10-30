@@ -40,6 +40,10 @@ public sealed class Decline {
     /** The local gateway credentials were missing or wrong. */
     public data object BadLocalKey : Decline()
 
+    /** A head that holds logins of its own serves them only to sessions splice started, and this caller named no launch
+     *  proof and forwarded none of those logins (PR #247 review, Oct 29). Its key was never the question. */
+    public data object NotLaunched : Decline()
+
     /** One of splice's own keys reached a head that forwards the caller's own login, in that login's place:
      *  [variables] are the launching environment's variables that put it there, which the person unsets
      *  (ClientAuth.allowUnlessOwnKey). */

@@ -90,9 +90,21 @@ internal class DeclineSentences(private val spoken: Spoken) {
             Decline.HeapBusy -> Said("splice is short of memory right now", next = Next.Resend(SEND_AGAIN))
             Decline.ReadTimeout -> Said("This request took too long to reach splice", next = Next.Resend(SEND_AGAIN))
             is Decline.BadBody, is Decline.Unfit, Decline.ForeignHost, Decline.BadLocalKey, is Decline.SpliceKeyAsLogin,
-            Decline.LivenessProbe, Decline.NoSharedLogin,
+            Decline.LivenessProbe, Decline.NoSharedLogin, Decline.NotLaunched,
             -> local(why, facts)
         }
+    }
+
+    /** The head's door: a splice key that is not this head's, or a session that proved nothing on a head holding logins
+     *  (PR #247 review, Oct 29), which sent no splice key at all and must not be told its key is bad. */
+    private fun door(why: Decline, head: String): Said = if (why == Decline.NotLaunched) {
+        Said(
+            "$head serves the logins it holds only to sessions splice started, and this session was started " +
+                "another way",
+            next = Next.Then("Start this session again with the head's own command, such as `$head --resume`."),
+        )
+    } else {
+        Said("This session's splice key is not valid", next = Next.Then("Start the session again from splice."))
     }
 
     /** Refusals about the request itself, its arrival and its caller. */
@@ -100,8 +112,7 @@ internal class DeclineSentences(private val spoken: Spoken) {
         is Decline.BadBody -> Said(arrived(why))
         is Decline.Unfit -> Said("This request needs more memory than splice can give one request")
         Decline.ForeignHost -> Said("splice answers only requests addressed to this machine")
-        Decline.BadLocalKey ->
-            Said("This session's splice key is not valid", next = Next.Then("Start the session again from splice."))
+        Decline.BadLocalKey, Decline.NotLaunched -> door(why, facts.head)
         is Decline.SpliceKeyAsLogin -> ownKey(why, facts)
         Decline.LivenessProbe -> Said("This request was a liveness probe, so no turn was started")
         Decline.NoSharedLogin -> Said(

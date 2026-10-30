@@ -1525,9 +1525,13 @@ function renderDoors() {
       : `<b class="upl-df" data-tn="door-tok">${noTokens(tot) || !tot.requests ? DRAW.dash : tok(tokensOf(tot))}</b><span class="upl-dq">tokens</span>`;
   }
   out.push(door("by", "Where it went", by));
+  // Results reads every request over its own window, beside two doors on the page's window and pick, so its door says
+  // what its figure covers wherever the two differ, in the band's words: its window, and all requests under a pick.
   const lead = PERF_HEADS.lead();
-  out.push(door("perf", "Results by command", !lead ? wait : lead.none ? `<span class="upl-dq">No requests</span>`
-    : `<b class="upl-df lv-${lead.level}" data-tn="door-failed">${lead.figure}</b><span class="upl-dq">failed</span>`));
+  const span = lead && lead.win !== ui.win ? ` in ${lead.word}` : "";
+  const all = ui.project != null || hasFilter() ? ", all requests" : "";
+  out.push(door("perf", "Results by command", !lead ? wait : lead.none ? `<span class="upl-dq">No requests${span}</span>`
+    : `<b class="upl-df lv-${lead.level}" data-tn="door-failed">${lead.figure}</b><span class="upl-dq">failed${span}${all}</span>`));
   let tk = wait;
   if (read) {
     const all = [...w.byHead.values()], tin = all.reduce((a, x) => a + x.in, 0), tc = all.reduce((a, x) => a + x.cached, 0);

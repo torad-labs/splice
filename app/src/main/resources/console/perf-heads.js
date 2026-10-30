@@ -373,13 +373,15 @@ const createPerfHeads = (scope, helpers) => {
     render();
   });
   /** The table's answer as the header's door reads it, or null before it has been read: the failed share and its level, or that
-   *  there were no requests at all. */
+   *  there were no requests at all, with the window it was read over (its key and its words). */
   function lead() {
-    if (!st.body || st.error || st.readFor !== winNow()) return null;
+    const win = winNow();
+    if (!st.body || st.error || st.readFor !== win) return null;
+    const over = { win, word: WINDOWS[win] };
     const used = (st.body.heads || []).filter((h) => h.count > 0);
-    if (!used.length) return { none: true };
+    if (!used.length) return { none: true, ...over };
     const all = used.reduce((x, h) => x + h.count, 0), bad = used.reduce((x, h) => x + failedOf(h), 0);
-    return { figure: rate(bad / all) ?? "0%", level: level(bad / all) };
+    return { figure: rate(bad / all) ?? "0%", level: level(bad / all), ...over };
   }
   return { html, lead };
 };

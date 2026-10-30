@@ -156,10 +156,15 @@ origin.
   heads resume the answer, up to five times, unless the cut reply had already started a tool call; then the turn ends, so re-send it. Other heads resume only when measured to continue, such as Kimi or
   a provider with `reanchor_prefill = true`; otherwise re-send the turn. Before any text,
   splice can retry the whole turn.
-- **A restart waits for an ordinary turn in flight, but only for 45 s.** A turn that is not a
-  compaction and is still streaming after that is cut, and Claude Code does not retry a turn cut
-  after its text began. A compaction is let finish first (see Changed). `splice upgrade` waits up to 30 minutes for
-  every head to go idle, then leaves the release staged unless you rerun with `--now`.
+- **A restart ends the turns in flight.** Each running turn that is not a compaction ends at once with "splice
+  restarted during this turn.", and the next daemon takes the session's next request. Claude Code sends a turn cut
+  before its text began again on its own; a turn cut after its text began ends there, so re-send it. Compactions are
+  waited for unless you restart with `--now` (see Changed). `splice upgrade` waits up to 30 minutes for every head to
+  go idle, then leaves the release staged unless you rerun with `--now`.
+- **Usage's Results by command counts every request, whatever the project or filters picked above.** It reads its own
+  1 hour, 24 hours or 7 days: the page's 5 hours reads as 24 hours and its 30 days as 7 days. Its switch names the
+  window it read, and with a project or filter picked its heading says "All requests". Results for one project, or
+  for the page's own 5 hours or 30 days, are not built yet.
 - **splice is tested against Claude Code 2.1.296.** When a session runs a newer one, doctor and
   `splice status` report it; the status line warns once per session during the daemon's lifetime.
 - **Claude Code's header reads `API Usage Billing` on every head but `claude-splice`.** Claude Code

@@ -38,7 +38,7 @@ import splice.core.auth.CredentialKey
 import splice.core.auth.CredentialVerdict
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
-import splice.core.client.LAUNCH_PROOF_HEADER
+import splice.core.config.LAUNCH_PROOF_HEADER
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.topology.SHARE_NODE_TOKEN

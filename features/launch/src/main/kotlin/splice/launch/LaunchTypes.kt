@@ -13,6 +13,8 @@ import kotlinx.serialization.json.put
 import splice.client.ClaudePolicy
 import splice.client.login.SignInWay
 import splice.client.login.TokenCaptureSpec
+import splice.core.config.LAUNCH_PROOF_HEADER
+import splice.core.config.TurnKey
 import splice.core.model.CLAUDE_CODE_ONE_MILLION
 import splice.core.model.CLIENT_TABLE_WINDOW
 import splice.core.model.ClientSpelling
@@ -228,14 +230,9 @@ public sealed class GatewayBearer {
 
     /** A head that forwards the client's own login holds no bearer of the session's. It may hold logins of its own,
      *  and serves those only to a caller proven splice's, so the session names [proof] in the launch proof header
-     *  (PR #247 review, Oct 29). */
-    public data class Forwarded(val proof: LaunchProof) : GatewayBearer()
-}
-
-/** The key a session on a head that forwards its own login names in the launch proof header (PR #247 review, Oct 29).
- *  Read when the launch is built. A function, so no data class around it can print the key. */
-public fun interface LaunchProof {
-    public fun key(): String
+     *  (PR #247 review, Oct 29). The key is read from [turnKey] when the launch is built, so a rotation reaches the
+     *  next launch, and this class never prints it. */
+    public data class Forwarded(val turnKey: TurnKey) : GatewayBearer()
 }
 
 /** How the launched client reaches this head's gateway: the port, the bearer, the request timeout and
@@ -283,6 +280,11 @@ public data class LaunchGateway(
     /** The apiKeyHelper command the session's settings carry, or null: a head that forwards the client's login
      *  keeps the client's own, as with [plantedToken]. */
     val keyHelper: String? get() = (bearer as? GatewayBearer.Helper)?.command?.takeUnless { forwardClientAuth }
+
+    /** The launch proof's line for the session's custom headers, on a head here that forwards the client's login, else
+     *  none: a command another machine serves never carries this machine's turn key (PR #247 review, Oct 29). */
+    val proofLines: List<String> get() = listOfNotNull((bearer as? GatewayBearer.Forwarded)?.takeIf { remote == null })
+        .map { "$LAUNCH_PROOF_HEADER: ${it.turnKey.get()}" }
 }
 
 public data class LaunchRecipe(

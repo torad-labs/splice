@@ -35,7 +35,7 @@ import splice.accounts.pool.HeadAccountPinSource
 import splice.app.probe.UpstreamPlaygroundProbe
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.CredentialKey
-import splice.core.client.LAUNCH_PROOF_HEADER
+import splice.core.config.LAUNCH_PROOF_HEADER
 import splice.core.usage.PlanLimit
 import splice.diagnostics.playground.PlaygroundHead
 import splice.head.usage.CredentialQuotaFiles

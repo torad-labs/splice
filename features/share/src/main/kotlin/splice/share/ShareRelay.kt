@@ -26,7 +26,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.io.readByteArray
-import splice.core.client.LAUNCH_PROOF_HEADER
+import splice.core.config.LAUNCH_PROOF_HEADER
 import splice.core.config.TurnKey
 import splice.core.topology.SHARE_NODE_TOKEN
 import splice.core.util.Cancellables

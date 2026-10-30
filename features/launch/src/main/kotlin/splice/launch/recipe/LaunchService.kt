@@ -27,11 +27,9 @@ import splice.client.wrap.WrapStateRead
 import splice.client.wrap.WrappedHead
 import splice.client.wrap.WrappedLaunch
 import splice.core.client.CLIENT_WALL_HEADER
-import splice.core.client.LAUNCH_PROOF_HEADER
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
 import splice.core.util.EnvReader
-import splice.launch.GatewayBearer
 import splice.launch.LaunchGateway
 import splice.launch.LaunchOutcome
 import splice.launch.LaunchSpec
@@ -386,10 +384,8 @@ public class LaunchService(
             // cooldown lift. Planted UNCONDITIONALLY, native included: it is a client-side WAIT
             // policy, and every head wants its session to survive a hold.
             put("CLAUDE_CODE_RETRY_WATCHDOG", "1")
-            val noProxy = mergedNoProxy(spec)
-            put("NO_PROXY", noProxy)
             // curl, which runs the statusline, reads the lowercase spelling first and ignores NO_PROXY once it is set.
-            put("no_proxy", noProxy)
+            mergedNoProxy(spec).let { put("NO_PROXY", it); put("no_proxy", it) }
             // Hide Claude Code's built-in Anthropic-account commands: in a gateway head, auth is the
             // proxy bearer above, so /login (a local-jsx command hardwired to platform.claude.com —
             // no hook or base-url override can reach it) and /logout are dead doors. These are the
@@ -411,17 +407,15 @@ public class LaunchService(
         }
     }
 
-    /** The ambient ANTHROPIC_CUSTOM_HEADERS, without a wall header or launch proof of its own, the session's client
-     *  wall, and on a head here that forwards the client's login, the launch's proof (PR #247 review, Oct 29). An outer
-     *  session's proof never rides along: it would reach a head it was not planted for, or another machine. */
+    /** The ambient ANTHROPIC_CUSTOM_HEADERS without splice's own headers, the session's client wall, and on a head here
+     *  that forwards the client's login, the launch's proof (PR #247 review, Oct 29). An outer session's splice headers
+     *  never ride along: its proof would reach a head it was not planted for, or another machine. */
     private fun customHeaders(spec: LaunchSpec): String {
-        val ours = listOf("$CLIENT_WALL_HEADER:", "$LAUNCH_PROOF_HEADER:")
+        // Every header splice plants for a session starts "x-splice-" (the client wall, the launch proof).
         val ambient = envReader("ANTHROPIC_CUSTOM_HEADERS").orEmpty().lines()
-            .filter { line -> line.isNotBlank() && ours.none { line.trim().startsWith(it, ignoreCase = true) } }
-        val wall = "$CLIENT_WALL_HEADER: ${spec.gateway.apiTimeoutMs}"
-        val forwarded = (spec.gateway.bearer as? GatewayBearer.Forwarded)?.takeIf { spec.gateway.remote == null }
-        val proof = forwarded?.let { "$LAUNCH_PROOF_HEADER: ${it.proof.key()}" }
-        return (ambient + wall + listOfNotNull(proof)).joinToString("\n")
+            .filter { it.isNotBlank() && !it.trim().startsWith("x-splice-", ignoreCase = true) }
+        return (ambient + "$CLIENT_WALL_HEADER: ${spec.gateway.apiTimeoutMs}" + spec.gateway.proofLines)
+            .joinToString("\n")
     }
 
     /** The ambient NO_PROXY with loopback added, and for a command another machine serves (LAN share) that machine's

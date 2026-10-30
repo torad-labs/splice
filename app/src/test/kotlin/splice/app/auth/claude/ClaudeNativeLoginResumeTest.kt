@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.core.client.LAUNCH_PROOF_HEADER
+import splice.core.config.LAUNCH_PROOF_HEADER
 import java.nio.file.Files
 import java.nio.file.Path
 

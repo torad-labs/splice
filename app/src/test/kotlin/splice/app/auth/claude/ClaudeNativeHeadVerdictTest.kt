@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.CredentialVerdict
-import splice.core.client.LAUNCH_PROOF_HEADER
+import splice.core.config.LAUNCH_PROOF_HEADER
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList

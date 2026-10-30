@@ -32,8 +32,8 @@ import splice.app.control.controlServerFor
 import splice.app.sources.PerfRowsFileSource
 import splice.app.sources.PerfSessionAccountIndex
 import splice.core.auth.CredentialKey
-import splice.core.client.LAUNCH_PROOF_HEADER
 import splice.core.config.ConfigService
+import splice.core.config.LAUNCH_PROOF_HEADER
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.core.util.JsonlSink

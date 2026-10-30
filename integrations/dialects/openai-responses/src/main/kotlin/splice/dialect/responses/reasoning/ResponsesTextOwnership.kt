@@ -13,6 +13,7 @@ internal class ResponsesTextOwner(private val text: CharSequence) {
     val length: Int get() = text.length
 
     fun borrow(): ResponsesTextRanges = ResponsesTextRanges(this)
+    fun owns(current: CharSequence): Boolean = current === text
     fun charAt(index: Int): Char = text[index]
 
     /** A terminal harvest may replace textBuf; such model-only text never rebinds existing delivery ranges. */
@@ -41,6 +42,11 @@ internal class ResponsesTextRanges(private val owner: ResponsesTextOwner) {
         val last = ranges.lastOrNull()
         if (last?.end == start) last.end = end else ranges.add(TextRange(start, end))
         length += count
+    }
+
+    /** Terminal model-only backfill can replace the buffer; its bytes cannot extend this delivery proof. */
+    fun append(count: Int, current: CharSequence) {
+        if (owner.owns(current)) append(count)
     }
 
     fun matchesPrefix(model: String, offset: Int = 0): Boolean {

@@ -152,7 +152,7 @@ internal class ResponsesReasoningFold(
         b.sawDelta = true
         state.thinkingBuf.append(text)
         sink.thinkingDelta(b.index, text)
-        delivered?.append(text.length)
+        delivered?.append(text.length, state.thinkingBuf)
     }
 
     private fun separatorChars(oi: Int, startsPart: Boolean): Int {

@@ -132,6 +132,18 @@ private fun visibleThinking(sink: RecordingSink): String =
 class SummaryStatusHeadersTest {
 
     @Test
+    fun `terminal model-only backfill cannot corrupt a later held-prefix delivery proof`() = runTest {
+        val sink = RecordingSink()
+        val frames = listOf(
+            event("response.reasoning_summary_text.delta", 2, mapOf("delta" to "<!")),
+            terminalOutput(listOf(summaryItem(listOf("Completed model text.")))),
+        )
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(frames.asFlow(), sink)
+        assertTrue(outcome is TurnOutcome.Success)
+        assertEquals("<!", visibleThinking(sink))
+    }
+
+    @Test
     fun `an oversized terminal suffix never reaches the client`() = runTest {
         val prefix = "**Checking**\n\nThe delivered paragraph."
         val sink = RecordingSink()

@@ -209,7 +209,7 @@ private object Kept {
         Decline.ReadTimeout -> HttpStatus.REQUEST_TIMEOUT
         Decline.NoSharedLogin, Decline.HeapBusy, is Decline.Budget, is Decline.Preflight, is Decline.BadBody,
         is Decline.UnknownModel, Decline.ForeignHost, Decline.BadLocalKey, Decline.NotLaunched,
-        Decline.NotLaunched, is Decline.SpliceKeyAsLogin, Decline.LivenessProbe, is Decline.Untranslatable,
+        is Decline.SpliceKeyAsLogin, Decline.LivenessProbe, is Decline.Untranslatable,
         -> null
     }
 

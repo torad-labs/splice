@@ -85,6 +85,7 @@ private const val SESSION = "one-command"
 private const val SEED = 20_261_029L
 private const val CASES = 120
 private const val RACE_CASES = 24
+private const val RETIRED_TURN_KEY = "a-turn-key-a-rotation-retired"
 
 class PoolFailoverTurnTest {
     @TempDir
@@ -275,6 +276,33 @@ class PoolFailoverTurnTest {
         }
     }
 
+    // PR #247 review round 3, Oct 30: `splice rotate-key` retires the turn key a launch wrote into the session's proof,
+    // and nothing refreshes it there. Splice started that session, so it is never told otherwise: it reads that its
+    // splice key is not valid and to start again from splice, which `splice sessions relaunch` does, and nothing of
+    // its turn reaches the vendor.
+    @Test
+    fun `a launched session whose proof a rotation retired reads that its key went stale`() = runBlocking {
+        val rig = FailoverRig(directory, limited = emptyMap(), headAuth = ClientAuthProvider("own"))
+        rig.launched = false
+        rig.start()
+        try {
+            val refused = rig.post(
+                mapOf(
+                    "Authorization" to "Bearer sk-ant-oat01-a-token-of-its-own",
+                    LAUNCH_PROOF_HEADER to RETIRED_TURN_KEY,
+                ),
+            )
+            val body = refused.bodyAsText()
+            assertEquals(HttpStatusCode.Unauthorized, refused.status)
+            assertTrue("splice key is not valid" in body, body)
+            assertTrue("Start the session again from splice" in body, body)
+            assertFalse("started another way" in body, body)
+            assertEquals(emptyList<String>(), rig.requests, "nothing of a refused turn reaches the vendor")
+        } finally {
+            rig.close()
+        }
+    }
+
     // The other machine's word is no proof either: the LAN share's relay adds the proof itself, and the word alone,
     // posted straight to the head's port, opens nothing.
     @Test
@@ -342,22 +370,20 @@ class PoolFailoverTurnTest {
             val random = Random(SEED)
             val wrong = (1..RACE_CASES).mapNotNull { case ->
                 rig.alone(own)
-                val credential = generatedCredential(random)
-                val carrier = if (random.nextBoolean()) {
-                    "Authorization" to "Bearer $credential"
-                } else {
-                    "x-api-key" to credential
-                }
+                val carrier = generatedCarrier(random)
                 val proven = random.nextInt(4) == 0
                 val proof = if (proven) mapOf(LAUNCH_PROOF_HEADER to "test-inference-token") else emptyMap()
                 val early = random.nextBoolean()
                 if (early) rig.join()
                 val before = rig.requests.size
+                val rows = rig.perfRows()
                 val status = rig.postSplit(mapOf(carrier) + proof) { if (!early) rig.join() }
                 val reached = rig.requests.drop(before)
-                val expected = if (proven) 200 else 401
-                "case $case $carrier proven=$proven early=$early -> $status, vendor heard $reached"
-                    .takeUnless { status == expected && (proven || reached.isEmpty()) }
+                // a caller refused after its body was read is refused by admission, which records the refusal's row;
+                // the door, at the headers, records none
+                val byAdmission = rig.perfRows() > rows
+                "case $case $carrier proven=$proven early=$early -> $status, vendor $reached, admission $byAdmission"
+                    .takeUnless { raceHeld(proven, early, status, reached, byAdmission) }
             }
             assertEquals(emptyList<String>(), wrong)
         } finally {
@@ -464,6 +490,17 @@ private fun generatedCredential(random: Random): String {
     return drawn.takeUnless { it in setOf("one", "two", "three", "test-inference-token") } ?: "$drawn-x"
 }
 
+/** What the race test expects of one case: a proven caller is served; any other is answered 401 with nothing at the
+ *  vendor, by admission when its login joined after the door. */
+private fun raceHeld(proven: Boolean, early: Boolean, status: Int, reached: List<String>, byAdmission: Boolean) =
+    if (proven) status == 200 else status == 401 && reached.isEmpty() && (early || byAdmission)
+
+/** A credential no login holds, in either carrier a caller can put it in. */
+private fun generatedCarrier(random: Random): Pair<String, String> {
+    val credential = generatedCredential(random)
+    return if (random.nextBoolean()) "Authorization" to "Bearer $credential" else "x-api-key" to credential
+}
+
 /** [limited] names each login the upstream refuses and how far out its five-hour reset is. */
 private class FailoverRig(
     directory: Path,
@@ -563,6 +600,9 @@ private class FailoverRig(
         ).copy(
             quotaBundle = quotaFor(null, if (pooled) pool else null),
             policy = HeadDeps.HeadPolicy(forwardClientAuth = true),
+            tokens = HeadDeps.HeadTokens({ "test-inference-token" }, { "test-operator-token" }) {
+                it == RETIRED_TURN_KEY
+            },
         ).copy(stores = headStores(directory).copy(perfStats = PerfStats(perfFile))),
     )
     private val client = HttpClient(CIO) {
@@ -654,6 +694,12 @@ private class FailoverRig(
     fun switchReason(): String? = pool.view(SESSION).lastSwitch?.reason
 
     fun answer(account: String): splice.core.head.ProviderAnswer? = head.providerAnswer(account)
+
+    /** How many perf rows the head has written so far. */
+    fun perfRows(): Int {
+        check(AsyncFileIo.drain())
+        return if (Files.exists(perfFile)) Files.readAllLines(perfFile).size else 0
+    }
 
     fun lastAccount(): String? {
         check(AsyncFileIo.drain())

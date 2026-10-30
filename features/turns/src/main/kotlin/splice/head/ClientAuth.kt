@@ -312,20 +312,33 @@ internal class HeldLoginDoor(
     private val responses: AdmissionResponses,
     private val refusedKeys: RefusedKeyLog,
 ) {
-    /** Whether [call], which forwards [forwarded], may run here. A refusal is answered and said here. */
+    /** Whether [call], which forwards [forwarded], may run here. A refusal is answered and said here.
+     *
+     *  PR #247 review round 3, Oct 30: a proof a rotation retired opens nothing, but splice did start that session, so
+     *  it reads that its splice key is not valid and to start again from splice, as `splice sessions relaunch` does,
+     *  never that it was started another way. */
     suspend fun opens(call: ApplicationCall, forwarded: Map<String, String>): Boolean {
         if (proven(call, forwarded)) return true
-        refusedKeys.refused(call.request.headers[SESSION_HEADER], KeyRefusal.NOT_LAUNCHED)
-        responses.respondNotLaunched(call)
+        val session = call.request.headers[SESSION_HEADER]
+        if (proofs(call).any(deps.tokens::retired)) {
+            refusedKeys.refused(session, KeyRefusal.RETIRED)
+            responses.respondUnauthorized(call)
+        } else {
+            refusedKeys.refused(session, KeyRefusal.NOT_LAUNCHED)
+            responses.respondNotLaunched(call)
+        }
         return false
     }
+
+    private fun proofs(call: ApplicationCall): List<String> =
+        call.request.headers.getAll(LAUNCH_PROOF_HEADER).orEmpty().map(String::trim)
 
     /** TRUE for a proven caller, which [HeldLoginVerdict] records, or for any caller while the head holds no login
      *  of its own, which admission still refuses a held login unless it was proven. */
     private fun proven(call: ApplicationCall, forwarded: Map<String, String>): Boolean {
         val pool = deps.quotaBundle.accountPool ?: return true
         val holds = pool.active
-        val named = call.request.headers.getAll(LAUNCH_PROOF_HEADER).orEmpty().any { isTurnKey(it.trim()) }
+        val named = proofs(call).any(::isTurnKey)
         val presented = CredentialKey.fromHeaders(forwarded)
         val proven = named || presented != null && pool.members.any { it.auth.observedCredentialKey() == presented }
         if (proven) HeldLoginVerdict.prove(call)

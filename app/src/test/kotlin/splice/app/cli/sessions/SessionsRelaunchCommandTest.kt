@@ -111,6 +111,31 @@ class SessionsRelaunchCommandTest {
         assertTrue(said.none { OWN_LOGIN in it || retiredTurnKey in it || keys.get() in it }, "no key: $said")
     }
 
+    // PR #247 review round 3, Oct 30: a launch writes the turn key into ANTHROPIC_CUSTOM_HEADERS as its launch proof,
+    // and nothing refreshes it there, so a rotation strands a session that proves itself that way to a head holding
+    // logins of its own. It is relaunched. A session whose proof is the current turn key, as every fresh launch's is,
+    // is left alone, so running the command again until none is left ends.
+    @Test
+    fun `after a rotation, a session whose launch proof holds the retired turn key is relaunched, and no fresh one`() {
+        val keys = MgmtKey(statePaths())
+        val retiredTurnKey = TurnKey(keys).get()
+        RetiredKeys(statePaths()).retire(keys.get())
+        keys.replace()
+        val stale = "ANTHROPIC_CUSTOM_HEADERS=anthropic-beta: a-flag\nx-splice-launch-proof: $retiredTurnKey"
+        val fresh = "ANTHROPIC_CUSTOM_HEADERS=x-splice-launch-proof: ${turnKey()}"
+        val sessions = listOf(
+            session("proved-before", 101, SessionRoute.Head("relay"), stale),
+            session("proved-after", 102, SessionRoute.Head("relay"), fresh),
+        )
+        val stand = standIn(mapOf("s-101" to (200 to RELAUNCHED)))
+
+        val exit = relaunch(sessions, ownPids = emptySet())
+
+        assertEquals(listOf("s-101"), stand.asked, "$said")
+        assertEquals(0, exit, "$said")
+        assertTrue(said.none { retiredTurnKey in it || turnKey() in it }, "no key: $said")
+    }
+
     // PR #247's fifth review: a rotation replaces the MCP access key too. A session launched with the key helper holds
     // no key in its environment, but its hosted MCP servers hold the MCP key its launch handed it until it ends. One
     // launched before the rotation is relaunched, though its head's file was since rewritten with the new key, and one

@@ -21,8 +21,9 @@
 - **`splice rotate-key` replaces the management key while the daemon runs, and sessions carry on.** A session splice
   launches reads its turn key through Claude Code's key helper, so after a rotation its next request reads the new
   key and the turn goes on, on the same head, with nothing typed lost. `splice sessions relaunch` relaunches each
-  session launched before the helper, and each session whose hosted MCP servers hold the MCP access key the rotation
-  replaced, on its own head, resumed; run it after the rotation until it reports none left.
+  session launched before the helper, each session whose launch proof carries the old turn key, and each session whose
+  hosted MCP servers hold the MCP access key the rotation replaced, on its own head, resumed; run it after the rotation
+  until it reports none left.
 - **`splice upgrade`** fetches, verifies and stages a release, waits for in-flight turns, restarts
   the daemon and runs doctor. `--rollback` puts the previous release back.
 - **Account pools on the ChatGPT, Grok, Kimi, Muse and Claude heads.** OAuth heads add labelled

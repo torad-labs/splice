@@ -29,6 +29,17 @@ function readJson(path: string): Json {
   return JSON.parse(text) as Json;
 }
 
+/** The bearer of a turn-auth-header file ("Authorization: Bearer <key>\n"), or "" when it holds none. */
+function bearerIn(path: string): string {
+  return /^Authorization: Bearer (\S+)\n$/.exec(readFileSync(path, "utf8"))?.[1] ?? "";
+}
+
+/** What an apiKeyHelper command prints, run the way Claude Code runs it: through a shell. */
+function helperPrints(command: string): string {
+  if (command === "") return "";
+  return Bun.spawnSync(["sh", "-c", command], { stdout: "pipe", stderr: "pipe" }).stdout.toString().trim();
+}
+
 function obj(value: unknown): Json {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Json) : {};
 }
@@ -119,8 +130,11 @@ const verbs: Record<string, (argv: readonly string[]) => void> = {
    *  .claude.json additionalModelOptionsCache row per model carrying its context_window) and hands
    *  Claude Code ONE client window (the pinned row's); the four tier slots never share a BARE id;
    *  the launch also packages the head (status line, /login command, its hook); and since v0.4.0 the
-   *  session holds the TURN key, never the management key, read by the status line from a 0600
-   *  header file, so neither settings.json nor curl's argv carries a key. */
+   *  session uses the TURN key, never the management key, kept in a 0600 header file, so neither
+   *  settings.json nor curl's argv carries a key. Since the key rotation of 2026-10-26 the session holds
+   *  no planted token at all: Claude Code reads ANTHROPIC_AUTH_TOKEN only once, so a rotated key
+   *  stranded it. It reads the key through the apiKeyHelper in settings.json instead, which prints
+   *  the header file's bearer and which Claude Code runs again after a 401. */
   "head-contract"(argv) {
     const head = arg(argv, 0, "head");
     const model = arg(argv, 1, "model");
@@ -132,7 +146,8 @@ const verbs: Record<string, (argv: readonly string[]) => void> = {
       }),
     );
     const home = arg(argv, 4, "home");
-    const env = obj(readJson(arg(argv, 5, "recipe"))["env"]);
+    const recipe = readJson(arg(argv, 5, "recipe"));
+    const env = obj(recipe["env"]);
     const control = arg(argv, 6, "control-port");
     const mgmtKey = readFileSync(arg(argv, 7, "mgmt-key-file"), "utf8").trim();
     const cfg = str(env["CLAUDE_CONFIG_DIR"]) || join(home, `.claude-${head}`);
@@ -164,17 +179,23 @@ const verbs: Record<string, (argv: readonly string[]) => void> = {
     const wrapped = slots.filter((v) => !expectedRows.has(v));
     check(new Set(bare).size === bare.length, `two tiers carry one bare id, so /model draws that model twice: ${JSON.stringify(slots)}`);
     check(wrapped.every((v) => [...expectedRows.keys()].some((m) => v.endsWith(`--${m}`))), `a tier points outside the roster: ${JSON.stringify(slots)}`);
-    const turnKey = str(env["ANTHROPIC_AUTH_TOKEN"]);
-    check(turnKey !== "" && turnKey !== mgmtKey, "a gateway session must be planted the turn key, not the management key");
-    check(!statusline.includes(mgmtKey) && !statusline.includes(turnKey), "no key inline in the status line command");
+    check(env["ANTHROPIC_AUTH_TOKEN"] === undefined, "a gateway session is planted a token, which Claude Code reads only once");
+    check(strings(recipe["unset"]).includes("ANTHROPIC_AUTH_TOKEN"),
+      "the launch keeps an outer session's ANTHROPIC_AUTH_TOKEN, which would shadow the key helper");
+    check(!statusline.includes(mgmtKey), "no key inline in the status line command");
     const words = splitWords(statusline);
     const headerArg = words[3] ?? "";
     check(JSON.stringify(words.slice(0, 3)) === JSON.stringify(["curl", "-sS", "-H"]) && headerArg.startsWith("@") &&
       JSON.stringify(words.slice(4)) === JSON.stringify(["--data-binary", "@-", `http://127.0.0.1:${control}/statusline/${head}`]),
       `status line must post to this head with the turn-key header file: ${JSON.stringify(words)}`);
     const headerFile = headerArg.slice(1);
-    check(readFileSync(headerFile, "utf8") === `Authorization: Bearer ${turnKey}\n`, "header file carries the planted turn key");
+    const turnKey = bearerIn(headerFile);
+    check(turnKey !== "" && turnKey !== mgmtKey, "the header file must carry the turn key, not the management key");
+    check(!statusline.includes(turnKey), "no key inline in the status line command");
     check(mode(headerFile) === 0o600, "header file is owner-only");
+    check(!JSON.stringify(settings).includes(turnKey) && !JSON.stringify(settings).includes(mgmtKey), "a key is written into settings.json");
+    check(helperPrints(str(settings["apiKeyHelper"])) === turnKey,
+      `the key helper must print the turn key from ${headerFile}: ${str(settings["apiKeyHelper"])}`);
     check(existsSync(loginMd), "no in-session /login command materialized");
     check(hookCmds.some((c) => c.includes("splice-login-hook")), `no /login hook on UserPromptSubmit: ${JSON.stringify(hookCmds)}`);
   },
@@ -210,23 +231,33 @@ const verbs: Record<string, (argv: readonly string[]) => void> = {
   },
 
   /** turn-key-placement <recipe> <settings.json> <state-dir> — after a relaunch the session env holds
-   *  a turn key, the management key is nowhere in it, neither key is in settings.json or the status
-   *  line, and the status line reads <state>/turn-auth-header, which is 0600. */
+   *  no key (since the key rotation of 2026-10-26 the session reads its turn key through the key
+   *  helper, so a rotated key reaches it), neither key is in settings.json or the status line, and the
+   *  status line and the key helper both read <state>/turn-auth-header, which is 0600 and carries a
+   *  turn key, not the management key. */
   "turn-key-placement"(argv) {
-    const env = obj(readJson(arg(argv, 0, "recipe"))["env"]);
+    const recipe = readJson(arg(argv, 0, "recipe"));
+    const env = obj(recipe["env"]);
     const settingsText = readFileSync(arg(argv, 1, "settings"), "utf8");
     const state = arg(argv, 2, "state-dir");
     const mgmt = readFileSync(join(state, "mgmt-key"), "utf8").trim();
-    const turn = str(env["ANTHROPIC_AUTH_TOKEN"]);
-    const statusline = str(obj((JSON.parse(settingsText) as Json)["statusLine"])["command"]);
+    const settings = obj(JSON.parse(settingsText) as Json);
+    const statusline = str(obj(settings["statusLine"])["command"]);
+    const helper = str(settings["apiKeyHelper"]);
     const header = join(state, "turn-auth-header");
-    console.log("session env holds:", turn === "" ? "no key" : turn === mgmt ? "THE MANAGEMENT KEY" : "a turn key");
-    console.log("header file:", header, existsSync(header) ? `0${mode(header).toString(8)}` : "missing");
-    check(turn !== "" && turn !== mgmt, "the relaunched session is not planted a turn key");
-    check(!JSON.stringify(env).includes(mgmt), "the management key is somewhere in the session env");
+    const turn = existsSync(header) ? bearerIn(header) : "";
+    console.log("session env holds:", env["ANTHROPIC_AUTH_TOKEN"] === undefined ? "no key" : "a planted token");
+    console.log("header file:", header, existsSync(header) ? `0${mode(header).toString(8)}` : "missing",
+      turn === "" ? "with no bearer" : turn === mgmt ? "carrying THE MANAGEMENT KEY" : "carrying a turn key");
+    check(env["ANTHROPIC_AUTH_TOKEN"] === undefined, "the relaunched session is planted a token, which Claude Code reads only once");
+    check(strings(recipe["unset"]).includes("ANTHROPIC_AUTH_TOKEN"),
+      "the relaunch keeps an outer session's ANTHROPIC_AUTH_TOKEN, which would shadow the key helper");
+    check(turn !== "" && turn !== mgmt, "turn-auth-header does not carry a turn key");
+    check(!JSON.stringify(env).includes(mgmt) && !JSON.stringify(env).includes(turn), "a key is somewhere in the session env");
     check(!settingsText.includes(mgmt) && !settingsText.includes(turn), "a key is written into settings.json");
     check(!statusline.includes(mgmt) && !statusline.includes(turn), "a key is in the status line argv");
     check(splitWords(statusline)[3] === `@${header}`, `the status line does not read ${header}: ${statusline}`);
+    check(helperPrints(helper) === turn, `the key helper does not print the turn key from ${header}: ${helper}`);
     check(mode(header) === 0o600, "turn-auth-header is not 0600");
   },
 

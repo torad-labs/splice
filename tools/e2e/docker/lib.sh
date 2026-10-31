@@ -40,7 +40,7 @@ resolve_state_dir() {
 ARTIFACTS="${ARTIFACTS:-/artifacts}"
 REPO="${REPO:-/repo}"
 OUT="${OUT:-/out}"
-# Anything carrying a key (a /launch recipe holds the turn key in ANTHROPIC_AUTH_TOKEN) lives here, a
+# Anything carrying a key (a 0.3.2 /launch recipe holds the management key in ANTHROPIC_AUTH_TOKEN) lives here, a
 # 0700 directory under $HOME, never under $OUT: run.sh copies /out into the checkout's receipts and
 # e2e-docker.yml uploads that tree as an artifact (V4-294).
 PRIVATE="${PRIVATE:-$HOME/.e2e-private}"

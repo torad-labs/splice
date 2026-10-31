@@ -563,7 +563,7 @@ step "head contract after relaunch: claudex (turn key, 0600 header file, roster,
 turn_key_placement() {
   bun "$LIB_TS" turn-key-placement "$PRIVATE/recipe-claudex.json" "$HOME/.claude-claudex/settings.json" "$(resolve_state_dir)"
 }
-step "after relaunch: turn key in the env, no key in settings.json or the status line, <state>/turn-auth-header 0600" turn_key_placement
+step "after relaunch: no key in the env, settings.json or the status line; the key helper and the status line read <state>/turn-auth-header 0600" turn_key_placement
 
 transcript_intact() {
   local projects="$HOME/.claude-claudex/projects"

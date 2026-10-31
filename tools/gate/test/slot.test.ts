@@ -501,8 +501,13 @@ try {
   // stands above a child it did not exec. A signal that reached only the first left the rest running under a freed slot.
   for (const [signal, status] of [["SIGTERM", 143], ["SIGINT", 130]] as const) {
     test(`a ${signal} to the wrapper takes the build's whole process group with it, and the slot is not freed before`, async () => {
-      // perl resets the SIGINT that a non-interactive bash gives every background child to ignore, so the child hears both signals
-      const fake = fakeBuildRoot('perl -e \'$SIG{INT}="DEFAULT"; exec "sleep", "30"\' &\necho $! >"$(dirname "$0")/child-pid"\nwait\n');
+      // perl resets the SIGINT that a non-interactive bash gives every background child to ignore, so the child hears both signals.
+      // perl names its own pid, and only after the reset: a pid bash wrote as perl started let the test signal a child that still
+      // ignored SIGINT, which then outlived the wrapper's 15 s grace and timed the test out under the full gate's load (Oct 30).
+      const fake = fakeBuildRoot(
+        'perl -e \'$SIG{INT}="DEFAULT"; open(my $f, ">", "$ARGV[0].tmp") or die; print $f $$; close $f; ' +
+          'rename("$ARGV[0].tmp", $ARGV[0]) or die; exec "sleep", "30"\' "$(dirname "$0")/child-pid" &\nwait\n',
+      );
       const lock = join(fake.dir, ".gradle-slot.lock");
       const wrapper = wrapperProcess(fake, `group-${signal}`);
       await waitForFile(join(fake.dir, "child-pid"), "started its background child");

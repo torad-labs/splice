@@ -1065,6 +1065,44 @@ class ResponsesRunawayGuardTest {
         assertTrue(deltas in 20..21, "expected the guard to stop the stream at the cap, saw $deltas deltas")
         assertTrue(emitted < 25, "the guard must unwind the upstream, not drain it; emitted=$emitted")
     }
+
+    // PR #247 review round 6, Oct 30: the reasoning fold refuses thinking text that would cross the cap and latches the
+    // budget's failure, so the refused text never reaches the thinking buffer. A guard that judged the buffers alone
+    // kept answering "within", and a reasoning stream that never ends was read to its end instead of unwound.
+    @Test
+    fun `a runaway reasoning stream trips the shared buffer cap and unwinds the upstream`() = runTest {
+        for (type in listOf("response.reasoning_text.delta", "response.reasoning_summary_text.delta")) {
+            val (outcome, emitted) = runawayReasoning(type)
+            val failure = outcome as TurnOutcome.Failure
+            assertEquals(ErrorType.API_ERROR, ClientWire.ownType(failure.cause), type)
+            assertFalse(failure.cause.providerReported, "$type: the runaway verdict is local")
+            assertTrue(failure.evidence.message.contains("exceeded max buffered size"), failure.evidence.message)
+            assertTrue(emitted < 25, "$type: the guard must unwind the upstream, not drain it; emitted=$emitted")
+        }
+    }
+
+    /** 25 reasoning deltas of 1M chars of [type] on one reasoning item, and never a terminal; the outcome and how many
+     *  deltas the upstream emitted before the translator stopped reading. */
+    private suspend fun runawayReasoning(type: String): Pair<TurnOutcome, Int> {
+        val chunk = "x".repeat(1_000_000)
+        var emitted = 0
+        val events = kotlinx.coroutines.flow.flow {
+            emit(ev("""{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}"""))
+            emit(ev("""{"type":"response.reasoning_summary_part.added","output_index":0}"""))
+            repeat(25) {
+                emitted += 1
+                emit(
+                    buildJsonObject {
+                        put("type", JsonPrimitive(type))
+                        put("output_index", JsonPrimitive(0))
+                        put("delta", JsonPrimitive(chunk))
+                    },
+                )
+            }
+        }
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(events, RecordingSink())
+        return outcome to emitted
+    }
 }
 
 // CX-01 in its own class: ResponsesStreamTranslatorTest sits at detekt's LargeClass ceiling.

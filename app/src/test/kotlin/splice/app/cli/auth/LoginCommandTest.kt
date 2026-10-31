@@ -126,8 +126,8 @@ class LoginCommandTest {
     fun `login for a command another machine serves says its logins live on that machine`(@TempDir tmp: Path) {
         val config = tmp.resolve(".config").resolve("splice").resolve("splice.toml")
         Files.createDirectories(config.parent)
-        val remotes = "\n[remote.claudex]\nurl = \"http://torad-server.lan:3097/claudex\"\n" +
-            "\n[remote.claudex-work]\nurl = \"http://torad-server.lan:3097/claudex?auth=work\"\n"
+        val remotes = "\n[remote.claudex]\nurl = \"http://devbox.lan:3097/claudex\"\n" +
+            "\n[remote.claudex-work]\nurl = \"http://devbox.lan:3097/claudex?auth=work\"\n"
         Files.writeString(config, FAST_HEAD_TOML + remotes)
         for (command in listOf("claudex", "claudex-work")) {
             val out = java.io.ByteArrayOutputStream()
@@ -145,7 +145,7 @@ class LoginCommandTest {
             val printed = out.toString()
             assertFalse(signedIn, printed)
             assertTrue(printed.contains("its logins live there"), printed)
-            assertTrue(printed.contains("Run `splice login claudex` on torad-server.lan"), printed)
+            assertTrue(printed.contains("Run `splice login claudex` on devbox.lan"), printed)
             assertFalse(printed.contains("unknown head") || printed.contains("`claudex-work login`"), printed)
         }
     }

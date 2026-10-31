@@ -3,7 +3,7 @@
 Approved by Marcos on October 19, 2026 and kept in this repository at `.design/brandkit/`. The console under `app/src/main/resources/console/` uses its mark, favicon, tokens and fonts.
 
 ## What this copy leaves out
-This folder holds the design files and stays near 14 MB. The full kit stays with the kit source in `brandkit-incoming/splice-brandkit/`, beside the repository checkout (`/home/marcos/Documents/dev/projects/splice/brandkit-incoming/splice-brandkit/`).
+This folder holds the design files and stays near 14 MB. The full kit stays with the kit source in `brandkit-incoming/splice-brandkit/`, beside the repository checkout (`../brandkit-incoming/splice-brandkit/`).
 - `src/`: the Python scripts that generate every file. The gate refuses a tracked `.py` file, so the generators stay with the kit source.
 - `motion/`: the flow loop and mark sting clips, and the logo animation (intro, idle, outro) in MP4, GIF, WebM, Lottie and SVG, with their `frames/`, `keyframes/` and `posters/` folders and the `-alpha.webm` clips. Together they would take this folder past 15 MB.
 - `brand-overview.html` keeps its links to `motion/` and `src/`. Those links resolve only in the full copy.

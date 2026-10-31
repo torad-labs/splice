@@ -5,7 +5,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertAcceptedCallbackText, assertInterruptedCallbackText } from "./interactive-output";
@@ -13,7 +13,8 @@ import { interactiveClient } from "./interactive-client";
 import { assertNativeBatch, assertNativeRestartBatch, assertNativeOutOfOrderBatch } from "./interactive-batch";
 import { assertNativeSequential } from "./interactive-sequential";
 
-const CLIENT = "/home/marcos/.local/share/claude/versions/2.1.310";
+// why: Claude Code 2.1.310 where its installer keeps it, in the home of whoever runs the qualification.
+export const CLIENT = resolve(homedir(), ".local/share/claude/versions/2.1.310");
 const MODEL = "gpt-6.1-sol";
 const SUMMARY = "PROBE_READABLE_REASONING: inspect the callback file, then run the Bash tool exactly once.";
 const SECOND_SUMMARY = "PROBE_SECOND_REASONING: read the already accepted effect file from the new model round.";

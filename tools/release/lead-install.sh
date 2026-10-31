@@ -15,8 +15,7 @@ set -euo pipefail
 sha=$1; why=${2:-}; what=${3:-}
 case "$why" in beta|milestone|live-fix) [ -n "$what" ] || { echo "REFUSED: say what the $why is"; exit 10; } ;;
   *) echo "REFUSED $sha: say why with beta, milestone or live-fix (repo/CLAUDE.md: this machine follows the beta channel, Marcos 2026-10-13)"; exit 10 ;; esac
-# R is the checkout this script sits in, not a path: the project moved from projects/mythos to projects/splice and a
-# spelled-out path went dead with it. The kept hub pairs sit beside the checkout, as tools/release hub and beta keep them.
+# R is the checkout this script sits in, not a path: a spelled-out path goes dead when the project folder moves. The kept hub pairs sit beside the checkout, as tools/release hub and beta keep them.
 R=$(cd "$(dirname "$0")/../.." && pwd); T=/tmp/splice-build-$sha-lead; D=~/.local/share/splice
 M=~/.local/state/splice-lead/last-restart-epoch
 ct(){ TZ=America/Chicago date '+%-I:%M %p CT'; }

@@ -35,13 +35,13 @@ class RemoteLaunchOwnerTest {
             assertTrue(state.startsWith(home), "the node's state is the one record-launch writes: $state")
 
             assertEquals(1, recordLaunch(launcher, "claudex-work", "http://elsewhere.lan:3097/claudex/@work"))
-            assertEquals(1, recordLaunch(launcher, "claudex-work", "http://torad-server.lan:3097/claudex"))
+            assertEquals(1, recordLaunch(launcher, "claudex-work", "http://devbox.lan:3097/claudex"))
             assertNull(LaunchOwners(state).read(launcher), "an address the entry doesn't name records nothing")
 
-            assertEquals(0, recordLaunch(launcher, "claudex-work", "http://torad-server.lan:3097/claudex/@work"))
+            assertEquals(0, recordLaunch(launcher, "claudex-work", "http://devbox.lan:3097/claudex/@work"))
             val owner = LaunchOwners(state).read(launcher)
             assertEquals("claudex-work", owner?.head)
-            assertEquals("http://torad-server.lan:3097/claudex/@work", owner?.baseUrl)
+            assertEquals("http://devbox.lan:3097/claudex/@work", owner?.baseUrl)
         }
     }
 
@@ -65,8 +65,8 @@ port = 3104
 discovery_prefix = "claude-plain--"
 
 [remote.claudex]
-url = "http://torad-server.lan:3097/claudex"
+url = "http://devbox.lan:3097/claudex"
 
 [remote.claudex-work]
-url = "http://torad-server.lan:3097/claudex?auth=work"
+url = "http://devbox.lan:3097/claudex?auth=work"
 """

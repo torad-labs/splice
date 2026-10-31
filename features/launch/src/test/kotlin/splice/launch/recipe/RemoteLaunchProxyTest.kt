@@ -28,7 +28,7 @@ class RemoteLaunchProxyTest(@param:TempDir private val tmp: Path) {
             contextWindow = 272000,
             modelOptionsCache = buildJsonObject { },
         ),
-        signIn = LaunchSignIn(loginCommand = "claudex login", signInLabel = "Codex (ChatGPT) on torad-server"),
+        signIn = LaunchSignIn(loginCommand = "claudex login", signInLabel = "Codex (ChatGPT) on devbox"),
         gateway = LaunchGateway(
             port = 0,
             bearer = GatewayBearer.Planted("splice-lan"),
@@ -44,21 +44,21 @@ class RemoteLaunchProxyTest(@param:TempDir private val tmp: Path) {
         val merged = LaunchService(
             ClaudeConfigMaterializer(tmp),
             envReader = { name -> if (name == "HTTPS_PROXY") "http://proxy.corp:8080" else null },
-        ).launch(remote("http://torad-server.lan:3097/claudex/@work"), emptyList(), dangerouslySkipPermissions = false)
+        ).launch(remote("http://devbox.lan:3097/claudex/@work"), emptyList(), dangerouslySkipPermissions = false)
             .env
             .getValue("NO_PROXY")
-        assertTrue("torad-server.lan" in merged.split(','), merged)
+        assertTrue("devbox.lan" in merged.split(','), merged)
     }
 
     @Test
     fun `a shell's lowercase no_proxy, which curl reads first, carries that machine too`() {
         val shell = mapOf("http_proxy" to "http://127.0.0.1:9", "no_proxy" to "localhost")
         val env = LaunchService(ClaudeConfigMaterializer(tmp), envReader = { shell[it] })
-            .launch(remote("http://torad-server.lan:3097/claudex"), emptyList(), dangerouslySkipPermissions = false)
+            .launch(remote("http://devbox.lan:3097/claudex"), emptyList(), dangerouslySkipPermissions = false)
             .env
         listOf("no_proxy", "NO_PROXY").forEach { name ->
             val planted = env[name].orEmpty().split(',')
-            assertTrue("torad-server.lan" in planted && "localhost" in planted, "$name=${env[name]}")
+            assertTrue("devbox.lan" in planted && "localhost" in planted, "$name=${env[name]}")
         }
     }
 }

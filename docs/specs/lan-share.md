@@ -9,34 +9,34 @@
 
 ## The goal
 
-Marcos, at the Mac, types `claudex`, and Claude Code runs on torad-server's ChatGPT login, the way Claude
-Code runs on Vertex or Bedrock: the Mac's Claude Code is pointed at torad-server's address and holds nothing
+Marcos, at the Mac, types `claudex`, and Claude Code runs on devbox's ChatGPT login, the way Claude
+Code runs on Vertex or Bedrock: the Mac's Claude Code is pointed at devbox's address and holds nothing
 else. No credential, token or file is copied to the Mac or kept in step with it.
 
 How anyone can tell it does:
 
-1. On torad-server, `splice share on` opens one port on the LAN (3097) and prints, for each command it
-   offers, the address another machine uses: `claudex  http://torad-server.lan:3097/claudex`.
-2. On the Mac, `splice remote add http://torad-server.lan:3097/claudex` links `claudex`. What the Mac keeps
+1. On devbox, `splice share on` opens one port on the LAN (3097) and prints, for each command it
+   offers, the address another machine uses: `claudex  http://devbox.lan:3097/claudex`.
+2. On the Mac, `splice remote add http://devbox.lan:3097/claudex` links `claudex`. What the Mac keeps
    for it is that address, one line in its `splice.toml`, and nothing else.
-3. `claudex` on the Mac starts Claude Code with torad-server's address as its base URL. Its turns answer on
-   torad-server's login, its `/model` picker lists torad-server's claudex models, and its statusline is
-   torad-server's for that session. The session's environment holds no credential: its auth token is a
-   fixed word that opens nothing, and torad-server signs every request with its own logins.
-4. Query params on the address choose what the Mac gets, and torad-server filters by them:
-   - `auth=<login>`: the Mac's sessions run on that one of torad-server's logins, as a Pin on the
+3. `claudex` on the Mac starts Claude Code with devbox's address as its base URL. Its turns answer on
+   devbox's login, its `/model` picker lists devbox's claudex models, and its statusline is
+   devbox's for that session. The session's environment holds no credential: its auth token is a
+   fixed word that opens nothing, and devbox signs every request with its own logins.
+4. Query params on the address choose what the Mac gets, and devbox filters by them:
+   - `auth=<login>`: the Mac's sessions run on that one of devbox's logins, as a Pin on the
      console's Accounts page does. The statusline's usage is then that login's.
    - `models=<id>,<id>`: the Mac is shown those models only (picker, tiers and pinned model).
    An unknown login or model is refused when the address is added and when `claudex` starts, naming what
-   torad-server has.
-5. When torad-server can't be reached, `claudex` says so before Claude Code starts: "claudex runs on
-   torad-server.lan (http://torad-server.lan:3097), which can't be reached: <why>", naming the host as the
+   devbox has.
+5. When devbox can't be reached, `claudex` says so before Claude Code starts: "claudex runs on
+   devbox.lan (http://devbox.lan:3097), which can't be reached: <why>", naming the host as the
    address does. Mid-session, Claude Code says it cannot connect; nothing between them turns that into
-   "overloaded". When torad-server answers but its claudex is not running, or does not answer, the turn's
-   error says that, in torad-server's name.
-6. `/login` in the Mac's `claudex` says its logins live on torad-server and how to sign in there. It never
+   "overloaded". When devbox answers but its claudex is not running, or does not answer, the turn's
+   error says that, in devbox's name.
+6. `/login` in the Mac's `claudex` says its logins live on devbox and how to sign in there. It never
    asks for a key. `claudex login` typed in the Mac's terminal says the same.
-7. torad-server answers machines on its own networks only. There is no join, token, pin or certificate.
+7. devbox answers machines on its own networks only. There is no join, token, pin or certificate.
 
 ## Decisions (Marcos, 2026-10-24): a node is a client, nothing more
 
@@ -99,8 +99,8 @@ What the Mac showed on 2026-10-24 that this replaces: the relay modeled as an ap
   OAuth beta on every turn it carries, which a node's Claude Code, holding no login, does not. While the
   caller's own sign-in is one of the head's logins, or it holds none, it has nothing to offer a node.
 - **Plain `claude` on a node** (Marcos, 2026-10-25: "claude here is still using a local account instead of
-  the server account on torad-server"). `claude` may name a remote command: `splice remote add
-  http://torad-server.lan:3097/claude-splice --as claude`. The wrapped `claude` then launches on the server's
+  the server account on [the server]"). `claude` may name a remote command: `splice remote add
+  http://devbox.lan:3097/claude-splice --as claude`. The wrapped `claude` then launches on the server's
   head, over the node's own `~/.claude` as it does today, so its settings, instructions, sessions and models
   stay the person's: only where its turns go changes. The node gets no model list from the server, since a
   Claude head's caller picks its own, and auto mode keeps Anthropic's own checks, since its turns reach

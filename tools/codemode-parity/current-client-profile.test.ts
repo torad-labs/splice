@@ -13,7 +13,7 @@ async function fixture(text:string){
   await writeFile(filename,text);
   const git=(args:string[],stdin="")=>{const run=Bun.spawnSync(["git",...args],{cwd:root,stdin:Buffer.from(stdin),stdout:"pipe",stderr:"pipe"});if(run.exitCode!==0)throw Error(run.stderr.toString());return run.stdout.toString().trim();};
   git(["init","--quiet"]);const blob=git(["hash-object","-w","--stdin"],text),tree=git(["mktree"],`100644 blob ${blob}\t${file}\n`);
-  const revision=git(["-c","user.name=marcospaulo","-c","user.email=marcospaulo.s.d@gmail.com","commit-tree",tree,"-m","Immutable parser fixture"]);
+  const revision=git(["-c","user.name=splice-fixture","-c","user.email=fixture@example.com","commit-tree",tree,"-m","Immutable parser fixture"]);
   const scan=Bun.spawn([resolve(import.meta.dir,"../../node_modules/.bin/ast-grep"),"scan","--inline-rules",astRules(),"--json=compact",filename],{stdout:"pipe",stderr:"pipe"});
   const [out,err,exit]=await Promise.all([new Response(scan.stdout).text(),new Response(scan.stderr).text(),scan.exited]);expect(exit,err).toBe(0);
   const ast=JSON.parse(out),units=ast.filter((node:any)=>["function_item","macro_definition"].includes(node.ruleId)).map((node:any)=>({

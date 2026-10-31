@@ -34,7 +34,7 @@
   ],
   "remainingFamilies": [],
   "findings": [],
-  "receiptPath": "/home/marcos/Documents/dev/projects/splice/artifacts/codemode-parity-2026-10-24/qualification-final-b228fe52/receipt.json",
+  "receiptPath": null,
   "referenceSourceLinkage": "unproven",
   "scope": "A green harness test suite or native reference subset never qualifies the product."
 }

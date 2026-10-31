@@ -27,7 +27,7 @@ public data class ShareConfig(
 @Serializable
 public data class RemoteConfig(val url: String)
 
-/** A remote command's address, read: the [server] (`http://torad-server.lan:3097`), the [head] it runs there, the
+/** A remote command's address, read: the [server] (`http://devbox.lan:3097`), the [head] it runs there, the
  *  server's login [auth] names, and the [models] the command is shown (empty: every model the head has). */
 public data class RemoteAddress(val server: String, val head: String, val auth: String?, val models: List<String>) {
     /** Where the server takes this command's turns, as a base URL Claude Code can be given: Claude Code appends its own
@@ -146,7 +146,7 @@ public const val SHARE_MODELS_PARAM: String = "models"
  *  it upstream (CallerCredential.nodeWord). */
 public const val SHARE_NODE_TOKEN: String = "splice-lan"
 
-private const val EXAMPLE = "http://torad-server.lan:3097/claudex"
+private const val EXAMPLE = "http://devbox.lan:3097/claudex"
 
 /** The port `[share]` listens on when the file names none. */
 internal const val SHARE_DEFAULT_PORT: Int = 3097

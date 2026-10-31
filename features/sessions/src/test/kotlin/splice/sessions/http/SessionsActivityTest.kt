@@ -46,7 +46,7 @@ class SessionsActivityTest {
 
     @Test
     fun `a call is its tool and its description, even when a long command comes first`(@TempDir tmp: Path) {
-        val command = "cd /home/marcos/Documents/dev/projects/mythos/repo && " + "./gradlew check ".repeat(20)
+        val command = "cd /home/me/projects/app && " + "./gradlew check ".repeat(20)
         val input = """{"command":"$command","description":"Run every check in the repo","timeout":120000}"""
         val last = row(tmp, LastSource(call("Bash", input))).getValue("last").jsonObject
         assertEquals("Bash", last.getValue("tool").jsonPrimitive.content)
@@ -60,8 +60,8 @@ class SessionsActivityTest {
             return last.getValue("text").jsonPrimitive.content
         }
         val pattern = "TurnWiring(" + "$" + "$" + "$" + "ARGS)"
-        assertEquals("", text("Bash", """{"command":"cd /home/marcos/secret && ls"}"""))
-        assertEquals("sessions.ts", text("Edit", """{"file_path":"/home/marcos/repo/src/lib/sessions.ts"}"""))
+        assertEquals("", text("Bash", """{"command":"cd /home/me/secret && ls"}"""))
+        assertEquals("sessions.ts", text("Edit", """{"file_path":"/home/me/repo/src/lib/sessions.ts"}"""))
         assertEquals(pattern, text("mcp__ast-grep__find_code", """{"pattern":"$pattern"}"""))
         assertEquals("kotlin coroutines", text("WebSearch", """{"query":"kotlin coroutines"}"""))
         assertEquals("example.com", text("WebFetch", """{"url":"https://example.com/a/b?x=1"}"""))

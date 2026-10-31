@@ -2,7 +2,7 @@
 
 - Created: 2026-09-15
 - Read: `@posthog/wizard` (GitHub README + AGENTS.md + `bin.ts`, PostHog docs and handbook),
-  `torad-toolkit` at `~/Documents/dev/projects/torad/torad-toolkit/torad-toolkit-main`
+  `torad-toolkit`, the Torad toolkit checkout
   (`src/cli/commands/init.ts`, `doctor.ts`, `detect.ts`, `package.json`),
   splice `SetupCommand.kt` / `AddCommand.kt` / `AdminSupport.kt` / `AddSeams.kt` / `CliStyle.kt`
   at `feat/v0.4.0` `7fa98534`

@@ -98,7 +98,7 @@ internal class ShareHttp(private val io: CoroutineDispatcher) {
             null
         }
 
-    /** The host [server] names (`torad-server.lan`, `192.168.1.236`), as said to the person. */
+    /** The host [server] names (`devbox.lan`, `192.168.1.50`), as said to the person. */
     fun hostOf(server: String): String = URI.create(server).host?.removeSurrounding("[", "]") ?: server
 }
 

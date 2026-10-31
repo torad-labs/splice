@@ -207,7 +207,7 @@ head-isolation law is not touched. It is the one place Splice writes under `~/.c
   "name": "gary",
   "sessionId": "<uuid minted at register, kept across helper restarts and key rotation>",
   "createdAt": 1792459759719,
-  "cwd": "/home/marcos",
+  "cwd": "/home/me",
   "key": {"id": "k2", "sha256": "<hex of sha256(peer key)>", "rotatedAt": 1792459759719},
   "scope": {"sendTo": ["*"]},
   "webhook": null,

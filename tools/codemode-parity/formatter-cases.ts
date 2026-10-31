@@ -3,8 +3,8 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { artifact, sha256, type CaseEvidence } from "./qualification";
 import { candidateCommand } from "./candidate-command";
+import { historicalCodexSource } from "./current-source";
 
-const sourceRoot = "/home/marcos/Documents/dev/infra/coding/codex";
 const revision = "17a9df60e420b58e3edc55efb1bb052e39492bbc";
 type Item = { type: string; text?: string; image_url?: string; detail?: string; audio_url?: string };
 const text = (value: string): Item => ({ type: "input_text", text: value });
@@ -50,7 +50,7 @@ async function command(argv: string[], input?: string): Promise<{ argv: string[]
   } finally { clearTimeout(timer); }
 }
 async function upstream(path: string, sourceRevision = revision): Promise<string> {
-  const result = await command(["git", "-C", sourceRoot, "show", `${sourceRevision}:${path}`]);
+  const result = await command(["git", "-C", historicalCodexSource(sourceRevision), "show", `${sourceRevision}:${path}`]);
   assert.equal(result.exitCode, 0, result.stderr);
   return result.stdout;
 }

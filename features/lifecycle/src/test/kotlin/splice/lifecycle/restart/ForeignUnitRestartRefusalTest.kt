@@ -188,9 +188,9 @@ class ForeignUnitRestartRefusalTest {
     @Test
     fun `the manager's environment block parses plain and dollar-quoted values`() {
         val env = ManagerEnvironment.parse(
-            "HOME=/home/marcos\nPATH=/usr/bin:/bin\nSPACED=\$'/home/a b'\nQUOTED=\$'it\\'s'\nNOEQUALS\n=orphan\n",
+            "HOME=/home/me\nPATH=/usr/bin:/bin\nSPACED=\$'/home/a b'\nQUOTED=\$'it\\'s'\nNOEQUALS\n=orphan\n",
         )
-        assertEquals("/home/marcos", env["HOME"])
+        assertEquals("/home/me", env["HOME"])
         assertEquals("/usr/bin:/bin", env["PATH"])
         assertEquals("/home/a b", env["SPACED"])
         assertEquals("it's", env["QUOTED"])

@@ -41,7 +41,7 @@ export async function prepareReviewWorkspace(directory: string): Promise<void> {
   await git("init", "--quiet");
   await writeFile(resolve(workspace, reviewProbeFile), before, { flag: "wx", mode: 0o600 });
   await git("add", "--", reviewProbeFile);
-  await git("-c", "user.name=marcospaulo", "-c", "user.email=marcospaulo.s.d@gmail.com", "commit", "--quiet", "-m", "test: establish private review fixture");
+  await git("-c", "user.name=splice-fixture", "-c", "user.email=fixture@example.com", "commit", "--quiet", "-m", "test: establish private review fixture");
   const head = await git("rev-parse", "HEAD");
   assert.match(head, /^[a-f0-9]{40}$/);
   await writeFile(resolve(workspace, reviewProbeFile), after);

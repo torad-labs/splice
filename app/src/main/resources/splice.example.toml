@@ -51,7 +51,7 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 # On a machine that runs another's heads, `splice remote add <address>` writes one line per command and links it.
 # auth= picks the server's login its sessions run on, models= the only models it is shown.
 # [remote.claudex]
-# url = "http://torad-server.lan:3097/claudex?auth=work&models=gpt-5.6-sol"
+# url = "http://devbox.lan:3097/claudex?auth=work&models=gpt-5.6-sol"
 
 # ── compaction instructions: your text after Claude Code's own summarizer prompt ──
 # Most specific scope wins and REPLACES the others (project+model > project > model > global);

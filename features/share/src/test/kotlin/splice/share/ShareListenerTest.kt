@@ -80,7 +80,7 @@ internal class ShareListenerTest {
     private fun listening(state: StatePaths) = ShareListener(
         ShareConfig(enabled = true, port = sharePort),
         object : SharedHeads {
-            override val machine: String = "torad-server"
+            override val machine: String = "devbox"
 
             override fun offered(): List<SharedHead> = listOf(
                 Head("stopped", TestPorts.reserve(), up = false),
@@ -130,7 +130,7 @@ internal class ShareListenerTest {
         assertEquals(503, status, body)
         val (type, message) = error(body)
         assertNotEquals("overloaded_error", type)
-        assertTrue(listOf("stopped", "torad-server", "not running").all(message::contains), message)
+        assertTrue(listOf("stopped", "devbox", "not running").all(message::contains), message)
     }
 
     @Test
@@ -139,7 +139,7 @@ internal class ShareListenerTest {
         assertEquals(503, status, body)
         val (type, message) = error(body)
         assertNotEquals("overloaded_error", type)
-        assertTrue(listOf("silent", "torad-server", "not answering").all(message::contains), message)
+        assertTrue(listOf("silent", "devbox", "not answering").all(message::contains), message)
     }
 
     @Test

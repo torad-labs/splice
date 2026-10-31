@@ -18,7 +18,7 @@ class SessionRegistryTest {
         Files.writeString(dir.resolve("$pid.json"), body)
     }
 
-    private val hostMachineId = "652c492b8aae4140b9d078835b2ed12a"
+    private val hostMachineId = "5f2b9c0e4a7d4e1b8c3f6a9d2e7b1c40"
     private val hostPidNamespace = "pid:[4026531836]"
     private val hostDomain = "linux:$hostMachineId:$hostPidNamespace"
 

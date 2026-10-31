@@ -65,8 +65,8 @@ class LanShareConfigTest {
 
     @Test
     fun `a remote command boots holding its address and nothing else`() {
-        val topology = boot("[remote.claudex]\nurl = \"http://torad-server.lan:3097/claudex?auth=work\"").getOrThrow()
-        assertEquals("http://torad-server.lan:3097/claudex?auth=work", topology.remote.getValue("claudex").url)
+        val topology = boot("[remote.claudex]\nurl = \"http://devbox.lan:3097/claudex?auth=work\"").getOrThrow()
+        assertEquals("http://devbox.lan:3097/claudex?auth=work", topology.remote.getValue("claudex").url)
     }
 
     @Test
@@ -131,8 +131,8 @@ class LanShareConfigTest {
     private fun generated(random: Random): Generated {
         val scheme = listOf("http", "https").random(random)
         val host = listOf(
-            "torad-server.lan",
-            "torad-server",
+            "devbox.lan",
+            "devbox",
             "192.168.${random.nextInt(256)}.${random.nextInt(1, 255)}",
             "[fd00::${random.nextInt(1, 0xffff).toString(16)}]",
             "box-${random.nextInt(100)}.local",

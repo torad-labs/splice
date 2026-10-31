@@ -9,6 +9,13 @@ async function git(cwd: string, args: string[]): Promise<{ code: number; stdout:
   try { const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]); return { code, stdout, stderr }; }
   finally { clearTimeout(timeout); }
 }
+/** The Codex clone the historical formatter and audio oracles read their pinned revision from: the one
+ *  CODEX_REFERENCE_REPO names, as for the current oracles. No machine's folder is assumed. */
+export function historicalCodexSource(revision: string): string {
+  const named = process.env.CODEX_REFERENCE_REPO;
+  if (!named) throw new Error(`set CODEX_REFERENCE_REPO to a Codex clone that holds ${revision}`);
+  return named;
+}
 /** A fresh checkout obtains the exact public source automatically; existing overrides remain read-only. */
 export async function resolveCurrentSource(pin: SourcePin, explicit?: string): Promise<string> {
   if (!/^[a-f0-9]{40}$/.test(pin.sourceRevision) || !/^rust-v\d+\.\d+\.\d+$/.test(pin.tag) || pin.repository !== "https://github.com/openai/codex") throw new Error("invalid official current source bootstrap pin");

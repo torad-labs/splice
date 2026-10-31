@@ -86,7 +86,7 @@ class CodexPeerRunTest {
         assertDelivered(dir, home, home.resolve(CONTROL_SOCKET))
     }
 
-    // The Codex home Eli runs its seats from, /home/marcos/.local/state/eli/codex-heads/native-recovery-bbo9r35v, puts
+    // A Codex home kept deep under a seat runner's state folder, as a runner keeps one per seat, puts
     // its control socket past the 108 bytes a Unix socket path may hold, as a link to the short socket the app-server
     // listens on; Oct 28 12:38 CT a codex peer ended there with "Unix domain path too long". The peer reaches its
     // app-server through the socket the link leads to.
@@ -94,7 +94,7 @@ class CodexPeerRunTest {
     fun `a Codex home whose control socket path is too long for a Unix socket still reaches its app-server`(
         @TempDir dir: Path,
     ) {
-        val home = dir.resolve("state/eli/codex-heads/native-recovery-bbo9r35v/" + "deep/".repeat(LONG_HOME_DEPTH))
+        val home = dir.resolve("state/runner/codex-heads/native-recovery-seat01/" + "deep/".repeat(LONG_HOME_DEPTH))
         val link = home.resolve(CONTROL_SOCKET)
         assertTrue(link.toString().toByteArray().size > UNIX_PATH_MAX, "precondition: the link's path is too long")
         val real = dir.resolve("s.sock")

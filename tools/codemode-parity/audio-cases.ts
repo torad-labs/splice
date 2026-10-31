@@ -5,10 +5,9 @@ import { spawn } from "node:child_process";
 import { artifact, type CaseEvidence } from "./qualification";
 import { candidateCommand } from "./candidate-command";
 import { capturedCommand } from "./current-command";
-import { resolveCurrentSource } from "./current-source";
+import { historicalCodexSource, resolveCurrentSource } from "./current-source";
 import { assertRustDependencyClosure, matchingRustToolchain, rustCompiler } from "./current-rust-build";
 
-const sourceRoot = "/home/marcos/Documents/dev/infra/coding/codex";
 const revision = "17a9df60e420b58e3edc55efb1bb052e39492bbc";
 export const audioManifest = `[package]
 name = "splice-native-audio-oracle"
@@ -54,7 +53,7 @@ export async function prepareAudioOracle(directory: string, sourceRevision = rev
     ["native-audio.rs", "codex-rs/utils/audio/src/lib.rs"],
   ];
   for (const [target, path] of sources) {
-    const source = await command(["git", "-C", sourceRoot, "show", `${sourceRevision}:${path}`]); assert.equal(source.exitCode, 0, source.stderr);
+    const source = await command(["git", "-C", historicalCodexSource(sourceRevision), "show", `${sourceRevision}:${path}`]); assert.equal(source.exitCode, 0, source.stderr);
     await writeFile(resolve(directory, target), source.stdout);
   }
   await writeFile(resolve(directory, "oracle.rs"), await readFile(resolve(import.meta.dir, "audio-oracle.rs")));

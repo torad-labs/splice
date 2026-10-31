@@ -1,6 +1,6 @@
 # Source evidence
 
-Where each value in the kit came from. Sources are the existing Splice files on torad-server and the 0.4.0 announcement video (`splice-0.4.0-announce.mp4`). Where a source existed, the kit uses its value.
+Where each value in the kit came from. Sources are the existing Splice files on the build machine and the 0.4.0 announcement video (`splice-0.4.0-announce.mp4`). Where a source existed, the kit uses its value.
 
 | Value | Source |
 | --- | --- |

@@ -1,6 +1,6 @@
 # Splice side of the cg benchmark: design
 
-From splice-lead, Oct 19 2026, for Simon's spec ~/.torad/simon/health/2026-10-19-splice-cg-benchmark.md.
+From splice-lead, Oct 19 2026, for Simon's spec of the same day, the splice cg benchmark.
 Design only. Nothing here is built, installed or switched on.
 
 ## What Splice can and cannot do, from the code

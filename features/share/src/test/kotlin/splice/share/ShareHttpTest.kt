@@ -20,7 +20,7 @@ import java.nio.channels.ClosedChannelException
 
 class ShareHttpTest {
     private val http = ShareHttp(Dispatchers.IO)
-    private val server = URI.create("http://torad-server.lan:3097/")
+    private val server = URI.create("http://devbox.lan:3097/")
 
     @Test
     fun `a server that is off or asleep is said as nothing answering, and asked whether it is on`() {
@@ -40,7 +40,7 @@ class ShareHttpTest {
             listOf("Network is unreachable", "Host is down", "Address family not supported by protocol family")
         for (reason in reasons) {
             val said = http.why(server, connectFailure(reason, SocketException(reason)))
-            assertTrue(said.contains(reason) && said.contains("torad-server.lan"), said)
+            assertTrue(said.contains(reason) && said.contains("devbox.lan"), said)
             assertFalse(said.contains("nothing is listening"), said)
         }
     }
@@ -48,9 +48,9 @@ class ShareHttpTest {
     @Test
     fun `a refused port is still said as nothing listening, and a missing route as no route`() {
         val refused = http.why(server, connectFailure(null, ClosedChannelException()))
-        assertTrue(refused.contains("nothing is listening on torad-server.lan:3097"), refused)
+        assertTrue(refused.contains("nothing is listening on devbox.lan:3097"), refused)
         val noRoute = http.why(server, connectFailure("No route to host", NoRouteToHostException("No route to host")))
-        assertTrue(noRoute.contains("this network has no route to torad-server.lan"), noRoute)
+        assertTrue(noRoute.contains("this network has no route to devbox.lan"), noRoute)
     }
 
     /** What java.net.http throws for a connect that failed with [os]: a ConnectException over a ConnectException over

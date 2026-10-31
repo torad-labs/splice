@@ -83,7 +83,7 @@ internal class RemoteAdd(
         return RemoteAdded(wanted, fresh.keys.toList(), offered.machine, refusals.isEmpty())
     }
 
-    /** Whether [address] names a server and nothing after it: `http://torad-server.lan:3097`. */
+    /** Whether [address] names a server and nothing after it: `http://devbox.lan:3097`. */
     private fun serverOnly(address: String): Boolean = try {
         val uri = URI.create(address)
         uri.rawPath.orEmpty().trim('/').isEmpty() && uri.rawQuery == null && uri.rawFragment == null

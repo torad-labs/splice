@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import { access, chmod, copyFile, mkdir, mkdtemp, open, readFile, readdir, rename, rm, stat, writeFile, type FileHandle } from "node:fs/promises";
 import { createServer } from "node:net";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { failureCode, Probe, type Sample } from "./probe";
@@ -147,7 +148,7 @@ async function main(): Promise<void> {
   invariant(hashes.front === expected.front && hashes.holder === expected.holder && hashes.jar === expected.jar, "Supplied artifact hashes differ");
   invariant(hashes.front !== hashes.oldFront, "Changed-byte upgrade requires a different front, not the old bytes");
   await access(java);
-  invariant(!receiptDir.startsWith("/home/marcos/."), "Receipts must not target an operator configuration home");
+  invariant(!receiptDir.startsWith(`${homedir()}/.`), "Receipts must not target an operator configuration home");
   await mkdir(dirname(receiptDir), { recursive: true, mode: 0o700 });
   await mkdir(receiptDir, { mode: 0o700 });
   receiptCreated = true;

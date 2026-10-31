@@ -7,11 +7,11 @@
 // in one tree, /tmp/splice-hub-build, then prints the pair in tools/release/mcp-hub.sha256's format.
 //
 // A fixed tree does NOT make a build reproducible, and no two builds of the same sources are expected to hash the same.
-// `strings` on the pairs kept on 2026-10-13 and 2026-10-19 finds the pre-push tree's path, projects/<name>/repo/.git/
+// `strings` on the pairs kept on 2026-10-13 and 2026-10-19 finds the pre-push tree's path, <checkout>/.git/
 // splice-prepush/tree, in every binary and /tmp/splice-hub-build in none: Gradle's build cache (org.gradle.caching=true)
 // hands the compile back from the tree that first made it, with that tree's paths inside (splice-hub-pin, Oct 19). The
-// two holders, whose sources did not change between them, differ in 84 bytes: the 6 letters of the project name in one
-// embedded path (projects/mythos to projects/splice), the 20 bytes of the ELF build ID, and 58 more spread through the
+// two holders, whose sources did not change between them, differ in 84 bytes: the 6 letters of the project folder's name in one
+// embedded path (the folder was renamed between the two builds), the 20 bytes of the ELF build ID, and 58 more spread through the
 // file that were not decoded. So a pin is the bytes of ONE build: the kept pair ships as built and is never rebuilt to
 // check it, and any other build, a cold cache, another tree or a runner, is expected to hash differently. A rebuild is for changed hub
 // sources (`git diff --quiet <kept sha> <head> -- integrations/mcp-hub`), and it is qualified again.

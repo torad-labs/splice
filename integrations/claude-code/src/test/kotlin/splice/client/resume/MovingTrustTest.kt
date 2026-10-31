@@ -17,7 +17,7 @@ class MovingTrustTest {
 
     @Test
     fun `a move in flight names the folder it is moving out of, and its end takes it back`() {
-        val home = Path.of("/home/marcos")
+        val home = Path.of("/home/me")
         moving.granted("s1", home, AT)
 
         assertEquals(home, moving.folderOf("s1"))
@@ -29,8 +29,8 @@ class MovingTrustTest {
 
     @Test
     fun `a daemon start clears every record a daemon that died mid-move left`() {
-        moving.granted("s1", Path.of("/home/marcos"), AT)
-        moving.granted("s2", Path.of("/home/marcos/work"), AT)
+        moving.granted("s1", Path.of("/home/me"), AT)
+        moving.granted("s2", Path.of("/home/me/work"), AT)
 
         assertEquals(2, moving.sweep(), "no move is in flight across a start")
         assertNull(moving.folderOf("s1"))
@@ -40,7 +40,7 @@ class MovingTrustTest {
 
     @Test
     fun `a session id that is no id is never written, read or deleted`() {
-        moving.granted("../escape", Path.of("/home/marcos"), AT)
+        moving.granted("../escape", Path.of("/home/me"), AT)
 
         assertEquals(0, moving.sweep(), "nothing was written for it")
         assertNull(moving.folderOf("../escape"))

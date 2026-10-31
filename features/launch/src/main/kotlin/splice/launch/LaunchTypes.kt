@@ -257,7 +257,7 @@ public data class LaunchGateway(
      * shut the only door that can heal a 401.
      */
     val forwardClientAuth: Boolean = false,
-    /** LAN share: the other machine's address this command's turns go to (`http://torad-server.lan:3097/claudex`), in
+    /** LAN share: the other machine's address this command's turns go to (`http://devbox.lan:3097/claudex`), in
      *  place of this machine's loopback [port]. Null for a head on this machine. */
     val remote: String? = null,
     /** A Claude head on another machine ([remote]): its turns reach Anthropic on that machine's logins, so this one,

@@ -9,13 +9,13 @@
     "units": 285
   },
   "sourceBinary": {
-    "path": "/home/marcos/.cache/splice/codemode-client-build/360319d8dee62d87e2d59fc0c21805d79519cfed/debug/splice-current-core-api-reference",
+    "path": "/home/me/.cache/splice/codemode-client-build/360319d8dee62d87e2d59fc0c21805d79519cfed/debug/splice-current-core-api-reference",
     "sha256": "bfdf94d615dca1fed3ac4e992d62e751d5c1d6777f9f0f7f654b788be753b845",
     "bytes": 596874280
   },
   "sourceCommand": {
     "argv": [
-      "/home/marcos/.cache/splice/codemode-client-build/360319d8dee62d87e2d59fc0c21805d79519cfed/debug/splice-current-core-api-reference"
+      "/home/me/.cache/splice/codemode-client-build/360319d8dee62d87e2d59fc0c21805d79519cfed/debug/splice-current-core-api-reference"
     ],
     "pid": 3007958,
     "exitCode": 0,

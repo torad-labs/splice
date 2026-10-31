@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile, readdir, writeFile, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
-import { interactiveScenario } from "./interactive-gateway";
+import { CLIENT, interactiveScenario } from "./interactive-gateway";
 import { assertNativeTypedMedia, assertAcceptedCallbackText, assertInterruptedCallbackText } from "./interactive-output";
 import { assertNativeBatch, assertNativeRestartBatch, assertNativeOutOfOrderBatch } from "./interactive-batch";
 import { assertNativeSequential } from "./interactive-sequential";
@@ -78,7 +78,7 @@ export async function runInteractiveCases(jar: string, evidence: string, runId: 
   const expectedJar = await identity(jar);
   const results = new Map<ScenarioName, any>();
   const rawArtifacts: CaseEvidence["artifacts"] = [];
-  rawArtifacts.push(await artifact("/home/marcos/.local/share/claude/versions/2.1.310"));
+  rawArtifacts.push(await artifact(CLIENT));
   const failures = new Map<ScenarioName, string>();
   for (const name of ["success", "late-failure", "native-lifecycle", "restart", "native-batch", "native-batch-restart", "native-batch-out-of-order", "native-sequential"] as const) {
     try {

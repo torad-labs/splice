@@ -1,7 +1,7 @@
 // Who the share listener answers (docs/specs/lan-share.md, "Who is on the LAN"): a source on this machine's own
 // networks, naming this machine in its Host. Properties over generated addresses and names, against three machines:
-// torad-server as it is (a house: its router's /24, the ISP's /64 and the router's unique local /64 on one interface,
-// Tailscale on another), a
+// a house (its router's /24, the ISP's /64 and the router's unique local /64 on one interface, Tailscale on
+// another), a
 // datacenter server (a public IPv4 address and the provider's shared networks on one interface), and a machine whose
 // interfaces cannot be read, which cannot tell the two apart and so answers loopback alone.
 package splice.share
@@ -22,15 +22,15 @@ internal class LanAdmissionTest {
         SharePrefix(InetAddress.getByName(address), bits, link)
 
     private val house = LanAdmission(
-        "torad-server",
+        "devbox",
         listOf("splice.example.net"),
         AttachedPrefixes {
             listOf(
-                prefix("192.168.1.236", 24, "enp8s0"),
-                prefix("2605:a601:aa80:1500:d347:d258:75ac:12c5", 64, "enp8s0"),
-                prefix("fd4e:9a1b:22c0:1::236", 64, "enp8s0"),
-                prefix("100.104.52.116", 32, "tailscale0"),
-                prefix("fd7a:115c:a1e0::3d01:34da", 128, "tailscale0"),
+                prefix("192.168.1.50", 24, "eno1"),
+                prefix("2001:db8:4a10:1500:6c1e:2bff:fe3a:9d41", 64, "eno1"),
+                prefix("fd12:3456:789a:1::50", 64, "eno1"),
+                prefix("100.101.102.103", 32, "tailscale0"),
+                prefix("fd7a:115c:a1e0::53", 128, "tailscale0"),
             )
         },
     )
@@ -47,7 +47,7 @@ internal class LanAdmissionTest {
         },
     )
 
-    private val unread = LanAdmission("torad-server", emptyList(), AttachedPrefixes { null })
+    private val unread = LanAdmission("devbox", emptyList(), AttachedPrefixes { null })
 
     private fun octet() = random.nextInt(256)
 
@@ -77,9 +77,9 @@ internal class LanAdmissionTest {
 
     private fun carrierGrade() = "100.${random.nextInt(64, 128)}.${octet()}.${octet()}"
 
-    private fun onHouseSixtyFour() = "2605:a601:aa80:1500:${hex()}:${hex()}:${hex()}:${hex()}"
+    private fun onHouseSixtyFour() = "2001:db8:4a10:1500:${hex()}:${hex()}:${hex()}:${hex()}"
 
-    private fun onHouseUniqueLocal() = "fd4e:9a1b:22c0:1:${hex()}:${hex()}:${hex()}:${hex()}"
+    private fun onHouseUniqueLocal() = "fd12:3456:789a:1:${hex()}:${hex()}:${hex()}:${hex()}"
 
     /** A tailnet peer's IPv6 address: Tailscale's fd7a:115c:a1e0::/48, inside the unique local range. */
     private fun tailnet() = "fd7a:115c:a1e0:${hex()}::${hex()}:${hex()}"
@@ -90,7 +90,7 @@ internal class LanAdmissionTest {
 
     /** A global IPv6 address off the house's /64: another /64 under the same /48, or anywhere else. */
     private fun offHouseSixtyFour() = listOf(
-        "2605:a601:aa80:${random.nextInt(0x1501, 0x10000).toString(16)}::${hex()}",
+        "2001:db8:4a10:${random.nextInt(0x1501, 0x10000).toString(16)}::${hex()}",
         "2a00:${hex()}:${hex()}::${hex()}",
     ).random(random)
 
@@ -147,19 +147,19 @@ internal class LanAdmissionTest {
     fun `a Host naming this machine, by address or by name, is answered`() = repeat(CASES) {
         val port = if (random.nextBoolean()) ":${random.nextInt(1, 65536)}" else ""
         val name = listOf(
-            "torad-server",
-            "torad-server.local",
-            "torad-server.lan",
-            "torad-server.home",
-            "torad-server.internal",
-            "torad-server.lan.",
+            "devbox",
+            "devbox.local",
+            "devbox.lan",
+            "devbox.home",
+            "devbox.internal",
+            "devbox.lan.",
             "splice.example.net",
         ).random(random).let { if (random.nextBoolean()) it.uppercase() else it }
         val host = listOf(
             name + port,
             rfc1918() + port,
             "[fd00::${hex()}]$port",
-            "[2605:a601:aa80:1500::${hex()}]$port",
+            "[2001:db8:4a10:1500::${hex()}]$port",
         ).random(random)
         assertTrue(house.admitsHost(host), host)
     }
@@ -171,11 +171,11 @@ internal class LanAdmissionTest {
             val label = (1..random.nextInt(1, 12)).map { letters.random(random) }.joinToString("")
             val host = listOf(
                 "$label.example.com",
-                "torad-server.$label.com",
-                "$label-torad-server",
+                "devbox.$label.com",
+                "$label-devbox",
                 "[zz:${label.take(2)}]",
             ).random(random)
-            if (host.substringBefore(':').trimEnd('.').lowercase() != "torad-server") {
+            if (host.substringBefore(':').trimEnd('.').lowercase() != "devbox") {
                 assertFalse(house.admitsHost(host), host)
             }
         }

@@ -16,7 +16,7 @@ public sealed class ShareDirectoryRead {
 public class ShareDirectory(io: CoroutineDispatcher) {
     private val http = ShareHttp(io)
 
-    /** What [server] (`http://torad-server.lan:3097`) offers. */
+    /** What [server] (`http://devbox.lan:3097`) offers. */
     public suspend fun read(server: String): ShareDirectoryRead {
         val asked = when (val answer = http.get(URI.create("$server/"))) {
             is ShareAnswer.Unreachable -> return refused("$server can't be reached: ${answer.why}")

@@ -166,6 +166,9 @@ origin.
   window it read, and with a project or filter picked its heading says "All requests". The header's door to it says
   the same, as in "3.0% failed in 24 hours, all requests". Results for one project, or for the page's own 5 hours or
   30 days, are not built yet.
+- **GPT-6.1 Sol's thinking often shows headings only on a ChatGPT subscription.** The subscription returns its
+  reasoning summaries as headings without their paragraphs, in every request shape tried on 2026-10-30. Setting
+  `summary = "concise"` under the head's `[heads.<name>.overrides]` brought the paragraphs back in some turns, not all.
 - **splice is tested against Claude Code 2.1.296.** When a session runs a newer one, doctor and
   `splice status` report it; the status line warns once per session during the daemon's lifetime.
 - **Claude Code's header reads `API Usage Billing` on every head but `claude-splice`.** Claude Code

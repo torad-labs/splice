@@ -72,11 +72,13 @@ import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.transport.UpstreamClient
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.SocketException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.random.Random
 import kotlin.time.Duration.Companion.seconds
 
@@ -85,6 +87,7 @@ private const val SESSION = "one-command"
 private const val SEED = 20_261_029L
 private const val CASES = 120
 private const val RACE_CASES = 24
+private const val ANSWER_TIMEOUT_MS = 10_000
 private const val RETIRED_TURN_KEY = "a-turn-key-a-rotation-retired"
 
 class PoolFailoverTurnTest {
@@ -571,8 +574,19 @@ private class FailoverRig(
     @Volatile
     private var poolRead = CountDownLatch(1)
 
+    /** Run by the next read of the pool's membership, on the head's own thread and before that read returns. The pool
+     *  calls its refresh hook AHEAD of the read it reconciles, so the door's signal comes a moment before the door has
+     *  read: a join the test ran on its own thread on that signal could land first, and the door then refused at the
+     *  headers what admission was to refuse (full gate, Oct 30: the captured first reader was the door itself). Armed
+     *  once the door has signalled, the join lands on the head's next read, after the door's and before the login is
+     *  chosen. */
+    private val atNextRead = AtomicReference<(() -> Unit)?>(null)
+
     init {
-        pool.membershipRefresh = AccountMembershipRefresh { poolRead.countDown() }
+        pool.membershipRefresh = AccountMembershipRefresh {
+            atNextRead.getAndSet(null)?.invoke()
+            poolRead.countDown()
+        }
     }
     private val providerClient = HttpClient(CIO)
     private val perfFile = directory.resolve("perf.jsonl")
@@ -653,7 +667,9 @@ private class FailoverRig(
     }
 
     /** One streamed turn carrying exactly [headers], sent by hand: the headers and half the body, then, once the
-     *  head has read its pool, [between], then the rest of the body. Answers the response's status. */
+     *  head's door has read its pool, the rest of the body, with [between] run at the head's next read of its pool
+     *  ([atNextRead]). Answers the response's status, after reading the answer to the close, so that no read of this
+     *  turn's reaches the next one. */
     suspend fun postSplit(headers: Map<String, String>, between: () -> Unit): Int = withContext(Dispatchers.IO) {
         val body = (
             """{"model":"synthetic--model","stream":true,"max_tokens":16,""" +
@@ -675,10 +691,23 @@ private class FailoverRig(
             out.write(body, 0, body.size / 2)
             out.flush()
             check(poolRead.await(10, TimeUnit.SECONDS)) { "the head never read its pool" }
-            between()
-            out.write(body, body.size / 2, body.size - body.size / 2)
-            out.flush()
-            val status = socket.getInputStream().bufferedReader().readLine().orEmpty()
+            atNextRead.set(between)
+            try {
+                out.write(body, body.size / 2, body.size - body.size / 2)
+                out.flush()
+            } catch (expected: SocketException) {
+                // The door answered at the headers and closed before the body's end, so the rest had nowhere to go.
+            }
+            socket.soTimeout = ANSWER_TIMEOUT_MS
+            val answer = socket.getInputStream().bufferedReader()
+            val status = answer.readLine().orEmpty()
+            try {
+                answer.forEachLine { } // to the close: the turn is over before the next case begins
+            } catch (expected: SocketException) {
+                // A head that closed with the body's rest unread resets the connection after its answer.
+            }
+            // A turn the door refused reads the pool no more, and its [between] must not run at the next turn's door.
+            atNextRead.set(null)
             status.split(" ").getOrNull(1)?.toIntOrNull() ?: -1
         }
     }

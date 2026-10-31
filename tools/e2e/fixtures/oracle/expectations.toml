@@ -246,6 +246,29 @@ regression and must go kotlin-wrong.
 """
 
 [[divergence]]
+field = "expected_upstream_requests[].input[0]"
+kind = "inserted-item"
+status = "sanctioned"
+authority = "Marcos, 2026-10-28, quoted in a493ed3e5: ship Splice by default with a pre defined configured append system prompt, that the user can change if they'd like. Since a493ed3e5 a head on the OpenAI Responses dialect that sets neither system_prompt nor system_prompt_file appends splice's standing-prompt.md beside Claude Code's own prompt"
+pinned_sha256 = "c0c24e57064b5e764d369050242060b79b44847bdcf0e5ebe05870c906f75252"
+affects = "every request the responses dialect sends for a head with no prompt of its own, which is every request of this replay (its splice.toml sets none)"
+reason = """
+Since a493ed3e5 the shipped standing prompt rides as one developer item, placed after the input's leading
+developer items (ResponsesSystemPrompt.appended), and the recorded inputs have none, so it is input[0] of
+every request. The pin is sha256(JSON.stringify({"role":"developer","content":<standing-prompt.md, trailing
+whitespace trimmed>})), the bytes the daemon sends; oracle-standing-prompt.test.ts derives it from the
+shipped file. The replay takes exactly that item out of each observed request and grades the rest against
+the recording and the scenario pins, so a request without it, with other bytes there, or with it anywhere
+else is red. A decided edit of standing-prompt.md re-pins this row.
+"""
+note = """
+Replay 2026-10-30 on a jar of 7971cc7eb: all 22 requests across the 11 scenarios led with this one item,
+and with it taken out every request matched again: the seven fixture-graded scenarios field for field,
+and compactish, failed, overflow_sse and truncated their pinned upstream sha256 (9ce4ec2c, 821f0db6,
+1da272e2, e12c7ef3) unchanged. Their client streams were untouched by it.
+"""
+
+[[divergence]]
 field = "expected_upstream_requests[].prompt_cache_key"
 status = "sanctioned"
 authority = "cache-key strategy quirk: ResponsesRequestBuilder.kt:141 CacheKeyStrategy.SESSION_ID (TOML cache_key = \"session-id\", shipped for grok at config/splice.example.toml:94); review repair 2026-07-30"

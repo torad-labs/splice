@@ -1731,12 +1731,17 @@ export function assertGuidance(body: PyValue, callerSystem: string, enabled: boo
   if (!pyEq(get(inputItems[0] as PyValue, "type"), "additional_tools") || !pyEq(get(inputItems[0] as PyValue, "role"), "developer")) {
     throw new ValueError("missing Responses lite additional_tools prefix");
   }
-  const developers = inputItems.filter((item) => pyEq(get(item, "role"), "developer") && !pyEq(get(item, "type"), "additional_tools"));
-  if (developers.length !== 1 || developers[0] !== inputItems[1]) {
+  const expected = callerSystem + (enabled ? "\n\n" + GUIDANCE : "");
+  // input[1] carries the caller's instructions and the guidance. A later developer item is a head prompt layer, such as
+  // the standing prompt a head with no prompt of its own ships with (a493ed3e5); it never carries either of them.
+  const layers = inputItems.slice(2).filter((item) => pyEq(get(item, "role"), "developer") && !pyEq(get(item, "type"), "additional_tools"));
+  if (!pyEq(get(inputItems[1] as PyValue, "role"), "developer") || layers.some((layer) => {
+    const text = get(layer, "content");
+    return typeof text !== "string" || text === expected || text.includes(callerSystem) || text.includes("<code_mode_orchestration>");
+  })) {
     throw new ValueError("developer instructions moved or duplicated");
   }
-  const instructions = get(developers[0] as PyValue, "content");
-  const expected = callerSystem + (enabled ? "\n\n" + GUIDANCE : "");
+  const instructions = get(inputItems[1] as PyValue, "content");
   if (instructions !== expected) {
     throw new ValueError("developer instructions did not preserve the expected caller/guidance boundary");
   }

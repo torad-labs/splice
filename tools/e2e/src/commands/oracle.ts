@@ -26,6 +26,9 @@
  *     a mismatch confined to a sanctioned field whose observed value equals the row's
  *     expected_without_session_header still passes (the runner sends NO session header, so the
  *     frozen fallback bytes are what a faithful gateway must reproduce — see the row's note).
+ *     A [[divergence]] row of kind "inserted-item" pins ONE item the gateway inserts into every request's input
+ *     (the shipped standing prompt, a493ed3e5): the replay takes exactly those bytes out of each request before
+ *     grading the rest, and a request missing them, or carrying other bytes there, is red.
  *   - the fat jar is an INPUT, never built from here (replay.mjs used to fall back to a nested
  *     `./gradlew :app:shadowJar`; inside the gate the gradle slot is already held, so a nested
  *     gradle deadlocks or double-builds). A missing jar is a harness failure that names the
@@ -81,6 +84,9 @@ export const DEFAULT_JAR = "app/build/libs/app-all.jar";
 const VENDORED_NAME = "mock-upstream.vendored.mjs";
 const EXPECTATIONS_NAME = "expectations.toml";
 const MANIFEST_NAME = "_manifest.json";
+/** The one [[divergence]] kind beside the default field-wise row: an item inserted into every request's input. */
+const INSERTED_ITEM = "inserted-item";
+const INSERTED_FIELD = /^expected_upstream_requests\[\]\.input\[(\d+)\]$/;
 /** The mock region, delimited by markers that have been stable across the port. */
 const START = "import http from 'node:http';";
 const END = "mock.listen(0, '127.0.0.1');";
@@ -133,6 +139,11 @@ export interface SanctionedField {
   field: string;
   without?: string;
   pinnedValue?: string;
+}
+export interface SanctionedInsert {
+  field: string;
+  at: number;
+  sha256: string;
 }
 export interface SanctionedScenario {
   pinnedStatus?: number;
@@ -281,6 +292,12 @@ export function enrolmentDrift(oracleDir: string): string | null {
     }
     if (!tomlStr(block, "pinned_sha256")) {
       problems.push(`UNPINNED     ${field}: sanctioned divergence with no pinned bytes`);
+    }
+    const kind = tomlStr(block, "kind");
+    if (kind !== undefined && kind !== INSERTED_ITEM) {
+      problems.push(`UNKNOWN      ${field}: kind ${JSON.stringify(kind)} is not one this table defines`);
+    } else if (kind === INSERTED_ITEM && !INSERTED_FIELD.test(field)) {
+      problems.push(`UNKNOWN      ${field}: an inserted-item row names expected_upstream_requests[].input[N]`);
     }
   }
   for (const name of [...onDisk].sort()) {
@@ -440,6 +457,7 @@ export function sanctionedFields(text: string): SanctionedField[] {
   const rows: SanctionedField[] = [];
   for (const block of text.split(/^\[\[divergence\]\]$/m).slice(1)) {
     const field = tomlStr(block, "field");
+    if (tomlStr(block, "kind") === INSERTED_ITEM) continue; // graded by withoutSanctionedInserts, never field-wise
     if (field && tomlStr(block, "status") === "sanctioned") {
       const row: SanctionedField = { field };
       const without = tomlStr(block, "expected_without_session_header");
@@ -451,6 +469,47 @@ export function sanctionedFields(text: string): SanctionedField[] {
   }
   return rows;
 }
+/** A [[divergence]] row of kind "inserted-item" sanctions ONE item the gateway puts into every request's input at a
+ *  fixed index, an item the recording cannot hold: splice's shipped standing prompt (a493ed3e5) leads the input of
+ *  every Responses request whose head sets no prompt. The row pins the item's bytes, sha256(JSON.stringify(item)). */
+export function sanctionedInserts(text: string): SanctionedInsert[] {
+  const rows: SanctionedInsert[] = [];
+  for (const block of text.split(/^\[\[divergence\]\]$/m).slice(1)) {
+    if (tomlStr(block, "kind") !== INSERTED_ITEM || tomlStr(block, "status") !== "sanctioned") continue;
+    const field = tomlStr(block, "field");
+    const sha256 = tomlStr(block, "pinned_sha256");
+    const at = field === undefined ? undefined : INSERTED_FIELD.exec(field)?.[1];
+    if (field === undefined || at === undefined || sha256 === undefined) {
+      throw new HarnessError(`an inserted-item divergence names expected_upstream_requests[].input[N] and pins its sha256 (field ${field ?? "(absent)"})`);
+    }
+    rows.push({ field, at: Number(at), sha256 });
+  }
+  return rows;
+}
+
+/** Every observed request with each sanctioned inserted item taken out, so the rest is still graded against the
+ *  recording and the scenario pins. A request missing the item at its index, or carrying other bytes there, is a
+ *  problem and is graded whole: a sanction is a pin, so the shipped default must reach the wire exactly as pinned. */
+export function withoutSanctionedInserts(observed: unknown[], inserts: readonly SanctionedInsert[], problems: string[]): unknown[] {
+  return observed.map((request, i) => {
+    let graded = request;
+    for (const insert of inserts) {
+      const input = (graded as { input?: unknown } | null)?.input;
+      const item = Array.isArray(input) ? input[insert.at] : undefined;
+      const sha = item === undefined ? null : createHash("sha256").update(JSON.stringify(item)).digest("hex");
+      if (!Array.isArray(input) || sha !== insert.sha256) {
+        problems.push(
+          `upstream[${i}].input[${insert.at}]: expected the sanctioned inserted item ${insert.sha256.slice(0, 16)}…, ` +
+            `got ${sha === null ? "none" : `${sha.slice(0, 16)}…`}`,
+        );
+        continue;
+      }
+      graded = { ...(graded as Record<string, unknown>), input: [...input.slice(0, insert.at), ...input.slice(insert.at + 1)] };
+    }
+    return graded;
+  });
+}
+
 export function sanctionedScenarios(text: string): Record<string, SanctionedScenario> {
   const rows: Record<string, SanctionedScenario> = {};
   for (const block of text.split(/^\[\[scenario\]\]$/m).slice(1)) {
@@ -848,6 +907,7 @@ command = "claudex"
     const bearer = readFileSync(join(tmp, "state", "mgmt-key"), "utf8").trim();
     const expectations = readExpectations(oracleDir);
     const sanctioned = sanctionedFields(expectations);
+    const inserts = sanctionedInserts(expectations);
     const roster = readdirSync(oracleDir)
       .filter((f) => f.endsWith(".json") && f !== MANIFEST_NAME)
       .map((f) => f.replace(/\.json$/, ""))
@@ -866,6 +926,8 @@ command = "claudex"
       const out = await post(HEAD_PORT, fx.client_request, bearer);
       const observedUpstream = m.upstreamBodies.slice(before).map((x) => x.body);
       const problems: string[] = [];
+      // What is graded: the observed requests less each sanctioned inserted item (the verdict keeps them whole).
+      const gradedUpstream = withoutSanctionedInserts(observedUpstream, inserts, problems);
 
       // A sanctioned scenario pins BOTH directions. Rows whose upstream request remains reference-
       // compatible set pin_upstream="fixture" and keep the ordinary deep diff; rows such as truncated
@@ -880,9 +942,9 @@ command = "claudex"
           problems.push(`sanctioned bytes drifted: pinned ${sanction.pinnedSha.slice(0, 16)}…, observed ${sha.slice(0, 16)}… — the divergence is no longer the one that was authorised`);
         }
         if (sanction.pinUpstream === "fixture") {
-          gradeUpstream(fx.expected_upstream_requests, observedUpstream, sanctioned, problems);
+          gradeUpstream(fx.expected_upstream_requests, gradedUpstream, sanctioned, problems);
         } else if (sanction.pinnedUpstreamSha) {
-          const upstreamSha = createHash("sha256").update(JSON.stringify(observedUpstream)).digest("hex");
+          const upstreamSha = createHash("sha256").update(JSON.stringify(gradedUpstream)).digest("hex");
           if (upstreamSha !== sanction.pinnedUpstreamSha) {
             problems.push(`sanctioned upstream bytes drifted: pinned ${sanction.pinnedUpstreamSha.slice(0, 16)}…, observed ${upstreamSha.slice(0, 16)}…`);
           }
@@ -909,7 +971,7 @@ command = "claudex"
         problems.push(`  observed …${JSON.stringify(b.slice(Math.max(0, i - 60), i + 100))}`);
       }
 
-      gradeUpstream(fx.expected_upstream_requests, observedUpstream, sanctioned, problems);
+      gradeUpstream(fx.expected_upstream_requests, gradedUpstream, sanctioned, problems);
 
       verdicts[name] = { pass: problems.length === 0, problems, observed_status: out.status, observed_sse: gotSse, observed_upstream: observedUpstream };
       console.log(problems.length === 0 ? `  ✓ ${name}` : `  ✗ ${name}`);

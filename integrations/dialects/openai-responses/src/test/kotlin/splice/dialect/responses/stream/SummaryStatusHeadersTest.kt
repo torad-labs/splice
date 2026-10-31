@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
 import splice.upstream.transport.BufferCapacity
+import kotlin.random.Random
 
 // The nine headers of one gpt-6-sol round in the Oct 1 trace, and the order its 63 reasoning items
 // carried them in (one header-only summary part per item), as indices into the list.
@@ -129,7 +130,58 @@ private fun terminalOutput(items: List<JsonObject>): JsonObject = buildJsonObjec
 private fun visibleThinking(sink: RecordingSink): String =
     sink.calls.filter { it.startsWith("think#") }.joinToString("") { it.substringAfter(':') }
 
+private const val ORDER_SEED = 4_501
+private const val ORDER_CASES = 300
+private val WORDS = listOf("read", "the", "ledger", "row", "names", "file", "check", "request", "retains", "every")
+
+/** A summary part the way the model writes one: a bold header, usually followed by a body. */
+private fun summaryText(random: Random): String {
+    val header = "**" + List(random.nextInt(1, 4)) { WORDS.random(random) }.joinToString(" ") + "**"
+    if (random.nextInt(4) == 0) return header
+    return header + "\n\n" + List(random.nextInt(1, 12)) { WORDS.random(random) }.joinToString(" ") + "."
+}
+
+/** [text] cut at random points into non-empty deltas, the way the backend streams it. */
+private fun cut(text: String, random: Random): List<String> {
+    val cuts = List(random.nextInt(0, 5)) { random.nextInt(1, text.length) }.toSortedSet()
+    return (listOf(0) + cuts + text.length).zipWithNext { from, to -> text.substring(from, to) }
+}
+
+/** One summary part streamed as [pieces], with the item's completed copy landing after the first [doneAt]. */
+private fun doneAmongDeltas(text: String, pieces: List<String>, doneAt: Int): List<JsonObject> {
+    val live = pieces.map { event("response.reasoning_summary_text.delta", 0, mapOf("delta" to it)) }
+    return buildList {
+        add(itemEvent("response.output_item.added", 0, summaryItem(emptyList())))
+        add(event("response.reasoning_summary_part.added", 0))
+        addAll(live.take(doneAt))
+        add(itemEvent("response.output_item.done", 0, summaryItem(listOf(text))))
+        addAll(live.drop(doneAt))
+        add(completed)
+    }
+}
+
 class SummaryStatusHeadersTest {
+
+    // The backend can send a reasoning item's done before the item's remaining deltas (openai/codex#16801).
+    // Wherever the completed copy lands, the client sees the part's text once: never a piece twice.
+    @Test
+    fun `a summary part reaches the client once wherever its completed item lands among its deltas`() = runTest {
+        val random = Random(ORDER_SEED)
+        val review = Triple("**H**\n\nBody.", listOf("**H**", "\n\nBody."), 1)
+        val generated = List(ORDER_CASES) {
+            val text = summaryText(random)
+            val pieces = cut(text, random)
+            Triple(text, pieces, random.nextInt(0, pieces.size + 1))
+        }
+        for ((text, pieces, doneAt) in listOf(review) + generated) {
+            val sink = RecordingSink()
+            val outcome = ResponsesStreamTranslator(ctx())
+                .driveTurn(doneAmongDeltas(text, pieces, doneAt).asFlow(), sink) as TurnOutcome.Success
+            val shape = "deltas $pieces, completed item after $doneAt of them"
+            assertEquals(text, visibleThinking(sink), shape)
+            assertEquals(text, outcome.text.thinkingText, shape)
+        }
+    }
 
     @Test
     fun `terminal model-only backfill cannot corrupt a later held-prefix delivery proof`() = runTest {

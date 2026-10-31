@@ -32,7 +32,12 @@ internal class SummaryStatusHeaders(
     private val owner: ResponsesTextOwner,
 ) {
 
-    private data class Part(val delivered: ResponsesTextRanges, var held: ReasoningPrefixText? = null)
+    /** [seen] counts the part's delta characters, so a delta can be placed against [delivered]. */
+    private data class Part(
+        val delivered: ResponsesTextRanges,
+        var held: ReasoningPrefixText? = null,
+        var seen: Long = 0,
+    )
     private class Item {
         val parts = LinkedHashMap<Int, Part>()
         var active = 0
@@ -74,7 +79,9 @@ internal class SummaryStatusHeaders(
         val item = items.getOrPut(key) { Item() }
         if (index != null) item.active = index
         val part = part(item, item.active)
-        if (part.delivered.length > 0) return SummaryRelease(text, startsPart = false, delivered = part.delivered)
+        val start = part.seen
+        part.seen += text.length
+        if (part.delivered.length > 0) return beyondDelivered(part, text, start)
         val held = part.held ?: ReasoningPrefixText(sequence.next()).also { part.held = it }
         held.append(text)
         pendingChars += text.length
@@ -117,6 +124,14 @@ internal class SummaryStatusHeaders(
         item.parts[index ?: item.active]
     }?.let { part ->
         release(part)?.let { decide(it, part.delivered) }
+    }
+
+    /** The backend can send an item's done before its remaining deltas (openai/codex#16801). A completed
+     *  copy may then have delivered past this delta, so only the characters beyond that proof render. */
+    private fun beyondDelivered(part: Part, text: String, start: Long): SummaryRelease? {
+        val skip = (part.delivered.length - start).coerceIn(0L, text.length.toLong()).toInt()
+        if (skip == text.length) return null
+        return SummaryRelease(text.substring(skip), startsPart = false, delivered = part.delivered)
     }
 
     private fun part(item: Item, index: Int): Part = item.parts.getOrPut(index) {

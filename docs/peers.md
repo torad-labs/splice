@@ -242,8 +242,10 @@ turn", so a hook never exits 2.
 
 An attach that finds the peer as asked changes nothing and answers once its helper runs. Attach is refused when no
 Codex app-server listens on the home's `app-server-control/app-server-control.sock` (or the daemon its
-`app-server-daemon/daemon.pid` names), because no message could reach the thread then. A thread run with
-`codex --no-daemon` has no app-server, so it cannot be a peer.
+`app-server-daemon/daemon.pid` names), because no message could reach the thread then. It is refused too when that
+app-server has not loaded the thread: attach reads the thread there before it registers anything. A thread run with
+`codex --no-daemon`, or by a Codex that runs its own app-server and listens on no socket, as the ChatGPT desktop app did
+on 2026-10-30, is not on the home's app-server, so it cannot be a peer.
 
 Attach looks up its own ancestry for the nearest process running `codex`. When it finds one, the peer's registry
 record carries a `lifecycleBinding` (version 1) naming that process as the thread's native owner and the peer's

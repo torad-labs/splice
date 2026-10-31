@@ -19,7 +19,12 @@ import java.util.Base64
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 
-internal class CodexStandInAppServer(socket: Path, private val thread: String) : AutoCloseable {
+/** [status] is the thread's status type thread/read reports: `notLoaded` for a thread this app-server does not hold. */
+internal class CodexStandInAppServer(
+    socket: Path,
+    private val thread: String,
+    private val status: String = "idle",
+) : AutoCloseable {
     /** The params of the turn/start the peer sent. */
     val turnStart = CompletableFuture<JsonObject>()
 
@@ -58,7 +63,7 @@ internal class CodexStandInAppServer(socket: Path, private val thread: String) :
         val tell = { method: String, params: String -> send(output, """{"method":"$method","params":$params}""") }
         when (message["method"]?.toString()?.trim('"')) {
             "initialize" -> reply("{}")
-            "thread/read" -> reply("""{"thread":{"id":"$thread","status":{"type":"idle"},"turns":[]}}""")
+            "thread/read" -> reply("""{"thread":{"id":"$thread","status":{"type":"$status"},"turns":[]}}""")
             "turn/start" -> {
                 turnStart.complete(message["params"]?.jsonObject)
                 reply("""{"turn":{"id":"turn-1","status":"inProgress","items":[]}}""")

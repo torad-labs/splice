@@ -1,7 +1,8 @@
 // NEW: Oct 27, 2026 (docs/peers.md, "A Codex thread as a peer"): POST /api/peers/codex, behind the management key, the
 // route `splice peer codex attach` calls. It registers a native Codex thread as the peer `codex-<thread id>`, or brings
 // the one there up to date, then starts its helper and answers once the helper's record is on the registry, as a
-// register does. A Codex home with no app-server listening is refused: no message could reach the thread.
+// register does. A Codex home with no app-server listening, or whose app-server has not loaded the thread, is refused:
+// no message could reach the thread.
 package splice.app.control.peer
 
 import io.ktor.http.HttpStatusCode
@@ -9,7 +10,7 @@ import io.ktor.server.application.ApplicationCall
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.app.peer.codex.CodexEndpoints
+import splice.app.peer.codex.CodexAppServers
 import splice.core.util.JsonScalars
 import splice.core.util.LogSafe
 import splice.http.JsonBody
@@ -19,7 +20,7 @@ import splice.sessions.peer.codex.CodexRequest
 import splice.sessions.peer.codex.NativeProcess
 import splice.sessions.peer.store.CodexAttach
 import splice.sessions.peer.store.PeerRefusal
-import java.nio.file.Path
+import splice.upstream.codemode.ProcessDispatchers
 
 private const val ATTACH_SHAPE =
     "body must be {\"thread\", \"home\", \"cwd\"}, with an optional \"owner\": {\"pid\", \"procStart\", \"pidDomain\"}"
@@ -27,7 +28,7 @@ private const val ATTACH_SHAPE =
 internal class PeerCodexRoutes(private val parts: PeerParts) {
     private val jsonBody = JsonBody()
     private val names = CodexNames()
-    private val endpoints = CodexEndpoints()
+    private val servers = CodexAppServers(ProcessDispatchers().io())
 
     /** POST /api/peers/codex. */
     suspend fun attach(call: ApplicationCall) {
@@ -36,12 +37,10 @@ internal class PeerCodexRoutes(private val parts: PeerParts) {
 
     private suspend fun attached(body: JsonObject?): PeerAnswer {
         val request = request(body) ?: return PeerReplies.refuse(HttpStatusCode.BadRequest, ATTACH_SHAPE)
-        val home = request.binding.home
-        if (endpoints.find(Path.of(home)) == null) {
-            return PeerReplies.refuse(
-                HttpStatusCode.Conflict,
-                "no Codex app-server listens for $home, so no message could reach the thread",
-            )
+        // The home's app-server must hold the thread now: one that listens nowhere, or that has not loaded it, could
+        // never pass the thread a message, and its helper would end at once (Oct 30, 2026).
+        servers.unreachable(request.binding)?.let { why ->
+            return PeerReplies.refuse(HttpStatusCode.Conflict, "$why, so no message could reach the thread")
         }
         return when (val outcome = parts.store.attachCodex(request)) {
             is CodexAttach.Refused -> PeerReplies.refuse(

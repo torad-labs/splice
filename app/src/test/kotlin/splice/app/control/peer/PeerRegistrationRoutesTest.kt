@@ -23,12 +23,15 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.control.api.ControlAudit
 import splice.app.control.mount.ControlGuard
 import splice.app.peer.PeerMailbox
+import splice.app.peer.codex.CodexStandInAppServer
 import splice.core.config.Knob
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
@@ -101,6 +104,35 @@ class PeerRegistrationRoutesTest {
         val hosted = attach(client, key.get(), body(home, cwd, owner = owner()))
         assertEquals(HttpStatusCode.Conflict, hosted.first, hosted.second)
         assertNull(store.get("codex-$THREAD"), "a thread only its own process holds is not registered")
+    }
+
+    // Oct 30, 2026: a thread run by a Codex that is not its home's shared app-server (the ChatGPT desktop app's own, on
+    // this machine) attached with 201, its helper read "the app-server has not loaded the thread" and ended, and the
+    // daemon revoked the peer 20 s later: the caller was told it had a peer, and no message could ever reach it.
+    @Test
+    fun `a thread the home's app-server has not loaded is refused, and one it has loaded attaches`(
+        @TempDir dir: Path,
+    ) = testApplication {
+        val store = PeerStore(dir.resolve("settings"))
+        val key = MgmtKey(StatePaths(baseOverride = dir.resolve("control")))
+        val mount = PeersMount(parts(dir, store), guard(key, store))
+        application { routing { mount.register(this) } }
+        val home = dir.resolve("codex-home")
+        val socket = home.resolve("app-server-control").resolve("app-server-control.sock")
+
+        val elsewhere = CodexStandInAppServer(socket, THREAD, status = "notLoaded").use {
+            attach(client, key.get(), body(home.toString(), dir.toString(), owner = owner()))
+        }
+        assertEquals(HttpStatusCode.Conflict, elsewhere.first, elsewhere.second)
+        assertTrue("has not loaded the thread" in elsewhere.second, elsewhere.second)
+        assertNull(store.get("codex-$THREAD"), "a thread no message could reach is not registered")
+
+        Files.delete(socket)
+        val loaded = CodexStandInAppServer(socket, THREAD).use {
+            attach(client, key.get(), body(home.toString(), dir.toString(), owner = owner()))
+        }
+        assertEquals(HttpStatusCode.Created, loaded.first, loaded.second)
+        assertNotNull(store.get("codex-$THREAD"), "a thread its app-server holds is a peer")
     }
 
     @Test

@@ -6,7 +6,9 @@
 package splice.app.peer.codex
 
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.ReceiveChannel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runInterruptible
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -85,6 +87,23 @@ internal class CodexAppServers(private val io: CoroutineDispatcher) {
             CodexOpen.Gone("the app-server at $path did not open a WebSocket")
         } else {
             CodexOpen.Open(CodexAppThread(CodexRpc(socket, io), binding.thread))
+        }
+    }
+
+    /** Null when [binding]'s app-server has loaded its thread, else why no message could reach the thread. It opens a
+     *  dialog, reads the thread and closes the dialog, and starts or resumes nothing. An attach asks this before it
+     *  registers the peer: a thread the home's shared app-server has not loaded runs in a Codex splice cannot reach
+     *  (Oct 30, 2026: the ChatGPT desktop app's own app-server, listening on no socket), and its helper would read
+     *  the same answer, end at once and be revoked, after the attach had answered 201. */
+    suspend fun unreachable(binding: CodexBinding): String? = when (val opened = open(binding)) {
+        is CodexOpen.Gone -> opened.reason
+        is CodexOpen.Open -> coroutineScope {
+            val thread = opened.thread
+            val reading = async { thread.read() }
+            val greeting = thread.greet()
+            thread.close()
+            reading.await()
+            (greeting as? CodexGreeting.Refused)?.reason
         }
     }
 

@@ -140,7 +140,7 @@ class ReadSetTest {
         Files.createDirectories(dir.resolve("tools/e2e/receipts/run"))
         Files.createSymbolicLink(dir.resolve("tools/e2e/receipts/run/latest"), Path.of("/out/does-not-exist.log"))
 
-        val set = ReadSet.globbed(dir.toFile(), listOf("tools/e2e/**"))
+        val set = ReadSet.matched(dir.toFile(), listOf("tools/e2e/**"))
 
         assertEquals(listOf("tools/e2e/deep/also.ts", "tools/e2e/tracked.ts"), set)
     }
@@ -212,5 +212,56 @@ class ReadSetTest {
         ) { ReadSet.git(dir.toFile(), listOf("tools", "checks")) }
 
         assertTrue(thrown.message!!.contains("checks"))
+    }
+
+    // A ladder leg's inputs name the files whose change re-runs it, and since d95a81d53 (Oct 28) some of them name a kind of file the
+    // repository must not hold: noPython's **/*.py, gateRules' **/baseline.xml. Such a glob matches nothing in a sound tree, so the full
+    // gate refused both legs before they ran (Oct 30). A leg's set is the union of its globs; only a leg that names no file at all fails.
+    @Test
+    fun `a leg's glob for a file the repository must not hold matches nothing, and its other globs still count`() {
+        repo()
+        file("tools/gate/no-python.ts")
+        git("add", "--", "tools")
+
+        assertEquals(listOf("tools/gate/no-python.ts"), ReadSet.matched(dir.toFile(), listOf("**/*.py", "**/*.ts")))
+    }
+
+    @Test
+    fun `a file two of a leg's globs match is in its set once`() {
+        repo()
+        file("package.json")
+        file("tools/gate/ladder.json")
+        git("add", "--", "package.json", "tools")
+
+        assertEquals(
+            listOf("package.json", "tools/gate/ladder.json"),
+            ReadSet.matched(dir.toFile(), listOf("**/*.json", "package.json")),
+        )
+    }
+
+    @Test
+    fun `a new untracked file of the forbidden kind joins the leg's set, so it re-runs the leg`() {
+        repo()
+        file("tools/gate/no-python.ts")
+        git("add", "--", "tools")
+        file("scripts/new.py")
+
+        assertEquals(
+            listOf("scripts/new.py", "tools/gate/no-python.ts"),
+            ReadSet.matched(dir.toFile(), listOf("**/*.py", "**/*.ts")),
+        )
+    }
+
+    @Test
+    fun `RED a leg whose every glob matches nothing fails, naming its globs`() {
+        repo()
+        file("tools/a.sh")
+        git("add", "--", "tools")
+
+        val thrown = assertThrows(IllegalStateException::class.java) {
+            ReadSet.matched(dir.toFile(), listOf("**/*.py", "checks/**"))
+        }
+
+        assertTrue(thrown.message!!.contains("**/*.py") && thrown.message!!.contains("checks/**"), thrown.message)
     }
 }

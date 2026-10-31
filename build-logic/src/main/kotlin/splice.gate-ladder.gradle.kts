@@ -70,8 +70,9 @@ val legTasks = legs.map { leg ->
                 inputs.files(app.map { it.tasks.named("shadowJar").get().outputs.files }).withPropertyName("fatJar")
             }
             // The row's globs are expanded by git (tracked, plus untracked and not ignored), never by walking the tree: a walk reads
-            // ignored directories and throws on a dangling link under them.
-            val matched = splice.lawsuite.ReadSet.globbedProvider(project, inputGlobs)
+            // ignored directories and throws on a dangling link under them. A glob may match nothing (noPython names the Python
+            // files the repository must not hold), and a file two globs match is named once; a row that names no file fails.
+            val matched = splice.lawsuite.ReadSet.matchedProvider(project, inputGlobs)
             inputs.files(
                 matched.map { files -> files.map { root.resolve(it) } },
             ).withPropertyName("ladderInputs")

@@ -24,10 +24,17 @@ abstract class ReadSetListing : ValueSource<List<String>, ReadSetListing.Params>
 
         /** Every tracked file of the repository, instead of the files under [roots]. */
         val tracked: Property<Boolean>
+
+        /** [roots] are a ladder leg's globs, read as one union in which a glob may match nothing ([ReadSet.matched]). */
+        val union: Property<Boolean>
     }
 
     override fun obtain(): List<String> {
         val repo = parameters.repo.get().asFile
-        return if (parameters.tracked.get()) ReadSet.tracked(repo) else ReadSet.git(repo, parameters.roots.get())
+        return when {
+            parameters.tracked.get() -> ReadSet.tracked(repo)
+            parameters.union.getOrElse(false) -> ReadSet.matched(repo, parameters.roots.get())
+            else -> ReadSet.git(repo, parameters.roots.get())
+        }
     }
 }

@@ -56,10 +56,6 @@ object ReadSet {
             parameters.tracked.set(false)
         }
 
-    /** [globbed] as a build value (see [gitProvider]). */
-    fun globbedProvider(project: Project, globs: List<String>): Provider<List<String>> =
-        gitProvider(project, globs.map { ":(glob)$it" })
-
     /** [tracked] as a build value (see [gitProvider]). */
     fun trackedProvider(project: Project): Provider<List<String>> =
         project.providers.valueSourceOf(ReadSetListing::class) {
@@ -67,8 +63,31 @@ object ReadSet {
             parameters.tracked.set(true)
         }
 
-    /** The same set for a row's glob patterns (a directory glob): git's own `:(glob)` pathspec, so the expansion is git's too. */
-    fun globbed(repo: File, globs: List<String>): List<String> = git(repo, globs.map { ":(glob)$it" })
+    /** The files a gate-ladder leg's input globs name, as git's own `:(glob)` pathspecs expand them: git's one listing of all of them, so a file two globs match is named once. A
+     *  glob may match nothing, because a leg's inputs can name the kind of file the repository must not hold (noPython's glob for
+     *  Python files, gateRules' for detekt baselines), and a new file of that kind then joins the set and re-runs the leg. The set must
+     *  name a file: a row whose every glob went stale fails by name, as a law's root does. */
+    fun matched(repo: File, globs: List<String>): List<String> {
+        val specs = globs.map { ":(glob)$it" }
+        val present = listed(repo, specs, "--cached", "--others", "--exclude-standard")
+        val set = (present - listed(repo, specs, "--deleted").toSet()).sorted()
+        check(set.isNotEmpty()) { "no file in $repo matches any of the leg's globs $globs" }
+        set.forEach { path ->
+            check(repo.resolve(path).isFile) {
+                "the leg's set lists '$path', which is not a file in $repo and which git does not call deleted"
+            }
+        }
+        return set
+    }
+
+    /** [matched] as a build value (see [gitProvider]). */
+    fun matchedProvider(project: Project, globs: List<String>): Provider<List<String>> =
+        project.providers.valueSourceOf(ReadSetListing::class) {
+            parameters.repo.set(project.rootProject.layout.projectDirectory)
+            parameters.roots.set(globs)
+            parameters.tracked.set(false)
+            parameters.union.set(true)
+        }
 
     /** The list file's text: every path ended by a NUL, so a filename holding a newline survives. The reader (LawReadSet) refuses an
      *  empty name and a repeated one, and the writer refuses them too, naming the entry, so the two cannot disagree. */
@@ -80,13 +99,17 @@ object ReadSet {
         return set.joinToString("") { "$it\u0000" }
     }
 
-    private fun listed(repo: File, root: String, vararg modes: String): List<String> {
-        val command = listOf("git", "ls-files") + modes + listOf("-z", "--", root)
+    private fun listed(repo: File, root: String, vararg modes: String): List<String> =
+        listed(repo, listOf(root), *modes)
+
+    private fun listed(repo: File, roots: List<String>, vararg modes: String): List<String> {
+        val command = listOf("git", "ls-files") + modes + listOf("-z", "--") + roots
         val process = ProcessBuilder(command).directory(repo).redirectError(ProcessBuilder.Redirect.INHERIT).start()
         val output = process.inputStream.readBytes()
         val exit = process.waitFor()
-        check(exit == 0) { "git ls-files over '$root' exited $exit in $repo" }
-        return names(output, root)
+        val named = roots.joinToString(", ")
+        check(exit == 0) { "git ls-files over '$named' exited $exit in $repo" }
+        return names(output, named)
     }
 
     /** Git's -z output: NUL-ended names. A name that is not valid UTF-8 throws with its bytes in hex, never decodes lossily. */

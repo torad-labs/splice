@@ -1,0 +1,54 @@
+# Failure-handling slice 8: selecting an Anthropic wire error is ClientWire's table.
+# Comparisons and when labels inspect an already chosen value; they choose no wire answer.
+id: kt-wire-type-single-source
+language: kotlin
+severity: error
+message: "ClientWire chooses the wire ErrorType from the failure cause and position; use its answer rather than selecting an enum value here."
+files:
+  - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
+rule:
+  any:
+    - matches: wire-selection
+    # Imported entries and aliases could hide a selection from the qualified-value check.
+    - kind: import_header
+      regex: '^import splice\.core\.turn\.ErrorType(\.|\s+as\b)'
+    - pattern: typealias $ALIAS = ErrorType
+    - pattern: typealias $ALIAS = splice.core.turn.ErrorType
+utils:
+  wire-selection:
+    all:
+      - any:
+          - pattern: ErrorType.$VALUE
+          - pattern: splice.core.turn.ErrorType.$VALUE
+      - not:
+          inside:
+            kind: equality_expression
+            # Only a direct operand is an inspection: f(ErrorType.API_ERROR) == result still chooses a type.
+            stopBy: neighbor
+      - not:
+          inside:
+            kind: when_condition
+            stopBy: neighbor
+      # OutcomeTags' typed overload only derives a stored perf-row label; it cannot produce a wire answer.
+      - not:
+          inside:
+            pattern: OutcomeTags.failure($TYPE)
+            stopBy: end
+      - not:
+          inside:
+            kind: source_file
+            stopBy: end
+            all:
+              - has:
+                  pattern: package splice.core.failure
+                  stopBy: end
+              - has:
+                  kind: object_declaration
+                  stopBy: end
+                  has:
+                    kind: type_identifier
+                    regex: '^ClientWire$'
+constraints:
+  VALUE:
+    regex: '^[A-Z][A-Z_]*$'

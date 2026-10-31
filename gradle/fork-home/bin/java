@@ -1,0 +1,22 @@
+#!/bin/sh
+# The java the app tests launch (its <home>/bin/java shape is what Gradle's executable probe expects). Each test JVM gets a home of
+# its own under $SPLICE_FORK_HOME_BASE, so forks running side by side never share a config file or a Graal cache: HOME and
+# -Duser.home name the fork home, and XDG_CONFIG_HOME and SPLICE_CONFIG are unset so config lives under it (app tests expect ~/.config).
+real="${JAVA_HOME:+$JAVA_HOME/bin/java}"
+[ -x "$real" ] || real=java
+if [ -z "$SPLICE_FORK_HOME_BASE" ]; then exec "$real" "$@"; fi
+fork="$SPLICE_FORK_HOME_BASE/fork-$$"
+mkdir -p "$fork"
+export HOME="$fork"
+unset XDG_CONFIG_HOME SPLICE_CONFIG
+count=$#
+while [ "$count" -gt 0 ]; do
+  arg="$1"
+  shift
+  case "$arg" in
+    -Duser.home=*) set -- "$@" "-Duser.home=$fork" ;;
+    *) set -- "$@" "$arg" ;;
+  esac
+  count=$((count - 1))
+done
+exec "$real" "$@"

@@ -1,0 +1,1220 @@
+/* Models, in the Sessions language (kit.js, sessions.css) and the drawings every page shares (console.css): each
+   command is a cel card in its provider's colour with its state as the lamp in the socket, joined on one rail, and the
+   open command beside the list as plates of sections — a figure, a meter, a bar on one scale, a mark on one axis.
+   Every model is a board of command cards on two shared scales; a project is its files and two rails, its prompt
+   layers and its compaction rules, beside the folders it sits among.
+   THE COLUMNS COME FROM THE PANE'S OWN WIDTH (@container pane), never from the viewport: the same rules draw 3822 and
+   1440, and nothing here asks how big the screen is. Built for 3822 first, read at 1440 in both themes. */
+
+.head .claude { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem; }
+.head .claude .cswitch { display: inline-flex; align-items: center; }
+.head .claude .rname { font-family: var(--font-name); }
+.switch button:disabled { cursor: default; opacity: .45; }
+.views { margin: 0 0 1.333rem; }
+.said { font: 500 1rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
+.said.limit { color: var(--limit); }
+.said.warn { color: var(--text); }   /* worth seeing, not a failure: in the text's own ink, never the key light (colour roles) */
+.menuwrap { position: relative; }
+.menuwrap > .menu { left: 0; right: auto; top: calc(100% + .5rem); }
+.menu button { display: flex; align-items: baseline; justify-content: space-between; gap: 1.333rem; }
+.menu button[aria-current="true"] { color: var(--text); box-shadow: inset .18rem 0 0 var(--text); }
+.mmeta { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); }
+/* a name and a state beside a kicker or a switch: the lamp, the name, then what is wrong with it */
+.raside { display: inline-flex; align-items: center; gap: 0.667rem; min-width: 0; }
+/* a section that leads with a figure or its state: 2u between the lead and what it leads */
+.pane .psec > .pd-sub { margin-bottom: calc(2 * var(--u)); }
+.signlead { align-items: center; gap: calc(1.5 * var(--u)); }
+.signlead.bad b { color: var(--limit); }
+.lamp.inline { position: static; width: 1.6rem; height: 1.6rem; flex: none; }
+.lamp.inline svg { width: 1rem; height: 1rem; }
+.lamp.inline .wait { width: 1rem; height: 1rem; }
+.lamp.inline i { width: .5rem; height: .5rem; }
+.lamp.inline.own i { width: .6rem; height: .6rem; border-radius: 50%; background: transparent; box-shadow: inset 0 0 0 .14rem var(--text-body); }
+.rname { font: 500 .9rem/1.2 var(--font-data); color: var(--text-body); overflow-wrap: anywhere; }
+.rname.limit { color: var(--limit); }
+/* a count tile that opens exactly those requests */
+.tdoor { display: inline-flex; align-items: center; gap: 0.333rem; text-decoration: none; }
+.tdoor:hover .pd-stat small { color: var(--text-body); }
+.tdoor .go { width: .8rem; height: .8rem; color: var(--text-mute); }
+.pd-stat.bad > svg:not(.pd-ring) { stroke: var(--limit); background: color-mix(in oklab, var(--limit) 12%, transparent); }
+.pd-stat.bad b { color: var(--limit); }
+
+/* ---------- the first read: the page that is arriving, at the size of what lands ---------- */
+/* a first read that failed is said beside the tabs, like a stale round, so the page that would have arrived stands where it lands */
+.firstread { display: inline-flex; align-items: center; gap: calc(2 * var(--u)); }
+/* the add tile arrives as the dashed place it is, not as a striped bar heavier than the cards above it */
+.ghost.card-tile { display: block; height: 3.4rem; border-radius: var(--r-obj); background: none; border: .1rem dashed var(--track-line); animation: none; }
+/* a first read that failed holds the arriving page still and quieter: nothing is on its way until it is asked again */
+.held { opacity: .5; }
+.held .ghost { animation: none; }
+/* the open command's place while the first read is out: its header and as many columns as the pane will hold, by the
+   rule the pane follows (kit colsFit over models.js PANE_COL_REM, 58rem a column beside the 32rem rail) */
+.gpane { display: none; }
+.gpane .plate.pcol { gap: calc(2 * var(--u)); align-items: flex-start; }
+/* the pane arrives inside its own frame, its header ruled off above the columns, as the open command lands */
+.cmds .gpane { border: var(--ink-w) solid var(--track-line); border-radius: var(--r-obj); background: var(--obj); padding: 0 0 calc(3 * var(--u)); }
+.gpane > .ghost-row { padding: calc(2 * var(--u)) calc(3 * var(--u)); border-bottom: .08rem solid var(--hair); }
+.gpane > .gbody { padding: 0 calc(3 * var(--u)); }
+/* the ghost plates are laid like the plates they stand for: as many columns as the pane holds, each into the shortest */
+@container (min-width: 90rem) {
+  .cmds .gpane { display: flex; flex: 1 1 0; min-width: 0; flex-direction: column; gap: calc(3 * var(--u)); }
+}
+
+/* ---------- commands: the rail and the open one ---------- */
+.cmds .pane { display: none; }
+.cmds.open .list { display: none; }
+.cmds.open .pane { display: flex; }
+.page { --side-by-side: 90; } /* kit.js sideBySide() reads this: the same 90rem as the container query below */
+@container (min-width: 90rem) {
+  .cmds, .cmds.open { display: flex; align-items: flex-start; gap: var(--gap-col); }
+  /* the rail takes a share of the row, between 32rem and the 40rem an Accounts column takes, so a long model name keeps
+     its whole line on a card where the row has room for it */
+  .cmds .list, .cmds.open .list { display: flex; flex: 0 0 clamp(32rem, 22%, 40rem); }
+  /* the pane takes the rest of the row: its 150rem cap left 900 px of screen empty to its right at 3822 (the width
+     pass, Oct 26), while the form inside it ended near x 1310 */
+  .cmds .pane, .cmds.open .pane { display: flex; flex: 1 1 0; min-width: 0; }
+  .pane .close { display: none; }
+}
+/* THE OPEN COMMAND IS IN THE PAGE'S ONE SCROLL (console.css): sessions.css gives every pane the window's height and a
+   scroll of its own; this one is as tall as what it holds, and its header keeps the pane's rounded corners itself */
+.cmds .pane { height: auto; overflow: visible; }
+.cmds .pane > header { border-radius: calc(var(--r-obj) - var(--ink-w)) calc(var(--r-obj) - var(--ink-w)) 0 0; }
+.cmds:not(.open) .list { max-width: 52rem; }
+/* a card sliding to its new group is a transformed box and paints over its neighbours: the group's head stays above
+   it, so "Needs you" is never covered by a card passing it (the rail's reorder, --t-snap) */
+.list.rail > .rhead { position: relative; z-index: 1; display: flex; align-items: baseline; gap: 0.667rem; margin: 0.333rem 0 -0.333rem; }
+.list.rail > .rhead .kicker { margin: 0; }
+.list.rail > .nothing { padding: .4rem .2rem; }
+.cmds .add[aria-pressed="true"] { border-style: solid; border-color: var(--text); color: var(--text); }
+/* the tile while a new command is made: the chip it will be and its provider, where its card will land */
+.add .tland { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0.667rem 0.667rem; min-width: 0; }
+.lamp.ready { color: var(--live); }
+.lamp.ready i { background: var(--live); box-shadow: 0 0 .6rem var(--live); }
+.lamp .wait { width: 1.3rem; height: 1.3rem; }
+.lamp .wait circle { stroke: var(--live); }
+.card.h { cursor: pointer; }
+.card.h:hover { background: var(--obj-high); }
+/* THE OPEN CARD IS MARKED IN NEUTRAL INK: the key light has one use per view, and it is not selection (colour roles) */
+.card.h[aria-current="true"] { border-color: var(--text); box-shadow: var(--cast) var(--cast) 0 var(--c), var(--cast) var(--cast) 0 var(--ink-w) var(--text); }
+.card.h .top { display: flex; align-items: center; gap: 1rem; min-height: 2rem; }
+.prov { font: 400 .88rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
+/* what is wrong with a command is said once, in the card's top-right slot, in the text's own ink */
+.card.h .top > .cstate, .card.h .top > .ghost.state { margin-left: auto; }
+.cstate { font: 500 .95rem/1.1 var(--font-name); color: var(--text); white-space: nowrap; }
+.card.h .meta { gap: 0.333rem 1rem; }
+/* a model's name can carry what tells two instances apart at its end, so it wraps whole where the rail is narrow and is never cut */
+.card.h .cmodel { min-width: 0; overflow-wrap: anywhere; line-height: 1.3; color: var(--text-body); }
+.card.h .caddr { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); }
+.card.h .cwin { margin-left: auto; font: 500 .95rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
+/* THE STRIP UNDER A READY CARD: one block of one height on every card. Its line says what is in flight and what failed,
+   its first track is the requests in flight against the most it lets in, its second the share that failed. The failed part
+   is hatched in the limit red with a gap of the card's own ground before it, and keeps a few pixels of its own so a
+   thousandth of the requests still reads as red beside the command's colour. */
+.rl-strip { display: flex; flex-direction: column; gap: var(--u); margin-top: calc(1.5 * var(--u)); }
+.rl-strip .flow { display: block; min-width: 0; }
+.rl-strip .bar { height: .7rem; }
+.rl-line { display: flex; align-items: baseline; justify-content: space-between; gap: var(--u); min-height: 1.2rem; font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.rl-fl b { font: 600 .95rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.rl-fail { display: inline-flex; align-items: baseline; gap: 0.333rem; color: var(--limit); }
+.rl-fail b { font: 600 .95rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--limit); }
+.rl-hatch { align-self: center; flex: none; width: .8rem; height: .8rem; border-radius: .15rem; background: repeating-linear-gradient(135deg, var(--limit) 0 .14rem, transparent .14rem .3rem); box-shadow: inset 0 0 0 .08rem var(--limit); }
+.rl-none, .rl-tot { color: var(--text-mute); }
+.rl-share { display: flex; gap: .22rem; height: .7rem; border-radius: .3rem; background: color-mix(in oklab, var(--text) 8%, transparent); overflow: hidden; }
+.rl-share.none { box-shadow: inset 0 0 0 .08rem var(--track-line); background: none; }
+.rl-share > i { display: block; height: 100%; border-radius: .3rem; }
+.rl-ok { flex: 1 1 0; min-width: 0; background: var(--c); }
+.rl-bad { flex: 0 0 auto; min-width: .35rem; background: repeating-linear-gradient(135deg, var(--limit) 0 .2rem, color-mix(in oklab, var(--limit) 55%, var(--obj)) .2rem .4rem); }
+.card.h .fix { display: flex; align-items: center; gap: 0.667rem; margin-top: 1rem; }
+
+/* ---------- the open command: its header ---------- */
+.pane > header { flex-wrap: wrap; align-items: baseline; }
+/* the name, the provider and the state on one baseline, and what can be done to it at the far end */
+.pane > header .who { flex: 0 1 auto; flex-wrap: wrap; align-items: baseline; gap: 0.667rem 1.333rem; }
+.pane > header .top { display: flex; align-items: baseline; gap: 0.667rem; min-height: 0; }
+.pane > header .prov { font-size: 1rem; }
+.pane > header .meta { margin-top: 0; gap: 0.667rem 1rem; }
+.pane > header .acts { margin-left: calc(2 * var(--u)); flex-wrap: wrap; align-items: center; }
+.pane > header > .close, .add-pane > header .acts { margin-left: auto; }
+.pane > header .signrow { justify-content: flex-start; }
+/* how a command that needs him signs in, one row under its name: the kicker, the state, then each field with its label */
+.pane > header .hask.rn-signbar { flex: 1 1 auto; margin-top: 0; margin: 0 0 0 calc(2 * var(--u)); gap: .6rem 1.1rem; font-size: .95rem; color: var(--text-body); }
+.rn-signbar .rn-sk { font: 600 .8rem/1 var(--font-name); letter-spacing: .08em; text-transform: uppercase; color: var(--text-mute); padding-right: .8rem; border-right: .08rem solid var(--track-line); }
+.rn-signbar .rn-sw { font: 600 .95rem/1 var(--font-name); color: var(--text); }
+.rn-signbar .rn-sw.bad { color: var(--limit); }
+.rn-signbar .lbl { font: 500 .88rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.rn-signbar .rn-kind { position: relative; }
+.rn-signbar .rn-env { display: inline-flex; align-items: center; gap: .5rem; }
+.rn-signbar .rn-hwrap, .rn-signbar .rt-hwrap { display: inline-flex; }
+.rn-signbar .field.env { min-width: 12rem; }
+.pane > header .signrow .outbox { margin-top: 0; }
+.pane > header .acts .chip { text-decoration: none; }
+/* the question a cutting press asks: under the acts, on its own line, right where the press was */
+.pane > header .hask { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 0.667rem; margin-top: 0.667rem; }
+.pane > header .hask .said { white-space: normal; }
+.pane > header .outbox { margin-top: 1rem; }
+/* the way back: to the value the provider sets, or to the templates */
+.act.back, .back { display: inline-flex; align-items: center; gap: 0.333rem; padding: .25rem .5rem; border: 0; background: none; color: var(--text-mute); font: 500 .88rem/1 var(--font-name); cursor: pointer; }
+.act.back:hover, .back:hover { color: var(--text); text-decoration: underline; }
+.back svg { flex: none; width: .9rem; height: .9rem; }
+
+/* ---------- the open command: the body, in columns of plates ---------- */
+.pane .body { padding: calc(3 * var(--u)) calc(3 * var(--u)) calc(4 * var(--u)); display: flex; flex-direction: column; gap: var(--gap-col); }
+/* as many columns as kit colsFit finds room for in the pane's own width (models.js PANE_COL_REM), each section a plate that
+   goes where the board is shortest (kit DRAW.masonry), so every plate is as tall as what it holds and no column stands
+   tinted and empty beside a longer one */
+.pcols { min-width: 0; }
+.plate.pcol { gap: 0; }
+/* a section with nothing in it draws nothing, so no plate carries an empty hairline */
+.psec:empty, .plate.pcol:empty { display: none; }
+.sechead.sub { margin-top: calc(1.5 * var(--u)); }
+.sechead.sub .kicker { letter-spacing: .07em; }
+
+/* ---------- a label beside its control: the one grid every form row stands in ---------- */
+.form { display: grid; grid-template-columns: minmax(7rem, max-content) minmax(0, 1fr); gap: calc(1.5 * var(--u)) calc(2 * var(--u)); align-items: baseline; }
+.form + .form, .form + .qrest, .chips + .form { margin-top: calc(1.5 * var(--u)); }
+/* in a column of the open command every section's labels take one width, so the controls of Where it goes, Sign-in,
+   Running and Settings start on one edge down the plate */
+.pane .pcol .form { grid-template-columns: 13rem minmax(0, 1fr); }
+/* ---------- Where it goes: the route as three nodes, each holding the field that sets it ---------- */
+.rtsec { container: rt / inline-size; }
+.pd-sub b.rt-title { font: 500 var(--fig-focal)/1.1 var(--font-lead); letter-spacing: 0; color: var(--text); }
+.rt-route { display: grid; grid-template-columns: minmax(0, .8fr) 2.4rem minmax(0, 1.3fr) 2.4rem minmax(0, 1.5fr); align-items: stretch; min-width: 0; }
+.rt-node { display: flex; flex-direction: column; align-items: flex-start; gap: calc(1.5 * var(--u)); min-width: 0; padding: calc(2 * var(--u)) calc(2.5 * var(--u)); border: .14rem solid var(--track-line); border-radius: var(--r-obj); background: var(--obj-sunk); }
+.rt-client { align-self: center; flex-direction: row; align-items: center; }
+.rt-cmd { border-color: var(--c); box-shadow: var(--cast) var(--cast) 0 var(--c); }
+.rt-prov { border-color: var(--c); }
+.rt-nn { font: 500 1rem/1.2 var(--font-name); color: var(--text); overflow-wrap: anywhere; }
+.rt-host { font: 500 .85rem/1.2 var(--font-data); color: var(--text-mute); overflow-wrap: anywhere; }
+.rt-nh { display: flex; align-items: center; flex-wrap: wrap; gap: var(--u); }
+/* the port is the socket the command sits in: its number in the command's own edge */
+.field.rt-port { flex: 0 0 6.4rem; width: 6.4rem; text-align: center; font: 600 1rem/1 var(--font-data); font-variant-numeric: tabular-nums; border: .14rem solid var(--c); }
+.rt-pfxrow { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u); width: 100%; min-width: 0; }
+.field.rt-pfx { flex: 1 1 100%; min-width: 0; border-radius: 999px; border-left: .3rem solid var(--c); padding-inline: calc(2 * var(--u)); }
+.rt-arrow { display: inline-flex; color: var(--text-mute); }
+.rt-arrow svg { width: 1.1rem; height: 1.1rem; }
+.rt-model { min-width: 0; padding: .4rem calc(1.2 * var(--u)); border: .1rem solid var(--track-line); border-radius: var(--r-in); background: var(--obj-high); font: 600 .92rem/1.2 var(--font-data); color: var(--text); overflow-wrap: anywhere; }
+.rt-node .field.url { flex: none; }
+.field.rt-url { width: 100%; min-width: 0; font-size: .9rem; text-overflow: ellipsis; }
+.rt-rail { position: relative; align-self: center; height: .14rem; background: var(--track-line); }
+.rt-rail::after { content: ""; position: absolute; right: -.05rem; top: 50%; width: .5rem; height: .5rem; border-top: .14rem solid var(--track-line); border-right: .14rem solid var(--track-line); transform: translate(0, -50%) rotate(45deg); }
+.rt-ports { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u); margin-top: calc(3 * var(--u)); padding-top: calc(2 * var(--u)); border-top: .08rem solid var(--hair); }
+.rt-pchip { display: inline-flex; align-items: center; gap: 0.333rem; }
+.rt-tag { padding: .12rem .4rem; border-radius: 999px; box-shadow: inset 0 0 0 .08rem var(--track-line); font: 500 .75rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
+/* in a column too narrow for three nodes side by side the route runs down the plate, an arrow between each */
+@container rt (max-width: 52rem) {
+  .rt-route { grid-template-columns: minmax(0, 1fr); }
+  .rt-client { align-self: start; }
+  .rt-rail { justify-self: center; width: .14rem; height: calc(3 * var(--u)); }
+  .rt-rail::after { left: 50%; right: auto; top: auto; bottom: -.05rem; transform: translate(-50%, 0) rotate(135deg); }
+}
+.ctl { display: flex; align-items: center; flex-wrap: wrap; gap: 0.667rem 1rem; min-width: 0; }
+.ctl.col { flex-direction: column; align-items: stretch; }
+.ctl.col > .act, .ctl.col > .menuwrap, .ctl.col > .switch, .ctl.col > .add { align-self: flex-start; }
+#h-name, #a-name { flex: 0 1 20rem; }
+#a-url, #a-key { flex: 0 1 34rem; }
+.field.win { flex: 0 0 7rem; font-family: var(--font-data); }
+.field.ptext { width: 100%; font: 400 .95rem/1.5 var(--font-name); resize: vertical; }
+.field.url { flex: 1 1 18rem; min-width: 12rem; max-width: 34rem; }
+.field.num { flex: 0 0 7rem; font-family: var(--font-data); }
+.field.mono, .lbl.mono { font-family: var(--font-data); }
+.lbl.mono { font-size: .88rem; overflow-wrap: anywhere; }
+.field.prefix { flex: 0 1 14rem; min-width: 8rem; }
+.field[aria-invalid="true"], .pickbtn[aria-invalid="true"] { border-color: var(--limit); }
+.shared { display: inline-flex; align-items: center; gap: 0.667rem; font: 500 .88rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.chip.flat { box-shadow: none; border-color: var(--track-line); color: var(--text-body); }
+.chip.ghost { border-style: dashed; border-color: var(--track-line); box-shadow: none; color: var(--text-mute); }
+/* a header is one row: its name, its value, its remove, and what is wrong with it under them. A row added opens to its
+   height as it comes in, and the plates below move with it, so nothing under the form jumps */
+.hdr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) var(--ctl-h); align-items: center; gap: var(--u); }
+.hdr .field, .hdr .hname { min-width: 0; width: 100%; box-sizing: border-box; }
+.hdr .hname { display: flex; align-items: center; min-height: var(--ctl-h); padding: 0 calc(1.5 * var(--u)); border-radius: var(--r-in); background: var(--obj-sunk); font: 500 .9rem/1 var(--font-data); color: var(--text); overflow-wrap: anywhere; }
+.hdr .icon { width: var(--ctl-h); height: var(--ctl-h); }
+.hdr > .said { grid-column: 1 / -1; white-space: normal; }
+.hdr.bad .field { border-color: var(--limit); }
+.rt-hwrap { display: grid; grid-template-rows: 1fr; }
+.rt-hwrap > .hdr { min-height: 0; overflow: clip; overflow-clip-margin: .5rem; }
+.rt-hwrap.rt-in { animation: rt-rows var(--t-snap) var(--e-out) both; }
+@keyframes rt-rows { from { grid-template-rows: 0fr; opacity: 0; } to { grid-template-rows: 1fr; opacity: 1; } }
+.ctl.col > .rt-hwrap { align-self: stretch; }
+/* a share of a whole as its parts: one segment for each, filled where it is shared or set */
+.rt-segs { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: .35rem; margin-bottom: calc(2 * var(--u)); }
+.rt-segs > i { display: block; height: var(--meter-h); border-radius: .3rem; background: color-mix(in oklab, var(--text) 8%, transparent); box-shadow: inset 0 0 0 .08rem var(--track-line); }
+.rt-segs > i.on { background: color-mix(in oklab, var(--text) 62%, transparent); box-shadow: none; }
+/* a window group's count of sessions ends the line, the kicker above says what it counts; the first window leads at the hero's size */
+.wfig.lead { font-size: var(--fig-hero); }
+.wline .wn b { font: 600 1rem/1 var(--font-data); color: var(--text); }
+/* an add that is one row rather than a tile: the dashed place the next header, model or project will land */
+.add.row { min-height: var(--ctl-h); width: auto; padding: .4rem .8rem; font-size: .9rem; }
+.add.row .plus { width: 1.25rem; height: 1.25rem; font-size: .9rem; }
+.pers { display: flex; flex-direction: column; gap: 0.667rem; }
+
+/* ---------- Right now: the hero, the meter, who is on it, and everything since it started ---------- */
+/* the failure share and the requests in flight stand in ONE grid of three columns: the figure or its label, the track, the count.
+   Both tracks start and end on the same edges, and the counts end on one right edge, whatever the figures say */
+.rn-grid { display: grid; grid-template-columns: minmax(7.5rem, max-content) minmax(0, 1fr) max-content; column-gap: calc(3 * var(--u)); row-gap: calc(3 * var(--u)); align-items: center; }
+.rn-fig { display: block; align-self: start; white-space: nowrap; }
+.rn-fig.quiet, .rn-fig.quiet .nr { color: var(--text-mute); }
+.rn-share { min-width: 0; align-self: start; }
+/* the share's track is centred on the figure's own line, its two ends named under it */
+.rn-share .stk { margin-top: calc((var(--fig-hero) - var(--meter-h)) / 2); }
+.rn-share .lfill { background: var(--limit); }
+.rn-cap { align-self: start; display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0.333rem; min-height: var(--fig-hero); font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.rn-cap b { font: 600 1.05rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+a.rn-door { display: inline-flex; align-items: center; gap: 0.333rem; color: var(--text-mute); text-decoration: none; }
+a.rn-door:hover { color: var(--text); }
+a.rn-door:hover b { text-decoration: underline; }
+a.rn-door b { border-bottom: .1rem dotted var(--text-mute); }
+.rn-l { font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.rn-f { justify-self: end; font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.rn-f b { font: 600 1.05rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--live); }
+.rn-f.quiet b, .rn-f.quiet .nr { color: var(--text-mute); }
+/* no limit to fill: every request in flight is a dot in the dashed track */
+.bar.rn-nolim { display: flex; align-items: center; gap: .3rem; padding-inline: .35rem; }
+.rn-nolim i { flex: none; width: .55rem; height: .55rem; border-radius: 50%; background: var(--live); }
+/* the requests in flight and the axis under them stand in ONE grid (each row a subgrid of it), so every bar and every
+   tick line up whatever word a row ends on */
+/* the meter needs no label: the hero over it says what it counts, so it runs the column wide, ending with the outcome bar */
+.snow .flow { display: block; min-width: 0; }
+.snow .pd-n.soft { color: var(--text-mute); font-family: var(--font-name); font-size: .8rem; text-align: left; }
+.flow { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr); align-items: center; gap: calc(2 * var(--u)); }
+.mlbl { font: 500 .88rem/1.2 var(--font-name); color: var(--text-mute); }
+/* a runtime that does not answer takes nothing: its meter's track hatched, with nothing on it */
+.bar.down { background: repeating-linear-gradient(135deg, color-mix(in oklab, var(--text) 16%, transparent) 0 .3rem, transparent .3rem .62rem); }
+.nowon { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; row-gap: calc(1.2 * var(--u)); margin-top: calc(-1 * var(--u)); }
+.nowon > :not(.rn-trow, .rn-axis) { grid-column: 1 / -1; justify-self: start; }
+/* a session's row stands on the grid's own columns: its name under the figure, its bar under the two tracks, its time under the counts */
+.rn-trow, .rn-axis { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; }
+.rn-who { display: inline-flex; align-items: center; gap: 0.333rem; min-width: 0; }
+/* a long name wraps inside its chip: the whole name is read, never cut */
+.rn-who .chip { min-width: 0; max-width: 16rem; white-space: normal; overflow-wrap: anywhere; line-height: 1.2; }
+.rn-rng { min-width: 0; }
+.rn-t { justify-self: end; display: grid; justify-items: end; text-align: right; }
+.rn-t b { font: 600 1.05rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.rn-t small, .rn-axis small { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.rn-axis { align-items: start; margin-top: calc(-.6 * var(--u)); }
+.rn-axis .pd-ax { grid-column: 2; }
+.rn-axis small { grid-column: 3; justify-self: end; padding-top: .4rem; }
+/* the outcome bar: every part says its count inside itself; the legend under it names only the colours */
+.rn-bar .pd-seg { justify-content: center; padding-inline: .3rem; }
+.rn-bar .pd-seg b { color: var(--obj); }
+.rn-out .pd-seg.nt, .rn-out .pd-sw.nt { background: var(--live); }
+.rn-out { display: grid; row-gap: calc(2.5 * var(--u)); }
+.rn-leg { margin-top: 0; }
+.rn-leg .rn-moved { margin-left: .1rem; }
+/* a tick on the session's bar for each request it holds, at how long that one has been held */
+.rn-trow .pd-trk u { position: absolute; top: -.2rem; bottom: -.2rem; width: .14rem; margin-left: -.07rem; border-radius: .07rem; background: var(--text); }
+/* how many of something one row stands for: requests from one session, sessions of one name */
+.cnt { flex: none; padding: .18rem .36rem; border-radius: .7rem; box-shadow: inset 0 0 0 .08rem var(--track-line); font: 600 .78rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.nowall { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); margin-top: calc(3 * var(--u)); }
+/* nothing taken yet: the outcome bar's own empty track, never a bar full of nothing */
+.pd-bar.none.down { background: repeating-linear-gradient(135deg, color-mix(in oklab, var(--text) 16%, transparent) 0 .3rem, transparent .3rem .62rem); }
+.pd-bar.none { height: var(--stack-h); border-radius: .3rem; background: color-mix(in oklab, var(--text) 6%, transparent); box-shadow: inset 0 0 0 .1rem var(--track-line); }
+
+/* ---------- Models: the tiers, their windows on one scale, and what each model takes ---------- */
+/* each tier is a row of one grid (subgrid), so every picker, glyph, window, bar and figure stands in its own column */
+/* the picker takes what its longest model name needs, up to 30rem, so a local model's name is not cut */
+.tiers { display: grid; grid-template-columns: minmax(3.5rem, max-content) fit-content(30rem) 1.3rem 7rem minmax(3rem, 1fr) max-content; gap: 0.667rem 1rem; align-items: center; }
+.tier { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; row-gap: 0.333rem; align-items: center; }
+.tier > .marks { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 0.667rem 1rem; }
+.tiers .chead { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.tiers .chead b { margin-left: 0.333rem; font: 600 .85rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.tier.osub { margin-top: calc(1.5 * var(--u)); }
+.tier.osub > .chead { grid-column: 1 / -1; }
+.tier.other > .oname { grid-column: 1 / 4; min-width: 0; font: 500 .9rem/1.25 var(--font-name); color: var(--text-body); overflow-wrap: anywhere; }
+.tier.other > .wv { grid-column: 4; text-align: left; }
+.tier.tfoot > .marks { grid-column: 1 / -1; }
+.tiers .wincell { flex-wrap: nowrap; }
+.tiers .pd-n small.srv { margin-left: 0.333rem; font: 500 .74rem/1 var(--font-name); color: var(--text-mute); }
+/* the tool glyph a model the runtime says calls tools carries, named once on the kicker line */
+.tglyph, .tools, .tleg { display: inline-flex; align-items: center; }
+.tglyph { justify-content: center; color: var(--text-body); }
+.tools svg, .tleg svg { flex: none; width: 1rem; height: 1rem; }
+.tleg { gap: 0.333rem; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.form .menuwrap > .pickbtn, .tiers .menuwrap > .pickbtn { width: 100%; justify-content: space-between; }
+/* how it signs in is a word or two: its picker is as wide as its longest choice, not the whole column */
+.form .menuwrap > .pickbtn.kindbtn { width: auto; min-width: 16rem; }
+.menuwrap > .menu.kmenu { min-width: 16rem; }
+.field.env { flex: 0 1 24rem; min-width: 12rem; }
+/* the pickers of Route and settings are drawn plain: the sign-in kind, and every setting's picker under Settings and All settings */
+.pane .kn .pickbtn, .pane .kindbtn, .everywrap .pickbtn { box-shadow: none; }
+.pickbtn .pf { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pickbtn .pf svg { width: .9rem; height: .9rem; margin-right: 0.333rem; vertical-align: -.12rem; }
+/* a picker's caret turns while its menu is open */
+.pickbtn > svg:last-child { flex: none; transition: transform var(--t-snap) var(--e-out); }
+.pickbtn[aria-expanded="true"] > svg:last-child { transform: rotate(-90deg); }
+/* a tier left out: the picker's edge dashed in the limit colour, its lock and None in it */
+.pickbtn.empty { border-style: dashed; border-color: var(--limit); box-shadow: none; color: var(--limit); }
+/* THE WINDOW AS A BAR ON ONE SCALE, with the tick where the model's own ceiling sits: a window past it is red */
+.wcell { min-width: 0; display: flex; align-items: center; }
+.wbar { position: relative; display: block; width: 100%; height: var(--meter-h); border-radius: .25rem; background: color-mix(in oklab, var(--text) 9%, transparent); overflow: visible; }
+.wbar > i { display: block; height: 100%; border-radius: .25rem; background: var(--c); transition: width var(--t-snap) var(--e-out); }
+.wbar > u { position: absolute; top: -.2rem; bottom: -.2rem; width: .14rem; margin-left: -.07rem; background: var(--text-body); }
+.wbar.over > i { background: var(--limit); }
+.wbar.over > u { background: var(--limit); }
+/* a roster of hundreds is found by typing, inside the menu it filters; each model's window is a bar on the section's
+   scale, so the largest is found by eye before a figure is read */
+.menu.mpick, .menu.ppick { max-height: 28rem; overflow-y: auto; }
+/* the menu keeps one width while its list is filtered, so the field under the caret never moves */
+.menu.mpick { width: 50rem; max-width: calc(100vw - 4rem); }
+.menu.mpick > button, .menu.mpick .mgroup > button { display: grid; grid-template-columns: minmax(0, 1fr) 7.5rem 6rem 3.6rem 8.6rem; align-items: center; gap: 1rem; }
+.menu.mpick > button.mclr { display: flex; justify-content: space-between; }
+.mpick .mname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.mpick .mwin .wbar { height: .45rem; }
+.mpick .mmeta { text-align: right; font-variant-numeric: tabular-nums; }
+.mfilter { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 0.667rem; padding: .45rem .5rem .55rem; background: var(--obj-high); border-bottom: .08rem solid var(--hair); }
+.mfilter .field { width: 11rem; }
+/* a long menu in groups: each folder named once, in the data face, over its projects */
+.menu .mgroup { display: flex; flex-direction: column; }
+.menu .mgroup + .mgroup { margin-top: 0.333rem; padding-top: .35rem; border-top: .08rem solid var(--hair); }
+.menu .mhead { padding: .45rem .75rem .25rem; font: 500 .78rem/1.2 var(--font-data); color: var(--text-mute); overflow-wrap: anywhere; }
+.menu > .nothing { display: block; padding: .6rem .75rem; }
+.menu.ppick { min-width: 24rem; }
+/* the find field, each folder and the foot run the menu's full width, so the foot covers the rows it scrolls over */
+.menu.ppick > *, .menu.mpick > * { align-self: stretch; }
+.ppick .pmeta { display: inline-flex; align-items: center; gap: 0.667rem; margin-left: auto; }
+.ppick .mmeta { min-width: 2.2rem; text-align: right; font-variant-numeric: tabular-nums; }
+.plive { display: inline-flex; align-items: center; gap: 0.333rem; font: 500 .82rem/1 var(--font-data); color: var(--text-body); }
+.plive i { flex: none; width: .5rem; height: .5rem; border-radius: 50%; background: var(--live); box-shadow: 0 0 .35rem var(--live); }
+/* the marks the menu's figures carry, named once at its foot */
+.menu .mfoot { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: flex-end; gap: 1rem; padding: .5rem .75rem; background: var(--obj-high); border-top: .08rem solid var(--hair); font: 500 .78rem/1.2 var(--font-name); color: var(--text-mute); }
+.menu .mfoot .plive, .menu .mfoot .mmeta { font: inherit; color: inherit; min-width: 0; }
+/* a tier nothing is set for reads the model that answers, in full ink, with the Default mark muted and no colour edge */
+.pickbtn.dflt-tier { box-shadow: none; border-color: var(--track-line); }
+.pickbtn .dflt, .menu .dflt { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); }
+.menu button .dflt { margin-left: auto; }
+
+/* ---------- Claude Code's window: one group per window, its sessions as chips ---------- */
+.wgroup { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); }
+/* the window, its bar on the scale of the model it serves (the tick), and the sessions counting against it */
+.wline { display: grid; grid-template-columns: max-content minmax(6rem, 24rem) max-content; align-items: center; gap: calc(2 * var(--u)); }
+.wfig { font: 600 var(--fig-focal)/1 var(--font-data); font-variant-numeric: tabular-nums; letter-spacing: -.01em; color: var(--text); }
+.wgroup + .wgroup { margin-top: calc(1.5 * var(--u)); }
+.chips { display: flex; flex-wrap: wrap; align-items: center; gap: 0.667rem; min-width: 0; }
+.chips .chip { text-decoration: none; }
+.cgrp { display: inline-flex; align-items: center; gap: 0.333rem; }
+
+/* ---------- Prices: each price a bar on its column's scale ---------- */
+/* the names take what the longest needs, up to 26rem, so a local model's long name keeps one line */
+.prices { display: grid; grid-template-columns: fit-content(26rem) minmax(3rem, 1fr) 6.5rem minmax(3rem, 1fr) 6.5rem; gap: 0.667rem 1rem; align-items: center; }
+.prices > .chead { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.prices .mname { font: 500 .9rem/1.25 var(--font-name); color: var(--text); overflow-wrap: anywhere; }
+.prices .pcell { flex-wrap: nowrap; }
+/* the figure is the bar's label: it reads as a figure, and the field shows on hover, on focus and once it holds a change */
+.prices > .chead.hin { grid-column: 2 / 4; }
+.prices > .chead.hout { grid-column: 4 / 6; }
+.prices .field.price { width: 100%; text-align: right; font-family: var(--font-data); font-variant-numeric: tabular-nums; background: transparent; border-color: transparent; padding-inline: .45rem; }
+.prices .field.price::placeholder { color: var(--text-mute); }
+.prices .field.price:hover { border-color: var(--track-line); }
+.prices .field.price:focus, .prices .field.price.dirty { background: var(--obj-sunk); }
+.prices .field.price.dirty { border-color: var(--track-line); }
+.prices > .marks { grid-column: 1 / -1; display: flex; align-items: center; gap: 0.667rem; margin-top: -0.333rem; }
+.prices > .marks .field.price { width: 6.5rem; }
+.search.pfind { width: auto; max-width: 30rem; margin-bottom: calc(1.5 * var(--u)); }
+
+/* ---------- Running: what it shares, and the quirks of the wire it speaks ---------- */
+.chips.tog { gap: 0.667rem; }
+.chip.tg { cursor: pointer; box-shadow: none; border-color: var(--text); color: var(--text); background: var(--obj-high); }
+.chip.tg[aria-pressed="false"] { border-style: dashed; border-color: var(--track-line); color: var(--text-mute); background: transparent; }
+.chip.tg:hover { border-color: var(--c); }
+.qrest { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); margin-top: calc(1.5 * var(--u)); }
+.qrest .disc b { font-family: var(--font-data); color: var(--text); }
+.qrest > .disc.door { align-self: flex-start; }
+.form .unit { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); }
+/* a quirk that follows the provider lights no segment of its switch: neither value is set here */
+.switch.unlit button { color: var(--text-mute); }
+.switch.dirty { box-shadow: .16rem .16rem 0 var(--c); }
+.switch.multi { flex-wrap: wrap; }
+.fig.mono { font-family: var(--font-data); }
+/* a quirk set here ends in the back glyph, its word said once on the kicker's line */
+.icon.qback { width: var(--ctl-h); height: var(--ctl-h); color: var(--text-mute); }
+.icon.qback:hover { color: var(--text); }
+.icon.qback svg { width: 1rem; height: 1rem; }
+.sechead .qleg { margin-left: auto; }
+.field.qlist { flex: 1 1 22rem; min-width: 12rem; max-width: 40rem; }
+/* a table quirk: each entry one chip, the word sent, the mapping glyph, the word the provider gets */
+.qtable { display: flex; flex-direction: column; gap: 0.667rem; min-width: 0; }
+.qgroup { display: flex; flex-wrap: wrap; align-items: center; gap: 0.333rem 0.667rem; }
+.qgk { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.chip.qpair { display: inline-flex; align-items: center; gap: 0.333rem; }
+.qpair .qk { font-family: var(--font-name); color: var(--text-body); }
+.qpair .qv { color: var(--text); }
+.qpair svg { flex: none; width: .85rem; height: .85rem; color: var(--text-mute); }
+
+/* ---------- Settings: this command's own, then every setting as it runs it, opened in place ---------- */
+.everyset { margin-top: calc(2 * var(--u)); }
+/* every setting, opened under the sections: a kicker line, then plates in the pane's own columns, so each plate stands
+   under the ones above it and the list is never one tall column beside two short ones */
+.everywrap { display: flex; flex-direction: column; gap: calc(2 * var(--u)); scroll-margin-top: 4rem; padding: calc(4 * var(--u)); border-radius: var(--r-in); background: color-mix(in oklab, var(--text) 4%, transparent); }
+/* every setting is ONE plate: its head and its three columns, the columns carrying no plate of their own */
+.everywrap .ecols > .plate { padding: 0; background: none; border-radius: 0; }
+.everyhead { display: flex; align-items: center; gap: 1rem; }
+.everyhead .kicker { margin: 0; }
+.everyhead .act { margin-left: auto; }
+.ecols { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); gap: var(--gap-col); align-items: stretch; }
+/* each topic ruled off from the next, 3u, a hairline and 3u, as sections are inside a plate */
+.everycol { display: flex; flex-direction: column; }
+.egroup + .egroup { margin-top: calc(3 * var(--u)); padding-top: calc(3 * var(--u)); border-top: .08rem solid var(--hair); }
+.egroup > .sechead { margin: 0 0 calc(2 * var(--u)); }
+.egroup > .sechead.sub { margin-top: 0; }
+/* one setting to a row, so a control and its way back never wrap under each other; a topic that holds times draws each
+   as a bar on the list's one log axis in the third column, with the axis once under the topic */
+/* no wider than one pane column (PANE_COL_REM), so in a single wide plate each time bar stays beside its control */
+.effgrid { display: grid; grid-template-columns: minmax(8rem, 17rem) minmax(0, 1fr); gap: 0.667rem calc(2 * var(--u)); align-items: center; max-width: 58rem; }
+.effgrid.timed { grid-template-columns: minmax(8rem, 17rem) minmax(0, 1fr) minmax(6rem, 16rem); }
+.effgrid:not(.timed) > .etime { display: none; }
+.effgrid > .ctl.span { grid-column: 2 / -1; }
+.etime { min-width: 0; }
+.etime .pd-trk { height: .6rem; }
+.eaxis { min-width: 0; }
+.eaxis .pd-axis { display: block; margin-top: 0; }
+.eaxis .pd-sl { display: none; }
+.effgrid > .lbl { font: 500 .9rem/1.25 var(--font-name); color: var(--text-body); overflow-wrap: anywhere; }
+.effgrid .line { display: flex; align-items: center; flex-wrap: wrap; gap: 0.667rem 1rem; min-width: 0; flex: 1 1 100%; }
+.effgrid .fixed { font: 500 .9rem/1.2 var(--font-data); color: var(--text); overflow-wrap: anywhere; }
+/* this page's own rows carry the restart mark as a glyph; the word is said once, in the legend */
+.later { display: inline-flex; align-items: center; color: var(--text-mute); }
+.later svg { width: .95rem; height: .95rem; stroke-width: 1.6; }
+.leg { display: inline-flex; align-items: center; gap: 0.333rem; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.leg svg { flex: none; width: .9rem; height: .9rem; stroke-width: 1.6; }
+/* console-lead's per-command setting rows stand in this page's own grid */
+.form .kn, .effgrid .kn { display: contents; }
+.pane .kn .tags { margin-left: 0; }
+/* one picker look in a command's pane: the settings' pickers like the tiers' */
+.pane .kn .pickbtn { --c: inherit; min-width: 13rem; }
+
+/* ---------- the Log: events in words, the raw lines behind one disclosure ---------- */
+.hlog { gap: 0; }
+.loghead { display: flex; flex-wrap: wrap; align-items: center; gap: 0.667rem 1rem; margin-bottom: calc(1.5 * var(--u)); }
+/* the search keeps its width whatever the count beside it says, so typing never moves the field under the caret */
+.loghead .search { flex: 0 1 26rem; width: auto; min-width: 12rem; }
+.loghead .act[data-act="logpause"] { margin-left: 0; }
+/* the file the lines come from, by its own name, beside the count of the lines read from it */
+.pfile.logfile { gap: 0.333rem; margin-left: 0.667rem; font-size: .85rem; color: var(--text-mute); }
+.pfile.logfile svg { color: var(--text-mute); }
+.events { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 5.6rem minmax(0, 1fr) minmax(4rem, 10rem); gap: 0.333rem 1rem; align-items: center; }
+.events li { display: contents; }
+.events time { font: 500 .9rem/1.3 var(--font-data); color: var(--text-mute); }
+.events .etext { font: 500 .9rem/1.35 var(--font-name); color: var(--text-body); }
+.events .ecount { min-width: 0; }
+.events .barcell > .v { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); }
+.rawwrap { display: flex; flex-direction: column; gap: 0.667rem; margin-top: calc(2 * var(--u)); }
+.rawwrap .disc .mmeta { margin-left: 0.333rem; }
+.rawlines { list-style: none; margin: 0; padding: .8rem .9rem; display: flex; flex-direction: column; gap: 0.333rem; background: var(--obj-sunk); border-radius: var(--r-in); font: 500 .88rem/1.45 var(--font-data); color: var(--text-body); }
+.rawlines li { display: block; content-visibility: auto; contain-intrinsic-size: auto 1.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rawlines li.rawend { white-space: normal; }
+/* the term searched for, marked in neutral ink in each line it is in */
+.rawlines mark { padding: 0 .1rem; border-radius: .15rem; background: color-mix(in oklab, var(--text) 22%, transparent); color: var(--text); font-weight: 600; }
+
+/* ---------- Save, in each section: the changes it holds, its own Save, its own result ---------- */
+.secsave { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); margin-top: calc(2 * var(--u)); padding-top: calc(2 * var(--u)); border-top: .08rem solid var(--hair); }
+.secsave .sacts { display: flex; align-items: center; flex-wrap: wrap; gap: 0.667rem 1rem; }
+.secsave .leg { margin-left: auto; }
+/* each change, its old value struck and its new one beside it; the four parts stay side by side */
+.changes { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: max-content minmax(0, max-content) minmax(0, max-content) max-content; justify-content: start; gap: 0.333rem 1rem; align-items: baseline; }
+.changes li { display: contents; }
+.changes .cname { font: 500 .9rem/1.3 var(--font-name); color: var(--text-body); }
+.changes .was { font: 500 .9rem/1.3 var(--font-data); color: var(--text-mute); text-decoration: line-through; overflow-wrap: anywhere; }
+.changes .now { font: 500 .9rem/1.3 var(--font-data); color: var(--text); overflow-wrap: anywhere; }
+.changes .when { display: inline-flex; align-items: center; }
+/* a field whose value its section's Save lists carries the command's colour edge (hitstop) */
+.field.dirty { box-shadow: .16rem .16rem 0 var(--c); }
+
+/* ---------- a new command ---------- */
+.add-pane { height: auto !important; position: static !important; }
+/* a new command is left by its own Close at every width: it has no card in the rail to come back to */
+.cmds .add-pane .close, .cmds.open .add-pane .close { display: inline-flex; }
+.add-pane .body { gap: calc(2 * var(--u)); }
+.tpls { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: 1rem; }
+/* the templates' kicker carries the sign-in glyphs' legend, so no tile repeats the words */
+.sechead.tplkick { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.333rem calc(3 * var(--u)); }
+.sechead.tplkick .kicker { margin: 0; }
+.pick.tpl { flex-direction: column; align-items: flex-start; gap: 0.667rem; padding: 1rem 1.1rem 1.1rem; }
+.pick.tpl .ttop { display: flex; align-items: center; gap: 0.667rem; width: 100%; }
+.pick.tpl .blot { width: 1.3rem; height: 1.3rem; flex: none; }
+.pick.tpl .tname { font: 500 1.3rem/1.1 var(--font-name); }
+.pick.tpl .tkind { margin-left: auto; display: inline-flex; color: var(--text-mute); }
+.pick.tpl .tkind svg { width: 1.1rem; height: 1.1rem; }
+.pick.tpl .chip { align-self: flex-start; }
+/* A NEW COMMAND: its chip and the way back to the templates on one line, then one column for each thing the template asks
+   (what it is called, how it reaches the provider, which models it serves) at equal widths, and the checks and the act in a
+   band under them. Under 70rem the columns stand one over the other. */
+.add-pane .body { container: addp / inline-size; }
+.addhead { display: flex; align-items: center; gap: calc(2 * var(--u)); }
+.addhead .back { margin-left: auto; }
+/* the template's command is the band across the top of its form: its chip at hero size, the way back to the templates beside it */
+.add-pane .addhead { align-self: stretch; box-sizing: border-box; min-height: 6.2rem; margin: calc(-3 * var(--u)) calc(-3 * var(--u)) 0; padding: 0 calc(4 * var(--u)); background: var(--obj-high); border-top: .08rem solid var(--hair); }
+.addhead .addchip .chip { height: 2.5rem; box-sizing: border-box; padding: 0 .9rem; font-size: 1.02rem; border-bottom-width: .3rem; }
+.add-pane .addhead .tback { border: .08rem solid var(--track-line); border-radius: var(--r-in); padding: .42rem .7rem; color: var(--text); background: transparent; }
+.addcols { --n: 1; display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: calc(3 * var(--u)) calc(4 * var(--u)); align-items: start; }
+.addcols.n1 { --n: 2; }
+.addcols.n2 { --n: 2; }
+.addcols.n3 { --n: 3; }
+.addcols.n2 > .addband, .addcols.n3 > .addband { grid-column: 1 / -1; }
+.addgrp { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); min-width: 0; }
+.addgrp > .kicker { margin: 0; }
+.addband { display: flex; flex-direction: column; gap: calc(2 * var(--u)); min-width: 0; }
+.addband:empty { display: none; }
+@container addp (max-width: 70rem) { .addcols, .addcols.n1, .addcols.n2, .addcols.n3 { grid-template-columns: minmax(0, 1fr); } }
+.addfld { display: grid; grid-template-columns: minmax(0, 1fr); gap: calc(.75 * var(--u)); align-items: start; min-width: 0; }
+.addfld .lbl { font: 500 .88rem/1 var(--font-name); color: var(--text-mute); }
+.addfld .ctl { display: flex; flex-wrap: wrap; align-items: center; gap: calc(1.5 * var(--u)); min-width: 0; }
+.addfld .ctl.col { flex-direction: column; align-items: stretch; flex-wrap: nowrap; }
+.addfld .field, .addfld #a-name, .addfld #a-url, .addfld #a-key { flex: 1 1 10rem; min-width: 0; max-width: none; }
+.addfld .astem { font: 500 1.05rem/1 var(--font-data); color: var(--text-mute); }
+.addprov { display: inline-flex; align-items: center; gap: calc(1.2 * var(--u)); min-height: var(--ctl-h); font: 500 1.15rem/1.1 var(--font-name); color: var(--text); }
+.addprov .blot { width: 1.1rem; height: 1.1rem; flex: none; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .14rem var(--ink); }
+.add-pane .tback { font-size: .95rem; }
+.add-pane .tsub { min-height: var(--ctl-h); }
+/* the card Add makes, at the rail's last place: dashed until it exists, lit in its provider's colour, turning while Add works
+   and resting in the limit red when a check refused it */
+.card.h.newcard { cursor: default; border-style: dashed; box-shadow: none; }
+.card.h.newcard:hover { background: var(--obj); }
+.card.h.newcard.working { border-style: solid; border-color: var(--c); }
+.card.h.newcard.refused { border-color: var(--limit); }
+.card.h.newcard .lamp.unchecked i { width: .6rem; height: .6rem; background: transparent; box-shadow: inset 0 0 0 .14rem var(--text-mute); animation: none; }
+.card.h.newcard .lamp.working .wait circle { stroke: var(--c); }
+.pane > header .meta .tsub { font-size: .9rem; }
+.pick:disabled { cursor: default; opacity: .45; box-shadow: .3rem .3rem 0 var(--wall-low); }
+.pick:disabled:hover { transform: none; }
+/* how a template signs in: a key, or a sign-in page in the browser, drawn before its words */
+.tsub { display: inline-flex; align-items: center; gap: 0.333rem; font: 500 .88rem/1.2 var(--font-name); color: var(--text-mute); }
+.tsub svg { flex: none; width: 1rem; height: 1rem; }
+/* the command it will add, the place its name takes dashed until a name is typed */
+.chip.tobe { display: inline-flex; align-items: center; border-style: dashed; box-shadow: none; color: var(--text-body); }
+.chip.tobe .slot { flex: none; display: inline-block; width: 4.5rem; height: 1.05em; margin-left: 0.333rem; border: .1rem dashed var(--text-mute); border-radius: .2rem; background: none; box-shadow: none; animation: none; }
+/* the provider's key a second command shares: its variable and the commands that send with it */
+.keyfact { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.667rem; color: var(--text-mute); }
+.keyfact svg { flex: none; width: 1rem; height: 1rem; }
+.keyfact code { font: 500 .88rem/1 var(--font-data); color: var(--text-body); }
+/* each model row: its id, its window typed and drawn on the rows' one scale, and its remove */
+.mrow { display: grid; grid-template-columns: minmax(0, 1fr) 5.5rem minmax(2.5rem, 5rem) max-content; gap: 0.667rem; align-items: center; }
+.mrow > .said { grid-column: 1 / -1; }
+.mrow.labels span { font: 500 .88rem/1 var(--font-name); color: var(--text-mute); }
+.mrow.labels .mscale { text-align: right; font: 500 .8rem/1 var(--font-data); }
+.checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.667rem; }
+.checks li { display: flex; align-items: center; gap: 0.667rem; font: 500 .95rem/1 var(--font-name); color: var(--text); }
+.checks .lamp { position: static; width: 1.7rem; height: 1.7rem; }
+.checks .lamp svg { width: 1.05rem; height: 1.05rem; }
+.checks .lamp i { width: .6rem; height: .6rem; }
+/* while splice runs its checks, each row is an arriving shape: the lamp's ring and its name's bar */
+.checks .gcheck .ghost:first-child { height: 1.2rem; border-radius: 50%; }
+.checks .gcheck .ghost { height: .95rem; }
+.checks.inline { flex-direction: row; flex-wrap: wrap; gap: 0.667rem 1.333rem; }  /* a new command's doctor checks, on one line (spec 1i) */
+code.launch { font: 500 .95rem/1 var(--font-data); color: var(--text); padding: .5rem .75rem; border: .12rem solid var(--track-line); border-radius: .4rem; }
+.checks .lamp.idle i { background: var(--track-line); }
+.checks li.pending .cname { color: var(--text-mute); }
+/* a check splice didn't run: a hollow lamp and its word, never the passed one */
+.checks .lamp.unchecked i { width: .8rem; height: .8rem; background: transparent; box-shadow: inset 0 0 0 .14rem var(--text-mute); }
+.checks .said:not(.limit) { color: var(--text-mute); }
+.add-pane .checks, .add-pane .foot, .add-pane .progress, .add-pane .outbox { padding-left: 0; }
+.add-pane .foot { justify-content: flex-start; margin-top: 0; }
+/* what Add still waits for, at the size of the labels it names, beside the dashed fields it means */
+.add-pane .foot .said:not(.limit) { font-size: .88rem; color: var(--text-mute); white-space: normal; }
+.field.need { border-style: dashed; }
+.page .foot { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem; }  /* a form's foot; the sidebar's .foot is console.css's */
+/* a command's own login, in Accounts' element, where Sign in was pressed */
+.card.h .outbox { margin-top: 1rem; gap: 0.667rem; flex-wrap: wrap; }
+.card.h .outbox .code-in { flex: 1 1 8.5rem; min-width: 0; }
+.cardfacts { display: grid; grid-template-columns: 9rem 1fr; gap: 0.667rem 1.333rem; margin: 0; }
+.cardfacts dt { font: 500 .88rem/1 var(--font-name); color: var(--text-body); }
+.cardfacts dd { margin: 0; font: 500 .95rem/1 var(--font-data); color: var(--text); }
+.progress { display: grid; grid-template-columns: minmax(0, 34rem) auto; gap: 1rem; align-items: center; }
+.progress .bar > b { transition: width 160ms linear; }
+.pword { font: 500 .95rem/1 var(--font-data); color: var(--text); white-space: nowrap; }
+.said .wait { width: 1.15rem; height: 1.15rem; vertical-align: middle; margin-right: 0.333rem; }
+.said .wait circle { stroke: var(--live); }
+
+/* ---------- a round that failed after the page loaded ----------
+   What is drawn is what splice last answered: it is held quieter, under the lock beside the tabs, until a round
+   answers again */
+#models.stale :is(.rl-strip, .rn-grid, .nowon, .nowall) { opacity: .55; transition: opacity var(--t-snap) var(--e-out); }
+
+/* ---------- a prompt kept in a file, and a command's project layers ---------- */
+.pfile { display: inline-flex; align-items: center; gap: 0.667rem; font: 500 .9rem/1 var(--font-data); color: var(--text); }
+.pfile svg { width: 1rem; height: 1rem; color: var(--text-body); }
+.per { display: flex; flex-direction: column; gap: 0.667rem; padding: .8rem; border: .12rem solid var(--track-line); border-radius: var(--r-obj); }
+.per-top { display: flex; align-items: center; flex-wrap: wrap; gap: 0.667rem 1rem; min-width: 0; }
+.per-top .ppath { min-width: 0; flex: 0 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; direction: rtl; text-align: left; font-size: .8rem; }
+.per-top .pend { margin-left: auto; display: inline-flex; align-items: center; gap: 0.667rem; }
+.per-top .icon { width: 1.8rem; height: 1.8rem; }
+.pname { font: 500 1rem/1 var(--font-name); color: var(--text); }
+
+/* ---------- the page's own mark: a round that failed after the page loaded, beside the tabs ---------- */
+.views { display: flex; flex-wrap: wrap; align-items: center; gap: calc(2 * var(--u)) calc(4 * var(--u)); }
+.vstale { display: inline-flex; align-items: center; gap: calc(2 * var(--u)); }
+/* the three views: equal places, one lit capsule that slides under the pressed word (models.js tabMotion) */
+.mt-switch { position: relative; display: inline-grid; grid-auto-flow: column; grid-auto-columns: var(--mt-seg, 9.6rem); }
+.mt-switch > button { position: relative; z-index: 1; padding-inline: 0; text-align: center; }
+.mt-switch > button[aria-pressed="true"] { background: none; box-shadow: none; }
+.mt-cap {
+  position: absolute; z-index: 0; top: .2rem; bottom: .2rem; left: .2rem; width: var(--mt-seg, 9.6rem); box-sizing: border-box;
+  border-radius: calc(var(--r-obj) - .15rem); background: var(--sel-face); box-shadow: inset 0 0 0 .1rem var(--sel-line);
+  transform: translateX(calc(var(--mt-i, 0) * 100%));
+}
+/* the view he left, held in its place while it fades out over the one that comes in */
+.mt-leaving, .cmds.mt-leaving { position: absolute; left: 0; right: 0; margin: 0; pointer-events: none; }
+
+/* ---------- every model: each provider a titled group of its commands' cards, every model on the board's two scales ----------
+   A card is an object (a command): a cel card with its provider's colour on its back edge. A row is a model, drawn as two
+   tracks on scales the whole board shares: its window a meter in its provider's colour on one linear scale, its price the
+   console's range bar on one log scale, so the eye compares lengths across every card. Figures end on one right edge per
+   column, the columns are named once over each column of the board, and the key above them names only the marks drawn. */
+.every { display: flex; flex-direction: column; gap: calc(4 * var(--u)); }
+.em-bar { display: flex; flex-wrap: wrap; align-items: center; gap: calc(2 * var(--u)) calc(6 * var(--u)); }
+.em-bar .search { width: 28rem; max-width: 100%; }
+/* the key of the marks stands beside the search and the figure while the width holds all three, under them when it does not */
+.em-bar > .em-keys { flex: 1 1 70rem; min-width: 0; }
+/* a search's clear cross, inside the field at its end, while something is typed */
+.search .sclear { position: absolute; right: .35rem; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 1.9rem; height: 1.9rem; padding: 0; border: 0; border-radius: var(--r-in); background: none; color: var(--text-mute); cursor: pointer; transition: color var(--t-hover) var(--e-out), background-color var(--t-hover) var(--e-out); }
+.search .sclear:hover { color: var(--text); background: var(--obj-high); }
+.search .sclear:focus-visible { outline: .14rem solid var(--text); outline-offset: .05rem; }
+.search .sclear svg { position: static; width: .9rem; height: .9rem; }
+.search:has(.sclear) .field { padding-right: 2.5rem; }
+/* the key, the column names and the board are one thing read together: 2u between them, not the page's 4u */
+.em-wall { display: flex; flex-direction: column; gap: calc(2 * var(--u)); min-width: 0; }
+.em-keys .legend { gap: 0.667rem 2rem; }
+.em-keys .legend .lg { gap: 0.667rem; font-size: .92rem; }
+/* the marks a row draws without a word on it, as the key shows them */
+.sw { flex: none; position: relative; display: inline-block; width: 1.5rem; height: .62rem; border-radius: .16rem; }
+.sw.most, .wtrk .most { background: color-mix(in oklab, var(--c, var(--text)) 34%, transparent); }
+.sw.notch, .wtrk u { width: .17rem; height: 1.3rem; border-radius: .08rem; background: var(--text); }
+.sw.notch { height: 1.1rem; }
+/* a model with no price, a window not served: the track's own shape, hatched, with nothing on it */
+.sw.none, .ptrk.none, .wtrk.none { background: repeating-linear-gradient(135deg, color-mix(in oklab, var(--text) 18%, transparent) 0 .14rem, transparent .14rem .42rem); box-shadow: inset 0 0 0 .08rem color-mix(in oklab, var(--text) 16%, transparent); }
+.mdot { flex: none; width: .72rem; height: .72rem; border-radius: 50%; background: var(--text); }
+/* the tiers a command sends to a model: four places in a strip, lit where it does, in the page's neutral selected look */
+/* the tiers a command sends to a model: one capsule, a lit place for each tier that lands on the model, in Claude's order */
+.tstrip { flex: none; display: inline-flex; overflow: hidden; border-radius: .34rem; background: var(--text-body); }
+.tstrip i { display: grid; place-items: center; min-width: 1.4rem; height: 1.55rem; font: 600 .76rem/1 var(--font-data); font-style: normal; color: var(--obj); }
+.tstrip i + i { box-shadow: inset .08rem 0 0 color-mix(in oklab, var(--obj) 32%, transparent); }
+/* the column names, once over each column of the board, on the card's own grid so every name stands over its track */
+.em-heads { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); column-gap: var(--gap-col); }
+.em-hc { min-width: 0; container: emcard / inline-size; padding: 0 calc(3 * var(--u)); border-inline: var(--ink-w) solid transparent; }
+.em-row.em-colhead { min-height: 0; padding-top: 0; padding-bottom: .5rem; font: 500 .88rem/1.2 var(--font-name); color: var(--text-mute); border-bottom: .08rem solid var(--hair); }
+.em-colhead .ch { text-align: right; white-space: nowrap; }
+.em-colhead .axh { display: flex; justify-content: space-between; align-items: baseline; gap: 0.667rem; white-space: nowrap; }
+.em-colhead .axh b { font-weight: 500; }
+.em-colhead .axh i { font: 500 .82rem/1.2 var(--font-data); font-style: normal; font-variant-numeric: tabular-nums; }
+/* the board: one column per 56rem the width holds, each a stack of provider groups with 2.4rem between them. The groups are
+   put in their columns when the board is drawn (models.js everyBoard), so opening a card never moves a group to another column. */
+.em-board { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); column-gap: var(--gap-col); align-items: start; }
+.em-col { min-width: 0; display: flex; flex-direction: column; gap: 2.4rem; }
+.em-board .titled > header { margin-bottom: calc(2 * var(--u)); }
+.em-card { display: flex; flex-direction: column; gap: calc(2 * var(--u)); padding: calc(2.5 * var(--u)) calc(3 * var(--u)) calc(3 * var(--u)); container: emcard / inline-size; }
+.em-head { display: flex; align-items: center; gap: 1rem; min-height: 2.2rem; }
+.em-head .pd-count, .em-head .pd-count b { font-size: .95rem; }
+.em-head .pd-count { margin-left: auto; }
+.em-head a.chip { transition: background-color var(--t-hover) var(--e-out); }
+.em-head a.chip:hover { background: var(--obj-high); }
+.em-rows { display: flex; flex-direction: column; min-width: 0; }
+.em-item { border-top: .08rem solid var(--hair); transition: background-color var(--t-hover) var(--e-out); }
+.em-rows > .em-item:first-child, .em-maker + .em-item { border-top: 0; }
+.em-item:hover, .em-item.open { background: color-mix(in oklab, var(--text) 4.5%, transparent); }
+/* a row: the name takes what is left, then the two tracks a fifth of the card each on the board's shared scales, each with its
+   own figure after it. A name that does not fit its cell stands alone on the row's first line (models.js fitRows) and the
+   tracks keep their columns on the second, so no name is wrapped inside its cell or cut. */
+.em-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) 20% 3.8rem 20% 4.3rem 4.5rem;
+  align-items: center; column-gap: var(--u); padding: .55rem 0 .55rem .6rem; min-height: var(--row-h);
+}
+.em-row.em-wide { row-gap: .4rem; padding-block: .6rem; }
+.em-row.em-wide > .em-name { grid-column: 1 / -1; grid-row: 1; }
+.em-row.em-wide > :nth-child(n + 2) { grid-row: 2; }
+.em-row.em-wide > :nth-child(2) { grid-column: 2; }
+.em-row.em-wide > :nth-child(3) { grid-column: 3; }
+.em-row.em-wide > :nth-child(4) { grid-column: 4; }
+.em-row.em-wide > :nth-child(5) { grid-column: 5; }
+.em-row.em-wide > :nth-child(6) { grid-column: 6; }
+.em-row.em-wide.gone > .gonelock { grid-column: 4 / -1; }
+/* a router's roster: one head per maker, its count beside it */
+.em-maker { margin: calc(1.5 * var(--u)) 0 0.333rem; padding: 0 0 .3rem .6rem; display: flex; align-items: baseline; gap: 0.667rem; font: 600 .84rem/1.2 var(--font-name); letter-spacing: .04em; color: var(--text-body); border-bottom: .08rem solid var(--hair); }
+.em-maker b { font: 500 .84rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
+.em-row.gone .gonelock { grid-column: 4 / -1; justify-self: start; }
+.em-name { min-width: 0; display: flex; align-items: center; gap: 0.667rem; overflow: clip; overflow-clip-margin: .3rem; }
+.em-name.still { padding-left: 1.45rem; }
+/* the name stands on one line with the tiers it carries at its end, and a dotted leader runs from them to the tracks, so the
+   eye reaches the window from the name along the row */
+.em-name .nm { min-width: 0; display: flex; align-items: center; gap: 0.667rem; }
+.em-name .mnm { min-width: 0; display: inline-flex; align-items: center; gap: 0.667rem; }
+.em-name .mname { font: 500 1.05rem/1.25 var(--font-name); color: var(--text); white-space: nowrap; }
+.em-ld { flex: 1 1 .6rem; min-width: .6rem; height: 0; align-self: flex-end; margin: 0 .1rem .5rem 0; border-bottom: .14rem dotted color-mix(in oklab, var(--text-mute) 70%, transparent); }
+.em-name .mk { font: 500 .92rem/1.25 var(--font-name); color: var(--text-mute); }
+.em-name mark, .proj-tab mark { padding: 0 .08rem; border-radius: .15rem; background: color-mix(in oklab, var(--text) 22%, transparent); color: var(--text); }
+.disc.em-name:hover .mname { text-decoration: underline; text-decoration-color: var(--text-mute); text-underline-offset: .2em; }
+.em-row > .v { text-align: right; white-space: nowrap; font: 500 .96rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.em-row > .v .nr { font-family: var(--font-name); color: var(--text-mute); }
+/* the window: the console's meter, a sunk track with a rim and the fill in the provider's colour with an ink right edge,
+   a lighter run on to the most it takes, a notch where the price rises. A faint tick at each round step of the board's scale
+   (--wtk, --ptk, set on the board by models.js boardScales) so a length reads against the scale as well as its neighbours. */
+.wtrk, .ptrk { position: relative; display: block; height: var(--meter-h); border-radius: .3rem; }
+.wtrk { overflow: hidden; background-color: var(--track); box-shadow: inset 0 0 0 .1rem var(--track-line); }
+.wtrk:not(.none) { background-image: repeating-linear-gradient(to right, transparent 0 calc(var(--wtk, 100%) - .08rem), color-mix(in oklab, var(--text) 16%, transparent) calc(var(--wtk, 100%) - .08rem) var(--wtk, 100%)); }
+.ptrk:not(.none) { background-image: repeating-linear-gradient(to right, transparent 0 calc(var(--ptk, 100%) - .08rem), color-mix(in oklab, var(--text) 22%, transparent) calc(var(--ptk, 100%) - .08rem) var(--ptk, 100%)); }
+.wtrk i { position: absolute; inset: 0 auto 0 0; min-width: .2rem; transition: width var(--t-snap) var(--e-out); }
+.wtrk .win { background: var(--c); border-right: .12rem solid var(--ink); border-radius: .3rem 0 0 .3rem; }
+.wtrk u { position: absolute; top: 50%; transform: translate(-50%, -50%); }
+/* the rate card under its row: each rate a band on the board's price scale with its figure, the dearer one past the
+   threshold the line on to its tick and the second figure */
+.em-rate { margin: 0 0 calc(2 * var(--u)) 2rem; padding: calc(2 * var(--u)) calc(3 * var(--u)); display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); background: var(--obj-sunk); border-radius: var(--r-in); }
+.rwins { font: 500 .88rem/1.2 var(--font-name); color: var(--text-mute); }
+.rwins b, .rtab .v { font: 500 .94rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.rtab { display: grid; grid-template-columns: max-content minmax(6rem, 16rem) 4.8rem; justify-content: start; align-items: center; gap: 0.667rem calc(2 * var(--u)); }
+.rtab.lc { grid-template-columns: max-content minmax(6rem, 16rem) 5.8rem 5.8rem; }
+.rtab .rh, .rtab .rk { font: 500 .84rem/1.2 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.rtab .rh, .rtab .v { text-align: right; }
+.em-rate .gonewhy { margin: 0; font: 500 .94rem/1.45 var(--font-name); color: var(--text-body); overflow-wrap: anywhere; }
+.em-foot { display: flex; align-items: stretch; gap: var(--u); }
+.em-foot > .mp-fewer { flex: none; border-radius: 999px; }
+@container emcard (max-width: 34rem) {
+  .em-row, .em-row.em-wide { grid-template-columns: minmax(0, 1fr) 3.4rem minmax(0, 1fr) 4.2rem 4.4rem; row-gap: 0.333rem; }
+  .em-row > .em-name, .em-row.em-wide > .em-name, .em-colhead > :first-child { grid-column: 1 / -1; grid-row: auto; }
+  .em-row.em-wide > :nth-child(n + 2) { grid-row: auto; grid-column: auto; }
+  .em-colhead > :first-child { display: none; }
+  .em-name .mname { white-space: normal; overflow-wrap: anywhere; }
+  .em-ld { display: none; }
+}
+.em-colhead .mh { white-space: nowrap; }
+/* no command yet: the dashed tile where the first one lands, and a search that matched nothing: its line and Clear */
+.every > .add.em-new { align-self: flex-start; min-width: 24rem; }
+.every .nomatch, .pj .nomatch { border: 0; padding: 0; min-height: 0; }
+/* the board while it is read: the rows' own tracks, ghosted */
+.em-row .ghost.gtrk { display: block; height: var(--meter-h); border-radius: .3rem; }
+/* a ghost row stands a little taller than the row it stands for: a name too long for its cell takes a second line on some rows */
+.em-card.ghosted .em-row { min-height: calc(var(--row-h) * 1.03); }
+.every .ghost.em-gsearch { width: 28rem; height: 2.55rem; border-radius: var(--r-in); }
+.em-keys > .ghost { display: block; height: 1rem; }
+/* motion: a row new since the last draw comes in once; a chevron turns once on the press that turned it */
+.em-row.arrive { animation: em-in var(--t-snap) var(--e-out) both; animation-delay: calc(var(--i, 0) * 24ms); }
+@keyframes em-in { from { opacity: 0; transform: translateY(.4rem); } }
+.disc.turn-on > .chev { animation: chev-on var(--t-snap) var(--e-out); }
+.disc.turn-off > .chev { animation: chev-off var(--t-snap) var(--e-out); }
+@keyframes chev-on { from { transform: rotate(0deg); } to { transform: rotate(90deg); } }
+@keyframes chev-off { from { transform: rotate(90deg); } to { transform: rotate(0deg); } }
+.em-rate.grow, .pj-grow { animation: em-open var(--t-snap) var(--e-out) both; }
+@keyframes em-open { from { opacity: 0; transform: translateY(-.35rem); } }
+
+/* the board's order, as a number before each provider's name: the order the groups are sorted by */
+.em-board .titled > header > h2 { display: flex; align-items: center; gap: 0.667rem; }
+.em-no { flex: none; padding: .22rem .45rem .24rem; border: .12rem solid var(--track-line); border-radius: .4rem; font: 500 .8rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
+/* a card that folds past its first models says its count on the control that opens and folds it: its chevron turns with the rows */
+.em-head .em-cnt {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 0.667rem; height: var(--ctl-h); padding: 0 .75rem 0 1rem; box-sizing: border-box;
+  border: .12rem solid var(--track-line); border-radius: 999px; background: var(--obj-sunk); color: var(--text-body); font: 500 .95rem/1 var(--font-data); cursor: pointer;
+  transition: background-color var(--t-hover) var(--e-out), border-color var(--t-hover) var(--e-out), color var(--t-hover) var(--e-out);
+}
+.em-head .em-cnt b { font: inherit; color: var(--text); }
+.em-head .em-cnt:hover { background: var(--obj-high); border-color: var(--text-mute); color: var(--text); }
+.em-head .em-cnt:focus-visible { outline: .14rem solid var(--text); outline-offset: .15rem; }
+.em-cch { flex: none; width: .95rem; height: .95rem; transform: rotate(-90deg); transition: transform var(--t-snap) var(--e-out); }
+.em-cnt.open .em-cch { transform: none; }
+/* a command whose roster is not known says so where its rows would stand, in the limit's ink with its way to ask again; one held at
+   a limit keeps its rows, dimmed, under the time it comes back */
+.chip > .em-lamp { flex: none; width: .6rem; height: .6rem; margin-right: .5rem; border-radius: 50%; background: var(--limit); box-shadow: none; display: inline-block; animation: none; }
+.chip > .em-lamp.nu { background: var(--text-mute); }
+.em-note { display: flex; align-items: center; justify-content: space-between; gap: calc(2 * var(--u)); padding: calc(1.5 * var(--u)) calc(2 * var(--u)); border: .12rem solid var(--limit); border-radius: var(--r-in); font: 500 1rem/1.2 var(--font-name); color: var(--limit); }
+.em-note.nr { border-color: var(--track-line); color: var(--text-body); }
+.em-lim { display: flex; margin: 0; padding: calc(1.5 * var(--u)) calc(2 * var(--u)); border: .12rem solid var(--limit); border-radius: var(--r-in); white-space: nowrap; }
+.em-held .em-rows { opacity: .45; }
+
+/* the board's figure as a door to every card's whole list: the figure and its words on one baseline, a chevron that turns when all are open */
+.em-bar > .em-all { display: flex; align-items: center; gap: calc(1.5 * var(--u)); padding: .3rem 1rem .3rem 1.1rem; border: .12rem solid var(--track-line); border-radius: var(--r-obj); background: var(--obj-sunk); color: var(--text-body); font: inherit; text-align: left; }
+.em-bar > button.em-all { cursor: pointer; transition: background-color var(--t-hover) var(--e-out), border-color var(--t-hover) var(--e-out); }
+.em-bar > button.em-all:hover { background: var(--obj-high); border-color: var(--text-mute); }
+.em-bar > button.em-all:focus-visible { outline: .14rem solid var(--text); outline-offset: .15rem; }
+.em-all.open .em-cch { transform: none; }
+/* the line that takes the board's place when a search matches nothing comes in over the board that folded away */
+.every .nomatch.em-in { animation: em-fade var(--t-snap) var(--e-out) both; }
+@keyframes em-fade { from { opacity: 0; } }
+.every > .add.em-new { transition: background-color 140ms var(--e-out), border-color 140ms var(--e-out), color 140ms var(--e-out); }
+.every > .add.em-new:hover { background: var(--obj-high); border-color: var(--text-mute); color: var(--text); }
+/* what a search takes away leaves the way it stood, fading, while the rest slides to its place (models.js findMotion) */
+.em-leaving { position: absolute; margin: 0; pointer-events: none; z-index: 1; }
+
+/* ---------- Projects: the folders and their projects, beside the open one ----------
+   One markup at every width; the tab's own width picks the shape (@container mpage, never the screen). Under 70rem the
+   list sits over the pane. From 70rem it is a rail beside the pane, both in the page's one scroll. From 150rem the rail
+   takes two columns, so every project and the open one are on screen at once. A folder is one block, as a project is
+   on Sessions, and its projects are lines in it. The open one carries a neutral ink edge, never the key light. */
+.page { container-name: mpage; }
+.pj { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gap-col); align-items: start; }
+.pj-side { min-width: 0; display: flex; flex-direction: column; gap: calc(2 * var(--u)); }
+.pj-bar { display: flex; flex-wrap: wrap; align-items: center; gap: calc(1.5 * var(--u)) calc(2 * var(--u)); }
+.pj-bar .search { flex: 1 1 14rem; width: auto; min-width: 0; }
+.pj-err, .pj-fail { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.667rem 0.667rem; }
+.pj-empty { display: flex; flex-wrap: wrap; align-items: center; gap: calc(2 * var(--u)) calc(4 * var(--u)); padding: calc(4 * var(--u)) 0; }
+/* the way to Settings is the kit's own link, arrow and all (console.css .plink) */
+.pj-empty .plink { align-self: center; }
+.pj-legend .legend { gap: 0.333rem calc(3 * var(--u)); }
+.pj-legend .lg { font-size: .88rem; }
+
+.pj-legend svg, .pmark svg { flex: none; width: .95rem; height: .95rem; }
+.pj .pt-live i { flex: none; width: .55rem; height: .55rem; border-radius: 50%; background: var(--live); box-shadow: 0 0 .4rem var(--live); }
+.sw.share { width: 1.5rem; height: .7rem; border-radius: .2rem; background: color-mix(in oklab, var(--text) 45%, transparent); }
+/* the folders run down as many 22rem columns as the rail is wide: one at 1440, two on his screen */
+.proj-list { columns: 22rem; column-gap: var(--gap-card); }
+.pj-group { break-inside: avoid; display: flex; flex-direction: column; gap: var(--u); margin-bottom: var(--gap-col); }
+/* a folder's head: its own name, then its live sessions and its sessions in all, the figure over its tiles' figures */
+.pj-gh { margin: 0; display: flex; align-items: baseline; gap: 0.667rem; min-width: 0; padding: 0 calc(1.5 * var(--u) + var(--ink-w)) 0 .2rem; font: 600 .9rem/1.25 var(--font-data); color: var(--text); }
+.pj-gh .gat { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pj-gh .gn { min-width: 2.6rem; text-align: right; font: 500 .82rem/1.25 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
+.pj-tiles {
+  display: flex; flex-direction: column; min-width: 0; overflow: clip;
+  background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
+  box-shadow: .3rem .3rem 0 var(--wall-low), .3rem .3rem 0 var(--ink-w) var(--ink);
+}
+/* a project is one line: its name, its marks, its live sessions, then its sessions as a bar and a figure at the right,
+   every tile's bar and figure on one edge; its place on a line under it only where no folder says it */
+.proj-tab {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.333rem 0.667rem; min-width: 0; min-height: 2.8rem; padding: .65rem calc(1.5 * var(--u));
+  background: transparent; border: 0; border-radius: 0; box-shadow: inset 0 -.08rem 0 var(--track-line);
+  font: inherit; color: var(--text-body); text-align: left; cursor: pointer; transition: background-color var(--t-hover) var(--e-out), box-shadow var(--t-snap) var(--e-out);
+}
+.proj-tab:last-child { box-shadow: none; }
+/* the projects with no sessions, behind one count: a row as tall as a tile, under the hairline the tile above it draws */
+.pj-morerow { display: flex; align-items: center; padding: var(--u) calc(1.5 * var(--u)) 0; }
+.pj-morerow .morepill { align-self: center; }
+.proj-tab:hover { background: var(--obj-high); }
+.proj-tab:focus-visible { outline: .14rem solid var(--text); outline-offset: -.3rem; }
+.proj-tab[aria-current="true"] { background: var(--obj-high); box-shadow: inset .3rem 0 0 var(--text), inset 0 -.08rem 0 var(--track-line); }
+.proj-tab[aria-current="true"]:last-child { box-shadow: inset .3rem 0 0 var(--text); }
+.proj-tab .pname { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.25; color: var(--text); }
+.pmark { flex: none; display: inline-grid; place-items: center; color: var(--text-mute); }
+.pmark.draft { color: var(--text); }
+.pj .pt-live { flex: none; display: inline-flex; align-items: center; gap: 0.333rem; font: 500 .82rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
+.ppath { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); }
+/* a path cut from its start, so its last folders stay in view; the whole path is the tile's title */
+.proj-tab .ppath, .pj-head .ppath { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; direction: rtl; text-align: left; }
+.proj-tab .ppath { flex: 1 0 100%; font-size: .8rem; line-height: 1.2; }
+.pt-share { flex: none; width: 7rem; height: .72rem; border-radius: .3rem; overflow: hidden; background: color-mix(in oklab, var(--text) 10%, transparent); }
+.pt-share i { display: block; height: 100%; min-width: .2rem; border-radius: .3rem; background: color-mix(in oklab, var(--text) 52%, transparent); transition: width var(--t-snap) var(--e-out); }
+.proj-tab.idle .pname { color: var(--text-body); }
+.pt-n { flex: none; min-width: 2.8rem; font: 500 .9rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); text-align: right; }
+/* a later read that failed: the list it had, quieter, so its figures read as held rather than fresh */
+.proj-list.stale { opacity: .55; }
+.pj .ghost.pj-gtile { display: block; width: auto; height: 2.8rem; border-radius: 0; background-clip: content-box; padding: 1rem calc(1.5 * var(--u)); box-sizing: border-box; box-shadow: inset 0 -.08rem 0 var(--track-line); }
+.pj .ghost.pj-gtile:last-child { box-shadow: none; }
+/* the filter's box while the list is read: as wide as the field and as tall (its line box, padding and border) */
+.pj .ghost.pj-gsearch { flex: 1 1 14rem; height: 2.55rem; border-radius: var(--r-in); }
+/* a command's picker while the list is read: its chip and the picker's padding and edge */
+.pj .ghost.pj-gpick { height: 2.42rem; border-radius: var(--r-obj); }
+.pj .ghost.pj-gsplit { display: block; height: var(--stack-h); margin-bottom: calc(2 * var(--u)); border-radius: .3rem; }
+.pj .ghost.pj-gstat { display: block; width: 11rem; height: 2.2rem; border-radius: var(--r-in); }
+.pj-gdoc .ghost-lines { gap: 0.667rem; }
+.pj-gwin { margin-top: calc(2 * var(--u)); padding-top: calc(2 * var(--u)); border-top: .08rem solid var(--hair); }
+.pj-gwin .ghost { display: block; width: 70%; height: .55rem; }
+.pj-gdoc .ghost { height: .9rem; }
+
+/* ---------- the open project: a pane by the console's contract, its head, then what each command does here ----------
+   It is a .pane with a .body, as the open command and the open session are, in the page's one scroll (console.css): the
+   rules below take back what sessions.css gives every .pane (hidden, a fixed height, a scroll of its own) and draw it. */
+.pj > .pane.pj-pane {
+  display: flex; flex-direction: column; min-width: 0; height: auto; overflow: hidden; container: pjpane / inline-size;
+  background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
+  box-shadow: var(--cast) var(--cast) 0 var(--wall-low), var(--cast) var(--cast) 0 var(--ink-w) var(--ink);
+}
+.pane.pj-pane > .pj-head {
+  flex: none; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.333rem calc(2 * var(--u)); min-height: 4.4rem; box-sizing: border-box;
+  padding: .95rem calc(3 * var(--u)); background: var(--obj-high); border-bottom: var(--ink-w) solid var(--ink);
+}
+.pj-name { margin: 0; min-width: 0; font: 400 1.4rem/1.2 var(--font-lead); color: var(--text); overflow-wrap: anywhere; }
+.pj-head .ppath { flex: 0 1 auto; max-width: 100%; }
+.pj-head .pj-door { margin-left: auto; display: inline-flex; align-items: baseline; gap: calc(2 * var(--u)); }
+.pj-head .pd-count, .pj-head .pd-count b { font-size: .88rem; }
+.pj-head .pj-fail { align-self: center; }
+.pane.pj-pane > .pj-body {
+  flex: none; overflow: visible; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gap-col); align-items: start;
+  padding: calc(3 * var(--u)) calc(3 * var(--u)) calc(4 * var(--u));
+}
+.pj-cmd { min-width: 0; display: flex; flex-direction: column; gap: var(--gap-col); }
+.pj-run { min-width: 0; }
+.pj-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u); margin-left: -0.333rem; }
+/* the project's sessions split by command: one bar, each part its command's colour (a meter's fill), largest first,
+   the part tied to no command of his hatched at its end; the chips under it are its labels */
+.pj-split { display: flex; height: var(--stack-h); margin-bottom: calc(2 * var(--u)); border-radius: .3rem; overflow: hidden; background: var(--obj-sunk); box-shadow: inset 0 0 0 var(--ink-w) var(--ink); }
+.pj-seg {
+  flex: none; display: flex; align-items: center; min-width: .5rem; height: 100%; margin: 0; padding: 0; border: 0; border-radius: 0; overflow: hidden; white-space: nowrap;
+  background: var(--c); box-shadow: inset -.12rem 0 0 var(--ink); color: var(--on-cable); font: 600 .85rem/1 var(--font-name); cursor: pointer;
+  transition: width var(--t-snap) var(--e-out), filter var(--t-hover) var(--e-out);
+}
+.pj-seg > span { padding-inline: .7rem; }
+.pj-seg b { font: 600 .85rem/1 var(--font-data); font-variant-numeric: tabular-nums; }
+.pj-seg:hover { filter: brightness(1.12); }
+.pj-seg.on { outline: .2rem solid var(--text); outline-offset: -.2rem; }
+.pj-seg:focus-visible { outline: .2rem solid var(--text); outline-offset: -.2rem; }
+.pj-split > i.unk, .sw.unk { flex: none; min-width: .16rem; background: repeating-linear-gradient(135deg, color-mix(in oklab, var(--text) 34%, transparent) 0 .14rem, transparent .14rem .42rem); }
+.pj-split > i.unk { height: 100%; }
+.pj-split.grow > * { animation: split-in var(--t-snap) var(--e-out) both; transform-origin: left; }
+@keyframes split-in { from { transform: scaleX(0); } }
+.pj-pick {
+  display: inline-flex; align-items: center; gap: 0.667rem; padding: .3rem .55rem .3rem .3rem; background: none;
+  border: .12rem solid transparent; border-radius: var(--r-obj); font: inherit; color: var(--text-body); cursor: pointer;
+  transition: background-color 140ms var(--e-out), border-color 140ms var(--e-out);
+}
+.pj-pick:hover { background: var(--obj-high); }
+.pj-pick.on { background: var(--obj-high); border-color: var(--text); }
+.pj-pick:focus-visible { outline: .14rem solid var(--text); outline-offset: .15rem; }
+/* a command never run in this project is still there to pick, quieter than the ones that were */
+.pj-pick.idle:not(.on) .chip { color: var(--text-mute); border-color: var(--track-line); }
+.pj-idle { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: var(--u); }
+.pj-run .pd-sub { margin-bottom: calc(1.5 * var(--u)); }
+/* As run by: the number of commands that ran here leads at the left, their bar and chips take the rest of the row */
+.prj-row { display: grid; grid-template-columns: minmax(0, 15rem) minmax(0, 1fr); column-gap: var(--gap-col); align-items: start; }
+.prj-row.solo { grid-template-columns: minmax(0, 1fr); }
+.prj-lead .pd-top { margin-bottom: 0; }
+.prj-bar { min-width: 0; }
+@container pjcmd (max-width: 52rem) { .prj-row { grid-template-columns: minmax(0, 1fr); row-gap: calc(2 * var(--u)); } }
+/* in a project no command has run in, no command chip is lit: none of them was picked by a run */
+.pj-chips.prj-none .pj-pick.on { background: none; border-color: transparent; }
+.pj-chips.prj-none .pj-pick.on .chip { color: var(--text-mute); border-color: var(--track-line); }
+.pj-run .pd-top { margin-bottom: calc(2 * var(--u)); }
+/* what Claude Code gets here from the picked command: its chip, then a tile for each thing it receives */
+.pj-for { display: flex; flex-wrap: wrap; align-items: center; gap: calc(1.5 * var(--u)) calc(4 * var(--u)); }
+.pj-for > .chip { flex: none; }
+.pc-n { font: 500 .88rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+/* sessions tied to no command of his: a fact in the row, not a pick, keyed by the bar's hatched part */
+.pj-unk { display: inline-flex; align-items: center; gap: 0.667rem; padding: .3rem .55rem .3rem .3rem; font: 500 .9rem/1 var(--font-name); color: var(--text-mute); }
+.pj-unk .sw.unk { flex: none; width: 1.3rem; height: .8rem; border-radius: .2rem; box-shadow: inset 0 0 0 .06rem var(--track-line); }
+.pj-cmd { container: pjcmd / inline-size; }
+.pj-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr)); gap: var(--gap-col); align-items: start; }
+
+
+.pj .sechead > .act { margin-left: auto; }
+/* wide, the files every command reads stand beside what each command does here, wide enough for their text to read */
+@container pjpane (min-width: 120rem) { .pane.pj-pane > .pj-body { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); } }
+@container mpage (min-width: 70rem) { .pj { grid-template-columns: 27rem minmax(0, 1fr); } }
+/* from 100rem (1440) the rail is wide enough for the splice manager's bar, which steps aside under it, to stay on one
+   line; the pane keeps its two columns of plates beside it */
+@container mpage (min-width: 100rem) { .pj { grid-template-columns: 32rem minmax(0, 1fr); } }
+@container mpage (min-width: 150rem) { .pj { grid-template-columns: 50rem minmax(0, 1fr); } }
+
+/* ---------- a project's files: a tile each with its length drawn, and the open one rendered as it reads ---------- */
+.ftiles { display: flex; flex-wrap: wrap; gap: calc(1.5 * var(--u)); }
+.ftile {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0.333rem 0.667rem; min-width: 12rem; max-width: 100%;
+  padding: .65rem .9rem .7rem; background: var(--obj-high); border: .12rem solid var(--track-line); border-radius: var(--r-in);
+  font: inherit; color: var(--text); text-align: left; cursor: pointer; transition: border-color 140ms var(--e-out);
+}
+.ftile:hover { border-color: var(--text-mute); }
+.ftile[aria-expanded="true"] { border-color: var(--text); box-shadow: inset 0 0 0 .06rem var(--text); }
+.ftile:focus-visible { outline: .14rem solid var(--text); outline-offset: .15rem; }
+.ftile > svg { grid-row: span 2; width: 1.25rem; height: 1.25rem; color: var(--text-body); }
+.ftile .fname { min-width: 0; overflow-wrap: anywhere; font: 500 .95rem/1.2 var(--font-data); color: var(--text); }
+.ftile .fsize { display: flex; align-items: center; gap: 0.333rem; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.ftile .fsize b { font: 500 .8rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
+.ftile .fbar { flex: none; width: 6rem; height: .4rem; border-radius: .2rem; overflow: hidden; background: color-mix(in oklab, var(--text) 10%, transparent); }
+.ftile .fbar i { display: block; height: 100%; min-width: .2rem; border-radius: .2rem; background: color-mix(in oklab, var(--text) 45%, transparent); }
+.pj .ghost.ftile-g { display: block; height: 3.5rem; border-radius: var(--r-in); }
+.fprev { display: flex; flex-direction: column; align-items: flex-start; gap: calc(1.5 * var(--u)); padding: calc(2 * var(--u)) calc(3 * var(--u)) calc(2.5 * var(--u)); background: var(--obj-sunk); border-radius: var(--r-in); }
+.fprev > .fhead { align-self: stretch; display: flex; align-items: baseline; justify-content: space-between; gap: 0.667rem; padding-bottom: calc(1.5 * var(--u)); border-bottom: .08rem solid var(--hair); }
+.fhead .fname { min-width: 0; overflow-wrap: anywhere; font: 500 .95rem/1.2 var(--font-data); color: var(--text); }
+.fdoc { max-width: 62rem; min-width: 0; font: 400 .95rem/1.55 var(--font-name); color: var(--text-body); overflow-wrap: anywhere; }
+.fdoc > :first-child { margin-top: 0; }
+.fdoc > :last-child { margin-bottom: 0; }
+.fdoc h3 { margin: 1.3em 0 .45em; font: 400 1.2rem/1.25 var(--font-lead); color: var(--text); }
+.fdoc h4, .fdoc h5, .fdoc h6 { margin: 1.15em 0 .4em; font: 600 1rem/1.3 var(--font-name); color: var(--text); }
+.fdoc h5, .fdoc h6 { font-size: .92rem; color: var(--text-body); }
+.fdoc p { margin: .5em 0; }
+.fdoc ul, .fdoc ol { margin: .45em 0; padding-left: 1.35rem; }
+.fdoc li { margin: .22em 0; }
+.fdoc li::marker { color: var(--text-mute); }
+.fdoc b { font-weight: 600; color: var(--text); }
+.fdoc code { font: 500 .86em/1 var(--font-data); padding: .08rem .3rem; border-radius: .25rem; background: color-mix(in oklab, var(--text) 9%, transparent); color: var(--text); }
+.fdoc pre { margin: .7em 0; padding: .7rem .9rem; overflow-x: auto; background: var(--obj); border-radius: var(--r-in); }
+.fdoc pre code { padding: 0; background: none; font: 400 .85rem/1.5 var(--font-data); white-space: pre; color: var(--text-body); }
+.fdoc hr { margin: 1.1em 0; border: 0; border-top: .08rem solid var(--hair); }
+.fdoc blockquote { margin: .6em 0; padding-left: .9rem; border-left: .2rem solid var(--track-line); color: var(--text-mute); }
+/* a memory file's front matter: its fields, each name beside its value, ruled off from the text */
+.fdoc .ffront { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: baseline; gap: 0.333rem calc(2 * var(--u)); margin: 0 0 1.1em; padding-bottom: .9em; border-bottom: .08rem solid var(--hair); }
+.ffront dt { font: 500 .8rem/1.4 var(--font-data); color: var(--text-mute); }
+.ffront dd { margin: 0; min-width: 0; font: 500 .9rem/1.45 var(--font-name); color: var(--text); }
+
+/* ---------- the rails: the system prompt's layers and compaction's rules, widest first, read down ----------
+   A rung is its dot on the one line down the rail, its scope (Claude Code, the command's chip, the project's name)
+   and its value under it. A layer that is sent fills its dot; a layer a Replace keeps from being sent dims, and its
+   stretch of the rail is dashed. In compaction one rule is in force, and its dot is ringed. */
+.rrail { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.pj .rung { position: relative; display: grid; grid-template-columns: 1.7rem minmax(0, 1fr); column-gap: calc(1.5 * var(--u)); row-gap: 0.667rem; padding: .6rem 0; }
+.pj .rung::before { content: ""; position: absolute; left: .85rem; top: 0; bottom: 0; width: .14rem; margin-left: -.07rem; background: var(--track-line); }
+.pj .rung:first-child::before { top: 1.45rem; }
+.pj .rung:last-child::before { bottom: auto; height: 1.45rem; }
+.pj .rung:only-child::before { display: none; }
+/* a rung's socket carries its place in the order, widest rule first: filled where it is sent, hollow where it is not set */
+.rdot { grid-row: 1 / span 2; grid-column: 1; justify-self: center; position: relative; z-index: 1; display: grid; place-items: center; width: 1.7rem; height: 1.7rem; margin-top: 0; border-radius: 50%; background: var(--obj); box-shadow: 0 0 0 .14rem var(--track-line); font: 600 .78rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
+.pj .rung.on .rdot { background: var(--text-body); box-shadow: 0 0 0 .14rem var(--text-body); color: var(--obj); }
+.rwho { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 0.333rem 0.667rem; min-width: 0; min-height: 1.4rem; font: 500 .95rem/1.2 var(--font-name); color: var(--text); }
+.rwho > .act { margin-left: auto; }
+.rval { grid-column: 2; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0.333rem 0.667rem; }
+.rbase, .rscope { font: 500 .95rem/1.2 var(--font-name); color: var(--text); }
+.pj .rung.unset > .rwho .pname, .pj .rung.unset > .rwho .rscope { color: var(--text-body); }
+.rown { font: 500 .9rem/1.3 var(--font-name); color: var(--text-body); }
+.mtag, .dmark { flex: none; padding: .2rem .38rem; border-radius: .25rem; font: 600 .74rem/1 var(--font-name); font-style: normal; letter-spacing: .07em; text-transform: uppercase; color: var(--text-body); box-shadow: inset 0 0 0 .08rem var(--track-line); }
+.dmark { color: var(--text); box-shadow: inset 0 0 0 .1rem var(--text); }
+.rtext { flex: 1 1 100%; min-width: 0; display: flex; flex-direction: column; padding: .5rem .7rem; background: var(--obj-sunk); border-radius: var(--r-in); font: 400 .86rem/1.5 var(--font-data); color: var(--text-body); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* under a Replace the layers above it are not sent: they dim, and their stretch of the rail is dashed */
+.pj .rung.cut > .rwho, .pj .rung.cut > .rval { opacity: .45; }
+.pj .rung:not(:has(.rval)) { row-gap: 0; }
+.pj .rung.cut::before, .legend i.rl-cut { background: repeating-linear-gradient(to bottom, var(--text-mute) 0 .3rem, transparent .3rem .55rem); }
+.pj .rung.cut .rdot { background: var(--obj); box-shadow: 0 0 0 .14rem var(--text-mute); color: var(--text-mute); }
+.legend i.rl-cut { flex: none; width: .14rem; height: 1.1rem; border-radius: 0; }
+.legend i.rl-unset { flex: none; width: .95rem; height: .95rem; border-radius: 50%; background: var(--obj); box-shadow: 0 0 0 .14rem var(--track-line); margin: 0 0.333rem; }
+/* compaction: the rule in force is ringed; a rule it overrides fills quieter than it */
+.rrail.cx .rung:not(.lit):not(.unset) .rdot { background: var(--text-mute); box-shadow: 0 0 0 .14rem var(--text-mute); color: var(--obj); }
+.rrail.cx .rung.lit .rdot, .legend i.rl-lit { background: var(--text); box-shadow: 0 0 0 .14rem var(--text), 0 0 0 .42rem color-mix(in oklab, var(--text) 18%, transparent); }
+.rrail.cx .rung.lit .rdot { color: var(--obj); }
+.legend i.rl-lit { flex: none; width: .72rem; height: .72rem; margin: 0 0.333rem; border-radius: 50%; }
+.redit { flex-direction: column; align-items: stretch; gap: 0.667rem; }
+.redit > .switch { align-self: flex-start; flex-wrap: wrap; }
+.redit > .field.ptext { min-height: 5.5rem; font: 400 .9rem/1.45 var(--font-data); }
+.pj .cfoot { display: flex; flex-wrap: wrap; align-items: center; gap: calc(1.5 * var(--u)) calc(2 * var(--u)); margin-top: calc(2 * var(--u)); padding-top: calc(2 * var(--u)); border-top: .08rem solid var(--hair); }
+.pj .cfind { margin: calc(1.5 * var(--u)) 0 0; font: 500 .88rem/1.45 var(--font-data); color: var(--limit); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* where Claude Code compacts on the main model: the window on the one scale of every command's window, filled to about
+   85% of it where the notch stands, its figure of the whole beside it */
+.pj .cwin { display: flex; align-items: center; gap: calc(1.5 * var(--u)); margin-top: calc(2 * var(--u)); padding-top: calc(2 * var(--u)); border-top: .08rem solid var(--hair); }
+.pj .cglyph { flex: none; display: inline-grid; color: var(--text-mute); }
+.pj .cglyph svg { width: 1.05rem; height: 1.05rem; }
+.pj .ctrk { position: relative; flex: 1 1 auto; max-width: 22rem; height: .55rem; border-radius: .2rem; background: color-mix(in oklab, var(--text) 8%, transparent); }
+.pj .ctrk i { position: absolute; left: 0; top: 0; bottom: 0; width: var(--w); border-radius: .2rem; background: linear-gradient(to right, color-mix(in oklab, var(--text) 45%, transparent) 85%, color-mix(in oklab, var(--text) 20%, transparent) 85%); }
+.pj .ctrk u { position: absolute; left: calc(var(--w) * .85); top: 50%; width: .16rem; height: 1rem; transform: translate(-50%, -50%); border-radius: .08rem; background: var(--text); }
+.pj .cwin .pd-count { flex: none; white-space: nowrap; }
+.rmodel { font: 500 .95rem/1.2 var(--font-name); color: var(--text); }
+/* the command that shares this address: the fork, then its chip, one unit */
+.also { display: inline-flex; align-items: center; gap: 0.333rem; color: var(--text-mute); }
+.also svg { width: 1.3rem; height: 1.3rem; flex: none; }
+.lbl.head2 { color: var(--text-mute); }
+
+/* The key glyph is drawn as strokes: a ring and its bit. Without these it fills its ring solid and shows as a dot. */
+.tsub svg, .keyfact svg, .pick.tpl .tkind svg, .sechead.tplkick svg { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- the page's one reading mark, and a down command's act ---------- */
+.vread { display: inline-flex; align-items: center; }
+.vread .ghost { height: .55rem; }
+
+/* ---------- Log: each turn a row, its time a bar on one log axis ---------- */
+.turnstats { margin-bottom: calc(3 * var(--u)); }
+.turns { display: grid; grid-template-columns: 5.6rem minmax(0, 1fr) 5.2rem minmax(0, 9rem) minmax(0, 9rem); column-gap: calc(2 * var(--u)); row-gap: var(--u); align-items: center; }
+.turns.nohit { grid-template-columns: 5.6rem minmax(0, 1fr) 5.2rem minmax(0, 9rem); }
+.trn .barcell { --v-w: 3.4rem; }
+.trn .barcell.both { grid-column: span 2; }
+.trn { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; }
+.trn time { font: 500 .9rem/1.3 var(--font-data); color: var(--text-mute); }
+.trn .pd-n { text-align: right; font-variant-numeric: tabular-nums; }
+.trn .barcell { min-width: 0; }
+.trhead span { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.trhead span:nth-child(2) { grid-column: 2 / 4; }
+.trn.bad .pd-trk .mid, .trn.bad .pd-trk .hi { background: var(--limit); }
+.trax { margin-top: calc(-.4 * var(--u)); }
+.trax .pd-ax { grid-column: 2; }
+.turns + .morepill, .turns + .more { margin-top: calc(1.5 * var(--u)); }
+.hlog .events { margin-top: calc(3 * var(--u)); }
+
+/* ---------- Running: a behaviour is a tile ---------- */
+.qgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: var(--gap-card); }
+.qtile { display: flex; flex-direction: column; gap: var(--u); min-width: 0; padding: calc(1.5 * var(--u)) calc(2 * var(--u)); border: var(--ink-w) solid var(--ink); border-radius: var(--r-in); background: var(--obj); box-shadow: calc(var(--cast) * .6) calc(var(--cast) * .6) 0 0 var(--c, var(--text-mute)); }
+.qtile:not(.own) { border: .1rem dashed var(--track-line); background: transparent; box-shadow: none; }
+/* the hard shadow of a tile set here sits in the grid's gap, so the grid keeps room for it on its right */
+.qgrid, .qmem { padding-right: calc(var(--cast) * .6); padding-bottom: calc(var(--cast) * .6); }
+.barcell.hit .vbar b { background: var(--splice-chart-2); }
+.turnstats .ring .arc { stroke: var(--splice-chart-2); }
+.qtile.wide { grid-column: 1 / -1; }
+.qhead { display: flex; align-items: center; justify-content: space-between; gap: 0.667rem; min-height: 1.9rem; }
+.qhead .lbl { font: 500 .9rem/1.25 var(--font-name); color: var(--text-body); }
+.qtile .ctl { gap: 0.667rem 0.667rem; }
+.qtile .field.num, .qtile .field.mono { flex: 0 1 9rem; }
+.qfig { font: 500 .88rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.qfig b { font: 600 1rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.qrest .qgrid { margin-top: calc(1.5 * var(--u)); }
+.qtile .switch { max-width: 100%; }
+
+/* the sign-in kinds: each choice carries how it signs in as a glyph, and the menu is as wide as its picker at least */
+.menuwrap > .menu.kmenu { min-width: max(100%, 16rem); }
+.menu.kmenu button { justify-content: flex-start; gap: 0.667rem; }
+.rt-kg { display: inline-block; flex: none; width: 1.3rem; height: 1.3rem; border-radius: .35rem; background: var(--c, var(--track-line)); }
+.pickbtn .pf .rt-kg { margin-right: 0.667rem; vertical-align: -.3rem; }
+.menu.kmenu button[aria-current="true"]::after { content: "\2713"; margin-left: auto; color: var(--live); font-weight: 600; }
+
+/* the tiers that already use a model ride its row, and its price ends the row, so a model is chosen on what it costs */
+.mpick .muse { display: flex; gap: 0.333rem; min-width: 0; overflow: hidden; }
+.mpick .muse i { font: 500 .72rem/1 var(--font-name); font-style: normal; padding: .18rem .4rem; border-radius: .7rem; box-shadow: inset 0 0 0 .08rem var(--track-line); color: var(--text-body); white-space: nowrap; }
+.mpick .mprice { color: var(--text-body); white-space: nowrap; text-align: right; }
+.mpick .mprice i { font-style: normal; color: var(--text-mute); margin-inline: 0; }
+.mclr-word { display: inline-flex; align-items: center; gap: 0.333rem; font-weight: 600; }
+.mclr-word svg { width: .9rem; height: .9rem; }
+
+/* the project menu opens in place under its tile, in the plate's own width, so it never runs past the pane or the screen */
+.menuwrap.inflow > .menu { position: static; margin-top: 0.667rem; width: auto; min-width: 0; }
+.ppick .pbar { width: 6.5rem; flex: none; }
+.ppick .pbar .vbar { width: 100%; }
+
+/* what Add still waits for, as segments filled one by one */
+.needs { display: inline-flex; align-items: center; gap: 0.333rem; }
+.needs i { display: block; width: 1.7rem; height: .4rem; border-radius: .2rem; background: color-mix(in oklab, var(--text) 16%, transparent); transition: background var(--t-snap) var(--e-out); }
+.needs i.on { background: var(--text); }
+
+/* a ghost plate holds sections the way a plate does: 4u, a hairline, 4u */
+.gpane .plate.pcol { align-items: stretch; }
+.gsec { display: flex; flex-direction: column; align-items: flex-start; gap: calc(2 * var(--u)); }
+.gsec + .gsec { margin-top: calc(4 * var(--u)); padding-top: calc(4 * var(--u)); border-top: .08rem solid var(--hair); align-self: stretch; }
+
+/* a list of models: every one of the command's, pressed where it is in the list */
+.chips.qpick { gap: 0.333rem; }
+
+/* each card's window is a bar on the one scale the rail shares, between its model and its figure */
+.card.h .cwbar { flex: 0 0 5.5rem; margin-left: auto; }
+.card.h .cwbar + .cwin { margin-left: 0; min-width: 3rem; text-align: right; }
+.card.h .cwbar .wbar { height: .5rem; }
+.door { display: inline-flex; align-items: center; gap: 0.333rem; text-decoration: none; color: var(--text-body); }
+.door:hover { color: var(--text); }
+.door .go { width: .8rem; height: .8rem; }
+
+/* the marks of the one axis, faint inside every timed track, so a group without its own axis reads against the plate's */
+.etime .pd-trk u.atk { position: absolute; top: 0; bottom: 0; width: .08rem; background: color-mix(in oklab, var(--text) 16%, transparent); pointer-events: none; }
+/* LOG AND MODELS ON ONE PITCH: every turn, event and model row stands 3.7rem from the next, and the cells of a column (time,
+   the bar, its figure, the window) start at the same x in the turns, the events and the models under them */
+.turns { row-gap: 0; }
+.trn:not(.trhead):not(.trax) { min-height: 3.7rem; }
+.trhead, .trax { min-height: 1.9rem; }
+.events { grid-template-columns: 5.6rem minmax(0, 1fr) 5.2rem minmax(0, 9rem); column-gap: calc(2 * var(--u)); row-gap: 0; grid-auto-rows: 3.7rem; }
+.events .etext { grid-column: 2 / 4; }
+.tiers > .tier:not(.thead), .tier.other { min-height: 3.7rem; }
+.wbar.none { background: repeating-linear-gradient(135deg, color-mix(in oklab, var(--text) 16%, transparent) 0 .3rem, transparent .3rem .62rem); }
+.rawlines li.rawend { display: flex; align-items: center; gap: 0.667rem; }
+.trnnone { display: flex; align-items: center; min-width: 0; color: var(--text-mute); }
+.trnnone.both { grid-column: span 2; }
+/* THE RAIL'S HEAD AND NUMBERS: how many commands need him of all of them, one segment per command, and each card's socket
+   holds the number it stands at, lit green when it is fine and red when it is not */
+.list.rail.rl-led { --rl-hero: 5rem; }
+.list.rail.rl-led::before { top: calc(var(--rl-hero) + var(--gap-card) + 1.1rem); }
+.rl-hero { display: grid; grid-template-columns: 3.4rem minmax(0, 1fr); grid-template-rows: 3.4rem 1rem; gap: calc(1.2 * var(--u)) calc(1.5 * var(--u)); align-items: center; height: var(--rl-hero); margin-left: -2.667rem; }
+.rl-hn { display: grid; place-items: center; height: 3.4rem; border-radius: var(--r-obj); border: var(--ink-w) solid var(--ink); background: var(--key-light); color: var(--splice-ink-day); font: 600 1.9rem/1 var(--font-data); font-variant-numeric: tabular-nums; box-shadow: .25rem .25rem 0 var(--ink); }
+.rl-hn.ok { background: var(--live); }
+.rl-hero.rl-calm { grid-template-columns: minmax(0, 1fr); }
+.rl-ghost { pointer-events: none; }
+.tplnone { display: flex; align-items: center; justify-content: space-between; gap: calc(2 * var(--u)); padding: calc(2 * var(--u)) calc(3 * var(--u)); border: .1rem dashed var(--track-line); border-radius: var(--r-in); }
+.tplnone > .nothing { padding: 0; }
+.pick.tpl.gtpl { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); pointer-events: none; }
+.ghost.rl-gsq { width: 3.4rem; height: 3.4rem; border-radius: var(--r-obj); }
+.ghost.rl-gseg { display: block; height: .5rem; border-radius: .25rem; }
+/* a ghost card stands on its own socket, the dark circle the number will light */
+.card.gcard[data-gs]::before { content: ""; position: absolute; left: -2.667rem; top: 1.1rem; width: 2rem; height: 2rem; border-radius: 50%; background: var(--socket); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .15rem var(--rail); }
+.rl-ht { display: flex; flex-direction: column; gap: .25rem; min-width: 0; }
+.rl-ht b { font: 500 1.4rem/1.1 var(--font-lead); color: var(--text); }
+.rl-ht small { font: 500 .88rem/1.1 var(--font-name); color: var(--text-mute); }
+.rl-segs { grid-column: 1 / -1; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: .3rem; height: .5rem; }
+.rl-seg { all: unset; box-sizing: border-box; display: block; height: .5rem; border-radius: .25rem; background: var(--c); cursor: pointer; opacity: .9; transition: transform var(--t-snap) var(--e-out); }
+.rl-seg.need { background: var(--key-light); }
+.rl-seg:hover, .rl-seg:focus-visible { transform: scaleY(1.7); opacity: 1; }
+.lamp .rl-num { font: 600 .88rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: currentColor; }
+.lamp.ready { color: var(--live); }
+/* ALL SETTINGS: its own title at the plates' lead size with the count beside it, and each group's count drawn as a bar against the largest group */
+.everyttl { margin: 0; font: 500 1.4rem/1.1 var(--font-lead); color: var(--text); display: inline-flex; align-items: baseline; gap: calc(1.2 * var(--u)); }
+.everyttl b { font: 600 1.1rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
+.egroup > .sechead { display: flex; align-items: center; gap: calc(1.5 * var(--u)); }
+.gbar { flex: 1 1 4rem; max-width: 12rem; height: .5rem; border-radius: .25rem; background: color-mix(in oklab, var(--text) 9%, transparent); overflow: hidden; }
+.gbar > i { display: block; height: 100%; border-radius: .25rem; background: var(--text-mute); transition: width var(--t-snap) var(--e-out); }
+/* the line from the rail's dashed card to the form's chip */
+.cmds { position: relative; }
+.addstem { position: absolute; left: 0; top: 0; z-index: 3; pointer-events: none; overflow: visible; color: var(--c, var(--text-mute)); }
+.addstem path { fill: none; stroke: var(--text-mute); stroke-width: 2; stroke-dasharray: 5 5; stroke-linecap: round; }
+.addstem circle { fill: var(--text-mute); }
+.lamp.working:has(> .rl-num) { box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .15rem var(--live), 0 0 .9rem var(--live); }
+.rt-wire { align-self: flex-start; padding: .15rem .5rem; border-radius: 999px; box-shadow: inset 0 0 0 .08rem var(--track-line); font: 500 .8rem/1.2 var(--font-name); color: var(--text-body); }

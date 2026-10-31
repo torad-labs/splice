@@ -1,0 +1,162 @@
+// NEW: both daemon listeners share charged ingress and application ownership.
+package splice.http.ingress
+
+import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.Application
+import io.ktor.server.application.ApplicationCall
+import io.ktor.server.application.ApplicationCallPipeline
+import io.ktor.server.application.ApplicationStopPreparing
+import io.ktor.server.application.call
+import io.ktor.server.response.respondText
+import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.discard
+import io.netty.channel.ChannelPipeline
+import io.netty.channel.group.DefaultChannelGroup
+import io.netty.util.concurrent.GlobalEventExecutor
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import splice.core.config.IngressReadIdleMs
+import splice.core.config.MaterializedByteCap
+import splice.core.config.RequestByteCap
+import splice.core.failure.Decline
+import splice.core.memory.HeapCapacityException
+import splice.core.memory.HeapCategory
+import splice.core.memory.HeapReservations
+import splice.core.memory.HeapWeights
+import splice.core.util.Cancellables
+import splice.core.wire.HttpStatus
+import java.util.concurrent.atomic.AtomicBoolean
+
+private const val CODEC_HANDLER = "codec"
+private val connectionKey = io.netty.util.AttributeKey.valueOf<IngressOwnership>("splice.heap.ingress")
+
+/** Admission runs after the HTTP codec but before automatic continue and Ktor's body actor.
+ *  Unknown-length bodies reserve the listener's cap. Refused bodies are never forwarded to Ktor.
+ *  A refusal closes its connection after Ktor writes the ordered response, without draining an unlimited body.
+ */
+public class HeapIngress(
+    private val heap: HeapReservations,
+    /** The listener's body cap, asked for at every request: a raised cap admits the next one (RequestByteCap). */
+    private val maxBodyBytes: RequestByteCap,
+    private val errorBody: IngressErrorBody,
+    /** The materialization gate's own ceiling, asked for at every request so a raised budget admits the next body
+     *  this guard would have refused (MaterializedByteCap). The default is the whole process ledger, for a listener
+     *  with no gate behind it. */
+    private val requestLimit: MaterializedByteCap = MaterializedByteCap { heap.limitBytes },
+    /** How long a staged close waits for the client's own FIN before closing; a test stretches it to tell a FIN from the timer. */
+    private val shutdownGraceMs: Long = SHUTDOWN_GRACE_MS,
+    /** How long a request body may sit silent before the connection is closed and its charge returned; null leaves a
+     *  listener unbounded here, for one whose own routes already bound the read (a head). */
+    private val readIdleMs: IngressReadIdleMs? = null,
+) {
+    private val requests = NettyIngressRequest()
+    private val stopping = AtomicBoolean()
+    private var connections = DefaultChannelGroup(GlobalEventExecutor.INSTANCE, true)
+
+    public fun install(pipeline: ChannelPipeline) {
+        val ownership = IngressOwnership(heap.reserve(HeapWeights.CONNECTION_BYTES, HeapCategory.CONNECTION))
+        pipeline.channel().attr(connectionKey).set(ownership)
+        // A read requested by the decoder also crosses this guard.
+        pipeline.addBefore(CODEC_HANDLER, "splice-heap-read", IngressReadGuard(ownership))
+        // Order is load-bearing: input shutdown sits before IngressShutdown, so its ctx.close() travels toward the
+        // head and never re-enters the staged close.
+        pipeline.addBefore(CODEC_HANDLER, "splice-heap-input-shutdown", IngressInputShutdown(ownership))
+        pipeline.addBefore(CODEC_HANDLER, "splice-heap-close", IngressShutdown(ownership, stopping, shutdownGraceMs))
+        pipeline.addBefore(CODEC_HANDLER, "splice-heap-drain", IngressDrain(ownership))
+        pipeline.addAfter(
+            CODEC_HANDLER,
+            "splice-heap-body",
+            IngressHandler(heap, maxBodyBytes, requestLimit, ownership, readIdleMs, errorBody),
+        )
+        // Added after the body handler, so it lands directly behind the codec: the response path sees writes there.
+        pipeline.addAfter(CODEC_HANDLER, "splice-heap-response", IngressResponseWatch(ownership))
+        // Physical close settles ownership even when a retired registration emits no channelInactive.
+        pipeline.channel().closeFuture().addListener { ownership.disconnect() }
+        val _ = connections.add(pipeline.channel())
+    }
+
+    /** The start of a drain: a connection with no request on it is closed now, so the client's next request opens a new
+     *  one and waits in the kernel for the next daemon, instead of reaching this one on the connection it kept open and
+     *  being refused. A connection that still owes a response is left alone and finishes it. */
+    public fun closeIdleConnections() {
+        connections.filter { it.attr(connectionKey).get()?.idle == true }.forEach { it.close() }
+    }
+
+    /** Bind the original request identity before routing wraps it. No injected header crosses the wire. */
+    public fun install(application: Application) {
+        stopping.set(false)
+        connections = DefaultChannelGroup(GlobalEventExecutor.INSTANCE, true)
+        // Stop accepted sockets while their event loops still run. Shutdown cancels scheduled drain tasks.
+        application.monitor.subscribe(ApplicationStopPreparing) {
+            stopping.set(true)
+            connections.close().syncUninterruptibly()
+        }
+        application.intercept(ApplicationCallPipeline.Monitoring) {
+            val request = requests.request(call)
+            val ownership = requests.channel(call)?.attr(connectionKey)?.get()
+            val entry = request?.let { ownership?.bind(it) }
+            if (entry == null) {
+                proceed()
+            } else {
+                entry.lease?.let { call.attributes.put(IngressLeases.key, it) }
+                try {
+                    if (entry.refusal == null) {
+                        proceed()
+                    } else {
+                        refuse(call, entry.refusal, entry.declined)
+                        finish()
+                    }
+                } catch (capacity: HeapCapacityException) {
+                    if (call.response.isCommitted) throw capacity
+                    refuse(call, HttpStatus.OVERLOADED)
+                    finish()
+                } finally {
+                    val input = call.request.receiveChannel()
+                    val owner = checkNotNull(ownership)
+                    Cancellables.withCleanup({ settle(call, owner, entry, input) }) { drainBody(owner, entry, input) }
+                }
+            }
+        }
+    }
+
+    /**
+     * A body the route never read is read to its end here when its last bytes are already in, or when it is small and
+     * declared, so the connection stays reusable, as the reply's keep-alive promised. Cancelling it instead would fail
+     * Ktor's copier mid-write and end every later request on the connection: that is why an unread body used to close
+     * it, and a client reusing the socket after a kept-alive reply met a reset (marlin's console 502, Oct 12). The read
+     * is bounded by the body already admitted and charged, and runs even when the call was cancelled, so the charge
+     * settles. A small body still on its way gets the listener's read-idle bound, or [SMALL_BODY_WAIT_MS]; one that
+     * does not finish within it stays unread, and settle closes the connection after the reply.
+     */
+    private suspend fun drainBody(owner: IngressOwnership, entry: IngressRequest, input: ByteReadChannel) {
+        if (input.isClosedForRead || !owner.drainable(entry)) return
+        val waitMs = readIdleMs?.invoke() ?: SMALL_BODY_WAIT_MS
+        withContext(NonCancellable) {
+            Cancellables.discard(
+                Cancellables.runCatchingCleanup { withTimeoutOrNull(waitMs) { input.discard() } },
+                "a body that cannot be read to its end stays unread, and settle closes its connection",
+            )
+        }
+    }
+
+    /** Settle unread input and suppress every future decoder read before returning its charge. */
+    private fun settle(call: ApplicationCall, owner: IngressOwnership, entry: IngressRequest, input: ByteReadChannel) {
+        if (!input.isClosedForRead) owner.unread(entry)
+        input.cancel(null)
+        if (owner.finish(entry)) requests.channel(call)?.close()
+    }
+
+    private suspend fun refuse(call: ApplicationCall, status: Int, declined: Decline? = null) {
+        val large = status == HttpStatus.CONTENT_TOO_LARGE
+        val why = declined
+            ?: if (large) Decline.TooLarge(bytes = null, limit = maxBodyBytes().toLong()) else Decline.HeapBusy
+        val type = if (large) "invalid_request_error" else "overloaded_error"
+        call.respondText(
+            errorBody.render(type, why),
+            ContentType.Application.Json,
+            HttpStatusCode(status, if (large) "Content Too Large" else "Gateway At Capacity"),
+        )
+    }
+}

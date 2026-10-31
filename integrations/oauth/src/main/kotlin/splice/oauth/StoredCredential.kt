@@ -1,0 +1,133 @@
+// NEW: 2026-09-22 — WHERE an OAuth credential lives, WHAT shape reads it, and the access token
+// inside it, in one place.
+//
+// Two callers already derived the first two independently: AddChecks.oauthPath and
+// AddCredentialFile.shape. A third (`splice models`, which must present a bearer to ask a provider
+// for its model list) would have made three hand-authored copies of "where does this kind keep its
+// token" — the drift class this repo fails builds over. Both originals now delegate here.
+//
+// NO NETWORK, NO REFRESH. This reads what is on disk. A token near expiry is the daemon's business;
+// a caller here reports the 401 it gets, which is the honest answer rather than a second refresh
+// implementation racing the daemon's.
+//
+// In integrations/oauth since LAYOUT-01, beside the account files and sign-in persistence that write
+// what it reads: `splice add` (features/configuration) and app's model discovery both ask it. The
+// model probe's adapter (StoredModelCredentials) stays in app, because the port it implements is the
+// models feature's and an integration never depends on a feature.
+package splice.oauth
+
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import splice.core.auth.ApiKeyFile
+import splice.core.config.KeyStore
+import splice.core.config.KeyStorePath
+import splice.core.topology.AuthKind
+import splice.core.topology.AuthKindRegistry
+import splice.core.topology.ProviderConfig
+import splice.core.util.DaemonLog
+import splice.core.util.EnvReader
+import splice.core.util.LogSink
+import splice.provider.codex.auth.CodexCredentialShape
+import splice.provider.grok.GrokCredentialShape
+import splice.provider.kimi.KimiCredentialShape
+import splice.provider.muse.MuseCredentialShape
+import splice.topology.TopologyLoader
+import splice.upstream.credentials.CredentialShape
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.Paths
+import java.util.concurrent.ConcurrentHashMap
+
+public class StoredCredential(
+    private val json: Json = Json { ignoreUnknownKeys = true },
+    /** Where splice's key store says it cannot be read: the daemon log, unless a caller names its own. */
+    private val log: LogSink = LogSink(DaemonLog::write),
+) {
+    /** Each key store this reader has read, by path ([keyStore]). */
+    private val keyStores = ConcurrentHashMap<Path, KeyStore>()
+
+    /** The credential file this provider's auth kind uses: what the operator named (an api-key head's key file), else
+     *  the kind's own default. Null when nothing is named for a kind with no default (api-key, client). */
+    public fun pathFor(provider: ProviderConfig): Path? =
+        (provider.auth.file ?: AuthKindRegistry.defaultAuthFileFor(provider.auth.kind))
+            ?.let { Paths.get(TopologyLoader.expandHome(it)) }
+
+    /** The reader for one wire kind, or null when splice cannot judge that kind's file. */
+    public fun shapeFor(kind: String): CredentialShape? = when (AuthKindRegistry.from(kind)) {
+        AuthKind.ChatgptOAuth -> CodexCredentialShape()
+        AuthKind.GrokOAuth -> GrokCredentialShape()
+        AuthKind.KimiOAuth -> KimiCredentialShape()
+        AuthKind.MuseOAuth -> MuseCredentialShape()
+        AuthKind.Client, null -> null
+    }
+
+    /** The token stored for this provider that a request presents ([CredentialShape.presented] — the
+     *  access token, or Muse's minted api_key), or null when there is no file, no shape for the kind,
+     *  or no token inside. The value is returned, never printed — callers put it on a header. */
+    public fun presentedToken(provider: ProviderConfig): String? =
+        stored(provider)?.let { (shape, root) -> shape.presented(root) }?.takeIf { it.isNotBlank() }
+
+    /** When the stored token expires, in epoch milliseconds, or null when there is no file, no shape
+     *  for the kind, or no expiry the shape can read (Codex's comes from the access token's JWT `exp`). */
+    public fun expiresAtMs(provider: ProviderConfig): Long? =
+        stored(provider)?.let { (shape, root) -> shape.material(root)?.expiresAtMs }
+
+    /** This provider's credential file, parsed, with the shape that reads it; null when either is absent. */
+    private fun stored(provider: ProviderConfig): Pair<CredentialShape, JsonObject>? {
+        // One guard, not two returns: "no file for this kind" and "no reader for this kind" are the
+        // same answer to this method's question, and detekt caps a function at three exits.
+        val path = pathFor(provider)
+        val shape = shapeFor(provider.auth.kind)
+        if (path == null || shape == null) return null
+        // An unreadable or unparseable credential file is the same answer as an absent one for this
+        // method's contract ("splice holds no token") — and the DIAGNOSIS is not lost, because every
+        // caller reports the absence itself: `splice add` and `splice doctor` through
+        // AddCredentialFile.problem, which renders the file's actual fault, and `splice models`
+        // through the "splice holds none for '<key>'" sentence it prints instead of a bare 401.
+        val root = rootOrNull(path) ?: return null
+        return shape to root
+    }
+
+    private fun rootOrNull(path: Path): JsonObject? = try {
+        json.parseToJsonElement(Files.readString(path)).jsonObject
+    } catch (_: IOException) {
+        null
+    } catch (_: IllegalArgumentException) {
+        null
+    }
+
+    /** The api-key this provider authenticates with, in the order its head reads it (ApiKeyAuthProvider): the
+     *  environment, then the key file its auth names ([pathFor]), then splice's own key store. Unregistered kinds use
+     *  that provider in every assembly arm, custom kinds included. Registered schemes keep their own reader: an OAuth
+     *  provider's token is [presentedToken]'s answer and a client-auth head holds no key of its own. */
+    public fun apiKey(provider: ProviderConfig, key: String, env: EnvReader): String? {
+        if (AuthKindRegistry.from(provider.auth.kind) != null) return null
+        val envVar = provider.auth.effectiveApiKeyEnv(key)
+        return env(envVar)?.takeIf { it.isNotBlank() }
+            ?: pathFor(provider)?.let(::keyFileKey)
+            ?: keyStore(env).read(envVar)
+    }
+
+    /** The key the file at [path] supplies, read as the head reads its key file ([ApiKeyFile.key]); null when it holds
+     *  none or cannot be read, and the store is read next, as the head reads it next. A failed read is not said here:
+     *  the head's own read says it, and the daemon's model lists reread this file every two seconds. */
+    private fun keyFileKey(path: Path): String? = try {
+        ApiKeyFile.key(Files.readString(path))
+    } catch (_: IOException) {
+        null
+    } catch (_: IllegalArgumentException) {
+        null
+    }
+
+    /** The key store at [env]'s path, one per path for this reader's life. A store that cannot be read is said once
+     *  per version (KeyStore's latch), and the latch is the store's own, so a store built per read said it at every
+     *  read: the daemon's model lists reread an api-key head's key every two seconds (fix 3, Oct 27). */
+    private fun keyStore(env: EnvReader): KeyStore =
+        keyStores.computeIfAbsent(KeyStorePath.defaultPath(env)) { KeyStore(it, log) }
+
+    /** The bearer to present for this provider, whichever way it authenticates. */
+    public fun bearer(provider: ProviderConfig, key: String, env: EnvReader): String? =
+        apiKey(provider, key, env) ?: presentedToken(provider)
+}

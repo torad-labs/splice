@@ -1,0 +1,12 @@
+# The splice manager's folder: every file splice ships into the global settings folder (the parent of splice.toml).
+# One path per line, relative to that folder and to this resource directory. A jar cannot be listed at runtime, so
+# a file the manager should get is added here. Blank lines and lines starting with # are skipped.
+CLAUDE.md
+.claude/settings.json
+.claude/skills/splice/SKILL.md
+.claude/skills/splice/reference/operations.md
+.claude/skills/splice/reference/reliability-mcp-install.md
+.claude/skills/splice/reference/cli.md
+.claude/skills/splice/reference/accounts-sessions-console.md
+.claude/skills/splice/reference/heads-and-backends.md
+.claude/skills/splice/reference/toml-reference.md

@@ -1,0 +1,18 @@
+id: kt-splice-line-single-source
+valid:
+  - 'val line = voice.ending(cause, at)'
+  - 'val text = "a model is still thinking"'
+  - |
+    package splice.core.failure
+    internal const val SPLICE_PREFIX = "[splice] "
+    value class SpliceLine(val text: String)
+  - |
+    package splice.core.failure
+    class SpliceLines { val text = "[splice] a line" }
+invalid:
+  - 'val line = "[splice] try again"'
+  - 'object LocalLines { val text = "[splice] a line" }'
+  - |
+    package splice.head.wire
+    class SpliceLines { val text = "[splice] a line" }
+  - 'const val PREFIX = "[splice] "'

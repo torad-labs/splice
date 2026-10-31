@@ -1,0 +1,59 @@
+# WALL (V4-218): one home, resolved in ONE place. splice.core.config.UserHome answers HOME first (unless
+# unset or blank), then the JVM's user.home. Every path under ~ used to read user.home directly, which
+# is the passwd entry's home and ignores the environment, so a run under another HOME (a sandbox, CI, a
+# second profile) read and wrote the real home's config, credentials and state (found 2026-09-25 on
+# the isolated film stack). The launch shim passes the same answer to the JVMs it starts.
+#
+# CENSUS AT AUTHORING (2026-09-27, derived from the tree with this rule): 32 reads of
+# System.getProperty("user.home") in 25 main files, every one moved onto UserHome in V4-218; 0 reads
+# of HOME from the environment.
+#
+# WHAT IS MATCHED, beyond the literal call. The property's NAME anywhere in main, so a const holding
+# it or `System.getProperties()["user.home"]` reads the same as the call. HOME read through anything
+# read-shaped: `System.getenv("HOME")`, the EnvReader seam's two spellings `env("HOME")` and
+# `envReader("HOME")` (and `.invoke("HOME")`), and a const declared to "HOME", which is how a read
+# would route around the literal. NOT CAUGHT: a HOME name assembled at runtime; none exists. Writing
+# HOME into a child process's environment is not a read and is not matched.
+id: kt-user-home-single-resolver
+language: kotlin
+severity: error
+message: "The home is resolved in one place: call splice.core.config.UserHome.dir() (or UserHome.expand for ~/ paths), never user.home or HOME directly."
+note: "UserHome reads HOME first and falls back to user.home, so a sandbox, CI or a second profile gets its own config, keys and state. A test that needs its own home uses UserHome.within(home) { ... }."
+files:
+  - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
+rule:
+  all:
+    # The resolver itself is `object UserHome`, exempt by that declaration and not by the file that holds it.
+    - not:
+        inside:
+          kind: object_declaration
+          stopBy: end
+          has:
+            kind: type_identifier
+            regex: '^UserHome$'
+    - any:
+        # The property, however it is reached: its name as a string anywhere.
+        - kind: string_content
+          regex: '^user\.home$'
+        # HOME read from the environment.
+        - all:
+            - kind: call_expression
+            - any:
+                - has: {nthChild: 1, kind: simple_identifier, regex: '^(getenv|env|envReader)$'}
+                - has:
+                    nthChild: 1
+                    kind: navigation_expression
+                    has: {kind: navigation_suffix, has: {kind: simple_identifier, regex: '^(getenv|invoke)$'}}
+            - has:
+                kind: call_suffix
+                has:
+                  kind: value_arguments
+                  has:
+                    kind: value_argument
+                    has: {kind: string_literal, has: {kind: string_content, regex: '^HOME$'}}
+        # A const that names HOME, the one indirection that would carry it past the call match.
+        - all:
+            - kind: property_declaration
+            - has: {kind: modifiers, has: {kind: property_modifier, regex: '^const$'}}
+            - has: {kind: string_literal, has: {kind: string_content, regex: '^HOME$'}}

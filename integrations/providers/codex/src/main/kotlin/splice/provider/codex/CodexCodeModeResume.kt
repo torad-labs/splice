@@ -1,0 +1,238 @@
+// NEW: validates and resumes active or lost code-mode records from client tool results, and (V4-336)
+// reads what else the client sent while a script was parked.
+package splice.provider.codex
+
+import splice.core.turn.TurnOutcome
+import splice.provider.codex.branch.CodeModeClientOutputDigests
+import splice.provider.codex.callbacks.CodeModeResumeResults
+import splice.provider.codex.callbacks.CodexCodeModeIncrementalOutcomes
+import splice.provider.codex.stream.CodeModeRejection
+import splice.provider.codex.stream.CodeModeSourceReset
+import splice.provider.codex.stream.reader.CodeModeReaderTermination
+import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeStep
+import splice.upstream.sse.WireSink
+internal class CodexCodeModeResume(
+    private val registry: CodexCodeModeRegistry,
+    private val wire: CodexCodeModeWire,
+    private val validation: CodexCodeModeValidation,
+    private val machine: CodexCodeModeMachine,
+    private val driver: CodexCodeModeDriver,
+) {
+    private val results = CodeModeResumeResults(validation)
+
+    suspend fun active(
+        record: CodeModeRecord,
+        context: CodeModeRunContext,
+        body: CodeModeBody,
+    ): TurnOutcome {
+        driver.sent.acknowledgeCleared(context)
+        val borrowed = registry.retainedCells.acquire(record)
+        try {
+            val source = driver.streams.find(record)
+            val reclaimed = borrowed == null && record.phase == CodeModePhase.LOST
+            return if (reclaimed && source?.sourceInterrupted != true) {
+                lost(record, context, body)
+            } else {
+                retained(record, context, body)
+            }
+        } finally {
+            if (borrowed != null) registry.retainedCells.release(record)
+        }
+    }
+
+    private suspend fun retained(
+        record: CodeModeRecord,
+        context: CodeModeRunContext,
+        body: CodeModeBody,
+    ): TurnOutcome {
+        val source = driver.streams.find(record)
+        record.error?.let {
+            return when {
+                source?.sourceInterrupted == true -> source.outcome()
+                // The round lost the source between this step's cell acquire and this read. The step continues on
+                // the client's history as a reclaimed one does, never as splice's protocol failure.
+                source?.sourceLost == true -> lost(record, context, body)
+                CodeModeReaderTermination.ended(source) -> lost(record, context, body)
+                else -> failure(it)
+            }
+        }
+        val attached = context.copy(link = context.link.copy(sink = driver.streams.attach(record, context.link.sink)))
+        attached.completed += context.completed
+        // The records whose results this request changed stay the client's when the resumed script's output goes up.
+        attached.conflicts = context.conflicts
+        return try {
+            if (record.progress.lastDigest == context.digest && record.progress.pending.isNotEmpty()) {
+                val pending = record.visiblePending().filter { it.clientId !in record.results }
+                if (pending.isNotEmpty()) return machine.emit(record, pending, attached.link.sink)
+            }
+            fresh(record, attached, body)
+        } finally {
+            driver.streams.endStep(record)
+        }
+    }
+
+    /** A lost cell can never resume, so the same request retried can never succeed: rather than
+     *  failing until new user content arrives, the record completes with its interruption evidence
+     *  (results so far, unresolved calls, the reason) and the model continues from there. */
+    suspend fun lost(
+        record: CodeModeRecord,
+        context: CodeModeRunContext,
+        body: CodeModeBody,
+    ): TurnOutcome {
+        val detail = record.error ?: "code-mode process state was lost; source was not rerun"
+        val supplied = results.supplied(record, context.turn, mode = CodeModeResultMode.INTERRUPT)
+        supplied.error?.let { return failure(it) }
+        registry.acceptResults(
+            record,
+            context.digest,
+            supplied.results,
+            context.turn.rendering.media,
+            CodeModeClientOutputDigests.capture(context, supplied.results.keys),
+        )
+        val interrupted = machine.interrupt(record, detail)
+        return if (interrupted is TurnOutcome.Failure) {
+            interrupted
+        } else {
+            driver.finishGenerated(record, context, body)
+        }
+    }
+
+    private suspend fun fresh(
+        record: CodeModeRecord,
+        context: CodeModeRunContext,
+        body: CodeModeBody,
+    ): TurnOutcome {
+        val extra = wire.extraContent(
+            driver.sent.resumeClient(context, record) ?: body,
+            record,
+            results.media(record, context.turn),
+            clearedCallbacks = context.turn.rendering.verifiedCleared.values.flatten().toSet(),
+        )
+        val hasExtraContent = extra != CodeModeExtra.NONE
+        val mode = if (hasExtraContent) CodeModeResultMode.INTERRUPT else CodeModeResultMode.RESUME
+        val supplied = results.supplied(record, context.turn, mode)
+        supplied.error?.let { return failure(it) }
+        registry.acceptResults(
+            record,
+            context.digest,
+            supplied.results,
+            context.turn.rendering.media,
+            CodeModeClientOutputDigests.capture(context, supplied.results.keys),
+        )
+        record.progress.pending.firstOrNull {
+            it.name !in context.turn.tools && it.clientId !in record.results
+        }?.let { pending ->
+            val message = "code-mode tool '${pending.name}' is no longer in the current tool catalog"
+            return reject(record, context, body, hasExtraContent, message)
+        }
+        return accept(record, context, body, extra, supplied.results)
+    }
+
+    private suspend fun accept(
+        record: CodeModeRecord,
+        context: CodeModeRunContext,
+        body: CodeModeBody,
+        extra: CodeModeExtra,
+        supplied: Map<String, CodeModeResult>,
+    ): TurnOutcome {
+        val source = driver.streams.find(record)
+        val advanced = advance(record, context, body, extra, supplied)
+        if (record.phase == CodeModePhase.COMPLETED) return driver.finishGenerated(record, context, body)
+        if (record.phase != CodeModePhase.LOST || advanced !is TurnOutcome.Failure) return advanced
+        return if (CodeModeReaderTermination.ended(source)) lost(record, context, body) else advanced
+    }
+
+    private suspend fun advance(
+        record: CodeModeRecord,
+        context: CodeModeRunContext,
+        body: CodeModeBody,
+        extra: CodeModeExtra,
+        supplied: Map<String, CodeModeResult>,
+    ): TurnOutcome = when {
+        results.interrupts(extra, record) -> {
+            wire.extraContent(
+                driver.sent.resumeClient(context, record) ?: body,
+                record,
+                results.media(record, context.turn),
+                report = extra,
+                clearedCallbacks = context.turn.rendering.verifiedCleared.values.flatten().toSet(),
+            )
+            machine.interrupt(record)
+        }
+        context.disableParallel && record.progress.pending.any { !it.exposed } -> {
+            exposeNext(record, supplied, context.link.sink)
+        }
+        else -> continueRuntime(record, context)
+    }
+
+    private suspend fun continueRuntime(record: CodeModeRecord, context: CodeModeRunContext): TurnOutcome {
+        val batch = results.runtime(record)
+        return if (batch.isEmpty() && record.progress.pending.isNotEmpty()) {
+            CodexCodeModeIncrementalOutcomes.waitingForResults(
+                registry,
+                record,
+                CodeModeStep.WaitingForResults(record.progress.output, record.progress.completionError),
+            )
+        } else {
+            if (batch.isNotEmpty()) {
+                val delivered = batch.map(CodeModeResult::id).toSet()
+                registry.changes.edit(record) { live ->
+                    live.progress.pending.removeAll { it.runtimeId in delivered }
+                }
+            }
+            machine.advance(
+                CodeModeAdvanceRequest(
+                    record,
+                    context.turn,
+                    context.disableParallel,
+                    batch,
+                    context.link.sink,
+                    driver.streams.find(record),
+                ),
+            ).also { outcome ->
+                CodeModeSourceReset.note(driver.streams.find(record), outcome, context.link.post.perf)
+            }
+        }
+    }
+
+    private suspend fun reject(
+        record: CodeModeRecord,
+        context: CodeModeRunContext,
+        body: CodeModeBody,
+        hasExtraContent: Boolean,
+        message: String,
+    ): TurnOutcome {
+        val rejected = machine.poison(record, message)
+        if (!hasExtraContent) return rejected
+        val interrupted = machine.interrupt(record, "additional client content arrived; $message")
+        return if (interrupted is TurnOutcome.Failure) {
+            interrupted
+        } else {
+            driver.finishGenerated(record, context, body)
+        }
+    }
+
+    private suspend fun exposeNext(
+        record: CodeModeRecord,
+        supplied: Map<String, CodeModeResult>,
+        sink: WireSink,
+    ): TurnOutcome {
+        registry.changes.save(record) { live -> live.progress.pending.first { !it.exposed }.exposed = true }
+        val pending = record.visiblePending().filter {
+            it.clientId !in record.results && it.clientId !in supplied
+        }
+        return machine.emit(record, pending, sink)
+    }
+
+    private fun failure(message: String): TurnOutcome.Failure = CodeModeRejection.state(message)
+}
+
+/**
+ * What the client added after a parked script's baseline that the script does not own (V4-336):
+ * nothing; only role=system messages, which Claude Code sends for a peer's message, a task
+ * notification or a hook's output, and which wait for the script's output when its every call is
+ * answered; or STEERING, anything else the operator's side gave (typed text, an image, a replay item
+ * nobody expected, a baseline that no longer matches), which stops the script as it always did.
+ */
+internal enum class CodeModeExtra { NONE, SYSTEM, STEERING }

@@ -1,0 +1,20 @@
+[package]
+name = "splice-current-core-oracle"
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+resolver = "2"
+
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[[bin]]
+name = "splice-current-core-oracle"
+path = "main.rs"
+
+[dependencies]
+bm25 = "=2.3.2"
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = { version = "=1.0.149", features = ["alloc", "preserve_order", "arbitrary_precision", "raw_value"] }

@@ -1,0 +1,57 @@
+// NEW: what the round strategy needs to build the runner a turn is driven by, split out of
+// RoundStrategy so its constructor takes the turn's tag, log, signals, finish and tool-search policy
+// once instead of beside the emitter and both post shapes, and the runners are built here.
+package splice.head.round
+
+import splice.core.perf.TurnPerf
+import splice.upstream.ReanchorPolicy
+import splice.upstream.RetryNotice
+import splice.upstream.RoundResult
+import splice.upstream.ToolSearchPolicy
+import splice.upstream.sse.WireSink
+import splice.upstream.transport.UpstreamEnding
+
+/** The turn-scoped collaborators every runner shares: the head tag, its log, the signals the runners
+ *  read, [finish] for the one terminal outcome, and the tool-search policy when the head has one. */
+internal class RoundRunners(
+    private val key: String,
+    log: RetryNotice,
+    private val signals: RunnerSignals,
+    private val finish: FinishTurn,
+    /** The turn's steps (failure-handling slice 4): every runner asks RetryEngine whether a round is sent again and
+     *  how long it waits first, on the turn's one ledger, as the post's attempt loop does, never on a count or a curve
+     *  of its own. */
+    private val steps: RoundSteps,
+    private val toolSearch: ToolSearchPolicy? = null,
+) {
+    private val notice = log
+    private val rounds = RoundSplice()
+
+    /** Whether the head searches tools, which keeps a turn off the single-round path. */
+    fun searchesTools(): Boolean = toolSearch != null
+
+    /** The one empty-answer recovery tells the turn it is recovering through the same signal as the other runners. */
+    fun emptyRetry(perf: TurnPerf?, reanchor: ReanchorPolicy?): EmptyAnswerRetry =
+        EmptyAnswerRetry(perf, steps, reanchor, signals.recovering)
+
+    /** The runner for a fold-eligible turn. */
+    fun fold(emitter: WireSink, post: PostRoundToSink, reanchor: ReanchorPolicy?): FoldRunner =
+        FoldRunner(emitter, post, FoldRounds(key, notice, signals, finish, steps, reanchor, toolSearch))
+
+    /** The runner for a re-anchor or search-only turn. */
+    fun reanchoring(post: PostRound): ReanchorRunner =
+        ReanchorRunner(key, notice, post, finish, signals, steps, toolSearch)
+
+    /** The single-round path's end: DR-130 — the runners salvage a failed round's own burn through
+     *  withFailureSalvage (DR-124); this path handed the raw outcome to finishTurn, which stamps ONLY
+     *  salvagedUsage, so the tokens the vendor billed went unrecorded. There are no absorbed rounds
+     *  here, so the accumulator is empty by construction and a Success or a clean abandonment passes
+     *  through untouched. */
+    suspend fun finishAlone(result: RoundResult): UpstreamEnding? = when (result) {
+        is RoundResult.Outcome -> {
+            finish(rounds.withFailureSalvage(result.outcome, RoundUsage()))
+            null
+        }
+        is RoundResult.Ended -> result.ending
+    }
+}

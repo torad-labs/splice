@@ -1,0 +1,553 @@
+// CX-09: the honesty floor and the promote floor left a band uncovered. With transcript mirroring
+// now operator-locked off, a non-compact turn in that band must be an honest error unless native
+// thinking already reached the client. These tests pin both halves: empty harvest fallback errors,
+// while an emitted native thinking block remains a clean success without any synthetic mirror.
+package splice.head.pipeline
+
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import splice.core.failure.ClientWire
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Lift
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.ProtocolFault
+import splice.core.failure.RefusedBy
+import splice.core.index.WireBlockIndex
+import splice.core.turn.ErrorType
+import splice.core.turn.MIRROR_MIN_CHARS
+import splice.core.turn.ReasoningDisplay
+import splice.core.turn.ResponseShape
+import splice.core.turn.RoundText
+import splice.core.turn.TurnMeta
+import splice.core.turn.TurnOutcome
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
+import splice.core.turn.Usage
+import splice.core.util.AsyncFileIo
+import splice.dialect.anthropic.PassthroughQuirks
+import splice.dialect.anthropic.PassthroughStreamTranslator
+import splice.dialect.anthropic.PassthroughTurnContext
+import splice.head.compact.CompactStats
+import splice.head.compact.CompactStatsSummary
+import splice.head.testVoice
+import splice.head.wire.CollectingTerminal
+import splice.head.wire.TurnTerminal
+import java.nio.file.Path
+
+/** Records the ending and any one-shot text; every other verb is inert for these cases. */
+private class RecTerminal : TurnTerminal {
+    val texts = mutableListOf<String>()
+    var ending: String? = null
+    var errorCause: FailureCause? = null
+    var errorType: ErrorType? = null
+    var errorPermanent: Boolean = false
+    override var hasEnded: Boolean = false
+        private set
+
+    override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) {
+        ending = "terminal"
+        hasEnded = true
+    }
+
+    override suspend fun emitError(cause: FailureCause) {
+        ending = "error"
+        errorCause = cause
+        // What the emitter was handed before slice 1, now read from the cause: its own type, and whether a re-send
+        // repeats it.
+        errorType = ClientWire.ownType(cause)
+        errorPermanent = cause.permanent || cause.deterministic
+        hasEnded = true
+    }
+
+    override fun abandon() {
+        ending = "abandon"
+        hasEnded = true
+    }
+
+    override suspend fun addTextBlock(text: String) {
+        texts.add(text)
+    }
+
+    override suspend fun openText(): WireBlockIndex = WireBlockIndex(0)
+    override suspend fun openThinking(): WireBlockIndex = WireBlockIndex(0)
+    override suspend fun openTool(id: String, name: String): WireBlockIndex = WireBlockIndex(0)
+    override suspend fun textDelta(index: WireBlockIndex, text: String) = Unit
+    override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) = Unit
+    override suspend fun inputJsonDelta(index: WireBlockIndex, partialJson: String) = Unit
+    override suspend fun closeBlock(index: WireBlockIndex) = Unit
+    override suspend fun closeAll() = Unit
+    override suspend fun addRedactedThinking(data: String) = Unit
+}
+
+/** After content: where the translators place every failure they build. */
+private val MID = Position(Moment.MID_CONTENT, streamBegan = true)
+
+/** Between the mirror floor (20) and the promote floor (40): long enough to mirror, too short to promote. */
+private const val BAND_CHARS = 30
+
+/** Past the promote floor (40), so the turn's own thinking is picked as the text. */
+private const val PROMOTED_CHARS = 45
+
+/** A config word as the display it names; anything else reads as OFF, as the config reader does. */
+private fun displayOf(raw: String): ReasoningDisplay =
+    ReasoningDisplay.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) } ?: ReasoningDisplay.OFF
+
+class TurnPipelineTest {
+
+    @TempDir
+    lateinit var tmp: Path
+
+    private fun pipeline(mirrorReasoning: Boolean = false) = TurnPipeline(
+        compactStats = CompactStats(tmp.resolve("compact.jsonl")),
+        log = {},
+        clampOutput = { it },
+        mirrorReasoning = mirrorReasoning,
+    )
+
+    private fun meta(showReasoning: String, compact: Boolean = false) = TurnMeta(
+        compact = compact,
+        reasoning = TurnReasoning(
+            showReasoning = displayOf(showReasoning),
+            effort = "medium",
+            summary = null,
+            budgetTokens = null,
+        ),
+        route = TurnRoute(
+            stream = true,
+            originalModel = "claude-codex--gpt-5.6-sol",
+            upstreamModel = "gpt-5.6-sol",
+            clientMaxTokens = null,
+        ),
+    )
+
+    /** No text, no tools — the shape that reaches the promote/honesty branch. */
+    private fun outcome(
+        thinking: String,
+        emittedThinking: Boolean = false,
+        messageClosed: Boolean = false,
+    ) = TurnOutcome.Success(
+        hasToolUse = false,
+        incomplete = false,
+        usage = Usage(0, 0, 0),
+        text = RoundText(
+            thinkingText = thinking,
+            bodyText = "",
+            emittedText = false,
+            // The CX-09 axis: false models the harvest fallback (buffer refilled from the completed
+            // response, sink never touched); true models every translator that streamed a real
+            // thinking block. Defaulting to false keeps the original cases meaning what they meant.
+            emittedThinking = emittedThinking,
+        ),
+        shape = ResponseShape(messageClosed = messageClosed),
+    )
+
+    /** In the uncovered band by construction: too short to promote, too long for the old check. */
+    private val bandThinking = "x".repeat(BAND_CHARS)
+
+    private suspend fun run(
+        mirrorReasoning: Boolean,
+        showReasoning: String,
+        thinking: String,
+        emittedThinking: Boolean = false,
+    ): RecTerminal {
+        val rec = RecTerminal()
+        pipeline(mirrorReasoning).finishStream(
+            rec,
+            outcome(thinking, emittedThinking),
+            meta(showReasoning),
+            elapsedMs = 1,
+        )
+        return rec
+    }
+
+    /** [run]'s compact sibling, returning the pipeline's own OUTCOME TAG alongside the terminal:
+     *  `empty_compact` and `empty_model` both reach the wire as the same OVERLOADED shape, so the
+     *  terminal alone cannot tell the compact gate from the non-compact one. */
+    private suspend fun runCompact(thinking: String, mirrorReasoning: Boolean = false): Pair<RecTerminal, String> {
+        val rec = RecTerminal()
+        val tag = pipeline(mirrorReasoning).finishStream(
+            rec,
+            outcome(thinking),
+            meta("text", compact = true),
+            elapsedMs = 1,
+        )
+        return rec to tag
+    }
+
+    /** Compact stats append on the process-wide file lane AFTER finishStream returns. Drain it
+     *  before JUnit deletes the temp dir, or the append lands in a directory being swept and the
+     *  test fails on teardown ("Failed to delete temp directory", CI 2026-09-07). */
+    @AfterEach
+    fun drainFileLane() {
+        AsyncFileIo.drain()
+    }
+
+    /** The compact-stats JSONL the pipeline appended this turn (a fresh reader over the same file). */
+    private fun recordedCompact(): CompactStatsSummary {
+        AsyncFileIo.drain()
+        return CompactStats(tmp.resolve("compact.jsonl")).read()
+    }
+
+    /** V4-59's wall, kept by failure-handling slice 2: NO error splice emits carries the provider's payload.
+     *
+     *  The operator's complaint is the reason this is not a style rule: a vendor's error payload was rendered
+     *  into his conversation as literal braces. Since slice 2 the client reads the one line its turn voice
+     *  composes for the cause, and the payload stays in the evidence, which only the log and the trace read.
+     *  The denominator is every leaf, so a cause added later is covered the day it exists. */
+    @Test
+    fun `an error splice emits says its voice's line for the cause and none of the payload`() = runTest {
+        val payload = """{"detail":"Rate limit exceeded: this gateway is holding retries for 120s"}"""
+        for (cause in everyLeaf) {
+            val terminal = CollectingTerminal(model = "m", usagePayload = { buildJsonObject { } }, voice = testVoice)
+            pipeline().finishStream(
+                terminal,
+                TurnOutcome.Failure(cause = cause, at = MID, evidence = FailureEvidence(payload)),
+                meta("text"),
+                elapsedMs = 1,
+            )
+            val body = terminal.responseBody()
+            assertTrue("content" !in body, "$cause must not become assistant text")
+            val words = body["error"]?.jsonObject?.get("message")?.jsonPrimitive?.content.orEmpty()
+            val line = testVoice.ending(cause, Position(Moment.NON_STREAM, streamBegan = false))
+            assertEquals(line.text, words, "the client reads the voice's line for $cause")
+            assertTrue("{" !in words && "holding retries" !in words, "the payload reached the client: $words")
+        }
+    }
+
+    /** Both permanent and transient failures use the error channel, keeping their retry semantics. */
+    @Test
+    fun `deterministic and transient failures are errors without assistant text`() = runTest {
+        val deterministic = RecTerminal()
+        val tag = pipeline().finishStream(
+            deterministic,
+            TurnOutcome.Failure(
+                cause = FailureCause.Splice.Protocol(ProtocolFault.CODE_MODE_STATE),
+                at = MID,
+                evidence = FailureEvidence("code-mode cell is unavailable"),
+            ),
+            meta("text"),
+            elapsedMs = 1,
+        )
+        assertEquals("error", deterministic.ending)
+        assertEquals(FailureCause.Splice.Protocol(ProtocolFault.CODE_MODE_STATE), deterministic.errorCause)
+        assertEquals(ErrorType.INVALID_REQUEST, deterministic.errorType)
+        assertTrue(deterministic.errorPermanent)
+        assertTrue(deterministic.texts.isEmpty())
+        assertEquals("failure:invalid_request_error", tag)
+
+        val retried = RecTerminal()
+        pipeline().finishStream(
+            retried,
+            TurnOutcome.Failure(
+                cause = FailureCause.Provider.Unrecognized(clientError = false),
+                at = MID,
+                evidence = FailureEvidence("upstream stream ended without response.completed"),
+            ),
+            meta("text"),
+            elapsedMs = 1,
+            // AFTER content: the type the outcome carries is the type the client receives. The
+            // pre-content half of this seam is pinned by its own cases at the foot of the file.
+        )
+        assertEquals("error", retried.ending)
+        assertEquals(ErrorType.API_ERROR, retried.errorType)
+        assertTrue(retried.texts.isEmpty())
+    }
+
+    /** V4-42: a zero-content turn must reach the client RETRYABLE. The operator's journal caught one
+     *  at 07:05:30 on 2026-09-16 (tag=empty_model, between healthy turns, so not a quota artifact) —
+     *  a muse 200 with stop_reason max_tokens and no content blocks.
+     *
+     *  Zero content means nothing reached the client, so the turn is indistinguishable from a
+     *  transient overload and nothing the client read is at stake. The TYPE decides recovery: before
+     *  content Claude Code re-sends an api_error IDENTICALLY until it gives up — the 2.1.x behaviour
+     *  recorded on TurnOutcome.Failure.deterministic, 87 and 47 identical turns on 2026-09-07 —
+     *  so it reproduces the same empty turn rather than recovering, while overloaded_error is
+     *  retried on a backoff. The cause stays the empty answer, so the client's line still says what happened. */
+    @Test
+    fun `a zero-content turn ends as overloaded, not api_error, so the client retries it`() = runTest {
+        val rec = RecTerminal()
+        pipeline().finishStream(rec, outcome(thinking = ""), meta("text"), elapsedMs = 1)
+
+        assertEquals("error", rec.ending, "a zero-content turn is an error ending, not a clean one")
+        assertEquals(
+            ErrorType.OVERLOADED,
+            rec.errorType,
+            "an empty turn BEFORE content must be retryable with backoff, not identically re-sent",
+        )
+        assertEquals(FailureCause.Provider.Empty(reasoningOnly = false), rec.errorCause)
+    }
+
+    @Test
+    fun `the default pipeline keeps the reasoning mirror locked off`() = runTest {
+        val rec = RecTerminal()
+        pipeline().finishStream(rec, outcome(bandThinking), meta("text"), elapsedMs = 1)
+        assertEquals("error", rec.ending)
+        assertEquals(ErrorType.OVERLOADED, rec.errorType) // V4-42: the empty_model branch, retryable
+        assertTrue(rec.texts.isEmpty(), "nothing may reach the wire when the turn errors")
+    }
+
+    @Test
+    fun `the band is an honest error when reasoning is not displayed as text`() = runTest {
+        val rec = run(mirrorReasoning = false, showReasoning = "hide", thinking = bandThinking)
+        assertEquals("error", rec.ending)
+        assertEquals(ErrorType.OVERLOADED, rec.errorType) // V4-42: the empty_model branch, retryable
+    }
+
+    @Test
+    fun `an explicit direct attempt to enable the mirror is rejected`() {
+        assertThrows(IllegalArgumentException::class.java) { pipeline(mirrorReasoning = true) }
+    }
+
+    // THE REGRESSION CELL. anthropic-passthrough pins showReasoning=THINKING for EVERY turn,
+    // precisely because it streams native thinking blocks and the text mirror must not
+    // double-render them. A gate that reads that sentinel as "nothing covers this turn" turned
+    // every thinking-only kimi turn into an API_ERROR *after* its content had already reached the
+    // client. Caught in adversarial review before it shipped; this cell is why it cannot return.
+    @Test
+    fun `a native thinking block covers the turn even though the text mirror will not fire`() = runTest {
+        val rec = run(
+            mirrorReasoning = false,
+            showReasoning = "thinking",
+            thinking = bandThinking,
+            emittedThinking = true,
+        )
+        assertEquals("terminal", rec.ending, "the client already received a thinking block")
+        assertTrue(rec.texts.isEmpty(), "passthrough must not double-render reasoning as text")
+    }
+
+    @Test
+    fun `an emitted thinking block covers the turn with the operator mirror off`() = runTest {
+        val rec = run(false, "text", bandThinking, emittedThinking = true)
+        assertEquals("terminal", rec.ending)
+    }
+
+    @Test
+    fun `the harvest-fallback shape is still an honest error - buffer full, wire empty`() = runTest {
+        // thinkingText non-empty but nothing ever reached the sink: the ONE genuinely empty turn.
+        val rec = run(mirrorReasoning = false, showReasoning = "thinking", thinking = bandThinking)
+        assertEquals("error", rec.ending)
+        assertEquals(ErrorType.OVERLOADED, rec.errorType) // V4-42: the empty_model branch, retryable
+    }
+
+    // THE ASTRA CELL (2026-09-05). Thirteen retry storms in one evening, every one the same shape:
+    // the model gave its final answer, a Stop hook echoed an end-of-turn report back as a
+    // continuation, and the model closed a message with nothing in it — a finished answer, which is
+    // how codex ends the turn. The honesty gate read it as "no content", the client retried the
+    // identical request eleven times per incident. A CLOSED message ends clean and is tagged so the
+    // perf row still names the class; a round with no message item at all stays the honest error.
+    @Test
+    fun `a message the model closed empty ends clean and is tagged, never empty_model`() = runTest {
+        val rec = RecTerminal()
+        val tag = pipeline().finishStream(
+            rec,
+            outcome("", messageClosed = true),
+            meta("text"),
+            elapsedMs = 1,
+        )
+        assertEquals("terminal", rec.ending, "a closed empty message is a finished answer")
+        assertEquals("empty_message", tag, "the log must still name the class")
+        assertTrue(rec.texts.isEmpty(), "nothing is invented for the wire: ${rec.texts}")
+    }
+
+    @Test
+    fun `an Anthropic message the model ended empty on end_turn ends clean, never empty_model`() = runTest {
+        val rec = RecTerminal()
+        val events = listOf(
+            """{"type":"message_start","message":{"usage":{"input_tokens":17}}}""",
+            """{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}""",
+            """{"type":"message_stop"}""",
+        ).map { Json.parseToJsonElement(it).jsonObject }
+        val success = PassthroughStreamTranslator(
+            PassthroughTurnContext({ false }, { null }, 180_000, 900_000),
+            PassthroughQuirks("synthetic"),
+        ).driveTurn(events.asFlow(), rec) as TurnOutcome.Success
+        val lines = mutableListOf<String>()
+        val tag = TurnPipeline(
+            compactStats = CompactStats(tmp.resolve("compact.jsonl")),
+            log = { lines.add(it) },
+            clampOutput = { it },
+        ).finishStream(rec, success, meta("thinking"), elapsedMs = 1)
+        // Claude Code's prompt-suggestion requests ask for silence ("Or nothing"); this is that answer.
+        assertEquals("empty_message", tag)
+        assertEquals("terminal", rec.ending)
+        assertTrue(rec.texts.isEmpty())
+        val shape = "opened=[] closed=[] stop_reason=end_turn " +
+            "input_tokens=17 cache_read_input_tokens=0 cache_creation_input_tokens=0 output_tokens=2"
+        assertEquals(listOf("[gateway] empty-message turn compact=false $shape; ending clean\n"), lines)
+    }
+
+    @Test
+    fun `a closed empty message on a compact turn is still an empty_compact error`() = runTest {
+        // Compaction needs a summary in the text channel; "nothing to add" is not one.
+        val rec = RecTerminal()
+        val tag = pipeline().finishStream(
+            rec,
+            outcome("", messageClosed = true),
+            meta("text", compact = true),
+            elapsedMs = 1,
+        )
+        assertEquals("empty_compact", tag)
+        assertEquals("error", rec.ending)
+    }
+
+    @Test
+    fun `below the mirror floor is an honest error with the lock enforced`() = runTest {
+        val short = "x".repeat(MIRROR_MIN_CHARS - 1)
+        assertEquals("error", run(false, "text", short).ending)
+    }
+
+    @Test
+    fun `above the promote floor still promotes to text and never errors`() = runTest {
+        val long = "x".repeat(PROMOTED_CHARS)
+        val rec = run(mirrorReasoning = false, showReasoning = "text", thinking = long)
+        assertEquals("terminal", rec.ending)
+        assertTrue(rec.texts.any { it == long }, "promote-to-text must emit the thinking verbatim")
+    }
+
+    // THE COMPACT HALF OF THE HONESTY GATE. Every case above builds `compact = false`, so only the
+    // `empty_model` arm was ever exercised — the `empty_compact` arm beside it had no coverage of
+    // any kind. It is the higher-stakes of the two: an empty SUCCESS on a compact turn makes Claude
+    // Code store a blank summary and lose the conversation thread, silently and unrecoverably. The
+    // gate must therefore fire on `compact` REGARDLESS of the mirror band the cases above map out,
+    // because the mirror is off for compact by construction (Mirror.willMirror: "compact is a
+    // text-only summarizer turn").
+
+    // DR-126: the (compact, no-text, tooled) shape fell through BOTH recorders — the promote
+    // branch skips on hasToolUse and the model_text arm requires emittedText — so the compact
+    // JSONL drift instrument was blind for exactly the anomalous class (a compact turn has no
+    // tools to call; a model calling one anyway is the drift worth a row). The turn itself must
+    // flow on unchanged: recorded, not rewritten.
+    @Test
+    fun `a tooled no-text compact turn records a row naming the shape`() = runTest {
+        val rec = RecTerminal()
+        val tooled = TurnOutcome.Success(
+            hasToolUse = true,
+            incomplete = false,
+            usage = Usage(0, 0, 0),
+            text = RoundText(thinkingText = "", bodyText = "", emittedText = false),
+        )
+        val tag = pipeline(mirrorReasoning = false).finishStream(
+            rec,
+            tooled,
+            meta("text", compact = true),
+            elapsedMs = 1,
+        )
+        assertEquals(mapOf("tooled_no_text" to 1), recordedCompact().byOutcome, "the shape must get a row")
+        assertEquals("ok", tag, "recorded, not rewritten — the turn flows to the normal terminal")
+    }
+
+    @Test
+    fun `an empty compact turn is an empty_compact error, never an empty success`() = runTest {
+        val (rec, tag) = runCompact(thinking = "")
+        assertEquals("empty_compact", tag)
+        assertEquals("error", rec.ending)
+        assertEquals(ErrorType.OVERLOADED, rec.errorType) // V4-42: retryable, like empty_model
+        assertEquals(FailureCause.Provider.Empty(reasoningOnly = false), rec.errorCause)
+        assertTrue(rec.texts.isEmpty(), "a blank summary must never reach the wire: ${rec.texts}")
+        val stats = recordedCompact()
+        assertEquals(mapOf("empty_model" to 1), stats.byOutcome, "recordCompact must have fired")
+        assertTrue(stats.tail.single().toString().contains("\"error\":\"api_error\""), "${stats.tail}")
+    }
+
+    @Test
+    fun `the former mirror band stays an empty_compact error`() = runTest {
+        // This is the band the transcript mirror used to rescue. With the lock enforced, the same
+        // reasoning covers nothing on a compact turn and the honesty gate fires.
+        val (rec, tag) = runCompact(thinking = bandThinking)
+        assertEquals("empty_compact", tag)
+        assertEquals(ErrorType.OVERLOADED, rec.errorType) // V4-42: retryable, like empty_model
+        assertTrue(rec.texts.isEmpty(), "compact must not emit a mirror block: ${rec.texts}")
+    }
+
+    @Test
+    fun `a compact turn with promotable reasoning promotes and ends clean`() = runTest {
+        // The never-when half: the gate keys on "nothing to put in the text channel", not on
+        // `compact` itself — a promotable summary is what compaction is FOR.
+        val summary = "x".repeat(PROMOTED_CHARS)
+        val (rec, tag) = runCompact(thinking = summary)
+        assertEquals("ok", tag)
+        assertEquals("terminal", rec.ending)
+        assertTrue(rec.texts.any { it == summary }, "the summary must reach the wire: ${rec.texts}")
+        assertEquals(mapOf("model_thinking" to 1), recordedCompact().byOutcome)
+    }
+    // V4-79 pin, RE-POINTED BY V4-81: TurnPipeline's Failure arm.
+    //
+    // V4-79 put the pre-content rule at this call, which made the pipeline the place that knew
+    // about CONTENT_FRAMES_OUT and forced a perf snapshot through finishStream on every turn. V4-81
+    // moved the rule to SseEmitter.emitError — the one place an error frame is written — so the
+    // pipeline's contract is now the narrower and more honest one: it reports the failure and says
+    // whether a retry could change it, and the wire type is not its business at all.
+    //
+    // The cells below therefore assert PASS-THROUGH, not remapping, and the remapping itself is
+    // pinned where it now happens (SseEmitterTest, "the pre-content rule is applied at the frame").
+    // Splitting them this way is the point: a cell here that still expected OVERLOADED would be
+    // testing a decision this file no longer makes, and would have gone red for the right reason
+    // only after someone re-implemented the rule in the wrong place.
+    //
+    // MUTATION PROOF (recorded in the ledger): drop `permanent = outcome.permanent` from the
+    // emitError call in TurnPipeline.finishStream and the permanent cell below goes red BY NAME.
+
+    @Test
+    fun `the pipeline hands the emitter the failure's own type and permanence`() = runTest {
+        // V4-117: the triple is (cause, expected wire type, expected permanence). The expectation is
+        // written out rather than computed from the cause, so a cause that started deriving a
+        // DIFFERENT type would redden here instead of silently redefining what the test asserts. A
+        // rate limit is a verdict identical bytes earn again until its window lifts; before content
+        // ClientWire still offers it to the client as an overload (SseEmitterTest).
+        val cases = listOf(
+            Triple(FailureCause.Provider.Unrecognized(clientError = false), ErrorType.API_ERROR, false),
+            Triple(FailureCause.Provider.Limited(Lift.Unstated, window = null), ErrorType.RATE_LIMIT, true),
+        )
+        for ((cause, expected, permanent) in cases) {
+            val rec = RecTerminal()
+            val tag = pipeline().finishStream(
+                rec,
+                TurnOutcome.Failure(
+                    cause = cause,
+                    at = MID,
+                    evidence = FailureEvidence("upstream stream ended without response.completed"),
+                ),
+                meta("text"),
+                elapsedMs = 1,
+            )
+            assertEquals("error", rec.ending)
+            assertEquals(cause, rec.errorCause, "the pipeline reports the failure; the emitter types the wire")
+            assertEquals(expected, rec.errorType)
+            assertEquals(permanent, rec.errorPermanent)
+            // The journal tag keeps the honest class either way; the diagnosis rides the evidence to the turn line.
+            assertEquals("failure:${expected.wireName}", tag, "the log must still name the failure honestly")
+        }
+    }
+
+    @Test
+    fun `a permanent failure reaches the emitter marked as such`() = runTest {
+        // See ClientWire: a failure the client would reproduce exactly by re-sending must not be
+        // advertised as transient, and the cause's permanence is what tells the emitter so.
+        val rec = RecTerminal()
+        val tag = pipeline().finishStream(
+            rec,
+            TurnOutcome.Failure(
+                cause = FailureCause.Provider.Refused(RefusedBy.MODEL),
+                at = MID,
+                evidence = FailureEvidence("upstream: model refused"),
+            ),
+            meta("text"),
+            elapsedMs = 1,
+        )
+        assertEquals(ErrorType.INVALID_REQUEST, rec.errorType)
+        assertEquals(true, rec.errorPermanent, "the permanence verdict must survive the pipeline")
+        assertEquals("failure:invalid_request_error", tag)
+    }
+}

@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "sourceRevision": "360319d8dee62d87e2d59fc0c21805d79519cfed",
+  "sourceTree": "307e4fa207fe563a11f3f7af09cee6fccd2d8376",
+  "root": {
+    "path": "codex-rs/core/src/tools/handlers/tool_search.rs",
+    "sha256": "a2c7df97e4381cd66456cb9fea5efabe21cb1b591df33141ebc55e89736837bf",
+    "gitBlob": "220fb3c11ab6a347ef2416bbfb31213c5e843628"
+  },
+  "owner": {
+    "id": "codex-rs/core/src/tools/handlers/tool_search.rs#struct_item@1310",
+    "sha256": "4f008998177c365c4ae67771288fd65fe35b2661c9c3ea7f6dd6f8dc57fcbda0",
+    "start": 1310,
+    "end": 1384,
+    "source": "struct CodeModeSearchResult {\n    name: String,\n    description: String,\n}"
+  },
+  "members": [
+    {
+      "id": "codex-rs/core/src/tools/handlers/tool_search.rs#field_declaration@1344",
+      "sha256": "7d9c8471af736ddb1c5c05231fbc85aba0bb84760232950059c5b41189f90ad1",
+      "start": 1344,
+      "end": 1356,
+      "source": "name: String"
+    },
+    {
+      "id": "codex-rs/core/src/tools/handlers/tool_search.rs#field_declaration@1362",
+      "sha256": "e249a2b9fe9787d55a63752d71b9e729469de42c8a9b8d5a37516bdd7d75f07e",
+      "start": 1362,
+      "end": 1381,
+      "source": "description: String"
+    }
+  ],
+  "routes": [
+    {
+      "id": "codex-rs/core/src/tools/handlers/tool_search.rs#function_item@6734",
+      "sha256": "b6d67b8bf97710fb4c1c55cdde6a5eedab87611029aa6ef2407ccc6512383d78",
+      "start": 6734,
+      "end": 9311,
+      "source": "async fn handle_call(\n        &self,\n        invocation: ToolInvocation,\n    ) -> Result<Box<dyn crate::tools::context::ToolOutput>, FunctionCallError> {\n        let ToolInvocation {\n            payload,\n            source,\n            step_context,\n            ..\n        } = invocation;\n        let nested = matches!(source, ToolCallSource::CodeMode { .. });\n\n        let args = match payload {\n            ToolPayload::ToolSearch { arguments } => arguments,\n            ToolPayload::Function { arguments } if nested => super::parse_arguments(&arguments)?,\n            _ => {\n                return Err(FunctionCallError::Fatal(format!(\n                    \"{TOOL_SEARCH_TOOL_NAME} handler received unsupported payload\"\n                )));\n            }\n        };\n\n        let query = args.query.trim();\n        if query.is_empty() {\n            return Err(FunctionCallError::RespondToModel(\n                \"query must not be empty\".to_string(),\n            ));\n        }\n        let limit = args.limit.unwrap_or(TOOL_SEARCH_DEFAULT_LIMIT);\n\n        if limit == 0 {\n            return Err(FunctionCallError::RespondToModel(\n                \"limit must be greater than zero\".to_string(),\n            ));\n        }\n\n        let model_messages = ResolvedModelMessages::from_model(&step_context.settings.model_info);\n        let indirect_prefixes = IndirectNamespacePrefixes::new(\n            model_messages.indirect_description_prefixes(),\n            step_context.tool_router.mcp_namespaces(),\n        )\n        .map_err(|error| FunctionCallError::Fatal(error.to_string()))?;\n\n        if nested {\n            let tools = self.search_code_mode(\n                query,\n                limit,\n                &step_context.tool_router,\n                step_context\n                    .turn\n                    .config\n                    .code_mode\n                    .tool_input_schema_max_bytes,\n                step_context\n                    .turn\n                    .config\n                    .features\n                    .enabled(Feature::CodeModeToolDescriptionFirst),\n                &indirect_prefixes,\n            );\n            return Ok(boxed_tool_output(JsonToolOutput::new(serde_json::json!({\n                \"tools\": tools,\n            }))));\n        }\n\n        if self.search_infos.is_empty() {\n            return Ok(boxed_tool_output(ToolSearchOutput { tools: Vec::new() }));\n        }\n\n        let mut tools = self.search(query, limit);\n        indirect_prefixes.apply_search(&mut tools);\n\n        Ok(boxed_tool_output(ToolSearchOutput { tools }))\n    }"
+    },
+    {
+      "id": "codex-rs/core/src/tools/handlers/tool_search.rs#function_item@9391",
+      "sha256": "4d957c6427783ca2d503eb5ca90b6d4cef23086f26567d3c324f2b5e8c74dfeb",
+      "start": 9391,
+      "end": 11645,
+      "source": "fn search_code_mode(\n        &self,\n        query: &str,\n        limit: usize,\n        router: &ToolRouter,\n        code_mode_input_schema_max_bytes: Option<usize>,\n        tool_description_first: bool,\n        indirect_prefixes: &IndirectNamespacePrefixes<'_>,\n    ) -> Vec<CodeModeSearchResult> {\n        let mut tools = Vec::new();\n        // Apply the exact step's nested-tool policy before limiting ranked results.\n        for entry in self.search_entries(query) {\n            for candidate_name in entry.tool_names() {\n                let candidate_name = candidate_name.with_default_namespace();\n                let name = codex_code_mode::normalize_code_mode_identifier(\n                    &codex_tools::code_mode_name_for_tool_name(&candidate_name),\n                );\n                let Some(tool_name) =\n                    router\n                        .code_mode_tool_names()\n                        .get(&name)\n                        .filter(|tool_name| {\n                            (*tool_name).clone().with_default_namespace() == candidate_name\n                        })\n                else {\n                    continue;\n                };\n                let Some(tool) = router.registered_tool(tool_name) else {\n                    continue;\n                };\n                let definitions = prepare_code_mode_tool_definitions(\n                    tool.cached_runtime().map(Arc::as_ref),\n                    || Cow::Owned(Arc::unwrap_or_clone(tool.spec())),\n                    code_mode_input_schema_max_bytes,\n                    tool_description_first,\n                );\n                let Some(definition) = definitions.iter().find(|definition| {\n                    definition.tool_name.clone().with_default_namespace() == candidate_name\n                }) else {\n                    continue;\n                };\n                let mut description = definition.description.clone();\n                indirect_prefixes\n                    .apply_code_mode_description(&definition.tool_name, &mut description);\n                tools.push(CodeModeSearchResult { name, description });\n                if tools.len() == limit {\n                    return tools;\n                }\n            }\n        }\n        tools\n    }"
+    }
+  ],
+  "observations": "Only complete raw-equal JSON text produced by the exact reviewed tool_search probe is decoded. Its value.tools elements are the serialized CodeModeSearchResult{name:String,description:String}; neither normalized tied selections nor header timing receives member credit."
+}

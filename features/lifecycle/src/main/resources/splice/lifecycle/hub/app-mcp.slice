@@ -1,0 +1,16 @@
+# splice-owned unit: splice's install lays this file and replaces it on every install, so an edit here does not last.
+# A unit of the same name in ~/.config/systemd/user overrides it, and setup and upgrade then leave the MCP hub to
+# that unit's owner.
+[Unit]
+Description=Memory-bounded Splice MCP holders and servers
+
+[Slice]
+# app-mcp.slice is below app.slice, independent of splice.service.
+# The current measured stdio cohort is 8.51 GiB PSS before holder overhead.
+# Desktop Commander remains per session. Limits retain room for that mode,
+# lazy starts and server state rather than assuming every server is shared.
+MemoryHigh=12G
+MemoryMax=16G
+MemorySwapMax=4G
+# No OOMScoreAdjust: the user manager cannot apply a negative value reliably.
+# Splice owns the post-fork adjustment for each hosted child, not this slice.

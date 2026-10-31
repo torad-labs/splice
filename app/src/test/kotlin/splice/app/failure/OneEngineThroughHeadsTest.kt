@@ -1,0 +1,493 @@
+// NEW: failure-handling slice 4. One engine decides every retry a turn makes, from the cause, where the turn stood and
+// the turn's one ledger (final-design.md section 8). These are its routes: a real head of each API type in front of
+// the scripted provider, on virtual time, driven through the failures section 8's table names, asserting what the
+// provider sees (how many requests, and when) and what the person reads. Every expected number is the table's own:
+// the waits are RetryBudgets' schedules, never a run's. A cut mid-answer continues from what arrived, and only where
+// the head's re-anchor rule can: an answer the client already reads is never restarted from scratch.
+package splice.app.failure
+
+import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import splice.app.provider.HeadReplies
+import splice.core.auth.RefreshCall
+import splice.core.turn.ReasoningDisplay
+import splice.dialect.anthropic.PassthroughProvider
+import splice.dialect.anthropic.PassthroughQuirks
+import splice.dialect.responses.ReasoningSettings
+import splice.head.scripted.ClientAnswer
+import splice.head.scripted.ClientRequest
+import splice.head.scripted.HeadShape
+import splice.head.scripted.ProviderRequest
+import splice.head.scripted.ScriptedReply
+import splice.head.scripted.reply
+import splice.head.scripted.withScriptedHeads
+import splice.oauth.codex.CodexRefresh
+import splice.provider.codex.CodexProvider
+import splice.provider.codex.auth.CodexAuthProvider
+import java.nio.file.Path
+import kotlin.io.path.writeText
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
+
+/** The prefix every line a person reads opens with. */
+private const val PREFIX = "[splice] "
+
+/** What a line says where Claude Code sends the turn again itself. */
+private const val RESENDS = "Claude Code sends this turn again."
+
+/** What a repeated ending says: Claude Code already sent the turn again once, so the turn stopped. */
+private const val STOPPED = "after Claude Code sent this turn again, so this turn stopped"
+
+private const val UNAUTHORIZED = 401
+private const val TOO_MANY_REQUESTS = 429
+private const val TEAPOT = 418
+private const val INTERNAL_SERVER_ERROR = 500
+private const val SERVICE_UNAVAILABLE = 503
+private const val UNNAMED_SERVER_ERROR = 520
+
+/** llama-server's answer while it loads a model (its unavailable_error), as LocalRuntimeReplies reads it. */
+private const val LLAMA_LOADING = """{"error":{"code":503,"message":"Loading model","type":"unavailable_error"}}"""
+
+/** Where the renewing head's login exchanges its refresh token: the scripted provider answers any path. */
+private const val TOKEN_PATH = "/oauth/token"
+
+/** A signed-in codex login whose opaque access token serves as it is until a refusal asks for a renewal. */
+private const val CODEX_LOGIN =
+    """{"tokens":{"access_token":"scripted-access","refresh_token":"scripted-refresh","account_id":"scripted"}}"""
+
+/** A Responses stream's own failure event for an overload, with no time stated. */
+private const val RESPONSES_OVERLOADED =
+    """{"type":"response.failed","response":{"error":{"code":"server_is_overloaded","message":"Try again."}}}"""
+
+/** A Responses stream's own failure event for a rate limit, with no time stated. */
+private const val RESPONSES_RATE_LIMITED =
+    """{"type":"response.failed","response":{"error":{"code":"rate_limit_exceeded","message":"Rate limit reached."}}}"""
+
+/** A proxy's login page sent as a 200, a body with no event in it that no reader names. */
+private const val PROXY_LOGIN_PAGE = "<html><body>Sign in to continue.</body></html>"
+
+/** The words an overload episode's line says of the wait it opens on. */
+private const val WAITS_15_S = "This turn tries again in 15 seconds."
+
+/** A Responses stream's own failure event for a server error. */
+private const val RESPONSES_SERVER_ERROR =
+    """{"type":"response.failed","response":{"error":{"code":"server_error","message":"upstream exploded"}}}"""
+
+/** A model whose reasoning the ChatGPT backend cuts at 518n-2 tokens, and the period of that cut. */
+private const val CUT_MODEL = "gpt-5.5"
+private const val CUT_PERIOD = 518L
+
+/** The words of the hidden item that asks a cut model to go on reasoning (codex-rs's own). */
+private const val CONTINUE_THINKING = "Continue thinking..."
+
+/** How a codex head reasons in these routes. */
+private val CODEX_REASONING =
+    ReasoningSettings(ReasoningDisplay.TEXT, replay = false, effort = "high", summary = "detailed")
+
+class OneEngineThroughHeadsTest {
+    @Test
+    fun `a 5 s Retry-After is waited out in silence and the answer streams`(@TempDir tmp: Path) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(
+                reply {
+                    status(TOO_MANY_REQUESTS)
+                    header("Retry-After", "5")
+                    openAiErrorBody("rate_limit_error", "Rate limit reached for requests.", "rate_limit_exceeded")
+                },
+                reply { chatAnswer("the answer after five seconds") },
+            )
+            val head = chat()
+
+            val answer = head.client.send()
+
+            assertEquals("the answer after five seconds", answer.text, answer.describe())
+            assertEquals(listOf(5.seconds), gaps(provider.requests), "the stated 5 s, waited once")
+            assertEquals(emptyList<String>(), lines(answer), "a wait under 10 s is waited in silence")
+        }
+    }
+
+    @Test
+    fun `an overload with no time stated is sent again at 2, 4, 8, 15 and 30 s, and only the 10 s wait is told`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(*Array(5) { overloaded() }, reply { chatAnswer("the answer after a minute") })
+            val head = chat()
+
+            val answer = head.client.send()
+
+            assertEquals("the answer after a minute", answer.text, answer.describe())
+            assertEquals(listOf(2, 4, 8, 15, 30).map { it.seconds }, gaps(provider.requests))
+            val told = lines(answer)
+            assertEquals(1, told.size, "one line for the episode, written when the first wait of 10 s began: $told")
+            assertTrue(WAITS_15_S in told.single(), told.single())
+            // When the line reaches the client, as its wait starts, is HoldsThroughHeadsTest's: it needs the clock moved by
+            // hand, and this head's waits pass at once.
+        }
+    }
+
+    @Test
+    fun `a model still loading is waited for up to five minutes and its answer streams`(@TempDir tmp: Path) =
+        runTest {
+            withScriptedHeads(tmp) {
+                val loading = reply { status(SERVICE_UNAVAILABLE); body(LLAMA_LOADING) }
+                provider.script(*Array(9) { loading }, reply { chatAnswer("loaded") })
+                val head = localChat(replies = HeadReplies.localChat)
+
+                val answer = head.client.send()
+
+                assertEquals("loaded", answer.text, answer.describe())
+                // The overload waits first, then a minute at a time while five minutes in all are not yet spent.
+                assertEquals(listOf(2, 4, 8, 15, 30, 60, 60, 60, 60).map { it.seconds }, gaps(provider.requests))
+            }
+        }
+
+    @Test
+    fun `a local model server that comes back after 43 s is reached and the answer streams`(@TempDir tmp: Path) =
+        runTest {
+            withScriptedHeads(tmp) {
+                provider.script(reply { chatAnswer("the server is back") })
+                val head = localChat(HeadShape(relayed = true), replies = HeadReplies.localChat)
+                head.relay.stopListening()
+                time.at(43.seconds) { head.relay.resumeListening() }
+
+                val answer = head.client.send()
+
+                assertEquals("the server is back", answer.text, answer.describe())
+                // Refused at 0, 1, 3, 7, 15 and 31 s, and reached on the wait that ends past 43 s.
+                assertEquals(1, provider.requests.size, "a refused connect never reaches the provider")
+                assertEquals(61.seconds, provider.requests.single().at)
+            }
+        }
+
+    @Test
+    fun `a local model server that never comes back ends with the not-running line after about two minutes`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            val head = localChat(HeadShape(relayed = true), replies = HeadReplies.localChat)
+            head.relay.stopListening()
+
+            val answer = head.client.send()
+
+            assertLine(answer, "model server is not running")
+            assertEquals(0, provider.requests.size)
+            // 1, 2, 4, 8, 16, 30, 30 and 30 s of waiting: the eight waits a path that does not answer is given.
+            assertEquals(121.seconds, time.passed())
+        }
+    }
+
+    @Test
+    fun `a server error before the stream began is sent again after 200, 400 and 800 ms`(@TempDir tmp: Path) =
+        runTest {
+            withScriptedHeads(tmp) {
+                val failed = reply {
+                    status(INTERNAL_SERVER_ERROR)
+                    openAiErrorBody("server_error", "The server had an error.", "server_error")
+                }
+                provider.script(failed, failed, failed, reply { chatAnswer("the fourth send answered") })
+                val head = chat()
+
+                val answer = head.client.send()
+
+                assertEquals("the fourth send answered", answer.text, answer.describe())
+                assertEquals(listOf(200, 400, 800).map { it.milliseconds }, gaps(provider.requests))
+            }
+        }
+
+    @Test
+    fun `an error no table names is sent once more, then ends quoting the provider`(@TempDir tmp: Path) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(
+                reply {
+                    status(UNNAMED_SERVER_ERROR)
+                    // Words a person may read: a sentence naming "upstream" is never quoted (ProviderWordsFilter).
+                    openAiErrorBody("odd_error", "Something odd happened on our side.", "odd_code")
+                },
+            )
+            val head = chat()
+
+            val answer = head.client.send()
+
+            assertEquals(2, provider.requests.size, "tried once more")
+            assertLine(answer, "Something odd happened on our side.")
+        }
+    }
+
+    @Test
+    fun `an unknown 4xx is sent once more, then ends with a status Claude Code does not send again`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(
+                reply { status(TEAPOT); openAiErrorBody("teapot_error", "I am a teapot.", "teapot") },
+            )
+            val head = chat()
+
+            val answer = head.client.send()
+
+            assertEquals(2, provider.requests.size, "tried once more")
+            assertEquals("false", answer.shouldRetry, answer.describe())
+        }
+    }
+
+    @Test
+    fun `a request whose identical predecessor ended for Claude Code to send again stops, and says so`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            // A 200 with no event in it ends R once its fresh re-sends are spent (slice 5 holds a stated limit instead).
+            val loginPage = reply { body(PROXY_LOGIN_PAGE) }
+            provider.script(*Array(3 + 3) { loginPage })
+            val head = anthropic()
+            val turn = ClientRequest(session = "sess-resent-by-claude-code")
+
+            val first = head.client.send(turn)
+            val again = head.client.send(turn)
+
+            assertLine(first, RESENDS)
+            assertLine(again, STOPPED)
+            assertFalse(RESENDS in lineOf(again), "the re-send ends with an answer Claude Code does not send again")
+        }
+    }
+
+    @Test
+    fun `a server error after the answer began is continued from what arrived, five times at most`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(
+                reply {
+                    responsesStart()
+                    responsesText("partial words")
+                    event(RESPONSES_SERVER_ERROR)
+                },
+                reply {
+                    responsesStart()
+                    event(RESPONSES_SERVER_ERROR)
+                },
+            )
+            val head = responses()
+
+            val answer = head.client.send()
+
+            assertEquals(1 + 5, provider.requests.size, "the first send and five recoveries: ${answer.describe()}")
+            provider.requests.drop(1).forEachIndexed { i, request ->
+                assertTrue("partial words" in request.body, "recovery ${i + 1} carries what arrived: ${request.body}")
+            }
+            assertTrue(answer.contentBeforeError, answer.describe())
+            assertTrue(lineOf(answer).startsWith(PREFIX), answer.describe())
+        }
+    }
+
+    @Test
+    fun `a mid-answer cut on an Anthropic head with prefill off ends at once with the cut-off line, no re-anchor sent`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            // Held before the cut, so the text is on the client's wire when the connection drops.
+            provider.script(reply { anthropicStart(); anthropicText("partial words"); hold(); cut() })
+            val head = anthropic()
+
+            val stream = head.client.open()
+            stream.awaitText("partial words")
+            provider.release()
+            val answer = stream.finish()
+
+            assertEquals(1, provider.requests.size, "no re-anchor reached the provider: ${answer.describe()}")
+            assertEquals("partial words", answer.text, answer.describe())
+            assertLine(answer, "cut off")
+        }
+    }
+
+    @Test
+    fun `the same cut on a head with prefill on is re-anchored from what arrived`(@TempDir tmp: Path) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(
+                reply { anthropicStart(); anthropicText("partial words"); hold(); cut() },
+                reply { anthropicStart(); anthropicText(" and the rest"); anthropicEnd() },
+            )
+            val head = custom("prefill") { tuning, _ ->
+                PassthroughProvider(tuning, PassthroughQuirks(tuning.key, reanchorPrefill = true))
+            }
+
+            val stream = head.client.open()
+            stream.awaitText("partial words")
+            provider.release()
+            val answer = stream.finish()
+
+            assertNull(answer.error, answer.describe())
+            assertEquals(2, provider.requests.size, answer.describe())
+            assertTrue("partial words" in provider.requests[1].body, "the re-anchor carries what arrived")
+            assertEquals("partial words and the rest", answer.text, answer.describe())
+        }
+    }
+
+    @Test
+    fun `an overload after the answer began is continued from what arrived after 2, 4, 8, 15 and 30 s, then ends`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            val overloaded = reply { responsesStart(); responsesText("partial words"); event(RESPONSES_OVERLOADED) }
+            provider.script(*Array(1 + 5) { overloaded })
+            val head = responses()
+
+            val answer = head.client.send()
+
+            // The overload's waits, each through the turn's waits, and every continuation carries what arrived.
+            assertEquals(listOf(2, 4, 8, 15, 30).map { it.seconds }, gaps(provider.requests), answer.describe())
+            assertTrue(provider.requests.drop(1).all { "partial words" in it.body }, answer.describe())
+            assertTrue(answer.contentBeforeError, answer.describe())
+        }
+    }
+
+    @Test
+    fun `a limit met after the answer began is continued from what arrived after 2, 4, 8 and 15 s`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            val limited = reply { responsesStart(); responsesText("partial words"); event(RESPONSES_RATE_LIMITED) }
+            provider.script(*Array(1 + 4 + 1) { limited })
+            val head = responses()
+
+            val answer = head.client.send()
+
+            // Section 8's Limited row with no time stated: four burst waits wherever the limit is met, and after the
+            // answer began each continuation carries what arrived. The fifth limit holds the turn (HoldsThroughHeadsTest).
+            assertEquals(listOf(2, 4, 8, 15).map { it.seconds }, gaps(provider.requests), answer.describe())
+            assertTrue(provider.requests.drop(1).all { "partial words" in it.body }, answer.describe())
+            assertTrue(answer.contentBeforeError, answer.describe())
+        }
+    }
+
+    @Test
+    fun `a stream that closed before sending anything is sent fresh twice, then ends for Claude Code to resend`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            val loginPage = reply { body(PROXY_LOGIN_PAGE) }
+            provider.script(loginPage, loginPage, loginPage, reply { anthropicAnswer("not reached") })
+            val head = anthropic()
+
+            val answer = head.client.send()
+
+            // A 200 that carried no event, which no reader names: the send and two fresh re-sends, on one budget.
+            assertEquals(1 + 2, provider.requests.size, answer.describe())
+            assertLine(answer, RESENDS)
+        }
+    }
+
+    @Test
+    fun `an empty answer is asked again once a turn, a recovery from a server error between them`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            val failed = reply { responsesStart(); event(RESPONSES_SERVER_ERROR) }
+            provider.script(failed, emptyResponse(), failed, emptyResponse(), reply { responsesAnswer("not reached") })
+            val head = responses()
+
+            val answer = head.client.send()
+
+            // A recovery, the turn's one empty re-send, a second recovery, and the second empty answer ends the turn.
+            assertEquals(4, provider.requests.size, answer.describe())
+            assertTrue(lineOf(answer).startsWith(PREFIX), answer.describe())
+        }
+    }
+
+    @Test
+    fun `a token endpoint answering 503 is asked again after 2 s and 4 s, then the turn ends with the login line`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(
+                reply { status(UNAUTHORIZED); anthropicErrorBody("authentication_error", "The access token expired.") },
+                reply { status(SERVICE_UNAVAILABLE); body("""{"error":"temporarily_unavailable"}""") },
+            )
+            val login = tmp.resolve("auth.json").also { it.writeText(CODEX_LOGIN) }
+            val head = custom("renewing") { tuning, log ->
+                val tokenUrl = provider.baseUrl + TOKEN_PATH
+                val auth = CodexAuthProvider(
+                    authPath = login,
+                    authCacheMs = 0,
+                    refreshCall = RefreshCall { CodexRefresh(log).refresh(tokenUrl, it) },
+                    log = log,
+                )
+                PassthroughProvider(tuning.copy(auth = auth), PassthroughQuirks(tuning.key))
+            }
+
+            val answer = head.client.send()
+
+            val exchanges = provider.requests.filter { it.path == TOKEN_PATH }
+            assertEquals(listOf(2.seconds, 4.seconds), gaps(exchanges), "three exchanges: ${answer.describe()}")
+            assertLine(answer, "login expired and could not be renewed")
+        }
+    }
+
+    @Test
+    fun `a codex round cut at its reasoning bound is continued silently up to 3 times, and the client sees one answer`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            // Every round is cut, so only the engine's budget of three continuations ends the folding.
+            provider.script(*Array(1 + 3 + 1) { cutRound(it + 1) })
+            val head = custom("codex", HeadShape(model = CUT_MODEL)) { tuning, log ->
+                CodexProvider(tuning, CODEX_REASONING, log = log)
+            }
+
+            val answer = head.client.send()
+
+            assertEquals(1 + 3, provider.requests.size, "the round and three continuations: ${answer.describe()}")
+            provider.requests.drop(1).forEachIndexed { i, request ->
+                assertTrue("ENC-${i + 1}" in request.body, "continuation ${i + 1} replays the reasoning it continues")
+                assertTrue(CONTINUE_THINKING in request.body, "and asks the model to go on: ${request.body}")
+            }
+            assertEquals("the answer of round 4", answer.text, "one answer, the last round's: ${answer.describe()}")
+            assertNull(answer.error, answer.describe())
+            assertEquals(emptyList<String>(), lines(answer), "a continuation is silent")
+        }
+    }
+
+    /** A codex round on a model the backend cuts, cut at 518n-2 reasoning tokens with n = [round], within the bound. */
+    private fun cutRound(round: Int): ScriptedReply = reply {
+        responsesReasoning("ENC-$round", id = "rs_round_$round")
+        responsesMessageAfterReasoning("the answer of round $round")
+        responsesCompleted(reasoningTokens = CUT_PERIOD * round - 2)
+    }
+
+    /** The time between each request the provider received and the one before it. */
+    private fun gaps(requests: List<ProviderRequest>): List<Duration> = requests.zipWithNext { a, b -> b.at - a.at }
+
+    /** The lines splice wrote into the answer's notice blocks. */
+    private fun lines(answer: ClientAnswer): List<String> = answer.notices.filter { it.startsWith(PREFIX) }
+
+    /** The line the client was given: an in-band error event's message, or the error body of a status. */
+    private fun lineOf(answer: ClientAnswer): String = answer.error?.message.orEmpty()
+
+    private fun assertLine(answer: ClientAnswer, fragment: String) {
+        val line = lineOf(answer)
+        assertTrue(line.startsWith(PREFIX), "a person reads one [splice] line: ${answer.describe()}")
+        assertTrue(fragment in line, "says \"$fragment\": $line")
+        assertFalse("attempt" in line, line)
+    }
+
+    /** A 503 that states no time: an overload every API type's reader reads as one. */
+    private fun overloaded(): ScriptedReply = reply {
+        status(SERVICE_UNAVAILABLE)
+        openAiErrorBody("server_error", "The server is overloaded.", "overloaded")
+    }
+
+    /** A Responses stream that completes with nothing in it: no message, no tool call, no reasoning. */
+    private fun emptyResponse(): ScriptedReply = reply {
+        event("""{"type":"response.created","response":{"id":"resp_scripted","status":"in_progress","output":[]}}""")
+        event(
+            """{"type":"response.completed","response":{"id":"resp_scripted","status":"completed","output":[],""" +
+                """"usage":{"input_tokens":12,"output_tokens":0}}}""",
+        )
+    }
+}

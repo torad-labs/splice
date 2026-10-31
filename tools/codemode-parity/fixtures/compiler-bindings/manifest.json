@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "scope": "synthetic compiler parser fixture; no Codex behavioral evidence",
+  "compiler": {
+    "version": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "sha256": "b53b780f77f952062f8ca8a3b70aef2390b1e45ad91939be94afdc9543026853"
+  },
+  "source": {
+    "path": "probe.rs",
+    "bytes": 942,
+    "sha256": "d43f57f0a2205c1758dd8938a6ecfcd3c9445bddb189647dfc1e9d653241e82f"
+  },
+  "hir": {
+    "path": "hir-tree.txt",
+    "bytes": 176662,
+    "sha256": "0dbddd2a88925ef64dac9eaa42520abf7a855cf442a6d3fa159108786f5cef10"
+  },
+  "thir": {
+    "path": "thir-flat.txt",
+    "bytes": 42381,
+    "sha256": "d7f547c6bebdf13d61c9c71ab4c02b2c333928ba7ff9590d815b57a427fcef80"
+  },
+  "args": [
+    "--crate-name",
+    "compiler_binding_fixture",
+    "--crate-type",
+    "lib",
+    "--edition",
+    "2024",
+    "probe.rs"
+  ]
+}

@@ -1,0 +1,108 @@
+{
+  "schema": 1,
+  "scope": "actual rustc1.99.1 synthetic source-selector fixture; all references intentionally outside selected source, none waived or covered",
+  "sourceRoot": "/work/splice/tools/codemode-parity/fixtures/compiler-driver",
+  "compiler": {
+    "path": "/work/artifacts/session-completion-2026-10-27/reference-0.165.0/compiler-binding-pilot/compiler-driver-overlay/sysroot/bin/rustc",
+    "bytes": 648536,
+    "sha256": "b53b780f77f952062f8ca8a3b70aef2390b1e45ad91939be94afdc9543026853"
+  },
+  "driver": {
+    "path": "/work/artifacts/session-completion-2026-10-27/reference-0.165.0/compiler-binding-pilot/compiler-driver-overlay/source-binding-driver-v6",
+    "bytes": 180208,
+    "sha256": "73450b03c915484cab0a699a9d7fbdb0c5dfcee2e083bcda1f5205dacbdb74c4"
+  },
+  "driverSource": {
+    "path": "/work/artifacts/session-completion-2026-10-27/reference-0.165.0/compiler-binding-pilot/compiler-driver-overlay/driver-v6.rs",
+    "bytes": 11873,
+    "sha256": "6bcdab78bb32a8d8ef8662ccd435eca073dc28b2dd4150fbbf776c693763676e"
+  },
+  "sources": [
+    {
+      "path": "/work/splice/tools/codemode-parity/fixtures/compiler-driver/probe.rs",
+      "bytes": 739,
+      "sha256": "ac3f89465291c686029fe4f059d71ce3cf65d9d9a8ad619a293c19ad7cd3b978"
+    },
+    {
+      "path": "/work/splice/tools/codemode-parity/fixtures/compiler-driver/remote.rs",
+      "bytes": 149,
+      "sha256": "a756f8ccd7e16ee629073e9d6b87974f632bcbf910cfd4dc423cb465be534b39"
+    }
+  ],
+  "external": {
+    "path": "/work/artifacts/session-completion-2026-10-27/reference-0.165.0/compiler-binding-pilot/compiler-driver-overlay/fixture-build-v4/libexternal_fixture.rmeta",
+    "bytes": 2787,
+    "sha256": "f312c196daa4e69ede5eeca030f68ae13562734f105c6e8f02b97790b5b8b869"
+  },
+  "selection": {
+    "algorithm": "exact-source-file-hash-v1",
+    "files": {
+      "path": "/work/splice/tools/codemode-parity/fixtures/compiler-driver/selected-sources.tsv",
+      "bytes": 229,
+      "sha256": "71942b1ac7b0a3bc0321c71c2c8abaad2586e3d152d8fa7cfb3efdd69dfa1afd"
+    },
+    "fileCount": 1,
+    "rootContextOnly": true
+  },
+  "output": {
+    "path": "/work/splice/tools/codemode-parity/fixtures/compiler-driver/selected-facts.jsonl",
+    "bytes": 19123,
+    "sha256": "e110d715bd7ff23684fa52c529e334c510b4c7ba80d07cf743977fc573b55789"
+  },
+  "command": [
+    "/work/artifacts/session-completion-2026-10-27/reference-0.165.0/compiler-binding-pilot/compiler-driver-overlay/source-binding-driver-v6",
+    "--sysroot",
+    "/work/artifacts/session-completion-2026-10-27/reference-0.165.0/compiler-binding-pilot/compiler-driver-overlay/sysroot",
+    "--crate-name",
+    "compiler_driver_fixture",
+    "--edition=2024",
+    "probe.rs",
+    "--crate-type",
+    "lib",
+    "--emit=metadata",
+    "--extern",
+    "external_fixture=/work/artifacts/session-completion-2026-10-27/reference-0.165.0/compiler-binding-pilot/compiler-driver-overlay/fixture-build-v4/libexternal_fixture.rmeta",
+    "--out-dir",
+    "/work/artifacts/session-completion-2026-10-27/reference-0.165.0/compiler-binding-pilot/compiler-driver-overlay/fixture-build-v6",
+    "-Zno-steal-thir=yes"
+  ],
+  "completion": {
+    "tag": "complete",
+    "declarations": 33,
+    "references": 0,
+    "observedReferences": 69,
+    "filteredReferences": [
+      {
+        "reason": "dummy-source-span",
+        "resolution": "unresolved",
+        "count": 6
+      },
+      {
+        "reason": "outside-selected-source-files",
+        "resolution": "Def",
+        "count": 15
+      },
+      {
+        "reason": "outside-selected-source-files",
+        "resolution": "FnDef",
+        "count": 26
+      },
+      {
+        "reason": "outside-selected-source-files",
+        "resolution": "dynamic-call",
+        "count": 3
+      },
+      {
+        "reason": "outside-selected-source-files",
+        "resolution": "generic-call",
+        "count": 3
+      },
+      {
+        "reason": "outside-selected-source-files",
+        "resolution": "non-definition-resolution",
+        "count": 16
+      }
+    ],
+    "behavioralCoverage": false
+  }
+}

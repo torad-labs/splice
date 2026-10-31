@@ -1,0 +1,76 @@
+// NEW: V4-368 — guarded per-head inventory and deletion of retained trace day files.
+package splice.head.wire
+
+import io.ktor.http.HttpStatusCode
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import splice.core.config.ConfigService
+import splice.core.storage.DayFileRemoval
+import splice.core.storage.DayFiles
+import splice.core.storage.DayInventory
+import splice.core.util.Cancellables
+import splice.core.util.JsonWire
+import splice.core.util.SafeFailureText
+import splice.head.TurnsHeadLookup
+import splice.head.trace.TraceDirPort
+import splice.http.JsonReply
+import java.io.IOException
+import java.nio.file.Path
+
+private const val TRACE_KEEP_UNWIRED = "the daemon wired no trace directory; kept trace cannot be read or deleted"
+
+/** One configured head's private day files, whether its capture switch currently runs or not. */
+public class TraceDeleteRoutes @JvmOverloads constructor(
+    private val heads: TurnsHeadLookup,
+    private val dir: TraceDirPort,
+    private val config: ConfigService,
+    private val removal: DayFileRemoval? = null,
+) {
+    /** Count each real record and byte before the operator decides to delete. */
+    public fun kept(head: String): JsonReply = answer(head, delete = false)
+
+    /** Delete on the file lane after earlier writes; other heads and non-day entries are untouched. */
+    public fun delete(head: String): JsonReply = answer(head, delete = true)
+
+    private fun answer(head: String, delete: Boolean): JsonReply {
+        val found = heads.byName(head).firstOrNull()
+            ?: return refuse(HttpStatusCode.BadRequest, "unknown head: $head")
+        val key = found.key
+        val traceDir = dir() ?: return refuse(HttpStatusCode.ServiceUnavailable, TRACE_KEEP_UNWIRED)
+        return Cancellables.runCatchingCancellable { read(key, traceDir, delete, found.trace?.stopped) }
+            .fold(
+                onSuccess = { JsonReply(HttpStatusCode.OK, it) },
+                onFailure = { failure ->
+                    refuse(
+                        if (delete && failure is IOException) {
+                            HttpStatusCode.Conflict
+                        } else {
+                            HttpStatusCode.InternalServerError
+                        },
+                        "cannot read or delete $key's trace under $traceDir: ${SafeFailureText.render(failure)}",
+                    )
+                },
+            )
+    }
+
+    private fun read(key: String, traceDir: Path, delete: Boolean, stopped: TraceStop?): String {
+        val files = removal?.let { DayFiles(traceDir, key, true, it) } ?: DayFiles(traceDir, key, ownerOnly = true)
+        val retention = config.getConfig(key).traceKeptDays
+        val inventory = if (delete) files.deleteKept(retention) else files.inventory(retention)
+        return inventoryJson(inventory, retention, stopped)
+    }
+
+    private fun inventoryJson(inventory: DayInventory, keptDays: Int, stopped: TraceStop?): String = buildJsonObject {
+        put("records", inventory.rows)
+        put("bytes", inventory.bytes)
+        // The UTC days this command keeps now, the day running included; null when it keeps every day (forever).
+        put("kept_days", keptDays.takeIf { it != Int.MAX_VALUE })
+        // Since when this command's requests have not saved whole, and the store's reason (the disk at the free-space
+        // floor, the body budget spent); both null while they save whole. The size above stays what is kept.
+        put("saving_stopped_at_epoch_ms", stopped?.atEpochMs)
+        put("saving_stopped_reason", stopped?.reason)
+    }.let(JsonWire::string)
+
+    private fun refuse(status: HttpStatusCode, message: String): JsonReply =
+        JsonReply(status, buildJsonObject { put("error", message) }.let(JsonWire::string))
+}

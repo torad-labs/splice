@@ -2,7 +2,7 @@
 # Red-green fixture test for the 'Update live-probe issue' step.
 #
 # Extracts the run block of the step named 'Update live-probe issue' from
-# .github/workflows/live-probe.yml (or $LIVE_PROBE_YAML) via python3+yaml,
+# .github/workflows/live-probe.yml (or $LIVE_PROBE_YAML) via bun's YAML parser,
 # serves synthetic issue data through a stub `gh` on PATH, and runs the
 # extracted block under bash -eo pipefail. All scenarios use zero network calls.
 set -euo pipefail
@@ -14,26 +14,25 @@ trap 'rm -rf "$tmpdir"' EXIT
 yaml="${LIVE_PROBE_YAML:-$dir/../../workflows/live-probe.yml}"
 step_name="Update live-probe issue"
 
-python3 - <<PY > "$tmpdir/step.sh"
-import sys
-import yaml
-
-with open("$yaml") as f:
-    data = yaml.safe_load(f)
-
-for job_name, job in data.get("jobs", {}).items():
-    for step in job.get("steps", []):
-        if step.get("name") == "$step_name":
-            run = step.get("run")
-            if run is None:
-                print("FAIL: step has no run block", file=sys.stderr)
-                sys.exit(1)
-            sys.stdout.write(run)
-            sys.exit(0)
-
-print("FAIL: step not found", file=sys.stderr)
-sys.exit(1)
-PY
+bun - "$yaml" "$step_name" > "$tmpdir/step.sh" <<'TS'
+const [file, stepName] = [Bun.argv[2]!, Bun.argv[3]!];
+const data = Bun.YAML.parse(await Bun.file(file).text()) as {
+  jobs?: Record<string, { steps?: { name?: string; run?: string }[] }>;
+};
+for (const job of Object.values(data.jobs ?? {})) {
+  for (const step of job.steps ?? []) {
+    if (step.name !== stepName) continue;
+    if (step.run === undefined || step.run === null) {
+      console.error("FAIL: step has no run block");
+      process.exit(1);
+    }
+    process.stdout.write(step.run);
+    process.exit(0);
+  }
+}
+console.error("FAIL: step not found");
+process.exit(1);
+TS
 chmod +x "$tmpdir/step.sh"
 
 cat > "$tmpdir/gh" <<'GH'

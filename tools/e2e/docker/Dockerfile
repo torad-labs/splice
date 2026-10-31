@@ -1,0 +1,85 @@
+# tools/e2e/docker/Dockerfile — a NEW MACHINE for the fresh-install e2e.
+#
+# Nothing splice-specific is baked in: the image is the prerequisite set the README asks a new
+# operator to have (Java 21+, Node 24, curl, bash, Claude Code on PATH) and an unprivileged
+# user with an empty HOME. The release artifacts and the checkout are mounted at run time, so the
+# same image proves any build. The container runs with --network none: every byte the daemon and
+# the wrapper move goes to the two in-container mock upstreams, or the run fails.
+FROM eclipse-temurin:21-jre-noble AS fresh
+
+# What splice is tested against is pinned so two builds a month apart prove the same machine (review of #116):
+# Node from the official tarball, verified against its published sha256; Bun the same way; Claude Code at an exact
+# version (run.sh passes Versions.kt's TESTED_CLAUDE_CODE value explicitly). The base image is a tag and the apt
+# packages carry no versions, so a rebuild can take a newer JRE and newer system tools: no PASS receipt records the
+# base image's digest to pin it to.
+ARG NODE_VERSION=24.20.0
+ARG NODE_SHA256=2f2c0da162318f0de47665410c7c8c2ed3d36c8f3105de4bbc61176c70a7cbf2
+ARG CLAUDE_CODE_VERSION=2.1.296
+# Bun runs the mock upstream and wire probe; match package.json's pinned packageManager.
+ARG BUN_VERSION=1.4.2
+ARG BUN_SHA256=36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913
+# The unprivileged user's uid — run.sh passes the host's so the bind-mounted /out and /artifacts
+# are readable/writable on both sides (the noble base already owns uid 1000 as `ubuntu`).
+ARG UID=1000
+
+# iproute2 gives `ss` for the socket assertions; procps gives `pgrep` for the daemon assertions;
+# xz-utils unpacks the Node tarball.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl bash iproute2 procps xz-utils unzip \
+ && curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" -o /tmp/node.tar.xz \
+ && echo "${NODE_SHA256}  /tmp/node.tar.xz" | sha256sum -c - \
+ && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 --exclude='*/CHANGELOG.md' --exclude='*/README.md' --exclude='*/LICENSE' \
+ && rm /tmp/node.tar.xz \
+ && curl -fsSL "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-x64.zip" -o /tmp/bun.zip \
+ && echo "${BUN_SHA256}  /tmp/bun.zip" | sha256sum -c - \
+ && unzip -p /tmp/bun.zip bun-linux-x64/bun > /usr/local/bin/bun \
+ && chmod 0755 /usr/local/bin/bun \
+ && test "$(bun --version)" = "${BUN_VERSION}" \
+ && rm /tmp/bun.zip \
+ && npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+ && npm cache clean --force \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN (userdel -r ubuntu 2>/dev/null || true) && useradd -m -u "${UID}" -s /bin/bash tester \
+ && mkdir -p /out && chown tester:tester /out
+
+USER tester
+WORKDIR /home/tester
+ENV HOME=/home/tester
+ENV PATH="/home/tester/.local/bin:${PATH}"
+
+# The machine an EXISTING 0.3.x user upgrades on: the fresh machine plus python3, which 0.3.x's launch shim
+# lists as a prerequisite (its README, install.sh) and parses /health with. Without it the old shim cannot read its
+# own healthy daemon and refuses ("port is occupied by a non-splice or malformed health endpoint"), so the
+# rehearsal never reaches the upgrade. Only the upgrade run builds this stage; the fresh machine stays without it,
+# because 0.4.0 needs none.
+# NO-PYTHON-EXEMPT[2026-10-10]: runs a published 0.3.x as shipped, which needs python3 (President for Marcos, 2026-10-10); remove when the oldest supported upgrade source no longer needs python3.
+FROM fresh AS upgrade
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
+USER tester
+
+# A machine with NO Node anywhere: what the no-node scenario proves a new user can install splice on. The prerequisite
+# set is Java, curl, bash and a NATIVELY installed Claude Code (the installer at claude.ai ships its own runtime). Bun
+# is here only to run the test's mock upstreams and probes; it is not on a user's machine and the scenario says so.
+FROM eclipse-temurin:21-jre-noble AS nonode
+ARG CLAUDE_CODE_VERSION=2.1.296
+ARG BUN_VERSION=1.4.2
+ARG BUN_SHA256=36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913
+ARG UID=1000
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl bash iproute2 procps unzip tmux \
+ && curl -fsSL "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-x64.zip" -o /tmp/bun.zip \
+ && echo "${BUN_SHA256}  /tmp/bun.zip" | sha256sum -c - \
+ && unzip -p /tmp/bun.zip bun-linux-x64/bun > /usr/local/bin/bun \
+ && chmod 0755 /usr/local/bin/bun \
+ && rm /tmp/bun.zip \
+ && rm -rf /var/lib/apt/lists/*
+RUN (userdel -r ubuntu 2>/dev/null || true) && useradd -m -u "${UID}" -s /bin/bash tester \
+ && mkdir -p /out && chown tester:tester /out
+USER tester
+WORKDIR /home/tester
+ENV HOME=/home/tester
+ENV PATH="/home/tester/.local/bin:${PATH}"
+# Claude Code's native installer, pinned to the tested version.
+RUN curl -fsSL https://claude.ai/install.sh | bash -s "${CLAUDE_CODE_VERSION}"

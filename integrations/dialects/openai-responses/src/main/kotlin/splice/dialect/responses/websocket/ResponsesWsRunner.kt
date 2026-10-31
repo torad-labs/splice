@@ -1,0 +1,200 @@
+// NEW: (ws-transport WS-3, 2026-08-01) the Responses side of the WS seam — everything
+// :daemon-head is forbidden to know (module law: :daemon-head may name only :core and :upstream).
+// It owns the round-terminal vocabulary, the chaining frame, the connection identity, and the
+// commit/clear of chaining state.
+//
+// THREE THINGS HERE EXIST BECAUSE ADVERSARIAL REVIEW FOUND THEM, each closing a silent-corruption
+// class rather than an error:
+//
+//  1. CONNECTION IDENTITY IS NOT stablePromptCacheKey. That key is a hash of the FIRST USER
+//     MESSAGE'S TEXT ONLY (ResponsesRequestBuilder.kt, ResponsesStableIds), so two conversations
+//     that open with the same words are ONE key — by design, not by collision. Used as the chain
+//     key it would hand conversation X's previous_response_id to conversation Y as its anchor, and
+//     the delta classifier cannot catch it: the very thing that makes them share a key (identical
+//     first item) is what makes Y's input look like a legitimate prefix-extension of X's. The
+//     session id is mixed in, so distinct sessions can never share a chain.
+//  2. PER-TURN HEADERS PARTICIPATE IN IDENTITY. A WebSocket's handshake headers are fixed for the
+//     socket's life, but the head's per-turn set need not be (the responses-lite marker used to
+//     key off `!meta.compact` until 2026-09-05, so a compact turn wanted it OFF on a socket opened
+//     with it ON — a reused socket then silently sent a lite-SHAPED body without its lite marker).
+//     Folding the header set into the key means a changed set opens a new connection instead.
+//  3. THE KEY ENCODING IS LENGTH-PREFIXED, not separator-joined. Any separator can appear inside a
+//     header value, and a joined key would then alias two different header sets onto one
+//     connection. Length prefixes are injective for every possible String with no reserved
+//     character at all.
+package splice.dialect.responses.websocket
+
+import kotlinx.coroutines.flow.onEach
+import kotlinx.serialization.json.JsonObject
+import splice.core.auth.Credentials
+import splice.core.perf.PerfKeys
+import splice.core.perf.TurnPerf
+import splice.core.perf.WsAttemptTiming
+import splice.core.turn.TurnMeta
+import splice.core.util.JsonScalars
+import splice.core.util.LogSink
+import splice.dialect.responses.stream.HandshakeHeaders
+import splice.dialect.responses.stream.ResponsesRoundEnd
+import splice.upstream.NEVER_PINGED_MS
+import splice.upstream.WsPathPulse
+import splice.upstream.WsRound
+import splice.upstream.WsRoundAbort
+import splice.upstream.WsRoundRunner
+
+// ResponsesRoundEnd + HandshakeHeaders live in ResponsesRoundEnd.kt (concentration, 2026-08-19).
+// Identity + terminal observation live in ResponsesWsIdentity.kt (concentration, 2026-08-19).
+
+internal class ResponsesWsRunner(
+    private val transport: WsUpstream,
+    private val session: ResponsesWsSession,
+    private val wssUrl: String,
+    private val handshakeHeaders: HandshakeHeaders,
+    private val webSocketPrefill: Boolean = false,
+    private val webSocketPolicy: ResponsesWebSocketPolicy = ResponsesWebSocketPolicy(),
+    private val log: LogSink = LogSink {},
+) : WsRoundRunner {
+
+    private val identity = ResponsesWsIdentity(session, log)
+    private val requestMetadata = ResponsesWsRequestMetadata()
+    private val prefiller = ResponsesWsPrefiller(
+        webSocketPrefill,
+        transport,
+        session,
+        identity,
+        requestMetadata,
+        wssUrl,
+        log,
+    )
+
+    override suspend fun attempt(
+        bodyJson: String,
+        meta: TurnMeta,
+        turnHeaders: Map<String, String>,
+        creds: Credentials,
+    ): WsRound? = attempt(bodyJson, meta, turnHeaders, creds, null)
+
+    override suspend fun attempt(
+        bodyJson: String,
+        meta: TurnMeta,
+        turnHeaders: Map<String, String>,
+        creds: Credentials,
+        perf: TurnPerf?,
+    ): WsRound? {
+        // No parseable body, or no isolation identity => ride SSE. The second is not a weaker key
+        // but NO key: without it, conversations sharing a first message would share a chain.
+        val request = identity.parseRequest(bodyJson)
+        val chain = identity.chainKey(meta)
+        if (request == null || chain == null) return null
+        // Codex's x-client-request-id rides the per-turn set, as on its HTTP POST (CodexRoutingHeaders, fix 4 of the
+        // Oct 27 Responses fixes): codex-rs names its thread with it on both transports.
+        val headers = handshakeHeaders(creds) + turnHeaders
+        val key = identity.connectionKey(chain, meta, headers)
+        val seed = ResponsesWsPrefiller.PrefillSeed(request, chain, key, headers, meta, perf)
+        val prefillContext = if (webSocketPolicy.acceptsPrefill(request)) prefiller.context(seed) else null
+        return if (prefillContext == null || prefiller.run(prefillContext)) serve(seed, turnHeaders) else null
+    }
+
+    private suspend fun serve(
+        seed: ResponsesWsPrefiller.PrefillSeed,
+        turnHeaders: Map<String, String>,
+    ): WsRound? {
+        val timing = seed.perf?.let(::WsAttemptTiming)
+        // Committed at SEND time, read at TERMINAL time: the frame the chaining layer just built
+        // determines what the next turn's prefix must be, and only a clean terminal may commit it.
+        var pending: ResponsesWsIdentity.PendingCommit? = null
+        // The round's abort, closed over the ONE connection this attempt got and the LEASE it held
+        // when it got it. No registry and no key: see WsRound's doc for why a chain-keyed lookup
+        // aborts the wrong socket, and the lease for why "still my round" is not the same question
+        // as "not finished yet". Default no-op covers the paths that never reach a connection.
+        var abort = WsRoundAbort { }
+        // The socket's liveness for the idle watchdog, closed over the same connection: a pooled
+        // socket outlives the round, but the poller that reads this is cancelled with the round.
+        var pathPulse = WsPathPulse { NEVER_PINGED_MS }
+        // The connection's vital signs, for the line a failed or incomplete round leaves (observeEnding).
+        var pulse: WsPulse? = null
+        val flow = transport.round(
+            key = seed.key,
+            handshake = WsHandshake(wssUrl, seed.headers),
+            isTerminal = { JsonScalars.str(it[FIELD_TYPE]) in ResponsesRoundEnd.ALL },
+            session = seed.meta.scope.sessionId,
+        ) { conn ->
+            conn.pulse.bindTiming(timing)
+            // Armed HERE because this is the only place the transport hands the connection out and
+            // the head never sees one (module law).
+            val lease = conn.lease.get()
+            abort = WsRoundAbort { if (conn.lease.get() == lease) conn.kill() }
+            pathPulse = WsPathPulse { conn.pulse.pingAgoMs() }
+            pulse = conn.pulse
+            // F7: frame + epoch captured atomically. Two calls (frameFor then epochOf) left a
+            // window where a concurrent clear bumped the epoch after the frame was built on
+            // now-stale context, and the post-bump epoch still matched at commit — resurrecting the
+            // state the clear existed to bar.
+            val metadata = requestMetadata.forTurn(seed.request, turnHeaders, seed.meta.upstreamHeaders.snapshot())
+            val built = session.frameAndEpoch(seed.chain, seed.request, conn.generation, metadata, seed.meta.compact)
+            pending = ResponsesWsIdentity.PendingCommit(built.committed ?: seed.request, conn.generation, built.epoch)
+            logFrame(conn.label, built)
+            built.frame.json
+        }
+        // No clear here: the transport declining (busy / connect failure) is a BYPASS, and the head
+        // calls roundBypassed for exactly that. Clearing in both places bumped the epoch twice for
+        // one logical event and, on the busy path, threw away a concurrent round's valid state
+        // before its terminal could even be observed (review of #72).
+        if (flow == null) {
+            // Counted on the turn so the head can tell a socket that failed this round from one never offered it.
+            seed.perf?.add(PerfKeys.WS_TRANSPORT_DECLINES, 1)
+            return null
+        }
+        // Terminal observation lives HERE, not in the caller: the runner is the only party that
+        // knows which events are terminal AND owns the chaining state they commit.
+        return WsRound(
+            events = flow.onEach { event ->
+                requestMetadata.captureEvent(seed.meta, event)
+                identity.observeTerminal(seed.chain, pending, event)
+                // The error ends the round cleanly, so the transport would pool the socket the server just retired.
+                if (isSocketFault(event)) abort.abort()
+                pulse?.let { identity.observeEnding(seed.key, event, it) }
+            },
+            abort = abort,
+            pathPulse = pathPulse,
+        )
+    }
+
+    /** Says whether [built] chained, and when it sent its whole input, why, on the socket [label] names. */
+    private fun logFrame(label: String, built: WsFrameAndEpoch) {
+        if (built.frame.chained) {
+            val closed = if (built.committed != null) ", its open tool calls closed as aborted" else ""
+            log("[ws] $label chained onto the previous response$closed\n")
+        }
+        built.frame.fullSendCode?.let { log("[ws] $label full send code=$it\n") }
+        built.frame.fullSendReason?.let { log("[ws] $label full send: $it\n") }
+    }
+
+    override fun isFailureTerminal(event: JsonObject): Boolean =
+        JsonScalars.str(event[FIELD_TYPE]) in ResponsesRoundEnd.FAILED
+
+    /** The backend ends every websocket at 60 minutes with websocket_connection_limit_reached, and a socket that lost
+     *  its in-memory chain answers previous_response_not_found; codex-rs retries both on a new connection. */
+    override fun isSocketFault(event: JsonObject): Boolean =
+        isFailureTerminal(event) && faultCode(event) in SOCKET_FAULT_CODES
+
+    /** The error code an `error` event carries at error.code and a `response.failed` at response.error.code. */
+    private fun faultCode(event: JsonObject): String? {
+        val error = event["error"] as? JsonObject ?: (event["response"] as? JsonObject)?.get("error") as? JsonObject
+        return error?.let { JsonScalars.str(it["code"]) }
+    }
+
+    override fun roundEnded(meta: TurnMeta, ok: Boolean) {
+        if (!ok) identity.chainKey(meta)?.let { session.cleared(it) }
+    }
+
+    /** A round this overlay did NOT serve still advances the conversation, so the chain must be
+     *  dropped (review of #72): the server's chained context stops at the last WS round, and the
+     *  delta classifier would then drop the SSE turn's assistant message as "server-held" when it
+     *  is nothing of the sort — a silent context loss, not a miss. */
+    override fun roundBypassed(meta: TurnMeta) {
+        identity.chainKey(meta)?.let { session.cleared(it) }
+    }
+}
+
+private const val FIELD_TYPE = "type"
+private val SOCKET_FAULT_CODES = setOf("websocket_connection_limit_reached", "previous_response_not_found")

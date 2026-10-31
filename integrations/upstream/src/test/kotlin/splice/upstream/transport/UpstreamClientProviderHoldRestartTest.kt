@@ -1,0 +1,195 @@
+package splice.upstream.transport
+
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
+import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import splice.core.auth.AuthDescription
+import splice.core.auth.CredentialKey
+import splice.core.auth.Credentials
+import splice.core.auth.LoginAnswer
+import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.FailureCause
+import splice.core.failure.Lift
+import splice.core.failure.LiftSource
+import splice.core.failure.LimitWindow
+import splice.core.usage.PlanLimit
+import splice.core.util.ElapsedClock
+import splice.core.util.LogSink
+import splice.core.util.WallClock
+import splice.core.wire.NativeReply
+import splice.upstream.Waiter
+import splice.upstream.failure.FailedReply
+import splice.upstream.failure.ProviderDeviation
+import splice.upstream.failure.Replies
+import splice.upstream.retry.FileProviderHoldStore
+import splice.upstream.retry.ProviderHold
+import splice.upstream.retry.RateLimitCooldown
+import java.nio.file.Files
+import java.nio.file.Path
+import java.time.Instant
+import java.util.concurrent.atomic.AtomicInteger
+import splice.upstream.testing.OpenAiTestReplies as OpenAiReplies
+
+private const val MS = 1_000L
+private const val SIX_DAYS_S = 6L * 24 * 3_600
+
+/** V4-412 through the transport: the daemon is stopped and started over the same state file. */
+class UpstreamClientProviderHoldRestartTest {
+    private val bodyReader = object : RefreshableAuthProvider {
+        override suspend fun credentials(): Credentials? = Credentials.ApiKey("k", "x-api-key", "")
+        override suspend fun refresh(): Credentials? = null
+        override suspend fun describe(): AuthDescription = AuthDescription(true, "body-reader", emptyMap())
+    }
+
+    /** A provider whose 429 body names its spent plan window, as the ChatGPT backend's does (CodexReplies); its reader
+     *  reads it where the reply arrives, since failure-handling slice 3 (the login provider did until then), and reads
+     *  the reply as the limit of that window, lifting at the reset it named, as CodexReplies.usageLimit does. */
+    private val bodyPlan = Replies(
+        OpenAiReplies,
+        object : ProviderDeviation {
+            override fun planLimit(reply: FailedReply): PlanLimit? =
+                Regex(""""resets_at":(\d+)""").find(reply.body)?.groupValues?.get(1)?.toLong()
+                    ?.let { PlanLimit("seven_day", it) }
+
+            override fun http(reply: FailedReply): FailureCause.Provider? = planLimit(reply)?.let { plan ->
+                val lift = Lift.At(Instant.ofEpochSecond(plan.resetEpochSeconds), true, LiftSource.BODY)
+                FailureCause.Provider.Limited(lift, LimitWindow.WEEKLY)
+            }
+        },
+    )
+
+    private fun client(dir: Path, engine: MockEngine, clock: ElapsedClock = ElapsedClock { 0L }) = UpstreamClient(
+        totalTimeoutMs = 900_000L,
+        client = HttpClient(engine),
+        pacing = RetryPacing(waiter = Waiter { }),
+        clock = clock,
+        holdStore = FileProviderHoldStore(dir.resolve("hold.json"), LogSink { }),
+    )
+
+    private fun ctx(notices: MutableList<String>) = PostContext(
+        url = "https://api.example.test/v1/responses",
+        auth = bodyReader,
+        extraHeaders = { emptyMap() },
+        replies = bodyPlan,
+        observers = PostObservers(onRetry = { notices.add(it) }),
+    )
+
+    // Each turn asks the provider itself and waits only on its own failure (Marcos, Oct 26): the restored native
+    // refusal is the provider's word for status and selection, never a refusal of the credential's next turn.
+    @Test
+    fun `a restarted native hold keeps the provider's word and never stops its credential's next turn`(
+        @TempDir dir: Path,
+    ) = runTest {
+        val reset = System.currentTimeMillis() / MS + SIX_DAYS_S
+        val native = """{"error":{"type":"rate_limit_error","resets_at":$reset,"message":"synthetic native refusal"}}"""
+        fun context(key: String) = PostContext(
+            url = "https://api.example.test/v1/messages",
+            auth = object : RefreshableAuthProvider by bodyReader {
+                override suspend fun credentials(): Credentials = Credentials.ApiKey(key, "x-api-key", "")
+
+                // Delegation would forward the login lookup to bodyReader, which answers with its own key.
+                override suspend fun answer(): LoginAnswer = LoginAnswer.Granted(credentials())
+            },
+            extraHeaders = { emptyMap() },
+            replies = bodyPlan,
+        )
+        val refusing = MockEngine {
+            respond(native, HttpStatusCode.TooManyRequests, headersOf("x-should-retry", listOf("true", "false")))
+        }
+        val original = client(dir, refusing)
+        assertEnds<UpstreamFailed> { original.posted(context("synthetic-a"), "{}") { "unreachable" } }
+        assertEquals(1, refusing.requestHistory.size, "a named plan window is never re-sent before its reset (V4-233)")
+        val key = requireNotNull(CredentialKey.fromHeaders(mapOf("x-api-key" to "synthetic-a")))
+        assertTrue(Files.exists(dir.resolve("hold-$key.json")))
+
+        val attempts = mutableListOf<String>()
+        val recovered = MockEngine { request ->
+            attempts += requireNotNull(request.headers["x-api-key"])
+            respond("ok", HttpStatusCode.OK, headersOf())
+        }
+        val restarted = client(dir, recovered)
+        restarted.clearRateLimitCooldown()
+
+        assertEquals("ok", restarted.posted(context("synthetic-a"), "{}") { "ok" })
+        assertEquals(listOf("synthetic-a"), attempts, "the credential's next turn asks the provider itself, at once")
+        assertFalse(Files.exists(dir.resolve("hold-$key.json")), "provider acceptance clears the native statement")
+    }
+
+    @Test
+    fun `a stored native hold ends at a nearer reset and an expired reply never arms`(@TempDir dir: Path) {
+        val store = FileProviderHoldStore(dir.resolve("hold.json"), LogSink {})
+        store.save(
+            ProviderHold(101L, null).also {
+                it.rateLimitReply = NativeReply("synthetic refusal", emptyMap())
+            },
+        )
+        var elapsed = 0L
+        var wall = 100_000L
+        val cooldown = RateLimitCooldown(ElapsedClock { elapsed }, WallClock { wall }, store)
+        cooldown.clear()
+        assertEquals(1_000L, cooldown.remainingMs())
+        elapsed = 1_001L
+        wall = 101_001L
+        assertEquals(0L, cooldown.remainingMs())
+        val expired = RateLimitCooldown(ElapsedClock { elapsed }, WallClock { wall }, store)
+        expired.clear()
+        assertEquals(0L, expired.remainingMs())
+        assertEquals(null, expired.rateLimitReply)
+        assertFalse(Files.exists(dir.resolve("hold.json")))
+    }
+
+    @Test
+    fun `a legacy unscoped file never claims ownership of a newly proved credential`(@TempDir dir: Path) = runTest {
+        val reset = System.currentTimeMillis() / MS + SIX_DAYS_S
+        val path = dir.resolve("hold.json")
+        FileProviderHoldStore(path, LogSink {}).save(ProviderHold(reset, PlanLimit("seven_day", reset)))
+        val engine = MockEngine { respond("ok", HttpStatusCode.OK, headersOf()) }
+        val current = client(dir, engine)
+        assertEquals(null, current.planHold)
+        assertEquals(0L, current.providerResetForMs)
+        assertEquals("ok", current.posted(ctx(mutableListOf()), "{}") { "ok" })
+        assertTrue(Files.exists(path), "unknown ownership is not a license to delete the old statement")
+    }
+
+    @Test
+    fun `a restarted head still reads out of quota, probes upstream once, and an answer clears the file`(
+        @TempDir dir: Path,
+    ) = runTest {
+        val reset = System.currentTimeMillis() / MS + SIX_DAYS_S
+        val refusing = MockEngine {
+            respond(
+                """{"error":{"type":"usage_limit_reached","resets_at":$reset,"limit_window_minutes":10080}}""",
+                HttpStatusCode.TooManyRequests,
+                headersOf(),
+            )
+        }
+        assertEnds<UpstreamFailed> { client(dir, refusing).posted(ctx(mutableListOf()), "{}") { "unreachable" } }
+
+        val calls = AtomicInteger()
+        val recovered = MockEngine {
+            calls.incrementAndGet()
+            respond("ok", HttpStatusCode.OK, headersOf())
+        }
+        val restarted = client(dir, recovered)
+        restarted.clearRateLimitCooldown()
+
+        assertEquals(PlanLimit("seven_day", reset), restarted.planHold, "read before any turn")
+        assertTrue(restarted.providerResetForMs > (SIX_DAYS_S - 60) * MS, "${restarted.providerResetForMs}")
+        val notices = mutableListOf<String>()
+        assertEquals("ok", restarted.posted(ctx(notices), "{}") { "ok" })
+
+        assertEquals(1, calls.get(), "the first turn after the restart is the probe, and it went out")
+        assertEquals(0L, restarted.providerResetForMs)
+        assertEquals(0L, restarted.planHoldForMs)
+        val key = requireNotNull(CredentialKey.fromHeaders(mapOf("x-api-key" to "k")))
+        assertFalse(Files.exists(dir.resolve("hold-$key.json")), "the answered credential removed its stored statement")
+    }
+}

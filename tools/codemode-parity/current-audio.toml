@@ -1,0 +1,25 @@
+[package]
+name = "splice-native-audio-oracle"
+version = "0.0.0"
+edition = "2024"
+
+[workspace]
+resolver = "2"
+
+[[bin]]
+name = "native-audio-oracle"
+path = "oracle.rs"
+
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[dependencies]
+base64 = "=0.22.1"
+symphonia = { version = "=0.6.0", default-features = false, features = ["isomp4", "mkv", "mp3", "ogg", "wav"] }
+thiserror = "=2.0.18"
+tracing = "=0.1.44"
+lru = "=0.18.2"
+sha1 = "=0.10.6"
+tokio = { version = "=1.52.3", features = ["full"] }
+serde_json = { version = "=1.0.149", features = ["alloc", "preserve_order", "arbitrary_precision", "raw_value"] }

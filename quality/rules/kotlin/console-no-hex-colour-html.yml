@@ -1,0 +1,17 @@
+# The console's no-hex-colour law (see console-no-hex-colour-css.yml) for its pages' style, fill, stroke and color attributes.
+id: console-no-hex-colour-html
+language: html
+severity: error
+message: A hex colour in a console page's style attribute is a second palette.
+note: Give the element a class and let the CSS use var(--splice-...).
+files:
+  - app/src/main/resources/console/*.html
+rule:
+  kind: attribute_value
+  regex: '#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b'
+  inside:
+    stopBy: end
+    kind: attribute
+    has:
+      kind: attribute_name
+      regex: '^(?:style|fill|stroke|color)$'

@@ -1,0 +1,261 @@
+{
+  "schema": 1,
+  "sourceRevision": "360319d8dee62d87e2d59fc0c21805d79519cfed",
+  "referenceCliSha256": "c06a67fd8ac76508dc78bd99ce20c9f317b8d568beda59485f3f4134df9962d5",
+  "nativeHostSha256": "522935d4392ec9674fab60b239b5495992c6a93e4deb65113a216b6f5451ccd4",
+  "peerTranscriptSha256": "19edd441fb9dc49b622cc38865ef09bff28db72cc84f6a400dc46cd95cf666e5",
+  "modelRequestsSha256": "9f9b0f919f879dcede79f0b40aee7cea99cd818271934bd2d6ae2b54bc3bd4a1",
+  "origin": "Actual rust-v0.165.0 signed interactive Codex CLI with deterministic loopback and fixed JSON-RPC peer; each script resolved rather than rejected.",
+  "vectors": [
+    {
+      "id": "object",
+      "server": "parity",
+      "tool": "echo",
+      "error": {
+        "code": -32001,
+        "message": "Fixed fixture RPC failure",
+        "data": {
+          "fixture": true
+        }
+      },
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "tool call error: tool call failed for `parity/echo`\n\nCaused by:\n    Mcp error: -32001: Fixed fixture RPC failure({\"fixture\":true})"
+          }
+        ],
+        "isError": true
+      }
+    },
+    {
+      "id": "absent",
+      "server": "parity",
+      "tool": "echo",
+      "error": {
+        "code": -32603,
+        "message": "Absent data"
+      },
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "tool call error: tool call failed for `parity/echo`\n\nCaused by:\n    Mcp error: -32603: Absent data"
+          }
+        ],
+        "isError": true
+      }
+    },
+    {
+      "id": "null",
+      "server": "parity",
+      "tool": "echo",
+      "error": {
+        "code": -32603,
+        "message": "Null data",
+        "data": null
+      },
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "tool call error: tool call failed for `parity/echo`\n\nCaused by:\n    Mcp error: -32603: Null data"
+          }
+        ],
+        "isError": true
+      }
+    },
+    {
+      "id": "order",
+      "server": "parity",
+      "tool": "echo",
+      "error": {
+        "code": -32602,
+        "message": "Ordered data",
+        "data": {
+          "zeta": 1,
+          "alpha": {
+            "beta": false,
+            "alpha": "λ"
+          }
+        }
+      },
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "tool call error: tool call failed for `parity/echo`\n\nCaused by:\n    Mcp error: -32602: Ordered data({\"zeta\":1,\"alpha\":{\"beta\":false,\"alpha\":\"λ\"}})"
+          }
+        ],
+        "isError": true
+      }
+    },
+    {
+      "id": "array",
+      "server": "parity",
+      "tool": "echo",
+      "error": {
+        "code": -32600,
+        "message": "Array data",
+        "data": [
+          false,
+          0,
+          "",
+          null,
+          {
+            "z": 2,
+            "a": 1
+          }
+        ]
+      },
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "tool call error: tool call failed for `parity/echo`\n\nCaused by:\n    Mcp error: -32600: Array data([false,0,\"\",null,{\"z\":2,\"a\":1}])"
+          }
+        ],
+        "isError": true
+      }
+    },
+    {
+      "id": "string",
+      "server": "parity",
+      "tool": "echo",
+      "error": {
+        "code": -32700,
+        "message": "String data",
+        "data": "quote\" newline\n snow雪"
+      },
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "tool call error: tool call failed for `parity/echo`\n\nCaused by:\n    Mcp error: -32700: String data(\"quote\\\" newline\\n snow雪\")"
+          }
+        ],
+        "isError": true
+      }
+    },
+    {
+      "id": "multiline",
+      "server": "parity",
+      "tool": "echo",
+      "error": {
+        "code": 0,
+        "message": "first\nsecond\r\n\nlast\n",
+        "data": {
+          "line": "x\ny"
+        }
+      },
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "tool call error: tool call failed for `parity/echo`\n\nCaused by:\n    Mcp error: 0: first\n    second\r\n    \n    last\n    ({\"line\":\"x\\ny\"})"
+          }
+        ],
+        "isError": true
+      }
+    },
+    {
+      "id": "empty",
+      "server": "parity",
+      "tool": "echo",
+      "error": {
+        "code": 1,
+        "message": "",
+        "data": {}
+      },
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "tool call error: tool call failed for `parity/echo`\n\nCaused by:\n    Mcp error: 1: ({})"
+          }
+        ],
+        "isError": true
+      }
+    },
+    {
+      "id": "false",
+      "server": "parity",
+      "tool": "echo",
+      "error": {
+        "code": -1,
+        "message": "False data",
+        "data": false
+      },
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "tool call error: tool call failed for `parity/echo`\n\nCaused by:\n    Mcp error: -1: False data(false)"
+          }
+        ],
+        "isError": true
+      }
+    },
+    {
+      "id": "zero",
+      "server": "parity",
+      "tool": "echo",
+      "error": {
+        "code": 2147483647,
+        "message": "Maximum code",
+        "data": 0
+      },
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "tool call error: tool call failed for `parity/echo`\n\nCaused by:\n    Mcp error: 2147483647: Maximum code(0)"
+          }
+        ],
+        "isError": true
+      }
+    },
+    {
+      "id": "minimum",
+      "server": "parity",
+      "tool": "echo",
+      "error": {
+        "code": -2147483648,
+        "message": "Minimum code",
+        "data": []
+      },
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "tool call error: tool call failed for `parity/echo`\n\nCaused by:\n    Mcp error: -2147483648: Minimum code([])"
+          }
+        ],
+        "isError": true
+      }
+    },
+    {
+      "id": "unicode",
+      "server": "parity",
+      "tool": "echo",
+      "error": {
+        "code": 42,
+        "message": "雪🙂\t\"\\",
+        "data": {
+          "separator": "  ",
+          "control": "\b\f\r\t",
+          "value": 150000000000000000000
+        }
+      },
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "tool call error: tool call failed for `parity/echo`\n\nCaused by:\n    Mcp error: 42: 雪🙂\t\"\\({\"separator\":\"  \",\"control\":\"\\b\\f\\r\\t\",\"value\":150000000000000000000})"
+          }
+        ],
+        "isError": true
+      }
+    }
+  ]
+}

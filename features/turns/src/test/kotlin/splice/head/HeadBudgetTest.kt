@@ -1,0 +1,286 @@
+// NEW: V4-133 review — a REAL HeadServer serving REAL turns consults its budget before each one and
+// reports each served turn's spend after its perf row.
+//
+// The failing state the review named: `PUT /api/budgets {"budgets":[{"head":"h","daily_usd":0.01,
+// "action":"block"}]}` answered 200 and turns on `h` kept being served, because nothing on the turn
+// path read a budget. The block arm here is what the client sees — a 400 invalid_request_error carrying
+// the budget's [splice] line, before any upstream call — and the spend arm compares what the budget
+// was told against the perf row the head actually wrote for that turn.
+package splice.head
+
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpStatusCode
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import splice.core.auth.AuthDescription
+import splice.core.auth.Credentials
+import splice.core.auth.RefreshableAuthProvider
+import splice.core.budget.BudgetBlock
+import splice.core.budget.HeadBudget
+import splice.core.failure.VoiceFacts
+import splice.core.model.ModelCatalog
+import splice.core.model.ModelEntry
+import splice.core.perf.OutcomeTag
+import splice.core.perf.PerfKeys
+import splice.core.turn.ReasoningDisplay
+import splice.core.turn.Usage
+import splice.core.turn.UsageField
+import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ReasoningSettings
+import splice.head.usage.CompareAnswer
+import splice.provider.codex.CodexProvider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
+import splice.upstream.ProviderTuning
+import java.nio.file.Files
+import java.nio.file.Path
+import java.time.Instant
+import java.time.ZoneId
+import java.util.UUID
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Duration.Companion.seconds
+
+private const val BUDGET_WAIT_MS = 10_000L
+private const val BUDGET_POLL_MS = 20L
+
+/** What a head told its budget, and the one answer it gives every admission. */
+private class RecordingBudget(private val answer: BudgetBlock?) : HeadBudget {
+    val admits = AtomicInteger()
+    val spends = CopyOnWriteArrayList<Triple<Long, String, Map<String, Long>>>()
+
+    override fun admit(): BudgetBlock? {
+        admits.incrementAndGet()
+        return answer
+    }
+
+    override fun spent(atMs: Long, model: String, counters: Map<String, Long>) {
+        spends.add(Triple(atMs, model, counters))
+    }
+}
+
+class HeadBudgetTest(@param:TempDir private val root: Path) {
+
+    @Test
+    fun `a reached block budget refuses the turn with its line as a 400, before any upstream call`() =
+        runBlocking {
+            val block = BudgetBlock(
+                message = "head 'codex' has spent \$2.00 today (UTC) against its \$2.00 daily budget",
+                detail = "spent_usd=2.00 limit_usd=2.00 unpriced_turns=0",
+                limit = "\$2.00",
+                resetsAt = Instant.parse("2026-10-27T05:00:00Z"),
+            )
+            val rig = BudgetRig(root, RecordingBudget(block))
+            try {
+                rig.start()
+                val response = rig.turn()
+                val body = response.bodyAsText()
+                // Failure-handling slice 4, ruling 4: splice's own budget is a permanent ending with no login in it,
+                // so it takes the non-login permanent status — 400 invalid_request_error with x-should-retry false,
+                // which 2.1.310 does not send again — rather than the 403 permission_error it wore before, which
+                // reads as a login's (final-design.md section 11).
+                assertEquals(HttpStatusCode.BadRequest, response.status, body)
+                assertEquals("false", response.headers["x-should-retry"], body)
+                val error = Json.parseToJsonElement(body).jsonObject.getValue("error").jsonObject
+                assertEquals("invalid_request_error", error.getValue("type").jsonPrimitive.content)
+                // The line names the head, the operator's limit and when the budget's day ends, in the head's zone
+                // (failure-handling slice 2); the spend and the remedies stay in the console and the log.
+                assertEquals(
+                    "[splice] claudex reached its daily budget of \$2.00, which resets Oct 27, 12:00 AM CDT. " +
+                        "Send the message again after that time.",
+                    error.getValue("message").jsonPrimitive.content,
+                )
+                assertEquals(0, rig.upstreamCalls(), "a refused turn must never reach the upstream")
+                val outcome = rig.perfRows(1).single().getValue("outcome").jsonPrimitive.content
+                assertEquals(
+                    OutcomeTag.BUDGET_BLOCKED.wire,
+                    outcome,
+                    "the refusal is on record beside the turns that ran",
+                )
+                assertEquals(1, rig.budget.admits.get(), "the budget is asked once per turn")
+                assertEquals(0, rig.budget.spends.size, "a refused turn spent nothing")
+            } finally {
+                rig.close()
+            }
+        }
+
+    @Test
+    fun `a served turn reports its spend with its own perf row's ts, model and token counters`() = runBlocking {
+        val rig = BudgetRig(root, RecordingBudget(null))
+        try {
+            rig.start()
+            val response = rig.turn()
+            assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
+            val row = rig.perfRows(1).single()
+            val (atMs, model, counters) = rig.budget.spends.single()
+            assertEquals(row.getValue("ts").jsonPrimitive.long, atMs)
+            assertEquals(row.getValue("model").jsonPrimitive.content, model)
+            for (key in listOf(PerfKeys.IN_TOKENS, PerfKeys.OUT_TOKENS)) {
+                assertEquals(row.getValue(key).jsonPrimitive.long, counters[key], "$key must be the row's own")
+            }
+            assertEquals(1, rig.budget.admits.get())
+        } finally {
+            rig.close()
+        }
+    }
+
+    @Test
+    fun `a Compare send is weighed by the same budget, and its refusal leaves an Over budget row flagged Compare`() =
+        runBlocking {
+            val block = BudgetBlock(
+                message = "head spent its budget",
+                detail = "spent_usd=2.00 limit_usd=2.00",
+                limit = "\$2.00",
+                resetsAt = Instant.parse("2026-10-27T05:00:00Z"),
+            )
+            val rig = BudgetRig(root, RecordingBudget(block))
+            try {
+                rig.start()
+                assertEquals(block, rig.head.compareSends.admit("compare-model", null))
+                val row = rig.perfRows(1).single()
+                assertEquals(OutcomeTag.BUDGET_BLOCKED.wire, row.getValue("outcome").jsonPrimitive.content)
+                assertEquals(1L, row.getValue(PerfKeys.COMPARE).jsonPrimitive.long)
+                assertNull(row["session"]?.takeUnless { it is JsonNull })
+                // written as a refused turn is: no token fields, no attempts, so the bill is empty and reads unanswered
+                assertNull(row[PerfKeys.IN_TOKENS])
+                assertNull(row[PerfKeys.OUT_TOKENS])
+                assertEquals(0L, row.getValue(PerfKeys.ATTEMPTS).jsonPrimitive.long)
+                assertEquals(1L, row.getValue(PerfKeys.NO_REQUEST).jsonPrimitive.long)
+                assertEquals(0, rig.budget.spends.size, "a refused send spent nothing")
+            } finally {
+                rig.close()
+            }
+        }
+
+    @Test
+    fun `an answered Compare send writes its row with the tokens it reported and spends them`() = runBlocking {
+        val rig = BudgetRig(root, RecordingBudget(null))
+        try {
+            rig.start()
+            val usage = Usage(
+                inputTokens = 100,
+                outputTokens = 7,
+                reported = setOf(UsageField.INPUT, UsageField.OUTPUT),
+            )
+            assertNull(rig.head.compareSends.admit("compare-model", null))
+            rig.head.compareSends.answered(CompareAnswer("compare-model", null, OutcomeTag.OK.wire, 120L, usage))
+            val row = rig.perfRows(1).single()
+            assertEquals(1L, row.getValue(PerfKeys.COMPARE).jsonPrimitive.long)
+            assertEquals(100L, row.getValue(PerfKeys.IN_TOKENS).jsonPrimitive.long)
+            assertEquals(7L, row.getValue(PerfKeys.OUT_TOKENS).jsonPrimitive.long)
+            val (atMs, model, counters) = rig.budget.spends.single()
+            assertEquals(row.getValue("ts").jsonPrimitive.long, atMs)
+            assertEquals("compare-model", model)
+            assertEquals(100L, counters[PerfKeys.IN_TOKENS])
+        } finally {
+            rig.close()
+        }
+    }
+
+    @Test
+    fun `a Compare send whose stream reported no usage leaves a row with no token counts, not zeros`() = runBlocking {
+        val rig = BudgetRig(root, RecordingBudget(null))
+        try {
+            rig.start()
+            rig.head.compareSends.answered(CompareAnswer("compare-model", null, OutcomeTag.OK.wire, 80L, null))
+            val row = rig.perfRows(1).single()
+            assertNull(row[PerfKeys.IN_TOKENS])
+            assertNull(row[PerfKeys.OUT_TOKENS])
+            assertEquals(1L, row.getValue(PerfKeys.COMPARE).jsonPrimitive.long)
+        } finally {
+            rig.close()
+        }
+    }
+}
+
+/** One codex head on a mock upstream, weighed against [budget]. */
+private class BudgetRig(root: Path, val budget: RecordingBudget) {
+    private val tmp: Path = Files.createDirectory(root.resolve(UUID.randomUUID().toString()))
+    private val mock = MockChatGptUpstream()
+    private val perfFile = tmp.resolve("perf.jsonl")
+    private val auth = BudgetRigAuth()
+    val head = HeadServer(
+        provider = provider(),
+        listenPort = 0,
+        deps = headDeps(tmp = tmp).copy(quotaBundle = quotaFor(null, null, budget = budget)),
+        voiceFacts = VoiceFacts(zone = ZoneId.of("America/Chicago")),
+    )
+    private val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
+
+    suspend fun start() {
+        head.start()
+        awaitListening(head.port)
+    }
+
+    suspend fun turn(): HttpResponse = client.post("http://127.0.0.1:${head.port}/v1/messages") {
+        header("Content-Type", "application/json")
+        setBody(
+            """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,
+                "system":"You are a test. SCENARIO:basic",
+                "messages":[{"role":"user","content":"go"}]}""",
+        )
+    }
+
+    fun upstreamCalls(): Int = mock.upstreamBodies.size
+
+    /** The perf rows the head wrote, once [count] have landed (the append is asynchronous). */
+    suspend fun perfRows(count: Int): List<JsonObject> = withTimeout(BUDGET_WAIT_MS) {
+        var lines = rowLines()
+        while (lines.size < count) {
+            delay(BUDGET_POLL_MS)
+            lines = rowLines()
+        }
+        lines.map { Json.parseToJsonElement(it).jsonObject }
+    }
+
+    private fun rowLines(): List<String> =
+        if (Files.exists(perfFile)) Files.readAllLines(perfFile).filter { it.isNotBlank() } else emptyList()
+
+    suspend fun close() {
+        head.stop()
+        client.close()
+        mock.stop()
+    }
+
+    private fun provider(): CodexProvider = CodexProvider(
+        tuning = ProviderTuning(
+            name = ProviderName(key = "codex", label = "claudex"),
+            catalog = ModelCatalog(
+                discoveryPrefix = "claude-codex--",
+                models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
+                defaultContextWindow = 272_000,
+            ),
+            pinnedModel = "gpt-5.6-sol",
+            auth = auth,
+            locations = ProviderLocations(baseUrl = mock.baseUrl),
+            watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
+            loginCommand = "claudex login",
+        ),
+        reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
+    )
+}
+
+private class BudgetRigAuth : RefreshableAuthProvider {
+    override suspend fun credentials(): Credentials = Credentials.Bearer("budget-token", "budget-id")
+    override suspend fun refresh(): Credentials = credentials()
+    override suspend fun describe(): AuthDescription = AuthDescription(true, "test")
+}

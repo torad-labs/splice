@@ -1,0 +1,146 @@
+package splice.client.transcript.capture
+
+import splice.client.transcript.BAD_CURSOR
+import splice.core.memory.HeapCapacityException
+import splice.core.memory.HeapCategory
+import splice.core.memory.HeapOwners
+import splice.core.memory.HeapWeights
+import splice.sessions.transcript.MAX_TRANSCRIPT_PAGE
+import splice.sessions.transcript.TranscriptLookup
+import splice.sessions.transcript.TranscriptMessage
+import splice.sessions.transcript.TranscriptPage
+
+private const val CAPTURE_PATH = "captured by splice's trace, turn"
+private const val CAPTURE_TOO_LARGE = "captured reply exceeds the transcript page byte limit"
+
+// why: raw message text, JSON trees, projected blocks and masked copies coexist during page materialization.
+private const val CAPTURE_PAGE_HEAP_FACTOR = 16L
+
+// why: reserve fixed page, cursor and collection metadata even when the selected source span is empty.
+private const val CAPTURE_PAGE_METADATA_BYTES = 4_096L
+
+// why: each admitted source message needs span, group and list-reference scratch under the existing page count cap.
+private const val CAPTURE_SPAN_WORKSPACE_BYTES = MAX_TRANSCRIPT_PAGE * 192L
+
+private data class CapturedGroup(val span: CaptureSpan, val messages: List<TranscriptMessage>)
+
+/** Keeps only a bounded page. A cursor pins the trace turn, so eviction or a newer capture is an honest refusal. */
+internal class CapturedPages {
+    private val reader = CapturedMessageReader()
+
+    fun read(
+        sent: CapturedRequestReader,
+        sessionId: String,
+        cursor: String?,
+        backwards: Boolean,
+        limit: Int,
+    ): TranscriptLookup {
+        val heap = sent.heap
+        val workspace = heap?.reserve(CAPTURE_SPAN_WORKSPACE_BYTES, HeapCategory.MATERIALIZATION)
+            ?: if (heap != null) throw HeapCapacityException() else null
+        return workspace.use { readWindow(sent, sessionId, cursor, backwards, limit) }
+    }
+
+    private fun readWindow(
+        sent: CapturedRequestReader,
+        sessionId: String,
+        cursor: String?,
+        backwards: Boolean,
+        limit: Int,
+    ): TranscriptLookup {
+        val position = cursor?.let(CaptureCursor::parse)
+        if (cursor != null && !matches(position, sent.turnId)) return TranscriptLookup.Refused(BAD_CURSOR)
+        val wanted = limit.coerceIn(1, MAX_TRANSCRIPT_PAGE)
+        val source = CapturedMessageSpans(sent)
+        val window = CapturedPageWindow(source).read(position?.offset, backwards, wanted)
+            ?: return TranscriptLookup.Refused(BAD_CURSOR)
+        return if (window.bytes > MAX_CAPTURE_PAGE_BYTES) {
+            TranscriptLookup.Refused(CAPTURE_TOO_LARGE)
+        } else {
+            materialize(sent, sessionId, window, backwards, wanted)
+        }
+    }
+
+    private fun materialize(
+        sent: CapturedRequestReader,
+        sessionId: String,
+        window: CapturedWindow,
+        backwards: Boolean,
+        wanted: Int,
+    ): TranscriptLookup {
+        val heap = sent.heap
+        val peak = heap?.reserve(
+            HeapWeights.multiply(window.bytes + CAPTURE_PAGE_METADATA_BYTES, CAPTURE_PAGE_HEAP_FACTOR),
+            HeapCategory.MATERIALIZATION,
+        ) ?: if (heap != null) throw HeapCapacityException() else null
+        return peak.use {
+            project(sent, sessionId, window, backwards, wanted).also { result ->
+                if (result is TranscriptLookup.Found && peak != null) {
+                    HeapOwners.keep(result.page, peak.split(CapturedPageWeight().of(result.page)))
+                }
+            }
+        }
+    }
+
+    private fun matches(position: CapturePosition?, turn: String): Boolean = position?.turn == turn
+
+    private fun project(
+        sent: CapturedRequestReader,
+        sessionId: String,
+        window: CapturedWindow,
+        backwards: Boolean,
+        limit: Int,
+    ): TranscriptLookup {
+        val groups = sent.text().use { input -> window.spans.map { CapturedGroup(it, reader.read(input, it)) } }
+        val selected = if (backwards) newest(groups, limit) else oldest(groups, limit)
+        val messages = selected.flatMap { it.messages }
+        val next = if (backwards) null else nextOf(groups, selected, window)
+        val earlier = if (backwards) earlierOf(groups, selected, window) else null
+        if (messages.isEmpty() && noContinuation(next, earlier)) return TranscriptLookup.Missing
+        return found(sent, sessionId, messages, next, earlier)
+    }
+
+    private fun noContinuation(next: Int?, earlier: Int?): Boolean = next == null && earlier == null
+
+    private fun nextOf(groups: List<CapturedGroup>, selected: List<CapturedGroup>, window: CapturedWindow): Int? =
+        if (selected.size < groups.size) groups[selected.size].span.start else window.next
+
+    private fun earlierOf(groups: List<CapturedGroup>, selected: List<CapturedGroup>, window: CapturedWindow): Int? =
+        if (selected.size < groups.size) selected.firstOrNull()?.span?.start else window.earlier
+
+    private fun found(
+        sent: CapturedRequestReader,
+        sessionId: String,
+        messages: List<TranscriptMessage>,
+        next: Int?,
+        earlier: Int?,
+    ): TranscriptLookup = TranscriptLookup.Found(
+        TranscriptPage(
+            sessionId,
+            "$CAPTURE_PATH ${sent.turnId}",
+            messages,
+            next?.let { CaptureCursor.mint(sent.turnId, it) },
+            emptyMap(),
+            earlier?.let { CaptureCursor.mint(sent.turnId, it) },
+        ),
+    )
+
+    private fun oldest(groups: List<CapturedGroup>, limit: Int): List<CapturedGroup> {
+        var count = 0
+        return groups.takeWhile { group ->
+            val keep = count < limit
+            count += group.messages.size
+            keep
+        }
+    }
+
+    private fun newest(groups: List<CapturedGroup>, limit: Int): List<CapturedGroup> {
+        var count = 0
+        var first = groups.size
+        while (first > 0 && count < limit) {
+            first--
+            count += groups[first].messages.size
+        }
+        return groups.subList(first, groups.size)
+    }
+}

@@ -1,0 +1,130 @@
+/* Usage › Results by command (perf-heads.js), beside Where it went and Tokens by command. One question: which
+   command is healthy and which one is hurting. A row is five columns on one line (the command, its requests, its failure
+   rate, the whole request's typical time and slowest 5%), numbers right-aligned in the data face, with generous height
+   so the table reads at a glance. Colour means one thing: the provider's colour is on the command's dot alone, and the
+   limit red and the Key Light are only for a problem; everything else is neutral ink on the plate. A row opens under
+   itself into a panel of shapes (the failure rate over one bar of every request, the cache and load as a ring and glyphs,
+   the stages as ticks on one axis, the compactions as a flow, the models as small multiples), collapsed by default. The
+   table fills its own column (container perf); where that column is too narrow for five, each figure carries its own
+   label instead and nothing is cut. Class names are prefixed (.prow, .pf, .pthead, .pd-): Usage also loads sessions.css,
+   whose .phead and .pc would land on plain ones.
+
+   THE PANEL'S DRAWINGS NOW LIVE IN THE KIT (console.css's drawings block, kit.js DRAW), because they are the Usage
+   drill-down's and every page needs them: the plate and its sections, the kicker, the hero figure, the stacked bar,
+   the ring and glyph tiles, the log axis and its range bars, the small-multiple cards and the "N more" pill. What is
+   left here is this table alone: its five columns, its rows and where the panel hangs under one. */
+
+.perf-heads { container: perf / inline-size; min-width: 0; display: flex; flex-direction: column; }
+/* The table fills the column the page gives it: at 3822 a 56rem cap held it to 849 px inside a 1991 px column. Its head
+   is the page's band head (usage.css .bandhead): the title, the note that it reads every project, its own window. */
+/* what the table ignores is a pill on its head, not a sentence */
+.perf-heads .hn { display: inline-flex; align-items: center; padding: .25rem .7rem; border-radius: 999px; box-shadow: inset 0 0 0 .1rem var(--track-line); font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); cursor: help; }
+.perf-heads .ptable { padding: .35rem 1rem .5rem; }
+
+/* the five columns, shared by the header and every row */
+.pcols { display: grid; grid-template-columns: minmax(0, 1fr) 9rem 8rem minmax(7rem, 1fr) 6.4rem 7.6rem; column-gap: 1rem; align-items: center; margin: 0 -0.667rem; padding-inline: .6rem; }
+.pthead { padding-block: .9rem .8rem; border-bottom: .12rem solid var(--track); font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
+.pthead .pf:nth-child(2), .pthead .pf:nth-child(3) { text-align: right; }
+.pthead .ure-time { text-align: left; }
+.pitem + .pitem { border-top: .12rem solid var(--track); }
+.prow { min-height: 3.7rem; padding-block: .6rem; border-radius: var(--r-in); cursor: pointer; font: 500 .95rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
+.prow:hover { background: color-mix(in oklab, var(--text) 4%, transparent); }
+.pf { min-width: 0; }
+.pf > em { display: none; }
+.pf.num, .pthead .pf.num { text-align: right; white-space: nowrap; }
+.pf.tm.slow { color: var(--text); font-weight: 600; }  /* slow today: the time takes the weight of a figure to look at, not a colour */
+
+/* the command: its place in the order, a disclosure (the kit's .disc and .chev), the provider's dot, its name */
+.pf.cmd { display: flex; align-items: center; gap: .667rem; }
+/* the whole request's time on one log axis: the solid bar to the typical, the line on to the slowest 5% and its tick */
+.ure-time { display: block; min-width: 0; }
+.ure-time .pd-trk { width: 100%; }
+.pd-trk.ure-none { background: none; box-shadow: inset 0 0 0 .1rem var(--track-line); }
+/* a command with no request keeps its row: its name, then the one line where its figures would stand */
+.pidle { min-height: 2.9rem; padding-block: .3rem; text-decoration: none; }
+.pidle .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 .95rem/1.2 var(--font-data); color: var(--text-body); }
+.ure-gap { flex: none; width: .8rem; }
+.pidle .upl-rank { box-shadow: none; }
+.pf.ure-say { grid-column: 2 / -1; display: inline-flex; align-items: center; gap: .333rem; font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
+.pf.ure-say .go { width: .85rem; height: .85rem; color: var(--text-mute); }
+.pidle:hover .ure-say { color: var(--text); }
+.gprow.pidle .ure-say { display: flex; }
+.ure-lead { margin: 0 0 calc(2 * var(--u)); }
+.ure-held { margin-top: calc(2 * var(--u)); }
+.ure-held .prow { cursor: default; }
+.ure-held .vbar.unread { display: block; flex: 1 1 auto; width: 100%; height: .4rem; background: none; box-shadow: inset 0 0 0 .1rem var(--track-line); }
+/* the two times a slow flag compares, marked on the stages' axis under its own tick labels */
+.pd-ax:has(.ure-mark) { height: 3.6rem; }
+.ure-mark { position: absolute; top: -.5rem; height: .5rem; width: 0; border-left: .16rem solid var(--text-mute); font: 500 .8rem/1.2 var(--font-name); font-style: normal; color: var(--text-mute); white-space: nowrap; }
+.ure-mark.now { border-left-color: var(--text); color: var(--text-body); }
+.ure-mark > b { position: absolute; left: .4rem; top: 2.1rem; font: 600 .85rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
+.ure-mark.end > b { left: auto; right: .4rem; }
+.ure-mark { text-indent: 0; }
+.plbl { display: inline-flex; align-items: center; gap: 0.667rem; min-width: 0; max-width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.plbl .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 .95rem/1.2 var(--font-data); color: var(--text); }
+
+/* the row's two bar cells (the kit draws the bar; these are this table's own widths and the one strong number) */
+.pf.req .v { min-width: 4.3rem; }
+.pf.fail .v { min-width: 2.9rem; font-size: 1.05rem; font-weight: 600; color: var(--text); }  /* the one strong number of the row */
+.pf.fail.lv-watch .vbar b { background: var(--key-ink); }
+.pf.fail.lv-watch .v { color: var(--key-ink); }
+.pf.fail.lv-bad .vbar b { background: var(--limit); }
+.pf.fail.lv-bad .v { color: var(--limit); }
+
+/* reading: the table's own rows, in the stripes that mean "still working", as many as it last held, so nothing under
+   the table moves when the window's figures land */
+.gprow { pointer-events: none; animation: ghost-in .45s var(--e-out) both; animation-delay: calc(var(--i, 0) * 50ms); }
+.gprow .pf { display: flex; align-items: center; }
+.gprow .pf > .ghost.track { flex: 1 1 auto; }
+.gprow .pf.num { justify-content: flex-end; }
+
+/* a window with no request at all keeps the table's frame and says so once inside it */
+.perf-heads .pnone { display: flex; align-items: center; min-height: 3.7rem; padding: .45rem 1.15rem; }
+/* a read that failed is the console's error row (console.css .errline), with the act that reads it again beside it */
+
+/* the panel a row opens: the kit's plate, hung under the row it belongs to */
+.pdetail { margin: 0 0 1rem 1.333rem; }
+.pnote { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.333rem 1rem; margin: 0 0 calc(4 * var(--u)); color: var(--text-mute); }
+.pnote .flag { margin: 0; display: inline-flex; flex-wrap: wrap; gap: 0.333rem 1rem; }
+.pnote .flag a { font-size: .95rem; }
+.pnote .flag .vs, .pnote .flag .vs b { font-size: .88rem; }
+.pd-hero { --bh: var(--stack-h); }
+/* what the record behind the counts could not cover, as quiet marks on the Outcomes kicker's line */
+.pgap { display: inline-flex; align-items: center; gap: 0.333rem; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.pgap > svg { flex: none; width: 1em; height: 1em; }
+/* stages: rows on one labelled log axis, filling their column; the heads over the two time columns are labels, muted serif,
+   never figures */
+/* the failure kinds past the third take patterns of the limit red, so no two blocks of one bar read alike */
+.pd-seg.f3, .pd-sw.f3 { background: repeating-linear-gradient(135deg, var(--limit) 0 .3rem, color-mix(in oklab, var(--limit) 55%, transparent) .3rem .6rem); }
+.pd-seg.f4, .pd-sw.f4 { background: repeating-linear-gradient(90deg, var(--limit) 0 .22rem, color-mix(in oklab, var(--limit) 45%, transparent) .22rem .5rem); }
+.pd-seg.f5, .pd-sw.f5 { background: color-mix(in oklab, var(--limit) 50%, transparent); }
+/* the model cards are as many as there are, up to four, and share the plate's width, so none stands alone in a row */
+@container perf (min-width: 56rem) {
+  .pd-cards { grid-template-columns: repeat(var(--k, 3), minmax(0, 1fr)); }
+}
+.perf-heads .pd-stages > .sechead .pd-n { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+
+/* a wide column: the name keeps the room a name needs and the two bars take the rest */
+@container perf (min-width: 60rem) {
+  .pcols { grid-template-columns: minmax(12rem, 20rem) minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1.3fr) 6.4rem 7.6rem; }
+}
+/* too narrow for five: each figure says its own label, the command leads its row */
+@container perf (max-width: 34rem) {
+  .pthead { display: none; }
+  .pcols { grid-template-columns: 1fr 1fr; row-gap: 0.667rem; }
+  .pcols .cmd { grid-column: 1 / -1; }
+  .pf.num { text-align: left; }
+  .pf > em { display: block; font: 500 .8rem/1.2 var(--font-name); font-style: normal; color: var(--text-mute); }
+  .pf.req, .pf.fail { flex-wrap: wrap; }
+  .pdetail { margin-left: 0; padding: calc(2 * var(--u)); }
+  .pd-grid { grid-template-columns: minmax(0, 6.4rem) minmax(0, 1fr) 3.8rem 4.4rem; column-gap: 0.667rem; }
+  .pd-cards { grid-template-columns: minmax(0, 1fr); }
+  .pd-rate { font-size: 2.4rem; }
+}
+@container perf (max-width: 34rem) {
+  .pf.ure-say { grid-column: 1 / -1; }
+  .pthead .ure-time { text-align: left; }
+}
+
+.ure-mark > b > span { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.pd-ax:has(.ure-mark) { margin-bottom: .6rem; }

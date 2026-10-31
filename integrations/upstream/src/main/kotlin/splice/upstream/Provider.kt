@@ -1,0 +1,165 @@
+// NEW: the Provider SPI (plan). The generic head hosting in :daemon-head consumes THIS; concrete
+// providers (:providers-codex/grok/openai) implement it by wiring their dialect translators +
+// auth + quirks. This is why :daemon-head never sees a concrete dialect — the module law forces it.
+package splice.upstream
+
+import kotlinx.coroutines.flow.Flow
+import kotlinx.serialization.json.JsonObject
+import splice.core.auth.Credentials
+import splice.core.auth.RefreshableAuthProvider
+import splice.core.model.ModelCatalog
+import splice.core.parse.AnthropicTurnBody
+import splice.core.prompt.SystemPromptMode
+import splice.core.turn.ReasoningDisplay
+import splice.core.turn.TurnMeta
+import splice.core.turn.TurnOutcome
+import splice.core.turn.WatchdogBudget
+import splice.upstream.failure.Replies
+import splice.upstream.sse.WireSink
+import splice.upstream.transport.UpstreamResponse
+import java.nio.file.Path
+
+/** A per-turn stream state machine: drives the WireSink from upstream events, returns an outcome
+ *  AFTER the loop (cross-event state + harvest). Imperative, not a Flow operator (see the dialect). */
+public fun interface StreamTranslator {
+    /** Prepare the downstream opener before the head commits its early generated header. */
+    public fun prepareSink(sink: WireSink) {}
+
+    public suspend fun driveTurn(upstream: Flow<JsonObject>, sink: WireSink): TurnOutcome
+}
+
+// BuiltTurn + TurnSignals live in ProviderTurns.kt (concentration, 2026-08-19).
+
+/** The dialect-invariant identity a provider exposes: which head it is, its catalog, auth, budget.
+ *  Every concrete provider shares this exact cluster, so it's grouped (see [ProviderTuning]) and
+ *  delegated instead of re-threaded through each constructor. */
+public interface ProviderIdentity {
+    public val key: String
+    public val label: String
+    public val catalog: ModelCatalog
+    public val pinnedModel: String
+    public val auth: RefreshableAuthProvider
+    public val watchdog: WatchdogBudget
+
+    /** The command that fixes this head's credentials, surfaced by [splice.head.turn.TurnDriver] as an
+     *  operator hint on AUTHENTICATION-classified failures: `<command> login` for an OAuth head,
+     *  `splice key set <ENV>` for an api-key head (read on its next request, no restart), empty where
+     *  splice has none to name (a client-auth head), so the upstream's own message stands. */
+    public val loginCommand: String
+}
+
+/** The construction bundle every concrete provider takes: its [ProviderIdentity] plus the upstream
+ *  base URL each provider turns into its own [Provider.upstreamUrl]. One cohesive param in place of
+ *  the seven knobs that were identical across codex/grok/openai. */
+public data class ProviderTuning(
+    val name: ProviderName,
+    override val catalog: ModelCatalog,
+    override val pinnedModel: String,
+    override val auth: RefreshableAuthProvider,
+    val locations: ProviderLocations,
+    override val watchdog: WatchdogBudget,
+    override val loginCommand: String = "",
+) : ProviderIdentity {
+    override val key: String get() = name.key
+    override val label: String get() = name.label
+}
+
+/** What a head is called: the [key] it is addressed by and the [label] an operator reads. */
+public data class ProviderName(val key: String, val label: String)
+
+/** Where a provider reaches and where it keeps state: the [baseUrl] each provider turns into its own
+ *  [Provider.upstreamUrl], and V4-334's [stateDir], this head's own directory for what must outlive the daemon
+ *  process (`heads/<key>/` under StatePaths.headsDir), named by the provider inside it. A null [stateDir] keeps
+ *  nothing on disk: every unwired build and test. [headers] are the extra headers the head's config names for every
+ *  request it sends there (extra_headers), which the Responses providers lay over their own ([headersOver]); the
+ *  chat and Anthropic arms lay theirs where they build their providers. */
+public data class ProviderLocations(
+    val baseUrl: String,
+    val stateDir: Path? = null,
+    val headers: Map<String, String> = emptyMap(),
+) {
+    /** [own] with each of [headers] laid over it, the way the chat heads lay them (ChatArm's StaticChatHeaders): a
+     *  configured header rides and replaces a provider default of the same name, and the credential's own auth header
+     *  wins over a configured one, so a config never sends a request under a credential the head did not sign in
+     *  with (fix 4 of the Oct 27 Responses fixes). */
+    public fun headersOver(own: Map<String, String>, creds: Credentials): Map<String, String> {
+        if (headers.isEmpty()) return own
+        val authHeader = when (creds) {
+            is Credentials.Bearer -> "Authorization"
+            is Credentials.ApiKey -> creds.header
+            Credentials.ClientForwarded -> null
+        }
+        return own + headers.filterKeys { name -> authHeader == null || !name.equals(authHeader, ignoreCase = true) }
+    }
+}
+
+/** Everything the generic head needs to serve one provider. */
+public interface Provider : ProviderIdentity {
+    public val upstreamUrl: String
+    public val showReasoning: ReasoningDisplay
+    public val replayReasoning: Boolean
+
+    /** How this head reads a failure of its own: its API type's standard reader, this provider's declared deviation
+     *  before it, and the foreign-key rule every API type shares before both (failure-handling slice 3). Every
+     *  failure a reply, an event or the websocket carries is read once, here, so one head's reading never depends on
+     *  where in the pipeline the failure was noticed.
+     *
+     *  Each dialect's provider declares its own (AnthropicReplies, ChatReplies, ResponsesReplies, each with the
+     *  vendor deviation its arm named). There is no default: a head that reads by a reading nobody chose for it is
+     *  the misreading this port exists to end. */
+    public val replies: Replies
+
+    /** A caller constraint this provider cannot honor, answered at admission as its cause decides.
+     *  Null preserves normal admission. This is evaluated before building or sending an upstream turn. */
+    public fun requestRefusal(body: AnthropicTurnBody): RequestRefusal? = null
+
+    public fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn
+
+    /** Append resolved custom text at this dialect's tail seam. The unchanged default preserves
+     *  current behavior for a provider whose dialect has not opted into the 0.4.0 capability. */
+    public fun withCompactionTail(turn: BuiltTurn, instructions: String): BuiltTurn = turn
+
+    /** Place the head's standing system prompt at this dialect's system seam, on EVERY turn.
+     *  [mode] is APPEND (the default: the client's own system field survives byte-identically and
+     *  the prompt rides beside it), REPLACE (that field is substituted) or STRIP (the prompt is a
+     *  pattern list and the matching paragraphs are deleted from that field). The unchanged default
+     *  preserves current behavior for a provider whose dialect has not opted into the capability —
+     *  and TurnPreparation then reports the prompt as NOT APPLIED rather than claiming text the
+     *  wire never carried. */
+    public fun withSystemPrompt(turn: BuiltTurn, prompt: String, mode: SystemPromptMode): BuiltTurn = turn
+
+    public fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator
+
+    /** Default: the bare SSE accept header every Responses/Chat upstream needs. Providers with a
+     *  credential-derived header (codex's ChatGPT-Account-ID, passthrough's identity headers)
+     *  override with more; this covers the three that don't. */
+    public fun extraHeaders(creds: Credentials): Map<String, String> = mapOf("Accept" to "text/event-stream")
+
+    /** Observe response headers for this turn before consuming its stream. Unused providers capture nothing. */
+    public fun observeResponseHeaders(meta: TurnMeta, response: UpstreamResponse) {}
+
+    /** Reasoning-continuation folding for this turn, or null when the feature is off for this
+     *  model/head (the default — every non-codex provider stays pure passthrough). */
+    public fun foldPolicy(meta: TurnMeta): FoldPolicy? = null
+
+    /** Mid-stream re-anchoring policy for FAILED rounds; null = surface the failure (pre-reanchor behaviour). */
+    public fun reanchorPolicy(meta: TurnMeta): ReanchorPolicy? = null
+
+    /** Where this turn's requests are routed upstream, asked once per turn; a new one each time, since it follows one
+     *  turn's requests. Null (the default) routes nothing beyond the turn's own headers. */
+    public fun route(meta: TurnMeta): VendorRoute? = null
+
+    /** RC-4 (reasoning-cache 2026-07-24): one-shot request-body amendment on a
+     *  deterministic upstream rejection — (status, responseText, bodyJson) -> amended
+     *  body or null. Default null keeps every provider on the plain retry plan. */
+    public fun amendBodyOnFailure(status: Int, responseText: String, bodyJson: String): String? = null
+
+    /** ws-transport WS-3: the WebSocket overlay for this provider, or null (the default, and every
+     *  provider that has not opted in). Non-null lets the head attempt a WS round before its normal
+     *  SSE post; the runner returns null for "ride SSE", so the overlay can only ever remove work,
+     *  never add a failure mode the SSE path did not already have. */
+    public val wsRunner: WsRoundRunner? get() = null
+
+    /** Cancel provider-owned per-turn resources when a head stops; the provider remains restartable. */
+    public fun onHeadStop() {}
+}

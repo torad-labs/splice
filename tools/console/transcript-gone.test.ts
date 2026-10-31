@@ -1,0 +1,121 @@
+// A session whose transcript is gone is never a door to nothing (Marlin, Oct 12, from her Usage walk: "Open session"
+// led to a Sessions page reading "No sessions", with no reason). Through the real pages against a stub daemon:
+// Requests opens every request's session, an ended agent's included, since Sessions finds ended agents in history
+// (splice-sessions, Oct 12), and Sessions reached for one it cannot find says "No transcript" where the log would be;
+// a log that cannot be read says "Not read" with the daemon's words kept off the page (fin's leak fix). An open request
+// always leaves a way back to the list: the list beside it, or Close where the request takes the page.
+import { afterAll, beforeAll, test } from "bun:test";
+import { chromium, expect, type Browser } from "@playwright/test";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { layout } from "../gate/src/lib/repo.ts";
+
+const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
+const now = Date.now();
+const DAEMON_WORDS = "java.nio.file.AccessDeniedException: /home/someone/.claude/projects/x.jsonl";
+const session = (id: string, name: string) => ({
+  session_id: id, name, head: "alpha", route: "head", availability: "live", status: "idle", cwd: "/work/desk",
+  last: { role: "assistant", tool: null, text: `${name} said its last line.`, ts: 1 },
+  updated_at: new Date(now - 60_000).toISOString(),
+});
+const turn = (id: string, sid: string) => ({
+  turn: id, turn_id: id, ts: now - 30_000, outcome: "ok", model: "m", session: sid, total: 2_000, attempts: 1, retries: 0,
+});
+const answers: Record<string, unknown> = {
+  "/api/sessions": { reading: true, sessions: [session("live0001-0000", "builder"), session("unread01-0000", "reviewer")] },
+  "/api/heads": { heads: [{ key: "alpha", label: "claude-alpha" }] },
+  "/api/heads/retired": { retired: [] },
+  "/api/models": { heads: [] },
+};
+const server = Bun.serve({
+  port: 0,
+  fetch(req) {
+    const path = new URL(req.url).pathname;
+    if (path === "/api/perf/turns") {
+      const rows = [turn("t-live", "live0001"), turn("t-gone", "0296ce46")];
+      return Response.json({ heads: [{ key: "alpha", label: "alpha", count: 2, returned: 2, truncated: false, rows,
+        usage: { models: [], accounts: [], sessions: [] } }] });
+    }
+    if (path === "/api/sessions/live0001-0000/transcript") return Response.json({ error: "gone" }, { status: 404 });
+    if (path === "/api/sessions/unread01-0000/transcript") return Response.json({ error: DAEMON_WORDS }, { status: 500 });
+    if (path in answers) return Response.json(answers[path]);
+    if (path.startsWith("/api/")) return Response.json({});
+    const file = join(consoleDir, path.slice(1));
+    return existsSync(file) && file.startsWith(consoleDir) ? new Response(Bun.file(file)) : new Response("no", { status: 404 });
+  },
+});
+
+let browser: Browser;
+beforeAll(async () => {
+  browser = await chromium.launch({ executablePath: process.env.SCREEN_REVIEW_BROWSER || undefined, args: ["--no-sandbox"] });
+}, 20_000);
+afterAll(async () => {
+  await browser.close();
+  server.stop(true);
+});
+
+test("Requests opens a listed session, and one Sessions no longer lists opens on No transcript, never on nothing", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  try {
+    await page.goto(`http://127.0.0.1:${server.port}/requests.html`);
+    await page.locator('article[data-open="alpha:t-live"]').click({ timeout: 15_000 });
+    await expect(page.locator(".pane a", { hasText: "Open session" })).toBeVisible();
+    // below the two-column width an open pane takes the page, so the list comes back only once it closes
+    await page.locator('.pane [data-act="close"]').click();
+    await expect(page.locator('article[data-open="alpha:t-gone"]')).toBeVisible();
+    await page.locator('article[data-open="alpha:t-gone"]').click();
+    await page.locator(".pane a", { hasText: "Open session" }).click();
+    await expect(page.locator(".pane.missing .log .empty")).toHaveText("No transcript", { timeout: 15_000 });
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("at every width an open request leaves a way back to the list: the list beside it, or Close", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  try {
+    await page.goto(`http://127.0.0.1:${server.port}/requests.html`);
+    await page.locator('article[data-open="alpha:t-live"]').click({ timeout: 15_000 });
+    const seen: { width: number; open: boolean; list: boolean; close: boolean }[] = [];
+    for (let width = 800; width <= 3900; width += 25) {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+      seen.push({ width, open: await page.locator(".requests .pane").isVisible(), list: await page.locator(".requests .list").isVisible(),
+        close: await page.locator('.requests .pane [data-act="close"]').isVisible() });
+    }
+    expect(seen.filter((s) => !s.open)).toEqual([]);
+    expect(seen.filter((s) => !s.list && !s.close)).toEqual([]);
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("Sessions reached for a session it cannot find says No transcript where the log would be", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  try {
+    await page.goto(`http://127.0.0.1:${server.port}/sessions.html#0296ce46-dead`);
+    await expect(page.locator(".pane.missing .log .empty")).toHaveText("No transcript", { timeout: 15_000 });
+    await page.locator(".pane.missing [data-act=close]").click();
+    await expect(page.locator(".pane.missing")).toHaveCount(0);
+    await expect(page.locator(".card.s", { hasText: "builder" })).toBeVisible(); // the list he has is still there
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("a log that is gone says No transcript, one that cannot be read says Not read, and the daemon's words stay off the page", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  const warned: string[] = [];
+  page.on("console", (m) => { if (m.type() === "warning") warned.push(m.text()); });
+  try {
+    await page.goto(`http://127.0.0.1:${server.port}/sessions.html#live0001-0000`);
+    await expect(page.locator(".pane .log .empty")).toHaveText("No transcript", { timeout: 15_000 });
+    await page.goto("about:blank"); // a hash-only move would keep the page, and its pane, as they were
+    await page.goto(`http://127.0.0.1:${server.port}/sessions.html#unread01-0000`);
+    await expect(page.locator(".pane .log .empty")).toHaveText("Not read", { timeout: 15_000 });
+    await expect(page.locator("body")).not.toContainText("AccessDenied");
+    await expect.poll(() => warned.some((w) => w.includes("AccessDeniedException"))).toBe(true);
+  } finally {
+    await page.close();
+  }
+}, 30_000);

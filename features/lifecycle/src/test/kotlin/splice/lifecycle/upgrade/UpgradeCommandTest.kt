@@ -279,7 +279,7 @@ internal class UpgradeCommandTest : UpgradeRig() {
         assertEquals("0.3.9", link(home, "current"))
         val release = UpgradeRelease(this.out, JdkUpgradeFetch(), process(), "java")
         assertEquals(release.base("v0.4.0", null), release.base("0.4.0", null), "one tag, two spellings")
-        assertTrue(release.base("0.4.0", null).endsWith("/download/v0.4.0"), release.base("0.4.0", null))
+        assertEquals("https://splice.torad.ai/v0.4.0", release.base("0.4.0", null))
     }
 
     @Test

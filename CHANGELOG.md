@@ -60,6 +60,10 @@
   finished answer whose client disconnected is kept on disk for its identical retry.
 - **Installing needs no GitHub account.** The downloaded release jar and launch shim are checked
   against the release's checksums, and build provenance is verified whenever `gh` is signed in.
+- **Releases are downloaded from splice.torad.ai.** `curl -fsSL https://splice.torad.ai/install.sh | bash` installs
+  the newest stable release, and `splice upgrade` and the beta channel read the same site. The GitHub release keeps the
+  notes and carries no file. A machine on a 0.4.0 beta still looks on GitHub, so it upgrades once with the installer
+  above.
 - **Installing and launching need no Node.** The launch shim is plain `sh` and `curl`, so a machine with Java and a
   natively installed Claude Code runs `claudex` with no Node on it. `install.sh` and `splice doctor` no longer ask for
   it, and the installer ends on one next step, `splice setup`.

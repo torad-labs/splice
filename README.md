@@ -87,17 +87,17 @@ and output attached to a terminal, it also offers to run each fix, with consent.
 ### Install a release
 
 ```bash
-curl -fsSL https://github.com/torad-labs/splice/releases/latest/download/install.sh | bash
+curl -fsSL https://splice.torad.ai/install.sh | bash
 ```
 
-The downloaded jar and launch shim are checked against the release's `sha256sums.txt`. If the GitHub CLI is installed
+Releases are downloaded from splice.torad.ai. The downloaded jar and launch shim are checked against the release's `sha256sums.txt`. If the GitHub CLI is installed
 and signed in, the installer also verifies each asset's build-provenance attestation; if not, it
 prints the `gh attestation verify` command that does it later.
 
 To pin one version instead of following `latest` (prereleases never become `latest`):
 
 ```bash
-curl -fsSL https://github.com/torad-labs/splice/releases/download/v0.4.0/install.sh \
+curl -fsSL https://splice.torad.ai/v0.4.0/install.sh \
   | env SPLICE_VERSION=v0.4.0 bash
 ```
 

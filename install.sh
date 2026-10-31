@@ -8,7 +8,8 @@
 #   ./install.sh                 # from a checkout: build the jar, install from it
 #   SPLICE_JAR=/path/to.jar ./install.sh   # prebuilt jar; sibling splice-launch is auto-detected
 #   SPLICE_JAR=/path/to.jar SPLICE_SHIM=/path/to/splice-launch ./install.sh
-#   curl -fsSL <raw>/install.sh | bash     # (release mode: downloads from GitHub Releases)
+#   curl -fsSL https://splice.torad.ai/install.sh | bash   # release mode: downloads from splice.torad.ai
+#   SPLICE_VERSION=v0.4.0 bash install.sh                   # release mode, pinned to one release
 set -euo pipefail
 
 SHARE_DIR="${SPLICE_SHARE_DIR:-$HOME/.local/share/splice}"
@@ -270,7 +271,10 @@ verify_attestation() {
 }
 
 # 1. Obtain the jar. Prefer an explicit SPLICE_JAR, else build from the checkout, else (release
-#    mode) download from GitHub Releases — the repo intentionally ships no binaries.
+#    mode) download from splice.torad.ai — the repo intentionally ships no binaries. Releases have
+#    been served there since Oct 31, 2026: /latest/ follows the newest stable release, and
+#    /v<version>/ holds each release as published.
+RELEASE_SITE="https://splice.torad.ai"
 if [ -n "${SPLICE_JAR:-}" ]; then
   echo "splice: installing jar from $SPLICE_JAR"
   cp "$SPLICE_JAR" "$JAR_TMP"
@@ -306,13 +310,12 @@ elif [ -n "$REPO_ROOT" ]; then
   [ -f "$BUILT" ] || { echo "splice: build produced no fat jar at $BUILT" >&2; exit 1; }
   cp "$BUILT" "$JAR_TMP"
 else
-  REPO="torad-labs/splice"
   if [ -n "${SPLICE_RELEASE_BASE_URL:-}" ]; then
     RELEASE_BASE="${SPLICE_RELEASE_BASE_URL%/}"
   elif [ -n "${SPLICE_VERSION:-}" ]; then
-    RELEASE_BASE="https://github.com/${REPO}/releases/download/${SPLICE_VERSION}"
+    RELEASE_BASE="${RELEASE_SITE}/v${SPLICE_VERSION#v}"
   else
-    RELEASE_BASE="https://github.com/${REPO}/releases/latest/download"
+    RELEASE_BASE="${RELEASE_SITE}/latest"
   fi
   JAR_URL="${RELEASE_BASE}/splice.jar"
   SUMS_URL="${RELEASE_BASE}/sha256sums.txt"
@@ -340,8 +343,7 @@ fi
 if [ ! -f "$SHIM_SRC" ]; then
   JAR_VERSION="$(jar_release "$JAR_TMP")"
   [ -n "$JAR_VERSION" ] || { echo "splice: prebuilt jar has no readable splice version" >&2; exit 1; }
-  REPO="torad-labs/splice"
-  RELEASE_BASE="${SPLICE_RELEASE_BASE_URL:-https://github.com/${REPO}/releases/download/v${JAR_VERSION}}"
+  RELEASE_BASE="${SPLICE_RELEASE_BASE_URL:-${RELEASE_SITE}/v${JAR_VERSION}}"
   SUMS_TMP="$(mktemp)"
   curl -fsSL "${RELEASE_BASE}/sha256sums.txt" -o "$SUMS_TMP"
   curl -fsSL "${RELEASE_BASE}/splice-launch" -o "$SHIM_TMP"

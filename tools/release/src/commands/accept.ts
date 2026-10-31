@@ -57,7 +57,8 @@ const EMBEDDED: readonly (readonly [string, string])[] = [
   ["dependency-licenses.json", "META-INF/dependency-licenses.json"],
 ];
 
-const RELEASE_REPO = "torad-labs/splice";
+// Where install.sh downloads releases from since Oct 31, 2026 (tools/release/downloads/worker.ts).
+const RELEASE_SITE = "https://splice.torad.ai";
 
 function fail(message: string): number {
   console.error(message);
@@ -235,12 +236,12 @@ export async function accept(argv: readonly string[], repoRoot: string): Promise
     }
   }
 
-  // With no channel override, every download must stay on GitHub's stable-only `latest` release.
+  // With no channel override, every download must come from splice.torad.ai's stable-only `latest`.
   resetLogs();
   const stable = makeSandbox();
   const stableRun = runInstall(distDir, stable, fakeEnv(stable));
   if (!stableRun.ok) return fail(stableRun.output);
-  const stableBase = `https://github.com/${RELEASE_REPO}/releases/latest/download`;
+  const stableBase = `${RELEASE_SITE}/latest`;
   const expectedStable = [`${stableBase}/splice.jar`, `${stableBase}/sha256sums.txt`, `${stableBase}/splice-launch`, ...hubAssets.map((asset) => `${stableBase}/${asset}`)];
   if (urls().join("\n") !== expectedStable.join("\n")) {
     return fail("release accept: default install did not use the exact stable latest URLs");
@@ -261,7 +262,7 @@ export async function accept(argv: readonly string[], repoRoot: string): Promise
     const versioned = makeSandbox();
     const run = runInstall(distDir, versioned, { ...fakeEnv(versioned), SPLICE_VERSION: pinned });
     if (!run.ok) return fail(run.output);
-    const base = `https://github.com/${RELEASE_REPO}/releases/download/${pinned}`;
+    const base = `${RELEASE_SITE}/${pinned}`;
     const expectedVersioned = [`${base}/splice.jar`, `${base}/sha256sums.txt`, `${base}/splice-launch`, ...hubAssets.map((asset) => `${base}/${asset}`)];
     if (urls().join("\n") !== expectedVersioned.join("\n")) {
       return fail(`release accept: ${pinned} install did not use the exact version-pinned URLs`);

@@ -23,13 +23,13 @@ describe("release verify", () => {
   });
 
   test("an unknown verb is a usage refusal, not a silent pass", () => {
-    const proc = Bun.spawnSync([process.execPath, join(repoRoot, "tools", "release", "index.ts"), "publish"], {
+    const proc = Bun.spawnSync([process.execPath, join(repoRoot, "tools", "release", "index.ts"), "ship"], {
       cwd: repoRoot,
       stdout: "pipe",
       stderr: "pipe",
     });
     expect(proc.exitCode).toBe(2);
-    expect(proc.stderr.toString()).toContain('no such verb "publish"');
+    expect(proc.stderr.toString()).toContain('no such verb "ship"');
   });
 
   test("package.json's release scripts are these verbs", () => {

@@ -75,10 +75,11 @@
 - **The console wears the Splice brand.** The bar shows the new splice mark, the tab shows a favicon that follows the theme, every colour comes from one tokens file, and the light theme now holds 4.5:1 text contrast on its Paper wall, with darker provider colours.
 
 ### Upgrading from 0.3.x
-0.3.x has no `splice upgrade`. Re-run the installer pinned to this release:
+0.3.x has no `splice upgrade`. Re-run the installer pinned to this release. Releases are downloaded from
+splice.torad.ai from 0.4.0 on, so the GitHub release carries the notes and no file:
 
 ```bash
-curl -fsSL https://github.com/torad-labs/splice/releases/download/v0.4.0/install.sh \
+curl -fsSL https://splice.torad.ai/v0.4.0/install.sh \
   | env SPLICE_VERSION=v0.4.0 bash
 ```
 

@@ -3,7 +3,7 @@ name: release
 # Two ways in, ONE release identity (the vX.Y.Z or vX.Y.Z-PRERELEASE tag):
 #
 #   promote:  merge the main -> prod PR (merge commit, never squash). The merge's push fires
-#     this workflow — GitHub generates the release; nobody runs a release command. The version is
+#     this workflow, which builds, attests and drafts the release (published as below). The version is
 #     DERIVED from the promoted code (the launch shim's SPLICE_GATEWAY_VERSION, the same marker
 #     `bun tools/release accept` pins against the jar), and the tag is created by the publish step at the promoted
 #     commit — an artifact of promotion, never a second manual pointer that can disagree (fleet's
@@ -13,6 +13,16 @@ name: release
 #     resolve step here at build time.
 #
 #   tag push (the plumbing):  git push origin v0.3.0-beta.1     — still works, unchanged.
+#
+# Where the release lands (Oct 31, 2026, Marcos: "I dont want the release download to be there [GitHub] ... being at
+# Cloudflare makes more sense"): this workflow builds, accepts and attests, and leaves the GitHub release as an
+# unpublished draft carrying the notes and no file. The downloads are served from splice.torad.ai, which is written
+# with wrangler's own login on the maintainer's machine, never with a Cloudflare token in this repository:
+#
+#   bun tools/release publish <version> --run <this run's id>
+#
+# takes the accepted-release artifact from this run, checks it against its sha256sums.txt, puts every file on
+# splice.torad.ai, lists the release there, and only then publishes the draft, which creates the tag.
 #
 # The tag created on publish uses the workflow's own GITHUB_TOKEN, and events created with that
 # token do not trigger workflows — so a promotion cannot recursively fire the tag path.
@@ -165,12 +175,14 @@ jobs:
           done
 
       - name: transfer accepted bundle to publisher
+        # The whole dist/ is what reaches splice.torad.ai: the publish job attests it, and `bun tools/release publish
+        # --run <id>` downloads this artifact on the maintainer's machine, so it is kept for a week, not a day.
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: accepted-release
           path: dist/
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
 
       - name: transfer the release notes to publisher
         # Beside the bundle, never in it: dist/ is the enumerated asset set accept verified.
@@ -219,8 +231,10 @@ jobs:
           subject-path: dist/splice.jar
           sbom-path: dist/bom.cdx.json
 
-      - name: upload every asset to an unpublished draft
-        # Draft-then-publish flow is deliberate: attestations complete before the release goes public.
+      - name: draft the release notes, with no file to download
+        # Draft first, as before: attestations complete before anything goes public. The draft stays a draft here.
+        # `bun tools/release publish` publishes it once splice.torad.ai serves every file, so the notes never name a
+        # release nobody can download yet.
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.2 # zizmor: ignore[superfluous-actions]
         with:
           draft: true
@@ -229,26 +243,6 @@ jobs:
           # the draft publishes, at the exact SHA the build job gated and attested.
           tag_name: v${{ needs.build.outputs.version }}
           target_commitish: ${{ github.sha }}
-          fail_on_unmatched_files: true
           # The CHANGELOG section first; GitHub's generated notes are appended below it.
           body_path: notes/release-notes.md
           generate_release_notes: true
-          files: |
-            dist/splice.jar
-            dist/splice-launch
-            dist/install.sh
-            dist/splice-mcp-holder
-            dist/splice-mcp-front
-            dist/LICENSE
-            dist/THIRD_PARTY_NOTICES.md
-            dist/THIRD_PARTY_LICENSES.txt
-            dist/PROVENANCE.md
-            dist/bom.cdx.json
-            dist/dependency-licenses.json
-            dist/sha256sums.txt
-
-      - name: publish only after every upload and attestation succeeded
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: v${{ needs.build.outputs.version }}
-        run: gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false

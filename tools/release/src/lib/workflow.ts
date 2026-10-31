@@ -118,18 +118,26 @@ export function stageStepProblem(workflow: Workflow): string | null {
   return null;
 }
 
+/** The artifact the build job hands the accepted bundle over in, and the publisher downloads from the run. */
+export const ACCEPTED_ARTIFACT = "accepted-release";
+
 /**
- * DR-25: the release's upload list must be the STAGED set, dist/-prefixed, plus the sums file — an
- * asset dropped from the workflow ships absent under a green build otherwise. `assets` comes from
- * the manifest `:app:stageRelease` wrote, never from a second hand copy of the list.
+ * Since Oct 31, 2026 the downloads are served from splice.torad.ai, never from GitHub (Marcos: "I dont want the release
+ * download to be there"): the GitHub release carries the notes and no file, and the build job keeps the WHOLE accepted
+ * dist/ as the run's artifact, which `bun tools/release publish --run <id>` takes to the site. DR-25's worry, an asset
+ * dropped by a hand list and shipped absent under a green build, has no list left to drop it from: the publisher sends
+ * every file sha256sums.txt binds, and the stage task writes the sums over the whole staged set.
  */
-export function releaseFilesProblem(workflow: Workflow, assets: readonly string[]): string | null {
+export function releaseFilesProblem(workflow: Workflow): string | null {
   const release = steps(workflow, "publish").find((step) => String(step.uses ?? "").startsWith(RELEASE_ACTION));
   if (!release) return "release verify: the publish job has no action-gh-release step";
-  const files = String(release.with?.files ?? "").split(/\s+/).filter((entry) => entry !== "");
-  const expected = [...assets.map((asset) => `dist/${asset}`), "dist/sha256sums.txt"];
-  if (files.length !== expected.length || files.some((file, i) => file !== expected[i])) {
-    return `release verify: release.yml files ${JSON.stringify(files)} != staged assets ${JSON.stringify(expected)}`;
+  if (release.with?.files !== undefined) {
+    return `release verify: release.yml attaches files to the GitHub release (${JSON.stringify(release.with.files)}); downloads are served from splice.torad.ai`;
+  }
+  const kept = steps(workflow, "build").find((step) => String(step.uses ?? "").startsWith("actions/upload-artifact@") && step.with?.name === ACCEPTED_ARTIFACT);
+  if (!kept) return `release verify: the build job does not keep the accepted bundle as the ${ACCEPTED_ARTIFACT} artifact`;
+  if (String(kept.with?.path ?? "").trim() !== "dist/") {
+    return `release verify: the ${ACCEPTED_ARTIFACT} artifact does not keep the whole accepted dist/: path is ${JSON.stringify(kept.with?.path)}`;
   }
   return null;
 }

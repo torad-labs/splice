@@ -387,7 +387,7 @@ Source: `core/.../config/StatePaths.kt` 45-55, 144-235; `core/.../topology/Topol
 
 1. Checks the platform (Linux, macOS, WSL2) and dependencies. Java 21+ is the one hard requirement. Everything
    else is reported with its fix and never aborts the install.
-2. Gets the jar: `SPLICE_JAR=/path`, else builds from a checkout, else downloads the release (`SPLICE_VERSION=vX.Y.Z`
+2. Gets the jar: `SPLICE_JAR=/path`, else builds from a checkout, else downloads the release from splice.torad.ai (`SPLICE_VERSION=vX.Y.Z`
    pins one; `SPLICE_RELEASE_BASE_URL` points elsewhere). Checks it against `sha256sums.txt`, and the build
    attestation when `gh` is signed in. On Linux x86-64 it also gets the hub pair the same way.
 3. Refuses a launcher whose version does not match the jar.

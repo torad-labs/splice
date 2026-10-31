@@ -1,0 +1,12 @@
+// splice.torad.ai: the Worker in worker.ts in front of the splice-releases R2 bucket. Deployed from this machine with
+// wrangler's own login (bunx wrangler@4 deploy --config tools/release/downloads/wrangler.jsonc); the bucket is
+// written by `bun tools/release publish`, never by the Worker.
+{
+  "name": "splice-downloads",
+  "main": "worker.ts",
+  "compatibility_date": "2026-10-30",
+  "workers_dev": false,
+  "routes": [{ "pattern": "splice.torad.ai", "custom_domain": true }],
+  "r2_buckets": [{ "binding": "RELEASES", "bucket_name": "splice-releases" }],
+  "observability": { "enabled": true }
+}

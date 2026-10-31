@@ -139,7 +139,7 @@ export async function verify(argv: readonly string[], repoRoot: string): Promise
   const manifest = readManifest(distDir);
   if (manifest instanceof Error) return fail(manifest.message);
   const published = [...manifest.assets, SUMS];
-  const filesProblem = releaseFilesProblem(workflow, manifest.assets);
+  const filesProblem = releaseFilesProblem(workflow);
   if (filesProblem) return fail(filesProblem);
   // DR-25 redo (codex catch, 2026-08-31): the asset denominator used to come from stage's hand
   // list, so a staged file OUTSIDE that list shipped absent from checksums/release under a green

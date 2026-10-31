@@ -19,12 +19,15 @@ import java.security.MessageDigest
 
 internal const val SUMS_ASSET = "sha256sums.txt"
 
-// why: the GitHub owner/name slug releases and attestations are fetched from. Named GITHUB_REPO
+// why: the GitHub owner/name slug the release workflow attests builds under. Named GITHUB_REPO
 // rather than the bare noun: a different value of the same bare name lives in
 // McpDispositionReasons, and const-single-source matches bare names across namespaces because
 // one name carrying two meanings is a reading hazard whether or not the compiler minds.
 private const val GITHUB_REPO = "torad-labs/splice"
-private const val RELEASES = "https://github.com/$GITHUB_REPO/releases"
+
+/** Where releases are downloaded from since Oct 31, 2026 (Marcos: the release download belongs at Cloudflare, not
+ *  GitHub): /latest/ follows the newest stable release, /v<version>/ holds each release, /releases.json lists them. */
+internal const val RELEASE_SITE = "https://splice.torad.ai"
 private const val SHIM_MODE = "rwxr-xr-x"
 
 /** The exit code of the candidate jar's `check-config` when its boot findings refuse the person's splice.toml: a wire contract with another process, read here and declared there. */
@@ -52,7 +55,7 @@ internal class UpgradeRelease(
      *  Tags are `v<version>` (release.yml); `--to 0.4.0` and `--to v0.4.0` name the same one. */
     fun base(to: String?, override: String?): String =
         override?.trim()?.takeIf { it.isNotEmpty() }?.trimEnd('/')
-            ?: if (to == null) "$RELEASES/latest/download" else "$RELEASES/download/v${to.removePrefix("v")}"
+            ?: if (to == null) "$RELEASE_SITE/latest" else "$RELEASE_SITE/v${to.removePrefix("v")}"
 
     /** Fetch, verify and validate the release into [staging]. [attest] false is the daemon updater (UpgradeAuto): a beta
      *  built while Actions is locked has no attestation, so that run checks every asset against the release sums alone,

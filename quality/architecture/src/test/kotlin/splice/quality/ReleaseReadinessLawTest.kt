@@ -278,12 +278,14 @@ internal object ReleaseReadiness {
             }
         },
         Rule("release-draft-first") { repo -> repo.contains(RELEASE_WORKFLOW, "draft: true") },
-        Rule("release-ships-licenses") { repo -> repo.contains(RELEASE_WORKFLOW, "THIRD_PARTY_LICENSES.txt") },
+        // Oct 31, 2026: the GitHub release carries notes only and splice.torad.ai serves every staged file, so the
+        // licenses ship when the stage task stages them, beside the jar and bound by sha256sums.txt.
+        Rule("release-ships-licenses") { repo -> repo.contains(STAGE_BUILD, "THIRD_PARTY_LICENSES.txt") },
     )
 
     private fun installerRules(): List<Rule> = listOf(
         Rule("install-no-fork-url") { repo -> repo.lacks(INSTALL, "marcospaulo/splice") },
-        Rule("install-downloads-from-releases") { repo -> repo.contains(INSTALL, "releases/download") },
+        Rule("install-downloads-from-release-site") { repo -> repo.contains(INSTALL, RELEASE_SITE) },
         Rule("install-no-or-true") { repo ->
             repo.onlyOn(INSTALL, OR_TRUE, ALLOWED_OR_TRUE, "a swallowed failure (`|| true`)")
         },
@@ -358,7 +360,11 @@ internal object ReleaseReadiness {
 private const val MIN_TRACKED = 100
 private const val MIN_KOTLIN = 100
 private const val CI_WORKFLOW = ".github/workflows/ci.yml"
-private const val INSTALL_RELEASE = "RELEASE_BASE=releases/download\n"
+private const val STAGE_BUILD = "app/build.gradle.kts"
+
+// Where releases are downloaded from since Oct 31, 2026 (Marcos: the download belongs at Cloudflare, not GitHub).
+private const val RELEASE_SITE = "https://splice.torad.ai"
+private const val INSTALL_RELEASE = "RELEASE_SITE=\"$RELEASE_SITE\"\n"
 private const val INSTALL_REFUSALS = "echo 'sha256 verification FAILED'; echo 'attestation verification FAILED'\n"
 private const val INSTALL_JAR = "verify_attestation \"\$JAR_TMP\" splice.jar\n"
 private const val INSTALL_SHIM = "verify_attestation \"\$SHIM_TMP\" splice-launch\n"
@@ -402,7 +408,8 @@ private class Tree(val root: File) {
         file(RUNBOOK, "# runbook\n")
         file(LAUNCH_SERVICE, "// dangerously-skip-permissions is opt-in\n")
         file(CI_WORKFLOW, "permissions: {}\nsteps:\n  - uses: actions/checkout@3d3c42e5aac5 # v7.0.1\n")
-        file(RELEASE_WORKFLOW, "permissions: {}\n  draft: true\n  files: dist/THIRD_PARTY_LICENSES.txt\n")
+        file(RELEASE_WORKFLOW, "permissions: {}\n  draft: true\n")
+        file(STAGE_BUILD, "val staged = listOf(\"LICENSE\", \"THIRD_PARTY_LICENSES.txt\")\n")
         // The compliant installer CARRIES both allowed swallows: an allowlist never exercised on the
         // green side proves only that the file had nothing to match.
         file(INSTALL, INSTALL_RELEASE + INSTALL_REFUSALS + INSTALL_JAR + INSTALL_SHIM + INSTALL_PREVIOUS + INSTALL_HOME)
@@ -486,10 +493,10 @@ private fun workflowMutations(): List<Mutation> = listOf(
         file(CI_WORKFLOW, "permissions: {}\nsteps:\n  - uses: actions/checkout@v4.2.1  \n")
     },
     Mutation("release.yml publishing directly", "release-draft-first", "draft: true") {
-        file(RELEASE_WORKFLOW, "permissions: {}\n  files: dist/THIRD_PARTY_LICENSES.txt\n")
+        file(RELEASE_WORKFLOW, "permissions: {}\n")
     },
-    Mutation("release.yml not shipping the licenses", "release-ships-licenses", "THIRD_PARTY_LICENSES.txt") {
-        file(RELEASE_WORKFLOW, "permissions: {}\n  draft: true\n")
+    Mutation("the stage task not staging the licenses", "release-ships-licenses", "THIRD_PARTY_LICENSES.txt") {
+        file(STAGE_BUILD, "val staged = listOf(\"LICENSE\")\n")
     },
 )
 
@@ -497,7 +504,11 @@ private fun installerMutations(): List<Mutation> = listOf(
     Mutation("install.sh naming the fork", "install-no-fork-url", "marcospaulo/splice") {
         append(INSTALL, "REPO=marcospaulo/splice\n")
     },
-    Mutation("install.sh not downloading from releases", "install-downloads-from-releases", "releases/download") {
+    Mutation(
+        "install.sh not downloading from the release site",
+        "install-downloads-from-release-site",
+        "splice.torad.ai",
+    ) {
         file(INSTALL, INSTALL_REFUSALS + INSTALL_JAR + INSTALL_SHIM)
     },
     // Each of these was ACCEPTED by the narrowed regex this list replaced, and each is a swallow the

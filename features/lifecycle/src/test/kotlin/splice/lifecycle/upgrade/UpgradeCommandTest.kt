@@ -92,6 +92,27 @@ internal class UpgradeCommandTest : UpgradeRig() {
 
     private fun attestations() = calls.filter { it.take(3) == listOf("gh", "attestation", "verify") }
 
+    // Goal (Marcos, Oct 31: "I dont want the release download to be there [GitHub] ... being at Cloudflare makes more
+    // sense"): with no SPLICE_RELEASE_BASE_URL, `splice upgrade` downloads every file of a release from splice.torad.ai,
+    // the pinned version from its own folder and the newest stable from /latest, and nothing from github.com.
+    @Test
+    fun `with no override every download of an upgrade comes from splice torad ai`(@TempDir home: Path) {
+        flatInstall(home)
+        pristine(home)
+        val good = Path.of(java.net.URI(release(home)))
+        val asked = mutableListOf<String>()
+        val fake = UpgradeFetch { url -> asked += url; Files.readAllBytes(good.resolve(url.substringAfterLast('/'))) }
+        val upgrade = { args: List<String> -> command(home, "", fetch = fake, gh = FakeGh(auth = 1)).upgrade(args) }
+        val (pinned, out) = captured { upgrade(listOf("--to", "v9.9.9")) }
+        assertTrue(pinned, out)
+        val fromPin = asked.all { it.startsWith("https://splice.torad.ai/v9.9.9/") }
+        assertTrue(asked.isNotEmpty() && fromPin, "pinned: $asked")
+        asked.clear()
+        captured { upgrade(emptyList()) }
+        val fromLatest = asked.all { it.startsWith("https://splice.torad.ai/latest/") }
+        assertTrue(asked.isNotEmpty() && fromLatest, "latest: $asked")
+    }
+
     @Test
     fun `with no gh a remote upgrade activates on the sha256 match and prints the later check`(@TempDir home: Path) {
         val (ok, out) = remoteUpgrade(home, FakeGh(auth = 127))

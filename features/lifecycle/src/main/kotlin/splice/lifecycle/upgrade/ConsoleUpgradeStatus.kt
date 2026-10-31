@@ -30,7 +30,7 @@
 // a probe. UpgradeRelease.stage downloads the jar and the shim, checks every asset's sha256 against the
 // published sums, attests the lot through an authenticated `gh`, and then RUNS the candidate jar to
 // read its version. UpgradeLayout records no last-checked version and UpgradeFetch returns a body
-// without the final URL a `releases/latest/download` redirect would carry the tag in, so there is no
+// without the final URL a `/latest/` redirect on splice.torad.ai would carry the tag in, so there is no
 // cheaper path in the tree. The field says so instead of inventing one.
 package splice.lifecycle.upgrade
 

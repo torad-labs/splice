@@ -7,8 +7,11 @@
 //   2. builds    the reproducible jar and the staged bundle in a throwaway tree under /tmp at that main sha,
 //                through `gate slot` like every gradle run here, with release.yml's steps: stageRelease with the
 //                tag threaded in, `release accept`, and the hub pair checked against mcp-hub.sha256;
-//   3. publishes `gh release create v<version> --prerelease --target <main sha>` with release.yml's asset set
-//                and notes that say the build was local and unattested.
+//   3. publishes the accepted dist/ on splice.torad.ai (`release publish`, wrangler's own login), where the beta
+//                channel's updater and install.sh download it since Oct 31, 2026, and then
+//                `gh release create v<version> --prerelease --target <main sha>` with the notes alone, saying the
+//                build was local and unattested. The GitHub release carries no file (Marcos: "I dont want the release
+//                download to be there").
 //
 // The MCP hub pair is never linked in the tree: Kotlin/Native writes each source file's absolute path into the
 // binary, so a tree build cannot hash to the qualified pair (lead-install.sh). The kept folder under
@@ -22,19 +25,16 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync,
 import { join } from "node:path";
 import { releaseNotes } from "../lib/changelog.ts";
 import { ALL_PLATFORMS } from "../lib/dist.ts";
+import { SITE } from "../lib/downloads.ts";
+import { publishDist } from "./publish.ts";
 
 export const usage =
-  "beta <X.Y.Z-beta.N>                  cut a local, unattested beta from origin/main: build in /tmp, accept, gh release create --prerelease";
+  "beta <X.Y.Z-beta.N>                  cut a local, unattested beta from origin/main: build in /tmp, accept, publish on splice.torad.ai, notes as a GitHub prerelease";
 
 const PINS = "tools/release/mcp-hub.sha256";
 const HUB_KEPT = "../artifacts/mcp-hub";
 const HUB_STAGE = "integrations/mcp-hub/build/bin/linuxX64";
 const HUB = ["holder", "front"] as const;
-const ASSETS = [
-  "splice.jar", "splice-launch", "install.sh", "splice-mcp-holder", "splice-mcp-front", "LICENSE",
-  "THIRD_PARTY_NOTICES.md", "THIRD_PARTY_LICENSES.txt", "PROVENANCE.md", "bom.cdx.json",
-  "dependency-licenses.json", "sha256sums.txt",
-];
 const BETA = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-beta\.(0|[1-9]\d*)$/;
 
 /** The three version markers, as main must spell them for the version being cut. */
@@ -92,7 +92,7 @@ function provenanceSection(sha: string, version: string): string {
     `points at that commit. The build ran \`bun tools/release beta ${version}\` in a throwaway tree, which appended`,
     "this section before building, so the jar embeds it. No Sigstore attestation exists for these assets:",
     "`gh attestation verify` fails on them, and install.sh, run with a signed-in gh, refuses them. Each asset is",
-    "bound to the release only by sha256sums.txt.",
+    `bound to the release only by sha256sums.txt. The assets are served from ${SITE}/v${version}/.`,
     "",
   ].join("\n");
 }
@@ -103,9 +103,10 @@ function notesFor(changelog: string, version: string, sha: string): string {
   if (section instanceof Error) throw new Refusal(`release beta: on main, ${section.message}`);
   return [
     `**Built locally from ${sha} on main without GitHub attestation, because Actions is locked.** The tag points at`,
-    "that commit. `gh attestation verify` fails on these assets, so install.sh refuses them while gh is signed in.",
-    "Install with gh signed out, or download splice.jar and splice-launch, check them against sha256sums.txt, and",
-    "run `SPLICE_JAR=./splice.jar ./install.sh`.",
+    `that commit. Its files are on ${SITE}/v${version}/, not on this page. \`gh attestation verify\` fails on them, so`,
+    "install.sh refuses them while gh is signed in. Install with gh signed out:",
+    "",
+    `    curl -fsSL ${SITE}/v${version}/install.sh | SPLICE_VERSION=v${version} bash`,
     "",
     section,
   ].join("\n");
@@ -154,10 +155,13 @@ export async function beta(argv: string[], repoRoot: string): Promise<number> {
       if (pinned.get(`splice-mcp-${b}`) !== got) throw new Refusal(`release beta: dist/splice-mcp-${b} is ${got}, not its pin in ${PINS}`);
     }
 
+    const published = await publishDist(join(tree, "dist"), version);
+    if (published) throw new Refusal(`release beta: ${published.message}`);
+    console.log(`release beta: ${tag} is on ${SITE}/${tag}/`);
     const notesFile = join(tree, "release-notes.md");
     writeFileSync(notesFile, notes);
     run(["gh", "release", "create", tag, "--prerelease", "--target", sha, "--title", `splice ${tag}`,
-      "--notes-file", notesFile, ...ASSETS.map((asset) => join(tree, "dist", asset))], repoRoot, Bun.env, false);
+      "--notes-file", notesFile], repoRoot, Bun.env, false);
     console.log(`release beta: jar ${sha256(join(tree, "dist/splice.jar"))}`);
     console.log(run(["gh", "release", "view", tag, "--json", "url", "-q", ".url"], repoRoot));
     run(["git", "worktree", "remove", "--force", tree], repoRoot);

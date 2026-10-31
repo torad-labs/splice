@@ -15,7 +15,6 @@ import {
   stageStepProblem,
   type Workflow,
 } from "../src/lib/workflow.ts";
-import { readManifest } from "../src/lib/dist.ts";
 
 const { repoRoot } = layout();
 const text = readFileSync(join(repoRoot, ".github/workflows/release.yml"), "utf8");
@@ -26,23 +25,12 @@ function parsed(source: string): Workflow {
   return workflow as Workflow;
 }
 
-/** The staged asset set, from the manifest when a bundle is staged, else the published order. */
-function assets(): readonly string[] {
-  const manifest = readManifest(join(repoRoot, "dist"));
-  if (!(manifest instanceof Error)) return manifest.assets;
-  return [
-    "splice.jar", "splice-launch", "install.sh", "splice-mcp-holder", "splice-mcp-front",
-    "LICENSE", "THIRD_PARTY_NOTICES.md", "THIRD_PARTY_LICENSES.txt", "PROVENANCE.md",
-    "bom.cdx.json", "dependency-licenses.json",
-  ];
-}
-
 describe("release.yml, parsed", () => {
   test("the real workflow passes all three legs", () => {
     const workflow = parsed(text);
     expect(prereleaseProblem(workflow)).toBeNull();
     expect(stageStepProblem(workflow)).toBeNull();
-    expect(releaseFilesProblem(workflow, assets())).toBeNull();
+    expect(releaseFilesProblem(workflow)).toBeNull();
   });
 
   test("the workflow spells the gated stage command exactly once, as text as well as parsed", () => {
@@ -85,13 +73,19 @@ describe("release.yml, parsed", () => {
     expect(prereleaseProblem(parsed(hardcoded))).toContain("prerelease input is");
   });
 
-  test("an asset dropped from the upload list fails against the staged set", () => {
-    const dropped = text.replace("            dist/PROVENANCE.md\n", "");
-    expect(releaseFilesProblem(parsed(dropped), assets())).toContain("!= staged assets");
+  // Since Oct 31, 2026 the downloads live on splice.torad.ai (Marcos: "I dont want the release download to be there"):
+  // the GitHub release carries the notes and nothing to download, and the whole accepted dist/ is what the publisher
+  // takes to the site, so no asset can be dropped on the way by a hand list.
+  test("a file attached to the GitHub release fails", () => {
+    const attached = text.replace("          generate_release_notes: true\n", "          generate_release_notes: true\n          files: dist/splice.jar\n");
+    expect(attached).not.toBe(text);
+    expect(releaseFilesProblem(parsed(attached))).toContain("attaches files to the GitHub release");
   });
 
-  test("an asset added to the staged set but not to the workflow fails", () => {
-    expect(releaseFilesProblem(parsed(text), [...assets(), "NEW-ASSET.txt"])).toContain("!= staged assets");
+  test("transferring less than the whole accepted dist/ fails", () => {
+    const partial = text.replace("          name: accepted-release\n          path: dist/\n", "          name: accepted-release\n          path: dist/splice.jar\n");
+    expect(partial).not.toBe(text);
+    expect(releaseFilesProblem(parsed(partial))).toContain("does not keep the whole accepted dist/");
   });
 
   test("a non-mapping document is refused rather than half-checked", () => {

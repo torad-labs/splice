@@ -29,7 +29,8 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-private const val LATEST_BASE = "https://github.com/torad-labs/splice/releases/latest/download"
+// Releases download from splice.torad.ai since Oct 31 (Marcos: "I dont want the release download to be there [GitHub]").
+private const val LATEST_BASE = "https://splice.torad.ai/latest"
 
 class UpgradeCheckRoutesTest {
     private val asked = CopyOnWriteArrayList<String>()
@@ -117,6 +118,19 @@ class UpgradeCheckRoutesTest {
         }
         val read = (onBeta.check() as UpgradeCheckOutcome.Done).snapshot
         assertEquals("0.4.1+build.7", read.latest)
+    }
+
+    @Test
+    fun `a beta tap reads the release list splice torad ai publishes, not GitHub's`() {
+        val list = """[{"draft":false,"prerelease":true,"tag_name":"v0.4.1-beta.2"}]"""
+        val lists = mutableListOf<String>()
+        val beta = AutoUpdateSettings { AutoUpdatePolicy(enabled = true, beta = true) }
+        val onBeta = UpgradeChecks(EnvReader { null }, WallClock { now }, beta).also {
+            it.channel = ReleaseChannel(EnvReader { null }, UpgradeFetch { url -> lists += url; list.toByteArray() })
+        }
+        val read = (onBeta.check() as UpgradeCheckOutcome.Done).snapshot
+        assertEquals("0.4.1-beta.2", read.latest)
+        assertEquals(listOf("https://splice.torad.ai/releases.json"), lists)
     }
 
     @Test

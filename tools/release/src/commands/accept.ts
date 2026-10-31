@@ -317,7 +317,7 @@ export async function accept(argv: readonly string[], repoRoot: string): Promise
   // The two java stubs below only need to be FIRST on PATH; the bundle they install from is the
   // staged one (the script copied dist/ beside each stub, which nothing then read).
   const dangling = mkdtempSync(join(tmpdir(), "release-accept-dangling-"));
-  danglingJava(dangling, stagedShim.shim);
+  danglingJava(dangling, stagedShim.shim, stagedShim.gateway);
   const danglingSandbox = makeSandbox();
   const danglingRun = runInstall(distDir, danglingSandbox, {
     ...sandboxEnv(danglingSandbox),
@@ -335,7 +335,7 @@ export async function accept(argv: readonly string[], repoRoot: string): Promise
   }
 
   const rollback = mkdtempSync(join(tmpdir(), "release-accept-rollback-"));
-  failingInstallJava(rollback, stagedShim.shim);
+  failingInstallJava(rollback, stagedShim.shim, stagedShim.gateway);
   const rollbackSandbox = makeSandbox();
   writeFileSync(join(rollbackSandbox.share, "splice.jar"), "previous jar\n");
   writeFileSync(join(rollbackSandbox.share, "splice-launch"), "previous shim\n");

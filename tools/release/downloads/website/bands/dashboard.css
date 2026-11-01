@@ -37,7 +37,7 @@
 .db-win .card.m.needs { display: block; }
 
 /* the console window: the console's own top bar (wordmark, its segmented switch of pages) over the console's wall, in the ink outline and hard cast */
-.db-win{container:dbw/inline-size;position:relative;background:var(--wall);border:var(--ink-w) solid var(--ink);border-radius:var(--r-obj);box-shadow:var(--cast) var(--cast) 0 var(--ink);--db-pad:calc(4 * var(--u))}
+.db-win{container:dbw/inline-size;position:relative;background:var(--wall);border:var(--ink-w) solid var(--ink);border-radius:var(--r-obj);box-shadow:var(--cast) var(--cast) 0 var(--ink);--db-pad:var(--pg-sp-5)}
 .db-r{position:absolute;opacity:0;pointer-events:none}
 .db-win .side{position:relative;top:auto;z-index:2;padding:0 calc(2 * var(--u));gap:calc(2 * var(--u));border-radius:calc(var(--r-obj) - .1rem) calc(var(--r-obj) - .1rem) 0 0;flex-wrap:nowrap}
 .db-win .nav{align-self:center;min-width:0}
@@ -55,7 +55,7 @@
 .db-cap{margin:0;font:600 var(--kicker)/1.2 var(--font-name);letter-spacing:.09em;text-transform:uppercase;color:var(--text-mute)}
 
 /* ---- Sessions: the one session waiting on you leads, at hero size; the rest step down in size and ink ---- */
-.db-sess{--name-w:11rem;--doing-w:14rem;--cmd-w:10rem;display:flex;flex-direction:column;gap:calc(4 * var(--u))}
+.db-sess{--name-w:calc(var(--pg-t-2) * 9);--doing-w:calc(var(--pg-t-1) * 18);--cmd-w:calc(var(--pg-t-1) * 11);display:flex;flex-direction:column;gap:calc(4 * var(--u))}
 .db-ghead{display:flex;align-items:center;gap:calc(2 * var(--u))}
 .db-ghead .pname{font:400 1.4rem/1.1 var(--font-lead);letter-spacing:-.01em;color:var(--text)}
 .db-ghead .pmix{flex:0 1 12rem;min-width:4rem;height:var(--meter-h-sub)}
@@ -75,7 +75,7 @@
 .db-needm .barcell.age>.v{flex:none;min-width:3.4rem;text-align:right;font:500 .92rem/1 var(--font-data);font-variant-numeric:tabular-nums;color:var(--text-body)}
 .db-ask{grid-column:2/4;display:flex;align-items:center;gap:calc(2 * var(--u));flex-wrap:wrap;padding:calc(1.5 * var(--u)) calc(2 * var(--u));background:var(--obj-sunk);border:var(--ink-w) solid var(--needs);border-radius:var(--r-in);box-shadow:.35rem .35rem 0 var(--ink)}
 .db-ask .q{margin:0;flex:1 1 14rem;font:500 1.15rem/1.35 var(--font-name);color:var(--text)}
-.db-ask .answers{margin:0;flex:none}
+.db-ask .answers{margin:0;flex:none;display:flex;gap:var(--pg-sp-3)}
 /* the rows of the other sessions: the console's own block, its rows on the page's shared tracks */
 .db-sess .pgroup .s .top{grid-template-columns:var(--name-w) var(--doing-w) minmax(6rem,1fr) var(--cmd-w)}
 .db-sess .pgroup .phead,.db-sess .rows-block{border-radius:0}
@@ -85,7 +85,7 @@
 .db-sess .s.idle .last .tgt{font-family:var(--font-name);color:var(--text-body)}
 .db-sess .s.idle .barcell.age .vbar>b{background:color-mix(in oklab,var(--text) 40%,transparent)}
 .db-sess .s.drop-before{background-image:linear-gradient(var(--key-light),var(--key-light));background-size:100% .25rem;background-position:top;background-repeat:no-repeat}
-.db-lift{position:relative;z-index:3;transform:translate(.6rem,-.35rem);background:var(--obj-high)!important;border-radius:var(--r-obj)!important;box-shadow:0 0 0 var(--ink-w) var(--ink),.5rem .5rem 0 var(--ink-w) var(--ink),.5rem .5rem 0 var(--ink)!important;margin-inline:calc(-1 * var(--u))}
+.db-lift{position:relative;z-index:3;transform:translateX(.6rem);margin-block:var(--pg-sp-3);background:var(--obj-high)!important;border-radius:var(--r-obj)!important;box-shadow:0 0 0 var(--ink-w) var(--ink),.5rem .5rem 0 var(--ink-w) var(--ink),.5rem .5rem 0 var(--ink)!important;margin-inline:calc(-1 * var(--u))}
 .db-lift .grip{opacity:1;color:var(--text)}
 .db-sess .s .grip{width:1.2rem;height:2rem;margin-left:-.4rem;margin-right:-.6rem;cursor:grab;color:var(--text-mute);flex:none;display:grid;place-items:center}
 .db-sess .s .grip svg{width:.6rem;height:1.1rem}
@@ -122,11 +122,11 @@
 .db-col{min-width:0;display:flex;flex-direction:column;gap:calc(4 * var(--u))}
 .db-tn .pd-st{padding-block:var(--u)}
 .db-tn .psec+.psec{margin-top:calc(4 * var(--u));padding-top:calc(4 * var(--u));border-top:.08rem solid var(--hair)}
-.db-tn .pd-grid{grid-template-columns:minmax(0,8.5rem) minmax(0,1fr) 4.8rem}
+.db-tn .pd-grid{grid-template-columns:minmax(0,calc(var(--pg-t-2) * 8.5)) minmax(0,1fr) calc(var(--pg-t-2) * 4.4)}
 .db-tn .pd-trk .mid{border-radius:.2rem;min-width:.3rem}
 .db-tn .pd-n.t{text-align:right}
-.db-tn .sx-chips{display:flex;flex-wrap:wrap;gap:var(--u)}
-.db-tn .sx-chip{display:inline-flex;align-items:center;gap:.4rem;min-height:1.7rem;padding:.2rem .6rem;background:var(--obj-sunk);border:.1rem solid var(--track-line);border-left:.3rem solid var(--text-mute);border-radius:var(--r-in);font:500 .85rem/1.2 var(--font-data);color:var(--text)}
+.db-tn .sx-chips{display:flex;flex-wrap:wrap;gap:var(--pg-sp-2)}
+.db-tn .sx-chip{display:inline-flex;align-items:center;gap:var(--pg-sp-1);min-height:1.7rem;padding:var(--pg-sp-1) var(--pg-sp-2);background:var(--obj-sunk);border:.1rem solid var(--track-line);border-left:.3rem solid var(--text-mute);border-radius:var(--r-in);font:500 .85rem/1.2 var(--font-data);color:var(--text)}
 .db-tn .sx-chip svg{flex:none;width:1rem;height:1rem}
 .db-tn .sx-chip.w{border-left-color:var(--text)}
 .db-money{display:flex;align-items:flex-end;flex-wrap:wrap;gap:calc(2 * var(--u)) calc(4 * var(--u))}
@@ -152,7 +152,7 @@
 .db-totals{display:flex;align-items:center;flex-wrap:wrap;gap:calc(2 * var(--u)) calc(6 * var(--u))}
 .db-totals .pd-stat.focal b{font-size:var(--fig-focal)}
 .db-use .ptable{--c:var(--ink);padding:.35rem 1rem .5rem;overflow:hidden}
-.db-use .pcols{grid-template-columns:minmax(9rem,1.15fr) minmax(0,1.2fr) minmax(0,1fr) minmax(0,1.2fr) 5rem 5rem minmax(0,1.1fr) minmax(0,1.5fr)}
+.db-use .pcols{grid-template-columns:minmax(calc(var(--pg-t-2) * 8),1.15fr) minmax(0,1.2fr) minmax(0,1fr) minmax(0,1.2fr) calc(var(--pg-t-2) * 4.6) calc(var(--pg-t-2) * 4.6) minmax(0,1.1fr) minmax(0,1.5fr)}
 .db-use .pthead .pf.num,.db-use .prow .pf.num{text-align:right}
 .db-use .pthead .pf:nth-child(7){text-align:right}
 .db-use .pf.price .v{min-width:3.4rem}
@@ -193,8 +193,6 @@
 .db-tot{display:flex;flex-direction:column;gap:calc(1.5 * var(--u));width:22rem;max-width:100%}
 .db-use .db-tot .pd-bar{--bh:1.5rem}
 
-/* the console's root is 12 px at 1440 and 390, so its kickers and labels read at 9.6 to 11 px there; below 1600 px the window is drawn 1.25 times larger, as the console reads on a wide screen (15 px root), so no label falls under 12 px */
-@container pg (max-width:1600px){.db-win{zoom:1.25}}
 /* narrow window: the console's own reflow */
 @container dbw (max-width:900px){
   .db-sx,.db-tb{grid-template-columns:minmax(0,1fr)}
@@ -202,10 +200,10 @@
   .db-need{grid-template-columns:var(--ring-focal) minmax(0,1fr)}
   .db-needm{grid-column:1/-1;justify-self:stretch;justify-content:space-between}
   .db-ask{grid-column:1/-1}
-  .db-sess{--doing-w:9rem;--name-w:9rem}
+  .db-sess{--doing-w:calc(var(--pg-t-1) * 16);--name-w:calc(var(--pg-t-2) * 8)}
 }
 @container dbw (max-width:640px){
-  .db-panel{padding:calc(2 * var(--u))}
+  .db-panel{padding:var(--pg-sp-3)}
   .db-win .side{flex-wrap:wrap;height:auto;padding:calc(1.5 * var(--u))}
   .db-uhead{grid-template-columns:minmax(0,1fr)}
   .db-use .ptable{padding:.35rem .8rem .5rem}
@@ -232,7 +230,7 @@
   .db-sess .s .top .last{grid-column:1/-1;grid-row:2}
   .db-sess .s .top .barcell{grid-column:1/-1;grid-row:3}
   .db-sess .s .top.bare .who{grid-column:1}
-  .db-lift{transform:translate(.3rem,-.3rem)}
+  .db-lift{transform:none;margin-inline:0}
   .db-hint{display:none}
   .db-need{padding:calc(2 * var(--u))}
   .db-sxl .sx-bar .barcell.age{width:auto;flex:1 1 8rem}
@@ -246,4 +244,64 @@
   .db-uhead>.ure-lead{order:1}
   .db-uhead>.pd-pop{order:2}
   .db-uhead>.db-totals{order:3}
+}
+
+/* ---- the type: the page's steps. t-1 the small words (kickers, chips, labels, ticks, ages), t-2 what a row or a log says (names,
+   tabs, tool calls, values), t-3 a figure that leads a column, t-4 the one focal figure of a view. A console part is set on its
+   step through #console (an id outranks the console's own rules). ---- */
+#console :is(.db-needk,.db-cap,.db-note,.db-demo,.db-hint,.pd-tk,.pd-lb,.pd-lb b,.pd-sub,.pd-seg span,.pd-seg b,.pd-failed span,.sechead .kicker,.rvw-ch span,.rvw-axis span,.pthead .pf,.sx-chip,.sx-chip span,.chip,.act.small,.barcell .v,.tdo .tgt,.tdo .tname,.pct .used,.pd-ax,.mtag,.lead){font-size:var(--pg-t-1)}
+#console :is(.who .name,.role,.word,.now,.now .obj,.db-tab span,.db-ask .q,.log .msg .body p,.pd-n.t,.pd-sl,.db-fold>summary,.tool .tname,.tool .tsum,.composer .field,.composer .act,.plbl .nm,.prow .pf,.prow .pf .v,.pd-failed,.pct,.db-fold .json,.db-fold .json *){font-size:var(--pg-t-2)}
+#console :is(.pname,.sx-bar .name,.rvw-ch b,.pd-stat.focal b,.pd-sub b){font-size:var(--pg-t-3)}
+#console :is(.db-needn,.pd-rate){font-size:var(--pg-t-4)}
+
+/* ---- room for the type: the console fixes a row's text line at 1.4rem and a tab at 2.1rem, which the page's steps outgrow ---- */
+#console .sessions .s .top .last { height: auto; min-height: 1.4rem; font-size: var(--pg-t-1); line-height: 1.5; }
+#console .sessions .last .tdo :is(.tname, .tgt) { line-height: 1.5; }
+#console .db-win .navset { padding: var(--pg-sp-1); gap: var(--pg-sp-1); }
+#console .db-tab { height: auto; min-height: 2.1rem; padding-block: var(--pg-sp-1); }
+.db-lift { padding-inline: var(--pg-sp-2); }
+
+/* ---- the session view and the turn view: room for the page's steps inside the console's boxes ---- */
+.sessions .db-seats { gap: var(--pg-sp-4); }
+#console .db-seats .card.m .body { margin-top: var(--pg-sp-2); }
+#console .db-sxl .tool { padding-inline: var(--pg-sp-3); }
+#console .db-win { --db-bh: calc(var(--pg-t-1) * 2.1); }
+#console .db-win .pd-bar, #console .db-use .pd-bar, #console .db-tn .pd-bar, #console .db-tot .pd-bar { --bh: var(--db-bh); }
+#console .db-tn .pd-pop, #console .db-tot, #console .db-use .pd-pop { gap: var(--pg-sp-2); }
+#console .db-folds { gap: var(--pg-sp-3); }
+#console .db-fold > summary { min-height: var(--ctl-h); padding: var(--pg-sp-1) var(--pg-sp-3); }
+.db-fold { box-shadow: .22rem .22rem 0 var(--ink); }
+#console .db-sxl .call .tool { padding: var(--pg-sp-2) var(--pg-sp-3); line-height: 1.3; }
+#console .db-sxl .call .tool :is(.tname, .tsum) { line-height: 1.3; }
+
+/* ---- the window's top bar: below 980 px the tabs take their own full row under the mark, so the bar never passes the window ---- */
+@container dbw (max-width:980px) {
+  .db-win .side { flex-wrap: wrap; height: auto; padding: calc(1.5 * var(--u)); row-gap: var(--pg-sp-2); }
+  .db-win .nav { flex: 1 1 100%; order: 3; }
+  .db-win .navset { width: 100%; --nav-pad: var(--pg-sp-2); }
+  .db-tab { flex: 1 1 auto; justify-content: center; }
+  .db-tab > svg { display: none; }
+  .db-demo { order: 2; }
+}
+@container dbw (max-width:420px) { .db-win .navset { gap: 0; padding: 3px; --nav-pad: 6px; } }
+#console .db-use .pf > em { font-size: var(--pg-t-1); }
+
+/* ---- Usage in a mid window: the head's parts stand in one column and each command's row is a card of labelled figures, as it is
+   on a phone; the console's own switch (34rem of the plate) would leave the eight columns to the page's larger type ---- */
+@container dbw (max-width:980px) {
+  .db-uhead { grid-template-columns: minmax(0, 1fr); }
+  .db-uhead > .ure-lead { order: 1; }
+  .db-uhead > .pd-pop { order: 2; }
+  .db-uhead > .db-totals { order: 3; }
+  .db-use .pthead { display: none; }
+  .db-use .ptable { padding: .35rem var(--pg-sp-3) .5rem; }
+  .db-use .prow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--pg-sp-2) var(--pg-sp-3); padding-block: var(--pg-sp-3); }
+  .db-use .pf.cmd, .db-use .pf.ure-time, .db-use .pf.lim { grid-column: 1 / -1; }
+  .db-use .pf.num { text-align: left; }
+  .db-use .pf > em { display: block; margin-bottom: var(--pg-sp-1); font-style: normal; color: var(--text-mute); }
+  .db-use .barcell.pf { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--pg-sp-2); align-items: center; }
+  .db-use .barcell.pf > em { grid-column: 1 / -1; }
+  .db-use .pf.lim { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: var(--pg-sp-2); align-items: center; }
+  .db-use .pf.lim > em { grid-column: 1 / -1; }
+  .db-use .pf.req .v, .db-use .pf.fail .v, .db-use .pf.price .v { min-width: 0; }
 }

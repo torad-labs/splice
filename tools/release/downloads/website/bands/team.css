@@ -1,106 +1,91 @@
-/* team band: a prompt to claude-splice, four seats, the messages between them and the tests, then one row that opens on how
-   a team forms. The markup at rest is the end of the story (the lead waiting, the three messages in, 18 of 18). The
-   reveal plays it once from the start (bands/team.js); without scripts or with less motion the page keeps the end.
-   Every console part keeps the console's rem and its own classes. */
+/* team band (prefix tm-): one window holding a team in the middle of its work, then one row that opens on how a team forms.
+   The window is the band's one picture: the prompt to claude-splice, the four seats (every one working, each on its own tool
+   call), and the messages between them, the last of which says the tests pass. The row below it holds the rest.
+   The band's type is the page's: --pg-t-1 (small words, chips, model tags), -2 (what a seat or a message says), -3 (a figure
+   in an opened cell). Spacing is the page's: --pg-sp-4 between the window's parts and between cards of one row or stack.
+   The console's parts keep their markup and classes; #teams sets them on those steps (an id outranks the console's rules). */
 
-/* ---------- the band's head: the heading and the line side by side (the line under it on a phone) ---------- */
-.tm-comp { min-width: 0; }
+/* ---------- the window ---------- */
+.tm-comp { min-width: 0; display: grid; gap: var(--pg-sp-5); }
+.tm-win {
+  container: tmw / inline-size; min-width: 0; display: grid; gap: var(--pg-sp-5);
+  padding: var(--pg-sp-5); background: var(--wall-low); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
+  box-shadow: var(--cast) var(--cast) 0 var(--ink);
+}
 
-/* ---------- the prompt to claude-splice ---------- */
-.tm-prompt { display: flex; align-items: center; gap: calc(2 * var(--u)); padding: calc(2 * var(--u)) calc(2.5 * var(--u)); margin: 0 0 calc(3 * var(--u)); }
-.tm-prompt > .chip { flex: none; }
+/* the prompt: the command that took it, and what was typed */
+.tm-goal { display: flex; align-items: center; gap: var(--pg-sp-3); min-width: 0; }
+.tm-goal > .chip { flex: none; }
 .tm-ptext {
-  margin: 0; padding: calc(1.5 * var(--u)) calc(2 * var(--u)); display: flex; gap: .8rem; align-items: baseline; flex: 1 1 auto; min-width: 0;
-  background: var(--obj-sunk); border-radius: var(--r-in); box-shadow: 0 0 0 var(--ink-w) var(--ink);
-  font: 500 1rem/1.5 var(--font-data); color: var(--text); overflow-wrap: anywhere;
+  margin: 0; flex: 1 1 auto; min-width: 0; display: flex; gap: var(--pg-sp-2); align-items: baseline;
+  padding: var(--pg-sp-2) var(--pg-sp-3); background: var(--obj-sunk); border-radius: var(--r-in); box-shadow: 0 0 0 var(--ink-w) var(--ink);
+  font: 500 var(--pg-t-2)/1.5 var(--font-data); color: var(--text); overflow-wrap: anywhere;
 }
 .tm-ptext::before { content: "❯"; flex: none; color: var(--text-mute); }
 
-/* ---------- the stage: the seats and the messages fill the container together ---------- */
-.tm-grid { min-height: var(--tm-grid-h, 0); display: grid; grid-template-columns: minmax(0, 1fr) clamp(26rem, 30%, 34rem); column-gap: var(--gap-col); align-items: stretch; }
-/* the seats: a 2 x 2 grid of equal cards; each card keeps the console's margin for its lamp's socket */
-.tm-seats { min-width: 0; padding-bottom: var(--cast); display: grid; grid-auto-rows: 1fr; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--gap-col); row-gap: calc(2 * var(--gap-card)); align-items: stretch; }
+/* the seats: four across, two by two, then one; each card keeps the console's margin for its lamp's socket */
+.tm-seats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--pg-sp-5) var(--pg-sp-4); padding-bottom: var(--cast); align-items: stretch; }
 .tm-seats > .card.m { display: flex; flex-direction: column; margin: 0 0 0 2.667rem; }
 .tm-seats > .card.m > .body { margin-top: auto; padding-top: calc(1.5 * var(--u)); }
-.tm-seats > .card.m > .meta { margin-top: calc(1.5 * var(--u)); }
-.tm-seats > .card.m > .top .role { font-size: 1.2rem; }
-.tm-seats .mtag, .tm-ctxh .mtag { font-size: var(--kicker); }  /* the console's model tag, at the kicker's size */
-.tm-waiting { color: var(--text-body); }
-/* waiting is neutral: the idle lamp with a hollow centre, never the needs-you tint or the key light */
-.lamp.tm-wait i { background: transparent; box-shadow: inset 0 0 0 .16rem var(--text-mute); }
+.tm-seats .now { align-items: flex-start; }
+#teams .tm-seats .now { line-height: 1.35; }
+#teams .tm-seats .now .obj { min-width: 0; overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
+.tm-seats .now svg { margin-top: .2em; }
 
-/* the messages */
-.tm-talk { align-self: stretch; display: flex; flex-direction: column; gap: calc(2 * var(--u)); min-width: 0; }
-.tm-talk:has(.tm-ghost) { align-self: start; }
-.tm-chat { flex: 1 1 auto; min-height: 0; }
-.tm-bub { padding: var(--u) calc(1.5 * var(--u)); row-gap: .333rem; grid-template-columns: minmax(0, 1fr); margin-left: 0; }
-.tm-bub .who { flex-direction: row; align-items: center; flex-wrap: wrap; gap: .333rem var(--u); }
+/* the messages: a plate under the seats, the thread across it */
+.tm-talk { min-width: 0; display: flex; flex-direction: column; gap: var(--pg-sp-3); }
+.tm-chat { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--pg-sp-4); }
+.tm-bub { padding: var(--pg-sp-2) var(--pg-sp-3); row-gap: var(--pg-sp-1); grid-template-columns: minmax(0, 1fr); margin: 0; align-content: start; }
+.tm-bub .who { flex-direction: row; align-items: center; flex-wrap: wrap; gap: var(--pg-sp-2); }
 .tm-bub .body { line-height: 1.35; }
 .tm-bub .body p { margin: 0; }
 .tm-arrow { width: 1.05rem; height: 1.05rem; flex: none; color: var(--text-mute); }
-/* no messages yet: a placeholder bubble in the bubble's own shape and height, dashed like the console's empty slots */
-.tm.tm-ghost { --c: var(--track-line); display: flex; align-items: center; min-height: 4.4rem; background: none; border: var(--ink-w) dashed var(--track-line); }
-.tm-ghost .empty { font: 500 1rem/1.35 var(--font-name); }
 
-/* ---------- the tests: one focal figure over a bar on its own scale of 18, across the foot of the container ---------- */
-@property --tm-n { syntax: "<integer>"; inherits: false; initial-value: 0; }
-.tm-tests { margin-top: calc(4 * var(--u)); gap: calc(2 * var(--u)); }
-.tm-tests .sechead { margin: 0; }
-.tm-trow { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; column-gap: calc(4 * var(--u)); }
-.tm-tfig { display: flex; align-items: baseline; gap: .8rem; }
-.tm-count { position: relative; color: transparent; counter-reset: tmc var(--tm-n); }
-.tm-count::after { content: counter(tmc); position: absolute; inset: 0; text-align: right; color: var(--text); }
-.tm-pass { font: 500 1rem/1 var(--font-name); color: var(--text-mute); }
-.tm-tbar { height: 1.1rem; border-radius: var(--r-in); background: color-mix(in oklab, var(--text) 8%, transparent); box-shadow: 0 0 0 var(--ink-w) var(--ink); overflow: hidden; }
-.tm-tbar .pd-bar { display: flex; height: 100%; width: 100%; margin: 0; border-radius: 0; box-shadow: none; background: none; }
-.tm-tbar .pd-seg { display: block; height: 100%; min-width: 0; }
+/* ---------- the type: the page's steps ---------- */
+#teams :is(.chip, .mtag, .kicker, .pct .used, .pd-sub, .lead) { font-size: var(--pg-t-1); }
+#teams :is(.tm-seats .role, .tm-seats .word, .tm-seats .now, .tm-bub .body, .tm-lab, .tm-row-l, .tm-cell .tab, .tm-cell .add, .meterline .pct) { font-size: var(--pg-t-2); }
+#teams .tm-ctxp .pd-sub b { font-size: var(--pg-t-3); }
+#teams .tm-cell .chip { font-size: var(--pg-t-1); }
+#teams .tm-lab .chip { font-size: var(--pg-t-1); }
 
-/* ---------- the row that opens in place: its height eases from 0 to its own over 240 ms (--splice-t-snap), the chevron turns with it ---------- */
-.tm-row { margin-top: calc(4 * var(--u)); background: var(--wall-low); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--ink); }
+/* ---------- the row that opens in place: its height eases from 0 to its own over 240 ms, the chevron turns with it ---------- */
+.tm-row { background: var(--wall-low); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--ink); }
 .tm-row-btn {
-  display: flex; align-items: center; gap: .9rem; width: 100%; min-height: var(--row-h); padding: 0 calc(3 * var(--u)); cursor: pointer; list-style: none;
+  display: flex; align-items: center; gap: var(--pg-sp-2); width: 100%; min-height: var(--row-h); padding: var(--pg-sp-2) var(--pg-sp-4); cursor: pointer; list-style: none;
   border-radius: var(--r-obj); color: var(--text); text-align: left;
-  font: 500 1.2rem/1.2 var(--font-name); transition: background-color var(--splice-t-hover) var(--splice-e-out);
+  font: 500 var(--pg-t-2)/1.2 var(--font-name); transition: background-color var(--splice-t-hover) var(--splice-e-out);
 }
 .tm-row-btn::-webkit-details-marker { display: none; }
 .tm-row-btn:hover { background: var(--track); }
 .tm-row-btn:focus-visible { outline: .22rem solid var(--text); outline-offset: .2rem; }
 .tm-chev { width: .9rem; height: .9rem; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; color: var(--text-body); transition: transform var(--splice-t-snap) var(--splice-e-out); }
 .tm-row[open] .tm-chev { transform: rotate(90deg); }
-.tm-cells { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: calc(2 * var(--gap-card)) var(--gap-col); padding: calc(3 * var(--u)) calc(4 * var(--u)) calc(4 * var(--u)); border-top: 1px solid var(--hair); }
-.tm-cell { display: flex; flex-direction: column; gap: var(--u); padding: calc(2.5 * var(--u)); min-width: 0; margin: 0; }
-.tm-draw { display: flex; flex-direction: column; justify-content: center; min-width: 0; flex: 1 1 auto; min-height: 5.6rem; padding-bottom: var(--u); }
-.tm-lab { margin: 0; font: 500 1rem/1.5 var(--font-name); color: var(--text-body); }
-.tm-lab .chip { margin-inline: .12rem; }
-.tm-panes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--u); }
-.tm-pane { display: flex; align-items: center; justify-content: center; min-width: 0; padding: .7rem .5rem; background: var(--obj-sunk); border-radius: var(--r-in); box-shadow: 0 0 0 var(--ink-w) var(--ink); }
+.tm-cells { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--pg-sp-5) var(--pg-sp-4); padding: var(--pg-sp-4) var(--pg-sp-5) var(--pg-sp-5); border-top: 1px solid var(--hair); }
+.tm-cell { display: flex; flex-direction: column; gap: var(--pg-sp-2); padding: var(--pg-sp-4); min-width: 0; margin: 0; }
+.tm-draw { display: flex; flex-direction: column; justify-content: center; min-width: 0; flex: 1 1 auto; min-height: 5.6rem; padding-bottom: var(--pg-sp-1); }
+.tm-lab { margin: 0; font: 500 var(--pg-t-2)/1.5 var(--font-name); color: var(--text-body); }
+.tm-lab .chip { margin-inline: 2px; }
+.tm-panes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--pg-sp-2); }
+.tm-pane { display: flex; align-items: center; justify-content: center; min-width: 0; padding: var(--pg-sp-2) var(--pg-sp-1); background: var(--obj-sunk); border-radius: var(--r-in); box-shadow: 0 0 0 var(--ink-w) var(--ink); }
 /* each session's own model and context: the console's context meter, one per session */
-.tm-ctxs { display: flex; flex-direction: column; gap: calc(2 * var(--u)); min-width: 0; }
-.tm-ctxp { display: flex; flex-direction: column; gap: var(--u); min-width: 0; }
-.tm-ctxh { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u); }
-.tm-ctxp .meterline { flex-wrap: wrap; }
-.tm-pair, .tm-line2 { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }
+.tm-ctxs { display: flex; flex-direction: column; gap: var(--pg-sp-3); min-width: 0; }
+.tm-ctxp { display: flex; flex-direction: column; gap: var(--pg-sp-2); min-width: 0; }
+.tm-ctxh { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pg-sp-2); }
+.tm-ctxp .meterline { flex-wrap: wrap; row-gap: var(--pg-sp-1); }
+.tm-pair, .tm-line2 { display: flex; align-items: center; gap: var(--pg-sp-3); flex-wrap: wrap; }
 .tm-pair { justify-content: flex-start; }
 .tm-plain { --c: var(--text-mute); }
-.tm-cell .tabs { display: flex; flex-wrap: wrap; gap: var(--u); min-width: 0; }
-/* the goal chip: left-aligned, 2u of padding, a line pitch of 1.35 where it wraps */
-.tm-cell .tab { height: auto; min-width: 0; max-width: 100%; padding: calc(1.5 * var(--u)) calc(2 * var(--u)); text-align: left; line-height: 1.35; align-items: center; }
+.tm-cell .tabs { display: flex; flex-wrap: wrap; gap: var(--pg-sp-2); min-width: 0; }
+.tm-cell .tab { height: auto; min-width: 0; max-width: 100%; padding: var(--pg-sp-2) var(--pg-sp-3); text-align: left; line-height: 1.35; align-items: center; }
 .tm-cell .tab .tname { min-width: 0; text-align: left; line-height: 1.35; overflow-wrap: anywhere; }
+#teams .tm-cell .add { height: auto; min-height: var(--ctl-h); padding: var(--pg-sp-2) var(--pg-sp-4); }
 
-/* ---------- the reveal: every element eases in over 260 ms (--splice-t-pop) on --splice-e-out, with a rise of 1.2rem.
-   Element i starts i * 25 ms in. While the band plays, bands/team.js changes the seats, the messages and the tests in place:
-   a lamp fades over 260 ms, a message rises in, the figure counts and the bar fills over 240 ms (--splice-t-snap). ---------- */
+/* ---------- the reveal: every element eases in once over 260 ms (--splice-t-pop) on --splice-e-out, with a rise of 1.2rem.
+   Element i starts i * 25 ms in. The seats stay at work: the console's working lamp is the only thing that goes on moving. ---------- */
 @media (prefers-reduced-motion: no-preference) {
   @keyframes tm-in { from { opacity: 0; transform: translateY(1.2rem); } to { opacity: 1; transform: none; } }
-  @keyframes tm-fade-in { from { opacity: 0; } to { opacity: 1; } }
-  @keyframes tm-fade-out { from { opacity: 1; } to { opacity: 0; } }
   .pg-js .tm-live:not(.is-seen) .tm-rv { opacity: 0; transform: translateY(1.2rem); }
   .pg-js .tm-live.is-seen .tm-rv { animation: tm-in var(--splice-t-pop) var(--splice-e-out) backwards; animation-delay: calc(var(--i, 0) * 25ms); }
-  .tm-arriving { animation: tm-in var(--splice-t-pop) var(--splice-e-out) backwards; }
-  .tm-fadein { animation: tm-fade-in var(--splice-t-pop) var(--splice-e-out) backwards; }
-  .tm-fadeout { animation: tm-fade-out var(--splice-t-pop) var(--splice-e-out) forwards; }
-  .tm-count { transition: --tm-n var(--splice-t-snap) var(--splice-e-out); }
-  .tm-tbar .pd-seg { transition: width var(--splice-t-snap) var(--splice-e-out); }
   @supports (interpolate-size: allow-keywords) {
     .tm-row { interpolate-size: allow-keywords; }
     .tm-row::details-content { block-size: 0; overflow: clip; transition: block-size var(--splice-t-snap) var(--splice-e-out), content-visibility var(--splice-t-snap) allow-discrete; }
@@ -108,21 +93,23 @@
   }
 }
 
-/* ---------- narrower containers ---------- */
-@container pg (max-width: 1000px) {
+/* ---------- the window picks its shape from its own width ---------- */
+@container tmw (max-width: 1000px) {
+  .tm-seats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container tmw (max-width: 760px) {
+  .tm-chat { grid-template-columns: minmax(0, 1fr); }
   .tm-cells { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-@container pg (max-width: 960px) {
-  .tm-grid { grid-template-columns: minmax(0, 1fr); row-gap: calc(3 * var(--u)); min-height: 0; }
-  /* stacked, the messages keep the height they end with, so nothing below them moves while they arrive */
-  .tm-talk { min-height: var(--tm-talk-h, 0); }
-}
 @container pg (max-width: 640px) {
-  .tm-prompt { flex-direction: column; align-items: flex-start; }
+  .tm-win { padding: var(--pg-sp-3); gap: var(--pg-sp-4); }
+  .tm-goal { flex-direction: column; align-items: flex-start; }
   .tm-ptext { align-self: stretch; }
   .tm-seats { grid-template-columns: minmax(0, 1fr); }
-  .tm-trow { grid-template-columns: minmax(0, 1fr); row-gap: calc(1.5 * var(--u)); }
-  .tm-cells { grid-template-columns: minmax(0, 1fr); padding: calc(2 * var(--u)) calc(2 * var(--u)) calc(3 * var(--u)); }
-  .tm-row-btn { padding: 0 calc(2 * var(--u)); }
+  .tm-cells { grid-template-columns: minmax(0, 1fr); padding: var(--pg-sp-3); }
+  .tm-row-btn { padding: var(--pg-sp-2) var(--pg-sp-3); }
   .tm-ctxp .meterline > .bar { flex-basis: 100%; }
 }
+#teams .tm-cell .add .plus { font-size: var(--pg-t-2); }
+.tm-panes { grid-template-columns: repeat(auto-fit, minmax(calc(var(--pg-t-1) * 12), 1fr)); }
+.tm-lab:has(.chip) { line-height: 2.4; }

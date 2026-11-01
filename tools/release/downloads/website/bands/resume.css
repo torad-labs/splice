@@ -13,6 +13,13 @@
 /* ---------- the band's header: the page's split head; the line carries a command ---------- */
 .rs-bh .pg-line code { font: 500 .92em/1 var(--font-data); color: var(--text); }
 
+/* ---------- type: the page's steps. t-1 the small words (kickers, chips, ages, reset times), t-2 what a row says (names, terminal
+   lines, the percent), t-4 the one focal figure. A console part is set on its step through #resume, which outranks the console's rule. ---------- */
+#resume :is(.rs-board .windows :is(.label, .when, .used), .socket, .rs-k, .rs-tag, .rs-from, .rs-age, .rs-only, .rs-path) { font-size: var(--pg-t-1); }
+#resume :is(.rs-board .windows .pct, .rs-board .card .name, .rs-board .provider > header h2) { font-size: var(--pg-t-2); }
+#resume .rs-board .windows > .pct.limit { font-size: var(--pg-t-4); }
+#resume .rs-board .windows > .pct.limit .used { font-size: var(--pg-t-1); }
+
 /* ---------- the product window: a plate on the wall, the board of three columns, then the chips ---------- */
 .rs-pw {
   container: rsw / inline-size;
@@ -34,23 +41,16 @@
    One focal figure leads: the week's 100% at the console's focal size, in limit red, "used" on its baseline. The 5-hour
    figure, the labels and the reset times stand at 14 to 16 px. */
 .rs-board .windows {
-  --rs-fs: max(14px, 1.1rem);
   grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--u); row-gap: var(--u); margin-top: var(--u);
 }
 .rs-board .windows > .label { min-height: 0; }
-.rs-board .windows :is(.label, .pct, .when) { font-size: var(--rs-fs); }
 .rs-board .windows > :nth-child(1) { grid-area: 1 / 1; }
 .rs-board .windows > :nth-child(3) { grid-area: 1 / 2; }
 .rs-board .windows > :nth-child(2) { grid-area: 2 / 1 / 3 / -1; }
 .rs-board .windows > :nth-child(4) { grid-area: 3 / 1 / 4 / -1; min-width: 0; }
-.rs-board .windows > :nth-child(5) { grid-area: 4 / 1; margin-top: var(--u); }
-.rs-board .windows > :nth-child(7) { grid-area: 4 / 2; margin-top: var(--u); }
-.rs-board .windows > :nth-child(6) { grid-area: 5 / 1 / 6 / -1; }
-.rs-board .windows > :nth-child(8) { grid-area: 6 / 1 / 7 / -1; min-width: 0; }
-.rs-board .windows > :is(:nth-child(1), :nth-child(3), :nth-child(5), :nth-child(7)) { align-self: baseline; margin-bottom: var(--u); }
+.rs-board .windows > :is(:nth-child(1), :nth-child(3)) { align-self: baseline; margin-bottom: var(--u); }
 .rs-board .windows > .pct { min-width: 0; }
-.rs-board .windows > .pct.limit { font-size: var(--fig-focal); font-weight: 600; line-height: 1; }
-.rs-board .windows > .pct.limit .used { font-size: var(--rs-fs); }
+.rs-board .windows > .pct.limit { font-weight: 600; line-height: 1; }
 .rs-board .card .top { min-height: 2.2rem; }
 /* the page also loads the models sheet, whose .held dims a card to half; this card holds a socket, not a held command */
 .rs-board .rs-p1 .card.held { opacity: 1; }
@@ -62,7 +62,7 @@
   padding: calc(1.5 * var(--u)) calc(1.75 * var(--u));
   background: var(--obj-sunk); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
   box-shadow: var(--cast) var(--cast) 0 var(--tc, var(--ink)), var(--cast) var(--cast) 0 var(--ink-w) var(--ink);
-  font: 500 1rem/1.5 var(--font-data); color: var(--text);
+  font: 500 var(--pg-t-2)/1.5 var(--font-data); color: var(--text);
 }
 [data-theme="day"] .rs-term { background: var(--obj); }   /* on Paper the sunk face is the plate's own colour, so the terminal takes the card face */
 .rs-tl { display: flex; align-items: center; gap: .667rem; min-height: 1.9rem; min-width: 0; }
@@ -85,21 +85,21 @@
 .rs-row .rs-age { color: var(--text-mute); font-weight: 400; white-space: nowrap; }
 .rs-row .rs-tagline { grid-column: 2 / -1; display: flex; }
 .rs-row .rs-pt { color: var(--text); }
-.rs-from { --c: var(--claude); gap: 0; font: 500 .85rem/1 var(--font-name); color: var(--text-body); padding: .3rem .55rem; }
+.rs-from { --c: var(--claude); gap: 0; font: 500 var(--pg-t-1)/1 var(--font-name); color: var(--text-body); padding: .3rem .55rem; }
 
 /* the terminal after the pick */
 .rs-path {
   display: block; width: fit-content; max-width: 100%; box-sizing: border-box; margin: .333rem 0 .333rem 1.5rem; padding: .35rem .6rem;
-  font: 500 .92rem/1.25 var(--font-data); color: var(--text); background: var(--obj);
+  font: 500 var(--pg-t-1)/1.25 var(--font-data); color: var(--text); background: var(--obj);
   border: .1rem solid var(--track-line); border-radius: .3rem; overflow-wrap: anywhere;
 }
-.rs-only { margin: 0 0 .5rem 1.5rem; font: 500 .9rem/1.2 var(--font-name); color: var(--text-mute); }
+.rs-only { margin: 0 0 .5rem 1.5rem; font: 500 var(--pg-t-1)/1.2 var(--font-name); color: var(--text-mute); }
 .rs-prompt { margin-bottom: .75rem; }
-.rs-status { margin-top: auto; padding-top: .667rem; border-top: 1px solid var(--hair); }
+.rs-status { margin-top: auto; padding-top: .667rem; border-top: 1px solid var(--hair); flex-wrap: wrap; }
+.rs-status > .rs-model { flex: none; white-space: nowrap; }
 .rs-status .lamp { position: static; flex: none; width: 1.7rem; height: 1.7rem; }
 .rs-status .lamp svg.wave { width: 1.25rem; height: 1.25rem; }
 .rs-model { display: inline-flex; align-items: center; gap: .55rem; font-weight: 500; }
-.rs-sess { margin-left: auto; min-width: 0; text-align: right; overflow-wrap: anywhere; font: 400 .9rem/1.25 var(--font-data); color: var(--text-mute); }
 .rs-dot { flex: none; width: .7rem; height: .7rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .14rem var(--ink); }
 
 /* ---------- what carries over ---------- */
@@ -109,15 +109,12 @@
   display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: var(--gap-col); row-gap: calc(3 * var(--u)); align-items: start;
 }   /* on the board's own three columns */
 .rs-carry > .rs-grp:first-child { grid-column: 1 / 3; }
-.rs-carry > .rs-rnote { grid-column: 1 / -1; }
 .rs-grp { display: flex; flex-direction: column; gap: calc(2 * var(--u)); min-width: 0; }
-.rs-k { margin: 0; font: 600 var(--kicker)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
+.rs-k { margin: 0; font: 600 var(--pg-t-1)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
 .rs-chips { display: flex; flex-wrap: wrap; gap: .667rem; }
-.rs-tag { --c: var(--track-line); gap: .5rem; padding: .5rem .8rem; font: 500 .95rem/1 var(--font-name); color: var(--text); }
+.rs-tag { --c: var(--track-line); gap: .5rem; padding: .5rem .8rem; font: 500 var(--pg-t-1)/1 var(--font-name); color: var(--text); }
 .rs-tag svg { flex: none; width: 1.05rem; height: 1.05rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; color: var(--text-mute); }
 .rs-gone { box-shadow: none; outline: .12rem dashed var(--track-line); outline-offset: -.12rem; color: var(--text-mute); }
-.rs-rnote { margin: 0; font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); }
-.rs-rnote code { font: 500 .95rem/1 var(--font-data); color: var(--text); }
 
 /* ---------- reveal: once, the first time the band scrolls into view (page.js adds is-seen to .rs-live) ---------- */
 @keyframes rs-rise { from { opacity: 0; transform: translateY(1rem); } }

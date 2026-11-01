@@ -84,9 +84,18 @@
 }
 .cm-drawer-in { min-height: 0; overflow: hidden; margin-inline: -.75rem; }
 .cm-drawer-wrap { padding: 0 .75rem var(--cm-gap); }
-/* a drawer is as wide as what it holds (each column takes its content's width), hangs at the board's right edge under its door,
-   and shrinks to the board where the content is wider than the board */
-.card.cm-dplate { display: grid; grid-auto-flow: column; grid-auto-columns: auto; width: fit-content; max-width: 100%; margin-left: auto; padding: 0; min-height: 0; cursor: default; }
+/* every open drawer is the board's full width, from its left edge to its right edge, with one padding and one gap to the cards above it;
+   its own content fills the columns (--cols, set per drawer below), so no column stands plain */
+.card.cm-dplate { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); grid-template-columns: var(--cols); width: 100%; margin-left: 0; padding: 0; min-height: 0; cursor: default; }
+.cm-drawer[data-k="or"] .cm-dplate { --cols: minmax(0, 1fr) minmax(0, 1.1fr) auto; }
+.cm-drawer[data-k="bo"] .cm-dplate { --cols: auto minmax(0, 1fr); }
+.cm-drawer[data-k="ow"] .cm-dplate { --cols: minmax(0, 1.2fr) minmax(0, 1fr); }
+.cm-dplate .cm-mods > .cm-mod { flex: 1 1 auto; justify-content: center; text-align: center; }
+.cm-dplate .cm-sl-row > .cm-sl { flex: 1 1 auto; }
+.cm-dplate .cm-own > .cm-mods { flex: 1 1 auto; }
+.cm-dplate .cm-sec > .cm-term { align-self: stretch; }
+.cm-dplate .cm-steps { flex: 1 1 auto; }
+.cm-dplate .cm-step { flex: 1 1 auto; justify-content: center; }
 .cm-dplate > .cm-sec { padding: calc(2 * var(--u)) calc(2.5 * var(--u)); border-left: .08rem solid var(--hair); justify-content: flex-start; }
 .cm-dplate > .cm-sec:first-child { border-left: 0; }
 
@@ -131,7 +140,6 @@
 .cm-term { display: inline-flex; align-items: baseline; gap: .8rem; padding: .7rem 1rem; background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); font: 500 var(--fr-tm)/1.3 var(--font-data); color: var(--text); }
 .cm-pr { color: var(--text-mute); }
 .cm-term code { font: inherit; }
-.cm-sec > .cm-term { align-self: flex-start; }
 .cm-caret { align-self: center; flex: none; width: .14rem; height: 1.1rem; margin-left: -.5rem; background: var(--text); }
 .cm-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 0; }
 .cm-step { --c: var(--local); gap: .6rem; font: 500 var(--fr-tm)/1 var(--font-name); padding: .35rem .8rem .35rem .4rem; }
@@ -175,12 +183,19 @@
   .cm-seg { width: .3rem; height: 1.7rem; margin-left: 1.12rem; }
   .cm-sl { flex-direction: column; align-items: flex-start; }
 }
+/* two cards across: the steps wrap to a second line, so the needs stand one under the other and fill the column's height */
+@container pg (min-width: 881px) and (max-width: 2199px) {
+  .cm-dplate .cm-facts-row { flex-direction: column; align-items: flex-start; }
+}
 /* one column: each drawer follows its own card, under it */
 @container pg (max-width: 880px) {
   .cm-board { grid-template-columns: minmax(0, 1fr); }
   .cm-card, .cm-drawer { grid-column: 1; grid-row: auto; order: var(--o); }
   .cm-card { min-height: 0; }
-  .card.cm-dplate { grid-auto-flow: row; grid-auto-columns: minmax(0, 1fr); width: auto; margin-left: 0; }
+  .card.cm-dplate { grid-auto-flow: row; grid-auto-columns: minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); width: auto; }
+  .cm-dplate .cm-mods > .cm-mod, .cm-dplate .cm-step { flex: 0 0 auto; justify-content: flex-start; text-align: left; }
+  .cm-dplate .cm-sl-row > .cm-sl, .cm-dplate .cm-own > .cm-mods, .cm-dplate .cm-steps { flex: 0 1 auto; }
+  .cm-dplate .cm-sec > .cm-term { align-self: flex-start; }
   .cm-dplate > .cm-sec { border-left: 0; border-top: .08rem solid var(--hair); padding-inline: 1.2rem; }
   .cm-dplate > .cm-sec:first-child { border-top: 0; }
 }
@@ -237,5 +252,4 @@
   .cm-card .windows.cm-win.cm-none { grid-template-columns: minmax(0, 1fr); }
   .cm-win.cm-none > .bar { grid-column: 1; grid-row: 1; }
   .cm-win.cm-none > .state { grid-column: 1; grid-row: 2; justify-self: start; }
-  .cm-sl { flex-direction: column; align-items: flex-start; }
 }

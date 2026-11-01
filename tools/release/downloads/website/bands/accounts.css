@@ -25,7 +25,7 @@
 .ac-plate .windows .label, .ac-plate .windows .pct, .ac-plate .windows .when, .ac-plate .windows .heldline { font-size: var(--fr-tm); }
 /* the Budget and Usage views' rows read at the Accounts view's step: a row's name and figure (62%, Resets midnight, a preset, a button, 74%, 2d 21h,
    Requests, Failed, At API prices) are --fr-tm; kickers, the hour axis and the chip that names the command stay --fr-ts */
-.ac-plate .meter.day, .ac-plate .meter.day .label, .ac-plate .meter.day .pct, .ac-plate .meter.day .pct .used, .ac-plate .meter.day .when, .ac-plate .meter.day .ads-unit, .ac-plate .meter.day .act.ac-bud, .ac-fine,
+.ac-plate .meter.day, .ac-plate .meter.day .label, .ac-plate .meter.day .pct, .ac-plate .meter.day .pct .used, .ac-plate .meter.day .when, .ac-plate .meter.day .ads-unit, .ac-plate .meter.day .act.ac-bud,
 .ac-plate .editor, .ac-plate .editor button, .ac-plate .editor .field, .ac-plate .money-in,
 .ac-plate .ac-cmds .pct, .ac-plate .ac-cmds .when, .ac-plate .ac-cmds .chip, .ac-plate .ac-tiles .pd-stat small { font-size: var(--fr-tm); }
 .ac-plate .kicker, .ac-plate .act.ac-copy { font-size: var(--fr-ts); }
@@ -94,7 +94,9 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
 /* the budget: the console's day strip filling the plate, its editor open (drawn, not edited here) */
 .ac-one .provider > header { margin-bottom: 1.4rem; }
 .ac-one { --when-n: 16; }
-.ac-budget { margin: 1rem 0 0; --bar-w: 70rem; --lab-w: 7rem; }
+/* the reset column takes its text's own width: the console sizes it from a character count at its 12 px step, and the page sets
+   the reset at 14 to 16 px, so the counted column ended 11 to 17 px short of "Resets midnight" and the text ran onto the border */
+.ac-budget { margin: 1rem 0 0; --bar-w: 70rem; --lab-w: 7rem; --when-w: max-content; }
 .ac-plate .meter.day.ac-budget > .chip.tag { position: static; transform: none; grid-column: 1 / -1; justify-self: start; margin-block: 0 calc(-.5 * var(--u)); }
 .ac-plate .meter.day.ac-budget > .editor { grid-column: 1 / -1; }
 .ac-budget .editor .edrow { column-gap: var(--pg-sp-3); row-gap: var(--pg-sp-2); }
@@ -104,16 +106,13 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
 .ac-budget .editor .mode button, .ac-budget .editor .presets button { cursor: default; }
 .ac-budget .editor .mode button { align-items: center; }
 .ac-budget .editor .mode .glyph { width: 1.05rem; height: 1.05rem; color: currentColor; }
-.ac-fine { font: 500 var(--fr-tm)/1.35 var(--font-name); color: var(--text-mute); }
-.ac-budget .edrow > .ac-fine { margin-left: auto; }
-.ac-plate .meter.day.ac-budget > .ac-bill { grid-column: 2 / -1; margin-top: -.667rem; }
 .ac-budget .dayrun > .hours > .hr { text-decoration: none; }
 /* the day's bars stand 8 px apart; a narrow plate draws it in two-hour bars */
 .ac-plate .dayrun > .hours { gap: var(--pg-sp-1); }
 .ac-budget .dayrun > .hours > .hn { display: none; }
 .ac-bud svg { width: 1rem; height: 1rem; }
 
-.ac-one > .col > .provider > .ac-budget { flex: 1; grid-template-rows: repeat(5, auto) minmax(0, 1fr); }
+.ac-one > .col > .provider > .ac-budget { flex: 1; grid-template-rows: repeat(4, auto) minmax(0, 1fr); }
 .ac-plate .meter.day.ac-budget > .dayrun { --track-h: calc(100% - var(--above) - var(--below)); height: auto; align-self: stretch; min-height: calc(var(--above) + 2.2rem + var(--below)); }
 
 /* each command against its limit */
@@ -159,7 +158,6 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
    card's rows keep their own spacing at the top and the hour chart takes the rest of the room, at least 37% of the plate's width */
 @container acw (width > 48rem) and (max-width: 91rem) {
   .ac-one > .col > .provider > .ac-budget { grid-template-rows: repeat(4, auto) minmax(37cqw, 1fr); align-content: stretch; }
-  /* the dollars bar and the line about the bill stay one group: they share a row, the line under the bar */
   .ac-plate .meter.day.ac-budget > .chip.tag { grid-row: 1; }
   .ac-plate .meter.day.ac-budget > :is(.label:not(.ads-k), .dayline, .when) { grid-row: 2; }
   .ac-plate .meter.day.ac-budget > .editor { grid-row: 3; }
@@ -167,7 +165,6 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
   .ac-plate .meter.day.ac-budget > :is(.ads-k, .capbox, .pct) { align-self: start; }
   .ac-plate .meter.day.ac-budget > .capbox { margin-bottom: 2.2rem; }
   .ac-plate .meter.day.ac-budget > .ads-k, .ac-plate .meter.day.ac-budget > .pct { margin-top: 0; padding-top: 0; }
-  .ac-plate .meter.day.ac-budget > .ac-bill { grid-row: 4; align-self: end; margin-top: 0; }
   .ac-plate .meter.day.ac-budget > .dayrun { grid-row: 5; height: auto; align-self: stretch; }
 }
 @container acw (width > 91rem) {
@@ -194,17 +191,19 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
   .ac-plate .meter.day.ac-budget { grid-template-columns: minmax(0, 1fr) auto; row-gap: 1rem; padding-inline: 1rem; --bar-w: 100%; }
   .ac-plate .meter.day.ac-budget > .label { grid-column: 1; }
   .ac-plate .meter.day.ac-budget > .chip.tag { margin-block: 0 calc(.5 * var(--u)); }
-  .ac-plate .meter.day.ac-budget { grid-template-rows: repeat(6, auto) minmax(0, 1fr); }
+  .ac-plate .meter.day.ac-budget { grid-template-rows: repeat(5, auto) minmax(0, 1fr); }
   .ac-plate .meter.day.ac-budget > .when { grid-column: 2; grid-row: 2; justify-self: end; min-width: 0; }
   .ac-plate .meter.day.ac-budget > .dayline { grid-column: 1 / -1; }
   .ac-plate .meter.day.ac-budget .ads-fig { width: auto; text-align: left; }
   .ac-plate .meter.day.ac-budget > .ads-k { display: none; }
   .ac-plate .meter.day.ac-budget > .capbox { grid-column: 1; }
   .ac-plate .meter.day.ac-budget > .pct { grid-column: 2; }
-  .ac-plate .meter.day.ac-budget > .ac-bill { grid-column: 1 / -1; margin-top: 0; }
   .ac-plate .meter.day.ac-budget > .dayrun { grid-column: 1 / -1; }
-  .ac-budget .edrow > .ac-fine { margin-left: 0; flex-basis: 100%; }
   .ac-budget .editor .mode { flex-wrap: wrap; }
+  /* a label that wraps grows the button to its text, with room above and below it */
+  .ac-plate .meter.day.ac-budget .editor .mode button { height: auto; min-height: var(--ctl-h); padding-block: .7rem; line-height: 1.25; text-align: left; }
+  /* the figure and its button on one line, the figure's words under them */
+  .ac-plate .meter.day.ac-budget .dayline > .ads-of { order: 3; flex: 1 0 100%; white-space: normal; }
   .ac-cmds-h, .ac-cmd-row { grid-template-columns: minmax(0, 1fr) 3.2rem; row-gap: var(--pg-sp-2); }
   .ac-cmd-row { padding-block: var(--u); }
   .ac-cmd-row .bar { grid-column: 1 / -1; grid-row: 2; }

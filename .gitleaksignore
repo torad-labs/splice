@@ -138,3 +138,11 @@ dd2a6783fd349d253b4e1fd70cd36f33471b4bc7:gateway/provider-grok/src/test/kotlin/g
 4058eab90b469a671cf2f75d4a0e54e6a6b4fe46:app/src/test/kotlin/splice/app/control/AuthRouteFieldsTest.kt:generic-api-key:43
 dfd2d19585d17364e76e73a5aa23e9159348d42d:features/turns/src/test/kotlin/splice/head/perf/ProviderFailureRowTest.kt:generic-api-key:68
 7ad358edaa384536c446da53e12351539f0ddd99:integrations/topology/src/test/kotlin/splice/topology/TomlStructurePreflightTest.kt:generic-api-key:41
+
+# Oct 31 CT, gitleaks v8.21.2 (the secret-scan workflow's pin) and 8.30.1 over the full history of PR #247's head
+# 78bc4be2d: opened each exact line. ShareCertificateDamageTest's TEXT_PIECES lists PEM's BEGIN and END markers as
+# pieces a hand-edited tls.pem is damaged with; no key body sits between them, and the file was deleted later. The
+# Cargo.lock match is two crate names in a dependency list (crypto_secretbox and the crate after it) in the Codex API
+# reference's lockfile. Neither is a credential or grants anything. No broad rule is relaxed.
+f061db6b50b4c9600f775503a09fc706935b1f4e:features/share/src/test/kotlin/splice/share/ShareCertificateDamageTest.kt:private-key:54
+a647799d38d70d51ba0e324e720020deca2508e4:tools/codemode-parity/current-api-reference/Cargo.lock:generic-api-key:2259

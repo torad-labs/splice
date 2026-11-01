@@ -153,15 +153,23 @@
 .sh-tabs label:hover { color: var(--text-body); }
 .sh-more:has(.sh-rd1:checked) .sh-tab1, .sh-more:has(.sh-rd2:checked) .sh-tab2, .sh-more:has(.sh-rd3:checked) .sh-tab3 { background: var(--sel-face); color: var(--sel-ink); box-shadow: inset 0 0 0 2px var(--sel-line); }
 .sh-more:has(.sh-rd1:focus-visible) .sh-tab1, .sh-more:has(.sh-rd2:focus-visible) .sh-tab2, .sh-more:has(.sh-rd3:focus-visible) .sh-tab3 { outline: var(--ink-w) solid var(--text); outline-offset: 3px; }
-/* the open pane is as tall as its own content, so no box holds empty space; the two that are not open wait invisible over
+/* the three panes stand in one grid cell, so the cell is as tall as the tallest and a tab click moves nothing below the band;
+   the open pane is as tall as its own content, so no box holds empty space; the two that are not open wait invisible over
    the same place, and a change eases them over */
-.sh-panes { margin-top: var(--pg-sp-4); position: relative; }
+.sh-panes { margin-top: var(--pg-sp-4); display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; }
 .sh-pane {
-  position: absolute; inset: 0 0 auto; visibility: hidden; opacity: 0; transform: translateY(6px); box-sizing: border-box; min-width: 0; padding: var(--pg-sp-4);
+  grid-area: 1 / 1; visibility: hidden; opacity: 0; transform: translateY(6px); box-sizing: border-box; min-width: 0; padding: var(--pg-sp-4);
   display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 17em), 1fr)); gap: var(--sh-g); align-content: start;
   background: var(--wall-low); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--ink);
 }
-.sh-more:has(.sh-rd1:checked) .sh-p1, .sh-more:has(.sh-rd2:checked) .sh-p2, .sh-more:has(.sh-rd3:checked) .sh-p3 { position: relative; visibility: visible; opacity: 1; transform: none; }
+.sh-more:has(.sh-rd1:checked) .sh-p1, .sh-more:has(.sh-rd2:checked) .sh-p2, .sh-more:has(.sh-rd3:checked) .sh-p3 { visibility: visible; opacity: 1; transform: none; }
+/* on a phone the panes stack their rows and differ by hundreds of pixels, so one shared height would leave a short pane over
+   a field of empty band; there the open pane alone sets the height, and the two others wait out of flow over the same place */
+@container pg (max-width: 640px) {
+  .sh-panes { position: relative; }
+  .sh-pane { position: absolute; inset: 0 0 auto; }
+  .sh-more:has(.sh-rd1:checked) .sh-p1, .sh-more:has(.sh-rd2:checked) .sh-p2, .sh-more:has(.sh-rd3:checked) .sh-p3 { position: relative; }
+}
 /* an address breaks only at a slash, a question mark or a comma: each part is held whole */
 .sh-nb { white-space: nowrap; }
 .sh-p2 { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }

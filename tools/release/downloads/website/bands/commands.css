@@ -219,7 +219,7 @@
 }
 @container pga (max-aspect-ratio: 4/3) {
   #commands .cm-in > .pg-head > .pg-art > svg:not(.cm-tall) { display: none; }
-  #commands .cm-in > .pg-head > .pg-art > .cm-tall { display: block; flex: 0 1 auto; min-height: 0; width: 100%; height: auto; position: sticky; top: calc(var(--fr-hh) + var(--pg-sp-5)); }
+  #commands .cm-in > .pg-head > .pg-art > .cm-tall { display: block; flex: 0 1 auto; min-height: 0; width: 100%; height: auto; position: static; }
   #commands .cm-in > .pg-head > .pg-art::after { content: none; }
 }
 

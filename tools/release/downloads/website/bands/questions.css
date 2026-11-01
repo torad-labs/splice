@@ -385,7 +385,7 @@
    cable lengths (--qa-ga, --qa-gb); a short column holds it to the column's height. Without scripts the piece fills the column and the stack
    stands at its foot. */
 @container pg (min-width:1280px){
-  .qa-band .pg-split>.pg-head>.pg-art{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;justify-self:stretch;align-self:stretch;width:auto;margin-top:var(--pg-sp-5);position:sticky;top:calc(var(--fr-hh) + var(--pg-sp-3))}
+  .qa-band .pg-split>.pg-head>.pg-art{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;justify-self:stretch;align-self:stretch;width:auto;margin-top:var(--pg-sp-5);position:static}
   .qa-band .pg-split>.pg-head>.pg-art.qa-follow{flex:none;height:var(--qa-ah)}
   .qa-band .pg-split>.pg-head>.pg-art>svg:first-child{flex:0 1 auto;min-height:0}
   .qa-band .pg-split>.pg-head>.pg-art .pg-stub{display:inline}

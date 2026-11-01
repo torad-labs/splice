@@ -185,6 +185,6 @@
      header while the cells scroll past */
   #teams .pg-split > .pg-head > .pg-art { flex: 1 1 0; min-height: 0; }
   #teams .pg-split > .pg-head > .pg-art > svg:not(.tm-tall) { display: none; }
-  #teams .pg-split > .pg-head > .pg-art > .tm-tall { display: block; flex: 0 1 auto; min-height: 0; width: 100%; height: auto; position: sticky; top: calc(var(--fr-hh) + var(--pg-sp-5)); }
+  #teams .pg-split > .pg-head > .pg-art > .tm-tall { display: block; flex: 0 1 auto; min-height: 0; width: 100%; height: auto; position: static; }
   #teams .pg-split > .pg-head > .pg-art::after { content: none; }
 }

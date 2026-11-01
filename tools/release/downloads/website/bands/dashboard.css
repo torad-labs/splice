@@ -387,7 +387,7 @@
   #console:nth-child(odd) > .pg-split > :not(.pg-head) { grid-column: 1 / span 8; }
   #console .pg-split > .pg-head > .pg-art { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; justify-self: stretch; align-self: stretch; width: auto; margin-top: var(--pg-sp-6); }
   #console .pg-split > .pg-head > .pg-art > svg:not(.db-tall) { display: none; }
-  #console .pg-split > .pg-head > .pg-art > .db-tall { display: block; flex: 0 1 auto; min-height: 0; width: 100%; height: auto; position: sticky; top: calc(var(--fr-hh) + var(--pg-sp-5)); }
+  #console .pg-split > .pg-head > .pg-art > .db-tall { display: block; flex: 0 1 auto; min-height: 0; width: 100%; height: auto; position: static; }
   #console .pg-split > .pg-head > .pg-art::after { content: none; }
 }
 

@@ -145,6 +145,17 @@
   }
   document.addEventListener("visibilitychange", function () { root.classList.toggle("pg-away", document.hidden); });
 
+  // The film's preview plays its own frames, muted, while it is in view and the tab is shown; it rests on its title card otherwise, and
+  // under reduced motion. Opening the film pauses it.
+  var pv = document.querySelector(".fr-pv");
+  if (pv && "IntersectionObserver" in window && !still.matches) {
+    var seen = false;
+    var go = function () { if (seen && !document.hidden) { var p = pv.play(); if (p && p.catch) p.catch(function () { /* stays on its still */ }); } else pv.pause(); };
+    new IntersectionObserver(function (entries) { seen = entries[entries.length - 1].isIntersecting; go(); }, { threshold: 0.25 }).observe(pv);
+    document.addEventListener("visibilitychange", go);
+    document.addEventListener("click", function (e) { if (e.target instanceof Element && e.target.closest("[data-film]")) { seen = false; pv.pause(); } });
+  }
+
   // The first screen's stage: when it comes into view, claudex hands a turn to the Grok plan and claude-splice hands one to the
   // Muse plan. The command that hands the turn on and the plan that takes it light up, the turn's wire runs its dashes while the
   // turn travels it, the plan's meter fills a little, and everything settles back. It plays once per view: leaving the stage and

@@ -241,7 +241,7 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
 }
 @container pga (max-aspect-ratio: 4/3) {
   #accounts .ac-in > .ac-hd > .pg-art > svg:not(.ac-tall) { display: none; }
-  #accounts .ac-in > .ac-hd > .pg-art > .ac-tall { display: block; flex: 0 1 auto; min-height: 0; width: 100%; height: auto; position: sticky; top: calc(var(--fr-hh) + var(--pg-sp-5)); }
+  #accounts .ac-in > .ac-hd > .pg-art > .ac-tall { display: block; flex: 0 1 auto; min-height: 0; width: 100%; height: auto; position: static; }
   #accounts .ac-in > .ac-hd > .pg-art::after { content: none; }
 }
 

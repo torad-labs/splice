@@ -17,7 +17,7 @@ shadow = "9.6.1"
 junit = "6.1.3"
 # Current gRPC embeds the gateway's Netty floor; protobuf stays on its ABI-compatible 3.x line.
 grpc = "1.85.1"
-protobuf = "3.25.9"
+protobuf = "4.36.2"
 opentelemetry = "1.67.0"
 # Self-contained code-mode feasibility probe; community artifacts, no Codex/Node installation.
 graaljs = "25.4.4.1.1"

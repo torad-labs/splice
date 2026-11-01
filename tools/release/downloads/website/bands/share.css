@@ -157,35 +157,51 @@
 .sh-tabs label:hover { color: var(--text-body); }
 .sh-more:has(.sh-rd1:checked) .sh-tab1, .sh-more:has(.sh-rd2:checked) .sh-tab2, .sh-more:has(.sh-rd3:checked) .sh-tab3 { background: var(--sel-face); color: var(--sel-ink); box-shadow: inset 0 0 0 2px var(--sel-line); }
 .sh-more:has(.sh-rd1:focus-visible) .sh-tab1, .sh-more:has(.sh-rd2:focus-visible) .sh-tab2, .sh-more:has(.sh-rd3:focus-visible) .sh-tab3 { outline: var(--ink-w) solid var(--text); outline-offset: 3px; }
-/* each pane is as tall as its own content and only the open one is drawn, so no plate holds empty space. A tab click eases the
-   panes' box from the old height to the new one (share.js holds the old height, sets the new one, and lets go when it ends);
-   while it eases the box clips, a little past its edge so the plates' cast shows. Under reduced motion the height changes at once. */
-.sh-panes { margin-top: var(--pg-sp-4); }
-.sh-panes.sh-ease { overflow: clip; overflow-clip-margin: calc(var(--cast) + var(--ink-w) + 4px); }
+/* the three panes lie over each other in one cell, so the frame is as tall as the tallest and a tab click moves nothing below it;
+   only the open pane is drawn (the others are out of the page's reading and tab order). A shorter pane's content stands centred
+   in the frame, its boxes filling what the frame leaves. */
+.sh-panes { margin-top: var(--pg-sp-4); display: grid; }
 .sh-pane {
-  display: none; box-sizing: border-box; min-width: 0; padding: var(--pg-sp-4);
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17em), 1fr)); gap: var(--sh-g); align-content: start;
+  grid-area: 1 / 1; visibility: hidden; display: grid; box-sizing: border-box; min-width: 0; padding: var(--pg-sp-4);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17em), 1fr)); gap: var(--sh-g); align-content: center;
   background: var(--wall-low); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--ink);
 }
-.sh-more:has(.sh-rd1:checked) .sh-p1, .sh-more:has(.sh-rd2:checked) .sh-p2, .sh-more:has(.sh-rd3:checked) .sh-p3 { display: grid; }
+.sh-more:has(.sh-rd1:checked) .sh-p1, .sh-more:has(.sh-rd2:checked) .sh-p2, .sh-more:has(.sh-rd3:checked) .sh-p3 { visibility: visible; }
 /* an address breaks only at a slash, a question mark or a comma: each part is held whole */
 .sh-nb { white-space: nowrap; }
 .sh-p2 { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
+@container sh (max-width: 899px) { .sh-p2 { grid-template-columns: minmax(0, .9fr) minmax(0, 1fr); } }
 @container sh (max-width: 699px) { .sh-p2 { grid-template-columns: minmax(0, 1fr); } }
-/* the options are three objects, each as tall as its own content */
-.sh-p1 { align-items: start; }
+/* the options are three objects of one height in a row; below 900 px they are a stack, each with its label and chip beside its address */
+.sh-p1 { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; align-content: stretch; }
+/* the stack's cards share two columns (the labels and chips, then the addresses), so every address starts on one edge */
+@container sh (min-width: 560px) and (max-width: 899px) {
+  .sh-p1 { grid-template-columns: max-content minmax(0, 1fr); column-gap: 0; }
+  .sh-p1 .sh-opt { grid-column: 1 / -1; grid-template-columns: subgrid; column-gap: var(--pg-sp-3); align-items: center; align-content: center; }
+  .sh-p1 .sh-opt > .sh-k { grid-column: 1; grid-row: 1; }
+  .sh-p1 .sh-opt > .sh-q { grid-column: 1; grid-row: 2; }
+  .sh-p1 .sh-opt > .sh-ex { grid-column: 2; grid-row: 2; }
+  .sh-p1 .sh-opt > .sh-refuse { grid-column: 1 / -1; }
+  .sh-p1 .sh-bad > .sh-ex { grid-row: 1; }
+}
+@container sh (max-width: 559px) {
+  .sh-p1 { grid-template-columns: minmax(0, 1fr); }
+}
+@container sh (max-width: 899px) { .sh-p1 .sh-opt { justify-items: start; } }
 .sh-p1 .sh-opt { padding: var(--pg-sp-3); background: var(--obj-sunk); border: 2px solid var(--ink); border-radius: var(--r-in); }
 .sh-p1 .sh-q { background: var(--track); }
 .sh-opts { display: grid; gap: var(--sh-g); min-width: 0; align-content: start; }
 .sh-p3 { grid-template-columns: minmax(0, 1fr); }
-.sh-opt { display: grid; gap: var(--pg-sp-3); min-width: 0; justify-items: start; align-content: start; }
-.sh-q { display: inline-block; padding: 5px var(--pg-sp-2); background: var(--obj-sunk); border: 2px solid var(--ink); border-radius: var(--r-in); box-shadow: 2px 2px 0 var(--track-line); font: 500 var(--pg-t-2)/1.2 var(--font-data); color: var(--text); }
+.sh-opt { display: grid; gap: var(--pg-sp-3); min-width: 0; justify-items: start; align-content: center; }
+.sh-q { display: inline-block; white-space: nowrap; padding: 5px var(--pg-sp-2); background: var(--obj-sunk); border: 2px solid var(--ink); border-radius: var(--r-in); box-shadow: 2px 2px 0 var(--track-line); font: 500 var(--pg-t-2)/1.2 var(--font-data); color: var(--text); }
 .sh-ex { font: 500 var(--pg-t-1)/1.6 var(--font-data); color: var(--text-body); min-width: 0; }
 .sh-ex b { font-weight: 600; color: var(--text); background: color-mix(in oklab, var(--text) 14%, transparent); border-radius: 3px; padding: 0 3px; }
 .sh-refuse { margin: 0; display: flex; align-items: baseline; gap: var(--pg-sp-2); font: 500 var(--pg-t-1)/1.45 var(--font-data); color: var(--limit); }
 .sh-list { display: grid; gap: var(--pg-sp-3); min-width: 0; align-content: start; }
 .sh-ready { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--pg-sp-3); }
-@container sh (max-width: 1099px) { .sh-ready { grid-template-columns: minmax(0, 1fr); } }
+/* the names stand two across wherever the list has the room (480 px); beside the options (700 to 899 px) and on a phone it is one column */
+@container sh (max-width: 579px) { .sh-ready { grid-template-columns: minmax(0, 1fr); } }
+@container sh (min-width: 700px) and (max-width: 899px) { .sh-ready { grid-template-columns: minmax(0, 1fr); } }
 .sh-ready li {
   display: flex; align-items: center; gap: var(--pg-sp-2); min-width: 0; padding: var(--pg-sp-2) var(--pg-sp-3);
   background: var(--obj-sunk); border: 2px solid var(--ink); border-radius: var(--r-in); box-shadow: 3px 3px 0 var(--c);
@@ -194,14 +210,22 @@
 .sh-ready b { font-weight: 500; color: var(--text); min-width: 0; white-space: nowrap; }
 .sh-rdot { flex: none; width: 1.5em; height: 1.5em; display: grid; place-items: center; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 2px var(--ink), 0 0 8px var(--c); font: 700 var(--pg-t-1)/1 var(--font-name); font-style: normal; color: var(--wall); }
 .sh-rc { --c: var(--text-mute); margin-left: auto; font-size: var(--pg-t-1); }
-.sh-rt { font: 400 var(--pg-t-1)/1.2 var(--font-name); color: var(--text-mute); white-space: nowrap; }
 .sh-pane .sh-cl { padding: var(--pg-sp-2) var(--pg-sp-3); background: var(--obj-sunk); border: 2px solid var(--ink); border-radius: var(--r-in); max-width: 100%; box-sizing: border-box; }
 [data-theme="day"] :is(.sh-pane .sh-cl, .sh-ready li, .sh-q, .sh-nets li, .sh-p1 .sh-opt) { background: var(--obj); }
 [data-theme="day"] .sh-p1 .sh-q { background: var(--track); }
-.sh-nets { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 17em), 1fr)); grid-auto-rows: 1fr; gap: var(--sh-g); list-style: none; margin: 0; padding: 0; }
+.sh-p3 { align-content: stretch; }
+.sh-nets { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: var(--sh-g); list-style: none; margin: 0; padding: 0; }
 .sh-nets li { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: var(--pg-sp-2); padding: var(--pg-sp-3) var(--pg-sp-3); background: var(--obj-sunk); border: 2px solid var(--ink); border-radius: var(--r-in); }
 .sh-nets code { font: 500 var(--pg-t-3)/1.2 var(--font-data); color: var(--text); }
 .sh-nets .state { font-size: var(--pg-t-1); }
+/* below 900 px the four networks are one column of rows, the network on the left and its answer on the right; on a phone each stands over its answer */
+@container sh (max-width: 899px) {
+  .sh-nets { grid-template-columns: minmax(0, 1fr); }
+  .sh-nets li { flex-direction: row; align-items: center; justify-content: space-between; }
+}
+@container sh (max-width: 559px) {
+  .sh-nets li { flex-direction: column; align-items: flex-start; justify-content: center; }
+}
 .sh-yes { display: inline-flex; align-items: center; gap: var(--pg-sp-1); font: 500 var(--pg-t-1)/1 var(--font-name); color: var(--text-body); }
 .sh-yes i { width: 10px; height: 10px; border-radius: 50%; background: var(--text-mute); }
 
@@ -242,11 +266,6 @@
   .sh-fg > .sh-n { grid-area: 1 / 2; }
   .sh-fg > .bar { grid-area: 2 / 1 / 3 / -1; }
 }
-/* the narrowest phones: "on tower" drops under the name, so every name stays whole on one line */
-@container sh (max-width: 340px) {
-  .sh-ready li { flex-wrap: wrap; row-gap: 2px; }
-  .sh-rt { flex-basis: 100%; padding-left: calc(1.5em + var(--pg-sp-1)); }
-}
 /* a phone: the plates' hard cast ends clear of the page's cable line down the right edge */
 @container pg (max-width: 640px) { .sh-in { box-sizing: border-box; padding-right: var(--pg-sp-1); } }
 /* the head's drawing stands under what the other computer keeps, in the column beside the tall figure (from 2,200 px) */
@@ -276,7 +295,7 @@
 @keyframes sh-glow { 0%, 100% { box-shadow: 0 0 0 2px var(--ink), 0 0 8px var(--c); } 17% { box-shadow: 0 0 0 2px var(--ink), 0 0 16px 3px var(--c); } }
 @keyframes sh-glow-live { 0%, 100% { box-shadow: 0 0 8px var(--live); } 17% { box-shadow: 0 0 16px 3px var(--live); } }
 @media (prefers-reduced-motion: no-preference) {
-  .sh-more.sh-moved .sh-pane { animation: sh-pane-in 180ms var(--e-out) both; }
+  .sh-more:has(.sh-rd1:checked) .sh-p1, .sh-more:has(.sh-rd2:checked) .sh-p2, .sh-more:has(.sh-rd3:checked) .sh-p3 { animation: sh-pane-in 180ms var(--e-out) both; }
 
   .pg-js .sh-head:not(.is-seen) .sh-ty { clip-path: inset(-.2em 100% -.2em 0); }
   .pg-js .sh-head:not(.is-seen) :is(.sh-done li, .sh-pick) { opacity: 0; }

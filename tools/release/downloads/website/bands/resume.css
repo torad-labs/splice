@@ -153,12 +153,11 @@
 @container pg (max-width: 640px) {
   .rs-pw { padding: calc(2 * var(--u)); }
   /* a phone's terminal takes the console card's own side padding (1.15rem), so the Studio card and both terminals keep the same
-     room to their border; the path has no indent and takes the terminal's whole inner width, on one line at its step */
+     room to their border; the path has no indent. Where its chip cannot hold the path on one line it breaks before a slash (the
+     markup's <wbr>), at the same type and padding as everywhere, and its text stays inside the chip */
   .rs-term { padding-inline: 1.15rem; }
-  #resume .rs-path { margin-left: 0; width: auto; max-width: none; padding: .3rem .25rem; white-space: nowrap; }
+  #resume .rs-path { margin-left: 0; }
 }
-/* a phone narrower than the page's usual 390: the path's type steps down with the window, so the line still stays whole */
-@container pg (max-width: 350px) { #resume .rs-path { font-size: calc((100cqw - 3rem) / 21.7); } }
 
 /* ---------- from 1,280 px to 2,199 px the head stands beside the window, as the page does from 2,200 px: the head takes 4 of 12
    columns (the heading holds two lines) and the window the other 8, on the side the band's place on the page gives it (even places put the head left) ---------- */

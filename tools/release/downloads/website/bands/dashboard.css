@@ -25,7 +25,7 @@
   .db-band.is-seen .db-win.db-ev { animation-duration: var(--t-move); }
   .db-band.is-seen .db-win:not(.db-live) :is(.bar>b, .vbar>b, .pd-trk i, .pd-seg, .pmix-in>i, .rvw-trk>i) { transform-origin: left center; animation: db-fill var(--t-snap) var(--e-out) 120ms backwards; }
   .db-band.is-seen .db-win:not(.db-live) .arc { animation: db-ring var(--t-snap) var(--e-out) 120ms backwards; }
-  .db-live .db-panel { animation: db-panel-in var(--t-snap) var(--e-out) backwards; }
+  .db-live:has(.db-r1:checked) .db-p1, .db-live:has(.db-r2:checked) .db-p2, .db-live:has(.db-r3:checked) .db-p3, .db-live:has(.db-r4:checked) .db-p4, .db-live:has(.db-r5:checked) .db-p5 { animation: db-panel-in var(--t-snap) var(--e-out) backwards; }
 }
 @media (prefers-reduced-motion: reduce) { .db-win, .db-win * { transition: none !important; } }
 
@@ -37,7 +37,7 @@
 .db-win .card.m.needs { display: block; }
 
 /* the console window: the console's own top bar (wordmark, its segmented switch of pages) over the console's wall, in the ink outline and hard cast */
-.db-win{container:dbw/inline-size;position:relative;background:var(--wall);border:var(--ink-w) solid var(--ink);border-radius:var(--r-obj);box-shadow:var(--cast) var(--cast) 0 var(--ink);--db-pad:var(--pg-sp-5)}
+.db-win{container:dbw/inline-size;position:relative;display:grid;grid-template-columns:minmax(0,1fr);background:var(--wall);border:var(--ink-w) solid var(--ink);border-radius:var(--r-obj);box-shadow:var(--cast) var(--cast) 0 var(--ink);--db-pad:var(--pg-sp-5)}
 .db-r{position:absolute;opacity:0;pointer-events:none}
 .db-win .side{position:relative;top:auto;z-index:2;padding:0 calc(2 * var(--u));gap:calc(2 * var(--u));border-radius:calc(var(--r-obj) - .1rem) calc(var(--r-obj) - .1rem) 0 0;flex-wrap:nowrap}
 .db-win .nav{align-self:center;min-width:0}
@@ -45,13 +45,17 @@
 .db-tab{position:relative;z-index:1;display:flex;align-items:center;gap:.667rem;height:2.1rem;padding:0 var(--nav-pad);border-radius:calc(var(--r-obj) - .15rem);white-space:nowrap;font:500 1.1rem/1 var(--font-name);color:var(--text-body);cursor:pointer;transition:color var(--t-hover) var(--e-out),background var(--t-hover) var(--e-out),box-shadow var(--t-hover) var(--e-out)}
 .db-tab>svg{flex:none;width:1.15em;height:1.15em;color:var(--text-mute);transition:color var(--t-hover) var(--e-out)}
 .db-tab:hover{color:var(--text)}
-.db-win:has(.db-r1:checked) .db-t1,.db-win:has(.db-r2:checked) .db-t2,.db-win:has(.db-r3:checked) .db-t3,.db-win:has(.db-r4:checked) .db-t4{color:var(--text);background:var(--sel-face);box-shadow:inset 0 0 0 .1rem var(--sel-line)}
-.db-win:has(.db-r1:checked) .db-t1>svg,.db-win:has(.db-r2:checked) .db-t2>svg,.db-win:has(.db-r3:checked) .db-t3>svg,.db-win:has(.db-r4:checked) .db-t4>svg{color:var(--text)}
-.db-win:has(.db-r1:focus-visible) .db-t1,.db-win:has(.db-r2:focus-visible) .db-t2,.db-win:has(.db-r3:focus-visible) .db-t3,.db-win:has(.db-r4:focus-visible) .db-t4{outline:var(--ink-w) solid var(--text);outline-offset:.18rem}
-.db-demo{margin-left:auto;flex:none;display:inline-flex;align-items:center;gap:.667rem;font:500 .95rem/1 var(--font-name);color:var(--text-mute)}
+.db-win:has(.db-r1:checked) .db-t1,.db-win:has(.db-r2:checked) .db-t2,.db-win:has(.db-r3:checked) .db-t3,.db-win:has(.db-r4:checked) .db-t4,.db-win:has(.db-r5:checked) .db-t5{color:var(--text);background:var(--sel-face);box-shadow:inset 0 0 0 .1rem var(--sel-line)}
+.db-win:has(.db-r1:checked) .db-t1>svg,.db-win:has(.db-r2:checked) .db-t2>svg,.db-win:has(.db-r3:checked) .db-t3>svg,.db-win:has(.db-r4:checked) .db-t4>svg,.db-win:has(.db-r5:checked) .db-t5>svg{color:var(--text)}
+.db-win:has(.db-r1:focus-visible) .db-t1,.db-win:has(.db-r2:focus-visible) .db-t2,.db-win:has(.db-r3:focus-visible) .db-t3,.db-win:has(.db-r4:focus-visible) .db-t4,.db-win:has(.db-r5:focus-visible) .db-t5{outline:var(--ink-w) solid var(--text);outline-offset:.18rem}
+.db-demo,.db-addr{flex:none;display:inline-flex;align-items:center;gap:.667rem;font:500 .95rem/1 var(--font-name);color:var(--text-mute)}
+.db-demo{margin-left:calc(2 * var(--u))}
+.db-addr{margin-left:auto;color:var(--text-body)}
+.db-addr svg{width:1.1em;height:1.1em;flex:none;color:var(--text-mute)}
 .db-demo i{width:.7rem;height:.7rem;border-radius:50%;background:transparent;box-shadow:inset 0 0 0 .14rem var(--text-mute)}
-.db-panel{display:none;padding:var(--db-pad);min-width:0}
-.db-win:has(.db-r1:checked) .db-p1,.db-win:has(.db-r2:checked) .db-p2,.db-win:has(.db-r3:checked) .db-p3,.db-win:has(.db-r4:checked) .db-p4{display:block}
+.db-win>.side{grid-area:1/1}
+.db-panel{grid-area:2/1;display:block;visibility:hidden;pointer-events:none;padding:var(--db-pad);min-width:0}
+.db-win:has(.db-r1:checked) .db-p1,.db-win:has(.db-r2:checked) .db-p2,.db-win:has(.db-r3:checked) .db-p3,.db-win:has(.db-r4:checked) .db-p4,.db-win:has(.db-r5:checked) .db-p5{visibility:visible;pointer-events:auto}
 .db-cap{margin:0;font:600 var(--kicker)/1.2 var(--font-name);letter-spacing:.09em;text-transform:uppercase;color:var(--text-mute)}
 
 /* ---- Sessions: the one session waiting on you leads, at hero size; the rest step down in size and ink ---- */
@@ -85,7 +89,7 @@
 .db-sess .s.idle .last .tgt{font-family:var(--font-name);color:var(--text-body)}
 .db-sess .s.idle .barcell.age .vbar>b{background:color-mix(in oklab,var(--text) 40%,transparent)}
 .db-sess .s.drop-before{background-image:linear-gradient(var(--key-light),var(--key-light));background-size:100% .25rem;background-position:top;background-repeat:no-repeat}
-.db-lift{position:relative;z-index:3;transform:translateX(.6rem);margin-block:var(--pg-sp-3);background:var(--obj-high)!important;border-radius:var(--r-obj)!important;box-shadow:0 0 0 var(--ink-w) var(--ink),.5rem .5rem 0 var(--ink-w) var(--ink),.5rem .5rem 0 var(--ink)!important;margin-inline:calc(-1 * var(--u))}
+.db-lift{position:relative;z-index:3;background:linear-gradient(var(--obj-high),var(--obj-high))!important;border-radius:var(--r-obj)!important;box-shadow:0 0 0 var(--ink-w) var(--ink),0 .3rem 0 var(--ink-w) var(--ink)!important}
 .db-lift .grip{opacity:1;color:var(--text)}
 .db-sess .s .grip{width:1.2rem;height:2rem;margin-left:-.4rem;margin-right:-.6rem;cursor:grab;color:var(--text-mute);flex:none;display:grid;place-items:center}
 .db-sess .s .grip svg{width:.6rem;height:1.1rem}
@@ -125,7 +129,7 @@
 .db-tn .pd-grid{grid-template-columns:minmax(0,calc(var(--pg-t-2) * 8.5)) minmax(0,1fr) calc(var(--pg-t-2) * 4.4)}
 .db-tn .pd-trk .mid{border-radius:.2rem;min-width:.3rem}
 .db-tn .pd-n.t{text-align:right}
-.db-tn .sx-chips{display:flex;flex-wrap:wrap;gap:var(--pg-sp-2)}
+.db-tn .sx-chips{display:flex;flex-wrap:wrap;gap:calc(2 * var(--u))}
 .db-tn .sx-chip{display:inline-flex;align-items:center;gap:var(--pg-sp-1);min-height:1.7rem;padding:var(--pg-sp-1) var(--pg-sp-2);background:var(--obj-sunk);border:.1rem solid var(--track-line);border-left:.3rem solid var(--text-mute);border-radius:var(--r-in);font:500 .85rem/1.2 var(--font-data);color:var(--text)}
 .db-tn .sx-chip svg{flex:none;width:1rem;height:1rem}
 .db-tn .sx-chip.w{border-left-color:var(--text)}
@@ -221,7 +225,7 @@
   .db-win .navset{width:100%;--nav-pad:.4rem;gap:.1rem}
   .db-tab{flex:1 1 auto;justify-content:center;font-size:.98rem}
   .db-tab>svg{display:none}
-  .db-demo{order:2}
+  .db-addr,.db-demo{order:2}
   .db-sess .s{grid-template-columns:2rem minmax(0,1fr)}
   .db-sess .s .top,.db-sess .pgroup .s .top{grid-template-columns:minmax(0,1fr) auto;row-gap:.333rem}
   .db-sess .s .top,.db-sess .pgroup .s .top{column-gap:.5rem}
@@ -230,7 +234,6 @@
   .db-sess .s .top .last{grid-column:1/-1;grid-row:2}
   .db-sess .s .top .barcell{grid-column:1/-1;grid-row:3}
   .db-sess .s .top.bare .who{grid-column:1}
-  .db-lift{transform:none;margin-inline:0}
   .db-hint{display:none}
   .db-need{padding:calc(2 * var(--u))}
   .db-sxl .sx-bar .barcell.age{width:auto;flex:1 1 8rem}
@@ -249,9 +252,9 @@
 /* ---- the type: the page's steps. t-1 the small words (kickers, chips, labels, ticks, ages), t-2 what a row or a log says (names,
    tabs, tool calls, values), t-3 a figure that leads a column, t-4 the one focal figure of a view. A console part is set on its
    step through #console (an id outranks the console's own rules). ---- */
-#console :is(.db-needk,.db-cap,.db-note,.db-demo,.db-hint,.pd-tk,.pd-lb,.pd-lb b,.pd-sub,.pd-seg span,.pd-seg b,.pd-failed span,.sechead .kicker,.rvw-ch span,.rvw-axis span,.pthead .pf,.sx-chip,.sx-chip span,.chip,.act.small,.barcell .v,.tdo .tgt,.tdo .tname,.pct .used,.pd-ax,.mtag,.lead){font-size:var(--pg-t-1)}
-#console :is(.who .name,.role,.word,.now,.now .obj,.db-tab span,.db-ask .q,.log .msg .body p,.pd-n.t,.pd-sl,.db-fold>summary,.tool .tname,.tool .tsum,.composer .field,.composer .act,.plbl .nm,.prow .pf,.prow .pf .v,.pd-failed,.pct,.db-fold .json,.db-fold .json *){font-size:var(--pg-t-2)}
-#console :is(.pname,.sx-bar .name,.rvw-ch b,.pd-stat.focal b,.pd-sub b){font-size:var(--pg-t-3)}
+#console :is(.db-needk,.db-cap,.db-note,.db-demo,.db-addr,.db-say,.db-act .tgt,.db-hint,.pd-tk,.pd-lb,.pd-lb b,.pd-sub,.pd-seg span,.pd-seg b,.pd-failed span,.sechead .kicker,.rvw-ch span,.rvw-axis span,.pthead .pf,.sx-chip,.sx-chip span,.chip,.act.small,.barcell .v,.tdo .tgt,.tdo .tname,.pct .used,.pd-ax,.mtag,.lead){font-size:var(--pg-t-1)}
+#console :is(.db-act .who,.db-act .tname,.who .name,.role,.word,.now,.now .obj,.db-tab span,.db-ask .q,.log .msg .body p,.pd-n.t,.pd-sl,.db-fold>summary,.tool .tname,.tool .tsum,.composer .field,.composer .act,.plbl .nm,.prow .pf,.prow .pf .v,.pd-failed,.pct,.db-fold .json,.db-fold .json *){font-size:var(--pg-t-2)}
+#console :is(.pname,.sx-bar .name,.db-tmbar .name,.rvw-ch b,.pd-stat.focal b,.pd-sub b){font-size:var(--pg-t-3)}
 #console :is(.db-needn,.pd-rate){font-size:var(--pg-t-4)}
 
 /* ---- room for the type: the console fixes a row's text line at 1.4rem and a tab at 2.1rem, which the page's steps outgrow ---- */
@@ -259,7 +262,6 @@
 #console .sessions .last .tdo :is(.tname, .tgt) { line-height: 1.5; }
 #console .db-win .navset { padding: var(--pg-sp-1); gap: var(--pg-sp-1); }
 #console .db-tab { height: auto; min-height: 2.1rem; padding-block: var(--pg-sp-1); }
-.db-lift { padding-inline: var(--pg-sp-2); }
 
 /* ---- the session view and the turn view: room for the page's steps inside the console's boxes ---- */
 .sessions .db-seats { gap: var(--pg-sp-4); }
@@ -275,14 +277,18 @@
 #console .db-sxl .call .tool :is(.tname, .tsum) { line-height: 1.3; }
 
 /* ---- the window's top bar: below 980 px the tabs take their own full row under the mark, so the bar never passes the window ---- */
-@container dbw (max-width:980px) {
+@container dbw (max-width:1180px) {
   .db-win .side { flex-wrap: wrap; height: auto; padding: calc(1.5 * var(--u)); row-gap: var(--pg-sp-2); }
   .db-win .nav { flex: 1 1 100%; order: 3; }
   .db-win .navset { width: 100%; --nav-pad: var(--pg-sp-2); }
   .db-tab { flex: 1 1 auto; justify-content: center; }
   .db-tab > svg { display: none; }
+  .db-addr { order: 2; }
   .db-demo { order: 2; }
 }
+@container dbw (max-width:520px) { #console .db-win .nav .navset .db-tab span { font-size: var(--pg-t-1); } #console .db-win .navset { gap: 0; padding: 3px; --nav-pad: 6px; } }
+/* on a phone the mark has its own row; the address and the demo mark share the next one */
+@container dbw (max-width:640px) { .db-win .mark { flex: 1 1 100%; } .db-addr { margin-left: 0; } .db-demo { margin-left: auto; } }
 @container dbw (max-width:420px) { .db-win .navset { gap: 0; padding: 3px; --nav-pad: 6px; } }
 #console .db-use .pf > em { font-size: var(--pg-t-1); }
 
@@ -304,4 +310,46 @@
   .db-use .pf.lim { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: var(--pg-sp-2); align-items: center; }
   .db-use .pf.lim > em { grid-column: 1 / -1; }
   .db-use .pf.req .v, .db-use .pf.fail .v, .db-use .pf.price .v { min-width: 0; }
+}
+
+/* ---- a stacked bar is one drawn object: its segments are painted as images, so no segment stands as a box of its own against the next ---- */
+.db-win .pd-seg { --sf: var(--text-mute); }
+.db-win .pd-seg.ok { --sf: color-mix(in oklab, var(--text) 66%, transparent); }
+.db-win .pd-seg.db-lt { --sf: color-mix(in oklab, var(--text) 34%, transparent); }
+.db-win .pd-seg.nt { --sf: color-mix(in oklab, var(--text) 52%, transparent); }
+.db-win .pd-seg.f0 { --sf: var(--limit); }
+.db-win .pd-seg.ink { --sf: var(--c, var(--text-mute)); }
+.db-win .pd-seg:is(.ok, .db-lt, .nt, .f0, .ink) { background: linear-gradient(var(--sf), var(--sf)); }
+
+/* ---- Sessions: every card carries its grip, the one being dragged holds its grip in full ink ---- */
+.db-sess .s .grip svg { opacity: .55; }
+.db-lift .grip svg { opacity: 1; }
+
+/* ---- A team: the team's page, the console's own seats (role, command, standing instruction, state, the tool in use) and its activity ---- */
+.db-tmv { display: flex; flex-direction: column; gap: calc(4 * var(--u)); }
+.db-tmbar { display: flex; align-items: center; gap: calc(2 * var(--u)); padding: calc(1.5 * var(--u)) calc(2 * var(--u)); background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--claude), var(--cast) var(--cast) 0 var(--ink-w) var(--ink); }
+.db-tmv .db-tmbar .name { font-family: var(--font-lead); font-weight: 400; line-height: 1.1; color: var(--text); }
+.db-tmbar .blots { display: inline-flex; gap: .333rem; }
+.db-tmbar .blots i { width: .75rem; height: .75rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); }
+.db-tmroom { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: calc(4 * var(--u)) calc(6 * var(--u)); align-items: start; }
+.db-tmseats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(3 * var(--u)); padding-bottom: var(--cast); }
+.db-win .db-tmseats > .card.m { display: flex; flex-direction: column; align-items: stretch; gap: 0; margin: 0 0 0 2.667rem; --cast: .4rem; }
+.db-tmseats > .card.m > .body { margin-top: auto; padding-top: var(--pg-sp-2); }
+.db-tmseats .now { display: flex; align-items: flex-start; gap: .667rem; margin: 0; line-height: 1.35; }
+.db-tmseats .now svg { margin-top: .2em; flex: none; }
+#console .db-tmseats .now .obj { min-width: 0; overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
+.db-say { margin: var(--pg-sp-2) 0 0; font-family: var(--font-name); font-style: italic; font-weight: 400; line-height: 1.35; color: var(--text-body); }
+.db-feed { min-width: 0; }
+.db-feed .sechead { margin-bottom: var(--pg-sp-2); }
+.db-act { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); }
+.db-act li { display: grid; grid-template-columns: .7rem calc(var(--pg-t-2) * 5) auto minmax(0, 1fr); align-items: baseline; column-gap: var(--pg-sp-2); min-width: 0; }
+.db-act li > i { width: .7rem; height: .7rem; border-radius: 50%; background: var(--c); align-self: center; }
+.db-act .who { color: var(--text-body); font-family: var(--font-name); font-weight: 500; }
+.db-act .tname { font-family: var(--font-data); font-weight: 600; color: var(--text); }
+.db-act .tgt { min-width: 0; font-family: var(--font-data); color: var(--text-body); overflow-wrap: anywhere; }
+@container dbw (max-width:900px) {
+  .db-tmroom { grid-template-columns: minmax(0, 1fr); }
+}
+@container dbw (max-width:640px) {
+  .db-tmseats { grid-template-columns: minmax(0, 1fr); }
 }

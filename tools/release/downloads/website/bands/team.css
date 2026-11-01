@@ -1,12 +1,12 @@
 /* team band (prefix tm-): one window holding a team in the middle of its work, then one row that opens on how a team forms.
    The window is the band's one picture: the prompt to claude-splice, the four seats (every one working, each on its own tool
-   call), and the messages between them, the last of which says the tests pass. The row below it holds the rest.
+   call and its standing instruction), and the messages between them, the last of which says the tests pass. The row below
+   it holds the rest: eight drawn objects, each with a label of three words or fewer.
    The band's type is the page's: --pg-t-1 (small words, chips, model tags), -2 (what a seat or a message says), -3 (a figure
    in an opened cell). Spacing is the page's: --pg-sp-4 between the window's parts and between cards of one row or stack.
    The console's parts keep their markup and classes; #teams sets them on those steps (an id outranks the console's rules). */
 
 /* ---------- the window ---------- */
-.tm-comp { min-width: 0; display: grid; gap: var(--pg-sp-5); }
 .tm-win {
   container: tmw / inline-size; min-width: 0; display: grid; gap: var(--pg-sp-5);
   padding: var(--pg-sp-5); background: var(--wall-low); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
@@ -31,25 +31,32 @@
 #teams .tm-seats .now { line-height: 1.35; }
 #teams .tm-seats .now .obj { min-width: 0; overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
 .tm-seats .now svg { margin-top: .2em; }
+/* a seat's standing instruction: one quoted line under its command */
+.tm-say { margin: var(--pg-sp-2) 0 0; font: italic 400 var(--pg-t-1)/1.35 var(--font-name); color: var(--text-body); }
 
 /* the messages: a plate under the seats, the thread across it */
 .tm-talk { min-width: 0; display: flex; flex-direction: column; gap: var(--pg-sp-3); }
 .tm-chat { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--pg-sp-4); }
 .tm-bub { padding: var(--pg-sp-2) var(--pg-sp-3); row-gap: var(--pg-sp-1); grid-template-columns: minmax(0, 1fr); margin: 0; align-content: start; }
+/* both chips and the arrow stay on one line; when the bubble is too narrow the second chip wraps with the arrow in front of it */
 .tm-bub .who { flex-direction: row; align-items: center; flex-wrap: wrap; gap: var(--pg-sp-2); }
+.tm-bub .who .chip { white-space: nowrap; }
+.tm-to { display: inline-flex; align-items: center; gap: var(--pg-sp-2); }
 .tm-bub .body { line-height: 1.35; }
 .tm-bub .body p { margin: 0; }
 .tm-arrow { width: 1.05rem; height: 1.05rem; flex: none; color: var(--text-mute); }
 
 /* ---------- the type: the page's steps ---------- */
-#teams :is(.chip, .mtag, .kicker, .pct .used, .pd-sub, .lead) { font-size: var(--pg-t-1); }
-#teams :is(.tm-seats .role, .tm-seats .word, .tm-seats .now, .tm-bub .body, .tm-lab, .tm-row-l, .tm-cell .tab, .tm-cell .add, .meterline .pct) { font-size: var(--pg-t-2); }
-#teams .tm-ctxp .pd-sub b { font-size: var(--pg-t-3); }
+#teams :is(.chip, .mtag, .kicker, .pct .used, .pd-sub, .lead, .tm-note) { font-size: var(--pg-t-1); }
+#teams :is(.tm-seats .role, .tm-seats .word, .tm-seats .now, .tm-bub .body, .tm-lab, .tm-row-l, .tm-cell .tab, .tm-cell .add, .meterline .pct, .tm-cell .tool) { font-size: var(--pg-t-2); }
 #teams .tm-cell .chip { font-size: var(--pg-t-1); }
-#teams .tm-lab .chip { font-size: var(--pg-t-1); }
 
-/* ---------- the row that opens in place: its height eases from 0 to its own over 240 ms, the chevron turns with it ---------- */
-.tm-row { background: var(--wall-low); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--ink); }
+/* ---------- the row that opens in place: its height eases from 0 to its own over 240 ms, the chevron turns with it.
+   Below 2,200 px it follows the window; from 2,200 px it spans the whole row under the window and the head, so no column stands empty. ---------- */
+.tm-row { margin-top: var(--pg-sp-5); background: var(--wall-low); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--ink); }
+@container pg (min-width: 2200px) {
+  #teams .pg-split > .tm-row { grid-column: 1 / -1; grid-row: 2; margin-top: var(--pg-sp-5); }
+}
 .tm-row-btn {
   display: flex; align-items: center; gap: var(--pg-sp-2); width: 100%; min-height: var(--row-h); padding: var(--pg-sp-2) var(--pg-sp-4); cursor: pointer; list-style: none;
   border-radius: var(--r-obj); color: var(--text); text-align: left;
@@ -60,32 +67,54 @@
 .tm-row-btn:focus-visible { outline: .22rem solid var(--text); outline-offset: .2rem; }
 .tm-chev { width: .9rem; height: .9rem; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; color: var(--text-body); transition: transform var(--splice-t-snap) var(--splice-e-out); }
 .tm-row[open] .tm-chev { transform: rotate(90deg); }
-.tm-cells { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--pg-sp-5) var(--pg-sp-4); padding: var(--pg-sp-4) var(--pg-sp-5) var(--pg-sp-5); border-top: 1px solid var(--hair); }
-.tm-cell { display: flex; flex-direction: column; gap: var(--pg-sp-2); padding: var(--pg-sp-4); min-width: 0; margin: 0; }
-.tm-draw { display: flex; flex-direction: column; justify-content: center; min-width: 0; flex: 1 1 auto; min-height: 5.6rem; padding-bottom: var(--pg-sp-1); }
-.tm-lab { margin: 0; font: 500 var(--pg-t-2)/1.5 var(--font-name); color: var(--text-body); }
-.tm-lab .chip { margin-inline: 2px; }
-.tm-panes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--pg-sp-2); }
+
+/* the eight objects: the console's gaps (1rem between rows, 2rem between columns); in every card the drawing starts 2u from the top
+   and the label stands at the foot, so a row's labels share one baseline */
+.tm-cells { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(var(--gap-card) + var(--cast)) var(--gap-col); padding: var(--pg-sp-4) var(--pg-sp-5) var(--pg-sp-5); border-top: 1px solid var(--hair); }
+.tm-cell { --c: color-mix(in oklab, var(--text) 22%, var(--ink)); display: flex; flex-direction: column; gap: var(--pg-sp-3); padding: calc(2 * var(--u)); min-width: 0; margin: 0; }
+.tm-draw { display: flex; flex-direction: column; justify-content: flex-start; align-items: flex-start; gap: var(--pg-sp-2); min-width: 0; flex: 1 1 auto; }
+.tm-lab { margin: 0; font: 500 var(--pg-t-2)/1.3 var(--font-name); color: var(--text-body); }
+.tm-panes { align-self: stretch; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--pg-sp-2); }
 .tm-pane { display: flex; align-items: center; justify-content: center; min-width: 0; padding: var(--pg-sp-2) var(--pg-sp-1); background: var(--obj-sunk); border-radius: var(--r-in); box-shadow: 0 0 0 var(--ink-w) var(--ink); }
 /* each session's own model and context: the console's context meter, one per session */
-.tm-ctxs { display: flex; flex-direction: column; gap: var(--pg-sp-3); min-width: 0; }
+.tm-ctxs { align-self: stretch; display: flex; flex-direction: column; gap: var(--pg-sp-3); min-width: 0; }
 .tm-ctxp { display: flex; flex-direction: column; gap: var(--pg-sp-2); min-width: 0; }
 .tm-ctxh { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pg-sp-2); }
-.tm-ctxp .meterline { flex-wrap: wrap; row-gap: var(--pg-sp-1); }
+.tm-ctxp .meterline { flex-wrap: nowrap; }
+/* the two tools that carry a message, drawn as the console draws a tool call */
+.tm-calls { align-self: stretch; display: flex; flex-direction: column; gap: var(--pg-sp-2); min-width: 0; }
+.tm-calls .call { min-width: 0; }
+.tm-calls .tool { max-width: 100%; flex-wrap: wrap; }
+.tm-calls .tool .tsum { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+#teams .tm-calls .tool { padding: var(--pg-sp-2) var(--pg-sp-3); line-height: 1.3; }
+#teams .tm-calls .tool :is(.tname, .tsum) { line-height: 1.3; }
 .tm-pair, .tm-line2 { display: flex; align-items: center; gap: var(--pg-sp-3); flex-wrap: wrap; }
 .tm-pair { justify-content: flex-start; }
+.tm-leads { display: flex; flex-direction: column; gap: var(--pg-sp-2); }
+.tm-note { color: var(--text-mute); font-family: var(--font-name); }
+.tm-roles { display: flex; flex-wrap: wrap; gap: var(--pg-sp-2); }
 .tm-plain { --c: var(--text-mute); }
 .tm-cell .tabs { display: flex; flex-wrap: wrap; gap: var(--pg-sp-2); min-width: 0; }
 .tm-cell .tab { height: auto; min-width: 0; max-width: 100%; padding: var(--pg-sp-2) var(--pg-sp-3); text-align: left; line-height: 1.35; align-items: center; }
 .tm-cell .tab .tname { min-width: 0; text-align: left; line-height: 1.35; overflow-wrap: anywhere; }
 #teams .tm-cell .add { height: auto; min-height: var(--ctl-h); padding: var(--pg-sp-2) var(--pg-sp-4); }
+#teams .tm-cell .add .plus { font-size: var(--pg-t-2); }
 
-/* ---------- the reveal: every element eases in once over 260 ms (--splice-t-pop) on --splice-e-out, with a rise of 1.2rem.
-   Element i starts i * 25 ms in. The seats stay at work: the console's working lamp is the only thing that goes on moving. ---------- */
+/* ---------- the motion: the window rises once (every part over 260 ms on --splice-e-out, 1.2rem, 25 ms apart); then the
+   team works. Each message slides in from its sender's side over 340 ms, and the seat it lands on rings once in its own colour
+   (the console's own pulse, mjust), so a change is what moves. Nothing runs under reduced motion. ---------- */
 @media (prefers-reduced-motion: no-preference) {
   @keyframes tm-in { from { opacity: 0; transform: translateY(1.2rem); } to { opacity: 1; transform: none; } }
+  @keyframes tm-send { from { opacity: 0; transform: translateX(var(--from, -3rem)); } to { opacity: 1; transform: none; } }
+  @keyframes tm-ring { from { box-shadow: 0 0 0 .26rem color-mix(in oklab, var(--c) 72%, transparent); } to { box-shadow: 0 0 0 .26rem transparent; } }
   .pg-js .tm-live:not(.is-seen) .tm-rv { opacity: 0; transform: translateY(1.2rem); }
+  .pg-js .tm-live:not(.is-seen) .tm-bub.tm-rv { transform: translateX(var(--from, -3rem)); }
   .pg-js .tm-live.is-seen .tm-rv { animation: tm-in var(--splice-t-pop) var(--splice-e-out) backwards; animation-delay: calc(var(--i, 0) * 25ms); }
+  .pg-js .tm-live.is-seen .tm-bub.tm-rv { animation: tm-send 340ms var(--splice-e-out) backwards; animation-delay: calc(700ms + (var(--i) - 8) * 560ms); }
+  /* the lamps' sockets: a ring on the seat that a message lands on, 340 ms after the message starts to slide */
+  .pg-js .tm-live.is-seen .tm-seats > .card.m::after { content: ""; position: absolute; inset: -.18rem; border-radius: inherit; pointer-events: none; }
+  .pg-js .tm-live.is-seen .tm-seats > .card.m:nth-child(1)::after { animation: tm-ring 420ms var(--splice-e-out) 2160ms; }
+  .pg-js .tm-live.is-seen .tm-seats > .card.m:nth-child(2)::after { animation: tm-ring 420ms var(--splice-e-out) 1040ms, tm-ring 420ms var(--splice-e-out) 1600ms; }
   @supports (interpolate-size: allow-keywords) {
     .tm-row { interpolate-size: allow-keywords; }
     .tm-row::details-content { block-size: 0; overflow: clip; transition: block-size var(--splice-t-snap) var(--splice-e-out), content-visibility var(--splice-t-snap) allow-discrete; }
@@ -96,10 +125,10 @@
 /* ---------- the window picks its shape from its own width ---------- */
 @container tmw (max-width: 1000px) {
   .tm-seats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@container tmw (max-width: 760px) {
   .tm-chat { grid-template-columns: minmax(0, 1fr); }
-  .tm-cells { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container pg (min-width: 1300px) {
+  .tm-cells { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 @container pg (max-width: 640px) {
   .tm-win { padding: var(--pg-sp-3); gap: var(--pg-sp-4); }
@@ -108,8 +137,4 @@
   .tm-seats { grid-template-columns: minmax(0, 1fr); }
   .tm-cells { grid-template-columns: minmax(0, 1fr); padding: var(--pg-sp-3); }
   .tm-row-btn { padding: var(--pg-sp-2) var(--pg-sp-3); }
-  .tm-ctxp .meterline > .bar { flex-basis: 100%; }
 }
-#teams .tm-cell .add .plus { font-size: var(--pg-t-2); }
-.tm-panes { grid-template-columns: repeat(auto-fit, minmax(calc(var(--pg-t-1) * 12), 1fr)); }
-.tm-lab:has(.chip) { line-height: 2.4; }

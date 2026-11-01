@@ -221,13 +221,13 @@ main, .fr-foot { position: relative; z-index: 1; }
 .fr-r { grid-area: inst; container: fr-i / inline-size; min-width: 0; margin-top: var(--pg-sp-5); }
 /* the film shows itself: a muted preview of its own frames plays while it is in view (its title card at rest), a play mark over it, and its
    name and length on its foot; a click opens it with sound */
-.fr-film { grid-area: film; position: relative; display: block; width: 100%; max-width: 720px; aspect-ratio: 16 / 9; margin-top: var(--pg-sp-4); overflow: hidden; color: var(--splice-cream); text-decoration: none; background: var(--obj-sunk); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--ink); }
+.fr-film { grid-area: film; position: relative; display: block; width: 100%; aspect-ratio: 16 / 9; margin-top: var(--pg-sp-4); overflow: hidden; color: var(--splice-cream); text-decoration: none; background: var(--obj-sunk); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--ink); }
 .fr-pv { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
 .fr-pl { position: absolute; left: 50%; top: 50%; width: 64px; height: 64px; margin: -32px 0 0 -32px; display: grid; place-items: center; border-radius: 50%; color: var(--ink); background: var(--splice-cream); box-shadow: 0 0 0 var(--ink-w) var(--ink), 0 6px 24px rgb(0 0 0 / .35); transition: transform var(--t-snap) var(--e-out); }
 .fr-pl svg { width: 26px; height: 26px; margin-left: 3px; }
 .fr-film:hover .fr-pl, .fr-film:focus-visible .fr-pl { transform: scale(1.08); }
 .fr-film:focus-visible { outline: var(--ink-w) solid var(--text); outline-offset: .2rem; }
-.fr-pt { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: baseline; gap: 10px; padding: 28px 16px 12px; font-size: var(--pg-t-2); background: linear-gradient(transparent, rgb(0 0 0 / .72)); }
+.fr-pt { position: absolute; left: 12px; bottom: 12px; display: flex; align-items: baseline; gap: 10px; padding: 6px 12px; font-size: var(--pg-t-2); background: rgb(0 0 0 / .78); border-radius: 6px; }
 .fr-pt b { font: 500 var(--pg-t-2)/1 var(--font-data); opacity: .8; }
 .fr-copy { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--pg-sp-3); align-items: start; padding: var(--pg-sp-3) var(--pg-sp-3) var(--pg-sp-3) var(--pg-sp-4); background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--ink); }
 .fr-lines { min-width: 0; }
@@ -272,14 +272,14 @@ main, .fr-foot { position: relative; z-index: 1; }
 }
 @container pg (min-width: 1400px) {
   /* the left column stands centred against the board, so neither column leaves a hole under it */
-  .fr-hero { grid-template-columns: minmax(0, clamp(540px, 40%, 1100px)) var(--pg-sp-5) minmax(0, 1fr); grid-template-rows: 1fr repeat(6, auto) 1fr; grid-template-areas: ". . stage" "h . stage" "lead . stage" "inst . stage" "film . stage" "facts . stage" "art . stage" ". . stage"; padding-left: var(--pg-m); padding-right: var(--fr-rg); padding-top: calc(var(--fr-hh) + var(--pg-sp-3)); min-height: 100svh; box-sizing: border-box; }
+  .fr-hero { grid-template-columns: minmax(0, clamp(540px, 40%, 1100px)) var(--pg-sp-5) minmax(0, 1fr); grid-template-rows: 1fr repeat(6, auto) 1fr; grid-template-areas: ". . stage" "h . stage" "lead . stage" "inst . stage" "film . stage" "facts . stage" "art . stage" ". . stage"; padding-left: var(--pg-m); padding-right: var(--fr-rg); padding-top: calc(var(--fr-hh) + var(--pg-sp-3)); box-sizing: border-box; }
   .fr-h1 { margin-top: 0; }
   /* the left column steps the same at every width: 32 px from headline to line, 56 between the parts, 32 from the install to the film */
   .fr-lead { margin-top: var(--fr-s); }
   .fr-r { margin-top: var(--fr-l); }
   .fr-film { margin-top: var(--fr-s); }
   .fr-facts { margin-top: var(--fr-l); }
-  .fr-stage { margin: 0; padding-top: 0; padding-bottom: var(--pg-sp-3); }
+  .fr-stage { margin: 0; padding-top: 0; padding-bottom: var(--pg-sp-3); align-self: center; }
   /* the drawing stands at the column's foot, 56 px under the facts: tall while the column is narrow, wide from 2,100 px */
   /* the film preview is the column's picture, so its drawing stays off */
 }

@@ -89,16 +89,16 @@ main { container: pg / inline-size; }
 }
 
 /* ===== the ground: a dot grid that fades at the band's edges, a tone that changes from band to band, and one cable down the
-   gutter with a dot travelling it (the warm key on the dot only) while the band is on screen. No band draws anything under
+   gutter with a dot travelling it (in the page's ink, one step above the cable) while the band is on screen. No band draws anything under
    its text; the drawings stand in the head block, and nothing in them moves under reduced motion. ===== */
 .pg-band::before, .fr-first::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background-image: radial-gradient(circle at center, color-mix(in oklab, var(--text) 18%, transparent) 1px, transparent 1.7px); background-size: 28px 28px; background-position: center top; -webkit-mask-image: linear-gradient(90deg, transparent, #000 9%, #000 91%, transparent), linear-gradient(180deg, transparent, #000 14%, #000 86%, transparent); -webkit-mask-composite: source-in; mask-image: linear-gradient(90deg, transparent, #000 9%, #000 91%, transparent), linear-gradient(180deg, transparent, #000 14%, #000 86%, transparent); mask-composite: intersect; }
 main > .pg-band:nth-child(odd) { background: linear-gradient(var(--pg-deep), var(--pg-deep)); }
 main > .pg-band:nth-child(even) { background: radial-gradient(60% 70% at 88% 0, var(--pg-glow), transparent 70%), linear-gradient(var(--pg-lit), var(--pg-lit)); }
 .pg-band::after, .fr-first::after { content: ""; position: absolute; z-index: -1; top: 0; bottom: 0; left: calc(var(--pg-m) / 2 - 4px); width: 8px; pointer-events: none; background: linear-gradient(var(--pg-cable), var(--pg-cable)) 50% 0 / 1.5px 100% no-repeat, radial-gradient(circle, var(--pg-dot, var(--claude)) 0 2.6px, transparent 3.2px) 50% 0 / 8px 8px no-repeat; opacity: .8; }
 main > .pg-band:nth-child(odd)::after { left: auto; right: calc(var(--pg-m) / 2 - 4px); }
-/* the travelling dot is traffic on the cable, so it takes the console's warm key (what is serving now is lit by it), never a
-   provider's colour: a provider colour on the page always names that provider */
-.pg-band, .fr-first { --pg-dot: var(--key-light); }
+/* the travelling dot is a decoration on the ground, so it takes the page's ink one step above the cable: never a provider's
+   colour (a provider colour on the page always names that provider) and never the warm key, which marks the next action */
+.pg-band, .fr-first { --pg-dot: var(--pg-ink); }
 @keyframes pg-lane { to { background-position: 50% 0, 50% 100%; } }
 @media (prefers-reduced-motion: no-preference) {
   .pg-band.pg-on::after, .fr-first.pg-on::after { animation: pg-lane 14s linear infinite; }

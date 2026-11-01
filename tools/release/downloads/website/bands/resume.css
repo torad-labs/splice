@@ -151,12 +151,14 @@
   .rs-carry > .rs-grp:first-child { grid-column: 1; }
 }
 @container pg (max-width: 640px) {
-  .rs-pw { padding: calc(2.5 * var(--u)); }
+  .rs-pw { padding: calc(2 * var(--u)); }
   /* a phone's terminal takes the console card's own side padding (1.15rem), so the Studio card and both terminals keep the same
-     room to their border; the path has no indent and breaks after its hyphen, so the chip stays narrower than the card */
+     room to their border; the path has no indent and takes the terminal's whole inner width, on one line at its step */
   .rs-term { padding-inline: 1.15rem; }
-  .rs-path { margin-left: 0; padding: .3rem .5rem; max-width: min(100%, 19rem); }
+  #resume .rs-path { margin-left: 0; width: auto; max-width: none; padding: .3rem .25rem; white-space: nowrap; }
 }
+/* a phone narrower than the page's usual 390: the path's type steps down with the window, so the line still stays whole */
+@container pg (max-width: 350px) { #resume .rs-path { font-size: calc((100cqw - 3rem) / 21.7); } }
 
 /* ---------- from 1,280 px to 2,199 px the head stands beside the window, as the page does from 2,200 px: the head takes 4 of 12
    columns (the heading holds two lines) and the window the other 8, on the side the band's place on the page gives it (even places put the head left) ---------- */
@@ -170,14 +172,13 @@
   #resume > .pg-split > .pg-head > .pg-art .pg-stub { display: inline; }
   #resume > .pg-split > .pg-head > .pg-art::after { content: ""; flex: 1 1 auto; min-height: 0; width: 8px; margin-left: calc(var(--pg-ax, 9%) - 4px); background: linear-gradient(var(--pg-cable), var(--pg-cable)) 50% 0 / 1.5px 100% no-repeat, radial-gradient(circle, var(--pg-dot, var(--claude)) 0 2.6px, transparent 3.2px) 50% 0 / 8px 8px no-repeat; }
 }
-/* a window too narrow for three columns but wide enough for two: two columns side by side, the Claude card over the list on the
-   left, the ChatGPT terminal over what carries over on the right. The board's columns and the chips become the window's own
-   children and the window flows them down two columns, so each column keeps its own height with no row shared across them. */
+/* a window too narrow for three columns but wide enough for two: Claude and the list side by side, then the ChatGPT terminal and what
+   carries over side by side under them, so the story reads across and down, and the two columns end within a few pixels of each
+   other. The board's columns become the window's own grid cells; every cell is as tall as its row, and the cards inside take the
+   row's height as they do in three columns, so no card holds empty space. */
 @container rsw (min-width: 62rem) and (width < 105rem) {
-  .rs-pwi { columns: 2; column-gap: 2.4rem; }
+  .rs-pwi { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2.4rem; align-items: stretch; }
   .rs-board { display: contents; }
-  .rs-board > .col { break-inside: avoid; }
-  .rs-board > .col:nth-child(2) { margin-top: 2.4rem; }
-  .rs-board > .col:nth-child(3) { break-before: column; }
-  .rs-carry-w { break-inside: avoid; }
+  .rs-pv, .rs-plate, .rs-term, .rs-list, .rs-p1 > .rs-rv:last-child, .rs-p1 .rail, .rs-p1 .rail .card { flex: 1; }
+  .rs-carry-w { margin-top: 0; }
 }

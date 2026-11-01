@@ -74,7 +74,11 @@
 .sh-file { font: 500 var(--pg-t-1)/1 var(--font-data); color: var(--text); }
 .sh-toml { margin: 0; padding: var(--pg-sp-2) var(--pg-sp-3); background: var(--track); border-radius: var(--r-in); font: 500 var(--pg-t-2)/1.5 var(--font-data); color: var(--text); white-space: pre-wrap; }
 .sh-toml code { font: inherit; }
-@container pg (max-width: 640px) { .sh-toml { font-size: var(--pg-t-1); } }
+/* a phone: the terminal and the file's card take 16 px at their sides and the file's text 10, so the url line fits whole */
+@container pg (max-width: 640px) {
+  .sh-term, .sh-keep { padding-inline: var(--pg-sp-3); }
+  .sh-toml { font-size: var(--pg-t-1); padding-inline: 10px; }
+}
 .sh-none { margin: 0; font: 400 var(--pg-t-2)/1.4 var(--font-name); color: var(--text-body); }
 
 /* ---------- the map: the tower's logins, the cables, the commands on the other computers ---------- */
@@ -153,23 +157,17 @@
 .sh-tabs label:hover { color: var(--text-body); }
 .sh-more:has(.sh-rd1:checked) .sh-tab1, .sh-more:has(.sh-rd2:checked) .sh-tab2, .sh-more:has(.sh-rd3:checked) .sh-tab3 { background: var(--sel-face); color: var(--sel-ink); box-shadow: inset 0 0 0 2px var(--sel-line); }
 .sh-more:has(.sh-rd1:focus-visible) .sh-tab1, .sh-more:has(.sh-rd2:focus-visible) .sh-tab2, .sh-more:has(.sh-rd3:focus-visible) .sh-tab3 { outline: var(--ink-w) solid var(--text); outline-offset: 3px; }
-/* the three panes stand in one grid cell, so the cell is as tall as the tallest and a tab click moves nothing below the band;
-   the open pane is as tall as its own content, so no box holds empty space; the two that are not open wait invisible over
-   the same place, and a change eases them over */
-.sh-panes { margin-top: var(--pg-sp-4); display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; }
+/* each pane is as tall as its own content and only the open one is drawn, so no plate holds empty space. A tab click eases the
+   panes' box from the old height to the new one (share.js holds the old height, sets the new one, and lets go when it ends);
+   while it eases the box clips, a little past its edge so the plates' cast shows. Under reduced motion the height changes at once. */
+.sh-panes { margin-top: var(--pg-sp-4); }
+.sh-panes.sh-ease { overflow: clip; overflow-clip-margin: calc(var(--cast) + var(--ink-w) + 4px); }
 .sh-pane {
-  grid-area: 1 / 1; visibility: hidden; opacity: 0; transform: translateY(6px); box-sizing: border-box; min-width: 0; padding: var(--pg-sp-4);
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 17em), 1fr)); gap: var(--sh-g); align-content: start;
+  display: none; box-sizing: border-box; min-width: 0; padding: var(--pg-sp-4);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17em), 1fr)); gap: var(--sh-g); align-content: start;
   background: var(--wall-low); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--ink);
 }
-.sh-more:has(.sh-rd1:checked) .sh-p1, .sh-more:has(.sh-rd2:checked) .sh-p2, .sh-more:has(.sh-rd3:checked) .sh-p3 { visibility: visible; opacity: 1; transform: none; }
-/* on a phone the panes stack their rows and differ by hundreds of pixels, so one shared height would leave a short pane over
-   a field of empty band; there the open pane alone sets the height, and the two others wait out of flow over the same place */
-@container pg (max-width: 640px) {
-  .sh-panes { position: relative; }
-  .sh-pane { position: absolute; inset: 0 0 auto; }
-  .sh-more:has(.sh-rd1:checked) .sh-p1, .sh-more:has(.sh-rd2:checked) .sh-p2, .sh-more:has(.sh-rd3:checked) .sh-p3 { position: relative; }
-}
+.sh-more:has(.sh-rd1:checked) .sh-p1, .sh-more:has(.sh-rd2:checked) .sh-p2, .sh-more:has(.sh-rd3:checked) .sh-p3 { display: grid; }
 /* an address breaks only at a slash, a question mark or a comma: each part is held whole */
 .sh-nb { white-space: nowrap; }
 .sh-p2 { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
@@ -232,6 +230,17 @@
   .sh-tabs label { flex: 1; padding-inline: 4px; }
   .sh-rc { margin-left: auto; }
   .sh-ready li { gap: var(--pg-sp-1); padding-inline: var(--pg-sp-2); }
+  /* a meter keeps its bar on a full row of its own: the label and the percent above it, the ring and its time (or the model)
+     under it, as the Studio card in Resume holds its two */
+  .sh-acc .windows { grid-template-columns: minmax(0, 1fr) auto; row-gap: var(--pg-sp-1); }
+  .sh-acc .windows > .label { grid-area: 1 / 1; }
+  .sh-acc .windows > .pct { grid-area: 1 / 2; }
+  .sh-acc .windows > .bar { grid-area: 2 / 1 / 3 / -1; }
+  .sh-acc .windows > .when { grid-area: 3 / 1 / 4 / -1; }
+  .sh-fg { grid-template-columns: minmax(0, 1fr) auto; row-gap: var(--pg-sp-1); }
+  .sh-fg > .sh-wk { grid-area: 1 / 1; }
+  .sh-fg > .sh-n { grid-area: 1 / 2; }
+  .sh-fg > .bar { grid-area: 2 / 1 / 3 / -1; }
 }
 /* the narrowest phones: "on tower" drops under the name, so every name stays whole on one line */
 @container sh (max-width: 340px) {
@@ -243,9 +252,11 @@
 /* the head's drawing stands under what the other computer keeps, in the column beside the tall figure (from 2,200 px) */
 .pg-split > .sh-head > .sh-art { display: none; }
 @container pg (min-width: 2200px) {
-  .pg-split > .sh-head > .sh-art { display: flex; flex: 1 1 0; min-height: 0; margin-top: var(--pg-sp-5); }
+  /* the drawing keeps one size on every tab (the figure's height changes with the tab, so it is not stretched to it): it stands
+     at the column's foot, level with the figure's end */
+  .pg-split > .sh-head > .sh-art { display: block; flex: none; margin-top: auto; padding-top: var(--pg-sp-5); }
   .pg-split > .sh-head > .sh-art::after { display: none; }
-  .pg-split > .sh-head > .sh-art > svg { flex: 1 1 0; min-height: 0; width: 100%; height: 100%; }
+  .pg-split > .sh-head > .sh-art > svg { width: 100%; height: auto; }
 }
 
 /* ---------- one sequence, once, when the band enters; then one slow loop while it is on screen ---------- */
@@ -257,6 +268,7 @@
 @keyframes sh-grow { from { transform: scaleX(0); } }
 @keyframes sh-arc { from { stroke-dasharray: 0 94.2; } }
 @keyframes sh-head { from { opacity: 0; } }
+@keyframes sh-pane-in { from { opacity: 0; transform: translateY(6px); } }
 /* the packet crosses the active cable in about a sixth of seven and a half seconds, then rests */
 @keyframes sh-loop { 0% { right: 0; opacity: 0; animation-timing-function: var(--e-io); } 2% { opacity: 1; } 15% { opacity: 1; } 17%, 100% { right: calc(100% - 14px); opacity: 0; } }
 @keyframes sh-loop-v { 0% { bottom: 0; opacity: 0; animation-timing-function: var(--e-io); } 2% { opacity: 1; } 15% { opacity: 1; } 17%, 100% { bottom: calc(100% - 14px); opacity: 0; } }
@@ -264,8 +276,7 @@
 @keyframes sh-glow { 0%, 100% { box-shadow: 0 0 0 2px var(--ink), 0 0 8px var(--c); } 17% { box-shadow: 0 0 0 2px var(--ink), 0 0 16px 3px var(--c); } }
 @keyframes sh-glow-live { 0%, 100% { box-shadow: 0 0 8px var(--live); } 17% { box-shadow: 0 0 16px 3px var(--live); } }
 @media (prefers-reduced-motion: no-preference) {
-  .sh-pane { transition: opacity 180ms var(--e-out), transform 180ms var(--e-out), visibility 0s linear 180ms; }
-  .sh-more:has(.sh-rd1:checked) .sh-p1, .sh-more:has(.sh-rd2:checked) .sh-p2, .sh-more:has(.sh-rd3:checked) .sh-p3 { transition: opacity 180ms var(--e-out), transform 180ms var(--e-out), visibility 0s; }
+  .sh-more.sh-moved .sh-pane { animation: sh-pane-in 180ms var(--e-out) both; }
 
   .pg-js .sh-head:not(.is-seen) .sh-ty { clip-path: inset(-.2em 100% -.2em 0); }
   .pg-js .sh-head:not(.is-seen) :is(.sh-done li, .sh-pick) { opacity: 0; }

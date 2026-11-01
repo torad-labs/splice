@@ -54,6 +54,7 @@ function facts(): Record<string, string> {
     "tested-claude-code": tested,
     "newer-claude-code": `${major}.${minor}.${patch! + 5}`,
     "history-days": read("core/src/main/kotlin/splice/core/perf/HistoryWindow.kt", /HISTORY_DEFAULT_DAYS: Int = (\d+)/),
+    "share-port": read("core/src/main/kotlin/splice/core/topology/LanShareConfig.kt", /SHARE_DEFAULT_PORT: Int = (\d+)/),
   };
 }
 

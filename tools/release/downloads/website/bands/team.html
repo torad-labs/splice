@@ -1,7 +1,8 @@
 <!-- console: sessions.css knobs.css models.css teams.css usage.css perf-heads.css -->
 <section class="pg-band" id="teams" aria-labelledby="tm-h">
-<div class="pg-in tm-live" data-reveal>
-<div class="tm-bh"><h2 class="pg-h2 tm-rv" id="tm-h" style="--i:0"><span id="teamwork"></span>Teams on different models</h2><p class="pg-line tm-rv" style="--i:1">Sessions on different models message each other inside Claude Code.</p></div>
+<div class="pg-in tm-live pg-split" data-reveal>
+<div class="tm-bh pg-head"><h2 class="pg-h2 tm-rv" id="tm-h" style="--i:0"><span id="teamwork"></span>Teams on different models</h2><p class="pg-line tm-rv" style="--i:1">Name the models in one prompt. The lead splits the work and the sessions message each other.</p><!--PG-ART:team--><div class="pg-art" style="--pg-ax:15%" aria-hidden="true"><svg viewBox="0 0 480 170" aria-hidden="true" focusable="false"><path class="pg-cab pg-stub" d="M72 72V170"/><path class="pg-cab" d="M116 44C178 44 178 94 240 94"/><path class="pg-flow" pathLength="100" style="--c:var(--claude);--d:0s;--t:9s" d="M116 44C178 44 178 94 240 94"/><path class="pg-cab" d="M240 94C240 69 364 69 364 44"/><path class="pg-flow" pathLength="100" style="--c:var(--grok);--d:-2.7s;--t:11s" d="M240 94C240 69 364 69 364 44"/><path class="pg-cab" d="M116 44C240 44 240 44 364 44"/><path class="pg-flow" pathLength="100" style="--c:var(--muse);--d:-5.4s;--t:13s" d="M116 44C240 44 240 44 364 44"/><use href="#pg-m-term" x="28" y="16" width="88" height="56"/><use href="#pg-m-term" x="196" y="94" width="88" height="56"/><use href="#pg-m-term" x="364" y="16" width="88" height="56"/><rect class="pg-caret" x="64" y="50.7" width="4.7" height="8.7"/><rect class="pg-caret" x="232" y="128.7" width="4.7" height="8.7"/><rect class="pg-caret" x="400" y="50.7" width="4.7" height="8.7"/></svg></div><!--/PG-ART--></div>
+<div class="tm-comp">
 <article class="card tm-prompt tm-rv" style="--c:var(--claude);--i:2" aria-label="The prompt to claude-splice"><span class="chip hcmd">claude-splice</span><p class="tm-ptext">Add rate limiting to the storefront API. Have grok build it, muse test it and gpt review it.</p></article>
 <div class="tm-grid"><div class="tm-seats"><article class="card m idle tm-rv" style="--c:var(--claude);--i:3" aria-label="Lead"><span class="lamp idle tm-wait" aria-hidden="true"><i></i></span><div class="top"><span class="role">Lead</span><span class="word tm-waiting">Waiting</span></div>
 <div class="meta"><span class="chip hcmd">claude-splice</span><span class="mdl mtag">Opus 5.5</span></div>
@@ -46,5 +47,5 @@
 <p class="tm-lab">Make a team with roles and a goal</p></article>
 <article class="card tm-cell" style="--c:color-mix(in oklab, var(--text) 22%, var(--ink))"><div class="tm-draw"><nav class="tabs" aria-label="Teams"><button class="tab" type="button" aria-current="true" tabindex="-1" data-drawn><span class="tname">Add rate limiting to the storefront API</span><span class="blots" role="img" title="4 of 4 running" aria-label="4 of 4 running"><i style="--c:var(--claude)"></i><i style="--c:var(--grok)"></i><i style="--c:var(--muse)"></i><i style="--c:var(--gpt)"></i></span></button></nav></div>
 <p class="tm-lab">Sessions that message each other are a team</p><p class="tm-lab">The dashboard shows who is working with whom</p></article></div></details>
-</div>
+</div></div>
 </section>

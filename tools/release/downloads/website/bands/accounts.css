@@ -3,11 +3,10 @@
 .ac-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 /* ---------- the band: one heading, one line, one component ---------- */
-.ac-hd { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px 40px; flex-wrap: wrap; }
 .ac-hd-t { min-width: 0; }
-.ac-lines { display: grid; margin: 14px 0 0; }
+.ac-lines { display: grid; margin: var(--pg-sp-2) 0 0; }
 .ac-lines .pg-line { grid-area: 1 / 1; margin: 0; }
-.ac-tabs { --ctl-h: 2.7rem; flex: none; }
+.ac-tabs { --ctl-h: 2.7rem; flex: none; justify-self: start; margin-top: var(--pg-sp-4); }
 .ac-tabs label {
   display: inline-flex; align-items: center; justify-content: center; cursor: pointer; white-space: nowrap;
   font: 500 .92rem/1 var(--font-name); color: var(--text-mute); padding: 0 .8rem; border-radius: calc(var(--r-obj) - .15rem);
@@ -15,7 +14,7 @@
 }
 .ac-tabs label:hover { color: var(--text-body); }
 .ac-plate {
-  --ctl-h: 2.4rem; margin-top: clamp(24px, 1.6cqw, 40px);
+  --ctl-h: 2.4rem;
   background: var(--wall-low); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
   box-shadow: var(--cast) var(--cast) 0 var(--ink); padding: calc(4 * var(--u));
 }
@@ -157,7 +156,6 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
 }
 @container pg (max-width: 640px) {
   .ac-plate { padding: calc(2.5 * var(--u)); }
-  .ac-hd { align-items: stretch; flex-direction: column; }
   .ac-tabs { width: 100%; --ctl-h: 2.6rem; }
   .ac-tabs label { flex: 1; padding-inline: .4rem; }
 }

@@ -10,8 +10,6 @@
    switch). Reduced motion: none of it runs. ===== */
 
 /* the band's head: the heading, then one line (the console's code chip in it) */
-.db-head { display: flex; flex-direction: column; gap: clamp(12px, 1.2cqw, 20px); margin-bottom: clamp(28px, 3cqw, 48px); }
-.db-head .pg-line { margin: 0; max-width: 44em; text-wrap: balance; }
 .db-head .pg-line code { font: 500 .94em/1 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); padding: .18em .42em; white-space: nowrap; }
 
 @keyframes db-rise { from { opacity: .28; transform: translateY(1.4rem); } }

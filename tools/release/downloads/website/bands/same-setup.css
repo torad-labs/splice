@@ -1,20 +1,9 @@
 /* same-setup (prefix ss-): one Claude Code setup, four commands. Four radios drive every state, so there is no script.
    The width is planned first. The container (1,344 px at 2548, 88% at 1440, 354 px at 390) is cut into rows that each fill it:
-   band header = heading | line (two halves, one column at 390);
+   band header = the page's split head (heading, line, drawing) over or beside the stage;
    tabs = four command cards across (two by two at 390);
    stage = window 1fr | unchanged panel 23rem (stacked at 390), both stretched to one height.
    Page parts use px or container units; every console component keeps the console's rem. */
-
-/* ---------- band header: heading | line, on the container's own grid ---------- */
-.ss-in { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: clamp(32px, 3cqw, 72px); align-items: end; }
-.ss-in > .pg-h2 { grid-column: 1; text-wrap: balance; }
-.ss-in > .pg-line { grid-column: 2; margin: 0; max-width: 34em; text-wrap: pretty; }
-.ss-in > .ss-stage { grid-column: 1 / -1; margin-top: clamp(32px, 3cqw, 72px); }
-@container pg (max-width: 760px) {
-  .ss-in { grid-template-columns: minmax(0, 1fr); align-items: start; }
-  .ss-in > .pg-line { grid-column: 1; margin-top: 16px; }
-  .ss-in > .ss-stage { margin-top: clamp(32px, 3cqw, 72px); }
-}
 
 /* ---------- stage: one state per command, all drawn from four radios ----------
    The radios sit first in the stage. :has() reads the checked one and sets the numbers every part draws from:

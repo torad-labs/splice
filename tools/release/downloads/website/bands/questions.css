@@ -2,13 +2,11 @@
 
 /* the band: heading and line on the page's own sizes (pg-h2, pg-line); the line holds the prototype's 46 em measure */
 .qa-band{interpolate-size:allow-keywords}
-.qa-bh{display:flex;flex-direction:column;gap:clamp(10px,1.1cqw,16px)}
-.qa-bh .pg-line{margin:0;max-width:46em}
 
 /* the width plan. One container (W). The list is one card at the full W, one column at every size. An opened row is one plate at the
    full W: the answer's text takes 5/12 and its facts 7/12 of what is left, so neither stands alone. Under 820 px the facts go under the text. */
 
-.qa-list{--qa-rp:clamp(14px,1.7cqw,26px);--qa-cg:clamp(14px,1.4cqw,20px);margin-top:clamp(32px,calc(32px + (100cqw - 390px) * .0116),48px);padding:6px 10px;background:var(--obj);border:var(--ink-w) solid var(--ink);border-radius:var(--r-obj);box-shadow:var(--cast) var(--cast) 0 var(--ink)}
+.qa-list{--qa-rp:clamp(14px,1.7cqw,26px);--qa-cg:clamp(14px,1.4cqw,20px);padding:6px 10px;background:var(--obj);border:var(--ink-w) solid var(--ink);border-radius:var(--r-obj);box-shadow:var(--cast) var(--cast) 0 var(--ink)}
 .qa-q + .qa-q{border-top:.12rem solid var(--track)}
 .qa-q{scroll-margin-top:calc(var(--fr-hh) + 16px)}
 .qa-q>summary{display:grid;grid-template-columns:14px minmax(0,1fr) auto;column-gap:var(--qa-cg);align-items:center;min-height:clamp(58px,calc(58px + (100cqw - 390px) * .0065),72px);padding:10px var(--qa-rp);border-radius:var(--r-in);cursor:pointer;list-style:none;transition:background var(--t-hover) var(--e-out)}

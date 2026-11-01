@@ -4,10 +4,7 @@
 /* the band's type ladder: four steps under the heading and the line, none within 1 px of another at 2548, 1440 or 390.
    label 12, data 14, name 16, focal figure 28 (the console's rem, floored so nothing reads under 12 px) */
 .mo-band{--mo-ts:max(.9rem,12px);--mo-tm:max(1.1rem,14px);--mo-tl:max(1.2rem,16px);--mo-fig:max(2.4rem,28px);interpolate-size:allow-keywords}
-.mo-head{display:flex;flex-direction:column;gap:16px}
-.mo-head .pg-h2{text-wrap:balance}
-.mo-head .pg-line{margin:0;max-width:44em}
-.mo-win{--mo-pad:calc(4 * var(--u));position:relative;margin-top:56px;padding:var(--mo-pad);background:var(--obj);border:var(--ink-w) solid var(--ink);border-radius:var(--r-obj);box-shadow:var(--cast) var(--cast) 0 var(--ink)}
+.mo-win{--mo-pad:calc(4 * var(--u));position:relative;padding:var(--mo-pad);background:var(--obj);border:var(--ink-w) solid var(--ink);border-radius:var(--r-obj);box-shadow:var(--cast) var(--cast) 0 var(--ink)}
 
 /* band reveal: once, when the band first scrolls into view. Heading, line and window each rise 1.4rem and fade up from 28% over --t-pop (260 ms)
    on --e-out, 30 ms apart (--d). The band keeps its height while it waits, so nothing below it moves. is-seen is added once and never removed. */
@@ -222,7 +219,7 @@
 /* at 820 and under the tabs are rows that open in place. The height cannot be held there without padding, so it eases over --t-snap:
    the open panel's row grows from 0 to its height while the closing one shuts and fades out. */
 @container pg (max-width:820px){
-  .mo-win{margin-top:36px;--mo-pad:calc(2 * var(--u))}
+  .mo-win{--mo-pad:calc(2 * var(--u))}
   .mo-tabs{grid-template-columns:minmax(0,1fr);row-gap:0}
   .mo-tab ~ .mo-tab{margin-top:var(--gap-card)}
   .mo-chev{display:block}

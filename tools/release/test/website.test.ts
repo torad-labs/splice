@@ -270,6 +270,37 @@ describe("splice.torad.ai's website", () => {
     expect([...words(answer).matchAll(/\b(\d+) days\b/g)].map((m) => m[1]).filter((n) => n !== days)).toEqual([]);
   });
 
+  // Marcos, Nov 1, 2026: "one feature I want us to highlight with its own section, which is the ability to connect
+  // another computer to a running splice on another computer, like we do with our mac that uses the subscriptions and
+  // heads from this computer by running one command to set things up." Its band shows the machine with the logins
+  // sharing them, the one command the other machine runs (its Copy button copies that line alone), and what the address
+  // can add (docs/specs/lan-share.md), and the header links to it. Every `splice share` and `splice remote` the page draws
+  // is a verb those commands take today, and every address it draws is on the port splice shares on.
+  test("a band shows another computer running on this one's plans after one command", () => {
+    const band = bands(page).get("share") ?? "";
+    expect(band).toContain("data-reveal");
+    const source = (path: string) => readFileSync(join(REPO, path), "utf8");
+    const port = /SHARE_DEFAULT_PORT: Int = (\d+)/.exec(source("core/src/main/kotlin/splice/core/topology/LanShareConfig.kt"))?.[1];
+    expect(port).toBeDefined();
+    const one = `splice remote add http://tower.lan:${port}`;
+    const text = words(band);
+    expect(["splice share on", one, "?auth=", "?models=", "splice remote", "splice share off"].filter((s) => !text.includes(s))).toEqual([]);
+    const copies = [...band.matchAll(/\bdata-copy="([^"]*)"/g)].map((m) => m[1]!.replace(/&amp;/g, "&"));
+    expect(copies).toContain(one);
+    expect(page).toContain('href="#share"');
+    const verbs = (path: string, name: string) =>
+      new RegExp(`${name} = "([^"]+)"`).exec(source(path))![1]!.split("|").map((p) => p.trim().replace(/^\[|\]$/g, "").split(/\s+/)[0]!);
+    const share = verbs("app/src/main/kotlin/splice/app/cli/share/ShareCommand.kt", "SHARE_USAGE");
+    const remote = verbs("app/src/main/kotlin/splice/app/cli/share/RemoteCommand.kt", "REMOTE_USAGE");
+    const all = words(page);
+    const unknown = [
+      ...[...all.matchAll(/\bsplice share (\w+)/g)].map((m) => m[1]!).filter((v) => !share.includes(v)).map((v) => `splice share ${v}`),
+      ...[...all.matchAll(/\bsplice remote (\w+)/g)].map((m) => m[1]!).filter((v) => !remote.includes(v)).map((v) => `splice remote ${v}`),
+      ...[...all.matchAll(/\btower\.lan:(\d+)/g)].map((m) => m[1]!).filter((p) => p !== port).map((p) => `port ${p}`),
+    ];
+    expect(unknown).toEqual([]);
+  });
+
   // The product parts are pictures of the console with made-up data, so their Allow, Save or preset buttons do nothing
   // here. A visitor's Tab key never lands on one: every button and field on the page does something (copies, picks
   // a theme, opens the menu, plays or closes the film), switches a tab or step, or is drawn only and out of the focus

@@ -4,13 +4,13 @@
 
 /* the band's heading and line: the page's pg-h2 and pg-line, with the line's own gap and measure */
 .cm-in .pg-h2 { --d: 0ms; }
-.cm-in .pg-line { margin: clamp(10px, .8cqw, 18px) 0 0; max-width: 76ch; --d: 40ms; }
+.cm-in .pg-line { --d: 40ms; }
 
 /* ---------- the board: two columns of equal width; every card keeps its own rest height, so rows stay equal.
    A card's panel is a drawer in its own grid row under the card's row, across both columns, so nothing stretches or leaves a void.
    Cards carry the 2rem gap as a bottom margin (a closed drawer is 0 tall and adds no gap); the board takes the last one back. ---------- */
 .cm-board {
-  margin: clamp(28px, 2.6cqw, 64px) 0 calc(-1 * var(--gap-col)); padding: 0; position: relative;
+  margin: 0 0 calc(-1 * var(--gap-col)); padding: 0; position: relative;
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--gap-col); row-gap: 0; align-items: stretch;
 }
 .cm-card { --d: calc(var(--i) * 40ms); grid-column: var(--cc); grid-row: var(--r); position: relative; margin-bottom: var(--gap-col); min-height: 13.9rem; padding: 1.15rem 1.4rem 1.25rem; display: flex; flex-direction: column; cursor: default; }
@@ -173,4 +173,39 @@
   .card.cm-dplate { grid-template-columns: minmax(0, 1fr); }
   .cm-dplate > .cm-sec { border-left: 0; border-top: .08rem solid var(--hair); padding-inline: 1.2rem; }
   .cm-dplate > .cm-sec:first-child { border-top: 0; }
+}
+
+/* ---------- four across where the board's column is 1,400 px or wider: the full container from 1,560 px up to 2,199 px, the 8 columns beside
+   the head from 2,330 px. Below that the cards lie two across, and one across on a phone. A card this narrow takes the phone's
+   meter (label, NN% and ring on one line, the bar under them). The eight cards fill two rows; each drawer opens full width under
+   them, in the order its card sits. ---------- */
+@container pg ((min-width: 1560px) and (max-width: 2199px)) or (min-width: 2330px) {
+  .cm-board { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .cm-board > .cm-card:nth-of-type(1) { grid-column: 1; grid-row: 1; }
+  .cm-board > .cm-card:nth-of-type(2) { grid-column: 2; grid-row: 1; }
+  .cm-board > .cm-card:nth-of-type(3) { grid-column: 3; grid-row: 1; }
+  .cm-board > .cm-card:nth-of-type(4) { grid-column: 4; grid-row: 1; }
+  .cm-board > .cm-card:nth-of-type(5) { grid-column: 1; grid-row: 2; }
+  .cm-board > .cm-card:nth-of-type(6) { grid-column: 2; grid-row: 2; }
+  .cm-board > .cm-card:nth-of-type(7) { grid-column: 3; grid-row: 2; }
+  .cm-board > .cm-card:nth-of-type(8) { grid-column: 4; grid-row: 2; }
+  .cm-drawer[data-k="or"] { grid-row: 3; }
+  .cm-drawer[data-k="bo"] { grid-row: 4; }
+  .cm-drawer[data-k="ow"] { grid-row: 5; }
+  .cm-card .meta .cmodel { white-space: normal; overflow-wrap: anywhere; }
+  .cm-card .windows.cm-win { grid-template-columns: minmax(0, 1fr) auto var(--ring-sz); row-gap: .5rem; }
+  .cm-win > .label { grid-column: 1; grid-row: 1; }
+  .cm-win > .pct { grid-column: 2; grid-row: 1; }
+  .cm-win > .when { grid-column: 3; grid-row: 1; }
+  .cm-win > :is(.bar, .capbox) { grid-column: 1 / -1; grid-row: 2; }
+  .cm-card .windows.cm-win.cm-ctx { grid-template-columns: minmax(0, 1fr) auto; row-gap: 0; }
+  .cm-win.cm-ctx > .cwbar { grid-column: 1; grid-row: 1; }
+  .cm-win.cm-ctx > .cwin { grid-column: 2; grid-row: 1; }
+  .cm-card .windows.cm-win.cm-none { grid-template-columns: minmax(0, 1fr); }
+  .cm-win.cm-none > .bar { grid-column: 1; grid-row: 1; }
+  .cm-win.cm-none > .state { grid-column: 1; grid-row: 2; justify-self: start; }
+  .cm-setup { flex-direction: column; align-items: flex-start; gap: .9rem; }
+  .cm-steps { flex-direction: column; align-items: flex-start; gap: 0; }
+  .cm-seg { width: .3rem; height: .8rem; margin-left: 1.12rem; }
+  .cm-sl { flex-direction: column; align-items: flex-start; }
 }

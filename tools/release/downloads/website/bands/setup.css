@@ -7,7 +7,7 @@
 @container pg (max-width: 640px) { #setup-install { scroll-margin-top: 150px; } }
 
 /* the window: the console's object, ink outline and a hard cast, on the page container */
-.su-win { position: relative; margin-top: clamp(32px, 2.6cqw, 56px); padding: calc(4 * var(--u)); display: flex; flex-direction: column; gap: calc(4 * var(--u)); background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--ink); }
+.su-win { position: relative; padding: calc(4 * var(--u)); display: flex; flex-direction: column; gap: calc(4 * var(--u)); background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--ink); }
 /* the three radios hold which step is open; they stand in the window unseen, and the step labels are their faces */
 .su-r { position: absolute; top: 0; left: 0; width: 1px; height: 1px; margin: 0; opacity: 0; pointer-events: none; }
 

@@ -10,16 +10,12 @@
    third panel. Inside the first panel only what changed moves: the week meter grows over --t-snap (240 ms) from 120 ms, its
    reset ring draws over --t-snap from 120 ms, and the lock pops over --t-pop from 200 ms. Reduced motion shows the final state. */
 
-/* ---------- the band's header: heading left, one line right ---------- */
-.rs-bh { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 64px; align-items: end; }
-.rs-bh .pg-h2 { text-wrap: balance; }
-.rs-bh .pg-line { margin: 0; max-width: none; }
+/* ---------- the band's header: the page's split head; the line carries a command ---------- */
 .rs-bh .pg-line code { font: 500 .92em/1 var(--font-data); color: var(--text); }
 
 /* ---------- the product window: a plate on the wall, the board of three columns, then the chips ---------- */
 .rs-pw {
   container: rsw / inline-size;
-  margin-top: clamp(32px, 2.4cqw, 61px);
   background: var(--wall-low); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
   box-shadow: var(--cast) var(--cast) 0 var(--ink); padding: calc(4 * var(--u));
 }
@@ -149,6 +145,5 @@
   .rs-carry > .rs-grp:first-child { grid-column: 1; }
 }
 @container pg (max-width: 640px) {
-  .rs-bh { grid-template-columns: minmax(0, 1fr); row-gap: 14px; }
   .rs-pw { padding: calc(2.5 * var(--u)); }
 }

@@ -4,9 +4,7 @@
    Every console part keeps the console's rem and its own classes. */
 
 /* ---------- the band's head: the heading and the line side by side (the line under it on a phone) ---------- */
-.tm-bh { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); column-gap: 64px; align-items: end; margin-bottom: 48px; }
-.tm-bh .pg-line { margin: 0; max-width: 44ch; }
-@container pg (min-width: 1801px) { .tm-bh { margin-bottom: 56px; } }
+.tm-comp { min-width: 0; }
 
 /* ---------- the prompt to claude-splice ---------- */
 .tm-prompt { display: flex; align-items: center; gap: calc(2 * var(--u)); padding: calc(2 * var(--u)) calc(2.5 * var(--u)); margin: 0 0 calc(3 * var(--u)); }
@@ -120,7 +118,6 @@
   .tm-talk { min-height: var(--tm-talk-h, 0); }
 }
 @container pg (max-width: 640px) {
-  .tm-bh { grid-template-columns: minmax(0, 1fr); row-gap: 14px; margin-bottom: 28px; }
   .tm-prompt { flex-direction: column; align-items: flex-start; }
   .tm-ptext { align-self: stretch; }
   .tm-seats { grid-template-columns: minmax(0, 1fr); }

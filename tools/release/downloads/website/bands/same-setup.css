@@ -50,9 +50,7 @@
 
 /* ---------- the Claude Code window ---------- */
 .ss-win { container: ss-win / inline-size; display: flex; flex-direction: column; gap: calc(2 * var(--u)); min-width: 0; transition: box-shadow var(--t-snap) var(--e-out); }
-/* the type ladder inside the window: 2.9rem API est.; 1.1rem terminal lines, model value and percentages; 1rem note, hook line and chip names (muted); .9rem kickers (never under 12 px) and the used / hit words */
-.ss-note { margin: 0; display: flex; align-items: flex-start; gap: .667rem; font: 400 var(--fr-tm)/1.35 var(--font-name); color: var(--text-mute); }
-.ss-note svg { flex: none; width: 1.2rem; height: 1.2rem; margin-top: .02rem; fill: none; stroke: var(--text-mute); stroke-width: 1.4; stroke-linecap: round; }
+/* the type ladder inside the window: 2.9rem API est.; 1.1rem terminal lines, model value and percentages; 1rem hook line and chip names (muted); .9rem kickers (never under 12 px) and the used / hit words */
 .ss-term {
   flex: 1; display: flex; flex-direction: column; justify-content: space-between; gap: calc(2.5 * var(--u)); min-width: 0;
   padding: calc(2.5 * var(--u)) calc(2.5 * var(--u)) calc(2 * var(--u));

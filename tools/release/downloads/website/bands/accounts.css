@@ -138,6 +138,16 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
 @container acw (max-width: 91rem) {
   .ac-board { flex-direction: column; align-items: stretch; }
   .ac-board > .col { width: 100%; flex: none; }
+  /* the Usage and Budget views share the Accounts view's height (one grid cell from 1,280 px), so their column takes the room */
+  .ac-pair > .col, .ac-one > .col { flex: 1 1 auto; }
+  /* one wide column: the bar takes the room the console's capped bar leaves, so the figure and the reset stay beside its end */
+  .ac-board .windows { grid-template-columns: var(--lab-w) minmax(0, 1fr) var(--pct-w) var(--when-w); }
+  /* the first Usage row's label keeps its room above the hairline (the console's lead badge reset took the row's padding) */
+  .ac-tiles .pd-stat.lead { padding-bottom: calc(2 * var(--u)); }
+}
+/* the Budget's label column keeps 12 px before its bar */
+@container acw (width > 48rem) {
+  .ac-plate .meter.day.ac-budget { column-gap: var(--pg-sp-2); }
 }
 @container acw (max-width: 48rem) {
   .ac-budget .dayrun > .hours > .hr:not(.hn) { display: none; }
@@ -159,6 +169,7 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
   .ac-win { flex-direction: column; align-items: stretch; }
   .ac-plate .meter.day.ac-budget { grid-template-columns: minmax(0, 1fr) auto; row-gap: 1rem; padding-inline: 1rem; --bar-w: 100%; }
   .ac-plate .meter.day.ac-budget > .label { grid-column: 1; }
+  .ac-plate .meter.day.ac-budget > .chip.tag { margin-block: 0 calc(.5 * var(--u)); }
   .ac-plate .meter.day.ac-budget { grid-template-rows: repeat(6, auto) minmax(0, 1fr); }
   .ac-plate .meter.day.ac-budget > .when { grid-column: 2; grid-row: 2; justify-self: end; min-width: 0; }
   .ac-plate .meter.day.ac-budget > .dayline { grid-column: 1 / -1; }
@@ -183,6 +194,19 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
   .ac-plate { padding: calc(2.5 * var(--u)); }
   .ac-tabs { width: 100%; --ctl-h: 2.6rem; }
   .ac-tabs label { flex: 1; padding-inline: .4rem; }
+}
+
+/* ---------- the head beside the plate from a 1,280 px container to 2,199 px (the page's split starts at 2,200 px): the head (heading, line, the
+   three tabs, the drawing and its cable) takes 4 of 12 columns on the left, as it does from 2,200 px, and the plate 8. The plate's own
+   width then picks its shape: the two providers stand in one column until the plate is 91 rem wide. ---------- */
+@container pg (min-width: 1280px) and (max-width: 2199px) {
+  #accounts .ac-in { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--pg-cg); align-items: start; }
+  #accounts .ac-in > .ac-hd { display: flex; flex-direction: column; align-self: stretch; grid-column: 1 / span 4; grid-row: 1; margin-bottom: 0; padding-right: clamp(0px, 1vw, 32px); }
+  #accounts .ac-in > .ac-plate { grid-column: 5 / -1; grid-row: 1; margin-top: 0; }
+  #accounts .ac-hd > .ac-tabs { align-self: flex-start; }
+  #accounts .ac-hd > .pg-art { display: flex; flex-direction: column; flex: 1 1 auto; justify-self: stretch; align-self: stretch; width: auto; margin-top: var(--pg-sp-6); }
+  #accounts .ac-hd > .pg-art .pg-stub { display: inline; }
+  #accounts .ac-hd > .pg-art::after { content: ""; flex: 1 1 auto; min-height: 0; width: 8px; margin-left: calc(var(--pg-ax, 9%) - 4px); background: linear-gradient(var(--pg-cable), var(--pg-cable)) 50% 0 / 1.5px 100% no-repeat, radial-gradient(circle, var(--pg-dot, var(--claude)) 0 2.6px, transparent 3.2px) 50% 0 / 8px 8px no-repeat; }
 }
 
 /* ---------- the three views: radios hold the choice, :has() shows the chosen one in place ----------

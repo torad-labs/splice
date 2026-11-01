@@ -37,11 +37,11 @@
 
 /* the meter row: the console's own windows grid (label, 1.1rem bar, NN%, reset ring), four columns on every card so bars end on one x.
    The reset time is not on the closed card: the ring draws it, and the time opens with the card (or reads on the ring). */
-.cm-card .windows.cm-win { grid-template-columns: 4.8rem minmax(0, 1fr) 4.6rem var(--ring-sz); margin-top: calc(2 * var(--u)); column-gap: var(--pg-sp-3); row-gap: 0; min-height: var(--ring-sz); }
+.cm-card .windows.cm-win { grid-template-columns: 4.8rem minmax(0, 1fr) calc(var(--fig-hero) * 1.9) var(--ring-sz); margin-top: calc(2 * var(--u)); column-gap: var(--pg-sp-3); row-gap: 0; min-height: var(--ring-sz); }
 .cm-card .windows .label, .cm-card .windows .pct, .cm-card .windows .when, .cm-card.card .windows .cwin, .cm-card .windows .state { font-size: var(--fr-tm); }
 .cm-card .msock, .cm-step .msock { font-size: var(--fr-tm); }
-/* the card's focal figure: its limit, or the size of its context, at the console's 1.7rem; the model's name above stays the focal line */
-.cm-card .windows.cm-win > .pct, .cm-card .windows .cwin .cm-fig { font: 600 var(--fig-focal)/1 var(--font-data); letter-spacing: -.01em; font-variant-numeric: tabular-nums; color: var(--text); }
+/* the card's focal figure: its limit, or the size of its context, at the console's hero step (2.9rem), well over the model's name above (1.7rem) */
+.cm-card .windows.cm-win > .pct, .cm-card .windows .cwin .cm-fig { font: 600 var(--fig-hero)/1 var(--font-data); letter-spacing: -.01em; font-variant-numeric: tabular-nums; color: var(--text); }
 .cm-card .windows .cwin .cm-fig { margin-right: .15em; }
 .cm-card .cm-win > .cwbar { display: block; flex: none; width: auto; min-width: 0; margin: 0; }
 .cm-card .cm-win .cwbar .wbar { height: var(--meter-h); }
@@ -182,11 +182,21 @@
   .cm-dplate > .cm-sec:first-child { border-top: 0; }
 }
 
-/* ---------- four across where the board's column is 1,400 px or wider: the full container from 1,560 px up to 2,199 px, the 8 columns beside
-   the head from 2,330 px. Below that the cards lie two across, and one across on a phone. A card this narrow takes the phone's
-   meter (label, NN% and ring on one line, the bar under them). The eight cards fill two rows; each drawer opens full width under
-   them, in the order its card sits. ---------- */
-@container pg ((min-width: 1560px) and (max-width: 2199px)) or (min-width: 2330px) {
+/* ---------- the head beside the board from a 1,280 px container to 2,199 px (the page's split starts at 2,200 px): the head takes 4 of 12
+   columns on the left, as it does from 2,200 px, and the board 8, two cards across. The head's drawing and its cable follow the page's split. ---------- */
+@container pg (min-width: 1280px) and (max-width: 2199px) {
+  #commands .cm-in { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--pg-cg); align-items: start; }
+  #commands .cm-in > .pg-head { display: flex; flex-direction: column; align-self: stretch; grid-column: 1 / span 4; grid-row: 1; margin-bottom: 0; padding-right: clamp(0px, 1vw, 32px); }
+  #commands .cm-in > .cm-board { grid-column: 5 / -1; grid-row: 1; }
+  #commands .cm-in > .pg-head > .pg-art { display: flex; flex-direction: column; flex: 1 1 auto; justify-self: stretch; align-self: stretch; width: auto; margin-top: var(--pg-sp-6); }
+  #commands .cm-in > .pg-head > .pg-art .pg-stub { display: inline; }
+  #commands .cm-in > .pg-head > .pg-art::after { content: ""; flex: 1 1 auto; min-height: 0; width: 8px; margin-left: calc(var(--pg-ax, 9%) - 4px); background: linear-gradient(var(--pg-cable), var(--pg-cable)) 50% 0 / 1.5px 100% no-repeat, radial-gradient(circle, var(--pg-dot, var(--claude)) 0 2.6px, transparent 3.2px) 50% 0 / 8px 8px no-repeat; }
+}
+
+/* ---------- four across where the board's column is 1,400 px or wider: the 8 columns beside the head from 2,330 px. Below that the cards lie
+   two across, and one across on a phone. A card this narrow takes the phone's meter (label, NN% and ring on one line, the bar under
+   them). The eight cards fill two rows; each drawer opens full width under them, in the order its card sits. ---------- */
+@container pg (min-width: 2330px) {
   .cm-board { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .cm-board > .cm-card:nth-of-type(1) { grid-column: 1; grid-row: 1; }
   .cm-board > .cm-card:nth-of-type(2) { grid-column: 2; grid-row: 1; }

@@ -145,15 +145,15 @@
   }
   document.addEventListener("visibilitychange", function () { root.classList.toggle("pg-away", document.hidden); });
 
-  // The film's preview plays its own frames, muted, while it is in view and the tab is shown; it rests on its title card otherwise, and
-  // under reduced motion. Opening the film pauses it.
+  // The film's preview rests on its title card, like a video's thumbnail. While a mouse is over it, it plays its own frames muted; when
+  // the mouse leaves, or the film opens, it stops and goes back to the title card. Under reduced motion it never moves.
   var pv = document.querySelector(".fr-pv");
-  if (pv && "IntersectionObserver" in window && !still.matches) {
-    var seen = false;
-    var go = function () { if (seen && !document.hidden) { var p = pv.play(); if (p && p.catch) p.catch(function () { /* stays on its still */ }); } else pv.pause(); };
-    new IntersectionObserver(function (entries) { seen = entries[entries.length - 1].isIntersecting; go(); }, { threshold: 0.25 }).observe(pv);
-    document.addEventListener("visibilitychange", go);
-    document.addEventListener("click", function (e) { if (e.target instanceof Element && e.target.closest("[data-film]")) { seen = false; pv.pause(); } });
+  var pvFilm = pv && pv.closest("[data-film]");
+  if (pvFilm && !still.matches) {
+    var rest = function () { pv.pause(); try { pv.currentTime = 7; } catch (_) { /* not loaded yet: it is still on its title card */ } };
+    pvFilm.addEventListener("pointerenter", function (e) { if (e.pointerType !== "mouse") return; var p = pv.play(); if (p && p.catch) p.catch(rest); });
+    pvFilm.addEventListener("pointerleave", rest);
+    pvFilm.addEventListener("click", rest);
   }
 
   // The first screen's stage: when it comes into view, claudex hands a turn to the Grok plan and claude-splice hands one to the

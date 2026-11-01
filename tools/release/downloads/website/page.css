@@ -12,7 +12,8 @@
   --pg-t-3: clamp(18px, calc(12px + .45vw), 28px);
   --pg-t-4: clamp(24px, calc(16px + .6vw), 34px);
   --pg-t-5: clamp(36px, calc(22px + 1.8vw), 76px);
-  --pg-t-6: clamp(40px, 4.1vw, 128px);
+  /* the headline stops at 110 px, where it still takes two lines in the first screen's column, which stops growing with the page */
+  --pg-t-6: clamp(40px, 4.1vw, 110px);
 
   /* ===== the page's spacing steps: 1 to 3 are fixed, 4 to 7 grow with the screen. Band padding, grid gaps and the page's
      parts take their space from these. ===== */
@@ -201,16 +202,16 @@ main, .fr-foot { position: relative; z-index: 1; }
 .fr-h1 { grid-area: h; margin: 0; font: 400 var(--pg-t-6)/1.02 var(--font-lead); letter-spacing: -.016em; color: var(--text); text-wrap: balance; }
 .fr-lead { grid-area: lead; margin: var(--pg-sp-4) 0 0; font: 400 var(--pg-t-3)/1.4 var(--font-name); color: var(--text-body); max-width: 30em; text-wrap: pretty; }
 .fr-r { grid-area: inst; container: fr-i / inline-size; min-width: 0; margin-top: var(--pg-sp-5); }
-/* the film shows itself: a muted preview of its own frames plays while it is in view (its title card at rest), a play mark over it, and its
-   name and length on its foot; a click opens it with sound */
+/* the film shows itself like a video thumbnail: it rests on its title card, plays its own frames muted while the pointer is over it, and
+   carries a play mark, its name and its length in one dark label on its foot; a click opens it with sound */
 .fr-film { grid-area: film; position: relative; display: block; width: 100%; aspect-ratio: 16 / 9; margin-top: var(--pg-sp-4); overflow: hidden; color: var(--splice-cream); text-decoration: none; background: var(--obj-sunk); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--ink); }
 .fr-pv { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
-.fr-pl { position: absolute; left: 50%; top: 50%; width: 64px; height: 64px; margin: -32px 0 0 -32px; display: grid; place-items: center; border-radius: 50%; color: var(--ink); background: var(--splice-cream); box-shadow: 0 0 0 var(--ink-w) var(--ink), 0 6px 24px rgb(0 0 0 / .35); transition: transform var(--t-snap) var(--e-out); }
-.fr-pl svg { width: 26px; height: 26px; margin-left: 3px; }
-.fr-film:hover .fr-pl, .fr-film:focus-visible .fr-pl { transform: scale(1.08); }
-.fr-film:focus-visible { outline: var(--ink-w) solid var(--text); outline-offset: .2rem; }
-.fr-pt { position: absolute; left: 12px; bottom: 12px; display: flex; align-items: baseline; gap: 10px; padding: 6px 12px; font-size: var(--pg-t-2); background: rgb(0 0 0 / .78); border-radius: 6px; }
+.fr-pt { position: absolute; left: 14px; bottom: 14px; display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 6px; font-size: var(--pg-t-2); line-height: 1; background: rgb(0 0 0 / .8); border-radius: 999px; }
 .fr-pt b { font: 500 var(--pg-t-2)/1 var(--font-data); opacity: .8; }
+.fr-pl { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; color: var(--ink); background: var(--splice-cream); transition: transform var(--t-snap) var(--e-out); }
+.fr-pl svg { width: 16px; height: 16px; margin-left: 2px; }
+.fr-film:hover .fr-pl, .fr-film:focus-visible .fr-pl { transform: scale(1.1); }
+.fr-film:focus-visible { outline: var(--ink-w) solid var(--text); outline-offset: .2rem; }
 .fr-copy { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--pg-sp-3); align-items: start; padding: var(--pg-sp-3) var(--pg-sp-3) var(--pg-sp-3) var(--pg-sp-4); background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--ink); }
 .fr-lines { min-width: 0; }
 .fr-cl { margin: 0; display: flex; gap: .8em; font: 500 var(--pg-t-1)/1.9 var(--font-data); color: var(--text); }
@@ -251,10 +252,15 @@ main, .fr-foot { position: relative; z-index: 1; }
   .fr-lead { margin-top: var(--pg-sp-3); }
   .fr-r { margin-top: var(--pg-sp-4); }
   .fr-film { margin-top: var(--pg-sp-3); }
+  /* a phone's film is small, so its label shrinks and stays clear of the title card */
+  .fr-pt { left: 8px; bottom: 8px; gap: 7px; padding: 3px 10px 3px 3px; font-size: 13px; }
+  .fr-pt b { font-size: 13px; }
+  .fr-pl { width: 24px; height: 24px; }
+  .fr-pl svg { width: 11px; height: 11px; margin-left: 1px; }
 }
 @container pg (min-width: 1400px) {
   /* the left column stands centred against the board, so neither column leaves a hole under it */
-  .fr-hero { grid-template-columns: minmax(0, clamp(540px, 40%, 1100px)) var(--pg-sp-5) minmax(0, 1fr); grid-template-rows: 1fr repeat(6, auto) 1fr; grid-template-areas: ". . stage" "h . stage" "lead . stage" "inst . stage" "film . stage" "facts . stage" "art . stage" ". . stage"; padding-left: var(--pg-m); padding-right: var(--fr-rg); padding-top: calc(var(--fr-hh) + var(--pg-sp-3)); box-sizing: border-box; }
+  .fr-hero { grid-template-columns: minmax(0, clamp(540px, 40%, 1100px)) var(--pg-sp-5) minmax(0, 1fr); grid-template-rows: 1fr repeat(6, auto) 1fr; grid-template-areas: ". . stage" "h . stage" "lead . stage" "inst . stage" "film . stage" "facts . stage" "art . stage" ". . stage"; padding-left: var(--pg-m); padding-right: var(--fr-rg); padding-top: calc(var(--fr-hh) + var(--pg-sp-5)); box-sizing: border-box; }
   .fr-h1 { margin-top: 0; }
   /* the left column steps the same at every width: 32 px from headline to line, 56 between the parts, 32 from the install to the film */
   .fr-lead { margin-top: var(--fr-s); }
@@ -378,20 +384,22 @@ main, .fr-foot { position: relative; z-index: 1; }
   .fr-facts.is-seen, .fr-close-in.is-seen { animation: fr-rise var(--t-pop) var(--e-out) backwards; }
 }
 
-/* the window answers to the stage's width: three columns from 1,180 px, a narrower connector and plan meters on two rows from
-   900 px, a slim connector and wrapped command cards from 740 px, one column under that (the commands, the connector laid
-   flat, then the plans), and tighter meters on a phone */
+/* the window answers to the stage's width: three columns from 1,180 px and a narrower connector under that; each plan meter
+   keeps one row down to 960 px, so the plans column is no taller than the commands beside it, and under it puts its reset time
+   on a second row under the bar;
+   a slim connector and wrapped command cards from 740 px, one column under that (the commands, the connector laid flat, then
+   the plans), and tighter meters on a phone */
 @container stg (max-width: 1179px) {
   .fr-win { grid-template-columns: minmax(0, 25rem) var(--fr-conn) minmax(0, 1fr); --fr-conn: 6.4rem; --fr-pad: 1rem; }
   .fr-connlab { font-size: 12px; letter-spacing: .02em; padding: .5rem .2rem; }
   .fr-cc .fr-gh { padding-right: .6rem; }
 }
-@container stg (min-width: 740px) and (max-width: 1179px) {
-  .fr-win .fr-plan .windows, .fr-win .fr-plan .windows.spend { grid-template-columns: minmax(0, 1fr) auto; grid-auto-flow: row dense; row-gap: max(.85rem, 10px); column-gap: 1rem; }
+@container stg (min-width: 740px) and (max-width: 959px) {
+  .fr-win .fr-plan .windows, .fr-win .fr-plan .windows.spend { grid-template-columns: 4.4rem minmax(0, 1fr) auto; grid-auto-flow: row; row-gap: .45rem; column-gap: .8rem; }
   .fr-win .fr-plan .windows .label { grid-column: 1; }
-  .fr-win .fr-plan .windows .bar { grid-column: 1 / -1; }
-  .fr-win .fr-plan .windows .pct { grid-column: 2; }
-  .fr-win .fr-plan .windows .when { grid-column: 1 / -1; }
+  .fr-win .fr-plan .windows .bar { grid-column: 2; }
+  .fr-win .fr-plan .windows .pct { grid-column: 3; }
+  .fr-win .fr-plan .windows .when { grid-column: 2 / -1; margin-bottom: .4rem; }
   .fr-win .card .top { flex-wrap: wrap; row-gap: .5rem; }
 }
 @container stg (min-width: 740px) and (max-width: 899px) {

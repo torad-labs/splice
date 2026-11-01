@@ -350,3 +350,20 @@
   .qa-tn::before{display:none}
   .qa-zr{column-gap:var(--pg-sp-3)}
 }
+
+/* the code in the versions answer is in the console's data face like every other command on the page */
+.qa-band code{font-family:var(--font-data)}
+.qa-cw code{font:inherit}
+
+/* the band's drawing: ten rows of the list, one open, a lamp for each answer. From 2,200 px a deck of answer cards stands at the foot of
+   the head column, where the cable from the rows ends */
+.qa-band .pg-art>.qa-deck{display:none}
+.qa-art .pg-stub{stroke-width:1.5}
+@container pg (min-width:2200px){
+  .qa-band .pg-split>.pg-head>.pg-art{margin-top:var(--pg-sp-5)}
+  .qa-band .pg-split>.pg-head>.pg-art>svg{flex:0 1 auto;min-height:0}
+  .qa-band .pg-split>.pg-head>.pg-art>.qa-deck{display:block;order:2}
+}
+
+/* the step's label is two words: it wraps inside its node when the node is narrow */
+.qa-band .qa-rtag{max-width:100%;white-space:normal;justify-content:center;text-align:center}

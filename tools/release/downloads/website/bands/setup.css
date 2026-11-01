@@ -12,7 +12,6 @@
 /* the header's Install button lands on the Install step; keep the heading and line in view above it */
 #setup-install { scroll-margin-top: clamp(150px, 12cqw, 190px); }
 @container pg (max-width: 640px) { #setup-install { scroll-margin-top: 150px; } }
-.su-hd .su-env { font: 500 var(--pg-t-2)/1 var(--font-data); color: var(--text); }
 
 /* the window: the console's object, ink outline and a hard cast, on the page container */
 .su-win { position: relative; padding: var(--pg-sp-5); display: flex; flex-direction: column; gap: var(--pg-sp-4); background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--ink); }
@@ -36,11 +35,11 @@
 :is(.su-win:has(#su-r2:checked) .su-st:nth-child(1), .su-win:has(#su-r3:checked) .su-st:nth-child(-n+2)) .su-sock { color: var(--splice-cream); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .15rem var(--socket-ink); }
 .su-stn { white-space: nowrap; }
 
-/* the stage: the three panels share one cell, so the band is as tall as its tallest step and nothing below it moves when a step opens.
-   The panel that leaves fades over --t-hover (140 ms); the one that arrives shows at once and its parts ease in over --t-snap (240 ms), below */
+/* the stage: only the open step stands, so the window is as tall as that step and its terminal ends where its output does. The step that
+   opens shows at once and its parts ease in over --t-snap (240 ms), below */
 .su-stage { display: grid; min-width: 0; }
-.su-panel { grid-area: 1/1; display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); column-gap: var(--pg-sp-5); align-items: stretch; min-width: 0; visibility: hidden; opacity: 0; pointer-events: none; transition: opacity var(--t-hover) var(--e-out), visibility 0s linear var(--t-hover); }
-:is(.su-win:has(#su-r1:checked) .su-panel:nth-child(1), .su-win:has(#su-r2:checked) .su-panel:nth-child(2), .su-win:has(#su-r3:checked) .su-panel:nth-child(3)) { visibility: visible; opacity: 1; pointer-events: auto; transition: none; }
+.su-panel { grid-area: 1/1; display: none; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); column-gap: var(--pg-sp-5); align-items: stretch; min-width: 0; visibility: hidden; opacity: 0; pointer-events: none; transition: opacity var(--t-hover) var(--e-out), visibility 0s linear var(--t-hover); }
+:is(.su-win:has(#su-r1:checked) .su-panel:nth-child(1), .su-win:has(#su-r2:checked) .su-panel:nth-child(2), .su-win:has(#su-r3:checked) .su-panel:nth-child(3)) { display: grid; visibility: visible; opacity: 1; pointer-events: auto; transition: none; }
 
 /* the text column: rows of one pitch (--su-rp) from one top edge; an object is the pitch less the page's gap */
 .su-txt { display: flex; flex-direction: column; min-width: 0; }
@@ -209,3 +208,8 @@
   .su-pm .su-pg { display: none; }
   .card.su-pm { grid-template-columns: minmax(0, 1fr) auto; padding-left: var(--pg-sp-3); }
 }
+
+/* the band's drawing: the install's download bar part way, a key, and a first prompt, one cable through all three. Its bar's fill is a
+   heavier line of the same ink. */
+.su-art .su-fill { stroke-width: 5; }
+.su-tb { justify-content: space-between; }

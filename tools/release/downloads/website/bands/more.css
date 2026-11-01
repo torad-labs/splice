@@ -124,6 +124,7 @@
 .mo-s5>.mo-plate>.psec{height:100%;justify-content:center}
 .mo-setrow{display:flex;flex-wrap:wrap;align-items:center;gap:var(--pg-sp-3) var(--pg-sp-4)}
 .mo-win textarea.mo-field{resize:none}
+@container pg (min-width:1101px){ .mo-win textarea.mo-field{min-height:calc(4.6 * 1.4 * var(--mo-tm) + 2 * var(--pg-sp-2))} }
 .mo-field{flex:1 1 22rem;width:auto;min-width:min(100%,14rem);line-height:1.4;font-family:var(--font-name);font-weight:500}
 .mo-scope{position:relative;flex:none;max-width:100%}
 .mo-scope label{display:inline-flex;align-items:center;white-space:nowrap;font:500 var(--mo-tm)/1.3 var(--font-name);color:var(--text-mute);padding:0 var(--pg-sp-2);border-radius:calc(var(--r-obj) - .15rem);cursor:pointer;transition:color var(--t-hover) var(--e-out),background-color var(--t-hover) var(--e-out)}
@@ -136,8 +137,8 @@
 .mo-pips{flex:1 1 auto;display:flex;gap:var(--pg-sp-1);margin:0}
 .mo-pips>i{flex:1 1 0;height:.9rem;border-radius:.2rem;background:transparent;box-shadow:inset 0 0 0 .1rem var(--track-line);transition:background-color var(--t-snap) var(--e-out),box-shadow var(--t-snap) var(--e-out)}
 .mo-comp>.psec:last-child{flex:1 1 auto}
-.mo-reaches{flex:1 1 auto;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:var(--pg-sp-4)}
-.mo-reach{display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;gap:var(--pg-sp-3);min-width:0;padding:var(--pg-sp-3);border:.1rem solid var(--track-line);border-radius:var(--r-in);background:var(--obj-sunk);transition:opacity var(--t-snap) var(--e-out),background-color var(--t-snap) var(--e-out)}
+.mo-reaches{flex:1 1 auto;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:var(--pg-sp-4);align-content:start}
+.mo-reach{display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:var(--pg-sp-2);min-width:0;padding:var(--pg-sp-3);border:.1rem solid var(--track-line);border-radius:var(--r-in);background:var(--obj-sunk);transition:opacity var(--t-snap) var(--e-out),background-color var(--t-snap) var(--e-out)}
 .mo-reach .chip.edge{padding-left:calc(.55rem + .12rem - 1px)}
 .mo-host.card{display:block;padding:0;border:0;background:none;box-shadow:none;top:auto;left:auto}
 .mo-host .onlogin{margin:0!important;padding:0!important;border:0!important;box-shadow:none!important}
@@ -154,13 +155,13 @@
 /* shared MCP servers: two plates with the same three rows, so three copies sit beside one. One focal figure: the 1. */
 .mo-sub{display:flex;align-items:flex-end;min-height:calc(var(--mo-fig) * 1.3)}
 .mo-lab{font:500 var(--mo-ts)/1.3 var(--font-name);color:var(--text-mute)}
-.mo-rows{--mo-rh:calc(var(--mo-tm) * 1.3 + var(--pg-sp-2));display:grid;grid-template-rows:repeat(3,var(--mo-rh));row-gap:var(--pg-sp-3)}
+.mo-rows{--mo-rh:calc(var(--mo-tm) * 1.3 + var(--pg-sp-2));display:grid;grid-template-rows:repeat(3,var(--mo-rh));row-gap:calc(var(--pg-sp-4) + 6px)}
 .mo-pair{display:flex;align-items:center;min-width:0;height:var(--mo-rh)}
 .mo-pair>.mo-srv,.mo-pair>.mo-host{flex:none}
 .mo-w{display:block;flex:1 1 .8rem;min-width:.8rem;height:.24rem;border-radius:.12rem;background:var(--text-mute);opacity:.7}
 .mo-srv{--c:var(--text-mute)}
 .mo-srv svg{color:var(--text-mute)}
-.mo-fan{--mo-rh:calc(var(--mo-tm) * 1.3 + var(--pg-sp-2));display:grid;grid-template-columns:auto minmax(1rem,1fr) .56rem 2.4rem auto;grid-template-rows:repeat(3,var(--mo-rh));row-gap:var(--pg-sp-3);align-items:center}
+.mo-fan{--mo-rh:calc(var(--mo-tm) * 1.3 + var(--pg-sp-2));display:grid;grid-template-columns:auto minmax(1rem,1fr) .56rem 2.4rem auto;grid-template-rows:repeat(3,var(--mo-rh));row-gap:calc(var(--pg-sp-4) + 6px);align-items:center}
 .mo-fsrv{grid-column:1;grid-row:1/4;align-self:center}
 .mo-w0{grid-column:2;grid-row:1/4;align-self:center}
 .mo-bar{grid-column:3;grid-row:1/4;align-self:stretch;margin-block:calc(var(--mo-rh) / 2);background:var(--rail);border-radius:.28rem;box-shadow:0 0 0 var(--ink-w) var(--ink)}
@@ -186,14 +187,20 @@
 .mo-prov .card{--c:var(--local)}
 .mo-win .local-model.lmc-body{margin-top:var(--pg-sp-1)}
 .mo-lrail.rail{padding-left:0}
-.mo-s6>.mo-prov{height:100%;display:flex;flex-direction:column}
-.mo-lrail.rail{flex:1 1 auto;display:flex;flex-direction:column}
-.mo-lrail>.card{flex:1 1 auto;display:flex;flex-direction:column}
+.mo-lprov>.mo-prov{height:100%;display:flex;flex-direction:column}
+.mo-lrail.rail{flex:1 1 auto;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:1fr}
+.mo-lrail>.card{display:flex;flex-direction:column}
 .mo-lrail{--gap-card:var(--pg-sp-4)}
+.mo-local{grid-template-rows:auto 1fr}
+.mo-lterm>.term{width:100%}
 .mo-lrail .card .top{min-height:2rem}
-.mo-lrail .lmc-body{flex:1 1 auto;align-content:space-between}
+.mo-lrail .lmc-body{flex:1 1 auto;grid-template-columns:minmax(0,1fr) auto;align-content:center;align-items:center;gap:var(--pg-sp-2) var(--pg-sp-3)}
+.mo-lrail .lmc-foot{grid-column:2;grid-row:1}
+.mo-lrail .lmc-hold{display:none}
+.mo-lrail .mo-servers{grid-column:1/-1;margin-top:0}
 .mo-tall{display:flex;flex-direction:column}
 .mo-tall>.term{flex:1;align-content:start}
+.mo-lterm{display:flex;flex-direction:column}
 /* the window holds the tallest panel's height, and a shorter panel fills it rather than floating in padding: the Upgrades
    terminal and the version plate stand full height, as a terminal window does. The setup terminal stands as tall as its lines,
    at the top of its column beside the two cards, which fill. */
@@ -212,16 +219,20 @@
 
 /* narrow: read the page's own width */
 @container pg (max-width:1100px){
-  .mo-tabs{grid-template-columns:repeat(3,minmax(0,1fr));row-gap:var(--gap-card)}
-  .mo-tab{grid-row:auto;grid-column:auto}
+  .mo-tabs{grid-template-columns:repeat(6,minmax(0,1fr));row-gap:var(--gap-card)}
+  .mo-tab{grid-row:auto;grid-column:span 2}
+  .mo-tab:nth-of-type(n+4){grid-column:span 3}
   /* below 1100 px the panels stack under the tabs and differ a lot in height, so the window follows the open one */
   .mo-panel{grid-row:3;display:none}
   .mo-r:checked + .mo-tab + .mo-panel{display:grid}
   .mo-grid{grid-template-columns:minmax(0,1fr)}
   .mo-s5,.mo-s6,.mo-s7,.mo-s12{grid-column:1/-1}
   .mo-sibs{padding-block:0}
-  .mo-reaches{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .mo-reaches{grid-template-columns:repeat(6,minmax(0,1fr))}
+  .mo-reach{grid-column:span 2}
+  .mo-reach:nth-child(n+4){grid-column:span 3}
   .mo-apart{grid-template-columns:minmax(0,1fr)}
+  .mo-lrail.rail{grid-auto-rows:auto}
 }
 /* at 820 and under the tabs are rows that open in place. The height cannot be held there without padding, so it eases over --t-snap:
    the open panel's row grows from 0 to its height while the closing one shuts and fades out. */
@@ -229,6 +240,7 @@
   .mo-win{--mo-pad:var(--pg-sp-3)}
   .mo-tabs{grid-template-columns:minmax(0,1fr);row-gap:0}
   .mo-tab ~ .mo-tab{margin-top:var(--gap-card)}
+  .mo-tab,.mo-tab:nth-of-type(n+4){grid-column:auto}
   .mo-chev{display:block}
   .mo-panel,.mo-r:checked + .mo-tab + .mo-panel{display:block}
   .mo-panel{grid-row:auto;transition:opacity var(--t-snap) var(--e-out),visibility 0s linear var(--t-snap)}
@@ -239,6 +251,8 @@
   .mo-win .plate{padding:var(--pg-sp-3)}
   .mo-prov{padding:0 var(--cast) var(--cast) 0}
   .mo-reaches{grid-template-columns:minmax(0,1fr)}
+  .mo-reach,.mo-reach:nth-child(n+4){grid-column:auto}
+  .mo-lrail.rail{grid-template-columns:minmax(0,1fr)}
   .mo-reach{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--pg-sp-2) var(--pg-sp-3);padding:var(--pg-sp-2) var(--pg-sp-3)}
   .mo-count{flex-wrap:wrap}
   .mo-apart{padding:var(--pg-sp-3)}
@@ -256,3 +270,33 @@
   .mo-scope label{flex:1 1 0;justify-content:center;white-space:normal;text-align:center;padding:var(--pg-sp-1);line-height:1.2}
 }
 .mo-plus::before{content:"+"}
+
+/* storefront: the prompt is a file in the repo, .splice/prompt.md, and the chip beside it is what it says */
+.mo-pfile{display:inline-flex;flex-direction:column;align-items:stretch;min-width:0;max-width:100%;overflow:hidden;background:var(--obj-sunk);border:.12rem solid var(--track-line);border-radius:var(--r-in)}
+.mo-pfn,.mo-pft{display:flex;align-items:center;gap:var(--pg-sp-1);min-width:0;padding:var(--pg-sp-1) var(--pg-sp-2)}
+.mo-pfn{border-bottom:.12rem solid var(--track-line);font:500 var(--mo-ts)/1.3 var(--font-data);color:var(--text-mute)}
+.mo-pfn code{font:inherit;color:var(--text-body)}
+.mo-pft{font:500 var(--mo-tm)/1.3 var(--font-name);color:var(--text)}
+.mo-pfn svg,.mo-pft svg{flex:none;width:var(--mo-ts);height:var(--mo-ts)}
+
+/* upgrades: the version plate runs its three parts down the plate, the rollback drawn as an arrow back to the version before */
+.mo-upg .mo-s5>.mo-plate>.psec{justify-content:space-between}
+.mo-upg .mo-tall>.term{align-content:space-between}
+.mo-back{display:block;width:100%;max-width:32rem;height:auto;margin:0;fill:none;stroke:var(--text-mute);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:5 5;vector-effect:non-scaling-stroke}
+.mo-back path{vector-effect:non-scaling-stroke}
+.mo-back path:last-child{stroke-dasharray:none}
+
+/* the drawings at 1,800 px and up: the head column stands beside the window (from 2,200 px the page's own split says the same), the
+   head's drawing runs a cable down to a rack of two units, and a lamp row stands in the gutter */
+.mo-band .pg-art>.mo-rack,.mo-gut{display:none}
+@container pg (min-width:1800px){
+  .mo-band .pg-split{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));column-gap:var(--pg-cg);align-items:start}
+  .mo-band .pg-split>.mo-head{display:flex;flex-direction:column;align-self:stretch;grid-column:9/-1;grid-row:1;margin-bottom:0;padding-left:clamp(0px,1vw,32px);padding-right:0;contain:size}
+  .mo-band .pg-split>.mo-win{grid-column:1/span 8;grid-row:1;margin-top:0}
+  .mo-band .pg-split>.mo-head>.pg-art{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;justify-self:stretch;align-self:stretch;width:auto;margin-top:var(--pg-sp-5)}
+  .mo-band .pg-split>.mo-head>.pg-art>svg{flex:0 1 auto;min-height:0}
+  .mo-band .pg-split>.mo-head>.pg-art .pg-stub{display:inline}
+  .mo-band .pg-split>.mo-head>.pg-art::after{content:"";flex:1 1 auto;min-height:0;width:8px;margin-left:calc(var(--pg-ax,9%) - 4px);background:linear-gradient(var(--pg-cable),var(--pg-cable)) 50% 0 / 1.5px 100% no-repeat,radial-gradient(circle,var(--pg-dot,var(--claude)) 0 2.6px,transparent 3.2px) 50% 0 / 8px 8px no-repeat}
+  .mo-band .pg-split>.mo-head>.pg-art>.mo-rack{display:block;order:2}
+  .mo-gut{display:block;position:absolute;z-index:0;left:calc(var(--pg-m) / 2 - 14px);top:calc(var(--pg-sp-7) + 120px);width:28px;pointer-events:none}
+}

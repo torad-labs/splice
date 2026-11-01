@@ -13,10 +13,10 @@
 //   - nothing private is on it: no address, no key, no path or host of the machine that built it.
 // The build is run as it is used, `bun tools/release/downloads/website/build.ts <out> --media <dir>`, and it never
 // replaces a folder it did not write, and writes nothing when a file the page loads is missing.
-import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, test } from "bun:test";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import worker from "../downloads/worker.ts";
 import { MEDIA } from "../downloads/website/build.ts";
 
@@ -25,9 +25,20 @@ const BUILD = join(REPO, "tools/release/downloads/website/build.ts");
 const CONSOLE = join(REPO, "app/src/main/resources/console");
 const KEEP = JSON.parse(readFileSync(join(REPO, "tools/release/downloads/website/keep.json"), "utf8")) as Record<string, string[]>;
 
+/** A fresh folder under the system's temp folder, removed when the file's tests end. */
+const made: string[] = [];
+function temp(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  made.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of made) rmSync(dir, { recursive: true, force: true });
+});
+
 /** A media folder holding a small stand-in for each film file the page loads, minus [without]. */
 function media(without: string[] = []): string {
-  const dir = mkdtempSync(join(tmpdir(), "splice-site-media-"));
+  const dir = temp("splice-site-media-");
   for (const name of MEDIA) if (!without.includes(name)) writeFileSync(join(dir, name), `stand-in ${name}`);
   return dir;
 }
@@ -69,8 +80,32 @@ function words(html: string): string {
     .replace(/\s+/g, " ");
 }
 
+/** The page's head as keep.json's head list writes it: `key = content` for each meta tag with a name or property (its
+ *  media after the key), and `rel = href` for each link but stylesheets and preloads. */
+function headEntries(html: string): string[] {
+  const head = html.slice(0, html.indexOf("</head>"));
+  const attr = (tag: string, a: string) => new RegExp(`\\b${a}="([^"]*)"`).exec(tag)?.[1];
+  const found: string[] = [];
+  for (const m of head.matchAll(/<meta\b[^>]*>/g)) {
+    const key = attr(m[0], "name") ?? attr(m[0], "property");
+    const media = attr(m[0], "media");
+    if (key) found.push(`${key}${media ? ` ${media}` : ""} = ${attr(m[0], "content") ?? ""}`);
+  }
+  for (const m of head.matchAll(/<link\b[^>]*>/g)) {
+    const rel = attr(m[0], "rel");
+    if (rel && rel !== "stylesheet" && rel !== "preload") found.push(`${rel} = ${attr(m[0], "href") ?? ""}`);
+  }
+  return found;
+}
+
+/** The page cut at each band: the text from one `<section class="pg-band` to the next, keyed by the band's id. */
+function bands(html: string): Map<string, string> {
+  const cut = html.split(/(?=<section class="pg-band)/).slice(1);
+  return new Map(cut.map((b) => [/^<section [^>]*\bid="([^"]+)"/.exec(b)?.[1] ?? "", b]));
+}
+
 describe("splice.torad.ai's website", () => {
-  const out = join(mkdtempSync(join(tmpdir(), "splice-site-")), "site");
+  const out = join(temp("splice-site-"), "site");
   const built = run(out, media());
   const page = existsSync(join(out, "index.html")) ? readFileSync(join(out, "index.html"), "utf8") : "";
 
@@ -133,6 +168,50 @@ describe("splice.torad.ai's website", () => {
       "splice. The plumbing for your coding agents. Free and open source. Runs on your computer. github.com/torad-labs/splice. " +
         "Below it, five drawn Claude Code windows: claude-splice, claude-grok, claudex, claude-kimi and claude-muse.",
     );
+  });
+
+  // Search engines, link previews and browsers read the head, not the page: what the live page's head told them is still
+  // told, and its JSON-LD graph still names the app, the page and the company behind it.
+  test("the head still tells search engines, link previews and browsers what the page before it did", () => {
+    const have = headEntries(page);
+    const gone = KEEP.head!.filter((e) => (e.includes(" = ") ? !have.includes(e) : !have.some((h) => h.startsWith(`${e} = `))));
+    expect(gone).toEqual([]);
+    const ld = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(page)?.[1];
+    expect(ld).toBeDefined();
+    const graph = (JSON.parse(ld!) as { "@graph": Array<{ "@type": string; name?: string; url?: string }> })["@graph"];
+    expect(KEEP.schema!.filter((t) => !graph.some((n) => n["@type"] === t))).toEqual([]);
+    expect(graph.find((n) => n["@type"] === "SoftwareApplication")).toMatchObject({ name: "splice", url: "https://splice.torad.ai/" });
+  });
+
+  // A phone's browser bar takes the page's colour: the console's own ground in each theme, so the bar and the page meet
+  // without a seam.
+  test("the browser bar wears the page's own ground in each theme", () => {
+    const tokens = readFileSync(join(CONSOLE, "tokens.css"), "utf8");
+    const token = (name: string) => new RegExp(`--splice-${name}:\\s*(#[0-9A-Fa-f]{6})`).exec(tokens)?.[1]?.toLowerCase();
+    const bar = (scheme: string) => headEntries(page).find((e) => e.startsWith(`theme-color (prefers-color-scheme: ${scheme}) = `))?.split(" = ")[1]?.toLowerCase();
+    expect(bar("light")).toBe(token("paper"));
+    expect(bar("dark")).toBe(token("night"));
+  });
+
+  // Links people shared to a section of the page before the redo (#faq, #teamwork ...) open at the band that took its
+  // place, not at the top.
+  test("a link to a section of the page before the redo opens at the band that took its place", () => {
+    const took: Record<string, string> = { "same-setup": "same-setup", switch: "resume", teamwork: "teams", dashboard: "console", limits: "more", setup: "setup", faq: "questions", install: "install" };
+    const cut = bands(page);
+    const astray = KEEP.anchors!.filter((id) => {
+      const band = took[id];
+      if (!band || !cut.has(band)) return true;
+      return (page.match(new RegExp(`\\bid="${id}"`, "g")) ?? []).length !== 1 || !new RegExp(`\\bid="${id}"`).test(cut.get(band)!);
+    });
+    expect(astray).toEqual([]);
+  });
+
+  // page.js reveals each [data-reveal] as it scrolls into view. A band with none would show everything at once and take no
+  // part in the page's progressive disclosure.
+  test("every band takes part in the reveal as it scrolls into view", () => {
+    const cut = bands(page);
+    expect(cut.size).toBeGreaterThan(0);
+    expect([...cut].filter(([, b]) => !/\bdata-reveal\b/.test(b)).map(([id]) => id)).toEqual([]);
   });
 
   // Browsers, bookmarks, home screens and link previews ask the host's root for its icons without reading the page, and
@@ -205,7 +284,7 @@ describe("splice.torad.ai's website", () => {
 
 describe("the website build", () => {
   test("never replaces a folder it did not write", () => {
-    const out = mkdtempSync(join(tmpdir(), "splice-site-foreign-"));
+    const out = temp("splice-site-foreign-");
     writeFileSync(join(out, "notes.txt"), "someone's work");
     const r = run(out, media());
     expect(r.code).not.toBe(0);
@@ -214,7 +293,7 @@ describe("the website build", () => {
   });
 
   test("replaces its own earlier output", () => {
-    const out = join(mkdtempSync(join(tmpdir(), "splice-site-again-")), "site");
+    const out = join(temp("splice-site-again-"), "site");
     expect(run(out, media()).code).toBe(0);
     writeFileSync(join(out, "left-over.txt"), "from the last build");
     const again = run(out, media());
@@ -225,7 +304,7 @@ describe("the website build", () => {
   });
 
   test("writes nothing when a file the page loads is missing, and names it", () => {
-    const parent = mkdtempSync(join(tmpdir(), "splice-site-missing-"));
+    const parent = temp("splice-site-missing-");
     const out = join(parent, "site");
     const film = MEDIA.find((m) => m.endsWith(".mp4"));
     expect(film).toBeDefined();
@@ -235,10 +314,15 @@ describe("the website build", () => {
     expect(existsSync(out)).toBe(false);
   });
 
+  // The config says how to build the site, and deploys the folder that command writes, which git never carries.
   test("the wrangler config deploys the folder the build writes", () => {
     const config = readFileSync(join(REPO, "tools/release/downloads/wrangler.jsonc"), "utf8");
-    expect(config).toContain('"directory": "./site"');
-    expect(config).toContain("website/build.ts");
-    expect(relative(REPO, join(REPO, "tools/release/downloads/site"))).toBe("tools/release/downloads/site");
+    const deploys = /"directory":\s*"([^"]+)"/.exec(config)?.[1];
+    const writes = /bun tools\/release\/downloads\/website\/build\.ts (\S+)/.exec(config)?.[1];
+    expect(deploys).toBeDefined();
+    expect(writes).toBeDefined();
+    expect(resolve(REPO, "tools/release/downloads", deploys!)).toBe(resolve(REPO, writes!));
+    const ignored = readFileSync(join(REPO, ".gitignore"), "utf8").split("\n").map((l) => l.trim().replace(/^\//, "").replace(/\/$/, ""));
+    expect(ignored).toContain(relative(REPO, resolve(REPO, writes!)));
   });
 });

@@ -49,7 +49,7 @@ opentelemetry-api = { module = "io.opentelemetry:opentelemetry-api", version.ref
 opentelemetry-sdk-trace = { module = "io.opentelemetry:opentelemetry-sdk-trace", version.ref = "opentelemetry" }
 graaljs-polyglot = { module = "org.graalvm.polyglot:polyglot", version.ref = "graaljs" }
 graaljs-community = { module = "org.graalvm.polyglot:js-community", version.ref = "graaljs" }
-zstd-jni = { module = "com.github.luben:zstd-jni", version = "1.5.7-20" }
+zstd-jni = { module = "com.github.luben:zstd-jni", version = "1.5.7-24" }
 slf4j-nop = { module = "org.slf4j:slf4j-nop", version.ref = "slf4j" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }

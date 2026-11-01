@@ -69,10 +69,12 @@ function rootPaths(text: string, base: string): string[] {
   return [...found];
 }
 
-/** The page's words as a reader sees them: no scripts, styles or tags, entities decoded, quotes straightened. */
+/** The page's words as a reader sees them: no scripts, styles or tags, entities decoded, quotes straightened. A <wbr>
+ *  only marks where a long line may break, so it adds nothing to the words. */
 function words(html: string): string {
   return html
     .replace(/<(script|style)\b[\s\S]*?<\/\1>/g, " ")
+    .replace(/<wbr\s*\/?>/g, "")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;|&#160;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;|&#34;/g, '"')
     .replace(/&#39;|&apos;|&#x27;/g, "'").replace(/&amp;/g, "&")

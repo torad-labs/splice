@@ -47,7 +47,9 @@
 .su-lab { flex: none; box-sizing: border-box; display: flex; align-items: center; min-height: var(--su-rp); padding-bottom: var(--pg-sp-3); font: 500 var(--su-tm)/1.4 var(--font-name); color: var(--text); border-bottom: 1px solid var(--hair); }
 .su-lab p { margin: 0; min-width: 0; }
 .su-lab code { font: 500 var(--su-ts)/1.3 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .1rem solid var(--track-line); border-radius: var(--r-in); padding: var(--pg-sp-1) var(--pg-sp-1); }
-.su-lab .chip { margin: 0 var(--pg-sp-1); vertical-align: middle; font-size: var(--su-ts); }
+.su-lab .chip { margin: 0 0 0 .2em; vertical-align: middle; font-size: var(--su-ts); }
+/* "you use" travels with its chip, so a narrow line never leaves the chip alone under the sentence */
+.su-nw { white-space: nowrap; }
 .su-map { display: flex; flex-direction: column; gap: var(--pg-sp-3); padding: var(--pg-sp-3) var(--cast) var(--cast) 0; }
 .su-pg { flex: none; display: grid; place-items: center; box-sizing: border-box; width: calc(var(--su-ob) - var(--pg-sp-2)); height: calc(var(--su-ob) - var(--pg-sp-2)); border-radius: var(--r-in); color: var(--text); background: var(--obj-sunk); box-shadow: inset 0 0 0 .1rem var(--track-line); }
 .su-pg svg { width: 58%; height: 58%; }

@@ -200,7 +200,7 @@ main, .fr-foot { position: relative; z-index: 1; }
   .fr-nav, .fr-hdr-in > .fr-theme { display: none; }
   .fr-menubtn { display: inline-flex; align-items: center; justify-content: center; }
   .fr-hdr-in > .fr-cta { margin-left: auto; }
-  .fr-hdr-in { gap: var(--pg-sp-1); }
+  .fr-hdr-in { gap: var(--pg-sp-2); }
   .fr-brand { margin-right: 0; }
 }
 @media (max-width: 820px) { .fr-hdr-in .act { padding: 0 14px; } }
@@ -472,7 +472,8 @@ main, .fr-foot { position: relative; z-index: 1; }
 .fr-foot .act { font-size: var(--pg-t-2); min-height: 40px; padding: 0 18px; --ctl-h: 40px; }
 .fr-foot .switch { --ctl-h: 40px; }
 /* the footer's four columns need the theme switch's 225 px in the fourth (1.45fr) track, which a 7fr column gives only from about
-   1400 px wide, so below that the footer stacks */
+   1400 px wide, so below that the name stands over the four columns at the container's full width, which still gives the
+   switch room for its three labels (248 px) down to 900 px; under that the columns pair up */
 @media (min-width: 1400px) {
   .fr-foot-in { grid-template-columns: repeat(12, minmax(0, 1fr)); }
   .fr-foot-in > .fr-fb { grid-column: 1 / span 4; }
@@ -480,6 +481,8 @@ main, .fr-foot { position: relative; z-index: 1; }
 }
 @media (max-width: 1399px) {
   .fr-foot-in { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 899px) {
   .fr-fcols { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 24px; }
   .fr-fl { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; grid-auto-flow: row; column-gap: 24px; }
   .fr-fleg { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 24px; }

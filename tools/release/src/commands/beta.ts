@@ -7,7 +7,7 @@
 //   2. builds    the reproducible jar and the staged bundle in a throwaway tree under /tmp at that main sha,
 //                through `gate slot` like every gradle run here, with release.yml's steps: stageRelease with the
 //                tag threaded in, `release accept`, and the hub pair checked against mcp-hub.sha256;
-//   3. publishes the accepted dist/ on splice.torad.ai (`release publish`, wrangler's own login), where the beta
+//   3. publishes the accepted dist/ on splice.torad.ai/download (`release publish`, the keyring's bucket token), where the beta
 //                channel's updater and install.sh download it since Oct 31, 2026, and then
 //                `gh release create v<version> --prerelease --target <main sha>` with the notes alone, saying the
 //                build was local and unattested. The GitHub release carries no file (Marcos: "I dont want the release

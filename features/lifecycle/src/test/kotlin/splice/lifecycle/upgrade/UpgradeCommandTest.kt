@@ -93,7 +93,7 @@ internal class UpgradeCommandTest : UpgradeRig() {
     private fun attestations() = calls.filter { it.take(3) == listOf("gh", "attestation", "verify") }
 
     // Goal (Marcos, Oct 31: "I dont want the release download to be there [GitHub] ... being at Cloudflare makes more
-    // sense"): with no SPLICE_RELEASE_BASE_URL, `splice upgrade` downloads every file of a release from splice.torad.ai,
+    // sense"): with no SPLICE_RELEASE_BASE_URL, `splice upgrade` downloads every file of a release from splice.torad.ai/download,
     // the pinned version from its own folder and the newest stable from /latest, and nothing from github.com.
     @Test
     fun `with no override every download of an upgrade comes from splice torad ai`(@TempDir home: Path) {
@@ -105,11 +105,11 @@ internal class UpgradeCommandTest : UpgradeRig() {
         val upgrade = { args: List<String> -> command(home, "", fetch = fake, gh = FakeGh(auth = 1)).upgrade(args) }
         val (pinned, out) = captured { upgrade(listOf("--to", "v9.9.9")) }
         assertTrue(pinned, out)
-        val fromPin = asked.all { it.startsWith("https://splice.torad.ai/v9.9.9/") }
+        val fromPin = asked.all { it.startsWith("https://splice.torad.ai/download/v9.9.9/") }
         assertTrue(asked.isNotEmpty() && fromPin, "pinned: $asked")
         asked.clear()
         captured { upgrade(emptyList()) }
-        val fromLatest = asked.all { it.startsWith("https://splice.torad.ai/latest/") }
+        val fromLatest = asked.all { it.startsWith("https://splice.torad.ai/download/latest/") }
         assertTrue(asked.isNotEmpty() && fromLatest, "latest: $asked")
     }
 
@@ -279,7 +279,7 @@ internal class UpgradeCommandTest : UpgradeRig() {
         assertEquals("0.3.9", link(home, "current"))
         val release = UpgradeRelease(this.out, JdkUpgradeFetch(), process(), "java")
         assertEquals(release.base("v0.4.0", null), release.base("0.4.0", null), "one tag, two spellings")
-        assertEquals("https://splice.torad.ai/v0.4.0", release.base("0.4.0", null))
+        assertEquals("https://splice.torad.ai/download/v0.4.0", release.base("0.4.0", null))
     }
 
     @Test

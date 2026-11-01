@@ -58,7 +58,7 @@ const EMBEDDED: readonly (readonly [string, string])[] = [
 ];
 
 // Where install.sh downloads releases from since Oct 31, 2026 (tools/release/downloads/worker.ts).
-const RELEASE_SITE = "https://splice.torad.ai";
+const RELEASE_SITE = "https://splice.torad.ai/download";
 
 function fail(message: string): number {
   console.error(message);

@@ -60,7 +60,7 @@
   finished answer whose client disconnected is kept on disk for its identical retry.
 - **Installing needs no GitHub account.** The downloaded release jar and launch shim are checked
   against the release's checksums, and build provenance is verified whenever `gh` is signed in.
-- **Releases are downloaded from splice.torad.ai.** `curl -fsSL https://splice.torad.ai/install.sh | bash` installs
+- **Releases are downloaded from splice.torad.ai/download.** `curl -fsSL https://splice.torad.ai/download/install.sh | bash` installs
   the newest stable release, and `splice upgrade` and the beta channel read the same site. The GitHub release keeps the
   notes and carries no file. A machine on a 0.4.0 beta still looks on GitHub, so it upgrades once with the installer
   above.
@@ -80,10 +80,10 @@
 
 ### Upgrading from 0.3.x
 0.3.x has no `splice upgrade`. Re-run the installer pinned to this release. Releases are downloaded from
-splice.torad.ai from 0.4.0 on, so the GitHub release carries the notes and no file:
+splice.torad.ai/download from 0.4.0 on, so the GitHub release carries the notes and no file:
 
 ```bash
-curl -fsSL https://splice.torad.ai/v0.4.0/install.sh \
+curl -fsSL https://splice.torad.ai/download/v0.4.0/install.sh \
   | env SPLICE_VERSION=v0.4.0 bash
 ```
 

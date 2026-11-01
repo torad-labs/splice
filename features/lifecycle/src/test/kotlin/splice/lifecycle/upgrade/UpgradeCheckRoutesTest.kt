@@ -29,8 +29,8 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-// Releases download from splice.torad.ai since Oct 31 (Marcos: "I dont want the release download to be there [GitHub]").
-private const val LATEST_BASE = "https://splice.torad.ai/latest"
+// Releases download from splice.torad.ai/download since Oct 31 (Marcos: "I dont want the release download to be there [GitHub]").
+private const val LATEST_BASE = "https://splice.torad.ai/download/latest"
 
 class UpgradeCheckRoutesTest {
     private val asked = CopyOnWriteArrayList<String>()
@@ -130,7 +130,7 @@ class UpgradeCheckRoutesTest {
         }
         val read = (onBeta.check() as UpgradeCheckOutcome.Done).snapshot
         assertEquals("0.4.1-beta.2", read.latest)
-        assertEquals(listOf("https://splice.torad.ai/releases.json"), lists)
+        assertEquals(listOf("https://splice.torad.ai/download/releases.json"), lists)
     }
 
     @Test

@@ -1,12 +1,14 @@
 // Goal (Marcos, Oct 31: "I dont want the release download to be there [GitHub] ... being at Cloudflare makes more
-// sense"): splice.torad.ai serves every release file the installer and `splice upgrade` ask for.
+// sense"), then: "Splice.torad.ai should be splices website ... Have tje download be splice.torad.ai/download"):
+// splice.torad.ai/download serves every release file the installer and `splice upgrade` ask for.
 //
-//   /v<version>/<file>  the file as published, cacheable forever since a published version never changes;
-//   /latest/<file>      a redirect to that file in the newest stable release, so every client lands on one version;
-//   /install.sh         the newest stable release's installer, for `curl -fsSL https://splice.torad.ai/install.sh | bash`;
-//   /releases.json      the list of published releases the updater reads, never cached;
+//   /download/v<version>/<file>  the file as published, cacheable forever since a published version never changes;
+//   /download/latest/<file>      a redirect to that file in the newest stable release, so every client lands on one;
+//   /download/install.sh         the newest stable release's installer;
+//   /download/releases.json      the list of published releases the updater reads, never cached;
 //
-// and nothing else. The worker runs here against an in-memory bucket with the R2 calls it makes.
+// and nothing else under /download. The rest of the host is splice's website: until it is deployed, the bare host
+// sends a visitor to the repository instead of a downloads page. The worker runs here against an in-memory bucket with the R2 calls it makes.
 import { describe, expect, test } from "bun:test";
 import worker, { type Bucket, newestStable } from "../downloads/worker.ts";
 
@@ -40,53 +42,64 @@ describe("splice.torad.ai", () => {
   const get = site(objects);
 
   test("a version's file is served as published and cached as immutable", async () => {
-    const reply = await get("/v0.4.0/splice.jar");
+    const reply = await get("/download/v0.4.0/splice.jar");
     expect(reply.status).toBe(200);
     expect(await reply.text()).toBe("jar 0.4.0");
     expect(reply.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
   });
 
   test("/latest/<file> redirects to the newest stable release, never a beta", async () => {
-    const reply = await get("/latest/splice.jar");
+    const reply = await get("/download/latest/splice.jar");
     expect(reply.status).toBe(302);
-    expect(reply.headers.get("location")).toBe("https://splice.torad.ai/v0.4.0/splice.jar");
+    expect(reply.headers.get("location")).toBe("https://splice.torad.ai/download/v0.4.0/splice.jar");
     expect(reply.headers.get("cache-control")).toBe("no-store");
   });
 
   test("/install.sh is the newest stable release's installer, revalidated on every fetch", async () => {
-    const reply = await get("/install.sh");
+    const reply = await get("/download/install.sh");
     expect(reply.status).toBe(200);
     expect(await reply.text()).toBe("installer 0.4.0");
     expect(reply.headers.get("cache-control")).toBe("no-cache");
   });
 
   test("/releases.json is the published list, never cached", async () => {
-    const reply = await get("/releases.json");
+    const reply = await get("/download/releases.json");
     expect(reply.status).toBe(200);
     expect(JSON.parse(await reply.text()).map((r: Entry) => r.tag_name)).toEqual(["v0.4.1-beta.1", "v0.4.0", "v0.3.2"]);
     expect(reply.headers.get("cache-control")).toBe("no-cache");
   });
 
   test("HEAD answers like GET without a body", async () => {
-    const reply = await get("/v0.4.0/splice.jar", "HEAD");
+    const reply = await get("/download/v0.4.0/splice.jar", "HEAD");
     expect(reply.status).toBe(200);
     expect(await reply.text()).toBe("");
   });
 
   test("a missing file, an unknown path or a path that leaves its folder is 404, and a write is 405", async () => {
-    for (const path of ["/v0.4.0/missing", "/v9.9.9/splice.jar", "/secret", "/v0.4.0/..%2Freleases.json", "/latest/..%2Fx", "/v0.4.0/a/b"]) {
+    for (const path of ["/download/v0.4.0/missing", "/download/v9.9.9/splice.jar", "/download/secret", "/secret", "/download/v0.4.0/..%2Freleases.json", "/download/latest/..%2Fx", "/download/v0.4.0/a/b", "/v0.4.0/splice.jar"]) {
       expect((await get(path)).status).toBe(404);
     }
-    expect((await get("/v0.4.0/splice.jar", "PUT")).status).toBe(405);
+    expect((await get("/download/v0.4.0/splice.jar", "PUT")).status).toBe(405);
   });
 
   test("before any stable release, /latest and /install.sh say so instead of serving a beta", async () => {
     const early = site({ "releases.json": feed("v0.4.0-beta.3"), "v0.4.0-beta.3/install.sh": "beta installer" });
-    for (const path of ["/latest/splice.jar", "/install.sh"]) {
+    for (const path of ["/download/latest/splice.jar", "/download/install.sh"]) {
       const reply = await early(path);
       expect(reply.status).toBe(404);
-      expect(await reply.text()).toContain("no stable release");
+      const said = await reply.text();
+      expect(said).toContain("no stable release");
+      expect(said).toContain("https://splice.torad.ai/download/v<version>/install.sh");
     }
+  });
+});
+
+describe("the rest of splice.torad.ai", () => {
+  test("the bare host sends a visitor to splice's repository, never to a downloads page, until the website is deployed", async () => {
+    const reply = await site({})("/");
+    expect(reply.status).toBe(302);
+    expect(reply.headers.get("location")).toBe("https://github.com/torad-labs/splice");
+    expect(reply.headers.get("cache-control")).toBe("no-store");
   });
 });
 

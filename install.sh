@@ -8,7 +8,7 @@
 #   ./install.sh                 # from a checkout: build the jar, install from it
 #   SPLICE_JAR=/path/to.jar ./install.sh   # prebuilt jar; sibling splice-launch is auto-detected
 #   SPLICE_JAR=/path/to.jar SPLICE_SHIM=/path/to/splice-launch ./install.sh
-#   curl -fsSL https://splice.torad.ai/install.sh | bash   # release mode: downloads from splice.torad.ai
+#   curl -fsSL https://splice.torad.ai/download/install.sh | bash   # release mode: downloads from splice.torad.ai/download
 #   SPLICE_VERSION=v0.4.0 bash install.sh                   # release mode, pinned to one release
 set -euo pipefail
 
@@ -271,10 +271,10 @@ verify_attestation() {
 }
 
 # 1. Obtain the jar. Prefer an explicit SPLICE_JAR, else build from the checkout, else (release
-#    mode) download from splice.torad.ai — the repo intentionally ships no binaries. Releases have
-#    been served there since Oct 31, 2026: /latest/ follows the newest stable release, and
-#    /v<version>/ holds each release as published.
-RELEASE_SITE="https://splice.torad.ai"
+#    mode) download from splice.torad.ai/download — the repo intentionally ships no binaries. Releases
+#    have been served there since Oct 31, 2026: /download/latest/ follows the newest stable release,
+#    and /download/v<version>/ holds each release as published.
+RELEASE_SITE="https://splice.torad.ai/download"
 if [ -n "${SPLICE_JAR:-}" ]; then
   echo "splice: installing jar from $SPLICE_JAR"
   cp "$SPLICE_JAR" "$JAR_TMP"

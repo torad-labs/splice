@@ -16,13 +16,15 @@ name: release
 #
 # Where the release lands (Oct 31, 2026, Marcos: "I dont want the release download to be there [GitHub] ... being at
 # Cloudflare makes more sense"): this workflow builds, accepts and attests, and leaves the GitHub release as an
-# unpublished draft carrying the notes and no file. The downloads are served from splice.torad.ai, which is written
-# with wrangler's own login on the maintainer's machine, never with a Cloudflare token in this repository:
+# unpublished draft carrying the notes and no file. The downloads are served from splice.torad.ai/download, which is
+# written from the maintainer's machine with a token scoped to the release bucket that its keyring holds, never with a
+# Cloudflare token in this repository:
 #
 #   bun tools/release publish <version> --run <this run's id>
 #
-# takes the accepted-release artifact from this run, checks it against its sha256sums.txt, puts every file on
-# splice.torad.ai, lists the release there, and only then publishes the draft, which creates the tag.
+# takes the accepted-release artifact from this run, checks every file's attestation from this workflow and its
+# sha256sums.txt, puts every file on splice.torad.ai/download, lists the release there, and only then publishes the
+# draft, which creates the tag.
 #
 # The tag created on publish uses the workflow's own GITHUB_TOKEN, and events created with that
 # token do not trigger workflows — so a promotion cannot recursively fire the tag path.

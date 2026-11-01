@@ -27,7 +27,7 @@ private const val GITHUB_REPO = "torad-labs/splice"
 
 /** Where releases are downloaded from since Oct 31, 2026 (Marcos: the release download belongs at Cloudflare, not
  *  GitHub): /latest/ follows the newest stable release, /v<version>/ holds each release, /releases.json lists them. */
-internal const val RELEASE_SITE = "https://splice.torad.ai"
+internal const val RELEASE_SITE = "https://splice.torad.ai/download"
 private const val SHIM_MODE = "rwxr-xr-x"
 
 /** The exit code of the candidate jar's `check-config` when its boot findings refuse the person's splice.toml: a wire contract with another process, read here and declared there. */

@@ -363,7 +363,7 @@ private const val CI_WORKFLOW = ".github/workflows/ci.yml"
 private const val STAGE_BUILD = "app/build.gradle.kts"
 
 // Where releases are downloaded from since Oct 31, 2026 (Marcos: the download belongs at Cloudflare, not GitHub).
-private const val RELEASE_SITE = "https://splice.torad.ai"
+private const val RELEASE_SITE = "https://splice.torad.ai/download"
 private const val INSTALL_RELEASE = "RELEASE_SITE=\"$RELEASE_SITE\"\n"
 private const val INSTALL_REFUSALS = "echo 'sha256 verification FAILED'; echo 'attestation verification FAILED'\n"
 private const val INSTALL_JAR = "verify_attestation \"\$JAR_TMP\" splice.jar\n"

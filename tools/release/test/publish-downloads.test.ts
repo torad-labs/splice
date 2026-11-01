@@ -1,8 +1,9 @@
 // Goal (Marcos, Oct 31: "I dont want the release download to be there [GitHub] ... being at Cloudflare makes more
-// sense"): publishing a built release puts it on splice.torad.ai, where the installer and `splice upgrade` find it.
+// sense"; then "Have tje download be splice.torad.ai/download"): publishing a built release puts it on splice.torad.ai/download, where the installer and `splice upgrade` find it.
 //
-//   - after a publish, splice.torad.ai serves every file of the release byte for byte from /v<version>/, lists the
-//     release in /releases.json (a beta as a prerelease), and /latest follows only a stable release;
+//   - after a publish, splice.torad.ai serves every file of the release byte for byte from /download/v<version>/,
+//     cached for good, lists the release in /download/releases.json (a beta as a prerelease), never cached, and
+//     /download/latest follows only a stable release;
 //   - a release whose files do not match its sha256sums.txt, or a version already published, is refused with
 //     nothing uploaded and the list unchanged;
 //   - no client is ever pointed at a version before all of its files are there: the list is written last.
@@ -38,7 +39,7 @@ function dist(version: string, tamper?: string): string {
   return dir;
 }
 
-type Kept = { bytes: Uint8Array; contentType: string; cacheControl: string };
+type Kept = { bytes: Uint8Array; contentType: string };
 
 /** The bucket in memory: what publish writes, and the R2 view the worker reads. */
 function memory() {
@@ -86,14 +87,14 @@ describe("release publish to splice.torad.ai", () => {
     const built = dist("0.4.0");
     expect(await publish(site.store, { version: "0.4.0", dist: built, now })).toBeUndefined();
     for (const name of ["splice.jar", "splice-launch", "install.sh", "LICENSE", "sha256sums.txt"]) {
-      const reply = await site.get(`/v0.4.0/${name}`);
+      const reply = await site.get(`/download/v0.4.0/${name}`);
       expect(reply.status).toBe(200);
       expect(await reply.text()).toBe(await Bun.file(join(built, name)).text());
     }
-    const list = JSON.parse(await (await site.get("/releases.json")).text());
+    const list = JSON.parse(await (await site.get("/download/releases.json")).text());
     expect(list).toEqual([{ tag_name: "v0.4.0", prerelease: false, draft: false, published_at: "2026-10-31T20:00:00.000Z" }]);
-    expect((await site.get("/latest/splice.jar")).headers.get("location")).toBe("https://splice.torad.ai/v0.4.0/splice.jar");
-    expect(await (await site.get("/install.sh")).text()).toBe("installer 0.4.0");
+    expect((await site.get("/download/latest/splice.jar")).headers.get("location")).toBe("https://splice.torad.ai/download/v0.4.0/splice.jar");
+    expect(await (await site.get("/download/install.sh")).text()).toBe("installer 0.4.0");
     expect(site.incomplete()).toEqual([]);
   });
 
@@ -101,10 +102,10 @@ describe("release publish to splice.torad.ai", () => {
     const site = memory();
     await publish(site.store, { version: "0.4.0", dist: dist("0.4.0"), now });
     expect(await publish(site.store, { version: "0.4.1-beta.1", dist: dist("0.4.1-beta.1"), now })).toBeUndefined();
-    const list = JSON.parse(await (await site.get("/releases.json")).text());
+    const list = JSON.parse(await (await site.get("/download/releases.json")).text());
     expect(list.map((r: { tag_name: string; prerelease: boolean }) => [r.tag_name, r.prerelease])).toEqual([["v0.4.1-beta.1", true], ["v0.4.0", false]]);
-    expect(await (await site.get("/v0.4.1-beta.1/splice.jar")).text()).toBe("jar 0.4.1-beta.1");
-    expect((await site.get("/latest/splice.jar")).headers.get("location")).toBe("https://splice.torad.ai/v0.4.0/splice.jar");
+    expect(await (await site.get("/download/v0.4.1-beta.1/splice.jar")).text()).toBe("jar 0.4.1-beta.1");
+    expect((await site.get("/download/latest/splice.jar")).headers.get("location")).toBe("https://splice.torad.ai/download/v0.4.0/splice.jar");
     expect(site.incomplete()).toEqual([]);
   });
 
@@ -129,11 +130,14 @@ describe("release publish to splice.torad.ai", () => {
     expect(site.writes).toEqual([]);
   });
 
-  test("files are cached as immutable and the list is never cached", async () => {
+  test("a published file is served cached for good, and the list as JSON never cached", async () => {
     const site = memory();
     await publish(site.store, { version: "0.4.0", dist: dist("0.4.0"), now });
-    expect(site.kept.get("v0.4.0/splice.jar")?.cacheControl).toBe("public, max-age=31536000, immutable");
-    expect(site.kept.get("releases.json")?.cacheControl).toBe("no-cache");
-    expect(site.kept.get("releases.json")?.contentType).toBe("application/json");
+    const jar = await site.get("/download/v0.4.0/splice.jar");
+    expect(jar.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    expect(jar.headers.get("content-type")).toBe("application/java-archive");
+    const list = await site.get("/download/releases.json");
+    expect(list.headers.get("cache-control")).toBe("no-cache");
+    expect(list.headers.get("content-type")).toBe("application/json");
   });
 });

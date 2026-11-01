@@ -241,10 +241,33 @@ describe("splice.torad.ai's website", () => {
     expect(install.filter((c) => c !== "curl -fsSL https://splice.torad.ai/download/install.sh | bash")).toEqual([]);
   });
 
-  // "A newer one usually works, and when a session runs a newer one, splice doctor and the status line say so": the
-  // status line drawn under that question shows what it says then, in the daemon's words.
-  test("the status line drawn for a newer Claude Code says so, as the status line does", () => {
-    expect(words(page)).toMatch(/Claude Code 2\.1\.\d+ is newer than the version splice \d+\.\d+\.\d+ was tested with \(2\.1\.285\)/);
+  // "Each release of splice is tested with one version of Claude Code": the version the page names is the one this
+  // splice is pinned to (Versions.kt), wherever the page draws Claude Code's version. The status line drawn for a newer
+  // one says what the daemon says then, in its words, about a version that is really newer than the pin.
+  test("the page names the Claude Code version splice is tested with, and draws a newer one as newer", () => {
+    const tested = /TESTED_CLAUDE_CODE: String = "([^"]+)"/.exec(readFileSync(join(REPO, "core/src/main/kotlin/splice/core/Versions.kt"), "utf8"))?.[1];
+    expect(tested).toBeDefined();
+    const esc = (s: string) => s.replace(/\./g, "\\.");
+    const text = words(page);
+    const said = new RegExp(`Claude Code (\\d+\\.\\d+\\.\\d+) is newer than the version splice \\d+\\.\\d+\\.\\d+ was tested with \\(${esc(tested!)}\\)`).exec(text);
+    expect(said).not.toBeNull();
+    expect(Bun.semver.order(said![1]!, tested!)).toBe(1);
+    const line = tested!.split(".").slice(0, 2).join(".");
+    const drawn = [...text.matchAll(new RegExp(`(?<![\\d.])${esc(line)}\\.\\d+(?!\\d)`, "g"))].map((m) => m[0]);
+    expect(drawn.filter((v) => v !== tested && v !== said![1])).toEqual([]);
+    expect(drawn.filter((v) => v === tested).length).toBeGreaterThan(1);
+  });
+
+  // "Where do my prompts go?" promises how long splice keeps them. Unless someone sets "Keep prompts and answers for",
+  // saved prompts and answers follow the history window, which a fresh install sets to HISTORY_DEFAULT_DAYS
+  // (SpliceConfig.traceKeptDays): the answer says that number, in its peek and its figure, and no other.
+  test("the answer on where prompts go says how long a fresh install keeps them", () => {
+    const days = /HISTORY_DEFAULT_DAYS: Int = (\d+)/.exec(readFileSync(join(REPO, "core/src/main/kotlin/splice/core/perf/HistoryWindow.kt"), "utf8"))?.[1];
+    expect(days).toBeDefined();
+    const answer = /<details class="qa-q" id="qa-q-prompts">[\s\S]*?<\/details>/.exec(page)?.[0] ?? "";
+    expect(answer).toContain(`<b>${days}</b> days</span></summary>`);
+    expect(answer).toContain(`aria-label="Kept for ${days} days`);
+    expect([...words(answer).matchAll(/\b(\d+) days\b/g)].map((m) => m[1]).filter((n) => n !== days)).toEqual([]);
   });
 
   // The product parts are pictures of the console with made-up data, so their Allow, Save or preset buttons do nothing

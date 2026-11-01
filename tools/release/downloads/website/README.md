@@ -53,5 +53,9 @@ bunx wrangler@4 deploy --config tools/release/downloads/wrangler.jsonc
   `#commands`, `#teams`, `#console`, `#questions` and `#setup-install` are the ids bands give their sections. `main` and the
   footer sit at `z-index: 1`, above the console's wall (body's grain and light shaft).
 - Names and figures are made up. No real address, key, token or machine path goes on the page; the tests check.
+- A fact about splice itself is not made up: the page states what the release does. Where splice's source defines the
+  number, write it as `{{name}}` and the build fills it from that source: `{{tested-claude-code}}`,
+  `{{newer-claude-code}}` (above it, for the "is newer than" status line) and `{{history-days}}` (how long a fresh
+  install keeps prompts and answers). A name the build does not know fails it; add new ones to `facts` in `build.ts`.
 - Files on this host: the console's under `/console/` (for example `/console/brand/splice-horizontal-night.svg`), the
   film's under `/landing/products/splice/assets/`.

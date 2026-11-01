@@ -17,6 +17,8 @@
 //   /site.css, /site.js                   built here
 //   /favicon.ico, /favicon.svg, /favicon-32.png, /apple-touch-icon.png, /site.webmanifest
 //                                         the console's brand icons at the paths browsers ask the root for (rootFiles)
+// A band writes {{name}} where the page states a number splice's own source defines (the Claude Code version it is
+// tested with, how long a fresh install keeps prompts), and the build fills it in from that source (facts).
 // A path the page or a stylesheet names that none of them has fails the build before anything is written, so no
 // broken page goes up. <out> is replaced only when this build (or the torad build it replaces) wrote it.
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -36,6 +38,34 @@ const MARK = ".assetsignore";
 const MARK_TEXT = "# Built by tools/release/downloads/website/build.ts in torad-labs/splice. A rebuild replaces this folder.\n.assetsignore\n";
 const OLD_MARK_TEXT = "# Built by apps/website/build/build-splice-site.py in torad-labs/torad. A rebuild replaces this folder.\n.assetsignore\n";
 
+/** What the page states that the product itself defines, read from splice's source at each build so the page never
+ *  drifts from the release it describes: the Claude Code version this splice is tested with, one newer than it for the
+ *  drawn "is newer than" status line, and the days a fresh install keeps prompts and answers (they follow the history
+ *  window unless someone sets their own, SpliceConfig.traceKeptDays). A band writes {{name}}. */
+function facts(): Record<string, string> {
+  const read = (path: string, re: RegExp) => {
+    const value = re.exec(readFileSync(join(REPO, path), "utf8"))?.[1];
+    if (!value) throw new Error(`${path} no longer matches ${re.source}, which the page's {{...}} values are read from`);
+    return value;
+  };
+  const tested = read("core/src/main/kotlin/splice/core/Versions.kt", /TESTED_CLAUDE_CODE: String = "(\d+\.\d+\.\d+)"/);
+  const [major, minor, patch] = tested.split(".").map(Number);
+  return {
+    "tested-claude-code": tested,
+    "newer-claude-code": `${major}.${minor}.${patch! + 5}`,
+    "history-days": read("core/src/main/kotlin/splice/core/perf/HistoryWindow.kt", /HISTORY_DEFAULT_DAYS: Int = (\d+)/),
+  };
+}
+
+/** [html] with each {{name}} replaced by its value in [values]; a name with no value fails the build. */
+function fill(html: string, values: Record<string, string>): string {
+  return html.replace(/\{\{([a-z0-9-]+)\}\}/g, (_, name: string) => {
+    const value = values[name];
+    if (value === undefined) throw new Error(`the page names {{${name}}}, and the build has no value for it (facts in build.ts)`);
+    return value;
+  });
+}
+
 /** The page with its bands in place, and the names of the bands in the page's order. With [only], the other bands'
  *  lines are dropped, so one band can be looked at on the page while the rest are still being built. */
 function page(only?: readonly string[]): { html: string; bands: string[] } {
@@ -47,7 +77,7 @@ function page(only?: readonly string[]): { html: string; bands: string[] } {
     bands.push(name);
     return readFileSync(file, "utf8").trimEnd() + "\n";
   });
-  return { html: linkConsoleSheets(html), bands };
+  return { html: linkConsoleSheets(fill(html, facts())), bands };
 }
 
 /** A band names the console page stylesheets its parts need on a line `<!-- console: accounts.css teams.css -->`.

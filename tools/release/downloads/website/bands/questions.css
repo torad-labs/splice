@@ -85,7 +85,8 @@
 .qa-diskhead{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem 1rem}
 .qa-lock{display:inline-flex;align-items:center;gap:.5rem;font:500 calc(var(--qa-fs) - 1px)/1.2 var(--font-name);color:var(--text-body)}
 .qa-keep{display:grid;grid-template-columns:auto auto minmax(0,1fr);align-items:baseline;column-gap:.6rem}
-.qa-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;align-self:center;margin-left:calc(1.5 * var(--u))}
+.qa-days{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:4px;align-self:center;margin-left:calc(1.5 * var(--u))}
+.qa-keep-n{grid-column:1/-1;margin-top:.35rem}
 .qa-days i{height:var(--meter-h);min-height:13px;border-radius:.2rem;background:var(--text);opacity:calc(var(--o) * .5)}
 .qa-offrow{display:flex;flex-wrap:wrap;align-items:center;gap:.8rem 1rem}
 .qa-store{display:flex;flex-direction:column;gap:calc(2 * var(--u));min-width:0}
@@ -324,8 +325,8 @@
   .qa-why .qa-arrow::after{right:auto;left:50%;top:auto;bottom:-1px;transform:translateX(-50%) rotate(135deg)}
   .qa-dl{grid-template-columns:4.6em minmax(0,1fr)}
   .qa-dl>span:last-child{grid-column:2}
-  .qa-keep{grid-template-columns:auto auto;justify-content:start}
-  .qa-days{grid-column:1/-1;margin:.7rem 0 0}
+  .qa-keep{grid-template-columns:auto minmax(0,1fr);justify-content:start}
+  .qa-days{grid-column:1/-1;margin:.7rem 0 0;max-width:12.5rem}
   .qa-ledger{grid-template-columns:minmax(0,1fr);gap:.4rem}
   .qa-ledger .qa-lab{margin-bottom:.5rem}
   .qa-lsep .qa-lab.qa-mute{grid-column:1}

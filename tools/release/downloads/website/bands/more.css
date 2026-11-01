@@ -296,15 +296,15 @@
 
 /* upgrades: the version plate runs its three parts down the plate, the rollback drawn as an arrow back to the version before */
 .mo-upg .mo-s5>.mo-plate>.psec{justify-content:space-between}
-.mo-upg .mo-tall>.term{align-content:space-between}
+.mo-upg .mo-tall>.term{align-content:start}
 .mo-back{display:block;width:100%;max-width:32rem;height:auto;margin:0;fill:none;stroke:var(--text-mute);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:5 5;vector-effect:non-scaling-stroke}
 .mo-back path{vector-effect:non-scaling-stroke}
 .mo-back path:last-child{stroke-dasharray:none}
 
-/* the drawings at 1,800 px and up: the head column stands beside the window (from 2,200 px the page's own split says the same), the
+/* the drawings from a 1,280 px container: the head column stands beside the window (as the page's own split does from 2,200 px), the
    head's drawing runs a cable down to a rack of two units, and a lamp row stands in the gutter */
 .mo-band .pg-art>.mo-rack,.mo-gut{display:none}
-@container pg (min-width:1800px){
+@container pg (min-width:1280px){
   .mo-band .pg-split{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));column-gap:var(--pg-cg);align-items:start}
   .mo-band .pg-split>.mo-head{display:flex;flex-direction:column;align-self:stretch;grid-column:9/-1;grid-row:1;margin-bottom:0;padding-left:clamp(0px,1vw,32px);padding-right:0;contain:size}
   .mo-band .pg-split>.mo-win{grid-column:1/span 8;grid-row:1;margin-top:0}

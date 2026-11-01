@@ -8,17 +8,17 @@
 /* the width plan. One container (W). The list is one card at the full W, one column at every size. An opened row is one plate at the
    full W: the answer's text takes 5/12 and its facts 7/12 of what is left, so neither stands alone. Under 820 px the facts go under the text. */
 
-.qa-list{--qa-rp:var(--pg-sp-4);--qa-cg:var(--pg-sp-3);padding:var(--pg-sp-1);background:var(--obj);border:var(--ink-w) solid var(--ink);border-radius:var(--r-obj);box-shadow:var(--cast) var(--cast) 0 var(--ink)}
+.qa-list{container:qal / inline-size;--qa-rp:var(--pg-sp-4);--qa-cg:var(--pg-sp-3);padding:var(--pg-sp-1);background:var(--obj);border:var(--ink-w) solid var(--ink);border-radius:var(--r-obj);box-shadow:var(--cast) var(--cast) 0 var(--ink)}
 .qa-q + .qa-q{border-top:.12rem solid var(--track)}
 .qa-q{scroll-margin-top:calc(var(--fr-hh) + 16px)}
-.qa-q>summary{display:grid;grid-template-columns:14px minmax(0,1fr) auto;column-gap:var(--qa-cg);align-items:center;min-height:calc(var(--pg-t-3) * 1.3 + var(--pg-sp-4) + var(--pg-sp-2));padding:var(--pg-sp-2) var(--qa-rp);border-radius:var(--r-in);cursor:pointer;list-style:none;transition:background var(--t-hover) var(--e-out)}
+.qa-q>summary{display:grid;grid-template-columns:14px minmax(0,56rem) minmax(max-content,1fr);column-gap:var(--qa-cg);align-items:center;min-height:calc(var(--pg-t-3) * 1.3 + var(--pg-sp-4) + var(--pg-sp-2));padding:var(--pg-sp-2) var(--qa-rp);border-radius:var(--r-in);cursor:pointer;list-style:none;transition:background var(--t-hover) var(--e-out)}
 .qa-q>summary::-webkit-details-marker{display:none}
 .qa-q>summary:hover{background:color-mix(in oklab,var(--text) 4%,transparent)}
 .qa-q>summary:focus-visible{outline:var(--ink-w) solid var(--text);outline-offset:-.25rem}
 .qa-q .chev{width:14px;height:14px;stroke-width:1.6}
 .qa-q[open] .chev{transform:rotate(90deg)}
 .qa-qt{font:600 var(--pg-t-3)/1.3 var(--font-name);color:var(--text)}
-.qa-peek{display:inline-flex;align-items:center;justify-content:flex-end;gap:var(--pg-sp-1);font:500 var(--pg-t-1)/1.3 var(--font-name);color:var(--text-mute);white-space:nowrap;transition:opacity var(--t-hover) var(--e-out)}
+.qa-peek{display:inline-flex;align-items:center;justify-content:flex-start;gap:var(--pg-sp-1);font:500 var(--pg-t-1)/1.3 var(--font-name);color:var(--text-mute);white-space:nowrap;transition:opacity var(--t-hover) var(--e-out)}
 .qa-peek b{font:500 1em/1.3 var(--font-data);font-variant-numeric:tabular-nums;color:var(--text-body)}
 .qa-pk-days,.qa-pk-dots{margin-right:var(--pg-sp-1)}
 .qa-q[open] .qa-peek{opacity:0}
@@ -206,7 +206,7 @@
 .qa-leg-f0{display:none!important}
 /* OpenRouter: the path a turn takes. Four boxes of one width on one row, a fixed wire between them, and a dashed lane under them that leaves
    Claude Code and skips splice. Claude Code's box is as tall as both lanes. Every kicker sits a gap above its first row. */
-.qa-route{--qa-rw:clamp(40px,3.6cqw,72px);display:grid;grid-template-columns:minmax(0,1fr) var(--qa-rw) minmax(0,1fr) var(--qa-rw) minmax(0,1fr) var(--qa-rw) minmax(0,1fr);grid-template-areas:"cc w1 sp w2 or w3 md" "cc wl ll ll ll ll ll";row-gap:var(--pg-sp-4)}
+.qa-route{--qa-rw:clamp(40px,4.4cqw,72px);display:grid;grid-template-columns:minmax(0,1fr) var(--qa-rw) minmax(0,1fr) var(--qa-rw) minmax(0,1fr) var(--qa-rw) minmax(0,1fr);grid-template-areas:"cc w1 sp w2 or w3 md" "cc wl ll ll ll ll ll";row-gap:var(--pg-sp-4)}
 .qa-route .qa-node{padding:var(--pg-sp-3)}
 .qa-rcc{grid-area:cc;justify-content:space-between;gap:var(--pg-sp-4)}
 .qa-rp{display:flex;flex-direction:column;gap:var(--pg-sp-3)}
@@ -265,14 +265,18 @@
 .qa-tn::before{content:"";position:absolute;left:calc(-1 * var(--pg-sp-3));width:var(--pg-sp-3);bottom:50%;height:calc(var(--qa-lp) - 1.2rem);border-left:.14rem solid var(--track-line);border-bottom:.14rem solid var(--track-line);border-bottom-left-radius:.5rem}
 .qa-tn+.qa-lab+.qa-tn::before{height:var(--qa-lp)}
 
-@container pg (max-width:1100px){
+@container qal (max-width:981px){
   .qa-pcs6{grid-template-columns:repeat(3,minmax(0,1fr))}
-  .qa-route{grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"cc cc" "w1 wl" "sp ll" "w2 ll" "or ll" "w3 ll" "md ll";row-gap:0;column-gap:var(--pg-sp-3)}
-  .qa-route .qa-rw{align-self:stretch;justify-self:center;width:.24rem;height:auto;min-height:1.8rem}
-  .qa-route .qa-rw::after{right:auto;left:50%;top:auto;bottom:-1px;transform:translateX(-50%) rotate(135deg)}
-  .qa-route .qa-rwl{background:repeating-linear-gradient(180deg,var(--text-mute) 0 .6rem,transparent .6rem 1rem)}
-  .qa-rll{flex-direction:column;justify-content:center;text-align:center}
-  .qa-rlh{flex-direction:column}
+  /* the chain in the facts column is under 380 px here: its boxes keep 12 px of air, so the path in Claude Code's box stays off the border */
+  .qa-chain{grid-template-columns:minmax(0,1.45fr) 1.1rem minmax(0,.7fr) 1.1rem minmax(0,1.2fr)}
+  .qa-chain .qa-node{padding:var(--pg-sp-2)}
+  /* the chain keeps its row: splice, OpenRouter and the models stand across the answer's width with Claude Code over them, the solid wire
+     drops from Claude Code to splice, the dashed lane runs down the right edge past the models into the gateway, which takes the full width */
+  .qa-route{grid-template-columns:minmax(0,1fr) var(--qa-rw) minmax(0,1fr) var(--qa-rw) minmax(0,1fr) var(--qa-rw);grid-template-areas:"cc cc cc cc cc cc" "w1 . . . . wl" "sp w2 or w3 md wl" "ll ll ll ll ll ll";row-gap:0}
+  .qa-route :is(.qa-rw1,.qa-rwl){align-self:stretch;justify-self:center;width:.24rem;height:auto;min-height:1.8rem}
+  .qa-route :is(.qa-rw1,.qa-rwl)::after{right:auto;left:50%;top:auto;bottom:-1px;transform:translateX(-50%) rotate(135deg)}
+  .qa-route .qa-rwl{background:repeating-linear-gradient(180deg,var(--text-mute) 0 .6rem,transparent .6rem 1rem);margin-bottom:calc(-1 * var(--pg-sp-4))}
+  .qa-route .qa-rll{margin-top:var(--pg-sp-4)}
   .qa-rcc{margin-bottom:0}
 }
 /* Q3: the sign-in file and the API key file share rows. Each head is one line of one height (the kicker, and for the key the command
@@ -296,7 +300,7 @@
 }
 
 /* narrow: read the page's own width */
-@container pg (max-width:1100px){
+@container qal (max-width:981px){
   .qa-cols{grid-template-columns:minmax(0,1fr)!important}
   .qa-cols>*+*{border-left:0!important;padding-left:0!important;padding-top:var(--pg-sp-4);border-top:.08rem solid var(--hair)}
   .qa-cols>.qa-disk{padding:var(--pg-sp-3) var(--pg-sp-4)!important;border:var(--ink-w) solid var(--ink)!important}
@@ -308,8 +312,7 @@
   /* stacked, the two files no longer share rows, so the sign-in head needs no height to match the key's */
   .qa-fhead{min-height:0}
 }
-@container pg (max-width:820px){
-  .qa-list{padding:var(--pg-sp-1)}
+@container qal (max-width:726px){
   .qa-tx{text-wrap:wrap}
   .qa-q>summary{grid-template-columns:14px minmax(0,1fr);padding:var(--pg-sp-3) var(--qa-rp)}
   .qa-peek{grid-column:2;grid-row:2;justify-content:flex-start;margin-top:var(--pg-sp-1);block-size:auto;transition:opacity var(--t-hover) var(--e-out),block-size var(--t-hover) var(--e-out),margin var(--t-hover) var(--e-out)}
@@ -357,24 +360,50 @@
 
 /* the band's drawing: ten rows of the list, one open, a lamp for each answer. From 2,200 px a deck of answer cards stands at the foot of
    the head column, where the cable from the rows ends */
-.qa-band .pg-art>.qa-deck{display:none}
+.qa-band .pg-art>.qa-deck,.qa-band .pg-art>.qa-mid{display:none}
 .qa-art .pg-stub{stroke-width:1.5}
-/* the drawing stands under the fixed header and follows the reader down the list, its cable short, so an open answer always has the drawing
-   beside it and no stretch of the column is only a cable */
-@container pg (min-width:2200px){
-  .qa-band .pg-split>.pg-head>.pg-art{margin-top:var(--pg-sp-5);flex:0 0 auto;align-self:stretch;position:sticky;top:calc(var(--fr-hh,64px) + var(--pg-sp-5))}
-  .qa-band .pg-split>.pg-head>.pg-art::after{flex:none;height:var(--pg-sp-6)}
-  .qa-band .pg-split>.pg-head>.pg-art>svg{flex:0 1 auto;min-height:0}
-  .qa-band .pg-split>.pg-head>.pg-art>.qa-deck{display:block;order:2}
+/* from a 1,280 px container the head stands beside the list, as the page does from 2,200 px and as the bands above and below do: the head takes
+   4 of 12 columns and the list the other 8, on the side the band's place gives it (odd places put the head right) */
+@container pg (min-width:1280px) and (max-width:2199px){
+  #questions>.pg-split{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));column-gap:var(--pg-cg);align-items:start}
+  #questions>.pg-split>.pg-head{display:flex;flex-direction:column;align-self:stretch;grid-column:1/span 4;grid-row:1;margin-bottom:0;padding-right:clamp(0px,1vw,32px)}
+  #questions>.pg-split>:not(.pg-head){grid-column:5/-1;grid-row:1;margin-top:0}
+  main>#questions:nth-child(odd)>.pg-split>.pg-head{grid-column:9/-1;padding-right:0;padding-left:clamp(0px,1vw,32px)}
+  main>#questions:nth-child(odd)>.pg-split>:not(.pg-head){grid-column:1/span 8}
+}
+/* The head column carries the drawing's two halves down the list: the ten rows stay by the heading, and the stack of answer cards stands beside
+   the answer that is open (questions.js sets --qa-lift and --qa-gap and adds qa-follow; with none open, or without scripts, the stack stands at
+   the foot of the column). The cable runs from the rows to the stack. */
+@container pg (min-width:1280px){
+  .qa-band .pg-split>.pg-head>.pg-art{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;justify-self:stretch;align-self:stretch;width:auto;margin-top:var(--pg-sp-5)}
+  .qa-band .pg-split>.pg-head>.pg-art>svg:first-child{flex:0 1 auto;min-height:0;margin-top:var(--qa-lift,0px)}
+  .qa-band .pg-split>.pg-head>.pg-art .pg-stub{display:inline}
+  .qa-band .pg-split>.pg-head>.pg-art::before,.qa-band .pg-split>.pg-head>.pg-art::after{content:"";flex:1 1 auto;min-height:var(--pg-sp-4);width:8px;margin-left:calc(var(--pg-ax,9%) - 4px);background:linear-gradient(var(--pg-cable),var(--pg-cable)) 50% 0 / 1.5px 100% no-repeat,radial-gradient(circle,var(--pg-dot,var(--claude)) 0 2.6px,transparent 3.2px) 50% 0 / 8px 8px no-repeat}
+  .qa-band .pg-split>.pg-head>.pg-art::before{order:1}
+  .qa-band .pg-split>.pg-head>.pg-art>.qa-mid{display:block;order:2;flex:none}
+  .qa-band .pg-split>.pg-head>.pg-art::after{order:3}
+  .qa-band .pg-split>.pg-head>.pg-art>.qa-deck{display:block;order:4;flex:none}
+  .qa-band .pg-split>.pg-head>.pg-art.qa-follow::before{flex:none;height:var(--qa-ga)}
+  .qa-band .pg-split>.pg-head>.pg-art.qa-follow::after{flex:none;height:var(--qa-gb)}
+}
+@media (prefers-reduced-motion:no-preference){
+  @container pg (min-width:1280px){ .qa-art.pg-on::before{animation:pg-lane 11s linear infinite;animation-delay:-5s} }
+  .pg-away .qa-art::before{animation-play-state:paused!important}
 }
 
 /* the step's label is two words: it wraps inside its node when the node is narrow */
 .qa-band .qa-rtag{max-width:100%;white-space:normal;justify-content:center;text-align:center}
 
 /* a phone: the router's chain (splice, OpenRouter, the models) is one column of the full width, and the shared gateway is a full-width row under it */
-@container pg (max-width:640px){
+@container qal (max-width:640px){
   .qa-route{grid-template-columns:minmax(0,1fr);grid-template-areas:"cc" "w1" "sp" "w2" "or" "w3" "md" "ll"}
+  .qa-route :is(.qa-rw2,.qa-rw3){align-self:stretch;justify-self:center;width:.24rem;height:auto;min-height:1.8rem}
+  .qa-route :is(.qa-rw2,.qa-rw3)::after{right:auto;left:50%;top:auto;bottom:-1px;transform:translateX(-50%) rotate(135deg)}
   .qa-route .qa-rwl{display:none}
-  .qa-route .qa-rll{margin-top:var(--pg-sp-4);align-self:stretch;flex-direction:row;justify-content:space-between;text-align:left}
-  .qa-route .qa-rlh{flex-direction:row}
+}
+
+/* between a 982 px and a 1,100 px list the router answer's second column is under 200 px: each seat's role stands over its command */
+@container qal (min-width:982px) and (max-width:1100px){
+  .qa-seat{flex-wrap:wrap;gap:var(--pg-sp-1) var(--pg-sp-2)}
+  .qa-seat em{flex:0 0 100%;min-width:0}
 }

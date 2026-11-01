@@ -214,3 +214,40 @@
    heavier line of the same ink. */
 .su-art .su-fill { stroke-width: 5; }
 .su-tb { justify-content: space-between; }
+
+/* from a 1,280 px container to 2,199 px the head stands beside the window, as the page does from 2,200 px and as the bands above and below do:
+   the head takes 4 of 12 columns and the window the other 8, on the side the band's place on the page gives it (even places put the head left).
+   The window is then 770 to 1,320 px wide and the terminal steps down one size, as it does at 2,200 px. Below a 1,700 px container the text column
+   is under 380 px, so the two columns take half each and the cards in the column take the narrow forms they take on a phone. */
+@container pg (min-width: 1280px) and (max-width: 2199px) { .su-band { --su-fs: var(--pg-t-1); } }
+@container pg (min-width: 1280px) and (max-width: 1699px) {
+  .su-panel { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .su-ar, .su-pt small { display: none; }
+  .su-pm .su-pg { display: none; }
+  .card.su-pm { grid-template-columns: minmax(0, 1fr) auto; height: var(--su-ob); padding-left: var(--pg-sp-3); }
+  .su-ch { flex-wrap: wrap; height: auto; min-height: var(--su-ob); padding: var(--pg-sp-2) var(--pg-sp-2) var(--pg-sp-2) var(--pg-sp-1); row-gap: var(--pg-sp-2); }
+  .su-ch .su-cs { flex: 1 1 auto; justify-content: flex-end; }
+  .su-cs code + code { display: none; }
+}
+@container pg (min-width: 1280px) and (max-width: 2199px) {
+  #setup > .pg-split { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--pg-cg); align-items: start; }
+  #setup > .pg-split > .pg-head { display: flex; flex-direction: column; align-self: stretch; grid-column: 1 / span 4; grid-row: 1; margin-bottom: 0; padding-right: clamp(0px, 1vw, 32px); }
+  #setup > .pg-split > :not(.pg-head) { grid-column: 5 / -1; grid-row: 1; margin-top: 0; }
+  main > #setup:nth-child(odd) > .pg-split > .pg-head { grid-column: 9 / -1; padding-right: 0; padding-left: clamp(0px, 1vw, 32px); }
+  main > #setup:nth-child(odd) > .pg-split > :not(.pg-head) { grid-column: 1 / span 8; }
+  #setup > .pg-split > .pg-head > .pg-art { display: flex; flex-direction: column; flex: 1 1 auto; justify-self: stretch; align-self: stretch; width: auto; margin-top: var(--pg-sp-6); }
+  #setup > .pg-split > .pg-head > .pg-art .pg-stub { display: inline; }
+  #setup > .pg-split > .pg-head > .pg-art::after { content: ""; flex: 1 1 auto; min-height: 0; width: 8px; margin-left: calc(var(--pg-ax, 9%) - 4px); background: linear-gradient(var(--pg-cable), var(--pg-cable)) 50% 0 / 1.5px 100% no-repeat, radial-gradient(circle, var(--pg-dot, var(--claude)) 0 2.6px, transparent 3.2px) 50% 0 / 8px 8px no-repeat; }
+}
+
+/* beside the window the head's drawing stands between two lengths of its cable, one from the line above it and one down to the foot of the column, so
+   neither length is long: the drawing keeps to the middle of a column that is taller than the head's text */
+@container pg (min-width: 1280px) {
+  #setup .pg-split > .pg-head > .pg-art { margin-top: var(--pg-sp-4); }
+  #setup .pg-split > .pg-head > .pg-art::before { content: ""; flex: 1 1 auto; min-height: var(--pg-sp-4); width: 8px; margin-left: calc(var(--pg-ax, 9%) - 4px); background: linear-gradient(var(--pg-cable), var(--pg-cable)) 50% 0 / 1.5px 100% no-repeat, radial-gradient(circle, var(--pg-dot, var(--claude)) 0 2.6px, transparent 3.2px) 50% 0 / 8px 8px no-repeat; }
+  #setup .pg-split > .pg-head > .pg-art > svg { flex: none; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  @container pg (min-width: 1280px) { #setup .su-art.pg-on::before { animation: pg-lane 11s linear infinite; animation-delay: -5s; } }
+  .pg-away #setup .su-art::before { animation-play-state: paused !important; }
+}

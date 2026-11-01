@@ -113,6 +113,22 @@
       if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) film.close();
     });
     film.addEventListener("close", function () { if (video) video.pause(); });
+
+    // Captions: the film draws its own words all over the picture, so the cue is shown on the strip under it, never on the
+    // picture (the css hides the picture's own cue). The strip follows the track the viewer's captions control picks: it
+    // shows the active cue while the track is on and nothing when the viewer turns captions off.
+    var cue = film.querySelector(".fr-cue");
+    var track = video && video.textTracks && video.textTracks.length ? video.textTracks[0] : null;
+    if (cue && track) {
+      var showCue = function () {
+        var on = track.mode !== "disabled" && track.activeCues && track.activeCues.length;
+        cue.textContent = on ? Array.prototype.map.call(track.activeCues, function (c) { return c.text; }).join(" ") : "";
+      };
+      track.addEventListener("cuechange", showCue);
+      video.textTracks.addEventListener("change", showCue);
+      video.addEventListener("seeked", showCue);
+      film.addEventListener("close", function () { cue.textContent = ""; });
+    }
   }
 
   // Life: a band, the first screen and each drawing get pg-on while they are on screen, and the page's css runs their motion
@@ -120,6 +136,8 @@
   // it while the tab is hidden. Nothing here runs under reduced motion: the css stops the motion there.
   var still = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : { matches: false, addEventListener: null };
   if ("IntersectionObserver" in window) {
+    // pg-life tells the css the on-screen marks are kept, so what loops off screen (a drawing, a working lamp's beat) is paused
+    root.classList.add("pg-life");
     var lifeIO = new IntersectionObserver(function (entries) {
       entries.forEach(function (en) { en.target.classList.toggle("pg-on", en.isIntersecting); });
     }, { rootMargin: "80px 0px 80px 0px" });

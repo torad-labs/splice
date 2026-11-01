@@ -52,13 +52,18 @@
 .db-demo{margin-left:auto}
 .db-demo i{width:.7rem;height:.7rem;border-radius:50%;background:transparent;box-shadow:inset 0 0 0 .14rem var(--text-mute)}
 .db-win>.side{grid-area:1/1}
-.db-panel{grid-area:2/1;display:block;visibility:hidden;pointer-events:none;padding:var(--db-pad);min-width:0}
-.db-win:has(.db-r1:checked) .db-p1,.db-win:has(.db-r2:checked) .db-p2,.db-win:has(.db-r3:checked) .db-p3,.db-win:has(.db-r4:checked) .db-p4,.db-win:has(.db-r5:checked) .db-p5{visibility:visible;pointer-events:auto}
+.db-panel{grid-area:2/1;display:block;visibility:hidden;pointer-events:none;padding:0 var(--db-pad);min-width:0;height:0;overflow:clip}
+.db-win:has(.db-r1:checked) .db-p1,.db-win:has(.db-r2:checked) .db-p2,.db-win:has(.db-r3:checked) .db-p3,.db-win:has(.db-r4:checked) .db-p4,.db-win:has(.db-r5:checked) .db-p5{visibility:visible;pointer-events:auto;height:auto;padding-block:var(--db-pad)}
 .db-cap{margin:0;font:600 var(--kicker)/1.2 var(--font-name);letter-spacing:.09em;text-transform:uppercase;color:var(--text-mute)}
 
-/* ---- the window's height: from 1280 px of window and up the five panels share one cell, so the band holds one height whatever
-   the tab; the tabs there stand within about 1.3x of each other. Narrower, Usage is far the tallest (a card per command), so a
-   panel that is not shown leaves the flow and the window is as tall as the tab it shows; the entering panel eases in. ---- */
+/* ---- the window's height: the five panels stand in one cell and the one shown is the one with a height, so the window is as tall as the
+   tab it shows. A tab switch eases the window to the new height over --t-snap: the panel that leaves goes to 0 as the one that enters
+   grows from 0 (interpolate-size lets a height run to auto). Where the window is 1280 px or narrower, Usage is far the tallest (a card
+   per command), so a panel that is not shown leaves the flow altogether and the entering panel eases in. ---- */
+.db-win { interpolate-size: allow-keywords; }
+@media (prefers-reduced-motion: no-preference) {
+  .db-panel { transition: height var(--t-snap) var(--e-out), padding-block var(--t-snap) var(--e-out); }
+}
 @container dbw (max-width:1280px) {
   .db-panel { display: none; }
   .db-win:has(.db-r1:checked) .db-p1, .db-win:has(.db-r2:checked) .db-p2, .db-win:has(.db-r3:checked) .db-p3, .db-win:has(.db-r4:checked) .db-p4, .db-win:has(.db-r5:checked) .db-p5 { display: block; }
@@ -94,9 +99,9 @@
 .db-sess .pgroup .pcol:last-child .s:last-child{box-shadow:none}
 .db-sess .s.idle .last .tgt{font-family:var(--font-name);color:var(--text-body)}
 .db-sess .s.idle .barcell.age .vbar>b{background:color-mix(in oklab,var(--text) 40%,transparent)}
-.db-sess .s.drop-before{background-image:linear-gradient(var(--key-light),var(--key-light));background-size:100% .25rem;background-position:top;background-repeat:no-repeat}
-.db-lift{position:relative;z-index:3;background:linear-gradient(var(--obj-high),var(--obj-high))!important;border-radius:var(--r-obj)!important;box-shadow:0 0 0 var(--ink-w) var(--ink),0 .3rem 0 var(--ink-w) var(--ink)!important}
-.db-lift .grip{opacity:1;color:var(--text)}
+.db-sess .s.drop-before{background-image:linear-gradient(var(--text-body),var(--text-body));background-size:100% .25rem;background-position:top;background-repeat:no-repeat}
+.db-lift{position:relative;z-index:3;background:linear-gradient(var(--obj-high),var(--obj-high))!important;border-radius:var(--r-obj)!important;box-shadow:0 0 0 var(--ink-w) var(--ink),.35rem .45rem 0 var(--ink)!important;transform:translateX(.6rem)}
+.db-lift .grip{opacity:1;color:var(--text);border-radius:.3rem;box-shadow:inset 0 0 0 .1rem var(--track-line),inset 0 .2rem .22rem var(--ink)}
 .db-sess .s .grip{width:1.2rem;height:2rem;margin-left:-.4rem;margin-right:-.6rem;cursor:grab;color:var(--text-mute);flex:none;display:grid;place-items:center}
 .db-sess .s .grip svg{width:.6rem;height:1.1rem}
 
@@ -366,4 +371,43 @@
   .db-act .who { grid-row: 1; grid-column: 2 / -1; }
   .db-act .tname { grid-row: 2; grid-column: 2; }
   .db-act .tgt { grid-row: 2; grid-column: 3; }
+}
+
+/* ---- from 1,280 px of the page the head stands beside the window, as the page does from 2,200 px: the head takes the 4 columns and the
+   window the 8, and the side follows the band's place on the page. The column beside the window holds a taller drawing of the same
+   machines, which takes the height the window leaves (and shrinks to it) and stays under the header while a tall tab scrolls past. ---- */
+#console .pg-art > .db-tall { display: none; }
+@container pg (min-width: 1280px) and (max-width: 2199px) {
+  #console .pg-split { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--pg-cg); align-items: start; }
+  #console .pg-split > .pg-head { display: flex; flex-direction: column; align-self: stretch; grid-column: 1 / span 4; grid-row: 1; margin-bottom: 0; padding-right: clamp(0px, 1vw, 32px); }
+  #console .pg-split > .db-win { grid-column: 5 / -1; grid-row: 1; margin-top: 0; }
+  #console:nth-child(odd) > .pg-split > .pg-head { grid-column: 9 / -1; padding-right: 0; padding-left: clamp(0px, 1vw, 32px); }
+  #console:nth-child(odd) > .pg-split > :not(.pg-head) { grid-column: 1 / span 8; }
+  #console .pg-split > .pg-head > .pg-art { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; justify-self: stretch; align-self: stretch; width: auto; margin-top: var(--pg-sp-6); }
+  #console .pg-split > .pg-head > .pg-art > svg:not(.db-tall) { display: none; }
+  #console .pg-split > .pg-head > .pg-art > .db-tall { display: block; flex: 0 1 auto; min-height: 0; width: 100%; height: auto; position: sticky; top: calc(var(--fr-hh) + var(--pg-sp-5)); }
+  #console .pg-split > .pg-head > .pg-art::after { content: none; }
+}
+
+/* ---- Usage in a window between a phone's and 980 px: the command cards stand two across, so the tab is no taller than the others beside it ---- */
+@container dbw (min-width:641px) and (max-width:980px) {
+  .db-use .ptable { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--pg-sp-3); }
+  .db-use .pitem + .pitem { border-top: 0; }
+  .db-use .pitem:nth-child(n+4) { border-top: .12rem solid var(--track); }
+  .db-use .pitem:nth-child(odd) { border-left: .12rem solid var(--track); padding-left: var(--pg-sp-3); }
+}
+
+/* ---- A session: the conversation's three views, drawn as the console's own switch above it (Messages shown) ---- */
+.db-views { align-self: flex-start; max-width: 100%; }
+.db-views .navset { display: inline-flex; max-width: 100%; }
+#console .db-views .navset { padding: var(--pg-sp-1); gap: var(--pg-sp-1); }
+.db-vt { appearance: none; border: 0; background: none; margin: 0; }
+.db-vt[aria-pressed="true"] { color: var(--text); background: var(--sel-face); box-shadow: inset 0 0 0 .1rem var(--sel-line); }
+
+/* ---- A turn in a window between a phone's and 900 px: the record's four parts stand two across, so the tab is no taller than its neighbours ---- */
+@container dbw (min-width:641px) and (max-width:900px) {
+  .db-tb { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .db-tb > .db-col + .db-col { padding-left: calc(4 * var(--u)); border-left: .08rem solid var(--hair); padding-top: 0; border-top: 0; }
+  .db-tb > .db-col:nth-child(odd) { padding-left: 0; border-left: 0; }
+  .db-tb > .db-col:nth-child(n+3) { padding-top: calc(4 * var(--u)); border-top: .08rem solid var(--hair); }
 }

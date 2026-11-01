@@ -83,7 +83,9 @@
 .tm-ctxh { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pg-sp-2); }
 .tm-ctxp .meterline { flex-wrap: nowrap; }
 /* the two tools that carry a message, drawn as the console draws a tool call */
-.tm-calls { align-self: stretch; display: flex; flex-direction: column; gap: var(--pg-sp-2); min-width: 0; }
+/* a tool call's box is one step taller than a chip, so it stands one step above the drawing's top: its first line of text then starts
+   where the first chip of the cells beside it does */
+.tm-calls { align-self: stretch; display: flex; flex-direction: column; gap: var(--pg-sp-2); min-width: 0; margin-top: calc(-1 * var(--pg-sp-2)); }
 .tm-calls .call { min-width: 0; }
 .tm-calls .tool { max-width: 100%; flex-wrap: wrap; }
 .tm-calls .tool .tsum { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
@@ -122,6 +124,9 @@
     .tm-row[open]::details-content { block-size: auto; }
   }
 }
+
+/* the taller drawing is shown only beside the window, from 1,280 px of the page up to 2,200 px */
+#teams .pg-art > .tm-tall { display: none; }
 
 /* ---------- the window picks its shape from its own width ---------- */
 @container tmw (max-width: 1300px) {
@@ -164,4 +169,11 @@
   #teams .pg-split > .pg-head > .pg-art { display: flex; flex-direction: column; flex: 1 1 auto; justify-self: stretch; align-self: stretch; width: auto; margin-top: var(--pg-sp-6); }
   #teams .pg-split > .pg-head > .pg-art .pg-stub { display: inline; }
   #teams .pg-split > .pg-head > .pg-art::after { content: ""; flex: 1 1 auto; min-height: 0; width: 8px; margin-left: calc(var(--pg-ax, 9%) - 4px); background: linear-gradient(var(--pg-cable), var(--pg-cable)) 50% 0 / 1.5px 100% no-repeat, radial-gradient(circle, var(--pg-dot, var(--claude)) 0 2.6px, transparent 3.2px) 50% 0 / 8px 8px no-repeat; }
+  /* the column beside the window holds a taller drawing of the same team, four terminals in a chain with the notes travelling between
+     them: it takes the height the window and the row under it leave (and shrinks to it), and once the row opens it stays under the
+     header while the cells scroll past */
+  #teams .pg-split > .pg-head > .pg-art { flex: 1 1 0; min-height: 0; }
+  #teams .pg-split > .pg-head > .pg-art > svg:not(.tm-tall) { display: none; }
+  #teams .pg-split > .pg-head > .pg-art > .tm-tall { display: block; flex: 0 1 auto; min-height: 0; width: 100%; height: auto; position: sticky; top: calc(var(--fr-hh) + var(--pg-sp-5)); }
+  #teams .pg-split > .pg-head > .pg-art::after { content: none; }
 }

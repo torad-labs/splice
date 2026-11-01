@@ -33,9 +33,10 @@
 .rs-pv { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .rs-board .provider > header { margin-bottom: 1rem; }
 .rs-plate { position: relative; flex: 1; display: flex; flex-direction: column; min-width: 0; }
-.rs-p1 > .rs-rv:last-child { flex: 1; display: flex; flex-direction: column; }
-.rs-p1 .rail { flex: 1; }
-.rs-p1 .rail .card { flex: 1; display: flex; flex-direction: column; }
+/* the Claude card keeps its own height, with its rail: it never stretches to the two terminals' height over empty ground */
+.rs-p1 > .rs-rv:last-child { flex: none; }
+.rs-p1 .rail { flex: none; }
+.rs-p1 .rail .card { flex: none; }
 
 /* the Claude card in its narrow reflow: label and figure on one row, the meter on the full row, the ring and its time under it.
    One focal figure leads: the week's 100% at the console's focal size, in limit red, "used" on its baseline. The 5-hour
@@ -91,7 +92,7 @@
 .rs-path {
   display: block; width: fit-content; max-width: 100%; box-sizing: border-box; margin: .333rem 0 .333rem 1.5rem; padding: .35rem .6rem;
   font: 500 var(--pg-t-1)/1.25 var(--font-data); color: var(--text); background: var(--obj);
-  border: .1rem solid var(--track-line); border-radius: .3rem; overflow-wrap: anywhere;
+  border: .1rem solid var(--track-line); border-radius: .3rem; overflow-wrap: normal;
 }
 .rs-only { margin: 0 0 .5rem 1.5rem; font: 500 var(--pg-t-1)/1.2 var(--font-name); color: var(--text-mute); }
 .rs-prompt { margin-bottom: .75rem; }
@@ -143,4 +144,7 @@
 }
 @container pg (max-width: 640px) {
   .rs-pw { padding: calc(2.5 * var(--u)); }
+  /* a phone's terminal holds the whole path on one line: no indent, a close box, the terminal's own padding a little tighter */
+  .rs-term { padding-inline: .6rem; }
+  .rs-path { margin-left: 0; padding: .3rem .25rem; }
 }

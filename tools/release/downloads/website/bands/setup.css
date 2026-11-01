@@ -192,8 +192,8 @@
 /* narrow widths: each step is its number over its name, so three steps fit a phone with room between them */
 @container pg (max-width: 820px) {
   .su-win { padding: var(--pg-sp-3); gap: var(--pg-sp-3); }
-  .su-ar, .su-pt small { display: none; }
-  .card.su-pm { grid-template-columns: auto minmax(0, 1fr) auto; height: var(--su-ob); }
+  .su-ar { display: none; }
+  .card.su-pm { grid-template-columns: auto minmax(0, 1fr) auto; }
   .su-tb { padding: var(--pg-sp-3); }
   .su-ch { padding: 0 var(--pg-sp-2) 0 var(--pg-sp-1); }
   .su-cs code + code { display: none; }
@@ -209,6 +209,10 @@
   .su-pm .su-pg { display: none; }
   .card.su-pm { grid-template-columns: minmax(0, 1fr) auto; padding-left: var(--pg-sp-3); }
 }
+/* at 360 px the longest row (openrouter, its plan line and its command) takes the card's padding down a step so the plan line keeps 8 px from the command */
+@container pg (max-width: 380px) {
+  .card.su-pm { padding-inline: var(--pg-sp-2); }
+}
 
 /* the band's drawing: the install's download bar part way, a key, and a first prompt, one cable through all three. Its bar's fill is a
    heavier line of the same ink. */
@@ -222,9 +226,9 @@
 @container pg (min-width: 1280px) and (max-width: 2199px) { .su-band { --su-fs: var(--pg-t-1); } }
 @container pg (min-width: 1280px) and (max-width: 1699px) {
   .su-panel { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .su-ar, .su-pt small { display: none; }
+  .su-ar { display: none; }
   .su-pm .su-pg { display: none; }
-  .card.su-pm { grid-template-columns: minmax(0, 1fr) auto; height: var(--su-ob); padding-left: var(--pg-sp-3); }
+  .card.su-pm { grid-template-columns: minmax(0, 1fr) auto; padding-left: var(--pg-sp-3); }
   .su-ch { flex-wrap: wrap; height: auto; min-height: var(--su-ob); padding: var(--pg-sp-2) var(--pg-sp-2) var(--pg-sp-2) var(--pg-sp-1); row-gap: var(--pg-sp-2); }
   .su-ch .su-cs { flex: 1 1 auto; justify-content: flex-end; }
   .su-cs code + code { display: none; }

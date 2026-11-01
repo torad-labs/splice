@@ -26,12 +26,27 @@
 .mo-r,.mo-sr{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;margin:0}
 .mo-tab{grid-row:1;grid-column:var(--n);display:flex;flex-direction:column;justify-content:center;min-width:0;cursor:pointer;--c:var(--track-line);box-shadow:none}
 .mo-tab .top{min-height:2rem;gap:var(--pg-sp-2)}
-.mo-tab .jname{font-size:var(--mo-ts);line-height:1.25;min-width:0;white-space:normal}
+.mo-tab .jname{font-size:var(--mo-ts);line-height:1.25;min-width:0;white-space:nowrap}
 .mo-tab .jglyph svg{width:var(--mo-ts);height:var(--mo-ts)}
 .mo-tab:hover{background:var(--obj-high)}
 .mo-r:checked + .mo-tab{--c:var(--text-mute);border-color:var(--sel-ink);background:var(--sel-face);box-shadow:inset .22rem 0 0 var(--sel-ink),inset 0 0 0 .1rem var(--sel-line)}
 .mo-r:checked + .mo-tab .jglyph{color:var(--text)}
 .mo-r:focus-visible + .mo-tab{outline:var(--ink-w) solid var(--text);outline-offset:.18rem}
+/* the five labels each stand on one line. Where the window cannot hold five in a row (under a 1,900 px container) the tabs are three over two
+   on a six-column grid, the second row's two tabs half the width each; from 1,900 px the five share the row by their own widths. */
+@container pg (min-width:821px) and (max-width:1899px){
+  .mo-tabs{grid-template-columns:repeat(6,minmax(0,1fr))}
+  .mo-tab:nth-of-type(1){grid-row:1;grid-column:1/span 2}
+  .mo-tab:nth-of-type(2){grid-row:1;grid-column:3/span 2}
+  .mo-tab:nth-of-type(3){grid-row:1;grid-column:5/span 2}
+  .mo-tab:nth-of-type(4){grid-row:2;grid-column:1/span 3;margin-top:var(--gap-card)}
+  .mo-tab:nth-of-type(5){grid-row:2;grid-column:4/span 3;margin-top:var(--gap-card)}
+  .mo-tabs>.mo-panel{grid-row:3}
+}
+@container pg (min-width:1900px){
+  .mo-tabs{grid-template-columns:repeat(5,auto)}
+  .mo-tab{min-width:auto}
+}
 .mo-chev{display:none;width:var(--mo-ts);height:var(--mo-ts);margin-left:auto;flex:none;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;color:var(--text-mute);transition:transform var(--t-snap) var(--e-out)}
 .mo-r:checked + .mo-tab .mo-chev{transform:rotate(90deg)}
 .mo-panel{grid-row:2;grid-column:1/-1;min-width:0;display:grid;opacity:0;visibility:hidden;pointer-events:none;transition:opacity var(--t-hit) var(--e-out),visibility 0s linear var(--t-hit)}
@@ -137,13 +152,16 @@
 .mo-pips{flex:1 1 auto;display:flex;gap:var(--pg-sp-1);margin:0}
 .mo-pips>i{flex:1 1 0;height:.9rem;border-radius:.2rem;background:transparent;box-shadow:inset 0 0 0 .1rem var(--track-line);transition:background-color var(--t-snap) var(--e-out),box-shadow var(--t-snap) var(--e-out)}
 .mo-comp>.psec:last-child{flex:1 1 auto}
-.mo-reaches{flex:1 1 auto;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:var(--pg-sp-4);align-content:start}
+.mo-reaches{flex:1 1 auto;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--pg-sp-4);align-content:start}
 .mo-reach{display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:var(--pg-sp-2);min-width:0;padding:var(--pg-sp-3);border:.1rem solid var(--track-line);border-radius:var(--r-in);background:var(--obj-sunk);transition:opacity var(--t-snap) var(--e-out),background-color var(--t-snap) var(--e-out)}
 .mo-reach .chip.edge{padding-left:calc(.55rem + .12rem - 1px)}
 .mo-host.card{display:block;padding:0;border:0;background:none;box-shadow:none;top:auto;left:auto}
 .mo-host .onlogin{margin:0!important;padding:0!important;border:0!important;box-shadow:none!important}
 .mo-band .mo-win .mo-host .sdoor{white-space:nowrap;gap:var(--pg-sp-2)}
 .mo-win .sdoor .lamp{width:1.5rem;height:1.5rem}
+/* the sessions fall three and two on cells of one width, so the second row's cards match the first row's; the longest card (name, lamp and
+   padding) is under 170 px, and five across leave each card at least that only from a 2,300 px container */
+@container pg (min-width:2300px){ .mo-reaches{grid-template-columns:repeat(5,minmax(0,1fr))} }
 /* the scope in force lights the sessions it reaches and dims the rest, over --t-snap */
 .mo-comp:has(.mo-sr[value="all"]:checked) .mo-n-all,.mo-comp:has(.mo-sr[value="model"]:checked) .mo-n-model,.mo-comp:has(.mo-sr[value="project"]:checked) .mo-n-project{display:inline}
 @media (prefers-reduced-motion:no-preference){
@@ -222,8 +240,6 @@
   /* the five tabs stay one row of five and the five panels keep sharing one cell, so the window holds the tallest panel's height here too */
   .mo-apart{grid-template-columns:minmax(0,1fr)}
   .mo-lrail.rail{grid-auto-rows:auto}
-  /* the five sessions fall three and two on cells of one width, so the second row's cards match the first row's */
-  .mo-reaches{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
 /* at 820 and under the tabs are rows that open in place. The height cannot be held there without padding, so it eases over --t-snap:
    the open panel's row grows from 0 to its height while the closing one shuts and fades out. */

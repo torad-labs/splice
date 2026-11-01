@@ -371,12 +371,15 @@
   main>#questions:nth-child(odd)>.pg-split>.pg-head{grid-column:9/-1;padding-right:0;padding-left:clamp(0px,1vw,32px)}
   main>#questions:nth-child(odd)>.pg-split>:not(.pg-head){grid-column:1/span 8}
 }
-/* The head column carries the drawing's two halves down the list: the ten rows stay by the heading, and the stack of answer cards stands beside
-   the answer that is open (questions.js sets --qa-lift and --qa-gap and adds qa-follow; with none open, or without scripts, the stack stands at
-   the foot of the column). The cable runs from the rows to the stack. */
+/* The head column carries the whole drawing, the ten rows, the junction and the stack of answer cards, as one piece pinned under the header
+   (sticky), so the stack stays beside whichever part of an open answer is in view. questions.js sets its height (--qa-ah) to what the column
+   and the screen allow, so its foot is on screen when the band's top is, and no more than 280 px of cable lies between two parts, and the two
+   cable lengths (--qa-ga, --qa-gb); a short column holds it to the column's height. Without scripts the piece fills the column and the stack
+   stands at its foot. */
 @container pg (min-width:1280px){
-  .qa-band .pg-split>.pg-head>.pg-art{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;justify-self:stretch;align-self:stretch;width:auto;margin-top:var(--pg-sp-5)}
-  .qa-band .pg-split>.pg-head>.pg-art>svg:first-child{flex:0 1 auto;min-height:0;margin-top:var(--qa-lift,0px)}
+  .qa-band .pg-split>.pg-head>.pg-art{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;justify-self:stretch;align-self:stretch;width:auto;margin-top:var(--pg-sp-5);position:sticky;top:calc(var(--fr-hh) + var(--pg-sp-3))}
+  .qa-band .pg-split>.pg-head>.pg-art.qa-follow{flex:none;height:var(--qa-ah)}
+  .qa-band .pg-split>.pg-head>.pg-art>svg:first-child{flex:0 1 auto;min-height:0}
   .qa-band .pg-split>.pg-head>.pg-art .pg-stub{display:inline}
   .qa-band .pg-split>.pg-head>.pg-art::before,.qa-band .pg-split>.pg-head>.pg-art::after{content:"";flex:1 1 auto;min-height:var(--pg-sp-4);width:8px;margin-left:calc(var(--pg-ax,9%) - 4px);background:linear-gradient(var(--pg-cable),var(--pg-cable)) 50% 0 / 1.5px 100% no-repeat,radial-gradient(circle,var(--pg-dot,var(--claude)) 0 2.6px,transparent 3.2px) 50% 0 / 8px 8px no-repeat}
   .qa-band .pg-split>.pg-head>.pg-art::before{order:1}

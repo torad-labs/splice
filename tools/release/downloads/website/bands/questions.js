@@ -47,54 +47,47 @@
     window.scrollTo({ top: aim, behavior: calm && calm.matches ? "smooth" : "auto" });
   }, true);
 
-  // The head column carries the drawing's lower half beside the open answer: the stack of answer cards stands level with the middle of the
-  // answer that is open, and the ten rows by the heading move down by part of the distance, so no stretch of the column is only a cable.
-  // The list tells the column its height as the row opens (a ResizeObserver), so the stack rises with the answer; with none open the stack
-  // stands at the foot of the column, where the stylesheet puts it.
+  // The head column carries the whole drawing as one piece pinned under the header (sticky in the stylesheet), so the stack of answer cards
+  // stays beside the part of an open answer that is in view. The piece is as tall as the column and the screen allow: no taller than the screen
+  // under the header less the heading's own height, no taller than its parts plus 280 px of cable between each two, and no taller than the column (a short column holds it
+  // to its own height). The two cable lengths share what is left. Under the heading its foot is on screen when the band's top is.
   var art = document.querySelector(".qa-art");
   var deck = art && art.querySelector(".qa-deck");
   var rows = art && art.querySelector("svg");
   var junction = art && art.querySelector(".qa-mid");
-  var last = null;
   var frame = 0;
-  var MIN_GAP = 40;
-  var REACH = 290;
+  var MIN_GAP = 24;
+  var REACH = 280;
 
   function clear() {
     art.classList.remove("qa-follow");
-    art.style.removeProperty("--qa-lift");
+    art.style.removeProperty("--qa-ah");
     art.style.removeProperty("--qa-ga");
     art.style.removeProperty("--qa-gb");
   }
 
+  // an svg of the drawing is as tall as its width times its viewBox's ratio
+  function tall(svg, w) {
+    var vb = svg.viewBox.baseVal;
+    return (w * vb.height) / vb.width;
+  }
+
   function place() {
     frame = 0;
-    var row = last && last.open ? last : list.querySelector(".qa-q[open]");
-    if (!row || getComputedStyle(deck).display === "none") return clear();
-    var sum = row.querySelector("summary");
-    var ans = row.querySelector(".qa-ans");
-    if (!sum || !ans) return clear();
-    var a = art.getBoundingClientRect();
-    var r = rows.getBoundingClientRect();
-    var was = r.top - a.top;
-    var rowsFoot = r.bottom - a.top - was;
-    var h = deck.getBoundingClientRect().height;
-    var m = junction.getBoundingClientRect().height;
-    var box = row.getBoundingClientRect();
-    var mid = box.top + sum.offsetHeight + ans.offsetHeight / 2 - a.top;
-    var foot = list.getBoundingClientRect().bottom + Math.max(0, sum.offsetHeight + ans.offsetHeight - box.height) - a.top;
-    // level with the middle of the answer, but never so high that more than REACH of the column is left bare under the stack
-    var top = Math.max(rowsFoot + m + 2 * MIN_GAP, Math.min(Math.max(mid - h / 2, foot - h - REACH), foot - h));
-    // what lies between the rows and the stack is shared by three stretches: the one above the rows (the art's own margin and the lift) and the
-    // two cable lengths either side of the junction box, so each is about as long as the others
-    var space = top - rowsFoot - m;
-    var margin = parseFloat(getComputedStyle(art).marginTop) || 0;
-    var lift = Math.max(0, (space - 2 * margin) / 3);
-    var gap = (space - lift) / 2;
-    art.style.setProperty("--qa-lift", lift + "px");
+    if (getComputedStyle(deck).display === "none") return clear();
+    art.classList.add("qa-follow");
+    var head = art.parentElement;
+    var h2 = head.querySelector(".pg-h2");
+    var w = art.clientWidth;
+    var parts = tall(rows, w) + tall(junction, w) + tall(deck, w);
+    var top = h2.getBoundingClientRect().bottom + (parseFloat(getComputedStyle(art).marginTop) || 0);
+    var room = list.getBoundingClientRect().bottom - top;
+    var screen = window.innerHeight - header() - 2 * 16 - (top - head.getBoundingClientRect().top);
+    var h = Math.max(parts + 2 * MIN_GAP, Math.min(room, screen, parts + 2 * REACH));
+    var gap = (h - parts) / 2;
+    art.style.setProperty("--qa-ah", h + "px");
     art.style.setProperty("--qa-ga", gap + "px");
     art.style.setProperty("--qa-gb", gap + "px");
-    art.classList.add("qa-follow");
   }
 
   function soon() {
@@ -102,10 +95,8 @@
   }
 
   if (art && deck && rows && junction && window.ResizeObserver) {
-    list.addEventListener("toggle", function (e) {
-      if (e.target instanceof HTMLDetailsElement) last = e.target;
-      soon();
-    }, true);
     new ResizeObserver(soon).observe(list);
+    window.addEventListener("resize", soon);
+    soon();
   }
 })();

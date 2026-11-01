@@ -203,7 +203,7 @@
   .su-panel:nth-child(2) .su-map { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 1fr; }
   .su-panel:nth-child(2) .su-map > :last-child { grid-column: 1 / -1; }
 }
-/* narrow widths: each step is its number over its name, so three steps fit a phone with room between them */
+/* narrow widths: a tighter window */
 @container pg (max-width: 820px) {
   .su-win { padding: var(--pg-sp-3); gap: var(--pg-sp-3); }
   .su-ar { display: none; }
@@ -212,8 +212,19 @@
   .su-ch { padding: 0 var(--pg-sp-2) 0 var(--pg-sp-1); }
   .su-cs code + code { display: none; }
 }
+/* on a phone the three steps stand one under another, all open, each under its own numbered name, as More's tabs become a list there: a
+   step taller than the screen would scroll its switch away, and a shorter one would stand in a frame cut for Sign in's five providers */
 @container pg (max-width: 640px) {
-  .su-steps .su-st { flex-direction: column; gap: var(--pg-sp-1); padding: var(--pg-sp-2) var(--pg-sp-1); }
+  .switch.su-steps, .su-stage { display: contents; }
+  .su-win .su-panel { visibility: visible; opacity: 1; pointer-events: auto; }
+  .su-steps .su-st:nth-child(1) { order: 1; } .su-stage .su-panel:nth-child(1) { order: 2; }
+  .su-steps .su-st:nth-child(2) { order: 3; } .su-stage .su-panel:nth-child(2) { order: 4; }
+  .su-steps .su-st:nth-child(3) { order: 5; } .su-stage .su-panel:nth-child(3) { order: 6; }
+  #setup .su-win .su-steps .su-st:nth-child(n) { justify-content: flex-start; gap: var(--pg-sp-2); min-height: 0; padding: 0; color: var(--text); background: none; box-shadow: none; border-radius: 0; cursor: default; pointer-events: none; }
+  #setup .su-win .su-steps .su-st:nth-child(n+2) { margin-top: var(--pg-sp-3); padding-top: var(--pg-sp-4); border-top: 1px solid var(--hair); }
+  #setup .su-win .su-steps .su-st:nth-child(n) .su-sock { color: var(--obj); background: var(--text); box-shadow: 0 0 0 var(--ink-w) var(--ink); }
+  #setup .su-win .su-steps .su-st:nth-child(n) .su-sn { opacity: 1; transform: none; }
+  #setup .su-win .su-steps .su-st:nth-child(n) .su-stk { opacity: 0; }
   /* a card that carries a name and a state stacks them when the two do not fit one line */
   .su-ch { flex-wrap: wrap; height: auto; min-height: var(--su-ob); padding-block: var(--pg-sp-2); row-gap: var(--pg-sp-2); }
   .su-ch .su-cs { flex: 1 1 auto; justify-content: flex-end; }

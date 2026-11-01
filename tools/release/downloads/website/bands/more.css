@@ -5,7 +5,7 @@
    own size tokens (--kicker, --fig-focal) and its card gap take the same steps inside this band, so a console part that reads them
    lands on the scale without its own rule. --mo-row is one row pitch for a list of objects; --ctl-h is a control that holds one line
    of data text with 4 px or more of air above and below it. */
-.mo-band{--mo-ts:var(--pg-t-1);--mo-tm:var(--pg-t-2);--mo-tl:var(--pg-t-3);--mo-fig:var(--pg-t-4);--kicker:var(--pg-t-1);--fig-focal:var(--pg-t-4);--gap-card:var(--pg-sp-4);--ctl-h:calc(var(--pg-t-2) * 1.3 + var(--pg-sp-3) + 6px);--mo-row:calc(var(--pg-t-3) + 3rem);interpolate-size:allow-keywords}
+.mo-band{--mo-ts:var(--pg-t-1);--mo-tm:var(--pg-t-2);--mo-tl:var(--pg-t-3);--mo-fig:var(--pg-t-4);--kicker:var(--pg-t-1);--fig-focal:var(--pg-t-4);--gap-card:var(--pg-sp-4);--ctl-h:calc(var(--pg-t-2) * 1.3 + var(--pg-sp-3) + 6px);--mo-row:calc(var(--pg-t-3) + 2.3rem);interpolate-size:allow-keywords}
 .mo-win{--mo-pad:var(--pg-sp-5);position:relative;padding:var(--mo-pad);background:var(--obj);border:var(--ink-w) solid var(--ink);border-radius:var(--r-obj);box-shadow:var(--cast) var(--cast) 0 var(--ink)}
 
 /* band reveal: once, when the band first scrolls into view. Heading, line and window each rise 1.4rem and fade up from 28% over --t-pop (260 ms)
@@ -21,7 +21,8 @@
 @keyframes mo-swap{from{opacity:0}}
 
 /* tabs: the console's topic cards in a row, the open one raised in neutral ink (settings.css .card.job).
-   The five panels share one cell, so the window keeps the tallest panel's height on every tab and nothing below the band moves.
+   The five panels share one cell, so the window keeps the tallest panel's height on every tab and nothing below the band moves. Each panel is as
+   tall as its own content and its content stands centred in that height, so a shorter panel leaves its bare plate half above and half below.
    The panel that opens eases in over --t-snap (240 ms): it rises .8rem and fades up. The panel that closes fades out over --t-hit (90 ms)
    first, so the two never read on top of each other. Fills grow, rings draw and terminals type over the same tokens. */
 .mo-tabs{position:relative;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));column-gap:var(--gap-card);align-items:stretch}
@@ -53,8 +54,8 @@
 .mo-r:checked + .mo-tab .mo-chev{transform:rotate(90deg)}
 .mo-panel{grid-row:2;grid-column:1/-1;min-width:0;display:grid;opacity:0;visibility:hidden;pointer-events:none;transition:opacity var(--t-hit) var(--e-out),visibility 0s linear var(--t-hit)}
 .mo-pin{min-width:0;display:flex;flex-direction:column}
-.mo-pc{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;margin-top:var(--pg-sp-4);padding-top:var(--pg-sp-4);border-top:1px solid var(--hair)}
-.mo-pc>.mo-fill{flex:1 1 auto}
+.mo-pc{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;justify-content:center;margin-top:var(--pg-sp-4);padding-top:var(--pg-sp-4);border-top:1px solid var(--hair)}
+.mo-pc>.mo-fill{flex:0 0 auto}
 .mo-r:checked + .mo-tab + .mo-panel{opacity:1;visibility:visible;pointer-events:auto;transition:none}
 @media (prefers-reduced-motion:no-preference){
   .pg-js [data-reveal]:not(.is-seen) .mo-ev:not(.mo-win){opacity:.28;transform:translateY(1.4rem)}
@@ -118,9 +119,9 @@
 .mo-s7>.mo-plate{height:100%}
 .mo-band .mo-win .mo-lead .mo-pchip,.mo-band .mo-win .mo-lead .mo-cc{font-size:var(--mo-tm)}
 .mo-band .mo-win .mo-lead .mo-cmd .chip{font-size:var(--mo-tl)}
-.mo-sibs{display:flex;flex-direction:column;justify-content:space-between;gap:var(--pg-sp-4);padding-block:var(--pg-sp-4)}
+.mo-sibs{display:flex;flex-direction:column;justify-content:space-between;gap:var(--pg-sp-3);padding-block:var(--pg-sp-3)}
 .mo-sibs>div:first-child{flex:1 1 auto;display:flex;flex-direction:column}
-.mo-sibs>div:first-child>.mo-term{flex:1 1 auto;align-content:start}
+.mo-sibs>div:first-child>.mo-term{align-content:start}
 .mo-sibs .mo-k{display:flex;align-items:center;min-height:var(--mo-ts);margin:0 0 var(--pg-sp-2)}
 .mo-band .mo-win .mo-sibs .term .tx{font-size:var(--mo-ts)}
 .mo-sibs .mo-term .tl{min-height:calc(var(--mo-ts) * 1.3 + var(--pg-sp-2))}
@@ -147,7 +148,15 @@
 .mo-s5>.mo-plate>.psec{height:100%;justify-content:center}
 .mo-setrow{display:flex;flex-wrap:wrap;align-items:center;gap:var(--pg-sp-3) var(--pg-sp-4)}
 .mo-win textarea.mo-field{resize:none}
-@container pg (min-width:1101px){ .mo-win textarea.mo-field{min-height:calc(4.6 * 1.4 * var(--mo-tm) + 2 * var(--pg-sp-2))} }
+/* the plate takes the page's step 4 inside, so the two sections stand as tall as their own lines; from a 2,200 px container the window has room for the
+   taller field and the roomier cards, which keeps this panel near the height of the others there */
+.mo-comp.plate{padding:var(--pg-sp-4)}
+.mo-comp>.psec+.psec{margin-top:var(--pg-sp-4);padding-top:var(--pg-sp-4)}
+@container pg (max-width:2199px){ .mo-comp .mo-reaches{gap:var(--pg-sp-3)} }
+@container pg (min-width:2200px){
+  .mo-win textarea.mo-field{min-height:calc(4.6 * 1.4 * var(--mo-tm) + 2 * var(--pg-sp-2))}
+  .mo-reach{padding:var(--pg-sp-3)}
+}
 .mo-field{flex:1 1 22rem;width:auto;min-width:min(100%,14rem);line-height:1.4;font-family:var(--font-name);font-weight:500}
 .mo-scope{position:relative;flex:none;max-width:100%}
 .mo-scope label{display:inline-flex;align-items:center;white-space:nowrap;font:500 var(--mo-tm)/1.3 var(--font-name);color:var(--text-mute);padding:0 var(--pg-sp-2);border-radius:calc(var(--r-obj) - .15rem);cursor:pointer;transition:color var(--t-hover) var(--e-out),background-color var(--t-hover) var(--e-out)}
@@ -161,7 +170,7 @@
 .mo-pips>i{flex:1 1 0;height:.9rem;border-radius:.2rem;background:transparent;box-shadow:inset 0 0 0 .1rem var(--track-line);transition:background-color var(--t-snap) var(--e-out),box-shadow var(--t-snap) var(--e-out)}
 .mo-comp>.psec:last-child{flex:1 1 auto}
 .mo-reaches{flex:1 1 auto;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--pg-sp-4);align-content:start}
-.mo-reach{display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:var(--pg-sp-2);min-width:0;padding:var(--pg-sp-3);border:.1rem solid var(--track-line);border-radius:var(--r-in);background:var(--obj-sunk);transition:opacity var(--t-snap) var(--e-out),background-color var(--t-snap) var(--e-out)}
+.mo-reach{display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:var(--pg-sp-2);min-width:0;padding:var(--pg-sp-2) var(--pg-sp-3);border:.1rem solid var(--track-line);border-radius:var(--r-in);background:var(--obj-sunk);transition:opacity var(--t-snap) var(--e-out),background-color var(--t-snap) var(--e-out)}
 .mo-reach .chip.edge{padding-left:calc(.55rem + .12rem - 1px)}
 .mo-host.card{display:block;padding:0;border:0;background:none;box-shadow:none;top:auto;left:auto}
 .mo-host .onlogin{margin:0!important;padding:0!important;border:0!important;box-shadow:none!important}
@@ -224,7 +233,7 @@
 .mo-lrail.rail{flex:1 1 auto;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:1fr}
 .mo-lrail>.card{display:flex;flex-direction:column}
 .mo-lrail{--gap-card:var(--pg-sp-4)}
-.mo-local{grid-template-rows:auto 1fr}
+.mo-local{grid-template-rows:auto auto}
 .mo-lterm>.term{width:100%}
 .mo-lrail .card .top{min-height:2rem}
 .mo-lrail .lmc-body{flex:1 1 auto;grid-template-columns:minmax(0,1fr) auto;align-content:center;align-items:center;gap:var(--pg-sp-2) var(--pg-sp-3)}
@@ -232,13 +241,11 @@
 .mo-lrail .lmc-hold{display:none}
 .mo-lrail .mo-servers{grid-column:1/-1;margin-top:0}
 .mo-tall{display:flex;flex-direction:column}
-.mo-tall>.term{flex:1;align-content:start}
+.mo-tall>.term{align-content:start}
 .mo-lterm{display:flex;flex-direction:column}
-/* the window holds the tallest panel's height, and a shorter panel fills it rather than floating in padding: the Upgrades
-   terminal and the version plate stand full height, as a terminal window does. The setup terminal stands as tall as its lines,
-   at the top of its column beside the two cards, which fill. */
-.mo-fit{align-content:stretch}
-.mo-tall .term .tl{min-height:calc(var(--mo-tm) * 1.3 + var(--pg-sp-4))}
+/* the window holds the tallest panel's height; a shorter panel keeps each block as tall as its own content and stands centred in it */
+.mo-fit{align-content:start}
+.mo-tall .term .tl{min-height:calc(var(--mo-tm) * 1.3 + var(--pg-sp-4) + 3px)}
 /* the upgrade and rollback bars are neutral: the track is the console's, the fill is the text ink. The green stays on the cards. */
 .mo-ink .bar{--c:var(--text)}
 
@@ -253,7 +260,6 @@
 /* narrow: read the page's own width */
 @container pg (max-width:1100px){
   /* the five tabs stay one row of five and the five panels keep sharing one cell, so the window holds the tallest panel's height here too */
-  .mo-apart{grid-template-columns:minmax(0,1fr)}
   .mo-lrail.rail{grid-auto-rows:auto}
 }
 /* at 820 and under the tabs are rows that open in place. The height cannot be held there without padding, so it eases over --t-snap:
@@ -287,7 +293,7 @@
   .mo-lrail.rail{grid-template-columns:minmax(0,1fr)}
   .mo-reach{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--pg-sp-2) var(--pg-sp-3);padding:var(--pg-sp-2) var(--pg-sp-3)}
   .mo-count{flex-wrap:wrap}
-  .mo-apart{padding:var(--pg-sp-3)}
+  .mo-apart{grid-template-columns:minmax(0,1fr);padding:var(--pg-sp-3)}
   .mo-fan{grid-template-columns:auto minmax(.6rem,1.4rem) .56rem 1rem auto}
   .mo-band .mo-win .mo-lead .mo-pchip,.mo-band .mo-win .mo-lead .mo-cc{font-size:var(--mo-ts)}
   .mo-cache{margin-left:0;flex:1 1 100%}

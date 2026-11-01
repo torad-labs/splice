@@ -122,9 +122,14 @@ main > .pg-band:nth-child(5n) { --pg-dot: var(--muse); }
 .pg-art .pg-fan { transform-box: fill-box; transform-origin: center; animation: pg-spin 22s linear infinite; animation-delay: var(--d, 0s); animation-play-state: paused; }
 .pg-art.pg-on .pg-flow, .pg-art.pg-on .pg-lamp, .pg-art.pg-on .pg-fan { animation-play-state: running; }
 .pg-away .pg-art .pg-flow, .pg-away .pg-art .pg-lamp, .pg-away .pg-art .pg-fan { animation-play-state: paused !important; }
-/* the console's working lamps beat on a 2.2 s loop wherever a band draws one; they run only while their band is on screen (and
-   while the tab is shown), like the drawings */
-.pg-life .pg-band:not(.pg-on) .beat, .pg-life .fr-first:not(.pg-on) .beat, .pg-away .beat { animation-play-state: paused !important; }
+/* the console's working lamps beat on a 2.2 s loop wherever a band draws one; they run only while the tab is shown, and while their
+   band is on screen by the rule below */
+.pg-away .beat { animation-play-state: paused !important; }
+/* and one rule for every loop inside a band: while the band is off screen (and the page keeps the on-screen marks) whatever runs in
+   it, a band's own caret, lamp or beat included, is paused, so no band needs its own pause */
+.pg-life :is(.pg-band, .fr-first):not(.pg-on) *,
+.pg-life :is(.pg-band, .fr-first):not(.pg-on) *::before,
+.pg-life :is(.pg-band, .fr-first):not(.pg-on) *::after { animation-play-state: paused !important; }
 @keyframes pg-flow { to { stroke-dashoffset: -100; } }
 @keyframes pg-lamp { 50% { opacity: .2; } }
 @keyframes pg-spin { to { transform: rotate(360deg); } }
@@ -421,7 +426,7 @@ main, .fr-foot { position: relative; z-index: 1; }
 
 /* ===== closing band: the head (heading, links, who made it), the install window and a drawing, three children of one grid.
    Under 900 px they stack (head, drawing, window); from 900 px the head stands over the window with the drawing at its right;
-   from 1,280 px the head takes 4 columns and the window 8, with the drawing under the window; from 2,200 px the three share one
+   from 1,280 px the head takes 4 columns and the window 8, with the drawing as one wide strip across the container under both; from 2,200 px the three share one
    row (head, window, drawing), so the band is as tall as the window. Every step inside the head is 32 px. ===== */
 .fr-close-in { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "head art" "win win"; column-gap: var(--pg-cg); row-gap: var(--fr-s); align-items: end; }
 .fr-close-l { grid-area: head; min-width: 0; }
@@ -431,9 +436,12 @@ main, .fr-foot { position: relative; z-index: 1; }
   .fr-close-in { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "art" "win"; }
   .fr-close-art { justify-self: start; width: min(100%, 360px); }
 }
-@container pg (min-width: 1280px) {
-  .fr-close-in { grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); grid-template-areas: "head win" "head art"; align-items: start; }
-  .fr-close-art { justify-self: start; }
+.fr-close-art .fr-art-x { display: none; }
+@container pg (min-width: 1280px) and (max-width: 2199px) {
+  .fr-close-in { grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); grid-template-areas: "head win" "art art"; align-items: start; }
+  .fr-close-art { justify-self: stretch; width: auto; }
+  .fr-close-art .fr-art-c { display: none; }
+  .fr-close-art .fr-art-x { display: block; }
 }
 @container pg (min-width: 2200px) {
   .fr-close-in { grid-template-columns: minmax(0, 3.6fr) minmax(0, 5.8fr) minmax(0, 2.6fr); grid-template-areas: "head win art"; align-items: center; }

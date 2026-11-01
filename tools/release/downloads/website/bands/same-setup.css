@@ -158,8 +158,8 @@
   .ss-kt-tm .ss-kt-blink { animation: ss-blink 1.1s steps(1) infinite; }
 }
 @container ss-stage (max-width: 44rem) {
-  .ss-kg { display: flex; flex-wrap: wrap; grid-auto-rows: auto; gap: var(--pg-sp-2); }
-  .ss-k { flex: 1 1 auto; min-height: 2.8rem; padding-right: var(--pg-sp-3); }
+  .ss-kg { grid-template-columns: minmax(0, 1fr); grid-auto-rows: 3.2rem; gap: var(--pg-sp-2); }
+  .ss-k { padding-right: var(--pg-sp-3); }
 }
 
 /* ---------- the head beside the window from a 1,280 px container to 2,199 px (the page's split starts at 2,200 px): the head takes 4 of 12

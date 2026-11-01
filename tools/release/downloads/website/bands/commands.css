@@ -61,7 +61,6 @@
 .cm-lab { display: inline-flex; align-items: center; gap: .5rem; font: 400 var(--fr-tm)/1.25 var(--font-name); color: var(--text-body); }
 .cm-facts-row .cm-lab { font-size: var(--fr-tm); }
 .cm-lab svg { flex: none; width: 1.05rem; height: 1.05rem; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
-.cm-note { font: 400 var(--fr-tm)/1.25 var(--font-name); color: var(--text-mute); }
 
 /* the door: the console's own disclosure (.disc and its .chev, no box), with the word of what it opens */
 .cm-door { margin-left: auto; cursor: pointer; gap: .5rem; font: 500 var(--fr-tm)/1.2 var(--font-name); color: var(--text-body); }
@@ -237,6 +236,9 @@
   .cm-board > .cm-card:nth-of-type(6) { grid-column: 2; grid-row: 2; }
   .cm-board > .cm-card:nth-of-type(7) { grid-column: 3; grid-row: 2; }
   .cm-board > .cm-card:nth-of-type(8) { grid-column: 4; grid-row: 2; }
+  /* the two rows of cards share one height, and a card whose foot holds facts lays them first so its provider sits on the foot's last line, where every other card's does */
+  .cm-board { grid-template-rows: 1fr 1fr auto auto auto; }
+  .cm-foot > .cm-fact { order: -1; }
   .cm-drawer[data-k="or"] { grid-row: 3; }
   .cm-drawer[data-k="bo"] { grid-row: 4; }
   .cm-drawer[data-k="ow"] { grid-row: 5; }

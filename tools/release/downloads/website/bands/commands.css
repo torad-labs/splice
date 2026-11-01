@@ -84,7 +84,9 @@
 }
 .cm-drawer-in { min-height: 0; overflow: hidden; margin-inline: -.75rem; }
 .cm-drawer-wrap { padding: 0 .75rem var(--cm-gap); }
-.card.cm-dplate { display: grid; grid-template-columns: var(--dc); padding: 0; min-height: 0; cursor: default; }
+/* a drawer is as wide as what it holds (each column takes its content's width), hangs at the board's right edge under its door,
+   and shrinks to the board where the content is wider than the board */
+.card.cm-dplate { display: grid; grid-auto-flow: column; grid-auto-columns: auto; width: fit-content; max-width: 100%; margin-left: auto; padding: 0; min-height: 0; cursor: default; }
 .cm-dplate > .cm-sec { padding: calc(2 * var(--u)) calc(2.5 * var(--u)); border-left: .08rem solid var(--hair); justify-content: flex-start; }
 .cm-dplate > .cm-sec:first-child { border-left: 0; }
 
@@ -116,7 +118,7 @@
 .cm-mod { --c: var(--router); font: 500 var(--fr-tm)/1 var(--font-name); padding: .4rem .7rem; }
 .cm-own .cm-mod { --c: var(--local); }
 .cm-own { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--pg-sp-2) var(--pg-sp-4); }
-.cm-dwhen { display: inline-flex; align-items: center; gap: .6rem; font: 500 var(--fr-tm)/1 var(--font-data); color: var(--text-body); }
+.cm-dwhen { display: inline-flex; align-items: center; gap: .6rem; white-space: nowrap; font: 500 var(--fr-tm)/1 var(--font-data); color: var(--text-body); }
 
 /* the status line, as Claude Code draws it */
 .cm-sl-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pg-sp-2) var(--pg-sp-4); }
@@ -138,11 +140,12 @@
 /* ---------- reveal: heading, line and each card ease in once on --t-pop (260 ms) and --e-out, each starting 40 ms after the one before
    (heading 0, line 40, card n at 40n ms); the eighth card is done at 540 ms. A card's meter fill grows and its ring draws over --t-snap (240 ms) with it.
    One band plays once: page.js adds .is-seen the first time the band scrolls into view and never removes it. ---------- */
-@keyframes cm-rise { from { opacity: 0; transform: translateY(1.2rem); } to { opacity: 1; transform: none; } }
+/* the first frame (what a band that has not played yet shows) is at rest, so the band's first content stands where every other band's does */
+@keyframes cm-rise { 0% { opacity: 0; transform: none; } 1% { opacity: 0; transform: translateY(1.2rem); } 100% { opacity: 1; transform: none; } }
 @keyframes cm-grow { from { transform: scaleX(0); } }
 @keyframes cm-arc { from { stroke-dasharray: 0 94.2; } }
 @media (prefers-reduced-motion: no-preference) {
-  .pg-js .cm-in[data-reveal]:not(.is-seen) :is(.pg-h2, .pg-line, .cm-card) { opacity: 0; transform: translateY(1.2rem); }
+  .pg-js .cm-in[data-reveal]:not(.is-seen) :is(.pg-h2, .pg-line, .cm-card) { opacity: 0; }
   .cm-in.is-seen :is(.pg-h2, .pg-line, .cm-card) { animation: cm-rise var(--t-pop) var(--e-out) both; animation-delay: var(--d); }
   .cm-in.is-seen .cm-card :is(.bar.grow > b, .wbar > i) { transform-origin: left; animation: cm-grow var(--t-snap) var(--e-out) both; animation-delay: var(--d); }
   .cm-in.is-seen .cm-card .ring .arc { animation: cm-arc var(--t-snap) var(--e-out) both; animation-delay: var(--d); }
@@ -177,7 +180,7 @@
   .cm-board { grid-template-columns: minmax(0, 1fr); }
   .cm-card, .cm-drawer { grid-column: 1; grid-row: auto; order: var(--o); }
   .cm-card { min-height: 0; }
-  .card.cm-dplate { grid-template-columns: minmax(0, 1fr); }
+  .card.cm-dplate { grid-auto-flow: row; grid-auto-columns: minmax(0, 1fr); width: auto; margin-left: 0; }
   .cm-dplate > .cm-sec { border-left: 0; border-top: .08rem solid var(--hair); padding-inline: 1.2rem; }
   .cm-dplate > .cm-sec:first-child { border-top: 0; }
 }
@@ -221,8 +224,5 @@
   .cm-card .windows.cm-win.cm-none { grid-template-columns: minmax(0, 1fr); }
   .cm-win.cm-none > .bar { grid-column: 1; grid-row: 1; }
   .cm-win.cm-none > .state { grid-column: 1; grid-row: 2; justify-self: start; }
-  .cm-setup { flex-direction: column; align-items: flex-start; gap: .9rem; }
-  .cm-steps { flex-direction: column; align-items: flex-start; gap: 0; }
-  .cm-seg { width: .3rem; height: 1.2rem; margin-left: 1.12rem; }
   .cm-sl { flex-direction: column; align-items: flex-start; }
 }

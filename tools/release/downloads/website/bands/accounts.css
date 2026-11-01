@@ -21,10 +21,11 @@
 
 /* ---------- type: the plate's console parts read the page's steps (--kicker, --fr-ts, --fr-tm, --fig-focal, --fig-hero) ---------- */
 .ac-plate .provider > header h2 { font-size: var(--fig-focal); line-height: 1.3; }
-.ac-plate .card .name, .ac-plate .add .plus, .ac-win-l, .ac-tabs label { font-size: var(--fr-tm); }
+.ac-plate .card .name, .ac-plate .add, .ac-plate .add .plus, .ac-win-l, .ac-tabs label,
+.ac-plate .windows .label, .ac-plate .windows .pct, .ac-plate .windows .when, .ac-plate .windows .heldline { font-size: var(--fr-tm); }
 .ac-plate .kicker, .ac-plate .meter.day > .label, .ac-plate .act.ac-copy, .ac-plate .meter.day .act.ac-bud, .ac-plate .money-in { font-size: var(--fr-ts); }
-.ac-plate .windows .label, .ac-plate .windows .pct, .ac-plate .windows .when, .ac-plate .windows .heldline, .ac-plate .pct .used,
-.ac-plate .chip, .ac-plate .plan, .ac-plate .socket, .ac-plate .msock, .ac-plate .state, .ac-plate .add, .ac-code, .ac-pchip, .ac-fine,
+.ac-plate .pct .used,
+.ac-plate .chip, .ac-plate .plan, .ac-plate .socket, .ac-plate .msock, .ac-plate .state, .ac-code, .ac-pchip, .ac-fine,
 .ac-plate .meter.day, .ac-plate .meter.day .label, .ac-plate .meter.day .pct, .ac-plate .meter.day .when, .ac-plate .meter.day .ads-unit,
 .ac-plate .editor, .ac-plate .editor button, .ac-plate .editor .field, .ac-plate .dayrun .marks b, .ac-cmds .pct, .ac-cmds .when, .ac-cmds .chip,
 .ac-plate .moves, .ac-plate .moveline { font-size: var(--fr-ts); }
@@ -148,6 +149,26 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
 /* the Budget's label column keeps 12 px before its bar */
 @container acw (width > 48rem) {
   .ac-plate .meter.day.ac-budget { column-gap: var(--pg-sp-2); }
+  /* the hour chart spans the card's inner width, its hour labels under all of it (the room on its right is the peak figure's) */
+  .ac-plate .meter.day.ac-budget > .dayrun { grid-column: 1 / -1; margin-right: 1.6rem; }
+}
+/* one column of cards (the plate narrower than 91 rem): the Accounts view is the tall one, so the Budget card shares its height; the
+   card's rows keep their own spacing at the top and the hour chart takes the rest of the room, at least 37% of the plate's width */
+@container acw (width > 48rem) and (max-width: 91rem) {
+  .ac-one > .col > .provider > .ac-budget { grid-template-rows: repeat(4, auto) minmax(37cqw, 1fr); align-content: stretch; }
+  /* the dollars bar and the line about the bill stay one group: they share a row, the line under the bar */
+  .ac-plate .meter.day.ac-budget > .chip.tag { grid-row: 1; }
+  .ac-plate .meter.day.ac-budget > :is(.label:not(.ads-k), .dayline, .when) { grid-row: 2; }
+  .ac-plate .meter.day.ac-budget > .editor { grid-row: 3; }
+  .ac-plate .meter.day.ac-budget > :is(.ads-k, .capbox, .pct) { grid-row: 4; }
+  .ac-plate .meter.day.ac-budget > :is(.ads-k, .capbox, .pct) { align-self: start; }
+  .ac-plate .meter.day.ac-budget > .capbox { margin-bottom: 2.2rem; }
+  .ac-plate .meter.day.ac-budget > .ads-k, .ac-plate .meter.day.ac-budget > .pct { margin-top: 0; padding-top: 0; }
+  .ac-plate .meter.day.ac-budget > .ac-bill { grid-row: 4; align-self: end; margin-top: 0; }
+  .ac-plate .meter.day.ac-budget > .dayrun { grid-row: 5; height: auto; align-self: stretch; }
+}
+@container acw (width > 91rem) {
+  .ac-plate .meter.day.ac-budget > .dayrun { max-height: 34cqw; }
 }
 @container acw (max-width: 48rem) {
   .ac-budget .dayrun > .hours > .hr:not(.hn) { display: none; }
@@ -264,11 +285,11 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
    (240 ms) once the plate is up. Then the rotation plays once, as accounts.js sets it: at 440 ms the first ChatGPT login locks (the lock pops
    over --t-pop, its line rises over --t-snap), at 700 ms the next socket lights over --t-hover and the moves line is drawn. A view opened
    later grows its own meters again. ---------- */
-@keyframes ac-rise { from { opacity: 0; transform: translateY(1.5rem); } }
+@keyframes ac-rise { 0% { opacity: 0; transform: none; } 1% { opacity: 0; transform: translateY(1.5rem); } 100% { opacity: 1; transform: none; } }
 @keyframes ac-grow { from { transform: scaleX(0); } }
 @keyframes ac-light { from { color: var(--socket-ink); background: var(--socket); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .15rem var(--rail); } }
 @media (prefers-reduced-motion: no-preference) {
-  .pg-js .ac-in[data-reveal]:not(.is-seen) :is(.ac-hd, .ac-plate) { opacity: 0; transform: translateY(1.5rem); }
+  .pg-js .ac-in[data-reveal]:not(.is-seen) :is(.ac-hd, .ac-plate) { opacity: 0; }
   .pg-js .ac-in[data-reveal]:not(.is-seen) .bar.grow > b { transform: scaleX(0); }
   .ac-in.is-seen .ac-hd { animation: ac-rise var(--t-move) var(--e-out) both; }
   .ac-in.is-seen .ac-plate { animation: ac-rise var(--t-move) var(--e-out) 90ms both; }

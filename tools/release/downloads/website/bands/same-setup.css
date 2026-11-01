@@ -162,6 +162,18 @@
   .ss-k { flex: 1 1 auto; min-height: 2.8rem; padding-right: var(--pg-sp-3); }
 }
 
+/* ---------- the head beside the window from a 1,280 px container to 2,199 px (the page's split starts at 2,200 px): the head takes 4 of 12
+   columns and the stage 8, on the side the page gives this band's place (odd places put the head on the right), and the head's drawing
+   stands midway down the column, so no stretch of it is bare. 1,024 to 1,279 px keeps the stacked row. ---------- */
+@container pg (min-width: 1280px) and (max-width: 2199px) {
+  #same-setup .ss-in { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--pg-cg); align-items: start; }
+  #same-setup .ss-in > .pg-head { display: flex; flex-direction: column; align-self: stretch; grid-column: 1 / span 4; grid-row: 1; margin-bottom: 0; padding-right: clamp(0px, 1vw, 32px); }
+  #same-setup .ss-in > .ss-stage { grid-column: 5 / -1; grid-row: 1; margin-top: 0; }
+  main > #same-setup:nth-child(odd) > .ss-in > .pg-head { grid-column: 9 / -1; padding-right: 0; padding-left: clamp(0px, 1vw, 32px); }
+  main > #same-setup:nth-child(odd) > .ss-in > .ss-stage { grid-column: 1 / span 8; }
+  #same-setup .ss-in > .pg-head > .pg-art { flex: 0 0 auto; align-self: stretch; justify-self: stretch; width: auto; margin-block: auto; }
+}
+
 /* ---------- reveal ----------
    Each part rises once on entering, by 1.5rem, on the console's ease-out, in its own step:
      heading and line  0 ms   --t-snap 240 ms  (done 240)
@@ -173,7 +185,7 @@
    Everything is done by 600 ms. Only opacity, transform and the meters move, so nothing below the band shifts.
    The page's script adds is-seen to each part (data-reveal) the first time it scrolls into view, so on a phone the panel
    plays when it arrives, not when the heading did. */
-@keyframes ss-rise { from { opacity: 0; transform: translateY(1.5rem); } }
+@keyframes ss-rise { 0% { opacity: 0; transform: none; } 1% { opacity: 0; transform: translateY(1.5rem); } 100% { opacity: 1; transform: none; } }
 @keyframes ss-fill { from { transform: scaleX(0); } }
 @keyframes ss-arc { from { stroke-dasharray: 0 94.2; } }
 .ss-rv-h { --ss-d: 0ms;   --ss-dur: var(--t-snap); }
@@ -183,7 +195,7 @@
 .ss-m1 { --ss-d: 310ms; } .ss-m2 { --ss-d: 330ms; } .ss-m3 { --ss-d: 350ms; }
 .ss-mv .bar > b { transform-origin: left; }
 @media (prefers-reduced-motion: no-preference) {
-  .pg-js .ss-rv[data-reveal]:not(.is-seen) { opacity: 0; transform: translateY(1.5rem); }
+  .pg-js .ss-rv[data-reveal]:not(.is-seen) { opacity: 0; }
   .pg-js .ss-win[data-reveal]:not(.is-seen) .ss-mv .bar > b { transform: scaleX(0); }
   .pg-js .ss-win[data-reveal]:not(.is-seen) .ss-mv .ring .arc { stroke-dasharray: 0 94.2; }
   .ss-rv.is-seen { animation: ss-rise var(--ss-dur) var(--e-out) 1 backwards; animation-delay: var(--ss-d); }

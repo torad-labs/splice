@@ -33,10 +33,14 @@
 .rs-pv { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .rs-board .provider > header { margin-bottom: 1rem; }
 .rs-plate { position: relative; flex: 1; display: flex; flex-direction: column; min-width: 0; }
-/* the Claude card keeps its own height, with its rail: it never stretches to the two terminals' height over empty ground */
-.rs-p1 > .rs-rv:last-child { flex: none; }
-.rs-p1 .rail { flex: none; }
-.rs-p1 .rail .card { flex: none; }
+/* three columns across: the Claude card runs down to the terminals' bottom edge, so the three columns end on one y. The week's
+   figure and its meter stay packed under the card's top; only the reset time drops to the card's foot, as the ChatGPT card's
+   model line does. Stacked and in two columns it keeps its own height (the window rules below set flex: none). */
+.rs-p1 > .rs-rv:last-child { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.rs-p1 .rail { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.rs-p1 .rail .card { flex: 1; display: flex; flex-direction: column; }
+.rs-p1 .rail .card .windows { flex: 1; grid-template-rows: auto auto minmax(0, 1fr); }
+.rs-p1 .rail .card .windows > :nth-child(4) { align-self: end; }
 
 /* the Claude card in its narrow reflow: label and figure on one row, the meter on the full row, the ring and its time under it.
    One focal figure leads: the week's 100% at the console's focal size, in limit red, "used" on its baseline. The 5-hour
@@ -144,9 +148,10 @@
 }
 @container pg (max-width: 640px) {
   .rs-pw { padding: calc(2.5 * var(--u)); }
-  /* a phone's terminal holds the whole path on one line: no indent, a close box, the terminal's own padding a little tighter */
-  .rs-term { padding-inline: .6rem; }
-  .rs-path { margin-left: 0; padding: .3rem .25rem; }
+  /* a phone's terminal takes the console card's own side padding (1.15rem), so the Studio card and both terminals keep the same
+     room to their border; the path has no indent and breaks after its hyphen, so the chip stays narrower than the card */
+  .rs-term { padding-inline: 1.15rem; }
+  .rs-path { margin-left: 0; padding: .3rem .5rem; max-width: min(100%, 19rem); }
 }
 
 /* ---------- from 1,280 px to 2,199 px the head stands beside the window, as the page does from 2,200 px: the head takes 4 of 12

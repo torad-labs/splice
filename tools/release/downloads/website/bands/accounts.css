@@ -4,22 +4,29 @@
 
 /* ---------- the band: one heading, one line, one component ---------- */
 .ac-hd-t { min-width: 0; }
-.ac-lines { display: grid; margin: var(--pg-sp-2) 0 0; }
-.ac-lines .pg-line { grid-area: 1 / 1; margin: 0; }
 .ac-tabs { --ctl-h: 2.7rem; flex: none; justify-self: start; margin-top: var(--pg-sp-4); }
 .ac-tabs label {
   display: inline-flex; align-items: center; justify-content: center; cursor: pointer; white-space: nowrap;
-  font: 500 .92rem/1 var(--font-name); color: var(--text-mute); padding: 0 .8rem; border-radius: calc(var(--r-obj) - .15rem);
+  font: 500 var(--fr-tm)/1 var(--font-name); color: var(--text-mute); padding: 0 .8rem; border-radius: calc(var(--r-obj) - .15rem);
   transition: color var(--t-hover) var(--e-out), background-color var(--t-hover) var(--e-out);
 }
 .ac-tabs label:hover { color: var(--text-body); }
 .ac-plate {
-  --ctl-h: 2.4rem;
+  --ctl-h: 2.7rem; --gap-card: var(--pg-sp-4); --gap-col: var(--pg-sp-5);
   background: var(--wall-low); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
   box-shadow: var(--cast) var(--cast) 0 var(--ink); padding: calc(4 * var(--u));
 }
 .ac-plate .act { cursor: default; }
 .ac-pin { container: acw / inline-size; }
+
+/* ---------- type: the plate's console parts read the page's steps (--kicker, --fr-ts, --fr-tm, --fig-focal, --fig-hero) ---------- */
+.ac-plate .provider > header h2 { font-size: var(--fig-focal); line-height: 1.3; }
+.ac-plate .card .name, .ac-plate .add .plus, .ac-win-l, .ac-tabs label { font-size: var(--fr-tm); }
+.ac-plate .windows .label, .ac-plate .windows .pct, .ac-plate .windows .when, .ac-plate .windows .heldline, .ac-plate .pct .used,
+.ac-plate .chip, .ac-plate .plan, .ac-plate .socket, .ac-plate .msock, .ac-plate .state, .ac-plate .add, .ac-code, .ac-pchip, .ac-fine,
+.ac-plate .meter.day, .ac-plate .meter.day .label, .ac-plate .meter.day .pct, .ac-plate .meter.day .when, .ac-plate .meter.day .ads-unit,
+.ac-plate .editor, .ac-plate .editor button, .ac-plate .editor .field, .ac-plate .dayrun .marks b, .ac-cmds .pct, .ac-cmds .when, .ac-cmds .chip,
+.ac-plate .moves, .ac-plate .moveline { font-size: var(--fr-ts); }
 
 /* ---------- parts of the plate ---------- */
 .ac-board { --when-n: 20; }
@@ -40,11 +47,12 @@
 .ac-plate .blot { flex-shrink: 1; }
 
 /* the add-account row: the Claude one opens (a details) and shows the two commands; the ChatGPT one names the other providers */
-.ac-add { flex-wrap: wrap; row-gap: .5rem; min-height: var(--ctl-h); }
-.ac-pchips { display: inline-flex; flex-wrap: wrap; gap: .5rem; margin-left: auto; }
-.ac-pchip { gap: .5rem; padding: .32rem .55rem; box-shadow: inset 0 0 0 1px var(--c); font: 500 .88rem/1 var(--font-name); color: var(--text-body); }
+.ac-add { flex-wrap: wrap; row-gap: var(--pg-sp-2); min-height: var(--ctl-h); }
+.ac-pchips { display: inline-flex; flex-wrap: wrap; gap: var(--pg-sp-2); margin-left: auto; }
+.ac-plate .add .plus { line-height: 1; }
+.ac-pchip { gap: .5rem; padding: .32rem .55rem; box-shadow: inset 0 0 0 1px var(--c); font: 500 var(--fr-ts)/1 var(--font-name); color: var(--text-body); }
 .ac-pdot { width: .7rem; height: .7rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); flex: none; }
-.ac-code { margin-left: auto; font: 500 .92rem/1.3 var(--font-data); color: var(--text-body); white-space: nowrap; overflow-wrap: anywhere; }
+.ac-code { margin-left: auto; font: 500 var(--fr-ts)/1.3 var(--font-data); color: var(--text-body); white-space: nowrap; overflow-wrap: anywhere; }
 .ac-chev { width: .9rem; height: .9rem; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .ac-chev-box { display: inline-flex; color: var(--text-mute); }
 .ac-chev-box .ac-chev { transition: transform var(--t-snap) var(--e-out); }
@@ -63,10 +71,10 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
 .ac-win { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: .667rem; padding: calc(2 * var(--u)); background: var(--obj-sunk); border: var(--ink-w) solid var(--ink); border-radius: var(--r-in); }
 .ac-ls { display: flex; flex-direction: column; gap: .333rem; }
 .ac-l { display: flex; gap: .8rem; }
-.ac-win-l { display: flex; gap: .8rem; min-width: 0; font: 500 .98rem/1.4 var(--font-data); color: var(--text); }
+.ac-win-l { display: flex; gap: .8rem; min-width: 0; font: 500 var(--fr-tm)/1.4 var(--font-data); color: var(--text); }
 .ac-win-l code { font: inherit; overflow-wrap: anywhere; }
 .ac-p { color: var(--text-mute); }
-.ac-copy { gap: .5rem; flex: none; cursor: pointer; }
+.ac-copy { gap: .5rem; flex: none; cursor: pointer; font-size: var(--fr-ts); }
 .ac-plate .act.ac-copy { cursor: pointer; }
 .ac-copy[hidden] { display: none; }
 .ac-copy svg { width: 1rem; height: 1rem; }
@@ -82,16 +90,20 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
 .ac-one { --when-n: 16; }
 .ac-budget { margin: 1rem 0 0; --bar-w: 70rem; }
 .ac-plate .meter.day.ac-budget > .editor { grid-column: 1 / -1; }
-.ac-budget .editor .edrow { column-gap: 1rem; }
+.ac-budget .editor .edrow { column-gap: var(--pg-sp-3); row-gap: var(--pg-sp-2); }
+.ac-plate .meter.day .editor :is(.presets, .mode) { gap: var(--pg-sp-2); }
 .ac-budget .field { cursor: default; }
 .ac-budget .editor :is(button, input) { pointer-events: none; }
 .ac-budget .editor .mode button, .ac-budget .editor .presets button { cursor: default; }
 .ac-budget .editor .mode button { align-items: center; }
 .ac-budget .editor .mode .glyph { width: 1.05rem; height: 1.05rem; color: currentColor; }
-.ac-fine { font: 500 .9rem/1.35 var(--font-name); color: var(--text-mute); }
+.ac-fine { font: 500 var(--fr-ts)/1.35 var(--font-name); color: var(--text-mute); }
 .ac-budget .edrow > .ac-fine { margin-left: auto; }
 .ac-plate .meter.day.ac-budget > .ac-bill { grid-column: 2 / -1; margin-top: -.667rem; }
 .ac-budget .dayrun > .hours > .hr { text-decoration: none; }
+/* the day's bars stand 8 px apart; a narrow plate draws it in two-hour bars */
+.ac-plate .dayrun > .hours { gap: var(--pg-sp-1); }
+.ac-budget .dayrun > .hours > .hn { display: none; }
 .ac-bud svg { width: 1rem; height: 1rem; }
 
 /* each command against its limit */
@@ -108,12 +120,14 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
 .ac-rs { display: none; }
 .ac-tiles { display: flex; flex-direction: column; gap: calc(2 * var(--u)); }
 .ac-tiles .pd-stats { flex-direction: column; align-items: stretch; gap: 0; flex: 1; }
-.ac-tiles .pd-stat { flex: 1; min-height: var(--row-h); gap: 1rem; }
+.ac-tiles .pd-stat { flex: 1; min-height: var(--row-h); gap: 1rem; padding-block: calc(1.5 * var(--u)); }
 .ac-tiles .pd-stat + .pd-stat { border-top: 1px solid var(--hair); }
 .ac-tiles .pd-stat > svg { width: 2.6rem; height: 2.6rem; padding: .6rem; }
-.ac-tiles .pd-stat b { font: 600 var(--fig-focal)/1 var(--font-data); letter-spacing: -.01em; }
+.ac-tiles .pd-stat b { font: 600 var(--fig-focal)/1.25 var(--font-data); letter-spacing: -.01em; }
 .ac-tiles .pd-stat.lead b { font-size: var(--fig-hero); }
-.ac-tiles .pd-stat small { font-size: .88rem; }
+.ac-tiles .pd-stat small { font-size: var(--fr-ts); }
+.ac-tiles .pd-stat > span { gap: calc(.75 * var(--u)); }
+.ac-tiles .pd-stat b { line-height: 1.25; }
 
 /* ---------- the plate picks its shape from its own width: two columns where each card keeps its 45 rem, one where it cannot ---------- */
 @container acw (max-width: 91rem) {
@@ -121,6 +135,8 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
   .ac-board > .col { width: 100%; flex: none; }
 }
 @container acw (max-width: 48rem) {
+  .ac-budget .dayrun > .hours > .hr:not(.hn) { display: none; }
+  .ac-budget .dayrun > .hours > .hn { display: flex; }
   .ac-board .windows { grid-template-columns: minmax(0, 1fr) auto; row-gap: .333rem; margin-top: var(--u); }
   .ac-board .windows > .label { grid-column: 1; grid-row: var(--r); min-height: 0; padding-top: var(--u); }
   .ac-board .windows > .pct { grid-column: 2; grid-row: var(--r); align-self: end; padding-top: var(--u); }
@@ -129,7 +145,10 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
   .ac-board .windows > .heldline { grid-row: 1; padding-block: 0 var(--u); }
   .ac-add-cmd .ac-code { order: 3; flex-basis: 100%; }
   .ac-add-cmd .ac-chev-box { order: 2; margin-left: auto; }
+  .ac-plate .provider > header { flex-wrap: wrap; row-gap: var(--pg-sp-1); }
+  .ac-plate .provider > header h2 { overflow: visible; flex: none; }
   .ac-note { margin-left: 0; flex-basis: 100%; }
+  .ac-code { white-space: normal; }
   .ac-pchips { margin-left: 0; }
   .ac-code { margin-left: 0; }
   .ac-win { flex-direction: column; align-items: stretch; }
@@ -145,7 +164,7 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
   .ac-plate .meter.day.ac-budget > .dayrun { grid-column: 1 / -1; }
   .ac-budget .edrow > .ac-fine { margin-left: 0; flex-basis: 100%; }
   .ac-budget .editor .mode { flex-wrap: wrap; }
-  .ac-cmds-h, .ac-cmd-row { grid-template-columns: minmax(0, 1fr) 3.2rem; row-gap: .5rem; }
+  .ac-cmds-h, .ac-cmd-row { grid-template-columns: minmax(0, 1fr) 3.2rem; row-gap: var(--pg-sp-2); }
   .ac-cmd-row { padding-block: var(--u); }
   .ac-cmd-row .bar { grid-column: 1 / -1; grid-row: 2; }
   .ac-cmd-row .pct { grid-column: 2; grid-row: 1; }
@@ -162,10 +181,8 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
 
 /* ---------- the three views: radios hold the choice, :has() opens the chosen one in place ----------
    The chosen view grows from 0 to its own height over --t-snap (240 ms) on --e-out while the one that closes shrinks to 0, and it fades in and
-   settles .5rem; the line under the heading swaps the same way. A closed view leaves the tab order and the page. */
+   settles .5rem; A closed view leaves the tab order and the page. */
 .ac-in { interpolate-size: allow-keywords; }
-.ac-lines .pg-line { opacity: 0; visibility: hidden; transform: translateY(.35rem); transition: opacity var(--t-snap) var(--e-out), transform var(--t-snap) var(--e-out), visibility 0s linear var(--t-snap); }
-.ac-in:has(.ac-rd-acc:checked) .ac-l-acc, .ac-in:has(.ac-rd-bud:checked) .ac-l-bud, .ac-in:has(.ac-rd-cmd:checked) .ac-l-cmd { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
 .ac-in:has(.ac-rd-acc:checked) .ac-tab-acc, .ac-in:has(.ac-rd-bud:checked) .ac-tab-bud, .ac-in:has(.ac-rd-cmd:checked) .ac-tab-cmd { background: var(--sel-face); color: var(--sel-ink); box-shadow: inset 0 0 0 .1rem var(--sel-line); }
 .ac-in:has(.ac-rd-acc:focus-visible) .ac-tab-acc, .ac-in:has(.ac-rd-bud:focus-visible) .ac-tab-bud, .ac-in:has(.ac-rd-cmd:focus-visible) .ac-tab-cmd { outline: var(--ink-w) solid var(--text); outline-offset: .18rem; }
 .ac-pane { height: 0; min-width: 0; overflow: clip; overflow-clip-margin: 1.5rem; visibility: hidden; opacity: 0; transform: translateY(.5rem); transition: height var(--t-snap) var(--e-out), opacity var(--t-snap) var(--e-out), transform var(--t-snap) var(--e-out), visibility 0s linear var(--t-snap); }
@@ -173,8 +190,10 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
 
 /* ---------- the focal figure: the serving account's week, 1.7rem; every other row figure stays at the console's .95rem ---------- */
 .ac-p-acc .ac-board { --pct-w: 6.2rem; }
+/* "used" is said once, on the figure that leads; the other rows' bars carry it */
+.ac-plate .windows .pct:not(.ac-fig) .used { display: none; }
 .ac-p-acc .pct.ac-fig { font: 600 var(--fig-focal)/1 var(--font-data); letter-spacing: -.01em; }
-.ac-p-acc .pct.ac-fig .used { font: 400 .95rem/1 var(--font-data); letter-spacing: 0; }
+.ac-p-acc .pct.ac-fig .used { font: 400 var(--fr-ts)/1 var(--font-data); letter-spacing: 0; }
 
 /* ---------- room: every line inside a card or tile keeps 2u from its edge ---------- */
 .ac-plate .card { padding-inline: calc(2 * var(--u)); }

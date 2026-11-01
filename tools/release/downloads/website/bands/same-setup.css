@@ -1,9 +1,7 @@
 /* same-setup (prefix ss-): one Claude Code setup, four commands. Four radios drive every state, so there is no script.
-   The width is planned first. The container (1,344 px at 2548, 88% at 1440, 354 px at 390) is cut into rows that each fill it:
-   band header = the page's split head (heading, line, drawing) over or beside the stage;
-   tabs = four command cards across (two by two at 390);
-   stage = window 1fr | unchanged panel 23rem (stacked at 390), both stretched to one height.
-   Page parts use px or container units; every console component keeps the console's rem. */
+   One picture: the Claude Code window, whole width. The four command tabs choose what it shows and stand over it as a slim
+   row; the list of what carries over stands under it as a plain strip, so neither is a second component.
+   Type: console parts read the page's steps (--kicker, --fr-ts, --fr-tm, --fig-focal, --fig-hero); gaps read --pg-sp-*. */
 
 /* ---------- stage: one state per command, all drawn from four radios ----------
    The radios sit first in the stage. :has() reads the checked one and sets the numbers every part draws from:
@@ -17,14 +15,12 @@
 .ss-r { position: absolute; width: 1px; height: 1px; margin: -1px; opacity: 0; pointer-events: none; }
 
 /* the gap is the card's cast plus its ink rim plus 1.1rem, so the clearance from one card's cast edge to the next card is more than 1rem at every width */
-.ss-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: calc(var(--cast) + var(--ink-w) + 1.1rem); margin-bottom: calc(3 * var(--u)); }
+.ss-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--pg-sp-4); margin-bottom: var(--pg-sp-4); }
 .ss-tab { font: inherit; color: var(--text); text-align: left; width: 100%; margin: 0; display: block; cursor: pointer;
   box-shadow: var(--cast) var(--cast) 0 var(--c), var(--cast) var(--cast) 0 var(--ink-w) var(--ink), inset 0 0 0 var(--ink-w) transparent;
   transition: top var(--t-hover) var(--e-out), left var(--t-hover) var(--e-out), --cast var(--t-hover) var(--e-out), border-color var(--t-snap) var(--e-out), box-shadow var(--t-snap) var(--e-out); }
-.ss-tab .top, .ss-tab .meta { display: flex; }
-.ss-tab .meta { margin-top: .5rem; }
-/* the console's own meter (1.1rem, ink edge) draws the window size, as it draws every limit */
-.ss-tab .cwbar .bar { display: block; }
+.ss-tab .top { display: flex; }
+.ss-tab .top .chip { font-size: var(--fr-ts); }
 /* the selected tab is the console's aria-current card */
 .ss-stage:has(.ss-r1:checked) .ss-tab:nth-child(1),
 .ss-stage:has(.ss-r2:checked) .ss-tab:nth-child(2),
@@ -35,14 +31,9 @@
 .ss-stage:has(.ss-r3:focus-visible) .ss-tab:nth-child(3),
 .ss-stage:has(.ss-r4:focus-visible) .ss-tab:nth-child(4) { outline: .14rem solid var(--text); outline-offset: .18rem; }
 
-.ss-cols { display: grid; grid-template-columns: minmax(0, 1fr) 23rem; gap: var(--gap-col); align-items: stretch; }
-@container ss-stage (max-width: 64rem) { .ss-cols { grid-template-columns: minmax(0, 1fr); } }
+.ss-cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--pg-sp-5); align-items: start; }
 @container ss-stage (max-width: 44rem) {
   .ss-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .ss-tab .meta { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .4rem .667rem; align-items: center; }
-  .ss-tab .cmodel { grid-column: 1 / -1; }
-  .card.h.ss-tab .cwbar { margin: 0; width: auto; }
-  .card.h.ss-tab .cwbar + .cwin { margin: 0; }
 }
 
 /* ---------- one value, four states, stacked in one cell: only the open command's is seen ---------- */
@@ -56,13 +47,13 @@
 /* ---------- the Claude Code window ---------- */
 .ss-win { container: ss-win / inline-size; display: flex; flex-direction: column; gap: calc(2 * var(--u)); min-width: 0; transition: box-shadow var(--t-snap) var(--e-out); }
 /* the type ladder inside the window: 2.9rem API est.; 1.1rem terminal lines, model value and percentages; 1rem note, hook line and chip names (muted); .8rem kickers and the used / hit words */
-.ss-note { margin: 0; display: flex; align-items: flex-start; gap: .667rem; font: 400 1rem/1.35 var(--font-name); color: var(--text-mute); }
+.ss-note { margin: 0; display: flex; align-items: flex-start; gap: .667rem; font: 400 var(--fr-tm)/1.35 var(--font-name); color: var(--text-mute); }
 .ss-note svg { flex: none; width: 1.2rem; height: 1.2rem; margin-top: .02rem; fill: none; stroke: var(--text-mute); stroke-width: 1.4; stroke-linecap: round; }
 .ss-term {
   flex: 1; display: flex; flex-direction: column; justify-content: space-between; gap: calc(2.5 * var(--u)); min-width: 0;
   padding: calc(2.5 * var(--u)) calc(2.5 * var(--u)) calc(2 * var(--u));
   background: var(--obj-sunk); border: var(--ink-w) solid var(--ink); border-radius: var(--r-in);
-  font: 400 1.1rem/1.5 var(--font-data); color: var(--text-body);
+  font: 400 var(--fr-tm)/1.5 var(--font-data); color: var(--text-body);
 }
 .ss-cc { display: flex; align-items: center; gap: calc(2 * var(--u)); }
 .ss-mascot { flex: none; width: 4.4rem; height: auto; color: var(--text-body); }
@@ -70,7 +61,7 @@
 .ss-cct b { font-weight: 600; color: var(--text); }
 .ss-cct mark { font: inherit; white-space: nowrap; }
 /* the header's model name takes its own width, so "· API Usage Billing" slides to it as the name changes */
-.ss-hm { position: relative; display: inline-block; width: var(--hw); height: 1.5em; vertical-align: top; transition: width var(--t-snap) var(--e-out); }
+.ss-hm { position: relative; display: inline-block; width: calc(var(--hw) + 1ch); height: 1.5em; vertical-align: top; transition: width var(--t-snap) var(--e-out); }
 .ss-hm .ss-s { grid-area: auto; position: absolute; left: 0; top: 0; }
 .ss-ex { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); }
 .ss-ex p { margin: 0; display: flex; gap: .8rem; }
@@ -78,12 +69,12 @@
 .ss-pr::before { content: "\276F"; flex: none; color: var(--text-mute); }
 .ss-re::before, .ss-tl::before { content: "\25CF"; flex: none; color: var(--text); }
 .ss-tl { color: var(--text); }
-.ss-ex p.ss-hk { gap: 0; padding-left: 2ch; font-size: 1rem; color: var(--text-mute); }
+.ss-ex p.ss-hk { gap: 0; padding-left: 2ch; font-size: var(--fr-ts); color: var(--text-mute); }
 .ss-hk::before { content: "\23BF"; flex: none; width: calc(1ch + .8rem); }
 /* Claude Code's permission prompt: the same on all four commands */
-.ss-pm { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 2rem; padding: .7rem 1rem; border: .14rem solid var(--track-line); border-radius: var(--r-in); color: var(--text); }
+.ss-pm { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pg-sp-1) var(--pg-sp-5); padding: .7rem 1rem; font-size: var(--fr-tm); border: .14rem solid var(--track-line); border-radius: var(--r-in); color: var(--text); }
 .ss-pos { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: 1.2rem; }
-.ss-po { display: inline-flex; align-items: center; gap: .5rem; color: var(--text-body); }
+.ss-po { display: inline-flex; align-items: center; gap: .5rem; color: var(--text-body); font-size: var(--fr-tm); }
 .ss-po.on { color: var(--text); background: var(--track); padding: .15rem .7rem; border-radius: var(--r-in); }
 .ss-po.on::before { content: "\276F"; color: var(--text-mute); }
 
@@ -98,14 +89,13 @@
 .ss-lm { display: grid; row-gap: calc(2 * var(--u)); min-width: 0; }
 .ss-f { display: grid; gap: .4rem; align-content: start; min-width: 0; }
 .ss-fl { font: 600 var(--kicker)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); white-space: nowrap; }
-.ss-fv { display: flex; align-items: center; gap: .55rem; font: 500 1.1rem/1.2 var(--font-data); color: var(--text); white-space: nowrap; min-height: 1.5rem; }
-.ss-fv.ss-big { font: 600 var(--fig-hero)/1 var(--font-data); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }   /* the one figure that leads */
+.ss-fv { display: flex; align-items: center; gap: .55rem; font: 500 var(--fr-tm)/1.3 var(--font-data); color: var(--text); white-space: nowrap; min-height: 1.5rem; }
+.ss-fv.ss-big { font: 600 var(--fig-hero)/1.3 var(--font-data); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }   /* the one figure that leads */
 .ss-dot { width: .66rem; height: .66rem; border-radius: 50%; background: var(--c); flex: none; transition: background-color var(--t-snap) var(--e-out); }
 .ss-mv { display: grid; grid-template-columns: minmax(0, 1fr) 4.7rem var(--ring-sz); align-items: center; gap: .667rem; min-width: 0; }
 .ss-mv .bar { height: var(--meter-h); }
 .ss-pv { display: flex; align-items: baseline; gap: .4rem; white-space: nowrap; }
-.ss-pc { font: 500 1.1rem/1 var(--font-data); font-variant-numeric: tabular-nums; display: grid; justify-items: start; }
-.ss-w { font: 400 var(--kicker)/1 var(--font-name); color: var(--text-mute); }
+.ss-pc { font: 500 var(--fr-tm)/1.2 var(--font-data); font-variant-numeric: tabular-nums; display: grid; justify-items: start; }
 .ss-mv .bar > b { width: calc(var(--v) * 1%); transition: width var(--t-snap) var(--e-out), background-color var(--t-snap) var(--e-out); }
 .ss-m1 { --v: var(--wk); --rv: var(--rg); }
 .ss-m2 { --v: var(--cx); --rv: calc(var(--cx) * .942); }
@@ -127,37 +117,20 @@
 }
 
 /* ---------- the unchanged panel: nine chips, each drawn on all four commands ---------- */
-.ss-keep {
-  display: flex; flex-direction: column; gap: calc(2 * var(--u)); min-width: 0; padding: 1rem 1rem 1.1rem;
-  background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
-  box-shadow: var(--cast) var(--cast) 0 var(--ink), var(--cast) var(--cast) 0 var(--ink-w) var(--ink);   /* the card's own cast: the panel and the window end on one edge */
-}
-.ss-kh { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-right: .85rem; }
-.ss-keep .kicker { font-size: var(--kicker); }
-.ss-kg { list-style: none; margin: 0; padding: 0; flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-rows: minmax(2.6rem, 1fr); gap: calc(1.5 * var(--u)); }
+.ss-keep { display: flex; flex-direction: column; gap: var(--pg-sp-3); min-width: 0; }
+.ss-kh { display: flex; align-items: center; }
+.ss-keep .kicker { font-size: var(--kicker); margin: 0; }
+.ss-kg { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); grid-auto-rows: 3rem; gap: var(--pg-sp-3); }
 .ss-k {
-  display: flex; align-items: center; gap: .7rem; padding: .35rem .85rem .35rem .6rem; min-width: 0;
+  display: flex; align-items: center; gap: var(--pg-sp-2); padding: .35rem var(--pg-sp-3) .35rem .6rem; min-width: 0;
   background: var(--obj-sunk); border-radius: var(--r-in); box-shadow: inset 0 0 0 1px var(--track-line);
 }
 .ss-k > svg { width: 1.9rem; height: 1.9rem; padding: .38rem; }
 .pd-stat > .ss-kn { display: block; min-width: 0; }
-.ss-k .ss-kn b { font: 400 1rem/1.2 var(--font-name); color: var(--text-body); white-space: nowrap; }
-/* the count is the row's figure, one column for all nine rows, the same on every command */
-.ss-k .ss-kc { margin-left: auto; min-width: 2ch; text-align: right; font: 500 1rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
-/* four dots, one per command in the tabs' colours: the chip is on every command, and the open one is ringed */
-.ss-kh > .ss-kd { margin-left: auto; }
-.pd-stat > .ss-kd, .ss-kh > .ss-kd { display: grid; grid-template-columns: repeat(4, .62rem); gap: .62rem; align-items: center; flex: none; }
-.ss-kd i {
-  --ss-on: 0; display: block; width: .62rem; height: .62rem; border-radius: 50%; background: var(--c);
-  box-shadow: 0 0 0 .13rem var(--obj-sunk), 0 0 0 .25rem color-mix(in oklab, var(--text) calc(var(--ss-on) * 100%), transparent);
-  transition: box-shadow var(--t-snap) var(--e-out);
-}
-.ss-kh .ss-kd i { box-shadow: 0 0 0 .13rem var(--obj), 0 0 0 .25rem color-mix(in oklab, var(--text) calc(var(--ss-on) * 100%), transparent); }
-.ss-stage:has(.ss-r1:checked) .ss-kd i:nth-child(1), .ss-stage:has(.ss-r2:checked) .ss-kd i:nth-child(2),
-.ss-stage:has(.ss-r3:checked) .ss-kd i:nth-child(3), .ss-stage:has(.ss-r4:checked) .ss-kd i:nth-child(4) { --ss-on: 1; }
+.ss-k .ss-kn b { font: 400 var(--fr-tm)/1.2 var(--font-name); color: var(--text-body); white-space: nowrap; }
 @container ss-stage (max-width: 44rem) {
-  .ss-kg { grid-auto-rows: 2.7rem; gap: calc(1 * var(--u)); }
-  .ss-k > svg { width: 1.8rem; height: 1.8rem; padding: .36rem; }
+  .ss-kg { display: flex; flex-wrap: wrap; grid-auto-rows: auto; gap: var(--pg-sp-2); }
+  .ss-k { flex: none; min-height: 2.6rem; padding-right: var(--pg-sp-3); }
 }
 
 /* ---------- reveal ----------

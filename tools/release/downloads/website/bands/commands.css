@@ -9,59 +9,63 @@
 /* ---------- the board: two columns of equal width; every card keeps its own rest height, so rows stay equal.
    A card's panel is a drawer in its own grid row under the card's row, across both columns, so nothing stretches or leaves a void.
    Cards carry the 2rem gap as a bottom margin (a closed drawer is 0 tall and adds no gap); the board takes the last one back. ---------- */
+.cm-in { --cm-gap: var(--pg-sp-4); }
 .cm-board {
-  margin: 0 0 calc(-1 * var(--gap-col)); padding: 0; position: relative;
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--gap-col); row-gap: 0; align-items: stretch;
+  margin: 0 0 calc(-1 * var(--cm-gap)); padding: 0; position: relative;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--cm-gap); row-gap: 0; align-items: stretch;
 }
-.cm-card { --d: calc(var(--i) * 40ms); grid-column: var(--cc); grid-row: var(--r); position: relative; margin-bottom: var(--gap-col); min-height: 13.9rem; padding: 1.15rem 1.4rem 1.25rem; display: flex; flex-direction: column; cursor: default; }
+.cm-card { --d: calc(var(--i) * 40ms); grid-column: var(--cc); grid-row: var(--r); position: relative; margin-bottom: var(--cm-gap); min-height: 12rem; padding: calc(2 * var(--u)) calc(2 * var(--u)) calc(1.5 * var(--u)); display: flex; flex-direction: column; cursor: default; }
 .cm-card.card.h:hover { background: var(--obj); top: 0; left: 0; --cast: .5rem; }
 .cm-card.serving.card.h:hover { background: color-mix(in oklab, var(--obj) 88%, var(--key-light)); }
-.cm-card .top { min-height: 2.2rem; gap: .667rem; }
+.cm-card .top { min-height: 1.8rem; gap: .667rem; }
+.cm-card .top .chip { font-size: var(--fr-ts); }
 .cm-card .meta { display: flex; min-height: calc(var(--fig-focal) * 1.15); margin-top: calc(2 * var(--u)); flex-wrap: nowrap; align-items: center; }
 .cm-card .meta .cmodel { font: 600 var(--fig-focal)/1.15 var(--font-data); letter-spacing: -.01em; color: var(--text); white-space: nowrap; }
 /* a name that is words, not a model id: the body face (only ids and typed commands are mono) */
-.cm-card .meta .cmodel.cm-words { font: 500 1.5rem/1.15 var(--font-name); letter-spacing: 0; white-space: normal; }
+.cm-card .meta .cmodel.cm-words { font: 500 var(--fig-focal)/1.15 var(--font-name); letter-spacing: 0; white-space: normal; }
 
 /* the numbered socket draws its ordinal from its data-n (a drawn number, not a word) */
 .cm-card .top > .msock::before { content: attr(data-n); }
 
-/* the kind mark: the console's glyph tile and its label, set at the card's right end */
-.cm-kind { margin-left: auto; gap: .667rem; }
-.cm-kind > svg:not(.pd-ring) { width: 2.2rem; height: 2.2rem; }
-.cm-kind small { font: 500 .88rem/1.2 var(--font-name); color: var(--text-body); }
+/* the kind of command (Plan, Key, GPU): the console's muted state word in the card's slot, as it says "Signed out" or "Not answering" */
+.cm-kind .state { font-size: var(--fr-ts); }
 
 /* the state of a command is drawn once: a lit numbered socket, a live dot and a warm card on the one that is serving; the rest keep a dark socket and a hollow dot */
 .cm-card:not(.serving) .chip i { background: transparent; box-shadow: inset 0 0 0 .14rem var(--text-mute); }
-.cm-newchip { border-style: dashed; border-color: var(--c); box-shadow: none; background: transparent; font-family: var(--font-name); font-size: 1rem; gap: .5rem; }
+.cm-newchip { border-style: dashed; border-color: var(--c); box-shadow: none; background: transparent; font-family: var(--font-name); font-size: var(--fr-ts); gap: .5rem; }
 .cm-newchip svg { width: .85rem; height: .85rem; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
 
 /* the meter row: the console's own windows grid (label, 1.1rem bar, NN%, reset ring), four columns on every card so bars end on one x.
    The reset time is not on the closed card: the ring draws it, and the time opens with the card (or reads on the ring). */
-.cm-card .windows.cm-win { grid-template-columns: 4.6rem minmax(0, 1fr) 6.4rem var(--ring-sz); margin-top: calc(2 * var(--u)); column-gap: 1rem; row-gap: 0; min-height: var(--ring-sz); }
+.cm-card .windows.cm-win { grid-template-columns: 4.8rem minmax(0, 1fr) 4.6rem var(--ring-sz); margin-top: calc(2 * var(--u)); column-gap: var(--pg-sp-3); row-gap: 0; min-height: var(--ring-sz); }
+.cm-card .windows .label, .cm-card .windows .pct, .cm-card .windows .when, .cm-card.card .windows .cwin, .cm-card .windows .state { font-size: var(--fr-tm); }
+.cm-card .msock { font-size: var(--kicker); }
 .cm-card .cm-win > .cwbar { display: block; flex: none; width: auto; min-width: 0; margin: 0; }
 .cm-card .cm-win .cwbar .wbar { height: var(--meter-h); }
 .cm-win > .pct { justify-self: end; text-align: right; }
 .cm-win > .when { justify-self: end; min-width: 0; justify-content: flex-end; }
 .cm-win > .cwin { justify-self: end; white-space: nowrap; }
-.cm-win.cm-none > .bar, .cm-win.cm-ctx > .cwbar { grid-column: 1 / 3; }
-.cm-win.cm-none > .state { grid-column: 3 / 5; justify-self: end; white-space: nowrap; }
-.cm-win.cm-ctx > .cwin { grid-column: 3 / 5; }
+/* a card with no window to show (no limits reported, a context size) holds its bar and its words, side by side */
+.cm-card .windows.cm-win:is(.cm-none, .cm-ctx) { grid-template-columns: minmax(0, 1fr) auto; }
+.cm-win.cm-none > .bar, .cm-win.cm-ctx > .cwbar { grid-column: 1; }
+.cm-win.cm-none > .state { grid-column: 2; justify-self: end; white-space: nowrap; }
+.cm-win.cm-ctx > .cwin { grid-column: 2; }
 
 /* the foot: what it runs on, its marked facts, the door that opens it. It sits on the card's last line. */
-.cm-foot { display: flex; flex-wrap: wrap; align-items: center; gap: .333rem 1.2rem; margin-top: auto; padding-top: calc(2 * var(--u)); min-height: calc(2rem + 2 * var(--u)); }
+.cm-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pg-sp-1) var(--pg-sp-3); margin-top: auto; padding-top: calc(2 * var(--u)); min-height: calc(1.8rem + 2 * var(--u)); }
 .cm-pdot { display: inline-block; width: .7rem; height: .7rem; border-radius: 50%; background: var(--c); margin-right: .5rem; vertical-align: -.05rem; }
-.cm-foot .prov { font: 500 .95rem/1 var(--font-name); color: var(--text); }
-.cm-lab { display: inline-flex; align-items: center; gap: .5rem; font: 400 .9rem/1.25 var(--font-name); color: var(--text-body); }
-.cm-facts-row .cm-lab { font-size: .95rem; }
+.cm-foot .prov { font: 500 var(--fr-ts)/1.25 var(--font-name); color: var(--text); }
+.cm-lab { display: inline-flex; align-items: center; gap: .5rem; font: 400 var(--fr-ts)/1.25 var(--font-name); color: var(--text-body); }
+.cm-facts-row .cm-lab { font-size: var(--fr-tm); }
 .cm-lab svg { flex: none; width: 1.05rem; height: 1.05rem; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
-.cm-note { font: 400 .92rem/1.25 var(--font-name); color: var(--text-mute); }
+.cm-note { font: 400 var(--fr-ts)/1.25 var(--font-name); color: var(--text-mute); }
 
-/* the door: the console's chevron, set alone at the card's foot; its name is on the control, not printed */
-.cm-door { margin-left: auto; cursor: pointer; min-width: 2.4rem; justify-content: center; padding-inline: .6rem; }
-.cm-door .chev { width: .9rem; height: .9rem; }
+/* the door: the console's own disclosure (.disc and its .chev, no box), with the word of what it opens */
+.cm-door { margin-left: auto; cursor: pointer; gap: .5rem; font: 500 var(--fr-ts)/1.2 var(--font-name); color: var(--text-body); }
+.cm-door .chev { width: .8rem; height: .8rem; }
 
 /* two facts drawn, each with its words beside it: turns by the hour in the card's colour, and a sign-in that runs straight through splice */
-.cm-fact { display: inline-flex; align-items: center; gap: .6rem; }
+.cm-fact { display: inline-flex; align-items: center; gap: .5rem; }
 .cm-turns { flex: none; display: flex; align-items: flex-end; gap: .08rem; width: 5.6rem; height: 1.5rem; }
 .cm-turns > i { flex: 1 1 0; min-width: 0; background: var(--c); border-radius: .1rem .1rem 0 0; }
 .cm-route { flex: none; width: 4.4rem; height: 1.3rem; fill: none; stroke-linecap: round; stroke-linejoin: round; }
@@ -76,13 +80,13 @@
   transition: grid-template-rows var(--t-snap) var(--e-out), opacity var(--t-snap) var(--e-out), visibility 0s linear var(--t-snap);
 }
 .cm-drawer-in { min-height: 0; overflow: hidden; margin-inline: -.75rem; }
-.cm-drawer-wrap { padding: 0 .75rem var(--gap-col); }
+.cm-drawer-wrap { padding: 0 .75rem var(--cm-gap); }
 .card.cm-dplate { display: grid; grid-template-columns: var(--dc); padding: 0; min-height: 0; cursor: default; }
-.cm-dplate > .cm-sec { padding: calc(2 * var(--u)) 1.6rem calc(2 * var(--u)); border-left: .08rem solid var(--hair); justify-content: flex-start; }
+.cm-dplate > .cm-sec { padding: calc(2 * var(--u)) calc(2.5 * var(--u)); border-left: .08rem solid var(--hair); justify-content: flex-start; }
 .cm-dplate > .cm-sec:first-child { border-left: 0; }
 
 .cm-card[data-k]::after {
-  content: ""; position: absolute; left: calc(100% - 2.5rem); top: 100%; width: .3rem; height: calc(var(--gap-col) + .2rem); margin-left: -.15rem;
+  content: ""; position: absolute; left: calc(100% - 2.5rem); top: 100%; width: .3rem; height: calc(var(--cm-gap) + .2rem); margin-left: -.15rem;
   background: var(--rail); box-shadow: 0 0 0 .08rem var(--ink); opacity: 0; pointer-events: none; transition: opacity var(--t-snap) var(--e-out);
 }
 /* The toggle is the card's own first child (a click on the door focuses it, and a toggle at the board's top would scroll the page there). */
@@ -103,30 +107,30 @@
 .cm-card[data-k="ow"]:has(> .cm-tg:focus-visible) .cm-door { outline: var(--ink-w) solid var(--text); outline-offset: .18rem; }
 .cm-door:hover { color: var(--text); border-color: var(--text-mute); }
 
-.cm-sec { display: flex; flex-direction: column; gap: calc(1 * var(--u)); min-width: 0; }
+.cm-sec { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); min-width: 0; }
 .cm-sec .kicker { margin: 0; }
-.cm-mods { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .5rem; }
-.cm-mod { --c: var(--router); font: 500 .92rem/1 var(--font-name); padding: .32rem .6rem; }
+.cm-mods { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--pg-sp-1); }
+.cm-mod { --c: var(--router); font: 500 var(--fr-ts)/1 var(--font-name); padding: .4rem .7rem; }
 .cm-own .cm-mod { --c: var(--local); }
-.cm-own { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: .667rem 1.4rem; }
-.cm-dwhen { display: inline-flex; align-items: center; gap: .6rem; font: 500 .95rem/1 var(--font-data); color: var(--text-body); }
+.cm-own { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--pg-sp-2) var(--pg-sp-4); }
+.cm-dwhen { display: inline-flex; align-items: center; gap: .6rem; font: 500 var(--fr-tm)/1 var(--font-data); color: var(--text-body); }
 
 /* the status line, as Claude Code draws it */
-.cm-sl-row { display: flex; flex-wrap: wrap; align-items: center; gap: .667rem 1.4rem; }
-.cm-sl { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: .25rem 1.2rem; padding: .6rem .9rem; background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); font: 500 .95rem/1.2 var(--font-data); color: var(--text-body); }
-.cm-sl-p { font: 600 1.05rem/1.2 var(--font-data); color: var(--text); }
+.cm-sl-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pg-sp-2) var(--pg-sp-4); }
+.cm-sl { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: var(--pg-sp-1) var(--pg-sp-3); padding: .7rem 1rem; background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); font: 500 var(--fr-tm)/1.3 var(--font-data); color: var(--text-body); }
+.cm-sl-p { font: 600 var(--fr-tm)/1.3 var(--font-data); color: var(--text); }
 
 /* bonsai: what it needs; then the command and its three steps (the console's numbered sockets on a rail) */
-.cm-facts-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1.4rem; }
-.cm-setup { display: flex; flex-wrap: wrap; align-items: center; gap: .9rem 1.6rem; }
-.cm-term { display: inline-flex; align-items: baseline; gap: .8rem; padding: .6rem .9rem; background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); font: 500 1rem/1.2 var(--font-data); color: var(--text); }
+.cm-facts-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pg-sp-1) var(--pg-sp-4); }
+.cm-setup { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pg-sp-3) var(--pg-sp-5); }
+.cm-term { display: inline-flex; align-items: baseline; gap: .8rem; padding: .7rem 1rem; background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); font: 500 var(--fr-tm)/1.3 var(--font-data); color: var(--text); }
 .cm-pr { color: var(--text-mute); }
 .cm-term code { font: inherit; }
 .cm-sec > .cm-term { align-self: flex-start; }
 .cm-caret { align-self: center; flex: none; width: .14rem; height: 1.1rem; margin-left: -.5rem; background: var(--text); }
 .cm-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 0; }
-.cm-step { --c: var(--local); gap: .6rem; font: 500 .92rem/1 var(--font-name); padding: .3rem .7rem .3rem .35rem; }
-.cm-seg { flex: none; width: 1.1rem; height: .3rem; background: var(--rail); box-shadow: 0 0 0 .08rem var(--ink); }
+.cm-step { --c: var(--local); gap: .6rem; font: 500 var(--fr-ts)/1 var(--font-name); padding: .35rem .8rem .35rem .4rem; }
+.cm-seg { flex: none; width: var(--pg-sp-3); height: .3rem; background: var(--rail); box-shadow: 0 0 0 .08rem var(--ink); }
 
 /* ---------- reveal: heading, line and each card ease in once on --t-pop (260 ms) and --e-out, each starting 40 ms after the one before
    (heading 0, line 40, card n at 40n ms); the eighth card is done at 540 ms. A card's meter fill grows and its ring draws over --t-snap (240 ms) with it.
@@ -162,7 +166,7 @@
   /* the setup command and its steps stand in one left-aligned column */
   .cm-setup { flex-direction: column; align-items: flex-start; gap: .9rem; }
   .cm-steps { flex-direction: column; align-items: flex-start; gap: 0; }
-  .cm-seg { width: .3rem; height: .8rem; margin-left: 1.12rem; }
+  .cm-seg { width: .3rem; height: 1.2rem; margin-left: 1.12rem; }
   .cm-sl { flex-direction: column; align-items: flex-start; }
 }
 /* one column: each drawer follows its own card, under it */
@@ -206,6 +210,6 @@
   .cm-win.cm-none > .state { grid-column: 1; grid-row: 2; justify-self: start; }
   .cm-setup { flex-direction: column; align-items: flex-start; gap: .9rem; }
   .cm-steps { flex-direction: column; align-items: flex-start; gap: 0; }
-  .cm-seg { width: .3rem; height: .8rem; margin-left: 1.12rem; }
+  .cm-seg { width: .3rem; height: 1.2rem; margin-left: 1.12rem; }
   .cm-sl { flex-direction: column; align-items: flex-start; }
 }

@@ -4,7 +4,7 @@
 
 /* the band's heading and line: the page's pg-h2 and pg-line, with the line's own gap and measure */
 .cm-in .pg-h2 { --d: 0ms; }
-.cm-in .pg-line { --d: 40ms; }
+
 
 /* ---------- the board: two columns of equal width; every card keeps its own rest height, so rows stay equal.
    A card's panel is a drawer in its own grid row under the card's row, across both columns, so nothing stretches or leaves a void.
@@ -18,7 +18,7 @@
 .cm-card.card.h:hover { background: var(--obj); top: 0; left: 0; --cast: .5rem; }
 .cm-card.serving.card.h:hover { background: color-mix(in oklab, var(--obj) 88%, var(--key-light)); }
 .cm-card .top { min-height: 1.8rem; gap: .667rem; }
-.cm-card .top .chip { font-size: var(--fr-ts); }
+.cm-card .top .chip { font-size: var(--fr-tm); }
 .cm-card .meta { display: flex; min-height: calc(var(--fig-focal) * 1.15); margin-top: calc(2 * var(--u)); flex-wrap: nowrap; align-items: center; }
 .cm-card .meta .cmodel { font: 600 var(--fig-focal)/1.15 var(--font-data); letter-spacing: -.01em; color: var(--text); white-space: nowrap; }
 /* a name that is words, not a model id: the body face (only ids and typed commands are mono) */
@@ -28,18 +28,21 @@
 .cm-card .top > .msock::before { content: attr(data-n); }
 
 /* the kind of command (Plan, Key, GPU): the console's muted state word in the card's slot, as it says "Signed out" or "Not answering" */
-.cm-kind .state { font-size: var(--fr-ts); }
+.cm-kind .state { font-size: var(--fr-tm); }
 
 /* the state of a command is drawn once: a lit numbered socket, a live dot and a warm card on the one that is serving; the rest keep a dark socket and a hollow dot */
 .cm-card:not(.serving) .chip i { background: transparent; box-shadow: inset 0 0 0 .14rem var(--text-mute); }
-.cm-newchip { border-style: dashed; border-color: var(--c); box-shadow: none; background: transparent; font-family: var(--font-name); font-size: var(--fr-ts); gap: .5rem; }
+.cm-newchip { border-style: dashed; border-color: var(--c); box-shadow: none; background: transparent; font-family: var(--font-name); font-size: var(--fr-tm); gap: .5rem; }
 .cm-newchip svg { width: .85rem; height: .85rem; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
 
 /* the meter row: the console's own windows grid (label, 1.1rem bar, NN%, reset ring), four columns on every card so bars end on one x.
    The reset time is not on the closed card: the ring draws it, and the time opens with the card (or reads on the ring). */
 .cm-card .windows.cm-win { grid-template-columns: 4.8rem minmax(0, 1fr) 4.6rem var(--ring-sz); margin-top: calc(2 * var(--u)); column-gap: var(--pg-sp-3); row-gap: 0; min-height: var(--ring-sz); }
 .cm-card .windows .label, .cm-card .windows .pct, .cm-card .windows .when, .cm-card.card .windows .cwin, .cm-card .windows .state { font-size: var(--fr-tm); }
-.cm-card .msock { font-size: var(--kicker); }
+.cm-card .msock, .cm-step .msock { font-size: var(--fr-tm); }
+/* the card's focal figure: its limit, or the size of its context, at the console's 1.7rem; the model's name above stays the focal line */
+.cm-card .windows.cm-win > .pct, .cm-card .windows .cwin .cm-fig { font: 600 var(--fig-focal)/1 var(--font-data); letter-spacing: -.01em; font-variant-numeric: tabular-nums; color: var(--text); }
+.cm-card .windows .cwin .cm-fig { margin-right: .15em; }
 .cm-card .cm-win > .cwbar { display: block; flex: none; width: auto; min-width: 0; margin: 0; }
 .cm-card .cm-win .cwbar .wbar { height: var(--meter-h); }
 .cm-win > .pct { justify-self: end; text-align: right; }
@@ -54,14 +57,14 @@
 /* the foot: what it runs on, its marked facts, the door that opens it. It sits on the card's last line. */
 .cm-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pg-sp-1) var(--pg-sp-3); margin-top: auto; padding-top: calc(2 * var(--u)); min-height: calc(1.8rem + 2 * var(--u)); }
 .cm-pdot { display: inline-block; width: .7rem; height: .7rem; border-radius: 50%; background: var(--c); margin-right: .5rem; vertical-align: -.05rem; }
-.cm-foot .prov { font: 500 var(--fr-ts)/1.25 var(--font-name); color: var(--text); }
-.cm-lab { display: inline-flex; align-items: center; gap: .5rem; font: 400 var(--fr-ts)/1.25 var(--font-name); color: var(--text-body); }
+.cm-foot .prov { font: 500 var(--fr-tm)/1.25 var(--font-name); color: var(--text); }
+.cm-lab { display: inline-flex; align-items: center; gap: .5rem; font: 400 var(--fr-tm)/1.25 var(--font-name); color: var(--text-body); }
 .cm-facts-row .cm-lab { font-size: var(--fr-tm); }
 .cm-lab svg { flex: none; width: 1.05rem; height: 1.05rem; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
-.cm-note { font: 400 var(--fr-ts)/1.25 var(--font-name); color: var(--text-mute); }
+.cm-note { font: 400 var(--fr-tm)/1.25 var(--font-name); color: var(--text-mute); }
 
 /* the door: the console's own disclosure (.disc and its .chev, no box), with the word of what it opens */
-.cm-door { margin-left: auto; cursor: pointer; gap: .5rem; font: 500 var(--fr-ts)/1.2 var(--font-name); color: var(--text-body); }
+.cm-door { margin-left: auto; cursor: pointer; gap: .5rem; font: 500 var(--fr-tm)/1.2 var(--font-name); color: var(--text-body); }
 .cm-door .chev { width: .8rem; height: .8rem; }
 
 /* two facts drawn, each with its words beside it: turns by the hour in the card's colour, and a sign-in that runs straight through splice */
@@ -108,9 +111,9 @@
 .cm-door:hover { color: var(--text); border-color: var(--text-mute); }
 
 .cm-sec { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); min-width: 0; }
-.cm-sec .kicker { margin: 0; }
+.cm-sec .kicker { margin: 0; font-size: var(--fr-ts); }
 .cm-mods { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--pg-sp-1); }
-.cm-mod { --c: var(--router); font: 500 var(--fr-ts)/1 var(--font-name); padding: .4rem .7rem; }
+.cm-mod { --c: var(--router); font: 500 var(--fr-tm)/1 var(--font-name); padding: .4rem .7rem; }
 .cm-own .cm-mod { --c: var(--local); }
 .cm-own { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--pg-sp-2) var(--pg-sp-4); }
 .cm-dwhen { display: inline-flex; align-items: center; gap: .6rem; font: 500 var(--fr-tm)/1 var(--font-data); color: var(--text-body); }
@@ -129,7 +132,7 @@
 .cm-sec > .cm-term { align-self: flex-start; }
 .cm-caret { align-self: center; flex: none; width: .14rem; height: 1.1rem; margin-left: -.5rem; background: var(--text); }
 .cm-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 0; }
-.cm-step { --c: var(--local); gap: .6rem; font: 500 var(--fr-ts)/1 var(--font-name); padding: .35rem .8rem .35rem .4rem; }
+.cm-step { --c: var(--local); gap: .6rem; font: 500 var(--fr-tm)/1 var(--font-name); padding: .35rem .8rem .35rem .4rem; }
 .cm-seg { flex: none; width: var(--pg-sp-3); height: .3rem; background: var(--rail); box-shadow: 0 0 0 .08rem var(--ink); }
 
 /* ---------- reveal: heading, line and each card ease in once on --t-pop (260 ms) and --e-out, each starting 40 ms after the one before

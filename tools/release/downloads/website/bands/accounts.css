@@ -22,6 +22,7 @@
 /* ---------- type: the plate's console parts read the page's steps (--kicker, --fr-ts, --fr-tm, --fig-focal, --fig-hero) ---------- */
 .ac-plate .provider > header h2 { font-size: var(--fig-focal); line-height: 1.3; }
 .ac-plate .card .name, .ac-plate .add .plus, .ac-win-l, .ac-tabs label { font-size: var(--fr-tm); }
+.ac-plate .kicker, .ac-plate .meter.day > .label, .ac-plate .act.ac-copy, .ac-plate .meter.day .act.ac-bud, .ac-plate .money-in { font-size: var(--fr-ts); }
 .ac-plate .windows .label, .ac-plate .windows .pct, .ac-plate .windows .when, .ac-plate .windows .heldline, .ac-plate .pct .used,
 .ac-plate .chip, .ac-plate .plan, .ac-plate .socket, .ac-plate .msock, .ac-plate .state, .ac-plate .add, .ac-code, .ac-pchip, .ac-fine,
 .ac-plate .meter.day, .ac-plate .meter.day .label, .ac-plate .meter.day .pct, .ac-plate .meter.day .when, .ac-plate .meter.day .ads-unit,
@@ -30,7 +31,7 @@
 
 /* ---------- parts of the plate ---------- */
 .ac-board { --when-n: 20; }
-.ac-note { margin-left: auto; font: 600 var(--kicker)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
+.ac-note { margin-left: auto; font: 600 var(--fr-ts)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
 .ac-plate .provider > header { margin-bottom: 1rem; }
 .ac-plate .provider > header .chip { margin-left: .333rem; }
 .ac-plate .card .top .grip, .ac-plate .card .top .icon.more { display: inline-grid; place-items: center; }
@@ -88,7 +89,8 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
 /* the budget: the console's day strip filling the plate, its editor open (drawn, not edited here) */
 .ac-one .provider > header { margin-bottom: 1.4rem; }
 .ac-one { --when-n: 16; }
-.ac-budget { margin: 1rem 0 0; --bar-w: 70rem; }
+.ac-budget { margin: 1rem 0 0; --bar-w: 70rem; --lab-w: 7rem; }
+.ac-plate .meter.day.ac-budget > .chip.tag { position: static; transform: none; grid-column: 1 / -1; justify-self: start; margin-block: 0 calc(-.5 * var(--u)); }
 .ac-plate .meter.day.ac-budget > .editor { grid-column: 1 / -1; }
 .ac-budget .editor .edrow { column-gap: var(--pg-sp-3); row-gap: var(--pg-sp-2); }
 .ac-plate .meter.day .editor :is(.presets, .mode) { gap: var(--pg-sp-2); }
@@ -106,13 +108,16 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
 .ac-budget .dayrun > .hours > .hn { display: none; }
 .ac-bud svg { width: 1rem; height: 1rem; }
 
+.ac-one > .col > .provider > .ac-budget { flex: 1; grid-template-rows: repeat(5, auto) minmax(0, 1fr); }
+.ac-plate .meter.day.ac-budget > .dayrun { --track-h: calc(100% - var(--above) - var(--below)); height: auto; align-self: stretch; min-height: calc(var(--above) + 2.2rem + var(--below)); }
+
 /* each command against its limit */
 .ac-pair .col { align-self: stretch; }
 .ac-pair .titled, .ac-pair .card { height: 100%; }
 .ac-cmds { display: flex; flex-direction: column; }
 .ac-cmds-h, .ac-cmd-row { display: grid; grid-template-columns: 11rem minmax(0, 1fr) 3.4rem 7rem; column-gap: 1rem; align-items: center; }
 .ac-cmds-h { padding-bottom: .667rem; border-bottom: 1px solid var(--hair); }
-.ac-cmd-row { min-height: var(--row-h); }
+.ac-cmd-row { flex: 1 0 auto; min-height: var(--row-h); }
 .ac-cmd-row + .ac-cmd-row { border-top: 1px solid var(--hair); }
 .ac-cmd-row .chip { justify-self: start; }
 .ac-cmd-row .when { min-width: 0; }
@@ -120,7 +125,7 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
 .ac-rs { display: none; }
 .ac-tiles { display: flex; flex-direction: column; gap: calc(2 * var(--u)); }
 .ac-tiles .pd-stats { flex-direction: column; align-items: stretch; gap: 0; flex: 1; }
-.ac-tiles .pd-stat { flex: 1; min-height: var(--row-h); gap: 1rem; padding-block: calc(1.5 * var(--u)); }
+.ac-tiles .pd-stat { flex: 1 0 auto; min-height: var(--row-h); gap: 1rem; padding-block: calc(1.5 * var(--u)); }
 .ac-tiles .pd-stat + .pd-stat { border-top: 1px solid var(--hair); }
 .ac-tiles .pd-stat > svg { width: 2.6rem; height: 2.6rem; padding: .6rem; }
 .ac-tiles .pd-stat b { font: 600 var(--fig-focal)/1.25 var(--font-data); letter-spacing: -.01em; }
@@ -154,7 +159,8 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
   .ac-win { flex-direction: column; align-items: stretch; }
   .ac-plate .meter.day.ac-budget { grid-template-columns: minmax(0, 1fr) auto; row-gap: 1rem; padding-inline: 1rem; --bar-w: 100%; }
   .ac-plate .meter.day.ac-budget > .label { grid-column: 1; }
-  .ac-plate .meter.day.ac-budget > .when { grid-column: 2; grid-row: 1; justify-self: end; min-width: 0; }
+  .ac-plate .meter.day.ac-budget { grid-template-rows: repeat(6, auto) minmax(0, 1fr); }
+  .ac-plate .meter.day.ac-budget > .when { grid-column: 2; grid-row: 2; justify-self: end; min-width: 0; }
   .ac-plate .meter.day.ac-budget > .dayline { grid-column: 1 / -1; }
   .ac-plate .meter.day.ac-budget .ads-fig { width: auto; text-align: left; }
   .ac-plate .meter.day.ac-budget > .ads-k { display: none; }
@@ -179,14 +185,31 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
   .ac-tabs label { flex: 1; padding-inline: .4rem; }
 }
 
-/* ---------- the three views: radios hold the choice, :has() opens the chosen one in place ----------
-   The chosen view grows from 0 to its own height over --t-snap (240 ms) on --e-out while the one that closes shrinks to 0, and it fades in and
-   settles .5rem; A closed view leaves the tab order and the page. */
-.ac-in { interpolate-size: allow-keywords; }
+/* ---------- the three views: radios hold the choice, :has() shows the chosen one in place ----------
+   Where the Accounts board lies in two columns (the page's container 1,280 px and wider) the three views stand in one grid cell, so the
+   plate keeps the height of the tallest in every view and the band below never moves as the tab changes; the chosen view stretches to
+   that height (the Budget's hour strip and the Usage rows take the room). Narrower, each view is its own height and the closed ones
+   leave the page. The chosen view fades in over --t-snap (240 ms) on --e-out and settles .5rem. A closed view leaves the tab order. */
+.ac-panes { display: block; }
 .ac-in:has(.ac-rd-acc:checked) .ac-tab-acc, .ac-in:has(.ac-rd-bud:checked) .ac-tab-bud, .ac-in:has(.ac-rd-cmd:checked) .ac-tab-cmd { background: var(--sel-face); color: var(--sel-ink); box-shadow: inset 0 0 0 .1rem var(--sel-line); }
 .ac-in:has(.ac-rd-acc:focus-visible) .ac-tab-acc, .ac-in:has(.ac-rd-bud:focus-visible) .ac-tab-bud, .ac-in:has(.ac-rd-cmd:focus-visible) .ac-tab-cmd { outline: var(--ink-w) solid var(--text); outline-offset: .18rem; }
-.ac-pane { height: 0; min-width: 0; overflow: clip; overflow-clip-margin: 1.5rem; visibility: hidden; opacity: 0; transform: translateY(.5rem); transition: height var(--t-snap) var(--e-out), opacity var(--t-snap) var(--e-out), transform var(--t-snap) var(--e-out), visibility 0s linear var(--t-snap); }
-.ac-in:has(.ac-rd-acc:checked) .ac-p-acc, .ac-in:has(.ac-rd-bud:checked) .ac-p-bud, .ac-in:has(.ac-rd-cmd:checked) .ac-p-cmd { height: auto; visibility: visible; opacity: 1; transform: none; transition-delay: 0s; }
+.ac-pane { display: none; grid-area: 1 / 1; flex-direction: column; min-width: 0; visibility: hidden; opacity: 0; transform: translateY(.5rem); transition: opacity var(--t-snap) var(--e-out), transform var(--t-snap) var(--e-out), visibility 0s linear var(--t-snap); }
+.ac-pin { flex: 1; display: flex; flex-direction: column; }
+.ac-pin > .board { flex: 1; align-items: stretch; }
+.ac-pin > .board > .col { display: flex; flex-direction: column; }
+.ac-pin > .board > .col > section { flex: 1; display: flex; flex-direction: column; }
+.ac-in:has(.ac-rd-acc:checked) .ac-p-acc, .ac-in:has(.ac-rd-bud:checked) .ac-p-bud, .ac-in:has(.ac-rd-cmd:checked) .ac-p-cmd { display: flex; visibility: visible; opacity: 1; transform: none; transition-delay: 0s; }
+
+@container pg (min-width: 1280px) {
+  .ac-panes { display: grid; }
+  .ac-pane { display: flex; }
+}
+@keyframes ac-pane { from { opacity: 0; transform: translateY(.5rem); } }
+@media (prefers-reduced-motion: no-preference) {
+  @container pg (max-width: 1279px) {
+    .ac-in:has(.ac-rd-acc:checked) .ac-p-acc, .ac-in:has(.ac-rd-bud:checked) .ac-p-bud, .ac-in:has(.ac-rd-cmd:checked) .ac-p-cmd { animation: ac-pane var(--t-snap) var(--e-out) both; }
+  }
+}
 
 /* ---------- the focal figure: the serving account's week, 1.7rem; every other row figure stays at the console's .95rem ---------- */
 .ac-p-acc .ac-board { --pct-w: 6.2rem; }
@@ -199,12 +222,12 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
 .ac-plate .card { padding-inline: calc(2 * var(--u)); }
 .ac-plate .ac-add { padding-inline: calc(2 * var(--u)); }
 .ac-tiles, .ac-cmds { padding-top: calc(2 * var(--u)); }
-.ac-plate .meter.day.ac-budget { padding: 1.8rem calc(2 * var(--u)) 1.45rem; }
+.ac-plate .meter.day.ac-budget { padding: calc(2 * var(--u)) calc(2 * var(--u)) 1.45rem; }
 @container acw (max-width: 48rem) {
   .ac-plate .ac-add { padding-block: calc(2 * var(--u)); }
   details.ac-add > summary { min-height: 0; }
   details.ac-add[open] { padding-top: calc(2 * var(--u)); }
-  .ac-plate .meter.day.ac-budget { padding: 2.2rem calc(2 * var(--u)) 1.45rem; }
+  .ac-plate .meter.day.ac-budget { padding: calc(2 * var(--u)) calc(2 * var(--u)) 1.45rem; }
   .ac-plate .meter.day.ac-budget > .dayrun { margin-right: 1.1rem; }
 }
 

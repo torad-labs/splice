@@ -38,8 +38,14 @@
 .tm-talk { min-width: 0; display: flex; flex-direction: column; gap: var(--pg-sp-3); }
 .tm-chat { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--pg-sp-4); }
 .tm-bub { padding: var(--pg-sp-2) var(--pg-sp-3); row-gap: var(--pg-sp-1); grid-template-columns: minmax(0, 1fr); margin: 0; align-content: start; }
-/* both chips and the arrow stay on one line; when the bubble is too narrow the second chip wraps with the arrow in front of it */
-.tm-bub .who { flex-direction: row; align-items: center; flex-wrap: wrap; gap: var(--pg-sp-2); }
+/* both chips and the arrow stay on one line while the bubble has room for the longest pair (claude-splice to claude-grok); below that
+   every bubble, whatever its chips, puts the sender over the arrow and the receiver, so the three share one structure. The bubble is
+   its own container and sizes in its chip step (--pg-t-1), so the room needed scales with the chips. */
+.tm-bub { container: tmb / inline-size; font-size: var(--pg-t-1); }
+.tm-bub .who { flex-direction: row; align-items: center; flex-wrap: nowrap; gap: var(--pg-sp-2); }
+@container tmb (max-width: 20em) {
+  .tm-bub .who { flex-direction: column; align-items: flex-start; }
+}
 .tm-bub .who .chip { white-space: nowrap; }
 .tm-to { display: inline-flex; align-items: center; gap: var(--pg-sp-2); }
 .tm-bub .body { line-height: 1.35; }
@@ -76,7 +82,7 @@
 .tm-lab { margin: 0; font: 500 var(--pg-t-2)/1.3 var(--font-name); color: var(--text-body); }
 /* the panes' boxes stand one step above the drawing's top, so the first chip in them starts where the next cell's first chip does */
 .tm-panes { align-self: stretch; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--pg-sp-2); margin-top: calc(-1 * var(--pg-sp-1)); }
-.tm-pane { display: flex; align-items: center; justify-content: center; min-width: 0; padding: var(--pg-sp-1); background: var(--obj-sunk); border-radius: var(--r-in); box-shadow: 0 0 0 var(--ink-w) var(--ink); }
+.tm-pane { display: flex; align-items: center; justify-content: flex-start; min-width: 0; padding: var(--pg-sp-1); background: var(--obj-sunk); border-radius: var(--r-in); box-shadow: 0 0 0 var(--ink-w) var(--ink); }
 /* each session's own model and context: the console's context meter, one per session */
 .tm-ctxs { align-self: stretch; display: flex; flex-direction: column; gap: var(--pg-sp-3); min-width: 0; }
 .tm-ctxp { display: flex; flex-direction: column; gap: var(--pg-sp-2); min-width: 0; }
@@ -133,6 +139,7 @@
   .tm-seats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @container tmw (max-width: 1000px) {
+  /* stacked, each bubble ends under its own message: the three share one chip structure, and only the message's length differs */
   .tm-chat { grid-template-columns: minmax(0, 1fr); }
 }
 /* four seats across: a card is too narrow to hold a command and its model on one row (Muse Spark 1.3 beside claude-muse), so in every

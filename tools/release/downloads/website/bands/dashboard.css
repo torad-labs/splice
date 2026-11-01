@@ -57,17 +57,10 @@
 .db-cap{margin:0;font:600 var(--kicker)/1.2 var(--font-name);letter-spacing:.09em;text-transform:uppercase;color:var(--text-mute)}
 
 /* ---- the window's height: the five panels stand in one cell and the one shown is the one with a height, so the window is as tall as the
-   tab it shows. A tab switch eases the window to the new height over --t-snap: the panel that leaves goes to 0 as the one that enters
-   grows from 0 (interpolate-size lets a height run to auto). Where the window is 1280 px or narrower, Usage is far the tallest (a card
-   per command), so a panel that is not shown leaves the flow altogether and the entering panel eases in. ---- */
-.db-win { interpolate-size: allow-keywords; }
-@media (prefers-reduced-motion: no-preference) {
-  .db-panel { transition: height var(--t-snap) var(--e-out), padding-block var(--t-snap) var(--e-out); }
-}
-@container dbw (max-width:1280px) {
-  .db-panel { display: none; }
-  .db-win:has(.db-r1:checked) .db-p1, .db-win:has(.db-r2:checked) .db-p2, .db-win:has(.db-r3:checked) .db-p3, .db-win:has(.db-r4:checked) .db-p4, .db-win:has(.db-r5:checked) .db-p5 { display: block; }
-}
+   tab it shows. A tab switch changes the panels at once and dashboard.js eases the window itself from the old height to the new one
+   over --t-snap on --e-out, at every width (it holds the old height inline, sets the new one, and lets go when the transition ends).
+   While it runs the window clips, so a panel taller than the window does not spill under the band. ---- */
+.db-win.db-ease { box-sizing: border-box; overflow: clip; align-content: start; }
 
 /* ---- Sessions: the one session waiting on you leads, at hero size; the rest step down in size and ink ---- */
 .db-sess{--name-w:calc(var(--pg-t-2) * 9);--doing-w:calc(var(--pg-t-1) * 18);--cmd-w:calc(var(--pg-t-1) * 11);display:flex;flex-direction:column;gap:calc(4 * var(--u))}

@@ -383,8 +383,6 @@
   #console .pg-split { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--pg-cg); align-items: start; }
   #console .pg-split > .pg-head { display: flex; flex-direction: column; align-self: stretch; grid-column: 1 / span 4; grid-row: 1; margin-bottom: 0; padding-right: clamp(0px, 1vw, 32px); }
   #console .pg-split > .db-win { grid-column: 5 / -1; grid-row: 1; margin-top: 0; }
-  #console:nth-child(odd) > .pg-split > .pg-head { grid-column: 9 / -1; padding-right: 0; padding-left: clamp(0px, 1vw, 32px); }
-  #console:nth-child(odd) > .pg-split > :not(.pg-head) { grid-column: 1 / span 8; }
   #console .pg-split > .pg-head > .pg-art { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; justify-self: stretch; align-self: stretch; width: auto; margin-top: var(--pg-sp-6); }
   #console .pg-split > .pg-head > .pg-art > svg:not(.db-tall) { display: none; }
   #console .pg-split > .pg-head > .pg-art > .db-tall { display: block; flex: 0 1 auto; min-height: 0; width: 100%; height: auto; position: static; }

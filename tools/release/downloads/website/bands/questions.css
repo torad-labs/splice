@@ -11,14 +11,14 @@
 .qa-list{container:qal / inline-size;--qa-rp:var(--pg-sp-4);--qa-cg:var(--pg-sp-3);padding:var(--pg-sp-1);background:var(--obj);border:var(--ink-w) solid var(--ink);border-radius:var(--r-obj);box-shadow:var(--cast) var(--cast) 0 var(--ink)}
 .qa-q + .qa-q{border-top:.12rem solid var(--track)}
 .qa-q{scroll-margin-top:calc(var(--fr-hh) + 16px)}
-.qa-q>summary{display:grid;grid-template-columns:14px minmax(0,56rem) minmax(max-content,1fr);column-gap:var(--qa-cg);align-items:center;min-height:calc(var(--pg-t-3) * 1.3 + var(--pg-sp-4) + var(--pg-sp-2));padding:var(--pg-sp-2) var(--qa-rp);border-radius:var(--r-in);cursor:pointer;list-style:none;transition:background var(--t-hover) var(--e-out)}
+.qa-q>summary{display:grid;grid-template-columns:14px minmax(0,1fr) auto;column-gap:var(--qa-cg);align-items:center;min-height:calc(var(--pg-t-3) * 1.3 + var(--pg-sp-4) + var(--pg-sp-2));padding:var(--pg-sp-2) var(--qa-rp);border-radius:var(--r-in);cursor:pointer;list-style:none;transition:background var(--t-hover) var(--e-out)}
 .qa-q>summary::-webkit-details-marker{display:none}
 .qa-q>summary:hover{background:color-mix(in oklab,var(--text) 4%,transparent)}
 .qa-q>summary:focus-visible{outline:var(--ink-w) solid var(--text);outline-offset:-.25rem}
 .qa-q .chev{width:14px;height:14px;stroke-width:1.6}
 .qa-q[open] .chev{transform:rotate(90deg)}
 .qa-qt{font:600 var(--pg-t-3)/1.3 var(--font-name);color:var(--text)}
-.qa-peek{display:inline-flex;align-items:center;justify-content:flex-start;gap:var(--pg-sp-1);font:500 var(--pg-t-1)/1.3 var(--font-name);color:var(--text-mute);white-space:nowrap;transition:opacity var(--t-hover) var(--e-out)}
+.qa-peek{display:inline-flex;justify-self:end;align-items:center;justify-content:flex-end;gap:var(--pg-sp-1);font:500 var(--pg-t-1)/1.3 var(--font-name);color:var(--text-mute);white-space:nowrap;transition:opacity var(--t-hover) var(--e-out)}
 .qa-peek b{font:500 1em/1.3 var(--font-data);font-variant-numeric:tabular-nums;color:var(--text-body)}
 .qa-pk-days,.qa-pk-dots{margin-right:var(--pg-sp-1)}
 .qa-q[open] .qa-peek{opacity:0}
@@ -376,8 +376,6 @@
   #questions>.pg-split{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));column-gap:var(--pg-cg);align-items:start}
   #questions>.pg-split>.pg-head{display:flex;flex-direction:column;align-self:stretch;grid-column:1/span 4;grid-row:1;margin-bottom:0;padding-right:clamp(0px,1vw,32px)}
   #questions>.pg-split>:not(.pg-head){grid-column:5/-1;grid-row:1;margin-top:0}
-  main>#questions:nth-child(odd)>.pg-split>.pg-head{grid-column:9/-1;padding-right:0;padding-left:clamp(0px,1vw,32px)}
-  main>#questions:nth-child(odd)>.pg-split>:not(.pg-head){grid-column:1/span 8}
 }
 /* The head column carries the whole drawing, the ten rows, the junction and the stack of answer cards, as one piece pinned under the header
    (sticky), so the stack stays beside whichever part of an open answer is in view. questions.js sets its height (--qa-ah) to what the column

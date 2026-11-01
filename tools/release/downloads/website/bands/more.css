@@ -343,8 +343,8 @@
 .mo-band .pg-art>.mo-rack,.mo-gut{display:none}
 @container pg (min-width:1280px){
   .mo-band .pg-split{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));column-gap:var(--pg-cg);align-items:start}
-  .mo-band .pg-split>.mo-head{display:flex;flex-direction:column;align-self:stretch;grid-column:9/-1;grid-row:1;margin-bottom:0;padding-left:clamp(0px,1vw,32px);padding-right:0;contain:size}
-  .mo-band .pg-split>.mo-win{grid-column:1/span 8;grid-row:1;margin-top:0}
+  .mo-band .pg-split>.mo-head{display:flex;flex-direction:column;align-self:stretch;grid-column:1/span 4;grid-row:1;margin-bottom:0;padding-right:clamp(0px,1vw,32px);padding-left:0;contain:size}
+  .mo-band .pg-split>.mo-win{grid-column:5/-1;grid-row:1;margin-top:0}
   .mo-band .pg-split>.mo-head>.pg-art{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;justify-self:stretch;align-self:stretch;width:auto;margin-top:var(--pg-sp-5)}
   .mo-band .pg-split>.mo-head>.pg-art>svg{flex:0 1 auto;min-height:0}
   .mo-band .pg-split>.mo-head>.pg-art .pg-stub{display:inline}

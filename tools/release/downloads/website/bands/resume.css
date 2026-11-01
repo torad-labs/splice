@@ -148,3 +148,24 @@
   .rs-term { padding-inline: .6rem; }
   .rs-path { margin-left: 0; padding: .3rem .25rem; }
 }
+
+/* ---------- from 1,280 px to 2,199 px the head stands beside the window, as the page does from 2,200 px: the head takes 3 of 12
+   columns and the window the other 9, on the side the band's place on the page gives it (even places put the head left) ---------- */
+@container pg (min-width: 1280px) and (max-width: 2199px) {
+  #resume > .pg-split { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--pg-cg); align-items: start; }
+  #resume > .pg-split > .pg-head { display: flex; flex-direction: column; align-self: stretch; grid-column: 1 / span 3; grid-row: 1; margin-bottom: 0; padding-right: clamp(0px, 1vw, 32px); }
+  #resume > .pg-split > :not(.pg-head) { grid-column: 4 / -1; grid-row: 1; margin-top: 0; }
+  main > #resume:nth-child(odd) > .pg-split > .pg-head { grid-column: 10 / -1; padding-right: 0; padding-left: clamp(0px, 1vw, 32px); }
+  main > #resume:nth-child(odd) > .pg-split > :not(.pg-head) { grid-column: 1 / span 9; }
+  #resume > .pg-split > .pg-head > .pg-art { flex: 1 1 auto; justify-self: stretch; width: auto; margin-top: var(--pg-sp-6); align-self: stretch; display: flex; flex-direction: column; }
+  #resume > .pg-split > .pg-head > .pg-art .pg-stub { display: inline; }
+  #resume > .pg-split > .pg-head > .pg-art::after { content: ""; flex: 1 1 auto; min-height: 0; width: 8px; margin-left: calc(var(--pg-ax, 9%) - 4px); background: linear-gradient(var(--pg-cable), var(--pg-cable)) 50% 0 / 1.5px 100% no-repeat, radial-gradient(circle, var(--pg-dot, var(--claude)) 0 2.6px, transparent 3.2px) 50% 0 / 8px 8px no-repeat; }
+}
+/* beside the head the window is narrower than the board's three columns need: the Claude card and the list stand side by
+   side, the terminal after the pick under them across both */
+@container pg (min-width: 1280px) and (max-width: 2199px) {
+  @container rsw (max-width: 78rem) {
+    .rs-board { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2.4rem; }
+    .rs-board > .col:nth-child(3) { grid-column: 1 / -1; }
+  }
+}

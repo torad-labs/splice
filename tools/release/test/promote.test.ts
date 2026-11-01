@@ -117,11 +117,18 @@ describe("release promote", () => {
     delete process.env.GH_PR_LIST;
   });
 
-  test("the first promotion creates prod at the pinned SHA", async () => {
+  // Since Oct 31, 2026 release.yml only drafts: the release goes public when the maintainer runs `release publish`
+  // on the run, which puts the files on splice.torad.ai/download first. promote says so, never that the push publishes.
+  const PUBLISH_HINT = `bun tools/release publish ${VERSION} --run <run id>`;
+
+  test("the first promotion creates prod at the pinned SHA and says how the draft goes public", async () => {
     const f = fixture();
     const result = await run(f, { env: { PROMOTE_YES: "1" } });
     expect(result.code).toBe(0);
-    expect(result.output).toContain(`prod created at ${f.mainSha} — release.yml is publishing v${VERSION}.`);
+    expect(result.output).toContain(`release.yml will fire and draft v${VERSION} from ${f.mainSha}.`);
+    expect(result.output).toContain(`prod created at ${f.mainSha} — release.yml is drafting v${VERSION}.`);
+    expect(result.output).toContain(PUBLISH_HINT);
+    expect(result.output).not.toMatch(/publish(?:es|ing)? v/);
     expect(prodSha(f)).toBe(f.mainSha);
   });
 
@@ -211,9 +218,12 @@ describe("release promote", () => {
       expect(result.code).toBe(0);
       const log = readFileSync(f.ghLog, "utf8");
       expect(log).toContain(`pr create --base prod --head main --title chore(release): promote main to prod (v${VERSION})`);
-      expect(log).toContain(`publishes **v${VERSION}**`);
+      expect(log).toContain(`drafts **v${VERSION}**`);
+      expect(log).toContain(PUBLISH_HINT);
+      expect(log).not.toContain(`publishes **v${VERSION}**`);
       expect(log).toContain("Merge with a **merge commit**, not squash.");
-      expect(result.output).toContain(`promote: promotion PR opened — merging it releases v${VERSION}.`);
+      expect(result.output).toContain(`promote: promotion PR opened — merging it drafts v${VERSION}.`);
+      expect(result.output).toContain(PUBLISH_HINT);
     });
   });
 

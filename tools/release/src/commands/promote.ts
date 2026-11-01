@@ -4,8 +4,10 @@
 // THE MECHANISM IS GITHUB-NATIVE: merging the main -> prod PR is the promotion. The push that merge
 // produces fires release.yml on prod, which derives the version FROM THE PROMOTED CODE (the launch
 // shim's SPLICE_GATEWAY_VERSION — the same marker `release accept` pins against the jar), re-runs
-// the full gate, builds, attests, and creates the vX.Y.Z tag at the promoted commit when the draft
-// release publishes. Nothing local touches prod, and no command "does the release".
+// the full gate, builds, attests, and drafts the release. Since Oct 31, 2026 the draft goes public
+// only through `bun tools/release publish <version> --run <id>`, which puts every file on
+// splice.torad.ai/download first; publishing the draft creates the vX.Y.Z tag at the promoted
+// commit. Nothing local touches prod.
 //
 // Merge the promotion PR with a MERGE COMMIT, never squash: squashing collapses all of main's
 // promoted history into one alien commit on prod and breaks the next promotion's diff.
@@ -95,11 +97,11 @@ export async function promote(
   // prod is created on first use; a PR needs the base ref to exist. Seeding it at main's tip is a
   // no-op promotion (same tree, no release fires until the NEXT prod push differs... it does fire —
   // a push event is a push event). So seed from the CURRENT PROD-LESS state only via the API ref
-  // create, which is a push of main's tip and WILL fire release.yml once, releasing v<version>.
+  // create, which is a push of main's tip and WILL fire release.yml once, drafting v<version>.
   // That is the correct first promotion, stated rather than hidden.
   if (!run(repoRoot, ["git", "ls-remote", "--exit-code", "origin", "refs/heads/prod"]).ok) {
     console.log("promote: prod does not exist yet. Creating it IS the first promotion:");
-    console.log(`         release.yml will fire and publish v${version} from ${mainSha}.`);
+    console.log(`         release.yml will fire and draft v${version} from ${mainSha}.`);
     if (Bun.env.PROMOTE_YES !== "1") {
       const answer = io.prompt(`Type the version to confirm the FIRST promotion (${version}): `);
       if (answer !== version) return fail(`promote: aborted (typed '${answer === "" ? "<eof>" : answer}')`);
@@ -118,7 +120,8 @@ export async function promote(
     }
     const pushed = run(repoRoot, ["git", "push", "origin", `${mainSha}:refs/heads/prod`]);
     if (!pushed.ok) return fail(pushed.stderr || "promote: pushing prod failed");
-    console.log(`promote: prod created at ${mainSha} — release.yml is publishing v${version}.`);
+    console.log(`promote: prod created at ${mainSha} — release.yml is drafting v${version}.`);
+    console.log(publishHint(version));
     return 0;
   }
 
@@ -139,7 +142,9 @@ export async function promote(
 
   const body =
     `Merging this PR IS the promotion: the resulting push to prod fires release.yml, which re-gates, ` +
-    `builds, attests, and publishes **v${version}** with the tag created at the promoted commit.\n\n` +
+    `builds, attests, and drafts **v${version}**. The release goes public when the maintainer runs ` +
+    `\`bun tools/release publish ${version} --run <run id>\` on that run: it puts every file on ` +
+    `splice.torad.ai/download, then publishes the draft, which creates the tag at the promoted commit.\n\n` +
     "Merge with a **merge commit**, not squash.";
   const created = run(repoRoot, [
     "gh", "pr", "create", "--base", "prod", "--head", "main",
@@ -148,6 +153,12 @@ export async function promote(
   ]);
   if (!created.ok) return fail(created.stderr || "promote: gh failed creating the promotion PR");
   if (created.stdout !== "") console.log(created.stdout);
-  console.log(`promote: promotion PR opened — merging it releases v${version}.`);
+  console.log(`promote: promotion PR opened — merging it drafts v${version}.`);
+  console.log(publishHint(version));
   return 0;
+}
+
+/** release.yml drafts; the release goes public only through `release publish` on the run (since Oct 31, 2026). */
+function publishHint(version: string): string {
+  return `         then, once the run is green: bun tools/release publish ${version} --run <run id>`;
 }

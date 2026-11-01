@@ -93,7 +93,7 @@
 .db-sess .s.idle .last .tgt{font-family:var(--font-name);color:var(--text-body)}
 .db-sess .s.idle .barcell.age .vbar>b{background:color-mix(in oklab,var(--text) 40%,transparent)}
 .db-sess .s.drop-before{background-image:linear-gradient(var(--text-body),var(--text-body));background-size:100% .25rem;background-position:top;background-repeat:no-repeat}
-.db-lift{position:relative;z-index:3;background:linear-gradient(var(--obj-high),var(--obj-high))!important;border-radius:var(--r-obj)!important;box-shadow:0 0 0 var(--ink-w) var(--ink),.35rem .45rem 0 var(--ink)!important;transform:translateX(.6rem)}
+.db-lift{position:relative;z-index:3;background:linear-gradient(var(--obj-high),var(--obj-high))!important;border-radius:var(--r-obj)!important;box-shadow:0 0 0 var(--ink-w) var(--ink),.35rem .45rem 0 var(--ink)!important;transform:translateY(-.2rem)}
 .db-lift .grip{opacity:1;color:var(--text);border-radius:.3rem;box-shadow:inset 0 0 0 .1rem var(--track-line),inset 0 .2rem .22rem var(--ink)}
 .db-sess .s .grip{width:1.2rem;height:2rem;margin-left:-.4rem;margin-right:-.6rem;cursor:grab;color:var(--text-mute);flex:none;display:grid;place-items:center}
 .db-sess .s .grip svg{width:.6rem;height:1.1rem}
@@ -209,6 +209,15 @@
   .db-needm{grid-column:1/-1;justify-self:stretch;justify-content:space-between}
   .db-ask{grid-column:1/-1}
   .db-sess{--doing-w:calc(var(--pg-t-1) * 16);--name-w:calc(var(--pg-t-2) * 8)}
+}
+/* the lead's row (lamp, name, tool, bar, time, command, Stop) needs about 650 px in one line, which the left column of a window under
+   1,180 px does not have: from there the session stands in one column, as it does under 900 px, so the row stays one line */
+@container dbw (max-width:1180px){
+  .db-sx{grid-template-columns:minmax(0,1fr)}
+}
+/* a window between a phone's and 900 px: the Needs you card's meter, its time and the command stand together, the chip beside the time */
+@container dbw (min-width:641px) and (max-width:900px){
+  .db-needm{justify-content:flex-start}
 }
 @container dbw (max-width:640px){
   .db-panel{padding:var(--pg-sp-3)}

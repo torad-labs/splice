@@ -148,8 +148,11 @@
 @container tmw (min-width: 1301px) {
   #teams .tm-seats .meta { flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: var(--pg-sp-1); }
 }
-@container tmw (min-width: 1301px) and (max-width: 1699px) {
+@container tmw (min-width: 1301px) {
+  /* the tool's name on the first line and what it acts on on the second, as the console's tool chips pair a name and its summary,
+     so every card's tool line is the same two lines (SendMessage / to reviewer) and the four cards keep one height */
   #teams .tm-seats .now { min-height: 2.7em; align-items: flex-start; }
+  #teams .tm-seats .now .tn { display: block; margin-bottom: calc(var(--pg-sp-1) / 2); }
 }
 @container pg (min-width: 2200px) {
   .tm-cells { grid-template-columns: repeat(4, minmax(0, 1fr)); }

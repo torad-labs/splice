@@ -8,7 +8,7 @@ import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { promote } from "../src/commands/promote.ts";
+import { promote, usage } from "../src/commands/promote.ts";
 import { SHIM_RELATIVE } from "../src/lib/shim.ts";
 
 const VERSION = "0.3.2";
@@ -120,6 +120,18 @@ describe("release promote", () => {
   // Since Oct 31, 2026 release.yml only drafts: the release goes public when the maintainer runs `release publish`
   // on the run, which puts the files on splice.torad.ai/download first. promote says so, never that the push publishes.
   const PUBLISH_HINT = `bun tools/release publish ${VERSION} --run <run id>`;
+  // The run id is the release.yml run the push to prod fired, so the hint says how to read it.
+  const RUN_ID_LOOKUP = "gh run list --workflow release.yml --branch prod --limit 1 --json databaseId --jq '.[0].databaseId'";
+
+  test("the help line says the promotion drafts the release, never that merging is the release", () => {
+    expect(usage).toContain("drafts the release");
+    expect(usage).not.toContain("IS the release");
+  });
+
+  test("the publish hint says how to find the run id", async () => {
+    const result = await run(fixture(), { env: { PROMOTE_YES: "1" } });
+    expect(result.output).toContain(RUN_ID_LOOKUP);
+  });
 
   test("the first promotion creates prod at the pinned SHA and says how the draft goes public", async () => {
     const f = fixture();

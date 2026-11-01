@@ -26,8 +26,9 @@ name: release
 # sha256sums.txt, puts every file on splice.torad.ai/download, lists the release there, and only then publishes the
 # draft, which creates the tag.
 #
-# The tag created on publish uses the workflow's own GITHUB_TOKEN, and events created with that
-# token do not trigger workflows — so a promotion cannot recursively fire the tag path.
+# The tag is created when `bun tools/release publish` publishes the draft from the maintainer's machine, with their
+# gh login rather than this workflow's GITHUB_TOKEN. If that tag's push fires the tag path below, its resolve step
+# finds the release already published and stops before building, so a publish can never start a second release.
 on:
   push:
     tags:

@@ -19,7 +19,7 @@ import { readSync } from "node:fs";
 import { SHIM_RELATIVE } from "../lib/shim.ts";
 
 export const usage =
-  "promote                              open the promotion PR (main -> prod); merging it IS the release";
+  "promote                              open the promotion PR (main -> prod); merging it drafts the release, publish makes it public";
 
 /** stdin, one line, EOF-tolerant — `read -r answer || answer=""`. */
 export interface PromoteIo {
@@ -160,5 +160,8 @@ export async function promote(
 
 /** release.yml drafts; the release goes public only through `release publish` on the run (since Oct 31, 2026). */
 function publishHint(version: string): string {
-  return `         then, once the run is green: bun tools/release publish ${version} --run <run id>`;
+  return [
+    `         then, once the run is green: bun tools/release publish ${version} --run <run id>`,
+    "         (the run id: gh run list --workflow release.yml --branch prod --limit 1 --json databaseId --jq '.[0].databaseId')",
+  ].join("\n");
 }

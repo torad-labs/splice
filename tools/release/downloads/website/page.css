@@ -224,15 +224,9 @@ main, .fr-foot { position: relative; z-index: 1; }
 .is-copied .fr-cb-b { opacity: 1; transform: none; }
 .fr-plat { margin: var(--pg-sp-3) 0 0; font: 400 var(--pg-t-1)/1.4 var(--font-name); color: var(--text-mute); }
 
-/* the facts: five ruled cells, three over two on the left of the first screen, two across on a phone */
-.fr-facts { grid-area: facts; list-style: none; margin: var(--pg-sp-5) 0 0; padding: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); border-top: 1px solid var(--hair); border-left: 1px solid var(--hair); }
-.fr-facts li { grid-column: span 3; display: flex; align-items: center; min-height: 56px; padding: 0 var(--pg-sp-3); font: 500 var(--pg-t-2)/1.2 var(--font-name); color: var(--text-body); border-right: 1px solid var(--hair); border-bottom: 1px solid var(--hair); }
-.fr-facts li:last-child { grid-column: 1 / -1; }
-@container pg (min-width: 560px) {
-  .fr-facts li { grid-column: span 2; }
-  .fr-facts li:nth-child(n+4) { grid-column: span 3; }
-  .fr-facts li:last-child { grid-column: span 3; }
-}
+/* the facts: five small console tiles in a row that wraps, each drawn like the console's objects (ink outline, hard cast) */
+.fr-facts { grid-area: facts; list-style: none; margin: var(--pg-sp-5) 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--pg-sp-3); }
+.fr-facts li { display: inline-flex; align-items: center; min-height: 40px; padding: 0 var(--pg-sp-3); font: 500 var(--pg-t-2)/1.2 var(--font-name); color: var(--text-body); background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: .5rem; box-shadow: .22rem .22rem 0 var(--ink); }
 .fr-facts b { font: 600 var(--pg-t-2)/1 var(--font-data); color: var(--text); }
 .fr-facts a { display: inline-flex; align-items: center; gap: 6px; color: var(--text); text-decoration: none; }
 .fr-facts a:hover { text-decoration: underline; text-underline-offset: .3em; }

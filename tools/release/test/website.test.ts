@@ -159,15 +159,25 @@ describe("splice.torad.ai's website", () => {
     expect(KEEP.links!.filter((link) => !hrefs.has(link))).toEqual([]);
   });
 
-  // A link to the page shared in a chat or a post shows the social card; those who cannot see it read what the page
-  // before the redo told them it shows.
-  test("a shared link shows the social card, described for those who cannot see it", () => {
+  // A link to the page shared in a chat or a post shows the social card the site itself serves, a JPEG at the size the
+  // head gives, so a preview draws it whole. (Rewritten Nov 1, 2026: the old card, held with the film in the torad
+  // repository, drew "Runs on your computer", the line Marcos struck; the new card lives beside the page.)
+  test("a shared link shows the social card the site serves, at the size the head gives", () => {
     const meta = (p: string) => new RegExp(`<meta property="${p}" content="([^"]*)"`).exec(page)?.[1];
-    expect(meta("og:image")).toBe("https://splice.torad.ai/landing/products/splice/assets/splice-0.4.0-og.jpg");
-    expect(meta("og:image:alt")).toBe(
-      "splice. The plumbing for your coding agents. Free and open source. Runs on your computer. github.com/torad-labs/splice. " +
-        "Below it, five drawn Claude Code windows: claude-splice, claude-grok, claudex, claude-kimi and claude-muse.",
-    );
+    const url = meta("og:image") ?? "";
+    expect(url.startsWith("https://splice.torad.ai/")).toBe(true);
+    const jpg = readFileSync(join(out, url.slice("https://splice.torad.ai/".length)));
+    expect([jpg[0], jpg[1]]).toEqual([0xff, 0xd8]);
+    let at = 2;
+    let size: number[] | undefined;
+    while (at + 8 < jpg.length && !size) {
+      const marker = jpg[at + 1]!;
+      // a frame header (SOF0 to SOF2): length, precision, then the height and the width
+      if (marker >= 0xc0 && marker <= 0xc2) size = [jpg.readUInt16BE(at + 7), jpg.readUInt16BE(at + 5)];
+      at += 2 + jpg.readUInt16BE(at + 2);
+    }
+    expect(size).toEqual([Number(meta("og:image:width")), Number(meta("og:image:height"))]);
+    expect(size).toEqual([1200, 630]);
   });
 
   // Search engines, link previews and browsers read the head, not the page: what the live page's head told them is still
@@ -299,6 +309,23 @@ describe("splice.torad.ai's website", () => {
       ...[...all.matchAll(/\btower\.lan:(\d+)/g)].map((m) => m[1]!).filter((p) => p !== port).map((p) => `port ${p}`),
     ];
     expect(unknown).toEqual([]);
+  });
+
+  // Marcos, Nov 1, 2026: "things like "runs on your computer" is AI slop, of course it runs in the persons computer."
+  // A shared link shows the page in small: its picture, described by the alt text, says what the page's headline says,
+  // and neither the picture's description nor anything a visitor reads on the page carries the line he struck. (The
+  // film window keeps the film's own captions, which are the film's words.)
+  test("the link preview carries the page's headline, and the page never says it runs on your computer", () => {
+    const h1 = words(/<h1\b[\s\S]*?<\/h1>/.exec(page)?.[0] ?? "").trim();
+    expect(h1.length).toBeGreaterThan(0);
+    const head = headEntries(page);
+    for (const key of ["og:image:alt", "twitter:image:alt"]) {
+      const alt = head.find((e) => e.startsWith(`${key} = `)) ?? "";
+      expect(alt).toContain(h1);
+      expect(alt.toLowerCase()).not.toContain("runs on your computer");
+    }
+    const read = words(page.replace(/<dialog\b[\s\S]*?<\/dialog>/g, " ")).toLowerCase();
+    expect(read).not.toContain("runs on your computer");
   });
 
   // The product parts are pictures of the console with made-up data, so their Allow, Save or preset buttons do nothing

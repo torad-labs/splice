@@ -4,7 +4,7 @@ One page whose product parts are the console's own markup, on the console's own 
 worker beside this folder (`../worker.ts`) serves what the build writes at every path but `/download`.
 
 ```sh
-# build (the film, its captions and the social card are too large for the repository; the torad repository holds them)
+# build (the film and its captions are too large for the repository; the torad repository holds them)
 bun tools/release/downloads/website/build.ts tools/release/downloads/site \
   --media <torad-main>/apps/website/build/held/products/splice/assets
 # test
@@ -23,6 +23,9 @@ bunx wrangler@4 deploy --config tools/release/downloads/wrangler.jsonc
   ground and the drawings. The build appends each band's `bands/NAME.css` and `bands/NAME.js` to make `/site.css` and
   `/site.js`.
 - `keep.json` lists every command, path, question, link and control the page must keep. The tests read it.
+- `social-card.jpg` is the link preview, served at `/splice-og.jpg`. It is `social-card.html` drawn at 1200 x 630: put the
+  html in a built site folder, open it there at that size, and save the screenshot as a JPEG. Its alt text in
+  `page.html` and `keep.json` says what it shows.
 
 ## Writing a band
 

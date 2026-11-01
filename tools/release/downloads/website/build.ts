@@ -10,13 +10,14 @@
 // way. README.md says how a band is written. Every path the page names on this host comes from one place:
 //   /console/...                          the console's own files (app/src/main/resources/console), copied as they are,
 //                                         so the page always wears the console's current look
-//   /landing/products/splice/assets/...   the film, its captions and the social card, from --media; they are too large
-//                                         for the repository and live in the torad repository's held assets
+//   /landing/products/splice/assets/...   the film and its captions, from --media; they are too large for the
+//                                         repository and live in the torad repository's held assets
 //                                         (apps/website/build/held/products/splice/assets), at the paths the page before
 //                                         this one used, so links to them keep working
 //   /site.css, /site.js                   built here
 //   /favicon.ico, /favicon.svg, /favicon-32.png, /apple-touch-icon.png, /site.webmanifest
 //                                         the console's brand icons at the paths browsers ask the root for (rootFiles)
+//   /splice-og.jpg                        the link preview, social-card.jpg beside this file (social-card.html drawn)
 // A band writes {{name}} where the page states a number splice's own source defines (the Claude Code version it is
 // tested with, how long a fresh install keeps prompts), and the build fills it in from that source (facts).
 // A path the page or a stylesheet names that none of them has fails the build before anything is written, so no
@@ -25,7 +26,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statS
 import { dirname, join, posix, resolve } from "node:path";
 
 /** The files the page loads from --media. */
-export const MEDIA: readonly string[] = ["splice-0.4.0.mp4", "splice-0.4.0.en.vtt", "splice-0.4.0-og.jpg"];
+export const MEDIA: readonly string[] = ["splice-0.4.0.mp4", "splice-0.4.0.en.vtt"];
 
 const HERE = import.meta.dir;
 const REPO = resolve(HERE, "../../../..");
@@ -158,7 +159,12 @@ function rootFiles(): { made: Array<[string, Uint8Array | string]>; copied: Arra
   };
   return {
     made: [["/favicon.ico", Buffer.concat([ico, png])], ["/site.webmanifest", JSON.stringify(manifest, null, 2) + "\n"]],
-    copied: [["/favicon.svg", join(brand, "favicon.svg")], ["/favicon-32.png", join(brand, "favicon-32.png")], ["/apple-touch-icon.png", join(brand, "splice-app-256.png")]],
+    copied: [
+      ["/favicon.svg", join(brand, "favicon.svg")],
+      ["/favicon-32.png", join(brand, "favicon-32.png")],
+      ["/apple-touch-icon.png", join(brand, "splice-app-256.png")],
+      ["/splice-og.jpg", join(HERE, "social-card.jpg")],
+    ],
   };
 }
 

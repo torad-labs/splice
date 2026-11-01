@@ -9,8 +9,9 @@
 //   /download/install.sh         the newest stable release's installer, served directly for `curl … | bash`
 //   /download/releases.json      the published list the updater reads (ReleaseChannel.kt), newest first, never cached
 //
-// The rest of the host is splice's website. Until it is deployed, the bare host redirects to the repository and every
-// other path is 404. Anything but GET and HEAD is 405. The worker reads the bucket and never writes it.
+// The rest of the host is splice's website (Marcos: "Yes, at splice.torad.ai, with downloads at /download"): every other
+// path is answered by the site's static files in ./site, and no site file ever answers for a /download path. Anything
+// but GET and HEAD is 405. The worker reads the bucket and never writes it.
 
 /** The part of an R2 bucket binding the worker uses. */
 export interface Bucket {
@@ -18,12 +19,17 @@ export interface Bucket {
   head(key: string): Promise<{ size: number; httpEtag?: string; httpMetadata?: { contentType?: string } } | null>;
 }
 
+/** The part of the static assets binding the worker uses: the website's files. */
+export interface Site {
+  fetch(request: Request): Promise<Response>;
+}
+
 interface Env {
   RELEASES: Bucket;
+  ASSETS: Site;
 }
 
 const PREFIX = "/download";
-const REPO = "https://github.com/torad-labs/splice";
 const LIST = "releases.json";
 const IMMUTABLE = "public, max-age=31536000, immutable";
 const REVALIDATE = "no-cache";
@@ -83,6 +89,28 @@ async function object(env: Env, key: string, head: boolean, cacheControl: string
   return new Response(full?.body ?? null, { status: 200, headers });
 }
 
+const RANGE = /^bytes=(\d*)-(\d*)$/;
+
+/** A file of the website. The assets binding answers the whole file, with no length the worker can read, and Safari
+ *  plays a film only from a server that answers byte ranges (Apple's media guidance). So a request for one range reads
+ *  the file, natively and once, and answers the bytes it names. A request without one streams the file as it is. */
+async function siteFile(request: Request, env: Env): Promise<Response> {
+  const reply = await env.ASSETS.fetch(request);
+  if (reply.status !== 200 || !reply.body) return reply;
+  const headers = new Headers(reply.headers);
+  headers.set("accept-ranges", "bytes");
+  const asked = RANGE.exec(request.headers.get("range")?.trim() ?? "");
+  if (!asked || (asked[1] === "" && asked[2] === "")) return new Response(reply.body, { status: 200, headers });
+  const bytes = new Uint8Array(await reply.arrayBuffer());
+  const size = bytes.length;
+  const [first, last] =
+    asked[1] === "" ? [Math.max(0, size - Number(asked[2])), size - 1] : [Number(asked[1]), asked[2] === "" ? size - 1 : Math.min(Number(asked[2]), size - 1)];
+  if (first >= size || first > last) return new Response(null, { status: 416, headers: { "content-range": `bytes */${size}` } });
+  headers.set("content-range", `bytes ${first}-${last}/${size}`);
+  headers.set("content-length", String(last - first + 1));
+  return new Response(bytes.subarray(first, last + 1), { status: 206, headers });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     if (request.method !== "GET" && request.method !== "HEAD") {
@@ -90,9 +118,8 @@ export default {
     }
     const head = request.method === "HEAD";
     const url = new URL(request.url);
-    if (url.pathname === "/") return new Response(null, { status: 302, headers: { location: REPO, "cache-control": "no-store" } });
     if (url.pathname === PREFIX || url.pathname === `${PREFIX}/`) return text(200, HOME);
-    if (!url.pathname.startsWith(`${PREFIX}/`)) return text(404, "not found\n");
+    if (!url.pathname.startsWith(`${PREFIX}/`)) return siteFile(request, env);
     const path = url.pathname.slice(PREFIX.length);
     const parts = path.split("/").slice(1);
 

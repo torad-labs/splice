@@ -1,6 +1,10 @@
-// splice.torad.ai/download: the Worker in worker.ts in front of the splice-releases R2 bucket. Deployed from this machine with
-// wrangler's own login (bunx wrangler@4 deploy --config tools/release/downloads/wrangler.jsonc); the bucket is
-// written by `bun tools/release publish`, never by the Worker.
+// splice.torad.ai: the Worker in worker.ts. /download is served from the splice-releases R2 bucket, and every other path
+// from the website's static files in ./site, which is built from the torad repository and never committed:
+//   python3 <torad>/apps/website/build/build-splice-site.py tools/release/downloads/site
+// Deployed from this machine with wrangler's own login (bunx wrangler@4 deploy --config tools/release/downloads/wrangler.jsonc);
+// with no ./site, wrangler refuses to deploy rather than serve the host without its website. The bucket is written by
+// `bun tools/release publish`, never by the Worker. The worker runs first on every request, so no site file can answer
+// for a /download path.
 {
   "name": "splice-downloads",
   "main": "worker.ts",
@@ -8,5 +12,6 @@
   "workers_dev": false,
   "routes": [{ "pattern": "splice.torad.ai", "custom_domain": true }],
   "r2_buckets": [{ "binding": "RELEASES", "bucket_name": "splice-releases" }],
+  "assets": { "directory": "./site", "binding": "ASSETS", "run_worker_first": true },
   "observability": { "enabled": true }
 }

@@ -7,8 +7,10 @@
 //   /download/install.sh         the newest stable release's installer;
 //   /download/releases.json      the list of published releases the updater reads, never cached;
 //
-// and nothing else under /download. The rest of the host is splice's website: until it is deployed, the bare host
-// sends a visitor to the repository instead of a downloads page. The worker runs here against an in-memory bucket with the R2 calls it makes.
+// and nothing else under /download. The rest of the host is splice's website (Marcos, Oct 31: "Yes, at splice.torad.ai,
+// with downloads at /download"): every other path is the site's own files, and no site file ever answers for a
+// /download path. The worker runs here against an in-memory bucket with the R2 calls it makes, and a stand-in for the
+// site's static assets.
 import { describe, expect, test } from "bun:test";
 import worker, { type Bucket, newestStable } from "../downloads/worker.ts";
 
@@ -27,9 +29,23 @@ function bucket(objects: Record<string, string>): Bucket {
   };
 }
 
+/** The website's static assets: [files] by path, 404 for anything else, the way the assets binding answers. Inside the
+ *  worker the binding's reply carries no content-length (measured on splice.torad.ai, Oct 31), so neither does this. */
+function assets(files: Record<string, string>) {
+  return {
+    async fetch(request: Request) {
+      const path = new URL(request.url).pathname;
+      if (!(path in files)) return new Response("site: not found", { status: 404 });
+      const bytes = new TextEncoder().encode(files[path]);
+      const body = request.method === "HEAD" ? null : new ReadableStream<Uint8Array>({ start(c) { c.enqueue(bytes); c.close(); } });
+      return new Response(body, { headers: { "content-type": "text/html; charset=utf-8" } });
+    },
+  };
+}
+
 const feed = (...tags: string[]) => JSON.stringify(tags.map(entry));
-const site = (objects: Record<string, string>) => (path: string, method = "GET") =>
-  worker.fetch(new Request(`https://splice.torad.ai${path}`, { method, redirect: "manual" }), { RELEASES: bucket(objects) });
+const site = (objects: Record<string, string>, pages: Record<string, string> = {}) => (path: string, method = "GET") =>
+  worker.fetch(new Request(`https://splice.torad.ai${path}`, { method, redirect: "manual" }), { RELEASES: bucket(objects), ASSETS: assets(pages) });
 
 describe("splice.torad.ai", () => {
   const objects = {
@@ -95,11 +111,71 @@ describe("splice.torad.ai", () => {
 });
 
 describe("the rest of splice.torad.ai", () => {
-  test("the bare host sends a visitor to splice's repository, never to a downloads page, until the website is deployed", async () => {
-    const reply = await site({})("/");
-    expect(reply.status).toBe(302);
-    expect(reply.headers.get("location")).toBe("https://github.com/torad-labs/splice");
-    expect(reply.headers.get("cache-control")).toBe("no-store");
+  const pages = { "/": "<h1>splice</h1>", "/assets/site.css": "body{}", "/download/v0.4.0/splice.jar": "a page posing as the jar", "/download/secret": "a page under /download" };
+  const get = site({ "releases.json": feed("v0.4.0"), "v0.4.0/splice.jar": "jar 0.4.0" }, pages);
+
+  test("is splice's website: the bare host and every path outside /download are the site's own files", async () => {
+    const home = await get("/");
+    expect(home.status).toBe(200);
+    expect(await home.text()).toBe("<h1>splice</h1>");
+    expect(await (await get("/assets/site.css")).text()).toBe("body{}");
+    expect((await get("/no-such-page")).status).toBe(404);
+  });
+
+  test("never lets a site file answer for a download path", async () => {
+    expect(await (await get("/download/v0.4.0/splice.jar")).text()).toBe("jar 0.4.0");
+    const stray = await get("/download/secret");
+    expect(stray.status).toBe(404);
+    expect(await stray.text()).not.toContain("a page under /download");
+  });
+
+  // Apple's media guidance: a server hosting video for Safari must answer byte-range requests, or the film never plays
+  // on an iPhone. The assets binding answers the whole file, so the worker cuts the range out of it.
+  test("answers a byte range of a site file, as Safari asks for the film", async () => {
+    const film = Array.from({ length: 100 }, (_, i) => String.fromCharCode(33 + (i % 90))).join("");
+    const env = { RELEASES: bucket({}), ASSETS: assets({ "/film.mp4": film }) };
+    const ask = (range?: string) =>
+      worker.fetch(new Request("https://splice.torad.ai/film.mp4", { headers: range ? { range } : {} }), env);
+    for (const [range, start, end] of [["bytes=10-19", 10, 19], ["bytes=95-", 95, 99], ["bytes=-5", 95, 99], ["bytes=90-500", 90, 99], ["bytes=0-0", 0, 0]] as const) {
+      const reply = await ask(range);
+      expect(reply.status).toBe(206);
+      expect(reply.headers.get("content-range")).toBe(`bytes ${start}-${end}/100`);
+      expect(reply.headers.get("content-length")).toBe(String(end - start + 1));
+      expect(await reply.text()).toBe(film.slice(start, end + 1));
+    }
+    const whole = await ask();
+    expect(whole.status).toBe(200);
+    expect(whole.headers.get("accept-ranges")).toBe("bytes");
+    expect(await whole.text()).toBe(film);
+    const past = await ask("bytes=100-");
+    expect(past.status).toBe(416);
+    expect(past.headers.get("content-range")).toBe("bytes */100");
+  });
+
+  // Property: whatever chunks the file arrives in, a satisfiable range answers exactly the bytes it names.
+  test("a range answers exactly its bytes, whatever chunks the file arrives in", async () => {
+    const rand = (n: number) => Math.floor(Math.random() * n);
+    for (let round = 0; round < 300; round++) {
+      const size = 1 + rand(300);
+      const file = Uint8Array.from({ length: size }, (_, i) => (i * 7 + round) % 256);
+      const cuts = [...new Set(Array.from({ length: rand(6) }, () => rand(size)))].sort((a, b) => a - b);
+      const chunks = [0, ...cuts, size].slice(1).map((end, i, ends) => file.slice(i === 0 ? 0 : ends[i - 1], end)).filter((c) => c.length);
+      const ASSETS = {
+        async fetch() {
+          const body = new ReadableStream<Uint8Array>({ start(c) { for (const chunk of chunks) c.enqueue(chunk); c.close(); } });
+          return new Response(body);
+        },
+      };
+      const start = rand(size);
+      const end = start + rand(size - start);
+      const reply = await worker.fetch(new Request("https://splice.torad.ai/f.bin", { headers: { range: `bytes=${start}-${end}` } }), { RELEASES: bucket({}), ASSETS });
+      expect(reply.status).toBe(206);
+      expect([...new Uint8Array(await reply.arrayBuffer())]).toEqual([...file.slice(start, end + 1)]);
+    }
+  });
+
+  test("is never written to", async () => {
+    for (const method of ["PUT", "POST", "DELETE"]) expect((await get("/", method)).status).toBe(405);
   });
 });
 

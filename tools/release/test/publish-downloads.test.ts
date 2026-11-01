@@ -41,6 +41,9 @@ function dist(version: string, tamper?: string): string {
 
 type Kept = { bytes: Uint8Array; contentType: string };
 
+/** The website in front of nothing: these tests read only /download. */
+const noSite = { fetch: async () => new Response("site: not found", { status: 404 }) };
+
 /** The bucket in memory: what publish writes, and the R2 view the worker reads. */
 function memory() {
   const kept = new Map<string, Kept>();
@@ -75,7 +78,7 @@ function memory() {
     },
   };
   const get = (path: string) =>
-    worker.fetch(new Request(`https://splice.torad.ai${path}`, { redirect: "manual" }), { RELEASES: bucket });
+    worker.fetch(new Request(`https://splice.torad.ai${path}`, { redirect: "manual" }), { RELEASES: bucket, ASSETS: noSite });
   return { store, kept, writes, get, incomplete: () => incompleteAtList };
 }
 

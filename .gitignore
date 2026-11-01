@@ -87,3 +87,5 @@ credentials.json
 # verifier harnesses, receipts and measurements: never committed (operator rule), so a seat's files here are never unlanded work
 /captures/
 /.Codex/tmp/
+# splice.torad.ai's website, built from the torad repository by apps/website/build/build-splice-site.py; never committed
+tools/release/downloads/site/

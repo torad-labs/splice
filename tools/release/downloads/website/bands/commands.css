@@ -236,9 +236,10 @@
   .cm-board > .cm-card:nth-of-type(6) { grid-column: 2; grid-row: 2; }
   .cm-board > .cm-card:nth-of-type(7) { grid-column: 3; grid-row: 2; }
   .cm-board > .cm-card:nth-of-type(8) { grid-column: 4; grid-row: 2; }
-  /* the two rows of cards share one height, and a card whose foot holds facts lays them first so its provider sits on the foot's last line, where every other card's does */
+  /* the two rows of cards share one height, and a card whose foot holds facts wraps them upward, so its provider leads the foot's
+     bottom line at the left, where every other card's sits, whether the facts fit beside it (3400) or wrap above it (2548) */
   .cm-board { grid-template-rows: 1fr 1fr auto auto auto; }
-  .cm-foot > .cm-fact { order: -1; }
+  .cm-foot { flex-wrap: wrap-reverse; align-content: flex-start; }
   .cm-drawer[data-k="or"] { grid-row: 3; }
   .cm-drawer[data-k="bo"] { grid-row: 4; }
   .cm-drawer[data-k="ow"] { grid-row: 5; }

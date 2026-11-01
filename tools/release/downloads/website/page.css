@@ -37,7 +37,7 @@
   --fr-s: calc(2 * var(--pg-sp-3));
   --fr-l: calc(3.5 * var(--pg-sp-3));
 
-  --fr-hh: clamp(64px, 2.9vw, 80px);
+  --fr-hh: clamp(64px, 2.9vw, 72px);
   --fr-ts: max(.9rem, 12px);
   --fr-tm: max(1.1rem, 14px);
   --pg-cable: var(--text-mute);
@@ -96,6 +96,12 @@ main > .pg-band:nth-child(odd) { background: linear-gradient(var(--pg-deep), var
 main > .pg-band:nth-child(even) { background: radial-gradient(60% 70% at 88% 0, var(--pg-glow), transparent 70%), linear-gradient(var(--pg-lit), var(--pg-lit)); }
 .pg-band::after, .fr-first::after { content: ""; position: absolute; z-index: -1; top: 0; bottom: 0; left: calc(var(--pg-m) / 2 - 4px); width: 8px; pointer-events: none; background: linear-gradient(var(--pg-cable), var(--pg-cable)) 50% 0 / 1.5px 100% no-repeat, radial-gradient(circle, var(--pg-dot, var(--claude)) 0 2.6px, transparent 3.2px) 50% 0 / 8px 8px no-repeat; opacity: .8; }
 main > .pg-band:nth-child(odd)::after { left: auto; right: calc(var(--pg-m) / 2 - 4px); }
+/* on a phone the gutter is 18 px and a window's cast reaches 12 px from the edge, so the cable runs 6 px from the edge instead of
+   mid-gutter, clear of the cast on one side and the text on the other */
+@media (max-width: 640px) {
+  .pg-band::after, .fr-first::after { left: 2px; }
+  main > .pg-band:nth-child(odd)::after { left: auto; right: 2px; }
+}
 /* the travelling dot is a decoration on the ground, so it takes the page's ink one step above the cable: never a provider's
    colour (a provider colour on the page always names that provider) and never the warm key, which marks the next action */
 .pg-band, .fr-first { --pg-dot: var(--pg-ink); }

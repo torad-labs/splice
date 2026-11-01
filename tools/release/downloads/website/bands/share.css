@@ -192,7 +192,7 @@
 .sh-p1 .sh-q { background: var(--track); }
 .sh-opts { display: grid; gap: var(--sh-g); min-width: 0; align-content: start; }
 .sh-p3 { grid-template-columns: minmax(0, 1fr); }
-.sh-opt { display: grid; gap: var(--pg-sp-3); min-width: 0; justify-items: start; align-content: center; }
+.sh-opt { display: grid; gap: var(--pg-sp-3); min-width: 0; justify-items: start; align-content: start; }
 .sh-q { display: inline-block; white-space: nowrap; padding: 5px var(--pg-sp-2); background: var(--obj-sunk); border: 2px solid var(--ink); border-radius: var(--r-in); box-shadow: 2px 2px 0 var(--track-line); font: 500 var(--pg-t-2)/1.2 var(--font-data); color: var(--text); }
 .sh-ex { font: 500 var(--pg-t-1)/1.6 var(--font-data); color: var(--text-body); min-width: 0; }
 .sh-ex b { font-weight: 600; color: var(--text); background: color-mix(in oklab, var(--text) 14%, transparent); border-radius: 3px; padding: 0 3px; }

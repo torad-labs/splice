@@ -124,6 +124,50 @@ describe("splice.torad.ai's website", () => {
     expect(KEEP.links!.filter((link) => !hrefs.has(link))).toEqual([]);
   });
 
+  // A link to the page shared in a chat or a post shows the social card; those who cannot see it read what the page
+  // before the redo told them it shows.
+  test("a shared link shows the social card, described for those who cannot see it", () => {
+    const meta = (p: string) => new RegExp(`<meta property="${p}" content="([^"]*)"`).exec(page)?.[1];
+    expect(meta("og:image")).toBe("https://splice.torad.ai/landing/products/splice/assets/splice-0.4.0-og.jpg");
+    expect(meta("og:image:alt")).toBe(
+      "splice. The plumbing for your coding agents. Free and open source. Runs on your computer. github.com/torad-labs/splice. " +
+        "Below it, five drawn Claude Code windows: claude-splice, claude-grok, claudex, claude-kimi and claude-muse.",
+    );
+  });
+
+  // Browsers, bookmarks, home screens and link previews ask the host's root for its icons without reading the page, and
+  // the page before the redo answered all of them.
+  test("the icons asked for at the host's root are there", () => {
+    const root = ["favicon.ico", "favicon.svg", "favicon-32.png", "apple-touch-icon.png", "site.webmanifest"];
+    expect(root.filter((f) => !existsSync(join(out, f)))).toEqual([]);
+    const png = [0x89, 0x50, 0x4e, 0x47];
+    const ico = readFileSync(join(out, "favicon.ico"));
+    expect([...ico.subarray(0, 6)]).toEqual([0, 0, 1, 0, 1, 0]); // an icon file holding one image
+    expect([...ico.subarray(ico.readUInt32LE(18), ico.readUInt32LE(18) + 4)]).toEqual(png);
+    expect([...readFileSync(join(out, "apple-touch-icon.png")).subarray(0, 4)]).toEqual(png);
+    expect([...readFileSync(join(out, "favicon-32.png")).subarray(0, 4)]).toEqual(png);
+    const manifest = JSON.parse(readFileSync(join(out, "site.webmanifest"), "utf8")) as { name: string; icons: Array<{ src: string }> };
+    expect(manifest.name).toBe("splice");
+    expect(manifest.icons.length).toBeGreaterThan(0);
+    expect(manifest.icons.map((i) => i.src).filter((src) => !existsSync(join(out, src.replace(/^\//, ""))))).toEqual([]);
+  });
+
+  // The page before the redo copied only the install line. Pasting more lines at once hands the later ones to whatever
+  // reads the terminal next: `splice add codex` would run before splice is on the PATH, and `claudex` would answer the
+  // sign-in's prompt.
+  test("a Copy button that copies the install command copies that line alone", () => {
+    const copies = [...page.matchAll(/\bdata-copy="([^"]*)"/g)].map((m) => m[1]!.replace(/&#10;/g, "\n").replace(/&amp;/g, "&"));
+    const install = copies.filter((c) => c.includes("install.sh"));
+    expect(install.length).toBeGreaterThan(0);
+    expect(install.filter((c) => c !== "curl -fsSL https://splice.torad.ai/download/install.sh | bash")).toEqual([]);
+  });
+
+  // "A newer one usually works, and when a session runs a newer one, splice doctor and the status line say so": the
+  // status line drawn under that question shows what it says then, in the daemon's words.
+  test("the status line drawn for a newer Claude Code says so, as the status line does", () => {
+    expect(words(page)).toMatch(/Claude Code 2\.1\.\d+ is newer than the version splice \d+\.\d+\.\d+ was tested with \(2\.1\.285\)/);
+  });
+
   // The product parts are pictures of the console with made-up data, so their Allow, Save or preset buttons do nothing
   // here. A visitor's Tab key never lands on one: every button and field on the page does something (copies, picks
   // a theme, opens the menu, plays or closes the film), switches a tab or step, or is drawn only and out of the focus

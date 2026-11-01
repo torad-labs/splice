@@ -15,6 +15,8 @@
 //                                         (apps/website/build/held/products/splice/assets), at the paths the page before
 //                                         this one used, so links to them keep working
 //   /site.css, /site.js                   built here
+//   /favicon.ico, /favicon.svg, /favicon-32.png, /apple-touch-icon.png, /site.webmanifest
+//                                         the console's brand icons at the paths browsers ask the root for (rootFiles)
 // A path the page or a stylesheet names that none of them has fails the build before anything is written, so no
 // broken page goes up. <out> is replaced only when this build (or the torad build it replaces) wrote it.
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -96,6 +98,39 @@ export function hostPaths(text: string, base: string): string[] {
   return [...found].sort();
 }
 
+/** What browsers, bookmarks, home screens and link previews ask the host's root for without reading the page, as the
+ *  page before this one answered: the console's own brand icons, an icon file holding the 32 px one, and a manifest
+ *  naming them. */
+function rootFiles(): { made: Array<[string, Uint8Array | string]>; copied: Array<[string, string]> } {
+  const brand = join(CONSOLE, "brand");
+  const png = readFileSync(join(brand, "favicon-32.png"));
+  const side = (at: number) => { const n = png.readUInt32BE(at); return n >= 256 ? 0 : n; }; // the PNG header's width, height
+  const ico = Buffer.alloc(22);
+  ico.writeUInt16LE(1, 2); // an icon file
+  ico.writeUInt16LE(1, 4); // holding one image
+  ico.writeUInt8(side(16), 6);
+  ico.writeUInt8(side(20), 7);
+  ico.writeUInt16LE(1, 10); // planes
+  ico.writeUInt16LE(32, 12); // bits per pixel
+  ico.writeUInt32LE(png.length, 14);
+  ico.writeUInt32LE(22, 18); // where the PNG starts
+  const manifest = {
+    name: "splice",
+    short_name: "splice",
+    start_url: "/",
+    display: "browser",
+    icons: [
+      { src: "/favicon.svg", sizes: "any", type: "image/svg+xml" },
+      { src: "/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { src: "/apple-touch-icon.png", sizes: "256x256", type: "image/png" },
+    ],
+  };
+  return {
+    made: [["/favicon.ico", Buffer.concat([ico, png])], ["/site.webmanifest", JSON.stringify(manifest, null, 2) + "\n"]],
+    copied: [["/favicon.svg", join(brand, "favicon.svg")], ["/favicon-32.png", join(brand, "favicon-32.png")], ["/apple-touch-icon.png", join(brand, "splice-app-256.png")]],
+  };
+}
+
 /** Where a path on this host comes from, or null when nothing has it. */
 function source(path: string, media: string): string | null {
   const file = (p: string) => (existsSync(p) && statSync(p).isFile() ? p : null);
@@ -109,13 +144,14 @@ function source(path: string, media: string): string | null {
 
 export function build(out: string, media: string, only?: readonly string[]): { files: number; bytes: number } {
   const { html, bands } = page(only);
-  const made = new Map<string, string>([["/index.html", html], ["/site.css", joined("css", bands)], ["/site.js", joined("js", bands)]]);
+  const root = rootFiles();
+  const made = new Map<string, Uint8Array | string>([["/index.html", html], ["/site.css", joined("css", bands)], ["/site.js", joined("js", bands)], ...root.made]);
 
   // Walk everything the page loads, and everything those stylesheets load in turn.
-  const copied = new Map<string, string>();
+  const copied = new Map<string, string>(root.copied);
   const missing: string[] = [];
   const wanted = hostPaths(html, "/").map((p) => ({ p, from: "index.html" }));
-  for (const [p, text] of made) if (p.endsWith(".css")) wanted.push(...hostPaths(text, "/").map((q) => ({ p: q, from: p.slice(1) })));
+  for (const [p, text] of made) if (p.endsWith(".css") && typeof text === "string") wanted.push(...hostPaths(text, "/").map((q) => ({ p: q, from: p.slice(1) })));
   while (wanted.length > 0) {
     const { p, from } = wanted.pop()!;
     if (made.has(p) || copied.has(p)) continue;
@@ -142,7 +178,7 @@ export function build(out: string, media: string, only?: readonly string[]): { f
   for (const [p, text] of made) {
     mkdirSync(dirname(join(out, p)), { recursive: true });
     writeFileSync(join(out, p), text);
-    bytes += Buffer.byteLength(text);
+    bytes += typeof text === "string" ? Buffer.byteLength(text) : text.byteLength;
   }
   for (const [p, from] of copied) {
     mkdirSync(dirname(join(out, p)), { recursive: true });

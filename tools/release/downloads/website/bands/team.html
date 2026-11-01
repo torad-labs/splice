@@ -1,0 +1,50 @@
+<!-- console: sessions.css knobs.css models.css teams.css usage.css perf-heads.css -->
+<section class="pg-band" id="teams" aria-labelledby="tm-h">
+<div class="pg-in tm-live" data-reveal>
+<div class="tm-bh"><h2 class="pg-h2 tm-rv" id="tm-h" style="--i:0">Teams on different models</h2><p class="pg-line tm-rv" style="--i:1">Sessions on different models message each other inside Claude Code.</p></div>
+<article class="card tm-prompt tm-rv" style="--c:var(--claude);--i:2" aria-label="The prompt to claude-splice"><span class="chip hcmd">claude-splice</span><p class="tm-ptext">Add rate limiting to the storefront API. Have grok build it, muse test it and gpt review it.</p></article>
+<div class="tm-grid"><div class="tm-seats"><article class="card m idle tm-rv" style="--c:var(--claude);--i:3" aria-label="Lead"><span class="lamp idle tm-wait" aria-hidden="true"><i></i></span><div class="top"><span class="role">Lead</span><span class="word tm-waiting">Waiting</span></div>
+<div class="meta"><span class="chip hcmd">claude-splice</span><span class="mdl mtag">Opus 5.5</span></div>
+<div class="body"><p class="why">Split work, send parts</p></div></article>
+<article class="card m idle tm-rv" style="--c:var(--grok);--i:4" aria-label="Builder"><span class="lamp idle" aria-hidden="true"><i></i></span><div class="top"><span class="role">Builder</span><span class="word idle">Idle</span></div>
+<div class="meta"><span class="chip hcmd">claude-grok</span><span class="mdl mtag">Grok 4.7</span></div>
+<div class="body"><p class="why">Write code, run tests</p></div></article>
+<article class="card m idle tm-rv" style="--c:var(--muse);--i:5" aria-label="Tester"><span class="lamp idle" aria-hidden="true"><i></i></span><div class="top"><span class="role">Tester</span><span class="word idle">Idle</span></div>
+<div class="meta"><span class="chip hcmd">claude-muse</span><span class="mdl mtag">Muse Spark 1.3</span></div>
+<div class="body"><p class="why">Write tests in test/</p></div></article>
+<article class="card m idle tm-rv" style="--c:var(--gpt);--i:6" aria-label="Reviewer"><span class="lamp idle" aria-hidden="true"><i></i></span><div class="top"><span class="role">Reviewer</span><span class="word idle">Idle</span></div>
+<div class="meta"><span class="chip hcmd">claudex</span><span class="mdl mtag">GPT-6 Sol</span></div>
+<div class="body"><p class="why">Read diff and tests</p></div></article></div>
+<section class="plate talk tm-talk tm-rv" style="--i:7" aria-label="Messages"><div class="sechead"><h3 class="kicker">Messages</h3></div>
+<div class="chat tm-chat"><div class="tm tm-bub" style="--c:var(--claude)"><div class="who"><span class="chip hcmd" style="--c:var(--claude)">claude-splice</span><svg class="tm-arrow" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg><span class="chip hcmd" style="--c:var(--grok)">claude-grok</span></div>
+<div class="body"><p>Build the limiter.</p></div></div>
+<div class="tm tm-bub" style="--c:var(--gpt)"><div class="who"><span class="chip hcmd" style="--c:var(--gpt)">claudex</span><svg class="tm-arrow" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg><span class="chip hcmd" style="--c:var(--grok)">claude-grok</span></div>
+<div class="body"><p>Bug at src/server.js:24: synchronous SQLite writes.</p></div></div>
+<div class="tm tm-bub latest" style="--c:var(--grok)"><div class="who"><span class="chip hcmd" style="--c:var(--grok)">claude-grok</span><svg class="tm-arrow" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg><span class="chip hcmd" style="--c:var(--claude)">claude-splice</span></div>
+<div class="body"><p>Fixed. 18 pass, 0 fail.</p></div></div></div></section></div>
+<section class="plate pd-hero tm-tests tm-rv" style="--i:11" aria-label="Tests"><div class="sechead"><h3 class="kicker">Tests</h3></div>
+<div class="tm-trow"><div class="tm-tfig"><b class="pd-rate tm-count" style="--tm-n:18">18</b><span class="tm-pass">pass</span></div>
+<div class="tm-tbar" role="img" aria-label="18 of 18 pass"><div class="pd-bar"><span class="pd-seg ok" style="width:100.00%"></span></div></div></div></section>
+<details class="tm-row tm-rv" style="--i:13"><summary class="tm-row-btn"><svg class="tm-chev" viewBox="0 0 10 10" aria-hidden="true"><path d="M3 1.5 7 5 3 8.5"></path></svg><span class="tm-row-l">How a team forms</span></summary><div class="tm-cells"><article class="card tm-cell" style="--c:color-mix(in oklab, var(--text) 22%, var(--ink))"><div class="tm-draw"><div class="tm-panes"><span class="tm-pane"><span class="chip hcmd" style="--c:var(--claude)">claude-splice</span></span><span class="tm-pane"><span class="chip hcmd" style="--c:var(--grok)">claude-grok</span></span><span class="tm-pane"><span class="chip hcmd" style="--c:var(--muse)">claude-muse</span></span><span class="tm-pane"><span class="chip hcmd" style="--c:var(--gpt)">claudex</span></span></div></div>
+<p class="tm-lab">One terminal or tmux pane per command</p></article>
+<article class="card tm-cell" style="--c:color-mix(in oklab, var(--text) 22%, var(--ink))"><div class="tm-draw"><div class="sessions tm-ctxs"><div class="tm-ctxp"><div class="tm-ctxh"><span class="chip hcmd" style="--c:var(--claude)">claude-splice</span><span class="mdl mtag">Opus 5.5</span></div>
+<div class="meterline" style="--c:var(--claude)"><div class="bar"><b style="width:12%"></b></div><span class="pct">12%<span class="used">used</span></span><div class="pd-sub"><b>120K</b>of 1M</div></div></div>
+<div class="tm-ctxp"><div class="tm-ctxh"><span class="chip hcmd" style="--c:var(--gpt)">claudex</span><span class="mdl mtag">GPT-6 Sol</span></div>
+<div class="meterline" style="--c:var(--gpt)"><div class="bar"><b style="width:10%"></b></div><span class="pct">10%<span class="used">used</span></span><div class="pd-sub"><b>41K</b>of 400K</div></div></div></div></div>
+<p class="tm-lab">Each session keeps its own model, context, terminal</p></article>
+<article class="card tm-cell" style="--c:color-mix(in oklab, var(--text) 22%, var(--ink))"><div class="tm-draw"><div class="tm-pair"><span class="chip hcmd" style="--c:var(--gpt)">claudex</span><svg class="tm-arrow" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4"></path></svg><span class="chip hcmd" style="--c:var(--grok)">claude-grok</span></div></div>
+<p class="tm-lab">They find each other with <span class="chip flat">ListAgents</span> and <span class="chip flat">SendMessage</span></p></article>
+<article class="card tm-cell" style="--c:color-mix(in oklab, var(--text) 22%, var(--ink))"><div class="tm-draw"><div class="tm-line2"><span class="chip hcmd" style="--c:var(--kimi)">claude-kimi</span><span class="chip hcmd" style="--c:var(--router)">claude-openrouter</span><span class="chip hcmd" style="--c:var(--local)">claude-bonsai</span></div></div>
+<p class="tm-lab">Any splice command can join</p></article>
+<article class="card tm-cell" style="--c:color-mix(in oklab, var(--text) 22%, var(--ink))"><div class="tm-draw"><div class="tm-pair"><span class="chip hcmd tm-plain">claude</span><svg class="tm-arrow" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h12" stroke-dasharray="2.5 3.5"></path><path d="M14 7l5 5-5 5"></path></svg><span class="chip hcmd" style="--c:var(--grok)">claude-grok</span></div></div>
+<p class="tm-lab">Plain claude can join; its messages skip splice</p></article>
+<article class="card tm-cell" style="--c:color-mix(in oklab, var(--text) 22%, var(--ink))"><div class="tm-draw"><div class="tm-line2"><span class="chip hcmd" style="--c:var(--claude)"><i aria-hidden="true"></i>claude-splice</span><span class="lead">Lead</span></div></div>
+<p class="tm-lab">Lead: claude-splice, on a Claude plan</p></article>
+<article class="card tm-cell" style="--c:color-mix(in oklab, var(--text) 22%, var(--ink))"><div class="tm-draw"><div class="tm-line2"><span class="chip hcmd" style="--c:var(--gpt)"><i aria-hidden="true"></i>claudex</span><span class="lead">Lead</span></div></div>
+<p class="tm-lab">No Claude plan: give the prompt to claudex</p><p class="tm-lab">Or any other command; that session leads</p></article>
+<article class="card tm-cell" style="--c:color-mix(in oklab, var(--text) 22%, var(--ink))"><div class="tm-draw"><nav class="tabs" aria-label="New team"><button class="add tnew" type="button" aria-pressed="false" tabindex="-1" data-drawn><span class="plus" aria-hidden="true">+</span><span>New team</span></button></nav></div>
+<p class="tm-lab">Make a team with roles and a goal</p></article>
+<article class="card tm-cell" style="--c:color-mix(in oklab, var(--text) 22%, var(--ink))"><div class="tm-draw"><nav class="tabs" aria-label="Teams"><button class="tab" type="button" aria-current="true" tabindex="-1" data-drawn><span class="tname">Add rate limiting to the storefront API</span><span class="blots" role="img" title="4 of 4 running" aria-label="4 of 4 running"><i style="--c:var(--claude)"></i><i style="--c:var(--grok)"></i><i style="--c:var(--muse)"></i><i style="--c:var(--gpt)"></i></span></button></nav></div>
+<p class="tm-lab">Sessions that message each other are a team</p><p class="tm-lab">The dashboard shows who is working with whom</p></article></div></details>
+</div>
+</section>

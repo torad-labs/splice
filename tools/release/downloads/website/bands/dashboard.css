@@ -1,0 +1,251 @@
+/* ===== dashboard band (class prefix db-): the console itself, in one window with the console's own top bar. Four tabs (Sessions,
+   A session, A turn, Usage) switch the panel under it; the turn's Request and Answer rows open. Components are the console's own
+   markup on its own stylesheets, with made-up data.
+
+   MOTION (the band enters once, when it first scrolls into view). The heading and the line rise 1.4rem and fade up from 28% over
+   --t-pop (260 ms), the line 30 ms later; the window does the same over --t-move (420 ms). Inside the open panel the meter fills
+   grow and the rings draw over --t-snap (240 ms) from 120 ms in, so the last lands at 360 ms. Only what enters moves, so the band
+   keeps its height and nothing below it moves. A tab switch eases the entering panel in over --t-snap: opacity from 0 and a .6rem
+   rise (db-live, added by dashboard.js on the first switch, so the fills play once and the panel's ease starts with the first
+   switch). Reduced motion: none of it runs. ===== */
+
+/* the band's head: the heading, then one line (the console's code chip in it) */
+.db-head { display: flex; flex-direction: column; gap: clamp(12px, 1.2cqw, 20px); margin-bottom: clamp(28px, 3cqw, 48px); }
+.db-head .pg-line { margin: 0; max-width: 44em; text-wrap: balance; }
+.db-head .pg-line code { font: 500 .94em/1 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); padding: .18em .42em; white-space: nowrap; }
+
+@keyframes db-rise { from { opacity: .28; transform: translateY(1.4rem); } }
+@keyframes db-fill { from { transform: scaleX(0); } }
+@keyframes db-ring { from { stroke-dasharray: 0 94.2; } }
+@keyframes db-panel-in { from { opacity: 0; transform: translateY(.6rem); } }
+@media (prefers-reduced-motion: no-preference) {
+  .pg-js .db-band:not(.is-seen) .db-ev { opacity: .28; transform: translateY(1.4rem); }
+  .pg-js .db-band:not(.is-seen) .db-win :is(.bar>b, .vbar>b, .pd-trk i, .pd-seg, .pmix-in>i, .rvw-trk>i) { transform: scaleX(0); }
+  .pg-js .db-band:not(.is-seen) .db-win .arc { stroke-dasharray: 0 94.2; }
+  .db-band.is-seen .db-ev { animation: db-rise var(--t-pop) var(--e-out) backwards; }
+  .db-band.is-seen .pg-line.db-ev { animation-delay: 30ms; }
+  .db-band.is-seen .db-win.db-ev { animation-duration: var(--t-move); }
+  .db-band.is-seen .db-win:not(.db-live) :is(.bar>b, .vbar>b, .pd-trk i, .pd-seg, .pmix-in>i, .rvw-trk>i) { transform-origin: left center; animation: db-fill var(--t-snap) var(--e-out) 120ms backwards; }
+  .db-band.is-seen .db-win:not(.db-live) .arc { animation: db-ring var(--t-snap) var(--e-out) 120ms backwards; }
+  .db-live .db-panel { animation: db-panel-in var(--t-snap) var(--e-out) backwards; }
+}
+@media (prefers-reduced-motion: reduce) { .db-win, .db-win * { transition: none !important; } }
+
+/* models.css, which the page links for another band, has a bare `.needs` rule for its step meter (inline-flex, and every <i>
+   inside a 1.7rem bar). It also lands on the console's needs-you parts, so they are put back as sessions.css and console.css draw them. */
+.db-win .lamp.needs { display: grid; gap: 0; }
+.db-win .needs .chip i { width: .7rem; height: .7rem; border-radius: 50%; background: var(--live); }
+
+.db-win .card.m.needs { display: block; }
+
+/* the console window: the console's own top bar (wordmark, its segmented switch of pages) over the console's wall, in the ink outline and hard cast */
+.db-win{container:dbw/inline-size;position:relative;background:var(--wall);border:var(--ink-w) solid var(--ink);border-radius:var(--r-obj);box-shadow:var(--cast) var(--cast) 0 var(--ink);--db-pad:calc(4 * var(--u))}
+.db-r{position:absolute;opacity:0;pointer-events:none}
+.db-win .side{position:relative;top:auto;z-index:2;padding:0 calc(2 * var(--u));gap:calc(2 * var(--u));border-radius:calc(var(--r-obj) - .1rem) calc(var(--r-obj) - .1rem) 0 0;flex-wrap:nowrap}
+.db-win .nav{align-self:center;min-width:0}
+.db-win .navset{--nav-pad:clamp(.7rem,.5vw + .2rem,1.2rem)}
+.db-tab{position:relative;z-index:1;display:flex;align-items:center;gap:.667rem;height:2.1rem;padding:0 var(--nav-pad);border-radius:calc(var(--r-obj) - .15rem);white-space:nowrap;font:500 1.1rem/1 var(--font-name);color:var(--text-body);cursor:pointer;transition:color var(--t-hover) var(--e-out),background var(--t-hover) var(--e-out),box-shadow var(--t-hover) var(--e-out)}
+.db-tab>svg{flex:none;width:1.15em;height:1.15em;color:var(--text-mute);transition:color var(--t-hover) var(--e-out)}
+.db-tab:hover{color:var(--text)}
+.db-win:has(.db-r1:checked) .db-t1,.db-win:has(.db-r2:checked) .db-t2,.db-win:has(.db-r3:checked) .db-t3,.db-win:has(.db-r4:checked) .db-t4{color:var(--text);background:var(--sel-face);box-shadow:inset 0 0 0 .1rem var(--sel-line)}
+.db-win:has(.db-r1:checked) .db-t1>svg,.db-win:has(.db-r2:checked) .db-t2>svg,.db-win:has(.db-r3:checked) .db-t3>svg,.db-win:has(.db-r4:checked) .db-t4>svg{color:var(--text)}
+.db-win:has(.db-r1:focus-visible) .db-t1,.db-win:has(.db-r2:focus-visible) .db-t2,.db-win:has(.db-r3:focus-visible) .db-t3,.db-win:has(.db-r4:focus-visible) .db-t4{outline:var(--ink-w) solid var(--text);outline-offset:.18rem}
+.db-demo{margin-left:auto;flex:none;display:inline-flex;align-items:center;gap:.667rem;font:500 .95rem/1 var(--font-name);color:var(--text-mute)}
+.db-demo i{width:.7rem;height:.7rem;border-radius:50%;background:transparent;box-shadow:inset 0 0 0 .14rem var(--text-mute)}
+.db-panel{display:none;padding:var(--db-pad);min-width:0}
+.db-win:has(.db-r1:checked) .db-p1,.db-win:has(.db-r2:checked) .db-p2,.db-win:has(.db-r3:checked) .db-p3,.db-win:has(.db-r4:checked) .db-p4{display:block}
+.db-cap{margin:0;font:600 var(--kicker)/1.2 var(--font-name);letter-spacing:.09em;text-transform:uppercase;color:var(--text-mute)}
+
+/* ---- Sessions: the one session waiting on you leads, at hero size; the rest step down in size and ink ---- */
+.db-sess{--name-w:11rem;--doing-w:14rem;--cmd-w:10rem;display:flex;flex-direction:column;gap:calc(4 * var(--u))}
+.db-ghead{display:flex;align-items:center;gap:calc(2 * var(--u))}
+.db-ghead .pname{font:400 1.4rem/1.1 var(--font-lead);letter-spacing:-.01em;color:var(--text)}
+.db-ghead .pmix{flex:0 1 12rem;min-width:4rem;height:var(--meter-h-sub)}
+.db-ghead .ptot{margin-right:auto}
+.db-hint{display:inline-flex;align-items:center;gap:.667rem;font:500 .95rem/1 var(--font-name);color:var(--text-mute)}
+.db-hint svg{width:.7rem;height:1.2rem;color:var(--text-mute)}
+.db-need{--c:var(--needs);display:grid;grid-template-columns:var(--ring-focal) minmax(0,1fr) auto;column-gap:calc(3 * var(--u));row-gap:calc(2 * var(--u));align-items:center;padding:calc(3 * var(--u)) calc(3 * var(--u)) calc(3 * var(--u)) calc(2.5 * var(--u))}
+.db-need .lamp{position:static;width:var(--ring-focal);height:var(--ring-focal);grid-row:1/3}
+.db-need .lamp svg{width:1.7rem;height:1.7rem}
+.db-needt{display:flex;flex-direction:column;gap:.667rem;min-width:0}
+.db-needk{margin:0;font:600 var(--kicker)/1.2 var(--font-name);letter-spacing:.09em;text-transform:uppercase;color:var(--needs)}
+.db-needn{margin:0;font:400 2.1rem/1.05 var(--font-lead);letter-spacing:-.01em;color:var(--text)}
+.db-needm{display:flex;align-items:center;gap:calc(2 * var(--u));justify-self:end}
+.db-needm .barcell.age{width:14rem;display:flex;align-items:center;gap:.667rem}
+.db-needm .barcell.age .vbar{position:relative;flex:1 1 auto;height:var(--meter-h-sub);border-radius:.31rem;background:color-mix(in oklab,var(--text) 10%,transparent);overflow:hidden}
+.db-needm .barcell.age .vbar>b{display:block;height:100%;border-radius:inherit;background:var(--needs)}
+.db-needm .barcell.age>.v{flex:none;min-width:3.4rem;text-align:right;font:500 .92rem/1 var(--font-data);font-variant-numeric:tabular-nums;color:var(--text-body)}
+.db-ask{grid-column:2/4;display:flex;align-items:center;gap:calc(2 * var(--u));flex-wrap:wrap;padding:calc(1.5 * var(--u)) calc(2 * var(--u));background:var(--obj-sunk);border:var(--ink-w) solid var(--needs);border-radius:var(--r-in);box-shadow:.35rem .35rem 0 var(--ink)}
+.db-ask .q{margin:0;flex:1 1 14rem;font:500 1.15rem/1.35 var(--font-name);color:var(--text)}
+.db-ask .answers{margin:0;flex:none}
+/* the rows of the other sessions: the console's own block, its rows on the page's shared tracks */
+.db-sess .pgroup .s .top{grid-template-columns:var(--name-w) var(--doing-w) minmax(6rem,1fr) var(--cmd-w)}
+.db-sess .pgroup .phead,.db-sess .rows-block{border-radius:0}
+.db-sess .pgroup{overflow:visible}
+.db-sess .pgroup .phead{border-radius:var(--r-obj) var(--r-obj) 0 0}
+.db-sess .pgroup .pcol:last-child .s:last-child{box-shadow:none}
+.db-sess .s.idle .last .tgt{font-family:var(--font-name);color:var(--text-body)}
+.db-sess .s.idle .barcell.age .vbar>b{background:color-mix(in oklab,var(--text) 40%,transparent)}
+.db-sess .s.drop-before{background-image:linear-gradient(var(--key-light),var(--key-light));background-size:100% .25rem;background-position:top;background-repeat:no-repeat}
+.db-lift{position:relative;z-index:3;transform:translate(.6rem,-.35rem);background:var(--obj-high)!important;border-radius:var(--r-obj)!important;box-shadow:0 0 0 var(--ink-w) var(--ink),.5rem .5rem 0 var(--ink-w) var(--ink),.5rem .5rem 0 var(--ink)!important;margin-inline:calc(-1 * var(--u))}
+.db-lift .grip{opacity:1;color:var(--text)}
+.db-sess .s .grip{width:1.2rem;height:2rem;margin-left:-.4rem;margin-right:-.6rem;cursor:grab;color:var(--text-mute);flex:none;display:grid;place-items:center}
+.db-sess .s .grip svg{width:.6rem;height:1.1rem}
+
+/* ---- A session ---- */
+.db-sx{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:calc(4 * var(--u)) calc(6 * var(--u));align-items:start}
+.db-sxl{min-width:0;display:flex;flex-direction:column;gap:calc(3 * var(--u))}
+.db-sxl .sx-bar{padding:calc(1.5 * var(--u)) calc(2 * var(--u));background:var(--obj);border:var(--ink-w) solid var(--ink);border-radius:var(--r-obj);box-shadow:var(--cast) var(--cast) 0 var(--claude),var(--cast) var(--cast) 0 var(--ink-w) var(--ink)}
+.db-sxl .sx-bar .name{font-size:var(--fig-focal);font-family:var(--font-lead);font-weight:400}
+.db-sxl .talk{display:flex;flex-direction:column;gap:calc(2 * var(--u))}
+.db-sxl .log{overflow:visible;padding:0;gap:calc(2 * var(--u));flex:none}
+.db-sxl .log>*{max-width:none}
+.db-sxl .log .msg.his{max-width:36rem;width:auto}
+.db-sxl .log .msg.agent{max-width:42rem;width:auto}
+.db-sxl .tool .caret{margin-left:.333rem;width:.8rem;height:.8rem;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.db-sxl .tool .tsum{overflow:visible;text-overflow:clip}
+.db-sxl .composer{display:flex;align-items:center;gap:.667rem;padding:0;border:0;background:none}
+.db-sxl .composer .field{flex:1 1 auto;min-width:0}
+.db-rail{min-width:0;display:flex;flex-direction:column;gap:calc(2 * var(--u))}
+.db-railh{display:flex;align-items:baseline;flex-wrap:wrap;gap:.333rem calc(2 * var(--u))}
+.db-railh .db-note{font:500 .85rem/1.2 var(--font-name);color:var(--text-mute)}
+.sessions .db-seats{position:relative;display:flex;flex-direction:column;gap:var(--gap-card);padding-left:2.667rem}
+.db-seats::before{content:"";position:absolute;left:.75rem;top:1.9rem;bottom:1.9rem;width:.5rem;background:var(--rail);border-radius:.3rem;box-shadow:0 0 0 var(--ink-w) var(--ink)}
+.db-seats .card.m{--cast:.4rem}
+.db-seats .card.m .lamp{z-index:1}
+.db-seats .card.m .now{display:flex;align-items:center;gap:.667rem;margin:0}
+.db-seats .card.m .top .chip{margin-left:auto}
+.db-seats .card.m .body{margin-top:.333rem}
+
+/* ---- A turn ---- */
+.db-tn{display:flex;flex-direction:column;gap:calc(4 * var(--u))}
+.db-tb{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:calc(4 * var(--u)) calc(4 * var(--u));padding-top:calc(4 * var(--u));border-top:.08rem solid var(--hair)}
+.db-tb>.db-col+.db-col{padding-left:calc(4 * var(--u));border-left:.08rem solid var(--hair)}
+.db-col{min-width:0;display:flex;flex-direction:column;gap:calc(4 * var(--u))}
+.db-tn .pd-st{padding-block:var(--u)}
+.db-tn .psec+.psec{margin-top:calc(4 * var(--u));padding-top:calc(4 * var(--u));border-top:.08rem solid var(--hair)}
+.db-tn .pd-grid{grid-template-columns:minmax(0,8.5rem) minmax(0,1fr) 4.8rem}
+.db-tn .pd-trk .mid{border-radius:.2rem;min-width:.3rem}
+.db-tn .pd-n.t{text-align:right}
+.db-tn .sx-chips{display:flex;flex-wrap:wrap;gap:var(--u)}
+.db-tn .sx-chip{display:inline-flex;align-items:center;gap:.4rem;min-height:1.7rem;padding:.2rem .6rem;background:var(--obj-sunk);border:.1rem solid var(--track-line);border-left:.3rem solid var(--text-mute);border-radius:var(--r-in);font:500 .85rem/1.2 var(--font-data);color:var(--text)}
+.db-tn .sx-chip svg{flex:none;width:1rem;height:1rem}
+.db-tn .sx-chip.w{border-left-color:var(--text)}
+.db-money{display:flex;align-items:flex-end;flex-wrap:wrap;gap:calc(2 * var(--u)) calc(4 * var(--u))}
+.db-money .pd-top{align-items:baseline}
+.db-fig{font:600 var(--fig-focal)/1 var(--font-data);font-variant-numeric:tabular-nums;letter-spacing:-.01em;color:var(--text)}
+.db-folds{display:flex;flex-direction:column;gap:var(--u)}
+.db-fold{border:var(--ink-w) solid var(--ink);border-radius:var(--r-in);background:var(--obj-sunk);box-shadow:.22rem .22rem 0 var(--ink);interpolate-size:allow-keywords}
+.db-fold>summary{list-style:none;display:flex;align-items:center;gap:.667rem;min-height:var(--ctl-h);padding:0 calc(1.5 * var(--u));cursor:pointer;font:500 .98rem/1 var(--font-name);color:var(--text)}
+.db-fold>summary::-webkit-details-marker{display:none}
+.db-fold>summary .chev{flex:none;width:.7rem;height:.7rem;fill:none;stroke:var(--text-mute);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;transition:transform var(--t-snap) var(--e-out)}
+.db-fold[open]>summary .chev{transform:rotate(90deg)}
+.db-fold::details-content{block-size:0;overflow:clip;transition:block-size var(--t-snap) var(--e-out),content-visibility var(--t-snap) var(--e-out) allow-discrete}
+.db-fold[open]::details-content{block-size:auto}
+.db-fold pre{margin:0;padding:var(--u) calc(1.5 * var(--u)) calc(1.5 * var(--u));font:400 .9rem/1.45 var(--font-data);color:var(--text-body);white-space:pre-wrap}
+
+/* ---- Usage ---- */
+.db-use{display:flex;flex-direction:column;gap:calc(4 * var(--u))}
+.db-use .ure-lead{margin:0}
+.db-uhead{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:calc(2 * var(--u)) calc(6 * var(--u));align-items:end}
+.db-uhead .pd-pop{grid-column:1/-1}
+.db-use .pd-bar{--bh:2.2rem}
+.db-use .pd-seg.ok{background:color-mix(in oklab,var(--text) 66%,transparent)}
+.db-totals{display:flex;align-items:center;flex-wrap:wrap;gap:calc(2 * var(--u)) calc(6 * var(--u))}
+.db-totals .pd-stat.focal b{font-size:var(--fig-focal)}
+.db-use .ptable{--c:var(--ink);padding:.35rem 1rem .5rem;overflow:hidden}
+.db-use .pcols{grid-template-columns:minmax(9rem,1.15fr) minmax(0,1.2fr) minmax(0,1fr) minmax(0,1.2fr) 5rem 5rem minmax(0,1.1fr) minmax(0,1.5fr)}
+.db-use .pthead .pf.num,.db-use .prow .pf.num{text-align:right}
+.db-use .pthead .pf:nth-child(7){text-align:right}
+.db-use .pf.price .v{min-width:3.4rem}
+.db-use .pf.lim{display:flex;align-items:center;gap:.667rem;min-width:0}
+.db-use .pf.lim .bar{flex:1 1 auto;min-width:3rem}
+.db-use .pf.lim .pct{min-width:2.6rem}
+.db-use .pf.lim .pct.lv-high{color:var(--text)}
+.db-use .prow{cursor:default}
+
+/* ---- A turn: tokens and cost as the console's Tokens and cost section draws them, on neutral inks ---- */
+.db-tn .rvw-money{gap:calc(3 * var(--u))}
+.db-tn .rvw-col{gap:var(--u)}
+.db-tn .rvw-inrow{grid-template-columns:auto minmax(0,1fr);gap:calc(2 * var(--u))}
+.db-tn .rvw-inrow>.pd-stat{min-width:0}
+.db-tn .rvw-inrow .pd-ring .rv{stroke:var(--text)}
+.db-tn .rvw-inrow .pd-ring .rt{stroke:color-mix(in oklab,var(--text) 16%,transparent)}
+.db-tn .pd-bar,.db-tot .pd-bar{--bh:1.5rem}
+.db-tn .pd-pop{gap:var(--u)}
+.pd-seg.db-lt{background:color-mix(in oklab,var(--text) 34%,transparent);color:var(--text)}
+.pd-seg.ok+.pd-seg.db-lt{box-shadow:inset .16rem 0 0 var(--ink)}
+.pd-sw.db-lt{background:color-mix(in oklab,var(--text) 34%,transparent)}
+.db-tn .rvw-axis{margin-top:var(--u)}
+.db-tn .rvw-axis>span.db-tail{transform:translateX(-100%)}
+.db-tn .rvw-trk.cost>i{background:color-mix(in oklab,var(--text) 62%,transparent)}
+/* the turn's record: four columns on a wide window, two on a mid one, one on a narrow one */
+.db-tb{grid-template-columns:repeat(4,minmax(0,1fr))}
+@container dbw (max-width:1180px){
+  .db-tb{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .db-tb>.db-col:nth-child(odd){padding-left:0;border-left:0}
+  .db-tb>.db-col:nth-child(n+3){padding-top:calc(4 * var(--u));border-top:.08rem solid var(--hair)}
+}
+/* the body of a fold: the console's own tree, strings in body ink */
+.db-fold .node svg{fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.db-fold .json{margin:0;padding:var(--u) calc(1.5 * var(--u)) calc(1.5 * var(--u));border:0;border-radius:0;background:none;overflow:visible;font:500 .9rem/1.55 var(--font-data)}
+.db-fold .json .str{color:var(--text-body)}
+.db-fold .json .tree.root{padding:0;margin:0}
+/* ---- Usage: each day total over its drawing ---- */
+.db-tot{display:flex;flex-direction:column;gap:calc(1.5 * var(--u));width:22rem;max-width:100%}
+.db-use .db-tot .pd-bar{--bh:1.5rem}
+
+/* the console's root is 12 px at 1440 and 390, so its kickers and labels read at 9.6 to 11 px there; below 1600 px the window is drawn 1.25 times larger, as the console reads on a wide screen (15 px root), so no label falls under 12 px */
+@container pg (max-width:1600px){.db-win{zoom:1.25}}
+/* narrow window: the console's own reflow */
+@container dbw (max-width:900px){
+  .db-sx,.db-tb{grid-template-columns:minmax(0,1fr)}
+  .db-tb>.db-col+.db-col{padding-left:0;border-left:0;padding-top:calc(4 * var(--u));border-top:.08rem solid var(--hair)}
+  .db-need{grid-template-columns:var(--ring-focal) minmax(0,1fr)}
+  .db-needm{grid-column:1/-1;justify-self:stretch;justify-content:space-between}
+  .db-ask{grid-column:1/-1}
+  .db-sess{--doing-w:9rem;--name-w:9rem}
+}
+@container dbw (max-width:640px){
+  .db-panel{padding:calc(2 * var(--u))}
+  .db-win .side{flex-wrap:wrap;height:auto;padding:calc(1.5 * var(--u))}
+  .db-uhead{grid-template-columns:minmax(0,1fr)}
+  .db-use .ptable{padding:.35rem .8rem .5rem}
+  .db-use .prow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:calc(1.5 * var(--u)) calc(2 * var(--u));padding-block:calc(1.5 * var(--u))}
+  .db-use .pf.cmd,.db-use .pf.ure-time,.db-use .pf.lim{grid-column:1/-1}
+  .db-use .pf.num{text-align:left}
+  .db-use .pf>em{display:block;margin-bottom:.333rem;font:500 .8rem/1.2 var(--font-name);font-style:normal;color:var(--text-mute)}
+  .db-use .barcell.pf{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:.667rem;align-items:center}
+  .db-use .barcell.pf>em{grid-column:1/-1}
+  .db-use .pf.lim{display:grid;grid-template-columns:minmax(0,1fr) auto auto;column-gap:.667rem;align-items:center}
+  .db-use .pf.lim>em{grid-column:1/-1}
+  .db-use .pf.req .v,.db-use .pf.fail .v,.db-use .pf.price .v{min-width:0}
+  .db-win .mark .lockup{height:2.2rem}
+  .db-win .nav{flex:1 1 100%;order:3}
+  .db-win .navset{width:100%;--nav-pad:.4rem;gap:.1rem}
+  .db-tab{flex:1 1 auto;justify-content:center;font-size:.98rem}
+  .db-tab>svg{display:none}
+  .db-demo{order:2}
+  .db-sess .s{grid-template-columns:2rem minmax(0,1fr)}
+  .db-sess .s .top,.db-sess .pgroup .s .top{grid-template-columns:minmax(0,1fr) auto;row-gap:.333rem}
+  .db-sess .s .top,.db-sess .pgroup .s .top{column-gap:.5rem}
+  .db-sess .s .top .who{grid-column:1}
+  .db-sess .s .top .cmd{grid-column:2;grid-row:1}
+  .db-sess .s .top .last{grid-column:1/-1;grid-row:2}
+  .db-sess .s .top .barcell{grid-column:1/-1;grid-row:3}
+  .db-sess .s .top.bare .who{grid-column:1}
+  .db-lift{transform:translate(.3rem,-.3rem)}
+  .db-hint{display:none}
+  .db-need{padding:calc(2 * var(--u))}
+  .db-sxl .sx-bar .barcell.age{width:auto;flex:1 1 8rem}
+  .db-tn .pd-st.pd-grid{grid-template-columns:minmax(0,1fr) auto;row-gap:.333rem}
+  .db-tn .pd-st .pd-sl{grid-column:1;grid-row:1}
+  .db-tn .pd-st .pd-n{grid-column:2;grid-row:1}
+  .db-tn .pd-st .pd-trk{grid-column:1/-1;grid-row:2}
+  .db-tn .pd-axis.pd-grid{grid-template-columns:minmax(0,1fr)}
+  .db-tn .pd-axis>span:not(.pd-ax){display:none}
+  .db-tn .pd-axis .pd-tk:nth-child(2){font-size:0}
+  .db-uhead>.ure-lead{order:1}
+  .db-uhead>.pd-pop{order:2}
+  .db-uhead>.db-totals{order:3}
+}

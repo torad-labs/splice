@@ -1,0 +1,346 @@
+/* questions: the band of ten questions, each a row that opens. Drawn with the console's own parts and made-up data. Class prefix qa-. */
+
+/* the band: heading and line on the page's own sizes (pg-h2, pg-line); the line holds the prototype's 46 em measure */
+.qa-band{interpolate-size:allow-keywords}
+.qa-bh{display:flex;flex-direction:column;gap:clamp(10px,1.1cqw,16px)}
+.qa-bh .pg-line{margin:0;max-width:46em}
+
+/* the width plan. One container (W). The list is one card at the full W, one column at every size. An opened row is one plate at the
+   full W: the answer's text takes 5/12 and its facts 7/12 of what is left, so neither stands alone. Under 820 px the facts go under the text. */
+
+.qa-list{--qa-rp:clamp(14px,1.7cqw,26px);--qa-cg:clamp(14px,1.4cqw,20px);margin-top:clamp(32px,calc(32px + (100cqw - 390px) * .0116),48px);padding:6px 10px;background:var(--obj);border:var(--ink-w) solid var(--ink);border-radius:var(--r-obj);box-shadow:var(--cast) var(--cast) 0 var(--ink)}
+.qa-q + .qa-q{border-top:.12rem solid var(--track)}
+.qa-q{scroll-margin-top:calc(var(--fr-hh) + 16px)}
+.qa-q>summary{display:grid;grid-template-columns:14px minmax(0,1fr) auto;column-gap:var(--qa-cg);align-items:center;min-height:clamp(58px,calc(58px + (100cqw - 390px) * .0065),72px);padding:10px var(--qa-rp);border-radius:var(--r-in);cursor:pointer;list-style:none;transition:background var(--t-hover) var(--e-out)}
+.qa-q>summary::-webkit-details-marker{display:none}
+.qa-q>summary:hover{background:color-mix(in oklab,var(--text) 4%,transparent)}
+.qa-q>summary:focus-visible{outline:var(--ink-w) solid var(--text);outline-offset:-.25rem}
+.qa-q .chev{width:14px;height:14px;stroke-width:1.6}
+.qa-q[open] .chev{transform:rotate(90deg)}
+.qa-qt{font:600 clamp(17px,calc(17px + (100cqw - 390px) * .0023),22px)/1.3 var(--font-name);color:var(--text)}
+.qa-peek{display:inline-flex;align-items:center;justify-content:flex-end;gap:.5em;font:500 clamp(15px,calc(15px + (100cqw - 1440px) * .0009),16px)/1 var(--font-name);color:var(--text-mute);white-space:nowrap;transition:opacity var(--t-hover) var(--e-out)}
+.qa-peek b{font:500 1em/1 var(--font-data);font-variant-numeric:tabular-nums;color:var(--text-body)}
+.qa-pk-days,.qa-pk-dots{margin-right:.4em}
+.qa-q[open] .qa-peek{opacity:0}
+.qa-pk-days,.qa-pk-dots{display:inline-flex;gap:3px;align-items:center}
+.qa-pk-days i{width:6px;height:16px;border-radius:2px;background:var(--text);opacity:calc(var(--o) * .55)}
+.qa-pk-dots{gap:6px}
+.qa-pk-dots i{width:10px;height:10px;border-radius:50%;background:var(--c)}
+.qa-mini{display:inline-flex;width:84px;height:.4rem;border-radius:.2rem;overflow:hidden;background:color-mix(in oklab,var(--text) 10%,transparent)}
+.qa-mini b{width:99.14%;background:color-mix(in oklab,var(--text) 66%,transparent)}
+.qa-mini i{width:max(.86%,3px);background:var(--limit)}
+
+
+/* the open: the answer comes down in place over --t-snap (240 ms) on --e-out, height, fade and a .4rem drop together; the chevron turns over the
+   same time and the row's peek fades out. Without motion preference the row simply opens. */
+@keyframes qa-wipe{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+@media (prefers-reduced-motion:no-preference){
+  .qa-q::details-content{block-size:0;opacity:0;transform:translateY(-.4rem);overflow:clip;transition:block-size var(--t-snap) var(--e-out),opacity var(--t-snap) var(--e-out),transform var(--t-snap) var(--e-out),content-visibility var(--t-snap) allow-discrete}
+  .qa-q[open]::details-content{block-size:auto;opacity:1;transform:none}
+  .qa-q[open] .qa-run .pd-bar.grow{animation:qa-wipe var(--t-snap) var(--e-out) both}
+  .qa-q[open] .qa-run .pd-bar.grow>.pd-seg{animation:none}
+}
+
+.qa-ans{padding:2px 0 12px}
+.qa-plate{--qa-pl:calc(var(--qa-rp) + 14px + var(--qa-cg));display:grid;grid-template-columns:minmax(0,5.8fr) minmax(0,6.2fr);column-gap:clamp(28px,3.2cqw,48px);align-items:start;padding:calc(4 * var(--u)) calc(4 * var(--u)) calc(4 * var(--u)) var(--qa-pl)}
+.qa-t{max-width:none}
+.qa-t p{margin:0}
+.qa-tx{font:400 clamp(16px,calc(16px + (100cqw - 390px) * .0009),18px)/1.55 var(--font-name);color:var(--text-body);text-wrap:balance}
+.qa-tx b{font-weight:600;color:var(--text)}
+.qa-c{font:500 .94em/1 var(--font-data);color:var(--text)}
+
+/* facts: the console's own parts in the plate's rhythm: 4u between sections with a 1 px hairline, 2u inside */
+.qa-fx,.qa-wide{--qa-fs:clamp(14px,calc(14px + (100cqw - 1440px) * .0018),16px);display:grid;gap:calc(4 * var(--u));min-width:0;align-content:start}
+.qa-fx>*,.qa-wide>*{min-width:0}
+:is(.qa-fx,.qa-wide) .kicker{font-size:max(12px,calc(var(--qa-fs) - 2.5px))}
+:is(.qa-fx,.qa-wide) .psec{gap:calc(2 * var(--u))}
+.qa-cols{display:grid;grid-template-columns:var(--cols,1fr 1fr);column-gap:calc(4 * var(--u));row-gap:calc(4 * var(--u));align-items:start}
+.qa-cols>*+*{border-left:.08rem solid var(--hair);padding-left:calc(4 * var(--u))}
+.qa-sep{padding-top:calc(4 * var(--u));border-top:.08rem solid var(--hair)}
+.qa-chips,.qa-stack,.qa-pvs,.qa-tags,.qa-models,.qa-seats{display:flex;flex-wrap:wrap;gap:.8rem .9rem;align-items:center}
+.qa-stack{flex-direction:column;align-items:flex-start;gap:.8rem}
+.qa-stack.qa-g2{display:grid;grid-template-columns:repeat(2,max-content);align-items:center;gap:.8rem .9rem}
+.qa-pvs{display:grid;grid-template-columns:repeat(3,auto);justify-content:start;gap:1rem 2rem}
+:is(.qa-fx,.qa-wide) .chip{font-size:calc(var(--qa-fs) - 1px)}
+.qa-cmd i{width:max(.7rem,9px);height:max(.7rem,9px);background:var(--c);box-shadow:none}
+.qa-model{--c:var(--router);font:500 calc(var(--qa-fs) - 1px)/1 var(--font-name)}
+.qa-pv{display:inline-flex;align-items:center;gap:.6rem;font:500 calc(var(--qa-fs) + 1px)/1.2 var(--font-name);color:var(--text)}
+.qa-pv i{flex:none;width:max(.7rem,9px);height:max(.7rem,9px);border-radius:50%;background:var(--c)}
+.qa-lab{font:500 var(--qa-fs)/1.35 var(--font-name);color:var(--text-body)}
+.qa-lab.qa-mute{color:var(--text-mute)}
+.qa-ico{display:inline-flex;align-items:center;gap:.6rem}
+.qa-ic{flex:none;width:1.15rem;height:1.15rem;min-width:15px;min-height:15px;color:var(--text-mute)}
+.qa-unit{font:500 var(--qa-fs)/1 var(--font-name);color:var(--text-mute)}
+:is(.qa-fx,.qa-wide) .fig-focal{font-size:max(var(--fig-focal),24px)}
+:is(.qa-fx,.qa-wide) .fig-hero{font-size:max(var(--fig-hero),36px)}
+.qa-sw{--ctl-h:max(2.2rem,32px)}
+.qa-sw button{font-size:calc(var(--qa-fs) - 1px)}
+.qa-link{display:inline-flex;align-items:baseline;flex-wrap:wrap;gap:.4rem .7rem;font:600 var(--qa-fs)/1.3 var(--font-name);color:var(--text);text-decoration:none}
+.qa-link .go{align-self:center;width:.85rem;height:.85rem;color:var(--text-mute)}
+.qa-link span{font-weight:500;color:var(--text-body)}
+.qa-link:hover{text-decoration:underline;text-underline-offset:.3em}
+/* the disk: what is kept on this computer */
+.qa-disk{padding:calc(2 * var(--u)) calc(3 * var(--u));background:var(--obj-sunk);border:var(--ink-w) solid var(--ink);border-radius:var(--r-in);gap:calc(2.5 * var(--u))!important}
+.qa-cols>.qa-disk{border-left:var(--ink-w) solid var(--ink);padding-left:calc(3 * var(--u))}
+.qa-diskhead{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem 1rem}
+.qa-lock{display:inline-flex;align-items:center;gap:.5rem;font:500 calc(var(--qa-fs) - 1px)/1.2 var(--font-name);color:var(--text-body)}
+.qa-keep{display:grid;grid-template-columns:auto auto minmax(0,1fr);align-items:baseline;column-gap:.6rem}
+.qa-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;align-self:center;margin-left:calc(1.5 * var(--u))}
+.qa-days i{height:var(--meter-h);min-height:13px;border-radius:.2rem;background:var(--text);opacity:calc(var(--o) * .5)}
+.qa-offrow{display:flex;flex-wrap:wrap;align-items:center;gap:.8rem 1rem}
+.qa-store{display:flex;flex-direction:column;gap:calc(2 * var(--u));min-width:0}
+.qa-cols>.qa-store+.qa-store{border-left:.08rem solid var(--hair)}
+.qa-path{font:500 calc(var(--qa-fs) - 1px)/1.3 var(--font-data);color:var(--text-body);white-space:nowrap}
+
+/* router */
+.qa-seat{display:inline-flex;align-items:center;gap:.7rem}
+.qa-seat em{font:500 calc(var(--qa-fs) - 2px)/1 var(--font-name);font-style:normal;color:var(--text-mute);min-width:3.6em}
+.qa-seats{flex-direction:column;align-items:flex-start;gap:.7rem}
+.qa-model{padding:.4rem .6rem}
+.qa-stl{gap:.2rem}
+.qa-wire{position:relative;flex:1 1 3rem;min-width:2.4rem;height:.24rem;margin:1.1rem 0;background:var(--text-mute);opacity:.7;border-radius:.12rem}
+.qa-sample{padding:.9rem 1.1rem;background:var(--obj-sunk);border:.12rem solid var(--ink);border-radius:var(--r-in);font:500 calc(var(--qa-fs) - 1px)/1.5 var(--font-data);color:var(--text);display:flex;flex-direction:column;gap:.15rem}
+.qa-sl{flex-direction:row;flex-wrap:wrap;align-items:center;gap:.4rem 1.1rem}
+.qa-sl>span+span{color:var(--text-body)}
+.qa-dim{color:var(--text-mute)}
+.qa-hd b{font-weight:600;color:var(--text);box-shadow:inset 0 -.12rem 0 var(--text-mute)}
+.qa-cw{flex-direction:row;gap:.8rem}
+.qa-ps{color:var(--text-mute)}
+
+/* billing */
+.qa-ledger{display:grid;grid-template-columns:auto minmax(0,1fr);gap:.8rem 1.2rem;align-items:center}
+.qa-ledger>.chip{justify-self:start}
+.qa-lh .qa-c{font-size:var(--qa-fs)}
+.qa-lsep{margin-top:calc(2 * var(--u));padding-top:calc(2 * var(--u));border-top:.08rem solid var(--hair)}
+.qa-lh{display:inline-flex}
+.qa-lsep .qa-lab.qa-mute{grid-column:2}
+
+/* resume */
+.qa-diff{gap:.7rem}
+.qa-dl{display:grid;grid-template-columns:4.6em auto minmax(0,1fr);align-items:baseline;gap:.4rem .9rem}
+.qa-dl b{font:600 calc(var(--qa-fs) - 2px)/1 var(--font-name);letter-spacing:.06em;text-transform:uppercase;color:var(--text-mute)}
+.qa-md{display:inline-flex;align-items:center;gap:.5rem}
+.qa-md i{width:max(.7rem,9px);height:max(.7rem,9px);border-radius:50%;background:var(--c)}
+.qa-why{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:.8rem}
+.qa-arrow{width:2.2rem;min-width:26px;height:.24rem;background:var(--text-mute);opacity:.7;border-radius:.12rem;position:relative}
+.qa-arrow::after{content:"";position:absolute;right:-1px;top:50%;width:.6rem;height:.6rem;border-top:.2rem solid var(--text-mute);border-right:.2rem solid var(--text-mute);transform:translateY(-50%) rotate(45deg);opacity:.9}
+
+/* run: the console's stacked outcome bar, twice, the second on its own scale */
+.qa-run{gap:calc(3 * var(--u))!important}
+.qa-run .pd-top .pd-rate{font-size:max(var(--fig-hero),34px)}
+.qa-run .cap{font-size:var(--qa-fs);align-items:center;gap:.7rem}
+.qa-run .pd-bar{--bh:max(var(--stack-h),26px)}
+.qa-run .pd-seg,.qa-run .pd-seg b{font-size:calc(var(--qa-fs) - 2px)}
+.qa-run .pd-lb,.qa-run .pd-lb b{font-size:calc(var(--qa-fs) - 1.5px)}
+.qa-run .pd-legend{margin-top:0}
+.qa-leg{gap:.5rem 1.6rem!important}
+.qa-zoom{position:relative;height:34px;margin:-6px 0;background:color-mix(in oklab,var(--limit) 20%,transparent);clip-path:polygon(99.137% 0,100% 0,100% 100%,0 100%)}
+.qa-zoom span{position:absolute;right:14px;bottom:6px;font:500 calc(var(--qa-fs) - 2px)/1 var(--font-name);color:var(--text-body)}
+
+/* replace */
+.qa-chain{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(1.6rem,.35fr) minmax(0,.7fr) minmax(1.6rem,.35fr) minmax(0,1.35fr);align-items:stretch;column-gap:0}
+.qa-node{display:flex;flex-direction:column;gap:calc(2 * var(--u));padding:calc(2 * var(--u)) calc(2.5 * var(--u));background:var(--obj-sunk);border:var(--ink-w) solid var(--ink);border-radius:var(--r-in);justify-content:center;min-width:0}
+.qa-chain .qa-wire{align-self:center;margin:0;min-width:0;flex:none;width:100%}
+.qa-n2{align-items:center;text-align:center;gap:.5rem}
+.qa-n2 b{font:400 1.4rem/1 var(--font-lead);color:var(--text)}
+.qa-n2 em{font:500 calc(var(--qa-fs) - 2px)/1.2 var(--font-name);font-style:normal;color:var(--text-mute)}
+.qa-mod{font:500 var(--qa-fs)/1.2 var(--font-name);color:var(--text-body)}
+
+/* versions */
+.qa-pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(2rem,.45fr) minmax(0,1fr);align-items:center}
+.qa-ver{display:flex;flex-direction:column;gap:.5rem;padding:calc(2 * var(--u)) calc(2.5 * var(--u));background:var(--obj-sunk);border:var(--ink-w) solid var(--ink);border-radius:var(--r-in);min-width:0}
+.qa-ver em{font:500 calc(var(--qa-fs) - 2px)/1 var(--font-name);font-style:normal;color:var(--text-mute)}
+.qa-ver b{font:600 max(var(--fig-focal),19px)/1 var(--font-data);font-variant-numeric:tabular-nums;color:var(--text)}
+.qa-wc{display:grid;place-items:center;margin:0;background:none;opacity:1;height:auto}
+.qa-wc::before{content:"";position:absolute;left:0;right:0;top:50%;height:.24rem;margin-top:-.12rem;background:var(--text-mute);opacity:.7}
+.qa-wc .qa-ic{position:relative;z-index:1;width:1.7rem;height:1.7rem;padding:.3rem;border-radius:50%;background:var(--obj);box-shadow:0 0 0 .08rem var(--track-line);color:var(--text)}
+.qa-say{display:flex;flex-direction:column;gap:.5rem}
+.qa-say em{font:500 calc(var(--qa-fs) - 2px)/1 var(--font-name);font-style:normal;color:var(--text-mute)}
+
+/* reveal: the band's heading, line and list each rise 1.4 rem and fade up from 28% over --t-pop (260 ms) on --e-out, 40 ms apart, once, when
+   the band first scrolls into view (page.js adds is-seen); nothing below moves, since the band keeps its height while its parts wait. */
+@keyframes qa-rise{from{opacity:.28;transform:translateY(1.4rem)}}
+@media (prefers-reduced-motion:no-preference){
+  .pg-js .qa-band [data-reveal]:not(.is-seen) .qa-ev{opacity:.28;transform:translateY(1.4rem)}
+  .qa-band [data-reveal].is-seen .qa-ev{animation:qa-rise var(--t-pop) var(--e-out) calc(var(--i) * 40ms) backwards}
+}
+
+/* The answer is its text and one compact band at its right, both from the plate's top row; the heavier facts take a full-width band under them.
+   Every opened answer starts its text and its first band at the same offset, so the like parts share a row from answer to answer. */
+.qa-wide{grid-column:1/-1;margin-top:calc(4 * var(--u));padding-top:calc(4 * var(--u));border-top:.08rem solid var(--hair)}
+.qa-wide.qa-bare{padding-top:0;border-top:0}
+.qa-wide .qa-cols{--cols:minmax(0,1fr) minmax(0,1fr)}
+.qa-stack.qa-g2{display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;gap:.8rem .9rem}
+
+/* a provider as a small card: the console's ink outline and a cast in its own colour, a dot, its name and what it is */
+.qa-pcs{display:flex;flex-wrap:wrap;gap:.8rem 1rem;align-items:stretch}
+.qa-pc{display:inline-flex;align-items:center;gap:.7rem;min-width:0;padding:.4rem .8rem .4rem .65rem;background:var(--obj-sunk);border:.12rem solid var(--ink);border-radius:var(--r-in);box-shadow:.14rem .14rem 0 var(--c);color:var(--text)}
+.qa-pc>i{flex:none;width:max(.7rem,9px);height:max(.7rem,9px);border-radius:50%;background:var(--c)}
+.qa-pc b{display:block;font:500 calc(var(--qa-fs) + 1px)/1.2 var(--font-name);white-space:nowrap}
+.qa-pc em{display:block;margin-top:.15rem;font:500 calc(var(--qa-fs) - 2px)/1.2 var(--font-name);font-style:normal;color:var(--text-mute)}
+
+/* the disk: Where do my prompts go? lays its parts across the full width */
+.qa-dcols{--cols:minmax(0,1fr) minmax(0,1.45fr) minmax(0,1fr)!important;align-items:center}
+.qa-file{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:.9rem;align-items:center}
+.qa-file .qa-store{gap:calc(2 * var(--u))}
+
+/* drawn notes: a glyph tile and a label of a few words, three across the band */
+.qa-gl{display:grid;place-items:center;flex:none;width:2.1rem;height:2.1rem;min-width:30px;min-height:30px;border-radius:50%;background:var(--obj);box-shadow:0 0 0 .08rem var(--track-line);color:var(--text)}
+.qa-gl .qa-ic{width:1.05rem;height:1.05rem;color:currentColor}
+
+/* OpenRouter: the flow and the priced status line side by side */
+
+/* Claude Code's own header, one node of the chain */
+.qa-ver{flex-direction:row;align-items:baseline;flex-wrap:wrap;gap:.3rem .8rem}
+.qa-mono{display:block;font:500 calc(var(--qa-fs) - 1px)/1.4 var(--font-data);color:var(--text)}
+.qa-mono.qa-dim{color:var(--text-mute)}
+.qa-n1{align-items:flex-start}
+.qa-n1 .qa-hl{display:flex;flex-direction:column;gap:.2rem}
+
+/* the cause and the effect, two boxes and the arrow between them */
+.qa-whys{display:grid;gap:calc(2 * var(--u))}
+.qa-bx{padding:calc(1.5 * var(--u)) calc(2 * var(--u));background:var(--obj-sunk);border:var(--ink-w) solid var(--ink);border-radius:var(--r-in);font:500 var(--qa-fs)/1.3 var(--font-name);color:var(--text-body);min-width:0}
+
+/* the outcome bar's long label: in the bar when it fits, in the legend under it when it does not */
+.qa-leg-f0{display:none!important}
+/* ---- third pass ---- */
+/* OpenRouter: the path a turn takes. Four boxes of one width on one row, a fixed wire between them, and a dashed lane under them that leaves
+   Claude Code and skips splice. Claude Code's box is as tall as both lanes. Every kicker sits 2u above its first row. */
+.qa-route{--qa-rw:clamp(40px,3.6cqw,72px);display:grid;grid-template-columns:minmax(0,1fr) var(--qa-rw) minmax(0,1fr) var(--qa-rw) minmax(0,1fr) var(--qa-rw) minmax(0,1fr);grid-template-areas:"cc w1 sp w2 or w3 md" "cc wl ll ll ll ll ll";row-gap:calc(3 * var(--u))}
+.qa-route .qa-node{padding:calc(2 * var(--u))}
+.qa-rcc{grid-area:cc;justify-content:space-between;gap:calc(3 * var(--u))}
+.qa-rp{display:flex;flex-direction:column;gap:calc(2 * var(--u))}
+.qa-tools{display:flex;flex-wrap:wrap;gap:.6rem}
+.qa-tool{--c:var(--track-line);font:500 calc(var(--qa-fs) - 1px)/1 var(--font-data)}
+.qa-rcc .qa-sample{white-space:normal;overflow-wrap:anywhere}
+.qa-rsp{grid-area:sp;justify-content:center}
+.qa-rtag{display:inline-flex;align-items:center;gap:.5rem;padding:.3rem .6rem;border:.08rem solid var(--track-line);border-radius:var(--r-in);font:500 calc(var(--qa-fs) - 1px)/1.2 var(--font-name);color:var(--text-body);white-space:nowrap}
+.qa-rtag .qa-ic{width:1rem;height:1rem;min-width:14px;min-height:14px}
+.qa-ror{grid-area:or;align-items:center;justify-content:center;box-shadow:.14rem .14rem 0 var(--router)}
+.qa-rdot{display:inline-flex;align-items:center;gap:.6rem}
+.qa-rdot i{flex:none;width:max(.7rem,9px);height:max(.7rem,9px);border-radius:50%;background:var(--router)}
+.qa-rdot b{font:600 calc(var(--qa-fs) + 3px)/1.2 var(--font-name);color:var(--text)}
+.qa-rmd{grid-area:md;align-items:center;justify-content:center}
+.qa-rmd .qa-models{justify-content:center}
+.qa-rll{grid-area:ll;flex-direction:row;align-items:center;justify-content:space-between;gap:calc(2 * var(--u));background:none;border-style:dashed;border-color:var(--track-line)}
+.qa-rlh{display:inline-flex;align-items:center;gap:calc(2 * var(--u))}
+.qa-rlh b{font:600 calc(var(--qa-fs) + 3px)/1.2 var(--font-name);color:var(--text)}
+.qa-rw{align-self:center;position:relative;height:.24rem;background:var(--text-mute);opacity:.7;border-radius:.12rem}
+.qa-rw::after{content:"";position:absolute;right:-1px;top:50%;width:.6rem;height:.6rem;border-top:.2rem solid var(--text-mute);border-right:.2rem solid var(--text-mute);transform:translateY(-50%) rotate(45deg);opacity:.9}
+.qa-rw1{grid-area:w1}.qa-rw2{grid-area:w2}.qa-rw3{grid-area:w3}
+.qa-rwl{grid-area:wl;background:repeating-linear-gradient(90deg,var(--text-mute) 0 .6rem,transparent .6rem 1rem)}
+
+/* a command and the plan it runs on, one line across its cell */
+.qa-hop{display:flex;align-items:center;min-width:0}
+.qa-hop .qa-rw{flex:1 1 1.6rem;min-width:1.2rem;margin:0 .9rem}
+.qa-hop .qa-pc{flex:none}
+.qa-cols.qa-q4{align-items:center}
+
+/* two steps on the console's rail, drawn across its cell; the second is not taken */
+.qa-hr{list-style:none;margin:0;padding:0;position:relative;display:flex;justify-content:space-between;gap:calc(3 * var(--u))}
+.qa-hr::before{content:"";position:absolute;left:1rem;right:1rem;top:1rem;height:.56rem;margin-top:-.28rem;background:var(--rail);border-radius:.28rem;box-shadow:0 0 0 var(--ink-w) var(--ink)}
+.qa-hr li{position:relative;display:flex;flex-direction:column;gap:calc(2 * var(--u));min-width:0;font:500 var(--qa-fs)/1.3 var(--font-name);color:var(--text-body)}
+.qa-hr li:last-child{align-items:flex-end;text-align:right}
+.qa-hr .socket{position:relative;left:auto;top:auto;flex:none}
+.qa-hr .qa-x .socket{background:color-mix(in oklab,var(--text) 4%,var(--obj));color:var(--text-mute);box-shadow:0 0 0 .12rem var(--track-line)}
+.qa-hr em{font:600 calc(var(--qa-fs) - 2px)/1 var(--font-name);font-style:normal;letter-spacing:.06em;text-transform:uppercase;color:var(--text-mute);margin-right:.4rem}
+.qa-hr s{color:var(--text-mute);text-decoration-thickness:.1rem}
+
+/* the same rail, up and down: three steps, each beside its socket */
+.qa-vr{list-style:none;margin:0;gap:calc(1.5 * var(--u))}
+.qa-vs{position:relative;display:flex;align-items:center;min-height:2.2rem;font:500 var(--qa-fs)/1.3 var(--font-name);color:var(--text-body)}
+.qa-vs .socket{top:50%;margin-top:-1rem}
+
+/* free: the zero is an empty track, the providers you still pay fill the row */
+.qa-zr{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;column-gap:calc(3 * var(--u))}
+.qa-zn{display:inline-flex;align-items:center;gap:.7rem;font:400 1.4rem/1 var(--font-lead);color:var(--text)}
+.qa-zb{--c:var(--text-mute)}
+.qa-pcs6{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:.8rem 1rem}
+.qa-pcs6 .qa-pc{min-width:0}
+
+/* billing: the two columns sit on shared rows */
+.qa-ledger.qa-lr{--qa-lp:2.5rem;grid-auto-rows:var(--qa-lp);gap:0 1.2rem}
+.qa-lr .qa-pc{padding:.25rem .7rem .25rem .6rem}
+.qa-tn{position:relative;justify-self:start;margin-left:1.6rem}
+.qa-tn::before{content:"";position:absolute;left:-.7rem;width:.7rem;bottom:50%;height:calc(var(--qa-lp) - .95rem);border-left:.14rem solid var(--track-line);border-bottom:.14rem solid var(--track-line);border-bottom-left-radius:.5rem}
+.qa-tn+.qa-lab+.qa-tn::before{height:var(--qa-lp)}
+
+@container pg (max-width:1100px){
+  .qa-pcs6{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .qa-route{grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"cc cc" "w1 wl" "sp ll" "w2 ll" "or ll" "w3 ll" "md ll";row-gap:0;column-gap:calc(2 * var(--u))}
+  .qa-route .qa-rw{align-self:stretch;justify-self:center;width:.24rem;height:auto;min-height:1.8rem}
+  .qa-route .qa-rw::after{right:auto;left:50%;top:auto;bottom:-1px;transform:translateX(-50%) rotate(135deg)}
+  .qa-route .qa-rwl{background:repeating-linear-gradient(180deg,var(--text-mute) 0 .6rem,transparent .6rem 1rem)}
+  .qa-rll{flex-direction:column;justify-content:center;text-align:center}
+  .qa-rlh{flex-direction:column}
+  .qa-rcc{margin-bottom:0}
+}
+/* Q3: the sign-in file and the API key file share rows. Each head is one line of one height (the kicker, and for the key the command
+   that uses it), so the two paths sit on one line, side by side or stacked. */
+.qa-fhead{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .8rem;min-height:2.4rem}
+.qa-file{grid-template-columns:auto minmax(0,1fr);align-items:center}
+
+/* Q9: the second bar's grey parts (cancelled, empty from the model, no outcome) are the console's quiet outcome; neighbours of one
+   grey are divided by the page's own line, as the console divides two parts of one colour */
+.qa-run .pd-seg.nt + .pd-seg.nt{box-shadow:inset .16rem 0 0 var(--ink)}
+
+/* motion off: the row opens and the chevron turns with no transition */
+@media (prefers-reduced-motion:reduce){
+  .qa-q>summary,.qa-peek,.qa-q .chev{transition:none}
+}
+
+/* narrow: read the page's own width */
+@container pg (max-width:1100px){
+  .qa-cols{grid-template-columns:minmax(0,1fr)!important}
+  .qa-cols>*+*{border-left:0!important;padding-left:0!important;padding-top:calc(3 * var(--u));border-top:.08rem solid var(--hair)}
+  .qa-cols>.qa-disk{padding:calc(2 * var(--u)) calc(3 * var(--u))!important;border:var(--ink-w) solid var(--ink)!important}
+  .qa-cols>.qa-store+.qa-store{border-top:.08rem solid var(--hair)}
+  .qa-dcols{--cols:minmax(0,1fr)!important}
+  .qa-wide .qa-cols{--cols:minmax(0,1fr)}
+  /* the dashed lane stands as tall as what it says, under the wire that leaves Claude Code */
+  .qa-rll{align-self:start}
+  /* stacked, the two files no longer share rows, so the sign-in head needs no height to match the key's */
+  .qa-fhead{min-height:0}
+}
+@container pg (max-width:820px){
+  .qa-list{padding:2px}
+  .qa-tx{text-wrap:wrap}
+  .qa-q>summary{grid-template-columns:14px minmax(0,1fr);padding:12px var(--qa-rp) 16px}
+  .qa-peek{grid-column:2;grid-row:2;justify-content:flex-start;margin-top:8px;font-size:15px;block-size:auto;transition:opacity var(--t-hover) var(--e-out),block-size var(--t-hover) var(--e-out),margin var(--t-hover) var(--e-out)}
+  .qa-q[open] .qa-peek{block-size:0;margin-top:0;overflow:hidden}
+  .qa-q[open]>summary{min-height:0}
+  .qa-run .qa-bar2 .pd-seg.f0>span{display:none}
+  .qa-leg-f0{display:inline-flex!important}
+  .qa-cols{row-gap:calc(3 * var(--u))}
+  .qa-plate{grid-template-columns:minmax(0,1fr);row-gap:calc(3 * var(--u));padding:calc(3 * var(--u)) 8px}
+  .qa-chain{grid-template-columns:minmax(0,1fr);row-gap:0}
+  .qa-chain .qa-wire{width:.24rem;height:1.8rem;min-height:22px;justify-self:center}
+  .qa-pair{grid-template-columns:minmax(0,1fr)}
+  .qa-pair .qa-wc{height:2.4rem;margin:0}
+  .qa-wc::before{left:50%;right:auto;top:0;bottom:0;width:.24rem;height:auto;margin:0 0 0 -.12rem}
+  .qa-why{grid-template-columns:minmax(0,1fr);gap:.5rem}
+  .qa-why .qa-arrow{width:.24rem;height:1.4rem;min-width:0;justify-self:start;margin-left:.6rem}
+  .qa-why .qa-arrow::after{right:auto;left:50%;top:auto;bottom:-1px;transform:translateX(-50%) rotate(135deg)}
+  .qa-dl{grid-template-columns:4.6em minmax(0,1fr)}
+  .qa-dl>span:last-child{grid-column:2}
+  .qa-keep{grid-template-columns:auto auto;justify-content:start}
+  .qa-days{grid-column:1/-1;margin:.7rem 0 0}
+  .qa-ledger{grid-template-columns:minmax(0,1fr);gap:.4rem}
+  .qa-ledger .qa-lab{margin-bottom:.5rem}
+  .qa-lsep .qa-lab.qa-mute{grid-column:1}
+  .qa-wide{margin-top:0;padding-top:calc(3 * var(--u))}
+  .qa-wide.qa-bare{padding-top:0}
+  .qa-file{column-gap:.7rem}
+  .qa-pcs6{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .qa-route .qa-node{padding:calc(1.5 * var(--u))}
+  .qa-ledger.qa-lr{grid-auto-rows:auto;gap:.4rem}
+  .qa-ledger .qa-e{display:none}
+  .qa-e+.qa-tn{margin-top:.5rem}
+  .qa-tn{margin-left:0}
+  .qa-hr{flex-direction:column;gap:calc(1.5 * var(--u))}
+  .qa-hr::before{left:.72rem;right:auto;top:1.1rem;bottom:1.1rem;width:.56rem;height:auto;margin:0}
+  .qa-hr li{flex-direction:row;align-items:center;gap:calc(2 * var(--u));min-height:2.2rem}
+  .qa-hr li:last-child{align-items:center;text-align:left}
+  .qa-tn::before{display:none}
+  .qa-zr{column-gap:calc(2 * var(--u))}
+}

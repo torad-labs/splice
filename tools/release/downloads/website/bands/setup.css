@@ -1,0 +1,192 @@
+/* setup band: install, sign in, start. One window holding three steps of one width, one open, each with its own text column and
+   terminal. Class prefix su-. The heading, line and container are the page's (pg-). Sizes read the page's size container (cqw). */
+
+.su-band { --su-ts: max(1rem, 13px); --su-tm: max(1.1rem, 14px); --su-rp: 59px; --su-lc: 520px; --su-fs: clamp(12.5px, calc(12.5px + (100cqw - 390px) * .00162), 16px); }
+/* the header's Install button lands on the Install step; keep the heading and line in view above it */
+#setup-install { scroll-margin-top: clamp(150px, 12cqw, 190px); }
+@container pg (max-width: 640px) { #setup-install { scroll-margin-top: 150px; } }
+
+/* the window: the console's object, ink outline and a hard cast, on the page container */
+.su-win { position: relative; margin-top: clamp(32px, 2.6cqw, 56px); padding: calc(4 * var(--u)); display: flex; flex-direction: column; gap: calc(4 * var(--u)); background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--ink); }
+/* the three radios hold which step is open; they stand in the window unseen, and the step labels are their faces */
+.su-r { position: absolute; top: 0; left: 0; width: 1px; height: 1px; margin: 0; opacity: 0; pointer-events: none; }
+
+/* three steps of one width, one open: the console's switch drawn across the window, a numbered socket on each.
+   A step before the open one shows a tick where its number was: the two swap over --t-snap (240 ms) on --e-out, and the rim of the socket eases with them */
+.switch.su-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .2rem; width: 100%; height: auto; }
+.su-steps .su-st { display: flex; align-items: center; justify-content: center; gap: clamp(8px, 1.1cqw, 16px); min-height: clamp(52px, 4.3rem, 64px); padding: 0 12px; font: 400 clamp(17px, calc(17px + (100cqw - 390px) * .0048), 28px)/1 var(--font-lead); letter-spacing: -.005em; color: var(--text-mute); background: none; border: 0; border-radius: calc(var(--r-obj) - .15rem); cursor: pointer; transition: color var(--t-snap) var(--e-out), background-color var(--t-snap) var(--e-out), box-shadow var(--t-snap) var(--e-out); }
+.su-steps .su-st:hover:not(:is(.su-win:has(#su-r1:checked) .su-st:nth-child(1), .su-win:has(#su-r2:checked) .su-st:nth-child(2), .su-win:has(#su-r3:checked) .su-st:nth-child(3))) { color: var(--text); background: var(--track); }
+:is(.su-win:has(#su-r1:checked) .su-st:nth-child(1), .su-win:has(#su-r2:checked) .su-st:nth-child(2), .su-win:has(#su-r3:checked) .su-st:nth-child(3)) { background: var(--sel-face); color: var(--sel-ink); box-shadow: inset 0 0 0 .1rem var(--sel-line); }
+:is(.su-win:has(#su-r1:focus-visible) .su-st:nth-child(1), .su-win:has(#su-r2:focus-visible) .su-st:nth-child(2), .su-win:has(#su-r3:focus-visible) .su-st:nth-child(3)) { outline: var(--ink-w) solid var(--text); outline-offset: .18rem; }
+.su-sock { position: relative; flex: none; width: max(2rem, 26px); height: max(2rem, 26px); border-radius: 50%; display: grid; place-items: center; font: 600 max(.88rem, 13px)/1 var(--font-data); color: var(--socket-ink); background: var(--socket); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .15rem var(--rail); transition: background-color var(--t-snap) var(--e-out), color var(--t-snap) var(--e-out), box-shadow var(--t-snap) var(--e-out); }
+.su-sock > * { grid-area: 1/1; }
+.su-sn { font-weight: 600; transition: opacity var(--t-snap) var(--e-out), transform var(--t-snap) var(--e-out); }
+.su-stk { width: 62%; height: 62%; opacity: 0; transform: scale(.6); transition: opacity var(--t-snap) var(--e-out), transform var(--t-snap) var(--e-out); }
+:is(.su-win:has(#su-r1:checked) .su-st:nth-child(1), .su-win:has(#su-r2:checked) .su-st:nth-child(2), .su-win:has(#su-r3:checked) .su-st:nth-child(3)) .su-sock { color: var(--obj); background: var(--text); }
+:is(.su-win:has(#su-r2:checked) .su-st:nth-child(1), .su-win:has(#su-r3:checked) .su-st:nth-child(-n+2)) .su-sn { opacity: 0; transform: scale(.6); }
+:is(.su-win:has(#su-r2:checked) .su-st:nth-child(1), .su-win:has(#su-r3:checked) .su-st:nth-child(-n+2)) .su-stk { opacity: 1; transform: none; }
+:is(.su-win:has(#su-r2:checked) .su-st:nth-child(1), .su-win:has(#su-r3:checked) .su-st:nth-child(-n+2)) .su-sock { color: var(--splice-cream); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .15rem var(--socket-ink); }
+.su-stn { white-space: nowrap; }
+
+/* the stage: the three panels share one cell, so the band is as tall as its tallest step and nothing below it moves when a step opens.
+   The panel that leaves fades over --t-hover (140 ms); the one that arrives shows at once and its parts ease in over --t-snap (240 ms), below */
+.su-stage { display: grid; min-width: 0; }
+.su-panel { grid-area: 1/1; display: grid; grid-template-columns: var(--su-lc) minmax(0, 1fr); column-gap: clamp(24px, 3cqw, 56px); align-items: stretch; min-width: 0; visibility: hidden; opacity: 0; pointer-events: none; transition: opacity var(--t-hover) var(--e-out), visibility 0s linear var(--t-hover); }
+:is(.su-win:has(#su-r1:checked) .su-panel:nth-child(1), .su-win:has(#su-r2:checked) .su-panel:nth-child(2), .su-win:has(#su-r3:checked) .su-panel:nth-child(3)) { visibility: visible; opacity: 1; pointer-events: auto; transition: none; }
+
+/* the text column: rows of one pitch (--su-rp, 59 px) from one top edge; an object is the pitch less a 12 px gap */
+.su-txt { display: flex; flex-direction: column; min-width: 0; }
+.su-lab { flex: none; box-sizing: border-box; display: flex; align-items: center; min-height: var(--su-rp); font: 500 clamp(16px, calc(16px + (100cqw - 390px) * .00114), 18px)/1.4 var(--font-name); color: var(--text); border-bottom: 1px solid var(--hair); }
+.su-lab p { margin: 0; min-width: 0; white-space: nowrap; }
+.su-lab code { font: 500 .9em var(--font-data); color: var(--text); background: var(--obj-sunk); border: .1rem solid var(--track-line); border-radius: var(--r-in); padding: .12em .4em; white-space: nowrap; }
+.su-lab .chip { margin: 0 .15em; vertical-align: middle; font-size: max(1rem, 13px); }
+.su-map { display: flex; flex-direction: column; gap: 12px; padding: 12px var(--cast) var(--cast) 0; }
+.su-pg { flex: none; display: grid; place-items: center; box-sizing: border-box; width: max(2.5rem, 30px); height: max(2.5rem, 30px); border-radius: var(--r-in); color: var(--text); background: var(--obj-sunk); box-shadow: inset 0 0 0 .1rem var(--track-line); }
+.su-pg svg { width: 58%; height: 58%; }
+
+/* sign in: the provider map, ink-outlined cards with each provider's colour as the cast and a glyph tile of its own. Drawn only: the
+   console's card lifts under the pointer, and these do not. */
+.card.su-pm { box-sizing: border-box; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; column-gap: calc(1.5 * var(--u)); height: calc(var(--su-rp) - 12px); padding: 0 1rem 0 .55rem; font: 500 var(--su-tm)/1.2 var(--font-data); color: var(--text); }
+.card.su-pm:hover, .card.su-cmd:hover { top: 0; left: 0; --cast: .5rem; }
+.su-pm code { font: inherit; min-width: 0; white-space: nowrap; }
+.su-pm .chip { font-size: var(--su-ts); }
+.su-pt { display: flex; align-items: baseline; gap: calc(1.5 * var(--u)); min-width: 0; }
+.su-pt small { font: 400 max(.95rem, 13px)/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.su-ar { width: 1.1rem; height: 1.1rem; color: var(--text-mute); }
+
+/* start: the three things Claude Code carries over, each showing its own state */
+.su-ch { box-sizing: border-box; display: flex; align-items: center; gap: calc(1.5 * var(--u)); height: calc(var(--su-rp) - 12px); padding: 0 1rem 0 .55rem; background: var(--obj-sunk); border: .1rem solid var(--track-line); border-radius: var(--r-in); color: var(--text); }
+.su-ch .su-pg { background: var(--obj); }
+.su-cn { font: 500 max(1rem, 13px)/1 var(--font-name); white-space: nowrap; }
+.su-cs { margin-left: auto; display: flex; align-items: center; gap: .55em; font: 500 var(--su-ts)/1 var(--font-data); color: var(--text-body); }
+.su-cs b { font-weight: 500; color: var(--text-mute); }
+.su-cs code { font: inherit; color: var(--text); background: var(--obj); border: .1rem solid var(--track-line); border-radius: var(--r-in); padding: .3em .5em; white-space: nowrap; }
+.su-lmp { width: .7rem; height: .7rem; border-radius: 50%; background: var(--text); box-shadow: 0 0 0 .1rem var(--obj-sunk), 0 0 0 .2rem var(--track-line); }
+.su-cs .su-lmp + b { margin-left: .35em; color: var(--text); }
+.su-seg { display: inline-flex; padding: .15rem; background: var(--obj); border: .12rem solid var(--ink); border-radius: var(--r-in); }
+.su-seg span { padding: .3em .65em; border-radius: calc(var(--r-in) - .15rem); color: var(--text-mute); }
+.su-seg span.on { background: var(--sel-face); color: var(--sel-ink); box-shadow: inset 0 0 0 .1rem var(--sel-line); }
+
+.su-cmd { box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: .7rem; height: calc(2 * var(--su-rp) - 12px); padding: 0 1.05rem; }
+.su-ct { display: flex; align-items: center; gap: calc(1.5 * var(--u)); }
+.su-prov { font: 400 max(.95rem, 13px)/1 var(--font-name); color: var(--text-mute); }
+.su-cm { display: flex; align-items: center; gap: calc(1.5 * var(--u)); font: 500 var(--su-ts)/1 var(--font-data); }
+.su-cmod { color: var(--text); white-space: nowrap; }
+.su-wb { flex: 1; min-width: 0; }
+.su-cwin { font-weight: 500; color: var(--text-mute); }
+
+/* the terminal: a sunk window with its own Copy, the console's cast */
+.su-term { display: flex; flex-direction: column; min-width: 0; background: var(--obj-sunk); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--ink); }
+.su-th .kicker { font-size: max(.8rem, 12px); }
+.su-th { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px 8px 18px; border-bottom: 1px solid var(--hair); }
+.su-tb { flex: 1; display: flex; flex-direction: column; padding: calc(2 * var(--u)) calc(2.5 * var(--u)) calc(2.5 * var(--u)); font: 500 var(--su-fs)/1.5 var(--font-data); color: var(--text-body); min-width: 0; }
+.su-tl { display: flex; align-items: baseline; gap: .8em; margin: 0; min-width: 0; }
+.su-tl.su-g { margin-top: .85em; }
+.su-tl.su-ctr { align-items: center; }
+.su-ctr code { flex: none; }
+.su-ctr .su-pick { margin-left: .7em; flex: 0 1 auto; min-width: 0; }
+.su-tl code { font: inherit; color: var(--text); min-width: 0; white-space: nowrap; }
+.su-tl code.su-wrap { white-space: normal; }
+.su-ps { flex: none; width: 1ch; color: var(--text-mute); }
+.su-o { padding-left: calc(1ch + .8em); }
+.su-ck { flex: none; align-self: flex-start; margin-top: .3em; width: 1.05em; height: 1.05em; color: var(--text); }
+.su-nm { flex: none; width: 1.05em; }
+.su-pw { display: flex; flex-wrap: wrap; gap: 0 1.2em; min-width: 0; }
+.su-dl { display: flex; align-items: center; gap: .9em; flex: 1; max-width: 20em; min-width: 0; }
+.su-dl .bar { flex: 1; min-width: 0; }
+.su-pc { flex: none; color: var(--text); }
+.su-mask { letter-spacing: .14em; color: var(--text); }
+.su-cur { display: inline-block; width: .6em; height: 1.15em; align-self: center; background: var(--text); opacity: .8; }
+.su-pk { padding-left: calc(1ch + .8em); }
+.su-pick { display: flex; flex-direction: row; flex-wrap: wrap; gap: .3em 1.4em; min-width: min(100%, 16em); padding: .45em .8em; border: .1rem solid var(--track-line); border-radius: var(--r-in); background: var(--obj); }
+.su-pi { display: flex; align-items: center; gap: .7em; color: var(--text-mute); }
+.su-pi.on { color: var(--text); }
+.su-rad { flex: none; width: .7em; height: .7em; border-radius: 50%; box-shadow: inset 0 0 0 .12em var(--text-mute); }
+.su-pi.on .su-rad { background: var(--text); box-shadow: 0 0 0 .12em var(--obj), 0 0 0 .22em var(--text); }
+
+/* install: what the installer looks for, four tools, each its own row object with its own glyph tile and the version it found */
+.su-mt { padding-bottom: 12px; }
+.su-tool { box-sizing: border-box; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; column-gap: calc(1.5 * var(--u)); height: calc(var(--su-rp) - 12px); padding: 0 1rem 0 .55rem; background: var(--obj-sunk); border: .1rem solid var(--track-line); border-radius: var(--r-in); color: var(--text); }
+.su-tool .su-pg { background: var(--obj); }
+.su-tool code { font: 500 var(--su-tm)/1.2 var(--font-data); color: var(--text); white-space: nowrap; }
+.su-tool i { font: 500 var(--su-ts)/1 var(--font-data); font-style: normal; color: var(--text-mute); }
+.su-tk { width: 1.15rem; height: 1.15rem; color: var(--text); }
+.su-lab.su-after { border-top: 1px solid var(--hair); border-bottom: 0; }
+.su-lab:last-child { border-bottom: 0; }
+
+/* start: Claude Code's own screen, the welcome box at the top and the input and status line held at the bottom */
+.su-cc { display: flex; flex-direction: column; gap: .15em; min-width: min(100%, 22em); padding: .7em 1em; border: .1rem solid var(--track-line); border-radius: var(--r-in); background: var(--obj); }
+.su-ccw { padding-left: calc(1ch + .8em); }
+.su-ccl { margin: 0; color: var(--text); }
+.su-ccm { color: var(--text-mute); }
+.su-star { color: var(--text); }
+.su-tl code { overflow-wrap: normal; }
+.su-bl { flex: none; align-self: center; width: 1.05em; height: 1.05em; display: grid; place-items: center; }
+.su-bl::before { content: ""; width: .55em; height: .55em; border-radius: 50%; background: var(--text); }
+.su-foot { margin-top: auto; display: flex; flex-direction: column; gap: .7em; padding-top: 1.4em; }
+.su-tl.su-inp { align-items: center; padding: .55em .8em; border: .1rem solid var(--track-line); border-radius: var(--r-in); background: var(--obj); }
+.su-tl.su-sb { justify-content: space-between; padding: 0 .2em; color: var(--text-mute); }
+.su-model { display: inline-flex; align-items: center; gap: .6em; color: var(--text-body); }
+.su-dot { display: inline-block; flex: none; width: .7em; height: .7em; border-radius: 50%; }
+
+/* Copy: ink, never the key light. Copy slides up and out while Copied slides up into place, both over --t-hover (140 ms) on --e-out */
+.su-copy { display: inline-grid; grid-template-areas: "x"; place-items: center; min-height: 36px; padding: 0 14px; font-size: 14px; overflow: hidden; }
+.su-copy[hidden] { display: none; }
+.su-copy svg { width: 15px; height: 15px; }
+.su-cb { grid-area: x; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; transition: opacity var(--t-hover) var(--e-out), transform var(--t-hover) var(--e-out); }
+.su-cb-b { opacity: 0; transform: translateY(1.4rem); }
+.is-copied .su-cb-a { opacity: 0; transform: translateY(-1.4rem); }
+.is-copied .su-cb-b { opacity: 1; transform: none; }
+
+/* reveals. The heading and line enter once, when they first scroll into view, and the window enters once when it does: the heading, the line and
+   the steps rise 1.4rem and fade up from 28% over --t-pop (260 ms) on --e-out, 40 ms apart; from 100 ms the open panel's text and terminal ease in over
+   --t-snap (240 ms), 40 ms apart; each terminal line fades in over --t-hover (140 ms), 14 ms apart from 140 ms. The last line lands by 364 ms, inside the
+   420 ms ceiling. A step opens the same way from 0 ms, over --t-snap (setup.js adds is-opening to the panel and is-fresh to the steps that changed),
+   and its number turns to a tick and its rim eases over --t-snap. Only what enters moves, and the band keeps its height, so nothing below it shifts.
+   is-seen is added once and never removed, so scrolling back does not replay it. Until then the parts wait low and ghosted, under pg-js, so a visitor
+   without scripts or who asks for less motion sees everything at rest. */
+@keyframes su-rise { from { opacity: .28; transform: translateY(1.4rem); } }
+@keyframes su-open { from { opacity: .28; transform: translateY(.8rem); } }
+@keyframes su-fill { from { transform: scaleX(0); } }
+@keyframes su-line { from { opacity: 0; transform: translateY(.4rem); } }
+@keyframes su-tick { from { opacity: 0; transform: scale(.6); } }
+@keyframes su-numout { from { opacity: 1; transform: none; } }
+@keyframes su-sel { from { background-color: transparent; color: var(--text-mute); box-shadow: inset 0 0 0 .1rem transparent; } }
+@keyframes su-selsock { from { background-color: var(--socket); color: var(--socket-ink); } }
+@media (prefers-reduced-motion: no-preference) {
+  .pg-js .su-hd:not(.is-seen) .su-p, .pg-js .su-win:not(.is-seen) .su-p { opacity: .28; transform: translateY(1.4rem); }
+  .pg-js .su-win:not(.is-seen) .su-q { opacity: .28; transform: translateY(.8rem); }
+  .pg-js .su-win:not(.is-seen) .su-tl { opacity: 0; }
+  .pg-js .su-win:not(.is-seen) .su-dl .bar > b { transform: scaleX(0); transform-origin: left center; }
+  .su-hd.is-seen, .su-win.is-seen { --su-d: 100ms; }
+  .su-panel.is-opening { --su-d: 0ms; }
+  .su-hd.is-seen .su-p, .su-win.is-seen .su-p { animation: su-rise var(--t-pop) var(--e-out) calc(var(--i) * 40ms) backwards; }
+  /* the first reveal plays on the panel that is open when the window enters; after a step is pressed, is-opening plays the panel that opens */
+  :is(.su-win.is-seen:not(.is-touched) .su-panel:nth-child(1), .su-panel.is-opening) .su-q { animation: su-open var(--t-snap) var(--e-out) calc(var(--su-d, 0ms) + var(--q) * 40ms) backwards; }
+  :is(.su-win.is-seen:not(.is-touched) .su-panel:nth-child(1), .su-panel.is-opening) .su-tl { animation: su-line var(--t-hover) var(--e-out) calc(var(--su-d, 0ms) + 40ms + var(--k, 0) * 14ms) backwards; }
+  :is(.su-win.is-seen:not(.is-touched) .su-panel:nth-child(1), .su-panel.is-opening) .su-dl .bar > b { transform-origin: left center; animation: su-fill var(--t-snap) var(--e-out) calc(var(--su-d, 0ms) + 40ms + var(--k, 0) * 14ms) backwards; }
+  :is(.su-win:has(#su-r2:checked) .su-st:nth-child(1), .su-win:has(#su-r3:checked) .su-st:nth-child(-n+2)).is-fresh .su-stk { animation: su-tick var(--t-snap) var(--e-out) backwards; }
+  :is(.su-win:has(#su-r2:checked) .su-st:nth-child(1), .su-win:has(#su-r3:checked) .su-st:nth-child(-n+2)).is-fresh .su-sn { animation: su-numout var(--t-snap) var(--e-out) backwards; }
+  :is(.su-win:has(#su-r1:checked) .su-st:nth-child(1), .su-win:has(#su-r2:checked) .su-st:nth-child(2), .su-win:has(#su-r3:checked) .su-st:nth-child(3)).is-fresh { animation: su-sel var(--t-snap) var(--e-out) backwards; }
+  :is(.su-win:has(#su-r1:checked) .su-st:nth-child(1), .su-win:has(#su-r2:checked) .su-st:nth-child(2), .su-win:has(#su-r3:checked) .su-st:nth-child(3)).is-fresh .su-sock { animation: su-selsock var(--t-snap) var(--e-out) backwards; }
+}
+@media (prefers-reduced-motion: reduce) { .su-st, .su-sock, .su-sn, .su-stk, .su-cb, .su-panel { animation: none !important; transition: none !important; } }
+
+/* the text column stays one line a label above 1100 px; below it the panel stacks and the labels may wrap */
+@container pg (max-width: 1100px) {
+  .su-panel { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); row-gap: calc(3 * var(--u)); }
+  .su-lab p { white-space: normal; }
+  .su-lab { padding: calc(1.5 * var(--u)) 0; }
+}
+/* narrow widths */
+@container pg (max-width: 820px) {
+  .su-win { padding: calc(2 * var(--u)); gap: calc(3 * var(--u)); }
+  .su-steps .su-st { padding: 0 6px; gap: 8px; }
+  .su-ar, .su-pt small { display: none; }
+  .card.su-pm { grid-template-columns: auto minmax(0, 1fr) auto; column-gap: calc(1.2 * var(--u)); padding: 0 .85rem 0 .45rem; }
+  .su-tb { padding: calc(2 * var(--u)) calc(1.5 * var(--u)); }
+  .su-th { padding-left: 14px; }
+  .su-ch { padding: 0 .7rem 0 .45rem; gap: calc(1.2 * var(--u)); }
+  .su-cs code + code { display: none; }
+  .su-seg span { padding: .3em .5em; }
+}

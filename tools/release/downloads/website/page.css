@@ -1,0 +1,312 @@
+/* What every band of splice.torad.ai shares: the page's one container, the band's padding, its heading and line, and
+   the size container bands answer to. The console's tokens.css and console.css load first; this sheet uses their
+   variables and fonts. */
+html { scroll-padding-top: 88px; }
+body { margin: 0; }
+main { container: pg / inline-size; }
+
+/* One container: 1,344 px at the widest, 88% at 1440, 18 px margins on a phone. */
+.pg-in { width: min(1344px, 88%); margin-inline: auto; position: relative; }
+@container pg (max-width: 640px) { .pg-in { width: calc(100% - 36px); } }
+
+/* One band gap: 160 px between two bands, 96 px on a phone. */
+.pg-band { padding-block: 80px; }
+@container pg (max-width: 640px) { .pg-band { padding-block: 48px; } }
+
+/* One band heading, 56 / 48 / 36 px in Fraunces, and its one line, 22 / 18 / 18 px. */
+.pg-h2 { margin: 0; font: 400 56px/1.05 var(--font-lead); letter-spacing: -.012em; color: var(--text); font-variation-settings: 'SOFT' 0, 'WONK' 0; }
+.pg-line { margin: 14px 0 0; max-width: 72ch; font: 400 22px/1.4 var(--font-name); color: var(--text-body); }
+@container pg (max-width: 1800px) { .pg-h2 { font-size: 48px; } .pg-line { font-size: 18px; } }
+@container pg (max-width: 640px) { .pg-h2 { font-size: 36px; } }
+
+/* A control the picture draws but the page cannot run (Allow, Save, a preset, a field) carries data-drawn and
+   tabindex="-1": no pointer, no hover, no press, and the Tab key skips it. */
+[data-drawn] { pointer-events: none; }
+
+/* ===== frame: the header and its menu, the first screen, the facts row, the closing band, the footer and the film window.
+   Class prefix fr-. The header, footer and film window sit outside <main>, so they answer to the viewport (@media); the rest
+   answers to the page's size container (@container pg). ===== */
+/* The console's wall (grain and the light shaft) is drawn by body's pseudo-elements at z-index 0; the page's content stands
+   above it, as the console's .app does, so the shaft never washes over text. */
+main, .fr-foot { position: relative; z-index: 1; }
+:root { --fr-hh: 64px; --fr-ts: max(.9rem, 12px); --fr-tm: max(1.1rem, 14px); }
+@media (max-width: 820px) { :root { --fr-hh: 56px; } }
+/* The page's container for what stands outside <main>: the same 1,344 px / 88% / 18 px margins as .pg-in. */
+.fr-wrap { width: min(1344px, 88%); margin-inline: auto; }
+@media (max-width: 640px) { .fr-wrap { width: calc(100% - 36px); } }
+
+.fr-skip { position: fixed; left: -9999px; top: 10px; z-index: 20; padding: 10px 16px; font: 500 15px/1 var(--font-name); color: var(--text); background: var(--obj-high); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: .22rem .22rem 0 var(--ink); }
+.fr-skip:focus { left: 12px; outline: var(--ink-w) solid var(--text); outline-offset: .18rem; }
+
+/* header: 64 px (56 on a phone), fixed, on the page's container */
+.fr-hdr { position: fixed; z-index: 6; top: 0; left: 0; right: 0; background: color-mix(in oklab, var(--wall) 88%, transparent); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); border-bottom: 1px solid var(--ink); --ctl-h: 40px; }
+.fr-hdr-in { height: var(--fr-hh); display: flex; align-items: center; gap: 28px; }
+.fr-brand { display: flex; align-items: center; flex: none; margin-right: 12px; border-radius: .3rem; }
+.fr-logo { display: block; height: 36px; width: auto; }
+.fr-logo.d { display: none; }
+[data-theme="day"] .fr-logo.n { display: none; }
+[data-theme="day"] .fr-logo.d { display: block; }
+.fr-nav { display: flex; align-items: center; gap: 30px; }
+.fr-nav a { font: 500 16px/1 var(--font-name); color: var(--text-body); text-decoration: none; padding: 12px 0; transition: color var(--t-hover) var(--e-out); }
+.fr-nav a:hover { color: var(--text); text-decoration: underline; text-underline-offset: .3em; }
+.fr-hdr-in > .fr-theme { margin-left: auto; flex: none; }
+.fr-hdr .switch button, .fr-foot .switch button { font-size: 15px; padding: 0 12px; }
+.fr-hdr-in .act { font-size: 15px; min-height: 40px; padding: 0 20px; }
+.fr-menubtn { display: none; padding: 0 12px !important; }
+.fr-menubtn svg { width: 20px; height: 20px; }
+.fr-menubtn .fr-mb-t, .fr-menubtn .fr-mb-x { display: none; }
+.fr-menubtn[aria-expanded="true"] { gap: 6px; white-space: nowrap; font-size: 15px !important; }
+.fr-menubtn[aria-expanded="true"] .fr-mb-i { display: none; }
+.fr-menubtn[aria-expanded="true"] .fr-mb-t { display: inline; }
+.fr-menubtn[aria-expanded="true"] .fr-mb-x { display: block; }
+
+/* the phone menu: opens under the header, as the console's menu does */
+@keyframes fr-sheet-in { from { opacity: 0; transform: translateY(-.35rem) scale(.98); } }
+.fr-sheet { position: absolute; top: 100%; left: 0; right: 0; background: var(--obj); border-bottom: var(--ink-w) solid var(--ink); box-shadow: 0 var(--cast) 0 var(--ink); transform-origin: top center; max-height: calc(100vh - var(--fr-hh)); overflow-y: auto; }
+.fr-sheet[hidden] { display: none; }
+.fr-sheet-in { padding: 8px 0 24px; display: flex; flex-direction: column; gap: 20px; }
+.fr-mnav { display: flex; flex-direction: column; }
+.fr-mnav a { display: flex; align-items: center; justify-content: space-between; min-height: 52px; font: 400 24px/1.2 var(--font-lead); color: var(--text); text-decoration: none; border-bottom: 1px solid var(--hair); }
+.fr-mnav a svg { width: 18px; height: 18px; color: var(--text-mute); }
+.fr-mrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.fr-mk { font: 600 var(--fr-ts)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
+.fr-mrow .switch { --ctl-h: 44px; flex: 1; max-width: none; }
+.fr-mrow .switch button { flex: 1; padding: 0 6px; }
+.fr-mtor { display: flex; flex-direction: column; gap: 18px; padding-top: 20px; border-top: 1px solid var(--hair); }
+.fr-mtl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+.fr-mtl a { display: flex; align-items: center; min-height: 44px; font: 500 16px/1.2 var(--font-name); color: var(--text-body); text-decoration: none; }
+.fr-talk { min-height: 44px; font-size: 15px; --ctl-h: 44px; }
+/* the header's row needs about 990 px inside its container (brand, five links, the theme switch, Install), so below 1200 px the
+   links and the switch live in the menu, as they do on a phone; on a phone the header's buttons also tighten */
+@media (max-width: 1200px) {
+  .fr-nav, .fr-hdr-in > .fr-theme { display: none; }
+  .fr-menubtn { display: inline-flex; align-items: center; justify-content: center; }
+  .fr-hdr-in > .fr-cta { margin-left: auto; }
+  .fr-hdr-in { gap: 8px; }
+  .fr-brand { margin-right: 0; }
+}
+@media (max-width: 820px) { .fr-hdr-in .act { padding: 0 14px; } }
+@media (min-width: 1201px) { .fr-sheet { display: none !important; } }
+
+/* first screen: one band, one container; the head, the install row and the window share its full width */
+.fr-first { padding: calc(var(--fr-hh) + clamp(26px, calc(26px + (100cqw - 390px) * .0343), 100px)) 0 80px; }
+@container pg (max-width: 640px) { .fr-first { padding-bottom: 48px; } }
+.fr-h1 { margin: 0; font: 400 clamp(34px, calc(34px + (100cqw - 390px) * .0213), 80px)/1.04 var(--font-lead); letter-spacing: -.016em; color: var(--text); text-wrap: balance; }
+.fr-row { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); grid-template-areas: "lead r" "film r"; grid-template-rows: auto 1fr; column-gap: clamp(32px, 4cqw, 64px); align-items: start; margin-top: clamp(20px, calc(20px + (100cqw - 390px) * .0139), 50px); }
+.fr-lead { grid-area: lead; margin: 0; font: 400 clamp(18px, calc(18px + (100cqw - 390px) * .00278), 24px)/1.4 var(--font-name); color: var(--text-body); max-width: 34em; }
+.fr-r { grid-area: r; min-width: 0; }
+.fr-film { grid-area: film; justify-self: start; margin-top: clamp(18px, 2cqw, 32px); font-size: 15px; min-height: 44px; gap: 10px; padding: 0 20px; }
+.fr-film svg { width: 15px; height: 15px; }
+.fr-film b { font: 500 15px/1 var(--font-data); color: var(--text-mute); margin-left: 4px; }
+.fr-copy { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; align-items: start; padding: clamp(14px, 1.3cqw, 24px) clamp(14px, 1.3cqw, 22px) clamp(14px, 1.3cqw, 24px) clamp(16px, 1.5cqw, 26px); background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--ink); }
+.fr-lines { min-width: 0; }
+.fr-cl { margin: 0; display: flex; gap: .8em; font: 500 clamp(11.8px, calc(11.8px + (100cqw - 390px) * .0032), 16px)/2 var(--font-data); color: var(--text); }
+.fr-cl code { font: inherit; min-width: 0; overflow-wrap: anywhere; }
+.fr-ps { color: var(--text-mute); flex: none; }
+.fr-copybtn { display: inline-grid; grid-template-areas: "x"; place-items: center; min-height: 40px; padding: 0 18px; font-size: 15px; overflow: hidden; }
+.fr-copybtn[hidden] { display: none; }
+.fr-copybtn svg { width: 16px; height: 16px; }
+/* Copy to Copied: the two labels sit in one cell so the button keeps its width. Copy slides up and out while Copied slides up
+   into place, both over --t-hover (140 ms) on --e-out; the button clips them, so the two never overprint. */
+.fr-cb { grid-area: x; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; transition: opacity var(--t-hover) var(--e-out), transform var(--t-hover) var(--e-out); }
+.fr-cb-b { opacity: 0; transform: translateY(1.4rem); }
+.is-copied .fr-cb-a { opacity: 0; transform: translateY(-1.4rem); }
+.is-copied .fr-cb-b { opacity: 1; transform: none; }
+.fr-plat { margin: clamp(16px, 1.6cqw, 26px) 0 0; font: 400 15px/1.4 var(--font-name); color: var(--text-mute); }
+
+/* the product window: console cards in console columns, filling the container */
+.fr-win { --fr-conn: 8.4rem; --fr-pad: 1.2rem; --i: 0; position: relative; margin-top: clamp(72px, calc(72px + (100cqw - 390px) * .0362), 120px); padding: calc(4 * var(--u)); display: grid; grid-template-columns: minmax(0, 33rem) var(--fr-conn) minmax(0, 1fr); column-gap: 0; align-items: stretch; background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--ink); }
+.fr-side { min-width: 0; display: flex; flex-direction: column; gap: calc(2 * var(--u)); }
+.fr-cc { padding-right: var(--fr-pad); }
+.fr-prov { padding-left: var(--fr-pad); }
+.fr-gh { margin: 0; display: flex; align-items: center; gap: .667rem; font: 400 1.4rem/1.1 var(--font-lead); color: var(--text); }
+.fr-gh .blot { flex: none; width: .8rem; height: .8rem; border-radius: 50%; background: var(--text-mute); box-shadow: 0 0 0 .14rem var(--ink); }
+.fr-grp { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); }
+.fr-grp + .fr-grp { margin-top: calc(1.5 * var(--u)); }
+.fr-stack { display: flex; flex-direction: column; gap: var(--gap-card); }
+.fr-chips { display: flex; flex-wrap: wrap; gap: .667rem; }
+.fr-feat, .fr-model { font-family: var(--font-name); font-size: var(--fr-ts); font-weight: 500; }
+/* the window's type: one focal figure, then data at --fr-tm (1.1rem, never under 14 px), then labels and chips at --fr-ts
+   (.9rem, never under 12 px). Side labels stay 1.4rem; group labels step down to --fr-tm. */
+.fr-win .fr-prov .fr-grp + .fr-grp .fr-gh { font-size: var(--fr-tm); }
+.fr-win .rl-ht { flex-direction: row; align-items: baseline; gap: .667rem; flex-wrap: nowrap; white-space: nowrap; }
+.fr-win .rl-ht .fr-fig { font: 600 var(--fig-hero)/1 var(--font-data); font-variant-numeric: tabular-nums; letter-spacing: 0; color: var(--text); }
+.fr-win .rl-ht .fr-of { font: 500 var(--fr-tm)/1.2 var(--font-name); color: var(--text-mute); }
+.fr-win .rl-ht .fr-den { font: 600 var(--fr-tm)/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.fr-win .chip, .fr-win .prov, .fr-win .plan, .fr-win .card .state, .fr-win .keysrc .state, .fr-win .pct .used, .fr-win .fr-more, .fr-win .tm .who .to, .fr-win .tm .who time { font-size: var(--fr-ts); }
+.fr-win .cmodel { font: 500 var(--fr-tm)/1.2 var(--font-name); color: var(--text-body); }
+.fr-win .card.h .cwin, .fr-win .card .name, .fr-win .lmc-name, .fr-win .lamp .rl-num, .fr-win .rl-line, .fr-win .rl-fl b, .fr-win .rl-fail b, .fr-win .windows .label, .fr-win .windows .pct, .fr-win .windows .when, .fr-win .tm .body, .fr-win .tm .who .from, .fr-win .add, .fr-win .add .plus { font-size: var(--fr-tm); }
+.fr-win .windows .when { font-family: var(--font-name); font-weight: 500; }
+.fr-win .fr-v { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.fr-win .rl-line { white-space: nowrap; }
+.fr-win .rl-strip { margin-top: calc(1.2 * var(--u)); }
+/* the two columns end together: the rail's add tile and the last provider card take whatever is left over */
+.fr-cc > .fr-rail { flex: 1; }
+.fr-win .fr-rail > .add { margin-top: auto; }
+.fr-prov > .fr-grp:last-child, .fr-prov > .fr-grp:last-child .fr-stack { flex: 1; display: flex; flex-direction: column; }
+.fr-prov > .fr-grp:last-child .fr-stack > .card { flex: 1; }
+.fr-rail.rail { margin-top: 0; }
+.fr-win .rail > .card.h { margin-right: 0; }
+.fr-msg { position: relative; margin: calc(.5 * var(--u)) 0; }
+.fr-msglab { margin: .5rem 0 0; font: 600 var(--fr-ts)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
+.fr-win .tm { grid-template-columns: minmax(0, 1fr); row-gap: .333rem; background: var(--obj-high); }
+.fr-win .tm .who { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: .25rem var(--u); }
+.fr-win .lamp.working .beat { animation: none; }
+
+/* the connector: one neutral bar between the sides, and a wire from each card to it */
+.fr-conn { position: relative; align-self: stretch; min-width: 0; }
+.fr-bar { position: absolute; left: 50%; top: 8.6rem; bottom: 1.1rem; width: .56rem; margin-left: -.28rem; background: var(--rail); border-radius: .28rem; box-shadow: 0 0 0 var(--ink-w) var(--ink); }
+.fr-connlab { position: absolute; left: 0; right: 0; top: 0; margin: 0; padding: .55rem .5rem .6rem; text-align: center; font: 600 var(--fr-ts)/1.3 var(--font-name); letter-spacing: .05em; text-transform: uppercase; color: var(--text-body); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); box-shadow: .14rem .14rem 0 var(--ink); }
+.fr-rail > .card.h::after, .fr-prov .fr-plan::before { content: ""; position: absolute; top: 50%; height: .24rem; margin-top: -.12rem; background: var(--text-mute); opacity: .7; pointer-events: none; }
+.fr-rail > .card.h::after { left: calc(100% + var(--cast)); width: calc(var(--fr-pad) + var(--fr-conn) / 2 - .28rem - var(--cast)); border-radius: 0 .12rem .12rem 0; }
+.fr-prov .fr-plan::before { right: 100%; width: calc(var(--fr-pad) + var(--fr-conn) / 2 - .28rem); border-radius: .12rem 0 0 .12rem; }
+.fr-open { color: var(--text-mute); }
+.fr-open svg { width: 1.15rem; height: 1.15rem; }
+.fr-models { display: flex; flex-wrap: wrap; align-items: center; gap: .667rem; margin-top: var(--u); }
+.fr-model { --c: var(--router); }
+.fr-more { font: 500 .88rem/1 var(--font-name); color: var(--text-mute); }
+.fr-plan .keysrc { margin-top: .667rem; }
+.fr-plan .windows, .fr-plan .windows.spend { grid-template-columns: 5.2rem minmax(0, 1fr) 6.6rem var(--win-when); }
+
+/* the window's reveal, once, the first time it scrolls into view (page.js adds is-seen), inside 420 ms (--t-move) on the
+   console's ease-out (--e-out). Its plate holds the layout and its parts enter: each rises .8rem and fades up from 28% over
+   --t-pop (260 ms), staggered 14 ms by its --i, so the last lands at 372 ms. Meter fills grow and reset rings draw over
+   --t-snap (240 ms) from the moment their card starts. Only what enters moves. */
+@keyframes fr-part { from { opacity: .28; transform: translateY(.8rem); } }
+@keyframes fr-fill { from { transform: scaleX(0); } }
+@keyframes fr-ring { from { stroke-dasharray: 0 94.2; } }
+@keyframes fr-rise { from { opacity: .28; transform: translateY(1.4rem); } }
+.fr-win .fr-rail > :nth-child(1) { --i: 1; }
+.fr-win .fr-rail > :nth-child(2) { --i: 2; }
+.fr-win .fr-rail > :nth-child(3) { --i: 3; }
+.fr-win .fr-rail > :nth-child(4) { --i: 4; }
+.fr-win .fr-rail > :nth-child(5) { --i: 5; }
+.fr-win .fr-rail > :nth-child(6) { --i: 6; }
+.fr-win .fr-rail > :nth-child(7) { --i: 7; }
+.fr-win .fr-rail > :nth-child(8) { --i: 8; }
+.fr-win .fr-prov .fr-grp:nth-child(1) .fr-stack > :nth-child(1) { --i: 1; }
+.fr-win .fr-prov .fr-grp:nth-child(1) .fr-stack > :nth-child(2) { --i: 2; }
+.fr-win .fr-prov .fr-grp:nth-child(1) .fr-stack > :nth-child(3) { --i: 3; }
+.fr-win .fr-prov .fr-grp:nth-child(1) .fr-stack > :nth-child(4) { --i: 4; }
+.fr-win .fr-prov .fr-grp:nth-child(1) .fr-stack > :nth-child(5) { --i: 5; }
+.fr-win .fr-prov .fr-grp:nth-child(2) { --i: 6; }
+.fr-win .fr-prov .fr-grp:nth-child(3) { --i: 7; }
+.fr-win .fr-prov .fr-grp:nth-child(4) { --i: 8; }
+@media (prefers-reduced-motion: no-preference) {
+  .pg-js .fr-win[data-reveal]:not(.is-seen) :is(.fr-gh, .fr-chips, .rl-hero, .fr-rail > .card, .fr-msg, .fr-rail > .add, .fr-conn, .fr-plan) { opacity: .28; transform: translateY(.8rem); }
+  .pg-js .fr-win[data-reveal]:not(.is-seen) :is(.bar.grow > b, .wbar > i, .flow .bar > b, .rl-seg) { transform: scaleX(0); }
+  .pg-js .fr-win[data-reveal]:not(.is-seen) .arc { stroke-dasharray: 0 94.2; }
+  .fr-win.is-seen :is(.fr-gh, .fr-chips, .rl-hero, .fr-rail > .card, .fr-msg, .fr-rail > .add, .fr-conn, .fr-plan) { animation: fr-part var(--t-pop) var(--e-out) calc(var(--i) * 14ms) backwards; }
+  .fr-win.is-seen :is(.bar.grow > b, .wbar > i, .flow .bar > b, .rl-seg) { transform-origin: left center; animation: fr-fill var(--t-snap) var(--e-out) calc(var(--i) * 14ms) backwards; }
+  .fr-win.is-seen .arc { animation: fr-ring var(--t-snap) var(--e-out) calc(var(--i) * 14ms) backwards; }
+  /* the facts row and the closing band: one rise of 1.4rem and a fade up from 28%, over --t-pop on --e-out, played once when
+     the band first scrolls into view. Until then it waits low and ghosted, so its band keeps its height. */
+  .pg-js .fr-facts[data-reveal]:not(.is-seen), .pg-js .fr-close-in[data-reveal]:not(.is-seen) { opacity: .28; transform: translateY(1.4rem); }
+  .fr-facts.is-seen, .fr-close-in.is-seen { animation: fr-rise var(--t-pop) var(--e-out) backwards; }
+}
+
+/* trust facts: one row of short facts directly under the window */
+.fr-facts { list-style: none; margin: 160px 0 0; padding: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); }
+.fr-facts li { display: flex; align-items: center; justify-content: center; min-height: 64px; padding: 0 12px; text-align: center; font: 500 16px/1.2 var(--font-name); color: var(--text-body); }
+.fr-facts li + li { border-left: 1px solid var(--hair); }
+.fr-facts b { font: 600 15px/1 var(--font-data); color: var(--text); }
+.fr-facts a { display: inline-flex; align-items: center; gap: 6px; color: var(--text); text-decoration: none; }
+.fr-facts a:hover { text-decoration: underline; text-underline-offset: .3em; }
+.fr-facts a svg { width: 14px; height: 14px; color: var(--text-mute); }
+@container pg (max-width: 1100px) {
+  .fr-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .fr-facts li:nth-child(4) { border-left: 0; }
+  .fr-facts li:nth-child(n+4) { border-top: 1px solid var(--hair); }
+}
+
+/* closing band: heading and links beside the install window, the full container */
+.fr-close { background: color-mix(in oklab, var(--wall-low) 60%, transparent); }
+.fr-close-in { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); column-gap: clamp(32px, 4cqw, 64px); align-items: center; }
+.fr-close-l { display: flex; flex-direction: column; gap: clamp(20px, 2cqw, 32px); }
+/* the install line and its Copy button need a window about 730 px wide (measured: 714 at 1260 wraps, 731 at 1280 holds). Up to
+   1400 px a 7fr window is narrower, so the heading's column takes only what its links need, and up to 1290 px even that is too
+   narrow, so the band stacks. */
+@container pg (max-width: 1400px) { .fr-close-in { grid-template-columns: max-content minmax(0, 1fr); } }
+@container pg (max-width: 1290px) { .fr-close-in { grid-template-columns: minmax(0, 1fr); row-gap: 32px; } }
+.fr-links { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 16px; }
+.fr-links .act { font-size: 15px; min-height: 44px; padding: 0 20px; }
+.fr-maker { margin: 0; font: 400 16px/1.4 var(--font-name); color: var(--text-body); }
+
+/* footer: Torad's, on the page's container */
+.fr-foot { padding: clamp(40px, calc(40px + (100vw - 390px) * .0185), 72px) 0; background: var(--wall-low); border-top: 1px solid var(--ink); }
+.fr-foot-in { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); column-gap: clamp(32px, 4vw, 64px); row-gap: 36px; align-items: start; }
+/* the four link columns sit on one pitch: three equal tracks and a fourth that holds the theme switch and ends on the container's right edge */
+.fr-fcols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.45fr); column-gap: clamp(16px, 1.8vw, 24px); row-gap: 28px; align-items: start; }
+.fr-tor { display: inline-flex; align-items: baseline; gap: 14px; text-decoration: none; color: var(--text); }
+.fr-tor span { font: 400 24px/1 var(--font-lead); }
+.fr-tor small { font: 500 var(--fr-ts)/1 var(--font-data); letter-spacing: .08em; color: var(--text-mute); }
+.fr-claim { margin: 16px 0 0; font: 400 16px/1.5 var(--font-name); color: var(--text-body); max-width: 26em; }
+.fr-fl { grid-column: 1/3; display: grid; grid-template-columns: subgrid; grid-template-rows: repeat(4, auto); grid-auto-flow: column; row-gap: 14px; align-content: start; }
+.fr-fl a, .fr-fleg a { display: inline-flex; align-items: center; justify-self: start; gap: 6px; font: 500 16px/1.2 var(--font-name); color: var(--text-body); text-decoration: none; transition: color var(--t-hover) var(--e-out); }
+.fr-fl a:hover, .fr-fleg a:hover { color: var(--text); text-decoration: underline; text-underline-offset: .3em; }
+.fr-fl a svg { width: 12px; height: 12px; color: var(--text-mute); }
+.fr-fleg { grid-column: 3; display: grid; row-gap: 14px; align-content: start; }
+.fr-fact { grid-column: 4; display: flex; flex-direction: column; align-items: stretch; gap: 16px; }
+.fr-fact .act { align-self: flex-start; }
+.fr-fact .switch { display: flex; }
+.fr-fact .switch button { flex: 1 1 auto; padding: 0 6px; }
+.fr-foot .act { font-size: 15px; min-height: 40px; padding: 0 18px; --ctl-h: 40px; }
+.fr-foot .switch { --ctl-h: 40px; }
+
+/* the film window: a modal dialog. The page dims behind it over --t-pop (260 ms) on --e-out, and the panel fades in over the
+   same 260 ms, rising .8rem into place (the translate property, so the panel keeps its centring transform). */
+@keyframes fr-dim-in { from { opacity: 0; } }
+@keyframes fr-dlg-in { from { opacity: 0; translate: 0 .8rem; } }
+.fr-dlg { position: fixed; z-index: 8; inset: auto; left: 50%; top: calc(var(--fr-hh) + 24px); transform: translateX(-50%); margin: 0; box-sizing: border-box; max-width: none; max-height: none; width: min(1100px, calc(100vw - 2 * clamp(18px, calc(18px + (100vw - 390px) * .0514), 72px)), calc((100vh - 220px) * 16 / 9)); padding: calc(2 * var(--u)); color: var(--text); background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--ink); flex-direction: column; gap: calc(1.5 * var(--u)); }
+.fr-dlg[open] { display: flex; }
+.fr-dlg::backdrop { background: color-mix(in oklab, var(--ink) 66%, transparent); }
+@media (prefers-reduced-motion: no-preference) {
+  .fr-dlg[open] { animation: fr-dlg-in var(--t-pop) var(--e-out) both; }
+  .fr-dlg[open]::backdrop { animation: fr-dim-in var(--t-pop) var(--e-out) both; }
+  .fr-sheet:not([hidden]) { animation: fr-sheet-in var(--t-pop) var(--e-out) both; }
+}
+.fr-dlg-bar { display: flex; justify-content: flex-end; }
+.fr-close-btn { gap: 8px; font-size: 15px; min-height: 40px; padding: 0 16px; --ctl-h: 40px; }
+.fr-close-btn svg { width: 16px; height: 16px; }
+.fr-vid { position: relative; aspect-ratio: 16 / 9; background: #000; border-radius: var(--r-in); overflow: hidden; box-shadow: inset 0 0 0 var(--ink-w) var(--ink); }
+.fr-vid video { display: block; width: 100%; height: 100%; background: #000; object-fit: contain; }
+
+/* narrow: what is inside <main> reads the page's own width */
+/* below 1100 px the two columns no longer have room (a plan card needs about 400 px), so the window stacks: the commands, the
+   connector laid flat, then the plans; the hero row stacks with it */
+@container pg (max-width: 1100px) {
+  .fr-win { grid-template-columns: minmax(0, 1fr); padding: calc(2 * var(--u)); }
+  .fr-row { grid-template-columns: minmax(0, 1fr); grid-template-areas: "lead" "r" "film"; grid-template-rows: auto; row-gap: 22px; }
+  .fr-film { margin-top: 0; }
+  .fr-cc, .fr-prov { padding-inline: 0; }
+  .fr-conn { height: 7.2rem; align-self: auto; }
+  .fr-bar { left: 0; right: 0; top: 50%; bottom: auto; width: auto; height: .56rem; margin: -.28rem 0 0; }
+  .fr-connlab { top: 50%; left: 50%; right: auto; transform: translate(-50%, -50%); width: max-content; max-width: 100%; white-space: normal; }
+  .fr-rail > .card.h::after, .fr-prov .fr-plan::before { display: none; }
+}
+@container pg (max-width: 820px) {
+  .fr-win { margin-top: 28px; }
+  .fr-cl { line-height: 1.75; gap: .6em; }
+  .fr-copy { padding: 14px; grid-template-columns: minmax(0, 1fr); }
+  .fr-copybtn { justify-self: start; margin-top: 8px; }
+  .fr-win .fr-plan .windows, .fr-win .fr-plan .windows.spend { grid-template-columns: minmax(0, 1fr) auto; grid-auto-flow: row dense; row-gap: .5rem; column-gap: 1rem; }
+  .fr-win .fr-plan .windows .label { grid-column: 1; }
+  .fr-win .fr-plan .windows .bar { grid-column: 1 / -1; }
+  .fr-win .fr-plan .windows .pct { grid-column: 2; }
+  .fr-win .fr-plan .windows .when { grid-column: 1 / -1; }
+  .fr-win .card .top { flex-wrap: wrap; row-gap: .5rem; }
+  .fr-win .rl-line { flex-wrap: wrap; white-space: normal; row-gap: .25rem; }
+  .fr-facts li { min-height: 56px; font-size: 15px; }
+}
+/* the footer's four columns need the theme switch's 225 px in the fourth (1.45fr) track, which a 7fr column gives only from about
+   1400 px wide, so below that the footer stacks */
+@media (max-width: 1399px) {
+  .fr-foot-in { grid-template-columns: minmax(0, 1fr); }
+  .fr-fcols { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 24px; }
+  .fr-fl { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; grid-auto-flow: row; column-gap: 24px; }
+  .fr-fleg { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 24px; }
+  .fr-fact { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; align-items: center; }
+  .fr-fact .switch { display: inline-flex; }
+  .fr-fact .switch button { flex: 0 0 auto; padding: 0 12px; }
+}
+@media (max-width: 820px) { .fr-dlg { top: calc(var(--fr-hh) + 16px); } }

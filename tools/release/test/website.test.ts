@@ -313,6 +313,20 @@ describe("splice.torad.ai's website", () => {
     expect(unknown).toEqual([]);
   });
 
+  // The Options tab shows addresses a reader can paste: every login an address names with ?auth= is one splice accepts
+  // as a login label, and a login the tower lacks is refused in splice's own words.
+  test("every ?auth= login the share band draws is one splice accepts, and a missing one is refused as splice says", () => {
+    const band = words(bands(page).get("share") ?? "");
+    const source = (path: string) => readFileSync(join(REPO, path), "utf8");
+    const label = new RegExp(/loginLabel = Regex\("([^"]+)"\)/.exec(source("core/src/main/kotlin/splice/core/topology/LanShareConfig.kt"))![1]!.replace(/\\\\/g, "\\"));
+    const named = [...band.matchAll(/\?auth=([^\s&<"]+)/g)].map((m) => m[1]!).filter((l) => l !== "<login>");
+    expect(named.length).toBeGreaterThan(0);
+    expect(named.filter((l) => !label.test(l))).toEqual([]);
+    const refusal = /login != null -> "\$\{offer\.command\} on \$machine (has no login named) '\$login'; (it has) \$logins"/.exec(source("app/src/main/kotlin/splice/app/cli/share/RemoteAdd.kt"));
+    expect(refusal).not.toBeNull();
+    expect(band).toMatch(new RegExp(`claudex on tower ${refusal![1]} '([a-z0-9._-]+)'; ${refusal![2]} [a-z0-9._-]+(, [a-z0-9._-]+)*`));
+  });
+
   // Marcos, Nov 1, 2026: "things like "runs on your computer" is AI slop, of course it runs in the persons computer."
   // A shared link shows the page in small: its picture, described by the alt text, says what the page's headline says,
   // and neither the picture's description nor anything a visitor reads on the page carries the line he struck. (The

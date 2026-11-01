@@ -48,15 +48,21 @@
 .db-win:has(.db-r1:checked) .db-t1,.db-win:has(.db-r2:checked) .db-t2,.db-win:has(.db-r3:checked) .db-t3,.db-win:has(.db-r4:checked) .db-t4,.db-win:has(.db-r5:checked) .db-t5{color:var(--text);background:var(--sel-face);box-shadow:inset 0 0 0 .1rem var(--sel-line)}
 .db-win:has(.db-r1:checked) .db-t1>svg,.db-win:has(.db-r2:checked) .db-t2>svg,.db-win:has(.db-r3:checked) .db-t3>svg,.db-win:has(.db-r4:checked) .db-t4>svg,.db-win:has(.db-r5:checked) .db-t5>svg{color:var(--text)}
 .db-win:has(.db-r1:focus-visible) .db-t1,.db-win:has(.db-r2:focus-visible) .db-t2,.db-win:has(.db-r3:focus-visible) .db-t3,.db-win:has(.db-r4:focus-visible) .db-t4,.db-win:has(.db-r5:focus-visible) .db-t5{outline:var(--ink-w) solid var(--text);outline-offset:.18rem}
-.db-demo,.db-addr{flex:none;display:inline-flex;align-items:center;gap:.667rem;font:500 .95rem/1 var(--font-name);color:var(--text-mute)}
-.db-demo{margin-left:calc(2 * var(--u))}
-.db-addr{margin-left:auto;color:var(--text-body)}
-.db-addr svg{width:1.1em;height:1.1em;flex:none;color:var(--text-mute)}
+.db-demo{flex:none;display:inline-flex;align-items:center;gap:.667rem;font:500 .95rem/1 var(--font-name);color:var(--text-mute)}
+.db-demo{margin-left:auto}
 .db-demo i{width:.7rem;height:.7rem;border-radius:50%;background:transparent;box-shadow:inset 0 0 0 .14rem var(--text-mute)}
 .db-win>.side{grid-area:1/1}
 .db-panel{grid-area:2/1;display:block;visibility:hidden;pointer-events:none;padding:var(--db-pad);min-width:0}
 .db-win:has(.db-r1:checked) .db-p1,.db-win:has(.db-r2:checked) .db-p2,.db-win:has(.db-r3:checked) .db-p3,.db-win:has(.db-r4:checked) .db-p4,.db-win:has(.db-r5:checked) .db-p5{visibility:visible;pointer-events:auto}
 .db-cap{margin:0;font:600 var(--kicker)/1.2 var(--font-name);letter-spacing:.09em;text-transform:uppercase;color:var(--text-mute)}
+
+/* ---- the window's height: from 1280 px of window and up the five panels share one cell, so the band holds one height whatever
+   the tab; the tabs there stand within about 1.3x of each other. Narrower, Usage is far the tallest (a card per command), so a
+   panel that is not shown leaves the flow and the window is as tall as the tab it shows; the entering panel eases in. ---- */
+@container dbw (max-width:1280px) {
+  .db-panel { display: none; }
+  .db-win:has(.db-r1:checked) .db-p1, .db-win:has(.db-r2:checked) .db-p2, .db-win:has(.db-r3:checked) .db-p3, .db-win:has(.db-r4:checked) .db-p4, .db-win:has(.db-r5:checked) .db-p5 { display: block; }
+}
 
 /* ---- Sessions: the one session waiting on you leads, at hero size; the rest step down in size and ink ---- */
 .db-sess{--name-w:calc(var(--pg-t-2) * 9);--doing-w:calc(var(--pg-t-1) * 18);--cmd-w:calc(var(--pg-t-1) * 11);display:flex;flex-direction:column;gap:calc(4 * var(--u))}
@@ -225,7 +231,7 @@
   .db-win .navset{width:100%;--nav-pad:.4rem;gap:.1rem}
   .db-tab{flex:1 1 auto;justify-content:center;font-size:.98rem}
   .db-tab>svg{display:none}
-  .db-addr,.db-demo{order:2}
+  .db-demo{order:2}
   .db-sess .s{grid-template-columns:2rem minmax(0,1fr)}
   .db-sess .s .top,.db-sess .pgroup .s .top{grid-template-columns:minmax(0,1fr) auto;row-gap:.333rem}
   .db-sess .s .top,.db-sess .pgroup .s .top{column-gap:.5rem}
@@ -252,7 +258,7 @@
 /* ---- the type: the page's steps. t-1 the small words (kickers, chips, labels, ticks, ages), t-2 what a row or a log says (names,
    tabs, tool calls, values), t-3 a figure that leads a column, t-4 the one focal figure of a view. A console part is set on its
    step through #console (an id outranks the console's own rules). ---- */
-#console :is(.db-needk,.db-cap,.db-note,.db-demo,.db-addr,.db-say,.db-act .tgt,.db-hint,.pd-tk,.pd-lb,.pd-lb b,.pd-sub,.pd-seg span,.pd-seg b,.pd-failed span,.sechead .kicker,.rvw-ch span,.rvw-axis span,.pthead .pf,.sx-chip,.sx-chip span,.chip,.act.small,.barcell .v,.tdo .tgt,.tdo .tname,.pct .used,.pd-ax,.mtag,.lead){font-size:var(--pg-t-1)}
+#console :is(.db-needk,.db-cap,.db-note,.db-demo,.db-say,.db-act .tgt,.db-hint,.pd-tk,.pd-lb,.pd-lb b,.pd-sub,.pd-seg span,.pd-seg b,.pd-failed span,.sechead .kicker,.rvw-ch span,.rvw-axis span,.pthead .pf,.sx-chip,.sx-chip span,.chip,.act.small,.barcell .v,.tdo .tgt,.tdo .tname,.pct .used,.pd-ax,.mtag,.lead){font-size:var(--pg-t-1)}
 #console :is(.db-act .who,.db-act .tname,.who .name,.role,.word,.now,.now .obj,.db-tab span,.db-ask .q,.log .msg .body p,.pd-n.t,.pd-sl,.db-fold>summary,.tool .tname,.tool .tsum,.composer .field,.composer .act,.plbl .nm,.prow .pf,.prow .pf .v,.pd-failed,.pct,.db-fold .json,.db-fold .json *){font-size:var(--pg-t-2)}
 #console :is(.pname,.sx-bar .name,.db-tmbar .name,.rvw-ch b,.pd-stat.focal b,.pd-sub b){font-size:var(--pg-t-3)}
 #console :is(.db-needn,.pd-rate){font-size:var(--pg-t-4)}
@@ -283,12 +289,11 @@
   .db-win .navset { width: 100%; --nav-pad: var(--pg-sp-2); }
   .db-tab { flex: 1 1 auto; justify-content: center; }
   .db-tab > svg { display: none; }
-  .db-addr { order: 2; }
   .db-demo { order: 2; }
 }
 @container dbw (max-width:520px) { #console .db-win .nav .navset .db-tab span { font-size: var(--pg-t-1); } #console .db-win .navset { gap: 0; padding: 3px; --nav-pad: 6px; } }
 /* on a phone the mark has its own row; the address and the demo mark share the next one */
-@container dbw (max-width:640px) { .db-win .mark { flex: 1 1 100%; } .db-addr { margin-left: 0; } .db-demo { margin-left: auto; } }
+@container dbw (max-width:640px) { .db-win .mark { flex: 1 1 100%; } .db-demo { margin-left: auto; } }
 @container dbw (max-width:420px) { .db-win .navset { gap: 0; padding: 3px; --nav-pad: 6px; } }
 #console .db-use .pf > em { font-size: var(--pg-t-1); }
 
@@ -352,4 +357,13 @@
 }
 @container dbw (max-width:640px) {
   .db-tmseats { grid-template-columns: minmax(0, 1fr); }
+}
+/* a phone's Activity: the seat on its own row, the tool and its file under it, so no word breaks inside a narrow column */
+@container dbw (max-width:640px) {
+  .db-act { gap: calc(2 * var(--u)); }
+  .db-act li { grid-template-columns: .7rem auto minmax(0, 1fr); row-gap: .333rem; }
+  .db-act li > i { grid-row: 1; grid-column: 1; }
+  .db-act .who { grid-row: 1; grid-column: 2 / -1; }
+  .db-act .tname { grid-row: 2; grid-column: 2; }
+  .db-act .tgt { grid-row: 2; grid-column: 3; }
 }

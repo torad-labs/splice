@@ -162,9 +162,17 @@
 /* reveal: the band's heading, line and list each rise 1.4 rem and fade up from 28% over --t-pop (260 ms) on --e-out, 40 ms apart, once, when
    the band first scrolls into view (page.js adds is-seen); nothing below moves, since the band keeps its height while its parts wait. */
 @keyframes qa-rise{from{opacity:.28;transform:translateY(1.4rem)}}
+@keyframes qa-fade{from{opacity:.28}}
+@keyframes qa-lift{from{transform:translateY(1.4rem)}}
 @media (prefers-reduced-motion:no-preference){
-  .pg-js .qa-band [data-reveal]:not(.is-seen) .qa-ev{opacity:.28;transform:translateY(1.4rem)}
-  .qa-band [data-reveal].is-seen .qa-ev{animation:qa-rise var(--t-pop) var(--e-out) calc(var(--i) * 40ms) backwards}
+  .pg-js .qa-band [data-reveal]:not(.is-seen) .qa-ev:not(.qa-list){opacity:.28;transform:translateY(1.4rem)}
+  .qa-band [data-reveal].is-seen .qa-ev:not(.qa-list){animation:qa-rise var(--t-pop) var(--e-out) calc(var(--i) * 40ms) backwards}
+  /* the list's own box never moves, so it stands the same distance under the band top whether the band is seen or not (as the Setup window does):
+     the list fades up and its questions rise inside it */
+  .pg-js .qa-band [data-reveal]:not(.is-seen) .qa-list.qa-ev{opacity:.28}
+  .pg-js .qa-band [data-reveal]:not(.is-seen) .qa-list.qa-ev>.qa-q{transform:translateY(1.4rem)}
+  .qa-band [data-reveal].is-seen .qa-list.qa-ev{animation:qa-fade var(--t-pop) var(--e-out) calc(var(--i) * 40ms) backwards}
+  .qa-band [data-reveal].is-seen .qa-list.qa-ev>.qa-q{animation:qa-lift var(--t-pop) var(--e-out) calc(var(--i) * 40ms) backwards}
 }
 
 /* The answer is its text and one compact band at its right, both from the plate's top row; the heavier facts take a full-width band under them.

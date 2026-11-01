@@ -11,6 +11,8 @@
 /* band reveal: once, when the band first scrolls into view. Heading, line and window each rise 1.4rem and fade up from 28% over --t-pop (260 ms)
    on --e-out, 30 ms apart (--d). The band keeps its height while it waits, so nothing below it moves. is-seen is added once and never removed. */
 @keyframes mo-rise{from{opacity:.28;transform:translateY(1.4rem)}}
+@keyframes mo-fade{from{opacity:.28}}
+@keyframes mo-lift{from{transform:translateY(1.4rem)}}
 @keyframes mo-panel{from{opacity:0;transform:translateY(.8rem)}}
 @keyframes mo-fill{from{transform:scaleX(0)}}
 @keyframes mo-ring{from{stroke-dasharray:0 100.53}}
@@ -55,8 +57,14 @@
 .mo-pc>.mo-fill{flex:1 1 auto}
 .mo-r:checked + .mo-tab + .mo-panel{opacity:1;visibility:visible;pointer-events:auto;transition:none}
 @media (prefers-reduced-motion:no-preference){
-  .pg-js [data-reveal]:not(.is-seen) .mo-ev{opacity:.28;transform:translateY(1.4rem)}
-  [data-reveal].is-seen .mo-ev{animation:mo-rise var(--t-pop) var(--e-out) calc(var(--d) * 1ms) backwards}
+  .pg-js [data-reveal]:not(.is-seen) .mo-ev:not(.mo-win){opacity:.28;transform:translateY(1.4rem)}
+  [data-reveal].is-seen .mo-ev:not(.mo-win){animation:mo-rise var(--t-pop) var(--e-out) calc(var(--d) * 1ms) backwards}
+  /* the window's own box never moves, so it stands at the same offset under the band top whether the band is seen or not (as the Setup window does):
+     its frame fades up and its content rises inside it */
+  .pg-js [data-reveal]:not(.is-seen) .mo-win.mo-ev{opacity:.28}
+  .pg-js [data-reveal]:not(.is-seen) .mo-win.mo-ev>.mo-tabs{transform:translateY(1.4rem)}
+  [data-reveal].is-seen .mo-win.mo-ev{animation:mo-fade var(--t-pop) var(--e-out) calc(var(--d) * 1ms) backwards}
+  [data-reveal].is-seen .mo-win.mo-ev>.mo-tabs{animation:mo-lift var(--t-pop) var(--e-out) calc(var(--d) * 1ms) backwards}
   .mo-r:checked + .mo-tab + .mo-panel{animation:mo-panel var(--t-snap) var(--e-out) backwards}
   /* what grows inside the open panel plays when the band is first seen and again on each tab change */
   [data-reveal].is-seen .mo-r:checked + .mo-tab + .mo-panel :is(.wbar>i,.pd-seg){transform-origin:left center;animation:mo-fill var(--t-snap) var(--e-out) calc(var(--i,0) * 14ms) backwards}
@@ -162,6 +170,13 @@
 /* the sessions fall three and two on cells of one width, so the second row's cards match the first row's; the longest card (name, lamp and
    padding) is under 170 px, and five across leave each card at least that only from a 2,300 px container */
 @container pg (min-width:2300px){ .mo-reaches{grid-template-columns:repeat(5,minmax(0,1fr))} }
+/* from 821 to 2,299 px the sessions sit on six columns: the first three take two each and the last two take three each, so the second row
+   fills the plate as the tabs' second row does (the stacked layout at 820 and under is unchanged) */
+@container pg (min-width:821px) and (max-width:2299px){
+  .mo-reaches{grid-template-columns:repeat(6,minmax(0,1fr))}
+  .mo-reach{grid-column:span 2}
+  .mo-reach:nth-child(n+4){grid-column:span 3}
+}
 /* the scope in force lights the sessions it reaches and dims the rest, over --t-snap */
 .mo-comp:has(.mo-sr[value="all"]:checked) .mo-n-all,.mo-comp:has(.mo-sr[value="model"]:checked) .mo-n-model,.mo-comp:has(.mo-sr[value="project"]:checked) .mo-n-project{display:inline}
 @media (prefers-reduced-motion:no-preference){

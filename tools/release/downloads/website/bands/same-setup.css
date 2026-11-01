@@ -163,15 +163,29 @@
 }
 
 /* ---------- the head beside the window from a 1,280 px container to 2,199 px (the page's split starts at 2,200 px): the head takes 4 of 12
-   columns and the stage 8, on the side the page gives this band's place (odd places put the head on the right), and the head's drawing
-   stands midway down the column, so no stretch of it is bare. 1,024 to 1,279 px keeps the stacked row. ---------- */
+   columns and the stage 8, on the side the page gives this band's place (odd places put the head on the right), and 1,024 to 1,279 px keeps the stacked row. ---------- */
 @container pg (min-width: 1280px) and (max-width: 2199px) {
   #same-setup .ss-in { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--pg-cg); align-items: start; }
   #same-setup .ss-in > .pg-head { display: flex; flex-direction: column; align-self: stretch; grid-column: 1 / span 4; grid-row: 1; margin-bottom: 0; padding-right: clamp(0px, 1vw, 32px); }
   #same-setup .ss-in > .ss-stage { grid-column: 5 / -1; grid-row: 1; margin-top: 0; }
   main > #same-setup:nth-child(odd) > .ss-in > .pg-head { grid-column: 9 / -1; padding-right: 0; padding-left: clamp(0px, 1vw, 32px); }
   main > #same-setup:nth-child(odd) > .ss-in > .ss-stage { grid-column: 1 / span 8; }
-  #same-setup .ss-in > .pg-head > .pg-art { flex: 0 0 auto; align-self: stretch; justify-self: stretch; width: auto; margin-block: auto; }
+}
+
+/* ---------- the head's drawing from a 1,280 px container up. The drawing's box takes the height the component leaves. Where that box is as tall as it is
+   wide (the head beside a tall component) it holds a taller drawing of the same objects, which shrinks to the box and stays under the
+   header while a taller component scrolls past, as the teams and console bands do; where the box is low and wide it holds the page's wide drawing
+   and its cable down the column. ---------- */
+#same-setup .pg-art > .ss-tall { display: none; }
+@container pg (min-width: 1280px) {
+  #same-setup .ss-in > .pg-head > .pg-art { container: pga / size; display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; justify-self: stretch; align-self: stretch; width: auto; margin-top: var(--pg-sp-6); }
+  #same-setup .ss-in > .pg-head > .pg-art .pg-stub { display: inline; }
+  #same-setup .ss-in > .pg-head > .pg-art::after { content: ""; flex: 1 1 auto; min-height: 0; width: 8px; margin-left: calc(var(--pg-ax, 9%) - 4px); background: linear-gradient(var(--pg-cable), var(--pg-cable)) 50% 0 / 1.5px 100% no-repeat, radial-gradient(circle, var(--pg-dot, var(--claude)) 0 2.6px, transparent 3.2px) 50% 0 / 8px 8px no-repeat; }
+}
+@container pga (max-aspect-ratio: 4/3) {
+  #same-setup .ss-in > .pg-head > .pg-art > svg:not(.ss-tall) { display: none; }
+  #same-setup .ss-in > .pg-head > .pg-art > .ss-tall { display: block; flex: 0 1 auto; min-height: 0; width: 100%; height: auto; position: sticky; top: calc(var(--fr-hh) + var(--pg-sp-5)); }
+  #same-setup .ss-in > .pg-head > .pg-art::after { content: none; }
 }
 
 /* ---------- reveal ----------

@@ -23,11 +23,15 @@
 .ac-plate .provider > header h2 { font-size: var(--fig-focal); line-height: 1.3; }
 .ac-plate .card .name, .ac-plate .add, .ac-plate .add .plus, .ac-win-l, .ac-tabs label,
 .ac-plate .windows .label, .ac-plate .windows .pct, .ac-plate .windows .when, .ac-plate .windows .heldline { font-size: var(--fr-tm); }
-.ac-plate .kicker, .ac-plate .meter.day > .label, .ac-plate .act.ac-copy, .ac-plate .meter.day .act.ac-bud, .ac-plate .money-in { font-size: var(--fr-ts); }
+/* the Budget and Usage views' rows read at the Accounts view's step: a row's name and figure (62%, Resets midnight, a preset, a button, 74%, 2d 21h,
+   Requests, Failed, At API prices) are --fr-tm; kickers, the hour axis and the chip that names the command stay --fr-ts */
+.ac-plate .meter.day, .ac-plate .meter.day .label, .ac-plate .meter.day .pct, .ac-plate .meter.day .pct .used, .ac-plate .meter.day .when, .ac-plate .meter.day .ads-unit, .ac-plate .meter.day .act.ac-bud, .ac-fine,
+.ac-plate .editor, .ac-plate .editor button, .ac-plate .editor .field, .ac-plate .money-in,
+.ac-plate .ac-cmds .pct, .ac-plate .ac-cmds .when, .ac-plate .ac-cmds .chip, .ac-plate .ac-tiles .pd-stat small { font-size: var(--fr-tm); }
+.ac-plate .kicker, .ac-plate .act.ac-copy { font-size: var(--fr-ts); }
 .ac-plate .pct .used,
-.ac-plate .chip, .ac-plate .plan, .ac-plate .socket, .ac-plate .msock, .ac-plate .state, .ac-code, .ac-pchip, .ac-fine,
-.ac-plate .meter.day, .ac-plate .meter.day .label, .ac-plate .meter.day .pct, .ac-plate .meter.day .when, .ac-plate .meter.day .ads-unit,
-.ac-plate .editor, .ac-plate .editor button, .ac-plate .editor .field, .ac-plate .dayrun .marks b, .ac-cmds .pct, .ac-cmds .when, .ac-cmds .chip,
+.ac-plate .chip, .ac-plate .plan, .ac-plate .socket, .ac-plate .msock, .ac-plate .state, .ac-code, .ac-pchip,
+.ac-plate .dayrun .marks b,
 .ac-plate .moves, .ac-plate .moveline { font-size: var(--fr-ts); }
 
 /* ---------- parts of the plate ---------- */
@@ -100,7 +104,7 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
 .ac-budget .editor .mode button, .ac-budget .editor .presets button { cursor: default; }
 .ac-budget .editor .mode button { align-items: center; }
 .ac-budget .editor .mode .glyph { width: 1.05rem; height: 1.05rem; color: currentColor; }
-.ac-fine { font: 500 var(--fr-ts)/1.35 var(--font-name); color: var(--text-mute); }
+.ac-fine { font: 500 var(--fr-tm)/1.35 var(--font-name); color: var(--text-mute); }
 .ac-budget .edrow > .ac-fine { margin-left: auto; }
 .ac-plate .meter.day.ac-budget > .ac-bill { grid-column: 2 / -1; margin-top: -.667rem; }
 .ac-budget .dayrun > .hours > .hr { text-decoration: none; }
@@ -131,7 +135,6 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
 .ac-tiles .pd-stat > svg { width: 2.6rem; height: 2.6rem; padding: .6rem; }
 .ac-tiles .pd-stat b { font: 600 var(--fig-focal)/1.25 var(--font-data); letter-spacing: -.01em; }
 .ac-tiles .pd-stat.lead b { font-size: var(--fig-hero); }
-.ac-tiles .pd-stat small { font-size: var(--fr-ts); }
 .ac-tiles .pd-stat > span { gap: calc(.75 * var(--u)); }
 .ac-tiles .pd-stat b { line-height: 1.25; }
 
@@ -225,9 +228,22 @@ details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
   #accounts .ac-in > .ac-hd { display: flex; flex-direction: column; align-self: stretch; grid-column: 1 / span 4; grid-row: 1; margin-bottom: 0; padding-right: clamp(0px, 1vw, 32px); }
   #accounts .ac-in > .ac-plate { grid-column: 5 / -1; grid-row: 1; margin-top: 0; }
   #accounts .ac-hd > .ac-tabs { align-self: flex-start; }
-  #accounts .ac-hd > .pg-art { display: flex; flex-direction: column; flex: 1 1 auto; justify-self: stretch; align-self: stretch; width: auto; margin-top: var(--pg-sp-6); }
-  #accounts .ac-hd > .pg-art .pg-stub { display: inline; }
-  #accounts .ac-hd > .pg-art::after { content: ""; flex: 1 1 auto; min-height: 0; width: 8px; margin-left: calc(var(--pg-ax, 9%) - 4px); background: linear-gradient(var(--pg-cable), var(--pg-cable)) 50% 0 / 1.5px 100% no-repeat, radial-gradient(circle, var(--pg-dot, var(--claude)) 0 2.6px, transparent 3.2px) 50% 0 / 8px 8px no-repeat; }
+}
+
+/* ---------- the head's drawing from a 1,280 px container up. The drawing's box takes the height the component leaves. Where that box is as tall as it is
+   wide (the head beside a tall component) it holds a taller drawing of the same objects, which shrinks to the box and stays under the
+   header while a taller component scrolls past, as the teams and console bands do; where the box is low and wide it holds the page's wide drawing
+   and its cable down the column. ---------- */
+#accounts .pg-art > .ac-tall { display: none; }
+@container pg (min-width: 1280px) {
+  #accounts .ac-in > .ac-hd > .pg-art { container: pga / size; display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; justify-self: stretch; align-self: stretch; width: auto; margin-top: var(--pg-sp-6); }
+  #accounts .ac-in > .ac-hd > .pg-art .pg-stub { display: inline; }
+  #accounts .ac-in > .ac-hd > .pg-art::after { content: ""; flex: 1 1 auto; min-height: 0; width: 8px; margin-left: calc(var(--pg-ax, 9%) - 4px); background: linear-gradient(var(--pg-cable), var(--pg-cable)) 50% 0 / 1.5px 100% no-repeat, radial-gradient(circle, var(--pg-dot, var(--claude)) 0 2.6px, transparent 3.2px) 50% 0 / 8px 8px no-repeat; }
+}
+@container pga (max-aspect-ratio: 4/3) {
+  #accounts .ac-in > .ac-hd > .pg-art > svg:not(.ac-tall) { display: none; }
+  #accounts .ac-in > .ac-hd > .pg-art > .ac-tall { display: block; flex: 0 1 auto; min-height: 0; width: 100%; height: auto; position: sticky; top: calc(var(--fr-hh) + var(--pg-sp-5)); }
+  #accounts .ac-in > .ac-hd > .pg-art::after { content: none; }
 }
 
 /* ---------- the three views: radios hold the choice, :has() shows the chosen one in place ----------

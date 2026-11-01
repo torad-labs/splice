@@ -35,10 +35,11 @@
 :is(.su-win:has(#su-r2:checked) .su-st:nth-child(1), .su-win:has(#su-r3:checked) .su-st:nth-child(-n+2)) .su-sock { color: var(--splice-cream); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .15rem var(--socket-ink); }
 .su-stn { white-space: nowrap; }
 
-/* the stage: only the open step stands, so the window is as tall as that step and its terminal ends where its output does. The step that
-   opens shows at once and its parts ease in over --t-snap (240 ms), below */
-.su-stage { display: grid; min-width: 0; }
-.su-panel { grid-area: 1/1; display: none; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); column-gap: var(--pg-sp-5); align-items: stretch; min-width: 0; visibility: hidden; opacity: 0; pointer-events: none; transition: opacity var(--t-hover) var(--e-out), visibility 0s linear var(--t-hover); }
+/* the stage: the three steps share one cell, so the window holds the tallest step's height at every width and choosing a step moves nothing
+   below it. Only the open step is seen; the others wait unseen in the same cell. The step that opens shows at once and its parts ease in over
+   --t-snap (240 ms), below */
+.su-stage { display: grid; min-width: 0; margin-top: var(--pg-sp-1); }
+.su-panel { grid-area: 1/1; display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); column-gap: var(--pg-sp-5); align-items: stretch; min-width: 0; visibility: hidden; opacity: 0; pointer-events: none; transition: opacity var(--t-hover) var(--e-out), visibility 0s linear var(--t-hover); }
 :is(.su-win:has(#su-r1:checked) .su-panel:nth-child(1), .su-win:has(#su-r2:checked) .su-panel:nth-child(2), .su-win:has(#su-r3:checked) .su-panel:nth-child(3)) { display: grid; visibility: visible; opacity: 1; pointer-events: auto; transition: none; }
 
 /* the text column: rows of one pitch (--su-rp) from one top edge; an object is the pitch less the page's gap */

@@ -359,11 +359,22 @@
    the head column, where the cable from the rows ends */
 .qa-band .pg-art>.qa-deck{display:none}
 .qa-art .pg-stub{stroke-width:1.5}
+/* the drawing stands under the fixed header and follows the reader down the list, its cable short, so an open answer always has the drawing
+   beside it and no stretch of the column is only a cable */
 @container pg (min-width:2200px){
-  .qa-band .pg-split>.pg-head>.pg-art{margin-top:var(--pg-sp-5)}
+  .qa-band .pg-split>.pg-head>.pg-art{margin-top:var(--pg-sp-5);flex:0 0 auto;align-self:stretch;position:sticky;top:calc(var(--fr-hh,64px) + var(--pg-sp-5))}
+  .qa-band .pg-split>.pg-head>.pg-art::after{flex:none;height:var(--pg-sp-6)}
   .qa-band .pg-split>.pg-head>.pg-art>svg{flex:0 1 auto;min-height:0}
   .qa-band .pg-split>.pg-head>.pg-art>.qa-deck{display:block;order:2}
 }
 
 /* the step's label is two words: it wraps inside its node when the node is narrow */
 .qa-band .qa-rtag{max-width:100%;white-space:normal;justify-content:center;text-align:center}
+
+/* a phone: the router's chain (splice, OpenRouter, the models) is one column of the full width, and the shared gateway is a full-width row under it */
+@container pg (max-width:640px){
+  .qa-route{grid-template-columns:minmax(0,1fr);grid-template-areas:"cc" "w1" "sp" "w2" "or" "w3" "md" "ll"}
+  .qa-route .qa-rwl{display:none}
+  .qa-route .qa-rll{margin-top:var(--pg-sp-4);align-self:stretch;flex-direction:row;justify-content:space-between;text-align:left}
+  .qa-route .qa-rlh{flex-direction:row}
+}

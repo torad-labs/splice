@@ -14,7 +14,7 @@
 @keyframes mo-panel{from{opacity:0;transform:translateY(.8rem)}}
 @keyframes mo-fill{from{transform:scaleX(0)}}
 @keyframes mo-ring{from{stroke-dasharray:0 100.53}}
-@keyframes mo-type{from{width:0}}
+@keyframes mo-type{from{clip-path:inset(0 100% 0 0)}}
 @keyframes mo-line{from{opacity:0}}
 @keyframes mo-swap{from{opacity:0}}
 
@@ -183,7 +183,7 @@
 .mo-prog .bar.sub{height:.7rem}
 .mo-bl{flex:none;min-width:19ch}
 .mo-pct{flex:none;min-width:3ch;text-align:right;font:600 var(--mo-tm)/1.3 var(--font-data);font-variant-numeric:tabular-nums;color:var(--text)}
-.mo-typed{display:inline-block;overflow:hidden;white-space:nowrap;width:calc(var(--mo-n) * 1ch);vertical-align:bottom}
+.mo-typed{display:inline-block;white-space:nowrap;width:calc(var(--mo-n) * 1ch);vertical-align:bottom}
 .mo-prov .card{--c:var(--local)}
 .mo-win .local-model.lmc-body{margin-top:var(--pg-sp-1)}
 .mo-lrail.rail{padding-left:0}
@@ -219,28 +219,29 @@
 
 /* narrow: read the page's own width */
 @container pg (max-width:1100px){
-  .mo-tabs{grid-template-columns:repeat(6,minmax(0,1fr));row-gap:var(--gap-card)}
-  .mo-tab{grid-row:auto;grid-column:span 2}
-  .mo-tab:nth-of-type(n+4){grid-column:span 3}
-  /* below 1100 px the panels stack under the tabs and differ a lot in height, so the window follows the open one */
-  .mo-panel{grid-row:3;display:none}
-  .mo-r:checked + .mo-tab + .mo-panel{display:grid}
-  .mo-grid{grid-template-columns:minmax(0,1fr)}
-  .mo-s5,.mo-s6,.mo-s7,.mo-s12{grid-column:1/-1}
-  .mo-sibs{padding-block:0}
-  .mo-reaches{grid-template-columns:repeat(6,minmax(0,1fr))}
-  .mo-reach{grid-column:span 2}
-  .mo-reach:nth-child(n+4){grid-column:span 3}
+  /* the five tabs stay one row of five and the five panels keep sharing one cell, so the window holds the tallest panel's height here too */
   .mo-apart{grid-template-columns:minmax(0,1fr)}
   .mo-lrail.rail{grid-auto-rows:auto}
+  /* the five sessions fall three and two on cells of one width, so the second row's cards match the first row's */
+  .mo-reaches{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
 /* at 820 and under the tabs are rows that open in place. The height cannot be held there without padding, so it eases over --t-snap:
    the open panel's row grows from 0 to its height while the closing one shuts and fades out. */
 @container pg (max-width:820px){
   .mo-win{--mo-pad:var(--pg-sp-3)}
+  .mo-grid{grid-template-columns:minmax(0,1fr)}
+  .mo-s5,.mo-s6,.mo-s7,.mo-s12{grid-column:1/-1}
+  .mo-sibs{padding-block:0}
+  /* the version plate is a row once it has the window's width: the kicker and the running version on the left, the arc and the two sockets
+     across the right */
+  .mo-upg .mo-s5>.mo-plate>.psec{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr);grid-template-rows:auto auto;column-gap:var(--pg-sp-5);align-items:end;align-content:center}
+  .mo-upg .mo-s5 .sechead{grid-column:1;grid-row:1;align-self:start}
+  .mo-upg .mo-s5 .pd-sub{grid-column:1;grid-row:2}
+  .mo-upg .mo-s5 .mo-back{grid-column:2;grid-row:1;max-width:none;align-self:end}
+  .mo-upg .mo-s5 .mo-socks{grid-column:2;grid-row:2;max-width:none;margin-top:0}
   .mo-tabs{grid-template-columns:minmax(0,1fr);row-gap:0}
   .mo-tab ~ .mo-tab{margin-top:var(--gap-card)}
-  .mo-tab,.mo-tab:nth-of-type(n+4){grid-column:auto}
+  .mo-tab{grid-row:auto;grid-column:auto}
   .mo-chev{display:block}
   .mo-panel,.mo-r:checked + .mo-tab + .mo-panel{display:block}
   .mo-panel{grid-row:auto;transition:opacity var(--t-snap) var(--e-out),visibility 0s linear var(--t-snap)}
@@ -264,10 +265,24 @@
   .mo-sibs>div{padding:0 var(--pg-sp-1) var(--pg-sp-1) 0}
   .mo-lrail .card .top{flex-wrap:wrap;row-gap:var(--pg-sp-2)}
 }
-/* on a phone the three scopes share the switch's width, each label on up to two lines */
+/* on a phone the three scopes share the switch's width, each label on one line; a terminal row that carries a bar puts its label on its own
+   line, so the bar and its percent share the row under it and the bar keeps its length */
 @container pg (max-width:640px){
   .mo-scope{display:flex;width:100%;height:auto;min-height:var(--ctl-h)}
-  .mo-scope label{flex:1 1 0;justify-content:center;white-space:normal;text-align:center;padding:var(--pg-sp-1);line-height:1.2}
+  .mo-scope label{flex:1 1 auto;justify-content:center;white-space:nowrap;text-align:center;padding:var(--pg-sp-1) calc(var(--pg-sp-1) / 2);line-height:1.2}
+  .mo-tall .tx{flex-wrap:wrap}
+  .mo-tall .mo-bl{flex:1 1 100%;min-width:0}
+  .mo-tall .mo-prog{flex:1 1 8rem}
+  .mo-upg .mo-s5>.mo-plate>.psec{grid-template-columns:minmax(0,1fr);grid-template-rows:none;align-items:stretch;align-content:space-between}
+  .mo-upg .mo-s5 :is(.sechead,.pd-sub,.mo-back,.mo-socks){grid-column:1;grid-row:auto;align-self:auto}
+  .mo-upg .mo-s5 .mo-back{max-width:32rem}
+  .mo-upg .mo-s5 .mo-socks{max-width:32rem;margin-top:var(--pg-sp-3)}
+  .mo-reach{padding:var(--pg-sp-2) var(--pg-sp-1);gap:var(--pg-sp-1)}
+}
+/* where the longest card (name and command) no longer fits one row, all five stack the command under the name, so the five agree */
+@container pg (max-width:380px){
+  .mo-scope{flex-direction:column}
+  .mo-reach{flex-direction:column;align-items:flex-start;justify-content:flex-start}
 }
 .mo-plus::before{content:"+"}
 

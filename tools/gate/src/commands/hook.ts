@@ -441,6 +441,7 @@ export function slotRunner(lay: Layout, label: string, echo: boolean, extraOptio
   return async (tasks, _root, cancel, options = []) => {
     const jdk = resolveJdk21();
     if ("error" in jdk) throw new Error(jdk.error);
+    if (echo) process.stderr.write(`  jdk 21: ${jdk.javaHome} (${jdk.source})\n`);
     const proc = Bun.spawn(
       [
         process.execPath,

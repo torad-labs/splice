@@ -3,7 +3,11 @@
 ## Prerequisites
 
 - Node 24
-- Java 21 (JDK, e.g. Temurin)
+- JDK 21, anywhere Gradle's toolchain detection looks (`~/.jdks`, `~/jdks`, `~/.sdkman`, `/usr/lib/jvm`,
+  `/Library/Java/JavaVirtualMachines`, Homebrew's `openjdk@21`), or named in `~/.gradle/gradle.properties` as
+  `org.gradle.java.installations.paths=/path/to/jdk-21`. Your default `java` may be newer: the build compiles and tests
+  on the 21 (`jvmToolchain(21)`), and the gate, the hooks' linters and the release launcher resolve the same 21 by
+  themselves; `bun tools/gate run --java-home-only` prints which one.
 - Bun 1.4.2 (the `packageManager` pin in package.json; the gate's Bun legs and the arch tests spawn it)
 
 ## The gates

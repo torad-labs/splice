@@ -114,12 +114,40 @@ describe("a pushed diff scopes the gate to what it touches", () => {
     }
   });
 
-  test("the version catalog, the root build and settings check every module, and say why", () => {
-    for (const path of ["settings.gradle.kts", "build.gradle.kts", "gradle/libs.versions.toml"]) {
+  test("the root build and settings check every module, and say why", () => {
+    for (const path of ["settings.gradle.kts", "build.gradle.kts"]) {
       const s = scope([path]);
       expect(checks(s.gradle).length, path).toBe(modules.length);
       expect(decided([path], ":core")?.why, path).toContain(path);
     }
+  });
+
+  test("the version catalog checks the modules whose scripts read its changed entries and their dependents, and every module when what changed was not read", () => {
+    const catalog = "gradle/libs.versions.toml";
+    const unread = scope([catalog]);
+    expect(checks(unread.gradle).length).toBe(modules.length);
+    expect(decided([catalog], ":core")?.why).toContain(catalog);
+    expect(unread.gradle).toContain(LAW_SUITES_TASK);
+
+    const why = "`guava` in gradle/libs.versions.toml changed, and integrations/codemode/build.gradle.kts reads it";
+    const read = prePushScope({ legs: LEGS, modules, moduleOf: moduleFor, changed: [catalog], graph, catalog: { kind: "modules", modules: new Map([[":integrations-codemode", why]]) } });
+    expect(checks(read.gradle)).toContain(":integrations-codemode:check");
+    expect(checks(read.gradle)).toContain(":app:check");
+    expect(checks(read.gradle)).not.toContain(":core:check");
+    expect(checks(read.gradle).length).toBeLessThan(modules.length);
+    expect(read.decisions.find((d) => d.name === ":integrations-codemode")).toEqual({ kind: "module", name: ":integrations-codemode", selected: true, why });
+    expect(read.decisions.find((d) => d.name === ":app")?.why).toContain(":integrations-codemode");
+    expect(read.decisions.find((d) => d.name === ":core")?.selected).toBe(false);
+    // the catalog sits under gradle/, which the public-source law reads, so the law suites still run
+    expect(read.gradle).toContain(LAW_SUITES_TASK);
+
+    const wide = prePushScope({ legs: LEGS, modules, moduleOf: moduleFor, changed: [catalog], graph, catalog: { kind: "full", why: "`kotlin` in gradle/libs.versions.toml changed, and build-logic/build.gradle.kts reads it, as every module's build does" } });
+    expect(checks(wide.gradle).length).toBe(modules.length);
+    expect(wide.decisions.find((d) => d.name === ":core")?.why).toContain("`kotlin`");
+
+    const comment = prePushScope({ legs: LEGS, modules, moduleOf: moduleFor, changed: [catalog], graph, catalog: { kind: "none" } });
+    expect(checks(comment.gradle)).toEqual([]);
+    expect(comment.gradle).toEqual([LAW_SUITES_TASK]);
   });
 
   test("a module build file, a rule file, package.json and a build-logic test do not check every module", () => {

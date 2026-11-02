@@ -18,6 +18,7 @@ import {
   installShims,
   isCollision,
   judgedRun,
+  ktlintFullRunReason,
   liveGradleElsewhere,
   moduleOf,
   namedFiles,
@@ -613,10 +614,31 @@ describe("pre-push stops a gradle run whose push cannot pass, and records how lo
     expect(text).toContain("ktlint could not judge: ktlint exited 2: boom");
   });
 
-  test("a change to .editorconfig, the version catalog or build-logic leaves ktlint to gradle, in every module in scope", async () => {
+  test("a catalog entry only one module's script reads keeps ktlint batched over the changed Kotlin, and gradle skips its ktlintCheck", async () => {
+    const root = oneModule();
+    writeFile(root, "gradle/libs.versions.toml", '[versions]\nguava = "33.7.1-jre"\n');
+    writeFile(root, "core/build.gradle.kts", 'plugins { id("splice.kotlin-common") }\ndependencies { constraints { implementation("com.google.guava:guava:${libs.versions.guava.get()}") } }\n');
+    git(root, ["add", "-f", "--", "gradle/libs.versions.toml", "core/build.gradle.kts"]);
+    commit(root, "chore(test): a catalog one module reads");
+    git(root, ["update-ref", "refs/remotes/origin/main", "HEAD"]);
+    writeFile(root, "gradle/libs.versions.toml", '[versions]\nguava = "33.8.0-jre"\n');
+    git(root, ["add", "-f", "--", "gradle/libs.versions.toml"]);
+    commit(root, "chore(test): the floor moves");
+    const calls: string[][] = [];
+    const { result, text } = await captured(() =>
+      prePush(lay(root), pushOf(root, head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS, ktlint: clean }),
+    );
+    expect(result).toBe(0);
+    expect(text).toContain("ktlint: 0 changed Kotlin file(s) in one run");
+    expect(text).not.toContain("gradle lints every module in scope");
+    expect(text).toContain("`guava` in gradle/libs.versions.toml changed, and core/build.gradle.kts reads it");
+    expect(calls).toEqual([[":core:check", "lawSuites"]]);
+  });
+
+  test("a change to .editorconfig, a catalog the push adds or build-logic leaves ktlint to gradle, in every module in scope", async () => {
     for (const [path, reason] of [
       [".editorconfig", ".editorconfig changed"],
-      ["gradle/libs.versions.toml", "the version catalog changed"],
+      ["gradle/libs.versions.toml", "gradle/libs.versions.toml is added by the push"],
       ["build-logic/src/main/kotlin/Rule.kt", "build-logic changed"],
     ] as const) {
       const root = oneModule();
@@ -627,7 +649,7 @@ describe("pre-push stops a gradle run whose push cannot pass, and records how lo
         prePush(lay(root), pushOf(root, head(root)), { gate: compiler(root), openRun: () => null, legs: NO_LEGS, ktlint: clean }),
       );
       expect(result, path).toBe(0);
-      expect(text, path).toContain(`ktlint: gradle lints every module in scope (${reason})`);
+      expect(text, path).toContain(`ktlint: gradle lints every module in scope (${reason}`);
       expect(text, path).not.toContain("✓ ktlint");
     }
   });
@@ -734,6 +756,22 @@ describe("the legs that read no code run and pass before gradle starts", () => {
   });
 });
 
+describe("ktlint lints every module in scope only when something that moves its verdict on an untouched file changed", () => {
+  const catalog = "gradle/libs.versions.toml";
+  test("the rule file and build-logic do; a catalog entry only module scripts read does not", () => {
+    expect(ktlintFullRunReason([".editorconfig"])).toBe(".editorconfig changed");
+    expect(ktlintFullRunReason(["build-logic/build.gradle.kts"])).toBe("build-logic changed");
+    expect(ktlintFullRunReason(["core/src/main/kotlin/splice/core/Probe.kt"])).toBeUndefined();
+    expect(ktlintFullRunReason([catalog], { kind: "modules", modules: new Map([[":app", "`guava` changed"]]) })).toBeUndefined();
+    expect(ktlintFullRunReason([catalog], { kind: "none" })).toBeUndefined();
+  });
+
+  test("a catalog entry every module's build reads does, and so does a catalog nobody read", () => {
+    expect(ktlintFullRunReason([catalog], { kind: "full", why: "`ktlint` in gradle/libs.versions.toml changed, and build-logic/build.gradle.kts reads it" })).toContain("`ktlint`");
+    expect(ktlintFullRunReason([catalog])).toContain("not read");
+  });
+});
+
 describe("pre-push scopes the gate to the pushed diff", () => {
   const docsCommit = (root: string) => {
     writeFile(root, "docs/NOTES.md", "notes\n");
@@ -783,6 +821,73 @@ describe("pre-push scopes the gate to the pushed diff", () => {
     const calls: string[][] = [];
     expect(await prePush(lay(root), pushOf(root, head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS })).toBe(0);
     expect(calls[0]).toContain(":core:check");
+  });
+
+  /** A second module beside :core, so a full selection and a one-module selection ask gradle for different tasks. */
+  const TWO_MODULES = `${MODULE_SETTINGS}include(":other")\nproject(":other").projectDir = file("other")\n`;
+  /** The branch's first push: a clean Probe.kt over the scaffold, which the remote then holds. */
+  const pushedBranch = (root: string): string => {
+    writeFile(root, TARGET, CLEAN);
+    git(root, ["add", TARGET]);
+    commit(root, "chore(test): the branch's own change");
+    return head(root);
+  };
+  /** main moves past the scaffold with a second module: settings, the module law and the module's script, a `full` path among them. */
+  const mainGains = (root: string, branch: string): string => {
+    git(root, ["checkout", "-q", "--detach", "origin/main"]);
+    writeFileSync(join(root, "settings.gradle.kts"), TWO_MODULES);
+    writeFileSync(join(root, "gradle", "module-law.txt"), ":core ->\n:other ->\n");
+    writeFile(root, "other/build.gradle.kts", 'plugins { id("splice.kotlin-common") }\n');
+    git(root, ["add", "--", "settings.gradle.kts", "other/build.gradle.kts"]);
+    git(root, ["add", "-f", "--", "gradle/module-law.txt"]);
+    commit(root, "chore(test): main gains a module");
+    const main = head(root);
+    git(root, ["update-ref", "refs/remotes/origin/main", main]);
+    git(root, ["checkout", "-q", branch.replace(/^refs\/heads\//, "")]);
+    return main;
+  };
+  const pushMoving = (root: string, from: string, tip: string): string => `${branchRef(root)} ${tip} refs/heads/feat/x ${from}\n`;
+
+  test("a push after a rebase onto origin/main is judged on the branch's own commits, not on what main gained", async () => {
+    const root = wallsRepo();
+    const branch = branchRef(root);
+    const remote = pushedBranch(root);
+    mainGains(root, branch);
+    git(root, ["rebase", "-q", "origin/main"]);
+    const calls: string[][] = [];
+    const { result, text } = await captured(() => prePush(lay(root), pushMoving(root, remote, head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS }));
+    expect(result).toBe(0);
+    // settings.gradle.kts moved since the remote's sha, but main holds exactly what the push sends, so it is not this push's change
+    expect(calls).toEqual([[":core:check", "lawSuites"]]);
+    expect(text).toContain("the merge base with origin/main");
+    expect(text).toContain(`the push changes ${TARGET}`);
+    expect(text).not.toContain("settings.gradle.kts is the project set");
+  });
+
+  test("a plain push of new commits is judged against the branch's tip on the remote, not against main", async () => {
+    const root = wallsRepo();
+    const remote = pushedBranch(root);
+    docsCommit(root);
+    const calls: string[][] = [];
+    const { result, text } = await captured(() => prePush(lay(root), pushMoving(root, remote, head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS }));
+    expect(result).toBe(0);
+    expect(calls).toEqual([]);
+    expect(text).toContain("the branch's tip on the remote");
+    expect(text).toContain("gradle: none (docs only)");
+  });
+
+  test("a push over a remote tip this checkout does not hold is judged against the merge base with origin/main", async () => {
+    const root = wallsRepo();
+    const branch = branchRef(root);
+    pushedBranch(root);
+    mainGains(root, branch);
+    git(root, ["rebase", "-q", "origin/main"]);
+    const unknown = "1234567890abcdef1234567890abcdef12345678";
+    const calls: string[][] = [];
+    const { result, text } = await captured(() => prePush(lay(root), pushMoving(root, unknown, head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS }));
+    expect(result).toBe(0);
+    expect(calls).toEqual([[":core:check", "lawSuites"]]);
+    expect(text).toContain("not in this checkout");
   });
 
   test("RED: a new branch with no origin/main to compare against is refused before any gate runs", async () => {

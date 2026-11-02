@@ -5,10 +5,12 @@
 // pattern that is only `**` matches nothing: it used to match every path, so those rows ran on every push. A row with
 // `on: "push"` judges the push itself (the commit subject, the history) and runs on every push without selecting a
 // module. The selector names the modules the diff affects: each changed module and every module that depends on one.
-// `check` runs for those modules only. A module the diff cannot reach is not built. `lawSuites` runs when a changed
-// path is one scope.json's `laws` list names. A jar leg runs when its own inputs match, and not because some product
-// file changed. Which test classes those checks run is test-impact.ts's call.
+// `check` runs for those modules only. A module the diff cannot reach is not built. A changed version catalog selects
+// the modules whose build scripts read the changed entries, as the caller read them (catalog-scope.ts). `lawSuites`
+// runs when a changed path is one scope.json's `laws` list names. A jar leg runs when its own inputs match, and not
+// because some product file changed. Which test classes those checks run is test-impact.ts's call.
 
+import type { CatalogImpact } from "./catalog-scope.ts";
 import { type ModuleGraph, select } from "./selector.ts";
 import { isMatchAll, lawRule, matchesAny, type ScopeRules, repoScope } from "./scope.ts";
 
@@ -98,6 +100,8 @@ export interface ScopeInput {
   readonly graph?: ModuleGraph;
   /** The scope rules. The committed file when omitted. */
   readonly scope?: ScopeRules;
+  /** What a changed version catalog makes the push run, as the caller read it. Absent: a changed catalog checks every module. */
+  readonly catalog?: CatalogImpact;
 }
 
 /** A leg that depends on the fat jar. */
@@ -151,7 +155,7 @@ export function prePushScope(input: ScopeInput): PrePushScope {
   const scope = input.scope ?? repoScope();
   const { changed } = input;
   const graph = input.graph ?? new Map();
-  const selection = select({ changed, modules: input.modules, moduleOf: input.moduleOf, graph, scope });
+  const selection = select({ changed, modules: input.modules, moduleOf: input.moduleOf, graph, scope, ...(input.catalog === undefined ? {} : { catalog: input.catalog }) });
   const docsOnly = selection.docsOnly;
   const modules = docsOnly ? [] : selection.modules;
   const selected = new Set(modules);
@@ -160,13 +164,16 @@ export function prePushScope(input: ScopeInput): PrePushScope {
     const owner = input.moduleOf(path);
     if (owner !== undefined) touched.add(owner);
   }
+  for (const module of selection.reasons?.keys() ?? []) touched.add(module);
 
   const moduleDecisions: Decision[] = input.modules.map((module) => {
     if (docsOnly) return { kind: "module", name: module, selected: false, why: "every changed path is prose no law reads" };
     if (selection.full) return { kind: "module", name: module, selected: true, why: selection.why ?? "a changed path affects every module" };
     if (touched.has(module)) {
       const files = changed.filter((path) => input.moduleOf(path) === module);
-      return { kind: "module", name: module, selected: true, why: `the push changes ${listed(files)}` };
+      const catalog = selection.reasons?.get(module);
+      const why = files.length === 0 ? (catalog ?? "a changed catalog entry selects it") : `the push changes ${listed(files)}${catalog === undefined ? "" : `, and ${catalog}`}`;
+      return { kind: "module", name: module, selected: true, why };
     }
     if (selected.has(module)) {
       const via = reaches(module, touched, graph, new Set());

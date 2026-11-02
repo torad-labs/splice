@@ -19,14 +19,20 @@
 // selected class runs one (a test inherited from a parent, an expression body whose type it cannot resolve). So when no selected
 // class is sure, one sure test class of the module joins the filter, and the module runs whole only when it has none.
 //
-// THE FULL SUITE runs when a changed path is one tools/gate/config/scope.json marks `full`: the version catalog, the root
-// build, and the other inputs every module's build reads. A module's own build script, a shared fixture and a build-logic
+// THE FULL SUITE runs when a changed path is one tools/gate/config/scope.json marks `full`: the root build, the convention
+// plugins, and the other inputs every module's build reads. A module's own build script, a shared fixture and a build-logic
 // file that is not on that list are that module's (or build-logic's) concern, and the reference walk selects their tests.
 // The quality/architecture laws run when the path is on the scope file's `laws` list, which is the scope's call.
+//
+// THE VERSION CATALOG (scope.json `catalog`) is read entry by entry (catalog-scope.ts): a module whose build script reads a
+// changed entry runs whole, since a version bump moves bytes no reference can follow, and the tests elsewhere that reach that
+// module are selected as for any whole module. An entry build-logic, the root build or settings reads, or one no script reads,
+// runs the full suite.
 //
 // WHAT THE SELECTION NEVER DOES is widen the run: it names classes inside the module checks the scope already requested
 // (prepush-scope.ts), and `confineTo` drops everything else. Only the full suite reaches past the scope.
 
+import { catalogImpactOf } from "./catalog-scope.ts";
 import { scanSource, type SourceScan, type TestClassDecl } from "./kotlin-source.ts";
 import { docsRule, fullRule, repoScope, type ScopeRules } from "./scope.ts";
 
@@ -233,6 +239,22 @@ function select(input: ImpactInput, scope: ScopeRules): TestImpact {
   };
   const extraSeeds = new Set<string>();
   let fullWhy: string | undefined;
+
+  // A changed version catalog, entry by entry: the module whose script reads a changed entry resolves new bytes, so it runs whole.
+  const catalog = catalogImpactOf({
+    changed: input.changed,
+    scope,
+    read: (path) => (inTip.has(path) ? tree.read(path) : undefined),
+    before: tree.before,
+    texts: () => buildTexts.map((b) => ({ path: b.path, module: b.module?.path, text: b.text })),
+  });
+  if (catalog?.kind === "full") return { mode: "full", why: catalog.why };
+  if (catalog?.kind === "modules") {
+    for (const [path, why] of catalog.modules) {
+      const module = input.modules.find((m) => m.path === path);
+      if (module) unsure(module, why, false);
+    }
+  }
 
   const changedInModules = [...changed].filter((path) => owner(path) !== undefined);
   for (const path of changedInModules) {

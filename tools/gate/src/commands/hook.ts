@@ -61,7 +61,8 @@ import { confineTo, type ImpactInput, impactClause, impactLines, testArgs, testI
 import { narrowBunTest } from "../lib/test-select.ts";
 import { withBuildDeps } from "../lib/project-deps.ts";
 import { commitLegs, decisionLine, type Leg, legsWithoutInputs, prePushScope, shadowJarDecision } from "../lib/prepush-scope.ts";
-import { repoScope } from "../lib/scope.ts";
+import { type CatalogImpact, type CatalogText, catalogImpactOf } from "../lib/catalog-scope.ts";
+import { catalogRule, repoScope } from "../lib/scope.ts";
 import { cancelledBySignal, RUN_ALREADY_OPEN_EXIT } from "./run.ts";
 import { title } from "./title.ts";
 
@@ -424,11 +425,16 @@ const KTLINT_LEG: Leg = { task: "ktlint", command: ["ktlint"] };
 
 /** Why a push cannot take the batched ktlint, or undefined when it can. ktlint's verdict on a file is a function of the file's
  *  bytes, the rule file and ktlint's version, so a file the push did not change keeps the verdict it had when it last passed,
- *  unless one of those moved: any .editorconfig, the catalog that names ktlint's version, or build-logic, which configures the
- *  plugin. Then gradle lints every module in scope, as it always did. */
-export function ktlintFullRunReason(changed: readonly string[]): string | undefined {
+ *  unless one of those moved: any .editorconfig, a catalog entry every module's build reads (ktlint's own version is one: build-logic
+ *  reads it), or build-logic, which configures the plugin. Then gradle lints every module in scope, as it always did. A catalog
+ *  entry only module scripts read moves no verdict; a catalog changed and not read ([catalog] absent) may have. */
+export function ktlintFullRunReason(changed: readonly string[], catalog?: CatalogImpact): string | undefined {
   if (changed.some((path) => path === ".editorconfig" || path.endsWith("/.editorconfig"))) return ".editorconfig changed";
-  if (changed.includes("gradle/libs.versions.toml")) return "the version catalog changed";
+  const versions = changed.find((path) => catalogRule(path) !== undefined);
+  if (versions !== undefined) {
+    if (catalog === undefined) return `${versions} changed, and what changed in it was not read`;
+    if (catalog.kind === "full") return catalog.why;
+  }
   if (changed.some((path) => path.startsWith("build-logic/"))) return "build-logic changed";
   return undefined;
 }
@@ -727,6 +733,20 @@ async function judgeIn(
     const script = join(root, module.dir, "build.gradle.kts");
     return existsSync(script) ? readFileSync(script, "utf8") : undefined;
   });
+  // A changed version catalog, read entry by entry against the base: which modules' scripts read what changed (catalog-scope.ts).
+  // A catalog the reading cannot place runs every module, and so does one this read fails on.
+  let catalog: CatalogImpact | undefined;
+  try {
+    catalog = catalogImpactOf({
+      changed,
+      scope: repoScope(),
+      read: (path) => (existsSync(join(root, path)) ? readFileSync(join(root, path), "utf8") : undefined),
+      before: (path) => textBefore(lay.repoRoot, refs, path),
+      texts: () => buildTextsIn(root, modules),
+    });
+  } catch (error) {
+    catalog = { kind: "full", why: `the version catalog could not be read: ${errorText(error)}` };
+  }
   const scope = prePushScope({
     legs,
     modules: modules.map((module) => module.path),
@@ -734,6 +754,7 @@ async function judgeIn(
     changed,
     graph,
     scope: repoScope(),
+    ...(catalog === undefined ? {} : { catalog }),
   });
   // The packaged code-mode test reruns the worker's suites against the fat jar. A push that cannot change what the worker loads
   // from that jar skips it, and the verdict says so; one that can runs it, and the log names the path that decided.
@@ -748,6 +769,7 @@ async function judgeIn(
   const scopeClause = `; scope: ${summary}${skipPackaged ? `; ${PACKAGED_TEST} skipped: ${PACKAGED_SKIPPED}` : ""}`;
   const packagedWhy = packaged?.runs === true ? packaged.why : undefined;
   console.error("── scope ──");
+  for (const ref of refs) console.error(`  judged against ${judgedBase(lay.repoRoot, ref).why}`);
   for (const line of scope.decisions) console.error(decisionLine(line));
   console.error(decisionLine(shadowJarDecision(scope.legs, packaged?.runs === true, packagedWhy)));
   console.error(
@@ -774,7 +796,7 @@ async function judgeIn(
   // ktlint is not run per module on every push (the plugin's lint step is never cached, so each of up to 31 modules in scope re-linted
   // every source it has, however little the push touched). It runs once over the Kotlin the push changes, in the modules gradle would
   // have linted, unless something that moves ktlint's verdict on an untouched file changed too.
-  const fullKtlint = deps.ktlint === undefined ? undefined : ktlintFullRunReason(changed);
+  const fullKtlint = deps.ktlint === undefined ? undefined : ktlintFullRunReason(changed, catalog);
   const batchKtlint = deps.ktlint !== undefined && fullKtlint === undefined;
   const ktlintFiles = batchKtlint ? changed.filter((path) => KOTLIN.test(path) && moduleOf(modules, path) !== undefined && existsSync(join(root, path))) : [];
   if (batchKtlint) console.error(`── ktlint: ${ktlintFiles.length} changed Kotlin file(s) in one run; gradle skips its per-module ktlintCheck ──`);
@@ -1030,13 +1052,13 @@ function movedRefs(root: string, refs: readonly PushedRef[]): string[] {
   return moved;
 }
 
-/** The paths the pushed refs change, each ref against the sha it moves from. A new branch has no such sha, so it is
- *  compared with its merge base with origin/main. Throws when a base or a diff cannot be read: pre-push refuses rather
- *  than judge a scope it cannot name. Renames list both paths, so a moved file's old module is judged too. */
+/** The paths the pushed refs change, each ref against the commit it is judged against (judgedBase). Throws when a base or a
+ *  diff cannot be read: pre-push refuses rather than judge a scope it cannot name. Renames list both paths, so a moved file's
+ *  old module is judged too. */
 export function pushedPaths(root: string, refs: readonly { tip: string; remote: string }[]): string[] {
   const paths = new Set<string>();
   for (const ref of refs) {
-    const base = pushBase(root, ref);
+    const base = judgedBase(root, ref).sha;
     const diff = git(root, ["diff", "--name-only", "--no-renames", "-z", base, ref.tip]);
     if (diff.status !== 0) throw new Error(`git diff ${base} ${ref.tip} failed: ${diff.stderr.trim()}`);
     for (const path of diff.stdout.toString("utf8").split("\0")) if (path !== "") paths.add(path);
@@ -1044,10 +1066,63 @@ export function pushedPaths(root: string, refs: readonly { tip: string; remote: 
   return [...paths].sort();
 }
 
-/** The commit a pushed ref is judged against: the sha it moves from, or a new branch's merge base with origin/main. Throws
- *  when git cannot say. */
-function pushBase(root: string, ref: { readonly tip: string; readonly remote: string }): string {
-  return ZERO_SHA.test(ref.remote) ? gitText(root, ["merge-base", "origin/main", ref.tip]) : ref.remote;
+/** The commit a pushed ref is judged against, and why it is that one. */
+export interface JudgedBase {
+  readonly sha: string;
+  readonly why: string;
+}
+
+/** The merge base of [a] and [b], or undefined when git cannot say (a sha this checkout does not hold, no origin/main). */
+function mergeBase(root: string, a: string, b: string): string | undefined {
+  const found = git(root, ["merge-base", a, b]);
+  const sha = found.stdout.toString("utf8").trim();
+  return found.status === 0 && sha.length > 0 ? sha : undefined;
+}
+
+const bases = new Map<string, JudgedBase>();
+
+/**
+ * THE COMMIT A PUSH IS JUDGED AGAINST. The scope is the pushed diff, and the diff needs a base. A plain push of new commits is
+ * judged against the branch's tip on the remote, as git's stdin names it: the new commits are the change. But a push that rebases
+ * or merges the branch onto main moves the remote's tip past commits main already holds, and a diff from the remote's tip would
+ * count main's own changes as this push's: on Nov 2 2026 three rebased PR branches each ran the full suite for a catalog line
+ * main had merged hours before. Main's commits were judged on main; what is new in the pushed commit is the branch's own content
+ * on top of them, which is its diff from its merge base with origin/main. So the base is the merge base with origin/main whenever
+ * that commit is not behind the remote's tip, and the remote's tip otherwise. A new branch has only the merge base with origin/main,
+ * and so does a remote tip this checkout does not hold. Throws when neither can be read: pre-push refuses rather than judge a
+ * scope it cannot name. The answer is kept per push, since the text-before reads ask for it once per changed path.
+ */
+export function judgedBase(root: string, ref: { readonly tip: string; readonly remote: string }): JudgedBase {
+  const key = `${root}\0${ref.tip}\0${ref.remote}`;
+  const kept = bases.get(key);
+  if (kept !== undefined) return kept;
+  const newBranch = ZERO_SHA.test(ref.remote);
+  const remote = newBranch ? undefined : mergeBase(root, ref.remote, ref.tip);
+  const main = mergeBase(root, "origin/main", ref.tip);
+  const short = (sha: string): string => sha.slice(0, 9);
+  let base: JudgedBase;
+  if (remote === undefined && main === undefined) {
+    throw new Error(
+      newBranch
+        ? `a new branch is judged against its merge base with origin/main, and origin/main cannot be read`
+        : `the remote's tip ${short(ref.remote)} is not in this checkout and origin/main cannot be read, so there is nothing to judge ${short(ref.tip)} against`,
+    );
+  } else if (main === undefined) {
+    base = { sha: remote as string, why: `${short(remote as string)}, the branch's tip on the remote (origin/main cannot be read)` };
+  } else if (remote === undefined) {
+    base = {
+      sha: main,
+      why: newBranch
+        ? `${short(main)}, the merge base with origin/main: the branch is new to the remote`
+        : `${short(main)}, the merge base with origin/main: the remote's tip ${short(ref.remote)} is not in this checkout`,
+    };
+  } else if (remote === main || git(root, ["merge-base", "--is-ancestor", main, remote]).status === 0) {
+    base = { sha: remote, why: `${short(remote)}, the branch's tip on the remote` };
+  } else {
+    base = { sha: main, why: `${short(main)}, the merge base with origin/main: the push puts the branch on commits main already holds, which were judged there` };
+  }
+  bases.set(key, base);
+  return base;
 }
 
 /**
@@ -1092,10 +1167,26 @@ function testSelection(
 /** A path's text in the commit a pushed ref moves from, for a path the push deleted; undefined when no ref's base holds it. */
 function textBefore(root: string, refs: readonly PushedRef[], path: string): string | undefined {
   for (const ref of refs) {
-    const shown = git(root, ["show", `${pushBase(root, ref)}:${path}`]);
+    const shown = git(root, ["show", `${judgedBase(root, ref).sha}:${path}`]);
     if (shown.status === 0) return shown.stdout.toString("utf8");
   }
   return undefined;
+}
+
+/** The build texts of the judged tree: every gradle script outside a source set's resources, and build-logic's sources, each with
+ *  the module it configures (undefined for the root build, settings and build-logic). The same set test-impact.ts scans. */
+function buildTextsIn(root: string, modules: readonly GradleModule[]): CatalogText[] {
+  const listed = git(root, ["ls-files", "-z"]);
+  if (listed.status !== 0) throw new Error(`git ls-files in the build tree failed: ${listed.stderr.trim()}`);
+  const texts: CatalogText[] = [];
+  for (const path of listed.stdout.toString("utf8").split("\0")) {
+    if (path === "") continue;
+    const script = /\.gradle(\.kts)?$/.test(path) && !/(^|\/)src\/[^/]+\/resources\//.test(path);
+    const logic = /^(build-logic|buildSrc)\//.test(path) && /\.(kt|kts|java)$/.test(path);
+    if (!script && !logic) continue;
+    texts.push({ path, module: logic ? undefined : moduleOf(modules, path), text: readFileSync(join(root, path), "utf8") });
+  }
+  return texts;
 }
 
 /** The module law, read from the file the build enforces. */

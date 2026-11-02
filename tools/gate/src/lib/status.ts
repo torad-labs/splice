@@ -17,11 +17,14 @@ export function exitForSignal(signal: NodeJS.Signals): number {
 /**
  * The status to propagate for a finished child — `Bun.spawn` and `Bun.spawnSync` alike, which is
  * why `signalCode` is widened AND optional: bun-types spells it `signalCode: NodeJS.Signals | null`
- * on `Subprocess` and `signalCode?: string` on `SyncSubprocess`.
+ * on `Subprocess` and, since @types/bun 1.4.4, `signalCode?: number | NodeJS.Signals` on
+ * `SyncSubprocess`, where the number is the signal's own number and so the one 128 is added to.
  */
 export function exitStatusOf(child: {
   readonly exitCode: number | null;
-  readonly signalCode?: string | null;
+  readonly signalCode?: string | number | null;
 }): number {
-  return child.signalCode ? exitForSignal(child.signalCode as NodeJS.Signals) : (child.exitCode ?? 1);
+  const signal = child.signalCode;
+  if (typeof signal === "number") return 128 + signal;
+  return signal ? exitForSignal(signal as NodeJS.Signals) : (child.exitCode ?? 1);
 }

@@ -2,12 +2,15 @@
 /** The structured half of plan-limit.sh: what the client is told, and what the upstream saw.
  *
  *  probe <port> <out> <log> three turns compared with the mock's recorded native responses:
- *                           FIRST, streamed: HTTP 429 with the native body and rate-limit headers,
+ *                           FIRST, streamed: HTTP 429 with the native envelope and rate-limit headers,
  *                           one upstream attempt; SECOND, streamed at once: that same native
  *                           refusal, held locally with no upstream attempt; THIRD, buffered after
- *                           the bounded hold: one new attempt, again relayed. The body and every
- *                           header are verbatim except unified-reset and retry-after, which name
- *                           splice's 30 s recheck (ClientRecheck.kt) when the native one is later.
+ *                           the bounded hold: one new attempt, again relayed. The envelope, the error
+ *                           type and every header are verbatim except unified-reset and retry-after,
+ *                           which name splice's 30 s recheck (ClientRecheck.kt) when the native one is
+ *                           later. The message is splice's own line (HoldSentences.kt, failure-handling
+ *                           slice 5, 2026-10-27): a limit the turn cannot wait out is told to Claude
+ *                           Code with the head, the window it met and the native reset as a clock time.
  *  upstream <log> [max]     the mock's request log as a timeline, and how many turns reached the
  *                           upstream while it was still at its limit. With [max], more than that
  *                           many fails.
@@ -76,10 +79,49 @@ function upstreamTurns(log: string): NativeReply[] {
     .map((line) => JSON.parse(line) as NativeReply).filter((row) => row.path === "/v1/messages");
 }
 
+interface Envelope {
+  type?: string;
+  error?: { type?: string; message?: string };
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** An epoch second as a person reads it in a hold line: LocalTimeText's "MMM d, h:mm a z" in the machine's zone, which is
+ *  UTC in the e2e image ("Nov 2, 10:28 PM UTC"). Spelled by hand so a locale's spacing cannot differ from the JDK's. */
+function clockTime(epochSeconds: number): string {
+  const at = new Date(epochSeconds * 1000);
+  const hours = at.getUTCHours();
+  const clock = `${hours % 12 === 0 ? 12 : hours % 12}:${String(at.getUTCMinutes()).padStart(2, "0")} ${hours < 12 ? "AM" : "PM"}`;
+  return `${MONTHS[at.getUTCMonth()]} ${at.getUTCDate()}, ${clock} UTC`;
+}
+
+/** The refusal body as Claude Code reads it: the native envelope and error type, so the client handles the 429 it is, and
+ *  in place of the upstream's sentence splice's line, which says the head met a limit and when it resets, in the
+ *  clock time the native reset header names. */
+function heldLine(answer: Answer, expected: NativeReply, label: string): void {
+  const native = JSON.parse(expected.body) as Envelope;
+  let got: Envelope;
+  try {
+    got = JSON.parse(answer.body) as Envelope;
+  } catch {
+    throw new CheckFailed(`${label}: the refusal body is not JSON: ${answer.body}`);
+  }
+  check(got.type === native.type && got.error?.type === native.error?.type,
+    `${label}: the refusal's type changed: native ${native.type}/${native.error?.type}, got ${got.type}/${got.error?.type}`);
+  const line = got.error?.message ?? "";
+  check(line.startsWith("[splice] "), `${label}: the message is not splice's line: ${line}`);
+  check(/\blimit\b/.test(line), `${label}: the line does not say the head met a limit: ${line}`);
+  const reset = expected.headers[UNIFIED_RESET];
+  if (reset !== undefined) {
+    const spelled = clockTime(Number(reset));
+    check(line.includes(spelled), `${label}: the line does not name the native reset ${spelled}: ${line}`);
+  }
+}
+
 function nativeReply(answer: Answer, expected: NativeReply | undefined, label: string): void {
   check(expected !== undefined, `${label}: the mock recorded no upstream reply`);
   check(expected.status === 429 && answer.status === 429, `${label}: native HTTP 429 required, got ${answer.status}`);
-  check(answer.body === expected.body, `${label}: the native refusal body changed`);
+  heldLine(answer, expected, label);
   const selected = (name: string) => name.startsWith("anthropic-ratelimit-") || name === "retry-after" || name === "x-should-retry";
   const source = Object.entries(expected.headers).filter(([name]) => selected(name));
   check(source.length > 0, `${label}: the mock recorded no rate-limit headers`);
@@ -89,7 +131,7 @@ function nativeReply(answer: Answer, expected: NativeReply | undefined, label: s
     else check(answer.headers[name] === value, `${label}: ${name} changed: expected '${value}', got '${answer.headers[name]}'`);
   }
   check(Object.keys(answer.headers).filter(selected).length === source.length, `${label}: splice invented rate-limit headers`);
-  console.log(`${label} ${answer.status} after ${answer.elapsed_ms} ms; native body and ${source.length} headers relayed, `
+  console.log(`${label} ${answer.status} after ${answer.elapsed_ms} ms; native envelope, splice's line and ${source.length} headers relayed, `
     + `retry deadlines at splice's ${CLIENT_RECHECK_S} s recheck`);
   for (const [name, value] of source) {
     const named = answer.headers[name];

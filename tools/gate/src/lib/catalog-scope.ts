@@ -15,7 +15,8 @@
 // An entry no build script reads at all: either it is dead or it is read in a way this file does not know, and the pre-push
 // selects more where it is unsure. A catalog the push adds, removes, or leaves unparseable on either side. A lookup whose alias is
 // computed (CatalogReader.read() walks every alias for the dependency-hygiene check at the root) is not a reader of any one entry:
-// the hygiene task has its own ladder inputs, and the entries it checks are the ones the module scripts resolve.
+// catalogMetadataSync runs only under gateOfRecord, never in a pre-push, and the entries it checks are the ones the module scripts
+// resolve.
 //
 // Pure: the caller reads the catalog before and after the push and the build texts, and nothing here starts a process.
 
@@ -240,16 +241,19 @@ export function catalogImpact(input: CatalogImpactInput): CatalogImpact {
   for (const text of input.texts) {
     const hits = catalogReferences(text.text, input.accessor, catalogs).filter((key) => standsFor.has(keyOf(key)));
     if (hits.length === 0) continue;
-    const entries = [...new Set(hits.flatMap((hit) => (standsFor.get(keyOf(hit)) ?? []).map((key) => key.alias)))];
-    for (const entry of entries) placed.add(entry);
+    // Placed by table and alias (keyOf), not by alias: ktlint, detekt, kover, cyclonedx, shadow and konsist name a version and a plugin
+    // each in the real catalog, and a read of one must not place a change to the other. The alias alone is for the reason.
+    const entries = [...new Map(hits.flatMap((hit) => standsFor.get(keyOf(hit)) ?? []).map((key) => [keyOf(key), key] as const)).values()];
+    for (const entry of entries) placed.add(keyOf(entry));
     const through = hits.filter((hit) => !changed.some((key) => keyOf(key) === keyOf(hit))).map((hit) => hit.alias);
     const via = through.length === 0 ? "" : ` through ${spelled(through)}`;
-    const reason = `${spelled(entries)} in ${path} changed, and ${text.path} reads ${entries.length === 1 ? "it" : "them"}${via}`;
+    const aliases = entries.map((key) => key.alias);
+    const reason = `${spelled(aliases)} in ${path} changed, and ${text.path} reads ${entries.length === 1 ? "it" : "them"}${via}`;
     if (text.module === undefined) return { kind: "full", why: `${reason}, as every module's build does` };
     const existing = modules.get(text.module);
     modules.set(text.module, existing === undefined ? reason : `${existing}; ${reason}`);
   }
-  const unplaced = changed.filter((key) => !placed.has(key.alias)).map((key) => key.alias);
+  const unplaced = changed.filter((key) => !placed.has(keyOf(key))).map((key) => key.alias);
   if (unplaced.length > 0) {
     return {
       kind: "full",

@@ -71,18 +71,28 @@ function isDirectory(path: string): boolean {
 
 /** The paths `org.gradle.java.installations.paths` names in the gradle user home's gradle.properties: Gradle's own way of
  *  pointing a machine at specific JDK folders, read here so the gate and the build answer alike. Read as java.util.Properties
- *  reads the file, which is how Gradle reads it: a backslash continues a line, `=`, `:` or whitespace separates the key, `#` and
- *  `!` open comments, and the last assignment wins. */
+ *  reads the file, which is how Gradle reads it: a line that is not a comment and ends in an odd run of backslashes continues on
+ *  the next line, whose leading blanks are dropped; a comment line (`#` or `!` first) is never continued, whatever it ends in;
+ *  `=`, `:` or whitespace separates the key; and the last assignment wins. */
 function gradleInstallationPaths(gradleUserHome: string): string[] {
   const file = join(gradleUserHome, "gradle.properties");
   if (!existsSync(file)) return [];
-  const lines = readFileSync(file, "utf8")
-    .replace(/\\\r?\n[ \t\f]*/g, "")
-    .split(/\r?\n/);
+  const logical: string[] = [];
+  let pending: string | undefined;
+  for (const natural of readFileSync(file, "utf8").split(/\r?\n/)) {
+    const line = natural.replace(/^[ \t\f]+/, "");
+    if (pending === undefined && (line.startsWith("#") || line.startsWith("!"))) continue;
+    const run = /\\+$/.exec(line)?.[0].length ?? 0;
+    if (run % 2 === 1) {
+      pending = (pending ?? "") + line.slice(0, -1);
+      continue;
+    }
+    logical.push((pending ?? "") + line);
+    pending = undefined;
+  }
+  if (pending !== undefined) logical.push(pending);
   let value = "";
-  for (const raw of lines) {
-    const line = raw.trimStart();
-    if (line.startsWith("#") || line.startsWith("!")) continue;
+  for (const line of logical) {
     const match = /^org\.gradle\.java\.installations\.paths(?:\s*[=:]\s*|\s+)(.*)$/.exec(line);
     if (match) value = match[1] ?? "";
   }

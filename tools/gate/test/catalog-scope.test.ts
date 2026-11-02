@@ -135,6 +135,23 @@ describe("a build script's catalog references", () => {
 });
 
 describe("what a catalog change makes the pre-push run", () => {
+  test("an alias two tables share is placed by table: a read of the library does not place a change to the version of the same name", () => {
+    // the real catalog has ktlint, detekt, kover, cyclonedx, shadow and konsist in two tables each; here `foo` is a version no script
+    // reads beside a library :core reads, and both change
+    const both = edited('grpc = "1.85.1"', 'grpc = "1.85.1"\nfoo = "1.0"').replace(
+      'junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }',
+      'junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }\nfoo = { module = "g:foo", version = "2.0" }',
+    );
+    const bumped = both.replace('foo = "1.0"', 'foo = "1.1"').replace('version = "2.0"', 'version = "2.1"');
+    const texts = TEXTS.map((text) => (text.path === "core/build.gradle.kts" ? { ...text, text: "dependencies { implementation(libs.foo) }\n" } : text));
+    const result = catalogImpact({ path: "gradle/libs.versions.toml", accessor: "libs", before: both, after: bumped, texts });
+    expect(result.kind).toBe("full");
+    if (result.kind === "full") expect(result.why).toContain("`foo` in gradle/libs.versions.toml changed, and no build script reads it");
+    // the library alone, read by :core, is placed
+    const libraryOnly = catalogImpact({ path: "gradle/libs.versions.toml", accessor: "libs", before: both, after: both.replace('version = "2.0"', 'version = "2.1"'), texts });
+    expect(Object.keys(modulesOf(libraryOnly))).toEqual([":core"]);
+  });
+
   test("an entry only module scripts read selects those modules, and the reason names the entry and the script", () => {
     const result = impact(edited('guava = "33.7.1-jre"', 'guava = "33.8.0-jre"'));
     expect(Object.keys(modulesOf(result)).sort()).toEqual([":app", ":integrations-codemode"]);

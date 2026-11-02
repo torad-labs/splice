@@ -164,6 +164,11 @@ describe("the JDK 21 resolver", () => {
       expect(pinned(`org.gradle.java.installations.paths ${join(box, "a")},${join(box, "b")}\n`)).toEqual([join(box, "a"), join(box, "b")]);
       expect(pinned(`org.gradle.java.installations.paths=${join(box, "old")}\n# moved:\norg.gradle.java.installations.paths=${join(box, "a")},${join(box, "b")}\n`)).toEqual([join(box, "a"), join(box, "b")]);
       expect(pinned(`# org.gradle.java.installations.paths=${join(box, "commented")}\norg.gradle.jvmargs=-Xmx2g\n`)[0]).not.toBe(join(box, "commented"));
+      // a comment line is never continued, whatever it ends in: the pin on the next line is read (Properties' javadoc: "a comment line
+      // cannot be extended in this manner")
+      expect(pinned(`# old pin was C:\\jdks\\\norg.gradle.java.installations.paths=${join(box, "a")},${join(box, "b")}\n`)).toEqual([join(box, "a"), join(box, "b")]);
+      // an even run of backslashes ends the line: the next line is its own key, not the pin's continuation
+      expect(pinned(`org.gradle.java.installations.paths=${join(box, "a")}\\\\\norg.gradle.jvmargs=-Xmx2g\n`)).toEqual([`${join(box, "a")}\\\\`, join(box, "home", "jdks")]);
     } finally {
       rmSync(box, { recursive: true, force: true });
     }

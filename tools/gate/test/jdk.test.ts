@@ -91,8 +91,15 @@ describe("the JDK 21 resolver", () => {
       expect(roots).toContain(join(box, "home", ".jdks"));
       expect(roots).toContain(join(box, "home", ".gradle", "jdks"));
       expect(roots).toContain(join(box, "home", ".sdkman", "candidates", "java"));
-      expect(roots).toContain("/usr/lib/jvm");
-      expect(roots).toContain("/Library/Java/JavaVirtualMachines");
+      expect(roots).toContain(join(box, "home", ".asdf", "installs", "java"));
+      // IntelliJ's macOS download folder, which `java_home -V` lists and Gradle's detection reads
+      expect(roots).toContain(join(box, "home", "Library", "Java", "JavaVirtualMachines"));
+      // the Linux folders Gradle's installation supplier scans: distro packages, Oracle RPMs, hand installs
+      for (const system of ["/usr/lib/jvm", "/usr/lib64/jvm", "/usr/java", "/usr/local/java", "/opt/java", "/Library/Java/JavaVirtualMachines"]) {
+        expect(roots).toContain(system);
+      }
+      // the user's folders come before the system's
+      expect(roots.indexOf(join(box, "home", "Library", "Java", "JavaVirtualMachines"))).toBeLessThan(roots.indexOf("/usr/lib/jvm"));
       // a pinned path that IS a JDK (not a folder of them) resolves as itself
       fakeJava(join(box, "pinned"), "21.0.11", "/should/not/be/read");
       fakeJava(join(box, "onpath"), "25.0.3", "/twenty-five");
@@ -100,6 +107,31 @@ describe("the JDK 21 resolver", () => {
         javaHome: join(box, "pinned"),
         source: `installed under ${join(box, "pinned")}`,
       });
+    } finally {
+      rmSync(box, { recursive: true, force: true });
+    }
+  });
+
+  test("the folders honor the variables Gradle honors: GRADLE_USER_HOME, SDKMAN_CANDIDATES_DIR and ASDF_DATA_DIR", () => {
+    const box = mkdtempSync(join(tmpdir(), "gate-jdk-"));
+    try {
+      const gradleHome = join(box, "gradle-user-home");
+      mkdirSync(gradleHome, { recursive: true });
+      writeFileSync(join(gradleHome, "gradle.properties"), `org.gradle.java.installations.paths=${join(box, "pinned")}\n`);
+      const roots = jdkRoots({
+        HOME: join(box, "home"),
+        GRADLE_USER_HOME: gradleHome,
+        SDKMAN_CANDIDATES_DIR: join(box, "sdkman-candidates"),
+        ASDF_DATA_DIR: join(box, "asdf-data"),
+      });
+      // the pin in the moved gradle home is read, and its jdks folder is searched
+      expect(roots[0]).toBe(join(box, "pinned"));
+      expect(roots).toContain(join(gradleHome, "jdks"));
+      expect(roots).toContain(join(box, "sdkman-candidates", "java"));
+      expect(roots).toContain(join(box, "asdf-data", "installs", "java"));
+      // the defaults under the home stay, so a machine with both is searched in both
+      expect(roots).toContain(join(box, "home", ".gradle", "jdks"));
+      expect(roots).toContain(join(box, "home", ".sdkman", "candidates", "java"));
     } finally {
       rmSync(box, { recursive: true, force: true });
     }

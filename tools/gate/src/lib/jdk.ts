@@ -66,10 +66,10 @@ function isDirectory(path: string): boolean {
   }
 }
 
-/** The paths `org.gradle.java.installations.paths` names in [home]'s ~/.gradle/gradle.properties: Gradle's own way of pointing a
- *  machine at specific JDK folders, read here so the gate and the build answer alike. */
-function gradleInstallationPaths(home: string): string[] {
-  const file = join(home, ".gradle", "gradle.properties");
+/** The paths `org.gradle.java.installations.paths` names in the gradle user home's gradle.properties: Gradle's own way of
+ *  pointing a machine at specific JDK folders, read here so the gate and the build answer alike. */
+function gradleInstallationPaths(gradleUserHome: string): string[] {
+  const file = join(gradleUserHome, "gradle.properties");
   if (!existsSync(file)) return [];
   const line = readFileSync(file, "utf8")
     .split("\n")
@@ -83,19 +83,34 @@ function gradleInstallationPaths(home: string): string[] {
 }
 
 /** Where installed JDKs live on this machine, in the order they are searched: the user's own pins and folders first, the
- *  system's after. Each entry is a folder OF JDKs, or a JDK itself (a pinned path). */
+ *  system's after. Each entry is a folder OF JDKs, or a JDK itself (a pinned path). The list is the one Gradle's own toolchain
+ *  detection scans, so a 21 `./gradlew` compiles on is one the gate finds: the gradle user home's pins and `jdks` download folder
+ *  (GRADLE_USER_HOME, or ~/.gradle), IntelliJ's download folders (~/.jdks on Linux, ~/Library/Java/JavaVirtualMachines on macOS),
+ *  SDKMAN's and asdf's candidate folders (at the variables those tools export, and their defaults under the home), and the
+ *  system folders: distro packages under /usr/lib/jvm and /usr/lib64/jvm, Oracle RPMs under /usr/java, hand installs under
+ *  /usr/local/java and /opt/java, and macOS bundles under /Library/Java/JavaVirtualMachines. */
 export function jdkRoots(env: Record<string, string | undefined> = Bun.env): string[] {
   const home = env.HOME ?? homedir();
-  return [
-    ...gradleInstallationPaths(home),
+  const gradleUserHome = env.GRADLE_USER_HOME ?? join(home, ".gradle");
+  const roots = [
+    ...gradleInstallationPaths(gradleUserHome),
     join(home, "jdks"),
     join(home, ".jdks"),
+    join(home, "Library", "Java", "JavaVirtualMachines"),
+    join(gradleUserHome, "jdks"),
     join(home, ".gradle", "jdks"),
+    join(env.SDKMAN_CANDIDATES_DIR ?? join(home, ".sdkman", "candidates"), "java"),
     join(home, ".sdkman", "candidates", "java"),
+    join(env.ASDF_DATA_DIR ?? join(home, ".asdf"), "installs", "java"),
     join(home, ".asdf", "installs", "java"),
     "/usr/lib/jvm",
+    "/usr/lib64/jvm",
+    "/usr/java",
+    "/usr/local/java",
+    "/opt/java",
     "/Library/Java/JavaVirtualMachines",
   ];
+  return [...new Set(roots)];
 }
 
 /** The JDK homes a root offers: itself when it is a JDK, else each child, a macOS bundle read at its Contents/Home. */

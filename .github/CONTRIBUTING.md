@@ -3,9 +3,11 @@
 ## Prerequisites
 
 - Node 24
-- JDK 21, anywhere Gradle's toolchain detection looks (`~/.jdks`, `~/jdks`, `~/.sdkman`, `/usr/lib/jvm`,
-  `/Library/Java/JavaVirtualMachines`, where `brew install --cask temurin@21` puts it), on your PATH, or named in
-  `~/.gradle/gradle.properties` as
+- JDK 21, anywhere Gradle's toolchain detection looks (`~/.jdks`, `~/jdks`, `~/.gradle/jdks`, `~/.sdkman`, `~/.asdf`,
+  `~/Library/Java/JavaVirtualMachines` where IntelliJ downloads on macOS, `/usr/lib/jvm` and `/usr/lib64/jvm`, `/usr/java`,
+  `/usr/local/java`, `/opt/java`, and `/Library/Java/JavaVirtualMachines`, where `brew install --cask temurin@21` puts it;
+  `GRADLE_USER_HOME`, `SDKMAN_CANDIDATES_DIR` and `ASDF_DATA_DIR` move those folders as they do for Gradle), on your PATH, or
+  named in `~/.gradle/gradle.properties` as
   `org.gradle.java.installations.paths=/path/to/jdk-21`. Your default `java` may be newer: the build compiles and tests
   on the 21 (`jvmToolchain(21)`), and the gate, the hooks' linters and the release launcher resolve the same 21 by
   themselves; `bun tools/gate run --java-home-only` prints which one.

@@ -145,129 +145,14 @@
   }
   document.addEventListener("visibilitychange", function () { root.classList.toggle("pg-away", document.hidden); });
 
-  // The first screen's stage: when it comes into view, claudex hands a turn to the Grok plan and claude-splice hands one to the
-  // Muse plan. The command that hands the turn on and the plan that takes it light up, the turn's wire runs its dashes while the
-  // turn travels it, the plan's meter fills a little, and everything settles back. It plays once per view: leaving the stage and
-  // coming back plays it again, and nothing runs while the stage rests. Under reduced motion the stage rests as drawn.
-  var win = document.querySelector(".fr-stage .fr-win");
-  if (win && "IntersectionObserver" in window) {
-    var rail = win.querySelectorAll(".fr-rail > .card.h");
-    var plans = win.querySelectorAll(".fr-prov .fr-grp:first-child .fr-plan");
-    var timers = [];
-    var run = 0;
-    var inView = false;
-    var ratio = 0;
-    var pkt = null;
-    var undo = [];
-    var turns = [
-      { cmd: 1, plan: 1, to: 2, toCmd: 2, color: "var(--gpt)", pct: [31, 33], from: [55, 56] },
-      { cmd: 0, plan: 0, to: 4, toCmd: 4, color: "var(--claude)", pct: null, from: null }
-    ];
-
-    var after = function (id, fn, ms) { timers.push(setTimeout(function () { if (id === run) fn(); }, ms)); };
-    var stacked = function () { return getComputedStyle(win).gridTemplateColumns.split(" ").length < 3; };
-    var on = function (card, yes) { if (card) card.classList.toggle("fr-on", !!yes); };
-    var hot = function (card, color, yes) {
-      if (!card) return;
-      card.classList.toggle("fr-hot", !!yes);
-      if (yes) card.style.setProperty("--fr-wc", color); else card.style.removeProperty("--fr-wc");
-    };
-    var meter = function (card, from, to) {
-      var fill = card.querySelector(".windows .bar.grow > b");
-      var p = card.querySelector(".windows .pct");
-      var txt = p && p.firstChild && p.firstChild.nodeType === 3 ? p.firstChild : null;
-      if (fill) fill.style.transform = "scaleX(" + to / from + ")";
-      if (txt) txt.nodeValue = Math.round(to) + "%";
-    };
-
-    // the packet: a small tile that rides the connector from the command's wire to the plan's wire, inside the connector bar
-    var travel = function (fromCard, toCard, color, done) {
-      var bar = win.querySelector(".fr-bar");
-      if (stacked() || !win.animate || !bar) { done(); return; }
-      if (!pkt) {
-        pkt = document.createElement("span");
-        pkt.className = "fr-pkt";
-        pkt.setAttribute("aria-hidden", "true");
-        pkt.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10M9 4l4 4-4 4"/></svg>';
-        bar.appendChild(pkt);
-      }
-      pkt.style.setProperty("--c", color);
-      var br = bar.getBoundingClientRect();
-      var wr = win.getBoundingClientRect();
-      var z = (win.offsetWidth ? wr.width / win.offsetWidth : 1) || 1;
-      var rem = parseFloat(getComputedStyle(root).fontSize) || 16;
-      var half = (pkt.offsetWidth / 2) * z, cast = 0.5 * rem * z;
-      var a = fromCard.getBoundingClientRect(), b = toCard.getBoundingClientRect();
-      var X = function (v) { return (v - br.left) / z; }, Y = function (v) { return (v - br.top) / z; };
-      var x0 = X(a.right + cast + half + 16), y0 = Y(a.top + a.height / 2);
-      var xm = X(br.left + br.width / 2);
-      var y1 = Y(b.top + b.height / 2), x1 = X(b.left - half - 16);
-      var l1 = Math.max(1, xm - x0), l2 = Math.max(1, Math.abs(y1 - y0)), l3 = Math.max(1, x1 - xm);
-      var tot = l1 + l2 + l3;
-      var at = function (x, y, s, o, off) { return { transform: "translate(" + x + "px," + y + "px) scale(" + s + ")", opacity: o, offset: off }; };
-      var anim = pkt.animate([
-        at(x0, y0, 0.6, 0, 0), at(x0, y0, 1, 1, 0.06),
-        at(xm, y0, 1, 1, 0.06 + 0.88 * l1 / tot), at(xm, y1, 1, 1, 0.06 + 0.88 * (l1 + l2) / tot),
-        at(x1, y1, 1, 1, 0.94), at(x1, y1, 0.6, 0, 1)
-      ], { duration: 3200, easing: "cubic-bezier(.65,0,.35,1)", fill: "none" });
-      anim.onfinish = done;
-      anim.oncancel = done;
-    };
-
-    var settle = function () {
-      run++;
-      timers.forEach(clearTimeout);
-      timers = [];
-      if (pkt && pkt.getAnimations) pkt.getAnimations().forEach(function (an) { an.onfinish = null; an.oncancel = null; an.cancel(); });
-      Array.prototype.forEach.call(win.querySelectorAll(".fr-on, .fr-hot"), function (c) { c.classList.remove("fr-on", "fr-hot"); c.style.removeProperty("--fr-wc"); });
-      undo.forEach(function (fn) { fn(); });
-      undo = [];
-    };
-
-    var play = function () {
-      var id = ++run;
-      var n = 0;
-      var next = function () {
-        var t = turns[n++];
-        if (!t || id !== run) return;
-        var cmd = rail[t.cmd], src = plans[t.plan], dst = plans[t.to], dstCmd = rail[t.toCmd];
-        if (!cmd || !src || !dst) return;
-        on(cmd, true); on(src, true);
-        if (t.from) { meter(src, t.from[0], t.from[1]); undo.push(function () { meter(src, t.from[1], t.from[0]); }); }
-        after(id, function () {
-          hot(cmd, t.color, true); hot(dst, t.color, true);
-          travel(cmd, dst, t.color, function () {
-            if (id !== run) return;
-            hot(cmd, t.color, false); hot(dst, t.color, false);
-            on(src, false); on(cmd, false); on(dst, true); on(dstCmd, true);
-            if (t.pct) { meter(dst, t.pct[0], t.pct[1]); undo.push(function () { meter(dst, t.pct[1], t.pct[0]); }); }
-            after(id, function () {
-              on(dst, false); on(dstCmd, false);
-              if (t.pct) meter(dst, t.pct[1], t.pct[0]);
-              if (t.from) meter(src, t.from[1], t.from[0]);
-              undo = [];
-              after(id, next, 700);
-            }, 2600);
-          });
-        }, 900);
-      };
-      next();
-    };
-
-    var enter = function () {
-      if (inView || still.matches || document.hidden) return;
-      inView = true;
-      var id = run;
-      timers.push(setTimeout(function () { if (inView && id === run) play(); }, 700));
-    };
-    var leave = function () { inView = false; settle(); };
-    new IntersectionObserver(function (entries) {
-      entries.forEach(function (en) {
-        ratio = en.intersectionRatio;
-        if (ratio >= 0.15) enter(); else leave();
-      });
-    }, { threshold: [0, 0.15] }).observe(win);
-    document.addEventListener("visibilitychange", function () { if (document.hidden) leave(); else if (ratio >= 0.15) enter(); });
-    if (still.addEventListener) still.addEventListener("change", function () { if (still.matches) leave(); });
+  // The film's preview rests on its title card, like a video's thumbnail. While a mouse is over it, it plays its own frames muted; when
+  // the mouse leaves, or the film opens, it stops and goes back to the title card. Under reduced motion it never moves.
+  var pv = document.querySelector(".fr-pv");
+  var pvFilm = pv && pv.closest("[data-film]");
+  if (pvFilm && !still.matches) {
+    var rest = function () { pv.pause(); try { pv.currentTime = 7; } catch (_) { /* not loaded yet: it is still on its title card */ } };
+    pvFilm.addEventListener("pointerenter", function (e) { if (e.pointerType !== "mouse") return; var p = pv.play(); if (p && p.catch) p.catch(rest); });
+    pvFilm.addEventListener("pointerleave", rest);
+    pvFilm.addEventListener("click", rest);
   }
 })();

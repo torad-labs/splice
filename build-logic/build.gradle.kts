@@ -44,6 +44,11 @@ dependencies {
     constraints {
         implementation("com.fasterxml.jackson.core:jackson-core:${libs.versions.jackson.get()}")
         implementation("com.fasterxml.jackson.core:jackson-databind:${libs.versions.jackson.get()}")
+        // build-logic applies the ktlint plugin to itself and cannot apply its own convention plugin, so the logback floor
+        // splice.kotlin-common puts on every module's `ktlint` configuration is repeated here for build-logic's own
+        // (ktlint-cli 1.8.0 pins logback-classic 1.3.16; GHSA-jhq6-gfmj-v8fx, GHSA-p47f-322f-whfh, GHSA-qqpg-mvqg-649v).
+        "ktlint"("ch.qos.logback:logback-classic:${libs.versions.logback.get()}")
+        "ktlint"("ch.qos.logback:logback-core:${libs.versions.logback.get()}")
     }
 
     // build-logic's own tests: the hygiene and discovery checks are pure Kotlin with red proofs.

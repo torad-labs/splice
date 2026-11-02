@@ -175,8 +175,6 @@
   #teams .pg-split > .pg-head { display: flex; flex-direction: column; align-self: stretch; grid-column: 1 / span 4; grid-row: 1 / span 2; margin-bottom: 0; padding-right: clamp(0px, 1vw, 32px); }
   #teams .pg-split > .tm-win { grid-column: 5 / -1; grid-row: 1; margin-top: 0; }
   #teams .pg-split > .tm-row { grid-column: 5 / -1; grid-row: 2; margin-top: var(--pg-sp-5); }
-  #teams:nth-child(odd) > .pg-split > .pg-head { grid-column: 9 / -1; padding-right: 0; padding-left: clamp(0px, 1vw, 32px); }
-  #teams:nth-child(odd) > .pg-split > :not(.pg-head) { grid-column: 1 / span 8; }
   #teams .pg-split > .pg-head > .pg-art { display: flex; flex-direction: column; flex: 1 1 auto; justify-self: stretch; align-self: stretch; width: auto; margin-top: var(--pg-sp-6); }
   #teams .pg-split > .pg-head > .pg-art .pg-stub { display: inline; }
   #teams .pg-split > .pg-head > .pg-art::after { content: ""; flex: 1 1 auto; min-height: 0; width: 8px; margin-left: calc(var(--pg-ax, 9%) - 4px); background: linear-gradient(var(--pg-cable), var(--pg-cable)) 50% 0 / 1.5px 100% no-repeat, radial-gradient(circle, var(--pg-dot, var(--claude)) 0 2.6px, transparent 3.2px) 50% 0 / 8px 8px no-repeat; }
@@ -185,6 +183,6 @@
      header while the cells scroll past */
   #teams .pg-split > .pg-head > .pg-art { flex: 1 1 0; min-height: 0; }
   #teams .pg-split > .pg-head > .pg-art > svg:not(.tm-tall) { display: none; }
-  #teams .pg-split > .pg-head > .pg-art > .tm-tall { display: block; flex: 0 1 auto; min-height: 0; width: 100%; height: auto; position: sticky; top: calc(var(--fr-hh) + var(--pg-sp-5)); }
+  #teams .pg-split > .pg-head > .pg-art > .tm-tall { display: block; flex: 0 1 auto; min-height: 0; width: 100%; height: auto; position: static; }
   #teams .pg-split > .pg-head > .pg-art::after { content: none; }
 }

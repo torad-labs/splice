@@ -168,8 +168,6 @@
   #same-setup .ss-in { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--pg-cg); align-items: start; }
   #same-setup .ss-in > .pg-head { display: flex; flex-direction: column; align-self: stretch; grid-column: 1 / span 4; grid-row: 1; margin-bottom: 0; padding-right: clamp(0px, 1vw, 32px); }
   #same-setup .ss-in > .ss-stage { grid-column: 5 / -1; grid-row: 1; margin-top: 0; }
-  main > #same-setup:nth-child(odd) > .ss-in > .pg-head { grid-column: 9 / -1; padding-right: 0; padding-left: clamp(0px, 1vw, 32px); }
-  main > #same-setup:nth-child(odd) > .ss-in > .ss-stage { grid-column: 1 / span 8; }
 }
 
 /* ---------- the head's drawing from a 1,280 px container up. The drawing's box takes the height the component leaves. Where that box is as tall as it is
@@ -184,7 +182,7 @@
 }
 @container pga (max-aspect-ratio: 4/3) {
   #same-setup .ss-in > .pg-head > .pg-art > svg:not(.ss-tall) { display: none; }
-  #same-setup .ss-in > .pg-head > .pg-art > .ss-tall { display: block; flex: 0 1 auto; min-height: 0; width: 100%; height: auto; position: sticky; top: calc(var(--fr-hh) + var(--pg-sp-5)); }
+  #same-setup .ss-in > .pg-head > .pg-art > .ss-tall { display: block; flex: 0 1 auto; min-height: 0; width: 100%; height: auto; position: static; }
   #same-setup .ss-in > .pg-head > .pg-art::after { content: none; }
 }
 

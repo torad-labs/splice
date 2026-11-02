@@ -1,13 +1,21 @@
 #!/usr/bin/env bun
 /** The structured half of plan-limit.sh: what the client is told, and what the upstream saw.
  *
- *  probe <port> <out> <log> three turns compared with the mock's recorded native responses:
- *                           FIRST, streamed: HTTP 429 with the native body and rate-limit headers,
- *                           one upstream attempt; SECOND, streamed at once: that same native
- *                           refusal, held locally with no upstream attempt; THIRD, buffered after
- *                           the bounded hold: one new attempt, again relayed. The body and every
- *                           header are verbatim except unified-reset and retry-after, which name
- *                           splice's 30 s recheck (ClientRecheck.kt) when the native one is later.
+ *  probe <port> <out> <log> three turns compared with the mock's recorded native responses: FIRST
+ *                           and SECOND streamed, THIRD buffered, each sent to the upstream once and
+ *                           refused with HTTP 429, with no proxy retries. A turn waits only on its own
+ *                           failure (2026-10-26, Marcos's call): the next turn on a limited login is
+ *                           still sent to the provider, so a lifted limit is noticed at once and one
+ *                           that holds reaches the client the same way the first turn's did. Each
+ *                           answer is the hand-over of failure-handling slice 5 (2026-10-27,
+ *                           final-design.md sections 9 and 10):
+ *                           the native envelope and error type; splice's own line (HoldSentences.kt)
+ *                           naming the head, the window it met and the native reset as a clock time;
+ *                           and exactly the headers of HandOverHeaders.kt: retry-after, the unified
+ *                           status, the unified reset and the per-window reset with the native value.
+ *                           Retry-After and the unified reset name one instant: the native reset with
+ *                           one login, splice's 30 s recheck where another login could serve the head.
+ *                           The mock's per-bucket and utilization headers are not relayed.
  *  upstream <log> [max]     the mock's request log as a timeline, and how many turns reached the
  *                           upstream while it was still at its limit. With [max], more than that
  *                           many fails.
@@ -20,12 +28,12 @@ import { join } from "node:path";
 
 class CheckFailed extends Error {}
 
-/** The longest the head refuses on its own before a turn probes the upstream again: NF-01's clamp,
- *  MAX_RATE_LIMIT_COOLDOWN_MS in integrations/upstream's RateLimitCooldown.kt. */
-const HEAD_HOLD_CEILING_MS = 120_000;
-/** How soon a limit answer tells the client to ask again: CLIENT_RECHECK_SECONDS in features/turns' ClientRecheck.kt. */
+/** How soon a handed-over limit tells the client to ask again where another login could serve the head: RECHECK_SECONDS in
+ *  core's ClientWire.kt, written by features/turns' HandOverHeaders.kt. */
 const CLIENT_RECHECK_S = 30;
 const UNIFIED_RESET = "anthropic-ratelimit-unified-reset";
+const UNIFIED_STATUS = "anthropic-ratelimit-unified-status";
+const FIVE_HOUR_RESET = "anthropic-ratelimit-unified-5h-reset";
 const RETRY_AFTER = "retry-after";
 function check(condition: unknown, message: string): asserts condition {
   if (!condition) throw new CheckFailed(message);
@@ -76,44 +84,90 @@ function upstreamTurns(log: string): NativeReply[] {
     .map((line) => JSON.parse(line) as NativeReply).filter((row) => row.path === "/v1/messages");
 }
 
+interface Envelope {
+  type?: string;
+  error?: { type?: string; message?: string };
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** An epoch second as a person reads it in a hold line: LocalTimeText's "MMM d, h:mm a z" in the machine's zone, which is
+ *  UTC in the e2e image ("Nov 2, 10:28 PM UTC"). Spelled by hand so a locale's spacing cannot differ from the JDK's. */
+function clockTime(epochSeconds: number): string {
+  const at = new Date(epochSeconds * 1000);
+  const hours = at.getUTCHours();
+  const clock = `${hours % 12 === 0 ? 12 : hours % 12}:${String(at.getUTCMinutes()).padStart(2, "0")} ${hours < 12 ? "AM" : "PM"}`;
+  return `${MONTHS[at.getUTCMonth()]} ${at.getUTCDate()}, ${clock} UTC`;
+}
+
+/** The refusal body as Claude Code reads it: the native envelope and error type, so the client handles the 429 it is, and
+ *  in place of the upstream's sentence splice's line, which says the head met a limit and when it resets, in the
+ *  clock time the native reset header names. */
+function heldLine(answer: Answer, expected: NativeReply, label: string): void {
+  const native = JSON.parse(expected.body) as Envelope;
+  let got: Envelope;
+  try {
+    got = JSON.parse(answer.body) as Envelope;
+  } catch {
+    throw new CheckFailed(`${label}: the refusal body is not JSON: ${answer.body}`);
+  }
+  check(got.type === native.type && got.error?.type === native.error?.type,
+    `${label}: the refusal's type changed: native ${native.type}/${native.error?.type}, got ${got.type}/${got.error?.type}`);
+  const line = got.error?.message ?? "";
+  check(line.startsWith("[splice] "), `${label}: the message is not splice's line: ${line}`);
+  check(/\blimit\b/.test(line), `${label}: the line does not say the head met a limit: ${line}`);
+  const reset = expected.headers[UNIFIED_RESET];
+  if (reset !== undefined) {
+    const spelled = clockTime(Number(reset));
+    check(line.includes(spelled), `${label}: the line does not name the native reset ${spelled}: ${line}`);
+  }
+}
+
 function nativeReply(answer: Answer, expected: NativeReply | undefined, label: string): void {
   check(expected !== undefined, `${label}: the mock recorded no upstream reply`);
   check(expected.status === 429 && answer.status === 429, `${label}: native HTTP 429 required, got ${answer.status}`);
-  check(answer.body === expected.body, `${label}: the native refusal body changed`);
-  const selected = (name: string) => name.startsWith("anthropic-ratelimit-") || name === "retry-after" || name === "x-should-retry";
-  const source = Object.entries(expected.headers).filter(([name]) => selected(name));
-  check(source.length > 0, `${label}: the mock recorded no rate-limit headers`);
-  for (const [name, value] of source) {
-    if (name === UNIFIED_RESET) recheckReset(answer, value, label);
-    else if (name === RETRY_AFTER) recheckRetryAfter(answer, value, label);
-    else check(answer.headers[name] === value, `${label}: ${name} changed: expected '${value}', got '${answer.headers[name]}'`);
-  }
-  check(Object.keys(answer.headers).filter(selected).length === source.length, `${label}: splice invented rate-limit headers`);
-  console.log(`${label} ${answer.status} after ${answer.elapsed_ms} ms; native body and ${source.length} headers relayed, `
-    + `retry deadlines at splice's ${CLIENT_RECHECK_S} s recheck`);
-  for (const [name, value] of source) {
-    const named = answer.headers[name];
-    console.log(`  ${name}: ${named}${named === value ? "" : ` (native ${value})`}`);
+  heldLine(answer, expected, label);
+  handOverHeaders(answer, expected, label);
+  console.log(`${label} ${answer.status} after ${answer.elapsed_ms} ms; native envelope, splice's line and the hand-over headers`);
+  for (const name of limitHeaders(answer.headers)) {
+    const native = expected.headers[name];
+    console.log(`  ${name}: ${answer.headers[name]}${answer.headers[name] === native ? "" : ` (native ${native ?? "none"})`}`);
   }
   console.log(`  ${answer.body}`);
 }
 
-/** ClientRecheck.unifiedReset: a native reset later than floor(now) + 30 s is written as that recheck, `now` being when the
- *  head wrote the answer, between the request's start and the answer's arrival. */
-function recheckReset(answer: Answer, native: string, label: string): void {
-  const named = answer.headers[UNIFIED_RESET];
-  const earliest = Math.floor(answer.started_ms / 1000) + CLIENT_RECHECK_S;
-  const latest = Math.floor(answer.received_ms / 1000) + CLIENT_RECHECK_S;
-  check(named !== undefined && Number(named) >= earliest && Number(named) <= latest,
-    `${label}: ${UNIFIED_RESET} should name the ${CLIENT_RECHECK_S} s recheck, between ${earliest} and ${latest}, got '${named}'`);
-  check(Number(named) < Number(native), `${label}: ${UNIFIED_RESET} '${named}' is not earlier than the native '${native}'`);
+/** The rate-limit headers of an answer, the ones Claude Code reads a limit from. */
+function limitHeaders(headers: Record<string, string>): string[] {
+  return Object.keys(headers).filter((name) => name.startsWith("anthropic-ratelimit-") || name === RETRY_AFTER).sort();
 }
 
-/** ClientRecheck.retryAfter: a native wait of more than 30 s (seconds, as the mock sends it) is written as "30"; a shorter one stays. */
-function recheckRetryAfter(answer: Answer, native: string, label: string): void {
-  const expected = /^\d+$/.test(native) && Number(native) > CLIENT_RECHECK_S ? String(CLIENT_RECHECK_S) : native;
-  check(answer.headers[RETRY_AFTER] === expected,
-    `${label}: ${RETRY_AFTER} expected '${expected}' for native '${native}', got '${answer.headers[RETRY_AFTER]}'`);
+/** HandOverHeaders.kt: exactly retry-after, the unified status "rejected", the unified reset and the five-hour member (the
+ *  window the mock's limit is), which carries the native reset. Retry-After counts to the unified reset from when the head
+ *  answered; that reset is the native one with one login, or splice's 30 s recheck where another login could serve. */
+function handOverHeaders(answer: Answer, expected: NativeReply, label: string): void {
+  const nativeReset = expected.headers[UNIFIED_RESET];
+  const nativeFiveHour = expected.headers[FIVE_HOUR_RESET];
+  check(nativeReset !== undefined && nativeFiveHour !== undefined, `${label}: the mock recorded no unified reset headers`);
+  check(answer.headers[UNIFIED_STATUS] === "rejected",
+    `${label}: ${UNIFIED_STATUS} expected 'rejected', got '${answer.headers[UNIFIED_STATUS]}'`);
+  check(answer.headers[FIVE_HOUR_RESET] === nativeFiveHour,
+    `${label}: ${FIVE_HOUR_RESET} should carry the native reset '${nativeFiveHour}', got '${answer.headers[FIVE_HOUR_RESET]}'`);
+  const told = answer.headers[UNIFIED_RESET];
+  const recheckEarliest = Math.floor(answer.started_ms / 1000) + CLIENT_RECHECK_S;
+  const recheckLatest = Math.floor(answer.received_ms / 1000) + CLIENT_RECHECK_S;
+  check(told !== undefined && /^\d+$/.test(told)
+    && (told === nativeReset || (Number(told) >= recheckEarliest && Number(told) <= recheckLatest)),
+    `${label}: ${UNIFIED_RESET} should be the native reset '${nativeReset}' or the ${CLIENT_RECHECK_S} s recheck `
+    + `(${recheckEarliest} to ${recheckLatest}), got '${told}'`);
+  const retryAfter = answer.headers[RETRY_AFTER];
+  const earliest = Number(told) - Math.ceil(answer.received_ms / 1000) - 1;
+  const latest = Number(told) - Math.floor(answer.started_ms / 1000) + 1;
+  check(retryAfter !== undefined && /^\d+$/.test(retryAfter) && Number(retryAfter) >= earliest && Number(retryAfter) <= latest,
+    `${label}: ${RETRY_AFTER} should count to ${UNIFIED_RESET} ${told} (${earliest} to ${latest} s), got '${retryAfter}'`);
+  const carried = limitHeaders(answer.headers);
+  const handOver = [FIVE_HOUR_RESET, RETRY_AFTER, UNIFIED_RESET, UNIFIED_STATUS].sort();
+  check(JSON.stringify(carried) === JSON.stringify(handOver),
+    `${label}: the hand-over should carry exactly ${handOver.join(", ")}, got ${carried.join(", ")}`);
 }
 
 const verbs: Record<string, (argv: readonly string[]) => Promise<void> | void> = {
@@ -126,23 +180,19 @@ const verbs: Record<string, (argv: readonly string[]) => Promise<void> | void> =
     check(attempts.length === 1, `the first native refusal made ${attempts.length} upstream attempts, expected one`);
     nativeReply(first, attempts[0], "FIRST");
 
+    // The next turn on the limited login is sent to the provider too: it waits on its own failure, not on the first turn's.
     const second = await turn(port);
     writeFileSync(out, JSON.stringify({ first, second }, null, 2));
     attempts = upstreamTurns(log);
-    check(attempts.length === 1, "the held follower reached upstream");
-    nativeReply(second, attempts[0], "SECOND");
+    check(attempts.length === 2, `the second turn made ${attempts.length - 1} upstream attempts, expected one of its own`);
+    nativeReply(second, attempts[1], "SECOND");
 
-    // The head holds from the upstream's own reset, bounded by its ceiling; the reset on the client's answer names only
-    // splice's 30 s recheck, so the wait is scheduled from the native reply the mock recorded.
-    const namedReset = Number(attempts[0]?.headers[UNIFIED_RESET] ?? "0") * 1000;
-    const holdUntil = Math.min(namedReset, second.received_ms + HEAD_HOLD_CEILING_MS);
-    await Bun.sleep(Math.max(0, holdUntil - Date.now()) + 1_000);
     const third = await turn(port, false);
     writeFileSync(out, JSON.stringify({ first, second, third }, null, 2));
     attempts = upstreamTurns(log);
-    check(attempts.length === 2, `the buffered re-probe made ${attempts.length - 1} attempts, expected one`);
-    nativeReply(third, attempts[1], "THIRD");
-    console.log("native 429 contract: one observer attempt, zero follower attempts, one bounded re-probe");
+    check(attempts.length === 3, `the buffered turn made ${attempts.length - 2} upstream attempts, expected one of its own`);
+    nativeReply(third, attempts[2], "THIRD");
+    console.log("native 429 contract: one upstream attempt per turn, no proxy retries, each handed over with the native reset");
   },
 
   pooled(argv) {

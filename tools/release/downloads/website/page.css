@@ -7,12 +7,14 @@
      1 fine print and the install lines   2 buttons, links, nav, facts   3 a band's line and the first screen's line
      4 the footer's name and the menu's links   5 every band heading   6 the first screen's headline (one step above) */
 :root {
+  --pg-font-ui: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --pg-t-1: clamp(13px, calc(8px + .35vw), 17px);
   --pg-t-2: clamp(15px, calc(10px + .4vw), 20px);
   --pg-t-3: clamp(18px, calc(12px + .45vw), 28px);
   --pg-t-4: clamp(24px, calc(16px + .6vw), 34px);
   --pg-t-5: clamp(36px, calc(22px + 1.8vw), 76px);
-  --pg-t-6: clamp(40px, 4.1vw, 128px);
+  /* the headline is a direct product claim, set in the UI face rather than the display serif */
+  --pg-t-6: clamp(44px, 4.4vw, 88px);
 
   /* ===== the page's spacing steps: 1 to 3 are fixed, 4 to 7 grow with the screen. Band padding, grid gaps and the page's
      parts take their space from these. ===== */
@@ -24,15 +26,12 @@
   --pg-sp-6: clamp(40px, 4vw, 88px);
   --pg-sp-7: clamp(56px, 4.8vw, 112px);
 
-  /* ===== the grid: one fluid container on 12 columns. The side gutter is 4.4vw (18 px on a phone, 63 px at 1440, 112 px at
-     2548, 150 px at most), so the content takes 91% of the width, and it stops at 2,800 px. ===== */
+  /* ===== the grid: the page uses the available width instead of stopping at a narrow centered column. The side gutter is
+     4.4vw (18 px on a phone, 63 px at 1440, 112 px at 2548, 150 px at most), and the content stops at 2,400 px. ===== */
   --pg-g: clamp(18px, 4.4vw, 150px);
   --pg-cg: clamp(14px, 2vw, 56px);
-  --pg-max: 2800px;
+  --pg-max: 2400px;
   --pg-m: max(var(--pg-g), calc((100vw - var(--pg-max)) / 2));
-  /* the first screen's right gutter: the container's own margin, down to 16 px where the stage (its box, ink outline and cast)
-     would otherwise fall under 740 px wide, between 1,400 and 1,460 px; the board's outline and cast always show */
-  --fr-rg: clamp(16px, calc(93vw - 1308px), var(--pg-m));
   /* the first screen's left column and the closing band step by two sizes: 32 px between a heading and what it leads, 56 px between parts */
   --fr-s: calc(2 * var(--pg-sp-3));
   --fr-l: calc(3.5 * var(--pg-sp-3));
@@ -63,7 +62,9 @@ main { container: pg / inline-size; }
 [data-drawn] { pointer-events: none; }
 
 /* ===== the band: one padding, one heading size, one line ===== */
-.pg-band { position: relative; isolation: isolate; padding-block: var(--pg-sp-7); }
+/* a band answers to the page's column, not the window: its own box is the column and its gutters, so every band lays out on a wide
+   screen as it does on a 1,900 px one, and its tone still runs edge to edge */
+.pg-band { position: relative; isolation: isolate; padding-block: var(--pg-sp-7); padding-inline: max(0px, calc((100% - var(--pg-max)) / 2 - var(--pg-g))); container: pg / inline-size; }
 .pg-h2 { margin: 0; font: 400 var(--pg-t-5)/1.05 var(--font-lead); letter-spacing: -.012em; color: var(--text); font-variation-settings: 'SOFT' 0, 'WONK' 0; text-wrap: balance; }
 .pg-line { margin: var(--pg-sp-2) 0 0; max-width: 36em; font: 400 var(--pg-t-3)/1.4 var(--font-name); color: var(--text-body); text-wrap: pretty; }
 
@@ -84,32 +85,12 @@ main { container: pg / inline-size; }
   .pg-split > .pg-head { display: flex; flex-direction: column; align-self: stretch; grid-column: 1 / span 4; grid-row: 1; margin-bottom: 0; padding-right: clamp(0px, 1vw, 32px); }
   .pg-split > :not(.pg-head) { grid-column: 5 / -1; grid-row: 1; margin-top: 0; }
   .pg-split > .pg-head > .pg-art { flex: 1 1 auto; justify-self: stretch; width: auto; margin-top: var(--pg-sp-6); align-self: stretch; }
-  main > .pg-band:nth-child(odd) > .pg-split > .pg-head { grid-column: 9 / -1; padding-right: 0; padding-left: clamp(0px, 1vw, 32px); }
-  main > .pg-band:nth-child(odd) > .pg-split > :not(.pg-head) { grid-column: 1 / span 8; }
 }
 
-/* ===== the ground: a dot grid that fades at the band's edges, a tone that changes from band to band, and one cable down the
-   gutter with a dot travelling it (in the page's ink, one step above the cable) while the band is on screen. No band draws anything under
-   its text; the drawings stand in the head block, and nothing in them moves under reduced motion. ===== */
-.pg-band::before, .fr-first::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background-image: radial-gradient(circle at center, color-mix(in oklab, var(--text) 18%, transparent) 1px, transparent 1.7px); background-size: 28px 28px; background-position: center top; -webkit-mask-image: linear-gradient(90deg, transparent, #000 9%, #000 91%, transparent), linear-gradient(180deg, transparent, #000 14%, #000 86%, transparent); -webkit-mask-composite: source-in; mask-image: linear-gradient(90deg, transparent, #000 9%, #000 91%, transparent), linear-gradient(180deg, transparent, #000 14%, #000 86%, transparent); mask-composite: intersect; }
+/* ===== the ground: one tone per band, changing from band to band; nothing is drawn behind or beside a band ===== */
 main > .pg-band:nth-child(odd) { background: linear-gradient(var(--pg-deep), var(--pg-deep)); }
 main > .pg-band:nth-child(even) { background: radial-gradient(60% 70% at 88% 0, var(--pg-glow), transparent 70%), linear-gradient(var(--pg-lit), var(--pg-lit)); }
-.pg-band::after, .fr-first::after { content: ""; position: absolute; z-index: -1; top: 0; bottom: 0; left: calc(var(--pg-m) / 2 - 4px); width: 8px; pointer-events: none; background: linear-gradient(var(--pg-cable), var(--pg-cable)) 50% 0 / 1.5px 100% no-repeat, radial-gradient(circle, var(--pg-dot, var(--claude)) 0 2.6px, transparent 3.2px) 50% 0 / 8px 8px no-repeat; opacity: .8; }
-main > .pg-band:nth-child(odd)::after { left: auto; right: calc(var(--pg-m) / 2 - 4px); }
-/* on a phone the gutter is 18 px and a window's cast reaches 12 px from the edge, so the cable runs 6 px from the edge instead of
-   mid-gutter, clear of the cast on one side and the text on the other */
-@media (max-width: 640px) {
-  .pg-band::after, .fr-first::after { left: 2px; }
-  main > .pg-band:nth-child(odd)::after { left: auto; right: 2px; }
-}
-/* the travelling dot is a decoration on the ground, so it takes the page's ink one step above the cable: never a provider's
-   colour (a provider colour on the page always names that provider) and never the warm key, which marks the next action */
-.pg-band, .fr-first { --pg-dot: var(--pg-ink); }
 @keyframes pg-lane { to { background-position: 50% 0, 50% 100%; } }
-@media (prefers-reduced-motion: no-preference) {
-  .pg-band.pg-on::after, .fr-first.pg-on::after { animation: pg-lane 14s linear infinite; }
-  .pg-away .pg-band::after, .pg-away .fr-first::after { animation-play-state: paused !important; }
-}
 
 /* ===== the drawings: splice's own things (terminals, machines, cables) in the theme's mute ink, line only. A dot travels a
    cable, a lamp pulses and a fan turns only while the drawing's band is on screen (page.js adds pg-on), and
@@ -212,17 +193,23 @@ main, .fr-foot { position: relative; z-index: 1; }
 @media (max-width: 820px) { .fr-hdr-in .act { padding: 0 14px; } }
 @media (min-width: 1201px) { .fr-sheet { display: none !important; } }
 
-/* ===== first screen: the claim and the install on the left, the live stage on the right, running to the screen's right edge.
-   Below 1,400 px it stacks: the claim, the install, the stage, then the facts. ===== */
-.fr-first { position: relative; isolation: isolate; padding: 0 0 var(--pg-sp-7); }
-.fr-hero { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "h" "lead" "inst" "film" "stage" "facts"; padding-inline: var(--pg-g); padding-top: calc(var(--fr-hh) + var(--pg-sp-5)); }
-.fr-h1 { grid-area: h; margin: 0; font: 400 var(--pg-t-6)/1.02 var(--font-lead); letter-spacing: -.016em; color: var(--text); text-wrap: balance; }
-.fr-lead { grid-area: lead; margin: var(--pg-sp-4) 0 0; font: 400 var(--pg-t-3)/1.4 var(--font-name); color: var(--text-body); max-width: 30em; text-wrap: pretty; }
-.fr-r { grid-area: inst; container: fr-i / inline-size; min-width: 0; margin-top: var(--pg-sp-5); }
-.fr-film { grid-area: film; justify-self: start; margin-top: var(--pg-sp-4); font-size: var(--pg-t-2); min-height: 44px; gap: 10px; padding: 0 20px; }
-.fr-film svg { width: 15px; height: 15px; }
-.fr-film b { font: 500 var(--pg-t-2)/1 var(--font-data); color: var(--text-mute); margin-left: 4px; }
-.fr-copy { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--pg-sp-3); align-items: start; padding: var(--pg-sp-3) var(--pg-sp-3) var(--pg-sp-3) var(--pg-sp-4); background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--ink); }
+/* ===== first screen: one clear claim and install action beside a large film, then straight into the product sections. ===== */
+.fr-first { position: relative; isolation: isolate; padding: 0 0 var(--pg-sp-6); background: radial-gradient(70% 65% at 88% 12%, color-mix(in oklab, var(--claude) 8%, transparent), transparent 72%), linear-gradient(var(--wall-low), var(--wall-low)); }
+.fr-hero { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "h" "lead" "inst" "film" "facts"; padding-inline: var(--pg-g); padding-top: calc(var(--fr-hh) + var(--pg-sp-5)); box-sizing: border-box; }
+.fr-h1 { grid-area: h; margin: 0; max-width: 14em; font: 600 var(--pg-t-6)/1.02 var(--pg-font-ui); letter-spacing: -.055em; color: var(--text); text-wrap: balance; }
+.fr-lead { grid-area: lead; margin: var(--pg-sp-4) 0 0; font: 400 var(--pg-t-3)/1.5 var(--pg-font-ui); color: var(--text-body); max-width: 34em; text-wrap: pretty; }
+.fr-r { grid-area: inst; container: fr-i / inline-size; min-width: 0; margin-top: var(--pg-sp-4); }
+/* the film shows itself like a video thumbnail: it rests on its title card, plays its own frames muted while the pointer is over it, and
+   carries a play mark, its name and its length in one dark label on its foot; a click opens it with sound */
+.fr-film { grid-area: film; position: relative; display: block; width: 100%; aspect-ratio: 16 / 9; margin-top: var(--pg-sp-4); overflow: hidden; color: var(--splice-cream); text-decoration: none; background: var(--obj-sunk); border: 1px solid color-mix(in oklab, var(--text) 16%, transparent); border-radius: 18px; box-shadow: 0 24px 80px rgb(0 0 0 / .24); }
+.fr-pv { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.fr-pt { position: absolute; left: 14px; bottom: 14px; display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 6px; font-size: var(--pg-t-2); line-height: 1; background: rgb(0 0 0 / .8); border-radius: 999px; }
+.fr-pt b { font: 500 var(--pg-t-2)/1 var(--font-data); opacity: .8; }
+.fr-pl { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; color: var(--ink); background: var(--splice-cream); transition: transform var(--t-snap) var(--e-out); }
+.fr-pl svg { width: 16px; height: 16px; margin-left: 2px; }
+.fr-film:hover .fr-pl, .fr-film:focus-visible .fr-pl { transform: scale(1.1); }
+.fr-film:focus-visible { outline: var(--ink-w) solid var(--text); outline-offset: .2rem; }
+.fr-copy { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--pg-sp-3); align-items: start; padding: var(--pg-sp-3) var(--pg-sp-3) var(--pg-sp-3) var(--pg-sp-4); background: color-mix(in oklab, var(--obj) 88%, transparent); border: 1px solid color-mix(in oklab, var(--text) 14%, transparent); border-radius: 14px; }
 .fr-lines { min-width: 0; }
 .fr-cl { margin: 0; display: flex; gap: .8em; font: 500 var(--pg-t-1)/1.9 var(--font-data); color: var(--text); }
 .fr-cl code { font: inherit; min-width: 0; overflow-wrap: anywhere; }
@@ -251,181 +238,38 @@ main, .fr-foot { position: relative; z-index: 1; }
 .fr-facts .act { gap: 6px; font-size: var(--pg-t-2); min-height: 44px; padding: 0 20px; }
 .fr-facts .act svg { width: 14px; height: 14px; }
 
-/* the stage: a container the product window answers to, so the window fits its column by layout at every width */
-.fr-stage { grid-area: stage; container: stg / inline-size; min-width: 0; margin-top: var(--pg-sp-5); }
 .fr-heroart { grid-area: art; display: none; }
 .fr-heroart .fr-art-w { display: none; }
 @container pg (max-width: 640px) {
-  .fr-stage { margin-inline: calc(-1 * var(--pg-g)); margin-top: var(--pg-sp-4); }
-  .fr-stage .fr-win { border-left: 0; border-right: 0; }
   .fr-hero { padding-top: calc(var(--fr-hh) + var(--pg-sp-3)); }
   .fr-lead { margin-top: var(--pg-sp-3); }
   .fr-r { margin-top: var(--pg-sp-4); }
   .fr-film { margin-top: var(--pg-sp-3); }
+  /* a phone's film is small, so its label shrinks and stays clear of the title card */
+  .fr-pt { left: 8px; bottom: 8px; gap: 7px; padding: 3px 10px 3px 3px; font-size: 13px; }
+  .fr-pt b { font-size: 13px; }
+  .fr-pl { width: 24px; height: 24px; }
+  .fr-pl svg { width: 11px; height: 11px; margin-left: 1px; }
 }
-@container pg (min-width: 1400px) {
-  .fr-hero { grid-template-columns: minmax(0, clamp(540px, 40%, 1100px)) var(--pg-sp-5) minmax(0, 1fr); grid-template-rows: repeat(5, auto) 1fr; grid-template-areas: "h . stage" "lead . stage" "inst . stage" "film . stage" "facts . stage" "art . stage"; padding-left: var(--pg-m); padding-right: var(--fr-rg); padding-top: 0; min-height: 100svh; }
-  .fr-h1 { margin-top: calc(var(--fr-hh) + var(--pg-sp-5)); }
-  /* the left column steps the same at every width: 32 px from headline to line, 56 between the parts, 32 from the install to the film */
-  .fr-lead { margin-top: var(--fr-s); }
-  .fr-r { margin-top: var(--fr-l); }
-  .fr-film { margin-top: var(--fr-s); }
-  .fr-facts { margin-top: var(--fr-l); }
-  .fr-stage { margin: 0; padding-top: calc(var(--fr-hh) + var(--pg-sp-3)); padding-bottom: var(--pg-sp-3); }
-  /* the drawing stands at the column's foot, 56 px under the facts, and fills the column down to the board's end: tall while the
-     column is narrow, wide from 2,100 px */
-  .fr-heroart { display: block; margin-top: var(--fr-l); }
+@container pg (min-width: 1100px) {
+  /* The film leads on every wide screen, level with the claim. */
+  .fr-hero { grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); grid-template-areas: "h film" "lead film" "inst film" "facts film"; column-gap: clamp(40px, 4vw, 96px); padding-left: var(--pg-m); padding-right: var(--pg-m); }
+  .fr-h1 { max-width: 12em; }
+  .fr-lead { margin-top: var(--pg-sp-4); }
+  .fr-r { margin-top: var(--pg-sp-5); }
+  .fr-film { grid-row: 1 / span 4; align-self: start; margin-top: 0; }
+  .fr-facts { margin-top: var(--pg-sp-4); }
 }
 @container pg (min-width: 2100px) {
   .fr-heroart .fr-art-t { display: none; }
   .fr-heroart .fr-art-w { display: block; }
 }
 
-/* the product window: console cards in console columns, filling the stage */
-.fr-win { --fr-conn: 8.4rem; --fr-pad: 1.2rem; --i: 0; position: relative; padding: calc(2.4 * var(--u)); display: grid; grid-template-columns: minmax(0, 33rem) var(--fr-conn) minmax(0, 1fr); column-gap: 0; align-items: stretch; background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--ink); }
-.fr-side { min-width: 0; display: flex; flex-direction: column; gap: calc(2 * var(--u)); }
-.fr-cc { padding-right: var(--fr-pad); }
-.fr-prov { padding-left: var(--fr-pad); }
-.fr-gh { margin: 0; display: flex; align-items: center; gap: .667rem; font: 400 1.4rem/1.1 var(--font-lead); color: var(--text); }
-.fr-gh .blot { flex: none; width: .8rem; height: .8rem; border-radius: 50%; background: var(--text-mute); box-shadow: 0 0 0 .14rem var(--ink); }
-.fr-grp { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); }
-.fr-grp + .fr-grp { margin-top: calc(1.5 * var(--u)); }
-.fr-stack { display: flex; flex-direction: column; gap: var(--gap-card); }
-.fr-chips { display: flex; flex-wrap: wrap; gap: max(.95rem, 12px); }
-.fr-feat, .fr-model { font-family: var(--font-name); font-size: var(--fr-ts); font-weight: 500; }
-/* the window's type: one focal figure, then data at --fr-tm (1.1rem, never under 14 px), then labels and chips at --fr-ts
-   (.9rem, never under 12 px). Side labels stay 1.4rem; group labels step down to --fr-tm. */
-.fr-win .fr-prov .fr-grp + .fr-grp .fr-gh { font-size: var(--fr-tm); }
-.fr-win .rl-ht { flex-direction: row; align-items: baseline; gap: .667rem; flex-wrap: nowrap; white-space: nowrap; }
-.fr-win .rl-ht .fr-fig { font: 600 var(--fig-hero)/1 var(--font-data); font-variant-numeric: tabular-nums; letter-spacing: 0; color: var(--text); }
-.fr-win .rl-ht .fr-of { font: 500 var(--fr-tm)/1.2 var(--font-name); color: var(--text-mute); }
-.fr-win .rl-ht .fr-den { font: 600 var(--fr-tm)/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
-.fr-win .chip, .fr-win .prov, .fr-win .plan, .fr-win .card .state, .fr-win .keysrc .state, .fr-win .pct .used, .fr-win .fr-more, .fr-win .tm .who .to, .fr-win .tm .who time { font-size: var(--fr-ts); }
-.fr-win .cmodel { font: 500 var(--fr-tm)/1.2 var(--font-name); color: var(--text-body); }
-.fr-win .card.h .cwin, .fr-win .card .name, .fr-win .lmc-name, .fr-win .lamp .rl-num, .fr-win .rl-line, .fr-win .rl-fl b, .fr-win .rl-fail b, .fr-win .windows .label, .fr-win .windows .pct, .fr-win .windows .when, .fr-win .tm .body, .fr-win .tm .who .from, .fr-win .add, .fr-win .add .plus { font-size: var(--fr-tm); }
-.fr-win .windows .when { font-family: var(--font-name); font-weight: 500; }
-.fr-win .fr-v { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
-.fr-win .rl-line { white-space: nowrap; }
-.fr-win .rl-strip { margin-top: calc(1.2 * var(--u)); }
-/* the two columns end together: the rail's add tile and the last provider card take whatever is left over */
-.fr-cc > .fr-rail { flex: 1; }
-.fr-win .fr-rail > .add { margin-top: auto; padding-block: .85rem; }
-.fr-prov > .fr-grp:last-child, .fr-prov > .fr-grp:last-child .fr-stack { flex: 1; display: flex; flex-direction: column; }
-.fr-prov > .fr-grp:last-child .fr-stack > .card { flex: 1; }
-.fr-rail.rail { margin-top: 0; }
-.fr-win .rail > .card.h { margin-right: 0; }
-.fr-msg { position: relative; margin: calc(.5 * var(--u)) 0; }
-.fr-msglab { margin: .5rem 0 0; font: 600 var(--fr-ts)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
-.fr-win .tm { grid-template-columns: minmax(0, 1fr); row-gap: .333rem; background: var(--obj-high); }
-.fr-win .tm .who { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: .25rem var(--u); }
-.fr-win .lamp.working .beat { animation: none; }
-.fr-win .fr-rail, .fr-win .fr-stack { gap: max(1.5rem, 20px); }
-.fr-win .fr-rail > .rl-hero { margin-bottom: .5rem; }
-.fr-win .fr-models { gap: max(.95rem, 12px); }
-.fr-win .fr-plan .windows, .fr-win .fr-plan .windows.spend { row-gap: max(.85rem, 10px); }
-
-/* the connector: one neutral bar between the sides, and a wire from each card to it. Wires are mute ink; while a turn travels
-   one, the wire of the card that hands it on and of the plan that takes it turns the turn's colour and its dashes run. */
-.fr-conn { position: relative; align-self: stretch; min-width: 0; }
-.fr-bar { position: absolute; left: 50%; top: 8.6rem; bottom: 1.1rem; width: .56rem; margin-left: -.28rem; background: var(--rail); border-radius: .28rem; box-shadow: 0 0 0 var(--ink-w) var(--ink); }
-.fr-connlab { position: absolute; left: 0; right: 0; top: 0; margin: 0; padding: .55rem .5rem .6rem; text-align: center; font: 600 var(--fr-ts)/1.3 var(--font-name); letter-spacing: .05em; text-transform: uppercase; color: var(--text-body); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); box-shadow: .14rem .14rem 0 var(--ink); }
-.fr-rail > .card.h::after, .fr-prov .fr-plan::before { content: ""; position: absolute; top: 50%; height: .26rem; margin-top: -.13rem; background-color: var(--text-mute); opacity: .7; pointer-events: none; }
-.fr-rail > .card.h::after { left: calc(100% + var(--cast)); width: calc(var(--fr-pad) + var(--fr-conn) / 2 - .28rem - var(--cast)); border-radius: 0 .12rem .12rem 0; }
-.fr-prov .fr-plan::before { right: 100%; width: calc(var(--fr-pad) + var(--fr-conn) / 2 - .28rem); border-radius: .12rem 0 0 .12rem; }
-.fr-rail > .card.h.fr-hot::after, .fr-prov .fr-plan.fr-hot::before { opacity: .95; background-color: transparent; background-image: repeating-linear-gradient(90deg, var(--fr-wc, var(--c)) 0 .5rem, transparent .5rem 1rem); background-size: 1rem 100%; }
-@keyframes fr-wire { to { background-position-x: 1rem; } }
-@media (prefers-reduced-motion: no-preference) {
-  .fr-rail > .card.h.fr-hot::after, .fr-prov .fr-plan.fr-hot::before { animation: fr-wire calc(var(--t-stripe) * 2) linear infinite; }
-}
-.fr-win .card.fr-on { background: color-mix(in oklab, var(--obj) 86%, var(--key-light)); }
-.fr-win .card.fr-on .bar > b, .fr-win .card.fr-on .wbar > i { transition: transform var(--t-move) var(--e-out); }
-.fr-win .bar.grow > b { transition: transform var(--t-move) var(--e-out); }
-.fr-win .fr-rail > .card.h, .fr-win .fr-stack > .card { transition: background var(--t-snap) var(--e-out); }
-.fr-pkt { position: absolute; left: 0; top: 0; z-index: 4; width: 2rem; height: 2rem; margin: -1rem 0 0 -1rem; display: grid; place-items: center; background: var(--c, var(--gpt)); color: var(--ink); border: var(--ink-w) solid var(--ink); border-radius: .35rem; box-shadow: .22rem .22rem 0 var(--ink); opacity: 0; pointer-events: none; will-change: transform; }
-.fr-pkt svg { width: 1rem; height: 1rem; }
-@media (prefers-reduced-motion: reduce) { .fr-pkt { display: none; } }
-.fr-open { color: var(--text-mute); }
-.fr-open svg { width: 1.15rem; height: 1.15rem; }
-.fr-models { display: flex; flex-wrap: wrap; align-items: center; gap: .667rem; margin-top: var(--u); }
-.fr-model { --c: var(--router); }
-.fr-more { font: 500 .88rem/1 var(--font-name); color: var(--text-mute); }
-.fr-plan .keysrc { margin-top: .667rem; }
-.fr-plan .windows, .fr-plan .windows.spend { grid-template-columns: 5.2rem minmax(0, 1fr) 6.6rem var(--win-when); }
-
-/* the window's reveal, once, the first time it scrolls into view (page.js adds is-seen), inside 420 ms (--t-move) on the
-   console's ease-out (--e-out). Its plate holds the layout and its parts enter: each rises .8rem and fades up from 28% over
-   --t-pop (260 ms), staggered 14 ms by its --i, so the last lands at 372 ms. Meter fills grow and reset rings draw over
-   --t-snap (240 ms) from the moment their card starts. Only what enters moves. */
-@keyframes fr-part { from { opacity: .28; transform: translateY(.8rem); } }
-@keyframes fr-fill { from { transform: scaleX(0); } }
-@keyframes fr-ring { from { stroke-dasharray: 0 94.2; } }
+/* the facts row and the closing band rise once when they first scroll into view. */
 @keyframes fr-rise { from { opacity: .28; transform: translateY(1.4rem); } }
-.fr-win .fr-rail > :nth-child(1) { --i: 1; }
-.fr-win .fr-rail > :nth-child(2) { --i: 2; }
-.fr-win .fr-rail > :nth-child(3) { --i: 3; }
-.fr-win .fr-rail > :nth-child(4) { --i: 4; }
-.fr-win .fr-rail > :nth-child(5) { --i: 5; }
-.fr-win .fr-rail > :nth-child(6) { --i: 6; }
-.fr-win .fr-rail > :nth-child(7) { --i: 7; }
-.fr-win .fr-rail > :nth-child(8) { --i: 8; }
-.fr-win .fr-prov .fr-grp:nth-child(1) .fr-stack > :nth-child(1) { --i: 1; }
-.fr-win .fr-prov .fr-grp:nth-child(1) .fr-stack > :nth-child(2) { --i: 2; }
-.fr-win .fr-prov .fr-grp:nth-child(1) .fr-stack > :nth-child(3) { --i: 3; }
-.fr-win .fr-prov .fr-grp:nth-child(1) .fr-stack > :nth-child(4) { --i: 4; }
-.fr-win .fr-prov .fr-grp:nth-child(1) .fr-stack > :nth-child(5) { --i: 5; }
-.fr-win .fr-prov .fr-grp:nth-child(2) { --i: 6; }
-.fr-win .fr-prov .fr-grp:nth-child(3) { --i: 7; }
-.fr-win .fr-prov .fr-grp:nth-child(4) { --i: 8; }
 @media (prefers-reduced-motion: no-preference) {
-  .pg-js .fr-win[data-reveal]:not(.is-seen) :is(.fr-gh, .fr-chips, .rl-hero, .fr-rail > .card, .fr-msg, .fr-rail > .add, .fr-conn, .fr-plan) { opacity: .28; transform: translateY(.8rem); }
-  .pg-js .fr-win[data-reveal]:not(.is-seen) :is(.bar.grow > b, .wbar > i, .flow .bar > b, .rl-seg) { transform: scaleX(0); }
-  .pg-js .fr-win[data-reveal]:not(.is-seen) .arc { stroke-dasharray: 0 94.2; }
-  .fr-win.is-seen :is(.fr-gh, .fr-chips, .rl-hero, .fr-rail > .card, .fr-msg, .fr-rail > .add, .fr-conn, .fr-plan) { animation: fr-part var(--t-pop) var(--e-out) calc(var(--i) * 14ms) backwards; }
-  .fr-win.is-seen :is(.bar.grow > b, .wbar > i, .flow .bar > b, .rl-seg) { transform-origin: left center; animation: fr-fill var(--t-snap) var(--e-out) calc(var(--i) * 14ms) backwards; }
-  .fr-win.is-seen .arc { animation: fr-ring var(--t-snap) var(--e-out) calc(var(--i) * 14ms) backwards; }
-  /* the facts row and the closing band: one rise of 1.4rem and a fade up from 28%, over --t-pop on --e-out, played once when
-     the band first scrolls into view. Until then it waits low and ghosted, so its band keeps its height. */
   .pg-js .fr-facts[data-reveal]:not(.is-seen), .pg-js .fr-close-in[data-reveal]:not(.is-seen) { opacity: .28; transform: translateY(1.4rem); }
   .fr-facts.is-seen, .fr-close-in.is-seen { animation: fr-rise var(--t-pop) var(--e-out) backwards; }
-}
-
-/* the window answers to the stage's width: three columns from 1,180 px, a narrower connector and plan meters on two rows from
-   900 px, a slim connector and wrapped command cards from 740 px, one column under that (the commands, the connector laid
-   flat, then the plans), and tighter meters on a phone */
-@container stg (max-width: 1179px) {
-  .fr-win { grid-template-columns: minmax(0, 25rem) var(--fr-conn) minmax(0, 1fr); --fr-conn: 6.4rem; --fr-pad: 1rem; }
-  .fr-connlab { font-size: 12px; letter-spacing: .02em; padding: .5rem .2rem; }
-  .fr-cc .fr-gh { padding-right: .6rem; }
-}
-@container stg (min-width: 740px) and (max-width: 1179px) {
-  .fr-win .fr-plan .windows, .fr-win .fr-plan .windows.spend { grid-template-columns: minmax(0, 1fr) auto; grid-auto-flow: row dense; row-gap: max(.85rem, 10px); column-gap: 1rem; }
-  .fr-win .fr-plan .windows .label { grid-column: 1; }
-  .fr-win .fr-plan .windows .bar { grid-column: 1 / -1; }
-  .fr-win .fr-plan .windows .pct { grid-column: 2; }
-  .fr-win .fr-plan .windows .when { grid-column: 1 / -1; }
-  .fr-win .card .top { flex-wrap: wrap; row-gap: .5rem; }
-}
-@container stg (min-width: 740px) and (max-width: 899px) {
-  .fr-win { grid-template-columns: minmax(0, .86fr) var(--fr-conn) minmax(0, 1fr); --fr-conn: 6.4rem; --fr-pad: 1rem; padding: calc(2 * var(--u)); }
-  .fr-win .rl-line { flex-wrap: wrap; white-space: normal; row-gap: .25rem; }
-  .fr-connlab { font-size: 12px; letter-spacing: 0; padding: .5rem .2rem; }
-}
-@container stg (max-width: 739px) {
-  .fr-win { grid-template-columns: minmax(0, 1fr); padding: calc(2 * var(--u)); }
-  .fr-cc, .fr-prov { padding-inline: 0; }
-  .fr-conn { height: 7.2rem; align-self: auto; }
-  .fr-bar { left: 0; right: 0; top: 50%; bottom: auto; width: auto; height: .56rem; margin: -.28rem 0 0; }
-  .fr-connlab { top: 50%; left: 50%; right: auto; transform: translate(-50%, -50%); width: max-content; max-width: 100%; white-space: normal; }
-  .fr-rail > .card.h::after, .fr-prov .fr-plan::before { display: none; }
-}
-@container stg (max-width: 520px) {
-  .fr-win .fr-plan .windows, .fr-win .fr-plan .windows.spend { grid-template-columns: minmax(0, 1fr) auto; grid-auto-flow: row dense; row-gap: max(.85rem, 10px); column-gap: 1rem; }
-  .fr-win .fr-plan .windows .label { grid-column: 1; }
-  .fr-win .fr-plan .windows .bar { grid-column: 1 / -1; }
-  .fr-win .fr-plan .windows .pct { grid-column: 2; }
-  .fr-win .fr-plan .windows .when { grid-column: 1 / -1; }
-  .fr-win .card .top { flex-wrap: wrap; row-gap: .5rem; }
-  .fr-win .rl-line { flex-wrap: wrap; white-space: normal; row-gap: .25rem; }
 }
 
 /* ===== closing band: the head (heading, links, who made it), the install window and a drawing, three children of one grid.
@@ -442,7 +286,8 @@ main, .fr-foot { position: relative; z-index: 1; }
 }
 .fr-close-art .fr-art-x { display: none; }
 @container pg (min-width: 1280px) and (max-width: 2199px) {
-  .fr-close-in { grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); grid-template-areas: "head win" "art art"; align-items: start; }
+  /* the head takes 4 of the page's 12 columns and the window 8, the same columns every band above uses, so the window lines up with theirs */
+  .fr-close-in { grid-template-columns: repeat(12, minmax(0, 1fr)); grid-template-areas: "head head head head win win win win win win win win" "art art art art art art art art art art art art"; align-items: start; }
   .fr-close-art { justify-self: stretch; width: auto; }
   .fr-close-art .fr-art-c { display: none; }
   .fr-close-art .fr-art-x { display: block; }
@@ -526,3 +371,6 @@ main, .fr-foot { position: relative; z-index: 1; }
   .fr-copy { padding: 14px; grid-template-columns: minmax(0, 1fr); }
   .fr-copybtn { justify-self: start; margin-top: var(--pg-sp-1); }
 }
+
+/* ===== no drawings: the page shows the product and its words, nothing beside them ===== */
+.pg-art, .fr-heroart, .fr-close-art { display: none !important; }

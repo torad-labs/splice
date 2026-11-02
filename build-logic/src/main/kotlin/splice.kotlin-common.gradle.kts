@@ -92,6 +92,13 @@ dependencies {
     "testImplementation"(platform("org.junit:junit-bom:${catalog.version("junit")}"))
     "testImplementation"("org.junit.jupiter:junit-jupiter")
     "testRuntimeOnly"("org.junit.platform:junit-platform-launcher")
+    // TRANSITIVE CVE FLOOR — logback (2026-11-02). ktlint-cli pins logback-classic 1.3.16 on the `ktlint` configuration the
+    // plugin above resolves it in, a line with no fix for GHSA-jhq6-gfmj-v8fx, GHSA-p47f-322f-whfh and GHSA-qqpg-mvqg-649v
+    // (all fixed in 1.5.34). Lint-time only, never in the shipped jar; both halves move together or neither loads.
+    constraints {
+        "ktlint"("ch.qos.logback:logback-classic:${catalog.version("logback")}")
+        "ktlint"("ch.qos.logback:logback-core:${catalog.version("logback")}")
+    }
 }
 
 tasks.withType<Test>().configureEach {

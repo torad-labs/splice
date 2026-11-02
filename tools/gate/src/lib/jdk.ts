@@ -1,17 +1,25 @@
-// Which JDK the gate runs on — resolved from the running VM's own `java.home` property, never from an
-// OS- or package-manager-specific path. Splice requires JDK 21 (module law + toolchain).
+// Which JDK the gate runs on. Splice builds on JDK 21 (module law + the Gradle toolchain splice.kotlin-common pins), whatever
+// `java` the machine defaults to: the toolchain compiles and tests on a 21 Gradle finds, and the gate, the hooks' linters and
+// the release launcher must run on the same one. Resolved in this order, the first 21 wins:
+//   1. $JAVA_HOME, when its bin/java reports 21, untouched;
+//   2. $SPLICE_JAVA, the java the launcher runs splice on (a machine whose default java is older or newer for its own work);
+//   3. the `java` on PATH, when it reports 21, its home read from `-XshowSettings:properties` (Linux and macOS launchers,
+//      /usr/bin/java included, without non-portable readlink flags);
+//   4. a JDK 21 installed where Gradle's own toolchain detection and the common installers put them (jdkRoots): the paths
+//      ~/.gradle/gradle.properties names in org.gradle.java.installations.paths, then ~/jdks, ~/.jdks, ~/.gradle/jdks, SDKMAN,
+//      asdf, /usr/lib/jvm and /Library/Java/JavaVirtualMachines (a bundle's Contents/Home). No vendor's own install path is
+//      spelled here (the release-readiness law's jdk-no-homebrew-path, from OSS-J): a keg-only Homebrew JDK is found through
+//      PATH or through the /Library/Java link its install prints, a Temurin cask through /Library/Java directly.
+// Anything else is a refusal naming every place looked and the remedies.
 //
-// A port of checks/gate.sh:14-50, which owned this until PR 5. The two branches are the script's:
-//   1. a caller-provided JAVA_HOME whose bin/java reports major 21 wins, untouched;
-//   2. otherwise the `java` on PATH, if it reports 21, and its home is read from
-//      `-XshowSettings:properties` — which works for Linux and macOS launchers, /usr/bin/java
-//      included, without non-portable readlink flags.
-// Anything else is a refusal with the install remedies attached (OSS-J pins that the resolver
-// works with JAVA_HOME unset and returns a Java 21).
-import { accessSync, constants } from "node:fs";
+// 1-3 are a port of checks/gate.sh:14-50, which owned this until PR 5. 4 is from 2026-11-02: a machine whose default java
+// moved to 25, with three JDK 21s installed, had every commit with Kotlin and every push refused, because nothing looked past
+// PATH. A JDK a machine has is found; only a machine with none is told to install one.
+import { accessSync, constants, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
-export type Jdk = { readonly javaHome: string } | { readonly error: string };
+export type Jdk = { readonly javaHome: string; readonly source: string } | { readonly error: string };
 
 /** The MAJOR version `bin -version` reports: the quoted version's first dot-separated component
  *  (`"21.0.4"` → 21, `"1.8.0_392"` → 1), exactly as gate.sh's awk/cut pipeline read it. */
@@ -50,31 +58,118 @@ function executable(path: string): boolean {
   }
 }
 
-export function resolveJdk21(env: Record<string, string | undefined> = Bun.env): Jdk {
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/** The paths `org.gradle.java.installations.paths` names in the gradle user home's gradle.properties: Gradle's own way of
+ *  pointing a machine at specific JDK folders, read here so the gate and the build answer alike. */
+function gradleInstallationPaths(gradleUserHome: string): string[] {
+  const file = join(gradleUserHome, "gradle.properties");
+  if (!existsSync(file)) return [];
+  const line = readFileSync(file, "utf8")
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l.startsWith("org.gradle.java.installations.paths"));
+  const value = line?.split("=").slice(1).join("=").trim() ?? "";
+  return value
+    .split(",")
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+}
+
+/** Where installed JDKs live on this machine, in the order they are searched: the user's own pins and folders first, the
+ *  system's after. Each entry is a folder OF JDKs, or a JDK itself (a pinned path). The list is the one Gradle's own toolchain
+ *  detection scans, so a 21 `./gradlew` compiles on is one the gate finds: the gradle user home's pins and `jdks` download folder
+ *  (GRADLE_USER_HOME, or ~/.gradle), IntelliJ's download folders (~/.jdks on Linux, ~/Library/Java/JavaVirtualMachines on macOS),
+ *  SDKMAN's and asdf's candidate folders (at the variables those tools export, and their defaults under the home), and the
+ *  system folders: distro packages under /usr/lib/jvm and /usr/lib64/jvm, Oracle RPMs under /usr/java, hand installs under
+ *  /usr/local/java and /opt/java, and macOS bundles under /Library/Java/JavaVirtualMachines. */
+export function jdkRoots(env: Record<string, string | undefined> = Bun.env): string[] {
+  const home = env.HOME ?? homedir();
+  const gradleUserHome = env.GRADLE_USER_HOME ?? join(home, ".gradle");
+  const roots = [
+    ...gradleInstallationPaths(gradleUserHome),
+    join(home, "jdks"),
+    join(home, ".jdks"),
+    join(home, "Library", "Java", "JavaVirtualMachines"),
+    join(gradleUserHome, "jdks"),
+    join(home, ".gradle", "jdks"),
+    join(env.SDKMAN_CANDIDATES_DIR ?? join(home, ".sdkman", "candidates"), "java"),
+    join(home, ".sdkman", "candidates", "java"),
+    join(env.ASDF_DATA_DIR ?? join(home, ".asdf"), "installs", "java"),
+    join(home, ".asdf", "installs", "java"),
+    "/usr/lib/jvm",
+    "/usr/lib64/jvm",
+    "/usr/java",
+    "/usr/local/java",
+    "/opt/java",
+    "/Library/Java/JavaVirtualMachines",
+  ];
+  return [...new Set(roots)];
+}
+
+/** The JDK homes a root offers: itself when it is a JDK, else each child, a macOS bundle read at its Contents/Home. */
+function homesUnder(root: string): string[] {
+  if (!isDirectory(root)) return [];
+  if (executable(join(root, "bin", "java"))) return [root];
+  const homes: string[] = [];
+  for (const name of readdirSync(root).sort()) {
+    const child = join(root, name);
+    if (executable(join(child, "bin", "java"))) homes.push(child);
+    else if (executable(join(child, "Contents", "Home", "bin", "java"))) homes.push(join(child, "Contents", "Home"));
+  }
+  return homes;
+}
+
+/** The first JDK 21 under [roots], searched in order, or undefined. */
+export function installedJdk21(
+  roots: readonly string[],
+  env: Record<string, string | undefined> = Bun.env,
+): { javaHome: string; source: string } | undefined {
+  for (const root of roots) {
+    for (const home of homesUnder(root)) {
+      if (javaMajor(join(home, "bin", "java"), env) === "21") return { javaHome: home, source: `installed under ${root}` };
+    }
+  }
+  return undefined;
+}
+
+export function resolveJdk21(env: Record<string, string | undefined> = Bun.env, roots: readonly string[] = jdkRoots(env)): Jdk {
   const declared = env.JAVA_HOME;
   if (declared) {
     const bin = join(declared, "bin", "java");
-    if (executable(bin) && javaMajor(bin, env) === "21") return { javaHome: declared };
+    if (executable(bin) && javaMajor(bin, env) === "21") return { javaHome: declared, source: "JAVA_HOME" };
   }
-  // SPLICE_JAVA is the java the launcher runs splice on, for a machine whose default java is older for its own work
-  // (an Android toolchain on 17). The gate builds the same code, so it takes the same JDK.
+  // SPLICE_JAVA is the java the launcher runs splice on, for a machine whose default java is another version for its own work
+  // (an Android toolchain on 17, a desktop on 25). The gate builds the same code, so it takes the same JDK.
   const named = env.SPLICE_JAVA;
   if (named && executable(named) && javaMajor(named, env) === "21") {
     const home = javaHomeOf(named, env);
-    if (home) return { javaHome: home };
+    if (home) return { javaHome: home, source: "SPLICE_JAVA" };
   }
   const onPath = Bun.which("java", { PATH: env.PATH ?? "" });
   if (onPath && javaMajor(onPath, env) === "21") {
     const home = javaHomeOf(onPath, env);
-    if (home) return { javaHome: home };
+    if (home) return { javaHome: home, source: "PATH java" };
   }
+  const installed = installedJdk21(roots, env);
+  if (installed) return installed;
   return {
     error:
-      "GATE: FAIL — JDK 21 required, none found (checked $JAVA_HOME, $SPLICE_JAVA and PATH java).\n" +
-      "  Install a JDK 21 and re-run, e.g.:\n" +
-      "    macOS:  brew install openjdk@21\n" +
+      "GATE: FAIL — JDK 21 required, none found (checked $JAVA_HOME, $SPLICE_JAVA, PATH java, and these JDK folders:\n" +
+      roots.map((root) => `    ${root}`).join("\n") +
+      "\n  ).\n" +
+      "  Install a JDK 21 in one of those folders and re-run, e.g.:\n" +
+      "    macOS:  brew install --cask temurin@21\n" +
       "    Debian/Ubuntu: sudo apt install openjdk-21-jdk\n" +
-      "    or download from https://adoptium.net/temurin/releases/?version=21",
+      "    or download from https://adoptium.net/temurin/releases/?version=21\n" +
+      "  or name its folder for Gradle and the gate alike, in ~/.gradle/gradle.properties:\n" +
+      "    org.gradle.java.installations.paths=/path/to/jdk-21",
   };
 }
 

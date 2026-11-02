@@ -2,9 +2,11 @@
 # tools/e2e/docker/plan-limit.sh — an Anthropic plan-limit 429, through splice, to the REAL Claude
 # Code at the pinned version. Run INSIDE the container by `run.sh --scenario plan-limit`.
 #
-# Single-login native refusals reach Claude Code as HTTP 429 with the native body and rate-limit
-# headers verbatim, except unified-reset (and retry-after, if sent), which name splice's 30 s
-# recheck when the native one is later (ClientRecheck.kt); one upstream attempt, no proxy retries.
+# Single-login native refusals reach Claude Code as HTTP 429 handed over (failure-handling slice 5,
+# 2026-10-27): the native envelope and error type, splice's line naming the head, the window and the
+# native reset (HoldSentences.kt), and exactly retry-after, the unified status, the unified reset and
+# the per-window reset (HandOverHeaders.kt). Every turn is sent to the upstream once, with no proxy
+# retries: a turn waits only on its own failure, never on another turn's limit (2026-10-26).
 # That client runs in persistent retry mode (CLAUDE_CODE_RETRY_WATCHDOG=1): it asks again at each
 # 30 s recheck, which splice answers locally while the limit holds, and resumes after the reset.
 # A pooled refusal moves the same request to a free login before any client response.
@@ -204,8 +206,8 @@ pool_turn() {
 }
 step "real Claude Code: same request completes on the next login without hearing 429" pool_turn
 
-# ── 4. native HTTP 429: native wire but recheck deadlines, one attempt, local follower, re-probe ──
-step "native 429: verbatim body and headers except the 30 s recheck deadlines, one attempt without proxy retries" \
+# ── 4. native HTTP 429: handed over with splice's line and the unified headers, one attempt per turn ──
+step "native 429: handed over with the native envelope, splice's line and the unified reset headers, one upstream attempt per turn without proxy retries" \
   bun "$PLAN_TS" probe "$PROBE_HEAD_PORT" "$OUT/first-frame.json" "$OUT/upstream-probe.jsonl"
 
 # ── 5. the real client rechecks every 30 s through the limit and resumes after the reset ───────

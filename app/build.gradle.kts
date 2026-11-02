@@ -22,6 +22,9 @@ buildscript {
         constraints {
             classpath("com.fasterxml.jackson.core:jackson-core:${libs.versions.jackson.get()}")
             classpath("com.fasterxml.jackson.core:jackson-databind:${libs.versions.jackson.get()}")
+            // guava too (2026-11-02, GHSA-xxph-c9ww-hj94, high): cyclonedx-core-java brings guava 33.7.1-jre
+            // onto this classpath, one patch short of the fix; the same floor integrations/codemode holds for grpc.
+            classpath("com.google.guava:guava:${libs.versions.guava.get()}")
         }
     }
 }

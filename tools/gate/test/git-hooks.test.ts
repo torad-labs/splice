@@ -97,9 +97,18 @@ function git(cwd: string, args: readonly string[]): void {
   if (proc.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${proc.stderr.toString()}`);
 }
 
+/** The fixture's own identity and no signing, for every git command that writes a commit: the fixtures read no ambient git
+ *  config, and a runner with no identity of its own (CI) cannot auto-detect one. */
+const IDENTITY = ["-c", "user.name=test", "-c", "user.email=test@test", "-c", "commit.gpgsign=false"] as const;
+
 /** A commit with the fixture's own identity and no signing. It runs the hooks the fixture has, and no others. */
 function commit(root: string, subject: string): void {
-  git(root, ["-c", "user.name=test", "-c", "user.email=test@test", "-c", "commit.gpgsign=false", "commit", "-q", "-m", subject]);
+  git(root, [...IDENTITY, "commit", "-q", "-m", subject]);
+}
+
+/** A rebase onto [onto] with the fixture's own identity: a rebase rewrites commits, and needs a committer like a commit does. */
+function rebase(root: string, onto: string): void {
+  git(root, [...IDENTITY, "rebase", "-q", onto]);
 }
 
 function head(root: string): string {
@@ -853,7 +862,7 @@ describe("pre-push scopes the gate to the pushed diff", () => {
     const branch = branchRef(root);
     const remote = pushedBranch(root);
     mainGains(root, branch);
-    git(root, ["rebase", "-q", "origin/main"]);
+    rebase(root, "origin/main");
     const calls: string[][] = [];
     const { result, text } = await captured(() => prePush(lay(root), pushMoving(root, remote, head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS }));
     expect(result).toBe(0);
@@ -881,7 +890,7 @@ describe("pre-push scopes the gate to the pushed diff", () => {
     const branch = branchRef(root);
     pushedBranch(root);
     mainGains(root, branch);
-    git(root, ["rebase", "-q", "origin/main"]);
+    rebase(root, "origin/main");
     const unknown = "1234567890abcdef1234567890abcdef12345678";
     const calls: string[][] = [];
     const { result, text } = await captured(() => prePush(lay(root), pushMoving(root, unknown, head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS }));

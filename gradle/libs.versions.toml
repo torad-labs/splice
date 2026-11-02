@@ -8,7 +8,7 @@ coroutines = "1.11.0"
 # kotlinx-serialization 1.12.0's klibs carry ABI 2.4.0 (built by Kotlin 2.4.10), which the 2.3.21 compiler the MCP hub
 # links with cannot consume, and its JVM parser caps nesting at 400 (JsonLineShapeFuzzTest). Held until kotlin moves to
 # 2.4.x, the CodeQL block in .github/dependabot.yml (PR #432, 2026-11-02).
-serialization = "1.11.0"
+serialization = "1.12.0"
 ktoml = "0.7.1"
 # konsist 0.18.x needs kotlin-compiler-embeddable 2.4.21 (0.17.3 asks 2.0.21); against 2.3.21 its PSI setup fails with
 # "Extensions storage is not registered" (UnpackedParameterLawTest). Held by the same Kotlin 2.4 block (PR #432, 2026-11-02).

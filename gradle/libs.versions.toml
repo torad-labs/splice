@@ -52,6 +52,10 @@ freemarker = "2.3.35"           # 2.3.32 resolved; GHSA-27j2-h3m2-8237 (critical
 # for the plugin classpath. Dependabot cannot open this one either (no declaration to edit). Drop it once
 # grpc's chain and cyclonedx carry 33.7.2+.
 guava = "33.8.0-jre"            # 33.6.0-android and 33.7.1-jre resolved; GHSA-xxph-c9ww-hj94 (high, CompactHashMap deserialization memory allocation)
+# logback rides in on every module's `ktlint` configuration under ktlint-cli 1.8.0 (the latest), which pins
+# logback-classic 1.3.16, a line with no fix for its three open advisories; floored by constraints in build-logic's
+# splice.kotlin-common. Lint-time only, never in the shipped jar. Drop it when ktlint moves to logback 1.5.
+logback = "1.5.34"              # 1.3.16 resolved; GHSA-jhq6-gfmj-v8fx, GHSA-p47f-322f-whfh, GHSA-qqpg-mvqg-649v (low, deserialization)
 
 [libraries]
 grpc-netty-shaded = { module = "io.grpc:grpc-netty-shaded", version.ref = "grpc" }

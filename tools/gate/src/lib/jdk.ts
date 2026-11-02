@@ -7,7 +7,9 @@
 //      /usr/bin/java included, without non-portable readlink flags);
 //   4. a JDK 21 installed where Gradle's own toolchain detection and the common installers put them (jdkRoots): the paths
 //      ~/.gradle/gradle.properties names in org.gradle.java.installations.paths, then ~/jdks, ~/.jdks, ~/.gradle/jdks, SDKMAN,
-//      asdf, /usr/lib/jvm, /Library/Java/JavaVirtualMachines (a bundle's Contents/Home) and Homebrew's openjdk@21.
+//      asdf, /usr/lib/jvm and /Library/Java/JavaVirtualMachines (a bundle's Contents/Home). No vendor's own install path is
+//      spelled here (the release-readiness law's jdk-no-homebrew-path, from OSS-J): a keg-only Homebrew JDK is found through
+//      PATH or through the /Library/Java link its install prints, a Temurin cask through /Library/Java directly.
 // Anything else is a refusal naming every place looked and the remedies.
 //
 // 1-3 are a port of checks/gate.sh:14-50, which owned this until PR 5. 4 is from 2026-11-02: a machine whose default java
@@ -93,8 +95,6 @@ export function jdkRoots(env: Record<string, string | undefined> = Bun.env): str
     join(home, ".asdf", "installs", "java"),
     "/usr/lib/jvm",
     "/Library/Java/JavaVirtualMachines",
-    "/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home",
-    "/usr/local/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home",
   ];
 }
 
@@ -150,7 +150,7 @@ export function resolveJdk21(env: Record<string, string | undefined> = Bun.env, 
       roots.map((root) => `    ${root}`).join("\n") +
       "\n  ).\n" +
       "  Install a JDK 21 in one of those folders and re-run, e.g.:\n" +
-      "    macOS:  brew install openjdk@21\n" +
+      "    macOS:  brew install --cask temurin@21\n" +
       "    Debian/Ubuntu: sudo apt install openjdk-21-jdk\n" +
       "    or download from https://adoptium.net/temurin/releases/?version=21\n" +
       "  or name its folder for Gradle and the gate alike, in ~/.gradle/gradle.properties:\n" +

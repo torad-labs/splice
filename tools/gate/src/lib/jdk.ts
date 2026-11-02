@@ -73,7 +73,8 @@ function isDirectory(path: string): boolean {
  *  pointing a machine at specific JDK folders, read here so the gate and the build answer alike. Read as java.util.Properties
  *  reads the file, which is how Gradle reads it: a line that is not a comment and ends in an odd run of backslashes continues on
  *  the next line, whose leading blanks are dropped; a comment line (`#` or `!` first) is never continued, whatever it ends in;
- *  `=`, `:` or whitespace separates the key; and the last assignment wins. */
+ *  `=`, `:` or whitespace separates the key; the value's escapes are decoded (`\\` one backslash, `\ ` a space, `\uXXXX` a
+ *  character); and the last assignment wins. */
 function gradleInstallationPaths(gradleUserHome: string): string[] {
   const file = join(gradleUserHome, "gradle.properties");
   if (!existsSync(file)) return [];
@@ -91,10 +92,14 @@ function gradleInstallationPaths(gradleUserHome: string): string[] {
     pending = undefined;
   }
   if (pending !== undefined) logical.push(pending);
+  const unescape = (value: string): string =>
+    value.replace(/\\(u[0-9a-fA-F]{4}|.)/g, (_match, escaped: string) =>
+      escaped.length === 5 ? String.fromCharCode(Number.parseInt(escaped.slice(1), 16)) : ({ t: "\t", n: "\n", r: "\r", f: "\f" }[escaped] ?? escaped),
+    );
   let value = "";
   for (const line of logical) {
     const match = /^org\.gradle\.java\.installations\.paths(?:\s*[=:]\s*|\s+)(.*)$/.exec(line);
-    if (match) value = match[1] ?? "";
+    if (match) value = unescape(match[1] ?? "");
   }
   return value
     .split(",")

@@ -183,6 +183,25 @@ describe("what a catalog change makes the pre-push run", () => {
     if (kotlin.kind === "full") expect(kotlin.why).toContain("`kotlin`");
   });
 
+  test("an entry read by a script that is itself every module's input is every module's, and the reason names the script", () => {
+    // quality/compiler-plugin/build.gradle.kts builds the jar every module's compileKotlin loads (the root build wires -Xplugin), an edge
+    // the module graph does not carry: on the real tree a kotlin-compiler-embeddable bump checked that one module of 35 (review of PR 445)
+    const bumped = edited(
+      'kotlin-compiler-embeddable = { module = "org.jetbrains.kotlin:kotlin-compiler-embeddable", version.ref = "kotlin" }',
+      'kotlin-compiler-embeddable = { module = "org.jetbrains.kotlin:kotlin-compiler-embeddable", version = "2.4.0" }',
+    );
+    const everyModule = (path: string): boolean => path === "quality/compiler-plugin/build.gradle.kts";
+    const result = catalogImpact({ path: "gradle/libs.versions.toml", accessor: "libs", before: CATALOG, after: bumped, texts: TEXTS, everyModule });
+    expect(result.kind).toBe("full");
+    if (result.kind === "full") {
+      expect(result.why).toContain("`kotlin-compiler-embeddable`");
+      expect(result.why).toContain("quality/compiler-plugin/build.gradle.kts");
+      expect(result.why).toContain("as every module's build does");
+    }
+    // told nothing about the script, the entry scopes to the module that owns it
+    expect(Object.keys(modulesOf(impact(bumped)))).toEqual([":quality-compiler-plugin"]);
+  });
+
   test("an entry no build script reads cannot be placed, so every module runs and the reason says so", () => {
     const result = impact(edited('junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }', 'junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version = "6.1.3" }'));
     expect(result.kind).toBe("full");
@@ -247,9 +266,32 @@ describe("the pushed paths decide whether the catalog is read at all", () => {
     expect(readTexts).toBe(1);
   });
 
+  test("a build script the scope marks full reads for every module: a catalog entry only it reads runs everything", () => {
+    const bumped = edited(
+      'kotlin-compiler-embeddable = { module = "org.jetbrains.kotlin:kotlin-compiler-embeddable", version.ref = "kotlin" }',
+      'kotlin-compiler-embeddable = { module = "org.jetbrains.kotlin:kotlin-compiler-embeddable", version = "2.4.0" }',
+    );
+    const marked = loadScope(
+      JSON.stringify({
+        full: [{ glob: "quality/compiler-plugin/build.gradle.kts", why: "builds the compiler plugin jar every module compiles with" }],
+        docs: [],
+        laws: [],
+        catalog: [{ glob: "gradle/libs.versions.toml", accessor: "libs", why: "is the version catalog" }],
+      }),
+    );
+    const everything = catalogImpactOf({ changed: ["gradle/libs.versions.toml"], scope: marked, read: () => bumped, before: () => CATALOG, texts: () => TEXTS });
+    expect(everything?.kind).toBe("full");
+    if (everything?.kind === "full") expect(everything.why).toContain("quality/compiler-plugin/build.gradle.kts");
+    // under a scope that does not mark the script, the same push scopes to the script's module
+    const narrow = catalogImpactOf({ changed: ["gradle/libs.versions.toml"], scope, read: () => bumped, before: () => CATALOG, texts: () => TEXTS });
+    expect(narrow?.kind).toBe("modules");
+  });
+
   test("the committed scope file marks the catalog as a catalog, read under the `libs` accessor, and no longer as full", () => {
     const committed = loadScope();
     expect(committed.catalog.map((rule) => [rule.glob, rule.accessor])).toEqual([["gradle/libs.versions.toml", "libs"]]);
     expect(committed.full.some((rule) => rule.glob === "gradle/libs.versions.toml")).toBe(false);
+    // the compiler plugin's script decides the jar every module compiles with, like its src/main
+    expect(committed.full.some((rule) => rule.glob === "quality/compiler-plugin/build.gradle.kts")).toBe(true);
   });
 });

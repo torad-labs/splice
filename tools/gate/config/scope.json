@@ -13,6 +13,7 @@
     { "glob": "build-logic/src/main/kotlin/splice/modulelaw/**", "why": "is the module-law table every module's configuration reads" },
     { "glob": "build-logic/src/main/kotlin/splice/testing/**", "why": "is the test-task wiring the convention plugin applies to every module" },
     { "glob": "quality/compiler-plugin/src/main/**", "why": "is the compiler plugin every module compiles with" },
+    { "glob": "quality/compiler-plugin/build.gradle.kts", "why": "builds the compiler plugin jar every module compiles with, and its catalog reads count for every module" },
     { "glob": "quality/detekt/detekt.yml", "why": "is the detekt config every kotlin module's check reads" },
     { "glob": ".editorconfig", "why": "is the ktlint rule list every module's check reads" }
   ],

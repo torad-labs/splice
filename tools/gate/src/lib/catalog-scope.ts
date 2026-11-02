@@ -11,7 +11,10 @@
 // dependents' classpaths too. So a changed entry selects the modules whose scripts read it and their dependents (selector.ts),
 // and runs all of those modules' unit suites whole (test-impact.ts): a version bump changes bytes no reference walk can follow.
 //
-// WHAT RUNS EVERY MODULE. An entry build-logic, the root build or settings reads, because every module's build runs those.
+// WHAT RUNS EVERY MODULE. An entry build-logic, the root build or settings reads, because every module's build runs those, and one
+// a module's script reads when that script is itself a scope.json `full` path: quality/compiler-plugin/build.gradle.kts builds the
+// jar the root build wires into every module's compileKotlin, an edge the module graph does not carry (review of PR 445: a bump of
+// kotlin-compiler-embeddable checked that module alone, and every other module would have loaded the new plugin unchecked).
 // An entry no build script reads at all: either it is dead or it is read in a way this file does not know, and the pre-push
 // selects more where it is unsure. A catalog the push adds, removes, or leaves unparseable on either side. A lookup whose alias is
 // computed (CatalogReader.read() walks every alias for the dependency-hygiene check at the root) is not a reader of any one entry:
@@ -20,7 +23,7 @@
 //
 // Pure: the caller reads the catalog before and after the push and the build texts, and nothing here starts a process.
 
-import { catalogRule, type ScopeRules } from "./scope.ts";
+import { catalogRule, fullRule, type ScopeRules } from "./scope.ts";
 
 export type CatalogSection = "versions" | "libraries" | "plugins" | "bundles";
 
@@ -208,6 +211,9 @@ export interface CatalogImpactInput {
   readonly after: string | undefined;
   /** Every build text of the pushed commit. */
   readonly texts: readonly CatalogText[];
+  /** Whether the build text at [path] is an input of every module's build though a module owns it (a scope.json `full` path, such as
+   *  the compiler plugin's script, whose jar every module compiles with: an edge the module graph does not carry). */
+  readonly everyModule?: (path: string) => boolean;
 }
 
 const spelled = (aliases: readonly string[]): string => aliases.map((alias) => `\`${alias}\``).join(", ");
@@ -249,7 +255,7 @@ export function catalogImpact(input: CatalogImpactInput): CatalogImpact {
     const via = through.length === 0 ? "" : ` through ${spelled(through)}`;
     const aliases = entries.map((key) => key.alias);
     const reason = `${spelled(aliases)} in ${path} changed, and ${text.path} reads ${entries.length === 1 ? "it" : "them"}${via}`;
-    if (text.module === undefined) return { kind: "full", why: `${reason}, as every module's build does` };
+    if (text.module === undefined || input.everyModule?.(text.path) === true) return { kind: "full", why: `${reason}, as every module's build does` };
     const existing = modules.get(text.module);
     modules.set(text.module, existing === undefined ? reason : `${existing}; ${reason}`);
   }
@@ -286,7 +292,14 @@ export function catalogImpactOf(input: CatalogImpactOfInput): CatalogImpact | un
   const texts = input.texts();
   const modules = new Map<string, string>();
   for (const { path, rule } of catalogs) {
-    const impact = catalogImpact({ path, accessor: rule.accessor, before: input.before(path), after: input.read(path), texts });
+    const impact = catalogImpact({
+      path,
+      accessor: rule.accessor,
+      before: input.before(path),
+      after: input.read(path),
+      texts,
+      everyModule: (script) => fullRule(script, input.scope) !== undefined,
+    });
     if (impact.kind === "full") return impact;
     if (impact.kind === "none") continue;
     for (const [module, why] of impact.modules) {

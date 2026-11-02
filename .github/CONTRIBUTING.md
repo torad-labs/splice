@@ -63,7 +63,7 @@ against the same vocabulary. Landing preserves those subjects because commits ar
 
 ## Working and landing on the shared branch
 
-All seats work in one checkout on the same release branch (`feat/v0.4.0`), not in separate feature
+All seats work in one checkout on the same dev branch (`dev`), not in separate feature
 branches or worktrees. Coordinate ownership by file and preserve every other seat's work.
 
 1. Commit only your own files by explicit path: `git commit -m "docs(scope): subject" -- <paths>`.

@@ -7,6 +7,7 @@
 // selection is unsure it selects more.
 import { describe, expect, test } from "bun:test";
 import { scanSource } from "../src/lib/kotlin-source.ts";
+import type { ModuleGraph } from "../src/lib/selector.ts";
 import {
   confineTo,
   fullSuiteReason,
@@ -26,6 +27,12 @@ const MODULES: readonly ImpactModule[] = [
   { path: ":app", dir: "app" },
   { path: ":features-turns", dir: "features/turns" },
 ];
+/** The module law of the small repository: :app and :features-turns depend on :core, which depends on nothing. */
+const GRAPH: ModuleGraph = new Map<string, readonly string[]>([
+  [":core", []],
+  [":app", [":core"]],
+  [":features-turns", [":core"]],
+]);
 
 const main = (dir: string, pkg: string, file: string): string => `${dir}/src/main/kotlin/${pkg.replaceAll(".", "/")}/${file}`;
 const unit = (dir: string, pkg: string, file: string): string => `${dir}/src/test/kotlin/${pkg.replaceAll(".", "/")}/${file}`;
@@ -87,7 +94,7 @@ const BASE: Readonly<Record<string, string>> = {
 };
 
 /** A push of [edits] (a path's new text, or null when the push deletes it) onto [base]. */
-function pushOf(edits: Readonly<Record<string, string | null>>, base: Readonly<Record<string, string>> = BASE, modules = MODULES): ImpactInput {
+function pushOf(edits: Readonly<Record<string, string | null>>, base: Readonly<Record<string, string>> = BASE, modules = MODULES, graph: ModuleGraph = GRAPH): ImpactInput {
   const tip: Record<string, string> = { ...base };
   for (const [path, text] of Object.entries(edits)) {
     if (text === null) delete tip[path];
@@ -95,6 +102,7 @@ function pushOf(edits: Readonly<Record<string, string | null>>, base: Readonly<R
   }
   return {
     modules,
+    graph,
     changed: Object.keys(edits).sort(),
     tree: {
       paths: Object.keys(tip).sort(),
@@ -570,9 +578,12 @@ const CATALOG = [
 ].join("\n");
 const CATALOG_PATH = "gradle/libs.versions.toml";
 const COMMON = "build-logic/src/main/kotlin/splice.kotlin-common.gradle.kts";
+/** A test in :features-turns that uses the serialization library :core exposes with `api`, and no class of :core. */
+const TURN_JSON_TEST = unit("features/turns", "splice.turns", "TurnJsonTest.kt");
 const CATALOG_BASE: Readonly<Record<string, string>> = {
   ...BASE,
   [CATALOG_PATH]: CATALOG,
+  [TURN_JSON_TEST]: junit("splice.turns", "TurnJsonTest", 'check(Json.parseToJsonElement("{}").toString() == "{}")', ["import kotlinx.serialization.json.Json"]),
   "core/build.gradle.kts": 'plugins { id("splice.kotlin-common") }\ndependencies { api(libs.kotlinx.serialization.json) }\n',
   "app/build.gradle.kts": 'plugins { id("splice.kotlin-common") }\ndependencies { constraints { implementation("com.google.guava:guava:${libs.versions.guava.get()}") } }\n',
   [COMMON]: 'val catalog = CatalogReader(extensions.getByType<VersionCatalogsExtension>().named("libs"))\nconfigure<KtlintExtension> { version.set(catalog.version("ktlint")) }\n',
@@ -587,10 +598,19 @@ describe("a version catalog change runs the modules whose build scripts read the
     expect(whyWhole(impact, ":app")).toContain("app/build.gradle.kts");
   });
 
-  test("a version a library pins runs the module that reads the library whole, and the tests elsewhere that reach that module", () => {
+  test("a version a library pins runs the module that reads the library whole, and every module that depends on it, which resolves the new bytes through it", () => {
     const impact = testImpact(pushOf({ [CATALOG_PATH]: bump('serialization = "1.11.0"', 'serialization = "1.11.1"') }, CATALOG_BASE));
-    expect(shape(impact)).toEqual({ ":core": "all", ":app": ["splice.app.CheckoutTest"], ":features-turns": ["splice.turns.TurnClockTest"] });
+    // TurnJsonTest names no class of :core, only Json, which :core's `api` puts on :features-turns's classpath: no reference from
+    // :core reaches it, and a release that parses or prints JSON differently breaks it, so the module runs whole, not narrowed
+    expect(shape(impact)).toEqual({ ":core": "all", ":app": "all", ":features-turns": "all" });
     expect(whyWhole(impact, ":core")).toContain("kotlinx-serialization-json");
+    expect(whyWhole(impact, ":features-turns")).toContain(":core");
+    expect(whyWhole(impact, ":features-turns")).toContain("kotlinx-serialization-json");
+  });
+
+  test("an entry a module with no dependents reads runs that module alone: nothing resolves the entry through it", () => {
+    const impact = testImpact(pushOf({ [CATALOG_PATH]: bump('guava = "33.7.1-jre"', 'guava = "33.8.0-jre"') }, CATALOG_BASE));
+    expect(shape(impact)).toEqual({ ":core": "none", ":app": "all", ":features-turns": "none" });
   });
 
   test("an entry a convention plugin every module applies reads runs the full suite, and the reason names both", () => {
@@ -1362,6 +1382,8 @@ function inputOf(repo: GenRepo, push: GenPush): ImpactInput {
   }
   return {
     modules: GEN_MODULES.map((m) => ({ path: m.path, dir: m.dir })),
+    // the generator declares no project dependencies, so the graph has no edges; the catalog is not among its edits
+    graph: new Map<string, readonly string[]>(GEN_MODULES.map((m) => [m.path, []])),
     changed: Object.keys(push.edits).sort(),
     tree: {
       paths: Object.keys(tip).sort(),

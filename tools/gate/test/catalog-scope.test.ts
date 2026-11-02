@@ -90,15 +90,16 @@ describe("the catalog is read as the four tables Gradle reads", () => {
     const before = parseCatalog(CATALOG);
     const bumped = parseCatalog(edited('guava = "33.7.1-jre"', 'guava = "33.8.0-jre"'));
     const commented = parseCatalog(edited("# the gateway's catalog", "# the gateway's catalog, verified 2026-11-02"));
-    const added = parseCatalog(`${CATALOG}\n[versions]\nlogback = "1.5.34"\n`.replace("[versions]\nkotlin", "[versions]\nkotlin"));
-    if (!before || !bumped || !commented) throw new Error("fixtures did not parse");
+    // the new alias goes inside the existing table: a second [versions] table is not TOML, and would not parse
+    const added = parseCatalog(edited('grpc = "1.85.1"', 'grpc = "1.85.1"\nlogback = "1.5.34"'));
+    if (!before || !bumped || !commented || !added) throw new Error("fixtures did not parse");
     expect(catalogChanges(before, bumped)).toEqual([{ section: "versions", alias: "guava" }]);
     expect(catalogChanges(before, commented)).toEqual([]);
     expect(catalogChanges(bumped, before)).toEqual([{ section: "versions", alias: "guava" }]);
     const removed = parseCatalog(edited('zstd-jni = { module = "com.github.luben:zstd-jni", version = "1.5.7-24" }', ""));
     if (!removed) throw new Error("fixture did not parse");
     expect(catalogChanges(before, removed)).toEqual([{ section: "libraries", alias: "zstd-jni" }]);
-    expect(added === undefined || catalogChanges(before, added).length >= 0).toBe(true);
+    expect(catalogChanges(before, added)).toEqual([{ section: "versions", alias: "logback" }]);
   });
 });
 
@@ -126,9 +127,10 @@ describe("a build script's catalog references", () => {
   });
 
   test("a reference to an alias only the other side of the push knows is still a reference", () => {
-    const after = parseCatalog(`${CATALOG}\n[versions]\nlogback = "1.5.34"\n`.replace(/\[versions\]\nlogback/, "[versions]\nlogback"));
-    const both = after ? [catalog, after] : [catalog];
-    expect(catalogReferences('catalog.version("logback")', "libs", both).length).toBe(after ? 1 : 0);
+    const after = parseCatalog(edited('grpc = "1.85.1"', 'grpc = "1.85.1"\nlogback = "1.5.34"'));
+    if (!after) throw new Error("fixture did not parse");
+    expect(refs('catalog.version("logback")')).toEqual([]);
+    expect(catalogReferences('catalog.version("logback")', "libs", [catalog, after])).toEqual([{ section: "versions", alias: "logback" }]);
   });
 });
 

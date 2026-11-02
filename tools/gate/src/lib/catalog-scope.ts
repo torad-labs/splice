@@ -7,8 +7,9 @@
 // `libs.versions.guava.get()`, `libs.plugins.kotlin.jvm`, `libs.bundles.grpc`) and as lookups by literal alias
 // (`catalog.version("ktlint")`, `findLibrary("x")`). A script that names none of a changed entry's accessors or aliases, directly
 // or through a library that pins a changed version or a bundle that carries a changed library, resolves exactly what it
-// resolved before the push. So a changed entry selects the modules whose scripts read it, and their dependents (selector.ts),
-// and runs those modules' unit suites whole (test-impact.ts): a version bump changes bytes no reference walk can follow.
+// resolved before the push, unless its module depends on one whose script does: the reader's `api` puts the new bytes on its
+// dependents' classpaths too. So a changed entry selects the modules whose scripts read it and their dependents (selector.ts),
+// and runs all of those modules' unit suites whole (test-impact.ts): a version bump changes bytes no reference walk can follow.
 //
 // WHAT RUNS EVERY MODULE. An entry build-logic, the root build or settings reads, because every module's build runs those.
 // An entry no build script reads at all: either it is dead or it is read in a way this file does not know, and the pre-push

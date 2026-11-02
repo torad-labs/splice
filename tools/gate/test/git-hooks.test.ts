@@ -856,6 +856,8 @@ describe("pre-push scopes the gate to the pushed diff", () => {
     return main;
   };
   const pushMoving = (root: string, from: string, tip: string): string => `${branchRef(root)} ${tip} refs/heads/feat/x ${from}\n`;
+  /** A source of the second module. */
+  const OTHER_TARGET = "other/src/main/kotlin/splice/other/Probe.kt";
 
   test("a push after a rebase onto origin/main is judged on the branch's own commits, not on what main gained", async () => {
     const root = wallsRepo();
@@ -883,6 +885,29 @@ describe("pre-push scopes the gate to the pushed diff", () => {
     expect(calls).toEqual([]);
     expect(text).toContain("the branch's tip on the remote");
     expect(text).toContain("gradle: none (docs only)");
+  });
+
+  test("a force-push that drops the remote's tip is judged against that tip, so the dropped commit's files are the push's change", async () => {
+    const root = wallsRepo();
+    const branch = branchRef(root);
+    mainGains(root, branch);
+    rebase(root, "origin/main");
+    // two commits pushed together, the remote holding the second; then the seat drops the second and pushes the first by force
+    const kept = pushedBranch(root);
+    writeFile(root, OTHER_TARGET, CLEAN);
+    git(root, ["add", OTHER_TARGET]);
+    commit(root, "chore(test): the commit the force-push drops");
+    const remote = head(root);
+    git(root, ["checkout", "-q", "-B", branch.replace(/^refs\/heads\//, ""), kept]);
+    const calls: string[][] = [];
+    const { result, text } = await captured(() => prePush(lay(root), pushMoving(root, remote, head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS }));
+    expect(result).toBe(0);
+    // the diff from the remote's tip names the dropped file, so its module is checked (and no law suite: the public-source law reads
+    // core/, not other/); a merge base of the two would be the pushed sha itself, an empty diff, and the push would check nothing
+    // though the tree it sends was never built
+    expect(calls).toEqual([[":other:check"]]);
+    expect(text).toContain(`${remote.slice(0, 9)}, the branch's tip on the remote`);
+    expect(text).toContain(`the push changes ${OTHER_TARGET}`);
   });
 
   test("a push over a remote tip this checkout does not hold is judged against the merge base with origin/main", async () => {

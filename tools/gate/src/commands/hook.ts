@@ -49,7 +49,7 @@ import { astGrepBin } from "../lib/astgrep.ts";
 import { resolveJdk21 } from "../lib/jdk.ts";
 import { type Layout, layout } from "../lib/repo.ts";
 import { acquireRunSentinel, describeOpenRun } from "../lib/sentinel.ts";
-import { parseModuleGraph } from "../lib/selector.ts";
+import { type ModuleGraph, parseModuleGraph } from "../lib/selector.ts";
 import { ktlintOver, type LintVerdict, lintable, type StagedLint, stagedLinters } from "../lib/lint-staged.ts";
 import { preparePrePushTree, type PrePushTree, takePrePushTreeNow } from "../lib/prepush-tree.ts";
 import { type Lane, type LaneOptions, type LaneOutcome, openLane } from "../lib/push-lane.ts";
@@ -763,7 +763,7 @@ async function judgeIn(
   // The unit suites the push runs: the classes the diff reaches in each module the scope checks, or the full suite when a
   // scope.json `full` path changed. A push that starts no gradle has no test run to narrow.
   const checkedModules = scope.gradle.flatMap((task) => (task.endsWith(":check") ? task.slice(0, -":check".length) : []));
-  const impact = scope.gradle.length === 0 ? undefined : testSelection(root, lay.repoRoot, refs, modules, changed, checkedModules);
+  const impact = scope.gradle.length === 0 ? undefined : testSelection(root, lay.repoRoot, refs, modules, graph, changed, checkedModules);
   const tests = impact === undefined ? { tasks: [], options: [] } : testArgs(impact, checkedModules, modules.map((module) => module.path));
   const summary = `${scope.summary}${impact === undefined ? "" : `; ${impactClause(impact)}`}`;
   const scopeClause = `; scope: ${summary}${skipPackaged ? `; ${PACKAGED_TEST} skipped: ${PACKAGED_SKIPPED}` : ""}`;
@@ -1088,16 +1088,21 @@ const bases = new Map<string, JudgedBase>();
  * count main's own changes as this push's: on Nov 2 2026 three rebased PR branches each ran the full suite for a catalog line
  * main had merged hours before. Main's commits were judged on main; what is new in the pushed commit is the branch's own content
  * on top of them, which is its diff from its merge base with origin/main. So the base is the merge base with origin/main whenever
- * that commit is not behind the remote's tip, and the remote's tip otherwise. A new branch has only the merge base with origin/main,
- * and so does a remote tip this checkout does not hold. Throws when neither can be read: pre-push refuses rather than judge a
- * scope it cannot name. The answer is kept per push, since the text-before reads ask for it once per changed path.
+ * that commit is not behind the remote's tip, and the remote's tip otherwise. The remote's tip is the tip itself, never its merge
+ * base with the pushed sha: a push that is not a fast-forward (an amend, a force-push after dropping a commit) moves from a tip that
+ * is not behind the sha, and the diff from that tip names what the dropped commit changed, whose modules were never built without
+ * it; the merge base of the two would be the pushed sha, an empty diff, and the push would check nothing. A new branch has only the
+ * merge base with origin/main, and so does a remote tip this checkout does not hold. Throws when neither can be read: pre-push
+ * refuses rather than judge a scope it cannot name. The answer is kept per push, since the text-before reads ask for it once per
+ * changed path.
  */
 export function judgedBase(root: string, ref: { readonly tip: string; readonly remote: string }): JudgedBase {
   const key = `${root}\0${ref.tip}\0${ref.remote}`;
   const kept = bases.get(key);
   if (kept !== undefined) return kept;
   const newBranch = ZERO_SHA.test(ref.remote);
-  const remote = newBranch ? undefined : mergeBase(root, ref.remote, ref.tip);
+  const held = !newBranch && git(root, ["cat-file", "-e", `${ref.remote}^{commit}`]).status === 0;
+  const remote = held ? ref.remote : undefined;
   const main = mergeBase(root, "origin/main", ref.tip);
   const short = (sha: string): string => sha.slice(0, 9);
   let base: JudgedBase;
@@ -1137,6 +1142,7 @@ function testSelection(
   repoRoot: string,
   refs: readonly PushedRef[],
   modules: readonly GradleModule[],
+  graph: ModuleGraph,
   changed: readonly string[],
   checked: readonly string[],
 ): TestImpact {
@@ -1151,6 +1157,7 @@ function testSelection(
     }
     const input: ImpactInput = {
       modules,
+      graph,
       changed,
       tree: {
         paths,

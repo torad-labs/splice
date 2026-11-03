@@ -14,7 +14,7 @@ const { repoRoot } = layout();
 const workflows = join(repoRoot, ".github/workflows");
 // the whole gate, not npm run gate:rules or gate:audit, which run one leg and launch no browser (round 2's suggestion)
 const runsGate = (step: Step) => /(?:^|\s)(?:npm run gate|bun tools\/gate run)(?=\s|$)/m.test(step.run ?? "");
-const installsChromium = (step: Step) => /\bplaywright install\b.*\bchromium\b/.test(step.run ?? "");
+const installsChromium = (step: Step) => /\bplaywright install(?!-)\b.*\bchromium\b/.test(step.run ?? "");
 
 const jobs = readdirSync(workflows)
   .filter((file) => /\.ya?ml$/.test(file))
@@ -29,6 +29,14 @@ describe("every workflow job that runs the gate has Chromium for the console's t
     const where = gating.map((job) => job.where);
     expect(where).toContain("ci.yml ladder");
     expect(where).toContain("release.yml build");
+  });
+
+  // install-deps lays down only the OS libraries, so a job whose one Chromium step is that has no browser to launch
+  // (PR 456's review, round 3)
+  test("a step that installs only Chromium's OS libraries does not count as installing Chromium", () => {
+    expect(installsChromium({ run: "bunx playwright install-deps chromium" })).toBe(false);
+    expect(installsChromium({ run: "bunx playwright install --with-deps chromium" })).toBe(true);
+    expect(installsChromium({ run: "bunx playwright install chromium" })).toBe(true);
   });
 
   test("each installs Playwright's Chromium before its first gate step", () => {

@@ -5,6 +5,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.runInterruptible
 import splice.core.auth.ClientAuthProvider
+import splice.core.auth.SavedPins
 import splice.core.failure.AccountBlock
 import splice.core.util.LruSizing
 import splice.core.util.WallClock
@@ -341,6 +342,14 @@ public class AccountPool(
     public fun unpin(sessionId: String? = null) {
         pins.unpin(sessionId)
     }
+
+    /** Every pin as saved state: read it to keep the pins, set it to put them back after a daemon restart (Nov 3, 2026:
+     *  a Use now pin lived here alone, and every restart dropped it). A pin whose login the pool does not hold now is
+     *  kept, as one whose login leaves later is: [pinned] and [select] pass over it until that login is back. A property,
+     *  not functions: the class sits at detekt's 15-function ceiling. */
+    public var savedPins: SavedPins
+        get() = pins.saved()
+        set(saved) = pins.restore(saved)
 
     /** The currently pinned label, or null when nothing is pinned. Safe for an operator surface —
      *  no credential material, just the label [select] already exposes elsewhere. */

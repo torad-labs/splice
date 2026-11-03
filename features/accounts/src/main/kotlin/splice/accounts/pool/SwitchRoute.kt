@@ -4,7 +4,6 @@ package splice.accounts.pool
 
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
-import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -12,7 +11,6 @@ import splice.accounts.AccountHead
 import splice.accounts.AccountHeadResolver
 import splice.accounts.AccountReplies
 import splice.core.auth.REFUSAL_FIELD
-import splice.core.util.LocalTimeText
 import splice.http.JsonBody
 
 private const val SESSION_FIELD = "session"
@@ -66,14 +64,7 @@ public class SwitchRoute(private val resolver: AccountHeadResolver) {
                 if (!pinned) put("error", "unknown account label '$label'")
                 val held = account?.quota?.holds?.models.orEmpty().takeIf { pinned }.orEmpty()
                 if (held.isNotEmpty()) {
-                    putJsonArray("models_held") {
-                        held.forEach { week ->
-                            addJsonObject {
-                                put("model", week.model)
-                                put("until_epoch_seconds", week.resetEpochSeconds)
-                            }
-                        }
-                    }
+                    putJsonArray("models_held") { HeldWords().modelWeeks(this, held) }
                 }
             }.toString(),
             status = if (pinned) HttpStatusCode.OK else HttpStatusCode.BadRequest,
@@ -97,13 +88,11 @@ public class SwitchRoute(private val resolver: AccountHeadResolver) {
     private suspend fun refusalFor(head: AccountHead, account: HeadAccountView): String? {
         val label = account.label
         if (!account.credential.present) {
+            val words = HeldWords()
             return head.accountAuth?.descriptions()?.get(label)?.fields?.get(REFUSAL_FIELD)
-                ?: "'$label' has no credential file; sign in to it first"
+                ?: if (account.credential.renewable) words.tokenExpired(label) else words.noCredential(label)
         }
-        return account.quota.holds.wholeLogin?.let { plan ->
-            val until = LocalTimeText().at(plan.resetEpochSeconds)
-            "${plan.windowWords} plan limit reached: '$label' serves no turn until $until"
-        }
+        return account.quota.holds.wholeLogin?.let { plan -> HeldWords().planSpent(label, plan) }
     }
 
     private suspend fun pinTarget(call: ApplicationCall): PinTarget? {

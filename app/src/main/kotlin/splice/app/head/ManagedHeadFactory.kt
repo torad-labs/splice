@@ -6,7 +6,9 @@ package splice.app.head
 
 import kotlinx.coroutines.CoroutineScope
 import splice.accounts.order.ACCOUNT_ORDER_FILE
+import splice.accounts.order.ACCOUNT_PINS_FILE
 import splice.accounts.order.AccountOrderStore
+import splice.accounts.order.AccountPinStore
 import splice.accounts.pool.HeadAccountPoolSource
 import splice.app.control.HeadAuthSurface
 import splice.app.control.HeadSources
@@ -160,6 +162,7 @@ internal class ManagedHeadFactory(
     internal var quotaProbes: QuotaProbes = QuotaProbes(AuthHttpClientFactory().create())
     private val accountPools = HeadAccountPools(HeadAccountPools.EvidenceLoadFactory(quotaSeams::evidenceLoads))
     private val accountOrders = AccountOrderStore(statePaths.stateDir.resolve(ACCOUNT_ORDER_FILE))
+    private val accountPins = AccountPinStore(statePaths.stateDir.resolve(ACCOUNT_PINS_FILE))
     private val providerHolds = ProviderHoldFiles(statePaths, log)
     private val traceStores = HeadTraceStores(statePaths)
     private val keptFiles = HeadKeptFiles(statePaths, log)
@@ -210,7 +213,7 @@ internal class ManagedHeadFactory(
                 authKind = ctx.providerCfg.auth.kind,
                 dialect = DialectWires.name(ctx.providerCfg.dialect),
                 keyPresence = keyPresence,
-                accountPool = accountPools.source(stores.accounts.pool, key, accountOrders),
+                accountPool = accountPools.source(stores.accounts.pool, key, accountOrders, accountPins),
                 accountAuth = accountPools.authSource(wired),
                 plans = stores.telemetry.economics.plans,
             ),

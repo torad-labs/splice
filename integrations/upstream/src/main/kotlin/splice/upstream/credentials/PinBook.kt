@@ -3,6 +3,8 @@
 // ceiling. A session pin outranks the head pin for THAT session only; a pin for one session never reaches another.
 package splice.upstream.credentials
 
+import splice.core.auth.SavedPins
+
 /** Session pins are bounded like the pool's own sticky sessions: the oldest goes first, so a client minting a new
  *  session id per run cannot grow this without limit. */
 private const val MAX_SESSION_PINS = 512
@@ -40,5 +42,19 @@ internal class PinBook {
     fun clear() {
         head = null
         sessions.clear()
+    }
+
+    /** Every pin, as it is saved between daemon runs. */
+    @Synchronized
+    fun saved(): SavedPins = SavedPins(head, LinkedHashMap(sessions))
+
+    /** Replaces every pin with [pins], as a daemon run saved them; the newest sessions are kept within the bound. */
+    @Synchronized
+    fun restore(pins: SavedPins) {
+        head = pins.head
+        sessions.clear()
+        pins.sessions.entries.toList().takeLast(MAX_SESSION_PINS).forEach { (session, label) ->
+            sessions[session] = label
+        }
     }
 }

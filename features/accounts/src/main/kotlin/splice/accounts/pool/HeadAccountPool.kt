@@ -2,8 +2,10 @@
 package splice.accounts.pool
 
 import splice.core.auth.AuthDescription
+import splice.core.failure.AccountBlock
 import splice.core.usage.ModelQuota
 import splice.core.usage.PlanLimit
+import splice.core.usage.QuotaFull
 import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindowView
 
@@ -113,6 +115,10 @@ public data class HeadAccountCredential(
     val present: Boolean = true,
     val excludedUntilEpochMillis: Long? = null,
     val exclusionReason: String? = null,
+    /** Set while the provider refuses the login until its owner acts, which no sign-in changes. */
+    val ownerBlock: AccountBlock? = null,
+    /** An expired token its own client renews the next time it runs: it cannot send, and nobody signs in again. */
+    val renewable: Boolean = false,
 )
 
 /** A head account's quota: its two windows and when they were observed, epoch SECONDS (the reset fields' unit), or
@@ -127,6 +133,8 @@ public data class HeadAccountQuota(
     val noUsageAtEpochSeconds: Long? = null,
     /** The plan windows the provider named spent on this account (Nov 3, 2026). */
     val holds: HeadAccountHolds = HeadAccountHolds(),
+    /** The window the selector reads full, and its reset: such a login serves after every login with room. */
+    val readsFull: QuotaFull? = null,
 )
 
 /** One quota window of a head's account as the control surface reads it: how full it is, when it resets (epoch

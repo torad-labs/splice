@@ -2,6 +2,7 @@
 package splice.app.head
 
 import splice.accounts.order.AccountOrderStore
+import splice.accounts.order.AccountPinStore
 import splice.accounts.order.HeadAccountOrderSource
 import splice.accounts.pool.HeadAccountAuthSource
 import splice.accounts.pool.HeadAccountCredential
@@ -21,6 +22,7 @@ import splice.app.provider.WiredAccount
 import splice.core.auth.AuthDescription
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.REFUSAL_FIELD
+import splice.core.auth.SavedPins
 import splice.core.util.WallClock
 import splice.head.usage.QuotaTracker
 import splice.head.usage.TrackedAccountQuota
@@ -31,6 +33,7 @@ import splice.upstream.credentials.AccountPoolView
 import splice.upstream.credentials.PoolAccount
 import splice.upstream.retry.ProviderHoldStore
 import splice.upstream.retry.RateLimitCooldown
+import java.io.IOException
 
 internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? = null) {
     fun interface EvidenceLoadFactory {
@@ -88,10 +91,18 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
     // uses for HeadPerfSkipSource.
     fun source(pool: AccountPool?): HeadAccountPoolSource? = pool?.let { PoolSource(it) }
 
-    fun source(pool: AccountPool?, head: String, orders: AccountOrderStore): HeadAccountPoolSource? = pool?.let {
+    /** The head's account source with its saved policy: the operator's order, and, given [pins], the pins the last
+     *  daemon run kept, put back before the first turn and saved again at every pin and unpin (Nov 3, 2026). */
+    fun source(
+        pool: AccountPool?,
+        head: String,
+        orders: AccountOrderStore,
+        pins: AccountPinStore? = null,
+    ): HeadAccountPoolSource? = pool?.let {
         val labels = it.effectiveOrder().toSet()
         it.order = orders.order(head).filter(labels::contains)
-        PoolSource(it, head, orders)
+        if (pins != null) it.savedPins = pins.pins(head)
+        PoolSource(it, head, orders, pins)
     }
 
     fun authSource(wired: Wired): HeadAccountAuthSource? =
@@ -139,11 +150,14 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
                     sevenDayModels = account.quota.sevenDayModels,
                     noUsageAtEpochSeconds = account.quota.noUsageAtEpochSeconds,
                     holds = HeadAccountHolds(account.quota.holds.wholeLogin, account.quota.holds.models),
+                    readsFull = account.quota.readsFull,
                 ),
                 credential = HeadAccountCredential(
                     present = account.credential.present,
                     excludedUntilEpochMillis = account.credential.excludedUntilEpochMillis,
                     exclusionReason = account.credential.exclusionReason,
+                    ownerBlock = account.credential.block,
+                    renewable = account.credential.renewable,
                 ),
             )
         },
@@ -158,6 +172,7 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
         private val pool: AccountPool,
         private val head: String? = null,
         private val orders: AccountOrderStore? = null,
+        private val pins: AccountPinStore? = null,
     ) : HeadAccountPoolSource, HeadAccountPinSource, HeadAccountOrderSource, HeadAccountSessionSource {
         override val active: Boolean get() = pool.active
 
@@ -178,9 +193,31 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
             nextTargetLabel = pool.nextTargetLabel(sessionId),
         )
 
-        override fun pin(label: String, sessionId: String?): Boolean = pool.pin(label, sessionId)
+        // Synchronized so two presses save in the order they pinned: each save writes the pins as they stand.
+        @Synchronized
+        override fun pin(label: String, sessionId: String?): Boolean {
+            val before = pool.savedPins
+            return pool.pin(label, sessionId).also { pinned -> if (pinned) savePinsOr(before) }
+        }
 
-        override fun unpin(sessionId: String?) = pool.unpin(sessionId)
+        @Synchronized
+        override fun unpin(sessionId: String?) {
+            val before = pool.savedPins
+            pool.unpin(sessionId)
+            savePinsOr(before)
+        }
+
+        /** Saves the pins as they stand, or, when the disk refuses, puts [before] back and rethrows: a press the next
+         *  restart would undo is answered as failed, never shown as taken. */
+        private fun savePinsOr(before: SavedPins) {
+            if (head == null) return
+            try {
+                pins?.set(head, pool.savedPins)
+            } catch (e: IOException) {
+                pool.savedPins = before
+                throw e
+            }
+        }
 
         override fun order(): List<String> = pool.order
 

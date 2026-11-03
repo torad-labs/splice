@@ -37,6 +37,12 @@ public class AccountPoolJson {
         into.putJsonObject("account_pool") {
             put("selected_label", view.selectedLabel)
             put("pinned_label", view.pinnedLabel)
+            // Why the pin is not serving, or the models it cannot serve yet: the pinned card reads them on every load.
+            val pin = PinReason(view, descriptions)
+            put("pin_refusal", pin.refusal)
+            pin.modelsHeld.takeIf { it.isNotEmpty() }?.let { weeks ->
+                putJsonArray("pin_models_held") { HeldWords().modelWeeks(this, weeks) }
+            }
             put("next_target_label", view.nextTargetLabel)
             putJsonArray("accounts") {
                 view.accounts.forEach { account ->

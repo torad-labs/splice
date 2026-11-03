@@ -24,7 +24,8 @@ private data class PinsDocument(val heads: Map<String, HeadPinsDocument> = empty
 
 /** Atomic pin persistence, every head in one document. Each replacement keeps the file it replaced as
  *  `account-pins.json.bak`, one copy. A document that cannot be read restores no pin rather than refuse the head:
- *  a pin is one press to set again, and the unreadable file is still the `.bak` after the next pin or unpin. */
+ *  a pin is one press to set again. One that reads as text but does not parse is still the `.bak` after the next pin
+ *  or unpin; one splice cannot read at all (its mode, bytes that are not UTF-8) is replaced. */
 public class AccountPinStore(private val file: Path) {
     private val json = Json {
         prettyPrint = true

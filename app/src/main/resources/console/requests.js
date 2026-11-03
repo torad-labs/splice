@@ -168,7 +168,7 @@ const acctInfo = (r) => {
   return { html, own: n.own, out: /^signed-out/i.test(r.acctLabel), rostered: Boolean(n.rostered) };
 };
 // the login's first letter, drawn inside the mark: text out of the drawn name, then escaped, since the letter is drawn raw
-const monogram = (html) => esc((textOf(html).trim()[0] ?? "·").toUpperCase());
+const monogram = (html) => esc((wordsIn(html).trim()[0] ?? "·").toUpperCase());
 const loginMark = (r, info) => (r.reset ? `<i class="mono held" title="At its limit">${ICON.lock}</i>`
   : info.out ? `<i class="mono out" title="Signed out">${ICON.signout}</i>`
     : `<i class="mono" style="--c:${colorOf(r.provider)}" aria-hidden="true">${monogram(info.html)}</i>`);

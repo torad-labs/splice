@@ -337,14 +337,12 @@ const stopRefusal = (res) => {
 // know it, and `String(undefined)` prints "undefined" on the screen as though splice knew that. Caught by
 // splice-builder3 reading teams.js against this file (Oct 10, 2026) before it reached a page.
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-// THE WORDS OF A DRAWN FRAGMENT, for an aria-label, a monogram or a lowercased state word: its tags taken out until none
-// is left, since one pass leaves a tag another tag split (`<scr<b></b>ipt>`). The result is text, and goes through esc
-// wherever it is drawn again (CodeQL js/incomplete-multi-character-sanitization, alerts 24 to 27, Nov 2 2026).
-const textOf = (html) => {
-  let text = String(html ?? "");
-  for (let stripped = text.replace(/<[^>]*>/g, ""); stripped !== text; stripped = text.replace(/<[^>]*>/g, "")) text = stripped;
-  return text;
-};
+// THE WORDS IN A DRAWN FRAGMENT, for an aria-label, a monogram or a lowercased state word: the browser's own parser reads
+// the fragment into a document nothing runs or loads from, and its text is what a reader would see, entities decoded.
+// No regex strips tags here: one pass leaves a tag another tag split, and an unclosed `<script` survives every pass
+// (CodeQL js/incomplete-multi-character-sanitization, alerts 24 to 27 and 34, Nov 2 2026). The result is text, and goes
+// through esc wherever it is drawn again. Named for what it returns, since models.js keeps a textOf of its own.
+const wordsIn = (html) => new DOMParser().parseFromString(String(html ?? ""), "text/html").documentElement.textContent ?? "";
 // WHAT IS NOT READ YET DRAWS AS ITS OWN SHAPE (Marcos, Oct 12: "we can do better than that reading indicator"): a
 // figure or a line is a striped bar the size of what will land there, a card a drawn card of such bars, a chart its
 // columns, so a page reads as arriving, never as empty or as a lone word. Widths are in rem; console.css draws them.

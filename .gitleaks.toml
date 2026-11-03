@@ -13,7 +13,7 @@
 # Each entry sits on the allowlist of the rule whose findings it silences, never on the global
 # [allowlist]. gitleaks v8.21.2 appends its own default global regexes to that one and tests
 # them against its regexTarget: under "match", the default `(?i)^true|false|null$` silenced any
-# finding whose match, variable name included, held `false` (review of grailseeker-app#32,
+# finding whose match, variable name included, held `false` (github-operator#129,
 # 2026-11-03). Nothing is appended to a rule's own allowlist, so the defaults keep the secret
 # as their target.
 [extend]

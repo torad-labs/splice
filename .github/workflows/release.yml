@@ -129,6 +129,12 @@ jobs:
       - name: install workspaces
         run: bun install --frozen-lockfile
 
+      # The gate's consoleTests row (tools/gate/config/ladder.json) drives the console's pages in Chromium, the one
+      # Playwright bundles for its own version. The runner has none and bun install downloads none, so the gate would stop
+      # the release at its first console test (PR 456's review, round 1). The OS libraries it needs come with it.
+      - name: install Playwright's Chromium
+        run: bunx playwright install --with-deps chromium
+
       - name: repository gates
         run: npm run gate
 

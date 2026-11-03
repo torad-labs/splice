@@ -86,8 +86,8 @@
     },
     {
       "task": "consoleTests",
-      "inputs": ["app/src/main/resources/console/**","tools/console/**","package.json","bun.lock"],
-      "why": "The console's own tests, through the real pages in Chromium against a stub daemon (tools/console): every page loads its nine classic scripts without an error, the pilot's ticking rule, and each page's reads, controls and words as a person sees them. Until Nov 3, 2026 no row ran them: a console script reached dev checked by `node --check` alone, and kit.js shipped a regex tag-stripper CodeQL then flagged (PR 450). The ladder runner installs Playwright's Chromium for this row (ci.yml); on this machine the tests use the browser Playwright installed, or SCREEN_REVIEW_BROWSER.",
+      "inputs": ["app/src/main/resources/console/**","tools/console/**","tools/gate/src/lib/repo.ts","package.json","bun.lock"],
+      "why": "The console's own tests, through the real pages in Chromium against a stub daemon (tools/console): every page loads its nine classic scripts without an error, the pilot's ticking rule, and each page's reads, controls and words as a person sees them. Until Nov 3, 2026 no row ran them: a console script reached dev checked by `node --check` alone, and kit.js shipped a regex tag-stripper CodeQL then flagged (PR 450). Every job that runs the gate installs Playwright's Chromium for this row (ci.yml's ladder, release.yml's build, and tools/gate/test/console-browser.test.ts holds them to it); on this machine the tests use the browser Playwright installed, or SCREEN_REVIEW_BROWSER.",
       "command": ["bun", "test", "tools/console"]
     },
     {

@@ -38,10 +38,13 @@ test("the console folder holds pages to load", () => {
 for (const name of pages) {
   test(`${name} loads every script and runs it without an error`, async () => {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
-    const errors: string[] = [];
-    page.on("pageerror", (err) => errors.push(err.message));
-    await page.goto(`http://127.0.0.1:${server.port}/${name}`, { waitUntil: "load" });
-    expect(errors).toEqual([]);
-    await page.close();
-  });
+    try {
+      const errors: string[] = [];
+      page.on("pageerror", (err) => errors.push(err.message));
+      await page.goto(`http://127.0.0.1:${server.port}/${name}`, { waitUntil: "load" });
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
 }

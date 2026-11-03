@@ -18,12 +18,14 @@ const PILOT = (() => {
   const ROW = "tr, li, [role=row], [role=listitem], article";
   const HEADING = "h1, h2, h3, h4, h5, h6, legend, caption, [role=heading]";
   const SECRET = /key|token|secret|passw|credential/i;
-  // A line made only of figures and their units ("52k / 200k", "3s ago", "1m 12s"): it changes as time passes, not
-  // because of an act, so it is not reported as new words. Read as words between figures and punctuation, each a unit or
-  // nothing: one regex over the whole line with overlapping alternatives (`m` then `s`, or `ms`) backtracked exponentially
-  // on a line of many repeated units (CodeQL js/redos, alert 31, Nov 2 2026).
+  // A line made only of figures and their units ("52k / 200k", "3s ago", "1m 12s", "13 min"): it changes as time passes,
+  // not because of an act, so it is not reported as new words. Read as words between figures and punctuation, each a unit
+  // or nothing: one regex over the whole line with overlapping alternatives (`m` then `s`, or `ms`) backtracked
+  // exponentially on a line of many repeated units (CodeQL js/redos, alert 31, Nov 2 2026). The units are the ones the
+  // console draws, spelled whole: DRAW.ms and spanWord say "min" and "w", which the regex had spelled from "m" and "in"
+  // (review of PR 450, round 2: a Sessions row ticking from "12 min" to "13 min" read as new words).
   const TICK_SPLIT = /[\s\d.,:%×+\-−–/()]+/;
-  const TICK_WORD = new Set(["ms", "s", "m", "h", "d", "k", "x", "kb", "mb", "gb", "tok", "tokens", "ago", "left", "in", "of"]);
+  const TICK_WORD = new Set(["ms", "s", "m", "min", "mins", "h", "d", "w", "k", "x", "kb", "mb", "gb", "tok", "tokens", "ago", "left", "in", "of"]);
   const ticking = (line) => line.split(TICK_SPLIT).every((word) => word === "" || TICK_WORD.has(word.toLowerCase()));
   const READ_CAP = 12000;
   const SETTLE_MS = 4000;
@@ -645,5 +647,6 @@ const PILOT = (() => {
   addEventListener("pagehide", leave);
   listen();
 
-  return { name: NAME };
+  // The tab's name, and the rule for the lines the pilot never reports as new words, so a test can read it as the agent does.
+  return { name: NAME, ticking };
 })();

@@ -13,7 +13,10 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.accounts.order.ACCOUNT_ORDER_FILE
+import splice.accounts.order.ACCOUNT_PINS_FILE
 import splice.accounts.order.AccountOrderStore
+import splice.accounts.order.AccountPinStore
+import splice.core.auth.SavedPins
 import splice.core.config.StatePaths
 import splice.core.retired.RetiredHead
 import splice.core.retired.RetiredHeads
@@ -101,6 +104,7 @@ internal class HeadRemoval(
         }
         unlink(command, topology.heads.filterKeys { it != key }.keys, topology)
         AccountOrderStore(statePaths.stateDir.resolve(ACCOUNT_ORDER_FILE)).set(key, emptyList())
+        AccountPinStore(statePaths.stateDir.resolve(ACCOUNT_PINS_FILE)).set(key, SavedPins())
         return JsonReply(HttpStatusCode.OK, "{}")
     }
 

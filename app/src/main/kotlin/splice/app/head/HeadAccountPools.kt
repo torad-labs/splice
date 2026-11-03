@@ -2,6 +2,7 @@
 package splice.app.head
 
 import splice.accounts.order.AccountOrderStore
+import splice.accounts.order.AccountPinStore
 import splice.accounts.order.HeadAccountOrderSource
 import splice.accounts.pool.HeadAccountAuthSource
 import splice.accounts.pool.HeadAccountCredential
@@ -88,10 +89,18 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
     // uses for HeadPerfSkipSource.
     fun source(pool: AccountPool?): HeadAccountPoolSource? = pool?.let { PoolSource(it) }
 
-    fun source(pool: AccountPool?, head: String, orders: AccountOrderStore): HeadAccountPoolSource? = pool?.let {
+    /** The head's account source with its saved policy: the operator's order, and, given [pins], the pins the last
+     *  daemon run kept, put back before the first turn and saved again at every pin and unpin (Nov 3, 2026). */
+    fun source(
+        pool: AccountPool?,
+        head: String,
+        orders: AccountOrderStore,
+        pins: AccountPinStore? = null,
+    ): HeadAccountPoolSource? = pool?.let {
         val labels = it.effectiveOrder().toSet()
         it.order = orders.order(head).filter(labels::contains)
-        PoolSource(it, head, orders)
+        if (pins != null) it.savedPins = pins.pins(head)
+        PoolSource(it, head, orders, pins)
     }
 
     fun authSource(wired: Wired): HeadAccountAuthSource? =
@@ -158,6 +167,7 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
         private val pool: AccountPool,
         private val head: String? = null,
         private val orders: AccountOrderStore? = null,
+        private val pins: AccountPinStore? = null,
     ) : HeadAccountPoolSource, HeadAccountPinSource, HeadAccountOrderSource, HeadAccountSessionSource {
         override val active: Boolean get() = pool.active
 
@@ -178,9 +188,20 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
             nextTargetLabel = pool.nextTargetLabel(sessionId),
         )
 
-        override fun pin(label: String, sessionId: String?): Boolean = pool.pin(label, sessionId)
+        // Synchronized so two presses save in the order they pinned: each save writes the pins as they stand.
+        @Synchronized
+        override fun pin(label: String, sessionId: String?): Boolean =
+            pool.pin(label, sessionId).also { pinned -> if (pinned) savePins() }
 
-        override fun unpin(sessionId: String?) = pool.unpin(sessionId)
+        @Synchronized
+        override fun unpin(sessionId: String?) {
+            pool.unpin(sessionId)
+            savePins()
+        }
+
+        private fun savePins() {
+            if (head != null) pins?.set(head, pool.savedPins)
+        }
 
         override fun order(): List<String> = pool.order
 

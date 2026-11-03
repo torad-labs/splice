@@ -275,6 +275,8 @@ internal object DiskWrites {
  *  writing files) and edited by hand when a write is added or removed; the ratchet prints the entry. */
 private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "features/accounts/src/main/kotlin/splice/accounts/order/AccountOrderStore.kt" to mapOf("writeAtomic0600(" to 2),
+    // Use now pins outlive the daemon (Nov 3, 2026): the pins file, and the one backup of the file it replaced.
+    "features/accounts/src/main/kotlin/splice/accounts/order/AccountPinStore.kt" to mapOf("writeAtomic0600(" to 2),
     // The names a person gave logins, by ref (labels only, Oct 12): one atomic owner-only write per rename.
     "features/accounts/src/main/kotlin/splice/accounts/pool/AccountNameStore.kt" to mapOf("writeAtomic0600(" to 1),
     "features/accounts/src/main/kotlin/splice/accounts/keys/KeyLedger.kt" to

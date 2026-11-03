@@ -60,6 +60,10 @@ public data class PostLimits(
     /** Whether the failure can move to a free login, or, once all are held, to an earlier-reset login. The cause supplies
      *  the just-received reset before it is persisted for account selection. Null preserves a standalone post's policy. */
     val otherLoginFree: OtherLoginFree? = null,
+    /** The model the request asks the upstream for, where the caller knows it: a refusal of one model's week holds
+     *  [rateLimitCooldown]'s login for this model alone, and an answer ends this model's week, never another's (Nov 3,
+     *  2026). Null holds and ends only what the whole login's windows say. */
+    val model: String? = null,
 )
 
 /** Whether another login can take this failure before content is committed. */

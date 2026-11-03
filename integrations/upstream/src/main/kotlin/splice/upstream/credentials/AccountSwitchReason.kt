@@ -59,22 +59,21 @@ public object AccountSwitchReason {
      *  room: token refreshes read as a new caller login (AccountPool's CallerLogin names a real one now). Which limit
      *  stopped it is [AccountAvailability.limitReason], so this stays under the complexity ceiling as limits are
      *  added. */
-    internal fun of(
-        previous: PoolAccount?,
-        chosen: PoolAccount,
-        at: Long,
-        pinLabel: String?,
-        ordered: List<String>,
-    ): String =
+    internal fun of(previous: PoolAccount?, chosen: PoolAccount, at: Long, policy: Policy): String =
         when {
             previous == null -> ACCOUNT_UNAVAILABLE_REASON
-            chosen.label == pinLabel -> PINNED
-            !AccountAvailability.available(previous, at) -> AccountAvailability.limitReason(previous, at)
+            chosen.label == policy.pinLabel -> PINNED
+            !AccountAvailability.available(previous, at, policy.model) ->
+                AccountAvailability.limitReason(previous, at, policy.model)
             AccountAvailability.fullReading(previous, at) -> USAGE_READING_FULL
-            chosen.label in ordered -> ORDERED
+            chosen.label in policy.ordered -> ORDERED
             chosen.primary -> PRIMARY_RESET
             else -> RESET_SOONER
         }
+
+    /** What the pool decides a move by besides the logins: the label pinned on the session or head, the person's
+     *  saved order, and the model the turn asks for, which a login's week of one model refuses alone (Nov 3, 2026). */
+    internal data class Policy(val pinLabel: String?, val ordered: List<String>, val model: String? = null)
 
     /** Foreign prose and terminal controls never become printable switch reasons. */
     public fun isSafe(reason: String): Boolean = reason in reasons || planWindow.matches(reason)

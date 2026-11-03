@@ -5,6 +5,7 @@ import splice.accounts.order.AccountOrderStore
 import splice.accounts.order.HeadAccountOrderSource
 import splice.accounts.pool.HeadAccountAuthSource
 import splice.accounts.pool.HeadAccountCredential
+import splice.accounts.pool.HeadAccountHolds
 import splice.accounts.pool.HeadAccountPinSource
 import splice.accounts.pool.HeadAccountPoolSource
 import splice.accounts.pool.HeadAccountPoolView
@@ -137,6 +138,7 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
                     observedAtEpochSeconds = account.quota.observedAtEpochSeconds,
                     sevenDayModels = account.quota.sevenDayModels,
                     noUsageAtEpochSeconds = account.quota.noUsageAtEpochSeconds,
+                    holds = HeadAccountHolds(account.quota.holds.wholeLogin, account.quota.holds.models),
                 ),
                 credential = HeadAccountCredential(
                     present = account.credential.present,

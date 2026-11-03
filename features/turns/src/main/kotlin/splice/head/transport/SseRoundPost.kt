@@ -128,6 +128,7 @@ internal class SseRoundPost(
             otherLoginFree = drive.accountHandoff?.let { handoff ->
                 OtherLoginFree { cause -> handoff.otherFree(drive, cause) }
             },
+            model = drive.meta.route.upstreamModel,
         )
     }
 

@@ -25,28 +25,31 @@ internal const val WARM_LOGIN_WAIT_MS: Long = MAX_RATE_LIMIT_COOLDOWN_MS
  *  pin/unpin/pinned/nextTargetLabel surface. Behaviour is byte-identical to the methods it
  *  replaces — a relocation, not a rewrite. */
 internal object AccountAvailability {
-    /** Free to serve: selectable, and not held on a plan window the provider named spent. Failover within one
-     *  provider (operator ruling, Oct 3): a held login stays held until the reset it named, so the next turn of the
-     *  same command goes to the next login, and a restart restores the hold with the rest of the provider's word. */
-    fun available(account: PoolAccount, at: Long): Boolean =
-        selectable(account, at) && !account.quotaHeld && account.cooldown.planHold.live() == null &&
+    /** Free to serve a turn of [model]: selectable, and not held on a plan window the provider named spent, the whole
+     *  login's or that model's week (Nov 3, 2026: a login refused Fable for the week still serves Opus). Failover
+     *  within one provider (operator ruling, Oct 3): a held login stays held until the reset it named, so the next turn
+     *  of the same command goes to the next login, and a restart restores the hold with the rest of the provider's
+     *  word. A null [model] reads the whole login's windows alone: the login serves some model. */
+    fun available(account: PoolAccount, at: Long, model: String? = null): Boolean =
+        selectable(account, at) && !account.quotaHeld && account.cooldown.planHold.live(model) == null &&
             (account.cooldown.rateLimitReply == null || account.cooldown.remainingMs() <= 0L)
 
-    /** The logins held on their plan that could otherwise serve, nearest reset first; ties keep [order]. */
-    fun nearestHeld(order: List<PoolAccount>, at: Long): List<PoolAccount> =
+    /** The logins held on their plan for a turn of [model] that could otherwise serve, nearest reset first; ties keep
+     *  [order]. */
+    fun nearestHeld(order: List<PoolAccount>, at: Long, model: String? = null): List<PoolAccount> =
         order.filter { account ->
             val held = account.quotaHeld || account.cooldown.providerUnavailableForMs() > 0L ||
-                account.cooldown.planHold.live() != null ||
+                account.cooldown.planHold.live(model) != null ||
                 (account.cooldown.rateLimitReply != null && account.cooldown.remainingMs() > 0L)
             held && account.credentialStatus(at).selectable
-        }.sortedBy { blockedUntil(it, at) ?: Long.MAX_VALUE }
+        }.sortedBy { blockedUntil(it, at, model) ?: Long.MAX_VALUE }
 
     /** Held only by the provider's short rate limit, its plan named spent by neither a hold nor a full reading: admission
      *  waits that hold out on the same login (CredentialHoldAdmission), so it is no exhausted login. A pool flipped from
      *  such a login to one held on its seven-day window until the next day, and failed turns as every login exhausted
      *  while the first had plan room (claude-splice, Oct 13, 6:42 PM CT). */
-    fun planRoom(account: PoolAccount, at: Long): Boolean =
-        !account.quotaHeld && account.cooldown.planHold.live() == null && !fullReading(account, at)
+    fun planRoom(account: PoolAccount, at: Long, model: String? = null): Boolean =
+        !account.quotaHeld && account.cooldown.planHold.live(model) == null && !fullReading(account, at)
 
     private fun selectable(account: PoolAccount, at: Long): Boolean =
         account.credentialStatus(at).selectable && account.cooldown.unavailableForMs() <= 0L
@@ -54,17 +57,22 @@ internal object AccountAvailability {
     /** The login a turn takes from [order], then the one it moves to when that one runs out: the first free login, or
      *  when every one is held, the one whose hold ends soonest. At most two; empty when none could serve. A warm
      *  session's [stay] comes first, as it does when the turn is selected ([Warm.stays]). */
-    fun upNext(order: List<PoolAccount>, at: Long, stay: PoolAccount? = null): List<PoolAccount> {
+    fun upNext(
+        order: List<PoolAccount>,
+        at: Long,
+        stay: PoolAccount? = null,
+        model: String? = null,
+    ): List<PoolAccount> {
         val pick = { from: List<PoolAccount> ->
-            preferredFree(from, at).firstOrNull() ?: nearestHeld(from, at).firstOrNull()
+            preferredFree(from, at, model).firstOrNull() ?: nearestHeld(from, at, model).firstOrNull()
         }
         val next = stay ?: pick(order) ?: return emptyList()
         return listOfNotNull(next, pick(order.filterNot { it.label == next.label }))
     }
 
     /** Full readings guide spending, never synthesize a refusal that the provider did not make. */
-    fun preferredFree(order: List<PoolAccount>, at: Long): List<PoolAccount> {
-        val free = order.filter { available(it, at) }
+    fun preferredFree(order: List<PoolAccount>, at: Long, model: String? = null): List<PoolAccount> {
+        val free = order.filter { available(it, at, model) }
         return free.filterNot { fullReading(it, at) }.ifEmpty { free }
     }
 
@@ -75,8 +83,8 @@ internal object AccountAvailability {
     /** Why [account] stopped serving: its credential first, then the plan the provider named spent. A rejected or
      *  signed-out login needs the person; an expired token its own command renews says only that it expired, never
      *  that a sign-in is needed (the field audit, Oct 13: 3,743 such lines after one token expired). */
-    fun limitReason(account: PoolAccount, at: Long): String {
-        val plan = account.cooldown.planHold.live()
+    fun limitReason(account: PoolAccount, at: Long, model: String? = null): String {
+        val plan = account.cooldown.planHold.live(model)
         val credential = credentialReason(account.credentialStatus(at))
         return when {
             credential != null -> credential
@@ -98,20 +106,21 @@ internal object AccountAvailability {
         else -> null
     }
 
-    fun resetOrder(at: Long): Comparator<PoolAccount> =
+    fun resetOrder(at: Long, model: String? = null): Comparator<PoolAccount> =
         compareBy<PoolAccount> { account ->
             val quota = account.quotaSnapshot
-            rankingWindow(account, quota?.sevenDay, at) == null && rankingWindow(account, quota?.fiveHour, at) == null
-        }.thenBy { !available(it, at) }
-            .thenBy { rankingWindow(it, it.quotaSnapshot?.sevenDay, at)?.resetsAt ?: Long.MAX_VALUE }
-            .thenBy { rankingWindow(it, it.quotaSnapshot?.fiveHour, at)?.resetsAt ?: Long.MAX_VALUE }
+            rankingWindow(account, quota?.sevenDay, at, model) == null &&
+                rankingWindow(account, quota?.fiveHour, at, model) == null
+        }.thenBy { !available(it, at, model) }
+            .thenBy { rankingWindow(it, it.quotaSnapshot?.sevenDay, at, model)?.resetsAt ?: Long.MAX_VALUE }
+            .thenBy { rankingWindow(it, it.quotaSnapshot?.fiveHour, at, model)?.resetsAt ?: Long.MAX_VALUE }
             .thenByDescending { it.primary }
             .thenBy { it.label }
 
-    private fun rankingWindow(account: PoolAccount, window: QuotaWindow?, at: Long): QuotaWindow? =
+    private fun rankingWindow(account: PoolAccount, window: QuotaWindow?, at: Long, model: String?): QuotaWindow? =
         window?.takeIf {
             val reset = it.resetsAt
-            available(account, at) && (reset == null || reset > TimeUnit.MILLISECONDS.toSeconds(at))
+            available(account, at, model) && (reset == null || reset > TimeUnit.MILLISECONDS.toSeconds(at))
         }
 
     fun exhausted(window: QuotaWindow?, at: Long): Boolean {
@@ -134,17 +143,25 @@ internal object AccountAvailability {
          *  hold needs no check of its own: it is clamped to [WARM_LOGIN_WAIT_MS] by construction, so the wait always
          *  fits. The reset a 429 body names is left out: it is often the window's reset stamped on a burst limit that
          *  clears in seconds (RateLimitCooldown, V4-61). */
-        fun stays(account: PoolAccount, servedAt: Long?, preference: List<PoolAccount>, at: Long): PoolAccount? {
+        fun stays(
+            account: PoolAccount,
+            servedAt: Long?,
+            preference: List<PoolAccount>,
+            at: Long,
+            model: String? = null,
+        ): PoolAccount? {
             val signedIn = account.credentialStatus(at).selectable && account.cooldown.unavailableForMs() <= 0L
             val chosen = preference.all { it.label == account.label }
-            return account.takeIf { recent(servedAt, at) && chosen && signedIn && planRoom(account, at) }
+            return account.takeIf { recent(servedAt, at) && chosen && signedIn && planRoom(account, at, model) }
         }
     }
 
-    fun earliestReset(accounts: List<PoolAccount>, at: Long): Long? =
-        accounts.mapNotNull { blockedUntil(it, at) }.minOrNull()
+    fun earliestReset(accounts: List<PoolAccount>, at: Long, model: String? = null): Long? =
+        accounts.mapNotNull { blockedUntil(it, at, model) }.minOrNull()
 
-    fun blockedUntil(account: PoolAccount, at: Long): Long? {
+    /** When [account] serves a turn of [model] again, or null when nothing holds it: the whole login's holds, and
+     *  that model's week where one is held. A null [model] reads the whole login alone. */
+    fun blockedUntil(account: PoolAccount, at: Long, model: String? = null): Long? {
         val credential = account.credentialStatus(at)
         if (!credential.credentialPresent) return null
         val snapshot = account.quotaSnapshot
@@ -165,7 +182,9 @@ internal object AccountAvailability {
             val rounded = TimeUnit.SECONDS.toMillis(seconds) < millis && seconds < Long.MAX_VALUE
             seconds + if (rounded) 1L else 0L
         }
-        return listOfNotNull(quotaReset, cooldownReset.takeIf { remaining > 0L }, authReset).maxOrNull()
+        val week = model?.let { asked -> account.cooldown.planHold.models().firstOrNull { it.model == asked } }
+        return listOfNotNull(quotaReset, cooldownReset.takeIf { remaining > 0L }, authReset, week?.resetEpochSeconds)
+            .maxOrNull()
     }
 }
 

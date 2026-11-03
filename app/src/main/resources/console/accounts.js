@@ -378,7 +378,7 @@ function askAgainSoon() {
   againTimer = setTimeout(async () => { await load(); render({ flip: true }); }, 5000);
 }
 const FRESH_UI = () => ({ lane: {}, signin: {}, editor: null, addProv: null, menu: null, armed: null, removeErr: null, rename: null, renameErr: null, renameDraft: null, replace: null, pulse: null, naming: null,
-  moving: null, slotErr: null, orderErr: null, keyErr: null, orderSaving: null, removing: null });
+  moving: null, slotErr: null, slotNote: null, orderErr: null, keyErr: null, orderSaving: null, removing: null });
 // why: the Day rows whose Not read reason is open; reasons: the refusals whose reason splice gave is open under their
 // word; doors: the logins whose every session door is out; enter: the one form or menu just opened, which rises into
 // place once and never again on a later redraw; shook: the refusal just drawn, which shakes once and then stands still
@@ -988,6 +988,11 @@ function slotHtml(p, c, a, serves) {
   return "";
 }
 const slotKey = (a, c) => `slot:${a.id}|${c.cmd}`;
+// the models a pinned login still cannot serve, each with when it can again (SwitchRoute.kt models_held), as one line
+const modelsHeld = (body) => (Array.isArray(body?.models_held) ? body.models_held : [])
+  .filter((m) => m?.model && m.until_epoch_seconds)
+  .map((m) => `${modelName({}, m.model)} is at its weekly limit here until ${at(m.until_epoch_seconds * 1000)}, so its turns use another login.`)
+  .join(" ");
 const useAct = (p, c, a, cls) => `<button class="act ${cls}" data-act="use" data-p="${p.id}" data-c="${esc(c.cmd)}" data-a="${a.id}">Use now</button>`;
 // Use now asked once: the sessions with a request in flight on the command, each a chip to its session, then the act
 // that switches and the way out, on a row of its own under the card's head. The confirming act fills in the text's own
@@ -1238,9 +1243,10 @@ function cardHtml(p, c, a, i, serves) {
   const socket = p.kind === "plan" ? `<span class="socket">${i + 1}</span>` : "";
   const renameErr = ui.rename === spot && ui.renameErr ? asErr(ui.renameErr) : null;
   const slotErr = c && ui.slotErr && ui.slotErr.a === a.id && ui.slotErr.c === c.cmd ? ui.slotErr : null;
+  const slotNote = c && !slotErr && ui.slotNote && ui.slotNote.a === a.id && ui.slotNote.c === c.cmd ? ui.slotNote : null;
   return `<article class="${cls}" data-key="card:${spot}" data-p="${p.id}" data-a="${a.id}">${socket}<div class="top">${grip}`
     + `${nameHtml(p, a, spot)}${nameIt}${sub}${src}<div class="slot${slotErr && ui.shook === slotKey(a, c) ? " failed" : ""}">${slotHtml(p, c, a, serves)}</div>${more}</div>`
-    + `${slotErr ? reasonHtml(slotErr, slotKey(a, c), "onslot") : ""}${armRow(p, c, a)}`
+    + `${slotErr ? reasonHtml(slotErr, slotKey(a, c), "onslot") : slotNote ? reasonHtml(slotNote, null, "onslot") : ""}${armRow(p, c, a)}`
     + `${mail}${renameErr ? `<div class="rename-err${ui.shook === "rename" ? " failed" : ""}" id="rename-err">${refusalHtml(renameErr, "rename")}${reasonHtml(renameErr, "rename")}</div>` : ""}`
     + `${ui.menu === spot ? menuHtml(p, a, spot) : ""}${body}${sessionsHtml(p, a, i + 1, !!live)}</article>`;
 }
@@ -2268,7 +2274,7 @@ document.addEventListener("click", async (e) => {
   const act = t.dataset.act, p = t.dataset.p && findProv(t.dataset.p), a = t.dataset.a && findAcct(t.dataset.a);
   const k = t.dataset.c && findCmd(t.dataset.c).c;
   // a refused switch or order is said until the next press; opening its reason is no new press
-  if (act !== "reason") { ui.slotErr = null; ui.orderErr = null; ui.keyErr = null; }
+  if (act !== "reason") { ui.slotErr = null; ui.slotNote = null; ui.orderErr = null; ui.keyErr = null; }
   switch (act) {
     // a refusal's word opens splice's own reason under it, and folds it back
     case "reason":
@@ -2303,7 +2309,9 @@ document.addEventListener("click", async (e) => {
       await saveOrder(k, order, t.dataset.v); break;
     }
     // Use now pins the account on that command: it serves from the next request, the rule stays, and the pin undoes it
-    // (SwitchRoute.kt). A switch splice refused says so beside the act, and the order it holds comes back.
+    // (SwitchRoute.kt). A switch splice refused says so beside the act, and the order it holds comes back. A login the
+    // provider holds for one model's week pins, and the line under it names that model and when it comes back, so its
+    // turns still going to another login is no surprise (Nov 3, 2026: "clicking 'use now' also didnt work").
     case "keep-use": ui.moving = null; render(); break;
     case "use": {
       const armed = ui.moving?.a === a.id && ui.moving?.c === k.cmd;
@@ -2312,7 +2320,8 @@ document.addEventListener("click", async (e) => {
       if (cut.length) { ui.moving = { a: a.id, c: k.cmd, cut }; ui.enter = "arm"; render(); break; }
       k.pin = a.id; render({ flip: true });
       const res = await API.post(headPath(k, "switch"), { label: labelOn(a, k.head) });
-      await refresh(null, res.ok ? null : () => { ui.slotErr = { a: a.id, c: k.cmd, ...mutationError(res, "Not switched") }; refused(slotKey(a, k)); });
+      const kept = res.ok ? modelsHeld(res.body) : "";
+      await refresh(null, res.ok ? (kept ? () => { ui.slotNote = { a: a.id, c: k.cmd, why: kept }; } : null) : () => { ui.slotErr = { a: a.id, c: k.cmd, ...mutationError(res, "Not switched") }; refused(slotKey(a, k)); });
       break;
     }
     case "unpin": {

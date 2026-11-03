@@ -84,13 +84,22 @@ public class RateLimitCooldown public constructor(
     init {
         val stored = holds.stored()
         val wallNow = wallClock()
-        val resetAt = stored.providerResetAtEpochSeconds?.takeIf { it * MS_PER_S > wallNow }
-        val plan = stored.plan?.takeIf { it.resetEpochSeconds * MS_PER_S > wallNow }
+        val ahead = { limit: PlanLimit -> limit.resetEpochSeconds * MS_PER_S > wallNow }
+        // One model's week saved with no model (every build before Nov 3, 2026) cannot say which turns it refuses, and
+        // the provider's reset those builds marked beside it came from the same refusal: neither holds the login again.
+        // The next refusal of that model holds it for that model alone.
+        val unmatched = stored.plan?.takeIf(PlanLimit::modelUnknown)
+        val resetAt = stored.providerResetAtEpochSeconds?.takeIf { at ->
+            at * MS_PER_S > wallNow && (unmatched == null || at > unmatched.resetEpochSeconds)
+        }
+        val plan = stored.plan?.takeIf { ahead(it) && unmatched == null }
+        val models = stored.models.filter { ahead(it) && it.forOneModel }
         resetAt?.let { at ->
             providerUnavailableUntilMs.set(clock() + minOf(at * MS_PER_S - wallNow, MAX_PROVIDER_RESET_MS))
         }
         plan?.let(planHold::restore)
-        holds.restored(stored, ProviderHold(resetAt, plan))
+        models.forEach(planHold::restore)
+        holds.restored(stored, ProviderHold(resetAt, plan, models))
         if (rateLimitReply != null) arm(providerUnavailableForMs())
     }
 
@@ -113,8 +122,9 @@ public class RateLimitCooldown public constructor(
     }
 
     /** Capture immediately before posting; invoke only on accepted headers. A newer refusal,
-     *  including one learned at the same clock tick, survives this request's acceptance. */
-    public fun acceptance(): StreamStart {
+     *  including one learned at the same clock tick, survives this request's acceptance. [model] is the model the
+     *  request asks for: its answer ends that model's week, never another's (PlanHold.clear). */
+    public fun acceptance(model: String? = null): StreamStart {
         val posted = holds.posted()
         return StreamStart {
             holds.accepted(posted) {
@@ -122,7 +132,7 @@ public class RateLimitCooldown public constructor(
                 unavailableUntilMs.set(0L)
                 providerUnavailableUntilMs.set(0L)
                 holds.providerReset(null)
-                planHold.clear()
+                planHold.clear(model)
                 rateLimitReply = null
             }
         }
@@ -202,6 +212,15 @@ public class RateLimitCooldown public constructor(
      *  marked unavailable, so selection moves the next turn at once. Returns the hold the plan window armed, or null.
      *  Re-arming an armed horizon is a max() and costs nothing. */
     internal fun limitLeft(left: LimitLeft, onRetry: RetryNotice): Long? {
+        // One model's week leaves the login serving every other model (Nov 3, 2026): that week is held for its model
+        // alone, and nothing of the login is marked, so selection keeps the login for the turns of every other.
+        val week = left.planLimit?.takeIf(PlanLimit::forOneModel)
+        return if (week != null) planHold.hold(week, onRetry) else loginLeft(left, onRetry)
+    }
+
+    /** A limit of the whole login: the provider's reset, its reply, the plan window it named and the horizon, as
+     *  [limitLeft] describes. */
+    private fun loginLeft(left: LimitLeft, onRetry: RetryNotice): Long? {
         captureProviderReset(left.lift)
         rateLimitReply = left.native
         val planned = left.planLimit?.let { planHold.hold(it, onRetry) }

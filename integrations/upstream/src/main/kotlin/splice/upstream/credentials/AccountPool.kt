@@ -136,13 +136,19 @@ public class AccountPool(
     public fun select(sessionId: String?, excluded: Set<String> = emptySet()): Selection =
         select(sessionId, excluded, null)
 
-    /** A changed caller login takes precedence over automatic stickiness, but never an operator pin. */
-    public fun select(sessionId: String?, excluded: Set<String>, callerCredentialKey: String?): Selection {
+    /** A changed caller login takes precedence over automatic stickiness, but never an operator pin. [model] is the
+     *  model the turn asks for: a login whose provider refused another model for the week serves it (Nov 3, 2026). */
+    public fun select(
+        sessionId: String?,
+        excluded: Set<String>,
+        callerCredentialKey: String?,
+        model: String? = null,
+    ): Selection {
         require(sessionId == null || sessionId.isNotBlank()) { "session id must not be blank" }
         while (true) {
             val current = liveMembership
             current.accounts.forEach { it.refreshCredentialEvidence() }
-            val caller = CallerLogin(callerCredentialKey, sessionId, current.accounts)
+            val caller = CallerLogin(callerCredentialKey, sessionId, current.accounts, model)
             val selected = selectionCommit.select(sessionId, excluded, current, caller)
             if (selected != null) return selected
         }
@@ -159,16 +165,17 @@ public class AccountPool(
             sessionId: String?,
             excluded: Set<String> = emptySet(),
             callerCredentialKey: String? = null,
+            model: String? = null,
         ): Selection {
             require(sessionId == null || sessionId.isNotBlank()) { "session id must not be blank" }
             currentCoroutineContext().ensureActive()
-            val loads = evidenceLoads ?: return this@AccountPool.select(sessionId, excluded, callerCredentialKey)
+            val loads = evidenceLoads ?: return this@AccountPool.select(sessionId, excluded, callerCredentialKey, model)
             while (true) {
                 loads.ensureActive()
                 val current = runInterruptible(loads.ioDispatcher) { liveMembership }
                 current.accounts.forEach { it.refreshCredentialEvidence(loads) }
                 val caller = runInterruptible(loads.ioDispatcher) {
-                    CallerLogin(callerCredentialKey, sessionId, current.accounts)
+                    CallerLogin(callerCredentialKey, sessionId, current.accounts, model)
                 }
                 currentCoroutineContext().ensureActive()
                 loads.ensureActive()
@@ -222,16 +229,17 @@ public class AccountPool(
         caller: CallerLogin,
     ): Pair<Selection, SessionAccount?> {
         val chosen = choose(previous, at, excluded, current, caller) ?: return Selection.Exhausted(
-            AccountAvailability.earliestReset(current.accounts, at),
+            AccountAvailability.earliestReset(current.accounts, at, caller.model),
             OwnerBlocks.named(current.accounts, at),
         ) to null
         // A new session starts relative to primary even when its credential is missing: choosing
         // a backup is cache-cold on that first turn, and the session's own last switch says so.
         val prior = previous ?: SessionAccount(current.primary.label, null)
         val pinLabel = pins.forSession(caller.session)
+        val policy = AccountSwitchReason.Policy(pinLabel, orderedLabels.get(), caller.model)
         val moved = prior.takeIf { it.label != chosen.account.label }?.let {
             val reason = caller.movedBy(previous, chosen.account, pinLabel)
-                ?: AccountSwitchReason.of(current.byLabel[it.label], chosen.account, at, pinLabel, orderedLabels.get())
+                ?: AccountSwitchReason.of(current.byLabel[it.label], chosen.account, at, policy)
             AccountSwitch(it.label, chosen.account.label, reason, at)
         }
         // The head switched only when the login it serves new or moved sessions on changed: once per change, never
@@ -239,7 +247,7 @@ public class AccountPool(
         // Oct 12). A session staying on its login, and the first login served after a start, are no switch of the head.
         val headFrom = if (previous == null || moved != null) headServing.getAndSet(chosen.account.label) else null
         val headSwitch = headFrom?.takeIf { it != chosen.account.label }?.let {
-            val reason = AccountSwitchReason.of(current.byLabel[it], chosen.account, at, pinLabel, orderedLabels.get())
+            val reason = AccountSwitchReason.of(current.byLabel[it], chosen.account, at, policy)
             AccountSwitch(it, chosen.account.label, reason, at)
         }
         headSwitch?.let(headLastSwitch::set)
@@ -257,28 +265,30 @@ public class AccountPool(
         return Selection.Chosen(selection) to session
     }
 
-    /** Safe state for operator surfaces; null names head-wide state, never another session's choice. */
-    public fun view(sessionId: String?): AccountPoolView {
+    /** Safe state for operator surfaces; null names head-wide state, never another session's choice. A [model] reads
+     *  each login as a turn of that model meets it (a turn moving on), null as the console shows the login. */
+    public fun view(sessionId: String?, model: String? = null): AccountPoolView {
         val at = now()
         val session = synchronized(sessions) { sessionId?.let(sessions::get) }
         val current = liveMembership
         val accounts = current.accounts
         accounts.forEach { it.refreshCredentialEvidence() }
         val pinLabel = pins.forSession(sessionId)
-        val stay = CallerLogin(null, sessionId, accounts).previewStay(session, current.byLabel, pinLabel, at)
+        val stay = CallerLogin(null, sessionId, accounts, model).previewStay(session, current.byLabel, pinLabel, at)
         return AccountPoolView(
             selectedLabel = session?.label?.takeIf(current.byLabel::containsKey),
-            accounts = accounts.map { account -> accountView(account, session?.label, at) },
+            accounts = accounts.map { account -> accountView(account, session?.label, at, model) },
             lastSwitch = if (sessionId == null) headLastSwitch.get() else session?.lastSwitch,
             blockedUntilEpochSecondsByLabel = accounts.mapNotNull { account ->
-                AccountAvailability.blockedUntil(account, at)?.let { account.label to it }
+                AccountAvailability.blockedUntil(account, at, model)?.let { account.label to it }
             }.toMap(),
             // Where the command moves when the account it would use next runs out: the same pick over the order
             // [nextTargetLabel] walks, with that account left out. Here, not a function: the class is at the ceiling.
             followingLabel = AccountAvailability.upNext(
-                candidates(session?.label, current, pinLabel),
+                candidates(session?.label, current, pinLabel, model),
                 at,
                 stay,
+                model,
             ).getOrNull(1)?.label,
         )
     }
@@ -376,12 +386,17 @@ public class AccountPool(
     /** One order for selection and its preview. A session stays on its free login in either mode, until a limit
      *  (Marcos, Oct 3: "a session stays put until a limit"); where it moves next is the quota that resets soonest, or
      *  the person's saved order, which also places a session that has no login yet. */
-    private fun candidates(previousLabel: String?, current: AccountMembership, pinLabel: String?): List<PoolAccount> {
+    private fun candidates(
+        previousLabel: String?,
+        current: AccountMembership,
+        pinLabel: String?,
+        model: String? = null,
+    ): List<PoolAccount> {
         val byLabel = current.byLabel
         val primary = current.primary
         val pin = pinLabel?.let(byLabel::get)
         val previous = previousLabel?.let(byLabel::get)
-        val byReset = current.accounts.sortedWith(AccountAvailability.resetOrder(now()))
+        val byReset = current.accounts.sortedWith(AccountAvailability.resetOrder(now(), model))
         val ordered = orderedLabels.get().mapNotNull(byLabel::get)
         val policy = if (ordered.isEmpty()) {
             listOfNotNull(previous) + byReset
@@ -406,14 +421,14 @@ public class AccountPool(
             pinLabel?.let(current.byLabel::get),
             caller.preferred(previous)?.let(current.byLabel::get),
         )
-        val order = (preference + candidates(caller.continuesFrom(previous), current, pinLabel))
+        val order = (preference + candidates(caller.continuesFrom(previous), current, pinLabel, caller.model))
             .distinctBy(PoolAccount::label)
             .filter { it.label !in excluded }
         // A warm session keeps its login through a short rate limit, which admission waits out: a move rebuilds its
         // whole cache on the next login (Marcos, Oct 19). A pin or a changed caller login elsewhere still wins.
         val stay = caller.stays(previous, current.byLabel, preference, at)?.takeIf { it.label !in excluded }
-        val free = AccountAvailability.preferredFree(order, at)
-        val held = AccountAvailability.nearestHeld(order, at)
+        val free = AccountAvailability.preferredFree(order, at, caller.model)
+        val held = AccountAvailability.nearestHeld(order, at, caller.model)
         val eligible = listOfNotNull(stay.takeIf { free.isNotEmpty() }) + when {
             excluded.isNotEmpty() -> free
             else -> free.ifEmpty { held }
@@ -426,7 +441,7 @@ public class AccountPool(
         }
     }
 
-    private fun accountView(account: PoolAccount, selected: String?, at: Long): AccountView {
+    private fun accountView(account: PoolAccount, selected: String?, at: Long, model: String?): AccountView {
         val snapshot = account.quotaSnapshot
         val credential = account.credentialStatus(at)
         return AccountView(
@@ -434,7 +449,7 @@ public class AccountPool(
             primary = account.primary,
             selected = account.label == selected,
             plan = snapshot?.plan,
-            available = AccountAvailability.available(account, at),
+            available = AccountAvailability.available(account, at, model),
             quota = AccountQuotaReading(
                 fiveHour = AccountWindowReading(
                     usedPercent = snapshot?.fiveHour?.usedPercent,
@@ -454,6 +469,7 @@ public class AccountPool(
                 sevenDayModels = snapshot?.models.orEmpty(),
                 noUsageAtEpochSeconds = snapshot?.takeIf { it.answeredEmpty }
                     ?.let { java.util.concurrent.TimeUnit.MILLISECONDS.toSeconds(it.updatedAt) },
+                holds = AccountHolds(account.cooldown.planHold.live(), account.cooldown.planHold.models()),
             ),
             credential = AccountCredentialReading(
                 present = credential.credentialPresent,

@@ -96,7 +96,7 @@ internal class UpstreamRequest(
             val handler = UpstreamHandler<T> { response ->
                 block(response.also { it.postedAtMs = postedAtMs })
             }
-            val acceptance = auth.cooldown.acceptance()
+            val acceptance = auth.cooldown.acceptance(ctx.limits.model)
             val accepted = StreamStart {
                 acceptance()
                 onStreamStart()

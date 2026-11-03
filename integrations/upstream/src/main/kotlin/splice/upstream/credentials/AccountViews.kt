@@ -4,6 +4,7 @@
 package splice.upstream.credentials
 
 import splice.core.usage.ModelQuota
+import splice.core.usage.PlanLimit
 
 /** Masked account state for status, doctor and control surfaces. */
 public data class AccountView(
@@ -17,6 +18,10 @@ public data class AccountView(
     val credential: AccountCredentialReading = AccountCredentialReading(),
 )
 
+/** The plan windows the provider named spent on an account while they hold: the whole login's, which refuses every
+ *  turn, and each model's week, which refuses that model's turns alone, the soonest reset first. */
+public data class AccountHolds(val wholeLogin: PlanLimit? = null, val models: List<PlanLimit> = emptyList())
+
 /** An account's quota as a status surface reads it: its two windows and when they were observed, epoch SECONDS (the
  *  reset fields' unit), or null when its tracker names no observation. */
 public data class AccountQuotaReading(
@@ -27,6 +32,9 @@ public data class AccountQuotaReading(
     val sevenDayModels: List<ModelQuota> = emptyList(),
     /** Epoch SECONDS the provider last answered with no usage for this account (QuotaSnapshot.answeredEmpty). */
     val noUsageAtEpochSeconds: Long? = null,
+    /** The plan windows the provider named spent on this account, as it named them: [AccountHolds.wholeLogin] holds it
+     *  for every model, each of [AccountHolds.models] for one model alone (Nov 3, 2026). */
+    val holds: AccountHolds = AccountHolds(),
 )
 
 /** One quota window of an account as a status surface reads it: how full it is, when it resets (epoch SECONDS) and

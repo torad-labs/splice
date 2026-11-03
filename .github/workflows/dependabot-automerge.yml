@@ -142,7 +142,9 @@ jobs:
       # GITHUB_TOKEN added. The push's event already carries its head, so the
       # label runs CI on the pushed commit.
       - name: Run CI on the pushed commit
-        if: github.event.action == 'synchronize'
+        # Needs only the token, so a failed arm does not also cost the commit its CI.
+        # Private repos only: a push still runs CI on a public one.
+        if: ${{ !cancelled() && steps.app.outcome == 'success' && github.event.action == 'synchronize' && github.event.repository.private }}
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           PR: ${{ github.event.pull_request.number }}
@@ -263,12 +265,13 @@ jobs:
           gh pr merge --auto --squash --match-head-commit "$HEAD_SHA" "$PR_URL"
           echo "Auto-merge armed (${UPDATE_TYPE}); GitHub merges once required checks pass." \
             >> "$GITHUB_STEP_SUMMARY"
-      # No `ci` label here after a rebase, unlike the automated job. CI runs
-      # with the privileges of whoever caused the event: Dependabot's own run
-      # read-only with Dependabot secrets, but a label the App adds would run
-      # Dependabot's dependency code with the App's. A rebased Dependabot PR
-      # waits for a person to re-add `ci` (fleet-prs: required check missing
-      # on the head).
+      # No `ci` label here after a rebase, unlike the automated job. A run
+      # Dependabot starts gets a read-only token and Dependabot secrets; a run
+      # a label starts gets the repo's Actions secrets and the token at the
+      # workflow's declared permissions. A label added here would give
+      # Dependabot's dependency code that context with nobody having read the
+      # bump, so a rebased Dependabot PR waits for a person (fleet-prs:
+      # required check missing on the head).
 
   # A PR's update-type is not fixed. When Dependabot rebases a stale PR it
   # re-resolves to whatever is latest NOW, so one armed as a patch can come

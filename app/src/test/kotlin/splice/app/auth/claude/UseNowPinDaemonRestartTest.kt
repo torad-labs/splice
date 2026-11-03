@@ -22,7 +22,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.accounts.claude.ClaudeAccountIdentity
@@ -88,8 +87,10 @@ class UseNowPinDaemonRestartTest {
                     setBody("""{"label":"$other"}""")
                 }
                 assertEquals(HttpStatusCode.OK, pressed.status, pressed.bodyAsText())
-                assertEquals(other, accountPool(client, before).text("pinned_label"), "Use now takes")
-                assertNotEquals(pick, other, "the pin moves the command off the login it would have used")
+                val pinned = accountPool(client, before)
+                assertEquals(other, pinned.text("pinned_label"), "Use now takes")
+                val moved = "the pin moves the command off the login it would have used"
+                assertEquals(other, pinned.text("next_target_label"), moved)
                 other
             } finally {
                 before.close()

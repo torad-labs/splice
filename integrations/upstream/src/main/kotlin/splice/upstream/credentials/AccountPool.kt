@@ -277,7 +277,7 @@ public class AccountPool(
         val stay = CallerLogin(null, sessionId, accounts, model).previewStay(session, current.byLabel, pinLabel, at)
         return AccountPoolView(
             selectedLabel = session?.label?.takeIf(current.byLabel::containsKey),
-            accounts = accounts.map { account -> accountView(account, session?.label, at, model) },
+            accounts = accounts.map { account -> AccountViewing(at, model)(account, session?.label) },
             lastSwitch = if (sessionId == null) headLastSwitch.get() else session?.lastSwitch,
             blockedUntilEpochSecondsByLabel = accounts.mapNotNull { account ->
                 AccountAvailability.blockedUntil(account, at, model)?.let { account.label to it }
@@ -439,44 +439,6 @@ public class AccountPool(
         return (eligible + lastResort).distinctBy(PoolAccount::label).firstNotNullOfOrNull { account ->
             account.acquireCredential(at, now)?.let { lease -> ChosenAccount(account, lease) }
         }
-    }
-
-    private fun accountView(account: PoolAccount, selected: String?, at: Long, model: String?): AccountView {
-        val snapshot = account.quotaSnapshot
-        val credential = account.credentialStatus(at)
-        return AccountView(
-            label = account.label,
-            primary = account.primary,
-            selected = account.label == selected,
-            plan = snapshot?.plan,
-            available = AccountAvailability.available(account, at, model),
-            quota = AccountQuotaReading(
-                fiveHour = AccountWindowReading(
-                    usedPercent = snapshot?.fiveHour?.usedPercent,
-                    resetEpochSeconds = snapshot?.fiveHour?.resetsAt,
-                    // V4-132 (GET /api/accounts, FEATURES.md §4.5): the window's own reported LENGTH,
-                    // dropped by every projection before this row even though QuotaWindow has carried it
-                    // since Quota.kt:14 — a provider that reports a 30-day period (Grok) or a 7-day one
-                    // must not be rendered as though both were the same "weekly" bar.
-                    windowSeconds = snapshot?.fiveHour?.windowSeconds,
-                ),
-                sevenDay = AccountWindowReading(
-                    usedPercent = snapshot?.sevenDay?.usedPercent,
-                    resetEpochSeconds = snapshot?.sevenDay?.resetsAt,
-                    windowSeconds = snapshot?.sevenDay?.windowSeconds,
-                ),
-                observedAtEpochSeconds = snapshot?.observedAtEpochSeconds,
-                sevenDayModels = snapshot?.models.orEmpty(),
-                noUsageAtEpochSeconds = snapshot?.takeIf { it.answeredEmpty }
-                    ?.let { java.util.concurrent.TimeUnit.MILLISECONDS.toSeconds(it.updatedAt) },
-                holds = AccountHolds(account.cooldown.planHold.live(), account.cooldown.planHold.models()),
-            ),
-            credential = AccountCredentialReading(
-                present = credential.credentialPresent,
-                excludedUntilEpochMillis = credential.excludedUntilEpochMillis,
-                exclusionReason = credential.reason,
-            ),
-        )
     }
 
     private data class ChosenAccount(

@@ -4,12 +4,15 @@ package splice.accounts.pool
 
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
+import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import splice.accounts.AccountHead
 import splice.accounts.AccountHeadResolver
 import splice.accounts.AccountReplies
 import splice.core.auth.REFUSAL_FIELD
+import splice.core.util.LocalTimeText
 import splice.http.JsonBody
 
 private const val SESSION_FIELD = "session"
@@ -26,7 +29,13 @@ public class SwitchRoute(private val resolver: AccountHeadResolver) {
      *
      *  V4-423: an account the daemon has no credential for (a refused link, or a file that is gone) cannot serve a
      *  turn, so pinning it is a promise nothing keeps: it answers 409 with the account's own sentence and pins
-     *  nothing. An account the pool does not list keeps the pin's 400. */
+     *  nothing. An account the pool does not list keeps the pin's 400.
+     *
+     *  Nov 3, 2026 (Marcos: "clicking 'use now' also didnt work"): an account the provider holds for every model, its
+     *  plan window named spent, serves no turn until that reset, so pinning it is the same empty promise: a 409 that
+     *  names the window and the reset, and nothing pinned. An account held for one model's week serves every other
+     *  model, so it pins, and the answer names each model it cannot serve yet and until when (`models_held`), so a turn
+     *  of that model that still goes elsewhere is no surprise. */
     public suspend fun switchAccount(call: ApplicationCall) {
         val target = pinTarget(call) ?: return
         val body = jsonBody.parse(call)
@@ -36,7 +45,8 @@ public class SwitchRoute(private val resolver: AccountHeadResolver) {
             AccountReplies.respondError(call, "body must name a 'label'", HttpStatusCode.BadRequest)
             return
         }
-        val refusal = refusalFor(target.head, label)
+        val account = target.head.activePool?.view(null)?.accounts?.firstOrNull { it.label == label }
+        val refusal = account?.let { refusalFor(target.head, it) }
         if (refusal != null) {
             AccountReplies.respond(
                 call,
@@ -54,6 +64,17 @@ public class SwitchRoute(private val resolver: AccountHeadResolver) {
             buildJsonObject {
                 put("ok", pinned)
                 if (!pinned) put("error", "unknown account label '$label'")
+                val held = account?.quota?.holds?.models.orEmpty().takeIf { pinned }.orEmpty()
+                if (held.isNotEmpty()) {
+                    putJsonArray("models_held") {
+                        held.forEach { week ->
+                            addJsonObject {
+                                put("model", week.model)
+                                put("until_epoch_seconds", week.resetEpochSeconds)
+                            }
+                        }
+                    }
+                }
             }.toString(),
             status = if (pinned) HttpStatusCode.OK else HttpStatusCode.BadRequest,
         )
@@ -69,14 +90,20 @@ public class SwitchRoute(private val resolver: AccountHeadResolver) {
         AccountReplies.respond(call, buildJsonObject { put("ok", true) }.toString(), status = HttpStatusCode.OK)
     }
 
-    /** Why [label] cannot be switched to, or null when it can: the pool lists it and the daemon has a credential
-     *  for it. A refused link says so in its own words (V4-410's sentence, from the account's description); an
-     *  account with no credential file gets the plain one. Not listed is not refused here: the pin answers that. */
-    private suspend fun refusalFor(head: AccountHead, label: String): String? {
-        val account = head.activePool?.view(null)?.accounts?.firstOrNull { it.label == label } ?: return null
-        if (account.credential.present) return null
-        return head.accountAuth?.descriptions()?.get(label)?.fields?.get(REFUSAL_FIELD)
-            ?: "'$label' has no credential file; sign in to it first"
+    /** Why [account] cannot be switched to, or null when it can: the daemon has a credential for it, and its provider
+     *  holds it for no window of the whole login. A refused link says so in its own words (V4-410's sentence, from the
+     *  account's description); an account with no credential file gets the plain one; a spent plan names its window
+     *  and when it serves again. Not listed is not refused here: the pin answers that. */
+    private suspend fun refusalFor(head: AccountHead, account: HeadAccountView): String? {
+        val label = account.label
+        if (!account.credential.present) {
+            return head.accountAuth?.descriptions()?.get(label)?.fields?.get(REFUSAL_FIELD)
+                ?: "'$label' has no credential file; sign in to it first"
+        }
+        return account.quota.holds.wholeLogin?.let { plan ->
+            val until = LocalTimeText().at(plan.resetEpochSeconds)
+            "${plan.windowWords} plan limit reached: '$label' serves no turn until $until"
+        }
     }
 
     private suspend fun pinTarget(call: ApplicationCall): PinTarget? {

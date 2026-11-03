@@ -3,6 +3,7 @@ package splice.accounts.pool
 
 import splice.core.auth.AuthDescription
 import splice.core.usage.ModelQuota
+import splice.core.usage.PlanLimit
 import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindowView
 
@@ -102,6 +103,10 @@ public data class HeadAccountView(
     val credential: HeadAccountCredential = HeadAccountCredential(),
 )
 
+/** The plan windows the provider named spent on a head's account while they hold, as it named them: [wholeLogin]
+ *  refuses every turn, and each of [models] refuses one model's turns alone, the soonest reset first. */
+public data class HeadAccountHolds(val wholeLogin: PlanLimit? = null, val models: List<PlanLimit> = emptyList())
+
 /** A head account's credential standing: whether splice can load it, and the timed authentication hold, if any,
  *  that keeps it out of selection, with the reason. */
 public data class HeadAccountCredential(
@@ -120,6 +125,8 @@ public data class HeadAccountQuota(
     val sevenDayModels: List<ModelQuota> = emptyList(),
     /** Epoch SECONDS the provider last answered with no usage for this account (QuotaView.noUsageAt). */
     val noUsageAtEpochSeconds: Long? = null,
+    /** The plan windows the provider named spent on this account (Nov 3, 2026). */
+    val holds: HeadAccountHolds = HeadAccountHolds(),
 )
 
 /** One quota window of a head's account as the control surface reads it: how full it is, when it resets (epoch

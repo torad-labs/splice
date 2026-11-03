@@ -7,7 +7,14 @@ import splice.core.util.WallClock
 /** The login the caller presented, and what it decides for one selection: which account it asks for, whether the
  *  session carries its history into the choice, and which login the session remembers afterwards. A call without
  *  a session has no history to carry and nothing to remember it by. */
-internal class CallerLogin(key: String?, val session: String?, accounts: List<PoolAccount>) {
+internal class CallerLogin(
+    key: String?,
+    val session: String?,
+    accounts: List<PoolAccount>,
+    /** The model the turn asks for, which a login's week of one model refuses alone (Nov 3, 2026); null reads the
+     *  whole login's windows. */
+    val model: String? = null,
+) {
     private val mark: CallerMark? = key?.let { presented ->
         accounts.singleOrNull { it.auth.observedCredentialKey() == presented }?.let {
             CallerMark(it.label, (it.auth as? AccountCredentialIdentitySource)?.credentialAccount())
@@ -35,7 +42,7 @@ internal class CallerLogin(key: String?, val session: String?, accounts: List<Po
         preference: List<PoolAccount>,
         at: Long,
     ): PoolAccount? = previous?.label?.takeIf { session != null }?.let(byLabel::get)
-        ?.let { AccountAvailability.Warm.stays(it, stampOf(previous)?.at, preference, at) }
+        ?.let { AccountAvailability.Warm.stays(it, stampOf(previous)?.at, preference, at, model) }
 
     /** [stays] as an operator surface previews it: no caller login is presented there, so only a pin can pull the
      *  session elsewhere. */

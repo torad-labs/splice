@@ -44,7 +44,8 @@ internal class WsRoundAcquire(
         val sent = CredentialKey.headers(credentials, drive.turnHeaders)
         val key = CredentialKey.fromHeaders(sent, carrier)
         // Taken before the send, as an HTTP send takes it, so a refusal learned after posting outlives this answer.
-        val receipt = (drive.account?.account?.cooldown ?: holds.forHeaders(sent, carrier))?.acceptance()
+        val receipt = (drive.account?.account?.cooldown ?: holds.forHeaders(sent, carrier))
+            ?.acceptance(drive.meta.route.upstreamModel)
         val answer = WsRoundAnswer { accepted ->
             answers.observed(accepted, clock(), sender, key)
             if (accepted) receipt?.invoke()

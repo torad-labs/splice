@@ -89,7 +89,29 @@ public data class PlanLimit(
      *  the conversion (codex names minutes), so no vendor unit crosses this boundary. Null where it said nothing,
      *  and then the row carries no window length — never a zero, which reads as a window of no length. */
     val windowSeconds: Long? = null,
+    /** The model the refused request asked for, where [claim] names one model's week ([oneModel]): that window holds
+     *  the login for this model alone, and the login keeps serving every other. Null on a window of the whole login,
+     *  and on one model's week whose model splice never learned, which then holds nothing (Nov 3, 2026, below). */
+    val model: String? = null,
 ) {
+    /** A seven-day claim past the plain one names one model's week: `seven_day_opus`, and `seven_day_overage_included`,
+     *  the claim Anthropic refused Fable with on accounts 2, 3 and 6 on Nov 2, 2026, their own week at 65 to 73% and
+     *  Fable at 100%. Splice held all three for every model until Nov 8, so when the login in use hit its five hours
+     *  at 1:15 AM CT on Nov 3, no login was left for Opus or Sonnet. `seven_day_oauth_apps` is the one seven-day
+     *  claim past the plain one that names no model: the week every Claude Code turn spends, which the client reads
+     *  beside seven_day_opus and seven_day_sonnet (docs/specs/web-console.md), so it holds the whole login (review
+     *  of #459). */
+    public val oneModel: Boolean get() = claim.startsWith("${SEVEN_DAY_CLAIM}_") && claim != SEVEN_DAY_OAUTH_APPS_CLAIM
+
+    /** One model's week that names the model it holds the login for. */
+    public val forOneModel: Boolean get() = oneModel && model != null
+
+    /** One model's week whose model splice never learned: it cannot say which turns it refuses, so it holds nothing. */
+    public val modelUnknown: Boolean get() = oneModel && model == null
+
+    /** This window as a request for [model] met it: one model's week holds that model, and any other window the login. */
+    public fun metBy(model: String?): PlanLimit = if (oneModel) copy(model = model) else this
+
     /** The claim in words: `five_hour` is "5-hour", `seven_day` "7-day", and a model-scoped
      *  seven-day claim names its model (`seven_day_opus` is "7-day Opus"). */
     public val windowWords: String
@@ -152,6 +174,9 @@ public const val FIVE_HOUR_CLAIM: String = "five_hour"
 
 /** Anthropic's unified claim of its seven-day window, and the opening of one model's seven-day claim. */
 public const val SEVEN_DAY_CLAIM: String = "seven_day"
+
+/** The seven-day window of the OAuth apps, Claude Code among them: past the plain claim, yet no one model's week. */
+internal const val SEVEN_DAY_OAUTH_APPS_CLAIM: String = "seven_day_oauth_apps"
 
 private const val PERCENT = 100.0
 private const val MILLIS = 1000L

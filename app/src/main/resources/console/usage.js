@@ -887,7 +887,8 @@ function idleOf(by, active) {
     const book = agentBook();
     for (const a of book.values()) if (a.idle) idle(a.sid, esc(a.text), { sub: esc(a.sub) });
   }
-  return out.sort((a, b) => wordsIn(a.label).localeCompare(wordsIn(b.label)));
+  const words = new Map(out.map((e) => [e, wordsIn(e.label)]));
+  return out.sort((a, b) => words.get(a).localeCompare(words.get(b)));
 }
 const niceTop = (v) => { const p = 10 ** Math.floor(Math.log10(Math.max(v, 1e-9))), m = v / p; return ([1, 1.5, 2, 3, 4, 5, 6, 8, 10].find((x) => m <= x) ?? 10) * p; };
 const headsOrder = () => S.heads.map((h) => h.key);

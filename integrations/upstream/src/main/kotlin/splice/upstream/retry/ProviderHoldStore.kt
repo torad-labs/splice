@@ -6,10 +6,14 @@
 package splice.upstream.retry
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.core.usage.PlanLimit
 import splice.core.util.Cancellables
@@ -21,11 +25,16 @@ import splice.core.wire.NativeReply
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** The provider's word, as wall instants in epoch seconds; either half may be absent. */
-public data class ProviderHold(val providerResetAtEpochSeconds: Long?, val plan: PlanLimit?) {
+/** The provider's word, as wall instants in epoch seconds; any part may be absent. [plan] holds the whole login and
+ *  each of [models] one model's week (PlanLimit.oneModel, Nov 3, 2026). */
+public data class ProviderHold(
+    val providerResetAtEpochSeconds: Long?,
+    val plan: PlanLimit?,
+    val models: List<PlanLimit> = emptyList(),
+) {
     public var rateLimitReply: NativeReply? = null
         internal set
-    val isEmpty: Boolean get() = providerResetAtEpochSeconds == null && plan == null
+    val isEmpty: Boolean get() = providerResetAtEpochSeconds == null && plan == null && models.isEmpty()
 }
 
 /** Where a head's or pool account's [ProviderHold] lives between restarts. */
@@ -83,7 +92,8 @@ public class FileProviderHoldStore(
         if (!Files.exists(path)) return null
         return Cancellables.runCatchingCancellable {
             val root = Json.parseToJsonElement(Files.readString(path)).jsonObject
-            ProviderHold(JsonScalars.long(root, RESET_AT), plan(root[PLAN] as? JsonObject)).also { hold ->
+            val models = (root[MODEL_WEEKS] as? JsonArray).orEmpty().mapNotNull { plan(it as? JsonObject) }
+            ProviderHold(JsonScalars.long(root, RESET_AT), plan(root[PLAN] as? JsonObject), models).also { hold ->
                 root[REPLY]?.let { hold.rateLimitReply = Json.decodeFromJsonElement(NativeReply.serializer(), it) }
             }
         }.onFailure {
@@ -105,26 +115,33 @@ public class FileProviderHoldStore(
 
     private fun plan(obj: JsonObject?): PlanLimit? {
         val claim = JsonScalars.str(obj, CLAIM) ?: return null
-        return JsonScalars.long(obj, RESET_AT)?.let { PlanLimit(claim, it) }
+        return JsonScalars.long(obj, RESET_AT)?.let { PlanLimit(claim, it, model = JsonScalars.str(obj, WEEK_MODEL)) }
     }
 
     private fun json(hold: ProviderHold): String = JsonWire.string(
         buildJsonObject {
             hold.providerResetAtEpochSeconds?.let { put(RESET_AT, it) }
             hold.rateLimitReply?.let { put(REPLY, Json.encodeToJsonElement(NativeReply.serializer(), it)) }
-            hold.plan?.let { limit ->
-                putJsonObject(PLAN) {
-                    put(CLAIM, limit.claim)
-                    put(RESET_AT, limit.resetEpochSeconds)
-                }
+            hold.plan?.let { limit -> putJsonObject(PLAN) { planFields(this, limit) } }
+            if (hold.models.isNotEmpty()) {
+                putJsonArray(MODEL_WEEKS) { hold.models.forEach { limit -> addJsonObject { planFields(this, limit) } } }
             }
         },
     )
+
+    /** One plan window's fields, the same in [PLAN] and in each of [MODEL_WEEKS]. */
+    private fun planFields(into: JsonObjectBuilder, limit: PlanLimit) {
+        into.put(CLAIM, limit.claim)
+        into.put(RESET_AT, limit.resetEpochSeconds)
+        limit.model?.let { into.put(WEEK_MODEL, it) }
+    }
 }
 
 private const val RESET_AT = "reset_at_epoch_seconds"
 private const val PLAN = "plan"
 private const val CLAIM = "claim"
+private const val MODEL_WEEKS = "models"
+private const val WEEK_MODEL = "model"
 private const val REPLY = "rate_limit_reply"
 
 // why: SHA-256 has 32 digest bytes and two hexadecimal characters per byte.
@@ -141,6 +158,7 @@ internal fun interface HoldChange {
 internal class ProviderHolds(private val store: ProviderHoldStore?) {
     private var resetAt: Long? = null
     private var plan: PlanLimit? = null
+    private var models: List<PlanLimit> = emptyList()
     private var reply: NativeReply? = null
     private var generation = 0L
 
@@ -170,7 +188,11 @@ internal class ProviderHolds(private val store: ProviderHoldStore?) {
             store?.save(snapshot())
         }
 
-    private fun snapshot(): ProviderHold = ProviderHold(resetAt, plan).also { it.rateLimitReply = rateLimitReply }
+    private fun snapshot(): ProviderHold = ProviderHold(
+        resetAt,
+        plan,
+        models,
+    ).also { it.rateLimitReply = rateLimitReply }
 
     /** What was stored, read once at construction; consumers keep only what has not passed. */
     fun stored(): ProviderHold = store?.load() ?: ProviderHold(null, null)
@@ -184,12 +206,14 @@ internal class ProviderHolds(private val store: ProviderHoldStore?) {
         store?.save(snapshot())
     }
 
-    /** Records the plan window (null when it ended) beside the provider's reset and writes both. */
+    /** Records the plan windows, the whole login's [whole] (null when none is held) and each model's week in [weeks],
+     *  beside the provider's reset, and writes them all. A new refusal is counted by [refusing], which the hold runs
+     *  this inside: an answer that ends one model's week leaves another's standing and must not read as a refusal. */
     @Synchronized
-    fun plan(limit: PlanLimit?) {
-        if (limit != null) generation++
-        if (plan == limit) return
-        plan = limit
+    fun plans(whole: PlanLimit?, weeks: List<PlanLimit>) {
+        if (plan == whole && models == weeks) return
+        plan = whole
+        models = weeks
         store?.save(snapshot())
     }
 
@@ -199,6 +223,7 @@ internal class ProviderHolds(private val store: ProviderHoldStore?) {
     fun restored(stored: ProviderHold, kept: ProviderHold) {
         resetAt = kept.providerResetAtEpochSeconds
         plan = kept.plan
+        models = kept.models
         reply = stored.rateLimitReply.takeUnless { kept.isEmpty }
         if (kept != stored || reply != stored.rateLimitReply) store?.save(snapshot())
     }

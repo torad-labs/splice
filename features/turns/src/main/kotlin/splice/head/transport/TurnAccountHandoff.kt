@@ -29,9 +29,11 @@ internal class TurnAccountHandoff(
      *  eligibility and acquires a caller-owned probe; a raced commitment never adopts that probe. */
     suspend fun moveAwaitingEvidence(drive: TurnDrive): Boolean {
         val pending = pending(drive) ?: return false
-        val available = pool.awaitingEvidence.select(drive.meta.scope.sessionId, pending.excluded)
+        val model = drive.meta.route.upstreamModel
+        val session = drive.meta.scope.sessionId
+        val available = pool.awaitingEvidence.select(session, pending.excluded, model = model)
         val selected = if (available is Selection.Exhausted && earlierHeld(drive)) {
-            pool.awaitingEvidence.select(drive.meta.scope.sessionId)
+            pool.awaitingEvidence.select(session, model = model)
         } else {
             available
         }
@@ -62,7 +64,9 @@ internal class TurnAccountHandoff(
             is FailureCause.Provider.NeedsPayment -> (cause.lift as? Lift.At)?.at
             is FailureCause.Provider, is FailureCause.Path, is FailureCause.Splice -> null
         }
-        return pool.view(drive.meta.scope.sessionId).accounts
+        // Each login as a turn of this model meets it: a login whose provider refused another model for the week is
+        // free for this one (Nov 3, 2026).
+        return pool.view(drive.meta.scope.sessionId, drive.meta.route.upstreamModel).accounts
             .any { it.available && it.label != current && it.label !in tried } || earlierHeld(drive, reset)
     }
 
@@ -71,7 +75,7 @@ internal class TurnAccountHandoff(
     private fun earlierHeld(drive: TurnDrive, reset: Instant? = null): Boolean {
         val current = drive.account?.account?.label ?: return false
         val session = drive.meta.scope.sessionId
-        val view = pool.view(session)
+        val view = pool.view(session, drive.meta.route.upstreamModel)
         val resets = view.blockedUntilEpochSecondsByLabel
         val currentReset = reset?.epochSecond ?: resets[current] ?: return false
         return view.accounts.any { account ->

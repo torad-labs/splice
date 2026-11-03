@@ -4,6 +4,7 @@
 package splice.upstream.credentials
 
 import splice.core.usage.ModelQuota
+import splice.core.usage.PlanLimit
 
 /** Masked account state for status, doctor and control surfaces. */
 public data class AccountView(
@@ -17,6 +18,10 @@ public data class AccountView(
     val credential: AccountCredentialReading = AccountCredentialReading(),
 )
 
+/** The plan windows the provider named spent on an account while they hold: the whole login's, which refuses every
+ *  turn, and each model's week, which refuses that model's turns alone, the soonest reset first. */
+public data class AccountHolds(val wholeLogin: PlanLimit? = null, val models: List<PlanLimit> = emptyList())
+
 /** An account's quota as a status surface reads it: its two windows and when they were observed, epoch SECONDS (the
  *  reset fields' unit), or null when its tracker names no observation. */
 public data class AccountQuotaReading(
@@ -27,6 +32,9 @@ public data class AccountQuotaReading(
     val sevenDayModels: List<ModelQuota> = emptyList(),
     /** Epoch SECONDS the provider last answered with no usage for this account (QuotaSnapshot.answeredEmpty). */
     val noUsageAtEpochSeconds: Long? = null,
+    /** The plan windows the provider named spent on this account, as it named them: [AccountHolds.wholeLogin] holds it
+     *  for every model, each of [AccountHolds.models] for one model alone (Nov 3, 2026). */
+    val holds: AccountHolds = AccountHolds(),
 )
 
 /** One quota window of an account as a status surface reads it: how full it is, when it resets (epoch SECONDS) and
@@ -44,6 +52,49 @@ public data class AccountCredentialReading(
     val excludedUntilEpochMillis: Long? = null,
     val exclusionReason: String? = null,
 )
+
+/** One account as the operator surfaces read it at [at]: for a turn of [model], or as the console shows the login when
+ *  [model] is null (Nov 3, 2026). Moved out of AccountPool, which keeps the selection, when the turn's model made that
+ *  file a god object by the concentration law's measure. */
+internal class AccountViewing(private val at: Long, private val model: String?) {
+    operator fun invoke(account: PoolAccount, selected: String?): AccountView {
+        val snapshot = account.quotaSnapshot
+        val credential = account.credentialStatus(at)
+        return AccountView(
+            label = account.label,
+            primary = account.primary,
+            selected = account.label == selected,
+            plan = snapshot?.plan,
+            available = AccountAvailability.available(account, at, model),
+            quota = AccountQuotaReading(
+                fiveHour = AccountWindowReading(
+                    usedPercent = snapshot?.fiveHour?.usedPercent,
+                    resetEpochSeconds = snapshot?.fiveHour?.resetsAt,
+                    // V4-132 (GET /api/accounts, FEATURES.md §4.5): the window's own reported LENGTH,
+                    // dropped by every projection before this row even though QuotaWindow has carried it
+                    // since Quota.kt:14 — a provider that reports a 30-day period (Grok) or a 7-day one
+                    // must not be rendered as though both were the same "weekly" bar.
+                    windowSeconds = snapshot?.fiveHour?.windowSeconds,
+                ),
+                sevenDay = AccountWindowReading(
+                    usedPercent = snapshot?.sevenDay?.usedPercent,
+                    resetEpochSeconds = snapshot?.sevenDay?.resetsAt,
+                    windowSeconds = snapshot?.sevenDay?.windowSeconds,
+                ),
+                observedAtEpochSeconds = snapshot?.observedAtEpochSeconds,
+                sevenDayModels = snapshot?.models.orEmpty(),
+                noUsageAtEpochSeconds = snapshot?.takeIf { it.answeredEmpty }
+                    ?.let { java.util.concurrent.TimeUnit.MILLISECONDS.toSeconds(it.updatedAt) },
+                holds = AccountHolds(account.cooldown.planHold.live(), account.cooldown.planHold.models()),
+            ),
+            credential = AccountCredentialReading(
+                present = credential.credentialPresent,
+                excludedUntilEpochMillis = credential.excludedUntilEpochMillis,
+                exclusionReason = credential.reason,
+            ),
+        )
+    }
+}
 
 /** One session's safe pool projection. */
 public data class AccountPoolView(

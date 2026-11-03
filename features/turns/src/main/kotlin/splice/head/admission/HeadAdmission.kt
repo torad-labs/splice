@@ -167,6 +167,8 @@ internal class HeadAdmission(
                 prepared.built.meta.scope.sessionId,
                 excluded = emptySet(),
                 callerCredentialKey = callerKey,
+                // a login whose provider refused another model for the week still serves this one (Nov 3, 2026)
+                model = prepared.built.meta.route.upstreamModel,
             )
         }
         val account = when (selection) {

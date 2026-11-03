@@ -38,12 +38,6 @@ internal class PinBook {
     @Synchronized
     fun ownedBy(sessionId: String?): String? = sessionId?.let(sessions::get)
 
-    @Synchronized
-    fun clear() {
-        head = null
-        sessions.clear()
-    }
-
     /** Every pin, as it is saved between daemon runs. */
     @Synchronized
     fun saved(): SavedPins = SavedPins(head, LinkedHashMap(sessions))

@@ -101,6 +101,10 @@ public class VirtualTime(
     /** How many waits are parked on this clock now. */
     public fun parkedNow(): Int = parked.value
 
+    /** When each parked wait falls due, as time passed since the clock was made, earliest first: a test reads that a
+     *  particular wait, such as a held turn's probe, is parked again before it moves the clock past it. */
+    public fun parkedDues(): List<Duration> = synchronized(lock) { sleepers.map { it.dueMs.milliseconds }.sorted() }
+
     /** Returns once at least [count] waits are parked on this clock. */
     public suspend fun awaitParked(count: Int = 1) {
         parked.first { it >= count }

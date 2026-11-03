@@ -5,6 +5,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -148,12 +149,16 @@ class NonStreamHoldsThroughHeadsTest {
             }
 
             first.hangUp()
-            // The leave wakes the remaining turn to recompute its schedule, and it parks on the clock again a few hops
-            // later. A clock moved in between puts its probe past the move, so the wait is on what the move needs: the
-            // first turn gone from the listing AND the remaining one parked (main's ladder on 47984fb54, Nov 2 2026,
-            // timed out here on attempt 1 and passed on attempt 3).
+            // The leave wakes the remaining turn to recompute its schedule, and it parks its probe on the clock again a few
+            // hops later. A clock moved in between puts that probe past the move. Each held streaming turn keeps three waits
+            // on the clock, so a count passes through the settled one before the probe is back (a run on Nov 3, 2026 read
+            // dues [2s, 15s, 7d], then [2s, 15s, 1m]): the wait is on the probe itself, due at one minute, with the first
+            // turn gone from the listing (main's ladder on 47984fb54, Nov 2 2026, timed out here on attempt 1).
             withContext(Dispatchers.Default) {
-                withTimeout(10_000) { while (head.heldTurns().size != 1 || time.parkedNow() != 1) delay(5) }
+                val settled = withTimeoutOrNull(10_000) {
+                    while (head.heldTurns().size != 1 || 60.seconds !in time.parkedDues()) delay(5)
+                }
+                assertTrue(settled != null, "held ${head.heldTurns().size}, parked waits due at ${time.parkedDues()}")
             }
             time.advanceBy(60.seconds)
             withContext(Dispatchers.Default) {

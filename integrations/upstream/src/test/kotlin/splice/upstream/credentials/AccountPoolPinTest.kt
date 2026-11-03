@@ -110,15 +110,18 @@ class AccountPoolPinTest {
         assertNull(pool.pinned())
     }
 
+    // Rewritten Nov 3, 2026: a reset cleared the pin, and every head start resets its pool, so the daemon restart
+    // that was to keep a saved pin dropped it. A pin is the operator's policy, kept across restarts like the order.
     @Test
-    fun `reset clears the pin along with the rest of runtime state`() {
+    fun `reset keeps the pin, as it keeps the operator's order`() {
         val fixture = Fixture()
         val pool = fixture.pool(fixture.account("primary", primary = true), fixture.account("plus-a"))
         pool.pin("plus-a")
 
         pool.reset()
 
-        assertNull(pool.pinned())
+        assertEquals("plus-a", pool.pinned())
+        assertEquals("plus-a", pool.chosen("session").account.label, "the next turn takes the pinned login")
     }
 
     @Test

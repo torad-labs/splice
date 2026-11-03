@@ -10,6 +10,11 @@
 // resolved before the push, unless its module depends on one whose script does: the reader's `api` puts the new bytes on its
 // dependents' classpaths too. So a changed entry selects the modules whose scripts read it and their dependents (selector.ts),
 // and runs all of those modules' unit suites whole (test-impact.ts): a version bump changes bytes no reference walk can follow.
+// The dependents are the module graph's, which carries main-configuration edges only (project-deps.ts): a module that reaches a
+// reader through testImplementation alone (features/turns reaches :integrations-providers-codex so) is not selected by that edge.
+// On today's tree every such reader's entries also reach the module through an `api` of a main dependency, so nothing slips; a
+// catalog walk over the test-scoped edges too, in the selector and in test-impact, would close the edge for good (review of PR 445,
+// round 4).
 //
 // WHAT RUNS EVERY MODULE. An entry build-logic, the root build or settings reads, because every module's build runs those, and one
 // a module's script reads when that script is itself a scope.json `full` path: quality/compiler-plugin/build.gradle.kts builds the

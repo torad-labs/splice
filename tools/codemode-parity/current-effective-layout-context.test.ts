@@ -54,6 +54,8 @@ describe("exact effectively private Rust layout context", () => {
     expect(effectiveLayoutContextReason(unit(inventory), inventory)).toBeUndefined();
   });
 
+  // Fourteen structured clones of the whole inventory and as many evaluations: 5,016 ms on a CI runner on Nov 2, 2026
+  // (main's ci run on 4a822a7a8), past bun's 5 s default, so the bound is the work's own, not the default.
   test("parent visibility, reexport, signature and conversion evidence stays hash bound", () => {
     for (const file of pinnedFiles) {
       const inventory = fixture();
@@ -63,7 +65,7 @@ describe("exact effectively private Rust layout context", () => {
       blob.files.find(found => found.path === base + file)!.gitBlob = "0".repeat(40);
       expect(effectiveLayoutContextReason(unit(blob), blob)).toBeUndefined();
     }
-  });
+  }, 30_000);
 
   test("all six concrete owners remain present with their exact identities", () => {
     for (const id of ownerIds) {

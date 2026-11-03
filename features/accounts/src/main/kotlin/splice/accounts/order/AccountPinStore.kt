@@ -7,6 +7,7 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import splice.core.auth.SavedPins
 import splice.core.util.SecureFile
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
@@ -36,9 +37,10 @@ public class AccountPinStore(private val file: Path) {
     @Synchronized
     public fun set(head: String, pins: SavedPins) {
         require(head.isNotBlank())
+        // Nothing to keep as the .bak when there is no file, or one splice cannot read: the press still saves.
         val previous = try {
             Files.readString(file)
-        } catch (_: NoSuchFileException) {
+        } catch (_: IOException) {
             null
         }
         val heads = read()?.heads.orEmpty() - head
@@ -60,6 +62,10 @@ public class AccountPinStore(private val file: Path) {
     } catch (_: SerializationException) {
         null
     } catch (_: IllegalArgumentException) {
+        null
+    } catch (_: IOException) {
+        // A file splice cannot read (its mode, a directory in its place) restores no pin either, rather than refuse
+        // the head at boot.
         null
     }
 }

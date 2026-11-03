@@ -148,11 +148,13 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
                     sevenDayModels = account.quota.sevenDayModels,
                     noUsageAtEpochSeconds = account.quota.noUsageAtEpochSeconds,
                     holds = HeadAccountHolds(account.quota.holds.wholeLogin, account.quota.holds.models),
+                    readsFull = account.quota.readsFull,
                 ),
                 credential = HeadAccountCredential(
                     present = account.credential.present,
                     excludedUntilEpochMillis = account.credential.excludedUntilEpochMillis,
                     exclusionReason = account.credential.exclusionReason,
+                    ownerBlock = account.credential.block,
                 ),
             )
         },

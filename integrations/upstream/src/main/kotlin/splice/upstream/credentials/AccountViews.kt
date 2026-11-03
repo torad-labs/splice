@@ -3,8 +3,12 @@
 // site changes.
 package splice.upstream.credentials
 
+import splice.core.failure.AccountBlock
 import splice.core.usage.ModelQuota
 import splice.core.usage.PlanLimit
+import splice.core.usage.QuotaFull
+import splice.core.usage.QuotaFullWindow
+import splice.core.usage.QuotaSnapshot
 
 /** Masked account state for status, doctor and control surfaces. */
 public data class AccountView(
@@ -35,6 +39,9 @@ public data class AccountQuotaReading(
     /** The plan windows the provider named spent on this account, as it named them: [AccountHolds.wholeLogin] holds it
      *  for every model, each of [AccountHolds.models] for one model alone (Nov 3, 2026). */
     val holds: AccountHolds = AccountHolds(),
+    /** The window the selector reads full ([AccountAvailability.fullReading]), and its reset: the later one when both
+     *  are. A reading, not a refusal: such a login still serves, after every login with room. */
+    val readsFull: QuotaFull? = null,
 )
 
 /** One quota window of an account as a status surface reads it: how full it is, when it resets (epoch SECONDS) and
@@ -51,6 +58,8 @@ public data class AccountCredentialReading(
     val present: Boolean = true,
     val excludedUntilEpochMillis: Long? = null,
     val exclusionReason: String? = null,
+    /** Set while the provider refuses the login until its owner acts, which no sign-in changes. */
+    val block: AccountBlock? = null,
 )
 
 /** One account as the operator surfaces read it at [at]: for a turn of [model], or as the console shows the login when
@@ -86,14 +95,24 @@ internal class AccountViewing(private val at: Long, private val model: String?) 
                 noUsageAtEpochSeconds = snapshot?.takeIf { it.answeredEmpty }
                     ?.let { java.util.concurrent.TimeUnit.MILLISECONDS.toSeconds(it.updatedAt) },
                 holds = AccountHolds(account.cooldown.planHold.live(), account.cooldown.planHold.models()),
+                readsFull = readsFull(snapshot),
             ),
             credential = AccountCredentialReading(
                 present = credential.credentialPresent,
                 excludedUntilEpochMillis = credential.excludedUntilEpochMillis,
                 exclusionReason = credential.reason,
+                block = credential.block,
             ),
         )
     }
+
+    /** The window the selector passes the login over for, by its own test ([AccountAvailability.exhausted]). */
+    private fun readsFull(snapshot: QuotaSnapshot?): QuotaFull? = listOfNotNull(
+        snapshot?.fiveHour?.let { QuotaFullWindow.FIVE_HOUR to it },
+        snapshot?.sevenDay?.let { QuotaFullWindow.SEVEN_DAY to it },
+    ).filter { (_, window) -> AccountAvailability.exhausted(window, at) }
+        .mapNotNull { (name, window) -> window.resetsAt?.let { QuotaFull(name, it) } }
+        .maxByOrNull { it.resetsAtEpochSeconds }
 }
 
 /** One session's safe pool projection. */

@@ -27,6 +27,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -47,7 +48,11 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.AccountBlock
+import splice.core.failure.OwnerStep
 import splice.core.usage.PlanLimit
+import splice.core.usage.QuotaSnapshot
+import splice.core.usage.QuotaWindow
 import splice.core.util.ElapsedClock
 import splice.core.util.LocalTimeText
 import splice.core.util.LogSink
@@ -76,13 +81,13 @@ class UseNowPinRestartTest {
 
     /** One daemon's run: its pool and the account source the control routes read, built from [state] as a daemon
      *  builds them at boot, so a second one over the same folder is the daemon after a restart. */
-    private inner class Daemon {
+    private inner class Daemon(private val readings: Map<String, QuotaSnapshot> = emptyMap()) {
         private val accounts = listOf("eight", "two", "three").map { label ->
             PoolAccount(
                 label = label,
                 primary = label == "eight",
                 auth = PinLogin(label),
-                quota = AccountQuotaSource { null },
+                quota = AccountQuotaSource { readings[label] },
                 cooldown = RateLimitCooldown(ElapsedClock { 0L }, store = holdFile(label)),
             )
         }
@@ -218,6 +223,60 @@ class UseNowPinRestartTest {
         val held = pool["pin_models_held"]?.jsonArray?.map { it.jsonObject }.orEmpty()
         assertEquals(listOf(FABLE), held.map { it.text("model") })
         assertEquals(listOf(fableReset), held.map { it["until_epoch_seconds"]?.jsonPrimitive?.long })
+    }
+
+    @Test
+    fun `a pinned login whose usage reads full while another has room keeps its pin and says why`() {
+        pinned("""{"label":"three"}""")
+        val full = QuotaSnapshot(fiveHour = QuotaWindow(100.0, fiveHourReset, 18_000))
+
+        val after = Daemon(mapOf("three" to full))
+        val turn = after.chosen(OPUS)
+        val pool = after.accountPool()
+
+        assertNotEquals("three", turn, "the pool spends a login with room before one that reads full")
+        assertEquals("three", pool.text("pinned_label"), "the pin is kept, not dropped")
+        val why = pool.text("pin_refusal").orEmpty()
+        assertTrue("5-hour" in why && "100%" in why, "it names the full window: $why")
+        assertTrue(LocalTimeText().at(fiveHourReset) in why, "it says when the window resets: $why")
+        assertTrue("'$turn'" in why, "it names the login the turns use instead: $why")
+    }
+
+    @Test
+    fun `a pinned login its provider refused says to sign in to it again, not when a retry comes`() {
+        pinned("""{"label":"three"}""")
+        val after = Daemon()
+        refuse(after, block = null)
+
+        val turn = after.chosen(OPUS)
+        val why = after.accountPool().text("pin_refusal").orEmpty()
+
+        assertNotEquals("three", turn)
+        assertTrue("sign in to it again" in why, why)
+        assertFalse("held until" in why, "a refused credential has no reset to wait for: $why")
+        assertTrue("'$turn'" in why, why)
+    }
+
+    @Test
+    fun `a pinned login blocked until its owner accepts new terms names that step`() {
+        pinned("""{"label":"three"}""")
+        val after = Daemon()
+        refuse(after, AccountBlock(OwnerStep.ACCEPT_TERMS, "claude.ai"))
+
+        val turn = after.chosen(OPUS)
+        val why = after.accountPool().text("pin_refusal").orEmpty()
+
+        assertNotEquals("three", turn)
+        assertTrue("owner accepts the provider's updated terms" in why && "claude.ai" in why, why)
+        assertFalse("held until" in why, "no wait clears a block: $why")
+        assertFalse("sign in" in why, "no sign-in clears a block: $why")
+    }
+
+    /** The provider refuses the pinned login on its next turn: a 401, or a block until its owner acts. */
+    private fun refuse(daemon: Daemon, block: AccountBlock?) {
+        val first = daemon.pool.select(SESSION, emptySet(), null, OPUS) as Selection.Chosen
+        assertEquals("three", first.account.account.label, "the pinned login takes the turn")
+        first.account.markCredentialUnavailable(block)
     }
 }
 

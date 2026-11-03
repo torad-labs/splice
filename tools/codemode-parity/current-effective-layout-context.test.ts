@@ -15,6 +15,10 @@ const preserved = original.units.filter(unit => unit.kind === "function_item" &&
   behaviorFiles.includes(unit.file.slice(base.length)));
 
 function fixture(): CurrentInventory { return structuredClone(original); }
+// One file's record changed, the rest shared with the original: the inventory is 20 MB, and a structured clone of it per
+// case took the hash-bound tests past bun's 5 s on a CI runner (main's ci run on 4a822a7a8, Nov 2 2026; review of PR 453).
+const withFile = (file: string, change: Partial<CurrentInventory["files"][number]>): CurrentInventory =>
+  ({ ...original, files: original.files.map(found => found.path === base + file ? { ...found, ...change } : found) });
 function unit(inventory: CurrentInventory, id = invocationId): SourceUnit {
   const result = inventory.units.find(unit => unit.id === id);
   if (!result) throw new Error(`fixture unit is missing: ${id}`);
@@ -54,31 +58,23 @@ describe("exact effectively private Rust layout context", () => {
     expect(effectiveLayoutContextReason(unit(inventory), inventory)).toBeUndefined();
   });
 
-  // Fourteen structured clones of the whole inventory and as many evaluations: 5,016 ms on a CI runner on Nov 2, 2026
-  // (main's ci run on 4a822a7a8), past bun's 5 s default, so the bound is the work's own, not the default.
   test("parent visibility, reexport, signature and conversion evidence stays hash bound", () => {
     for (const file of pinnedFiles) {
-      const inventory = fixture();
-      inventory.files.find(found => found.path === base + file)!.sha256 = "0".repeat(64);
+      const inventory = withFile(file, { sha256: "0".repeat(64) });
       expect(effectiveLayoutContextReason(unit(inventory), inventory)).toBeUndefined();
-      const blob = fixture();
-      blob.files.find(found => found.path === base + file)!.gitBlob = "0".repeat(40);
+      const blob = withFile(file, { gitBlob: "0".repeat(40) });
       expect(effectiveLayoutContextReason(unit(blob), blob)).toBeUndefined();
     }
-  }, 30_000);
+  });
 
-  // Twelve structured clones of the whole inventory and as many evaluations (6 owners x 2): 4,352 ms on the CI run that
-  // timed out the test above, so it carries the same bound (review of PR 453, round 1).
   test("all six concrete owners remain present with their exact identities", () => {
     for (const id of ownerIds) {
-      const missing = fixture();
-      missing.units = missing.units.filter(found => found.id !== id);
+      const missing = { ...original, units: original.units.filter(found => found.id !== id) };
       expect(effectiveLayoutContextReason(unit(missing, fieldId), missing)).toBeUndefined();
-      const changed = fixture();
-      unit(changed, id).sha256 = "0".repeat(64);
+      const changed = { ...original, units: original.units.map(found => found.id === id ? { ...found, sha256: "0".repeat(64) } : found) };
       expect(effectiveLayoutContextReason(unit(changed, fieldId), changed)).toBeUndefined();
     }
-  }, 30_000);
+  });
 
   test("unknown declarations and same-named serialized DTO fields never inherit layout context", () => {
     const wire = original.units.filter(found => found.file === base + "tools/context.rs" &&

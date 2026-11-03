@@ -2620,7 +2620,10 @@ document.addEventListener("click", (e) => {
   }
   render();
 });
-if (TOPIC[location.hash.slice(1)]) { ui.open = location.hash.slice(1); ui.chosen = true; ui.shown = true; }
+// a topic the address names opens only when it is one of this page's own (TOPIC inherits Object.prototype, so a hash of
+// "constructor" passed a plain lookup and the pane drew Object's source; review of PR 450, round 3)
+const opened = location.hash.slice(1);
+if (Object.hasOwn(TOPIC, opened)) { ui.open = opened; ui.chosen = true; ui.shown = true; }
 // before the first read answers, the rail draws its cards: their names and glyphs are this page's own, and each card's
 // state is the ghost of what will land in it (Marcos, Oct 12: a blank page under its title read as broken)
 // EACH CARD'S GHOST IS THE STATE IT WILL HOLD (Oct 27): the pairs of a word, a figure and a bar the card draws once read,

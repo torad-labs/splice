@@ -176,7 +176,7 @@ public const val FIVE_HOUR_CLAIM: String = "five_hour"
 public const val SEVEN_DAY_CLAIM: String = "seven_day"
 
 /** The seven-day window of the OAuth apps, Claude Code among them: past the plain claim, yet no one model's week. */
-public const val SEVEN_DAY_OAUTH_APPS_CLAIM: String = "seven_day_oauth_apps"
+internal const val SEVEN_DAY_OAUTH_APPS_CLAIM: String = "seven_day_oauth_apps"
 
 private const val PERCENT = 100.0
 private const val MILLIS = 1000L

@@ -1,9 +1,28 @@
+# ---
+# MANAGED FILE — do not edit here.
+# Source: torad-labs/github-operator policy/gitleaks/splice.toml
+# Synced by `operator sync`; local edits are overwritten on the next sync.
+# ---
+# Adopted 2026-11-03 from the repo's hand-kept config, every entry unchanged, when the review of
+# github-operator#129 found it on the global regexTarget = "match" the paragraph before [extend]
+# explains. The header that follows is the repo's own.
+#
 # Repo-local gitleaks config (auto-loaded from the scan root). Extends the default
 # ruleset — this file only narrows false-positive classes, never disables rules.
+#
+# Each entry sits on the allowlist of the rule whose findings it silences, never on the global
+# [allowlist]. gitleaks v8.21.2 appends its own default global regexes to that one and tests
+# them against its regexTarget: under "match", the default `(?i)^true|false|null$` silenced any
+# finding whose match, variable name included, held `false` (review of grailseeker-app#32,
+# 2026-11-03). Nothing is appended to a rule's own allowlist, so the defaults keep the secret
+# as their target.
 [extend]
 useDefault = true
 
-[allowlist]
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
 description = "splice fixture shapes that pattern-match generic-api-key but are not credentials"
 # Tested against each finding's MATCH. The default target is the bare secret, which never holds the
 # key name, so the regex below allowed nothing (Oct 2: a ResponsesCodexWireGoldenTest fixture failed the scan).

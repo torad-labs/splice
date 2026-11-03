@@ -35,11 +35,25 @@
 #
 # PREREQUISITES. Without them the mint fails loudly; there is deliberately no
 # fallback to GITHUB_TOKEN, because that fallback IS the silent failure above.
-#   * torad-review grants Contents, Pull requests and Workflows write. Enabling
-#     auto-merge on a PR that changes .github/workflows (every github-actions
-#     bump, every template sync) is refused to an App without `workflows`.
+#   * torad-review grants Contents, Pull requests, Workflows and Issues write.
+#     Enabling auto-merge on a PR that changes .github/workflows (every
+#     github-actions bump, every template sync) is refused to an App without
+#     `workflows`. Issues covers the `ci` label the automated job re-adds after
+#     a push; a mint that asks for a permission the App lacks fails whole.
 #   * REVIEW_APP_ID and REVIEW_APP_PRIVATE_KEY exist as org DEPENDABOT secrets.
 #     A run Dependabot triggers sees Dependabot secrets only, never Actions ones.
+#
+# THE KEY RUNS ONLY WITH THE BASE BRANCH'S ACTIONS. A `pull_request` run takes
+# this file from the PR's merge commit, so a Dependabot PR that re-pins one of
+# its actions would hand REVIEW_APP_PRIVATE_KEY to that unread pin, and the key
+# mints write tokens on every repo the App is installed on. GitHub sends a
+# runner every secret its job names when the job starts, so no step-level `if`
+# can keep it off a runner: the key lives in the arm job alone, which runs only
+# after the pins job, which runs no action, found the file this run loaded to be
+# the base branch's, byte for byte.
+# A Dependabot PR that changes this file waits for a person (review of
+# torad-fleet#288, round 2). It loses little: the operator's sync sets this
+# file's pins in every repo regardless.
 name: automerge
 
 on: pull_request
@@ -47,7 +61,7 @@ on: pull_request
 permissions: {}
 
 # One queue per PR for Dependabot's own pushes, and another for everyone else's,
-# split by the same test that gates the automerge job below. A queue holds one
+# split by the same test that gates the pins job below. A queue holds one
 # pending run, and a newer run replaces it, so with one queue a maintainer's push
 # (a no-op here) could cancel Dependabot's pending run, the one that disarms a
 # major the App armed for an earlier head. Split, Dependabot's newest run always
@@ -155,7 +169,16 @@ jobs:
             grep -q "HTTP 404" "$RUNNER_TEMP/unlabel.err"
           gh api -X POST "repos/$REPO/issues/$PR/labels" -f 'labels[]=ci' > /dev/null
 
-  automerge:
+  # Is the file this run loaded the base branch's, byte for byte? A script and no
+  # action, so nothing the PR re-pinned can steer the answer, and the arm job, the
+  # one that holds the App's key, runs only on its "safe=true". It asks of this
+  # run's own commit (GITHUB_SHA, the merge commit the workflow came from) and of
+  # that commit's first parent, the base tip GitHub merged the PR onto, so a push
+  # that lands meanwhile, or a re-run hours later, gets the answer for the file
+  # that actually runs. The file is named from GITHUB_WORKFLOW_REF
+  # ("owner/repo/<path>@<ref>"). A blob it cannot read, or a base without the
+  # file (a PR that adds it), gets no answer and fails, and the PR is disarmed.
+  pins:
     # Gate on the ACTOR, not the branch name: a branch called
     # `dependabot/anything` can be pushed by anyone, and the jobs below act on it.
     # Only Dependabot's own push to its own PR is decided here. Anyone else's push,
@@ -168,8 +191,50 @@ jobs:
     # it, at a third of ubuntu-latest's rate, on every PR in every repo.
     runs-on: ubuntu-slim
     timeout-minutes: 5
-    # Read only. The App token arms; GITHUB_TOKEN only feeds fetch-metadata, and
-    # the disarm runs in its own job so fetch-metadata never holds write access.
+    permissions:
+      contents: read # this file at this run's commit and at the base it merged onto
+    outputs:
+      safe: ${{ steps.files.outputs.safe }}
+    steps:
+      - name: Read whether this run's own workflow file is the base branch's
+        id: files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          self="${GITHUB_WORKFLOW_REF#"$GITHUB_REPOSITORY/"}"
+          self="${self%%@*}"
+          case "$self" in
+            .github/workflows/?*) ;;
+            *)
+              echo "::error::Could not tell which file this run comes from: '$GITHUB_WORKFLOW_REF'"
+              exit 1
+              ;;
+          esac
+          blob() { gh api "repos/$GITHUB_REPOSITORY/contents/$self?ref=$1" --jq '.sha // empty'; }
+          base="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA" --jq '.parents[0].sha // empty')"
+          if [ -z "$base" ]; then
+            echo "::error::Could not read the base this run's commit $GITHUB_SHA was merged onto."
+            exit 1
+          fi
+          ran="$(blob "$GITHUB_SHA")"
+          ours="$(blob "$base")"
+          if [ -z "$ran" ] || [ -z "$ours" ]; then
+            echo "::error::Could not read $self at this run's commit $GITHUB_SHA and at its base $base."
+            exit 1
+          fi
+          if [ "$ran" = "$ours" ]; then safe=true; else safe=false; fi
+          echo "safe=$safe" >> "$GITHUB_OUTPUT"
+
+  # Classifies Dependabot's head. It holds no key and no write access, because
+  # fetch-metadata may be a pin this very PR wrote: the key runs in the arm job,
+  # and the disarm, which needs write access, in a job of its own. It runs even
+  # when the pins job failed, so that a PR it could not clear is disarmed.
+  automerge:
+    needs: pins
+    if: ${{ !cancelled() && github.event.pull_request.user.login == 'dependabot[bot]' && github.event.sender.login == 'dependabot[bot]' }}
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
     permissions:
       contents: read # fetch-metadata reads the PR's commits
       pull-requests: read # ...and the PR itself
@@ -189,24 +254,26 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # One decision, made once, that every later step and the disarm job read.
+      # One decision, made once, that the arm and disarm jobs read.
       # Classified means fetch-metadata read the first commit and Dependabot wrote
       # the head too, so the entries describe the head this run would arm.
-      #   arm      classified, and every update is a patch or a minor, named
-      #            explicitly. Each entry of
+      #   arm      classified, the pins job cleared the PR, and every update is a
+      #            patch or a minor, named explicitly. Each entry of
       #            updated-dependencies-json is read, not update-type: that is the
       #            highest type among the entries and skips one with no type, such
       #            as a requirement bump with no "from" version (torad#23 read as
       #            semver-minor with two such entries). A Docker digest bump has
       #            no type either, and is not armed.
-      #   disarm   anything else: a major above all, an entry with no type, and a
-      #            push of Dependabot's own that is not classified, which may be a
-      #            major too (see the disarm job below).
+      #   disarm   anything else: a major above all, an entry with no type, a PR
+      #            that changes this workflow or whose files could not be read,
+      #            and a push of Dependabot's own that is not classified, which
+      #            may be a major too (see the disarm job below).
       - name: Decide whether to arm or disarm this head
         id: plan
         env:
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          SAFE: ${{ needs.pins.outputs.safe }}
           READ: ${{ steps.meta.outcome == 'success' }}
           UPDATES: ${{ steps.meta.outputs.updated-dependencies-json }}
           EVERY_PATCH_OR_MINOR: >-
@@ -219,15 +286,26 @@ jobs:
           classified=false
           if [ "$READ" = "true" ] && [ "$author" = "dependabot[bot]" ]; then classified=true; fi
           every="$(jq -r "$EVERY_PATCH_OR_MINOR" <<<"${UPDATES:-null}" 2>/dev/null)" || every=false
-          if [ "$classified" = "true" ] && [ "$every" = "true" ]; then plan=arm; else plan=disarm; fi
+          if [ "$classified" = "true" ] && [ "$every" = "true" ] && [ "$SAFE" = "true" ]; then plan=arm; else plan=disarm; fi
           echo "classified=$classified" >> "$GITHUB_OUTPUT"
           echo "do=$plan" >> "$GITHUB_OUTPUT"
 
+  # The only job a Dependabot run gives the App's key. Its condition is read
+  # before a runner is assigned, and it asks the pins job itself, so even a
+  # classifier some action had steered cannot bring the key to a PR that
+  # changes this file. Every action here is then the base branch's own pin.
+  arm:
+    needs: [pins, automerge]
+    if: ${{ needs.pins.outputs.safe == 'true' && needs.automerge.outputs.do == 'arm' }}
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    # GITHUB_TOKEN does nothing in this job: the App token arms the merge.
+    permissions: {}
+    steps:
       # This run was triggered by Dependabot, so `secrets` holds DEPENDABOT
       # secrets here. Say so at the point of failure instead of letting the mint
       # fail with a bare "app-id is required".
       - name: Require the App credentials as Dependabot secrets
-        if: steps.plan.outputs.do == 'arm'
         env:
           APP_ID: ${{ secrets.REVIEW_APP_ID }}
         run: |
@@ -238,7 +316,6 @@ jobs:
 
       - name: Mint the App token that arms the merge
         id: app
-        if: steps.plan.outputs.do == 'arm'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.REVIEW_APP_ID }}
@@ -254,12 +331,11 @@ jobs:
       # a broken gate. The arm names the head it classified, so a push that lands
       # between the event and the arm is not armed in its place.
       - name: Enable auto-merge for patch and minor updates
-        if: steps.plan.outputs.do == 'arm'
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
+          UPDATE_TYPE: ${{ needs.automerge.outputs.update-type }}
         run: |
           set -euo pipefail
           gh pr merge --auto --squash --match-head-commit "$HEAD_SHA" "$PR_URL"
@@ -281,7 +357,15 @@ jobs:
   # is disarmed on the way back up, not only left unarmed on the way down.
   # A push of Dependabot's own that could not be classified may be such a major
   # too, so it is disarmed the same way, and the job goes red to say
-  # it could not tell.
+  # it could not tell. So is one that changes this workflow, left for a person
+  # with a note, and one the pins job could not read, in red.
+  #
+  # Every Dependabot run ends in exactly one of the arm and this job: it runs
+  # unless the arm's own condition held. It asks the pins job itself, as the arm
+  # does, not only the plan: on a PR that changes this file the classifier runs
+  # the PR's own fetch-metadata, which can hang past its timeout or take its
+  # runner down before the plan writes anything, and an App arm from an earlier
+  # head must still come off (review of github-operator#139, round 1).
   #
   # What is disarmed: an auto-merge automation enabled (this App, or
   # github-actions[bot] in copies from before the App armed), and one a person
@@ -305,8 +389,8 @@ jobs:
   # merged by hand: that stands, with a note, as does a merge with no arm on, or
   # on a person's arm made after this push.
   disarm:
-    needs: automerge
-    if: ${{ !cancelled() && needs.automerge.outputs.do == 'disarm' }}
+    needs: [pins, automerge]
+    if: ${{ !cancelled() && needs.pins.result != 'skipped' && !(needs.pins.result == 'success' && needs.pins.outputs.safe == 'true' && needs.automerge.result == 'success' && needs.automerge.outputs.do == 'arm') }}
     runs-on: ubuntu-slim
     timeout-minutes: 5
     permissions:
@@ -322,6 +406,7 @@ jobs:
           NUMBER: ${{ github.event.pull_request.number }}
           PUSHED_AT: ${{ github.event.pull_request.updated_at }}
           CLASSIFIED: ${{ needs.automerge.outputs.classified }}
+          SAFE: ${{ needs.pins.outputs.safe }}
           UPDATE_TYPE: ${{ needs.automerge.outputs.update-type }}
           ARMED_BY: >-
             query($owner: String!, $name: String!, $number: Int!) {
@@ -392,9 +477,15 @@ jobs:
           if [ "$who" = "person" ]; then
             echo "Auto-merge stays on: a person turned it on for this head, and that decision stands." >> "$GITHUB_STEP_SUMMARY"
           fi
-          if [ "$CLASSIFIED" = "true" ]; then
-            echo "Left for a human: not every update in it is a patch or a minor (the highest fetch-metadata read: ${UPDATE_TYPE:-none})." >> "$GITHUB_STEP_SUMMARY"
-          else
+          if [ "$CLASSIFIED" != "true" ]; then
             echo "::error::Dependabot's own push could not be classified: fetch-metadata could not read it, or its head is not Dependabot's commit, so its update type is unknown. Only a person's auto-merge on this head is left on; a human decides."
             exit 1
+          fi
+          if [ "$SAFE" = "false" ]; then
+            echo "Left for a human: it changes this workflow, so arming it would run the actions it re-pinned with the App's private key, unread (the highest update fetch-metadata read: ${UPDATE_TYPE:-none})." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$SAFE" != "true" ]; then
+            echo "::error::Could not tell whether this PR changes this workflow (see the pins job), so whether it re-pins this workflow's actions is unknown. Only a person's auto-merge on this head is left on; a human decides."
+            exit 1
+          else
+            echo "Left for a human: not every update in it is a patch or a minor (the highest fetch-metadata read: ${UPDATE_TYPE:-none})." >> "$GITHUB_STEP_SUMMARY"
           fi

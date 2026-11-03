@@ -67,6 +67,8 @@ describe("exact effectively private Rust layout context", () => {
     }
   }, 30_000);
 
+  // Twelve structured clones of the whole inventory and as many evaluations (6 owners x 2): 4,352 ms on the CI run that
+  // timed out the test above, so it carries the same bound (review of PR 453, round 1).
   test("all six concrete owners remain present with their exact identities", () => {
     for (const id of ownerIds) {
       const missing = fixture();
@@ -76,7 +78,7 @@ describe("exact effectively private Rust layout context", () => {
       unit(changed, id).sha256 = "0".repeat(64);
       expect(effectiveLayoutContextReason(unit(changed, fieldId), changed)).toBeUndefined();
     }
-  });
+  }, 30_000);
 
   test("unknown declarations and same-named serialized DTO fields never inherit layout context", () => {
     const wire = original.units.filter(found => found.file === base + "tools/context.rs" &&

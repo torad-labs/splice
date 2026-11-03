@@ -63,6 +63,13 @@ dependencies {
     testImplementation(platform("org.junit:junit-bom:${libs.versions.junit.get()}"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    // This module applies ktlint itself (above), so the logback floor splice.kotlin-common puts on every other module's `ktlint`
+    // configuration is repeated here: ktlint-cli 1.8.0 pins logback-classic 1.3.16 (GHSA-jhq6-gfmj-v8fx, GHSA-p47f-322f-whfh,
+    // GHSA-qqpg-mvqg-649v), and this was the one configuration in the build still resolving it (main's dependency graph, Nov 2 2026).
+    constraints {
+        "ktlint"("ch.qos.logback:logback-classic:${libs.versions.logback.get()}")
+        "ktlint"("ch.qos.logback:logback-core:${libs.versions.logback.get()}")
+    }
 }
 
 // The root build wires this unpublished compiler plugin into every Kotlin compile via a stable

@@ -5,9 +5,12 @@
 // A module is selected when a changed path is one of its files, or when it depends on a selected module. The edges are
 // the module law, plus the main project dependencies an unlisted module's build script declares (project-deps.ts):
 // :app is unlisted, and it is a dependent of the modules it names, not of every module. A path scope.json marks `full`
-// selects every module, because every module's build reads it. A push whose every path is `docs` selects none.
+// selects every module, because every module's build reads it. A version catalog (scope.json `catalog`) selects the
+// modules whose build scripts read the entries the push changed, as the caller read them (catalog-scope.ts); given no
+// reading, it selects every module, since what changed in it is unknown. A push whose every path is `docs` selects none.
 
-import { docsRule, fullRule, type ScopeRules, repoScope } from "./scope.ts";
+import type { CatalogImpact } from "./catalog-scope.ts";
+import { catalogRule, docsRule, fullRule, type ScopeRules, repoScope } from "./scope.ts";
 
 /** The module law as a graph: each module to the project modules its main configurations may depend on. */
 export type ModuleGraph = ReadonlyMap<string, readonly string[]>;
@@ -53,6 +56,8 @@ export interface Selection {
   readonly docsOnly: boolean;
   /** Why [full] is set: the path and the rule's reason. Absent otherwise. */
   readonly why?: string;
+  /** The modules a changed catalog entry selected, each with why: the entry and the script of the module that reads it. */
+  readonly reasons?: ReadonlyMap<string, string>;
 }
 
 export interface SelectInput {
@@ -62,6 +67,9 @@ export interface SelectInput {
   readonly graph: ModuleGraph;
   /** The scope rules. The committed file when omitted. */
   readonly scope?: ScopeRules;
+  /** What the changed version catalog makes the push run, read by the caller (catalog-scope.ts). Absent when no catalog changed, or
+   *  when the caller did not read it: then a changed catalog selects every module. */
+  readonly catalog?: CatalogImpact;
 }
 
 /** The modules [changed] affects. */
@@ -70,20 +78,26 @@ export function select(input: SelectInput): Selection {
   const { changed } = input;
   const fullHit = changed.map((path) => ({ path, rule: fullRule(path, scope) })).find((hit) => hit.rule !== undefined);
   const docsOnly = changed.length > 0 && changed.every((path) => docsRule(path, scope) !== undefined);
-  if (fullHit?.rule !== undefined) {
-    return {
-      modules: [...input.modules].sort(),
-      full: true,
-      docsOnly: false,
-      why: `${fullHit.path} ${fullHit.rule.why}`,
-    };
-  }
+  const every = (why: string): Selection => ({ modules: [...input.modules].sort(), full: true, docsOnly: false, why });
+  if (fullHit?.rule !== undefined) return every(`${fullHit.path} ${fullHit.rule.why}`);
   const touched = new Set<string>();
   for (const path of changed) {
     const module = input.moduleOf(path);
     if (module !== undefined) touched.add(module);
   }
-  return { modules: withDependents(touched, input.modules, input.graph), full: false, docsOnly };
+  const catalogHit = changed.map((path) => ({ path, rule: catalogRule(path, scope) })).find((hit) => hit.rule !== undefined);
+  let reasons: ReadonlyMap<string, string> | undefined;
+  if (catalogHit?.rule !== undefined) {
+    const impact = input.catalog;
+    if (impact === undefined) return every(`${catalogHit.path} ${catalogHit.rule.why}, and what changed in it was not read`);
+    if (impact.kind === "full") return every(impact.why);
+    if (impact.kind === "modules") {
+      reasons = impact.modules;
+      for (const module of impact.modules.keys()) touched.add(module);
+    }
+  }
+  const modules = withDependents(touched, input.modules, input.graph);
+  return reasons === undefined ? { modules, full: false, docsOnly } : { modules, full: false, docsOnly, reasons };
 }
 
 /** Whether [path] is prose no law reads, by the committed scope file. */

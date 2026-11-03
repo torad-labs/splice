@@ -1,7 +1,7 @@
-// The pre-push scope rules, read from tools/gate/config/scope.json. A changed path is full, docs, a law input, or
-// none of those. The lists live in the file so a new input of every module's build is a config line, not a regex in
-// this tree. A glob that is only `**` or `*` matches every path; it selects nothing, because a row that named one
-// ran on every push.
+// The pre-push scope rules, read from tools/gate/config/scope.json. A changed path is full, a version catalog, docs, a
+// law input, or none of those. The lists live in the file so a new input of every module's build is a config line, not
+// a regex in this tree. A glob that is only `**` or `*` matches every path; it selects nothing, because a row that
+// named one ran on every push.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -13,9 +13,16 @@ export interface ScopeRule {
   readonly except?: readonly string[];
 }
 
-/** The three classes a changed path can fall into. Anything else is a module's own file. */
+/** A Gradle version catalog: build scripts read its entries under [accessor] (`libs.ktor.server.core` for the `libs`
+ *  catalog), so a changed entry is scoped to the scripts that read it (catalog-scope.ts). */
+export interface CatalogRule extends ScopeRule {
+  readonly accessor: string;
+}
+
+/** The classes a changed path can fall into. Anything else is a module's own file. */
 export interface ScopeRules {
   readonly full: readonly ScopeRule[];
+  readonly catalog: readonly CatalogRule[];
   readonly docs: readonly ScopeRule[];
   readonly laws: readonly ScopeRule[];
 }
@@ -66,10 +73,29 @@ function asExcept(value: unknown, where: string): string[] {
   return value as string[];
 }
 
+/** The catalog rules in [value]: scope rules that each name the accessor build scripts read the catalog under. An absent
+ *  list is no catalog. */
+function asCatalogRules(value: unknown): CatalogRule[] {
+  if (value === undefined) return [];
+  const rules = asRules(value, "catalog");
+  return rules.map((rule, index) => {
+    const accessor = (Array.isArray(value) ? (value[index] as { accessor?: unknown }).accessor : undefined) as unknown;
+    if (typeof accessor !== "string" || !/^[A-Za-z_][\w]*$/.test(accessor)) {
+      throw new Error(`tools/gate/config/scope.json: catalog[${index}] has no accessor (the name build scripts read the catalog under, such as libs)`);
+    }
+    return { ...rule, accessor };
+  });
+}
+
 /** The rules in [text], or the committed scope file when [text] is omitted. */
 export function loadScope(text: string = readFileSync(SCOPE_FILE, "utf8")): ScopeRules {
-  const parsed = JSON.parse(text) as { full?: unknown; docs?: unknown; laws?: unknown };
-  return { full: asRules(parsed.full, "full"), docs: asRules(parsed.docs, "docs"), laws: asRules(parsed.laws, "laws") };
+  const parsed = JSON.parse(text) as { full?: unknown; catalog?: unknown; docs?: unknown; laws?: unknown };
+  return {
+    full: asRules(parsed.full, "full"),
+    catalog: asCatalogRules(parsed.catalog),
+    docs: asRules(parsed.docs, "docs"),
+    laws: asRules(parsed.laws, "laws"),
+  };
 }
 
 let cached: ScopeRules | undefined;
@@ -90,6 +116,11 @@ function ruleFor(rules: readonly ScopeRule[], path: string): ScopeRule | undefin
 /** The full-suite rule [path] matches, or undefined when a change to it does not affect every module. */
 export function fullRule(path: string, scope: ScopeRules = repoScope()): ScopeRule | undefined {
   return ruleFor(scope.full, path);
+}
+
+/** The catalog rule [path] matches, or undefined when the path is not a version catalog. */
+export function catalogRule(path: string, scope: ScopeRules = repoScope()): CatalogRule | undefined {
+  return ruleFor(scope.catalog, path) as CatalogRule | undefined;
 }
 
 /** The docs rule [path] matches, or undefined when the path is not prose no law reads. */

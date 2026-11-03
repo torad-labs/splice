@@ -45,6 +45,11 @@ jobs:
           build-mode: ${{ matrix.build-mode }}
       - name: build Kotlin
         if: matrix.language == 'java-kotlin'
-        run: ./gradlew classes --no-daemon --stacktrace
+        # CodeQL's extractor sees only the sources the compiler compiles in this job. gradle.properties turns the build cache on, and
+        # setup-java's gradle cache carries ~/.gradle/caches, the build cache included, between runs under a key hashed from the gradle
+        # files: a head that changes none of them after one that did restored every compileKotlin FROM-CACHE (34 of 34 on dev head
+        # b53104d18, Nov 2 2026), and the analysis failed with "could not process any code written in Java/Kotlin". So this build
+        # compiles with the build cache off; the dependency cache it restores is still what makes it fast.
+        run: ./gradlew classes --no-daemon --stacktrace --no-build-cache
       - name: analyze
         uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1

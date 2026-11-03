@@ -1,7 +1,6 @@
 {
-  "about": "What a changed path does to the pre-push scope. prepush-scope.ts and test-impact.ts read this file and nothing else decides a full run. full: the path is an input of every module's build, so every module's check runs and the test selection does not narrow. docs: prose no law reads, so no module is checked. laws: a law suite reads the path, so pre-push requests lawSuites and gradle's up-to-date check runs the suite whose inputs changed. A path in none of these selects the module that owns it, plus the modules that depend on it. A ladder row runs when a changed path matches one of its inputs. A pattern that is only ** matches every path and selects nothing.",
+  "about": "What a changed path does to the pre-push scope. prepush-scope.ts and test-impact.ts read this file and nothing else decides a full run. full: the path is an input of every module's build, so every module's check runs and the test selection does not narrow. catalog: the path is a Gradle version catalog, read under the named accessor; the entries the push changes select the modules whose build scripts read them (and their dependents), run those modules' unit suites whole, and run every module when build-logic, the root build or settings reads a changed entry, when no build script reads it, or when the catalog cannot be read. docs: prose no law reads, so no module is checked. laws: a law suite reads the path, so pre-push requests lawSuites and gradle's up-to-date check runs the suite whose inputs changed. A path in none of these selects the module that owns it, plus the modules that depend on it. A ladder row runs when a changed path matches one of its inputs. A pattern that is only ** matches every path and selects nothing.",
   "full": [
-    { "glob": "gradle/libs.versions.toml", "why": "is the version catalog every module resolves" },
     { "glob": "build.gradle.kts", "why": "is the root build logic applied to every project" },
     { "glob": "settings.gradle.kts", "why": "is the project set and plugin management every project is included through" },
     { "glob": "gradle.properties", "why": "sets gradle properties every project reads" },
@@ -14,8 +13,12 @@
     { "glob": "build-logic/src/main/kotlin/splice/modulelaw/**", "why": "is the module-law table every module's configuration reads" },
     { "glob": "build-logic/src/main/kotlin/splice/testing/**", "why": "is the test-task wiring the convention plugin applies to every module" },
     { "glob": "quality/compiler-plugin/src/main/**", "why": "is the compiler plugin every module compiles with" },
+    { "glob": "quality/compiler-plugin/build.gradle.kts", "why": "builds the compiler plugin jar every module compiles with, and its catalog reads count for every module" },
     { "glob": "quality/detekt/detekt.yml", "why": "is the detekt config every kotlin module's check reads" },
     { "glob": ".editorconfig", "why": "is the ktlint rule list every module's check reads" }
+  ],
+  "catalog": [
+    { "glob": "gradle/libs.versions.toml", "accessor": "libs", "why": "is the version catalog, whose changed entries select the modules whose build scripts read them" }
   ],
   "docs": [
     { "glob": "docs/**", "except": ["docs/PROVENANCE.md"], "why": "is prose no law reads" },

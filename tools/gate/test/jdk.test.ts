@@ -9,8 +9,16 @@ import { join } from "node:path";
 import { run } from "../src/commands/run.ts";
 import { javaMajor, jdkRoots, majorFrom, resolveJdk21 } from "../src/lib/jdk.ts";
 
-/** A `java` launcher that reports `version` and, under -XshowSettings, a java.home of `home`. */
+/** A JDK: a `java` launcher that reports `version` and, under -XshowSettings, a java.home of `home`, beside a `javac`. */
 function fakeJava(dir: string, version: string, home: string): string {
+  const bin = fakeJre(dir, version, home);
+  writeFileSync(join(dir, "bin", "javac"), "#!/bin/sh\nexit 0\n");
+  chmodSync(join(dir, "bin", "javac"), 0o755);
+  return bin;
+}
+
+/** A JRE: the same launcher with no `javac` beside it, as Debian's openjdk-21-jre-headless lays it down. */
+function fakeJre(dir: string, version: string, home: string): string {
   mkdirSync(join(dir, "bin"), { recursive: true });
   const bin = join(dir, "bin", "java");
   writeFileSync(
@@ -45,7 +53,9 @@ describe("the JDK 21 resolver", () => {
     const box = mkdtempSync(join(tmpdir(), "gate-jdk-"));
     try {
       fakeJava(join(box, "declared"), "17.0.2", "/seventeen");
+      // the launcher on PATH is a stub (as /usr/bin/java is) whose java.home is the JDK itself
       fakeJava(join(box, "onpath"), "21.0.4", join(box, "reported-home"));
+      fakeJava(join(box, "reported-home"), "21.0.4", join(box, "reported-home"));
       const jdk = resolveJdk21({ JAVA_HOME: join(box, "declared"), PATH: join(box, "onpath", "bin") }, []);
       expect(jdk).toEqual({ javaHome: join(box, "reported-home"), source: "PATH java" });
       // and with JAVA_HOME unset entirely — the OSS-J shape
@@ -107,6 +117,60 @@ describe("the JDK 21 resolver", () => {
         javaHome: join(box, "pinned"),
         source: `installed under ${join(box, "pinned")}`,
       });
+    } finally {
+      rmSync(box, { recursive: true, force: true });
+    }
+  });
+
+  test("a JRE 21, a java with no javac beside it, is not a JDK: it is passed over wherever it sits, and the refusal names it", () => {
+    const box = mkdtempSync(join(tmpdir(), "gate-jdk-"));
+    try {
+      // Debian's jre-headless sorts before a Temurin JDK in the same folder; the JDK is still the answer
+      fakeJre(join(box, "jvm", "java-21-openjdk-amd64"), "21.0.11", "/should/not/be/read");
+      fakeJava(join(box, "jvm", "temurin-21-jdk-amd64"), "21.0.11", "/should/not/be/read");
+      fakeJava(join(box, "onpath"), "25.0.3", "/twenty-five");
+      expect(resolveJdk21({ PATH: join(box, "onpath", "bin") }, [join(box, "jvm")])).toEqual({
+        javaHome: join(box, "jvm", "temurin-21-jdk-amd64"),
+        source: `installed under ${join(box, "jvm")}`,
+      });
+      // the java on PATH is a JRE 21: its home has no javac, so the search goes on to the folders
+      fakeJre(join(box, "jre-on-path"), "21.0.11", join(box, "jre-home"));
+      fakeJre(join(box, "jre-home"), "21.0.11", join(box, "jre-home"));
+      expect(resolveJdk21({ PATH: join(box, "jre-on-path", "bin") }, [join(box, "jvm")])).toEqual({
+        javaHome: join(box, "jvm", "temurin-21-jdk-amd64"),
+        source: `installed under ${join(box, "jvm")}`,
+      });
+      // a machine whose only 21 is a JRE is refused, and told which folder holds a JRE and not a JDK
+      const jdk = resolveJdk21({ PATH: join(box, "onpath", "bin") }, [join(box, "jre-home")]);
+      expect("error" in jdk).toBe(true);
+      const message = (jdk as { error: string }).error;
+      expect(message).toContain("JDK 21 required");
+      expect(message).toContain(`${join(box, "jre-home")} is a JRE`);
+    } finally {
+      rmSync(box, { recursive: true, force: true });
+    }
+  });
+
+  test("the Gradle pin is read as java.util.Properties reads it: continuation lines, `:` and whitespace separators, the last assignment", () => {
+    const box = mkdtempSync(join(tmpdir(), "gate-jdk-"));
+    try {
+      const pinned = (text: string): string[] => {
+        const gradleHome = mkdtempSync(join(box, "gradle-"));
+        writeFileSync(join(gradleHome, "gradle.properties"), text);
+        return jdkRoots({ HOME: join(box, "home"), GRADLE_USER_HOME: gradleHome }).slice(0, 2);
+      };
+      expect(pinned(`org.gradle.java.installations.paths=${join(box, "a")},\\\n    ${join(box, "b")}\n`)).toEqual([join(box, "a"), join(box, "b")]);
+      expect(pinned(`org.gradle.java.installations.paths: ${join(box, "a")}, ${join(box, "b")}\n`)).toEqual([join(box, "a"), join(box, "b")]);
+      expect(pinned(`org.gradle.java.installations.paths ${join(box, "a")},${join(box, "b")}\n`)).toEqual([join(box, "a"), join(box, "b")]);
+      expect(pinned(`org.gradle.java.installations.paths=${join(box, "old")}\n# moved:\norg.gradle.java.installations.paths=${join(box, "a")},${join(box, "b")}\n`)).toEqual([join(box, "a"), join(box, "b")]);
+      expect(pinned(`# org.gradle.java.installations.paths=${join(box, "commented")}\norg.gradle.jvmargs=-Xmx2g\n`)[0]).not.toBe(join(box, "commented"));
+      // a comment line is never continued, whatever it ends in: the pin on the next line is read (Properties' javadoc: "a comment line
+      // cannot be extended in this manner")
+      expect(pinned(`# old pin was C:\\jdks\\\norg.gradle.java.installations.paths=${join(box, "a")},${join(box, "b")}\n`)).toEqual([join(box, "a"), join(box, "b")]);
+      // an even run of backslashes ends the line (the next line is its own key, not the pin's continuation), and the value's escapes
+      // are decoded as Properties decodes them: `\\` is one backslash, `\ ` a space
+      expect(pinned(`org.gradle.java.installations.paths=${join(box, "a")}\\\\\norg.gradle.jvmargs=-Xmx2g\n`)).toEqual([`${join(box, "a")}\\`, join(box, "home", "jdks")]);
+      expect(pinned(`org.gradle.java.installations.paths=${join(box, "a\\ b")},${join(box, "c")}\n`)).toEqual([join(box, "a b"), join(box, "c")]);
     } finally {
       rmSync(box, { recursive: true, force: true });
     }

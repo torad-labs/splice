@@ -19,16 +19,25 @@
 // selected class runs one (a test inherited from a parent, an expression body whose type it cannot resolve). So when no selected
 // class is sure, one sure test class of the module joins the filter, and the module runs whole only when it has none.
 //
-// THE FULL SUITE runs when a changed path is one tools/gate/config/scope.json marks `full`: the version catalog, the root
-// build, and the other inputs every module's build reads. A module's own build script, a shared fixture and a build-logic
+// THE FULL SUITE runs when a changed path is one tools/gate/config/scope.json marks `full`: the root build, the convention
+// plugins, and the other inputs every module's build reads. A module's own build script, a shared fixture and a build-logic
 // file that is not on that list are that module's (or build-logic's) concern, and the reference walk selects their tests.
 // The quality/architecture laws run when the path is on the scope file's `laws` list, which is the scope's call.
+//
+// THE VERSION CATALOG (scope.json `catalog`) is read entry by entry (catalog-scope.ts): a module whose build script reads a
+// changed entry runs whole, since a version bump moves bytes no reference can follow, and so does every module that depends on
+// it (the module graph the caller passes in): the reader's `api` puts the new bytes on its dependents' classpaths too, and a
+// ServiceLoader finds a runtime one, so a dependent's test that uses only the library is broken by the bump while no reference
+// from the reader's classes reaches it. An entry build-logic, the root build or settings reads, or one no script reads, runs
+// the full suite.
 //
 // WHAT THE SELECTION NEVER DOES is widen the run: it names classes inside the module checks the scope already requested
 // (prepush-scope.ts), and `confineTo` drops everything else. Only the full suite reaches past the scope.
 
+import { catalogImpactOf } from "./catalog-scope.ts";
 import { scanSource, type SourceScan, type TestClassDecl } from "./kotlin-source.ts";
 import { docsRule, fullRule, repoScope, type ScopeRules } from "./scope.ts";
+import { type ModuleGraph, withDependents } from "./selector.ts";
 
 /** A gradle module: its project path, as settings.gradle.kts names it, and its directory. */
 export interface ImpactModule {
@@ -48,6 +57,9 @@ export interface PushedTree {
 
 export interface ImpactInput {
   readonly modules: readonly ImpactModule[];
+  /** The module law plus the project edges the unlisted modules' scripts declare (selector.ts, project-deps.ts): a module whose
+   *  script reads a changed catalog entry makes its dependents whole too, since they resolve the new bytes through it. */
+  readonly graph: ModuleGraph;
   /** The paths the push changes since its base commit. */
   readonly changed: readonly string[];
   readonly tree: PushedTree;
@@ -233,6 +245,33 @@ function select(input: ImpactInput, scope: ScopeRules): TestImpact {
   };
   const extraSeeds = new Set<string>();
   let fullWhy: string | undefined;
+
+  // A changed version catalog, entry by entry: the module whose script reads a changed entry resolves new bytes, so it runs whole.
+  const catalog = catalogImpactOf({
+    changed: input.changed,
+    scope,
+    read: (path) => (inTip.has(path) ? tree.read(path) : undefined),
+    before: tree.before,
+    texts: () => buildTexts.map((b) => ({ path: b.path, module: b.module?.path, text: b.text })),
+  });
+  if (catalog?.kind === "full") return { mode: "full", why: catalog.why };
+  if (catalog?.kind === "modules") {
+    const byPath = new Map(input.modules.map((m) => [m.path, m]));
+    for (const [path, why] of catalog.modules) {
+      const module = byPath.get(path);
+      if (module) unsure(module, why, false);
+    }
+    // The reader's dependents resolve the same new bytes, through its `api` or at run time, and the walk from the reader's classes
+    // cannot see a test that uses only the library: on the real tree, with :core declaring api(libs.kotlinx.serialization.json), a
+    // serialization bump narrowed :integrations-dialects-openai-responses past a test that only parses and prints Json (PR 445).
+    const paths = input.modules.map((m) => m.path);
+    for (const [reader, readerWhy] of catalog.modules) {
+      for (const path of withDependents(new Set([reader]), paths, input.graph)) {
+        const module = byPath.get(path);
+        if (module && !catalog.modules.has(path)) unsure(module, `it depends on ${reader}, and ${readerWhy}`, false);
+      }
+    }
+  }
 
   const changedInModules = [...changed].filter((path) => owner(path) !== undefined);
   for (const path of changedInModules) {

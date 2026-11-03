@@ -92,7 +92,7 @@ public class FileProviderHoldStore(
         if (!Files.exists(path)) return null
         return Cancellables.runCatchingCancellable {
             val root = Json.parseToJsonElement(Files.readString(path)).jsonObject
-            val models = (root[MODELS] as? JsonArray).orEmpty().mapNotNull { plan(it as? JsonObject) }
+            val models = (root[MODEL_WEEKS] as? JsonArray).orEmpty().mapNotNull { plan(it as? JsonObject) }
             ProviderHold(JsonScalars.long(root, RESET_AT), plan(root[PLAN] as? JsonObject), models).also { hold ->
                 root[REPLY]?.let { hold.rateLimitReply = Json.decodeFromJsonElement(NativeReply.serializer(), it) }
             }
@@ -115,7 +115,7 @@ public class FileProviderHoldStore(
 
     private fun plan(obj: JsonObject?): PlanLimit? {
         val claim = JsonScalars.str(obj, CLAIM) ?: return null
-        return JsonScalars.long(obj, RESET_AT)?.let { PlanLimit(claim, it, model = JsonScalars.str(obj, MODEL)) }
+        return JsonScalars.long(obj, RESET_AT)?.let { PlanLimit(claim, it, model = JsonScalars.str(obj, WEEK_MODEL)) }
     }
 
     private fun json(hold: ProviderHold): String = JsonWire.string(
@@ -124,24 +124,24 @@ public class FileProviderHoldStore(
             hold.rateLimitReply?.let { put(REPLY, Json.encodeToJsonElement(NativeReply.serializer(), it)) }
             hold.plan?.let { limit -> putJsonObject(PLAN) { planFields(this, limit) } }
             if (hold.models.isNotEmpty()) {
-                putJsonArray(MODELS) { hold.models.forEach { limit -> addJsonObject { planFields(this, limit) } } }
+                putJsonArray(MODEL_WEEKS) { hold.models.forEach { limit -> addJsonObject { planFields(this, limit) } } }
             }
         },
     )
 
-    /** One plan window's fields, the same in [PLAN] and in each of [MODELS]. */
+    /** One plan window's fields, the same in [PLAN] and in each of [MODEL_WEEKS]. */
     private fun planFields(into: JsonObjectBuilder, limit: PlanLimit) {
         into.put(CLAIM, limit.claim)
         into.put(RESET_AT, limit.resetEpochSeconds)
-        limit.model?.let { into.put(MODEL, it) }
+        limit.model?.let { into.put(WEEK_MODEL, it) }
     }
 }
 
 private const val RESET_AT = "reset_at_epoch_seconds"
 private const val PLAN = "plan"
 private const val CLAIM = "claim"
-private const val MODELS = "models"
-private const val MODEL = "model"
+private const val MODEL_WEEKS = "models"
+private const val WEEK_MODEL = "model"
 private const val REPLY = "rate_limit_reply"
 
 // why: SHA-256 has 32 digest bytes and two hexadecimal characters per byte.

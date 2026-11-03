@@ -64,6 +64,16 @@ jobs:
           bun-version: 1.4.2
       - name: install workspaces
         run: bun install --frozen-lockfile
+      # The console's tests (the consoleTests row of tools/gate/config/ladder.json) drive the real pages in Chromium, the
+      # one Playwright bundles for its own version, which the runner does not have. The browser is cached by that version,
+      # read off the lockfile, so a run downloads it once per Playwright bump; the OS libraries it needs come with it.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: playwright-browser
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+      - name: install Playwright's Chromium
+        run: bunx playwright install --with-deps chromium
       # A push to main runs the whole ladder on everything. A pull request runs what its diff against main affects: the
       # same selector as pre-push (tools/gate/src/lib/selector.ts), so a check still runs whenever its inputs change.
       - name: complete repository gate

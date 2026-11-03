@@ -12,7 +12,8 @@ type Workflow = { jobs?: Record<string, { steps?: Step[] }> };
 
 const { repoRoot } = layout();
 const workflows = join(repoRoot, ".github/workflows");
-const runsGate = (step: Step) => /\b(npm run gate|bun tools\/gate run)\b/.test(step.run ?? "");
+// the whole gate, not npm run gate:rules or gate:audit, which run one leg and launch no browser (round 2's suggestion)
+const runsGate = (step: Step) => /(?:^|\s)(?:npm run gate|bun tools\/gate run)(?=\s|$)/m.test(step.run ?? "");
 const installsChromium = (step: Step) => /\bplaywright install\b.*\bchromium\b/.test(step.run ?? "");
 
 const jobs = readdirSync(workflows)

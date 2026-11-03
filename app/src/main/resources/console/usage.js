@@ -583,9 +583,9 @@ const headEnd = (heads, out) => (heads.length || out
 function goneCard(g, mx) {
   const label = acctLabel(g.head, g.label, g.name), key = acctKeyOf(g.head, g.label);
   const mine = D.all ? [D.all.accounts.get(key)].filter(Boolean) : [], s = sumOf(mine);
-  const door = mine.length ? ` data-act="pick" data-d="account" data-v="${esc(key)}" role="button" tabindex="0" aria-label="${esc(`${plain(label)}: where its requests went`)}"` : "";
+  const door = mine.length ? ` data-act="pick" data-d="account" data-v="${esc(key)}" role="button" tabindex="0" aria-label="${esc(`${wordsIn(label)}: where its requests went`)}"` : "";
   const pk = pickedAccount(), picked = Boolean(pk && pk.head === g.head && pk.labels.includes(g.label));
-  return { prov: providerOfHead(g.head), kind: "plan", gone: true, name: plain(label), used: -1, s, heads: new Set([g.head]), rows: 0, h: cardH("plan", 0, true, 0, s),
+  return { prov: providerOfHead(g.head), kind: "plan", gone: true, name: wordsIn(label), used: -1, s, heads: new Set([g.head]), rows: 0, h: cardH("plan", 0, true, 0, s),
     make: (withChips) => `<article class="card pcard out gone${picked ? " picked" : ""}" data-a="gone-${esc(key)}" style="--c:${colorOf(providerOfHead(g.head))}"${door}>`
       + topRow(leadFig(s, [], { out: true }), headEnd(withChips ? [g.head] : [], false))
       + `<header><span class="nm">${label}</span></header>`
@@ -887,7 +887,7 @@ function idleOf(by, active) {
     const book = agentBook();
     for (const a of book.values()) if (a.idle) idle(a.sid, esc(a.text), { sub: esc(a.sub) });
   }
-  return out.sort((a, b) => plain(a.label).localeCompare(plain(b.label)));
+  return out.sort((a, b) => wordsIn(a.label).localeCompare(wordsIn(b.label)));
 }
 const niceTop = (v) => { const p = 10 ** Math.floor(Math.log10(Math.max(v, 1e-9))), m = v / p; return ([1, 1.5, 2, 3, 4, 5, 6, 8, 10].find((x) => m <= x) ?? 10) * p; };
 const headsOrder = () => S.heads.map((h) => h.key);
@@ -1112,7 +1112,7 @@ function byHtml() {
   const sent = groupsOf(ui.by).sort((a, b) => rankBy(b) - rankBy(a) || b.s.requests - a.s.requests || tokensOf(b.s) - tokensOf(a.s));
   const every = [...sent, ...idleOf(ui.by, sent)];
   const find = ui.find.trim().toLowerCase();
-  const list = find ? every.filter((e) => plain(e.label).toLowerCase().includes(find) || plain(e.sub).toLowerCase().includes(find)) : every;
+  const list = find ? every.filter((e) => wordsIn(e.label).toLowerCase().includes(find) || wordsIn(e.sub).toLowerCase().includes(find)) : every;
   const live = list.filter((e) => !e.idle);
   // Rows that ran on the same commands stand together under one line of chips, said once, whatever the ranking: the groups
   // stand in the order of their best row and the rows inside each keep their rank. A row with no neighbour on its commands

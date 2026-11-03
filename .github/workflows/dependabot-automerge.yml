@@ -123,6 +123,7 @@ jobs:
           permission-contents: write # the merge itself
           permission-pull-requests: write # enabling auto-merge
           permission-workflows: write # PRs that change .github/workflows
+          permission-issues: write # the `ci` label below
 
       - name: Arm auto-merge
         env:
@@ -132,6 +133,25 @@ jobs:
           set -euo pipefail
           gh pr merge --auto --squash "$PR_URL"
           echo "Auto-merge armed; GitHub merges once required checks pass." >> "$GITHUB_STEP_SUMMARY"
+
+      # Private repos run CI when a PR opens and when a label is added, never on
+      # a push (Marcos, 2026-11-02). A person re-adds `ci` when ready to merge;
+      # nobody does for an automated PR, so a push to one (the template sync
+      # onto its open PR) would leave the armed merge without its required
+      # checks. The App adds the label: GitHub starts no workflow for a label
+      # GITHUB_TOKEN added. The push's event already carries its head, so the
+      # label runs CI on the pushed commit.
+      - name: Run CI on the pushed commit
+        if: github.event.action == 'synchronize'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh api -X DELETE "repos/$REPO/issues/$PR/labels/ci" > /dev/null 2> "$RUNNER_TEMP/unlabel.err" ||
+            grep -q "HTTP 404" "$RUNNER_TEMP/unlabel.err"
+          gh api -X POST "repos/$REPO/issues/$PR/labels" -f 'labels[]=ci' > /dev/null
 
   automerge:
     # Gate on the ACTOR, not the branch name: a branch called
@@ -243,6 +263,12 @@ jobs:
           gh pr merge --auto --squash --match-head-commit "$HEAD_SHA" "$PR_URL"
           echo "Auto-merge armed (${UPDATE_TYPE}); GitHub merges once required checks pass." \
             >> "$GITHUB_STEP_SUMMARY"
+      # No `ci` label here after a rebase, unlike the automated job. CI runs
+      # with the privileges of whoever caused the event: Dependabot's own run
+      # read-only with Dependabot secrets, but a label the App adds would run
+      # Dependabot's dependency code with the App's. A rebased Dependabot PR
+      # waits for a person to re-add `ci` (fleet-prs: required check missing
+      # on the head).
 
   # A PR's update-type is not fixed. When Dependabot rebases a stale PR it
   # re-resolves to whatever is latest NOW, so one armed as a patch can come

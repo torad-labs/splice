@@ -169,8 +169,10 @@ class CollectCompactionRetryTest {
                 "\"type\":\"message\"" in answer,
                 "a collect retry reads ONE messages body, not SSE frames: $answer",
             )
+            // The answer reaches the client before the serving side's log line lands (the coverage workflow read the log
+            // right after the body twice on Nov 2, 2026 and found no line yet), so the wait is on the line itself.
             assertTrue(
-                held.lines.any { "collect compaction answer served from its hold" in it },
+                waitFor(20_000) { held.lines.any { "collect compaction answer served from its hold" in it } },
                 "the serving side names its source: ${held.lines.joinToString("")}",
             )
         } finally {

@@ -148,8 +148,12 @@ class NonStreamHoldsThroughHeadsTest {
             }
 
             first.hangUp()
+            // The leave wakes the remaining turn to recompute its schedule, and it parks on the clock again a few hops
+            // later. A clock moved in between puts its probe past the move, so the wait is on what the move needs: the
+            // first turn gone from the listing AND the remaining one parked (main's ladder on 47984fb54, Nov 2 2026,
+            // timed out here on attempt 1 and passed on attempt 3).
             withContext(Dispatchers.Default) {
-                withTimeout(10_000) { while (head.heldTurns().size != 1) delay(5) }
+                withTimeout(10_000) { while (head.heldTurns().size != 1 || time.parkedNow() != 1) delay(5) }
             }
             time.advanceBy(60.seconds)
             withContext(Dispatchers.Default) {

@@ -1634,7 +1634,7 @@ function memberWord(tm, slot) {
   if (held) return { word: `at limit · back ${backWord(new Date(held.back))}`, run: true, limit: true };
   const L = stallLook(slot, x) ?? stateOf(x);
   // a state word may carry its mark (the lock before At limit): the band says the words alone
-  return { word: String(L.word).replace(/<[^>]*>/g, "").toLowerCase(), run: true, limit: L.cls === "stalled" };
+  return { word: textOf(L.word).toLowerCase(), run: true, limit: L.cls === "stalled" };
 }
 /** THE TEAM'S WORK AND WHO DID IT. A request count is the one hero of its section, a door to its requests where one session
  *  holds them all, turning limit red only while a member is held at its plan limit; the tokens stand one step under it with

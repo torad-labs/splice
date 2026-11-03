@@ -19,8 +19,12 @@ const PILOT = (() => {
   const HEADING = "h1, h2, h3, h4, h5, h6, legend, caption, [role=heading]";
   const SECRET = /key|token|secret|passw|credential/i;
   // A line made only of figures and their units ("52k / 200k", "3s ago", "1m 12s"): it changes as time passes, not
-  // because of an act, so it is not reported as new words.
-  const TICKING = /^(?:[\s\d.,:%×+\-−–/()]|ms|s|m|h|d|k|x|kb|mb|gb|tok|tokens|ago|left|in|of)*$/i;
+  // because of an act, so it is not reported as new words. Read as words between figures and punctuation, each a unit or
+  // nothing: one regex over the whole line with overlapping alternatives (`m` then `s`, or `ms`) backtracked exponentially
+  // on a line of many repeated units (CodeQL js/redos, alert 31, Nov 2 2026).
+  const TICK_SPLIT = /[\s\d.,:%×+\-−–/()]+/;
+  const TICK_WORD = new Set(["ms", "s", "m", "h", "d", "k", "x", "kb", "mb", "gb", "tok", "tokens", "ago", "left", "in", "of"]);
+  const ticking = (line) => line.split(TICK_SPLIT).every((word) => word === "" || TICK_WORD.has(word.toLowerCase()));
   const READ_CAP = 12000;
   const SETTLE_MS = 4000;
   const refs = new Map();
@@ -335,7 +339,7 @@ const PILOT = (() => {
   // The words showing outside the composer, line by line, without lines that only tick (a clock, a count, "3s ago").
   function words() {
     const roots = modal() ? [modal()] : [...document.body.children].filter((el) => !el.matches(`${OWN}, script, style, template`));
-    return new Set(roots.flatMap((el) => (el.innerText || "").split("\n")).map(squash).filter((l) => l.length > 3 && !TICKING.test(l)));
+    return new Set(roots.flatMap((el) => (el.innerText || "").split("\n")).map(squash).filter((l) => l.length > 3 && !ticking(l)));
   }
   const moment = () => ({ main: mainNode(), file: here().file, modal: modal(), said: alerts(), items: inventory(), words: words() });
   // An act settles once the calls it started are answered and the page has drawn what they said, within a bound.

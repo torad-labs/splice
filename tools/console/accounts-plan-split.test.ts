@@ -18,6 +18,10 @@ const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const HOUR = 3_600_000;
 const dayStart = Math.floor(Date.now() / (24 * HOUR)) * 24 * HOUR;
 const noon = dayStart + 12 * HOUR;
+// The fixture's hours are fixed hours of today's UTC day, and Day draws an hour after the browser's now as empty: each page
+// reads its clock at 18:00 UTC of that day, so every hour the fixture names has gone by whenever the row runs (PR 456's
+// review, round 2: run between 00:00 and 13:00 UTC, the unread hour was still ahead and drew nothing).
+const PAGE_NOW = dayStart + 18 * HOUR;
 const split = (turns: number, cost: number, unpriced: number, plan: number, planUsd: number) =>
   ({ hour: noon, turns, cost_usd: cost, unpriced_turns: unpriced, plan_turns: plan, plan_value_usd: planUsd, plan_unpriced_turns: 0 });
 const before = (turns: number, cost: number) => ({ hour: noon + HOUR, turns, cost_usd: cost, unpriced_turns: 0, plan_turns: null, plan_value_usd: null, plan_unpriced_turns: null });
@@ -64,6 +68,7 @@ afterAll(async () => {
 async function dayOf(command: string, width = 1440) {
   const page = await browser.newPage({ viewport: { width, height: 1000 } });
   try {
+    await page.clock.setFixedTime(PAGE_NOW);
     await page.goto(`http://127.0.0.1:${server.port}/accounts.html`);
     const meter = page.locator(`[data-meter="${command}"]`);
     await expect(meter).toBeVisible({ timeout: 15_000 });
@@ -113,6 +118,7 @@ test("on a mixed command an hour from before the split is counted as earlier and
 test("a budget set before on a command all on a plan keeps its button, so he can see it and remove it", async () => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   try {
+    await page.clock.setFixedTime(PAGE_NOW);
     await page.goto(`http://127.0.0.1:${server.port}/accounts.html`);
     const meter = page.locator(`[data-meter="plan-budget"]`);
     await expect(meter).toContainText("Budget $20", { timeout: 15_000 });
@@ -141,6 +147,7 @@ test("a wrapped split Day keeps each phrase whole and joins none with a separato
   for (const width of [3828, 1440, 1280, 1024]) {
     const page = await browser.newPage({ viewport: { width, height: 1000 } });
     try {
+      await page.clock.setFixedTime(PAGE_NOW);
       await page.goto(`http://127.0.0.1:${server.port}/accounts.html`);
       await expect(page.locator(`[data-meter="mixed-before"]`)).toContainText("earlier, unsorted", { timeout: 15_000 });
       const seen = await page.evaluate(() => [...document.querySelectorAll(".meter.day")].flatMap((strip) => {

@@ -35,18 +35,21 @@ test("the console folder holds pages to load", () => {
   expect(pages.length).toBeGreaterThan(0);
 });
 
-// AN ADDRESS NAMES ONLY THE PAGE'S OWN TOPICS. Settings' topic table inherits Object.prototype, so settings.html#constructor
-// once passed a plain lookup and opened a pane that drew Object's native source; the gate reads the table's own keys
-// (review of PR 450, round 3, and PR 453, round 1, which asked for the page to hold it in place).
-test("settings.html opens no pane for an address that names none of its topics", async () => {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
-  try {
-    await page.goto(`http://127.0.0.1:${server.port}/settings.html#constructor`, { waitUntil: "load" });
-    expect(await page.locator("body").innerText()).not.toContain("native code");
-  } finally {
-    await page.close();
-  }
-}, 30_000);
+// AN ADDRESS NAMES ONLY THE PAGE'S OWN TOPICS. Settings' topic table inherits Object.prototype, so an address naming an
+// inherited key once passed a plain lookup and opened a pane that drew what the lookup found: Object's native source for
+// #constructor and #toString, "[object Object]" for #__proto__. The gate reads the table's own keys (review of PR 450,
+// round 3; PR 453, rounds 1 and 2, which asked for the page to hold the whole class in place).
+for (const [hash, drawn] of [["constructor", "native code"], ["toString", "native code"], ["__proto__", "[object Object]"]] as const) {
+  test(`settings.html#${hash} opens no pane`, async () => {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    try {
+      await page.goto(`http://127.0.0.1:${server.port}/settings.html#${hash}`, { waitUntil: "load" });
+      expect(await page.locator("body").innerText()).not.toContain(drawn);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+}
 
 for (const name of pages) {
   test(`${name} loads every script and runs it without an error`, async () => {

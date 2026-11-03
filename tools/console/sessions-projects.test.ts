@@ -72,7 +72,8 @@ const THREE = [
 test("groups come in the order of their most urgent card, with No project last", async () => {
   const p = await page(THREE);
   try {
-    expect(await names(p)).toEqual(["temple", "website", "No project"]);
+    // the list stands before its groups are drawn, so the read waits for them (a CI runner read it at once, Nov 3, 2026)
+    await expect.poll(() => names(p), { timeout: 15_000 }).toEqual(["temple", "website", "No project"]);
   } finally {
     await p.close();
   }

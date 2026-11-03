@@ -64,6 +64,24 @@ jobs:
           bun-version: 1.4.2
       - name: install workspaces
         run: bun install --frozen-lockfile
+      # The console's tests (the consoleTests row of tools/gate/config/ladder.json) drive the real pages in Chromium, the
+      # one Playwright bundles for its own version, which the runner does not have. The browser is cached by that version,
+      # read off the installed package, so a run downloads it once per Playwright bump. A cached browser still needs its OS
+      # libraries, which the runner image does not keep.
+      - name: read Playwright's version
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: playwright-browser
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - name: install Playwright's Chromium
+        if: ${{ steps.playwright-browser.outputs.cache-hit != 'true' }}
+        run: bunx playwright install --with-deps chromium
+      - name: install Chromium's OS libraries
+        if: ${{ steps.playwright-browser.outputs.cache-hit == 'true' }}
+        run: bunx playwright install-deps chromium
       # A push to main runs the whole ladder on everything. A pull request runs what its diff against main affects: the
       # same selector as pre-push (tools/gate/src/lib/selector.ts), so a check still runs whenever its inputs change.
       - name: complete repository gate

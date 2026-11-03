@@ -12,6 +12,10 @@ const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const HOUR = 3_600_000;
 const dayStart = Math.floor(Date.now() / (24 * HOUR)) * 24 * HOUR; // a UTC midnight: whole hours, so no opening half-hour
 const noon = dayStart + 12 * HOUR;
+// The fixture's hours are fixed hours of today's UTC day, and Day draws an hour after the browser's now as empty: each page
+// reads its clock at 18:00 UTC of that day, so every hour the fixture names has gone by whenever the row runs (PR 456's
+// review, round 2: run between 00:00 and 13:00 UTC, the unread hour was still ahead and drew nothing).
+const PAGE_NOW = dayStart + 18 * HOUR;
 const commands = ["torn-day", "clean-day", "plan-day", "plan-torn", "warming", "big-day"];
 // the daemon says a command is still being read for this many answers, then answers with its day (wire shape of EconomicsPayloads)
 const READING_ANSWERS = 2;
@@ -69,6 +73,7 @@ afterAll(async () => {
 async function dayOf(command: string) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   try {
+    await page.clock.setFixedTime(PAGE_NOW);
     await page.goto(`http://127.0.0.1:${server.port}/accounts.html`);
     const meter = page.locator(`[data-meter="${command}"]`);
     await expect(meter).toBeVisible({ timeout: 15_000 });
@@ -84,6 +89,7 @@ async function dayOf(command: string) {
 async function tornDay(command: string) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   try {
+    await page.clock.setFixedTime(PAGE_NOW);
     await page.goto(`http://127.0.0.1:${server.port}/accounts.html`);
     const meter = page.locator(`[data-meter="${command}"]`);
     await expect(meter).toBeVisible({ timeout: 15_000 });
@@ -136,6 +142,7 @@ test("a day whose hours were all read shows its figure", async () => {
 test("at 3828 the requests-on-your-plan line under a Day reading stays clear of the Set budget button", async () => {
   const page = await browser.newPage({ viewport: { width: 3828, height: 1889 } });
   try {
+    await page.clock.setFixedTime(PAGE_NOW);
     await page.goto(`http://127.0.0.1:${server.port}/accounts.html`);
     const meter = page.locator(`[data-meter="plan-day"]`);
     await expect(meter).toBeVisible({ timeout: 15_000 });
@@ -164,6 +171,7 @@ test("a command the daemon is still reading stands as its day's ghost, never Rea
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const seen: { text: string; busy: boolean; ghosts: number }[] = [];
   try {
+    await page.clock.setFixedTime(PAGE_NOW);
     await page.goto(`http://127.0.0.1:${server.port}/accounts.html`);
     const meter = page.locator(`[data-meter="warming"]`);
     await expect(meter).toBeVisible({ timeout: 15_000 });
@@ -196,6 +204,7 @@ for (const width of [3828, 1440]) {
   test(`at ${width} a Day with a figure and a count keeps each phrase on one line, inside the card`, async () => {
     const page = await browser.newPage({ viewport: { width, height: 1000 } });
     try {
+      await page.clock.setFixedTime(PAGE_NOW);
       await page.goto(`http://127.0.0.1:${server.port}/accounts.html`);
       const meter = page.locator(`[data-meter="big-day"]`);
       await expect(meter).toContainText("≈$1,512", { timeout: 15_000 });

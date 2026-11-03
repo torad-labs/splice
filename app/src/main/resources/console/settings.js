@@ -2640,13 +2640,16 @@ const RAIL_GHOST = {
   data: () => `<div class="rmini"><p class="rail-big" aria-hidden="true"><b>${GHOST.fig(4.6)}</b>kept</p><span class="rsplit">${GHOST.track()}</span></div>`,
   version: () => `<div class="rail-socks" style="--n:2" aria-hidden="true">${[1, 2].map((i) => `<span class="rail-sk"><i class="rail-sock">${i}</i>${GHOST.bar(3)}</span>`).join("")}</div>`,
 };
-const railGhost = (id) => (RAIL_GHOST[id] ?? RAIL_GHOST.reasoning)();
+// A ghost is looked up by a topic id the page was opened with, so the table is read by its own keys only: a name it does
+// not hold, `constructor` or `__proto__` among them, draws the busy shape, never a method of Object (CodeQL alert 29).
+const ownGhost = (table, id, fallback) => (Object.hasOwn(table, id) ? table[id] : fallback);
+const railGhost = (id) => ownGhost(RAIL_GHOST, id, RAIL_GHOST.reasoning)();
 // the rail AND the open topic beside it, both as the shapes that will land: a rail alone left two thirds of the page
 // empty for as long as the first read takes, and the pane then arrived into that hole (the slow door, Oct 26)
 const ghostHtml = () => `<div class="jobs${ui.shown ? " open" : ""}" style="${GHOST.pin(`jobs:${ui.open}`)}"><div class="list rail plain" aria-busy="true" aria-label="Reading settings">${TOPICS.map((x) => `<article class="card job ghosted" aria-hidden="true" aria-current="${ui.open === x.id}">`
   + `<div class="top"><span class="jglyph">${SV[x.id]}</span><span class="jname">${esc(x.name)}</span></div><div class="jstate"><div class="jdraw">${railGhost(x.id)}</div></div></article>`).join("")}</div>`
   + `<div class="pane" aria-hidden="true"><header><span class="jglyph">${SV[ui.open] ?? SV.busy}</span><div class="who"><div class="top"><span class="name">${esc(TOPIC[ui.open]?.name ?? "")}</span></div></div></header>`
-  + `<div class="body kn plate">${(PANE_GHOST[ui.open] ?? PANE_GHOST.busy)()}</div></div></div>`;
+  + `<div class="body kn plate">${ownGhost(PANE_GHOST, ui.open, PANE_GHOST.busy)()}</div></div></div>`;
 // EVERY TOPIC ARRIVES IN ITS OWN SHAPE (Oct 26): opened from a link, a topic draws its sections under their real
 // kickers, its settings under their own names, and the figures, bars, rows and cards they will hold as ghosts, so
 // nothing moves when the reads land.

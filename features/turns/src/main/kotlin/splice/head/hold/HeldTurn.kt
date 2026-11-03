@@ -24,6 +24,12 @@ import splice.upstream.retry.MAX_HOLD_MS
 import splice.upstream.retry.WAKE_STAGGER_MS
 import splice.upstream.retry.WAKE_STAGGER_STEP_MS
 
+/** Lists a turn as held where the world reads it (the console's live turns), called once the turn is among its
+ *  login's holds and a try-now can reach it. */
+internal fun interface HoldListing {
+    fun list()
+}
+
 /** One turn's place among its login's held turns, and the wait that holds it. Lives as long as the turn, so a turn
  *  held again after a probe keeps its place and its seven days. */
 internal class HeldTurn(
@@ -91,13 +97,21 @@ internal class HeldTurn(
     }
 
     /** Holds as [ask] says until the hold ends; [wallEndMs] is when the session's wall, less its margin, falls on the
-     *  wall clock, and [lost] completes when the client leaves a turn that outlives it (a compaction). */
-    suspend fun hold(ask: HoldAsk, wallEndMs: Long, lost: Deferred<Unit>): HoldEnd {
+     *  wall clock, and [lost] completes when the client leaves a turn that outlives it (a compaction). [listing] lists
+     *  the turn as held once it is among its login's holds, which is when a try-now can reach it: listed before that,
+     *  the console shows a held turn that try-now answers "nothing held". */
+    suspend fun hold(
+        ask: HoldAsk,
+        wallEndMs: Long,
+        lost: Deferred<Unit>,
+        listing: HoldListing = HoldListing {},
+    ): HoldEnd {
         if (login != ask.login) registry.leave(this)
         login = ask.login
         heldSinceMs = ask.heldSinceMs
         cause = ask.cause
         registry.join(this)
+        listing.list()
         try {
             return waitOut(ask, wallEndMs, lost)
         } finally {

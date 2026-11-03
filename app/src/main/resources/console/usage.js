@@ -1073,7 +1073,6 @@ function scopeHtml() {
 }
 
 // ---------- where it went: one line per thing, its tokens, requests and cost drawn on shared scales ----------
-const plain = (html) => String(html).replace(/<[^>]*>/g, "");
 /** The cost cell: a key's money solid, a plan's value at API prices hatched, each on a line of its own on one dollar
  *  scale, so a row that holds both draws both and never adds them; the reason in words where splice has no price at
  *  all. The two marks and the estimate are named once, in the band's head. */

@@ -281,7 +281,12 @@ internal class HoldsThroughHeadsTest : HoldRouteFixtures() {
             )
 
             val stream = head.client.open(launched())
-            eventually { stream.soFar().notices.isNotEmpty() }
+            // The hold writes the client's notice before it lists the turn as held (TurnHold.hold: the wait line, then the
+            // state), so the wait is on what the console reads, not on the notice: on a loaded CI runner the notice alone had
+            // landed when the console was read, and it listed the turn as running (PR #445's ladder, Nov 2 2026). The console
+            // lists the turn as held once it is among its login's holds (HeldTurn.hold), so a try-now on the console's word
+            // reaches it.
+            eventually { "\"held\":true" in console.live("chat").body }
             time.advanceBy(7.minutes)
             assertTrue("\"held\":true" in console.live("chat").body, "the console lists the turn as held")
             assertEquals(HttpStatusCode.OK, console.tryNow("chat", null).status, "one login held")

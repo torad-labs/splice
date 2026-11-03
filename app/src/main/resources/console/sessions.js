@@ -502,7 +502,7 @@ function hi(text) {
 }
 /** THE LAMP NAMES ITS STATE (round 2's bug list): a working row and a stalled one differed only by a drawing, which
  *  says nothing without sight. Its name is the word the drawing stands for. */
-const lampName = (L) => L.name ?? String(L.word ?? "").replace(/<[^>]*>/g, "").split(" · ")[0].trim();
+const lampName = (L) => L.name ?? wordsIn(L.word).split(" · ")[0].trim();
 const lampHtml = (L) => `<span class="lamp ${L.cls}" role="img" aria-label="${esc(lampName(L))}" title="${esc(lampName(L))}">${L.lamp}</span>`;
 // a worktree whose folder is an id names nothing he would know it by: it reads as a worktree, its folder its title
 const wtWord = (wt) => (ID_PART.test(wt) ? "Worktree" : wt);

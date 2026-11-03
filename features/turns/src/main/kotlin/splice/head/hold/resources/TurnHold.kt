@@ -33,10 +33,11 @@ internal class TurnHold(
         val wallEndMs = if (left == Long.MAX_VALUE) Long.MAX_VALUE else now + left
         surfaces.slot.yieldPermit()
         surfaces.watchdog.holdStarted()
-        surfaces.liveTurns.state(surfaces.slot, heldState(ask))
         surfaces.lease?.state(HeapOwnerState.QUEUED)
         val end = try {
-            held.hold(ask, wallEndMs, surfaces.lost)
+            // The console lists the turn as held once a try-now can reach it, from among its login's holds; listed
+            // before that, a try-now sent on the console's word found nothing held (PR 450's review, round 2).
+            held.hold(ask, wallEndMs, surfaces.lost) { surfaces.liveTurns.state(surfaces.slot, heldState(ask)) }
         } finally {
             surfaces.lease?.state(HeapOwnerState.ACTIVE)
             surfaces.terminal.holding(false)

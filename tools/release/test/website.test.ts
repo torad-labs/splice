@@ -259,7 +259,8 @@ describe("splice.torad.ai's website", () => {
   test("the page names the Claude Code version splice is tested with, and draws a newer one as newer", () => {
     const tested = /TESTED_CLAUDE_CODE: String = "([^"]+)"/.exec(readFileSync(join(REPO, "core/src/main/kotlin/splice/core/Versions.kt"), "utf8"))?.[1];
     expect(tested).toBeDefined();
-    const esc = (s: string) => s.replace(/\./g, "\\.");
+    // every regex metacharacter, not only the dot: a version holds only digits and dots, and the escape says so for any string
+    const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const text = words(page);
     const said = new RegExp(`Claude Code (\\d+\\.\\d+\\.\\d+) is newer than the version splice \\d+\\.\\d+\\.\\d+ was tested with \\(${esc(tested!)}\\)`).exec(text);
     expect(said).not.toBeNull();

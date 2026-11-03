@@ -287,7 +287,10 @@ internal class HoldsThroughHeadsTest : HoldRouteFixtures() {
             eventually { "\"held\":true" in console.live("chat").body }
             time.advanceBy(7.minutes)
             assertTrue("\"held\":true" in console.live("chat").body, "the console lists the turn as held")
-            assertEquals(HttpStatusCode.OK, console.tryNow("chat", null).status, "one login held")
+            // Try-now reaches the turn once it has joined its login's holds (HeldTurn.hold: registry.join), a step after the
+            // console lists it as held. A try-now that finds nothing held probes nothing, so asking again is safe; the probe's
+            // time below still shows it went at once, since eventually waits in real time and moves no virtual clock.
+            eventually { console.tryNow("chat", null).status == HttpStatusCode.OK }
             runClock(500.milliseconds, atMost = 20.minutes) { stream.finished }
 
             assertEquals("tried now", stream.finish().text, stream.finish().describe())

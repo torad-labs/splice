@@ -35,6 +35,19 @@ test("the console folder holds pages to load", () => {
   expect(pages.length).toBeGreaterThan(0);
 });
 
+// AN ADDRESS NAMES ONLY THE PAGE'S OWN TOPICS. Settings' topic table inherits Object.prototype, so settings.html#constructor
+// once passed a plain lookup and opened a pane that drew Object's native source; the gate reads the table's own keys
+// (review of PR 450, round 3, and PR 453, round 1, which asked for the page to hold it in place).
+test("settings.html opens no pane for an address that names none of its topics", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  try {
+    await page.goto(`http://127.0.0.1:${server.port}/settings.html#constructor`, { waitUntil: "load" });
+    expect(await page.locator("body").innerText()).not.toContain("native code");
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
 for (const name of pages) {
   test(`${name} loads every script and runs it without an error`, async () => {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });

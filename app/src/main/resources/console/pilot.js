@@ -23,9 +23,10 @@ const PILOT = (() => {
   // or nothing: one regex over the whole line with overlapping alternatives (`m` then `s`, or `ms`) backtracked
   // exponentially on a line of many repeated units (CodeQL js/redos, alert 31, Nov 2 2026). The units are the ones the
   // console draws, spelled whole: DRAW.ms and spanWord say "min" and "w", which the regex had spelled from "m" and "in"
-  // (review of PR 450, round 2: a Sessions row ticking from "12 min" to "13 min" read as new words).
+  // (review of PR 450, round 2: a Sessions row ticking from "12 min" to "13 min" read as new words), and DRAW.big says
+  // "B" for billions beside "K" and "M" (round 3).
   const TICK_SPLIT = /[\s\d.,:%×+\-−–/()]+/;
-  const TICK_WORD = new Set(["ms", "s", "m", "min", "mins", "h", "d", "w", "k", "x", "kb", "mb", "gb", "tok", "tokens", "ago", "left", "in", "of"]);
+  const TICK_WORD = new Set(["ms", "s", "m", "min", "mins", "h", "d", "w", "k", "b", "x", "kb", "mb", "gb", "tok", "tokens", "ago", "left", "in", "of"]);
   const ticking = (line) => line.split(TICK_SPLIT).every((word) => word === "" || TICK_WORD.has(word.toLowerCase()));
   const READ_CAP = 12000;
   const SETTLE_MS = 4000;

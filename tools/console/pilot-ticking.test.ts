@@ -40,10 +40,11 @@ declare const PILOT: { ticking: (line: string) => boolean };
 const ticking = (line: string) => page.evaluate<boolean, string>((l) => PILOT.ticking(l), line);
 
 // What the console draws as a figure and its unit: DRAW.ms ("3 min 12 s"), spanWord ("12 min", "3 w"), dur ("5 min"),
-// a window ("52k / 200k"), an age ("3s ago", "5 min ago"), what is left ("4 min left", "in 3 mins"), a share ("100%").
+// a window ("52k / 200k"), an age ("3s ago", "5 min ago"), what is left ("4 min left", "in 3 mins"), a share ("100%"),
+// and a total DRAW.big shortens ("of 1.2B tokens", once a team's tokens pass a billion; review of PR 450, round 3).
 const TICKS = [
   "52k / 200k", "3s ago", "1m 12s", "1h2m", "0:42", "13 min", "3 min 12 s", "5 min ago", "4 min left", "in 3 mins",
-  "12 tokens", "3 w", "100%", "1.5 MB of 2 GB", "2 d 4 h",
+  "12 tokens", "3 w", "100%", "1.5 MB of 2 GB", "2 d 4 h", "of 1.2B tokens", "of 53.9M tokens",
 ];
 // A line with a word in it is what an act may have changed, however many figures stand beside the word.
 const WORDS = ["Alpha One", "No sessions yet", "13 minutes", "Started 3 min ago", "Try now", "3 min · held", "running"];

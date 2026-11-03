@@ -317,13 +317,15 @@ public class AccountPool(
     public val responseCooldowns: Map<String, splice.upstream.retry.RateLimitCooldown>
         get() = liveMembership.byLabel.mapValues { it.value.cooldown }
 
-    /** Clears only runtime stickiness/cooldowns; persisted quota and credential files stay untouched. */
+    /** Clears only runtime stickiness/cooldowns; persisted quota and credential files stay untouched. The operator's
+     *  policy stays too: the saved order, and the pins, which the daemon saves and puts back when it builds the head.
+     *  Every head start runs this reset (HeadLifecycle), so a pin it cleared died at the restart that was to keep it
+     *  (Nov 3, 2026: the install of #461 dropped Marcos's pin on account-3 that way). */
     public fun reset() {
         synchronized(sessions) { sessions.clear() }
         synchronized(statelessLock) { statelessPrevious = null }
         headLastSwitch.set(null)
         headServing.set(null)
-        pins.clear()
         membership.get().accounts.forEach {
             it.cooldown.clear()
             it.cooldown.clearUnavailable()
@@ -332,7 +334,7 @@ public class AccountPool(
     }
 
     /** Pins [label] as the account [select] tries FIRST, ahead of the primary preference, until
-     *  [unpin] or the next [reset]. False (nothing pinned) when [label] names no account here. */
+     *  [unpin]; a [reset] keeps it. False (nothing pinned) when [label] names no account here. */
     public fun pin(label: String, sessionId: String? = null): Boolean {
         val account = liveMembership.byLabel[label] ?: return false
         pins.pin(account.label, sessionId)

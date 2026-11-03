@@ -117,6 +117,8 @@ public data class HeadAccountCredential(
     val exclusionReason: String? = null,
     /** Set while the provider refuses the login until its owner acts, which no sign-in changes. */
     val ownerBlock: AccountBlock? = null,
+    /** An expired token its own client renews the next time it runs: it cannot send, and nobody signs in again. */
+    val renewable: Boolean = false,
 )
 
 /** A head account's quota: its two windows and when they were observed, epoch SECONDS (the reset fields' unit), or

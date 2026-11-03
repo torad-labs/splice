@@ -19,6 +19,10 @@ import splice.core.util.LocalTimeText
 internal class HeldWords {
     fun noCredential(label: String): String = "'$label' has no credential file; sign in to it first"
 
+    /** An expired token beside what renews it: its own client renews it on its next run, and nobody signs in. */
+    fun tokenExpired(label: String): String =
+        "'$label': its token expired, and its own client renews it the next time it runs"
+
     fun planSpent(label: String, plan: PlanLimit): String {
         val until = LocalTimeText().at(plan.resetEpochSeconds)
         return "${plan.windowWords} plan limit reached: '$label' serves no turn until $until"
@@ -68,11 +72,12 @@ internal class PinReason(
         get() {
             val account = pinned ?: return null
             val next = view.nextTargetLabel
-            // The pin serves when the selector picks it, or, with no pick at all, when nothing holds it.
-            val serves = if (next == null) account.available else next == account.label
-            if (serves) return null
+            // The selector picks the pin, or nothing at all: the pin serves unless something holds it. With every login
+            // held, the pin can be the pick because its hold ends first, and the card still says why it waits.
+            val picked = next == null || next == account.label
+            if (picked && account.available) return null
             val why = credentialWhy(account) ?: planWhy(account)
-            return if (next == null) why else "$why. Turns use '$next' meanwhile."
+            return if (picked) why else "$why. Turns use '$next' meanwhile."
         }
 
     val modelsHeld: List<PlanLimit>
@@ -83,10 +88,14 @@ internal class PinReason(
     private fun credentialWhy(account: HeadAccountView): String? {
         val label = account.label
         val credential = account.credential
+        // The login's own words, where its description has them (a native place names the command to run).
+        val described = descriptions[label]?.fields?.get(REFUSAL_FIELD)
+        // In the selector's own order (AccountAvailability.credentialReason).
         return when {
-            !credential.present -> descriptions[label]?.fields?.get(REFUSAL_FIELD) ?: words.noCredential(label)
             credential.ownerBlock != null -> words.ownerStep(label, credential.ownerBlock)
             credential.excludedUntilEpochMillis != null -> words.refused(label)
+            credential.renewable -> described ?: words.tokenExpired(label)
+            !credential.present -> described ?: words.noCredential(label)
             else -> null
         }
     }

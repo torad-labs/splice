@@ -22,6 +22,7 @@ import splice.app.provider.WiredAccount
 import splice.core.auth.AuthDescription
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.REFUSAL_FIELD
+import splice.core.auth.SavedPins
 import splice.core.util.WallClock
 import splice.head.usage.QuotaTracker
 import splice.head.usage.TrackedAccountQuota
@@ -32,6 +33,7 @@ import splice.upstream.credentials.AccountPoolView
 import splice.upstream.credentials.PoolAccount
 import splice.upstream.retry.ProviderHoldStore
 import splice.upstream.retry.RateLimitCooldown
+import java.io.IOException
 
 internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? = null) {
     fun interface EvidenceLoadFactory {
@@ -155,6 +157,7 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
                     excludedUntilEpochMillis = account.credential.excludedUntilEpochMillis,
                     exclusionReason = account.credential.exclusionReason,
                     ownerBlock = account.credential.block,
+                    renewable = account.credential.renewable,
                 ),
             )
         },
@@ -192,17 +195,28 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
 
         // Synchronized so two presses save in the order they pinned: each save writes the pins as they stand.
         @Synchronized
-        override fun pin(label: String, sessionId: String?): Boolean =
-            pool.pin(label, sessionId).also { pinned -> if (pinned) savePins() }
+        override fun pin(label: String, sessionId: String?): Boolean {
+            val before = pool.savedPins
+            return pool.pin(label, sessionId).also { pinned -> if (pinned) savePinsOr(before) }
+        }
 
         @Synchronized
         override fun unpin(sessionId: String?) {
+            val before = pool.savedPins
             pool.unpin(sessionId)
-            savePins()
+            savePinsOr(before)
         }
 
-        private fun savePins() {
-            if (head != null) pins?.set(head, pool.savedPins)
+        /** Saves the pins as they stand, or, when the disk refuses, puts [before] back and rethrows: a press the next
+         *  restart would undo is answered as failed, never shown as taken. */
+        private fun savePinsOr(before: SavedPins) {
+            if (head == null) return
+            try {
+                pins?.set(head, pool.savedPins)
+            } catch (e: IOException) {
+                pool.savedPins = before
+                throw e
+            }
         }
 
         override fun order(): List<String> = pool.order

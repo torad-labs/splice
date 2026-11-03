@@ -60,6 +60,8 @@ public data class AccountCredentialReading(
     val exclusionReason: String? = null,
     /** Set while the provider refuses the login until its owner acts, which no sign-in changes. */
     val block: AccountBlock? = null,
+    /** An expired token its own client renews the next time it runs: it cannot send, and nobody signs in again. */
+    val renewable: Boolean = false,
 )
 
 /** One account as the operator surfaces read it at [at]: for a turn of [model], or as the console shows the login when
@@ -102,6 +104,7 @@ internal class AccountViewing(private val at: Long, private val model: String?) 
                 excludedUntilEpochMillis = credential.excludedUntilEpochMillis,
                 exclusionReason = credential.reason,
                 block = credential.block,
+                renewable = credential.renewable,
             ),
         )
     }

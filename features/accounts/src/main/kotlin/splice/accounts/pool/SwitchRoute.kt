@@ -88,8 +88,9 @@ public class SwitchRoute(private val resolver: AccountHeadResolver) {
     private suspend fun refusalFor(head: AccountHead, account: HeadAccountView): String? {
         val label = account.label
         if (!account.credential.present) {
+            val words = HeldWords()
             return head.accountAuth?.descriptions()?.get(label)?.fields?.get(REFUSAL_FIELD)
-                ?: HeldWords().noCredential(label)
+                ?: if (account.credential.renewable) words.tokenExpired(label) else words.noCredential(label)
         }
         return account.quota.holds.wholeLogin?.let { plan -> HeldWords().planSpent(label, plan) }
     }

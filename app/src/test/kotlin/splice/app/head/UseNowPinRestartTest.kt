@@ -30,6 +30,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -41,11 +42,13 @@ import splice.accounts.order.ACCOUNT_PINS_FILE
 import splice.accounts.order.AccountOrderStore
 import splice.accounts.order.AccountPinStore
 import splice.accounts.pool.AccountPoolJson
+import splice.accounts.pool.HeadAccountPinSource
 import splice.accounts.pool.HeadAccountPoolSource
 import splice.accounts.pool.SwitchRoute
 import splice.accounts.signin.HeadRestart
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
+import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.failure.AccountBlock
@@ -57,6 +60,9 @@ import splice.core.util.ElapsedClock
 import splice.core.util.LocalTimeText
 import splice.core.util.LogSink
 import splice.core.util.WallClock
+import splice.upstream.credentials.AccountCredentialIdentitySource
+import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialEvidence
+import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialPresence
 import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountQuotaSource
 import splice.upstream.credentials.PoolAccount
@@ -64,7 +70,10 @@ import splice.upstream.credentials.Selection
 import splice.upstream.retry.FileProviderHoldStore
 import splice.upstream.retry.ProviderHold
 import splice.upstream.retry.RateLimitCooldown
+import java.io.IOException
+import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 
 private const val HEAD = "claude-splice"
 private const val FABLE = "claude-fable-5-1"
@@ -81,12 +90,15 @@ class UseNowPinRestartTest {
 
     /** One daemon's run: its pool and the account source the control routes read, built from [state] as a daemon
      *  builds them at boot, so a second one over the same folder is the daemon after a restart. */
-    private inner class Daemon(private val readings: Map<String, QuotaSnapshot> = emptyMap()) {
+    private inner class Daemon(
+        private val readings: Map<String, QuotaSnapshot> = emptyMap(),
+        private val expired: Set<String> = emptySet(),
+    ) {
         private val accounts = listOf("eight", "two", "three").map { label ->
             PoolAccount(
                 label = label,
                 primary = label == "eight",
-                auth = PinLogin(label),
+                auth = if (label in expired) ExpiredLogin() else PinLogin(label),
                 quota = AccountQuotaSource { readings[label] },
                 cooldown = RateLimitCooldown(ElapsedClock { 0L }, store = holdFile(label)),
             )
@@ -272,6 +284,54 @@ class UseNowPinRestartTest {
         assertFalse("sign in" in why, "no sign-in clears a block: $why")
     }
 
+    @Test
+    fun `a pinned login whose token expired, which its own client renews, says so and asks for no sign-in`() {
+        pinned("""{"label":"three"}""")
+
+        val after = Daemon(expired = setOf("three"))
+        val turn = after.chosen(OPUS)
+        val pool = after.accountPool()
+
+        assertNotEquals("three", turn, "an expired token sends no turn")
+        assertEquals("three", pool.text("pinned_label"), "the pin is kept: the login serves again once renewed")
+        val why = pool.text("pin_refusal").orEmpty()
+        assertTrue("token expired" in why, why)
+        assertFalse("sign in" in why, "nobody needs to sign in again: $why")
+        assertFalse("no credential file" in why, "the file is there: $why")
+        assertTrue("'$turn'" in why, why)
+    }
+
+    @Test
+    fun `a pinned login held like every other, whose hold ends first, still says why it serves no turn`() {
+        pinned("""{"label":"three"}""")
+        val later = PlanLimit("five_hour", fiveHourReset + 3_600)
+        providerHeld("eight", ProviderHold(null, later))
+        providerHeld("two", ProviderHold(null, later))
+        providerHeld("three", ProviderHold(null, PlanLimit("five_hour", fiveHourReset)))
+
+        val pool = Daemon().accountPool()
+
+        assertEquals("three", pool.text("next_target_label"), "no login serves, and the pin's hold ends first")
+        val why = pool.text("pin_refusal").orEmpty()
+        assertTrue("5-hour plan limit reached" in why && LocalTimeText().at(fiveHourReset) in why, why)
+        assertFalse("Turns use" in why, "no other login serves meanwhile: $why")
+    }
+
+    @Test
+    fun `a pin the disk refuses to save is not shown as set`() {
+        val daemon = Daemon()
+        val pins = daemon.source as HeadAccountPinSource
+        Files.setPosixFilePermissions(state, PosixFilePermissions.fromString("r-x------"))
+        try {
+            assertThrows(IOException::class.java) { pins.pin("three", null) }
+        } finally {
+            Files.setPosixFilePermissions(state, PosixFilePermissions.fromString("rwx------"))
+        }
+
+        assertNull(daemon.accountPool().text("pinned_label"), "the console shows no pin the next restart would drop")
+        assertEquals("eight", daemon.chosen(OPUS), "the pool's own policy serves")
+    }
+
     /** The provider refuses the pinned login on its next turn: a 401, or a block until its owner acts. */
     private fun refuse(daemon: Daemon, block: AccountBlock?) {
         val first = daemon.pool.select(SESSION, emptySet(), null, OPUS) as Selection.Chosen
@@ -284,4 +344,15 @@ private class PinLogin(private val token: String) : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer(token)
     override suspend fun refresh(): Credentials = credentials()
     override suspend fun describe(): AuthDescription = AuthDescription(true, "synthetic")
+}
+
+/** A native login whose access token lapsed beside its refresh token: it cannot send, and its own client renews it the
+ *  next time it runs, so nobody signs in again. */
+private class ExpiredLogin : RefreshableAuthProvider, AccountCredentialIdentitySource {
+    override suspend fun credentials(): Credentials? = null
+    override suspend fun refresh(): Credentials? = null
+    override suspend fun describe(): AuthDescription = AuthDescription(false, "synthetic")
+    override fun credentialIdentity(): CredentialFileIdentity? = null
+    override fun credentialEvidence(): CredentialEvidence =
+        CredentialEvidence(null, CredentialPresence.MISSING, renewable = true)
 }

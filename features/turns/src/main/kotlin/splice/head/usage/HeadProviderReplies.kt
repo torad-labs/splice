@@ -61,6 +61,9 @@ internal class HeadProviderReplies(
         cooldown: RateLimitCooldown,
         plan: PlanLimit?,
     ) {
+        // One model's week, from a send that names no model: it cannot say which turns it refuses, so it holds nothing,
+        // the login least of all (Nov 3, 2026; review of #459).
+        if (plan?.modelUnknown == true) return
         cooldown.captureProviderReset(reply.lift)
         val planWait = plan?.let { cooldown.planHold.hold(it, RetryNotice { }) } ?: 0L
         val namedWait = maxOf(planWait, cooldown.providerUnavailableForMs())

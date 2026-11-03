@@ -213,9 +213,14 @@ public class RateLimitCooldown public constructor(
      *  Re-arming an armed horizon is a max() and costs nothing. */
     internal fun limitLeft(left: LimitLeft, onRetry: RetryNotice): Long? {
         // One model's week leaves the login serving every other model (Nov 3, 2026): that week is held for its model
-        // alone, and nothing of the login is marked, so selection keeps the login for the turns of every other.
-        val week = left.planLimit?.takeIf(PlanLimit::forOneModel)
-        return if (week != null) planHold.hold(week, onRetry) else loginLeft(left, onRetry)
+        // alone, and nothing of the login is marked, so selection keeps the login for the turns of every other. One
+        // whose model the caller never said holds nothing at all, the login least of all (review of #459).
+        val plan = left.planLimit
+        return when {
+            plan?.forOneModel == true -> planHold.hold(plan, onRetry)
+            plan?.modelUnknown == true -> null
+            else -> loginLeft(left, onRetry)
+        }
     }
 
     /** A limit of the whole login: the provider's reset, its reply, the plan window it named and the horizon, as

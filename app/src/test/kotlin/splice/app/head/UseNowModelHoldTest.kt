@@ -133,6 +133,25 @@ class UseNowModelHoldTest {
         assertTrue(LocalTimeText().at(weekReset) in error, "it says when the login serves again: $error")
         assertNull(pool.pinned(), "nothing is pinned")
     }
+
+    // Review of #459, round 1: seven_day_oauth_apps is the week every Claude Code turn spends
+    // (docs/specs/web-console.md, the client's rate_limits beside seven_day_opus and seven_day_sonnet), never one
+    // model's, so an Opus turn refused on it holds the login for every model.
+    @Test
+    fun `Use now on a login whose OAuth-app week an Opus turn met pins nothing and says why`() = testApplication {
+        route()
+        val refused = PlanLimit("seven_day_oauth_apps", weekReset).metBy(OPUS)
+        accounts.getValue("two").cooldown.planHold.hold(refused) {}
+
+        val response = useNow("two")
+        val body = response.bodyAsText()
+
+        assertEquals(HttpStatusCode.Conflict, response.status, body)
+        val error = Json.parseToJsonElement(body).jsonObject["error"]?.jsonPrimitive?.content.orEmpty()
+        assertTrue("plan limit reached" in error, error)
+        assertTrue(LocalTimeText().at(weekReset) in error, "it says when the login serves again: $error")
+        assertNull(pool.pinned(), "nothing is pinned")
+    }
 }
 
 private class Login(private val token: String) : RefreshableAuthProvider {

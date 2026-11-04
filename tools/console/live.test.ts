@@ -1,11 +1,12 @@
 // Goal: a test that reads what the page draws (a box, a computed style, a scroll size) measures the element the page has,
-// never one a redraw already replaced, however often the page redraws.
+// never one a redraw already replaced, on a page that redraws in bursts and holds still between them.
 import { afterAll, beforeAll, test } from "bun:test";
 import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { live } from "./live.ts";
 
 const READS = 300;
-// why: ten replacements in a row span a few event-loop turns, long enough that a two-trip read often straddles one
+// why: each replacement is its own zero-delay timer, which Chromium holds to at least 4 ms once timers nest five deep, so
+// ten in a row churn for about 38 ms, long enough that a two-trip read often straddles one
 const BURST = 10;
 // why: a quiet spell several times longer than three protocol trips on a CI runner busy compiling, so a read always
 // lands in one; a 4 ms spell let a loaded runner miss all 50 tries

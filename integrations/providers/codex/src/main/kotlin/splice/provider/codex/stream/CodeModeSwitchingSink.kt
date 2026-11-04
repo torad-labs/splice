@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.index.WireBlockIndex
 import splice.core.util.JsonWire
 import splice.provider.codex.stream.early.CodeModeEarlyBlocks
+import splice.provider.codex.stream.early.CodeModeEarlyEnd
 import splice.provider.codex.stream.sink.CodeModeSinkContent
 import splice.provider.codex.stream.sink.CodeModeSinkOpens
 import splice.provider.codex.stream.source.CodeModeDeliveredText
@@ -47,8 +48,8 @@ internal class CodeModeSwitchingSink(
 
     suspend fun attach(sink: WireSink) = core.attach(sink)
 
-    /** [refuseEarly] false keeps the early Write block open for the calls a step is about to issue. */
-    suspend fun detach(refuseEarly: Boolean = true): String? = core.detach(refuseEarly)
+    /** [earlyEnd] says what becomes of the early Write block; a step's end refuses whatever is still open. */
+    suspend fun detach(earlyEnd: CodeModeEarlyEnd = CodeModeEarlyEnd.ABANDON): String? = core.detach(earlyEnd)
 
     suspend fun confirmedText(): CodeModeDeliveredText = core.confirmedText()
 
@@ -88,8 +89,8 @@ internal class CodeModeSinkCore(initial: WireSink) {
         writes.drain(sink)
     }
 
-    suspend fun detach(refuseEarly: Boolean = true): String? = mutex.withLock {
-        if (refuseEarly) early.refuse()
+    suspend fun detach(earlyEnd: CodeModeEarlyEnd = CodeModeEarlyEnd.ABANDON): String? = mutex.withLock {
+        early.end(earlyEnd)
         val sink = target
         deliveredNative = sink?.let { native.toList().takeIf { complete } }
         native.clear()

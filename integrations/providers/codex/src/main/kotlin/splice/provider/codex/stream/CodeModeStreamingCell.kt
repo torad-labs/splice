@@ -7,6 +7,7 @@ import kotlinx.coroutines.ensureActive
 import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
+import splice.provider.codex.stream.early.CodeModeEarlyEnd
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
@@ -33,7 +34,7 @@ internal class CodeModeStreamingCell(
             checkSource()
             if (step is CodeModeStep.Calls) {
                 // The first of these calls may take over the round's early Write block (CodeModeEarlyBlocks).
-                deliveredText = round.switching.detach(refuseEarly = false)
+                deliveredText = round.switching.detach(CodeModeEarlyEnd.KEEP)
                 round.lifecycle.delivered(round.switching.deliveredText)
             }
             step

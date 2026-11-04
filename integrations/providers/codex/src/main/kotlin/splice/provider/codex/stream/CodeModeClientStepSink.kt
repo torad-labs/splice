@@ -3,6 +3,7 @@ package splice.provider.codex.stream
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.index.WireBlockIndex
+import splice.provider.codex.stream.early.CodeModeEarlyEnd
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.sse.WireSink
 
@@ -13,7 +14,7 @@ internal class CodeModeClientStepSink(
     fun belongsTo(round: CodeModeSwitchingSink): Boolean = this.round === round
 
     override suspend fun openTool(id: String, name: String): WireBlockIndex {
-        round.detach()
+        round.detach(CodeModeEarlyEnd.REFUSE_UNCLAIMED)
         return sink.openTool(id, name)
     }
 
@@ -22,7 +23,7 @@ internal class CodeModeClientStepSink(
 
     /** Ends the early block call [clientId] took over, in place of opening a block for it. */
     suspend fun finishEarly(clientId: String, arguments: JsonObject): Boolean {
-        round.detach()
+        round.detach(CodeModeEarlyEnd.REFUSE_UNCLAIMED)
         return round.finishEarly(sink, clientId, arguments)
     }
 }

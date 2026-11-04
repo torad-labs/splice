@@ -39,6 +39,18 @@ internal data class CodeModeEarlyBlock(
     }
 }
 
+/** How detaching a round's client ends its early Write block. */
+internal enum class CodeModeEarlyEnd {
+    /** The runtime asked for calls: the first may take the block over. */
+    KEEP,
+
+    /** A call is going out: a block no call took over is refused, and one a call took over stays for it. */
+    REFUSE_UNCLAIMED,
+
+    /** The step ended: a block still open is refused, taken over or not. */
+    ABANDON,
+}
+
 /** One round's early Write. Access is serialized by the switching sink's attachment mutex. */
 internal class CodeModeEarlyBlocks {
     /** Set once, before the round reads, when the client has a Write tool to stream into. */
@@ -122,14 +134,31 @@ internal class CodeModeEarlyBlocks {
         return true
     }
 
-    /** Closes an open block no call took over, with a parameter Write does not take, so the client refuses it. */
+    /** Closes an open block no call took over, with a parameter Write does not take, so the client refuses it. A
+     *  script whose block has not opened yet stops streaming: something else holds the client now. */
     suspend fun refuse() {
+        reader = null
         val block = open?.takeUnless { it.claimed } ?: return
         open = null
-        reader = null
         val reason = JsonWire.string(JsonPrimitive(NOT_WRITTEN_REASON))
         block.sink.inputJsonDelta(block.index, "\",\"$NOT_WRITTEN_KEY\":$reason}")
         block.sink.closeBlock(block.index)
+    }
+
+    /** A detach ends the block as [how] says. */
+    suspend fun end(how: CodeModeEarlyEnd) {
+        when (how) {
+            CodeModeEarlyEnd.KEEP -> Unit
+            CodeModeEarlyEnd.REFUSE_UNCLAIMED -> refuse()
+            CodeModeEarlyEnd.ABANDON -> abandon()
+        }
+    }
+
+    /** The step ended: a block a call took over but never finished, because the call failed before it went out,
+     *  closes the way one no call took over does. */
+    suspend fun abandon() {
+        open?.claimed = false
+        refuse()
     }
 
     /** The client step dropped its draft, the block with it, so no frame may name it again. */

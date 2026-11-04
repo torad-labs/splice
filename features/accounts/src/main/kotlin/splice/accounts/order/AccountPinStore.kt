@@ -7,6 +7,7 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import splice.core.auth.SavedPins
 import splice.core.util.DaemonLog
+import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import java.io.IOException
 import java.nio.file.Files
@@ -70,7 +71,7 @@ public class AccountPinStore(private val file: Path) {
         try {
             if (kept != saved) set(head, kept)
         } catch (e: IOException) {
-            DaemonLog.write("[$head] the pin file kept $names after it let go: $e\n")
+            DaemonLog.write("[$head] the pin file kept $names after it let go: ${SafeFailureText.render(e)}\n")
         }
     }
 

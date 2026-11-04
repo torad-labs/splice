@@ -33,7 +33,7 @@ internal class ClaudeAccountWiring(
     private val identities: splice.app.auth.claude.ClaudeIdentityRefresh? = null,
     nativePlaces: ClaudeLoginPlacesSource = ClaudeLoginPlacesSource { null },
 ) {
-    private val native = ClaudeNativeAccountWiring(statePaths, nativePlaces, log)
+    private val native = ClaudeNativeAccountWiring(statePaths, nativePlaces, log, identities)
 
     /** Native places provide read-only selectable credentials. Without one, [caller] remains the forwarded primary;
      *  managed folders are always separate members, never a replacement for the native login owner. */

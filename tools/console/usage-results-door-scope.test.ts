@@ -60,6 +60,10 @@ afterAll(async () => {
 
 const door = (p: Page) => p.locator("#doors [data-act=door][data-v=perf]");
 const said = (p: Page) => door(p).locator(".upl-dq");
+// The qualifier's line boxes, read from the live element in one turn of the page: the page redraws the doors when a read
+// lands, and a handle taken before a redraw names a detached span, which has none.
+const lineBoxes = (p: Page) =>
+  p.evaluate(() => document.querySelector("#doors [data-act=door][data-v=perf] .upl-dq")?.getClientRects().length ?? 0);
 async function open(query: string, run: (p: Page) => Promise<void>) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1400 } });
   const p = await context.newPage();
@@ -89,7 +93,7 @@ test("Usage: the Results door names the table's window when the page's window is
     // the table's own switch moves the door with it
     await p.locator("#band-perf [data-act=perfwin][data-v='1h']").click();
     await expect(said(p)).toContainText("1 hour", { timeout: 20_000 });
-    expect(await said(p).evaluate((el) => el.getClientRects().length)).toBe(1);
+    expect(await lineBoxes(p)).toBe(1);
   });
 }, 90_000);
 
@@ -97,6 +101,6 @@ test("Usage: with a project picked, the Results door says its figure is over all
   await open("?project=/work/website", async (p) => {
     await expect(p.locator("#band-perf .bandhead")).toContainText("All requests", { timeout: 20_000 });
     await expect(said(p)).toContainText(/all requests/i, { timeout: 20_000 });
-    expect(await said(p).evaluate((el) => el.getClientRects().length)).toBe(1);
+    expect(await lineBoxes(p)).toBe(1);
   });
 }, 90_000);

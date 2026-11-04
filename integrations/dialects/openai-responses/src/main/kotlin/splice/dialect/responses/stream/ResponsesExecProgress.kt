@@ -5,6 +5,10 @@
 // 137 blocks in one claudex transcript). The runtime still gets the text unchanged, so a call dispatches as soon as
 // it can and shows as a tool chip; the client's stream stays alive on keepalives while a long script is written, and
 // nothing new shows in the reasoning until a call dispatches.
+//
+// Nov 3, 2026 (Marcos, "like native claude code"): the file a script's opening tools.Write writes is the one exception.
+// The codex head streams its path and content into Claude Code's Write block while GPT writes them, as a native Write
+// shows them (CodeModeEarlyBlocks); the script around them still never reaches the client.
 package splice.dialect.responses.stream
 
 import kotlinx.serialization.json.JsonObject

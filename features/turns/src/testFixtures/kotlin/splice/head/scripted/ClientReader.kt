@@ -289,6 +289,10 @@ public class ClientStream internal constructor() {
     public suspend fun awaitText(fragment: String): ClientAnswer =
         progress.first { it.ended || fragment in it.answer.text }.answer
 
+    /** Returns once what arrived so far satisfies [seen], or the answer ended without it. */
+    public suspend fun awaitAnswer(seen: (ClientAnswer) -> Boolean): ClientAnswer =
+        progress.first { it.ended || seen(it.answer) }.answer
+
     /** Returns the whole answer once it ended. */
     public suspend fun finish(): ClientAnswer = progress.first { it.ended }.answer
 

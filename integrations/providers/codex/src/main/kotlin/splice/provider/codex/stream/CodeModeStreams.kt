@@ -17,6 +17,7 @@ import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.CodexCodeModeWire
 import splice.provider.codex.stream.batch.CodeModeBatchHistory
+import splice.provider.codex.stream.early.CODE_MODE_EARLY_WRITE_TOOL
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.sse.WireSink
@@ -81,6 +82,7 @@ internal class CodeModeStreams(
         headStop = context.headStop,
         recovery = context.recovery,
     ).also { round ->
+        if (CODE_MODE_EARLY_WRITE_TOOL in context.turn.tools) round.switching.streamEarlyWrites()
         reading += round
         context.postedSources += round
         round.start(scope, post, body) { reading.remove(round) }

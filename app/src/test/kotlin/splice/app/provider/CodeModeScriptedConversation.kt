@@ -6,6 +6,7 @@
 package splice.app.provider
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -29,6 +30,7 @@ import splice.core.util.JsonScalars
 import splice.dialect.responses.ReasoningSettings
 import splice.head.scripted.ClientAnswer
 import splice.head.scripted.ClientRequest
+import splice.head.scripted.ClientStream
 import splice.head.scripted.ReplyScript
 import splice.head.scripted.ScriptedHead
 import splice.head.scripted.ScriptedHeads
@@ -90,13 +92,17 @@ private val TOOLS = buildJsonArray {
 }
 
 /** One Claude Code conversation: its messages so far, as the client keeps and sends them. */
-internal class CodeModeConversation(val session: String, opening: String) {
+internal class CodeModeConversation(
+    val session: String,
+    opening: String,
+    private val tools: JsonArray = TOOLS,
+) {
     val messages = mutableListOf(message("user", JsonPrimitive(opening)))
     private var system: String? = null
 
     fun body(): JsonObject = buildJsonObject {
         put("messages", JsonArray(messages))
-        put("tools", TOOLS)
+        put("tools", tools)
         system?.let { put("system", it) }
     }
 
@@ -247,6 +253,43 @@ internal class ScriptedGpt {
 
     fun waitOn(cell: String): GptAnswer = respond { n -> listOf(reasoning(n), waitCall(n, cell)) }
 
+    /** Reasoning, then the script [pieces] spell, written for exec one piece a delta, as GPT streams a long script.
+     *  Before piece [holdAfter] the backend waits for [gate], as GPT pauses mid-file. */
+    fun execInPieces(pieces: List<String>, holdAfter: Int, gate: Deferred<Unit>): GptAnswer {
+        val n = ++serial
+        val id = "resp_synthetic_$n"
+        val exec = buildJsonObject {
+            put("type", "custom_tool_call")
+            put("id", "ctc_synthetic_$n")
+            put("call_id", "call_exec_$n")
+            put("name", "exec")
+            put("input", pieces.joinToString(""))
+        }
+        val output = listOf(reasoning(n), exec)
+        outputs[id] = output
+        return GptAnswer(
+            reply {
+                event(created(id))
+                stream(this, 0, output.first(), done = true)
+                event(itemEvent("response.output_item.added", 1, JsonObject(exec + ("input" to JsonPrimitive("")))))
+                pieces.forEachIndexed { at, piece ->
+                    if (at == holdAfter) awaitSignal(gate)
+                    event(
+                        buildJsonObject {
+                            put("type", "response.custom_tool_call_input.delta")
+                            put("output_index", 1)
+                            put("item_id", "ctc_synthetic_$n")
+                            put("delta", piece)
+                        }.toString(),
+                    )
+                }
+                event(itemEvent("response.output_item.done", 1, exec))
+                event(completed(id, output))
+            },
+            id,
+        )
+    }
+
     fun answer(text: String): GptAnswer = respond { n -> listOf(reasoning(n), message(n, text)) }
 
     /** Reasoning and the first words of an answer, then the backend overloads before the answer completes. */
@@ -295,20 +338,7 @@ internal class ScriptedGpt {
             reply {
                 event(created(id))
                 output.forEachIndexed { at, item -> stream(this, at, item, done = true) }
-                event(
-                    buildJsonObject {
-                        put("type", "response.completed")
-                        putJsonObject("response") {
-                            put("id", id)
-                            put("status", "completed")
-                            put("output", JsonArray(output))
-                            putJsonObject("usage") {
-                                put("input_tokens", 11)
-                                put("output_tokens", 3)
-                            }
-                        }
-                    }.toString(),
-                )
+                event(completed(id, output))
             },
             id,
         )
@@ -385,6 +415,19 @@ internal class ScriptedGpt {
         put("type", type)
         put("output_index", at)
         put("item", item)
+    }.toString()
+
+    private fun completed(id: String, output: List<JsonObject>): String = buildJsonObject {
+        put("type", "response.completed")
+        putJsonObject("response") {
+            put("id", id)
+            put("status", "completed")
+            put("output", JsonArray(output))
+            putJsonObject("usage") {
+                put("input_tokens", 11)
+                put("output_tokens", 3)
+            }
+        }
     }.toString()
 
     private fun created(id: String): String = buildJsonObject {
@@ -625,6 +668,29 @@ internal class CodeModeRig(val head: ScriptedHead, private val ledger: BackendLe
         return answer ?: fail("the head never answered within ${TURN_LIMIT_MS / 1000} s\n${ledger.summary(this)}")
     }
 
+    /** One request of [talk] as [turn] makes it, with [watch] reading the answer while it still arrives. */
+    suspend fun watch(
+        talk: CodeModeConversation,
+        vararg answers: GptAnswer,
+        watch: suspend (ClientStream) -> Unit,
+    ): ClientAnswer {
+        val before = ledger.requestCount()
+        ledger.script(answers.toList())
+        val body = JsonObject(talk.body() + ("model" to JsonPrimitive(model)))
+        val request = ClientRequest(text = "", stream = true, session = talk.session, extra = body)
+        val answer = withTimeoutOrNull(TURN_LIMIT_MS) {
+            val stream = head.client.open(request)
+            try {
+                watch(stream)
+                stream.finish()
+            } finally {
+                if (!stream.finished) stream.hangUp()
+            }
+        }
+        ledger.took(before, answers.toList())
+        return answer ?: fail("the head never answered within ${TURN_LIMIT_MS / 1000} s\n${ledger.summary(this)}")
+    }
+
     companion object {
         /** A head on [model], a responses-lite one: [CODE_MODE_MODEL] unless a test names a model the backend cuts,
          *  whose turns the head runs round by round (the fold). */
@@ -634,14 +700,18 @@ internal class CodeModeRig(val head: ScriptedHead, private val ledger: BackendLe
             ledger: BackendLedger,
             webSocket: Boolean,
             model: String = CODE_MODE_MODEL,
-        ): CodeModeRig {
+        ): CodeModeRig = start(heads, tmp, ledger, CodeModeRigHead(webSocket, model))
+
+        /** A head as [head] describes it, its runtime included. */
+        suspend fun start(heads: ScriptedHeads, tmp: Path, ledger: BackendLedger, head: CodeModeRigHead): CodeModeRig {
+            val (webSocket, model, runtime) = head
             val kind = if (webSocket) "codex-ws" else "codex"
             var prefix = ""
-            val head = heads.custom(kind) { tuning, log ->
+            val scripted = heads.custom(kind) { tuning, log ->
                 prefix = tuning.catalog.discoveryPrefix
                 val bridge = CodexCodeModeBridge(
                     CodeModeBridgeConfig(
-                        runtimes = { ScriptedCodeModeRuntime() },
+                        runtimes = runtime,
                         state = CodeModeStateLocation(tmp.resolve("records-$kind"), tmp.resolve("legacy-$kind.json")),
                         log = log,
                     ),
@@ -666,10 +736,17 @@ internal class CodeModeRig(val head: ScriptedHead, private val ledger: BackendLe
                     codeMode = CodexCodeModeWiring(bridge, listOf(model)),
                 )
             }
-            return CodeModeRig(head, ledger, "$prefix$model")
+            return CodeModeRig(scripted, ledger, "$prefix$model")
         }
     }
 }
+
+/** The head a rig starts: its transport, the model it pins, and the runtime its scripts run on. */
+internal data class CodeModeRigHead(
+    val webSocket: Boolean,
+    val model: String = CODE_MODE_MODEL,
+    val runtime: () -> NativeCodeModeLifecycle = { ScriptedCodeModeRuntime() },
+)
 
 /** The code-mode runtime: a script's source names its cell, and says whether it yields before it asks the client to
  *  Read. A yielded script finishes once the client's result arrives. */

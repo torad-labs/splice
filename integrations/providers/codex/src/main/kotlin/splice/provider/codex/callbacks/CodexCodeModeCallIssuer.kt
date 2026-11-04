@@ -9,6 +9,7 @@ import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.CodexCodeModeValidation
 import splice.provider.codex.state.CodeModeWeight
+import splice.provider.codex.stream.CodeModeClientStepSink
 import splice.provider.codex.stream.CodeModeOversizedCalls
 import splice.provider.codex.stream.CodeModeRecoveryHistory
 import splice.upstream.codemode.CodeModeCell
@@ -75,10 +76,12 @@ internal class CodexCodeModeCallIssuer(
                 actions.retry.retry(request, cell, refused)
             }
         }
+        // A script that opened with this Write already streamed its block to the client (CodeModeEarlyBlocks).
+        val early = calls.firstOrNull()?.let { (request.sink as? CodeModeClientStepSink)?.claimEarly(it) }
         val pending = calls.mapIndexed { index, call ->
             CodeModePending(
                 runtimeId = call.id,
-                clientId = "$CODE_MODE_CLIENT_ID_PREFIX${UUID.randomUUID()}",
+                clientId = early?.takeIf { index == 0 } ?: "$CODE_MODE_CLIENT_ID_PREFIX${UUID.randomUUID()}",
                 name = call.name,
                 arguments = call.arguments,
                 exposed = !request.disableParallel || index == 0,

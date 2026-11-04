@@ -36,6 +36,10 @@ import splice.upstream.sse.WireRequest
 import splice.upstream.sse.WireResponse
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 private const val DAY_ONE = 1_789_725_600_000L // 2026-09-18T10:00Z
 
@@ -91,11 +95,12 @@ class TurnTraceTest {
     private fun store(
         maxBodyChars: Int = 1 shl 20,
         heap: HeapReservations = HeapBudget(Long.MAX_VALUE),
+        clock: WallClock = WallClock { DAY_ONE },
     ): TraceStore = TraceStore(
         ActivityDays(tmp.resolve("trace"), "kimi", retentionDays = 7, clock = WallClock { DAY_ONE }, ownerOnly = true),
         head = "kimi",
         maxBodyChars = maxBodyChars,
-        now = WallClock { DAY_ONE },
+        now = clock,
         ids = TurnIdMint { "turn-0001" },
         heap = heap,
         bodyBudget = DayBodyBudget(minFreeBytes = 0, clock = WallClock { DAY_ONE }),
@@ -219,6 +224,45 @@ class TurnTraceTest {
         assertEquals("""{"input":[]}""", attempt.at("request", "body"))
         assertEquals("""{"type":"response.created"}""" + "\n", attempt.at("response", "text"))
         assertEquals("1", turn.str("rounds"))
+    }
+
+    @Test
+    fun `client frames stay recordable while an upstream attempt is being captured`() {
+        val capturing = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val armed = AtomicBoolean(false)
+        val clock = WallClock {
+            if (armed.compareAndSet(true, false)) {
+                capturing.countDown()
+                check(release.await(10, TimeUnit.SECONDS)) { "attempt capture was not released" }
+            }
+            DAY_ONE
+        }
+        val trace = store(clock = clock).begin(meta, inbound)
+        trace.wsRoundStarted()
+        trace.responseText("""{"type":"response.completed"}""")
+        val workers = Executors.newFixedThreadPool(2)
+        try {
+            armed.set(true)
+            val attempt = workers.submit { trace.wsAttempt("""{"input":[]}""", emptyMap(), null) }
+            try {
+                assertTrue(capturing.await(5, TimeUnit.SECONDS), "attempt capture reached its clock")
+                // The capture is deliberately held open, not merely made slow by a large fixture.
+                workers.submit { trace.clientFrame("data: first\n\ndata: second\n\n") }
+                    .get(5, TimeUnit.SECONDS)
+            } finally {
+                release.countDown()
+            }
+            attempt.get(5, TimeUnit.SECONDS)
+            trace.finish("ok", PerfSnapshot(emptyMap(), emptyMap()))
+
+            val (record, turn) = lines()
+            assertEquals("""{"type":"response.completed"}""", record.at("response", "text"))
+            assertEquals("data: first\n\ndata: second\n\n", turn.at("answer", "body"))
+        } finally {
+            release.countDown()
+            workers.shutdownNow()
+        }
     }
 
     @Test

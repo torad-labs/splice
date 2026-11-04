@@ -1,5 +1,7 @@
 // NEW: a JavaScript string literal's value, decoded as it streams in.
-package splice.provider.codex.stream
+package splice.provider.codex.stream.early
+
+import java.util.HexFormat
 
 /** Decodes the body of one JavaScript string literal opened by [quote] (", ' or a backtick) as the script streams it.
  *  It gives only text it is sure of: it waits at an escape cut between two deltas, holds for good at an
@@ -77,7 +79,7 @@ internal class CodeModeLiteralDecoder(private val quote: Char) {
     private fun escape(at: Int, e: Char): Step = when (e) {
         '0' -> after(at + 1) { next -> if (next in '0'..'9') Step.Hold else Step.Took("\u0000", ESCAPE) }
         in '1'..'9' -> Step.Hold
-        'x' -> fixed(at + ESCAPE, HEX_DIGITS)
+        'x' -> fixed(at + ESCAPE, BYTE_ESCAPE_DIGITS)
         'u' -> unicode(at)
         in LINE_BREAKS -> continuation(at, e)
         else -> Step.Took(e.toString(), ESCAPE)
@@ -103,8 +105,7 @@ internal class CodeModeLiteralDecoder(private val quote: Char) {
     private fun braced(at: Int, open: Int): Step {
         val close = (open + 1 until minOf(pending.length, open + MAX_BRACED)).firstOrNull { pending[it] == '}' }
             ?: return if (pending.length < open + MAX_BRACED) Step.More else Step.Hold
-        val digits = pending.substring(open + 1, close)
-        val code = digits.toIntOrNull(HEX)?.takeIf { digits.isNotEmpty() && it <= Character.MAX_CODE_POINT }
+        val code = hexValue(pending.substring(open + 1, close))?.takeIf { it <= Character.MAX_CODE_POINT }
         return code?.let { codeAt(it, width = close - at + 1) } ?: Step.Hold
     }
 
@@ -114,9 +115,12 @@ internal class CodeModeLiteralDecoder(private val quote: Char) {
         if (end > pending.length) {
             return if (pending.substring(from).all(::isHexDigit)) Step.More else Step.Hold
         }
-        val digits = pending.substring(from, end)
-        return if (digits.all(::isHexDigit)) codeAt(digits.toInt(HEX), width = count + ESCAPE) else Step.Hold
+        return hexValue(pending.substring(from, end))?.let { codeAt(it, width = count + ESCAPE) } ?: Step.Hold
     }
+
+    /** The value [digits] spell in hex, or null unless they are one or more ASCII hex digits and nothing else. */
+    private fun hexValue(digits: String): Int? =
+        if (digits.isNotEmpty() && digits.all(::isHexDigit)) HexFormat.fromHexDigits(digits) else null
 
     private fun codeAt(code: Int, width: Int): Step = Step.Took(String(Character.toChars(code)), width)
 
@@ -124,7 +128,8 @@ internal class CodeModeLiteralDecoder(private val quote: Char) {
     private inline fun after(at: Int, decide: (Char) -> Step): Step =
         if (at + 1 >= pending.length) Step.More else decide(pending[at + 1])
 
-    private fun isHexDigit(c: Char): Boolean = c in '0'..'9' || c in 'a'..'f' || c in 'A'..'F'
+    /** An ASCII hex digit only: no sign, no other script's digits. */
+    private fun isHexDigit(c: Char): Boolean = HexFormat.isHexDigit(c.code)
 }
 
 /** The escapes that stand for one character each. */
@@ -140,15 +145,16 @@ private val SIMPLE = mapOf(
 /** The line terminators a backslash can continue a line across. */
 private val LINE_BREAKS = setOf('\r', '\n', ' ', ' ')
 
-private const val HEX = 16
-
 /** A backslash and the character after it. */
 private const val ESCAPE = 2
 
 /** A backslash, a carriage return and a line feed: one line continuation. */
 private const val CRLF_CONTINUATION = 3
 
-private const val HEX_DIGITS = 2
+/** A \x escape carries exactly two hex digits (ECMA-262 HexEscapeSequence). */
+private const val BYTE_ESCAPE_DIGITS = 2
+
+/** A \u escape without braces carries exactly four hex digits (ECMA-262 Hex4Digits). */
 private const val UNICODE_DIGITS = 4
 
 /** A braced code point escape is at most \u{10FFFF}: the brace, six digits and the closing brace. */

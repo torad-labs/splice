@@ -1,10 +1,10 @@
-package splice.provider.codex.stream
+package splice.provider.codex.stream.early
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.provider.codex.stream.CodeModeEarlyWrite.Event
+import splice.provider.codex.stream.early.CodeModeEarlyWrite.Event
 import kotlin.random.Random
 
 /**
@@ -90,10 +90,12 @@ class CodeModeEarlyWriteTest {
 
     @Test
     fun `an escape the reader cannot be sure of holds the stream where it stands`() {
-        val script = "text(await tools.Write({file_path:\"/w/a.txt\",content:\"abc\\1def\"}))"
-        val events = CodeModeEarlyWrite().feed(script)
+        listOf("\\1", "\\u{-1}", "\\u{+41}", "\\u{}", "\\u{110000}", "\\x+f", "\\u-041").forEach { escape ->
+            val script = "text(await tools.Write({file_path:\"/w/a.txt\",content:\"abc${escape}def\"}))"
+            val events = runCatching { CodeModeEarlyWrite().feed(script) }
 
-        assertEquals(listOf(Event.Opened("/w/a.txt"), Event.Content("abc")), events)
+            assertEquals(Result.success(listOf(Event.Opened("/w/a.txt"), Event.Content("abc"))), events, script)
+        }
     }
 
     private fun content(events: List<Event>): String =

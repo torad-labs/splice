@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.index.WireBlockIndex
 import splice.core.util.JsonWire
+import splice.provider.codex.stream.early.CodeModeEarlyBlocks
 import splice.provider.codex.stream.sink.CodeModeSinkContent
 import splice.provider.codex.stream.sink.CodeModeSinkOpens
 import splice.provider.codex.stream.source.CodeModeDeliveredText

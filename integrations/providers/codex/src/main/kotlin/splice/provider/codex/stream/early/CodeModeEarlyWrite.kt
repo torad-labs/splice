@@ -4,7 +4,7 @@
 // client nothing until GPT finished it, five and a half minutes on the Mac session's 52 KB stylesheet, because the
 // runtime only reads a script once it is whole. This reader finds the path and the file's text in the script as it
 // streams, so the client's Write block can open at the path and fill as GPT writes, as a native Write does.
-package splice.provider.codex.stream
+package splice.provider.codex.stream.early
 
 import java.util.regex.Pattern
 

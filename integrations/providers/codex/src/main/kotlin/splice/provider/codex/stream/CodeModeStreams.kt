@@ -17,6 +17,7 @@ import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.CodexCodeModeWire
 import splice.provider.codex.stream.batch.CodeModeBatchHistory
+import splice.provider.codex.stream.early.CODE_MODE_EARLY_WRITE_TOOL
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.sse.WireSink

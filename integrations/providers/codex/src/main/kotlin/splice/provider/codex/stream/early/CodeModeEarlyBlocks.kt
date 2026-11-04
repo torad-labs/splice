@@ -3,7 +3,7 @@
 // The runtime's first call takes the block over when it is that Write; any other end closes the block so the client
 // refuses it and writes nothing. The Mac session's 10:26 PM CT turn showed nothing for 5.5 minutes while one script
 // wrote a 52 KB stylesheet.
-package splice.provider.codex.stream
+package splice.provider.codex.stream.early
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -31,10 +31,10 @@ internal data class CodeModeEarlyBlock(
 
     /** Whether [name] and [arguments] are this Write: its path, and a content that starts with what streamed. */
     fun writes(name: String, arguments: JsonObject): Boolean {
-        val shaped = name == CODE_MODE_EARLY_WRITE_TOOL && arguments.keys == setOf(PATH, CONTENT)
+        val shaped = name == CODE_MODE_EARLY_WRITE_TOOL && arguments.keys == setOf(WRITE_PATH, WRITE_CONTENT)
         val strings = arguments.values.all { (it as? JsonPrimitive)?.isString == true }
-        val samePath = JsonScalars.strIfString(arguments[PATH]) == path
-        val grows = JsonScalars.strIfString(arguments[CONTENT]).startsWith(streamed)
+        val samePath = JsonScalars.strIfString(arguments[WRITE_PATH]) == path
+        val grows = JsonScalars.strIfString(arguments[WRITE_CONTENT]).startsWith(streamed)
         return shaped && strings && samePath && grows
     }
 }
@@ -98,7 +98,7 @@ internal class CodeModeEarlyBlocks {
         }
         val id = "$CODE_MODE_CLIENT_ID_PREFIX${UUID.randomUUID()}"
         val index = target.openTool(id, CODE_MODE_EARLY_WRITE_TOOL)
-        target.inputJsonDelta(index, "{\"$PATH\":${JsonWire.string(JsonPrimitive(path))},\"$CONTENT\":\"")
+        target.inputJsonDelta(index, "{\"$WRITE_PATH\":${JsonWire.string(JsonPrimitive(path))},\"$WRITE_CONTENT\":\"")
         open = CodeModeEarlyBlock(id, path, target, index)
     }
 
@@ -116,7 +116,7 @@ internal class CodeModeEarlyBlocks {
         val block = open?.takeIf { it.claimed && it.id == clientId } ?: return false
         open = null
         if (block.sink !== sink) return false
-        val content = JsonScalars.strIfString(arguments[CONTENT])
+        val content = JsonScalars.strIfString(arguments[WRITE_CONTENT])
         block.sink.inputJsonDelta(block.index, escaped(content.substring(block.streamed.length)) + "\"}")
         block.sink.closeBlock(block.index)
         return true
@@ -127,7 +127,8 @@ internal class CodeModeEarlyBlocks {
         val block = open?.takeUnless { it.claimed } ?: return
         open = null
         reader = null
-        block.sink.inputJsonDelta(block.index, "\",\"$REFUSAL_KEY\":${JsonWire.string(JsonPrimitive(REFUSAL))}}")
+        val reason = JsonWire.string(JsonPrimitive(NOT_WRITTEN_REASON))
+        block.sink.inputJsonDelta(block.index, "\",\"$NOT_WRITTEN_KEY\":$reason}")
         block.sink.closeBlock(block.index)
     }
 
@@ -144,7 +145,11 @@ internal class CodeModeEarlyBlocks {
         JsonWire.string(JsonPrimitive(text)).let { it.substring(1, it.length - 1) }
 }
 
-private const val PATH = "file_path"
-private const val CONTENT = "content"
-private const val REFUSAL_KEY = "splice_not_written"
-private const val REFUSAL = "the script did not make this Write as it streamed; its own call, if it made one, follows"
+/** Claude Code's Write tool parameters, the two keys a streamed Write block carries. */
+private const val WRITE_PATH = "file_path"
+private const val WRITE_CONTENT = "content"
+
+/** The parameter Write does not take, which makes Claude Code refuse a block no call took over. */
+private const val NOT_WRITTEN_KEY = "splice_not_written"
+private const val NOT_WRITTEN_REASON =
+    "the script did not make this Write as it streamed; its own call, if it made one, follows"

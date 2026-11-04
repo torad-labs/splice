@@ -41,6 +41,12 @@ public object PerfKeys {
     // counters (durations are summed ms; sizes are bytes; the rest are counts)
     public const val ADMIT_WAIT_MS: String = "admit_wait_ms"
 
+    /** Route entry to the legacy stage-clock origin, including dispatch, auth and model-roster waits. */
+    public const val PRE_ADMISSION_MS: String = "pre_admission_ms"
+
+    /** The model-roster portion of PRE_ADMISSION_MS, before an inflight slot is acquired. */
+    public const val MODEL_ROSTER_WAIT_MS: String = "model_roster_wait_ms"
+
     /** Only on a request the gate HELD because its command's limit was full: how long it sat in the queue. A request
      *  that went straight in has no such field, whatever ADMIT_WAIT_MS reads, since a pass through an open gate is not
      *  waiting. "Waited in line" counts and lists the requests that carry it (Marlin, Oct 12). */

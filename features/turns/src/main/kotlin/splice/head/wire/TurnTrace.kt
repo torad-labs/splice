@@ -122,7 +122,8 @@ public class TurnTrace internal constructor(
 
     /** Every frame the head wrote toward the client, in order — the mirror of FrameRecording. */
     public fun clientFrame(frame: String) {
-        synchronized(lock) { streamed.append(frame) }
+        // Attempt redaction must not hold up client delivery; only the answer buffer is shared here.
+        synchronized(streamed) { streamed.append(frame) }
     }
 
     /** The collect path's answer, read when the turn record is written. */
@@ -182,7 +183,8 @@ public class TurnTrace internal constructor(
     private fun turnRecord(inbound: ClientInbound, outcomeTag: String, perf: PerfSnapshot): JsonObject {
         val (clientBody, clientTruncated) = store.bounded(inbound.body)
         val answer = collected?.answer()
-        val (answerBody, answerTruncated) = answer?.let { store.bounded(it.body) } ?: streamed.take()
+        val (answerBody, answerTruncated) = answer?.let { store.bounded(it.body) }
+            ?: synchronized(streamed) { streamed.take() }
         return buildJsonObject {
             stamp(this, TraceKinds.TURN)
             putJsonObject("client") {

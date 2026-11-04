@@ -47,8 +47,11 @@ internal class HeadAdmission(
         if (!admission.acceptingOrRespond(call)) return
         // Fix 3 (Oct 27): before the turn takes a slot or is read, the head's model list follows the credential the
         // turn is sent with, so a turn sent the moment after a sign-in is prepared from that sign-in's list.
+        val modelsAt = deps.seams.clock()
         deps.traffic.models.await()
+        val modelsWaitMs = deps.seams.clock() - modelsAt
         val perf = telemetry.begin(arrivalAt)
+        perf.setCount(splice.core.perf.PerfKeys.MODEL_ROSTER_WAIT_MS, modelsWaitMs)
         val t0 = deps.seams.clock()
         val slot = admission.acquireSlotOrRespond(call) ?: return
         telemetry.markAdmitted(perf, t0, slot.heldMs)

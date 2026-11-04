@@ -18,7 +18,10 @@ internal class AdmissionTelemetry(
 ) {
     fun arrivalTime(): Long = clock()
 
-    fun begin(arrivalAt: Long = clock()): TurnPerf = TurnPerf(clock = clock).also { it.recordArrival(arrivalAt) }
+    fun begin(arrivalAt: Long = clock()): TurnPerf = TurnPerf(clock = clock).also {
+        it.recordArrival(arrivalAt)
+        it.setCount(PerfKeys.PRE_ADMISSION_MS, it.arrivalElapsedMs())
+    }
 
     suspend fun <T> prepare(perf: TurnPerf, leaseStart: Long, work: TimedWork<T>): T {
         val started = clock()

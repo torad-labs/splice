@@ -184,6 +184,9 @@ internal class ProviderHolds(private val store: ProviderHoldStore?) {
         @Synchronized
         set(value) {
             if (value != null) generation++
+            // Equal refusals still advance evidence, but unchanged state needs no disk write.
+            // Successful turns must not rewrite a retained model week while holding this lock.
+            if (reply == value) return
             reply = value
             store?.save(snapshot())
         }

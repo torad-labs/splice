@@ -65,15 +65,23 @@ public class AccountPool(
     @Volatile
     public var membershipRefresh: AccountMembershipRefresh? = null
 
+    /** Every read of the pool starts here, so a pin whose login read a new limit lets go before anything reads the pin
+     *  (Marcos, Nov 3, 2026: "make the pin let go at the first limit reading instead of pulling seats back"). */
     private val liveMembership: AccountMembership
         get() {
             membershipRefresh?.refresh()
-            return membership.get()
+            val current = membership.get()
+            pins.letGo(current.byLabel, now())?.let { onPinsLetGo?.letGo(it) }
+            return current
         }
 
     /** Hears a login join the pool: the head's held turns may move to it (failure-handling slice 5). */
     @Volatile
     public var onJoined: Runnable? = null
+
+    /** Hears the pins that let go at a limit reading, so the saved pins let go too and a restart does not restore them. */
+    @Volatile
+    public var onPinsLetGo: PinsLetGo? = null
 
     /** Publishes membership only. Existing session choices, order, cooldown objects and leased turns survive. A label
      *  the pool did not hold before is a login that joined, and [onJoined] hears it. */
@@ -333,11 +341,12 @@ public class AccountPool(
         }
     }
 
-    /** Pins [label] as the account [select] tries FIRST, ahead of the primary preference, until
-     *  [unpin]; a [reset] keeps it. False (nothing pinned) when [label] names no account here. */
+    /** Pins [label] as the account [select] tries FIRST, ahead of the primary preference, until [unpin] or until the
+     *  login reads a limit it did not read now; a [reset] keeps it. False (nothing pinned) when [label] names no account
+     *  here. */
     public fun pin(label: String, sessionId: String? = null): Boolean {
         val account = liveMembership.byLabel[label] ?: return false
-        pins.pin(account.label, sessionId)
+        pins.pin(account, sessionId, now())
         return true
     }
 
@@ -356,7 +365,7 @@ public class AccountPool(
     /** The currently pinned label, or null when nothing is pinned. Safe for an operator surface —
      *  no credential material, just the label [select] already exposes elsewhere. */
     public fun pinned(sessionId: String? = null): String? =
-        pins.forSession(sessionId)?.takeIf(membership.get().byLabel::containsKey)
+        liveMembership.byLabel.let { known -> pins.forSession(sessionId)?.takeIf(known::containsKey) }
 
     /** The label [select] would choose next for [sessionId] (null = head-wide), without acquiring
      *  a credential lease — a read-only probe for an operator surface (GET /api/accounts "the next

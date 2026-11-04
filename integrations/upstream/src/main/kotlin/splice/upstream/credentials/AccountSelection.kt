@@ -31,6 +31,12 @@ public fun interface AccountMembershipRefresh {
     public fun refresh()
 }
 
+/** Hears the logins whose pins let go because each read a limit it did not read when it was pinned, so the pins saved
+ *  between daemon runs let go too. */
+public fun interface PinsLetGo {
+    public fun letGo(labels: Set<String>)
+}
+
 /** Reads one account's latest provider quota without coupling the SPI to gateway persistence. */
 public fun interface AccountQuotaSource {
     public fun snapshot(): QuotaSnapshot?

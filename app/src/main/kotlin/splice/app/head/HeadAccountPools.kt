@@ -23,6 +23,7 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.REFUSAL_FIELD
 import splice.core.auth.SavedPins
+import splice.core.util.DaemonLog
 import splice.core.util.WallClock
 import splice.head.usage.QuotaTracker
 import splice.head.usage.TrackedAccountQuota
@@ -30,6 +31,7 @@ import splice.upstream.codemode.ProcessElapsedNow
 import splice.upstream.credentials.AccountEvidenceLoads
 import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountPoolView
+import splice.upstream.credentials.PinsLetGo
 import splice.upstream.credentials.PoolAccount
 import splice.upstream.retry.ProviderHoldStore
 import splice.upstream.retry.RateLimitCooldown
@@ -101,7 +103,18 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
     ): HeadAccountPoolSource? = pool?.let {
         val labels = it.effectiveOrder().toSet()
         it.order = orders.order(head).filter(labels::contains)
-        if (pins != null) it.savedPins = pins.pins(head)
+        if (pins != null) {
+            it.savedPins = pins.pins(head)
+            // A pin lets go at its login's first limit reading, and the saved one with it, so no restart restores it.
+            it.onPinsLetGo = PinsLetGo { gone ->
+                DaemonLog.write("[$head] Use now pin on ${gone.joinToString()} let go: the login read a limit\n")
+                try {
+                    pins.release(head, gone)
+                } catch (e: IOException) {
+                    DaemonLog.write("[$head] the pin file kept ${gone.joinToString()} after it let go: $e\n")
+                }
+            }
+        }
         PoolSource(it, head, orders, pins)
     }
 

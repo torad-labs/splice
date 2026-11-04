@@ -56,6 +56,15 @@ public class AccountPinStore(private val file: Path) {
         SecureFile.writeAtomic0600(file, json.encodeToString(PinsDocument(kept)))
     }
 
+    /** Lets go of every pin [head] holds on one of [labels], the logins whose limit reading let their pins go (Nov 3,
+     *  2026). The rest of the file stays as it is, so a press saved meanwhile is kept. */
+    @Synchronized
+    public fun release(head: String, labels: Set<String>) {
+        val saved = pins(head)
+        val kept = SavedPins(saved.head?.takeUnless(labels::contains), saved.sessions.filterValues { it !in labels })
+        if (kept != saved) set(head, kept)
+    }
+
     private fun read(): PinsDocument? = try {
         json.decodeFromString<PinsDocument>(Files.readString(file))
     } catch (_: NoSuchFileException) {

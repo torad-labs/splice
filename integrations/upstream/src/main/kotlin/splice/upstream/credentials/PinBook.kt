@@ -24,8 +24,8 @@ internal class PinBook {
     private var head: String? = null
     private val sessions = LinkedHashMap<String, String>()
 
-    /** The limits each pinned login read when Use now was pressed, or at the first read after a restart put its pin
-     *  back: a pin lets go at the first limit its login reads beyond them. */
+    /** The limits each pinned login read when Use now was pressed and still reads, saved with the pins: a pin lets go at
+     *  the first limit its login reads beyond them. */
     private val pinnedOver = HashMap<String, Set<String>>()
 
     /** Pins [account] for [sessionId], or for the whole head when null. A limit it already reads keeps the pin: Use
@@ -58,32 +58,37 @@ internal class PinBook {
     @Synchronized
     fun ownedBy(sessionId: String?): String? = sessionId?.let(sessions::get)
 
-    /** Every pin, as it is saved between daemon runs. */
+    /** Every pin, as it is saved between daemon runs, with what each pinned login is pinned over. */
     @Synchronized
-    fun saved(): SavedPins = SavedPins(head, LinkedHashMap(sessions))
+    fun saved(): SavedPins = SavedPins(head, LinkedHashMap(sessions), pinnedOver.filterKeys(pinnedLabels()::contains))
 
-    /** Replaces every pin with [pins], as a daemon run saved them; the newest sessions are kept within the bound. What
-     *  each login reads at the first read after this is what its pin was set over: the run that saved a pin let go of
-     *  it at any limit that came later. */
+    /** Replaces every pin with [pins], as a daemon run saved them; the newest sessions are kept within the bound. Each
+     *  pin is weighed against what it was saved over, so a limit its login read after that, before this run or before
+     *  a refused write put these back, lets it go at the first read. A login saved with nothing for it (a file from
+     *  before [SavedPins.over]) is weighed against that first read. */
     @Synchronized
     fun restore(pins: SavedPins) {
         head = pins.head
         sessions.clear()
-        pinnedOver.clear()
         pins.sessions.entries.toList().takeLast(MAX_SESSION_PINS).forEach { (session, label) ->
             sessions[session] = label
         }
+        pinnedOver.clear()
+        pinnedOver.putAll(pins.over.filterKeys(pinnedLabels()::contains))
     }
 
-    /** Lets go of every pin whose login reads a limit it did not read when pinned, and returns those logins, or null
-     *  when every pin stays. A limit that clears leaves what the pin was set over, so its return is a new reading. A
-     *  login the pool does not hold now keeps its pin until it is back. It reads each login's last observation, not a
-     *  new one: this runs on every read of the pool, and the reads that matter (a turn's choice, the console's view)
-     *  observe every login themselves, so a usage reading lets its pin go at the next of them. */
+    /** Lets go of every pin whose login reads a limit it was not pinned over, and tells [changed] whenever a pin let go
+     *  or what one is pinned over shrank, inside this lock, so two changes are saved in the order they happened. A
+     *  limit that clears leaves what the pin is pinned over, so its return is a new reading. A login the pool does not
+     *  hold now keeps its pin until it is back. It reads each login's last observation, not a new one: this runs on
+     *  every read of the pool, and a turn's choice and the console's view observe every login after it, so a usage
+     *  reading lets its pin go at the read after the one that observed it, while that turn already passes over a login
+     *  that reads full. */
     @Synchronized
-    fun letGo(accounts: Map<String, PoolAccount>, at: Long): Set<String>? {
-        val pinned = sessions.values.toSet() + listOfNotNull(head)
+    fun letGo(accounts: Map<String, PoolAccount>, at: Long, changed: PinsLetGo?) {
+        val pinned = pinnedLabels()
         pinnedOver.keys.retainAll(pinned)
+        val before = HashMap(pinnedOver)
         val gone = pinned.filterTo(mutableSetOf()) { label ->
             val account = accounts[label] ?: return@filterTo false
             val reads = limits(account, at)
@@ -91,12 +96,13 @@ internal class PinBook {
             pinnedOver[label] = over intersect reads
             (reads - over).isNotEmpty()
         }
-        if (gone.isEmpty()) return null
         if (head in gone) head = null
         sessions.values.removeAll(gone)
         pinnedOver.keys.removeAll(gone)
-        return gone
+        if (gone.isNotEmpty() || pinnedOver != before) changed?.letGo(gone, HashMap(pinnedOver))
     }
+
+    private fun pinnedLabels(): Set<String> = sessions.values.toSet() + listOfNotNull(head)
 
     /** The limits [account] reads at [at] that a pin lets go on. A short rate limit is none: a turn waits it out on the
      *  same login. */

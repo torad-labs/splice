@@ -71,7 +71,7 @@ public class AccountPool(
         get() {
             membershipRefresh?.refresh()
             val current = membership.get()
-            pins.letGo(current.byLabel, now())?.let { onPinsLetGo?.letGo(it) }
+            pins.letGo(current.byLabel, now(), onPinsLetGo)
             return current
         }
 
@@ -345,6 +345,9 @@ public class AccountPool(
      *  login reads a limit it did not read now; a [reset] keeps it. False (nothing pinned) when [label] names no account
      *  here. */
     public fun pin(label: String, sessionId: String? = null): Boolean {
+        // The login's own reading first, so a limit it read since the last read lets go of the pins already on it before
+        // this press sets what the login is pinned over: a session's press must not carry the head's pin over a limit.
+        liveMembership.byLabel[label]?.refreshCredentialEvidence()
         val account = liveMembership.byLabel[label] ?: return false
         pins.pin(account, sessionId, now())
         return true

@@ -105,7 +105,7 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
         if (pins != null) {
             it.savedPins = pins.pins(head)
             // A pin lets go at its login's first limit reading, and the saved one with it, so no restart restores it.
-            it.onPinsLetGo = PinsLetGo { gone -> pins.release(head, gone) }
+            it.onPinsLetGo = PinsLetGo { gone, over -> pins.release(head, gone, over) }
         }
         PoolSource(it, head, orders, pins)
     }

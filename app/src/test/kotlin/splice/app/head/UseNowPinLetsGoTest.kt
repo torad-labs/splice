@@ -26,6 +26,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -57,6 +58,7 @@ import splice.upstream.credentials.PoolAccount
 import splice.upstream.credentials.Selection
 import splice.upstream.retry.FileProviderHoldStore
 import splice.upstream.retry.RateLimitCooldown
+import java.io.IOException
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.random.Random
@@ -236,6 +238,87 @@ class UseNowPinLetsGoTest {
         assertEquals(SavedPins(), savedPins(), "the session's saved pin lets go too")
     }
 
+    // PR #468 review, round 1: a pin a restart put back was weighed against what its login read at the first read after
+    // it, so a limit that landed while nothing read the pool, followed by a restart (the beta auto-update restarts at the
+    // first moment with no turn in flight), kept the pin it should have let go.
+    @Test
+    fun `a full usage reading just before a restart lets the pin go after it`() {
+        Daemon().useNow("three")
+        readings["three"] = full()
+
+        val restarted = Daemon()
+
+        assertNull(restarted.shownPin(), "the login read a limit after the press, so the restart keeps no pin")
+        assertEquals(SavedPins(), savedPins())
+        assertEquals("eight", restarted.chosen(OPUS), "a turn goes where the policy sends it")
+    }
+
+    @Test
+    fun `a Fable-week refusal just before a restart lets the pin go after it`() {
+        val daemon = Daemon()
+        daemon.useNow("three")
+        daemon.refuseFableWeek("three")
+
+        assertNull(Daemon().shownPin(), "the 5:16 refusal, then a restart: still no pin")
+        assertEquals(SavedPins(), savedPins())
+    }
+
+    @Test
+    fun `a limit that cleared and came back before a restart lets the pin go after it`() {
+        readings["three"] = full()
+        val daemon = Daemon()
+        (daemon.source as HeadAccountPinSource).pin("three", null)
+        assertEquals("three", daemon.shownPin(), "a limit the login read at the press keeps the pin")
+        readings["three"] = withRoom()
+        assertEquals("three", daemon.shownPin(), "the reading cleared")
+
+        readings["three"] = full()
+
+        assertNull(Daemon().shownPin(), "its return is a new reading, so the restart keeps no pin")
+        assertEquals(SavedPins(), savedPins())
+    }
+
+    @Test
+    fun `a pin whose let-go the disk refused to save lets go again after a restart`() {
+        val daemon = Daemon()
+        daemon.useNow("three")
+        readOnlyState {
+            readings["three"] = full()
+            assertNull(daemon.shownPin(), "the pool lets go even when the file cannot be written")
+        }
+        assertEquals("three", savedPins().head, "the file kept the pin the disk would not drop")
+
+        assertNull(Daemon().shownPin(), "the restart reads a limit the pin was not set over, and lets it go again")
+        assertEquals(SavedPins(), savedPins())
+    }
+
+    @Test
+    fun `a press the disk refuses does not bring back a pin that let go`() {
+        val daemon = Daemon()
+        daemon.useNow("three")
+        readings["three"] = full()
+        // A turn reads the full login and goes elsewhere, so the press below is the read that lets the pin go.
+        assertEquals("eight", daemon.chosen(OPUS, "another-seat"))
+        readOnlyState {
+            assertThrows(IOException::class.java) { (daemon.source as HeadAccountPinSource).pin("two", SEAT) }
+            assertNull(daemon.shownPin(), "the refused press puts the pins back as they were, the let-go included")
+        }
+    }
+
+    private fun full() = QuotaSnapshot(sevenDay = QuotaWindow(100.0, weekReset, 604_800))
+
+    private fun withRoom() = QuotaSnapshot(sevenDay = QuotaWindow(40.0, weekReset, 604_800))
+
+    /** Runs [block] while the daemon's state folder refuses writes, as a full or read-only disk does. */
+    private fun readOnlyState(block: () -> Unit) {
+        state.toFile().setWritable(false)
+        try {
+            block()
+        } finally {
+            state.toFile().setWritable(true)
+        }
+    }
+
     /** The events of the property's runs: what each does to the daemon's world, and the limits it adds or clears in
      *  the model the goal is checked against. */
     private val events = listOf(
@@ -252,12 +335,24 @@ class UseNowPinLetsGoTest {
             world.add(label, "login")
         },
         Event("full reading") { world, label, _ ->
-            readings[label] = QuotaSnapshot(sevenDay = QuotaWindow(100.0, weekReset, 604_800))
+            readings[label] = full()
             world.add(label, "full")
         },
         Event("reading with room") { world, label, _ ->
-            readings[label] = QuotaSnapshot(sevenDay = QuotaWindow(40.0, weekReset, 604_800))
+            readings[label] = withRoom()
             world.remove(label, "full")
+        },
+        // A limit and a restart in one step: nothing reads the pool between them, which no other pair of steps gives,
+        // since every step's check reads it.
+        Event("full reading, then restart") { world, label, _ ->
+            readings[label] = full()
+            world.add(label, "full")
+            world.daemon = Daemon()
+        },
+        Event("Fable week, then restart") { world, label, _ ->
+            world.daemon.refuseFableWeek(label)
+            world.add(label, "fable")
+            world.daemon = Daemon()
         },
         Event("provider holds the account") { world, label, _ ->
             heldAccounts += label

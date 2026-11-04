@@ -18,8 +18,14 @@ import java.nio.file.Path
  *  [ACCOUNT_ORDER_FILE]: a build from before it reads that document strictly, so a new key there would refuse it. */
 public const val ACCOUNT_PINS_FILE: String = "account-pins.json"
 
+/** One head's pins. [over] is what each pinned login was pinned over (PR #468 review); a build from before it ignores
+ *  the key, since this file is read with unknown keys ignored. */
 @Serializable
-private data class HeadPinsDocument(val head: String? = null, val sessions: Map<String, String> = emptyMap())
+private data class HeadPinsDocument(
+    val head: String? = null,
+    val sessions: Map<String, String> = emptyMap(),
+    val over: Map<String, Set<String>> = emptyMap(),
+)
 
 @Serializable
 private data class PinsDocument(val heads: Map<String, HeadPinsDocument> = emptyMap())
@@ -35,7 +41,7 @@ public class AccountPinStore(private val file: Path) {
     }
 
     public fun pins(head: String): SavedPins =
-        read()?.heads?.get(head)?.let { SavedPins(it.head, it.sessions) } ?: SavedPins()
+        read()?.heads?.get(head)?.let { SavedPins(it.head, it.sessions, it.over) } ?: SavedPins()
 
     @Synchronized
     public fun set(head: String, pins: SavedPins) {
@@ -50,7 +56,7 @@ public class AccountPinStore(private val file: Path) {
         val kept = if (pins.head == null && pins.sessions.isEmpty()) {
             heads
         } else {
-            heads + (head to HeadPinsDocument(pins.head, pins.sessions))
+            heads + (head to HeadPinsDocument(pins.head, pins.sessions, pins.over))
         }
         if (previous != null) {
             SecureFile.writeAtomic0600(file.resolveSibling(file.fileName.toString() + ".bak"), previous)
@@ -59,19 +65,24 @@ public class AccountPinStore(private val file: Path) {
     }
 
     /** Lets go of every pin [head] holds on one of [labels], the logins whose limit reading let their pins go (Nov 3,
-     *  2026), and says so in the daemon log. The rest of the file stays as it is, so a press saved meanwhile is kept. A
-     *  disk that refuses is logged, not thrown: the pool has let go already, and the next pin or unpin writes the file
-     *  as the pool holds it. */
+     *  2026), says so in the daemon log, and records [over], what each login still pinned is pinned over now. The rest
+     *  of the file stays as it is, so a press saved meanwhile is kept. A disk that refuses is logged, not thrown: the
+     *  pool has changed already, and a pin the file keeps is weighed against what it was saved over, so the next run
+     *  lets it go at its first read. */
     @Synchronized
-    public fun release(head: String, labels: Set<String>) {
+    public fun release(head: String, labels: Set<String>, over: Map<String, Set<String>>) {
         val names = labels.joinToString()
-        DaemonLog.write("[$head] Use now pin on $names let go: the login read a limit\n")
+        if (labels.isNotEmpty()) DaemonLog.write("[$head] Use now pin on $names let go: the login read a limit\n")
         val saved = pins(head)
-        val kept = SavedPins(saved.head?.takeUnless(labels::contains), saved.sessions.filterValues { it !in labels })
+        val headPin = saved.head?.takeUnless(labels::contains)
+        val sessions = saved.sessions.filterValues { it !in labels }
+        val pinned = sessions.values.toSet() + listOfNotNull(headPin)
+        val kept = SavedPins(headPin, sessions, (saved.over + over).filterKeys(pinned::contains))
         try {
             if (kept != saved) set(head, kept)
         } catch (e: IOException) {
-            DaemonLog.write("[$head] the pin file kept $names after it let go: ${SafeFailureText.render(e)}\n")
+            val what = if (labels.isEmpty()) "a limit that cleared" else "$names after it let go"
+            DaemonLog.write("[$head] the pin file kept $what: ${SafeFailureText.render(e)}\n")
         }
     }
 

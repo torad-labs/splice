@@ -25,6 +25,7 @@
 // here; only the socket write waits.
 package splice.head.wire
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -185,14 +186,22 @@ internal class ClientChannel(
     private fun socketWrite(frame: String, perf: TurnPerf, clock: ElapsedClock): Boolean {
         if (detached.get()) return false
         val t = clock()
-        // A dead client fails the write in two shapes: IOException from the engine write, and
-        // IllegalStateException from a channel Ktor already closed. runCatchingCleanup captures both
-        // (and rethrows cancellation by contract), so neither escapes as an unclassified fault —
-        // clientGone is always set and the recording channel detaches instead of failing the turn.
-        val writeResult = Cancellables.runCatchingCleanup { coalesced.write(frame) }
-        if (writeResult.isFailure) {
+        // A dead client fails the write in three shapes, and none escapes as an unclassified fault:
+        // clientGone is always set and the recording channel detaches instead of failing the turn. An
+        // IOException from the engine write and an IllegalStateException from a channel Ktor already
+        // closed come back from runCatchingCleanup. A response Ktor cancelled as its client left throws
+        // a CancellationException instead: ktor-io rethrows a cancelled channel's cause to every later
+        // write and keeps its type (CloseToken.wrapCause). That is no cancellation of this turn, since
+        // the write never suspends, and a compaction whose drive wrote a frame in that moment used to
+        // end there with nothing held for its retry (PR 468's loaded CI). Anything else escapes.
+        val failure = try {
+            Cancellables.runCatchingCleanup { coalesced.write(frame) }.exceptionOrNull()
+        } catch (responseCancelled: CancellationException) {
+            responseCancelled
+        }
+        if (failure != null) {
             clientGone.set(true)
-            if (!detachIfRecording()) writeResult.getOrThrow()
+            if (!detachIfRecording()) throw failure
             return false
         }
         val wroteAtMs = clock()

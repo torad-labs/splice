@@ -12,6 +12,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -707,16 +708,25 @@ internal abstract class HoldRouteFixtures : HoldReplyFixtures() {
 
     /** Moves the virtual clock to the next time something waits for, at most [step] at a time, once the head has
      *  settled after the last move, until [done] or [atMost]. A send a wake starts reaches the provider at the time
-     *  it was due, not a step later. */
+     *  it was due, not a step later: the clock does not move again until each wait the move woke has answered. */
     protected suspend fun ScriptedHeads.runClock(step: Duration, atMost: Duration, done: () -> Boolean) =
         withContext(Dispatchers.Default) {
             while (!done() && time.passed() < atMost) {
                 settle()
                 val now = time.passed()
                 val next = minOf(time.nextDue() ?: (now + step), now + step, atMost)
+                val woken = time.parkedDues().count { it <= next }
+                val seen = answers()
                 time.advanceBy((next - now).coerceAtLeast(Duration.ZERO))
+                withTimeoutOrNull(ANSWER_MS) {
+                    while (!done() && answers() < seen + woken) delay(POLL_MS)
+                }
             }
         }
+
+    /** What a woken wait does that the test can see: park again, or send the provider a request. Counted together,
+     *  since each woken wait does at least one of them unless the turn ends. */
+    private fun ScriptedHeads.answers(): Long = time.parksSoFar() + provider.requests.size
 
     /** Waits in real time until the head has gone quiet: no wait parked or woken and no request sent for a few polls. */
     private suspend fun ScriptedHeads.settle() {
@@ -759,5 +769,9 @@ internal abstract class HoldRouteFixtures : HoldReplyFixtures() {
         const val SETTLE_POLLS = 5
         const val POLL_MS = 2L
         const val EVENTUALLY_MS = 10_000L
+
+        /** How long, in real time, a woken wait gets to park again or send before the clock moves on without it. A
+         *  wait that ends its loop does neither, and costs this once. */
+        const val ANSWER_MS = 2_000L
     }
 }

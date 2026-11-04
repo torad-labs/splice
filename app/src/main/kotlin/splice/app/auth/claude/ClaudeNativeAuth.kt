@@ -50,6 +50,7 @@ internal class ClaudeNativeAuth(
     private val profiles: ClaudeCredentialProfiles,
     private val log: LogSink,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
+    private val identities: ClaudeIdentityRefresh? = null,
 ) : RefreshableAuthProvider, AccountCredentialIdentitySource {
     val credentialKey: String?
         get() = observe()?.accessToken?.let {
@@ -113,13 +114,32 @@ internal class ClaudeNativeAuth(
     private fun usable(token: NativeAccessToken): Boolean =
         !token.accessToken.isNullOrBlank() && token.expiresAt?.let { it > clock() } == true
 
-    private val file = NativeCredentialFile(directory.resolve(CREDENTIALS_JSON), log)
+    private val file = NativeCredentialFile(directory.resolve(CREDENTIALS_JSON), log, NativeTokenLanded(::prove))
 
     private fun observe(): NativeAccessToken? = file.read()
+
+    /** Claude Code renews this login, never splice, so splice cannot carry its account across the renewal. It proves
+     *  the new token the moment it first reads it instead (a pool pick, a quota read, a turn), not when a page next
+     *  reads the card, so the card shows its email on that first read (Nov 3, 2026). */
+    private fun prove(token: NativeAccessToken?) {
+        val access = token?.takeIf(::usable)?.accessToken ?: return
+        val key = CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer $access")) ?: return
+        identities?.request(key, access)
+    }
 }
 
-/** The native login's credential file, parsed again only when the file moved. */
-private class NativeCredentialFile(private val path: Path, private val log: LogSink) {
+/** Hears the token each parse of the native credential file found: once each time the file moved, so a token Claude
+ *  Code renewed is heard once, when it lands. */
+private fun interface NativeTokenLanded {
+    operator fun invoke(token: NativeAccessToken?)
+}
+
+/** The native login's credential file, parsed again only when the file moved. [parsed] hears each parse. */
+private class NativeCredentialFile(
+    private val path: Path,
+    private val log: LogSink,
+    private val parsed: NativeTokenLanded,
+) {
     // why: read() runs on every observation (several per turn, and on each membership refresh), so a file that stays
     // unreadable is named when its failure class changes, not on every read.
     @Volatile
@@ -135,6 +155,7 @@ private class NativeCredentialFile(private val path: Path, private val log: LogS
         held?.takeIf { stamp != null && it.first == stamp }?.let { return it.second }
         val token = parse()
         held = if (stamp != null && lastClass == null) stamp to token else null
+        parsed(token)
         return token
     }
 

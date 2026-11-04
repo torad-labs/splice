@@ -5,6 +5,7 @@ import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.claude.ClaudeLoginPlaceView
 import splice.accounts.claude.ClaudeLoginPlacesSource
 import splice.app.auth.claude.ClaudeCredentialProfiles
+import splice.app.auth.claude.ClaudeIdentityRefresh
 import splice.app.auth.claude.ClaudeNativeAuth
 import splice.app.auth.claude.ClaudeNativeQuota
 import splice.core.config.StatePaths
@@ -19,6 +20,7 @@ internal class ClaudeNativeAccountWiring(
     private val paths: StatePaths,
     private val places: ClaudeLoginPlacesSource,
     private val log: LogSink,
+    private val identities: ClaudeIdentityRefresh? = null,
 ) {
     private data class Entry(
         val key: String?,
@@ -67,6 +69,7 @@ internal class ClaudeNativeAccountWiring(
             view.id,
             ClaudeCredentialProfiles(paths.stateDir, log),
             log,
+            identities = identities,
         )
         val wired = WiredAccount(
             label = "native:${view.id.wire}",

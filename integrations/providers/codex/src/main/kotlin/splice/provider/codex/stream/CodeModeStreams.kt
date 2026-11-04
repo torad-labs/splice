@@ -81,6 +81,7 @@ internal class CodeModeStreams(
         headStop = context.headStop,
         recovery = context.recovery,
     ).also { round ->
+        if (CODE_MODE_EARLY_WRITE_TOOL in context.turn.tools) round.switching.streamEarlyWrites()
         reading += round
         context.postedSources += round
         round.start(scope, post, body) { reading.remove(round) }

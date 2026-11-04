@@ -28,6 +28,7 @@ internal class CodeModeSinkOpens(
         core.open(CodeModeSinkBlocks.Kind.RAW, raw = contentBlock)
 
     override suspend fun customToolSource(event: CustomToolSource) {
+        core.observe(event)
         observer.observe(event)
     }
 }
@@ -98,6 +99,7 @@ internal class CodeModeSinkContent(private val core: CodeModeSinkCore) : BlockDe
         core.target?.discard()
         core.blocks.discard()
         core.writes.discard()
+        core.early.discard()
         core.resetDelivered()
     }
 }

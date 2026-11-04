@@ -32,7 +32,8 @@ internal class CodeModeStreamingCell(
             val step = cell.advance(results)
             checkSource()
             if (step is CodeModeStep.Calls) {
-                deliveredText = round.switching.detach()
+                // The first of these calls may take over the round's early Write block (CodeModeEarlyBlocks).
+                deliveredText = round.switching.detach(refuseEarly = false)
                 round.lifecycle.delivered(round.switching.deliveredText)
             }
             step

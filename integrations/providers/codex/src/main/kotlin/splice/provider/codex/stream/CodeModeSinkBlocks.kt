@@ -39,6 +39,9 @@ internal class CodeModeSinkBlocks {
         Kind.RAW -> sink.openRawBlock(checkNotNull(block.raw))
     }
 
+    /** No block is open or waiting to open. */
+    fun idle(): Boolean = blocks.isEmpty()
+
     suspend fun destination(sink: WireSink, index: WireBlockIndex): WireBlockIndex? {
         val block = blocks[index.value] ?: return null
         return block.index ?: openOn(sink, block)?.also { block.index = it }

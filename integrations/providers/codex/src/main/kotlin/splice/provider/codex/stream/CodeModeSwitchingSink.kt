@@ -46,9 +46,21 @@ internal class CodeModeSwitchingSink(
 
     suspend fun attach(sink: WireSink) = core.attach(sink)
 
-    suspend fun detach(): String? = core.detach()
+    /** [refuseEarly] false keeps the early Write block open for the calls a step is about to issue. */
+    suspend fun detach(refuseEarly: Boolean = true): String? = core.detach(refuseEarly)
 
     suspend fun confirmedText(): CodeModeDeliveredText = core.confirmedText()
+
+    /** Streams a script's opening Write into the client's Write block (CodeModeEarlyBlocks); called before reading. */
+    fun streamEarlyWrites() {
+        core.early.enabled = true
+    }
+
+    /** The early Write block this round streamed, when [name] and [arguments] are that Write (CodeModeEarlyBlocks). */
+    suspend fun claimEarly(name: String, arguments: JsonObject): String? = core.claimEarly(name, arguments)
+
+    suspend fun finishEarly(sink: WireSink, clientId: String, arguments: JsonObject): Boolean =
+        core.finishEarly(sink, clientId, arguments)
 }
 
 /** The state every part shares: the attachment lock, the client sink now attached, the block table, the writes held
@@ -58,6 +70,7 @@ internal class CodeModeSinkCore(initial: WireSink) {
     var target: WireSink? = initial
     val blocks = CodeModeSinkBlocks()
     val writes = CodeModeSinkWrites()
+    val early = CodeModeEarlyBlocks()
     var deliveredNative: List<JsonElement>? = null
         private set
     var deliveredText: CodeModeDeliveredText = CodeModeDeliveredText(0, "")
@@ -74,7 +87,8 @@ internal class CodeModeSinkCore(initial: WireSink) {
         writes.drain(sink)
     }
 
-    suspend fun detach(): String? = mutex.withLock {
+    suspend fun detach(refuseEarly: Boolean = true): String? = mutex.withLock {
+        if (refuseEarly) early.refuse()
         val sink = target
         deliveredNative = sink?.let { native.toList().takeIf { complete } }
         native.clear()
@@ -105,12 +119,23 @@ internal class CodeModeSinkCore(initial: WireSink) {
         name: String = "",
         raw: JsonObject? = null,
     ): WireBlockIndex = mutex.withLock {
+        early.refuse()
         val bytes = JsonWire.byteSize(id) + JsonWire.byteSize(name) + (raw?.let(JsonWire::byteSize) ?: 0L)
         require(bytes <= CodeModeLimits.MAX_FRAME_BYTES) { "stream block exceeds byte budget" }
         val index = blocks.open(null, kind, id, name, raw)
         writes.deliver(target, bytes.toInt()) { sink -> blocks.destination(sink, index) }
         index
     }
+
+    /** The script stream reaches the early Write before the source capture: a block opens only while the round holds
+     *  none of its own. */
+    suspend fun observe(event: CustomToolSource) = mutex.withLock { early.observe(event, target, blocks.idle()) }
+
+    suspend fun claimEarly(name: String, arguments: JsonObject): String? =
+        mutex.withLock { early.claim(name, arguments) }
+
+    suspend fun finishEarly(sink: WireSink, clientId: String, arguments: JsonObject): Boolean =
+        mutex.withLock { early.finish(sink, clientId, arguments) }
 
     /** What the client step was given, kept only while it fits one frame's budget: a longer record could not be
      *  replayed. */

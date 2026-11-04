@@ -18,6 +18,7 @@ internal object CodeModeClientCalls {
     }
 
     private suspend fun emit(call: CodeModePending, sink: WireSink) {
+        if (sink is CodeModeClientStepSink && sink.finishEarly(call.clientId, call.arguments)) return
         val index = sink.openTool(call.clientId, call.name)
         sink.inputJsonDelta(index, JsonWire.string(call.arguments))
         sink.closeBlock(index)

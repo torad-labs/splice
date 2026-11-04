@@ -142,8 +142,8 @@ private val SIMPLE = mapOf(
     'v' to "\u000B",
 )
 
-/** The line terminators a backslash can continue a line across. */
-private val LINE_BREAKS = setOf('\r', '\n', ' ', ' ')
+/** The line terminators a backslash can continue a line across: CR, LF, LS and PS. */
+private val LINE_BREAKS = setOf('\r', '\n', '\u2028', '\u2029')
 
 /** A backslash and the character after it. */
 private const val ESCAPE = 2

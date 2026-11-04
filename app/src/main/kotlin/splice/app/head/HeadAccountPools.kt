@@ -30,6 +30,7 @@ import splice.upstream.codemode.ProcessElapsedNow
 import splice.upstream.credentials.AccountEvidenceLoads
 import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountPoolView
+import splice.upstream.credentials.PinsLetGo
 import splice.upstream.credentials.PoolAccount
 import splice.upstream.retry.ProviderHoldStore
 import splice.upstream.retry.RateLimitCooldown
@@ -101,7 +102,11 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
     ): HeadAccountPoolSource? = pool?.let {
         val labels = it.effectiveOrder().toSet()
         it.order = orders.order(head).filter(labels::contains)
-        if (pins != null) it.savedPins = pins.pins(head)
+        if (pins != null) {
+            it.savedPins = pins.pins(head)
+            // A pin lets go at its login's first limit reading, and the saved one with it, so no restart restores it.
+            it.onPinsLetGo = PinsLetGo { gone, over -> pins.release(head, gone, over) }
+        }
         PoolSource(it, head, orders, pins)
     }
 

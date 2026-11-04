@@ -69,7 +69,11 @@ class HeadServerCompactionReplayTest(@param:TempDir private val tmp: Path) {
     private val heap = HeapBudget(Long.MAX_VALUE, 64 * 1024 * 1024)
     private val lines = CopyOnWriteArrayList<String>()
     private lateinit var head: HeadServer
+
+    // CIO's own request timeout is 15 s, a second clock under the backstop: the in-flight retry's request stays open
+    // while the test polls the log before it releases the hold, and a 23-minute loaded gate on Nov 3 took longer.
     private val client = HttpClient(CIO) {
+        engine { requestTimeout = HANG_BACKSTOP.inWholeMilliseconds }
         defaultRequest { bearerAuth("test-inference-token") }
     }
 

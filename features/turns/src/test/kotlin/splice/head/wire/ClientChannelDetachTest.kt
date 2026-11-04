@@ -2,6 +2,9 @@
 // failing the turn, and a channel without a recording still fails exactly as before.
 package splice.head.wire
 
+import io.ktor.utils.io.ByteChannel
+import io.ktor.utils.io.jvm.javaio.toOutputStream
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -11,6 +14,7 @@ import org.junit.jupiter.api.Test
 import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
 import java.io.IOException
+import java.io.Writer
 import java.util.concurrent.atomic.AtomicBoolean
 
 class ClientChannelDetachTest {
@@ -79,5 +83,38 @@ class ClientChannelDetachTest {
         assertThrows(IllegalStateException::class.java) { ch.timedClientWrite("event: ping\n\n", TurnPerf(), clock) }
         assertTrue(ch.clientGone.get())
         assertFalse(ch.detached.get())
+    }
+
+    /** PR 468's loaded CI: once Ktor cancels a response (its client left), a write to that response throws a
+     *  CancellationException, not an IOException (ktor-io's CloseToken keeps the cancellation's type). A compaction
+     *  whose drive wrote a frame in that moment ended "without a terminal frame" and its retry paid a second upstream
+     *  turn. The client is gone either way: the recording channel detaches, and the turn runs on. */
+    @Test
+    fun `a write to a response Ktor cancelled is client loss - a recording channel detaches, nothing thrown`() {
+        val recording = FrameRecording()
+        val response = cancelledResponse()
+        val ch = channel(recording) { response.write(it); response.flush() }
+        ch.timedClientWrite("event: content_block_delta\n\n", TurnPerf(), clock)
+        ch.timedClientWrite("event: message_stop\n\n", TurnPerf(), clock)
+        assertTrue(ch.clientGone.get())
+        assertTrue(ch.detached.get())
+        assertEquals(2, recording.size, "every frame is recorded for the retry")
+    }
+
+    @Test
+    fun `a write to a response Ktor cancelled still cancels a turn without a recording, and flips clientGone`() {
+        val response = cancelledResponse()
+        val ch = channel(null) { response.write(it); response.flush() }
+        assertThrows(CancellationException::class.java) { ch.timedClientWrite("event: ping\n\n", TurnPerf(), clock) }
+        assertTrue(ch.clientGone.get())
+        assertFalse(ch.detached.get())
+    }
+
+    /** The writer a response body opened, over a response channel Ktor then cancelled as its client left. */
+    private fun cancelledResponse(): Writer {
+        val channel = ByteChannel()
+        val writer = channel.toOutputStream().writer()
+        channel.cancel(CancellationException("the client left"))
+        return writer
     }
 }

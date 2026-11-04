@@ -4,8 +4,9 @@
 //
 // The goal: a pin Use now sets, for the command or for one session, is still set after the daemon restarts, and the
 // next turn takes that login as it did before; Unpin outlives the restart the same way. When the pinned login cannot
-// serve, the pin stays and the pool says why and where the turns go instead: a login held for every model names its
-// window and when it serves again, and one held for one model's week names that model and until when. Driven through
+// serve for a limit it already read at the press, the pin stays and the pool says why and where the turns go instead: a
+// login held for every model names its window and when it serves again, and one held for one model's week names that
+// model and until when. A limit the login reads after the press lets the pin go (UseNowPinLetsGoTest, Nov 3, 2026). Driven through
 // the switch route the console posts to, with each daemon's pool built from the same state folder, as a restart does,
 // and read through the pool's one JSON projection (/api/auth's account_pool).
 package splice.app.head
@@ -156,12 +157,16 @@ class UseNowPinRestartTest {
     /** What the first daemon left in [label]'s hold file when the provider refused it. */
     private fun providerHeld(label: String, hold: ProviderHold) = holdFile(label).save(hold)
 
-    private fun pinned(body: String) = testApplication {
-        val daemon = Daemon()
+    private fun pinned(body: String, readings: Map<String, QuotaSnapshot> = emptyMap()) = testApplication {
+        val daemon = Daemon(readings)
         with(daemon) { routes() }
         val response = client.post("/api/auth/$HEAD/switch") { setBody(body) }
         assertEquals(HttpStatusCode.OK, response.status)
     }
+
+    /** A team seat's start pins its session through the pool (PoolAccountPins), past the console's 409 for a login
+     *  held for every model: the one way a pin is set over such a hold. */
+    private fun seatPinned(label: String) = assertTrue((Daemon().source as HeadAccountPinSource).pin(label, SESSION))
 
     private fun JsonObject.text(key: String): String? = (get(key) as? JsonPrimitive)?.takeIf { it.isString }?.content
 
@@ -203,13 +208,13 @@ class UseNowPinRestartTest {
     }
 
     @Test
-    fun `a pinned login the provider then holds for every model keeps its pin and says why`() {
-        pinned("""{"label":"three"}""")
+    fun `a seat pinned to a login its provider holds for every model keeps its pin and says why`() {
         providerHeld("three", ProviderHold(null, PlanLimit("five_hour", fiveHourReset)))
+        seatPinned("three")
 
         val after = Daemon()
         val turn = after.chosen(OPUS)
-        val pool = after.accountPool()
+        val pool = after.accountPool(SESSION)
 
         assertNotEquals("three", turn, "a login held for every model serves no turn")
         assertEquals("three", pool.text("pinned_label"), "the pin is kept, not dropped")
@@ -220,10 +225,10 @@ class UseNowPinRestartTest {
     }
 
     @Test
-    fun `a pinned login held for Fable's week keeps its pin, Opus takes it, and the pool names the Fable hold`() {
-        pinned("""{"label":"two"}""")
+    fun `a login pinned while held for Fable's week keeps its pin, Opus takes it, and the pool names the Fable hold`() {
         val fableWeek = PlanLimit("seven_day_overage_included", fableReset, model = FABLE)
         providerHeld("two", ProviderHold(null, null, listOf(fableWeek)))
+        pinned("""{"label":"two"}""")
 
         val after = Daemon()
         val pool = after.accountPool()
@@ -238,9 +243,9 @@ class UseNowPinRestartTest {
     }
 
     @Test
-    fun `a pinned login whose usage reads full while another has room keeps its pin and says why`() {
-        pinned("""{"label":"three"}""")
+    fun `a login pinned while its usage reads full and another has room keeps its pin and says why`() {
         val full = QuotaSnapshot(fiveHour = QuotaWindow(100.0, fiveHourReset, 18_000))
+        pinned("""{"label":"three"}""", mapOf("three" to full))
 
         val after = Daemon(mapOf("three" to full))
         val turn = after.chosen(OPUS)
@@ -302,14 +307,14 @@ class UseNowPinRestartTest {
     }
 
     @Test
-    fun `a pinned login held like every other, whose hold ends first, still says why it serves no turn`() {
-        pinned("""{"label":"three"}""")
+    fun `a seat pinned to a login held like every other, whose hold ends first, still says why it serves no turn`() {
         val later = PlanLimit("five_hour", fiveHourReset + 3_600)
         providerHeld("eight", ProviderHold(null, later))
         providerHeld("two", ProviderHold(null, later))
         providerHeld("three", ProviderHold(null, PlanLimit("five_hour", fiveHourReset)))
+        seatPinned("three")
 
-        val pool = Daemon().accountPool()
+        val pool = Daemon().accountPool(SESSION)
 
         assertEquals("three", pool.text("next_target_label"), "no login serves, and the pin's hold ends first")
         val why = pool.text("pin_refusal").orEmpty()

@@ -87,7 +87,7 @@ internal class ClaudeFolderAuth(
         val given = ClaudeLoginFactsReader().displayName(folder.resolve(".splice-account.json"))
         given?.let { fields["display_name"] = it }
         held?.let { credential ->
-            val key = CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer ${credential.accessToken}"))
+            val key = keyOf(credential.accessToken)
             val account = key?.let { profiles?.read(it) }
             if (account == null && key != null) identities?.request(key, credential.accessToken)
             account?.let {
@@ -108,9 +108,24 @@ internal class ClaudeFolderAuth(
             .onFailure { why -> log("[claude-account] ${name()} could not be refreshed (${why::class.simpleName})\n") }
             .getOrNull()?.let { rotated ->
                 save(held.document, rotated)
+                carry(held.accessToken, rotated.accessToken)
                 Credentials.Bearer(rotated.accessToken)
             }
     }
+
+    /** A renewal keeps the account: Anthropic issued [renewed] for this login's own refresh token, so the account
+     *  proved for [old] is the renewed token's too, filed under it at once, and the card keeps its email through
+     *  the renewal (Nov 3, 2026: five cards went up to four hours without one, until a page read proved the new
+     *  token). When [old] was never proved, [renewed] is proved now, not when a page next reads this login. */
+    private fun carry(old: String, renewed: String) {
+        val key = keyOf(renewed) ?: return
+        val account = keyOf(old)?.let { profiles?.read(it) }
+        if (account != null) profiles?.observed(key, account) else identities?.request(key, renewed)
+    }
+
+    /** The identity store's key for [accessToken]: the digest the token is sent under. */
+    private fun keyOf(accessToken: String): String? =
+        CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer $accessToken"))
 
     /** The whole document plus the three fields splice reads, or null when the folder holds no readable credential. */
     private fun read(): Held? = readHeld()

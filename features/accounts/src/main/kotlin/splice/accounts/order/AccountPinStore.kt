@@ -6,6 +6,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import splice.core.auth.SavedPins
+import splice.core.util.DaemonLog
 import splice.core.util.SecureFile
 import java.io.IOException
 import java.nio.file.Files
@@ -57,12 +58,20 @@ public class AccountPinStore(private val file: Path) {
     }
 
     /** Lets go of every pin [head] holds on one of [labels], the logins whose limit reading let their pins go (Nov 3,
-     *  2026). The rest of the file stays as it is, so a press saved meanwhile is kept. */
+     *  2026), and says so in the daemon log. The rest of the file stays as it is, so a press saved meanwhile is kept. A
+     *  disk that refuses is logged, not thrown: the pool has let go already, and the next pin or unpin writes the file
+     *  as the pool holds it. */
     @Synchronized
     public fun release(head: String, labels: Set<String>) {
+        val names = labels.joinToString()
+        DaemonLog.write("[$head] Use now pin on $names let go: the login read a limit\n")
         val saved = pins(head)
         val kept = SavedPins(saved.head?.takeUnless(labels::contains), saved.sessions.filterValues { it !in labels })
-        if (kept != saved) set(head, kept)
+        try {
+            if (kept != saved) set(head, kept)
+        } catch (e: IOException) {
+            DaemonLog.write("[$head] the pin file kept $names after it let go: $e\n")
+        }
     }
 
     private fun read(): PinsDocument? = try {

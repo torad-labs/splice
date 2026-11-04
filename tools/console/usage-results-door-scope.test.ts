@@ -9,6 +9,7 @@ import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { layout } from "../gate/src/lib/repo.ts";
+import { live } from "./live.ts";
 
 const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const now = Date.now();
@@ -89,7 +90,7 @@ test("Usage: the Results door names the table's window when the page's window is
     // the table's own switch moves the door with it
     await p.locator("#band-perf [data-act=perfwin][data-v='1h']").click();
     await expect(said(p)).toContainText("1 hour", { timeout: 20_000 });
-    expect(await said(p).evaluate((el) => el.getClientRects().length)).toBe(1);
+    expect(await live(said(p), (el) => el.getClientRects().length)).toBe(1);
   });
 }, 90_000);
 
@@ -97,6 +98,6 @@ test("Usage: with a project picked, the Results door says its figure is over all
   await open("?project=/work/website", async (p) => {
     await expect(p.locator("#band-perf .bandhead")).toContainText("All requests", { timeout: 20_000 });
     await expect(said(p)).toContainText(/all requests/i, { timeout: 20_000 });
-    expect(await said(p).evaluate((el) => el.getClientRects().length)).toBe(1);
+    expect(await live(said(p), (el) => el.getClientRects().length)).toBe(1);
   });
 }, 90_000);

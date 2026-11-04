@@ -7,6 +7,7 @@ import { chromium, expect, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { layout } from "../gate/src/lib/repo.ts";
+import { live } from "./live.ts";
 
 const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const hourStart = Math.floor(Date.now() / 3_600_000) * 3_600_000;
@@ -65,7 +66,7 @@ test("the group line's bursts pill brings the group's line into view", async () 
     const pill = page.locator('.rqgroup [data-act="grp"][data-v="bursts"]');
     expect(await pill.getAttribute("title")).toBe("Show these bursts");
     await pill.click();
-    await expect.poll(() => page.locator(".rqgroup").evaluate((e) => Math.round(e.getBoundingClientRect().top))).toBeLessThan(200);
+    await expect.poll(() => live(page.locator(".rqgroup"), (e) => Math.round(e.getBoundingClientRect().top))).toBeLessThan(200);
     expect(await page.locator('.rqburst[aria-expanded="true"]').count()).toBe(0);
   } finally {
     await page.close();

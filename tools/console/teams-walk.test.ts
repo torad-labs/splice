@@ -10,6 +10,7 @@ import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { layout } from "../gate/src/lib/repo.ts";
+import { live } from "./live.ts";
 
 const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 type Row = Record<string, unknown>;
@@ -139,7 +140,7 @@ test("a member row with no command dims its Model and Account pickers and leaves
   await expect(head).toBeEnabled();
   await expect(model).toBeDisabled();
   await expect(account).toBeDisabled();
-  const opacity = (l: typeof head) => l.evaluate((e) => Number(getComputedStyle(e).opacity));
+  const opacity = (l: typeof head) => live(l, (e) => Number(getComputedStyle(e).opacity));
   bunExpect(await opacity(head)).toBe(1);
   bunExpect(await opacity(model)).toBeLessThan(1);
   bunExpect(await opacity(account)).toBeLessThan(1);

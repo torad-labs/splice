@@ -9,6 +9,7 @@ import { chromium, expect, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { layout } from "../gate/src/lib/repo.ts";
+import { live } from "./live.ts";
 
 const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const day = Date.now() - 3_600_000;
@@ -97,7 +98,7 @@ test("a command that held nothing today stands under one No requests label as a 
     await expect(quiet.locator(".pclk")).toHaveText("");
     // alpha and beta, which held requests, draw their figures and stand above the label
     await expect(today.locator(".pk:not(.quiet)[data-grow]")).toHaveCount(2);
-    const y = await today.evaluate((el) => {
+    const y = await live(today, (el) => {
       const top = (sel: string) => el.querySelector(sel)!.getBoundingClientRect().top;
       return { beta: top('.pk[data-grow="peak-beta"]'), label: top(".pk.pg"), gamma: top('.pk[data-grow="peak-gamma"]') };
     });

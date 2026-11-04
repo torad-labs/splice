@@ -8,6 +8,7 @@ import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { layout } from "../gate/src/lib/repo.ts";
+import { live } from "./live.ts";
 
 const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const DAY = 864e5;
@@ -87,7 +88,7 @@ test("a store that holds something shows its size, its count and its share; one 
     const bar = whole.locator(".pd-pop");
     await expect(bar).toContainText("Transcript copies 12.8 GB");
     // every part is as long as its own share of the total the figure above it reads, once the bar has grown in
-    const shares = () => whole.evaluate((el) => {
+    const shares = () => live(whole, (el) => {
       const size = (t: string) => Number.parseFloat(t.replace(/[^\d.]/g, "")) * (/TB/.test(t) ? 1_048_576 : /GB/.test(t) ? 1024 : /KB/.test(t) ? 1 / 1024 : 1);
       const total = size(el.querySelector(".pd-top .pd-rate")?.textContent ?? "");
       const w = el.querySelector(".pd-bar")!.getBoundingClientRect().width;

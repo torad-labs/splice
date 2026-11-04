@@ -38,6 +38,7 @@ public class VirtualTime(
     private val sleepers = mutableListOf<Sleeper>()
     private val alarms = mutableListOf<Alarm>()
     private val parked = MutableStateFlow(0)
+    private var parks = 0L
 
     /** Something a test does once the clock reads [dueMs]. */
     private data class Alarm(val dueMs: Long, val action: () -> Unit)
@@ -101,6 +102,10 @@ public class VirtualTime(
     /** How many waits are parked on this clock now. */
     public fun parkedNow(): Int = parked.value
 
+    /** How many waits have parked on this clock since it was made. A loop that wakes and parks again leaves
+     *  [parkedNow] where it was; this count still moves, so a test can tell the loop answered its wake. */
+    public fun parksSoFar(): Long = synchronized(lock) { parks }
+
     /** When each parked wait falls due, as time passed since the clock was made, earliest first: a test reads that a
      *  particular wait, such as a held turn's probe, is parked again before it moves the clock past it. */
     public fun parkedDues(): List<Duration> = synchronized(lock) { sleepers.map { it.dueMs.milliseconds }.sorted() }
@@ -137,6 +142,7 @@ public class VirtualTime(
                 passedMs >= dueMs -> true
                 else -> {
                     sleepers += sleeper
+                    parks++
                     null
                 }
             }

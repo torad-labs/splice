@@ -179,7 +179,13 @@ internal class ClaudeIdentityRefresh(
     fun request(key: String, token: String): Deferred<ClaudeAccountIdentity?> = active[key]
         ?: if (remembered(key)) CompletableDeferred(profiles.read(key)) else start(key, token)
 
-    private fun start(key: String, token: String): Deferred<ClaudeAccountIdentity?> {
+    /** Asks the provider about [token] even when [key] already has a record: a renewal files the account it carried
+     *  from the old token, and this read brings what that account's profile says now, such as a changed email. A
+     *  verified answer replaces the record; a refusal or a failure leaves it as it is. */
+    fun reprove(key: String, token: String): Deferred<ClaudeAccountIdentity?> =
+        active[key] ?: start(key, token, recheck = false)
+
+    private fun start(key: String, token: String, recheck: Boolean = true): Deferred<ClaudeAccountIdentity?> {
         val next = scope.async(dispatcher, start = CoroutineStart.LAZY) {
             val result = Cancellables.runCatchingCancellable { probe.result(token) }.getOrElse { failure ->
                 log("[claude-profile] profile read failed (${failure::class.simpleName})\n")
@@ -199,7 +205,7 @@ internal class ClaudeIdentityRefresh(
                 next.cancel()
                 existing
             }
-            remembered(key) -> {
+            recheck && remembered(key) -> {
                 next.cancel()
                 CompletableDeferred(profiles.read(key))
             }

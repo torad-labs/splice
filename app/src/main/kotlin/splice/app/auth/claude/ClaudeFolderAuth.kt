@@ -116,11 +116,12 @@ internal class ClaudeFolderAuth(
     /** A renewal keeps the account: Anthropic issued [renewed] for this login's own refresh token, so the account
      *  proved for [old] is the renewed token's too, filed under it at once, and the card keeps its email through
      *  the renewal (Nov 3, 2026: five cards went up to four hours without one, until a page read proved the new
-     *  token). When [old] was never proved, [renewed] is proved now, not when a page next reads this login. */
+     *  token). Then [renewed] is proved in the background, not when a page next reads this login, so the card shows
+     *  what the account's profile says now. The record is filed first, so that read can only replace it. */
     private fun carry(old: String, renewed: String) {
         val key = keyOf(renewed) ?: return
-        val account = keyOf(old)?.let { profiles?.read(it) }
-        if (account != null) profiles?.observed(key, account) else identities?.request(key, renewed)
+        keyOf(old)?.let { profiles?.read(it) }?.let { profiles?.observed(key, it) }
+        identities?.reprove(key, renewed)
     }
 
     /** The identity store's key for [accessToken]: the digest the token is sent under. */

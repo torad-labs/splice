@@ -11,6 +11,7 @@ import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { layout } from "../gate/src/lib/repo.ts";
+import { live } from "./live.ts";
 
 const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const now = Date.now();
@@ -93,7 +94,7 @@ async function opened(width: number, height: number, scale: number, id: string):
   return page;
 }
 type Box = { left: number; right: number; top: number; bottom: number };
-const boxOf = (page: Page, sel: string) => page.locator(sel).first().evaluate((e) => {
+const boxOf = (page: Page, sel: string) => live(page.locator(sel).first(), (e) => {
   const r = e.getBoundingClientRect();
   return { left: r.left, right: r.right, top: r.top + scrollY, bottom: r.bottom + scrollY };
 });

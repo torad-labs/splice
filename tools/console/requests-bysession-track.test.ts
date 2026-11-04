@@ -9,6 +9,7 @@ import { chromium, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { layout } from "../gate/src/lib/repo.ts";
+import { live } from "./live.ts";
 
 const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const now = Date.now();
@@ -64,7 +65,7 @@ test("at 1440 every By session line's bar sits on a track as wide as its column,
       const bySession = page.locator(".bys", { has: page.locator(".byh", { hasText: "By session" }) });
       await bySession.locator(".byr .bb").nth(4).waitFor({ timeout: 15_000 });
       await page.waitForTimeout(400); // the bars grow to their widths
-      const m = await bySession.evaluate((grid) => {
+      const m = await live(bySession, (grid) => {
         const col = parseFloat(getComputedStyle(grid).gridTemplateColumns.split(" ")[1] ?? "0");
         const alpha = (c: string) => (c === "transparent" ? 0 : /rgba?\(([^)]+)\)/.test(c) ? Number(c.match(/rgba?\(([^)]+)\)/)![1]!.split(",")[3] ?? 1) : 1);
         return {

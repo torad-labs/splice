@@ -10,6 +10,7 @@ import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { layout } from "../gate/src/lib/repo.ts";
+import { live } from "./live.ts";
 
 const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const stream = (text: string) => [
@@ -110,7 +111,7 @@ test("the plan reads from its box's top, and a long plan grows its box with no i
     await page.locator("#prompt").fill(Array.from({ length: 80 }, (_, i) => `- step ${i + 1} of the plan`).join("\n"));
     await page.locator("#prompt").press("Escape");
     const out = page.locator(".pg-md-out");
-    expect(await out.evaluate((el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true); // the box holds the whole plan: nothing to scroll to
+    expect(await live(out, (el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true); // the box holds the whole plan: nothing to scroll to
     const grown = (await page.locator(".pg-md").boundingBox())!, last = (await page.locator(".pg-md-out li").last().boundingBox())!;
     expect(grown.height).toBeGreaterThan(box.height + 500); // eighty steps made the box taller, not a scroller
     expect(last.y + last.height).toBeLessThanOrEqual(grown.y + grown.height + 1); // the last step stands inside the box

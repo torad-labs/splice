@@ -9,6 +9,7 @@ import { chromium, expect, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { layout } from "../gate/src/lib/repo.ts";
+import { live } from "./live.ts";
 
 const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const now = Date.now();
@@ -65,7 +66,7 @@ test("a plan request draws its API-price worth hollow, the list's key says Plan 
     await page.goto(`http://127.0.0.1:${server.port}/requests.html`);
     const card = (turn: string) => page.locator(`article[data-open="codex:${turn}"]`);
     await expect(card("onplan")).toBeVisible({ timeout: 20_000 });
-    const fill = (turn: string) => card(turn).locator(".co .cbar > b").evaluate((b) => getComputedStyle(b).backgroundColor);
+    const fill = (turn: string) => live(card(turn).locator(".co .cbar > b"), (b) => getComputedStyle(b).backgroundColor);
     await expect(card("onplan").locator(".co .v")).toHaveText("$0.053");
     expect(await card("onplan").locator(".co.plan").count()).toBe(1);
     // the list redraws on its poll, so a single read can land on a row being replaced and read no colour: read until settled

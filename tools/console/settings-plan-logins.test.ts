@@ -7,6 +7,7 @@ import { chromium, expect, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { layout } from "../gate/src/lib/repo.ts";
+import { live } from "./live.ts";
 
 const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const now = Math.floor(Date.now() / 1000);
@@ -72,7 +73,7 @@ test("three login cards stand in a row where the pane is as wide as his 3822 scr
     const tops = await page.locator(".plogs > .plog:not(.ghosted)").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
     // both logins on one row, and the row's cards are never wider than a third of the list
     expect(new Set(tops).size).toBe(1);
-    const w = await page.locator(".plogs > .plog:not(.ghosted)").first().evaluate((e) => e.getBoundingClientRect().width / (e.parentElement as HTMLElement).getBoundingClientRect().width);
+    const w = await live(page.locator(".plogs > .plog:not(.ghosted)").first(), (e) => e.getBoundingClientRect().width / (e.parentElement as HTMLElement).getBoundingClientRect().width);
     expect(w).toBeLessThan(0.36);
   } finally {
     await page.close();

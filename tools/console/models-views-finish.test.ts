@@ -11,6 +11,7 @@ import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { layout } from "../gate/src/lib/repo.ts";
+import { live } from "./live.ts";
 
 const consoleDir = process.env.CONSOLE_DIR || join(layout().repoRoot, "app/src/main/resources/console");
 // alpha holds thirty models and folds past its first four, beta holds three and shows them all
@@ -164,7 +165,7 @@ test("a command whose every login is at its limit keeps its rows, dimmed, under 
     await expect(held.locator(".em-lim")).toContainText("Limit reached until", { timeout: 20_000 });
     await expect(held).toHaveClass(/em-held/);
     await expect(rows(p, "alpha")).toHaveCount(4);
-    expect(await held.locator(".em-rows").evaluate((e) => +getComputedStyle(e).opacity)).toBeLessThan(0.6);
+    expect(await live(held.locator(".em-rows"), (e) => +getComputedStyle(e).opacity)).toBeLessThan(0.6);
     await expect(p.locator('.em-card[data-cmd="beta"] .em-lim')).toHaveCount(0);
   } finally {
     await p.close();

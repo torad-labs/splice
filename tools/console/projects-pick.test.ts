@@ -7,6 +7,7 @@ import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { layout } from "../gate/src/lib/repo.ts";
+import { live } from "./live.ts";
 
 const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const now = Date.now();
@@ -214,7 +215,7 @@ test("on a wide Requests the tiles count the requests in the window, and the fil
   try {
     await expect(p.locator(".ptiles .ptotal").first()).toHaveText("3", { timeout: 20_000 });
     expect(await tileTotals(p)).toEqual([["Every project", "3"], ["temple", "2"], ["website", "1"], ["No project", "0"]]);
-    const left = (sel: string) => p.locator(sel).first().evaluate((e) => Math.round(e.getBoundingClientRect().left));
+    const left = (sel: string) => live(p.locator(sel).first(), (e) => Math.round(e.getBoundingClientRect().left));
     expect(await left(".fv")).toBe(await left(".ptiles"));
   } finally {
     await p.context().close();

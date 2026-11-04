@@ -77,14 +77,15 @@ internal class PinBook {
 
     /** Lets go of every pin whose login reads a limit it did not read when pinned, and returns those logins, or null
      *  when every pin stays. A limit that clears leaves what the pin was set over, so its return is a new reading. A
-     *  login the pool does not hold now keeps its pin until it is back. */
+     *  login the pool does not hold now keeps its pin until it is back. It reads each login's last observation, not a
+     *  new one: this runs on every read of the pool, and the reads that matter (a turn's choice, the console's view)
+     *  observe every login themselves, so a usage reading lets its pin go at the next of them. */
     @Synchronized
     fun letGo(accounts: Map<String, PoolAccount>, at: Long): Set<String>? {
         val pinned = sessions.values.toSet() + listOfNotNull(head)
         pinnedOver.keys.retainAll(pinned)
         val gone = pinned.filterTo(mutableSetOf()) { label ->
             val account = accounts[label] ?: return@filterTo false
-            account.refreshCredentialEvidence()
             val reads = limits(account, at)
             val over = pinnedOver[label] ?: reads
             pinnedOver[label] = over intersect reads

@@ -114,6 +114,9 @@ private const val TEARS_PAST_BUDGET = 7
 private const val PERF_POLLS = 300
 private const val PERF_POLL_MS = 50L
 
+/** The id on the message_start a client read, which the turn's perf row carries as response_message_id (V4-354). */
+private val CLIENT_MESSAGE_ID = Regex("\"id\":\"(msg_[^\"]+)\"")
+
 private const val HOLD_MS = 6_000L
 
 /** V4-116: the armed mid-output stall-re-anchor tier the stall arms run under. A reply inside a
@@ -479,19 +482,25 @@ class MidStreamTearContinuesTest {
         seen.toString()
     }
 
-    /** The perf row this head wrote for the turn just finished. PerfStats appends through
-     *  AsyncFileIo, so it is polled rather than read once — the HeadServerCapacityTest idiom.
+    /** The perf row this head wrote for the turn the client read as [received]. PerfStats appends
+     *  through AsyncFileIo, so it is polled rather than read once — the HeadServerCapacityTest idiom.
      *
-     *  Polled for a row that was NOT THERE before the turn, never for "any row": the file is per
-     *  head and every arm on the same port appends to it, so "the last row" is the previous arm's
-     *  row until this turn's append lands — and it landed late enough once (V4-141 gate of record,
-     *  2026-09-20: ARM 7 read ARM 5's `outcome: ok` row while its own `error:conn-reset` row was
-     *  still in the writer) for the arm to fail on a row it never wrote. [before] is the count
-     *  taken by [perfRowsBefore] ahead of the turn. */
-    private fun perfRow(port: Int, before: Int): String {
+     *  Found by the turn's own id, never by position: the file is per head and every arm on the same
+     *  port appends to it, so "the last row" is the previous arm's row until this turn's append lands
+     *  (V4-141 gate of record, 2026-09-20: ARM 7 read ARM 5's `outcome: ok` row). Counting the rows
+     *  before the turn was not enough either: on Nov 3, 2026 a loaded pre-push wrote the previous
+     *  arm's row after that count, and ARM 7 read it (its id ended _284; the client's ended _285). A
+     *  turn whose client read no id falls back to the first row not there at [before]. */
+    private fun perfRow(port: Int, before: Int, received: String): String {
+        val id = CLIENT_MESSAGE_ID.find(received)?.groupValues?.get(1)
         repeat(PERF_POLLS) {
             val rows = perfRows(port)
-            if (rows.size > before) return rows.last()
+            val row = if (id == null) {
+                rows.takeIf { it.size > before }?.last()
+            } else {
+                rows.lastOrNull { it.contains("\"response_message_id\":\"$id\"") }
+            }
+            if (row != null) return row
             Thread.sleep(PERF_POLL_MS)
         }
         return ""
@@ -647,7 +656,7 @@ class MidStreamTearContinuesTest {
         // V4-444: and the ROW says which kind of re-POST that was. A surface reading the row (the
         // console's Requests list) draws "Started over" for this turn and "Resumed" for ARM 11's,
         // and before this counter existed the two rows were identical.
-        val row = perfRow(honestPort, before)
+        val row = perfRow(honestPort, before, received)
         assertTrue(row.contains(REANCHORS_FIELD + "1"), "the restart is a spent re-anchor, got: " + row)
         assertTrue(
             row.contains(FROM_SCRATCH_FIELD + "1"),
@@ -674,7 +683,7 @@ class MidStreamTearContinuesTest {
             received.contains("overloaded_error"),
             "the client still reads the honest retryable error" + diagnostics(received),
         )
-        val row = perfRow(prefillPort, before)
+        val row = perfRow(prefillPort, before, received)
         assertTrue(
             row.contains(PERF_CAUSE_FIELD + PersistedCause.UPSTREAM_TRUNCATED.name + QUOTE),
             "an unrecovered tear must stay greppable as a torn stream, got: " + row + diagnostics(received),

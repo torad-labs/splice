@@ -60,6 +60,25 @@ private const val CLIENT_BYTE_KEY = "arrival_to_first_client_byte_ms"
 
 class RequestStartTimingTest {
     @Test
+    fun `model roster waits are visible without changing legacy stage clocks`(@TempDir root: Path) =
+        runBlocking<Unit> {
+            val now = AtomicLong(100L)
+            TimingRig(
+                root,
+                models = HeadDeps.CurrentModels { now.addAndGet(2_000L) },
+                clock = ElapsedClock { now.get() },
+            ).use { rig ->
+                rig.start()
+                assertTrue(timingPost(rig.port, "timed").contains("message_stop"))
+                val row = timingRow(root)
+                assertEquals(2_000L, duration(row, "model_roster_wait_ms"), row.toString())
+                assertEquals(2_000L, duration(row, "pre_admission_ms"), row.toString())
+                assertEquals(0L, duration(row, "total"), "legacy stages keep their existing origin")
+                assertEquals(2_000L, duration(row, CLIENT_BYTE_KEY), row.toString())
+            }
+        }
+
+    @Test
     fun `a delayed upstream request write reaches its persisted arrival to write duration`(
         @TempDir root: Path,
     ) = runBlocking<Unit> {
@@ -181,6 +200,8 @@ private class TimingRig(
     heapBytes: Long = 0,
     prepDelay: Boolean = false,
     write: DelayedUpstreamWrite? = null,
+    models: HeadDeps.CurrentModels = HeadDeps.CurrentModels {},
+    clock: ElapsedClock? = null,
 ) : AutoCloseable {
     private val upstream = MockChatGptUpstream()
     val provider = TimingProvider(timingProvider(upstream.baseUrl), prepDelay)
@@ -196,9 +217,9 @@ private class TimingRig(
             log = {},
             seams = HeadDeps.HeadSeams(
                 requestMaterializationGate = heap,
-                clock = write?.clock ?: ElapsedClock(MonoClock::nowMs),
+                clock = clock ?: write?.clock ?: ElapsedClock(MonoClock::nowMs),
             ),
-        ),
+        ).let { deps -> deps.copy(traffic = deps.traffic.copy(models = models)) },
     )
     val port: Int get() = head.port
 

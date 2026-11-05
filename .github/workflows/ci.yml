@@ -108,7 +108,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 0
+          # Attribution reads ancestry; retain the release rehearsal's existing checkout too.
+          fetch-depth: ${{ (matrix.worker == 'source' || matrix.worker == 'rehearsal') && '0' || '1' }}
       - uses: ./.github/actions/ci-setup
         with:
           browser: ${{ matrix.worker == 'browser' || matrix.worker == 'rehearsal' }}

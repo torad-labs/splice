@@ -43,6 +43,7 @@ internal class UpstreamEventTiming(private val perf: TurnPerf, private val poste
             ending = UpstreamGapEnd.CANCELLED
             throw cancelled
         } finally {
+            perf.maxCount(PerfKeys.UP_BLOCKED_TOTAL_MS, 0)
             perf.add(PerfKeys.UP_BLOCKED_TOTAL_MS, deliveryTotalMs)
             val endedAtMs = perf.elapsedMs()
             recordGap(previousEventMs, endedAtMs, ending)

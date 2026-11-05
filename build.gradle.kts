@@ -85,11 +85,14 @@ subprojects {
 // only when a kover task was asked for by name. Measured on four modules' test tasks, Oct 9: 42.1 s with the agent, 36.5 s
 // without it.
 val coverageRequested = gradle.startParameter.taskNames.any { it.substringAfterLast(':').startsWith("kover") }
+// The collector validates all candidate-bound shards before supplying this manifest.
+val externalCoverage = providers.environmentVariable("KOVER_EXTERNAL_BINARY_REPORTS").orNull
 subprojects {
     plugins.withId("org.jetbrains.kotlin.jvm") {
         apply(plugin = "org.jetbrains.kotlinx.kover")
         extensions.configure<kotlinx.kover.gradle.plugin.dsl.KoverProjectExtension> {
-            currentProject { instrumentation { disabledForAll.set(!coverageRequested) } }
+            // Kover removes Test dependencies when instrumentation is disabled; source/class inputs remain.
+            currentProject { instrumentation { disabledForAll.set(!coverageRequested || externalCoverage != null) } }
         }
     }
 }
@@ -131,5 +134,10 @@ subprojects {
 kover {
     merge {
         allProjects()
+    }
+    if (externalCoverage != null) {
+        reports.total.additionalBinaryReports.addAll(
+            file(externalCoverage).readLines().filter { it.isNotBlank() }.map { file(it) },
+        )
     }
 }

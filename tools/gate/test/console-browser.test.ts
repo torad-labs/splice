@@ -1,5 +1,5 @@
 // The consoleTests row (tools/gate/config/ladder.json) launches Chromium, and the gate runs every row wherever a workflow
-// runs it whole: ci.yml's ladder on a push to main, and release.yml's repository gates on a v* tag or a push to prod. A
+// runs it whole: release.yml's repository gates, or CI browser/rehearsal workers. A
 // runner has no Playwright browser and bun install downloads none, so every job that runs the gate installs one first.
 // PR 456's review, round 1: release.yml did not, and the v0.4.0 tag would have stopped at its gate before the jar.
 import { describe, expect, test } from "bun:test";
@@ -7,7 +7,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { layout } from "../src/lib/repo.ts";
 
-type Step = { name?: string; run?: string; uses?: string };
+type Step = { name?: string; run?: string; uses?: string; if?: string; with?: Record<string, string> };
 type Workflow = { jobs?: Record<string, { steps?: Step[] }> };
 
 const { repoRoot } = layout();
@@ -25,10 +25,18 @@ const jobs = readdirSync(workflows)
 const gating = jobs.filter((job) => job.steps.some(runsGate));
 
 describe("every workflow job that runs the gate has Chromium for the console's tests", () => {
-  test("the gate runs in ci.yml's ladder and in release.yml's build", () => {
-    const where = gating.map((job) => job.where);
-    expect(where).toContain("ci.yml ladder");
-    expect(where).toContain("release.yml build");
+  test("release's full gate and CI's browser/rehearsal workers have Chromium before execution", () => {
+    expect(gating.map(job => job.where)).toContain("release.yml build");
+    const worker = jobs.find(job => job.where === "ci.yml workers")!;
+    const setup = worker.steps.findIndex(step => step.uses === "./.github/actions/ci-setup");
+    const execute = worker.steps.findIndex(step => step.run?.includes("ci worker"));
+    expect(setup).toBeGreaterThanOrEqual(0);
+    expect(execute).toBeGreaterThan(setup);
+    expect(worker.steps[setup]!.with?.browser).toBe("${{ matrix.worker == 'browser' || matrix.worker == 'rehearsal' }}");
+    const action = Bun.YAML.parse(readFileSync(join(repoRoot, ".github/actions/ci-setup/action.yml"), "utf8")) as {runs: {steps: Step[]}};
+    const install = action.runs.steps.find(installsChromium);
+    expect(install).toBeDefined();
+    expect(install!.if).toBe("inputs.browser == 'true'");
   });
 
   // install-deps lays down only the OS libraries, so a job whose one Chromium step is that has no browser to launch

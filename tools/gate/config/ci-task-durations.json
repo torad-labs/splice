@@ -1,0 +1,15 @@
+{
+  ":app:test": 350.05,
+  ":features-turns:test": 342.59,
+  ":features-diagnostics:lawTest": 231.47,
+  ":features-diagnostics:test": 152.41,
+  ":integrations-claude-code:test": 146.76,
+  ":features-heads:test": 133.25,
+  ":integrations-codemode:test": 119.23,
+  ":integrations-providers-codex:test": 109.48,
+  ":integrations-upstream:test": 85.39,
+  ":integrations-mcp:test": 62.19,
+  ":core:test": 52.87,
+  ":integrations-dialects-openai-chat:test": 36.41,
+  ":integrations-dialects-anthropic:test": 32.28
+}

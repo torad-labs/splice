@@ -1,0 +1,8 @@
+{
+  "splice.head.HeadServerIntegrationTest": 63.137,
+  "splice.head.RequestHeapBudgetTest": 36.077,
+  "splice.head.HeadServerEndingsTest": 29.388,
+  "splice.codemode.CodeModeWorkerBootTest": 85.465,
+  "splice.app.provider.CodeModeHistoryInPlaceTest": 68.085,
+  "splice.app.cli.UpgradeProcessTest": 65.495
+}

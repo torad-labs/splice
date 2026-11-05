@@ -14,12 +14,12 @@ const WRAPPERS = new Set(["project", "testFixtures", "files", "fileTree"]);
 const PROJECT_CALL = /project\s*\(/g;
 
 /** The project paths [script] depends on through a main configuration, sorted and unique. */
-export function declaredProjectDeps(script: string): string[] {
+export function declaredProjectDeps(script: string, includeTestConfigurations = false): string[] {
   const found = new Set<string>();
   for (const match of script.matchAll(PROJECT_CALL)) {
     const open = (match.index ?? 0) + match[0].length - 1;
     const config = configurationOf(script, open);
-    if (config === undefined || !MAIN.has(config)) continue;
+    if (!includeTestConfigurations && (config === undefined || !MAIN.has(config))) continue;
     const path = projectPath(argsOf(script, open));
     if (path !== undefined) found.add(path);
   }

@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 // tools/gate — the repository's gate CLI. Dispatch only: every verb's behaviour lives in
 // src/commands/<verb>.ts, and everything two verbs share lives in src/lib/.
+import { ci, usage as ciUsage } from "./src/commands/ci.ts";
 import { allowlist, usage as allowlistUsage } from "./src/commands/allowlist.ts";
 import { attribution, usage as attributionUsage } from "./src/commands/attribution.ts";
 import { audit, usage as auditUsage } from "./src/commands/audit.ts";
@@ -16,6 +17,7 @@ import { title, usage as titleUsage } from "./src/commands/title.ts";
 import { typecheck, usage as typecheckUsage } from "./src/commands/typecheck.ts";
 
 const VERBS = {
+  ci: { usage: ciUsage, exec: (argv: string[]) => ci(argv) },
   run: { usage: runUsage, exec: (argv: string[]) => run(argv) },
   slot: { usage: slotUsage, exec: (argv: string[]) => slot(argv) },
   sentinel: { usage: sentinelUsage, exec: (argv: string[]) => sentinel(argv) },

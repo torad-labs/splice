@@ -28,6 +28,7 @@
 // test — tools/gate/test/jdk.test.ts calls `run(["--java-home-only"])` directly, captures the
 // printed home, and asserts javaMajor reports 21 for its `bin/java`.
 import { join } from "node:path";
+import { ciSelection } from "../lib/ci-selection.ts";
 import { resolveJdk21 } from "../lib/jdk.ts";
 import { GATE_TREE, type PrePushTree, preparePrePushTree } from "../lib/prepush-tree.ts";
 import { type Layout, layout } from "../lib/repo.ts";
@@ -110,16 +111,7 @@ async function runSince(base: string): Promise<number> {
   try {
     const { repoRoot } = judged.where;
     const hook = await import("./hook.ts");
-    const { prePushScope } = await import("../lib/prepush-scope.ts");
-    const modules = hook.gradleModules(repoRoot);
-    const legs = hook.readLadder(repoRoot);
-    const scope = prePushScope({
-      legs,
-      modules: modules.map((module) => module.path),
-      moduleOf: (file) => hook.moduleOf(modules, file),
-      changed: hook.pathsSince(repoRoot, base),
-      graph: hook.readModuleGraph(repoRoot),
-    });
+    const scope = ciSelection(repoRoot, hook.pathsSince(repoRoot, base));
     console.error(`══ splice gate (pull request) ══  scope: ${scope.summary}`);
     const direct = hook.runDirectLegs(repoRoot, scope.direct);
     let gradleExit = 0;

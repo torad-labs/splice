@@ -17,9 +17,10 @@ internal class CodeModeTurnNotes(
     fun announce(context: CodeModeRunContext, remainingCallbacks: Set<String>) {
         val resultIds = context.turn.toolResults.map(CodeModeResult::id).toSet()
         val owners = registry.resultOwners(context.key, resultIds)
-        val ordinary = owners.unknown.count { it in remainingCallbacks }
+        val ordinary = owners.unknown.intersect(remainingCallbacks)
+        val reason = ordinaryReason(context, ordinary, owners.foreign != null)
         val state = when {
-            ordinary > 0 -> "ordinary"
+            ordinary.isNotEmpty() -> "ordinary:$reason"
             owners.unknown.isNotEmpty() -> "reconstructed"
             else -> "retained"
         }
@@ -28,10 +29,10 @@ internal class CodeModeTurnNotes(
             if (announced.size > NOTE_CACHE_KEYS) announced.remove(announced.keys.first())
             previous != state
         }
-        if (changed && state == "ordinary") {
+        if (changed && ordinary.isNotEmpty()) {
             log(
-                "[code-mode] $ordinary tool result(s) remain ordinary after history reconstruction " +
-                    "for conversation ${context.key.take(CODE_MODE_RECORD_LOG_CHARS)}",
+                "[code-mode] ${ordinary.size} tool result(s) remain ordinary after history reconstruction " +
+                    "for conversation ${context.key.take(CODE_MODE_RECORD_LOG_CHARS)}: $reason",
             )
         } else if (changed && state == "reconstructed") {
             log(
@@ -40,6 +41,13 @@ internal class CodeModeTurnNotes(
                     "for conversation ${context.key.take(CODE_MODE_RECORD_LOG_CHARS)}",
             )
         }
+    }
+
+    private fun ordinaryReason(context: CodeModeRunContext, ids: Set<String>, foreign: Boolean): String = when {
+        ids.isEmpty() -> ""
+        foreign -> "results belong to another session or model"
+        registry.expiredHistory(context.key, context.digest, ids) -> "expired code-mode history"
+        else -> "unknown execution records"
     }
 }
 

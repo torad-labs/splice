@@ -120,6 +120,7 @@ class CodeModeConversationRebaseTest : CodeModeBridgeTestSupport() {
             val bridge = bridge(runtime, retention = CodeModeRetention(bytes = 30_000))
 
             assertKeptAsSent(threeScripts(bridge, listOf(big, big, "c")))
-            assertEquals(1, logLines.count { "it alone holds more than 30000 bytes" in it }, "$logLines")
+            assertTrue(logLines.any { "moved to durable cache" in it }, "$logLines")
+            assertFalse(logLines.any { "let go" in it }, "$logLines")
         }
 }

@@ -12,21 +12,17 @@ internal fun interface CodeModeSessionEnd {
 /** Only turn start trims canonical history; mid-turn replay cannot invalidate a running source. */
 internal class CodeModeTurnStart(
     private val access: CodeModeRegistryAccess,
-    state: CodeModeSweepRecords,
+    private val state: CodeModeSweepRecords,
     private val store: CodexCodeModeStore,
     private val clock: Clock,
     private val cells: CodeModeCellRetention,
     private val cache: CodeModeRecordCache,
 ) {
-    private val records = state.records
-    private val history = state.history
-    private val retention = state.retention
-
     fun begin(key: String, digest: String? = null, continued: Set<String> = emptySet()) = access.withKey(key) {
         cache.restore(key)
         val reaped = digest?.let { cells.supersede(key, it, continued) } == true
-        val changed = retention.beginTurn(records, history, key, clock.millis()) or reaped
+        val changed = state.retention.beginTurn(state.records, state.history, key, clock.millis()) or reaped
         if (changed) cells.closeEmpty(key)
-        store.save(records, history.entries, retryOnly = !changed, dirtyKeys = setOf(key))
+        store.save(state.records, state.history.entries, retryOnly = !changed, dirtyKeys = setOf(key))
     }
 }

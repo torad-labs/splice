@@ -1,0 +1,72 @@
+// Same-source CI partition adapter. The normal local gate is unchanged.
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+import org.gradle.api.tasks.testing.Test
+
+String exportPath = System.getenv('SPLICE_CI_GRAPH')
+String shardPlan = System.getenv('SPLICE_CI_SHARDS')
+gradle.taskGraph.whenReady { graph ->
+    if (exportPath && gradle.rootProject.projectDir.canonicalPath == System.getenv('SPLICE_CI_ROOT')) {
+        def tasks = graph.allTasks
+        def identities = tasks.collect { it.path } as Set
+        def rows = tasks.collect { task ->
+            def dependencies = graph.getDependencies(task).findAll { identities.contains(it.path) }.collect { it.path }.sort()
+            def ladder = task.project == task.project.rootProject && task instanceof Exec
+            def kind = task instanceof Test ? 'test' : ladder ? 'ladder' : task.group == 'verification' && !task.actions.empty ? 'verification' : 'task'
+            if (task.name == 'gateOfRecord') kind = 'aggregate'
+            def row = [path: task.path, deps: dependencies, kind: kind, actions: !task.actions.empty]
+            if (task instanceof Test) row.reports = gradle.rootProject.projectDir.toPath().relativize(task.reports.junitXml.outputLocation.get().asFile.toPath()).toString()
+            row
+        }
+        def out = new File(exportPath)
+        out.parentFile.mkdirs()
+        out.text = JsonOutput.toJson(rows)
+    }
+}
+String tracePath = System.getenv('SPLICE_CI_TRACE')
+if (tracePath) gradle.taskGraph.afterTask { task, state ->
+    if (gradle.rootProject.projectDir.canonicalPath == System.getenv('SPLICE_CI_ROOT')) {
+        def trace = new File(tracePath)
+        trace.parentFile.mkdirs()
+        synchronized (tracePath.intern()) { trace.append(JsonOutput.toJson([path:task.path, failed:state.failure != null, skipped:state.skipMessage]) + '\n') }
+    }
+}
+// Class shards preserve each task's existing filters and classpath. Only App/Turns
+// ordinary tests are split; specialized isolated tasks retain their original owner.
+if (shardPlan) {
+    def configuration = new JsonSlurper().parse(new File(shardPlan))
+    gradle.projectsEvaluated {
+        gradle.rootProject.allprojects { project ->
+            project.tasks.withType(Test).configureEach { task ->
+                if (configuration.tasks.contains(task.path)) {
+                    task.doFirst {
+                        def candidates = [] as Set
+                        task.testClassesDirs.files.each { dir ->
+                            if (dir.exists()) dir.eachFileRecurse { file ->
+                                if (file.name.endsWith('.class') && !file.name.contains('$')) candidates.add(dir.toPath().relativize(file.toPath()).toString().replace(File.separator, '.').replaceAll(/\.class$/, ''))
+                            }
+                        }
+                        def loads = (0..<configuration.count).collect { 0d }
+                        def buckets = (0..<configuration.count).collect { [] }
+                        candidates.toList().sort { a,b ->
+                            def weight = { name -> (configuration.weights[name] ?: 1) as double }
+                            def order = weight(b) <=> weight(a)
+                            order == 0 ? a <=> b : order
+                        }.each { name ->
+                            int bucket = (0..<configuration.count).min { loads[it] }
+                            buckets[bucket].add(name)
+                            loads[bucket] += (configuration.weights[name] ?: 1) as double
+                        }
+                        def selected = buckets[configuration.index as int]
+                        // An empty shard is explicit, never interpreted as 'run everything'.
+                        task.filter.setFailOnNoMatchingTests(false)
+                        task.filter.setCommandLineIncludePatterns(selected.empty ? ['__splice_empty_shard__'] : selected)
+                        def receipt = new File(configuration.output as String, task.path.replace(':','_') + '.json')
+                        receipt.parentFile.mkdirs()
+                        receipt.text = JsonOutput.toJson([task: task.path, candidates: candidates.toList().sort(), selected: selected.sort(), index: configuration.index, count: configuration.count])
+                    }
+                }
+            }
+        }
+    }
+}

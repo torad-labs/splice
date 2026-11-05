@@ -38,6 +38,9 @@ private val WIRE_ESCAPE_BYTES = Array(UTF8_ASCII_CEILING) { code -> WIRE_ESCAPES
 
 /** Streams borrowed tree nodes while retaining the legacy wire's numeric lexemes and string escaping. */
 public object JsonWire {
+    /** The pinned serializer's spelling, shared with history hashing without exposing a mutable table. */
+    internal fun escape(character: Char): String? = WIRE_ESCAPES.getOrNull(character.code)
+
     // Committed request shapes reach 24 container levels in the Anthropic goldens/request-mfjs-schema.json
     // and 9 in Responses contract/responses-codex-profile.json. 128 leaves >5x schema headroom while
     // bounding every recursive downstream walk. These are fixture measurements, not live-client maxima.

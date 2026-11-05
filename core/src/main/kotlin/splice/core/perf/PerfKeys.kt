@@ -173,6 +173,10 @@ public object PerfKeys {
     public const val UP_GAP_MAX_MS: String = "up_gap_max_ms"
     public const val UP_GAPS_2S: String = "up_gaps_2s"
     public const val UP_BLOCKED_MAX_MS: String = "up_blocked_max_ms"
+
+    /** Total synchronous downstream delivery time, including suspension, across every observed event. */
+    public const val UP_BLOCKED_TOTAL_MS: String = "up_blocked_total_ms"
+
     public const val UP_GAP_END: String = "up_gap_end"
 
     /** Longest upstream wait for content, including ping-only stretches and terminal tails, excluding delivery. */

@@ -17,6 +17,7 @@ public class ReasoningHistory {
     private var role = ""
     private var inText = false
     private val encoding = ByteArray(HISTORY_ENCODING_BYTES)
+    private var quoted: HistoryJsonString? = null
 
     public val offset: Long get() = characters
 
@@ -103,9 +104,19 @@ public class ReasoningHistory {
                     token("array:${next.size}")
                     next.asReversed().forEach(pending::add)
                 }
-                is JsonPrimitive -> token(next.toString())
+                is JsonPrimitive -> primitive(next)
             }
         }
+    }
+
+    /** Keep the persisted token grammar without allocating an escaped copy of a whole tool result. */
+    private fun primitive(value: JsonPrimitive) {
+        if (!value.isString) {
+            token(value.content)
+            return
+        }
+        val writer = quoted ?: HistoryJsonString(encoding).also { quoted = it }
+        writer.write(value.content, digest)
     }
 
     private fun snapshot(): MessageDigest = requireNotNull(digest.clone() as? MessageDigest) {

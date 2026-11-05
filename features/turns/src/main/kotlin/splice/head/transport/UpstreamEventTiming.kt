@@ -15,6 +15,7 @@ internal class UpstreamEventTiming(private val perf: TurnPerf, private val poste
         var previousEventMs = postedAtMs
         var previousContentMs = postedAtMs ?: perf.elapsedMs()
         var ending = UpstreamGapEnd.TORN
+        var deliveryTotalMs = 0L
         try {
             events.collect { event ->
                 val nowMs = perf.elapsedMs()
@@ -30,6 +31,7 @@ internal class UpstreamEventTiming(private val perf: TurnPerf, private val poste
                 } finally {
                     val resumedAtMs = perf.elapsedMs()
                     val blockedMs = resumedAtMs - deliveryStartedMs
+                    deliveryTotalMs += blockedMs
                     perf.maxCount(PerfKeys.UP_BLOCKED_MAX_MS, blockedMs)
                     previousEventMs = resumedAtMs
                     // Even ping delivery is downstream work, not part of the wait for content.
@@ -41,6 +43,8 @@ internal class UpstreamEventTiming(private val perf: TurnPerf, private val poste
             ending = UpstreamGapEnd.CANCELLED
             throw cancelled
         } finally {
+            perf.maxCount(PerfKeys.UP_BLOCKED_TOTAL_MS, 0)
+            perf.add(PerfKeys.UP_BLOCKED_TOTAL_MS, deliveryTotalMs)
             val endedAtMs = perf.elapsedMs()
             recordGap(previousEventMs, endedAtMs, ending)
             perf.maxCount(PerfKeys.UP_CONTENT_GAP_MAX_MS, endedAtMs - previousContentMs)

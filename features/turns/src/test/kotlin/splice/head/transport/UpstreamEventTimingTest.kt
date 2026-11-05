@@ -79,6 +79,7 @@ class UpstreamEventTimingTest {
         assertEquals(1_000L, perf.snapshot().counters[PerfKeys.UP_GAP_MAX_MS])
         assertEquals(30_000L, perf.snapshot().counters[PerfKeys.UP_CONTENT_GAP_MAX_MS])
         assertEquals(deliveryMs, perf.snapshot().counters[PerfKeys.UP_BLOCKED_MAX_MS])
+        assertEquals(32 * deliveryMs, perf.snapshot().counters[PerfKeys.UP_BLOCKED_TOTAL_MS])
     }
 
     @Test

@@ -225,7 +225,7 @@ internal class CodexCodeModeRegistry(
                 it.key != record.key && it.key !in busyKeys &&
                     record.conversationId != null && it.conversationId == record.conversationId
             }
-            val candidate = records.toMutableList()
+            val candidate = CodeModeRecordList(records)
             val nextHistory = CodeModeExpiredHistory(history.entries.toMutableList(), config.retention.records, heap)
             if (!retention.makeRoom(candidate, nextHistory, record, config.clock.millis())) return null
             candidate += record
@@ -239,12 +239,31 @@ internal class CodexCodeModeRegistry(
         private val previous: List<CodeModeRecord>,
     ) {
         private val parked = previous.filter { it.phase == CodeModePhase.ACTIVE }
-        private val evicted = (records.map(CodeModeRecord::id) - candidate.map(CodeModeRecord::id).toSet()).toSet()
-        private val removedMarkers = (history.entries - nextHistory.entries.toSet()).toSet()
-        private val addedMarkers = history.entries.toHashSet().let { before ->
-            nextHistory.entries.filterNot { it in before }
+
+        // makeRoom only removes records and remembers those removals. An append without an eviction leaves
+        // every expiry marker untouched; hashing their result-id sets here made each new script pay for the
+        // entire head's expired history while holding its shared monitor.
+        private val evicted = if (candidate.size > records.size) {
+            emptySet()
+        } else {
+            (records.map(CodeModeRecord::id) - candidate.map(CodeModeRecord::id).toSet()).toSet()
         }
-        val changedKeys = setOf(candidate.last().key) + records.filter { it.id in evicted }.map(CodeModeRecord::key) +
+        private val evictedKeys = if (evicted.isEmpty()) {
+            emptySet()
+        } else {
+            records.filter { it.id in evicted }.mapTo(mutableSetOf(), CodeModeRecord::key)
+        }
+        private val removedMarkers = if (evicted.isEmpty()) {
+            emptySet()
+        } else {
+            (history.entries - nextHistory.entries.toSet()).toSet()
+        }
+        private val addedMarkers = if (evicted.isEmpty()) {
+            emptyList()
+        } else {
+            history.entries.toHashSet().let { before -> nextHistory.entries.filterNot { it in before } }
+        }
+        val changedKeys = setOf(candidate.last().key) + evictedKeys +
             removedMarkers.map(CodeModeExpiredSnapshot::key) + previous.map(CodeModeRecord::key)
 
         fun retireCells(key: String) {
@@ -256,17 +275,19 @@ internal class CodexCodeModeRegistry(
         }
 
         fun onlyAdds(key: String): Boolean =
-            parked.none { it.key == key } && records.none { it.key == key && it.id in evicted } &&
+            parked.none { it.key == key } && key !in evictedKeys &&
                 removedMarkers.none { it.key == key } && addedMarkers.none { it.key == key }
 
         fun publishEvictions(key: String) {
-            records.filter { it.key == key && it.id in evicted }.forEach { record ->
-                CodeModeSourceEnds.defer(record.sourceEnd)
-                record.sourceEnd = null
+            if (key in evictedKeys) {
+                records.filter { it.key == key && it.id in evicted }.forEach { record ->
+                    CodeModeSourceEnds.defer(record.sourceEnd)
+                    record.sourceEnd = null
+                }
+                val removed = records.removeAll { it.key == key && it.id in evicted }
+                if (removed && records.none { it.key == key }) endSession(key)
             }
-            val removed = records.removeAll { it.key == key && it.id in evicted }
-            if (removed && records.none { it.key == key }) endSession(key)
-            history.entries.removeAll { it.key == key && it in removedMarkers }
+            if (removedMarkers.isNotEmpty()) history.entries.removeAll { it.key == key && it in removedMarkers }
             history.entries.addAll(addedMarkers.filter { it.key == key })
         }
 

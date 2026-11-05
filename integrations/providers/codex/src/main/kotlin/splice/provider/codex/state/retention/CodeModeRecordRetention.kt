@@ -10,6 +10,8 @@ import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeSessionEnd
 import splice.provider.codex.state.collection.CodeModeRecordKeys
 import splice.provider.codex.state.lease.CodeModeSessionAlive
+import java.util.Collections
+import java.util.IdentityHashMap
 
 /** V4-337: which records the head keeps within [bounds], a conversation at a time. Runs under the
  *  registry's monitor; each record that goes is remembered in the expired history, as an expired one is.
@@ -74,18 +76,7 @@ internal class CodeModeRecordRetention(
         expired: CodeModeExpiredHistory,
         record: CodeModeRecord,
         now: Long,
-    ): Boolean {
-        val gone = Gone(records, expired, now)
-        val full = "the head holds ${bounds.records} records"
-        while (bounds.records?.let { records.size >= it } == true) {
-            gone.leastRecent(record.key, full) ?: gone.finished(record.key, "$full, none of them idle") ?: return false
-        }
-        var held = records.sumOf(::bytesOf) + bytesOf(record)
-        while (held > bounds.bytes) {
-            held -= gone.leastRecent(record.key, "the head's records passed ${bounds.bytes} bytes") ?: break
-        }
-        return true
-    }
+    ): Boolean = AdmissionRoom(records, expired, now).makeRoom(record)
 
     /** At the registry's start, where nothing runs: each conversation past its own bound goes whole, then
      *  the least recently used ones until the head is within its bounds. True when any went. */
@@ -160,13 +151,13 @@ internal class CodeModeRecordRetention(
     private fun idle(records: List<CodeModeRecord>, except: Set<String>): String? =
         records.groupBy(CodeModeRecord::key)
             .filter { (key, kept) -> key !in except && idle(kept) }
-            .minWithOrNull(
-                compareBy<Map.Entry<String, List<CodeModeRecord>>>(
-                    { (_, kept) -> kept.any { it.sessionId?.let(sessionAlive::invoke) != false } },
-                    { (_, kept) -> kept.maxOf { it.progress.updatedAt } },
-                ),
-            )
+            .minWithOrNull(idleOrder)
             ?.key
+
+    private val idleOrder = compareBy<Map.Entry<String, List<CodeModeRecord>>>(
+        { (_, kept) -> kept.any { it.sessionId?.let(sessionAlive::invoke) != false } },
+        { (_, kept) -> kept.maxOf { it.progress.updatedAt } },
+    )
 
     private fun idle(kept: List<CodeModeRecord>): Boolean = kept.isNotEmpty() &&
         kept.all(CodeModeRecord::terminal) && kept.none { it.sessionId?.let(sessionAlive::invoke) == true }
@@ -177,6 +168,65 @@ internal class CodeModeRecordRetention(
         val own = CodeModeRecordKeys.of(records, key)
         val countFull = bounds.perConversation?.let { own.size > it } == true
         return countFull || own.sumOf(::bytesOf) > bounds.bytes
+    }
+
+    /** Admission owns the registry monitor. Group and order once, then remove every victim in one pass. */
+    private inner class AdmissionRoom(
+        private val records: MutableList<CodeModeRecord>,
+        expired: CodeModeExpiredHistory,
+        now: Long,
+    ) {
+        private val gone = Gone(records, expired, now)
+        private val removed = Collections.newSetFromMap(IdentityHashMap<CodeModeRecord, Boolean>())
+        private var count = records.size
+        private var held = 0L
+
+        fun makeRoom(record: CodeModeRecord): Boolean {
+            // Most admissions need no victims, so avoid grouping their history at all.
+            held = records.sumOf(::bytesOf) + bytesOf(record)
+            if (bounds.records?.let { count >= it } != true && held <= bounds.bytes) return true
+            val groups = records.groupBy(CodeModeRecord::key)
+            val victims = groups.entries.filter { (key, kept) -> key != record.key && idle(kept) }
+                .sortedWith(idleOrder).iterator()
+            try {
+                if (!fitCount(record.key, groups[record.key].orEmpty(), victims)) return false
+                while (held > bounds.bytes) {
+                    reclaim(victims, "the head's records passed ${bounds.bytes} bytes") ?: break
+                }
+                return true
+            } finally {
+                records.removeAll { it in removed }
+            }
+        }
+
+        private fun fitCount(
+            key: String,
+            own: List<CodeModeRecord>,
+            victims: Iterator<Map.Entry<String, List<CodeModeRecord>>>,
+        ): Boolean {
+            val full = "the head holds ${bounds.records} records"
+            while (bounds.records?.let { count >= it } == true) {
+                reclaim(victims, full) ?: retire(key, own, "$full, none of them idle") ?: return false
+            }
+            return true
+        }
+
+        private fun reclaim(victims: Iterator<Map.Entry<String, List<CodeModeRecord>>>, why: String): Long? {
+            while (victims.hasNext()) {
+                val victim = victims.next()
+                // Session liveness can change independently of the registry's monitor.
+                if (idle(victim.value)) return retire(victim.key, victim.value, "least recently used, and $why")
+            }
+            return null
+        }
+
+        private fun retire(key: String, kept: List<CodeModeRecord>, why: String): Long? {
+            val going = kept.filter { it !in removed && it.terminal() }
+            if (going.isEmpty()) return null
+            removed.addAll(going)
+            count -= going.size
+            return gone.remember(key, going, why).also { held -= it }
+        }
     }
 
     /** Lets records go from [records] at [now], each remembered in [expired]. */
@@ -195,6 +245,10 @@ internal class CodeModeRecordRetention(
             val going = CodeModeRecordKeys.of(records, key).filter(CodeModeRecord::terminal)
             if (going.isEmpty()) return null
             records.removeAll(going.toSet())
+            return remember(key, going, why)
+        }
+
+        fun remember(key: String, going: List<CodeModeRecord>, why: String): Long {
             going.forEach { expired.remember(it, now) }
             val freed = going.sumOf(::bytesOf)
             log(

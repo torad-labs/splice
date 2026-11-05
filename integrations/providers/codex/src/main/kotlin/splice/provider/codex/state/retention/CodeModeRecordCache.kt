@@ -4,6 +4,7 @@ import splice.core.memory.HeapReservations
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.provider.codex.CodeModeBridgeConfig
+import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeStore
@@ -14,7 +15,7 @@ import splice.provider.codex.state.collection.CodeModeRecordKeys
 import splice.provider.codex.state.diagnostics.CODE_MODE_RECORD_LOG_CHARS
 import kotlin.concurrent.withLock
 
-/** Uses a conversation while all of its model keys remain resident. */
+/** Uses a conversation while its readable model keys remain resident. */
 internal fun interface CodeModeConversationBorrower<T> {
     operator fun invoke(): T
 }
@@ -54,16 +55,32 @@ internal class CodeModeRecordCache(
     }
 
     /** Pin hot and cold keys before restoring: another turn's trim must not undo a cross-model lookup. */
-    fun <T> withConversation(conversationId: String?, borrower: CodeModeConversationBorrower<T>): T {
+    fun <T> withConversation(
+        ownKey: String,
+        conversationId: String?,
+        borrower: CodeModeConversationBorrower<T>,
+    ): T {
         if (conversationId == null) return borrower()
         access.monitor.withLock { conversations.merge(conversationId, 1, Int::plus) }
         try {
-            store.cold.forConversation(conversationId).forEach { key -> access.withKey(key) { restore(key) } }
+            // The borrower must restore its own key; only a sibling's persistence failure is optional.
+            store.cold.forConversation(conversationId).filter { it != ownKey }.forEach(::restoreSibling)
             return borrower()
         } finally {
             access.monitor.withLock {
                 conversations.computeIfPresent(conversationId) { _, count -> (count - 1).takeIf { it > 0 } }
             }
+        }
+    }
+
+    private fun restoreSibling(key: String) {
+        try {
+            access.withKey(key) { restore(key) }
+        } catch (failure: CodeModePersistenceException) {
+            config.log(
+                "[code-mode] conversation ${key.take(CODE_MODE_RECORD_LOG_CHARS)} stays cold " +
+                    "(${SafeFailureText.render(failure)}); its sibling keys continue",
+            )
         }
     }
 

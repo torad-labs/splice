@@ -157,7 +157,7 @@ internal class CodexCodeModeRegistry(
     fun recordsFor(key: String): List<CodeModeRecord> = queries.recordsFor(key)
 
     fun completed(key: String, conversationId: String? = null): List<CodeModeRecord> =
-        cache.withConversation(conversationId) { queries.completed(key, conversationId) }
+        cache.withConversation(key, conversationId) { queries.completed(key, conversationId) }
 
     fun expiredHistory(key: String, digest: String, ids: Set<String>): Boolean =
         queries.expiredHistory(key, digest, ids)
@@ -173,7 +173,7 @@ internal class CodexCodeModeRegistry(
 
         fun run(): Boolean {
             CodeModeHeap.own(record, heap)
-            return cache.withConversation(record.conversationId) { admit() }.also { cache.trim() }
+            return cache.withConversation(record.key, record.conversationId) { admit() }.also { cache.trim() }
         }
 
         private fun admit(): Boolean {

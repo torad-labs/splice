@@ -3,7 +3,7 @@ package splice.provider.codex.state.save
 
 import splice.provider.codex.CodeModeExpiredSnapshot
 import splice.provider.codex.CodeModeRecord
-import splice.provider.codex.state.CodeModeKeptState
+import splice.provider.codex.state.CodeModeColdRecords
 import splice.provider.codex.state.CodeModeKeyLocks
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.collection.CodeModeRecordKeys
@@ -18,7 +18,7 @@ internal class CodeModeSavePreparation(
     private val snapshots: CodeModeSaveSnapshots,
     private val keyLocks: CodeModeKeyLocks,
     private val registryLock: ReentrantLock?,
-    private val kept: Map<String, CodeModeKeptState>,
+    private val cold: CodeModeColdRecords,
     private val uncertainKeys: MutableSet<String>,
     private val failedKeys: MutableSet<String>,
     private val write: CodeModePreparedWrite,
@@ -36,6 +36,12 @@ internal class CodeModeSavePreparation(
     ) {
         val entry = keyLocks.acquire(key)
         try {
+            // Another key can leave RAM while this save waits on an earlier key. Its remaining
+            // expiry markers must never replace the full journal merely because its payload is cold.
+            if (key in cold) {
+                failedKeys.remove(key)
+                return
+            }
             registryLock?.lock()
             val prepared = try {
                 snapshots.prepare(key, records, expired, changedRecord)
@@ -70,7 +76,7 @@ internal class CodeModeSavePreparation(
             changed.forEach { it.live.retainedBytes = it.snapshot.retainedBytes }
             return
         }
-        val sizes = kept[key]?.records.orEmpty()
+        val sizes = cold.committed(key)?.records.orEmpty()
         if (changedRecord != null) {
             changedRecord.retainedBytes = sizes[changedRecord.id]?.retainedBytes
         } else {

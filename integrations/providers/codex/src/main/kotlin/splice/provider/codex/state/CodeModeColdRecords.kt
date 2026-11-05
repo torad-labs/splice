@@ -24,6 +24,7 @@ internal class CodeModeColdRecords(
     fun before(cutoff: Long): Set<String> = entries.filterValues { it.updatedAt < cutoff }.keys
     fun forConversation(id: String): Set<String> = entries.filterValues { id in it.conversations }.keys
     fun clear() = entries.clear()
+    fun committed(key: String): CodeModeKeptState? = kept[key]
 
     /** The caller has committed and owns this key. Remove the store's snapshot owner too. */
     fun evict(key: String): Boolean {

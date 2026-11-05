@@ -95,7 +95,7 @@ internal class CodexCodeModeStore(
         snapshots,
         keyLocks,
         registryLock,
-        kept,
+        cold,
         uncertainKeys,
         failedKeys,
         CodeModePreparedWrite(::persist),

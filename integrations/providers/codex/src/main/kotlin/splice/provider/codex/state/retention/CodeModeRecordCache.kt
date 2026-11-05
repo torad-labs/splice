@@ -97,12 +97,21 @@ internal class CodeModeRecordCache(
             state.records.groupBy(CodeModeRecord::key).filter { (key, records) -> idle(key, records) }
                 .entries.sortedBy { (_, records) -> records.maxOf { it.progress.updatedAt } }.map { it.key }
         }
-        candidates.forEach { key ->
+        candidates.forEach(::trimCandidate)
+    }
+
+    private fun trimCandidate(key: String) {
+        try {
             access.tryKey(key) {
                 val own = CodeModeRecordKeys.of(state.records, key)
                 if (bytes() <= config.retention.bytes || !idle(key, own)) return@tryKey
                 releaseIdle(key)
             }
+        } catch (failure: CodeModePersistenceException) {
+            config.log(
+                "[code-mode] conversation ${key.take(CODE_MODE_RECORD_LOG_CHARS)} remains resident " +
+                    "(${SafeFailureText.render(failure)}); other cache candidates continue",
+            )
         }
     }
 

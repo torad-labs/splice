@@ -29,7 +29,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # PR collection verifies receipts with Bun only. Main also runs Gradle discovery.
       - uses: ./.github/actions/ci-setup
+        if: github.event_name == 'push'
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        if: github.event_name == 'pull_request'
+        with:
+          bun-version: 1.4.2
+      - name: Install collector dependencies
+        if: github.event_name == 'pull_request'
+        run: bun install --frozen-lockfile
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: ci-plan-${{ github.run_attempt }}
@@ -62,16 +71,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 0
+          # PR checkout is GitHub's tested merge plus its two exact parent commits.
+          fetch-depth: 2
       - uses: ./.github/actions/ci-setup
       - name: Derive selected tasks and execution ownership
         id: plan
         env:
           EVENT: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           if [ "$EVENT" = pull_request ]; then
-            bun tools/gate ci plan "origin/$BASE_REF"
+            bun tools/gate ci plan-pr "$PR_HEAD_SHA"
           else
             bun tools/gate ci plan
           fi
@@ -97,7 +107,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 0
+          # Attribution reads ancestry; retain the release rehearsal's existing checkout too.
+          fetch-depth: ${{ (matrix.worker == 'source' || matrix.worker == 'rehearsal') && '0' || '1' }}
       - uses: ./.github/actions/ci-setup
         with:
           browser: ${{ matrix.worker == 'browser' || matrix.worker == 'rehearsal' }}
@@ -141,7 +152,7 @@ jobs:
           if-no-files-found: ignore
 
   macos:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

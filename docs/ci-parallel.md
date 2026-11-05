@@ -23,6 +23,10 @@ For contributors, CI should finish the required verification sooner by starting 
 
 Local pre-push and release entry points remain unchanged apart from the corrected CI selector used by `run --since`. Main workers refuse to clean the shared local checkout. The tiny Gradle adapter integration fixture runs through the normal slot, not a direct Gradle binary.
 
+## Startup overhead
+
+For contributors, the PR gate should avoid downloading history and Gradle state that its job never reads. PR planning must still select the exact changes against the base parent of the tested GitHub merge candidate, including deletions and changes from long-lived or fork branches. The planner validates the event's head SHA against the merge's second parent and selects against its actual first parent; the event's base SHA can be stale after main advances. It refuses incomplete or mismatched history. History-dependent workers retain full history. PR receipt collection uses only Bun; main still sets up Gradle and runs full test discovery. Acceptance is unchanged verification with a shorter measured hosted critical path, not an assumed timing reduction.
+
 ## Acceptance
 
 The selected Gradle task closure and ladder are the obligation inventory, not a copied job list. Each executable verification obligation has a designated owner. Missing, duplicate, wrong-candidate or failed required receipts refuse a green gate. Empty scope is represented explicitly. Worker failures preserve results for diagnosis and cannot be disguised as unselected work. Full coverage keeps its current trigger scope and remains outside `gate`.

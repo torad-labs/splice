@@ -9,7 +9,8 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertTrue
-import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnOutcome
@@ -25,10 +26,12 @@ import splice.upstream.codemode.NativeCodeModeOptions
 
 /** The fake host owns observable session state; record eviction must never reset that host state. */
 class CodeModeNativeSessionLifetimeTest : CodeModeBridgeTestSupport() {
-    @Test
-    fun `session values survive execution record eviction while client liveness is unknown`() = runTest {
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun `session values survive execution record eviction while client liveness is unknown`(cache: Boolean) = runTest {
         val host = StatefulHost()
-        val bridge = bridge(host, retention = CodeModeRetention(perConversation = 1))
+        val policy = if (cache) CodeModeRetention(bytes = 1) else CodeModeRetention(perConversation = 1)
+        val bridge = bridge(host, retention = policy)
         val first = ArrayDeque(listOf(outcome(outer("store", STORE_SOURCE)), completedOutcome()))
         bridge.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, RecordingSink()) {
             RoundResult.Outcome(first.removeFirst())
@@ -48,10 +51,12 @@ class CodeModeNativeSessionLifetimeTest : CodeModeBridgeTestSupport() {
         bridge.onHeadStop()
     }
 
-    @Test
-    fun `a yielded cell survives another cell admitted under execution record pressure`() = runTest {
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun `a yielded cell survives another cell admitted under execution record pressure`(cache: Boolean) = runTest {
         val host = StatefulHost()
-        val bridge = bridge(host, retention = CodeModeRetention(perConversation = 1))
+        val policy = if (cache) CodeModeRetention(bytes = 1) else CodeModeRetention(perConversation = 1)
+        val bridge = bridge(host, retention = policy)
         val first = ArrayDeque(listOf(outcome(outer("first", YIELD_SOURCE)), completedOutcome()))
         bridge.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, RecordingSink()) {
             RoundResult.Outcome(first.removeFirst())

@@ -65,7 +65,7 @@ internal class CodeModeTimedSweep(
     /** Under [monitor]: starts the sweeps when a record is kept and none run. */
     fun arm() {
         val retained = records.isNotEmpty() || history.entries.isNotEmpty() || terminal != null ||
-            nativeOwned?.retained() == true
+            nativeOwned?.retained() == true || store.cold.retained
         if (released) return
         if (running == null && retained) running = CodeModeSweeps.every(interval) { sweep() }
     }
@@ -78,7 +78,8 @@ internal class CodeModeTimedSweep(
         }
     }
 
-    private fun empty(): Boolean = records.isEmpty() && history.entries.isEmpty() && nativeOwned?.retained() != true
+    private fun empty(): Boolean = records.isEmpty() && history.entries.isEmpty() &&
+        nativeOwned?.retained() != true && !store.cold.retained
 
     /** One sweep: what the sweeper changed is saved, a save that fails is logged and made again at the
      *  next sweep, and the sweeps stop once no record or expiry marker is kept. Never throws: a throw would end the

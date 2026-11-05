@@ -12,6 +12,7 @@ import splice.core.memory.HeapText
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
+import splice.provider.codex.state.CodeModeColdRecords
 import splice.provider.codex.state.CodeModeJournalEncoding
 import splice.provider.codex.state.CodeModeJournalText
 import splice.provider.codex.state.CodeModeKeptState
@@ -85,13 +86,16 @@ internal class CodexCodeModeStore(
     /** Each conversation as its file held it when last read or written, by conversation key. */
     private val kept = ConcurrentHashMap<String, CodeModeKeptState>()
 
+    /** Journal-backed conversations whose payloads have no in-memory owner in this store. */
+    val cold = CodeModeColdRecords(files, kept, registryLock, heap)
+
     private val capacity = CodeModeSaveHeap(heap)
     private val snapshots = CodeModeSaveSnapshots(kept, uncertainKeys, capacity)
     private val savePreparation = CodeModeSavePreparation(
         snapshots,
         keyLocks,
         registryLock,
-        kept,
+        cold,
         uncertainKeys,
         failedKeys,
         CodeModePreparedWrite(::persist),
@@ -110,20 +114,30 @@ internal class CodexCodeModeStore(
     fun release(): Boolean {
         if (!settled) return false
         kept.clear()
+        cold.clear()
         return true
     }
 
     /** Every conversation the directory holds, then the ones only the legacy file holds, written to their files. */
-    fun load(): CodeModePersistedState {
-        readDirectory()
+    fun load(maxBytes: Long = Long.MAX_VALUE): CodeModePersistedState {
+        val coldMarkers = readDirectory(maxBytes)
         val legacy = readLegacy()
-        val carried = legacy.orEmpty().filterKeys { !kept.containsKey(it) }
+        val carried = legacy.orEmpty().filterKeys { !kept.containsKey(it) && it !in cold }
         val stays = "${location.legacyFile.fileName} stays"
         val written = carried.count { (key, conversation) -> checkpoint(key, conversation, stays) }
         if (legacy != null && written == carried.size) {
             removeLegacy()
         }
-        return merged(kept.mapValues { it.value.snapshot() } + carried)
+        val loaded = files.merge(kept.mapValues { it.value.snapshot() } + carried)
+        return loaded.copy(expired = (loaded.expired + coldMarkers).sortedBy(CodeModeExpiredSnapshot::expiredAt))
+    }
+
+    /** Persist while allowing other conversations to run; the caller must recheck ownership before eviction. */
+    fun commit(key: String, records: List<CodeModeRecord>, expired: List<CodeModeExpiredSnapshot>): Boolean {
+        if (!location.journaling.now()) return false
+        // Include late source accounting and turn-use timestamps, not just the last executed cell.
+        save(records, expired, dirtyKeys = setOf(key))
+        return location.journaling.now() && key !in failedKeys
     }
 
     /** Writes each conversation of the given state that differs from what the disk holds, and removes the
@@ -146,13 +160,15 @@ internal class CodexCodeModeStore(
             addAll(kept.keys)
         }
         if (!location.journaling.now()) {
+            cold.changedWithoutJournal(keys, records)
             // What changed while the journal was off is owed to disk once it is back on: marked like a failed write,
             // the first periodic sweep after the switch writes it. Unmarked, it waited for its own conversation's next
             // change, and a hard stop before then lost it (§9 audit, Oct 12).
             failedKeys.addAll(keys)
             return
         }
-        val selected = if (retryOnly) keys.intersect(failedKeys) else keys
+        // Absence from the hot list is not deletion: a cold conversation still lives in its journal.
+        val selected = (if (retryOnly) keys.intersect(failedKeys) else keys) - cold.keys
         val retryKeys = selected.intersect(failedKeys)
         pendingWrites.incrementAndGet()
         failedKeys.addAll(selected)
@@ -233,11 +249,24 @@ internal class CodexCodeModeStore(
         }
     }
 
-    private fun readDirectory() {
+    private fun readDirectory(maxBytes: Long): List<CodeModeExpiredSnapshot> {
+        var held = 0L
+        val markers = mutableListOf<CodeModeExpiredSnapshot>()
         files.load().forEach { (key, selected) ->
-            kept[key] = CodeModeKeptState(selected.state.version, selected.state, heap)
-            if (selected.checkpoint) checkpoint(key, selected.state, "the selected conversation stays")
+            val state = selected.state
+            kept[key] = CodeModeKeptState(state.version, state, heap)
+            val committed = !selected.checkpoint || checkpoint(key, state, "the selected conversation stays")
+            val bytes = state.records.sumOf { it.retainedBytes ?: 0L }
+            val completed = state.records.isNotEmpty() && state.records.all { it.phase == CodeModePhase.COMPLETED }
+            val cacheable = committed && completed
+            if (held + bytes > maxBytes && cacheable) {
+                cold.evict(key)
+                markers.addAll(state.expired)
+            } else {
+                held += bytes
+            }
         }
+        return markers
     }
 
     /** Every conversation the legacy file holds, or null when there is none or it could not be read. */
@@ -309,21 +338,6 @@ internal class CodexCodeModeStore(
         Files.deleteIfExists(files.olderLockPath(key))
         if (Files.exists(dir)) FileChannel.open(dir, StandardOpenOption.READ).use { it.force(true) }
         kept.remove(key)
-    }
-
-    /** The conversations as one state: the least recently used first, each in its own record order, and
-     *  the markers in the order they were made. */
-    private fun merged(conversations: Map<String, CodeModePersistedState>): CodeModePersistedState {
-        val oldestFirst = conversations.entries.sortedWith(
-            compareBy<Map.Entry<String, CodeModePersistedState>>(
-                { entry -> entry.value.records.maxOfOrNull(CodeModeRecordSnapshot::updatedAt) ?: 0L },
-                { entry -> entry.key },
-            ),
-        )
-        return CodeModePersistedState(
-            records = oldestFirst.flatMap { it.value.records },
-            expired = oldestFirst.flatMap { it.value.expired }.sortedBy(CodeModeExpiredSnapshot::expiredAt),
-        )
     }
 }
 

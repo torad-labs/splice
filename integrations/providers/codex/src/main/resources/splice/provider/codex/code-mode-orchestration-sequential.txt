@@ -1,4 +1,5 @@
 <code_mode_orchestration>
 - The tools the instructions above name (Read, Bash, Edit, Write, Agent and the rest) are nested tools of `exec`: call them inside one functions.exec as `await tools.Read({...})`, and return what you need with `text(...)`.
 - The client has disabled parallel tool use: inside functions.exec, use sequential await for every tool call, and chain dependent calls in the same functions.exec when code can derive the next arguments. Avoid unnecessary output.
+- For a long-running build or agent, do independent work while its cell runs. When waiting is the next useful action, use functions.wait with yield_time_ms: 60000; new output or completion returns early. Repeated short waits with no new output add a model round each time.
 </code_mode_orchestration>

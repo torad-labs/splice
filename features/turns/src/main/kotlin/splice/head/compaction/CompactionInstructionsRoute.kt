@@ -81,9 +81,10 @@ public class CompactionInstructionsRoute(
      *  scope is head-independent and always reported.
      *
      *  The model is read from the SOURCE LABEL core composes (`model:<id>`, CompactionInstructions
-     *  .kt:76) rather than parsed out of a free string: constructing the label the roster implies and
-     *  comparing is the safe direction, because a format change breaks the comparison loudly instead
-     *  of silently matching nothing. */
+     *  .kt:76). File-backed rules append their provenance to that label, including unreadable files. */
     private fun belongsToHead(rule: EffectiveCompactionInstructions, roster: Set<String>): Boolean =
-        rule.scope != CompactionScope.MODEL || roster.any { rule.source == "${CompactionScope.MODEL.wire}:$it" }
+        rule.scope != CompactionScope.MODEL || roster.any { model ->
+            val source = "${CompactionScope.MODEL.wire}:$model"
+            rule.source == source || rule.source.startsWith("$source file:")
+        }
 }

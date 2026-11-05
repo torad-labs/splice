@@ -36,21 +36,23 @@ private const val RETAINED_HEAP_DIVISOR: Long = 4
 // anchors on 21,409 records (about 300 MB of objects) on Oct 20. A fixed ceiling keeps code mode inside a few GB.
 private const val RETAINED_BYTES_CEILING: Long = 256L * 1024 * 1024
 
-/** V4-337: what a head's code mode keeps. The unit is the conversation (a record's key): its records
- *  place in its history in order, each on top of the one before, so a record that goes takes every
- *  later one of its conversation with it. The bounds therefore take whole conversations, least
- *  recently used first, and never the conversation a new script belongs to. */
+/** Replay records move between memory and durable journals a conversation at a time. With journaling
+ *  off or an explicit count policy, byte pressure keeps the legacy whole-conversation expiry behavior. */
 public data class CodeModeRetention(
     /** An optional explicit conversation count bound. Null leaves retention to bytes and TTL. */
     val perConversation: Int? = null,
     /** An optional explicit head count bound. No fixed count restricts a head by default. */
     val records: Int? = null,
-    /** The most the head's records take as stored (UTF-8 JSON). Never a reason to refuse a script. */
+    /** Hot record budget in stored UTF-8 bytes. The default journal-backed cache preserves replay on disk.
+     *  In-use records may exceed it; explicit count policies enforce both count and byte bounds. */
     // A boot-time share of the actual JVM heap, with room for decoded objects and transient wire buffers.
     val bytes: Long = minOf(Runtime.getRuntime().maxMemory() / RETAINED_HEAP_DIVISOR, RETAINED_BYTES_CEILING),
     /** How long a record may sit untouched before a sweep drops it. */
     val ttl: Duration = 24.hours,
-)
+) {
+    internal val durableCache: Boolean get() = records == null && perConversation == null
+    internal val cacheBytes: Long get() = if (durableCache) bytes else Long.MAX_VALUE
+}
 
 /** The per-script bounds code mode enforces: source and output size, plus optional call and round counts;
  *  protocol frame bytes still bound every step. */

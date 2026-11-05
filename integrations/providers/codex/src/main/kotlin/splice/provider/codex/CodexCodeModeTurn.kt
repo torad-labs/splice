@@ -52,7 +52,14 @@ internal class CodexCodeModeTurn(
         val held = input.post.perf?.timed(PerfKeys.CODE_MODE_TURN_LOCK_WAIT_MS) { locks.acquire(branchKey, key) }
             ?: locks.acquire(branchKey, key)
         return try {
-            runHeld(input, key)
+            registry.cache.acquire(key)
+            try {
+                runHeld(input, key)
+            } finally {
+                registry.cache.release(key)
+            }
+        } catch (error: CodeModePersistenceException) {
+            error.outcome()
         } finally {
             locks.release(branchKey, key, held)
         }
@@ -113,7 +120,6 @@ internal class CodexCodeModeTurn(
         initialOuter: GatewayCustomCall?,
         body: CodeModeBody,
     ): TurnOutcome {
-        notes.announce(context)
         val records = registry.recordsFor(context.key)
         context.turn.rendering.verifiedCleared.clear()
         driver.sent.acknowledgeCleared(context, records)
@@ -159,6 +165,7 @@ internal class CodexCodeModeTurn(
         body: CodeModeBody,
         owner: CodeModePlacedOwner?,
     ): TurnOutcome {
+        notes.announce(context, wire.callbackIds(body))
         val completed = context.completed
         val terminal = completed.lastOrNull(CodeModeBatchHistory::unclaimed)
         return when {

@@ -89,7 +89,31 @@ internal class CodeModeSaveSnapshots(
             .takeUnless { it.records.isEmpty() && it.expired.isEmpty() }
         val changed = key in uncertain || next != prior || next?.records?.zip(prior?.records.orEmpty())
             ?.any { (left, right) -> !CodeModeStateJournal.same(left, right) } == true
-        return if (changed) Prepared(key, next, peak, nativeRoots = roots, sources = snapshots) else null
+        if (!changed) return null
+        return delta(key, indexed, next, snapshots, peak)
+            ?: Prepared(key, next, peak, nativeRoots = roots, sources = snapshots)
+    }
+
+    /** Flush all live fields without checkpointing a large journal for a timestamp or late source completion. */
+    private fun delta(
+        key: String,
+        indexed: CodeModeKeptState?,
+        next: CodeModePersistedState?,
+        snapshots: List<Cell>,
+        peak: HeapLease,
+    ): Prepared? {
+        val prior = indexed?.snapshot() ?: return null
+        if (key in uncertain || next == null) return null
+        val sameMetadata = next.expired == prior.expired && next.version == prior.version
+        val sameMembers = next.records.map { it.id } == indexed.records.keys.toList() && sameMetadata
+        val unchangedRoots = snapshots.all { it.live.nativeBaseId == it.snapshot.nativeBaseId }
+        val deltaOnly = sameMembers && unchangedRoots
+        val cells = snapshots.filterNot { CodeModeStateJournal.same(it.snapshot, indexed.records[it.live.id]) }
+        return if (deltaOnly && cells.isNotEmpty()) {
+            Prepared(key, null, peak, cells = cells, sources = snapshots)
+        } else {
+            null
+        }
     }
 
     private fun canPrepareCells(

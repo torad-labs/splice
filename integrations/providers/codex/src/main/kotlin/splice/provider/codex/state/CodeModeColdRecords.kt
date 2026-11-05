@@ -36,7 +36,7 @@ internal class CodeModeColdRecords(
 
     /** Under the key lock and registry monitor. A read failure is never a replay cache miss. */
     fun restore(key: String): CodeModePersistedState? {
-        if (key !in entries) return null
+        if (!entries.containsKey(key)) return null
         monitor?.unlock()
         return try {
             files.restore(key)

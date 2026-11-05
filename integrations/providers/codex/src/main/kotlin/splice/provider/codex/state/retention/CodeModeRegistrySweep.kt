@@ -16,7 +16,7 @@ internal class CodeModeRegistrySweep(
     private val state: CodeModeSweepRecords,
     private val store: CodexCodeModeStore,
     private val sweeper: CodexCodeModeSweeper,
-    private val retention: CodeModeRecordRetention,
+    private val cache: CodeModeRecordCache,
 ) : Runnable {
     override fun run() {
         nativeSessions.ended().forEach { key ->
@@ -24,15 +24,18 @@ internal class CodeModeRegistrySweep(
         }
         val keys = access.monitor.withLock {
             state.records.map(CodeModeRecord::key).toSet() +
-                state.history.entries.map(CodeModeExpiredSnapshot::key) + store.pendingKeys
+                state.history.entries.map(CodeModeExpiredSnapshot::key) + store.pendingKeys +
+                store.cold.before(config.clock.millis() - config.retention.ttl.inWholeMilliseconds)
         }
         keys.forEach { key ->
             access.tryKey(key) {
+                cache.restore(key)
                 val changed = sweeper.sweep(key)
                 store.save(state.records, state.history.entries, retryOnly = !changed, dirtyKeys = setOf(key))
             }
         }
         withinBounds()
+        cache.trim()
     }
 
     /** The head's bounds hold on the timer too: finished conversations past them go within one sweep of
@@ -42,14 +45,20 @@ internal class CodeModeRegistrySweep(
         val passed = mutableSetOf<String>()
         while (true) {
             val key = access.monitor.withLock {
-                retention.overBound(
+                state.retention.overBound(
                     state.records,
                     sweeper.busyKeys() + passed,
                 )
             } ?: return
             var went = false
             access.tryKey(key) {
-                went = retention.letGoOver(state.records, state.history, key, sweeper.busyKeys(), config.clock.millis())
+                went = state.retention.letGoOver(
+                    state.records,
+                    state.history,
+                    key,
+                    sweeper.busyKeys(),
+                    config.clock.millis(),
+                )
                 if (went) store.save(state.records, state.history.entries, dirtyKeys = setOf(key))
             }
             if (!went) passed += key
@@ -57,4 +66,8 @@ internal class CodeModeRegistrySweep(
     }
 }
 
-internal data class CodeModeSweepRecords(val records: MutableList<CodeModeRecord>, val history: CodeModeExpiredHistory)
+internal data class CodeModeSweepRecords(
+    val records: MutableList<CodeModeRecord>,
+    val history: CodeModeExpiredHistory,
+    val retention: CodeModeRecordRetention,
+)

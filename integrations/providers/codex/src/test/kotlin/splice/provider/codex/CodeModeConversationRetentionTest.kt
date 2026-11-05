@@ -125,7 +125,7 @@ class CodeModeConversationRetentionTest {
     }
 
     @Test
-    fun `the head's bytes take whole conversations, and never refuse a script`() {
+    fun `byte pressure preserves every conversation across cache eviction and restart`() {
         val big = "x".repeat(10_000)
         val registry = registry(CodeModeRetention(bytes = 250_000))
         (1..6).forEach { other ->
@@ -134,9 +134,14 @@ class CodeModeConversationRetentionTest {
         }
 
         assertEquals((1..6).map { "c0-s$it" }, registry.kept(0), "the live conversation lost records")
-        registry.wholeOrGone(1..6)
-        assertEquals(emptyList<String>(), registry.kept(1), "the byte bound let nothing go")
-        assertEquals(RECORDS_PER_CONVERSATION, registry.kept(6).size, "the newest conversation went")
+        assertTrue(logs.any { "moved to durable cache" in it }, "$logs")
+        (1..6).forEach { other ->
+            assertEquals(RECORDS_PER_CONVERSATION, registry.kept(other).size, "conversation $other lost replay")
+        }
+        registry.cache.trim()
+        registry.save()
+        val restarted = registry(CodeModeRetention(bytes = 250_000))
+        (1..6).forEach { other -> assertEquals(RECORDS_PER_CONVERSATION, restarted.kept(other).size) }
     }
 
     @Test
@@ -161,16 +166,16 @@ class CodeModeConversationRetentionTest {
     }
 
     @Test
-    fun `a conversation that alone holds more than the head's bytes lets go at its turn, not at an admission`() {
+    fun `a conversation larger than the cache keeps its replay on the next turn`() {
         val big = "x".repeat(10_000)
         val registry = registry(CodeModeRetention(bytes = 30_000))
         repeat(4) { n -> registry.script(0, n, source = big) }
         assertEquals(4, registry.kept(0).size, "an admission let the admitting conversation's records go")
 
         registry.turnStart.begin("conversation-0")
-
-        assertEquals(emptyList<String>(), registry.kept(0))
-        assertTrue(logs.any { "it alone holds more than 30000 bytes" in it }, "$logs")
+        registry.cache.trim()
+        assertEquals((0..3).map { "c0-s$it" }, registry.kept(0))
+        assertTrue(!registry.expiredHistory("conversation-0", "digest-0-0", emptySet()))
     }
 
     @Test
@@ -185,15 +190,42 @@ class CodeModeConversationRetentionTest {
     }
 
     @Test
-    fun `restart removes an oversized newest conversation before an older small one`() {
+    fun `restart can load an oversized conversation from its journal`() {
         val original = registry()
         original.script(2, 0, source = "small")
         original.script(1, 0, source = "x".repeat(40_000))
 
         val restarted = registry(CodeModeRetention(bytes = 30_000))
 
-        assertEquals(emptyList<String>(), restarted.kept(1), "the newest conversation exceeds the bound alone")
+        assertEquals(listOf("c1-s0"), restarted.kept(1), "the oversized conversation lost replay")
         assertEquals(listOf("c2-s0"), restarted.kept(2), "a small older conversation remains")
+    }
+
+    @Test
+    fun `a cold conversation still expires after its actual TTL`() {
+        val registry = registry(CodeModeRetention(bytes = 1))
+        registry.script(1, 0)
+        registry.cache.trim()
+        clock.now += 25.hours.inWholeMilliseconds
+        registry.timed.sweep()
+        assertEquals(emptyList<String>(), registry.kept(1))
+        assertEquals(emptyList<String>(), registry(CodeModeRetention(bytes = 1)).kept(1))
+    }
+
+    @Test
+    fun `a turn's replay remains available while another conversation fills the cache`() {
+        val registry = registry(CodeModeRetention(bytes = 1))
+        registry.script(1, 0)
+        registry.cache.acquire("conversation-1")
+        try {
+            registry.script(2, 0)
+            registry.cache.trim()
+            assertEquals(listOf("c1-s0"), registry.kept(1))
+            registry.script(1, 1)
+        } finally {
+            registry.cache.release("conversation-1")
+        }
+        assertEquals(listOf("c1-s0", "c1-s1"), registry.kept(1))
     }
 
     @Test

@@ -29,6 +29,7 @@ import splice.provider.codex.state.CodeModeTurnStart
 import splice.provider.codex.state.collection.CodeModeRecordList
 import splice.provider.codex.state.query.CodeModeRecordQueries
 import splice.provider.codex.state.query.CodeModeResultOwners
+import splice.provider.codex.state.retention.CodeModeRecordCache
 import splice.provider.codex.state.retention.CodeModeRecordRetention
 import splice.provider.codex.state.retention.CodeModeRegistrySweep
 import splice.provider.codex.state.retention.CodeModeSweepOwnership
@@ -72,7 +73,7 @@ internal class CodexCodeModeRegistry(
 
     init {
         // The boot snapshots must not pin payloads after the live record expires or is purged.
-        val loaded = store.load()
+        val loaded = store.load(config.retention.cacheBytes)
         records = CodeModeRecordList(
             loaded.records.map { it.restore().also { record -> CodeModeHeap.own(record, heap) } },
         ).also(CodeModeNativeChain::link)
@@ -103,8 +104,11 @@ internal class CodexCodeModeRegistry(
     private val admissions = startup.entries
     val retainedCells = CodeModeCellRetention(config, access, records, cells, admissions, endSession)
     private val sweeper = CodexCodeModeSweeper(config, records, cells, admissions, history, endSession, retainedCells)
+    private val sweepRecords = CodeModeSweepRecords(records, history, retention)
+    val cache = CodeModeRecordCache(config, access, sweepRecords, store, heap)
 
     private val queries = CodeModeRecordQueries(access, records, history) { key ->
+        cache.restore(key)
         val changed = sweeper.sweep(key, key)
         store.save(records, history.entries, retryOnly = !changed, dirtyKeys = setOf(key))
     }
@@ -117,10 +121,10 @@ internal class CodexCodeModeRegistry(
             config,
             nativeSessions,
             access,
-            CodeModeSweepRecords(records, history),
+            sweepRecords,
             store,
             sweeper,
-            retention,
+            cache,
         ),
         store,
         config,
@@ -128,7 +132,7 @@ internal class CodexCodeModeRegistry(
     ).also { it.nativeOwned = CodeModeSweepOwnership(nativeCells.services::hasSessions) }
 
     /** V4-337: where each code-mode turn starts, before its history is built. */
-    val turnStart = CodeModeTurnStart(access, retention, records, history, store, config.clock, retainedCells)
+    val turnStart = CodeModeTurnStart(access, sweepRecords, store, config.clock, retainedCells, cache)
 
     init {
         monitor.withLock {
@@ -136,6 +140,7 @@ internal class CodexCodeModeRegistry(
             if (changed) store.save(records, history.entries)
             timed.arm()
         }
+        cache.trim()
     }
 
     /** ACTIVE owns visible calls before their result; LOST still needs a result or exact retry. */
@@ -149,8 +154,10 @@ internal class CodexCodeModeRegistry(
 
     fun recordsFor(key: String): List<CodeModeRecord> = queries.recordsFor(key)
 
-    fun completed(key: String, conversationId: String? = null): List<CodeModeRecord> =
-        queries.completed(key, conversationId)
+    fun completed(key: String, conversationId: String? = null): List<CodeModeRecord> {
+        cache.restoreConversation(conversationId)
+        return queries.completed(key, conversationId)
+    }
 
     fun expiredHistory(key: String, digest: String, ids: Set<String>): Boolean =
         queries.expiredHistory(key, digest, ids)
@@ -166,11 +173,16 @@ internal class CodexCodeModeRegistry(
 
         fun run(): Boolean {
             CodeModeHeap.own(record, heap)
+            cache.restoreConversation(record.conversationId)
+            access.withKey(record.key) { cache.restore(record.key) }
             // A failed boot already has durable source; an exact retry reuses its identity.
             startup.resume(record)?.let { return it }
             while (true) {
                 val accepted = attempt()
-                if (accepted != null) return accepted
+                if (accepted != null) {
+                    cache.trim()
+                    return accepted
+                }
                 val key = checkNotNull(blockedKey)
                 keyLocks.release(key, keyLocks.acquire(key))
             }

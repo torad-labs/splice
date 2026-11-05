@@ -34,17 +34,21 @@ internal class CodeModeStateDirectory(
         val modifiedAt: Long = Files.getLastModifiedTime(path).toMillis()
     }
 
-    fun load(): Map<String, Loaded> {
-        if (!Files.isDirectory(dir)) return emptyMap()
+    fun load(): Sequence<Pair<String, Loaded>> {
+        if (!Files.isDirectory(dir)) return emptySequence()
         val listed = try {
             Files.list(dir).use { entries -> entries.toList() }
         } catch (failure: IOException) {
             log("[code-mode] $dir not listed (${SafeFailureText.render(failure)}): its conversations are not restored")
-            return emptyMap()
+            return emptySequence()
         }
         dropOrphanLocks(listed)
         val files = listed.filter { FILE_NAME.matches(it.fileName.toString()) }
-        return files.mapNotNull(::read).groupBy(OnDisk::key).mapValues { (key, versions) ->
+        // Decode one conversation at a time: cold journals must not all become resident at boot.
+        return files.groupBy { it.fileName.toString().substringBefore('.') }.values.asSequence().mapNotNull { paths ->
+            val versions = paths.mapNotNull(::read)
+            if (versions.isEmpty()) return@mapNotNull null
+            val key = versions.first().key
             // A downgraded jar can create newer .json state beside the .jsonl it cannot discover.
             val identical = versions.zipWithNext().all { (left, right) -> sameState(left.state, right.state) }
             val selected = versions.maxWith(
@@ -53,14 +57,39 @@ internal class CodeModeStateDirectory(
                     .thenBy { it.path == path(key) },
             )
             val migration = versions.size > 1 || selected.path != path(key)
-            Loaded(selected.state, migration || CodeModeStateJournal.outgrown(selected.path, selected.liveBytes))
+            key to Loaded(selected.state, migration || CodeModeStateJournal.outgrown(selected.path, selected.liveBytes))
         }
+    }
+
+    /** Reload a cold conversation honestly; a failed read must never turn a retry into new execution. */
+    fun restore(key: String): CodeModePersistedState {
+        val state = CodeModeStateJournal.read(path(key), json, heap)
+        val keys = state.records.map { it.key } + state.expired.map { it.key }
+        require(state.records.isNotEmpty() && keys.all { it == key }) {
+            "cold code-mode journal belongs to another conversation"
+        }
+        CodeModeStateJournal.liveBytes(state, json, heap)
+        return state
     }
 
     private fun sameState(left: CodeModePersistedState, right: CodeModePersistedState): Boolean =
         left == right && left.records.zip(right.records).all { (before, after) ->
             CodeModeStateJournal.same(before, after)
         }
+
+    /** The loaded conversations oldest first, preserving each conversation's record order. */
+    fun merge(conversations: Map<String, CodeModePersistedState>): CodeModePersistedState {
+        val oldestFirst = conversations.entries.sortedWith(
+            compareBy<Map.Entry<String, CodeModePersistedState>>(
+                { entry -> entry.value.records.maxOfOrNull(CodeModeRecordSnapshot::updatedAt) ?: 0L },
+                { entry -> entry.key },
+            ),
+        )
+        return CodeModePersistedState(
+            records = oldestFirst.flatMap { it.value.records },
+            expired = oldestFirst.flatMap { it.value.expired }.sortedBy(CodeModeExpiredSnapshot::expiredAt),
+        )
+    }
 
     fun path(key: String): Path = named(key, ".jsonl")
 

@@ -32,7 +32,7 @@ internal class CodeModeRecordRetention(
 ) {
 
     /** At the start of conversation [key]'s turn: its finished records go together when it reached
-     *  [CodeModeRetention.perConversation] records or alone holds more than [CodeModeRetention.bytes],
+     *  [CodeModeRetention.perConversation] records,
      *  and none of its records is running (a running script's baseline sits on them). Records that stay
      *  are used by this turn ([used]). True when any went. */
     fun beginTurn(
@@ -63,14 +63,12 @@ internal class CodeModeRecordRetention(
         val why = when {
             own.any { it.sessionId?.let(sessionAlive::invoke) == true } -> null
             bounds.perConversation?.let { own.size >= it } == true -> "it reached ${bounds.perConversation} records"
-            own.sumOf(::bytesOf) > bounds.bytes -> "it alone holds more than ${bounds.bytes} bytes"
             else -> null
         }
         return why?.let { Gone(records, expired, now).finished(key, it) } != null
     }
 
-    /** Makes room by reclaiming finished conversations within the byte budget. An explicit count
-     *  override can also reclaim this conversation or refuse admission; defaults never refuse by count. */
+    /** An explicit count policy expires finished conversations. Byte pressure only changes cache residency. */
     fun makeRoom(
         records: MutableList<CodeModeRecord>,
         expired: CodeModeExpiredHistory,
@@ -92,8 +90,6 @@ internal class CodeModeRecordRetention(
         while (exceedsHeadCount(records.size)) {
             gone.leastRecent(null, "the head held ${records.size} records") ?: break
         }
-        var held = records.sumOf(::bytesOf)
-        while (held > bounds.bytes) held -= gone.leastRecent(null, "the head's records held $held bytes") ?: break
         return records.size != before
     }
 
@@ -102,7 +98,7 @@ internal class CodeModeRecordRetention(
      *  the bounds held only at an admission and at the start, so a head past them stayed past them until the
      *  next script, however long that took (Oct 22: 94.6 MB over the bound from a boot to its first script). */
     fun overBound(records: List<CodeModeRecord>, busy: Set<String>): String? =
-        if (exceedsHeadCount(records.size) || records.sumOf(::bytesOf) > bounds.bytes) {
+        if (exceedsHeadCount(records.size)) {
             idle(records, busy + lost(records))
         } else {
             null
@@ -166,8 +162,7 @@ internal class CodeModeRecordRetention(
 
     private fun overOwnBound(records: List<CodeModeRecord>, key: String): Boolean {
         val own = CodeModeRecordKeys.of(records, key)
-        val countFull = bounds.perConversation?.let { own.size > it } == true
-        return countFull || own.sumOf(::bytesOf) > bounds.bytes
+        return bounds.perConversation?.let { own.size > it } == true
     }
 
     /** Admission owns the registry monitor. Group and order once, then remove every victim in one pass. */
@@ -179,21 +174,15 @@ internal class CodeModeRecordRetention(
         private val gone = Gone(records, expired, now)
         private val removed = Collections.newSetFromMap(IdentityHashMap<CodeModeRecord, Boolean>())
         private var count = records.size
-        private var held = 0L
 
         fun makeRoom(record: CodeModeRecord): Boolean {
             // Most admissions need no victims, so avoid grouping their history at all.
-            held = records.sumOf(::bytesOf) + bytesOf(record)
-            if (bounds.records?.let { count >= it } != true && held <= bounds.bytes) return true
+            if (bounds.records?.let { count >= it } != true) return true
             val groups = records.groupBy(CodeModeRecord::key)
             val victims = groups.entries.filter { (key, kept) -> key != record.key && idle(kept) }
                 .sortedWith(idleOrder).iterator()
             try {
-                if (!fitCount(record.key, groups[record.key].orEmpty(), victims)) return false
-                while (held > bounds.bytes) {
-                    reclaim(victims, "the head's records passed ${bounds.bytes} bytes") ?: break
-                }
-                return true
+                return fitCount(record.key, groups[record.key].orEmpty(), victims)
             } finally {
                 records.removeAll { it in removed }
             }
@@ -225,7 +214,7 @@ internal class CodeModeRecordRetention(
             if (going.isEmpty()) return null
             removed.addAll(going)
             count -= going.size
-            return gone.remember(key, going, why).also { held -= it }
+            return gone.remember(key, going, why)
         }
     }
 
@@ -253,7 +242,7 @@ internal class CodeModeRecordRetention(
             val freed = going.sumOf(::bytesOf)
             log(
                 "[code-mode] conversation ${key.take(RECORD_ID_LOG_CHARS)}: ${going.size} record(s), $freed bytes, " +
-                    "let go ($why); its scripts so far stay in its history as ordinary tool calls",
+                    "let go ($why); durable upstream history is reconstructed separately",
             )
             return freed
         }

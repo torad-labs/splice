@@ -4,36 +4,43 @@ package splice.provider.codex.state
 import splice.core.util.LogSink
 import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.CodexCodeModeRegistry
-import splice.provider.codex.state.diagnostics.CODE_MODE_RECORD_LOG_CHARS
 import splice.upstream.codemode.CodeModeResult
-import java.util.concurrent.ConcurrentHashMap
 
 internal class CodeModeTurnNotes(
     private val registry: CodexCodeModeRegistry,
     private val log: LogSink,
 ) {
-    private val announced: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    private val announced = LinkedHashMap<String, String>(NOTE_CACHE_KEYS, 1f, true)
 
-    fun announce(context: CodeModeRunContext) {
-        notes(context).filter { announced.add("${context.key}|$it") }.forEach { log("[code-mode] $it") }
-    }
-
-    private fun notes(context: CodeModeRunContext): List<String> {
+    /** Inspect the body after durable reconstruction, so a missing hot record does not imply fallback. */
+    fun announce(context: CodeModeRunContext, remainingCallbacks: Set<String>) {
         val resultIds = context.turn.toolResults.map(CodeModeResult::id).toSet()
         val owners = registry.resultOwners(context.key, resultIds)
-        return buildList {
-            if (registry.expiredHistory(context.key, context.digest, resultIds)) {
-                add("expired code-mode history for this conversation; its client calls stay ordinary tool calls")
-            }
-            owners.foreign?.let { foreign ->
-                add(
-                    "code-mode results in this history belong to another session or model " +
-                        "(record ${foreign.id.take(CODE_MODE_RECORD_LOG_CHARS)}); they stay ordinary tool calls",
-                )
-            }
-            if (owners.unknown.isNotEmpty()) {
-                add("unknown or expired code-mode tool results stay ordinary tool calls: ${owners.unknown}")
-            }
+        val ordinary = owners.unknown.count { it in remainingCallbacks }
+        val state = when {
+            ordinary > 0 -> "ordinary"
+            owners.unknown.isNotEmpty() -> "reconstructed"
+            else -> "retained"
+        }
+        val changed = synchronized(announced) {
+            val previous = announced.put(context.key, state)
+            if (announced.size > NOTE_CACHE_KEYS) announced.remove(announced.keys.first())
+            previous != state
+        }
+        if (changed && state == "ordinary") {
+            log(
+                "[code-mode] $ordinary tool result(s) remain ordinary after history reconstruction " +
+                    "for conversation ${context.key.take(NOTE_KEY_CHARS)}",
+            )
+        } else if (changed && state == "reconstructed") {
+            log(
+                "[code-mode] durable history reconstructed ${owners.unknown.size} result(s) " +
+                    "without execution records " +
+                    "for conversation ${context.key.take(NOTE_KEY_CHARS)}",
+            )
         }
     }
 }
+
+private const val NOTE_CACHE_KEYS = 256
+private const val NOTE_KEY_CHARS = 8

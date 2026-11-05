@@ -11,6 +11,7 @@ import splice.provider.codex.state.CodeModeHeap
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.CodeModeRegistryAccess
 import splice.provider.codex.state.collection.CodeModeRecordKeys
+import splice.provider.codex.state.diagnostics.CODE_MODE_RECORD_LOG_CHARS
 import kotlin.concurrent.withLock
 
 /** The byte limit bounds hot records, not replay lifetime. Only a committed, unused conversation can
@@ -71,7 +72,10 @@ internal class CodeModeRecordCache(
                 if (bytes() <= config.retention.cacheBytes || !idle(key, own)) return@tryKey
                 if (store.cool(key, state.records, state.history.entries)) {
                     state.records.removeAll(own.toSet())
-                    config.log("[code-mode] conversation ${key.take(CACHE_KEY_CHARS)}: records moved to durable cache")
+                    config.log(
+                        "[code-mode] conversation ${key.take(CODE_MODE_RECORD_LOG_CHARS)}: " +
+                            "records moved to durable cache",
+                    )
                 }
             }
         }
@@ -85,5 +89,3 @@ internal class CodeModeRecordCache(
 
     private fun bytes(): Long = state.records.sumOf { it.retainedBytes ?: 0L }
 }
-
-private const val CACHE_KEY_CHARS = 8

@@ -4,6 +4,7 @@ package splice.provider.codex.state
 import splice.core.util.LogSink
 import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.CodexCodeModeRegistry
+import splice.provider.codex.state.diagnostics.CODE_MODE_RECORD_LOG_CHARS
 import splice.upstream.codemode.CodeModeResult
 
 internal class CodeModeTurnNotes(
@@ -30,17 +31,17 @@ internal class CodeModeTurnNotes(
         if (changed && state == "ordinary") {
             log(
                 "[code-mode] $ordinary tool result(s) remain ordinary after history reconstruction " +
-                    "for conversation ${context.key.take(NOTE_KEY_CHARS)}",
+                    "for conversation ${context.key.take(CODE_MODE_RECORD_LOG_CHARS)}",
             )
         } else if (changed && state == "reconstructed") {
             log(
                 "[code-mode] durable history reconstructed ${owners.unknown.size} result(s) " +
                     "without execution records " +
-                    "for conversation ${context.key.take(NOTE_KEY_CHARS)}",
+                    "for conversation ${context.key.take(CODE_MODE_RECORD_LOG_CHARS)}",
             )
         }
     }
 }
 
+// why: retain transitions for hundreds of concurrent conversations without keeping every historical warning forever.
 private const val NOTE_CACHE_KEYS = 256
-private const val NOTE_KEY_CHARS = 8

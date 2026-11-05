@@ -78,11 +78,10 @@ jobs:
         id: plan
         env:
           EVENT: ${{ github.event_name }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           if [ "$EVENT" = pull_request ]; then
-            bun tools/gate ci plan-pr "$PR_BASE_SHA" "$PR_HEAD_SHA"
+            bun tools/gate ci plan-pr "$PR_HEAD_SHA"
           else
             bun tools/gate ci plan
           fi

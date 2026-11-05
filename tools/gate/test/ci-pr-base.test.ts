@@ -18,6 +18,7 @@ test("a two-generation checkout selects all PR changes even after long branch di
       writeFileSync(join(root, "deleted.txt"), "original");
       writeFileSync(join(root, "renamed.txt"), "rename me");
       git(root, "add", "."); git(root, "commit", "-m", "initial");
+      const eventBase = git(root, "rev-parse", "HEAD");
       git(root, "checkout", "-b", "feature");
       for (let i = 0; i < length; i++) {
         writeFileSync(join(root, "feature.txt"), String(i));
@@ -33,14 +34,18 @@ test("a two-generation checkout selects all PR changes even after long branch di
       git(root, "merge", "--no-ff", "feature", "-m", "candidate");
       git(root, "clone", "--depth", "2", "--no-tags", "file://" + root, shallow);
       expect(git(shallow, "rev-parse", "--is-shallow-repository")).toBe("true");
-      const selected = pathsSince(shallow, pullRequestBase(shallow, base, head));
+      const selectedBase = pullRequestBase(shallow, head);
+      const selected = pathsSince(shallow, selectedBase);
       expect(selected).toEqual(["deleted.txt", "feature.txt", "new-name.txt", "renamed.txt"]);
       expect(selected).toEqual(pathsSince(root, base));
-      expect(() => pullRequestBase(shallow, head, base)).toThrow();
-      expect(() => pullRequestBase(shallow, base, "0".repeat(40))).toThrow();
-      expect(() => pullRequestBase(shallow, "--all", head)).toThrow();
+      // GitHub can retain the PR-open base SHA after rebuilding its merge on newer main.
+      expect(selectedBase).not.toBe(eventBase);
+      expect(selectedBase).toBe(base);
+      expect(() => pullRequestBase(shallow, base)).toThrow();
+      expect(() => pullRequestBase(shallow, "0".repeat(40))).toThrow();
+      expect(() => pullRequestBase(shallow, "--all")).toThrow();
       git(shallow, "checkout", "--detach", base);
-      expect(() => pullRequestBase(shallow, base, head)).toThrow();
+      expect(() => pullRequestBase(shallow, head)).toThrow();
     } finally {
       rmSync(root, { recursive: true, force: true });
       rmSync(shallow, { recursive: true, force: true });

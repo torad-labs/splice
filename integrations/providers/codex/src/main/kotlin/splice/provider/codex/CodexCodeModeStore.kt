@@ -132,12 +132,12 @@ internal class CodexCodeModeStore(
         return loaded.copy(expired = (loaded.expired + coldMarkers).sortedBy(CodeModeExpiredSnapshot::expiredAt))
     }
 
-    /** Commit before dropping the snapshot owner. A disabled or failed journal cannot evict memory. */
-    fun cool(key: String, records: List<CodeModeRecord>, expired: List<CodeModeExpiredSnapshot>): Boolean {
+    /** Persist while allowing other conversations to run; the caller must recheck ownership before eviction. */
+    fun commit(key: String, records: List<CodeModeRecord>, expired: List<CodeModeExpiredSnapshot>): Boolean {
         if (!location.journaling.now()) return false
         // Include late source accounting and turn-use timestamps, not just the last executed cell.
         save(records, expired, dirtyKeys = setOf(key))
-        return cold.evict(key)
+        return location.journaling.now() && key !in failedKeys
     }
 
     /** Writes each conversation of the given state that differs from what the disk holds, and removes the

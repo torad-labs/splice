@@ -84,20 +84,16 @@ internal class CodeModeRecordCache(
             access.tryKey(key) {
                 val own = CodeModeRecordKeys.of(state.records, key)
                 if (bytes() <= config.retention.bytes || !idle(key, own)) return@tryKey
-                releaseIdle(key, own)
+                releaseIdle(key)
             }
         }
     }
 
-    private fun releaseIdle(key: String, own: List<CodeModeRecord>) {
-        if (config.retention.durableCache && store.cool(key, state.records, state.history.entries)) {
-            state.records.removeAll(own.toSet())
-            // The reader settled and owes no usage. Restored records cannot carry these process-local leases.
-            own.forEach(CodeModeRecord::endSource)
-            config.log(
-                "[code-mode] conversation ${key.take(CODE_MODE_RECORD_LOG_CHARS)}: records moved to durable cache",
-            )
+    private fun releaseIdle(key: String) {
+        if (config.retention.durableCache && store.commit(key, state.records, state.history.entries)) {
+            coolCommitted(key)
         } else if (!config.retention.durableCache || !config.state.journaling.now()) {
+            if (!idle(key, CodeModeRecordKeys.of(state.records, key))) return
             val policy = if (config.retention.durableCache) "journal off" else "explicit count policy"
             val changed = state.retention.letGoIdle(
                 state.records,
@@ -108,6 +104,16 @@ internal class CodeModeRecordCache(
             )
             if (changed) store.save(state.records, state.history.entries, dirtyKeys = setOf(key))
         }
+    }
+
+    /** The commit released the monitor for I/O. A conversation may have become pinned during that write. */
+    private fun coolCommitted(key: String) {
+        val current = CodeModeRecordKeys.of(state.records, key)
+        if (!idle(key, current) || !store.cold.evict(key)) return
+        state.records.removeAll(current.toSet())
+        // The reader settled and owes no usage. Restored records cannot carry these process-local leases.
+        current.forEach(CodeModeRecord::endSource)
+        config.log("[code-mode] conversation ${key.take(CODE_MODE_RECORD_LOG_CHARS)}: records moved to durable cache")
     }
 
     private fun idle(key: String, records: List<CodeModeRecord>): Boolean =

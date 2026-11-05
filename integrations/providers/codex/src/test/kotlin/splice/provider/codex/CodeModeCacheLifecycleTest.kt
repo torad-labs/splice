@@ -160,6 +160,56 @@ class CodeModeCacheLifecycleTest : CodeModeBridgeTestSupport() {
         assertEquals(listOf("accepted source"), registry.completed("source").map { it.progress.output })
     }
 
+    @Test
+    fun `a conversation pinned during the cooling write keeps its prior native cell visible`() {
+        val prior = record("prior").also { it.conversationId = "conversation" }
+        val current = record("current").also {
+            it.phase = CodeModePhase.ACTIVE
+            it.conversationId = "conversation"
+        }
+        seed(listOf(prior, current))
+        val writing = mapOf("prior" to CountDownLatch(1), "current" to CountDownLatch(1))
+        val proceed = mapOf("prior" to CountDownLatch(1), "current" to CountDownLatch(1))
+        val block = AtomicBoolean(false)
+        val writer = CodeModeStateWrite { file, text ->
+            val key = writing.keys.firstOrNull { file == path(it) }
+            if (block.get() && key != null) {
+                writing.getValue(key).countDown()
+                check(proceed.getValue(key).await(10, TimeUnit.SECONDS))
+            }
+            CodeModeStateJournal.write(file, text)
+        }
+        val registry = registry(writer = writer)
+        val hot = registry.recordsFor("prior").single()
+        val active = registry.recordsFor("current").single()
+        // Like beginTurn's used timestamp: cooling must write this changed snapshot while releasing the monitor.
+        hot.progress.updatedAt++
+        block.set(true)
+        val failure = AtomicReference<Throwable?>()
+        val found = AtomicReference<List<String>>()
+        val save = thread(failure) { registry.changes.save(active) { it.origin.source = "changed" } }
+        val trim = thread(failure) { registry.cache.trim() }
+        val read = thread(failure) {
+            found.set(registry.completed("current", "conversation").map(CodeModeRecord::id))
+        }
+        save.start()
+        try {
+            assertTrue(writing.getValue("current").await(10, TimeUnit.SECONDS))
+            trim.start()
+            assertTrue(writing.getValue("prior").await(10, TimeUnit.SECONDS))
+            read.start()
+            waiting(read)
+            proceed.getValue("prior").countDown()
+            trim.join(10_000)
+        } finally {
+            proceed.values.forEach(CountDownLatch::countDown)
+            listOf(save, trim, read).forEach { it.join(10_000) }
+        }
+        assertFalse(listOf(save, trim, read).any(Thread::isAlive))
+        assertNull(failure.get())
+        assertEquals(listOf(prior.id), found.get(), "the cooling write ignored a newly acquired conversation pin")
+    }
+
     private fun config() = CodeModeBridgeConfig(
         { error("no runtime is needed") },
         stateLocation(),

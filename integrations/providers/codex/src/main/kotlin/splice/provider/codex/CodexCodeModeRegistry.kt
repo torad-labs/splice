@@ -27,6 +27,7 @@ import splice.provider.codex.state.CodeModeSourceEnds
 import splice.provider.codex.state.CodeModeStartupAdmissions
 import splice.provider.codex.state.CodeModeTurnStart
 import splice.provider.codex.state.collection.CodeModeRecordList
+import splice.provider.codex.state.query.CodeModeQueryPreparation
 import splice.provider.codex.state.query.CodeModeRecordQueries
 import splice.provider.codex.state.query.CodeModeResultOwners
 import splice.provider.codex.state.retention.CodeModeRecordCache
@@ -97,9 +98,6 @@ internal class CodexCodeModeRegistry(
     }
     val source = CodeModeSourceRecords(access, records, history, store, contexts)
     val changes = CodeModeRecordChanges(access, records, history, store, cells, startup, config)
-    val notifications = splice.provider.codex.stream.notifications.CodeModeConversationNotifications(
-        splice.provider.codex.state.notification.CodeModeNotificationRecords(access, records, changes),
-    )
     val interruptionRecords = splice.provider.codex.state.interrupt.CodeModeInterruptedRecords(access, records, changes)
     private val admissions = startup.entries
     val retainedCells = CodeModeCellRetention(config, access, records, cells, admissions, endSession)
@@ -107,11 +105,15 @@ internal class CodexCodeModeRegistry(
     private val sweepRecords = CodeModeSweepRecords(records, history, retention)
     val cache = CodeModeRecordCache(config, access, sweepRecords, store, heap)
 
-    private val queries = CodeModeRecordQueries(access, records, history) { key ->
+    private val prepareQuery = CodeModeQueryPreparation { key ->
         cache.restore(key)
         val changed = sweeper.sweep(key, key)
         store.save(records, history.entries, retryOnly = !changed, dirtyKeys = setOf(key))
     }
+    private val queries = CodeModeRecordQueries(access, records, history, prepareQuery)
+    val notifications = splice.provider.codex.stream.notifications.CodeModeConversationNotifications(
+        splice.provider.codex.state.notification.CodeModeNotificationRecords(access, records, changes, prepareQuery),
+    )
     val mcpOwners = queries.mcpOwnership
     val timed = CodeModeTimedSweep(
         monitor,

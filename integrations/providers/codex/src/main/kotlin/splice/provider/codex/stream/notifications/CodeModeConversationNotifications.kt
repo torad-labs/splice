@@ -12,6 +12,7 @@ import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.history.notification.CodeModeHistoryNotifications
 import splice.provider.codex.state.CodeModeTurnIdentity
+import splice.provider.codex.state.notification.CodeModeNotificationOrigin
 import splice.provider.codex.state.notification.CodeModeNotificationRecords
 import splice.upstream.codemode.CodeModeText
 import splice.upstream.codemode.NativeCodeModeNotification
@@ -66,30 +67,36 @@ internal class CodeModeConversationNotifications(private val records: CodeModeNo
         context: CodeModeRunContext,
         conversation: String,
     ): NativeCodeModeNotifications {
-        bind(conversation, record.origin.outerCallId, context)
-        return NativeCodeModeNotifications { notification -> receive(record, conversation, notification) }
+        val origin = CodeModeNotificationOrigin(
+            record.key,
+            record.id,
+            record.sessionId,
+            conversation,
+            record.origin.outerCallId,
+        )
+        bind(conversation, origin.callId, context)
+        return NativeCodeModeNotifications { notification -> receive(origin, notification) }
     }
 
     private suspend fun receive(
-        record: CodeModeRecord,
-        conversation: String,
+        origin: CodeModeNotificationOrigin,
         notification: NativeCodeModeNotification,
     ): NativeCodeModeNotificationDelivery {
         if (CodeModeText.trim(notification.text).isEmpty()) return NativeCodeModeNotificationDelivery.Delivered
         val refused = NativeCodeModeNotificationDelivery.Rejected(
             "failed to inject exec notify message for cell ${notification.cellId}: no active turn",
         )
-        val owner = if (notification.sessionKey == conversation && notification.callId == record.origin.outerCallId) {
-            select(record, notification)
+        val owner = if (notification.sessionKey == origin.conversation && notification.callId == origin.callId) {
+            select(origin, notification)
         } else {
             null
         }
-        return owner?.let { deliver(it, record, notification, refused) } ?: refused
+        return owner?.let { deliver(it, origin, notification, refused) } ?: refused
     }
 
     private suspend fun deliver(
         owner: CodeModeNotificationOwner,
-        record: CodeModeRecord,
+        origin: CodeModeNotificationOrigin,
         notification: NativeCodeModeNotification,
         refused: NativeCodeModeNotificationDelivery.Rejected,
     ): NativeCodeModeNotificationDelivery {
@@ -101,7 +108,8 @@ internal class CodeModeConversationNotifications(private val records: CodeModeNo
                 try {
                     owner.mutex.withLock {
                         if (!owner.active || !owner.job.isActive) return@withLock refused
-                        if (!records.append(record, owner.context.turn.sessionId, notification)) return@withLock refused
+                        val record = records.append(origin, owner.context.turn.sessionId, notification)
+                            ?: return@withLock refused
                         owner.history?.inject(owner.context, record)
                         persisted = true
                         owner.context.link.sink.addTextBlock(notification.text)
@@ -118,10 +126,13 @@ internal class CodeModeConversationNotifications(private val records: CodeModeNo
         }
     }
 
-    private fun select(record: CodeModeRecord, notification: NativeCodeModeNotification): CodeModeNotificationOwner? =
+    private fun select(
+        origin: CodeModeNotificationOrigin,
+        notification: NativeCodeModeNotification,
+    ): CodeModeNotificationOwner? =
         synchronized(monitor) {
             val candidates = owners.values.filter {
-                it.conversation == notification.sessionKey && it.context.turn.sessionId == record.sessionId &&
+                it.conversation == notification.sessionKey && it.context.turn.sessionId == origin.sessionId &&
                     it.job.isActive
             }
             candidates.firstOrNull { it.token === preferred[notification.sessionKey to notification.callId] }

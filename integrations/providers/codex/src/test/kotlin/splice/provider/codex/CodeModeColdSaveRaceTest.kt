@@ -50,7 +50,8 @@ class CodeModeColdSaveRaceTest {
             val save = executor.submit { access.monitor.withLock { store.save(records, markers) } }
             assertTrue(writing.await(10, TimeUnit.SECONDS), "the other conversation did not reach its disk write")
             access.withKey("beta") {
-                assertTrue(store.cool("beta", records, markers))
+                assertTrue(store.commit("beta", records, markers))
+                assertTrue(store.cold.evict("beta"))
                 records.remove(beta)
             }
             proceed.countDown()

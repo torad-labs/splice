@@ -160,6 +160,7 @@ internal class CodexCodeModeStore(
             addAll(kept.keys)
         }
         if (!location.journaling.now()) {
+            cold.changedWithoutJournal(keys, records)
             // What changed while the journal was off is owed to disk once it is back on: marked like a failed write,
             // the first periodic sweep after the switch writes it. Unmarked, it waited for its own conversation's next
             // change, and a hard stop before then lost it (§9 audit, Oct 12).

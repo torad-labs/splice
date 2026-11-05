@@ -154,10 +154,8 @@ internal class CodexCodeModeRegistry(
 
     fun recordsFor(key: String): List<CodeModeRecord> = queries.recordsFor(key)
 
-    fun completed(key: String, conversationId: String? = null): List<CodeModeRecord> {
-        cache.restoreConversation(conversationId)
-        return queries.completed(key, conversationId)
-    }
+    fun completed(key: String, conversationId: String? = null): List<CodeModeRecord> =
+        cache.withConversation(conversationId) { queries.completed(key, conversationId) }
 
     fun expiredHistory(key: String, digest: String, ids: Set<String>): Boolean =
         queries.expiredHistory(key, digest, ids)
@@ -173,16 +171,16 @@ internal class CodexCodeModeRegistry(
 
         fun run(): Boolean {
             CodeModeHeap.own(record, heap)
-            cache.restoreConversation(record.conversationId)
+            return cache.withConversation(record.conversationId) { admit() }.also { cache.trim() }
+        }
+
+        private fun admit(): Boolean {
             access.withKey(record.key) { cache.restore(record.key) }
             // A failed boot already has durable source; an exact retry reuses its identity.
             startup.resume(record)?.let { return it }
             while (true) {
                 val accepted = attempt()
-                if (accepted != null) {
-                    cache.trim()
-                    return accepted
-                }
+                if (accepted != null) return accepted
                 val key = checkNotNull(blockedKey)
                 keyLocks.release(key, keyLocks.acquire(key))
             }

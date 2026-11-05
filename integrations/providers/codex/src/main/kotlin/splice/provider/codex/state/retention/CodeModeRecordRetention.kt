@@ -99,17 +99,12 @@ internal class CodeModeRecordRetention(
      *  next script, however long that took (Oct 22: 94.6 MB over the bound from a boot to its first script). */
     fun overBound(records: List<CodeModeRecord>, busy: Set<String>): String? =
         if (exceedsHeadCount(records.size)) {
-            idle(records, busy + lost(records))
+            // A LOST record still needs its result or exact retry, even when its error reads as finished (#247).
+            val lost = records.filter { it.phase == CodeModePhase.LOST }.mapTo(HashSet(), CodeModeRecord::key)
+            idle(records, busy + lost)
         } else {
             null
         }
-
-    /** The conversations holding a LOST record. A LOST record still needs a result or an exact retry
-     *  (CodexCodeModeRegistry.owner), so the timed sweep leaves its conversation to its expiry and never to the
-     *  bound: round 11 of #247 found the sweep letting it go, since a LOST record carries an error and so reads as
-     *  finished. An admission, which needs the room now, may still let it go. */
-    private fun lost(records: List<CodeModeRecord>): Set<String> =
-        records.filter { it.phase == CodeModePhase.LOST }.mapTo(HashSet(), CodeModeRecord::key)
 
     /** Under [key]'s lock: [key]'s finished records go together when the head is still past its bounds and
      *  [key] is still idle and outside [busy]. True when any went. */
@@ -129,6 +124,23 @@ internal class CodeModeRecordRetention(
         own.forEach(CodeModeRecord::endSource)
         // The session its scripts ran in goes too, or its engine and host lease stay held after the head let it go
         // (round 11 of #247).
+        closeSession(key)
+        return true
+    }
+
+    /** A memory-only or explicitly count-bounded head cannot retain this conversation as a cold journal. */
+    fun letGoIdle(
+        records: MutableList<CodeModeRecord>,
+        expired: CodeModeExpiredHistory,
+        key: String,
+        now: Long,
+        why: String,
+    ): Boolean {
+        val own = CodeModeRecordKeys.of(records, key)
+        val busy = own.any { it.phase == CodeModePhase.LOST || mayBill(it) }
+        if (!idle(own) || busy) return false
+        Gone(records, expired, now).finished(key, why) ?: return false
+        own.forEach(CodeModeRecord::endSource)
         closeSession(key)
         return true
     }
@@ -248,7 +260,7 @@ internal class CodeModeRecordRetention(
         }
     }
 
-    private fun bytesOf(record: CodeModeRecord): Long = record.retainedBytes
+    fun bytesOf(record: CodeModeRecord): Long = record.retainedBytes
         ?: json.encodeToString(CodeModeRecordSnapshot.serializer(), record.snapshot())
             .toByteArray(Charsets.UTF_8).size.toLong().also { record.retainedBytes = it }
 }

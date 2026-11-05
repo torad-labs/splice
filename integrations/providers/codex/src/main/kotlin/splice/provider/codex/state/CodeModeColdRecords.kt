@@ -3,6 +3,7 @@ package splice.provider.codex.state
 import splice.core.memory.HeapReservations
 import splice.provider.codex.CodeModePersistedState
 import splice.provider.codex.CodeModePersistenceException
+import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRecordSnapshot
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
@@ -25,6 +26,13 @@ internal class CodeModeColdRecords(
     fun forConversation(id: String): Set<String> = entries.filterValues { id in it.conversations }.keys
     fun clear() = entries.clear()
     fun committed(key: String): CodeModeKeptState? = kept[key]
+
+    /** An unwritten mutation invalidates its cached size; expired keys must release their old snapshot owners. */
+    fun changedWithoutJournal(keys: Set<String>, records: List<CodeModeRecord>) {
+        records.filter { it.key in keys }.forEach { it.retainedBytes = null }
+        val liveKeys = records.mapTo(HashSet(), CodeModeRecord::key)
+        (keys - liveKeys).forEach(kept::remove)
+    }
 
     /** The caller has committed and owns this key. Remove the store's snapshot owner too. */
     fun evict(key: String): Boolean {

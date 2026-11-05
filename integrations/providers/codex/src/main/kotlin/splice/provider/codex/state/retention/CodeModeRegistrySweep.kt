@@ -1,11 +1,14 @@
 package splice.provider.codex.state.retention
 
+import splice.core.util.Cancellables
+import splice.core.util.SafeFailureText
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeExpiredSnapshot
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeStore
 import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeRegistryAccess
+import splice.provider.codex.state.diagnostics.CODE_MODE_RECORD_LOG_CHARS
 import splice.provider.codex.stream.CodeModeNativeSessions
 import kotlin.concurrent.withLock
 
@@ -22,20 +25,30 @@ internal class CodeModeRegistrySweep(
         nativeSessions.ended().forEach { key ->
             access.tryKey(key) { nativeSessions.closeSession(key) }
         }
-        val keys = access.monitor.withLock {
-            state.records.map(CodeModeRecord::key).toSet() +
-                state.history.entries.map(CodeModeExpiredSnapshot::key) + store.pendingKeys +
-                store.cold.before(config.clock.millis() - config.retention.ttl.inWholeMilliseconds)
+        val (keys, due) = access.monitor.withLock {
+            val due = store.cold.before(config.clock.millis() - config.retention.ttl.inWholeMilliseconds)
+            val keys = state.records.map(CodeModeRecord::key).toSet() +
+                state.history.entries.map(CodeModeExpiredSnapshot::key) + store.pendingKeys + due
+            keys to due
         }
-        keys.forEach { key ->
+        keys.forEach { key -> sweep(key, key in due) }
+        withinBounds()
+        cache.trim()
+    }
+
+    private fun sweep(key: String, restore: Boolean) {
+        Cancellables.runCatchingBestEffort {
             access.tryKey(key) {
-                cache.restore(key)
+                if (restore) cache.restore(key)
                 val changed = sweeper.sweep(key)
                 store.save(state.records, state.history.entries, retryOnly = !changed, dirtyKeys = setOf(key))
             }
+        }.exceptionOrNull()?.let { failure ->
+            config.log(
+                "[code-mode] conversation ${key.take(CODE_MODE_RECORD_LOG_CHARS)} not swept " +
+                    "(${SafeFailureText.render(failure)}); the next sweep tries again",
+            )
         }
-        withinBounds()
-        cache.trim()
     }
 
     /** The head's bounds hold on the timer too: finished conversations past them go within one sweep of

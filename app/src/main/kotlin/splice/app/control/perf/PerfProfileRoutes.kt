@@ -1,17 +1,14 @@
 package splice.app.control.perf
 
-import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
-import io.ktor.server.http.content.LocalFileContent
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
-import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.withContext
 import splice.app.control.ConsolePorts
 import splice.app.control.mount.ControlGuard
-import splice.core.util.PerfWorkBudget
 
 internal class PerfProfileRoutes(
     private val ports: ConsolePorts,
@@ -75,22 +72,22 @@ internal class PerfProfileRoutes(
         return null
     }
 
-    private suspend fun artifact(call: ApplicationCall, id: String) {
-        val artifact = runInterruptible(work.io) { ports.performance?.profiles?.artifact(id) }
-        if (artifact == null) {
-            work.refusal(call, "expired", "profile_artifact_unavailable", HttpStatusCode.Gone)
-            return
-        }
-        val lease = PerfWorkBudget.acquire(COPY_BYTES.toLong())
-        if (lease == null) {
-            work.refusal(call, "busy", "artifact_memory_budget", HttpStatusCode.TooManyRequests)
-            return
-        }
-        lease.use {
-            call.respond(LocalFileContent(artifact.path.toFile(), ContentType.parse(artifact.mediaType)))
+    private suspend fun artifact(call: ApplicationCall, id: String) = withContext(work.io) {
+        val profiles = ports.performance?.profiles
+        val reader = profiles?.openArtifact(id)
+        if (reader == null) {
+            if (profiles?.artifact(id) != null) {
+                work.refusal(call, "busy", "artifact_reader_capacity", HttpStatusCode.TooManyRequests)
+            } else {
+                work.refusal(call, "expired", "profile_artifact_unavailable", HttpStatusCode.Gone)
+            }
+        } else {
+            PerfProfileContent(reader, work.io).use { content ->
+                call.respond(content)
+                content.awaitDelivered()
+            }
         }
     }
 }
 
 private val PROFILE_ID = Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
-private const val COPY_BYTES = 64 * 1_024

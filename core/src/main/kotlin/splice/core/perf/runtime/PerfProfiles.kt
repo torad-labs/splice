@@ -27,4 +27,7 @@ interface PerfProfiles {
     fun status(id: String? = null): JsonObject
 
     fun artifact(id: String): PerfProfileArtifact?
+
+    /** Opens a bounded reader that keeps its artifact retained until the caller closes it. */
+    fun openArtifact(id: String): PerfProfileRead? = null
 }

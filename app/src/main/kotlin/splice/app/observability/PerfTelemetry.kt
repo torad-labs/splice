@@ -3,9 +3,11 @@ package splice.app.observability
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.java.Java
 import io.ktor.client.plugins.HttpTimeout
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
@@ -67,8 +69,9 @@ internal class PerfTelemetry(
     private val aggregate = PerfAggregateStore(paths.perfAggregatesDir, identity, clock)
     private val evidenceFiles = RequestEvidenceFiles(paths.perfEvidenceDir, rows.kept, clock)
     private val evidenceStores = heads.associateWith(evidenceFiles::forHead)
+    private val exportConfig = bootConfig.perfExportConfig()
     val exports = PerfExports(
-        bootConfig.perfExportConfig(),
+        exportConfig,
         identity,
         PerfAggregateSource {
             accumulator.snapshot().let { snapshot ->
@@ -86,6 +89,12 @@ internal class PerfTelemetry(
         },
         clock,
     )
+    private val nativeExportEnabled = exportConfig.enabled && "traces" in exportConfig.signals
+    val nativeTraceExporter = if (enabled && nativeExportEnabled) {
+        exports.nativeSpans()
+    } else {
+        null
+    }
     private val observer = PerfFanout(
         listOf(
             accumulator,
@@ -225,58 +234,65 @@ internal class PerfTelemetry(
     }
 
     /** Called after heads/MCP stop. Flush while source data is still alive, then release dependent owners. */
-    suspend fun close() = withContext(io) {
-        config.effectiveObserver = null
-        val jobs = listOfNotNull(sampler, configWorker)
-        jobs.forEach { it.cancel() }
-        val stopped = withTimeoutOrNull(PRODUCER_STOP_MS) { jobs.forEach { it.join() }; true }
-        if (stopped != true) {
-            cleanup.failed("producers_pending")
-            // Keep sources charged and alive for the remaining producers; a later close can finish the drain.
-            throw IOException("performance producers did not stop")
+    suspend fun close() {
+        val caller = currentCoroutineContext()
+        withContext(NonCancellable + io) {
+            config.effectiveObserver = null
+            val jobs = listOfNotNull(sampler, configWorker)
+            jobs.forEach { it.cancel() }
+            val stopped = withTimeoutOrNull(PRODUCER_STOP_MS) { jobs.forEach { it.join() }; true }
+            if (stopped != true) {
+                cleanup.failed("producers_pending")
+                // Keep sources charged and alive for the remaining producers; a later close can finish the drain.
+                caller.ensureActive()
+                throw IOException("performance producers did not stop")
+            }
+            configTicks.close()
+            Cancellables.withCleanup(::closeOwners) { caller.ensureActive() }
         }
-        configTicks.close()
-        runInterruptible { closeOwners() }
+        caller.ensureActive()
     }
 
-    private fun closeOwners() {
-        finalCheckpoints()
-        flushOwners()
-        closeReaders()
-        closeAdapters()
-        cleanup.run("accumulator") { accumulator.close() }
-    }
+    private fun closeOwners() = cleanup.finish(
+        ::finalCheckpoints,
+        ::flushOwners,
+        ::closeReaders,
+        ::closeAdapters,
+        { cleanup.run("accumulator") { accumulator.close() } },
+    )
 
-    private fun finalCheckpoints() {
-        cleanup.run("configuration_drain") { tracking.drain() }
-        cleanup.run("configuration_checkpoint") { configuration.persist(clock()) }
-        cleanup.run("aggregate_checkpoint") { if (enabled) checkpoint() }
-    }
+    private fun finalCheckpoints() = cleanup.finish(
+        { cleanup.run("configuration_drain") { tracking.drain() } },
+        { cleanup.run("configuration_checkpoint") { configuration.persist(clock()) } },
+        { cleanup.run("aggregate_checkpoint") { if (enabled) checkpoint() } },
+    )
 
-    private fun flushOwners() {
-        cleanup.run("evidence_stop") { if (enabled) heads.forEach { evidenceFiles.stopCoverage(it) } }
-        cleanup.run("evidence_flush") {
-            if (!AsyncFileIo.awaitDirectory(paths.perfEvidenceDir)) cleanup.failed("evidence_unsettled")
-        }
-        cleanup.run("evidence") { evidenceFiles.close() }
-        cleanup.run("aggregate") { aggregate.close() }
-    }
+    private fun flushOwners() = cleanup.finish(
+        { cleanup.run("evidence_stop") { if (enabled) heads.forEach { evidenceFiles.stopCoverage(it) } } },
+        {
+            cleanup.run("evidence_flush") {
+                if (!AsyncFileIo.awaitDirectory(paths.perfEvidenceDir)) cleanup.failed("evidence_unsettled")
+            }
+        },
+        { cleanup.run("evidence") { evidenceFiles.close() } },
+        { cleanup.run("aggregate") { aggregate.close() } },
+    )
 
-    private fun closeReaders() {
-        cleanup.run("export_flush") { if (!exports.flush()) cleanup.failed("export_flush_incomplete") }
-        cleanup.run("profiles") { profiles.close() }
-        cleanup.run("alerts") { alertEngine.close() }
-        cleanup.run("delivery") { delivery.close() }
-    }
+    private fun closeReaders() = cleanup.finish(
+        { cleanup.run("export_flush") { if (!exports.flush()) cleanup.failed("export_flush_incomplete") } },
+        { cleanup.run("profiles") { profiles.close() } },
+        { cleanup.run("alerts") { alertEngine.close() } },
+        { cleanup.run("delivery") { delivery.close() } },
+    )
 
-    private fun closeAdapters() {
-        scope.cancel()
-        cleanup.run("delivery_client") { deliveryClient.close() }
-        cleanup.run("exports") { exports.close() }
-        cleanup.run("objectives") { objectives.close() }
-        cleanup.run("runtime") { runtime.close() }
-        cleanup.run("tracking") { tracking.close() }
-    }
+    private fun closeAdapters() = cleanup.finish(
+        { scope.cancel() },
+        { cleanup.run("delivery_client") { deliveryClient.close() } },
+        { cleanup.run("exports") { exports.close() } },
+        { cleanup.run("objectives") { objectives.close() } },
+        { cleanup.run("runtime") { runtime.close() } },
+        { cleanup.run("tracking") { tracking.close() } },
+    )
 }
 
 private const val SAMPLE_MS = 5_000L

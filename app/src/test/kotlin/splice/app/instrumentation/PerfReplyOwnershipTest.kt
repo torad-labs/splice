@@ -11,6 +11,7 @@ import io.ktor.server.testing.testApplication
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -73,5 +74,25 @@ class PerfReplyOwnershipTest {
             cleanup.run("cancelled") { throw CancellationException("fixture") }
         }
         assertThrows(AssertionError::class.java) { cleanup.run("fatal") { throw AssertionError("fixture") } }
+    }
+
+    @Test
+    fun `fatal or cancelled teardown releases later owned memory and preserves the first failure`() {
+        val cleanup = PerfCleanup(LogSink {})
+        for (failure in listOf(CancellationException("cancelled"), AssertionError("fatal"))) {
+            val before = PerfWorkBudget.retainedBytes()
+            val first = checkNotNull(PerfWorkBudget.acquire(1024))
+            val last = checkNotNull(PerfWorkBudget.acquire(1024))
+            val thrown = assertThrows(failure.javaClass) {
+                cleanup.finish(
+                    { first.close(); throw failure },
+                    { throw IOException("later failure") },
+                    { last.close() },
+                )
+            }
+            assertSame(failure, thrown)
+            assertEquals(before, PerfWorkBudget.retainedBytes())
+            assertEquals("later failure", thrown.suppressed.single().message)
+        }
     }
 }

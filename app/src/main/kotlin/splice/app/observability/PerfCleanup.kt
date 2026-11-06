@@ -15,6 +15,14 @@ internal class PerfCleanup(private val log: LogSink) {
         }
     }
 
+    /** Teardown still releases later owners when a step must propagate cancellation or a fatal failure. */
+    fun finish(vararg actions: PerfCloseAction) { finishAt(actions, 0) }
+
+    private fun finishAt(actions: Array<out PerfCloseAction>, index: Int) {
+        if (index == actions.size) return
+        Cancellables.withCleanup({ finishAt(actions, index + 1) }) { actions[index].close() }
+    }
+
     @Synchronized
     fun failed(owner: String) {
         if (failures.size < MAX_FAILURES) failures += "cleanup_$owner"

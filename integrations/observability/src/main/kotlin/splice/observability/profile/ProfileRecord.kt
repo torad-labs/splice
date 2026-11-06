@@ -20,6 +20,8 @@ internal class ProfileRecord(val request: PerfProfileRequest, val fromMs: Long) 
     var captureUntilMs: Long? = null
     var sizeBytes = 0L
     var available = false
+    var readers = 0
+    val removable: Boolean get() = available && readers == 0
     var issue: String? = null
 
     fun reply(identity: PerfIdentity, nowMs: Long, status: String, issue: String): JsonObject {

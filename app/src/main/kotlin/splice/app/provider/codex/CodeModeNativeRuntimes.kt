@@ -30,7 +30,7 @@ internal class CodeModeNativeRuntimes(
             limits = limits,
             cellHeapMb = cellHeapMb,
             artifact = artifact,
-            traceExporter = performance?.exports?.nativeSpans(),
+            traceExporter = performance?.nativeTraceExporter,
         ).also { performance?.owners?.add(it) }
     }
 }

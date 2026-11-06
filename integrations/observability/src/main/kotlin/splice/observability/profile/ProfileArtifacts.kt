@@ -2,6 +2,7 @@ package splice.observability.profile
 
 import splice.core.perf.observation.PerfIdentity
 import splice.core.perf.runtime.PerfProfileArtifact
+import splice.core.util.PerfWorkBudget
 import splice.core.util.SecureFile
 import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
@@ -77,6 +78,19 @@ internal class ProfileArtifacts(directory: Path, private val identity: PerfIdent
         if (bytes != record.sizeBytes || bytes > ProfileLimits.ARTIFACT_BYTES) return null
         val type = if (record.request.profiler == "jfr") "application/octet-stream" else "text/plain; charset=utf-8"
         return PerfProfileArtifact(record.id, file, bytes, type)
+    }
+
+    fun open(artifact: PerfProfileArtifact, memory: PerfWorkBudget.Lease, release: AutoCloseable): ProfileRead {
+        val channel = FileChannel.open(artifact.path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)
+        var opened = false
+        try {
+            check(channel.size() == artifact.sizeBytes) { "Profile artifact changed" }
+            val reader = ProfileRead(artifact, channel, memory, release)
+            opened = true
+            return reader
+        } finally {
+            if (!opened) channel.close()
+        }
     }
 
     fun expire(record: ProfileRecord) {

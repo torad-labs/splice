@@ -19,6 +19,17 @@ const group = (key: string, over: Row): Row => ({
 const proj = (p: string) => ({ id: `/work/${p}`, name: p, label: p, source: "folder", folder: "/work" });
 const rows = Array.from({ length: 6 }, (_, i) => ({ turn: `o${i}`, ts: now - 30_000 * (i + 1), first_byte: 100, total: 500, outcome: "ok", model: "m", account: "primary", session: "s1", project: proj("website") }));
 let queryWorkerBusy = false, refuseSummary = false;
+let limitPerfHttp = false, admittedPerfHttp = 0, refuseSettings = false;
+let profileState = "idle", savedObjectives: Row[] = [];
+const httpHolds = new Map<string, { entered: () => void; wait: Promise<void> }>();
+function holdHttp(path: string, method = "GET") {
+  let entered!: () => void, release!: () => void;
+  const ready = new Promise<void>((resolve) => { entered = resolve; });
+  const wait = new Promise<void>((resolve) => { release = resolve; });
+  httpHolds.set(`${method} ${path}`, { entered, wait });
+  return { ready, release };
+}
+const httpCapacity = () => Response.json({ schema_version: 1, status: "busy", reason: "control_query_capacity" }, { status: 429 });
 let heldQuery: { path: string; cursor: boolean; entered: () => void; wait: Promise<void> } | null = null;
 function holdQuery(path: string, cursor = false) {
   let entered!: () => void, release!: () => void;
@@ -48,10 +59,25 @@ async function workerResponse(url: URL) {
   } finally { queryWorkerBusy = false; }
 }
 
-const server = Bun.serve({
-  port: 0,
-  async fetch(req) {
+async function fixtureResponse(req: Request) {
     const url = new URL(req.url), path = url.pathname;
+    if (limitPerfHttp) {
+      if (path === "/api/perf/schema") return Response.json({ status: "ok", metrics: [] });
+      if (path === "/api/perf/runtime") return Response.json({ status: "ok", as_of_ms: now, age_ms: 0, measurements: { process_cpu: 7 } });
+      if (path === "/api/perf/profiles/capabilities") return Response.json({ status: "ok", capabilities: [{ id: "jfr.cpu", supported: true }] });
+      if (path === "/api/perf/objectives") {
+        if (req.method === "PUT") {
+          if (refuseSettings) return httpCapacity();
+          const body = await req.json() as { objectives: Row[] }; savedObjectives = body.objectives;
+        }
+        return Response.json({ schema_version: 1, status: "ok", revision: savedObjectives.length ? "saved-objective" : "initial", objectives: savedObjectives, rules: [] });
+      }
+      if (path.startsWith("/api/perf/profiles")) {
+        if (path.endsWith("/artifact")) return new Response("fixture-profile", { headers: { "Content-Type": "application/octet-stream" } });
+        if (req.method === "POST") profileState = path.endsWith("/stop") ? "stopped" : "running";
+        return Response.json({ status: profileState, profile_id: "bounded-profile", artifact_available: profileState === "stopped" });
+      }
+    }
     if (url.searchParams.get("model") === "one-query-worker" && url.searchParams.get("contract") === "1" && ["/api/perf/summary", "/api/perf/series", "/api/perf/diagnose", "/api/perf/turns"].includes(path)) return workerResponse(url);
     if (path === "/api/heads") return Response.json({ heads: [{ key: "plan", label: "claude-plan" }] });
     if (path === "/api/models") return Response.json({ heads: [{ head: "plan", provider: "anthropic", models: [] }] });
@@ -80,6 +106,22 @@ const server = Bun.serve({
     if (path.startsWith("/api/")) return Response.json({});
     const file = join(consoleDir, path.slice(1));
     return existsSync(file) && file.startsWith(consoleDir) ? new Response(Bun.file(file)) : new Response("no", { status: 404 });
+}
+const server = Bun.serve({
+  port: 0,
+  async fetch(req) {
+    const url = new URL(req.url), path = url.pathname;
+    // Legacy rows belong to Usage's ordinary route; the guarded Perf contract has four admissions.
+    const guarded = limitPerfHttp && path.startsWith("/api/perf/") && !(path === "/api/perf/turns" && url.searchParams.get("contract") !== "1");
+    if (!guarded) return fixtureResponse(req);
+    if (admittedPerfHttp >= 4) return httpCapacity();
+    admittedPerfHttp++;
+    try {
+      const key = `${req.method} ${path}`, hold = httpHolds.get(key);
+      if (hold) { httpHolds.delete(key); hold.entered(); await hold.wait; }
+      else await Bun.sleep(60);
+      return await fixtureResponse(req);
+    } finally { admittedPerfHttp--; }
   },
 });
 
@@ -127,6 +169,72 @@ test("Usage: Results door names its command and opens expandable diagnostics in 
     expect(href.searchParams.get("outcome")).toBe("failed");
     expect(Number(href.searchParams.get("until")) - Number(href.searchParams.get("from"))).toBe(7 * 86400000);
   });
+}, 90_000);
+
+test("Usage: bounded Perf admission preserves startup views and pending profile and objective actions", async () => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1400 } });
+  const p = await context.newPage(), releases: (() => void)[] = [];
+  limitPerfHttp = true; profileState = "idle"; savedObjectives = [];
+  try {
+    await p.goto(`http://127.0.0.1:${server.port}/usage.html?contract=1&model=one-query-worker&project=/work/website&from=${now - 60000}&until=${now}`);
+    const panel = p.locator("#band-perf"), content = panel.locator(".pc-content");
+    await expect(door(p).locator("[data-tn=door-failed]")).toHaveText("5%");
+    await expect(content).toHaveAttribute("aria-busy", "false");
+    await panel.locator('[data-pc-tab="runtime"]').click();
+    await expect(content).toContainText("Current process sample · Ok");
+    await expect(panel.getByRole("table", { name: "CPU, GC, memory, files and exporter health", exact: true })).toContainText("7");
+    await panel.locator('[data-pc-tab="profiles"]').click();
+    await expect(content).toContainText("Capabilities: Ok");
+    await expect(panel.getByRole("button", { name: "Start capture", exact: true })).toBeEnabled();
+
+    // Occupy every server admission. A user action must remain pending while newer cohorts
+    // supersede the reads; aborting a browser fetch would not release these held server requests.
+    const reads = ["/api/perf/summary", "/api/perf/runtime", "/api/perf/alerts", "/api/perf/alerts/status"].map((path) => holdHttp(path));
+    releases.push(...reads.map((hold) => hold.release));
+    await panel.getByRole("button", { name: "Refresh", exact: true }).click();
+    await Promise.all(reads.map((hold) => hold.ready));
+    await panel.getByRole("button", { name: "Start capture", exact: true }).click();
+    await expect(panel.locator(".pc-message")).toHaveText("Performance action pending…");
+    for (const project of ["/work/old-a", "/work/old-b", "/work/website"]) {
+      await panel.locator('[name="project"]').fill(project);
+      await panel.getByRole("button", { name: "Apply cohort", exact: true }).click();
+    }
+    await expect(panel.getByRole("button", { name: "Start capture", exact: true })).toBeDisabled();
+    reads.forEach((hold) => hold.release());
+    await expect(panel.locator(".pc-message")).toHaveText("Capture: Running");
+    await expect(content).toHaveAttribute("aria-busy", "false");
+    await expect(panel.locator(".pc-coverage strong")).toHaveText("Ok");
+    await expect(door(p).locator("[data-tn=door-failed]")).toHaveText("5%");
+    await panel.getByRole("button", { name: "Stop capture", exact: true }).click();
+    await expect(panel.locator(".pc-message")).toHaveText("Capture: Stopped");
+    const artifact = p.waitForEvent("download");
+    await panel.getByRole("button", { name: "Download artifact", exact: true }).click();
+    expect((await artifact).suggestedFilename()).toBe("splice-profile-bounded-profile.jfr");
+    await expect(panel.locator(".pc-message")).toHaveText("Profile artifact downloaded");
+
+    await panel.locator('[data-pc-tab="objectives"]').click();
+    await expect(content).toContainText("Canonical revision initial");
+    const save = holdHttp("/api/perf/objectives", "PUT"); releases.push(save.release);
+    await panel.locator('[name="settings"]').fill(JSON.stringify({ schema_version: 1, objectives: [{ id: "saved-through-refresh", cohort: {}, completion_ms: 1000 }], rules: [] }));
+    await panel.getByRole("button", { name: "Save objectives and rules", exact: true }).click();
+    await save.ready;
+    await panel.getByRole("button", { name: "Apply cohort", exact: true }).click();
+    await expect(panel.getByRole("button", { name: "Save objectives and rules", exact: true })).toBeDisabled();
+    await expect(panel.getByRole("button", { name: "Discard edits and reload", exact: true })).toBeDisabled();
+    save.release();
+    await expect(panel.locator(".pc-message")).toHaveText("Saved revision saved-objective");
+    await expect(panel.getByRole("table", { name: "Configured objectives", exact: true })).toContainText("saved-through-refresh");
+    await panel.getByRole("button", { name: "Discard edits and reload", exact: true }).click();
+    await expect(panel.locator(".pc-message")).toHaveText("Objective settings reloaded");
+    refuseSettings = true;
+    await panel.getByRole("button", { name: "Save objectives and rules", exact: true }).click();
+    await expect(panel.locator(".pc-message")).toHaveText("control_query_capacity");
+    await expect(panel.getByRole("button", { name: "Save objectives and rules", exact: true })).toBeEnabled();
+    await expect(content).toHaveAttribute("aria-busy", "false");
+  } finally {
+    releases.forEach((release) => release()); httpHolds.clear(); refuseSettings = false;
+    await context.close(); limitPerfHttp = false;
+  }
 }, 90_000);
 
 test("Usage: native and Results window controls keep exact 5-hour, 30-day and 1-hour intervals", async () => {

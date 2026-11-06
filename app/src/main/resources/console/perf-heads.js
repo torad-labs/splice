@@ -4,22 +4,44 @@ const PERF_CONSOLE = (() => {
   const FILTERS = ["head", "model", "transport", "outcome", "session", "project", "account", "local", "compact", "streaming"];
   const SELECTORS = [...FILTERS, "silence_ms", "queued_ms", "resumed", "started_over", "unattributed", "test"];
   const WINDOWS = { "1m": 60000, "5m": 300000, "15m": 900000, "1h": 3600000, "5h": 18000000, "24h": 86400000, "7d": 604800000, "30d": 2592000000 };
-  // These four projections share one server query worker. Keep the lane across panel generations
-  // and page mounts, but leave runtime, alerts, settings and the rest of the console independent.
+  // Perf HTTP admits four requests, including the one query worker below. Fixed read keys keep
+  // only each kind's newest queued read; accepted actions are never replaced. Other console APIs
+  // do not use this queue. Drain active responses even after navigation/generation cancellation:
+  // aborting fetch does not prove that the server has released its admission or query worker.
+  const perfTransport = API, perfWaiting = new Map();
+  let perfRunning = 0;
+  function drainPerf() {
+    while (perfRunning < 4 && perfWaiting.size) {
+      const [key, next] = perfWaiting.entries().next().value; perfWaiting.delete(key);
+      if (!next.current()) { next.resolve(null); continue; }
+      perfRunning++;
+      Promise.resolve().then(next.send).then(next.resolve, next.reject)
+        .finally(() => { perfRunning--; drainPerf(); });
+    }
+  }
+  function perfRequest(key, method, path, current, body) {
+    return new Promise((resolve, reject) => {
+      if (key === "action" && perfWaiting.has(key)) { reject(new Error("Another performance action is pending. Wait for it to finish.")); return; }
+      perfWaiting.get(key)?.resolve(null);
+      perfWaiting.set(key, { current, resolve, reject, send: () => perfTransport[method](path, body) });
+      drainPerf();
+    });
+  }
+  // The four query projections also share one worker across panel generations and page mounts.
   let queryRunning = false, queryWaiting = null;
   function drainQuery() {
     if (queryRunning || !queryWaiting) return;
     const next = queryWaiting; queryWaiting = null;
     if (!next.current()) { next.resolve(null); return; }
     queryRunning = true;
-    Promise.resolve().then(() => next.api.get(next.path)).then(next.resolve, next.reject)
+    Promise.resolve().then(() => perfRequest("query", "get", next.path, next.current)).then(next.resolve, next.reject)
       .finally(() => { queryRunning = false; drainQuery(); });
   }
-  function queryRead(api, path, current) {
+  function queryRead(path, current) {
     return new Promise((resolve, reject) => {
       // Keep one active read and only the newest pending projection, including rapid refreshes.
       queryWaiting?.resolve(null);
-      queryWaiting = { api, path, current, resolve, reject };
+      queryWaiting = { path, current, resolve, reject };
       drainQuery();
     });
   }
@@ -36,7 +58,7 @@ const PERF_CONSOLE = (() => {
   const section = (title, body) => `<section class="pc-section"><h3>${safe(title)}</h3>${body}</section>`;
   const issues = (v) => [...(v?.coverage?.issues || []), ...(v?.issues || [])].map((x) => typeof x === "string" ? x : x.code).filter(Boolean);
   const status = (r) => !r ? "Loading" : !r.ok ? r.status === 0 ? "Offline" : r.status === 404 ? "Unsupported" : "Error" : (words(r.body?.status || "ok").replace(/^./, (c) => c.toUpperCase()));
-  const explain = (r) => r?.body?.error?.reason || r?.body?.error?.code || issues(r?.body).join(" · ");
+  const explain = (r) => r?.body?.error?.reason || r?.body?.error?.code || r?.body?.reason || issues(r?.body).join(" · ");
   function params(query) {
     const p = new URLSearchParams({ contract: "1", from: String(query.from_ms), until: String(query.until_ms), source: query.source || "auto" });
     for (const k of SELECTORS) if (query.filters?.[k] != null && query.filters[k] !== "") p.set(k, String(query.filters[k]));
@@ -142,6 +164,8 @@ const PERF_CONSOLE = (() => {
     const current = () => options.query();
     const accountChoices = () => [...new Set(String((st.query || queryNow()).filters?.account || "").split("\u001f").filter(Boolean))];
     const host = () => document.querySelector(`[data-performance="${options.id}"]`);
+    const attached = () => host()?.isConnected;
+    const actionPending = () => st.actionBusy || st.standingBusy || st.profileBusy;
     const repaint = () => { const h = host(); if (h) h.innerHTML = inner(); options.changed?.(); };
     function queryNow() {
       const input = current(), filters = { ...input.filters };
@@ -159,6 +183,7 @@ const PERF_CONSOLE = (() => {
       const abort = st.abort = new AbortController(), api = API.scoped(abort.signal), gen = ++st.generation;
       const active = () => gen === st.generation && !abort.signal.aborted && host()?.isConnected;
       const changed = key !== st.key; st.key = key; st.query = queryNow(); st.busy = true; st.rowsBusy = false;
+      if (!st.standingStarted) { st.standingStarted = true; standing(); }
       if (changed) { clearMeasurements(); st.cursor = null; st.openRequest = null; }
       if (accountChoices().length > 1) {
         clearMeasurements(); st.busy = false; st.advanced = true;
@@ -172,15 +197,14 @@ const PERF_CONSOLE = (() => {
       const queried = (async () => {
         for (const [key, path] of Object.entries(projections)) {
           if (!active()) return;
-          // A superseded query drains its response before the next starts: aborting only its
-          // browser fetch could free this lane while the server still holds the worker lock.
-          // API already carries page-lifetime cancellation; generation cancellation skips queued
-          // work and discards returned values, while independent reads abort immediately.
-          const r = await queryRead(API, path, active);
+          const r = await queryRead(path, active);
           if (active()) st.replies[key] = r;
         }
       })();
-      await Promise.all([queried, ...Object.entries(paths).map(async ([key, path]) => { const r = await api.get(path); if (active()) st.replies[key] = r; })]);
+      await Promise.all([queried, ...Object.entries(paths).map(async ([key, path]) => {
+        const r = await (key === "preferences" ? api.get(path) : perfRequest(key, "get", path, active));
+        if (active()) st.replies[key] = r;
+      })]);
       if (!active()) return;
       st.busy = false;
       if (st.replies.summary?.body?.query) {
@@ -192,9 +216,18 @@ const PERF_CONSOLE = (() => {
       notifyAlerts();
       st.timer = setTimeout(() => { if (!document.hidden && !host()?.contains(document.activeElement)) read(); else st.timer = setTimeout(() => read(), 15000); }, 15000);
     }
-    async function standing() {
-      const [schema, caps, profiles, settings, preferences] = await Promise.all(["/api/perf/schema", "/api/perf/profiles/capabilities", "/api/perf/profiles", "/api/perf/objectives", "/api/alerts"].map((p) => API.get(p)));
-      Object.assign(st.replies, { schema, caps, preferences }); st.profilesReply = profiles; st.profiles = profiles.ok ? profiles.body : null; st.settings = settings.ok ? settings.body : null; st.settingsReply = settings; repaint();
+    function standing() {
+      if (st.standingBusy) return st.standingPromise;
+      st.standingBusy = true; repaint();
+      st.standingPromise = (async () => {
+        const paths = { schema: "/api/perf/schema", caps: "/api/perf/profiles/capabilities", profiles: "/api/perf/profiles", settings: "/api/perf/objectives" };
+        const [schema, caps, profiles, settings, preferences] = await Promise.all([
+          ...Object.entries(paths).map(([key, path]) => perfRequest(key, "get", path, attached)), API.get("/api/alerts"),
+        ]);
+        if (!attached() || !schema || !caps || !profiles || !settings) return;
+        Object.assign(st.replies, { schema, caps, preferences }); st.profilesReply = profiles; st.profiles = profiles.ok ? profiles.body : null; st.settings = settings.ok ? settings.body : null; st.settingsReply = settings;
+      })().finally(() => { st.standingBusy = false; repaint(); });
+      return st.standingPromise;
     }
     const field = (k, label, value = "", type = "text", extra = "") => `<label>${safe(label)}<input class="field" name="${safe(k)}" type="${type}" value="${safe(value)}" ${extra}></label>`;
     const select = (k, label, values, picked) => `<label>${safe(label)}<select name="${safe(k)}" class="field">${values.map(([v, t]) => `<option value="${safe(v)}"${String(picked ?? "") === v ? " selected" : ""}>${safe(t)}</option>`).join("")}</select></label>`;
@@ -374,10 +407,10 @@ const PERF_CONSOLE = (() => {
     function profiles() {
       const caps = st.replies.caps?.body?.capabilities || [], p = st.profiles;
       return note("Capture starts only when you press Start capture. It records the current process, independently of request filters. Bounds: 1–300 seconds; one capture per process. No native profiler is downloaded.")
-        + `<form data-pc-form="profile" class="pc-actions">${select("profile", "Profiler and mode", caps.map((c) => [c.id, `${c.id}${c.supported ? "" : ` · ${words(c.reason)}`}`]), st.profileMode || "jfr.cpu")}${field("duration", "Duration · seconds", 60, "number", 'min="1" max="300" required')}<button class="act small" type="submit"${st.actionBusy ? " disabled" : ""}>Start capture</button></form>`
+        + `<form data-pc-form="profile" class="pc-actions">${select("profile", "Profiler and mode", caps.map((c) => [c.id, `${c.id}${c.supported ? "" : ` · ${words(c.reason)}`}`]), st.profileMode || "jfr.cpu")}${field("duration", "Duration · seconds", 60, "number", 'min="1" max="300" required')}<button class="act small" type="submit"${actionPending() ? " disabled" : ""}>Start capture</button></form>`
         + note(`Capabilities: ${status(st.replies.caps)}`) + table(["Capability", "Supported", "Reason"], caps.map((c) => [safe(c.id), scalar(c.supported), safe(words(c.reason))]), "Profile availability")
         + (p ? facts({ status: p.status, profile_id: p.profile_id, from: date(p.from_ms), until: date(p.until_ms), size_bytes: p.size_bytes, artifact_available: p.artifact_available }) + note([...(p.issues || []), ...(p.limitations || [])].map((x) => words(typeof x === "string" ? x : x.code)).join(" · "))
-          + `<div class="pc-actions"><button class="act quiet small" data-pc="profile-refresh">Refresh status</button>${p.status === "running" ? '<button class="act small" data-pc="profile-stop">Stop capture</button>' : ""}${p.artifact_available && p.profile_id ? '<button class="act small" data-pc="profile-download">Download artifact</button>' : ""}</div>` : note(`${status(st.profilesReply)} · Profile status has not been returned.`));
+          + `<div class="pc-actions"><button class="act quiet small" data-pc="profile-refresh"${actionPending() ? " disabled" : ""}>Refresh status</button>${p.status === "running" ? `<button class="act small" data-pc="profile-stop"${actionPending() ? " disabled" : ""}>Stop capture</button>` : ""}${p.artifact_available && p.profile_id ? `<button class="act small" data-pc="profile-download"${actionPending() ? " disabled" : ""}>Download artifact</button>` : ""}</div>` : note(`${status(st.profilesReply)} · Profile status has not been returned.`));
     }
     function objectives() {
       const settings = st.settings;
@@ -388,7 +421,7 @@ const PERF_CONSOLE = (() => {
         + table(["Objective", "Revision", "Cohort", "First content · ms", "Completion · ms", "Queue · ms", "Progress gap · ms"], (settings.objectives || []).map((o) => [safe(o.id), safe(o.revision), safe(JSON.stringify(o.cohort)), num(o.first_content_ms), num(o.completion_ms), num(o.queue_ms), num(o.progress_gap_ms)]), "Configured objectives")
         + `<form data-pc-form="objectives"><label class="pc-json-label">Objective and alert settings · JSON<textarea class="field pc-json" name="settings" spellcheck="false" rows="15">${safe(st.draft ?? JSON.stringify({ schema_version: 1, objectives: settings.objectives || [], rules: settings.rules || [] }, null, 2))}</textarea></label>`
         + note('Rules use metric, comparison "above" or "below", threshold, window_ms, min_count ≥ 1, min_coverage 0–1, hold_ms, cooldown_ms, recovery {threshold, hold_ms} and optional delivery_enabled. Recovery must be on the healthy side. Server validates the entire document before publishing; revisions are canonical.')
-        + `<div class="pc-actions"><button type="submit" class="act small"${st.actionBusy ? " disabled" : ""}>Save objectives and rules</button><button type="button" class="act quiet small" data-pc="objectives-reload">Discard edits and reload</button></div></form>`;
+        + `<div class="pc-actions"><button type="submit" class="act small"${actionPending() ? " disabled" : ""}>Save objectives and rules</button><button type="button" class="act quiet small" data-pc="objectives-reload"${actionPending() ? " disabled" : ""}>Discard edits and reload</button></div></form>`;
     }
     function alerts() {
       const now = st.replies.alertStatus?.body, history = st.replies.alerts?.body;
@@ -438,13 +471,19 @@ const PERF_CONSOLE = (() => {
     function download(blob, name) {
       const url = URL.createObjectURL(blob), a = document.createElement("a"); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
-    async function refreshProfile() {
-      const p = st.profiles?.profile_id, r = await API.get(`/api/perf/profiles${p ? `/${encodeURIComponent(p)}` : ""}`);
-      if (r.ok) st.profiles = r.body; else st.message = `Profile status: ${status(r)}`; repaint();
+    function refreshProfile() {
+      if (st.profileBusy) return st.profilePromise;
+      if (st.actionBusy || st.standingBusy) return;
+      st.profileBusy = true; repaint();
+      const p = st.profiles?.profile_id;
+      st.profilePromise = perfRequest("profile-status", "get", `/api/perf/profiles${p ? `/${encodeURIComponent(p)}` : ""}`, attached)
+        .then((r) => { if (r && attached()) { if (r.ok) st.profiles = r.body; else st.message = `Profile status: ${status(r)} · ${words(explain(r))}`; } })
+        .finally(() => { st.profileBusy = false; repaint(); });
+      return st.profilePromise;
     }
     document.addEventListener("submit", async (e) => {
       const form = e.target.closest("[data-pc-form]"); if (!form || !host()?.contains(form)) return;
-      e.preventDefault(); const values = new FormData(form);
+      e.preventDefault(); const values = new FormData(form); let actionStarted = false;
       try {
         if (["add-objective", "add-rule"].includes(form.dataset.pcForm)) {
           const draft = st.draft ? JSON.parse(st.draft) : { schema_version: 1, objectives: [...st.settings.objectives], rules: [...st.settings.rules] };
@@ -473,24 +512,25 @@ const PERF_CONSOLE = (() => {
           if (!input.window) { input.from_ms = Number(values.get("from")); input.until_ms = Number(values.get("until")); if (!(input.until_ms > input.from_ms)) throw new Error("Enter a valid exact interval"); }
           st.message = ""; options.apply(input); st.key = null; read(true); return;
         }
-        if (st.actionBusy) return; st.actionBusy = true;
+        if (actionPending()) { st.message = "A performance action is pending. Wait for it to finish."; return; }
+        st.actionBusy = actionStarted = true; st.message = "Performance action pending…"; repaint();
         if (form.dataset.pcForm === "profile") {
           const [profiler, mode] = String(values.get("profile")).split("."), durationSeconds = Number(values.get("duration"));
           if (!Number.isInteger(durationSeconds) || durationSeconds < 1 || durationSeconds > 300) throw new Error("Duration must be 1–300 seconds");
           const capability = (st.replies.caps?.body?.capabilities || []).find((x) => x.id === `${profiler}.${mode}`);
           if (!capability?.supported && capability?.reason !== "mode_requires_explicit_start_probe") throw new Error(words(capability?.reason || "Unsupported profile"));
-          const r = await API.post("/api/perf/profiles", { profiler, mode, durationSeconds });
-          st.profiles = r.body; st.message = `Capture: ${status(r)}`;
+          const r = await perfRequest("action", "post", "/api/perf/profiles", () => true, { profiler, mode, durationSeconds });
+          st.profiles = r.body; st.message = `Capture: ${status(r)}${explain(r) ? ` · ${words(explain(r))}` : ""}`;
         }
         if (form.dataset.pcForm === "objectives") {
           st.draft = String(values.get("settings")); if (st.draft.length > 65536) throw new Error("Settings document is too large");
           const body = JSON.parse(st.draft); if (body.schema_version !== 1 || !Array.isArray(body.objectives) || !Array.isArray(body.rules)) throw new Error("Version 1 settings require objectives and rules arrays");
-          const r = await API.put("/api/perf/objectives", { schema_version: 1, objectives: body.objectives, rules: body.rules });
+          const r = await perfRequest("action", "put", "/api/perf/objectives", () => true, { schema_version: 1, objectives: body.objectives, rules: body.rules });
           if (!r.ok || r.body?.status !== "ok") throw new Error(explain(r) || "Settings were not saved");
           st.draft = null; await standing(); st.message = `Saved revision ${r.body.revision}`; read(true);
         }
       } catch (error) { st.message = error.message || "Action failed"; }
-      finally { st.actionBusy = false; repaint(); }
+      finally { if (actionStarted) st.actionBusy = false; repaint(); }
     });
     document.addEventListener("input", (e) => { if (host()?.contains(e.target) && e.target.name === "settings") st.draft = e.target.value; });
     document.addEventListener("toggle", (e) => {
@@ -516,7 +556,7 @@ const PERF_CONSOLE = (() => {
       if (!host()?.contains(e.target)) return;
       const tab = e.target.closest("[data-pc-tab]"); if (tab) { st.tab = tab.dataset.pcTab; repaint(); return; }
       const button = e.target.closest("[data-pc]"); if (!button) return;
-      const action = button.dataset.pc;
+      const action = button.dataset.pc; let actionStarted = false;
       try {
         if (action === "refresh") { read(true); return; }
         if (action === "completed-window") { const q = completedWindow(); if (!q || st.busy) return; options.apply(q); st.message = "Selected the completed window. Coverage is reported below."; st.key = null; read(true); return; }
@@ -535,23 +575,27 @@ const PERF_CONSOLE = (() => {
           options.apply({ filters: q.filters, source: q.source, objective_id: q.objective_id, window, ...(window ? {} : { from_ms: st.query.from_ms, until_ms: st.query.until_ms }) });
           st.key = null; read(true);
         }
-        if (action === "objectives-reload") { st.draft = null; await standing(); }
-        if (action === "profile-refresh") await refreshProfile();
-        if (action === "profile-stop") { const r = await API.post(`/api/perf/profiles/${encodeURIComponent(st.profiles.profile_id)}/stop`, {}); st.profiles = r.body; st.message = `Capture: ${status(r)}`; }
-        if (action === "profile-download") { const r = await API.blob(`/api/perf/profiles/${encodeURIComponent(st.profiles.profile_id)}/artifact`); if (!r.ok) throw new Error(`Artifact: ${status(r)}`); download(r.body, `splice-profile-${st.profiles.profile_id}.jfr`); }
+        if (["objectives-reload", "profile-refresh", "profile-stop", "profile-download"].includes(action)) {
+          if (actionPending()) { st.message = "A performance action is pending. Wait for it to finish."; repaint(); return; }
+          if (action === "profile-refresh") { await refreshProfile(); return; }
+          st.actionBusy = actionStarted = true; st.message = "Performance action pending…"; repaint();
+          if (action === "objectives-reload") { st.draft = null; await standing(); st.message = st.settingsReply?.ok ? "Objective settings reloaded" : `Objective settings: ${status(st.settingsReply)} · ${words(explain(st.settingsReply))}`; }
+          if (action === "profile-stop") { const r = await perfRequest("action", "post", `/api/perf/profiles/${encodeURIComponent(st.profiles.profile_id)}/stop`, () => true, {}); st.profiles = r.body; st.message = `Capture: ${status(r)}${explain(r) ? ` · ${words(explain(r))}` : ""}`; }
+          if (action === "profile-download") { const id = st.profiles.profile_id, r = await perfRequest("action", "blob", `/api/perf/profiles/${encodeURIComponent(id)}/artifact`, () => true); if (!r.ok) throw new Error(`Artifact: ${status(r)}`); download(r.body, `splice-profile-${id}.jfr`); st.message = "Profile artifact downloaded"; }
+        }
         if (action === "next") {
           if (st.busy || st.rowsBusy || !st.replies.rows?.body?.next_cursor) return;
           const gen = st.generation, abort = st.abort, p = params(st.query);
           const active = () => gen === st.generation && !abort.signal.aborted && host()?.isConnected;
           p.set("cursor", st.replies.rows.body.next_cursor); p.set("page_size", "100");
           st.rowsBusy = true; repaint();
-          try { const r = await queryRead(API, `/api/perf/turns?${p}`, active); if (active()) st.replies.rows = r; }
+          try { const r = await queryRead(`/api/perf/turns?${p}`, active); if (active()) st.replies.rows = r; }
           finally { if (active()) st.rowsBusy = false; }
         }
       } catch (error) { st.message = error.message || "Action failed"; }
+      finally { if (actionStarted) st.actionBusy = false; }
       repaint();
     });
-    standing();
     return { html, read, query: () => st.query, lead, showResults: () => { st.tab = "overview"; repaint(); } };
   }
   function fromAddress(fallback = {}) {

@@ -19,7 +19,7 @@ export function sinks(value: unknown): Sink[] {
   if (!Array.isArray(value) || value.length === 0 || value.length > 32) throw new Error('sink_status_missing');
   const names = new Set<string>();
   return value.map(v => {
-    if (!v || typeof v !== 'object' || typeof v.sink !== 'string' || !/^[a-zA-Z0-9_.-]{1,80}$/.test(v.sink) || names.has(v.sink)) throw new Error('sink_status_invalid');
+    if (!v || typeof v !== 'object' || typeof v.sink !== 'string' || !/^[a-zA-Z0-9_.:-]{1,80}$/.test(v.sink) || names.has(v.sink)) throw new Error('sink_status_invalid');
     names.add(v.sink);
     const result: Record<string, unknown> = { sink: v.sink };
     for (const key of ['observed', 'enqueued', 'written', 'failed', 'dropped', 'pending']) { const n = counter(v[key]); if (n === null) throw new Error('sink_counter_missing'); result[key] = n; }

@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { decodeOtlp } from './otlp';
-import { reconcileSinks, telemetrySummary, type TelemetryPoint } from './telemetry';
+import { reconcileSinks, sinks, telemetrySummary, type TelemetryPoint } from './telemetry';
 import { finalSchedule, materialize } from './schedule';
 import { defaults, validate } from './manifest';
 import { sameRuntimeOwner } from './profile';
@@ -35,10 +35,26 @@ test('histogram export rejects mismatched bucket totals instead of counting acce
 });
 function point(at: number, value: number): TelemetryPoint {
   return { repetition: 0, phase: 'steady', sampled_from_ms: at, sampled_until_ms: at + 1, identity: { bootId: 'a', build: 'b', version: '1', configRevision: 'c', schemaVersion: 1 }, artifact_sha256: 'a'.repeat(64), process_id: 123, config_sha256: 'b'.repeat(64), status: 'ok', issues: [], as_of_ms: at,
-    sinks: [{ sink: 'history', observed: value, enqueued: value, written: value, failed: 0, dropped: 0, pending: 0, oldestPendingMs: null, lastSuccessEpochMs: at }], memory: { observation_reserved_bytes: 10, observation_limit_bytes: 16, work_leased_bytes: 4, work_limit_bytes: 16, owner_accounted_bytes: {} }, disk: { aggregate: 100 }, runtime: null, exports: null, read_bytes: 100, elapsed_ms: 1 };
+    sinks: [{ sink: 'request_evidence:bench', observed: value, enqueued: value, written: value, failed: 0, dropped: 0, pending: 0, oldestPendingMs: null, lastSuccessEpochMs: at }], memory: { observation_reserved_bytes: 10, observation_limit_bytes: 16, work_leased_bytes: 4, work_limit_bytes: 16, owner_accounted_bytes: {} }, disk: { aggregate: 100 }, runtime: null, exports: null, read_bytes: 100, elapsed_ms: 1 };
 }
 test('sink evidence reports actual interval losses and refuses resets, changed ownership and missing counters', () => {
   const first = point(1000, 5), last = point(2000, 10);
+  const sink = first.sinks![0]!;
+  expect(sinks(first.sinks)).toEqual(first.sinks!);
+  expect(sinks([{ ...sink, sink: 'a'.repeat(80) }])).toHaveLength(1);
+  for (const name of ['', 'a'.repeat(81), 'request_evidence:/bench', 'request_evidence:bench name', 'request_evidence:bench\n', 'request_evidence:bench\u0000', 'request_evidence:bé nch']) {
+    expect(() => sinks([{ ...sink, sink: name }])).toThrow('sink_status_invalid');
+  }
+  expect(() => sinks([sink, sink])).toThrow('sink_status_invalid');
+  for (const key of ['observed', 'enqueued', 'written', 'failed', 'dropped', 'pending']) {
+    for (const value of [undefined, null, -1, 0.5, Infinity, Number.MAX_SAFE_INTEGER + 1, '1']) {
+      expect(() => sinks([{ ...sink, [key]: value }])).toThrow('sink_counter_missing');
+    }
+  }
+  for (const key of ['oldestPendingMs', 'lastSuccessEpochMs']) {
+    expect(() => sinks([{ ...sink, [key]: undefined }])).toThrow('sink_age_missing');
+    expect(() => sinks([{ ...sink, [key]: -1 }])).toThrow('sink_age_missing');
+  }
   expect(reconcileSinks(first, last)).toMatchObject({ status: 'observed', value: 0 });
   last.sinks![0]!.dropped = 2;
   expect(reconcileSinks(first, last)).toMatchObject({ status: 'loss', value: 2 });

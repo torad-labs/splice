@@ -86,8 +86,10 @@ internal fun interface PerfJsonRead {
     fun read(): JsonObject
 }
 
-// Keep active memory/IO work at two requests while a normal four-read console burst waits without occupying threads.
+// Keep active memory/IO work at two requests across all performance endpoints.
 private const val ACTIVE_REQUESTS = 2
+
+// Let the other two requests in a normal four-read console burst suspend without occupying threads.
 private const val WAITING_REQUESTS = 2
 
 // Include admission waiting in the existing fifteen-second deadline, so a queue cannot extend request lifetime.

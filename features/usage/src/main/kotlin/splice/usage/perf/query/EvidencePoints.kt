@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.perf.OutcomeTags
+import splice.core.perf.UsageMeasurementStamp
 import splice.core.perf.observation.PerfAggregatePoint
 import splice.core.perf.observation.PerfEventKind
 import splice.core.perf.observation.PerfMetricRegistry
@@ -22,7 +23,7 @@ internal class EvidencePoints(private val query: PerfQuery) {
         "arrival_to_terminal_ms", "arrival_to_first_meaningful_content_ms", "arrival_to_first_reasoning_ms",
         "arrival_to_first_text_ms", "arrival_to_first_tool_ms", "arrival_to_first_client_byte_ms",
         "queue_wait_ms", "upstream_gap_max_ms", "downstream_gap_max_ms", "attempt_duration_ms",
-    )
+    ) + USAGE_METRICS
     private val result = LinkedHashMap<PointKey, PerfAggregatePoint>()
 
     fun points(): Map<PointKey, PerfAggregatePoint> = result
@@ -113,6 +114,10 @@ internal object PerfEvidenceJson {
         put("kind", event.kind.name)
         put("wall_ms", event.stamp.wallMs)
         put("monotonic_ms", event.stamp.monotonicMs)
+        put("head", event.scope.head)
+        put("request_id", textValue(event.links.requestId))
+        put("turn_id", textValue(event.links.turnId))
+        put("session_id", textValue(event.links.sessionId))
         put("attempt_id", textValue(event.links.attemptId))
         put("tool_id", textValue(event.links.toolId))
         put("trace_id", textValue(event.links.traceId))
@@ -128,5 +133,8 @@ internal object PerfEvidenceJson {
     }
 }
 
-private val USAGE_METRICS = setOf("input_tokens", "output_tokens", "cached_tokens", "missing_usage")
+private val USAGE_METRICS = setOf(
+    "input_tokens", "output_tokens", "cached_tokens", "missing_usage", "usage_cache_write_tokens",
+    "usage_cache_write_1h_tokens", "usage_absorbed_rounds", "usage_cut_rounds", "usage_no_request",
+) + UsageMeasurementStamp.fields.keys
 private const val MINUTE_MS = 60_000L

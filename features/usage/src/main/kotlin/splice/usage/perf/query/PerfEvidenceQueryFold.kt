@@ -21,7 +21,7 @@ import splice.usage.perf.query.PerfQueryJson.textValue
 internal class PerfEvidenceQueryFold(private val sources: PerfQuerySources) {
     fun read(query: PerfQuery, filter: PerfQueryFilter, nowMs: Long, data: QueryData) {
         val source = sources.evidence() ?: return missing(data)
-        val through = maxOf(query.untilMs, nowMs)
+        val through = maxOf(query.untilMs, data.settledUntilMs?.let { minOf(nowMs, it) } ?: nowMs)
         source.read(PerfEvidenceQuery(query.fromMs, through, query.filters["head"])).use { read ->
             data.evidenceAvailable = true
             data.asOf = read.asOfMs
@@ -47,10 +47,18 @@ internal class PerfEvidenceQueryFold(private val sources: PerfQuerySources) {
         val requests = events.filter { it.links.requestId != null }.groupBy { it.links.requestId }
         val selected = requests.values.filter { matches(it, filter) }
         val complete = read.complete && !data.truncated && read.coverage.observedMs >= query.untilMs - query.fromMs
+        val receipt = buildJsonObject {
+            put("as_of_ms", read.asOfMs)
+            put("coverage_basis", read.coverageBasis)
+            put("event_time_final", read.eventTimeFinal)
+        }
+        data.workload = JsonObject(PerfWorkloadComparison.fold(requests.values, selected, query, complete) + receipt)
         if (!complete) data.issue("request_wall_coverage_unknown", EVIDENCE)
-        data.populationCoverage["request_scope_resolved_at_terminal_or_latest_checkpoint"] = PerfQueryJson.coverageJson(
-            read.coverage.copy(requestedUntilMs = query.untilMs),
-            complete,
+        data.populationCoverage["request_scope_resolved_at_terminal_or_latest_checkpoint"] = JsonObject(
+            PerfQueryJson.coverageJson(
+                read.coverage.copy(requestedUntilMs = query.untilMs),
+                complete,
+            ) + receipt,
         )
         mergePoints(query, selected, complete, data)
         data.identities.addAll(selected.flatten().map { it.stamp.identity })
@@ -174,7 +182,12 @@ internal class PerfEvidenceQueryFold(private val sources: PerfQuerySources) {
             JsonArray(
                 selected.map { group ->
                     buildJsonObject {
-                        put("request_id", textValue(group.first().links.requestId))
+                        val linked = group.lastOrNull { it.links.turnId != null } ?: group.last()
+                        put("request_id", textValue(linked.links.requestId))
+                        put("head", linked.scope.head)
+                        put("turn_id", textValue(linked.links.turnId))
+                        put("trace_id", textValue(linked.links.traceId))
+                        put("session_id", textValue(linked.links.sessionId))
                         put("events", JsonArray(group.sortedBy { it.stamp.monotonicMs }.map(::timelineEvent)))
                     }
                 },

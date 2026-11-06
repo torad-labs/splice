@@ -6,6 +6,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import splice.core.model.TurnBill
 import splice.core.perf.PerfKeys
+import splice.core.perf.UsageMeasurementStamp
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.util.LogSink
@@ -77,5 +78,6 @@ internal class TurnUsageStamp(
         // A later posted bill must replace any earlier no-request ownership.
         drive.perf.setCount(PerfKeys.NO_REQUEST, 0L)
         TurnBill.counters(usage).forEach { (key, value) -> drive.perf.setCount(key, value) }
+        UsageMeasurementStamp.counters(usage).forEach { (key, value) -> drive.perf.setCount(key, value) }
     }
 }

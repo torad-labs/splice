@@ -4,6 +4,8 @@ import splice.core.model.TurnBill
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSnapshot
 import splice.core.perf.TurnPerf
+import splice.core.perf.UsageMeasurementStamp
+import splice.core.turn.UsageRequest
 
 /** The canonical row owns the usage observation, including its held source's final bill. */
 internal object UsageObservation {
@@ -22,8 +24,24 @@ internal object UsageObservation {
                 put("cached_tokens", total.cacheRead.toDouble())
             }
             put("missing_usage", missing(row))
+            putAll(comparisonFacts(row))
         }
         request.usage(values)
+    }
+
+    private fun comparisonFacts(row: Map<String, Long>): Map<String, Double> = buildMap {
+        val total = TurnBill.total(row)
+        UsageMeasurementStamp.fields.keys.forEach { put(it, if (row[it] == 1L) 1.0 else 0.0) }
+        if (row[PerfKeys.USAGE_OBSERVED_CACHE_WRITE] == 1L) {
+            put("usage_cache_write_tokens", total.cacheWrite.toDouble())
+        }
+        if (row[PerfKeys.USAGE_OBSERVED_CACHE_WRITE_1H] == 1L) {
+            put("usage_cache_write_1h_tokens", total.cacheWriteHourly.toDouble())
+        }
+        val history = TurnBill.history(row)
+        put("usage_absorbed_rounds", history.absorbed.rounds.toDouble())
+        put("usage_cut_rounds", history.cutRounds.toDouble())
+        put("usage_no_request", if (history.request == UsageRequest.NONE) 1.0 else 0.0)
     }
 
     private fun observed(row: Map<String, Long>, latest: String, absorbed: String): Boolean =

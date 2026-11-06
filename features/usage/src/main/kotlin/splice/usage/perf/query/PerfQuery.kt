@@ -36,7 +36,12 @@ public data class PerfConfigInterval(
 
 public fun interface PerfConfigProvenance {
     public fun intervals(fromMs: Long, untilMs: Long): List<PerfConfigInterval>
+
+    /** The revision covers safe effective knobs, never credentials or remote topology. */
+    public fun comparisonScope(): PerfConfigComparisonScope = PerfConfigComparisonScope.UNKNOWN
 }
+
+public enum class PerfConfigComparisonScope { UNKNOWN, EFFECTIVE_KNOB_POLICY }
 
 /** Offline implementations need only heads and rows; absent instruments remain explicit. */
 public interface PerfQuerySources {

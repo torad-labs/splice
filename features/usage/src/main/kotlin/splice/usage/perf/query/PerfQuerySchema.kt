@@ -16,5 +16,11 @@ internal object PerfQuerySchema {
         put("objective_selector", "objective: configured objective ID; unknown IDs are errors")
         put("export_modes", strings(listOf("legacy_rows: legacy_row", "observations: observation")))
         put("partial_bucket_policy", "exclude_intersecting_edges; exact_evidence_used_when_available")
+        put("comparison", PerfComparisonJson.semantics())
+        put(
+            "settled_until_ms",
+            "nullable certified collection horizon; caller selects completed bounds explicitly; " +
+                "not event-time finality",
+        )
     }
 }

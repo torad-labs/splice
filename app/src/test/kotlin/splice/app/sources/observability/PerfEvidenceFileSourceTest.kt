@@ -171,7 +171,10 @@ class PerfEvidenceFileSourceTest {
     fun `a filtered out observation cannot hide a conflicting matching duplicate`(@TempDir root: Path) {
         val dir = root.resolve("evidence")
         val writer = RequestEvidenceFiles(dir, clock = clock).forHead("test")
-        val first = event("conflict", PerfEventKind.REQUEST_ARRIVED).copy(links = PerfLinks(sessionId = "a"))
+        val first = event(
+            "conflict",
+            PerfEventKind.REQUEST_ARRIVED,
+        ).copy(links = PerfLinks(requestId = "shared-request", sessionId = "a"))
         assertTrue(writer.record(first))
         assertTrue(AsyncFileIo.awaitDirectory(dir))
         val file = Files.newDirectoryStream(dir).use { paths ->
@@ -179,7 +182,7 @@ class PerfEvidenceFileSourceTest {
         }
         Files.writeString(
             file,
-            Json.encodeToString(first.copy(links = PerfLinks(sessionId = "b"))) + "\n",
+            Json.encodeToString(first.copy(links = first.links.copy(sessionId = "b"))) + "\n",
             StandardOpenOption.APPEND,
         )
         val request = PerfEvidenceCursorRequest(
@@ -203,9 +206,8 @@ class PerfEvidenceFileSourceTest {
         val dir = root.resolve("evidence")
         val writer = RequestEvidenceFiles(dir, clock = clock).forHead("test")
         listOf("excluded" to "a", "first" to "b", "second" to "b").forEach { (id, session) ->
-            assertTrue(
-                writer.record(event(id, PerfEventKind.REQUEST_ARRIVED).copy(links = PerfLinks(sessionId = session))),
-            )
+            val observation = event(id, PerfEventKind.REQUEST_ARRIVED)
+            assertTrue(writer.record(observation.copy(links = observation.links.copy(sessionId = session))))
         }
         assertTrue(AsyncFileIo.awaitDirectory(dir))
         Files.writeString(

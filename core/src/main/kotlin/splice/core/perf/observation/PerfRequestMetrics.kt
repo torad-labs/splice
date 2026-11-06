@@ -5,7 +5,8 @@ internal object PerfRequestMetrics {
     private val content = setOf(PerfEventKind.CONTENT_PROGRESS, PerfEventKind.REQUEST_FINISHED)
     private val attempt = setOf(PerfEventKind.ATTEMPT_FINISHED)
 
-    fun definitions(): List<PerfMetricDefinition> = durations() + quantities() + lifecycle()
+    fun definitions(): List<PerfMetricDefinition> =
+        durations() + quantities() + lifecycle() + PerfUsageMetrics.definitions()
 
     private fun durations(): List<PerfMetricDefinition> = listOf(
         duration("arrival_to_terminal_ms", REQUEST_ARRIVAL, "honest client terminal", terminal),

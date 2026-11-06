@@ -61,8 +61,12 @@ public class PerfQueryService(
 
     public fun schema(): JsonObject = PerfQuerySchema.render()
 
+    /** Certified collection horizon, not event time. The bounded source read releases its temporary lease. */
+    public fun settledUntilMs(head: String? = null): Long? = sources.evidence()?.settledUntilMs(head)
+
     private fun read(query: PerfQuery, filter: PerfQueryFilter): QueryData {
         val data = QueryData(query)
+        data.settledUntilMs = settledUntilMs(query.filters["head"])
         data.goodput = PerfEvidenceJson.initialGoodput(query.objective)
         measured(query, filter, data)
         if (data.counts.isEmpty()) data.counts = PerfPopulationCounts.aggregate(data)

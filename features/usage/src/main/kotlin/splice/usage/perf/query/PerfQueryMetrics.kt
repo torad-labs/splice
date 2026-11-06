@@ -67,6 +67,7 @@ internal object PerfQueryMetrics {
                 },
             )
             put("goodput", data.goodput)
+            put("comparison", PerfComparisonJson.render(query, data))
             put("legacy", data.legacy)
         }
     }

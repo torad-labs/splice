@@ -48,6 +48,7 @@ internal object UsageRounds {
                     absorbed = prior.absorbed + prior.finalRound + latest.absorbed,
                     cutRounds = prior.cutRounds + latest.cutRounds + missingBills(prior, latest, observations),
                 ),
+                measured = UsageMeasurements.combined(prior, latest),
             ),
             reported = observations,
         )

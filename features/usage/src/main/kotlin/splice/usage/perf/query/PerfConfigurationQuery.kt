@@ -9,7 +9,8 @@ import splice.usage.perf.query.PerfQueryJson.textValue
 
 internal object PerfConfigurationQuery {
     fun render(sources: PerfQuerySources, query: PerfQuery, data: QueryData): JsonObject {
-        val intervals = sources.provenance()?.intervals(query.fromMs, query.untilMs)
+        val provenance = sources.provenance()
+        val intervals = provenance?.intervals(query.fromMs, query.untilMs)
         val eligible = intervals.orEmpty().asSequence().filter { overlaps(it, query) }.take(MAX_INTERVALS + 1).toList()
         val boots = data.identities.map { it.bootId }.toSet()
         val unknown = incomplete(eligible, boots, sources, query)
@@ -17,6 +18,17 @@ internal object PerfConfigurationQuery {
         return buildJsonObject {
             put("status", when { unknown -> "unknown"; revisions.size > 1 -> "mixed"; else -> "known" })
             put("comparison_compatible", !unknown && revisions.size == 1)
+            put(
+                "comparison_scope",
+                (provenance?.comparisonScope() ?: PerfConfigComparisonScope.UNKNOWN).name.lowercase(),
+            )
+            put(
+                "excluded_dimensions",
+                PerfQueryJson.strings(
+                    listOf("credentials", "headers", "paths", "addresses", "provider_topology", "remote_environment"),
+                ),
+            )
+            put("requires_matching_provider_topology", true)
             put("intervals", JsonArray(eligible.take(MAX_INTERVALS).map(::intervalJson)))
             put("truncated", eligible.size > MAX_INTERVALS)
         }

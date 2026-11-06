@@ -4,6 +4,8 @@ import java.nio.file.Path
 
 /** A single owned capture. close stops it on success, cancellation and setup/copy failures. */
 public interface ProfileCapture : AutoCloseable {
+    val fromMs: Long? get() = null
+    val untilMs: Long? get() = null
     fun start()
     fun finish(destination: Path)
 }

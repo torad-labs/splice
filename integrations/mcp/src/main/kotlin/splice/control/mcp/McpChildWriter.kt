@@ -24,6 +24,8 @@ private const val WRITE_LINE_BYTES = 1L
 // why: a single quarter-second wakeup recovers capacity races without retaining a timer per reverse reply.
 private const val HOSTED_REPLY_RETRY_MS = 250L
 
+private data class McpWriteAddress(val request: Long? = null, val serverRequest: Long? = null)
+
 /** One child/stdin generation, carrying its own short-lived retirement fence. */
 internal data class McpWriteTarget(
     val child: Process,
@@ -186,6 +188,7 @@ private class McpWriteAdmission<L : Any>(
         bytes: Long,
         requestId: Long?,
         serverRequestId: Long?,
+        observations: McpPerfInvocation? = null,
     ): McpWrite? = synchronized(lock) {
         val requestRoom = requestId == null || requests.size < WRITE_QUEUE_CAPACITY
         val byteRoom = bytes <= MAX_QUEUED_WRITE_BYTES && retainedBytes <= MAX_QUEUED_WRITE_BYTES - bytes
@@ -193,7 +196,7 @@ private class McpWriteAdmission<L : Any>(
         if (!accepting(target) || !room) {
             null
         } else {
-            McpWrite(target, bytes, requestId, serverRequestId).also { delivery ->
+            McpWrite(target, bytes, requestId, serverRequestId, observations).also { delivery ->
                 requestId?.let { requests[it] = target }
                 inFlight += delivery
                 retainedBytes += bytes
@@ -338,15 +341,26 @@ internal class McpChildWriter(
         }
     }
 
-    suspend fun request(msg: JsonObject, requestId: Long, expected: Process, budget: Duration): Boolean =
-        submit(msg, requestId, null, expected, budget)?.completed?.await() ?: false
+    suspend fun request(
+        msg: JsonObject,
+        requestId: Long,
+        expected: Process,
+        budget: Duration,
+        observations: McpPerfInvocation? = null,
+    ): Boolean = submit(
+        msg,
+        McpWriteAddress(request = requestId),
+        expected,
+        budget,
+        observations,
+    )?.completed?.await() ?: false
 
     suspend fun notify(msg: JsonObject, expected: Process? = null, budget: Duration): Boolean =
-        submit(msg, null, null, expected, budget)?.completed?.await() ?: false
+        submit(msg, McpWriteAddress(), expected, budget)?.completed?.await() ?: false
 
     /** A known unqueued reply stays retained for this exact live generation until a later stdin slot accepts it. */
     fun reply(msg: JsonObject, requestId: Long, child: Process, budget: Duration): Boolean {
-        if (submit(msg, null, requestId, child, budget) != null) return true
+        if (submit(msg, McpWriteAddress(serverRequest = requestId), child, budget) != null) return true
         val selected = target(child) ?: return false
         return reverseReplies.retain(
             McpReverseReply(
@@ -372,14 +386,20 @@ internal class McpChildWriter(
 
     private fun submit(
         msg: JsonObject,
-        requestId: Long?,
-        serverRequestId: Long?,
+        address: McpWriteAddress,
         expected: Process?,
         budget: Duration,
+        observations: McpPerfInvocation? = null,
     ): McpWrite? {
         val selected = target(expected) ?: return null
         val bytes = JsonWire.byteSize(msg) + WRITE_LINE_BYTES
-        val delivery = admission.reserve(selected, bytes, requestId, serverRequestId) ?: return null
+        val delivery = admission.reserve(
+            selected,
+            bytes,
+            address.request,
+            address.serverRequest,
+            observations,
+        ) ?: return null
         delivery.encoded = codec.encode(msg)
         return delivery.takeIf { queue(it, budget) }
     }
@@ -424,6 +444,12 @@ internal class McpChildWriter(
             if (unqueued) write.requestId?.let(requests::remove)
             if (delivered) write.serverRequestId?.let(serverRequests::remove)
         }
+        write.observations?.phase(
+            mapOf(
+                "tool_buffered_bytes" to 0.0,
+                "tool_buffered_ms" to McpPerfObservations.elapsed(write.retainedAt),
+            ),
+        )
         write.completed.complete(delivered)
     }
 }

@@ -76,6 +76,7 @@ public data class McpHostConfig(
         /** The existing systemd slice name, checked at every hosted spawn. */
         val slice: String = APP_MCP_SLICE,
         val capture: Capture? = null,
+        val observations: McpPerfRecorders? = null,
     )
 
     public data class Capture(val store: McpToolResultStore, val io: CoroutineDispatcher)

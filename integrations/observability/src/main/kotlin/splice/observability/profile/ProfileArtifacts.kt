@@ -41,10 +41,15 @@ internal class ProfileArtifacts(directory: Path, private val identity: PerfIdent
     }
 
     override fun close() {
-        fileLock?.release()
-        lockChannel?.close()
+        val ownedLock = fileLock
+        val channel = lockChannel
         fileLock = null
         lockChannel = null
+        try {
+            ownedLock?.release()
+        } finally {
+            channel?.close()
+        }
     }
 
     fun temporary(record: ProfileRecord): Path = path(record.id, "tmp").also {

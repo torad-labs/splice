@@ -16,6 +16,8 @@ internal class ProfileRecord(val request: PerfProfileRequest, val fromMs: Long) 
     val id: String = UUID.randomUUID().toString()
     var status = "running"
     var untilMs: Long? = null
+    var captureFromMs: Long? = null
+    var captureUntilMs: Long? = null
     var sizeBytes = 0L
     var available = false
     var issue: String? = null
@@ -34,9 +36,7 @@ internal class ProfileRecord(val request: PerfProfileRequest, val fromMs: Long) 
         put("profile_id", id)
         put("identity", Json.encodeToJsonElement(identity))
         put("process_id", ProcessHandle.current().pid())
-        put("from_ms", fromMs)
-        put("until_ms", untilMs?.let(::JsonPrimitive) ?: JsonNull)
-        put("window_scope", "capture_operation_including_setup_and_finalization")
+        window().forEach { (key, value) -> put(key, value) }
         put(
             "settings",
             buildJsonObject {
@@ -72,6 +72,17 @@ internal class ProfileRecord(val request: PerfProfileRequest, val fromMs: Long) 
                 issue?.let { add(JsonPrimitive(it)) }
                 if (expired) add(JsonPrimitive("artifact_expired"))
             },
+        )
+    }
+
+    private fun window() = buildJsonObject {
+        put("from_ms", captureFromMs ?: fromMs)
+        put("until_ms", (captureUntilMs ?: untilMs)?.let(::JsonPrimitive) ?: JsonNull)
+        put("operation_from_ms", fromMs)
+        put("operation_until_ms", untilMs?.let(::JsonPrimitive) ?: JsonNull)
+        put(
+            "window_scope",
+            if (captureFromMs == null) "capture_operation_including_setup_and_finalization" else "recording",
         )
     }
 }

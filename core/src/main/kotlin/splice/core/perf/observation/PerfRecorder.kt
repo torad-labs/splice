@@ -75,6 +75,21 @@ public class PerfRecorder(
         return PerfToolRecorder(this, toolScope, links, start.monotonicMs, native != null)
     }
 
+    /** An independently owned tool operation; absent inference request/attempt links remain absent. */
+    public fun tool(scope: PerfScope, links: PerfLinks = PerfLinks()): PerfToolRecorder {
+        val parent = PerfDimensions.links(links)
+        return tool(
+            scope,
+            parent.copy(
+                traceId = parent.traceId ?: UUID.randomUUID().toString().replace("-", ""),
+                traceFlags = parent.traceFlags ?: "01",
+                spanId = parent.spanId.takeIf { parent.traceId != null },
+                parentSpanId = parent.parentSpanId.takeIf { parent.traceId != null },
+            ),
+            null,
+        )
+    }
+
     private fun nextId(): String =
         "${identity.bootId.take(PerfObservationLimits.MAX_LABEL / 2)}:$recorderId:${sequence.incrementAndGet()}"
 

@@ -11,6 +11,8 @@ import splice.control.mcp.JsonRpcCodec
 import splice.control.mcp.ListingAsk
 import splice.control.mcp.McpChildWriter
 import splice.control.mcp.McpHostConfig
+import splice.control.mcp.McpPerfContextKey
+import splice.control.mcp.McpPerfObservations
 import splice.control.mcp.McpResult
 import splice.control.mcp.McpWriteTarget
 import splice.control.mcp.Pending
@@ -19,8 +21,10 @@ import splice.control.mcp.RPC_SERVER_ERROR
 import splice.control.mcp.RPC_SERVER_EXITED
 import splice.control.mcp.RPC_TIMED_OUT
 import splice.core.util.LogSink
+import splice.core.util.MonoClock
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.coroutines.coroutineContext
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -68,9 +72,10 @@ internal class HostedClientCalls(
         val deadline = Deadline(runtime.config.clock, runtime.config.requestTimeout())
         val hostId = ids.getAndIncrement()
         val (out, token) = progress.outbound(request, hostId)
-        val slot = Pending(sessionId, clientId, token)
+        val slot = Pending(sessionId, clientId, token, coroutineContext[McpPerfContextKey]?.invocation?.transfer())
         val reservation = RequestId(sessionId, clientId)
         if (reservations.putIfAbsent(reservation, slot) != null) {
+            slot.observations?.finish("bad")
             return runtime.codec.error(
                 clientId,
                 RPC_SERVER_EXITED,
@@ -80,6 +85,7 @@ internal class HostedClientCalls(
         val child = runtime.target.target()?.child
         if (child == null) {
             reservations.remove(reservation, slot)
+            slot.observations?.finish("bad")
             return runtime.codec.error(clientId, RPC_SERVER_EXITED, "hosted MCP server '$name' is not ready")
         }
         val forwarded = Forward(hostId, child, out, slot, clientId)
@@ -90,6 +96,7 @@ internal class HostedClientCalls(
             }
         } catch (error: CancellationException) {
             slot.terminateProgress()
+            slot.observations?.cancel()
             throw error
         }
     }
@@ -102,6 +109,8 @@ internal class HostedClientCalls(
                     RequestId(forwarded.pending.sessionId, forwarded.pending.clientId),
                     forwarded.pending,
                 )
+                forwarded.pending.observations?.timeout()
+                forwarded.pending.observations?.finish("bad")
             }
             return timedOut(forwarded.clientId, forwarded.pending)
         }
@@ -110,6 +119,7 @@ internal class HostedClientCalls(
             forwarded.hostId,
             forwarded.child,
             writeBudget,
+            forwarded.pending.observations,
         )
         val answerBudget = deadline.remaining()
         // A charged wire ID remains cancelable until this exact generation settles it or exits.
@@ -140,6 +150,7 @@ internal class HostedClientCalls(
         // exact generation, so cancellation and eventual child-exit cleanup remain available.
         if (hostId !in runtime.writer.unsettled && pending.remove(hostId, slot)) {
             reservations.remove(RequestId(slot.sessionId, slot.clientId), slot)
+            slot.observations?.finish("bad")
         }
         return runtime.codec.error(
             clientId,
@@ -150,6 +161,7 @@ internal class HostedClientCalls(
 
     private fun timedOut(clientId: JsonElement, slot: Pending): JsonObject {
         slot.terminateProgress()
+        slot.observations?.timeout()
         return runtime.codec.error(clientId, RPC_TIMED_OUT, "hosted MCP server '$name' did not answer in time")
     }
 
@@ -158,10 +170,15 @@ internal class HostedClientCalls(
         private val calls: HostedClientCalls,
     ) {
         suspend fun call(sessionId: String, clientId: JsonElement, request: JsonObject): JsonObject {
+            val warm = host.alive
+            val started = MonoClock.nowMs()
             when (val up = host.ensureStarted()) {
                 is McpResult.Refused -> return host.codec.error(clientId, RPC_SERVER_ERROR, up.reason)
                 is McpResult.Served -> Unit
             }
+            coroutineContext[McpPerfContextKey]?.invocation?.phase(
+                mapOf("tool_cold_start_ms" to if (warm) 0.0 else McpPerfObservations.elapsed(started)),
+            )
             return host.tools.answer(request, clientId, ListingAsk { calls.forward(sessionId, clientId, request) })
         }
 

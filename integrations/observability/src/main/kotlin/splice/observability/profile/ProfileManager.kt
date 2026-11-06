@@ -130,8 +130,12 @@ public class ProfileManager(
     private fun execute(run: ProfileRun) {
         run.thread = Thread.currentThread()
         val expiry = supervisor.schedule({
-            run.abort()
-            settle(run, "aborted", "capture_deadline_expired")
+            synchronized(lock) {
+                if (run.record.status == "running") {
+                    run.abort()
+                    settle(run, "aborted", "capture_deadline_expired")
+                }
+            }
         }, run.record.request.durationSeconds + FINALIZATION_SECONDS, TimeUnit.SECONDS)
         try {
             prune()
@@ -169,6 +173,10 @@ public class ProfileManager(
             run.ensureActive()
             val path = artifacts.temporary(record)
             it.finish(path)
+            synchronized(lock) {
+                record.captureFromMs = it.fromMs
+                record.captureUntilMs = it.untilMs
+            }
             path
         }
         synchronized(lock) {
@@ -185,6 +193,7 @@ public class ProfileManager(
     }
 
     private fun cleanup(run: ProfileRun) {
+        val interrupted = Thread.interrupted()
         try {
             artifacts.deleteTemporary(run.record)
             artifacts.metadata(run.record)
@@ -199,6 +208,7 @@ public class ProfileManager(
                     releaseMemory()
                 }
             }
+            if (interrupted) Thread.currentThread().interrupt()
         }
     }
 
@@ -240,10 +250,13 @@ public class ProfileManager(
     }
 
     private fun setupFailed(error: Exception): Nothing {
-        artifacts.close()
-        memory.close()
-        worker.shutdown()
-        supervisor.shutdown()
+        try {
+            artifacts.close()
+        } finally {
+            memory.close()
+            worker.shutdown()
+            supervisor.shutdown()
+        }
         throw error
     }
 }

@@ -21,6 +21,8 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.time.Duration
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicBoolean
 
 class ProfileManagerTest {
     private val identity = PerfIdentity("boot", "build", "version", "config")
@@ -35,6 +37,7 @@ class ProfileManagerTest {
             manager.stop(id)
             val completed = awaitSettled(manager, id)
             assertEquals("completed", completed.getValue("status").jsonPrimitive.content)
+            assertEquals("recording", completed.getValue("window_scope").jsonPrimitive.content)
             val artifact = assertNotNull(manager.artifact(id)).let { checkNotNull(manager.artifact(id)) }
             assertTrue(artifact.sizeBytes in 1..ProfileLimits.ARTIFACT_BYTES)
             assertEquals(Files.size(artifact.path), artifact.sizeBytes)
@@ -141,8 +144,30 @@ class ProfileManagerTest {
         assertTrue(Files.list(directory).use { it.noneMatch { path -> path.toString().endsWith(".profile") } })
     }
 
+    @Test
+    fun `setup deadline aborts the capture and closes its resource`(@TempDir directory: Path) {
+        val closed = AtomicBoolean()
+        val factory = ProfileCaptureFactory { _, _, _ ->
+            object : ProfileCapture {
+                override fun start() { CountDownLatch(1).await() }
+                override fun finish(destination: Path) = Unit
+                override fun close() { closed.set(true) }
+            }
+        }
+        ProfileManager(directory, identity, factory = factory).use { manager ->
+            val started = manager.start(PerfProfileRequest())
+            val id = started.getValue("profile_id").jsonPrimitive.content
+            PerfWorkBudget.release(started)
+            val aborted = awaitSettled(manager, id)
+            assertEquals("aborted", aborted.getValue("status").jsonPrimitive.content)
+            assertNull(manager.artifact(id))
+            assertTrue(closed.get())
+            PerfWorkBudget.release(aborted)
+        }
+    }
+
     private fun awaitSettled(manager: ProfileManager, id: String): JsonObject =
-        assertTimeoutPreemptively(Duration.ofSeconds(10)) {
+        assertTimeoutPreemptively(Duration.ofSeconds(15)) {
             var state = manager.status(id)
             while (state.getValue("status").jsonPrimitive.content == "running") {
                 check(!Thread.currentThread().isInterrupted) { "Profile completion deadline expired" }

@@ -63,7 +63,16 @@ public class McpHost(
     private val sessions = McpSessions(config.clock)
     private val servers = HostedServers(sharing, global, config, spawner, codec, log, sessions)
     private val minting = SessionMinting(servers, sessions, log)
-    private val posts = McpPostHandler(codec, sharing, global, servers, sessions, minting, log)
+    private val posts =
+        McpPostHandler(
+            codec,
+            sharing,
+            global,
+            servers,
+            sessions,
+            minting,
+            McpPostHandler.Runtime(log, config.runtime.observations),
+        )
     private val status = McpStatus(sharing, global, HostedServerLookup(servers::get), sessions, inventory)
 
     /** `POST /api/mcp/{name}/test`: starts a server when it is not running, lists its tools, and says what came back. */

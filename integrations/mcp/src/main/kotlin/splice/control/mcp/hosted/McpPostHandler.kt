@@ -11,6 +11,8 @@ import splice.control.mcp.JsonRpcCodec
 import splice.control.mcp.McpAdmission
 import splice.control.mcp.McpClient
 import splice.control.mcp.McpHostMessage
+import splice.control.mcp.McpPerfObservations
+import splice.control.mcp.McpPerfRecorders
 import splice.control.mcp.McpReply
 import splice.control.mcp.McpResult
 import splice.control.mcp.McpSession
@@ -21,6 +23,7 @@ import splice.control.mcp.RpcKind
 import splice.control.mcp.SessionMinting
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
+import splice.core.util.MonoClock
 import splice.core.wire.HttpStatus
 
 // why: JSON-RPC specifies -32600 for an invalid request envelope.
@@ -37,8 +40,10 @@ internal class McpPostHandler(
     private val servers: HostedServers,
     private val sessions: McpSessions,
     private val minting: SessionMinting,
-    private val log: LogSink,
+    private val runtime: Runtime,
 ) {
+    internal data class Runtime(val log: LogSink, val observations: McpPerfRecorders? = null)
+
     suspend fun post(
         name: String,
         sessionId: String?,
@@ -52,8 +57,22 @@ internal class McpPostHandler(
         if (message.kind == RpcKind.INVALID) {
             return bad(HttpStatus.BAD_REQUEST, message.id, RPC_INVALID, "invalid JSON-RPC")
         }
-        val admission = admission(name, sessionId, message)
-        return route(name, McpClient(sessionId, protocolVersion, head), msg, message, admission)
+        val invocation = if (message.kind == RpcKind.REQUEST && codec.method(msg) == "tools/call") {
+            McpPerfObservations.start(runtime.observations, sessions.get(name, sessionId)?.head ?: head, sessionId)
+        } else {
+            null
+        }
+        return if (invocation == null) {
+            val admission = admission(name, sessionId, message)
+            route(name, McpClient(sessionId, protocolVersion, head), msg, message, admission)
+        } else {
+            invocation.run {
+                val started = MonoClock.nowMs()
+                val admission = admission(name, sessionId, message)
+                invocation.phase(mapOf("tool_queue_ms" to McpPerfObservations.elapsed(started)))
+                route(name, McpClient(sessionId, protocolVersion, head), msg, message, admission)
+            }
+        }
     }
 
     private suspend fun admission(name: String, sessionId: String?, message: McpHostMessage): McpAdmission? =
@@ -153,7 +172,7 @@ internal class McpPostHandler(
         val delivered = when (val sent = server.notify(session.id, msg)) {
             is McpResult.Served -> sent.value
             is McpResult.Refused -> {
-                log("[mcp-host] ${LogSafe.str(name)}: notify failed (${LogSafe.str(sent.reason)})\n")
+                runtime.log("[mcp-host] ${LogSafe.str(name)}: notify failed (${LogSafe.str(sent.reason)})\n")
                 false
             }
         }

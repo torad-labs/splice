@@ -94,6 +94,7 @@ abstract class McpHostFixture {
     protected var idleBudget: Duration = 30.minutes
     protected var handshakeBudget: Duration = 1.minutes
     protected var serverCeiling: Int = 32
+    protected var observations: McpPerfRecorders? = null
 
     protected fun boot(
         maxServers: Int = 32,
@@ -121,7 +122,7 @@ abstract class McpHostFixture {
                 maxServers = { serverCeiling },
                 requestTimeout = { requestBudget },
                 initializeTimeout = { handshakeBudget },
-                runtime = McpHostConfig.Runtime(clock = clock),
+                runtime = McpHostConfig.Runtime(clock = clock, observations = observations),
             ),
             log = LogSink { line ->
                 synchronized(log) { log.append(line) }

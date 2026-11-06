@@ -10,6 +10,8 @@ import java.time.Duration
 /** Empty settings plus an event allowlist excludes content-bearing JFR events and forced GC. */
 internal class JfrCapture(private val request: PerfProfileRequest) : ProfileCapture {
     private var recording: Recording? = null
+    override val fromMs: Long? get() = recording?.startTime?.toEpochMilli()
+    override val untilMs: Long? get() = recording?.stopTime?.toEpochMilli()
 
     override fun start() {
         if (!FlightRecorder.isAvailable() || request.mode == "wall") throw ProfileUnavailable()

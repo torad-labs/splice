@@ -10,7 +10,7 @@ internal object PerfDimensions {
     private val trace = Regex("[0-9a-f]{32}")
     private val span = Regex("[0-9a-f]{16}")
     private val flags = Regex("[0-9a-f]{2}")
-    private val transports = setOf("sse", "ws", "websocket", "http", "local", UNKNOWN)
+    private val transports = setOf("sse", "ws", "websocket", "http", "local", "mcp", UNKNOWN)
     private val workKinds =
         setOf("client", "compact", "tool", "compare", "local", "runtime", "instrumentation", "upstream", UNKNOWN)
 

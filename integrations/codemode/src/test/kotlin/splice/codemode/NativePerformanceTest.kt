@@ -1,0 +1,84 @@
+package splice.codemode
+
+import io.opentelemetry.sdk.common.CompletableResultCode
+import io.opentelemetry.sdk.trace.data.SpanData
+import io.opentelemetry.sdk.trace.export.SpanExporter
+import kotlinx.coroutines.withContext
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import splice.core.perf.observation.PerfEventKind
+import splice.core.perf.observation.PerfIdentity
+import splice.core.perf.observation.PerfObservation
+import splice.core.perf.observation.PerfObserver
+import splice.core.perf.observation.PerfRecorder
+import splice.core.perf.observation.PerfScope
+import splice.core.util.ElapsedClock
+import splice.core.util.MonoClock
+import splice.core.util.WallClock
+import splice.upstream.codemode.CodeModePerfContext
+import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeStep
+import java.util.concurrent.CopyOnWriteArrayList
+
+class NativePerformanceTest {
+    @Test
+    fun `native callbacks keep request links after client close and borrow the exporter`() = nativeProcessTest {
+        val events = CopyOnWriteArrayList<PerfObservation>()
+        val exporter = NativePerformanceExporter()
+        val recorder = PerfRecorder(
+            PerfIdentity("boot", "build", "version", "config"),
+            PerfObserver { events.add(it) },
+            ElapsedClock(MonoClock::nowMs),
+            WallClock(System::currentTimeMillis),
+        )
+        val request = recorder.request(PerfScope(head = "codex"), MonoClock.nowMs(), System.currentTimeMillis())
+        request.update(
+            request.scope,
+            request.links.copy(traceId = "a".repeat(32), spanId = "b".repeat(16), traceFlags = "00"),
+        )
+        val attempt = request.attempt("sse")
+        NativeCodeModeRuntime(traceExporter = exporter).use { runtime ->
+            val cell = withContext(CodeModePerfContext(request, attempt.links)) {
+                runtime.startSession("observed", "text(await tools.Read({secret:'private-value'}));", setOf("Read"))
+            }
+            val call = (cell.advance() as CodeModeStep.Calls).calls.single()
+            request.finish("good")
+            val result = cell.advance(listOf(CodeModeResult(call.id, "accepted"))) as CodeModeStep.Completed
+            assertEquals("accepted", result.output)
+            val warm = withContext(CodeModePerfContext(request, attempt.links)) {
+                runtime.startSession("observed", "text('warm');", emptySet())
+            }
+            assertEquals("warm", (warm.advance() as CodeModeStep.Completed).output)
+        }
+        val finished = events.filter { it.kind == PerfEventKind.TOOL_FINISHED }
+        assertTrue(finished.size >= 3)
+        assertTrue(
+            finished.all {
+                it.links.requestId == request.links.requestId && it.links.attemptId == attempt.links.attemptId
+            },
+        )
+        assertEquals(finished.size, finished.map { it.links.toolId }.toSet().size)
+        assertTrue(finished.all { it.values["tool_native_span"] == 1.0 })
+        assertTrue(finished.all { event -> exporter.spans.any { it.spanId == event.links.spanId } })
+        assertTrue(events.any { it.values.containsKey("tool_callback_wait_ms") })
+        assertTrue(events.any { it.values["tool_cold_start_ms"] == 0.0 })
+        assertFalse(events.toString().contains("private-value"))
+        assertFalse(exporter.closed)
+    }
+}
+
+private class NativePerformanceExporter : SpanExporter {
+    val spans = CopyOnWriteArrayList<SpanData>()
+    var closed = false
+    override fun export(spans: Collection<SpanData>): CompletableResultCode {
+        this.spans.addAll(spans)
+        return CompletableResultCode.ofSuccess()
+    }
+    override fun flush(): CompletableResultCode = CompletableResultCode.ofSuccess()
+    override fun shutdown(): CompletableResultCode {
+        closed = true
+        return CompletableResultCode.ofSuccess()
+    }
+}

@@ -1,6 +1,7 @@
 package splice.control.mcp
 
 import kotlinx.coroutines.CompletableDeferred
+import splice.core.util.MonoClock
 import java.io.IOException
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.Executors
@@ -14,7 +15,10 @@ internal data class McpWrite(
     val bytes: Long,
     val requestId: Long?,
     val serverRequestId: Long?,
+    val observations: McpPerfInvocation? = null,
 ) {
+    val retainedAt = MonoClock.nowMs()
+    var queuedAt = retainedAt
     var encoded: String? = null
     val completed = CompletableDeferred<Boolean>()
     var terminal = false
@@ -67,6 +71,14 @@ internal class McpWriteQueue(
     )
 
     fun offer(delivery: McpWrite): Boolean = try {
+        delivery.queuedAt = MonoClock.nowMs()
+        delivery.observations?.phase(
+            mapOf(
+                "tool_admission_depth" to executor.queue.size.toDouble(),
+                "tool_admission_capacity" to WRITE_QUEUE_CAPACITY.toDouble(),
+                "tool_buffered_bytes" to delivery.bytes.toDouble(),
+            ),
+        )
         executor.execute { write(delivery) }
         true
     } catch (_: RejectedExecutionException) {
@@ -79,6 +91,7 @@ internal class McpWriteQueue(
     }
 
     private fun write(delivery: McpWrite) {
+        delivery.observations?.phase(mapOf("tool_queue_ms" to McpPerfObservations.elapsed(delivery.queuedAt)))
         try {
             resolved(delivery, writeToPipe(delivery))
         } catch (failure: IOException) {
@@ -94,6 +107,7 @@ internal class McpWriteQueue(
         delivery.target.output.write(encoded)
         delivery.target.output.newLine()
         delivery.target.output.flush()
+        delivery.observations?.sent()
         true
     }
 }

@@ -18,7 +18,12 @@ private const val HOST_TOKEN_PREFIX = "splice-"
 
 /** A forwarded request waiting for the child: who asked, under which client id, and the progress
  *  token the client attached (the child sees the host's own; see [ProgressTokens]). */
-internal class Pending(val sessionId: String, val clientId: JsonElement, val progressToken: JsonElement? = null) {
+internal class Pending(
+    val sessionId: String,
+    val clientId: JsonElement,
+    val progressToken: JsonElement? = null,
+    val observations: McpPerfInvocation? = null,
+) {
     val answer = CompletableDeferred<JsonObject>()
 
     @Volatile var terminal = false
@@ -32,6 +37,7 @@ internal class Pending(val sessionId: String, val clientId: JsonElement, val pro
 
     /** The answer the caller gets when the child never will answer: an error under ITS id. */
     fun fail(codec: JsonRpcCodec, message: String) {
+        observations?.finish("?")
         answer.complete(codec.error(clientId, RPC_SERVER_EXITED, message))
     }
 }
@@ -62,7 +68,9 @@ internal class ProgressTokens {
         val matches = pending.entries.filter {
             it.value.sessionId == sessionId && it.value.clientId == clientId
         }
-        val hostId = matches.singleOrNull()?.key ?: return null
+        val match = matches.singleOrNull() ?: return null
+        match.value.observations?.cancel()
+        val hostId = match.key
         return codec.withCancelledRequestId(msg, JsonPrimitive(hostId))
     }
 

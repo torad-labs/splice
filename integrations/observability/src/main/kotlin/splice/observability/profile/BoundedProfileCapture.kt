@@ -10,6 +10,8 @@ internal class BoundedProfileCapture(
     private val run: ProfileRun,
     private val supervisor: ScheduledExecutorService,
 ) : ProfileCapture {
+    override val fromMs: Long? get() = capture.fromMs
+    override val untilMs: Long? get() = capture.untilMs
     override fun start() = bounded { capture.start() }
     override fun finish(destination: Path) = bounded { capture.finish(destination) }
     override fun close() = bounded { capture.close() }

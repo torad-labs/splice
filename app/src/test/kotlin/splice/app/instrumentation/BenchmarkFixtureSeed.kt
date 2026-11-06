@@ -2,6 +2,7 @@ package splice.app.instrumentation
 
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -17,10 +18,12 @@ import splice.core.perf.observation.PerfLinks
 import splice.core.perf.observation.PerfMetricRegistry
 import splice.core.perf.observation.PerfObservation
 import splice.core.perf.observation.PerfScope
+import splice.core.perf.observation.PerfSinkStatus
 import splice.core.perf.observation.PerfStamp
 import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
 import splice.core.util.EnvReader
+import splice.core.util.MonoClock
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import splice.head.perf.RequestEvidenceFiles
@@ -66,21 +69,75 @@ object BenchmarkFixtureSeed {
                     check(writer.record(event(identity, links, PerfEventKind.REQUEST_FINISHED, now)))
                     check(writer.record(event(identity, links, PerfEventKind.USAGE_RECORDED, now)))
                     now = from + MINUTE_MS
+                    // Both writers share one lane; settle evidence before admitting the aggregate checkpoint.
+                    val evidenceWaitStarted = MonoClock.nowMs()
+                    check(AsyncFileIo.awaitDirectory(paths.perfEvidenceDir)) {
+                        barrierFailure("evidence", index, evidenceWaitStarted, aggregate.status(), writer.sink.status())
+                    }
                     check(aggregate.append(snapshot(identity, from, now)))
-                    check(AsyncFileIo.awaitFile(paths.perfAggregatesDir.resolve("checkpoint.json")))
-                    check(AsyncFileIo.awaitDirectory(paths.perfEvidenceDir))
+                    val aggregateWaitStarted = MonoClock.nowMs()
+                    check(AsyncFileIo.awaitFile(paths.perfAggregatesDir.resolve("checkpoint.json"))) {
+                        barrierFailure(
+                            "aggregate_checkpoint",
+                            index,
+                            aggregateWaitStarted,
+                            aggregate.status(),
+                            writer.sink.status(),
+                        )
+                    }
                     // Hour boundaries certify actual accepted producer prefixes, never event extents.
                     if ((index + 1) % 60 == 0) {
                         check(evidence.checkpointCoverage())
-                        check(AsyncFileIo.awaitDirectory(paths.perfEvidenceDir))
+                        awaitCoverage(paths, evidence, aggregate, index, "hourly_coverage")
                     }
                 }
                 check(evidence.stopCoverage(HEAD))
-                check(AsyncFileIo.awaitDirectory(paths.perfEvidenceDir))
+                val lastIndex = (WEEK_MS / MINUTE_MS).toInt() - 1
+                awaitCoverage(paths, evidence, aggregate, lastIndex, "final_coverage")
                 check(PerfEvidenceFileSource(paths.perfEvidenceDir, clock).settledUntilMs(HEAD) == until)
             }
             check(aggregate.status().let { it.failed == 0L && it.dropped == 0L && it.pending == 0L })
         }
+    }
+
+    private fun awaitCoverage(
+        paths: StatePaths,
+        evidence: RequestEvidenceFiles,
+        aggregate: PerfAggregateStore,
+        index: Int,
+        stage: String,
+    ) {
+        val started = MonoClock.nowMs()
+        check(AsyncFileIo.awaitDirectory(paths.perfEvidenceDir)) {
+            barrierFailure(stage, index, started, aggregate.status(), evidence.coverageSink.status())
+        }
+    }
+
+    private fun barrierFailure(
+        stage: String,
+        index: Int,
+        started: Long,
+        aggregate: PerfSinkStatus,
+        evidence: PerfSinkStatus,
+    ): String = buildJsonObject {
+        put("code", "fixture_barrier_failed")
+        put("stage", stage)
+        put("minute_index", index)
+        put("barrier_elapsed_ms", MonoClock.nowMs() - started)
+        put("interrupted", Thread.currentThread().isInterrupted)
+        put("aggregate", sinkCounters(aggregate))
+        put("evidence", sinkCounters(evidence))
+        put("io", Json.encodeToJsonElement(AsyncFileIo.WorkSnapshot.serializer(), AsyncFileIo.workSnapshot))
+    }.toString()
+
+    private fun sinkCounters(status: PerfSinkStatus): JsonObject = buildJsonObject {
+        put("observed", status.observed)
+        put("enqueued", status.enqueued)
+        put("written", status.written)
+        put("failed", status.failed)
+        put("dropped", status.dropped)
+        put("pending", status.pending)
+        put("oldest_pending_ms", status.oldestPendingMs)
     }
 
     private fun snapshot(identity: PerfIdentity, from: Long, until: Long): PerfAggregateSnapshot {

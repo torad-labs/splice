@@ -25,8 +25,10 @@ public class PerfAccumulator(identity: PerfIdentity) : PerfObserver, PerfAggrega
             closed -> false
             observation.stamp.identity != identity -> { mismatched++; false }
             PerfDimensions.id(observation.stamp.observationId) == null -> { invalid++; false }
-            !seen.add(observation.stamp.observationId) -> false
-            else -> accumulate(observation)
+            else -> {
+                val reserved = lifecycle.terminalReservation(observation)
+                if (seen.add(observation.stamp.observationId, reserved)) accumulate(observation, reserved) else false
+            }
         }
     }
 
@@ -82,7 +84,7 @@ public class PerfAccumulator(identity: PerfIdentity) : PerfObserver, PerfAggrega
         PerfCoverage(timeline.first, timeline.last, 0, listOf(PerfIssue(code, ACCUMULATOR)), listOf(status())),
     )
 
-    private fun accumulate(observation: PerfObservation): Boolean {
+    private fun accumulate(observation: PerfObservation, terminalReservation: Long): Boolean {
         val safe = observation.copy(
             scope = PerfDimensions.scope(observation.scope),
             links = PerfDimensions.links(observation.links),
@@ -93,7 +95,7 @@ public class PerfAccumulator(identity: PerfIdentity) : PerfObserver, PerfAggrega
             timeline.advance(safe.stamp)
         }
         cells.expire(timeline.last)
-        if (!lifecycle.record(safe, at)) return false
+        if (!lifecycle.record(safe, at, terminalReservation)) return false
         accepted++
         val recordUsage = acceptUsage(safe)
         return accumulateValues(safe, at, recordUsage)

@@ -4,13 +4,19 @@ package splice.core.perf.observation
 internal class PerfRecentIds(private val memory: PerfMemoryAccount) {
     private var ids = LinkedHashSet<String>()
 
-    fun add(id: String): Boolean {
+    /** A closing handle may transfer its existing reservation; retirement must not need new admission. */
+    fun add(id: String, reservedBytes: Long = 0L): Boolean {
+        require(reservedBytes == 0L || reservedBytes >= PerfMemoryBudget.ID_BYTES)
         if (id in ids) return false
         if (ids.size >= PerfObservationLimits.MAX_DEDUP) {
             ids.remove(ids.first())
             memory.release(PerfMemoryBudget.ID_BYTES)
         }
-        if (!memory.reserve(PerfMemoryBudget.ID_BYTES)) return false
+        if (reservedBytes == 0L) {
+            if (!memory.reserve(PerfMemoryBudget.ID_BYTES)) return false
+        } else {
+            memory.release(reservedBytes - PerfMemoryBudget.ID_BYTES)
+        }
         ids.add(id)
         return true
     }

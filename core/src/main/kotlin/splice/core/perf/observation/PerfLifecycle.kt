@@ -14,13 +14,27 @@ internal class PerfLifecycle(
     var orphanTerminals = 0L
         private set
 
-    fun record(event: PerfObservation, at: Long): Boolean = when (event.kind) {
+    /** The handle's bytes become observation and lifecycle tombstones, under the accumulator's monitor. */
+    fun terminalReservation(event: PerfObservation): Long {
+        val key = terminalKey(event) ?: return 0L
+        if (key !in active || terminals.contains(key)) return 0L
+        return PerfMemoryBudget.HANDLE_BYTES - PerfMemoryBudget.ID_BYTES
+    }
+
+    private fun terminalKey(event: PerfObservation): String? = when (event.kind) {
+        PerfEventKind.REQUEST_FINISHED -> event.links.requestId?.let { "$REQUESTS:$it" }
+        PerfEventKind.ATTEMPT_FINISHED -> event.links.attemptId?.let { "$ATTEMPTS:$it" }
+        PerfEventKind.TOOL_FINISHED -> event.links.toolId?.let { "tools:$it" }
+        else -> null
+    }
+
+    fun record(event: PerfObservation, at: Long, terminalReservation: Long): Boolean = when (event.kind) {
         PerfEventKind.REQUEST_ARRIVED -> start(REQUESTS, event.links.requestId, event.scope, at)
         PerfEventKind.ATTEMPT_STARTED -> start(ATTEMPTS, event.links.attemptId, event.scope, at)
         PerfEventKind.TOOL_STARTED -> start("tools", event.links.toolId, event.scope, at)
-        PerfEventKind.REQUEST_FINISHED -> finish(REQUESTS, event.links.requestId, event, at)
-        PerfEventKind.ATTEMPT_FINISHED -> finish(ATTEMPTS, event.links.attemptId, event, at)
-        PerfEventKind.TOOL_FINISHED -> finish("tools", event.links.toolId, event, at)
+        PerfEventKind.REQUEST_FINISHED -> finish(REQUESTS, event.links.requestId, event, at, terminalReservation)
+        PerfEventKind.ATTEMPT_FINISHED -> finish(ATTEMPTS, event.links.attemptId, event, at, terminalReservation)
+        PerfEventKind.TOOL_FINISHED -> finish("tools", event.links.toolId, event, at, terminalReservation)
         PerfEventKind.REQUEST_ADMITTED, PerfEventKind.PROTOCOL_PROGRESS, PerfEventKind.CONTENT_PROGRESS,
         PerfEventKind.CLIENT_PROGRESS, PerfEventKind.GAP, PerfEventKind.GATE_STATE, PerfEventKind.TOOL_PHASE,
         PerfEventKind.RUNTIME, PerfEventKind.SELF_COST, PerfEventKind.CHECKPOINT, PerfEventKind.USAGE_RECORDED,
@@ -64,11 +78,12 @@ internal class PerfLifecycle(
         terminals.clear()
     }
 
-    private fun finish(family: String, id: String?, event: PerfObservation, at: Long): Boolean {
+    private fun finish(family: String, id: String?, event: PerfObservation, at: Long, reserved: Long): Boolean {
         val key = id?.let { "$family:$it" }
-        if (key != null && !terminals.add(key)) return false
-        val previous = key?.let(active::remove)
-        if (previous != null) memory.release(PerfMemoryBudget.HANDLE_BYTES)
+        val previous = key?.let(active::get)
+        val terminalBytes = if (previous != null) PerfMemoryBudget.HANDLE_BYTES - reserved else 0L
+        if (key != null && !terminals.add(key, terminalBytes)) return false
+        if (previous != null) active.remove(key)
         if (previous != null) gauges.change(liveMetric(family), previous, -1.0, at) else orphanTerminals++
         val scope = event.scope.copy(outcome = event.outcome?.let(PerfDimensions::outcome) ?: "unknown")
         count("${family}_finished", scope, at)

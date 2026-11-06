@@ -34,12 +34,11 @@ internal class ExportEngine(
     fun coverage(): JsonObject = coverage.json(clock(), traces.dropped, traces.missingContext)
 
     fun tick(): Boolean {
-        var success = drain()
-        if (config.prometheus || transport?.metrics != null) success = sample() && success
-        return success
+        val drained = drain()
+        return sample() && drained
     }
 
-    private fun drain(): Boolean {
+    fun drain(): Boolean {
         val entries = ArrayList<ExportQueued>()
         val spans = ArrayList<SpanData>()
         val logs = ArrayList<LogRecordData>()
@@ -76,7 +75,9 @@ internal class ExportEngine(
         }
     }
 
-    private fun sample(): Boolean {
+    fun sample(): Boolean = if (config.prometheus || transport?.metrics != null) sampleEnabled() else true
+
+    private fun sampleEnabled(): Boolean {
         val lease = PerfWorkBudget.acquire(CONVERSION_BYTES) ?: return sampleBusy()
         return lease.use {
             val snapshot = snapshot()

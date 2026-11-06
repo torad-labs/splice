@@ -1,0 +1,616 @@
+{
+  "schema_version": 1,
+  "measured_at": "2026-11-05",
+  "unchanged_source": "45cae7f4fcc3382ebc816fdfe52296aa8ce8a045",
+  "rows": [
+    {
+      "run_id": "baseline-c1",
+      "experiment_stage": "calibration",
+      "role": "baseline",
+      "source_commit": "45cae7f4fcc3382ebc816fdfe52296aa8ce8a045",
+      "artifact_sha256": "a45baf2631590cfeac33566b4f053b215eae1d4a66783a3495e5fd91ed264db6",
+      "harness_sha256": "468f437ba665ee392b9d59ad9e88888dc8ca31cca77d9af2d79f7e367cc49ce9",
+      "repetitions": 5,
+      "warmup_ms": 1000,
+      "duration_ms": 2000,
+      "load": {
+        "kind": "concurrency",
+        "value": 1
+      },
+      "hardware": {
+        "architecture": "x64",
+        "logical_cpus": 16,
+        "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+        "memory_bytes": 129912614912
+      },
+      "os": {
+        "platform": "linux",
+        "release": "6.17.0-41-generic"
+      },
+      "jvm": "java version \"21.0.11\" 2026-04-21 LTS\nJava(TM) SE Runtime Environment (build 21.0.11+9-LTS-211)\nJava HotSpot(TM) 64-Bit Server VM (build 21.0.11+9-LTS-211, mixed mode, sharing)",
+      "status": "complete",
+      "counts": {
+        "offered": 331,
+        "accepted": 331,
+        "accepted_unknown": 0,
+        "completed": 331,
+        "failed": 0,
+        "refused": 0,
+        "cancelled": 0,
+        "pending": 0,
+        "generator_dropped": 0
+      },
+      "goodput": {
+        "objective_revision": "fixture-objectives-v1",
+        "eligible": 331,
+        "successful": 331,
+        "rps": 33.1,
+        "interval_95": {
+          "mean": 33.1,
+          "low": 30.525643505650393,
+          "high": 35.67435649434961,
+          "n": 5,
+          "cv": 0.06264785907349764
+        },
+        "population": "steady arrivals, completed by bounded drain; arrival-to-content/completion objectives"
+      },
+      "completion_ms": {
+        "n": 331,
+        "p50": 29.27865500000007,
+        "p95": 34.115968000000066,
+        "p99": 38.67491400000017,
+        "max": 42.27662099999998
+      },
+      "generator": {
+        "delay_ms": {
+          "n": 331,
+          "p50": 0.010800000000017462,
+          "p95": 0.02723000000059983,
+          "p99": 0.035789999999906286,
+          "max": 0.05504999999993743
+        },
+        "saturated": false,
+        "max_inflight": 128,
+        "achieved_offered_rps": 33.1,
+        "limitations": [
+          "Bun mock and generator share one event loop",
+          "synthetic output token counts are scripted usage, not tokenizer estimates",
+          "arrival schedule continues at fixed deadlines; overloaded slots are explicitly dropped",
+          "no inference of sustainable capacity from short runs",
+          "cache state is scripted upstream cache usage, not real provider cache verification"
+        ]
+      },
+      "manifest_sha256": "1877509f6a351854ed03e7e2d95b9d642869f0f437dd9694f73a2ffa9c27c33a",
+      "samples_sha256": "a58f22d5ab82c1a83a905eebe2b7359f390e2bc3c8c845e0c00a0b3512aab3f2",
+      "observations_sha256": "b04342c6357df56230c0b460754e9d53b2d0feb75419e8bdd6a0fa3e5057cd7f",
+      "artifact_directory": "/tmp/splice-instrumentation-run/baseline-c1",
+      "limitations": [
+        "calibration only, not final capacity or overhead acceptance",
+        "shared host and co-located Bun mock/generator",
+        "unknown telemetry loss and exclusive sustained growth"
+      ]
+    },
+    {
+      "run_id": "baseline-c10",
+      "experiment_stage": "calibration",
+      "role": "baseline",
+      "source_commit": "45cae7f4fcc3382ebc816fdfe52296aa8ce8a045",
+      "artifact_sha256": "a45baf2631590cfeac33566b4f053b215eae1d4a66783a3495e5fd91ed264db6",
+      "harness_sha256": "468f437ba665ee392b9d59ad9e88888dc8ca31cca77d9af2d79f7e367cc49ce9",
+      "repetitions": 5,
+      "warmup_ms": 1000,
+      "duration_ms": 2000,
+      "load": {
+        "kind": "concurrency",
+        "value": 10
+      },
+      "hardware": {
+        "architecture": "x64",
+        "logical_cpus": 16,
+        "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+        "memory_bytes": 129912614912
+      },
+      "os": {
+        "platform": "linux",
+        "release": "6.17.0-41-generic"
+      },
+      "jvm": "java version \"21.0.11\" 2026-04-21 LTS\nJava(TM) SE Runtime Environment (build 21.0.11+9-LTS-211)\nJava HotSpot(TM) 64-Bit Server VM (build 21.0.11+9-LTS-211, mixed mode, sharing)",
+      "status": "complete",
+      "counts": {
+        "offered": 2948,
+        "accepted": 2948,
+        "accepted_unknown": 0,
+        "completed": 2948,
+        "failed": 0,
+        "refused": 0,
+        "cancelled": 0,
+        "pending": 0,
+        "generator_dropped": 0
+      },
+      "goodput": {
+        "objective_revision": "fixture-objectives-v1",
+        "eligible": 2948,
+        "successful": 2948,
+        "rps": 294.8,
+        "interval_95": {
+          "mean": 294.8,
+          "low": 227.1905784151351,
+          "high": 362.40942158486496,
+          "n": 5,
+          "cv": 0.18473333968323116
+        },
+        "population": "steady arrivals, completed by bounded drain; arrival-to-content/completion objectives"
+      },
+      "completion_ms": {
+        "n": 2948,
+        "p50": 29.516884000000573,
+        "p95": 51.87551000000167,
+        "p99": 77.71900599999935,
+        "max": 170.4843830000027
+      },
+      "generator": {
+        "delay_ms": {
+          "n": 2948,
+          "p50": 0.00398000000132015,
+          "p95": 0.014559999999619322,
+          "p99": 0.03859000000011292,
+          "max": 1.7918039999967732
+        },
+        "saturated": false,
+        "max_inflight": 128,
+        "achieved_offered_rps": 294.8,
+        "limitations": [
+          "Bun mock and generator share one event loop",
+          "synthetic output token counts are scripted usage, not tokenizer estimates",
+          "arrival schedule continues at fixed deadlines; overloaded slots are explicitly dropped",
+          "no inference of sustainable capacity from short runs",
+          "cache state is scripted upstream cache usage, not real provider cache verification"
+        ]
+      },
+      "manifest_sha256": "432f9a79ca5d3b18599cecbf1b7b21fbd5954ac7a42d341afd6537b9aec49106",
+      "samples_sha256": "19c45dc219e6c1ef9ab7d2ccd8a43abfc09d67516938352814e67b5dbed9f83c",
+      "observations_sha256": "d7665a77c62dcb039bf36532c9442fb1d4c4f7adb44888f8042df70839eafb98",
+      "artifact_directory": "/tmp/splice-instrumentation-run/baseline-c10",
+      "limitations": [
+        "calibration only, not final capacity or overhead acceptance",
+        "shared host and co-located Bun mock/generator",
+        "unknown telemetry loss and exclusive sustained growth"
+      ]
+    },
+    {
+      "run_id": "baseline-c50",
+      "experiment_stage": "calibration",
+      "role": "baseline",
+      "source_commit": "45cae7f4fcc3382ebc816fdfe52296aa8ce8a045",
+      "artifact_sha256": "a45baf2631590cfeac33566b4f053b215eae1d4a66783a3495e5fd91ed264db6",
+      "harness_sha256": "468f437ba665ee392b9d59ad9e88888dc8ca31cca77d9af2d79f7e367cc49ce9",
+      "repetitions": 5,
+      "warmup_ms": 1000,
+      "duration_ms": 2000,
+      "load": {
+        "kind": "concurrency",
+        "value": 50
+      },
+      "hardware": {
+        "architecture": "x64",
+        "logical_cpus": 16,
+        "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+        "memory_bytes": 129912614912
+      },
+      "os": {
+        "platform": "linux",
+        "release": "6.17.0-41-generic"
+      },
+      "jvm": "java version \"21.0.11\" 2026-04-21 LTS\nJava(TM) SE Runtime Environment (build 21.0.11+9-LTS-211)\nJava HotSpot(TM) 64-Bit Server VM (build 21.0.11+9-LTS-211, mixed mode, sharing)",
+      "status": "complete",
+      "counts": {
+        "offered": 4140,
+        "accepted": 4140,
+        "accepted_unknown": 0,
+        "completed": 4140,
+        "failed": 0,
+        "refused": 0,
+        "cancelled": 0,
+        "pending": 0,
+        "generator_dropped": 0
+      },
+      "goodput": {
+        "objective_revision": "fixture-objectives-v1",
+        "eligible": 4140,
+        "successful": 4140,
+        "rps": 414,
+        "interval_95": {
+          "mean": 414,
+          "low": 343.4969775513134,
+          "high": 484.5030224486866,
+          "n": 5,
+          "cv": 0.13717435751442383
+        },
+        "population": "steady arrivals, completed by bounded drain; arrival-to-content/completion objectives"
+      },
+      "completion_ms": {
+        "n": 4140,
+        "p50": 116.32645999999659,
+        "p95": 183.82308900000498,
+        "p99": 229.14595199999894,
+        "max": 284.24507099999755
+      },
+      "generator": {
+        "delay_ms": {
+          "n": 4140,
+          "p50": 0.003590000000258442,
+          "p95": 0.011720000002242159,
+          "p99": 0.025979999998526182,
+          "max": 2.2648819999958505
+        },
+        "saturated": false,
+        "max_inflight": 128,
+        "achieved_offered_rps": 414,
+        "limitations": [
+          "Bun mock and generator share one event loop",
+          "synthetic output token counts are scripted usage, not tokenizer estimates",
+          "arrival schedule continues at fixed deadlines; overloaded slots are explicitly dropped",
+          "no inference of sustainable capacity from short runs",
+          "cache state is scripted upstream cache usage, not real provider cache verification"
+        ]
+      },
+      "manifest_sha256": "26390e17b0979473f4d74c939cfe9af08d383c4e0904c6b8315d9e5b6f163d92",
+      "samples_sha256": "68577e91ac9d96b7e392ee4ad4942d9f4b80c7966749b0f3ee7123ee217100dd",
+      "observations_sha256": "def2c5a0098640d1c806ff78b8be94356be44b85a39266d51b6a0394cf3ad8a8",
+      "artifact_directory": "/tmp/splice-instrumentation-run/baseline-c50",
+      "limitations": [
+        "calibration only, not final capacity or overhead acceptance",
+        "shared host and co-located Bun mock/generator",
+        "unknown telemetry loss and exclusive sustained growth"
+      ]
+    },
+    {
+      "run_id": "baseline-c70",
+      "experiment_stage": "calibration",
+      "role": "baseline",
+      "source_commit": "45cae7f4fcc3382ebc816fdfe52296aa8ce8a045",
+      "artifact_sha256": "a45baf2631590cfeac33566b4f053b215eae1d4a66783a3495e5fd91ed264db6",
+      "harness_sha256": "468f437ba665ee392b9d59ad9e88888dc8ca31cca77d9af2d79f7e367cc49ce9",
+      "repetitions": 5,
+      "warmup_ms": 1000,
+      "duration_ms": 2000,
+      "load": {
+        "kind": "concurrency",
+        "value": 70
+      },
+      "hardware": {
+        "architecture": "x64",
+        "logical_cpus": 16,
+        "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+        "memory_bytes": 129912614912
+      },
+      "os": {
+        "platform": "linux",
+        "release": "6.17.0-41-generic"
+      },
+      "jvm": "java version \"21.0.11\" 2026-04-21 LTS\nJava(TM) SE Runtime Environment (build 21.0.11+9-LTS-211)\nJava HotSpot(TM) 64-Bit Server VM (build 21.0.11+9-LTS-211, mixed mode, sharing)",
+      "status": "complete",
+      "counts": {
+        "offered": 4098,
+        "accepted": 4098,
+        "accepted_unknown": 0,
+        "completed": 4098,
+        "failed": 0,
+        "refused": 0,
+        "cancelled": 0,
+        "pending": 0,
+        "generator_dropped": 0
+      },
+      "goodput": {
+        "objective_revision": "fixture-objectives-v1",
+        "eligible": 4098,
+        "successful": 4098,
+        "rps": 409.8,
+        "interval_95": {
+          "mean": 409.8,
+          "low": 377.1669421990522,
+          "high": 442.43305780094784,
+          "n": 5,
+          "cv": 0.06414330842890173
+        },
+        "population": "steady arrivals, completed by bounded drain; arrival-to-content/completion objectives"
+      },
+      "completion_ms": {
+        "n": 4098,
+        "p50": 173.14048399999592,
+        "p95": 233.34454799999367,
+        "p99": 264.7943249999953,
+        "max": 304.8172140000024
+      },
+      "generator": {
+        "delay_ms": {
+          "n": 4098,
+          "p50": 0.003819999998086132,
+          "p95": 0.013109999999869615,
+          "p99": 0.03382999998575542,
+          "max": 1.4705360000007204
+        },
+        "saturated": false,
+        "max_inflight": 128,
+        "achieved_offered_rps": 409.8,
+        "limitations": [
+          "Bun mock and generator share one event loop",
+          "synthetic output token counts are scripted usage, not tokenizer estimates",
+          "arrival schedule continues at fixed deadlines; overloaded slots are explicitly dropped",
+          "no inference of sustainable capacity from short runs",
+          "cache state is scripted upstream cache usage, not real provider cache verification"
+        ]
+      },
+      "manifest_sha256": "3ff6658b8487ee347651a2c03aea285838f8a8fe28e25b848c720f8e6ad05bb3",
+      "samples_sha256": "db3ca34304f063f6e5d7118eb009196610f035bb824b6af11c641399ff68a163",
+      "observations_sha256": "19aa9f28dfadc5739cc59b549d45b5d31f2d2ebe3d4e46008d2edbee4a74dcc0",
+      "artifact_directory": "/tmp/splice-instrumentation-run/baseline-c70",
+      "limitations": [
+        "calibration only, not final capacity or overhead acceptance",
+        "shared host and co-located Bun mock/generator",
+        "unknown telemetry loss and exclusive sustained growth"
+      ]
+    },
+    {
+      "run_id": "baseline-c100",
+      "experiment_stage": "calibration",
+      "role": "baseline",
+      "source_commit": "45cae7f4fcc3382ebc816fdfe52296aa8ce8a045",
+      "artifact_sha256": "a45baf2631590cfeac33566b4f053b215eae1d4a66783a3495e5fd91ed264db6",
+      "harness_sha256": "468f437ba665ee392b9d59ad9e88888dc8ca31cca77d9af2d79f7e367cc49ce9",
+      "repetitions": 5,
+      "warmup_ms": 1000,
+      "duration_ms": 2000,
+      "load": {
+        "kind": "concurrency",
+        "value": 100
+      },
+      "hardware": {
+        "architecture": "x64",
+        "logical_cpus": 16,
+        "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+        "memory_bytes": 129912614912
+      },
+      "os": {
+        "platform": "linux",
+        "release": "6.17.0-41-generic"
+      },
+      "jvm": "java version \"21.0.11\" 2026-04-21 LTS\nJava(TM) SE Runtime Environment (build 21.0.11+9-LTS-211)\nJava HotSpot(TM) 64-Bit Server VM (build 21.0.11+9-LTS-211, mixed mode, sharing)",
+      "status": "complete",
+      "counts": {
+        "offered": 2263,
+        "accepted": 2263,
+        "accepted_unknown": 0,
+        "completed": 2263,
+        "failed": 0,
+        "refused": 0,
+        "cancelled": 0,
+        "pending": 0,
+        "generator_dropped": 0
+      },
+      "goodput": {
+        "objective_revision": "fixture-objectives-v1",
+        "eligible": 2263,
+        "successful": 2263,
+        "rps": 226.3,
+        "interval_95": {
+          "mean": 226.3,
+          "low": 199.75470411843185,
+          "high": 252.84529588156818,
+          "n": 5,
+          "cv": 0.09448623781461135
+        },
+        "population": "steady arrivals, completed by bounded drain; arrival-to-content/completion objectives"
+      },
+      "completion_ms": {
+        "n": 2263,
+        "p50": 507.2211830000015,
+        "p95": 702.2230459999992,
+        "p99": 790.273629000003,
+        "max": 989.6897170000011
+      },
+      "generator": {
+        "delay_ms": {
+          "n": 2263,
+          "p50": 0.005340000003343448,
+          "p95": 0.018230000001494773,
+          "p99": 0.3143790000031004,
+          "max": 6.787188000002061
+        },
+        "saturated": false,
+        "max_inflight": 128,
+        "achieved_offered_rps": 226.3,
+        "limitations": [
+          "Bun mock and generator share one event loop",
+          "synthetic output token counts are scripted usage, not tokenizer estimates",
+          "arrival schedule continues at fixed deadlines; overloaded slots are explicitly dropped",
+          "no inference of sustainable capacity from short runs",
+          "cache state is scripted upstream cache usage, not real provider cache verification"
+        ]
+      },
+      "manifest_sha256": "1a2bd7d6848cb0dd1a867cbd451cb7680ced86fc2055cfc51c3dfa875bcd7bdf",
+      "samples_sha256": "431531c3aa54b0a2202e8463e0acb93f05bbc898f63a6db013bc220993a00254",
+      "observations_sha256": "31b4caae3d72dfe64dbc0cd2f9f12a70b91bd14b8ce7620f50969c833ae5466d",
+      "artifact_directory": "/tmp/splice-instrumentation-run/baseline-c100",
+      "limitations": [
+        "calibration only, not final capacity or overhead acceptance",
+        "shared host and co-located Bun mock/generator",
+        "unknown telemetry loss and exclusive sustained growth"
+      ]
+    },
+    {
+      "run_id": "baseline-r100",
+      "experiment_stage": "calibration",
+      "role": "baseline",
+      "source_commit": "45cae7f4fcc3382ebc816fdfe52296aa8ce8a045",
+      "artifact_sha256": "a45baf2631590cfeac33566b4f053b215eae1d4a66783a3495e5fd91ed264db6",
+      "harness_sha256": "468f437ba665ee392b9d59ad9e88888dc8ca31cca77d9af2d79f7e367cc49ce9",
+      "repetitions": 5,
+      "warmup_ms": 1000,
+      "duration_ms": 2000,
+      "load": {
+        "kind": "arrival_rate",
+        "value": 100
+      },
+      "hardware": {
+        "architecture": "x64",
+        "logical_cpus": 16,
+        "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+        "memory_bytes": 129912614912
+      },
+      "os": {
+        "platform": "linux",
+        "release": "6.17.0-41-generic"
+      },
+      "jvm": "java version \"21.0.11\" 2026-04-21 LTS\nJava(TM) SE Runtime Environment (build 21.0.11+9-LTS-211)\nJava HotSpot(TM) 64-Bit Server VM (build 21.0.11+9-LTS-211, mixed mode, sharing)",
+      "status": "complete",
+      "counts": {
+        "offered": 1000,
+        "accepted": 1000,
+        "accepted_unknown": 0,
+        "completed": 1000,
+        "failed": 0,
+        "refused": 0,
+        "cancelled": 0,
+        "pending": 0,
+        "generator_dropped": 0
+      },
+      "goodput": {
+        "objective_revision": "fixture-objectives-v1",
+        "eligible": 1000,
+        "successful": 1000,
+        "rps": 100,
+        "interval_95": {
+          "mean": 100,
+          "low": 100,
+          "high": 100,
+          "n": 5,
+          "cv": 0
+        },
+        "population": "steady arrivals, completed by bounded drain; arrival-to-content/completion objectives"
+      },
+      "completion_ms": {
+        "n": 1000,
+        "p50": 50.55456000000413,
+        "p95": 142.5746160000126,
+        "p99": 207.0393710000062,
+        "max": 240.82281900000817
+      },
+      "generator": {
+        "delay_ms": {
+          "n": 1000,
+          "p50": 0.08934800000861287,
+          "p95": 9.484798000004957,
+          "p99": 23.71902499999851,
+          "max": 43.63957499999378
+        },
+        "saturated": false,
+        "max_inflight": 128,
+        "achieved_offered_rps": 100,
+        "limitations": [
+          "Bun mock and generator share one event loop",
+          "synthetic output token counts are scripted usage, not tokenizer estimates",
+          "arrival schedule continues at fixed deadlines; overloaded slots are explicitly dropped",
+          "no inference of sustainable capacity from short runs",
+          "cache state is scripted upstream cache usage, not real provider cache verification"
+        ]
+      },
+      "manifest_sha256": "4194ff266821a85d170ebd7b7b050406af5fe5df53adfbc908d05163af57fc71",
+      "samples_sha256": "d007ad1fe374c5cfb2ee1c43dfb4a3d37a7095132acdee2b3a80c3ac4059a004",
+      "observations_sha256": "2ae56cf07dd6273c015395b31583a290c6aafde8287cc214fb0c33192bbc473a",
+      "artifact_directory": "/tmp/splice-instrumentation-run/baseline-r100",
+      "limitations": [
+        "calibration only, not final capacity or overhead acceptance",
+        "shared host and co-located Bun mock/generator",
+        "unknown telemetry loss and exclusive sustained growth"
+      ]
+    },
+    {
+      "run_id": "baseline-r500",
+      "experiment_stage": "calibration",
+      "role": "baseline",
+      "source_commit": "45cae7f4fcc3382ebc816fdfe52296aa8ce8a045",
+      "artifact_sha256": "a45baf2631590cfeac33566b4f053b215eae1d4a66783a3495e5fd91ed264db6",
+      "harness_sha256": "468f437ba665ee392b9d59ad9e88888dc8ca31cca77d9af2d79f7e367cc49ce9",
+      "repetitions": 5,
+      "warmup_ms": 1000,
+      "duration_ms": 2000,
+      "load": {
+        "kind": "arrival_rate",
+        "value": 500
+      },
+      "hardware": {
+        "architecture": "x64",
+        "logical_cpus": 16,
+        "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+        "memory_bytes": 129912614912
+      },
+      "os": {
+        "platform": "linux",
+        "release": "6.17.0-41-generic"
+      },
+      "jvm": "java version \"21.0.11\" 2026-04-21 LTS\nJava(TM) SE Runtime Environment (build 21.0.11+9-LTS-211)\nJava HotSpot(TM) 64-Bit Server VM (build 21.0.11+9-LTS-211, mixed mode, sharing)",
+      "status": "partial",
+      "counts": {
+        "offered": 5000,
+        "accepted": 2107,
+        "accepted_unknown": 2893,
+        "completed": 2107,
+        "failed": 0,
+        "refused": 0,
+        "cancelled": 0,
+        "pending": 0,
+        "generator_dropped": 2893
+      },
+      "goodput": {
+        "objective_revision": "fixture-objectives-v1",
+        "eligible": 2107,
+        "successful": 1993,
+        "rps": 199.3,
+        "interval_95": {
+          "mean": 199.3,
+          "low": 145.81317191831246,
+          "high": 252.78682808168756,
+          "n": 5,
+          "cv": 0.21617480976555195
+        },
+        "population": "steady arrivals, completed by bounded drain; arrival-to-content/completion objectives"
+      },
+      "completion_ms": {
+        "n": 2107,
+        "p50": 683.204070000007,
+        "p95": 1031.9033460000064,
+        "p99": 1128.4342130000005,
+        "max": 1301.5123010000098
+      },
+      "generator": {
+        "delay_ms": {
+          "n": 5000,
+          "p50": 0.8573570000007749,
+          "p95": 10.421730000001844,
+          "p99": 23.703601999994135,
+          "max": 45.782749000005424
+        },
+        "saturated": true,
+        "max_inflight": 128,
+        "achieved_offered_rps": 500,
+        "limitations": [
+          "Bun mock and generator share one event loop",
+          "synthetic output token counts are scripted usage, not tokenizer estimates",
+          "arrival schedule continues at fixed deadlines; overloaded slots are explicitly dropped",
+          "no inference of sustainable capacity from short runs",
+          "cache state is scripted upstream cache usage, not real provider cache verification"
+        ]
+      },
+      "manifest_sha256": "2288de41fc95532d80d3046c11924cf25ef04aa9600b94827a9b2e1d5188b471",
+      "samples_sha256": "c214e0900630fa0b80fd4119679ccf302f966a83339965c920e75d51c115cd65",
+      "observations_sha256": "8e7ab9b74c2b24e57817c6d4094be7f37de5e8ae32e33c6c06d99dff1102bb2a",
+      "artifact_directory": "/tmp/splice-instrumentation-run/baseline-r500",
+      "limitations": [
+        "calibration only, not final capacity or overhead acceptance",
+        "shared host and co-located Bun mock/generator",
+        "unknown telemetry loss and exclusive sustained growth"
+      ]
+    }
+  ]
+}

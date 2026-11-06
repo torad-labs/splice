@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "fixed_before_candidate_data": true,
+  "revision": "2026-11-05-before-candidate",
+  "goodput_degradation_pct": 5,
+  "cpu_per_completion_degradation_pct": 5,
+  "added_p95_ms": 1,
+  "added_p95_pct": 5,
+  "aggregate_cache_bytes": 33554432,
+  "rollup_disk_bytes": 268435456,
+  "active_head_model_combinations_per_family": 256,
+  "sustained_extra_growth_bytes": 0,
+  "silent_loss": 0,
+  "maximum_baseline_cv": 0.1,
+  "profile_budget": "separate-measurement"
+}

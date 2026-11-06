@@ -11,7 +11,8 @@
     "tools/probes/tsconfig.json",
     "tools/screen-review/tsconfig.json",
     "tools/console/tsconfig.json",
-    ".claude/hooks/tsconfig.json"
+    ".claude/hooks/tsconfig.json",
+    "tools/instrumentation-bench/tsconfig.json"
   ],
   "excused": {},
   "baseline": {}

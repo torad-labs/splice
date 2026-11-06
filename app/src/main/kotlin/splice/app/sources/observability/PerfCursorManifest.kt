@@ -8,7 +8,7 @@ internal const val PERF_CURSOR_ENTRY_BYTES = 20
 internal const val PERF_CURSOR_MAX_SEGMENTS = 256
 internal const val PERF_CURSOR_MAX_LINE_BYTES = 128 * 1_024
 internal const val PERF_CURSOR_WORK_BYTES = 512L * 1_024 * 1_024
-internal const val PERF_CURSOR_RESERVE_BYTES = 8L * 1_024 * 1_024
+internal const val PERF_CURSOR_RESERVE_BYTES = 4L * 1_024 * 1_024
 internal const val PERF_CURSOR_OUTPUT_BYTES = 2L * 1_024 * 1_024
 
 @Serializable

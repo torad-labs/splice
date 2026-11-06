@@ -4,6 +4,7 @@ import splice.app.sources.PerfLineReader
 import splice.core.perf.observation.PerfIssue
 import splice.core.perf.observation.PerfObservation
 import splice.head.perf.RequestEvidenceFormat
+import splice.usage.perf.history.PerfEvidenceCoverageProof
 import splice.usage.perf.history.PerfEvidenceQuery
 import java.io.IOException
 import java.nio.channels.FileChannel
@@ -14,6 +15,7 @@ import java.nio.file.StandardOpenOption
 internal class PerfEvidenceReadScan(
     private val query: PerfEvidenceQuery,
     private val inventory: PerfEvidenceInventory,
+    private val proof: PerfEvidenceCoverageProof? = null,
 ) {
     val observations = LinkedHashMap<String, PerfObservation>()
     val issues = ArrayList<PerfIssue>()
@@ -24,7 +26,8 @@ internal class PerfEvidenceReadScan(
     val work = PerfCursorWork()
 
     fun scan() {
-        val fixed = inventory.candidates(query.head).map { it to inventory.fingerprints.capture(it, work) }
+        val fixed = proof?.let { inventory.certified(it, work) }
+            ?: inventory.candidates(query.head).map { it to inventory.fingerprints.capture(it, work) }
         for ((path, segment) in fixed) {
             read(path, segment)
             if (inventory.fingerprints.digest(path, segment.end, work) != segment.digest) {
@@ -79,6 +82,8 @@ internal class PerfEvidenceReadScan(
     }
 }
 
-internal const val EVIDENCE_READ_OUTPUT = 4L * 1_024 * 1_024
+internal const val EVIDENCE_READ_OUTPUT = 4L * 1_024 * 1_024 - EVIDENCE_COVERAGE_BYTES
 internal const val EVIDENCE_READ_OVERHEAD = 64L * 1_024
 private const val MAX_EVIDENCE_ISSUES = 64
+
+internal const val EVIDENCE_COVERAGE_BYTES = 256L * 1_024

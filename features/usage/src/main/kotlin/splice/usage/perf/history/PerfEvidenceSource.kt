@@ -14,12 +14,17 @@ public data class PerfEvidenceRead(
     val coverage: PerfCoverage,
     val asOfMs: Long,
     val complete: Boolean,
+    val coverageBasis: String = "unknown",
+    val eventTimeFinal: Boolean = false,
 ) : AutoCloseable {
     override fun close(): Unit = PerfWorkBudget.release(this)
 }
 
 public fun interface PerfEvidenceSource {
     public fun read(query: PerfEvidenceQuery): PerfEvidenceRead
+
+    /** Consumers may explicitly select a completed window ending here; requested bounds are never rewritten. */
+    public fun settledUntilMs(head: String? = null): Long? = null
 }
 
 public fun interface PerfEvidenceSinkSource {

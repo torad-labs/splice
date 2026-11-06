@@ -61,6 +61,9 @@ internal class PerfQueryWork(private val clock: WallClock, private val sources: 
         val warm = cached?.takeIf { matches(it, query, operation, now) }
         val restored = warm?.let { JsonScalars.objectOrNull(Json, it.payload) }
         if (restored != null) return restored
+        // A stale cache is optional state; release it before the cold source phase.
+        cached?.let(PerfWorkBudget::release)
+        cached = null
         val result = read(query)
         if (operation != null) cache(query, operation, now, result)
         return result

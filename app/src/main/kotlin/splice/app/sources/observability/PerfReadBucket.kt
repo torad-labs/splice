@@ -40,7 +40,13 @@ internal class PerfReadBucket(val identity: PerfIdentity) {
         until = maxOf(until, value.until)
         observed += value.observed
         observedEnd = maxOf(observedEnd, value.observedEnd)
-        value.points.values.forEach(::point)
+        // Transfer owned working cells; no escaped snapshot exists during coarsening.
+        val iterator = value.points.values.iterator()
+        while (iterator.hasNext()) {
+            val next = iterator.next()
+            point(next)
+            iterator.remove()
+        }
     }
 
     fun snapshot(): PerfAggregateSnapshot = PerfAggregateSnapshot(

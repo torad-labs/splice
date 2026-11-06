@@ -4,6 +4,7 @@ import kotlinx.serialization.json.Json
 import splice.core.perf.observation.PerfIssue
 import splice.head.perf.RequestEvidenceFormat
 import splice.head.perf.RequestEvidenceRetention
+import splice.usage.perf.history.PerfEvidenceCoverageProof
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -23,6 +24,33 @@ internal class PerfEvidenceInventory(private val directory: Path) {
     } catch (_: NoSuchFileException) {
         emptyList()
     }
+
+    fun certified(proof: PerfEvidenceCoverageProof, work: PerfCursorWork): List<Pair<Path, PerfCursorSegment>> =
+        proof.prefixes.map { prefix ->
+            if (RequestEvidenceFormat.headOf(
+                    prefix.fileName,
+                ) == null
+            ) {
+                throw IOException("evidence_proof_segment_invalid")
+            }
+            val path = directory.resolve(prefix.fileName)
+            if (!Files.isRegularFile(
+                    path,
+                    LinkOption.NOFOLLOW_LINKS,
+                )
+            ) {
+                throw IOException("evidence_proof_segment_missing")
+            }
+            if (fingerprints.digest(
+                    path,
+                    prefix.end,
+                    work,
+                ) != prefix.digest
+            ) {
+                throw IOException("evidence_proof_segment_changed")
+            }
+            path to PerfCursorSegment(prefix.digest, prefix.fileName, null, prefix.end, prefix.digest)
+        }
 
     fun issues(): List<PerfIssue> = try {
         val path = directory.resolve(RequestEvidenceFormat.RETENTION_FILE)

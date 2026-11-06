@@ -6,6 +6,7 @@ import splice.core.util.SecureFile
 import java.io.IOException
 import java.nio.channels.FileChannel
 import java.nio.channels.OverlappingFileLockException
+import java.nio.file.DirectoryStream
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
@@ -18,14 +19,32 @@ internal class PerfHistoryFiles(private val directory: Path) {
     private val json = Json { ignoreUnknownKeys = true }
     val checkpoint: Path = directory.resolve("checkpoint.json")
 
-    fun inventory(): List<PerfHistoryEntry> = try {
-        Files.newDirectoryStream(directory).use { paths ->
-            val result = paths.asSequence().mapNotNull(::entry).take(MAX_FILES + 1).toList()
-            if (result.size > MAX_FILES) throw IOException("aggregate inventory limit")
-            result.sortedBy { it.fromMs }
-        }
+    fun inventory(
+        fromMs: Long = Long.MIN_VALUE,
+        untilMs: Long = Long.MAX_VALUE,
+        byteLimit: Long = Long.MAX_VALUE,
+    ): List<PerfHistoryEntry> = try {
+        Files.newDirectoryStream(directory).use { collect(it, fromMs, untilMs, byteLimit) }
     } catch (_: NoSuchFileException) {
         emptyList()
+    }
+
+    private fun collect(
+        paths: DirectoryStream<Path>,
+        fromMs: Long,
+        untilMs: Long,
+        byteLimit: Long,
+    ): List<PerfHistoryEntry> {
+        val result = ArrayList<PerfHistoryEntry>()
+        var owned = 0L
+        for (path in paths) {
+            val entry = entry(path)?.takeIf { it.fromMs < untilMs && it.fromMs + it.resolutionMs > fromMs } ?: continue
+            owned += path.toString().length.toLong() * 2L + INVENTORY_ENTRY_BYTES
+            if (owned > byteLimit) throw IOException("query_memory_limit")
+            if (result.size >= MAX_FILES) throw IOException("aggregate inventory limit")
+            result += entry
+        }
+        return result.sortedBy { it.fromMs }
     }
 
     private fun entry(path: Path): PerfHistoryEntry? {
@@ -131,3 +150,5 @@ private const val MAX_FILES = 4_096
 private const val MAX_CHECKPOINT_BYTES = 64L * 1_024
 private const val UTF8_MAX_BYTES = 3L
 private const val REVISION_BYTES = 128L
+
+private const val INVENTORY_ENTRY_BYTES = 256L

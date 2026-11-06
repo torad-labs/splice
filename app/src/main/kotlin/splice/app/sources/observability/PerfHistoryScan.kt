@@ -25,10 +25,10 @@ internal class PerfHistoryScan(
     fun error(code: String) { coverage.error(code) }
 
     fun scan(files: PerfHistoryFiles) {
-        val inventory = files.inventory()
+        val inventory = files.inventory(maxOf(from, retainedFrom), until, INVENTORY_BYTES)
         val hours = inventory.filter { it.resolutionMs == PERF_HOUR_MS }.map { it.fromMs }.toSet()
         for (entry in inventory.filter { eligible(it, hours) }) {
-            if (!read(files, entry)) break
+            if (!read(entry)) break
         }
     }
 
@@ -40,7 +40,7 @@ internal class PerfHistoryScan(
         return entry.resolutionMs != PERF_MINUTE_MS || PerfHistoryFormat.hour(entry.fromMs) !in hours
     }
 
-    private fun read(files: PerfHistoryFiles, entry: PerfHistoryEntry): Boolean {
+    private fun read(entry: PerfHistoryEntry): Boolean {
         val limited = bytes + entry.bytes > PERF_HISTORY_DISK_BYTES || MonoClock.nowMs() - started > QUERY_TIME_MS
         if (limited) {
             error("query_work_limit")
@@ -48,7 +48,11 @@ internal class PerfHistoryScan(
         }
         bytes += entry.bytes
         return try {
-            fold(files.read(entry))
+            PerfHistoryStream.read(entry) { snapshot ->
+                fold.add(snapshot)
+                coverage.add(snapshot)
+                rows += snapshot.points.size
+            }
             true
         } catch (_: IllegalArgumentException) {
             error("history_malformed")
@@ -59,21 +63,8 @@ internal class PerfHistoryScan(
             !limit
         }
     }
-
-    private fun fold(file: PerfHistoryFile) {
-        if (file.snapshots.sumOf(
-                PerfHistorySize::snapshot,
-            ) > DECODE_BYTES
-        ) {
-            throw IOException("decoded history memory limit")
-        }
-        for (snapshot in file.snapshots.sortedBy { it.fromMs }) {
-            fold.add(snapshot)
-            coverage.add(snapshot)
-            rows += snapshot.points.size
-        }
-    }
 }
 
 private const val QUERY_TIME_MS = 30_000L
-private const val DECODE_BYTES = 4L * 1_024 * 1_024
+
+private const val INVENTORY_BYTES = 1L * 1_024 * 1_024

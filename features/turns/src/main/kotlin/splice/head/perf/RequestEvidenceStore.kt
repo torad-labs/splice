@@ -7,7 +7,6 @@ import splice.core.perf.observation.PerfMetricRegistry
 import splice.core.perf.observation.PerfObservation
 import splice.core.perf.observation.PerfObserver
 import splice.core.perf.observation.PerfProjection
-import splice.core.util.AsyncFileIo
 import splice.core.util.FileIoSink
 import splice.core.util.FileIoWrite
 import splice.core.util.PerfWorkBudget
@@ -34,8 +33,13 @@ public class RequestEvidenceStore internal constructor(
 
     override fun record(observation: PerfObservation): Boolean {
         if (observation.kind !in accepted || observation.links.requestId == null) return true
-        if (!valid(observation)) return false.also { sink.reject() }
-        return enqueue(observation)
+        return files.admit { if (valid(observation)) enqueue(observation) else refused() }
+    }
+
+    private fun refused(): Boolean {
+        sink.reject()
+        files.faultCoverage(head)
+        return false
     }
 
     private fun valid(observation: PerfObservation): Boolean = observation.scope.head == head &&
@@ -48,10 +52,10 @@ public class RequestEvidenceStore internal constructor(
     private fun numeric(value: Double): Boolean = value.isFinite() && value >= 0
 
     private fun enqueue(observation: PerfObservation): Boolean {
-        val budget = PerfWorkBudget.acquire(estimate(observation)) ?: return false.also { sink.reject() }
+        val budget = PerfWorkBudget.acquire(estimate(observation)) ?: return refused()
         val retained = observation.copy(values = observation.values.toMap())
-        val queued = AsyncFileIo.submitFor(
-            files.lane,
+        val queued = files.submit(
+            head,
             sink,
             FileIoWrite {
                 try {

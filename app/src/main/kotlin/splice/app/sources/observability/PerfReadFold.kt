@@ -54,7 +54,12 @@ internal class PerfReadFold(initialResolution: Long, private val span: Long) {
         val previous = buckets
         buckets = LinkedHashMap()
         bytes = 0L
-        for (bucket in previous.values) rebin(bucket)
+        val iterator = previous.values.iterator()
+        while (iterator.hasNext()) {
+            val bucket = iterator.next()
+            iterator.remove()
+            rebin(bucket)
+        }
         return true
     }
 
@@ -85,7 +90,7 @@ internal class PerfReadFold(initialResolution: Long, private val span: Long) {
 }
 
 private data class ReadBucketKey(val identity: PerfIdentity, val slot: Long)
-private const val FOLD_BYTES = 3L * 1_024 * 1_024
+private const val FOLD_BYTES = 2L * 1_024 * 1_024
 private const val CELL_OVERHEAD = 256L
 private const val FIVE_MINUTES = 5L * PERF_MINUTE_MS
 private const val FIFTEEN_MINUTES = 15L * PERF_MINUTE_MS

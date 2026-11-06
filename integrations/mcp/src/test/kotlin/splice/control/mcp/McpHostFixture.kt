@@ -13,6 +13,7 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import splice.client.mcp.DirectoryProbe
 import splice.client.mcp.McpSharing
+import splice.control.mcp.observation.McpPerfRecorders
 import splice.core.util.LogSink
 import java.nio.file.Files
 import java.nio.file.Path

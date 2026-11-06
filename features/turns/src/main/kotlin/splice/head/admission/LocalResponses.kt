@@ -23,12 +23,12 @@ import splice.head.turn.Preparation
 import splice.head.turn.SESSION_TAG_CHARS
 import splice.head.turn.delivery.CollectedReply
 import splice.head.wire.CollectingTerminal
-import splice.head.wire.DeliveryObservation
 import splice.head.wire.FrameWrite
 import splice.head.wire.OK_STATUS
 import splice.head.wire.SseEmitterFactory
 import splice.head.wire.TurnTerminal
 import splice.head.wire.TurnWiring
+import splice.head.wire.observation.DeliveryObservation
 import splice.http.SseResponse
 import splice.upstream.Provider
 

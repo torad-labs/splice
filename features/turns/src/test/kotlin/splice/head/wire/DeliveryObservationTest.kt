@@ -10,10 +10,10 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.perf.OutcomeTag
 import splice.core.perf.TurnPerf
-import splice.core.perf.observation.PerfAccumulator
 import splice.core.perf.observation.PerfIdentity
 import splice.core.perf.observation.PerfRecorder
 import splice.core.perf.observation.PerfScope
+import splice.core.perf.observation.aggregate.PerfAccumulator
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
 import splice.head.turn.delivery.CollectedReply

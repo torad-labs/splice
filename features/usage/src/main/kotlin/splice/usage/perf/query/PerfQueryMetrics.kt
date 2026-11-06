@@ -14,6 +14,8 @@ import splice.usage.perf.PERF_P95_QUANTILE
 import splice.usage.perf.query.PerfQueryJson.coverageJson
 import splice.usage.perf.query.PerfQueryJson.numeric
 import splice.usage.perf.query.PerfQueryJson.scopeJson
+import splice.usage.perf.query.reduction.EvidencePoints
+import splice.usage.perf.query.reduction.PerfComparisonJson
 import kotlin.math.ceil
 
 internal object PerfQueryMetrics {

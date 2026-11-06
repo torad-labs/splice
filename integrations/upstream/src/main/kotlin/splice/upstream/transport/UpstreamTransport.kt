@@ -39,8 +39,8 @@ import splice.core.util.LogSink
 import splice.upstream.ProviderProbe
 import splice.upstream.RetryBackoff
 import splice.upstream.Waiter
-import splice.upstream.memory.UpstreamHttpRuntime
-import splice.upstream.memory.UpstreamHttpRuntimeSource
+import splice.upstream.observability.UpstreamHttpRuntime
+import splice.upstream.observability.UpstreamHttpRuntimeSource
 import java.io.IOException
 import java.net.ConnectException
 import java.net.InetAddress

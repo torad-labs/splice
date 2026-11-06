@@ -36,7 +36,7 @@ internal class ControlMcpWiring(
     private val statePaths get() = daemon.statePaths
     private val config get() = daemon.config
     private val log get() = daemon.log
-    internal var observations = splice.control.mcp.McpPerfRecorders { null }
+    internal var observations = splice.control.mcp.observation.McpPerfRecorders { null }
 
     /** The census the MCP host reports, kept for GET /api/mcp/memory, which names the copies it measures by it. */
     var inventory: McpInventory? = null

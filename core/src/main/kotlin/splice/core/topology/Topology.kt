@@ -35,6 +35,7 @@ import splice.core.model.ModelRates
 import splice.core.model.ModelTierSuffix
 import splice.core.model.PublishedRates
 import splice.core.model.WindowRule
+import splice.core.topology.telemetry.TelemetryConfig
 
 @Serializable
 public data class Topology(

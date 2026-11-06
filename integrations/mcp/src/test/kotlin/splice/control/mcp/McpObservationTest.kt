@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.control.mcp.observation.McpPerfRecorders
 import splice.core.perf.OutcomeTag
 import splice.core.perf.observation.PerfEventKind
 import splice.core.perf.observation.PerfIdentity

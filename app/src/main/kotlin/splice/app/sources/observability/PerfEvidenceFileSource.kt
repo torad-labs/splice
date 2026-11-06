@@ -1,5 +1,6 @@
 package splice.app.sources.observability
 
+import splice.app.sources.observability.cursor.PerfEvidenceCursors
 import splice.core.perf.observation.PerfCoverage
 import splice.core.perf.observation.PerfIssue
 import splice.core.util.AsyncFileIo

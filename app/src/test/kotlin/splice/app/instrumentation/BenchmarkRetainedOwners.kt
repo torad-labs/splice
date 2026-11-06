@@ -10,7 +10,6 @@ import splice.app.sources.observability.PerfAggregateStore
 import splice.app.sources.observability.PerfEvidenceFileSource
 import splice.core.config.StatePaths
 import splice.core.perf.observation.NoPerfObserver
-import splice.core.perf.observation.PerfAccumulator
 import splice.core.perf.observation.PerfEventKind
 import splice.core.perf.observation.PerfIdentity
 import splice.core.perf.observation.PerfObservationBudget
@@ -18,6 +17,7 @@ import splice.core.perf.observation.PerfObserver
 import splice.core.perf.observation.PerfRecorder
 import splice.core.perf.observation.PerfScope
 import splice.core.perf.observation.PerfSinkStatus
+import splice.core.perf.observation.aggregate.PerfAccumulator
 import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
 import splice.core.util.JsonScalars

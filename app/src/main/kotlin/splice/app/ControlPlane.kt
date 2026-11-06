@@ -148,7 +148,7 @@ internal class ControlPlane(
         set(value) {
             field = value
             providerAssembly.performance = value
-            mcp.observations = splice.control.mcp.McpPerfRecorders { head ->
+            mcp.observations = splice.control.mcp.observation.McpPerfRecorders { head ->
                 value?.recorder?.takeIf { head in value.sources.heads() }
             }
         }

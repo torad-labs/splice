@@ -8,11 +8,11 @@ import kotlinx.coroutines.sync.withLock
 import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
 import splice.head.wire.ClientChannel
-import splice.head.wire.DeliveryObservation
 import splice.head.wire.FrameRecording
 import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.StatusGate
 import splice.head.wire.TurnTrace
+import splice.head.wire.observation.DeliveryObservation
 import java.io.IOException
 import java.io.Writer
 import java.util.concurrent.atomic.AtomicBoolean

@@ -1,6 +1,9 @@
 package splice.app.sources.observability
 
 import splice.app.sources.PerfLineReader
+import splice.app.sources.observability.cursor.PERF_CURSOR_MAX_LINE_BYTES
+import splice.app.sources.observability.cursor.PerfCursorSegment
+import splice.app.sources.observability.cursor.PerfCursorWork
 import splice.core.perf.observation.PerfIssue
 import splice.core.perf.observation.PerfObservation
 import splice.head.perf.RequestEvidenceFormat

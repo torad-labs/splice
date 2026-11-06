@@ -18,13 +18,13 @@ import splice.app.sources.observability.PerfAggregateStore
 import splice.app.sources.observability.PerfEvidenceFileSource
 import splice.core.config.ConfigService
 import splice.core.perf.observation.NoPerfObserver
-import splice.core.perf.observation.PerfAccumulator
 import splice.core.perf.observation.PerfAggregateSource
 import splice.core.perf.observation.PerfEventKind
 import splice.core.perf.observation.PerfIssue
 import splice.core.perf.observation.PerfObserver
 import splice.core.perf.observation.PerfRecorder
 import splice.core.perf.observation.PerfScope
+import splice.core.perf.observation.aggregate.PerfAccumulator
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock

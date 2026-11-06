@@ -1,5 +1,7 @@
 package splice.app.sources.observability
 
+import splice.app.sources.observability.cursor.PERF_CURSOR_DISK_BYTES
+import splice.app.sources.observability.cursor.PerfCursorFiles
 import splice.core.perf.observation.PerfCoverage
 import splice.core.perf.observation.PerfIssue
 import splice.core.util.AsyncFileIo

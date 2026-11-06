@@ -1,6 +1,9 @@
 package splice.app.sources.observability
 
 import kotlinx.serialization.json.Json
+import splice.app.sources.observability.cursor.PerfCursorInventory
+import splice.app.sources.observability.cursor.PerfCursorSegment
+import splice.app.sources.observability.cursor.PerfCursorWork
 import splice.core.perf.observation.PerfIssue
 import splice.head.perf.RequestEvidenceFormat
 import splice.head.perf.RequestEvidenceProofFormat

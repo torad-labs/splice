@@ -3,9 +3,9 @@ package splice.app.observability
 import splice.app.sources.PerfSourceFiles
 import splice.app.sources.observability.PerfAggregateStore
 import splice.app.sources.observability.PerfEvidenceFileSource
-import splice.core.perf.observation.PerfAccumulator
 import splice.core.perf.observation.PerfAggregateSnapshot
 import splice.core.perf.observation.PerfIssue
+import splice.core.perf.observation.aggregate.PerfAccumulator
 import splice.core.perf.runtime.PerfRuntimeSource
 import splice.usage.perf.HeadAccountNames
 import splice.usage.perf.RequestProjects

@@ -18,8 +18,8 @@ import splice.codemode.WorkerSpawn
 import splice.control.mcp.FakeMcpServer
 import splice.control.mcp.McpHost
 import splice.control.mcp.McpHostConfig
-import splice.control.mcp.McpPerfRecorders
 import splice.control.mcp.McpProcessLauncher
+import splice.control.mcp.observation.McpPerfRecorders
 import splice.core.perf.observation.PerfEventKind
 import splice.core.perf.observation.PerfIdentity
 import splice.core.perf.observation.PerfObservation

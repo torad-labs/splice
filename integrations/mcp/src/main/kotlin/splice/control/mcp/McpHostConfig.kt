@@ -12,6 +12,7 @@
 package splice.control.mcp
 
 import kotlinx.coroutines.CoroutineDispatcher
+import splice.control.mcp.observation.McpPerfRecorders
 import splice.core.config.Knob
 import splice.core.mcp.McpToolResultStore
 import kotlin.time.Duration

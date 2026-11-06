@@ -6,6 +6,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import splice.control.mcp.observation.McpPerfInvocation
 
 internal const val RPC_SERVER_EXITED = -32000
 

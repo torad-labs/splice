@@ -11,8 +11,6 @@ import splice.control.mcp.JsonRpcCodec
 import splice.control.mcp.ListingAsk
 import splice.control.mcp.McpChildWriter
 import splice.control.mcp.McpHostConfig
-import splice.control.mcp.McpPerfContextKey
-import splice.control.mcp.McpPerfObservations
 import splice.control.mcp.McpResult
 import splice.control.mcp.McpWriteTarget
 import splice.control.mcp.Pending
@@ -20,6 +18,8 @@ import splice.control.mcp.ProgressTokens
 import splice.control.mcp.RPC_SERVER_ERROR
 import splice.control.mcp.RPC_SERVER_EXITED
 import splice.control.mcp.RPC_TIMED_OUT
+import splice.control.mcp.observation.McpPerfContextKey
+import splice.control.mcp.observation.McpPerfObservations
 import splice.core.util.LogSink
 import splice.core.util.MonoClock
 import java.util.concurrent.ConcurrentHashMap

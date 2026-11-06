@@ -6,6 +6,7 @@ import kotlinx.serialization.json.put
 import splice.core.perf.OutcomeTag
 import splice.core.perf.observation.PerfMetricRegistry
 import splice.usage.perf.query.PerfQueryJson.strings
+import splice.usage.perf.query.reduction.PerfComparisonJson
 
 internal object PerfQuerySchema {
     fun render(): JsonObject = buildJsonObject {

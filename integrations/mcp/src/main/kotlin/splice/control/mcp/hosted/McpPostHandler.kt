@@ -11,8 +11,6 @@ import splice.control.mcp.JsonRpcCodec
 import splice.control.mcp.McpAdmission
 import splice.control.mcp.McpClient
 import splice.control.mcp.McpHostMessage
-import splice.control.mcp.McpPerfObservations
-import splice.control.mcp.McpPerfRecorders
 import splice.control.mcp.McpReply
 import splice.control.mcp.McpResult
 import splice.control.mcp.McpSession
@@ -21,6 +19,8 @@ import splice.control.mcp.RPC_SERVER_ERROR
 import splice.control.mcp.RPC_TIMED_OUT
 import splice.control.mcp.RpcKind
 import splice.control.mcp.SessionMinting
+import splice.control.mcp.observation.McpPerfObservations
+import splice.control.mcp.observation.McpPerfRecorders
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.core.util.MonoClock

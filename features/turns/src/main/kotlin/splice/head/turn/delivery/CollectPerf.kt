@@ -15,8 +15,8 @@ import splice.core.util.JsonWire
 import splice.head.perf.PerfFailure
 import splice.head.turn.TurnDrive
 import splice.head.turn.TurnTelemetry
-import splice.head.wire.DeliveredBody
-import splice.head.wire.DeliveryObservation
+import splice.head.wire.observation.DeliveredBody
+import splice.head.wire.observation.DeliveryObservation
 
 /** A collect turn holds its ending, not its snapshot, until downstream delivery has settled. */
 internal class CollectPerf {

@@ -7,9 +7,9 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.perf.observation.PerfAccumulator
 import splice.core.perf.observation.PerfIdentity
 import splice.core.perf.observation.PerfRecorder
+import splice.core.perf.observation.aggregate.PerfAccumulator
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
 import splice.upstream.retry.GateObservation

@@ -644,7 +644,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     // dedicated StatePaths-owned files/directories; profile artifacts are separately opt-in.
     "app/src/main/kotlin/splice/app/observability/PerfConfigHistory.kt" to
         mapOf("writeAtomic0600(" to 1),
-    "app/src/main/kotlin/splice/app/sources/observability/PerfCursorFiles.kt" to mapOf(
+    "app/src/main/kotlin/splice/app/sources/observability/cursor/PerfCursorFiles.kt" to mapOf(
         "FileChannel.open(" to 2,
         "writeAtomic0600(" to 1,
     ),

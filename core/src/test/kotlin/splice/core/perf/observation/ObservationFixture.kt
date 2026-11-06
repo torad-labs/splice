@@ -1,5 +1,6 @@
 package splice.core.perf.observation
 
+import splice.core.perf.observation.aggregate.PerfAccumulator
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
 

@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.sources.PerfRowsFileSource
+import splice.app.sources.observability.cursor.PERF_CURSOR_TTL_MS
+import splice.app.sources.observability.cursor.PerfCommittedCursors
 import splice.core.perf.PerfArchiveName
 import splice.core.util.WallClock
 import splice.usage.perf.history.PerfCursorQuery

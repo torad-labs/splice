@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.perf.OutcomeTag
+import splice.core.perf.observation.aggregate.PerfMemoryAccount
 
 internal class PerfTerminalPressureTest {
     @Test

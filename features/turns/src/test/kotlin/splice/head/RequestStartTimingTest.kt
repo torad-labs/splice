@@ -26,12 +26,12 @@ import splice.core.memory.HeapBudget
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicTurnBody
-import splice.core.perf.observation.PerfAccumulator
 import splice.core.perf.observation.PerfEventKind
 import splice.core.perf.observation.PerfIdentity
 import splice.core.perf.observation.PerfObservation
 import splice.core.perf.observation.PerfObserver
 import splice.core.perf.observation.PerfRecorder
+import splice.core.perf.observation.aggregate.PerfAccumulator
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo

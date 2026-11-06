@@ -26,8 +26,8 @@ package splice.app.sources
 
 import kotlinx.serialization.json.Json
 import splice.app.sources.dense.PerfLineSpot
-import splice.app.sources.observability.PerfCommittedCursors
 import splice.app.sources.observability.PerfSourceCosts
+import splice.app.sources.observability.cursor.PerfCommittedCursors
 import splice.core.perf.PerfArchiveName
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables

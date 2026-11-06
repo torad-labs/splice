@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.perf.OutcomeTag
+import splice.core.perf.observation.aggregate.PerfObservationLimits
 
 internal class PerfAccumulatorBehaviorTest {
     @Test

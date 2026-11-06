@@ -36,7 +36,7 @@ internal class UpstreamFactory {
             requestWriteTimeoutMs = cfg.firstByteTimeoutMs,
             requestWriteBound = WriteBoundMs { ctx.faultPlan.liveWatchdog().firstByteTimeout.inWholeMilliseconds },
         ).also { client ->
-            splice.upstream.memory.UpstreamHttpRuntime.source(client)?.let { performance?.owners?.add(it) }
+            splice.upstream.observability.UpstreamHttpRuntime.source(client)?.let { performance?.owners?.add(it) }
         },
         // Every wait is RetryEngine's (failure-handling slice 4): the retry curve and its knobs retired in 0.4.0.
         pacing = RetryPacing(),

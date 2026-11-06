@@ -5,6 +5,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.perf.observation.aggregate.PerfMemoryBudget
+import splice.core.perf.observation.aggregate.PerfObservationLimits
 
 /** Stable numeric allowlist. Legacy fields are catalogued without being silently reinterpreted as new events. */
 public object PerfMetricRegistry {

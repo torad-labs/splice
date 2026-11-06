@@ -7,7 +7,7 @@ import splice.core.perf.observation.PerfRecorder
 import splice.core.perf.runtime.PerfRuntimeSource
 import splice.core.util.PerfWorkBudget
 import splice.observability.runtime.RuntimeSampler
-import splice.upstream.memory.JvmHeapRuntimeSource
+import splice.upstream.observability.JvmHeapRuntimeSource
 
 /** Rebuilds only when actual resource owners change, preserving the sampler's bounded missing-owner diagnostics. */
 internal class PerfRuntimeSampling(

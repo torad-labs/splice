@@ -1,6 +1,8 @@
 package splice.control.mcp
 
 import kotlinx.serialization.json.JsonObject
+import splice.control.mcp.observation.McpPerfInvocation
+import splice.control.mcp.observation.McpPerfObservations
 import splice.core.util.JsonWire
 import java.io.BufferedWriter
 import java.util.Collections

@@ -3,6 +3,9 @@ package splice.upstream.codemode
 
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import splice.core.perf.observation.PerfLinks
+import splice.core.perf.observation.PerfRequestRecorder
+import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
 
 /** Splice-owned script execution. A yielded request is executed by the client, never by this runtime. */
@@ -131,3 +134,11 @@ public sealed class CodeModeStep {
         val timing: NativeCodeModeTiming? = null,
     ) : CodeModeStep()
 }
+
+/** Request ownership crosses the runtime seam without depending on a tracing SDK or a process-global recorder. */
+public class CodeModePerfContext(
+    public val request: PerfRequestRecorder?,
+    public val attempt: PerfLinks? = null,
+) : AbstractCoroutineContextElement(CodeModePerfContextKey)
+
+public object CodeModePerfContextKey : CoroutineContext.Key<CodeModePerfContext>

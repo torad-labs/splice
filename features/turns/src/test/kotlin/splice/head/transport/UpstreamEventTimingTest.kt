@@ -27,10 +27,10 @@ import splice.core.perf.TurnPerf
 import splice.core.perf.UpstreamAttemptTiming
 import splice.core.perf.UpstreamGapEnd
 import splice.core.perf.WsAttemptTiming
-import splice.core.perf.observation.PerfAccumulator
 import splice.core.perf.observation.PerfIdentity
 import splice.core.perf.observation.PerfRecorder
 import splice.core.perf.observation.PerfScope
+import splice.core.perf.observation.aggregate.PerfAccumulator
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
 import java.io.IOException

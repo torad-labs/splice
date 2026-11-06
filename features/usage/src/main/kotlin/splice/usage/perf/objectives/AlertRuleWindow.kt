@@ -1,8 +1,8 @@
 package splice.usage.perf.objectives
 
-import splice.usage.perf.query.EvidencePoints
 import splice.usage.perf.query.PerfQuery
 import splice.usage.perf.query.PerfQueryService
+import splice.usage.perf.query.reduction.EvidencePoints
 
 internal data class AlertRuleWindow(
     val from: Long?,

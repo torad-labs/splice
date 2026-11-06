@@ -4,11 +4,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.ChannelResult
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.yield
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.Cancellables
 import splice.upstream.codemode.CodeModeInvocationAction
@@ -65,29 +67,39 @@ internal class NativeCell(
         if (readySteps.isEmpty()) {
             val response = observations.response(yieldTimeMs)
             while (readySteps.isEmpty()) {
-                select<Unit> {
-                    delegates.ready.onReceiveCatching { received ->
-                        consumeDelegate(received, response)
-                    }
-                    response.onAwait { frame ->
-                        acceptObservation(frame)
+                val queued = delegates.poll()
+                if (queued != null) {
+                    callbacks.consume(queued)?.let(readySteps::addLast)
+                } else {
+                    select<Unit> {
+                        delegates.ready.onReceiveCatching { received -> consumeDelegate(received, response) }
+                        response.onAwait { frame -> acceptObservation(frame) }
                     }
                 }
             }
         }
-        val step = readySteps.first()
-        return if (step is CodeModeStep.Calls) batchCalls(step) else readySteps.removeFirst()
+        val first = readySteps.first() as? CodeModeStep.Calls ?: return readySteps.removeFirst()
+        if (readySteps.all { it is CodeModeStep.Calls }) collectCallbackBurst()
+        readySteps.removeFirst()
+        val calls = first.calls.toMutableList()
+        while (true) {
+            val next = readySteps.firstOrNull() as? CodeModeStep.Calls ?: break
+            readySteps.removeFirst()
+            calls.addAll(next.calls)
+        }
+        return CodeModeStep.Calls(calls)
     }
 
     private suspend fun consumeDelegate(
-        received: ChannelResult<JsonObject>,
+        received: ChannelResult<Unit>,
         response: CompletableDeferred<JsonObject>,
     ) {
-        val frame = received.getOrNull()
+        val frame = delegates.poll()
         if (frame != null) {
             callbacks.consume(frame)?.let(readySteps::addLast)
             return
         }
+        if (received.isSuccess) return
         // A session failure can close callbacks after this request's specific error was already delivered.
         if (response.isCompleted) {
             acceptObservation(response.await())
@@ -105,31 +117,31 @@ internal class NativeCell(
 
     override suspend fun yieldObservation(): Unit = observations.yieldObservation()
 
-    /** Let the reader route the same native event-loop turn, then issue ready siblings in one client batch. */
-    private suspend fun batchCalls(first: CodeModeStep.Calls): CodeModeStep.Calls {
-        yield()
-        val calls = first.calls.toMutableList()
-        val channel = delegates.ready
-        var draining = true
-        while (draining) {
-            val frame = channel.tryReceive().getOrNull()
-            if (frame == null) {
-                draining = false
-            } else {
-                when (val next = callbacks.consume(frame)) {
-                    is CodeModeStep.Calls -> calls.addAll(next.calls)
-                    null -> Unit
-                    is CodeModeStep.Notified, is CodeModeStep.Completed, is CodeModeStep.Yielded,
-                    is CodeModeStep.WaitingForResults,
-                    -> {
-                        readySteps.addLast(next)
-                        draining = false
+    /** Coalesce a native callback burst across reader scheduling without waiting for tool results. */
+    private suspend fun collectCallbackBurst() {
+        // The native protocol has no end-of-burst marker. A quiet interval lets
+        // sibling invokes cross the transport; the outer deadline prevents a
+        // continuous producer from holding a client batch indefinitely.
+        withTimeoutOrNull(NATIVE_CALLBACK_BATCH_MAX_MS) {
+            var collecting = true
+            while (collecting) {
+                currentCoroutineContext().ensureActive()
+                val frame = delegates.poll()
+                if (frame == null) {
+                    val received = withTimeoutOrNull(NATIVE_CALLBACK_BATCH_QUIET_MS) {
+                        delegates.ready.receiveCatching()
                     }
+                    // Return prepared calls first. The next observation retains
+                    // consumeDelegate's completed-response/error precedence.
+                    collecting = received?.isSuccess == true
+                } else {
+                    val next = callbacks.consume(frame)
+                    // Keep ownership in the cell across suspension/cancellation.
+                    if (next != null) readySteps.addLast(next)
+                    collecting = next == null || next is CodeModeStep.Calls
                 }
             }
         }
-        readySteps.removeFirst()
-        return CodeModeStep.Calls(calls)
     }
 
     private fun decode(frame: JsonObject): CodeModeStep = when (
@@ -180,3 +192,5 @@ internal class NativeCell(
 
 // Matches Codex's foreground default; the caller's explicit wait budget overrides this.
 internal const val DEFAULT_NATIVE_OBSERVE_MS: Long = 10_000
+private const val NATIVE_CALLBACK_BATCH_QUIET_MS: Long = 10
+private const val NATIVE_CALLBACK_BATCH_MAX_MS: Long = 50

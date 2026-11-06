@@ -68,11 +68,36 @@ object CodeModeJournalReadProbe {
             state.records.all { it.key == key } && state.expired.all { it.key == key }
         if (!matches) throw CodeModeStorageException.Invalid(CodeModeStorageProblem.COLD_STATE)
         val liveBytes = CodeModeStateJournal.liveBytes(state, json, JvmHeap.budget)
+        val phases = state.records.groupingBy { it.phase }.eachCount()
         return buildJsonObject {
             put("records", state.records.size)
             put("expired", state.expired.size)
             put("live_bytes", liveBytes)
             put("identity_matches", matches)
+            put(
+                "phases",
+                buildJsonObject {
+                    phases.forEach { (phase, count) -> put(phase.name, count) }
+                },
+            )
+            put("pending_total", state.records.sumOf { it.pending.size })
+            put(
+                "unresolved_pending",
+                state.records.sumOf { record ->
+                    record.pending.count { it.clientId !in record.results }
+                },
+            )
+            put("native_completed_records", state.records.count { it.nativeCompleted })
+            put("native_batch_records", state.records.count { it.nativeBatch != null })
+            // Conservative candidates: a multi-cell batch also needs every member finished before it can be claimed.
+            put(
+                "unclaimed_output_candidates",
+                state.records.count {
+                    it.phase == CodeModePhase.COMPLETED && it.sourceState?.let { source ->
+                        source.usage != null && !source.consumed
+                    } == true
+                },
+            )
         }
     }
 

@@ -121,3 +121,127 @@ test('offline and loading never appear as zero traffic', async ({ page }) => {
   await expect(page.locator('.pc-coverage')).toContainText('Offline');
   await expect(page.locator('.pc-content')).toContainText('Measurements have not been returned');
 });
+
+test('completed window is explicit, preserves exact duration and uses the certified boundary', async ({ page }) => {
+  const from = 1793890000000, until = from + 18000000, reads = [];
+  await page.route('**/api/**', async (route) => {
+    const url = route.request().url();
+    if (new URL(url).pathname === '/api/perf/summary') reads.push(new URL(url));
+    await route.fulfill({ json: response(url) });
+  });
+  await page.goto(`/preview.html?from=${from}&until=${until}&transport=http&streaming=0`);
+  await expect(page.locator('.pc-coverage')).toContainText('18,000,000');
+  const link = page.getByRole('link', { name: /Open requests/ });
+  expect(new URL(await link.getAttribute('href'), 'http://fixture').searchParams.get('until')).toBe(String(until));
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect.poll(() => reads.length).toBe(2);
+  expect(reads[1].searchParams.get('until')).toBe(String(until));
+  await page.getByRole('button', { name: 'Use completed window' }).click();
+  await expect(link).toHaveAttribute('href', new RegExp(`until=${until - 60000}`));
+  const chosen = new URL(await link.getAttribute('href'), 'http://fixture');
+  expect(+chosen.searchParams.get('until') - +chosen.searchParams.get('from')).toBe(18000000);
+  expect(chosen.searchParams.get('from')).toBe(String(from - 60000));
+  expect(chosen.searchParams.get('transport')).toBe('http');
+  expect(chosen.searchParams.get('streaming')).toBe('0');
+  await page.getByRole('button', { name: 'All filters', exact: true }).click();
+  await expect(page.locator('[name="from"]')).toHaveValue(String(from - 60000));
+  await expect(page.locator('[name="until"]')).toHaveValue(String(until - 60000));
+});
+
+test('unknown recording boundary disables completed-window selection', async ({ page }) => {
+  await open(page, 'busy');
+  await expect(page.getByRole('button', { name: 'Use completed window' })).toBeDisabled();
+  await expect(page.getByText('No certified recording boundary available for this duration.')).toBeVisible();
+});
+
+test('measured workload match allows known build and settings changes but rejects a changed joint distribution', async ({ page }) => {
+  await open(page, 'ok');
+  await page.getByRole('button', { name: 'Baselines', exact: true }).click();
+  await page.getByRole('button', { name: 'Save locally' }).click();
+  await expect(page.getByRole('heading', { name: 'Measured workload matches', exact: true })).toBeVisible();
+  const stored = JSON.parse(await page.evaluate(() => localStorage.getItem('splice-performance-baselines-v1')))[0];
+  expect(stored.version).toBe(2);
+  expect(stored.summary.comparison.workload.partitions[0].scope.outcome).toBe('ok');
+  expect(stored.summary.comparison.workload.partitions[0].cache_write_1h_tokens).toBe(0);
+  expect(stored.summary.configuration.comparison_scope).toBe('effective_knob_policy');
+  let changedWorkload = false;
+  await page.route('**/api/perf/summary?**', (route) => {
+    const data = summary(route.request().url(), 'ok');
+    data.identity_cohorts[0].build = 'fixture-build-b';
+    data.comparison.provenance.builds = ['fixture-build-b'];
+    data.configuration.intervals[0].revision = 'effective-config-b';
+    if (changedWorkload) {
+      // The returned rate and histogram means stay the same; the actual joint population differs.
+      data.comparison.workload.distribution_id = 'b'.repeat(64);
+      data.comparison.workload.partitions[0].scope.outcome = 'failed';
+    }
+    return route.fulfill({ json: data });
+  });
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(page.locator('.pc-content')).toContainText('Changed variables: build, effective settings');
+  await expect(page.getByRole('heading', { name: 'Measured workload matches', exact: true })).toBeVisible();
+  await expect(page.locator('.pc-content')).toContainText('Provider topology and remote conditions are unverified');
+  changedWorkload = true;
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Incompatible', exact: true })).toBeVisible();
+  await expect(page.locator('.pc-content')).toContainText('joint workload distribution');
+  await expect(page.getByRole('table', { name: /Saved and current observations/ })).toBeVisible();
+});
+
+test('mixed provenance and old imports remain insufficient while v2 drops unapproved fields', async ({ page }) => {
+  await open(page, 'ok');
+  await page.getByRole('button', { name: 'Baselines', exact: true }).click();
+  const data = summary('/?objective=interactive&project=splice&local=0', 'ok');
+  data.comparison.workload.partitions[0].prompt = 'SECRET-FIXTURE';
+  data.comparison.provenance.authorization = 'SECRET-FIXTURE';
+  const upload = async (version) => page.locator('[data-pc-import]').setInputFiles({ name: 'baseline.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ format: 'splice-performance-baseline', version, name: 'Old or mixed', summary: data })) });
+  await upload(1);
+  await expect(page.getByRole('heading', { name: 'Insufficient evidence', exact: true })).toBeVisible();
+  data.comparison.provenance.builds.push('fixture-build-b');
+  await upload(2);
+  await expect(page.locator('.pc-content')).toContainText('Unknown or mixed: build');
+  const stored = await page.evaluate(() => localStorage.getItem('splice-performance-baselines-v1'));
+  expect(stored).not.toContain('SECRET-FIXTURE');
+  expect(JSON.parse(stored)[0].summary.comparison.workload.partitions[0].count).toBe(138);
+  data.comparison.provenance.builds = ['fixture-build-a'];
+  data.comparison.workload.partitions = Array(257).fill(data.comparison.workload.partitions[0]);
+  await upload(2);
+  await expect(page.locator('.pc-content')).toContainText('complete saved evidence');
+  const bounded = JSON.parse(await page.evaluate(() => localStorage.getItem('splice-performance-baselines-v1')))[0];
+  expect(bounded.summary.comparison.workload.partitions).toHaveLength(256);
+  expect(bounded.summary.comparison.projection_truncated).toBe(true);
+});
+
+test('request links use real turn identity and preserve the selected query', async ({ page }) => {
+  await open(page);
+  await page.getByRole('button', { name: 'Requests & traces', exact: true }).click();
+  const turn = page.getByRole('link', { name: 'Open recorded turn', exact: true });
+  const url = new URL(await turn.getAttribute('href'), 'http://fixture');
+  expect(decodeURIComponent(url.hash)).toBe('#codex:actual-turn-fixture');
+  expect(url.searchParams.get('project')).toBe('splice');
+  expect(url.searchParams.get('local')).toBe('0');
+  expect(+url.searchParams.get('until') - +url.searchParams.get('from')).toBe(18000000);
+  await page.route('**/api/perf/diagnose?**', (route) => {
+    const data = response(route.request().url());
+    const request = data.timeline.requests[0]; request.turn_id = null;
+    request.events.forEach((e) => { e.turn_id = null; });
+    return route.fulfill({ json: data });
+  });
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(turn).toHaveCount(0);
+  expect(await page.locator('.pc-content a[href*="request-fixture"]').count()).toBe(0);
+});
+
+test('account alias gap explains cached names without polling accounts or auth', async ({ page }) => {
+  const requested = [];
+  await page.route('**/api/**', (route) => {
+    const url = new URL(route.request().url()); requested.push(url.pathname);
+    const data = response(url.href);
+    if (url.pathname === '/api/perf/summary') data.coverage.issues.push({ code: 'account_alias_mapping_unavailable', source: 'accounts', count: 1 });
+    return route.fulfill({ json: data });
+  });
+  await page.goto('/preview.html?account=fixture-name');
+  await expect(page.getByText(/Exact recorded account IDs still work/)).toBeVisible();
+  await expect(page.getByText(/up to 60 seconds/)).toBeVisible();
+  expect(requested.filter((p) => /\/api\/(accounts|auth|quota)/.test(p))).toEqual([]);
+});

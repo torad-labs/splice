@@ -28,23 +28,41 @@ const PERF_CONSOLE = (() => {
     for (const [k, v] of Object.entries(extra)) if (v != null) p.set(k, String(v));
     return `requests.html?${p}${hash ? `#${encodeURIComponent(hash)}` : ""}`;
   }
+  // Keep the storage key so existing snapshots remain inspectable; exported documents are version 2.
   const STORE = "splice-performance-baselines-v1", LIMIT = 8, MAX_BYTES = 750000;
+  const WORKLOAD_FIELDS = ["input_tokens", "output_tokens", "cached_tokens", "cache_write_tokens", "cache_write_1h_tokens", "absorbed_rounds", "cut_rounds", "no_request"];
+  const WORKLOAD_SCOPE = ["head", "model", "transport", "work", "local", "compact", "streaming", "outcome"];
+  const SEMANTICS = ["population", "filter_attribution", "input_tokens", "output_tokens", "cache_write_1h_tokens", "rounds", "matching_basis", "distribution_id", "scope", "presence", "assurance"];
   // Explicit projection: snapshots never contain rows, traces, prompts, headers, or arbitrary imported objects.
   function snapshot(summary, name = "Baseline") {
     if (summary?.contract_version !== 1 || !summary.query || !Array.isArray(summary.identity_cohorts)) throw new Error("Not a version 1 performance summary");
-    const text = (v) => typeof v === "string" ? v.slice(0, 256) : null;
+    let projectionTruncated = false;
+    const text = (v) => { if (typeof v !== "string") return null; if (v.length > 256) projectionTruncated = true; return v.slice(0, 256); };
     const number = (v) => typeof v === "number" && Number.isFinite(v) ? v : null;
+    const list = (v, limit = 64) => { if (!Array.isArray(v)) return []; if (v.length > limit) projectionTruncated = true; return v.slice(0, limit); };
+    const strings = (v, limit = 64) => list(v, limit).map(text).filter((x) => x !== null);
     const keep = (obj, keys) => Object.fromEntries(keys.filter((k) => obj && Object.hasOwn(obj, k)).map((k) => [k, typeof obj[k] === "boolean" ? obj[k] : typeof obj[k] === "number" ? number(obj[k]) : text(obj[k])]));
     const metrics = (obj, keys) => Object.fromEntries(entries(obj).slice(0, 160).filter(([k]) => /^[a-z][a-z0-9_.]{0,95}$/.test(k)).map(([k, v]) => [k, { ...keep(v, [...keys, "filter_attribution"]), coverage: coverage(v.coverage), ...(Array.isArray(v.buckets) ? { buckets: v.buckets.slice(0, 128).map(number), bounds_ms: (v.bounds_ms || []).slice(0, 128).map(number) } : {}) }]));
     const q = summary.query;
     if (!Number.isFinite(q.from_ms) || !Number.isFinite(q.until_ms) || q.until_ms <= q.from_ms) throw new Error("Invalid baseline interval");
-    const coverage = (v) => ({ ...keep(v, ["from_ms", "until_ms", "observed_ms", "complete"]), issues: (v?.issues || []).slice(0, 64).map((x) => keep(x, ["code", "source", "count"])), sinks: (v?.sinks || []).slice(0, 64).map((x) => keep(x, ["sink", "observed", "enqueued", "written", "failed", "dropped", "pending", "oldestPendingMs", "lastSuccessEpochMs"])) });
+    const query = (v) => ({ ...keep(v, ["from_ms", "until_ms", "source", "objective_id", "objective_revision"]), filters: keep(v?.filters, SELECTORS) });
+    const coverage = (v) => ({ ...keep(v, ["from_ms", "until_ms", "observed_ms", "complete", "as_of_ms", "coverage_basis", "event_time_final"]), issues: list(v?.issues).map((x) => keep(x, ["code", "source", "count"])), sinks: list(v?.sinks).map((x) => keep(x, ["sink", "observed", "enqueued", "written", "failed", "dropped", "pending", "oldestPendingMs", "lastSuccessEpochMs"])) });
+    const evidence = summary.comparison, workload = evidence?.workload, provenance = evidence?.provenance;
+    const comparisonEvidence = evidence ? {
+      ...keep(evidence, ["status", "readiness_scope", "projection_truncated"]), reasons: strings(evidence.reasons),
+      workload: { ...keep(workload, ["status", "population_complete", "observed_arrivals", "measured_requests", "matching_requests", "matching_basis", "distribution_id", "as_of_ms", "coverage_basis", "event_time_final"]), reasons: strings(workload?.reasons), truncated: workload?.truncated === true || (workload?.partitions?.length || 0) > 256,
+        partitions: list(workload?.partitions, 256).map((p) => ({ scope: keep(p?.scope, WORKLOAD_SCOPE), ...keep(p, [...WORKLOAD_FIELDS, "count"]) })) },
+      measurement_semantics: keep(evidence.measurement_semantics, SEMANTICS),
+      provenance: { ...keep(provenance, ["source", "objective_id", "objective_revision", "configuration_status", "configuration_scope", "as_of_ms", "settled_until_ms"]), builds: strings(provenance?.builds, 128), versions: strings(provenance?.versions, 128), schema_versions: list(provenance?.schema_versions, 128).map(number), query: query(provenance?.query) },
+      environment: keep(evidence.environment, ["provider_topology", "remote_environment", "causal_equivalence"]),
+    } : null;
     const clean = {
       schema_version: 1, contract_version: 1, status: text(summary.status),
-      query: { ...keep(q, ["from_ms", "until_ms", "source", "objective_id", "objective_revision"]), filters: keep(q.filters, SELECTORS) },
-      as_of_ms: number(summary.as_of_ms), requested_duration_ms: number(summary.requested_duration_ms), observed_duration_ms: number(summary.observed_duration_ms),
-      identity_cohorts: summary.identity_cohorts.slice(0, 128).map((x) => keep(x, ["boot_id", "build", "version", "boot_config_revision", "effective_config_revision", "configuration_status"])),
-      configuration: { ...keep(summary.configuration, ["status", "comparison_compatible", "truncated"]), intervals: (summary.configuration?.intervals || []).slice(0, 512).map((x) => keep(x, ["head", "boot_id", "from_ms", "until_ms", "revision"])) },
+      query: query(q),
+      as_of_ms: number(summary.as_of_ms), settled_until_ms: number(summary.settled_until_ms), requested_duration_ms: number(summary.requested_duration_ms), observed_duration_ms: number(summary.observed_duration_ms),
+      identity_cohorts: summary.identity_cohorts.slice(0, 128).map((x) => keep(x, ["boot_id", "build", "version", "schema_version", "boot_config_revision", "effective_config_revision", "configuration_status"])),
+      configuration: { ...keep(summary.configuration, ["status", "comparison_compatible", "comparison_scope", "requires_matching_provider_topology"]), excluded_dimensions: strings(summary.configuration?.excluded_dimensions), truncated: summary.configuration?.truncated === true || (summary.configuration?.intervals?.length || 0) > 512, intervals: list(summary.configuration?.intervals, 512).map((x) => keep(x, ["head", "boot_id", "from_ms", "until_ms", "revision"])) },
+      comparison: comparisonEvidence,
       coverage: coverage(summary.coverage), population_coverage: Object.fromEntries(entries(summary.population_coverage).slice(0, 12).map(([k, v]) => [k.slice(0, 100), coverage(v)])),
       counts: keep(summary.counts, ["record_unit", "known_arrivals", "known_completions", "known_successful_completions", "population_complete", "arrivals", "completions", "attribution", "filter_attribution"]),
       rates: keep(summary.rates, ["arrivals_per_s", "completions_per_s", "successful_completions_per_s", "attempts_per_s", "input_tokens_per_s", "output_tokens_per_s", "cached_tokens_per_s", "upstream_bytes_per_s", "downstream_bytes_per_s", "upstream_events_per_s", "downstream_events_per_s", "denominator", "filter_attribution", "interpretation"]),
@@ -53,28 +71,49 @@ const PERF_CONSOLE = (() => {
       counters: metrics(summary.counters, ["count", "sum", "per_s"]), gauges: metrics(summary.gauges, ["last", "max", "time_weighted_mean", "covered_ms", "sample_count", "scope_count"]),
       missing_fields: (summary.missing_fields || []).slice(0, 200).map(text), resolution_ms: number(summary.resolution_ms), truncated: summary.truncated === true,
     };
-    return { format: "splice-performance-baseline", version: 1, name: String(name).slice(0, 80), saved_at_ms: Date.now(), summary: clean };
+    if (comparisonEvidence && projectionTruncated) comparisonEvidence.projection_truncated = true;
+    return { format: "splice-performance-baseline", version: 2, name: String(name).slice(0, 80), saved_at_ms: Date.now(), summary: clean };
+  }
+  function importBaseline(b) {
+    if (b?.format !== "splice-performance-baseline" || ![1, 2].includes(b.version)) throw new Error("Unsupported baseline format");
+    const clean = snapshot(b.version === 1 ? { ...b.summary, comparison: null } : b.summary, b.name);
+    clean.saved_at_ms = Number.isFinite(b.saved_at_ms) ? b.saved_at_ms : clean.saved_at_ms;
+    return clean;
   }
   function loadBaselines() {
-    try { const raw = localStorage.getItem(STORE) || "[]"; return raw.length <= MAX_BYTES ? JSON.parse(raw).slice(0, LIMIT).map((b) => ({ ...snapshot(b.summary, b.name), saved_at_ms: b.saved_at_ms })) : []; } catch { return []; }
+    try { const raw = localStorage.getItem(STORE) || "[]"; return raw.length <= MAX_BYTES ? JSON.parse(raw).slice(0, LIMIT).map(importBaseline) : []; } catch { return []; }
   }
   function comparison(a, b) {
-    const unknown = [], different = [];
-    for (const [name, extract] of [
-      ["build", (s) => [...new Set(s.identity_cohorts.map((i) => i.build))]],
-      ["effective configuration", (s) => s.configuration?.comparison_compatible ? [...new Set(s.configuration.intervals.map((i) => i.revision))] : []],
-      ...["head", "model", "transport", "streaming", "outcome"].map((k) => [k, (s) => [s.query.filters[k]]]),
-    ]) {
-      const x = extract(a), y = extract(b);
-      if (x.length !== 1 || y.length !== 1 || x[0] == null || y[0] == null || ["", "unknown", "mixed"].includes(x[0]) || ["", "unknown", "mixed"].includes(y[0])) unknown.push(name);
-      else if (x[0] !== y[0]) different.push(name);
-    }
-    if (JSON.stringify(entries(a.query.filters).sort()) !== JSON.stringify(entries(b.query.filters).sort())) different.push("query cohort");
-    if (a.goodput?.objective_id !== b.goodput?.objective_id || a.goodput?.objective_revision !== b.goodput?.objective_revision) different.push("objective revision");
-    // The public summary currently has no exact input/output/cache partition facts. Do not infer them from means.
-    unknown.push("input size", "output size", "cache partition");
-    if (!a.coverage?.complete || !b.coverage?.complete) unknown.push("whole-window coverage");
-    return { status: different.length ? "Incompatible" : "Insufficient evidence", different, unknown };
+    const unknown = [], different = [], changed = [], x = a.comparison, y = b.comparison;
+    const known = (v) => v != null && !["", "unknown", "mixed", "?"].includes(v);
+    const one = (items) => { const values = [...new Set(items || [])]; return values.length === 1 && known(values[0]) ? values[0] : null; };
+    const compare = (name, left, right, variable = false) => {
+      if (!known(left) || !known(right)) unknown.push(name);
+      else if (left !== right) (variable ? changed : different).push(name);
+    };
+    compare("build", one(x?.provenance?.builds), one(y?.provenance?.builds), true);
+    compare("measurement schema", one(x?.provenance?.schema_versions), one(y?.provenance?.schema_versions));
+    const revision = (s) => s.configuration?.comparison_compatible === true && !s.configuration.truncated && s.configuration.comparison_scope === "effective_knob_policy" ? one(s.configuration.intervals?.map((i) => i.revision)) : null;
+    compare("effective settings", revision(a), revision(b), true);
+    compare("source", x?.provenance?.source, y?.provenance?.source);
+    if (JSON.stringify(entries(a.query.filters).sort()) !== JSON.stringify(entries(b.query.filters).sort())) different.push("selected cohort");
+    if (a.query.objective_id !== b.query.objective_id || a.query.objective_revision !== b.query.objective_revision) different.push("objective definition (goodput)");
+    if ((a.query.objective_id && !known(a.query.objective_revision)) || (b.query.objective_id && !known(b.query.objective_revision))) unknown.push("objective revision");
+    const partitionsKnown = (w) => Array.isArray(w?.partitions) && w.partitions.length > 0 && w.partitions.length <= 256 && !w.truncated && w.partitions.every((p) =>
+      ["head", "model", "transport", "work", "outcome"].every((k) => typeof p.scope?.[k] === "string" && known(p.scope[k]))
+      && ["local", "compact", "streaming"].every((k) => typeof p.scope?.[k] === "boolean")
+      && WORKLOAD_FIELDS.every((k) => Number.isSafeInteger(p[k]) && p[k] >= 0) && Number.isSafeInteger(p.count) && p.count > 0);
+    const workloadKnown = (c) => c?.status === "ready" && !c.projection_truncated && !c.reasons?.length && c.readiness_scope === "measured_workload_and_effective_knob_policy_only" && c.provenance?.configuration_scope === "effective_knob_policy"
+      && c.workload?.status === "complete" && c.workload.population_complete === true && c.workload.matching_basis === "exact_joint_frequency_v1"
+      && /^[a-f0-9]{64}$/.test(c.workload.distribution_id || "") && partitionsKnown(c.workload);
+    if (!partitionsKnown(x?.workload) || !partitionsKnown(y?.workload)) unknown.push("input size", "output size", "cache partition", "resolved workload and outcome");
+    if (!workloadKnown(x) || !workloadKnown(y)) unknown.push("complete measured workload");
+    else compare("joint workload distribution", x.workload.distribution_id, y.workload.distribution_id);
+    if (x?.projection_truncated || y?.projection_truncated) unknown.push("complete saved evidence");
+    if (SEMANTICS.some((k) => !known(x?.measurement_semantics?.[k]) || !known(y?.measurement_semantics?.[k]))) unknown.push("measurement meanings");
+    else if (SEMANTICS.some((k) => x.measurement_semantics[k] !== y.measurement_semantics[k])) different.push("measurement meanings");
+    return { status: different.length ? "Incompatible" : unknown.length ? "Insufficient evidence" : "Measured workload matches", different, unknown, changed,
+      reasons: [...new Set([...(x?.reasons || []), ...(y?.reasons || [])])].map(words) };
   }
   function create(scope, options) {
     const { document, API, setTimeout, clearTimeout, setInterval } = scope;
@@ -128,16 +167,25 @@ const PERF_CONSOLE = (() => {
         + field("head", "Command", f.head) + field("model", "Model", f.model) + field("project", "Project", f.project)
         + select("objective", "Objective", [["", "Unconfigured"], ...(st.settings?.objectives || []).map((x) => [x.id, x.id])], q.objective_id)
         + `<button class="act small" type="submit">Apply cohort</button><button class="act quiet small" type="button" data-pc="filters" aria-expanded="${st.advanced}">All filters</button></div>`
-        + `<div class="pc-query-extra"${st.advanced ? "" : " hidden"}>${field("from", "From · epoch ms", input.from_ms ?? "", "number")}${field("until", "Until · exclusive epoch ms", input.until_ms ?? "", "number")}`
+        + `<div class="pc-query-extra"${st.advanced ? "" : " hidden"}>${field("from", "From · epoch ms", q.from_ms, "number")}${field("until", "Until · exclusive epoch ms", q.until_ms, "number")}`
         + ["transport", "outcome", "session", "account", "silence_ms", "queued_ms", "resumed", "started_over", "unattributed", "test"].map((k) => field(k, words(k), f[k])).join("")
         + ["local", "compact", "streaming"].map((k) => select(k, words(k), [["", "Any"], ["1", "Yes"], ["0", "No"]], f[k])).join("")
         + select("source", "Source", [["auto", "Automatic"], ["live", "Live"], ["history", "History"], ["evidence", "Recorded evidence"], ["legacy", "Legacy rows"]], q.source) + `</div></form>`;
     }
+    function completedWindow() {
+      const q = st.query, horizon = st.replies.summary?.body?.settled_until_ms, duration = q?.until_ms - q?.from_ms;
+      return Number.isSafeInteger(horizon) && horizon >= duration && Number.isSafeInteger(duration) && duration > 0
+        ? { ...q, filters: { ...q.filters }, window: "", from_ms: horizon - duration, until_ms: horizon } : null;
+    }
     function coverage() {
       const query = st.query || queryNow();
       const r = st.replies.summary, s = r?.body, stale = s?.as_of_ms != null && query.until_ms - s.as_of_ms > 60000;
+      const completed = completedWindow(), accountGap = issues(s).includes("account_alias_mapping_unavailable");
       return `<div class="pc-coverage" role="status"><strong>${safe(status(r))}${stale ? " · Stale" : ""}${st.busy ? " · Refreshing" : ""}</strong><span>${safe(date(query.from_ms))} → ${safe(date(query.until_ms))}</span><span>Observed ${num(s?.observed_duration_ms)} / requested ${num(s?.requested_duration_ms)} ms</span>${s?.truncated ? "<b>Truncated</b>" : ""}</div>`
+        + `<div class="pc-actions"><button class="act quiet small" data-pc="completed-window"${!completed || st.busy ? " disabled" : ""}>Use completed window</button><span class="pc-note">${completed ? `From ${safe(date(completed.from_ms))} to ${safe(date(completed.until_ms))} · same ${num(completed.until_ms - completed.from_ms)} ms duration` : "No certified recording boundary available for this duration."}</span></div>`
+        + (completed ? note("This selects the interval ending at the certified recording boundary. Late records can revise it; coverage still applies. Your selected interval stays unchanged until you choose it.") : "")
         + (explain(r) ? note(words(explain(r))) : "")
+        + (accountGap ? note("Account names are temporarily unavailable. Exact recorded account IDs still work. Name matching uses the last Accounts read for up to 60 seconds; opening Accounts refreshes it. This view does not refresh accounts automatically.") : "")
         + (s?.missing_fields?.length ? `<details class="pc-detail"><summary>${s.missing_fields.length} unavailable measurements</summary>${note(s.missing_fields.map(words).join(" · "))}</details>` : "");
     }
     function overview() {
@@ -188,41 +236,61 @@ const PERF_CONSOLE = (() => {
       const selected = requests.find((x) => x.request_id === st.openRequest) || requests[0];
       const events = selected?.events || [], arrival = events.find((e) => e.kind === "REQUEST_ARRIVED"), origin = arrival?.monotonic_ms ?? events[0]?.monotonic_ms;
       const measurement = (e) => entries(e.measurements).map(([k, v]) => `${words(k)}: ${num(v)}`).join(" · ");
-      const rows = events.map((e) => [safe(words(e.kind)), num(Number.isFinite(e.monotonic_ms) && Number.isFinite(origin) ? e.monotonic_ms - origin : null), safe(e.attempt_id ?? "—"), safe(e.tool_id ?? "—"), safe(measurement(e)), e.trace_id ? safe(e.trace_id) : "—"]);
+      const rows = events.map((e) => [safe(words(e.kind)), num(Number.isFinite(e.monotonic_ms) && Number.isFinite(origin) ? e.monotonic_ms - origin : null), safe(e.attempt_id ?? "—"), safe(e.tool_id ?? "—"), safe(measurement(e)), turnLink(e, e.trace_id || e.turn_id || "Turn unavailable")]);
       const evidence = table(["Measured condition", "Mean · ms", "Interpretation", "Next measurement"], (d?.evidence || []).map((e) => [safe(words(e.metric)), num(e.mean_ms), safe(`${words(e.classification)} · ${words(e.inference)}`), safe(words(e.next_falsifying_measurement))]), "Diagnosis evidence");
       const span = events.length ? events.at(-1).monotonic_ms - origin : 0;
       const waterfall = span > 0 ? `<div class="pc-waterfall" role="img" aria-label="Recorded progress on the request clock; exact values in the table below">${events.filter((e) => /CONTENT|CLIENT|ATTEMPT|TOOL|REQUEST/.test(e.kind)).map((e) => `<div><span>${safe(words(e.kind))}${e.attempt_id ? ` · ${safe(e.attempt_id)}` : ""}${e.tool_id ? ` · ${safe(e.tool_id)}` : ""}</span><i><b style="left:${Math.max(0, Math.min(100, (e.monotonic_ms - origin) / span * 100))}%"></b></i><small>${num(e.monotonic_ms - origin)} ms</small></div>`).join("")}</div>` : "";
       return evidence + note("Content and successful flush checkpoints below are separate from transport bytes. Attempt and tool IDs have independent clocks; their durations overlap and are not additive.")
         + select("openRequest", "Representative request", requests.map((r) => [r.request_id, r.request_id]), selected?.request_id)
+        + (selected ? `<div class="pc-actions">${turnLink(selected, "Open recorded turn")}</div>` + facts({ command: selected.head, turn: selected.turn_id, trace: selected.trace_id, session: selected.session_id }) : "")
         + (d?.timeline?.truncated ? note("Representative timeline is truncated; it is not the complete population.") : "")
         + note(arrival ? "Elapsed time is measured from the recorded request arrival." : "Arrival is unavailable. Elapsed time starts at the first retained event.")
         + waterfall + table(["Event", "Elapsed · ms", "Attempt", "Tool", "Measurements", "Trace reference"], rows, "Request, attempt and tool timeline")
         + (!events.length ? note(`${status(st.replies.diagnose)} · No request timeline evidence.`) : "")
         + section("Resource evidence", facts(d?.resources) + table(["Measured resource", "Value", "Reported capacity", "Fraction", "Interpretation"], (d?.resources?.conditions || []).map((x) => [safe(words(x.metric)), num(x.value), num(x.capacity), num(x.fraction), safe(words(x.inference))]), "Resource occupancy · sample time only")) + requestRows();
     }
+    function turnLink(record, label) {
+      return record?.head && record?.turn_id ? `<a href="${safe(address(st.query, { head: record.head }, `${record.head}:${record.turn_id}`))}">${safe(label)}</a>` : safe(record?.trace_id || record?.turn_id || "Turn link unavailable");
+    }
     function requestRows() {
       const r = st.replies.rows, v = r?.body;
-      return table(["Request", "Time", "Command", "Model", "Outcome"], (v?.rows || []).map((x) => [`<a href="${safe(address(st.query, { head: x.head }, x.turn_id ? `${x.head}:${x.turn_id}` : ""))}">${safe(x.turn_id || "Unidentified request")}</a>`, safe(date(x.ts)), safe(x.head), safe(x.model ?? "Unknown"), safe(words(x.outcome))]), "Recorded request rows · returned source order")
+      return table(["Request", "Time", "Command", "Model", "Outcome"], (v?.rows || []).map((x) => [turnLink(x, x.turn_id), safe(date(x.ts)), safe(x.head), safe(x.model ?? "Unknown"), safe(words(x.outcome))]), "Recorded request rows · returned source order")
         + note(`${status(r)} · ${num(v?.total_matching)} matching records · ${v?.record_unit || "record"}`)
         + (v?.next_cursor ? `<button class="act small" data-pc="next">Next records</button>` : "");
     }
     function baselines() {
       const selected = st.baselines[st.selected], summary = st.replies.summary?.body;
       const c = selected && summary?.identity_cohorts ? comparison(selected.summary, summary) : null;
-      const values = selected && summary ? table(["Recorded value · unmatched cohorts", "Saved", "Current"], [
+      const values = selected && summary ? table(["Recorded value", "Saved", "Current"], [
         ...["arrivals_per_s", "completions_per_s", "attempts_per_s", "input_tokens_per_s", "output_tokens_per_s", "cached_tokens_per_s"].map((k) => [safe(words(k)), num(selected.summary.rates[k]), num(summary.rates?.[k])]),
         ...["arrival_to_first_meaningful_content_ms", "arrival_to_terminal_ms", "queue_wait_ms"].map((k) => [`${safe(words(k))} · p95`, num(selected.summary.histograms[k]?.p95), num(summary.histograms?.[k]?.p95)]),
         ["Known good / s", num(selected.summary.goodput.known_good_per_s), num(summary.goodput?.known_good_per_s)],
         ["Observed / requested · ms", `${num(selected.summary.observed_duration_ms)} / ${num(selected.summary.requested_duration_ms)}`, `${num(summary.observed_duration_ms)} / ${num(summary.requested_duration_ms)}`],
-      ], "Saved and current observations · no matched performance claim") : "";
+      ], "Saved and current observations · no causal performance claim") : "";
+      const evidence = (s) => {
+        const c = s?.comparison, w = c?.workload, p = c?.provenance;
+        return facts({ workload: w?.status || "Unavailable", measured_requests: w?.measured_requests, matching_requests: w?.matching_requests, observed_arrivals: w?.observed_arrivals,
+          measured_as_of: date(w?.as_of_ms ?? p?.as_of_ms), coverage_basis: w?.coverage_basis, event_time_final: w?.event_time_final, build: p?.builds?.join(", "), schema: p?.schema_versions?.join(", "),
+          source: p?.source, settings: s?.configuration?.intervals?.map((i) => i.revision).filter((v, i, a) => a.indexOf(v) === i).join(", "), settings_scope: p?.configuration_scope,
+          objective: p?.objective_id, objective_revision: p?.objective_revision, matching_basis: w?.matching_basis, distribution: w?.distribution_id });
+      };
+      const partitions = (s) => table(["Command / model / transport / work / outcome", "Local / compact / streaming", "Input", "Output", "Cache read", "Cache write", "1h write", "Absorbed / cut / no request", "Requests"], (s?.comparison?.workload?.partitions || []).map((p) => [
+        safe(["head", "model", "transport", "work", "outcome"].map((k) => p.scope?.[k] ?? "unknown").join(" / ")),
+        safe(["local", "compact", "streaming"].map((k) => p.scope?.[k] ?? "unknown").join(" / ")), ...["input_tokens", "output_tokens", "cached_tokens", "cache_write_tokens", "cache_write_1h_tokens"].map((k) => num(p[k])),
+        ["absorbed_rounds", "cut_rounds", "no_request"].map((k) => num(p[k])).join(" / "), num(p.count),
+      ]), "Measured workload groups · exact counts");
       return `<div class="pc-actions">${field("baselineName", "Baseline name", "Baseline")}
         <button class="act small" data-pc="save-baseline"${!summary?.rates || st.busy ? " disabled" : ""}>Save locally</button><label class="act quiet small">Import JSON<input type="file" accept="application/json,.json" data-pc-import hidden></label></div>`
-        + note(`Up to ${LIMIT} snapshots in this browser. Query, measured identity/configuration, objective revision, coverage and summary only.`)
+        + note(`Up to ${LIMIT} snapshots in this browser. Saved measurements include the query, workload groups, build, settings, objective and coverage. Imported files are local records, not independently verified measurements.`)
         + select("baseline", "Saved baseline", st.baselines.map((b, i) => [String(i), `${b.name} · ${date(b.saved_at_ms)}`]), String(st.selected))
         + (selected ? `<div class="pc-actions"><button class="act quiet small" data-pc="export-baseline">Export JSON</button><button class="act quiet small" data-pc="apply-baseline">Apply saved cohort</button><button class="act quiet small" data-pc="delete-baseline">Delete</button></div>`
           + facts({ saved_at: date(selected.saved_at_ms), measured_at: date(selected.summary.as_of_ms), source: selected.summary.query.source, from: date(selected.summary.query.from_ms), until: date(selected.summary.query.until_ms), objective_revision: selected.summary.goodput.objective_revision })
-          + section(c?.status || "Waiting for current summary", note(c ? `Different: ${c.different.join(", ") || "none known"}. Unknown or mixed: ${c.unknown.join(", ")}. No performance ranking is made.` : "Read the current cohort first.") + values)
-          + `<details class="pc-detail"><summary>Saved cohort and configuration evidence</summary>${facts(selected.summary.query.filters)}${selected.summary.identity_cohorts.map(facts).join("")}${selected.summary.configuration.intervals.map(facts).join("")}</details>` : note("No saved baselines."));
+          + section(c?.status || "Waiting for current summary", note(c ? `Different: ${c.different.join(", ") || "none known"}. Unknown or mixed: ${c.unknown.join(", ") || "none in the measured comparison"}. Changed variables: ${c.changed.join(", ") || "none known"}.` : "Read the current cohort first.")
+            + note("Matching compares measured request groups and their proportions, including actual outcomes and token/cache counts. It covers effective settings only. Provider topology and remote conditions are unverified; a match does not establish cause or rank providers.")
+            + (c?.reasons.length ? note(`Evidence gaps: ${c.reasons.join(" · ")}`) : "") + values)
+          + `<div class="pc-grid">${section("Saved evidence", evidence(selected.summary))}${section("Current evidence", evidence(summary))}</div>`
+          + `<details class="pc-detail"><summary>Measured workload groups</summary>${section("Saved", partitions(selected.summary))}${section("Current", partitions(summary))}</details>`
+          + `<details class="pc-detail"><summary>Saved cohort and configuration evidence</summary>${facts(selected.summary.query.filters)}${selected.summary.identity_cohorts.map(facts).join("")}${facts(selected.summary.configuration)}${selected.summary.configuration.intervals.map(facts).join("")}${note(`Settings exclude: ${(selected.summary.configuration.excluded_dimensions || []).map(words).join(", ") || "not recorded"}.`)}</details>` : note("No saved baselines."));
     }
     function profiles() {
       const caps = st.replies.caps?.body?.capabilities || [], p = st.profiles;
@@ -350,8 +418,7 @@ const PERF_CONSOLE = (() => {
       if (el.matches("[data-pc-import]")) {
         try {
           const file = el.files?.[0]; if (!file || file.size > MAX_BYTES) throw new Error("Import must be a baseline JSON file under 750 KB");
-          const b = JSON.parse(await file.text()); if (b.format !== "splice-performance-baseline" || b.version !== 1) throw new Error("Unsupported baseline format");
-          const clean = snapshot(b.summary, b.name); clean.saved_at_ms = Number.isFinite(b.saved_at_ms) ? b.saved_at_ms : clean.saved_at_ms;
+          const clean = importBaseline(JSON.parse(await file.text()));
           saveStore([clean, ...st.baselines]); st.selected = 0; st.message = "Baseline imported locally";
         } catch (error) { st.message = error.message; } repaint();
       }
@@ -363,11 +430,16 @@ const PERF_CONSOLE = (() => {
       const action = button.dataset.pc;
       try {
         if (action === "refresh") { read(true); return; }
+        if (action === "completed-window") { const q = completedWindow(); if (!q || st.busy) return; options.apply(q); st.message = "Selected the completed window. Coverage is reported below."; st.key = null; read(true); return; }
         if (action === "filters") st.advanced = !st.advanced;
         if (action === "save-baseline") { saveStore([snapshot(st.replies.summary.body, host().querySelector('[name="baselineName"]').value), ...st.baselines]); st.selected = 0; st.message = "Baseline saved in this browser"; }
         if (action === "delete-baseline") { saveStore(st.baselines.filter((_, i) => i !== st.selected)); st.selected = 0; }
         if (action === "export-baseline") download(new Blob([JSON.stringify(st.baselines[st.selected], null, 2)], { type: "application/json" }), "splice-performance-baseline.json");
-        if (action === "apply-baseline") { const q = st.baselines[st.selected].summary.query; options.apply({ filters: q.filters, source: q.source, objective_id: q.objective_id, window: current().window || "24h" }); st.key = null; read(true); }
+        if (action === "apply-baseline") {
+          const q = st.baselines[st.selected].summary.query, window = current().window || "";
+          options.apply({ filters: q.filters, source: q.source, objective_id: q.objective_id, window, ...(window ? {} : { from_ms: st.query.from_ms, until_ms: st.query.until_ms }) });
+          st.key = null; read(true);
+        }
         if (action === "objectives-reload") { st.draft = null; await standing(); }
         if (action === "profile-refresh") await refreshProfile();
         if (action === "profile-stop") { const r = await API.post(`/api/perf/profiles/${encodeURIComponent(st.profiles.profile_id)}/stop`, {}); st.profiles = r.body; st.message = `Capture: ${status(r)}`; }

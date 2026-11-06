@@ -32,6 +32,7 @@ internal class RequestEvidenceCoverage(
     private var lastAsOf = 0L
     private val retiredHeads = LinkedHashSet<String>()
     private val prefixes = RequestEvidencePrefixes()
+    private val expected = LinkedHashSet<String>()
 
     @Synchronized
     fun start(head: String, bootId: String): Boolean {
@@ -63,8 +64,10 @@ internal class RequestEvidenceCoverage(
     }
 
     @Synchronized
-    fun retired(head: String?) {
+    fun retired(file: Path) {
         if (lease == null) return
+        expected.remove(file.fileName.toString())
+        val head = RequestEvidenceFormat.headOf(file.fileName.toString())
         val selected = head?.let(::listOf) ?: heads.toList()
         if ((heads + selected).size > RequestEvidenceProofFormat.MAX_HEADS) {
             scopeComplete = false
@@ -80,7 +83,12 @@ internal class RequestEvidenceCoverage(
 
     @Synchronized
     fun stop(head: String) { active[head]?.stopMs = clock() }
-    fun appended(path: Path, line: String) { if (lease != null) prefixes.appended(path, line) }
+    fun appended(path: Path, line: String) {
+        if (lease != null) {
+            expected += path.fileName.toString()
+            prefixes.appended(path, line)
+        }
+    }
 
     @Synchronized
     fun enabled(): Boolean = active.isNotEmpty()
@@ -103,6 +111,8 @@ internal class RequestEvidenceCoverage(
             require((heads + owners).size <= RequestEvidenceProofFormat.MAX_HEADS)
             heads.addAll(owners)
         }
+        val available = files.map { it.fileName.toString() }.toSet()
+        expected.filter { it !in available }.forEach { retired(directory.resolve(it)) }
         val captured = prefixes.capture(files)
         val proof = snapshot(untilMs, captured)
         val encoded = Json.encodeToString(proof)
@@ -191,6 +201,7 @@ internal class RequestEvidenceCoverage(
                 retentionEpochs[head] = count + (retentionEpochs[head] ?: 0L)
             }
             intervals.addAll(old.intervals)
+            expected.addAll(old.prefixes.map { it.fileName })
             lastAsOf = old.asOfMs
         }
     }
@@ -200,6 +211,7 @@ internal class RequestEvidenceCoverage(
         lock?.close()
         lock = null
         prefixes.clear()
+        expected.clear()
         active.clear()
         intervals.clear()
         heads.clear()

@@ -34,6 +34,7 @@ public object RequestEvidenceProofFormat {
         val proof = Json.decodeFromString<RequestEvidenceProof>(bytes.toString(Charsets.UTF_8))
         require(proof.heads.size in 1..MAX_HEADS && proof.intervals.size <= MAX_INTERVALS)
         require(proof.prefixes.size <= MAX_PREFIXES)
+        require(proof.prefixes.all { it.fileName.length <= MAX_FILE_CHARS && it.digest.length <= MAX_DIGEST_CHARS })
         require(proof.lossEpochs.size <= MAX_HEADS && proof.retentionEpochs.size <= MAX_HEADS)
         scopes(proof)
         return proof
@@ -51,3 +52,6 @@ private const val MAX_HEAD_CHARS = 128
 private const val MAX_BOOT_CHARS = 256
 private const val COLON: Byte = 58
 private const val COMMA: Byte = 44
+
+private const val MAX_FILE_CHARS = 256
+private const val MAX_DIGEST_CHARS = 64

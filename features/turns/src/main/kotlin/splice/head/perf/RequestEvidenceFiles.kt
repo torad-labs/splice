@@ -19,7 +19,6 @@ import splice.core.util.WallClock
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption
-import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.util.UUID
 
@@ -58,7 +57,13 @@ public class RequestEvidenceFiles(
         val lease = PerfWorkBudget.acquire(COVERAGE_WORK_BYTES) ?: return false.also { coverageSink.reject() }
         val until = coverage.boundary()
         val queued = AsyncFileIo.submitFor(lane, coverageSink) {
-            lease.use { coverage.commit(until, segments()); true }
+            lease.use {
+                SecureFile.ownerOnlyDirectory(
+                    directory,
+                )?.let { throw IOException("request evidence directory is not private") }
+                coverage.commit(until, segments())
+                true
+            }
         }
         if (!queued) lease.close()
         queued
@@ -118,25 +123,21 @@ public class RequestEvidenceFiles(
             .also { current[head] = it }
     }
 
-    private fun segments(): List<Path> = try {
-        Files.newDirectoryStream(directory).use { entries ->
-            val found = entries.asSequence().filter { RequestEvidenceFormat.isSegment(it.fileName.toString()) }
-                .take(MAX_EVIDENCE_SEGMENTS + 1)
-                .onEach {
-                    if (!Files.isRegularFile(
-                            it,
-                            LinkOption.NOFOLLOW_LINKS,
-                        )
-                    ) {
-                        throw IOException("invalid evidence segment")
-                    }
+    private fun segments(): List<Path> = Files.newDirectoryStream(directory).use { entries ->
+        val found = entries.asSequence().filter { RequestEvidenceFormat.isSegment(it.fileName.toString()) }
+            .take(MAX_EVIDENCE_SEGMENTS + 1)
+            .onEach {
+                if (!Files.isRegularFile(
+                        it,
+                        LinkOption.NOFOLLOW_LINKS,
+                    )
+                ) {
+                    throw IOException("invalid evidence segment")
                 }
-                .toList()
-            if (found.size > MAX_EVIDENCE_SEGMENTS) throw IOException("request evidence segment bound exceeded")
-            found.sortedBy { Files.getLastModifiedTime(it).toMillis() }
-        }
-    } catch (_: NoSuchFileException) {
-        emptyList()
+            }
+            .toList()
+        if (found.size > MAX_EVIDENCE_SEGMENTS) throw IOException("request evidence segment bound exceeded")
+        found.sortedBy { Files.getLastModifiedTime(it).toMillis() }
     }
 
     private fun expire(files: List<Path>, incoming: Long) {
@@ -153,7 +154,7 @@ public class RequestEvidenceFiles(
                 expiredSegments = previous.expiredSegments + 1,
                 expiredBeforeWriteMs = maxOf(previous.expiredBeforeWriteMs ?: 0L, modified),
             )
-            coverage.retired(RequestEvidenceFormat.headOf(file.fileName.toString()))
+            coverage.retired(file)
             // Publish expiry before deleting data, so even a crash cannot make missing evidence look complete.
             saveRetention()
             bytes -= Files.size(file)

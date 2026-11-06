@@ -102,10 +102,40 @@ class PerfEvidenceCoverageTest {
             paths.first { RequestEvidenceFormat.isSegment(it.fileName.toString()) }
         }
         Files.delete(segment)
+        missingCoverage(source, "evidence_proof_segment_missing")
+        now = 6_000L
+        RequestEvidenceFiles(directory, clock = wall, elapsed = ElapsedClock { now }).use { files ->
+            assertTrue(files.startCoverage("test", "third-boot"))
+            now = 7_000L
+            assertTrue(files.checkpointCoverage())
+            assertTrue(AsyncFileIo.awaitDirectory(directory))
+        }
+        missingCoverage(source, "evidence_retention_expired")
+    }
+
+    @Test
+    fun `an enabled idle producer proves zero events without inventing event extents`(@TempDir root: Path) {
+        var now = 1_000L
+        val directory = root.resolve("idle")
+        val wall = WallClock { now }
+        RequestEvidenceFiles(directory, clock = wall, elapsed = ElapsedClock { now }).use { files ->
+            assertTrue(files.startCoverage("test", "boot"))
+            now = 2_000L
+            assertTrue(files.checkpointCoverage())
+            assertTrue(AsyncFileIo.awaitDirectory(directory))
+        }
+        PerfEvidenceFileSource(directory, wall).read(PerfEvidenceQuery(1_000L, 2_000L, "test")).use { read ->
+            assertTrue(read.complete, read.coverage.issues.toString())
+            assertEquals(1_000L, read.coverage.observedMs)
+            assertTrue(read.observations.isEmpty())
+        }
+    }
+
+    private fun missingCoverage(source: PerfEvidenceFileSource, reason: String) {
         source.read(PerfEvidenceQuery(4_000L, 5_000L, "test")).use { read ->
-            assertFalse(read.complete)
+            assertFalse(read.complete, "missing bytes must stay outside certified coverage")
             assertEquals(0L, read.coverage.observedMs)
-            assertTrue(read.coverage.issues.any { it.code == "evidence_proof_segment_missing" })
+            assertTrue(read.coverage.issues.any { it.code == reason })
         }
     }
 

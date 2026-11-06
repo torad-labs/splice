@@ -12,7 +12,7 @@ import splice.usage.perf.query.PerfQueryService
 internal class PerfQueryRoutes(private val work: PerfHttpWork) {
     suspend fun selected(call: ApplicationCall, telemetry: PerfTelemetry?, kind: String): Boolean {
         if (call.request.queryParameters["contract"] != "1") {
-            return PerfQueryHttp.selected(call, telemetry?.query, kind, System.currentTimeMillis())
+            return PerfQueryHttp.selected(call, telemetry?.inspection?.query, kind, System.currentTimeMillis())
         }
         respond(call, telemetry, kind)
         return true
@@ -26,7 +26,7 @@ internal class PerfQueryRoutes(private val work: PerfHttpWork) {
             val parameters = entries.associate { it.key to it.value.first() }
             val parsed = PerfQueryParser.parse(parameters, System.currentTimeMillis())
             val query = parsed.query ?: return@read requireNotNull(parsed.error)
-            dispatch(telemetry.query, kind, query, parameters)
+            dispatch(telemetry.inspection.query, kind, query, parameters)
         }
     }
 

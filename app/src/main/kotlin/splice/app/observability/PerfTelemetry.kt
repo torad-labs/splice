@@ -10,14 +10,10 @@ import splice.core.util.LogSink
 import splice.core.util.MonoClock
 import splice.core.util.WallClock
 import splice.observability.export.PerfExports
-import splice.observability.profile.ProfileManager
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.retry.InflightGate
 import splice.usage.alerts.AlertStore
-import splice.usage.perf.RequestProjects
-import splice.usage.perf.objectives.PerfObjectiveStore
-import splice.usage.perf.query.PerfQueryService
 
 /** The daemon's single composition owner. Construction happens before head producers; no profile starts here. */
 internal class PerfTelemetry(
@@ -53,16 +49,9 @@ internal class PerfTelemetry(
         it.enabled = enabled
         it.runtimeSource = runtime
     }
-    val objectives = PerfObjectiveStore(paths.perfObjectivesFile).also { sources.objectives = it }
-    var projects: RequestProjects? = null
-    val query = PerfQueryService(sources, RequestProjects { projects?.invoke() ?: EmptyPerfProjects })
-    val profiles = ProfileManager(
-        paths.perfProfilesDir,
-        identity.copy(configRevision = "unknown:effective_configuration_requires_intervals"),
-        PerfNativeProfiler.installed(),
-    )
+    val inspection = PerfInspection(paths, identity, sources)
     private val scope = LifecycleScope(io)
-    private val alerting = PerfAlerting(query, objectives, alerts, log, scope)
+    private val alerting = PerfAlerting(inspection.query, inspection.objectives, alerts, log, scope)
     val alertEngine = alerting.engine
     val instrumentation = PerfInstrumentationStatus(
         identity,
@@ -121,7 +110,7 @@ internal class PerfTelemetry(
 
     private fun closeReaders() = cleanup.finish(
         { cleanup.run("export_flush") { if (!exports.flush()) cleanup.failed("export_flush_incomplete") } },
-        { cleanup.run("profiles") { profiles.close() } },
+        { cleanup.run("profiles") { inspection.stopProfiles() } },
         { alerting.stopDelivery(cleanup) },
     )
 
@@ -129,7 +118,7 @@ internal class PerfTelemetry(
         { scope.cancel() },
         { cleanup.run("delivery_client") { alerting.close() } },
         { cleanup.run("exports") { exports.close() } },
-        { cleanup.run("objectives") { objectives.close() } },
+        { cleanup.run("objectives") { inspection.close() } },
         { cleanup.run("runtime") { runtime.close() } },
         { cleanup.run("tracking") { tracking.close() } },
     )

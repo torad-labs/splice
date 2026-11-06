@@ -20,7 +20,7 @@ internal class PerfProfileRoutes(
             guard.guarded(call) {
                 work.execute(call) {
                     work.respond(call, ports.performance) {
-                        ports.performance?.profiles?.capabilities() ?: work.unavailable()
+                        ports.performance?.inspection?.profiles?.capabilities() ?: work.unavailable()
                     }
                 }
             }
@@ -39,7 +39,7 @@ internal class PerfProfileRoutes(
                 work.execute(call) {
                     validId(call)?.let { id ->
                         work.respond(call, ports.performance) {
-                            ports.performance?.profiles?.stop(id) ?: work.unavailable()
+                            ports.performance?.inspection?.profiles?.stop(id) ?: work.unavailable()
                         }
                     }
                 }
@@ -51,7 +51,7 @@ internal class PerfProfileRoutes(
     }
 
     private suspend fun status(call: ApplicationCall, id: String?) = work.respond(call, ports.performance) {
-        ports.performance?.profiles?.status(id) ?: work.unavailable()
+        ports.performance?.inspection?.profiles?.status(id) ?: work.unavailable()
     }
 
     private suspend fun start(call: ApplicationCall) = PerfBody.consume(call, work) { body ->
@@ -60,7 +60,7 @@ internal class PerfProfileRoutes(
             if (request == null) {
                 work.error("error", "invalid_profile_request")
             } else {
-                ports.performance?.profiles?.start(request) ?: work.unavailable()
+                ports.performance?.inspection?.profiles?.start(request) ?: work.unavailable()
             }
         }
     }
@@ -73,7 +73,7 @@ internal class PerfProfileRoutes(
     }
 
     private suspend fun artifact(call: ApplicationCall, id: String) = withContext(work.io) {
-        val profiles = ports.performance?.profiles
+        val profiles = ports.performance?.inspection?.profiles
         val reader = profiles?.openArtifact(id)
         if (reader == null) {
             if (profiles?.artifact(id) != null) {

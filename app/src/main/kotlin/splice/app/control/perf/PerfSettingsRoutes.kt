@@ -18,7 +18,7 @@ internal class PerfSettingsRoutes(
             guard.guarded(call) {
                 work.execute(call) {
                     work.respond(call, ports.performance) {
-                        ports.performance?.objectives?.settings() ?: work.unavailable()
+                        ports.performance?.inspection?.objectives?.settings() ?: work.unavailable()
                     }
                 }
             }
@@ -28,7 +28,7 @@ internal class PerfSettingsRoutes(
                 work.execute(call) {
                     PerfBody.consume(call, work) { body ->
                         work.respond(call, ports.performance) {
-                            ports.performance?.objectives?.update(body) ?: work.unavailable()
+                            ports.performance?.inspection?.objectives?.update(body) ?: work.unavailable()
                         }
                     }
                 }

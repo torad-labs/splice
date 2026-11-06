@@ -112,7 +112,7 @@ internal class ControlServer(
     public val ports: ConsolePorts = ConsolePorts()
 
     internal fun wirePerformance(performance: splice.app.observability.PerfTelemetry) {
-        projects.requestTags?.let { performance.projects = it }
+        projects.requestTags?.let { performance.inspection.projects = it }
         performance.accounts(accounts.performanceNames())
     }
 

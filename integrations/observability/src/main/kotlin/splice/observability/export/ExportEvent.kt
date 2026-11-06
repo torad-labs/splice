@@ -8,6 +8,7 @@ import io.opentelemetry.api.trace.TraceId
 import io.opentelemetry.api.trace.TraceState
 import splice.core.perf.observation.PerfEventKind
 import splice.core.perf.observation.PerfObservation
+import splice.observability.OBSERVABILITY_NANOS_PER_MILLISECOND
 
 internal data class ExportTraceContext(
     val current: SpanContext,
@@ -47,7 +48,7 @@ internal object ExportEvents {
         }
         return ExportEvent(
             event.kind,
-            Math.multiplyExact(event.stamp.wallMs.coerceIn(0, MAX_EPOCH_MS), NANOS_PER_MS),
+            Math.multiplyExact(event.stamp.wallMs.coerceIn(0, MAX_EPOCH_MS), OBSERVABILITY_NANOS_PER_MILLISECOND),
             ExportTraceContext(currentContext, parent, links.requestId?.takeIf(requestId::matches)),
             attributes.build(),
             event.outcome?.let(ExportSchema::outcome),
@@ -61,7 +62,7 @@ internal object ExportEvents {
     private fun context(trace: String?, span: String?, flags: String?): SpanContext {
         if (trace == null || span == null) return SpanContext.getInvalid()
         if (!TraceId.isValid(trace) || !SpanId.isValid(span)) return SpanContext.getInvalid()
-        val sampled = flags?.toIntOrNull(HEX_RADIX)?.and(1) == 1
+        val sampled = flags?.toIntOrNull(EXPORT_TRACE_FLAGS_RADIX)?.and(1) == 1
         return SpanContext.create(
             trace,
             span,
@@ -71,7 +72,9 @@ internal object ExportEvents {
     }
 }
 
+// Keep each projected event to 64 numeric attributes before it enters the fixed-size export queue.
 private const val MAX_VALUES = 64
-private const val HEX_RADIX = 16
-internal const val NANOS_PER_MS = 1_000_000L
-private const val MAX_EPOCH_MS = Long.MAX_VALUE / NANOS_PER_MS
+
+// W3C trace flags are encoded in hexadecimal, including the sampled bit used by the SDK context.
+private const val EXPORT_TRACE_FLAGS_RADIX = 16
+private const val MAX_EPOCH_MS = Long.MAX_VALUE / OBSERVABILITY_NANOS_PER_MILLISECOND

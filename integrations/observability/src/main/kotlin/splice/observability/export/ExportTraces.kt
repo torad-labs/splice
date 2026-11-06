@@ -130,5 +130,8 @@ internal class ExportTraces : AutoCloseable {
     )
 }
 
+// Keep at most 512 unfinished span starts; missing completions must not grow correlation state indefinitely.
 private const val MAX_ACTIVE = 512
+
+// Charge 4 KiB for each retained span start and its correlation fields until completion or close.
 private const val SPAN_BYTES = 4_096L

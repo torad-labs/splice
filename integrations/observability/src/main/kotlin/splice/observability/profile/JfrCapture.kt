@@ -46,5 +46,8 @@ internal class JfrCapture(private val request: PerfProfileRequest) : ProfileCapt
     }
 }
 
+// Sample execution stacks at 20 ms intervals to bound the frequency of optional CPU profiling events.
 private const val SAMPLE_PERIOD_MS = 20L
+
+// Record monitor contention lasting at least 10 ms, excluding brief acquisitions from the bounded capture.
 private const val LOCK_THRESHOLD_MS = 10L

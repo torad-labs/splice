@@ -42,10 +42,10 @@ internal object ExportSchema {
     }.build()
 
     fun scope(value: PerfScope): PerfScope = PerfScope(
-        head = label(value.head) ?: UNKNOWN,
+        head = label(value.head) ?: UNKNOWN_EXPORT_DIMENSION,
         model = label(value.model),
-        transport = value.transport?.takeIf { it in transports } ?: value.transport?.let { UNKNOWN },
-        work = value.work.takeIf { it in work } ?: UNKNOWN,
+        transport = value.transport?.takeIf { it in transports } ?: value.transport?.let { UNKNOWN_EXPORT_DIMENSION },
+        work = value.work.takeIf { it in work } ?: UNKNOWN_EXPORT_DIMENSION,
         streaming = value.streaming,
         local = value.local,
         compact = value.compact,
@@ -56,17 +56,18 @@ internal object ExportSchema {
         "ok", "good", "success" -> "good"
         "cancelled", "client_abort" -> "cancelled"
         "refused", "at_capacity" -> "refused"
-        UNKNOWN, "?" -> UNKNOWN
+        UNKNOWN_EXPORT_DIMENSION, "?" -> UNKNOWN_EXPORT_DIMENSION
         else -> "bad"
     }
 
     private fun label(value: String?): String? = value?.takeIf { label.matches(it) && !opaque.matches(it) }
     private val label = Regex("[A-Za-z0-9][A-Za-z0-9_./-]{0,95}")
     private val opaque = Regex("[0-9a-fA-F-]{24,}")
-    private val transports = setOf("sse", "ws", "websocket", "http", "local", "mcp", UNKNOWN)
+    private val transports = setOf("sse", "ws", "websocket", "http", "local", "mcp", UNKNOWN_EXPORT_DIMENSION)
     private val work = setOf("client", "compact", "tool", "compare", "local", "runtime", "instrumentation", "upstream")
 }
 
+// Prometheus and OTLP publish durations in seconds while the local metric registry records milliseconds.
 private const val MS_TO_SECONDS = 0.001
 
-private const val UNKNOWN = "unknown"
+private const val UNKNOWN_EXPORT_DIMENSION = "unknown"

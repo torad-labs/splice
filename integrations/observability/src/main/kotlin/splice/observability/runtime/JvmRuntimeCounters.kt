@@ -3,6 +3,7 @@ package splice.observability.runtime
 import com.sun.management.OperatingSystemMXBean
 import com.sun.management.ThreadMXBean
 import com.sun.management.UnixOperatingSystemMXBean
+import splice.observability.OBSERVABILITY_MILLIS_PER_SECOND
 import java.lang.management.ManagementFactory
 
 /** Process counters never imply a request's CPU ownership or coroutine queue delay. */
@@ -58,11 +59,9 @@ internal class JvmRuntimeCounters {
         val previous = previousAllocation?.let { count -> previousMs?.let { time -> count to time } } ?: return null
         val elapsed = nowMs - previous.second
         return if (elapsed > 0 && total >= previous.first) {
-            (total - previous.first).toDouble() * MILLIS_PER_SECOND / elapsed
+            (total - previous.first).toDouble() * OBSERVABILITY_MILLIS_PER_SECOND / elapsed
         } else {
             null
         }
     }
 }
-
-private const val MILLIS_PER_SECOND = 1_000.0

@@ -132,5 +132,8 @@ internal class ExportEngine(
     }
 }
 
+// Reserve 2 MiB for snapshot-to-SDK conversion; contention skips the sample instead of borrowing unbounded memory.
 private const val CONVERSION_BYTES = 2L * 1_024 * 1_024
+
+// One drain handles at most the queue's 256-event capacity, leaving later arrivals for a subsequent tick.
 private const val MAX_BATCH = 256

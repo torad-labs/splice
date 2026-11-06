@@ -32,7 +32,7 @@ internal class ProfileRecord(val request: PerfProfileRequest, val fromMs: Long) 
     }
 
     fun json(identity: PerfIdentity, nowMs: Long = fromMs) = buildJsonObject {
-        val expired = untilMs?.let { nowMs - it > ProfileLimits.RETENTION_MS } == true
+        val expired = untilMs?.let { nowMs - it > ProfileLimits.ARTIFACT_RETENTION_MS } == true
         put("schema_version", identity.schemaVersion)
         put("status", status)
         put("profile_id", id)

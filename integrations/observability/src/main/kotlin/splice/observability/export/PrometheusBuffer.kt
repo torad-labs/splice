@@ -2,7 +2,7 @@ package splice.observability.export
 
 /** A fixed buffer checks the complete fragment before writing; no geometric growth or partial success. */
 internal class PrometheusBuffer {
-    private val bytes = ByteArray(PerfScrapeLimits.MAX_TEXT_BYTES)
+    private val bytes = ByteArray(PerfScrapeLimits.MAX_SCRAPE_TEXT_BYTES)
     private var length = 0
     var exceeded: Boolean = false
         private set

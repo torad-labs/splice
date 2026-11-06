@@ -41,7 +41,7 @@ class ProfileDownloadTest {
             reader.use {
                 val second = checkNotNull(manager.openArtifact(id))
                 second.use { assertNull(manager.openArtifact(id)) }
-                now += ProfileLimits.RETENTION_MS + 1
+                now += ProfileLimits.ARTIFACT_RETENTION_MS + 1
                 capture(manager) // The normal capture path prunes expired records.
                 assertNull(manager.openArtifact(id))
                 assertTrue(Files.exists(reader.artifact.path))

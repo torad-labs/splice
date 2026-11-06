@@ -14,10 +14,15 @@ public class PerfScrape internal constructor(
 }
 
 /** Output is ASCII, so the enforced character bound is also its encoded UTF-8 byte bound. */
-public object PerfScrapeLimits {
-    public const val MAX_TEXT_BYTES: Int = 256 * 1_024
-    public const val RESPONSE_BYTES: Long = 3L * MAX_TEXT_BYTES + 4_096
-    public const val MAX_AGE_MS: Long = 15_000
+internal object PerfScrapeLimits {
+    // Cap the fixed ASCII renderer at 256 KiB so metric-label growth cannot expand scrape responses indefinitely.
+    public const val MAX_SCRAPE_TEXT_BYTES: Int = 256 * 1_024
+
+    // Reserve the text's UTF-16 representation, ASCII response bytes and 4 KiB of response ownership overhead.
+    public const val RESPONSE_BYTES: Long = 3L * MAX_SCRAPE_TEXT_BYTES + 4_096
+
+    // After three five-second sampling intervals, report a stale scrape instead of presenting old counters as current.
+    public const val MAX_SCRAPE_AGE_MS: Long = 15_000
 }
 
 internal object ScrapeUnavailable {

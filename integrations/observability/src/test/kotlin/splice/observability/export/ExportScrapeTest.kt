@@ -28,7 +28,7 @@ class ExportScrapeTest {
             assertTrue(exports.flush())
             exports.scrape().use { scrape ->
                 assertTrue(scrape.available)
-                assertTrue(scrape.text.toByteArray(Charsets.UTF_8).size <= PerfScrapeLimits.MAX_TEXT_BYTES)
+                assertTrue(scrape.text.toByteArray(Charsets.UTF_8).size <= PerfScrapeLimits.MAX_SCRAPE_TEXT_BYTES)
                 assertEquals(256, scrape.text.lineSequence().count { it.startsWith("splice_requests_finished_total{") })
             }
             source.set(ScrapeFixtures.snapshot(histogram = true))
@@ -57,13 +57,13 @@ class ExportScrapeTest {
                 scrapes.scrape().use { assertEquals("unsampled", it.state) }
                 totals.reconcile(ExportFixtures.snapshot())
                 assertTrue(scrapes.publish(totals.points(), totals))
-                now += PerfScrapeLimits.MAX_AGE_MS + 1
+                now += PerfScrapeLimits.MAX_SCRAPE_AGE_MS + 1
                 scrapes.scrape().use { stale ->
                     assertFalse(stale.available)
                     assertEquals("stale", stale.state)
                     assertTrue(stale.text.contains("unavailable"))
                 }
-                assertEquals(JsonPrimitive(PerfScrapeLimits.MAX_AGE_MS + 1), scrapes.status()["sample_age_ms"])
+                assertEquals(JsonPrimitive(PerfScrapeLimits.MAX_SCRAPE_AGE_MS + 1), scrapes.status()["sample_age_ms"])
                 scrapes.close()
                 scrapes.scrape().use { assertEquals("closed", it.state) }
             }

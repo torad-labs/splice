@@ -65,12 +65,21 @@ internal class OtlpTransport(private val config: PerfExportConfig) {
     }
 }
 
+// Limit each optional collector attempt to 750 ms so an unavailable endpoint cannot hold the export lane indefinitely.
 private const val ATTEMPT_MS = 750L
+
+// Wait 100 ms before the single retry instead of immediately repeating a failed collector request.
 private const val INITIAL_BACKOFF_MS = 100L
-private const val MAX_BACKOFF_MS = 200L
-private const val MAX_ATTEMPTS = 2
+
+// Cap retry delay at 200 ms to keep transport retry time within the worker's bounded completion wait.
+private const val OTLP_MAX_BACKOFF_MS = 200L
+
+// Permit one retry after the first attempt, bounding collector failure amplification to two requests.
+private const val OTLP_MAX_ATTEMPTS = 2
+
+// Use exponential doubling for the SDK retry policy, bounded by the explicit maximum delay and attempt count.
 private const val BACKOFF_MULTIPLIER = 2.0
 private val TIMEOUT = Duration.ofMillis(ATTEMPT_MS)
-private val RETRY = RetryPolicy.builder().setMaxAttempts(MAX_ATTEMPTS)
-    .setInitialBackoff(Duration.ofMillis(INITIAL_BACKOFF_MS)).setMaxBackoff(Duration.ofMillis(MAX_BACKOFF_MS))
+private val RETRY = RetryPolicy.builder().setMaxAttempts(OTLP_MAX_ATTEMPTS)
+    .setInitialBackoff(Duration.ofMillis(INITIAL_BACKOFF_MS)).setMaxBackoff(Duration.ofMillis(OTLP_MAX_BACKOFF_MS))
     .setBackoffMultiplier(BACKOFF_MULTIPLIER).build()

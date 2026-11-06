@@ -12,7 +12,7 @@ import java.nio.file.StandardOpenOption
 internal object ProfileCopy {
     fun copy(input: InputStream, destination: Path) {
         val lease = PerfWorkBudget.acquire(
-            ProfileLimits.BUFFER_BYTES.toLong(),
+            ProfileLimits.COPY_BUFFER_BYTES.toLong(),
         ) ?: throw IOException("Profile copy budget unavailable")
         lease.use {
             Files.newOutputStream(
@@ -26,7 +26,7 @@ internal object ProfileCopy {
     }
 
     private fun transfer(input: InputStream, output: OutputStream) {
-        val buffer = ByteArray(ProfileLimits.BUFFER_BYTES)
+        val buffer = ByteArray(ProfileLimits.COPY_BUFFER_BYTES)
         var total = 0L
         var read = input.read(buffer)
         while (read >= 0) {

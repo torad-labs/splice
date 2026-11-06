@@ -10,10 +10,10 @@ import splice.core.perf.observation.PerfIssue
 /** Only finite source/code names cross the status boundary; free-form issue details never do. */
 internal object ExportSourceCoverage {
     fun of(source: PerfCoverage): JsonObject {
-        val issues = source.issues.take(MAX_ISSUES)
+        val issues = source.issues.take(MAX_EXPORT_COVERAGE_ISSUES)
         val groups = issues.groupBy {
-            (it.code.takeIf(codes::contains) ?: UNKNOWN) to
-                (it.source.takeIf { name -> name == "accumulator" } ?: UNKNOWN)
+            (it.code.takeIf(codes::contains) ?: UNKNOWN_COVERAGE_LABEL) to
+                (it.source.takeIf { name -> name == "accumulator" } ?: UNKNOWN_COVERAGE_LABEL)
         }
         return buildJsonObject {
             put("requested_from_ms", source.requestedFromMs)
@@ -50,5 +50,6 @@ internal object ExportSourceCoverage {
     )
 }
 
-private const val MAX_ISSUES = 64
-private const val UNKNOWN = "unknown"
+// Project at most 64 source issues into retained status; excess entries remain visible through omitted counts.
+private const val MAX_EXPORT_COVERAGE_ISSUES = 64
+private const val UNKNOWN_COVERAGE_LABEL = "unknown"

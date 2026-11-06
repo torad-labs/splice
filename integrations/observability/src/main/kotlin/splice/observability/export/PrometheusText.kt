@@ -2,6 +2,7 @@ package splice.observability.export
 
 import splice.core.perf.observation.PerfAggregatePoint
 import splice.core.perf.observation.PerfMetricRegistry
+import splice.observability.OBSERVABILITY_MILLIS_PER_SECOND
 
 internal object PrometheusText {
     fun render(points: List<PerfAggregatePoint>, dropped: Long, missingMs: Long): String? =
@@ -40,7 +41,7 @@ internal object PrometheusText {
             "# TYPE splice_export_dropped_total counter\nsplice_export_dropped_total ",
         ).append(dropped).append('\n')
         out.append("# TYPE splice_export_missing_seconds_total counter\nsplice_export_missing_seconds_total ")
-            .append(missingMs / MILLIS_PER_SECOND).append('\n')
+            .append(missingMs / OBSERVABILITY_MILLIS_PER_SECOND).append('\n')
         return out.text()
     }
 
@@ -68,5 +69,3 @@ internal object PrometheusText {
         out.append(name).append('{').append(labels).append("} ").append(value).append('\n')
     }
 }
-
-private const val MILLIS_PER_SECOND = 1_000.0

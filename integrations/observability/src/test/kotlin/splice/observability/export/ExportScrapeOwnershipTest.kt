@@ -63,7 +63,7 @@ class ExportScrapeOwnershipTest {
             val legacy = exports.prometheus()
             try {
                 assertTrue(counter(legacy).endsWith(" 3.0"))
-                assertTrue(legacy.toByteArray(Charsets.UTF_8).size <= PerfScrapeLimits.MAX_TEXT_BYTES)
+                assertTrue(legacy.toByteArray(Charsets.UTF_8).size <= PerfScrapeLimits.MAX_SCRAPE_TEXT_BYTES)
             } finally {
                 PerfWorkBudget.release(legacy)
             }

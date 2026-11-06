@@ -120,7 +120,10 @@ public class RuntimeSampler(
     }
 }
 
+// Reserve 64 KiB for each cached sample or independent reader copy, releasing it with that owner.
 private const val RUNTIME_SAMPLE_BYTES = 64L * 1_024
+
+// Admit at most eight distinct runtime owners; report omitted sources instead of growing the sampling registry.
 private const val MAX_RUNTIME_SOURCES = 8
 
 /** Owners must be actual process resources, not a fresh adapter for each head sharing one resource. */

@@ -22,7 +22,9 @@ internal class ExportCoverage : AutoCloseable {
     private val dropped = AtomicLong()
 
     fun update(source: PerfCoverage, totals: ExportTotals, now: Long): Boolean {
-        val lease = PerfWorkBudget.acquire(COVERAGE_BYTES) ?: run { dropped.incrementAndGet(); return false }
+        val lease = PerfWorkBudget.acquire(
+            EXPORT_COVERAGE_LEASE_BYTES,
+        ) ?: run { dropped.incrementAndGet(); return false }
         val data = buildJsonObject {
             put("as_of_ms", totals.asOfMs)
             put("sampled_epoch_ms", now)
@@ -58,4 +60,5 @@ internal class ExportCoverage : AutoCloseable {
     }
 }
 
-private const val COVERAGE_BYTES = 64L * 1_024
+// Reserve 64 KiB per retained coverage checkpoint so status history cannot grow without a work-budget lease.
+private const val EXPORT_COVERAGE_LEASE_BYTES = 64L * 1_024

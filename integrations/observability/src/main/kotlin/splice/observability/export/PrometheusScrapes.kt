@@ -68,7 +68,7 @@ internal class PrometheusScrapes(enabled: Boolean, private val clock: WallClock)
         .also { if (it == null) responseBusy.incrementAndGet() }
 
     private fun phase(view: PrometheusState): String = if (
-        view.phase == "ready" && clock() - requireNotNull(view.sample).at > PerfScrapeLimits.MAX_AGE_MS
+        view.phase == "ready" && clock() - requireNotNull(view.sample).at > PerfScrapeLimits.MAX_SCRAPE_AGE_MS
     ) {
         "stale"
     } else {
@@ -79,9 +79,9 @@ internal class PrometheusScrapes(enabled: Boolean, private val clock: WallClock)
         val view = current.get()
         return buildJsonObject {
             put("state", phase(view))
-            put("max_text_bytes", PerfScrapeLimits.MAX_TEXT_BYTES)
+            put("max_text_bytes", PerfScrapeLimits.MAX_SCRAPE_TEXT_BYTES)
             put("response_bytes", PerfScrapeLimits.RESPONSE_BYTES)
-            put("max_age_ms", PerfScrapeLimits.MAX_AGE_MS)
+            put("max_age_ms", PerfScrapeLimits.MAX_SCRAPE_AGE_MS)
             view.attemptedAt?.let { put("last_attempt_epoch_ms", it) }
             view.sample?.let {
                 put("last_success_epoch_ms", it.at)
@@ -100,6 +100,11 @@ internal class PrometheusScrapes(enabled: Boolean, private val clock: WallClock)
     }
 }
 
+// Charge two bytes per retained String character even when the JVM uses compact ASCII strings.
 private const val CHARACTER_BYTES = 2L
+
+// Keep 4 KiB beyond text storage for the retained sample and ownership bookkeeping.
 private const val OVERHEAD_BYTES = 4_096L
-private const val RENDER_BYTES = 3L * PerfScrapeLimits.MAX_TEXT_BYTES + 65_536
+
+// Hold the ASCII buffer, UTF-16 result and 64 KiB of rendering workspace under one admission lease.
+private const val RENDER_BYTES = 3L * PerfScrapeLimits.MAX_SCRAPE_TEXT_BYTES + 65_536

@@ -10,6 +10,7 @@ import io.opentelemetry.sdk.metrics.internal.data.ImmutableMetricData
 import io.opentelemetry.sdk.metrics.internal.data.ImmutableSumData
 import splice.core.perf.observation.PerfAggregatePoint
 import splice.core.perf.observation.PerfMetricRegistry
+import splice.observability.OBSERVABILITY_NANOS_PER_MILLISECOND
 
 /** Pinned OTel 1.67.0 immutable data factories; upgrading the SDK requires these conversion tests. */
 internal object OtlpMetricData {
@@ -33,7 +34,8 @@ internal object OtlpMetricData {
                 AggregationTemporality.CUMULATIVE,
                 family.map { point ->
                     ImmutableHistogramPointData.create(
-                        point.fromMs * NANOS_PER_MS, point.untilMs * NANOS_PER_MS,
+                        point.fromMs * OBSERVABILITY_NANOS_PER_MILLISECOND,
+                        point.untilMs * OBSERVABILITY_NANOS_PER_MILLISECOND,
                         ExportSchema.attributes(point.scope), point.sum * metric.factor,
                         point.min != null, (point.min ?: 0.0) * metric.factor,
                         point.max != null, (point.max ?: 0.0) * metric.factor,
@@ -54,8 +56,8 @@ internal object OtlpMetricData {
                 family.mapNotNull { point ->
                     point.last?.let {
                         ImmutableDoublePointData.create(
-                            point.fromMs * NANOS_PER_MS,
-                            point.untilMs * NANOS_PER_MS,
+                            point.fromMs * OBSERVABILITY_NANOS_PER_MILLISECOND,
+                            point.untilMs * OBSERVABILITY_NANOS_PER_MILLISECOND,
                             ExportSchema.attributes(point.scope),
                             it * metric.factor,
                         )
@@ -76,8 +78,8 @@ internal object OtlpMetricData {
                 AggregationTemporality.CUMULATIVE,
                 family.map { point ->
                     ImmutableDoublePointData.create(
-                        point.fromMs * NANOS_PER_MS,
-                        point.untilMs * NANOS_PER_MS,
+                        point.fromMs * OBSERVABILITY_NANOS_PER_MILLISECOND,
+                        point.untilMs * OBSERVABILITY_NANOS_PER_MILLISECOND,
                         ExportSchema.attributes(point.scope),
                         point.sum * metric.factor,
                     )

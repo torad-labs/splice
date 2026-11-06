@@ -51,7 +51,13 @@ internal class ExportTotals : AutoCloseable {
     private fun reconcilePoint(key: ExportMinute, point: PerfAggregatePoint, total: ExportTotal) {
         val old = minutes[key]
         val delta = ExportPopulation.difference(point, old?.point) ?: run { dropped++; return }
-        val lease = old?.lease ?: if (minutes.size < MAX_MINUTES) PerfWorkBudget.acquire(POINT_BYTES) else null
+        val lease = old?.lease ?: if (minutes.size < MAX_MINUTES) {
+            PerfWorkBudget.acquire(
+                EXPORT_TOTAL_POINT_BYTES,
+            )
+        } else {
+            null
+        }
         if (lease == null) { dropped++; return }
         total.point = ExportPopulation.merge(total.point, delta)
         minutes[key] = ExportCheckpoint(point, lease)
@@ -62,7 +68,7 @@ internal class ExportTotals : AutoCloseable {
             dropped++
             return null
         }
-        val lease = PerfWorkBudget.acquire(POINT_BYTES) ?: run { dropped++; return null }
+        val lease = PerfWorkBudget.acquire(EXPORT_TOTAL_POINT_BYTES) ?: run { dropped++; return null }
         return ExportTotal(point.copy(count = 0, sum = 0.0, min = null, max = null, buckets = emptyList()), lease)
             .also { totals[series] = it }
     }
@@ -75,7 +81,14 @@ internal class ExportTotals : AutoCloseable {
     }
 }
 
-private const val POINT_BYTES = 2_048L
+// Charge 2 KiB for each retained cumulative point or minute checkpoint, including its dimensions and histogram.
+private const val EXPORT_TOTAL_POINT_BYTES = 2_048L
+
+// Bound reconciliation to 2,048 minute checkpoints so changing series cannot retain an unlimited deduplication history.
 private const val MAX_MINUTES = 2_048
+
+// Keep cumulative exporter state to 512 series even when the source rotates through new dimensions.
 private const val MAX_SERIES = 512
+
+// Limit one metric family to half the cumulative-series capacity so it cannot occupy every slot.
 private const val FAMILY_SERIES = 256

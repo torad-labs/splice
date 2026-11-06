@@ -73,4 +73,5 @@ internal class RuntimeReading {
     }
 }
 
+// Read at most 64 metrics from each owner so one source cannot expand the cached runtime projection indefinitely.
 private const val MAX_OWNER_METRICS = 64

@@ -35,4 +35,5 @@ internal class ExportSignalStatus {
     }
 }
 
+// Allow the two 750 ms transport attempts plus backoff, then release the worker from SDK completion waits.
 internal const val EXPORT_WAIT_MS = 2_500L

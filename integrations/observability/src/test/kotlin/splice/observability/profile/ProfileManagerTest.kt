@@ -119,7 +119,7 @@ class ProfileManagerTest {
             PerfWorkBudget.release(manager.stop(id))
             PerfWorkBudget.release(awaitSettled(manager, id))
             assertNotNull(manager.artifact(id))
-            now += ProfileLimits.RETENTION_MS + 1
+            now += ProfileLimits.ARTIFACT_RETENTION_MS + 1
             val expired = manager.status(id)
             assertNull(manager.artifact(id))
             assertEquals("false", expired.getValue("artifact_available").jsonPrimitive.content)

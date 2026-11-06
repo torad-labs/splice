@@ -15,7 +15,7 @@ internal class ExportQueue : AutoCloseable {
 
     @Synchronized
     fun offer(event: ExportEvent?, span: SpanData?): Boolean {
-        val lease = if (closed) null else PerfWorkBudget.acquire(EVENT_BYTES)
+        val lease = if (closed) null else PerfWorkBudget.acquire(QUEUED_EXPORT_EVENT_BYTES)
         if (lease == null) { dropped.incrementAndGet(); return false }
         if (!queue.offer(ExportQueued(event, span, lease))) {
             lease.close()
@@ -44,5 +44,8 @@ internal class ExportQueue : AutoCloseable {
     }
 }
 
+// Keep at most 256 pending events so a slow collector cannot accumulate inference work indefinitely.
 private const val QUEUE_CAPACITY = 256
-private const val EVENT_BYTES = 8_192L
+
+// Charge 8 KiB for each sanitized event and its queue ownership until the export attempt finishes.
+private const val QUEUED_EXPORT_EVENT_BYTES = 8_192L

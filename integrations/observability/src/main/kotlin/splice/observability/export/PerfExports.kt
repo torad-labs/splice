@@ -101,11 +101,11 @@ public class PerfExports(
 
     /** Caller releases this top-level owner with PerfWorkBudget.release after consuming it and all nested data. */
     public fun status(): JsonObject {
-        val lease = PerfWorkBudget.acquire(STATUS_BYTES) ?: return STATUS_BUSY
+        val lease = PerfWorkBudget.acquire(EXPORT_STATUS_RESERVE_BYTES) ?: return STATUS_BUSY
         var retained = false
         return try {
             val result = statusData()
-            lease.retain(result, STATUS_BYTES)
+            lease.retain(result, EXPORT_STATUS_RESERVE_BYTES)
             retained = true
             result
         } finally {
@@ -167,14 +167,20 @@ public class PerfExports(
     }
 }
 
+// Refresh exports every five seconds on the dedicated worker, keeping snapshot conversion off request threads.
 private const val SAMPLE_SECONDS = 5L
+
+// Bound an explicit flush wait to ten seconds even if the collector or export worker stalls.
 private const val FLUSH_SECONDS = 10L
+
+// Give the final drain and SDK shutdown twenty seconds before interrupting the dedicated export worker.
 private const val CLOSE_SECONDS = 20L
 
 private const val TRACES = "traces"
 private const val LOGS = "logs"
 
-private const val STATUS_BYTES = 96L * 1_024
+// Reserve 96 KiB for each independent exporter-status response until its caller releases the returned tree.
+private const val EXPORT_STATUS_RESERVE_BYTES = 96L * 1_024
 private val STATUS_BUSY = buildJsonObject {
     put("status", "busy")
     put("reason", "shared_work_budget")

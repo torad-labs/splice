@@ -31,7 +31,7 @@ public class ProfileManager(
     private val artifacts = ProfileArtifacts(directory, identity)
     private val records = linkedMapOf<String, ProfileRecord>()
     private val memory =
-        checkNotNull(PerfWorkBudget.acquire((ProfileLimits.MAX_RECORDS + 1) * ProfileLimits.METADATA_BYTES))
+        checkNotNull(PerfWorkBudget.acquire((ProfileLimits.MAX_RECORDS + 1) * ProfileLimits.RECORD_METADATA_BYTES))
     private val worker =
         ThreadPoolExecutor(1, 1, 0L, TimeUnit.SECONDS, ArrayBlockingQueue(1), ProfileThreads.factory("splice-profile"))
     private val supervisor = ScheduledThreadPoolExecutor(1, ProfileThreads.factory("splice-profile-deadline")).apply {
@@ -81,7 +81,7 @@ public class ProfileManager(
                 active != null -> record.reply(identity, clock(), "busy", "one_capture_at_a_time")
                 reason != null -> record.reply(identity, clock(), "unsupported", reason)
                 records.values.filter { it.readers > 0 }.sumOf { it.sizeBytes } >
-                    ProfileLimits.STORE_BYTES - ProfileLimits.ARTIFACT_BYTES ->
+                    ProfileLimits.ARTIFACT_STORE_BYTES - ProfileLimits.ARTIFACT_BYTES ->
                     record.reply(identity, clock(), "busy", "artifact_store_pinned")
                 !ProfileAdmission.acquire() -> record.reply(identity, clock(), "busy", "one_capture_per_process")
                 else -> {
@@ -111,7 +111,7 @@ public class ProfileManager(
     }
 
     override fun artifact(id: String): PerfProfileArtifact? = synchronized(lock) {
-        records[id]?.takeIf { clock() - (it.untilMs ?: it.fromMs) <= ProfileLimits.RETENTION_MS }?.let(
+        records[id]?.takeIf { clock() - (it.untilMs ?: it.fromMs) <= ProfileLimits.ARTIFACT_RETENTION_MS }?.let(
             artifacts::artifact,
         )
     }
@@ -120,7 +120,7 @@ public class ProfileManager(
         if (closed || readers >= MAX_READERS) return null
         val record = records[id] ?: return null
         val artifact = artifact(id) ?: return null
-        val lease = PerfWorkBudget.acquire(READ_BYTES) ?: return null
+        val lease = PerfWorkBudget.acquire(PROFILE_READ_LEASE_BYTES) ?: return null
         var opened = false
         try {
             val result = artifacts.open(
@@ -255,8 +255,8 @@ public class ProfileManager(
         val completed = records.values.filter { it.untilMs != null }
         var total = completed.filter { it.available }.sumOf { it.sizeBytes }
         completed.forEach { record ->
-            val expired = clock() - checkNotNull(record.untilMs) > ProfileLimits.RETENTION_MS
-            val overBudget = total > ProfileLimits.STORE_BYTES - ProfileLimits.ARTIFACT_BYTES
+            val expired = clock() - checkNotNull(record.untilMs) > ProfileLimits.ARTIFACT_RETENTION_MS
+            val overBudget = total > ProfileLimits.ARTIFACT_STORE_BYTES - ProfileLimits.ARTIFACT_BYTES
             val remove = expired || overBudget
             if (record.removable && remove) {
                 artifacts.expire(record)
@@ -289,9 +289,18 @@ public class ProfileManager(
     }
 }
 
+// Allow thirty seconds beyond the requested recording window for bounded artifact finalization and copying.
 private const val FINALIZATION_SECONDS = 30L
+
+// Recheck idle artifact retention once per minute instead of adding file maintenance to every control read.
 private const val RETENTION_TICK_SECONDS = 60L
+
+// Retain only sixteen characters of rejected profiler settings so refusal metadata cannot copy arbitrary input.
 private const val MAX_SETTING_LENGTH = 16
 private const val PROFILE_FAILED = "failed"
+
+// Allow two simultaneous downloads so pinned artifacts and per-reader buffers remain bounded.
 private const val MAX_READERS = 2
-private const val READ_BYTES = PERF_PROFILE_READ_BUFFER_BYTES + 4L * 1_024
+
+// Reserve the shared download buffer plus 4 KiB for its channel, pinned-record ownership and response metadata.
+private const val PROFILE_READ_LEASE_BYTES = PERF_PROFILE_READ_BUFFER_BYTES + 4L * 1_024

@@ -11,6 +11,8 @@ import splice.core.perf.observation.PerfIssue
 import splice.core.perf.observation.PerfObserver
 import splice.core.perf.observation.aggregate.PerfAccumulator
 import splice.core.util.AsyncFileIo
+import splice.core.util.ElapsedClock
+import splice.core.util.MonoClock
 import splice.core.util.PerfWorkBudget
 import splice.core.util.WallClock
 import splice.head.perf.RequestEvidenceFiles
@@ -24,10 +26,11 @@ internal class PerfCollection(
     private val rows: PerfSourceFiles,
     private val enabled: Boolean,
     clock: WallClock,
+    elapsed: ElapsedClock = ElapsedClock(MonoClock::nowMs),
 ) : PerfAggregateSource, AutoCloseable {
     private val accumulator = PerfAccumulator(identity)
     private val aggregate = PerfAggregateStore(paths.perfAggregatesDir, identity, clock)
-    private val evidenceFiles = RequestEvidenceFiles(paths.perfEvidenceDir, rows.kept, clock)
+    private val evidenceFiles = RequestEvidenceFiles(paths.perfEvidenceDir, rows.kept, clock, elapsed = elapsed)
     private val evidenceStores = heads.associateWith(evidenceFiles::forHead)
     private val evidence = PerfEvidenceFileSource(
         paths.perfEvidenceDir,
@@ -37,11 +40,14 @@ internal class PerfCollection(
 
     fun fanout(exports: PerfObserver): PerfFanout = PerfFanout(
         listOf(
-            accumulator,
-            exports,
-            PerfObserver { event -> evidenceStores[event.scope.head]?.record(event) ?: true },
+            PerfFanoutTarget(accumulator),
+            PerfFanoutTarget(exports),
+            PerfFanoutTarget(
+                PerfObserver { event -> evidenceStores[event.scope.head]?.record(event) ?: true },
+                PerfLoss { head -> evidenceFiles.faultCoverage(head.takeIf { it in heads }) },
+            ),
         ),
-    ).also { it.loss = PerfLoss { head -> evidenceFiles.faultCoverage(head.takeIf { it in heads }) } }
+    )
 
     override fun snapshot(): PerfAggregateSnapshot = accumulator.snapshot().let { snapshot ->
         if (enabled) {

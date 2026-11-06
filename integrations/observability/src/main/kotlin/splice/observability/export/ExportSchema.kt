@@ -63,7 +63,7 @@ internal object ExportSchema {
     private fun label(value: String?): String? = value?.takeIf { label.matches(it) && !opaque.matches(it) }
     private val label = Regex("[A-Za-z0-9][A-Za-z0-9_./-]{0,95}")
     private val opaque = Regex("[0-9a-fA-F-]{24,}")
-    private val transports = setOf("sse", "ws", "websocket", "http", "local", UNKNOWN)
+    private val transports = setOf("sse", "ws", "websocket", "http", "local", "mcp", UNKNOWN)
     private val work = setOf("client", "compact", "tool", "compare", "local", "runtime", "instrumentation", "upstream")
 }
 

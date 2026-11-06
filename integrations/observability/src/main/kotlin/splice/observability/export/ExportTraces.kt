@@ -13,39 +13,72 @@ private data class ExportStarted(val event: ExportEvent, val lease: PerfWorkBudg
 
 internal class ExportTraces : AutoCloseable {
     private val active = LinkedHashMap<String, ExportStarted>()
-    var dropped: Long = 0L
+
+    @Volatile var dropped: Long = 0L
+        private set
+
+    @Volatile var missingContext: Long = 0L
         private set
 
     fun accept(event: ExportEvent): SpanData? = when {
-        !event.context.isValid -> null
+        event.kind == PerfEventKind.CHECKPOINT -> { attach(event); null }
         event.kind in starts -> { start(event); null }
         else -> finish(event)
     }
 
     private fun start(event: ExportEvent) {
-        val key = event.context.traceId + event.context.spanId
+        val key = key(event) ?: return
         if (key !in active) {
             val lease = if (active.size < MAX_ACTIVE) PerfWorkBudget.acquire(SPAN_BYTES) else null
             if (lease == null) dropped++ else active[key] = ExportStarted(event, lease)
         }
     }
 
+    private fun attach(event: ExportEvent) {
+        if (!event.context.isValid) return
+        val key = key(event) ?: return
+        val started = active[key] ?: return
+        if (!started.event.context.isValid) {
+            active[key] = started.copy(event = event.copy(atNanos = started.event.atNanos))
+        }
+    }
+
+    private fun key(event: ExportEvent): String? = when {
+        event.kind in requestEvents && event.requestId != null -> "request:" + event.requestId
+        event.context.isValid -> event.context.traceId + event.context.spanId
+        else -> null
+    }
+
     private fun finish(event: ExportEvent): SpanData? {
-        val key = event.context.traceId + event.context.spanId
         val name = terminals[event.kind] ?: return null
+        val started = remove(event) ?: return null
+        val context = if (started.event.context.isValid) started.event else event
+        return if (context.context.isValid) {
+            span(name, started.event, event, context)
+        } else {
+            missingContext++; dropped++; null
+        }
+    }
+
+    private fun remove(event: ExportEvent): ExportStarted? {
+        val key = key(event) ?: run { missingContext++; dropped++; return null }
         val started = active.remove(key) ?: run { dropped++; return null }
         started.lease.close()
-        return if (started.event.native) {
+        return started
+    }
+
+    private fun span(name: String, start: ExportEvent, end: ExportEvent, context: ExportEvent): SpanData? {
+        return if (start.native) {
             null
         } else {
             ExportSpan(
                 name,
-                event.context,
-                event.parent,
-                started.event.atNanos,
-                maxOf(event.atNanos, started.event.atNanos),
-                event.attributes,
-                if (event.outcome == "good") StatusData.ok() else StatusData.error(),
+                context.context,
+                context.parent,
+                start.atNanos,
+                maxOf(end.atNanos, start.atNanos),
+                end.attributes,
+                if (end.outcome == "good") StatusData.ok() else StatusData.error(),
             )
         }
     }
@@ -88,6 +121,8 @@ internal class ExportTraces : AutoCloseable {
     }
 
     private val starts = setOf(PerfEventKind.REQUEST_ARRIVED, PerfEventKind.ATTEMPT_STARTED, PerfEventKind.TOOL_STARTED)
+    private val requestEvents =
+        setOf(PerfEventKind.REQUEST_ARRIVED, PerfEventKind.CHECKPOINT, PerfEventKind.REQUEST_FINISHED)
     private val terminals = mapOf(
         PerfEventKind.REQUEST_FINISHED to "splice.request",
         PerfEventKind.ATTEMPT_FINISHED to "splice.attempt",

@@ -3,8 +3,6 @@ package splice.observability.export
 import io.opentelemetry.sdk.logs.data.LogRecordData
 import io.opentelemetry.sdk.trace.data.SpanData
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import splice.core.perf.export.PerfExportConfig
 import splice.core.perf.observation.PerfAggregateSource
 import splice.core.perf.observation.PerfIdentity
@@ -24,13 +22,13 @@ internal class ExportEngine(
     private val traces = ExportTraces()
     private val text = AtomicReference("# splice operator telemetry has not sampled yet\n")
     private var textLease: PerfWorkBudget.Lease? = null
-    private val coverage = AtomicReference(JsonObject(emptyMap()))
+    private val coverage = ExportCoverage()
     val metricsStatus = ExportSignalStatus()
     val tracesStatus = ExportSignalStatus()
     val logsStatus = ExportSignalStatus()
 
     fun prometheus(): String = text.get()
-    fun coverage(): JsonObject = coverage.get()
+    fun coverage(): JsonObject = coverage.json(clock(), traces.dropped, traces.missingContext)
 
     fun tick(): Boolean {
         var success = drain()
@@ -84,23 +82,14 @@ internal class ExportEngine(
             totals.reconcile(snapshot)
             val points = totals.points()
             if (config.prometheus) publish(PrometheusText.render(points, totals.dropped, totals.missingMs))
-            coverage.set(
-                buildJsonObject {
-                    put("as_of_ms", totals.asOfMs)
-                    put("sampled_epoch_ms", clock())
-                    put("missed_expired_ms", totals.missingMs)
-                    put("source_issues", totals.sourceIssues)
-                    put("metric_dropped", totals.dropped)
-                    put("trace_dropped", traces.dropped)
-                    put("temporality", "cumulative_since_export_start")
-                },
-            )
-            val exporter = transport?.metrics ?: return@use true
+            val coverageOk = coverage.update(snapshot.coverage, totals, clock())
+            if (!coverageOk) metricsStatus.dropped.incrementAndGet()
+            val exporter = transport?.metrics ?: return@use coverageOk
             val data = OtlpMetricData.of(points)
-            if (data.isEmpty()) return@use true
+            if (data.isEmpty()) return@use coverageOk
             metricsStatus.enqueued.addAndGet(data.size.toLong())
             metricsStatus.pending.addAndGet(data.size.toLong())
-            metricsStatus.finish(exporter.export(data), data.size, clock())
+            metricsStatus.finish(exporter.export(data), data.size, clock()) && coverageOk
         }
     }
 
@@ -118,6 +107,7 @@ internal class ExportEngine(
         logsStatus.dropped.addAndGet(logsStatus.pending.getAndSet(0))
         traces.close()
         totals.close()
+        coverage.close()
         textLease?.close()
         textLease = null
         text.set("# splice operator telemetry closed\n")

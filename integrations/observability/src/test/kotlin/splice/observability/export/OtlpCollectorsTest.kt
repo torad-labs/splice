@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Test
 import splice.core.perf.export.PerfExportConfig
 import splice.core.perf.observation.PerfAggregateSource
 import splice.core.perf.observation.PerfEventKind
+import splice.core.perf.observation.PerfRecorder
+import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
 import java.io.ByteArrayInputStream
 import java.io.InputStream
@@ -129,8 +131,10 @@ class OtlpCollectorsTest {
             },
             WallClock { 2_000 },
         ).use { exports ->
-            assertTrue(exports.record(ExportFixtures.event(PerfEventKind.REQUEST_ARRIVED)))
-            assertTrue(exports.record(ExportFixtures.event(PerfEventKind.REQUEST_FINISHED, 1_250)))
+            val recorder = PerfRecorder(ExportFixtures.identity, exports, ElapsedClock { 1_250 }, WallClock { 1_250 })
+            val request = recorder.request(ExportFixtures.scope, 1_000, 1_000)
+            request.update(request.scope, ExportFixtures.links)
+            assertTrue(request.finish("ok"))
             assertTrue(exports.flush(), exports.status().toString())
             assertFalse(exports.status().toString().contains("header-secret"))
         }

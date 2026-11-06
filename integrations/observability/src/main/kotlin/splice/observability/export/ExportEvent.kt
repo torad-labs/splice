@@ -9,15 +9,25 @@ import io.opentelemetry.api.trace.TraceState
 import splice.core.perf.observation.PerfEventKind
 import splice.core.perf.observation.PerfObservation
 
+internal data class ExportTraceContext(
+    val current: SpanContext,
+    val parent: SpanContext,
+    // Local join key only: never an attribute or log body.
+    val requestId: String?,
+)
+
 internal data class ExportEvent(
     val kind: PerfEventKind,
     val atNanos: Long,
-    val context: SpanContext,
-    val parent: SpanContext,
+    val trace: ExportTraceContext,
     val attributes: Attributes,
     val outcome: String?,
     val native: Boolean,
-)
+) {
+    val context: SpanContext get() = trace.current
+    val parent: SpanContext get() = trace.parent
+    val requestId: String? get() = trace.requestId
+}
 
 /** Copy only allowlisted numeric data and fixed dimension families before entering the queue. */
 internal object ExportEvents {
@@ -38,8 +48,7 @@ internal object ExportEvents {
         return ExportEvent(
             event.kind,
             Math.multiplyExact(event.stamp.wallMs.coerceIn(0, MAX_EPOCH_MS), NANOS_PER_MS),
-            currentContext,
-            parent,
+            ExportTraceContext(currentContext, parent, links.requestId?.takeIf(requestId::matches)),
             attributes.build(),
             event.outcome?.let(ExportSchema::outcome),
             event.values["tool_native_span"] == 1.0,
@@ -47,6 +56,7 @@ internal object ExportEvents {
     }
 
     private fun numeric(value: Double): Boolean = value.isFinite() && value >= 0.0
+    private val requestId = Regex("[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}")
 
     private fun context(trace: String?, span: String?, flags: String?): SpanContext {
         if (trace == null || span == null) return SpanContext.getInvalid()

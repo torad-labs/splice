@@ -20,13 +20,10 @@ internal class ExportTotals : AutoCloseable {
         private set
     var dropped: Long = 0L
         private set
-    var sourceIssues: Long = 0L
-        private set
 
     fun reconcile(snapshot: PerfAggregateSnapshot) {
         if (asOfMs > 0L && snapshot.fromMs > asOfMs) missingMs += snapshot.fromMs - asOfMs
         if (snapshot.untilMs < asOfMs) { dropped++; return }
-        sourceIssues = snapshot.coverage.issues.sumOf { it.count }
         minutes.entries.removeIf { (_, value) ->
             (value.point.fromMs < snapshot.fromMs).also { if (it) value.lease.close() }
         }

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { cpus, platform, release, arch, totalmem } from 'node:os';
+import { isAbsolute } from 'node:path';
 
 export const budget = Object.freeze({ revision: '2026-11-05-before-candidate', goodput_degradation_pct: 5,
   cpu_per_completion_degradation_pct: 5, added_p95_ms: 1, added_p95_pct: 5,
@@ -12,6 +13,7 @@ export interface Manifest {
   schema_version: 1; experiment_stage?: 'calibration' | 'steady'; run_id: string; role: 'baseline' | 'candidate' | 'direct'; source_commit: string;
   artifact_sha256: string; process_build: string; boot_id: string; config_revision: string;
   hardware: unknown; os: unknown; jvm: unknown; seed: number; warmup_ms: number; duration_ms: number;
+  java?: { executable: string; sha256: string };
   repetitions: number; scenario: Scenario; protocol: 'anthropic' | 'responses';
   transport: 'sse' | 'http' | 'websocket'; streaming: boolean; input_bytes: number;
   upstream?: { protocol: 'anthropic' | 'responses'; transport: 'sse' | 'websocket' };
@@ -42,8 +44,9 @@ function requireValue(ok: unknown, message: string): asserts ok { if (!ok) throw
 function bounded(n: unknown, min: number, max: number) { return typeof n === 'number' && Number.isFinite(n) && n >= min && n <= max; }
 export function validate(m: Manifest): Manifest {
   requireValue(m && typeof m === 'object' && m.schema_version === 1, 'schema_version must be 1');
-  const fields = Object.keys(defaults()).concat('provenance', 'upstream', 'collector_fault', 'retained_history');
+  const fields = Object.keys(defaults()).concat('provenance', 'upstream', 'collector_fault', 'retained_history', 'java');
   requireValue(Object.keys(m).every(key => fields.includes(key)), 'unknown manifest field');
+  if (m.java !== undefined) requireValue(m.java && typeof m.java === 'object' && Object.keys(m.java).every(k => ['executable', 'sha256'].includes(k)) && typeof m.java.executable === 'string' && isAbsolute(m.java.executable) && /^[a-f0-9]{64}$/.test(m.java.sha256), 'invalid java selection');
   const nested: Record<string, string[]> = { objectives: ['first_content_ms', 'completion_ms', 'queue_ms'], load: ['kind', 'value'], collection: ['mode', 'exports', 'profiles', 'polling'], target: ['kind', 'artifact_path', 'launcher_sha256'], generator_limits: Object.keys(defaults().generator_limits), fixture: Object.keys(defaults().fixture) };
   for (const [key, allowed] of Object.entries(nested)) { const value = (m as unknown as Record<string, unknown>)[key]; requireValue(value && typeof value === 'object' && Object.keys(value).every(field => allowed.includes(field)), `unknown ${key} field`); }
   requireValue(['calibration', 'steady'].includes(m.experiment_stage ?? 'calibration'), 'invalid experiment_stage');

@@ -1,11 +1,29 @@
 import { expect, test } from 'bun:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { defaults, validate } from './manifest';
 import { frames, requestBytes } from './fixture';
 import { initial, WireObserver } from './observe';
 import { run } from './run';
 import { readRun, analyze } from './analyze';
+import { startDesk } from './desk';
+
+test('explicit Java selection requires an absolute executable and full digest', () => {
+  const m = defaults(); m.java = { executable: '/task/jdk/bin/java', sha256: 'a'.repeat(64) };
+  expect(validate(m).java).toEqual(m.java);
+  m.java.executable = 'java'; expect(() => validate(m)).toThrow('invalid java selection');
+  m.java.executable = '/task/jdk/bin/java'; m.java.sha256 = 'short';
+  expect(() => validate(m)).toThrow('invalid java selection');
+});
+
+test('a wrong Java digest refuses the desk before any executable or artifact launch', async () => {
+  const root = await mkdtemp('/tmp/splice-instrumentation-java-');
+  try {
+    const executable = join(root, 'java'); await writeFile(executable, 'not a JVM\n', { mode: 0o700 });
+    const m = defaults(); m.role = 'candidate'; m.target = { kind: 'proxy', artifact_path: join(root, 'absent.jar') };
+    await expect(startDesk(m, 'http://127.0.0.1:18000', join(root, 'desk'), null, { executable, sha256: '0'.repeat(64) })).rejects.toThrow('java_sha256_mismatch');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
 
 test('honest terminal validation rejects dropped content despite complete terminal usage', () => {
   const m = defaults(); let tick = 0;

@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { defaults, environment, hash, validate, type Manifest } from './manifest';
 import { requestBytes, sleep, startUpstream } from './fixture';
 import { initial, observe, type Sample } from './observe';
-import { resource, startDesk } from './desk';
+import { resource, startDesk, type JavaRuntime } from './desk';
 import { summarize, type Extras } from './summary';
 import { analyze } from './analyze';
 import { collector, startProfile } from './adapters';
@@ -37,6 +37,7 @@ export async function run(input: Manifest, directory: string, dry = false) {
   const samples: Sample[] = []; const extras: Extras = { repetitions: [], fixture: null, polling: { count: 0, failed: 0, bytes: 0, elapsed_ms: 0 }, partial_reason: null };
   const upstream = startUpstream(m); const exporter = collector(m.collection.exports, m.generator_limits.max_wire_bytes, m.collector_fault); let desk: Awaited<ReturnType<typeof startDesk>> | undefined;
   const bootIds: string[] = []; const processIdentities: DeskIdentity[] = []; const origin = performance.now(); const now = () => performance.now() - origin;
+  const javaRuntimes: JavaRuntime[] = [];
   const telemetryPoints: TelemetryPoint[] = []; const telemetryBoundaries: { before: number; after: number; repetition: number; from_ms: number; until_ms: number }[] = [];
   let activeTelemetry: Awaited<ReturnType<typeof startTelemetry>> | null = null;
   let sequence = 0, polling = false, pollTask: Promise<void> | undefined;
@@ -96,6 +97,7 @@ export async function run(input: Manifest, directory: string, dry = false) {
         desk = await startDesk(m, upstream.url, join(output, `desk-${repetition}`), exporter.endpoint); bootIds.push(desk.bootId);
         m.boot_id = bootIds[0] ?? 'unknown'; m.jvm = desk.jvm; m.process_build = desk.processBuild; m.config_revision = desk.configHash;
         if (desk.identity) processIdentities.push(desk.identity);
+        if (desk.java) javaRuntimes.push(desk.java);
         startPolling();
       }
       const profile = await startProfile(m, desk, repetition, output);
@@ -132,12 +134,12 @@ export async function run(input: Manifest, directory: string, dry = false) {
   if (upstream.stats().request_body_mismatches) extras.partial_reason ??= 'upstream_request_shape_invalid';
   if (m.upstream?.transport === 'websocket' && upstream.stats().websocket_requests === 0) extras.partial_reason ??= 'production_websocket_not_observed';
   if (m.retained_history && historyStudy(m, extras.history ?? []).status !== 'complete') extras.partial_reason ??= 'history_study_partial';
-  m.provenance = { measured_at: new Date().toISOString(), environment: env, boot_ids: bootIds, process_identities: processIdentities, request_sha256: hash(body),
+  m.provenance = { measured_at: new Date().toISOString(), environment: env, boot_ids: bootIds, process_identities: processIdentities, java_runtimes: javaRuntimes, request_sha256: hash(body),
     supplied_identity: { source_commit: input.source_commit, artifact_sha256: input.artifact_sha256, process_build: input.process_build, config_revision: input.config_revision },
     harness_sha256: await harnessAtLoad };
   samples.sort((a, b) => a.sequence - b.sequence);
   const manifestBytes = JSON.stringify(m, null, 2) + '\n'; const sampleBytes = samples.map(row => JSON.stringify(row)).join('\n') + (samples.length ? '\n' : '');
-  const summary = summarize(m, samples, extras);
+  const summary = { ...summarize(m, samples, extras), java_runtimes: javaRuntimes };
   await writeVerified(join(output, 'manifest.json'), manifestBytes);
   await writeVerified(join(output, 'samples.jsonl'), sampleBytes);
   const observationBytes = JSON.stringify(extras, null, 2) + '\n';

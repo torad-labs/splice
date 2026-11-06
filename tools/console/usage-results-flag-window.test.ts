@@ -78,6 +78,7 @@ test("Usage: Results names a burst of failures only inside the window its table 
     // A custom transport is not known by the page's sampled-row flag; positive returned failures cannot lend it a cohort.
     await p.locator('#band-perf [name="window"]').selectOption("24h");
     await p.getByRole("button", { name: "All filters", exact: true }).click();
+    await expect(p.locator('#band-perf [name="window"]')).toHaveValue("24h");
     await p.locator('#band-perf [name="transport"]').fill("http");
     await p.getByRole("button", { name: "Apply cohort", exact: true }).click();
     await expect(p.locator("#band-perf .pc-command-failure")).toContainText("3% failed");

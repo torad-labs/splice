@@ -488,7 +488,13 @@ const PERF_CONSOLE = (() => {
       try {
         if (action === "refresh") { read(true); return; }
         if (action === "completed-window") { const q = completedWindow(); if (!q || st.busy) return; options.apply(q); st.message = "Selected the completed window. Coverage is reported below."; st.key = null; read(true); return; }
-        if (action === "filters") st.advanced = !st.advanced;
+        if (action === "filters") {
+          // Disclosure must preserve the query being edited, not redraw it from the last applied cohort.
+          st.advanced = !st.advanced;
+          host().querySelector(".pc-query-extra").hidden = !st.advanced;
+          button.setAttribute("aria-expanded", String(st.advanced));
+          return;
+        }
         if (action === "save-baseline") { saveStore([snapshot(st.replies.summary.body, host().querySelector('[name="baselineName"]').value), ...st.baselines]); st.selected = 0; st.message = "Baseline saved in this browser"; }
         if (action === "delete-baseline") { saveStore(st.baselines.filter((_, i) => i !== st.selected)); st.selected = 0; }
         if (action === "export-baseline") download(new Blob([JSON.stringify(st.baselines[st.selected], null, 2)], { type: "application/json" }), "splice-performance-baseline.json");

@@ -31,7 +31,7 @@ test('partial goodput keeps known outcomes while exact metrics remain unknown', 
   await expect(page.locator('.pc-content')).toContainText('known good rate is lower bound');
   await expect(page.locator('.pc-content')).toContainText('—');
   await page.getByRole('button', { name: 'Latency', exact: true }).click();
-  await expect(page.locator('table')).toContainText('p99');
+  await expect(page.getByRole('table', { name: 'Latency distributions', exact: true })).toContainText('p99');
   await page.getByText('Distribution', { exact: true }).first().click();
   await expect(page.locator('.pc-content')).toContainText('upper inclusive bucket bound');
   await expect(page.locator('.pc-content')).toContainText('Overflow');

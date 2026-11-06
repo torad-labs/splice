@@ -17,7 +17,12 @@ internal object PerfRequestMetrics {
         duration("attempt_duration_ms", "attempt start", "attempt terminal", attempt),
         duration("upstream_gap_ms", "upstream progress", "next upstream progress", setOf(PerfEventKind.GAP)),
         duration("downstream_gap_ms", "client progress", "next client progress", setOf(PerfEventKind.GAP)),
-        duration("local_read_block_ms", "local read begins", "local read ends", setOf(PerfEventKind.GAP)),
+        duration(
+            "local_read_block_ms",
+            "synchronous event delivery begins",
+            "event delivery returns to reader",
+            setOf(PerfEventKind.GAP),
+        ),
         duration(
             "client_write_flush_ms",
             "client write begins",
@@ -53,22 +58,29 @@ internal object PerfRequestMetrics {
         quantity("downstream_bytes", "bytes", PerfEventKind.CLIENT_PROGRESS),
         quantity("upstream_events", "events", PerfEventKind.PROTOCOL_PROGRESS),
         quantity("downstream_events", "events", PerfEventKind.CLIENT_PROGRESS),
-        quantity("input_tokens", "tokens", PerfEventKind.REQUEST_FINISHED),
-        quantity("output_tokens", "tokens", PerfEventKind.REQUEST_FINISHED),
-        quantity("cached_tokens", "tokens", PerfEventKind.REQUEST_FINISHED),
-        quantity("missing_usage", "requests", PerfEventKind.REQUEST_FINISHED),
+        quantity("input_tokens", "tokens", PerfEventKind.USAGE_RECORDED),
+        quantity("output_tokens", "tokens", PerfEventKind.USAGE_RECORDED),
+        quantity("cached_tokens", "tokens", PerfEventKind.USAGE_RECORDED),
+        quantity("missing_usage", "requests", PerfEventKind.USAGE_RECORDED),
     )
 
     private fun quantity(id: String, unit: String, event: PerfEventKind): PerfMetricDefinition = PerfMetricDefinition(
         id,
-        "Observed $id; absent is unknown, never an inferred zero",
+        quantityDescription(id),
         PerfMetricType.COUNTER,
         unit,
         "observed event",
         "observed event",
         "events at observation time; tokens at request terminal",
-        setOf(event),
+        if (event == PerfEventKind.USAGE_RECORDED) setOf(event, PerfEventKind.REQUEST_FINISHED) else setOf(event),
     )
+
+    private fun quantityDescription(id: String): String = if (id == "upstream_bytes") {
+        "HTTP positive response-body reads including error bodies, or UTF-8 decoded WebSocket text callbacks; " +
+            "excludes transport/TLS framing; fragmented or malformed protocol bytes remain observed"
+    } else {
+        "Observed $id; absent is unknown, never an inferred zero"
+    }
 
     private fun lifecycle(): List<PerfMetricDefinition> {
         val counts =

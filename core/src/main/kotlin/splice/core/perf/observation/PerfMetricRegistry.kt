@@ -10,7 +10,7 @@ import kotlinx.serialization.json.put
 public object PerfMetricRegistry {
     private val definitions = (
         PerfLegacyMetrics.definitions() + PerfRequestMetrics.definitions() +
-            PerfSystemMetrics.definitions()
+            PerfSystemMetrics.definitions() + PerfTransportMetrics.definitions()
         ).associateBy { it.id }
     private val bounds = listOf(
         BOUND_0_MS,
@@ -54,6 +54,12 @@ public object PerfMetricRegistry {
         put("max_aggregate_cells", PerfObservationLimits.MAX_CELLS)
         put("retained_minutes", PerfObservationLimits.RETAINED_MINUTES)
         put("gauge_sample_ms", PerfObservationLimits.SAMPLE_MS)
+        put("memory_budget_bytes", PerfMemoryBudget.LIMIT_BYTES)
+        put("state_budget_bytes", PerfMemoryBudget.ALLOCATABLE_BYTES)
+        put("snapshot_generation_budget_bytes", PerfMemoryBudget.SNAPSHOT_BYTES)
+        put("memory_headroom_bytes", PerfMemoryBudget.HEADROOM_BYTES)
+        put("memory_accounting", "Conservative UTF-16/object-size admission estimates, not measured JVM allocation")
+        put("snapshot_ownership", "One process-wide generation; callers must budget retained immutable snapshots")
         put(
             "metrics",
             JsonObject(
@@ -71,9 +77,14 @@ public object PerfMetricRegistry {
 
     internal fun definition(metric: String): PerfMetricDefinition? = definitions[metric]
 
-    internal fun isContentTiming(metric: String): Boolean = definitions[metric]?.let {
-        it.type == PerfMetricType.HISTOGRAM && PerfEventKind.CONTENT_PROGRESS in it.events
+    internal fun isBoundaryTiming(metric: String): Boolean = definitions[metric]?.let {
+        val progress = PerfEventKind.CONTENT_PROGRESS in it.events || PerfEventKind.CLIENT_PROGRESS in it.events
+        val terminalHistogram = PerfEventKind.REQUEST_FINISHED in it.events && it.type == PerfMetricType.HISTOGRAM
+        progress && terminalHistogram
     } == true
+
+    internal fun isUsageMetric(metric: String): Boolean =
+        definitions[metric]?.events?.contains(PerfEventKind.USAGE_RECORDED) == true
 
     internal fun accepts(metric: String, kind: PerfEventKind, value: Double): Boolean =
         value.isFinite() && value in 0.0..MAX_MEASUREMENT && definitions[metric]?.events?.contains(kind) == true

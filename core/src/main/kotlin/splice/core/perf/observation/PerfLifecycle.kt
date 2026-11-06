@@ -5,9 +5,10 @@ internal class PerfLifecycle(
     private val cells: PerfCells,
     private val gauges: PerfGaugeBook,
     private val scopes: PerfScopeBudget,
+    private val memory: PerfMemoryAccount,
 ) {
-    private val active = HashMap<String, PerfScope>()
-    private val terminals = PerfRecentIds()
+    private var active = HashMap<String, PerfScope>()
+    private val terminals = PerfRecentIds(memory)
     var dropped = 0L
         private set
     var orphanTerminals = 0L
@@ -22,7 +23,7 @@ internal class PerfLifecycle(
         PerfEventKind.TOOL_FINISHED -> finish("tools", event.links.toolId, event, at)
         PerfEventKind.REQUEST_ADMITTED, PerfEventKind.PROTOCOL_PROGRESS, PerfEventKind.CONTENT_PROGRESS,
         PerfEventKind.CLIENT_PROGRESS, PerfEventKind.GAP, PerfEventKind.GATE_STATE, PerfEventKind.TOOL_PHASE,
-        PerfEventKind.RUNTIME, PerfEventKind.SELF_COST, PerfEventKind.CHECKPOINT,
+        PerfEventKind.RUNTIME, PerfEventKind.SELF_COST, PerfEventKind.CHECKPOINT, PerfEventKind.USAGE_RECORDED,
         -> transition(event, at)
     }
 
@@ -41,7 +42,7 @@ internal class PerfLifecycle(
         if (key?.let(::alreadyKnown) == true) return false
         val live = scopes.bound(liveMetric(family), scope.copy(outcome = null))
         count(if (family == REQUESTS) "requests_arrived" else "${family}_started", live, at)
-        if (key == null || active.size >= PerfObservationLimits.MAX_HANDLES) {
+        if (key == null || !reserveHandle()) {
             dropped++
         } else {
             active[key] = live
@@ -54,10 +55,20 @@ internal class PerfLifecycle(
 
     private fun alreadyKnown(key: String): Boolean = key in active || terminals.contains(key)
 
+    private fun reserveHandle(): Boolean = active.size < PerfObservationLimits.MAX_HANDLES &&
+        memory.reserve(PerfMemoryBudget.HANDLE_BYTES)
+
+    fun clear() {
+        memory.release(active.size * PerfMemoryBudget.HANDLE_BYTES)
+        active = HashMap()
+        terminals.clear()
+    }
+
     private fun finish(family: String, id: String?, event: PerfObservation, at: Long): Boolean {
         val key = id?.let { "$family:$it" }
         if (key != null && !terminals.add(key)) return false
         val previous = key?.let(active::remove)
+        if (previous != null) memory.release(PerfMemoryBudget.HANDLE_BYTES)
         if (previous != null) gauges.change(liveMetric(family), previous, -1.0, at) else orphanTerminals++
         val scope = event.scope.copy(outcome = event.outcome?.let(PerfDimensions::outcome) ?: "unknown")
         count("${family}_finished", scope, at)

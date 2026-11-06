@@ -1,15 +1,20 @@
 package splice.core.perf.observation
 
 /** Fixed cell count bounds every histogram and sparse minute map, even under hostile cardinality. */
-internal class PerfCells {
-    private val entries = LinkedHashMap<PerfCellKey, PerfCell>()
+internal class PerfCells(private val memory: PerfMemoryAccount?) {
+    private var entries = LinkedHashMap<PerfCellKey, PerfCell>()
     var dropped = 0L
         private set
     var expiredBefore: Long? = null
         private set
+    var expiredInputs = 0L
+        private set
+    private var retentionFrom = Long.MIN_VALUE
 
-    fun add(metric: String, scope: PerfScope, at: Long, value: Double) {
-        cell(metric, scope, at)?.add(value)
+    fun add(metric: String, scope: PerfScope, at: Long, value: Double): Boolean {
+        val target = cell(metric, scope, at) ?: return false
+        target.add(value)
+        return true
     }
 
     fun integrate(series: PerfSeriesKey, from: Long, until: Long, value: Double) {
@@ -24,31 +29,46 @@ internal class PerfCells {
 
     fun expire(at: Long) {
         val cutoff = minute(at) - (PerfObservationLimits.RETAINED_MINUTES - 1) * PerfObservationLimits.MINUTE_MS
+        retentionFrom = maxOf(retentionFrom, cutoff)
+        val before = entries.size
         val removed = entries.keys.removeIf { it.minute < cutoff }
+        memory?.release((before - entries.size) * PerfMemoryBudget.CELL_BYTES)
         if (removed) expiredBefore = cutoff
     }
 
     fun copy(): PerfCells {
-        val result = PerfCells()
+        // The process-wide snapshot permit reserves this temporary map and its returned DTO generation together.
+        val result = PerfCells(null)
         entries.forEach { (key, cell) -> result.entries[key] = cell.copy() }
         result.dropped = dropped
         result.expiredBefore = expiredBefore
+        result.expiredInputs = expiredInputs
+        result.retentionFrom = retentionFrom
         return result
     }
 
     fun points(until: Long): List<PerfAggregatePoint> = entries.map { (key, value) -> value.point(key, until) }
 
+    fun clear() {
+        memory?.release(entries.size * PerfMemoryBudget.CELL_BYTES)
+        entries = LinkedHashMap()
+    }
+
     private fun cell(metric: String, scope: PerfScope, at: Long): PerfCell? {
         val key = PerfCellKey(metric, scope, minute(at))
         val existing = entries[key]
         if (existing != null) return existing
-        if (entries.size >= PerfObservationLimits.MAX_CELLS) {
-            dropped++
-            return null
-        }
+        if (!mayAdd(key.minute)) return null
         val cell = PerfCell(PerfMetricRegistry.definition(metric)?.type == PerfMetricType.HISTOGRAM)
         entries[key] = cell
         return cell
+    }
+
+    private fun mayAdd(at: Long): Boolean = when {
+        at < retentionFrom -> { expiredInputs++; false }
+        entries.size >= PerfObservationLimits.MAX_CELLS -> { dropped++; false }
+        memory?.reserve(PerfMemoryBudget.CELL_BYTES) == false -> { dropped++; false }
+        else -> true
     }
 
     private fun minute(at: Long): Long = Math.floorDiv(

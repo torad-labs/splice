@@ -7,11 +7,12 @@ import java.util.concurrent.atomic.AtomicLong
 
 /** Synchronous, bounded observation creation. The observer owns persistence acknowledgement and loss accounting. */
 public class PerfRecorder(
-    private val identity: PerfIdentity,
+    identity: PerfIdentity,
     private val observer: PerfObserver,
     private val clock: ElapsedClock,
     private val wallClock: WallClock,
 ) {
+    private val identity = PerfProvenance.bounded(identity)
     private val sequence = AtomicLong()
     private val recorderId = UUID.randomUUID().toString()
 
@@ -37,12 +38,28 @@ public class PerfRecorder(
 
     internal fun elapsedSince(origin: Long): Long = (clock() - origin).coerceAtLeast(0)
 
-    private fun stamp(): PerfStamp = PerfStamp(nextId(), identity, wallClock(), clock())
+    internal fun stamp(): PerfStamp = PerfStamp(nextId(), identity, wallClock(), clock())
+
+    internal fun attributedStamp(origin: PerfStamp): PerfStamp = origin.copy(observationId = nextId())
+
+    internal fun attempt(scope: PerfScope, parent: PerfLinks, transport: String): PerfAttemptRecorder {
+        val start = stamp()
+        val attemptScope = PerfDimensions.scope(scope.copy(transport = transport, work = "upstream", outcome = null))
+        val links = PerfDimensions.links(
+            parent.copy(
+                attemptId = start.observationId,
+                parentSpanId = parent.spanId,
+                spanId = UUID.randomUUID().toString().replace("-", "").take(SPAN_HEX_LENGTH),
+            ),
+        )
+        publish(PerfObservation(start, attemptScope, PerfEventKind.ATTEMPT_STARTED, links = links))
+        return PerfAttemptRecorder(this, attemptScope, links, start.monotonicMs)
+    }
 
     private fun nextId(): String =
         "${identity.bootId.take(PerfObservationLimits.MAX_LABEL / 2)}:$recorderId:${sequence.incrementAndGet()}"
 
-    private fun publish(observation: PerfObservation): Boolean {
+    internal fun publish(observation: PerfObservation): Boolean {
         if (observer === NoPerfObserver) return true
         val values = observation.values.filter { (key, value) ->
             PerfMetricRegistry.accepts(key, observation.kind, value)
@@ -68,3 +85,5 @@ public class PerfRecorder(
         return accepted && dropped == 0
     }
 }
+
+private const val SPAN_HEX_LENGTH = 16

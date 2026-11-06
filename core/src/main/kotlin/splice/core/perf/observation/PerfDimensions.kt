@@ -12,7 +12,7 @@ internal object PerfDimensions {
     private val flags = Regex("[0-9a-f]{2}")
     private val transports = setOf("sse", "ws", "websocket", "http", "local", UNKNOWN)
     private val workKinds =
-        setOf("client", "compact", "tool", "compare", "local", "runtime", "instrumentation", UNKNOWN)
+        setOf("client", "compact", "tool", "compare", "local", "runtime", "instrumentation", "upstream", UNKNOWN)
 
     fun scope(scope: PerfScope): PerfScope = scope.copy(
         head = scope.head.takeIf(label::matches) ?: UNKNOWN,
@@ -31,6 +31,7 @@ internal object PerfDimensions {
         traceFlags = links.traceFlags?.takeIf(flags::matches),
         // Vendor trace-state may contain account data; export requires a separate explicit allowlist.
         traceState = null,
+        turnId = id(links.turnId),
     )
 
     fun outcome(value: String): String = when {

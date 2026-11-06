@@ -12,10 +12,17 @@ public class PerfRequestRecorder internal constructor(
     private var currentLinks = initialLinks
     private var finished = false
     private var admitted = false
-    private val terminalMeasurements = LinkedHashMap<String, Double>()
+    private val measurements = PerfRequestMeasurements()
+    private val canonicalUsage = PerfCanonicalUsage(recorder)
 
     public val links: PerfLinks get() = synchronized(lock) { currentLinks }
     public val scope: PerfScope get() = synchronized(lock) { currentScope }
+
+    public fun attempt(transport: String): PerfAttemptRecorder = synchronized(lock) {
+        recorder.attempt(currentScope, currentLinks, transport)
+    }
+
+    public fun usage(values: Map<String, Double>): Boolean = synchronized(lock) { canonicalUsage.record(values) }
 
     public fun update(scope: PerfScope, links: PerfLinks = this.links): Unit = synchronized(lock) {
         if (!finished) {
@@ -31,6 +38,7 @@ public class PerfRequestRecorder internal constructor(
         outcome: String? = null,
     ): Boolean = synchronized(lock) {
         when {
+            kind == PerfEventKind.USAGE_RECORDED -> usage(values)
             finished || kind == PerfEventKind.REQUEST_ARRIVED -> false
             kind == PerfEventKind.REQUEST_FINISHED -> finish(outcome ?: "?", values)
             kind == PerfEventKind.REQUEST_ADMITTED && admitted -> false
@@ -41,41 +49,24 @@ public class PerfRequestRecorder internal constructor(
     public fun finish(outcome: String, values: Map<String, Double> = emptyMap()): Boolean = synchronized(lock) {
         if (finished) return false
         finished = true
-        val terminalValues = values.filterKeys { !PerfMetricRegistry.isContentTiming(it) }
-        recorder.emit(
+        val terminal = PerfObservation(
+            recorder.stamp(),
             currentScope,
             PerfEventKind.REQUEST_FINISHED,
-            terminalValues + terminalMeasurements + ("arrival_to_terminal_ms" to elapsedMs().toDouble()),
+            measurements.terminal(values, elapsedMs()),
             currentLinks,
-            outcome,
+            PerfDimensions.terminalOutcome(outcome),
         )
+        val recorded = recorder.publish(terminal)
+        val usageRecorded = canonicalUsage.finish(terminal, values)
+        recorded && usageRecorded
     }
 
     public fun elapsedMs(): Long = recorder.elapsedSince(arrivalMonotonicMs)
 
     private fun observeOpen(kind: PerfEventKind, values: Map<String, Double>, outcome: String?): Boolean {
-        if (kind == PerfEventKind.REQUEST_ADMITTED) {
-            admitted = true
-            values["queue_wait_ms"]?.takeIf { PerfMetricRegistry.accepts("queue_wait_ms", kind, it) }
-                ?.let { terminalMeasurements.putIfAbsent("queue_wait_ms", it) }
-        }
-        if (kind == PerfEventKind.CONTENT_PROGRESS) {
-            values.forEach { (key, value) ->
-                if (PerfMetricRegistry.isContentTiming(key) && PerfMetricRegistry.accepts(key, kind, value)) {
-                    terminalMeasurements.putIfAbsent(key, value)
-                }
-            }
-        }
-        if (kind == PerfEventKind.GAP) captureGapMaxima(values)
+        if (kind == PerfEventKind.REQUEST_ADMITTED) admitted = true
+        measurements.observe(kind, values)
         return recorder.emit(currentScope, kind, values, currentLinks, outcome)
-    }
-
-    private fun captureGapMaxima(values: Map<String, Double>) {
-        listOf("upstream_gap_ms" to "upstream_gap_max_ms", "downstream_gap_ms" to "downstream_gap_max_ms")
-            .forEach { (event, maximum) ->
-                values[event]?.takeIf { PerfMetricRegistry.accepts(event, PerfEventKind.GAP, it) }?.let { value ->
-                    terminalMeasurements[maximum] = maxOf(terminalMeasurements[maximum] ?: 0.0, value)
-                }
-            }
     }
 }

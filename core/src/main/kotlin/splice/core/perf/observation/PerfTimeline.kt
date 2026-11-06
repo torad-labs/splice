@@ -9,6 +9,8 @@ internal class PerfTimeline {
         private set
     var clockChanges = 0L
         private set
+    var lateObservations = 0L
+        private set
     val observed: Long get() = (last - first).coerceAtLeast(0)
 
     fun advance(stamp: PerfStamp): Long {
@@ -24,6 +26,14 @@ internal class PerfTimeline {
             last = maxOf(last, candidate)
         }
         return last
+    }
+
+    fun attributed(stamp: PerfStamp): Long {
+        val start = origin ?: return advance(stamp)
+        val elapsed = (stamp.monotonicMs - start.monotonicMs).coerceAtLeast(0)
+        val at = (first + elapsed).coerceAtLeast(first)
+        if (at < last) lateObservations++
+        return at
     }
 }
 

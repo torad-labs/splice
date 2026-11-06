@@ -28,4 +28,5 @@ public data class PerfLinks(
     val parentSpanId: String? = null,
     val traceFlags: String? = null,
     val traceState: String? = null,
+    val turnId: String? = null,
 )

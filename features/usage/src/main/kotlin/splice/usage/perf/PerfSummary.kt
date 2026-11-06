@@ -113,7 +113,7 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
         putJsonObject("outcomes") { byOutcome.forEach { (tag, n) -> put(tag, n) } }
         // Stopped and unattributed rows stay in outcomes and the denominator, never the failure count.
         val failures = byOutcome.filterKeys(OutcomeTags::isFailed)
-        put("failure_share", failures.values.sum().toDouble() / rows.size)
+        put("failure_share", if (rows.isEmpty()) null else failures.values.sum().toDouble() / rows.size)
         // Per failing tag, with the same classification as the Failed request filter.
         putJsonObject("failure_shares") { failures.forEach { (tag, n) -> put(tag, n.toDouble() / rows.size) } }
         counters(rows).forEach { (k, v) -> put(k, v) }

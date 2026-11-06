@@ -1,5 +1,8 @@
 package splice.app.instrumentation
 
+import io.opentelemetry.sdk.common.CompletableResultCode
+import io.opentelemetry.sdk.trace.data.SpanData
+import io.opentelemetry.sdk.trace.export.SpanExporter
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -79,7 +82,9 @@ object BenchmarkExecutionFixture {
         rows: MutableList<JsonObject>,
         repetition: Int,
     ) {
+        val exporter = BenchmarkNativeExporter()
         NativeCodeModeRuntime(
+            traceExporter = exporter,
             spawn = WorkerSpawn { builder ->
                 val executable = Path.of(builder.command().first()).toRealPath()
                 check(executable.startsWith(root)) { "native bundle must unpack into task tmpdir" }
@@ -108,6 +113,7 @@ object BenchmarkExecutionFixture {
                 request.finish("good")
             }
         }
+        check(exporter.spans.isNotEmpty())
     }
 
     private fun receipt(
@@ -235,6 +241,23 @@ object BenchmarkExecutionFixture {
         MessageDigest.getInstance("SHA-256").digest(bytes),
     )
 }
+
+private class BenchmarkNativeExporter : SpanExporter {
+    val spans = CopyOnWriteArrayList<SpanData>()
+
+    @Synchronized
+    override fun export(values: Collection<SpanData>): CompletableResultCode {
+        check(spans.size + values.size <= MAX_NATIVE_FIXTURE_SPANS)
+        spans.addAll(values)
+        return CompletableResultCode.ofSuccess()
+    }
+
+    override fun flush(): CompletableResultCode = CompletableResultCode.ofSuccess()
+    override fun shutdown(): CompletableResultCode = CompletableResultCode.ofSuccess()
+}
+
+// Bound local recording for each native runtime's cold/warm pair, including its protocol setup spans.
+private const val MAX_NATIVE_FIXTURE_SPANS = 512
 
 private const val INIT = """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25",""" +
     """"capabilities":{},"clientInfo":{"name":"benchmark","version":"1"}}}"""

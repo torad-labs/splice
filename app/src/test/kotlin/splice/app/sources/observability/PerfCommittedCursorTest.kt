@@ -49,25 +49,29 @@ class PerfCommittedCursorTest {
         Files.writeString(file, row(500, "ok") + row(500, "failed") + row(300, "ok"))
         val source = PerfRowsFileSource(file)
         val request = PerfCursorRequest(query, all, pageSize = 1)
-        val first = source.page(request)
-        assertEquals("3", first.metadata["total_matching"].toString())
-        assertEquals("\"complete\"", first.metadata["status"].toString())
-        Files.writeString(file, row(100, "ok"), StandardOpenOption.APPEND)
-        val second = source.page(request.copy(cursor = first.nextCursor))
-        val third = source.page(request.copy(cursor = second.nextCursor))
-        assertEquals(listOf(500L, 500L, 300L), (first.rows + second.rows + third.rows).map { it.ts })
-        assertEquals(3, (first.recordIds + second.recordIds + third.recordIds).distinct().size)
-        assertNull(third.nextCursor)
-        val filtered = source.page(
+        source.page(request).use { first ->
+            assertEquals("3", first.metadata["total_matching"].toString())
+            assertEquals("\"complete\"", first.metadata["status"].toString())
+            Files.writeString(file, row(100, "ok"), StandardOpenOption.APPEND)
+            source.page(request.copy(cursor = first.nextCursor)).use { second ->
+                source.page(request.copy(cursor = second.nextCursor)).use { third ->
+                    assertEquals(listOf(500L, 500L, 300L), (first.rows + second.rows + third.rows).map { it.ts })
+                    assertEquals(3, (first.recordIds + second.recordIds + third.recordIds).distinct().size)
+                    assertNull(third.nextCursor)
+                }
+            }
+        }
+        source.page(
             PerfCursorRequest(
                 query.copy(filterHash = "failed"),
                 PerfRowPredicate {
                     it.outcome == "failed"
                 },
             ),
-        )
-        assertEquals("1", filtered.metadata["total_matching"].toString())
-        assertEquals(listOf("failed"), filtered.rows.map { it.outcome })
+        ).use { filtered ->
+            assertEquals("1", filtered.metadata["total_matching"].toString())
+            assertEquals(listOf("failed"), filtered.rows.map { it.outcome })
+        }
     }
 
     @Test
@@ -79,20 +83,23 @@ class PerfCommittedCursorTest {
         Files.createDirectories(archive)
         Files.writeString(file, row(500, "ok") + row(600, "ok"))
         val request = PerfCursorRequest(query, all, pageSize = 1)
-        val first = PerfRowsFileSource(file, archive).page(request)
-        assertNotNull(first.nextCursor)
-        val rolled = file.resolveSibling("${file.fileName}.1")
-        Files.move(file, rolled)
-        Files.writeString(file, row(700, "ok"))
-        Files.copy(rolled, archive.resolve(PerfArchiveName(file.fileName.toString()).of(1_000L)))
-        Files.move(file, rolled, StandardCopyOption.REPLACE_EXISTING)
-        Files.writeString(file, row(800, "ok"))
-        val second = PerfRowsFileSource(file, archive).page(request.copy(cursor = first.nextCursor))
-        assertEquals(listOf(600L), second.rows.map { it.ts })
-        assertNull(second.nextCursor)
-        val fresh = PerfRowsFileSource(file, archive).page(request.copy(pageSize = 20))
-        assertEquals(4, fresh.rows.size)
-        assertEquals(4, fresh.recordIds.distinct().size)
+        PerfRowsFileSource(file, archive).page(request).use { first ->
+            assertNotNull(first.nextCursor)
+            val rolled = file.resolveSibling("${file.fileName}.1")
+            Files.move(file, rolled)
+            Files.writeString(file, row(700, "ok"))
+            Files.copy(rolled, archive.resolve(PerfArchiveName(file.fileName.toString()).of(1_000L)))
+            Files.move(file, rolled, StandardCopyOption.REPLACE_EXISTING)
+            Files.writeString(file, row(800, "ok"))
+            PerfRowsFileSource(file, archive).page(request.copy(cursor = first.nextCursor)).use { second ->
+                assertEquals(listOf(600L), second.rows.map { it.ts })
+                assertNull(second.nextCursor)
+            }
+        }
+        PerfRowsFileSource(file, archive).page(request.copy(pageSize = 20)).use { fresh ->
+            assertEquals(4, fresh.rows.size)
+            assertEquals(4, fresh.recordIds.distinct().size)
+        }
     }
 
     @Test
@@ -109,32 +116,39 @@ class PerfCommittedCursorTest {
         var now = System.currentTimeMillis()
         val source = PerfCommittedCursors(file, archive, PerfSourceCosts(), WallClock { now })
         val request = PerfCursorRequest(query, all, pageSize = 1)
-        val first = source.page(request)
-        assertEquals("2", first.metadata["known_matching"].toString())
-        assertEquals("\"incomplete\"", first.metadata["status"].toString())
-        val changed = source.page(request.copy(cursor = first.nextCursor, query = query.copy(filterHash = "changed")))
-        assertEquals("\"invalid\"", changed.metadata["status"].toString())
-        now += PERF_CURSOR_TTL_MS + 1
-        val expired = source.page(request.copy(cursor = first.nextCursor))
-        assertEquals("\"expired\"", expired.metadata["status"].toString())
-        now -= PERF_CURSOR_TTL_MS + 1
-        Files.delete(rolled)
-        Files.delete(saved)
-        val missing = source.page(request.copy(cursor = first.nextCursor))
-        assertEquals("\"expired\"", missing.metadata["status"].toString())
-        assertTrue(missing.rows.isEmpty())
+        source.page(request).use { first ->
+            assertEquals("2", first.metadata["known_matching"].toString())
+            assertEquals("\"incomplete\"", first.metadata["status"].toString())
+            source.page(
+                request.copy(cursor = first.nextCursor, query = query.copy(filterHash = "changed")),
+            ).use { changed ->
+                assertEquals("\"invalid\"", changed.metadata["status"].toString())
+            }
+            now += PERF_CURSOR_TTL_MS + 1
+            source.page(request.copy(cursor = first.nextCursor)).use { expired ->
+                assertEquals("\"expired\"", expired.metadata["status"].toString())
+            }
+            now -= PERF_CURSOR_TTL_MS + 1
+            Files.delete(rolled)
+            Files.delete(saved)
+            source.page(request.copy(cursor = first.nextCursor)).use { missing ->
+                assertEquals("\"expired\"", missing.metadata["status"].toString())
+                assertTrue(missing.rows.isEmpty())
+            }
+        }
     }
 
     @Test
     fun `malformed and uncommitted rows are explicit and never called complete`(@TempDir directory: Path) {
         val file = directory.resolve("head.jsonl")
         Files.writeString(file, row(500, "ok") + "{malformed\n" + "{\"ts\":600,\"outcome\":\"ok\"}")
-        val page = PerfRowsFileSource(file).page(PerfCursorRequest(query, all))
-        assertEquals(1, page.rows.size)
-        assertEquals("\"incomplete\"", page.metadata["status"].toString())
-        assertEquals("null", page.metadata["total_matching"].toString())
-        assertEquals("1", page.metadata["malformed_rows"].toString())
-        assertTrue(page.metadata["read_errors"].toString().contains("uncommitted_tail"))
+        PerfRowsFileSource(file).page(PerfCursorRequest(query, all)).use { page ->
+            assertEquals(1, page.rows.size)
+            assertEquals("\"incomplete\"", page.metadata["status"].toString())
+            assertEquals("null", page.metadata["total_matching"].toString())
+            assertEquals("1", page.metadata["malformed_rows"].toString())
+            assertTrue(page.metadata["read_errors"].toString().contains("uncommitted_tail"))
+        }
     }
 
     private fun row(ts: Long, outcome: String): String = "{\"ts\":$ts,\"model\":\"test\",\"outcome\":\"$outcome\"}\n"

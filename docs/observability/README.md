@@ -91,8 +91,10 @@ and must not be summed into total latency.
   identities, measurement conditions and acceptance status. Calibration data is
   not an overhead or sustainable-capacity result.
 
-Set `perf_collection_enabled` in `[defaults]` to control the new local collection
-at startup. Disabling it preserves legacy performance records and configured
+Set `perf_collection_enabled = "false"` in `[defaults]` to disable the new local
+collection at startup, or `"true"` to enable it. Values in `[defaults]` use the
+existing string format; the Boolean fields in `[telemetry.operator]` use TOML
+Booleans without quotes. Disabling collection preserves legacy performance records and configured
 local traces. Exporter settings are also restart-required; the configuration API
 reports this from knob metadata. A saved desired value does not claim that an
 already running owner has applied it.

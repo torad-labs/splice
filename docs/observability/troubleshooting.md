@@ -93,6 +93,12 @@ resolution is explicitly unavailable. Exact recorded account IDs remain usable.
 The performance worker does not load the account dashboard or refresh
 authentication/quota information to fill missing names.
 
+A legacy account group can contain several labels without a canonical account
+reference. Performance cannot query that union as one account ID. The console
+keeps the native Usage group visible and asks for one of its exact IDs before
+reading Performance. Choosing an ID narrows both views together; it never sends
+the joined labels as an account ID or drops the filter.
+
 Existing text CLI output, legacy API roots and legacy row fields retain their
 meanings. Use the explicit new contract for shared machine filters and coverage.
 New instrumentation does not change prompt construction, replay, canonical billing,

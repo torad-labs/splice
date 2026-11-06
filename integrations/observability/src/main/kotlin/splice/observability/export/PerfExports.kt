@@ -101,7 +101,7 @@ public class PerfExports(
 
     public fun flush(): Boolean = worker.flush()
 
-    override fun close() = worker.close()
+    override fun close(): Unit = worker.close()
 }
 
 private const val TRACES = "traces"

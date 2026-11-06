@@ -33,10 +33,19 @@ export async function queryHistory(desk: OwnedDesk, fixture: { from_ms: number; 
   for (const cache of ['first_query_in_process', 'repeat_query']) {
     const before = await readSourceCosts(desk);
     const endpoint = source === 'history' ? 'series' : 'summary';
-    const result = await control(desk, `/api/perf/${endpoint}?contract=1&head=bench&source=${source}&from=${from}&until=${until}`, { limit: 4 * 1024 ** 2, timeout_ms: 30000 });
-    const v = result.value;
+    const started = performance.now();
+    let result: { value: Record<string, any>; bytes: number | null; elapsed_ms: number }, errorClass: string | null = null;
+    try {
+      result = await control(desk, `/api/perf/${endpoint}?contract=1&head=bench&source=${source}&from=${from}&until=${until}`, { limit: 4 * 1024 ** 2, timeout_ms: 30000 });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      errorClass = /^[a-z0-9_]{1,100}$/.test(message) ? message : 'history_query_failed';
+      result = { value: {}, bytes: null, elapsed_ms: performance.now() - started };
+    }
+    const v = result.value && typeof result.value === 'object' && !Array.isArray(result.value) ? result.value : {};
     const work_cost = sourceCostDelta(before, await readSourceCosts(desk));
-    if (v.query?.from_ms !== from || v.query?.until_ms !== until || v.query?.source !== source) throw new Error('history_query_bounds_changed');
+    const queryBoundsMatch = v.query?.from_ms === from && v.query?.until_ms === until && v.query?.source === source;
+    if (!queryBoundsMatch) errorClass ??= 'history_query_bounds_changed';
     const histogramCount = source === 'history' && Array.isArray(v.series) ? v.series.reduce((n: number, row: any) => n + Object.values(row.metrics ?? {}).reduce<number>((s, value: any) => s + (counter(value.count) ?? 0), 0), 0) : null;
     const workload = v.comparison?.workload;
     const observedArrivals = source === 'evidence' ? counter(workload?.observed_arrivals) : null;
@@ -45,7 +54,9 @@ export async function queryHistory(desk: OwnedDesk, fixture: { from_ms: number; 
     const evidenceCoverage = v.population_coverage?.request_scope_resolved_at_terminal_or_latest_checkpoint;
     rows.push({ repetition, window_ms: window, source, cache, cache_scope: cache === 'first_query_in_process' ? 'fresh_process_and_query_cache' : 'same_process_same_query', prior_population_queries_in_process: cache === 'first_query_in_process' ? 0 : 1,
       binding: { process_id: desk.pid, start_ticks: desk.identity?.start_ticks ?? null, artifact_sha256: desk.identity?.artifact_sha256 ?? null },
-      status: typeof v.status === 'string' && ['ok', 'partial', 'busy', 'error'].includes(v.status) ? v.status : 'unknown', from_ms: from, until_ms: until, elapsed_ms: result.elapsed_ms, bytes: result.bytes,
+      status: errorClass ? /^control_http_(409|429|503)$/.test(errorClass) ? 'busy' : 'error' : typeof v.status === 'string' && ['ok', 'partial', 'busy', 'error'].includes(v.status) ? v.status : 'unknown', error_class: errorClass,
+      query_bounds_match: queryBoundsMatch, returned_from_ms: counter(v.query?.from_ms), returned_until_ms: counter(v.query?.until_ms), returned_source: ['history', 'evidence'].includes(v.query?.source) ? v.query.source : null,
+      from_ms: from, until_ms: until, elapsed_ms: result.elapsed_ms, bytes: result.bytes,
       population: source === 'history' ? 'aggregate_histogram_observations' : 'request_arrivals', populated: actual === null ? null : actual > 0, histogram_count: histogramCount, expected_histogram_count: source === 'history' ? expected : null,
       observed_arrivals: observedArrivals, expected_arrivals: source === 'evidence' ? expected : null, population_complete: populationComplete, observed_count_matches_fixture: actual === null ? null : actual === expected, count_matches_fixture: populationComplete === true && actual === expected,
       coverage: numericProjection(v.coverage), population_coverage: numericProjection(v.population_coverage), missing_fields: Array.isArray(v.missing_fields) ? v.missing_fields.filter((code: unknown) => typeof code === 'string' && /^[a-z0-9_.-]{1,100}$/.test(code)).slice(0, 256) : null,

@@ -11,8 +11,9 @@ import { analyze } from './analyze';
 import { collector, startProfile } from './adapters';
 import { startTelemetry, telemetrySummary, type TelemetryPoint } from "./telemetry";
 import { queryHistory } from './history';
+import { historyStudy } from './history-result';
 import type { DeskIdentity } from './identity';
-const harnessAtLoad = Promise.all(['run.ts', 'manifest.ts', 'fixture.ts', 'observe.ts', 'desk.ts', 'summary.ts', 'analyze.ts', 'adapters.ts', 'identity.ts', 'control.ts', 'profile.ts', 'otlp.ts', 'telemetry.ts', 'history.ts', 'costs.ts', 'retained.ts', 'retained-model.ts'].map(f => Bun.file(join(import.meta.dir, f)).text())).then(files => hash(files.join('\n')));
+const harnessAtLoad = Promise.all(['run.ts', 'manifest.ts', 'fixture.ts', 'observe.ts', 'desk.ts', 'summary.ts', 'analyze.ts', 'adapters.ts', 'identity.ts', 'control.ts', 'profile.ts', 'otlp.ts', 'telemetry.ts', 'history.ts', 'history-result.ts', 'costs.ts', 'retained.ts', 'retained-model.ts'].map(f => Bun.file(join(import.meta.dir, f)).text())).then(files => hash(files.join('\n')));
 export async function writeVerified(path: string, value: string) {
   const temporary = `${path}.${randomUUID()}.tmp`; const file = await open(temporary, 'wx', 0o600);
   try { await file.writeFile(value); await file.sync(); } finally { await file.close(); }
@@ -130,6 +131,7 @@ export async function run(input: Manifest, directory: string, dry = false) {
   if (exporter.counts.wire_invalid || exporter.counts.evidence_overflow) extras.partial_reason ??= 'export_evidence_partial';
   if (upstream.stats().request_body_mismatches) extras.partial_reason ??= 'upstream_request_shape_invalid';
   if (m.upstream?.transport === 'websocket' && upstream.stats().websocket_requests === 0) extras.partial_reason ??= 'production_websocket_not_observed';
+  if (m.retained_history && historyStudy(m, extras.history ?? []).status !== 'complete') extras.partial_reason ??= 'history_study_partial';
   m.provenance = { measured_at: new Date().toISOString(), environment: env, boot_ids: bootIds, process_identities: processIdentities, request_sha256: hash(body),
     supplied_identity: { source_commit: input.source_commit, artifact_sha256: input.artifact_sha256, process_build: input.process_build, config_revision: input.config_revision },
     harness_sha256: await harnessAtLoad };

@@ -196,7 +196,8 @@ it has no new-collection toggle. Baseline minimal/export/profile requests are
 rejected. Candidate minimal means **only new instrumentation disabled**, preserving
 legacy perf rows and full configured traces. Candidate local enables new
 instrumentation. Both require a candidate artifact with the pinned config
-contract: `[defaults] perf_collection_enabled = true|false`. Optional exports use
+contract: `[defaults] perf_collection_enabled = "true"|"false"` (defaults store
+string values; the knob coerces this to a Boolean). Optional exports use
 `[telemetry.operator]` with `prometheus_enabled`, `otlp_endpoint`, `otlp_protocol`,
 `otlp_headers` and `otlp_signals`. All are set before boot; no runtime setting is
 assumed hot reloadable. Use the unchanged-baseline analyzer for baseline local versus candidate local
@@ -261,6 +262,33 @@ population completeness, receipt as-of, coverage basis and work counters.
 Missing counts remain null; matching a known partial count is not a complete
 population pass. Bounded partial seven-day evidence summaries remain explicit;
 complete paginated observation export is a separate functional acceptance check.
+
+`summary.history` retains every query row and recomputes the study verdict from
+the requested source/window, independent expected population, complete coverage,
+source as-of and work-cost receipts, and fresh process bindings. A query refusal,
+error, unknown coverage or population mismatch marks the study and overall run
+partial, with CLI exit2. A bounded partial response remains useful evidence but
+cannot establish full history-query success. The harness records all requested
+query repetitions before evaluating this verdict; other execution failures still
+stop the run normally.
+
+Prepare the four manifests with `materializeHistory(point, artifact, seed)` from
+`schedule.ts`. `artifact` is the frozen `{path, source_commit, sha256}` reference;
+`seed` is the independently verified `{directory, receipt_sha256, source_commit}`
+reference. The helper copies the exact source/window selectors from each history
+point and validates the cold/local configuration without starting a process:
+
+```ts
+import { finalSchedule, materializeHistory } from './tools/instrumentation-bench/schedule';
+const manifests = finalSchedule().points
+  .filter(point => point.cohort === 'candidate-history-study')
+  .map(point => materializeHistory(point, artifact, seed));
+```
+
+The helper consumes trusted preparation references; `installHistory` still
+rehashes the seed receipt and all declared files before each launch. Native/MCP
+and retained-state points keep their separate entry prerequisites and cannot be
+materialized by this helper.
 
 BenchmarkExecutionFixture is a separately launched compiled app test entry that
 invokes NativeCodeModeRuntime and McpHost with the deterministic FakeMcpServer

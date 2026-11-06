@@ -1,6 +1,7 @@
 import { telemetrySummary, type TelemetryPoint } from './telemetry';
 import type { Manifest } from './manifest';
 import type { Sample } from './observe';
+import { historyStudy } from './history-result';
 export interface Interval { mean: number | null; low: number | null; high: number | null; n: number; cv: number | null }
 export function interval(xs: number[]): Interval {
   if (!xs.length) return { mean: null, low: null, high: null, n: 0, cv: null };
@@ -23,6 +24,7 @@ export interface Repetition {
 export interface Extras { repetitions: Repetition[]; fixture: unknown; polling: { count: number; failed: number; bytes: number; elapsed_ms: number }; partial_reason: string | null; exports?: unknown; profiles?: unknown[]; schemas?: unknown[]; history?: unknown[]; query_summaries?: unknown[]; telemetry?: { points: TelemetryPoint[] } & ReturnType<typeof telemetrySummary> }
 export function summarize(m: Manifest, all: Sample[], extras: Extras) {
   const telemetry = extras.telemetry ? telemetrySummary(extras.telemetry.points, extras.telemetry.intervals) : null;
+  const history = historyStudy(m, extras.history ?? []), historyPartial = history.requested && history.status !== 'complete';
   const rows = all.filter(row => row.phase === 'steady');
   const duration = m.duration_ms * m.repetitions / 1000;
   const count = (p: (r: Sample) => boolean) => rows.filter(p).length;
@@ -43,8 +45,8 @@ export function summarize(m: Manifest, all: Sample[], extras: Extras) {
   const saturated = counters.generator_dropped > 0 || (generatorTails.p95 ?? 0) > m.generator_limits.max_schedule_delay_ms;
   const repeated = per.length === m.repetitions;
   const missing = m.load.kind === 'arrival_rate' ? Math.max(0, Math.ceil(m.duration_ms * m.load.value / 1000) * m.repetitions - rows.length) : null;
-  return { schema_version: 1, experiment_stage: m.experiment_stage ?? 'calibration', run_id: m.run_id, status: extras.partial_reason || !repeated || wireInvalid || counters.pending || saturated || missing ? 'partial' : 'complete',
-    partial_reason: extras.partial_reason ?? (saturated ? 'generator_saturated' : null), requested_duration_ms: m.duration_ms * m.repetitions,
+  return { schema_version: 1, experiment_stage: m.experiment_stage ?? 'calibration', run_id: m.run_id, status: extras.partial_reason || historyPartial || !repeated || wireInvalid || counters.pending || saturated || missing ? 'partial' : 'complete',
+    partial_reason: extras.partial_reason ?? (historyPartial ? 'history_study_partial' : saturated ? 'generator_saturated' : null), requested_duration_ms: m.duration_ms * m.repetitions,
     observed_duration_ms: extras.repetitions.reduce((n, r) => n + r.observed_duration_ms, 0), counts: counters,
     rates_per_second: Object.fromEntries(Object.entries(counters).map(([k, v]) => [k, v / duration])),
     missing_generator_iterations: missing, dropped_generator_iterations: counters.generator_dropped,
@@ -58,7 +60,7 @@ export function summarize(m: Manifest, all: Sample[], extras: Extras) {
     runtime_resources: { source: m.target.kind === 'proxy' ? 'Linux /proc process CPU/RSS plus task state directory size; CPU includes steady interval and bounded drain' : 'unavailable: mock and generator share a process',
       gc_ms: null, allocation_bytes: null, reason: 'requires instrumented runtime/JFR adapter', repetitions: per },
     telemetry_loss: telemetry?.loss ?? { value: null, reason: 'sink adapter unavailable for this artifact' }, instrumentation_resources: telemetry?.resources ?? null, sink_intervals: telemetry?.intervals ?? [],
-    polling: extras.polling, export_cost: { collector: extras.exports ?? null, cpu_ms: null, reason: 'collector bytes/time measured; exporter CPU requires instrumented counter adapter' }, profiles: extras.profiles ?? [],
+    polling: extras.polling, export_cost: { collector: extras.exports ?? null, cpu_ms: null, reason: 'collector bytes/time measured; exporter CPU requires instrumented counter adapter' }, profiles: extras.profiles ?? [], history,
     wire: { invalid: wireInvalid, terminal_correct: count(r => r.terminal_correct), hashes_recorded: count(r => r.wire_sha256 !== null), fixture: extras.fixture },
     confidence_intervals: { method: 'two-sided Student t over repetition means; independent repetitions assumption; no request-level pseudoreplication', completion_p95_ms: interval(per.flatMap(r => r.completion_p95_ms === null ? [] : [r.completion_p95_ms])) },
     generator: { delay_ms: generatorTails, saturated, max_inflight: m.generator_limits.max_inflight, achieved_offered_rps: rows.length / duration,

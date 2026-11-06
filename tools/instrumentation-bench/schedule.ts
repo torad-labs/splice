@@ -1,4 +1,5 @@
 import { defaults, validate, type Manifest } from './manifest';
+import type { RetainedFixture } from './history';
 /** Preparation only. This module never starts a process, listener or workload. */
 export function finalSchedule() {
   const points: { id: string; cohort: string; evidence: string; patch: Partial<Manifest>; history_query?: { window_ms: 86400000 | 604800000; source: 'history' | 'evidence' }; prerequisite?: string }[] = [];
@@ -42,5 +43,12 @@ export function materialize(point: ReturnType<typeof finalSchedule>['points'][nu
     manifest.protocol = 'responses'; manifest.transport = manifest.upstream.transport; delete manifest.upstream;
   }
   return validate(manifest);
+}
+/** Preparation only: bind a verified seed receipt reference; installHistory rechecks its files before boot. */
+export function materializeHistory(point: ReturnType<typeof finalSchedule>['points'][number], artifact: { path: string; source_commit: string; sha256: string }, fixture: RetainedFixture): Manifest {
+  const query = point.history_query;
+  if (point.cohort !== 'candidate-history-study' || !query || ![86400000, 604800000].includes(query.window_ms) || !['history', 'evidence'].includes(query.source)) throw new Error('history_point_required');
+  const { prerequisite, ...prepared } = point;
+  return materialize({ ...prepared, patch: { ...point.patch, retained_history: { ...fixture, query_window_ms: query.window_ms, query_source: query.source } } }, 'candidate', artifact);
 }
 if (import.meta.main) console.log(JSON.stringify(finalSchedule(), null, 2));

@@ -19,7 +19,7 @@ public class PerfWebhookDelivery(
     private val objectives: PerfObjectiveStore? = null,
 ) : PerfAlertDelivery, AutoCloseable {
     private val lock = Any()
-    private val lease = PerfWorkBudget.acquire(QUEUE_BYTES)
+    private val lease = PerfWorkBudget.acquire(QUEUE_BYTES, PerfWorkBudget.Kind.WEBHOOK_QUEUE)
     private val queue = Channel<JsonObject>(QUEUE_SIZE)
     private val results = LinkedHashMap<String, String>()
     private var accepted = 0L

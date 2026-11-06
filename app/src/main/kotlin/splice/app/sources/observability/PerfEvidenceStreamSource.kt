@@ -33,6 +33,7 @@ internal class PerfEvidenceStreamSource(
     fun consume(query: PerfEvidenceQuery, consumer: PerfObservationConsumer): PerfEvidenceReceipt {
         val lease = PerfWorkBudget.acquire(
             EVIDENCE_STREAM_RESERVE_BYTES,
+            PerfWorkBudget.Kind.EVIDENCE_READ,
         ) ?: return unavailable(query, "evidence_memory_busy")
         val started = MonoClock.nowMs()
         var scan: PerfEvidenceStreamScan? = null

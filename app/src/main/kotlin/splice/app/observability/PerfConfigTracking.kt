@@ -16,7 +16,10 @@ internal class PerfConfigTracking(
     val history: PerfConfigHistory,
 ) : AutoCloseable {
     private val heads = heads.take(MAX_TRACKED_HEADS).toSet()
-    private val originalsLease = PerfWorkBudget.acquire(this.heads.size.toLong() * CONFIG_CHANGE_HEAD_BYTES)
+    private val originalsLease = PerfWorkBudget.acquire(
+        this.heads.size.toLong() * CONFIG_CHANGE_HEAD_BYTES,
+        PerfWorkBudget.Kind.CONFIGURATION,
+    )
     private val originals = if (originalsLease == null) {
         emptyMap()
     } else {
@@ -39,7 +42,7 @@ internal class PerfConfigTracking(
         // A publisher may have captured this listener before close detached it.
         if (closed) return
         val bytes = heads.size.toLong() * CONFIG_CHANGE_HEAD_BYTES
-        val lease = PerfWorkBudget.acquire(bytes)
+        val lease = PerfWorkBudget.acquire(bytes, PerfWorkBudget.Kind.CONFIGURATION)
         if (listOf(
                 lease == null,
                 originalsLease == null,

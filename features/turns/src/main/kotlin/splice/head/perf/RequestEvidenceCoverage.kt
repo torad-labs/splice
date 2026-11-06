@@ -43,7 +43,7 @@ internal class RequestEvidenceCoverage(
             return false
         }
         if (lease == null) {
-            lease = PerfWorkBudget.acquire(STATE_BYTES) ?: return false
+            lease = PerfWorkBudget.acquire(STATE_BYTES, PerfWorkBudget.Kind.EVIDENCE_COVERAGE) ?: return false
             checkNotNull(lease).retain(this, STATE_BYTES)
         }
         heads += head

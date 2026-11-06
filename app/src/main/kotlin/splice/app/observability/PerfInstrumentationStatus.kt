@@ -62,13 +62,7 @@ internal class PerfInstrumentationStatus(
                 put("headroom_bytes", observation.headroomBytes)
             },
         )
-        put(
-            "work",
-            buildJsonObject {
-                put("leased_bytes", PerfWorkBudget.retainedBytes())
-                put("limit_bytes", PerfWorkBudget.LIMIT_BYTES)
-            },
-        )
+        put("work", workMemory())
         put(
             "owners",
             buildJsonObject {
@@ -78,6 +72,47 @@ internal class PerfInstrumentationStatus(
                         buildJsonObject {
                             put("accounted_bytes", JsonNull)
                             put("reason", "per_owner_attribution_unavailable")
+                        },
+                    )
+                }
+            },
+        )
+    }
+
+    private fun workMemory(): JsonObject {
+        val snapshot = PerfWorkBudget.snapshot()
+        return buildJsonObject {
+            put("leased_bytes", snapshot.accounting.leasedBytes)
+            put("limit_bytes", PerfWorkBudget.LIMIT_BYTES)
+            put("accounting", accounting(snapshot.accounting))
+            put(
+                "last_refusal",
+                snapshot.lastRefusal?.let { refusal ->
+                    buildJsonObject {
+                        put("requested_bytes", refusal.requestedBytes)
+                        put("requested_kind", refusal.requestedKind.code)
+                        put("accounting", accounting(refusal.accounting))
+                    }
+                } ?: JsonNull,
+            )
+        }
+    }
+
+    private fun accounting(value: PerfWorkBudget.Accounting): JsonObject = buildJsonObject {
+        put("basis", "lease_accounting_not_heap")
+        put("retained_ticket_liveness", "not_inspected_includes_pending_cleaner")
+        put("leased_bytes", value.leasedBytes)
+        put("unretained_reservation_bytes", value.unretainedReservationBytes)
+        put("retained_ticket_bytes", value.retainedTicketBytes)
+        put(
+            "kinds",
+            buildJsonObject {
+                value.kinds.forEach { group ->
+                    put(
+                        group.kind.code,
+                        buildJsonObject {
+                            put("unretained_reservation_bytes", group.unretainedReservationBytes)
+                            put("retained_ticket_bytes", group.retainedTicketBytes)
                         },
                     )
                 }

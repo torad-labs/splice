@@ -32,7 +32,7 @@ internal class PerfEvidenceCursors(
     }
 
     private fun admitted(request: PerfEvidenceCursorRequest): PerfEvidencePage {
-        val lease = PerfWorkBudget.acquire(PERF_CURSOR_RESERVE_BYTES)
+        val lease = PerfWorkBudget.acquire(PERF_CURSOR_RESERVE_BYTES, PerfWorkBudget.Kind.EVIDENCE_READ)
         if (lease == null) {
             queries.release()
             return failure(request, "busy", "memory_busy")

@@ -26,7 +26,7 @@ public class RuntimeSampler(
     private val owners = RuntimeOwners(sources)
     private val counters = JvmRuntimeCounters()
     private val payloads = RuntimePayloads(identity)
-    private val memory = PerfWorkBudget.acquire(RUNTIME_SAMPLE_BYTES)
+    private val memory = PerfWorkBudget.acquire(RUNTIME_SAMPLE_BYTES, PerfWorkBudget.Kind.RUNTIME_SAMPLE)
     private var closed = false
     private var sampledAt = 0L
     private var sampledMono = 0L
@@ -35,7 +35,8 @@ public class RuntimeSampler(
     @Synchronized
     public fun sample(): JsonObject {
         if (closed || memory == null) return payloads.unavailable(if (closed) "closed" else "work_budget_exhausted")
-        val lease = PerfWorkBudget.acquire(RUNTIME_SAMPLE_BYTES) ?: return payloads.unavailable("work_budget_exhausted")
+        val lease = PerfWorkBudget.acquire(RUNTIME_SAMPLE_BYTES, PerfWorkBudget.Kind.RUNTIME_SAMPLE)
+            ?: return payloads.unavailable("work_budget_exhausted")
         var transferred = false
         try {
             val reading = RuntimeReading()
@@ -66,7 +67,8 @@ public class RuntimeSampler(
     @Synchronized
     override fun runtime(): JsonObject {
         if (sampledAt == 0L || closed) return latest
-        val lease = PerfWorkBudget.acquire(RUNTIME_SAMPLE_BYTES) ?: return payloads.unavailable("work_budget_exhausted")
+        val lease = PerfWorkBudget.acquire(RUNTIME_SAMPLE_BYTES, PerfWorkBudget.Kind.RUNTIME_SAMPLE)
+            ?: return payloads.unavailable("work_budget_exhausted")
         return payloads.aged(latest, elapsedClock() - sampledMono).also { lease.retain(it, RUNTIME_SAMPLE_BYTES) }
     }
 

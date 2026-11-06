@@ -20,7 +20,7 @@ import java.nio.file.Path
 
 /** A bounded persisted interval ledger. Missing, truncated and unclean intervals remain unknown to the query layer. */
 internal class PerfConfigHistory(private val path: Path) : PerfConfigProvenance, AutoCloseable {
-    private val memory = PerfWorkBudget.acquire(HISTORY_BYTES)
+    private val memory = PerfWorkBudget.acquire(HISTORY_BYTES, PerfWorkBudget.Kind.CONFIGURATION)
     private val values = ArrayList<PerfConfigInterval>()
     val writes = PerfWriteStatus("effective_config_history")
 
@@ -51,7 +51,7 @@ internal class PerfConfigHistory(private val path: Path) : PerfConfigProvenance,
     @Synchronized
     fun persist(now: Long) {
         if (memory == null) { writes.reject(); return }
-        val work = PerfWorkBudget.acquire(ENCODE_BYTES)
+        val work = PerfWorkBudget.acquire(ENCODE_BYTES, PerfWorkBudget.Kind.CONFIGURATION)
         if (work == null) { writes.reject(); return }
         work.use {
             writes.begin()
@@ -85,7 +85,7 @@ internal class PerfConfigHistory(private val path: Path) : PerfConfigProvenance,
     override fun close() { values.clear(); memory?.close() }
 
     private fun restore() {
-        val work = PerfWorkBudget.acquire(DECODE_BYTES) ?: return
+        val work = PerfWorkBudget.acquire(DECODE_BYTES, PerfWorkBudget.Kind.CONFIGURATION) ?: return
         work.use { restoreHeld() }
     }
 

@@ -44,7 +44,7 @@ internal class PerfQueryWork(private val clock: WallClock, private val sources: 
     }
 
     private fun admitted(query: PerfQuery, operation: String?, read: PerfQueryResult): JsonObject {
-        val lease = PerfWorkBudget.acquire(QUERY_BYTES)
+        val lease = PerfWorkBudget.acquire(QUERY_BYTES, PerfWorkBudget.Kind.QUERY_REPLY)
             ?: return queryError("memory_busy", "shared_work_budget", "busy")
         var retained = false
         return try {
@@ -90,7 +90,7 @@ internal class PerfQueryWork(private val clock: WallClock, private val sources: 
         clearCache()
         val encoded = result.toString()
         val bytes = encoded.length.toLong() * CHAR_CHARGE + RESULT_OVERHEAD
-        val lease = PerfWorkBudget.acquire(bytes) ?: return
+        val lease = PerfWorkBudget.acquire(bytes, PerfWorkBudget.Kind.QUERY_CACHE) ?: return
         val entry = CachedQuery(query, operation, now, encoded)
         lease.retain(entry, bytes)
         cached = entry

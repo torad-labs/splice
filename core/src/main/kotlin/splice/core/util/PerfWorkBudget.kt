@@ -10,18 +10,40 @@ public object PerfWorkBudget {
     private const val LIMIT = LIMIT_BYTES
     private val cleaner = Cleaner.create()
     private val tickets = HashMap<Int, MutableList<Ticket<*>>>()
+    private val reservations = LongArray(Kind.entries.size)
+    private val retainedTickets = LongArray(Kind.entries.size)
+    private val lastRefusal = RefusalRecord()
     private var used = 0L
 
     @Synchronized
-    public fun acquire(bytes: Long): Lease? {
+    public fun acquire(bytes: Long): Lease? = acquire(bytes, Kind.OTHER)
+
+    /** Adds a fixed diagnostic label without changing admission or the caller's lease lifetime. */
+    @Synchronized
+    public fun acquire(bytes: Long, kind: Kind): Lease? {
         require(bytes >= 0L)
-        if (bytes > LIMIT - used) return null
+        if (bytes > LIMIT - used) {
+            lastRefusal.capture(bytes, kind)
+            return null
+        }
         used += bytes
-        return Lease(bytes)
+        reservations[kind.ordinal] += bytes
+        return Lease(bytes, kind)
     }
 
     @Synchronized
     public fun retainedBytes(): Long = used
+
+    /** Fixed-size accounting only: no reservation, ticket scan, reachability check or heap measurement. */
+    @Synchronized
+    public fun snapshot(): Snapshot = Snapshot(accounting(used, reservations, retainedTickets), lastRefusal.snapshot())
+
+    private fun accounting(total: Long, reserved: LongArray, retained: LongArray): Accounting = Accounting(
+        total,
+        reserved.sum(),
+        retained.sum(),
+        Kind.entries.map { KindBytes(it, reserved[it.ordinal], retained[it.ordinal]) },
+    )
 
     /** Releases a returned page after the consumer has finished with its payload. Cleaner is the fallback. */
     @Synchronized
@@ -30,17 +52,28 @@ public object PerfWorkBudget {
         tickets[hash]?.firstOrNull { it.owner.get() === owner }?.cleanable?.clean()
     }
 
-    public class Lease internal constructor(private var bytes: Long) : AutoCloseable, Runnable {
+    public class Lease @JvmOverloads internal constructor(
+        private var bytes: Long,
+        private val kind: Kind = Kind.OTHER,
+    ) : AutoCloseable, Runnable {
+        private var ticketed = false
+
         public fun <T : Any> retain(owner: T, retained: Long) {
             synchronized(PerfWorkBudget) {
                 require(retained in 0..bytes)
                 used -= bytes - retained
+                charged()[kind.ordinal] -= bytes - retained
                 bytes = retained
             }
             synchronized(PerfWorkBudget) {
                 val ticket = Ticket(owner, this)
                 ticket.cleanable = cleaner.register(owner, ticket)
                 tickets.getOrPut(ticket.hash) { ArrayList() }.add(ticket)
+                if (!ticketed) {
+                    reservations[kind.ordinal] -= bytes
+                    retainedTickets[kind.ordinal] += bytes
+                    ticketed = true
+                }
             }
         }
 
@@ -49,8 +82,68 @@ public object PerfWorkBudget {
         override fun close() {
             synchronized(PerfWorkBudget) {
                 used -= bytes
+                charged()[kind.ordinal] -= bytes
                 bytes = 0L
             }
+        }
+
+        private fun charged(): LongArray = if (ticketed) retainedTickets else reservations
+    }
+
+    /** Labels are explicit groups of lease acquisition sites, never owner identities. */
+    public enum class Kind(public val code: String) {
+        QUERY_REPLY("query_reply"),
+        QUERY_CACHE("query_cache"),
+        HISTORY_READ("history_read"),
+        EVIDENCE_READ("evidence_read"),
+        CONFIGURATION("configuration"),
+        RUNTIME_SAMPLE("runtime_sample"),
+        EVIDENCE_COVERAGE("evidence_coverage"),
+        WEBHOOK_QUEUE("webhook_queue"),
+        OTHER("other"),
+    }
+
+    /** Reservations may be long-lived; retained tickets may include collected owners awaiting Cleaner. */
+    public data class KindBytes(
+        val kind: Kind,
+        val unretainedReservationBytes: Long,
+        val retainedTicketBytes: Long,
+    )
+
+    /** Actual charged bytes. Neither phase establishes logical owner liveness or measured heap size. */
+    public data class Accounting(
+        val leasedBytes: Long,
+        val unretainedReservationBytes: Long,
+        val retainedTicketBytes: Long,
+        val kinds: List<KindBytes>,
+    )
+
+    /** The latest process-wide refusal; later failures replace it and successful acquisitions do not clear it. */
+    public data class Refusal(val requestedBytes: Long, val requestedKind: Kind, val accounting: Accounting)
+
+    public data class Snapshot(val accounting: Accounting, val lastRefusal: Refusal?)
+
+    private class RefusalRecord {
+        private var requestedBytes = 0L
+        private var requestedKind: Kind? = null
+        private var total = 0L
+        private val reserved = LongArray(Kind.entries.size)
+        private val retained = LongArray(Kind.entries.size)
+
+        fun capture(bytes: Long, kind: Kind) {
+            requestedBytes = bytes
+            requestedKind = kind
+            total = used
+            reservations.copyInto(reserved)
+            retainedTickets.copyInto(retained)
+        }
+
+        fun snapshot(): Refusal? = requestedKind?.let {
+            Refusal(
+                requestedBytes,
+                it,
+                accounting(total, reserved, retained),
+            )
         }
     }
 

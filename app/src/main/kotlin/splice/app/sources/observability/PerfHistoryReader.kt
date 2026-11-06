@@ -18,7 +18,7 @@ internal class PerfHistoryReader(private val files: PerfHistoryFiles, private va
     fun read(from: Long, until: Long, now: Long, evidence: List<PerfIssue>, sink: PerfSinkStatus): PerfHistoryRead {
         val resolution = if (from < now - PERF_DAY_MS) PERF_HOUR_MS else PERF_MINUTE_MS
         if (!queries.tryAcquire()) return unavailable(from, until, resolution, "query_busy", sink)
-        val lease = PerfWorkBudget.acquire(HISTORY_READ_RESERVE)
+        val lease = PerfWorkBudget.acquire(HISTORY_READ_RESERVE, PerfWorkBudget.Kind.HISTORY_READ)
         if (lease == null) {
             queries.release()
             return unavailable(from, until, resolution, "memory_busy", sink)

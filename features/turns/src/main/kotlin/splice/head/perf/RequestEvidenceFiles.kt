@@ -54,7 +54,8 @@ public class RequestEvidenceFiles(
 
     public fun checkpointCoverage(): Boolean = synchronized(admission) {
         if (!coverage.enabled()) return false
-        val lease = PerfWorkBudget.acquire(COVERAGE_WORK_BYTES) ?: return false.also { coverageSink.reject() }
+        val lease = PerfWorkBudget.acquire(COVERAGE_WORK_BYTES, PerfWorkBudget.Kind.EVIDENCE_COVERAGE)
+            ?: return false.also { coverageSink.reject() }
         val until = coverage.boundary()
         val queued = AsyncFileIo.submitFor(lane, coverageSink) {
             lease.use {

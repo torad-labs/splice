@@ -103,7 +103,8 @@ class PerfHistoryWindowTest {
     }
 
     private fun assertSeriesCount(value: kotlinx.serialization.json.JsonObject, expected: Long) {
-        assertTrue(!value.toString().contains("memory_busy"), value.toString())
+        val budget = PerfWorkBudget.snapshot()
+        assertTrue(!value.toString().contains("memory_busy"), "work_budget=$budget")
         val count = value.getValue("series").jsonArray.sumOf { row ->
             row.jsonObject.getValue("metrics").jsonObject.values.sumOf { metric ->
                 checkNotNull(JsonScalars.str(metric.jsonObject, "count")).toLong()

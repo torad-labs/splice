@@ -56,7 +56,7 @@ public class PerfEvidenceFileSource(
 
     override fun settledUntilMs(head: String?): Long? {
         require(head == null || evidenceHeadPattern.matches(head)) { "invalid evidence head" }
-        val lease = PerfWorkBudget.acquire(HORIZON_BYTES) ?: return null
+        val lease = PerfWorkBudget.acquire(HORIZON_BYTES, PerfWorkBudget.Kind.EVIDENCE_READ) ?: return null
         return lease.use {
             try {
                 coverage.horizon(head)
@@ -73,7 +73,7 @@ public class PerfEvidenceFileSource(
         val head = query.head
         require(head == null || evidenceHeadPattern.matches(head)) { "invalid evidence head" }
         if (!reading.tryAcquire()) return unavailable(query, "evidence_query_busy")
-        val lease = PerfWorkBudget.acquire(EVIDENCE_READ_RESERVE)
+        val lease = PerfWorkBudget.acquire(EVIDENCE_READ_RESERVE, PerfWorkBudget.Kind.EVIDENCE_READ)
         if (lease == null) {
             reading.release()
             return unavailable(query, "evidence_memory_busy")

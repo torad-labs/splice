@@ -150,6 +150,25 @@ reducing it; an HTTP scrape retains ownership through response delivery.
 Concurrency and size limits return visible busy/partial states. These budgets
 do not claim that the whole JVM uses only 32 MiB.
 
+Instrumentation status exposes `memory.work.accounting` alongside the existing
+`leased_bytes` and unchanged 16 MiB `limit_bytes`. Its `leased_bytes` is the sum
+of `unretained_reservation_bytes` and `retained_ticket_bytes`. The `kinds` object
+splits those two phases across nine fixed acquisition categories: `query_reply`,
+`query_cache`, `history_read`, `evidence_read`, `configuration`, `runtime_sample`,
+`evidence_coverage`, `webhook_queue` and `other`. These labels identify acquisition
+sites, not individual owners.
+
+The snapshot's `basis` is `lease_accounting_not_heap`. Reservations can be
+long-lived; retained tickets can include collected owners awaiting Cleaner.
+`retained_ticket_liveness` therefore reports
+`not_inspected_includes_pending_cleaner`: neither phase establishes owner
+liveness or measured heap usage.
+
+`memory.work.last_refusal` is null until an acquisition is refused. It then holds
+one bounded, process-wide record: `requested_bytes`, `requested_kind` and a copied
+`accounting` snapshot from that refusal. A later refusal replaces it; successful
+acquisitions do not clear it. This is the latest refusal, not an event history.
+
 Summary queries consume certified evidence incrementally and retain a bounded
 request reduction. The raw observation inventory has a separate page limit;
 that limit does not cap a summary's request population. A reduction that reaches

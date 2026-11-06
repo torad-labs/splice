@@ -188,6 +188,12 @@ class RequestStartTimingTest {
                         assertTrue(refused.startsWith("HTTP/1.1 529"), refused)
                         assertTrue(refused.contains("overloaded_error"), refused)
                         assertEquals(1, rig.gate.snapshot().inflight)
+                        // The client can read the refusal before the finalizer updates the accumulator.
+                        awaitTiming("the refused request reached terminal accounting") {
+                            rig.observations.snapshot().points.any {
+                                it.metric == "requests_finished" && it.sum > 0.0
+                            }
+                        }
                         val observed = rig.observations.snapshot().points
                         assertEquals(2.0, observed.filter { it.metric == "requests_arrived" }.sumOf { it.sum })
                         assertEquals(1.0, observed.filter { it.metric == "requests_finished" }.sumOf { it.sum })

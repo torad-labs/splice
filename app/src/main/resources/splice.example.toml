@@ -968,6 +968,13 @@ command = "claude-splice"
 # activityStoreHeads = "*"                                  # which heads store activity labels: "*", "" or "a,b"
 # budgetDefaultAction = "warn"                               # "warn" or "block" (HOT, per ask); PUT /api/budgets fills a bare row
 # perfArchiveRetentionDays = "90"                            # days; SUPERSEDED by historyRetentionDays, read only as its carry-over
+# perfCollectionEnabled = "true"                              # bool; save local performance measurements (RESTART)
+# telemetryPrometheusEnabled = "false"                     # bool; expose the local Prometheus scrape endpoint (RESTART)
+# telemetryOtlpEndpoint = ""                                # URL; optional OTLP HTTP(S) endpoint, without credentials/query/fragment (RESTART)
+# telemetryOtlpProtocol = "http/protobuf"                   # "http/protobuf" | "grpc" (RESTART)
+# telemetryOtlpHeaders = "{}"                               # JSON object of string headers; max 16 headers, each value max 4096 chars (RESTART)
+# telemetryOtlpSignals = ""                                 # comma-separated subset of metrics,traces,logs; empty disables OTLP signal export (RESTART)
+#                                                           # These settings control operator telemetry export; local perf capture is separate.
 # historyRetentionDays = "35"                                # days, or "forever" (HOT); how far back splice keeps BOTH the hourly totals and the
 #                                                            #   request records. A fresh install's splice.toml carries 35. An install that
 #                                                            #   predates this key keeps the window it had (perfArchiveRetentionDays, 90):

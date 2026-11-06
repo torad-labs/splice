@@ -48,6 +48,8 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     ":integrations-claude-code" to setOf(":core", ":features-sessions"),
     ":integrations-mcp" to setOf(":core", ":integrations-claude-code", ":integrations-http"),
     ":integrations-http" to setOf(":core"),
+    // metrics and traces export adapters; implementation dependencies match gradle/module-law.txt.
+    ":integrations-observability" to setOf(":core"),
     // the MCP hub's native binaries (holder, front; Kotlin/Native): no project dependency on either plane.
     ":integrations-mcp-hub" to emptySet(),
     // the splice.toml file on disk: load, first-run starter, structural preflight and digest.

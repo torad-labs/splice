@@ -40,9 +40,9 @@ internal class PerfRemoteProfiles(private val env: EnvReader, private val errors
         val port = DaemonSettings(errors).controlPort(env)
         val url = "http://127.0.0.1:$port/api/perf/profiles$suffix"
         val reply = if (body == null) {
-            ControlPlaneClient.send(url, "GET", key.key, TIMEOUT_MS)
+            ControlPlaneClient.send(url, "GET", key.key, PROFILE_CONTROL_TIMEOUT_MS)
         } else {
-            (ControlPlaneClient.post(url, key.key, body, TIMEOUT_MS) as? PostReading.Answered)?.reply
+            (ControlPlaneClient.post(url, key.key, body, PROFILE_CONTROL_TIMEOUT_MS) as? PostReading.Answered)?.reply
         } ?: return failed("daemon_unavailable_or_reply_lost")
         return decode(reply.body, reply.status)
     }
@@ -62,4 +62,4 @@ internal class PerfRemoteProfiles(private val env: EnvReader, private val errors
 private val PROFILE_ID = Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 // Bound authenticated profile-control HTTP waits to fifteen seconds so a stopped daemon cannot hang the CLI.
-private const val TIMEOUT_MS = 15_000
+private const val PROFILE_CONTROL_TIMEOUT_MS = 15_000

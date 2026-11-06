@@ -90,4 +90,5 @@ internal object PerfEvidenceConsumption {
     }
 }
 
+// Reserve 64 KiB for an independent coverage receipt after releasing the compatibility reader's observation lease.
 private const val RECEIPT_BYTES = 64L * 1_024

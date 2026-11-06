@@ -101,11 +101,11 @@ internal class AlertJournal(private val path: Path, admitted: Boolean) {
         loaded.states.size > MAX_RULES,
         loaded.latest.size > MAX_RULES,
         loaded.deliveries.size > MAX_DELIVERIES,
-        loaded.events.size > MAX_EVENTS,
+        loaded.events.size > MAX_JOURNALED_ALERT_EVENTS,
     ).any { it }
 
     private fun retain(candidate: AlertJournalData): AlertJournalData {
-        var result = candidate.copy(events = candidate.events.takeLast(MAX_EVENTS))
+        var result = candidate.copy(events = candidate.events.takeLast(MAX_JOURNALED_ALERT_EVENTS))
         while (ObjectiveJson.codec.encodeToString(
                 result,
             ).toByteArray(Charsets.UTF_8).size > JOURNAL_LIMIT && result.events.isNotEmpty()
@@ -116,7 +116,14 @@ internal class AlertJournal(private val path: Path, admitted: Boolean) {
     }
 }
 
+// Keep thirty-two pending deliveries in the durable outbox so retries cannot grow the journal indefinitely.
 internal const val MAX_DELIVERIES = 32
+
+// Bound persisted rule state to the configured thirty-two-rule capacity before restoring the journal.
 private const val MAX_RULES = 32
-private const val MAX_EVENTS = 128
+
+// Retain the latest 128 lifecycle events while durable state and pending deliveries remain authoritative.
+private const val MAX_JOURNALED_ALERT_EVENTS = 128
+
+// Cap the atomic lifecycle-and-outbox document at 128 KiB before publication and restore.
 private const val JOURNAL_LIMIT = 131_072

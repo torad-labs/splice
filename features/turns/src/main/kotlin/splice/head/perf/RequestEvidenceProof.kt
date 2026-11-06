@@ -30,8 +30,14 @@ public object RequestEvidenceProofFormat {
     public const val MAX_PROOF_BOOT_CHARS: Int = 256
 
     public const val COVERAGE_FILE: String = "coverage.json"
+
+    // Cap durable coverage receipts at 128 KiB before JSON decoding or producer publication.
     public const val MAX_BYTES: Int = 128 * 1_024
+
+    // Allow thirty-two evidence heads so coverage membership and loss maps remain bounded.
     public const val MAX_HEADS: Int = 32
+
+    // Keep 256 coverage intervals; older intervals expire rather than extending receipt state indefinitely.
     public const val MAX_INTERVALS: Int = 256
 
     /** Bound object cardinality before decoding, including a corrupt receipt's maps and arrays. */
@@ -40,7 +46,9 @@ public object RequestEvidenceProofFormat {
         val proof = Json.decodeFromString<RequestEvidenceProof>(bytes.toString(Charsets.UTF_8))
         require(proof.heads.size in 1..MAX_HEADS && proof.intervals.size <= MAX_INTERVALS)
         require(proof.prefixes.size <= MAX_PROOF_PREFIXES)
-        require(proof.prefixes.all { it.fileName.length <= MAX_FILE_CHARS && it.digest.length <= MAX_DIGEST_CHARS })
+        require(
+            proof.prefixes.all { it.fileName.length <= MAX_FILE_CHARS && it.digest.length <= MAX_PROOF_DIGEST_CHARS },
+        )
         require(proof.lossEpochs.size <= MAX_HEADS && proof.retentionEpochs.size <= MAX_HEADS)
         scopes(proof)
         return proof
@@ -52,10 +60,20 @@ public object RequestEvidenceProofFormat {
     }
 }
 
+// Reject receipts with more than 4,096 structural separators before allocating decoded arrays and maps.
 private const val MAX_TOKENS = 4_096
+
+// Bound head labels to the existing 128-character head identifier contract before retaining coverage scopes.
 private const val MAX_HEAD_CHARS = 128
+
+// The byte value 58 is the JSON colon separator counted before receipt decoding.
 private const val COLON: Byte = 58
+
+// The byte value 44 is the JSON comma separator counted before receipt decoding.
 private const val COMMA: Byte = 44
 
+// Limit retained segment filenames to 256 characters before accepting proof-prefix descriptors.
 private const val MAX_FILE_CHARS = 256
-private const val MAX_DIGEST_CHARS = 64
+
+// A SHA-256 digest has sixty-four hexadecimal characters in the serialized prefix proof.
+private const val MAX_PROOF_DIGEST_CHARS = 64

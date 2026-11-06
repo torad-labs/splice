@@ -81,4 +81,5 @@ internal object PerfWorkloadFacts {
     }?.takeIf { it == it.toLong().toDouble() }?.toLong()
 }
 
+// Double represents every integer only through 2^53 minus one; larger token counts cannot certify exact workload matches.
 private const val MAX_EXACT_INTEGER = 9_007_199_254_740_991.0

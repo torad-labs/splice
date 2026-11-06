@@ -35,7 +35,7 @@ public class PerfProfilesCommand(private val profiles: PerfProfiles) : PerfProfi
         } else {
             PerfProfileRequest().durationSeconds
         }
-        return if (duration == null || duration !in 1..MAX_DURATION) {
+        return if (duration == null || duration !in 1..MAX_CLI_PROFILE_SECONDS) {
             invalid()
         } else {
             profiles.start(PerfProfileRequest(values["profiler"] ?: "jfr", values["mode"] ?: "cpu", duration))
@@ -48,4 +48,5 @@ public class PerfProfilesCommand(private val profiles: PerfProfiles) : PerfProfi
     )
 }
 
-private const val MAX_DURATION = 3_600
+// Bound CLI duration parsing to one hour; the selected profiler still applies its own stricter capture limit.
+private const val MAX_CLI_PROFILE_SECONDS = 3_600

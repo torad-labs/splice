@@ -82,15 +82,34 @@ public object PerfQueryParser {
     private fun invalid(code: String): PerfQueryRead = PerfQueryRead(null, queryError("invalid_query", code))
 }
 
+// Cap accepted page requests at one thousand records before cursor decoding and response allocation.
 internal const val MAX_PAGE_SIZE = 1_000
+
+// Limit opaque cursor text to 32 KiB before continuation parsing.
 internal const val MAX_CURSOR_CHARS = 32_768
+
+// Reject ordinary selector values above 512 characters before query construction.
 private const val MAX_VALUE = 512
 private const val PAGE_SIZE = "page_size"
 private val switches = setOf("0", "1", "true", "false")
+
+// The public 1m selector denotes sixty seconds expressed in millisecond query bounds.
 private const val MINUTE = 60_000L
+
+// The public 5m selector denotes five complete minutes expressed in millisecond query bounds.
 private const val FIVE_MINUTES = 300_000L
+
+// The public 15m selector denotes fifteen complete minutes expressed in millisecond query bounds.
 private const val FIFTEEN_MINUTES = 900_000L
+
+// The public 1h selector denotes sixty complete minutes expressed in millisecond query bounds.
 private const val HOUR = 3_600_000L
+
+// The public 5h selector denotes five complete hours expressed in millisecond query bounds.
 private const val FIVE_HOURS = 18_000_000L
+
+// The public 24h selector denotes twenty-four elapsed hours rather than a calendar-day boundary.
 private const val DAY = 86_400_000L
+
+// The public 7d selector denotes seven elapsed days rather than a calendar-week boundary.
 private const val WEEK = 604_800_000L

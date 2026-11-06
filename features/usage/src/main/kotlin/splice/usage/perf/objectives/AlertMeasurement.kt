@@ -29,7 +29,7 @@ internal object AlertMeasurements {
         return measurement.copy(
             identity = AlertMeasurementIdentity(
                 identities(result),
-                ((result["identity_cohorts"] as? JsonArray)?.size ?: 0) > MAX_IDENTITIES,
+                ((result["identity_cohorts"] as? JsonArray)?.size ?: 0) > MAX_ALERT_IDENTITIES,
             ),
             reason = problem(rule, result, measurement),
         )
@@ -122,7 +122,7 @@ internal object AlertMeasurements {
     private fun identities(result: JsonObject): String {
         val identities = result["identity_cohorts"] as? JsonArray ?: return "[]"
         return JsonArray(
-            identities.take(MAX_IDENTITIES).mapNotNull { item ->
+            identities.take(MAX_ALERT_IDENTITIES).mapNotNull { item ->
                 val identity = item as? JsonObject ?: return@mapNotNull null
                 JsonObject(
                     identityKeys.associateWith {
@@ -137,9 +137,13 @@ internal object AlertMeasurements {
 }
 
 internal const val REQUEST_POPULATION = "request_scope_resolved_at_terminal_or_latest_checkpoint"
-private const val MAX_IDENTITIES = 8
+
+// Refuse evaluation above eight identity cohorts instead of merging incomparable builds or configurations.
+private const val MAX_ALERT_IDENTITIES = 8
 private const val OBSERVED_MS = "observed_ms"
 private const val POPULATION = "population"
 private const val APPROXIMATION = "approximation"
+
+// Retain at most 128 characters per identity field in detached alert evidence.
 private const val MAX_IDENTITY_LENGTH = 128
 private val identityKeys = setOf("boot_id", "build", "version", "boot_config_revision", "effective_config_revision")

@@ -37,7 +37,7 @@ internal class PerfQueryRows(private val sources: PerfQuerySources) {
     }
 
     private fun headProblem(heads: List<String>): JsonObject? = when {
-        heads.size > MAX_HEADS -> queryError("head_limit", "too_many_heads", "unsupported")
+        heads.size > MAX_QUERY_HEADS -> queryError("head_limit", "too_many_heads", "unsupported")
         heads.any { sources.rows(it) !is PerfCursorSource } ->
             queryError("cursor_unavailable", "complete_legacy_row_export_requires_cursor_source", "unsupported")
         else -> null
@@ -155,4 +155,6 @@ internal class PerfQueryRows(private val sources: PerfQuerySources) {
 }
 
 internal data class HeadCursor(val start: String?, val next: String?, val metadata: JsonObject = JsonObject(emptyMap()))
-private const val MAX_HEADS = 64
+
+// Freeze at most sixty-four head cursors so a multi-head traversal has bounded metadata and response state.
+private const val MAX_QUERY_HEADS = 64

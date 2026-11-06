@@ -168,4 +168,5 @@ public class PerfAlertEngine(
     }
 }
 
+// Reserve 2 MiB for retained alert lifecycle and outbox state within the shared query-work budget.
 private const val ENGINE_BYTES = 2L * 1_024 * 1_024

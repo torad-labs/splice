@@ -137,4 +137,6 @@ private val USAGE_METRICS = setOf(
     "input_tokens", "output_tokens", "cached_tokens", "missing_usage", "usage_cache_write_tokens",
     "usage_cache_write_1h_tokens", "usage_absorbed_rounds", "usage_cut_rounds", "usage_no_request",
 ) + UsageMeasurementStamp.fields.keys
+
+// Evidence-derived points align to complete sixty-second wall-clock minutes, clipped to the requested query window.
 private const val MINUTE_MS = 60_000L

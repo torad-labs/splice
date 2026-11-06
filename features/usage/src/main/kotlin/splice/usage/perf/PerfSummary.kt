@@ -22,7 +22,9 @@ import splice.core.util.WallClock
 import kotlin.math.ceil
 
 private const val P50 = 0.50
-private const val P95 = 0.95
+
+// Legacy exact rows and aggregate histograms both report the ninety-fifth percentile under the p95 field.
+internal const val PERF_P95_QUANTILE = 0.95
 private const val MS_PER_MINUTE = 60_000L
 private const val MS_PER_HOUR = 3_600_000L
 private const val HOURS_PER_DAY = 24L
@@ -205,7 +207,7 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
         return buildJsonObject {
             put("count", sorted.size)
             put("p50", percentile(sorted, P50))
-            put("p95", percentile(sorted, P95))
+            put("p95", percentile(sorted, PERF_P95_QUANTILE))
             put("max", sorted.last())
         }
     }

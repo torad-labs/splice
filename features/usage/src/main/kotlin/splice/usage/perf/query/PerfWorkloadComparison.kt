@@ -107,5 +107,6 @@ internal class PerfWorkloadComparison(private val query: PerfQuery) {
     }
 }
 
+// Keep at most 256 exact workload partitions and expose omissions rather than claiming unmatched workloads are comparable.
 private const val MAX_PARTITIONS = 256
 internal const val MATCHING_BASIS = "exact_joint_frequency_v1"

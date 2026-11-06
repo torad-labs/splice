@@ -29,5 +29,8 @@ internal object RequestObservation {
     fun of(call: ApplicationCall): PerfRequestRecorder? = call.attributes.getOrNull(key)
 }
 
+// A W3C span identifier contains sixteen hexadecimal characters, drawn here from a generated UUID.
 private const val SPAN_ID_CHARS = 16
+
+// The traceparent regex captures flags after the trace and parent span identifiers as its third group.
 private const val TRACE_FLAGS_GROUP = 3

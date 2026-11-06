@@ -20,4 +20,5 @@ internal object PerfCliArguments {
     }
 }
 
+// Each parsed CLI option consumes exactly two arguments: its flag and the following value.
 private const val FLAG_AND_VALUE = 2

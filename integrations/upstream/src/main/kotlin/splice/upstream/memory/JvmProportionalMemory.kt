@@ -18,5 +18,8 @@ internal object JvmProportionalMemory {
     }
 }
 
+// Read at most sixty-four procfs rollup lines while locating Pss so the sampler's textual scan remains bounded.
 private const val MAX_ROLLUP_LINES = 64
+
+// Linux smaps_rollup reports Pss in binary kilobytes, so multiply by 1,024 to expose bytes.
 private const val BYTES_PER_KIB = 1_024L

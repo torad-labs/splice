@@ -40,7 +40,7 @@ internal class PerfQueryWork(private val clock: WallClock, private val sources: 
         var retained = false
         return try {
             val result = result(query, operation, read)
-            val bytes = result.toString().length.toLong() * JSON_CHARGE + RESULT_OVERHEAD
+            val bytes = result.toString().length.toLong() * QUERY_JSON_CHARGE + RESULT_OVERHEAD
             if (bytes > QUERY_BYTES) return queryError("result_limit", "query_result_exceeds_budget", "partial")
             lease.retain(result, bytes)
             retained = true
@@ -70,7 +70,12 @@ internal class PerfQueryWork(private val clock: WallClock, private val sources: 
     }
 
     private fun matches(entry: CachedQuery, query: PerfQuery, operation: String?, now: Long): Boolean =
-        listOf(operation != null, entry.operation == operation, entry.query == query, now - entry.atMs in 0..CACHE_MS)
+        listOf(
+            operation != null,
+            entry.operation == operation,
+            entry.query == query,
+            now - entry.atMs in 0..QUERY_CACHE_MS,
+        )
             .all { it }
 
     private fun cache(query: PerfQuery, operation: String, now: Long, result: JsonObject) {
@@ -90,8 +95,18 @@ internal fun interface PerfQueryResult {
 }
 
 private data class CachedQuery(val query: PerfQuery, val operation: String, val atMs: Long, val payload: String)
+
+// Reserve 4 MiB per query result and refuse projections that exceed the admitted work budget.
 private const val QUERY_BYTES = 4L * 1_024 * 1_024
-private const val JSON_CHARGE = 8L
+
+// Charge eight bytes per rendered character for the decoded response tree and its retained strings.
+private const val QUERY_JSON_CHARGE = 8L
+
+// Charge two bytes per character in the encoded cache even when the JVM uses compact strings.
 private const val CHAR_CHARGE = 2L
+
+// Add 4 KiB for response collections and ownership beyond the text-dependent result charge.
 private const val RESULT_OVERHEAD = 4_096L
-private const val CACHE_MS = 1_000L
+
+// Reuse an identical query result for at most one second so repeated polling avoids immediate recomputation.
+private const val QUERY_CACHE_MS = 1_000L

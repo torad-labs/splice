@@ -38,11 +38,11 @@ internal object ObjectiveJson {
     /** Copies before retaining: no returned subtree aliases the engine's retained state or a query lease. */
     fun reply(value: JsonObject): JsonObject {
         val encoded = value.toString()
-        val lease = PerfWorkBudget.acquire(encoded.length.toLong() * JSON_CHARGE + OVERHEAD)
+        val lease = PerfWorkBudget.acquire(encoded.length.toLong() * OBJECTIVE_JSON_CHARGE + OVERHEAD)
             ?: return failure("shared_work_budget", "busy")
         return try {
             val result = codec.parseToJsonElement(encoded) as JsonObject
-            lease.retain(result, encoded.length.toLong() * JSON_CHARGE + OVERHEAD)
+            lease.retain(result, encoded.length.toLong() * OBJECTIVE_JSON_CHARGE + OVERHEAD)
             result
         } catch (failure: IllegalArgumentException) {
             lease.close()
@@ -61,5 +61,8 @@ internal object ObjectiveJson {
     fun long(value: JsonObject, key: String): Long? = (value[key] as? JsonPrimitive)?.longOrNull
 }
 
-private const val JSON_CHARGE = 8L
+// Charge eight bytes per encoded character for the detached decoded objective tree and its copied strings.
+private const val OBJECTIVE_JSON_CHARGE = 8L
+
+// Add 4 KiB for objective response collections and lease ownership beyond the text-dependent charge.
 private const val OVERHEAD = 4_096L

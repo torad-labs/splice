@@ -24,7 +24,7 @@ internal class PerfReductionMemory {
     }?.also { strings[it] = it }
 
     fun identity(value: PerfIdentity): PerfIdentity? = identities[value] ?: value.takeIf {
-        identities.size < MAX_IDENTITIES && take(
+        identities.size < MAX_REDUCTION_IDENTITIES && take(
             DIMENSION_BYTES + listOf(
                 it.bootId,
                 it.build,
@@ -35,7 +35,7 @@ internal class PerfReductionMemory {
     }?.also { identities[it] = it }
 
     fun scope(value: PerfScope): PerfScope? = scopes[value] ?: value.takeIf {
-        scopes.size < MAX_SCOPES && take(
+        scopes.size < MAX_REDUCTION_SCOPES && take(
             DIMENSION_BYTES + listOfNotNull(
                 it.head,
                 it.model,
@@ -59,10 +59,23 @@ internal class PerfReductionMemory {
     }
 }
 
+// Hold request reduction within a 3 MiB lease; transient source decoding is admitted separately.
 internal const val PERF_REDUCTION_BYTES = 3L * 1_024 * 1_024
-private const val MAX_IDENTITIES = 64
-private const val MAX_SCOPES = 256
+
+// Retain at most sixty-four identity cohorts so request reduction cannot accumulate unlimited provenance.
+private const val MAX_REDUCTION_IDENTITIES = 64
+
+// Retain at most 256 resolved scopes so dimensional churn cannot exhaust the reducer's shared lease.
+private const val MAX_REDUCTION_SCOPES = 256
+
+// Intern at most 8,192 distinct request-link strings before reporting reduction memory pressure.
 private const val MAX_STRINGS = 8_192
+
+// Reserve 32 KiB for reducer maps and ownership before admitting request, scope and link entries.
 private const val REDUCTION_OVERHEAD = 32L * 1_024
+
+// Charge 512 bytes per identity or scope object before its retained dimension strings.
 private const val DIMENSION_BYTES = 512L
+
+// Charge ninety-six bytes per interned link before its UTF-16 character storage.
 private const val LINK_BYTES = 96L

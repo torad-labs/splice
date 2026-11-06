@@ -28,7 +28,7 @@ internal class RequestEvidencePrefixes {
     }
 
     fun capture(paths: List<Path>): List<RequestEvidencePrefix> {
-        if (paths.sumOf { Files.size(it) } > MAX_CAPTURE_BYTES) throw IOException("evidence prefix work limit")
+        if (paths.sumOf { Files.size(it) } > MAX_PREFIX_CAPTURE_BYTES) throw IOException("evidence prefix work limit")
         digests.keys.retainAll(paths.toSet())
         return paths.map { path ->
             val end = Files.size(path)
@@ -69,6 +69,9 @@ internal class RequestEvidencePrefixes {
 }
 
 private data class EvidenceDigest(val digest: MessageDigest, var end: Long, var forced: Boolean = false)
+
+// Hash retained segments through a reusable 64 KiB buffer instead of reading their complete contents into memory.
 private const val BUFFER_BYTES = 64 * 1_024
 
-private const val MAX_CAPTURE_BYTES = 64L * 1_024 * 1_024
+// Limit prefix reconstruction to the 64 MiB retained-evidence contract before scanning the files.
+private const val MAX_PREFIX_CAPTURE_BYTES = 64L * 1_024 * 1_024

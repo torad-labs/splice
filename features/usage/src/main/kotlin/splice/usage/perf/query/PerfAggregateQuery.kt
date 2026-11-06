@@ -80,4 +80,5 @@ internal class PerfAggregateQuery(private val sources: PerfQuerySources) {
     }
 }
 
+// Stop retained aggregate projection at 4,096 points and expose partial coverage instead of growing without bound.
 internal const val MAX_POINTS = 4_096

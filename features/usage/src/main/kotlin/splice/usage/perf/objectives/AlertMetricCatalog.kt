@@ -39,4 +39,5 @@ internal object AlertMetricCatalog {
     }
 }
 
+// Registered alert metrics use three components: the metric prefix, registry identifier and selected statistic.
 private const val PARTS = 3

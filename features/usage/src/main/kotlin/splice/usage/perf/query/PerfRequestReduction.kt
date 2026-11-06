@@ -171,6 +171,7 @@ internal object PerfEvidenceSelection {
             ?: events.firstOrNull { it.kind == PerfEventKind.REQUEST_ARRIVED } ?: events.first()
 }
 
+// Charge 512 bytes per request's scalar reduction state before its retained identifier text.
 private const val REQUEST_FIXED_BYTES = 512L
 private const val EVIDENCE = "evidence"
 private data class ReducedInput(
@@ -179,6 +180,8 @@ private data class ReducedInput(
     val links: PerfLinks,
     val outcome: String?,
 )
+
+// Stop at 2,048 reduced metric points and mark the result partial instead of retaining an unlimited dimension product.
 private const val MAX_REDUCED_POINTS = 2_048
 private val REDUCED_KINDS = setOf(
     PerfEventKind.REQUEST_ARRIVED,

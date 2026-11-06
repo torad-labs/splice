@@ -63,4 +63,5 @@ internal object PerfDiagnosis {
     }
 }
 
+// Return the twelve largest measured contributors so diagnosis remains a bounded ranked view.
 private const val MAX_RANKED = 12

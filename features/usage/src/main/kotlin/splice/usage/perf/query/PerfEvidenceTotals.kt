@@ -51,7 +51,7 @@ internal class PerfEvidenceTotals(private val query: PerfQuery) {
         val bad = verdicts[PerfObjectiveVerdict.BAD.ordinal]
         val pending = verdicts[PerfObjectiveVerdict.PENDING.ordinal]
         val unknown = verdicts[PerfObjectiveVerdict.UNKNOWN.ordinal]
-        val seconds = (query.untilMs - query.fromMs) / MILLIS_PER_SECOND
+        val seconds = (query.untilMs - query.fromMs) / QUERY_MILLIS_PER_SECOND
         return buildJsonObject {
             put("status", if (complete) "configured" else "partial")
             put("objective_id", objective.id)

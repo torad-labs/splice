@@ -9,7 +9,8 @@ internal object ObjectiveValidation {
 
     fun problem(value: ObjectiveSettings): String? = when {
         value.schemaVersion != 1 -> "unsupported_schema_version"
-        value.objectives.size > MAX_ENTRIES || value.rules.size > MAX_ENTRIES -> "settings_count_limit"
+        value.objectives.size > MAX_OBJECTIVE_ENTRIES || value.rules.size > MAX_OBJECTIVE_ENTRIES ->
+            "settings_count_limit"
         value.objectives.distinctBy { it.id }.size != value.objectives.size -> "duplicate_objective"
         value.rules.distinctBy { it.id }.size != value.rules.size -> "duplicate_rule"
         else -> value.objectives.firstNotNullOfOrNull(::objectiveProblem)
@@ -31,7 +32,7 @@ internal object ObjectiveValidation {
         return when {
             !identifier.matches(value.id) -> "invalid_objective_id"
             limits.all { it == null } -> "objective_requires_threshold"
-            limits.filterNotNull().any { !it.isFinite() || it !in 0.0..MAX_DURATION.toDouble() } ->
+            limits.filterNotNull().any { !it.isFinite() || it !in 0.0..MAX_RULE_DURATION_MS.toDouble() } ->
                 "invalid_objective_threshold"
             else -> cohortProblem(value.cohort)
         }
@@ -57,16 +58,17 @@ internal object ObjectiveValidation {
         }
 
     private fun timingProblem(value: AlertRule): String? = when {
-        value.windowMs !in MIN_WINDOW..MAX_DURATION -> "invalid_rule_window"
+        value.windowMs !in MIN_WINDOW..MAX_RULE_DURATION_MS -> "invalid_rule_window"
         value.minCount !in 1..MAX_COUNT -> "invalid_rule_count"
         !value.minCoverage.isFinite() || value.minCoverage !in 0.0..1.0 -> "invalid_rule_coverage"
-        value.holdMs !in 0..MAX_DURATION || value.cooldownMs !in 0..MAX_DURATION -> "invalid_rule_duration"
+        value.holdMs !in 0..MAX_RULE_DURATION_MS || value.cooldownMs !in 0..MAX_RULE_DURATION_MS ->
+            "invalid_rule_duration"
         else -> null
     }
 
     private fun recoveryProblem(value: AlertRule): String? = when {
         !value.recovery.threshold.isFinite() || value.recovery.threshold < 0 -> "invalid_recovery_threshold"
-        value.recovery.holdMs !in 0..MAX_DURATION -> "invalid_recovery_hold"
+        value.recovery.holdMs !in 0..MAX_RULE_DURATION_MS -> "invalid_recovery_hold"
         value.comparison == "above" && value.recovery.threshold > value.threshold -> "invalid_hysteresis"
         value.comparison == "below" && value.recovery.threshold < value.threshold -> "invalid_hysteresis"
         else -> null
@@ -106,8 +108,17 @@ internal object ObjectiveValidation {
     }
 }
 
-private const val MAX_ENTRIES = 32
+// Allow thirty-two objectives and thirty-two rules so settings, lifecycle state and outbox work stay finite.
+private const val MAX_OBJECTIVE_ENTRIES = 32
+
+// Bound cohort selector values to 128 characters before storing objective or rule settings.
 private const val MAX_COHORT_VALUE = 128
+
+// Reject minimum-count settings above one million rather than accepting arbitrarily large evaluation thresholds.
 private const val MAX_COUNT = 1_000_000L
+
+// Require at least one second of alert evidence to avoid zero-width or subsecond rule windows.
 private const val MIN_WINDOW = 1_000L
-private const val MAX_DURATION = 604_800_000L
+
+// Cap rule windows, holds, cooldowns and latency objectives at seven days to bound persisted timing policy.
+private const val MAX_RULE_DURATION_MS = 604_800_000L

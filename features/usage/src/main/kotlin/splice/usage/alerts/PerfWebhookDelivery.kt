@@ -32,7 +32,7 @@ public class PerfWebhookDelivery(
     private val worker = scope.launch {
         for (event in queue) {
             val result = if (enabled(event)) {
-                withTimeoutOrNull(DELIVERY_TIMEOUT_MS) { transport.performance(event) } ?: "failed"
+                withTimeoutOrNull(WEBHOOK_DELIVERY_MS) { transport.performance(event) } ?: "failed"
             } else {
                 "disabled"
             }
@@ -57,10 +57,10 @@ public class PerfWebhookDelivery(
             rejected++
             return@synchronized false
         }
-        if (results[key] in setOf(ACCEPTED, "delivered")) return@synchronized true
+        if (results[key] in setOf(WEBHOOK_ACCEPTED, "delivered")) return@synchronized true
         val sent = queue.trySend(requireNotNull(reduced)).isSuccess
         if (sent) {
-            results[requireNotNull(key)] = ACCEPTED
+            results[requireNotNull(key)] = WEBHOOK_ACCEPTED
             accepted++
             pending++
             prune()
@@ -71,12 +71,12 @@ public class PerfWebhookDelivery(
     }
 
     override fun result(dedupKey: String): String? = synchronized(lock) {
-        results[dedupKey]?.takeUnless { it == ACCEPTED }
+        results[dedupKey]?.takeUnless { it == WEBHOOK_ACCEPTED }
     }
 
     override fun status(): JsonObject = synchronized(lock) {
         buildJsonObject {
-            put(ACCEPTED, accepted)
+            put(WEBHOOK_ACCEPTED, accepted)
             put("delivered", delivered)
             put("failed", failed)
             put("rejected", rejected)
@@ -118,16 +118,25 @@ public class PerfWebhookDelivery(
 
     private fun prune() {
         while (results.size > RESULT_SIZE) {
-            val completed = results.entries.firstOrNull { it.value != ACCEPTED } ?: return
+            val completed = results.entries.firstOrNull { it.value != WEBHOOK_ACCEPTED } ?: return
             results.remove(completed.key)
         }
     }
 }
 
+// Keep thirty-two pending webhooks so a slow destination cannot retain an unlimited alert stream.
 private const val QUEUE_SIZE = 32
-private const val ACCEPTED = "accepted"
-private const val DELIVERY_TIMEOUT_MS = 10_000L
+private const val WEBHOOK_ACCEPTED = "accepted"
+
+// Cancel one webhook delivery after ten seconds so the single worker can process later alerts.
+private const val WEBHOOK_DELIVERY_MS = 10_000L
+
+// Keep sixty-four delivery acknowledgements while retaining unfinished accepted entries until their outcome is known.
 private const val RESULT_SIZE = 64
+
+// Reject webhook fields above 160 characters so queued scalar envelopes fit the bounded transport contract.
 private const val MAX_FIELD_CHARS = 160
+
+// Reserve 256 KiB for the fixed webhook queue and result table while the delivery owner is alive.
 private const val QUEUE_BYTES = 256L * 1_024
 private val fields = setOf("dedup_key", "rule_id", "metric", "state", "observed", "threshold", "delivery_enabled")

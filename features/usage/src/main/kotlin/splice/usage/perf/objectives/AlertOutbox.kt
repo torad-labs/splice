@@ -68,11 +68,14 @@ internal class AlertOutbox(
             }
         }
         val status = when {
-            result == FAILED && attempt.attempts < MAX_ATTEMPTS -> "retry_pending"
-            result in setOf("delivered", FAILED, "disabled") -> result
+            result == ALERT_DELIVERY_FAILED && attempt.attempts < MAX_ATTEMPTS -> "retry_pending"
+            result in setOf("delivered", ALERT_DELIVERY_FAILED, "disabled") -> result
             else -> "delivery_result_unknown"
         }
-        return save(attempt.copy(status = status, nextAt = now + retryDelay(attempt)), failed = result == FAILED)
+        return save(
+            attempt.copy(status = status, nextAt = now + retryDelay(attempt)),
+            failed = result == ALERT_DELIVERY_FAILED,
+        )
     }
 
     private fun dispatch(attempt: AlertAttempt, now: Long): Boolean {
@@ -119,10 +122,24 @@ internal class AlertOutbox(
     }
 }
 
+// Persist at most three dispatch attempts so failed or refused webhook delivery cannot retry indefinitely.
 private const val MAX_ATTEMPTS = 3
-private const val FAILED = "failed"
+private const val ALERT_DELIVERY_FAILED = "failed"
+
+// Space retry attempts by a five-second base delay plus deterministic jitter to avoid immediate repeated sends.
 private const val BASE_RETRY_MS = 5_000L
+
+// Wait thirty seconds for an accepted delivery result before classifying its outcome as unknown.
 private const val COMPLETION_WAIT_MS = 30_000L
+
+// Clear the sign bit of the 32-bit key hash before reducing it to a nonnegative retry jitter.
 private const val JITTER_MASK = 0x7fffffffL
 private val finished =
-    setOf("delivered", FAILED, "disabled", "enqueue_exhausted", "restart_delivery_unknown", "delivery_result_unknown")
+    setOf(
+        "delivered",
+        ALERT_DELIVERY_FAILED,
+        "disabled",
+        "enqueue_exhausted",
+        "restart_delivery_unknown",
+        "delivery_result_unknown",
+    )

@@ -22,19 +22,19 @@ internal class PerfQueryFilter(
     private val accounts: RecordedAccounts?,
     private val sources: PerfQuerySources,
 ) {
-    private val tags: ProjectTags? = if (PROJECT in query.filters) projects?.invoke() else null
+    private val tags: ProjectTags? = if (PROJECT_FILTER in query.filters) projects?.invoke() else null
     private val accountNames = HashMap<String, AccountReading?>()
     private val missingAccounts = HashSet<String>()
     private val legacy = (
         TurnsFilterReader()(
             Parameters.build {
-                query.filters.filterKeys { it != SESSION && it != ACCOUNT }.forEach { (k, v) -> append(k, v) }
+                query.filters.filterKeys { it != SESSION_FILTER && it != ACCOUNT }.forEach { (k, v) -> append(k, v) }
             },
         ) as? TurnsFilterRead.Read
         )?.filter
 
     fun unsupported(): String? = when {
-        PROJECT in query.filters && tags == null -> "project_mapping_unavailable"
+        PROJECT_FILTER in query.filters && tags == null -> "project_mapping_unavailable"
         else -> null
     }
 
@@ -60,8 +60,8 @@ internal class PerfQueryFilter(
     private fun links(scope: PerfScope, links: PerfLinks, ignored: Set<String>): Boolean =
         query.filters.all { (key, value) ->
             key in ignored || when (key) {
-                SESSION -> links.sessionId == value
-                PROJECT -> project(links.sessionId, links.projectId, value)
+                SESSION_FILTER -> links.sessionId == value
+                PROJECT_FILTER -> project(links.sessionId, links.projectId, value)
                 ACCOUNT -> account(scope.head)?.matches(links.accountId, value) == true
                 else -> true
             }
@@ -75,9 +75,9 @@ internal class PerfQueryFilter(
 
     private fun rowFilter(key: String, value: String, head: String, row: PerfRow): Boolean = when (key) {
         "head" -> head == value
-        SESSION -> row.transcript.sessionId == value
+        SESSION_FILTER -> row.transcript.sessionId == value
         ACCOUNT -> account(head)?.matches(row.facts.account, value) == true
-        PROJECT -> rowProject(row, value)
+        PROJECT_FILTER -> rowProject(row, value)
         "local" -> (row.fields[PerfKeys.LOCAL_STEP] == 1L) == flag(value)
         "compact" -> row.facts.compact == flag(value)
         "transport", "streaming" -> false
@@ -102,7 +102,7 @@ internal class PerfQueryFilter(
     }
 
     private fun project(session: String?, recorded: String?, asked: String): Boolean {
-        val resolved = recorded ?: session?.let { JsonScalars.str(tags?.of(it.take(SESSION_TAG_CHARS)), "id") }
+        val resolved = recorded ?: session?.let { JsonScalars.str(tags?.of(it.take(PROJECT_SESSION_TAG_CHARS)), "id") }
         return if (asked == "none") resolved == null && session != null else resolved == asked
     }
 
@@ -116,9 +116,21 @@ internal class PerfQueryFilter(
 }
 
 internal val rawFilters =
-    setOf(SESSION, PROJECT, ACCOUNT, "silence_ms", "queued_ms", "resumed", "started_over", "test", "unattributed")
+    setOf(
+        SESSION_FILTER,
+        PROJECT_FILTER,
+        ACCOUNT,
+        "silence_ms",
+        "queued_ms",
+        "resumed",
+        "started_over",
+        "test",
+        "unattributed",
+    )
 
-private const val PROJECT = "project"
-private const val SESSION = "session"
+private const val PROJECT_FILTER = "project"
+private const val SESSION_FILTER = "session"
 private const val ACCOUNT = "account"
-private const val SESSION_TAG_CHARS = 8
+
+// Project lookup uses the existing eight-character legacy session tag; this feature does not depend on the turns module.
+private const val PROJECT_SESSION_TAG_CHARS = 8

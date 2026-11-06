@@ -123,5 +123,8 @@ public class PerfObjectiveStore(private val path: Path) : AutoCloseable {
     }
 }
 
+// Limit the settings document to 32 KiB before decoding or atomic replacement.
 private const val SETTINGS_LIMIT = 32_768
+
+// Reserve 512 KiB for retained objective settings and publication state while the store is open.
 private const val STORE_BYTES = 512L * 1_024

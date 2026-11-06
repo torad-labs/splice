@@ -53,7 +53,11 @@ private class NameProjection {
         val label = JsonScalars.str(row, "display_name")
         val heads = row["heads"] as? JsonArray
         if (label == null || heads == null) return false
-        val valid = listOf(heads.size <= MAX_HEADS, ref.length <= MAX_TEXT, label.length <= MAX_TEXT).all { it }
+        val valid = listOf(
+            heads.size <= MAX_ACCOUNT_NAME_HEADS,
+            ref.length <= MAX_TEXT,
+            label.length <= MAX_TEXT,
+        ).all { it }
         return valid && heads.all { headValue ->
             val head = JsonScalars.str(headValue)
             head != null && head.length <= MAX_TEXT && aliases(row, head, ref, label)
@@ -67,7 +71,7 @@ private class NameProjection {
         if (listOfNotNull(pool, place).any { it.length > MAX_TEXT }) return false
         val aliases = listOfNotNull(ref, pool, single, place, place?.let { "native:$it" })
         return aliases.all { key ->
-            val size = ENTRY_BYTES + STRING_BYTES * (head.length + key.length + ref.length + label.length)
+            val size = ENTRY_BYTES + ACCOUNT_ALIAS_CHAR_BYTES * (head.length + key.length + ref.length + label.length)
             if (bytes + size > RETAINED_BYTES) {
                 false
             } else {
@@ -79,12 +83,29 @@ private class NameProjection {
     }
 }
 
+// Project at most sixty-four authoritative account rows so name resolution cannot retain an unlimited roster.
 private const val MAX_ROWS = 64
-private const val MAX_HEADS = 32
+
+// Limit aliases to thirty-two heads per row before expanding the account-name lookup map.
+private const val MAX_ACCOUNT_NAME_HEADS = 32
+
+// Reject account labels and lookup keys above 256 characters before retaining a snapshot.
 private const val MAX_TEXT = 256
+
+// Expire name snapshots after one minute so attribution does not silently use stale settled account names.
 private const val MAX_AGE_MS = 60_000L
+
+// Reserve 512 KiB while constructing the bounded alias map and replacing the previous snapshot.
 private const val WORK_BYTES = 512L * 1_024
+
+// Limit the published alias map to 256 KiB, leaving construction scratch outside retained state.
 private const val RETAINED_BYTES = 256L * 1_024
+
+// Charge 512 bytes per alias-map entry for key, value and collection ownership before text charges.
 private const val ENTRY_BYTES = 512L
-private const val STRING_BYTES = 4L
+
+// Charge four bytes per alias character for retained string content and copied lookup-key content.
+private const val ACCOUNT_ALIAS_CHAR_BYTES = 4L
+
+// Charge 4 KiB for the snapshot owner and its maps before adding alias entries.
 private const val SNAPSHOT_OVERHEAD = 4_096L

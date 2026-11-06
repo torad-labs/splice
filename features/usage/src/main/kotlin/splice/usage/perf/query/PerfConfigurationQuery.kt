@@ -11,7 +11,9 @@ internal object PerfConfigurationQuery {
     fun render(sources: PerfQuerySources, query: PerfQuery, data: QueryData): JsonObject {
         val provenance = sources.provenance()
         val intervals = provenance?.intervals(query.fromMs, query.untilMs)
-        val eligible = intervals.orEmpty().asSequence().filter { overlaps(it, query) }.take(MAX_INTERVALS + 1).toList()
+        val eligible = intervals.orEmpty().asSequence().filter {
+            overlaps(it, query)
+        }.take(MAX_QUERY_CONFIG_INTERVALS + 1).toList()
         val boots = data.identities.map { it.bootId }.toSet()
         val unknown = incomplete(eligible, boots, sources, query)
         val revisions = eligible.mapNotNull { it.revision }.distinct()
@@ -29,8 +31,8 @@ internal object PerfConfigurationQuery {
                 ),
             )
             put("requires_matching_provider_topology", true)
-            put("intervals", JsonArray(eligible.take(MAX_INTERVALS).map(::intervalJson)))
-            put("truncated", eligible.size > MAX_INTERVALS)
+            put("intervals", JsonArray(eligible.take(MAX_QUERY_CONFIG_INTERVALS).map(::intervalJson)))
+            put("truncated", eligible.size > MAX_QUERY_CONFIG_INTERVALS)
         }
     }
 
@@ -48,7 +50,7 @@ internal object PerfConfigurationQuery {
     ): Boolean =
         listOf(
             intervals.isEmpty(),
-            intervals.size > MAX_INTERVALS,
+            intervals.size > MAX_QUERY_CONFIG_INTERVALS,
             intervals.any { unknown(it, boots) },
             sources.heads().filter { query.filters["head"]?.let { asked -> it == asked } != false }.any {
                 !covers(intervals.filter { interval -> interval.head == it }, boots, query)
@@ -75,4 +77,5 @@ internal object PerfConfigurationQuery {
     }
 }
 
-private const val MAX_INTERVALS = 512
+// Project at most 512 configuration intervals and mark truncation before comparing provenance windows.
+private const val MAX_QUERY_CONFIG_INTERVALS = 512

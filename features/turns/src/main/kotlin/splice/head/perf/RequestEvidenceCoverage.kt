@@ -231,6 +231,11 @@ private data class EvidenceProducer(
     var faulted: Boolean = false,
 )
 
+// Reserve 512 KiB for producer intervals, head membership and loss epochs until the evidence owner closes.
 private const val STATE_BYTES = 512L * 1_024
+
+// Invalidate coverage when wall and monotonic progress disagree by more than one second instead of filling a clock gap.
 private const val CLOCK_DRIFT_MS = 1_000L
+
+// Three UTF-8 bytes per UTF-16 code unit conservatively bounds the encoded receipt before publication.
 private const val UTF8_BYTES = 3L

@@ -199,9 +199,17 @@ public class RequestEvidenceFiles(
     }
 }
 
+// Share a 64 MiB retained-evidence disk cap across all heads instead of allocating that allowance per head.
 private const val EVIDENCE_DISK_BYTES = 64L * 1_024 * 1_024
+
+// Roll evidence at 1 MiB so retention can reclaim small segments without rewriting live journals.
 private const val EVIDENCE_SEGMENT_BYTES = 1_024L * 1_024
+
+// Reserve 4 KiB for scalar retention metadata when calculating space available for event segments.
 private const val EVIDENCE_MANIFEST_BYTES = 4_096L
+
+// Require 8 KiB of evidence capacity beyond metadata before admitting a writable evidence store.
 private const val MIN_EVIDENCE_BYTES = 8_192L
 
+// Reserve 1 MiB while encoding and publishing coverage so checkpoint work competes within the shared work budget.
 private const val COVERAGE_WORK_BYTES = 1L * 1_024 * 1_024

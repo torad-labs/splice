@@ -10,6 +10,7 @@ import kotlinx.serialization.json.put
 import splice.core.perf.observation.PerfAggregatePoint
 import splice.core.perf.observation.PerfMetricRegistry
 import splice.core.util.JsonScalars
+import splice.usage.perf.PERF_P95_QUANTILE
 import splice.usage.perf.query.PerfQueryJson.coverageJson
 import splice.usage.perf.query.PerfQueryJson.numeric
 import splice.usage.perf.query.PerfQueryJson.scopeJson
@@ -30,7 +31,7 @@ internal object PerfQueryMetrics {
 
     fun summary(query: PerfQuery, data: QueryData): JsonObject {
         val groups = data.points.values.groupBy { it.metric }
-        val seconds = (query.untilMs - query.fromMs).toDouble() / MILLIS_PER_SECOND
+        val seconds = (query.untilMs - query.fromMs).toDouble() / QUERY_MILLIS_PER_SECOND
         val populations = MetricPopulationCoverage(query, data)
         return buildJsonObject {
             put("rates", rateSummary(groups, seconds, data))
@@ -128,7 +129,7 @@ internal object PerfQueryMetrics {
             put("min", numeric(points.mapNotNull { it.min }.minOrNull()))
             put("max", numeric(points.mapNotNull { it.max }.maxOrNull()))
             put("p50", quantile(buckets, bounds, count, HALF))
-            put("p95", quantile(buckets, bounds, count, P95))
+            put("p95", quantile(buckets, bounds, count, PERF_P95_QUANTILE))
             put("p99", quantile(buckets, bounds, count, P99))
             put("bounds_ms", JsonArray(bounds.map(::JsonPrimitive)))
             put("buckets", JsonArray(buckets.map(::JsonPrimitive)))
@@ -181,9 +182,13 @@ internal object PerfQueryMetrics {
     }
 }
 
-internal const val MILLIS_PER_SECOND = 1_000.0
+// Convert millisecond query windows into seconds for both aggregate and evidence throughput denominators.
+internal const val QUERY_MILLIS_PER_SECOND = 1_000.0
+
+// The median uses the half-population quantile, preserving the public p50 statistic.
 private const val HALF = 0.5
-private const val P95 = 0.95
+
+// The p99 statistic selects the ninety-ninth percentile of the observed histogram population.
 private const val P99 = 0.99
 
 /** The evidence fold replaces only its supported request metrics; other points retain aggregate attribution. */

@@ -22,7 +22,7 @@ internal class PerfRepresentativeTimeline(private val memory: PerfReductionMemor
         val group = group(key) ?: return
         if (!makeRoom(group, event)) return
         val charge = charge(event)
-        if (bytes + charge <= MAX_BYTES && memory.take(charge)) {
+        if (bytes + charge <= MAX_TIMELINE_BYTES && memory.take(charge)) {
             group.add(
                 event.copy(
                     values = event.values.toMap(),
@@ -43,7 +43,7 @@ internal class PerfRepresentativeTimeline(private val memory: PerfReductionMemor
         } else { truncated = true; null }
 
     private fun makeRoom(group: MutableList<PerfObservation>, event: PerfObservation): Boolean {
-        if (group.size < MAX_EVENTS) return true
+        if (group.size < MAX_TIMELINE_EVENTS) return true
         truncated = true
         if (event.kind !in setOf(PerfEventKind.REQUEST_FINISHED, PerfEventKind.USAGE_RECORDED)) return false
         val removed = charge(group.removeLast())
@@ -99,16 +99,28 @@ internal class PerfRepresentativeTimeline(private val memory: PerfReductionMemor
             event.scope.outcome,
             event.outcome,
             event.links.toolId,
-        ).sumOf { it.length * CHAR_BYTES } + event.values.keys.sumOf { it.length * CHAR_BYTES }
+        ).sumOf { it.length * TIMELINE_CHAR_BYTES } + event.values.keys.sumOf { it.length * TIMELINE_CHAR_BYTES }
 }
 
 internal data class ReducedRequestKey(val boot: String, val request: String)
+
+// Keep examples from at most twenty requests; this display limit never defines the measured request population.
 private const val MAX_REQUESTS = 20
-private const val MAX_EVENTS = 8
-private const val MAX_BYTES = 128L * 1_024
+
+// Keep at most eight representative events per displayed request so progress events cannot dominate examples.
+private const val MAX_TIMELINE_EVENTS = 8
+
+// Limit representative timelines to 128 KiB independently of the reducer's complete scalar request counts.
+private const val MAX_TIMELINE_BYTES = 128L * 1_024
+
+// Charge 768 bytes per retained example event before metric entries and correlated text.
 private const val EVENT_BYTES = 768L
+
+// Charge ninety-six bytes for each numeric metric entry retained in a representative event.
 private const val VALUE_BYTES = 96L
-private const val CHAR_BYTES = 4L
+
+// Charge four bytes per retained timeline character for copied text and its rendered representation.
+private const val TIMELINE_CHAR_BYTES = 4L
 private val TIMELINE_KINDS = setOf(
     PerfEventKind.REQUEST_ARRIVED,
     PerfEventKind.CHECKPOINT,

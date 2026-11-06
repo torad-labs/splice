@@ -71,6 +71,7 @@ internal class PerfLegacyQuery(private val sources: PerfQuerySources) {
     }
 }
 
+// Retain at most 4,096 legacy rows and report a partial result when the matching population is larger.
 private const val MAX_LEGACY_ROWS = 4_096
 
 internal object PerfLegacyRows {

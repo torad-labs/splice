@@ -260,4 +260,5 @@ internal object PerfReducedValues {
     }
 }
 
+// Charge 144 bytes for each attempt's scalar reducer state before its retained identifier text.
 private const val ATTEMPT_FIXED_BYTES = 144L

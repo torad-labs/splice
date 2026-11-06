@@ -75,10 +75,16 @@ public class RequestEvidenceStore internal constructor(
         val identity = observation.stamp.identity
         val identityChars = identity.bootId.length.toLong() + identity.build.length + identity.version.length +
             identity.configRevision.length
-        return EVIDENCE_METADATA_BYTES + identityChars * CHAR_BYTES + observation.values.size * EVIDENCE_VALUE_BYTES
+        return EVIDENCE_METADATA_BYTES + identityChars * EVIDENCE_IDENTITY_CHAR_BYTES +
+            observation.values.size * EVIDENCE_VALUE_BYTES
     }
 }
 
+// Charge 8 KiB for observation metadata and bounded links before producer enqueue.
 private const val EVIDENCE_METADATA_BYTES = 8_192L
+
+// Charge 256 bytes per metric value for its key, boxed number and map entry.
 private const val EVIDENCE_VALUE_BYTES = 256L
-private const val CHAR_BYTES = 2L
+
+// Charge two bytes per retained identity character even when the JVM uses compact strings.
+private const val EVIDENCE_IDENTITY_CHAR_BYTES = 2L

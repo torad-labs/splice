@@ -65,7 +65,11 @@ internal class AlertRuleWindows(private val query: PerfQueryService) {
 
 internal const val COMPLETED_REQUEST_WINDOW = "certified_completed_request_window"
 internal const val COMPLETED_UNCHANGED = "completed_window_unchanged"
+
+// Reject completed-window evidence older than one minute even when a rule uses a longer measurement window.
 private const val MAX_COMPLETED_LAG_MS = 60_000L
+
+// Allow fifteen seconds of checkpoint settling lag for short windows before classifying completed evidence as stale.
 private const val MIN_COMPLETED_LAG_MS = 15_000L
 private val requestAliases = setOf(
     "goodput.good_fraction",

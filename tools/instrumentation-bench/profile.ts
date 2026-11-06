@@ -58,7 +58,7 @@ export async function startProfile(m: Manifest, desk: OwnedDesk, repetition: num
   const started = (await control(desk, '/api/perf/profiles', { method: 'POST', body: { profiler: 'jfr', mode: 'cpu', durationSeconds } })).value;
   const id = started.profile_id;
   if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id) || started.status !== 'running' || started.process_id !== desk.pid) throw new Error('profile_start_unverified');
-  const identity = runtimeIdentity(started.identity);
+  const identity = runtimeIdentity(started.identity, started.schema_version);
   const receipt: ProfileReceipt = { repetition, profile_id: id, status: 'running', error_class: null, identity, process_id: desk.pid,
     capture_from_ms: null, capture_until_ms: null, steady_from_ms: null, steady_until_ms: null, size_bytes: null, artifact_sha256: null, artifact_path: null,
     runtime_binding: { first: null, last: null, samples: 0, source_commit: desk.identity.source_commit, jar_sha256: desk.identity.artifact_sha256, process_start_ticks: desk.identity.start_ticks, config_sha256: desk.identity.raw_config_sha256, config_scope: 'profile_and_runtime_revisions_reported_separately' },
@@ -73,7 +73,7 @@ export async function startProfile(m: Manifest, desk: OwnedDesk, repetition: num
       let result = (await control(desk, `/api/perf/profiles/${id}/stop`, { method: 'POST' })).value;
       const deadline = performance.now() + 20000;
       while (result.status === 'running' && performance.now() < deadline) { await sleep(100); result = (await control(desk, `/api/perf/profiles/${id}`)).value; }
-      if (result.status !== 'completed' || result.artifact_available !== true || result.process_id !== desk.pid || JSON.stringify(runtimeIdentity(result.identity)) !== JSON.stringify(identity)) throw new Error('profile_terminal_identity_unverified');
+      if (result.status !== 'completed' || result.artifact_available !== true || result.process_id !== desk.pid || JSON.stringify(runtimeIdentity(result.identity, result.schema_version)) !== JSON.stringify(identity)) throw new Error('profile_terminal_identity_unverified');
       if (result.window_scope !== 'recording' || !Number.isSafeInteger(result.from_ms) || !Number.isSafeInteger(result.until_ms) || result.from_ms > fromMs || result.until_ms < untilMs) throw new Error('profile_interval_uncovered');
       if (!Number.isSafeInteger(result.size_bytes) || result.size_bytes <= 0 || result.size_bytes > 64 * 1024 ** 2) throw new Error('profile_artifact_size_invalid');
       receipt.capture_from_ms = result.from_ms; receipt.capture_until_ms = result.until_ms;

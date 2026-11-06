@@ -6,11 +6,11 @@ export interface OwnedDesk {
   assertIdentity(): Promise<void>;
 }
 export interface RuntimeIdentity { bootId: string; build: string; version: string; configRevision: string; schemaVersion: number }
-export function runtimeIdentity(value: unknown): RuntimeIdentity {
+export function runtimeIdentity(value: unknown, declaredSchemaVersion: unknown): RuntimeIdentity {
   if (!value || typeof value !== 'object') throw new Error('runtime_identity_missing');
   const v = value as Record<string, unknown>;
   for (const key of ['bootId', 'build', 'version', 'configRevision']) if (typeof v[key] !== 'string' || !v[key] || (v[key] as string).length > 200) throw new Error('runtime_identity_invalid');
-  if (v.schemaVersion !== 1) throw new Error('runtime_identity_schema');
+  if (declaredSchemaVersion !== 1 || Object.hasOwn(v, 'schemaVersion') && v.schemaVersion !== 1) throw new Error('runtime_identity_schema');
   return { bootId: v.bootId as string, build: v.build as string, version: v.version as string, configRevision: v.configRevision as string, schemaVersion: 1 };
 }
 export async function boundedBody(response: Response, limit: number): Promise<Uint8Array> {

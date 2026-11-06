@@ -52,7 +52,7 @@ export function reconcileSinks(first: TelemetryPoint, last: TelemetryPoint) {
   const missing = (reason: string) => ({ status: 'unavailable', value: null, reason, sinks: [] as object[] });
   if (!first.identity || !last.identity || JSON.stringify(first.identity) !== JSON.stringify(last.identity) || first.process_id !== last.process_id || first.artifact_sha256 !== last.artifact_sha256 || first.config_sha256 !== last.config_sha256) return missing('sink_identity_changed');
   if (first.status !== 'ok' || last.status !== 'ok' || !first.sinks || !last.sinks) return missing('sink_boundary_partial');
-  try { sinks(first.sinks); sinks(last.sinks); runtimeIdentity(first.identity); runtimeIdentity(last.identity); } catch { return missing('sink_boundary_malformed'); }
+  try { sinks(first.sinks); sinks(last.sinks); runtimeIdentity(first.identity, first.identity.schemaVersion); runtimeIdentity(last.identity, last.identity.schemaVersion); } catch { return missing('sink_boundary_malformed'); }
   if (first.as_of_ms === null || last.as_of_ms === null || last.as_of_ms <= first.as_of_ms) return missing('sink_time_not_advancing');
   if (JSON.stringify(first.sinks.map(s => s.sink).sort()) !== JSON.stringify(last.sinks.map(s => s.sink).sort())) return missing('sink_population_changed');
   const result: object[] = []; let loss = 0;
@@ -74,7 +74,7 @@ export async function startTelemetry(m: Manifest, desk: OwnedDesk, repetition: n
     const point: TelemetryPoint = { repetition, phase, sampled_from_ms: Date.now(), sampled_until_ms: 0, identity: null, artifact_sha256: m.artifact_sha256, process_id: desk.pid, config_sha256: desk.identity?.raw_config_sha256 ?? 'unknown', status: 'partial', issues: [], as_of_ms: null, sinks: null, memory: { observation_reserved_bytes: null, observation_limit_bytes: null, work_leased_bytes: null, work_limit_bytes: null, owner_accounted_bytes: Object.fromEntries(owners.map(n => [n, null])) }, disk: {}, runtime: null, exports: null, read_bytes: 0, elapsed_ms: 0 };
     try {
       const result = await control(desk, '/api/perf/instrumentation/status'); point.read_bytes += result.bytes;
-      const v = result.value; const identity = runtimeIdentity(v.identity);
+      const v = result.value; const identity = runtimeIdentity(v.identity, v.schema_version);
       if (identity.build !== desk.identity?.process_build) throw new Error('instrumentation_build_mismatch');
       point.identity = identity; point.as_of_ms = counter(v.as_of_ms);
       if (v.schema_version !== 1 || v.process_id !== desk.pid || v.collection_mode !== m.collection.mode || v.status !== 'ok') throw new Error('instrumentation_status_partial');
@@ -88,7 +88,7 @@ export async function startTelemetry(m: Manifest, desk: OwnedDesk, repetition: n
     } catch (error) { point.issues.push(error instanceof Error && /^[a-z0-9_]+$/.test(error.message) ? error.message : 'instrumentation_status_unavailable'); }
     try {
       const result = await control(desk, '/api/perf/runtime'); point.read_bytes += result.bytes;
-      if (!point.identity || JSON.stringify(runtimeIdentity(result.value.identity)) !== JSON.stringify(point.identity) || counter(result.value.as_of_ms) === null || Date.now() - result.value.as_of_ms > 15000) throw new Error('runtime_status_stale_or_mismatched');
+      if (!point.identity || JSON.stringify(runtimeIdentity(result.value.identity, result.value.schema_version)) !== JSON.stringify(point.identity) || counter(result.value.as_of_ms) === null || Date.now() - result.value.as_of_ms > 15000) throw new Error('runtime_status_stale_or_mismatched');
       point.runtime = { as_of_ms: result.value.as_of_ms, age_ms: result.value.age_ms, capabilities: capabilities(result.value.capabilities), issues: codes(result.value.issues), measurements: numericProjection(result.value.measurements), owner_readings: numericProjection(result.value.owner_readings), owner_coverage: 'registered_owners_only_partial' };
     } catch { point.issues.push('runtime_status_unavailable'); }
     if (m.collection.exports) try { const result = await control(desk, '/api/perf/export/status'); point.read_bytes += result.bytes; point.exports = numericProjection(result.value); } catch { point.issues.push('export_status_unavailable'); }

@@ -13,7 +13,7 @@ export async function readSourceCosts(desk: OwnedDesk): Promise<SourceCosts | nu
       for (const key of [...counters, ...gauges]) { const n = counter(value.sources?.[owner]?.[key]); if (n === null) return null; cost[key] = n; }
       sources[owner] = cost;
     }
-    return { identity: runtimeIdentity(value.identity), process_id: value.process_id, as_of_ms: value.as_of_ms, sources, retained_bytes_scope: 'process_shared_work_pool' };
+    return { identity: runtimeIdentity(value.identity, value.schema_version), process_id: value.process_id, as_of_ms: value.as_of_ms, sources, retained_bytes_scope: 'process_shared_work_pool' };
   } catch { return null; }
 }
 export function sourceCostDelta(first: SourceCosts | null, last: SourceCosts | null) {

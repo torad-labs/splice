@@ -48,6 +48,12 @@ manifest; it does not authenticate a malicious local rewrite of both artifact
 and receipt. `process_build=source:<sha>` is the freeze's source label. Candidate
 runtime identities are captured separately from the application's responses.
 
+Runtime, instrumentation-status, and profile responses declare their wire schema
+in the enclosing `schema_version`. The harness requires numeric version `1` there
+before normalizing an omitted nested `identity.schemaVersion` to its serialized
+default. An explicitly present nested version must also be numeric `1`; missing or
+unsupported envelope versions and conflicting identity versions remain failures.
+
 Proxy readiness requires Linux `/proc` visibility. Before even requesting health,
 the harness intersects both listening socket inodes with the spawned child's file
 descriptors, verifies its process start ticks and liveness, then rechecks ownership

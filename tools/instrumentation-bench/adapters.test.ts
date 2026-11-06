@@ -5,7 +5,7 @@ import { reconcileSinks, sinks, startTelemetry, telemetrySummary, type Telemetry
 import { finalSchedule, materialize } from './schedule';
 import { defaults, validate } from './manifest';
 import { sameRuntimeOwner } from './profile';
-import type { OwnedDesk } from './control';
+import { runtimeIdentity, type OwnedDesk } from './control';
 
 const cat = (...bytes: Uint8Array[]) => Buffer.concat(bytes);
 const varint = (value: number) => { const bytes: number[] = []; do { const rest = value % 128; value = Math.floor(value / 128); bytes.push(rest | (value ? 128 : 0)); } while (value); return new Uint8Array(bytes); };
@@ -67,13 +67,25 @@ test('sink evidence reports actual interval losses and refuses resets, changed o
   const summary = telemetrySummary([first, last], [{ repetition: 0, before: 0, after: 1, from_ms: 1001, until_ms: 1999 }]);
   expect(summary.resources).toMatchObject({ pool_reservation_peak_bytes: 14, retained_heap_bytes: null, sustained_growth: null });
 });
+test('runtime wire identities use the enclosing schema and reject conflicting or unversioned data', () => {
+  const identity = { bootId: 'boot', build: 'loaded-build', version: '1', configRevision: 'config' };
+  const wire = JSON.parse(JSON.stringify({ schema_version: 1, identity }));
+  expect(runtimeIdentity(wire.identity, wire.schema_version)).toEqual({ ...identity, schemaVersion: 1 });
+  expect(runtimeIdentity({ ...identity, schemaVersion: 1 }, 1)).toEqual({ ...identity, schemaVersion: 1 });
+  for (const schema of [undefined, null, 2, '1', true]) {
+    expect(() => runtimeIdentity(identity, schema)).toThrow('runtime_identity_schema');
+    expect(() => runtimeIdentity({ ...identity, schemaVersion: 1 }, schema)).toThrow('runtime_identity_schema');
+    expect(() => runtimeIdentity({ ...identity, schemaVersion: schema }, 1)).toThrow('runtime_identity_schema');
+  }
+  expect(() => runtimeIdentity({ ...identity, bootId: '' }, 1)).toThrow('runtime_identity_invalid');
+});
 test('live telemetry requires the artifact-bound build before accepting its first or subsequent sample', async () => {
   const state = await mkdtemp('/tmp/splice-instrumentation-live-identity-test-');
   const processBuild = `compiled-artifact-inputs-sha256:${'a'.repeat(64)}`;
-  const identity = { bootId: 'test-boot', build: `source:${'1'.repeat(40)}`, version: '1', configRevision: 'test-config', schemaVersion: 1 };
+  const identity = { bootId: 'test-boot', build: `source:${'1'.repeat(40)}`, version: '1', configRevision: 'test-config' };
   const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch(request) {
     const as_of_ms = Date.now();
-    if (new URL(request.url).pathname === '/api/perf/runtime') return Response.json({ identity, as_of_ms, age_ms: 0, capabilities: [], issues: [], measurements: {} });
+    if (new URL(request.url).pathname === '/api/perf/runtime') return Response.json({ schema_version: 1, identity, as_of_ms, age_ms: 0, capabilities: [], issues: [], measurements: {} });
     return Response.json({ identity, as_of_ms, schema_version: 1, process_id: 123, collection_mode: 'local', status: 'ok', sinks: point(as_of_ms, 1).sinks,
       memory: { observation: { reserved_bytes: 10, total_limit_bytes: 16 }, work: { leased_bytes: 4, limit_bytes: 16 }, owners: {} } });
   } });

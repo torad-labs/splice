@@ -19,7 +19,7 @@ class OperatorTelemetryConfigTest {
     fun `operator namespace and collection alias reach global restart knobs`() {
         val source = """
             [defaults]
-            perf_collection_enabled = false
+            perf_collection_enabled = "false"
             [telemetry.operator]
             prometheus_enabled = true
             otlp_endpoint = "http://127.0.0.1:4318"

@@ -167,3 +167,10 @@ share
 share.enabled	
 share.hostnames	
 share.port	
+telemetry	
+telemetry.operator	
+telemetry.operator.otlp_endpoint	
+telemetry.operator.otlp_headers	
+telemetry.operator.otlp_protocol	
+telemetry.operator.otlp_signals	
+telemetry.operator.prometheus_enabled	

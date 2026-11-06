@@ -29,6 +29,8 @@ internal class PerfCursorFiles(private val directory: Path) {
 
     fun index(id: String): FileChannel = FileChannel.open(directory.resolve("$id.idx"), StandardOpenOption.READ)
 
+    fun evidenceIds(id: String): PerfEvidenceSeen = PerfEvidenceSeen(directory.resolve("$id.seen"))
+
     fun create(id: String): FileChannel {
         val reason = SecureFile.ownerOnlyDirectory(directory)
         if (reason != null) throw IOException("cursor_directory_permissions")

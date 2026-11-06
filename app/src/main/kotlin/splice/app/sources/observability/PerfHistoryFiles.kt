@@ -104,6 +104,8 @@ internal class PerfHistoryFiles(private val directory: Path) {
 
     fun remove(entry: PerfHistoryEntry) { Files.deleteIfExists(entry.path) }
 
+    fun sealedHour(minute: Long): Boolean = Files.exists(path(PerfHistoryFormat.hour(minute), PERF_HOUR_MS))
+
     private fun path(time: Long, resolution: Long): Path =
         directory.resolve("${if (resolution == PERF_MINUTE_MS) "minute" else "hour"}-$time.json")
 

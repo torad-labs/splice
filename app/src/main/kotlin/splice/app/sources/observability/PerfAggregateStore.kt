@@ -120,7 +120,7 @@ public class PerfAggregateStore(directory: Path, private val identity: PerfIdent
         points: List<PerfAggregatePoint>,
         cutoff: Long,
     ) {
-        if (minute < cutoff) {
+        if (minute < cutoff || files.sealedHour(minute)) {
             issue(PerfIssue("late_checkpoint_expired", HISTORY_SINK))
         } else {
             writeMinute(snapshot, minute, points)

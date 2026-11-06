@@ -27,7 +27,9 @@ internal class PerfHistoryReader(private val files: PerfHistoryFiles, private va
         }
         val started = MonoClock.nowMs()
         costs.begin(true)
-        val scan = HistoryScan(from, until, resolution, evidence.toMutableList())
+        val retainedFrom = (now - HISTORY_RETENTION_MS).coerceAtLeast(0L)
+        val scan = HistoryScan(from, until, resolution, evidence.toMutableList(), retainedFrom)
+        if (from < retainedFrom) scan.issues += PerfIssue("retention_expired", HISTORY_SINK)
         var retained = false
         try {
             val result = scanned(scan, sink)
@@ -71,6 +73,7 @@ private class HistoryScan(
     private val until: Long,
     private val resolution: Long,
     val issues: MutableList<PerfIssue>,
+    private val retainedFrom: Long,
 ) {
     private val retained = ArrayList<PerfHistoryFile>()
     var bytes = 0L
@@ -87,7 +90,7 @@ private class HistoryScan(
     }
 
     private fun eligible(entry: PerfHistoryEntry, hours: Set<Long>): Boolean {
-        if (entry.fromMs >= until || entry.fromMs + entry.resolutionMs <= from) return false
+        if (entry.fromMs >= until || entry.fromMs + entry.resolutionMs <= maxOf(from, retainedFrom)) return false
         return entry.resolutionMs != PERF_MINUTE_MS || PerfHistoryFormat.hour(entry.fromMs) !in hours
     }
 
@@ -168,3 +171,4 @@ private class HistoryScan(
 
 private const val RESULT_OVERHEAD = 16L * 1_024
 private const val MAX_READ_ISSUES = 64
+private const val HISTORY_RETENTION_MS = 35L * PERF_DAY_MS

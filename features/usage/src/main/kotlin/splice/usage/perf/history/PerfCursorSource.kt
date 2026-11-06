@@ -1,6 +1,7 @@
 package splice.usage.perf.history
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.util.PerfWorkBudget
 import splice.usage.perf.PerfRow
 
 public fun interface PerfRowPredicate {
@@ -21,7 +22,9 @@ public data class PerfCursorPage(
     val recordIds: List<String>,
     val nextCursor: String?,
     val metadata: JsonObject,
-)
+) : AutoCloseable {
+    override fun close(): Unit = PerfWorkBudget.release(this)
+}
 
 public interface PerfCursorSource {
     public fun page(request: PerfCursorRequest): PerfCursorPage

@@ -1,0 +1,95 @@
+package splice.app.sources.observability
+
+import splice.core.perf.observation.PerfCoverage
+import splice.core.perf.observation.PerfIssue
+import splice.core.util.AsyncFileIo
+import splice.core.util.MonoClock
+import splice.core.util.PerfWorkBudget
+import splice.core.util.WallClock
+import splice.usage.perf.history.PerfEvidenceCursorRequest
+import splice.usage.perf.history.PerfEvidenceCursorSource
+import splice.usage.perf.history.PerfEvidencePage
+import splice.usage.perf.history.PerfEvidenceQuery
+import splice.usage.perf.history.PerfEvidenceRead
+import splice.usage.perf.history.PerfEvidenceSinkSource
+import java.io.IOException
+import java.nio.file.Path
+import java.util.concurrent.Semaphore
+
+public class PerfEvidenceFileSource(
+    private val directory: Path,
+    private val clock: WallClock,
+    private val sinks: PerfEvidenceSinkSource? = null,
+) : PerfEvidenceCursorSource {
+    public val costs: PerfSourceCosts = PerfSourceCosts()
+    private val inventory = PerfEvidenceInventory(directory)
+    private val cursors = PerfEvidenceCursors(directory, clock, costs)
+    private val reading = Semaphore(1)
+
+    override fun page(request: PerfEvidenceCursorRequest): PerfEvidencePage = cursors.page(request)
+
+    override fun read(query: PerfEvidenceQuery): PerfEvidenceRead {
+        require(query.fromMs >= 0 && query.untilMs > query.fromMs) { "invalid evidence interval" }
+        require(query.head == null || evidenceHeadPattern.matches(query.head)) { "invalid evidence head" }
+        if (!reading.tryAcquire()) return unavailable(query, "evidence_query_busy")
+        val lease = PerfWorkBudget.acquire(PERF_CURSOR_RESERVE_BYTES)
+        if (lease == null) {
+            reading.release()
+            return unavailable(query, "evidence_memory_busy")
+        }
+        return readHeld(query, lease)
+    }
+
+    private fun readHeld(query: PerfEvidenceQuery, lease: PerfWorkBudget.Lease): PerfEvidenceRead {
+        val started = MonoClock.nowMs()
+        val scan = PerfEvidenceReadScan(query, inventory)
+        costs.begin(true)
+        var retained = false
+        return try {
+            val settled = AsyncFileIo.awaitDirectory(directory)
+            val asOf = clock()
+            scan.issues += inventory.issues()
+            if (!settled) scan.issues += PerfIssue("evidence_pending_write", EVIDENCE_SOURCE)
+            scan(scan)
+            val statuses = sinks?.statuses().orEmpty()
+            if (statuses.any { it.failed + it.dropped + it.pending > 0 }) {
+                scan.issues += PerfIssue("evidence_sink_loss_or_pending", EVIDENCE_SOURCE)
+            }
+            val result = PerfEvidenceRead(
+                scan.observations.values.toList(),
+                PerfCoverage(query.fromMs, query.untilMs, 0L, scan.issues.distinct(), statuses),
+                asOf,
+                scan.issues.isEmpty(),
+            )
+            lease.retain(result, scan.retainedBytes)
+            retained = true
+            result
+        } finally {
+            if (!retained) lease.close()
+            costs.end(scan.scannedRows, scan.work.bytes, (MonoClock.nowMs() - started).coerceAtLeast(0L))
+            reading.release()
+        }
+    }
+
+    private fun scan(scan: PerfEvidenceReadScan) {
+        try {
+            scan.scan()
+        } catch (failure: IOException) {
+            val code = failure.message?.takeIf { it.startsWith("evidence_") || it.startsWith("cursor_") }
+                ?: "evidence_read_error"
+            scan.issues += PerfIssue(code, EVIDENCE_SOURCE)
+        }
+    }
+
+    private fun unavailable(query: PerfEvidenceQuery, code: String): PerfEvidenceRead {
+        costs.refused()
+        return PerfEvidenceRead(
+            emptyList(),
+            PerfCoverage(query.fromMs, query.untilMs, 0, listOf(PerfIssue(code, EVIDENCE_SOURCE))),
+            clock(),
+            false,
+        )
+    }
+}
+
+internal val evidenceHeadPattern = Regex("[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")

@@ -102,7 +102,7 @@ public class PerfRowsFileSource internal constructor(
     @Synchronized
     override fun <T> projected(sinceMs: Long, read: PerfProjectionRead<T>): T {
         val retained = compact
-        costs.projection(retained.versions().isNotEmpty())
+        val decodedBefore = parsedLines
         return try {
             projectedRead(sinceMs, retained, read)
         } catch (_: PerfProjectionChanged) {
@@ -116,6 +116,8 @@ public class PerfRowsFileSource internal constructor(
                     override fun complete(rows: List<PerfRow>): List<PerfRow> = rows
                 })
             }
+        } finally {
+            costs.projection(parsedLines == decodedBefore)
         }
     }
 

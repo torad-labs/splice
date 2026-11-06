@@ -693,8 +693,8 @@ describe("the legs that read no code run and pass before gradle starts", () => {
   const bunLeg = (task: string, script: string): Leg => ({ task, command: ["bun", "-e", script], inputs: ["**/*.kt"] });
 
   test("RED: any of the four failing fails the push, and gradle is never asked", async () => {
+    const root = oneModule();
     for (const task of NO_CODE) {
-      const root = oneModule();
       const calls: string[][] = [];
       const lines: PushTiming[] = [];
       const { result, text } = await captured(() =>

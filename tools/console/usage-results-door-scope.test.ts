@@ -20,6 +20,7 @@ const proj = (p: string) => ({ id: `/work/${p}`, name: p, label: p, source: "fol
 const rows = Array.from({ length: 6 }, (_, i) => ({ turn: `o${i}`, ts: now - 30_000 * (i + 1), first_byte: 100, total: 500, outcome: "ok", model: "m", account: "primary", session: "s1", project: proj("website") }));
 let queryWorkerBusy = false, refuseSummary = false;
 let limitPerfHttp = false, admittedPerfHttp = 0, refuseSettings = false;
+let artifactFailure: string | null = null;
 let profileState = "idle", savedObjectives: Row[] = [];
 const httpHolds = new Map<string, { entered: () => void; wait: Promise<void> }>();
 function holdHttp(path: string, method = "GET") {
@@ -73,7 +74,14 @@ async function fixtureResponse(req: Request) {
         return Response.json({ schema_version: 1, status: "ok", revision: savedObjectives.length ? "saved-objective" : "initial", objectives: savedObjectives, rules: [] });
       }
       if (path.startsWith("/api/perf/profiles")) {
-        if (path.endsWith("/artifact")) return new Response("fixture-profile", { headers: { "Content-Type": "application/octet-stream" } });
+        if (path.endsWith("/artifact")) {
+          if (artifactFailure === "malformed") return new Response('{"reason":', { status: 429, headers: { "Content-Type": "application/json" } });
+          if (artifactFailure === "non-json") return new Response('{"reason":"artifact_reader_capacity"}', { status: 429, headers: { "Content-Type": "text/plain" } });
+          if (artifactFailure === "unknown") return Response.json({ reason: "private_path_should_not_be_shown", path: "/fixture/private" }, { status: 429 });
+          if (artifactFailure === "oversized") return Response.json({ reason: "artifact_reader_capacity", padding: "x".repeat(4096) }, { status: 429 });
+          if (artifactFailure) return Response.json({ schema_version: 1, status: "busy", reason: artifactFailure }, { status: 429 });
+          return new Response("fixture-profile", { headers: { "Content-Type": "application/octet-stream" } });
+        }
         if (req.method === "POST") profileState = path.endsWith("/stop") ? "stopped" : "running";
         return Response.json({ status: profileState, profile_id: "bounded-profile", artifact_available: profileState === "stopped" });
       }
@@ -211,6 +219,14 @@ test("Usage: bounded Perf admission preserves startup views and pending profile 
     await panel.getByRole("button", { name: "Download artifact", exact: true }).click();
     expect((await artifact).suggestedFilename()).toBe("splice-profile-bounded-profile.jfr");
     await expect(panel.locator(".pc-message")).toHaveText("Profile artifact downloaded");
+    for (const refusal of ["control_query_capacity", "artifact_reader_capacity", "oversized", "unknown", "malformed", "non-json"]) {
+      artifactFailure = refusal;
+      await panel.getByRole("button", { name: "Download artifact", exact: true }).click();
+      const reason = ["control_query_capacity", "artifact_reader_capacity"].includes(refusal) ? ` · ${refusal.replaceAll("_", " ")}` : "";
+      await expect(panel.locator(".pc-message")).toHaveText(`Artifact: Error${reason}`);
+      await expect(panel.getByRole("button", { name: "Download artifact", exact: true })).toBeEnabled();
+    }
+    artifactFailure = null;
 
     await panel.locator('[data-pc-tab="objectives"]').click();
     await expect(content).toContainText("Canonical revision initial");
@@ -218,21 +234,32 @@ test("Usage: bounded Perf admission preserves startup views and pending profile 
     await panel.locator('[name="settings"]').fill(JSON.stringify({ schema_version: 1, objectives: [{ id: "saved-through-refresh", cohort: {}, completion_ms: 1000 }], rules: [] }));
     await panel.getByRole("button", { name: "Save objectives and rules", exact: true }).click();
     await save.ready;
+    // The earlier document is already submitted. New textarea edits and builder additions
+    // must survive its completion and remain explicitly unsaved.
+    await panel.locator('[name="settings"]').fill(JSON.stringify({ schema_version: 1, objectives: [{ id: "newer-unsaved-objective", cohort: {}, completion_ms: 2000 }], rules: [] }));
+    await panel.getByText("Add objective", { exact: true }).click();
+    const builder = panel.locator('[data-pc-form="add-objective"]');
+    await builder.locator('[name="id"]').fill("builder-after-submit");
+    await builder.getByRole("button", { name: "Add to draft", exact: true }).click();
     await panel.getByRole("button", { name: "Apply cohort", exact: true }).click();
     await expect(panel.getByRole("button", { name: "Save objectives and rules", exact: true })).toBeDisabled();
     await expect(panel.getByRole("button", { name: "Discard edits and reload", exact: true })).toBeDisabled();
     save.release();
-    await expect(panel.locator(".pc-message")).toHaveText("Saved revision saved-objective");
+    await expect(panel.locator(".pc-message")).toHaveText("Saved revision saved-objective. Newer draft edits are unsaved.");
     await expect(panel.getByRole("table", { name: "Configured objectives", exact: true })).toContainText("saved-through-refresh");
+    await expect(panel.getByRole("table", { name: "Configured objectives", exact: true })).not.toContainText("newer-unsaved-objective");
+    await expect(panel.locator('[name="settings"]')).toHaveValue(/newer-unsaved-objective/);
+    await expect(panel.locator('[name="settings"]')).toHaveValue(/builder-after-submit/);
     await panel.getByRole("button", { name: "Discard edits and reload", exact: true }).click();
     await expect(panel.locator(".pc-message")).toHaveText("Objective settings reloaded");
+    await expect(panel.locator('[name="settings"]')).not.toHaveValue(/newer-unsaved-objective|builder-after-submit/);
     refuseSettings = true;
     await panel.getByRole("button", { name: "Save objectives and rules", exact: true }).click();
     await expect(panel.locator(".pc-message")).toHaveText("control_query_capacity");
     await expect(panel.getByRole("button", { name: "Save objectives and rules", exact: true })).toBeEnabled();
     await expect(content).toHaveAttribute("aria-busy", "false");
   } finally {
-    releases.forEach((release) => release()); httpHolds.clear(); refuseSettings = false;
+    releases.forEach((release) => release()); httpHolds.clear(); refuseSettings = false; artifactFailure = null;
     await context.close(); limitPerfHttp = false;
   }
 }, 90_000);

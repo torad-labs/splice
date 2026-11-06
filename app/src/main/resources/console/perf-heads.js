@@ -4,6 +4,7 @@ const PERF_CONSOLE = (() => {
   const FILTERS = ["head", "model", "transport", "outcome", "session", "project", "account", "local", "compact", "streaming"];
   const SELECTORS = [...FILTERS, "silence_ms", "queued_ms", "resumed", "started_over", "unattributed", "test"];
   const WINDOWS = { "1m": 60000, "5m": 300000, "15m": 900000, "1h": 3600000, "5h": 18000000, "24h": 86400000, "7d": 604800000, "30d": 2592000000 };
+  const ARTIFACT_REFUSALS = ["control_query_capacity", "control_query_deadline", "performance_io_failure", "invalid_profile_id", "artifact_reader_capacity", "profile_artifact_unavailable"];
   // Perf HTTP admits four requests, including the one query worker below. Fixed read keys keep
   // only each kind's newest queued read; accepted actions are never replaced. Other console APIs
   // do not use this queue. Drain active responses even after navigation/generation cancellation:
@@ -159,7 +160,7 @@ const PERF_CONSOLE = (() => {
   }
   function create(scope, options) {
     const { document, API, setTimeout, clearTimeout, setInterval } = scope;
-    const st = { key: null, query: null, replies: {}, tab: "overview", busy: false, rowsBusy: false, abort: null, timer: null, generation: 0, message: "", baselines: loadBaselines(), selected: 0, draft: null, profiles: null, settings: null, openRequest: null, cursor: null, advanced: false, commands: new Set() };
+    const st = { key: null, query: null, replies: {}, tab: "overview", busy: false, rowsBusy: false, abort: null, timer: null, generation: 0, message: "", baselines: loadBaselines(), selected: 0, draft: null, draftRevision: 0, profiles: null, settings: null, openRequest: null, cursor: null, advanced: false, commands: new Set() };
     const clearMeasurements = () => { st.replies = Object.fromEntries(["schema", "caps", "preferences"].filter((k) => st.replies[k]).map((k) => [k, st.replies[k]])); };
     const current = () => options.query();
     const accountChoices = () => [...new Set(String((st.query || queryNow()).filters?.account || "").split("\u001f").filter(Boolean))];
@@ -499,7 +500,7 @@ const PERF_CONSOLE = (() => {
             for (const k of ["threshold", "window_ms", "min_count", "min_coverage", "hold_ms", "cooldown_ms"]) item[k] = Number(values.get(k));
             if (values.get("objective_id")) item.objective_id = values.get("objective_id");
           }
-          list.push(item); st.draft = JSON.stringify(draft, null, 2); st.message = "Added to draft. Save objectives and rules to publish."; repaint(); return;
+          list.push(item); st.draft = JSON.stringify(draft, null, 2); st.draftRevision++; st.message = "Added to draft. Save objectives and rules to publish."; repaint(); return;
         }
         if (form.dataset.pcForm === "query") {
           const input = { window: values.get("window"), filters: {}, source: values.get("source"), objective_id: values.get("objective") || null };
@@ -524,15 +525,18 @@ const PERF_CONSOLE = (() => {
         }
         if (form.dataset.pcForm === "objectives") {
           st.draft = String(values.get("settings")); if (st.draft.length > 65536) throw new Error("Settings document is too large");
+          const draftRevision = st.draftRevision;
           const body = JSON.parse(st.draft); if (body.schema_version !== 1 || !Array.isArray(body.objectives) || !Array.isArray(body.rules)) throw new Error("Version 1 settings require objectives and rules arrays");
           const r = await perfRequest("action", "put", "/api/perf/objectives", () => true, { schema_version: 1, objectives: body.objectives, rules: body.rules });
           if (!r.ok || r.body?.status !== "ok") throw new Error(explain(r) || "Settings were not saved");
-          st.draft = null; await standing(); st.message = `Saved revision ${r.body.revision}`; read(true);
+          await standing();
+          if (st.draftRevision === draftRevision) st.draft = null;
+          st.message = `Saved revision ${r.body.revision}${st.draftRevision !== draftRevision ? ". Newer draft edits are unsaved." : ""}`; read(true);
         }
       } catch (error) { st.message = error.message || "Action failed"; }
       finally { if (actionStarted) st.actionBusy = false; repaint(); }
     });
-    document.addEventListener("input", (e) => { if (host()?.contains(e.target) && e.target.name === "settings") st.draft = e.target.value; });
+    document.addEventListener("input", (e) => { if (host()?.contains(e.target) && e.target.name === "settings") { st.draft = e.target.value; st.draftRevision++; } });
     document.addEventListener("toggle", (e) => {
       const el = e.target;
       if (!host()?.contains(el) || !el.matches?.("[data-pc-command]")) return;
@@ -581,7 +585,7 @@ const PERF_CONSOLE = (() => {
           st.actionBusy = actionStarted = true; st.message = "Performance action pending…"; repaint();
           if (action === "objectives-reload") { st.draft = null; await standing(); st.message = st.settingsReply?.ok ? "Objective settings reloaded" : `Objective settings: ${status(st.settingsReply)} · ${words(explain(st.settingsReply))}`; }
           if (action === "profile-stop") { const r = await perfRequest("action", "post", `/api/perf/profiles/${encodeURIComponent(st.profiles.profile_id)}/stop`, () => true, {}); st.profiles = r.body; st.message = `Capture: ${status(r)}${explain(r) ? ` · ${words(explain(r))}` : ""}`; }
-          if (action === "profile-download") { const id = st.profiles.profile_id, r = await perfRequest("action", "blob", `/api/perf/profiles/${encodeURIComponent(id)}/artifact`, () => true); if (!r.ok) throw new Error(`Artifact: ${status(r)}`); download(r.body, `splice-profile-${id}.jfr`); st.message = "Profile artifact downloaded"; }
+          if (action === "profile-download") { const id = st.profiles.profile_id, r = await perfRequest("action", "blob", `/api/perf/profiles/${encodeURIComponent(id)}/artifact`, () => true, { refusalReasons: ARTIFACT_REFUSALS }); if (!r.ok) throw new Error(`Artifact: ${status(r)}${explain(r) ? ` · ${words(explain(r))}` : ""}`); download(r.body, `splice-profile-${id}.jfr`); st.message = "Profile artifact downloaded"; }
         }
         if (action === "next") {
           if (st.busy || st.rowsBusy || !st.replies.rows?.body?.next_cursor) return;

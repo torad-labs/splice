@@ -122,17 +122,35 @@ const API = (() => {
       if (counted) pending--;
     }
   }
+  // Artifact callers can opt into fixed machine refusal codes. Never return the error document:
+  // it can contain paths or credentials, and even an error stream must have a small read bound.
+  async function blobRefusal(res, options) {
+    const allowed = options?.refusalReasons;
+    if (!Array.isArray(allowed) || !allowed.length || res.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase() !== "application/json" || !res.body) return null;
+    const reader = res.body.getReader(), bytes = new Uint8Array(4096); let size = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value.byteLength > bytes.length - size) { await reader.cancel(); return null; }
+        bytes.set(value, size); size += value.byteLength;
+      }
+      const reason = JSON.parse(new TextDecoder().decode(bytes.subarray(0, size)))?.reason;
+      return typeof reason === "string" && /^[a-z][a-z0-9_]{0,63}$/.test(reason) && allowed.slice(0, 16).includes(reason) ? { reason } : null;
+    } catch { return null; }
+    finally { reader.releaseLock(); }
+  }
   const client = (signal) => ({
     pending: () => pending,
     get: (p) => call("GET", p, undefined, undefined, signal),
     // Managed profile artifacts use the same bearer guard; never put credentials into a download URL.
-    async blob(path) {
+    async blob(path, options) {
       pending++;
       try {
         await signedIn;
         const res = await fetch(path, { signal, headers: { Authorization: `Bearer ${localStorage.getItem(STORE) || ""}` } });
         if (res.status === 401 && !signal?.aborted) lock();
-        return { ok: res.ok, status: res.status, body: res.ok ? await res.blob() : null };
+        return { ok: res.ok, status: res.status, body: res.ok ? await res.blob() : await blobRefusal(res, options) };
       } catch { return { ok: false, status: 0, body: null }; }
       finally { pending--; }
     },

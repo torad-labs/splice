@@ -93,7 +93,9 @@ silently shorten a supplied interval or change its rate denominator.
 New retained telemetry has a 256 MiB disk envelope: 176 MiB for aggregate history,
 16 MiB for frozen cursor metadata and 64 MiB for request evidence. Aggregate
 history keeps minute resolution for 24 hours and hourly history for older data
-within 35 days. Reads can coarsen further to fit bounded work; their reported
+within 35 days, subject to the disk cap. Dense data can force earlier eviction;
+the time horizons are not guaranteed retention at every cardinality. Reads can
+coarsen further to fit bounded work; their reported
 resolution and boundary coverage remain explicit. Legacy raw-row retention is a
 separate existing policy.
 

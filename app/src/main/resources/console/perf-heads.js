@@ -583,7 +583,11 @@ const PERF_CONSOLE = (() => {
           if (actionPending()) { st.message = "A performance action is pending. Wait for it to finish."; repaint(); return; }
           if (action === "profile-refresh") { await refreshProfile(); return; }
           st.actionBusy = actionStarted = true; st.message = "Performance action pending…"; repaint();
-          if (action === "objectives-reload") { st.draft = null; await standing(); st.message = st.settingsReply?.ok ? "Objective settings reloaded" : `Objective settings: ${status(st.settingsReply)} · ${words(explain(st.settingsReply))}`; }
+          if (action === "objectives-reload") {
+            const draftRevision = st.draftRevision; st.draft = null; await standing();
+            st.message = st.settingsReply?.ok ? "Objective settings reloaded" : `Objective settings: ${status(st.settingsReply)} · ${words(explain(st.settingsReply))}`;
+            if (st.draftRevision !== draftRevision) st.message += ". Newer draft edits are unsaved.";
+          }
           if (action === "profile-stop") { const r = await perfRequest("action", "post", `/api/perf/profiles/${encodeURIComponent(st.profiles.profile_id)}/stop`, () => true, {}); st.profiles = r.body; st.message = `Capture: ${status(r)}${explain(r) ? ` · ${words(explain(r))}` : ""}`; }
           if (action === "profile-download") { const id = st.profiles.profile_id, r = await perfRequest("action", "blob", `/api/perf/profiles/${encodeURIComponent(id)}/artifact`, () => true, { refusalReasons: ARTIFACT_REFUSALS }); if (!r.ok) throw new Error(`Artifact: ${status(r)}${explain(r) ? ` · ${words(explain(r))}` : ""}`); download(r.body, `splice-profile-${id}.jfr`); st.message = "Profile artifact downloaded"; }
         }

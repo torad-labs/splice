@@ -39,7 +39,7 @@ internal class PerfHistoryRetention(private val files: PerfHistoryFiles) {
         var held = files.inventory().sumOf { it.bytes }
         for (entry in files.inventory()) {
             val expired = entry.fromMs + entry.resolutionMs <= now - RETENTION_MS
-            if (expired || held + PERF_HISTORY_FILE_BYTES > PERF_HISTORY_DISK_BYTES) {
+            if (expired || held + PERF_HISTORY_FILE_BYTES + HISTORY_METADATA_RESERVE > PERF_HISTORY_DISK_BYTES) {
                 files.remove(entry)
                 held -= entry.bytes
                 issues += PerfIssue(if (expired) "retention_expired" else "disk_evicted", HISTORY_SINK)
@@ -49,3 +49,4 @@ internal class PerfHistoryRetention(private val files: PerfHistoryFiles) {
 }
 
 private const val RETENTION_MS = 35L * PERF_DAY_MS
+private const val HISTORY_METADATA_RESERVE = 128L * 1_024

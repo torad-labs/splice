@@ -83,6 +83,25 @@ class PerfAggregateStoreTest {
         assertTrue(offline.read(minute, 120_000L).coverage.issues.any { it.code == "history_malformed" })
     }
 
+    @Test
+    fun `retained history expires offline and oversized checkpoints report refused persistence`(
+        @TempDir directory: Path,
+    ) {
+        val store = PerfAggregateStore(directory, identity, WallClock { 200_000L })
+        append(store, directory, snapshot(minute, 1, 100_000L))
+        store.close()
+        val offline = PerfAggregateStore(directory, identity, WallClock { 40L * PERF_DAY_MS })
+        val expired = offline.read(minute, 120_000L)
+        assertTrue(expired.snapshots.isEmpty())
+        assertTrue(expired.coverage.issues.any { it.code == "retention_expired" })
+        val enormous = snapshot(minute, 1, 100_000L).let { value ->
+            value.copy(points = List(10_000) { value.points.single() })
+        }
+        assertFalse(offline.append(enormous))
+        assertEquals(1L, offline.status().dropped)
+        assertEquals(0L, offline.status().enqueued)
+    }
+
     private fun append(store: PerfAggregateStore, directory: Path, value: PerfAggregateSnapshot) {
         assertTrue(store.append(value))
         assertTrue(AsyncFileIo.awaitFile(directory.resolve("checkpoint.json")))

@@ -90,7 +90,8 @@ class PerfCommittedCursorTest {
         val source = PerfCommittedCursors(file, archive, PerfSourceCosts(), WallClock { now })
         val request = PerfCursorRequest(query, all, pageSize = 1)
         val first = source.page(request)
-        assertEquals("2", first.metadata["total_matching"].toString())
+        assertEquals("2", first.metadata["known_matching"].toString())
+        assertEquals("\"incomplete\"", first.metadata["status"].toString())
         val changed = source.page(request.copy(cursor = first.nextCursor, query = query.copy(filterHash = "changed")))
         assertEquals("\"invalid\"", changed.metadata["status"].toString())
         now += PERF_CURSOR_TTL_MS + 1

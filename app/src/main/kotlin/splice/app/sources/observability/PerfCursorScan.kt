@@ -44,7 +44,12 @@ internal class PerfCursorScan(
 
     private fun candidate(path: Path, index: FileChannel) {
         val segment = inventory.capture(path, work)
-        if (inventory.aliasesRolled(path, segment, segments)) return
+        if (inventory.aliasesRolled(path, segment, segments)) {
+            // Legacy copied archives carry no writer-issued logical segment id. Equal complete bytes
+            // prevent duplicate export, but cannot prove that two independent generations were not equal.
+            issues += "rotation_alias_identity_unproven"
+            return
+        }
         segments += segment
         scanSegment(path, segment, index)
         if (inventory.digest(path, segment.end, work) != segment.digest) throw IOException("cursor_segment_changed")

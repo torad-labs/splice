@@ -1,12 +1,15 @@
 package splice.app.instrumentation
 
+import io.ktor.client.HttpClient
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
 import kotlinx.coroutines.runBlocking
@@ -27,6 +30,7 @@ import splice.core.config.StatePaths
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
+import splice.core.util.PerfWorkBudget
 import splice.usage.alerts.AlertStore
 import java.nio.file.Path
 
@@ -40,7 +44,7 @@ class PerfAssemblyRoutesTest {
             application { routing { PerfMount(ConsolePorts(), guard).register(this) } }
             listOf(
                 "schema", "series", "diagnose", "observations", "runtime", "metrics",
-                "profiles", "profiles/capabilities",
+                "profiles", "profiles/capabilities", "instrumentation/status",
                 "profiles/bad", "profiles/bad/artifact", "objectives", "alerts", "alerts/status", "export/status",
             ).forEach {
                 assertEquals(HttpStatusCode.Unauthorized, client.get("/api/perf/$it").status, it)
@@ -79,6 +83,7 @@ class PerfAssemblyRoutesTest {
                 val settings = client.get("/api/perf/objectives") { bearerAuth(bearer) }
                 assertEquals(HttpStatusCode.OK, settings.status)
                 assertTrue("revision" in Json.parseToJsonElement(settings.bodyAsText()).jsonObject)
+                assertInstrumentation(client, bearer, telemetry)
                 val scrape = client.get("/api/perf/metrics") { bearerAuth(bearer) }
                 assertEquals(HttpStatusCode.NotFound, scrape.status)
                 val malformed = client.post("/api/perf/profiles") {
@@ -94,5 +99,17 @@ class PerfAssemblyRoutesTest {
         } finally {
             telemetry.close()
         }
+    }
+
+    private suspend fun assertInstrumentation(client: HttpClient, bearer: String, telemetry: PerfTelemetry) {
+        val ownership = client.get("/api/perf/instrumentation/status") { bearerAuth(bearer) }
+        assertEquals(HttpStatusCode.OK, ownership.status)
+        assertEquals(ContentType.Application.Json, ownership.contentType()?.withoutParameters())
+        val diagnostic = Json.parseToJsonElement(ownership.bodyAsText()).jsonObject
+        assertEquals(telemetry.identity.build, JsonScalars.str(diagnostic["identity"]!!.jsonObject, "build"))
+        assertEquals("local", JsonScalars.str(diagnostic, "collection_mode"))
+        val work = diagnostic["memory"]!!.jsonObject["work"]!!.jsonObject
+        assertEquals(PerfWorkBudget.LIMIT_BYTES.toString(), JsonScalars.str(work, "limit_bytes"))
+        assertTrue("sources" in diagnostic)
     }
 }

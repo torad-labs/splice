@@ -5,7 +5,8 @@ import java.lang.ref.WeakReference
 
 /** One process-wide allowance shared by history checkpoints, reads and cursor state. */
 public object PerfWorkBudget {
-    private const val LIMIT = 16L * 1_024 * 1_024
+    public const val LIMIT_BYTES: Long = 16L * 1_024 * 1_024
+    private const val LIMIT = LIMIT_BYTES
     private val cleaner = Cleaner.create()
     private val tickets = HashMap<Int, MutableList<Ticket<*>>>()
     private var used = 0L

@@ -7,6 +7,8 @@ import org.gradle.api.artifacts.result.ResolvedComponentResult
 import org.gradle.api.artifacts.result.ResolvedDependencyResult
 import org.gradle.api.tasks.ClasspathNormalizer
 import org.gradle.api.tasks.PathSensitivity
+import org.gradle.language.jvm.tasks.ProcessResources
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import splice.release.IsolatePlatforms
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -113,6 +115,19 @@ application {
     applicationName = "splice"
     mainClass.set("splice.app.MainKt")
 }
+
+val identitySources = layout.buildDirectory.dir("generated/sources/application-identity")
+val applicationIdentity = tasks.register<splice.release.ApplicationArtifactIdentity>("generateApplicationArtifactIdentity") {
+    classes.set(tasks.named<KotlinCompile>("compileKotlin").flatMap { it.destinationDirectory })
+    resources.set(layout.dir(tasks.named<ProcessResources>("processResources").map { it.destinationDir }))
+    runtimeArtifacts.from(configurations.runtimeClasspath)
+    // Include the bridge and every handwritten Java input, excluding only the generated self-reference.
+    javaSources.from(layout.projectDirectory.dir("src/main/java"))
+    source.set(identitySources.map { it.file("splice/app/ApplicationArtifactFingerprint.java") })
+}
+// Do not mark this source root builtBy: Kotlin precedes generation, just like WorkerArchiveStamp.
+sourceSets.main { java.srcDir(identitySources) }
+tasks.named("compileJava") { dependsOn(applicationIdentity) }
 
 // The example topology is a main RESOURCE (src/main/resources/splice.example.toml), so it is on
 // :app:test's classpath and an input to the task by itself: touch it, the tests that read it re-run.

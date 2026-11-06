@@ -29,11 +29,14 @@ import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
 import splice.app.control.RosterAccountNames
 import splice.app.control.api.HeadResolver
+import splice.app.observability.PerfAccountNames
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.usage.QuotaReadFailureSource
 import splice.core.util.LogSink
 import splice.oauth.OAuthPrimaryAccount
+import splice.usage.perf.HeadAccountNames
+import splice.usage.perf.NamedAccount
 import java.nio.file.Path
 
 internal class AccountsMount(
@@ -75,6 +78,13 @@ internal class AccountsMount(
 
     /** How Requests and Usage name a recorded login: by the label this roster shows, never by an email a row kept. */
     fun recordedNames(): RosterAccountNames = RosterAccountNames(AccountRoster { accountsJson() }, logins, names)
+
+    /** Never triggers roster rendering or auth reads; absence/staleness remains explicit to the query layer. */
+    fun performanceNames(): PerfAccountNames = PerfAccountNames { head ->
+        accountsRoute.nameSnapshots.current()?.let { snapshot ->
+            HeadAccountNames { recorded -> snapshot.find(head, recorded)?.let { NamedAccount(it.ref, it.label) } }
+        }
+    }
 
     /** The route and in-process doctor read one authoritative roster at call time. */
     suspend fun accountsJson(): String {

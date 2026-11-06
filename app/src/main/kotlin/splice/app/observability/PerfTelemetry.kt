@@ -10,6 +10,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import splice.app.sources.PerfSourceFiles
 import splice.app.sources.observability.PerfAggregateStore
 import splice.app.sources.observability.PerfEvidenceFileSource
@@ -39,12 +40,12 @@ import splice.upstream.retry.InflightGate
 import splice.usage.alerts.AlertDelivery
 import splice.usage.alerts.AlertStore
 import splice.usage.alerts.PerfWebhookDelivery
-import splice.usage.perf.RecordedAccounts
 import splice.usage.perf.RequestProjects
 import splice.usage.perf.history.PerfEvidenceSinkSource
 import splice.usage.perf.objectives.PerfAlertEngine
 import splice.usage.perf.objectives.PerfObjectiveStore
 import splice.usage.perf.query.PerfQueryService
+import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 
 /** The daemon's single composition owner. Construction happens before head producers; no profile starts here. */
@@ -129,11 +130,31 @@ internal class PerfTelemetry(
     }
     private val delivery = PerfWebhookDelivery(AlertDelivery(alerts, log, scope, deliveryClient), scope, objectives)
     val alertEngine = PerfAlertEngine(query, objectives, delivery)
+    val instrumentation = PerfInstrumentationStatus(identity, enabled, PerfStatusRead { diagnosticSnapshot() })
     private val gates = ConcurrentHashMap<String, InflightGate>()
     private var sampler: kotlinx.coroutines.Job? = null
-    private var accountWorker: kotlinx.coroutines.Job? = null
     private val configTicks = Channel<Unit>(Channel.CONFLATED)
     private var configWorker: kotlinx.coroutines.Job? = null
+    private val cleanup = PerfCleanup(log)
+
+    private fun diagnosticSnapshot(): PerfStatusSnapshot {
+        val sinks = listOf(
+            accumulator.status(),
+            aggregate.status(),
+            evidenceFiles.coverageSink.status(),
+            configuration.writes.status(),
+        ) +
+            evidenceStores.values.take(MAX_DIAGNOSTIC_HEADS).map { it.sink.status() }
+        val issues = buildList {
+            if (!enabled) add("collection_disabled")
+            if (observer.failures.get() > 0) add("observer_failure")
+            if (observer.dropped.get() > 0) add("observer_drop")
+            if (evidenceStores.size > MAX_DIAGNOSTIC_HEADS) add("sink_status_truncated")
+            if (sinks.any { it.failed > 0 || it.dropped > 0 }) add("sink_loss")
+            addAll(cleanup.issues())
+        }
+        return PerfStatusSnapshot(sinks, aggregate.costs.snapshot(), evidence.costs.snapshot(), issues)
+    }
 
     fun gate(head: String, gate: InflightGate) { gates[head] = gate }
 
@@ -145,7 +166,11 @@ internal class PerfTelemetry(
         tracking.start()
         configWorker = scope.launch {
             for (tick in configTicks) {
-                runInterruptible { tracking.drain(); gates.values.forEach(InflightGate::sampleObservations) }
+                runInterruptible {
+                    cleanup.run(
+                        "configuration_sample",
+                    ) { tracking.drain(); gates.values.forEach(InflightGate::sampleObservations) }
+                }
             }
         }
         sampler = scope.launch { samplePeriodically() }
@@ -171,19 +196,7 @@ internal class PerfTelemetry(
         }
     }
 
-    fun accounts(names: RecordedAccounts) {
-        accountWorker?.cancel()
-        accountWorker = scope.launch {
-            while (isActive) {
-                heads.forEach { head ->
-                    Cancellables.runCatchingCancellable { names.forHead(head) }
-                        .onSuccess { sources.accountNames(head, it) }
-                        .onFailure { sources.accountNames(head, null) }
-                }
-                if (!ticker.awaitTick(ACCOUNT_REFRESH_MS)) break
-            }
-        }
-    }
+    fun accounts(names: PerfAccountNames) { sources.names = names }
 
     private fun tick() {
         tracking.drain()
@@ -214,36 +227,60 @@ internal class PerfTelemetry(
     /** Called after heads/MCP stop. Flush while source data is still alive, then release dependent owners. */
     suspend fun close() = withContext(io) {
         config.effectiveObserver = null
-        sampler?.cancel()
-        accountWorker?.cancel()
-        configWorker?.cancel()
-        sampler?.join()
-        accountWorker?.join()
-        configWorker?.join()
-        tracking.drain()
-        Cancellables.runCatchingCancellable { configuration.persist(clock()) }.onFailure {
-            log("[perf] final configuration provenance checkpoint failed\n")
+        val jobs = listOfNotNull(sampler, configWorker)
+        jobs.forEach { it.cancel() }
+        val stopped = withTimeoutOrNull(PRODUCER_STOP_MS) { jobs.forEach { it.join() }; true }
+        if (stopped != true) {
+            cleanup.failed("producers_pending")
+            // Keep sources charged and alive for the remaining producers; a later close can finish the drain.
+            throw IOException("performance producers did not stop")
         }
-        if (enabled) checkpoint()
-        if (enabled) heads.forEach { evidenceFiles.stopCoverage(it) }
-        AsyncFileIo.awaitDirectory(paths.perfEvidenceDir)
-        evidenceFiles.close()
-        aggregate.close()
-        exports.flush()
-        profiles.close()
-        alertEngine.close()
-        delivery.close()
+        configTicks.close()
+        runInterruptible { closeOwners() }
+    }
+
+    private fun closeOwners() {
+        finalCheckpoints()
+        flushOwners()
+        closeReaders()
+        closeAdapters()
+        cleanup.run("accumulator") { accumulator.close() }
+    }
+
+    private fun finalCheckpoints() {
+        cleanup.run("configuration_drain") { tracking.drain() }
+        cleanup.run("configuration_checkpoint") { configuration.persist(clock()) }
+        cleanup.run("aggregate_checkpoint") { if (enabled) checkpoint() }
+    }
+
+    private fun flushOwners() {
+        cleanup.run("evidence_stop") { if (enabled) heads.forEach { evidenceFiles.stopCoverage(it) } }
+        cleanup.run("evidence_flush") {
+            if (!AsyncFileIo.awaitDirectory(paths.perfEvidenceDir)) cleanup.failed("evidence_unsettled")
+        }
+        cleanup.run("evidence") { evidenceFiles.close() }
+        cleanup.run("aggregate") { aggregate.close() }
+    }
+
+    private fun closeReaders() {
+        cleanup.run("export_flush") { if (!exports.flush()) cleanup.failed("export_flush_incomplete") }
+        cleanup.run("profiles") { profiles.close() }
+        cleanup.run("alerts") { alertEngine.close() }
+        cleanup.run("delivery") { delivery.close() }
+    }
+
+    private fun closeAdapters() {
         scope.cancel()
-        deliveryClient.close()
-        exports.close()
-        objectives.close()
-        runtime.close()
-        tracking.close()
-        accumulator.close()
+        cleanup.run("delivery_client") { deliveryClient.close() }
+        cleanup.run("exports") { exports.close() }
+        cleanup.run("objectives") { objectives.close() }
+        cleanup.run("runtime") { runtime.close() }
+        cleanup.run("tracking") { tracking.close() }
     }
 }
 
 private const val SAMPLE_MS = 5_000L
-private const val ACCOUNT_REFRESH_MS = 30_000L
 private const val SNAPSHOT_BYTES = 2L * 1_024 * 1_024
 private const val DELIVERY_TIMEOUT_MS = 10_000L
+private const val MAX_DIAGNOSTIC_HEADS = 60
+private const val PRODUCER_STOP_MS = 15_000L

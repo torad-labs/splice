@@ -12,11 +12,9 @@ import splice.accounts.pool.AccountNameStore
 import splice.accounts.pool.SIGNED_OUT_WORD
 import splice.core.auth.AccountRef
 import splice.core.util.JsonScalars
-import splice.core.util.PerfWorkBudget
 import splice.usage.perf.HeadAccountNames
 import splice.usage.perf.NamedAccount
 import splice.usage.perf.RecordedAccounts
-import java.io.IOException
 
 private const val SINGLE_LOGIN = "primary"
 private const val NATIVE_PREFIX = "native:"
@@ -56,27 +54,6 @@ internal class RosterAccountNames(
         }
     }
 
-    /** Preloaded aliases for performance queries: no lazy credential lookup or mutation on the query thread. */
-    fun snapshots(): RecordedAccounts = RecordedAccounts { head ->
-        val lease = PerfWorkBudget.acquire(SNAPSHOT_WORK) ?: throw IOException("account_mapping_memory_busy")
-        var retained = false
-        try {
-            val rows = rows(head)
-            if (rows.size > MAX_SNAPSHOT_ACCOUNTS) throw IOException("account_mapping_size_limit")
-            val byValue = rows.flatMap { row -> recordedAs(row, head).map { it to named(row) } }.toMap()
-            val bytes = byValue.entries.sumOf { (key, value) ->
-                (key.length + value.ref.length + value.label.length).toLong() * STRING_CHARGE + ENTRY_OVERHEAD
-            } + SNAPSHOT_OVERHEAD
-            if (bytes > SNAPSHOT_WORK) throw IOException("account_mapping_size_limit")
-            HeadAccountNames(byValue::get).also {
-                lease.retain(it, bytes)
-                retained = true
-            }
-        } finally {
-            if (!retained) lease.close()
-        }
-    }
-
     private suspend fun rows(head: String): List<JsonObject> {
         val body = JsonScalars.objectOrNull(json, roster.json())
         val all = body?.get("accounts") as? JsonArray ?: return emptyList()
@@ -111,9 +88,3 @@ internal class RosterAccountNames(
         return NamedAccount(ref, shown ?: SIGNED_OUT_WORD)
     }
 }
-
-private const val SNAPSHOT_WORK = 512L * 1_024
-private const val MAX_SNAPSHOT_ACCOUNTS = 64
-private const val STRING_CHARGE = 4L
-private const val ENTRY_OVERHEAD = 256L
-private const val SNAPSHOT_OVERHEAD = 4_096L

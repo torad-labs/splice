@@ -113,7 +113,7 @@ internal class ControlServer(
 
     internal fun wirePerformance(performance: splice.app.observability.PerfTelemetry) {
         projects.requestTags?.let { performance.projects = it }
-        performance.accounts(accounts.recordedNames().snapshots())
+        performance.accounts(accounts.performanceNames())
     }
 
     private val resolver = readings.resolver(heads)

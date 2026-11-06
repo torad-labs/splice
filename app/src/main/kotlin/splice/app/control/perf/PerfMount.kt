@@ -43,6 +43,15 @@ internal class PerfMount(
                 }
             }
         }
+        route.get("/api/perf/instrumentation/status") {
+            guard.guarded(call) {
+                work.execute(call) {
+                    work.respond(call, null) {
+                        ports.performance?.instrumentation?.status() ?: work.unavailable()
+                    }
+                }
+            }
+        }
         route.get("/api/perf/metrics") {
             guard.guarded(call) { work.execute(call) { metrics.respond(call, ports.performance) } }
         }

@@ -10,15 +10,16 @@ import java.util.concurrent.atomic.AtomicLong
 /** Configuration publication only copies bounded scalar maps; hashing and persistence run on the owned worker. */
 internal class PerfConfigTracking(
     private val config: ConfigService,
-    private val heads: Set<String>,
+    heads: Set<String>,
     private val boot: String,
     val history: PerfConfigHistory,
 ) : AutoCloseable {
-    private val originalsLease = PerfWorkBudget.acquire(heads.size.toLong() * BYTES_PER_HEAD)
+    private val heads = heads.take(MAX_TRACKED_HEADS).toSet()
+    private val originalsLease = PerfWorkBudget.acquire(this.heads.size.toLong() * BYTES_PER_HEAD)
     private val originals = if (originalsLease == null) {
         emptyMap()
     } else {
-        heads.associateWith {
+        this.heads.associateWith {
             PerfConfigRevision.project(config.getConfig(it).asMap())
         }
     }
@@ -34,7 +35,15 @@ internal class PerfConfigTracking(
     private fun changed(observation: EffectiveConfigObservation) {
         val bytes = heads.size.toLong() * BYTES_PER_HEAD
         val lease = PerfWorkBudget.acquire(bytes)
-        if (listOf(lease == null, originalsLease == null, queue.remainingCapacity() == 0).any { it }) {
+        if (listOf(
+                lease == null,
+                originalsLease == null,
+                queue.remainingCapacity() == 0,
+                !observation.headsComplete,
+            ).any {
+                it
+            }
+        ) {
             lease?.close()
             lostAt.compareAndSet(0, observation.atMs)
         } else {
@@ -94,3 +103,4 @@ internal fun interface PerfConfigSignal {
 
 private const val MAX_CHANGES = 8
 private const val BYTES_PER_HEAD = 32L * 1_024
+private const val MAX_TRACKED_HEADS = 32

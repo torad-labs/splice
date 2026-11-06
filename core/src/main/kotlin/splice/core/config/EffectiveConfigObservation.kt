@@ -8,6 +8,7 @@ public data class EffectiveConfigObservation(
     val heads: Map<String, Map<String, Any?>>,
     /** A collapsed or failed publication cannot certify the intervening interval. */
     val unknownFromMs: Long? = null,
+    val headsComplete: Boolean = true,
 )
 
 public fun interface EffectiveConfigObserver {

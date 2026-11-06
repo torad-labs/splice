@@ -12,7 +12,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.app.observability.PerfTelemetry
-import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.core.util.MonoClock
 import splice.core.util.PerfWorkBudget
@@ -55,7 +54,7 @@ internal class PerfHttpWork(val io: CoroutineDispatcher = ProcessDispatchers().i
                 val encoding = MonoClock.nowMs()
                 val bytes = runInterruptible(io) { JsonWire.bytes(result) }
                 telemetry?.measured("self_serialize_ms", MonoClock.nowMs() - encoding)
-                call.respondBytes(bytes, ContentType.Application.Json, status(result))
+                call.respondBytes(bytes, ContentType.Application.Json, PerfReplyStatus.of(result))
             }
         } finally {
             PerfWorkBudget.release(result)
@@ -73,14 +72,6 @@ internal class PerfHttpWork(val io: CoroutineDispatcher = ProcessDispatchers().i
     }
 
     fun unavailable(): JsonObject = error("unsupported", "performance_unavailable")
-
-    private fun status(result: JsonObject): HttpStatusCode = when (JsonScalars.str(result, "status")) {
-        "busy" -> HttpStatusCode.Conflict
-        "error" -> HttpStatusCode.BadRequest
-        "unsupported" -> HttpStatusCode.UnprocessableEntity
-        "expired" -> HttpStatusCode.Gone
-        else -> HttpStatusCode.OK
-    }
 }
 
 internal fun interface PerfControlWork {

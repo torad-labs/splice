@@ -1,6 +1,7 @@
 package splice.core.config
 
 import splice.core.util.Cancellables
+import splice.core.util.PerfWorkBudget
 
 /** Serializes bounded immutable notifications; persistence, hashing and gate reads belong to the app worker. */
 internal class EffectiveConfigPublications(private val snapshots: ConfigSnapshotCache) {
@@ -23,14 +24,38 @@ internal class EffectiveConfigPublications(private val snapshots: ConfigSnapshot
     fun publish(generation: ConfigSnapshotCache.Generation) {
         val listener = observer ?: return
         if (snapshots.current() !== generation || published === generation) return
+        val lease = PerfWorkBudget.acquire((minOf(generation.heads.size, MAX_OBSERVED_HEADS) + 1L) * BYTES_PER_HEAD)
+        if (lease == null) {
+            mutationAt = mutationAt ?: System.currentTimeMillis()
+            mutations = 2
+            Cancellables.runCatchingBestEffort {
+                listener.changed(
+                    EffectiveConfigObservation(
+                        ++sequence,
+                        requireNotNull(mutationAt),
+                        emptyMap(),
+                        emptyMap(),
+                        mutationAt,
+                        false,
+                    ),
+                )
+            }.onFailure { mutations = 2 }
+            return
+        }
+        lease.use { publishHeld(listener, generation) }
+    }
+
+    private fun publishHeld(listener: EffectiveConfigObserver, generation: ConfigSnapshotCache.Generation) {
         val now = System.currentTimeMillis()
         val unknown = mutationAt.takeIf { mutations > 1 }
         val observation = EffectiveConfigObservation(
             ++sequence,
             if (unknown == null) mutationAt ?: now else now,
             generation.global.effective.asMap(),
-            generation.heads.mapValues { it.value.effective.asMap() },
+            generation.heads.entries.asSequence().take(MAX_OBSERVED_HEADS)
+                .associate { it.key to it.value.effective.asMap() },
             unknown,
+            generation.heads.size <= MAX_OBSERVED_HEADS,
         )
         published = generation
         mutationAt = null
@@ -41,3 +66,6 @@ internal class EffectiveConfigPublications(private val snapshots: ConfigSnapshot
         }
     }
 }
+
+private const val MAX_OBSERVED_HEADS = 32
+private const val BYTES_PER_HEAD = 32L * 1_024

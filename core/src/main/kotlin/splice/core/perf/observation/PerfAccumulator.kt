@@ -174,10 +174,12 @@ public class PerfAccumulator(identity: PerfIdentity) : PerfObserver, PerfAggrega
         }
     }
 
-    private fun status(): PerfSinkStatus = PerfSinkStatus(
-        ACCUMULATOR, observed, accepted, accepted, mismatched, observed - accepted - mismatched,
-        0, null, if (accepted > 0) timeline.last else null,
-    )
+    public fun status(): PerfSinkStatus = synchronized(lock) {
+        PerfSinkStatus(
+            ACCUMULATOR, observed, accepted, accepted, mismatched, observed - accepted - mismatched,
+            0, null, if (accepted > 0) timeline.last else null,
+        )
+    }
 }
 
 private const val ACCUMULATOR = "accumulator"

@@ -11,6 +11,16 @@ internal object PerfMemoryBudget {
     private var snapshotActive = false
 
     @Synchronized
+    fun status(): PerfMemoryStatus = PerfMemoryStatus(
+        reserved,
+        ALLOCATABLE_BYTES,
+        LIMIT_BYTES,
+        snapshotActive,
+        SNAPSHOT_BYTES,
+        HEADROOM_BYTES,
+    )
+
+    @Synchronized
     fun open(account: PerfMemoryAccount): Long? {
         collectReleased()
         if (owners.size >= MAX_OWNERS || reserved + BASE_BYTES > ALLOCATABLE_BYTES) return null

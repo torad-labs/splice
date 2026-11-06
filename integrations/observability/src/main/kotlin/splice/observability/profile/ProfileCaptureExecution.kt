@@ -2,7 +2,9 @@ package splice.observability.profile
 
 import splice.core.util.WallClock
 import java.io.IOException
+import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ScheduledThreadPoolExecutor
+import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
 /** Executes one admitted capture, including its deadline, publication and final metadata, on the bounded worker. */
@@ -10,12 +12,45 @@ internal class ProfileCaptureExecution(
     private val archive: ProfileArchive,
     private val capabilities: ProfileCapabilities,
     private val factory: ProfileCaptureFactory,
-    private val supervisor: ScheduledThreadPoolExecutor,
     private val clock: WallClock,
-) {
+) : AutoCloseable {
     private val artifacts = archive.artifacts
+    private val worker =
+        ThreadPoolExecutor(1, 1, 0L, TimeUnit.SECONDS, ArrayBlockingQueue(1), ProfileThreads.factory("splice-profile"))
+    private val supervisor = ScheduledThreadPoolExecutor(1, ProfileThreads.factory("splice-profile-deadline")).apply {
+        removeOnCancelPolicy = true
+        setExecuteExistingDelayedTasksAfterShutdownPolicy(false)
+    }
 
-    fun execute(run: ProfileRun, completion: ProfileCompletion) {
+    fun scheduleMaintenance(action: Runnable) {
+        supervisor.scheduleWithFixedDelay(action, RETENTION_TICK_SECONDS, RETENTION_TICK_SECONDS, TimeUnit.SECONDS)
+    }
+
+    fun enqueueMaintenance(action: Runnable) { worker.execute(action) }
+
+    fun submit(run: ProfileRun, completion: ProfileCompletion) {
+        worker.execute { execute(run, completion) }
+    }
+
+    fun abortStartup() {
+        worker.shutdown()
+        supervisor.shutdown()
+    }
+
+    fun shutdownSupervisor() { supervisor.shutdown() }
+
+    override fun close() {
+        worker.shutdown()
+        // The active worker's finally block owns capture closure before shutting down its supervisor.
+        try {
+            worker.awaitTermination(ProfileLimits.CONTROL_SECONDS, TimeUnit.SECONDS)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
+        if (worker.isTerminated) supervisor.shutdown()
+    }
+
+    private fun execute(run: ProfileRun, completion: ProfileCompletion) {
         run.thread = Thread.currentThread()
         val expiry = supervisor.schedule({
             synchronized(archive.lock) {
@@ -102,3 +137,6 @@ internal fun interface ProfileCompletion {
 
 // Allow thirty seconds beyond the requested recording window for bounded artifact finalization and copying.
 private const val FINALIZATION_SECONDS = 30L
+
+// Recheck idle artifact retention once per minute instead of adding file maintenance to every control read.
+private const val RETENTION_TICK_SECONDS = 60L

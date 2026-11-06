@@ -1,36 +1,23 @@
 package splice.app.observability
 
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.java.Java
-import io.ktor.client.plugins.HttpTimeout
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.withContext
 import splice.app.sources.PerfSourceFiles
 import splice.core.config.ConfigService
 import splice.core.perf.observation.NoPerfObserver
 import splice.core.perf.observation.PerfRecorder
-import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.core.util.MonoClock
-import splice.core.util.PerfWorkBudget
 import splice.core.util.WallClock
 import splice.observability.export.PerfExports
 import splice.observability.profile.ProfileManager
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.retry.InflightGate
-import splice.usage.alerts.AlertDelivery
 import splice.usage.alerts.AlertStore
-import splice.usage.alerts.PerfWebhookDelivery
 import splice.usage.perf.RequestProjects
-import splice.usage.perf.objectives.PerfAlertEngine
 import splice.usage.perf.objectives.PerfObjectiveStore
 import splice.usage.perf.query.PerfQueryService
-import java.io.IOException
 
 /** The daemon's single composition owner. Construction happens before head producers; no profile starts here. */
 internal class PerfTelemetry(
@@ -75,15 +62,8 @@ internal class PerfTelemetry(
         PerfNativeProfiler.installed(),
     )
     private val scope = LifecycleScope(io)
-    private val deliveryClient = HttpClient(Java) {
-        install(HttpTimeout) {
-            connectTimeoutMillis = ALERT_HTTP_TIMEOUT_MS
-            requestTimeoutMillis = ALERT_HTTP_TIMEOUT_MS
-            socketTimeoutMillis = ALERT_HTTP_TIMEOUT_MS
-        }
-    }
-    private val delivery = PerfWebhookDelivery(AlertDelivery(alerts, log, scope, deliveryClient), scope, objectives)
-    val alertEngine = PerfAlertEngine(query, objectives, delivery)
+    private val alerting = PerfAlerting(query, objectives, alerts, log, scope)
+    val alertEngine = alerting.engine
     val instrumentation = PerfInstrumentationStatus(
         identity,
         enabled,
@@ -113,7 +93,7 @@ internal class PerfTelemetry(
             collection.checkpoint()
             collection.checkpointCoverage()
         }
-        PerfWorkBudget.release(alertEngine.evaluate(clock()))
+        alerting.evaluate(clock())
     }
 
     fun measured(metric: String, durationMs: Long, owner: String = "control_query") {
@@ -122,18 +102,7 @@ internal class PerfTelemetry(
 
     /** Called after heads/MCP stop. Flush while source data is still alive, then release dependent owners. */
     suspend fun close() {
-        val caller = currentCoroutineContext()
-        withContext(NonCancellable + io) {
-            config.effectiveObserver = null
-            if (!schedule.stop()) {
-                cleanup.failed("producers_pending")
-                // Keep sources charged and alive for the remaining producers; a later close can finish the drain.
-                caller.ensureActive()
-                throw IOException("performance producers did not stop")
-            }
-            Cancellables.withCleanup(::closeOwners) { caller.ensureActive() }
-        }
-        caller.ensureActive()
+        schedule.finish(config, io, ::closeOwners)
     }
 
     private fun closeOwners() = cleanup.finish(
@@ -153,19 +122,15 @@ internal class PerfTelemetry(
     private fun closeReaders() = cleanup.finish(
         { cleanup.run("export_flush") { if (!exports.flush()) cleanup.failed("export_flush_incomplete") } },
         { cleanup.run("profiles") { profiles.close() } },
-        { cleanup.run("alerts") { alertEngine.close() } },
-        { cleanup.run("delivery") { delivery.close() } },
+        { alerting.stopDelivery(cleanup) },
     )
 
     private fun closeAdapters() = cleanup.finish(
         { scope.cancel() },
-        { cleanup.run("delivery_client") { deliveryClient.close() } },
+        { cleanup.run("delivery_client") { alerting.close() } },
         { cleanup.run("exports") { exports.close() } },
         { cleanup.run("objectives") { objectives.close() } },
         { cleanup.run("runtime") { runtime.close() } },
         { cleanup.run("tracking") { tracking.close() } },
     )
 }
-
-// Bound webhook connect, request and socket waits to ten seconds on the alert delivery lane.
-private const val ALERT_HTTP_TIMEOUT_MS = 10_000L

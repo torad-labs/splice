@@ -9,11 +9,7 @@ import splice.core.perf.runtime.PerfProfiles
 import splice.core.util.Cancellables
 import splice.core.util.WallClock
 import java.nio.file.Path
-import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.RejectedExecutionException
-import java.util.concurrent.ScheduledThreadPoolExecutor
-import java.util.concurrent.ThreadPoolExecutor
-import java.util.concurrent.TimeUnit
 
 /** Construction starts no capture. One bounded worker owns start, stop, copy and cleanup, off request threads. */
 public class ProfileManager(
@@ -26,13 +22,7 @@ public class ProfileManager(
     private val capabilities = ProfileCapabilities(nativeExecutable)
     private val archive = ProfileArchive(ProfileArtifacts(directory, identity), clock)
     private val lock = archive.lock
-    private val worker =
-        ThreadPoolExecutor(1, 1, 0L, TimeUnit.SECONDS, ArrayBlockingQueue(1), ProfileThreads.factory("splice-profile"))
-    private val supervisor = ScheduledThreadPoolExecutor(1, ProfileThreads.factory("splice-profile-deadline")).apply {
-        removeOnCancelPolicy = true
-        setExecuteExistingDelayedTasksAfterShutdownPolicy(false)
-    }
-    private val execution = ProfileCaptureExecution(archive, capabilities, factory, supervisor, clock)
+    private val execution = ProfileCaptureExecution(archive, capabilities, factory, clock)
     private var active: ProfileRun? = null
     private var closed = false
 
@@ -41,19 +31,13 @@ public class ProfileManager(
         Cancellables.withCleanup({
             if (!initialized) {
                 Cancellables.withCleanup({ archive.close() }) {
-                    worker.shutdown()
-                    supervisor.shutdown()
+                    execution.abortStartup()
                 }
             }
         }) {
             archive.artifacts.lock()
             archive.artifacts.clearPreviousBoot()
-            supervisor.scheduleWithFixedDelay(
-                { maintenance() },
-                RETENTION_TICK_SECONDS,
-                RETENTION_TICK_SECONDS,
-                TimeUnit.SECONDS,
-            )
+            execution.scheduleMaintenance(::maintenance)
             initialized = true
         }
     }
@@ -79,7 +63,7 @@ public class ProfileManager(
                     val run = ProfileRun(record)
                     active = run
                     archive.add(record)
-                    worker.execute { execution.execute(run, ::complete) }
+                    execution.submit(run, ::complete)
                     record.json(identity)
                 }
             }
@@ -114,24 +98,17 @@ public class ProfileManager(
             active?.takeIf { it.record.status == "running" }?.let { execution.abort(it, "manager_closed") }
             if (active == null) {
                 archive.close()
-                supervisor.shutdown()
+                execution.shutdownSupervisor()
             }
         }
-        worker.shutdown()
-        // The active worker's finally block owns capture closure before shutting down its supervisor.
-        try {
-            worker.awaitTermination(ProfileLimits.CONTROL_SECONDS, TimeUnit.SECONDS)
-        } catch (_: InterruptedException) {
-            Thread.currentThread().interrupt()
-        }
-        if (worker.isTerminated) supervisor.shutdown()
+        execution.close()
     }
 
     private fun complete(run: ProfileRun) = synchronized(lock) {
         if (active === run) active = null
         ProfileAdmission.release()
         if (closed) {
-            supervisor.shutdown()
+            execution.shutdownSupervisor()
             archive.close()
         }
     }
@@ -140,7 +117,7 @@ public class ProfileManager(
         synchronized(lock) {
             if (closed || active != null) return
             try {
-                worker.execute { synchronized(lock) { archive.prune(active?.record) } }
+                execution.enqueueMaintenance { synchronized(lock) { archive.prune(active?.record) } }
             } catch (_: RejectedExecutionException) {
                 // A new capture acquired the single worker; it performs the same pruning before setup.
                 return
@@ -148,9 +125,6 @@ public class ProfileManager(
         }
     }
 }
-
-// Recheck idle artifact retention once per minute instead of adding file maintenance to every control read.
-private const val RETENTION_TICK_SECONDS = 60L
 
 // Retain only sixteen characters of rejected profiler settings so refusal metadata cannot copy arbitrary input.
 private const val MAX_SETTING_LENGTH = 16

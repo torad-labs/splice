@@ -1,13 +1,18 @@
 package splice.app.observability
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import splice.core.config.ConfigService
 import splice.core.perf.observation.PerfEventKind
 import splice.core.perf.observation.PerfRecorder
 import splice.core.perf.observation.PerfScope
@@ -16,6 +21,7 @@ import splice.core.util.LogSink
 import splice.core.util.MonoClock
 import splice.upstream.codemode.ProcessTicker
 import splice.upstream.retry.InflightGate
+import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 
 /** Owns the periodic and conflated configuration producers; stop must settle both before their sources can close. */
@@ -50,7 +56,23 @@ internal class PerfTelemetrySchedule(
         sampler = scope.launch { samplePeriodically() }
     }
 
-    suspend fun stop(): Boolean {
+    /** Hand dependent-owner cleanup back to composition only after both producers have settled. */
+    suspend fun finish(config: ConfigService, io: CoroutineDispatcher, continuation: PerfCloseAction) {
+        val caller = currentCoroutineContext()
+        withContext(NonCancellable + io) {
+            config.effectiveObserver = null
+            if (!stop()) {
+                cleanup.failed("producers_pending")
+                // Keep sources charged and alive for the remaining producers; a later close can finish the drain.
+                caller.ensureActive()
+                throw IOException("performance producers did not stop")
+            }
+            Cancellables.withCleanup({ continuation.close() }) { caller.ensureActive() }
+        }
+        caller.ensureActive()
+    }
+
+    private suspend fun stop(): Boolean {
         val jobs = listOfNotNull(sampler, configWorker)
         jobs.forEach { it.cancel() }
         val stopped = withTimeoutOrNull(PRODUCER_STOP_MS) { jobs.forEach { it.join() }; true }

@@ -26,8 +26,9 @@ internal object PerfEvidenceConsumption {
         source: PerfEvidenceSource,
         query: PerfEvidenceQuery,
         consumer: PerfObservationConsumer,
-    ): PerfEvidenceReceipt =
-        source.read(query).use { read ->
+    ): PerfEvidenceReceipt {
+        val owner: PerfEvidenceRead = source.read(query)
+        return owner.use { read ->
             val issues = ArrayList(read.coverage.issues)
             val changed = deliver(read.observations, consumer, issues)
             val coverage = read.coverage.copy(
@@ -44,6 +45,7 @@ internal object PerfEvidenceConsumption {
                 )
             retain(receipt, query)
         }
+    }
 
     private fun deliver(
         events: List<PerfObservation>,

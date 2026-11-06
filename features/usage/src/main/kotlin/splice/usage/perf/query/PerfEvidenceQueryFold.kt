@@ -3,6 +3,7 @@ package splice.usage.perf.query
 import splice.core.perf.observation.PerfObservation
 import splice.core.util.PerfWorkBudget
 import splice.usage.perf.history.PerfEvidenceQuery
+import splice.usage.perf.history.PerfEvidenceReceipt
 
 /** Streaming source consumption and scalar request reduction share the global work budget. */
 internal class PerfEvidenceQueryFold(private val sources: PerfQuerySources) {
@@ -21,10 +22,11 @@ internal class PerfEvidenceQueryFold(private val sources: PerfQuerySources) {
         lease.use {
             val through = maxOf(query.untilMs, data.settledUntilMs?.let { minOf(nowMs, it) } ?: nowMs)
             val reduction = PerfRequestReduction(query, filter, data)
-            source.consume(
+            val receipt: PerfEvidenceReceipt = source.consume(
                 PerfEvidenceQuery(query.fromMs, through, query.filters["head"]),
                 reduction,
-            ).use(reduction::finish)
+            )
+            receipt.use(reduction::finish)
         }
     }
 }

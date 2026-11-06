@@ -92,20 +92,23 @@ internal class PerfEvidenceCursors(
         id: String,
         available: Long,
         settled: Boolean,
-    ): PerfCursorManifest = files.evidenceIds(id).use { seen ->
-        val scan = PerfEvidenceCursorScan(request, inventory, work, seen, available)
-        files.create(id).use(scan::scan)
-        scan.issues += inventory.issues().map { it.code }
-        if (!settled) scan.issues += "evidence_pending_write"
-        val manifest = PerfCursorManifest(
-            id, clock(), request.query.fromMs, request.query.untilMs,
-            PerfEvidencePageMetadata.key(
-                request,
-            ),
-            scan.segments, scan.matching, scan.issues, scan.malformed, scan.scanned, work.bytes,
-        )
-        files.save(manifest)
-        manifest
+    ): PerfCursorManifest {
+        val owner: PerfEvidenceSeen = files.evidenceIds(id)
+        return owner.use { seen ->
+            val scan = PerfEvidenceCursorScan(request, inventory, work, seen, available)
+            files.create(id).use(scan::scan)
+            scan.issues += inventory.issues().map { it.code }
+            if (!settled) scan.issues += "evidence_pending_write"
+            val manifest = PerfCursorManifest(
+                id, clock(), request.query.fromMs, request.query.untilMs,
+                PerfEvidencePageMetadata.key(
+                    request,
+                ),
+                scan.segments, scan.matching, scan.issues, scan.malformed, scan.scanned, work.bytes,
+            )
+            files.save(manifest)
+            manifest
+        }
     }
 
     private fun validate(manifest: PerfCursorManifest, request: PerfEvidenceCursorRequest) {

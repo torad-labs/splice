@@ -41,7 +41,8 @@ internal class PerfObservationQuery(private val sources: PerfQuerySources) {
                 PerfObservationPredicate { filter.scope(it.scope) && filter.links(it.scope, it.links) },
                 PerfMultiCursor.hash(query),
             )
-        return source.page(request).use { page -> render(query, page) }
+        val owner: PerfEvidencePage = source.page(request)
+        return owner.use { page -> render(query, page) }
     }
 
     private fun render(query: PerfQuery, page: PerfEvidencePage): JsonObject {

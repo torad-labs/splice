@@ -6,6 +6,7 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondBytes
 import kotlinx.coroutines.runInterruptible
 import splice.app.observability.PerfTelemetry
+import splice.observability.export.PerfScrape
 
 /** The exporter lends an immutable cache snapshot with room for this single UTF-8 encoding. */
 internal class PerfMetricsRoute(private val work: PerfHttpWork) {
@@ -14,7 +15,8 @@ internal class PerfMetricsRoute(private val work: PerfHttpWork) {
             work.refusal(call, "unsupported", "performance_unavailable", HttpStatusCode.ServiceUnavailable)
             return
         }
-        telemetry.exports.scrape().use { scrape ->
+        val owner: PerfScrape = telemetry.exports.scrape()
+        owner.use { scrape ->
             val code = when {
                 scrape.available -> HttpStatusCode.OK
                 scrape.state == "disabled" -> HttpStatusCode.NotFound

@@ -8,6 +8,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.perf.OutcomeTag
 import splice.core.util.JsonScalars
+import splice.usage.perf.history.PerfCursorPage
 import splice.usage.perf.history.PerfCursorQuery
 import splice.usage.perf.history.PerfCursorRequest
 import splice.usage.perf.history.PerfCursorSource
@@ -52,7 +53,8 @@ internal class PerfQueryRows(private val sources: PerfQuerySources) {
             val source = sources.rows(head) as? PerfCursorSource
                 ?: return@associateWith HeadCursor(null, null, queryError("cursor_unavailable", "source_changed"))
             val old = tokens?.get(head)
-            source.page(request(query, filter, head, old?.start, 1)).use { page ->
+            val owner: PerfCursorPage = source.page(request(query, filter, head, old?.start, 1))
+            owner.use { page ->
                 HeadCursor(
                     JsonScalars.str(page.metadata, "start_cursor"),
                     if (old != null) old.next else JsonScalars.str(page.metadata, "start_cursor"),
@@ -74,7 +76,8 @@ internal class PerfQueryRows(private val sources: PerfQuerySources) {
             if (rows.size >= size || state.next == null) continue
             val source = sources.rows(head) as? PerfCursorSource
                 ?: return queryError("cursor_unavailable", "source_changed")
-            source.page(request(query, filter, head, state.next, size - rows.size)).use { page ->
+            val owner: PerfCursorPage = source.page(request(query, filter, head, state.next, size - rows.size))
+            owner.use { page ->
                 if (JsonScalars.str(page.metadata, "snapshot_id") == null) {
                     next[head] = state.copy(metadata = copyMetadata(page.metadata))
                     return result(query, next, rows, ids, null)

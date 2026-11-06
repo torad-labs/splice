@@ -88,7 +88,7 @@ class PerfWebhookDeliveryTest {
                 assertTrue(bodies.isEmpty())
                 assertTrue(delivery.enqueue(event(true)))
                 assertTrue(delivery.enqueue(event(true)))
-                // This fires only after the 503 response has been received and handled. The worker then
+                // AlertDelivery logs after it observes the failed transport outcome. The worker then
                 // publishes its terminal result; runCurrent drains that continuation before assertions.
                 failedResponseHandled.await()
                 runCurrent()

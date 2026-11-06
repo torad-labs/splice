@@ -10,15 +10,16 @@ internal object PerfDimensions {
     private val trace = Regex("[0-9a-f]{32}")
     private val span = Regex("[0-9a-f]{16}")
     private val flags = Regex("[0-9a-f]{2}")
-    private val transports = setOf("sse", "ws", "websocket", "http", "local", "mcp", UNKNOWN)
-    private val workKinds =
-        setOf("client", "compact", "tool", "compare", "local", "runtime", "instrumentation", "upstream", UNKNOWN)
+    private val transports = setOf("sse", "ws", "websocket", "http", "local", "mcp", UNKNOWN_DIMENSION)
+    private val workKinds = setOf(
+        "client", "compact", "tool", "compare", "local", "runtime", "instrumentation", "upstream", UNKNOWN_DIMENSION,
+    )
 
     fun scope(scope: PerfScope): PerfScope = scope.copy(
-        head = scope.head.takeIf(label::matches) ?: UNKNOWN,
+        head = scope.head.takeIf(label::matches) ?: UNKNOWN_DIMENSION,
         model = scope.model?.takeIf(label::matches),
-        transport = scope.transport?.takeIf { it in transports } ?: scope.transport?.let { UNKNOWN },
-        work = scope.work.takeIf { it in workKinds } ?: UNKNOWN,
+        transport = scope.transport?.takeIf { it in transports } ?: scope.transport?.let { UNKNOWN_DIMENSION },
+        work = scope.work.takeIf { it in workKinds } ?: UNKNOWN_DIMENSION,
         outcome = scope.outcome?.let(::outcome),
     )
 
@@ -35,11 +36,11 @@ internal object PerfDimensions {
     )
 
     fun outcome(value: String): String = when {
-        value in setOf("good", "bad", UNKNOWN, "cancelled", "refused") -> value
+        value in setOf("good", "bad", UNKNOWN_DIMENSION, "cancelled", "refused") -> value
         OutcomeTags.isClean(value) -> "good"
         value == OutcomeTag.CANCELLED.wire || OutcomeTags.isStopped(value) -> "cancelled"
         value == OutcomeTag.AT_CAPACITY.wire -> "refused"
-        value == "?" -> UNKNOWN
+        value == "?" -> UNKNOWN_DIMENSION
         else -> "bad"
     }
 
@@ -50,7 +51,7 @@ internal object PerfDimensions {
         "bad" -> OutcomeTag.UNEXPECTED.wire
         "cancelled" -> OutcomeTag.CANCELLED.wire
         "refused" -> OutcomeTag.AT_CAPACITY.wire
-        UNKNOWN, "?" -> "?"
+        UNKNOWN_DIMENSION, "?" -> "?"
         else -> knownOutcome(value)
     }
 
@@ -58,4 +59,4 @@ internal object PerfDimensions {
         ?: if (OutcomeTags.isStopped(value)) OutcomeTag.CLIENT_ABORT.wire else OutcomeTag.UNEXPECTED.wire
 }
 
-private const val UNKNOWN = "unknown"
+private const val UNKNOWN_DIMENSION = "unknown"

@@ -43,7 +43,7 @@ internal class PerfCell(private val histogram: Boolean) {
     }
 
     fun point(key: PerfCellKey, until: Long): PerfAggregatePoint = PerfAggregatePoint(
-        key.metric, key.scope, key.minute, minOf(key.minute + PerfObservationLimits.MINUTE_MS, until),
+        key.metric, key.scope, key.minute, minOf(key.minute + PerfObservationLimits.AGGREGATE_MINUTE_MS, until),
         count, sum, minimum, maximum, buckets.toList(), last, weighted, covered,
     )
 

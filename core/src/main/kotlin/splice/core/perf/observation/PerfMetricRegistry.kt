@@ -50,13 +50,13 @@ public object PerfMetricRegistry {
         )
         put("snapshot_semantics", "cumulative minute replacements keyed by identity, metric, scope and fromMs")
         put("rate_denominator", "requested wall duration including idle time")
-        put("max_series_per_family", PerfObservationLimits.MAX_SCOPES)
+        put("max_series_per_family", PerfObservationLimits.MAX_METRIC_SCOPES)
         put("max_aggregate_cells", PerfObservationLimits.MAX_CELLS)
         put("retained_minutes", PerfObservationLimits.RETAINED_MINUTES)
-        put("gauge_sample_ms", PerfObservationLimits.SAMPLE_MS)
-        put("memory_budget_bytes", PerfMemoryBudget.LIMIT_BYTES)
+        put("gauge_sample_ms", PerfObservationLimits.GAUGE_SAMPLE_INTERVAL_MS)
+        put("memory_budget_bytes", PerfMemoryBudget.OBSERVATION_MEMORY_LIMIT_BYTES)
         put("state_budget_bytes", PerfMemoryBudget.ALLOCATABLE_BYTES)
-        put("snapshot_generation_budget_bytes", PerfMemoryBudget.SNAPSHOT_BYTES)
+        put("snapshot_generation_budget_bytes", PerfMemoryBudget.OBSERVATION_SNAPSHOT_BYTES)
         put("memory_headroom_bytes", PerfMemoryBudget.HEADROOM_BYTES)
         put("memory_accounting", "Conservative UTF-16/object-size admission estimates, not measured JVM allocation")
         put("snapshot_ownership", "One process-wide generation; callers must budget retained immutable snapshots")
@@ -105,6 +105,7 @@ public object PerfMetricRegistry {
     }
 }
 
+// why: Bound accepted sample magnitudes before summation; larger inputs count as dropped observations.
 private const val MAX_MEASUREMENT = 1.0e18
 private val TOOL_INTEGER_METRICS = setOf(
     "tool_calls_per_turn",
@@ -116,24 +117,65 @@ private val TOOL_INTEGER_METRICS = setOf(
     "tool_buffered_bytes",
 )
 
+// why: Separate measured zero durations from every positive latency in the shared histogram schema.
 private const val BOUND_0_MS = 0.0
+
+// why: Retain one-millisecond resolution at the bottom of the fixed, upper-inclusive duration buckets.
 private const val BOUND_1_MS = 1.0
+
+// why: Keep short latencies distinguishable before the duration buckets widen along the 1/2/5 progression.
 private const val BOUND_2_MS = 2.0
+
+// why: Finish the first 1/2/5 millisecond decade without retaining individual latency samples.
 private const val BOUND_5_MS = 5.0
+
+// why: Start the tens-of-milliseconds decade in the shared mergeable histogram layout.
 private const val BOUND_10_MS = 10.0
+
+// why: Preserve the two-step resolution within the tens-of-milliseconds decade.
 private const val BOUND_20_MS = 20.0
+
+// why: Cover the rest of the lower latency decade with a fixed-size bucket instead of raw samples.
 private const val BOUND_50_MS = 50.0
+
+// why: Keep a tenth-second boundary visible in the same schema used by local and exported observations.
 private const val BOUND_100_MS = 100.0
+
+// why: Preserve subsecond resolution before the additional quarter-second boundary.
 private const val BOUND_200_MS = 200.0
+
+// why: Retain an explicit quarter-second boundary; reported quantiles expose this bucket's finite width.
 private const val BOUND_250_MS = 250.0
+
+// why: Distinguish durations up to half a second before moving to second-scale buckets.
 private const val BOUND_500_MS = 500.0
+
+// why: Mark the millisecond-to-second transition without changing the histogram's millisecond unit.
 private const val BOUND_1000_MS = 1000.0
+
+// why: Preserve the 1/2/5 progression for second-scale waits in a bounded histogram.
 private const val BOUND_2000_MS = 2000.0
+
+// why: Separate waits up to five seconds while keeping fixed memory per histogram.
 private const val BOUND_5000_MS = 5000.0
+
+// why: Begin the tens-of-seconds range for long admission, upstream and tool waits.
 private const val BOUND_10000_MS = 10000.0
+
+// why: Retain an explicit fifteen-second boundary rather than folding all such waits into thirty seconds.
 private const val BOUND_15000_MS = 15000.0
+
+// why: Keep a half-minute boundary while making long-wait quantile uncertainty explicit in the schema.
 private const val BOUND_30000_MS = 30000.0
+
+// why: Distinguish waits up to one minute before moving to coarser long-duration buckets.
 private const val BOUND_60000_MS = 60000.0
+
+// why: Keep two-minute waits distinguishable without expanding retention into raw duration samples.
 private const val BOUND_120000_MS = 120000.0
+
+// why: Cover waits up to five minutes in the fixed long-duration tail.
 private const val BOUND_300000_MS = 300000.0
+
+// why: Bound the final finite bucket at ten minutes; longer durations remain explicit unbounded overflow.
 private const val BOUND_600000_MS = 600000.0

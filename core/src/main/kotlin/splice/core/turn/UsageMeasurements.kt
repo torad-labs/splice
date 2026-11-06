@@ -3,7 +3,7 @@ package splice.core.turn
 public enum class UsageMeasure { INPUT, OUTPUT, CACHE_READ, CACHE_WRITE, CACHE_WRITE_1H }
 
 /** Measurement presence covers the total owned bill, not just the last contributing round. */
-public object UsageMeasurements {
+internal object UsageMeasurements {
     /** Partial updates preserve an earlier fact when the other update has no contribution to that field. */
     public fun added(prior: Usage, latest: Usage): Set<UsageMeasure> = UsageMeasure.entries.filterTo(linkedSetOf()) {
         val left = contributes(prior, it)

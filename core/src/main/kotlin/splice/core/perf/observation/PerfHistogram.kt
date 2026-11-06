@@ -3,7 +3,7 @@ package splice.core.perf.observation
 import kotlin.math.ceil
 
 /** Quantiles merge bucket counts first. Overflow is unknown, never a fabricated maximum latency. */
-public object PerfHistogram {
+internal object PerfHistogram {
     private val bounds = PerfMetricRegistry.durationBoundsMs()
 
     internal fun bucket(value: Double): Int {

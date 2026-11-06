@@ -37,4 +37,5 @@ internal class PerfTimeline {
     }
 }
 
+// why: Report wall/monotonic disagreement beyond one second while keeping interval attribution monotonic.
 private const val CLOCK_TOLERANCE_MS = 1000L

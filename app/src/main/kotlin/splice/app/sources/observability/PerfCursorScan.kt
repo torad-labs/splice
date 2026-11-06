@@ -32,10 +32,16 @@ internal class PerfCursorScan(
 
     fun scan(index: FileChannel) {
         for (path in inventory.candidates()) {
-            try {
+            val issue = try {
                 candidate(path, index)
-            } catch (failure: IOException) {
-                issues += failure.message?.takeIf { it.startsWith("cursor_") } ?: "cursor_read_error"
+                null
+            } catch (failure: PerfCursorScanRefusal) {
+                failure.issue
+            } catch (_: IOException) {
+                "cursor_read_error"
+            }
+            if (issue != null) {
+                issues += issue
                 break
             }
         }
@@ -52,7 +58,9 @@ internal class PerfCursorScan(
         }
         segments += segment
         scanSegment(path, segment, index)
-        if (inventory.digest(path, segment.end, work) != segment.digest) throw IOException("cursor_segment_changed")
+        if (inventory.digest(path, segment.end, work) != segment.digest) {
+            throw PerfCursorScanRefusal("cursor_segment_changed")
+        }
     }
 
     private fun scanSegment(path: Path, segment: PerfCursorSegment, index: FileChannel) {
@@ -79,7 +87,7 @@ internal class PerfCursorScan(
         if (row == null) {
             malformed++
         } else if (!parsed.probe && eligible(row)) {
-            if ((matching + 1) * PERF_CURSOR_ENTRY_BYTES > indexBytes) throw IOException("cursor_index_limit")
+            if ((matching + 1) * PERF_CURSOR_ENTRY_BYTES > indexBytes) throw PerfCursorScanRefusal("cursor_index_limit")
             val position = ByteBuffer.allocate(PERF_CURSOR_ENTRY_BYTES)
                 .putInt(segments.lastIndex).putLong(start).putLong(end)
             position.flip()
@@ -94,4 +102,8 @@ internal class PerfCursorScan(
     }
 }
 
+// why: Charge the single reusable legacy-row decoder while scanning the cursor's bounded disk index.
 private const val DECODER_BYTES = 64L * 1_024
+
+/** Only locally constructed cursor reason codes cross the evidence boundary; arbitrary I/O text never does. */
+private class PerfCursorScanRefusal(val issue: String) : IOException()

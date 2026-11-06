@@ -162,25 +162,25 @@ internal object PerfLegacy1 {
         ),
         entry(
             PerfKeys.WS_REFUSED_TOO_LARGE,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "WebSocket attempts whose peer refused the request frame as too large: a 1009 close " +
                 "before any event.",
         ),
         entry(
             PerfKeys.WS_PRE_OUTPUT_FALLBACKS,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "WebSocket rounds re-served over HTTP/SSE before any client bytes, after the " +
                 "fresh-socket retry failed too.",
         ),
         entry(
             PerfKeys.WS_FRESH_SOCKET_RETRIES,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "WebSocket rounds that failed before client bytes on a socket fault and were sent again " +
                 "at once on a fresh socket.",
         ),
         entry(
             PerfKeys.WS_TRANSPORT_DECLINES,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "WebSocket rounds the socket could not take at all: its connect, its send or its first " +
                 "event failed.",
         ),
@@ -189,12 +189,12 @@ internal object PerfLegacy1 {
     private fun part7(): List<PerfMetricDefinition> = listOf(
         entry(
             PerfKeys.WS_PREFILL_ROUNDS,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "Legacy ws_prefill_rounds observed value; no new event value is inferred",
         ),
         entry(
             PerfKeys.WS_PREFILL_BYPASSES,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "Legacy ws_prefill_bypasses observed value; no new event value is inferred",
         ),
         entry(
@@ -245,5 +245,3 @@ internal object PerfLegacy1 {
         projections = setOf(PerfProjection.LOCAL, PerfProjection.SUPPORT),
     )
 }
-
-private const val COUNT = "count"

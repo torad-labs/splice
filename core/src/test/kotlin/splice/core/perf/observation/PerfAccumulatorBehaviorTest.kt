@@ -62,7 +62,7 @@ internal class PerfAccumulatorBehaviorTest {
                 request.finish(OutcomeTag.OK.wire)
             }
             val snapshot = fixture.accumulator.snapshot()
-            assertTrue(snapshot.points.map { it.scope }.distinct().size <= PerfObservationLimits.MAX_SCOPES)
+            assertTrue(snapshot.points.map { it.scope }.distinct().size <= PerfObservationLimits.MAX_METRIC_SCOPES)
             assertTrue(snapshot.points.any { it.scope.head == "overflow" })
             assertTrue(snapshot.coverage.issues.any { it.code == "cardinality_overflow" })
             assertEquals(MODEL_STRESS.toDouble(), fixture.total("requests_arrived"))
@@ -92,10 +92,10 @@ internal class PerfAccumulatorBehaviorTest {
     fun `minute state expires explicitly and bounded snapshots do not resurrect expired gauge intervals`() {
         ObservationFixture().use { fixture ->
             fixture.recorder.emit(fixture.scope, PerfEventKind.GATE_STATE, mapOf("gate_limit" to 2.0))
-            fixture.advance((PerfObservationLimits.RETAINED_MINUTES + 1) * PerfObservationLimits.MINUTE_MS)
+            fixture.advance((PerfObservationLimits.RETAINED_MINUTES + 1) * PerfObservationLimits.AGGREGATE_MINUTE_MS)
             fixture.recorder.emit(fixture.scope, PerfEventKind.CHECKPOINT)
             val snapshot = fixture.accumulator.snapshot()
-            assertTrue(snapshot.points.all { it.fromMs >= PerfObservationLimits.MINUTE_MS })
+            assertTrue(snapshot.points.all { it.fromMs >= PerfObservationLimits.AGGREGATE_MINUTE_MS })
             assertTrue(snapshot.coverage.issues.any { it.code == "retention_expired" })
             assertEquals(snapshot, fixture.accumulator.snapshot())
         }

@@ -18,21 +18,25 @@ internal class PerfCells(private val memory: PerfMemoryAccount?) {
     }
 
     fun integrate(series: PerfSeriesKey, from: Long, until: Long, value: Double) {
-        val cutoff = minute(until) - (PerfObservationLimits.RETAINED_MINUTES - 1) * PerfObservationLimits.MINUTE_MS
+        val cutoff = minute(
+            until,
+        ) - (PerfObservationLimits.RETAINED_MINUTES - 1) * PerfObservationLimits.AGGREGATE_MINUTE_MS
         var start = maxOf(from, cutoff)
         while (start < until) {
-            val end = minOf(until, minute(start) + PerfObservationLimits.MINUTE_MS)
+            val end = minOf(until, minute(start) + PerfObservationLimits.AGGREGATE_MINUTE_MS)
             cell(series.metric, series.scope, start)?.integrate(value, end - start)
             start = end
         }
     }
 
     fun expire(at: Long) {
-        val cutoff = minute(at) - (PerfObservationLimits.RETAINED_MINUTES - 1) * PerfObservationLimits.MINUTE_MS
+        val cutoff = minute(
+            at,
+        ) - (PerfObservationLimits.RETAINED_MINUTES - 1) * PerfObservationLimits.AGGREGATE_MINUTE_MS
         retentionFrom = maxOf(retentionFrom, cutoff)
         val before = entries.size
         val removed = entries.keys.removeIf { it.minute < cutoff }
-        memory?.release((before - entries.size) * PerfMemoryBudget.CELL_BYTES)
+        memory?.release((before - entries.size) * PerfMemoryBudget.AGGREGATE_CELL_BYTES)
         if (removed) expiredBefore = cutoff
     }
 
@@ -50,7 +54,7 @@ internal class PerfCells(private val memory: PerfMemoryAccount?) {
     fun points(until: Long): List<PerfAggregatePoint> = entries.map { (key, value) -> value.point(key, until) }
 
     fun clear() {
-        memory?.release(entries.size * PerfMemoryBudget.CELL_BYTES)
+        memory?.release(entries.size * PerfMemoryBudget.AGGREGATE_CELL_BYTES)
         entries = LinkedHashMap()
     }
 
@@ -67,12 +71,12 @@ internal class PerfCells(private val memory: PerfMemoryAccount?) {
     private fun mayAdd(at: Long): Boolean = when {
         at < retentionFrom -> { expiredInputs++; false }
         entries.size >= PerfObservationLimits.MAX_CELLS -> { dropped++; false }
-        memory?.reserve(PerfMemoryBudget.CELL_BYTES) == false -> { dropped++; false }
+        memory?.reserve(PerfMemoryBudget.AGGREGATE_CELL_BYTES) == false -> { dropped++; false }
         else -> true
     }
 
     private fun minute(at: Long): Long = Math.floorDiv(
         at,
-        PerfObservationLimits.MINUTE_MS,
-    ) * PerfObservationLimits.MINUTE_MS
+        PerfObservationLimits.AGGREGATE_MINUTE_MS,
+    ) * PerfObservationLimits.AGGREGATE_MINUTE_MS
 }

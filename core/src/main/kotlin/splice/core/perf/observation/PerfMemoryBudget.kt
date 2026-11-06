@@ -14,16 +14,16 @@ internal object PerfMemoryBudget {
     fun status(): PerfMemoryStatus = PerfMemoryStatus(
         reserved,
         ALLOCATABLE_BYTES,
-        LIMIT_BYTES,
+        OBSERVATION_MEMORY_LIMIT_BYTES,
         snapshotActive,
-        SNAPSHOT_BYTES,
+        OBSERVATION_SNAPSHOT_BYTES,
         HEADROOM_BYTES,
     )
 
     @Synchronized
     fun open(account: PerfMemoryAccount): Long? {
         collectReleased()
-        if (owners.size >= MAX_OWNERS || reserved + BASE_BYTES > ALLOCATABLE_BYTES) return null
+        if (owners.size >= MAX_ACCUMULATOR_OWNERS || reserved + BASE_BYTES > ALLOCATABLE_BYTES) return null
         val id = ++nextId
         owners[id] = Owner(WeakReference(account), BASE_BYTES)
         reserved += BASE_BYTES
@@ -73,15 +73,34 @@ internal object PerfMemoryBudget {
         }
     }
 
-    const val LIMIT_BYTES = 16L * 1024 * 1024
+    // why: Reserve 16 MiB for observation state within the plan's 32 MiB combined observation/work allowance.
+    const val OBSERVATION_MEMORY_LIMIT_BYTES = 16L * 1024 * 1024
+
+    // why: Leave explicit headroom for estimates that cannot account for every JVM/container allocation.
     const val HEADROOM_BYTES = 2L * 1024 * 1024
-    const val SNAPSHOT_BYTES = 4L * 1024 * 1024
-    const val ALLOCATABLE_BYTES = LIMIT_BYTES - HEADROOM_BYTES - SNAPSHOT_BYTES
-    const val CELL_BYTES = 1536L
-    const val SCOPE_BYTES = 1024L
+
+    // why: One admitted snapshot temporarily copies the aggregate map and creates its immutable result together.
+    const val OBSERVATION_SNAPSHOT_BYTES = 4L * 1024 * 1024
+    const val ALLOCATABLE_BYTES = OBSERVATION_MEMORY_LIMIT_BYTES - HEADROOM_BYTES - OBSERVATION_SNAPSHOT_BYTES
+
+    // why: Charge histogram buckets, aggregate values and map entries conservatively without measuring JVM allocation.
+    const val AGGREGATE_CELL_BYTES = 1536L
+
+    // why: Reserve bounded dimension strings and set/map overhead for each retained family scope.
+    const val OBSERVATION_SCOPE_BYTES = 1024L
+
+    // why: Charge each bounded observation/terminal identifier and its deduplication entry.
     const val ID_BYTES = 512L
+
+    // why: Reserve the series key, current value and integration state for each active gauge.
     const val GAUGE_BYTES = 1024L
+
+    // why: Charge a live request/attempt/tool handle until it becomes bounded terminal tombstone state.
     const val HANDLE_BYTES = 1024L
+
+    // why: Empty accumulators still retain maps and bookkeeping that must consume process-wide admission.
     private const val BASE_BYTES = 4096L
-    private const val MAX_OWNERS = 256
+
+    // why: Bound weak-owner accounting itself even when individual accumulators retain almost no observations.
+    private const val MAX_ACCUMULATOR_OWNERS = 256
 }

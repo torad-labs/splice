@@ -45,12 +45,12 @@ internal object PerfLegacy3 {
         ),
         entry(
             PerfKeys.FRAMES_OUT,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "Legacy frames_out observed value; no new event value is inferred",
         ),
         entry(
             PerfKeys.CONTENT_FRAMES_OUT,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "Frames that carried CONTENT ; everything except the structural turn-opening pair " +
                 "(message_start + ping). G5's safe-reissue probe keys off THIS, not [FRAMES_OUT]: since " +
                 "message_start moved to upstream-handoff (dead-air fix), frames_out goes non-zero " +
@@ -61,12 +61,12 @@ internal object PerfLegacy3 {
         ),
         entry(
             PerfKeys.FRAMES_SKIPPED,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "Legacy frames_skipped observed value; no new event value is inferred",
         ),
         entry(
             PerfKeys.BYTES_OUT,
-            BYTES,
+            PerfLegacyMetrics.BYTES_UNIT,
             "Legacy bytes_out observed bytes; no new event value is inferred",
         ),
     )
@@ -116,7 +116,7 @@ internal object PerfLegacy3 {
     private fun part4(): List<PerfMetricDefinition> = listOf(
         entry(
             PerfKeys.ABSORBED_ROUNDS,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "The rounds a turn billed before its final one ([splice.core.turn.AbsorbedRounds]). " +
                 "[IN_TOKENS] is the final round's input, the context; each absorbed round was a request " +
                 "of its own, billed and metered, so its buckets ride beside it. Written only when the " +
@@ -164,7 +164,7 @@ internal object PerfLegacy3 {
         ),
         entry(
             PerfKeys.CUT_SOURCE_ROUNDS,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "Source rounds this turn cut while they still streamed " +
                 "([splice.core.turn.Usage.cutRounds]): steering a parked code-mode script ends its " +
                 "round before the backend's terminal, so the tokens that round used are billed upstream " +
@@ -173,7 +173,7 @@ internal object PerfLegacy3 {
         ),
         entry(
             PerfKeys.SOURCE_ATTEMPTS,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "The upstream tries made by the turn that posted a code-mode script's source, on the " +
                 "row of a later client step that source's reset ended. That step made no try of its " +
                 "own, so its [ATTEMPTS] stays 0 and this says the stream it waited on reset after this " +
@@ -181,7 +181,7 @@ internal object PerfLegacy3 {
         ),
         entry(
             PerfKeys.FAILURE_PERMANENT,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "The classified failure's retry decision: 1 is permanent, 0 retryable; absent when no " +
                 "decision was observed.",
         ),
@@ -190,12 +190,12 @@ internal object PerfLegacy3 {
     private fun part6(): List<PerfMetricDefinition> = listOf(
         entry(
             PerfKeys.INFLIGHT,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "Concurrent turns in flight on this head at admission ; the live-concurrency gauge.",
         ),
         entry(
             PerfKeys.ASYNC_IO_DROPS,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "IO-005: AsyncFileIo.droppedCount() at admission ; the cumulative process-wide count of " +
                 "state/telemetry writes dropped at queue capacity, riding every turn's perf row the " +
                 "same way [INFLIGHT] rides a live gauge. A one-time stderr warning at the first drop " +
@@ -204,17 +204,17 @@ internal object PerfLegacy3 {
         ),
         entry(
             PerfKeys.TOOLS_EAGER,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "Legacy tools_eager observed value; no new event value is inferred",
         ),
         entry(
             PerfKeys.TOOLS_DEFERRED,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "Legacy tools_deferred observed value; no new event value is inferred",
         ),
         entry(
             PerfKeys.SEARCH_ROUNDS,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "Legacy search_rounds observed value; no new event value is inferred",
         ),
     )
@@ -222,7 +222,7 @@ internal object PerfLegacy3 {
     private fun part7(): List<PerfMetricDefinition> = listOf(
         entry(
             PerfKeys.POST_SEND_RETRIES,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "UP-004: retries of a SocketException/SocketTimeoutException that fired AFTER the " +
                 "request body was (possibly) fully written ; the upstream may already be " +
                 "processing/billing the prior attempt. Diagnostics were label-only " +
@@ -231,7 +231,7 @@ internal object PerfLegacy3 {
         ),
         entry(
             PerfKeys.REANCHORS,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "V4-116: mid-stream re-anchors this turn SPENT ; the proxy resumed the turn from its " +
                 "own salvage after a stall or a tear. A COUNT, not a flag, because the question the " +
                 "next incident asks is \"how many times did splice try before giving up\", and the ending " +
@@ -241,7 +241,7 @@ internal object PerfLegacy3 {
         ),
         entry(
             PerfKeys.REANCHORS_FROM_SCRATCH,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "V4-444: how many of those [REANCHORS] re-POSTed the request VERBATIM, because nothing " +
                 "the client could see had been salvaged (thinking only, or a tear before the first text " +
                 "delta). The two are different things to the person reading the row and splice has " +
@@ -275,9 +275,5 @@ internal object PerfLegacy3 {
         projections = setOf(PerfProjection.LOCAL, PerfProjection.SUPPORT),
     )
 }
-
-private const val COUNT = "count"
-
-private const val BYTES = "bytes"
 
 private const val TOKENS = "tokens"

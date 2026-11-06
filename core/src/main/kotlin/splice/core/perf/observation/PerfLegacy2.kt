@@ -14,23 +14,23 @@ internal object PerfLegacy2 {
         ),
         entry(
             PerfKeys.ATTEMPTS,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "Legacy attempts observed value; no new event value is inferred",
         ),
         entry(
             PerfKeys.TRANSPORT_ATTEMPT_STARTS,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "Transport attempts begun, including attempts abandoned before their first event.",
         ),
         entry(
             PerfKeys.REFUSED_RUNTIME_PORT,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "Port of a proven refused connect to a loopback runtime, absent for resets and remote " +
                 "failures.",
         ),
         entry(
             PerfKeys.NO_REQUEST,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "UsageHistory explicitly owns no final upstream request; absent token observations are " +
                 "not missing bills.",
         ),
@@ -39,18 +39,18 @@ internal object PerfLegacy2 {
     private fun part2(): List<PerfMetricDefinition> = listOf(
         entry(
             PerfKeys.LOCAL_STEP,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "One client-facing code-mode step synthesized without an upstream post, not a turn.",
         ),
         entry(
             PerfKeys.ACTIVITY_QUERY,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "Claude Code's activity side query, answered by the head itself with no model: a local " +
                 "step of its own kind.",
         ),
         entry(
             PerfKeys.COMPARE,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "A row written by a Compare models send (POST /api/playground): it has no session and " +
                 "is no project's work, so a project view must never fold it into \"no project\". It " +
                 "counts everywhere else a request counts.",
@@ -71,29 +71,29 @@ internal object PerfLegacy2 {
     private fun part3(): List<PerfMetricDefinition> = listOf(
         entry(
             PerfKeys.CODE_MODE_DIVERGENCE,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "A changed code-mode callback was sent upstream without touching the owner's queued " +
                 "script.",
         ),
         entry(
             PerfKeys.CODE_MODE_START_REJECTED,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "Failed executable source released a pending runtime boot or disposed its unadopted " +
                 "cell.",
         ),
         entry(
             PerfKeys.RETRIES,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "Legacy retries observed value; no new event value is inferred",
         ),
         entry(
             PerfKeys.REFRESHES,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "Legacy refreshes observed value; no new event value is inferred",
         ),
         entry(
             PerfKeys.EMPTY_RETRIES,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "Rounds re-sent once, same body, after the model answered with nothing " +
                 "(EmptyAnswerRetry).",
         ),
@@ -102,7 +102,7 @@ internal object PerfLegacy2 {
     private fun part4(): List<PerfMetricDefinition> = listOf(
         entry(
             PerfKeys.EMPTY_CONTINUES,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "Rounds carried on from their own reasoning, with a request for the answer, after the " +
                 "model answered with reasoning alone (EmptyAnswerRetry, on a vendor whose quirks ask " +
                 "for it).",
@@ -123,7 +123,7 @@ internal object PerfLegacy2 {
         ),
         entry(
             PerfKeys.PROVIDER_STATUS,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "V4-444: the HTTP status the provider's own answer carried, for a turn whose failure " +
                 "came back as a response. ABSENT when no answer came back at all ; a transport failure, " +
                 "or a local hold that refused the turn before it was sent ; because 0 there reads as a " +
@@ -144,22 +144,22 @@ internal object PerfLegacy2 {
     private fun part5(): List<PerfMetricDefinition> = listOf(
         entry(
             PerfKeys.REQ_BYTES,
-            BYTES,
+            PerfLegacyMetrics.BYTES_UNIT,
             "Legacy req_bytes observed bytes; no new event value is inferred",
         ),
         entry(
             PerfKeys.UPSTREAM_REQ_BYTES,
-            BYTES,
+            PerfLegacyMetrics.BYTES_UNIT,
             "Legacy upstream_req_bytes observed bytes; no new event value is inferred",
         ),
         entry(
             PerfKeys.SSE_BYTES_IN,
-            BYTES,
+            PerfLegacyMetrics.BYTES_UNIT,
             "Legacy sse_bytes_in observed bytes; no new event value is inferred",
         ),
         entry(
             PerfKeys.EVENTS_IN,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "Legacy events_in observed value; no new event value is inferred",
         ),
         entry(
@@ -173,7 +173,7 @@ internal object PerfLegacy2 {
     private fun part6(): List<PerfMetricDefinition> = listOf(
         entry(
             PerfKeys.UP_GAPS_2S,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "Legacy up_gaps_2s observed value; no new event value is inferred",
         ),
         entry(
@@ -219,14 +219,14 @@ internal object PerfLegacy2 {
         ),
         entry(
             PerfKeys.ARRIVAL_BURSTS,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "Visible deltas grouped into bursts by arrival gap before the pacer: the bursts, the " +
                 "largest in deltas, and the longest silence a burst broke (the first burst of a turn " +
                 "follows no silence and records none).",
         ),
         entry(
             PerfKeys.ARRIVAL_BURST_MAX_DELTAS,
-            COUNT,
+            PerfLegacyMetrics.COUNT_UNIT,
             "Legacy arrival_burst_max_deltas observed value; no new event value is inferred",
         ),
     )
@@ -263,8 +263,4 @@ internal object PerfLegacy2 {
     )
 }
 
-private const val COUNT = "count"
-
 private const val SECONDS = "seconds"
-
-private const val BYTES = "bytes"

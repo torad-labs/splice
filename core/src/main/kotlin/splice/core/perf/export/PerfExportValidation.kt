@@ -4,11 +4,12 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import splice.core.wire.NETWORK_PORT_MAX
 import java.net.URI
 import java.net.URISyntaxException
 
 /** Validation never includes supplied values in diagnostics. */
-public object PerfExportValidation {
+internal object PerfExportValidation {
     public val signals: Set<String> = setOf("metrics", "traces", "logs")
     private val headerName = Regex("[A-Za-z0-9!#$%&'*+.^_`|~-]{1,128}")
     private val forbiddenHeaders = setOf("host", "content-length", "content-type", "connection", "transfer-encoding")
@@ -28,7 +29,7 @@ public object PerfExportValidation {
     private fun validUri(uri: URI): Boolean {
         val origin = uri.scheme in setOf("http", "https") && !uri.host.isNullOrEmpty()
         val clean = listOf(uri.rawUserInfo, uri.rawQuery, uri.rawFragment).all { it == null }
-        val port = uri.port == -1 || uri.port in 1..MAX_PORT
+        val port = uri.port == -1 || uri.port in 1..NETWORK_PORT_MAX
         return if (origin) clean && port else false
     }
 
@@ -64,9 +65,17 @@ public object PerfExportValidation {
     }
 }
 
+// why: Bound URI parsing and retained collector configuration before constructing a network exporter.
 private const val MAX_ENDPOINT = 2_048
-private const val MAX_PORT = 65_535
+
+// why: Keep operator-supplied exporter header cardinality bounded before request construction.
 private const val MAX_HEADERS = 16
+
+// why: Bound each retained authentication/header value without echoing it in a validation failure.
 private const val MAX_HEADER_VALUE = 4_096
+
+// why: Cap the complete header JSON before parsing so many small fields cannot bypass per-value limits.
 private const val MAX_HEADER_JSON = 16_384
+
+// why: The signal selector contains only the three fixed signal names; reject oversized text before splitting.
 private const val MAX_SIGNAL_TEXT = 128

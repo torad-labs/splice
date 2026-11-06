@@ -10,7 +10,10 @@ internal class PerfScopeBudget(private val memory: PerfMemoryAccount) {
         val family = family(metric)
         val seen = scopes.getOrPut(family) { LinkedHashSet() }
         if (scope in seen) return scope
-        if (seen.size >= PerfObservationLimits.MAX_SCOPES - 1 || !memory.reserve(PerfMemoryBudget.SCOPE_BYTES)) {
+        if (seen.size >= PerfObservationLimits.MAX_METRIC_SCOPES - 1 || !memory.reserve(
+                PerfMemoryBudget.OBSERVATION_SCOPE_BYTES,
+            )
+        ) {
             exceeded++
             return overflow
         }
@@ -19,7 +22,7 @@ internal class PerfScopeBudget(private val memory: PerfMemoryAccount) {
     }
 
     fun clear() {
-        memory.release(scopes.values.sumOf { it.size } * PerfMemoryBudget.SCOPE_BYTES)
+        memory.release(scopes.values.sumOf { it.size } * PerfMemoryBudget.OBSERVATION_SCOPE_BYTES)
         scopes = HashMap()
     }
 

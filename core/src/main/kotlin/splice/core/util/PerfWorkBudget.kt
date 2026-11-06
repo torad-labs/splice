@@ -5,6 +5,7 @@ import java.lang.ref.WeakReference
 
 /** One process-wide allowance shared by history checkpoints, reads and cursor state. */
 public object PerfWorkBudget {
+    // why: Reserve 16 MiB for query/checkpoint/cursor work within the plan's combined 32 MiB instrumentation allowance.
     public const val LIMIT_BYTES: Long = 16L * 1_024 * 1_024
     private const val LIMIT = LIMIT_BYTES
     private val cleaner = Cleaner.create()

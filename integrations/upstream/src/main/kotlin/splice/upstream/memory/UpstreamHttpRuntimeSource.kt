@@ -10,7 +10,7 @@ import okhttp3.Dispatcher
 import splice.core.perf.runtime.PerfRuntimeSource
 
 /** These are only this client's HTTP pool and call dispatcher; websocket pools remain separate and unknown. */
-public class UpstreamHttpRuntimeSource(
+internal class UpstreamHttpRuntimeSource(
     private val pool: ConnectionPool,
     private val dispatcher: Dispatcher,
 ) : PerfRuntimeSource {

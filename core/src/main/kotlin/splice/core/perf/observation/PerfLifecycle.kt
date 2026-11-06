@@ -23,7 +23,7 @@ internal class PerfLifecycle(
 
     private fun terminalKey(event: PerfObservation): String? = when (event.kind) {
         PerfEventKind.REQUEST_FINISHED -> event.links.requestId?.let { "$REQUESTS:$it" }
-        PerfEventKind.ATTEMPT_FINISHED -> event.links.attemptId?.let { "$ATTEMPTS:$it" }
+        PerfEventKind.ATTEMPT_FINISHED -> event.links.attemptId?.let { "$ATTEMPT_FAMILY:$it" }
         PerfEventKind.TOOL_FINISHED -> event.links.toolId?.let { "tools:$it" }
         PerfEventKind.REQUEST_ARRIVED, PerfEventKind.ATTEMPT_STARTED, PerfEventKind.TOOL_STARTED,
         PerfEventKind.REQUEST_ADMITTED, PerfEventKind.PROTOCOL_PROGRESS, PerfEventKind.CONTENT_PROGRESS,
@@ -34,10 +34,10 @@ internal class PerfLifecycle(
 
     fun record(event: PerfObservation, at: Long, terminalReservation: Long): Boolean = when (event.kind) {
         PerfEventKind.REQUEST_ARRIVED -> start(REQUESTS, event.links.requestId, event.scope, at)
-        PerfEventKind.ATTEMPT_STARTED -> start(ATTEMPTS, event.links.attemptId, event.scope, at)
+        PerfEventKind.ATTEMPT_STARTED -> start(ATTEMPT_FAMILY, event.links.attemptId, event.scope, at)
         PerfEventKind.TOOL_STARTED -> start("tools", event.links.toolId, event.scope, at)
         PerfEventKind.REQUEST_FINISHED -> finish(REQUESTS, event.links.requestId, event, at, terminalReservation)
-        PerfEventKind.ATTEMPT_FINISHED -> finish(ATTEMPTS, event.links.attemptId, event, at, terminalReservation)
+        PerfEventKind.ATTEMPT_FINISHED -> finish(ATTEMPT_FAMILY, event.links.attemptId, event, at, terminalReservation)
         PerfEventKind.TOOL_FINISHED -> finish("tools", event.links.toolId, event, at, terminalReservation)
         PerfEventKind.REQUEST_ADMITTED, PerfEventKind.PROTOCOL_PROGRESS, PerfEventKind.CONTENT_PROGRESS,
         PerfEventKind.CLIENT_PROGRESS, PerfEventKind.GAP, PerfEventKind.GATE_STATE, PerfEventKind.TOOL_PHASE,
@@ -48,7 +48,7 @@ internal class PerfLifecycle(
     private fun transition(event: PerfObservation, at: Long): Boolean {
         if (event.kind == PerfEventKind.CHECKPOINT || event.kind == PerfEventKind.REQUEST_ADMITTED) {
             refine(REQUESTS, event.links.requestId, event.scope, at)
-            refine(ATTEMPTS, event.links.attemptId, event.scope, at)
+            refine(ATTEMPT_FAMILY, event.links.attemptId, event.scope, at)
             refine("tools", event.links.toolId, event.scope, at)
         }
         if (event.kind == PerfEventKind.REQUEST_ADMITTED) count("requests_admitted", event.scope, at)
@@ -119,4 +119,4 @@ internal class PerfLifecycle(
 
 private const val REQUESTS = "requests"
 
-private const val ATTEMPTS = "attempts"
+private const val ATTEMPT_FAMILY = "attempts"

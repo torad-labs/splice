@@ -120,4 +120,5 @@ public class PerfRecorder(
     }
 }
 
+// why: A span identifier is 8 bytes represented by 16 hexadecimal characters.
 private const val SPAN_HEX_LENGTH = 16

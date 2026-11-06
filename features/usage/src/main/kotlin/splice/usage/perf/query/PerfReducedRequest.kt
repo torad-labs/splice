@@ -47,7 +47,19 @@ internal class PerfReducedRequest(
             PerfEventKind.REQUEST_FINISHED -> { terminal(event, selectedScope, selectedLinks); true }
             PerfEventKind.USAGE_RECORDED -> { usage(event, selectedScope); true }
             PerfEventKind.ATTEMPT_STARTED, PerfEventKind.ATTEMPT_FINISHED -> attempt(event, selectedScope)
-            else -> {
+            PerfEventKind.REQUEST_ADMITTED,
+            PerfEventKind.PROTOCOL_PROGRESS,
+            PerfEventKind.CONTENT_PROGRESS,
+            PerfEventKind.CLIENT_PROGRESS,
+            PerfEventKind.GAP,
+            PerfEventKind.GATE_STATE,
+            PerfEventKind.TOOL_STARTED,
+            PerfEventKind.TOOL_FINISHED,
+            PerfEventKind.TOOL_PHASE,
+            PerfEventKind.RUNTIME,
+            PerfEventKind.SELF_COST,
+            PerfEventKind.CHECKPOINT,
+            -> {
                 checkpoint(event, selectedScope, selectedLinks)
                 true
             }
@@ -154,7 +166,21 @@ internal class PerfReducedRequest(
                 PerfEventKind.REQUEST_ARRIVED -> arrivalOutcome
                 PerfEventKind.CHECKPOINT -> checkpointOutcome
                 PerfEventKind.USAGE_RECORDED -> usageOutcome
-                else -> outcome
+                PerfEventKind.REQUEST_ADMITTED,
+                PerfEventKind.REQUEST_FINISHED,
+                PerfEventKind.ATTEMPT_STARTED,
+                PerfEventKind.ATTEMPT_FINISHED,
+                PerfEventKind.PROTOCOL_PROGRESS,
+                PerfEventKind.CONTENT_PROGRESS,
+                PerfEventKind.CLIENT_PROGRESS,
+                PerfEventKind.GAP,
+                PerfEventKind.GATE_STATE,
+                PerfEventKind.TOOL_STARTED,
+                PerfEventKind.TOOL_FINISHED,
+                PerfEventKind.TOOL_PHASE,
+                PerfEventKind.RUNTIME,
+                PerfEventKind.SELF_COST,
+                -> outcome
             },
         )
 

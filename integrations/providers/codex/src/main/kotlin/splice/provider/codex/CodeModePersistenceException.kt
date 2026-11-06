@@ -19,23 +19,27 @@ internal class CodeModePersistenceException(
     operation: CodeModeStorageOperation = CodeModeStorageOperation.SAVE,
 ) :
     CodeModeSourcePersistenceException(cause) {
-    private val storage = when {
+    private val storage: CodeModeStorageFault = when {
         cause is CodeModePersistenceException -> cause.storage
         cause is CodeModeStorageException -> cause.fault
         cause is HeapCapacityException -> CodeModeStorageFault.HEAP
         diskFull -> CodeModeStorageFault.DISK_FULL
         else -> CodeModeStorageFault.IO
     }
-    private val detail = when (cause) {
+    private val detail: String = when (cause) {
         is CodeModePersistenceException -> cause.detail
         is CodeModeStorageException -> requireNotNull(cause.message)
         else -> when (storage) {
             CodeModeStorageFault.HEAP -> "the daemon heap reservation was refused"
             CodeModeStorageFault.DISK_FULL -> "the disk that holds splice's state is full, so free space on it"
-            else -> "storage I/O failed; check state storage access and health"
+            CodeModeStorageFault.LIMIT,
+            CodeModeStorageFault.INVALID,
+            CodeModeStorageFault.ACCESS,
+            CodeModeStorageFault.IO,
+            -> "storage I/O failed; check state storage access and health"
         }
     }
-    private val attempted = (cause as? CodeModePersistenceException)?.attempted ?: operation
+    private val attempted: CodeModeStorageOperation = (cause as? CodeModePersistenceException)?.attempted ?: operation
     override val message: String =
         "code-mode state could not be ${attempted.description}: $detail; source was not rerun"
 

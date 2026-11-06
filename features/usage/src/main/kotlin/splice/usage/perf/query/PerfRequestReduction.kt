@@ -117,7 +117,7 @@ internal class PerfRequestReduction(
                 }
             }
             iterator.remove()
-            if (points.points().size > MAX_POINTS) { limit("request_point_limit"); break }
+            if (points.points().size > MAX_REDUCED_POINTS) { limit("request_point_limit"); break }
         }
         requests.clear()
         return matching
@@ -179,7 +179,7 @@ private data class ReducedInput(
     val links: PerfLinks,
     val outcome: String?,
 )
-private const val MAX_POINTS = 2_048
+private const val MAX_REDUCED_POINTS = 2_048
 private val REDUCED_KINDS = setOf(
     PerfEventKind.REQUEST_ARRIVED,
     PerfEventKind.CHECKPOINT,

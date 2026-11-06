@@ -181,7 +181,7 @@ public class RequestEvidenceFiles(
     private val metadataBytes: Long
         get() = EVIDENCE_MANIFEST_BYTES +
             if (coverage.enabled() || Files.exists(directory.resolve(RequestEvidenceProofFormat.FILE))) {
-                RequestEvidenceProofFormat.MAX_BYTES
+                RequestEvidenceProofFormat.MAX_BYTES.toLong()
             } else {
                 0L
             }

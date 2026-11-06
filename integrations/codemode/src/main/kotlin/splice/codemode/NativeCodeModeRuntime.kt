@@ -8,6 +8,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.codemode.host.PoolLimits
@@ -186,7 +187,7 @@ public class NativeCodeModeRuntime(
         }
     }
 
-    override fun runtime() = buildJsonObject {
+    override fun runtime(): JsonObject = buildJsonObject {
         val current = connection
         put(
             "measurements",

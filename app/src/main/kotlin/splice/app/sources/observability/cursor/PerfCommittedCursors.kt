@@ -2,6 +2,7 @@ package splice.app.sources.observability.cursor
 
 import splice.app.sources.observability.PerfSourceCosts
 import splice.core.util.AsyncFileIo
+import splice.core.util.Cancellables
 import splice.core.util.MonoClock
 import splice.core.util.PerfWorkBudget
 import splice.core.util.WallClock
@@ -89,7 +90,7 @@ internal class PerfCommittedCursors(
 
     private fun create(request: PerfCursorRequest, work: PerfCursorWork): PerfCursorManifest = files.lock().use {
         val now = clock()
-        val held = files.prune(now)
+        val held = files.prune(now, reserveFiles = 2)
         if (held >= PERF_CURSOR_DISK_BYTES - CURSOR_METADATA_ALLOWANCE) {
             throw PerfReadRefusal(
                 PerfReadIssue.CURSOR_DISK_LIMIT,
@@ -98,7 +99,8 @@ internal class PerfCommittedCursors(
         val settled = AsyncFileIo.awaitFile(live)
         val id = UUID.randomUUID().toString()
         val scan = PerfCursorScan(inventory, request, work, PERF_CURSOR_DISK_BYTES - held - CURSOR_METADATA_ALLOWANCE)
-        try {
+        var committed = false
+        Cancellables.withCleanup({ if (!committed) files.discard(id) }) {
             files.create(id).use(scan::scan)
             if (!settled) scan.issues += "pending_write_uncertain"
             val manifest = PerfCursorManifest(
@@ -106,10 +108,8 @@ internal class PerfCommittedCursors(
                 scan.segments, scan.matching, scan.issues, scan.malformed, scan.rows, work.bytes,
             )
             files.save(manifest)
+            committed = true
             manifest
-        } catch (failure: IOException) {
-            files.discard(id)
-            throw failure
         }
     }
 

@@ -3,6 +3,7 @@ package splice.app.sources.observability.cursor
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import splice.app.sources.observability.PerfEvidenceSeen
+import splice.core.util.Cancellables
 import splice.core.util.SecureFile
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
@@ -52,7 +53,8 @@ internal class PerfCursorFiles(private val directory: Path) {
         return PerfCursorPosition(buffer.int, buffer.long, buffer.long)
     }
 
-    fun prune(now: Long): Long {
+    /** The caller holds [lock] through admission and creation, including across source instances/processes. */
+    fun prune(now: Long, reserveFiles: Int): Long {
         val root = directory.toAbsolutePath().parent
         if (!Files.exists(root)) return 0L
         return Files.newDirectoryStream(root, "*-cursors").use { directories ->
@@ -60,7 +62,7 @@ internal class PerfCursorFiles(private val directory: Path) {
             var count = 0
             for (path in directories) {
                 if (++count > MAX_CURSOR_DIRECTORIES) throw PerfReadRefusal(PerfReadIssue.CURSOR_INVENTORY_LIMIT)
-                total += pruneDirectory(path, now)
+                total += pruneDirectory(path, now, if (path == directory.toAbsolutePath()) reserveFiles else 0)
             }
             total
         }
@@ -74,36 +76,40 @@ internal class PerfCursorFiles(private val directory: Path) {
             StandardOpenOption.CREATE,
             StandardOpenOption.WRITE,
         )
-        val locked = try {
-            channel.tryLock() != null
-        } catch (_: OverlappingFileLockException) {
-            false
+        var locked = false
+        return Cancellables.withCleanup({ if (!locked) channel.close() }) {
+            locked = try {
+                channel.tryLock() != null
+            } catch (_: OverlappingFileLockException) {
+                false
+            }
+            if (!locked) throw PerfReadRefusal(PerfReadIssue.CURSOR_BUSY)
+            channel
         }
-        if (!locked) {
-            channel.close()
-            throw PerfReadRefusal(PerfReadIssue.CURSOR_BUSY)
-        }
-        return channel
     }
 
-    private fun pruneDirectory(directory: Path, now: Long): Long {
+    private fun pruneDirectory(directory: Path, now: Long, reserveFiles: Int): Long {
         val paths = listDirectory(directory)
         var bytes = 0L
-        for (path in paths) {
+        var retained = 0
+        // An oversized old inventory can recover over bounded passes, but never evict an unexpired token.
+        for (path in paths.take(MAX_CURSOR_FILES)) {
             if (Files.getLastModifiedTime(path).toMillis() < now - PERF_CURSOR_TTL_MS) {
                 Files.deleteIfExists(path)
             } else {
                 bytes += Files.size(path)
+                retained++
             }
+        }
+        if (paths.size > MAX_CURSOR_FILES || retained > MAX_CURSOR_FILES - reserveFiles) {
+            throw PerfReadRefusal(PerfReadIssue.CURSOR_INVENTORY_LIMIT)
         }
         return bytes
     }
 
     private fun listDirectory(directory: Path): List<Path> = try {
         Files.newDirectoryStream(directory).use { stream ->
-            val list = stream.asSequence().take(MAX_CURSOR_FILES + 1).toList()
-            if (list.size > MAX_CURSOR_FILES) throw PerfReadRefusal(PerfReadIssue.CURSOR_INVENTORY_LIMIT)
-            list
+            stream.asSequence().take(MAX_CURSOR_FILES + 1).toList()
         }
     } catch (_: NoSuchFileException) {
         emptyList()

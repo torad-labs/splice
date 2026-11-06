@@ -27,7 +27,7 @@ internal class PerfEvidenceStreamScan(
     var scannedRows = 0L
         private set
 
-    fun scan(seen: PerfEvidenceSeen) {
+    fun scan(seen: PerfEvidenceDedup) {
         val fixed = proof?.let { inventory.certified(it, work) }
             ?: inventory.candidates(query.head).map { it to inventory.fingerprints.capture(it, work) }
         for ((path, segment) in fixed) {
@@ -38,7 +38,7 @@ internal class PerfEvidenceStreamScan(
         }
     }
 
-    private fun read(path: Path, segment: PerfCursorSegment, seen: PerfEvidenceSeen) {
+    private fun read(path: Path, segment: PerfCursorSegment, seen: PerfEvidenceDedup) {
         val head = RequestEvidenceFormat.headOf(path.fileName.toString())
         FileChannel.open(path, StandardOpenOption.READ).use { channel ->
             val reader = PerfLineReader(channel, 0L, segment.end, PERF_CURSOR_MAX_LINE_BYTES)
@@ -51,7 +51,7 @@ internal class PerfEvidenceStreamScan(
         }
     }
 
-    private fun record(raw: String, head: String?, seen: PerfEvidenceSeen) {
+    private fun record(raw: String, head: String?, seen: PerfEvidenceDedup) {
         scannedRows++
         val value = PerfEvidenceCodec.decode(raw)
         if (value == null || value.scope.head != head) {

@@ -70,16 +70,40 @@ internal class PerfEvidenceStreamSource(
 
     private fun scan(scan: PerfEvidenceStreamScan) {
         try {
-            files.lock().use {
-                if (PERF_CURSOR_DISK_BYTES - files.prune(clock()) < EVIDENCE_DEDUP_BYTES + EVIDENCE_COVERAGE_BYTES) {
-                    throw PerfReadRefusal(PerfReadIssue.CURSOR_DISK_LIMIT)
+            if (!diskScan(scan)) {
+                val lease = PerfWorkBudget.acquire(EVIDENCE_MEMORY_DEDUP_BYTES, PerfWorkBudget.Kind.EVIDENCE_READ)
+                    ?: throw PerfReadRefusal(PerfReadIssue.EVIDENCE_MEMORY_LIMIT)
+                lease.use {
+                    scan.scan(PerfEvidenceMemorySeen())
                 }
-                files.evidenceIds(UUID.randomUUID().toString()).use(scan::scan)
             }
         } catch (failure: PerfReadRefusal) {
             scan.issue(failure.issue.code)
         } catch (_: IOException) {
             scan.issue("evidence_read_error")
+        }
+    }
+
+    private fun diskScan(scan: PerfEvidenceStreamScan): Boolean {
+        val lock = try {
+            files.lock()
+        } catch (_: IOException) {
+            return false
+        }
+        return lock.use {
+            // Only scratch preparation may choose the bounded memory owner. No evidence callback ran yet.
+            val seen = try {
+                val available = PERF_CURSOR_DISK_BYTES - files.prune(clock(), reserveFiles = 1)
+                if (available < EVIDENCE_DEDUP_BYTES + EVIDENCE_COVERAGE_BYTES) {
+                    throw PerfReadRefusal(PerfReadIssue.CURSOR_DISK_LIMIT)
+                }
+                files.evidenceIds(UUID.randomUUID().toString())
+            } catch (_: IOException) {
+                return false
+            }
+            // Record, work-limit and cleanup failures propagate; retrying would duplicate consumer callbacks.
+            seen.use(scan::scan)
+            true
         }
     }
 

@@ -11,7 +11,7 @@ import java.nio.file.StandardOpenOption
 import java.security.MessageDigest
 
 /** Temporary disk hash table deduplicates observation ids without a heap-sized request/id cache. */
-internal class PerfEvidenceSeen(private val path: Path) : AutoCloseable {
+internal class PerfEvidenceSeen(private val path: Path) : PerfEvidenceDedup, AutoCloseable {
     private val channel = FileChannel.open(
         path,
         StandardOpenOption.CREATE_NEW,
@@ -31,7 +31,7 @@ internal class PerfEvidenceSeen(private val path: Path) : AutoCloseable {
         }
     }
 
-    fun add(identity: String, payload: ByteArray): PerfEvidenceDuplicate {
+    override fun add(identity: String, payload: ByteArray): PerfEvidenceDuplicate {
         val hash = MessageDigest.getInstance("SHA-256").digest(identity.toByteArray())
         val first = (ByteBuffer.wrap(hash).int and Int.MAX_VALUE) % SLOTS
         var slot = first

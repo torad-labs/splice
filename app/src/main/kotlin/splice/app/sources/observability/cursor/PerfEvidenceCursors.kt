@@ -6,6 +6,7 @@ import splice.app.sources.observability.PerfEvidenceSeen
 import splice.app.sources.observability.PerfSourceCosts
 import splice.app.sources.observability.evidenceHeadPattern
 import splice.core.util.AsyncFileIo
+import splice.core.util.Cancellables
 import splice.core.util.MonoClock
 import splice.core.util.PerfWorkBudget
 import splice.core.util.WallClock
@@ -81,15 +82,16 @@ internal class PerfEvidenceCursors(
         work: PerfCursorWork,
     ): PerfCursorManifest = files.lock().use {
         val now = clock()
-        val available = PERF_CURSOR_DISK_BYTES - files.prune(now) - EVIDENCE_DEDUP_BYTES - METADATA_RESERVE
+        val available = PERF_CURSOR_DISK_BYTES - files.prune(now, reserveFiles = 2) -
+            EVIDENCE_DEDUP_BYTES - METADATA_RESERVE
         if (available <= 0) throw PerfReadRefusal(PerfReadIssue.CURSOR_DISK_LIMIT)
         val settled = AsyncFileIo.awaitDirectory(directory)
         val id = UUID.randomUUID().toString()
-        try {
-            build(request, work, id, available, settled)
-        } catch (failure: IOException) {
-            files.discard(id)
-            throw failure
+        var committed = false
+        Cancellables.withCleanup({ if (!committed) files.discard(id) }) {
+            val manifest = build(request, work, id, available, settled)
+            committed = true
+            manifest
         }
     }
 
@@ -101,21 +103,22 @@ internal class PerfEvidenceCursors(
         settled: Boolean,
     ): PerfCursorManifest {
         val owner: PerfEvidenceSeen = files.evidenceIds(id)
-        return owner.use { seen ->
+        val manifest = owner.use { seen ->
             val scan = PerfEvidenceCursorScan(request, inventory, work, seen, available)
             files.create(id).use(scan::scan)
             scan.issues += inventory.issues().map { it.code }
             if (!settled) scan.issues += "evidence_pending_write"
-            val manifest = PerfCursorManifest(
+            PerfCursorManifest(
                 id, clock(), request.query.fromMs, request.query.untilMs,
                 PerfEvidencePageMetadata.key(
                     request,
                 ),
                 scan.segments, scan.matching, scan.issues, scan.malformed, scan.scanned, work.bytes,
             )
-            files.save(manifest)
-            manifest
         }
+        // The temporary dedup file releases its slot before the permanent index/manifest pair is complete.
+        files.save(manifest)
+        return manifest
     }
 
     private fun validate(manifest: PerfCursorManifest, request: PerfEvidenceCursorRequest) {

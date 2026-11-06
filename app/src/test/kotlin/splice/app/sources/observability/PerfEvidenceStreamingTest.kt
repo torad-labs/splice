@@ -110,7 +110,7 @@ class PerfEvidenceStreamingTest {
     }
 }
 
-private class StreamingEvidenceFixture(root: Path) : AutoCloseable, PerfQuerySources, PerfConfigProvenance {
+internal class StreamingEvidenceFixture(root: Path) : AutoCloseable, PerfQuerySources, PerfConfigProvenance {
     private val directory = root.resolve("evidence")
     private var now = 1_000L
     private var until = now

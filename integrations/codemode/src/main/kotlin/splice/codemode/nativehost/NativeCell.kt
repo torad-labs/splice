@@ -195,5 +195,9 @@ internal class NativeCell(
 
 // Matches Codex's foreground default; the caller's explicit wait budget overrides this.
 internal const val DEFAULT_NATIVE_OBSERVE_MS: Long = 10_000
+
+// Ten milliseconds absorbed sibling invoke scheduling gaps in the six-callback interactive benchmark.
 private const val NATIVE_CALLBACK_BATCH_QUIET_MS: Long = 10
+
+// Cap added dispatch latency even when a continuous callback producer never leaves a quiet interval.
 private const val NATIVE_CALLBACK_BATCH_MAX_MS: Long = 50

@@ -18,6 +18,7 @@ import splice.core.perf.observation.PerfStamp
 import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
 import splice.core.util.JsonScalars
+import splice.core.util.MonoClock
 import splice.core.util.PerfWorkBudget
 import splice.core.util.WallClock
 import splice.head.perf.RequestEvidenceFiles
@@ -135,7 +136,14 @@ private class StreamingEvidenceFixture(root: Path) : AutoCloseable, PerfQuerySou
                 assertTrue(writer.record(event(index, kind, now)))
             }
             if (withUsage) assertTrue(writer.record(event(index, PerfEventKind.USAGE_RECORDED, now)))
-            if (index % 10 == 0) assertTrue(AsyncFileIo.awaitDirectory(directory))
+            if (index % 10 == 0) {
+                val started = MonoClock.nowMs()
+                assertTrue(AsyncFileIo.awaitDirectory(directory)) {
+                    "stage=seed_evidence request_index=$index barrier_elapsed_ms=${MonoClock.nowMs() - started} " +
+                        "interrupted=${Thread.currentThread().isInterrupted} evidence=${writer.sink.status()} " +
+                        "io=${AsyncFileIo.workSnapshot} work_budget=${PerfWorkBudget.snapshot()}"
+                }
+            }
         }
         until = 1_000L + count * 100
         now = until

@@ -2,7 +2,8 @@ import { expect, test } from 'bun:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { defaults, validate } from './manifest';
-import { frames, requestBytes } from './fixture';
+import { frames, requestBytes, startUpstream } from './fixture';
+import { requestBodyMatcher } from './request-body';
 import { initial, WireObserver } from './observe';
 import { run } from './run';
 import { readRun, analyze } from './analyze';
@@ -50,6 +51,72 @@ test('request size is exact and fixtures cannot silently relabel unsupported col
   const m = defaults(); expect(requestBytes(m).length).toBe(m.input_bytes);
   m.collection.exports = true; expect(() => validate(m)).toThrow();
   m.collection.exports = false; m.load.value = 1000; expect(() => validate(m)).toThrow();
+});
+
+test('upstream accepts reordered objects but rejects changed fields, values, array order and duplicate members', async () => {
+  const m = defaults(); m.role = 'candidate'; m.target = { kind: 'proxy' }; m.fixture.first_wait_ms = 0; m.fixture.chunk_wait_ms = 0;
+  const original = requestBytes(m), expected = JSON.parse(new TextDecoder().decode(original));
+  const reordered = { messages: expected.messages.map(({ role, content }: any) => ({ content, role })), stream: expected.stream, max_tokens: expected.max_tokens, model: expected.model };
+  const text = JSON.stringify(reordered), upstream = startUpstream(m);
+  const changed = (edit: (value: any) => void) => { const value = structuredClone(reordered); edit(value); return JSON.stringify(value); };
+  const invalid = [
+    changed(value => { value.model = 'other'; }), changed(value => { value.max_tokens++; }),
+    changed(value => { value.messages.reverse(); }), changed(value => { value.messages[0].content += 'x'; }),
+    changed(value => { delete value.max_tokens; }), changed(value => { value.extra = true; }),
+    changed(value => { value.messages[0].extra = null; }), changed(value => { value.stream = false; }),
+    text.replace('"max_tokens":4', '"max_tokens":4.0000000000000001'),
+    text.replace('{', '{"model":"fixture-model",'), text.replace('{', '{"mo\\u0064el":"fixture-model",'),
+    text.replace('"messages":[{', '"messages":[{"role":"user",'),
+    text.replace('"messages":[{', '"messages":[{"ro\\u006ce":"user",'),
+    'null', '[]', '{', new Uint8Array([0xff]),
+  ];
+  try {
+    for (const body of [text, ...invalid]) {
+      const response = await fetch(`${upstream.url}/v1/messages`, { method: 'POST', body });
+      expect(response.status).toBe(body === text ? 200 : 400); await response.arrayBuffer();
+    }
+    expect(upstream.stats().attempts).toBe(1);
+    expect(upstream.stats().request_body_mismatches).toBe(invalid.length);
+    expect(requestBytes(m)).toEqual(original);
+  } finally { await upstream.stop(); }
+});
+
+test('only proxy Anthropic upstreams require streaming and the exact eager custom-tool default', async () => {
+  for (const proxy of [false, true]) for (const streaming of [false, true]) {
+    const m = defaults(); m.streaming = streaming; m.transport = streaming ? 'sse' : 'http'; m.scenario = 'tool-heavy';
+    m.fixture.first_wait_ms = 0; m.fixture.chunk_wait_ms = 0;
+    if (proxy) { m.role = 'candidate'; m.target = { kind: 'proxy' }; m.upstream = { protocol: 'anthropic', transport: 'sse' }; }
+    const original = requestBytes(m), expected = JSON.parse(new TextDecoder().decode(original));
+    if (proxy) expected.stream = true;
+    if (proxy && streaming) expected.tools[0].eager_input_streaming = true;
+    const upstream = startUpstream(m);
+    try {
+      const response = await fetch(`${upstream.url}/v1/messages`, { method: 'POST', body: JSON.stringify(expected) });
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-type')).toContain(proxy || streaming ? 'text/event-stream' : 'application/json');
+      const content = await response.text();
+      if (proxy || streaming) expect(content).toContain('event: message_stop');
+      else expect(JSON.parse(content).stop_reason).toBe('tool_use');
+      const wrongStream = { ...expected, stream: !expected.stream };
+      const wrongTool = structuredClone(expected); wrongTool.tools[0].eager_input_streaming = !(proxy && streaming);
+      for (const body of [wrongStream, wrongTool]) {
+        const rejected = await fetch(`${upstream.url}/v1/messages`, { method: 'POST', body: JSON.stringify(body) });
+        expect(rejected.status).toBe(400); await rejected.arrayBuffer();
+      }
+      expect(requestBytes(m)).toEqual(original);
+    } finally { await upstream.stop(); }
+  }
+});
+
+test('strict JSON matching bounds nesting and breadth without interpreting punctuation inside strings', () => {
+  const matches = requestBodyMatcher('{"message":"escaped \\\" \\\\ , } ] : ","nested":{"a":1},"other":{"a":2}}');
+  expect(matches('{"other":{"a":2},"nested":{"a":1},"message":"escaped \\\" \\\\ , } ] : "}')).toBe(true);
+  expect(matches('{"other":{"a":2},"nested":{"a":1,"a":1},"message":"escaped \\\" \\\\ , } ] : "}')).toBe(false);
+  expect(() => requestBodyMatcher('['.repeat(66) + '0' + ']'.repeat(66))).toThrow('request_structure_limit');
+  expect(() => requestBodyMatcher(JSON.stringify(Array(65536).fill(0)))).toThrow('request_structure_limit');
+  expect(() => requestBodyMatcher('1e400')).toThrow('request_number_invalid');
+  expect(requestBodyMatcher('{"tokens":4}')('{"tokens":4.0e0}')).toBe(true);
+  expect(requestBodyMatcher('{"tokens":4}')('{"tokens":4.0000000000000001}')).toBe(false);
 });
 
 test('open arrivals keep every offered slot and explicitly drop excess work', async () => {

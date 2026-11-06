@@ -1,4 +1,5 @@
-import { hash, type Manifest } from './manifest';
+import type { Manifest } from './manifest';
+import { requestBodyLimit, requestBodyMatcher } from './request-body';
 export const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, Math.max(0, ms)));
 export function requestBytes(m: Manifest): Uint8Array {
   const messages = Array.from({ length: m.fixture.history_messages }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: 'x' }));
@@ -46,11 +47,21 @@ export function nonstream(m: Manifest): any {
 }
 export function startUpstream(m: Manifest) {
   let attempts = 0, active = 0, peak = 0, bodyMismatch = 0, httpRequests = 0, websocketRequests = 0;
-  const expected = hash(requestBytes(m));
+  const anthropicProxy = m.target.kind === 'proxy' && (m.upstream?.protocol ?? m.protocol) === 'anthropic';
+  const expected = JSON.parse(new TextDecoder().decode(requestBytes(m)));
+  if (anthropicProxy) {
+    // startDesk uses Anthropic client auth. PassthroughRequestBuilder always streams
+    // upstream; PassthroughToolSanitizer adds this default for streaming custom tools.
+    expected.stream = true;
+    for (const tool of expected.tools ?? []) {
+      if (m.streaming && !Object.hasOwn(tool, 'eager_input_streaming') && (!Object.hasOwn(tool, 'type') || tool.type === 'custom')) tool.eager_input_streaming = true;
+    }
+  }
+  const matchesBody = requestBodyMatcher(JSON.stringify(expected));
   const upstreamManifest = { ...m, protocol: m.upstream?.protocol ?? m.protocol };
   const all = frames(upstreamManifest);
   const validBody = (body: Uint8Array | string, websocket: boolean) => {
-    if (m.target.kind === 'direct' || !m.upstream || m.upstream.protocol === 'anthropic') return hash(typeof body === 'string' ? body : body) === expected;
+    if (m.target.kind === 'direct' || !m.upstream || m.upstream.protocol === 'anthropic') return matchesBody(body);
     try { const v = JSON.parse(typeof body === 'string' ? body : new TextDecoder().decode(body)); return v.model === 'fixture-model' && Array.isArray(v.input) && (websocket ? v.type === 'response.create' : typeof v.stream === 'boolean'); } catch { return false; }
   };
   const schedule = async (emit: (value: any) => void, alive: () => boolean) => {
@@ -60,7 +71,7 @@ export function startUpstream(m: Manifest) {
       if (alive()) emit(all[i]);
     }
   };
-  const server = Bun.serve<{ closed: boolean; busy: boolean }>({ hostname: '127.0.0.1', port: 0, maxRequestBodySize: 32 * 1024 ** 2,
+  const server = Bun.serve<{ closed: boolean; busy: boolean }>({ hostname: '127.0.0.1', port: 0, maxRequestBodySize: requestBodyLimit,
     async fetch(req, s) {
       if (req.headers.get('upgrade') === 'websocket') return s.upgrade(req, { data: { closed: false, busy: false } }) ? undefined : new Response(null, { status: 400 });
       if (new URL(req.url).pathname === '/health') return Response.json({ ok: true, fixture: true });
@@ -69,7 +80,7 @@ export function startUpstream(m: Manifest) {
       attempts++; httpRequests++;
       if (m.scenario === 'refusal' || (m.scenario === 'retry' && attempts % 3 === 1))
         return Response.json({ type: 'error', error: { type: 'rate_limit_error', message: 'scripted refusal' } }, { status: 429, headers: { 'retry-after': '0' } });
-      const upstreamStreaming = m.upstream?.protocol === 'responses' ? JSON.parse(new TextDecoder().decode(body)).stream === true : m.streaming;
+      const upstreamStreaming = m.upstream?.protocol === 'responses' ? JSON.parse(new TextDecoder().decode(body)).stream === true : anthropicProxy || m.streaming;
       if (!upstreamStreaming) { await sleep(m.fixture.first_wait_ms); return Response.json(nonstream(upstreamManifest)); }
       active++; peak = Math.max(peak, active); let cancelled = false;
       return new Response(new ReadableStream({

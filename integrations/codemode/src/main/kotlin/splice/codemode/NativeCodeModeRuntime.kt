@@ -1,5 +1,6 @@
 package splice.codemode
 
+import io.opentelemetry.sdk.trace.export.SpanExporter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.cancel
@@ -7,6 +8,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import splice.codemode.host.PoolLimits
 import splice.codemode.nativehost.NativeCellAdmission
 import splice.codemode.nativehost.NativeConnection
@@ -18,9 +21,13 @@ import splice.codemode.nativehost.sessions.NativeLogicalControl
 import splice.codemode.nativehost.sessions.NativeLogicalSession
 import splice.codemode.nativehost.sessions.NativeLogicalSessions
 import splice.codemode.nativehost.sessions.NativeSessionConnection
+import splice.codemode.nativehost.trace.NativeStartTiming
 import splice.codemode.nativehost.trace.NativeTraceContext
 import splice.codemode.nativehost.trace.NativeTracing
+import splice.codemode.nativehost.trace.NativeTracingProvider
+import splice.core.perf.runtime.PerfRuntimeSource
 import splice.core.util.Cancellables
+import splice.core.util.MonoClock
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeManual
@@ -41,8 +48,10 @@ public class NativeCodeModeRuntime(
     private val spawn: WorkerSpawn = WorkerSpawn(ProcessBuilder::start),
     private val artifact: NativeHostArtifact = NativeHostArtifact(),
     private val maxYieldTimeMs: Long? = null,
-) : NativeCodeModeLifecycle {
+    traceExporter: SpanExporter? = null,
+) : NativeCodeModeLifecycle, PerfRuntimeSource {
     private val closed = AtomicBoolean()
+    private val tracing = NativeTracingProvider(traceExporter)
     private val ownership = Any()
     private val scope = LifecycleScope(ioDispatcher)
     private val opening = Mutex()
@@ -117,11 +126,24 @@ public class NativeCodeModeRuntime(
     /** The same logical owner is retained by foreground cells, controls and session expiry. */
     internal fun logicalSession(key: String): NativeLogicalSession = sessions.session(key)
 
-    private suspend fun activeConnection(): NativeConnection = opening.withLock {
-        val current = connection
-        if (current != null && current.isAvailable()) return@withLock current
-        current?.close()
-        open()
+    private suspend fun activeConnection(): NativeConnection {
+        val queued = MonoClock.nowMs()
+        return opening.withLock {
+            NativeStartTiming.record("tool_queue_ms", (MonoClock.nowMs() - queued).coerceAtLeast(0).toDouble())
+            val current = connection
+            if (current != null && current.isAvailable()) {
+                NativeStartTiming.record("tool_cold_start_ms", 0.0)
+                return@withLock current
+            }
+            current?.close()
+            val startedAt = MonoClock.nowMs()
+            open().also {
+                NativeStartTiming.record(
+                    "tool_cold_start_ms",
+                    (MonoClock.nowMs() - startedAt).coerceAtLeast(0).toDouble(),
+                )
+            }
+        }
     }
 
     private fun retire(dead: NativeConnection) {
@@ -140,7 +162,7 @@ public class NativeCodeModeRuntime(
                 scope,
                 ioDispatcher,
                 NativeConnectionClosed(::retire),
-                NativeTracing(),
+                NativeTracing(tracing.tracer),
             ).also { connection = it }
         }
         try {
@@ -164,6 +186,18 @@ public class NativeCodeModeRuntime(
         }
     }
 
+    override fun runtime() = buildJsonObject {
+        val current = connection
+        put(
+            "measurements",
+            buildJsonObject {
+                admission.measurements().forEach { (key, value) -> put(key, value) }
+                current?.tracing?.invocations?.measurements()?.forEach { (key, value) -> put(key, value) }
+                put("runtime_processes_active", if (current?.isAvailable() == true) 1 else 0)
+            },
+        )
+    }
+
     override fun close() {
         if (closed.compareAndSet(false, true)) {
             val host = synchronized(ownership) { connection }
@@ -176,6 +210,7 @@ public class NativeCodeModeRuntime(
             sessions.close()
             admission.closeAll()
             scope.cancel()
+            tracing.close()
         }
     }
 }

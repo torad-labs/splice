@@ -63,15 +63,16 @@ public class PerfRecorder(
         val links = PerfDimensions.links(
             parent.copy(
                 toolId = start.observationId,
+                attemptId = traceLinks?.attemptId ?: parent.attemptId,
                 traceId = native?.traceId ?: parent.traceId,
                 traceFlags = native?.traceFlags ?: parent.traceFlags,
-                parentSpanId = native?.parentSpanId ?: parent.spanId,
+                parentSpanId = traceLinks?.parentSpanId ?: parent.spanId,
                 spanId = native?.spanId ?: UUID.randomUUID().toString().replace("-", "").take(SPAN_HEX_LENGTH),
             ),
         )
         val values = if (native != null) mapOf("tool_native_span" to 1.0) else emptyMap()
         publish(PerfObservation(start, toolScope, PerfEventKind.TOOL_STARTED, values, links))
-        return PerfToolRecorder(this, toolScope, links, start.monotonicMs)
+        return PerfToolRecorder(this, toolScope, links, start.monotonicMs, native != null)
     }
 
     private fun nextId(): String =

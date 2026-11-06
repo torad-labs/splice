@@ -520,9 +520,24 @@ class TurnFinishTest {
     fun `only a code-mode response without an upstream attempt marks a local step`() = runBlocking {
         for (attempts in listOf(0L, 1L)) {
             val rig = Rig(tmp, "local-step-$attempts")
-            val emitter =
+            val events = mutableListOf<splice.core.perf.observation.PerfObservation>()
+            val request = splice.core.perf.observation.PerfRecorder(
+                splice.core.perf.observation.PerfIdentity("boot", "build", "version", "config"),
+                splice.core.perf.observation.PerfObserver { events.add(it) },
+                ElapsedClock { 0 },
+                splice.core.util.WallClock { 0 },
+            ).request(splice.core.perf.observation.PerfScope(head = "codex"), 0, 0)
+            val collecting =
                 CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } }, voice = testVoice)
-            val drive = rig.drive(emitter)
+            val emitter = object : TurnTerminal by collecting {
+                override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) {
+                    collecting.emitTerminal(hasToolUse, incomplete, usage)
+                    request.finish("good")
+                }
+            }
+            val drive = rig.drive(
+                emitter,
+            ).let { it.copy(inputs = it.inputs.copy(perf = TurnPerf(observations = request))) }
             drive.perf.setCount(PerfKeys.ATTEMPTS, attempts)
             try {
                 rig.finish.finishTurn(
@@ -536,6 +551,9 @@ class TurnFinishTest {
                     ),
                 )
                 assertEquals(attempts == 0L, drive.perf.snapshot().counters[PerfKeys.LOCAL_STEP] == 1L)
+                val terminal = events.single { it.kind == splice.core.perf.observation.PerfEventKind.REQUEST_FINISHED }
+                assertEquals(if (attempts == 0L) true else null, terminal.scope.local)
+                assertEquals(if (attempts == 0L) "local" else "client", terminal.scope.work)
             } finally {
                 drive.slot.release()
             }

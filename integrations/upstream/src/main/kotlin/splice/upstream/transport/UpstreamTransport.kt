@@ -39,6 +39,8 @@ import splice.core.util.LogSink
 import splice.upstream.ProviderProbe
 import splice.upstream.RetryBackoff
 import splice.upstream.Waiter
+import splice.upstream.memory.UpstreamHttpRuntime
+import splice.upstream.memory.UpstreamHttpRuntimeSource
 import java.io.IOException
 import java.net.ConnectException
 import java.net.InetAddress
@@ -156,9 +158,20 @@ public class UpstreamTransport {
                 }
             }
         }.also {
-            it.attributes.put(upstreamTimingBridgeKey, timing)
-            it.attributes.put(upstreamBodyBridgeKey, bodies)
+            attachObservers(it, timing, bodies, pool, dispatcher)
         }
+    }
+
+    private fun attachObservers(
+        client: HttpClient,
+        timing: UpstreamTimingBridge,
+        bodies: UpstreamBodyBridge,
+        pool: ConnectionPool,
+        dispatcher: Dispatcher,
+    ) {
+        client.attributes.put(upstreamTimingBridgeKey, timing)
+        client.attributes.put(upstreamBodyBridgeKey, bodies)
+        client.attributes.put(UpstreamHttpRuntime.key, UpstreamHttpRuntimeSource(pool, dispatcher))
     }
 
     /** V4-289: what the once-per-process line says about the request-write bound on this system. V4-292: a

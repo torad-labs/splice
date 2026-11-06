@@ -40,7 +40,7 @@ dependencies {
         }
     }
     implementation(libs.opentelemetry.api)
-    testImplementation(libs.opentelemetry.sdk.trace)
+    api(libs.opentelemetry.sdk.trace)
     implementation(libs.graaljs.polyglot)
     // The published aggregator declares platform POMs as runtime artifacts. Shadow consumes ZIPs,
     // so use its native JAR dependencies directly.

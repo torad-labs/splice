@@ -66,6 +66,9 @@ public fun interface CodeModeInvocationAction<T> {
 public interface CodeModeInvocationContext : CoroutineContext.Element {
     public val isActive: Boolean
     public suspend fun <T> within(action: CodeModeInvocationAction<T>): T
+    public fun buffered(bytes: Int): Unit = Unit
+    public fun delivered(bytes: Int, ageMs: Long): Unit = Unit
+    public fun discarded(bytes: Int): Unit = Unit
 }
 
 public object CodeModeInvocationContextKey : CoroutineContext.Key<CodeModeInvocationContext>

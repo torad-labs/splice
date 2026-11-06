@@ -3,6 +3,7 @@ package splice.codemode.nativehost
 import splice.codemode.host.PoolLimits
 import splice.codemode.nativehost.sessions.NativeLogicalSession
 import splice.codemode.nativehost.sessions.STALE_NATIVE_CELL_ERROR
+import splice.codemode.nativehost.trace.NativeStartTiming
 import splice.upstream.failure.CodeModeCapacityException
 import splice.upstream.failure.CodeModeToolException
 import java.util.concurrent.ConcurrentHashMap
@@ -37,6 +38,9 @@ internal class NativeCellAdmission(private val limits: PoolLimits, cellHeapMb: I
 
     @Synchronized
     fun reserve(): NativeCellLease {
+        NativeStartTiming.record("tool_admission_depth", 0.0)
+        NativeStartTiming.record("tool_admission_capacity", maxCells.toDouble())
+        NativeStartTiming.record("tool_occupied_cells", leases.size.toDouble())
         val reserved = (leases.size + 1L) * cellBytes + NATIVE_HOST_RESERVE_MB * NATIVE_MIB
         if (leases.size >= maxCells || reserved > budget) {
             throw CodeModeCapacityException(
@@ -50,6 +54,13 @@ internal class NativeCellAdmission(private val limits: PoolLimits, cellHeapMb: I
     fun release(lease: NativeCellLease) {
         leases.remove(lease)
     }
+
+    @Synchronized
+    fun measurements(): Map<String, Double> = mapOf(
+        "runtime_tools_active" to leases.size.toDouble(),
+        "runtime_tool_capacity" to maxCells.toDouble(),
+        "runtime_tool_queued" to 0.0,
+    )
 
     @Synchronized
     fun closeAll() {

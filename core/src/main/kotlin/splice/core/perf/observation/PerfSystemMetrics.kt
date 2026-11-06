@@ -12,7 +12,7 @@ internal object PerfSystemMetrics {
             "native span starts",
             "native span ends",
             "tool operations",
-            setOf(PerfEventKind.TOOL_STARTED),
+            setOf(PerfEventKind.TOOL_STARTED, PerfEventKind.TOOL_PHASE, PerfEventKind.TOOL_FINISHED),
         ),
     )
 
@@ -79,6 +79,8 @@ internal object PerfSystemMetrics {
         "runtime_direct_bytes", "runtime_threads", "runtime_cpu_ratio", "runtime_cpu_ns", "runtime_gc_count",
         "runtime_gc_pause_ms", "runtime_fd_count", "runtime_dispatcher_lag_ms", "runtime_executor_queued",
         "runtime_executor_active", "runtime_tools_active", "runtime_processes_active",
+        "runtime_http_connections", "runtime_http_connections_idle",
+        "runtime_http_calls_queued", "runtime_http_calls_running",
         "runtime_nonheap_used_bytes", "runtime_nonheap_committed_bytes", "runtime_mapped_bytes", "runtime_pss_bytes",
         "runtime_platform_threads", "runtime_virtual_threads", "runtime_allocation_bytes",
         "runtime_allocation_bytes_per_second", "runtime_fd_limit", "runtime_system_load", "runtime_connections",
@@ -87,7 +89,15 @@ internal object PerfSystemMetrics {
     ).map {
         PerfMetricDefinition(
             it,
-            "Runtime sample; unsupported platform values remain absent",
+            when {
+                it.startsWith(
+                    "runtime_allocation",
+                ) -> "Approximate JDK all-thread heap allocation; not exclusive owner bytes"
+                it.startsWith(
+                    "runtime_http_",
+                ) -> "Owned HTTP pool or call dispatcher only; no websocket support implied"
+                else -> "Runtime sample; unsupported platform values remain absent"
+            },
             PerfMetricType.GAUGE,
             unit(it),
             "runtime sample",

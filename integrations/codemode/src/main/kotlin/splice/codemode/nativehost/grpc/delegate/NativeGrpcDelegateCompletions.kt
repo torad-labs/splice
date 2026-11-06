@@ -37,6 +37,7 @@ internal class NativeGrpcDelegateCompletions(
     }
 
     fun completeAsync(id: String, delegate: NativeGrpcDelegate, result: JsonObject) {
+        delegate.span?.replyReceived()
         val job = scope.launch(
             delegate.span?.coroutineContext ?: kotlin.coroutines.EmptyCoroutineContext,
             start = CoroutineStart.LAZY,
@@ -64,15 +65,18 @@ internal class NativeGrpcDelegateCompletions(
             }
             answered(id, delegate)
         } catch (error: StatusRuntimeException) {
+            delegate.span?.outcome("bad")
             // Only cancellation makes a missing invocation benign; an uncancelled failure closes its session.
             if (!delegate.isCancelled()) sink.failed(delegate.session, error)
         } catch (error: NativeGrpcProtocolException) {
+            delegate.span?.outcome("bad")
             if (!delegate.isCancelled()) sink.failed(delegate.session, error)
         }
     }
 
     private fun answered(id: String, delegate: NativeGrpcDelegate) {
         if (pending.remove(id, delegate)) {
+            delegate.span?.outcome("good")
             sink.settled(delegate.session, delegate.cell, delegate.id)
             releaseTrace(id, delegate)
         }

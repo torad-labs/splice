@@ -29,8 +29,13 @@ class RequestEvidenceStoreTest {
             PerfRecorder(PerfIdentity("test", "build", "version", "config"), store, ElapsedClock { now }, wall)
         val request = recorder.request(PerfScope(head = "test"), 0L, wall())
         request.update(request.scope, request.links.copy(sessionId = "session"))
+        val attempt = request.attempt("sse")
+        val tool = request.tool()
+        tool.observe(PerfEventKind.TOOL_PHASE, mapOf("tool_buffered_bytes" to 512.0))
         now = 10
         request.finish(OutcomeTag.CLIENT_ABORT.wire)
+        attempt.finish("good")
+        tool.finish("cancelled")
         now = 70_000
         request.usage(mapOf("input_tokens" to 100.0, "missing_usage" to 0.0))
         assertTrue(AsyncFileIo.drain())
@@ -39,6 +44,16 @@ class RequestEvidenceStoreTest {
         val usage = rows.single { it.kind == PerfEventKind.USAGE_RECORDED }
         assertEquals(terminal.links.requestId, usage.links.requestId)
         assertEquals("session", terminal.links.sessionId)
+        assertTrue(
+            rows.any { it.kind == PerfEventKind.ATTEMPT_STARTED && it.links.requestId == terminal.links.requestId },
+        )
+        assertTrue(
+            rows.any { it.kind == PerfEventKind.ATTEMPT_FINISHED && it.links.attemptId == attempt.links.attemptId },
+        )
+        val toolTerminal = rows.single { it.kind == PerfEventKind.TOOL_FINISHED }
+        assertEquals(tool.links.toolId, toolTerminal.links.toolId)
+        assertEquals(terminal.links.requestId, toolTerminal.links.requestId)
+        assertEquals(512.0, rows.single { it.kind == PerfEventKind.TOOL_PHASE }.values["tool_buffered_bytes"])
         assertEquals(60_010L, terminal.stamp.wallMs)
         assertEquals(terminal.stamp.wallMs, usage.stamp.wallMs)
         assertEquals(100.0, usage.values["input_tokens"])

@@ -26,11 +26,11 @@ internal class NativeGrpcDelegates(
     private val pending = ConcurrentHashMap<String, NativeGrpcDelegate>()
     private val completions = NativeGrpcDelegateCompletions(channel, scope, sink, tracing, pending)
 
-    fun tool(session: NativeGrpcSession, message: DynamicMessage) {
+    fun tool(session: NativeGrpcSession, message: DynamicMessage, context: Context = Context.root()) {
         val id = NativeGrpcFields.identifier(message, "invocation_id")
         val cell = NativeGrpcFields.identifier(message, "cell_id")
         val key = key(session, "tool", id)
-        val span = callbackSpan(session, message)
+        val span = callbackSpan(session, message, context)
         val delegate = NativeGrpcDelegate(session, cell, id, false, span)
         span.handoff {
             check(pending.putIfAbsent(key, delegate) == null) {
@@ -51,7 +51,11 @@ internal class NativeGrpcDelegates(
         sink.emit(NativeGrpcFrames.delegate(key, session.localId, request))
     }
 
-    private fun callbackSpan(session: NativeGrpcSession, message: DynamicMessage): NativeTraceSpan = tracing.start(
+    private fun callbackSpan(
+        session: NativeGrpcSession,
+        message: DynamicMessage,
+        context: Context = Context.root(),
+    ): NativeTraceSpan = tracing.start(
         "code_mode.grpc.callback",
         mapOf(
             "session.id" to session.id,
@@ -60,7 +64,7 @@ internal class NativeGrpcDelegates(
             "invocation.id" to NativeGrpcFields.text(message, "invocation_id"),
         ),
         remoteParent = NativeGrpcWire.value(message, "traceparent") as? String,
-        current = Context.root(),
+        current = context,
     )
 
     fun ignored(session: NativeGrpcSession, message: DynamicMessage) {

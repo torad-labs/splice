@@ -2,6 +2,7 @@
 package splice.provider.codex.stream
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
 import splice.core.failure.FailureCause
 import splice.core.failure.FailureEvidence
 import splice.core.failure.Moment
@@ -20,6 +21,7 @@ import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.state.diagnostics.CODE_MODE_RECORD_LOG_CHARS
 import splice.provider.codex.stream.native.CodeModeNativeStartup
 import splice.upstream.codemode.CodeModeCell
+import splice.upstream.codemode.CodeModePerfContext
 import splice.upstream.codemode.CodeModeRuntime
 import splice.upstream.codemode.NativeCodeModeLifecycle
 import splice.upstream.codemode.availability.CodeModeAvailabilityPlan
@@ -36,18 +38,25 @@ internal class CodeModeRuntimeStarter(
     private val native = CodeModeNativeStartup(registry)
 
     suspend fun start(record: CodeModeRecord, context: CodeModeRunContext, stream: CodeModeLiveRound?): CodeModeCell =
-        try {
-            record.runtimeDispatching = true
-            if (stream == null) {
-                starting(record, context, null)
-            } else {
-                stream.executing(record)
-                val cell = stream.sourceFor(record).whileStarting { starting(record, context, stream) }
-                CodeModeStreamingCell(cell, record, stream)
+        withContext(
+            CodeModePerfContext(
+                context.link.post.perf?.observations,
+                context.link.post.perf?.upstream?.observations?.links,
+            ),
+        ) {
+            try {
+                record.runtimeDispatching = true
+                if (stream == null) {
+                    starting(record, context, null)
+                } else {
+                    stream.executing(record)
+                    val cell = stream.sourceFor(record).whileStarting { starting(record, context, stream) }
+                    CodeModeStreamingCell(cell, record, stream)
+                }
+            } catch (error: IOException) {
+                reportSourceRejection(context, stream)
+                throw error
             }
-        } catch (error: IOException) {
-            reportSourceRejection(context, stream)
-            throw error
         }
 
     private fun reportSourceRejection(context: CodeModeRunContext, stream: CodeModeLiveRound?) {

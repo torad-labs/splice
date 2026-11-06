@@ -5,6 +5,7 @@ import io.grpc.Metadata
 import io.grpc.Status
 import io.grpc.StatusRuntimeException
 import kotlinx.coroutines.withTimeoutOrNull
+import splice.codemode.nativehost.trace.NativePerfContext
 
 /** Source transport deadlines bound native RPCs, independently of upstream model silence. */
 internal object NativeGrpcDeadlines {
@@ -33,10 +34,13 @@ internal object NativeGrpcDeadlines {
 
     private suspend fun <T> within(millis: Long, operation: String, observation: NativeGrpcObservation<T>): T {
         val result = withTimeoutOrNull(millis) { NativeGrpcTimed(observation.await()) }
-            ?: throw NativeGrpcProtocolException(
+        if (result == null) {
+            NativePerfContext.timedOut()
+            throw NativeGrpcProtocolException(
                 "gRPC code-mode host timed out waiting for $operation response",
                 invalidatesSession = true,
             )
+        }
         return result.value
     }
 

@@ -6,6 +6,7 @@ public class PerfToolRecorder internal constructor(
     private val scope: PerfScope,
     public val links: PerfLinks,
     private val startedAt: Long,
+    private val nativeSpan: Boolean = false,
 ) {
     private val lock = Any()
     private var finished = false
@@ -18,7 +19,7 @@ public class PerfToolRecorder internal constructor(
         when {
             finished -> false
             kind == PerfEventKind.TOOL_FINISHED -> finish(outcome ?: "?", values)
-            kind == PerfEventKind.TOOL_PHASE -> recorder.emit(scope, kind, values, links, outcome)
+            kind == PerfEventKind.TOOL_PHASE -> recorder.emit(scope, kind, ownership(values), links, outcome)
             else -> false
         }
     }
@@ -29,9 +30,12 @@ public class PerfToolRecorder internal constructor(
         recorder.emit(
             scope,
             PerfEventKind.TOOL_FINISHED,
-            values + ("tool_duration_ms" to recorder.elapsedSince(startedAt).toDouble()),
+            ownership(values) + ("tool_duration_ms" to recorder.elapsedSince(startedAt).toDouble()),
             links,
             outcome,
         )
     }
+
+    private fun ownership(values: Map<String, Double>): Map<String, Double> =
+        if (nativeSpan) values + ("tool_native_span" to 1.0) else values
 }

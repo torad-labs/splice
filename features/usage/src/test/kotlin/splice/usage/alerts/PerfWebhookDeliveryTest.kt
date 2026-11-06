@@ -5,6 +5,7 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -75,11 +76,21 @@ class PerfWebhookDeliveryTest {
             val store = AlertStore(tmp.resolve("alerts.json"))
             store.replace(AlertSettings(desktop = true, webhookUrl = "https://example.invalid/private-secret"))
             val logs = mutableListOf<String>()
-            PerfWebhookDelivery(AlertDelivery(store, { logs.add(it) }, this, client), this).use { delivery ->
+            val failedResponseHandled = CompletableDeferred<Unit>()
+            PerfWebhookDelivery(
+                AlertDelivery(store, { line ->
+                    logs.add(line)
+                    failedResponseHandled.complete(Unit)
+                }, this, client),
+                this,
+            ).use { delivery ->
                 assertFalse(delivery.enqueue(event(false)))
                 assertTrue(bodies.isEmpty())
                 assertTrue(delivery.enqueue(event(true)))
                 assertTrue(delivery.enqueue(event(true)))
+                // This fires only after the 503 response has been received and handled. The worker then
+                // publishes its terminal result; runCurrent drains that continuation before assertions.
+                failedResponseHandled.await()
                 runCurrent()
                 assertEquals(1, bodies.size)
                 assertEquals("failed", delivery.result("dedup"))

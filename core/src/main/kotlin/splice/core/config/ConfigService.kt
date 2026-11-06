@@ -75,6 +75,8 @@ public class ConfigService(
         coerceAll(this.headOverrides).accepted.filterKeys { it !in headOnlyKnobKeys },
     )
     private val snapshots = ConfigSnapshotCache()
+
+    private val effectiveChanges = EffectiveConfigPublications(snapshots)
     private val processEnvironment: Map<String, String> by lazy { snapshots.environment(this.envReader) }
 
     // PATCH publishes one immutable batch. Readers never retain a map another thread can mutate.
@@ -86,7 +88,13 @@ public class ConfigService(
     public val headLayer: HeadOverrideLayer = HeadOverrideLayer(perHeadOverrides)
 
     init {
-        headLayer.observeChanges(ConfigRevisionChanged(snapshots::invalidate))
+        headLayer.observeChanges(
+            ConfigRevisionChanged {
+                effectiveChanges.mutated()
+                snapshots.invalidate()
+                if (effectiveChanges.observer != null) snapshot()
+            },
+        )
         // V4-109: say it ONCE, at construction, for every key the TOML layers asked for and did not
         // get. Logged here rather than at each read because the merge runs per request — a line per
         // read would bury the daemon log in a config mistake that never changes. The doctor repeats
@@ -121,6 +129,17 @@ public class ConfigService(
         snapshots.observeSnapshots(heap)
     }
 
+    /** App owns listener lifetime; null detaches it before instrumentation shutdown. */
+    public var effectiveObserver: EffectiveConfigObserver?
+        get() = effectiveChanges.observer
+        set(observer) {
+            effectiveChanges.observer = observer
+            if (observer != null) {
+                snapshots.invalidate()
+                snapshot()
+            }
+        }
+
     // The guard cascade is the literal port of config.mjs's patch loop (each `when` arm is one of
     // its `continue`s): unknown key -> reject; null -> delete; uncoercible -> reject; else -> apply.
     public fun patch(partial: Map<String, Any?>): PatchResult {
@@ -153,6 +172,7 @@ public class ConfigService(
             } else {
                 synchronized(runtimeLock) {
                     runtimeLayer = Collections.unmodifiableMap((runtimeLayer + applied).filterValues { it != null })
+                    effectiveChanges.mutated()
                     snapshots.invalidate()
                 }
                 persistApplied(applied)
@@ -181,7 +201,9 @@ public class ConfigService(
         val generation = if (previous != null && previous.inputs == inputs) {
             previous
         } else {
-            snapshots.publish(ticket, buildSnapshot(inputs, previous))
+            snapshots.publish(ticket, buildSnapshot(inputs, previous)).also { published ->
+                effectiveChanges.publish(published)
+            }
         }
         generation.envRejected.keys.forEach { key ->
             log("[config] ignoring invalid env value for $key: '${ConfigRedaction.values(environment)[key]}'")

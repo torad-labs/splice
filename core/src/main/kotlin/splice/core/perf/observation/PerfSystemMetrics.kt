@@ -111,6 +111,7 @@ internal object PerfSystemMetrics {
         "self_record_ns", "self_snapshot_ms", "self_serialize_ms", "self_enqueue_ms", "self_write_ms",
         "self_read_ms", "self_export_ms", "self_query_ms", "self_compaction_ms", "self_flush_ms",
         "self_queue_depth", "self_queue_oldest_ms", "self_dropped", "self_failures", "self_bytes_written",
+        "self_scheduler_delay_ms", "self_sampler_ms",
     ).map {
         val type = when {
             it.endsWith("_ms") -> PerfMetricType.HISTOGRAM

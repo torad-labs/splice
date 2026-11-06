@@ -50,6 +50,7 @@ dependencies {
     implementation(project(":integrations-mcp"))
     implementation(project(":integrations-topology"))
     implementation(project(":integrations-codemode"))
+    implementation(project(":integrations-observability"))
     implementation(project(":integrations-oauth"))
     implementation(project(":integrations-terminal"))
     implementation(project(":integrations-tmux"))

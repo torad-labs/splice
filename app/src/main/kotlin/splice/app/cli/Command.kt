@@ -216,7 +216,7 @@ public sealed class Command {
         }
     }
     public data class Perf(val args: List<String>) : Command() {
-        override suspend fun run(): Int = outcomeExitCode(PerfWiring.command().perf(args, EnvReader(System::getenv)))
+        override suspend fun run(): Int = outcomeExitCode(PerfWiring.run(args, EnvReader(System::getenv)))
     }
 
     /** V4-173: the upstream request bodies a head sent, when its operator opted in. */

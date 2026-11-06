@@ -16,6 +16,7 @@ internal class CodeModeNativeRuntimes(
     private val cellHeapMb: Int,
 ) : CodeModeRuntimes {
     private val artifact = NativeHostArtifact()
+    internal var performance: splice.app.observability.PerfTelemetry? = null
 
     override fun availability(): CodeModeAvailability = if (enabled) {
         artifact.availability()
@@ -25,6 +26,11 @@ internal class CodeModeNativeRuntimes(
 
     override fun open(): CodeModeRuntime {
         if (!enabled) throw IOException(CODE_MODE_HOST_DISABLED)
-        return NativeCodeModeRuntime(limits = limits, cellHeapMb = cellHeapMb, artifact = artifact)
+        return NativeCodeModeRuntime(
+            limits = limits,
+            cellHeapMb = cellHeapMb,
+            artifact = artifact,
+            traceExporter = performance?.exports?.nativeSpans(),
+        ).also { performance?.owners?.add(it) }
     }
 }

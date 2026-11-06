@@ -34,6 +34,7 @@ internal class UsageReadRoutes(
 ) {
     private val economics = EconomicsPayloads(heads, lookup = lookup)
     private val perf = PerfRoutes(lookup)
+    internal var performance: splice.app.control.perf.PerfMount? = null
 
     /** Which project each request row belongs to, set once the sessions wiring exists. */
     fun tagProjects(tags: RequestProjects) {
@@ -56,7 +57,18 @@ internal class UsageReadRoutes(
             }
         }
         route.get("/api/perf/turns") {
-            guard.guarded(call) { withContext(io) { perf.turns(call) } }
+            guard.guarded(call) {
+                val observations = performance
+                if (observations == null) {
+                    withContext(io) { perf.turns(call) }
+                } else {
+                    observations.work.execute(call) {
+                        withContext(io) {
+                            if (!observations.selected(call, "rows")) perf.turns(call)
+                        }
+                    }
+                }
+            }
         }
         route.get("/api/perf/price") {
             guard.guarded(call) { withContext(io) { perf.price(call) } }

@@ -317,6 +317,13 @@ public class StatePaths(
      *  discarded on the next rotation. One directory: the names already carry the head. */
     public val perfArchiveDir: Path = stateDir.resolve("perf-archive")
 
+    /** Numeric instrumentation has separate retention from the legacy request ledger. */
+    public val perfAggregatesDir: Path = stateDir.resolve("perf-aggregates")
+    public val perfEvidenceDir: Path = stateDir.resolve("perf-evidence")
+    public val perfProfilesDir: Path = stateDir.resolve("perf-profiles")
+    public val perfObjectivesFile: Path = stateDir.resolve("perf-objectives.json")
+    public val perfConfigurationFile: Path = stateDir.resolve("perf-configuration.json")
+
     /** Hourly token-economics rollup (quota instrument) — additive, not a frozen HUD name. */
     public fun economicsFile(headKey: String): Path = stateDir.resolve("$headKey-economics.json")
 

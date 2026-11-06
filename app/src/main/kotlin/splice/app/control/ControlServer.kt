@@ -111,6 +111,11 @@ internal class ControlServer(
      *  discipline they share and why they left this file (V4-161). Read at CALL time, never captured. */
     public val ports: ConsolePorts = ConsolePorts()
 
+    internal fun wirePerformance(performance: splice.app.observability.PerfTelemetry) {
+        projects.requestTags?.let { performance.projects = it }
+        performance.accounts(accounts.recordedNames().snapshots())
+    }
+
     private val resolver = readings.resolver(heads)
     private val audit = ControlAudit(log)
 

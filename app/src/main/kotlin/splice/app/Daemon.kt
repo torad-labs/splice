@@ -149,6 +149,13 @@ public class Daemon(
     // diffused into splice.app.head / splice.app.provider, 2026-08-17). All are stateless or hold
     // only their own probe bookkeeping; one instance each keeps the wiring readable.
     private val headBoot = HeadBoot()
+    private val performance = splice.app.observability.PerfTelemetry(
+        config,
+        topology.heads.keys,
+        controlPlane.perfRows,
+        controlPlane.alerts,
+        log,
+    ).also { controlPlane.performance = it }
     private val headProbes = HeadProbes()
     private val headShutdown = HeadShutdown()
 
@@ -187,6 +194,7 @@ public class Daemon(
         ).also {
             it.credentialAccountNames = controlPlane.credentialAccountNames
             it.sentCredentials = controlPlane.sentCredentials
+            it.performance = performance
         }
     private val managedHeadFactory = ManagedHeadFactory(
         statePaths = statePaths,
@@ -213,6 +221,7 @@ public class Daemon(
     private var stopped = false
 
     public suspend fun start() {
+        performance.start()
         // Before anything binds: the control plane and every head serve on a handed-over socket where there is one.
         controlPlane.adopted = adopted
         headServerFactory.adopted = adopted
@@ -317,6 +326,7 @@ public class Daemon(
             headProbes.stop()
             managedHeadFactory.closeEvidenceLoads()
             controlPlane.cancelProbes()
+            performance.close()
             topologyWindows.close()
             stopped = true
         }

@@ -144,6 +144,15 @@ internal class ControlPlane(
     internal val playground = stores.playground
     internal val console = stores.console
 
+    internal var performance: splice.app.observability.PerfTelemetry? = null
+        set(value) {
+            field = value
+            providerAssembly.performance = value
+            mcp.observations = splice.control.mcp.McpPerfRecorders { head ->
+                value?.recorder?.takeIf { head in value.sources.heads() }
+            }
+        }
+
     /** The daemon's one LaunchService, built at [start]: it fills [claudeLogin] as it wires the Claude login arm. */
     private val launch = ControlLaunchWiring(
         daemon,
@@ -237,6 +246,8 @@ internal class ControlPlane(
      *  playground probe, and V4-239's [ConsoleWiring.wireVerbReads] for the models, trace and wire reads. */
 
     private fun wireConsolePorts(srv: ControlServer) {
+        srv.ports.performance = performance
+        performance?.let { srv.wirePerformance(it) }
         srv.ports.turns.codeMode = providerAssembly.codeModeControls
         srv.ports.turns.foreground = foregroundTools
         srv.ports.compaction = compactionInstructions

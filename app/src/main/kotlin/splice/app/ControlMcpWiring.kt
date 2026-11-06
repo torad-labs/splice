@@ -36,6 +36,7 @@ internal class ControlMcpWiring(
     private val statePaths get() = daemon.statePaths
     private val config get() = daemon.config
     private val log get() = daemon.log
+    internal var observations = splice.control.mcp.McpPerfRecorders { null }
 
     /** The census the MCP host reports, kept for GET /api/mcp/memory, which names the copies it measures by it. */
     var inventory: McpInventory? = null
@@ -116,6 +117,7 @@ internal class ControlMcpWiring(
         // child into a `--slice=` systemd rejects. An empty knob therefore falls back to the
         // declared default rather than being passed through.
         runtime = McpHostConfig.Runtime(
+            observations = observations,
             slice = (config.getConfig().asMap()[Knob.MCP_SLICE.key] as? String)?.takeIf { it.isNotBlank() }
                 ?: APP_MCP_SLICE,
             capture = McpHostConfig.Capture(McpToolResultStore(statePaths), ProcessDispatchers().io()),

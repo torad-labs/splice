@@ -92,12 +92,18 @@ describe("install.sh downloads from splice.torad.ai", () => {
     expect(run.urls).toEqual([`${HOST}/latest/splice.jar`, `${HOST}/latest/sha256sums.txt`, `${HOST}/latest/splice-launch`]);
   });
 
-  test("a pinned SPLICE_VERSION takes every file from that version's folder", () => {
-    for (const pinned of ["v9.9.9", "v9.8.7-beta.6"]) {
-      const run = install({ SPLICE_VERSION: pinned });
-      expect(run.ok, run.output).toBe(true);
-      expect(run.urls).toEqual([`${HOST}/${pinned}/splice.jar`, `${HOST}/${pinned}/sha256sums.txt`, `${HOST}/${pinned}/splice-launch`]);
-    }
+  test("a pinned stable SPLICE_VERSION takes every file from that version's folder", () => {
+    const pinned = "v9.9.9";
+    const run = install({ SPLICE_VERSION: pinned });
+    expect(run.ok, run.output).toBe(true);
+    expect(run.urls).toEqual([`${HOST}/${pinned}/splice.jar`, `${HOST}/${pinned}/sha256sums.txt`, `${HOST}/${pinned}/splice-launch`]);
+  });
+
+  test("a pinned prerelease SPLICE_VERSION takes every file from that version's folder", () => {
+    const pinned = "v9.8.7-beta.6";
+    const run = install({ SPLICE_VERSION: pinned });
+    expect(run.ok, run.output).toBe(true);
+    expect(run.urls).toEqual([`${HOST}/${pinned}/splice.jar`, `${HOST}/${pinned}/sha256sums.txt`, `${HOST}/${pinned}/splice-launch`]);
   });
 
   test("a prebuilt jar with no launcher beside it fetches its own release's launcher", () => {
@@ -109,10 +115,13 @@ describe("install.sh downloads from splice.torad.ai", () => {
     expect(run.urls).toEqual([`${HOST}/v9.9.9/sha256sums.txt`, `${HOST}/v9.9.9/splice-launch`]);
   });
 
-  test("no install asks github.com for anything", () => {
-    for (const env of [{}, { SPLICE_VERSION: "v9.9.9" }] as Record<string, string>[]) {
-      const run = install(env);
-      expect(run.urls.filter((url) => url.includes("github.com"))).toEqual([]);
-    }
+  test("a default install asks github.com for nothing", () => {
+    const run = install({});
+    expect(run.urls.filter((url) => url.includes("github.com"))).toEqual([]);
+  });
+
+  test("a pinned install asks github.com for nothing", () => {
+    const run = install({ SPLICE_VERSION: "v9.9.9" });
+    expect(run.urls.filter((url) => url.includes("github.com"))).toEqual([]);
   });
 });

@@ -6,14 +6,17 @@
 // its 14-function budget, and four collaborators now respond through it.
 package splice.head.admission
 
+import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.content.OutgoingContent
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.netty.NettyApplicationCall
 import io.ktor.server.response.header
 import io.ktor.server.response.respond
 import io.ktor.server.routing.RoutingCall
 import io.ktor.server.routing.RoutingPipelineCall
+import io.ktor.utils.io.ByteWriteChannel
 import splice.core.budget.BudgetBlock
 import splice.core.failure.ClientWire
 import splice.core.failure.Decline
@@ -34,6 +37,18 @@ import splice.http.ingress.IngressErrorBody
  *  every refusal before a turn takes. The real response status owns retry semantics, not the SSE rule. */
 public class AdmissionErrorBody(private val voice: HeadVoice) : IngressErrorBody {
     override fun render(type: String, why: Decline): String = envelope(type, FailureCause.Splice.Declined(why), null)
+
+    override fun content(call: ApplicationCall, type: String, why: Decline, status: HttpStatusCode): OutgoingContent {
+        val observation = RequestObservation.of(call) ?: return super<IngressErrorBody>.content(call, type, why, status)
+        val reply = CollectedReply(render(type, why), status, observations = observation, outcome = "refused")
+        // Keep ingress's original application/json header. CollectedReply owns UTF-8 bytes and successful flush.
+        return object : OutgoingContent.WriteChannelContent() {
+            override val contentType = ContentType.Application.Json
+            override val contentLength = reply.contentLength
+            override val status = reply.status
+            override suspend fun writeTo(channel: ByteWriteChannel) = reply.writeTo(channel)
+        }
+    }
 
     /** [cause] told as the client is told it ([answer], or ClientWire's answer at admission when null). */
     internal fun envelope(type: String, cause: FailureCause, answer: WireAnswer?): String {

@@ -6,6 +6,7 @@
 // in the file.
 package splice.head.admission
 
+import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import splice.core.auth.CredentialKey
 import splice.core.failure.EndingHeard
@@ -42,6 +43,11 @@ internal class HeadAdmission(
     private val resends = ResendLedger(deps.seams.clock)
 
     fun arrivalTime(): Long = telemetry.arrivalTime()
+
+    /** The listener observes arrivals before ingress can refuse their bodies without entering this handler. */
+    fun observeRequests(application: Application) {
+        RequestObservation.install(application, deps, preparation.provider.key)
+    }
 
     suspend fun handleMessages(call: ApplicationCall, arrivalAt: Long = arrivalTime()) {
         RequestObservation.run(call, deps, preparation.provider.key, arrivalAt) {

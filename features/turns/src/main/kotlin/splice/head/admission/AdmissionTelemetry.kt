@@ -5,8 +5,14 @@
 // slot is returned, so INFLIGHT is the depth the turn actually entered at.
 package splice.head.admission
 
+import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.application.ApplicationCallPipeline
+import io.ktor.server.application.call
+import io.ktor.server.request.httpMethod
+import io.ktor.server.request.path
 import io.ktor.util.AttributeKey
 import kotlinx.coroutines.CancellationException
 import splice.core.perf.OutcomeTag
@@ -65,7 +71,23 @@ internal object RequestObservation {
     private val key = AttributeKey<PerfRequestRecorder>("splice.request.observation")
     private val traceParent = Regex("00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})")
 
+    /** Installed before HeapIngress's Monitoring interceptor, including the calls it answers before routing. */
+    fun install(application: Application, deps: HeadDeps, head: String) {
+        application.intercept(ApplicationCallPipeline.Monitoring) {
+            if (call.request.httpMethod == HttpMethod.Post && call.request.path() == "/v1/messages") {
+                run(call, deps, head, deps.seams.clock()) { proceed() }
+            } else {
+                proceed()
+            }
+        }
+    }
+
     suspend fun run(call: ApplicationCall, deps: HeadDeps, head: String, arrivalAt: Long, work: TimedWork<Unit>) {
+        // Routing reuses the listener's handle. Direct handler callers still own one from this point.
+        if (of(call) != null) {
+            work()
+            return
+        }
         val observation = deps.stores.observations.request(
             PerfScope(head = head),
             arrivalAt,

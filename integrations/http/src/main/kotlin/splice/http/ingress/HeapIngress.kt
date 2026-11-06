@@ -1,14 +1,13 @@
 // NEW: both daemon listeners share charged ingress and application ownership.
 package splice.http.ingress
 
-import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.ApplicationStopPreparing
 import io.ktor.server.application.call
-import io.ktor.server.response.respondText
+import io.ktor.server.response.respond
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.discard
 import io.netty.channel.ChannelPipeline
@@ -153,10 +152,13 @@ public class HeapIngress(
         val why = declined
             ?: if (large) Decline.TooLarge(bytes = null, limit = maxBodyBytes().toLong()) else Decline.HeapBusy
         val type = if (large) "invalid_request_error" else "overloaded_error"
-        call.respondText(
-            errorBody.render(type, why),
-            ContentType.Application.Json,
-            HttpStatusCode(status, if (large) "Content Too Large" else "Gateway At Capacity"),
+        call.respond(
+            errorBody.content(
+                call,
+                type,
+                why,
+                HttpStatusCode(status, if (large) "Content Too Large" else "Gateway At Capacity"),
+            ),
         )
     }
 }

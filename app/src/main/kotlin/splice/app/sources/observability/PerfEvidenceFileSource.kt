@@ -171,8 +171,10 @@ public class PerfEvidenceFileSource(
 
 internal val evidenceHeadPattern = Regex("[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
 
+// Reserve 6 MiB for decoding, deduplication and the bounded retained-evidence result together.
 private const val EVIDENCE_READ_RESERVE = 6L * 1_024 * 1_024
 
 private data class EvidenceProofRead(val proof: PerfEvidenceCoverageProof?, val issue: PerfIssue?)
 
+// Reserve 1 MiB while decoding coverage proof to determine a settled evidence horizon.
 private const val HORIZON_BYTES = 1L * 1_024 * 1_024

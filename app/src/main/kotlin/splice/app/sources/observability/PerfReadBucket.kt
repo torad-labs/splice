@@ -18,7 +18,7 @@ internal class PerfReadBucket(val identity: PerfIdentity) {
         private set
 
     fun additional(point: PerfAggregatePoint): Long =
-        if ((point.metric to point.scope) in points) 0L else PerfHistorySize.point(point) + CELL_OVERHEAD
+        if ((point.metric to point.scope) in points) 0L else PerfHistorySize.point(point) + PERF_READ_CELL_OVERHEAD
 
     fun coverage(snapshot: PerfAggregateSnapshot) {
         first = minOf(first, snapshot.fromMs)
@@ -76,5 +76,8 @@ internal class PerfReadBucket(val identity: PerfIdentity) {
     }
 }
 
+// Charge 2 KiB for each identity/time bucket before identity and point ownership.
 internal const val BUCKET_OVERHEAD = 2_048L
-private const val CELL_OVERHEAD = 256L
+
+// Charge 256 bytes for each metric/scope map entry in both bucket insertion and fold admission estimates.
+internal const val PERF_READ_CELL_OVERHEAD = 256L

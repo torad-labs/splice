@@ -105,6 +105,7 @@ internal class PerfCursorInventory(private val live: Path, private val archive: 
         .digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
 }
 
+// Hash frozen file prefixes through a reusable 64 KiB buffer instead of loading entire segments.
 private const val DIGEST_BUFFER = 64 * 1_024
 private const val ATTRIBUTES_MISSING = "cursor_attributes_missing"
 

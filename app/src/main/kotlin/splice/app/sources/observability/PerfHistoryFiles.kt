@@ -82,7 +82,7 @@ internal class PerfHistoryFiles(private val directory: Path) {
             value.revisions.keys.sumOf { it.length.toLong() * 2L + REVISION_BYTES }
         if (owned > PERF_HISTORY_WORK_BYTES / 2L) throw IOException("aggregate checkpoint memory limit")
         val encoded = json.encodeToString(value)
-        if (encoded.length * UTF8_MAX_BYTES > PERF_HISTORY_FILE_BYTES) {
+        if (encoded.length * HISTORY_UTF8_BYTES_PER_CHAR > PERF_HISTORY_FILE_BYTES) {
             throw IOException(
                 "aggregate checkpoint size limit",
             )
@@ -102,7 +102,7 @@ internal class PerfHistoryFiles(private val directory: Path) {
         val owned = PerfHistorySize.identity(value.identity) + value.issues.sumOf(PerfHistorySize::issue)
         if (owned > MAX_CHECKPOINT_BYTES) throw IOException("aggregate checkpoint metadata size limit")
         val encoded = json.encodeToString(value)
-        if (encoded.length * UTF8_MAX_BYTES > MAX_CHECKPOINT_BYTES) {
+        if (encoded.length * HISTORY_UTF8_BYTES_PER_CHAR > MAX_CHECKPOINT_BYTES) {
             throw IOException(
                 "aggregate checkpoint metadata size limit",
             )
@@ -146,9 +146,17 @@ internal class PerfHistoryFiles(private val directory: Path) {
     }
 }
 
+// Bound aggregate inventory to 4,096 entries so damaged retention cannot allocate an unbounded path list.
 private const val MAX_FILES = 4_096
+
+// Cap checkpoint metadata at 64 KiB before decoding and atomic publication.
 private const val MAX_CHECKPOINT_BYTES = 64L * 1_024
-private const val UTF8_MAX_BYTES = 3L
+
+// A UTF-16 code unit needs at most three UTF-8 bytes; surrogate pairs need four bytes for two units.
+private const val HISTORY_UTF8_BYTES_PER_CHAR = 3L
+
+// Charge 128 bytes per retained revision entry beyond its key text during history publication.
 private const val REVISION_BYTES = 128L
 
+// Charge 256 bytes per inventory descriptor beyond its path text while collecting aggregate files.
 private const val INVENTORY_ENTRY_BYTES = 256L

@@ -47,4 +47,5 @@ internal fun interface PerfCloseAction {
     fun close()
 }
 
+// Keep thirty-two owner failure codes so repeated cleanup failures cannot grow the diagnostic list indefinitely.
 private const val MAX_FAILURES = 32

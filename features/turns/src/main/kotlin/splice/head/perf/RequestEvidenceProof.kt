@@ -23,7 +23,13 @@ public data class RequestEvidenceInterval(val head: String, val bootId: String, 
 public data class RequestEvidencePrefix(val fileName: String, val end: Long, val digest: String)
 
 public object RequestEvidenceProofFormat {
-    public const val FILE: String = "coverage.json"
+    // One prefix per retained segment bounds both receipt decoding and the producer's segment inventory.
+    public const val MAX_PROOF_PREFIXES: Int = 128
+
+    // Bound boot labels in producer state and receipt validation before they enter interval collections.
+    public const val MAX_PROOF_BOOT_CHARS: Int = 256
+
+    public const val COVERAGE_FILE: String = "coverage.json"
     public const val MAX_BYTES: Int = 128 * 1_024
     public const val MAX_HEADS: Int = 32
     public const val MAX_INTERVALS: Int = 256
@@ -33,7 +39,7 @@ public object RequestEvidenceProofFormat {
         require(bytes.size <= MAX_BYTES && bytes.count { it == COLON || it == COMMA } <= MAX_TOKENS)
         val proof = Json.decodeFromString<RequestEvidenceProof>(bytes.toString(Charsets.UTF_8))
         require(proof.heads.size in 1..MAX_HEADS && proof.intervals.size <= MAX_INTERVALS)
-        require(proof.prefixes.size <= MAX_PREFIXES)
+        require(proof.prefixes.size <= MAX_PROOF_PREFIXES)
         require(proof.prefixes.all { it.fileName.length <= MAX_FILE_CHARS && it.digest.length <= MAX_DIGEST_CHARS })
         require(proof.lossEpochs.size <= MAX_HEADS && proof.retentionEpochs.size <= MAX_HEADS)
         scopes(proof)
@@ -42,14 +48,12 @@ public object RequestEvidenceProofFormat {
     private fun scopes(proof: RequestEvidenceProof) {
         require(proof.lossEpochs.keys.all { it in proof.heads } && proof.retentionEpochs.keys.all { it in proof.heads })
         require(proof.heads.all { it.length <= MAX_HEAD_CHARS })
-        require(proof.intervals.all { it.head in proof.heads && it.bootId.length <= MAX_BOOT_CHARS })
+        require(proof.intervals.all { it.head in proof.heads && it.bootId.length <= MAX_PROOF_BOOT_CHARS })
     }
 }
 
 private const val MAX_TOKENS = 4_096
-private const val MAX_PREFIXES = 128
 private const val MAX_HEAD_CHARS = 128
-private const val MAX_BOOT_CHARS = 256
 private const val COLON: Byte = 58
 private const val COMMA: Byte = 44
 

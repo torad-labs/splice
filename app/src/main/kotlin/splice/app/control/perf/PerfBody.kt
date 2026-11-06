@@ -59,5 +59,8 @@ internal fun interface PerfBodyRead {
     suspend fun consume(document: JsonObject)
 }
 
+// Reject control documents above 64 KiB before decoding so settings input cannot allocate an unbounded JSON tree.
 private const val MAX_BODY_BYTES = 64 * 1_024
+
+// Reserve 512 KiB for the bounded body, decoded text and JSON tree until the route finishes consuming it.
 private const val BODY_WORK_BYTES = 512L * 1_024

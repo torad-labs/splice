@@ -142,7 +142,10 @@ internal class PerfEvidenceCursors(
         )
 }
 
+// Leave 256 KiB of cursor disk capacity for manifest metadata after reserving deduplication and index space.
 private const val METADATA_RESERVE = 256L * 1_024
+
+// Cap event pages at one thousand observations before response allocation.
 private const val MAX_EVIDENCE_PAGE_SIZE = 1_000
 private val EVIDENCE_CURSOR = Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9]{1,10}")
 

@@ -43,7 +43,10 @@ internal class PerfReadCoverage(private val from: Long, private val until: Long,
         val existing = issues[key]
         if (existing != null) {
             issues[key] = existing.copy(count = maxOf(existing.count, value.count))
-        } else if (issues.size < MAX_ISSUES && issueBytes + PerfHistorySize.issue(value) <= ISSUE_BYTES) {
+        } else if (issues.size < MAX_READ_COVERAGE_ISSUES && issueBytes + PerfHistorySize.issue(
+                value,
+            ) <= READ_COVERAGE_ISSUE_BUDGET
+        ) {
             issues[key] = value
             issueBytes += PerfHistorySize.issue(value)
         } else {
@@ -52,5 +55,8 @@ internal class PerfReadCoverage(private val from: Long, private val until: Long,
     }
 }
 
-private const val MAX_ISSUES = 64
-private const val ISSUE_BYTES = 128L * 1_024
+// Keep at most sixty-four distinct coverage issues while duplicate codes accumulate counts.
+private const val MAX_READ_COVERAGE_ISSUES = 64
+
+// Limit retained issue details to 128 KiB independently of the issue-count bound.
+private const val READ_COVERAGE_ISSUE_BUDGET = 128L * 1_024

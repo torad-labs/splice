@@ -60,4 +60,6 @@ internal class PerfRemoteProfiles(private val env: EnvReader, private val errors
 }
 
 private val PROFILE_ID = Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+// Bound authenticated profile-control HTTP waits to fifteen seconds so a stopped daemon cannot hang the CLI.
 private const val TIMEOUT_MS = 15_000

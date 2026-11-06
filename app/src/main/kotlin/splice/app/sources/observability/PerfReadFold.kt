@@ -42,7 +42,7 @@ internal class PerfReadFold(initialResolution: Long, private val span: Long) {
     private fun additional(identity: PerfIdentity, from: Long, point: PerfAggregatePoint?): Long {
         val bucket = buckets[key(identity, from)]
         val metadata = if (bucket == null) BUCKET_OVERHEAD + PerfHistorySize.identity(identity) else 0L
-        val cell = point?.let { bucket?.additional(it) ?: (PerfHistorySize.point(it) + CELL_OVERHEAD) } ?: 0L
+        val cell = point?.let { bucket?.additional(it) ?: (PerfHistorySize.point(it) + PERF_READ_CELL_OVERHEAD) } ?: 0L
         return metadata + cell
     }
 
@@ -64,12 +64,12 @@ internal class PerfReadFold(initialResolution: Long, private val span: Long) {
     }
 
     private fun nextResolution(): Long = when {
-        resolution < FIVE_MINUTES -> FIVE_MINUTES
-        resolution < FIFTEEN_MINUTES -> FIFTEEN_MINUTES
+        resolution < FOLD_FIVE_MINUTES -> FOLD_FIVE_MINUTES
+        resolution < FOLD_FIFTEEN_MINUTES -> FOLD_FIFTEEN_MINUTES
         resolution < PERF_HOUR_MS -> PERF_HOUR_MS
         resolution < SIX_HOURS -> SIX_HOURS
         resolution < PERF_DAY_MS -> PERF_DAY_MS
-        else -> resolution * DAYS_PER_WEEK
+        else -> resolution * COARSENING_FACTOR
     }
 
     private fun rebin(value: PerfReadBucket) {
@@ -90,9 +90,12 @@ internal class PerfReadFold(initialResolution: Long, private val span: Long) {
 }
 
 private data class ReadBucketKey(val identity: PerfIdentity, val slot: Long)
+
+// Coarsen when aggregate cells exceed 2 MiB instead of dropping counts or retaining every source point.
 private const val FOLD_BYTES = 2L * 1_024 * 1_024
-private const val CELL_OVERHEAD = 256L
-private const val FIVE_MINUTES = 5L * PERF_MINUTE_MS
-private const val FIFTEEN_MINUTES = 15L * PERF_MINUTE_MS
+private const val FOLD_FIVE_MINUTES = 5L * PERF_MINUTE_MS
+private const val FOLD_FIFTEEN_MINUTES = 15L * PERF_MINUTE_MS
 private const val SIX_HOURS = 6L * PERF_HOUR_MS
-private const val DAYS_PER_WEEK = 7L
+
+// After day-sized buckets, multiply resolution by seven on each coarsening step until the selected span fits.
+private const val COARSENING_FACTOR = 7L

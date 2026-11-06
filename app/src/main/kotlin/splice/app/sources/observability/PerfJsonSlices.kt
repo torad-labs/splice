@@ -78,7 +78,7 @@ internal class PerfJsonSlices(private val text: String) {
             }
             at++
             if (depth == 0) return at
-            require(depth <= MAX_DEPTH)
+            require(depth <= MAX_SLICE_DEPTH)
         }
         throw IllegalArgumentException("unterminated history object")
     }
@@ -93,6 +93,11 @@ internal class PerfJsonSlices(private val text: String) {
     }
 }
 
+// Allow thirty-two fields per sliced object before building its field-offset map.
 private const val MAX_FIELDS = 32
+
+// Reject field names above sixty-four characters before retaining them in the structural index.
 private const val MAX_NAME = 64
-private const val MAX_DEPTH = 32
+
+// Limit nested containers to thirty-two levels so malformed history cannot drive an unbounded structural scan.
+private const val MAX_SLICE_DEPTH = 32

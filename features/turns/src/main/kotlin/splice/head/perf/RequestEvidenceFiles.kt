@@ -125,7 +125,7 @@ public class RequestEvidenceFiles(
 
     private fun segments(): List<Path> = Files.newDirectoryStream(directory).use { entries ->
         val found = entries.asSequence().filter { RequestEvidenceFormat.isSegment(it.fileName.toString()) }
-            .take(MAX_EVIDENCE_SEGMENTS + 1)
+            .take(RequestEvidenceProofFormat.MAX_PROOF_PREFIXES + 1)
             .onEach {
                 if (!Files.isRegularFile(
                         it,
@@ -136,7 +136,11 @@ public class RequestEvidenceFiles(
                 }
             }
             .toList()
-        if (found.size > MAX_EVIDENCE_SEGMENTS) throw IOException("request evidence segment bound exceeded")
+        if (found.size > RequestEvidenceProofFormat.MAX_PROOF_PREFIXES) {
+            throw IOException(
+                "request evidence segment bound exceeded",
+            )
+        }
         found.sortedBy { Files.getLastModifiedTime(it).toMillis() }
     }
 
@@ -147,7 +151,8 @@ public class RequestEvidenceFiles(
         for (file in files) {
             val modified = Files.getLastModifiedTime(file).toMillis()
             val old = cutoff != null && modified < cutoff
-            val fits = bytes + incoming <= maxBytes - metadataBytes && count < MAX_EVIDENCE_SEGMENTS
+            val fits = bytes + incoming <= maxBytes - metadataBytes &&
+                count < RequestEvidenceProofFormat.MAX_PROOF_PREFIXES
             if (!old && fits) continue
             val previous = checkNotNull(retention)
             retention = previous.copy(
@@ -180,7 +185,7 @@ public class RequestEvidenceFiles(
 
     private val metadataBytes: Long
         get() = EVIDENCE_MANIFEST_BYTES +
-            if (coverage.enabled() || Files.exists(directory.resolve(RequestEvidenceProofFormat.FILE))) {
+            if (coverage.enabled() || Files.exists(directory.resolve(RequestEvidenceProofFormat.COVERAGE_FILE))) {
                 RequestEvidenceProofFormat.MAX_BYTES.toLong()
             } else {
                 0L
@@ -198,6 +203,5 @@ private const val EVIDENCE_DISK_BYTES = 64L * 1_024 * 1_024
 private const val EVIDENCE_SEGMENT_BYTES = 1_024L * 1_024
 private const val EVIDENCE_MANIFEST_BYTES = 4_096L
 private const val MIN_EVIDENCE_BYTES = 8_192L
-private const val MAX_EVIDENCE_SEGMENTS = 128
 
 private const val COVERAGE_WORK_BYTES = 1L * 1_024 * 1_024

@@ -18,7 +18,7 @@ internal class PerfJsonlExport(private val output: TerminalOutput, private val s
             output.line(queryError("invalid_mode", "unsupported_export_mode").toString())
             return false
         }
-        val pageSize = parameters["page_size"]?.toIntOrNull() ?: DEFAULT_PAGE_SIZE
+        val pageSize = parameters["page_size"]?.toIntOrNull() ?: PerfQueryParser.DEFAULT_PAGE_SIZE
         var cursor = parameters["cursor"]
         var count = 0L
         var page: ExportedPage
@@ -89,4 +89,3 @@ private data class ExportedPage(val next: String?, val complete: Boolean, val ac
     }
     fun finished(failure: String?): Boolean = complete && next == null && failure == null
 }
-private const val DEFAULT_PAGE_SIZE = 200

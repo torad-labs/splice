@@ -30,7 +30,11 @@ public class PerfProfilesCommand(private val profiles: PerfProfiles) : PerfProfi
     }
 
     private fun start(values: Map<String, String>): JsonObject {
-        val duration = if ("duration" in values) values["duration"]?.toIntOrNull() else DEFAULT_DURATION
+        val duration = if ("duration" in values) {
+            values["duration"]?.toIntOrNull()
+        } else {
+            PerfProfileRequest().durationSeconds
+        }
         return if (duration == null || duration !in 1..MAX_DURATION) {
             invalid()
         } else {
@@ -44,5 +48,4 @@ public class PerfProfilesCommand(private val profiles: PerfProfiles) : PerfProfi
     )
 }
 
-private const val DEFAULT_DURATION = 60
 private const val MAX_DURATION = 3_600

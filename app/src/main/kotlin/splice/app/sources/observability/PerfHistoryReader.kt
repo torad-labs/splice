@@ -9,6 +9,7 @@ import splice.core.util.PerfWorkBudget
 import java.io.IOException
 import java.util.concurrent.Semaphore
 
+// Reserve 6 MiB for source decoding, coverage and the adaptive aggregate fold together.
 private const val HISTORY_READ_RESERVE = 6L * 1_024 * 1_024
 
 internal class PerfHistoryReader(private val files: PerfHistoryFiles, private val costs: PerfSourceCosts) {
@@ -34,7 +35,7 @@ internal class PerfHistoryReader(private val files: PerfHistoryFiles, private va
                 result,
                 result.snapshots.sumOf(
                     PerfHistoryFormat::estimate,
-                ) + PerfHistorySize.coverage(result.coverage) + RESULT_OVERHEAD,
+                ) + PerfHistorySize.coverage(result.coverage) + HISTORY_RESULT_OVERHEAD,
             )
             retained = true
             return result
@@ -70,5 +71,6 @@ internal class PerfHistoryReader(private val files: PerfHistoryFiles, private va
     }
 }
 
-private const val RESULT_OVERHEAD = 4_096L
+// Charge 4 KiB for result lists and ownership beyond retained snapshot and coverage charges.
+private const val HISTORY_RESULT_OVERHEAD = 4_096L
 private const val HISTORY_RETENTION_MS = 35L * PERF_DAY_MS

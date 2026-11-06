@@ -41,7 +41,7 @@ internal object PerfHistoryStream {
         accept.accept(snapshot)
         for (point in slices.elements(points)) {
             val value = json.decodeFromString<PerfAggregatePoint>(slices.value(point, POINT_CHARS))
-            if (PerfHistorySize.point(value) > POINT_BYTES) throw IOException(MEMORY_LIMIT)
+            if (PerfHistorySize.point(value) > HISTORY_POINT_DECODE_BYTES) throw IOException(MEMORY_LIMIT)
             accept.accept(snapshot.copy(points = listOf(value)))
         }
     }
@@ -59,9 +59,16 @@ internal object PerfHistoryStream {
 @Serializable
 private data class PerfReadFileHeader(val schemaVersion: Int = 1, val resolutionMs: Long, val fromMs: Long)
 
+// Limit non-point JSON fragments to 16 KiB of characters before constructing the metadata document.
 private const val METADATA_CHARS = 16 * 1_024
+
+// Cap decoded non-point snapshot metadata at 256 KiB while each point is processed separately.
 private const val METADATA_BYTES = 256L * 1_024
+
+// Decode at most 32 KiB of JSON text for one point rather than materializing the complete file tree.
 private const val POINT_CHARS = 32 * 1_024
-private const val POINT_BYTES = 512L * 1_024
+
+// Reject a decoded point above 512 KiB so one record cannot exhaust the streaming reader's workspace.
+private const val HISTORY_POINT_DECODE_BYTES = 512L * 1_024
 
 private const val MEMORY_LIMIT = "query_memory_limit"

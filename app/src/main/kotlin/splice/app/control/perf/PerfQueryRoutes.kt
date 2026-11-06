@@ -36,7 +36,7 @@ internal class PerfQueryRoutes(private val work: PerfHttpWork) {
         query: PerfQuery,
         parameters: Map<String, String>,
     ): JsonObject {
-        val pageSize = parameters["page_size"]?.toIntOrNull() ?: DEFAULT_ROWS
+        val pageSize = parameters["page_size"]?.toIntOrNull() ?: PerfQueryParser.DEFAULT_PAGE_SIZE
         return when (kind) {
             "schema" -> service.schema()
             "series" -> service.series(query)
@@ -56,5 +56,3 @@ internal class PerfQueryRoutes(private val work: PerfHttpWork) {
         }
     }
 }
-
-private const val DEFAULT_ROWS = 200

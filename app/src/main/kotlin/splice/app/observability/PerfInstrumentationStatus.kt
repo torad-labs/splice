@@ -97,6 +97,7 @@ internal data class PerfStatusSnapshot(
     val issues: List<String>,
 )
 
+// Reserve 128 KiB for an independent instrumentation-status tree until its response owner releases it.
 private const val STATUS_BYTES = 128L * 1_024
 private val BUSY = buildJsonObject {
     put("schema_version", 1)

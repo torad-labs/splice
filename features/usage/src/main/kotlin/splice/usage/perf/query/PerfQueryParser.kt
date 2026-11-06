@@ -7,6 +7,9 @@ import splice.usage.perf.query.PerfQueryJson.queryError
 
 /** Shared API/CLI validation. Error text never reflects raw user input. */
 public object PerfQueryParser {
+    // A 200-row default keeps cursor pages bounded while allowing callers to request the validated maximum.
+    public const val DEFAULT_PAGE_SIZE: Int = 200
+
     private val windows = mapOf(
         "1m" to MINUTE,
         "5m" to FIVE_MINUTES,

@@ -65,4 +65,5 @@ internal class PerfRuntimeSampling(
     override fun close() { sampler?.close(); sampler = null }
 }
 
+// Reserve 96 KiB for each independent runtime reply until its caller releases the JSON tree.
 private const val REPLY_BYTES = 96L * 1_024

@@ -28,7 +28,11 @@ public class PerfQueryService(
         envelope(selected, data, buildJsonObject { put("series", PerfQueryMetrics.series(data)) })
     }
 
-    public fun rows(query: PerfQuery, cursor: String? = null, pageSize: Int = 200): JsonObject =
+    public fun rows(
+        query: PerfQuery,
+        cursor: String? = null,
+        pageSize: Int = PerfQueryParser.DEFAULT_PAGE_SIZE,
+    ): JsonObject =
         execute(query, null) { selected, filter ->
             if (pageSize !in 1..MAX_PAGE_SIZE) {
                 queryError("invalid_page_size", "page_size_out_of_bounds")
@@ -43,7 +47,11 @@ public class PerfQueryService(
             }
         }
 
-    public fun observations(query: PerfQuery, cursor: String? = null, pageSize: Int = 200): JsonObject =
+    public fun observations(
+        query: PerfQuery,
+        cursor: String? = null,
+        pageSize: Int = PerfQueryParser.DEFAULT_PAGE_SIZE,
+    ): JsonObject =
         execute(query, null) { selected, filter ->
             if (pageSize !in 1..MAX_PAGE_SIZE) {
                 queryError("invalid_page_size", "page_size_out_of_bounds")

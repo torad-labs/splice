@@ -13,11 +13,12 @@ internal class PerfRuntimeOwners {
     fun add(source: PerfRuntimeSource) {
         sources.removeAll { it.get() == null }
         if (sources.any { it.get() === source }) return
-        if (sources.size < MAX_OWNERS) sources.add(WeakReference(source)) else overflow = true
+        if (sources.size < MAX_TRACKED_RUNTIME_OWNERS) sources.add(WeakReference(source)) else overflow = true
     }
 
     @Synchronized
     fun snapshot(): List<PerfRuntimeSource> = sources.mapNotNull { it.get() }
 }
 
-private const val MAX_OWNERS = 64
+// Retain at most sixty-four weak owner references and expose overflow instead of extending the runtime registry.
+private const val MAX_TRACKED_RUNTIME_OWNERS = 64

@@ -49,4 +49,6 @@ internal class PerfHistoryRetention(private val files: PerfHistoryFiles) {
 }
 
 private const val RETENTION_MS = 35L * PERF_DAY_MS
+
+// Leave 128 KiB of disk headroom for checkpoints and directory metadata before retaining another aggregate file.
 private const val HISTORY_METADATA_RESERVE = 128L * 1_024

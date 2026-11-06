@@ -67,10 +67,11 @@ internal class PerfEvidenceStreamScan(
         val at = issues.indexOfFirst { it.code == code }
         if (at >= 0) {
             issues[at] = issues[at].copy(count = issues[at].count + 1)
-        } else if (issues.size < MAX_ISSUES) {
+        } else if (issues.size < MAX_STREAM_ISSUES) {
             issues += PerfIssue(code, EVIDENCE_SOURCE)
         }
     }
 }
 
-private const val MAX_ISSUES = 64
+// Keep sixty-four distinct streaming issue codes while repeated failures increment their existing counters.
+private const val MAX_STREAM_ISSUES = 64

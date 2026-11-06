@@ -26,8 +26,11 @@ internal object PerfEvidenceCodec {
     fun fingerprint(value: PerfObservation): ByteArray = MessageDigest.getInstance("SHA-256")
         .digest(json.encodeToString(value.copy(values = value.values.toSortedMap())).toByteArray(Charsets.UTF_8))
 
-    fun charge(rawBytes: Long): Long = rawBytes * DECODE_EXPANSION + OBSERVATION_OVERHEAD
+    fun charge(rawBytes: Long): Long = rawBytes * EVIDENCE_DECODE_EXPANSION + OBSERVATION_OVERHEAD
 }
 
-private const val DECODE_EXPANSION = 8L
+// Charge eight times raw evidence bytes for the decoded event tree and copied strings.
+private const val EVIDENCE_DECODE_EXPANSION = 8L
+
+// Add 2 KiB per observation for record and collection ownership beyond its text-dependent charge.
 private const val OBSERVATION_OVERHEAD = 2_048L

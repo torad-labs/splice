@@ -39,7 +39,7 @@ internal class PerfConfigHistory(private val path: Path) : PerfConfigProvenance,
             values[prior] = old.copy(untilMs = at.coerceAtLeast(old.fromMs))
         }
         values += PerfConfigInterval(head, at, null, revision, boot)
-        while (values.size > MAX_INTERVALS) values.removeAt(0)
+        while (values.size > MAX_CONFIG_INTERVALS) values.removeAt(0)
     }
 
     @Synchronized
@@ -58,7 +58,7 @@ internal class PerfConfigHistory(private val path: Path) : PerfConfigProvenance,
             var success = false
             try {
                 val data = document(now)
-                require(JsonWire.byteSize(data) <= MAX_FILE_BYTES) { "configuration_history_limit" }
+                require(JsonWire.byteSize(data) <= MAX_CONFIG_FILE_BYTES) { "configuration_history_limit" }
                 SecureFile.writeAtomic0600(path, data.toString())
                 success = true
             } finally {
@@ -92,12 +92,12 @@ internal class PerfConfigHistory(private val path: Path) : PerfConfigProvenance,
     private fun restoreHeld() {
         try {
             if (!Files.exists(path)) return
-            val bytes = Files.newInputStream(path).use { it.readNBytes(MAX_FILE_BYTES + 1) }
-            require(bytes.size <= MAX_FILE_BYTES) { "configuration_history_limit" }
+            val bytes = Files.newInputStream(path).use { it.readNBytes(MAX_CONFIG_FILE_BYTES + 1) }
+            require(bytes.size <= MAX_CONFIG_FILE_BYTES) { "configuration_history_limit" }
             val text = bytes.decodeToString(throwOnInvalidSequence = true)
             JsonWire.requireRequestNesting(text)
             val saved = Json.parseToJsonElement(text) as? JsonArray ?: return
-            require(saved.size <= MAX_INTERVALS) { "configuration_interval_limit" }
+            require(saved.size <= MAX_CONFIG_INTERVALS) { "configuration_interval_limit" }
             values += saved.mapNotNull { (it as? JsonObject)?.let(::interval) }
         } catch (_: IOException) {
             values.clear()
@@ -132,10 +132,19 @@ internal class PerfConfigHistory(private val path: Path) : PerfConfigProvenance,
         listOf(ID_TEXT.matches(head), ID_TEXT.matches(boot), revision == null || REVISION.matches(revision)).all { it }
 }
 
-private const val MAX_INTERVALS = 128
+// Keep 128 recent configuration intervals; eviction leaves older comparison provenance unknown.
+private const val MAX_CONFIG_INTERVALS = 128
+
+// Reserve 256 KiB for the bounded interval ledger independently of temporary encoding or decoding work.
 private const val HISTORY_BYTES = 256L * 1_024
-private const val MAX_FILE_BYTES = 64 * 1_024
+
+// Limit persisted configuration provenance to 64 KiB before decoding or publishing the interval ledger.
+private const val MAX_CONFIG_FILE_BYTES = 64 * 1_024
+
+// Reserve 512 KiB while constructing and encoding the bounded configuration ledger.
 private const val ENCODE_BYTES = 512L * 1_024
+
+// Reserve 4 MiB for loading the bounded ledger so decoded collections remain under the shared work admission.
 private const val DECODE_BYTES = 4L * 1_024 * 1_024
 private val ID_TEXT = Regex("[A-Za-z0-9_.-]{1,128}")
 private val REVISION = Regex("[0-9a-f]{64}")

@@ -7,11 +7,20 @@ import splice.core.perf.observation.PerfCoverage
 import splice.core.perf.observation.PerfIdentity
 import splice.core.perf.observation.PerfIssue
 
+// Minute aggregate filenames and boundaries use sixty thousand milliseconds per complete minute.
 internal const val PERF_MINUTE_MS = 60_000L
+
+// Hour rollups cover sixty minute windows, expressed in the source clock's milliseconds.
 internal const val PERF_HOUR_MS = 3_600_000L
 internal const val PERF_DAY_MS = 24L * PERF_HOUR_MS
+
+// Allocate 176 MiB to aggregate history within the managed instrumentation disk budget.
 internal const val PERF_HISTORY_DISK_BYTES = 176L * 1_024 * 1_024
+
+// Cap each aggregate file at 512 KiB so one history decode remains bounded.
 internal const val PERF_HISTORY_FILE_BYTES = 512L * 1_024
+
+// Reserve 8 MiB for history maintenance and encoding under the shared work-memory admission.
 internal const val PERF_HISTORY_WORK_BYTES = 8L * 1_024 * 1_024
 internal const val HISTORY_SINK = "aggregate_history"
 
@@ -80,7 +89,7 @@ internal object PerfHistoryFormat {
                     hour,
                     hour + PERF_HOUR_MS,
                     values.sumOf { it.coverage.observedMs }.coerceAtMost(PERF_HOUR_MS),
-                    values.flatMap { it.coverage.issues }.distinct().take(MAX_ISSUES),
+                    values.flatMap { it.coverage.issues }.distinct().take(MAX_MERGED_HISTORY_ISSUES),
                 ),
             )
         }
@@ -103,5 +112,6 @@ internal object PerfHistoryFormat {
         )
     }
 
-    private const val MAX_ISSUES = 64
+    // Retain sixty-four distinct source issues when reducing minute snapshots into an hourly record.
+    private const val MAX_MERGED_HISTORY_ISSUES = 64
 }

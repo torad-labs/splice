@@ -14,11 +14,11 @@ internal object PerfProfileInput {
                 "durationSeconds",
             )?.toIntOrNull()
         } else {
-            DEFAULT_DURATION
+            PerfProfileRequest().durationSeconds
         }
         val valid = listOf(
             body.keys.all { it in setOf("profiler", "mode", "durationSeconds") },
-            duration != null && duration in 1..MAX_DURATION,
+            duration != null && duration in 1..MAX_HTTP_PROFILE_SECONDS,
             profiler in setOf("jfr", "native"),
             mode in setOf("cpu", "wall", "alloc", "lock"),
         ).all { it }
@@ -34,5 +34,5 @@ internal object PerfProfileInput {
     }
 }
 
-private const val DEFAULT_DURATION = 60
-private const val MAX_DURATION = 300
+// The HTTP capture contract permits at most five minutes, matching the capture manager's admission bound.
+private const val MAX_HTTP_PROFILE_SECONDS = 300

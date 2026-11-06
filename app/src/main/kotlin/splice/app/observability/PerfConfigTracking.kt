@@ -16,7 +16,7 @@ internal class PerfConfigTracking(
     val history: PerfConfigHistory,
 ) : AutoCloseable {
     private val heads = heads.take(MAX_TRACKED_HEADS).toSet()
-    private val originalsLease = PerfWorkBudget.acquire(this.heads.size.toLong() * BYTES_PER_HEAD)
+    private val originalsLease = PerfWorkBudget.acquire(this.heads.size.toLong() * CONFIG_CHANGE_HEAD_BYTES)
     private val originals = if (originalsLease == null) {
         emptyMap()
     } else {
@@ -34,7 +34,7 @@ internal class PerfConfigTracking(
     }
 
     private fun changed(observation: EffectiveConfigObservation) {
-        val bytes = heads.size.toLong() * BYTES_PER_HEAD
+        val bytes = heads.size.toLong() * CONFIG_CHANGE_HEAD_BYTES
         val lease = PerfWorkBudget.acquire(bytes)
         if (listOf(
                 lease == null,
@@ -102,6 +102,11 @@ internal fun interface PerfConfigSignal {
     fun changed()
 }
 
+// Queue eight configuration publications; overflow is reported rather than blocking the publication lane.
 private const val MAX_CHANGES = 8
-private const val BYTES_PER_HEAD = 32L * 1_024
+
+// Charge 32 KiB per copied head policy while the tracking worker owns its scalar configuration map.
+private const val CONFIG_CHANGE_HEAD_BYTES = 32L * 1_024
+
+// Track at most thirty-two heads so configuration snapshots have a bounded process-wide footprint.
 private const val MAX_TRACKED_HEADS = 32

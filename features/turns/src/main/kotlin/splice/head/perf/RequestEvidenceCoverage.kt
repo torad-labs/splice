@@ -36,7 +36,7 @@ internal class RequestEvidenceCoverage(
 
     @Synchronized
     fun start(head: String, bootId: String): Boolean {
-        val invalid = bootId.length > MAX_BOOT_CHARS || head in active
+        val invalid = bootId.length > RequestEvidenceProofFormat.MAX_PROOF_BOOT_CHARS || head in active
         val full = heads.size >= RequestEvidenceProofFormat.MAX_HEADS && head !in heads
         if (invalid || full) {
             scopeComplete = false
@@ -121,7 +121,7 @@ internal class RequestEvidenceCoverage(
                 "evidence proof size limit",
             )
         }
-        SecureFile.writeAtomic0600(directory.resolve(RequestEvidenceProofFormat.FILE), encoded)
+        SecureFile.writeAtomic0600(directory.resolve(RequestEvidenceProofFormat.COVERAGE_FILE), encoded)
         FileChannel.open(directory, StandardOpenOption.READ).use { it.force(true) }
         synchronized(this) { active.entries.removeIf { (it.value.stopMs ?: Long.MAX_VALUE) <= untilMs } }
     }
@@ -181,7 +181,7 @@ internal class RequestEvidenceCoverage(
 
     private fun restore() {
         if (restored) return
-        val path = directory.resolve(RequestEvidenceProofFormat.FILE)
+        val path = directory.resolve(RequestEvidenceProofFormat.COVERAGE_FILE)
         if (Files.exists(path)) {
             val bytes = Files.newInputStream(path).use { it.readNBytes(RequestEvidenceProofFormat.MAX_BYTES + 1) }
             if (bytes.size > RequestEvidenceProofFormat.MAX_BYTES) throw IOException("evidence proof size limit")
@@ -232,6 +232,5 @@ private data class EvidenceProducer(
 )
 
 private const val STATE_BYTES = 512L * 1_024
-private const val MAX_BOOT_CHARS = 256
 private const val CLOCK_DRIFT_MS = 1_000L
 private const val UTF8_BYTES = 3L

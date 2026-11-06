@@ -66,4 +66,5 @@ internal class PerfProfileContent(
     }
 }
 
+// Cancel a profile download after fifteen seconds so a slow client cannot pin its artifact and reader indefinitely.
 private const val DELIVERY_MS = 15_000L

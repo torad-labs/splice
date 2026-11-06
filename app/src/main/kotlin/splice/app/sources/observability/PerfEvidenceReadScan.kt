@@ -83,7 +83,12 @@ internal class PerfEvidenceReadScan(
 }
 
 internal const val EVIDENCE_READ_OUTPUT = 4L * 1_024 * 1_024 - EVIDENCE_COVERAGE_BYTES
+
+// Charge 64 KiB for result collections and ownership before retaining observations.
 internal const val EVIDENCE_READ_OVERHEAD = 64L * 1_024
+
+// Keep sixty-four distinct scan issue codes, folding repeated occurrences into their existing counts.
 private const val MAX_EVIDENCE_ISSUES = 64
 
+// Leave 256 KiB of the retained result budget for coverage and issue metadata.
 internal const val EVIDENCE_COVERAGE_BYTES = 256L * 1_024

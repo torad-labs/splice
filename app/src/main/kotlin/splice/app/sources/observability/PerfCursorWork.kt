@@ -17,4 +17,5 @@ internal class PerfCursorWork {
     }
 }
 
+// Stop cursor scan work after ten seconds so one traversal cannot occupy the query lane indefinitely.
 private const val QUERY_LIMIT_MS = 10_000L

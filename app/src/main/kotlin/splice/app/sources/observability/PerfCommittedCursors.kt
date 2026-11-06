@@ -117,7 +117,7 @@ internal class PerfCommittedCursors(
 
     private fun valid(request: PerfCursorRequest): Boolean = request.query.fromMs >= 0 &&
         request.query.untilMs > request.query.fromMs && request.query.filterHash.length in 1..MAX_FILTER_HASH &&
-        request.pageSize in 1..MAX_PAGE_SIZE && (request.cursor == null || TOKEN.matches(request.cursor))
+        request.pageSize in 1..MAX_COMMITTED_PAGE_SIZE && (request.cursor == null || TOKEN.matches(request.cursor))
 
     private fun failure(request: PerfCursorRequest, status: String, reason: String): PerfCursorPage {
         if (status == "busy") costs.refused()
@@ -130,6 +130,12 @@ private object PerfCursorLane {
 }
 
 private val TOKEN = Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9]{1,10}")
+
+// Leave 256 KiB of cursor disk capacity for its manifest when reserving the fixed-width row index.
 private const val CURSOR_METADATA_ALLOWANCE = 256L * 1_024
+
+// Bound selection fingerprints to 256 characters before persisting cursor identity.
 private const val MAX_FILTER_HASH = 256
-private const val MAX_PAGE_SIZE = 1_000
+
+// Cap each committed-row page at one thousand records before allocating its response.
+private const val MAX_COMMITTED_PAGE_SIZE = 1_000

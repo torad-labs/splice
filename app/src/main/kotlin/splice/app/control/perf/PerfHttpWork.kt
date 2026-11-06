@@ -82,5 +82,8 @@ internal fun interface PerfJsonRead {
     fun read(): JsonObject
 }
 
+// Release a control admission after fifteen seconds so slow reads cannot hold both performance slots indefinitely.
 private const val DEADLINE_MS = 15_000L
+
+// Reserve 16 KiB beyond the measured response for JSON encoding and HTTP write bookkeeping.
 private const val ENCODING_SCRATCH = 16L * 1_024

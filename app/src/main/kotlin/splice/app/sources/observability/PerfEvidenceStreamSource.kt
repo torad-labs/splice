@@ -27,7 +27,9 @@ internal class PerfEvidenceStreamSource(
     private val files = PerfCursorFiles(directory.resolveSibling("${directory.fileName}-cursors"))
 
     fun consume(query: PerfEvidenceQuery, consumer: PerfObservationConsumer): PerfEvidenceReceipt {
-        val lease = PerfWorkBudget.acquire(STREAM_BYTES) ?: return unavailable(query, "evidence_memory_busy")
+        val lease = PerfWorkBudget.acquire(
+            EVIDENCE_STREAM_RESERVE_BYTES,
+        ) ?: return unavailable(query, "evidence_memory_busy")
         val started = MonoClock.nowMs()
         var scan: PerfEvidenceStreamScan? = null
         var retained = false
@@ -119,5 +121,9 @@ internal class PerfEvidenceStreamSource(
 }
 
 private data class StreamProofRead(val proof: PerfEvidenceCoverageProof?, val issue: String?)
-private const val STREAM_BYTES = 3L * 1_024 * 1_024
+
+// Reserve 3 MiB for proof validation and streaming decode without retaining the complete observation history.
+private const val EVIDENCE_STREAM_RESERVE_BYTES = 3L * 1_024 * 1_024
+
+// Charge 4 KiB beyond coverage for the streaming receipt and its ownership bookkeeping.
 private const val RECEIPT_OVERHEAD = 4_096L

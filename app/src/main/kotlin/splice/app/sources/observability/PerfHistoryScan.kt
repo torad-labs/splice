@@ -65,6 +65,8 @@ internal class PerfHistoryScan(
     }
 }
 
+// Stop history scanning after thirty seconds so a large retained window cannot monopolize query work.
 private const val QUERY_TIME_MS = 30_000L
 
+// Limit the path inventory to a 1 MiB charge before decoding aggregate files.
 private const val INVENTORY_BYTES = 1L * 1_024 * 1_024

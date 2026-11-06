@@ -77,7 +77,7 @@ public object PerfQueryHttp {
         operation: String,
         parameters: Map<String, String>,
     ): JsonObject {
-        val size = parameters["page_size"]?.toIntOrNull() ?: DEFAULT_ROWS
+        val size = parameters["page_size"]?.toIntOrNull() ?: PerfQueryParser.DEFAULT_PAGE_SIZE
         return when (operation) {
             "summary" -> service.summary(query)
             "series" -> service.series(query)
@@ -89,5 +89,3 @@ public object PerfQueryHttp {
         }
     }
 }
-
-private const val DEFAULT_ROWS = 200

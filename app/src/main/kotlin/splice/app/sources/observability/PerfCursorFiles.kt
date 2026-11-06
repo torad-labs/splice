@@ -115,6 +115,11 @@ internal class PerfCursorFiles(private val directory: Path) {
     }
 }
 
+// Reject cursor manifests above 256 KiB before reading and decoding their segment metadata.
 private const val MAX_MANIFEST_BYTES = 256L * 1_024
+
+// Inspect at most 128 files per cursor directory so corrupted inventories cannot grow an unbounded list.
 private const val MAX_CURSOR_FILES = 128
+
+// Bound pruning to 256 cursor directories per pass and report inventory overflow explicitly.
 private const val MAX_CURSOR_DIRECTORIES = 256

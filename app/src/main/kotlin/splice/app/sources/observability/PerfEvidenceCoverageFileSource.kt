@@ -36,7 +36,7 @@ public class PerfEvidenceCoverageFileSource(private val directory: Path) : PerfE
 
     private fun load(): RequestEvidenceProof? {
         val bytes = try {
-            Files.newInputStream(directory.resolve(RequestEvidenceProofFormat.FILE)).use {
+            Files.newInputStream(directory.resolve(RequestEvidenceProofFormat.COVERAGE_FILE)).use {
                 it.readNBytes(RequestEvidenceProofFormat.MAX_BYTES + 1)
             }
         } catch (_: NoSuchFileException) {
@@ -54,7 +54,11 @@ public class PerfEvidenceCoverageFileSource(private val directory: Path) : PerfE
         require(proof.heads.distinct().size == proof.heads.size && proof.heads.all(evidenceHeadPattern::matches))
         require(proof.intervals.size <= RequestEvidenceProofFormat.MAX_INTERVALS)
         require(proof.lossEpochs.keys.all { it in proof.heads } && proof.retentionEpochs.keys.all { it in proof.heads })
-        require(proof.prefixes.size <= MAX_PREFIXES && proof.prefixes.sumOf { it.end } <= MAX_EVIDENCE_BYTES)
+        require(
+            proof.prefixes.size <= RequestEvidenceProofFormat.MAX_PROOF_PREFIXES && proof.prefixes.sumOf {
+                it.end
+            } <= MAX_EVIDENCE_BYTES,
+        )
         require(proof.prefixes.map { it.fileName }.distinct().size == proof.prefixes.size)
         intervals(proof)
         prefixes(proof)
@@ -62,7 +66,7 @@ public class PerfEvidenceCoverageFileSource(private val directory: Path) : PerfE
 
     private fun intervals(proof: RequestEvidenceProof) {
         proof.intervals.forEach {
-            require(it.head in proof.heads && it.bootId.length <= MAX_BOOT_CHARS)
+            require(it.head in proof.heads && it.bootId.length <= RequestEvidenceProofFormat.MAX_PROOF_BOOT_CHARS)
             require(it.fromMs >= 0 && it.untilMs in it.fromMs..proof.asOfMs)
         }
     }
@@ -145,6 +149,6 @@ internal object PerfEvidenceIntervals {
 
 private data class ProofInterval(val from: Long, val until: Long)
 private val digestPattern = Regex("[0-9a-f]{64}")
-private const val MAX_PREFIXES = 128
+
+// Reject proof prefixes whose combined extents exceed the producer's 64 MiB retained-evidence contract.
 private const val MAX_EVIDENCE_BYTES = 64L * 1_024 * 1_024
-private const val MAX_BOOT_CHARS = 256

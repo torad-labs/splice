@@ -110,8 +110,17 @@ private class CursorPageSelection(
     }
 }
 
+// Keep the reusable legacy-row decoder within a 64 KiB cache charge during page reads.
 private const val PAGE_DECODER_BYTES = 64L * 1_024
+
+// Reserve 64 KiB for page lists, cursor metadata and response ownership before adding row charges.
 private const val PAGE_OVERHEAD_BYTES = 64L * 1_024
+
+// Charge 2 KiB per decoded row beyond its text expansion for record and collection objects.
 private const val PAGE_ROW_OVERHEAD = 2_048L
+
+// Charge eight times the raw row bytes for decoded strings, JSON nodes and row projection.
 private const val PAGE_DECODE_EXPANSION = 8L
+
+// Accept observation identifiers up to 256 characters before retaining them in the page metadata.
 private const val MAX_OBSERVATION_ID = 256

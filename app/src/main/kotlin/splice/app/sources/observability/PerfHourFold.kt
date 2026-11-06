@@ -69,6 +69,11 @@ internal class PerfHourFold(private val hour: Long) {
     }
 }
 
+// Limit retained hour-reduction cells to 2 MiB while streaming and releasing individual minute files.
 private const val MAX_HOUR_BYTES = 2L * 1_024 * 1_024
+
+// Charge 2 KiB per new hourly aggregate cell before its metric and dimension text.
 private const val CELL_BYTES = 2_048L
+
+// Retain sixty-four hour-coverage issues so reduction cannot accumulate unbounded diagnostic detail.
 private const val MAX_HOUR_ISSUES = 64

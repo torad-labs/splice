@@ -58,7 +58,7 @@ class PerfEvidenceProofSafetyTest {
             assertTrue(files.checkpointCoverage())
             assertTrue(AsyncFileIo.awaitDirectory(directory))
         }
-        val path = directory.resolve(RequestEvidenceProofFormat.FILE)
+        val path = directory.resolve(RequestEvidenceProofFormat.COVERAGE_FILE)
         val proof = RequestEvidenceProofFormat.decode(Files.readAllBytes(path))
         assertTrue(proof.prefixes.any { RequestEvidenceFormat.headOf(it.fileName) == "other" })
         Files.writeString(

@@ -132,9 +132,9 @@ internal class PerfTelemetry(
     private val scope = LifecycleScope(io)
     private val deliveryClient = HttpClient(Java) {
         install(HttpTimeout) {
-            connectTimeoutMillis = DELIVERY_TIMEOUT_MS
-            requestTimeoutMillis = DELIVERY_TIMEOUT_MS
-            socketTimeoutMillis = DELIVERY_TIMEOUT_MS
+            connectTimeoutMillis = ALERT_HTTP_TIMEOUT_MS
+            requestTimeoutMillis = ALERT_HTTP_TIMEOUT_MS
+            socketTimeoutMillis = ALERT_HTTP_TIMEOUT_MS
         }
     }
     private val delivery = PerfWebhookDelivery(AlertDelivery(alerts, log, scope, deliveryClient), scope, objectives)
@@ -200,7 +200,7 @@ internal class PerfTelemetry(
             }
             val ended = MonoClock.nowMs()
             measured("self_sampler_ms", ended - start, "perf_sampler")
-            due = if (ended - start < SAMPLE_MS) start + SAMPLE_MS else ended + SAMPLE_MS
+            due = if (ended - start < TELEMETRY_SAMPLE_MS) start + TELEMETRY_SAMPLE_MS else ended + TELEMETRY_SAMPLE_MS
             if (!ticker.awaitTick((due - MonoClock.nowMs()).coerceAtLeast(1L))) break
         }
     }
@@ -221,7 +221,7 @@ internal class PerfTelemetry(
 
     private fun checkpoint() {
         if (aggregate.status().pending > 0) return
-        val lease = PerfWorkBudget.acquire(SNAPSHOT_BYTES) ?: return
+        val lease = PerfWorkBudget.acquire(TELEMETRY_SNAPSHOT_BYTES) ?: return
         lease.use { aggregate.append(accumulator.snapshot()) }
     }
 
@@ -295,8 +295,17 @@ internal class PerfTelemetry(
     )
 }
 
-private const val SAMPLE_MS = 5_000L
-private const val SNAPSHOT_BYTES = 2L * 1_024 * 1_024
-private const val DELIVERY_TIMEOUT_MS = 10_000L
+// Sample every five seconds on the owner worker; delayed work schedules a later tick instead of catching up in a burst.
+private const val TELEMETRY_SAMPLE_MS = 5_000L
+
+// Reserve 2 MiB for checkpoint snapshot work so contention skips the checkpoint instead of borrowing unbounded memory.
+private const val TELEMETRY_SNAPSHOT_BYTES = 2L * 1_024 * 1_024
+
+// Bound webhook connect, request and socket waits to ten seconds on the alert delivery lane.
+private const val ALERT_HTTP_TIMEOUT_MS = 10_000L
+
+// Report at most sixty head sink statuses and mark truncation to bound the status projection.
 private const val MAX_DIAGNOSTIC_HEADS = 60
+
+// Wait at most fifteen seconds for producers to stop before proceeding with dependent-owner cleanup.
 private const val PRODUCER_STOP_MS = 15_000L

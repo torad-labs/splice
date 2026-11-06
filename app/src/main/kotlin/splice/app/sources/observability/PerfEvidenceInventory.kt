@@ -3,6 +3,7 @@ package splice.app.sources.observability
 import kotlinx.serialization.json.Json
 import splice.core.perf.observation.PerfIssue
 import splice.head.perf.RequestEvidenceFormat
+import splice.head.perf.RequestEvidenceProofFormat
 import splice.head.perf.RequestEvidenceRetention
 import splice.usage.perf.history.PerfEvidenceCoverageProof
 import java.io.IOException
@@ -17,9 +18,14 @@ internal class PerfEvidenceInventory(private val directory: Path) {
 
     fun candidates(head: String?): List<Path> = try {
         val files = Files.newDirectoryStream(directory).use { entries ->
-            entries.asSequence().filter { eligible(it, head) }.take(MAX_EVIDENCE_SEGMENTS + 1).toList()
+            entries.asSequence().filter {
+                eligible(
+                    it,
+                    head,
+                )
+            }.take(RequestEvidenceProofFormat.MAX_PROOF_PREFIXES + 1).toList()
         }
-        if (files.size > MAX_EVIDENCE_SEGMENTS) throw IOException("cursor_segment_limit")
+        if (files.size > RequestEvidenceProofFormat.MAX_PROOF_PREFIXES) throw IOException("cursor_segment_limit")
         files.sortedBy { it.fileName.toString() }
     } catch (_: NoSuchFileException) {
         emptyList()
@@ -85,5 +91,6 @@ internal class PerfEvidenceInventory(private val directory: Path) {
 }
 
 internal const val EVIDENCE_SOURCE = "request_evidence"
-private const val MAX_EVIDENCE_SEGMENTS = 128
+
+// Read at most 4 KiB of scalar retention counters before decoding the evidence-loss manifest.
 private const val MAX_RETENTION_BYTES = 4_096

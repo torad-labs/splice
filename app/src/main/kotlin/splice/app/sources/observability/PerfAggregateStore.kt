@@ -196,7 +196,7 @@ public class PerfAggregateStore(directory: Path, private val identity: PerfIdent
     @Synchronized
     private fun issue(value: PerfIssue) {
         val old = issues[value.code]
-        if (old != null || issues.size < MAX_ISSUES) {
+        if (old != null || issues.size < MAX_STORE_ISSUES) {
             issues[value.code] = value.copy(
                 count = (old?.count ?: 0L) + value.count,
             )
@@ -207,6 +207,11 @@ public class PerfAggregateStore(directory: Path, private val identity: PerfIdent
     private fun evidence(): List<PerfIssue> = issues.values.toList()
 }
 
+// Admit at most 4 MiB for a pending history snapshot so asynchronous persistence cannot retain arbitrary producer state.
 private const val MAX_PENDING_BYTES = 4L * 1_024 * 1_024
-private const val MAX_ISSUES = 64
+
+// Retain sixty-four distinct store issue codes; repeated occurrences update their existing counts.
+private const val MAX_STORE_ISSUES = 64
+
+// Reject identities above a 16 KiB charge before creating a durable writer session.
 private const val MAX_IDENTITY_BYTES = 16L * 1_024

@@ -10,7 +10,7 @@ import java.io.IOException
 import java.util.concurrent.locks.ReentrantLock
 
 /** A cache owns encoded bytes; every returned JSON tree owns a distinct lease. */
-internal class PerfQueryWork(private val clock: WallClock) {
+internal class PerfQueryWork(private val clock: WallClock, private val sources: PerfQuerySources) {
     private val lock = ReentrantLock()
     private var cached: CachedQuery? = null
 
@@ -50,12 +50,18 @@ internal class PerfQueryWork(private val clock: WallClock) {
         }
     }
 
-    private fun result(query: PerfQuery, operation: String?, read: PerfQueryResult): JsonObject {
+    private fun result(request: PerfQuery, operation: String?, read: PerfQueryResult): JsonObject {
+        // Selection is current before a hit, and still inside query admission and the work lease.
+        val query = PerfObjectiveQuery.resolve(request, sources)
+            ?: return queryError(
+                "objective_selection_unavailable",
+                "objective_missing_mismatched_or_cohort_unavailable",
+            )
         val now = clock()
         val warm = cached?.takeIf { matches(it, query, operation, now) }
         val restored = warm?.let { JsonScalars.objectOrNull(Json, it.payload) }
         if (restored != null) return restored
-        val result = read()
+        val result = read(query)
         if (operation != null) cache(query, operation, now, result)
         return result
     }
@@ -77,7 +83,7 @@ internal class PerfQueryWork(private val clock: WallClock) {
 }
 
 internal fun interface PerfQueryResult {
-    operator fun invoke(): JsonObject
+    operator fun invoke(query: PerfQuery): JsonObject
 }
 
 private data class CachedQuery(val query: PerfQuery, val operation: String, val atMs: Long, val payload: String)

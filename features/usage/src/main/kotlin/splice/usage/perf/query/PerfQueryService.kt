@@ -16,7 +16,7 @@ public class PerfQueryService(
     private val accounts: RecordedAccounts? = null,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
-    private val work = PerfQueryWork(clock)
+    private val work = PerfQueryWork(clock, sources)
 
     public fun summary(query: PerfQuery): JsonObject = execute(query, "summary") { selected, filter ->
         val data = read(selected, filter)
@@ -82,14 +82,7 @@ public class PerfQueryService(
     }
 
     private fun execute(query: PerfQuery, operation: String?, read: PerfQueryOperation): JsonObject =
-        work.execute(query, operation) {
-            val resolved = PerfObjectiveQuery.resolve(query, sources)
-            if (resolved == null) {
-                queryError("objective_selection_unavailable", "objective_missing_mismatched_or_cohort_unavailable")
-            } else {
-                selected(resolved, read)
-            }
-        }
+        work.execute(query, operation) { resolved -> selected(resolved, read) }
 
     private fun selected(query: PerfQuery, read: PerfQueryOperation): JsonObject {
         val filter = PerfQueryFilter(query, projects, accounts, sources)

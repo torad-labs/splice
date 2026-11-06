@@ -80,9 +80,11 @@ internal object AlertDerivedMetrics {
             ).orEmpty().mapNotNull { it as? JsonObject }
         val successes = sinks.mapNotNull { ObjectiveJson.long(it, "lastSuccessEpochMs") }.filter { it in 0..nowMs }
         val coverage = buildJsonObject {
-            put("observed_ms", rule.windowMs)
-            put("complete", true)
+            put("observed_ms", 0)
+            put("complete", false)
             put("population", "current_sink_status_snapshots")
+            put("temporal_basis", "current_sink_snapshot")
+            put("sampled_at_ms", nowMs)
         }
         return AlertMeasurements.measured(
             successes.minOrNull()?.let { (nowMs - it).toDouble() },

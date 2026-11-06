@@ -53,6 +53,8 @@ internal object AlertMeasurements {
             put("complete", ObjectiveJson.text(coverage, "complete") == "true")
             put(POPULATION, ObjectiveJson.text(ObjectiveJson.text(coverage, POPULATION)))
             put(APPROXIMATION, ObjectiveJson.text(ObjectiveJson.text(coverage, APPROXIMATION)))
+            put("temporal_basis", ObjectiveJson.text(coverage, "temporal_basis") ?: "interval")
+            put("sampled_at_ms", ObjectiveJson.number(ObjectiveJson.long(coverage, "sampled_at_ms")))
         }
         return AlertMeasurement(value, count, fraction, reduced.toString(), "[]", reason)
     }

@@ -109,10 +109,14 @@ public class PerfAlertEngine(
             rule,
             AlertEvaluationTime(now, restarted),
         )
-        if (store.snapshot()?.revision != settings.revision) return report("settings_changed_during_evaluation")
-        if (journal.publish(next.copy(lastEvaluation = now))) {
-            restarted = false
-            outbox.advance(now)
+        val publication = store.publishIfCurrent(settings.revision) { journal.publish(next.copy(lastEvaluation = now)) }
+        when (publication) {
+            ObjectivePublicationResult.SETTINGS_CHANGED -> return report("settings_changed_during_evaluation")
+            ObjectivePublicationResult.PUBLISHED -> {
+                restarted = false
+                outbox.advance(now)
+            }
+            ObjectivePublicationResult.FAILED -> Unit
         }
         return report()
     }

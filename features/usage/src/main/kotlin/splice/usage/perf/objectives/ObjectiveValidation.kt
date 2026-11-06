@@ -48,7 +48,13 @@ internal object ObjectiveValidation {
     private fun detailsProblem(value: AlertRule, settings: ObjectiveSettings): String? =
         timingProblem(
             value,
-        ) ?: recoveryProblem(value) ?: referenceProblem(value, settings) ?: cohortProblem(value.cohort)
+        ) ?: recoveryProblem(value) ?: referenceProblem(value, settings) ?: snapshotProblem(value)
+            ?: cohortProblem(value.cohort)
+
+    private fun snapshotProblem(value: AlertRule): String? =
+        "instant_snapshot_requires_zero_min_coverage".takeIf {
+            value.metric == "telemetry.staleness_ms" && value.minCoverage != 0.0
+        }
 
     private fun timingProblem(value: AlertRule): String? = when {
         value.windowMs !in MIN_WINDOW..MAX_DURATION -> "invalid_rule_window"

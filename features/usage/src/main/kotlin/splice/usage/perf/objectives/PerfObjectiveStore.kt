@@ -87,6 +87,17 @@ public class PerfObjectiveStore(private val path: Path) : AutoCloseable {
     @Synchronized
     internal fun snapshot(): ObjectiveSettings? = value.takeIf { !closed && issue == null }
 
+    /** Serializes the revision check and local lifecycle commit with settings updates; never wraps query or HTTP. */
+    @Synchronized
+    internal fun publishIfCurrent(
+        revision: String,
+        publication: ObjectivePublication,
+    ): ObjectivePublicationResult = when {
+        snapshot()?.revision != revision -> ObjectivePublicationResult.SETTINGS_CHANGED
+        publication.publish() -> ObjectivePublicationResult.PUBLISHED
+        else -> ObjectivePublicationResult.FAILED
+    }
+
     internal fun lifecyclePath(): Path = path.resolveSibling("${path.fileName}.alerts")
 
     @Synchronized

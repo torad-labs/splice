@@ -1,10 +1,12 @@
 package splice.observability.runtime
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.perf.observation.PerfEventKind
 import splice.core.perf.observation.PerfIdentity
@@ -42,9 +44,11 @@ public class RuntimeSampler(
             val reading = RuntimeReading()
             val now = elapsedClock()
             counters.sample(now, reading)
-            val ownerReadings = ownerReadings(reading)
+            val sampledWall = wallClock()
+            val ownerReadings = ownerReadings(reading, sampledWall)
+            val failedOwners = ownerReadings.count { RuntimeOwnerSampling.failed(it.jsonObject) }
             RuntimeUnknowns.fill(reading)
-            sampledAt = wallClock()
+            sampledAt = sampledWall
             sampledMono = now
             latest = buildJsonObject {
                 put("schema_version", identity.schemaVersion)
@@ -56,10 +60,12 @@ public class RuntimeSampler(
                 put("owner_readings", ownerReadings)
                 put("owner_coverage", "registered_owners_only_partial")
                 put("omitted_source_entries", owners.omitted)
+                put("failed_source_entries", failedOwners)
                 put(
                     "issues",
                     buildJsonArray {
                         if (owners.omitted > 0) add(kotlinx.serialization.json.JsonPrimitive("runtime_owner_limit"))
+                        if (failedOwners > 0) add(kotlinx.serialization.json.JsonPrimitive("runtime_owner_read_failed"))
                     },
                 )
             }
@@ -106,14 +112,10 @@ public class RuntimeSampler(
         put("issues", buildJsonArray { add(kotlinx.serialization.json.JsonPrimitive(reason)) })
     }
 
-    private fun ownerReadings(reading: RuntimeReading) = buildJsonArray {
+    private fun ownerReadings(reading: RuntimeReading, nowMs: Long) = buildJsonArray {
+        val previous = latest["owner_readings"] as? JsonArray
         owners.sources.forEachIndexed { index, source ->
-            add(
-                buildJsonObject {
-                    put("owner_index", index)
-                    reading.merge(source.runtime()).forEach { (key, value) -> put(key, value) }
-                },
-            )
+            add(RuntimeOwnerSampling.sample(source, index, previous?.getOrNull(index)?.jsonObject, reading, nowMs))
         }
     }
 }

@@ -7,6 +7,7 @@ import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondText
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -19,9 +20,10 @@ import splice.upstream.codemode.ProcessDispatchers
 import java.io.IOException
 import java.util.concurrent.Semaphore
 
-/** Two admitted requests across every performance endpoint, without waiting queues on Netty or inference lanes. */
+/** Two active reads and two suspended waiters across performance endpoints, all within one deadline. */
 internal class PerfHttpWork(val io: CoroutineDispatcher = ProcessDispatchers().io()) {
-    private val admitted = Semaphore(2)
+    private val admitted = Semaphore(ACTIVE_REQUESTS + WAITING_REQUESTS)
+    private val running = kotlinx.coroutines.sync.Semaphore(ACTIVE_REQUESTS)
 
     suspend fun execute(call: ApplicationCall, block: PerfControlWork) {
         if (!admitted.tryAcquire()) {
@@ -33,7 +35,9 @@ internal class PerfHttpWork(val io: CoroutineDispatcher = ProcessDispatchers().i
             )
         }
         try {
-            val completed = withTimeoutOrNull(DEADLINE_MS) { block.run(); true }
+            val completed = withTimeoutOrNull(DEADLINE_MS) {
+                running.withPermit { block.run(); true }
+            }
             if (completed != true) refusal(call, "busy", "control_query_deadline", HttpStatusCode.ServiceUnavailable)
         } catch (_: IOException) {
             refusal(call, "error", "performance_io_failure", HttpStatusCode.InternalServerError)
@@ -82,7 +86,11 @@ internal fun interface PerfJsonRead {
     fun read(): JsonObject
 }
 
-// Release a control admission after fifteen seconds so slow reads cannot hold both performance slots indefinitely.
+// Keep active memory/IO work at two requests while a normal four-read console burst waits without occupying threads.
+private const val ACTIVE_REQUESTS = 2
+private const val WAITING_REQUESTS = 2
+
+// Include admission waiting in the existing fifteen-second deadline, so a queue cannot extend request lifetime.
 private const val DEADLINE_MS = 15_000L
 
 // Reserve 16 KiB beyond the measured response for JSON encoding and HTTP write bookkeeping.

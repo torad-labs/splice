@@ -42,13 +42,13 @@ internal class ObjectiveFixture(directory: Path) : AutoCloseable {
                 override fun settledUntilMs(head: String?): Long? =
                     if (horizonAvailable) horizonOverride ?: (now - horizonLag) else null
 
-                override fun read(selected: PerfEvidenceQuery): PerfEvidenceRead {
+                override fun read(query: PerfEvidenceQuery): PerfEvidenceRead {
                     settingsDuringRead?.let { replacement ->
                         settingsDuringRead = null
                         configure(replacement)
                     }
-                    val horizon = settledUntilMs(selected.head) ?: 0L
-                    val through = minOf(selected.untilMs, horizon)
+                    val horizon = settledUntilMs(query.head) ?: 0L
+                    val through = minOf(query.untilMs, horizon)
                     val events = (0 until count).flatMap { index ->
                         listOf(
                             event("arrive-$index", index, through - 500, PerfEventKind.REQUEST_ARRIVED),
@@ -58,12 +58,12 @@ internal class ObjectiveFixture(directory: Path) : AutoCloseable {
                     return PerfEvidenceRead(
                         events,
                         PerfCoverage(
-                            selected.fromMs,
-                            selected.untilMs,
-                            if (covered) (through - selected.fromMs).coerceAtLeast(0) else 0,
+                            query.fromMs,
+                            query.untilMs,
+                            if (covered) (through - query.fromMs).coerceAtLeast(0) else 0,
                         ),
                         now,
-                        selected.untilMs <= horizon,
+                        query.untilMs <= horizon,
                         "committed_observations_as_of",
                         false,
                     )

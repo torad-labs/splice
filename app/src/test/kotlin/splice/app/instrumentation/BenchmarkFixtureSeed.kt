@@ -112,7 +112,22 @@ object BenchmarkFixtureSeed {
                     "usage_observed_cache_read" to 1.0, "usage_observed_cache_write" to 1.0,
                     "usage_observed_cache_write_1h" to 1.0,
                 )
-                else -> emptyMap()
+                PerfEventKind.REQUEST_ARRIVED,
+                PerfEventKind.REQUEST_ADMITTED,
+                PerfEventKind.ATTEMPT_STARTED,
+                PerfEventKind.ATTEMPT_FINISHED,
+                PerfEventKind.PROTOCOL_PROGRESS,
+                PerfEventKind.CONTENT_PROGRESS,
+                PerfEventKind.CLIENT_PROGRESS,
+                PerfEventKind.GAP,
+                PerfEventKind.GATE_STATE,
+                PerfEventKind.TOOL_STARTED,
+                PerfEventKind.TOOL_FINISHED,
+                PerfEventKind.TOOL_PHASE,
+                PerfEventKind.RUNTIME,
+                PerfEventKind.SELF_COST,
+                PerfEventKind.CHECKPOINT,
+                -> emptyMap()
             },
             links = links,
             outcome = if (kind == PerfEventKind.REQUEST_FINISHED) "good" else null,

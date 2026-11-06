@@ -189,7 +189,21 @@ private class StreamingEvidenceFixture(root: Path) : AutoCloseable, PerfQuerySou
             PerfEventKind.REQUEST_FINISHED -> mapOf("arrival_to_terminal_ms" to 60.0)
             PerfEventKind.ATTEMPT_FINISHED -> mapOf("attempt_duration_ms" to 20.0)
             PerfEventKind.USAGE_RECORDED -> usage()
-            else -> emptyMap()
+            PerfEventKind.REQUEST_ARRIVED,
+            PerfEventKind.REQUEST_ADMITTED,
+            PerfEventKind.ATTEMPT_STARTED,
+            PerfEventKind.PROTOCOL_PROGRESS,
+            PerfEventKind.CONTENT_PROGRESS,
+            PerfEventKind.CLIENT_PROGRESS,
+            PerfEventKind.GAP,
+            PerfEventKind.GATE_STATE,
+            PerfEventKind.TOOL_STARTED,
+            PerfEventKind.TOOL_FINISHED,
+            PerfEventKind.TOOL_PHASE,
+            PerfEventKind.RUNTIME,
+            PerfEventKind.SELF_COST,
+            PerfEventKind.CHECKPOINT,
+            -> emptyMap()
         }
         return PerfObservation(
             PerfStamp("$request-${kind.name}", identity, at, at),

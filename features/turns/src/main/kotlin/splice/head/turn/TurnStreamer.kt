@@ -15,12 +15,10 @@
 // the recording even when a cancellation lands between the check and the start.
 package splice.head.turn
 
-import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.header
 import io.ktor.server.response.respond
-import io.ktor.server.response.respondText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineName
@@ -37,6 +35,7 @@ import splice.core.perf.PerfKeys
 import splice.head.ClientWindowWitness
 import splice.head.HeadDeps
 import splice.head.compaction.CompactionReplay
+import splice.head.turn.delivery.CollectedReply
 import splice.head.turn.detached.DetachedCompaction
 import splice.head.turn.stream.PendingSse
 import splice.head.wire.ContentReached
@@ -197,7 +196,7 @@ internal class TurnStreamer(
                 running.await()
                 choice.headers.forEach { (name, value) -> call.response.header(name, value) }
                 choice.shouldRetry?.let { call.response.header("x-should-retry", it.toString()) }
-                call.respondText(choice.body, ContentType.Application.Json, HttpStatusCode.fromValue(choice.status))
+                call.respond(CollectedReply(choice.body, HttpStatusCode.fromValue(choice.status), drive.perf))
             }
         }
     }

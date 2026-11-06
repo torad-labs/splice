@@ -36,6 +36,7 @@ import splice.head.perf.PerfFailure
 import splice.head.perf.PerfRowMeta
 import splice.head.perf.PerfStats
 import splice.head.perf.PerfTranscriptIds
+import splice.head.perf.UsageObservation
 import splice.head.usage.TurnSpend
 import splice.head.wire.TurnTrace
 
@@ -168,6 +169,7 @@ internal class TurnTelemetry(
             TurnBill.counters(it).forEach { (key, value) -> drive.perf.setCount(key, value) }
         }
         val snap = billingSnapshot(drive)
+        UsageObservation.record(drive.perf, snap)
         // V4-174: the turn record closes on the same snapshot the perf row carries — every ending
         // of a drive goes through here, so the trace never has a turn without its outcome.
         closeTrace(drive.trace, outcomeTag, snap, endingLine(drive, ending))
@@ -280,6 +282,7 @@ internal class TurnTelemetry(
         perf.setCount(PerfKeys.ATTEMPTS, 0)
         TurnBill.counters(noRequestUsage).forEach { (key, value) -> perf.setCount(key, value) }
         val snap = perf.snapshot()
+        UsageObservation.record(perf, snap)
         closeTrace(trace, tag, snap)
         val rowMeta = PerfRowMeta(
             meta.route.upstreamModel,

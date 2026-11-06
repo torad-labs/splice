@@ -8,6 +8,7 @@ import kotlinx.coroutines.sync.withLock
 import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
 import splice.head.wire.ClientChannel
+import splice.head.wire.DeliveryObservation
 import splice.head.wire.FrameRecording
 import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.StatusGate
@@ -48,6 +49,7 @@ internal class PendingSseWriter(
                     out.flush()
                     if (pendingBytes) {
                         perf.firstClientByte()
+                        DeliveryObservation.firstByte(perf.observations)
                         pendingBytes = false
                     }
                 }

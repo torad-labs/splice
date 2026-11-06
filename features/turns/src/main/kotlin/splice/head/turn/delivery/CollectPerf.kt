@@ -8,11 +8,15 @@ import io.ktor.http.withCharset
 import io.ktor.utils.io.ByteWriteChannel
 import io.ktor.utils.io.writeStringUtf8
 import splice.core.failure.FailureCause
+import splice.core.perf.OutcomeTag
 import splice.core.perf.TurnPerf
+import splice.core.perf.observation.PerfRequestRecorder
 import splice.core.util.JsonWire
 import splice.head.perf.PerfFailure
 import splice.head.turn.TurnDrive
 import splice.head.turn.TurnTelemetry
+import splice.head.wire.DeliveredBody
+import splice.head.wire.DeliveryObservation
 
 /** A collect turn holds its ending, not its snapshot, until downstream delivery has settled. */
 internal class CollectPerf {
@@ -66,25 +70,38 @@ internal class CollectPerf {
 internal class CollectedReply(
     private val body: String,
     override val status: HttpStatusCode,
-    private val perf: TurnPerf,
+    private val perf: TurnPerf? = null,
+    private val observations: PerfRequestRecorder? = perf?.observations,
+    private val outcome: String? = null,
 ) : OutgoingContent.WriteChannelContent() {
     override val contentType: ContentType = ContentType.Application.Json.withCharset(Charsets.UTF_8)
     override val contentLength: Long = JsonWire.byteSize(body)
 
     override suspend fun writeTo(channel: ByteWriteChannel) {
-        val output = if (body.isNotEmpty()) FirstByteChannel(channel, perf) else channel
-        output.writeStringUtf8(body)
-        output.flush()
+        val started = observations?.elapsedMs()
+        val output = if (body.isNotEmpty()) FirstByteChannel(channel, perf, observations) else channel
+        var delivered = false
+        try {
+            output.writeStringUtf8(body)
+            output.flush()
+            delivered = true
+        } finally {
+            if (!delivered) observations?.finish(OutcomeTag.CLIENT_ABORT.wire)
+        }
+        val elapsed = started?.let { observations?.elapsedMs()?.minus(it) } ?: 0L
+        DeliveryObservation.body(observations, DeliveredBody(body, contentLength, elapsed, status.value, outcome))
     }
 
     /** Encoding can flush before writeStringUtf8 returns; a later failure cannot erase delivered bytes. */
     private class FirstByteChannel(
         private val output: ByteWriteChannel,
-        private val perf: TurnPerf,
+        private val perf: TurnPerf?,
+        private val observations: PerfRequestRecorder?,
     ) : ByteWriteChannel by output {
         override suspend fun flush() {
             output.flush()
-            perf.firstClientByte()
+            perf?.firstClientByte()
+            DeliveryObservation.firstByte(observations)
         }
     }
 }

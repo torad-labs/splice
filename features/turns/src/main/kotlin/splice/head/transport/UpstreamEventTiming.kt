@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.perf.UpstreamGapEnd
+import splice.core.perf.observation.PerfEventKind
 
 /** Each collection owns its stopwatch. Synchronous delivery is charged separately, never as silence. */
 internal class UpstreamEventTiming(private val perf: TurnPerf, private val postedAtMs: Long?) {
@@ -33,6 +34,7 @@ internal class UpstreamEventTiming(private val perf: TurnPerf, private val poste
                     val blockedMs = resumedAtMs - deliveryStartedMs
                     deliveryTotalMs += blockedMs
                     perf.maxCount(PerfKeys.UP_BLOCKED_MAX_MS, blockedMs)
+                    perf.observations?.observe(PerfEventKind.GAP, mapOf("local_read_block_ms" to blockedMs.toDouble()))
                     previousEventMs = resumedAtMs
                     // Even ping delivery is downstream work, not part of the wait for content.
                     previousContentMs += blockedMs
@@ -54,6 +56,7 @@ internal class UpstreamEventTiming(private val perf: TurnPerf, private val poste
     private fun recordGap(previousMs: Long?, nowMs: Long, kind: UpstreamGapEnd) {
         if (previousMs == null) return
         val gapMs = nowMs - previousMs
+        perf.observations?.observe(PerfEventKind.GAP, mapOf("upstream_gap_ms" to gapMs.toDouble()))
         perf.intervals.record(PerfKeys.UP_GAP_MAX_MS, previousMs, nowMs, kind)
         perf.maxCount(PerfKeys.UP_GAPS_2S, 0)
         if (gapMs >= LONG_UPSTREAM_GAP_MS) perf.add(PerfKeys.UP_GAPS_2S, 1)

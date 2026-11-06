@@ -67,7 +67,13 @@ internal class DeltaPacer(
     private val tickMs: Long = PACE_TICK_MS,
 ) {
     /** A frame waiting its turn, with the perf ledger its socket write is counted in. */
-    internal data class Held(val frame: String, val perf: TurnPerf, val visible: Boolean, val atMs: Long)
+    internal data class Held(
+        val frame: String,
+        val perf: TurnPerf,
+        val visible: Boolean,
+        val atMs: Long,
+        val modelOutput: Boolean = true,
+    )
 
     private class Queued(val held: Held, private val slices: VisibleDeltaSlices?) {
         private var delivered = false
@@ -103,7 +109,7 @@ internal class DeltaPacer(
             return false
         }
         if (queue.isEmpty()) signal()
-        val queued = Queued(Held(frame, perf, visible, nowMs), slices)
+        val queued = Queued(Held(frame, perf, visible, nowMs, modelOutput), slices)
         queue.addLast(queued)
         visibleHeld += queued.weight
         return true

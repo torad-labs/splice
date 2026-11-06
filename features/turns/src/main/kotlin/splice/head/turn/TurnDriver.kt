@@ -165,7 +165,7 @@ internal class TurnDriver(
 
     /** Claude Code's activity side query, answered by the proxy (ActivityLabel): no upstream turn. */
     suspend fun answerLocally(call: ApplicationCall, local: Preparation.Local, perf: TurnPerf) {
-        localResponses.answer(call, local)
+        localResponses.answer(call, local, perf)
         telemetry.localAnswers.activityAnswer(local.sessionId, provider.catalog.stripSuffixes(local.model), perf)
     }
 

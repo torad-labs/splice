@@ -8,6 +8,8 @@ package splice.head.admission
 import splice.core.perf.PerfKeys
 import splice.core.perf.TimedWork
 import splice.core.perf.TurnPerf
+import splice.core.perf.observation.PerfEventKind
+import splice.core.perf.observation.PerfRequestRecorder
 import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
 import splice.upstream.retry.InflightGate
@@ -18,10 +20,11 @@ internal class AdmissionTelemetry(
 ) {
     fun arrivalTime(): Long = clock()
 
-    fun begin(arrivalAt: Long = clock()): TurnPerf = TurnPerf(clock = clock).also {
-        it.recordArrival(arrivalAt)
-        it.setCount(PerfKeys.PRE_ADMISSION_MS, it.arrivalElapsedMs())
-    }
+    fun begin(arrivalAt: Long = clock(), observations: PerfRequestRecorder? = null): TurnPerf =
+        TurnPerf(observations = observations, clock = clock).also {
+            it.recordArrival(arrivalAt)
+            it.setCount(PerfKeys.PRE_ADMISSION_MS, it.arrivalElapsedMs())
+        }
 
     suspend fun <T> prepare(perf: TurnPerf, leaseStart: Long, work: TimedWork<T>): T {
         val started = clock()
@@ -41,5 +44,9 @@ internal class AdmissionTelemetry(
         perf.mark(PerfKeys.GATE)
         perf.setCount(PerfKeys.INFLIGHT, gate.snapshot().inflight.toLong())
         perf.setCount(PerfKeys.ASYNC_IO_DROPS, AsyncFileIo.droppedCount().toLong())
+        perf.observations?.observe(
+            PerfEventKind.REQUEST_ADMITTED,
+            mapOf("queue_wait_ms" to (heldMs ?: 0L).toDouble()),
+        )
     }
 }

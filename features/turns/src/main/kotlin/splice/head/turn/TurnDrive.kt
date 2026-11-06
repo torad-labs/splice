@@ -136,7 +136,10 @@ internal data class TurnDrive(
     var turnId: String? = trace?.turnId
         private set
 
-    fun sentTurnId(): String = turnId ?: UUID.randomUUID().toString().also { turnId = it }
+    fun sentTurnId(): String = turnId ?: UUID.randomUUID().toString().also { id ->
+        turnId = id
+        perf.observations?.let { it.update(it.scope, it.links.copy(turnId = id)) }
+    }
 
     private val claims = TurnClaims()
     val collectPerf = CollectPerf()

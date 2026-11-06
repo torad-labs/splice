@@ -24,9 +24,12 @@
 //     character at all.
 package splice.dialect.responses.websocket
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
 import kotlinx.serialization.json.JsonObject
 import splice.core.auth.Credentials
+import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.perf.WsAttemptTiming
@@ -99,6 +102,33 @@ internal class ResponsesWsRunner(
         turnHeaders: Map<String, String>,
     ): WsRound? {
         val timing = seed.perf?.let(::WsAttemptTiming)
+        var handedOff = false
+        var ending = OutcomeTag.UPSTREAM_FAILED.wire
+        try {
+            val round = serveObserved(seed, turnHeaders, timing) ?: return null
+            handedOff = true
+            return round.copy(
+                events = round.events.onEach { event ->
+                    val type = JsonScalars.str(event[FIELD_TYPE])
+                    if (type in ResponsesRoundEnd.SUCCESS) ending = OutcomeTag.OK.wire
+                    if (type in ResponsesRoundEnd.FAILED) ending = OutcomeTag.UPSTREAM_FAILED.wire
+                }.onCompletion { cause ->
+                    timing?.finish(if (cause is CancellationException) OutcomeTag.CANCELLED.wire else ending)
+                },
+            )
+        } catch (cancelled: CancellationException) {
+            ending = OutcomeTag.CANCELLED.wire
+            throw cancelled
+        } finally {
+            if (!handedOff) timing?.finish(ending)
+        }
+    }
+
+    private suspend fun serveObserved(
+        seed: ResponsesWsPrefiller.PrefillSeed,
+        turnHeaders: Map<String, String>,
+        timing: WsAttemptTiming?,
+    ): WsRound? {
         // Committed at SEND time, read at TERMINAL time: the frame the chaining layer just built
         // determines what the next turn's prefix must be, and only a clean terminal may commit it.
         var pending: ResponsesWsIdentity.PendingCommit? = null

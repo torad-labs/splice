@@ -3,6 +3,8 @@
 // predecessor measured, and a late observation from a past attempt is dropped rather than published as the current one.
 package splice.core.perf
 
+import splice.core.perf.observation.PerfAttemptRecorder
+
 /** The upstream attempts of one turn, sharing its owner's lock and counters so each publication lands in the same
  *  atomic snapshot as everything else the turn measured. */
 public class UpstreamAttempts internal constructor(
@@ -10,12 +12,17 @@ public class UpstreamAttempts internal constructor(
     private val counters: MutableMap<String, Long>,
 ) {
     private var current = 0L
+    private var observed: PerfAttemptRecorder? = null
+
+    /** The current transport owner remains live when its detached client's handle has closed. */
+    public val observations: PerfAttemptRecorder? get() = synchronized(lock) { observed }
 
     /** Whether [attempt] is the one in flight. */
     internal fun isCurrent(attempt: Long): Boolean = attempt == current
 
     /** Retain each attempt start while atomically discarding its predecessor's timing measurements. */
-    public fun begin(): Long = synchronized(lock) {
+    public fun begin(observations: PerfAttemptRecorder? = null): Long = synchronized(lock) {
+        observed = observations
         for (milestones in UpstreamMilestones.entries) {
             counters.remove(milestones.arrival)
             counters.remove(milestones.wait)

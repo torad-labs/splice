@@ -6,13 +6,12 @@
 // its 14-function budget, and four collaborators now respond through it.
 package splice.head.admission
 
-import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.netty.NettyApplicationCall
 import io.ktor.server.response.header
-import io.ktor.server.response.respondText
+import io.ktor.server.response.respond
 import io.ktor.server.routing.RoutingCall
 import io.ktor.server.routing.RoutingPipelineCall
 import splice.core.budget.BudgetBlock
@@ -25,8 +24,10 @@ import splice.core.failure.Position
 import splice.core.failure.SpliceLine
 import splice.core.failure.StoppedBy
 import splice.core.failure.WireAnswer
+import splice.core.perf.OutcomeTag
 import splice.core.wire.ErrorEnvelope
 import splice.core.wire.HttpStatus
+import splice.head.turn.delivery.CollectedReply
 import splice.http.ingress.IngressErrorBody
 
 /** Shared pre-turn HTTP bodies: what was declined, said in [voice]'s line (failure-handling slice 2), in the envelope
@@ -59,10 +60,13 @@ internal class AdmissionResponses(private val voice: HeadVoice) {
     suspend fun respondRefusal(call: ApplicationCall, cause: FailureCause) {
         val answer = ClientWire.answer(cause, AT_ADMISSION)
         answer.shouldRetry?.let { call.response.header(SHOULD_RETRY_HEADER, it.toString()) }
-        call.respondText(
-            bodies.envelope(answer.type.wireName, cause, answer),
-            ContentType.Application.Json,
-            statusLine(checkNotNull(answer.status) { "an admission answer is an HTTP status" }),
+        call.respond(
+            CollectedReply(
+                bodies.envelope(answer.type.wireName, cause, answer),
+                statusLine(checkNotNull(answer.status) { "an admission answer is an HTTP status" }),
+                observations = RequestObservation.of(call),
+                outcome = "refused",
+            ),
         )
     }
 
@@ -92,6 +96,7 @@ internal class AdmissionResponses(private val voice: HeadVoice) {
         val connection = nettyCall(call)?.context?.channel()
         if (connection != null) {
             connection.close()
+            RequestObservation.of(call)?.finish(OutcomeTag.RESTARTED.wire)
             return
         }
         call.response.header(HttpHeaders.Connection, "close")

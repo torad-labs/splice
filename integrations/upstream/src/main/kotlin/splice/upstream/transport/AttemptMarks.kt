@@ -26,7 +26,7 @@ internal class AttemptMarks(private val timing: UpstreamAttemptTiming?, private 
     }
 
     /** A read of the response body returned bytes. */
-    fun firstByte() {
-        timing?.firstByte()
+    fun firstByte(bytes: Long = 0L) {
+        timing?.firstByte(bytes)
     }
 }

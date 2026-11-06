@@ -25,11 +25,15 @@ import splice.core.memory.HeapBudget
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicTurnBody
+import splice.core.perf.observation.PerfAccumulator
+import splice.core.perf.observation.PerfIdentity
+import splice.core.perf.observation.PerfRecorder
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
 import splice.core.util.MonoClock
+import splice.core.util.WallClock
 import splice.dialect.responses.ReasoningSettings
 import splice.head.admission.RequestMaterializationGate
 import splice.upstream.BuiltTurn
@@ -75,6 +79,11 @@ class RequestStartTimingTest {
                 assertEquals(2_000L, duration(row, "pre_admission_ms"), row.toString())
                 assertEquals(0L, duration(row, "total"), "legacy stages keep their existing origin")
                 assertEquals(2_000L, duration(row, CLIENT_BYTE_KEY), row.toString())
+                val observed = rig.observations.snapshot().points
+                assertEquals(1.0, observed.filter { it.metric == "requests_arrived" }.sumOf { it.sum })
+                assertEquals(1.0, observed.filter { it.metric == "requests_finished" }.sumOf { it.sum })
+                assertEquals(2_000.0, observed.filter { it.metric == CLIENT_BYTE_KEY }.sumOf { it.sum })
+                assertEquals(2_000.0, observed.filter { it.metric == "arrival_to_first_text_ms" }.sumOf { it.sum })
             }
         }
 
@@ -147,6 +156,9 @@ class RequestStartTimingTest {
                         assertTrue(refused.startsWith("HTTP/1.1 529"), refused)
                         assertTrue(refused.contains("overloaded_error"), refused)
                         assertEquals(1, rig.gate.snapshot().inflight)
+                        val observed = rig.observations.snapshot().points
+                        assertEquals(2.0, observed.filter { it.metric == "requests_arrived" }.sumOf { it.sum })
+                        assertEquals(1.0, observed.filter { it.metric == "requests_finished" }.sumOf { it.sum })
                     } finally {
                         hold.close()
                     }
@@ -207,6 +219,10 @@ private class TimingRig(
     val provider = TimingProvider(timingProvider(upstream.baseUrl), prepDelay)
     val gate = InflightGate(maxInflight = { maxInflight }, maxQueued = { 4 })
     val heap = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, heapBytes))
+    private val elapsed = clock ?: write?.clock ?: ElapsedClock(MonoClock::nowMs)
+    private val identity = PerfIdentity("timing", "test", "test", "test")
+    val observations = PerfAccumulator(identity)
+    private val recorder = PerfRecorder(identity, observations, elapsed, WallClock(System::currentTimeMillis))
     private val head = HeadServer(
         provider,
         0,
@@ -217,9 +233,14 @@ private class TimingRig(
             log = {},
             seams = HeadDeps.HeadSeams(
                 requestMaterializationGate = heap,
-                clock = clock ?: write?.clock ?: ElapsedClock(MonoClock::nowMs),
+                clock = elapsed,
             ),
-        ).let { deps -> deps.copy(traffic = deps.traffic.copy(models = models)) },
+        ).let { deps ->
+            deps.copy(
+                traffic = deps.traffic.copy(models = models),
+                stores = deps.stores.copy(captures = deps.stores.captures.copy(observations = recorder)),
+            )
+        },
     )
     val port: Int get() = head.port
 

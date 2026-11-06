@@ -33,6 +33,16 @@ const TOOLS = [
   "ln", "readlink", "install", "chmod", "mkdir", "dirname", "cat", "head", "tr", "timeout", "printf",
 ];
 
+// Reuse only symlinks to real, read-only host commands. Each install keeps its own sandbox,
+// fake executables, release server, and attestation log.
+const TOOL_FARM = mkdtempSync(join(tmpdir(), "install-provenance-tools-"));
+workspaces.push(TOOL_FARM);
+for (const tool of TOOLS) {
+  const real = Bun.which(tool);
+  if (!real) throw new Error(`the installer test needs ${tool} on PATH`);
+  symlinkSync(real, join(TOOL_FARM, tool));
+}
+
 const JAR = "synthetic splice jar bytes\n";
 // The markers pair it with the fake jar's `shim-version` and `version` below; install.sh refuses a pair that does not match.
 const SHIM = '#!/usr/bin/env node\n// synthetic splice-launch\nconst SPLICE_SHIM_VERSION = "shim-test";\nconst SPLICE_GATEWAY_VERSION = "9.9.9";\n';
@@ -51,11 +61,6 @@ function sandbox(gh: Gh, verifyExit = 0) {
   workspaces.push(dir);
   const bin = join(dir, "path");
   mkdirSync(bin);
-  for (const tool of TOOLS) {
-    const real = Bun.which(tool);
-    if (!real) throw new Error(`the installer test needs ${tool} on PATH`);
-    symlinkSync(real, join(bin, tool));
-  }
   const share = join(dir, "share");
   const binDir = join(dir, "bin");
   // java: 21 for the preflight, the jar's version and launcher, and an `install --all` that links `splice`.
@@ -108,7 +113,7 @@ async function install(gh: Gh, options: { verifyExit?: number; sums?: string; bi
       stdout: "pipe",
       stderr: "pipe",
       env: {
-        PATH: options.binOnPath ? `${box.binDir}:${box.bin}` : box.bin,
+        PATH: options.binOnPath ? `${box.binDir}:${box.bin}:${TOOL_FARM}` : `${box.bin}:${TOOL_FARM}`,
         HOME: box.dir,
         SPLICE_SHARE_DIR: box.share,
         SPLICE_BIN_DIR: box.binDir,

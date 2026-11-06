@@ -59,23 +59,29 @@ esac
   return dir;
 }
 
+// These inputs are immutable: each install gets the same synthetic release bytes and fake executables.
+// Version selection remains an environment input, and each run still has its own sandbox and logs.
+const ASSETS = release();
+const FAKE_TOOLS = fakes();
+const NETWORK = fakeNetwork();
+cleanup.push(NETWORK.dir);
+
 /** One install with the fake network; the URLs curl was asked for, in order. */
 function install(env: Record<string, string>): { urls: string[]; output: string; ok: boolean } {
-  const assets = release();
-  const network = fakeNetwork();
-  cleanup.push(network.dir);
   const box = makeSandbox("install-downloads-");
   cleanup.push(box.dir);
-  const result = runInstall(assets, box, {
+  const curlLog = join(box.dir, "curl.log");
+  const ghLog = join(box.dir, "gh.log");
+  const result = runInstall(ASSETS, box, {
     ...sandboxEnv(box),
-    SPLICE_FAKE_RELEASE_ASSETS: assets,
-    SPLICE_FAKE_CURL_LOG: network.curlLog,
-    SPLICE_FAKE_GH_LOG: network.ghLog,
+    SPLICE_FAKE_RELEASE_ASSETS: ASSETS,
+    SPLICE_FAKE_CURL_LOG: curlLog,
+    SPLICE_FAKE_GH_LOG: ghLog,
     SPLICE_RELEASE_BASE_URL: "",
-    PATH: `${network.dir}:${fakes()}:${box.bin}:${Bun.env.PATH ?? ""}`,
+    PATH: `${NETWORK.dir}:${FAKE_TOOLS}:${box.bin}:${Bun.env.PATH ?? ""}`,
     ...env,
   });
-  const urls = existsSync(network.curlLog) ? readFileSync(network.curlLog, "utf8").split("\n").filter(Boolean) : [];
+  const urls = existsSync(curlLog) ? readFileSync(curlLog, "utf8").split("\n").filter(Boolean) : [];
   return { urls, output: result.output, ok: result.ok };
 }
 

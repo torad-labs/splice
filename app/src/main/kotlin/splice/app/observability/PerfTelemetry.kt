@@ -1,6 +1,5 @@
 package splice.app.observability
 
-import kotlinx.coroutines.cancel
 import splice.app.sources.PerfSourceFiles
 import splice.core.config.ConfigService
 import splice.core.perf.observation.NoPerfObserver
@@ -91,7 +90,7 @@ internal class PerfTelemetry(
 
     /** Called after heads/MCP stop. Flush while source data is still alive, then release dependent owners. */
     suspend fun close() {
-        schedule.finish(config, io, ::closeOwners)
+        schedule.finish(config, io, { alerting.stopDelivery(cleanup) }, ::closeOwners)
     }
 
     private fun closeOwners() = cleanup.finish(
@@ -111,11 +110,9 @@ internal class PerfTelemetry(
     private fun closeReaders() = cleanup.finish(
         { cleanup.run("export_flush") { if (!exports.flush()) cleanup.failed("export_flush_incomplete") } },
         { cleanup.run("profiles") { inspection.stopProfiles() } },
-        { alerting.stopDelivery(cleanup) },
     )
 
     private fun closeAdapters() = cleanup.finish(
-        { scope.cancel() },
         { cleanup.run("delivery_client") { alerting.close() } },
         { cleanup.run("exports") { exports.close() } },
         { cleanup.run("objectives") { inspection.close() } },

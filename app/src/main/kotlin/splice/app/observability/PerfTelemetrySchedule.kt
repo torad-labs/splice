@@ -4,6 +4,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -56,12 +57,17 @@ internal class PerfTelemetrySchedule(
         sampler = scope.launch { samplePeriodically() }
     }
 
-    /** Hand dependent-owner cleanup back to composition only after both producers have settled. */
-    suspend fun finish(config: ConfigService, io: CoroutineDispatcher, continuation: PerfCloseAction) {
+    /** Hand dependent-owner cleanup back to composition after producers and delivery children have settled. */
+    suspend fun finish(
+        config: ConfigService,
+        io: CoroutineDispatcher,
+        stopDelivery: PerfCloseAction,
+        continuation: PerfCloseAction,
+    ) {
         val caller = currentCoroutineContext()
         withContext(NonCancellable + io) {
             config.effectiveObserver = null
-            if (!stop()) {
+            if (!stop(stopDelivery)) {
                 cleanup.failed("producers_pending")
                 // Keep sources charged and alive for the remaining producers; a later close can finish the drain.
                 caller.ensureActive()
@@ -72,10 +78,15 @@ internal class PerfTelemetrySchedule(
         caller.ensureActive()
     }
 
-    private suspend fun stop(): Boolean {
+    private suspend fun stop(stopDelivery: PerfCloseAction): Boolean {
         val jobs = listOfNotNull(sampler, configWorker)
         jobs.forEach { it.cancel() }
-        val stopped = withTimeoutOrNull(PRODUCER_STOP_MS) { jobs.forEach { it.join() }; true }
+        val stopped = withTimeoutOrNull(PRODUCER_STOP_MS) {
+            jobs.forEach { it.join() }
+            stopDelivery.close()
+            checkNotNull(scope.coroutineContext[Job]).cancelAndJoin()
+            true
+        }
         if (stopped != true) return false
         configTicks.close()
         return true
@@ -117,5 +128,5 @@ internal fun interface PerfSamplingWork {
 // Sample every five seconds on the owner worker; delayed work schedules a later tick instead of catching up in a burst.
 private const val TELEMETRY_SAMPLE_MS = 5_000L
 
-// Wait at most fifteen seconds for producers to stop before proceeding with dependent-owner cleanup.
+// Share fifteen seconds across producer and delivery shutdown before releasing dependent owners.
 private const val PRODUCER_STOP_MS = 15_000L

@@ -14,6 +14,7 @@ import splice.core.perf.observation.PerfIdentity
 import splice.core.perf.observation.PerfObservation
 import splice.core.perf.observation.PerfObserver
 import splice.core.util.Cancellables
+import splice.core.util.PerfWorkBudget
 import splice.core.util.WallClock
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -94,7 +95,21 @@ public class PerfExports(
         override fun shutdown(): CompletableResultCode = CompletableResultCode.ofSuccess()
     }
 
-    public fun status(): JsonObject = buildJsonObject {
+    /** Caller releases this top-level owner with PerfWorkBudget.release after consuming it and all nested data. */
+    public fun status(): JsonObject {
+        val lease = PerfWorkBudget.acquire(STATUS_BYTES) ?: return STATUS_BUSY
+        var retained = false
+        return try {
+            val result = statusData()
+            lease.retain(result, STATUS_BYTES)
+            retained = true
+            result
+        } finally {
+            if (!retained) lease.close()
+        }
+    }
+
+    private fun statusData(): JsonObject = buildJsonObject {
         put("prometheus_enabled", config.prometheus)
         put("otlp_enabled", config.enabled)
         put("endpoint_configured", !config.endpoint.isNullOrEmpty())
@@ -153,3 +168,9 @@ private const val CLOSE_SECONDS = 20L
 
 private const val TRACES = "traces"
 private const val LOGS = "logs"
+
+private const val STATUS_BYTES = 96L * 1_024
+private val STATUS_BUSY = buildJsonObject {
+    put("status", "busy")
+    put("reason", "shared_work_budget")
+}

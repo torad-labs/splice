@@ -1,9 +1,11 @@
 package splice.observability.export
 
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.perf.observation.PerfCoverage
+import splice.core.util.JsonScalars
 import splice.core.util.PerfWorkBudget
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -36,8 +38,10 @@ internal class ExportCoverage : AutoCloseable {
 
     fun json(now: Long, traceDropped: Long, missingContext: Long): JsonObject {
         val sample = current.get()
+        // The public status boundary has already reserved its independent response lease.
+        val copy = sample?.data?.let { requireNotNull(JsonScalars.objectOrNull(Json, it.toString())) }
         return buildJsonObject {
-            sample?.data?.forEach { (key, value) -> put(key, value) }
+            copy?.forEach { (key, value) -> put(key, value) }
             put("sampled", sample != null)
             sample?.let {
                 put("sample_age_ms", (now - it.at).coerceAtLeast(0))

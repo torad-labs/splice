@@ -39,7 +39,9 @@ class ExportSlowCollectorTest {
                     assertTrue(exports.record(ExportFixtures.event(PerfEventKind.REQUEST_ARRIVED)))
                 }
                 assertTimeoutPreemptively(Duration.ofSeconds(10)) { assertFalse(exports.flush()) }
-                assertTrue(exports.status().getValue("metrics").jsonObject.getValue("failed").jsonPrimitive.long > 0)
+                ExportStatusRead(exports).use { status ->
+                    assertTrue(status.value.getValue("metrics").jsonObject.getValue("failed").jsonPrimitive.long > 0)
+                }
                 release.countDown()
             }
         } finally {

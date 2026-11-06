@@ -107,8 +107,10 @@ class OtlpCollectorsTest {
                 PerfAggregateSource { ExportFixtures.snapshot() },
             ).use { exports ->
                 assertFalse(exports.flush())
-                assertTrue(exports.status().getValue("metrics").jsonObject.getValue("failed").jsonPrimitive.long > 0)
-                assertFalse(exports.status().toString().contains(endpoint))
+                ExportStatusRead(exports).use { status ->
+                    assertTrue(status.value.getValue("metrics").jsonObject.getValue("failed").jsonPrimitive.long > 0)
+                    assertFalse(status.value.toString().contains(endpoint))
+                }
             }
             assertTrue(received.isNotEmpty())
         } finally {
@@ -135,8 +137,11 @@ class OtlpCollectorsTest {
             val request = recorder.request(ExportFixtures.scope, 1_000, 1_000)
             request.update(request.scope, ExportFixtures.links)
             assertTrue(request.finish("ok"))
-            assertTrue(exports.flush(), exports.status().toString())
-            assertFalse(exports.status().toString().contains("header-secret"))
+            val flushed = exports.flush()
+            ExportStatusRead(exports).use { status ->
+                assertTrue(flushed, status.value.toString())
+                assertFalse(status.value.toString().contains("header-secret"))
+            }
         }
     }
 

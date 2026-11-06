@@ -9,8 +9,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import splice.codemode.host.PoolLimits
 import splice.codemode.nativehost.NativeCellAdmission
 import splice.codemode.nativehost.NativeConnection
@@ -22,6 +20,7 @@ import splice.codemode.nativehost.sessions.NativeLogicalControl
 import splice.codemode.nativehost.sessions.NativeLogicalSession
 import splice.codemode.nativehost.sessions.NativeLogicalSessions
 import splice.codemode.nativehost.sessions.NativeSessionConnection
+import splice.codemode.nativehost.trace.NativeRuntimeMeasurements
 import splice.codemode.nativehost.trace.NativeStartTiming
 import splice.codemode.nativehost.trace.NativeTraceContext
 import splice.codemode.nativehost.trace.NativeTracing
@@ -137,13 +136,7 @@ public class NativeCodeModeRuntime(
                 return@withLock current
             }
             current?.close()
-            val startedAt = MonoClock.nowMs()
-            open().also {
-                NativeStartTiming.record(
-                    "tool_cold_start_ms",
-                    (MonoClock.nowMs() - startedAt).coerceAtLeast(0).toDouble(),
-                )
-            }
+            NativeStartTiming.coldStart { open() }
         }
     }
 
@@ -187,17 +180,7 @@ public class NativeCodeModeRuntime(
         }
     }
 
-    override fun runtime(): JsonObject = buildJsonObject {
-        val current = connection
-        put(
-            "measurements",
-            buildJsonObject {
-                admission.measurements().forEach { (key, value) -> put(key, value) }
-                current?.tracing?.invocations?.measurements()?.forEach { (key, value) -> put(key, value) }
-                put("runtime_processes_active", if (current?.isAvailable() == true) 1 else 0)
-            },
-        )
-    }
+    override fun runtime(): JsonObject = NativeRuntimeMeasurements.snapshot(admission, connection)
 
     override fun close() {
         if (closed.compareAndSet(false, true)) {

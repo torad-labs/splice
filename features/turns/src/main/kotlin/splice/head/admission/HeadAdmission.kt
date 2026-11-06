@@ -6,16 +6,11 @@
 // in the file.
 package splice.head.admission
 
-import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
-import kotlinx.coroutines.CancellationException
 import splice.core.auth.CredentialKey
 import splice.core.failure.EndingHeard
 import splice.core.failure.RequestFacts
 import splice.core.memory.HeapLease
-import splice.core.perf.OutcomeTag
-import splice.core.perf.observation.PerfRequestRecorder
-import splice.core.perf.observation.PerfScope
 import splice.core.turn.LiveWatchdogBudget
 import splice.head.HeadDeps
 import splice.head.hold.ClientWallHeader
@@ -49,33 +44,19 @@ internal class HeadAdmission(
     fun arrivalTime(): Long = telemetry.arrivalTime()
 
     suspend fun handleMessages(call: ApplicationCall, arrivalAt: Long = arrivalTime()) {
-        val observation = deps.stores.observations.request(
-            PerfScope(head = preparation.provider.key),
-            arrivalAt,
-            deps.stores.perfStats.clock(),
-        )
-        RequestObservation.attach(call, observation)
-        var ending = OutcomeTag.UNEXPECTED.wire
-        try {
-            handleObserved(call, arrivalAt, observation)
-            ending = if ((call.response.status()?.value ?: 0) >= HttpStatusCode.BadRequest.value) "refused" else "?"
-        } catch (cancelled: CancellationException) {
-            ending = OutcomeTag.CANCELLED.wire
-            throw cancelled
-        } finally {
-            // Actual delivery owns successful closure. Every earlier return still closes its arrival.
-            observation.finish(ending)
+        RequestObservation.run(call, deps, preparation.provider.key, arrivalAt) {
+            handleObserved(call, arrivalAt)
         }
     }
 
-    private suspend fun handleObserved(call: ApplicationCall, arrivalAt: Long, observation: PerfRequestRecorder) {
+    private suspend fun handleObserved(call: ApplicationCall, arrivalAt: Long) {
         if (!admission.acceptingOrRespond(call)) return
         // Fix 3 (Oct 27): before the turn takes a slot or is read, the head's model list follows the credential the
         // turn is sent with, so a turn sent the moment after a sign-in is prepared from that sign-in's list.
         val modelsAt = deps.seams.clock()
         deps.traffic.models.await()
         val modelsWaitMs = deps.seams.clock() - modelsAt
-        val perf = telemetry.begin(arrivalAt, observation)
+        val perf = telemetry.begin(arrivalAt, RequestObservation.of(call))
         perf.setCount(splice.core.perf.PerfKeys.MODEL_ROSTER_WAIT_MS, modelsWaitMs)
         val t0 = deps.seams.clock()
         val slot = admission.acquireSlotOrRespond(call) ?: return
@@ -134,17 +115,7 @@ internal class HeadAdmission(
 
     private suspend fun serveReady(call: ApplicationCall, prepared: Preparation.Ready, admitted: AdmittedTurn) {
         val meta = prepared.built.meta
-        admitted.perf.observations?.let {
-            it.update(
-                it.scope.copy(
-                    model = meta.route.upstreamModel,
-                    streaming = prepared.stream,
-                    compact = meta.compact,
-                    local = false,
-                ),
-                it.links.copy(sessionId = meta.scope.sessionId),
-            )
-        }
+        RequestObservation.ready(admitted.perf, prepared)
         // Before describe: a compaction held for a restart is not yet one the restart's read waits for.
         if (meta.compact && !admission.compactionAdmittedOrRespond(call, TurnEnd(admitted::release))) return
         admitted.slot.describe(
@@ -169,7 +140,7 @@ internal class HeadAdmission(
         // request the head received and answered — a trace that skipped it would show a client
         // retrying for no visible reason. Null for every head whose trace is off.
         val trace = prepared.takeInbound()?.let { deps.stores.captures.trace?.begin(prepared.built.meta, it) }
-        admitted.perf.observations?.let { it.update(it.scope, it.links.copy(turnId = trace?.turnId)) }
+        RequestObservation.turn(admitted.perf, trace?.turnId)
         admitAccountAndDrive(call, prepared, admitted, trace)
     }
 

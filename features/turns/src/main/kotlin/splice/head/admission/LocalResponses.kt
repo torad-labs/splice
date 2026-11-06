@@ -28,7 +28,7 @@ import splice.head.wire.OK_STATUS
 import splice.head.wire.SseEmitterFactory
 import splice.head.wire.TurnTerminal
 import splice.head.wire.TurnWiring
-import splice.head.wire.observation.DeliveryObservation
+import splice.head.wire.observation.LocalFrameDelivery
 import splice.http.SseResponse
 import splice.upstream.Provider
 
@@ -46,7 +46,7 @@ internal class LocalResponses(
 
     /** One text block, an end_turn terminal, zero usage: the side query is not a context read. */
     suspend fun answer(call: ApplicationCall, local: Preparation.Local, perf: TurnPerf) {
-        localScope(perf, local.model, local.sessionId, local.stream)
+        RequestObservation.local(perf, local.model, local.sessionId, local.stream)
         val usage = wiring.usagePayloadBuilderFor(
             provider.catalog,
             local.model,
@@ -56,12 +56,7 @@ internal class LocalResponses(
         if (local.stream) {
             val stream = SseResponse { out ->
                 val emitter = emitters.create(
-                    write = { frame ->
-                        val at = deps.seams.clock()
-                        out.write(frame)
-                        out.flush()
-                        DeliveryObservation.frame(perf.observations, frame, deps.seams.clock() - at)
-                    },
+                    write = LocalFrameDelivery(out, perf.observations, deps.seams.clock),
                     model = local.model,
                     usagePayload = usage,
                     voice = voice.anyTurn,
@@ -89,26 +84,17 @@ internal class LocalResponses(
      *  here with the honest error frame the seal gives an attached client, so this client retries
      *  as well — and finds the entry gone (CompactionReplay.finish), so that attempt runs upstream. */
     suspend fun replay(call: ApplicationCall, replayed: Preparation.Replay, perf: TurnPerf) {
-        localScope(perf, replayed.model, replayed.sessionId, true)
+        RequestObservation.local(perf, replayed.model, replayed.sessionId, true)
         quotaHeaders(call, replayed.sessionId)
         var frames = 0
         var whole = false
         val stream = SseResponse { out ->
+            val write = LocalFrameDelivery(out, perf.observations, deps.seams.clock)
             whole = replayed.recording.follow { frame ->
-                val at = deps.seams.clock()
-                out.write(frame)
-                out.flush()
-                DeliveryObservation.frame(perf.observations, frame, deps.seams.clock() - at)
+                write(frame)
                 frames += 1
             }
-            if (!whole) {
-                sealFollower(replayed) { frame ->
-                    val at = deps.seams.clock()
-                    out.write(frame)
-                    out.flush()
-                    DeliveryObservation.frame(perf.observations, frame, deps.seams.clock() - at)
-                }
-            }
+            if (!whole) sealFollower(replayed, write)
         }
         call.respond(stream)
         replay.consumed(replayed.key, replayed.recording)
@@ -128,7 +114,7 @@ internal class LocalResponses(
      *  the hold; a drive that ended without its terminal answers the honest overload error the follower
      *  is sealed with, and the next attempt runs upstream ([CompactionReplay] already dropped it). */
     suspend fun replayCollected(call: ApplicationCall, collected: Preparation.Collected, perf: TurnPerf) {
-        localScope(perf, collected.model, collected.sessionId, false)
+        RequestObservation.local(perf, collected.model, collected.sessionId, false)
         quotaHeaders(call, collected.sessionId)
         val who = collected.sessionId?.let { "session ${it.take(SESSION_TAG_CHARS)}" } ?: "no session"
         val body = collected.hold.await()
@@ -153,7 +139,7 @@ internal class LocalResponses(
      *  collected from the frames. A delivered body spends the recording as a streamed replay does; a drive that
      *  ended without its terminal answers the honest error, and the next attempt runs upstream. */
     suspend fun collectRecording(call: ApplicationCall, recorded: Preparation.CollectedRecording, perf: TurnPerf) {
-        localScope(perf, recorded.model, recorded.sessionId, false)
+        RequestObservation.local(perf, recorded.model, recorded.sessionId, false)
         quotaHeaders(call, recorded.sessionId)
         val who = recorded.sessionId?.let { "session ${it.take(SESSION_TAG_CHARS)}" } ?: "no session"
         val answer = RecordedAnswer()
@@ -228,17 +214,5 @@ internal class LocalResponses(
             incomplete = false,
             usage = Usage(reported = UsageField.entries.toSet()),
         )
-    }
-
-    private fun localScope(perf: TurnPerf, model: String, session: String?, stream: Boolean) {
-        perf.observations?.let {
-            it.update(
-                it.scope.copy(model = model, local = true, streaming = stream),
-                it.links.copy(sessionId = session),
-            )
-            // These prepared branches serve an answer without a new provider request. Unknown arrivals and
-            // code-mode Ready turns must leave canonical usage to their own settlement owner.
-            it.usage(mapOf("missing_usage" to 0.0))
-        }
     }
 }

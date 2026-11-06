@@ -42,7 +42,6 @@ public class InflightGate(
     private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
 ) {
     private val lock = Any()
-    private var queuedCancelled = 0L
     private val capacity = InflightCapacity(maxInflight, maxQueued)
     private var inflight = 0
     private val queue = ArrayDeque<Waiter>()
@@ -51,14 +50,8 @@ public class InflightGate(
     /** A matching session may prepare one continuation on its already-held source permit. */
     public fun resumeSource(session: String?): Slot? = session?.let { sources[it]?.resume() }
 
-    // V4-213, all guarded by [lock]. Insertion order is admission order, so [snapshot] lists the
-    // oldest slot first (the console reads the first live row as a head's current turn).
-    private val live = LinkedHashSet<Slot>()
-    private var acquired = 0L
-    private var released = 0L
-    private var waited = 0L
-    private var waitMsTotal = 0L
-    private var refused = 0L
+    // Traffic is read and changed only under [lock], alongside the permit transition it observes.
+    private val traffic = InflightTraffic()
 
     // Transition calls hold lock: gate -> recorder -> accumulator. The observer must only accumulate/enqueue
     // bounded memory, with no serialization, filesystem/network I/O or callback into this gate.
@@ -69,8 +62,8 @@ public class InflightGate(
                 queue.size,
                 maxInflight(),
                 queue.peekFirst()?.let { clock() - it.queuedAt } ?: 0L,
-                refused,
-                queuedCancelled,
+                traffic.refused,
+                traffic.queuedCancelled,
             )
         },
     )
@@ -93,14 +86,8 @@ public class InflightGate(
             inflight = inflight,
             queued = queue.size,
             limit = maxInflight(),
-            traffic = GateCounts(
-                acquired = acquired,
-                released = released,
-                waited = waited,
-                avgWaitMs = if (waited == 0L) 0L else (waitMsTotal + waited / 2) / waited,
-                refused = refused,
-            ),
-            live = live.map { it.readingState.reading(now) },
+            traffic = traffic.counts(),
+            live = traffic.readings(now),
             waiting = queue.map { GateWait(it.session, now - it.queuedAt) },
         )
     }
@@ -155,12 +142,7 @@ public class InflightGate(
     internal fun deliver(waitedMs: Long?): Slot {
         val slot = Slot(this, clock, heldMs = waitedMs)
         synchronized(lock) {
-            acquired += 1
-            if (waitedMs != null) {
-                waited += 1
-                waitMsTotal += waitedMs
-            }
-            live.add(slot)
+            traffic.delivered(slot, waitedMs)
             observations.record()
         }
         return slot
@@ -187,7 +169,7 @@ public class InflightGate(
                     waiter.queuedAt = clock()
                     queue.addLast(waiter)
                 } else {
-                    refused += 1
+                    traffic.refuse()
                     rejected = true
                 }
                 observations.record()
@@ -214,7 +196,7 @@ public class InflightGate(
                 // admission and the hand-off race is decided there, never here (both sides run
                 // under [lock]/tryResume atomicity, so exactly one compensator fires).
                 synchronized(lock) {
-                    if (!waiter.resumed && queue.remove(waiter)) queuedCancelled += 1
+                    if (!waiter.resumed && queue.remove(waiter)) traffic.cancelQueued()
                     observations.record()
                 }
             }
@@ -227,13 +209,13 @@ public class InflightGate(
     internal fun release(slot: Slot, yielded: Boolean = false) {
         if (yielded) {
             synchronized(lock) {
-                if (live.remove(slot)) released += 1
+                traffic.release(slot)
                 observations.record()
             }
             return
         }
         returnPermit {
-            if (live.remove(slot)) released += 1
+            traffic.release(slot)
         }
     }
 

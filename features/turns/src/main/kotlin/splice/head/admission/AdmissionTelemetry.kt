@@ -5,15 +5,21 @@
 // slot is returned, so INFLIGHT is the depth the turn actually entered at.
 package splice.head.admission
 
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.util.AttributeKey
+import kotlinx.coroutines.CancellationException
+import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.perf.TimedWork
 import splice.core.perf.TurnPerf
 import splice.core.perf.observation.PerfEventKind
 import splice.core.perf.observation.PerfRequestRecorder
+import splice.core.perf.observation.PerfScope
 import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
+import splice.head.HeadDeps
+import splice.head.turn.Preparation
 import splice.upstream.retry.InflightGate
 import java.util.UUID
 
@@ -59,6 +65,26 @@ internal object RequestObservation {
     private val key = AttributeKey<PerfRequestRecorder>("splice.request.observation")
     private val traceParent = Regex("00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})")
 
+    suspend fun run(call: ApplicationCall, deps: HeadDeps, head: String, arrivalAt: Long, work: TimedWork<Unit>) {
+        val observation = deps.stores.observations.request(
+            PerfScope(head = head),
+            arrivalAt,
+            deps.stores.perfStats.clock(),
+        )
+        attach(call, observation)
+        var ending = OutcomeTag.UNEXPECTED.wire
+        try {
+            work()
+            ending = if ((call.response.status()?.value ?: 0) >= HttpStatusCode.BadRequest.value) "refused" else "?"
+        } catch (cancelled: CancellationException) {
+            ending = OutcomeTag.CANCELLED.wire
+            throw cancelled
+        } finally {
+            // Actual delivery owns successful closure. Every earlier return still closes its arrival.
+            observation.finish(ending)
+        }
+    }
+
     fun attach(call: ApplicationCall, request: PerfRequestRecorder) {
         call.attributes.put(key, request)
         // W3C version 00 only. The recorder validates every ID and drops unsupported trace state.
@@ -76,6 +102,37 @@ internal object RequestObservation {
     }
 
     fun of(call: ApplicationCall): PerfRequestRecorder? = call.attributes.getOrNull(key)
+
+    fun ready(perf: TurnPerf, prepared: Preparation.Ready) {
+        val meta = prepared.built.meta
+        perf.observations?.let {
+            it.update(
+                it.scope.copy(
+                    model = meta.route.upstreamModel,
+                    streaming = prepared.stream,
+                    compact = meta.compact,
+                    local = false,
+                ),
+                it.links.copy(sessionId = meta.scope.sessionId),
+            )
+        }
+    }
+
+    fun turn(perf: TurnPerf, turnId: String?) {
+        perf.observations?.let { it.update(it.scope, it.links.copy(turnId = turnId)) }
+    }
+
+    fun local(perf: TurnPerf, model: String, session: String?, stream: Boolean) {
+        perf.observations?.let {
+            it.update(
+                it.scope.copy(model = model, local = true, streaming = stream),
+                it.links.copy(sessionId = session),
+            )
+            // These prepared branches serve an answer without a new provider request. Unknown arrivals and
+            // code-mode Ready turns must leave canonical usage to their own settlement owner.
+            it.usage(mapOf("missing_usage" to 0.0))
+        }
+    }
 }
 
 // A W3C span identifier contains sixteen hexadecimal characters, drawn here from a generated UUID.

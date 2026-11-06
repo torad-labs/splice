@@ -410,8 +410,8 @@ object BenchmarkDelayedIoFixture {
     private const val FIXTURE_CLASS = "splice/app/instrumentation/BenchmarkDelayedIoFixture"
     private val FIXTURE_DIRECTORIES = setOf("META-INF/", "splice/", "splice/app/", "splice/app/instrumentation/")
 
-    // One fixed five-second maximum from admission also bounds a late-starting injection.
-    private const val HOLD_MS = 5_000L
+    // Stop the intentional wait at 4.5s, leaving 0.5s for observed completion within the driver's unchanged 5s bound.
+    private const val HOLD_MS = 4_500L
 
     // A released latch needs only a bounded scheduling grace; the external driver still owns process cleanup.
     private const val CLEANUP_MS = 1_000L

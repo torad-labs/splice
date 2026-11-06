@@ -1,0 +1,69 @@
+# Named objectives and sustained performance alerts
+
+Objectives are explicit operator configuration. Installation creates no rules and enables no notifications. A named objective describes request thresholds and a bounded cohort; query goodput and alert goodput use the same `PerfObjectives` request evaluator. Histogram percentiles are never substituted for individual objective verdicts.
+
+`PerfObjectiveStore(path)` takes a path resolved by the application through `StatePaths`. It exposes `settings()`, `update(JsonObject)`, `objective(id)`, `cohort(id)` and atomic `selection(id)`, and must be closed at shutdown. The authoritative `PerfQuerySources.objectiveSelection(id)` delegates to `selection(id)` and returns `PerfObjectiveSelection(objective, cohort)` from one settings generation: an empty map means a known unscoped objective; null selection means unavailable. Separate legacy objective/cohort reads remain source compatible but cannot resolve named queries because they cannot prove coherence across an intervening update. The query service combines objective filters with requested filters and rejects conflicts. Alert rules combine their own filters with the same objective filters. Supported cohort keys are `head`, `model`, `transport`, `outcome`, `local`, `compact`, and `streaming`; arbitrary request/session/project/account filters cannot become persistent alert dimensions.
+
+For example, an operator may choose this configuration; these numbers are illustrative, not defaults:
+
+```json
+{
+  "schema_version": 1,
+  "objectives": [
+    {"id": "interactive", "cohort": {"head": "codex"}, "completion_ms": 30000}
+  ],
+  "rules": [
+    {
+      "id": "interactive-goodput",
+      "objective_id": "interactive",
+      "cohort": {},
+      "metric": "goodput.good_fraction",
+      "comparison": "below",
+      "threshold": 0.95,
+      "window_ms": 300000,
+      "min_count": 20,
+      "min_coverage": 0.95,
+      "hold_ms": 60000,
+      "cooldown_ms": 300000,
+      "recovery": {"threshold": 0.98, "hold_ms": 60000},
+      "delivery_enabled": false
+    }
+  ]
+}
+```
+
+Optional objective bounds are `first_content_ms`, `completion_ms`, `queue_ms`, and `progress_gap_ms`; at least one is required. They retain the core evaluator's measurement meanings, including meaningful content and the maximum upstream progress gap. Protocol silence, meaningful-content silence and client-delivery silence are distinct measurements. Reasoning alone is not a failed delivery verdict. A missing required request measurement remains unknown, except where an already known violated bound or failed terminal proves BAD.
+
+`comparison` defaults to `above`. Breaches use strict `>`/`<`; recovery uses inclusive `<=`/`>=`. `recovery` is an object with a required healthy-side `threshold` and optional `hold_ms` (default zero). Each rule requires its window, minimum count, minimum coverage, hold and cooldown. `delivery_enabled` defaults to false. Windows are 1 second through 7 days; hold/cooldown/recovery are zero through 7 days. Minimum count is 1–1,000,000; coverage is 0–1. There are at most 32 objectives and 32 rules, IDs are bounded identifiers, cohort values are limited to 128 characters, and settings are limited to 32 KiB.
+
+Updates validate the whole document, including references, cohort conflicts, finite thresholds, hysteresis, unsupported fields and metric types. They atomically replace the file only after successful validation. Failure leaves the previous effective configuration unchanged. Returned settings contain `revision`; objective entries also contain `revision`. These are stable SHA-256 hashes of canonical configuration. Caller-supplied revisions are ignored. No credential, path, or input text is used as a revision value. Invalid stored settings remain explicitly unavailable rather than enabling fallback rules.
+
+| Rule metric | Measurement and sample population |
+|---|---|
+| `histograms.<registry-id>.p95`, `.p99`, `.max` | Shared query histogram values and that histogram's count. Quantiles retain their reported bucket approximation. Queue/tail/progress-gap distributions stay separate. |
+| `gauges.<registry-id>.last`, `.max`, `.time_weighted_mean` | Gauge samples, with `sample_count`. Coverage is bounded by aggregate coverage and `covered_ms / (window_ms × observed scope_count)`. Missing expected scopes remain unknown. Last is one most recent scope reading, max is the maximum observed sample, and the mean is weighted by observed covered time. |
+| `counters.<registry-id>.per_s` | Registry event deltas divided by requested wall seconds; count is counter measurements. Sampled cumulative gate/GC/runtime values cannot be selected as counters. |
+| `goodput.good_fraction`, `goodput.per_s` | Exact shared-query goodput, with `known_evaluable` as the count gate and request-population temporal coverage. |
+| `failure_fraction` | Nonclean terminal outcomes, including cancellation/refusal, divided by known terminal outcomes. Unknown outcomes or incomplete terminal population prevent evaluation. |
+| `refusal_fraction` | Measured `refused` or `OutcomeTag.AT_CAPACITY` terminals divided by known terminals. It never sums cumulative gate-refusal samples. |
+| `retry_amplification` | Attempts started divided by arrivals in the requested event window. This is a window event ratio, not a per-request retry attribution. Incomplete coverage prevents evaluation. |
+| `telemetry.staleness_ms` | Maximum measured age since success across current source sink snapshots; count is sinks with a known timestamp. This is a current status measurement, with sustained behavior established by repeated evaluations. A missing sink timestamp is insufficient data. |
+| `telemetry.loss_fraction` | Explicitly unavailable: a cumulative sink snapshot does not provide a window delta. Use actual `counters.self_dropped.per_s` measurements where present. |
+
+Queue pressure can use `gate_queued`, `gate_oldest_wait_ms`, or `gate_saturated`; measured resource pressure can use heap/RSS/CPU/dispatcher gauges and GC's recorded cumulative gauge. No GC rate is invented. Missing-progress rules can use the measured upstream/downstream gap distributions; absence of an ongoing silence measurement is reported as unavailable. The registry is the allowlist, so unsupported platform/runtime fields and absent samples produce `insufficient_data` with a stable reason.
+
+Known complete requests retain GOOD/BAD under unknown whole-window coverage. The query's `known_evaluable`, `observed_arrivals`, `known_good_per_s`, and `known_good_rate_is_lower_bound` remain useful evidence. Alerts never silently replace exact `per_s` or `good_fraction` with a lower bound. Count and coverage gates are independent; no samples cannot be healthy even when minimum temporal coverage is zero.
+
+`PerfAlertEngine(query, store, delivery)` starts no scheduler. The host calls blocking `evaluate(nowMs)` on its bounded background I/O lane, off inference and event-loop threads. Empty rules perform no query or delivery. Concurrent evaluation returns busy. The engine consumes and releases leased query replies after reducing them into its own bounded state. Its own `evaluate`, `history` and `status` replies, and store settings/update replies, must be encoded/reduced and released with `PerfWorkBudget.release(reply)`. Close the engine and store during shutdown; the host separately owns and closes the delivery adapter.
+
+Lifecycle states are `insufficient_data`, `pending`, `firing`, and `resolved`. A breach must persist across evaluated windows for `hold_ms`; recovery requires the configured healthy threshold and recovery hold. A firing incident remains active through missing data. In the hysteresis band it remains firing. Cooldown delays a new firing after a measured recovery. Evaluations at or before the persisted last evaluation are ignored as late; historical corrections do not retroactively rewrite delivered incidents. A restart or a gap longer than a rule window resets pending/recovery continuity. Already firing incident IDs survive restart. These are sampled-window guarantees, not claims about unobserved continuous time.
+
+Each event includes `alert_id`, stable `dedup_key`, `rule_id`, `rule_revision`, `state`, `active`, `metric`, `comparison`, `observed`, `threshold`, `sample_count`, `window {from_ms,until_ms}`, `cohort`, `coverage`, `identity`, `objective_revision`, `pending_since_ms`, `firing_since_ms`, `resolved_at_ms`, `recovery_since_ms`, `as_of_ms`, `reason`, `continuity`, `diagnostic_links`, `delivery_enabled`, and `delivery_status`. Diagnostic links carry a relative endpoint and structured parameters. Identity includes up to eight bounded build/version/boot/config cohorts; it does not include request content. History returns `{schema_version,status,events,expired_events,retention}`; status returns current events plus delivery accounting and pending attempts. History is bounded to 128 transition events and a 128 KiB atomic journal; expiry is explicit. Current lifecycle and at most 32 delivery records share that journal beside settings as `<settings-filename>.alerts`.
+
+Lifecycle and each attempt are persisted before calling `PerfAlertDelivery.enqueue`. True means bounded queue acceptance only. The optional nonblocking `result(dedupKey)` reports actual `delivered`, `failed`, or `disabled`; null means completion unknown. There are at most three attempts with bounded deterministic jittered delays, and accepted attempts with no completion eventually become explicitly unknown. Restarted in-flight/accepted attempts become `restart_delivery_unknown`, avoiding a blind duplicate when remote acceptance cannot be known. Actual failed HTTP attempts and queue refusals have separate durable counters. A failed lifecycle write publishes no new firing and initiates no delivery.
+
+`PerfWebhookDelivery(AlertDelivery, ownerScope, objectives)` supplies one worker and a queue of 32. The optional third argument must be supplied in production: the worker checks the captured `settings_revision` and current rule opt-in immediately before HTTP. Each evaluation captures one settings snapshot and events name its revision. A detected change before publication returns `settings_changed_during_evaluation` without publishing that computation or accepting delivery. Removed/revised rules retire with explicit insufficient-data events, never a fabricated healthy recovery. Already queued events whose settings changed are disabled; an already in-flight HTTP operation cannot be revoked retroactively, and its actual result remains recorded. No configuration lock spans query or network work.
+
+The adapter reuses existing `AlertStore.webhook_url` and the existing `{"text": ...}` body, with a 10-second attempt limit. There are no real external sends in development fixtures. Existing budget alert settings and webhook behavior remain unchanged. Performance history is the browser event source: B08 must require the event's performance `delivery_enabled`, existing desktop preference, and browser notification permission; deduplicate by `dedup_key`. The daemon does not deliver desktop notifications and queue acceptance never claims a desktop notification occurred.
+
+Runtime fixtures are authored for atomic rejection, revision/cohort behavior, lifecycle transitions, missing data, restart/late windows, exact versus partial goodput, refusal outcomes, persistence failure, bounded retries, enqueue/HTTP failure distinction, and shared webhook behavior using a mock HTTP engine. Execution belongs to the final integrated gate.

@@ -28,7 +28,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import splice.core.util.Cancellables
+import splice.core.util.JsonScalars
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.usage.budgets.BudgetAlert
@@ -62,7 +64,27 @@ public class AlertDelivery(
         scope.launch { post(head, url, text) }
     }
 
-    private suspend fun post(head: String, url: String, text: String) {
+    /** The performance adapter serializes/bounds calls; existing preferences and webhook body are reused. */
+    public suspend fun performance(event: JsonObject): String {
+        val url = source.settings().webhookUrl
+        val rule = JsonScalars.str(event, "rule_id")
+        val metric = JsonScalars.str(event, "metric")
+        val enabled = JsonScalars.str(event, "delivery_enabled") == "true"
+        return if (enabled && listOf(url, rule, metric).all { it != null }) {
+            performancePost(requireNotNull(url), requireNotNull(rule), requireNotNull(metric), event)
+        } else {
+            "disabled"
+        }
+    }
+
+    private suspend fun performancePost(url: String, rule: String, metric: String, event: JsonObject): String {
+        val observed = JsonScalars.str(event, "observed") ?: "unknown"
+        val threshold = JsonScalars.str(event, "threshold") ?: "unknown"
+        val text = "Performance rule $rule firing: $metric=$observed (threshold $threshold)."
+        return if (post("performance", url, text, "performance")) "delivered" else "failed"
+    }
+
+    private suspend fun post(head: String, url: String, text: String, category: String = "budget"): Boolean =
         Cancellables.runCatchingCancellable {
             client.post(url) {
                 contentType(ContentType.Application.Json)
@@ -72,17 +94,22 @@ public class AlertDelivery(
             onSuccess = { response ->
                 if (!response.status.isSuccess()) {
                     val status = response.status.value.toString()
-                    log("[${LogSafe.str(head)}][budget] webhook alert answered HTTP ${LogSafe.str(status)}\n")
+                    log(
+                        "[${LogSafe.str(
+                            head,
+                        )}][${LogSafe.str(category)}] webhook alert answered HTTP ${LogSafe.str(status)}\n",
+                    )
                 }
+                response.status.isSuccess()
             },
             onFailure = { failure ->
                 log(
-                    "[${LogSafe.str(head)}][budget] webhook alert failed: " +
+                    "[${LogSafe.str(head)}][${LogSafe.str(category)}] webhook alert failed: " +
                         "${LogSafe.str(WebhookFailure(url).of(failure))}\n",
                 )
+                false
             },
         )
-    }
 }
 
 /** A failed webhook POST said without its message (V4-295): Ktor's timeouts put the whole URL in theirs

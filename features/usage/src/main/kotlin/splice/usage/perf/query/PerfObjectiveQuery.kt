@@ -4,14 +4,14 @@ package splice.usage.perf.query
 internal object PerfObjectiveQuery {
     fun resolve(query: PerfQuery, sources: PerfQuerySources): PerfQuery? {
         val id = query.objectiveId ?: return query
-        val stored = sources.objective(id)
-        val objective = stored ?: query.objective
-        val mismatch = query.objective?.let { supplied -> stored != null && supplied != stored } == true
-        val filters = filters(query, sources.objectiveCohort(id))
+        val selection = sources.objectiveSelection(id) ?: return null
+        val objective = selection.objective
+        val mismatch = query.objective?.let { supplied -> supplied != objective } == true
+        val filters = filters(query, selection.cohort)
         return if (mismatch || filters == null) {
             null
         } else {
-            objective?.takeIf { it.id == id }?.let {
+            objective.takeIf { it.id == id }?.let {
                 query.copy(objective = it, filters = filters)
             }
         }

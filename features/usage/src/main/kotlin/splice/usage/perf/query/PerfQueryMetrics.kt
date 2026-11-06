@@ -31,40 +31,33 @@ internal object PerfQueryMetrics {
     fun summary(query: PerfQuery, data: QueryData): JsonObject {
         val groups = data.points.values.groupBy { it.metric }
         val seconds = (query.untilMs - query.fromMs).toDouble() / MILLIS_PER_SECOND
+        val populations = MetricPopulationCoverage(query, data)
         return buildJsonObject {
-            put(
-                "rates",
-                buildJsonObject {
-                    rates.forEach { (name, metric) ->
-                        val values = groups[metric]
-                        put(name, numeric(values?.sumOf { it.sum }?.div(seconds)))
-                        if (values == null) data.missing.add(metric)
-                    }
-                    put("denominator", "requested_wall_duration")
-                    put("filter_attribution", data.populationSource)
-                    put(
-                        "coverage",
-                        data.populationCoverage[data.populationSource] ?: coverageJson(data.coverage, data.complete),
-                    )
-                    put(
-                        "interpretation",
-                        if (data.complete) "complete_population" else "known_observations_with_reported_gaps",
-                    )
-                },
-            )
+            put("rates", rateSummary(groups, seconds, data))
             put(
                 "histograms",
-                JsonObject(groups.filterKeys { type(it) == "histogram" }.mapValues { histogram(it.value) }),
+                JsonObject(
+                    groups.filterKeys { type(it) == "histogram" }.mapValues {
+                        populations.attach(it.key, histogram(it.value))
+                    },
+                ),
             )
             put(
                 "counters",
                 JsonObject(
                     groups.filterKeys { type(it) == "counter" }.mapValues {
-                        counter(it.value, seconds)
+                        populations.attach(it.key, counter(it.value, seconds))
                     },
                 ),
             )
-            put("gauges", JsonObject(groups.filterKeys { type(it) == "gauge" }.mapValues { gauge(it.value) }))
+            put(
+                "gauges",
+                JsonObject(
+                    groups.filterKeys { type(it) == "gauge" }.mapValues {
+                        populations.attach(it.key, gauge(it.value))
+                    },
+                ),
+            )
             put(
                 "outcomes",
                 buildJsonObject {
@@ -76,6 +69,22 @@ internal object PerfQueryMetrics {
             put("goodput", data.goodput)
             put("legacy", data.legacy)
         }
+    }
+
+    private fun rateSummary(
+        groups: Map<String, List<PerfAggregatePoint>>,
+        seconds: Double,
+        data: QueryData,
+    ): JsonObject = buildJsonObject {
+        rates.forEach { (name, metric) ->
+            val values = groups[metric]
+            put(name, numeric(values?.sumOf { it.sum }?.div(seconds)))
+            if (values == null) data.missing.add(metric)
+        }
+        put("denominator", "requested_wall_duration")
+        put("filter_attribution", data.populationSource)
+        put("coverage", data.populationCoverage[data.populationSource] ?: coverageJson(data.coverage, data.complete))
+        put("interpretation", if (data.complete) "complete_population" else "known_observations_with_reported_gaps")
     }
 
     fun series(data: QueryData): JsonArray = JsonArray(
@@ -175,3 +184,20 @@ internal const val MILLIS_PER_SECOND = 1_000.0
 private const val HALF = 0.5
 private const val P95 = 0.95
 private const val P99 = 0.99
+
+/** The evidence fold replaces only its supported request metrics; other points retain aggregate attribution. */
+private class MetricPopulationCoverage(query: PerfQuery, private val data: QueryData) {
+    private val requestMetrics = EvidencePoints(query).supported
+
+    fun attach(metric: String, payload: JsonObject): JsonObject {
+        val population = if (metric in requestMetrics) data.populationSource else "aggregate_event_time_scope"
+        val coverage = data.populationCoverage[population]
+            ?: coverageJson(data.coverage.copy(observedMs = 0), false)
+        return JsonObject(
+            payload + buildJsonObject {
+                put("filter_attribution", population)
+                put("coverage", coverage)
+            },
+        )
+    }
+}

@@ -28,6 +28,8 @@ class PerfQuerySelectionTest {
             override fun rows(head: String): PerfRowsSource? = null
             override fun objective(id: String): PerfObjectiveSet? = objective.takeIf { id == it.id }
             override fun objectiveCohort(id: String): Map<String, String> = emptyMap()
+            override fun objectiveSelection(id: String): PerfObjectiveSelection? =
+                objective.takeIf { it.id == id }?.let { PerfObjectiveSelection(it, emptyMap()) }
         })
         val query =
             requireNotNull(

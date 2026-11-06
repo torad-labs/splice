@@ -57,6 +57,7 @@ class PerfObjectiveCacheIdentityTest {
         override fun rows(head: String): PerfRowsSource? = null
         override fun objective(id: String): PerfObjectiveSet = objective
         override fun objectiveCohort(id: String): Map<String, String> = cohort
+        override fun objectiveSelection(id: String): PerfObjectiveSelection = PerfObjectiveSelection(objective, cohort)
         override fun live(): PerfAggregateSnapshot = PerfAggregateSnapshot(
             PerfIdentity("boot", "build", "1", "rev"),
             0,

@@ -22,6 +22,9 @@ public data class PerfQuery(
 
 public data class PerfQueryRead(val query: PerfQuery?, val error: JsonObject?)
 
+/** One immutable settings generation: thresholds/revision and cohort must be read atomically by the source. */
+public data class PerfObjectiveSelection(val objective: PerfObjectiveSet, val cohort: Map<String, String>)
+
 /** Revision identifiers describe effective configuration, never credential values. Null means unknown. */
 public data class PerfConfigInterval(
     val head: String,
@@ -51,6 +54,9 @@ public interface PerfQuerySources {
 
     /** Null means unavailable; an empty map explicitly identifies an unscoped named objective. */
     public fun objectiveCohort(id: String): Map<String, String>? = null
+
+    /** Authoritative named lookup. Null is unavailable; separate legacy reads cannot prove a coherent generation. */
+    public fun objectiveSelection(id: String): PerfObjectiveSelection? = null
 }
 
 public fun interface HeadPerfQuery {

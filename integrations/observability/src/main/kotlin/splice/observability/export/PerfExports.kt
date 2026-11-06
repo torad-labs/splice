@@ -125,8 +125,13 @@ public class PerfExports(
         }
     }
 
-    private fun tick(): Boolean = Cancellables.runCatchingCancellable { engine.tick() }
-        .getOrElse { workerFailures.incrementAndGet(); false }
+    private fun tick(): Boolean = Cancellables.runCatchingBestEffort { engine.tick() }
+        .getOrElse {
+            // Worker interruption is control flow, not a failed optional export sample.
+            if (it is InterruptedException) throw it
+            workerFailures.incrementAndGet()
+            false
+        }
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return

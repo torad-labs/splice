@@ -14,6 +14,7 @@ import splice.core.perf.export.PerfExportConfig
 import splice.core.perf.observation.PerfAggregateSource
 import splice.core.util.WallClock
 import java.util.concurrent.CancellationException
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.atomic.AtomicReference
 
 class ExportScrapeFailureTest {
@@ -56,8 +57,10 @@ class ExportScrapeFailureTest {
     }
 
     @Test
-    fun `snapshot cancellation and fatal failure propagate after invalidating the scrape`() {
+    fun `snapshot cancellation interruption and fatal failure propagate after invalidating the scrape`() {
         val failure = AtomicReference<Throwable?>()
+        val failures =
+            listOf(CancellationException("cancelled"), InterruptedException("interrupted"), LinkageError("fatal"))
         val source = PerfAggregateSource {
             failure.get()?.let { throw it }
             ExportFixtures.snapshot()
@@ -69,7 +72,7 @@ class ExportScrapeFailureTest {
             ExportQueue(),
             WallClock { 1_000 },
         ).use { engine ->
-            listOf(CancellationException("cancelled"), LinkageError("fatal")).forEach { expected ->
+            failures.forEach { expected ->
                 failure.set(null)
                 assertTrue(engine.tick())
                 engine.scrape().use { assertTrue(it.available) }
@@ -80,6 +83,32 @@ class ExportScrapeFailureTest {
                     assertEquals("source_failed", scrape.state)
                 }
             }
+        }
+        failure.set(null)
+        PerfExports(
+            PerfExportConfig(prometheus = true),
+            ExportFixtures.identity,
+            source,
+            WallClock { 1_000 },
+        ).use { exports ->
+            failures.forEach { expected ->
+                assertTrue(exports.flush())
+                exports.scrape().use { assertTrue(it.available) }
+                failure.set(expected)
+                try {
+                    assertFlushPropagates(exports, expected)
+                } finally {
+                    failure.set(null)
+                }
+            }
+        }
+    }
+
+    private fun assertFlushPropagates(exports: PerfExports, expected: Throwable) {
+        assertSame(expected, assertThrows(ExecutionException::class.java) { exports.flush() }.cause)
+        exports.scrape().use { scrape ->
+            assertFalse(scrape.available)
+            assertEquals("source_failed", scrape.state)
         }
     }
 }

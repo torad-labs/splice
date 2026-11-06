@@ -9,7 +9,8 @@ import { resource, startDesk } from './desk';
 import { summarize, type Extras } from './summary';
 import { analyze } from './analyze';
 import { collector, startProfile } from './adapters';
-const harnessAtLoad = Promise.all(['run.ts', 'manifest.ts', 'fixture.ts', 'observe.ts', 'desk.ts', 'summary.ts', 'analyze.ts', 'adapters.ts'].map(f => Bun.file(join(import.meta.dir, f)).text())).then(files => hash(files.join('\n')));
+import type { DeskIdentity } from './identity';
+const harnessAtLoad = Promise.all(['run.ts', 'manifest.ts', 'fixture.ts', 'observe.ts', 'desk.ts', 'summary.ts', 'analyze.ts', 'adapters.ts', 'identity.ts'].map(f => Bun.file(join(import.meta.dir, f)).text())).then(files => hash(files.join('\n')));
 export async function writeVerified(path: string, value: string) {
   const temporary = `${path}.${randomUUID()}.tmp`; const file = await open(temporary, 'wx', 0o600);
   try { await file.writeFile(value); await file.sync(); } finally { await file.close(); }
@@ -32,7 +33,7 @@ export async function run(input: Manifest, directory: string, dry = false) {
   const env = environment(); m.hardware = env.hardware; m.os = env.os;
   const samples: Sample[] = []; const extras: Extras = { repetitions: [], fixture: null, polling: { count: 0, failed: 0, bytes: 0, elapsed_ms: 0 }, partial_reason: null };
   const upstream = startUpstream(m); const exporter = collector(m.collection.exports, m.generator_limits.max_wire_bytes); let desk: Awaited<ReturnType<typeof startDesk>> | undefined;
-  const bootIds: string[] = []; const origin = performance.now(); const now = () => performance.now() - origin;
+  const bootIds: string[] = []; const processIdentities: DeskIdentity[] = []; const origin = performance.now(); const now = () => performance.now() - origin;
   let sequence = 0, polling = false, pollTask: Promise<void> | undefined;
   const startPolling = () => {
     if (!m.collection.polling || !desk) return;
@@ -41,6 +42,7 @@ export async function run(input: Manifest, directory: string, dry = false) {
     pollTask = (async () => { while (polling) {
       const started = now(); extras.polling.count++;
       try {
+        await current.assertIdentity();
         const r = await fetch(current.pollBase + path, { headers: current.mgmtKey ? { authorization: `Bearer ${current.mgmtKey}` } : {}, signal: AbortSignal.timeout(Math.min(2000, m.generator_limits.timeout_ms)), redirect: 'error' });
         if (!r.ok) extras.polling.failed++;
         const reader = r.body?.getReader(); let size = 0;
@@ -52,6 +54,7 @@ export async function run(input: Manifest, directory: string, dry = false) {
     } })();
   };
   const phase = async (repetition: number, name: Sample['phase'], duration: number) => {
+    await desk!.assertIdentity();
     const start = now(), deadline = start + duration; const active = new Set<Promise<void>>(); let capped = false;
     const launch = (scheduled: number) => {
       if (sequence >= m.generator_limits.max_iterations) { capped = true; return; }
@@ -78,7 +81,7 @@ export async function run(input: Manifest, directory: string, dry = false) {
         }
       }));
     }
-    const offeredEnd = now(); await Promise.all(active);
+    const offeredEnd = now(); await Promise.all(active); await desk!.assertIdentity();
     if (capped) extras.partial_reason = 'generator_iteration_limit';
     return { observed_duration_ms: offeredEnd - start, scheduling_elapsed_ms: offeredEnd - start, drain_ms: Math.max(0, now() - deadline) };
   };
@@ -87,6 +90,7 @@ export async function run(input: Manifest, directory: string, dry = false) {
       if (!desk) {
         desk = await startDesk(m, upstream.url, join(output, `desk-${repetition}`), exporter.endpoint); bootIds.push(desk.bootId);
         m.boot_id = bootIds[0] ?? 'unknown'; m.jvm = desk.jvm; m.process_build = desk.processBuild; m.config_revision = desk.configHash;
+        if (desk.identity) processIdentities.push(desk.identity);
         startPolling();
       }
       await phase(repetition, 'warmup', m.warmup_ms);
@@ -106,7 +110,7 @@ export async function run(input: Manifest, directory: string, dry = false) {
   } finally {
     polling = false; await pollTask; if (desk) await desk.stop(); extras.fixture = upstream.stats(); await upstream.stop(); await exporter.stop(); extras.exports = exporter.counts; if (m.collection.exports && !exporter.counts.requests) extras.partial_reason ??= 'no_export_received'; if (extras.polling.failed) extras.partial_reason ??= 'polling_failed';
   }
-  m.provenance = { measured_at: new Date().toISOString(), environment: env, boot_ids: bootIds, request_sha256: hash(body),
+  m.provenance = { measured_at: new Date().toISOString(), environment: env, boot_ids: bootIds, process_identities: processIdentities, request_sha256: hash(body),
     supplied_identity: { source_commit: input.source_commit, artifact_sha256: input.artifact_sha256, process_build: input.process_build, config_revision: input.config_revision },
     harness_sha256: await harnessAtLoad };
   samples.sort((a, b) => a.sequence - b.sequence);

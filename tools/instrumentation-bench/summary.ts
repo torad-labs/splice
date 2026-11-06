@@ -41,8 +41,8 @@ export function summarize(m: Manifest, all: Sample[], extras: Extras) {
   const saturated = counters.generator_dropped > 0 || (generatorTails.p95 ?? 0) > m.generator_limits.max_schedule_delay_ms;
   const repeated = per.length === m.repetitions;
   const missing = m.load.kind === 'arrival_rate' ? Math.max(0, Math.ceil(m.duration_ms * m.load.value / 1000) * m.repetitions - rows.length) : null;
-  return { schema_version: 1, experiment_stage: m.experiment_stage ?? 'calibration', run_id: m.run_id, status: extras.partial_reason || !repeated || wireInvalid || counters.pending || counters.generator_dropped || missing ? 'partial' : 'complete',
-    partial_reason: extras.partial_reason, requested_duration_ms: m.duration_ms * m.repetitions,
+  return { schema_version: 1, experiment_stage: m.experiment_stage ?? 'calibration', run_id: m.run_id, status: extras.partial_reason || !repeated || wireInvalid || counters.pending || saturated || missing ? 'partial' : 'complete',
+    partial_reason: extras.partial_reason ?? (saturated ? 'generator_saturated' : null), requested_duration_ms: m.duration_ms * m.repetitions,
     observed_duration_ms: extras.repetitions.reduce((n, r) => n + r.observed_duration_ms, 0), counts: counters,
     rates_per_second: Object.fromEntries(Object.entries(counters).map(([k, v]) => [k, v / duration])),
     missing_generator_iterations: missing, dropped_generator_iterations: counters.generator_dropped,

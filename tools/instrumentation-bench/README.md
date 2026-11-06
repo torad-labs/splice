@@ -39,6 +39,15 @@ boot IDs remain `unknown`; a fresh desk is not evidence of a daemon-reported ID.
 `process_build=source:<sha>` identifies the verified source, not `/health.version`.
 The build's jar manifest, launcher and SHA256SUMS are separate artifacts.
 
+Proxy readiness requires Linux `/proc` visibility. Before even requesting health,
+the harness intersects both listening socket inodes with the spawned child's file
+descriptors, verifies its process start ticks and liveness, then rechecks ownership
+after health. It also verifies the child's `-jar` path. Ownership is checked around
+each workload phase and before polling. Missing platform support or unverifiable
+ownership fails explicitly; an unrelated HTTP200 can never establish readiness.
+Each desk records this process/socket evidence with the verified artifact and
+configuration digests in `provenance.process_identities`.
+
 The launcher uses an explicit child environment allowlist, `-Duser.home`,
 `SPLICE_STATE_DIR`, `SPLICE_CONFIG`, and XDG directories under the new task desk.
 It does not assign HOME or inherit provider/auth environment variables. The mock
@@ -98,7 +107,8 @@ per second. Every original arrival slot is retained: exceeding max_inflight
 records `generator_dropped`, and late dispatch records generator_delay_ms. The
 scheduler never changes the offered rate to wait for a free worker. Iteration,
 request-timeout and wire-byte caps bound the generator. Exceeding any cap cannot
-be reported as a capacity pass.
+be reported as a capacity pass. Scheduling-delay saturation alone also marks the
+run partial and exits2, even if all arrival slots eventually complete.
 
 Warmup requests are retained with `phase=warmup` but excluded from steady
 summaries. Each repetition drains with bounded per-request timeouts. A timed-out
@@ -133,6 +143,17 @@ so daemon CPU is unavailable. Endpoint snapshots do not prove absence of sustain
 memory/disk growth. Polling reports bounded loop count, failures, bytes and wall
 time. Failed polling is not a successful collection comparison.
 
+The analyzer requires the first run to have role `baseline` and the second
+`candidate`, both using proxy artifacts. It rehashes each retained jar and its
+build identity sidecar, verifies the recorded process/artifact/configuration
+binding, and matches the normalized base configuration across both runs. Binary
+identities are expected to differ; each must match its own verified binding.
+Artifact files must remain available for this verification. Direct controls and
+candidate-to-candidate studies are separate analyses, not aliases for this
+unchanged-baseline comparison. Older calibration receipts without process
+bindings remain calibration records and cannot acquire retrospective proof.
+Invalid roles or identities return `checks=null`, never plausible budget results.
+
 The analyzer re-reads and checks the written receipt hashes. It matches workload,
 objective, timing, JVM, hardware, transport and generator limits, then compares
 wire/content hashes and outcomes. Direct and proxy runs remain separate cohorts;
@@ -160,9 +181,10 @@ instrumentation. Both require a candidate artifact with the pinned config
 contract: `[defaults] perf_collection_enabled = true|false`. Optional exports use
 `[telemetry.operator]` with `prometheus_enabled`, `otlp_endpoint`, `otlp_protocol`,
 `otlp_headers` and `otlp_signals`. All are set before boot; no runtime setting is
-assumed hot reloadable. Compare candidate modes on otherwise matched cohorts to isolate new
-collection overhead; compare unchanged local against candidate local for the
-whole product change.
+assumed hot reloadable. Use the unchanged-baseline analyzer for baseline local versus candidate local
+or minimal with otherwise matched cohorts. Candidate-to-candidate mode studies
+need their own explicitly labelled analysis; they cannot occupy the baseline
+argument of this CLI.
 
 Optional candidate OTLP/HTTP collection targets a bounded, task-owned loopback
 collector; payloads are discarded after byte accounting. No outside collector is

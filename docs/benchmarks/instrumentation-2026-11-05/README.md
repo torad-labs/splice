@@ -61,3 +61,8 @@ native/MCP execution have explicit adapter instructions in the
 [harness README](../../../tools/instrumentation-bench/README.md).
 
 No working daemon, paid provider, install, restart, push or release was used.
+
+The subsequent B00 retry adds Linux process/socket ownership and artifact/config
+binding verification. These earlier calibration manifests lack that evidence and
+are explicitly ineligible for the strict baseline/candidate analyzer; they are
+not retroactively upgraded. No repeated load sweep was run for this correction.

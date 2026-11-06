@@ -5,8 +5,10 @@ import io.opentelemetry.sdk.trace.data.SpanData
 import kotlinx.serialization.json.JsonObject
 import splice.core.perf.export.PerfExportConfig
 import splice.core.perf.observation.PerfAggregatePoint
+import splice.core.perf.observation.PerfAggregateSnapshot
 import splice.core.perf.observation.PerfAggregateSource
 import splice.core.perf.observation.PerfIdentity
+import splice.core.util.Cancellables
 import splice.core.util.PerfWorkBudget
 import splice.core.util.WallClock
 
@@ -77,7 +79,7 @@ internal class ExportEngine(
     private fun sample(): Boolean {
         val lease = PerfWorkBudget.acquire(CONVERSION_BYTES) ?: return sampleBusy()
         return lease.use {
-            val snapshot = source.snapshot()
+            val snapshot = snapshot()
             if (!validIdentity(snapshot.identity)) return@use false
             totals.reconcile(snapshot)
             val points = totals.points()
@@ -85,6 +87,15 @@ internal class ExportEngine(
             val coverageOk = coverage.update(snapshot.coverage, totals, clock())
             if (!coverageOk) metricsStatus.dropped.incrementAndGet()
             exportMetrics(points) && scrapeOk && coverageOk
+        }
+    }
+
+    private fun snapshot(): PerfAggregateSnapshot {
+        var completed = false
+        return Cancellables.withCleanup(
+            cleanup = { if (!completed && config.prometheus) scrapes.fail("source_failed") },
+        ) {
+            source.snapshot().also { completed = true }
         }
     }
 

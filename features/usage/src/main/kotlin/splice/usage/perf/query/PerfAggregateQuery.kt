@@ -1,6 +1,7 @@
 package splice.usage.perf.query
 
 import splice.core.perf.observation.PerfAggregateSnapshot
+import splice.core.perf.observation.PerfCoverage
 import splice.core.perf.observation.PerfHistory
 import splice.core.util.PerfWorkBudget
 
@@ -13,9 +14,33 @@ internal class PerfAggregateQuery(private val sources: PerfQuerySources) {
         val history = if (query.source in setOf("auto", "history")) sources.history() else null
         if (history != null) history(query, filter, data, history)
         val live = if (query.source in setOf("auto", "live")) sources.live() else null
-        if (live != null) accept(live, query, filter, data)
+        if (live != null) live(live, query, filter, data, history != null)
         if (history == null && live == null) data.issue("aggregate_source_unavailable", "aggregates")
         data.populationCoverage["aggregate_event_time_scope"] = PerfQueryJson.coverageJson(data.coverage, data.complete)
+    }
+
+    private fun live(
+        snapshot: PerfAggregateSnapshot,
+        query: PerfQuery,
+        filter: PerfQueryFilter,
+        data: QueryData,
+        historyAvailable: Boolean,
+    ) {
+        if (!historyAvailable) data.coverage = liveCoverage(snapshot, query)
+        accept(snapshot, query, filter, data)
+        data.complete = data.coverage.observedMs >= query.untilMs - query.fromMs && data.coverage.issues.isEmpty()
+    }
+
+    private fun liveCoverage(snapshot: PerfAggregateSnapshot, query: PerfQuery): PerfCoverage {
+        val coverage = snapshot.coverage
+        val overlap = (
+            minOf(query.untilMs, coverage.requestedUntilMs) -
+                maxOf(query.fromMs, coverage.requestedFromMs)
+            ).coerceAtLeast(0L)
+        val outside = (coverage.requestedUntilMs - coverage.requestedFromMs - overlap).coerceAtLeast(0L)
+        // Without gap positions, only the observed time that cannot lie outside the query is provable.
+        val known = (coverage.observedMs - outside).coerceIn(0L, overlap)
+        return coverage.copy(requestedFromMs = query.fromMs, requestedUntilMs = query.untilMs, observedMs = known)
     }
 
     private fun history(query: PerfQuery, filter: PerfQueryFilter, data: QueryData, history: PerfHistory) {

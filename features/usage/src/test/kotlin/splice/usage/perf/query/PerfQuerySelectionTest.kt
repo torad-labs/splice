@@ -1,7 +1,10 @@
 package splice.usage.perf.query
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -41,11 +44,31 @@ class PerfQuerySelectionTest {
     }
 
     @Test
+    fun `successful profile capabilities without status succeeds while capability errors fail`() {
+        val lines = ArrayList<String>()
+        val terminal = TerminalOutput { lines.add(it) }
+        var response = buildJsonObject { put("schema_version", 1); put("capabilities", buildJsonArray {}) }
+        val command = PerfCommand(
+            terminal,
+            terminal,
+            HeadPerfRows { _, _ -> PerfRowsSource { PerfRowsWindow(emptyList()) } },
+        )
+        assertTrue(
+            command.perf(listOf("profile", "capabilities"), EnvReader { null }, null, PerfProfileCommand { response }),
+        )
+        assertEquals(response, Json.parseToJsonElement(lines.single()))
+        response = buildJsonObject { put("status", "error"); put("capabilities", buildJsonArray {}) }
+        assertFalse(
+            command.perf(listOf("profile", "capabilities"), EnvReader { null }, null, PerfProfileCommand { response }),
+        )
+    }
+
+    @Test
     fun `schema is available offline without topology and machine profile absence has no ANSI text`() {
         val lines = ArrayList<String>()
         val terminal = TerminalOutput { lines.add(it) }
         val command =
-            PerfCommand(terminal, terminal, HeadPerfRows { _, _ -> PerfRowsSource { PerfRowsWindow(emptyList()) } })
+            PerfCommand(terminal, terminal) { _, _ -> PerfRowsSource { PerfRowsWindow(emptyList()) } }
         assertTrue(command.perf(listOf("schema"), EnvReader { null }))
         assertEquals("1", JsonScalars.str(Json.parseToJsonElement(lines.single()).jsonObject, "contract_version"))
         lines.clear()

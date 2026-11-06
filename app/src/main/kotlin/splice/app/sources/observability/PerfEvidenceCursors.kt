@@ -93,14 +93,14 @@ internal class PerfEvidenceCursors(
         available: Long,
         settled: Boolean,
     ): PerfCursorManifest = files.evidenceIds(id).use { seen ->
-        val scan = PerfEvidenceCursorScan(request.query, inventory, work, seen, available)
+        val scan = PerfEvidenceCursorScan(request, inventory, work, seen, available)
         files.create(id).use(scan::scan)
         scan.issues += inventory.issues().map { it.code }
         if (!settled) scan.issues += "evidence_pending_write"
         val manifest = PerfCursorManifest(
             id, clock(), request.query.fromMs, request.query.untilMs,
             PerfEvidencePageMetadata.key(
-                request.query,
+                request,
             ),
             scan.segments, scan.matching, scan.issues, scan.malformed, scan.scanned, work.bytes,
         )
@@ -111,15 +111,24 @@ internal class PerfEvidenceCursors(
     private fun validate(manifest: PerfCursorManifest, request: PerfEvidenceCursorRequest) {
         if (clock() - manifest.asOfMs !in 0..PERF_CURSOR_TTL_MS) throw IOException("cursor_snapshot_expired")
         val times = manifest.fromMs == request.query.fromMs && manifest.untilMs == request.query.untilMs
-        require(times && manifest.filterHash == PerfEvidencePageMetadata.key(request.query)) { "cursor_filter_changed" }
+        require(times && manifest.filterHash == PerfEvidencePageMetadata.key(request)) { "cursor_filter_changed" }
     }
 
     private fun valid(request: PerfEvidenceCursorRequest): Boolean {
         val interval = request.query.fromMs >= 0 && request.query.untilMs > request.query.fromMs
         val head = request.query.head == null || evidenceHeadPattern.matches(request.query.head)
         val cursor = request.cursor == null || EVIDENCE_CURSOR.matches(request.cursor)
-        return interval && head && cursor && request.pageSize in 1..MAX_EVIDENCE_PAGE_SIZE
+        return listOf(
+            interval,
+            head,
+            cursor,
+            validFilter(request),
+            request.pageSize in 1..MAX_EVIDENCE_PAGE_SIZE,
+        ).all { it }
     }
+
+    private fun validFilter(request: PerfEvidenceCursorRequest): Boolean =
+        EVIDENCE_FILTER.matches(request.filterHash) && (request.predicate == null || request.filterHash.isNotEmpty())
 
     private fun failure(request: PerfEvidenceCursorRequest, status: String, reason: String): PerfEvidencePage =
         PerfEvidencePage(
@@ -133,3 +142,5 @@ internal class PerfEvidenceCursors(
 private const val METADATA_RESERVE = 256L * 1_024
 private const val MAX_EVIDENCE_PAGE_SIZE = 1_000
 private val EVIDENCE_CURSOR = Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9]{1,10}")
+
+private val EVIDENCE_FILTER = Regex("[A-Za-z0-9_-]{0,128}")

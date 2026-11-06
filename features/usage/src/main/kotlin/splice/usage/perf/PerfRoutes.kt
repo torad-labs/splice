@@ -42,7 +42,6 @@ import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
 import splice.usage.UsageReadPreparation
 import splice.usage.perf.query.PerfQueryHttp
-import splice.usage.perf.query.PerfQueryService
 import java.time.DateTimeException
 import java.time.ZoneId
 
@@ -69,8 +68,8 @@ public class PerfRoutes(
     /** Read per request rather than captured: an absent `since` is resolved against NOW, and a
      *  console that has been polling for hours must not keep asking about the hour it started in. */
     private val clock: WallClock = WallClock(System::currentTimeMillis),
-    private val queries: PerfQueryService? = null,
 ) {
+
     private val readFilter = TurnsFilterReader()
 
     /** Installed by the application before serving routes; older readers never consult it. */
@@ -84,9 +83,7 @@ public class PerfRoutes(
     public var accounts: RecordedAccounts = RecordedAccounts { HeadAccountNames { null } }
 
     public suspend fun turns(call: ApplicationCall) {
-        if (call.request.queryParameters["contract"] == "1" && queries != null) {
-            PerfQueryHttp.respond(call, queries, "rows", clock())
-        } else {
+        if (!PerfQueryHttp.selected(call, null, "rows", clock())) {
             legacyTurns(call)
         }
     }

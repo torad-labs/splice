@@ -3,6 +3,7 @@ package splice.app.sources.observability
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.usage.perf.history.PerfCursorQuery
+import splice.usage.perf.history.PerfEvidenceCursorRequest
 import splice.usage.perf.history.PerfEvidenceQuery
 
 internal object PerfEvidencePageMetadata {
@@ -13,6 +14,9 @@ internal object PerfEvidencePageMetadata {
     )
 
     fun key(query: PerfEvidenceQuery): String = "observations-v1:${query.head ?: "*"}"
+
+    fun key(request: PerfEvidenceCursorRequest): String =
+        if (request.filterHash.isEmpty()) key(request.query) else "${key(request.query)}:${request.filterHash}"
 
     private fun events(value: JsonObject): JsonObject {
         val fields = value.toMutableMap()

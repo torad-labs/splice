@@ -45,11 +45,16 @@ public class PerfCommand(
     private val output: TerminalOutput,
     private val errors: TerminalOutput,
     private val rows: HeadPerfRows,
-    private val queries: HeadPerfQuery? = null,
-    private val profiles: PerfProfileCommand? = null,
 ) {
 
-    public fun perf(args: List<String>, envReader: EnvReader): Boolean {
+    public fun perf(args: List<String>, envReader: EnvReader): Boolean = perf(args, envReader, null, null)
+
+    public fun perf(
+        args: List<String>,
+        envReader: EnvReader,
+        queries: HeadPerfQuery?,
+        profiles: PerfProfileCommand?,
+    ): Boolean {
         if ("--json" in args || args.firstOrNull() in setOf(
                 "schema",
                 "export",

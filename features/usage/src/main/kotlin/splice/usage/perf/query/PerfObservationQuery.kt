@@ -15,6 +15,7 @@ import splice.usage.perf.history.PerfEvidenceCursorRequest
 import splice.usage.perf.history.PerfEvidenceCursorSource
 import splice.usage.perf.history.PerfEvidencePage
 import splice.usage.perf.history.PerfEvidenceQuery
+import splice.usage.perf.history.PerfObservationPredicate
 import splice.usage.perf.query.PerfQueryJson.envelope
 import splice.usage.perf.query.PerfQueryJson.identityJson
 import splice.usage.perf.query.PerfQueryJson.queryError
@@ -37,12 +38,14 @@ internal class PerfObservationQuery(private val sources: PerfQuerySources) {
                 PerfEvidenceQuery(query.fromMs, query.untilMs, query.filters["head"]),
                 sourceCursor,
                 pageSize,
+                PerfObservationPredicate { filter.scope(it.scope) && filter.links(it.scope, it.links) },
+                PerfMultiCursor.hash(query),
             )
-        return source.page(request).use { page -> render(query, filter, page) }
+        return source.page(request).use { page -> render(query, page) }
     }
 
-    private fun render(query: PerfQuery, filter: PerfQueryFilter, page: PerfEvidencePage): JsonObject {
-        val selected = page.observations.filter { filter.scope(it.scope) && filter.links(it.scope, it.links) }
+    private fun render(query: PerfQuery, page: PerfEvidencePage): JsonObject {
+        val selected = page.observations
         val complete = JsonScalars.str(page.metadata, "status") == "complete"
         val data = QueryData(query)
         data.complete = complete
@@ -64,7 +67,7 @@ internal class PerfObservationQuery(private val sources: PerfQuerySources) {
                 put("metadata", requireNotNull(JsonScalars.objectOrNull(Json, page.metadata.toString())))
                 put(
                     "count_semantics",
-                    "metadata_counts_source_events; filtered_events_counted_only_after_all_pages",
+                    "metadata_counts_frozen_matching_observation_events",
                 )
                 put("export_complete", complete && page.nextCursor == null)
             },

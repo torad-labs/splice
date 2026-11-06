@@ -47,6 +47,26 @@ class PerfQueryAggregateTest {
         PerfWorkBudget.release(result)
     }
 
+    @Test
+    fun `live source coverage survives query projection and partial edges still prevent exact completeness`() {
+        val live = snapshot(3)
+        val service = PerfQueryService(object : PerfQuerySources {
+            override fun heads(): Set<String> = setOf("h")
+            override fun rows(head: String): PerfRowsSource? = null
+            override fun live(): PerfAggregateSnapshot = live
+        })
+        val result = service.summary(PerfQuery(0, 120_000, source = "live"))
+        assertEquals("120000", JsonScalars.str(result, "observed_duration_ms"))
+        assertEquals("true", JsonScalars.str(result.getValue("coverage").jsonObject, "complete"))
+        assertEquals("ok", JsonScalars.str(result, "status"))
+        PerfWorkBudget.release(result)
+        val edge = service.summary(PerfQuery(1_000, 61_000, source = "live"))
+        assertEquals("60000", JsonScalars.str(edge, "observed_duration_ms"))
+        assertEquals("false", JsonScalars.str(edge.getValue("coverage").jsonObject, "complete"))
+        assertTrue(edge.toString().contains("partial_bucket_edges_excluded"))
+        PerfWorkBudget.release(edge)
+    }
+
     private fun snapshot(count: Long): PerfAggregateSnapshot = PerfAggregateSnapshot(
         identity,
         0,

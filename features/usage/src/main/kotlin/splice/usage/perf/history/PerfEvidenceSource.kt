@@ -26,11 +26,19 @@ public fun interface PerfEvidenceSinkSource {
     public fun statuses(): List<PerfSinkStatus>
 }
 
+/** Applied once while freezing a cursor population, never re-evaluated on continuation. */
+public fun interface PerfObservationPredicate {
+    public fun matches(observation: PerfObservation): Boolean
+}
+
 /** Pages contain events, never partially folded request rows. Join all pages by request and observation ids. */
 public data class PerfEvidenceCursorRequest(
     val query: PerfEvidenceQuery,
     val cursor: String? = null,
     val pageSize: Int = 200,
+    val predicate: PerfObservationPredicate? = null,
+    /** Stable identity of the predicate selection; required when predicate is supplied. */
+    val filterHash: String = "",
 )
 
 public data class PerfEvidencePage(

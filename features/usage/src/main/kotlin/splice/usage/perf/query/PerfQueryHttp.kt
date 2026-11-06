@@ -11,6 +11,37 @@ import splice.usage.perf.query.PerfQueryJson.queryError
 
 /** Used inside the host's existing authenticated loopback routes and blocking query executor. */
 public object PerfQueryHttp {
+    /** Legacy formats keep their serializers but refuse selectors they cannot honor. */
+    public suspend fun selected(
+        call: ApplicationCall,
+        service: PerfQueryService?,
+        operation: String,
+        nowMs: Long,
+    ): Boolean {
+        val contract = call.request.queryParameters["contract"]
+        val problem = when {
+            contract == null -> PerfLegacyParameters.problem(call.request.queryParameters, operation)
+            contract != "1" -> "unsupported_contract"
+            service == null -> "contract_service_unavailable"
+            else -> null
+        }
+        return when {
+            problem != null -> {
+                call.respondText(
+                    queryError("unsupported_query", problem, "unsupported").toString(),
+                    ContentType.Application.Json,
+                    HttpStatusCode.UnprocessableEntity,
+                )
+                true
+            }
+            contract != null -> {
+                respond(call, requireNotNull(service), operation, nowMs)
+                true
+            }
+            else -> false
+        }
+    }
+
     public suspend fun respond(call: ApplicationCall, service: PerfQueryService, operation: String, nowMs: Long) {
         val entries = call.request.queryParameters.entries()
         val result = if (entries.any { it.value.size != 1 }) {

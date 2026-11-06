@@ -55,10 +55,14 @@ class PerfQueryCursorTest {
                         PerfRowsWindow(emptyList())
                     }
                 },
-                HeadPerfQuery { service },
             )
         assertTrue(
-            command.perf(listOf("export", "--from", "0", "--until", "100", "--page-size", "1"), EnvReader { null }),
+            command.perf(
+                listOf("export", "--from", "0", "--until", "100", "--page-size", "1"),
+                EnvReader { null },
+                HeadPerfQuery { service },
+                null,
+            ),
         )
         val metadata = Json.parseToJsonElement(lines.last()) as JsonObject
         assertEquals("export_metadata", JsonScalars.str(metadata, "record_type"))
@@ -66,7 +70,12 @@ class PerfQueryCursorTest {
         assertEquals("1", JsonScalars.str(metadata, "records_written"))
         assertFalse(lines.joinToString().contains('\u001b'))
         lines.clear()
-        command.perf(listOf("--json", "--from", "0", "--until", "100", "--source", "legacy"), EnvReader { null })
+        command.perf(
+            listOf("--json", "--from", "0", "--until", "100", "--source", "legacy"),
+            EnvReader { null },
+            HeadPerfQuery { service },
+            null,
+        )
         val expected = service.summary(PerfQuery(0, 100, source = "legacy"))
         assertEquals(expected, Json.parseToJsonElement(lines.single()))
         PerfWorkBudget.release(expected)

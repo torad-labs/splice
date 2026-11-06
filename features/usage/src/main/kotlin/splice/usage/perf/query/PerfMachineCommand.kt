@@ -28,6 +28,7 @@ internal class PerfMachineCommand(
             return write(
                 profiles?.execute(args.drop(1))
                     ?: queryError("profile_unavailable", "profile_command_not_wired", "unsupported"),
+                capabilities = args.getOrNull(1) == "capabilities",
             )
         }
         val parsed = PerfCliArguments.read(if (args.firstOrNull() == operation) args.drop(1) else args)
@@ -74,15 +75,20 @@ internal class PerfMachineCommand(
         })
     }
 
-    private fun write(json: JsonObject): Boolean {
+    private fun write(json: JsonObject, capabilities: Boolean = false): Boolean {
         output.line(json.toString())
-        val result = successful(json)
+        val result = successful(json, capabilities)
         PerfWorkBudget.release(json)
         return result
     }
 
-    private fun successful(json: JsonObject): Boolean = JsonScalars.str(
-        json,
-        "status",
-    ) in setOf(OutcomeTag.OK.wire, "empty", "partial", "running", "completed")
+    private fun successful(json: JsonObject, capabilities: Boolean): Boolean {
+        val status = JsonScalars.str(json, "status")
+        return if (status != null) {
+            status in setOf(OutcomeTag.OK.wire, "empty", "partial", "running", "completed")
+        } else {
+            capabilities && json["capabilities"] is kotlinx.serialization.json.JsonArray &&
+                JsonScalars.str(json, "schema_version") == "1" && "error" !in json
+        }
+    }
 }

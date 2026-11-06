@@ -3,6 +3,8 @@ package splice.app.sources.observability
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -15,12 +17,19 @@ import splice.core.perf.observation.PerfObservation
 import splice.core.perf.observation.PerfScope
 import splice.core.perf.observation.PerfStamp
 import splice.core.util.AsyncFileIo
+import splice.core.util.JsonScalars
+import splice.core.util.PerfWorkBudget
 import splice.core.util.WallClock
 import splice.head.perf.RequestEvidenceFiles
 import splice.head.perf.RequestEvidenceFormat
 import splice.head.perf.RequestEvidenceRetention
+import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.history.PerfEvidenceCursorRequest
 import splice.usage.perf.history.PerfEvidenceQuery
+import splice.usage.perf.history.PerfObservationPredicate
+import splice.usage.perf.query.PerfQuery
+import splice.usage.perf.query.PerfQueryService
+import splice.usage.perf.query.PerfQuerySources
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
@@ -155,6 +164,87 @@ class PerfEvidenceFileSourceTest {
             assertEquals("1", page.metadata["known_matching_events"].toString())
             assertEquals(JsonNull, page.metadata["total_matching_events"])
             assertTrue(page.metadata["read_errors"].toString().contains("evidence_duplicate_conflict"))
+        }
+    }
+
+    @Test
+    fun `a filtered out observation cannot hide a conflicting matching duplicate`(@TempDir root: Path) {
+        val dir = root.resolve("evidence")
+        val writer = RequestEvidenceFiles(dir, clock = clock).forHead("test")
+        val first = event("conflict", PerfEventKind.REQUEST_ARRIVED).copy(links = PerfLinks(sessionId = "a"))
+        assertTrue(writer.record(first))
+        assertTrue(AsyncFileIo.awaitDirectory(dir))
+        val file = Files.newDirectoryStream(dir).use { paths ->
+            paths.first { RequestEvidenceFormat.headOf(it.fileName.toString()) == "test" }
+        }
+        Files.writeString(
+            file,
+            Json.encodeToString(first.copy(links = PerfLinks(sessionId = "b"))) + "\n",
+            StandardOpenOption.APPEND,
+        )
+        val request = PerfEvidenceCursorRequest(
+            query,
+            pageSize = 1,
+            predicate = PerfObservationPredicate { it.links.sessionId == "b" },
+            filterHash = "session-b",
+        )
+        PerfEvidenceFileSource(dir, clock).page(request).use {
+            assertTrue(it.observations.isEmpty())
+            assertEquals("incomplete", JsonScalars.str(it.metadata, "status"))
+            assertEquals(JsonNull, it.metadata["total_matching_events"])
+            assertTrue(it.metadata.toString().contains("evidence_duplicate_conflict"))
+        }
+    }
+
+    @Test
+    fun `event filters freeze matching counts before page one and remain stable across continuation`(
+        @TempDir root: Path,
+    ) {
+        val dir = root.resolve("evidence")
+        val writer = RequestEvidenceFiles(dir, clock = clock).forHead("test")
+        listOf("excluded" to "a", "first" to "b", "second" to "b").forEach { (id, session) ->
+            assertTrue(
+                writer.record(event(id, PerfEventKind.REQUEST_ARRIVED).copy(links = PerfLinks(sessionId = session))),
+            )
+        }
+        assertTrue(AsyncFileIo.awaitDirectory(dir))
+        Files.writeString(
+            dir.resolve(RequestEvidenceFormat.RETENTION_FILE),
+            Json.encodeToString(RequestEvidenceRetention(lossAccountingComplete = true)),
+        )
+        val source = PerfEvidenceFileSource(dir, clock)
+        val service = PerfQueryService(object : PerfQuerySources {
+            override fun heads(): Set<String> = setOf("test")
+            override fun rows(head: String): PerfRowsSource? = null
+            override fun evidence(): PerfEvidenceFileSource = source
+        })
+        val selected = PerfQuery(0, 10_000, mapOf("head" to "test", "session" to "b"))
+        val first = service.observations(selected, pageSize = 1)
+        assertEquals(
+            "first",
+            JsonScalars.str(first.getValue("observations").jsonArray.single().jsonObject, "observation_id"),
+        )
+        assertEquals("2", JsonScalars.str(first.getValue("metadata").jsonObject, "total_matching_events"))
+        val second = service.observations(selected, JsonScalars.str(first, "next_cursor"), 1)
+        assertEquals(
+            "second",
+            JsonScalars.str(second.getValue("observations").jsonArray.single().jsonObject, "observation_id"),
+        )
+        assertEquals("true", JsonScalars.str(second, "export_complete"))
+        PerfWorkBudget.release(first)
+        PerfWorkBudget.release(second)
+        val request = PerfEvidenceCursorRequest(
+            query,
+            pageSize = 1,
+            predicate = PerfObservationPredicate { it.links.sessionId == "b" },
+            filterHash = "session-b",
+        )
+        val token = source.page(request).use { it.nextCursor }
+        source.page(request.copy(cursor = token, predicate = PerfObservationPredicate { false })).use {
+            assertEquals(listOf("second"), it.observationIds, "continuation reads the frozen index")
+        }
+        source.page(request.copy(cursor = token, filterHash = "changed")).use {
+            assertEquals("invalid", JsonScalars.str(it.metadata, "status"))
         }
     }
 

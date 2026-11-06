@@ -3,7 +3,7 @@ package splice.app.sources.observability
 import splice.app.sources.PerfLineReader
 import splice.core.perf.observation.PerfObservation
 import splice.head.perf.RequestEvidenceFormat
-import splice.usage.perf.history.PerfEvidenceQuery
+import splice.usage.perf.history.PerfEvidenceCursorRequest
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
@@ -11,7 +11,7 @@ import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 
 internal class PerfEvidenceCursorScan(
-    private val query: PerfEvidenceQuery,
+    private val request: PerfEvidenceCursorRequest,
     private val inventory: PerfEvidenceInventory,
     private val work: PerfCursorWork,
     private val seen: PerfEvidenceSeen,
@@ -27,7 +27,7 @@ internal class PerfEvidenceCursorScan(
         private set
 
     fun scan(index: FileChannel) {
-        val fixed = inventory.candidates(query.head).map { it to inventory.fingerprints.capture(it, work) }
+        val fixed = inventory.candidates(request.query.head).map { it to inventory.fingerprints.capture(it, work) }
         for ((path, segment) in fixed) {
             segments += segment
             try {
@@ -76,10 +76,13 @@ internal class PerfEvidenceCursorScan(
         }
     }
 
+    private fun selected(value: PerfObservation): Boolean =
+        PerfEvidenceCodec.matches(value, request.query) && request.predicate?.matches(value) != false
+
     private fun accept(value: PerfObservation, position: PerfCursorPosition, index: FileChannel) {
         val duplicate = seen.add(PerfEvidenceCodec.identity(value), PerfEvidenceCodec.fingerprint(value))
         if (duplicate == PerfEvidenceDuplicate.CONFLICT && CONFLICT !in issues) issues += CONFLICT
-        if (duplicate == PerfEvidenceDuplicate.NEW && PerfEvidenceCodec.matches(value, query)) {
+        if (duplicate == PerfEvidenceDuplicate.NEW && selected(value)) {
             if ((matching + 1) * PERF_CURSOR_ENTRY_BYTES > indexLimit) throw IOException("cursor_index_limit")
             val bytes = ByteBuffer.allocate(PERF_CURSOR_ENTRY_BYTES)
                 .putInt(position.segment).putLong(position.start).putLong(position.end)

@@ -22,15 +22,24 @@ internal class PerfJsonlExport(private val output: TerminalOutput, private val s
         var cursor = parameters["cursor"]
         var count = 0L
         var page: ExportedPage
+        var traversalFailure: String? = null
         do {
             page = writePage(query, mode, cursor, pageSize)
             count += page.count
-            val repeated = page.next != null && page.next == cursor
-            if (!page.accepted || repeated) break
+            traversalFailure = page.failure(cursor)
+            if (traversalFailure != null) break
             cursor = page.next
         } while (cursor != null)
-        output.line(metadata(query, mode, count, page.complete).toString())
-        return page.complete
+        val complete = page.finished(traversalFailure)
+        val final = metadata(query, mode, count, complete)
+        output.line(
+            JsonObject(
+                final + buildJsonObject {
+                    put("traversal_failure", PerfQueryJson.textValue(traversalFailure))
+                },
+            ).toString(),
+        )
+        return complete
     }
 
     private fun writePage(query: PerfQuery, mode: ExportMode, cursor: String?, size: Int): ExportedPage {
@@ -72,5 +81,12 @@ private enum class ExportMode(val wire: String, val field: String, val unit: Str
     ROWS("legacy_rows", "rows", "legacy_row"),
     OBSERVATIONS("observations", "observations", "observation"),
 }
-private data class ExportedPage(val next: String?, val complete: Boolean, val accepted: Boolean, val count: Int)
+private data class ExportedPage(val next: String?, val complete: Boolean, val accepted: Boolean, val count: Int) {
+    fun failure(cursor: String?): String? = when {
+        !accepted -> "page_rejected"
+        next != null && next == cursor -> "cursor_non_progress"
+        else -> null
+    }
+    fun finished(failure: String?): Boolean = complete && next == null && failure == null
+}
 private const val DEFAULT_PAGE_SIZE = 200

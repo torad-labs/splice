@@ -71,6 +71,10 @@ public object PerfMetricRegistry {
 
     internal fun definition(metric: String): PerfMetricDefinition? = definitions[metric]
 
+    internal fun isContentTiming(metric: String): Boolean = definitions[metric]?.let {
+        it.type == PerfMetricType.HISTOGRAM && PerfEventKind.CONTENT_PROGRESS in it.events
+    } == true
+
     internal fun accepts(metric: String, kind: PerfEventKind, value: Double): Boolean =
         value.isFinite() && value in 0.0..MAX_MEASUREMENT && definitions[metric]?.events?.contains(kind) == true
 }

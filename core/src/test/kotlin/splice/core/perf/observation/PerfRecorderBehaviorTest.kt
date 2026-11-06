@@ -31,18 +31,52 @@ internal class PerfRecorderBehaviorTest {
         val request = fixture.recorder.request(fixture.scope, fixture.now, fixture.wall)
         fixture.advance(1000)
         request.observe(PerfEventKind.PROTOCOL_PROGRESS, mapOf("upstream_events" to 1.0))
-        request.observe(PerfEventKind.CONTENT_PROGRESS, mapOf("arrival_to_first_meaningful_content_ms" to 1000.0))
-        request.observe(PerfEventKind.CONTENT_PROGRESS, mapOf("arrival_to_first_meaningful_content_ms" to 2000.0))
-        assertTrue(fixture.points("arrival_to_first_meaningful_content_ms").isEmpty())
+        request.observe(PerfEventKind.CONTENT_PROGRESS, mapOf(FIRST_MEANINGFUL_CONTENT_MS to 1000.0))
+        request.observe(PerfEventKind.CONTENT_PROGRESS, mapOf(FIRST_MEANINGFUL_CONTENT_MS to 2000.0))
+        assertTrue(fixture.points(FIRST_MEANINGFUL_CONTENT_MS).isEmpty())
         fixture.advance(MINUTE)
         fixture.wall = -MINUTE
         request.finish(OutcomeTag.OK.wire)
-        val first = fixture.points("arrival_to_first_meaningful_content_ms").single()
+        val first = fixture.points(FIRST_MEANINGFUL_CONTENT_MS).single()
         assertEquals(1L, first.count)
         assertEquals(1000.0, first.sum)
         assertEquals(MINUTE, first.fromMs)
         assertTrue(fixture.points("arrival_to_terminal_ms").single().sum >= 0)
         assertTrue(fixture.accumulator.snapshot().coverage.issues.any { it.code == "clock_discontinuity" })
+    }
+
+    @Test
+    fun `completion cannot invent content timings or replace observed content boundaries`() {
+        val fixture = ObservationFixture()
+        val contentMetrics = listOf(
+            FIRST_MEANINGFUL_CONTENT_MS,
+            "arrival_to_first_reasoning_ms",
+            "arrival_to_first_text_ms",
+            "arrival_to_first_tool_ms",
+        )
+        val suppliedTimings = contentMetrics.associateWith { 0.0 }
+        val heartbeatOnly = fixture.recorder.request(fixture.scope, fixture.now, fixture.wall)
+        heartbeatOnly.observe(PerfEventKind.PROTOCOL_PROGRESS, mapOf("upstream_events" to 1.0))
+        heartbeatOnly.finish(
+            OutcomeTag.OK.wire,
+            suppliedTimings + mapOf("queue_wait_ms" to 2.0, "output_tokens" to 1.0),
+        )
+        assertTrue(contentMetrics.all { fixture.points(it).isEmpty() })
+        assertEquals(
+            PerfObjectiveVerdict.UNKNOWN,
+            PerfObjectives.evaluate(OutcomeTag.OK.wire, emptyMap(), PerfObjectiveSet("content", "one", 1000.0)),
+        )
+        assertEquals(2.0, fixture.total("queue_wait_ms"))
+        assertEquals(1.0, fixture.total("output_tokens"))
+        val observed = fixture.recorder.request(fixture.scope, fixture.now, fixture.wall)
+        fixture.advance(1000)
+        observed.observe(PerfEventKind.CONTENT_PROGRESS, contentMetrics.associateWith { 1000.0 })
+        observed.finish(OutcomeTag.OK.wire, suppliedTimings)
+        contentMetrics.forEach { metric ->
+            val point = fixture.points(metric).single()
+            assertEquals(1L, point.count)
+            assertEquals(1000.0, point.sum)
+        }
     }
 
     @Test
@@ -86,3 +120,4 @@ internal class PerfRecorderBehaviorTest {
 }
 
 private const val MINUTE = 60000L
+private const val FIRST_MEANINGFUL_CONTENT_MS = "arrival_to_first_meaningful_content_ms"

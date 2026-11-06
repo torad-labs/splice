@@ -41,10 +41,11 @@ public class PerfRequestRecorder internal constructor(
     public fun finish(outcome: String, values: Map<String, Double> = emptyMap()): Boolean = synchronized(lock) {
         if (finished) return false
         finished = true
+        val terminalValues = values.filterKeys { !PerfMetricRegistry.isContentTiming(it) }
         recorder.emit(
             currentScope,
             PerfEventKind.REQUEST_FINISHED,
-            values + terminalMeasurements + ("arrival_to_terminal_ms" to elapsedMs().toDouble()),
+            terminalValues + terminalMeasurements + ("arrival_to_terminal_ms" to elapsedMs().toDouble()),
             currentLinks,
             outcome,
         )
@@ -60,7 +61,7 @@ public class PerfRequestRecorder internal constructor(
         }
         if (kind == PerfEventKind.CONTENT_PROGRESS) {
             values.forEach { (key, value) ->
-                if (key.startsWith("arrival_to_first_") && PerfMetricRegistry.accepts(key, kind, value)) {
+                if (PerfMetricRegistry.isContentTiming(key) && PerfMetricRegistry.accepts(key, kind, value)) {
                     terminalMeasurements.putIfAbsent(key, value)
                 }
             }

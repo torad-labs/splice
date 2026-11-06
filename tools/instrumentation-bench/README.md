@@ -69,8 +69,9 @@ logs into receipts.
 Use the complete `fixtures/steady.json` manifest as the starting point. The
 fixture body is padded to exactly `input_bytes` and reused byte-for-byte for all
 requests; its SHA256 is recorded. The proxy's own upstream serialization may
-change the body. The fixture reports how many upstream bodies differ from the
-client input; this is separate from client wire validity. A proxy transformation
+change the body. The passthrough fixture requires the exact client body. Responses checks the real
+converted request shape and records HTTP/WS request counts; it does not compare
+converted bytes with the Anthropic client input. A proxy transformation
 must not be misrepresented as a harness rewrite or as proof of byte identity.
 
 | Scenario | Manifest fields and interpretation |
@@ -90,12 +91,15 @@ desk per repetition; warm retains it across repetitions. Neither means a real
 provider cache was measured. `seed` fixes the declared workload identity; current
 scripts intentionally use no randomness.
 
-Protocols: direct Anthropic SSE/JSON and Responses SSE/JSON/WS are implemented;
-proxy capture uses the real Anthropic passthrough path. Request streaming selects
-`transport=sse` and `streaming=true`; nonstream uses `http`/false. Responses WS is
-an explicitly selected **direct fixture transport**. The production Responses
-websocket default stays off. The proxy Responses/WS adapter below is required for
-that additional cohort; selecting it without an adapter is rejected.
+Protocols: direct Anthropic SSE/JSON and Responses SSE/JSON/WS are implemented.
+Proxy clients use Anthropic; optional `upstream={protocol:responses,transport:sse|websocket}`
+selects the real OpenAiResponsesProvider and explicit isolated `websocket` quirk.
+The production default stays off. Actual HTTP/WS counts are recorded; a requested
+WS cohort with no observed upstream WebSocket is partial. `reconnect` closes every
+third selected WS request with1011 before output, exercising production retry/fallback.
+Anthropic fixture usage explicitly reports input/output/cache-read/cache-write/hourly
+zero or positive values. Responses lacks supported write/hourly measurement fields,
+so its measured-workload comparison correctly remains insufficient for that tuple.
 
 `experiment_stage=calibration` is the default and cannot pass final budget analysis.
 Set `experiment_stage=steady` only after selecting controlled timing: the harness
@@ -132,8 +136,9 @@ and disk snapshots. Completion/goodput rates use all bounded-drain outcomes of
 steady arrivals divided by the requested offering duration. They are cohort
 rates, not an assertion that every completion happened before the offering
 window ended. Queue timing is null: generator lateness is not server queue delay.
-GC/allocation, sink loss and isolated exporter CPU are null with reasons until the
-instrumented adapters provide those measurements.
+GC/allocation and isolated exporter CPU remain null with reasons. Candidate sink
+loss uses actual bounded, identity-checked counter deltas; unchanged-baseline
+instrumentation counters remain unavailable without making that baseline partial.
 
 CPU is a Linux process /proc tick delta, including completion drain, divided by
 completed requests; RSS is an endpoint snapshot. Disk counts the task state tree.
@@ -166,7 +171,7 @@ CV >10% makes the result invalid/inconclusive; increase controlled duration or
 repetitions instead of relaxing budgets. Profiling is a separate cohort/envelope.
 
 The checked-in [budget receipt](../../docs/benchmarks/instrumentation-2026-11-05/budgets.json)
-is fixed before candidate results. Missing sink loss, exclusive growth or CPU
+is fixed before candidate results. Missing candidate sink loss, controlled growth or CPU
 measurements prevents an overall pass. A short run cannot establish sustainable
 capacity; increase controlled duration and observe stable queues/resources/loss
 at each independently offered rate before making that claim.
@@ -186,43 +191,117 @@ or minimal with otherwise matched cohorts. Candidate-to-candidate mode studies
 need their own explicitly labelled analysis; they cannot occupy the baseline
 argument of this CLI.
 
-Optional candidate OTLP/HTTP collection targets a bounded, task-owned loopback
-collector; payloads are discarded after byte accounting. No outside collector is
-contacted. Candidate profiles use the authenticated JFR CPU profile API and stop
-after the steady interval. Capture failures are partial. Profiles require a
-separate measured overhead comparison and are excluded from the 5% always-on
-budget. The collection contract must be exercised on the integrated candidate;
-a request that is merely accepted is not proof that metrics/spans/profile samples
-were produced. OTLP gRPC remains an external adapter capability, not an assumed
-working alias for HTTP/protobuf.
+Candidate status uses guarded GET /api/perf/instrumentation/status, runtime, schema,
+summary and optional export/status. Every sampler record binds artifact/PID/config
+and canonical runtime identity. One-second time series include pool reservation,
+work leases, named sink counters and isolated aggregate/evidence/cursor/profile disk
+bytes. No new endpoint is polled on the unchanged baseline. Delta reconciliation
+rejects changed identity, reset/missing/stale counters and unbracketed intervals.
+Pending backlog prevents a no-loss pass. The analyzer recomputes deltas from points.
+Pool reservation is not retained heap; whole-process RSS is recorded separately.
+Actual retained-heap plateau proof uses the separate authorized fixture experiment below.
 
-The following integrations remain explicit adapters and **unmeasured** until
-executed; they must not be relabelled as the direct fixtures above:
+OTLP/HTTP collector decodes bounded protobuf metrics, spans and lifecycle logs,
+validates service/scope identity, timestamps, IDs and histogram bucket totals, and
+retains only bounded names/counts/time bounds. All requested signals must contain
+records. Byte accounting alone cannot pass. collector_fault chooses healthy, slow
+or unavailable with delay and active-request caps; no outside collector is used.
+Gzip and gRPC are explicit unsupported collector capabilities, never guessed aliases.
+Wire fields follow [OTLP metrics](https://raw.githubusercontent.com/open-telemetry/opentelemetry-proto/v1.5.0/opentelemetry/proto/metrics/v1/metrics.proto),
+[traces](https://raw.githubusercontent.com/open-telemetry/opentelemetry-proto/v1.5.0/opentelemetry/proto/trace/v1/trace.proto),
+and [logs](https://raw.githubusercontent.com/open-telemetry/opentelemetry-proto/v1.5.0/opentelemetry/proto/logs/v1/logs.proto).
 
-- **Production Responses/SSE/WS:** adapt the holding upstream in
-  `features/turns/src/test/kotlin/splice/head/HeadServerLoadTest.kt`. Keep its real
-  HeadServer/UpstreamClient path, use these fixture events and monotonic arrival
-  records, and report actual transport. Preserve the existing 1000-stream gate;
-  it is a correctness test, not a capacity result. Set Responses WS explicitly on
-  the isolated adapter only; never alter the production default.
-- **Retained history/cold reads:** reuse
-  `app/src/test/kotlin/splice/app/sources/PerfHistoryProfile.kt` and
-  `PerfHistoryScaleTest`. Seed synthetic retained rows in the desk only; record
-  row count/window/day distribution and cold/warm OS-cache methodology. Export
-  its JFR allocation/file-I/O evidence with process/build/cohort identity. A large
-  request body is not a retained-history read benchmark.
-- **Native/MCP tool execution:** wrap the existing native/MCP fixture with the
-  same arrival/terminal contract and include actual execution attribution. Tool
-  argument frames alone do not measure host startup, callbacks or pending replies.
-- **Sibling Splice-Benchmarks/AIPerf:** use an adapter that emits this manifest and
-  sample schema, preserves raw input bytes and real wire terminals, and supplies
-  generator delay/missed slots. Do not call an OpenAI-compatible endpoint proof
-  of Splice protocol support. No changes to the sibling repository are required.
-- **Sink loss, exclusive growth and queue:** collect authenticated candidate
-  counter snapshots around each steady interval and bind them to process/build,
-  boot, config and measurement population. Reset/restart or missing snapshots
-  produce null/partial, never zero loss. Attach server queue timing separately
-  from generator delay. GC/allocation/profiler counters need capability evidence.
+Profiles start before warmup, use durationSeconds, verify terminal profile_id, PID,
+identity and recording coverage, download at most64MiB, check JFR magic/size/hash and
+parse jfr summary. Acceptance of POST is insufficient. Optional profile cost is a
+separate cohort, outside the always-on overhead envelope.
+
+Retained history uses the test-only BenchmarkFixtureSeed entry, real
+PerfAggregateStore/RequestEvidenceFiles writers, injected clocks and their actual
+coverage receipt. The fixture records producer class hashes and every durable file
+hash. retained_history supplies its directory/receipt_sha256/source_commit; the
+desk verifies and copies only those task-owned files before launch. Queries retain
+explicit24h/7d bounds, first/repeat-read cost, counts, coverage and resolution.
+Each query brackets actual `sources.aggregate` and `sources.evidence` counters;
+reset or unavailable counters yield no delta. `retainedBytes` describes the shared
+work pool, and concurrent source work can contribute to the bracket.
+First read is process/query-cache cold only on a fresh desk; OS cache is uncontrolled.
+The helper never fabricates a durable coverage ledger. Aggregate and evidence
+fixture populations are separate and identified as such.
+
+BenchmarkExecutionFixture is a separately launched compiled app test entry that
+invokes NativeCodeModeRuntime and McpHost with the deterministic FakeMcpServer
+stdio child. It verifies actual returned values, child parent/PID/start/executable
+identity, loaded-class hashes, native callback and MCP observations. It requires
+task-specific user.home/java.io.tmpdir and records five fresh hosts per kind, each
+with a cold and warm invocation. The app already depends on the MCP module's
+published testFixtures; the runtime receipt includes FakeMcpServer's class hash.
+It is production execution evidence, not unchanged-baseline causal overhead.
+Tool argument frames in tool-heavy remain only a wire workload. Neither test-only
+entry has an automatic benchmark test or launches during compilation. Root owns
+the integrated build and authorizes execution of the compiled entries.
+
+## Separate retained-state experiment
+
+`BenchmarkRetainedFixture` owns the actual accumulator, aggregate store, evidence
+writer/source, query cache and cursor paths. Virtual clocks advance one request
+per minute through36days of fill, then five equal24hour steps. Each checkpoint
+waits for the real writer lanes and exercises24hour series reads and a cursor.
+Only synthetic segment mtimes are aligned with the injected producer clock because
+production evidence retention uses mtime; payloads and coverage ledgers are never
+rewritten. Both modes hold a5.5MiB shared-pool lease to represent other ordinary
+application work. This reservation is accounting pressure, not a heap allocation.
+Optional active exporter, profiler and alert owners are outside this experiment.
+
+`retained.ts` runs five fresh minimal/local pairs serially and alternates their
+order. Producers are paused for every probe. Before `jcmd GC.run` and
+`GC.class_histogram`, it checks its child's PID, start ticks, exact command line
+and executable; the candidate jar and fixture classes must match retained hashes.
+It primes diagnostic classes before the measured post-fill points, bounds probe
+time/output, hashes each histogram and validates its Total against all class rows.
+Full-GC probes have substantial cost and run outside inference timing; see the
+[JDK diagnostic command reference](https://docs.oracle.com/en/java/javase/21/docs/specs/man/jcmd.html).
+No heap dump or installed JVM is attached.
+
+The comparator uses repeated actual whole-JVM live shallow-heap totals, paired
+local-minus-minimal differences, pool accounting and aggregate/evidence/cursor
+disk sizes. The difference estimates extra retention; it cannot attribute shared
+objects exactly to an owner. Five independent fresh pairs supply95%t intervals;
+the five dependent points within a JVM supply its equal-work slope. Positive
+growth fails, uncertain growth is inconclusive, and the fixed growth budget stays
+zero. Missing points, loss, refused reads, reused controls or missing disk counters
+invalidate evidence. The32MiB memory and256MiB rollup disk caps remain fixed.
+
+After the integrated gate, retain only the compiled `BenchmarkRetained*.class`
+files with their package paths under a new task directory. This driver puts the
+frozen candidate jar first on the classpath, then those fixture classes; no second
+build is required. Compute class receipts without launching a JVM:
+
+    bun tools/instrumentation-bench/retained.ts classes /tmp/splice-instrumentation-.../classes
+    bun tools/instrumentation-bench/retained.ts plan
+
+The retained manifest contains schema_version1, source_commit, artifact_sha256,
+artifact_path, fixture_classes_root, fixture_classes_sha256 and the exact protocol
+printed by `plan`. Only after root authorizes the frozen candidate, run:
+
+    bun tools/instrumentation-bench/retained.ts run manifest.json /tmp/splice-instrumentation-.../retained <frozen-source-sha>
+
+Attach its directory to `run.ts analyze` with `--retained-study`. Analysis rehashes
+the jar, classes, histogram and receipt files and matches hardware/OS/JVM with the
+candidate timing study. This can supply scoped growth evidence; it cannot turn an
+unstable experiment into a pass or establish optional-owner growth coverage.
+
+Generate the final preparation schedule without starting workloads:
+
+    bun tools/instrumentation-bench/schedule.ts
+
+It declares closed1/10/50/70/100 and open100/250/400/500 points, five repetitions,
+matched direct controls and representative secondary cohorts. Normal defaults are
+20s warmup/60s steady; initial open sweep uses10s/30s and must be extended if
+unstable. The upper open point is not assumed saturated. Materialize with frozen
+artifact receipts, then execute serially after root authorization. The final
+iteration envelope is bounded at500000; reaching it remains partial. Candidate
+telemetry is capped at10000 points. No confidence or performance budget is relaxed.
 
 No Gradle suite, install, restart, push or release command is part of this harness.
 Artifact creation is a separately authorized build of unchanged source; tests

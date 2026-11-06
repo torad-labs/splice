@@ -1,3 +1,4 @@
+import { telemetrySummary, type TelemetryPoint } from './telemetry';
 import type { Manifest } from './manifest';
 import type { Sample } from './observe';
 export interface Interval { mean: number | null; low: number | null; high: number | null; n: number; cv: number | null }
@@ -19,8 +20,9 @@ export interface Repetition {
   repetition: number; observed_duration_ms: number; drain_ms: number; cpu_ms: number | null;
   rss_start_bytes: number | null; rss_end_bytes: number | null; disk_start_bytes: number | null; disk_end_bytes: number | null;
 }
-export interface Extras { repetitions: Repetition[]; fixture: unknown; polling: { count: number; failed: number; bytes: number; elapsed_ms: number }; partial_reason: string | null; exports?: unknown; profiles?: unknown[] }
+export interface Extras { repetitions: Repetition[]; fixture: unknown; polling: { count: number; failed: number; bytes: number; elapsed_ms: number }; partial_reason: string | null; exports?: unknown; profiles?: unknown[]; schemas?: unknown[]; history?: unknown[]; query_summaries?: unknown[]; telemetry?: { points: TelemetryPoint[] } & ReturnType<typeof telemetrySummary> }
 export function summarize(m: Manifest, all: Sample[], extras: Extras) {
+  const telemetry = extras.telemetry ? telemetrySummary(extras.telemetry.points, extras.telemetry.intervals) : null;
   const rows = all.filter(row => row.phase === 'steady');
   const duration = m.duration_ms * m.repetitions / 1000;
   const count = (p: (r: Sample) => boolean) => rows.filter(p).length;
@@ -55,7 +57,7 @@ export function summarize(m: Manifest, all: Sample[], extras: Extras) {
     cpu_ms_per_completion: interval(per.flatMap(r => r.cpu_ms_per_completion === null ? [] : [r.cpu_ms_per_completion])),
     runtime_resources: { source: m.target.kind === 'proxy' ? 'Linux /proc process CPU/RSS plus task state directory size; CPU includes steady interval and bounded drain' : 'unavailable: mock and generator share a process',
       gc_ms: null, allocation_bytes: null, reason: 'requires instrumented runtime/JFR adapter', repetitions: per },
-    telemetry_loss: { value: null, reason: 'requires candidate sink counter adapter; no inference from request completion' },
+    telemetry_loss: telemetry?.loss ?? { value: null, reason: 'sink adapter unavailable for this artifact' }, instrumentation_resources: telemetry?.resources ?? null, sink_intervals: telemetry?.intervals ?? [],
     polling: extras.polling, export_cost: { collector: extras.exports ?? null, cpu_ms: null, reason: 'collector bytes/time measured; exporter CPU requires instrumented counter adapter' }, profiles: extras.profiles ?? [],
     wire: { invalid: wireInvalid, terminal_correct: count(r => r.terminal_correct), hashes_recorded: count(r => r.wire_sha256 !== null), fixture: extras.fixture },
     confidence_intervals: { method: 'two-sided Student t over repetition means; independent repetitions assumption; no request-level pseudoreplication', completion_p95_ms: interval(per.flatMap(r => r.completion_p95_ms === null ? [] : [r.completion_p95_ms])) },

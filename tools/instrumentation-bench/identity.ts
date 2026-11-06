@@ -23,7 +23,7 @@ export async function verifyArtifact(m: Manifest): Promise<ArtifactIdentity> {
   if (receipt.source_commit !== m.source_commit || receipt.artifact_sha256 !== m.artifact_sha256 || receipt.clean_source !== true) throw new Error('artifact_identity_receipt_mismatch');
   return { artifact_path: artifact, source_commit: receipt.source_commit, artifact_sha256: receipt.artifact_sha256, artifact_receipt_sha256: hash(raw) };
 }
-async function startTicks(pid: number): Promise<string> {
+export async function startTicks(pid: number): Promise<string> {
   if (process.platform !== 'linux') throw new Error('process_socket_identity_unsupported');
   try {
     const raw = await readFile(`/proc/${pid}/stat`, 'utf8'); const fields = raw.slice(raw.lastIndexOf(')') + 2).split(' ');

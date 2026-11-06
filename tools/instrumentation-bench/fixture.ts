@@ -28,7 +28,7 @@ export function frames(m: Manifest): any[] {
       { type: 'response.output_item.done', output_index: 0, item },
       { type: 'response.completed', response: { id: 'resp_fixture', status: 'completed', output: [item], usage: { input_tokens: 10, output_tokens: m.output_tokens_target, input_tokens_details: { cached_tokens: m.cache_state === 'warm' ? 5 : 0 } } } }];
   }
-  return [{ type: 'message_start', message: { id: 'msg_fixture', type: 'message', role: 'assistant', model: 'fixture-model', content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 10, output_tokens: 0 } } },
+  return [{ type: 'message_start', message: { id: 'msg_fixture', type: 'message', role: 'assistant', model: 'fixture-model', content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 10, output_tokens: 0, cache_read_input_tokens: m.cache_state === 'warm' ? 5 : 0, cache_creation_input_tokens: 0, cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 0 } } } },
     { type: 'content_block_start', index: 0, content_block: tool ? { type: 'tool_use', id: 'tool_fixture', name: 'fixture_tool', input: {} } : { type: 'text', text: '' } },
     ...Array.from({ length: m.fixture.chunks }, () => ({ type: 'content_block_delta', index: 0,
       delta: tool ? { type: 'input_json_delta', partial_json: ' ' } : { type: 'text_delta', text: 'x' } })),
@@ -42,12 +42,17 @@ export function nonstream(m: Manifest): any {
   return { id: 'msg_fixture', type: 'message', role: 'assistant', model: 'fixture-model',
     content: m.scenario === 'tool-heavy' ? [{ type: 'tool_use', id: 'tool_fixture', name: 'fixture_tool', input: {} }]
       : [{ type: 'text', text: 'x'.repeat(m.fixture.chunks) }], stop_reason: m.scenario === 'tool-heavy' ? 'tool_use' : 'end_turn', stop_sequence: null,
-    usage: { input_tokens: 10, output_tokens: m.output_tokens_target } };
+    usage: { input_tokens: 10, output_tokens: m.output_tokens_target, cache_read_input_tokens: m.cache_state === 'warm' ? 5 : 0, cache_creation_input_tokens: 0, cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 0 } } };
 }
 export function startUpstream(m: Manifest) {
-  let attempts = 0, active = 0, peak = 0, bodyMismatch = 0;
+  let attempts = 0, active = 0, peak = 0, bodyMismatch = 0, httpRequests = 0, websocketRequests = 0;
   const expected = hash(requestBytes(m));
-  const all = frames(m);
+  const upstreamManifest = { ...m, protocol: m.upstream?.protocol ?? m.protocol };
+  const all = frames(upstreamManifest);
+  const validBody = (body: Uint8Array | string, websocket: boolean) => {
+    if (m.target.kind === 'direct' || !m.upstream || m.upstream.protocol === 'anthropic') return hash(typeof body === 'string' ? body : body) === expected;
+    try { const v = JSON.parse(typeof body === 'string' ? body : new TextDecoder().decode(body)); return v.model === 'fixture-model' && Array.isArray(v.input) && (websocket ? v.type === 'response.create' : typeof v.stream === 'boolean'); } catch { return false; }
+  };
   const schedule = async (emit: (value: any) => void, alive: () => boolean) => {
     for (let i = 0; i < all.length && alive(); i++) {
       const wait = i === 2 ? m.fixture.first_wait_ms : i > 2 && i < m.fixture.chunks + 2 ? m.fixture.chunk_wait_ms : 0;
@@ -55,16 +60,17 @@ export function startUpstream(m: Manifest) {
       if (alive()) emit(all[i]);
     }
   };
-  const server = Bun.serve<{ closed: boolean }>({ hostname: '127.0.0.1', port: 0,
+  const server = Bun.serve<{ closed: boolean; busy: boolean }>({ hostname: '127.0.0.1', port: 0, maxRequestBodySize: 32 * 1024 ** 2,
     async fetch(req, s) {
-      if (req.headers.get('upgrade') === 'websocket') return s.upgrade(req, { data: { closed: false } }) ? undefined : new Response(null, { status: 400 });
+      if (req.headers.get('upgrade') === 'websocket') return s.upgrade(req, { data: { closed: false, busy: false } }) ? undefined : new Response(null, { status: 400 });
       if (new URL(req.url).pathname === '/health') return Response.json({ ok: true, fixture: true });
       const body = new Uint8Array(await req.arrayBuffer());
-      if (hash(body) !== expected) bodyMismatch++;
-      attempts++;
+      if (!validBody(body, false)) { bodyMismatch++; return new Response(null, { status: 400 }); }
+      attempts++; httpRequests++;
       if (m.scenario === 'refusal' || (m.scenario === 'retry' && attempts % 3 === 1))
         return Response.json({ type: 'error', error: { type: 'rate_limit_error', message: 'scripted refusal' } }, { status: 429, headers: { 'retry-after': '0' } });
-      if (!m.streaming) { await sleep(m.fixture.first_wait_ms); return Response.json(nonstream(m)); }
+      const upstreamStreaming = m.upstream?.protocol === 'responses' ? JSON.parse(new TextDecoder().decode(body)).stream === true : m.streaming;
+      if (!upstreamStreaming) { await sleep(m.fixture.first_wait_ms); return Response.json(nonstream(upstreamManifest)); }
       active++; peak = Math.max(peak, active); let cancelled = false;
       return new Response(new ReadableStream({
         async start(controller) {
@@ -77,12 +83,15 @@ export function startUpstream(m: Manifest) {
     },
     websocket: {
       async message(ws, body) {
-        attempts++; if (hash(typeof body === 'string' ? body : new Uint8Array(body)) !== expected) bodyMismatch++;
+        attempts++; websocketRequests++;
+        if (m.scenario === 'reconnect' && attempts % 3 === 1) { ws.close(1011); return; }
+        if (ws.data.busy || !validBody(typeof body === 'string' ? body : new Uint8Array(body), true)) { bodyMismatch++; ws.close(1008); return; }
+        ws.data.busy = true;
         active++; peak = Math.max(peak, active);
-        try { await schedule(value => { ws.send(JSON.stringify(value)); }, () => !ws.data.closed); if (!ws.data.closed) ws.close(1000); }
-        finally { active--; }
+        try { await schedule(value => { ws.send(JSON.stringify(value)); }, () => !ws.data.closed); if (!ws.data.closed && m.target.kind === 'direct') ws.close(1000); }
+        finally { active--; ws.data.busy = false; }
       }, close(ws) { ws.data.closed = true; },
     },
   });
-  return { url: `http://127.0.0.1:${server.port}`, stop: () => server.stop(true), stats: () => ({ attempts, active, peak, request_body_mismatches: bodyMismatch }) };
+  return { url: `http://127.0.0.1:${server.port}`, stop: () => server.stop(true), stats: () => ({ attempts, active, peak, request_body_mismatches: bodyMismatch, http_requests: httpRequests, websocket_requests: websocketRequests, upstream_protocol: upstreamManifest.protocol, requested_transport: m.upstream?.transport ?? m.transport }) };
 }

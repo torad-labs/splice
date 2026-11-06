@@ -190,6 +190,7 @@ internal class BenchmarkRetainedOwners(
     )
 
     override fun close() {
+        query.close()
         evidence?.let { check(it.stopCoverage(HEAD)); it.close() }
         aggregate?.close()
         accumulator?.close()

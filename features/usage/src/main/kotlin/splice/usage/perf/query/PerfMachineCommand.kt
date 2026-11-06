@@ -37,8 +37,12 @@ internal class PerfMachineCommand(
     }
 
     private fun invoke(operation: String, parsed: Map<String, String>, env: EnvReader): Boolean = try {
-        val service = queries?.service(env) ?: offline(env)
-        dispatch(operation, parsed, service)
+        val borrowed = queries?.service(env)
+        if (borrowed != null) {
+            dispatch(operation, parsed, borrowed)
+        } else {
+            offline(env).use { dispatch(operation, parsed, it) }
+        }
     } catch (_: IOException) {
         write(queryError("topology_unreadable", "offline_topology_unavailable"))
     } catch (_: IllegalArgumentException) {

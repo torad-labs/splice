@@ -41,7 +41,7 @@ class PerfEvidenceStreamingTest {
         checkNotNull(PerfWorkBudget.acquire(5L * 1_024 * 1_024)).use {
             StreamingEvidenceFixture(root).use { fixture ->
                 fixture.seed(3_000)
-                val result = fixture.service().summary(fixture.query())
+                val result = fixture.service().use { it.summary(fixture.query()) }
                 try {
                     assertEquals(
                         "3000",
@@ -76,7 +76,7 @@ class PerfEvidenceStreamingTest {
                 assertTrue(it.coverage.issues.any { issue -> issue.code == "evidence_consumer_limit" })
             }
             fixture.conflict()
-            val result = fixture.service().summary(fixture.query())
+            val result = fixture.service().use { it.summary(fixture.query()) }
             try {
                 assertNull(JsonScalars.str(result.getValue("goodput").jsonObject, "eligible"))
                 assertEquals("false", JsonScalars.str(result.getValue("coverage").jsonObject, "complete"))
@@ -91,9 +91,9 @@ class PerfEvidenceStreamingTest {
     fun `late canonical usage revises a later receipt without changing original completion count`(@TempDir root: Path) {
         StreamingEvidenceFixture(root).use { fixture ->
             fixture.seed(1, withUsage = false)
-            val before = fixture.service().summary(fixture.query())
+            val before = fixture.service().use { it.summary(fixture.query()) }
             fixture.lateUsage()
-            val after = fixture.service().summary(fixture.query())
+            val after = fixture.service().use { it.summary(fixture.query()) }
             try {
                 assertEquals(
                     "insufficient_evidence",

@@ -17,8 +17,11 @@ public class PerfQueryService(
     private val projects: RequestProjects? = null,
     private val accounts: RecordedAccounts? = null,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
-) {
+) : AutoCloseable {
     private val work = PerfQueryWork(clock, sources)
+
+    /** Releases the owned cache; injected sources and previously returned replies retain their own lifetimes. */
+    override fun close(): Unit = work.close()
 
     public fun summary(query: PerfQuery): JsonObject = execute(query, "summary") { selected, filter ->
         val data = read(selected, filter)

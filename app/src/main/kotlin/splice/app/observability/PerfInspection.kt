@@ -22,5 +22,8 @@ internal class PerfInspection(paths: StatePaths, identity: PerfIdentity, sources
     fun stopProfiles() { profiles.close() }
 
     /** Objective state remains available to alert/delivery readers until the app has closed them and exports. */
-    override fun close() { objectives.close() }
+    override fun close() {
+        query.close()
+        objectives.close()
+    }
 }

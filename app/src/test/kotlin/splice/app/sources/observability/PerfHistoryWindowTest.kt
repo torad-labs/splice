@@ -83,19 +83,20 @@ class PerfHistoryWindowTest {
             val dayStore = PerfAggregateStore(day, identity, WallClock { start + PERF_DAY_MS })
             val weekStore = PerfAggregateStore(week, identity, WallClock { start + 7 * PERF_DAY_MS })
             var selected: PerfHistory = dayStore
-            val service = PerfQueryService(
+            PerfQueryService(
                 object : PerfQuerySources {
                     override fun heads(): Set<String> = setOf("representative")
                     override fun rows(head: String): PerfRowsSource? = null
                     override fun history(): PerfHistory = selected
                 },
                 clock = WallClock { start + 7 * PERF_DAY_MS },
-            )
-            val first = service.series(PerfQuery(start, start + PERF_DAY_MS, source = "history"))
-            try { assertSeriesCount(first, 1_440L * 8 * 2) } finally { PerfWorkBudget.release(first) }
-            selected = weekStore
-            val second = service.series(PerfQuery(start, start + 7 * PERF_DAY_MS, source = "history"))
-            try { assertSeriesCount(second, 168L * 48 * 2) } finally { PerfWorkBudget.release(second) }
+            ).use { service ->
+                val first = service.series(PerfQuery(start, start + PERF_DAY_MS, source = "history"))
+                try { assertSeriesCount(first, 1_440L * 8 * 2) } finally { PerfWorkBudget.release(first) }
+                selected = weekStore
+                val second = service.series(PerfQuery(start, start + 7 * PERF_DAY_MS, source = "history"))
+                try { assertSeriesCount(second, 168L * 48 * 2) } finally { PerfWorkBudget.release(second) }
+            }
             dayStore.close()
             weekStore.close()
         }

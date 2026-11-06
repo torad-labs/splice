@@ -13,9 +13,11 @@ import splice.app.sources.PerfSourceFiles
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.util.EnvReader
+import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.core.util.PerfWorkBudget
 import splice.usage.alerts.AlertStore
+import splice.usage.perf.query.PerfQuery
 import java.nio.file.Path
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -25,6 +27,8 @@ class PerfCancelledShutdownTest {
         val before = PerfWorkBudget.retainedBytes()
         val first = telemetry(directory)
         first.start()
+        val until = System.currentTimeMillis()
+        val reply = first.inspection.query.summary(PerfQuery(until - 60_000L, until, source = "history"))
         var cancellationPreserved = false
         launch {
             currentCoroutineContext().cancel()
@@ -34,7 +38,13 @@ class PerfCancelledShutdownTest {
                 cancellationPreserved = true
             }
         }.join()
-        assertTrue(cancellationPreserved)
+        try {
+            assertTrue(cancellationPreserved)
+            assertEquals("1", JsonScalars.str(reply, "schema_version"))
+            assertTrue(PerfWorkBudget.retainedBytes() > before, "the caller still owns its returned reply")
+        } finally {
+            PerfWorkBudget.release(reply)
+        }
         assertEquals(before, PerfWorkBudget.retainedBytes())
         val replacement = telemetry(directory)
         try {

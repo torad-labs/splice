@@ -8,11 +8,13 @@ import splice.core.util.WallClock
 import splice.usage.perf.query.PerfQueryJson.queryError
 import java.io.IOException
 import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /** A cache owns encoded bytes; every returned JSON tree owns a distinct lease. */
-internal class PerfQueryWork(private val clock: WallClock, private val sources: PerfQuerySources) {
+internal class PerfQueryWork(private val clock: WallClock, private val sources: PerfQuerySources) : AutoCloseable {
     private val lock = ReentrantLock()
     private var cached: CachedQuery? = null
+    private var closed = false
 
     fun execute(query: PerfQuery, operation: String?, read: PerfQueryResult): JsonObject {
         val parsed = PerfQueryParser.parse(
@@ -26,11 +28,18 @@ internal class PerfQueryWork(private val clock: WallClock, private val sources: 
         if (parsed.error != null) return parsed.error
         if (!lock.tryLock()) return queryError("query_busy", "query_in_progress", "busy")
         return try {
-            admitted(query, operation, read)
+            if (closed) queryError("query_closed", "query_service_closed") else admitted(query, operation, read)
         } catch (_: IOException) {
             queryError("source_unreadable", "local_source_read_failed")
         } finally {
             lock.unlock()
+        }
+    }
+
+    override fun close() {
+        lock.withLock {
+            closed = true
+            clearCache()
         }
     }
 
@@ -62,8 +71,7 @@ internal class PerfQueryWork(private val clock: WallClock, private val sources: 
         val restored = warm?.let { JsonScalars.objectOrNull(Json, it.payload) }
         if (restored != null) return restored
         // A stale cache is optional state; release it before the cold source phase.
-        cached?.let(PerfWorkBudget::release)
-        cached = null
+        clearCache()
         val result = read(query)
         if (operation != null) cache(query, operation, now, result)
         return result
@@ -79,14 +87,18 @@ internal class PerfQueryWork(private val clock: WallClock, private val sources: 
             .all { it }
 
     private fun cache(query: PerfQuery, operation: String, now: Long, result: JsonObject) {
-        cached?.let(PerfWorkBudget::release)
-        cached = null
+        clearCache()
         val encoded = result.toString()
         val bytes = encoded.length.toLong() * CHAR_CHARGE + RESULT_OVERHEAD
         val lease = PerfWorkBudget.acquire(bytes) ?: return
         val entry = CachedQuery(query, operation, now, encoded)
         lease.retain(entry, bytes)
         cached = entry
+    }
+
+    private fun clearCache() {
+        cached?.let(PerfWorkBudget::release)
+        cached = null
     }
 }
 

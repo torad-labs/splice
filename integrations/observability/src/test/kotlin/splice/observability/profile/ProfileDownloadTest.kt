@@ -68,7 +68,7 @@ class ProfileDownloadTest {
         assertEquals(before, PerfWorkBudget.retainedBytes())
     }
 
-    private fun capture(manager: ProfileManager): String = assertTimeoutPreemptively(Duration.ofSeconds(10)) {
+    private fun capture(manager: ProfileManager): String = assertTimeoutPreemptively<String>(Duration.ofSeconds(10)) {
         var started = manager.start(PerfProfileRequest())
         while (started.getValue("status").jsonPrimitive.content == "busy") {
             release(started)

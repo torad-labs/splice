@@ -13,6 +13,7 @@ import splice.core.perf.observation.PerfObserver
 import splice.core.perf.observation.PerfRecorder
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
+import splice.observability.OBSERVABILITY_NANOS_PER_MILLISECOND
 
 class ExportRequestTraceTest {
     @Test
@@ -26,8 +27,8 @@ class ExportRequestTraceTest {
             val root = output.spans.single()
             assertEquals(ExportFixtures.links.traceId, root.traceId)
             assertEquals(ExportFixtures.links.spanId, root.spanId)
-            assertEquals(1_000 * NANOS_PER_MS, root.startEpochNanos)
-            assertEquals(1_250 * NANOS_PER_MS, root.endEpochNanos)
+            assertEquals(1_000 * OBSERVABILITY_NANOS_PER_MILLISECOND, root.startEpochNanos)
+            assertEquals(1_250 * OBSERVABILITY_NANOS_PER_MILLISECOND, root.endEpochNanos)
         }
     }
 
@@ -54,8 +55,8 @@ class ExportRequestTraceTest {
             assertEquals(incoming.parentSpanId, root.parentSpanId)
             assertEquals(root.traceId, child.traceId)
             assertEquals(root.spanId, child.parentSpanId)
-            assertEquals(1_000 * NANOS_PER_MS, root.startEpochNanos)
-            assertEquals(1_250 * NANOS_PER_MS, root.endEpochNanos)
+            assertEquals(1_000 * OBSERVABILITY_NANOS_PER_MILLISECOND, root.startEpochNanos)
+            assertEquals(1_250 * OBSERVABILITY_NANOS_PER_MILLISECOND, root.endEpochNanos)
             assertFalse(root.attributes.toString().contains(requireNotNull(request.links.requestId)))
             assertEquals(0L, output.traces.dropped)
         }
@@ -74,7 +75,7 @@ class ExportRequestTraceTest {
             output.now = 1_001
             assertTrue(linked.finish("refused"))
             assertEquals(ExportFixtures.links.spanId, output.spans.single().spanId)
-            assertEquals(1_000 * NANOS_PER_MS, output.spans.single().startEpochNanos)
+            assertEquals(1_000 * OBSERVABILITY_NANOS_PER_MILLISECOND, output.spans.single().startEpochNanos)
         }
     }
 

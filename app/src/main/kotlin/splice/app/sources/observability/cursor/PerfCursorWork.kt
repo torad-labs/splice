@@ -1,7 +1,6 @@
 package splice.app.sources.observability.cursor
 
 import splice.core.util.MonoClock
-import java.io.IOException
 
 internal class PerfCursorWork {
     private val started = MonoClock.nowMs()
@@ -11,7 +10,7 @@ internal class PerfCursorWork {
     fun charge(count: Long) {
         val over = count > PERF_CURSOR_WORK_BYTES - bytes || MonoClock.nowMs() - started > QUERY_LIMIT_MS
         if (count < 0 || over) {
-            throw IOException("cursor_work_limit")
+            throw PerfReadRefusal(PerfReadIssue.CURSOR_WORK_LIMIT)
         }
         bytes += count
     }

@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.perf.observation.PerfEventKind
+import splice.observability.OBSERVABILITY_NANOS_PER_MILLISECOND
 
 class ExportTraceTest {
     @Test
@@ -31,7 +32,7 @@ class ExportTraceTest {
             assertEquals(parent.spanId, request.spanId)
             assertEquals(request.traceId, attempt.traceId)
             assertEquals(request.spanId, attempt.parentSpanId)
-            assertEquals(1_250 * NANOS_PER_MS, request.endEpochNanos)
+            assertEquals(1_250 * OBSERVABILITY_NANOS_PER_MILLISECOND, request.endEpochNanos)
             assertFalse(request.attributes.toString().contains("secret"))
             assertTrue(request.events.isEmpty())
         }

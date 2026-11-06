@@ -167,7 +167,7 @@ class ProfileManagerTest {
     }
 
     private fun awaitSettled(manager: ProfileManager, id: String): JsonObject =
-        assertTimeoutPreemptively(Duration.ofSeconds(15)) {
+        assertTimeoutPreemptively<JsonObject>(Duration.ofSeconds(15)) {
             var state = manager.status(id)
             while (state.getValue("status").jsonPrimitive.content == "running") {
                 check(!Thread.currentThread().isInterrupted) { "Profile completion deadline expired" }

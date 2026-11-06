@@ -4,7 +4,6 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import splice.app.sources.observability.PerfEvidenceSeen
 import splice.core.util.SecureFile
-import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.channels.OverlappingFileLockException
@@ -18,9 +17,9 @@ internal class PerfCursorFiles(private val directory: Path) {
 
     fun load(id: String): PerfCursorManifest {
         val path = directory.resolve("$id.json")
-        if (Files.size(path) > MAX_MANIFEST_BYTES) throw IOException("cursor_manifest_limit")
+        if (Files.size(path) > MAX_MANIFEST_BYTES) throw PerfReadRefusal(PerfReadIssue.CURSOR_MANIFEST_LIMIT)
         val bytes = Files.newInputStream(path).use { it.readNBytes(MAX_MANIFEST_BYTES.toInt() + 1) }
-        if (bytes.size > MAX_MANIFEST_BYTES) throw IOException("cursor_manifest_limit")
+        if (bytes.size > MAX_MANIFEST_BYTES) throw PerfReadRefusal(PerfReadIssue.CURSOR_MANIFEST_LIMIT)
         return json.decodeFromString(bytes.toString(Charsets.UTF_8))
     }
 
@@ -34,7 +33,7 @@ internal class PerfCursorFiles(private val directory: Path) {
 
     fun create(id: String): FileChannel {
         val reason = SecureFile.ownerOnlyDirectory(directory)
-        if (reason != null) throw IOException("cursor_directory_permissions")
+        if (reason != null) throw PerfReadRefusal(PerfReadIssue.CURSOR_DIRECTORY_PERMISSIONS)
         return FileChannel.open(directory.resolve("$id.idx"), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)
     }
 
@@ -46,7 +45,7 @@ internal class PerfCursorFiles(private val directory: Path) {
                     ordinal * PERF_CURSOR_ENTRY_BYTES + buffer.position(),
                 ) <= 0
             ) {
-                throw IOException("cursor_index_shortened")
+                throw PerfReadRefusal(PerfReadIssue.CURSOR_INDEX_SHORTENED)
             }
         }
         buffer.flip()
@@ -60,7 +59,7 @@ internal class PerfCursorFiles(private val directory: Path) {
             var total = 0L
             var count = 0
             for (path in directories) {
-                if (++count > MAX_CURSOR_DIRECTORIES) throw IOException("cursor_inventory_limit")
+                if (++count > MAX_CURSOR_DIRECTORIES) throw PerfReadRefusal(PerfReadIssue.CURSOR_INVENTORY_LIMIT)
                 total += pruneDirectory(path, now)
             }
             total
@@ -69,7 +68,7 @@ internal class PerfCursorFiles(private val directory: Path) {
 
     fun lock(): FileChannel {
         val reason = SecureFile.ownerOnlyDirectory(directory)
-        if (reason != null) throw IOException("cursor_directory_permissions")
+        if (reason != null) throw PerfReadRefusal(PerfReadIssue.CURSOR_DIRECTORY_PERMISSIONS)
         val channel = FileChannel.open(
             directory.parent.resolve("perf-cursors.lock"),
             StandardOpenOption.CREATE,
@@ -82,7 +81,7 @@ internal class PerfCursorFiles(private val directory: Path) {
         }
         if (!locked) {
             channel.close()
-            throw IOException("cursor_busy")
+            throw PerfReadRefusal(PerfReadIssue.CURSOR_BUSY)
         }
         return channel
     }
@@ -103,7 +102,7 @@ internal class PerfCursorFiles(private val directory: Path) {
     private fun listDirectory(directory: Path): List<Path> = try {
         Files.newDirectoryStream(directory).use { stream ->
             val list = stream.asSequence().take(MAX_CURSOR_FILES + 1).toList()
-            if (list.size > MAX_CURSOR_FILES) throw IOException("cursor_inventory_limit")
+            if (list.size > MAX_CURSOR_FILES) throw PerfReadRefusal(PerfReadIssue.CURSOR_INVENTORY_LIMIT)
             list
         }
     } catch (_: NoSuchFileException) {

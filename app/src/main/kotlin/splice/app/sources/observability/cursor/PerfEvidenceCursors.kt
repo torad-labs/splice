@@ -57,8 +57,10 @@ internal class PerfEvidenceCursors(
             lease.retain(page, reader.retainedBytes)
             retained = true
             page
-        } catch (error: IOException) {
-            failed(request, error)
+        } catch (failure: PerfReadRefusal) {
+            failed(request, failure.issue)
+        } catch (_: IOException) {
+            failure(request, "expired", "cursor_read_error")
         } catch (_: IllegalArgumentException) {
             failure(request, "invalid", "cursor_invalid_or_changed")
         } finally {
@@ -68,8 +70,8 @@ internal class PerfEvidenceCursors(
         }
     }
 
-    private fun failed(request: PerfEvidenceCursorRequest, error: IOException): PerfEvidencePage {
-        val reason = error.message?.takeIf { it.startsWith("cursor_") } ?: "cursor_read_error"
+    private fun failed(request: PerfEvidenceCursorRequest, issue: PerfReadIssue): PerfEvidencePage {
+        val reason = issue.code
         val status = if (reason.endsWith("_limit")) "incomplete" else "expired"
         return failure(request, status, reason)
     }
@@ -80,7 +82,7 @@ internal class PerfEvidenceCursors(
     ): PerfCursorManifest = files.lock().use {
         val now = clock()
         val available = PERF_CURSOR_DISK_BYTES - files.prune(now) - EVIDENCE_DEDUP_BYTES - METADATA_RESERVE
-        if (available <= 0) throw IOException("cursor_disk_limit")
+        if (available <= 0) throw PerfReadRefusal(PerfReadIssue.CURSOR_DISK_LIMIT)
         val settled = AsyncFileIo.awaitDirectory(directory)
         val id = UUID.randomUUID().toString()
         try {
@@ -117,15 +119,21 @@ internal class PerfEvidenceCursors(
     }
 
     private fun validate(manifest: PerfCursorManifest, request: PerfEvidenceCursorRequest) {
-        if (clock() - manifest.asOfMs !in 0..PERF_CURSOR_TTL_MS) throw IOException("cursor_snapshot_expired")
+        if (clock() - manifest.asOfMs !in 0..PERF_CURSOR_TTL_MS) {
+            throw PerfReadRefusal(
+                PerfReadIssue.CURSOR_SNAPSHOT_EXPIRED,
+            )
+        }
         val times = manifest.fromMs == request.query.fromMs && manifest.untilMs == request.query.untilMs
         require(times && manifest.filterHash == PerfEvidencePageMetadata.key(request)) { "cursor_filter_changed" }
     }
 
     private fun valid(request: PerfEvidenceCursorRequest): Boolean {
         val interval = request.query.fromMs >= 0 && request.query.untilMs > request.query.fromMs
-        val head = request.query.head == null || evidenceHeadPattern.matches(request.query.head)
-        val cursor = request.cursor == null || EVIDENCE_CURSOR.matches(request.cursor)
+        val requestedHead = request.query.head
+        val head = requestedHead == null || evidenceHeadPattern.matches(requestedHead)
+        val requestedCursor = request.cursor
+        val cursor = requestedCursor == null || EVIDENCE_CURSOR.matches(requestedCursor)
         return listOf(
             interval,
             head,

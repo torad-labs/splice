@@ -11,7 +11,6 @@ import splice.app.sources.PerfRowsCache
 import splice.usage.perf.PerfRow
 import splice.usage.perf.history.PerfCursorPage
 import splice.usage.perf.history.PerfCursorRequest
-import java.io.IOException
 import java.nio.channels.FileChannel
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
@@ -28,13 +27,20 @@ internal class PerfCursorPageRead(private val files: PerfCursorFiles, private va
     ): PerfCursorPage {
         val candidates = inventory.candidates()
         val paths = manifest.segments.map {
-            inventory.resolve(it, candidates, work) ?: throw IOException("cursor_segment_expired")
+            inventory.resolve(it, candidates, work) ?: throw PerfReadRefusal(PerfReadIssue.CURSOR_SEGMENT_EXPIRED)
         }
         val selection = CursorPageSelection(manifest, request, paths, work)
         val page = files.index(manifest.id).use { index -> selection.read(index, offset, files) }
         paths.forEachIndexed { index, path ->
             val segment = manifest.segments[index]
-            if (inventory.digest(path, segment.end, work) != segment.digest) throw IOException("cursor_segment_changed")
+            if (inventory.digest(
+                    path,
+                    segment.end,
+                    work,
+                ) != segment.digest
+            ) {
+                throw PerfReadRefusal(PerfReadIssue.CURSOR_SEGMENT_CHANGED)
+            }
         }
         retainedBytes = selection.retainedBytes
         return page
@@ -55,7 +61,11 @@ private class CursorPageSelection(
         private set
 
     fun read(index: FileChannel, offset: Long, files: PerfCursorFiles): PerfCursorPage {
-        if (index.size() != manifest.matching * PERF_CURSOR_ENTRY_BYTES) throw IOException("cursor_index_changed")
+        if (index.size() != manifest.matching * PERF_CURSOR_ENTRY_BYTES) {
+            throw PerfReadRefusal(
+                PerfReadIssue.CURSOR_INDEX_CHANGED,
+            )
+        }
         var at = offset
         while (at < manifest.matching && rows.size < request.pageSize) {
             if (!record(files.position(index, at))) break
@@ -71,7 +81,7 @@ private class CursorPageSelection(
         if (retainedBytes + charge > PERF_CURSOR_OUTPUT_BYTES) return false
         val raw = raw(paths[position.segment], position)
         work.charge(position.end - position.start)
-        val row = decoder.decode(raw).row ?: throw IOException("cursor_record_changed")
+        val row = decoder.decode(raw).row ?: throw PerfReadRefusal(PerfReadIssue.CURSOR_RECORD_CHANGED)
         validate(row)
         retainedBytes += charge
         rows += row
@@ -80,22 +90,28 @@ private class CursorPageSelection(
     }
 
     private fun checked(position: PerfCursorPosition): PerfCursorSegment {
-        val segment = manifest.segments.getOrNull(position.segment) ?: throw IOException("cursor_index_invalid")
+        val segment = manifest.segments.getOrNull(
+            position.segment,
+        ) ?: throw PerfReadRefusal(PerfReadIssue.CURSOR_INDEX_INVALID)
         val reversed = position.end <= position.start || position.start < 0
-        if (position.end > segment.end || reversed) throw IOException("cursor_index_invalid")
+        if (position.end > segment.end || reversed) throw PerfReadRefusal(PerfReadIssue.CURSOR_INDEX_INVALID)
         return segment
     }
 
     private fun validate(row: PerfRow) {
         val outside = row.ts < manifest.fromMs || row.ts >= manifest.untilMs
-        if (outside || !request.predicate.matches(row)) throw IOException("cursor_filter_changed")
+        if (outside || !request.predicate.matches(row)) throw PerfReadRefusal(PerfReadIssue.CURSOR_FILTER_CHANGED)
     }
 
     private fun raw(path: Path, position: PerfCursorPosition): String =
         FileChannel.open(path, StandardOpenOption.READ).use { channel ->
             val reader = PerfLineReader(channel, position.start, position.end, PERF_CURSOR_MAX_LINE_BYTES)
-            val raw = reader.next() ?: throw IOException("cursor_record_missing")
-            if (!reader.terminated || reader.position != position.end) throw IOException("cursor_record_changed")
+            val raw = reader.next() ?: throw PerfReadRefusal(PerfReadIssue.CURSOR_RECORD_MISSING)
+            if (!reader.terminated || reader.position != position.end) {
+                throw PerfReadRefusal(
+                    PerfReadIssue.CURSOR_RECORD_CHANGED,
+                )
+            }
             raw
         }
 

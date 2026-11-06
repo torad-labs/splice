@@ -1,7 +1,6 @@
 package splice.app.sources.observability.cursor
 
 import splice.core.perf.PerfArchiveName
-import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.file.Files
@@ -36,7 +35,7 @@ internal class PerfCursorInventory(private val live: Path, private val archive: 
                 paths.asSequence().filter { names.rotatedAt(it.fileName.toString()) != null }
                     .take(PERF_CURSOR_MAX_SEGMENTS + 1).toList()
             }
-            if (paths.size > PERF_CURSOR_MAX_SEGMENTS) throw IOException("cursor_segment_limit")
+            if (paths.size > PERF_CURSOR_MAX_SEGMENTS) throw PerfReadRefusal(PerfReadIssue.CURSOR_SEGMENT_LIMIT)
             ArrayList(paths)
         } catch (_: NoSuchFileException) {
             ArrayList()
@@ -45,7 +44,7 @@ internal class PerfCursorInventory(private val live: Path, private val archive: 
 
     fun capture(path: Path, work: PerfCursorWork): PerfCursorSegment {
         val attributes = attributes(path)
-        if (!attributes.isRegularFile) throw IOException("cursor_segment_not_regular")
+        if (!attributes.isRegularFile) throw PerfReadRefusal(PerfReadIssue.CURSOR_SEGMENT_NOT_REGULAR)
         val end = attributes.size
         val key = attributes.fileKey
         val id = hash("${key ?: path.toAbsolutePath()}@${attributes.created}")
@@ -72,14 +71,14 @@ internal class PerfCursorInventory(private val live: Path, private val archive: 
     fun digest(path: Path, end: Long, work: PerfCursorWork): String {
         val digest = MessageDigest.getInstance("SHA-256")
         FileChannel.open(path, StandardOpenOption.READ).use { channel ->
-            if (channel.size() < end) throw IOException("cursor_segment_shortened")
+            if (channel.size() < end) throw PerfReadRefusal(PerfReadIssue.CURSOR_SEGMENT_SHORTENED)
             val buffer = ByteBuffer.allocate(DIGEST_BUFFER)
             var at = 0L
             while (at < end) {
                 buffer.clear()
                 buffer.limit(minOf(buffer.capacity().toLong(), end - at).toInt())
                 val size = channel.read(buffer, at)
-                if (size <= 0) throw IOException("cursor_segment_shortened")
+                if (size <= 0) throw PerfReadRefusal(PerfReadIssue.CURSOR_SEGMENT_SHORTENED)
                 work.charge(size.toLong())
                 digest.update(buffer.array(), 0, size)
                 at += size

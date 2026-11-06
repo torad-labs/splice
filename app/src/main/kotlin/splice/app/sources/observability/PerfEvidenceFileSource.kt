@@ -1,6 +1,7 @@
 package splice.app.sources.observability
 
 import splice.app.sources.observability.cursor.PerfEvidenceCursors
+import splice.app.sources.observability.cursor.PerfReadRefusal
 import splice.core.perf.observation.PerfCoverage
 import splice.core.perf.observation.PerfIssue
 import splice.core.util.AsyncFileIo
@@ -37,7 +38,8 @@ public class PerfEvidenceFileSource(
 
     override fun consume(query: PerfEvidenceQuery, consumer: PerfObservationConsumer): PerfEvidenceReceipt {
         require(query.fromMs >= 0 && query.untilMs > query.fromMs) { "invalid evidence interval" }
-        require(query.head == null || evidenceHeadPattern.matches(query.head)) { "invalid evidence head" }
+        val head = query.head
+        require(head == null || evidenceHeadPattern.matches(head)) { "invalid evidence head" }
         if (!reading.tryAcquire()) {
             return PerfEvidenceReceipt(
                 PerfCoverage(query.fromMs, query.untilMs, 0, listOf(PerfIssue("evidence_query_busy", EVIDENCE_SOURCE))),
@@ -68,7 +70,8 @@ public class PerfEvidenceFileSource(
 
     override fun read(query: PerfEvidenceQuery): PerfEvidenceRead {
         require(query.fromMs >= 0 && query.untilMs > query.fromMs) { "invalid evidence interval" }
-        require(query.head == null || evidenceHeadPattern.matches(query.head)) { "invalid evidence head" }
+        val head = query.head
+        require(head == null || evidenceHeadPattern.matches(head)) { "invalid evidence head" }
         if (!reading.tryAcquire()) return unavailable(query, "evidence_query_busy")
         val lease = PerfWorkBudget.acquire(EVIDENCE_READ_RESERVE)
         if (lease == null) {
@@ -152,10 +155,10 @@ public class PerfEvidenceFileSource(
     private fun scan(scan: PerfEvidenceReadScan) {
         try {
             scan.scan()
-        } catch (failure: IOException) {
-            val code = failure.message?.takeIf { it.startsWith("evidence_") || it.startsWith("cursor_") }
-                ?: "evidence_read_error"
-            scan.issues += PerfIssue(code, EVIDENCE_SOURCE)
+        } catch (failure: PerfReadRefusal) {
+            scan.issues += PerfIssue(failure.issue.code, EVIDENCE_SOURCE)
+        } catch (_: IOException) {
+            scan.issues += PerfIssue("evidence_read_error", EVIDENCE_SOURCE)
         }
     }
 

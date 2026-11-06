@@ -178,7 +178,7 @@ object TraceBodyHydrationProbe {
                 if (type == "tool_result") value["content"]?.let { count(it, counts, depth + 1) }
             }
             is JsonArray -> value.forEach { count(it, counts, depth + 1) }
-            else -> Unit
+            is JsonPrimitive -> Unit
         }
     }
 

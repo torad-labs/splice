@@ -4,6 +4,8 @@ import kotlinx.serialization.json.Json
 import splice.app.sources.observability.cursor.PerfCursorInventory
 import splice.app.sources.observability.cursor.PerfCursorSegment
 import splice.app.sources.observability.cursor.PerfCursorWork
+import splice.app.sources.observability.cursor.PerfReadIssue
+import splice.app.sources.observability.cursor.PerfReadRefusal
 import splice.core.perf.observation.PerfIssue
 import splice.head.perf.RequestEvidenceFormat
 import splice.head.perf.RequestEvidenceProofFormat
@@ -28,7 +30,11 @@ internal class PerfEvidenceInventory(private val directory: Path) {
                 )
             }.take(RequestEvidenceProofFormat.MAX_PROOF_PREFIXES + 1).toList()
         }
-        if (files.size > RequestEvidenceProofFormat.MAX_PROOF_PREFIXES) throw IOException("cursor_segment_limit")
+        if (files.size > RequestEvidenceProofFormat.MAX_PROOF_PREFIXES) {
+            throw PerfReadRefusal(
+                PerfReadIssue.CURSOR_SEGMENT_LIMIT,
+            )
+        }
         files.sortedBy { it.fileName.toString() }
     } catch (_: NoSuchFileException) {
         emptyList()
@@ -40,7 +46,7 @@ internal class PerfEvidenceInventory(private val directory: Path) {
                     prefix.fileName,
                 ) == null
             ) {
-                throw IOException("evidence_proof_segment_invalid")
+                throw PerfReadRefusal(PerfReadIssue.EVIDENCE_PROOF_SEGMENT_INVALID)
             }
             val path = directory.resolve(prefix.fileName)
             if (!Files.isRegularFile(
@@ -48,7 +54,7 @@ internal class PerfEvidenceInventory(private val directory: Path) {
                     LinkOption.NOFOLLOW_LINKS,
                 )
             ) {
-                throw IOException("evidence_proof_segment_missing")
+                throw PerfReadRefusal(PerfReadIssue.EVIDENCE_PROOF_SEGMENT_MISSING)
             }
             if (fingerprints.digest(
                     path,
@@ -56,7 +62,7 @@ internal class PerfEvidenceInventory(private val directory: Path) {
                     work,
                 ) != prefix.digest
             ) {
-                throw IOException("evidence_proof_segment_changed")
+                throw PerfReadRefusal(PerfReadIssue.EVIDENCE_PROOF_SEGMENT_CHANGED)
             }
             path to PerfCursorSegment(prefix.digest, prefix.fileName, null, prefix.end, prefix.digest)
         }

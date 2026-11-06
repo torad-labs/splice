@@ -23,6 +23,6 @@ internal object ProfileLimits {
     const val COPY_BUFFER_BYTES = 64 * 1_024
 
     // Reserve 16 KiB per profile record and independent metadata reply within the shared work budget.
-    const val RECORD_METADATA_BYTES = 16L * 1_024
+    const val PROFILE_METADATA_BYTES = 16L * 1_024
     val modes = setOf("cpu", "wall", "alloc", "lock")
 }

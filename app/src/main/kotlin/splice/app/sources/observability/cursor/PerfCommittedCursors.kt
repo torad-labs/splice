@@ -48,7 +48,7 @@ internal class PerfCommittedCursors(
         return try {
             val manifest = load(request, work)
             val offset = request.cursor?.substringAfter(':')?.toLongOrNull() ?: 0L
-            if (offset !in 0..manifest.matching) throw IOException("cursor_offset_invalid")
+            if (offset !in 0..manifest.matching) throw PerfReadRefusal(PerfReadIssue.CURSOR_OFFSET_INVALID)
             val reader = PerfCursorPageRead(files, inventory)
             val page = reader.read(manifest, offset, request, work)
             scannedRows = if (request.cursor == null) manifest.scannedRows else page.rows.size.toLong()
@@ -57,8 +57,10 @@ internal class PerfCommittedCursors(
             page
         } catch (_: NoSuchFileException) {
             failure(request, "expired", "cursor_snapshot_expired")
-        } catch (error: IOException) {
-            failed(request, error)
+        } catch (failure: PerfReadRefusal) {
+            failed(request, failure.issue)
+        } catch (_: IOException) {
+            failure(request, "expired", "cursor_read_error")
         } catch (_: IllegalArgumentException) {
             failure(request, "invalid", "cursor_malformed")
         } finally {
@@ -74,8 +76,8 @@ internal class PerfCommittedCursors(
         return manifest
     }
 
-    private fun failed(request: PerfCursorRequest, error: IOException): PerfCursorPage {
-        val reason = error.message?.takeIf { it.startsWith("cursor_") } ?: "cursor_read_error"
+    private fun failed(request: PerfCursorRequest, issue: PerfReadIssue): PerfCursorPage {
+        val reason = issue.code
         val status = when {
             reason == "cursor_filter_changed" || reason == "cursor_offset_invalid" -> "invalid"
             reason == "cursor_busy" -> "busy"
@@ -88,7 +90,11 @@ internal class PerfCommittedCursors(
     private fun create(request: PerfCursorRequest, work: PerfCursorWork): PerfCursorManifest = files.lock().use {
         val now = clock()
         val held = files.prune(now)
-        if (held >= PERF_CURSOR_DISK_BYTES - CURSOR_METADATA_ALLOWANCE) throw IOException("cursor_disk_limit")
+        if (held >= PERF_CURSOR_DISK_BYTES - CURSOR_METADATA_ALLOWANCE) {
+            throw PerfReadRefusal(
+                PerfReadIssue.CURSOR_DISK_LIMIT,
+            )
+        }
         val settled = AsyncFileIo.awaitFile(live)
         val id = UUID.randomUUID().toString()
         val scan = PerfCursorScan(inventory, request, work, PERF_CURSOR_DISK_BYTES - held - CURSOR_METADATA_ALLOWANCE)
@@ -109,16 +115,22 @@ internal class PerfCommittedCursors(
 
     private fun validate(manifest: PerfCursorManifest, request: PerfCursorRequest) {
         val age = clock() - manifest.asOfMs
-        if (age !in 0..PERF_CURSOR_TTL_MS || manifest.schemaVersion != 1) throw IOException("cursor_snapshot_expired")
+        if (age !in 0..PERF_CURSOR_TTL_MS || manifest.schemaVersion != 1) {
+            throw PerfReadRefusal(
+                PerfReadIssue.CURSOR_SNAPSHOT_EXPIRED,
+            )
+        }
         val changedInterval = manifest.fromMs != request.query.fromMs || manifest.untilMs != request.query.untilMs
         if (manifest.filterHash != request.query.filterHash || changedInterval) {
-            throw IOException("cursor_filter_changed")
+            throw PerfReadRefusal(PerfReadIssue.CURSOR_FILTER_CHANGED)
         }
     }
 
     private fun valid(request: PerfCursorRequest): Boolean = request.query.fromMs >= 0 &&
         request.query.untilMs > request.query.fromMs && request.query.filterHash.length in 1..MAX_FILTER_HASH &&
-        request.pageSize in 1..MAX_COMMITTED_PAGE_SIZE && (request.cursor == null || TOKEN.matches(request.cursor))
+        request.pageSize in 1..MAX_COMMITTED_PAGE_SIZE && request.cursor.let { cursor ->
+            cursor == null || TOKEN.matches(cursor)
+        }
 
     private fun failure(request: PerfCursorRequest, status: String, reason: String): PerfCursorPage {
         if (status == "busy") costs.refused()

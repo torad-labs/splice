@@ -1,5 +1,7 @@
 package splice.app.sources.observability
 
+import splice.app.sources.observability.cursor.PerfReadIssue
+import splice.app.sources.observability.cursor.PerfReadRefusal
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
@@ -37,7 +39,13 @@ internal class PerfEvidenceSeen(private val path: Path) : AutoCloseable {
             val bytes = ByteBuffer.allocate(SLOT_BYTES)
             val offset = slot.toLong() * SLOT_BYTES
             while (bytes.hasRemaining()) {
-                if (channel.read(bytes, offset + bytes.position()) <= 0) throw IOException("cursor_dedup_read_error")
+                if (channel.read(
+                        bytes,
+                        offset + bytes.position(),
+                    ) <= 0
+                ) {
+                    throw PerfReadRefusal(PerfReadIssue.CURSOR_DEDUP_READ_ERROR)
+                }
             }
             if (bytes.array()[0] == 0.toByte()) return insert(offset, hash, payload)
             if (bytes.array().copyOfRange(1, 1 + EVIDENCE_SHA256_BYTES).contentEquals(hash)) {
@@ -45,11 +53,11 @@ internal class PerfEvidenceSeen(private val path: Path) : AutoCloseable {
             }
             slot = (slot + 1) % SLOTS
         } while (slot != first)
-        throw IOException("cursor_dedup_limit")
+        throw PerfReadRefusal(PerfReadIssue.CURSOR_DEDUP_LIMIT)
     }
 
     private fun insert(offset: Long, hash: ByteArray, payload: ByteArray): PerfEvidenceDuplicate {
-        if (count >= SLOTS / LOAD_DIVISOR) throw IOException("cursor_dedup_limit")
+        if (count >= SLOTS / LOAD_DIVISOR) throw PerfReadRefusal(PerfReadIssue.CURSOR_DEDUP_LIMIT)
         val content = ByteBuffer.wrap(payload)
         val at = TABLE_BYTES + count.toLong() * EVIDENCE_SHA256_BYTES
         while (content.hasRemaining()) channel.write(content, at + content.position())
@@ -64,7 +72,13 @@ internal class PerfEvidenceSeen(private val path: Path) : AutoCloseable {
         val bytes = ByteBuffer.allocate(EVIDENCE_SHA256_BYTES)
         val at = TABLE_BYTES + index.toLong() * EVIDENCE_SHA256_BYTES
         while (bytes.hasRemaining()) {
-            if (channel.read(bytes, at + bytes.position()) <= 0) throw IOException("cursor_dedup_read_error")
+            if (channel.read(
+                    bytes,
+                    at + bytes.position(),
+                ) <= 0
+            ) {
+                throw PerfReadRefusal(PerfReadIssue.CURSOR_DEDUP_READ_ERROR)
+            }
         }
         return if (bytes.array().contentEquals(payload)) PerfEvidenceDuplicate.SAME else PerfEvidenceDuplicate.CONFLICT
     }

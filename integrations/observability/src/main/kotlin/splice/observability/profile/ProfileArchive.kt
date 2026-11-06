@@ -11,7 +11,7 @@ internal class ProfileArchive(val artifacts: ProfileArtifacts, private val clock
     val lock = Any()
     private val records = linkedMapOf<String, ProfileRecord>()
     private val memory =
-        checkNotNull(PerfWorkBudget.acquire((ProfileLimits.MAX_RECORDS + 1) * ProfileLimits.RECORD_METADATA_BYTES))
+        checkNotNull(PerfWorkBudget.acquire((ProfileLimits.MAX_RECORDS + 1) * ProfileLimits.PROFILE_METADATA_BYTES))
     private var readers = 0
     private var retired = false
 

@@ -2,6 +2,8 @@ package splice.app.sources.observability
 
 import splice.app.sources.observability.cursor.PERF_CURSOR_DISK_BYTES
 import splice.app.sources.observability.cursor.PerfCursorFiles
+import splice.app.sources.observability.cursor.PerfReadIssue
+import splice.app.sources.observability.cursor.PerfReadRefusal
 import splice.core.perf.observation.PerfCoverage
 import splice.core.perf.observation.PerfIssue
 import splice.core.util.AsyncFileIo
@@ -69,14 +71,14 @@ internal class PerfEvidenceStreamSource(
         try {
             files.lock().use {
                 if (PERF_CURSOR_DISK_BYTES - files.prune(clock()) < EVIDENCE_DEDUP_BYTES + EVIDENCE_COVERAGE_BYTES) {
-                    throw IOException("cursor_disk_limit")
+                    throw PerfReadRefusal(PerfReadIssue.CURSOR_DISK_LIMIT)
                 }
                 files.evidenceIds(UUID.randomUUID().toString()).use(scan::scan)
             }
-        } catch (failure: IOException) {
-            val code = failure.message?.takeIf { it.startsWith("evidence_") || it.startsWith("cursor_") }
-                ?: "evidence_read_error"
-            scan.issue(code)
+        } catch (failure: PerfReadRefusal) {
+            scan.issue(failure.issue.code)
+        } catch (_: IOException) {
+            scan.issue("evidence_read_error")
         }
     }
 

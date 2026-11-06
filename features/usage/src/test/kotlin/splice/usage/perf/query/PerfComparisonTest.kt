@@ -207,16 +207,7 @@ class PerfComparisonTest {
         fixture.now = 3_000
         fixture.intervals = listOf(PerfConfigInterval("h", 100, 3_000, "config", "boot"))
         val later = (1..25).flatMap { fixture.request("later-$it", at = 2_500) }
-        val selected = fixture.request("selected", at = 1_500).map {
-            when (it.kind) {
-                PerfEventKind.REQUEST_FINISHED -> it.copy(
-                    stamp = it.stamp.copy(wallMs = 2_500, monotonicMs = 2_500),
-                    values = mapOf("arrival_to_terminal_ms" to 1_000.0),
-                )
-                PerfEventKind.USAGE_RECORDED -> it.copy(stamp = it.stamp.copy(wallMs = 2_501, monotonicMs = 2_501))
-                else -> it
-            }
-        }
+        val selected = fixture.request("selected", at = 1_500).map(::delayTerminal)
         fixture.events = later + selected
         val query = fixture.query.copy(
             fromMs = 1_000,
@@ -296,6 +287,30 @@ class PerfComparisonTest {
         } finally {
             listOf(completed, future).forEach(PerfWorkBudget::release)
         }
+    }
+
+    private fun delayTerminal(event: PerfObservation): PerfObservation = when (event.kind) {
+        PerfEventKind.REQUEST_FINISHED -> event.copy(
+            stamp = event.stamp.copy(wallMs = 2_500, monotonicMs = 2_500),
+            values = mapOf("arrival_to_terminal_ms" to 1_000.0),
+        )
+        PerfEventKind.USAGE_RECORDED -> event.copy(stamp = event.stamp.copy(wallMs = 2_501, monotonicMs = 2_501))
+        PerfEventKind.REQUEST_ARRIVED,
+        PerfEventKind.REQUEST_ADMITTED,
+        PerfEventKind.ATTEMPT_STARTED,
+        PerfEventKind.ATTEMPT_FINISHED,
+        PerfEventKind.PROTOCOL_PROGRESS,
+        PerfEventKind.CONTENT_PROGRESS,
+        PerfEventKind.CLIENT_PROGRESS,
+        PerfEventKind.GAP,
+        PerfEventKind.GATE_STATE,
+        PerfEventKind.TOOL_STARTED,
+        PerfEventKind.TOOL_FINISHED,
+        PerfEventKind.TOOL_PHASE,
+        PerfEventKind.RUNTIME,
+        PerfEventKind.SELF_COST,
+        PerfEventKind.CHECKPOINT,
+        -> event
     }
 
     private fun fingerprint(result: JsonObject): String? =

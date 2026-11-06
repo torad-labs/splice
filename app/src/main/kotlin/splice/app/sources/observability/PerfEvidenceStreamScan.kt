@@ -4,12 +4,13 @@ import splice.app.sources.PerfLineReader
 import splice.app.sources.observability.cursor.PERF_CURSOR_MAX_LINE_BYTES
 import splice.app.sources.observability.cursor.PerfCursorSegment
 import splice.app.sources.observability.cursor.PerfCursorWork
+import splice.app.sources.observability.cursor.PerfReadIssue
+import splice.app.sources.observability.cursor.PerfReadRefusal
 import splice.core.perf.observation.PerfIssue
 import splice.head.perf.RequestEvidenceFormat
 import splice.usage.perf.history.PerfEvidenceCoverageProof
 import splice.usage.perf.history.PerfEvidenceQuery
 import splice.usage.perf.history.PerfObservationConsumer
-import java.io.IOException
 import java.nio.channels.FileChannel
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
@@ -32,7 +33,7 @@ internal class PerfEvidenceStreamScan(
         for ((path, segment) in fixed) {
             read(path, segment, seen)
             if (inventory.fingerprints.digest(path, segment.end, work) != segment.digest) {
-                throw IOException("evidence_segment_changed")
+                throw PerfReadRefusal(PerfReadIssue.EVIDENCE_SEGMENT_CHANGED)
             }
         }
     }
@@ -61,7 +62,7 @@ internal class PerfEvidenceStreamScan(
             PerfEvidenceDuplicate.CONFLICT -> issue("evidence_duplicate_conflict")
             PerfEvidenceDuplicate.SAME -> Unit
             PerfEvidenceDuplicate.NEW -> if (PerfEvidenceCodec.matches(value, query) && !consumer.accept(value)) {
-                throw IOException("evidence_consumer_limit")
+                throw PerfReadRefusal(PerfReadIssue.EVIDENCE_CONSUMER_LIMIT)
             }
         }
     }

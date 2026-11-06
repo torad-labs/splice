@@ -34,13 +34,19 @@ internal class PerfEvidenceCursorScan(
         val fixed = inventory.candidates(request.query.head).map { it to inventory.fingerprints.capture(it, work) }
         for ((path, segment) in fixed) {
             segments += segment
-            try {
+            val issue = try {
                 scanSegment(path, segment, index)
                 if (inventory.fingerprints.digest(path, segment.end, work) != segment.digest) {
-                    throw IOException("cursor_segment_changed")
+                    throw PerfReadRefusal(PerfReadIssue.CURSOR_SEGMENT_CHANGED)
                 }
-            } catch (failure: IOException) {
-                issues += failure.message?.takeIf { it.startsWith("cursor_") } ?: "cursor_read_error"
+                null
+            } catch (failure: PerfReadRefusal) {
+                failure.issue.code
+            } catch (_: IOException) {
+                "cursor_read_error"
+            }
+            if (issue != null) {
+                issues += issue
                 break
             }
         }
@@ -87,7 +93,11 @@ internal class PerfEvidenceCursorScan(
         val duplicate = seen.add(PerfEvidenceCodec.identity(value), PerfEvidenceCodec.fingerprint(value))
         if (duplicate == PerfEvidenceDuplicate.CONFLICT && CONFLICT !in issues) issues += CONFLICT
         if (duplicate == PerfEvidenceDuplicate.NEW && selected(value)) {
-            if ((matching + 1) * PERF_CURSOR_ENTRY_BYTES > indexLimit) throw IOException("cursor_index_limit")
+            if ((matching + 1) * PERF_CURSOR_ENTRY_BYTES > indexLimit) {
+                throw PerfReadRefusal(
+                    PerfReadIssue.CURSOR_INDEX_LIMIT,
+                )
+            }
             val bytes = ByteBuffer.allocate(PERF_CURSOR_ENTRY_BYTES)
                 .putInt(position.segment).putLong(position.start).putLong(position.end)
             bytes.flip()

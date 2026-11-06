@@ -4,12 +4,13 @@ import splice.app.sources.PerfLineReader
 import splice.app.sources.observability.cursor.PERF_CURSOR_MAX_LINE_BYTES
 import splice.app.sources.observability.cursor.PerfCursorSegment
 import splice.app.sources.observability.cursor.PerfCursorWork
+import splice.app.sources.observability.cursor.PerfReadIssue
+import splice.app.sources.observability.cursor.PerfReadRefusal
 import splice.core.perf.observation.PerfIssue
 import splice.core.perf.observation.PerfObservation
 import splice.head.perf.RequestEvidenceFormat
 import splice.usage.perf.history.PerfEvidenceCoverageProof
 import splice.usage.perf.history.PerfEvidenceQuery
-import java.io.IOException
 import java.nio.channels.FileChannel
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
@@ -34,7 +35,7 @@ internal class PerfEvidenceReadScan(
         for ((path, segment) in fixed) {
             read(path, segment)
             if (inventory.fingerprints.digest(path, segment.end, work) != segment.digest) {
-                throw IOException("evidence_segment_changed")
+                throw PerfReadRefusal(PerfReadIssue.EVIDENCE_SEGMENT_CHANGED)
             }
         }
     }
@@ -67,7 +68,11 @@ internal class PerfEvidenceReadScan(
         val prior = observations[id]
         if (prior == null) {
             val charge = PerfEvidenceCodec.charge(bytes)
-            if (retainedBytes + charge > EVIDENCE_READ_OUTPUT) throw IOException("evidence_memory_limit")
+            if (retainedBytes + charge > EVIDENCE_READ_OUTPUT) {
+                throw PerfReadRefusal(
+                    PerfReadIssue.EVIDENCE_MEMORY_LIMIT,
+                )
+            }
             retainedBytes += charge
             observations[id] = value
         } else if (prior != value) {
@@ -85,6 +90,9 @@ internal class PerfEvidenceReadScan(
     }
 }
 
+// Leave 256 KiB of the retained result budget for coverage and issue metadata.
+internal const val EVIDENCE_COVERAGE_BYTES = 256L * 1_024
+
 internal const val EVIDENCE_READ_OUTPUT = 4L * 1_024 * 1_024 - EVIDENCE_COVERAGE_BYTES
 
 // Charge 64 KiB for result collections and ownership before retaining observations.
@@ -92,6 +100,3 @@ internal const val EVIDENCE_READ_OVERHEAD = 64L * 1_024
 
 // Keep sixty-four distinct scan issue codes, folding repeated occurrences into their existing counts.
 private const val MAX_EVIDENCE_ISSUES = 64
-
-// Leave 256 KiB of the retained result budget for coverage and issue metadata.
-internal const val EVIDENCE_COVERAGE_BYTES = 256L * 1_024

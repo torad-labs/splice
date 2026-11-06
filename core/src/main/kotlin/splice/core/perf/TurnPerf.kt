@@ -7,6 +7,7 @@
 // orphans its history. Recording is best-effort telemetry: it must never throw into the turn.
 package splice.core.perf
 
+import splice.core.perf.observation.PerfRequestRecorder
 import splice.core.turn.WireFacts
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
@@ -39,6 +40,7 @@ public fun interface TimedWork<T> {
  *  and it belongs to whoever measures it, not to a typing wave. */
 public class TurnPerf(
     wallClock: WallClock = WallClock(System::currentTimeMillis),
+    public val observations: PerfRequestRecorder? = null,
     // Last, so a trailing lambda is the elapsed clock: `TurnPerf { now }`.
     private val clock: ElapsedClock = ElapsedClock(System::currentTimeMillis),
 ) {

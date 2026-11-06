@@ -44,8 +44,11 @@ beforeAll(async () => {
   });
 }, 20_000);
 afterAll(async () => {
+  console.error("[settings-week-exact.test.ts afterAll] browser.close: start");
   await browser.close();
+  console.error("[settings-week-exact.test.ts afterAll] browser.close: resolved");
   server.stop(true);
+  console.error("[settings-week-exact.test.ts afterAll] server.stop(true): returned");
 });
 
 test("a busy command's week shows the daemon's real count above 2,000, and its longest silence", async () => {

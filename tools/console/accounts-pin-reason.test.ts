@@ -49,8 +49,11 @@ beforeAll(async () => {
   browser = await chromium.launch({ executablePath: process.env.SCREEN_REVIEW_BROWSER || undefined, args: ["--no-sandbox", "--disable-background-networking"] });
 }, 20_000);
 afterAll(async () => {
+  console.error("[accounts-pin-reason.test.ts afterAll] browser.close: start");
   await browser.close();
+  console.error("[accounts-pin-reason.test.ts afterAll] browser.close: resolved");
   server.stop(true);
+  console.error("[accounts-pin-reason.test.ts afterAll] server.stop(true): returned");
 });
 
 async function onPage(check: (page: Page) => Promise<void>) {

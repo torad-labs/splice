@@ -47,8 +47,11 @@ beforeAll(async () => {
   browser = await chromium.launch({ executablePath: process.env.SCREEN_REVIEW_BROWSER || undefined, args: ["--no-sandbox"] });
 }, 20_000);
 afterAll(async () => {
+  console.error("[requests-order.test.ts afterAll] browser.close: start");
   await browser.close();
+  console.error("[requests-order.test.ts afterAll] browser.close: resolved");
   server.stop(true);
+  console.error("[requests-order.test.ts afterAll] server.stop(true): returned");
 });
 
 async function look(query: string) {

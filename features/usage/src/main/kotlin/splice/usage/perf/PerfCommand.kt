@@ -20,6 +20,9 @@ import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
 import splice.topology.TopologyLoader
+import splice.usage.perf.query.HeadPerfQuery
+import splice.usage.perf.query.PerfMachineCommand
+import splice.usage.perf.query.PerfProfileCommand
 import java.io.IOException
 import java.nio.file.Files
 import java.util.Locale
@@ -42,9 +45,26 @@ public class PerfCommand(
     private val output: TerminalOutput,
     private val errors: TerminalOutput,
     private val rows: HeadPerfRows,
+    private val queries: HeadPerfQuery? = null,
+    private val profiles: PerfProfileCommand? = null,
 ) {
 
     public fun perf(args: List<String>, envReader: EnvReader): Boolean {
+        if ("--json" in args || args.firstOrNull() in setOf(
+                "schema",
+                "export",
+                "diagnose",
+                "profile",
+                "series",
+                "summary",
+            )
+        ) {
+            return PerfMachineCommand(output, rows, queries, profiles).execute(args, envReader)
+        }
+        return text(args, envReader)
+    }
+
+    private fun text(args: List<String>, envReader: EnvReader): Boolean {
         val summary = PerfSummary()
         val window = windowLabel(args)?.let(summary::window)
         if (window == null) {

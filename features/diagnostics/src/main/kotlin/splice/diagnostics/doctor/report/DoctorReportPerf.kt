@@ -15,7 +15,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.config.StatePaths
 import splice.core.perf.LivenessProbe
-import splice.core.perf.PerfKeys
+import splice.core.perf.observation.PerfMetricRegistry
+import splice.core.perf.observation.PerfProjection
 import splice.core.topology.Topology
 
 private const val PERF_TAIL_ROWS = 200
@@ -31,49 +32,8 @@ private val IDENTITY_FIELDS: Set<String> = setOf("model", "outcome", "account")
 private val FILE_KEY = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 private const val UNSAFE_KEY = "head key is not a safe file name; its perf file was not read"
 private val FLAG_FIELDS: Set<String> = setOf("compact", "cache_cold")
-internal val perfNumericFields: Set<String> = setOf(
-    PerfKeys.RECV,
-    PerfKeys.PARSE,
-    PerfKeys.BUILD,
-    PerfKeys.GATE,
-    PerfKeys.HEADERS,
-    PerfKeys.FIRST_BYTE,
-    PerfKeys.FIRST_FRAME,
-    PerfKeys.FIRST_DELTA,
-    PerfKeys.STREAM_END,
-    PerfKeys.FINISH,
-    PerfKeys.TOTAL,
-    PerfKeys.AUTH_MS,
-    PerfKeys.BACKOFF_MS,
-    PerfKeys.REFRESH_MS,
-    PerfKeys.WRITE_MS,
-    PerfKeys.USAGE_MS,
-    PerfKeys.ATTEMPTS,
-    PerfKeys.RETRIES,
-    PerfKeys.REFRESHES,
-    PerfKeys.REQ_BYTES,
-    PerfKeys.UPSTREAM_REQ_BYTES,
-    PerfKeys.SSE_BYTES_IN,
-    PerfKeys.EVENTS_IN,
-    PerfKeys.FRAMES_OUT,
-    PerfKeys.CONTENT_FRAMES_OUT,
-    PerfKeys.FRAMES_SKIPPED,
-    PerfKeys.BYTES_OUT,
-    PerfKeys.OUT_TOKENS,
-    PerfKeys.IN_TOKENS,
-    PerfKeys.CACHED_TOKENS,
-    // V4-85: the cache-WRITE counter. This set is an ALLOWLIST, so a key missing from it is not
-    // rendered wrong — it is invisible, which is the worse failure here: the doctor report is the
-    // operator diagnostic for exactly the question "why is my reported cost wrong", and a cache
-    // write priced as a cache miss was that question. A number, like every other key in this set.
-    PerfKeys.CACHE_WRITE_TOKENS,
-    PerfKeys.INFLIGHT,
-    PerfKeys.ASYNC_IO_DROPS,
-    PerfKeys.TOOLS_EAGER,
-    PerfKeys.TOOLS_DEFERRED,
-    PerfKeys.SEARCH_ROUNDS,
-    PerfKeys.POST_SEND_RETRIES,
-)
+internal val perfNumericFields: Set<String> =
+    (PerfMetricRegistry.schema(PerfProjection.SUPPORT)["metrics"] as JsonObject).keys
 
 internal class DoctorReportPerf(
     private val statePaths: StatePaths,
@@ -129,6 +89,7 @@ internal class DoctorReportPerf(
      *  are not numbers a consumer's parser accepts, so they are dropped, never re-emitted raw. */
     private fun number(value: JsonElement): JsonPrimitive? =
         (value as? JsonPrimitive)?.takeIf { !it.isString && JSON_NUMBER.matches(it.content) }
+            ?.takeIf { it.content.toDoubleOrNull()?.isFinite() == true }
 
     private fun string(value: JsonElement): String? = (value as? JsonPrimitive)?.takeIf { it.isString }?.content
 

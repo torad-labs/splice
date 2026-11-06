@@ -41,6 +41,8 @@ import splice.usage.USAGE_READ_PENDING_HEADER
 import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
 import splice.usage.UsageReadPreparation
+import splice.usage.perf.query.PerfQueryHttp
+import splice.usage.perf.query.PerfQueryService
 import java.time.DateTimeException
 import java.time.ZoneId
 
@@ -67,6 +69,7 @@ public class PerfRoutes(
     /** Read per request rather than captured: an absent `since` is resolved against NOW, and a
      *  console that has been polling for hours must not keep asking about the hour it started in. */
     private val clock: WallClock = WallClock(System::currentTimeMillis),
+    private val queries: PerfQueryService? = null,
 ) {
     private val readFilter = TurnsFilterReader()
 
@@ -81,6 +84,14 @@ public class PerfRoutes(
     public var accounts: RecordedAccounts = RecordedAccounts { HeadAccountNames { null } }
 
     public suspend fun turns(call: ApplicationCall) {
+        if (call.request.queryParameters["contract"] == "1" && queries != null) {
+            PerfQueryHttp.respond(call, queries, "rows", clock())
+        } else {
+            legacyTurns(call)
+        }
+    }
+
+    private suspend fun legacyTurns(call: ApplicationCall) {
         val name = call.request.queryParameters["head"].orEmpty()
         val matches = if (name.isBlank()) emptyList() else heads.byName(name).ifEmpty { heads.retired(name) }
         if (matches.isEmpty()) {
@@ -281,15 +292,11 @@ public class PerfRoutes(
     private fun kept(matching: List<PerfRow>, rows: AskedRows, gaps: TurnPriceGap): List<PerfRow> = when (rows.order) {
         TurnsOrder.NEWEST -> matching.sortedBy { it.ts }.takeLast(rows.n)
         // Dearest first over the whole window; a request with no figure sorts after every priced one.
-        TurnsOrder.PRICE -> dearestFirst(matching, gaps).take(rows.n)
-    }
-
-    // why: each row is priced ONCE, then sorted by that figure. A comparator that priced both rows on every comparison
-    // asked the rate card about n log n times; a week of rows took 90 s on desk c (jstack, Oct 12).
-    private fun dearestFirst(matching: List<PerfRow>, gaps: TurnPriceGap): List<PerfRow> =
-        matching.map { it to (gaps.value(it) ?: Double.NEGATIVE_INFINITY) }
+        TurnsOrder.PRICE -> matching.map { it to (gaps.value(it) ?: Double.NEGATIVE_INFINITY) }
             .sortedWith(compareByDescending<Pair<PerfRow, Double>> { it.second }.thenByDescending { it.first.ts })
+            .take(rows.n)
             .map { it.first }
+    }
 
     /** For `test=waited`: the matching request that sat through the longest silence, over every matching row. */
     private fun longestSilence(filter: TurnsFilter, matching: List<PerfRow>): Pair<PerfRow, Long>? {

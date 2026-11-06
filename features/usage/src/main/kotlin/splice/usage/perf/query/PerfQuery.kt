@@ -6,6 +6,7 @@ import splice.core.perf.observation.PerfHistory
 import splice.core.perf.observation.PerfObjectiveSet
 import splice.core.perf.runtime.PerfRuntimeSource
 import splice.core.util.EnvReader
+import splice.usage.perf.HeadAccountNames
 import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.history.PerfEvidenceSource
 
@@ -16,6 +17,7 @@ public data class PerfQuery(
     val filters: Map<String, String> = emptyMap(),
     val objective: PerfObjectiveSet? = null,
     val source: String = "auto",
+    val objectiveId: String? = null,
 )
 
 public data class PerfQueryRead(val query: PerfQuery?, val error: JsonObject?)
@@ -42,6 +44,10 @@ public interface PerfQuerySources {
     public fun evidence(): PerfEvidenceSource? = null
     public fun provenance(): PerfConfigProvenance? = null
     public fun runtime(): PerfRuntimeSource? = null
+
+    /** Fresh local roster snapshot only; null means aliases cannot be resolved. Never refresh auth here. */
+    public fun accountNames(head: String): HeadAccountNames? = null
+    public fun objective(id: String): PerfObjectiveSet? = null
 }
 
 public fun interface HeadPerfQuery {

@@ -22,6 +22,24 @@ class PerfCommittedCursorTest {
     private val all = PerfRowPredicate { true }
 
     @Test
+    fun `opaque start cursor replays the frozen first record after append and reader restart`(
+        @TempDir directory: Path,
+    ) {
+        val file = directory.resolve("head.jsonl")
+        Files.writeString(file, row(500, "ok"))
+        val request = PerfCursorRequest(query, all, pageSize = 1)
+        val start = PerfRowsFileSource(file).page(request).use { first ->
+            splice.core.util.JsonScalars.str(first.metadata, "start_cursor")
+        }
+        assertNotNull(start)
+        Files.writeString(file, row(100, "ok"), StandardOpenOption.APPEND)
+        PerfRowsFileSource(file).page(request.copy(cursor = start)).use { frozen ->
+            assertEquals(listOf(500L), frozen.rows.map { it.ts })
+            assertEquals("1", frozen.metadata["total_matching"].toString())
+        }
+    }
+
+    @Test
     fun `fixed cursor counts all filters before paging and excludes late commits with older timestamps`(
         @TempDir directory: Path,
     ) {

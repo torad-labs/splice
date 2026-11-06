@@ -32,6 +32,7 @@ internal object PerfCursorMetadata {
         put("requested_from_ms", manifest.fromMs)
         put("requested_until_ms", manifest.untilMs)
         put("snapshot_id", manifest.id)
+        put("start_cursor", "${manifest.id}:0")
         put("order", "committed_segment_then_byte")
         put("truncation", !complete)
         put("malformed_rows", manifest.malformed)

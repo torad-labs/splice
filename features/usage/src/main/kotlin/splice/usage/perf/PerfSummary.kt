@@ -105,7 +105,7 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
     private fun span(ms: Long): String =
         if (ms >= MS_PER_HOUR) "${ms / MS_PER_HOUR}h" else "${ms / MS_PER_MINUTE}m"
 
-    private fun metrics(rows: List<PerfRow>): JsonObject = buildJsonObject {
+    internal fun metrics(rows: List<PerfRow>): JsonObject = buildJsonObject {
         latencies(rows).forEach { (k, v) -> put(k, v) }
         val byOutcome = rows.groupingBy { it.outcome }.eachCount().toSortedMap()
         putJsonObject("outcomes") { byOutcome.forEach { (tag, n) -> put(tag, n) } }

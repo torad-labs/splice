@@ -4,7 +4,7 @@ import { hash, type Manifest } from './manifest';
 import { sleep } from './fixture';
 
 export interface ArtifactIdentity {
-  artifact_path: string; source_commit: string; artifact_sha256: string; artifact_receipt_sha256: string;
+  artifact_path: string; source_commit: string; artifact_sha256: string; artifact_receipt_sha256: string; process_build: string;
 }
 export interface ListenerIdentity { port: number; inode: string; address: string }
 export interface ProcessIdentity {
@@ -12,7 +12,7 @@ export interface ProcessIdentity {
   verification: 'linux-proc-listen-inodes'; verified_at: string;
 }
 export interface DeskIdentity extends ArtifactIdentity, ProcessIdentity {
-  process_build: string; config_revision: string; base_config_sha256: string; raw_config_sha256: string;
+  config_revision: string; base_config_sha256: string; raw_config_sha256: string;
 }
 export async function verifyArtifact(m: Manifest): Promise<ArtifactIdentity> {
   const artifact = await realpath(m.target.artifact_path!);
@@ -21,7 +21,13 @@ export async function verifyArtifact(m: Manifest): Promise<ArtifactIdentity> {
   const raw = await Bun.file(join(dirname(artifact), 'identity.json')).text();
   const receipt = JSON.parse(raw);
   if (receipt.source_commit !== m.source_commit || receipt.artifact_sha256 !== m.artifact_sha256 || receipt.clean_source !== true) throw new Error('artifact_identity_receipt_mismatch');
-  return { artifact_path: artifact, source_commit: receipt.source_commit, artifact_sha256: receipt.artifact_sha256, artifact_receipt_sha256: hash(raw) };
+  // Candidate receipts are issued only after the freeze verifies this exact fingerprint inside the hashed JAR.
+  // The pinned legacy baseline has no new runtime metrics; its fallback is source provenance, not an observed runtime identity.
+  const legacy = m.role === 'baseline' && m.source_commit === '45cae7f4fcc3382ebc816fdfe52296aa8ce8a045';
+  const sourceBuild = `source:${m.source_commit}`;
+  const processBuild = receipt.process_build === undefined && legacy ? sourceBuild : receipt.process_build;
+  if (typeof processBuild !== 'string' || (legacy ? processBuild !== sourceBuild : !/^compiled-artifact-inputs-sha256:[a-f0-9]{64}$/.test(processBuild))) throw new Error('artifact_process_build_unverified');
+  return { artifact_path: artifact, source_commit: receipt.source_commit, artifact_sha256: receipt.artifact_sha256, artifact_receipt_sha256: hash(raw), process_build: processBuild };
 }
 export async function startTicks(pid: number): Promise<string> {
   if (process.platform !== 'linux') throw new Error('process_socket_identity_unsupported');
@@ -93,7 +99,7 @@ export async function verifyRunBinding(m: Manifest): Promise<DeskIdentity[]> {
   if (!Array.isArray(identities) || identities.length !== expected) throw new Error('process_binding_missing');
   for (const id of identities) {
     if (id.artifact_path !== artifact.artifact_path || id.source_commit !== artifact.source_commit || id.artifact_sha256 !== artifact.artifact_sha256 || id.artifact_receipt_sha256 !== artifact.artifact_receipt_sha256) throw new Error('process_artifact_binding_mismatch');
-    if (id.process_build !== `source:${m.source_commit}` || m.process_build !== id.process_build || id.config_revision !== m.config_revision || !/^[a-f0-9]{64}$/.test(id.config_revision)) throw new Error('process_config_binding_mismatch');
+    if (id.process_build !== artifact.process_build || m.process_build !== id.process_build || id.config_revision !== m.config_revision || !/^[a-f0-9]{64}$/.test(id.config_revision)) throw new Error('process_config_binding_mismatch');
     if (!/^[a-f0-9]{64}$/.test(id.base_config_sha256) || !/^[a-f0-9]{64}$/.test(id.raw_config_sha256)) throw new Error('config_binding_missing');
     if (id.verification !== 'linux-proc-listen-inodes' || !Number.isSafeInteger(id.pid) || id.pid < 1 || !/^\d+$/.test(id.start_ticks) || !Number.isFinite(Date.parse(id.verified_at)) || !Array.isArray(id.listeners) || id.listeners.length !== 2) throw new Error('process_binding_invalid');
     if (new Set(id.listeners.map(item => item.port)).size !== 2 || id.listeners.some(item => !Number.isSafeInteger(item.port) || item.port <= 1024 || item.port > 65535 || [3096, 3099].includes(item.port) || !/^\d+$/.test(item.inode) || !isLoopbackBinding(item.address))) throw new Error('socket_binding_invalid');

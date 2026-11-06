@@ -26,13 +26,13 @@ export async function startDesk(m: Manifest, upstream: string, directory: string
     const processIdentity = await waitForOwnedHealth(proc.pid, headPort, controlPort, () => proc.exitCode === null && proc.signalCode === null);
     await assertProcessArtifact(proc.pid, artifact);
     await verifyArtifact(m);
-    const identity: DeskIdentity = { ...artifactIdentity, ...processIdentity, process_build: `source:${m.source_commit}`, config_revision: hash(normalized(config)), base_config_sha256: hash(normalized(baseConfig)), raw_config_sha256: hash(config) };
+    const identity: DeskIdentity = { ...artifactIdentity, ...processIdentity, config_revision: hash(normalized(config)), base_config_sha256: hash(normalized(baseConfig)), raw_config_sha256: hash(config) };
     const assertIdentity = async () => { await assertProcessIdentity(identity, () => proc.exitCode === null && proc.signalCode === null); await assertProcessArtifact(proc.pid, artifact); };
     await assertIdentity();
     const keyFile = (await readdir(state)).find(name => name === 'mgmt-key');
     const mgmtKey = keyFile ? (await readFile(join(state, keyFile), 'utf8')).trim() : '';
     const java = Bun.spawnSync(['java', '-version'], { stderr: 'pipe', stdout: 'pipe' });
-    return { target: `http://127.0.0.1:${headPort}/v1/messages`, pid: proc.pid, bootId: 'unknown', jvm: new TextDecoder().decode(java.stderr).trim(), processBuild: `source:${m.source_commit}`, configHash: identity.config_revision, identity, assertIdentity, mgmtKey, pollBase: `http://127.0.0.1:${headPort}`, controlBase: `http://127.0.0.1:${controlPort}`, state, history, stop };
+    return { target: `http://127.0.0.1:${headPort}/v1/messages`, pid: proc.pid, bootId: 'unknown', jvm: new TextDecoder().decode(java.stderr).trim(), processBuild: identity.process_build, configHash: identity.config_revision, identity, assertIdentity, mgmtKey, pollBase: `http://127.0.0.1:${headPort}`, controlBase: `http://127.0.0.1:${controlPort}`, state, history, stop };
   } catch (error) { await stop(); throw error; }
 }
 export async function resource(pid: number | null, state: string) {

@@ -1,9 +1,11 @@
 import { expect, test } from 'bun:test';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { decodeOtlp } from './otlp';
-import { reconcileSinks, sinks, telemetrySummary, type TelemetryPoint } from './telemetry';
+import { reconcileSinks, sinks, startTelemetry, telemetrySummary, type TelemetryPoint } from './telemetry';
 import { finalSchedule, materialize } from './schedule';
 import { defaults, validate } from './manifest';
 import { sameRuntimeOwner } from './profile';
+import type { OwnedDesk } from './control';
 
 const cat = (...bytes: Uint8Array[]) => Buffer.concat(bytes);
 const varint = (value: number) => { const bytes: number[] = []; do { const rest = value % 128; value = Math.floor(value / 128); bytes.push(rest | (value ? 128 : 0)); } while (value); return new Uint8Array(bytes); };
@@ -64,6 +66,32 @@ test('sink evidence reports actual interval losses and refuses resets, changed o
   expect(reconcileSinks(first, { ...last, status: 'partial' })).toMatchObject({ value: null, reason: 'sink_boundary_partial' });
   const summary = telemetrySummary([first, last], [{ repetition: 0, before: 0, after: 1, from_ms: 1001, until_ms: 1999 }]);
   expect(summary.resources).toMatchObject({ pool_reservation_peak_bytes: 14, retained_heap_bytes: null, sustained_growth: null });
+});
+test('live telemetry requires the artifact-bound build before accepting its first or subsequent sample', async () => {
+  const state = await mkdtemp('/tmp/splice-instrumentation-live-identity-test-');
+  const processBuild = `compiled-artifact-inputs-sha256:${'a'.repeat(64)}`;
+  const identity = { bootId: 'test-boot', build: `source:${'1'.repeat(40)}`, version: '1', configRevision: 'test-config', schemaVersion: 1 };
+  const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch(request) {
+    const as_of_ms = Date.now();
+    if (new URL(request.url).pathname === '/api/perf/runtime') return Response.json({ identity, as_of_ms, age_ms: 0, capabilities: [], issues: [], measurements: {} });
+    return Response.json({ identity, as_of_ms, schema_version: 1, process_id: 123, collection_mode: 'local', status: 'ok', sinks: point(as_of_ms, 1).sinks,
+      memory: { observation: { reserved_bytes: 10, total_limit_bytes: 16 }, work: { leased_bytes: 4, limit_bytes: 16 }, owners: {} } });
+  } });
+  try {
+    const desk: OwnedDesk = { pid: 123, state, mgmtKey: 'test-key', controlBase: server.url.origin, assertIdentity: async () => {},
+      identity: { artifact_path: `${state}/synthetic.jar`, source_commit: '1'.repeat(40), artifact_sha256: '2'.repeat(64), artifact_receipt_sha256: '3'.repeat(64), process_build: processBuild,
+        config_revision: '4'.repeat(64), base_config_sha256: '5'.repeat(64), raw_config_sha256: '6'.repeat(64), pid: 123, start_ticks: '1', listeners: [], verification: 'linux-proc-listen-inodes', verified_at: new Date().toISOString() } };
+    const manifest = defaults(); manifest.role = 'candidate'; manifest.collection.mode = 'local';
+    const telemetry = await startTelemetry(manifest, desk, 0);
+    const first = await telemetry.sample();
+    expect(first.status).toBe('partial'); expect(first.issues).toContain('instrumentation_build_mismatch'); expect(first.identity).toBeNull(); expect(first.sinks).toBeNull();
+    identity.build = processBuild;
+    const valid = await telemetry.sample();
+    expect(valid.status).toBe('ok'); expect(valid.issues).toEqual([]); expect(valid.identity?.build).toBe(processBuild); expect(valid.sinks).toHaveLength(1);
+    identity.build = `compiled-artifact-inputs-sha256:${'b'.repeat(64)}`;
+    const changed = await telemetry.sample();
+    expect(changed.status).toBe('partial'); expect(changed.issues).toContain('instrumentation_build_mismatch'); expect(changed.identity).toBeNull(); expect(changed.sinks).toBeNull();
+  } finally { await server.stop(true); await rm(state, { recursive: true, force: true }); }
 });
 test('prepared schedule has five repeated required closed points, bounded open sweep and distinct optional studies', () => {
   const plan = finalSchedule(); expect(plan.measured).toBe(false);

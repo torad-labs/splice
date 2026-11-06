@@ -74,7 +74,9 @@ export async function startTelemetry(m: Manifest, desk: OwnedDesk, repetition: n
     const point: TelemetryPoint = { repetition, phase, sampled_from_ms: Date.now(), sampled_until_ms: 0, identity: null, artifact_sha256: m.artifact_sha256, process_id: desk.pid, config_sha256: desk.identity?.raw_config_sha256 ?? 'unknown', status: 'partial', issues: [], as_of_ms: null, sinks: null, memory: { observation_reserved_bytes: null, observation_limit_bytes: null, work_leased_bytes: null, work_limit_bytes: null, owner_accounted_bytes: Object.fromEntries(owners.map(n => [n, null])) }, disk: {}, runtime: null, exports: null, read_bytes: 0, elapsed_ms: 0 };
     try {
       const result = await control(desk, '/api/perf/instrumentation/status'); point.read_bytes += result.bytes;
-      const v = result.value; point.identity = runtimeIdentity(v.identity); point.as_of_ms = counter(v.as_of_ms);
+      const v = result.value; const identity = runtimeIdentity(v.identity);
+      if (identity.build !== desk.identity?.process_build) throw new Error('instrumentation_build_mismatch');
+      point.identity = identity; point.as_of_ms = counter(v.as_of_ms);
       if (v.schema_version !== 1 || v.process_id !== desk.pid || v.collection_mode !== m.collection.mode || v.status !== 'ok') throw new Error('instrumentation_status_partial');
       if (expected && JSON.stringify(expected) !== JSON.stringify(point.identity)) throw new Error('instrumentation_identity_changed');
       expected ??= point.identity;

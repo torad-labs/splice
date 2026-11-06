@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { defaults, hash, type Manifest } from './manifest';
 import { analyze } from './analyze';
 import { initial } from './observe';
-import { assertProcessIdentity, waitForOwnedHealth, type DeskIdentity } from './identity';
+import { assertProcessIdentity, verifyArtifact, waitForOwnedHealth, type DeskIdentity } from './identity';
 import type { Extras } from './summary';
 
 async function receiptFixture(root: string, role: 'baseline' | 'candidate') {
@@ -14,8 +14,9 @@ async function receiptFixture(root: string, role: 'baseline' | 'candidate') {
   const m = defaults(); m.role = role; m.run_id = role; m.experiment_stage = 'steady'; m.warmup_ms = 10000; m.duration_ms = 30000;
   m.source_commit = role === 'baseline' ? '45cae7f4fcc3382ebc816fdfe52296aa8ce8a045' : '1'.repeat(40);
   m.artifact_sha256 = hash(artifactBytes); m.target = { kind: 'proxy', artifact_path: artifact };
-  m.process_build = `source:${m.source_commit}`; m.config_revision = hash(`synthetic config ${role}`);
-  const artifactReceipt = JSON.stringify({ source_commit: m.source_commit, artifact_sha256: m.artifact_sha256, clean_source: true });
+  m.process_build = role === 'baseline' ? `source:${m.source_commit}` : `compiled-artifact-inputs-sha256:${hash('synthetic compiled inputs')}`;
+  m.config_revision = hash(`synthetic config ${role}`);
+  const artifactReceipt = JSON.stringify({ source_commit: m.source_commit, artifact_sha256: m.artifact_sha256, clean_source: true, ...(role === 'candidate' ? { process_build: m.process_build } : {}) });
   await Bun.write(join(directory, 'identity.json'), artifactReceipt);
   const identity: DeskIdentity = { artifact_path: artifact, source_commit: m.source_commit, artifact_sha256: m.artifact_sha256,
     artifact_receipt_sha256: hash(artifactReceipt), process_build: m.process_build, config_revision: m.config_revision,
@@ -37,7 +38,7 @@ async function receiptFixture(root: string, role: 'baseline' | 'candidate') {
     const bytes = JSON.stringify(manifest); await Bun.write(join(directory, 'manifest.json'), bytes);
     await Bun.write(join(directory, 'receipt.json'), JSON.stringify({ manifest_sha256: hash(bytes), samples_sha256: hash(sampleBytes), observations_sha256: hash(observationBytes), sample_count: samples.length }));
   };
-  await save(); return { directory, manifest: m, artifact, artifactBytes, save };
+  await save(); return { directory, manifest: m, artifact, artifactBytes, artifactReceipt, save };
 }
 
 test('analysis requires baseline/candidate roles and validated artifact/process/configuration binding', async () => {
@@ -46,6 +47,19 @@ test('analysis requires baseline/candidate roles and validated artifact/process/
     const baseline = await receiptFixture(root, 'baseline'), candidate = await receiptFixture(root, 'candidate');
     const valid = await analyze(baseline.directory, candidate.directory);
     expect(valid.status).toBe('inconclusive'); expect(valid.reasons).toEqual([]); expect(valid.checks).not.toBeNull();
+    expect((await verifyArtifact(candidate.manifest)).process_build).toBe(candidate.manifest.process_build);
+    expect((await verifyArtifact(baseline.manifest)).process_build).toBe(`source:${baseline.manifest.source_commit}`);
+    await expect(verifyArtifact({ ...baseline.manifest, role: 'candidate' })).rejects.toThrow('artifact_process_build_unverified');
+    const baselineReceipt = join(baseline.directory, 'identity.json');
+    await Bun.write(baselineReceipt, JSON.stringify({ ...JSON.parse(baseline.artifactReceipt), source_commit: '2'.repeat(40) }));
+    await expect(verifyArtifact({ ...baseline.manifest, source_commit: '2'.repeat(40) })).rejects.toThrow('artifact_process_build_unverified');
+    await Bun.write(baselineReceipt, baseline.artifactReceipt);
+    const candidateReceipt = join(candidate.directory, 'identity.json');
+    for (const process_build of [undefined, null, `source:${candidate.manifest.source_commit}`, `compiled-artifact-inputs-sha256:${'a'.repeat(63)}`, `compiled-artifact-inputs-sha256:${'A'.repeat(64)}`]) {
+      await Bun.write(candidateReceipt, JSON.stringify({ ...JSON.parse(candidate.artifactReceipt), process_build }));
+      await expect(verifyArtifact(candidate.manifest)).rejects.toThrow('artifact_process_build_unverified');
+    }
+    await Bun.write(candidateReceipt, candidate.artifactReceipt);
     await baseline.save({ ...baseline.manifest, role: 'candidate' });
     let result = await analyze(baseline.directory, candidate.directory);
     expect(result.reasons).toContain('baseline_role_required'); expect(result.checks).toBeNull();
@@ -53,11 +67,22 @@ test('analysis requires baseline/candidate roles and validated artifact/process/
     result = await analyze(baseline.directory, candidate.directory);
     expect(result.reasons).toContain('candidate_role_required'); expect(result.checks).toBeNull();
     await candidate.save();
-    for (const changed of [{ process_build: 'source:' + '2'.repeat(40) }, { config_revision: hash('different config') }, { source_commit: '2'.repeat(40) }, { provenance: { harness_sha256: hash('same test harness') } }]) {
+    for (const changed of [{ process_build: `source:${candidate.manifest.source_commit}` }, { process_build: `compiled-artifact-inputs-sha256:${'2'.repeat(64)}` }, { config_revision: hash('different config') }, { source_commit: '2'.repeat(40) }, { provenance: { harness_sha256: hash('same test harness') } }]) {
       await candidate.save({ ...candidate.manifest, ...changed });
       result = await analyze(baseline.directory, candidate.directory);
       expect(result.reasons).toContain('candidate_identity_unverified'); expect(result.checks).toBeNull();
     }
+    await candidate.save(); await Bun.write(candidateReceipt, candidate.artifactReceipt + '\n');
+    result = await analyze(baseline.directory, candidate.directory);
+    expect(result.reasons).toContain('candidate_identity_unverified'); expect(result.checks).toBeNull();
+    const changedBuildReceipt = JSON.stringify({ ...JSON.parse(candidate.artifactReceipt), process_build: `compiled-artifact-inputs-sha256:${'3'.repeat(64)}` });
+    await Bun.write(candidateReceipt, changedBuildReceipt);
+    const changedReceiptBinding = structuredClone(candidate.manifest);
+    (changedReceiptBinding.provenance as { process_identities: DeskIdentity[] }).process_identities[0]!.artifact_receipt_sha256 = hash(changedBuildReceipt);
+    await candidate.save(changedReceiptBinding);
+    result = await analyze(baseline.directory, candidate.directory);
+    expect(result.reasons).toContain('candidate_identity_unverified'); expect(result.checks).toBeNull();
+    await Bun.write(candidateReceipt, candidate.artifactReceipt);
     await candidate.save(); await Bun.write(candidate.artifact, 'replaced artifact with same manifest labels');
     result = await analyze(baseline.directory, candidate.directory);
     expect(result.reasons).toContain('candidate_identity_unverified'); expect(result.checks).toBeNull();

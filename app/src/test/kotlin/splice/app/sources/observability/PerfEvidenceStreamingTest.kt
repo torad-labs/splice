@@ -46,7 +46,7 @@ class PerfEvidenceStreamingTest {
                     assertEquals(
                         "3000",
                         JsonScalars.str(result.getValue("counts").jsonObject, "arrivals"),
-                        result.toString(),
+                        { "$result work_budget=${PerfWorkBudget.snapshot()}" },
                     )
                     assertEquals("3000", JsonScalars.str(result.getValue("counts").jsonObject, "completions"))
                     val goodput = result.getValue("goodput").jsonObject

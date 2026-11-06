@@ -46,6 +46,9 @@ class PerfAlertStalenessTest {
                 assertEquals("false", pending.obj("coverage").text("complete"))
                 assertEquals("current_sink_snapshot", pending.obj("coverage").text("temporal_basis"))
                 assertEquals(120_000L, pending.obj("coverage").long("sampled_at_ms"))
+                assertEquals("current_sink_snapshot", pending.text("window_basis"))
+                assertEquals(120_000L, pending.long("data_as_of_ms"))
+                assertEquals("null", pending["settled_until_ms"].toString())
                 assertEquals("firing", sample(engine, source, 130_000).text("state"))
                 source.secondSuccess = null
                 val missing = sample(engine, source, 140_000)

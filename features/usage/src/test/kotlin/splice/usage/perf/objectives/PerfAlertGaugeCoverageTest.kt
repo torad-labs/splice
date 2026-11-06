@@ -18,6 +18,24 @@ import java.nio.file.Path
 
 class PerfAlertGaugeCoverageTest {
     @Test
+    fun `aggregate gauge alerts remain evaluable when request collection horizon is unavailable`(@TempDir tmp: Path) {
+        PerfObjectiveStore(tmp.resolve("objectives.json")).use { store ->
+            val config = objectiveSettings(metric = "gauges.gate_queued.max", hold = 0)
+            assertEquals("ok", takeReply(store.update(Json.parseToJsonElement(config).jsonObject)).text("status"))
+            val query = PerfQueryService(CurrentGauge(), clock = WallClock { 120_000 })
+            PerfAlertEngine(query, store, PerfAlertDelivery { false }).use { engine ->
+                val event = takeReply(engine.evaluate(120_000)).event()
+                assertEquals("firing", event.text("state"))
+                assertEquals(200.0, event.number("observed"))
+                assertEquals("current_aggregate_window", event.text("window_basis"))
+                assertEquals(120_000L, event.obj("window").long("until_ms"))
+                assertEquals(0L, event.long("window_lag_ms"))
+                assertEquals("null", event["settled_until_ms"].toString())
+            }
+        }
+    }
+
+    @Test
     fun `two half covered gauge scopes never combine into one fully covered alert population`(@TempDir tmp: Path) {
         PerfObjectiveStore(tmp.resolve("objectives.json")).use { store ->
             val config = objectiveSettings(metric = "gauges.gate_queued.max", hold = 0)
@@ -51,4 +69,21 @@ class PerfAlertGaugeCoverageTest {
         "gate_queued", PerfScope(head = "h", model = model), 0, 60_000, 1, 200.0, 200.0, 200.0,
         last = 200.0, weightedSum = 6_000_000.0, coveredMs = 30_000,
     )
+
+    private class CurrentGauge : PerfQuerySources {
+        override fun heads(): Set<String> = setOf("h")
+        override fun rows(head: String): PerfRowsSource? = null
+        override fun live(): PerfAggregateSnapshot = PerfAggregateSnapshot(
+            PerfIdentity("boot", "build", "v", "config"),
+            60_000,
+            120_000,
+            listOf(
+                PerfAggregatePoint(
+                    "gate_queued", PerfScope(head = "h"), 60_000, 120_000, 2, 400.0, 200.0, 200.0,
+                    last = 200.0, weightedSum = 12_000_000.0, coveredMs = 60_000,
+                ),
+            ),
+            PerfCoverage(60_000, 120_000, 60_000),
+        )
+    }
 }

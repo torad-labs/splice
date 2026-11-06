@@ -9,6 +9,8 @@ import splice.usage.perf.query.PerfQueryService
 internal data class AlertEvaluationTime(val now: Long, val restarted: Boolean)
 
 internal class AlertRuleEvaluation(private val query: PerfQueryService, private val outbox: AlertOutbox) {
+    private val windows = AlertRuleWindows(query)
+
     fun evaluate(
         data: AlertJournalData,
         settings: ObjectiveSettings,
@@ -21,12 +23,10 @@ internal class AlertRuleEvaluation(private val query: PerfQueryService, private 
         val revision = ObjectiveJson.hash(ObjectiveJson.codec.encodeToString(rule) + objective?.revision.orEmpty())
         val current = AlertRetirement.changed(data, rule.id, revision, time.now)
         val previous = current.states[rule.id] ?: AlertState(rule.id, revision)
-        val measured = measure(rule, context, time.now)
+        val measured = measure(rule, context, previous, time.now)
         val state = AlertLifecycle.advance(previous, rule, measured, time.now, time.restarted)
         val event = deliveryState(AlertEvents.render(state, rule, context, measured, time.now), current)
-        val changed = state.copy(
-            lastEvaluation = null,
-        ) != previous.copy(lastEvaluation = null) || rule.id !in current.latest
+        val changed = AlertLifecycle.changed(state, previous) || rule.id !in current.latest
         val events = if (changed) {
             current.events.filterNot {
                 ObjectiveJson.text(
@@ -58,12 +58,33 @@ internal class AlertRuleEvaluation(private val query: PerfQueryService, private 
         return JsonObject(event + ("delivery_status" to ObjectiveJson.text(status)))
     }
 
-    private fun measure(rule: AlertRule, context: AlertContext, now: Long): AlertMeasurement {
-        if (now < rule.windowMs) {
-            return AlertMeasurements.measured(null, 0, JsonObject(emptyMap()), rule.windowMs, "window_before_epoch")
+    private fun measure(rule: AlertRule, context: AlertContext, previous: AlertState, now: Long): AlertMeasurement {
+        val window = windows.select(rule, context, previous, now)
+        if (window.reason != null) {
+            return AlertMeasurements.measured(null, 0, JsonObject(emptyMap()), rule.windowMs, window.reason)
+                .copy(timing = AlertMeasurementTime(window, null))
         }
-        val result = query.summary(PerfQuery(now - rule.windowMs, now, context.cohort, context.objective?.objective()))
-        return try { AlertMeasurements.read(rule, result, now) } finally { PerfWorkBudget.release(result) }
+        val result = query.summary(
+            PerfQuery(
+                requireNotNull(window.from),
+                requireNotNull(window.until),
+                context.cohort,
+                context.objective?.objective(),
+                source = when (window.basis) {
+                    COMPLETED_REQUEST_WINDOW -> "evidence"
+                    "current_sink_snapshot" -> "live"
+                    else -> "auto"
+                },
+            ),
+        )
+        return try {
+            val measurement = AlertMeasurements.read(rule, result, now)
+            val coverage = ObjectiveJson.codec.parseToJsonElement(measurement.coverage) as JsonObject
+            val asOf = if (window.basis == "current_sink_snapshot") now else ObjectiveJson.long(coverage, "as_of_ms")
+            measurement.copy(timing = AlertMeasurementTime(window, asOf))
+        } finally {
+            PerfWorkBudget.release(result)
+        }
     }
 }
 

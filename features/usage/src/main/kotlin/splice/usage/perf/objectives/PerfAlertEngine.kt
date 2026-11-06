@@ -141,6 +141,7 @@ public class PerfAlertEngine(
                         },
                     )
                     put("as_of_ms", ObjectiveJson.number(journal.data.lastEvaluation))
+                    put("evaluated_at_ms", ObjectiveJson.number(journal.data.lastEvaluation))
                     put("events", JsonArray(journal.data.latest.values.toList()))
                     put("reason", ObjectiveJson.text(reason ?: journal.issue))
                     put("restart_uncertain", restarted)

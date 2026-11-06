@@ -14,6 +14,7 @@ class PerfAlertConfigurationTest {
     fun `configuration changing during query skips publication and delivery of the old generation`(@TempDir tmp: Path) {
         ObjectiveFixture(tmp).use { fixture ->
             fixture.configure(objectiveSettings(delivery = true, hold = 0))
+            fixture.horizonLag = 5_000
             fixture.settingsDuringRead = objectiveSettings(delivery = false, hold = 0)
             val skipped = fixture.evaluate(120_000)
             assertEquals("settings_changed_during_evaluation", skipped.text("reason"))
@@ -22,6 +23,8 @@ class PerfAlertConfigurationTest {
             val current = fixture.evaluate(121_000).event()
             assertEquals(takeReply(fixture.store.settings()).text("revision"), current.text("settings_revision"))
             assertFalse(current.text("delivery_enabled") == "true")
+            assertEquals(121_000L, current.long("evaluated_at_ms"))
+            assertEquals(116_000L, current.obj("window").long("until_ms"))
         }
     }
 

@@ -15,6 +15,7 @@ import splice.core.perf.observation.PerfStamp
 import splice.core.util.PerfWorkBudget
 import splice.core.util.WallClock
 import splice.usage.perf.PerfRowsSource
+import splice.usage.perf.history.PerfEvidenceQuery
 import splice.usage.perf.history.PerfEvidenceRead
 import splice.usage.perf.history.PerfEvidenceSource
 import splice.usage.perf.query.PerfQueryService
@@ -29,32 +30,44 @@ internal class ObjectiveFixture(directory: Path) : AutoCloseable {
     var covered = true
     var outcome = OutcomeTag.OK.wire
     var settingsDuringRead: String? = null
+    var horizonAvailable = true
+    var horizonLag = 0L
+    var horizonOverride: Long? = null
     val delivery = RecordingDelivery()
     val query = PerfQueryService(
         object : PerfQuerySources {
             override fun heads(): Set<String> = setOf("h")
             override fun rows(head: String): PerfRowsSource? = null
-            override fun evidence(): PerfEvidenceSource = PerfEvidenceSource { selected ->
-                settingsDuringRead?.let { replacement ->
-                    settingsDuringRead = null
-                    configure(replacement)
-                }
-                val events = (0 until count).flatMap { index ->
-                    listOf(
-                        event("arrive-$index", index, selected.untilMs - 500, PerfEventKind.REQUEST_ARRIVED),
-                        event("finish-$index", index, selected.untilMs - 100, PerfEventKind.REQUEST_FINISHED),
+            override fun evidence(): PerfEvidenceSource = object : PerfEvidenceSource {
+                override fun settledUntilMs(head: String?): Long? =
+                    if (horizonAvailable) horizonOverride ?: (now - horizonLag) else null
+
+                override fun read(selected: PerfEvidenceQuery): PerfEvidenceRead {
+                    settingsDuringRead?.let { replacement ->
+                        settingsDuringRead = null
+                        configure(replacement)
+                    }
+                    val horizon = settledUntilMs(selected.head) ?: 0L
+                    val through = minOf(selected.untilMs, horizon)
+                    val events = (0 until count).flatMap { index ->
+                        listOf(
+                            event("arrive-$index", index, through - 500, PerfEventKind.REQUEST_ARRIVED),
+                            event("finish-$index", index, through - 100, PerfEventKind.REQUEST_FINISHED),
+                        )
+                    }
+                    return PerfEvidenceRead(
+                        events,
+                        PerfCoverage(
+                            selected.fromMs,
+                            selected.untilMs,
+                            if (covered) (through - selected.fromMs).coerceAtLeast(0) else 0,
+                        ),
+                        now,
+                        selected.untilMs <= horizon,
+                        "committed_observations_as_of",
+                        false,
                     )
                 }
-                PerfEvidenceRead(
-                    events,
-                    PerfCoverage(
-                        selected.fromMs,
-                        selected.untilMs,
-                        if (covered) selected.untilMs - selected.fromMs else 0,
-                    ),
-                    now,
-                    true,
-                )
             }
         },
         clock = WallClock { now },

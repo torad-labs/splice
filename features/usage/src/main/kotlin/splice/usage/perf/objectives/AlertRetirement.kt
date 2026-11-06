@@ -35,6 +35,22 @@ internal object AlertRetirement {
                     put("retired", true)
                     put("reason", reason)
                     put("as_of_ms", now)
+                    put("evaluated_at_ms", now)
+                    put(
+                        "window_lag_ms",
+                        ObjectiveJson.number(
+                            ObjectiveJson.long(
+                                ObjectiveJson.obj(previous, "window"),
+                                "until_ms",
+                            )?.let {
+                                now - it
+                            },
+                        ),
+                    )
+                    put(
+                        "data_lag_ms",
+                        ObjectiveJson.number(ObjectiveJson.long(previous, "data_as_of_ms")?.let { now - it }),
+                    )
                     put("delivery_status", "disabled")
                     put("dedup_key", ObjectiveJson.hash("${ObjectiveJson.text(previous, "alert_id")}:$reason"))
                 },

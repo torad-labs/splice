@@ -11,10 +11,13 @@ internal data class AlertMeasurement(
     val count: Long,
     val fraction: Double,
     val coverage: String,
-    val identity: String,
+    val identity: AlertMeasurementIdentity,
     val reason: String?,
-    val identityTruncated: Boolean = false,
+    val timing: AlertMeasurementTime? = null,
 )
+
+internal data class AlertMeasurementIdentity(val encoded: String, val truncated: Boolean = false)
+internal data class AlertMeasurementTime(val window: AlertRuleWindow, val dataAsOf: Long?)
 
 internal object AlertMeasurements {
     fun read(rule: AlertRule, result: JsonObject, nowMs: Long): AlertMeasurement {
@@ -24,9 +27,11 @@ internal object AlertMeasurements {
             else -> AlertDerivedMetrics.read(rule, result, nowMs)
         }
         return measurement.copy(
-            identity = identities(result),
+            identity = AlertMeasurementIdentity(
+                identities(result),
+                ((result["identity_cohorts"] as? JsonArray)?.size ?: 0) > MAX_IDENTITIES,
+            ),
             reason = problem(rule, result, measurement),
-            identityTruncated = ((result["identity_cohorts"] as? JsonArray)?.size ?: 0) > MAX_IDENTITIES,
         )
     }
 
@@ -55,8 +60,11 @@ internal object AlertMeasurements {
             put(APPROXIMATION, ObjectiveJson.text(ObjectiveJson.text(coverage, APPROXIMATION)))
             put("temporal_basis", ObjectiveJson.text(coverage, "temporal_basis") ?: "interval")
             put("sampled_at_ms", ObjectiveJson.number(ObjectiveJson.long(coverage, "sampled_at_ms")))
+            put("as_of_ms", ObjectiveJson.number(ObjectiveJson.long(coverage, "as_of_ms")))
+            put("coverage_basis", ObjectiveJson.text(ObjectiveJson.text(coverage, "coverage_basis")))
+            put("event_time_final", coverage["event_time_final"] ?: kotlinx.serialization.json.JsonNull)
         }
-        return AlertMeasurement(value, count, fraction, reduced.toString(), "[]", reason)
+        return AlertMeasurement(value, count, fraction, reduced.toString(), AlertMeasurementIdentity("[]"), reason)
     }
 
     private fun goodput(rule: AlertRule, result: JsonObject): AlertMeasurement {

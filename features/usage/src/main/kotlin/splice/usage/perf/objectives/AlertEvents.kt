@@ -28,22 +28,51 @@ internal object AlertEvents {
         put("metric", rule.metric)
         put("comparison", rule.comparison)
         put("sample_count", measurement.count)
-        put("window", buildJsonObject { put("from_ms", now - rule.windowMs); put("until_ms", now) })
+        timing(measurement, now).forEach { (key, value) -> put(key, value) }
         put("cohort", JsonObject(context.cohort.mapValues { JsonPrimitive(it.value) }))
         put("coverage", ObjectiveJson.codec.parseToJsonElement(measurement.coverage))
-        put("identity", ObjectiveJson.codec.parseToJsonElement(measurement.identity))
-        put("identity_truncated", measurement.identityTruncated)
+        put("identity", ObjectiveJson.codec.parseToJsonElement(measurement.identity.encoded))
+        put("identity_truncated", measurement.identity.truncated)
         put("objective_revision", ObjectiveJson.text(context.objective?.revision))
         put("pending_since_ms", ObjectiveJson.number(state.pendingSince))
         put("firing_since_ms", ObjectiveJson.number(state.firingSince))
         put("resolved_at_ms", ObjectiveJson.number(state.resolvedAt))
         put("recovery_since_ms", ObjectiveJson.number(state.recoverySince))
+        put("hold_observed_ms", state.heldMs)
+        put("recovery_observed_ms", state.recoveredMs)
         put("as_of_ms", now)
         put("reason", ObjectiveJson.text(state.reason))
         put("continuity", if (context.restarted) "restart_gap_hold_reset" else "sampled_windows")
         put("delivery_enabled", rule.deliveryEnabled)
         put("delivery_status", if (rule.deliveryEnabled && state.state == "firing") "pending" else "disabled")
-        put("diagnostic_links", links(context, now - rule.windowMs, now))
+        put("diagnostic_links", links(context, measurement))
+    }
+
+    private fun timing(measurement: AlertMeasurement, now: Long): JsonObject = buildJsonObject {
+        put("window", window(measurement))
+        put("evaluated_at_ms", now)
+        put("data_as_of_ms", ObjectiveJson.number(measurement.timing?.dataAsOf))
+        put("data_lag_ms", ObjectiveJson.number(measurement.timing?.dataAsOf?.let { now - it }))
+        put("window_basis", ObjectiveJson.text(measurement.timing?.window?.basis))
+        put("window_lag_ms", ObjectiveJson.number(measurement.timing?.window?.until?.let { now - it }))
+        put("settled_until_ms", ObjectiveJson.number(measurement.timing?.window?.horizon))
+        put("max_window_lag_ms", ObjectiveJson.number(measurement.timing?.window?.maxLagMs))
+    }
+
+    private fun links(context: AlertContext, measurement: AlertMeasurement): JsonArray {
+        val window = measurement.timing?.window
+        return if (window?.from == null || window.until == null) {
+            JsonArray(
+                emptyList(),
+            )
+        } else {
+            links(context, window.from, window.until)
+        }
+    }
+
+    private fun window(measurement: AlertMeasurement): JsonObject = buildJsonObject {
+        put("from_ms", ObjectiveJson.number(measurement.timing?.window?.from))
+        put("until_ms", ObjectiveJson.number(measurement.timing?.window?.until))
     }
 
     private fun links(context: AlertContext, from: Long, until: Long): JsonArray = JsonArray(

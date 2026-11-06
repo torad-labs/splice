@@ -15,6 +15,8 @@ import splice.core.perf.observation.PerfEventKind
 internal class UpstreamEventTiming(private val perf: TurnPerf, private val postedAtMs: Long?) {
     fun observe(events: Flow<JsonObject>): Flow<JsonObject> = flow {
         val observations = perf.upstream.observations
+        val tail = UpstreamEventTail(perf, observations, postedAtMs)
+        perf.upstream.observeTail(observations, tail)
         var previousEventMs = postedAtMs
         var previousContentMs = postedAtMs ?: perf.elapsedMs()
         var ending = UpstreamGapEnd.TORN
@@ -38,6 +40,7 @@ internal class UpstreamEventTiming(private val perf: TurnPerf, private val poste
                     perf.maxCount(PerfKeys.UP_BLOCKED_MAX_MS, blockedMs)
                     observations?.observe(PerfEventKind.GAP, mapOf("local_read_block_ms" to blockedMs.toDouble()))
                     previousEventMs = resumedAtMs
+                    tail.delivered(resumedAtMs)
                     // Even ping delivery is downstream work, not part of the wait for content.
                     previousContentMs += blockedMs
                 }
@@ -50,7 +53,8 @@ internal class UpstreamEventTiming(private val perf: TurnPerf, private val poste
             perf.maxCount(PerfKeys.UP_BLOCKED_TOTAL_MS, 0)
             perf.add(PerfKeys.UP_BLOCKED_TOTAL_MS, deliveryTotalMs)
             val endedAtMs = perf.elapsedMs()
-            recordGap(previousEventMs, endedAtMs, ending, observations)
+            tail.record()
+            recordGap(previousEventMs, endedAtMs, ending, null)
             perf.maxCount(PerfKeys.UP_CONTENT_GAP_MAX_MS, endedAtMs - previousContentMs)
         }
     }

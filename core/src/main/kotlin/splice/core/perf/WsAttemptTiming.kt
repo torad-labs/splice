@@ -21,6 +21,7 @@ public class WsAttemptTiming(private val perf: TurnPerf, private val recordLegac
     private var previousFragmentAt: Long? = null
 
     public fun finish(outcome: String) {
+        if (recordLegacy) perf.upstream.beforeFinish(attempt)
         observations?.finish(outcome)
     }
 

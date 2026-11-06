@@ -20,6 +20,7 @@ public class UpstreamAttemptTiming(private val perf: TurnPerf) {
     private val attempt = perf.upstream.begin(observations)
 
     public fun finish(outcome: String) {
+        perf.upstream.beforeFinish(attempt)
         observations?.finish(outcome)
     }
 

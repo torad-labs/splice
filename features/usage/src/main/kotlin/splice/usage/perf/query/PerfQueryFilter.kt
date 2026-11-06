@@ -38,7 +38,11 @@ internal class PerfQueryFilter(
         else -> null
     }
 
-    fun scope(scope: PerfScope): Boolean = query.filters.all { (key, value) ->
+    fun scope(scope: PerfScope): Boolean = scope(scope, emptySet())
+
+    private fun scope(scope: PerfScope, ignored: Set<String>): Boolean = query.filters.filterKeys {
+        it !in ignored
+    }.all { (key, value) ->
         when (key) {
             "head" -> scope.head == value
             "model" -> scope.model == value
@@ -51,14 +55,20 @@ internal class PerfQueryFilter(
         }
     }
 
-    fun links(scope: PerfScope, links: PerfLinks): Boolean = query.filters.all { (key, value) ->
-        when (key) {
-            SESSION -> links.sessionId == value
-            PROJECT -> project(links.sessionId, links.projectId, value)
-            ACCOUNT -> account(scope.head)?.matches(links.accountId, value) == true
-            else -> true
+    fun links(scope: PerfScope, links: PerfLinks): Boolean = links(scope, links, emptySet())
+
+    private fun links(scope: PerfScope, links: PerfLinks, ignored: Set<String>): Boolean =
+        query.filters.all { (key, value) ->
+            key in ignored || when (key) {
+                SESSION -> links.sessionId == value
+                PROJECT -> project(links.sessionId, links.projectId, value)
+                ACCOUNT -> account(scope.head)?.matches(links.accountId, value) == true
+                else -> true
+            }
         }
-    }
+
+    fun knownMatches(scope: PerfScope, links: PerfLinks, unknown: Set<String>): Boolean =
+        scope(scope, unknown) && links(scope, links, unknown)
 
     fun row(head: String, row: PerfRow): Boolean = row.ts >= query.fromMs && row.ts < query.untilMs &&
         legacy?.matches(row) == true && query.filters.all { (key, value) -> rowFilter(key, value, head, row) }

@@ -23,6 +23,13 @@ public data class PerfEvidenceRead(
 public fun interface PerfEvidenceSource {
     public fun read(query: PerfEvidenceQuery): PerfEvidenceRead
 
+    /**
+     * Synchronous bounded consumption. False stops explicitly; observations must not escape an uncharged callback.
+     * maxRecords limits materialized read results; streaming implementations instead enforce work/state limits.
+     */
+    public fun consume(query: PerfEvidenceQuery, consumer: PerfObservationConsumer): PerfEvidenceReceipt =
+        PerfEvidenceConsumption.consume(this, query, consumer)
+
     /** Consumers may explicitly select a completed window ending here; requested bounds are never rewritten. */
     public fun settledUntilMs(head: String? = null): Long? = null
 }

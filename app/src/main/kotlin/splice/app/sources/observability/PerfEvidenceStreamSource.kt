@@ -1,0 +1,122 @@
+package splice.app.sources.observability
+
+import splice.core.perf.observation.PerfCoverage
+import splice.core.perf.observation.PerfIssue
+import splice.core.util.AsyncFileIo
+import splice.core.util.MonoClock
+import splice.core.util.PerfWorkBudget
+import splice.core.util.WallClock
+import splice.usage.perf.history.PerfEvidenceCoverageProof
+import splice.usage.perf.history.PerfEvidenceCoverageSource
+import splice.usage.perf.history.PerfEvidenceQuery
+import splice.usage.perf.history.PerfEvidenceReceipt
+import splice.usage.perf.history.PerfEvidenceSinkSource
+import splice.usage.perf.history.PerfObservationConsumer
+import java.io.IOException
+import java.nio.file.Path
+import java.util.UUID
+
+internal class PerfEvidenceStreamSource(
+    private val directory: Path,
+    private val clock: WallClock,
+    private val sinks: PerfEvidenceSinkSource?,
+    private val coverage: PerfEvidenceCoverageSource,
+    private val costs: PerfSourceCosts,
+) {
+    private val inventory = PerfEvidenceInventory(directory)
+    private val files = PerfCursorFiles(directory.resolveSibling("${directory.fileName}-cursors"))
+
+    fun consume(query: PerfEvidenceQuery, consumer: PerfObservationConsumer): PerfEvidenceReceipt {
+        val lease = PerfWorkBudget.acquire(STREAM_BYTES) ?: return unavailable(query, "evidence_memory_busy")
+        val started = MonoClock.nowMs()
+        var scan: PerfEvidenceStreamScan? = null
+        var retained = false
+        costs.begin(true)
+        return try {
+            val settled = AsyncFileIo.awaitDirectory(directory)
+            val read = proof(query)
+            val proof = read.proof
+            val scanned = PerfEvidenceStreamScan(query, inventory, proof, consumer)
+            scan = scanned
+            scanned.issues += proof?.coverage?.issues ?: inventory.issues()
+            read.issue?.let(scanned::issue)
+            if (!settled && proof == null) scanned.issue("evidence_pending_write")
+            scan(scanned)
+            val result = result(query, proof, scanned)
+            lease.retain(result, PerfHistorySize.coverage(result.coverage) + RECEIPT_OVERHEAD)
+            retained = true
+            result
+        } finally {
+            if (!retained) lease.close()
+            costs.end(scan?.scannedRows ?: 0L, scan?.work?.bytes ?: 0L, (MonoClock.nowMs() - started).coerceAtLeast(0L))
+        }
+    }
+
+    private fun proof(query: PerfEvidenceQuery): StreamProofRead = try {
+        StreamProofRead(coverage.proof(query), null)
+    } catch (_: IOException) {
+        StreamProofRead(null, "evidence_proof_read_error")
+    } catch (_: IllegalArgumentException) {
+        StreamProofRead(null, "evidence_proof_malformed")
+    }
+
+    private fun scan(scan: PerfEvidenceStreamScan) {
+        try {
+            files.lock().use {
+                if (PERF_CURSOR_DISK_BYTES - files.prune(clock()) < EVIDENCE_DEDUP_BYTES + EVIDENCE_COVERAGE_BYTES) {
+                    throw IOException("cursor_disk_limit")
+                }
+                files.evidenceIds(UUID.randomUUID().toString()).use(scan::scan)
+            }
+        } catch (failure: IOException) {
+            val code = failure.message?.takeIf { it.startsWith("evidence_") || it.startsWith("cursor_") }
+                ?: "evidence_read_error"
+            scan.issue(code)
+        }
+    }
+
+    private fun result(
+        query: PerfEvidenceQuery,
+        proof: PerfEvidenceCoverageProof?,
+        scan: PerfEvidenceStreamScan,
+    ): PerfEvidenceReceipt {
+        val statuses = sinks?.statuses().orEmpty()
+        if (proof == null && statuses.any { it.failed + it.dropped + it.pending > 0 }) {
+            scan.issue("evidence_sink_loss_or_pending")
+        }
+        val observed = if (scan.issues.any {
+                it !in proof?.coverage?.issues.orEmpty()
+            }
+        ) {
+            0L
+        } else {
+            proof?.coverage?.observedMs ?: 0L
+        }
+        val coverage = PerfCoverage(query.fromMs, query.untilMs, observed, scan.issues.distinct(), statuses)
+        if (PerfHistorySize.coverage(
+                coverage,
+            ) > EVIDENCE_COVERAGE_BYTES
+        ) {
+            return unavailable(query, "evidence_metadata_limit")
+        }
+        return PerfEvidenceReceipt(
+            coverage,
+            proof?.asOfMs ?: clock(),
+            scan.issues.isEmpty(),
+            if (proof == null) "unknown" else "committed_observations_as_of",
+        )
+    }
+
+    private fun unavailable(query: PerfEvidenceQuery, code: String): PerfEvidenceReceipt {
+        costs.refused()
+        return PerfEvidenceReceipt(
+            PerfCoverage(query.fromMs, query.untilMs, 0, listOf(PerfIssue(code, EVIDENCE_SOURCE))),
+            clock(),
+            false,
+        )
+    }
+}
+
+private data class StreamProofRead(val proof: PerfEvidenceCoverageProof?, val issue: String?)
+private const val STREAM_BYTES = 3L * 1_024 * 1_024
+private const val RECEIPT_OVERHEAD = 4_096L

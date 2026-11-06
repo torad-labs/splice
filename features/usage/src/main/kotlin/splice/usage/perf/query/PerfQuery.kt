@@ -53,6 +53,9 @@ public interface PerfQuerySources {
     public fun provenance(): PerfConfigProvenance? = null
     public fun runtime(): PerfRuntimeSource? = null
 
+    /** Actual owner boot mode; null for unknown/mixed offline history. Only local and minimal are defined. */
+    public fun collectionMode(): String? = null
+
     /** Fresh local roster snapshot only; null means aliases cannot be resolved. Never refresh auth here. */
     public fun accountNames(head: String): HeadAccountNames? = null
     public fun objective(id: String): PerfObjectiveSet? = null

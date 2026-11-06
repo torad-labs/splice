@@ -13,7 +13,9 @@ import splice.usage.perf.history.PerfEvidenceCursorSource
 import splice.usage.perf.history.PerfEvidencePage
 import splice.usage.perf.history.PerfEvidenceQuery
 import splice.usage.perf.history.PerfEvidenceRead
+import splice.usage.perf.history.PerfEvidenceReceipt
 import splice.usage.perf.history.PerfEvidenceSinkSource
+import splice.usage.perf.history.PerfObservationConsumer
 import java.io.IOException
 import java.nio.file.Path
 import java.util.concurrent.Semaphore
@@ -31,6 +33,23 @@ public class PerfEvidenceFileSource(
     private val reading = Semaphore(1)
 
     override fun page(request: PerfEvidenceCursorRequest): PerfEvidencePage = cursors.page(request)
+
+    override fun consume(query: PerfEvidenceQuery, consumer: PerfObservationConsumer): PerfEvidenceReceipt {
+        require(query.fromMs >= 0 && query.untilMs > query.fromMs) { "invalid evidence interval" }
+        require(query.head == null || evidenceHeadPattern.matches(query.head)) { "invalid evidence head" }
+        if (!reading.tryAcquire()) {
+            return PerfEvidenceReceipt(
+                PerfCoverage(query.fromMs, query.untilMs, 0, listOf(PerfIssue("evidence_query_busy", EVIDENCE_SOURCE))),
+                clock(),
+                false,
+            )
+        }
+        return try {
+            PerfEvidenceStreamSource(directory, clock, sinks, coverage, costs).consume(query, consumer)
+        } finally {
+            reading.release()
+        }
+    }
 
     override fun settledUntilMs(head: String?): Long? {
         require(head == null || evidenceHeadPattern.matches(head)) { "invalid evidence head" }

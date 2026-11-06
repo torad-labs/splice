@@ -15,6 +15,13 @@ import splice.core.perf.observation.PerfIssue
 import splice.core.perf.observation.PerfScope
 
 internal object PerfQueryJson {
+    fun unavailableWorkload(): JsonObject = buildJsonObject {
+        put("status", "unavailable")
+        put("population_complete", false)
+        put("distribution_id", textValue(null))
+        put("reasons", strings(listOf("canonical_request_evidence_unavailable")))
+    }
+
     fun queryError(code: String, reason: String, status: String = "error"): JsonObject = buildJsonObject {
         put("schema_version", 1)
         put("contract_version", 1)
@@ -78,6 +85,7 @@ internal object PerfQueryJson {
         put("query", queryJson(query))
         put("as_of_ms", data.asOf)
         put("settled_until_ms", numeric(data.settledUntilMs))
+        put("collection_mode", textValue(data.collectionMode))
         put("requested_duration_ms", query.untilMs - query.fromMs)
         put("observed_duration_ms", data.coverage.observedMs)
         put("identity_cohorts", JsonArray(data.identities.map(::identityJson)))

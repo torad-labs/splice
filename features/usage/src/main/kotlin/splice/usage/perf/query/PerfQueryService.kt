@@ -67,6 +67,7 @@ public class PerfQueryService(
     private fun read(query: PerfQuery, filter: PerfQueryFilter): QueryData {
         val data = QueryData(query)
         data.settledUntilMs = settledUntilMs(query.filters["head"])
+        data.collectionMode = sources.collectionMode()?.takeIf { it in setOf("local", "minimal") }
         data.goodput = PerfEvidenceJson.initialGoodput(query.objective)
         measured(query, filter, data)
         if (data.counts.isEmpty()) data.counts = PerfPopulationCounts.aggregate(data)

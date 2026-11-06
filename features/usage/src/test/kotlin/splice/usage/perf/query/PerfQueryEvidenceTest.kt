@@ -121,6 +121,58 @@ class PerfQueryEvidenceTest {
     }
 
     @Test
+    fun `possibly matching missing model limits exact eligibility without erasing known good requests`() {
+        val known = listOf(
+            event("a", "one", 101, PerfEventKind.REQUEST_ARRIVED),
+            event("b", "one", 201, PerfEventKind.REQUEST_FINISHED, "ok")
+                .copy(values = mapOf("arrival_to_terminal_ms" to 100.0)),
+        )
+        val unresolved = event("c", "two", 301, PerfEventKind.REQUEST_ARRIVED)
+            .copy(scope = PerfScope(head = "h"))
+        val query = PerfQuery(
+            100,
+            1_100,
+            filters = mapOf("model" to "m"),
+            objective = PerfObjectiveSet("latency", "r1", completionMs = 200.0),
+            source = "evidence",
+        )
+        val result = service(known + unresolved).summary(query)
+        try {
+            val goodput = result.getValue("goodput").jsonObject
+            assertEquals("1", JsonScalars.str(goodput, "good"))
+            assertNull(JsonScalars.str(goodput, "eligible"))
+            assertTrue(result.toString().contains("request_cohort_membership_unknown"))
+        } finally {
+            PerfWorkBudget.release(result)
+        }
+    }
+
+    @Test
+    fun `known excluded model cannot make selected streaming cohort membership unknown`() {
+        val included = listOf(
+            event("a", "one", 101, PerfEventKind.REQUEST_ARRIVED),
+            event("b", "one", 201, PerfEventKind.REQUEST_FINISHED, "ok")
+                .copy(values = mapOf("arrival_to_terminal_ms" to 100.0)),
+        ).map { it.copy(scope = it.scope.copy(streaming = true)) }
+        val excluded = event("c", "two", 301, PerfEventKind.REQUEST_ARRIVED)
+            .copy(scope = PerfScope(head = "h", model = "other", streaming = null))
+        val query = PerfQuery(
+            100,
+            1_100,
+            filters = mapOf("model" to "m", "streaming" to "true"),
+            objective = PerfObjectiveSet("latency", "r1", completionMs = 200.0),
+            source = "evidence",
+        )
+        val result = service(included + excluded).summary(query)
+        try {
+            assertEquals("1", JsonScalars.str(result.getValue("goodput").jsonObject, "eligible"))
+            assertEquals("1.0", JsonScalars.str(result.getValue("goodput").jsonObject, "per_s"))
+        } finally {
+            PerfWorkBudget.release(result)
+        }
+    }
+
+    @Test
     fun `short windows and malformed parameters are consistent and credential free`() {
         assertEquals(
             60_000L,

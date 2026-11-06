@@ -14,6 +14,7 @@ internal class QueryData(query: PerfQuery) {
     var coverage = PerfCoverage(query.fromMs, query.untilMs, 0)
     var asOf = query.untilMs
     var settledUntilMs: Long? = null
+    var collectionMode: String? = null
     var resolution = 0L
     var complete = false
     var truncated = false
@@ -21,7 +22,7 @@ internal class QueryData(query: PerfQuery) {
     var goodput = JsonObject(emptyMap())
     var legacy = JsonObject(emptyMap())
     var configuration = JsonObject(emptyMap())
-    var workload = PerfWorkloadComparison.unavailable()
+    var workload = PerfQueryJson.unavailableWorkload()
     var timeline = JsonObject(emptyMap())
     var evidenceAvailable = false
     val populationCoverage = LinkedHashMap<String, JsonObject>()

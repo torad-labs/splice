@@ -11,40 +11,49 @@ import splice.usage.perf.query.PerfQueryJson.strings
 import splice.usage.perf.query.PerfQueryJson.textValue
 import java.security.MessageDigest
 
-internal object PerfWorkloadComparison {
-    fun unavailable(): JsonObject = buildJsonObject {
-        put("status", "unavailable")
-        put("population_complete", false)
-        put("distribution_id", textValue(null))
-        put("reasons", strings(listOf("canonical_request_evidence_unavailable")))
+internal class PerfWorkloadComparison(private val query: PerfQuery) {
+    private val partitions = LinkedHashMap<JsonObject, Int>()
+    private val reasons = linkedSetOf<String>()
+    private var arrivals = 0L
+    private var measured = 0L
+    private var matching = 0L
+    private var membershipUnknown = false
+    private var truncated = false
+
+    fun add(events: List<PerfObservation>, selected: Boolean) {
+        if (!arrived(events, query)) return
+        if (unresolved(events, query)) membershipUnknown = true
+        if (!selected) return
+        arrivals++
+        val facts = PerfWorkloadFacts.measure(events)
+        reasons.addAll(facts.reasons)
+        if (facts.reasons.isEmpty()) matching++
+        facts.partition?.let { partition ->
+            measured++
+            if (partition in partitions || partitions.size < MAX_PARTITIONS) {
+                partitions[partition] = (partitions[partition] ?: 0) + 1
+            } else {
+                truncated = true
+            }
+        }
     }
 
-    fun fold(
-        all: Collection<List<PerfObservation>>,
-        selected: List<List<PerfObservation>>,
-        query: PerfQuery,
-        complete: Boolean,
-    ): JsonObject {
-        val cohort = selected.filter { arrived(it, query) }
-        val measured = cohort.map(PerfWorkloadFacts::measure)
-        val reasons = measured.flatMap { it.reasons }.toMutableSet()
-        if (cohort.isEmpty()) reasons.add("no_observed_arrivals")
+    fun render(complete: Boolean): JsonObject {
+        if (arrivals == 0L) reasons.add("no_observed_arrivals")
         if (!complete) reasons.add("request_population_partial")
-        val membershipUnknown = all.filter { arrived(it, query) }.any { unresolved(it, query) }
         if (membershipUnknown) reasons.add("cohort_membership_unresolved")
-        val partitions = measured.mapNotNull { it.partition }.groupingBy { it }.eachCount()
-        if (partitions.size > MAX_PARTITIONS) reasons.add("workload_partition_limit")
+        if (truncated) reasons.add("workload_partition_limit")
         val known = complete && reasons.isEmpty()
         return buildJsonObject {
-            put("status", status(cohort.size, known))
+            put("status", status(arrivals, known))
             put("population_complete", complete && !membershipUnknown)
-            put("observed_arrivals", cohort.size)
-            put("measured_requests", measured.count { it.partition != null })
-            put("matching_requests", measured.count { it.reasons.isEmpty() })
+            put("observed_arrivals", arrivals)
+            put("measured_requests", measured)
+            put("matching_requests", matching)
             put("matching_basis", MATCHING_BASIS)
             put("distribution_id", textValue(if (known) identity(partitions) else null))
             put("reasons", strings(reasons.sorted()))
-            put("truncated", partitions.size > MAX_PARTITIONS)
+            put("truncated", truncated)
             put(
                 "partitions",
                 JsonArray(
@@ -56,8 +65,8 @@ internal object PerfWorkloadComparison {
         }
     }
 
-    private fun status(count: Int, complete: Boolean): String = when {
-        count == 0 -> "empty"
+    private fun status(count: Long, complete: Boolean): String = when {
+        count == 0L -> "empty"
         complete -> "complete"
         else -> "partial"
     }

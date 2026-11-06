@@ -5,23 +5,18 @@ import java.net.URI
 
 /** Empty endpoint/signals are deliberate disabled values, unlike ordinary text knobs. */
 internal object TelemetryKnobValue {
-    val knobs: Set<Knob> = setOf(
-        Knob.TELEMETRY_OTLP_ENDPOINT,
-        Knob.TELEMETRY_OTLP_PROTOCOL,
-        Knob.TELEMETRY_OTLP_HEADERS,
-        Knob.TELEMETRY_OTLP_SIGNALS,
+    private val validators: Map<Knob, TelemetryValueValidator> = mapOf(
+        Knob.TELEMETRY_OTLP_ENDPOINT to TelemetryValueValidator(PerfExportValidation::endpoint),
+        Knob.TELEMETRY_OTLP_PROTOCOL to TelemetryValueValidator(PerfExportValidation::protocol),
+        Knob.TELEMETRY_OTLP_HEADERS to TelemetryValueValidator { PerfExportValidation.parseHeaders(it) != null },
+        Knob.TELEMETRY_OTLP_SIGNALS to TelemetryValueValidator { PerfExportValidation.parseSignals(it) != null },
     )
+
+    val knobs: Set<Knob> = validators.keys
 
     fun coerce(knob: Knob, raw: String?): String? {
         val text = raw?.trim() ?: return null
-        val valid = when (knob) {
-            Knob.TELEMETRY_OTLP_ENDPOINT -> PerfExportValidation.endpoint(text)
-            Knob.TELEMETRY_OTLP_PROTOCOL -> PerfExportValidation.protocol(text)
-            Knob.TELEMETRY_OTLP_HEADERS -> PerfExportValidation.parseHeaders(text) != null
-            Knob.TELEMETRY_OTLP_SIGNALS -> PerfExportValidation.parseSignals(text) != null
-            else -> false
-        }
-        return text.takeIf { valid }
+        return text.takeIf { validators[knob]?.accepts(it) == true }
     }
 
     fun rejectCombination(
@@ -39,6 +34,10 @@ internal object TelemetryKnobValue {
             applied.remove(it)
             "gRPC telemetry endpoint cannot have a path"
         }
+    }
+
+    private fun interface TelemetryValueValidator {
+        fun accepts(text: String): Boolean
     }
 }
 

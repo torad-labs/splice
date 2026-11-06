@@ -7,9 +7,7 @@ internal class PerfRecentIds(private val memory: PerfMemoryAccount) {
     fun add(id: String): Boolean {
         if (id in ids) return false
         if (ids.size >= PerfObservationLimits.MAX_DEDUP) {
-            val oldest = ids.iterator()
-            oldest.next()
-            oldest.remove()
+            ids.remove(ids.first())
             memory.release(PerfMemoryBudget.ID_BYTES)
         }
         if (!memory.reserve(PerfMemoryBudget.ID_BYTES)) return false

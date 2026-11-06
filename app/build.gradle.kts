@@ -117,7 +117,9 @@ application {
 }
 
 val identitySources = layout.buildDirectory.dir("generated/sources/application-identity")
-val applicationIdentity = tasks.register<splice.release.ApplicationArtifactIdentity>("generateApplicationArtifactIdentity") {
+val applicationIdentity = tasks.register<splice.release.ApplicationArtifactIdentity>(
+    "generateApplicationArtifactIdentity",
+) {
     classes.set(tasks.named<KotlinCompile>("compileKotlin").flatMap { it.destinationDirectory })
     resources.set(layout.dir(tasks.named<ProcessResources>("processResources").map { it.destinationDir }))
     runtimeArtifacts.from(configurations.runtimeClasspath)

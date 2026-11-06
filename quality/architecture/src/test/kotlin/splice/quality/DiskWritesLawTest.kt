@@ -640,6 +640,46 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "integrations/upstream/src/main/kotlin/splice/upstream/retry/ProviderHoldStore.kt" to mapOf(
         "writeAtomic0600(" to 1,
     ),
+    // The numeric performance ledger, request evidence and explicit objective settings are in their
+    // dedicated StatePaths-owned files/directories; profile artifacts are separately opt-in.
+    "app/src/main/kotlin/splice/app/observability/PerfConfigHistory.kt" to
+        mapOf("writeAtomic0600(" to 1),
+    "app/src/main/kotlin/splice/app/sources/observability/PerfCursorFiles.kt" to mapOf(
+        "FileChannel.open(" to 2,
+        "writeAtomic0600(" to 1,
+    ),
+    "app/src/main/kotlin/splice/app/sources/observability/PerfEvidenceSeen.kt" to
+        mapOf("FileChannel.open(" to 1),
+    "app/src/main/kotlin/splice/app/sources/observability/PerfHistoryFiles.kt" to mapOf(
+        "FileChannel.open(" to 1,
+        "writeAtomic0600(" to 2,
+    ),
+    "app/src/main/kotlin/splice/app/sources/observability/PerfHistoryWriter.kt" to mapOf(
+        "FileChannel.open(" to 1,
+        "writeAtomic0600(" to 1,
+    ),
+    "features/turns/src/main/kotlin/splice/head/perf/RequestEvidenceCoverage.kt" to mapOf(
+        "FileChannel.open(" to 1,
+        "writeAtomic0600(" to 1,
+    ),
+    "features/turns/src/main/kotlin/splice/head/perf/RequestEvidenceFiles.kt" to mapOf(
+        "JsonlSink.appendLine(" to 1,
+        "writeAtomic0600(" to 1,
+    ),
+    "features/turns/src/main/kotlin/splice/head/perf/RequestEvidencePrefixes.kt" to
+        mapOf("FileChannel.open(" to 1),
+    "features/usage/src/main/kotlin/splice/usage/perf/objectives/AlertJournal.kt" to
+        mapOf("writeAtomic0600(" to 1),
+    "features/usage/src/main/kotlin/splice/usage/perf/objectives/PerfObjectiveStore.kt" to
+        mapOf("writeAtomic0600(" to 1),
+    "integrations/observability/src/main/kotlin/splice/observability/profile/ProfileArtifacts.kt" to mapOf(
+        "FileChannel.open(" to 1,
+        "Files.move(" to 1,
+        "createNew0600(" to 2,
+        "writeAtomic0600(" to 1,
+    ),
+    "integrations/observability/src/main/kotlin/splice/observability/profile/ProfileCopy.kt" to
+        mapOf("Files.newOutputStream(" to 1),
 )
 
 class DiskWritesLawTest {

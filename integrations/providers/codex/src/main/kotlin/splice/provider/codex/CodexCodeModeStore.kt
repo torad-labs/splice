@@ -318,7 +318,7 @@ internal class CodexCodeModeStore(
 
     private fun secureDirectory() {
         val open = SecureFile.ownerOnlyDirectory(dir)
-        if (open != null) throw IOException("the code-mode state directory $dir is not owner-only: $open")
+        if (open != null) throw CodeModeStorageException.Access()
     }
 
     private fun published(key: String, indexed: CodeModeKeptState) {

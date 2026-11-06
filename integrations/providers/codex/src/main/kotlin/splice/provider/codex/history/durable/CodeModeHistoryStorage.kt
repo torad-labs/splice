@@ -7,6 +7,7 @@ import splice.core.memory.HeapReservations
 import splice.core.memory.HeapText
 import splice.core.util.LogSink
 import splice.provider.codex.CodeModeStateLocation
+import splice.provider.codex.CodeModeStorageOperation
 import splice.provider.codex.history.CodeModeLedgerEntry
 import splice.upstream.memory.JvmHeap
 import java.io.IOException
@@ -44,7 +45,7 @@ internal class CodeModeHistoryStorage(
     private val pending = ConcurrentHashMap<String, MutableList<CodeModeHistoryPrepared>>()
     val durableEnabled: Boolean get() = location.journaling.now()
 
-    fun read(key: String): CodeModeHistoryState? = CodeModeHistoryValidation.guarded {
+    fun read(key: String): CodeModeHistoryState? = CodeModeHistoryValidation.guarded(CodeModeStorageOperation.RESTORE) {
         val file = path(key)
         val state = when {
             Files.exists(file) -> {
@@ -60,7 +61,7 @@ internal class CodeModeHistoryStorage(
         state
     }
 
-    fun write(prepared: CodeModeHistoryPrepared) = CodeModeHistoryValidation.guarded {
+    fun write(prepared: CodeModeHistoryPrepared) = CodeModeHistoryValidation.guarded(CodeModeStorageOperation.SAVE) {
         CodeModeHistoryDeltas.own(prepared, heap)
         val key = prepared.delta.key
         if (!durableEnabled) {

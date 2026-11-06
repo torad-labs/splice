@@ -49,7 +49,8 @@ internal class SpliceSentences(private val spoken: Spoken) {
     /** Turns splice stopped, or that stopped inside splice. */
     private fun stopped(cause: FailureCause.Splice, facts: LineFacts): Said = when (cause) {
         is FailureCause.Splice.Stopped -> stoppedBy(cause.by, facts.head)
-        is FailureCause.Splice.Protocol -> protocol(cause.fault, facts.head)
+        is FailureCause.Splice.Protocol -> cause.storage?.let { CodeModeStorageSentences.said(it, facts.head) }
+            ?: protocol(cause.fault, facts.head)
         is FailureCause.Splice.Internal ->
             Said("This turn failed because of a fault in splice", next = Next.Resend(SEND_AGAIN))
         FailureCause.Splice.CompactionUnfinished -> Said(

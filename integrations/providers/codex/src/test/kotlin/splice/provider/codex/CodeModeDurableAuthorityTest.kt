@@ -2,11 +2,22 @@ package splice.provider.codex
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.failure.ClientWire
+import splice.core.failure.CodeModeStorageFault
+import splice.core.failure.FailureCause
+import splice.core.failure.HeadVoice
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.RequestFacts
 import splice.core.perf.InputDigest
+import splice.core.turn.ErrorType
 import splice.provider.codex.history.CodeModeCallbackProof
 import splice.provider.codex.history.CodeModeCallbackReceipt
 import splice.provider.codex.history.CodeModeClientDelta
@@ -73,21 +84,32 @@ class CodeModeDurableAuthorityTest : CodeModeBridgeTestSupport() {
             it.filter { file -> file.fileName.toString().endsWith(".jsonl") }.findFirst().orElseThrow()
         }
         Files.writeString(file, "{broken")
-        assertThrows(CodeModePersistenceException::class.java) { ledger().entries("key") }
+        val failure = assertThrows(CodeModePersistenceException::class.java) { ledger().entries("key") }
+        assertStorageRefusal(failure, CodeModeStorageFault.INVALID, "invalid")
+        assertEquals("{broken", Files.readString(file))
     }
 
     @Test
     fun `a failed bounded save leaves the previously committed authority recoverable`() {
         val committed = CodeModeLedgerEntry(listOf(user("begin")), listOf(user("begin")), emptyList())
         ledger().record("key", committed)
+        val file = stateLocation().dir.resolve("history").resolve(InputDigest.hex("key") + ".jsonl")
+        val before = Files.readAllBytes(file)
         val bounded = CodeModeUpstreamLedger(storage = CodeModeHistoryStorage(stateLocation(), json, 1024))
-        assertThrows(CodeModePersistenceException::class.java) {
-            bounded.record(
-                "key",
-                CodeModeLedgerEntry(listOf(user("more")), listOf(user("x".repeat(4000))), emptyList()),
-            )
+        repeat(2) {
+            val failure = assertThrows(CodeModePersistenceException::class.java) {
+                bounded.record(
+                    "key",
+                    CodeModeLedgerEntry(listOf(user("more")), listOf(user("x".repeat(4000))), emptyList()),
+                )
+            }
+            assertStorageRefusal(failure, CodeModeStorageFault.LIMIT, "storage limit")
+            assertTrue("limit=1024 bytes" in failure.message)
+            assertTrue("source was not rerun" in failure.message)
+            assertArrayEquals(before, Files.readAllBytes(file))
         }
         assertEquals(committed.sent, ledger().entries("key").single().sent)
+        assertEquals(1L, ledger().newest("key"))
     }
 
     @Test
@@ -143,6 +165,29 @@ class CodeModeDurableAuthorityTest : CodeModeBridgeTestSupport() {
     private fun ledger() = CodeModeUpstreamLedger(
         storage = CodeModeHistoryStorage(stateLocation(), json, 4L * 1024 * 1024),
     )
+
+    private fun assertStorageRefusal(
+        failure: CodeModePersistenceException,
+        storage: CodeModeStorageFault,
+        text: String,
+    ) {
+        val outcome = failure.outcome()
+        assertEquals(storage, (outcome.cause as FailureCause.Splice.Protocol).storage)
+        val positions = listOf(outcome.at, Position(Moment.BEFORE_COMMIT, streamBegan = false))
+        for (at in positions) {
+            for (repeated in listOf(false, true)) {
+                val voice = HeadVoice("claudex", null).turn(RequestFacts(false, false, repeated))
+                val answer = ClientWire.answer(outcome.cause, at, repeated)
+                val line = voice.ending(outcome.cause, at, answer).text
+                assertEquals(ErrorType.INVALID_REQUEST, answer.type)
+                assertFalse(answer.clientResends)
+                assertTrue(text in line, line)
+                assertFalse("Send the message again" in line, line)
+                assertFalse("did not start" in line, line)
+                assertFalse("lost its state" in line, line)
+            }
+        }
+    }
     private fun user(text: String): JsonElement = item("""{"role":"user","content":"$text"}""")
     private fun assistant(text: String): JsonElement = item("""{"role":"assistant","content":"$text"}""")
     private fun item(text: String): JsonElement = json.parseToJsonElement(text)

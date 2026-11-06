@@ -242,7 +242,7 @@ public sealed class FailureCause {
         }
 
         /** splice's own protocol state cannot go on: the code-mode machine, or a call the dialect cannot express. */
-        public data class Protocol(val fault: ProtocolFault) : Splice() {
+        public data class Protocol(val fault: ProtocolFault, val storage: CodeModeStorageFault? = null) : Splice() {
             override val persisted: PersistedCause
                 get() = if (fault == ProtocolFault.DIALECT_UNSUPPORTED) {
                     PersistedCause.DIALECT_UNSUPPORTED

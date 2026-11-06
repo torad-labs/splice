@@ -2,10 +2,14 @@ package splice.provider.codex
 
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import splice.core.failure.CodeModeStorageFault
+import splice.core.failure.FailureCause
+import splice.core.failure.HeadVoice
 import splice.provider.codex.state.CodeModeStateDirectory
 import java.nio.file.Files
 import kotlin.time.Duration.Companion.hours
@@ -37,9 +41,15 @@ class CodeModeSiblingRestoreTest : CodeModeBridgeTestSupport() {
     fun `the caller's own unreadable journal remains fatal for admission and native lookup`(admission: Boolean) {
         val registry = corruptedSibling()
         try {
-            assertThrows(CodeModePersistenceException::class.java) {
+            val failure = assertThrows(CodeModePersistenceException::class.java) {
                 if (admission) registry.add(record("bad", 1)) else registry.completed("bad", "conversation")
             }
+            val outcome = failure.outcome()
+            val voice = HeadVoice("claudex", null).anyTurn
+            assertEquals(CodeModeStorageFault.INVALID, (outcome.cause as FailureCause.Splice.Protocol).storage)
+            assertTrue("restored" in failure.message)
+            assertTrue("invalid" in voice.ending(outcome.cause, outcome.at).text)
+            assertFalse(voice.answer(outcome.cause, outcome.at).clientResends)
             assertEquals("{broken\n", Files.readString(path("bad")))
         } finally {
             registry.cache.release("healthy")

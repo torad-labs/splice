@@ -2,8 +2,9 @@ package splice.provider.codex.history.durable
 
 import splice.core.memory.HeapReservations
 import splice.core.memory.HeapText
+import splice.provider.codex.CodeModeStorageException
+import splice.provider.codex.CodeModeStorageProblem
 import splice.provider.codex.history.CodeModeLedgerEntry
-import java.io.IOException
 
 /** Revisions form an acyclic persistent graph; completed output updates a post without changing its stable id. */
 internal class CodeModeHistoryReplay(private val key: String, private val heap: HeapReservations) {
@@ -21,8 +22,10 @@ internal class CodeModeHistoryReplay(private val key: String, private val heap: 
         val identity = delta.version == 1 && delta.key == key && delta.revision == revision + 1L
         val post = delta.post
         val monotonic = post.id > 0 && delta.nextId > post.id && delta.nextId >= nextId
-        if (!identity || !monotonic) throw IOException("authoritative history revision identity is invalid")
-        val parent = post.base?.let { revisions[it] ?: throw IOException("authoritative history parent is absent") }
+        if (!identity || !monotonic) throw CodeModeStorageException.Invalid(CodeModeStorageProblem.REVISION_IDENTITY)
+        val parent = post.base?.let {
+            revisions[it] ?: throw CodeModeStorageException.Invalid(CodeModeStorageProblem.MISSING_PARENT)
+        }
         val entry = CodeModeHistoryDeltas.apply(delta, parent)
         CodeModeHistoryDeltas.own(CodeModeHistoryPrepared(delta, entry), heap)
         revisions[delta.revision] = entry

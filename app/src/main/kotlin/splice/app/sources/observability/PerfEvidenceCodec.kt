@@ -1,8 +1,10 @@
 package splice.app.sources.observability
 
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import splice.core.perf.observation.PerfObservation
 import splice.usage.perf.history.PerfEvidenceQuery
+import java.security.MessageDigest
 
 internal object PerfEvidenceCodec {
     private val json = Json { ignoreUnknownKeys = true }
@@ -20,6 +22,9 @@ internal object PerfEvidenceCodec {
     }
 
     fun identity(value: PerfObservation): String = "${value.stamp.identity.bootId}:${value.stamp.observationId}"
+
+    fun fingerprint(value: PerfObservation): ByteArray = MessageDigest.getInstance("SHA-256")
+        .digest(json.encodeToString(value.copy(values = value.values.toSortedMap())).toByteArray(Charsets.UTF_8))
 
     fun charge(rawBytes: Long): Long = rawBytes * DECODE_EXPANSION + OBSERVATION_OVERHEAD
 }

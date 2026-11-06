@@ -59,6 +59,9 @@ internal class PerfHistoryFiles(private val directory: Path) {
     }
 
     fun write(value: PerfHistoryFile) {
+        val owned = value.snapshots.sumOf(PerfHistorySize::snapshot) +
+            value.revisions.keys.sumOf { it.length.toLong() * 2L + REVISION_BYTES }
+        if (owned > PERF_HISTORY_WORK_BYTES / 2L) throw IOException("aggregate checkpoint memory limit")
         val encoded = json.encodeToString(value)
         if (encoded.length * UTF8_MAX_BYTES > PERF_HISTORY_FILE_BYTES) {
             throw IOException(
@@ -77,7 +80,15 @@ internal class PerfHistoryFiles(private val directory: Path) {
     }
 
     fun checkpoint(value: PerfHistoryCheckpoint) {
-        SecureFile.writeAtomic0600(checkpoint, json.encodeToString(value))
+        val owned = PerfHistorySize.identity(value.identity) + value.issues.sumOf(PerfHistorySize::issue)
+        if (owned > MAX_CHECKPOINT_BYTES) throw IOException("aggregate checkpoint metadata size limit")
+        val encoded = json.encodeToString(value)
+        if (encoded.length * UTF8_MAX_BYTES > MAX_CHECKPOINT_BYTES) {
+            throw IOException(
+                "aggregate checkpoint metadata size limit",
+            )
+        }
+        SecureFile.writeAtomic0600(checkpoint, encoded)
         // Atomic replacement alone does not make the directory entry durable after host loss.
         FileChannel.open(directory, StandardOpenOption.READ).use { it.force(true) }
     }
@@ -119,3 +130,4 @@ internal class PerfHistoryFiles(private val directory: Path) {
 private const val MAX_FILES = 4_096
 private const val MAX_CHECKPOINT_BYTES = 64L * 1_024
 private const val UTF8_MAX_BYTES = 3L
+private const val REVISION_BYTES = 128L

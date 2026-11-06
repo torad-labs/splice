@@ -36,9 +36,7 @@ internal object PerfHistoryFormat {
     fun minute(value: Long): Long = Math.floorDiv(value, PERF_MINUTE_MS) * PERF_MINUTE_MS
     fun hour(value: Long): Long = Math.floorDiv(value, PERF_HOUR_MS) * PERF_HOUR_MS
 
-    fun estimate(snapshot: PerfAggregateSnapshot): Long = SNAPSHOT_BYTES + snapshot.points.sumOf { point ->
-        POINT_BYTES + point.metric.length * 2L + point.scope.toString().length * 2L + point.buckets.size * BUCKET_BYTES
-    } + snapshot.coverage.issues.sumOf { ISSUE_BYTES + (it.detail?.length ?: 0) * 2L }
+    fun estimate(snapshot: PerfAggregateSnapshot): Long = PerfHistorySize.snapshot(snapshot)
 
     fun frozen(snapshot: PerfAggregateSnapshot): PerfAggregateSnapshot = snapshot.copy(
         points = snapshot.points.map { it.copy(buckets = it.buckets.toList()) },
@@ -107,8 +105,3 @@ internal object PerfHistoryFormat {
 
     private const val MAX_ISSUES = 64
 }
-
-private const val SNAPSHOT_BYTES = 2_048L
-private const val POINT_BYTES = 1_024L
-private const val BUCKET_BYTES = 32L
-private const val ISSUE_BYTES = 256L

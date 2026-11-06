@@ -18,6 +18,7 @@ import java.nio.file.Path
 public class PerfAggregateStore(directory: Path, private val identity: PerfIdentity, private val clock: WallClock) :
     PerfHistory, AutoCloseable {
     private val files = PerfHistoryFiles(directory)
+    private val writer = PerfHistoryWriter(directory)
     private val sink = FileIoSink(HISTORY_SINK, clock)
     private val issues = LinkedHashMap<String, PerfIssue>()
     private val retention = PerfHistoryRetention(files)
@@ -25,8 +26,10 @@ public class PerfAggregateStore(directory: Path, private val identity: PerfIdent
     private val reads = PerfHistoryReader(files, costs)
     private var closed = false
     private var durableUntil = 0L
+    private var writable = false
 
     init {
+        if (writer.uncertain()) issue(PerfIssue("checkpoint_uncertain", HISTORY_SINK))
         try {
             files.readCheckpoint()?.let { saved ->
                 durableUntil = saved.durableUntilMs
@@ -51,8 +54,31 @@ public class PerfAggregateStore(directory: Path, private val identity: PerfIdent
         }
     }
 
+    /** Call once at daemon startup. Offline readers never acquire or dirty the writable session. */
+    @Synchronized
+    public fun openWriter(): Boolean {
+        if (closed) return false
+        if (writable) return true
+        writable = try {
+            require(PerfHistorySize.identity(identity) <= MAX_IDENTITY_BYTES) { "history identity size limit" }
+            writer.open(clock())
+            true
+        } catch (_: IOException) {
+            issue(PerfIssue("writer_open_failed", HISTORY_SINK))
+            false
+        } catch (_: IllegalArgumentException) {
+            issue(PerfIssue("writer_identity_limit", HISTORY_SINK))
+            false
+        }
+        return writable
+    }
+
     @Synchronized
     override fun append(snapshot: PerfAggregateSnapshot): Boolean {
+        if (!openWriter()) {
+            sink.reject()
+            return false
+        }
         val charge = PerfHistoryFormat.estimate(snapshot)
         val lease = if (!closed && charge <= MAX_PENDING_BYTES) {
             PerfWorkBudget.acquire(
@@ -83,12 +109,20 @@ public class PerfAggregateStore(directory: Path, private val identity: PerfIdent
 
     override fun close() {
         synchronized(this) { closed = true }
-        if (!AsyncFileIo.awaitFile(files.checkpoint)) return
-        if (sink.status().written == 0L) return
+        if (!writable) return
         try {
-            files.lock().use { files.checkpoint(PerfHistoryCheckpoint(identity, durableUntil, true, evidence())) }
+            val settled = AsyncFileIo.awaitFile(files.checkpoint)
+            val status = sink.status()
+            if (settled && status.failed + status.dropped == 0L) {
+                files.lock().use {
+                    files.checkpoint(PerfHistoryCheckpoint(identity, durableUntil, true, evidence()))
+                    writer.clean()
+                }
+            }
         } catch (_: IOException) {
             issue(PerfIssue("close_checkpoint_failed", HISTORY_SINK))
+        } finally {
+            writer.close()
         }
     }
 
@@ -175,3 +209,4 @@ public class PerfAggregateStore(directory: Path, private val identity: PerfIdent
 
 private const val MAX_PENDING_BYTES = 4L * 1_024 * 1_024
 private const val MAX_ISSUES = 64
+private const val MAX_IDENTITY_BYTES = 16L * 1_024

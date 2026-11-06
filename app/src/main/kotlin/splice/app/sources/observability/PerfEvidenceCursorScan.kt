@@ -1,6 +1,7 @@
 package splice.app.sources.observability
 
 import splice.app.sources.PerfLineReader
+import splice.core.perf.observation.PerfObservation
 import splice.head.perf.RequestEvidenceFormat
 import splice.usage.perf.history.PerfEvidenceQuery
 import java.io.IOException
@@ -70,7 +71,15 @@ internal class PerfEvidenceCursorScan(
         val value = PerfEvidenceCodec.decode(raw)
         if (value == null || value.scope.head != head) {
             malformed++
-        } else if (PerfEvidenceCodec.matches(value, query) && seen.add(PerfEvidenceCodec.identity(value))) {
+        } else {
+            accept(value, position, index)
+        }
+    }
+
+    private fun accept(value: PerfObservation, position: PerfCursorPosition, index: FileChannel) {
+        val duplicate = seen.add(PerfEvidenceCodec.identity(value), PerfEvidenceCodec.fingerprint(value))
+        if (duplicate == PerfEvidenceDuplicate.CONFLICT && CONFLICT !in issues) issues += CONFLICT
+        if (duplicate == PerfEvidenceDuplicate.NEW && PerfEvidenceCodec.matches(value, query)) {
             if ((matching + 1) * PERF_CURSOR_ENTRY_BYTES > indexLimit) throw IOException("cursor_index_limit")
             val bytes = ByteBuffer.allocate(PERF_CURSOR_ENTRY_BYTES)
                 .putInt(position.segment).putLong(position.start).putLong(position.end)
@@ -80,3 +89,5 @@ internal class PerfEvidenceCursorScan(
         }
     }
 }
+
+private const val CONFLICT = "evidence_duplicate_conflict"

@@ -11,6 +11,7 @@ import splice.core.perf.observation.PerfCoverage
 import splice.core.perf.observation.PerfIdentity
 import splice.core.perf.observation.PerfScope
 import splice.core.util.AsyncFileIo
+import splice.core.util.PerfWorkBudget
 import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.Path
@@ -29,12 +30,21 @@ class PerfAggregateStoreTest {
         append(store, directory, snapshot(minute, 5, 110_000L))
         append(store, directory, snapshot(minute, 2, 90_000L))
         val result = store.read(minute, 120_000L)
-        assertEquals(5L, result.snapshots.flatMap { it.points }.sumOf { it.count })
-        assertEquals(50.0, result.snapshots.flatMap { it.points }.sumOf { it.sum })
+        try {
+            assertEquals(5L, result.snapshots.flatMap { it.points }.sumOf { it.count })
+            assertEquals(50.0, result.snapshots.flatMap { it.points }.sumOf { it.sum })
+        } finally {
+            PerfWorkBudget.release(result)
+        }
         assertEquals(4L, store.status().written)
         store.close()
         val offline = PerfAggregateStore(directory, identity.copy(bootId = "boot-b"), WallClock { 200_000L })
-        assertEquals(5L, offline.read(minute, 120_000L).snapshots.flatMap { it.points }.sumOf { it.count })
+        val reopened = offline.read(minute, 120_000L)
+        try {
+            assertEquals(5L, reopened.snapshots.flatMap { it.points }.sumOf { it.count })
+        } finally {
+            PerfWorkBudget.release(reopened)
+        }
     }
 
     @Test
@@ -46,12 +56,20 @@ class PerfAggregateStoreTest {
         now = 27L * PERF_HOUR_MS
         append(store, directory, snapshot(now, 1, now + 1_000))
         val result = store.read(0L, PERF_HOUR_MS)
-        assertEquals(PERF_HOUR_MS, result.resolutionMs)
-        assertEquals(5L, result.snapshots.flatMap { it.points }.sumOf { it.count })
+        try {
+            assertEquals(PERF_HOUR_MS, result.resolutionMs)
+            assertEquals(5L, result.snapshots.flatMap { it.points }.sumOf { it.count })
+        } finally {
+            PerfWorkBudget.release(result)
+        }
         append(store, directory, snapshot(minute, 9, 110_000L))
         val late = store.read(0L, PERF_HOUR_MS)
-        assertEquals(5L, late.snapshots.flatMap { it.points }.sumOf { it.count })
-        assertTrue(late.coverage.issues.any { it.code == "late_checkpoint_expired" })
+        try {
+            assertEquals(5L, late.snapshots.flatMap { it.points }.sumOf { it.count })
+            assertTrue(late.coverage.issues.any { it.code == "late_checkpoint_expired" })
+        } finally {
+            PerfWorkBudget.release(late)
+        }
         store.close()
     }
 
@@ -62,10 +80,14 @@ class PerfAggregateStoreTest {
         val restarted =
             PerfAggregateStore(directory, identity.copy(bootId = "new", build = "new"), WallClock { 200_000L })
         val read = restarted.read(0L, 200_000L)
-        assertTrue(read.coverage.issues.any { it.code == "checkpoint_uncertain" })
-        assertTrue(read.coverage.issues.any { it.code == "build_changed" })
-        assertTrue(read.coverage.issues.any { it.code == "coverage_gap" })
-        assertTrue(read.coverage.observedMs < 200_000L)
+        try {
+            assertTrue(read.coverage.issues.any { it.code == "checkpoint_uncertain" })
+            assertTrue(read.coverage.issues.any { it.code == "build_changed" })
+            assertTrue(read.coverage.issues.any { it.code == "coverage_gap" })
+            assertTrue(read.coverage.observedMs < 200_000L)
+        } finally {
+            PerfWorkBudget.release(read)
+        }
         store.close()
     }
 
@@ -80,7 +102,12 @@ class PerfAggregateStoreTest {
         assertEquals(0L, failed.status().written)
         Files.writeString(directory.resolve("minute-60000.json"), "{broken")
         val offline = PerfAggregateStore(directory, identity, WallClock { 200_000L })
-        assertTrue(offline.read(minute, 120_000L).coverage.issues.any { it.code == "history_malformed" })
+        val malformed = offline.read(minute, 120_000L)
+        try {
+            assertTrue(malformed.coverage.issues.any { it.code == "history_malformed" })
+        } finally {
+            PerfWorkBudget.release(malformed)
+        }
     }
 
     @Test
@@ -92,8 +119,12 @@ class PerfAggregateStoreTest {
         store.close()
         val offline = PerfAggregateStore(directory, identity, WallClock { 40L * PERF_DAY_MS })
         val expired = offline.read(minute, 120_000L)
-        assertTrue(expired.snapshots.isEmpty())
-        assertTrue(expired.coverage.issues.any { it.code == "retention_expired" })
+        try {
+            assertTrue(expired.snapshots.isEmpty())
+            assertTrue(expired.coverage.issues.any { it.code == "retention_expired" })
+        } finally {
+            PerfWorkBudget.release(expired)
+        }
         val enormous = snapshot(minute, 1, 100_000L).let { value ->
             value.copy(points = List(10_000) { value.points.single() })
         }

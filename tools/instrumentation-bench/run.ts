@@ -100,15 +100,15 @@ export async function run(input: Manifest, directory: string, dry = false) {
       const profile = await startProfile(m, desk, repetition, output);
       const telemetry = m.role === 'candidate' ? await startTelemetry(m, desk, repetition) : null;
       activeTelemetry = telemetry;
-      if (desk.history) { extras.history ??= []; extras.history.push(...await queryHistory(desk, desk.history.until_ms, repetition)); }
-      if (telemetry) { extras.schemas ??= []; extras.schemas.push(await telemetry.schema()); await telemetry.sample(); telemetry.start(); }
+      if (desk.history && m.retained_history) { extras.history ??= []; extras.history.push(...await queryHistory(desk, desk.history, m.retained_history, repetition)); }
+      if (telemetry) { extras.schemas ??= []; extras.schemas.push(await telemetry.schema()); const first = await telemetry.sample(); profile?.bindRuntime(first.status === 'ok' ? first.identity : null); telemetry.start(); }
       await phase(repetition, 'warmup', m.warmup_ms);
       await telemetry?.pause(); telemetry?.setPhase('steady');
       const telemetryBefore = telemetry?.points.length ?? 0; await telemetry?.sample(); telemetry?.start();
       const before = await resource(desk.pid, desk.state);
       const timing = await phase(repetition, 'steady', m.duration_ms);
       const after = await resource(desk.pid, desk.state);
-      await telemetry?.pause(); const telemetryAfter = telemetry?.points.length ?? 0; await telemetry?.sample();
+      await telemetry?.pause(); const telemetryAfter = telemetry?.points.length ?? 0; const last = await telemetry?.sample(); if (profile) profile.bindRuntime(last?.status === 'ok' ? last.identity : null);
       if (telemetry) { const offset = telemetryPoints.length; telemetryPoints.push(...telemetry.points); telemetryBoundaries.push({ repetition, before: offset + telemetryBefore, after: offset + telemetryAfter, from_ms: timing.from_epoch_ms, until_ms: timing.until_epoch_ms }); }
       activeTelemetry = null;
       if (telemetry) { extras.query_summaries ??= []; extras.query_summaries.push(await telemetry.summary(timing.from_epoch_ms, timing.until_epoch_ms)); }

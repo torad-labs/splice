@@ -39,6 +39,15 @@ boot IDs remain `unknown`; a fresh desk is not evidence of a daemon-reported ID.
 `process_build=source:<sha>` identifies the verified source, not `/health.version`.
 The build's jar manifest, launcher and SHA256SUMS are separate artifacts.
 
+Source provenance starts at the trusted external freeze: the operator builds a
+clean, identified checkout and retains its build command, successful exit and
+artifact hashes independently of the benchmark run. The adjacent `identity.json`
+is that freeze receipt, not a signature or proof reconstructed from JAR bytes.
+The harness checks consistency and detects replacement against the frozen
+manifest; it does not authenticate a malicious local rewrite of both artifact
+and receipt. `process_build=source:<sha>` is the freeze's source label. Candidate
+runtime identities are captured separately from the application's responses.
+
 Proxy readiness requires Linux `/proc` visibility. Before even requesting health,
 the harness intersects both listening socket inodes with the spawned child's file
 descriptors, verifies its process start ticks and liveness, then rechecks ownership
@@ -47,6 +56,10 @@ each workload phase and before polling. Missing platform support or unverifiable
 ownership fails explicitly; an unrelated HTTP200 can never establish readiness.
 Each desk records this process/socket evidence with the verified artifact and
 configuration digests in `provenance.process_identities`.
+
+Wildcard and non-loopback bindings are rejected before the first HTTP probe;
+the receipt retains each socket's observed address. Both production connectors
+bind `127.0.0.1` directly, so the task configuration changes only their ports.
 
 The launcher uses an explicit child environment allowlist, `-Duser.home`,
 `SPLICE_STATE_DIR`, `SPLICE_CONFIG`, and XDG directories under the new task desk.
@@ -216,18 +229,38 @@ identity and recording coverage, download at most64MiB, check JFR magic/size/has
 parse jfr summary. Acceptance of POST is insufficient. Optional profile cost is a
 separate cohort, outside the always-on overhead envelope.
 
+The profile's boot, loaded build, version and schema must match the actual
+identity sampled by instrumentation telemetry before warmup and after steady
+work. Its receipt retains those runtime identities, the frozen JAR/source,
+process start ticks and configuration-file hash. Profile and runtime configuration
+revisions remain separately reported: a profile can legitimately declare an
+unknown configuration scope; that does not excuse a different boot or build.
+
 Retained history uses the test-only BenchmarkFixtureSeed entry, real
 PerfAggregateStore/RequestEvidenceFiles writers, injected clocks and their actual
 coverage receipt. The fixture records producer class hashes and every durable file
-hash. retained_history supplies its directory/receipt_sha256/source_commit; the
-desk verifies and copies only those task-owned files before launch. Queries retain
-explicit24h/7d bounds, first/repeat-read cost, counts, coverage and resolution.
+hash. retained_history supplies its directory/receipt_sha256/source_commit plus
+`query_window_ms` (86400000 or604800000) and `query_source` (history or evidence).
+The desk verifies and copies only those task-owned files before launch. Four
+separate cohorts select one source/window each, with five fresh processes per
+cohort. The first population query is `first_query_in_process`, followed by one
+`repeat_query`; no other history window warms that process first. Concurrent
+polling, profiling and exports are disabled for these query-cost cohorts.
+Queries retain the fixture's explicit24h/7d bounds, first/repeat-query cost,
+counts, coverage and resolution, before workload warmup generates new traffic.
 Each query brackets actual `sources.aggregate` and `sources.evidence` counters;
 reset or unavailable counters yield no delta. `retainedBytes` describes the shared
 work pool, and concurrent source work can contribute to the bracket.
-First read is process/query-cache cold only on a fresh desk; OS cache is uncontrolled.
+First query is process/query-cache cold; OS filesystem cache is uncontrolled.
 The helper never fabricates a durable coverage ledger. Aggregate and evidence
 fixture populations are separate and identified as such.
+
+Aggregate series reconcile48 histogram observations per fixture minute. Evidence
+summaries reconcile one request arrival per fixture minute and retain their own
+population completeness, receipt as-of, coverage basis and work counters.
+Missing counts remain null; matching a known partial count is not a complete
+population pass. Bounded partial seven-day evidence summaries remain explicit;
+complete paginated observation export is a separate functional acceptance check.
 
 BenchmarkExecutionFixture is a separately launched compiled app test entry that
 invokes NativeCodeModeRuntime and McpHost with the deterministic FakeMcpServer
@@ -295,8 +328,9 @@ Generate the final preparation schedule without starting workloads:
 
     bun tools/instrumentation-bench/schedule.ts
 
-It declares closed1/10/50/70/100 and open100/250/400/500 points, five repetitions,
-matched direct controls and representative secondary cohorts. Normal defaults are
+It declares34 points, including closed1/10/50/70/100, open100/250/400/500 and four
+source/window history-query cohorts, with five repetitions, matched direct
+controls and representative secondary cohorts. Normal defaults are
 20s warmup/60s steady; initial open sweep uses10s/30s and must be extended if
 unstable. The upper open point is not assumed saturated. Materialize with frozen
 artifact receipts, then execute serially after root authorization. The final

@@ -6,7 +6,7 @@ import { sleep } from './fixture';
 export interface ArtifactIdentity {
   artifact_path: string; source_commit: string; artifact_sha256: string; artifact_receipt_sha256: string;
 }
-export interface ListenerIdentity { port: number; inode: string }
+export interface ListenerIdentity { port: number; inode: string; address: string }
 export interface ProcessIdentity {
   pid: number; start_ticks: string; listeners: ListenerIdentity[];
   verification: 'linux-proc-listen-inodes'; verified_at: string;
@@ -41,16 +41,20 @@ async function listeners(pid: number, ports: number[], expectedStart: string): P
   } catch { throw new Error('process_socket_identity_unavailable'); }
   const links = await Promise.all(descriptors.map(async fd => { try { return await readlink(`/proc/${pid}/fd/${fd}`); } catch { return ''; } }));
   const owned = new Set(links.flatMap(link => { const match = /^socket:\[(\d+)\]$/.exec(link); return match?.[1] ? [match[1]] : []; }));
-  const found = new Map<number, string>();
+  const found = new Map<number, ListenerIdentity>();
   for (const table of tables) for (const row of table.trim().split('\n').slice(1)) {
     const fields = row.trim().split(/\s+/); const [address, hexPort] = (fields[1] ?? '').split(':'); const inode = fields[9];
-    // Only bindings reachable through our IPv4 loopback URL count, never another local interface.
-    if (!['0100007F', '00000000', '00000000000000000000000000000000', '0000000000000000FFFF00000100007F'].includes(address ?? '')) continue;
     const port = parseInt(hexPort ?? '', 16);
-    if (fields[3] === '0A' && inode && ports.includes(port) && owned.has(inode)) found.set(port, inode);
+    if (fields[3] !== '0A' || !inode || !ports.includes(port) || !owned.has(inode)) continue;
+    // Reject a task-owned wildcard or non-loopback listener before any HTTP probe.
+    if (!isLoopbackBinding(address)) throw new Error('process_listener_not_loopback');
+    found.set(port, { port, inode, address: address! });
   }
   if (await startTicks(pid) !== expectedStart) throw new Error('process_identity_changed');
-  return ports.every(port => found.has(port)) ? ports.map(port => ({ port, inode: found.get(port)! })) : null;
+  return ports.every(port => found.has(port)) ? ports.map(port => found.get(port)!) : null;
+}
+function isLoopbackBinding(address: string | undefined) {
+  return address === '0100007F' || address === '0000000000000000FFFF00000100007F';
 }
 export async function assertProcessIdentity(identity: ProcessIdentity, alive: () => boolean) {
   if (!alive()) throw new Error('isolated_desk_exited');
@@ -92,7 +96,7 @@ export async function verifyRunBinding(m: Manifest): Promise<DeskIdentity[]> {
     if (id.process_build !== `source:${m.source_commit}` || m.process_build !== id.process_build || id.config_revision !== m.config_revision || !/^[a-f0-9]{64}$/.test(id.config_revision)) throw new Error('process_config_binding_mismatch');
     if (!/^[a-f0-9]{64}$/.test(id.base_config_sha256) || !/^[a-f0-9]{64}$/.test(id.raw_config_sha256)) throw new Error('config_binding_missing');
     if (id.verification !== 'linux-proc-listen-inodes' || !Number.isSafeInteger(id.pid) || id.pid < 1 || !/^\d+$/.test(id.start_ticks) || !Number.isFinite(Date.parse(id.verified_at)) || !Array.isArray(id.listeners) || id.listeners.length !== 2) throw new Error('process_binding_invalid');
-    if (new Set(id.listeners.map(item => item.port)).size !== 2 || id.listeners.some(item => !Number.isSafeInteger(item.port) || item.port <= 1024 || item.port > 65535 || [3096, 3099].includes(item.port) || !/^\d+$/.test(item.inode))) throw new Error('socket_binding_invalid');
+    if (new Set(id.listeners.map(item => item.port)).size !== 2 || id.listeners.some(item => !Number.isSafeInteger(item.port) || item.port <= 1024 || item.port > 65535 || [3096, 3099].includes(item.port) || !/^\d+$/.test(item.inode) || !isLoopbackBinding(item.address))) throw new Error('socket_binding_invalid');
   }
   return identities;
 }

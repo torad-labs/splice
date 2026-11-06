@@ -3,6 +3,7 @@ import { decodeOtlp } from './otlp';
 import { reconcileSinks, telemetrySummary, type TelemetryPoint } from './telemetry';
 import { finalSchedule, materialize } from './schedule';
 import { defaults, validate } from './manifest';
+import { sameRuntimeOwner } from './profile';
 
 const cat = (...bytes: Uint8Array[]) => Buffer.concat(bytes);
 const varint = (value: number) => { const bytes: number[] = []; do { const rest = value % 128; value = Math.floor(value / 128); bytes.push(rest | (value ? 128 : 0)); } while (value); return new Uint8Array(bytes); };
@@ -58,4 +59,17 @@ test('prepared schedule has five repeated required closed points, bounded open s
   expect(() => materialize(plan.points.find(p => p.id === 'native-mcp')!, 'candidate')).toThrow('fixture_prerequisite_required');
   const old = defaults(); old.role = 'baseline'; old.collection.mode = 'minimal';
   expect(() => validate(old)).toThrow('legacy baseline has no minimal collection toggle');
+  expect(plan.points.filter(p => p.cohort === 'candidate-history-study').map(p => p.history_query)).toEqual([
+    { source: 'history', window_ms: 86400000 }, { source: 'history', window_ms: 604800000 },
+    { source: 'evidence', window_ms: 86400000 }, { source: 'evidence', window_ms: 604800000 },
+  ]);
+});
+
+test('profile owner must match the measured boot and build while configuration scope remains explicit', () => {
+  const runtime = { bootId: 'boot', build: 'loaded-build', version: '1', schemaVersion: 1, configRevision: 'applied-policy' };
+  const profile = { ...runtime, configRevision: 'unknown' };
+  expect(sameRuntimeOwner(profile, runtime)).toBe(true);
+  for (const changed of [{ bootId: 'other-boot' }, { build: 'other-build' }, { schemaVersion: 2 }, { version: '2' }, { build: 'unknown' }]) {
+    expect(sameRuntimeOwner({ ...profile, ...changed }, runtime)).toBe(false);
+  }
 });

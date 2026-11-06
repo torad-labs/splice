@@ -9,7 +9,7 @@
   "stability": "lower bounds only: extend matched durations/repetitions if JIT, variance or confidence intervals remain unstable; never loosen fixed budgets",
   "open_sweep": "500 rps is the initial bounded endpoint, not a guaranteed saturation point. If unsaturated, prepare an explicitly larger bounded generator envelope or additional points; do not claim capacity.",
   "direct_controls": "For each matched point create direct Anthropic control; for upstream Responses select direct Responses protocol and same upstream transport/timing. End-to-end p95 differences are not isolated proxy self-time.",
-  "scenario_count": 31,
+  "scenario_count": 34,
   "points": [
     {
       "id": "closed-1",
@@ -448,13 +448,56 @@
       }
     },
     {
-      "id": "retained-history",
+      "id": "retained-history-24h",
       "cohort": "candidate-history-study",
-      "evidence": "populated real-writer 24h/7d series, first/repeat read, coverage/resolution/work and retained-disk cost",
+      "evidence": "one source/window per fresh JVM; first/repeat query, independent fixture population, coverage and source work cost",
       "patch": {
         "cache_state": "cold"
       },
-      "prerequisite": "compiled BenchmarkFixtureSeed entry; immutable verified fixture receipt bound to frozen candidate source"
+      "history_query": {
+        "window_ms": 86400000,
+        "source": "history"
+      },
+      "prerequisite": "compiled BenchmarkFixtureSeed receipt bound to frozen source; set retained_history query_source/query_window_ms from history_query"
+    },
+    {
+      "id": "retained-history-7d",
+      "cohort": "candidate-history-study",
+      "evidence": "one source/window per fresh JVM; first/repeat query, independent fixture population, coverage and source work cost",
+      "patch": {
+        "cache_state": "cold"
+      },
+      "history_query": {
+        "window_ms": 604800000,
+        "source": "history"
+      },
+      "prerequisite": "compiled BenchmarkFixtureSeed receipt bound to frozen source; set retained_history query_source/query_window_ms from history_query"
+    },
+    {
+      "id": "retained-evidence-24h",
+      "cohort": "candidate-history-study",
+      "evidence": "one source/window per fresh JVM; first/repeat query, independent fixture population, coverage and source work cost",
+      "patch": {
+        "cache_state": "cold"
+      },
+      "history_query": {
+        "window_ms": 86400000,
+        "source": "evidence"
+      },
+      "prerequisite": "compiled BenchmarkFixtureSeed receipt bound to frozen source; set retained_history query_source/query_window_ms from history_query"
+    },
+    {
+      "id": "retained-evidence-7d",
+      "cohort": "candidate-history-study",
+      "evidence": "one source/window per fresh JVM; first/repeat query, independent fixture population, coverage and source work cost",
+      "patch": {
+        "cache_state": "cold"
+      },
+      "history_query": {
+        "window_ms": 604800000,
+        "source": "evidence"
+      },
+      "prerequisite": "compiled BenchmarkFixtureSeed receipt bound to frozen source; set retained_history query_source/query_window_ms from history_query"
     },
     {
       "id": "retained-state",

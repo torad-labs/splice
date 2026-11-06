@@ -16,7 +16,7 @@ export interface Manifest {
   transport: 'sse' | 'http' | 'websocket'; streaming: boolean; input_bytes: number;
   upstream?: { protocol: 'anthropic' | 'responses'; transport: 'sse' | 'websocket' };
   collector_fault?: { mode: 'healthy' | 'slow' | 'unavailable'; delay_ms: number; max_active: number };
-  retained_history?: { directory: string; receipt_sha256: string; source_commit: string };
+  retained_history?: { directory: string; receipt_sha256: string; source_commit: string; query_window_ms: 86400000 | 604800000; query_source: 'history' | 'evidence' };
   output_tokens_target: number; cache_state: 'cold' | 'warm'; objective_revision: string;
   objectives: { first_content_ms: number; completion_ms: number; queue_ms: number | null };
   load: { kind: 'concurrency' | 'arrival_rate'; value: number };
@@ -58,7 +58,10 @@ export function validate(m: Manifest): Manifest {
   requireValue(m.streaming === (m.transport !== 'http'), 'streaming and transport disagree');
   if (m.upstream) requireValue(Object.keys(m.upstream).every(k => ['protocol', 'transport'].includes(k)) && ['anthropic', 'responses'].includes(m.upstream.protocol) && ['sse', 'websocket'].includes(m.upstream.transport) && (m.upstream.transport !== 'websocket' || m.upstream.protocol === 'responses'), 'invalid upstream transport');
   if (m.collector_fault) requireValue(m.collection.exports && Object.keys(m.collector_fault).every(k => ['mode', 'delay_ms', 'max_active'].includes(k)) && ['healthy', 'slow', 'unavailable'].includes(m.collector_fault.mode) && bounded(m.collector_fault.delay_ms, 0, 10000) && bounded(m.collector_fault.max_active, 1, 32) && Number.isInteger(m.collector_fault.max_active), 'invalid collector fault');
-  if (m.retained_history) requireValue(m.role === 'candidate' && Object.keys(m.retained_history).every(k => ['directory', 'receipt_sha256', 'source_commit'].includes(k)) && /^\/tmp\/splice-instrumentation-[A-Za-z0-9_./-]+$/.test(m.retained_history.directory) && /^[a-f0-9]{64}$/.test(m.retained_history.receipt_sha256) && m.retained_history.source_commit === m.source_commit, 'invalid retained history fixture');
+  if (m.retained_history) {
+    requireValue(m.role === 'candidate' && Object.keys(m.retained_history).every(k => ['directory', 'receipt_sha256', 'source_commit', 'query_window_ms', 'query_source'].includes(k)) && /^\/tmp\/splice-instrumentation-[A-Za-z0-9_./-]+$/.test(m.retained_history.directory) && /^[a-f0-9]{64}$/.test(m.retained_history.receipt_sha256) && m.retained_history.source_commit === m.source_commit && [86400000, 604800000].includes(m.retained_history.query_window_ms) && ['history', 'evidence'].includes(m.retained_history.query_source), 'invalid retained history fixture');
+    requireValue(m.cache_state === 'cold' && m.collection.mode === 'local' && !m.collection.polling && !m.collection.profiles && !m.collection.exports, 'history query study requires fresh local desks without concurrent optional work');
+  }
   requireValue(bounded(m.seed, 0, 2 ** 32 - 1) && Number.isInteger(m.seed), 'invalid seed');
   for (const [name, min, max] of [['warmup_ms', 0, 3600000], ['duration_ms', 100, 3600000], ['repetitions', 1, 100], ['input_bytes', 256, 16 * 1024 ** 2], ['output_tokens_target', 1, 100000]] as const)
     requireValue(bounded(m[name], min, max) && Number.isInteger(m[name]), `invalid ${name}`);

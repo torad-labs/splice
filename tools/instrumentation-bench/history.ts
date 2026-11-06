@@ -1,7 +1,7 @@
 import { copyFile, lstat, mkdir, readFile, realpath } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { control, counter, type OwnedDesk } from './control';
-import { hash } from './manifest';
+import { hash, type Manifest } from './manifest';
 import { numericProjection } from './telemetry';
 import { readSourceCosts, sourceCostDelta } from './costs';
 export interface RetainedFixture { directory: string; receipt_sha256: string; source_commit: string }
@@ -26,18 +26,32 @@ export async function installHistory(fixture: RetainedFixture, state: string) {
   if (![...seen].some(p => p === 'state/perf-evidence/coverage.json')) throw new Error('history_coverage_receipt_missing');
   return { receipt_sha256: fixture.receipt_sha256, identity: receipt.identity, from_ms: receipt.from_ms as number, until_ms: receipt.until_ms as number, files: seen.size, bytes: total };
 }
-export async function queryHistory(desk: OwnedDesk, until: number, repetition: number) {
+export async function queryHistory(desk: OwnedDesk, fixture: { from_ms: number; until_ms: number }, selection: NonNullable<Manifest['retained_history']>, repetition: number) {
   const rows: object[] = [];
-  for (const window of [24 * 3600000, 7 * 86400000]) for (const cache of ['first_read', 'repeat_read']) {
-    const from = until - window;
+  const window = selection.query_window_ms, source = selection.query_source, until = fixture.until_ms, from = until - window;
+  if (![86400000, 604800000].includes(window) || !['history', 'evidence'].includes(source) || from < fixture.from_ms || !Number.isSafeInteger(until) || until > Date.now()) throw new Error('history_query_selection_invalid');
+  for (const cache of ['first_query_in_process', 'repeat_query']) {
     const before = await readSourceCosts(desk);
-    const result = await control(desk, `/api/perf/series?contract=1&head=bench&source=history&from=${from}&until=${until}`, { limit: 4 * 1024 ** 2, timeout_ms: 30000 });
+    const endpoint = source === 'history' ? 'series' : 'summary';
+    const result = await control(desk, `/api/perf/${endpoint}?contract=1&head=bench&source=${source}&from=${from}&until=${until}`, { limit: 4 * 1024 ** 2, timeout_ms: 30000 });
     const v = result.value;
     const work_cost = sourceCostDelta(before, await readSourceCosts(desk));
-    if (v.query?.from_ms !== from || v.query?.until_ms !== until || v.query?.source !== 'history') throw new Error('history_query_bounds_changed');
-    const series = Array.isArray(v.series) ? v.series : [];
-    const histogramCount = series.reduce((n: number, row: any) => n + Object.values(row.metrics ?? {}).reduce<number>((s, value: any) => s + (counter(value.count) ?? 0), 0), 0);
-    rows.push({ repetition, window_ms: window, cache, status: typeof v.status === 'string' && ['ok', 'partial', 'busy', 'error'].includes(v.status) ? v.status : 'unknown', from_ms: from, until_ms: until, elapsed_ms: result.elapsed_ms, bytes: result.bytes, populated: histogramCount > 0, histogram_count: histogramCount, expected_histogram_count: 48 * window / 60000, count_matches_fixture: histogramCount === 48 * window / 60000, coverage: numericProjection(v.coverage), resolution_ms: counter(v.resolution_ms), settled_until_ms: counter(v.settled_until_ms), work_cost, identity_cohort_count: Array.isArray(v.identity_cohorts) ? v.identity_cohorts.length : null, limitations: ['first read is process/query-cache cold only on a fresh desk; filesystem cache is uncontrolled', 'fixture cohort identity differs from the live boot and must remain disclosed'] });
+    if (v.query?.from_ms !== from || v.query?.until_ms !== until || v.query?.source !== source) throw new Error('history_query_bounds_changed');
+    const histogramCount = source === 'history' && Array.isArray(v.series) ? v.series.reduce((n: number, row: any) => n + Object.values(row.metrics ?? {}).reduce<number>((s, value: any) => s + (counter(value.count) ?? 0), 0), 0) : null;
+    const workload = v.comparison?.workload;
+    const observedArrivals = source === 'evidence' ? counter(workload?.observed_arrivals) : null;
+    const populationComplete = source === 'evidence' ? typeof workload?.population_complete === 'boolean' ? workload.population_complete : null : typeof v.coverage?.complete === 'boolean' ? v.coverage.complete : null;
+    const actual = source === 'history' ? histogramCount : observedArrivals, expected = (source === 'history' ? 48 : 1) * window / 60000;
+    const evidenceCoverage = v.population_coverage?.request_scope_resolved_at_terminal_or_latest_checkpoint;
+    rows.push({ repetition, window_ms: window, source, cache, cache_scope: cache === 'first_query_in_process' ? 'fresh_process_and_query_cache' : 'same_process_same_query', prior_population_queries_in_process: cache === 'first_query_in_process' ? 0 : 1,
+      binding: { process_id: desk.pid, start_ticks: desk.identity?.start_ticks ?? null, artifact_sha256: desk.identity?.artifact_sha256 ?? null },
+      status: typeof v.status === 'string' && ['ok', 'partial', 'busy', 'error'].includes(v.status) ? v.status : 'unknown', from_ms: from, until_ms: until, elapsed_ms: result.elapsed_ms, bytes: result.bytes,
+      population: source === 'history' ? 'aggregate_histogram_observations' : 'request_arrivals', populated: actual === null ? null : actual > 0, histogram_count: histogramCount, expected_histogram_count: source === 'history' ? expected : null,
+      observed_arrivals: observedArrivals, expected_arrivals: source === 'evidence' ? expected : null, population_complete: populationComplete, observed_count_matches_fixture: actual === null ? null : actual === expected, count_matches_fixture: populationComplete === true && actual === expected,
+      coverage: numericProjection(v.coverage), population_coverage: numericProjection(v.population_coverage), missing_fields: Array.isArray(v.missing_fields) ? v.missing_fields.filter((code: unknown) => typeof code === 'string' && /^[a-z0-9_.-]{1,100}$/.test(code)).slice(0, 256) : null,
+      as_of_ms: counter(v.as_of_ms), evidence_as_of_ms: counter(evidenceCoverage?.as_of_ms), coverage_basis: evidenceCoverage?.coverage_basis === 'committed_observations_as_of' ? 'committed_observations_as_of' : 'unknown', event_time_final: typeof evidenceCoverage?.event_time_final === 'boolean' ? evidenceCoverage.event_time_final : null,
+      resolution_ms: counter(v.resolution_ms), settled_until_ms: counter(v.settled_until_ms), work_cost, identity_cohort_count: Array.isArray(v.identity_cohorts) ? v.identity_cohorts.length : null,
+      limitations: ['filesystem cache is uncontrolled', 'fixture cohort identity differs from the live boot', 'partial evidence summaries are not complete exports; complete cursor traversal is a separate acceptance check'] });
   }
   return rows;
 }

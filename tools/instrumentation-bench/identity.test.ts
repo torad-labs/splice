@@ -21,7 +21,7 @@ async function receiptFixture(root: string, role: 'baseline' | 'candidate') {
     artifact_receipt_sha256: hash(artifactReceipt), process_build: m.process_build, config_revision: m.config_revision,
     base_config_sha256: hash('same base config'), raw_config_sha256: hash(`synthetic raw config ${role}`),
     pid: 1, start_ticks: '123', verification: 'linux-proc-listen-inodes', verified_at: '2026-11-05T00:00:00.000Z',
-    listeners: [{ port: 40000, inode: '42' }, { port: 40001, inode: '43' }] };
+    listeners: [{ port: 40000, inode: '42', address: '0100007F' }, { port: 40001, inode: '43', address: '0100007F' }] };
   // These synthetic receipts test validation only; they are never published as measured evidence.
   m.provenance = { harness_sha256: hash('same test harness'), process_identities: [identity] };
   const samples = Array.from({ length: 5 }, (_, repetition) => ({ ...initial(repetition, repetition, 'steady', repetition * 40000),
@@ -109,5 +109,15 @@ test.skipIf(process.platform !== 'linux')('readiness binds both live child socke
     await assertProcessIdentity(identity, () => child.exitCode === null && child.signalCode === null);
     child.kill(); await child.exited;
     await expect(assertProcessIdentity(identity, () => child.exitCode === null && child.signalCode === null)).rejects.toThrow('isolated_desk_exited');
+  } finally { if (child.exitCode === null && child.signalCode === null) child.kill(); await child.exited; }
+});
+
+test.skipIf(process.platform !== 'linux')('task-owned wildcard listeners cannot qualify as loopback isolation', async () => {
+  const child = Bun.spawn([process.execPath, '-e', 'const a = Bun.serve({hostname:"0.0.0.0",port:0,fetch:()=>Response.json({ok:true})}); const b = Bun.serve({hostname:"127.0.0.1",port:0,fetch:()=>Response.json({ok:true})}); console.log(JSON.stringify([a.port,b.port]));'], { stdout: 'pipe', stderr: 'pipe' });
+  try {
+    const reader = child.stdout.getReader(); let text = '';
+    while (!text.includes('\n')) { const item = await reader.read(); if (item.done) throw new Error('child_server_failed'); text += new TextDecoder().decode(item.value); }
+    reader.releaseLock(); const ports: number[] = JSON.parse(text.trim());
+    await expect(waitForOwnedHealth(child.pid, ports[0]!, ports[1]!, () => child.exitCode === null && child.signalCode === null, 2000)).rejects.toThrow('process_listener_not_loopback');
   } finally { if (child.exitCode === null && child.signalCode === null) child.kill(); await child.exited; }
 });

@@ -9,7 +9,11 @@ export interface ProfileReceipt {
   repetition: number; profile_id: string; status: string; error_class: string | null; identity: RuntimeIdentity;
   process_id: number; capture_from_ms: number | null; capture_until_ms: number | null; steady_from_ms: number | null; steady_until_ms: number | null;
   size_bytes: number | null; artifact_sha256: string | null; artifact_path: string | null;
+  runtime_binding: { first: RuntimeIdentity | null; last: RuntimeIdentity | null; samples: number; source_commit: string; jar_sha256: string; process_start_ticks: string; config_sha256: string; config_scope: 'profile_and_runtime_revisions_reported_separately' };
   jfr: { status: string; chunks: number | null; duration_seconds: number | null; execution_samples: number | null; reason: string | null };
+}
+export function sameRuntimeOwner(profile: RuntimeIdentity, runtime: RuntimeIdentity) {
+  return ![profile.bootId, profile.build, runtime.bootId, runtime.build].includes('unknown') && profile.bootId === runtime.bootId && profile.build === runtime.build && profile.version === runtime.version && profile.schemaVersion === runtime.schemaVersion;
 }
 async function jfrSummary(path: string) {
   const child = Bun.spawn(['jfr', 'summary', path], { stdout: 'pipe', stderr: 'pipe', env: { PATH: process.env.PATH ?? '/usr/bin:/bin' } });
@@ -57,10 +61,15 @@ export async function startProfile(m: Manifest, desk: OwnedDesk, repetition: num
   const identity = runtimeIdentity(started.identity);
   const receipt: ProfileReceipt = { repetition, profile_id: id, status: 'running', error_class: null, identity, process_id: desk.pid,
     capture_from_ms: null, capture_until_ms: null, steady_from_ms: null, steady_until_ms: null, size_bytes: null, artifact_sha256: null, artifact_path: null,
+    runtime_binding: { first: null, last: null, samples: 0, source_commit: desk.identity.source_commit, jar_sha256: desk.identity.artifact_sha256, process_start_ticks: desk.identity.start_ticks, config_sha256: desk.identity.raw_config_sha256, config_scope: 'profile_and_runtime_revisions_reported_separately' },
     jfr: { status: 'unavailable', chunks: null, duration_seconds: null, execution_samples: null, reason: 'not_downloaded' } };
-  return { receipt, stop: async (fromMs: number, untilMs: number) => {
+  return { receipt, bindRuntime: (runtime: RuntimeIdentity | null) => {
+    if (!runtime || !sameRuntimeOwner(identity, runtime) || receipt.runtime_binding.first && !sameRuntimeOwner(receipt.runtime_binding.first, runtime)) throw new Error('profile_runtime_identity_mismatch');
+    receipt.runtime_binding.first ??= runtime; receipt.runtime_binding.last = runtime; receipt.runtime_binding.samples++;
+  }, stop: async (fromMs: number, untilMs: number) => {
     receipt.steady_from_ms = fromMs; receipt.steady_until_ms = untilMs;
     try {
+      if (receipt.runtime_binding.samples < 2 || !receipt.runtime_binding.first || !receipt.runtime_binding.last) throw new Error('profile_runtime_binding_missing');
       let result = (await control(desk, `/api/perf/profiles/${id}/stop`, { method: 'POST' })).value;
       const deadline = performance.now() + 20000;
       while (result.status === 'running' && performance.now() < deadline) { await sleep(100); result = (await control(desk, `/api/perf/profiles/${id}`)).value; }

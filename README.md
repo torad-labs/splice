@@ -353,6 +353,8 @@ last 500 daemon lines through the same redaction, `--out FILE` writes it. Nothin
 one and whether it is live, stale or gone, plus the `SendMessage` line that reaches it.
 `splice perf --window 24h` shows, per head, how long turns wait before the first byte and how long
 they stream, the failure share by outcome, retries, cache hit ratio and peak concurrency.
+The [performance operator guide](docs/observability/README.md) covers machine-readable
+queries, the Performance console, profiles, exporters, objectives and measurement limits.
 
 When a session's Claude Code is newer than the version this splice release was tested with,
 doctor, `splice status` and the status line say so once; equal or older is silent.

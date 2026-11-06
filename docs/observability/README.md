@@ -4,6 +4,38 @@ Splice keeps performance observations locally. A default installation needs no
 collector, metrics database or profiling agent. Prometheus, OTLP export and deep
 profiling are optional. Performance objectives and alert delivery are opt-in.
 
+This guide describes the implemented inspection surfaces. Sustainable capacity
+and instrumentation overhead require controlled, matched measurements; the
+checked-in [benchmark receipts](../benchmarks/instrumentation-2026-11-05/README.md)
+are calibration evidence.
+
+## Quick start
+
+Read the retained per-head summary, even while the daemon is offline:
+
+```sh
+splice perf
+splice perf --window 1h
+```
+
+Text output defaults to 24h and accepts 1h, 24h or 7d. For machine-readable
+results, inspect the schema, then query the same interval:
+
+```sh
+splice perf schema --json
+splice perf summary --window 1h --json
+splice perf diagnose --window 1h --json
+```
+
+`splice perf --json` is the machine summary with its default 24h window. Check
+`status`, coverage and missing fields before treating a result as complete.
+These CLI queries read local files; current runtime readings use the running
+daemon's API. Before requesting a profile, inspect its reported support:
+
+```sh
+splice perf profile capabilities
+```
+
 The console's Performance panel is available from Usage and Requests. Start with
 an explicit interval and cohort, inspect its coverage, then follow the same
 filters into latency distributions, queue history, request timelines and traces.
@@ -94,7 +126,7 @@ and must not be summed into total latency.
 Set `perf_collection_enabled = "false"` in `[defaults]` to disable the new local
 collection at startup, or `"true"` to enable it. Values in `[defaults]` use the
 existing string format; the Boolean fields in `[telemetry.operator]` use TOML
-Booleans without quotes. Disabling collection preserves legacy performance records and configured
-local traces. Exporter settings are also restart-required; the configuration API
+Booleans without quotes. Disabling collection preserves legacy performance
+records and configured local traces. Exporter settings are also restart-required; the configuration API
 reports this from knob metadata. A saved desired value does not claim that an
 already running owner has applied it.

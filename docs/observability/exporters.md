@@ -4,7 +4,7 @@ Local collection is on by default and remains self-contained. Prometheus and OTL
 
 ```toml
 [defaults]
-perf_collection_enabled = true
+perf_collection_enabled = "true"
 
 [telemetry.operator]
 prometheus_enabled = false

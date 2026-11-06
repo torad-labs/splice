@@ -5,7 +5,7 @@ import java.nio.file.Path
 import java.util.concurrent.ScheduledExecutorService
 
 public fun interface ProfileCaptureFactory {
-    fun create(
+    public fun create(
         request: PerfProfileRequest,
         nativeExecutable: Path?,
         supervisor: ScheduledExecutorService,

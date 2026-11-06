@@ -1,6 +1,7 @@
 package splice.upstream.memory
 
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -9,7 +10,7 @@ import splice.core.util.AsyncFileIo
 
 /** App composes existing owners through the core port; observability never depends on upstream. */
 public object JvmHeapRuntimeSource : PerfRuntimeSource {
-    override fun runtime() = buildJsonObject {
+    override fun runtime(): JsonObject = buildJsonObject {
         val memory = JvmHeap.memorySnapshot()
         val work = AsyncFileIo.workSnapshot
         put(

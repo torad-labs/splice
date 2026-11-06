@@ -2,6 +2,7 @@ package splice.upstream.memory
 
 import io.ktor.client.HttpClient
 import io.ktor.util.AttributeKey
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.ConnectionPool
@@ -13,7 +14,7 @@ public class UpstreamHttpRuntimeSource(
     private val pool: ConnectionPool,
     private val dispatcher: Dispatcher,
 ) : PerfRuntimeSource {
-    override fun runtime() = buildJsonObject {
+    override fun runtime(): JsonObject = buildJsonObject {
         put(
             "measurements",
             buildJsonObject {

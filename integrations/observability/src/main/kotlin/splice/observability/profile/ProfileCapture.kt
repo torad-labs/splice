@@ -4,10 +4,10 @@ import java.nio.file.Path
 
 /** A single owned capture. close stops it on success, cancellation and setup/copy failures. */
 public interface ProfileCapture : AutoCloseable {
-    val fromMs: Long? get() = null
-    val untilMs: Long? get() = null
-    fun start()
-    fun finish(destination: Path)
+    public val fromMs: Long? get() = null
+    public val untilMs: Long? get() = null
+    public fun start()
+    public fun finish(destination: Path)
 }
 
 internal class ProfileUnavailable : java.io.IOException("Profiler mode unavailable")

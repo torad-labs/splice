@@ -16,4 +16,6 @@ dependencies {
     implementation(libs.opentelemetry.exporter.otlp)
 
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.grpc.netty.shaded)
+    testImplementation(libs.grpc.stub)
 }

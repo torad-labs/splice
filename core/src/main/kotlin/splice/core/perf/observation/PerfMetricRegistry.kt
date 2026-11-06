@@ -93,14 +93,28 @@ public object PerfMetricRegistry {
     internal fun accepts(metric: String, kind: PerfEventKind, value: Double): Boolean =
         validValue(metric, value) && definitions[metric]?.events?.contains(kind) == true
 
-    private fun validValue(metric: String, value: Double): Boolean = if (metric == "gate_saturated") {
+    private fun validValue(metric: String, value: Double): Boolean = if (metric in setOf(
+            "gate_saturated",
+            "tool_native_span",
+        )
+    ) {
         value == 0.0 || value == 1.0
     } else {
-        value.isFinite() && value in 0.0..MAX_MEASUREMENT
+        value.isFinite() && value in 0.0..MAX_MEASUREMENT &&
+            (metric !in TOOL_INTEGER_METRICS || value % 1.0 == 0.0)
     }
 }
 
 private const val MAX_MEASUREMENT = 1.0e18
+private val TOOL_INTEGER_METRICS = setOf(
+    "tool_calls_per_turn",
+    "tool_timeouts",
+    "tool_cancelled",
+    "tool_admission_depth",
+    "tool_admission_capacity",
+    "tool_occupied_cells",
+    "tool_buffered_bytes",
+)
 
 private const val BOUND_0_MS = 0.0
 private const val BOUND_1_MS = 1.0

@@ -56,6 +56,24 @@ public class PerfRecorder(
         return PerfAttemptRecorder(this, attemptScope, links, start.monotonicMs)
     }
 
+    internal fun tool(scope: PerfScope, parent: PerfLinks, traceLinks: PerfLinks?): PerfToolRecorder {
+        val start = stamp()
+        val toolScope = PerfDimensions.scope(scope.copy(work = "tool", outcome = null))
+        val native = traceLinks?.let(PerfDimensions::links)?.takeIf { it.traceId != null && it.spanId != null }
+        val links = PerfDimensions.links(
+            parent.copy(
+                toolId = start.observationId,
+                traceId = native?.traceId ?: parent.traceId,
+                traceFlags = native?.traceFlags ?: parent.traceFlags,
+                parentSpanId = native?.parentSpanId ?: parent.spanId,
+                spanId = native?.spanId ?: UUID.randomUUID().toString().replace("-", "").take(SPAN_HEX_LENGTH),
+            ),
+        )
+        val values = if (native != null) mapOf("tool_native_span" to 1.0) else emptyMap()
+        publish(PerfObservation(start, toolScope, PerfEventKind.TOOL_STARTED, values, links))
+        return PerfToolRecorder(this, toolScope, links, start.monotonicMs)
+    }
+
     private fun nextId(): String =
         "${identity.bootId.take(PerfObservationLimits.MAX_LABEL / 2)}:$recorderId:${sequence.incrementAndGet()}"
 

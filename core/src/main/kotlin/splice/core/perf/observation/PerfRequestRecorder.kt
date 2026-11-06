@@ -22,6 +22,10 @@ public class PerfRequestRecorder internal constructor(
         recorder.attempt(currentScope, currentLinks, transport)
     }
 
+    public fun tool(traceLinks: PerfLinks? = null): PerfToolRecorder = synchronized(lock) {
+        recorder.tool(currentScope, currentLinks, traceLinks)
+    }
+
     public fun usage(values: Map<String, Double>): Boolean = synchronized(lock) { canonicalUsage.record(values) }
 
     public fun update(scope: PerfScope, links: PerfLinks = this.links): Unit = synchronized(lock) {

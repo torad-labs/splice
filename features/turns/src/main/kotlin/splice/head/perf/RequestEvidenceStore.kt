@@ -25,6 +25,9 @@ public class RequestEvidenceStore internal constructor(
         PerfEventKind.REQUEST_FINISHED,
         PerfEventKind.CHECKPOINT,
         PerfEventKind.USAGE_RECORDED,
+        PerfEventKind.TOOL_STARTED,
+        PerfEventKind.TOOL_PHASE,
+        PerfEventKind.TOOL_FINISHED,
     )
 
     override fun record(observation: PerfObservation): Boolean {

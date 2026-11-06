@@ -46,7 +46,10 @@ class ExportCoverageTest {
                     assertEquals(JsonPrimitive(3_000), fresh.coverage["source_age_ms"])
                     assertEquals(coverage.getValue("source"), fresh.coverage["source"])
                 }
-                assertTrue(exports.prometheus().contains("splice_requests_finished_total"))
+                exports.scrape().use { scrape ->
+                    assertTrue(scrape.available)
+                    assertTrue(scrape.text.contains("splice_requests_finished_total"))
+                }
             }
         }
     }

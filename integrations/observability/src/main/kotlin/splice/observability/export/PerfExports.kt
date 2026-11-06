@@ -66,11 +66,15 @@ public class PerfExports(
         return accepted
     }
 
+    /** Compatibility projection: release a successful returned String with PerfWorkBudget.release after use. */
     public fun prometheus(): String = if (config.prometheus) {
         engine.prometheus()
     } else {
         "# splice Prometheus export disabled\n"
     }
+
+    /** Preferred scrape port: keep the owner through encoding/delivery and close it afterward. */
+    public fun scrape(): PerfScrape = if (config.prometheus) engine.scrape() else ScrapeUnavailable.of("disabled")
 
     /** Native SDK spans enter exactly once and are projected before they reach this component's bounded queue. */
     public fun nativeSpans(): SpanExporter = object : SpanExporter {
@@ -126,6 +130,7 @@ public class PerfExports(
         put("native_skipped", nativeSkipped.get())
         put("native_queue_failed", nativeFailed.get())
         put("coverage", engine.coverage())
+        put("prometheus", engine.scrapeStatus())
         put("metrics", engine.metricsStatus.json())
         put(TRACES, engine.tracesStatus.json())
         put(LOGS, engine.logsStatus.json())

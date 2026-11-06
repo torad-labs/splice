@@ -20,7 +20,7 @@ class ExportPopulationTest {
             totals.reconcile(ExportFixtures.snapshot(2, 60_000, 120_000))
             assertEquals(7.0, totals.points().single().sum)
             assertEquals(7L, totals.points().single().count)
-            val text = PrometheusText.render(totals.points(), totals.dropped, totals.missingMs)
+            val text = requireNotNull(PrometheusText.render(totals.points(), totals.dropped, totals.missingMs))
             assertEquals(text, PrometheusText.render(totals.points(), totals.dropped, totals.missingMs))
             assertTrue(text.contains("splice_requests_finished_total{"))
             assertEquals(7.0, OtlpMetricData.of(totals.points()).single().doubleSumData.points.single().value)
@@ -47,7 +47,7 @@ class ExportPopulationTest {
         assertEquals(1.5, exported.sum)
         assertEquals(buckets, exported.counts)
         assertEquals(bounds.map { it / 1_000 }, exported.boundaries)
-        val text = PrometheusText.render(listOf(point), 0, 0)
+        val text = requireNotNull(PrometheusText.render(listOf(point), 0, 0))
         assertTrue(text.contains("le=\"+Inf\"} 3.0"))
         assertTrue(text.contains("_sum{head=\"test\""))
     }
@@ -70,7 +70,8 @@ class ExportPopulationTest {
                     model = "deadbeefdeadbeefdeadbeefdeadbeef",
                 ),
             )
-            val text = PrometheusText.render(listOf(bad.copy(scope = ExportSchema.scope(bad.scope))), 0, 0)
+            val text =
+                requireNotNull(PrometheusText.render(listOf(bad.copy(scope = ExportSchema.scope(bad.scope))), 0, 0))
             assertFalse(text.contains("secret"))
             assertFalse(text.contains("deadbeef"))
         }

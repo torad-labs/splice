@@ -4,11 +4,11 @@ import io.opentelemetry.sdk.logs.data.LogRecordData
 import io.opentelemetry.sdk.trace.data.SpanData
 import kotlinx.serialization.json.JsonObject
 import splice.core.perf.export.PerfExportConfig
+import splice.core.perf.observation.PerfAggregatePoint
 import splice.core.perf.observation.PerfAggregateSource
 import splice.core.perf.observation.PerfIdentity
 import splice.core.util.PerfWorkBudget
 import splice.core.util.WallClock
-import java.util.concurrent.atomic.AtomicReference
 
 internal class ExportEngine(
     private val config: PerfExportConfig,
@@ -20,14 +20,15 @@ internal class ExportEngine(
     private val transport = if (config.enabled) OtlpTransport(config) else null
     private val totals = ExportTotals()
     private val traces = ExportTraces()
-    private val text = AtomicReference("# splice operator telemetry has not sampled yet\n")
-    private var textLease: PerfWorkBudget.Lease? = null
+    private val scrapes = PrometheusScrapes(config.prometheus, clock)
     private val coverage = ExportCoverage()
     val metricsStatus = ExportSignalStatus()
     val tracesStatus = ExportSignalStatus()
     val logsStatus = ExportSignalStatus()
 
-    fun prometheus(): String = text.get()
+    fun prometheus(): String = scrapes.text()
+    fun scrape(): PerfScrape = scrapes.scrape()
+    fun scrapeStatus(): JsonObject = scrapes.status()
     fun coverage(): JsonObject = coverage.json(clock(), traces.dropped, traces.missingContext)
 
     fun tick(): Boolean {
@@ -74,31 +75,39 @@ internal class ExportEngine(
     }
 
     private fun sample(): Boolean {
-        val lease = PerfWorkBudget.acquire(CONVERSION_BYTES)
-        if (lease == null) { metricsStatus.dropped.incrementAndGet(); return false }
+        val lease = PerfWorkBudget.acquire(CONVERSION_BYTES) ?: return sampleBusy()
         return lease.use {
             val snapshot = source.snapshot()
-            if (snapshot.identity != identity) { metricsStatus.failed.incrementAndGet(); return@use false }
+            if (!validIdentity(snapshot.identity)) return@use false
             totals.reconcile(snapshot)
             val points = totals.points()
-            if (config.prometheus) publish(PrometheusText.render(points, totals.dropped, totals.missingMs))
+            val scrapeOk = !config.prometheus || scrapes.publish(points, totals)
             val coverageOk = coverage.update(snapshot.coverage, totals, clock())
             if (!coverageOk) metricsStatus.dropped.incrementAndGet()
-            val exporter = transport?.metrics ?: return@use coverageOk
-            val data = OtlpMetricData.of(points)
-            if (data.isEmpty()) return@use coverageOk
-            metricsStatus.enqueued.addAndGet(data.size.toLong())
-            metricsStatus.pending.addAndGet(data.size.toLong())
-            metricsStatus.finish(exporter.export(data), data.size, clock()) && coverageOk
+            exportMetrics(points) && scrapeOk && coverageOk
         }
     }
 
-    private fun publish(value: String) {
-        val lease = PerfWorkBudget.acquire(value.length * CHARACTER_BYTES)
-        if (lease == null) { metricsStatus.dropped.incrementAndGet(); return }
-        text.set(value)
-        textLease?.close()
-        textLease = lease
+    private fun exportMetrics(points: List<PerfAggregatePoint>): Boolean {
+        val exporter = transport?.metrics ?: return true
+        val data = OtlpMetricData.of(points)
+        if (data.isEmpty()) return true
+        metricsStatus.enqueued.addAndGet(data.size.toLong())
+        metricsStatus.pending.addAndGet(data.size.toLong())
+        return metricsStatus.finish(exporter.export(data), data.size, clock())
+    }
+
+    private fun sampleBusy(): Boolean {
+        metricsStatus.dropped.incrementAndGet()
+        if (config.prometheus) scrapes.fail("busy")
+        return false
+    }
+
+    private fun validIdentity(actual: PerfIdentity): Boolean {
+        if (actual == identity) return true
+        metricsStatus.failed.incrementAndGet()
+        if (config.prometheus) scrapes.fail("source_failed")
+        return false
     }
 
     override fun close() {
@@ -108,12 +117,9 @@ internal class ExportEngine(
         traces.close()
         totals.close()
         coverage.close()
-        textLease?.close()
-        textLease = null
-        text.set("# splice operator telemetry closed\n")
+        scrapes.close()
     }
 }
 
 private const val CONVERSION_BYTES = 2L * 1_024 * 1_024
-private const val CHARACTER_BYTES = 2L
 private const val MAX_BATCH = 256

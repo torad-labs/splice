@@ -6,9 +6,10 @@ import { chromium, expect, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { layout } from "../gate/src/lib/repo.ts";
+import { performanceSummary, performanceRows } from "./usage-performance-fixture.ts";
 
 const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
-const now = Date.now();
+const now = Date.UTC(2026, 10, 6, 12); // keep the burst within today, independently of when the gate runs
 type Row = Record<string, unknown>;
 const group = (key: string, over: Row): Row => ({
   key, requests: 0, input_tokens: 0, cached_tokens: 0, output_tokens: 0, cost_usd: null, plan_requests: 0, plan_value_usd: null,
@@ -26,12 +27,13 @@ const server = Bun.serve({
     if (path === "/api/models") return Response.json({ heads: [{ head: "plan", provider: "anthropic", models: [] }] });
     if (path === "/api/status") return Response.json({ registry: [{ key: "plan", family: "anthropic", authKind: "claude-oauth" }] });
     if (path === "/api/perf/summary") {
-      const w = url.searchParams.get("window");
+      const from = Number(url.searchParams.get("from")), until = Number(url.searchParams.get("until"));
       // under 1 hour the table reads no failures; under 24 hours and 7 days it reads the burst
-      const bad = w === "1h" ? 0 : 3, count = 100;
-      return Response.json({ heads: [{ key: "plan", count, empty: false, coverage_known: true, clamped: false, outcomes: bad ? { ok: count - bad, "error:overloaded": bad } : { ok: count }, failure_share: bad / count, failure_shares: bad ? { "error:overloaded": bad / count } : {}, models: {}, time_before_first_byte_ms: { count, p50: 100, p95: 200, max: 300 } }] });
+      const bad = BURST >= from && BURST < until ? 3 : 0, count = 100;
+      return Response.json(performanceSummary(url, { plan: { count, local_steps: 0, empty: false, read_status: "readable", metrics_complete: true, outcomes: bad ? { ok: count - bad, "error:overloaded": bad } : { ok: count }, failure_share: bad / count, failure_shares: bad ? { "error:overloaded": bad / count } : {}, models: {}, time_before_first_byte_ms: { count, p50: 100, p95: 200, max: 300 } } }));
     }
     if (path === "/api/perf/turns") {
+      if (url.searchParams.get("contract") === "1") return Response.json(performanceRows(url));
       const held = Number(url.searchParams.get("n"));
       const g = group("primary", { requests: 9, input_tokens: 9000, output_tokens: 900, plan_requests: 9, plan_value_usd: 1 });
       const usage = { totals: group("totals", g), accounts: [g], models: [], sessions: [], days: [group(new Date().toLocaleDateString("en-CA"), g)] };
@@ -59,15 +61,26 @@ afterAll(async () => {
 });
 
 test("Usage: Results names a burst of failures only inside the window its table reads", async () => {
-  const context = await browser.newContext({ viewport: { width: 1440, height: 1400 } });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1400 }, timezoneId: "UTC" });
   const p = await context.newPage();
   try {
+    await p.clock.install({ time: new Date(now) });
     await p.goto(`http://127.0.0.1:${server.port}/usage.html`);
-    await p.locator("#band-perf [data-act=perfwin][data-v='24h']").click();
-    await p.locator("#band-perf [data-act=perfopen][data-k=plan]").click();
+    await p.locator('#band-perf [name="window"]').selectOption("24h");
+    await p.getByRole("button", { name: "Apply cohort", exact: true }).click();
+    await p.locator('#band-perf [data-pc-command="plan"] > summary').click();
     await expect(p.locator("#band-perf .flag.failing")).toContainText("Failing", { timeout: 20_000 });
-    await p.locator("#band-perf [data-act=perfwin][data-v='1h']").click();
-    await expect(p.locator("#band-perf .pd-hero")).toContainText("No failures", { timeout: 20_000 });
+    await expect(p.locator("#band-perf .flag.failing")).toContainText("sampled records");
+    await p.locator('#band-perf [name="window"]').selectOption("1h");
+    await p.getByRole("button", { name: "Apply cohort", exact: true }).click();
+    await expect(p.locator("#band-perf .pc-command-failure")).toContainText("No failures", { timeout: 20_000 });
+    await expect(p.locator("#band-perf .flag")).toHaveCount(0);
+    // A custom transport is not known by the page's sampled-row flag; positive returned failures cannot lend it a cohort.
+    await p.locator('#band-perf [name="window"]').selectOption("24h");
+    await p.getByRole("button", { name: "All filters", exact: true }).click();
+    await p.locator('#band-perf [name="transport"]').fill("http");
+    await p.getByRole("button", { name: "Apply cohort", exact: true }).click();
+    await expect(p.locator("#band-perf .pc-command-failure")).toContainText("3% failed");
     await expect(p.locator("#band-perf .flag")).toHaveCount(0);
   } finally {
     await context.close();

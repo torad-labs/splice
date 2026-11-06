@@ -6,6 +6,7 @@ const PERF_CONSOLE = (() => {
   const WINDOWS = { "1m": 60000, "5m": 300000, "15m": 900000, "1h": 3600000, "5h": 18000000, "24h": 86400000, "7d": 604800000, "30d": 2592000000 };
   const safe = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const num = (v) => typeof v === "number" && Number.isFinite(v) ? v.toLocaleString("en-US", { maximumFractionDigits: 3 }) : "—";
+  const percent = (v) => typeof v === "number" && Number.isFinite(v) ? `${num(v * 100)}%` : "—";
   const words = (v) => String(v ?? "Unknown").replace(/_/g, " ");
   const date = (v) => Number.isFinite(v) ? new Date(v).toLocaleString() : "Unknown time";
   const entries = (v) => v && typeof v === "object" && !Array.isArray(v) ? Object.entries(v) : [];
@@ -117,11 +118,12 @@ const PERF_CONSOLE = (() => {
   }
   function create(scope, options) {
     const { document, API, setTimeout, clearTimeout, setInterval } = scope;
-    const st = { key: null, query: null, replies: {}, tab: "overview", busy: false, abort: null, timer: null, generation: 0, message: "", baselines: loadBaselines(), selected: 0, draft: null, profiles: null, settings: null, openRequest: null, cursor: null, advanced: false };
+    const st = { key: null, query: null, replies: {}, tab: "overview", busy: false, abort: null, timer: null, generation: 0, message: "", baselines: loadBaselines(), selected: 0, draft: null, profiles: null, settings: null, openRequest: null, cursor: null, advanced: false, commands: new Set() };
     const clearMeasurements = () => { st.replies = Object.fromEntries(["schema", "caps", "preferences"].filter((k) => st.replies[k]).map((k) => [k, st.replies[k]])); };
     const current = () => options.query();
+    const accountChoices = () => [...new Set(String((st.query || queryNow()).filters?.account || "").split("\u001f").filter(Boolean))];
     const host = () => document.querySelector(`[data-performance="${options.id}"]`);
-    const repaint = () => { const h = host(); if (h) h.innerHTML = inner(); };
+    const repaint = () => { const h = host(); if (h) h.innerHTML = inner(); options.changed?.(); };
     function queryNow() {
       const input = current(), filters = { ...input.filters };
       const query = { from_ms: input.from_ms, until_ms: input.until_ms, source: input.source || "auto", filters, objective_id: input.objective_id || null };
@@ -138,6 +140,11 @@ const PERF_CONSOLE = (() => {
       const abort = st.abort = new AbortController(), api = API.scoped(abort.signal), gen = ++st.generation;
       const changed = key !== st.key; st.key = key; st.query = queryNow(); st.busy = true;
       if (changed) { clearMeasurements(); st.cursor = null; st.openRequest = null; }
+      if (accountChoices().length > 1) {
+        clearMeasurements(); st.busy = false; st.advanced = true;
+        st.replies.summary = { ok: true, status: 200, body: { contract_version: 1, status: "unsupported", query: st.query, error: { reason: "cohort_unavailable_choose_one_recorded_account" } } };
+        repaint(); return;
+      }
       repaint();
       const p = params(st.query).toString();
       const paths = { summary: `/api/perf/summary?${p}`, series: `/api/perf/series?${p}`, diagnose: `/api/perf/diagnose?${p}`, rows: `/api/perf/turns?${p}&page_size=100`, runtime: "/api/perf/runtime", alerts: `/api/perf/alerts?from=${st.query.from_ms}&until=${st.query.until_ms}`, alertStatus: "/api/perf/alerts/status", preferences: "/api/alerts" };
@@ -161,16 +168,17 @@ const PERF_CONSOLE = (() => {
     const select = (k, label, values, picked) => `<label>${safe(label)}<select name="${safe(k)}" class="field">${values.map(([v, t]) => `<option value="${safe(v)}"${String(picked ?? "") === v ? " selected" : ""}>${safe(t)}</option>`).join("")}</select></label>`;
     const metricCoverage = (m) => `${m?.coverage?.complete === true ? "Complete" : m?.coverage ? "Partial" : "Unknown"} · ${num(m?.coverage?.observed_ms)} ms · ${safe(words(m?.filter_attribution))}`;
     function controls() {
-      const q = st.query || queryNow(), input = current(), f = q.filters;
+      const q = st.query || queryNow(), input = current(), f = q.filters, accounts = accountChoices();
       return `<form class="pc-query" data-pc-form="query"><div class="pc-query-main">`
         + select("window", "Window", [["", "Exact interval"], ...Object.keys(WINDOWS).map((x) => [x, x])], input.window || "")
         + field("head", "Command", f.head) + field("model", "Model", f.model) + field("project", "Project", f.project)
         + select("objective", "Objective", [["", "Unconfigured"], ...(st.settings?.objectives || []).map((x) => [x.id, x.id])], q.objective_id)
         + `<button class="act small" type="submit">Apply cohort</button><button class="act quiet small" type="button" data-pc="filters" aria-expanded="${st.advanced}">All filters</button></div>`
         + `<div class="pc-query-extra"${st.advanced ? "" : " hidden"}>${field("from", "From · epoch ms", q.from_ms, "number")}${field("until", "Until · exclusive epoch ms", q.until_ms, "number")}`
-        + ["transport", "outcome", "session", "account", "silence_ms", "queued_ms", "resumed", "started_over", "unattributed", "test"].map((k) => field(k, words(k), f[k])).join("")
+        + ["transport", "outcome", "session", "account", "silence_ms", "queued_ms", "resumed", "started_over", "unattributed", "test"].map((k) => k === "account" && accounts.length > 1 ? select(k, "Recorded account", [["", "Choose one ID"], ...accounts.map((v) => [v, v])], "") : field(k, words(k), f[k])).join("")
         + ["local", "compact", "streaming"].map((k) => select(k, words(k), [["", "Any"], ["1", "Yes"], ["0", "No"]], f[k])).join("")
-        + select("source", "Source", [["auto", "Automatic"], ["live", "Live"], ["history", "History"], ["evidence", "Recorded evidence"], ["legacy", "Legacy rows"]], q.source) + `</div></form>`;
+        + select("source", "Source", [["auto", "Automatic"], ["live", "Live"], ["history", "History"], ["evidence", "Recorded evidence"], ["legacy", "Legacy rows"]], q.source) + `</div></form>`
+        + (accounts.length > 1 ? note("Cohort unavailable: this account uses multiple recorded IDs. Choose one ID to narrow Usage and Performance together. Usage continues to show the combined account until you choose.") : "");
     }
     function completedWindow() {
       const q = st.query, horizon = st.replies.summary?.body?.settled_until_ms, duration = q?.until_ms - q?.from_ms;
@@ -190,18 +198,57 @@ const PERF_CONSOLE = (() => {
     }
     function overview() {
       const s = st.replies.summary?.body;
-      if (!s?.rates) return note(`${status(st.replies.summary)} · Measurements have not been returned.`);
+      if (!s?.rates) return note(`${status(st.replies.summary)} · Measurements have not been returned.`) + commandResults();
       const rates = s.rates;
       const hero = [["Arrivals / s", "arrivals_per_s"], ["Completions / s", "completions_per_s"], ["Successful / s", "successful_completions_per_s"], ["Attempts / s", "attempts_per_s"]];
       const headline = `<div class="pc-meters">${hero.map(([label, k]) => `<div><span>${label}</span><strong>${num(rates[k])}</strong></div>`).join("")}</div>`;
       const traffic = table(["Traffic", "Per second"], [["Input tokens", "input_tokens"], ["Output tokens", "output_tokens"], ["Cached tokens", "cached_tokens"], ["Upstream bytes", "upstream_bytes"], ["Downstream bytes", "downstream_bytes"], ["Upstream events", "upstream_events"], ["Downstream events", "downstream_events"]].map(([label, key]) => [label, num(rates[`${key}_per_s`])]), "Token, byte and event throughput");
       const g = s.goodput || {};
       const goodput = g.status === "unconfigured" ? note("Select a configured objective to measure goodput.") : facts({ objective: g.objective_id, revision: g.objective_revision, status: g.status, good: g.good, bad: g.bad, known_evaluable: g.known_evaluable, observed_arrivals: g.observed_arrivals, pending: g.pending, unknown: g.unknown, whole_window_eligible: g.eligible, whole_window_good_per_s: g.per_s, good_fraction: g.good_fraction, known_good_per_s: g.known_good_per_s, known_good_rate_is_lower_bound: g.known_good_rate_is_lower_bound }) + note(words(g.attribution));
-      const heads = entries(s.legacy).map(([head, h]) => [`<a href="${safe(address(st.query, { head }))}">${safe(head)}</a>`, num(h.count), num(h.local_steps), num(h.total_ms?.p50), num(h.total_ms?.p95), safe(h.metrics_complete === false ? "Partial" : h.read_status || "Unknown")]);
       return headline + note(`Rates use requested wall duration. ${words(rates.interpretation)}. Attribution: ${words(rates.filter_attribution)}.`)
         + `<div class="pc-grid">${section("Throughput", traffic)}${section("Objective goodput", goodput)}${section("Request populations", facts(s.counts) + note("Arrival and completion windows are separate. Model-at-arrival may be unknown; returned attribution governs each rate."))}</div>`
-        + table(["Command", "Requests", "Local steps", "p50 · ms", "p95 · ms", "Coverage"], heads, "Results by command · selected cohort")
+        + commandResults()
         + `<details class="pc-detail"><summary>Population coverage and outcomes</summary>${facts(s.outcomes)}${entries(s.population_coverage).map(([k, v]) => section(words(k), facts(v))).join("")}</details>`;
+    }
+    const commandName = (head) => options.commandName?.(head) || head;
+    function commandResults() {
+      const reply = st.replies.summary, s = reply?.body;
+      const columns = ["Command", "Requests", "Failed", "Typical · ms", "Slowest 5% · ms", "Coverage"];
+      const heading = `<h3>Results by command</h3>${note("Selected cohort and interval · open a command for outcomes, cache, load, stages and models.")}`;
+      const labels = `<div class="pc-command-grid pc-command-labels" aria-hidden="true">${columns.map((x) => `<span>${x}</span>`).join("")}</div>`;
+      if (!reply || st.busy || options.ready?.() === false) {
+        const ghost = '<i class="ghost" aria-hidden="true"></i>';
+        return `<section class="pc-results" aria-label="Results by command">${heading}<div class="card pc-commands ghosted" aria-busy="true">${labels}${Array.from({ length: 6 }, () => `<div class="pc-command-grid">${columns.map(() => `<span>${ghost}</span>`).join("")}</div>`).join("")}</div></section>`;
+      }
+      const heads = entries(s?.legacy).sort((a, b) => (b[1].failure_share ?? -1) - (a[1].failure_share ?? -1) || (b[1].count ?? -1) - (a[1].count ?? -1));
+      const rows = heads.map(([head, h]) => {
+        const covered = h.metrics_complete === false ? "Partial metrics" : h.read_status === "readable" ? "Recorded rows" : "Unread / unknown";
+        const cells = [commandName(head), h.count === 0 ? "No requests" : num(h.count), percent(h.failure_share), num(h.total_ms?.p50), num(h.total_ms?.p95), covered];
+        return `<details class="pc-command" data-pc-command="${safe(head)}"${st.commands.has(head) ? " open" : ""}><summary class="pc-command-grid">${cells.map((value, i) => `<span><small>${columns[i]}</small>${safe(value)}</span>`).join("")}</summary><div class="pc-command-detail">${commandDetail(head, h)}</div></details>`;
+      }).join("");
+      return `<section class="pc-results" aria-label="Results by command">${heading}<div class="card pc-commands">${labels}${rows || note(`${status(reply)} · No command results returned.`)}</div></section>`;
+    }
+    function commandDetail(head, h) {
+      const link = (label, extra = {}) => `<a href="${safe(address(st.query, { head, ...extra }))}">${safe(label)}</a>`;
+      const failure = h.failure_share === 0 ? "No failures" : typeof h.failure_share === "number" ? `${percent(h.failure_share)} failed` : "Failure rate unavailable";
+      const flag = h.metrics_complete !== false ? options.sampledFlag?.(head, st.query) : null;
+      const flagFits = flag && Number.isFinite(flag.from) && Number.isFinite(flag.to) && flag.from >= st.query.from_ms && flag.to < st.query.until_ms;
+      const sampled = flagFits && (flag.kind === "slow" || h.failure_share > 0)
+        ? `<p class="pc-note"><span class="flag ${flag.kind === "failing" ? "failing" : "slow"}">${link(`${flag.kind === "failing" ? "Failing" : "Slow"} in sampled records · ${date(flag.from)} to ${date(flag.to)}`, flag.kind === "failing" ? { outcome: "failed" } : {})}</span></p>` : "";
+      const outcomes = table(["Outcome", "Requests"], entries(h.outcomes).map(([outcome, count]) => [link(words(outcome), { outcome }), num(count)]), `${commandName(head)} outcomes`);
+      const stages = table(["Stage", "Samples", "Typical · ms", "Slowest 5% · ms", "Maximum · ms"], [["Waited in line", h.queue_wait_ms], ["Before first byte", h.time_before_first_byte_ms], ["Streaming", h.time_streaming_ms], ["Whole request", h.total_ms]].map(([label, v]) => [label, num(v?.count), num(v?.p50), num(v?.p95), num(v?.max)]), `${commandName(head)} stages`);
+      const models = table(["Model", "Requests", "Failed", "Typical · ms", "Slowest 5% · ms"], entries(h.models).map(([model, v]) => [model === "?" ? "Ended before a model was picked" : link(model, { model }), num(v.count), percent(v.failure_share), num(v.total_ms?.p50), num(v.total_ms?.p95)]), `${commandName(head)} models`);
+      return `<div class="pc-actions"><strong class="pc-command-failure">${safe(failure)}</strong>${link("Open requests")}${h.failure_share > 0 ? link("Open failures", { outcome: "failed" }) : ""}${link("Open compactions", { compact: "1" })}</div>`
+        + sampled + note(`Recorded request rows: ${num(h.count)} · local steps: ${num(h.local_steps)}. ${h.metrics_complete === false ? "Metric work limit reached; counts are returned separately from unavailable metrics." : "Metrics describe the returned recorded-row population; coverage gaps can leave records uncounted."}`)
+        + `<div class="pc-grid">${section("Outcomes", outcomes)}${section("Cache and load", facts({ cache_hit_ratio: percent(h.cache_hit_ratio), cold_after_account_switch: h.cache_cold, retries: h.retries, refreshes: h.refreshes, peak_inflight: h.peak_inflight }))}${section("Stages", stages)}</div>`
+        + note("Stages describe their own measured samples and can overlap; they do not add up to the whole request. Peak inflight is a reported sample, not a process total.") + models;
+    }
+    function lead() {
+      if (st.busy || st.key !== fingerprint() || !st.replies.summary?.ok || options.ready?.() === false) return null;
+      const heads = entries(st.replies.summary.body?.legacy), known = heads.filter(([, h]) => h.count > 0 && h.metrics_complete !== false && Number.isFinite(h.failure_share)).sort((a, b) => b[1].failure_share - a[1].failure_share);
+      const head = known[0], picked = current().window, window = { "1m": "1 minute", "5m": "5 minutes", "15m": "15 minutes", "1h": "1 hour", "5h": "5 hours", "24h": "24 hours", "7d": "7 days", "30d": "30 days" }[picked] || "selected interval";
+      return { head: head?.[0], name: head ? commandName(head[0]) : null, figure: head ? percent(head[1].failure_share) : null,
+        none: heads.length > 0 && heads.every(([, h]) => h.count === 0), window, scoped: Object.keys(st.query?.filters || {}).some((k) => k !== "local") };
     }
     function distribution() {
       const s = st.replies.summary?.body;
@@ -341,7 +388,7 @@ const PERF_CONSOLE = (() => {
     }
     const tabs = { overview: ["Overview", overview], distribution: ["Latency", distribution], history: ["History", history], runtime: ["Runtime", runtime], timeline: ["Requests & traces", timeline], baselines: ["Baselines", baselines], profiles: ["Profiles", profiles], objectives: ["Objectives", objectives], alerts: ["Alerts", alerts] };
     function inner() {
-      return `<div class="bandhead pc-heading"><h2>Performance</h2><a href="${safe(address(st.query || queryNow()))}">Open requests ↗</a><button class="act quiet small" data-pc="refresh"${st.busy ? " disabled" : ""}>Refresh</button></div>`
+      return `<div class="bandhead pc-heading"><h2>Performance</h2>${accountChoices().length > 1 ? "" : `<a href="${safe(address(st.query || queryNow()))}">Open requests ↗</a>`}<button class="act quiet small" data-pc="refresh"${st.busy ? " disabled" : ""}>Refresh</button></div>`
         + controls() + coverage() + `<nav class="pc-tabs" aria-label="Performance views">${entries(tabs).map(([k, [title]]) => `<button type="button" data-pc-tab="${k}" aria-current="${st.tab === k ? "page" : "false"}">${title}</button>`).join("")}</nav>`
         + (st.message ? `<p class="pc-message" role="status">${safe(st.message)}</p>` : "")
         + `<div class="pc-content" aria-busy="${st.busy}">${tabs[st.tab][1]()}</div>`;
@@ -385,9 +432,14 @@ const PERF_CONSOLE = (() => {
         }
         if (form.dataset.pcForm === "query") {
           const input = { window: values.get("window"), filters: {}, source: values.get("source"), objective_id: values.get("objective") || null };
+          if (accountChoices().length > 1 && !accountChoices().includes(values.get("account"))) throw new Error("Choose one recorded account ID before applying this cohort");
+          if (accountChoices().length > 1 && values.get("head") !== st.query.filters.head) throw new Error("Keep the selected command when choosing one of its account IDs");
           for (const k of SELECTORS) if (values.get(k)) input.filters[k] = String(values.get(k)).trim();
+          if (input.filters.project === "-") input.filters.project = "none";
+          if (input.filters.outcome === "fail") input.filters.outcome = "failed";
+          if (input.filters.outcome === "all") delete input.filters.outcome;
           if (!input.window) { input.from_ms = Number(values.get("from")); input.until_ms = Number(values.get("until")); if (!(input.until_ms > input.from_ms)) throw new Error("Enter a valid exact interval"); }
-          options.apply(input); st.key = null; read(true); return;
+          st.message = ""; options.apply(input); st.key = null; read(true); return;
         }
         if (st.actionBusy) return; st.actionBusy = true;
         if (form.dataset.pcForm === "profile") {
@@ -409,6 +461,11 @@ const PERF_CONSOLE = (() => {
       finally { st.actionBusy = false; repaint(); }
     });
     document.addEventListener("input", (e) => { if (host()?.contains(e.target) && e.target.name === "settings") st.draft = e.target.value; });
+    document.addEventListener("toggle", (e) => {
+      const el = e.target;
+      if (!host()?.contains(el) || !el.matches?.("[data-pc-command]")) return;
+      if (el.open) st.commands.add(el.dataset.pcCommand); else st.commands.delete(el.dataset.pcCommand);
+    }, true);
     document.addEventListener("change", async (e) => {
       if (!host()?.contains(e.target)) return;
       const el = e.target;
@@ -449,17 +506,34 @@ const PERF_CONSOLE = (() => {
       repaint();
     });
     standing();
-    return { html, read, query: () => st.query, lead: () => null };
+    return { html, read, query: () => st.query, lead, showResults: () => { st.tab = "overview"; repaint(); } };
   }
   function fromAddress(fallback = {}) {
     const p = new URLSearchParams(location.search), filters = { ...fallback.filters };
     for (const k of SELECTORS) if (p.has(k)) { if (p.get(k)) filters[k] = p.get(k); else delete filters[k]; }
+    if (filters.project === "-") filters.project = "none";
+    if (filters.outcome === "fail") filters.outcome = "failed";
+    if (filters.outcome === "all") delete filters.outcome;
+    if (p.get("contract") !== "1" && filters.account?.includes("|")) {
+      const [head, ...labels] = filters.account.split("|"); filters.head = head; filters.account = labels.join("|");
+    }
     return { ...fallback, filters, window: p.has("from") ? "" : p.get("win") || fallback.window, from_ms: p.has("from") ? Number(p.get("from")) : fallback.from_ms, until_ms: p.has("until") || p.has("to") ? Number(p.get("until") || p.get("to")) : fallback.until_ms, source: p.get("source") || fallback.source || "auto", objective_id: p.get("objective") || fallback.objective_id };
   }
   return { create, params, address, fromAddress, snapshot, comparison };
 })();
 const createPerfHeads = (scope, helpers) => {
   let override = null, addressActive = true, lastNative = "";
+  const canonicalAccount = (query) => {
+    const { head, account } = query.filters;
+    if (!head || !account) return query;
+    const labels = account.split("\u001f"), rows = helpers.S.accounts.filter((a) => a.ref && (a.heads || []).includes(head));
+    const found = rows.filter((a) => {
+      const place = a.login_place?.id;
+      const aliases = [a.ref, a.account_labels?.[head], a.selector_key, a.label, a.edit_target?.id, place, place ? `native:${place}` : null, a.single_login === true ? "primary" : null].filter(Boolean);
+      return labels.every((v) => aliases.includes(v));
+    });
+    return found.length === 1 ? { ...query, filters: { ...query.filters, account: found[0].ref } } : query;
+  };
   const base = () => {
     const { ui } = helpers, f = ui.f || {}, filters = { local: "0" };
     if (ui.project) filters.project = ui.project === NO_PROJECT_KEY ? "none" : ui.project;
@@ -469,8 +543,24 @@ const createPerfHeads = (scope, helpers) => {
     const native = { window: ui.win, filters }, key = JSON.stringify(native);
     if (lastNative && lastNative !== key) addressActive = false;
     lastNative = key;
-    return addressActive ? PERF_CONSOLE.fromAddress(native) : native;
+    return canonicalAccount(addressActive ? PERF_CONSOLE.fromAddress(native) : native);
   };
   let lastBase = "";
-  return PERF_CONSOLE.create(scope, { id: "usage", query: () => { const b = base(), key = JSON.stringify(b); if (lastBase && lastBase !== key) override = null; lastBase = key; return override || b; }, apply: (q) => { override = q; } });
+  const sampledFlag = (head, query) => {
+    const native = base().filters, picked = query.filters || {};
+    if (Object.keys(native).some((k) => k !== "local")) return null;
+    if (Object.keys(picked).some((k) => k !== "head" && picked[k] !== native[k]) || Object.keys(native).some((k) => native[k] !== picked[k])) return null;
+    const flag = helpers.flagOf(head);
+    // The legacy page's flag is explicitly sampled; a missing end or unknown custom cohort cannot certify this interval.
+    return flag && Number.isFinite(flag.to) ? flag : null;
+  };
+  return PERF_CONSOLE.create(scope, { id: "usage", query: () => { const b = base(), key = JSON.stringify(b); if (lastBase && lastBase !== key) override = null; lastBase = key; return override || b; },
+    apply: (q) => {
+      const before = base(), labels = (before.filters.account || "").split("\u001f");
+      override = q;
+      if (labels.length > 1 && q.filters.head === before.filters.head && labels.includes(q.filters.account)) {
+        lastBase = ""; lastNative = ""; addressActive = false;
+        helpers.selectAccount(q.filters.head, q.filters.account);
+      }
+    }, commandName: helpers.cmdOf, ready: () => helpers.S.stood, changed: helpers.changed, sampledFlag });
 };

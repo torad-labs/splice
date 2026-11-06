@@ -193,3 +193,26 @@
 .pc-builder { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; padding: 1rem 0; }
 .pc-checkbox { flex-direction: row !important; align-items: center; }
 @container performance (max-width: 40rem) { .pc-builder { grid-template-columns: minmax(0, 1fr); } }
+.pc-results { margin: 1.6rem 0; }
+.pc-results h3 { font: 400 1.2rem/1.3 var(--font-lead); }
+.pc-commands { padding: 0; overflow: hidden; }
+.pc-command-grid { display: grid; grid-template-columns: minmax(12rem, 2fr) repeat(4, minmax(6rem, 1fr)) minmax(10rem, 1.4fr); gap: 1rem; align-items: baseline; padding: 1rem; }
+.pc-command-grid > span { min-width: 0; overflow-wrap: anywhere; font-family: var(--font-data); }
+.pc-command-grid > span:not(:first-child) { text-align: right; }
+.pc-command-labels { color: var(--text-mute); background: var(--obj); font: 500 .82rem/1.4 var(--font-name); }
+.pc-command-grid small { display: none; color: var(--text-mute); font: 500 .82rem/1.4 var(--font-name); }
+.pc-command { border-top: 1px solid var(--hair); }
+.perf-console .pc-command > summary { padding: 1rem; }
+.pc-command > summary::marker { content: ""; }
+.pc-command > summary > span:first-child::before { content: "+ "; }
+.pc-command[open] > summary > span:first-child::before { content: "− "; }
+.pc-command-detail { padding: 0 1rem 1rem; border-top: 1px solid var(--hair); }
+.pc-commands .ghost { width: 80%; height: 1rem; }
+@container performance (max-width: 70rem) {
+  .pc-command-labels { display: none; }
+  .pc-command-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pc-command-grid small { display: block; margin-bottom: .4rem; }
+  .pc-command-grid > span:not(:first-child) { text-align: left; }
+  .pc-command-detail .pc-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@container performance (max-width: 40rem) { .pc-command-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

@@ -1303,7 +1303,7 @@ function flagOf(head) {
   }
   if (at != null && ok.length - at >= 5) {
     const run = ok.slice(at);
-    return { kind: "slow", from: run[0].ts - run[0].total, to: null, now: q(run.map((r) => r.total), .5), typ };
+    return { kind: "slow", from: run[0].ts - run[0].total, to: run.at(-1).ts, now: q(run.map((r) => r.total), .5), typ };
   }
   const GAP = 5 * 60e3, bad = (r) => failed(r) && r.outcome !== "error:plan-limit";
   let best = null, cur = null;
@@ -1342,7 +1342,9 @@ function readNote() {
     + (errs.length ? `<span class="rdset bad">${errs.map(chip).join("")}<span class="why">${NOT_READ}</span></span>` : "")
     + `</span>`;
 }
-const PERF_HEADS = createPerfHeads(scope, { render: () => { renderBand("perf"); renderDoors(); }, chip, providerOfHead, cmdOf, flagOf, flagHtml, hasFilter, ui, S, n0, secs, OPEN, OUTCOME_WORD, tagWord, isFailed, NOT_READ });
+const PERF_HEADS = createPerfHeads(scope, { changed: renderDoors,
+  selectAccount: (head, account) => { ui.f.account = `${head}|${account}`; ui.by = nextBy("account"); ui.shown = CUT; again(); },
+  chip, providerOfHead, cmdOf, flagOf, flagHtml, hasFilter, ui, S, n0, secs, OPEN, OUTCOME_WORD, tagWord, isFailed, NOT_READ });
 
 const BANDS = {
   money: { el: () => document.getElementById("band-money"), html: moneyHtml },
@@ -1525,7 +1527,12 @@ function renderDoors() {
       : `<b class="upl-df" data-tn="door-tok">${noTokens(tot) || !tot.requests ? DRAW.dash : tok(tokensOf(tot))}</b><span class="upl-dq">tokens</span>`;
   }
   out.push(door("by", "Where it went", by));
-  out.push(door("perf", "Performance", `<span class="upl-dq">Throughput, latency & health</span>`));
+  // A named command's returned failure share, never an invented overall aggregate. The panel uses this same cohort.
+  const lead = PERF_HEADS.lead();
+  const span = lead ? ` · ${lead.window}${lead.scoped ? " · selected cohort" : ""}` : "";
+  out.push(door("perf", "Results by command", !lead ? wait : lead.figure != null
+    ? `<b class="upl-df" data-tn="door-failed">${esc(lead.figure)}</b><span class="upl-dq">${esc(lead.name)} failed${esc(span)}</span>`
+    : `<span class="upl-dq">${lead.none ? "No requests" : "Failure rate unavailable"}${esc(span)}</span>`));
   let tk = wait;
   if (read) {
     const all = [...w.byHead.values()], tin = all.reduce((a, x) => a + x.in, 0), tc = all.reduce((a, x) => a + x.cached, 0);
@@ -1699,7 +1706,11 @@ document.addEventListener("click", (e) => {
     case "projmenu": ui.pmenu = !ui.pmenu; renderPick(); break;
     case "pickproj": ui.project = el.dataset.p || null; ui.pmenu = false; PICK.set(ui.project); ui.by = nextBy("project") === "project" ? "account" : ui.by; ui.shown = CUT; again(); break;
     case "win": if (v === ui.win) break; winChange(v); break;
-    case "door": document.getElementById(`band-${v}`)?.scrollIntoView({ block: "start", behavior: "smooth" }); break;
+    case "door": {
+      if (v === "perf") PERF_HEADS.showResults();
+      const target = v === "perf" ? document.querySelector("#band-perf .pc-results") : document.getElementById(`band-${v}`);
+      target?.scrollIntoView({ block: "start", behavior: "smooth" }); break;
+    }
     case "measure": if (v === ui.measure) break; ui.measure = v; renderBand("chart"); break;
     case "by": if (v === ui.by) break; ui.by = v; ui.shown = CUT; ui.find = ""; renderBand("by", true); break;
     case "rank": if (v === ui.rank) break; ui.rank = v; ui.shown = CUT; renderBand("by", true); break;

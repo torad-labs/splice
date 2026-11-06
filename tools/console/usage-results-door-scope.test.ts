@@ -1,15 +1,13 @@
-// Usage, the header's door to Results by command: it carries the Results table's own answer beside two doors that read
-// the page's window and the page's project pick. The table reads every request over its own window (1 hour, 24 hours or
-// 7 days; the page's 5 hours as 24 hours and its 30 days as 7 days), and its head says "All requests" when a project or
-// filter is picked. Goal: the door says what its figure covers wherever that differs from the doors beside it, in the
-// band's own words: the table's window when it is not the page's, and all requests when a project is picked. Where the
-// two agree it reads as before, and its qualifier stays on one line.
+// Usage's Results door names the command behind its returned failure share. Results now uses contract=1 and the exact
+// shared window/project: 5 hours stays 5 hours, 30 days stays 30 days, and a project selection narrows the result.
+// The native page, integrated panel, header navigation and Requests links must agree on that scope.
 import { afterAll, beforeAll, test } from "bun:test";
 import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { layout } from "../gate/src/lib/repo.ts";
 import { live } from "./live.ts";
+import { performanceSummary, performanceRows } from "./usage-performance-fixture.ts";
 
 const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const now = Date.now();
@@ -29,10 +27,15 @@ const server = Bun.serve({
     if (path === "/api/models") return Response.json({ heads: [{ head: "plan", provider: "anthropic", models: [] }] });
     if (path === "/api/status") return Response.json({ registry: [{ key: "plan", family: "anthropic", authKind: "claude-oauth" }] });
     if (path === "/api/perf/summary") {
-      const bad = 3, count = 100;
-      return Response.json({ heads: [{ key: "plan", count, empty: false, coverage_known: true, clamped: false, outcomes: { ok: count - bad, "error:overloaded": bad }, failure_share: bad / count, failure_shares: { "error:overloaded": bad / count }, models: {}, time_before_first_byte_ms: { count, p50: 100, p95: 200, max: 300 } }] });
+      const picked = url.searchParams.get("project") === "/work/website", bad = picked ? 1 : 3, count = picked ? 20 : 100;
+      const total_ms = { count, p50: 500, p95: 900, max: 1200 };
+      return Response.json(performanceSummary(url, { plan: { count, local_steps: 0, empty: false, read_status: "readable", metrics_complete: true,
+        outcomes: { ok: count - bad, "error:overloaded": bad }, failure_share: bad / count, failure_shares: { "error:overloaded": bad / count },
+        models: { m: { count, failure_share: bad / count, total_ms } }, total_ms, cache_hit_ratio: .8, retries: 2, refreshes: 0, peak_inflight: 3,
+        time_before_first_byte_ms: { count, p50: 100, p95: 200, max: 300 } } }));
     }
     if (path === "/api/perf/turns") {
+      if (url.searchParams.get("contract") === "1") return Response.json(performanceRows(url));
       const held = Number(url.searchParams.get("n"));
       const g = group("primary", { requests: 6, input_tokens: 6000, output_tokens: 600, plan_requests: 6, plan_value_usd: 1 });
       const usage = { totals: group("totals", g), accounts: [g], models: [], sessions: [], days: [group(new Date().toLocaleDateString("en-CA"), g)] };
@@ -66,38 +69,73 @@ async function open(query: string, run: (p: Page) => Promise<void>) {
   const p = await context.newPage();
   try {
     await p.goto(`http://127.0.0.1:${server.port}/usage.html${query}`);
-    // 3 of 100 requests failed, however the page rounds it
-    await expect(door(p).locator("[data-tn=door-failed]")).toHaveText(/^3(\.0)?%$/, { timeout: 20_000 });
+    // This is the named command's server-reported share, including the selected project's different population.
+    await expect(door(p).locator("[data-tn=door-failed]")).toHaveText(query ? "5%" : "3%", { timeout: 20_000 });
     await run(p);
   } finally {
     await context.close();
   }
 }
 
-test("Usage: where the Results table and the page agree, the door reads its figure as failed and nothing more", async () => {
+test("Usage: Results door names its command and opens expandable diagnostics in the shared panel", async () => {
   await open("", async (p) => {
-    await expect(said(p)).toHaveText("failed");
+    await expect(said(p)).toContainText("claude-plan failed · 7 days");
+    await expect(door(p)).toHaveAttribute("aria-label", "Results by command");
+    await p.getByRole("button", { name: "Profiles", exact: true }).click();
+    await door(p).click();
+    await expect(p.getByRole("button", { name: "Overview", exact: true })).toHaveAttribute("aria-current", "page");
+    await p.locator('#band-perf [data-pc-command="plan"] > summary').click();
+    await expect(p.getByRole("table", { name: "claude-plan outcomes", exact: true })).toContainText("error:overloaded");
+    await expect(p.getByRole("table", { name: "claude-plan stages", exact: true })).toContainText("Before first byte");
+    await expect(p.getByRole("table", { name: "claude-plan models", exact: true })).toContainText("m");
+    await expect(p.locator(".pc-command-detail")).toContainText("80%");
+    await expect(p.locator(".pc-command-detail")).toContainText("do not add up");
+    const link = p.locator(".pc-command-detail").getByRole("link", { name: "Open failures", exact: true });
+    const href = new URL((await link.getAttribute("href"))!, "http://fixture");
+    expect(href.searchParams.get("contract")).toBe("1");
+    expect(href.searchParams.get("head")).toBe("plan");
+    expect(href.searchParams.get("outcome")).toBe("failed");
+    expect(Number(href.searchParams.get("until")) - Number(href.searchParams.get("from"))).toBe(7 * 86400000);
   });
 }, 90_000);
 
-test("Usage: the Results door names the table's window when the page's window is one the table does not keep", async () => {
+test("Usage: native and Results window controls keep exact 5-hour, 30-day and 1-hour intervals", async () => {
   await open("", async (p) => {
+    const readFor = (duration: number) => p.waitForRequest((r) => {
+      const u = new URL(r.url());
+      return u.pathname === "/api/perf/summary" && u.searchParams.get("contract") === "1" && Number(u.searchParams.get("until")) - Number(u.searchParams.get("from")) === duration;
+    });
+    const fiveHours = readFor(5 * 3600000);
     await p.locator("#win [data-act=win][data-v='5h']").click();
-    await expect(p.locator("#band-perf [data-act=perfwin][aria-pressed=true], #band-perf [data-act=perfwin][aria-checked=true]")).toContainText("24 hours", { timeout: 20_000 });
-    await expect(said(p)).toContainText("24 hours", { timeout: 20_000 });
+    await fiveHours;
+    await expect(p.locator('#band-perf [name="window"]')).toHaveValue("5h");
+    await expect(said(p)).toContainText("5 hours", { timeout: 20_000 });
+    const thirtyDays = readFor(30 * 86400000);
     await p.locator("#win [data-act=win][data-v='30d']").click();
-    await expect(said(p)).toContainText("7 days", { timeout: 20_000 });
-    // the table's own switch moves the door with it
-    await p.locator("#band-perf [data-act=perfwin][data-v='1h']").click();
+    await thirtyDays;
+    await expect(said(p)).toContainText("30 days", { timeout: 20_000 });
+    const oneHour = readFor(3600000);
+    await p.locator('#band-perf [name="window"]').selectOption("1h");
+    await p.getByRole("button", { name: "Apply cohort", exact: true }).click();
+    await oneHour;
     await expect(said(p)).toContainText("1 hour", { timeout: 20_000 });
     expect(await live(said(p), (el) => el.getClientRects().length)).toBe(1);
   });
 }, 90_000);
 
-test("Usage: with a project picked, the Results door says its figure is over all requests, as the band's head does", async () => {
+test("Usage: selected project changes the Results population and survives request navigation", async () => {
   await open("?project=/work/website", async (p) => {
-    await expect(p.locator("#band-perf .bandhead")).toContainText("All requests", { timeout: 20_000 });
-    await expect(said(p)).toContainText(/all requests/i, { timeout: 20_000 });
+    await expect(p.locator('#band-perf [name="project"]')).toHaveValue("/work/website");
+    await expect(said(p)).toContainText("selected cohort", { timeout: 20_000 });
+    await p.locator('#band-perf [data-pc-command="plan"] > summary').click();
+    await expect(p.locator(".pc-command-failure")).toHaveText("5% failed");
+    await expect(p.getByRole("table", { name: "claude-plan outcomes", exact: true })).toContainText("19");
+    const link = p.locator(".pc-command-detail").getByRole("link", { name: "Open requests", exact: true });
+    const href = new URL((await link.getAttribute("href"))!, "http://fixture");
+    expect(href.searchParams.get("project")).toBe("/work/website");
+    expect(href.searchParams.get("head")).toBe("plan");
+    expect(href.searchParams.get("local")).toBe("0");
+    expect(Number(href.searchParams.get("until")) - Number(href.searchParams.get("from"))).toBe(7 * 86400000);
     expect(await live(said(p), (el) => el.getClientRects().length)).toBe(1);
   });
 }, 90_000);

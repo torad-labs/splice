@@ -1,12 +1,14 @@
 package splice.app.sources.observability
 
 import kotlinx.serialization.json.jsonObject
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.sources.observability.cursor.PerfCursorPruning
 import splice.core.util.JsonScalars
 import splice.core.util.PerfWorkBudget
 import splice.usage.perf.history.PerfEvidenceCursorRequest
@@ -17,8 +19,16 @@ import java.nio.file.attribute.FileTime
 import kotlin.coroutines.cancellation.CancellationException
 
 class PerfEvidenceScratchTest {
+    @TempDir
+    lateinit var root: Path
+
+    @AfterEach
+    fun releaseCursorSweeps() {
+        PerfCursorPruning.closeRoot(root)
+    }
+
     @Test
-    fun `event cursor pairs also stop at capacity without blocking their existing continuation`(@TempDir root: Path) {
+    fun `event cursor pairs also stop at capacity without blocking their existing continuation`() {
         StreamingEvidenceFixture(root).use { fixture ->
             fixture.seed(2)
             val source = fixture.evidence()
@@ -46,7 +56,7 @@ class PerfEvidenceScratchTest {
     }
 
     @Test
-    fun `a full scratch fallback reports incomplete instead of a complete partial population`(@TempDir root: Path) {
+    fun `a full scratch fallback reports incomplete instead of a complete partial population`() {
         StreamingEvidenceFixture(root).use { fixture ->
             fixture.seed(411)
             overfull(root)
@@ -66,7 +76,7 @@ class PerfEvidenceScratchTest {
     }
 
     @Test
-    fun `fallback preserves conflicting identities and consumer refusals`(@TempDir root: Path) {
+    fun `fallback preserves conflicting identities and consumer refusals`() {
         StreamingEvidenceFixture(root).use { fixture ->
             fixture.seed(2)
             overfull(root)
@@ -87,10 +97,10 @@ class PerfEvidenceScratchTest {
     }
 
     @Test
-    fun `cancelled fallback releases its lease and a subsequent real read remains complete`(@TempDir root: Path) {
+    fun `cancelled fallback releases its lease and a subsequent real read remains complete`() {
         StreamingEvidenceFixture(root).use { fixture ->
             fixture.seed(2)
-            overfull(root)
+            failedCleanup(root)
             val source = fixture.evidence()
             val retained = PerfWorkBudget.retainedBytes()
             assertThrows(CancellationException::class.java) {
@@ -105,12 +115,10 @@ class PerfEvidenceScratchTest {
     }
 
     @Test
-    fun `a failed cursor expiry cleanup does not replace a successful evidence scan`(@TempDir root: Path) {
+    fun `a failed cursor expiry cleanup does not replace a successful evidence scan`() {
         StreamingEvidenceFixture(root).use { fixture ->
             fixture.seed(2)
-            val stale = Files.createDirectories(root.resolve("broken-cursors/stale.idx"))
-            Files.writeString(stale.resolve("occupied"), "not a cursor")
-            Files.setLastModifiedTime(stale, FileTime.fromMillis(-2_000_000))
+            failedCleanup(root)
             fixture.evidence().consume(fixture.evidenceQuery(), PerfObservationConsumer { true }).use { read ->
                 assertTrue(read.complete, read.coverage.issues.toString())
                 assertEquals(200L, read.coverage.observedMs)
@@ -121,5 +129,11 @@ class PerfEvidenceScratchTest {
     private fun overfull(root: Path) {
         val directory = Files.createDirectories(root.resolve("old-cursors"))
         repeat(130) { Files.writeString(directory.resolve("old-$it.idx"), "unexpired") }
+    }
+
+    private fun failedCleanup(root: Path) {
+        val stale = Files.createDirectories(root.resolve("broken-cursors/stale.idx"))
+        Files.writeString(stale.resolve("occupied"), "not a cursor")
+        Files.setLastModifiedTime(stale, FileTime.fromMillis(-2_000_000))
     }
 }

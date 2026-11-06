@@ -1,6 +1,7 @@
 package splice.app.sources.observability
 
 import kotlinx.serialization.json.jsonObject
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.app.sources.PerfRowsFileSource
 import splice.app.sources.observability.cursor.PERF_CURSOR_TTL_MS
 import splice.app.sources.observability.cursor.PerfCommittedCursors
+import splice.app.sources.observability.cursor.PerfCursorPruning
 import splice.core.util.JsonScalars
 import splice.core.util.PerfWorkBudget
 import splice.core.util.WallClock
@@ -25,10 +27,16 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class PerfCursorCapacityTest {
+    @TempDir
+    lateinit var root: Path
+
+    @AfterEach
+    fun releaseCursorSweeps() {
+        PerfCursorPruning.closeRoot(root)
+    }
+
     @Test
-    fun `the sixty fifth first page refuses while existing pages and the same measured cohort remain available`(
-        @TempDir root: Path,
-    ) {
+    fun `the sixty fifth first page refuses while existing pages and the same measured cohort remain available`() {
         StreamingEvidenceFixture(root).use { fixture ->
             fixture.seed(110)
             val file = rows(root)
@@ -53,7 +61,7 @@ class PerfCursorCapacityTest {
     }
 
     @Test
-    fun `competing source owners reserve the last pair under the shared file lock`(@TempDir root: Path) {
+    fun `competing source owners reserve the last pair under the shared file lock`() {
         val file = rows(root)
         val request = request()
         val token = fill(PerfRowsFileSource(file), request, 63)
@@ -86,9 +94,7 @@ class PerfCursorCapacityTest {
     }
 
     @Test
-    fun `oversized expired inventories recover through bounded cleanup without evicting a live continuation`(
-        @TempDir root: Path,
-    ) {
+    fun `oversized expired inventories recover through bounded cleanup without evicting a live continuation`() {
         val file = rows(root)
         val now = System.currentTimeMillis()
         val source = PerfCommittedCursors(file, null, PerfSourceCosts(), WallClock { now })
@@ -101,12 +107,40 @@ class PerfCursorCapacityTest {
             Files.setLastModifiedTime(expired, FileTime.fromMillis(now - PERF_CURSOR_TTL_MS - 1))
         }
         source.page(request).use(::assertCapacity)
+        source.page(request).use(::assertCapacity)
         source.page(request).use { recovered ->
             assertEquals("complete", JsonScalars.str(recovered.metadata, "status"))
             assertEquals(100, recovered.rows.size)
             assertNotNull(recovered.nextCursor)
         }
         assertContinuation(file, request, token)
+    }
+
+    @Test
+    fun `expired tail beyond a live prefix is reached across source instances before fresh admission`() {
+        val file = rows(root)
+        val request = request()
+        fill(PerfRowsFileSource(file), request, 64)
+        val directory = file.resolveSibling("${file.fileName}-cursors")
+        repeat(2) { Files.writeString(directory.resolve("overflow-$it.idx"), "old") }
+        // Pin the actual iteration order: exactly the entries beyond the first live128 are expired.
+        val ordered = Files.newDirectoryStream(directory).use { it.toList() }
+        val prefix = ordered.take(128).toSet()
+        val retainedId = prefix.first { path ->
+            path.fileName.toString().endsWith(".json") &&
+                directory.resolve(path.fileName.toString().removeSuffix(".json") + ".idx") in prefix
+        }.fileName.toString().removeSuffix(".json")
+        val now = System.currentTimeMillis()
+        ordered.drop(128).forEach { Files.setLastModifiedTime(it, FileTime.fromMillis(now - PERF_CURSOR_TTL_MS - 1)) }
+        val other = root.resolve("other.jsonl")
+        Files.copy(file, other)
+        repeat(2) { PerfRowsFileSource(other).page(request).use(::assertCapacity) }
+        PerfRowsFileSource(other).page(request).use { recovered ->
+            assertEquals("complete", JsonScalars.str(recovered.metadata, "status"))
+            assertEquals(100, recovered.rows.size)
+            assertNotNull(recovered.nextCursor)
+        }
+        assertContinuation(file, request, "$retainedId:100")
     }
 
     private fun rows(root: Path): Path = root.resolve("test.jsonl").also { path ->

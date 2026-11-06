@@ -1,7 +1,8 @@
 package splice.core.perf.observation
 
 internal object PerfSystemMetrics {
-    fun definitions(): List<PerfMetricDefinition> = gates() + tools() + nativeSpan() + runtime() + selfCost()
+    fun definitions(): List<PerfMetricDefinition> =
+        gates() + tools() + nativeSpan() + runtime() + fileIoRuntime() + selfCost()
 
     private fun nativeSpan(): List<PerfMetricDefinition> = listOf(
         PerfMetricDefinition(
@@ -104,6 +105,36 @@ internal object PerfSystemMetrics {
             "next runtime sample",
             "sampled process state",
             setOf(PerfEventKind.RUNTIME),
+        )
+    }
+
+    private fun fileIoRuntime(): List<PerfMetricDefinition> = mapOf(
+        "accepted" to "Accepted tasks since process start; executor rejections are excluded",
+        "completed" to "Tasks returned normally since process start; reported write failures can still occur",
+        "failed" to "Tasks that threw since process start; distinct from explicitly reported write failures",
+        "failed_writes" to "Explicitly reported write failures since process start; can accompany completed tasks",
+        "dropped" to "Tasks refused by the pending cap or executor rejection since process start",
+        "pending" to "Current unfinished tasks including running, runnable queued and delayed timers",
+        "running" to "Current executing tasks",
+        "scheduled" to "Current delayed timers with positive remaining delay",
+        "queued" to "Derived runnable queue: max(pending - running - scheduled, 0); snapshot is not atomic",
+        "peak_pending" to "Highest observed pending task count since process start",
+        "queue_wait_ms" to "Cumulative elapsed queue wait at task start since process start; excludes timer delay",
+        "run_ms" to "Cumulative elapsed execution at task finish since process start; includes waits, not CPU time",
+        "peak_queue_wait_ms" to "Largest task queue wait since process start; excludes requested timer delay",
+        "peak_run_ms" to "Largest finished task elapsed execution since process start; includes waits, not CPU time",
+    ).map { (name, description) ->
+        val id = "runtime_file_io_$name"
+        PerfMetricDefinition(
+            id,
+            description,
+            PerfMetricType.GAUGE,
+            unit(id),
+            "runtime sample",
+            "next runtime sample",
+            "process-wide AsyncFileIo lane; sampled state, cumulative totals and lifetime peaks",
+            setOf(PerfEventKind.RUNTIME),
+            missingReasons = listOf("not_observed", "collection_disabled", "runtime_owner_read_failed"),
         )
     }
 

@@ -51,6 +51,37 @@ virtual-thread counts, generic dispatcher delay or transport internals remain
 unavailable with a reason. Splice's own sampler scheduling delay describes only
 that owned worker.
 
+The runtime sampler refreshes the single process-wide `AsyncFileIo` lane every
+five seconds. `GET /api/perf/runtime` exposes its `runtime_file_io_*` measurements
+alongside the existing generic executor readings. Counts use `count`; elapsed
+values ending in `_ms` use milliseconds.
+`accepted`, `completed`, `failed`, `failed_writes` and `dropped` are cumulative
+since process start. `completed` means the task returned normally; a sink can
+report a write failure within such a task. `failed` means the task threw, while
+`failed_writes` counts explicitly reported write failures. These counts can
+overlap and must not be added together. `dropped` counts refusals by the pending
+cap or executor rejection.
+
+`pending`, `running` and `scheduled` describe unfinished tasks, executing tasks
+and delayed timers with positive remaining delay. `queued` is the derived
+runnable queue, `max(pending - running - scheduled, 0)`. These are independently
+read scalars, not an atomic accounting balance. `peak_pending` is the highest
+observed pending count since process start. `queue_wait_ms` accumulates elapsed
+wait at task start, excluding requested timer delay; `run_ms` accumulates elapsed
+execution when a task finishes, including waits. Their `peak_` counterparts are
+the largest individual durations since process start. Unfinished execution time
+is not included. These are gauge snapshots of totals and peaks, not task timing
+histograms, interval deltas or CPU durations.
+
+The file lane occupies one of the sampler's existing eight owner slots, after
+the JVM source and before registered owners. Owner truncation remains disclosed;
+no additional sampling pool is created. Reads use the cached sample and its
+`as_of_ms`/`age_ms`. Missing, disabled, failed or budget-refused sampling is
+unknown, never a fabricated zero; failed owner reads retain known metric keys
+with null values. Per-sink instrumentation status and legacy `async_io_drops`
+admission samples retain their separate meanings. This runtime visibility does
+not replace a candidate-linked JFR or native-profiler capture.
+
 ## Histograms, gauges and rates
 
 Histogram snapshots are cumulative minute replacements, keyed by identity,

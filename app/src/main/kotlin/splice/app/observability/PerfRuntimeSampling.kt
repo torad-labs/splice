@@ -6,6 +6,7 @@ import splice.core.perf.observation.PerfIdentity
 import splice.core.perf.observation.PerfRecorder
 import splice.core.perf.runtime.PerfRuntimeSource
 import splice.core.util.PerfWorkBudget
+import splice.observability.runtime.AsyncFileIoRuntimeSource
 import splice.observability.runtime.RuntimeSampler
 import splice.upstream.observability.JvmHeapRuntimeSource
 
@@ -23,7 +24,7 @@ internal class PerfRuntimeSampling(
     @Synchronized
     fun sample() {
         if (!enabled) return
-        val next = listOf(heap) + owners.snapshot()
+        val next = listOf(heap, AsyncFileIoRuntimeSource) + owners.snapshot()
         if (selected != next) {
             sampler?.close()
             selected = next

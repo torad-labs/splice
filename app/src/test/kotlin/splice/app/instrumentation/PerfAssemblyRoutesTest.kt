@@ -14,7 +14,9 @@ import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -84,6 +86,7 @@ class PerfAssemblyRoutesTest {
                 assertEquals(HttpStatusCode.OK, settings.status)
                 assertTrue("revision" in Json.parseToJsonElement(settings.bodyAsText()).jsonObject)
                 assertInstrumentation(client, bearer, telemetry)
+                assertFileIoRuntime(client, bearer, telemetry)
                 val scrape = client.get("/api/perf/metrics") { bearerAuth(bearer) }
                 assertEquals(HttpStatusCode.NotFound, scrape.status)
                 val malformed = client.post("/api/perf/profiles") {
@@ -111,5 +114,47 @@ class PerfAssemblyRoutesTest {
         val work = diagnostic["memory"]!!.jsonObject["work"]!!.jsonObject
         assertEquals(PerfWorkBudget.LIMIT_BYTES.toString(), JsonScalars.str(work, "limit_bytes"))
         assertTrue("sources" in diagnostic)
+    }
+
+    private suspend fun assertFileIoRuntime(client: HttpClient, bearer: String, telemetry: PerfTelemetry) {
+        telemetry.runtime.sample()
+        val response = client.get("/api/perf/runtime") { bearerAuth(bearer) }
+        assertEquals(HttpStatusCode.OK, response.status)
+        val runtime = Json.parseToJsonElement(response.bodyAsText()).jsonObject
+        val measurements = runtime.getValue("measurements").jsonObject
+        val owner = runtime.getValue("owner_readings").jsonArray.single {
+            "runtime_file_io_pending" in it.jsonObject.getValue("measurements").jsonObject
+        }.jsonObject
+        val owned = owner.getValue("measurements").jsonObject
+        val ids = listOf(
+            "accepted", "completed", "failed", "failed_writes", "dropped", "pending", "running", "scheduled",
+            "queued", "peak_pending", "queue_wait_ms", "run_ms", "peak_queue_wait_ms", "peak_run_ms",
+        ).map { "runtime_file_io_$it" }.toSet()
+        assertEquals(ids, owned.keys)
+        assertEquals("ok", JsonScalars.str(owner, "status"))
+        owned.forEach { (id, value) ->
+            assertEquals(value, measurements.getValue(id), id)
+            assertTrue(value.jsonPrimitive.content.toDouble().let { it.isFinite() && it >= 0 }, id)
+        }
+        val pending = owned.getValue("runtime_file_io_pending").jsonPrimitive.content.toDouble()
+        val running = owned.getValue("runtime_file_io_running").jsonPrimitive.content.toDouble()
+        val scheduled = owned.getValue("runtime_file_io_scheduled").jsonPrimitive.content.toDouble()
+        assertEquals(
+            (pending - running - scheduled).coerceAtLeast(0.0),
+            owned.getValue("runtime_file_io_queued").jsonPrimitive.content.toDouble(),
+        )
+        val schemaResponse = client.get("/api/perf/schema") { bearerAuth(bearer) }
+        assertEquals(HttpStatusCode.OK, schemaResponse.status)
+        val schema = Json.parseToJsonElement(schemaResponse.bodyAsText()).jsonObject.getValue("metrics").jsonObject
+        ids.forEach { id ->
+            val metric = schema.getValue(id).jsonObject
+            assertEquals("gauge", JsonScalars.str(metric, "type"), id)
+            assertEquals(if (id.endsWith("_ms")) "ms" else "count", JsonScalars.str(metric, "unit"), id)
+            assertEquals(
+                "last and monotonic time-weighted mean; never sum repeated cumulative samples",
+                JsonScalars.str(metric, "aggregation"),
+                id,
+            )
+        }
     }
 }

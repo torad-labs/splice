@@ -88,7 +88,7 @@ internal class CollectedReply(
         } finally {
             if (!delivered) observations?.finish(OutcomeTag.CLIENT_ABORT.wire)
         }
-        val elapsed = started?.let { observations?.elapsedMs()?.minus(it) } ?: 0L
+        val elapsed = started?.let { observations.elapsedMs() - it } ?: 0L
         DeliveryObservation.body(observations, DeliveredBody(body, contentLength, elapsed, status.value, outcome))
     }
 

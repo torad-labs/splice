@@ -75,7 +75,7 @@ internal object AlertLifecycle {
         val window = measurement.timing?.window
         val completed = window?.basis == COMPLETED_REQUEST_WINDOW
         val last = if (completed) prior.lastFreshEvaluation ?: prior.lastEvaluation else prior.lastEvaluation
-        val dataGap = if (completed) window?.until?.let { until -> prior.lastWindowEnd?.let { until - it } } else null
+        val dataGap = if (completed) window.until?.let { until -> prior.lastWindowEnd?.let { until - it } } else null
         return last?.let { now - it > windowMs } == true || dataGap?.let { it > windowMs } == true
     }
 

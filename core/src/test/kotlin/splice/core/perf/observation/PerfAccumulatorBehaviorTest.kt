@@ -1,6 +1,7 @@
 package splice.core.perf.observation
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -8,18 +9,33 @@ import splice.core.perf.OutcomeTag
 
 internal class PerfAccumulatorBehaviorTest {
     @Test
+    fun `invalid saturation value cannot fabricate occupied time and reports dropped observation`() {
+        ObservationFixture().use { fixture ->
+            assertFalse(fixture.recorder.emit(fixture.scope, PerfEventKind.GATE_STATE, mapOf(GATE_SATURATED to 2.0)))
+            assertTrue(fixture.points(GATE_SATURATED).isEmpty())
+            fixture.advance(1000)
+            fixture.recorder.emit(fixture.scope, PerfEventKind.GATE_STATE, mapOf(GATE_SATURATED to 0.0))
+            fixture.advance(1000)
+            fixture.recorder.emit(fixture.scope, PerfEventKind.CHECKPOINT)
+            assertEquals(0.0, fixture.points(GATE_SATURATED).single().weightedSum)
+            assertEquals(1.0, fixture.total("self_dropped"))
+            assertTrue(fixture.accumulator.snapshot().coverage.issues.any { it.code == "observation_dropped" })
+        }
+    }
+
+    @Test
     fun `gate means integrate exact limit transitions while cumulative refusals stay gauges`() {
         ObservationFixture().use { fixture ->
             fixture.recorder.emit(
                 fixture.scope,
                 PerfEventKind.GATE_STATE,
-                mapOf("gate_limit" to 2.0, "gate_refused" to 1.0, "gate_saturated" to 1.0),
+                mapOf("gate_limit" to 2.0, "gate_refused" to 1.0, GATE_SATURATED to 1.0),
             )
             fixture.advance(1000)
             fixture.recorder.emit(
                 fixture.scope,
                 PerfEventKind.GATE_STATE,
-                mapOf("gate_limit" to 1.0, "gate_refused" to 1.0, "gate_saturated" to 0.0),
+                mapOf("gate_limit" to 1.0, "gate_refused" to 1.0, GATE_SATURATED to 0.0),
             )
             fixture.advance(1000)
             fixture.recorder.emit(fixture.scope, PerfEventKind.CHECKPOINT)
@@ -32,7 +48,7 @@ internal class PerfAccumulatorBehaviorTest {
             assertEquals(1.0, refused.last)
             assertEquals(1.0, refused.weightedSum / refused.coveredMs)
             assertEquals(2000L, first.coverage.observedMs)
-            assertEquals(1000.0, first.points.single { it.metric == "gate_saturated" }.weightedSum)
+            assertEquals(1000.0, first.points.single { it.metric == GATE_SATURATED }.weightedSum)
         }
     }
 
@@ -90,3 +106,4 @@ private const val MEAN_LIMIT = 1.5
 private const val MODEL_STRESS = 1000
 private const val MEDIAN = 0.5
 private const val TAIL = 0.95
+private const val GATE_SATURATED = "gate_saturated"

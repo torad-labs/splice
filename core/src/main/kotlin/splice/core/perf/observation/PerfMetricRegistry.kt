@@ -86,8 +86,18 @@ public object PerfMetricRegistry {
     internal fun isUsageMetric(metric: String): Boolean =
         definitions[metric]?.events?.contains(PerfEventKind.USAGE_RECORDED) == true
 
+    internal fun isAttemptMilestone(metric: String): Boolean = definitions[metric]?.let {
+        it.type == PerfMetricType.HISTOGRAM && PerfEventKind.PROTOCOL_PROGRESS in it.events
+    } == true
+
     internal fun accepts(metric: String, kind: PerfEventKind, value: Double): Boolean =
-        value.isFinite() && value in 0.0..MAX_MEASUREMENT && definitions[metric]?.events?.contains(kind) == true
+        validValue(metric, value) && definitions[metric]?.events?.contains(kind) == true
+
+    private fun validValue(metric: String, value: Double): Boolean = if (metric == "gate_saturated") {
+        value == 0.0 || value == 1.0
+    } else {
+        value.isFinite() && value in 0.0..MAX_MEASUREMENT
+    }
 }
 
 private const val MAX_MEASUREMENT = 1.0e18

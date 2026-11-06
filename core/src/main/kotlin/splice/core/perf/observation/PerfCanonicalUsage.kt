@@ -9,18 +9,25 @@ internal class PerfCanonicalUsage(private val recorder: PerfRecorder) {
     fun record(values: Map<String, Double>): Boolean {
         if (pending != null || emitted) return false
         val usage = values.filterKeys(PerfMetricRegistry::isUsageMetric)
-        if (usage.isEmpty()) return false
+        if (!valid(usage) || usage.size != values.size) return false
         pending = usage
-        return publish() && usage.size == values.size
+        return publish()
     }
 
     fun finish(observation: PerfObservation, values: Map<String, Double>): Boolean {
         terminal = observation.copy(values = emptyMap())
         if (pending == null) {
             val usage = values.filterKeys(PerfMetricRegistry::isUsageMetric)
-            if (usage.isNotEmpty()) pending = usage
+            if (usage.isNotEmpty()) {
+                if (!valid(usage)) return false
+                pending = usage
+            }
         }
         return publish()
+    }
+
+    private fun valid(values: Map<String, Double>): Boolean = values.isNotEmpty() && values.all { (metric, value) ->
+        PerfMetricRegistry.accepts(metric, PerfEventKind.USAGE_RECORDED, value)
     }
 
     private fun publish(): Boolean {

@@ -17,6 +17,7 @@ public class PerfAccumulator(identity: PerfIdentity) : PerfObserver, PerfAggrega
     private var accepted = 0L
     private var invalid = 0L
     private var mismatched = 0L
+    private var recordingDrops = 0L
 
     override fun record(observation: PerfObservation): Boolean = synchronized(lock) {
         observed++
@@ -121,6 +122,7 @@ public class PerfAccumulator(identity: PerfIdentity) : PerfObserver, PerfAggrega
     }
 
     private fun recordValue(event: PerfObservation, metric: String, value: Double, at: Long): Boolean {
+        if (metric == "self_dropped") recordingDrops += value.toLong()
         // First-content values travel in live observations; their distribution is recorded only at request terminal.
         if (PerfMetricRegistry.isBoundaryTiming(metric) && event.kind != PerfEventKind.REQUEST_FINISHED) return true
         if (event.kind == PerfEventKind.REQUEST_ADMITTED && metric == "queue_wait_ms") return true
@@ -157,6 +159,7 @@ public class PerfAccumulator(identity: PerfIdentity) : PerfObserver, PerfAggrega
             "late_observation" to timeline.lateObservations,
             "late_observation_expired" to view.expiredInputs,
             "memory_budget_exhausted" to memory.rejected,
+            "observation_dropped" to recordingDrops,
         )
         val issues = counts.filterValues { it > 0 }.map { (code, count) -> PerfIssue(code, ACCUMULATOR, count) }
         val retention = view.expiredBefore?.let {

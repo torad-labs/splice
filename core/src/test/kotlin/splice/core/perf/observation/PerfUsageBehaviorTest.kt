@@ -8,6 +8,26 @@ import splice.core.perf.OutcomeTag
 
 internal class PerfUsageBehaviorTest {
     @Test
+    fun `invalid early bill leaves canonical slot available for valid finish or late usage`() {
+        listOf(Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY).forEach { invalid ->
+            ObservationFixture().use { fixture ->
+                val atFinish = fixture.recorder.request(fixture.scope, fixture.now, fixture.wall)
+                assertFalse(atFinish.usage(mapOf(OUTPUT_TOKENS to invalid)))
+                assertTrue(atFinish.finish(OutcomeTag.OK.wire, mapOf(OUTPUT_TOKENS to 2.0)))
+                assertEquals(2.0, fixture.total(OUTPUT_TOKENS))
+                val late = fixture.recorder.request(fixture.scope, fixture.now, fixture.wall)
+                assertFalse(late.usage(mapOf(OUTPUT_TOKENS to invalid)))
+                late.finish(OutcomeTag.OK.wire)
+                fixture.advance(MINUTE)
+                assertTrue(late.usage(mapOf(OUTPUT_TOKENS to 2.0)))
+                assertEquals(2L, fixture.points(OUTPUT_TOKENS).single().count)
+                assertEquals(2.0 + 2.0, fixture.total(OUTPUT_TOKENS))
+                assertEquals(2.0, fixture.total("requests_finished"))
+            }
+        }
+    }
+
+    @Test
     fun `early canonical usage waits for terminal and takes precedence over legacy finish values`() {
         ObservationFixture().use { fixture ->
             val request = fixture.recorder.request(fixture.scope, fixture.now, fixture.wall)

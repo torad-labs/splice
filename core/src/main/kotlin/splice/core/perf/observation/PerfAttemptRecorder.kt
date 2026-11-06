@@ -9,6 +9,7 @@ public class PerfAttemptRecorder internal constructor(
 ) {
     private val lock = Any()
     private var finished = false
+    private val milestones = HashSet<String>()
 
     public fun observe(
         kind: PerfEventKind,
@@ -19,7 +20,7 @@ public class PerfAttemptRecorder internal constructor(
             finished -> false
             kind == PerfEventKind.ATTEMPT_FINISHED -> finish(outcome ?: "?", values)
             kind == PerfEventKind.PROTOCOL_PROGRESS || kind == PerfEventKind.GAP ->
-                recorder.emit(scope, kind, values, links, outcome)
+                progress(kind, values, outcome)
             else -> false
         }
     }
@@ -34,5 +35,14 @@ public class PerfAttemptRecorder internal constructor(
             links,
             outcome,
         )
+    }
+
+    private fun progress(kind: PerfEventKind, values: Map<String, Double>, outcome: String?): Boolean {
+        val unique = values.filter { (metric, value) ->
+            !PerfMetricRegistry.isAttemptMilestone(metric) ||
+                !PerfMetricRegistry.accepts(metric, kind, value) || milestones.add(metric)
+        }
+        val recorded = recorder.emit(scope, kind, unique, links, outcome)
+        return recorded && unique.size == values.size
     }
 }

@@ -9,6 +9,33 @@ import splice.core.perf.OutcomeTag
 
 internal class PerfAttemptBehaviorTest {
     @Test
+    fun `protocol milestones record first valid boundary once while progress counts keep accumulating`() {
+        ObservationFixture().use { fixture ->
+            val request = fixture.recorder.request(fixture.scope, fixture.now, fixture.wall)
+            val attempt = request.attempt("http")
+            val metrics = listOf(
+                "http_request_write_ms",
+                "http_response_headers_ms",
+                "http_first_body_byte_ms",
+                "ws_send_accepted_ms",
+                "ws_first_fragment_ms",
+            )
+            assertFalse(attempt.observe(PerfEventKind.PROTOCOL_PROGRESS, metrics.associateWith { Double.NaN }))
+            val progress = mapOf("upstream_events" to 1.0)
+            assertTrue(attempt.observe(PerfEventKind.PROTOCOL_PROGRESS, metrics.associateWith { 1000.0 } + progress))
+            assertFalse(attempt.observe(PerfEventKind.PROTOCOL_PROGRESS, metrics.associateWith { 2000.0 } + progress))
+            attempt.finish(OutcomeTag.OK.wire)
+            request.finish(OutcomeTag.OK.wire)
+            metrics.forEach { metric ->
+                val point = fixture.points(metric).single()
+                assertEquals(1L, point.count)
+                assertEquals(1000.0, point.sum)
+            }
+            assertEquals(2.0, fixture.total("upstream_events"))
+        }
+    }
+
+    @Test
     fun `attempt identity and duration remain independent after client completion`() {
         ObservationFixture().use { fixture ->
             val request = fixture.recorder.request(fixture.scope, fixture.now, fixture.wall)

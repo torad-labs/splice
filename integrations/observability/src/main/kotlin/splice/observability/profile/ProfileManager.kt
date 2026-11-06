@@ -2,15 +2,12 @@ package splice.observability.profile
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.perf.observation.PerfIdentity
-import splice.core.perf.runtime.PERF_PROFILE_READ_BUFFER_BYTES
 import splice.core.perf.runtime.PerfProfileArtifact
 import splice.core.perf.runtime.PerfProfileRead
 import splice.core.perf.runtime.PerfProfileRequest
 import splice.core.perf.runtime.PerfProfiles
 import splice.core.util.Cancellables
-import splice.core.util.PerfWorkBudget
 import splice.core.util.WallClock
-import java.io.IOException
 import java.nio.file.Path
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.RejectedExecutionException
@@ -24,38 +21,33 @@ public class ProfileManager(
     private val identity: PerfIdentity,
     nativeExecutable: Path? = null,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
-    private val factory: ProfileCaptureFactory = DefaultProfileCaptures,
+    factory: ProfileCaptureFactory = DefaultProfileCaptures,
 ) : PerfProfiles, AutoCloseable {
-    private val lock = Any()
     private val capabilities = ProfileCapabilities(nativeExecutable)
-    private val artifacts = ProfileArtifacts(directory, identity)
-    private val records = linkedMapOf<String, ProfileRecord>()
-    private val memory =
-        checkNotNull(PerfWorkBudget.acquire((ProfileLimits.MAX_RECORDS + 1) * ProfileLimits.RECORD_METADATA_BYTES))
+    private val archive = ProfileArchive(ProfileArtifacts(directory, identity), clock)
+    private val lock = archive.lock
     private val worker =
         ThreadPoolExecutor(1, 1, 0L, TimeUnit.SECONDS, ArrayBlockingQueue(1), ProfileThreads.factory("splice-profile"))
     private val supervisor = ScheduledThreadPoolExecutor(1, ProfileThreads.factory("splice-profile-deadline")).apply {
         removeOnCancelPolicy = true
         setExecuteExistingDelayedTasksAfterShutdownPolicy(false)
     }
+    private val execution = ProfileCaptureExecution(archive, capabilities, factory, supervisor, clock)
     private var active: ProfileRun? = null
     private var closed = false
-    private var readers = 0
-    private val idle: Boolean get() = active == null && readers == 0
 
     init {
         var initialized = false
         Cancellables.withCleanup({
             if (!initialized) {
-                Cancellables.withCleanup({ artifacts.close() }) {
-                    memory.close()
+                Cancellables.withCleanup({ archive.close() }) {
                     worker.shutdown()
                     supervisor.shutdown()
                 }
             }
         }) {
-            artifacts.lock()
-            artifacts.clearPreviousBoot()
+            archive.artifacts.lock()
+            archive.artifacts.clearPreviousBoot()
             supervisor.scheduleWithFixedDelay(
                 { maintenance() },
                 RETENTION_TICK_SECONDS,
@@ -80,15 +72,14 @@ public class ProfileManager(
                 closed -> record.reply(identity, clock(), PROFILE_FAILED, "manager_closed")
                 active != null -> record.reply(identity, clock(), "busy", "one_capture_at_a_time")
                 reason != null -> record.reply(identity, clock(), "unsupported", reason)
-                records.values.filter { it.readers > 0 }.sumOf { it.sizeBytes } >
-                    ProfileLimits.ARTIFACT_STORE_BYTES - ProfileLimits.ARTIFACT_BYTES ->
+                archive.pinned() ->
                     record.reply(identity, clock(), "busy", "artifact_store_pinned")
                 !ProfileAdmission.acquire() -> record.reply(identity, clock(), "busy", "one_capture_per_process")
                 else -> {
                     val run = ProfileRun(record)
                     active = run
-                    records[record.id] = record
-                    worker.execute { execute(run) }
+                    archive.add(record)
+                    worker.execute { execution.execute(run, ::complete) }
                     record.json(identity)
                 }
             }
@@ -101,7 +92,7 @@ public class ProfileManager(
 
     override fun status(id: String?): JsonObject = ProfileReplies.create {
         synchronized(lock) {
-            val record = if (id == null) active?.record ?: records.values.lastOrNull() else records[id]
+            val record = if (id == null) active?.record ?: archive.record(null) else archive.record(id)
             record?.json(
                 identity,
                 clock(),
@@ -110,49 +101,19 @@ public class ProfileManager(
         }
     }
 
-    override fun artifact(id: String): PerfProfileArtifact? = synchronized(lock) {
-        records[id]?.takeIf { clock() - (it.untilMs ?: it.fromMs) <= ProfileLimits.ARTIFACT_RETENTION_MS }?.let(
-            artifacts::artifact,
-        )
-    }
+    override fun artifact(id: String): PerfProfileArtifact? = synchronized(lock) { archive.artifact(id) }
 
     override fun openArtifact(id: String): PerfProfileRead? = synchronized(lock) {
-        if (closed || readers >= MAX_READERS) return null
-        val record = records[id] ?: return null
-        val artifact = artifact(id) ?: return null
-        val lease = PerfWorkBudget.acquire(PROFILE_READ_LEASE_BYTES) ?: return null
-        var opened = false
-        try {
-            val result = artifacts.open(
-                artifact,
-                lease,
-                AutoCloseable {
-                    synchronized(lock) {
-                        record.readers--
-                        readers--
-                        if (closed && idle) releaseMemory()
-                    }
-                },
-            )
-            record.readers++
-            readers++
-            opened = true
-            result
-        } finally {
-            if (!opened) lease.close()
-        }
+        if (closed) null else archive.open(id)
     }
 
     override fun close() {
         synchronized(lock) {
             if (closed) return
             closed = true
-            active?.takeIf { it.record.status == "running" }?.let { run ->
-                run.abort()
-                settle(run, "aborted", "manager_closed")
-            }
+            active?.takeIf { it.record.status == "running" }?.let { execution.abort(it, "manager_closed") }
             if (active == null) {
-                if (readers == 0) releaseMemory()
+                archive.close()
                 supervisor.shutdown()
             }
         }
@@ -166,107 +127,12 @@ public class ProfileManager(
         if (worker.isTerminated) supervisor.shutdown()
     }
 
-    private fun execute(run: ProfileRun) {
-        run.thread = Thread.currentThread()
-        val expiry = supervisor.schedule({
-            synchronized(lock) {
-                if (run.record.status == "running") {
-                    run.abort()
-                    settle(run, "aborted", "capture_deadline_expired")
-                }
-            }
-        }, run.record.request.durationSeconds + FINALIZATION_SECONDS, TimeUnit.SECONDS)
-        try {
-            prune()
-            artifacts.metadata(run.record)
-            capture(run)
-        } catch (_: ProfileUnavailable) {
-            settle(run, "unsupported", "profiler_mode_unavailable")
-        } catch (_: ProfileOversized) {
-            settle(run, "oversized", "artifact_limit_exceeded")
-        } catch (_: InterruptedException) {
-            settle(run, "aborted", "capture_cancelled_or_deadline_expired")
-            Thread.currentThread().interrupt()
-        } catch (_: IOException) {
-            settle(run, PROFILE_FAILED, "profile_io_or_control_failed")
-        } catch (_: RuntimeException) {
-            settle(run, PROFILE_FAILED, "profile_runtime_failed")
-        } finally {
-            expiry.cancel(false)
-            cleanup(run)
-        }
-    }
-
-    private fun capture(run: ProfileRun) {
-        val record = run.record
-        val capture = BoundedProfileCapture(
-            factory.create(record.request, capabilities.nativeExecutable, supervisor),
-            run,
-            supervisor,
-        )
-        val temporary = capture.use {
-            run.ensureActive()
-            it.start()
-            if (record.request.profiler == "native") capabilities.verified(record.request.mode)
-            run.awaitDuration()
-            run.ensureActive()
-            val path = artifacts.temporary(record)
-            it.finish(path)
-            synchronized(lock) {
-                record.captureFromMs = it.fromMs
-                record.captureUntilMs = it.untilMs
-            }
-            path
-        }
-        synchronized(lock) {
-            run.ensureActive()
-            artifacts.publish(record, temporary)
-            settle(run, "completed", null)
-        }
-    }
-
-    private fun settle(run: ProfileRun, status: String, issue: String?) = synchronized(lock) {
-        run.record.status = status
-        run.record.issue = issue
-        run.record.untilMs = clock()
-    }
-
-    private fun cleanup(run: ProfileRun) {
-        val interrupted = Thread.interrupted()
-        try {
-            artifacts.deleteTemporary(run.record)
-            artifacts.metadata(run.record)
-        } catch (_: IOException) {
-            settle(run, PROFILE_FAILED, "profile_metadata_or_cleanup_failed")
-        } finally {
-            synchronized(lock) {
-                if (active === run) active = null
-                ProfileAdmission.release()
-                if (closed) {
-                    supervisor.shutdown()
-                    if (readers == 0) releaseMemory()
-                }
-            }
-            if (interrupted) Thread.currentThread().interrupt()
-        }
-    }
-
-    private fun prune() = synchronized(lock) {
-        val completed = records.values.filter { it.untilMs != null }
-        var total = completed.filter { it.available }.sumOf { it.sizeBytes }
-        completed.forEach { record ->
-            val expired = clock() - checkNotNull(record.untilMs) > ProfileLimits.ARTIFACT_RETENTION_MS
-            val overBudget = total > ProfileLimits.ARTIFACT_STORE_BYTES - ProfileLimits.ARTIFACT_BYTES
-            val remove = expired || overBudget
-            if (record.removable && remove) {
-                artifacts.expire(record)
-                total -= record.sizeBytes
-            }
-        }
-        while (records.size > ProfileLimits.MAX_RECORDS) {
-            val oldest = records.values.firstOrNull { it.readers == 0 && it !== active?.record } ?: break
-            artifacts.forget(oldest)
-            records.remove(oldest.id)
+    private fun complete(run: ProfileRun) = synchronized(lock) {
+        if (active === run) active = null
+        ProfileAdmission.release()
+        if (closed) {
+            supervisor.shutdown()
+            archive.close()
         }
     }
 
@@ -274,23 +140,14 @@ public class ProfileManager(
         synchronized(lock) {
             if (closed || active != null) return
             try {
-                worker.execute { prune() }
+                worker.execute { synchronized(lock) { archive.prune(active?.record) } }
             } catch (_: RejectedExecutionException) {
                 // A new capture acquired the single worker; it performs the same pruning before setup.
                 return
             }
         }
     }
-
-    private fun releaseMemory() {
-        records.clear()
-        memory.close()
-        artifacts.close()
-    }
 }
-
-// Allow thirty seconds beyond the requested recording window for bounded artifact finalization and copying.
-private const val FINALIZATION_SECONDS = 30L
 
 // Recheck idle artifact retention once per minute instead of adding file maintenance to every control read.
 private const val RETENTION_TICK_SECONDS = 60L
@@ -298,9 +155,3 @@ private const val RETENTION_TICK_SECONDS = 60L
 // Retain only sixteen characters of rejected profiler settings so refusal metadata cannot copy arbitrary input.
 private const val MAX_SETTING_LENGTH = 16
 private const val PROFILE_FAILED = "failed"
-
-// Allow two simultaneous downloads so pinned artifacts and per-reader buffers remain bounded.
-private const val MAX_READERS = 2
-
-// Reserve the shared download buffer plus 4 KiB for its channel, pinned-record ownership and response metadata.
-private const val PROFILE_READ_LEASE_BYTES = PERF_PROFILE_READ_BUFFER_BYTES + 4L * 1_024

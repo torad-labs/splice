@@ -1,7 +1,5 @@
 package splice.observability.export
 
-import io.opentelemetry.sdk.common.CompletableResultCode
-import io.opentelemetry.sdk.trace.data.SpanData
 import io.opentelemetry.sdk.trace.export.SpanExporter
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -29,18 +27,14 @@ public class PerfExports(
     private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) : PerfObserver, AutoCloseable {
     private val config = config.copy(headers = config.headers.toMap(), signals = config.signals.toSet())
-    private val nativeEnabled = config.enabled && TRACES in config.signals
     private val eventEnabled = config.enabled && config.signals.any { it == TRACES || it == LOGS }
-    private val nativeAccepted = AtomicLong()
-    private val nativeSkipped = AtomicLong()
-    private val nativeFailed = AtomicLong()
     private val queue = ExportQueue()
     private val engine = ExportEngine(config, identity, source, queue, clock)
     private val closed = AtomicBoolean()
+    private val native = NativeExportSpans(queue, closed, config.enabled && TRACES in config.signals)
     private val flushing = AtomicBoolean()
     private val workerFailures = AtomicLong()
     private val observed = AtomicLong()
-    private val sanitizer = ExportTraces()
     private val worker = if (config.enabled || config.prometheus) {
         Executors.newSingleThreadScheduledExecutor { task ->
             Executors.defaultThreadFactory().newThread(task).apply { name = "splice-telemetry-export"; isDaemon = true }
@@ -77,27 +71,7 @@ public class PerfExports(
     public fun scrape(): PerfScrape = if (config.prometheus) engine.scrape() else ScrapeUnavailable.of("disabled")
 
     /** Native SDK spans enter exactly once and are projected before they reach this component's bounded queue. */
-    public fun nativeSpans(): SpanExporter = object : SpanExporter {
-        override fun export(spans: Collection<SpanData>): CompletableResultCode {
-            if (closed.get() || !nativeEnabled) {
-                nativeSkipped.addAndGet(spans.size.toLong())
-                return CompletableResultCode.ofSuccess()
-            }
-            var accepted = true
-            spans.forEach { span ->
-                if (span.hasEnded() && span.spanContext.isValid) {
-                    val offered = queue.offer(null, sanitizer.sanitize(span))
-                    if (offered) nativeAccepted.incrementAndGet() else nativeFailed.incrementAndGet()
-                    accepted = offered && accepted
-                } else {
-                    nativeSkipped.incrementAndGet()
-                }
-            }
-            return if (accepted) CompletableResultCode.ofSuccess() else CompletableResultCode.ofFailure()
-        }
-        override fun flush(): CompletableResultCode = CompletableResultCode.ofSuccess()
-        override fun shutdown(): CompletableResultCode = CompletableResultCode.ofSuccess()
-    }
+    public fun nativeSpans(): SpanExporter = native.exporter()
 
     /** Caller releases this top-level owner with PerfWorkBudget.release after consuming it and all nested data. */
     public fun status(): JsonObject {
@@ -126,9 +100,9 @@ public class PerfExports(
         put("queue_dropped", queue.dropped.get())
         put("queue_pending", queue.pending())
         put("worker_failures", workerFailures.get())
-        put("native_accepted", nativeAccepted.get())
-        put("native_skipped", nativeSkipped.get())
-        put("native_queue_failed", nativeFailed.get())
+        put("native_accepted", native.accepted)
+        put("native_skipped", native.skipped)
+        put("native_queue_failed", native.failed)
         put("coverage", engine.coverage())
         put("prometheus", engine.scrapeStatus())
         put("metrics", engine.metricsStatus.json())

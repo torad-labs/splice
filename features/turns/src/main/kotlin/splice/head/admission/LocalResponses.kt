@@ -5,7 +5,6 @@
 // so Claude Code cannot tell them from a model's answer — which is the point.
 package splice.head.admission
 
-import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.header
 import io.ktor.server.response.respond
@@ -15,20 +14,18 @@ import splice.core.failure.RequestFacts
 import splice.core.perf.TurnPerf
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
-import splice.core.util.JsonWire
 import splice.head.HeadDeps
 import splice.head.compaction.CompactionReplay
 import splice.head.compaction.RecordedAnswer
 import splice.head.turn.Preparation
 import splice.head.turn.SESSION_TAG_CHARS
-import splice.head.turn.delivery.CollectedReply
 import splice.head.wire.CollectingTerminal
 import splice.head.wire.FrameWrite
-import splice.head.wire.OK_STATUS
 import splice.head.wire.SseEmitterFactory
 import splice.head.wire.TurnTerminal
 import splice.head.wire.TurnWiring
 import splice.head.wire.observation.LocalFrameDelivery
+import splice.head.wire.observation.LocalResponseDelivery
 import splice.http.SseResponse
 import splice.upstream.Provider
 
@@ -67,13 +64,7 @@ internal class LocalResponses(
         } else {
             val terminal = CollectingTerminal(local.model, usage, voice = voice.anyTurn)
             emitText(terminal, local.text)
-            call.respond(
-                CollectedReply(
-                    terminal.responseBody().let(JsonWire::string),
-                    HttpStatusCode.fromValue(terminal.httpStatus()),
-                    perf,
-                ),
-            )
+            call.respond(LocalResponseDelivery.terminal(terminal, perf))
         }
     }
 
@@ -126,7 +117,7 @@ internal class LocalResponses(
             )
             return
         }
-        call.respond(CollectedReply(JsonWire.string(body), HttpStatusCode.fromValue(OK_STATUS), perf))
+        call.respond(LocalResponseDelivery.body(body, perf))
         deps.log(
             "[${provider.key}] collect compaction answer served from its hold ($who; the retry cost no " +
                 "upstream turn)\n",
@@ -153,7 +144,7 @@ internal class LocalResponses(
             )
             return
         }
-        call.respond(CollectedReply(JsonWire.string(body), HttpStatusCode.fromValue(OK_STATUS), perf))
+        call.respond(LocalResponseDelivery.body(body, perf))
         replay.consumed(recorded.key, recorded.recording)
         deps.log(
             "[${provider.key}] collect compaction answer collected from its streamed recording ($who, " +
@@ -170,13 +161,7 @@ internal class LocalResponses(
             voice = compactionVoice,
         )
         terminal.emitError(FailureCause.Splice.CompactionUnfinished)
-        call.respond(
-            CollectedReply(
-                terminal.responseBody().let(JsonWire::string),
-                HttpStatusCode.fromValue(terminal.httpStatus()),
-                observations = RequestObservation.of(call),
-            ),
-        )
+        call.respond(LocalResponseDelivery.terminal(terminal, observations = RequestObservation.of(call)))
     }
 
     // The one failure ending the wire knows (SseEmitter.emitError, L3): an overloaded error, which

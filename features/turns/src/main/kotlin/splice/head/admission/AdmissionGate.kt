@@ -8,7 +8,6 @@ package splice.head.admission
 
 import io.ktor.http.HttpHeaders
 import io.ktor.server.application.ApplicationCall
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
@@ -75,7 +74,7 @@ internal class AdmissionGate(
         // V4-114: the gate ANSWERS with a value now, so this refusal is a compiler-checked `when`
         // branch rather than a `catch` on a name — the 529 on the wire is unchanged, and the
         // window-closed refusal ten lines below has always been spelled as a returned null.
-        val slot = when (val admission = acquireObserved(call, session)) {
+        val slot = when (val admission = RequestObservation.acquire(call, gate, session, deps.seams.clock)) {
             is InflightGate.Admission.Acquired -> admission.slot
             InflightGate.Admission.AtCapacity -> {
                 val full = gate.snapshot()
@@ -98,19 +97,6 @@ internal class AdmissionGate(
             return null
         }
         return slot
-    }
-
-    private suspend fun acquireObserved(call: ApplicationCall, session: String?): InflightGate.Admission {
-        val started = deps.seams.clock()
-        try {
-            return gate.acquire(session)
-        } catch (cancelled: CancellationException) {
-            RequestObservation.of(call)?.finish(
-                OutcomeTag.CANCELLED.wire,
-                mapOf("queue_wait_ms" to (deps.seams.clock() - started).coerceAtLeast(0).toDouble()),
-            )
-            throw cancelled
-        }
     }
 
     /** For a block that cannot refuse the cap because it never reads the body. Its declared length

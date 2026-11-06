@@ -23,7 +23,6 @@ import splice.control.mcp.observation.McpPerfObservations
 import splice.control.mcp.observation.McpPerfRecorders
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
-import splice.core.util.MonoClock
 import splice.core.wire.HttpStatus
 
 // why: JSON-RPC specifies -32600 for an invalid request envelope.
@@ -62,17 +61,11 @@ internal class McpPostHandler(
         } else {
             null
         }
-        return if (invocation == null) {
-            val admission = admission(name, sessionId, message)
-            route(name, McpClient(sessionId, protocolVersion, head), msg, message, admission)
-        } else {
-            invocation.run {
-                val started = MonoClock.nowMs()
-                val admission = admission(name, sessionId, message)
-                invocation.phase(mapOf("tool_queue_ms" to McpPerfObservations.elapsed(started)))
-                route(name, McpClient(sessionId, protocolVersion, head), msg, message, admission)
-            }
-        }
+        return McpPerfObservations.admitted(
+            invocation,
+            admission = { admission(name, sessionId, message) },
+            route = { admission -> route(name, McpClient(sessionId, protocolVersion, head), msg, message, admission) },
+        )
     }
 
     private suspend fun admission(name: String, sessionId: String?, message: McpHostMessage): McpAdmission? =

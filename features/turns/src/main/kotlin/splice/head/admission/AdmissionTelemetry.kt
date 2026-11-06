@@ -103,6 +103,24 @@ internal object RequestObservation {
 
     fun of(call: ApplicationCall): PerfRequestRecorder? = call.attributes.getOrNull(key)
 
+    suspend fun acquire(
+        call: ApplicationCall,
+        gate: InflightGate,
+        session: String?,
+        clock: ElapsedClock,
+    ): InflightGate.Admission {
+        val started = clock()
+        try {
+            return gate.acquire(session)
+        } catch (cancelled: CancellationException) {
+            of(call)?.finish(
+                OutcomeTag.CANCELLED.wire,
+                mapOf("queue_wait_ms" to (clock() - started).coerceAtLeast(0).toDouble()),
+            )
+            throw cancelled
+        }
+    }
+
     fun ready(perf: TurnPerf, prepared: Preparation.Ready) {
         val meta = prepared.built.meta
         perf.observations?.let {

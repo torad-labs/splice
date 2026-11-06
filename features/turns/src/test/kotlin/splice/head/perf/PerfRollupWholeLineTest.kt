@@ -45,7 +45,7 @@ class PerfRollupWholeLineTest {
             }
         }
         producers.forEach { it.join() }
-        assertTrue(AsyncFileIo.drain(), "the lane drains")
+        awaitPerfWrites(file, stats)
         assertEquals(emptyList<String>(), violations)
         assertEquals(400, counted.get())
         assertEquals(400, wholeLines(file).size)
@@ -76,9 +76,16 @@ class PerfRollupWholeLineTest {
             assertEquals(0, wholeLines(file).size)
         } finally {
             held.countDown()
-            assertTrue(AsyncFileIo.drain(), "the lane drains before the temp folder is deleted")
+            awaitPerfWrites(file, stats)
         }
         assertEquals(50, counted.get())
         assertEquals(50, wholeLines(file).size)
+    }
+
+    private fun awaitPerfWrites(file: Path, stats: PerfStats) {
+        // The tracked append finishes its whole-line callback before this file's write settles.
+        assertTrue(AsyncFileIo.awaitFile(file)) {
+            "Perf writes did not settle: sink=${stats.sink.status()}, lane=${AsyncFileIo.workSnapshot}"
+        }
     }
 }

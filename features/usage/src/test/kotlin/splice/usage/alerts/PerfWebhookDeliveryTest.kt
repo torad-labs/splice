@@ -5,10 +5,12 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -65,7 +67,7 @@ class PerfWebhookDeliveryTest {
     @Test
     fun `performance opt in and existing preferences gate the shared text webhook transport`(
         @TempDir tmp: Path,
-    ) = runTest {
+    ) = runBlocking {
         val bodies = mutableListOf<String>()
         HttpClient(
             MockEngine { request ->
@@ -76,22 +78,19 @@ class PerfWebhookDeliveryTest {
             val store = AlertStore(tmp.resolve("alerts.json"))
             store.replace(AlertSettings(desktop = true, webhookUrl = "https://example.invalid/private-secret"))
             val logs = mutableListOf<String>()
-            val failedResponseHandled = CompletableDeferred<Unit>()
             PerfWebhookDelivery(
-                AlertDelivery(store, { line ->
-                    logs.add(line)
-                    failedResponseHandled.complete(Unit)
-                }, this, client),
+                AlertDelivery(store, { line -> logs.add(line) }, this, client),
                 this,
             ).use { delivery ->
                 assertFalse(delivery.enqueue(event(false)))
                 assertTrue(bodies.isEmpty())
                 assertTrue(delivery.enqueue(event(true)))
                 assertTrue(delivery.enqueue(event(true)))
-                // AlertDelivery logs after it observes the failed transport outcome. The worker then
-                // publishes its terminal result; runCurrent drains that continuation before assertions.
-                failedResponseHandled.await()
-                runCurrent()
+                // MockEngine dispatches its handler through the engine dispatcher. Use a real-clock
+                // scope and await the public terminal result so a virtual timeout cannot hide the 503.
+                withTimeout(12_000L) {
+                    while (delivery.result("dedup") == null) yield()
+                }
                 assertEquals(1, bodies.size)
                 assertEquals("failed", delivery.result("dedup"))
                 assertEquals("1", JsonScalars.str(delivery.status(), "failed"))
@@ -101,7 +100,9 @@ class PerfWebhookDeliveryTest {
                 assertFalse(logs.joinToString().contains("private-secret"))
                 store.replace(AlertSettings(desktop = true))
                 assertTrue(delivery.enqueue(event(true)))
-                runCurrent()
+                withTimeout(12_000L) {
+                    while (delivery.result("dedup") == null) yield()
+                }
                 assertEquals("disabled", delivery.result("dedup"))
                 assertEquals(1, bodies.size)
             }

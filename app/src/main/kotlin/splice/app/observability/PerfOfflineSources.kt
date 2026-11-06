@@ -6,6 +6,7 @@ import splice.app.sources.observability.PerfEvidenceFileSource
 import splice.core.GATEWAY_VERSION
 import splice.core.config.StatePaths
 import splice.core.perf.observation.PerfIdentity
+import splice.core.util.Cancellables
 import splice.core.util.WallClock
 import splice.usage.perf.objectives.PerfObjectiveStore
 import splice.usage.perf.query.PerfQuerySources
@@ -36,5 +37,9 @@ internal class PerfOfflineSources(
     override fun objective(id: String) = objectives.objective(id)
     override fun objectiveCohort(id: String) = objectives.cohort(id)
 
-    override fun close() { aggregate.close(); configuration.close(); objectives.close() }
+    override fun close() {
+        Cancellables.withCleanup({ objectives.close() }) {
+            Cancellables.withCleanup({ configuration.close() }) { aggregate.close() }
+        }
+    }
 }

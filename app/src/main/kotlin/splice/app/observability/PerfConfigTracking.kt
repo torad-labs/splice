@@ -3,6 +3,7 @@ package splice.app.observability
 import splice.core.config.ConfigService
 import splice.core.config.EffectiveConfigObservation
 import splice.core.config.EffectiveConfigObserver
+import splice.core.util.Cancellables
 import splice.core.util.PerfWorkBudget
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.atomic.AtomicLong
@@ -84,9 +85,9 @@ internal class PerfConfigTracking(
 
     override fun close() {
         config.effectiveObserver = null
-        drain()
-        originalsLease?.close()
-        history.close()
+        Cancellables.withCleanup({ history.close() }) {
+            Cancellables.withCleanup({ originalsLease?.close() }) { drain() }
+        }
     }
 
     private data class Change(

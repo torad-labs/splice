@@ -25,7 +25,11 @@ internal class PerfLifecycle(
         PerfEventKind.REQUEST_FINISHED -> event.links.requestId?.let { "$REQUESTS:$it" }
         PerfEventKind.ATTEMPT_FINISHED -> event.links.attemptId?.let { "$ATTEMPTS:$it" }
         PerfEventKind.TOOL_FINISHED -> event.links.toolId?.let { "tools:$it" }
-        else -> null
+        PerfEventKind.REQUEST_ARRIVED, PerfEventKind.ATTEMPT_STARTED, PerfEventKind.TOOL_STARTED,
+        PerfEventKind.REQUEST_ADMITTED, PerfEventKind.PROTOCOL_PROGRESS, PerfEventKind.CONTENT_PROGRESS,
+        PerfEventKind.CLIENT_PROGRESS, PerfEventKind.GAP, PerfEventKind.GATE_STATE, PerfEventKind.TOOL_PHASE,
+        PerfEventKind.RUNTIME, PerfEventKind.SELF_COST, PerfEventKind.CHECKPOINT, PerfEventKind.USAGE_RECORDED,
+        -> null
     }
 
     fun record(event: PerfObservation, at: Long, terminalReservation: Long): Boolean = when (event.kind) {

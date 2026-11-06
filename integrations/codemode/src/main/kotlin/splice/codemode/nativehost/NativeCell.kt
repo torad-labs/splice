@@ -11,6 +11,7 @@ import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.yield
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.Cancellables
 import splice.upstream.codemode.CodeModeInvocationAction
@@ -119,6 +120,8 @@ internal class NativeCell(
 
     /** Coalesce a native callback burst across reader scheduling without waiting for tool results. */
     private suspend fun collectCallbackBurst() {
+        // Preserve the foreground observer's fairness/cancellation point with its calls still buffered.
+        yield()
         // The native protocol has no end-of-burst marker. A quiet interval lets
         // sibling invokes cross the transport; the outer deadline prevents a
         // continuous producer from holding a client batch indefinitely.

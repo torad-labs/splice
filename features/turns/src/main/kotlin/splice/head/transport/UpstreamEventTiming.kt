@@ -8,11 +8,13 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.perf.UpstreamGapEnd
+import splice.core.perf.observation.PerfAttemptRecorder
 import splice.core.perf.observation.PerfEventKind
 
 /** Each collection owns its stopwatch. Synchronous delivery is charged separately, never as silence. */
 internal class UpstreamEventTiming(private val perf: TurnPerf, private val postedAtMs: Long?) {
     fun observe(events: Flow<JsonObject>): Flow<JsonObject> = flow {
+        val observations = perf.upstream.observations
         var previousEventMs = postedAtMs
         var previousContentMs = postedAtMs ?: perf.elapsedMs()
         var ending = UpstreamGapEnd.TORN
@@ -21,7 +23,7 @@ internal class UpstreamEventTiming(private val perf: TurnPerf, private val poste
             events.collect { event ->
                 val nowMs = perf.elapsedMs()
                 val kind = UpstreamEventKinds.kind(event)
-                recordGap(previousEventMs, nowMs, kind)
+                recordGap(previousEventMs, nowMs, kind, observations)
                 if (UpstreamEventKinds.hasContent(event, kind)) {
                     perf.maxCount(PerfKeys.UP_CONTENT_GAP_MAX_MS, nowMs - previousContentMs)
                     previousContentMs = nowMs
@@ -34,7 +36,7 @@ internal class UpstreamEventTiming(private val perf: TurnPerf, private val poste
                     val blockedMs = resumedAtMs - deliveryStartedMs
                     deliveryTotalMs += blockedMs
                     perf.maxCount(PerfKeys.UP_BLOCKED_MAX_MS, blockedMs)
-                    perf.observations?.observe(PerfEventKind.GAP, mapOf("local_read_block_ms" to blockedMs.toDouble()))
+                    observations?.observe(PerfEventKind.GAP, mapOf("local_read_block_ms" to blockedMs.toDouble()))
                     previousEventMs = resumedAtMs
                     // Even ping delivery is downstream work, not part of the wait for content.
                     previousContentMs += blockedMs
@@ -48,15 +50,15 @@ internal class UpstreamEventTiming(private val perf: TurnPerf, private val poste
             perf.maxCount(PerfKeys.UP_BLOCKED_TOTAL_MS, 0)
             perf.add(PerfKeys.UP_BLOCKED_TOTAL_MS, deliveryTotalMs)
             val endedAtMs = perf.elapsedMs()
-            recordGap(previousEventMs, endedAtMs, ending)
+            recordGap(previousEventMs, endedAtMs, ending, observations)
             perf.maxCount(PerfKeys.UP_CONTENT_GAP_MAX_MS, endedAtMs - previousContentMs)
         }
     }
 
-    private fun recordGap(previousMs: Long?, nowMs: Long, kind: UpstreamGapEnd) {
+    private fun recordGap(previousMs: Long?, nowMs: Long, kind: UpstreamGapEnd, observations: PerfAttemptRecorder?) {
         if (previousMs == null) return
         val gapMs = nowMs - previousMs
-        perf.observations?.observe(PerfEventKind.GAP, mapOf("upstream_gap_ms" to gapMs.toDouble()))
+        observations?.observe(PerfEventKind.GAP, mapOf("upstream_gap_ms" to gapMs.toDouble()))
         perf.intervals.record(PerfKeys.UP_GAP_MAX_MS, previousMs, nowMs, kind)
         perf.maxCount(PerfKeys.UP_GAPS_2S, 0)
         if (gapMs >= LONG_UPSTREAM_GAP_MS) perf.add(PerfKeys.UP_GAPS_2S, 1)

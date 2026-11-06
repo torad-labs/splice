@@ -16,10 +16,15 @@ import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.perf.UpstreamAttemptTiming
 import splice.core.perf.UpstreamGapEnd
+import splice.core.perf.observation.PerfAccumulator
+import splice.core.perf.observation.PerfIdentity
+import splice.core.perf.observation.PerfRecorder
+import splice.core.perf.observation.PerfScope
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
 import java.net.SocketException
@@ -30,6 +35,36 @@ class UpstreamEventTimingTest {
         """{"type":"content_block_delta","delta":{"type":"text_delta","text":"synthetic"}}""",
     ).jsonObject
     private val ping = Json.parseToJsonElement("""{"type":"ping"}""").jsonObject
+
+    @Test
+    fun `detached upstream gaps and reader work survive client completion`() = runTest {
+        val clock = ElapsedClock { testScheduler.currentTime }
+        val identity = PerfIdentity("detached", "test", "test", "test")
+        val aggregate = PerfAccumulator(identity)
+        val recorder = PerfRecorder(identity, aggregate, clock, WallClock { 60_000L + clock() })
+        val request = recorder.request(PerfScope(head = "test"), 0L, 60_000L)
+        val perf = TurnPerf(observations = request, clock = clock)
+        val attempt = UpstreamAttemptTiming(perf)
+        request.finish(OutcomeTag.CLIENT_ABORT.wire)
+        val delivered = mutableListOf<kotlinx.serialization.json.JsonObject>()
+        UpstreamEventTiming(perf, 0).observe(
+            flow {
+                delay(10)
+                emit(text)
+                delay(20)
+            },
+        ).collect {
+            delivered += it
+            delay(5)
+        }
+        attempt.finish(OutcomeTag.OK.wire)
+        assertEquals(listOf(text), delivered)
+        val points = aggregate.snapshot().points
+        assertEquals(30.0, points.filter { it.metric == "upstream_gap_ms" }.sumOf { it.sum })
+        assertEquals(5.0, points.filter { it.metric == "local_read_block_ms" }.sumOf { it.sum })
+        assertEquals(35.0, points.filter { it.metric == "attempt_duration_ms" }.sumOf { it.sum })
+        assertEquals(1.0, points.filter { it.metric == "requests_finished" }.sumOf { it.sum })
+    }
 
     @ParameterizedTest
     @ValueSource(strings = ["completed", "torn", "cancelled"])

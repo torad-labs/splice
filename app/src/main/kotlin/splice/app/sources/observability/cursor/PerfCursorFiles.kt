@@ -191,7 +191,7 @@ private class CursorPruneSweep(private val stream: DirectoryStream<Path>) : Auto
         }
         CursorPruneRead(files, bytes, iterator.hasNext())
     } catch (failure: DirectoryIteratorException) {
-        throw failure.cause
+        throw (failure.cause ?: failure)
     }
 
     private fun retainedBytes(path: Path, now: Long): Long? = try {
@@ -224,4 +224,6 @@ private const val MAX_CURSOR_DIRECTORIES = 256
 
 // At most four paused directory streams retain 64 KiB each inside the unchanged shared work allowance.
 private const val MAX_PENDING_SWEEPS = 4
+
+// Charge 64 KiB per retained directory iterator so paused pruning stays inside the shared work allowance.
 private const val PRUNE_SWEEP_BYTES = 64L * 1_024

@@ -48,14 +48,15 @@ if (shardPlan) {
                         }
                         def loads = (0..<configuration.count).collect { 0d }
                         def buckets = (0..<configuration.count).collect { [] }
+                        // A measured zero is a helper/near-zero test, not an unknown class.
+                        def weight = { name -> (configuration.weights.containsKey(name) ? configuration.weights[name] : 1) as double }
                         candidates.toList().sort { a,b ->
-                            def weight = { name -> (configuration.weights[name] ?: 1) as double }
                             def order = weight(b) <=> weight(a)
                             order == 0 ? a <=> b : order
                         }.each { name ->
                             int bucket = (0..<configuration.count).min { loads[it] }
                             buckets[bucket].add(name)
-                            loads[bucket] += (configuration.weights[name] ?: 1) as double
+                            loads[bucket] += weight(name)
                         }
                         def selected = buckets[configuration.index as int]
                         // An empty shard is explicit, never interpreted as 'run everything'.

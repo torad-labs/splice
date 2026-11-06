@@ -31,8 +31,16 @@ public object UsageMeasurements {
 
     private fun emptyIdentity(usage: Usage): Boolean = listOf(
         usage.origin.history.request == UsageRequest.NONE,
-        usage.absorbed.rounds == 0L,
+        usage.absorbed == AbsorbedRounds(),
         usage.cutRounds == 0L,
-        listOf(usage.inputTokens, usage.outputTokens, usage.cachedTokens, usage.cacheWriteTokens).all { it == 0L },
+        listOf(
+            usage.inputTokens,
+            usage.outputTokens,
+            usage.cachedTokens,
+            usage.reasoningTokens,
+            usage.cacheWriteTokens,
+            usage.cacheWriteHourlyTokens,
+            usage.origin.recordedOutputTokens,
+        ).all { it == 0L },
     ).all { it }
 }

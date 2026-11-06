@@ -55,6 +55,9 @@ internal class PerfRequestReduction(
     }
 
     private fun capture(key: ReducedRequestKey, observation: PerfObservation) {
+        val state = requests[key] ?: return
+        if (PerfEvidenceWindow.inside(observation, query)) state.hasRequestedEvidence = true
+        if (!state.hasRequestedEvidence) return
         if (timeline.contains(key) || PerfEvidenceSelection.matches(listOf(observation), filter)) {
             timeline.capture(key, observation)
         }
@@ -100,7 +103,7 @@ internal class PerfRequestReduction(
             val (key, state) = iterator.next()
             val events = state.events()
             if (events.isNotEmpty() && PerfEvidenceMembership.unknown(events, query, filter)) membershipUnknown = true
-            val selected = events.isNotEmpty() && PerfEvidenceSelection.matches(events, filter)
+            val selected = state.hasRequestedEvidence && PerfEvidenceSelection.matches(events, filter)
             workload.add(events, selected)
             if (selected) {
                 matching++

@@ -13,6 +13,7 @@ internal class PerfReducedRequest(
     val identity: PerfIdentity,
     private val memory: PerfReductionMemory,
 ) {
+    var hasRequestedEvidence = false
     private var arrivalWall = -1L
     private var arrivalMono = 0L
     private var arrivalOutcome: String? = null

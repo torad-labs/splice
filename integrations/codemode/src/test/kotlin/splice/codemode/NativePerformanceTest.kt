@@ -63,6 +63,9 @@ class NativePerformanceTest {
         assertTrue(finished.all { it.values["tool_native_span"] == 1.0 })
         assertTrue(finished.all { event -> exporter.spans.any { it.spanId == event.links.spanId } })
         assertTrue(events.any { it.values.containsKey("tool_callback_wait_ms") })
+        val coldStarts = events.mapNotNull { it.values["tool_cold_start_ms"] }
+        assertEquals(2, coldStarts.size)
+        assertTrue(coldStarts.first() > 0.0)
         assertTrue(events.any { it.values["tool_cold_start_ms"] == 0.0 })
         assertFalse(events.toString().contains("private-value"))
         assertFalse(exporter.closed)

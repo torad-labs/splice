@@ -119,7 +119,7 @@ public class NativeCodeModeRuntime(
         source: String,
         definitions: List<CodeModeManual.NestedTool>,
         options: NativeCodeModeOptions,
-    ): NativeCodeModeCell = NativeTraceContext.preserve {
+    ): NativeCodeModeCell = NativeTraceContext.start {
         require(sessionKey.isNotBlank()) { "Native code-mode session key is required" }
         starter.start(sessionKey, source, definitions, options)
     }

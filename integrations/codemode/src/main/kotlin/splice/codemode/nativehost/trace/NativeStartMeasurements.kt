@@ -5,7 +5,9 @@ import io.opentelemetry.context.ContextKey
 
 /** Fixed-size operation preparation readings travel with existing context, never a global ID cache. */
 internal class NativeStartMeasurements {
-    private val values = linkedMapOf<String, Double>()
+    // A successful execution that reuses its logical session never opens the host connection.
+    // The connection opener replaces this zero with measured startup time when it runs.
+    private val values = linkedMapOf("tool_cold_start_ms" to 0.0)
 
     @Synchronized
     fun record(metric: String, value: Double) { values[metric] = value }

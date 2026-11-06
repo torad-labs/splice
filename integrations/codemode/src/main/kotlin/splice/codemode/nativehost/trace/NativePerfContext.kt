@@ -34,7 +34,7 @@ internal object NativePerfContext {
         return parent.with(
             requestKey,
             request,
-        ).with(attemptKey, links).with(NativeStartTiming.key, NativeStartMeasurements())
+        ).with(attemptKey, links)
     }
 
     fun tool(name: String, span: Span, parent: Context): PerfToolRecorder? {

@@ -42,6 +42,12 @@ internal class NativeTracing(private val tracer: Tracer = GlobalOpenTelemetry.ge
 internal object NativeTraceContext {
     fun capture(): CoroutineContext = NativeTraceElement(Context.current())
 
+    suspend fun <T> start(action: CodeModeInvocationAction<T>): T = preserve {
+        // One execution owns its preparation readings, including through nested preserved scopes.
+        val context = Context.current().with(NativeStartTiming.key, NativeStartMeasurements())
+        withContext(NativeTraceElement(context)) { action.run() }
+    }
+
     suspend fun <T> preserve(action: CodeModeInvocationAction<T>): T {
         val perf = currentCoroutineContext()[CodeModePerfContextKey]
         val context = NativePerfContext.attach(Context.current(), perf?.request, perf?.attempt)

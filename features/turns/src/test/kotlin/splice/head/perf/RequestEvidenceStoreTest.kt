@@ -38,7 +38,7 @@ class RequestEvidenceStoreTest {
         tool.finish("cancelled")
         now = 70_000
         request.usage(mapOf("input_tokens" to 100.0, "missing_usage" to 0.0))
-        assertTrue(AsyncFileIo.drain())
+        awaitEvidenceWrites(directory, store)
         val rows = observations(directory)
         val terminal = rows.single { it.kind == PerfEventKind.REQUEST_FINISHED }
         val usage = rows.single { it.kind == PerfEventKind.USAGE_RECORDED }
@@ -74,7 +74,7 @@ class RequestEvidenceStoreTest {
             now++
             request.finish(OutcomeTag.OK.wire)
         }
-        assertTrue(AsyncFileIo.drain())
+        awaitEvidenceWrites(directory, store)
         val retention = Json.decodeFromString<RequestEvidenceRetention>(
             Files.readString(directory.resolve("retention.json")),
         )
@@ -82,6 +82,13 @@ class RequestEvidenceStoreTest {
         assertTrue(Files.list(directory).use { paths -> paths.mapToLong(Files::size).sum() } <= 8_192L)
         assertTrue(observations(directory).isNotEmpty())
         assertEquals(0L, store.sink.status().failed)
+    }
+
+    private fun awaitEvidenceWrites(directory: Path, store: RequestEvidenceStore) {
+        // Each append persists retention metadata before its directory-scoped write completes.
+        assertTrue(AsyncFileIo.awaitDirectory(directory)) {
+            "Evidence writes did not settle: sink=${store.sink.status()}, lane=${AsyncFileIo.workSnapshot}"
+        }
     }
 
     private fun observations(directory: Path): List<PerfObservation> = Files.list(directory).use { paths ->

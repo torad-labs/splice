@@ -4,6 +4,25 @@ const PERF_CONSOLE = (() => {
   const FILTERS = ["head", "model", "transport", "outcome", "session", "project", "account", "local", "compact", "streaming"];
   const SELECTORS = [...FILTERS, "silence_ms", "queued_ms", "resumed", "started_over", "unattributed", "test"];
   const WINDOWS = { "1m": 60000, "5m": 300000, "15m": 900000, "1h": 3600000, "5h": 18000000, "24h": 86400000, "7d": 604800000, "30d": 2592000000 };
+  // These four projections share one server query worker. Keep the lane across panel generations
+  // and page mounts, but leave runtime, alerts, settings and the rest of the console independent.
+  let queryRunning = false, queryWaiting = null;
+  function drainQuery() {
+    if (queryRunning || !queryWaiting) return;
+    const next = queryWaiting; queryWaiting = null;
+    if (!next.current()) { next.resolve(null); return; }
+    queryRunning = true;
+    Promise.resolve().then(() => next.api.get(next.path)).then(next.resolve, next.reject)
+      .finally(() => { queryRunning = false; drainQuery(); });
+  }
+  function queryRead(api, path, current) {
+    return new Promise((resolve, reject) => {
+      // Keep one active read and only the newest pending projection, including rapid refreshes.
+      queryWaiting?.resolve(null);
+      queryWaiting = { api, path, current, resolve, reject };
+      drainQuery();
+    });
+  }
   const safe = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const num = (v) => typeof v === "number" && Number.isFinite(v) ? v.toLocaleString("en-US", { maximumFractionDigits: 3 }) : "—";
   const percent = (v) => typeof v === "number" && Number.isFinite(v) ? `${num(v * 100)}%` : "—";
@@ -118,7 +137,7 @@ const PERF_CONSOLE = (() => {
   }
   function create(scope, options) {
     const { document, API, setTimeout, clearTimeout, setInterval } = scope;
-    const st = { key: null, query: null, replies: {}, tab: "overview", busy: false, abort: null, timer: null, generation: 0, message: "", baselines: loadBaselines(), selected: 0, draft: null, profiles: null, settings: null, openRequest: null, cursor: null, advanced: false, commands: new Set() };
+    const st = { key: null, query: null, replies: {}, tab: "overview", busy: false, rowsBusy: false, abort: null, timer: null, generation: 0, message: "", baselines: loadBaselines(), selected: 0, draft: null, profiles: null, settings: null, openRequest: null, cursor: null, advanced: false, commands: new Set() };
     const clearMeasurements = () => { st.replies = Object.fromEntries(["schema", "caps", "preferences"].filter((k) => st.replies[k]).map((k) => [k, st.replies[k]])); };
     const current = () => options.query();
     const accountChoices = () => [...new Set(String((st.query || queryNow()).filters?.account || "").split("\u001f").filter(Boolean))];
@@ -138,7 +157,8 @@ const PERF_CONSOLE = (() => {
       if (st.busy && key === st.key && !force) return;
       st.abort?.abort(); clearTimeout(st.timer);
       const abort = st.abort = new AbortController(), api = API.scoped(abort.signal), gen = ++st.generation;
-      const changed = key !== st.key; st.key = key; st.query = queryNow(); st.busy = true;
+      const active = () => gen === st.generation && !abort.signal.aborted && host()?.isConnected;
+      const changed = key !== st.key; st.key = key; st.query = queryNow(); st.busy = true; st.rowsBusy = false;
       if (changed) { clearMeasurements(); st.cursor = null; st.openRequest = null; }
       if (accountChoices().length > 1) {
         clearMeasurements(); st.busy = false; st.advanced = true;
@@ -147,9 +167,21 @@ const PERF_CONSOLE = (() => {
       }
       repaint();
       const p = params(st.query).toString();
-      const paths = { summary: `/api/perf/summary?${p}`, series: `/api/perf/series?${p}`, diagnose: `/api/perf/diagnose?${p}`, rows: `/api/perf/turns?${p}&page_size=100`, runtime: "/api/perf/runtime", alerts: `/api/perf/alerts?from=${st.query.from_ms}&until=${st.query.until_ms}`, alertStatus: "/api/perf/alerts/status", preferences: "/api/alerts" };
-      await Promise.all(Object.entries(paths).map(async ([key, path]) => { const r = await api.get(path); if (gen === st.generation && !abort.signal.aborted) st.replies[key] = r; }));
-      if (gen !== st.generation || abort.signal.aborted) return;
+      const projections = { summary: `/api/perf/summary?${p}`, series: `/api/perf/series?${p}`, diagnose: `/api/perf/diagnose?${p}`, rows: `/api/perf/turns?${p}&page_size=100` };
+      const paths = { runtime: "/api/perf/runtime", alerts: `/api/perf/alerts?from=${st.query.from_ms}&until=${st.query.until_ms}`, alertStatus: "/api/perf/alerts/status", preferences: "/api/alerts" };
+      const queried = (async () => {
+        for (const [key, path] of Object.entries(projections)) {
+          if (!active()) return;
+          // A superseded query drains its response before the next starts: aborting only its
+          // browser fetch could free this lane while the server still holds the worker lock.
+          // API already carries page-lifetime cancellation; generation cancellation skips queued
+          // work and discards returned values, while independent reads abort immediately.
+          const r = await queryRead(API, path, active);
+          if (active()) st.replies[key] = r;
+        }
+      })();
+      await Promise.all([queried, ...Object.entries(paths).map(async ([key, path]) => { const r = await api.get(path); if (active()) st.replies[key] = r; })]);
+      if (!active()) return;
       st.busy = false;
       if (st.replies.summary?.body?.query) {
         st.query = st.replies.summary.body.query;
@@ -303,7 +335,7 @@ const PERF_CONSOLE = (() => {
       const r = st.replies.rows, v = r?.body;
       return table(["Request", "Time", "Command", "Model", "Outcome"], (v?.rows || []).map((x) => [turnLink(x, x.turn_id), safe(date(x.ts)), safe(x.head), safe(x.model ?? "Unknown"), safe(words(x.outcome))]), "Recorded request rows · returned source order")
         + note(`${status(r)} · ${num(v?.total_matching)} matching records · ${v?.record_unit || "record"}`)
-        + (v?.next_cursor ? `<button class="act small" data-pc="next">Next records</button>` : "");
+        + (v?.next_cursor ? `<button class="act small" data-pc="next"${st.busy || st.rowsBusy ? " disabled" : ""}>Next records</button>` : "");
     }
     function baselines() {
       const selected = st.baselines[st.selected], summary = st.replies.summary?.body;
@@ -507,7 +539,15 @@ const PERF_CONSOLE = (() => {
         if (action === "profile-refresh") await refreshProfile();
         if (action === "profile-stop") { const r = await API.post(`/api/perf/profiles/${encodeURIComponent(st.profiles.profile_id)}/stop`, {}); st.profiles = r.body; st.message = `Capture: ${status(r)}`; }
         if (action === "profile-download") { const r = await API.blob(`/api/perf/profiles/${encodeURIComponent(st.profiles.profile_id)}/artifact`); if (!r.ok) throw new Error(`Artifact: ${status(r)}`); download(r.body, `splice-profile-${st.profiles.profile_id}.jfr`); }
-        if (action === "next") { const gen = st.generation, p = params(st.query); p.set("cursor", st.replies.rows.body.next_cursor); p.set("page_size", "100"); const r = await API.scoped(st.abort.signal).get(`/api/perf/turns?${p}`); if (gen === st.generation) st.replies.rows = r; }
+        if (action === "next") {
+          if (st.busy || st.rowsBusy || !st.replies.rows?.body?.next_cursor) return;
+          const gen = st.generation, abort = st.abort, p = params(st.query);
+          const active = () => gen === st.generation && !abort.signal.aborted && host()?.isConnected;
+          p.set("cursor", st.replies.rows.body.next_cursor); p.set("page_size", "100");
+          st.rowsBusy = true; repaint();
+          try { const r = await queryRead(API, `/api/perf/turns?${p}`, active); if (active()) st.replies.rows = r; }
+          finally { if (active()) st.rowsBusy = false; }
+        }
       } catch (error) { st.message = error.message || "Action failed"; }
       repaint();
     });

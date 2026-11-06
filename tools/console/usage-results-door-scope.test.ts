@@ -18,11 +18,41 @@ const group = (key: string, over: Row): Row => ({
 });
 const proj = (p: string) => ({ id: `/work/${p}`, name: p, label: p, source: "folder", folder: "/work" });
 const rows = Array.from({ length: 6 }, (_, i) => ({ turn: `o${i}`, ts: now - 30_000 * (i + 1), first_byte: 100, total: 500, outcome: "ok", model: "m", account: "primary", session: "s1", project: proj("website") }));
+let queryWorkerBusy = false, refuseSummary = false;
+let heldQuery: { path: string; cursor: boolean; entered: () => void; wait: Promise<void> } | null = null;
+function holdQuery(path: string, cursor = false) {
+  let entered!: () => void, release!: () => void;
+  const ready = new Promise<void>((resolve) => { entered = resolve; });
+  const wait = new Promise<void>((resolve) => { release = resolve; });
+  heldQuery = { path, cursor, entered, wait };
+  return { ready, release };
+}
+// Model the actual route's single query worker. Concurrent reads receive its real refusal shape;
+// tests judge the selected cohort and rendered views, not request counts or implementation details.
+async function workerResponse(url: URL) {
+  const busy = () => Response.json({ schema_version: 1, contract_version: 1, status: "busy", error: { code: "query_busy", reason: "query_in_progress" } }, { status: 409 });
+  if (queryWorkerBusy || (refuseSummary && url.pathname === "/api/perf/summary")) return busy();
+  queryWorkerBusy = true;
+  try {
+    if (heldQuery?.path === url.pathname && heldQuery.cursor === url.searchParams.has("cursor")) {
+      const hold = heldQuery; heldQuery = null; hold.entered(); await hold.wait;
+    } else await Bun.sleep(30);
+    const picked = url.searchParams.get("project") === "/work/website", name = picked ? "current" : "superseded";
+    const total_ms = { count: 20, p50: 500, p95: 900, max: 1200 };
+    const summary = performanceSummary(url, { plan: { count: 20, read_status: "readable", metrics_complete: true, failure_share: picked ? .05 : .5, total_ms } });
+    if (url.pathname === "/api/perf/summary") return Response.json(summary);
+    if (url.pathname === "/api/perf/series") return Response.json({ ...summary, series: [{ from_ms: now - 1000, until_ms: now, metrics: { [`${name}_gauge`]: { last: 7 } } }] });
+    if (url.pathname === "/api/perf/diagnose") return Response.json({ ...summary, evidence: [{ metric: `${name}_diagnosis`, mean_ms: 7, classification: "observed", inference: "recorded" }] });
+    const cursor = url.searchParams.has("cursor"), turn = `${name}-${cursor ? "second" : "first"}-page`;
+    return Response.json({ ...performanceRows(url), rows: [{ head: "plan", turn_id: turn, ts: now, model: "one-query-worker", outcome: "ok" }], total_matching: 110, next_cursor: cursor ? null : "page-two" });
+  } finally { queryWorkerBusy = false; }
+}
 
 const server = Bun.serve({
   port: 0,
   async fetch(req) {
     const url = new URL(req.url), path = url.pathname;
+    if (url.searchParams.get("model") === "one-query-worker" && url.searchParams.get("contract") === "1" && ["/api/perf/summary", "/api/perf/series", "/api/perf/diagnose", "/api/perf/turns"].includes(path)) return workerResponse(url);
     if (path === "/api/heads") return Response.json({ heads: [{ key: "plan", label: "claude-plan" }] });
     if (path === "/api/models") return Response.json({ heads: [{ head: "plan", provider: "anthropic", models: [] }] });
     if (path === "/api/status") return Response.json({ registry: [{ key: "plan", family: "anthropic", authKind: "claude-oauth" }] });
@@ -138,4 +168,56 @@ test("Usage: selected project changes the Results population and survives reques
     expect(Number(href.searchParams.get("until")) - Number(href.searchParams.get("from"))).toBe(7 * 86400000);
     expect(await live(said(p), (el) => el.getClientRects().length)).toBe(1);
   });
+}, 90_000);
+
+test("Usage: a single query worker returns every view for the newest cohort and refresh", async () => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1400 } });
+  const p = await context.newPage(), first = holdQuery("/api/perf/summary");
+  let pageTurn: ReturnType<typeof holdQuery> | null = null;
+  try {
+    await p.goto(`http://127.0.0.1:${server.port}/usage.html?contract=1&model=one-query-worker&from=${now - 60000}&until=${now}`);
+    await first.ready;
+    const panel = p.locator("#band-perf"), content = panel.locator(".pc-content");
+    // Multiple cohort edits while a previous server read still owns the worker must publish only
+    // the newest cohort. Aborting its browser response does not release this fixture's worker.
+    for (const project of ["/work/old-a", "/work/old-b", "/work/website"]) {
+      await panel.locator('[name="project"]').fill(project);
+      await panel.getByRole("button", { name: "Apply cohort", exact: true }).click();
+    }
+    first.release();
+    await expect(content).toHaveAttribute("aria-busy", "false");
+    await expect(panel.locator('[name="project"]')).toHaveValue("/work/website");
+    await expect(door(p).locator("[data-tn=door-failed]")).toHaveText("5%");
+    await panel.locator('[data-pc-tab="history"]').click();
+    await expect(panel.getByRole("table", { name: "History · last 120 returned scope intervals", exact: true })).toContainText("7");
+    await expect(panel.locator('[name="historyMetric"]')).toHaveValue("current_gauge");
+    await panel.locator('[data-pc-tab="timeline"]').click();
+    await expect(panel.getByRole("table", { name: "Diagnosis evidence", exact: true })).toContainText("current diagnosis");
+    const records = panel.getByRole("table", { name: "Recorded request rows · returned source order", exact: true });
+    await expect(records).toContainText("current-first-page");
+    await expect(panel.locator(".pc-coverage strong")).toHaveText("Ok");
+
+    // A refresh supersedes an in-flight cursor page. Its old page cannot replace the refreshed
+    // first page, and the subsequent intentional Next still reaches the actual second page.
+    pageTurn = holdQuery("/api/perf/turns", true);
+    await panel.getByRole("button", { name: "Next records", exact: true }).click();
+    await pageTurn.ready;
+    await expect(panel.getByRole("button", { name: "Next records", exact: true })).toBeDisabled();
+    await panel.getByRole("button", { name: "Refresh", exact: true }).click();
+    pageTurn.release();
+    await expect(content).toHaveAttribute("aria-busy", "false");
+    await expect(records).toContainText("current-first-page");
+    await expect(records).not.toContainText("current-second-page");
+    await panel.getByRole("button", { name: "Next records", exact: true }).click();
+    await expect(records).toContainText("current-second-page");
+
+    refuseSummary = true;
+    await panel.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(content).toHaveAttribute("aria-busy", "false");
+    await expect(panel.locator(".pc-coverage strong")).toHaveText("Error");
+    await expect(panel).toContainText("query in progress");
+  } finally {
+    first.release(); pageTurn?.release(); heldQuery = null; refuseSummary = false;
+    await context.close();
+  }
 }, 90_000);

@@ -593,15 +593,28 @@ internal class HoldBoundsThroughHeadsTest : HoldRouteFixtures() {
     fun `a provider sending only keepalive comments holds the turn until the session's wall, which it ends 30 s before`(
         @TempDir tmp: Path,
     ) = runTest {
-        // On a clock the test steps, so the head reads each keepalive as it comes, 20 s apart, as a slow provider's.
+        // The provider keepalives and the session wall share a manually stepped clock.
         withScriptedHeads(tmp, VirtualTime()) {
             provider.script(reply { repeat(KEEPALIVES) { keepalive(); delay(20.seconds) } })
             val head = chat(HeadShape(progressCap = 5.minutes))
             val turn = ClientRequest(headers = mapOf(WALL_HEADER to "960000"))
 
             val stream = head.client.open(turn)
+            // open() starts I/O on real dispatchers. Keep virtual time at zero until the head consumes the first
+            // keepalive, so the request-relative session wall cannot start after runClock has already advanced.
+            eventually { stream.finished || head.liveTurns.list().any { it.silence.seenOutput } }
             runClock(5.seconds, atMost = 16.minutes) { stream.finished }
-            assertTrue(stream.finished, "the live provider is held until the session wall")
+            assertTrue(stream.finished) {
+                val observed = stream.soFar()
+                val live = head.liveTurns.list().singleOrNull()
+                "the live provider is held until the session wall; " +
+                    "clock=${time.passed()} nextDue=${time.nextDue()} parked=${time.parkedNow()} " +
+                    "requests=${provider.requests.size} firstRequestAt=${provider.requests.firstOrNull()?.at} " +
+                    "phase=${live?.state?.javaClass?.simpleName} silence=${live?.silence} " +
+                    "watchdogHeld=${head.log.any { "holding the turn until its session's wall" in it }} " +
+                    "status=${observed.status} events=${observed.events.size} cut=${observed.cut} " +
+                    "readFailed=${observed.failure != null}"
+            }
             val answer = stream.finish()
 
             assertTrue(

@@ -57,15 +57,32 @@ public object PerfWorkBudget {
         private val kind: Kind = Kind.OTHER,
     ) : AutoCloseable, Runnable {
         private var ticketed = false
+        private var closed = false
+
+        /** Atomically replaces this reservation. Refusal leaves it owned; success invalidates this lease. */
+        public fun transfer(totalBytes: Long): Lease? = synchronized(PerfWorkBudget) {
+            require(totalBytes >= 0L)
+            check(!closed && !ticketed) { "Only an open, unretained reservation can transfer" }
+            val additional = totalBytes - bytes
+            if (additional > LIMIT - used) {
+                lastRefusal.capture(additional, kind)
+                return null
+            }
+            val replacement = Lease(totalBytes, kind)
+            used += additional
+            reservations[kind.ordinal] += additional
+            bytes = 0L
+            closed = true
+            replacement
+        }
 
         public fun <T : Any> retain(owner: T, retained: Long) {
             synchronized(PerfWorkBudget) {
+                check(!closed) { "A closed reservation cannot retain an owner" }
                 require(retained in 0..bytes)
                 used -= bytes - retained
                 charged()[kind.ordinal] -= bytes - retained
                 bytes = retained
-            }
-            synchronized(PerfWorkBudget) {
                 val ticket = Ticket(owner, this)
                 ticket.cleanable = cleaner.register(owner, ticket)
                 tickets.getOrPut(ticket.hash) { ArrayList() }.add(ticket)
@@ -84,6 +101,7 @@ public object PerfWorkBudget {
                 used -= bytes
                 charged()[kind.ordinal] -= bytes
                 bytes = 0L
+                closed = true
             }
         }
 

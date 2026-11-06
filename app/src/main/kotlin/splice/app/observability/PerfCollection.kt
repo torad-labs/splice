@@ -67,7 +67,8 @@ internal class PerfCollection(
     fun checkpoint() {
         if (aggregate.status().pending > 0) return
         val lease = PerfWorkBudget.acquire(TELEMETRY_SNAPSHOT_BYTES) ?: return
-        lease.use { aggregate.append(accumulator.snapshot()) }
+        // Accumulator snapshots detach points, histograms and coverage lists; the writer can take this sole copy.
+        lease.use { aggregate.appendOwned(accumulator.snapshot(), it) }
     }
 
     fun checkpointCoverage() { evidenceFiles.checkpointCoverage() }

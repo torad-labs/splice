@@ -74,16 +74,25 @@ public class PerfAggregateStore(directory: Path, private val identity: PerfIdent
     }
 
     @Synchronized
-    override fun append(snapshot: PerfAggregateSnapshot): Boolean {
+    override fun append(snapshot: PerfAggregateSnapshot): Boolean = append(snapshot, null)
+
+    /** Only for detached snapshots the producer relinquishes. Caller still closes its original lease. */
+    @Synchronized
+    internal fun appendOwned(snapshot: PerfAggregateSnapshot, lease: PerfWorkBudget.Lease): Boolean =
+        append(snapshot, lease)
+
+    private fun append(snapshot: PerfAggregateSnapshot, snapshotLease: PerfWorkBudget.Lease?): Boolean {
         if (!openWriter()) {
             sink.reject()
             return false
         }
         val charge = PerfHistoryFormat.estimate(snapshot)
         val lease = if (!closed && charge <= MAX_PENDING_BYTES) {
-            PerfWorkBudget.acquire(
-                charge + PERF_HISTORY_WORK_BYTES,
-            )
+            if (snapshotLease == null) {
+                PerfWorkBudget.acquire(charge + PERF_HISTORY_WORK_BYTES)
+            } else {
+                snapshotLease.transfer(charge + PERF_HISTORY_WORK_BYTES)
+            }
         } else {
             null
         }
@@ -92,12 +101,14 @@ public class PerfAggregateStore(directory: Path, private val identity: PerfIdent
             issue(PerfIssue("checkpoint_dropped", HISTORY_SINK))
             return false
         }
-        val frozen = PerfHistoryFormat.frozen(snapshot)
-        val accepted = AsyncFileIo.submitFor(files.checkpoint, sink) {
-            lease.use { persist(frozen) }
+        var accepted = false
+        try {
+            val frozen = if (snapshotLease == null) PerfHistoryFormat.frozen(snapshot) else snapshot
+            accepted = AsyncFileIo.submitFor(files.checkpoint, sink) { lease.use { persist(frozen) } }
+            return accepted
+        } finally {
+            if (!accepted) lease.close()
         }
-        if (!accepted) lease.close()
-        return accepted
     }
 
     override fun read(fromMs: Long, untilMs: Long): PerfHistoryRead {

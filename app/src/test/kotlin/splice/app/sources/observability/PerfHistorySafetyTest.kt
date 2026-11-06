@@ -81,6 +81,45 @@ class PerfHistorySafetyTest {
     }
 
     @Test
+    fun `owned checkpoints persist beside ordinary owners and refused work releases its reservation`(
+        @TempDir dir: Path,
+    ) {
+        PerfAggregateStore(dir, identity, clock).use { writer ->
+            checkNotNull(PerfWorkBudget.acquire(8L * 1_024 * 1_024)).use {
+                assertFalse(appendOwned(writer))
+            }
+            assertEquals(1L, writer.status().dropped)
+            val entered = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            assertTrue(AsyncFileIo.submit { entered.countDown(); release.await(10, TimeUnit.SECONDS) })
+            try {
+                assertTrue(entered.await(5, TimeUnit.SECONDS))
+                checkNotNull(PerfWorkBudget.acquire(7L * 1_024 * 1_024)).use {
+                    assertTrue(appendOwned(writer))
+                    assertEquals(1L, writer.status().pending)
+                    assertBusy(writer)
+                    release.countDown()
+                    assertTrue(AsyncFileIo.awaitFile(dir.resolve("checkpoint.json")))
+                    // A completed write must release its transferred lease before the next checkpoint.
+                    assertTrue(appendOwned(writer))
+                    assertTrue(AsyncFileIo.awaitFile(dir.resolve("checkpoint.json")))
+                }
+            } finally {
+                release.countDown()
+            }
+            assertEquals(2L, writer.status().written)
+            assertEquals(0L, writer.status().failed)
+            val read = writer.read(snapshot.fromMs, snapshot.untilMs)
+            try {
+                assertEquals(1L, read.snapshots.flatMap { it.points }.sumOf { it.count })
+                assertTrue(read.coverage.issues.any { it.code == "checkpoint_dropped" })
+            } finally {
+                PerfWorkBudget.release(read)
+            }
+        }
+    }
+
+    @Test
     fun `variable checkpoint metadata is refused before enqueue`(@TempDir dir: Path) {
         val huge = "x".repeat(3 * 1_024 * 1_024)
         PerfAggregateStore(dir, identity, clock).use { writer ->
@@ -104,6 +143,18 @@ class PerfHistorySafetyTest {
         PerfAggregateStore(dir, identity, clock).use {
             assertTrue(it.append(snapshot))
             assertTrue(AsyncFileIo.awaitFile(dir.resolve("checkpoint.json")))
+        }
+    }
+
+    private fun appendOwned(writer: PerfAggregateStore): Boolean =
+        checkNotNull(PerfWorkBudget.acquire(2L * 1_024 * 1_024)).use { writer.appendOwned(snapshot, it) }
+
+    private fun assertBusy(writer: PerfAggregateStore) {
+        val read = writer.read(snapshot.fromMs, snapshot.untilMs)
+        try {
+            assertTrue(read.coverage.issues.any { it.code == "memory_busy" })
+        } finally {
+            PerfWorkBudget.release(read)
         }
     }
 

@@ -26,6 +26,7 @@ internal class PerfConfigTracking(
     }
     private val queue = ArrayBlockingQueue<Change>(MAX_CHANGES)
     private val lostAt = AtomicLong()
+    private var closed = false
     var afterChange = PerfConfigSignal {}
 
     fun start() {
@@ -33,7 +34,10 @@ internal class PerfConfigTracking(
         drain()
     }
 
+    @Synchronized
     private fun changed(observation: EffectiveConfigObservation) {
+        // A publisher may have captured this listener before close detached it.
+        if (closed) return
         val bytes = heads.size.toLong() * CONFIG_CHANGE_HEAD_BYTES
         val lease = PerfWorkBudget.acquire(bytes)
         if (listOf(
@@ -83,7 +87,10 @@ internal class PerfConfigTracking(
         }
     }
 
+    @Synchronized
     override fun close() {
+        if (closed) return
+        closed = true
         config.effectiveObserver = null
         Cancellables.withCleanup({ history.close() }) {
             Cancellables.withCleanup({ originalsLease?.close() }) { drain() }

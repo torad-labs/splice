@@ -3407,6 +3407,61 @@
             <sha256 value="e2788168fd666c5ea181ed6733635b4b8ee56697482585e5725fe8a2ee5e6f39" origin="Verified Maven Central artifact checksum"/>
          </artifact>
       </component>
+      <component group="io.opentelemetry" name="opentelemetry-exporter-common" version="1.67.0">
+         <artifact name="opentelemetry-exporter-common-1.67.0.jar">
+            <sha256 value="eb61aab6d20bf105102dfa061b478b659cec17e82a50969898046456768ba09b" origin="Verified Maven Central artifact checksum"/>
+         </artifact>
+         <artifact name="opentelemetry-exporter-common-1.67.0.module">
+            <sha256 value="e995dd16e6cbaa9437cef3b52311399cdd8ca7507363fcb8539e59a422448114" origin="Verified Maven Central artifact checksum"/>
+         </artifact>
+         <artifact name="opentelemetry-exporter-common-1.67.0.pom">
+            <sha256 value="60416280a92b91949df63cb73c15e91bbd0e2f2a257c82789a21c4036fcedb2a" origin="Verified Maven Central artifact checksum"/>
+         </artifact>
+      </component>
+      <component group="io.opentelemetry" name="opentelemetry-exporter-otlp" version="1.67.0">
+         <artifact name="opentelemetry-exporter-otlp-1.67.0.jar">
+            <sha256 value="6724a9c8f9f42de757682c6194c48d9fee4670cd19a85c37954eba526c58b836" origin="Verified Maven Central artifact checksum"/>
+         </artifact>
+         <artifact name="opentelemetry-exporter-otlp-1.67.0.module">
+            <sha256 value="1d62f77b955409fbf48f6d316dc9459311896c840bfa8972e8324d111ceca6d2" origin="Verified Maven Central artifact checksum"/>
+         </artifact>
+         <artifact name="opentelemetry-exporter-otlp-1.67.0.pom">
+            <sha256 value="a3ad948d55d27a6f564a8f0a3fd908bf8de4daa0f3c897c89e7d159a356fc17b" origin="Verified Maven Central artifact checksum"/>
+         </artifact>
+      </component>
+      <component group="io.opentelemetry" name="opentelemetry-exporter-otlp-common" version="1.67.0">
+         <artifact name="opentelemetry-exporter-otlp-common-1.67.0.jar">
+            <sha256 value="75530ab4d93e6fdef478d3e112713337625e70a63df357e6e7b9060c13788015" origin="Verified Maven Central artifact checksum"/>
+         </artifact>
+         <artifact name="opentelemetry-exporter-otlp-common-1.67.0.module">
+            <sha256 value="9d786fa870bb2330ee5e57497304514cf951684dbc34d3e634282061cf4d3253" origin="Verified Maven Central artifact checksum"/>
+         </artifact>
+         <artifact name="opentelemetry-exporter-otlp-common-1.67.0.pom">
+            <sha256 value="37e25fa4e5787be2a2c571af20f9029440dc574b3772fd979ebc36ce28cac700" origin="Verified Maven Central artifact checksum"/>
+         </artifact>
+      </component>
+      <component group="io.opentelemetry" name="opentelemetry-exporter-sender-okhttp" version="1.67.0">
+         <artifact name="opentelemetry-exporter-sender-okhttp-1.67.0.jar">
+            <sha256 value="0ccb54e5e1db24680b0b7b818299552477dcc7114de7ca0f7b054e6e20958b83" origin="Verified Maven Central artifact checksum"/>
+         </artifact>
+         <artifact name="opentelemetry-exporter-sender-okhttp-1.67.0.module">
+            <sha256 value="53d65650293ad6339fc0150af0d0e41194f7703fd6bf70cd86d19a240e9684b7" origin="Verified Maven Central artifact checksum"/>
+         </artifact>
+         <artifact name="opentelemetry-exporter-sender-okhttp-1.67.0.pom">
+            <sha256 value="3cd0b287f2c6b2828cf56fa19bc9f1d756d5c0c1a95d6103eef13f92843c5bd5" origin="Verified Maven Central artifact checksum"/>
+         </artifact>
+      </component>
+      <component group="io.opentelemetry" name="opentelemetry-sdk" version="1.67.0">
+         <artifact name="opentelemetry-sdk-1.67.0.jar">
+            <sha256 value="52a8f599a368a3d62185e37053f6a53175d6fbe3ecc1d565baba13b1a854267f" origin="Verified Maven Central artifact checksum"/>
+         </artifact>
+         <artifact name="opentelemetry-sdk-1.67.0.module">
+            <sha256 value="809cf4c4f36810077e4aa513ed2adaf0d4c384dfa0f63ad1f6a56c9351f5a40d" origin="Verified Maven Central artifact checksum"/>
+         </artifact>
+         <artifact name="opentelemetry-sdk-1.67.0.pom">
+            <sha256 value="d087dad68feb917f91b963103a0f3ee74a38b064ea6322a1b7c5134a4cec1537" origin="Verified Maven Central artifact checksum"/>
+         </artifact>
+      </component>
       <component group="io.opentelemetry" name="opentelemetry-sdk-common" version="1.67.0">
          <artifact name="opentelemetry-sdk-common-1.67.0.jar">
             <sha256 value="628a4c00db9561ff4c608a650d5e7fd66a1e153ccdf1ba3cdc5ac0b7c6518fea" origin="Verified Maven Central artifact checksum"/>
@@ -3416,6 +3471,28 @@
          </artifact>
          <artifact name="opentelemetry-sdk-common-1.67.0.pom">
             <sha256 value="d931fd1a660901f6f300f181ff488d437052dbd58cafb062b2d74e457a3ea1f1" origin="Verified Maven Central artifact checksum"/>
+         </artifact>
+      </component>
+      <component group="io.opentelemetry" name="opentelemetry-sdk-logs" version="1.67.0">
+         <artifact name="opentelemetry-sdk-logs-1.67.0.jar">
+            <sha256 value="dd0f0b625e08787af49d7e270abc6def4c2eabc2f18f5f145b7924024a3311e3" origin="Verified Maven Central artifact checksum"/>
+         </artifact>
+         <artifact name="opentelemetry-sdk-logs-1.67.0.module">
+            <sha256 value="0c7d2ee146883f51c5f7b79a4d923629a7e1ebe99f2e358a2bbd6975cf9311ef" origin="Verified Maven Central artifact checksum"/>
+         </artifact>
+         <artifact name="opentelemetry-sdk-logs-1.67.0.pom">
+            <sha256 value="2ece5dd994c3d5d9f354b63d967c00101b3fd7527d7a7d9fee21bdc5c8dc8d6e" origin="Verified Maven Central artifact checksum"/>
+         </artifact>
+      </component>
+      <component group="io.opentelemetry" name="opentelemetry-sdk-metrics" version="1.67.0">
+         <artifact name="opentelemetry-sdk-metrics-1.67.0.jar">
+            <sha256 value="c157ff10da59a87a57e5236d9f3290792d9b749433be5e5b449a7d1604c320a9" origin="Verified Maven Central artifact checksum"/>
+         </artifact>
+         <artifact name="opentelemetry-sdk-metrics-1.67.0.module">
+            <sha256 value="78c117735b7c0e4d3105d48a9b9fa1faa670d40e145d9de8f5a509a74e662eb1" origin="Verified Maven Central artifact checksum"/>
+         </artifact>
+         <artifact name="opentelemetry-sdk-metrics-1.67.0.pom">
+            <sha256 value="80c8f251ac62c01aa7c7076a8666045b2a56b2be6e604660d3dd9d2542d70437" origin="Verified Maven Central artifact checksum"/>
          </artifact>
       </component>
       <component group="io.opentelemetry" name="opentelemetry-sdk-trace" version="1.67.0">

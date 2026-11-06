@@ -134,13 +134,14 @@ public class PerfEvidenceFileSource(
             scan.observations.values.toList(),
             coverage,
             asOf,
-            scan.issues.isEmpty(),
+            proof != null && scan.issues.isEmpty(),
             coverageBasis = if (proof == null) "unknown" else "committed_observations_as_of",
         )
     }
 
     private fun proof(query: PerfEvidenceQuery): EvidenceProofRead = try {
-        EvidenceProofRead(coverage.proof(query), null)
+        val proof = coverage.proof(query)
+        EvidenceProofRead(proof, if (proof == null) PerfIssue("evidence_coverage_unknown", EVIDENCE_SOURCE) else null)
     } catch (_: IOException) {
         EvidenceProofRead(null, PerfIssue("evidence_proof_read_error", EVIDENCE_SOURCE))
     } catch (_: IllegalArgumentException) {

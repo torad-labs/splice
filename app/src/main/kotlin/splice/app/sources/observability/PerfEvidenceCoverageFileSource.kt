@@ -69,7 +69,8 @@ public class PerfEvidenceCoverageFileSource(private val directory: Path) : PerfE
 
     private fun prefixes(proof: RequestEvidenceProof) {
         proof.prefixes.forEach {
-            require(RequestEvidenceFormat.headOf(it.fileName) != null && it.end in 0..MAX_EVIDENCE_BYTES)
+            val head = RequestEvidenceFormat.headOf(it.fileName)
+            require(head != null && head in proof.heads && it.end in 0..MAX_EVIDENCE_BYTES)
             require(digestPattern.matches(it.digest))
         }
     }

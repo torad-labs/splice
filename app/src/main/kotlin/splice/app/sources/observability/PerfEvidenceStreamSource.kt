@@ -53,7 +53,8 @@ internal class PerfEvidenceStreamSource(
     }
 
     private fun proof(query: PerfEvidenceQuery): StreamProofRead = try {
-        StreamProofRead(coverage.proof(query), null)
+        val proof = coverage.proof(query)
+        StreamProofRead(proof, if (proof == null) "evidence_coverage_unknown" else null)
     } catch (_: IOException) {
         StreamProofRead(null, "evidence_proof_read_error")
     } catch (_: IllegalArgumentException) {
@@ -102,7 +103,7 @@ internal class PerfEvidenceStreamSource(
         return PerfEvidenceReceipt(
             coverage,
             proof?.asOfMs ?: clock(),
-            scan.issues.isEmpty(),
+            proof != null && scan.issues.isEmpty(),
             if (proof == null) "unknown" else "committed_observations_as_of",
         )
     }

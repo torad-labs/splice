@@ -1,0 +1,177 @@
+package splice.app.sources.observability
+
+import splice.core.perf.observation.PerfAggregatePoint
+import splice.core.perf.observation.PerfAggregateSnapshot
+import splice.core.perf.observation.PerfHistory
+import splice.core.perf.observation.PerfHistoryRead
+import splice.core.perf.observation.PerfIdentity
+import splice.core.perf.observation.PerfIssue
+import splice.core.perf.observation.PerfSinkStatus
+import splice.core.util.AsyncFileIo
+import splice.core.util.FileIoSink
+import splice.core.util.PerfWorkBudget
+import splice.core.util.WallClock
+import java.io.IOException
+import java.nio.file.Path
+
+/** Durable minute replacements and retained hourly history, usable without a running daemon. */
+public class PerfAggregateStore(directory: Path, private val identity: PerfIdentity, private val clock: WallClock) :
+    PerfHistory, AutoCloseable {
+    private val files = PerfHistoryFiles(directory)
+    private val sink = FileIoSink(HISTORY_SINK, clock)
+    private val issues = LinkedHashMap<String, PerfIssue>()
+    private val retention = PerfHistoryRetention(files)
+    public val costs: PerfSourceCosts = PerfSourceCosts()
+    private val reads = PerfHistoryReader(files, costs)
+    private var closed = false
+    private var durableUntil = 0L
+
+    init {
+        try {
+            files.readCheckpoint()?.let { saved ->
+                durableUntil = saved.durableUntilMs
+                saved.issues.forEach(::issue)
+                if (!saved.clean) {
+                    issue(
+                        PerfIssue("checkpoint_uncertain", HISTORY_SINK, detail = "after ${saved.durableUntilMs}"),
+                    )
+                }
+                if (saved.identity.bootId != identity.bootId) issue(PerfIssue("boot_changed", HISTORY_SINK))
+                if (saved.identity.build != identity.build) issue(PerfIssue("build_changed", HISTORY_SINK))
+                if (saved.identity.configRevision != identity.configRevision) {
+                    issue(
+                        PerfIssue("config_changed", HISTORY_SINK),
+                    )
+                }
+            }
+        } catch (_: IOException) {
+            issue(PerfIssue("checkpoint_read_error", HISTORY_SINK))
+        } catch (_: IllegalArgumentException) {
+            issue(PerfIssue("checkpoint_malformed", HISTORY_SINK))
+        }
+    }
+
+    @Synchronized
+    override fun append(snapshot: PerfAggregateSnapshot): Boolean {
+        val charge = PerfHistoryFormat.estimate(snapshot)
+        val lease = if (!closed && charge <= MAX_PENDING_BYTES) {
+            PerfWorkBudget.acquire(
+                charge + PERF_HISTORY_WORK_BYTES,
+            )
+        } else {
+            null
+        }
+        if (lease == null) {
+            sink.reject()
+            issue(PerfIssue("checkpoint_dropped", HISTORY_SINK))
+            return false
+        }
+        val frozen = PerfHistoryFormat.frozen(snapshot)
+        val accepted = AsyncFileIo.submitFor(files.checkpoint, sink) {
+            lease.use { persist(frozen) }
+        }
+        if (!accepted) lease.close()
+        return accepted
+    }
+
+    override fun read(fromMs: Long, untilMs: Long): PerfHistoryRead {
+        require(fromMs >= 0 && untilMs > fromMs) { "history interval must be positive and ordered" }
+        return reads.read(fromMs, untilMs, clock(), evidence(), sink.status())
+    }
+
+    override fun status(): PerfSinkStatus = sink.status()
+
+    override fun close() {
+        synchronized(this) { closed = true }
+        if (!AsyncFileIo.awaitFile(files.checkpoint)) return
+        if (sink.status().written == 0L) return
+        try {
+            files.lock().use { files.checkpoint(PerfHistoryCheckpoint(identity, durableUntil, true, evidence())) }
+        } catch (_: IOException) {
+            issue(PerfIssue("close_checkpoint_failed", HISTORY_SINK))
+        }
+    }
+
+    private fun persist(snapshot: PerfAggregateSnapshot): Boolean = try {
+        files.lock().use {
+            retention.maintain(clock()).forEach(::issue)
+            val cutoff = PerfHistoryFormat.hour(clock() - PERF_DAY_MS)
+            snapshot.points.groupBy { PerfHistoryFormat.minute(it.fromMs) }.forEach { (minute, points) ->
+                writeRetained(snapshot, minute, points, cutoff)
+            }
+            if (snapshot.untilMs < durableUntil) issue(PerfIssue("clock_or_checkpoint_reordered", HISTORY_SINK))
+            durableUntil = maxOf(durableUntil, snapshot.untilMs)
+            retention.maintain(clock()).forEach(::issue)
+            files.checkpoint(PerfHistoryCheckpoint(identity, durableUntil, issues = evidence()))
+            costs.disk(files.inventory().sumOf { it.bytes })
+        }
+        true
+    } catch (_: IOException) {
+        issue(PerfIssue("checkpoint_write_error", HISTORY_SINK))
+        false
+    } catch (_: IllegalArgumentException) {
+        issue(PerfIssue("checkpoint_malformed", HISTORY_SINK))
+        false
+    }
+
+    private fun writeRetained(
+        snapshot: PerfAggregateSnapshot,
+        minute: Long,
+        points: List<PerfAggregatePoint>,
+        cutoff: Long,
+    ) {
+        if (minute < cutoff) {
+            issue(PerfIssue("late_checkpoint_expired", HISTORY_SINK))
+        } else {
+            writeMinute(snapshot, minute, points)
+        }
+    }
+
+    private fun writeMinute(snapshot: PerfAggregateSnapshot, minute: Long, points: List<PerfAggregatePoint>) {
+        val until = minOf(minute + PERF_MINUTE_MS, snapshot.untilMs)
+        val current = files.existing(minute, PERF_MINUTE_MS)
+        val revisions = current?.revisions.orEmpty().toMutableMap()
+        val identityKey = snapshot.identity.toString()
+        if (snapshot.untilMs < (revisions[identityKey] ?: Long.MIN_VALUE)) return
+        val previous = current?.snapshots.orEmpty().associateBy { it.identity }.toMutableMap()
+        val part = snapshot.copy(
+            fromMs = minute,
+            untilMs = until,
+            points = points,
+            coverage = snapshot.coverage.copy(
+                requestedFromMs = minute,
+                requestedUntilMs = until,
+                observedMs = minOf(snapshot.coverage.observedMs, (until - minute).coerceAtLeast(0L)),
+            ),
+        )
+        val merged = PerfHistoryFormat.merge(previous[snapshot.identity], part)
+        if (merged == previous[snapshot.identity]) return
+        previous[snapshot.identity] = merged
+        revisions[identityKey] = snapshot.untilMs
+        retention.reserve(clock()).forEach(::issue)
+        files.write(
+            PerfHistoryFile(
+                resolutionMs = PERF_MINUTE_MS,
+                fromMs = minute,
+                snapshots = previous.values.toList(),
+                revisions = revisions,
+            ),
+        )
+    }
+
+    @Synchronized
+    private fun issue(value: PerfIssue) {
+        val old = issues[value.code]
+        if (old != null || issues.size < MAX_ISSUES) {
+            issues[value.code] = value.copy(
+                count = (old?.count ?: 0L) + value.count,
+            )
+        }
+    }
+
+    @Synchronized
+    private fun evidence(): List<PerfIssue> = issues.values.toList()
+}
+
+private const val MAX_PENDING_BYTES = 4L * 1_024 * 1_024
+private const val MAX_ISSUES = 64

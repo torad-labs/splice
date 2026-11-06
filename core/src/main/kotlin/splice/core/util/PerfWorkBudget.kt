@@ -1,0 +1,41 @@
+package splice.core.util
+
+import java.lang.ref.Cleaner
+
+/** One process-wide allowance shared by history checkpoints, reads and cursor state. */
+public object PerfWorkBudget {
+    private const val LIMIT = 16L * 1_024 * 1_024
+    private val cleaner = Cleaner.create()
+    private var used = 0L
+
+    @Synchronized
+    public fun acquire(bytes: Long): Lease? {
+        require(bytes >= 0L)
+        if (bytes > LIMIT - used) return null
+        used += bytes
+        return Lease(bytes)
+    }
+
+    @Synchronized
+    public fun retainedBytes(): Long = used
+
+    public class Lease internal constructor(private var bytes: Long) : AutoCloseable, Runnable {
+        public fun <T : Any> retain(owner: T, retained: Long) {
+            synchronized(PerfWorkBudget) {
+                require(retained in 0..bytes)
+                used -= bytes - retained
+                bytes = retained
+            }
+            cleaner.register(owner, this)
+        }
+
+        override fun run(): Unit = close()
+
+        override fun close() {
+            synchronized(PerfWorkBudget) {
+                used -= bytes
+                bytes = 0L
+            }
+        }
+    }
+}

@@ -360,7 +360,7 @@ private class TopologyChecks(
 
     fun findings(): List<TopologyFinding> =
         references() + auth() + ports() + (if (withRosters) rosters() else statics()) + knobs() + prompts() +
-            compaction() + channel() + remotes() + relays()
+            compaction() + channel() + remotes() + relays() + topology.telemetry.operator.findings()
 
     /** An auth kind its provider's dialect cannot carry, asked the way head assembly asks it ([AuthCompatibility]), so
      *  the pairing refuses boot with every other finding instead of skipping that head behind a running daemon. */
@@ -522,7 +522,8 @@ private class TopologyChecks(
             log = LogSink {},
         ).coerceRejects()
         val global = topology.defaults.keys.mapNotNull { key ->
-            ignored[key]?.let { TopologyFinding("defaults.$key", it) }
+            val canonical = if (key == "perf_collection_enabled") "perfCollectionEnabled" else key
+            ignored[canonical]?.let { TopologyFinding("defaults.$key", it) }
         }
         val perHead = topology.heads.flatMap { (head, config) ->
             config.overrides.keys.mapNotNull { key ->

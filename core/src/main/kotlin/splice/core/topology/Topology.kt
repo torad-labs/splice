@@ -39,6 +39,7 @@ import splice.core.model.WindowRule
 @Serializable
 public data class Topology(
     val daemon: DaemonConfig = DaemonConfig(),
+    val telemetry: TelemetryConfig = TelemetryConfig(),
     val claude: ClaudeSharingDefaults = ClaudeSharingDefaults(),
     val compaction: CompactionConfig = CompactionConfig(),
     val defaults: Map<String, String> = emptyMap(),

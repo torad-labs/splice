@@ -225,6 +225,21 @@ public class SpliceConfig internal constructor(
         get() = string(Knob.PROJECTS_FOLDERS).orEmpty()
             .split(':').map { it.trim() }.filter(ProjectFolderCheck::absolute)
 
+    public val perfCollectionEnabled: Boolean get() = bool(Knob.PERF_COLLECTION_ENABLED)
+    public val telemetryPrometheusEnabled: Boolean get() = bool(Knob.TELEMETRY_PROMETHEUS_ENABLED)
+    public val telemetryOtlpEndpoint: String get() = string(Knob.TELEMETRY_OTLP_ENDPOINT).orEmpty()
+    public val telemetryOtlpProtocol: String get() = string(Knob.TELEMETRY_OTLP_PROTOCOL).orEmpty()
+    public val telemetryOtlpHeaders: String get() = string(Knob.TELEMETRY_OTLP_HEADERS).orEmpty()
+    public val telemetryOtlpSignals: String get() = string(Knob.TELEMETRY_OTLP_SIGNALS).orEmpty()
+
+    public fun perfExportConfig(): splice.core.perf.export.PerfExportConfig = splice.core.perf.export.PerfExportConfig(
+        prometheus = telemetryPrometheusEnabled,
+        endpoint = telemetryOtlpEndpoint.takeIf(String::isNotEmpty),
+        protocol = telemetryOtlpProtocol,
+        headers = requireNotNull(splice.core.perf.export.PerfExportValidation.parseHeaders(telemetryOtlpHeaders)),
+        signals = requireNotNull(splice.core.perf.export.PerfExportValidation.parseSignals(telemetryOtlpSignals)),
+    )
+
     public fun asMap(): Map<String, Any?> = m
 
     private fun string(k: Knob): String? = m[k.key]?.toString()

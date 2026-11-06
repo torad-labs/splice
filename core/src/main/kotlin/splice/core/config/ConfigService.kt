@@ -146,10 +146,11 @@ public class ConfigService(
                 }
             }
         }
-        val notPersisted = if (applied.isEmpty()) {
-            null
-        } else {
-            synchronized(persistLock) {
+        val notPersisted = synchronized(persistLock) {
+            rejected.putAll(TelemetryKnobValue.rejectCombination(applied, getConfig().asMap()))
+            if (applied.isEmpty()) {
+                null
+            } else {
                 synchronized(runtimeLock) {
                     runtimeLayer = Collections.unmodifiableMap((runtimeLayer + applied).filterValues { it != null })
                     snapshots.invalidate()
@@ -183,7 +184,7 @@ public class ConfigService(
             snapshots.publish(ticket, buildSnapshot(inputs, previous))
         }
         generation.envRejected.keys.forEach { key ->
-            log("[config] ignoring invalid env value for $key: '${environment[key]}'")
+            log("[config] ignoring invalid env value for $key: '${ConfigRedaction.values(environment)[key]}'")
         }
         return generation.snapshot(headKey, FreshConfig { getConfig(headKey) })
     }

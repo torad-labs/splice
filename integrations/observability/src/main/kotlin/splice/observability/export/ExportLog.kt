@@ -1,0 +1,23 @@
+package splice.observability.export
+
+import io.opentelemetry.api.common.Attributes
+import io.opentelemetry.api.logs.Severity
+import io.opentelemetry.api.trace.SpanContext
+import io.opentelemetry.sdk.common.InstrumentationScopeInfo
+import io.opentelemetry.sdk.logs.data.Body
+import io.opentelemetry.sdk.logs.data.LogRecordData
+import io.opentelemetry.sdk.resources.Resource
+
+internal class ExportLog(private val event: ExportEvent) : LogRecordData {
+    override fun getResource(): Resource = ExportResource.resource
+    override fun getInstrumentationScopeInfo(): InstrumentationScopeInfo = ExportResource.scope
+    override fun getTimestampEpochNanos(): Long = event.atNanos
+    override fun getObservedTimestampEpochNanos(): Long = event.atNanos
+    override fun getSpanContext(): SpanContext = event.context
+    override fun getSeverity(): Severity = Severity.INFO
+    override fun getSeverityText(): String = "INFO"
+    override fun getBody(): Body = Body.string(event.kind.name)
+    override fun getEventName(): String = "splice." + event.kind.name.lowercase()
+    override fun getAttributes(): Attributes = event.attributes
+    override fun getTotalAttributeCount(): Int = event.attributes.size()
+}

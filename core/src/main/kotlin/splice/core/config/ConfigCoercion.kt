@@ -176,6 +176,7 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
 
     /** [raw] is the spelling a source gave: its text, or null when the source had no value. Each arm reads only the text. */
     fun coerce(knob: Knob, raw: String?): Any? = when {
+        knob in TelemetryKnobValue.knobs -> TelemetryKnobValue.coerce(knob, raw)
         knob == Knob.MIRROR_REASONING -> false
         // The history window governs DELETION, so a word that is neither a day count nor `forever`
         // must be refused by name rather than kept as text no reader understands: a typo that read

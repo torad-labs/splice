@@ -73,7 +73,7 @@ public object ConfigFindings {
             .map { it.copy(message = withFix(it), line = lineOf(text, it.path)) }
         val local = runtimes.of(topology).distinct()
             .map { it.copy(line = rows.of(text, it.path) ?: lineOf(text, it.path)) }
-        return refused(checks + local + elsewhere(topology), topology)
+        return refused(checks + OperatorTelemetryFindings.of(topology) + local + elsewhere(topology), topology)
     }
 
     /** A knob finding keeps boot's own reason as written (the console writer pins it word for word); the boot

@@ -18,6 +18,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import splice.core.config.ConfigRedaction
 import splice.core.config.ConfigService
 import splice.core.topology.TopologyWriterSource
 import splice.http.JsonBody
@@ -109,7 +110,7 @@ public class ConfigRoutes(
     // The scalar-map -> JSON writer both configJson (the layer views) and patchConfig (the
     // applied/rejected result) need.
     private fun mapToJson(values: Map<String, Any?>) = buildJsonObject {
-        values.forEach { (key, value) ->
+        ConfigRedaction.values(values).forEach { (key, value) ->
             when (value) {
                 null -> put(key, null as String?)
                 is Boolean -> put(key, value)

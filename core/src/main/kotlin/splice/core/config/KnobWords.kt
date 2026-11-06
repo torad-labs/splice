@@ -33,6 +33,7 @@ public object KnobWords {
     public val VERBOSITY: List<String> = listOf("low", "medium", "high")
 
     private val BY_KNOB: Map<Knob, List<String>> = mapOf(
+        Knob.TELEMETRY_OTLP_PROTOCOL to listOf("http/protobuf", "grpc"),
         Knob.QUOTA_POLL to QUOTA_POLL,
         Knob.SHOW_REASONING to SHOW_REASONING,
         Knob.BUDGET_DEFAULT_ACTION to BUDGET_ACTIONS,

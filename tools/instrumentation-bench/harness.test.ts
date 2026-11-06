@@ -82,27 +82,39 @@ test('upstream accepts reordered objects but rejects changed fields, values, arr
 });
 
 test('only proxy Anthropic upstreams require streaming and the exact eager custom-tool default', async () => {
-  for (const proxy of [false, true]) for (const streaming of [false, true]) {
-    const m = defaults(); m.streaming = streaming; m.transport = streaming ? 'sse' : 'http'; m.scenario = 'tool-heavy';
+  const tool = { name: 'fixture_tool', description: 'synthetic fixture', input_schema: { type: 'object', properties: {} } };
+  const eagerTool = { ...tool, eager_input_streaming: true }, disabledTool = { ...tool, eager_input_streaming: false };
+  // Explicit wire expectations, independent of the fixture's transformation logic.
+  const cases = [
+    { role: 'direct', target: 'direct', streaming: false, transport: 'http', upstream: undefined,
+      accepted: { stream: false, tools: [tool] }, rejected: [{ stream: true }, { tools: [eagerTool] }, { tools: [disabledTool] }], contentType: 'application/json' },
+    { role: 'direct', target: 'direct', streaming: true, transport: 'sse', upstream: undefined,
+      accepted: { stream: true, tools: [tool] }, rejected: [{ stream: false }, { tools: [eagerTool] }, { tools: [disabledTool] }], contentType: 'text/event-stream' },
+    { role: 'candidate', target: 'proxy', streaming: false, transport: 'http', upstream: { protocol: 'anthropic', transport: 'sse' },
+      accepted: { stream: true, tools: [tool] }, rejected: [{ stream: false }, { tools: [eagerTool] }, { tools: [disabledTool] }], contentType: 'text/event-stream' },
+    { role: 'candidate', target: 'proxy', streaming: true, transport: 'sse', upstream: { protocol: 'anthropic', transport: 'sse' },
+      accepted: { stream: true, tools: [eagerTool] }, rejected: [{ stream: false }, { tools: [tool] }, { tools: [disabledTool] }], contentType: 'text/event-stream' },
+  ] as const;
+  for (const row of cases) {
+    const m = defaults(); m.role = row.role; m.target = { kind: row.target }; m.upstream = row.upstream;
+    m.streaming = row.streaming; m.transport = row.transport; m.scenario = 'tool-heavy';
     m.fixture.first_wait_ms = 0; m.fixture.chunk_wait_ms = 0;
-    if (proxy) { m.role = 'candidate'; m.target = { kind: 'proxy' }; m.upstream = { protocol: 'anthropic', transport: 'sse' }; }
-    const original = requestBytes(m), expected = JSON.parse(new TextDecoder().decode(original));
-    if (proxy) expected.stream = true;
-    if (proxy && streaming) expected.tools[0].eager_input_streaming = true;
+    const original = requestBytes(m), expected = { ...JSON.parse(new TextDecoder().decode(original)), ...row.accepted };
     const upstream = startUpstream(m);
     try {
       const response = await fetch(`${upstream.url}/v1/messages`, { method: 'POST', body: JSON.stringify(expected) });
       expect(response.status).toBe(200);
-      expect(response.headers.get('content-type')).toContain(proxy || streaming ? 'text/event-stream' : 'application/json');
+      expect(response.headers.get('content-type')).toContain(row.contentType);
       const content = await response.text();
-      if (proxy || streaming) expect(content).toContain('event: message_stop');
+      if (row.contentType === 'text/event-stream') expect(content).toContain('event: message_stop');
       else expect(JSON.parse(content).stop_reason).toBe('tool_use');
-      const wrongStream = { ...expected, stream: !expected.stream };
-      const wrongTool = structuredClone(expected); wrongTool.tools[0].eager_input_streaming = !(proxy && streaming);
-      for (const body of [wrongStream, wrongTool]) {
+      for (const override of row.rejected) {
+        const body = { ...expected, ...override };
         const rejected = await fetch(`${upstream.url}/v1/messages`, { method: 'POST', body: JSON.stringify(body) });
         expect(rejected.status).toBe(400); await rejected.arrayBuffer();
       }
+      expect(upstream.stats().attempts).toBe(1);
+      expect(upstream.stats().request_body_mismatches).toBe(row.rejected.length);
       expect(requestBytes(m)).toEqual(original);
     } finally { await upstream.stop(); }
   }
@@ -112,8 +124,19 @@ test('strict JSON matching bounds nesting and breadth without interpreting punct
   const matches = requestBodyMatcher('{"message":"escaped \\\" \\\\ , } ] : ","nested":{"a":1},"other":{"a":2}}');
   expect(matches('{"other":{"a":2},"nested":{"a":1},"message":"escaped \\\" \\\\ , } ] : "}')).toBe(true);
   expect(matches('{"other":{"a":2},"nested":{"a":1,"a":1},"message":"escaped \\\" \\\\ , } ] : "}')).toBe(false);
-  expect(() => requestBodyMatcher('['.repeat(66) + '0' + ']'.repeat(66))).toThrow('request_structure_limit');
+  for (const [open, empty, close] of [['[', '[]', ']'], ['{"child":', '{}', '}']] as const) {
+    const allowed = open.repeat(63) + empty + close.repeat(63);
+    const refused = open.repeat(64) + empty + close.repeat(64);
+    expect(requestBodyMatcher(allowed)(allowed)).toBe(true);
+    expect(() => requestBodyMatcher(refused)).toThrow('request_structure_limit');
+  }
+  const allowedNodes = JSON.stringify(Array(65535).fill(0));
+  expect(requestBodyMatcher(allowedNodes)(allowedNodes)).toBe(true);
   expect(() => requestBodyMatcher(JSON.stringify(Array(65536).fill(0)))).toThrow('request_structure_limit');
+  // Structural refusal precedes final grammar validation, including unfinished input.
+  expect(() => requestBodyMatcher('['.repeat(65))).toThrow('request_structure_limit');
+  expect(() => requestBodyMatcher('[' + Array(65536).fill('0').join(','))).toThrow('request_structure_limit');
+  for (const malformed of ['{"nested":{"a":1,},"message":"x"}', '[true false]', '{"a" 1}', '{"a":"unterminated', '{"a":"\\q"}']) expect(() => requestBodyMatcher(malformed)).toThrow();
   expect(() => requestBodyMatcher('1e400')).toThrow('request_number_invalid');
   expect(requestBodyMatcher('{"tokens":4}')('{"tokens":4.0e0}')).toBe(true);
   expect(requestBodyMatcher('{"tokens":4}')('{"tokens":4.0000000000000001}')).toBe(false);

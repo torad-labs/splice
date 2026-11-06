@@ -83,24 +83,23 @@ public class PerfQueryService(
 
     private fun execute(query: PerfQuery, operation: String?, read: PerfQueryOperation): JsonObject =
         work.execute(query, operation) {
-            val filter = PerfQueryFilter(query, projects, accounts, sources)
-            val unsupported = filter.unsupported()
-            val resolved = resolve(query)
-            when {
-                query.filters["head"]?.let { it !in sources.heads() } == true ->
-                    queryError("unknown_head", "head_not_available")
-                unsupported != null -> queryError("filter_unavailable", unsupported, "unsupported")
-                resolved == null -> queryError("unknown_objective", "objective_unavailable_or_mismatched")
-                else -> read(resolved, filter)
+            val resolved = PerfObjectiveQuery.resolve(query, sources)
+            if (resolved == null) {
+                queryError("objective_selection_unavailable", "objective_missing_mismatched_or_cohort_unavailable")
+            } else {
+                selected(resolved, read)
             }
         }
-    private fun resolve(query: PerfQuery): PerfQuery? {
-        val id = query.objectiveId ?: return query
-        if (query.objective != null && query.objective.id != id) return null
-        val stored = sources.objective(id)
-        val objective = stored ?: query.objective
-        val mismatch = query.objective?.let { supplied -> stored != null && supplied != stored } == true
-        return if (mismatch) null else objective?.let { query.copy(objective = it) }
+
+    private fun selected(query: PerfQuery, read: PerfQueryOperation): JsonObject {
+        val filter = PerfQueryFilter(query, projects, accounts, sources)
+        val unsupported = filter.unsupported()
+        return when {
+            query.filters["head"]?.let { it !in sources.heads() } == true ->
+                queryError("unknown_head", "head_not_available")
+            unsupported != null -> queryError("filter_unavailable", unsupported, "unsupported")
+            else -> read(query, filter)
+        }
     }
 }
 

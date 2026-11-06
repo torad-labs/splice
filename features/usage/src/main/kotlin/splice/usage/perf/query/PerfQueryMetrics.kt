@@ -56,6 +56,14 @@ internal object PerfQueryMetrics {
                 "histograms",
                 JsonObject(groups.filterKeys { type(it) == "histogram" }.mapValues { histogram(it.value) }),
             )
+            put(
+                "counters",
+                JsonObject(
+                    groups.filterKeys { type(it) == "counter" }.mapValues {
+                        counter(it.value, seconds)
+                    },
+                ),
+            )
             put("gauges", JsonObject(groups.filterKeys { type(it) == "gauge" }.mapValues { gauge(it.value) }))
             put(
                 "outcomes",
@@ -129,11 +137,35 @@ internal object PerfQueryMetrics {
         return JsonNull
     }
 
+    private fun counter(points: List<PerfAggregatePoint>, seconds: Double): JsonObject = buildJsonObject {
+        val sum = points.sumOf { it.sum }
+        put("count", points.sumOf { it.count })
+        put("sum", sum)
+        put("per_s", sum / seconds)
+        put("denominator", "requested_wall_duration")
+        put("count_unit", "counter_measurements")
+        put("aggregation", "sum_event_deltas")
+    }
+
     private fun gauge(points: List<PerfAggregatePoint>): JsonObject = buildJsonObject {
         val covered = points.sumOf { it.coveredMs }
         put("last", numeric(points.maxByOrNull { it.untilMs }?.last))
         put("time_weighted_mean", numeric(if (covered > 0) points.sumOf { it.weightedSum } / covered else null))
         put("covered_ms", covered)
+        put("sample_count", points.sumOf { it.count })
+        put("scope_count", points.map { it.scope }.distinct().size)
+        put("covered_ms_semantics", "sum_over_observed_scopes")
+        put("scope_coverage", "observed_scopes_only_missing_expected_scopes_unknown")
+        put(
+            "aggregation",
+            buildJsonObject {
+                put("last", "latest_single_scope_reading_not_process_sum")
+                put("max", "maximum_observed_scope_sample")
+                put("time_weighted_mean", "covered_time_weighted_mean_over_observed_scopes")
+            },
+        )
+        put("per_s", JsonNull)
+        put("rate_status", "unsupported_for_sampled_gauge")
         put("min", numeric(points.mapNotNull { it.min }.minOrNull()))
         put("max", numeric(points.mapNotNull { it.max }.maxOrNull()))
     }

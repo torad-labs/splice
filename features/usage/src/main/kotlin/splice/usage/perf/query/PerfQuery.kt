@@ -48,6 +48,9 @@ public interface PerfQuerySources {
     /** Fresh local roster snapshot only; null means aliases cannot be resolved. Never refresh auth here. */
     public fun accountNames(head: String): HeadAccountNames? = null
     public fun objective(id: String): PerfObjectiveSet? = null
+
+    /** Null means unavailable; an empty map explicitly identifies an unscoped named objective. */
+    public fun objectiveCohort(id: String): Map<String, String>? = null
 }
 
 public fun interface HeadPerfQuery {

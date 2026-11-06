@@ -27,6 +27,7 @@ class PerfQuerySelectionTest {
             override fun heads(): Set<String> = setOf("h")
             override fun rows(head: String): PerfRowsSource? = null
             override fun objective(id: String): PerfObjectiveSet? = objective.takeIf { id == it.id }
+            override fun objectiveCohort(id: String): Map<String, String> = emptyMap()
         })
         val query =
             requireNotNull(

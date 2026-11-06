@@ -125,6 +125,17 @@ const API = (() => {
   const client = (signal) => ({
     pending: () => pending,
     get: (p) => call("GET", p, undefined, undefined, signal),
+    // Managed profile artifacts use the same bearer guard; never put credentials into a download URL.
+    async blob(path) {
+      pending++;
+      try {
+        await signedIn;
+        const res = await fetch(path, { signal, headers: { Authorization: `Bearer ${localStorage.getItem(STORE) || ""}` } });
+        if (res.status === 401 && !signal?.aborted) lock();
+        return { ok: res.ok, status: res.status, body: res.ok ? await res.blob() : null };
+      } catch { return { ok: false, status: 0, body: null }; }
+      finally { pending--; }
+    },
     // a read that answers at once with what is ready, marking what splice is still reading, rather than waiting on it
     getReady: (p) => call("GET", p, undefined, { "x-splice-read-pending": "1" }, signal),
     post: (p, b) => call("POST", p, b ?? {}, undefined, signal),

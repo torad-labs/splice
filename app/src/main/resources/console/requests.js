@@ -268,6 +268,55 @@ let ui = { project: PICK.get(), pmenu: false, open: null, q: "", win: "24h", cmd
   outcome: "all", tag: null, why: null, compact: false, menu: null, n: PAGE, tab: "sent", nodes: new Set(), bursts: new Set(), kindsOpen: false, byAll: false, sidAll: false,
   order: "new", modelAll: false }; // Newest or Highest price (fin): what the read asks for; the list shows what the daemon says it applied
 const root = document.getElementById("requests");
+// The performance panel and request list consume the same exact cohort. Legacy row enrichment stays on its
+// original endpoint; the performance records and aggregates use contract=1 with the identical selectors.
+let perfOverride = new URLSearchParams(location.search).get("perf") === "1" ? PERF_CONSOLE.fromAddress({ filters: { local: "0" }, window: "24h" }) : null;
+let perfResolved = !perfOverride?.objective_id;
+const PERF_MONITOR = PERF_CONSOLE.create(scope, {
+  id: "requests",
+  resolved: (query) => {
+    if (!query?.objective_id || !query.filters) return;
+    const before = Object.entries(perfOverride?.filters || {}).sort(), after = Object.entries(query.filters).sort();
+    const changed = JSON.stringify(before) !== JSON.stringify(after), wasResolved = perfResolved;
+    perfResolved = true;
+    if (!changed && wasResolved) return;
+    perfOverride = { ...query };
+    // Named objectives may carry a server-owned cohort. The enriched row list must use that resolved cohort too.
+    again();
+  },
+  query: () => {
+    if (perfOverride) return perfOverride;
+    const filters = { local: "0" };
+    const head = state.heads.find((h) => h.command === ui.cmd);
+    if (head) filters.head = head.key;
+    if (ui.model) filters.model = ui.model;
+    if (ui.sid) filters.session = ui.sid;
+    if (ui.project) filters.project = ui.project === NO_PROJECT_KEY ? "none" : ui.project;
+    if (ui.account) filters.account = ui.account.split("|").slice(1).join("|");
+    if (ui.compact) filters.compact = "1";
+    if (ui.tag) filters.outcome = ui.tag;
+    else if (ui.outcome !== "all") filters.outcome = { fail: "failed", clean: "ok,empty_message", stopped: "stopped" }[ui.outcome];
+    if (ui.why) Object.assign(filters, WHY_ASKS[ui.why] || {});
+    return { filters, window: ui.win, from_ms: ui.from ?? since(), until_ms: ui.to ?? +NOW };
+  },
+  apply: (query) => {
+    const f = query.filters;
+    perfOverride = query;
+    perfResolved = !query.objective_id;
+    ui.cmd = f.head ? state.heads.find((h) => h.key === f.head)?.command || f.head : null;
+    ui.model = f.model || null; ui.sid = f.session || null;
+    ui.account = f.account && f.head ? `${f.head}|${f.account}` : null;
+    ui.project = f.project === "none" ? NO_PROJECT_KEY : f.project || null; PICK.set(ui.project);
+    ui.compact = f.compact === "1" || f.compact === "true";
+    ui.outcome = "all"; ui.tag = null; ui.why = null;
+    const until = query.until_ms ?? Date.now();
+    const spans = { "1m": 60000, "5m": 300000, "15m": 900000, "1h": 3600000, "5h": 18000000, "24h": 86400000, "7d": 604800000, "30d": 2592000000 };
+    ui.from = query.from_ms ?? until - (spans[query.window] || 86400000); ui.to = until;
+    perfOverride = { ...query, from_ms: ui.from, until_ms: ui.to };
+    if (WINDOWS[query.window]) ui.win = query.window;
+    again();
+  },
+});
 // How far back every read asks: the window, or the stretch a door from another page named, which may reach further
 // back than the window does. One figure, so the rows, the menus and the search all cover the same ground.
 const since = (win = ui.win) => Math.min(ui.from ?? Infinity, +NOW - WINDOWS[win][1]);
@@ -492,6 +541,17 @@ function addFilters(p, head, { outcome = true, why = ui.why, compact = ui.compac
   }
   // a named stretch begins at the daemon too, or a cap on the newest rows would cut the stretch's start off
   if (ui.from) p.set("from", String(+ui.from + 1));
+  // Explicit performance filters are exact, including false switches and a full session ID.
+  const advanced = perfOverride;
+  if (advanced) {
+    for (const key of ["model", "session", "project", "account", "transport", "outcome", "local", "compact", "streaming"]) {
+      p.delete(key);
+      if (advanced.filters[key] != null) p.set(key, String(advanced.filters[key]));
+    }
+    if (advanced.from_ms != null) p.set("from", String(advanced.from_ms));
+    else if (ui.from != null) p.set("from", String(ui.from));
+    if (advanced.until_ms != null) p.set("until", String(advanced.until_ms));
+  }
   return p;
 }
 /** One head's window: the rows the filters asked for, or the window's own menus from an unfiltered read. */
@@ -509,6 +569,8 @@ function turnsPath(head, filtered, win = ui.win, held = MAX_HELD, project = ui.p
 
 /** Which heads this read asks at all: a command filter, or an account picked on one head, narrows it to that head. */
 function askedHeads() {
+  const exact = perfOverride?.filters.head;
+  if (exact) return state.heads.filter((h) => h.key === exact);
   const picked = ui.account && ui.account !== "none" ? ui.account.split("|")[0] : null;
   return state.heads.filter((h) => (!ui.cmd || h.command === ui.cmd) && (!picked || h.key === picked));
 }
@@ -525,6 +587,7 @@ function unreadable(errors, head, word, why) {
   errors.push({ cmd: head.command, word });
 }
 async function readRows(held = MAX_HELD) {
+  if (perfOverride?.objective_id && !perfResolved) { state.rows = []; state.headErrors = []; return; }
   const heads = askedHeads();
   const reads = await Promise.all(heads.map((h) => API.getReady(turnsPath(h, true, ui.win, held))));
   const rows = [], errors = [], pending = [];
@@ -909,7 +972,7 @@ function searched() {
   const out = [], seen = new Set();
   for (const hit of state.search.hits) {
     const known = byTurn.get(hit.id);
-    if (known) { known.said = hit.said; out.push(known); } else if (hitPasses(hit)) out.push(hit);
+    if (known) { known.said = hit.said; out.push(known); } else if (!perfOverride && hitPasses(hit)) out.push(hit);
     seen.add(hit.id);
   }
   // an agent is searched for by its name too: every request of a session whose name holds the words (Marlin's walk:
@@ -926,7 +989,7 @@ function searched() {
 // ---------- what the daemon cannot filter: a project, a stretch of time and what happened ----------
 // These narrow the rows the read already cut. The read asks for the window's newest 2,000, so a narrow one of these
 // says how many of the window it had to look at, rather than reading as the whole window's answer.
-const narrow = (rows) => rows.filter((r) => inPick(r) && (!ui.repo || r.repo === ui.repo || r.repoRoot === ui.repo)
+const narrow = (rows) => perfOverride ? rows : rows.filter((r) => inPick(r) && (!ui.repo || r.repo === ui.repo || r.repoRoot === ui.repo)
   && (!ui.from || (+r.ts > ui.from && +r.ts <= (ui.to ?? +NOW)))
   && (!ui.tag || ui.tag.split(",").includes(r.outcome)) && (!ui.why || ROW_TEST[ui.why] || WHY[ui.why].has(r)));
 const filtered = () => narrow(searched());
@@ -2037,6 +2100,10 @@ let bandW = 0;
 new ResizeObserver(() => { if (bandEl.clientWidth !== bandW) { bandW = bandEl.clientWidth; rqbFit(bandEl); } }).observe(bandEl);
 let bandShown = "", paneWas = null;
 function render() {
+  const perfHost = document.getElementById("requests-performance");
+  if (perfHost) perfHost.innerHTML = PERF_MONITOR.html();
+  root.hidden = Boolean(perfOverride?.objective_id && !perfResolved);
+  bandEl.hidden = root.hidden;
   // A request stays open through a filter that excludes it (paneHtml reads past the filter on purpose, and it stands
   // at the table's head), but a reload whose window no longer carries its row at all closes it.
   const pane = paneHtml();
@@ -2162,6 +2229,21 @@ document.addEventListener("click", async (e) => {
     open(el.dataset.open); return;
   }
   const v = el.dataset.v, m = el.dataset.m;
+  if (perfOverride) {
+    const f = perfOverride.filters, act = el.dataset.act;
+    if (perfOverride.objective_id && ["pickproj", "set", "unset", "outcome", "toggle"].includes(act)) perfResolved = false;
+    const key = { cmd: "head", sid: "session" }[m] || m;
+    if (act === "pickproj") { if (el.dataset.p) f.project = el.dataset.p === NO_PROJECT_KEY ? "none" : el.dataset.p; else delete f.project; }
+    if (act === "set" || act === "unset") {
+      if (m === "win") { perfOverride.window = v; delete perfOverride.from_ms; delete perfOverride.until_ms; ui.from = ui.to = null; }
+      else if (act === "unset" || !v) delete f[key];
+      else f[key] = m === "cmd" ? state.heads.find((h) => h.command === v)?.key || v : m === "account" ? v.split("|").slice(1).join("|") : v;
+    }
+    if (act === "outcome") { delete f.outcome; const value = { fail: "failed", clean: "ok,empty_message", stopped: "stopped" }[v]; if (value) f.outcome = value; }
+    if (act === "toggle" && m === "compact") { if (ui.compact) delete f.compact; else f.compact = "1"; }
+    if (act === "clearall") { perfOverride = null; }
+    if (["why", "widen", "goto", "upto"].includes(act)) perfOverride = null;
+  }
   switch (el.dataset.act) {
     case "theme": toggleTheme(); break;
     case "menu": ui.menu = ui.menu === m ? null : m; render(); break;

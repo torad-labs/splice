@@ -10,10 +10,15 @@ internal object PerfSystemMetrics {
         "gate_oldest_wait_ms",
         "gate_refused",
         "gate_queued_cancelled",
+        "gate_saturated",
     ).map {
         PerfMetricDefinition(
             it,
-            "Gate state sample; refused and cancelled are cumulative readings, never event deltas",
+            if (it == "gate_saturated") {
+                "One when positive gate limit is fully occupied, otherwise zero; weightedSum is saturated milliseconds"
+            } else {
+                "Gate state sample; refused and cancelled are cumulative readings, never event deltas"
+            },
             PerfMetricType.GAUGE,
             if (it.endsWith("_ms")) "ms" else "count",
             "gate state transition",

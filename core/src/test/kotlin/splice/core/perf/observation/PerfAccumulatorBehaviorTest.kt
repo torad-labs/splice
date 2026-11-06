@@ -13,13 +13,13 @@ internal class PerfAccumulatorBehaviorTest {
             fixture.recorder.emit(
                 fixture.scope,
                 PerfEventKind.GATE_STATE,
-                mapOf("gate_limit" to 2.0, "gate_refused" to 1.0),
+                mapOf("gate_limit" to 2.0, "gate_refused" to 1.0, "gate_saturated" to 1.0),
             )
             fixture.advance(1000)
             fixture.recorder.emit(
                 fixture.scope,
                 PerfEventKind.GATE_STATE,
-                mapOf("gate_limit" to 1.0, "gate_refused" to 1.0),
+                mapOf("gate_limit" to 1.0, "gate_refused" to 1.0, "gate_saturated" to 0.0),
             )
             fixture.advance(1000)
             fixture.recorder.emit(fixture.scope, PerfEventKind.CHECKPOINT)
@@ -32,6 +32,7 @@ internal class PerfAccumulatorBehaviorTest {
             assertEquals(1.0, refused.last)
             assertEquals(1.0, refused.weightedSum / refused.coveredMs)
             assertEquals(2000L, first.coverage.observedMs)
+            assertEquals(1000.0, first.points.single { it.metric == "gate_saturated" }.weightedSum)
         }
     }
 

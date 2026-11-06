@@ -86,6 +86,13 @@ runtime, live gates, capture controls and unpersisted collection intervals are
 unavailable offline. Missing evidence is explicit; an offline command does not
 start provider traffic to fill it.
 
+Account aliases require a fresh authoritative name snapshot from an existing
+Accounts read. That snapshot expires after 60 seconds; reading it from a
+performance query does not renew its age. Before it exists or after expiry, alias
+resolution is explicitly unavailable. Exact recorded account IDs remain usable.
+The performance worker does not load the account dashboard or refresh
+authentication/quota information to fill missing names.
+
 Existing text CLI output, legacy API roots and legacy row fields retain their
 meanings. Use the explicit new contract for shared machine filters and coverage.
 New instrumentation does not change prompt construction, replay, canonical billing,

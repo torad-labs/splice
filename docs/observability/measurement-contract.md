@@ -117,12 +117,23 @@ reducing it; an HTTP scrape retains ownership through response delivery.
 Concurrency and size limits return visible busy/partial states. These budgets
 do not claim that the whole JVM uses only 32 MiB.
 
+Summary queries consume certified evidence incrementally and retain a bounded
+request reduction. The raw observation inventory has a separate page limit;
+that limit does not cap a summary's request population. A reduction that reaches
+its memory, cardinality or work limit reports partial coverage rather than
+presenting the retained subset as the complete interval.
+
 ## Provenance and comparison
 
 Results carry boot, running-build, schema and effective-configuration identities.
 Unknown identities remain unknown. Desired restart-required settings do not
 change the identity of an owner that has not restarted. Hot changes create real
 per-head configuration intervals.
+
+The running build's `compiled-artifact-inputs-sha256` identity is embedded during
+the build and remains attached to the loaded code when the installed path is
+replaced. It hashes compiled inputs; it is not the final JAR's byte checksum.
+Benchmark receipts retain both the embedded identity and the actual JAR SHA256.
 
 The effective-knob comparison scope excludes credentials, headers and certain
 paths/addresses. A matching revision does not prove matching provider topology,
@@ -131,6 +142,19 @@ output and cache facts, transport, objective, source, coverage and timing.
 Missing facts produce insufficient evidence; incompatible known facts are
 different from missing ones. Neither a ratio nor a matched cohort alone proves
 a causal speedup.
+
+`summary.comparison` reports measured workload readiness separately from that
+external assurance. Its `exact_joint_frequency_v1` basis retains joint request
+facts and their frequencies, including outcome, input/output/cache quantities and
+history markers. Equal averages do not imply equal workloads. A `ready` result
+means the measured workload and effective-knob metadata are usable for comparison;
+it does not certify provider topology or remote environment equivalence.
+
+Actual measurement presence is separate from billing's reporting policy. An
+omitted or null cache field is not an explicitly measured zero, even when billing
+uses a zero for accounting. Incremental updates preserve observed fields;
+distinct combined rounds cannot hide a missing contributing measurement.
+Absorbed or cut history cannot be expanded into invented per-request sizes.
 
 Implementation and source-review receipts are not performance acceptance.
 Capacity and overhead claims require matching built artifacts, stable repeated

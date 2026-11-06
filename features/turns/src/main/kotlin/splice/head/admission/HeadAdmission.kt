@@ -50,7 +50,7 @@ internal class HeadAdmission(
 
     suspend fun handleMessages(call: ApplicationCall, arrivalAt: Long = arrivalTime()) {
         val observation = deps.stores.observations.request(
-            PerfScope(head = preparation.provider.key, local = true),
+            PerfScope(head = preparation.provider.key),
             arrivalAt,
             deps.stores.perfStats.clock(),
         )
@@ -64,7 +64,6 @@ internal class HeadAdmission(
             throw cancelled
         } finally {
             // Actual delivery owns successful closure. Every earlier return still closes its arrival.
-            if (observation.scope.local == true) observation.usage(mapOf("missing_usage" to 0.0))
             observation.finish(ending)
         }
     }

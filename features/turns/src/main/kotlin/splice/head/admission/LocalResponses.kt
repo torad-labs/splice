@@ -236,6 +236,9 @@ internal class LocalResponses(
                 it.scope.copy(model = model, local = true, streaming = stream),
                 it.links.copy(sessionId = session),
             )
+            // These prepared branches serve an answer without a new provider request. Unknown arrivals and
+            // code-mode Ready turns must leave canonical usage to their own settlement owner.
+            it.usage(mapOf("missing_usage" to 0.0))
         }
     }
 }

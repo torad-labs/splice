@@ -50,8 +50,7 @@ internal object PerfDimensions {
         "good" -> OutcomeTag.OK.wire
         "bad" -> OutcomeTag.UNEXPECTED.wire
         "cancelled" -> OutcomeTag.CANCELLED.wire
-        "refused" -> OutcomeTag.AT_CAPACITY.wire
-        UNKNOWN_DIMENSION, "?" -> "?"
+        "refused", UNKNOWN_DIMENSION, "?" -> "?"
         else -> knownOutcome(value)
     }
 

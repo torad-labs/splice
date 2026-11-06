@@ -71,8 +71,8 @@ internal class AdmissionResponses(private val voice: HeadVoice) {
     /** The one shape every refusal before a turn takes: [cause] decides the status, the error type and
      *  x-should-retry (ClientWire at ADMISSION), and the head's voice says the line the client reads. Every admission
      *  path answers IDENTICALLY per cause because client retry logic keys on the shape (three hand-built
-     *  copies of the 529 drifted; review 2026-07-22 round 3). */
-    suspend fun respondRefusal(call: ApplicationCall, cause: FailureCause) {
+     *  copies of the 529 drifted; review 2026-07-22 round 3). [outcome] names only a known observation cause. */
+    suspend fun respondRefusal(call: ApplicationCall, cause: FailureCause, outcome: OutcomeTag? = null) {
         val answer = ClientWire.answer(cause, AT_ADMISSION)
         answer.shouldRetry?.let { call.response.header(SHOULD_RETRY_HEADER, it.toString()) }
         call.respond(
@@ -80,7 +80,7 @@ internal class AdmissionResponses(private val voice: HeadVoice) {
                 bodies.envelope(answer.type.wireName, cause, answer),
                 statusLine(checkNotNull(answer.status) { "an admission answer is an HTTP status" }),
                 observations = RequestObservation.of(call),
-                outcome = "refused",
+                outcome = outcome?.wire ?: "refused",
             ),
         )
     }
@@ -98,7 +98,7 @@ internal class AdmissionResponses(private val voice: HeadVoice) {
 
     /** The gate and its queue are full: [limit] turns already run on this head. */
     suspend fun respondAtCapacity(call: ApplicationCall, limit: Int) {
-        respondRefusal(call, FailureCause.Splice.AtCapacity(limit))
+        respondRefusal(call, FailureCause.Splice.AtCapacity(limit), OutcomeTag.AT_CAPACITY)
     }
 
     /** The refusal of a request that reaches a head that is stopping: its connection is closed with no HTTP answer.
@@ -115,7 +115,7 @@ internal class AdmissionResponses(private val voice: HeadVoice) {
             return
         }
         call.response.header(HttpHeaders.Connection, "close")
-        respondRefusal(call, FailureCause.Splice.Stopped(StoppedBy.HEAD_STOPPING))
+        respondRefusal(call, FailureCause.Splice.Stopped(StoppedBy.HEAD_STOPPING), OutcomeTag.RESTARTED)
     }
 
     private fun nettyCall(call: ApplicationCall): NettyApplicationCall? {

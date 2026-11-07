@@ -265,9 +265,11 @@ fixture populations are separate and identified as such.
 History observations retain a bounded, validated projection of the returned
 identity cohorts. These describe persisted data and need not include the process
 serving the query. Invalid or truncated identities cannot establish provenance.
-The live identity is available in the existing runtime telemetry sample; join it
-to the same repetition and verified process, start time, artifact, build and
-configuration before comparing it with the verified seed. The desk's `unknown`
+The live identity is available in the existing runtime telemetry sample; bind it
+to the same repetition and verified process, start time, artifact and build before
+comparing it with the verified seed. Preserve the raw configuration digest as
+separate provenance: the runtime policy revision and normalized TOML digest hash
+different inputs and must not be compared for equality. The desk's `unknown`
 boot placeholder is not identity evidence. Boot/build/configuration transition
 issues remain visible, and the default history-study verdict still requires
 complete coverage.

@@ -18,6 +18,7 @@ import kotlinx.serialization.json.put
 import java.io.BufferedReader
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
 
 private const val JSONRPC = "2.0"
 private const val OVERFLOW_NOTIFICATIONS = 257
@@ -35,7 +36,7 @@ private val ASKS = mapOf("ping-me" to "ping", "roots-me" to "roots/list")
  *  `progress`/`late-progress` report progress, `ping-me` pings the client, `roots-me` asks it for roots, and
  *  `hold`, `slow` and `timeout-progress` keep the call in flight until the test releases it.
  *
- *  THE SERVER HAS NO CLOCK. A held call is released by an EVENT the test owns: a [RELEASE] notification posted
+ *  Held calls have no clock. A held call is released by an EVENT the test owns: a [RELEASE] notification posted
  *  through the host (counted, so one that arrives before the call is not lost), the host's own
  *  `notifications/cancelled` (the host's request timeout is production's clock, not the test's), or the end of
  *  stdin, which releases everything so a crashed test never strands the child. Lines that arrive while a call is
@@ -72,7 +73,12 @@ public object FakeMcpServer {
     @JvmStatic
     public fun main(args: Array<String>) {
         check(args.isEmpty()) { "FakeMcpServer takes no arguments" }
-        if (System.getenv("FAKE2") != null) sun.misc.Signal.handle(sun.misc.Signal("TERM")) { }
+        if (System.getenv("FAKE2") != null) {
+            val received = AtomicBoolean()
+            sun.misc.Signal.handle(sun.misc.Signal("TERM")) {
+                if (received.compareAndSet(false, true)) FakeMcpTermReceipts.record()
+            }
+        }
         while (true) {
             val line = (queued.removeFirstOrNull() ?: input.readLine())?.trim() ?: break
             if (line.isNotEmpty()) dispatch(Json.parseToJsonElement(line).jsonObject)

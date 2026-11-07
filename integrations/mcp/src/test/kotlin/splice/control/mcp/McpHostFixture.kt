@@ -102,16 +102,18 @@ abstract class McpHostFixture {
         requestTimeout: Duration = 20.seconds,
         idleTimeout: Duration = 30.minutes,
         initializeTimeout: Duration = 1.minutes,
+        shutdownDirectory: Path? = null,
     ): McpHost {
         requestBudget = requestTimeout
         idleBudget = idleTimeout
         handshakeBudget = initializeTimeout
         serverCeiling = maxServers
+        val shutdownEnv = shutdownDirectory?.let { mapOf("FAKE_TERM_DIRECTORY" to it.toString()) }.orEmpty()
         val global = buildJsonObject {
             put("fake", FakeMcpServer.entry())
             put("alias", FakeMcpServer.entry())
-            put("fake2", FakeMcpServer.entry(mapOf("FAKE2" to "1")))
-            put("fake3", FakeMcpServer.entry(mapOf("FAKE2" to "2")))
+            put("fake2", FakeMcpServer.entry(mapOf("FAKE2" to "1") + shutdownEnv))
+            put("fake3", FakeMcpServer.entry(mapOf("FAKE2" to "2") + shutdownEnv))
             put("remote", json.parseToJsonElement("""{"type":"http","url":"https://x/mcp"}"""))
         }
         val sharing = McpSharing(true, emptySet(), "http://127.0.0.1:1/mcp/", { "k" }, DirectoryProbe { false })

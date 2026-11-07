@@ -126,7 +126,7 @@ class NonStreamHoldsThroughHeadsTest {
     }
 
     @Test
-    fun `a held login keeps its probe schedule when its oldest client leaves`(@TempDir tmp: Path) = runTest {
+    fun `a known reset is re-ranked when the oldest held client leaves`(@TempDir tmp: Path) = runTest {
         withScriptedHeads(tmp, VirtualTime()) {
             val spent = reply {
                 status(429)
@@ -150,25 +150,28 @@ class NonStreamHoldsThroughHeadsTest {
             }
 
             first.hangUp()
-            // The leave wakes the remaining turn to recompute its schedule, and it parks its probe on the clock again a few
-            // hops later. A clock moved in between puts that probe past the move. Each held streaming turn keeps three waits
-            // on the clock, so a count passes through the settled one before the probe is back (a run on Nov 3, 2026 read
-            // dues [2s, 15s, 7d], then [2s, 15s, 1m]): the wait is on the probe itself, due at one minute, with the first
-            // turn gone from the listing (main's ladder on 47984fb54, Nov 2 2026, timed out here on attempt 1).
+            // Both finite Retry-After replies arrived at virtual t=0 and name reset t=60. Leaving wakes the remaining
+            // turn to re-rank without changing that reset; its existing two-second wake stagger moves the probe to t=62.
             withContext(Dispatchers.Default) {
                 val settled = withTimeoutOrNull(10_000) {
-                    while (head.heldTurns().size != 1 || 60.seconds !in time.parkedDues()) delay(5)
+                    while (head.heldTurns().size != 1 || 62.seconds !in time.parkedDues()) delay(5)
                 }
                 assertTrue(settled != null, "held ${head.heldTurns().size}, parked waits due at ${time.parkedDues()}")
             }
             time.advanceBy(60.seconds)
+            assertEquals(2, provider.requests.size, "the known reset does not send before the re-ranked t=62 probe")
+            assertTrue(
+                62.seconds in time.parkedDues(),
+                "the held request remains parked for the existing two-second stagger",
+            )
+            time.advanceBy(2.seconds)
             withContext(Dispatchers.Default) {
                 withTimeout(10_000) { while (!second.finished) delay(5) }
             }
 
             assertEquals("the remaining turn continued", second.finish().text)
             assertEquals(3, provider.requests.size, "one scheduled probe serves the remaining held turn")
-            assertEquals(60.seconds, provider.requests.last().at)
+            assertEquals(62.seconds, provider.requests.last().at)
         }
     }
 

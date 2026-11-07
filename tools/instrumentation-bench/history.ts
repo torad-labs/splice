@@ -5,6 +5,57 @@ import { hash, type Manifest } from './manifest';
 import { numericProjection } from './telemetry';
 import { readSourceCosts, sourceCostDelta } from './costs';
 export interface RetainedFixture { directory: string; receipt_sha256: string; source_commit: string }
+const FIXTURE_HISTOGRAM_METRICS = ['arrival_to_terminal_ms', 'arrival_to_first_meaningful_content_ms', 'queue_wait_ms'] as const;
+const FIXTURE_DURATION_BOUNDS_MS = [0, 1, 2, 5, 10, 20, 50, 100, 200, 250, 500, 1000, 2000, 5000, 10000, 15000, 30000, 60000, 120000, 300000, 600000];
+export function boundedIssueProjection(value: unknown) {
+  if (!Array.isArray(value)) return { issues: [], valid: false, truncated: false };
+  const truncated = value.length > 64;
+  const issues = value.slice(0, 64).map(issue => ({
+    code: typeof issue?.code === 'string' && /^[a-z0-9_]{1,100}$/.test(issue.code) ? issue.code : null,
+    source: typeof issue?.source === 'string' && /^[a-z0-9_:-]{1,80}$/.test(issue.source) ? issue.source : null,
+    count: counter(issue?.count),
+  }));
+  const valid = !truncated && issues.every(issue => issue.code !== null && issue.source !== null && issue.count !== null);
+  return { issues, valid, truncated };
+}
+/** Aggregate only the fixed synthetic histogram vocabulary; never retain scopes or arbitrary response fields. */
+export function fixtureHistogramProfiles(value: Record<string, any>) {
+  if (!Array.isArray(value?.series)) return null;
+  let unexpectedMetricCount = 0, invalidRowCount = 0;
+  const profiles = Object.fromEntries(FIXTURE_HISTOGRAM_METRICS.map(metric => [metric, {
+    rows: 0, count: 0, sum: 0, min: null as number | null, max: null as number | null,
+    bounds_ms: FIXTURE_DURATION_BOUNDS_MS, buckets: Array(FIXTURE_DURATION_BOUNDS_MS.length + 1).fill(0), valid: true,
+  }])) as Record<typeof FIXTURE_HISTOGRAM_METRICS[number], { rows: number; count: number; sum: number; min: number | null; max: number | null; bounds_ms: number[]; buckets: number[]; valid: boolean }>;
+  for (const row of value.series) {
+    const rowValid = row && typeof row === 'object' && !Array.isArray(row)
+      && row.metrics && typeof row.metrics === 'object' && !Array.isArray(row.metrics);
+    if (!rowValid) invalidRowCount++;
+    const metrics = rowValid ? row.metrics : {};
+    unexpectedMetricCount += Object.keys(metrics).filter(metric => !FIXTURE_HISTOGRAM_METRICS.includes(metric as typeof FIXTURE_HISTOGRAM_METRICS[number])).length;
+    for (const metric of FIXTURE_HISTOGRAM_METRICS) {
+      if (!Object.hasOwn(metrics, metric)) continue;
+      const target = profiles[metric]; target.rows++;
+      const sample = metrics[metric];
+      if (!sample || typeof sample !== 'object' || Array.isArray(sample)) { target.valid = false; continue; }
+      const count = counter(sample.count), sum = typeof sample.sum === 'number' && Number.isFinite(sample.sum) ? sample.sum : null;
+      const min = typeof sample.min === 'number' && Number.isFinite(sample.min) ? sample.min : null;
+      const max = typeof sample.max === 'number' && Number.isFinite(sample.max) ? sample.max : null;
+      const bounds = Array.isArray(sample.bounds_ms) ? sample.bounds_ms : null;
+      const buckets = Array.isArray(sample.buckets) ? sample.buckets.map(counter) : null;
+      if (count === null || sum === null || min === null || max === null || !bounds || JSON.stringify(bounds) !== JSON.stringify(FIXTURE_DURATION_BOUNDS_MS)
+        || !buckets || buckets.length !== target.buckets.length || buckets.some((n: number | null) => n === null)) { target.valid = false; continue; }
+      const nextCount = target.count + count, nextSum = target.sum + sum;
+      const nextBuckets = target.buckets.map((n, index) => n + (buckets[index] ?? 0));
+      if (!Number.isSafeInteger(nextCount) || !Number.isFinite(nextSum) || nextBuckets.some(n => !Number.isSafeInteger(n))) { target.valid = false; continue; }
+      target.count = nextCount; target.sum = nextSum;
+      target.min = target.min === null ? min : Math.min(target.min, min); target.max = target.max === null ? max : Math.max(target.max, max);
+      target.buckets = nextBuckets;
+    }
+  }
+  for (const metric of FIXTURE_HISTOGRAM_METRICS) if (profiles[metric].rows === 0) profiles[metric].valid = false;
+  return { metrics: profiles, unexpected_metric_count: unexpectedMetricCount, invalid_row_count: invalidRowCount, truncated: false,
+    valid: unexpectedMetricCount === 0 && invalidRowCount === 0 && FIXTURE_HISTOGRAM_METRICS.every(metric => profiles[metric].valid) };
+}
 /** Copies only verified producer output into a new isolated desk before its process starts. */
 export async function installHistory(fixture: RetainedFixture, state: string) {
   const root = await realpath(fixture.directory);
@@ -47,6 +98,7 @@ export async function queryHistory(desk: OwnedDesk, fixture: { from_ms: number; 
     const queryBoundsMatch = v.query?.from_ms === from && v.query?.until_ms === until && v.query?.source === source;
     if (!queryBoundsMatch) errorClass ??= 'history_query_bounds_changed';
     const histogramCount = source === 'history' && Array.isArray(v.series) ? v.series.reduce((n: number, row: any) => n + Object.values(row.metrics ?? {}).reduce<number>((s, value: any) => s + (counter(value.count) ?? 0), 0), 0) : null;
+    const histogramProfiles = source === 'history' ? fixtureHistogramProfiles(v) : null;
     const workload = v.comparison?.workload;
     const observedArrivals = source === 'evidence' ? counter(workload?.observed_arrivals) : null;
     const populationComplete = source === 'evidence' ? typeof workload?.population_complete === 'boolean' ? workload.population_complete : null : typeof v.coverage?.complete === 'boolean' ? v.coverage.complete : null;
@@ -62,6 +114,7 @@ export async function queryHistory(desk: OwnedDesk, fixture: { from_ms: number; 
       coverage: numericProjection(v.coverage), population_coverage: numericProjection(v.population_coverage), missing_fields: Array.isArray(v.missing_fields) ? v.missing_fields.filter((code: unknown) => typeof code === 'string' && /^[a-z0-9_.-]{1,100}$/.test(code)).slice(0, 256) : null,
       as_of_ms: counter(v.as_of_ms), evidence_as_of_ms: counter(evidenceCoverage?.as_of_ms), coverage_basis: evidenceCoverage?.coverage_basis === 'committed_observations_as_of' ? 'committed_observations_as_of' : 'unknown', event_time_final: typeof evidenceCoverage?.event_time_final === 'boolean' ? evidenceCoverage.event_time_final : null,
       resolution_ms: counter(v.resolution_ms), settled_until_ms: counter(v.settled_until_ms), work_cost, identity_cohort_count: Array.isArray(v.identity_cohorts) ? v.identity_cohorts.length : null,
+      histogram_profiles: histogramProfiles, coverage_issues: boundedIssueProjection(v.coverage?.issues),
       limitations: ['filesystem cache is uncontrolled', 'fixture cohort identity differs from the live boot', 'partial evidence summaries are not complete exports; complete cursor traversal is a separate acceptance check'] });
   }
   return rows;

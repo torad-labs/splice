@@ -5,12 +5,15 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock as withReentrantLock
 
 /** Keeps history encoding and source replies from simultaneously reserving their large workspaces. */
 public object PerfWorkPhase {
     private val permits = Semaphore(QUERY_PHASES)
     private val checkpoints = Mutex()
-    private val exportMonitor = java.lang.Object()
+    private val exportLock = ReentrantLock()
+    private val exportCondition = exportLock.newCondition()
     private var activeExports = 0
     private var checkpointWaiters = 0
     private var checkpointActive = false
@@ -24,7 +27,7 @@ public object PerfWorkPhase {
 
     /** Await before allocating a snapshot or submitting work; never call from the shared file-I/O lane. */
     public suspend fun checkpoint(): Lease {
-        synchronized(exportMonitor) {
+        exportLock.withReentrantLock {
             checkpointWaiters++
             signalExportChange()
         }
@@ -45,7 +48,7 @@ public object PerfWorkPhase {
                 }
             }
         } finally {
-            synchronized(exportMonitor) {
+            exportLock.withReentrantLock {
                 checkpointWaiters--
                 signalExportChange()
             }
@@ -70,7 +73,7 @@ public object PerfWorkPhase {
     }
 
     /** Export conversion and delivery share a gate with checkpoints, not the two HTTP query permits. */
-    public fun tryExportWork(): Lease? = synchronized(exportMonitor) {
+    public fun tryExportWork(): Lease? = exportLock.withReentrantLock {
         if (checkpointWaiters > 0 || checkpointActive) {
             null
         } else {
@@ -83,11 +86,11 @@ public object PerfWorkPhase {
     public fun awaitExportWork(timeoutMs: Long): Lease? {
         require(timeoutMs >= 0L)
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
-        synchronized(exportMonitor) {
+        exportLock.withReentrantLock {
             while (checkpointPhaseBlocked()) {
                 val remaining = deadline - System.nanoTime()
                 if (remaining <= 0L) return null
-                TimeUnit.NANOSECONDS.timedWait(exportMonitor, remaining)
+                exportCondition.awaitNanos(remaining)
             }
             activeExports++
             return Lease(0, activeExport = true)
@@ -96,7 +99,7 @@ public object PerfWorkPhase {
 
     private suspend fun enterCheckpointPhase() {
         while (true) {
-            val waiting = synchronized(exportMonitor) {
+            val waiting = exportLock.withReentrantLock {
                 if (activeExports == 0 && !checkpointActive) {
                     checkpointActive = true
                     signalExportChange()
@@ -110,7 +113,7 @@ public object PerfWorkPhase {
         }
     }
 
-    private fun tryEnterCheckpointPhase(): Boolean = synchronized(exportMonitor) {
+    private fun tryEnterCheckpointPhase(): Boolean = exportLock.withReentrantLock {
         if (checkpointPhaseBlocked()) {
             false
         } else {
@@ -122,12 +125,12 @@ public object PerfWorkPhase {
     private fun checkpointPhaseBlocked(): Boolean =
         checkpointWaiters > 0 || checkpointActive || activeExports > 0
 
-    private fun leaveCheckpointPhase() = synchronized(exportMonitor) {
+    private fun leaveCheckpointPhase() = exportLock.withReentrantLock {
         checkpointActive = false
         signalExportChange()
     }
 
-    private fun leaveExportWork() = synchronized(exportMonitor) {
+    private fun leaveExportWork() = exportLock.withReentrantLock {
         check(activeExports > 0) { "No export work owns a phase" }
         activeExports--
         signalExportChange()
@@ -137,7 +140,7 @@ public object PerfWorkPhase {
         val previous = exportChanged
         exportChanged = CompletableDeferred()
         previous.complete(Unit)
-        exportMonitor.notifyAll()
+        exportCondition.signalAll()
     }
 
     /** A transferable permit: enqueue rejection and completion may release it on different threads. */

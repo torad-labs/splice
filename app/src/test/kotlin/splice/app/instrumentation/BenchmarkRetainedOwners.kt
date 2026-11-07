@@ -421,8 +421,8 @@ internal class BenchmarkRetainedOwners(
     }
 
     private fun readDiagnostics() = buildJsonObject {
-        putAll(historyDiagnostics())
-        putAll(cursorDiagnostics())
+        historyDiagnostics().forEach { (key, value) -> put(key, value) }
+        cursorDiagnostics().forEach { (key, value) -> put(key, value) }
     }
 
     private fun historyDiagnostics() = buildJsonObject {
@@ -434,7 +434,7 @@ internal class BenchmarkRetainedOwners(
 
     private fun cursorDiagnostics() = buildJsonObject {
         put("cursor_status", nullableJson(cursorStatus))
-        put("cursor_issue_codes", buildJsonArray { cursorIssueCodes.forEach { add(it) } })
+        put("cursor_issue_codes", buildJsonArray { cursorIssueCodes.forEach { add(JsonPrimitive(it)) } })
         put("cursor_returned_observations", nullableJson(cursorReturnedObservations))
         put("cursor_known_matching_events", nullableJson(cursorKnownMatchingEvents))
         put("cursor_total_matching_events", nullableJson(cursorTotalMatchingEvents))

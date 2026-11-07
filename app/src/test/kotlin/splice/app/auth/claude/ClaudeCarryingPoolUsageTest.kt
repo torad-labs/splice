@@ -339,7 +339,10 @@ class ClaudeCarryingPoolUsageTest {
 
     @Test
     fun `request evidence summary follows the account ref actually used by the selected pool turn`() = runBlocking {
-        val fixture = fixture()
+        val fixture = ClaudeNativePoolFixture(home).also {
+            it.seed("native")
+            add(it)
+        }
         val telemetry = telemetry(fixture)
         telemetry.start()
         val sent = CopyOnWriteArrayList<String?>()

@@ -74,10 +74,10 @@ class ExportScrapeFailureTest {
         ).use { engine ->
             failures.forEach { expected ->
                 failure.set(null)
-                assertTrue(engine.tick())
+                assertTrue(engine.tick(timeoutMs = 0L))
                 engine.scrape().use { assertTrue(it.available) }
                 failure.set(expected)
-                assertSame(expected, assertThrows(expected.javaClass) { engine.tick() })
+                assertSame(expected, assertThrows(expected.javaClass) { engine.tick(timeoutMs = 0L) })
                 engine.scrape().use { scrape ->
                     assertFalse(scrape.available)
                     assertEquals("source_failed", scrape.state)

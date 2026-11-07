@@ -151,7 +151,7 @@ class NonStreamHoldsThroughHeadsTest {
 
             first.hangUp()
             // Both finite Retry-After replies arrived at virtual t=0 and name reset t=60. Leaving wakes the remaining
-            // turn to re-rank without changing that reset; its existing two-second wake stagger moves the probe to t=62.
+            // turn to re-rank without changing that reset; its existing two-second wake stagger moves the resend to t=62.
             withContext(Dispatchers.Default) {
                 val settled = withTimeoutOrNull(10_000) {
                     while (head.heldTurns().size != 1 || 62.seconds !in time.parkedDues()) delay(5)
@@ -159,7 +159,7 @@ class NonStreamHoldsThroughHeadsTest {
                 assertTrue(settled != null, "held ${head.heldTurns().size}, parked waits due at ${time.parkedDues()}")
             }
             time.advanceBy(60.seconds)
-            assertEquals(2, provider.requests.size, "the known reset does not send before the re-ranked t=62 probe")
+            assertEquals(2, provider.requests.size, "the known reset does not resend before the re-ranked t=62 wake")
             assertTrue(
                 62.seconds in time.parkedDues(),
                 "the held request remains parked for the existing two-second stagger",

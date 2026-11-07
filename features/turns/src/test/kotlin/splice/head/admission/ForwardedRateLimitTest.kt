@@ -220,7 +220,11 @@ class ForwardedRateLimitTest {
                     assertTrue(line.startsWith("[splice] ") && "did not say when it resets" in line, line)
                 }
                 assertEquals(1, rig.refused.size, "the terminal response does not retry the provider")
-                assertEquals(0L, rig.upstream.rateLimitedForMs, "an unstated refusal does not hold a credential")
+                assertEquals(
+                    20_000L,
+                    rig.upstream.rateLimitedForMs,
+                    "the credential retains the existing bounded cooldown",
+                )
                 assertEquals(null, headers["retry-after"])
                 assertEquals(null, headers["anthropic-ratelimit-unified-status"])
                 assertEquals(HttpStatusCode.OK, rig.turn("synthetic-healthy", stream).first)

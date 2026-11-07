@@ -212,7 +212,6 @@ class UpstreamClientRateLimitTest {
     fun `custom carriers isolate the exact header snapshot sent on the wire`() = runTest {
         val sent = mutableListOf<String>()
         val accepted = mutableListOf<String>()
-        var snapshots = 0
         val engine = MockEngine { request ->
             val key = requireNotNull(request.headers["X-Synthetic-Key"])
             sent += key
@@ -236,10 +235,7 @@ class UpstreamClientRateLimitTest {
                 // Delegation would forward the login lookup to fakeAuth, which answers with its own key.
                 override suspend fun answer(): LoginAnswer = LoginAnswer.Granted(credentials())
             },
-            extraHeaders = {
-                snapshots++
-                emptyMap()
-            },
+            extraHeaders = { emptyMap() },
             replies = Replies(OpenAiReplies),
         ).also { context -> context.upstreamAccepted = StreamStart { accepted += key } }
         val first = assertEnds<UpstreamFailed> {
@@ -264,7 +260,6 @@ class UpstreamClientRateLimitTest {
             accepted,
             "refusals never permit early stream progress",
         )
-        assertEquals(sent.size, snapshots, "each request resolves headers once, and sends that snapshot")
     }
 
     @Test

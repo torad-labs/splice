@@ -21,6 +21,7 @@ import splice.core.perf.observation.aggregate.PerfAccumulator
 import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
 import splice.core.util.JsonScalars
+import splice.core.util.MonoClock
 import splice.core.util.PerfWorkBudget
 import splice.core.util.WallClock
 import splice.head.perf.RequestEvidenceFiles
@@ -122,10 +123,33 @@ internal class BenchmarkRetainedOwners(
             ),
         )
         check(checkNotNull(aggregate).append(completed))
-        check(AsyncFileIo.awaitFile(paths.perfAggregatesDir.resolve("checkpoint.json")))
+        val waitStarted = MonoClock.nowMs()
+        check(AsyncFileIo.awaitFile(paths.perfAggregatesDir.resolve("checkpoint.json"))) {
+            checkpointFailure(MonoClock.nowMs() - waitStarted)
+        }
         check(checkNotNull(evidence).checkpointCoverage())
         check(AsyncFileIo.awaitDirectory(paths.perfEvidenceDir))
         alignSyntheticFileClock()
+    }
+
+    private fun checkpointFailure(waitElapsed: Long): String {
+        val pending = AsyncFileIo.pendingUnder(paths.perfAggregatesDir)
+        val checkpoint = paths.perfAggregatesDir.resolve("checkpoint.json").toAbsolutePath().normalize()
+        return buildJsonObject {
+            put("code", "retained_checkpoint_settlement_failed")
+            put("completed_hours", producedHours)
+            put("virtual_until_ms", now)
+            put("await_elapsed_ms", waitElapsed)
+            put("interrupted", Thread.currentThread().isInterrupted)
+            put("global_pending_tasks", pending.count)
+            put("aggregate_pending_path_count", pending.paths.size)
+            put("checkpoint_pending", checkpoint in pending.paths)
+            put("io", Json.encodeToJsonElement(AsyncFileIo.workSnapshot))
+            put("aggregate", Json.encodeToJsonElement(checkNotNull(aggregate).status()))
+            put("evidence", Json.encodeToJsonElement(checkNotNull(writer).sink.status()))
+            put("coverage", Json.encodeToJsonElement(checkNotNull(evidence).coverageSink.status()))
+            put("accumulator", Json.encodeToJsonElement(checkNotNull(accumulator).status()))
+        }.toString()
     }
 
     private fun alignSyntheticFileClock() {

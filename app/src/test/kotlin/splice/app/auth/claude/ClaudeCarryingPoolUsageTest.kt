@@ -42,6 +42,7 @@ import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.core.util.AsyncFileIo
 import splice.core.util.JsonlSink
+import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.head.usage.QuotaTracker
 import splice.sessions.registry.SessionAvailability

@@ -73,8 +73,11 @@ internal class EvidencePoints(private val query: PerfQuery) {
     private fun accepted(key: String, value: Double): Boolean = key in supported && value.isFinite() && value >= 0
 
     private fun add(event: PerfObservation, metric: String, value: Double) {
-        val start = maxOf(query.fromMs, event.stamp.wallMs / MINUTE_MS * MINUTE_MS)
-        val end = minOf(query.untilMs, event.stamp.wallMs / MINUTE_MS * MINUTE_MS + MINUTE_MS)
+        val start = maxOf(query.fromMs, event.stamp.wallMs / EVIDENCE_MINUTE_MS * EVIDENCE_MINUTE_MS)
+        val end = minOf(
+            query.untilMs,
+            event.stamp.wallMs / EVIDENCE_MINUTE_MS * EVIDENCE_MINUTE_MS + EVIDENCE_MINUTE_MS,
+        )
         val scope = event.scope.copy(outcome = event.outcome ?: event.scope.outcome)
         bins.add(
             event.stamp.identity,
@@ -137,6 +140,3 @@ private val USAGE_METRICS = setOf(
     "input_tokens", "output_tokens", "cached_tokens", "missing_usage", "usage_cache_write_tokens",
     "usage_cache_write_1h_tokens", "usage_absorbed_rounds", "usage_cut_rounds", "usage_no_request",
 ) + UsageMeasurementStamp.fields.keys
-
-// Evidence-derived points align to complete sixty-second wall-clock minutes, clipped to the requested query window.
-private const val MINUTE_MS = 60_000L

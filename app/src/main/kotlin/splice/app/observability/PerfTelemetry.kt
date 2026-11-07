@@ -1,14 +1,9 @@
 package splice.app.observability
 
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.withContext
 import splice.app.sources.PerfSourceFiles
 import splice.core.config.ConfigService
 import splice.core.perf.observation.NoPerfObserver
 import splice.core.perf.observation.PerfRecorder
-import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.core.util.MonoClock
@@ -19,7 +14,6 @@ import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.retry.InflightGate
 import splice.usage.alerts.AlertStore
-import java.io.IOException
 
 /** The daemon's single composition owner. Construction happens before head producers; no profile starts here. */
 internal class PerfTelemetry(
@@ -68,6 +62,7 @@ internal class PerfTelemetry(
     )
     private val cleanup = PerfCleanup(log)
     private val schedule = PerfTelemetrySchedule(scope, tracking, recorder, log, cleanup, ::tick)
+    private val shutdown = PerfTelemetryShutdown(io, schedule, config)
 
     fun gate(head: String, gate: InflightGate) { schedule.gate(head, gate) }
 
@@ -96,21 +91,7 @@ internal class PerfTelemetry(
     }
 
     /** Called after heads/MCP stop. Flush while source data is still alive, then release dependent owners. */
-    suspend fun close() {
-        val caller = currentCoroutineContext()
-        withContext(NonCancellable + io) {
-            val phase = try {
-                schedule.finish(config) { alerting.stopDelivery(cleanup) }
-            } catch (failure: IOException) {
-                caller.ensureActive()
-                throw failure
-            }
-            phase.use {
-                Cancellables.withCleanup({ closeOwners(it) }) { caller.ensureActive() }
-            }
-        }
-        caller.ensureActive()
-    }
+    suspend fun close() = shutdown.close({ alerting.stopDelivery(cleanup) }, ::closeOwners)
 
     private fun closeOwners(phase: PerfWorkPhase.Lease) = cleanup.finish(
         { finalCheckpoints(phase) },

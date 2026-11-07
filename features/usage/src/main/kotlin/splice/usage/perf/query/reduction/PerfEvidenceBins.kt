@@ -8,7 +8,7 @@ import splice.usage.perf.query.PointKey
 /** Exact counter/histogram folding; coarsen time only, retaining every identity and scope separately. */
 internal class PerfEvidenceBins(private val query: PerfQuery) {
     private val span = query.untilMs - query.fromMs
-    private var resolution = MINUTE_MS
+    private var resolution = EVIDENCE_MINUTE_MS
     private var collapsed = false
     private var values = LinkedHashMap<PointKey, PerfAggregatePoint>()
     var truncated = false
@@ -49,7 +49,7 @@ internal class PerfEvidenceBins(private val query: PerfQuery) {
 
     private fun coarsen(): Boolean {
         if (collapsed) return false
-        resolution = minOf(span, resolution * COARSENING_FACTOR)
+        resolution = minOf(span, resolution * EVIDENCE_BIN_GROWTH)
         collapsed = resolution >= span
         val previous = values
         values = LinkedHashMap()
@@ -66,6 +66,8 @@ internal class PerfEvidenceBins(private val query: PerfQuery) {
 // Keep the existing 2,048-cell projection bound; an irreducible dimensional product remains explicitly partial.
 private const val MAX_REDUCED_POINTS = 2_048
 
-// Begin with minute bins and double their width until the exact selected population fits the same cell bound.
-private const val MINUTE_MS = 60_000L
-private const val COARSENING_FACTOR = 2L
+// Raw evidence points and their first reduction bins share complete sixty-second wall-clock minutes.
+internal const val EVIDENCE_MINUTE_MS = 60_000L
+
+// Double time-bin width until exact counts fit the existing cell bound; identity and scope stay separate.
+private const val EVIDENCE_BIN_GROWTH = 2L

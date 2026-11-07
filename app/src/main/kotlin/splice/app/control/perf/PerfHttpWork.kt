@@ -27,6 +27,15 @@ internal class PerfHttpWork(val io: CoroutineDispatcher = ProcessDispatchers().i
     private val running = kotlinx.coroutines.sync.Semaphore(ACTIVE_REQUESTS)
 
     suspend fun execute(call: ApplicationCall, block: PerfControlWork) {
+        withAdmission(call) { running.withPermit { block.run() } }
+    }
+
+    /** Phase waiting uses an admitted slot, never an idle active worker needed by status/settings reads. */
+    suspend fun source(call: ApplicationCall, block: PerfControlWork) {
+        withAdmission(call) { PerfWorkPhase.query().use { running.withPermit { block.run() } } }
+    }
+
+    private suspend fun withAdmission(call: ApplicationCall, block: PerfControlWork) {
         if (!admitted.tryAcquire()) {
             return refusal(
                 call,
@@ -37,7 +46,8 @@ internal class PerfHttpWork(val io: CoroutineDispatcher = ProcessDispatchers().i
         }
         try {
             val completed = withTimeoutOrNull(DEADLINE_MS) {
-                running.withPermit { block.run(); true }
+                block.run()
+                true
             }
             if (completed != true) refusal(call, "busy", "control_query_deadline", HttpStatusCode.ServiceUnavailable)
         } catch (_: IOException) {
@@ -45,11 +55,6 @@ internal class PerfHttpWork(val io: CoroutineDispatcher = ProcessDispatchers().i
         } finally {
             admitted.release()
         }
-    }
-
-    /** Source reads wait within admission's deadline and keep the phase until their reply has been released. */
-    suspend fun source(call: ApplicationCall, block: PerfControlWork) {
-        execute(call) { PerfWorkPhase.query().use { block.run() } }
     }
 
     suspend fun respond(call: ApplicationCall, telemetry: PerfTelemetry?, read: PerfJsonRead) {

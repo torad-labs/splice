@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { boundedIssueProjection, fixtureHistogramProfiles } from './history';
+import { boundedIdentityCohortProjection, boundedIssueProjection, fixtureHistogramProfiles } from './history';
 
 const metrics = ['arrival_to_terminal_ms', 'arrival_to_first_meaningful_content_ms', 'queue_wait_ms'] as const;
 const bounds = [0, 1, 2, 5, 10, 20, 50, 100, 200, 250, 500, 1000, 2000, 5000, 10000, 15000, 30000, 60000, 120000, 300000, 600000];
@@ -52,4 +52,14 @@ test('malformed histogram wire shapes remain invalid and issue projection drops 
   ], valid: false, truncated: false });
   expect(JSON.stringify(issues)).not.toContain('/tmp/private');
   expect(boundedIssueProjection(Array(70).fill({ code: 'coverage_gap', source: 'aggregate_history', count: 1 }))).toMatchObject({ valid: false, truncated: true, issues: { length: 64 } });
+});
+
+test('identity cohort projection keeps only validated boot/build/config fields within its fixed bound', () => {
+  const cohort = { boot_id: '00000000-0000-4000-8000-000000000001', build: `compiled-artifact-inputs-sha256:${'a'.repeat(64)}`, boot_config_revision: 'b'.repeat(64), schema_version: 1, version: 'private-version-label', effective_config_revision: '/private/path' };
+  expect(boundedIdentityCohortProjection([cohort])).toEqual({ cohorts: [{ boot_id: cohort.boot_id, build: cohort.build, boot_config_revision: cohort.boot_config_revision, schema_version: 1 }], valid: true, truncated: false });
+  const malformed = boundedIdentityCohortProjection([{ ...cohort, boot_id: 'unsafe-private-boot', build: 'private-build-path', boot_config_revision: 'unknown' }]);
+  expect(malformed).toEqual({ cohorts: [{ boot_id: null, build: null, boot_config_revision: null, schema_version: 1 }], valid: false, truncated: false });
+  expect(JSON.stringify(malformed)).not.toContain('unsafe-private-boot');
+  expect(boundedIdentityCohortProjection(Array(70).fill(cohort))).toMatchObject({ valid: false, truncated: true, cohorts: { length: 64 } });
+  expect(boundedIdentityCohortProjection(null)).toEqual({ cohorts: [], valid: false, truncated: false });
 });

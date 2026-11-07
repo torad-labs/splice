@@ -18,6 +18,21 @@ export function boundedIssueProjection(value: unknown) {
   const valid = !truncated && issues.every(issue => issue.code !== null && issue.source !== null && issue.count !== null);
   return { issues, valid, truncated };
 }
+/** Retain only stable identity fields needed to bind a stored cohort to a verified process. */
+export function boundedIdentityCohortProjection(value: unknown) {
+  if (!Array.isArray(value)) return { cohorts: [], valid: false, truncated: false };
+  const truncated = value.length > 64;
+  const cohorts = value.slice(0, 64).map(identity => {
+    const record = identity && typeof identity === 'object' && !Array.isArray(identity) ? identity as Record<string, unknown> : {};
+    const bootId = typeof record.boot_id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(record.boot_id) ? record.boot_id : null;
+    const build = typeof record.build === 'string' && /^(?:compiled-artifact-inputs-sha256:[a-f0-9]{64}|source:[a-f0-9]{40})$/.test(record.build) ? record.build : null;
+    const configRevision = typeof record.boot_config_revision === 'string' && /^[a-f0-9]{64}$/.test(record.boot_config_revision) ? record.boot_config_revision : null;
+    const schemaVersion = record.schema_version === 1 ? 1 : null;
+    return { boot_id: bootId, build, boot_config_revision: configRevision, schema_version: schemaVersion };
+  });
+  const valid = !truncated && cohorts.every(identity => identity.boot_id !== null && identity.build !== null && identity.boot_config_revision !== null && identity.schema_version === 1);
+  return { cohorts, valid, truncated };
+}
 /** Aggregate only the fixed synthetic histogram vocabulary; never retain scopes or arbitrary response fields. */
 export function fixtureHistogramProfiles(value: Record<string, any>) {
   if (!Array.isArray(value?.series)) return null;
@@ -99,6 +114,7 @@ export async function queryHistory(desk: OwnedDesk, fixture: { from_ms: number; 
     if (!queryBoundsMatch) errorClass ??= 'history_query_bounds_changed';
     const histogramCount = source === 'history' && Array.isArray(v.series) ? v.series.reduce((n: number, row: any) => n + Object.values(row.metrics ?? {}).reduce<number>((s, value: any) => s + (counter(value.count) ?? 0), 0), 0) : null;
     const histogramProfiles = source === 'history' ? fixtureHistogramProfiles(v) : null;
+    const identityCohorts = boundedIdentityCohortProjection(v.identity_cohorts);
     const workload = v.comparison?.workload;
     const observedArrivals = source === 'evidence' ? counter(workload?.observed_arrivals) : null;
     const populationComplete = source === 'evidence' ? typeof workload?.population_complete === 'boolean' ? workload.population_complete : null : typeof v.coverage?.complete === 'boolean' ? v.coverage.complete : null;
@@ -114,6 +130,7 @@ export async function queryHistory(desk: OwnedDesk, fixture: { from_ms: number; 
       coverage: numericProjection(v.coverage), population_coverage: numericProjection(v.population_coverage), missing_fields: Array.isArray(v.missing_fields) ? v.missing_fields.filter((code: unknown) => typeof code === 'string' && /^[a-z0-9_.-]{1,100}$/.test(code)).slice(0, 256) : null,
       as_of_ms: counter(v.as_of_ms), evidence_as_of_ms: counter(evidenceCoverage?.as_of_ms), coverage_basis: evidenceCoverage?.coverage_basis === 'committed_observations_as_of' ? 'committed_observations_as_of' : 'unknown', event_time_final: typeof evidenceCoverage?.event_time_final === 'boolean' ? evidenceCoverage.event_time_final : null,
       resolution_ms: counter(v.resolution_ms), settled_until_ms: counter(v.settled_until_ms), work_cost, identity_cohort_count: Array.isArray(v.identity_cohorts) ? v.identity_cohorts.length : null,
+      identity_cohorts: identityCohorts.cohorts, identity_cohorts_valid: identityCohorts.valid, identity_cohorts_truncated: identityCohorts.truncated,
       histogram_profiles: histogramProfiles, coverage_issues: boundedIssueProjection(v.coverage?.issues),
       limitations: ['filesystem cache is uncontrolled', 'fixture cohort identity differs from the live boot', 'partial evidence summaries are not complete exports; complete cursor traversal is a separate acceptance check'] });
   }

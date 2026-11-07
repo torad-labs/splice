@@ -13,6 +13,7 @@ import splice.core.perf.observation.PerfRecorder
 import splice.core.perf.observation.PerfScope
 import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
+import splice.core.util.MonoClock
 import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.Path
@@ -69,12 +70,21 @@ class RequestEvidenceStoreTest {
         val store = files.forHead("test")
         val recorder =
             PerfRecorder(PerfIdentity("test", "build", "version", "config"), store, ElapsedClock { now }, wall)
-        repeat(40) {
+        repeat(40) { index ->
             val request = recorder.request(PerfScope(head = "test"), now, now)
+            // Retention reads this clock on the shared file lane; settle before advancing it.
+            awaitEvidenceWrites(directory, store, "request=$index kind=REQUEST_ARRIVED")
             now++
             request.finish(OutcomeTag.OK.wire)
+            awaitEvidenceWrites(directory, store, "request=$index kind=REQUEST_FINISHED")
         }
         awaitEvidenceWrites(directory, store)
+        val status = store.sink.status()
+        assertEquals(80L, status.observed)
+        assertEquals(80L, status.enqueued)
+        assertEquals(80L, status.written)
+        assertEquals(0L, status.pending)
+        assertEquals(0L, status.dropped)
         val retention = Json.decodeFromString<RequestEvidenceRetention>(
             Files.readString(directory.resolve("retention.json")),
         )
@@ -84,10 +94,13 @@ class RequestEvidenceStoreTest {
         assertEquals(0L, store.sink.status().failed)
     }
 
-    private fun awaitEvidenceWrites(directory: Path, store: RequestEvidenceStore) {
+    private fun awaitEvidenceWrites(directory: Path, store: RequestEvidenceStore, stage: String = "complete") {
         // Each append persists retention metadata before its directory-scoped write completes.
+        val started = MonoClock.nowMs()
         assertTrue(AsyncFileIo.awaitDirectory(directory)) {
-            "Evidence writes did not settle: sink=${store.sink.status()}, lane=${AsyncFileIo.workSnapshot}"
+            "Evidence writes did not settle: stage=$stage elapsed_ms=${MonoClock.nowMs() - started} " +
+                "interrupted=${Thread.currentThread().isInterrupted} sink=${store.sink.status()}, " +
+                "lane=${AsyncFileIo.workSnapshot}"
         }
     }
 

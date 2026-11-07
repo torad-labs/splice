@@ -2,6 +2,7 @@ package splice.core.perf.observation
 
 import splice.core.perf.OutcomeTag
 import splice.core.perf.OutcomeTags
+import splice.core.perf.observation.validation.PerfDimensionText
 
 /** Keep free-form text out of dimensions; cap the complete dimension product in the accumulator. */
 internal object PerfDimensions {

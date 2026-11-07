@@ -1,4 +1,4 @@
-package splice.core.perf.observation
+package splice.core.perf.observation.validation
 
 /** Validate the telemetry wire alphabet without allocating a regex matcher for each observation. */
 internal object PerfDimensionText {
@@ -36,9 +36,17 @@ internal object PerfDimensionText {
     }
 }
 
-// why: Preserve the existing bounded dimension/identifier grammar and W3C trace wire widths.
+// why: Keep the existing maximum dimension label width on the telemetry wire.
 private const val LABEL_LENGTH = 128
+
+// why: Preserve the existing upper bound for request and correlation identifiers.
 private const val IDENTIFIER_LENGTH = 160
+
+// why: A W3C trace ID encodes 16 bytes as 32 lowercase hexadecimal characters.
 private const val TRACE_LENGTH = 32
+
+// why: A W3C span ID encodes 8 bytes as 16 lowercase hexadecimal characters.
 private const val SPAN_LENGTH = 16
+
+// why: W3C trace flags encode one byte as two lowercase hexadecimal characters.
 private const val FLAGS_LENGTH = 2

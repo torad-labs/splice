@@ -1,5 +1,7 @@
 package splice.core.perf.observation
 
+import java.util.concurrent.atomic.AtomicBoolean
+
 /** A tool owns its terminal independently of the request, including callbacks arriving after delivery. */
 public class PerfToolRecorder internal constructor(
     private val recorder: PerfRecorder,
@@ -59,4 +61,15 @@ public class PerfToolRecorder internal constructor(
 
     private fun ownership(values: Map<String, Double>): Map<String, Double> =
         if (nativeSpan) values + ("tool_native_span" to 1.0) else values
+}
+
+/** A single prepared tool terminal, retaining its measured time until external finalization has completed. */
+public class PerfToolCompletion internal constructor(
+    private val recorder: PerfRecorder,
+    private val observation: PerfObservation,
+) {
+    private val published = AtomicBoolean()
+
+    /** Publishes once, including when the external finalizer failed; observer refusal remains a false result. */
+    public fun publish(): Boolean = published.compareAndSet(false, true) && recorder.publish(observation)
 }

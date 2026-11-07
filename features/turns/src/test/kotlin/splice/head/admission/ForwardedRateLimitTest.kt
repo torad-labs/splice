@@ -203,15 +203,13 @@ class ForwardedRateLimitTest {
             try {
                 val (status, body, headers) = rig.turn("synthetic-refused", stream, wallMs = 20_000L)
                 if (stream) {
-                    assertEquals(HttpStatusCode.OK, status)
-                    val events = body.lineSequence().filter { it.startsWith("data: ") }
-                        .map { Json.parseToJsonElement(it.removePrefix("data: ")).jsonObject }.toList()
-                    val error = events.single { it["type"]?.jsonPrimitive?.content == "error" }
-                        .getValue("error").jsonObject
+                    // The unstated limit ends before any SSE frame commits the response. PendingSse
+                    // therefore returns the same pre-stream JSON refusal as the buffered request.
+                    assertEquals(HttpStatusCode.BadRequest, status)
+                    val error = Json.parseToJsonElement(body).jsonObject.getValue("error").jsonObject
                     assertEquals("invalid_request_error", error.getValue("type").jsonPrimitive.content)
-                    assertTrue("did not say when it resets" in error.getValue("message").jsonPrimitive.content)
-                    assertFalse("tries again" in body, "an unstated limit does not open a retry schedule")
-                    assertTrue(events.none { it["type"]?.jsonPrimitive?.content == "message_stop" })
+                    val line = error.getValue("message").jsonPrimitive.content
+                    assertTrue(line.startsWith("[splice] ") && "did not say when it resets" in line, line)
                 } else {
                     assertEquals(HttpStatusCode.BadRequest, status)
                     val error = Json.parseToJsonElement(body).jsonObject.getValue("error").jsonObject

@@ -110,7 +110,7 @@ internal class UsageMount(
         }
         route.get("/api/perf/summary") {
             guard.guarded(call) {
-                performance.work.execute(call) {
+                performance.work.source(call) {
                     withContext(fileIo) {
                         if (!performance.selected(call, "summary")) perfPayloads.summary(call)
                     }

@@ -62,7 +62,7 @@ internal class UsageReadRoutes(
                 if (observations == null) {
                     withContext(io) { perf.turns(call) }
                 } else {
-                    observations.work.execute(call) {
+                    observations.work.source(call) {
                         withContext(io) {
                             if (!observations.selected(call, "rows")) perf.turns(call)
                         }

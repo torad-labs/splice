@@ -1,18 +1,25 @@
 package splice.app.observability
 
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import splice.app.sources.PerfSourceFiles
 import splice.core.config.ConfigService
 import splice.core.perf.observation.NoPerfObserver
 import splice.core.perf.observation.PerfRecorder
+import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.core.util.MonoClock
+import splice.core.util.PerfWorkPhase
 import splice.core.util.WallClock
 import splice.observability.export.PerfExports
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.retry.InflightGate
 import splice.usage.alerts.AlertStore
+import java.io.IOException
 
 /** The daemon's single composition owner. Construction happens before head producers; no profile starts here. */
 internal class PerfTelemetry(
@@ -72,16 +79,16 @@ internal class PerfTelemetry(
 
     fun accounts(names: PerfAccountNames) { sources.names = names }
 
-    private fun tick() {
+    private fun tick(phase: PerfWorkPhase.Lease) {
         tracking.drain()
         configuration.persist(clock())
         if (enabled) {
             runtime.sample()
             schedule.sampleGates()
-            collection.checkpoint()
             collection.checkpointCoverage()
         }
         alerting.evaluate(clock())
+        if (enabled) collection.checkpoint(phase)
     }
 
     fun measured(metric: String, durationMs: Long, owner: String = "control_query") {
@@ -90,21 +97,33 @@ internal class PerfTelemetry(
 
     /** Called after heads/MCP stop. Flush while source data is still alive, then release dependent owners. */
     suspend fun close() {
-        schedule.finish(config, io, { alerting.stopDelivery(cleanup) }, ::closeOwners)
+        val caller = currentCoroutineContext()
+        withContext(NonCancellable + io) {
+            val phase = try {
+                schedule.finish(config) { alerting.stopDelivery(cleanup) }
+            } catch (failure: IOException) {
+                caller.ensureActive()
+                throw failure
+            }
+            phase.use {
+                Cancellables.withCleanup({ closeOwners(it) }) { caller.ensureActive() }
+            }
+        }
+        caller.ensureActive()
     }
 
-    private fun closeOwners() = cleanup.finish(
-        ::finalCheckpoints,
+    private fun closeOwners(phase: PerfWorkPhase.Lease) = cleanup.finish(
+        { finalCheckpoints(phase) },
         { collection.closePersistence(cleanup) },
         ::closeReaders,
         ::closeAdapters,
         { cleanup.run("accumulator") { collection.close() } },
     )
 
-    private fun finalCheckpoints() = cleanup.finish(
+    private fun finalCheckpoints(phase: PerfWorkPhase.Lease) = cleanup.finish(
         { cleanup.run("configuration_drain") { tracking.drain() } },
         { cleanup.run("configuration_checkpoint") { configuration.persist(clock()) } },
-        { cleanup.run("aggregate_checkpoint") { if (enabled) collection.checkpoint() } },
+        { cleanup.run("aggregate_checkpoint") { if (enabled) collection.checkpoint(phase) } },
     )
 
     private fun closeReaders() = cleanup.finish(

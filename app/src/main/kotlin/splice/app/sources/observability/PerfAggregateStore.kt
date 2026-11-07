@@ -10,6 +10,7 @@ import splice.core.perf.observation.PerfSinkStatus
 import splice.core.util.AsyncFileIo
 import splice.core.util.FileIoSink
 import splice.core.util.PerfWorkBudget
+import splice.core.util.PerfWorkPhase
 import splice.core.util.WallClock
 import java.io.IOException
 import java.nio.file.Path
@@ -76,18 +77,31 @@ public class PerfAggregateStore(directory: Path, private val identity: PerfIdent
     @Synchronized
     override fun append(snapshot: PerfAggregateSnapshot): Boolean = append(snapshot, null)
 
-    /** Only for detached snapshots the producer relinquishes. Caller still closes its original lease. */
-    @Synchronized
-    internal fun appendOwned(snapshot: PerfAggregateSnapshot, lease: PerfWorkBudget.Lease): Boolean =
-        append(snapshot, lease)
-
     private fun append(snapshot: PerfAggregateSnapshot, snapshotLease: PerfWorkBudget.Lease?): Boolean {
+        val phase = PerfWorkPhase.tryCheckpoint() ?: return rejectCheckpoint()
+        return phase.use { append(snapshot, snapshotLease, it) }
+    }
+
+    /** The producer already awaits the phase before allocating its detached snapshot. */
+    @Synchronized
+    internal fun appendOwned(
+        snapshot: PerfAggregateSnapshot,
+        lease: PerfWorkBudget.Lease,
+        phase: PerfWorkPhase.Lease,
+    ): Boolean = append(snapshot, lease, phase)
+
+    private fun append(
+        snapshot: PerfAggregateSnapshot,
+        snapshotLease: PerfWorkBudget.Lease?,
+        phase: PerfWorkPhase.Lease,
+    ): Boolean {
         if (!openWriter()) {
             sink.reject()
             return false
         }
         val charge = PerfHistoryFormat.estimate(snapshot)
-        val lease = if (!closed && charge <= MAX_PENDING_BYTES) {
+        // openWriter already rejected a closed owner while this append holds the store monitor.
+        val lease = if (charge <= MAX_PENDING_BYTES) {
             if (snapshotLease == null) {
                 PerfWorkBudget.acquire(charge + PERF_HISTORY_WORK_BYTES)
             } else {
@@ -96,19 +110,30 @@ public class PerfAggregateStore(directory: Path, private val identity: PerfIdent
         } else {
             null
         }
-        if (lease == null) {
-            sink.reject()
-            issue(PerfIssue("checkpoint_dropped", HISTORY_SINK))
-            return false
-        }
+        if (lease == null) return rejectCheckpoint()
+        var writing = phase
         var accepted = false
         try {
+            writing = phase.transferCheckpoint()
+            val transferred = writing
             val frozen = if (snapshotLease == null) PerfHistoryFormat.frozen(snapshot) else snapshot
-            accepted = AsyncFileIo.submitFor(files.checkpoint, sink) { lease.use { persist(frozen) } }
+            accepted = AsyncFileIo.submitFor(files.checkpoint, sink) {
+                transferred.use { lease.use { persist(frozen) } }
+            }
             return accepted
         } finally {
-            if (!accepted) lease.close()
+            if (!accepted) {
+                lease.close()
+                writing.close()
+            }
         }
+    }
+
+    @Synchronized
+    internal fun rejectCheckpoint(): Boolean {
+        sink.reject()
+        issue(PerfIssue("checkpoint_dropped", HISTORY_SINK))
+        return false
     }
 
     override fun read(fromMs: Long, untilMs: Long): PerfHistoryRead {

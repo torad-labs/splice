@@ -16,6 +16,7 @@ import splice.app.observability.PerfTelemetry
 import splice.core.util.JsonWire
 import splice.core.util.MonoClock
 import splice.core.util.PerfWorkBudget
+import splice.core.util.PerfWorkPhase
 import splice.upstream.codemode.ProcessDispatchers
 import java.io.IOException
 import java.util.concurrent.Semaphore
@@ -44,6 +45,11 @@ internal class PerfHttpWork(val io: CoroutineDispatcher = ProcessDispatchers().i
         } finally {
             admitted.release()
         }
+    }
+
+    /** Source reads wait within admission's deadline and keep the phase until their reply has been released. */
+    suspend fun source(call: ApplicationCall, block: PerfControlWork) {
+        execute(call) { PerfWorkPhase.query().use { block.run() } }
     }
 
     suspend fun respond(call: ApplicationCall, telemetry: PerfTelemetry?, read: PerfJsonRead) {

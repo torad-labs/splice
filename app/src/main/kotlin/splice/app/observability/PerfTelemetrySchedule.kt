@@ -1,17 +1,13 @@
 package splice.app.observability
 
-import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import splice.core.config.ConfigService
 import splice.core.perf.observation.PerfEventKind
@@ -20,6 +16,7 @@ import splice.core.perf.observation.PerfScope
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.MonoClock
+import splice.core.util.PerfWorkPhase
 import splice.upstream.codemode.ProcessTicker
 import splice.upstream.retry.InflightGate
 import java.io.IOException
@@ -57,39 +54,37 @@ internal class PerfTelemetrySchedule(
         sampler = scope.launch { samplePeriodically() }
     }
 
-    /** Hand dependent-owner cleanup back to composition after producers and delivery children have settled. */
+    /** The existing stop deadline also bounds acquiring the final checkpoint phase before owners can close. */
     suspend fun finish(
         config: ConfigService,
-        io: CoroutineDispatcher,
         stopDelivery: PerfCloseAction,
-        continuation: PerfCloseAction,
-    ) {
-        val caller = currentCoroutineContext()
-        withContext(NonCancellable + io) {
-            config.effectiveObserver = null
-            if (!stop(stopDelivery)) {
-                cleanup.failed("producers_pending")
-                // Keep sources charged and alive for the remaining producers; a later close can finish the drain.
-                caller.ensureActive()
-                throw IOException("performance producers did not stop")
-            }
-            Cancellables.withCleanup({ continuation.close() }) { caller.ensureActive() }
+    ): PerfWorkPhase.Lease {
+        config.effectiveObserver = null
+        return stop(stopDelivery) ?: run {
+            cleanup.failed("producers_pending")
+            // Keep sources charged and alive for pending work; a later close can finish the drain.
+            throw IOException("performance producers or checkpoint phase did not settle")
         }
-        caller.ensureActive()
     }
 
-    private suspend fun stop(stopDelivery: PerfCloseAction): Boolean {
+    private suspend fun stop(stopDelivery: PerfCloseAction): PerfWorkPhase.Lease? {
         val jobs = listOfNotNull(sampler, configWorker)
         jobs.forEach { it.cancel() }
-        val stopped = withTimeoutOrNull(PRODUCER_STOP_MS) {
-            jobs.forEach { it.join() }
-            stopDelivery.close()
-            checkNotNull(scope.coroutineContext[Job]).cancelAndJoin()
-            true
+        var phase: PerfWorkPhase.Lease? = null
+        try {
+            val stopped = withTimeoutOrNull(PRODUCER_STOP_MS) {
+                jobs.forEach { it.join() }
+                stopDelivery.close()
+                checkNotNull(scope.coroutineContext[Job]).cancelAndJoin()
+                phase = PerfWorkPhase.checkpoint()
+                true
+            }
+            if (stopped != true) return null
+            configTicks.close()
+            return checkNotNull(phase).also { phase = null }
+        } finally {
+            phase?.close()
         }
-        if (stopped != true) return false
-        configTicks.close()
-        return true
     }
 
     fun measured(metric: String, durationMs: Long, owner: String) {
@@ -105,7 +100,9 @@ internal class PerfTelemetrySchedule(
         while (currentCoroutineContext().isActive) {
             val start = MonoClock.nowMs()
             measured("self_scheduler_delay_ms", (start - due).coerceAtLeast(0), "perf_sampler")
-            Cancellables.runCatchingBestEffort { runInterruptible { work.sample() } }.onFailure {
+            Cancellables.runCatchingBestEffort {
+                PerfWorkPhase.checkpoint().use { phase -> runInterruptible { work.sample(phase) } }
+            }.onFailure {
                 recorder.emit(
                     PerfScope(work = "instrumentation"),
                     PerfEventKind.SELF_COST,
@@ -122,7 +119,7 @@ internal class PerfTelemetrySchedule(
 }
 
 internal fun interface PerfSamplingWork {
-    fun sample()
+    fun sample(phase: PerfWorkPhase.Lease)
 }
 
 // Sample every five seconds on the owner worker; delayed work schedules a later tick instead of catching up in a burst.

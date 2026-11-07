@@ -14,6 +14,7 @@ import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
 import splice.core.util.MonoClock
 import splice.core.util.PerfWorkBudget
+import splice.core.util.PerfWorkPhase
 import splice.core.util.WallClock
 import splice.head.perf.RequestEvidenceFiles
 import splice.usage.perf.history.PerfEvidenceSinkSource
@@ -70,11 +71,14 @@ internal class PerfCollection(
         if (enabled) heads.forEach { evidenceFiles.startCoverage(it, identity.bootId) }
     }
 
-    fun checkpoint() {
-        if (aggregate.status().pending > 0) return
-        val lease = PerfWorkBudget.acquire(TELEMETRY_SNAPSHOT_BYTES) ?: return
+    fun checkpoint(phase: PerfWorkPhase.Lease) {
+        val lease = PerfWorkBudget.acquire(TELEMETRY_SNAPSHOT_BYTES)
+        if (lease == null) {
+            aggregate.rejectCheckpoint()
+            return
+        }
         // Accumulator snapshots detach points, histograms and coverage lists; the writer can take this sole copy.
-        lease.use { aggregate.appendOwned(accumulator.snapshot(), it) }
+        lease.use { aggregate.appendOwned(accumulator.snapshot(), it, phase) }
     }
 
     fun checkpointCoverage() { evidenceFiles.checkpointCoverage() }
@@ -116,7 +120,7 @@ internal class PerfCollection(
     override fun close() { accumulator.close() }
 }
 
-// Reserve 2 MiB for checkpoint snapshot work so contention skips the checkpoint instead of borrowing unbounded memory.
+// Reserve 2 MiB for snapshot construction; refusal records loss instead of borrowing unbounded memory.
 private const val TELEMETRY_SNAPSHOT_BYTES = 2L * 1_024 * 1_024
 
 // Report at most sixty head sink statuses and mark truncation to bound the status projection.

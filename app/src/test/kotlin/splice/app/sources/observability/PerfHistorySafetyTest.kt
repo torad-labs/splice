@@ -13,6 +13,7 @@ import splice.core.perf.observation.PerfIssue
 import splice.core.perf.observation.PerfScope
 import splice.core.util.AsyncFileIo
 import splice.core.util.PerfWorkBudget
+import splice.core.util.PerfWorkPhase
 import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.Path
@@ -76,6 +77,7 @@ class PerfHistorySafetyTest {
             assertTrue(writer.append(snapshot))
             assertFalse(AsyncFileIo.awaitFile(dir.resolve("checkpoint.json")))
             assertEquals(1L, writer.status().failed)
+            checkNotNull(PerfWorkPhase.tryCheckpoint()).close()
         }
         PerfAggregateStore(dir, identity, clock).use { assertTrue(uncertain(it)) }
     }
@@ -147,7 +149,9 @@ class PerfHistorySafetyTest {
     }
 
     private fun appendOwned(writer: PerfAggregateStore): Boolean =
-        checkNotNull(PerfWorkBudget.acquire(2L * 1_024 * 1_024)).use { writer.appendOwned(snapshot, it) }
+        checkNotNull(PerfWorkPhase.tryCheckpoint()).use { phase ->
+            checkNotNull(PerfWorkBudget.acquire(2L * 1_024 * 1_024)).use { writer.appendOwned(snapshot, it, phase) }
+        }
 
     private fun assertBusy(writer: PerfAggregateStore) {
         val read = writer.read(snapshot.fromMs, snapshot.untilMs)

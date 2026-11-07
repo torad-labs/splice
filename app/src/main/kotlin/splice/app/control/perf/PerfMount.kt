@@ -22,7 +22,7 @@ internal class PerfMount(
     fun register(route: Route) {
         listOf("schema", "series", "diagnose", "observations").forEach { operation ->
             route.get("/api/perf/$operation") {
-                guard.guarded(call) { work.execute(call) { queries.respond(call, ports.performance, operation) } }
+                guard.guarded(call) { work.source(call) { queries.respond(call, ports.performance, operation) } }
             }
         }
         route.get("/api/perf/runtime") {

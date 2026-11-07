@@ -23,7 +23,7 @@ internal class ExportWorker(
     private val eventEnabled = config.enabled && config.signals.any { it == "traces" || it == "logs" }
     private val flushing = AtomicBoolean()
     private val workerFailures = AtomicLong()
-    private val finalOutcome = AtomicReference<Boolean?>(null)
+    private val finalOutcome = AtomicReference<FinalOutcome?>(null)
     private val finalSampling = AtomicReference(FinalSampling.PENDING)
     private val workerFinalized = AtomicBoolean()
     private val worker = if (config.enabled || config.prometheus) {
@@ -90,7 +90,7 @@ internal class ExportWorker(
     internal fun closeAndFlush(timeoutMs: Long): Boolean {
         require(timeoutMs >= 0L)
         val boundedMs = minOf(timeoutMs, CLOSE_MS)
-        if (!closed.compareAndSet(false, true)) return finalOutcome.get() ?: false
+        if (!closed.compareAndSet(false, true)) return finalOutcome.get() == FinalOutcome.SUCCEEDED
         schedule?.cancel(false)
         events?.cancel(false)
         queue.stop()
@@ -98,7 +98,7 @@ internal class ExportWorker(
         if (executor == null) {
             engine.close()
             workerFinalized.set(true)
-            finalOutcome.set(true)
+            finalOutcome.set(FinalOutcome.SUCCEEDED)
             return true
         }
         return closeWorker(executor, boundedMs)
@@ -159,7 +159,7 @@ internal class ExportWorker(
         } finally {
             if (preserveCleanup) executor.shutdown() else executor.shutdownNow()
         }
-        finalOutcome.compareAndSet(null, result)
+        finalOutcome.compareAndSet(null, if (result) FinalOutcome.SUCCEEDED else FinalOutcome.FAILED)
         return result
     }
 
@@ -179,7 +179,7 @@ internal class ExportWorker(
 
     private fun markFinalFailure() {
         workerFailures.incrementAndGet()
-        finalOutcome.compareAndSet(null, false)
+        finalOutcome.compareAndSet(null, FinalOutcome.FAILED)
     }
 
     private fun rethrowFatalOrCancellation(failure: Throwable?) {
@@ -192,6 +192,8 @@ internal class ExportWorker(
     override fun close() { closeAndFlush() }
 
     private enum class FinalSampling { PENDING, RUNNING, EXPIRED, FINISHED }
+
+    private enum class FinalOutcome { SUCCEEDED, FAILED }
 }
 
 private enum class ExportWork { SAMPLE, DRAIN, TICK, FINAL_TICK }

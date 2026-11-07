@@ -14,8 +14,8 @@ class PerfWorkBudgetOutcomeTest {
 
         assertNull(first.lease)
         assertEquals(Long.MAX_VALUE, captured.requestedBytes)
-        assertEquals(Long.MAX_VALUE, first.refusal?.requestedBytes)
-        assertEquals(captured.accounting, first.refusal?.accounting)
+        assertEquals(Long.MAX_VALUE, first.refusal.requestedBytes)
+        assertEquals(captured.accounting, first.refusal.accounting)
     }
 
     @Test

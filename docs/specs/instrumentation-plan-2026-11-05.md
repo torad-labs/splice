@@ -1,6 +1,8 @@
 # Complete Splice instrumentation plan
 
-Date: 2026-11-05. Status: implementation plan; no application changes made by this planning task.
+Date: 2026-11-05. Status: implementation present; integrated acceptance is in progress.
+The completion checklist remains open until the final candidate passes the repository
+gate, functional and console checks, and matched capacity and overhead experiments.
 Source baseline: `43fbc0046`. Recheck changed implementation seams before starting work.
 
 ## Outcome and scope

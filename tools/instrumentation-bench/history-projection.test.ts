@@ -57,6 +57,8 @@ test('malformed histogram wire shapes remain invalid and issue projection drops 
 test('identity cohort projection keeps only validated boot/build/config fields within its fixed bound', () => {
   const cohort = { boot_id: '00000000-0000-4000-8000-000000000001', build: `compiled-artifact-inputs-sha256:${'a'.repeat(64)}`, boot_config_revision: 'b'.repeat(64), schema_version: 1, version: 'private-version-label', effective_config_revision: '/private/path' };
   expect(boundedIdentityCohortProjection([cohort])).toEqual({ cohorts: [{ boot_id: cohort.boot_id, build: cohort.build, boot_config_revision: cohort.boot_config_revision, schema_version: 1 }], valid: true, truncated: false });
+  const seed = { boot_id: 'benchmark-retained-fixture', build: `source:${'c'.repeat(40)}`, boot_config_revision: 'fixture-config-v1', schema_version: 1 };
+  expect(boundedIdentityCohortProjection([seed])).toEqual({ cohorts: [seed], valid: true, truncated: false });
   const malformed = boundedIdentityCohortProjection([{ ...cohort, boot_id: 'unsafe-private-boot', build: 'private-build-path', boot_config_revision: 'unknown' }]);
   expect(malformed).toEqual({ cohorts: [{ boot_id: null, build: null, boot_config_revision: null, schema_version: 1 }], valid: false, truncated: false });
   expect(JSON.stringify(malformed)).not.toContain('unsafe-private-boot');

@@ -7,6 +7,9 @@ import { readSourceCosts, sourceCostDelta } from './costs';
 export interface RetainedFixture { directory: string; receipt_sha256: string; source_commit: string }
 const FIXTURE_HISTOGRAM_METRICS = ['arrival_to_terminal_ms', 'arrival_to_first_meaningful_content_ms', 'queue_wait_ms'] as const;
 const FIXTURE_DURATION_BOUNDS_MS = [0, 1, 2, 5, 10, 20, 50, 100, 200, 250, 500, 1000, 2000, 5000, 10000, 15000, 30000, 60000, 120000, 300000, 600000];
+// Exact identity literals emitted by app/src/test/.../BenchmarkFixtureSeed.kt; no arbitrary fixture labels pass.
+const RETAINED_FIXTURE_BOOT_ID = 'benchmark-retained-fixture';
+const RETAINED_FIXTURE_CONFIG_REVISION = 'fixture-config-v1';
 export function boundedIssueProjection(value: unknown) {
   if (!Array.isArray(value)) return { issues: [], valid: false, truncated: false };
   const truncated = value.length > 64;
@@ -24,9 +27,9 @@ export function boundedIdentityCohortProjection(value: unknown) {
   const truncated = value.length > 64;
   const cohorts = value.slice(0, 64).map(identity => {
     const record = identity && typeof identity === 'object' && !Array.isArray(identity) ? identity as Record<string, unknown> : {};
-    const bootId = typeof record.boot_id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(record.boot_id) ? record.boot_id : null;
+    const bootId = typeof record.boot_id === 'string' && (/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(record.boot_id) || record.boot_id === RETAINED_FIXTURE_BOOT_ID) ? record.boot_id : null;
     const build = typeof record.build === 'string' && /^(?:compiled-artifact-inputs-sha256:[a-f0-9]{64}|source:[a-f0-9]{40})$/.test(record.build) ? record.build : null;
-    const configRevision = typeof record.boot_config_revision === 'string' && /^[a-f0-9]{64}$/.test(record.boot_config_revision) ? record.boot_config_revision : null;
+    const configRevision = typeof record.boot_config_revision === 'string' && (/^[a-f0-9]{64}$/.test(record.boot_config_revision) || record.boot_config_revision === RETAINED_FIXTURE_CONFIG_REVISION) ? record.boot_config_revision : null;
     const schemaVersion = record.schema_version === 1 ? 1 : null;
     return { boot_id: bootId, build, boot_config_revision: configRevision, schema_version: schemaVersion };
   });

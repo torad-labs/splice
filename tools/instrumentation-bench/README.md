@@ -262,6 +262,16 @@ First query is process/query-cache cold; OS filesystem cache is uncontrolled.
 The helper never fabricates a durable coverage ledger. Aggregate and evidence
 fixture populations are separate and identified as such.
 
+History observations retain a bounded, validated projection of the returned
+identity cohorts. These describe persisted data and need not include the process
+serving the query. Invalid or truncated identities cannot establish provenance.
+The live identity is available in the existing runtime telemetry sample; join it
+to the same repetition and verified process, start time, artifact, build and
+configuration before comparing it with the verified seed. The desk's `unknown`
+boot placeholder is not identity evidence. Boot/build/configuration transition
+issues remain visible, and the default history-study verdict still requires
+complete coverage.
+
 Aggregate series reconcile48 histogram observations per fixture minute. Evidence
 summaries reconcile one request arrival per fixture minute and retain their own
 population completeness, receipt as-of, coverage basis and work counters.

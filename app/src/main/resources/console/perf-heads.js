@@ -5,29 +5,7 @@ const PERF_CONSOLE = (() => {
   const SELECTORS = [...FILTERS, "silence_ms", "queued_ms", "resumed", "started_over", "unattributed", "test"];
   const WINDOWS = { "1m": 60000, "5m": 300000, "15m": 900000, "1h": 3600000, "5h": 18000000, "24h": 86400000, "7d": 604800000, "30d": 2592000000 };
   const ARTIFACT_REFUSALS = ["control_query_capacity", "control_query_deadline", "performance_io_failure", "invalid_profile_id", "artifact_reader_capacity", "profile_artifact_unavailable"];
-  // Perf HTTP admits four requests, including the one query worker below. Fixed read keys keep
-  // only each kind's newest queued read; accepted actions are never replaced. Other console APIs
-  // do not use this queue. Drain active responses even after navigation/generation cancellation:
-  // aborting fetch does not prove that the server has released its admission or query worker.
-  const perfTransport = API, perfWaiting = new Map();
-  let perfRunning = 0;
-  function drainPerf() {
-    while (perfRunning < 4 && perfWaiting.size) {
-      const [key, next] = perfWaiting.entries().next().value; perfWaiting.delete(key);
-      if (!next.current()) { next.resolve(null); continue; }
-      perfRunning++;
-      Promise.resolve().then(next.send).then(next.resolve, next.reject)
-        .finally(() => { perfRunning--; drainPerf(); });
-    }
-  }
-  function perfRequest(key, method, path, current, body, transport = perfTransport) {
-    return new Promise((resolve, reject) => {
-      if (key === "action" && perfWaiting.has(key)) { reject(new Error("Another performance action is pending. Wait for it to finish.")); return; }
-      perfWaiting.get(key)?.resolve(null);
-      perfWaiting.set(key, { current, resolve, reject, send: () => transport[method](path, body) });
-      drainPerf();
-    });
-  }
+  const perfTransport = API;
   // The four query projections also share one worker across panel generations and page mounts.
   let queryRunning = false, queryWaiting = null;
   function drainQuery() {
@@ -35,7 +13,7 @@ const PERF_CONSOLE = (() => {
     const next = queryWaiting; queryWaiting = null;
     if (!next.current()) { next.resolve(null); return; }
     queryRunning = true;
-    Promise.resolve().then(() => perfRequest("query", "get", next.path, next.current, undefined, next.transport)).then(next.resolve, next.reject)
+    Promise.resolve().then(() => next.transport.perfRequest("perf:shared-query", "GET", next.path, undefined, next.current)).then(next.resolve, next.reject)
       .finally(() => { queryRunning = false; drainQuery(); });
   }
   function queryRead(path, current, transport = perfTransport) {
@@ -47,16 +25,38 @@ const PERF_CONSOLE = (() => {
     });
   }
   const safe = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-  const num = (v) => typeof v === "number" && Number.isFinite(v) ? v.toLocaleString("en-US", { maximumFractionDigits: 3 }) : "—";
+  const num = (v) => typeof v === "number" && Number.isFinite(v) ? v.toLocaleString("en-US", v !== 0 && Math.abs(v) < .01 ? { maximumSignificantDigits: 3 } : { maximumFractionDigits: 3 }) : "—";
   const percent = (v) => typeof v === "number" && Number.isFinite(v) ? `${num(v * 100)}%` : "—";
   const words = (v) => String(v ?? "Unknown").replace(/_/g, " ");
-  const date = (v) => Number.isFinite(v) ? new Date(v).toLocaleString() : "Unknown time";
+  const date = (v) => Number.isFinite(v) ? new Date(v).toLocaleString("en-US", { timeZone: "America/Chicago" }) : "Unknown time";
   const entries = (v) => v && typeof v === "object" && !Array.isArray(v) ? Object.entries(v) : [];
   const scalar = (v) => typeof v === "number" ? num(v) : typeof v === "boolean" ? String(v) : v == null ? "—" : safe(words(v));
   const note = (s) => `<p class="pc-note">${safe(s)}</p>`;
   const table = (heads, rows, caption) => `<div class="pc-table-wrap" tabindex="0" role="region" aria-label="${safe(caption)}"><table class="pc-table"><caption>${safe(caption)}</caption><thead><tr>${heads.map((h) => `<th scope="col">${safe(h)}</th>`).join("")}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((v, i) => `<${i ? "td" : 'th scope="row"'}>${v}</${i ? "td" : "th"}>`).join("")}</tr>`).join("")}</tbody></table></div>`;
   const facts = (v) => `<dl class="pc-facts">${entries(v).filter(([, x]) => x == null || ["string", "number", "boolean"].includes(typeof x)).map(([k, x]) => `<div><dt>${safe(words(k))}</dt><dd>${scalar(x)}</dd></div>`).join("")}</dl>`;
   const section = (title, body) => `<section class="pc-section"><h3>${safe(title)}</h3>${body}</section>`;
+  const detail = (title, body) => `<details class="pc-detail"><summary>${safe(title)}</summary>${body}</details>`;
+  const known = (v) => typeof v === "number" && Number.isFinite(v);
+  const duration = (v) => !known(v) ? "Not measured" : v < 1000 ? `${num(v)} ms` : v < 60000 ? `${num(v / 1000)} s` : v < 3600000 ? `${num(v / 60000)} min` : v < 86400000 ? `${num(v / 3600000)} h` : `${num(v / 86400000)} days`;
+  const bytes = (v) => { if (!known(v)) return "Not measured"; const i = Math.min(4, Math.max(0, Math.floor(Math.log2(Math.max(1, v)) / 10))); return `${num(v / 1024 ** i)} ${["B", "KiB", "MiB", "GiB", "TiB"][i]}`; };
+  const keyWords = (v) => words(String(v).replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^runtime[_. ]/, "").replace(/\./g, " ")).replace(/\b(cpu|jvm|gc|rss|http|otlp|io)\b/gi, (x) => x.toUpperCase());
+  const metricNames = { arrival_to_first_meaningful_content_ms: "First content", arrival_to_terminal_ms: "Whole request", queue_wait_ms: "Queue wait", client_flush_ms: "Client flush", first_content_ms: "First content", completion_ms: "Completion", progress_gap_ms: "Progress gap", queue_ms: "Queue wait" };
+  const metricName = (k) => metricNames[k] || keyWords(k).replace(/ (ms|ns|bytes|ratio)$/, "");
+  const reading = (k, v) => !known(v) ? "Not measured" : /bytes_per_second$/.test(k) ? `${bytes(v)} / s` : /bytes$/i.test(k) ? bytes(v) : /(_ns|Nanos)$/.test(k) ? duration(v / 1000000) : /(_ms|Millis|Ms)$/.test(k) ? duration(v) : /(_ratio|Ratio)$/.test(k) ? percent(v) : num(v);
+  const badge = (label, kind = "neutral") => `<span class="pc-state pc-state-${kind}"><i aria-hidden="true"></i>${safe(label)}</span>`;
+  const empty = (title, hint = "") => `<div class="pc-empty">${badge(title, "unknown")}${hint ? note(hint) : ""}</div>`;
+  const track = (v, max, label) => `<span class="pc-track" role="img" aria-label="${safe(label)}"><i style="width:${known(v) && max > 0 ? Math.max(0, Math.min(100, v / max * 100)) : 0}%"></i>${v === 0 ? '<b class="pc-zero"></b>' : ""}</span>`;
+  function bars(items, caption, unit = "", labelHtml = safe) {
+    const values = items.map(([, v]) => known(v) ? v : 0), max = Math.max(0, ...values), min = Math.min(0, ...values), span = max - min;
+    const drawn = (label, v) => min >= 0 ? track(v, max, `${label}: ${num(v)}${unit}; scale 0 to ${num(max)}${unit}`)
+      : `<span class="pc-track" role="img" aria-label="${safe(`${label}: ${num(v)}${unit}; scale ${num(min)} to ${num(max)}${unit}`)}"><i style="position:absolute;left:${(Math.min(v, 0) - min) / span * 100}%;width:${Math.abs(v) / span * 100}%"></i><b class="pc-zero" style="left:${-min / span * 100}%"></b></span>`;
+    return `<div class="pc-bars"><p class="pc-axis">${safe(caption)} <span>${num(min)} → ${num(max)}${safe(unit)}</span></p>${items.map(([label, v]) => `<div class="pc-bar-row"><span>${labelHtml(label)}</span>${known(v) ? drawn(label, v) : badge("Not measured", "unknown")}<strong>${known(v) ? `${num(v)}${safe(unit)}` : ""}</strong></div>`).join("")}</div>`;
+  }
+  function ranges(items) {
+    const max = Math.max(1, ...items.map(([, h]) => h?.p99 ?? h?.max ?? h?.p95 ?? 0));
+    const position = (v) => known(v) ? Math.max(0, Math.min(100, Math.log1p(Math.max(0, v)) / Math.log1p(max) * 100)) : 0;
+    return `<div class="pc-ranges"><p class="pc-axis">Typical ▰ · p95 │ · p99 ● <span>Log scale · 0 → ${safe(duration(max))}</span></p>${items.map(([label, h]) => `<div class="pc-range-row"><span>${safe(label)}</span>${known(h?.p50) ? `<span class="pc-range" role="img" aria-label="${safe(label)}: typical ${safe(duration(h.p50))}, p95 ${safe(duration(h.p95))}, p99 ${safe(duration(h.p99))}; logarithmic scale"><b style="width:${position(h.p50)}%"></b>${known(h.p95) ? `<i style="left:${position(h.p95)}%"></i>` : ""}${known(h.p99) ? `<em style="left:${position(h.p99)}%"></em>` : ""}</span>` : badge("Not measured", "unknown")}<strong>${safe(duration(h?.p50))}</strong><small>p95 ${safe(duration(h?.p95))}</small></div>`).join("")}</div>`;
+  }
   const issues = (v) => [...(v?.coverage?.issues || []), ...(v?.issues || [])].map((x) => typeof x === "string" ? x : x.code).filter(Boolean);
   const status = (r) => !r ? "Loading" : !r.ok ? r.status === 0 ? "Offline" : r.status === 404 ? "Unsupported" : "Error" : (words(r.body?.status || "ok").replace(/^./, (c) => c.toUpperCase()));
   const explain = (r) => r?.body?.error?.reason || r?.body?.error?.code || r?.body?.reason || issues(r?.body).join(" · ");
@@ -160,6 +160,8 @@ const PERF_CONSOLE = (() => {
   }
   function create(scope, options) {
     const { document, API, setTimeout, clearTimeout, setInterval } = scope;
+    const panelRead = (key, method, path, current, body, transport = API, opts = {}) =>
+      transport.perfRequest(`perf:${options.id}:${key}`, method.toUpperCase(), path, body, current, { ...opts, replace: key !== "action" });
     const st = { key: null, query: null, replies: {}, tab: "overview", busy: false, rowsBusy: false, abort: null, timer: null, generation: 0, message: "", baselines: loadBaselines(), selected: 0, draft: null, draftRevision: 0, profiles: null, settings: null, openRequest: null, cursor: null, advanced: false, commands: new Set() };
     const clearMeasurements = () => { st.replies = Object.fromEntries(["schema", "caps", "preferences"].filter((k) => st.replies[k]).map((k) => [k, st.replies[k]])); };
     const current = () => options.query();
@@ -183,6 +185,8 @@ const PERF_CONSOLE = (() => {
       st.abort?.abort(); clearTimeout(st.timer);
       const abort = st.abort = new AbortController(), api = API.scoped(abort.signal), gen = ++st.generation;
       const active = () => gen === st.generation && !abort.signal.aborted && host()?.isConnected;
+      API.cancelPerf(`perf:${options.id}:`);
+      API.cancelPerf("perf:shared-query");
       const changed = key !== st.key; st.key = key; st.query = queryNow(); st.busy = true; st.rowsBusy = false;
       if (!st.standingStarted) { st.standingStarted = true; standing(); }
       if (changed) { clearMeasurements(); st.cursor = null; st.openRequest = null; }
@@ -207,7 +211,7 @@ const PERF_CONSOLE = (() => {
         }
       })();
       await Promise.all([queried, ...Object.entries(paths).map(async ([key, path]) => {
-        const r = await (key === "preferences" ? api.get(path) : perfRequest(key, "get", path, active));
+        const r = await (key === "preferences" ? api.get(path) : panelRead(key, "get", path, active, undefined, api));
         if (active()) {
           st.replies[key] = r;
           if (key !== "preferences") capacityRefusals.push({ key, path, projection: false, answer: r });
@@ -217,7 +221,7 @@ const PERF_CONSOLE = (() => {
       // Only the shared helper's exact capacity-refusal predicate retries, after this whole batch settles.
       const retried = await api.retryCapacity(capacityRefusals, active, (refused, retryApi, canStart) => refused.projection
         ? queryRead(refused.path, () => active() && canStart(), retryApi)
-        : perfRequest(refused.key, "get", refused.path, () => active() && canStart(), undefined, retryApi));
+        : panelRead(refused.key, "get", refused.path, () => active() && canStart(), undefined, retryApi));
       for (const { item, answer } of retried) {
         if (active()) st.replies[item.key] = answer;
       }
@@ -238,11 +242,11 @@ const PERF_CONSOLE = (() => {
       st.standingPromise = (async () => {
         const paths = { schema: "/api/perf/schema", caps: "/api/perf/profiles/capabilities", profiles: "/api/perf/profiles", settings: "/api/perf/objectives" };
         let [schema, caps, profiles, settings, preferences] = await Promise.all([
-          ...Object.entries(paths).map(([key, path]) => perfRequest(key, "get", path, attached)), API.get("/api/alerts"),
+          ...Object.entries(paths).map(([key, path]) => panelRead(key, "get", path, attached)), API.get("/api/alerts"),
         ]);
         const replies = [schema, caps, profiles, settings];
         const retried = await API.retryCapacity(Object.entries(paths).map(([key, path], index) => ({ key, path, answer: replies[index] })), attached,
-          (item, retryApi, canStart) => perfRequest(item.key, "get", item.path, () => attached() && canStart(), undefined, retryApi));
+          (item, retryApi, canStart) => panelRead(item.key, "get", item.path, () => attached() && canStart(), undefined, retryApi));
         for (const { item, answer } of retried) {
           if (item.key === "schema") schema = answer;
           if (item.key === "caps") caps = answer;
@@ -279,11 +283,11 @@ const PERF_CONSOLE = (() => {
       const query = st.query || queryNow();
       const r = st.replies.summary, s = r?.body, stale = s?.as_of_ms != null && query.until_ms - s.as_of_ms > 60000;
       const completed = completedWindow(), accountGap = issues(s).includes("account_alias_mapping_unavailable");
-      return `<div class="pc-coverage" role="status"><strong>${safe(status(r))}${stale ? " · Stale" : ""}${st.busy ? " · Refreshing" : ""}</strong><span>${safe(date(query.from_ms))} → ${safe(date(query.until_ms))}</span><span>Observed ${num(s?.observed_duration_ms)} / requested ${num(s?.requested_duration_ms)} ms</span>${s?.truncated ? "<b>Truncated</b>" : ""}</div>`
-        + `<div class="pc-actions"><button class="act quiet small" data-pc="completed-window"${!completed || st.busy ? " disabled" : ""}>Use completed window</button><span class="pc-note">${completed ? `From ${safe(date(completed.from_ms))} to ${safe(date(completed.until_ms))} · same ${num(completed.until_ms - completed.from_ms)} ms duration` : "No certified recording boundary available for this duration."}</span></div>`
-        + (completed ? note("This selects the interval ending at the certified recording boundary. Late records can revise it; coverage still applies. Your selected interval stays unchanged until you choose it.") : "")
-        + (explain(r) ? note(words(explain(r))) : "")
-        + (accountGap ? note("Account names are temporarily unavailable. Exact recorded account IDs still work. Name matching uses the last Accounts read for up to 60 seconds; opening Accounts refreshes it. This view does not refresh accounts automatically.") : "")
+      return `<div class="pc-coverage" role="status">${badge(`${status(r)}${stale ? " · Stale" : ""}${st.busy ? " · Refreshing" : ""}`, !r?.ok || stale || issues(s).length ? "unknown" : "neutral")}<span>${safe(date(query.from_ms))} → ${safe(date(query.until_ms))} CT</span><span>${safe(duration(s?.observed_duration_ms))} observed / ${safe(duration(s?.requested_duration_ms))} selected</span>${s?.truncated ? badge("Truncated", "unknown") : ""}<button class="act quiet small" data-pc="completed-window"${!completed || st.busy ? " disabled" : ""}>Use completed window</button></div>`
+        + (accountGap ? badge("Account names unavailable", "unknown") : "")
+        + detail("Coverage and recording boundary", (completed ? note(`From ${date(completed.from_ms)} to ${date(completed.until_ms)} · same ${duration(completed.until_ms - completed.from_ms)} duration. This selects the interval ending at the certified recording boundary. Late records can revise it; coverage still applies. Your selected interval stays unchanged until you choose it.`) : note("No certified recording boundary available for this duration."))
+          + (explain(r) ? note(words(explain(r))) : "")
+          + (accountGap ? note("Account names are temporarily unavailable. Exact recorded account IDs still work. Name matching uses the last Accounts read for up to 60 seconds; opening Accounts refreshes it. This view does not refresh accounts automatically.") : ""))
         + (s?.missing_fields?.length ? `<details class="pc-detail"><summary>${s.missing_fields.length} unavailable measurements</summary>${note(s.missing_fields.map(words).join(" · "))}</details>` : "");
     }
     function overview() {
@@ -291,12 +295,20 @@ const PERF_CONSOLE = (() => {
       if (!s?.rates) return note(`${status(st.replies.summary)} · Measurements have not been returned.`) + commandResults();
       const rates = s.rates;
       const hero = [["Arrivals / s", "arrivals_per_s"], ["Completions / s", "completions_per_s"], ["Successful / s", "successful_completions_per_s"], ["Attempts / s", "attempts_per_s"]];
-      const headline = `<div class="pc-meters">${hero.map(([label, k]) => `<div><span>${label}</span><strong>${num(rates[k])}</strong></div>`).join("")}</div>`;
-      const traffic = table(["Traffic", "Per second"], [["Input tokens", "input_tokens"], ["Output tokens", "output_tokens"], ["Cached tokens", "cached_tokens"], ["Upstream bytes", "upstream_bytes"], ["Downstream bytes", "downstream_bytes"], ["Upstream events", "upstream_events"], ["Downstream events", "downstream_events"]].map(([label, key]) => [label, num(rates[`${key}_per_s`])]), "Token, byte and event throughput");
+      const peak = Math.max(0, ...hero.map(([, k]) => rates[k] || 0));
+      const headline = `<div class="pc-meters">${hero.map(([label, k]) => `<div><span>${label}</span>${known(rates[k]) ? `<strong>${num(rates[k])}</strong>${track(rates[k], peak, `${label}: ${num(rates[k])}; shared scale 0 to ${num(peak)}`)}` : empty("Rate unavailable")}</div>`).join("")}</div>`;
+      const traffic = bars([["Input", rates.input_tokens_per_s], ["Output", rates.output_tokens_per_s], ["Cached", rates.cached_tokens_per_s]], "Tokens / s")
+        + bars([["Upstream", rates.upstream_bytes_per_s], ["Downstream", rates.downstream_bytes_per_s]], "Bytes / s")
+        + detail("Event throughput", bars([["Upstream", rates.upstream_events_per_s], ["Downstream", rates.downstream_events_per_s]], "Events / s"));
       const g = s.goodput || {};
-      const goodput = g.status === "unconfigured" ? note("Select a configured objective to measure goodput.") : facts({ objective: g.objective_id, revision: g.objective_revision, status: g.status, good: g.good, bad: g.bad, known_evaluable: g.known_evaluable, observed_arrivals: g.observed_arrivals, pending: g.pending, unknown: g.unknown, whole_window_eligible: g.eligible, whole_window_good_per_s: g.per_s, good_fraction: g.good_fraction, known_good_per_s: g.known_good_per_s, known_good_rate_is_lower_bound: g.known_good_rate_is_lower_bound }) + note(words(g.attribution));
-      return headline + note(`Rates use requested wall duration. ${words(rates.interpretation)}. Attribution: ${words(rates.filter_attribution)}.`)
-        + `<div class="pc-grid">${section("Throughput", traffic)}${section("Objective goodput", goodput)}${section("Request populations", facts(s.counts) + note("Arrival and completion windows are separate. Model-at-arrival may be unknown; returned attribution governs each rate."))}</div>`
+      const goodput = g.status === "unconfigured" ? empty("Objective not selected", "Select an objective above to measure goodput.") : badge(words(g.status), g.bad > 0 ? "bad" : "neutral") + bars([["Good", g.good], ["Bad", g.bad], ["Pending", g.pending], ["Unknown", g.unknown]], "Objective results")
+        + detail("Goodput definitions and coverage", facts({ objective: g.objective_id, revision: g.objective_revision, known_evaluable: g.known_evaluable, observed_arrivals: g.observed_arrivals, whole_window_eligible: g.eligible, whole_window_good_per_s: g.per_s, good_fraction: g.good_fraction, known_good_per_s: g.known_good_per_s, known_good_rate_is_lower_bound: g.known_good_rate_is_lower_bound }) + note(words(g.attribution)));
+      const counts = s.counts || {};
+      const populations = bars([["Known arrivals", counts.known_arrivals], ["Known completions", counts.known_completions], ["Known successful", counts.known_successful_completions]], "Recorded lifecycle counts")
+        + badge(counts.population_complete ? "Complete population" : "Partial population", counts.population_complete ? "neutral" : "unknown")
+        + detail("Population definitions", facts(counts) + note("Arrival and completion windows are separate. Model-at-arrival may be unknown; returned attribution governs each rate."));
+      return headline + detail("Rate definitions", note(`Rates use requested wall duration. ${words(rates.interpretation)}. Attribution: ${words(rates.filter_attribution)}.`))
+        + `<div class="pc-grid pc-overview-grid">${section("Throughput", traffic)}${section("Request populations", populations)}${section("Objective goodput", goodput)}</div>`
         + commandResults()
         + `<details class="pc-detail"><summary>Population coverage and outcomes</summary>${facts(s.outcomes)}${entries(s.population_coverage).map(([k, v]) => section(words(k), facts(v))).join("")}</details>`;
     }
@@ -313,7 +325,7 @@ const PERF_CONSOLE = (() => {
       const heads = entries(s?.legacy).sort((a, b) => (b[1].failure_share ?? -1) - (a[1].failure_share ?? -1) || (b[1].count ?? -1) - (a[1].count ?? -1));
       const rows = heads.map(([head, h]) => {
         const covered = h.metrics_complete === false ? "Partial metrics" : h.read_status === "readable" ? "Recorded rows" : "Unread / unknown";
-        const cells = [commandName(head), h.count === 0 ? "No requests" : num(h.count), percent(h.failure_share), num(h.total_ms?.p50), num(h.total_ms?.p95), covered];
+        const cells = [commandName(head), h.count === 0 ? "No recorded rows" : num(h.count), percent(h.failure_share), num(h.total_ms?.p50), num(h.total_ms?.p95), covered];
         return `<details class="pc-command" data-pc-command="${safe(head)}"${st.commands.has(head) ? " open" : ""}><summary class="pc-command-grid">${cells.map((value, i) => `<span><small>${columns[i]}</small>${safe(value)}</span>`).join("")}</summary><div class="pc-command-detail">${commandDetail(head, h)}</div></details>`;
       }).join("");
       return `<section class="pc-results" aria-label="Results by command">${heading}<div class="card pc-commands">${labels}${rows || note(`${status(reply)} · No command results returned.`)}</div></section>`;
@@ -325,13 +337,14 @@ const PERF_CONSOLE = (() => {
       const flagFits = flag && Number.isFinite(flag.from) && Number.isFinite(flag.to) && flag.from >= st.query.from_ms && flag.to < st.query.until_ms;
       const sampled = flagFits && (flag.kind === "slow" || h.failure_share > 0)
         ? `<p class="pc-note"><span class="flag ${flag.kind === "failing" ? "failing" : "slow"}">${link(`${flag.kind === "failing" ? "Failing" : "Slow"} in sampled records · ${date(flag.from)} to ${date(flag.to)}`, flag.kind === "failing" ? { outcome: "failed" } : {})}</span></p>` : "";
-      const outcomes = table(["Outcome", "Requests"], entries(h.outcomes).map(([outcome, count]) => [link(words(outcome), { outcome }), num(count)]), `${commandName(head)} outcomes`);
-      const stages = table(["Stage", "Samples", "Typical · ms", "Slowest 5% · ms", "Maximum · ms"], [["Waited in line", h.queue_wait_ms], ["Before first byte", h.time_before_first_byte_ms], ["Streaming", h.time_streaming_ms], ["Whole request", h.total_ms]].map(([label, v]) => [label, num(v?.count), num(v?.p50), num(v?.p95), num(v?.max)]), `${commandName(head)} stages`);
+      const outcomes = bars(entries(h.outcomes), "Recorded outcomes", "", (outcome) => link(words(outcome), { outcome }));
+      const stageItems = [["Waited in line", h.queue_wait_ms], ["Before first byte", h.time_before_first_byte_ms], ["Streaming", h.time_streaming_ms], ["Whole request", h.total_ms]];
+      const stages = ranges(stageItems) + detail("Stage sample counts", table(["Stage", "Samples", "Typical · ms", "Slowest 5% · ms", "Maximum · ms"], stageItems.map(([label, v]) => [label, num(v?.count), num(v?.p50), num(v?.p95), num(v?.max)]), `${commandName(head)} stages`));
       const models = table(["Model", "Requests", "Failed", "Typical · ms", "Slowest 5% · ms"], entries(h.models).map(([model, v]) => [model === "?" ? "Ended before a model was picked" : link(model, { model }), num(v.count), percent(v.failure_share), num(v.total_ms?.p50), num(v.total_ms?.p95)]), `${commandName(head)} models`);
       return `<div class="pc-actions"><strong class="pc-command-failure">${safe(failure)}</strong>${link("Open requests")}${h.failure_share > 0 ? link("Open failures", { outcome: "failed" }) : ""}${link("Open compactions", { compact: "1" })}</div>`
-        + sampled + note(`Recorded request rows: ${num(h.count)} · local steps: ${num(h.local_steps)}. ${h.metrics_complete === false ? "Metric work limit reached; counts are returned separately from unavailable metrics." : "Metrics describe the returned recorded-row population; coverage gaps can leave records uncounted."}`)
+        + sampled + detail("Recorded row coverage", note(`Recorded request rows: ${num(h.count)} · local steps: ${num(h.local_steps)}. ${h.metrics_complete === false ? "Metric work limit reached; counts are returned separately from unavailable metrics." : "Metrics describe the returned recorded-row population; coverage gaps can leave records uncounted."}`))
         + `<div class="pc-grid">${section("Outcomes", outcomes)}${section("Cache and load", facts({ cache_hit_ratio: percent(h.cache_hit_ratio), cold_after_account_switch: h.cache_cold, retries: h.retries, refreshes: h.refreshes, peak_inflight: h.peak_inflight }))}${section("Stages", stages)}</div>`
-        + note("Stages describe their own measured samples and can overlap; they do not add up to the whole request. Peak inflight is a reported sample, not a process total.") + models;
+        + detail("Stage and load meanings", note("Stages describe their own measured samples and can overlap; they do not add up to the whole request. Peak inflight is a reported sample, not a process total.")) + models;
     }
     function lead() {
       if (st.busy || st.key !== fingerprint() || !st.replies.summary?.ok || options.ready?.() === false) return null;
@@ -342,10 +355,14 @@ const PERF_CONSOLE = (() => {
     }
     function distribution() {
       const s = st.replies.summary?.body;
-      const rows = entries(s?.histograms).map(([key, h]) => [safe(words(key)), num(h.count), num(h.p50), num(h.p95), num(h.p99), metricCoverage(h), `<details><summary>Distribution</summary>${note(words(h.approximation))}${note(st.replies.schema?.body?.metrics?.[key]?.population || "Population not described")}${table(["Upper bound · ms", "Count"], (h.buckets || []).map((n, i) => [i < (h.bounds_ms || []).length ? num(h.bounds_ms[i]) : "Overflow", num(n)]), `${words(key)} bucket counts`)}</details>`]);
-      return note("Independent measured durations; stages, attempts and tools can overlap and do not add up to request elapsed time. Percentiles are returned bucket bounds, not exact samples.")
-        + table(["Measurement", "Samples", "p50 · ms", "p95 · ms", "p99 · ms", "Metric coverage / attribution", "Buckets"], rows, "Latency distributions")
-        + (!rows.length ? note("No histogram measurements for this cohort.") : "");
+      const histograms = entries(s?.histograms).sort((a, b) => (b[1].p95 || 0) - (a[1].p95 || 0));
+      return section("Measured latency", histograms.length ? ranges(histograms.map(([k, h]) => [metricName(k), h])) : empty("No measured durations", "This cohort has no histogram samples."))
+        + note("Durations overlap. Percentiles are bucket bounds; they are approximate.")
+        + detail("Measurement definitions", note("Independent measured durations; stages, attempts and tools can overlap and do not add up to request elapsed time. Percentiles are returned bucket bounds, not exact samples."))
+        + `<div class="pc-distributions">${histograms.map(([key, h]) => detail(`${metricName(key)} · ${num(h.count)} samples`, badge(h.coverage?.complete ? "Complete" : "Partial", h.coverage?.complete ? "neutral" : "unknown")
+          + note(metricCoverage(h)) + note(words(h.approximation)) + note(st.replies.schema?.body?.metrics?.[key]?.population || "Population not described")
+          + bars((h.buckets || []).map((n, i) => [i < (h.bounds_ms || []).length ? `≤ ${duration(h.bounds_ms[i])}` : "Overflow", n]), "Bucket counts")
+          + table(["p50 · ms", "p95 · ms", "p99 · ms"], [[num(h.p50), num(h.p95), num(h.p99)]], "Returned percentile bounds"))).join("")}</div>`;
     }
     function history() {
       const series = st.replies.series?.body?.series || [], gauges = st.replies.summary?.body?.gauges || {};
@@ -355,49 +372,63 @@ const PERF_CONSOLE = (() => {
       const chosen = st.historyMetric || points[0]?.k;
       const filtered = points.filter((x) => x.k === chosen).slice(-120);
       const values = filtered.map((x) => x.m.last).filter((v) => typeof v === "number"), max = Math.max(1, ...values);
-      const graph = filtered.length ? `<div class="pc-history" role="img" aria-label="${safe(words(chosen))}: latest reading per returned interval and scope. Table follows.">${filtered.map(({ p, m }) => `<span title="${safe(date(p.from_ms))} · ${safe(p.scope?.head)} · ${num(m.last)}" style="--height:${typeof m.last === "number" && m.last > 0 ? Math.max(1, m.last / max * 100) : 0}%"><i></i></span>`).join("")}</div>` : note(`${status(st.replies.series)} · No sampled history for this cohort.`);
-      return note("Latest is one observed scope, never a process total. Max is the largest scope sample; mean is weighted over observed scope time. Covered milliseconds are summed over scopes; missing scopes are unknown.")
-        + tableSummary + select("historyMetric", "History measurement", [...new Set(points.map((x) => x.k))].map((k) => [k, words(k)]), chosen) + graph
-        + table(["From", "Until", "Head / model / transport", "Latest", "Max", "Weighted mean", "Samples"], filtered.map(({ p, m }) => [safe(date(p.from_ms)), safe(date(p.until_ms)), safe([p.scope?.head, p.scope?.model, p.scope?.transport].map((x) => x ?? "unknown").join(" / ")), num(m.last), num(m.max), num(m.time_weighted_mean), num(m.sample_count)]), "History · last 120 returned scope intervals")
-        + section("Event counters", table(["Counter", "Measurements", "Sum of deltas", "Per second", "Metric coverage / attribution"], entries(st.replies.summary?.body?.counters).map(([k, c]) => [safe(words(k)), num(c.count), num(c.sum), num(c.per_s), metricCoverage(c)]), "Counters · requested-duration rates"));
+      const graph = values.length ? `<div class="pc-axis">${safe(metricName(chosen))}<span>0 → ${num(max)} · per observed scope</span></div><div class="pc-history" role="img" aria-label="${safe(words(chosen))}: latest reading per returned interval and scope. Exact readings below.">${filtered.map(({ p, m }) => `<span title="${safe(date(p.from_ms))} · ${safe(p.scope?.head)} · ${num(m.last)}" style="--height:${known(m.last) && m.last > 0 ? m.last / max * 100 : 0}%"><i></i>${m.last === 0 ? '<b class="pc-zero"></b>' : !known(m.last) ? '<b class="pc-unknown-point">?</b>' : ""}</span>`).join("")}</div><p class="pc-axis"><span>${safe(date(filtered[0].p.from_ms))} CT</span><span>${safe(date(filtered.at(-1).p.until_ms))} CT</span></p>${values.every((v) => v === 0) ? badge("All recorded samples are zero") : ""}` : empty("No sampled history", `${status(st.replies.series)} · This cohort has no returned gauge samples.`);
+      return select("historyMetric", "History measurement", [...new Set(points.map((x) => x.k))].map((k) => [k, metricName(k)]), chosen) + graph
+        + note("Each point is one scope. Missing scopes remain unknown.")
+        + detail("Exact history readings", table(["From", "Until", "Head / model / transport", "Latest", "Max", "Weighted mean", "Samples"], filtered.map(({ p, m }) => [safe(date(p.from_ms)), safe(date(p.until_ms)), safe([p.scope?.head, p.scope?.model, p.scope?.transport].map((x) => x ?? "unknown").join(" / ")), num(m.last), num(m.max), num(m.time_weighted_mean), num(m.sample_count)]), "History · last 120 returned scope intervals"))
+        + detail("Gauge summary and meanings", note("Latest is one observed scope, never a process total. Max is the largest scope sample; mean is weighted over observed scope time. Covered milliseconds are summed over scopes; missing scopes are unknown.") + tableSummary)
+        + detail("Event counters", table(["Counter", "Measurements", "Sum of deltas", "Per second", "Metric coverage / attribution"], entries(st.replies.summary?.body?.counters).map(([k, c]) => [safe(metricName(k)), num(c.count), num(c.sum), num(c.per_s), metricCoverage(c)]), "Counters · requested-duration rates"));
     }
     function runtime() {
       const r = st.replies.runtime, v = r?.body;
-      return note(`Current process sample · ${status(r)} · ${date(v?.as_of_ms)} · age ${num(v?.age_ms)} ms. Historical resource measurements are in History for the selected interval.`)
-        + facts(v?.identity) + table(["Runtime measurement", "Value"], entries(v?.measurements).map(([k, x]) => [safe(words(k)), scalar(x)]), "CPU, GC, memory, files and exporter health")
-        + table(["Capability", "Supported", "Reason"], (v?.capabilities || []).map((x) => [safe(x.id), scalar(x.supported), safe(words(x.reason))]), "Runtime capabilities") + note(issues(v).map(words).join(" · "))
-        + table(["Sink", "Observed", "Enqueued", "Written", "Failed", "Dropped", "Pending", "Oldest pending · ms", "Last success"], (st.replies.summary?.body?.coverage?.sinks || []).map((x) => [safe(x.sink), num(x.observed), num(x.enqueued), num(x.written), num(x.failed), num(x.dropped), num(x.pending), num(x.oldestPendingMs), safe(date(x.lastSuccessEpochMs))]), "Recording and export health · returned source coverage");
+      const groups = new Map(), group = (k) => /cpu|process.*time/i.test(k) ? "CPU" : /heap|memory|rss|buffer|gc/i.test(k) ? "Memory and GC" : /file|disk|persist/i.test(k) ? "Files and persistence" : /export|otlp|scrape/i.test(k) ? "Export" : /http|socket|connection/i.test(k) ? "Connections" : /thread|scheduler/i.test(k) ? "Threads" : /native|tool|mcp/i.test(k) ? "Tools" : "Instrumentation";
+      for (const [key, value] of entries(v?.measurements)) { const name = group(key); if (!groups.has(name)) groups.set(name, []); groups.get(name).push([key, value]); }
+      const readings = (items) => `<dl class="pc-readings">${items.map(([k, x]) => `<div><dt>${safe(metricName(k))}</dt><dd>${safe(reading(k, x))}</dd>${/_ratio$/.test(k) && known(x) ? track(x, 1, `${metricName(k)}: ${percent(x)}`) : ""}</div>`).join("")}</dl>`;
+      const cards = [...groups].map(([name, items]) => section(name, readings(items.slice(0, 5)) + (items.length > 5 ? detail(`${items.length - 5} more readings`, readings(items.slice(5))) : ""))).join("");
+      const sinks = st.replies.summary?.body?.coverage?.sinks || [];
+      return `<div class="pc-actions">${badge(status(r), r?.ok ? "neutral" : "unknown")}<span>Sampled ${safe(date(v?.as_of_ms))} CT · ${safe(duration(v?.age_ms))} old</span></div>`
+        + (cards ? `<div class="pc-runtime-grid" style="--pc-columns:${Math.min(4, groups.size)}">${cards}</div>` : empty("No runtime sample"))
+        + detail("Process identity and unavailable counters", facts(v?.identity) + table(["Capability", "Availability", "Reason"], (v?.capabilities || []).map((x) => [safe(metricName(x.id)), badge(x.supported === true ? "Available" : x.supported === false ? "Unsupported" : "Unknown", x.supported ? "neutral" : "unknown"), safe(words(x.reason))]), "Runtime capabilities") + note(issues(v).map(words).join(" · ")))
+        + section("Recording and export health", sinks.length ? `<div class="pc-runtime-grid" style="--pc-columns:${Math.min(4, sinks.length)}">${sinks.map((x) => section(keyWords(x.sink), badge(x.failed || x.dropped ? "Recording loss" : x.pending ? "Writes pending" : "No pending writes", x.failed || x.dropped ? "bad" : x.pending ? "unknown" : "neutral")
+          + bars([["Written", x.written], ["Pending", x.pending], ["Failed", x.failed], ["Dropped", x.dropped]], "Sink records")
+          + detail("Sink counters", facts(x)))).join("")}</div>` : empty("Sink status unavailable"))
+        + note("Current process sample. Use History for the selected interval.");
     }
     function timeline() {
       const d = st.replies.diagnose?.body, requests = d?.timeline?.requests || [];
       const selected = requests.find((x) => x.request_id === st.openRequest) || requests[0];
       const events = selected?.events || [], arrival = events.find((e) => e.kind === "REQUEST_ARRIVED"), origin = arrival?.monotonic_ms ?? events[0]?.monotonic_ms;
       const measurement = (e) => entries(e.measurements).map(([k, v]) => `${words(k)}: ${num(v)}`).join(" · ");
-      const rows = events.map((e) => [safe(words(e.kind)), num(Number.isFinite(e.monotonic_ms) && Number.isFinite(origin) ? e.monotonic_ms - origin : null), safe(e.attempt_id ?? "—"), safe(e.tool_id ?? "—"), safe(measurement(e)), turnLink(e, e.trace_id || e.turn_id || "Turn unavailable")]);
+      const rows = events.map((e) => [safe(words(e.kind)), num(Number.isFinite(e.monotonic_ms) && Number.isFinite(origin) ? e.monotonic_ms - origin : null), safe(e.attempt_id ?? "—"), safe(e.tool_id ?? "—"), detail("Measurements", safe(measurement(e))), turnLink(e, "Open turn")]);
       const evidence = table(["Measured condition", "Mean · ms", "Interpretation", "Next measurement"], (d?.evidence || []).map((e) => [safe(words(e.metric)), num(e.mean_ms), safe(`${words(e.classification)} · ${words(e.inference)}`), safe(words(e.next_falsifying_measurement))]), "Diagnosis evidence");
       const span = events.length ? events.at(-1).monotonic_ms - origin : 0;
-      const waterfall = span > 0 ? `<div class="pc-waterfall" role="img" aria-label="Recorded progress on the request clock; exact values in the table below">${events.filter((e) => /CONTENT|CLIENT|ATTEMPT|TOOL|REQUEST/.test(e.kind)).map((e) => `<div><span>${safe(words(e.kind))}${e.attempt_id ? ` · ${safe(e.attempt_id)}` : ""}${e.tool_id ? ` · ${safe(e.tool_id)}` : ""}</span><i><b style="left:${Math.max(0, Math.min(100, (e.monotonic_ms - origin) / span * 100))}%"></b></i><small>${num(e.monotonic_ms - origin)} ms</small></div>`).join("")}</div>` : "";
-      return evidence + note("Content and successful flush checkpoints below are separate from transport bytes. Attempt and tool IDs have independent clocks; their durations overlap and are not additive.")
-        + select("openRequest", "Representative request", requests.map((r) => [r.request_id, r.request_id]), selected?.request_id)
-        + (selected ? `<div class="pc-actions">${turnLink(selected, "Open recorded turn")}</div>` + facts({ command: selected.head, turn: selected.turn_id, trace: selected.trace_id, session: selected.session_id }) : "")
+      const waterfall = events.length ? `<div class="pc-waterfall" role="img" aria-label="Recorded progress on the request clock; exact values in event details">${events.filter((e) => /CONTENT|CLIENT|ATTEMPT|TOOL|REQUEST/.test(e.kind)).map((e) => `<div><span>${safe(words(e.kind).toLowerCase())}</span><i><b style="left:${span > 0 ? Math.max(0, Math.min(100, (e.monotonic_ms - origin) / span * 100)) : 0}%"></b></i><small>${safe(duration(e.monotonic_ms - origin))}</small></div>`).join("")}</div>` : "";
+      return section("Measured conditions", (d?.evidence || []).length ? bars((d.evidence || []).map((e) => [metricName(e.metric), e.mean_ms]), "Mean measured duration", " ms") : empty("No diagnosis measurements"))
+        + detail("Interpretation and next measurements", evidence + note("Content and successful flush checkpoints below are separate from transport bytes. Attempt and tool IDs have independent clocks; their durations overlap and are not additive."))
+        + select("openRequest", "Representative request", requests.map((r, i) => [r.request_id, `Request ${i + 1} · ${commandName(r.head) || "Unknown command"} · ${(r.events || []).length} recorded events`]), selected?.request_id)
+        + (selected ? `<div class="pc-actions">${turnLink(selected, "Open recorded turn")}</div>` + detail("Request identifiers", facts({ command: selected.head, turn: selected.turn_id, trace: selected.trace_id, session: selected.session_id })) : "")
         + (d?.timeline?.truncated ? note("Representative timeline is truncated; it is not the complete population.") : "")
         + note(arrival ? "Elapsed time is measured from the recorded request arrival." : "Arrival is unavailable. Elapsed time starts at the first retained event.")
-        + waterfall + table(["Event", "Elapsed · ms", "Attempt", "Tool", "Measurements", "Trace reference"], rows, "Request, attempt and tool timeline")
-        + (!events.length ? note(`${status(st.replies.diagnose)} · No request timeline evidence.`) : "")
-        + section("Resource evidence", facts(d?.resources) + table(["Measured resource", "Value", "Reported capacity", "Fraction", "Interpretation"], (d?.resources?.conditions || []).map((x) => [safe(words(x.metric)), num(x.value), num(x.capacity), num(x.fraction), safe(words(x.inference))]), "Resource occupancy · sample time only")) + requestRows();
+        + waterfall + (events.length ? detail("Event details and correlation IDs", table(["Event", "Elapsed · ms", "Attempt", "Tool", "Measurements", "Trace reference"], rows, "Request, attempt and tool timeline")) : empty("No request timeline evidence", status(st.replies.diagnose)))
+        + detail("Resource evidence", facts(d?.resources) + ((d?.resources?.conditions || []).length ? table(["Measured resource", "Value", "Reported capacity", "Fraction", "Interpretation"], d.resources.conditions.map((x) => [safe(metricName(x.metric)), num(x.value), num(x.capacity), num(x.fraction), safe(words(x.inference))]), "Resource occupancy · sample time only") : empty("Resource occupancy not measured"))) + requestRows();
     }
     function turnLink(record, label) {
-      return record?.head && record?.turn_id ? `<a href="${safe(address(st.query, { head: record.head }, `${record.head}:${record.turn_id}`))}">${safe(label)}</a>` : safe(record?.trace_id || record?.turn_id || "Turn link unavailable");
+      return record?.head && record?.turn_id ? `<a href="${safe(address(st.query, { head: record.head }, `${record.head}:${record.turn_id}`))}">${safe(label)}</a>` : "Turn link unavailable";
     }
     function requestRows() {
       const r = st.replies.rows, v = r?.body;
-      return table(["Request", "Time", "Command", "Model", "Outcome"], (v?.rows || []).map((x) => [turnLink(x, x.turn_id), safe(date(x.ts)), safe(x.head), safe(x.model ?? "Unknown"), safe(words(x.outcome))]), "Recorded request rows · returned source order")
-        + note(`${status(r)} · ${num(v?.total_matching)} matching records · ${v?.record_unit || "record"}`)
+      return ((v?.rows || []).length ? table(["Request", "Time", "Command", "Model", "Outcome"], v.rows.map((x, i) => [turnLink(x, `Open request ${i + 1}`), safe(date(x.ts)), safe(commandName(x.head)), safe(x.model ?? "Unknown"), badge(words(x.outcome), x.outcome === "failed" ? "bad" : "neutral")]), "Recorded request rows · returned source order") : empty(r?.ok ? "No recorded rows returned" : "Request rows unavailable", status(r)))
+        + note(`${status(r)} · ${known(v?.total_matching) ? num(v.total_matching) : "Unknown count of"} matching recorded rows`)
         + (v?.next_cursor ? `<button class="act small" data-pc="next"${st.busy || st.rowsBusy ? " disabled" : ""}>Next records</button>` : "");
     }
     function baselines() {
       const selected = st.baselines[st.selected], summary = st.replies.summary?.body;
       const c = selected && summary?.identity_cohorts ? comparison(selected.summary, summary) : null;
+      const pairs = selected && summary ? [
+        ...["arrivals_per_s", "completions_per_s", "attempts_per_s", "input_tokens_per_s", "output_tokens_per_s", "cached_tokens_per_s"].map((k) => [keyWords(k), selected.summary.rates[k], summary.rates?.[k], " / s"]),
+        ...["arrival_to_first_meaningful_content_ms", "arrival_to_terminal_ms", "queue_wait_ms"].map((k) => [`${metricName(k)} · p95`, selected.summary.histograms[k]?.p95, summary.histograms?.[k]?.p95, " ms"]),
+      ] : [];
+      const drawn = `<div class="pc-comparisons">${pairs.map(([label, left, right, unit]) => section(label, bars([["Saved", left], ["Current", right]], "Observed values", unit))).join("")}</div>`;
       const values = selected && summary ? table(["Recorded value", "Saved", "Current"], [
         ...["arrivals_per_s", "completions_per_s", "attempts_per_s", "input_tokens_per_s", "output_tokens_per_s", "cached_tokens_per_s"].map((k) => [safe(words(k)), num(selected.summary.rates[k]), num(summary.rates?.[k])]),
         ...["arrival_to_first_meaningful_content_ms", "arrival_to_terminal_ms", "queue_wait_ms"].map((k) => [`${safe(words(k))} · p95`, num(selected.summary.histograms[k]?.p95), num(summary.histograms?.[k]?.p95)]),
@@ -418,23 +449,28 @@ const PERF_CONSOLE = (() => {
       ]), "Measured workload groups · exact counts");
       return `<div class="pc-actions">${field("baselineName", "Baseline name", "Baseline")}
         <button class="act small" data-pc="save-baseline"${!summary?.rates || st.busy ? " disabled" : ""}>Save locally</button><label class="act quiet small">Import JSON<input type="file" accept="application/json,.json" data-pc-import hidden></label></div>`
-        + note(`Up to ${LIMIT} snapshots in this browser. Saved measurements include the query, workload groups, build, settings, objective and coverage. Imported files are local records, not independently verified measurements.`)
+        + detail("What a snapshot contains", note(`Up to ${LIMIT} snapshots in this browser. Saved measurements include the query, workload groups, build, settings, objective and coverage. Imported files are local records, not independently verified measurements.`))
         + select("baseline", "Saved baseline", st.baselines.map((b, i) => [String(i), `${b.name} · ${date(b.saved_at_ms)}`]), String(st.selected))
         + (selected ? `<div class="pc-actions"><button class="act quiet small" data-pc="export-baseline">Export JSON</button><button class="act quiet small" data-pc="apply-baseline">Apply saved cohort</button><button class="act quiet small" data-pc="delete-baseline">Delete</button></div>`
-          + facts({ saved_at: date(selected.saved_at_ms), measured_at: date(selected.summary.as_of_ms), source: selected.summary.query.source, from: date(selected.summary.query.from_ms), until: date(selected.summary.query.until_ms), objective_revision: selected.summary.goodput.objective_revision })
-          + section(c?.status || "Waiting for current summary", note(c ? `Different: ${c.different.join(", ") || "none known"}. Unknown or mixed: ${c.unknown.join(", ") || "none in the measured comparison"}. Changed variables: ${c.changed.join(", ") || "none known"}.` : "Read the current cohort first.")
+          + badge(c?.status || "Waiting for current summary", c?.status === "Measured workload matches" ? "neutral" : "unknown")
+          + note("Observed differences only. Matching workload does not establish cause.") + drawn
+          + detail("Comparison conditions and exact values", note(c ? `Different: ${c.different.join(", ") || "none known"}. Unknown or mixed: ${c.unknown.join(", ") || "none in the measured comparison"}. Changed variables: ${c.changed.join(", ") || "none known"}.` : "Read the current cohort first.")
             + note("Matching compares measured request groups and their proportions, including actual outcomes and token/cache counts. It covers effective settings only. Provider topology and remote conditions are unverified; a match does not establish cause or rank providers.")
             + (c?.reasons.length ? note(`Evidence gaps: ${c.reasons.join(" · ")}`) : "") + values)
-          + `<div class="pc-grid">${section("Saved evidence", evidence(selected.summary))}${section("Current evidence", evidence(summary))}</div>`
+          + detail("Saved and current measurement evidence", `<div class="pc-comparisons">${section("Saved evidence", evidence(selected.summary))}${section("Current evidence", evidence(summary))}</div>`)
           + `<details class="pc-detail"><summary>Measured workload groups</summary>${section("Saved", partitions(selected.summary))}${section("Current", partitions(summary))}</details>`
           + `<details class="pc-detail"><summary>Saved cohort and configuration evidence</summary>${facts(selected.summary.query.filters)}${selected.summary.identity_cohorts.map(facts).join("")}${facts(selected.summary.configuration)}${selected.summary.configuration.intervals.map(facts).join("")}${note(`Settings exclude: ${(selected.summary.configuration.excluded_dimensions || []).map(words).join(", ") || "not recorded"}.`)}</details>` : note("No saved baselines."));
     }
     function profiles() {
       const caps = st.replies.caps?.body?.capabilities || [], p = st.profiles;
-      return note("Capture starts only when you press Start capture. It records the current process, independently of request filters. Bounds: 1–300 seconds; one capture per process. No native profiler is downloaded.")
-        + `<form data-pc-form="profile" class="pc-actions">${select("profile", "Profiler and mode", caps.map((c) => [c.id, `${c.id}${c.supported ? "" : ` · ${words(c.reason)}`}`]), st.profileMode || "jfr.cpu")}${field("duration", "Duration · seconds", 60, "number", 'min="1" max="300" required')}<button class="act small" type="submit"${actionPending() ? " disabled" : ""}>Start capture</button></form>`
-        + note(`Capabilities: ${status(st.replies.caps)}`) + table(["Capability", "Supported", "Reason"], caps.map((c) => [safe(c.id), scalar(c.supported), safe(words(c.reason))]), "Profile availability")
-        + (p ? facts({ status: p.status, profile_id: p.profile_id, from: date(p.from_ms), until: date(p.until_ms), size_bytes: p.size_bytes, artifact_available: p.artifact_available }) + note([...(p.issues || []), ...(p.limitations || [])].map((x) => words(typeof x === "string" ? x : x.code)).join(" · "))
+      const name = (id) => keyWords(id).replace(/^jfr /i, "JVM · ").replace(/^native /i, "Native · ");
+      return `<form data-pc-form="profile" class="pc-actions">${select("profile", "Profiler and mode", caps.map((c) => [c.id, `${name(c.id)}${c.supported ? "" : " · unavailable"}`]), st.profileMode || "jfr.cpu")}${field("duration", "Duration · seconds", 60, "number", 'min="1" max="300" required')}<button class="act small" type="submit"${actionPending() ? " disabled" : ""}>Start capture</button></form>`
+        + badge(`Capabilities: ${status(st.replies.caps)}`, st.replies.caps?.ok ? "neutral" : "unknown")
+        + note("Explicit capture · current process · one at a time · 1–300 seconds")
+        + `<div class="pc-capabilities">${caps.map((c) => `<div><strong>${safe(name(c.id))}</strong>${badge(c.supported ? "Available" : "Unavailable", c.supported ? "neutral" : "unknown")}${!c.supported ? detail("Reason", note(words(c.reason))) : ""}</div>`).join("")}</div>`
+        + detail("Capture bounds and capabilities", note("Capture starts only when you press Start capture. It records the current process, independently of request filters. Bounds: 1–300 seconds; one capture per process. No native profiler is downloaded."))
+        + (p ? `<div class="pc-profile-result">${badge(words(p.status), p.status === "failed" ? "bad" : p.status === "running" ? "unknown" : "neutral")}<strong>${safe(bytes(p.size_bytes))}</strong><span>${safe(date(p.from_ms))} → ${safe(date(p.until_ms))} CT</span></div>`
+          + detail("Capture details", facts({ profile_id: p.profile_id, artifact_available: p.artifact_available }) + note([...(p.issues || []), ...(p.limitations || [])].map((x) => words(typeof x === "string" ? x : x.code)).join(" · ")))
           + `<div class="pc-actions"><button class="act quiet small" data-pc="profile-refresh"${actionPending() ? " disabled" : ""}>Refresh status</button>${p.status === "running" ? `<button class="act small" data-pc="profile-stop"${actionPending() ? " disabled" : ""}>Stop capture</button>` : ""}${p.artifact_available && p.profile_id ? `<button class="act small" data-pc="profile-download"${actionPending() ? " disabled" : ""}>Download artifact</button>` : ""}</div>` : note(`${status(st.profilesReply)} · Profile status has not been returned.`));
     }
     function objectives() {
@@ -442,20 +478,30 @@ const PERF_CONSOLE = (() => {
       if (!settings) return note(`${status(st.settingsReply)} · Objective settings unavailable.`);
       const builders = `<div class="pc-grid"><details class="pc-detail"><summary>Add objective</summary><form data-pc-form="add-objective" class="pc-builder">${field("id", "Objective ID", "", "text", "required maxlength=128")}${field("cohort", "Cohort · JSON", "{}")}${["first_content_ms", "completion_ms", "queue_ms", "progress_gap_ms"].map((k) => field(k, words(k), "", "number", 'min="0"')).join("")}<button class="act small" type="submit">Add to draft</button></form></details>`
         + `<details class="pc-detail"><summary>Add alert rule</summary><form data-pc-form="add-rule" class="pc-builder">${field("id", "Rule ID", "", "text", "required maxlength=128")}${select("objective_id", "Objective", [["", "None"], ...(settings.objectives || []).map((o) => [o.id, o.id])], "")}${field("cohort", "Cohort · JSON", "{}")}${field("metric", "Metric selector", "", "text", 'required placeholder="histograms.queue_wait_ms.p95"')}${select("comparison", "Trigger when", [["above", "Above threshold"], ["below", "Below threshold"]], "above")}${field("threshold", "Threshold", "", "number", 'required step="any"')}${field("window_ms", "Window · ms", 300000, "number", 'required min="1"')}${field("min_count", "Minimum samples", 1, "number", 'required min="1"')}${field("min_coverage", "Minimum coverage · 0–1", 1, "number", 'required min="0" max="1" step="0.01"')}${field("hold_ms", "Trigger hold · ms", 0, "number", 'required min="0"')}${field("cooldown_ms", "Delivery cooldown · ms", 60000, "number", 'required min="0"')}${field("recovery_threshold", "Recovery threshold", "", "number", 'required step="any"')}${field("recovery_hold_ms", "Recovery hold · ms", 0, "number", 'required min="0"')}<label class="pc-checkbox"><input type="checkbox" name="delivery_enabled">Allow configured delivery for this rule</label><button class="act small" type="submit">Add to draft</button></form></details></div>`;
-      return note(`Canonical revision ${settings.revision || "unknown"}. No rules or delivery are enabled by default.`) + builders
-        + table(["Objective", "Revision", "Cohort", "First content · ms", "Completion · ms", "Queue · ms", "Progress gap · ms"], (settings.objectives || []).map((o) => [safe(o.id), safe(o.revision), safe(JSON.stringify(o.cohort)), num(o.first_content_ms), num(o.completion_ms), num(o.queue_ms), num(o.progress_gap_ms)]), "Configured objectives")
-        + `<form data-pc-form="objectives"><label class="pc-json-label">Objective and alert settings · JSON<textarea class="field pc-json" name="settings" spellcheck="false" rows="15">${safe(st.draft ?? JSON.stringify({ schema_version: 1, objectives: settings.objectives || [], rules: settings.rules || [] }, null, 2))}</textarea></label>`
-        + note('Rules use metric, comparison "above" or "below", threshold, window_ms, min_count ≥ 1, min_coverage 0–1, hold_ms, cooldown_ms, recovery {threshold, hold_ms} and optional delivery_enabled. Recovery must be on the healthy side. Server validates the entire document before publishing; revisions are canonical.')
-        + `<div class="pc-actions"><button type="submit" class="act small"${actionPending() ? " disabled" : ""}>Save objectives and rules</button><button type="button" class="act quiet small" data-pc="objectives-reload"${actionPending() ? " disabled" : ""}>Discard edits and reload</button></div></form>`;
+      const draft = st.draft ?? JSON.stringify({ schema_version: 1, objectives: settings.objectives || [], rules: settings.rules || [] }, null, 2);
+      const rows = Math.max(8, draft.split("\n").length + 1);
+      return `<div class="pc-comparisons" style="--pc-columns:${Math.max(1, Math.min(3, settings.objectives?.length || 0))}">${(settings.objectives || []).map((o) => section(o.id, bars(["first_content_ms", "completion_ms", "queue_ms", "progress_gap_ms"].filter((k) => known(o[k])).map((k) => [metricName(k), o[k]]), "Configured upper bounds", " ms") + detail("Cohort and revision", facts(o.cohort) + facts({ revision: o.revision })))).join("") || empty("No configured objectives", "Add an objective to measure request goodput.")}</div>`
+        + `<div class="pc-capabilities">${(settings.rules || []).map((rule) => `<div><strong>${safe(rule.id)}</strong>${badge(rule.delivery_enabled ? "Delivery enabled" : "Local only")}<span>${safe(metricName(rule.metric))} · ${safe(words(rule.comparison))} ${num(rule.threshold)}</span></div>`).join("")}</div>`
+        + builders + `<details class="pc-detail" data-pc-editor${st.editorOpen || st.draft != null ? " open" : ""}><summary>Edit settings JSON</summary><form data-pc-form="objectives"><label class="pc-json-label">Objective and alert settings · JSON<textarea class="field pc-json" name="settings" spellcheck="false" rows="${rows}">${safe(draft)}</textarea></label>`
+        + detail("Rule fields and validation", note('Rules use metric, comparison "above" or "below", threshold, window_ms, min_count ≥ 1, min_coverage 0–1, hold_ms, cooldown_ms, recovery {threshold, hold_ms} and optional delivery_enabled. Recovery must be on the healthy side. Server validates the entire document before publishing; revisions are canonical.'))
+        + `<div class="pc-actions"><button type="submit" class="act small"${actionPending() ? " disabled" : ""}>Save objectives and rules</button><button type="button" class="act quiet small" data-pc="objectives-reload"${actionPending() ? " disabled" : ""}>Discard edits and reload</button></div></form></details>`
+        + detail("Settings revision", facts({ revision: settings.revision }) + note("No rules or delivery are enabled by default."));
     }
     function alerts() {
       const now = st.replies.alertStatus?.body, history = st.replies.alerts?.body;
-      const rows = (events) => (events || []).map((e) => [safe(e.rule_id), safe(`${words(e.state)}${e.active ? " · active" : ""}${e.retired ? " · retired" : ""}`), scalar(e.observed), scalar(e.threshold), num(e.sample_count), safe(words(e.coverage?.reason || e.reason || (e.coverage?.complete ? "Complete" : "Partial / unknown"))), safe(words(e.delivery_status)), `<a href="${safe(alertAddress(e))}">Inspect interval</a><details><summary>Lifecycle and coverage</summary>${facts({ pending_since: date(e.pending_since_ms), firing_since: date(e.firing_since_ms), recovery_since: date(e.recovery_since_ms), resolved_at: date(e.resolved_at_ms), continuity: e.continuity, objective_revision: e.objective_revision, rule_revision: e.rule_revision, settings_revision: e.settings_revision })}${facts(e.coverage)}${facts(e.cohort)}</details>`]);
-      return note(`Current states: ${status(st.replies.alertStatus)} · History: ${status(st.replies.alerts)} · ${now?.restart_uncertain ? "Restart uncertainty · " : ""}${words(now?.reason || "")} · insufficient data never resolves an active alert.`)
-        + table(["Rule", "State", "Observed", "Threshold", "Samples", "Coverage", "Delivery", "Evidence"], rows(now?.events), "Current alert states")
-        + table(["Rule", "State", "Observed", "Threshold", "Samples", "Coverage", "Delivery", "Evidence"], rows(history?.events), "Alert transitions in selected interval")
-        + facts({ history_status: history?.status, expired_events: history?.expired_events, delivery_rejected: now?.delivery_rejected, delivery_failures: now?.delivery_failures, enqueue_failures: now?.enqueue_failures })
-        + note("Desktop notices require the rule’s delivery opt-in, the existing desktop preference, and browser permission. This page does not request permission.");
+      const state = (e) => badge(`${words(e.state)}${e.active ? " · active" : ""}${e.retired ? " · retired" : ""}`, e.state === "firing" ? "bad" : /pending|insufficient/.test(e.state) ? "unknown" : "neutral");
+      const measurement = (e) => {
+        const metric = e.metric || st.settings?.rules?.find((r) => r.id === e.rule_id)?.metric;
+        const unit = /_ms(?:\.|$)/.test(metric) ? " ms" : /_ns(?:\.|$)/.test(metric) ? " ns" : /_bytes(?:\.|$)/.test(metric) ? " B" : /_per_s(?:\.|$)/.test(metric) ? " / s" : /_ratio(?:\.|$)/.test(metric) ? " ratio" : "";
+        return bars([["Observed", e.observed], ["Threshold", e.threshold]], metric ? keyWords(metric) : "Rule measurement · unit unavailable", unit);
+      };
+      const lifecycle = (e) => detail("Lifecycle and coverage", facts({ pending_since: date(e.pending_since_ms), firing_since: date(e.firing_since_ms), recovery_since: date(e.recovery_since_ms), resolved_at: date(e.resolved_at_ms), continuity: e.continuity, objective_revision: e.objective_revision, rule_revision: e.rule_revision, settings_revision: e.settings_revision }) + facts(e.coverage) + facts(e.cohort));
+      const events = [...(now?.events || [])].sort((a, b) => Number(b.active) - Number(a.active));
+      return `<div class="pc-actions">${badge(`Current: ${status(st.replies.alertStatus)}`)}${badge(`History: ${status(st.replies.alerts)}`)}${now?.restart_uncertain ? badge("Restart uncertainty", "unknown") : ""}</div>`
+        + (events.length ? `<div class="pc-runtime-grid" style="--pc-columns:${Math.min(4, events.length)}">${events.map((e) => section(e.rule_id, state(e) + measurement(e) + note(words(e.coverage?.reason || e.reason || (e.coverage?.complete ? "Complete coverage" : "Partial coverage"))) + `<a href="${safe(alertAddress(e))}">Inspect interval</a>` + lifecycle(e))).join("")}</div>` : empty(st.replies.alertStatus?.ok ? "No current alert states" : "Current alerts unavailable"))
+        + section("Alert transitions", (history?.events || []).length ? `<ol class="pc-alert-rail">${history.events.map((e) => `<li>${state(e)}<strong>${safe(e.rule_id)}</strong><span>${known(e.window?.until_ms) ? `Window ended ${safe(date(e.window.until_ms))} CT` : "Window time unavailable"}</span><a href="${safe(alertAddress(e))}">Inspect interval</a>${lifecycle(e)}</li>`).join("")}</ol>` : empty(st.replies.alerts?.ok ? "No transitions in this interval" : "Alert history unavailable", status(st.replies.alerts)))
+        + note("Insufficient data never resolves an active alert.")
+        + detail("Delivery and history health", facts({ history_status: history?.status, expired_events: history?.expired_events, delivery_rejected: now?.delivery_rejected, delivery_failures: now?.delivery_failures, enqueue_failures: now?.enqueue_failures }) + note("Desktop notices require the rule’s delivery opt-in, the existing desktop preference, and browser permission. This page does not request permission."));
     }
     function alertAddress(e) {
       const p = e.diagnostic_links?.find((x) => x.endpoint === "/api/perf/diagnose")?.parameters || {};
@@ -503,9 +549,9 @@ const PERF_CONSOLE = (() => {
       const p = st.profiles?.profile_id;
       const path = `/api/perf/profiles${p ? `/${encodeURIComponent(p)}` : ""}`;
       st.profilePromise = (async () => {
-        let r = await perfRequest("profile-status", "get", path, attached);
+        let r = await panelRead("profile-status", "get", path, attached);
         const retried = await API.retryCapacity([{ path, answer: r }], attached,
-          (item, retryApi, canStart) => perfRequest("profile-status", "get", item.path, () => attached() && canStart(), undefined, retryApi));
+          (item, retryApi, canStart) => panelRead("profile-status", "get", item.path, () => attached() && canStart(), undefined, retryApi));
         if (retried.length) r = retried[0].answer;
         if (r && attached()) { if (r.ok) st.profiles = r.body; else st.message = `Profile status: ${status(r)} · ${words(explain(r))}`; }
       })()
@@ -550,26 +596,28 @@ const PERF_CONSOLE = (() => {
           if (!Number.isInteger(durationSeconds) || durationSeconds < 1 || durationSeconds > 300) throw new Error("Duration must be 1–300 seconds");
           const capability = (st.replies.caps?.body?.capabilities || []).find((x) => x.id === `${profiler}.${mode}`);
           if (!capability?.supported && capability?.reason !== "mode_requires_explicit_start_probe") throw new Error(words(capability?.reason || "Unsupported profile"));
-          const r = await perfRequest("action", "post", "/api/perf/profiles", () => true, { profiler, mode, durationSeconds });
+          const r = await panelRead("action", "post", "/api/perf/profiles", () => true, { profiler, mode, durationSeconds });
           st.profiles = r.body; st.message = `Capture: ${status(r)}${explain(r) ? ` · ${words(explain(r))}` : ""}`;
         }
         if (form.dataset.pcForm === "objectives") {
           st.draft = String(values.get("settings")); if (st.draft.length > 65536) throw new Error("Settings document is too large");
           const draftRevision = st.draftRevision;
           const body = JSON.parse(st.draft); if (body.schema_version !== 1 || !Array.isArray(body.objectives) || !Array.isArray(body.rules)) throw new Error("Version 1 settings require objectives and rules arrays");
-          const r = await perfRequest("action", "put", "/api/perf/objectives", () => true, { schema_version: 1, objectives: body.objectives, rules: body.rules });
+          const r = await panelRead("action", "put", "/api/perf/objectives", () => true, { schema_version: 1, objectives: body.objectives, rules: body.rules });
           if (!r.ok || r.body?.status !== "ok") throw new Error(explain(r) || "Settings were not saved");
           await standing();
-          if (st.draftRevision === draftRevision) st.draft = null;
-          st.message = `Saved revision ${r.body.revision}${st.draftRevision !== draftRevision ? ". Newer draft edits are unsaved." : ""}`; read(true);
+          if (st.draftRevision === draftRevision) { st.draft = null; st.editorOpen = false; }
+          st.message = `Settings saved${st.draftRevision !== draftRevision ? ". Newer draft edits are unsaved." : "."}`; read(true);
         }
       } catch (error) { st.message = error.message || "Action failed"; }
       finally { if (actionStarted) st.actionBusy = false; repaint(); }
     });
-    document.addEventListener("input", (e) => { if (host()?.contains(e.target) && e.target.name === "settings") { st.draft = e.target.value; st.draftRevision++; } });
+    document.addEventListener("input", (e) => { if (host()?.contains(e.target) && e.target.name === "settings") { st.draft = e.target.value; st.draftRevision++; e.target.rows = Math.max(8, st.draft.split("\n").length + 1); } });
     document.addEventListener("toggle", (e) => {
       const el = e.target;
-      if (!host()?.contains(el) || !el.matches?.("[data-pc-command]")) return;
+      if (!host()?.contains(el)) return;
+      if (el.matches?.("[data-pc-editor]")) { st.editorOpen = el.open; return; }
+      if (!el.matches?.("[data-pc-command]")) return;
       if (el.open) st.commands.add(el.dataset.pcCommand); else st.commands.delete(el.dataset.pcCommand);
     }, true);
     document.addEventListener("change", async (e) => {
@@ -618,12 +666,12 @@ const PERF_CONSOLE = (() => {
             st.message = st.settingsReply?.ok ? "Objective settings reloaded" : `Objective settings: ${status(st.settingsReply)} · ${words(explain(st.settingsReply))}`;
             if (st.draftRevision !== draftRevision) st.message += ". Newer draft edits are unsaved.";
           }
-          if (action === "profile-stop") { const r = await perfRequest("action", "post", `/api/perf/profiles/${encodeURIComponent(st.profiles.profile_id)}/stop`, () => true, {}); st.profiles = r.body; st.message = `Capture: ${status(r)}${explain(r) ? ` · ${words(explain(r))}` : ""}`; }
+          if (action === "profile-stop") { const r = await panelRead("action", "post", `/api/perf/profiles/${encodeURIComponent(st.profiles.profile_id)}/stop`, () => true, {}); st.profiles = r.body; st.message = `Capture: ${status(r)}${explain(r) ? ` · ${words(explain(r))}` : ""}`; }
           if (action === "profile-download") {
             const id = st.profiles.profile_id, path = `/api/perf/profiles/${encodeURIComponent(id)}/artifact`, options = { refusalReasons: ARTIFACT_REFUSALS };
-            let r = await perfRequest("action", "blob", path, attached, options);
+            let r = await panelRead("action", "blob", path, attached, options);
             const retried = await API.retryCapacity([{ path, answer: r }], attached,
-              (item, retryApi, canStart) => perfRequest("action", "blob", item.path, () => attached() && canStart(), options, retryApi));
+              (item, retryApi, canStart) => panelRead("action", "blob", item.path, () => attached() && canStart(), options, retryApi));
             if (retried.length) r = retried[0].answer;
             if (!r.ok) throw new Error(`Artifact: ${status(r)}${explain(r) ? ` · ${words(explain(r))}` : ""}`);
             download(r.body, `splice-profile-${id}.jfr`); st.message = "Profile artifact downloaded";

@@ -56,7 +56,10 @@ async function workerResponse(url: URL) {
     } else await Bun.sleep(30);
     const picked = url.searchParams.get("project") === "/work/website", name = picked ? "current" : "superseded";
     const total_ms = { count: 20, p50: 500, p95: 900, max: 1200 };
-    const summary = performanceSummary(url, { plan: { count: 20, read_status: "readable", metrics_complete: true, failure_share: picked ? .05 : .5, total_ms } });
+    const summary = performanceSummary(url, { plan: {
+      count: 20, read_status: "readable", metrics_complete: true, failure_share: picked ? .05 : .5,
+      outcomes: { ok: picked ? 19 : 10, "error:overloaded": picked ? 1 : 10 }, total_ms,
+    } });
     if (url.pathname === "/api/perf/summary") return Response.json(summary);
     if (url.pathname === "/api/perf/series") return Response.json({ ...summary, series: [{ from_ms: now - 1000, until_ms: now, metrics: { [`${name}_gauge`]: { last: 7 } } }] });
     if (url.pathname === "/api/perf/diagnose") return Response.json({ ...summary, evidence: [{ metric: `${name}_diagnosis`, mean_ms: 7, classification: "observed", inference: "recorded" }] });
@@ -170,7 +173,13 @@ test("Usage: Results door names its command and opens expandable diagnostics in 
     await door(p).click();
     await expect(p.getByRole("button", { name: "Overview", exact: true })).toHaveAttribute("aria-current", "page");
     await p.locator('#band-perf [data-pc-command="plan"] > summary').click();
-    await expect(p.getByRole("table", { name: "claude-plan outcomes", exact: true })).toContainText("error:overloaded");
+    const outcomes = p.locator(".pc-command-detail .pc-section").filter({ hasText: "Recorded outcomes" });
+    const overloaded = outcomes.getByRole("link", { name: "error:overloaded", exact: true });
+    await expect(overloaded).toBeVisible();
+    expect(new URL((await overloaded.getAttribute("href"))!, "http://fixture").searchParams.get("outcome")).toBe("error:overloaded");
+    await expect(outcomes).toContainText("3");
+    await expect(p.locator(".pc-command-detail")).toContainText("Before first byte");
+    await p.locator(".pc-command-detail").getByText("Stage sample counts", { exact: true }).click();
     await expect(p.getByRole("table", { name: "claude-plan stages", exact: true })).toContainText("Before first byte");
     await expect(p.getByRole("table", { name: "claude-plan models", exact: true })).toContainText("m");
     await expect(p.locator(".pc-command-detail")).toContainText("80%");
@@ -194,8 +203,10 @@ test("Usage: bounded Perf admission preserves startup views and pending profile 
     await expect(door(p).locator("[data-tn=door-failed]")).toHaveText("5%");
     await expect(content).toHaveAttribute("aria-busy", "false");
     await panel.locator('[data-pc-tab="runtime"]').click();
-    await expect(content).toContainText("Current process sample · Ok");
-    await expect(panel.getByRole("table", { name: "CPU, GC, memory, files and exporter health", exact: true })).toContainText("7");
+    await expect(content).toContainText("Current process sample");
+    await expect(panel.getByRole("heading", { name: "CPU", exact: true })).toBeVisible();
+    await expect(panel).toContainText("process CPU");
+    await expect(panel).toContainText("7");
     await panel.locator('[data-pc-tab="profiles"]').click();
     await expect(content).toContainText("Capabilities: Ok");
     await expect(panel.getByRole("button", { name: "Start capture", exact: true })).toBeEnabled();
@@ -216,7 +227,7 @@ test("Usage: bounded Perf admission preserves startup views and pending profile 
     reads.forEach((hold) => hold.release());
     await expect(panel.locator(".pc-message")).toHaveText("Capture: Running");
     await expect(content).toHaveAttribute("aria-busy", "false");
-    await expect(panel.locator(".pc-coverage strong")).toHaveText("Ok");
+    await expect(panel.locator(".pc-coverage .pc-state")).toHaveText("Ok");
     await expect(door(p).locator("[data-tn=door-failed]")).toHaveText("5%");
     await panel.getByRole("button", { name: "Stop capture", exact: true }).click();
     await expect(panel.locator(".pc-message")).toHaveText("Capture: Stopped");
@@ -234,7 +245,14 @@ test("Usage: bounded Perf admission preserves startup views and pending profile 
     artifactFailure = null;
 
     await panel.locator('[data-pc-tab="objectives"]').click();
-    await expect(content).toContainText("Canonical revision initial");
+    const revision = panel.locator("details.pc-detail").filter({ hasText: "Settings revision" });
+    if (!(await revision.evaluate((element) => (element as HTMLDetailsElement).open))) await revision.locator("summary").click();
+    await expect(revision).toContainText("initial");
+    const editor = panel.locator("details[data-pc-editor]");
+    const openEditor = async () => {
+      if (!(await editor.evaluate((element) => (element as HTMLDetailsElement).open))) await editor.locator(":scope > summary").click();
+    };
+    await openEditor();
     const save = holdHttp("/api/perf/objectives", "PUT"); releases.push(save.release);
     await panel.locator('[name="settings"]').fill(JSON.stringify({ schema_version: 1, objectives: [{ id: "saved-through-refresh", cohort: {}, completion_ms: 1000 }], rules: [] }));
     await panel.getByRole("button", { name: "Save objectives and rules", exact: true }).click();
@@ -250,28 +268,31 @@ test("Usage: bounded Perf admission preserves startup views and pending profile 
     await expect(panel.getByRole("button", { name: "Save objectives and rules", exact: true })).toBeDisabled();
     await expect(panel.getByRole("button", { name: "Discard edits and reload", exact: true })).toBeDisabled();
     save.release();
-    await expect(panel.locator(".pc-message")).toHaveText("Saved revision saved-objective. Newer draft edits are unsaved.");
-    await expect(panel.getByRole("table", { name: "Configured objectives", exact: true })).toContainText("saved-through-refresh");
-    await expect(panel.getByRole("table", { name: "Configured objectives", exact: true })).not.toContainText("newer-unsaved-objective");
+    await expect(panel.locator(".pc-message")).toHaveText("Settings saved. Newer draft edits are unsaved.");
+    await expect(panel.locator(".pc-comparisons")).toContainText("saved-through-refresh");
+    await expect(panel.locator(".pc-comparisons")).not.toContainText("newer-unsaved-objective");
+    await expect(revision).toContainText("saved-objective");
     await expect(panel.locator('[name="settings"]')).toHaveValue(/newer-unsaved-objective/);
     await expect(panel.locator('[name="settings"]')).toHaveValue(/builder-after-submit/);
     const reload = holdHttp("/api/perf/objectives"); releases.push(reload.release);
     await panel.getByRole("button", { name: "Discard edits and reload", exact: true }).click();
     await reload.ready;
+    await openEditor();
     await panel.locator('[name="settings"]').fill(JSON.stringify({ schema_version: 1, objectives: [{ id: "edited-during-reload", cohort: {}, completion_ms: 3000 }], rules: [] }));
     await panel.getByText("Add objective", { exact: true }).click();
     await builder.locator('[name="id"]').fill("builder-during-reload");
     await builder.getByRole("button", { name: "Add to draft", exact: true }).click();
     reload.release();
     await expect(panel.locator(".pc-message")).toHaveText("Objective settings reloaded. Newer draft edits are unsaved.");
-    await expect(content).toContainText("Canonical revision saved-objective");
-    await expect(panel.getByRole("table", { name: "Configured objectives", exact: true })).toContainText("saved-through-refresh");
-    await expect(panel.getByRole("table", { name: "Configured objectives", exact: true })).not.toContainText("edited-during-reload");
+    await expect(revision).toContainText("saved-objective");
+    await expect(panel.locator(".pc-comparisons")).toContainText("saved-through-refresh");
+    await expect(panel.locator(".pc-comparisons")).not.toContainText("edited-during-reload");
     await expect(panel.locator('[name="settings"]')).toHaveValue(/edited-during-reload/);
     await expect(panel.locator('[name="settings"]')).toHaveValue(/builder-during-reload/);
     await panel.getByRole("button", { name: "Discard edits and reload", exact: true }).click();
     await expect(panel.locator(".pc-message")).toHaveText("Objective settings reloaded");
     await expect(panel.locator('[name="settings"]')).not.toHaveValue(/edited-during-reload|builder-during-reload/);
+    await openEditor();
     refuseSettings = true;
     await panel.getByRole("button", { name: "Save objectives and rules", exact: true }).click();
     await expect(panel.locator(".pc-message")).toHaveText("control_query_capacity");
@@ -313,7 +334,9 @@ test("Usage: selected project changes the Results population and survives reques
     await expect(said(p)).toContainText("selected cohort", { timeout: 20_000 });
     await p.locator('#band-perf [data-pc-command="plan"] > summary').click();
     await expect(p.locator(".pc-command-failure")).toHaveText("5% failed");
-    await expect(p.getByRole("table", { name: "claude-plan outcomes", exact: true })).toContainText("19");
+    const outcomes = p.locator(".pc-command-detail .pc-section").filter({ hasText: "Recorded outcomes" });
+    await expect(outcomes.getByRole("link", { name: "ok", exact: true })).toBeVisible();
+    await expect(outcomes).toContainText("19");
     const link = p.locator(".pc-command-detail").getByRole("link", { name: "Open requests", exact: true });
     const href = new URL((await link.getAttribute("href"))!, "http://fixture");
     expect(href.searchParams.get("project")).toBe("/work/website");
@@ -343,13 +366,16 @@ test("Usage: a single query worker returns every view for the newest cohort and 
     await expect(panel.locator('[name="project"]')).toHaveValue("/work/website");
     await expect(door(p).locator("[data-tn=door-failed]")).toHaveText("5%");
     await panel.locator('[data-pc-tab="history"]').click();
+    await panel.locator("details.pc-detail").filter({ hasText: "Exact history readings" }).locator("summary").click();
     await expect(panel.getByRole("table", { name: "History · last 120 returned scope intervals", exact: true })).toContainText("7");
     await expect(panel.locator('[name="historyMetric"]')).toHaveValue("current_gauge");
     await panel.locator('[data-pc-tab="timeline"]').click();
+    await panel.getByText("Interpretation and next measurements", { exact: true }).click();
     await expect(panel.getByRole("table", { name: "Diagnosis evidence", exact: true })).toContainText("current diagnosis");
     const records = panel.getByRole("table", { name: "Recorded request rows · returned source order", exact: true });
-    await expect(records).toContainText("current-first-page");
-    await expect(panel.locator(".pc-coverage strong")).toHaveText("Ok");
+    const requestLink = records.getByRole("link", { name: "Open request 1", exact: true });
+    await expect(requestLink).toHaveAttribute("href", /#plan%3Acurrent-first-page$/);
+    await expect(panel.locator(".pc-coverage .pc-state")).toHaveText("Ok");
 
     // A refresh supersedes an in-flight cursor page. Its old page cannot replace the refreshed
     // first page, and the subsequent intentional Next still reaches the actual second page.
@@ -360,15 +386,15 @@ test("Usage: a single query worker returns every view for the newest cohort and 
     await panel.getByRole("button", { name: "Refresh", exact: true }).click();
     pageTurn.release();
     await expect(content).toHaveAttribute("aria-busy", "false");
-    await expect(records).toContainText("current-first-page");
-    await expect(records).not.toContainText("current-second-page");
+    await expect(requestLink).toHaveAttribute("href", /#plan%3Acurrent-first-page$/);
+    await expect(requestLink).not.toHaveAttribute("href", /current-second-page$/);
     await panel.getByRole("button", { name: "Next records", exact: true }).click();
-    await expect(records).toContainText("current-second-page");
+    await expect(requestLink).toHaveAttribute("href", /#plan%3Acurrent-second-page$/);
 
     refuseSummary = true;
     await panel.getByRole("button", { name: "Refresh", exact: true }).click();
     await expect(content).toHaveAttribute("aria-busy", "false");
-    await expect(panel.locator(".pc-coverage strong")).toHaveText("Error");
+    await expect(panel.locator(".pc-coverage .pc-state")).toHaveText("Error");
     await expect(panel).toContainText("query in progress");
   } finally {
     first.release(); pageTurn?.release(); heldQuery = null; refuseSummary = false;

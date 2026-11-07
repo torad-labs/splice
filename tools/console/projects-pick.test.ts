@@ -29,6 +29,7 @@ const turn = (t: string, agoS: number, session: string, p: string | null, over: 
 });
 const TURNS = [
   turn("t-web", 20, "aaaaaaaa", "website"),
+  turn("t-loose", 30, "eeeeeeee", null),
   turn("t-old", 40, "bbbbbbbb", "temple", { title: "Fix the retry ladder in the gate" }), // a session no longer live
   turn("t-ask", 60, "cccccccc", "temple"),
 ];
@@ -42,6 +43,7 @@ const TEAMS = [
 ];
 
 const asked: string[] = [];
+const tileProjects = new Set<string>();
 let sessions: Row[] = SESSIONS, teams: Row[] = TEAMS, liveTurns: Row[] = [];
 const server = Bun.serve({
   port: 0,
@@ -57,7 +59,8 @@ const server = Bun.serve({
     if (path === "/api/perf/turns") {
       const p = url.searchParams.get("project");
       if (url.searchParams.get("n") !== "1") asked.push(p ?? "");
-      const rows = TURNS.filter((r) => !p || (r.project as Row | null)?.id === p);
+      else tileProjects.add(p ?? "<all>");
+      const rows = TURNS.filter((r) => p == null || (p === "none" ? !r.project : (r.project as Row | null)?.id === p));
       return Response.json({ heads: [{ key: "alpha", label: "alpha", count: rows.length, returned: rows.length, truncated: false, rows, usage: { models: [], accounts: [], sessions: [] } }] });
     }
     if (path.startsWith("/api/")) return Response.json({});
@@ -99,6 +102,17 @@ test("Requests: picking a project asks the daemon for its requests, in time orde
     await expect(p.locator(".pgroup")).toHaveCount(0);
     expect(new URL(p.url()).searchParams.get("project")).toBe("/work/temple");
     expect(await p.evaluate(() => localStorage.getItem("splice.project"))).toBe("/work/temple");
+  } finally {
+    await p.context().close();
+  }
+}, 60_000);
+
+test("Requests: project tiles keep their own selector inside an advanced performance cohort", async () => {
+  tileProjects.clear();
+  const p = await open("requests.html", `?perf=1&contract=1&head=alpha&from=${now - 86_400_000}&until=${now}`);
+  try {
+    await expect(card(p, "t-web")).toBeVisible({ timeout: 20_000 });
+    await expect.poll(() => ["<all>", "/work/website", "/work/temple", "none"].every((key) => tileProjects.has(key))).toBe(true);
   } finally {
     await p.context().close();
   }
@@ -213,8 +227,8 @@ test("on a wide Teams the tiles count teams, a team under every project it has a
 test("on a wide Requests the tiles count the requests in the window, and the filters section starts where the tiles do", async () => {
   const p = await open("requests.html", "", 3828);
   try {
-    await expect(p.locator(".ptiles .ptotal").first()).toHaveText("3", { timeout: 20_000 });
-    expect(await tileTotals(p)).toEqual([["Every project", "3"], ["temple", "2"], ["website", "1"], ["No project", "0"]]);
+    await expect(p.locator(".ptiles .ptotal").first()).toHaveText("4", { timeout: 20_000 });
+    expect(await tileTotals(p)).toEqual([["Every project", "4"], ["temple", "2"], ["website", "1"], ["No project", "1"]]);
     const left = (sel: string) => live(p.locator(sel).first(), (e) => Math.round(e.getBoundingClientRect().left));
     expect(await left(".fv")).toBe(await left(".ptiles"));
   } finally {
@@ -230,7 +244,7 @@ const menuFigures = (p: Page) => p.locator(".pmenu button").evaluateAll((els) =>
 for (const [page, figures] of [
   ["sessions.html", [["Every project", "4"], ["temple", "2"], ["website", "1"], ["No project", "1"]]],
   ["teams.html", [["Every project", "3"], ["temple", "1"], ["website", "2"], ["No project", "1"]]],
-  ["requests.html", [["Every project", "3"], ["temple", "2"], ["website", "1"], ["No project", "0"]]],
+  ["requests.html", [["Every project", "4"], ["temple", "2"], ["website", "1"], ["No project", "1"]]],
 ] as const) {
   test(`at 1440 ${page}'s picker and its menu carry each project's figure, as its tiles do`, async () => {
     const p = await open(page);

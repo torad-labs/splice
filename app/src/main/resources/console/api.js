@@ -99,6 +99,52 @@ const API = (() => {
     if (kept && Date.now() - kept.at < ms) return kept.answer;
     return call("GET", path);
   }
+  // All console performance calls share the daemon's two-running/two-waiting admission budget.
+  // Keep sent calls in their slots until the response body drains: aborting fetch is not proof the
+  // server released its admission. A stale generation may stop queued work and ignore sent results.
+  const PERF_ACTIVE = 4, PERF_WAITING = 32, perfWaiting = new Map();
+  let perfRunning = 0;
+  const localPerfBusy = () => ({ ok: false, status: 429, body: { status: "busy", reason: "console_query_capacity" } });
+  function drainPerf() {
+    while (perfRunning < PERF_ACTIVE && perfWaiting.size) {
+      const [key, next] = perfWaiting.entries().next().value;
+      perfWaiting.delete(key);
+      if (!next.current()) { next.resolve(null); continue; }
+      perfRunning++;
+      Promise.resolve().then(() => /^BLOB$/i.test(next.method)
+        ? client(undefined, next.current).blob(next.path, next.body)
+        : call(next.method, next.path, next.body,
+          next.ready ? { "x-splice-read-pending": "1" } : undefined,
+          undefined, undefined, next.current)).then(next.resolve, next.reject)
+        .finally(() => { perfRunning--; drainPerf(); });
+    }
+  }
+  function perfRequest(key, method, path, body, current = () => true, options = {}) {
+    if (typeof key !== "string" || !key.startsWith("perf:") && !key.startsWith("requests:")) {
+      return Promise.reject(new Error("performance request key is invalid"));
+    }
+    return new Promise((resolve, reject) => {
+      const pendingRead = perfWaiting.get(key);
+      if (pendingRead && options.replace === false) {
+        reject(new Error("Another performance action is pending. Wait for it to finish."));
+        return;
+      }
+      pendingRead?.resolve(null);
+      if (!pendingRead && perfRunning >= PERF_ACTIVE && perfWaiting.size >= PERF_WAITING) {
+        resolve(localPerfBusy());
+        return;
+      }
+      perfWaiting.set(key, { method, path, body, current, ready: options.ready === true, resolve, reject });
+      drainPerf();
+    });
+  }
+  function cancelPerf(prefix) {
+    for (const [key, pendingRead] of perfWaiting) {
+      if (!key.startsWith(prefix) || !/^GET$/i.test(pendingRead.method) || pendingRead.current()) continue;
+      perfWaiting.delete(key);
+      pendingRead.resolve(null);
+    }
+  }
   // Every answer comes back as { ok, status, body }; a refused or unreachable call is an answer too, never a throw.
   async function call(method, path, body, extra, signal, keepalive, maySend = () => true) {
     const counted = !path.startsWith("/api/console/pilot");
@@ -184,6 +230,9 @@ const API = (() => {
     },
     // a read that answers at once with what is ready, marking what splice is still reading, rather than waiting on it
     getReady: (p) => call("GET", p, undefined, { "x-splice-read-pending": "1" }, signal, undefined, maySend),
+    perfRequest: (key, method, path, body, current = () => true, options = {}) =>
+      perfRequest(key, method, path, body, () => !signal?.aborted && maySend() && current(), options),
+    cancelPerf,
     post: (p, b) => call("POST", p, b ?? {}, undefined, signal, undefined, maySend),
     put: (p, b, extra) => call("PUT", p, b, extra, signal, undefined, maySend),
     patch: (p, b) => call("PATCH", p, b, undefined, signal, undefined, maySend),

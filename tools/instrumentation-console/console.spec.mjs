@@ -7,7 +7,7 @@ async function open(page, state = 'partial') {
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(data) });
   });
   await page.goto('/preview.html');
-  await expect(page.locator('.pc-coverage')).toContainText('18,000,000');
+  await expect(page.locator('.pc-coverage')).toContainText('5 h selected');
 }
 test('five-hour project cohort is shared and retained by request links', async ({ page }) => {
   await open(page);
@@ -31,10 +31,12 @@ test('partial goodput keeps known outcomes while exact metrics remain unknown', 
   await expect(page.locator('.pc-content')).toContainText('known good rate is lower bound');
   await expect(page.locator('.pc-content')).toContainText('—');
   await page.getByRole('button', { name: 'Latency', exact: true }).click();
-  await expect(page.getByRole('table', { name: 'Latency distributions', exact: true })).toContainText('p99');
-  await page.getByText('Distribution', { exact: true }).first().click();
-  await expect(page.locator('.pc-content')).toContainText('upper inclusive bucket bound');
-  await expect(page.locator('.pc-content')).toContainText('Overflow');
+  await expect(page.locator('.pc-ranges')).toBeVisible();
+  const distribution = page.locator('.pc-distributions > details').first();
+  await distribution.locator('summary').click();
+  await expect(distribution.getByRole('table', { name: 'Returned percentile bounds' })).toContainText('p99');
+  await expect(distribution).toContainText('upper inclusive bucket bound');
+  await expect(distribution).toContainText('Overflow');
 });
 test('resource scopes and nonadditive evidence stay explicit', async ({ page }) => {
   await open(page);
@@ -48,7 +50,9 @@ test('resource scopes and nonadditive evidence stay explicit', async ({ page }) 
   await expect(page.locator('.pc-content')).toContainText('arrival to first meaningful content ms: 3,000');
   await expect(page.locator('.pc-content')).toContainText('client write flush ms: 2');
   await page.getByRole('button', { name: 'Next records' }).click();
-  await expect(page.getByRole('link', { name: 'fixture-turn-2' })).toBeVisible();
+  const nextTurn = page.getByRole('link', { name: 'Open request 1', exact: true });
+  await expect(nextTurn).toBeVisible();
+  await expect.poll(async () => decodeURIComponent(new URL(await nextTurn.getAttribute('href'), 'http://fixture').hash)).toBe('#codex:fixture-turn-2');
 });
 test('snapshots are bounded, content-free and visibly insufficient for matched comparison', async ({ page }) => {
   await open(page);
@@ -92,6 +96,7 @@ test('profile start, stop, status and authenticated artifact controls show retur
 test('objective draft publishes whole settings, shows canonical revision, and alerts remain active on gaps', async ({ page }) => {
   await open(page);
   await page.getByRole('button', { name: 'Objectives', exact: true }).click();
+  await expect(page.locator('[name="settings"]')).toBeHidden();
   await page.getByText('Add objective', { exact: true }).click();
   const form = page.locator('[data-pc-form="add-objective"]');
   await form.locator('[name="id"]').fill('new-objective');
@@ -102,10 +107,13 @@ test('objective draft publishes whole settings, shows canonical revision, and al
     if (route.request().method() === 'PUT') {
       expect(route.request().postDataJSON().rules).toEqual([]);
       await route.fulfill({ json: { status: 'ok', revision: 'canonical-new-revision' } });
-    } else await route.fulfill({ json: settings });
+    } else await route.fulfill({ json: { ...settings, revision: 'canonical-new-revision' } });
   });
   await page.getByRole('button', { name: 'Save objectives and rules' }).click();
-  await expect(page.locator('.pc-message')).toContainText('canonical-new-revision');
+  await expect(page.locator('.pc-message')).toContainText('Settings saved.');
+  await page.getByText('Settings revision', { exact: true }).click();
+  await expect(page.locator('.pc-content')).toContainText('canonical-new-revision');
+  await page.getByText('Edit settings JSON', { exact: true }).click();
   await page.getByRole('button', { name: 'Discard edits and reload' }).click();
   await page.getByRole('button', { name: 'Alerts', exact: true }).click();
   await expect(page.locator('.pc-content')).toContainText('insufficient data · active');
@@ -130,7 +138,7 @@ test('completed window is explicit, preserves exact duration and uses the certif
     await route.fulfill({ json: response(url) });
   });
   await page.goto(`/preview.html?from=${from}&until=${until}&transport=http&streaming=0`);
-  await expect(page.locator('.pc-coverage')).toContainText('18,000,000');
+  await expect(page.locator('.pc-coverage')).toContainText('5 h selected');
   const link = page.getByRole('link', { name: /Open requests/ });
   expect(new URL(await link.getAttribute('href'), 'http://fixture').searchParams.get('until')).toBe(String(until));
   await page.getByRole('button', { name: 'Refresh', exact: true }).click();
@@ -151,6 +159,7 @@ test('completed window is explicit, preserves exact duration and uses the certif
 test('unknown recording boundary disables completed-window selection', async ({ page }) => {
   await open(page, 'busy');
   await expect(page.getByRole('button', { name: 'Use completed window' })).toBeDisabled();
+  await page.getByText('Coverage and recording boundary', { exact: true }).click();
   await expect(page.getByText('No certified recording boundary available for this duration.')).toBeVisible();
 });
 
@@ -158,7 +167,7 @@ test('measured workload match allows known build and settings changes but reject
   await open(page, 'ok');
   await page.getByRole('button', { name: 'Baselines', exact: true }).click();
   await page.getByRole('button', { name: 'Save locally' }).click();
-  await expect(page.getByRole('heading', { name: 'Measured workload matches', exact: true })).toBeVisible();
+  await expect(page.getByText('Measured workload matches', { exact: true })).toBeVisible();
   const stored = JSON.parse(await page.evaluate(() => localStorage.getItem('splice-performance-baselines-v1')))[0];
   expect(stored.version).toBe(2);
   expect(stored.summary.comparison.workload.partitions[0].scope.outcome).toBe('ok');
@@ -178,12 +187,15 @@ test('measured workload match allows known build and settings changes but reject
     return route.fulfill({ json: data });
   });
   await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await page.getByText('Comparison conditions and exact values', { exact: true }).click();
   await expect(page.locator('.pc-content')).toContainText('Changed variables: build, effective settings');
-  await expect(page.getByRole('heading', { name: 'Measured workload matches', exact: true })).toBeVisible();
+  await expect(page.getByText('Measured workload matches', { exact: true })).toBeVisible();
   await expect(page.locator('.pc-content')).toContainText('Provider topology and remote conditions are unverified');
   changedWorkload = true;
   await page.getByRole('button', { name: 'Refresh', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Incompatible', exact: true })).toBeVisible();
+  await expect(page.getByText('Comparison conditions and exact values', { exact: true })).toBeVisible();
+  await page.getByText('Comparison conditions and exact values', { exact: true }).click();
+  await expect(page.getByText('Incompatible', { exact: true })).toBeVisible();
   await expect(page.locator('.pc-content')).toContainText('joint workload distribution');
   await expect(page.getByRole('table', { name: /Saved and current observations/ })).toBeVisible();
 });
@@ -196,9 +208,10 @@ test('mixed provenance and old imports remain insufficient while v2 drops unappr
   data.comparison.provenance.authorization = 'SECRET-FIXTURE';
   const upload = async (version) => page.locator('[data-pc-import]').setInputFiles({ name: 'baseline.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ format: 'splice-performance-baseline', version, name: 'Old or mixed', summary: data })) });
   await upload(1);
-  await expect(page.getByRole('heading', { name: 'Insufficient evidence', exact: true })).toBeVisible();
+  await expect(page.getByText('Insufficient evidence', { exact: true })).toBeVisible();
   data.comparison.provenance.builds.push('fixture-build-b');
   await upload(2);
+  await page.getByText('Comparison conditions and exact values', { exact: true }).click();
   await expect(page.locator('.pc-content')).toContainText('Unknown or mixed: build');
   const stored = await page.evaluate(() => localStorage.getItem('splice-performance-baselines-v1'));
   expect(stored).not.toContain('SECRET-FIXTURE');
@@ -206,6 +219,7 @@ test('mixed provenance and old imports remain insufficient while v2 drops unappr
   data.comparison.provenance.builds = ['fixture-build-a'];
   data.comparison.workload.partitions = Array(257).fill(data.comparison.workload.partitions[0]);
   await upload(2);
+  await page.getByText('Comparison conditions and exact values', { exact: true }).click();
   await expect(page.locator('.pc-content')).toContainText('complete saved evidence');
   const bounded = JSON.parse(await page.evaluate(() => localStorage.getItem('splice-performance-baselines-v1')))[0];
   expect(bounded.summary.comparison.workload.partitions).toHaveLength(256);
@@ -241,6 +255,8 @@ test('account alias gap explains cached names without polling accounts or auth',
     return route.fulfill({ json: data });
   });
   await page.goto('/preview.html?account=fixture-name');
+  await expect(page.getByText('Account names unavailable', { exact: true })).toBeVisible();
+  await page.getByText('Coverage and recording boundary', { exact: true }).click();
   await expect(page.getByText(/Exact recorded account IDs still work/)).toBeVisible();
   await expect(page.getByText(/up to 60 seconds/)).toBeVisible();
   expect(requested.filter((p) => /\/api\/(accounts|auth|quota)/.test(p))).toEqual([]);

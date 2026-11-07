@@ -5,9 +5,22 @@ import java.util.concurrent.ConcurrentHashMap
 /** Entries share the native pending invocation's bounded lifetime and opaque delegate identity. */
 internal class NativeTraceInvocations : AutoCloseable {
     private val active = ConcurrentHashMap<String, NativeTraceSpan>()
+    private val admission = Any()
+    private var closed = false
 
     fun add(id: String, span: NativeTraceSpan) {
-        check(active.putIfAbsent(id, span) == null) { "Duplicate native callback trace" }
+        val accepted = synchronized(admission) {
+            if (closed) {
+                false
+            } else {
+                check(active.putIfAbsent(id, span) == null) { "Duplicate native callback trace" }
+                true
+            }
+        }
+        if (!accepted) {
+            span.outcome("cancelled")
+            span.close()
+        }
     }
 
     fun get(id: String): NativeTraceSpan? = active[id]
@@ -30,6 +43,9 @@ internal class NativeTraceInvocations : AutoCloseable {
     }
 
     override fun close() {
+        synchronized(admission) { closed = true }
+        // Once sealed, removals either own their close or leave it to this sweep. A late registration
+        // closes outside the admission lock, so exporter work never blocks registry admission.
         active.entries.forEach { (id, span) -> remove(id, span) }
     }
 }

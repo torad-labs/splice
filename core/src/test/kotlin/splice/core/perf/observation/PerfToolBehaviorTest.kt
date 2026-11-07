@@ -3,6 +3,7 @@ package splice.core.perf.observation
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.util.ElapsedClock
@@ -65,5 +66,50 @@ class PerfToolBehaviorTest {
         assertEquals(native.parentSpanId, tool.links.parentSpanId)
         assertEquals(1.0, events.last().values["tool_native_span"])
         assertFalse(tool.observe(PerfEventKind.TOOL_PHASE, mapOf("tool_occupied_cells" to 0.5)))
+    }
+
+    @Test
+    fun `prepared tool completion keeps measured time and publishes once after finalization`() {
+        val events = mutableListOf<PerfObservation>()
+        var now = 10L
+        val recorder = PerfRecorder(
+            PerfIdentity("boot", "build", "version", "revision"),
+            PerfObserver { events.add(it) },
+            ElapsedClock { now },
+            WallClock { now },
+        )
+        val tool = recorder.tool(PerfScope())
+        now = 30L
+        val completion = requireNotNull(tool.prepareFinish("cancelled"))
+        assertTrue(events.none { it.kind == PerfEventKind.TOOL_FINISHED })
+        assertFalse(tool.finish("ok"))
+        assertNull(tool.prepareFinish("ok"))
+        assertFalse(tool.observe(PerfEventKind.TOOL_PHASE))
+        now = 500L // external finalization must not inflate the tool's terminal timing
+        assertTrue(completion.publish())
+        assertFalse(completion.publish())
+        val terminal = events.single { it.kind == PerfEventKind.TOOL_FINISHED }
+        assertEquals(30L, terminal.stamp.monotonicMs)
+        assertEquals(30L, terminal.stamp.wallMs)
+        assertEquals(20.0, terminal.values["tool_duration_ms"])
+        assertEquals("cancelled", terminal.outcome)
+    }
+
+    @Test
+    fun `prepared completion preserves observer refusal without republishing`() {
+        val events = mutableListOf<PerfObservation>()
+        val recorder = PerfRecorder(
+            PerfIdentity("boot", "build", "version", "revision"),
+            PerfObserver {
+                events.add(it)
+                it.kind != PerfEventKind.TOOL_FINISHED
+            },
+            ElapsedClock { 0 },
+            WallClock { 0 },
+        )
+        val completion = requireNotNull(recorder.tool(PerfScope()).prepareFinish("ok"))
+        assertFalse(completion.publish())
+        assertFalse(completion.publish())
+        assertEquals(1, events.count { it.kind == PerfEventKind.TOOL_FINISHED })
     }
 }

@@ -156,7 +156,7 @@ public class NativeCodeModeRuntime(
                 scope,
                 ioDispatcher,
                 NativeConnectionClosed(::retire),
-                NativeTracing(tracing.tracer),
+                NativeTracing(tracing.tracer, tracing),
             ).also { connection = it }
         }
         try {

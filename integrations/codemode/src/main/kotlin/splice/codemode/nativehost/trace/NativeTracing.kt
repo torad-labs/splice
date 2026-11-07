@@ -11,7 +11,10 @@ import splice.upstream.codemode.CodeModePerfContextKey
 import kotlin.coroutines.CoroutineContext
 
 /** Trace ownership follows operations and callbacks; a session never stores an ambient caller context. */
-internal class NativeTracing(private val tracer: Tracer = GlobalOpenTelemetry.getTracer("splice.codemode")) {
+internal class NativeTracing(
+    private val tracer: Tracer = GlobalOpenTelemetry.getTracer("splice.codemode"),
+    private val provider: NativeTracingProvider? = null,
+) {
     val invocations = NativeTraceInvocations()
 
     fun start(
@@ -23,19 +26,48 @@ internal class NativeTracing(private val tracer: Tracer = GlobalOpenTelemetry.ge
         val parent = remoteParent?.let(
             NativeTraceParents::context,
         )?.let { current.with(Span.fromContext(it)) } ?: current
-        // A no-op Java builder can return its parent. Rust's disabled tracing Span has no context to propagate.
-        if (!tracer.isEnabled) {
-            return NativeTraceSpan(
-                Span.getInvalid(),
-                parent,
-                NativePerfContext.tool(name, Span.getInvalid(), parent),
-                name,
-            )
+        val ownership = provider?.acquire()
+        return create(name, parent, attributes, ownership)
+    }
+
+    private fun enabled(ownership: NativeSpanOwnership?): Boolean {
+        if (provider != null && ownership == null) return false
+        return tracer.isEnabled
+    }
+
+    private fun create(
+        name: String,
+        parent: Context,
+        attributes: Map<String, String>,
+        ownership: NativeSpanOwnership?,
+    ): NativeTraceSpan {
+        var span: Span? = null
+        var transferred = false
+        try {
+            if (!enabled(ownership)) {
+                // A sealed provider admits no new native span. Local observations remain explicitly non-native,
+                // as with disabled tracing; an invalid span never borrows its parent's native identity.
+                return NativeTraceSpan(
+                    Span.getInvalid(),
+                    parent,
+                    NativePerfContext.tool(name, Span.getInvalid(), parent),
+                    name,
+                )
+            }
+            val builder = tracer.spanBuilder(name).setParent(parent)
+            attributes.forEach { (key, value) -> builder.setAttribute(key, value) }
+            val started = builder.startSpan().also { span = it }
+            return NativeTraceSpan(started, parent, NativePerfContext.tool(name, started, parent), name, ownership)
+                .also { transferred = true }
+        } finally {
+            if (!transferred) {
+                try {
+                    span?.end()
+                } finally {
+                    ownership?.close()
+                }
+            }
         }
-        val builder = tracer.spanBuilder(name).setParent(parent)
-        attributes.forEach { (key, value) -> builder.setAttribute(key, value) }
-        val span = builder.startSpan()
-        return NativeTraceSpan(span, parent, NativePerfContext.tool(name, span, parent), name)
     }
 }
 

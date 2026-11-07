@@ -3,6 +3,7 @@ package splice.codemode
 import io.opentelemetry.sdk.common.CompletableResultCode
 import io.opentelemetry.sdk.trace.data.SpanData
 import io.opentelemetry.sdk.trace.export.SpanExporter
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -26,10 +27,11 @@ class NativePerformanceTest {
     @Test
     fun `native callbacks keep request links after client close and borrow the exporter`() = nativeProcessTest {
         val events = CopyOnWriteArrayList<PerfObservation>()
+        val terminalsPublished = CompletableDeferred<Unit>()
         val exporter = NativePerformanceExporter()
         val recorder = PerfRecorder(
             PerfIdentity("boot", "build", "version", "config"),
-            PerfObserver { events.add(it) },
+            observer(events, terminalsPublished),
             ElapsedClock(MonoClock::nowMs),
             WallClock(System::currentTimeMillis),
         )
@@ -52,6 +54,9 @@ class NativePerformanceTest {
             }
             assertEquals("warm", (warm.advance() as CodeModeStep.Completed).output)
         }
+        // Runtime shutdown cancels asynchronous finalizers. Await their actual publications under
+        // nativeProcessTest's existing 30s deadline; no sleep or second probe can manufacture them.
+        terminalsPublished.await()
         val finished = events.filter { it.kind == PerfEventKind.TOOL_FINISHED }
         assertTrue(finished.size >= 3)
         assertTrue(
@@ -61,7 +66,7 @@ class NativePerformanceTest {
         )
         assertEquals(finished.size, finished.map { it.links.toolId }.toSet().size)
         assertTrue(finished.all { it.values["tool_native_span"] == 1.0 })
-        assertTrue(finished.all { event -> exporter.spans.any { it.spanId == event.links.spanId } })
+        assertPublishedSpans(finished, exporter)
         assertTrue(events.any { it.values.containsKey("tool_callback_wait_ms") })
         val coldStarts = events.mapNotNull { it.values["tool_cold_start_ms"] }
         assertEquals(2, coldStarts.size)
@@ -69,6 +74,23 @@ class NativePerformanceTest {
         assertTrue(events.any { it.values["tool_cold_start_ms"] == 0.0 })
         assertFalse(events.toString().contains("private-value"))
         assertFalse(exporter.closed)
+    }
+
+    private fun observer(
+        events: CopyOnWriteArrayList<PerfObservation>,
+        published: CompletableDeferred<Unit>,
+    ): PerfObserver = PerfObserver { event ->
+        events.add(event).also {
+            val finished = event.kind == PerfEventKind.TOOL_FINISHED
+            if (finished && events.count { it.kind == PerfEventKind.TOOL_FINISHED } >= 3) published.complete(Unit)
+        }
+    }
+
+    private fun assertPublishedSpans(finished: List<PerfObservation>, exporter: NativePerformanceExporter) {
+        assertTrue(finished.all { event -> exporter.spans.any { it.spanId == event.links.spanId } }) {
+            "finished=${finished.size}, exported=${exporter.spans.size}, " +
+                "missing=${finished.count { event -> exporter.spans.none { it.spanId == event.links.spanId } }}"
+        }
     }
 }
 

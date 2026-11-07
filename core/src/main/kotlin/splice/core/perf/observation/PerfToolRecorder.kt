@@ -30,11 +30,32 @@ public class PerfToolRecorder internal constructor(
         recorder.emit(
             scope,
             PerfEventKind.TOOL_FINISHED,
-            ownership(values) + ("tool_duration_ms" to recorder.elapsedSince(startedAt).toDouble()),
+            terminalValues(values),
             links,
             outcome,
         )
     }
+
+    /** Captures terminal timing before an external finalizer; the caller must publish the returned completion. */
+    public fun prepareFinish(outcome: String, values: Map<String, Double> = emptyMap()): PerfToolCompletion? =
+        synchronized(lock) {
+            if (finished) return null
+            val terminalValues = terminalValues(values)
+            val observation = PerfObservation(
+                recorder.stamp(),
+                scope,
+                PerfEventKind.TOOL_FINISHED,
+                terminalValues,
+                links,
+                outcome,
+            )
+            val completion = PerfToolCompletion(recorder, observation)
+            finished = true
+            completion
+        }
+
+    private fun terminalValues(values: Map<String, Double>): Map<String, Double> =
+        ownership(values) + ("tool_duration_ms" to recorder.elapsedSince(startedAt).toDouble())
 
     private fun ownership(values: Map<String, Double>): Map<String, Double> =
         if (nativeSpan) values + ("tool_native_span" to 1.0) else values

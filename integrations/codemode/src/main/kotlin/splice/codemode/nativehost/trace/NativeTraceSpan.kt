@@ -4,6 +4,7 @@ import io.opentelemetry.api.trace.Span
 import io.opentelemetry.context.Context
 import kotlinx.coroutines.withContext
 import splice.core.perf.observation.PerfEventKind
+import splice.core.perf.observation.PerfToolCompletion
 import splice.core.perf.observation.PerfToolRecorder
 import splice.core.util.MonoClock
 import splice.upstream.codemode.CodeModeInvocationAction
@@ -16,6 +17,7 @@ internal class NativeTraceSpan(
     parent: Context,
     val observations: PerfToolRecorder? = null,
     private val operation: String = "unknown",
+    private val ownership: NativeSpanOwnership? = null,
 ) : AutoCloseable {
     val context: Context = NativePerfContext.operation(parent.with(span), observations)
     private val startedAt = MonoClock.nowMs()
@@ -62,17 +64,33 @@ internal class NativeTraceSpan(
 
     override fun close() {
         if (closed.compareAndSet(false, true)) {
+            ownership.use { finish() }
+        }
+    }
+
+    private fun finish() {
+        var completion: PerfToolCompletion? = null
+        try {
             val reply = repliedAt
             val metric = when {
                 reply != null -> "tool_delivery_ms"
                 operation == "code_mode.grpc.callback" -> "tool_pending_reply_ms"
                 else -> "tool_execution_ms"
             }
-            observations?.finish(
+            completion = observations?.prepareFinish(
                 outcome,
                 mapOf(metric to (MonoClock.nowMs() - (reply ?: startedAt)).coerceAtLeast(0).toDouble()),
             )
+        } finally {
+            endAndPublish(completion)
+        }
+    }
+
+    private fun endAndPublish(completion: PerfToolCompletion?) {
+        try {
             span.end()
+        } finally {
+            completion?.publish()
         }
     }
 }

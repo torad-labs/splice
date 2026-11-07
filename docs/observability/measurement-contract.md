@@ -178,10 +178,17 @@ one bounded, process-wide record: `requested_bytes`, `requested_kind` and a copi
 acquisitions do not clear it. This is the latest refusal, not an event history.
 
 Summary queries consume certified evidence incrementally and retain a bounded
-request reduction. The raw observation inventory has a separate page limit;
-that limit does not cap a summary's request population. A reduction that reaches
-its memory, cardinality or work limit reports partial coverage rather than
-presenting the retained subset as the complete interval.
+request reduction. Request partitions share one frozen inventory and one total
+read-work budget. All observations for a request stay in the same partition,
+including late usage and observations encountered out of order. A terminal
+observation does not authorize discarding that request's earlier or later data.
+Time bins can coarsen while preserving counts, sums and histogram buckets;
+`resolution_ms` reports the resulting detail.
+
+The raw observation inventory has a separate page limit; that limit does not
+cap a summary's request population. A reduction that reaches its memory,
+cardinality or work limit reports partial coverage rather than presenting the
+retained subset as the complete interval.
 
 ## Provenance and comparison
 

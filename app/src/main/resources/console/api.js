@@ -122,6 +122,31 @@ const API = (() => {
       if (counted) pending--;
     }
   }
+  // Capacity refusals are retried only after their caller's whole batch settles. One pass is
+  // serial and finite; callers supply their existing generation/coalescing queue for each retry.
+  async function retryCapacity(refusals, current, resend, parentSignal, inheritedSignal, phase) {
+    const pending = refusals.filter((item) => item?.answer?.status === 429 && item.answer.body?.reason === "control_query_capacity");
+    if (!pending.length) return [];
+    const deadline = phase ? null : new AbortController();
+    phase?.start();
+    const deadlineSignal = phase ? phase.signal : deadline.signal;
+    const retrySignal = AbortSignal.any([deadlineSignal, ...[inheritedSignal, parentSignal].filter(Boolean)]);
+    const retryClient = client(retrySignal);
+    const timer = deadline ? setTimeout(() => deadline.abort(), 15000) : null;
+    const completed = [];
+    try {
+      for (const item of pending) {
+        if (!current() || deadlineSignal.aborted || inheritedSignal?.aborted || parentSignal?.aborted) break;
+        let answer;
+        try { answer = await resend(item, retryClient); } catch { break; }
+        if (!current() || deadlineSignal.aborted || inheritedSignal?.aborted || parentSignal?.aborted) break;
+        completed.push({ item, answer });
+      }
+      return completed;
+    } finally {
+      if (deadline) { clearTimeout(timer); deadline.abort(); }
+    }
+  }
   // Artifact callers can opt into fixed machine refusal codes. Never return the error document:
   // it can contain paths or credentials, and even an error stream must have a small read bound.
   async function blobRefusal(res, options) {
@@ -163,6 +188,7 @@ const API = (() => {
     // a last word as the tab hides or closes: the browser still delivers it after the page is gone (pilot.js)
     parting: (p) => call("POST", p, {}, undefined, undefined, true),
     scoped: (nextSignal) => client(signal ? AbortSignal.any([signal, nextSignal]) : nextSignal),
+    retryCapacity: (refusals, current, resend, parentSignal, phase) => retryCapacity(refusals, current, resend, parentSignal, signal, phase),
     recent,
   });
   return client();

@@ -68,7 +68,7 @@ const root = document.getElementById("usage");
 const S = { heads: [], providerOf: {}, labels: {}, declared: new Map(), sessionRows: [], liveHead: {}, sessions: {}, sessionsPending: true, keys: [], accounts: [], registry: [], groups: [], stood: false, error: null };
 // one window's reads: the totals the daemon folded, and the newest rows. [all] is the window with the project pick alone
 // (the plan and key cards), [scoped] the same under the filters opened below the cards.
-const D = { loading: true, stale: false, pending: false, every: null, all: null, scoped: null, rows: [], held: new Set(), errors: [], gen: 0 };
+const D = { loading: true, stale: false, pending: false, every: null, all: null, scoped: null, rows: [], held: new Set(), errors: [], gen: 0, retryAbort: null, retryPhase: null };
 
 const providerOfHead = (key) => S.providerOf[key];
 const cmdOf = (key) => S.heads.find((h) => h.key === key)?.command ?? key;
@@ -196,8 +196,46 @@ function foldWindow(reads, heads) {
   });
   return w;
 }
+async function retryCapacityBatch(asks, answers, gen, abort, read, tried, phase) {
+  const byPath = new Map();
+  asks.forEach((ask, index) => {
+    const path = turnsUrl(ask.h, ask.held, ask.f, ask.label, ask.model), item = byPath.get(path) ?? { path, answer: answers[index], indices: [] };
+    item.indices.push(index); byPath.set(path, item);
+  });
+  const candidates = [...byPath.values()].filter((item) => !tried.has(item.path));
+  const retried = await API.retryCapacity(candidates, () => gen === D.gen && !abort.signal.aborted, (item, client) => {
+    tried.add(item.path);
+    return client.getReady(item.path);
+  }, abort.signal, phase);
+  for (const { item, answer } of retried) {
+    read.set(item.path, Promise.resolve(answer));
+    for (const index of item.indices) answers[index] = answer;
+  }
+  return answers;
+}
 async function readWindow() {
   const gen = ++D.gen;
+  D.retryPhase?.finish();
+  D.retryAbort?.abort();
+  const retryAbort = D.retryAbort = new AbortController(), retriedPaths = new Set();
+  let retryTimer = null;
+  const retryPhase = D.retryPhase = {
+    controller: new AbortController(),
+    get signal() { return this.controller.signal; },
+    start() {
+      if (!retryTimer && !this.controller.signal.aborted) {
+        retryTimer = setTimeout(() => { retryTimer = null; this.controller.abort(); }, 15000);
+      }
+    },
+    finish() {
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = null;
+      if (!this.controller.signal.aborted) this.controller.abort();
+      if (D.retryPhase === this) D.retryPhase = null;
+    },
+  };
+  retryAbort.signal.addEventListener("abort", () => retryPhase.finish(), { once: true });
+  try {
   const wide = { wide: true }; // every project, for the tiles' figures
   const open = {}, read = new Map();
   const scopes = [...(hasFilter() ? [ui.f, open] : [open]), ...(ui.project ? [wide] : [])];
@@ -206,8 +244,10 @@ async function readWindow() {
   let ids = null;
   if (ui.f.model) {
     const early = headsFor(open).map((h) => ({ f: open, h, held: 1, label: null }));
-    const seen = foldWindow(await Promise.all(early.map(get)), early.map((a) => a.h)).models;
+    const earlyReads = await Promise.all(early.map(get));
+    await retryCapacityBatch(early, earlyReads, gen, retryAbort, read, retriedPaths, retryPhase);
     if (gen !== D.gen) return;
+    const seen = foldWindow(earlyReads, early.map((a) => a.h)).models;
     ids = modelIdsOf(ui.f.model, seen.keys());
   }
   D.modelIds = ids;
@@ -216,6 +256,7 @@ async function readWindow() {
   const rowAsks = headsFor(ui.f).flatMap((h) => labelsOf(ui.f).flatMap((label) => modelsOf(ui.f).map((model) => ({ f: ui.f, h, held: MAX_HELD, label, model }))));
   // Count first. The multi-megabyte trails fill in after the totals and chart are already usable.
   const totals = await Promise.all(asks.map(get));
+  await retryCapacityBatch(asks, totals, gen, retryAbort, read, retriedPaths, retryPhase);
   if (gen !== D.gen) return;
   const split = (scope) => { const idx = asks.map((a, i) => (a.f === scope ? i : -1)).filter((i) => i >= 0); return foldWindow(idx.map((i) => totals[i]), idx.map((i) => asks[i].h)); };
   D.scoped = split(scopes[0]);
@@ -231,6 +272,7 @@ async function readWindow() {
   const shift = bandTop() - topWas;
   if (Number.isFinite(shift) && Math.abs(shift) > 0.5) for (const [place, at] of TWF) if (place.includes("|by-")) TWF.set(place, { x: at.x, y: at.y + shift });
   const rows = await Promise.all(rowAsks.map(get));
+  await retryCapacityBatch(rowAsks, rows, gen, retryAbort, read, retriedPaths, retryPhase);
   if (gen !== D.gen) return;
   rowAsks.forEach((a, i) => {
     const answer = (rows[i].body?.heads || []).find((x) => x.key === a.h.key);
@@ -249,6 +291,11 @@ async function readWindow() {
   D.pending = pending; D.reading = reading; D.loading = false;
   render();
   if (pending) setTimeout(() => { if (gen === D.gen) readWindow(); }, 2000);
+  } finally {
+    retryPhase.finish();
+    retryAbort.abort();
+    if (D.retryAbort === retryAbort) D.retryAbort = null;
+  }
 }
 function mapRow(head, r) {
   const sid = r.session_id || r.session || null;

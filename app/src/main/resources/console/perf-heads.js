@@ -20,11 +20,11 @@ const PERF_CONSOLE = (() => {
         .finally(() => { perfRunning--; drainPerf(); });
     }
   }
-  function perfRequest(key, method, path, current, body) {
+  function perfRequest(key, method, path, current, body, transport = perfTransport) {
     return new Promise((resolve, reject) => {
       if (key === "action" && perfWaiting.has(key)) { reject(new Error("Another performance action is pending. Wait for it to finish.")); return; }
       perfWaiting.get(key)?.resolve(null);
-      perfWaiting.set(key, { current, resolve, reject, send: () => perfTransport[method](path, body) });
+      perfWaiting.set(key, { current, resolve, reject, send: () => transport[method](path, body) });
       drainPerf();
     });
   }
@@ -35,14 +35,14 @@ const PERF_CONSOLE = (() => {
     const next = queryWaiting; queryWaiting = null;
     if (!next.current()) { next.resolve(null); return; }
     queryRunning = true;
-    Promise.resolve().then(() => perfRequest("query", "get", next.path, next.current)).then(next.resolve, next.reject)
+    Promise.resolve().then(() => perfRequest("query", "get", next.path, next.current, undefined, next.transport)).then(next.resolve, next.reject)
       .finally(() => { queryRunning = false; drainQuery(); });
   }
-  function queryRead(path, current) {
+  function queryRead(path, current, transport = perfTransport) {
     return new Promise((resolve, reject) => {
       // Keep one active read and only the newest pending projection, including rapid refreshes.
       queryWaiting?.resolve(null);
-      queryWaiting = { path, current, resolve, reject };
+      queryWaiting = { path, current, transport, resolve, reject };
       drainQuery();
     });
   }
@@ -195,17 +195,32 @@ const PERF_CONSOLE = (() => {
       const p = params(st.query).toString();
       const projections = { summary: `/api/perf/summary?${p}`, series: `/api/perf/series?${p}`, diagnose: `/api/perf/diagnose?${p}`, rows: `/api/perf/turns?${p}&page_size=100` };
       const paths = { runtime: "/api/perf/runtime", alerts: `/api/perf/alerts?from=${st.query.from_ms}&until=${st.query.until_ms}`, alertStatus: "/api/perf/alerts/status", preferences: "/api/alerts" };
+      const capacityRefusals = [];
       const queried = (async () => {
         for (const [key, path] of Object.entries(projections)) {
           if (!active()) return;
           const r = await queryRead(path, active);
-          if (active()) st.replies[key] = r;
+          if (active()) {
+            st.replies[key] = r;
+            capacityRefusals.push({ key, path, projection: true, answer: r });
+          }
         }
       })();
       await Promise.all([queried, ...Object.entries(paths).map(async ([key, path]) => {
         const r = await (key === "preferences" ? api.get(path) : perfRequest(key, "get", path, active));
-        if (active()) st.replies[key] = r;
+        if (active()) {
+          st.replies[key] = r;
+          if (key !== "preferences") capacityRefusals.push({ key, path, projection: false, answer: r });
+        }
       })]);
+      if (!active()) return;
+      // Only the shared helper's exact capacity-refusal predicate retries, after this whole batch settles.
+      const retried = await api.retryCapacity(capacityRefusals, active, (refused, retryApi) => refused.projection
+        ? queryRead(refused.path, active, retryApi)
+        : perfRequest(refused.key, "get", refused.path, active, undefined, retryApi));
+      for (const { item, answer } of retried) {
+        if (active()) st.replies[item.key] = answer;
+      }
       if (!active()) return;
       st.busy = false;
       if (st.replies.summary?.body?.query) {
@@ -222,9 +237,18 @@ const PERF_CONSOLE = (() => {
       st.standingBusy = true; repaint();
       st.standingPromise = (async () => {
         const paths = { schema: "/api/perf/schema", caps: "/api/perf/profiles/capabilities", profiles: "/api/perf/profiles", settings: "/api/perf/objectives" };
-        const [schema, caps, profiles, settings, preferences] = await Promise.all([
+        let [schema, caps, profiles, settings, preferences] = await Promise.all([
           ...Object.entries(paths).map(([key, path]) => perfRequest(key, "get", path, attached)), API.get("/api/alerts"),
         ]);
+        const replies = [schema, caps, profiles, settings];
+        const retried = await API.retryCapacity(Object.entries(paths).map(([key, path], index) => ({ key, path, answer: replies[index] })), attached,
+          (item, retryApi) => perfRequest(item.key, "get", item.path, attached, undefined, retryApi));
+        for (const { item, answer } of retried) {
+          if (item.key === "schema") schema = answer;
+          if (item.key === "caps") caps = answer;
+          if (item.key === "profiles") profiles = answer;
+          if (item.key === "settings") settings = answer;
+        }
         if (!attached() || !schema || !caps || !profiles || !settings) return;
         Object.assign(st.replies, { schema, caps, preferences }); st.profilesReply = profiles; st.profiles = profiles.ok ? profiles.body : null; st.settings = settings.ok ? settings.body : null; st.settingsReply = settings;
       })().finally(() => { st.standingBusy = false; repaint(); });
@@ -477,8 +501,14 @@ const PERF_CONSOLE = (() => {
       if (st.actionBusy || st.standingBusy) return;
       st.profileBusy = true; repaint();
       const p = st.profiles?.profile_id;
-      st.profilePromise = perfRequest("profile-status", "get", `/api/perf/profiles${p ? `/${encodeURIComponent(p)}` : ""}`, attached)
-        .then((r) => { if (r && attached()) { if (r.ok) st.profiles = r.body; else st.message = `Profile status: ${status(r)} · ${words(explain(r))}`; } })
+      const path = `/api/perf/profiles${p ? `/${encodeURIComponent(p)}` : ""}`;
+      st.profilePromise = (async () => {
+        let r = await perfRequest("profile-status", "get", path, attached);
+        const retried = await API.retryCapacity([{ path, answer: r }], attached,
+          (item, retryApi) => perfRequest("profile-status", "get", item.path, attached, undefined, retryApi));
+        if (retried.length) r = retried[0].answer;
+        if (r && attached()) { if (r.ok) st.profiles = r.body; else st.message = `Profile status: ${status(r)} · ${words(explain(r))}`; }
+      })()
         .finally(() => { st.profileBusy = false; repaint(); });
       return st.profilePromise;
     }
@@ -589,7 +619,15 @@ const PERF_CONSOLE = (() => {
             if (st.draftRevision !== draftRevision) st.message += ". Newer draft edits are unsaved.";
           }
           if (action === "profile-stop") { const r = await perfRequest("action", "post", `/api/perf/profiles/${encodeURIComponent(st.profiles.profile_id)}/stop`, () => true, {}); st.profiles = r.body; st.message = `Capture: ${status(r)}${explain(r) ? ` · ${words(explain(r))}` : ""}`; }
-          if (action === "profile-download") { const id = st.profiles.profile_id, r = await perfRequest("action", "blob", `/api/perf/profiles/${encodeURIComponent(id)}/artifact`, () => true, { refusalReasons: ARTIFACT_REFUSALS }); if (!r.ok) throw new Error(`Artifact: ${status(r)}${explain(r) ? ` · ${words(explain(r))}` : ""}`); download(r.body, `splice-profile-${id}.jfr`); st.message = "Profile artifact downloaded"; }
+          if (action === "profile-download") {
+            const id = st.profiles.profile_id, path = `/api/perf/profiles/${encodeURIComponent(id)}/artifact`, options = { refusalReasons: ARTIFACT_REFUSALS };
+            let r = await perfRequest("action", "blob", path, attached, options);
+            const retried = await API.retryCapacity([{ path, answer: r }], attached,
+              (item, retryApi) => perfRequest("action", "blob", item.path, attached, options, retryApi));
+            if (retried.length) r = retried[0].answer;
+            if (!r.ok) throw new Error(`Artifact: ${status(r)}${explain(r) ? ` · ${words(explain(r))}` : ""}`);
+            download(r.body, `splice-profile-${id}.jfr`); st.message = "Profile artifact downloaded";
+          }
         }
         if (action === "next") {
           if (st.busy || st.rowsBusy || !st.replies.rows?.body?.next_cursor) return;
@@ -597,7 +635,14 @@ const PERF_CONSOLE = (() => {
           const active = () => gen === st.generation && !abort.signal.aborted && host()?.isConnected;
           p.set("cursor", st.replies.rows.body.next_cursor); p.set("page_size", "100");
           st.rowsBusy = true; repaint();
-          try { const r = await queryRead(`/api/perf/turns?${p}`, active); if (active()) st.replies.rows = r; }
+          try {
+            const path = `/api/perf/turns?${p}`;
+            let r = await queryRead(path, active);
+            const retried = await API.retryCapacity([{ path, answer: r }], active,
+              (item, retryApi) => queryRead(item.path, active, retryApi), abort.signal);
+            if (retried.length) r = retried[0].answer;
+            if (active()) st.replies.rows = r;
+          }
           finally { if (active()) st.rowsBusy = false; }
         }
       } catch (error) { st.message = error.message || "Action failed"; }

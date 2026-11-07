@@ -47,11 +47,17 @@ class PerfEvidenceRetainedWindowTest {
             listOf(1_440, 10_080).forEach { minutes ->
                 val query = fixture.query(minutes)
                 val summary = service.summary(query)
-                try { population(summary, minutes) } finally { PerfWorkBudget.release(summary) }
+                try { summaryPopulation(summary, minutes) } finally { PerfWorkBudget.release(summary) }
                 val returnedSeries = service.series(query)
                 try { series(returnedSeries, minutes) } finally { PerfWorkBudget.release(returnedSeries) }
             }
         }
+    }
+
+    private fun summaryPopulation(value: JsonObject, count: Int) {
+        population(value, count)
+        val workload = value.getValue("comparison").jsonObject.getValue("workload").jsonObject
+        assertEquals("true", JsonScalars.str(workload, "population_complete"))
     }
 
     private fun population(value: JsonObject, count: Int) {
@@ -60,8 +66,13 @@ class PerfEvidenceRetainedWindowTest {
         assertEquals(count.toString(), JsonScalars.str(counts, "completions"))
         assertEquals(count.toString(), JsonScalars.str(counts, "known_successful_completions"))
         assertEquals("true", JsonScalars.str(counts, "population_complete"))
-        val workload = value.getValue("comparison").jsonObject.getValue("workload").jsonObject
-        assertEquals("true", JsonScalars.str(workload, "population_complete"))
+        val coverage = value.getValue("coverage").jsonObject
+        assertEquals("true", JsonScalars.str(coverage, "complete"), value.toString())
+        assertEquals((count * 60_000L).toString(), JsonScalars.str(coverage, "observed_ms"))
+        val requestCoverage = value.getValue("population_coverage").jsonObject
+            .getValue("request_scope_resolved_at_terminal_or_latest_checkpoint").jsonObject
+        assertEquals("true", JsonScalars.str(requestCoverage, "complete"))
+        assertEquals((count * 60_000L).toString(), JsonScalars.str(requestCoverage, "observed_ms"))
         assertFalse(value.toString().contains("request_point_limit"), value.toString())
         assertTrue(checkNotNull(JsonScalars.str(value, "resolution_ms")).toLong() > 60_000L)
     }

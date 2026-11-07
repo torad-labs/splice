@@ -122,12 +122,13 @@ internal class StreamingEvidenceFixture(root: Path) : AutoCloseable, PerfQuerySo
     private var until = now
     private val wall = WallClock { now }
     private val files = RequestEvidenceFiles(directory, clock = wall, elapsed = ElapsedClock { now })
+    private val writer = files.forHead("test")
     private val source = PerfEvidenceFileSource(directory, wall)
     private val identity = PerfIdentity("b".repeat(36), "test-build", "test-version", "boot-config")
 
     fun seed(count: Int, withUsage: Boolean = true) {
+        assertTrue(AsyncFileIo.drain()) { "stage=before_seed io=${AsyncFileIo.workSnapshot}" }
         assertTrue(files.startCoverage("test", identity.bootId))
-        val writer = files.forHead("test")
         repeat(count) { index ->
             val start = 1_000L + index * 100
             val kinds =
@@ -140,15 +141,11 @@ internal class StreamingEvidenceFixture(root: Path) : AutoCloseable, PerfQuerySo
             kinds.forEachIndexed { offset, kind ->
                 now = start + offset * 20
                 assertTrue(writer.record(event(index, kind, now)))
+                settle(index, kind)
             }
-            if (withUsage) assertTrue(writer.record(event(index, PerfEventKind.USAGE_RECORDED, now)))
-            if (index % 10 == 0) {
-                val started = MonoClock.nowMs()
-                assertTrue(AsyncFileIo.awaitDirectory(directory)) {
-                    "stage=seed_evidence request_index=$index barrier_elapsed_ms=${MonoClock.nowMs() - started} " +
-                        "interrupted=${Thread.currentThread().isInterrupted} evidence=${writer.sink.status()} " +
-                        "io=${AsyncFileIo.workSnapshot} work_budget=${PerfWorkBudget.snapshot()}"
-                }
+            if (withUsage) {
+                assertTrue(writer.record(event(index, PerfEventKind.USAGE_RECORDED, now)))
+                settle(index, PerfEventKind.USAGE_RECORDED)
             }
         }
         until = 1_000L + count * 100
@@ -156,11 +153,21 @@ internal class StreamingEvidenceFixture(root: Path) : AutoCloseable, PerfQuerySo
         checkpoint()
     }
 
+    private fun settle(index: Int, kind: PerfEventKind) {
+        // The writer reads our virtual clock on the shared file lane; settle before advancing that clock again.
+        val started = MonoClock.nowMs()
+        assertTrue(AsyncFileIo.awaitDirectory(directory)) {
+            "stage=seed_evidence request_index=$index kind=$kind barrier_elapsed_ms=${MonoClock.nowMs() - started} " +
+                "interrupted=${Thread.currentThread().isInterrupted} evidence=${writer.sink.status()} " +
+                "io=${AsyncFileIo.workSnapshot} work_budget=${PerfWorkBudget.snapshot()}"
+        }
+    }
+
     fun conflict() {
         now += 100
         val first = event(0, PerfEventKind.REQUEST_ARRIVED, 1_000L)
         assertTrue(
-            files.forHead("test").record(
+            writer.record(
                 first.copy(
                     scope = first.scope.copy(model = "conflicting-model"),
                     links = first.links.copy(requestId = "another-request"),
@@ -172,7 +179,7 @@ internal class StreamingEvidenceFixture(root: Path) : AutoCloseable, PerfQuerySo
 
     fun lateUsage() {
         now += 100
-        assertTrue(files.forHead("test").record(event(0, PerfEventKind.USAGE_RECORDED, 1_060L)))
+        assertTrue(writer.record(event(0, PerfEventKind.USAGE_RECORDED, 1_060L)))
         checkpoint()
     }
 

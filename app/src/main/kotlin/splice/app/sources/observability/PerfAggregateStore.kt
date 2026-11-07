@@ -97,11 +97,14 @@ public class PerfAggregateStore(directory: Path, private val identity: PerfIdent
     ): Boolean {
         val charge = StoreAppendCharge(snapshot, openWriter())
         val earlyRejection = charge.rejection
-        if (earlyRejection == "writer_unavailable") {
-            sink.reject(earlyRejection)
-            return false
+        if (earlyRejection != null) {
+            return if (earlyRejection == "writer_unavailable") {
+                sink.reject(earlyRejection)
+                false
+            } else {
+                rejectCheckpoint(earlyRejection)
+            }
         }
-        if (earlyRejection != null) return rejectCheckpoint(earlyRejection)
         val admittedCharge = requireNotNull(charge.bytes)
         val targetBytes = admittedCharge + PERF_HISTORY_WORK_BYTES
         val admission = if (snapshotLease == null) {
@@ -121,7 +124,7 @@ public class PerfAggregateStore(directory: Path, private val identity: PerfIdent
         }
         var writing = phase
         var accepted = false
-        try {
+        return try {
             writing = phase.transferCheckpoint()
             val transferred = writing
             val frozen = if (snapshotLease == null) PerfHistoryFormat.frozen(snapshot) else snapshot

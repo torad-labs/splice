@@ -33,7 +33,7 @@ internal class PerfTelemetryShutdown(
                 caller.ensureActive()
                 throw failure
             }
-            stopExport(min(EXPORT_CLOSE_MS, remainingMs(deadline)))
+            stopExport.close(min(EXPORT_CLOSE_MS, remainingMs(deadline)))
             val phase = withTimeoutOrNull(min(PRODUCER_STOP_MS, remainingMs(deadline))) {
                 PerfWorkPhase.checkpoint()
             } ?: run {

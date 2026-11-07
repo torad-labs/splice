@@ -122,6 +122,34 @@ class PerfHistorySafetyTest {
     }
 
     @Test
+    fun `history transfer refusal reports its exact marginal request and locked accounting`(@TempDir dir: Path) {
+        PerfAggregateStore(dir, identity, clock).use { writer ->
+            val phase = checkNotNull(PerfWorkPhase.tryCheckpoint())
+            val snapshotLease = checkNotNull(PerfWorkBudget.acquire(2L * 1_024 * 1_024))
+            val pressureBytes = PerfWorkBudget.LIMIT_BYTES - PerfWorkBudget.retainedBytes()
+            val pressureLease = checkNotNull(PerfWorkBudget.acquire(pressureBytes))
+            try {
+                assertFalse(writer.appendOwned(snapshot, snapshotLease, phase))
+                val status = writer.status()
+                val last = requireNotNull(requireNotNull(status.rejections).last)
+                val target = PerfHistoryFormat.estimate(snapshot) + 8L * 1_024 * 1_024
+                assertEquals(1L, status.dropped)
+                assertEquals(1L, status.rejections?.historyMemory)
+                assertEquals(target - 2L * 1_024 * 1_024, last.requestedBytes)
+                assertEquals(target, last.targetBytes)
+                assertEquals(PerfWorkBudget.LIMIT_BYTES, last.leasedBytes)
+
+                PerfWorkBudget.acquireWithOutcome(Long.MAX_VALUE)
+                assertEquals(last, writer.status().rejections?.last)
+            } finally {
+                pressureLease.close()
+                snapshotLease.close()
+                phase.close()
+            }
+        }
+    }
+
+    @Test
     fun `variable checkpoint metadata is refused before enqueue`(@TempDir dir: Path) {
         val huge = "x".repeat(3 * 1_024 * 1_024)
         PerfAggregateStore(dir, identity, clock).use { writer ->

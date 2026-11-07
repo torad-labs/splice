@@ -10,7 +10,9 @@ import splice.core.perf.observation.PerfAggregateSource
 import splice.core.perf.observation.PerfIdentity
 import splice.core.util.Cancellables
 import splice.core.util.PerfWorkBudget
+import splice.core.util.PerfWorkPhase
 import splice.core.util.WallClock
+import java.util.concurrent.atomic.AtomicBoolean
 
 internal class ExportEngine(
     private val config: PerfExportConfig,
@@ -18,8 +20,10 @@ internal class ExportEngine(
     private val source: PerfAggregateSource,
     private val queue: ExportQueue,
     private val clock: WallClock,
+    private val closed: AtomicBoolean = AtomicBoolean(),
 ) : AutoCloseable {
     private val transport = if (config.enabled) OtlpTransport(config) else null
+    private val metricSamplingEnabled = config.prometheus || transport?.metrics != null
     private val totals = ExportTotals()
     private val traces = ExportTraces()
     private val scrapes = PrometheusScrapes(config.prometheus, clock)
@@ -33,12 +37,20 @@ internal class ExportEngine(
     fun scrapeStatus(): JsonObject = scrapes.status()
     fun coverage(): JsonObject = coverage.json(clock(), traces.dropped, traces.missingContext)
 
-    fun tick(): Boolean {
-        val drained = drain()
-        return sample() && drained
-    }
+    fun tick(timeoutMs: Long, finalTick: Boolean = false): Boolean =
+        PerfWorkPhase.awaitExportWork(timeoutMs)?.use {
+            if (closed.get() && !finalTick) {
+                false
+            } else {
+                val drained = drainBatch()
+                val sampled = !metricSamplingEnabled || sampleEnabled()
+                sampled && drained
+            }
+        } ?: false
 
-    fun drain(): Boolean {
+    fun drain(): Boolean = exportWork { drainBatch() }
+
+    private fun drainBatch(): Boolean {
         val entries = ArrayList<ExportQueued>()
         val spans = ArrayList<SpanData>()
         val logs = ArrayList<LogRecordData>()
@@ -75,13 +87,20 @@ internal class ExportEngine(
         }
     }
 
-    fun sample(): Boolean = if (config.prometheus || transport?.metrics != null) sampleEnabled() else true
+    fun sample(): Boolean = exportWork { !metricSamplingEnabled || sampleEnabled() }
+
+    private fun exportWork(work: ExportPhaseWork): Boolean =
+        PerfWorkPhase.tryExportWork()?.use { if (closed.get()) false else work.run() } ?: true
 
     private fun sampleEnabled(): Boolean {
         val lease = PerfWorkBudget.acquire(CONVERSION_BYTES) ?: return sampleBusy()
         return lease.use {
             val snapshot = snapshot()
-            if (!validIdentity(snapshot.identity)) return@use false
+            if (snapshot.identity != identity) {
+                metricsStatus.failed.incrementAndGet()
+                if (config.prometheus) scrapes.fail("source_failed")
+                return@use false
+            }
             totals.reconcile(snapshot)
             val points = totals.points()
             val scrapeOk = !config.prometheus || scrapes.publish(points, totals)
@@ -115,14 +134,8 @@ internal class ExportEngine(
         return false
     }
 
-    private fun validIdentity(actual: PerfIdentity): Boolean {
-        if (actual == identity) return true
-        metricsStatus.failed.incrementAndGet()
-        if (config.prometheus) scrapes.fail("source_failed")
-        return false
-    }
-
     override fun close() {
+        closed.set(true)
         transport?.shutdown()?.join(EXPORT_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
         queue.close()
         logsStatus.dropped.addAndGet(logsStatus.pending.getAndSet(0))
@@ -131,6 +144,10 @@ internal class ExportEngine(
         coverage.close()
         scrapes.close()
     }
+}
+
+private fun interface ExportPhaseWork {
+    fun run(): Boolean
 }
 
 // Reserve 2 MiB for snapshot-to-SDK conversion; contention skips the sample instead of borrowing unbounded memory.

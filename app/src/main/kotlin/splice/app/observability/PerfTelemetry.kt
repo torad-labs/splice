@@ -91,7 +91,18 @@ internal class PerfTelemetry(
     }
 
     /** Called after heads/MCP stop. Flush while source data is still alive, then release dependent owners. */
-    suspend fun close() = shutdown.close({ alerting.stopDelivery(cleanup) }, ::closeOwners)
+    suspend fun close() = shutdown.close(
+        { alerting.stopDelivery(cleanup) },
+        PerfExportStop { timeoutMs ->
+            var completed = false
+            cleanup.run("export_flush") {
+                completed = exports.closeAndFlushWithin(timeoutMs)
+                if (!completed) cleanup.failed("export_flush_incomplete")
+            }
+            completed
+        },
+        ::closeOwners,
+    )
 
     private fun closeOwners(phase: PerfWorkPhase.Lease) = cleanup.finish(
         { finalCheckpoints(phase) },
@@ -107,10 +118,7 @@ internal class PerfTelemetry(
         { cleanup.run("aggregate_checkpoint") { if (enabled) collection.checkpoint(phase) } },
     )
 
-    private fun closeReaders() = cleanup.finish(
-        { cleanup.run("export_flush") { if (!exports.flush()) cleanup.failed("export_flush_incomplete") } },
-        { cleanup.run("profiles") { inspection.stopProfiles() } },
-    )
+    private fun closeReaders() = cleanup.finish({ cleanup.run("profiles") { inspection.stopProfiles() } })
 
     private fun closeAdapters() = cleanup.finish(
         { cleanup.run("delivery_client") { alerting.close() } },

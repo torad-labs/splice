@@ -31,6 +31,19 @@ public object PerfWorkBudget {
         return Lease(bytes, kind)
     }
 
+    /** Captures this admission's refusal under the budget lock for callers that expose causal diagnostics. */
+    @Synchronized
+    public fun acquireWithOutcome(bytes: Long, kind: Kind = Kind.OTHER): Admission {
+        require(bytes >= 0L)
+        if (bytes > LIMIT - used) {
+            lastRefusal.capture(bytes, kind)
+            return Admission(null, lastRefusal.snapshot())
+        }
+        used += bytes
+        reservations[kind.ordinal] += bytes
+        return Admission(Lease(bytes, kind), null)
+    }
+
     @Synchronized
     public fun retainedBytes(): Long = used
 
@@ -61,6 +74,16 @@ public object PerfWorkBudget {
 
         /** Atomically replaces this reservation. Refusal leaves it owned; success invalidates this lease. */
         public fun transfer(totalBytes: Long): Lease? = synchronized(PerfWorkBudget) {
+            transferLease(totalBytes)
+        }
+
+        /** Captures this transfer's marginal refusal and accounting under the same budget lock. */
+        public fun transferWithOutcome(totalBytes: Long): Admission = synchronized(PerfWorkBudget) {
+            val replacement = transferLease(totalBytes)
+            Admission(replacement, if (replacement == null) lastRefusal.snapshot() else null)
+        }
+
+        private fun transferLease(totalBytes: Long): Lease? {
             require(totalBytes >= 0L)
             check(!closed && !ticketed) { "Only an open, unretained reservation can transfer" }
             val additional = totalBytes - bytes
@@ -73,7 +96,7 @@ public object PerfWorkBudget {
             reservations[kind.ordinal] += additional
             bytes = 0L
             closed = true
-            replacement
+            return replacement
         }
 
         public fun <T : Any> retain(owner: T, retained: Long) {
@@ -138,6 +161,9 @@ public object PerfWorkBudget {
 
     /** The latest process-wide refusal; later failures replace it and successful acquisitions do not clear it. */
     public data class Refusal(val requestedBytes: Long, val requestedKind: Kind, val accounting: Accounting)
+
+    /** Either the acquired owner or the refusal captured atomically with the failed admission. */
+    public data class Admission(val lease: Lease?, val refusal: Refusal?)
 
     public data class Snapshot(val accounting: Accounting, val lastRefusal: Refusal?)
 

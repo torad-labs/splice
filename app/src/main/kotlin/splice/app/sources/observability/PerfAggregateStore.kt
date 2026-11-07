@@ -78,7 +78,7 @@ public class PerfAggregateStore(directory: Path, private val identity: PerfIdent
     override fun append(snapshot: PerfAggregateSnapshot): Boolean = append(snapshot, null)
 
     private fun append(snapshot: PerfAggregateSnapshot, snapshotLease: PerfWorkBudget.Lease?): Boolean {
-        val phase = PerfWorkPhase.tryCheckpoint() ?: return rejectCheckpoint()
+        val phase = PerfWorkPhase.tryCheckpoint() ?: return rejectCheckpoint("phase_unavailable")
         return phase.use { append(snapshot, snapshotLease, it) }
     }
 
@@ -95,22 +95,30 @@ public class PerfAggregateStore(directory: Path, private val identity: PerfIdent
         snapshotLease: PerfWorkBudget.Lease?,
         phase: PerfWorkPhase.Lease,
     ): Boolean {
-        if (!openWriter()) {
-            sink.reject()
+        val charge = StoreAppendCharge(snapshot, openWriter())
+        val earlyRejection = charge.rejection
+        if (earlyRejection == "writer_unavailable") {
+            sink.reject(earlyRejection)
             return false
         }
-        val charge = PerfHistoryFormat.estimate(snapshot)
-        // openWriter already rejected a closed owner while this append holds the store monitor.
-        val lease = if (charge <= MAX_PENDING_BYTES) {
-            if (snapshotLease == null) {
-                PerfWorkBudget.acquire(charge + PERF_HISTORY_WORK_BYTES)
-            } else {
-                snapshotLease.transfer(charge + PERF_HISTORY_WORK_BYTES)
-            }
+        if (earlyRejection != null) return rejectCheckpoint(earlyRejection)
+        val admittedCharge = requireNotNull(charge.bytes)
+        val targetBytes = admittedCharge + PERF_HISTORY_WORK_BYTES
+        val admission = if (snapshotLease == null) {
+            PerfWorkBudget.acquireWithOutcome(targetBytes)
         } else {
-            null
+            snapshotLease.transferWithOutcome(targetBytes)
         }
-        if (lease == null) return rejectCheckpoint()
+        val lease = admission.lease
+        if (lease == null) {
+            val refusal = requireNotNull(admission.refusal)
+            return rejectCheckpoint(
+                reason = "history_memory",
+                requestedBytes = refusal.requestedBytes,
+                targetBytes = targetBytes,
+                leasedBytes = refusal.accounting.leasedBytes,
+            )
+        }
         var writing = phase
         var accepted = false
         try {
@@ -120,7 +128,7 @@ public class PerfAggregateStore(directory: Path, private val identity: PerfIdent
             accepted = AsyncFileIo.submitFor(files.checkpoint, sink) {
                 transferred.use { lease.use { persist(frozen) } }
             }
-            return accepted
+            accepted
         } finally {
             if (!accepted) {
                 lease.close()
@@ -130,8 +138,13 @@ public class PerfAggregateStore(directory: Path, private val identity: PerfIdent
     }
 
     @Synchronized
-    internal fun rejectCheckpoint(): Boolean {
-        sink.reject()
+    internal fun rejectCheckpoint(
+        reason: String = "unclassified",
+        requestedBytes: Long? = null,
+        targetBytes: Long? = null,
+        leasedBytes: Long? = null,
+    ): Boolean {
+        sink.reject(reason, requestedBytes, targetBytes, leasedBytes)
         issue(PerfIssue("checkpoint_dropped", HISTORY_SINK))
         return false
     }
@@ -251,3 +264,24 @@ private const val MAX_STORE_ISSUES = 64
 
 // Reject identities above a 16 KiB charge before creating a durable writer session.
 private const val MAX_IDENTITY_BYTES = 16L * 1_024
+
+private class StoreAppendCharge(snapshot: PerfAggregateSnapshot, writerAvailable: Boolean) {
+    val bytes: Long?
+    val rejection: String?
+
+    init {
+        if (!writerAvailable) {
+            bytes = null
+            rejection = "writer_unavailable"
+        } else {
+            val charge = PerfHistoryFormat.estimate(snapshot)
+            if (charge > MAX_PENDING_BYTES) {
+                bytes = null
+                rejection = "serialization_size"
+            } else {
+                bytes = charge
+                rejection = null
+            }
+        }
+    }
+}

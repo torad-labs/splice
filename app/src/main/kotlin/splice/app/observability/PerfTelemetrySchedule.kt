@@ -54,37 +54,26 @@ internal class PerfTelemetrySchedule(
         sampler = scope.launch { samplePeriodically() }
     }
 
-    /** The existing stop deadline also bounds acquiring the final checkpoint phase before owners can close. */
-    suspend fun finish(
-        config: ConfigService,
-        stopDelivery: PerfCloseAction,
-    ): PerfWorkPhase.Lease {
+    /** Stop producers first; final export shutdown runs before the final checkpoint phase is acquired. */
+    suspend fun finish(config: ConfigService, stopDelivery: PerfCloseAction, timeoutMs: Long) {
         config.effectiveObserver = null
-        return stop(stopDelivery) ?: run {
+        if (!stop(stopDelivery, timeoutMs)) {
             cleanup.failed("producers_pending")
-            // Keep sources charged and alive for pending work; a later close can finish the drain.
             throw IOException("performance producers or checkpoint phase did not settle")
         }
     }
 
-    private suspend fun stop(stopDelivery: PerfCloseAction): PerfWorkPhase.Lease? {
+    private suspend fun stop(stopDelivery: PerfCloseAction, timeoutMs: Long): Boolean {
         val jobs = listOfNotNull(sampler, configWorker)
         jobs.forEach { it.cancel() }
-        var phase: PerfWorkPhase.Lease? = null
-        try {
-            val stopped = withTimeoutOrNull(PRODUCER_STOP_MS) {
-                jobs.forEach { it.join() }
-                stopDelivery.close()
-                checkNotNull(scope.coroutineContext[Job]).cancelAndJoin()
-                phase = PerfWorkPhase.checkpoint()
-                true
-            }
-            if (stopped != true) return null
-            configTicks.close()
-            return checkNotNull(phase).also { phase = null }
-        } finally {
-            phase?.close()
-        }
+        val stopped = withTimeoutOrNull(timeoutMs) {
+            jobs.forEach { it.join() }
+            stopDelivery.close()
+            checkNotNull(scope.coroutineContext[Job]).cancelAndJoin()
+            true
+        } == true
+        if (stopped) configTicks.close()
+        return stopped
     }
 
     fun measured(metric: String, durationMs: Long, owner: String) {
@@ -126,4 +115,4 @@ internal fun interface PerfSamplingWork {
 private const val TELEMETRY_SAMPLE_MS = 5_000L
 
 // Share fifteen seconds across producer and delivery shutdown before releasing dependent owners.
-private const val PRODUCER_STOP_MS = 15_000L
+internal const val PRODUCER_STOP_MS = 15_000L

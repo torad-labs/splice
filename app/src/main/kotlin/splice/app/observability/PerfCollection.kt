@@ -72,9 +72,16 @@ internal class PerfCollection(
     }
 
     fun checkpoint(phase: PerfWorkPhase.Lease) {
-        val lease = PerfWorkBudget.acquire(TELEMETRY_SNAPSHOT_BYTES)
+        val admission = PerfWorkBudget.acquireWithOutcome(TELEMETRY_SNAPSHOT_BYTES)
+        val lease = admission.lease
         if (lease == null) {
-            aggregate.rejectCheckpoint()
+            val refusal = requireNotNull(admission.refusal)
+            aggregate.rejectCheckpoint(
+                reason = "snapshot_memory",
+                requestedBytes = refusal.requestedBytes,
+                targetBytes = TELEMETRY_SNAPSHOT_BYTES,
+                leasedBytes = refusal.accounting.leasedBytes,
+            )
             return
         }
         // Accumulator snapshots detach points, histograms and coverage lists; the writer can take this sole copy.

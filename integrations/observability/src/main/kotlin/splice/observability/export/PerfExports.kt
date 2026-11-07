@@ -26,8 +26,8 @@ public class PerfExports(
     private val config = config.copy(headers = config.headers.toMap(), signals = config.signals.toSet())
     private val eventEnabled = config.enabled && config.signals.any { it == TRACES || it == LOGS }
     private val queue = ExportQueue()
-    private val engine = ExportEngine(config, identity, source, queue, clock)
     private val closed = AtomicBoolean()
+    private val engine = ExportEngine(config, identity, source, queue, clock, closed)
     private val native = NativeExportSpans(queue, closed, config.enabled && TRACES in config.signals)
     private val observed = AtomicLong()
     private val worker = ExportWorker(config, engine, queue, closed)
@@ -88,6 +88,7 @@ public class PerfExports(
         put("queue_dropped", queue.dropped.get())
         put("queue_pending", queue.pending())
         put("worker_failures", worker.failures)
+        put("worker_finalized", worker.finalized)
         put("native_accepted", native.accepted)
         put("native_skipped", native.skipped)
         put("native_queue_failed", native.failed)
@@ -101,7 +102,13 @@ public class PerfExports(
 
     public fun flush(): Boolean = worker.flush()
 
-    override fun close(): Unit = worker.close()
+    /** Stop scheduled work, drain and sample once under a bounded deadline, then close the exporters. */
+    public fun closeAndFlush(): Boolean = worker.closeAndFlush()
+
+    /** Stop scheduled work and bound the final drain/sample/close by [timeoutMs]. */
+    public fun closeAndFlushWithin(timeoutMs: Long): Boolean = worker.closeAndFlush(timeoutMs)
+
+    override fun close() { worker.close() }
 }
 
 private const val TRACES = "traces"

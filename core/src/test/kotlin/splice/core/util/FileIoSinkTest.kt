@@ -30,4 +30,30 @@ class FileIoSinkTest {
         assertEquals(42L, status.lastSuccessEpochMs)
         assertEquals(0L, aggregate.status().observed)
     }
+
+    @Test
+    fun `rejected work exposes a bounded cause and reservation context`() {
+        val sink = FileIoSink("aggregate_history", WallClock { 99L })
+        sink.reject(
+            "history_memory",
+            requestedBytes = 6_497_336L,
+            targetBytes = 8_594_488L,
+            leasedBytes = 10_440_704L,
+        )
+
+        val status = sink.status()
+        val rejections = requireNotNull(status.rejections)
+        assertEquals(1L, status.observed)
+        assertEquals(1L, status.dropped)
+        assertEquals(0L, status.enqueued)
+        assertEquals(1L, rejections.historyMemory)
+        assertEquals(
+            "history_memory",
+            rejections.last?.reason,
+        )
+        assertEquals(99L, rejections.last?.atEpochMs)
+        assertEquals(6_497_336L, rejections.last?.requestedBytes)
+        assertEquals(8_594_488L, rejections.last?.targetBytes)
+        assertEquals(10_440_704L, rejections.last?.leasedBytes)
+    }
 }

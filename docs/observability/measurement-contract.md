@@ -177,6 +177,28 @@ one bounded, process-wide record: `requested_bytes`, `requested_kind` and a copi
 `accounting` snapshot from that refusal. A later refusal replaces it; successful
 acquisitions do not clear it. This is the latest refusal, not an event history.
 
+Aggregate-history sink rejection details are in `sinks[]` on the guarded
+`GET /api/perf/instrumentation/status` response, on the row whose `sink` is
+`aggregate_history`. History-backed query responses also include sink status in
+`coverage.sinks[]`. Each sink's `rejections` is null until a rejection; its
+camel-case counters are `snapshotMemory`, `serializationSize`, `historyMemory`,
+`phaseUnavailable`, `writerUnavailable`, `asyncEnqueue` and `unclassified`.
+`last` contains the most recent reason (`snapshot_memory`, `serialization_size`,
+`history_memory`, `phase_unavailable`, `writer_unavailable`, `async_enqueue` or
+`unclassified`), its wall-clock `atEpochMs`, and optional byte fields. The
+counters accumulate, but `last` is one record, not a rejection history.
+
+For a rejected work-budget admission, `requestedBytes` is the amount that attempt
+tried to add; on a lease transfer it is the marginal addition. `targetBytes` is
+the total lease size sought (equal to `requestedBytes` for a direct acquisition).
+`leasedBytes` is the process-wide lease-accounting total captured at that exact
+failed admission. These are lease estimates, not heap measurements or owner
+attribution. Byte fields are null when the rejection did not come from a budget
+admission, such as serialization-size, phase, writer or async-enqueue rejection;
+null means no relevant admission context was captured, not zero usage. A sink
+rejection and its shared leased total do not by themselves identify which other
+owner held those bytes or prove a particular competing operation caused it.
+
 Summary queries consume certified evidence incrementally and retain a bounded
 request reduction. Request partitions share one frozen inventory and one total
 read-work budget. All observations for a request stay in the same partition,

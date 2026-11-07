@@ -1,5 +1,7 @@
 package splice.core.util
 
+import splice.core.perf.observation.PerfSinkRejection
+import splice.core.perf.observation.PerfSinkRejections
 import splice.core.perf.observation.PerfSinkStatus
 import java.io.IOException
 import java.nio.file.Path
@@ -17,6 +19,14 @@ public class FileIoSink(private val name: String, private val clock: WallClock) 
     private var failed = 0L
     private var dropped = 0L
     private var lastSuccess: Long? = null
+    private var snapshotMemory = 0L
+    private var serializationSize = 0L
+    private var historyMemory = 0L
+    private var phaseUnavailable = 0L
+    private var writerUnavailable = 0L
+    private var asyncEnqueue = 0L
+    private var unclassified = 0L
+    private var lastRejection: PerfSinkRejection? = null
     private val pending = LinkedHashMap<Long, Long>()
 
     @Synchronized
@@ -30,6 +40,20 @@ public class FileIoSink(private val name: String, private val clock: WallClock) 
         pending = pending.size.toLong(),
         oldestPendingMs = pending.values.minOrNull()?.let { (MonoClock.nowMs() - it).coerceAtLeast(0L) },
         lastSuccessEpochMs = lastSuccess,
+        rejections = if (lastRejection == null) {
+            null
+        } else {
+            PerfSinkRejections(
+                snapshotMemory,
+                serializationSize,
+                historyMemory,
+                phaseUnavailable,
+                writerUnavailable,
+                asyncEnqueue,
+                unclassified,
+                lastRejection,
+            )
+        },
     )
 
     /** Explicitly rejected work still belongs to the sink's observed population. */
@@ -37,6 +61,20 @@ public class FileIoSink(private val name: String, private val clock: WallClock) 
     public fun reject() {
         observed++
         dropped++
+        recordRejection("unclassified")
+    }
+
+    /** Rejection labels are a closed set; only byte scalars are retained, never exception text or owner data. */
+    @Synchronized
+    public fun reject(
+        reason: String,
+        requestedBytes: Long? = null,
+        targetBytes: Long? = null,
+        leasedBytes: Long? = null,
+    ) {
+        observed++
+        dropped++
+        recordRejection(reason, requestedBytes, targetBytes, leasedBytes)
     }
 
     @Synchronized
@@ -60,6 +98,7 @@ public class FileIoSink(private val name: String, private val clock: WallClock) 
             pending.remove(ticket)
             enqueued--
             dropped++
+            recordRejection("async_enqueue")
         }
         return accepted
     }
@@ -72,6 +111,55 @@ public class FileIoSink(private val name: String, private val clock: WallClock) 
             lastSuccess = clock()
         } else {
             failed++
+        }
+    }
+
+    private fun recordRejection(
+        reason: String,
+        requestedBytes: Long? = null,
+        targetBytes: Long? = null,
+        leasedBytes: Long? = null,
+    ) {
+        val classifiedReason = incrementRejection(reason)
+        lastRejection = PerfSinkRejection(
+            reason = classifiedReason,
+            atEpochMs = clock(),
+            requestedBytes = requestedBytes,
+            targetBytes = targetBytes,
+            leasedBytes = leasedBytes,
+        )
+    }
+
+    private fun incrementRejection(reason: String): String {
+        return when (reason) {
+            "snapshot_memory" -> {
+                snapshotMemory++
+                "snapshot_memory"
+            }
+            "serialization_size" -> {
+                serializationSize++
+                "serialization_size"
+            }
+            "history_memory" -> {
+                historyMemory++
+                "history_memory"
+            }
+            "phase_unavailable" -> {
+                phaseUnavailable++
+                "phase_unavailable"
+            }
+            "writer_unavailable" -> {
+                writerUnavailable++
+                "writer_unavailable"
+            }
+            "async_enqueue" -> {
+                asyncEnqueue++
+                "async_enqueue"
+            }
+            else -> {
+                unclassified++
+                "unclassified"
+            }
         }
     }
 }

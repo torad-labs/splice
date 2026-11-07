@@ -5,19 +5,15 @@ import splice.core.perf.OutcomeTags
 
 /** Keep free-form text out of dimensions; cap the complete dimension product in the accumulator. */
 internal object PerfDimensions {
-    private val label = Regex("[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}")
-    private val identifier = Regex("[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}")
-    private val trace = Regex("[0-9a-f]{32}")
-    private val span = Regex("[0-9a-f]{16}")
-    private val flags = Regex("[0-9a-f]{2}")
+    private val outcomes = setOf("good", "bad", UNKNOWN_DIMENSION, "cancelled", "refused")
     private val transports = setOf("sse", "ws", "websocket", "http", "local", "mcp", UNKNOWN_DIMENSION)
     private val workKinds = setOf(
         "client", "compact", "tool", "compare", "local", "runtime", "instrumentation", "upstream", UNKNOWN_DIMENSION,
     )
 
     fun scope(scope: PerfScope): PerfScope = scope.copy(
-        head = scope.head.takeIf(label::matches) ?: UNKNOWN_DIMENSION,
-        model = scope.model?.takeIf(label::matches),
+        head = scope.head.takeIf(PerfDimensionText::label) ?: UNKNOWN_DIMENSION,
+        model = scope.model?.takeIf(PerfDimensionText::label),
         transport = scope.transport?.takeIf { it in transports } ?: scope.transport?.let { UNKNOWN_DIMENSION },
         work = scope.work.takeIf { it in workKinds } ?: UNKNOWN_DIMENSION,
         outcome = scope.outcome?.let(::outcome),
@@ -26,17 +22,17 @@ internal object PerfDimensions {
     fun links(links: PerfLinks): PerfLinks = links.copy(
         requestId = id(links.requestId), attemptId = id(links.attemptId), toolId = id(links.toolId),
         sessionId = id(links.sessionId), projectId = id(links.projectId), accountId = id(links.accountId),
-        traceId = links.traceId?.takeIf { trace.matches(it) && it.any { char -> char != '0' } },
-        spanId = links.spanId?.takeIf { span.matches(it) && it.any { char -> char != '0' } },
-        parentSpanId = links.parentSpanId?.takeIf { span.matches(it) && it.any { char -> char != '0' } },
-        traceFlags = links.traceFlags?.takeIf(flags::matches),
+        traceId = links.traceId?.takeIf(PerfDimensionText::trace),
+        spanId = links.spanId?.takeIf(PerfDimensionText::span),
+        parentSpanId = links.parentSpanId?.takeIf(PerfDimensionText::span),
+        traceFlags = links.traceFlags?.takeIf(PerfDimensionText::flags),
         // Vendor trace-state may contain account data; export requires a separate explicit allowlist.
         traceState = null,
         turnId = id(links.turnId),
     )
 
     fun outcome(value: String): String = when {
-        value in setOf("good", "bad", UNKNOWN_DIMENSION, "cancelled", "refused") -> value
+        value in outcomes -> value
         OutcomeTags.isClean(value) -> "good"
         value == OutcomeTag.CANCELLED.wire || OutcomeTags.isStopped(value) -> "cancelled"
         value == OutcomeTag.AT_CAPACITY.wire -> "refused"
@@ -44,7 +40,7 @@ internal object PerfDimensions {
         else -> "bad"
     }
 
-    fun id(value: String?): String? = value?.takeIf(identifier::matches)
+    fun id(value: String?): String? = value?.takeIf(PerfDimensionText::identifier)
 
     fun terminalOutcome(value: String): String = when (value) {
         "good" -> OutcomeTag.OK.wire

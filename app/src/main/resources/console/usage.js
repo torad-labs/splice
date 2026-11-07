@@ -218,11 +218,12 @@ async function readWindow() {
   D.retryPhase?.finish();
   D.retryAbort?.abort();
   const retryAbort = D.retryAbort = new AbortController(), retriedPaths = new Set();
-  let retryTimer = null, retryWindowOpen = false;
+  let retryTimer = null, retryWindowOpen = false, retryStarted = false, retryFinished = false;
   const retryPhase = D.retryPhase = {
     open: () => retryWindowOpen,
     start() {
-      if (!retryTimer && !retryWindowOpen) {
+      if (!retryStarted && !retryFinished) {
+        retryStarted = true;
         retryWindowOpen = true;
         retryTimer = setTimeout(() => { retryTimer = null; retryWindowOpen = false; }, 15000);
       }
@@ -231,6 +232,7 @@ async function readWindow() {
       if (retryTimer) clearTimeout(retryTimer);
       retryTimer = null;
       retryWindowOpen = false;
+      retryFinished = true;
       if (D.retryPhase === this) D.retryPhase = null;
     },
   };

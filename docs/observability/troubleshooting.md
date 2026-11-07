@@ -30,9 +30,12 @@ for history persistence does not itself occupy those workers. Runtime and
 status reads still obey the shared admission bound; a busy response remains an
 unavailable measurement, not an empty interval.
 
-The console retries an HTTP 429 with `control_query_capacity` once per refused
-URL after the current batch settles. Retries run serially within a 15-second
-retry phase and stop when the selected view changes or is canceled. Deadline,
+The console schedules at most one retry per refused URL after the current batch
+settles, serially within a 15-second send window that starts with the first
+retry. A queued retry is skipped if the view changes or the window closes. Once
+sent, a retry keeps its existing query/performance queue slot until its HTTP
+response drains under the route's normal request deadline; the send window does
+not bound that in-flight drain. A stale response is discarded. Deadline,
 memory-budget and other failures remain visible for diagnosis.
 
 ## Sink accounting

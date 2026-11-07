@@ -7,7 +7,6 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
-import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
@@ -404,8 +403,9 @@ class ClaudeCarryingPoolUsageTest {
         val response = client.get("http://127.0.0.1:${rig.server.listeningPort}/api/accounts") {
             bearerAuth(rig.key.get())
         }
-        assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
-        return Json.parseToJsonElement(response.bodyAsText()).jsonObject.getValue("accounts").jsonArray
+        val text = response.bodyAsText()
+        assertEquals(HttpStatusCode.OK, response.status, text)
+        return Json.parseToJsonElement(text).jsonObject.getValue("accounts").jsonArray
             .single {
                 it.jsonObject.getValue("account_labels").jsonObject.getValue(NATIVE_HEAD)
                     .jsonPrimitive.content == label
@@ -425,8 +425,8 @@ class ClaudeCarryingPoolUsageTest {
             counts.getValue("known_arrivals").jsonPrimitive.content == arrivals &&
                 counts.getValue("known_completions").jsonPrimitive.content == completions
         }
-        assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
-        val counts = Json.parseToJsonElement(response.bodyAsText()).jsonObject.getValue("counts").jsonObject
+        assertEquals(HttpStatusCode.OK, response.status, response.text)
+        val counts = Json.parseToJsonElement(response.text).jsonObject.getValue("counts").jsonObject
         assertEquals(arrivals, counts.getValue("known_arrivals").jsonPrimitive.content)
         assertEquals(completions, counts.getValue("known_completions").jsonPrimitive.content)
     }
@@ -437,8 +437,8 @@ class ClaudeCarryingPoolUsageTest {
                 it.jsonObject.getValue("kind").jsonPrimitive.content == "REQUEST_FINISHED"
             }
         }
-        assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
-        val events = Json.parseToJsonElement(response.bodyAsText()).jsonObject
+        assertEquals(HttpStatusCode.OK, response.status, response.text)
+        val events = Json.parseToJsonElement(response.text).jsonObject
             .getValue("observations").jsonArray.map { it.jsonObject }
         assertTrue(events.any { it.getValue("kind").jsonPrimitive.content == "REQUEST_FINISHED" })
     }
@@ -448,16 +448,19 @@ class ClaudeCarryingPoolUsageTest {
         rig: ClaudeNativePoolFixture.Rig,
         url: String,
         ready: (JsonElement) -> Boolean,
-    ): HttpResponse {
-        var response: HttpResponse? = null
+    ): PerfReply {
+        var response: PerfReply? = null
         repeat(20) {
             val current = client.get(url) { bearerAuth(rig.key.get()) }
-            response = current
+            val captured = PerfReply(current.status, current.bodyAsText())
+            response = captured
             if (current.status == HttpStatusCode.OK) {
-                val body = Json.parseToJsonElement(current.bodyAsText())
-                if (ready(body)) return current
+                val body = Json.parseToJsonElement(captured.text)
+                if (ready(body)) return captured
             }
         }
         return requireNotNull(response)
     }
+
+    private data class PerfReply(val status: HttpStatusCode, val text: String)
 }

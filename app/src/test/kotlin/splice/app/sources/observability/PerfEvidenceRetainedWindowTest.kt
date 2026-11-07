@@ -20,6 +20,7 @@ import splice.core.perf.observation.PerfStamp
 import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
 import splice.core.util.JsonScalars
+import splice.core.util.MonoClock
 import splice.core.util.PerfWorkBudget
 import splice.core.util.WallClock
 import splice.head.perf.RequestEvidenceFiles
@@ -102,6 +103,7 @@ private class RetainedEvidenceFixture(private val directory: Path) : AutoCloseab
     private var now = 60_000L
     private val clock = WallClock { now }
     private val writer = RequestEvidenceFiles(directory, clock = clock, elapsed = ElapsedClock { now })
+    private val head = writer.forHead("test")
     private val source = PerfEvidenceFileSource(directory, clock)
     private val identity = PerfIdentity("boot", "build", "version", "config")
     private val scope = PerfScope(
@@ -114,27 +116,47 @@ private class RetainedEvidenceFixture(private val directory: Path) : AutoCloseab
     )
 
     fun seed() {
-        assertTrue(writer.startCoverage("test", identity.bootId))
-        val head = writer.forHead("test")
+        val started = MonoClock.nowMs()
+        assertTrue(AsyncFileIo.drain()) { failure("before_seed", null, started) }
+        assertTrue(writer.startCoverage("test", identity.bootId)) { failure("start_coverage", null, started) }
         repeat(10_080) { index ->
             val from = now
-            assertTrue(head.record(event(index, PerfEventKind.REQUEST_ARRIVED)))
+            record(index, PerfEventKind.REQUEST_ARRIVED)
             now += 20
-            assertTrue(head.record(event(index, PerfEventKind.REQUEST_FINISHED)))
-            assertTrue(head.record(event(index, PerfEventKind.USAGE_RECORDED)))
+            record(index, PerfEventKind.REQUEST_FINISHED)
+            record(index, PerfEventKind.USAGE_RECORDED)
             now = from + 60_000L
-            if (index % 10 == 0) assertTrue(AsyncFileIo.awaitDirectory(directory))
-            if ((index + 1) % 60 == 0) checkpoint()
+            if ((index + 1) % 60 == 0) checkpoint(index)
         }
-        assertTrue(writer.stopCoverage("test"))
-        assertTrue(AsyncFileIo.awaitDirectory(directory))
+        val stopping = MonoClock.nowMs()
+        assertTrue(writer.stopCoverage("test")) { failure("stop_coverage", null, stopping) }
+        settle("final_coverage", null)
     }
 
-    private fun checkpoint() {
-        assertTrue(AsyncFileIo.awaitDirectory(directory))
-        assertTrue(writer.checkpointCoverage())
-        assertTrue(AsyncFileIo.awaitDirectory(directory))
+    private fun record(index: Int, kind: PerfEventKind) {
+        val started = MonoClock.nowMs()
+        assertTrue(head.record(event(index, kind))) { failure("record_$kind", index, started) }
+        // The queued writer reads this virtual clock; settle its write before the next clock advance.
+        settle("seed_$kind", index)
     }
+
+    private fun checkpoint(index: Int) {
+        settle("before_coverage", index)
+        val started = MonoClock.nowMs()
+        assertTrue(writer.checkpointCoverage()) { failure("checkpoint_coverage", index, started) }
+        settle("after_coverage", index)
+    }
+
+    private fun settle(stage: String, index: Int?) {
+        val started = MonoClock.nowMs()
+        assertTrue(AsyncFileIo.awaitDirectory(directory)) { failure(stage, index, started) }
+    }
+
+    private fun failure(stage: String, index: Int?, started: Long): String =
+        "stage=$stage request_index=$index barrier_elapsed_ms=${MonoClock.nowMs() - started} " +
+            "interrupted=${Thread.currentThread().isInterrupted} evidence=${head.sink.status()} " +
+            "coverage=${writer.coverageSink.status()} io=${AsyncFileIo.workSnapshot} " +
+            "work_budget=${PerfWorkBudget.snapshot()}"
 
     private fun event(index: Int, kind: PerfEventKind): PerfObservation {
         val usage = mapOf(

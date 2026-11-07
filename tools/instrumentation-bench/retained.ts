@@ -5,7 +5,7 @@ import { boundedBody } from './control';
 import { defaults, environment, hash } from './manifest';
 import { startTicks, verifyArtifact } from './identity';
 import { diskSize } from './telemetry';
-import { classDigest, compareRetained, parseHistogram, retainedProtocol, type RetainedManifest, type RetainedMeasurement, type RetainedRun } from './retained-model';
+import { classDigest, compareRetained, parseHistogram, retainedProtocol, validReadDiagnostics, type RetainedManifest, type RetainedMeasurement, type RetainedRun } from './retained-model';
 const mainClass = 'splice.app.instrumentation.BenchmarkRetainedFixture';
 const artifactManifest = (m: RetainedManifest) => ({ ...defaults(), role: 'candidate' as const, source_commit: m.source_commit, artifact_sha256: m.artifact_sha256, target: { kind: 'proxy' as const, artifact_path: m.artifact_path } });
 export async function fixtureClassReceipt(directory: string) {
@@ -25,7 +25,8 @@ async function write(path: string, bytes: string) { const file = await open(path
 function measurement(value: any, pid: number, mode: 'local' | 'minimal', source: string): RetainedMeasurement {
   if (value?.process_id !== pid || value?.producer_paused !== true || !['ready', 'paused'].includes(value.status) || value.identity?.build !== `source:${source}`) throw new Error('retained_fixture_identity_mismatch');
   const m = value.measurement;
-  for (const key of ['virtual_ms', 'produced_hours', 'requests', 'observation_reserved_bytes', 'observation_limit_bytes', 'work_leased_bytes', 'work_limit_bytes', 'composition_reserved_bytes', 'query_count', 'query_refused', 'cursor_count']) if (!Number.isSafeInteger(m?.[key]) || m[key] < 0) throw new Error('retained_fixture_counter_missing');
+  for (const key of ['virtual_ms', 'produced_hours', 'requests', 'observation_reserved_bytes', 'observation_limit_bytes', 'work_leased_bytes', 'work_limit_bytes', 'composition_reserved_bytes', 'query_count', 'query_refused', 'expected_retention_incomplete', 'cursor_count']) if (!Number.isSafeInteger(m?.[key]) || m[key] < 0) throw new Error('retained_fixture_counter_missing');
+  if (m.expected_retention_incomplete > m.cursor_count || !validReadDiagnostics(m.read_diagnostics)) throw new Error('retained_fixture_read_diagnostics_invalid');
   if (m.mode !== mode || !Array.isArray(m.sinks) || m.sinks.length > 16) throw new Error('retained_fixture_shape_invalid');
   for (const sink of m.sinks) for (const key of ['failed', 'dropped', 'pending']) if (!Number.isSafeInteger(sink[key]) || sink[key] < 0) throw new Error('retained_fixture_sink_invalid');
   return m;

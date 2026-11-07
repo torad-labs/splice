@@ -28,7 +28,7 @@ export function historyStudy(m: Manifest, rows: unknown[]) {
     const observed = counter(selection.query_source === 'history' ? row.histogram_count : row.observed_arrivals);
     const declared = counter(selection.query_source === 'history' ? row.expected_histogram_count : row.expected_arrivals);
     const population = selection.query_source === 'history' ? 'aggregate_histogram_observations' : 'request_arrivals';
-    if (row.population !== population || observed !== expected || declared !== expected || row.count_matches_fixture !== true) issues.add('history_population_mismatch');
+    if (row.population !== population || observed !== expected || declared !== expected || row.observed_count_matches_fixture !== true) issues.add('history_population_mismatch');
     if (counter(row.as_of_ms) === null || row.as_of_ms < row.until_ms) issues.add('history_as_of_unknown');
     if (selection.query_source === 'evidence' && (counter(row.evidence_as_of_ms) === null || row.evidence_as_of_ms < row.until_ms || counter(row.settled_until_ms) === null || row.settled_until_ms < row.until_ms || row.coverage_basis !== 'committed_observations_as_of' || row.event_time_final !== false)) issues.add('history_evidence_proof_incomplete');
     if (row.work_cost?.status !== 'observed') issues.add('history_work_cost_unavailable');

@@ -16,7 +16,7 @@ function fixture(point = points[0]!) {
     for (const first of [true, false]) history.push({ repetition, source: selection.query_source, window_ms: window, cache: first ? 'first_query_in_process' : 'repeat_query',
       cache_scope: first ? 'fresh_process_and_query_cache' : 'same_process_same_query', prior_population_queries_in_process: first ? 0 : 1,
       from_ms: until - window, until_ms: until, query_bounds_match: true, status: 'ok', error_class: null,
-      population: evidence ? 'request_arrivals' : 'aggregate_histogram_observations', population_complete: true, count_matches_fixture: true,
+      population: evidence ? 'request_arrivals' : 'aggregate_histogram_observations', population_complete: true, observed_count_matches_fixture: true, count_matches_fixture: true,
       histogram_count: evidence ? null : expected, expected_histogram_count: evidence ? null : expected, observed_arrivals: evidence ? expected : null, expected_arrivals: evidence ? expected : null,
       coverage: { complete: true, observed_ms: window }, as_of_ms: until + 1, evidence_as_of_ms: until + 1, settled_until_ms: until,
       coverage_basis: 'committed_observations_as_of', event_time_final: false, work_cost: { status: 'observed' }, binding: { process_id: 100 + repetition, start_ticks: `${1000 + repetition}`, artifact_sha256: artifact.sha256 } });
@@ -37,7 +37,8 @@ test('partial, refused, unknown and mismatched history receipts remain visible a
   const changes = [
     { status: 'partial' }, { status: 'busy', error_class: 'control_http_503' }, { status: 'error', error_class: 'history_query_failed' },
     { coverage: null }, { coverage: { complete: false, observed_ms: 0 } }, { population_complete: null },
-    { observed_arrivals: 1 }, { as_of_ms: null }, { evidence_as_of_ms: null }, { settled_until_ms: null },
+    { observed_arrivals: 1 }, { observed_count_matches_fixture: null }, { observed_count_matches_fixture: false },
+    { as_of_ms: null }, { evidence_as_of_ms: null }, { settled_until_ms: null },
     { query_bounds_match: false }, { work_cost: { status: 'unavailable' } },
   ];
   for (const change of changes) {
@@ -50,6 +51,18 @@ test('partial, refused, unknown and mismatched history receipts remain visible a
   }
   const aggregate = fixture(); aggregate.history[0]!.histogram_count = 1;
   expect(summarize(aggregate.m, aggregate.samples, aggregate.extras).history.reasons).toContain('history_population_mismatch');
+});
+test('exact retained populations with incomplete coverage stay partial without a population-mismatch diagnostic', () => {
+  for (const point of points) {
+    const { m, samples, extras, history } = fixture(point);
+    Object.assign(history[0]!, { status: 'partial', population_complete: false, count_matches_fixture: false,
+      coverage: { complete: false, observed_ms: m.retained_history!.query_window_ms } });
+    const result = summarize(m, samples, extras);
+    expect(result).toMatchObject({ status: 'partial', partial_reason: 'history_study_partial', history: { status: 'partial', completed_queries: 9 } });
+    expect(result.history.reasons).toContain('history_coverage_incomplete');
+    expect(result.history.reasons).toContain('history_query_partial_or_failed');
+    expect(result.history.reasons).not.toContain('history_population_mismatch');
+  }
 });
 test('missing receipts and reused processes cannot complete a requested cold history study', () => {
   const absent = fixture(); absent.history.pop();

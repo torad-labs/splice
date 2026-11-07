@@ -16,6 +16,20 @@ to series, diagnosis, request inventory and traces.
 | An alert stays active during a data gap | Missing data cannot establish healthy recovery. Inspect its reason, count, coverage and last known incident. |
 | Saved baselines cannot be matched | Missing workload facts, mixed configuration, different objective revisions, topology scope and incomplete coverage. Do not infer partitions from average token sizes. |
 
+For a refused read, inspect its `reason`. `control_query_capacity` means the
+bounded control-query admission pool is full; `control_query_deadline` means the
+request exhausted its deadline. `shared_work_budget` means the requested memory
+reservation could not fit. For the latter, inspect
+`memory.work.last_refusal` on `/api/perf/instrumentation/status`, including the
+requested bytes and the accounting snapshot taken at refusal. A later status
+snapshot can show less memory because the competing work has already finished.
+
+Source queries can wait for an aggregate checkpoint within their existing
+deadline. This wait happens before acquiring an active HTTP worker, so waiting
+for history persistence does not itself occupy those workers. Runtime and
+status reads still obey the shared admission bound; a busy response remains an
+unavailable measurement, not an empty interval.
+
 ## Sink accounting
 
 Queue acceptance and durable completion are separate. File sinks expose observed,

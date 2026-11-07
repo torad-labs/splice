@@ -150,6 +150,14 @@ reducing it; an HTTP scrape retains ownership through response delivery.
 Concurrency and size limits return visible busy/partial states. These budgets
 do not claim that the whole JVM uses only 32 MiB.
 
+Live source queries and aggregate checkpoints coordinate their use of that work
+pool. A checkpoint retains its full workspace reservation until accepted file
+work finishes. A source query waits for its phase before taking an active HTTP
+worker, within the existing admission bound and 15-second deadline. Cancellation
+releases query ownership; it does not revoke ownership already transferred to
+accepted persistence. Runtime and instrumentation-status reads do not acquire
+the source-query phase, but still share the bounded HTTP admission pool.
+
 Instrumentation status exposes `memory.work.accounting` alongside the existing
 `leased_bytes` and unchanged 16 MiB `limit_bytes`. Its `leased_bytes` is the sum
 of `unretained_reservation_bytes` and `retained_ticket_bytes`. The `kinds` object

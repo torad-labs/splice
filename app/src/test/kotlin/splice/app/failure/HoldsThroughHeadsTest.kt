@@ -143,7 +143,12 @@ internal class HoldsThroughHeadsTest : HoldRouteFixtures() {
             assertTrue((answer.noticeArrival("5-hour") ?: Duration.INFINITE) <= 1.seconds, "the line comes at once")
             val held = answer.arrivals.filter { it <= provider.requests[1].at }
             val longest = held.zipWithNext { a, b -> b - a }.maxOrNull() ?: Duration.ZERO
-            assertTrue(longest <= 32.seconds, "a ping at least every 30 s while held, the longest gap $longest")
+            assertTrue(longest <= 32.seconds) {
+                val gap = held.zipWithNext().maxByOrNull { (from, until) -> until - from }
+                "a ping at least every 30 s while held, the longest gap $longest " +
+                    "from=${gap?.first} until=${gap?.second} arrivals=${held.size} " +
+                    "resumed_at=${provider.requests[1].at} virtual_now=${time.passed()}"
+            }
         }
     }
 
@@ -731,8 +736,15 @@ internal abstract class HoldRouteFixtures : HoldReplyFixtures() {
                 val woken = time.parkedDues().count { it <= next }
                 val seen = answers()
                 time.advanceBy((next - now).coerceAtLeast(Duration.ZERO))
-                withTimeoutOrNull(ANSWER_MS) {
+                val answered = withTimeoutOrNull(ANSWER_MS) {
                     while (!done() && answers() < seen + woken) delay(POLL_MS)
+                    true
+                }
+                // An unanswered wake must fail here; moving time again would hide the unsettled fixture.
+                assertTrue(answered == true) {
+                    "stage=virtual_clock_wake_unanswered from=$now until=$next woken=$woken " +
+                        "answers_before=$seen answers_now=${answers()} done=${done()} " +
+                        "parked=${time.parkedNow()} next_due=${time.nextDue()} wait_guard_ms=$ANSWER_MS"
                 }
             }
         }

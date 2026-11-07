@@ -15,24 +15,47 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.perf.LivenessProbe
 import splice.core.testing.TestPorts
 import splice.core.util.Cancellables
+import java.io.InputStream
 import java.net.ServerSocket
+import java.net.Socket
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 
 private const val CLOSED_400 = "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n" +
     "Connection: close\r\n\r\n"
 
+// Keep the existing per-probe bound; fixture startup and teardown get the same finite guard.
+private const val TEST_PROBE_TIMEOUT_MS = 300
+
+// The marked probe has fixed small headers/body; reject malformed framing without an unbounded read.
+private const val PROBE_HEADER_BYTES = 1024
+
 class TurnPathProbeLoopTest {
 
     private val sockets = mutableListOf<ServerSocket>()
     private val logs = mutableListOf<String>()
+    private val answeringConnection = AtomicReference<Socket?>(null)
+    private val answeringStage = AtomicReference("not started")
+    private val answeringFailure = AtomicReference<String?>(null)
+    private val answered = AtomicInteger()
+    private var answeringThread: Thread? = null
 
     @AfterEach
-    fun tearDown() = sockets.forEach {
-        Cancellables.discard(runCatching { it.close() }, "turn-probe test server teardown")
+    fun tearDown() {
+        sockets.forEach {
+            Cancellables.discard(runCatching { it.close() }, "turn-probe test server teardown")
+        }
+        answeringConnection.getAndSet(null)?.close()
+        answeringThread?.join(TEST_PROBE_TIMEOUT_MS.toLong())
+        assertFalse(answeringThread?.isAlive == true) { "answering fixture did not stop: ${answerDiagnostics()}" }
     }
 
     /** A server that answers every request with an HTTP error — alive, just unhappy.
@@ -42,23 +65,56 @@ class TurnPathProbeLoopTest {
      *  open and unanswered, which the probe reads as exactly the wedge this server exists NOT to be. */
     private fun answeringServer(): Int {
         val ss = ServerSocket(0, 8, java.net.InetAddress.getLoopbackAddress()).also(sockets::add)
-        thread(isDaemon = true) {
+        val ready = CountDownLatch(1)
+        answeringThread = thread(isDaemon = true, name = "turn-probe-answer-accept") {
+            answeringStage.set("accepting")
+            ready.countDown()
             while (!ss.isClosed) {
                 Cancellables.discard(
                     runCatching {
                         ss.accept().use { c ->
-                            c.getInputStream().read(ByteArray(1024)) // drain a little
-                            c.getOutputStream().write(
-                                CLOSED_400.toByteArray(),
-                            )
+                            answeringConnection.set(c)
+                            if (ss.isClosed) return@use
+                            answeringStage.set("reading request")
+                            c.soTimeout = TEST_PROBE_TIMEOUT_MS
+                            // TCP read boundaries are not HTTP boundaries. Closing after one read can
+                            // leave the POST body unread and reset the client's recovery response.
+                            consumeProbe(c.getInputStream().buffered())
+                            answeringStage.set("writing response")
+                            c.getOutputStream().write(CLOSED_400.toByteArray())
+                            answered.incrementAndGet()
+                            answeringStage.set("answered")
                         }
-                    },
+                    }.onFailure { if (!ss.isClosed) answeringFailure.set(it.javaClass.simpleName) },
                     "turn-probe test accept loop",
                 )
+                answeringConnection.set(null)
             }
-        }.name = "turn-probe-answer-accept"
+        }
+        assertTrue(ready.await(TEST_PROBE_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)) {
+            "answering fixture did not start: ${answerDiagnostics()}"
+        }
         return ss.localPort
     }
+
+    private fun consumeProbe(input: InputStream) {
+        val header = StringBuilder()
+        while (!header.endsWith("\r\n\r\n")) {
+            check(header.length < PROBE_HEADER_BYTES) { "probe headers exceeded fixture bound" }
+            val next = input.read()
+            check(next >= 0) { "probe ended before headers" }
+            header.append(next.toChar())
+        }
+        val length = header.lines().single { it.startsWith("Content-Length:", ignoreCase = true) }
+            .substringAfter(':').trim().toInt()
+        val body = LivenessProbe.PROBE_REQUEST_JSON.toByteArray(Charsets.UTF_8)
+        check(length == body.size) { "unexpected probe body length" }
+        check(input.readNBytes(length).contentEquals(body)) { "incomplete or unexpected probe body" }
+    }
+
+    private fun answerDiagnostics() =
+        "stage=${answeringStage.get()}, answered=${answered.get()}, failure=${answeringFailure.get()}, " +
+            "thread=${answeringThread?.state}"
 
     /** The wedge: accepts the connection and never writes a byte. */
     private fun hangingServer(): Int {
@@ -75,7 +131,13 @@ class TurnPathProbeLoopTest {
     }
 
     private fun probe(port: Int, stalled: ConcurrentHashMap<String, Boolean>) =
-        TurnPathProbeLoop("t", TurnPathProbe(port, timeoutMs = 300), stalled, { logs.add(it) }, intervalMs = 10)
+        TurnPathProbeLoop(
+            "t",
+            TurnPathProbe(port, timeoutMs = TEST_PROBE_TIMEOUT_MS),
+            stalled,
+            { logs.add(it) },
+            intervalMs = 10,
+        )
 
     @Test
     fun `the loop marks its POST as non-dispatching without carrying credentials`() {
@@ -105,7 +167,7 @@ class TurnPathProbeLoopTest {
         val stalled = ConcurrentHashMap<String, Boolean>()
         val p = probe(answeringServer(), stalled)
         repeat(4) { p.tick() }
-        assertFalse(stalled["t"] == true, "a 400 is a live turn path")
+        assertFalse(stalled["t"] == true) { "a 400 is a live turn path: ${answerDiagnostics()}" }
         assertTrue(logs.none { "STALLED" in it })
     }
 
@@ -125,7 +187,7 @@ class TurnPathProbeLoopTest {
         val stalled = ConcurrentHashMap<String, Boolean>()
         val p = TurnPathProbeLoop(
             "t",
-            TurnPathProbe(hangingServer(), timeoutMs = 300, draining = DaemonDraining { true }),
+            TurnPathProbe(hangingServer(), timeoutMs = TEST_PROBE_TIMEOUT_MS, draining = DaemonDraining { true }),
             stalled,
             { logs.add(it) },
             intervalMs = 10,
@@ -146,8 +208,8 @@ class TurnPathProbeLoopTest {
         // same key, now against a live server — a restart/recovery in place
         val p2 = probe(answeringServer(), stalled)
         p2.tick()
-        assertFalse(stalled["t"] == true, "recovery must clear the flag")
-        assertTrue(logs.any { "RECOVERED" in it })
+        assertFalse(stalled["t"] == true) { "recovery must clear the flag: ${answerDiagnostics()}, logs=$logs" }
+        assertEquals(1, logs.count { "RECOVERED" in it }, "recovery logs the transition once")
     }
 
     @Test

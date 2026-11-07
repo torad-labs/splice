@@ -586,6 +586,9 @@ internal class HoldBoundsThroughHeadsTest : HoldRouteFixtures() {
             val head = chat()
 
             val stream = head.client.open(launched())
+            runClock(1.seconds, atMost = 2.minutes) { provider.requests.size >= 4 }
+            // Drain the real client reader before advancing the virtual wait whose start this test measures.
+            eventually { stream.soFar().noticeArrival("15 seconds") != null }
             runClock(1.seconds, atMost = 2.minutes) { stream.finished }
             val answer = stream.finish()
 

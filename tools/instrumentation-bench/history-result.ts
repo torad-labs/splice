@@ -25,6 +25,8 @@ export function historyStudy(m: Manifest, rows: unknown[]) {
     if (rowBounds !== bounds) issues.add('history_fixture_window_changed');
     if (row.status !== 'ok' || row.error_class !== null) issues.add('history_query_partial_or_failed');
     if (row.population_complete !== true || row.coverage?.complete !== true || row.coverage?.observed_ms !== selection.query_window_ms) issues.add('history_coverage_incomplete');
+    if (selection.query_source === 'history' && (row.identity_cohorts_valid !== true || row.identity_cohorts_truncated !== false
+      || !Array.isArray(row.identity_cohorts) || row.identity_cohorts.length < 1 || row.identity_cohort_count !== row.identity_cohorts.length)) issues.add('history_identity_cohorts_invalid');
     const observed = counter(selection.query_source === 'history' ? row.histogram_count : row.observed_arrivals);
     const declared = counter(selection.query_source === 'history' ? row.expected_histogram_count : row.expected_arrivals);
     const population = selection.query_source === 'history' ? 'aggregate_histogram_observations' : 'request_arrivals';

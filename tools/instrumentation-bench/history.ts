@@ -33,7 +33,7 @@ export function boundedIdentityCohortProjection(value: unknown) {
     const schemaVersion = record.schema_version === 1 ? 1 : null;
     return { boot_id: bootId, build, boot_config_revision: configRevision, schema_version: schemaVersion };
   });
-  const valid = !truncated && cohorts.every(identity => identity.boot_id !== null && identity.build !== null && identity.boot_config_revision !== null && identity.schema_version === 1);
+  const valid = !truncated && cohorts.length > 0 && cohorts.every(identity => identity.boot_id !== null && identity.build !== null && identity.boot_config_revision !== null && identity.schema_version === 1);
   return { cohorts, valid, truncated };
 }
 /** Aggregate only the fixed synthetic histogram vocabulary; never retain scopes or arbitrary response fields. */

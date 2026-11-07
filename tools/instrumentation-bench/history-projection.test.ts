@@ -59,6 +59,7 @@ test('identity cohort projection keeps only validated boot/build/config fields w
   expect(boundedIdentityCohortProjection([cohort])).toEqual({ cohorts: [{ boot_id: cohort.boot_id, build: cohort.build, boot_config_revision: cohort.boot_config_revision, schema_version: 1 }], valid: true, truncated: false });
   const seed = { boot_id: 'benchmark-retained-fixture', build: `source:${'c'.repeat(40)}`, boot_config_revision: 'fixture-config-v1', schema_version: 1 };
   expect(boundedIdentityCohortProjection([seed])).toEqual({ cohorts: [seed], valid: true, truncated: false });
+  expect(boundedIdentityCohortProjection([])).toEqual({ cohorts: [], valid: false, truncated: false });
   const malformed = boundedIdentityCohortProjection([{ ...cohort, boot_id: 'unsafe-private-boot', build: 'private-build-path', boot_config_revision: 'unknown' }]);
   expect(malformed).toEqual({ cohorts: [{ boot_id: null, build: null, boot_config_revision: null, schema_version: 1 }], valid: false, truncated: false });
   expect(JSON.stringify(malformed)).not.toContain('unsafe-private-boot');

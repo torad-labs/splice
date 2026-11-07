@@ -38,7 +38,7 @@ internal class SseRoundHeaders(private val provider: Provider, private val onRet
             (creds as? Credentials.ApiKey)?.header,
         )
         answers.sent(key)
-        drive.accountLabel.observe(key, drive.meta.scope.sessionId)
+        drive.observeAccount(key)
         return headers
     }
 }

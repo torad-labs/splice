@@ -52,6 +52,7 @@ internal class WsRoundAcquire(
         }
         val postedAtMs = drive.perf.elapsedMs()
         val round = runner.attempt(bodyJson, drive.meta, drive.turnHeaders, credentials, drive.perf) ?: return null
+        drive.observeAccount(key)
         return WsAcquiredRound(
             round.copy(events = UpstreamEventTiming(drive.perf, postedAtMs).observe(round.events)),
             answer,

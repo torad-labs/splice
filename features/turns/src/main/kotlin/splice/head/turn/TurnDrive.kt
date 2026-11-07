@@ -167,6 +167,16 @@ internal data class TurnDrive(
     /** The account this turn's row names: observed per attempt, else the chosen login, else the head's label. */
     val accountLabel = TurnAccountLabel()
 
+    /** Keep exact request evidence on the same account identity as this turn's legacy row. */
+    internal fun observeAccount(key: String?) {
+        accountLabel.observe(key, meta.scope.sessionId)
+        val request = perf.observations ?: return
+        val accountId = accountLabel.of(account?.account?.label)
+        if (request.links.accountId != accountId) {
+            request.update(request.scope, request.links.copy(accountId = accountId))
+        }
+    }
+
     /** The model the upstream is asked for: the meta's, read rather than copied. */
     val upstreamModel: String get() = meta.route.upstreamModel
 

@@ -7,12 +7,14 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -29,13 +31,16 @@ import splice.app.control.ControlAuth
 import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
 import splice.app.control.controlServerFor
+import splice.app.observability.PerfTelemetry
 import splice.app.sources.PerfRowsFileSource
 import splice.app.sources.PerfSessionAccountIndex
+import splice.app.sources.PerfSourceFiles
 import splice.core.auth.CredentialKey
 import splice.core.config.ConfigService
 import splice.core.config.LAUNCH_PROOF_HEADER
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
+import splice.core.util.AsyncFileIo
 import splice.core.util.JsonlSink
 import splice.core.util.WallClock
 import splice.head.usage.QuotaTracker
@@ -47,6 +52,7 @@ import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRoute
 import splice.sessions.registry.SessionSource
 import splice.sessions.registry.SessionStatus
+import splice.usage.alerts.AlertStore
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
@@ -283,7 +289,7 @@ class ClaudeCarryingPoolUsageTest {
     fun `an added pool account clears the old carrying place without replacing its own Usage quota`() = runBlocking {
         val fixture = fixture()
         val sent = CopyOnWriteArrayList<String?>()
-        val upstream = fixture.nativeUpstream(sent, CopyOnWriteArrayList(), refusedCredential = null).start()
+        val upstream = fixture.nativeUpstream(sent, CopyOnWriteArrayList()).start()
         val port = upstream.engine.resolvedConnectors().single().port
         val rig = fixture.rig(upstreamUrl = "http://127.0.0.1:$port")
         try {
@@ -328,5 +334,126 @@ class ClaudeCarryingPoolUsageTest {
             rig.close()
             upstream.stop()
         }
+    }
+
+    @Test
+    fun `request evidence summary follows the account ref actually used by the selected pool turn`() = runBlocking {
+        val fixture = fixture()
+        val telemetry = telemetry(fixture)
+        telemetry.start()
+        val sent = CopyOnWriteArrayList<String?>()
+        val upstream = fixture.nativeUpstream(sent, CopyOnWriteArrayList()).start()
+        val port = upstream.engine.resolvedConnectors().single().port
+        val rig = fixture.rig(upstreamUrl = "http://127.0.0.1:$port", performance = telemetry)
+        try {
+            val from = System.currentTimeMillis()
+            HttpClient(Java).use { client ->
+                sendEvidenceTurn(client, rig, sent)
+                assertTrue(AsyncFileIo.awaitDirectory(fixture.paths.perfEvidenceDir))
+                val accountRef = accountRef(client, rig, "added")
+                val until = System.currentTimeMillis() + 1
+                val base = "http://127.0.0.1:${rig.server.listeningPort}/api/perf"
+                val query = "contract=1&source=evidence&head=$NATIVE_HEAD&account=$accountRef&from=$from&until=$until"
+                assertSummaryCounts(client, rig, "$base/summary?$query", arrivals = "1", completions = "1")
+                val nativeRef = requireNotNull(
+                    rig.plane.credentialAccountNames.forCredential(key("synthetic-native")),
+                )
+                assertSummaryCounts(
+                    client,
+                    rig,
+                    "$base/summary?${query.replace("account=$accountRef", "account=$nativeRef")}",
+                    arrivals = "0",
+                    completions = "0",
+                )
+                assertFinishedObservation(client, "$base/observations?$query", rig)
+            }
+        } finally {
+            rig.close()
+            telemetry.close()
+            upstream.stop()
+        }
+    }
+
+    private fun telemetry(fixture: ClaudeNativePoolFixture) = PerfTelemetry(
+        ConfigService(fixture.paths),
+        setOf(NATIVE_HEAD),
+        PerfSourceFiles(fixture.paths),
+        AlertStore(fixture.paths.stateDir.resolve("alerts.json")),
+        LogSink {},
+    )
+
+    private suspend fun sendEvidenceTurn(client: HttpClient, rig: ClaudeNativePoolFixture.Rig, sent: List<String?>) {
+        val turn = client.post("http://127.0.0.1:${rig.head.head.port}/v1/messages") {
+            bearerAuth("synthetic-caller")
+            header(LAUNCH_PROOF_HEADER, rig.proof)
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"model":"synthetic-model","stream":false,"max_tokens":32,""" +
+                    """"messages":[{"role":"user","content":"synthetic evidence account turn"}]}""",
+            )
+        }
+        assertEquals(HttpStatusCode.OK, turn.status, turn.bodyAsText())
+        assertEquals(listOf("Bearer synthetic-native", "Bearer synthetic-added"), sent)
+    }
+
+    private suspend fun accountRef(client: HttpClient, rig: ClaudeNativePoolFixture.Rig, label: String): String {
+        val response = client.get("http://127.0.0.1:${rig.server.listeningPort}/api/accounts") {
+            bearerAuth(rig.key.get())
+        }
+        assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
+        return Json.parseToJsonElement(response.bodyAsText()).jsonObject.getValue("accounts").jsonArray
+            .single {
+                it.jsonObject.getValue("account_labels").jsonObject.getValue(NATIVE_HEAD)
+                    .jsonPrimitive.content == label
+            }
+            .jsonObject.getValue("ref").jsonPrimitive.content
+    }
+
+    private suspend fun assertSummaryCounts(
+        client: HttpClient,
+        rig: ClaudeNativePoolFixture.Rig,
+        url: String,
+        arrivals: String,
+        completions: String,
+    ) {
+        val response = readUntil(client, rig, url) { body ->
+            val counts = body.jsonObject.getValue("counts").jsonObject
+            counts.getValue("known_arrivals").jsonPrimitive.content == arrivals &&
+                counts.getValue("known_completions").jsonPrimitive.content == completions
+        }
+        assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
+        val counts = Json.parseToJsonElement(response.bodyAsText()).jsonObject.getValue("counts").jsonObject
+        assertEquals(arrivals, counts.getValue("known_arrivals").jsonPrimitive.content)
+        assertEquals(completions, counts.getValue("known_completions").jsonPrimitive.content)
+    }
+
+    private suspend fun assertFinishedObservation(client: HttpClient, url: String, rig: ClaudeNativePoolFixture.Rig) {
+        val response = readUntil(client, rig, url) { body ->
+            body.jsonObject.getValue("observations").jsonArray.any {
+                it.jsonObject.getValue("kind").jsonPrimitive.content == "REQUEST_FINISHED"
+            }
+        }
+        assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
+        val events = Json.parseToJsonElement(response.bodyAsText()).jsonObject
+            .getValue("observations").jsonArray.map { it.jsonObject }
+        assertTrue(events.any { it.getValue("kind").jsonPrimitive.content == "REQUEST_FINISHED" })
+    }
+
+    private suspend fun readUntil(
+        client: HttpClient,
+        rig: ClaudeNativePoolFixture.Rig,
+        url: String,
+        ready: (JsonElement) -> Boolean,
+    ): HttpResponse {
+        var response: HttpResponse? = null
+        repeat(20) {
+            val current = client.get(url) { bearerAuth(rig.key.get()) }
+            response = current
+            if (current.status == HttpStatusCode.OK) {
+                val body = Json.parseToJsonElement(current.bodyAsText())
+                if (ready(body)) return current
+            }
+        }
+        return requireNotNull(response)
     }
 }

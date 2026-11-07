@@ -135,7 +135,13 @@ private class RetainedEvidenceFixture(private val directory: Path) : AutoCloseab
         val values = when (kind) {
             PerfEventKind.USAGE_RECORDED -> usage
             PerfEventKind.REQUEST_FINISHED -> mapOf("arrival_to_terminal_ms" to 20.0)
-            else -> emptyMap()
+            PerfEventKind.REQUEST_ARRIVED, PerfEventKind.REQUEST_ADMITTED,
+            PerfEventKind.ATTEMPT_STARTED, PerfEventKind.ATTEMPT_FINISHED,
+            PerfEventKind.GATE_STATE, PerfEventKind.CLIENT_PROGRESS, PerfEventKind.GAP,
+            PerfEventKind.PROTOCOL_PROGRESS, PerfEventKind.TOOL_STARTED, PerfEventKind.CONTENT_PROGRESS,
+            PerfEventKind.TOOL_PHASE, PerfEventKind.CHECKPOINT, PerfEventKind.TOOL_FINISHED,
+            PerfEventKind.RUNTIME, PerfEventKind.SELF_COST,
+            -> emptyMap()
         }
         return PerfObservation(
             PerfStamp("$index-${kind.name}", identity, now, now),

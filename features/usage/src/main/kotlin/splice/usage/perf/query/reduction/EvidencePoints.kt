@@ -27,9 +27,11 @@ internal class EvidencePoints(private val query: PerfQuery) {
         "arrival_to_first_text_ms", "arrival_to_first_tool_ms", "arrival_to_first_client_byte_ms",
         "queue_wait_ms", "upstream_gap_max_ms", "downstream_gap_max_ms", "attempt_duration_ms",
     ) + USAGE_METRICS
-    private val result = LinkedHashMap<PointKey, PerfAggregatePoint>()
+    private val bins = PerfEvidenceBins(query)
+    val truncated: Boolean get() = bins.truncated
+    val resolutionMs: Long get() = bins.resolutionMs
 
-    fun points(): Map<PointKey, PerfAggregatePoint> = result
+    fun points(): Map<PointKey, PerfAggregatePoint> = bins.points()
 
     fun add(events: List<PerfObservation>) {
         events.firstOrNull { it.kind == PerfEventKind.REQUEST_ARRIVED }?.let { count(it, "requests_arrived") }
@@ -74,22 +76,17 @@ internal class EvidencePoints(private val query: PerfQuery) {
         val start = maxOf(query.fromMs, event.stamp.wallMs / MINUTE_MS * MINUTE_MS)
         val end = minOf(query.untilMs, event.stamp.wallMs / MINUTE_MS * MINUTE_MS + MINUTE_MS)
         val scope = event.scope.copy(outcome = event.outcome ?: event.scope.outcome)
-        val key = PointKey(event.stamp.identity, metric, scope, start)
-        val previous = result[key]
-        result[key] = PerfAggregatePoint(
-            metric, scope, start, end, (previous?.count ?: 0) + 1,
-            (previous?.sum ?: 0.0) + value, minOf(previous?.min ?: value, value),
-            maxOf(previous?.max ?: value, value), buckets(metric, value, previous),
+        bins.add(
+            event.stamp.identity,
+            PerfAggregatePoint(metric, scope, start, end, 1, value, value, value, buckets(metric, value)),
         )
     }
 
-    private fun buckets(metric: String, value: Double, previous: PerfAggregatePoint?): List<Long> {
+    private fun buckets(metric: String, value: Double): List<Long> {
         if (PerfQueryMetrics.type(metric) != "histogram") return emptyList()
         val bounds = PerfMetricRegistry.durationBoundsMs()
         val bucket = bounds.indexOfFirst { value <= it }.takeIf { it >= 0 } ?: bounds.size
-        return List(bounds.size + 1) {
-            (previous?.buckets?.getOrNull(it) ?: 0L) + if (it == bucket) 1L else 0L
-        }
+        return List(bounds.size + 1) { if (it == bucket) 1L else 0L }
     }
 }
 

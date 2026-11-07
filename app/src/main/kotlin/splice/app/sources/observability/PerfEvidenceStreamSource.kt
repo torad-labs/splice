@@ -74,7 +74,7 @@ internal class PerfEvidenceStreamSource(
                 val lease = PerfWorkBudget.acquire(EVIDENCE_MEMORY_DEDUP_BYTES, PerfWorkBudget.Kind.EVIDENCE_READ)
                     ?: throw PerfReadRefusal(PerfReadIssue.EVIDENCE_MEMORY_LIMIT)
                 lease.use {
-                    scan.scan(PerfEvidenceMemorySeen())
+                    repeat(scan.partitions) { scan.scan(PerfEvidenceMemorySeen(), it) }
                 }
             }
         } catch (failure: PerfReadRefusal) {
@@ -102,7 +102,10 @@ internal class PerfEvidenceStreamSource(
                 return false
             }
             // Record, work-limit and cleanup failures propagate; retrying would duplicate consumer callbacks.
-            seen.use(scan::scan)
+            seen.use { scan.scan(it) }
+            for (partition in 1 until scan.partitions) {
+                files.evidenceIds(UUID.randomUUID().toString()).use { scan.scan(it, partition) }
+            }
             true
         }
     }

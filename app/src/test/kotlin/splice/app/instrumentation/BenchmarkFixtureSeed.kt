@@ -2,7 +2,9 @@ package splice.app.instrumentation
 
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -34,6 +36,15 @@ import java.security.MessageDigest
 
 /** Offline production-writer fixture. Invoke the already compiled test entry only after benchmark authorization. */
 object BenchmarkFixtureSeed {
+    private val requestScope = PerfScope(
+        head = HEAD,
+        model = "fixture-model",
+        transport = "sse",
+        local = false,
+        compact = false,
+        streaming = true,
+    )
+
     @JvmStatic
     fun main(args: Array<String>) {
         require(args.size == 3) { "expected task directory, until epoch ms, source commit" }
@@ -146,7 +157,7 @@ object BenchmarkFixtureSeed {
         val points = metrics.flatMap { metric ->
             List(16) { model ->
                 PerfAggregatePoint(
-                    metric, PerfScope(head = HEAD, model = "fixture-model-$model", transport = "sse"),
+                    metric, requestScope.copy(model = "fixture-model-$model"),
                     from, until, 1L, 20.0, 20.0, 20.0,
                     List(bounds.size + 1) { if (it == bounds.indexOfFirst { bound -> bound >= 20.0 }) 1L else 0L },
                 )
@@ -158,13 +169,15 @@ object BenchmarkFixtureSeed {
     private fun event(identity: PerfIdentity, links: PerfLinks, kind: PerfEventKind, now: Long): PerfObservation =
         PerfObservation(
             PerfStamp("${links.requestId}-${kind.name}", identity, now, now),
-            PerfScope(head = HEAD, model = "fixture-model", transport = "sse"),
+            requestScope,
             kind,
             values = when (kind) {
                 PerfEventKind.REQUEST_FINISHED -> mapOf("arrival_to_terminal_ms" to 20.0)
                 PerfEventKind.USAGE_RECORDED -> mapOf(
                     "input_tokens" to 15.0, "output_tokens" to 4.0, "cached_tokens" to 5.0,
                     "usage_cache_write_tokens" to 0.0, "usage_cache_write_1h_tokens" to 0.0,
+                    "missing_usage" to 0.0, "usage_absorbed_rounds" to 0.0, "usage_cut_rounds" to 0.0,
+                    "usage_no_request" to 0.0,
                     "usage_observed_input" to 1.0, "usage_observed_output" to 1.0,
                     "usage_observed_cache_read" to 1.0, "usage_observed_cache_write" to 1.0,
                     "usage_observed_cache_write_1h" to 1.0,
@@ -187,7 +200,7 @@ object BenchmarkFixtureSeed {
                 -> emptyMap()
             },
             links = links,
-            outcome = if (kind == PerfEventKind.REQUEST_FINISHED) "good" else null,
+            outcome = if (kind == PerfEventKind.REQUEST_FINISHED) "ok" else null,
         )
 
     private fun receipt(root: Path, paths: StatePaths, until: Long, identity: PerfIdentity) {
@@ -202,6 +215,9 @@ object BenchmarkFixtureSeed {
             put("aggregate_observations_per_minute", 48)
             put("evidence_requests_per_minute", 1)
             put("population_note", "aggregate and raw evidence are distinct synthetic fixture populations")
+            put("evidence_scope", Json.encodeToJsonElement(PerfScope.serializer(), requestScope))
+            put("terminal_outcome", "ok")
+            put("usage_policy", "known_complete; no_absorbed_rounds; no_cut_rounds; actual_synthetic_request")
             put("coverage_certified_until_ms", until)
             putJsonArray("producer_classes") {
                 listOf(
@@ -223,21 +239,23 @@ object BenchmarkFixtureSeed {
                     )
                 }
             }
-            putJsonArray("files") {
-                Files.walk(paths.stateDir).use { files ->
-                    files.filter { Files.isRegularFile(it, LinkOption.NOFOLLOW_LINKS) }.sorted().forEach { file ->
-                        add(
-                            buildJsonObject {
-                                put("path", root.relativize(file).toString())
-                                put("bytes", Files.size(file))
-                                put("sha256", sha256(file))
-                            },
-                        )
-                    }
-                }
-            }
+            put("files", inventory(root, paths))
         }
         SecureFile.writeAtomic0600(root.resolve("fixture-receipt.json"), Json.encodeToString(value))
+    }
+
+    private fun inventory(root: Path, paths: StatePaths): JsonArray = buildJsonArray {
+        Files.walk(paths.stateDir).use { files ->
+            files.filter { Files.isRegularFile(it, LinkOption.NOFOLLOW_LINKS) }.sorted().forEach { file ->
+                add(
+                    buildJsonObject {
+                        put("path", root.relativize(file).toString())
+                        put("bytes", Files.size(file))
+                        put("sha256", sha256(file))
+                    },
+                )
+            }
+        }
     }
 
     private fun sha256(path: Path): String {

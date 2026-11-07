@@ -1,5 +1,6 @@
 package splice.app.sources.observability
 
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -82,6 +83,11 @@ class PerfEvidenceStreamingTest {
                 assertNull(JsonScalars.str(result.getValue("goodput").jsonObject, "eligible"))
                 assertEquals("false", JsonScalars.str(result.getValue("coverage").jsonObject, "complete"))
                 assertTrue(result.toString().contains("evidence_duplicate_conflict"))
+                val conflicts = result.getValue("coverage").jsonObject.getValue("issues").jsonArray.filter {
+                    JsonScalars.str(it.jsonObject, "code") == "evidence_duplicate_conflict"
+                }
+                assertEquals(1, conflicts.size)
+                assertEquals("1", JsonScalars.str(conflicts.single().jsonObject, "count"))
             } finally {
                 PerfWorkBudget.release(result)
             }
@@ -153,7 +159,14 @@ internal class StreamingEvidenceFixture(root: Path) : AutoCloseable, PerfQuerySo
     fun conflict() {
         now += 100
         val first = event(0, PerfEventKind.REQUEST_ARRIVED, 1_000L)
-        assertTrue(files.forHead("test").record(first.copy(scope = first.scope.copy(model = "conflicting-model"))))
+        assertTrue(
+            files.forHead("test").record(
+                first.copy(
+                    scope = first.scope.copy(model = "conflicting-model"),
+                    links = first.links.copy(requestId = "another-request"),
+                ),
+            ),
+        )
         checkpoint()
     }
 

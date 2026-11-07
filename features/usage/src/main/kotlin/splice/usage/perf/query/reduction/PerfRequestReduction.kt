@@ -9,7 +9,7 @@ import splice.core.perf.observation.PerfLinks
 import splice.core.perf.observation.PerfObservation
 import splice.core.perf.observation.PerfScope
 import splice.usage.perf.history.PerfEvidenceReceipt
-import splice.usage.perf.history.PerfObservationConsumer
+import splice.usage.perf.history.PerfPartitionedObservationConsumer
 import splice.usage.perf.query.PerfQuery
 import splice.usage.perf.query.PerfQueryFilter
 import splice.usage.perf.query.PerfQueryJson
@@ -19,12 +19,16 @@ internal class PerfRequestReduction(
     private val query: PerfQuery,
     private val filter: PerfQueryFilter,
     private val data: QueryData,
-) : PerfObservationConsumer {
-    private val memory = PerfReductionMemory()
+) : PerfPartitionedObservationConsumer {
+    private val memory = PerfReductionMemory(PERF_REDUCTION_BYTES - TIMELINE_RESERVATION_BYTES)
     private val requests = LinkedHashMap<ReducedRequestKey, PerfReducedRequest>()
-    private val timeline = PerfRepresentativeTimeline(memory)
+    private val timeline = PerfRepresentativeTimeline(PerfReductionMemory(TIMELINE_RESERVATION_BYTES))
     private val keepLinks = query.filters.keys.any { it in setOf("session", "project", "account") }
     private var membershipUnknown = false
+    private val points = EvidencePoints(query)
+    private val totals = PerfEvidenceTotals(query)
+    private val workload = PerfWorkloadComparison(query)
+    private var matching = 0L
 
     override fun accept(observation: PerfObservation): Boolean {
         val request = observation.links.requestId ?: return true
@@ -80,13 +84,11 @@ internal class PerfRequestReduction(
     }
 
     fun finish(receipt: PerfEvidenceReceipt) {
-        val points = EvidencePoints(query)
-        val totals = PerfEvidenceTotals(query)
-        val workload = PerfWorkloadComparison(query)
-        val matching = reduce(points, totals, workload)
+        partitionFinished()
         val complete = listOf(
             receipt.complete,
             !data.truncated,
+            !points.truncated,
             !membershipUnknown,
             receipt.coverage.observedMs >= query.untilMs - query.fromMs,
         ).all {
@@ -98,6 +100,11 @@ internal class PerfRequestReduction(
         data.workload = JsonObject(workload.render(complete) + receiptMetadata(receipt))
         data.timeline = timeline.render(matching)
         merge(points, complete)
+    }
+
+    override fun partitionFinished() {
+        matching += reduce(points, totals, workload)
+        memory.nextPartition()
     }
 
     private fun reduce(points: EvidencePoints, totals: PerfEvidenceTotals, workload: PerfWorkloadComparison): Long {
@@ -121,7 +128,6 @@ internal class PerfRequestReduction(
                 }
             }
             iterator.remove()
-            if (points.points().size > MAX_REDUCED_POINTS) { limit("request_point_limit"); break }
         }
         requests.clear()
         return matching
@@ -146,6 +152,8 @@ internal class PerfRequestReduction(
     }
 
     private fun merge(points: EvidencePoints, complete: Boolean) {
+        if (points.truncated) data.issue("request_point_limit", "query")
+        data.resolution = maxOf(data.resolution, points.resolutionMs)
         if (complete || data.points.isEmpty()) {
             data.populationSource = "request_scope_resolved_at_terminal_or_latest_checkpoint"
             data.points.entries.removeAll { it.key.metric in points.supported }
@@ -185,8 +193,8 @@ private data class ReducedInput(
     val outcome: String?,
 )
 
-// Stop at 2,048 reduced metric points and mark the result partial instead of retaining an unlimited dimension product.
-private const val MAX_REDUCED_POINTS = 2_048
+// Keep the global 128 KiB representative timeline plus its 32 KiB bookkeeping inside the unchanged 3 MiB lease.
+private const val TIMELINE_RESERVATION_BYTES = 160L * 1_024
 private val REDUCED_KINDS = setOf(
     PerfEventKind.REQUEST_ARRIVED,
     PerfEventKind.CHECKPOINT,

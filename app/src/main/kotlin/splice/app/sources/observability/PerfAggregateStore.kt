@@ -28,23 +28,18 @@ public class PerfAggregateStore(directory: Path, private val identity: PerfIdent
     private var closed = false
     private var durableUntil = 0L
     private var writable = false
+    private var previousIdentity: PerfIdentity? = null
 
     init {
         if (writer.uncertain()) issue(PerfIssue("checkpoint_uncertain", HISTORY_SINK))
         try {
             files.readCheckpoint()?.let { saved ->
                 durableUntil = saved.durableUntilMs
+                previousIdentity = saved.identity
                 saved.issues.forEach(::issue)
                 if (!saved.clean) {
                     issue(
                         PerfIssue("checkpoint_uncertain", HISTORY_SINK, detail = "after ${saved.durableUntilMs}"),
-                    )
-                }
-                if (saved.identity.bootId != identity.bootId) issue(PerfIssue("boot_changed", HISTORY_SINK))
-                if (saved.identity.build != identity.build) issue(PerfIssue("build_changed", HISTORY_SINK))
-                if (saved.identity.configRevision != identity.configRevision) {
-                    issue(
-                        PerfIssue("config_changed", HISTORY_SINK),
                     )
                 }
             }
@@ -63,6 +58,11 @@ public class PerfAggregateStore(directory: Path, private val identity: PerfIdent
         writable = try {
             require(PerfHistorySize.identity(identity) <= MAX_IDENTITY_BYTES) { "history identity size limit" }
             writer.open(clock())
+            previousIdentity?.let { saved ->
+                if (saved.bootId != identity.bootId) issue(PerfIssue("boot_changed", HISTORY_SINK))
+                if (saved.build != identity.build) issue(PerfIssue("build_changed", HISTORY_SINK))
+                if (saved.configRevision != identity.configRevision) issue(PerfIssue("config_changed", HISTORY_SINK))
+            }
             true
         } catch (_: IOException) {
             issue(PerfIssue("writer_open_failed", HISTORY_SINK))

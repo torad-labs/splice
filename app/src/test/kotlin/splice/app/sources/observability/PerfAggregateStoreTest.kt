@@ -82,13 +82,42 @@ class PerfAggregateStoreTest {
         val read = restarted.read(0L, 200_000L)
         try {
             assertTrue(read.coverage.issues.any { it.code == "checkpoint_uncertain" })
-            assertTrue(read.coverage.issues.any { it.code == "build_changed" })
+            assertFalse(read.coverage.issues.any { it.code == "build_changed" })
             assertTrue(read.coverage.issues.any { it.code == "coverage_gap" })
             assertTrue(read.coverage.observedMs < 200_000L)
         } finally {
             PerfWorkBudget.release(read)
         }
         store.close()
+        assertTrue(restarted.openWriter())
+        val changed = restarted.read(0L, 200_000L)
+        try {
+            assertTrue(changed.coverage.issues.any { it.code == "build_changed" })
+            assertTrue(changed.coverage.issues.any { it.code == "boot_changed" })
+        } finally {
+            PerfWorkBudget.release(changed)
+            restarted.close()
+        }
+    }
+
+    @Test
+    fun `a clean offline reader preserves writer identity without inventing its own transition`(@TempDir dir: Path) {
+        PerfAggregateStore(dir, identity, WallClock { 120_000L }).use {
+            append(it, dir, snapshot(minute, 110, 120_000L))
+        }
+        val checkpoint = Files.readString(dir.resolve("checkpoint.json"))
+        val readerIdentity = PerfIdentity("offline", "unknown", "other-version", "unknown")
+        PerfAggregateStore(dir, readerIdentity, WallClock { 120_000L }).use { reader ->
+            val read = reader.read(minute, 120_000L)
+            try {
+                assertTrue(read.coverage.issues.isEmpty(), read.coverage.issues.toString())
+                assertEquals(listOf(identity), read.snapshots.map { it.identity }.distinct())
+                assertEquals(110L, read.snapshots.flatMap { it.points }.sumOf { it.count })
+            } finally {
+                PerfWorkBudget.release(read)
+            }
+        }
+        assertEquals(checkpoint, Files.readString(dir.resolve("checkpoint.json")))
     }
 
     @Test

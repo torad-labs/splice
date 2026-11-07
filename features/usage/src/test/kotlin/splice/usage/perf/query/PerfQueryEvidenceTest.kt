@@ -23,6 +23,25 @@ import splice.usage.perf.history.PerfEvidenceSource
 
 class PerfQueryEvidenceTest {
     @Test
+    fun `physical event order and late usage do not retire terminal request state early`() {
+        val arrival = event("arrival", "one", 101, PerfEventKind.REQUEST_ARRIVED)
+        val terminal = event("terminal", "one", 201, PerfEventKind.REQUEST_FINISHED, "ok")
+            .copy(values = mapOf("arrival_to_terminal_ms" to 100.0))
+        val usage = event("usage", "one", 301, PerfEventKind.USAGE_RECORDED, "ok")
+            .copy(values = mapOf("output_tokens" to 50.0))
+        service(listOf(terminal, usage, arrival, usage)).use { service ->
+            val result = service.summary(PerfQuery(100, 1_100, source = "evidence"))
+            try {
+                assertEquals("1", JsonScalars.str(result.getValue("counts").jsonObject, "arrivals"))
+                assertEquals("1", JsonScalars.str(result.getValue("counts").jsonObject, "completions"))
+                assertEquals("50.0", JsonScalars.str(result.getValue("rates").jsonObject, "output_tokens_per_s"))
+            } finally {
+                PerfWorkBudget.release(result)
+            }
+        }
+    }
+
+    @Test
     fun `refused before legacy turn and canonical late usage are counted once at their own boundaries`() {
         val events = listOf(
             event("a", "one", 101, PerfEventKind.REQUEST_ARRIVED),

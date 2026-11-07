@@ -7,10 +7,13 @@ import splice.app.sources.observability.cursor.PerfCursorWork
 import splice.app.sources.observability.cursor.PerfReadIssue
 import splice.app.sources.observability.cursor.PerfReadRefusal
 import splice.core.perf.observation.PerfIssue
+import splice.core.perf.observation.PerfObservation
 import splice.head.perf.RequestEvidenceFormat
 import splice.usage.perf.history.PerfEvidenceCoverageProof
 import splice.usage.perf.history.PerfEvidenceQuery
 import splice.usage.perf.history.PerfObservationConsumer
+import splice.usage.perf.history.PerfPartitionedObservationConsumer
+import splice.usage.perf.history.PerfRequestPartitions
 import java.nio.channels.FileChannel
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
@@ -26,16 +29,24 @@ internal class PerfEvidenceStreamScan(
     val issues = ArrayList<PerfIssue>()
     var scannedRows = 0L
         private set
+    val partitions = if (consumer is PerfPartitionedObservationConsumer) PerfRequestPartitions.COUNT else 1
+    private var partition = 0
+    private var fixed: List<Pair<Path, PerfCursorSegment>>? = null
 
-    fun scan(seen: PerfEvidenceDedup) {
-        val fixed = proof?.let { inventory.certified(it, work) }
-            ?: inventory.candidates(query.head).map { it to inventory.fingerprints.capture(it, work) }
-        for ((path, segment) in fixed) {
+    fun scan(seen: PerfEvidenceDedup, selectedPartition: Int = 0) {
+        partition = selectedPartition
+        val prefixes = fixed ?: (
+            proof?.let { inventory.certified(it, work) }
+                ?: inventory.candidates(query.head).map { it to inventory.fingerprints.capture(it, work) }
+            )
+            .also { fixed = it }
+        for ((path, segment) in prefixes) {
             read(path, segment, seen)
             if (inventory.fingerprints.digest(path, segment.end, work) != segment.digest) {
                 throw PerfReadRefusal(PerfReadIssue.EVIDENCE_SEGMENT_CHANGED)
             }
         }
+        (consumer as? PerfPartitionedObservationConsumer)?.partitionFinished()
     }
 
     private fun read(path: Path, segment: PerfCursorSegment, seen: PerfEvidenceDedup) {
@@ -61,17 +72,20 @@ internal class PerfEvidenceStreamScan(
         when (seen.add(PerfEvidenceCodec.identity(value), PerfEvidenceCodec.fingerprint(value))) {
             PerfEvidenceDuplicate.CONFLICT -> issue("evidence_duplicate_conflict")
             PerfEvidenceDuplicate.SAME -> Unit
-            PerfEvidenceDuplicate.NEW -> if (PerfEvidenceCodec.matches(value, query) && !consumer.accept(value)) {
+            PerfEvidenceDuplicate.NEW -> if (selected(value) && !consumer.accept(value)) {
                 throw PerfReadRefusal(PerfReadIssue.EVIDENCE_CONSUMER_LIMIT)
             }
         }
     }
 
+    private fun selected(value: PerfObservation): Boolean =
+        (partitions == 1 || PerfRequestPartitions.matches(value, partition)) && PerfEvidenceCodec.matches(value, query)
+
     fun issue(code: String) {
         val at = issues.indexOfFirst { it.code == code }
-        if (at >= 0) {
+        if (at >= 0 && partition == 0) {
             issues[at] = issues[at].copy(count = issues[at].count + 1)
-        } else if (issues.size < MAX_STREAM_ISSUES) {
+        } else if (at < 0 && issues.size < MAX_STREAM_ISSUES) {
             issues += PerfIssue(code, EVIDENCE_SOURCE)
         }
     }

@@ -5,26 +5,36 @@ import splice.core.perf.observation.PerfLinks
 import splice.core.perf.observation.PerfScope
 
 /** Conservative accounting under the separately held 3 MiB reducer lease. Transient decode belongs to the source. */
-internal class PerfReductionMemory {
+internal class PerfReductionMemory(private val limit: Long = PERF_REDUCTION_BYTES) {
     private var bytes = REDUCTION_OVERHEAD
+    private var retained = REDUCTION_OVERHEAD
     private val identities = HashMap<PerfIdentity, PerfIdentity>()
     private val scopes = HashMap<PerfScope, PerfScope>()
     private val strings = HashMap<String, String>()
 
     fun take(count: Long): Boolean {
-        if (count > PERF_REDUCTION_BYTES - bytes) return false
+        if (count > limit - bytes) return false
         bytes += count
         return true
     }
 
     fun give(count: Long) { bytes -= count }
 
+    /** Request/attempt state was folded and released; interned dimensions keep their original global caps. */
+    fun nextPartition() { bytes = retained }
+
+    private fun keep(count: Long): Boolean {
+        if (!take(count)) return false
+        retained += count
+        return true
+    }
+
     fun text(value: String): String? = strings[value] ?: value.takeIf {
-        strings.size < MAX_STRINGS && take(LINK_BYTES + it.length * 2L)
+        strings.size < MAX_STRINGS && keep(LINK_BYTES + it.length * 2L)
     }?.also { strings[it] = it }
 
     fun identity(value: PerfIdentity): PerfIdentity? = identities[value] ?: value.takeIf {
-        identities.size < MAX_REDUCTION_IDENTITIES && take(
+        identities.size < MAX_REDUCTION_IDENTITIES && keep(
             DIMENSION_BYTES + listOf(
                 it.bootId,
                 it.build,
@@ -35,7 +45,7 @@ internal class PerfReductionMemory {
     }?.also { identities[it] = it }
 
     fun scope(value: PerfScope): PerfScope? = scopes[value] ?: value.takeIf {
-        scopes.size < MAX_REDUCTION_SCOPES && take(
+        scopes.size < MAX_REDUCTION_SCOPES && keep(
             DIMENSION_BYTES + listOfNotNull(
                 it.head,
                 it.model,

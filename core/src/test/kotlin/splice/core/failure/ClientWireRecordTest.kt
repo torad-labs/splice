@@ -83,12 +83,11 @@ private fun spliceCauses(): List<FailureCause> = buildList {
     BOOLS.forEach { escaped -> BOOLS.forEach { add(FailureCause.Splice.Internal(escaped, permanent = it)) } }
 }
 
-/** Failure-handling slice 5: a hold that ended without the turn going on, for each way it ends and each cause it held. */
+/** Failure-handling slice 5: a hold that ended without the turn going on, for each way it ends and each holdable cause. */
 private fun heldCauses(): List<FailureCause> = buildList {
     val reset = Instant.parse("2026-10-26T18:00:00Z")
     val held = listOf(
         FailureCause.Provider.Limited(LIFTS[1], LimitWindow.FIVE_HOUR),
-        FailureCause.Provider.Limited(Lift.Unstated, null),
         FailureCause.Provider.Overloaded(LIFTS[1], loading = false),
         FailureCause.Provider.NeedsPayment(Lift.Unstated, subscription = false),
     )
@@ -105,8 +104,8 @@ private val POSITIONS: List<Position> = Moment.entries.flatMap { moment -> BOOLS
 private enum class Fam { R, P, LOGIN, T, L, H }
 
 /** Section 11's table, as this file reads it. Null for a cause outside R, P and T: a held turn's ending (slice 5), a
- *  request that took too long to arrive (408, its own row), and a cut round, which never ends a turn. A limit and a
- *  spent account end through a hold step, which keeps today's R wire until slice 5. */
+ *  request that took too long to arrive (408, its own row), and a cut round, which never ends a turn. Finite limits
+ *  and spent accounts can end through a hold step, which keeps today's R wire until slice 5. */
 private object Section11 {
     fun of(cause: FailureCause): Fam? = when (cause) {
         is FailureCause.Provider -> provider(cause)
@@ -122,7 +121,9 @@ private object Section11 {
         -> Fam.P
         is FailureCause.Provider.Unrecognized -> permanent(cause.clientError)
         is FailureCause.Provider.ReasoningCut -> null
-        is FailureCause.Provider.Limited, is FailureCause.Provider.NeedsPayment, is FailureCause.Provider.Overloaded,
+        is FailureCause.Provider.Limited ->
+            permanent(cause.lift is Lift.Unstated || cause.window == LimitWindow.BILLING_CYCLE)
+        is FailureCause.Provider.NeedsPayment, is FailureCause.Provider.Overloaded,
         is FailureCause.Provider.ServerError, is FailureCause.Provider.Empty, is FailureCause.Provider.ToolTear,
         -> Fam.R
     }

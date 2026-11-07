@@ -278,6 +278,7 @@ private fun Random.recovery(): Recovery = when (nextInt(4)) {
 /** The leaves the client may send again on today's wire: family R (section 11), with the limit and payment endings
  *  slices 2 to 4 still answer that way (the interim lines). HoldOutlasted's line is the held cause's (slice 5). */
 private fun resendable(cause: FailureCause): Boolean? = when (cause) {
+    is FailureCause.Provider.Limited -> cause.lift !is Lift.Unstated && cause.window != LimitWindow.BILLING_CYCLE
     is FailureCause.Provider ->
         cause::class in RESENDABLE_PROVIDER ||
             (cause is FailureCause.Provider.Unrecognized && !cause.clientError)
@@ -346,6 +347,30 @@ private fun assertReadable(
 
 class SpliceLinesPropertyTest {
     @Test
+    fun `an unstated billing-cycle limit quotes its words and says no resend`() {
+        val said = requireNotNull(
+            ProviderWordsFilter.of("You've reached your monthly usage limit for this billing cycle"),
+        )
+        val cause = FailureCause.Provider.Limited(Lift.Unstated, LimitWindow.BILLING_CYCLE, said)
+        val at = Position(Moment.BEFORE_COMMIT, streamBegan = false)
+        val now = Instant.parse("2026-11-07T12:00:00Z")
+        val facts = LineFacts(
+            head = "claude-kimi",
+            loginCommand = null,
+            providerName = "Kimi",
+            local = false,
+            request = RequestFacts(compaction = false, firstExchange = false),
+            now = now,
+        )
+        val answer = ClientWire.answer(cause, at)
+        val text = SpliceLines(LocalTimeText(ZoneId.of("UTC"))).ending(cause, at, answer, facts).text
+
+        assertFalse(answer.clientResends, "an unstated billing-cycle limit is terminal")
+        assertFalse(SAYS_RESEND in text, text)
+        assertTrue(said.text in text, text)
+    }
+
+    @Test
     fun `every line is one splice line of one or two sentences within 240 characters`() {
         forEveryLine(seed = 1) { line, facts, _, about, place ->
             assertReadable(line, facts, emptyList(), about, place)
@@ -401,7 +426,7 @@ class SpliceLinesPropertyTest {
     }
 
     @Test
-    fun `provider words appear only in refused, rejected, forbidden, payment and unrecognized lines`() {
+    fun `provider words appear only in verdict, payment and terminal-limit lines`() {
         val random = Random(5)
         val lines = SpliceLines(LocalTimeText(ZoneId.of("America/Chicago")))
         repeat(RUNS) {
@@ -414,7 +439,8 @@ class SpliceLinesPropertyTest {
 
             // A block's line says its step in splice's words, so it quotes nobody either.
             val blocked = (case.cause as? FailureCause.Provider.Forbidden)?.block != null
-            val quotes = case.cause::class in QUOTED && !blocked
+            val limited = case.cause as? FailureCause.Provider.Limited
+            val quotes = (case.cause::class in QUOTED && !blocked) || limited?.mayWaitForReset == false
             if (!quotes) assertFalse(spoken in line.text, "quoted by a ${case.cause}: ${line.text}")
             val subscription = (case.cause as? FailureCause.Provider.NeedsPayment)?.subscription == true
             if (quotes && !subscription) assertTrue(spoken in line.text, "${case.cause} quotes its words: ${line.text}")

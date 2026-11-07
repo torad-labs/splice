@@ -24,7 +24,8 @@ internal object FailureFamilies {
         is FailureCause.Provider.Refused,
         -> ClientWire.Family.P
         is FailureCause.Provider.Unrecognized -> if (cause.clientError) ClientWire.Family.P else ClientWire.Family.R
-        is FailureCause.Provider.Limited, is FailureCause.Provider.Overloaded, is FailureCause.Provider.ServerError,
+        is FailureCause.Provider.Limited -> again(cause.mayWaitForReset)
+        is FailureCause.Provider.Overloaded, is FailureCause.Provider.ServerError,
         is FailureCause.Provider.NeedsPayment, is FailureCause.Provider.Empty, is FailureCause.Provider.ToolTear,
         is FailureCause.Provider.ReasoningCut,
         -> ClientWire.Family.R

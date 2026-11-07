@@ -348,21 +348,23 @@ class OneEngineThroughHeadsTest {
     }
 
     @Test
-    fun `a limit met after the answer began is continued from what arrived after 2, 4, 8 and 15 s`(
+    fun `an unstated limit after the answer began ends once and preserves what arrived`(
         @TempDir tmp: Path,
     ) = runTest {
         withScriptedHeads(tmp) {
             val limited = reply { responsesStart(); responsesText("partial words"); event(RESPONSES_RATE_LIMITED) }
-            provider.script(*Array(1 + 4 + 1) { limited })
+            provider.script(limited)
             val head = responses()
 
             val answer = head.client.send()
 
-            // Section 8's Limited row with no time stated: four burst waits wherever the limit is met, and after the
-            // answer began each continuation carries what arrived. The fifth limit holds the turn (HoldsThroughHeadsTest).
-            assertEquals(listOf(2, 4, 8, 15).map { it.seconds }, gaps(provider.requests), answer.describe())
-            assertTrue(provider.requests.drop(1).all { "partial words" in it.body }, answer.describe())
+            assertEquals(1, provider.requests.size, "no automatic resend for an unstated reset")
+            assertEquals(Duration.ZERO, time.passed())
+            assertEquals("partial words", answer.text, answer.describe())
             assertTrue(answer.contentBeforeError, answer.describe())
+            assertEquals("rate_limit_error", answer.error?.type, answer.describe())
+            assertFalse(answer.completed, answer.describe())
+            assertEquals(null, answer.stopReason, answer.describe())
         }
     }
 

@@ -100,13 +100,14 @@ internal object PlanModel {
     private fun fresh(met: Met, ledger: RetryLedger): RetryStep =
         if (ledger.count(Spend.FRESH_REISSUE) < 2) again(How.SAME) else end(met)
 
+    /** Unstated limits and billing-cycle limits are provider verdicts; only finite waits outside that class retry. */
     private val limited = Row { met, ledger ->
         val cause = met.cause as FailureCause.Provider.Limited
         val ms = waitMs(cause.lift)
         val lift = cause.lift
         when {
+            lift is Lift.Unstated || cause.window == LimitWindow.BILLING_CYCLE -> end(met)
             lift is Lift.At && (ms ?: 0L) > FLOOR -> stated(met, lift, ms ?: 0L)
-            lift is Lift.Unstated && cause.window != null -> switchOr(met, RetryStep.Hold(null, Probes.UNSTATED))
             else -> bursts(met, ledger, ms?.coerceAtLeast(0L) ?: 0L, Probes.UNSTATED)
         }
     }
@@ -435,6 +436,39 @@ class RetryEngineModelTest {
         // The sequences reach every way of sending again, so the comparison above covered all of them.
         val ways = steps.mapNotNull { (it.step as? RetryStep.Again)?.how }
         assertEquals(How.entries.toSet(), ways.toSet(), "every way of sending again was taken")
+    }
+
+    @Test
+    fun `unstated and billing-cycle limits end without a resend while finite stated limits keep their plan`() {
+        val at = Position(Moment.BEFORE_COMMIT, streamBegan = false)
+        val facts = TurnFacts(
+            pooled = true,
+            freeLogin = true,
+            warmWaitLeftMs = 600_000L,
+            continuesReasoning = false,
+            canContinue = false,
+            deadlines = TurnFacts.Deadlines(Long.MAX_VALUE),
+            earliestLift = null,
+        )
+        val unstated = FailureCause.Provider.Limited(Lift.Unstated, LimitWindow.FIVE_HOUR)
+        val billingCycleFinite = FailureCause.Provider.Limited(
+            Lift.At(NOW.plusSeconds(300), firm = true, LiftSource.RETRY_AFTER),
+            LimitWindow.BILLING_CYCLE,
+        )
+        val shortFinite = FailureCause.Provider.Limited(
+            Lift.At(NOW.plusSeconds(300), firm = true, LiftSource.RETRY_AFTER),
+            LimitWindow.FIVE_HOUR,
+        )
+
+        assertEquals(RetryStep.End(unstated), RetryEngine.next(unstated, at, RetryLedger(), facts, NOW))
+        assertEquals(
+            RetryStep.End(billingCycleFinite),
+            RetryEngine.next(billingCycleFinite, at, RetryLedger(), facts, NOW),
+        )
+        assertEquals(
+            RetryStep.Again(300_000L, How.SAME),
+            RetryEngine.next(shortFinite, at, RetryLedger(), facts, NOW),
+        )
     }
 
     @Test

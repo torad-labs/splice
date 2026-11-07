@@ -47,6 +47,9 @@ public sealed class FailureCause {
             override val persisted: PersistedCause get() = PersistedCause.VENDOR_RATE_LIMITED
             override val permanent: Boolean get() = true
             override val resumeAt: Instant? get() = (lift as? Lift.At)?.at
+
+            /** An unstated reset or a billing-cycle limit ends the turn instead of promising a short recovery. */
+            public val mayWaitForReset: Boolean get() = lift is Lift.At && window != LimitWindow.BILLING_CYCLE
         }
 
         /** The provider is over capacity: a 502, or a code that spells an overload. */

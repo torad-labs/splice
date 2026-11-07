@@ -134,7 +134,7 @@ class TodayWireCharacterizationTest {
     }
 
     @Test
-    fun `a non-stream failure keeps its real status`(@TempDir tmp: Path) = runTest {
+    fun `a non-stream limit without a stated reset stops the client's automatic resend`(@TempDir tmp: Path) = runTest {
         withScriptedHeads(tmp) {
             provider.script(
                 reply {
@@ -145,10 +145,11 @@ class TodayWireCharacterizationTest {
 
             val answer = chat().client.send(ClientRequest(stream = false))
 
-            assertEquals(TOO_MANY_REQUESTS, answer.status, answer.describe())
-            assertEquals("rate_limit_error", answer.error?.type, answer.describe())
-            assertNull(answer.shouldRetry, answer.describe())
-            assertEquals(setOf(Family.L), answer.families(), answer.describe())
+            assertEquals(BAD_REQUEST, answer.status, answer.describe())
+            assertEquals("invalid_request_error", answer.error?.type, answer.describe())
+            assertEquals("false", answer.shouldRetry, answer.describe())
+            assertTrue(Family.P in answer.families(), answer.describe())
+            assertEquals(1, provider.requests.size)
         }
     }
 }

@@ -305,7 +305,7 @@ internal class HoldsThroughHeadsTest : HoldRouteFixtures() {
     }
 
     @Test
-    fun `Kimi's 5-hour 429 of Oct 23 holds at once after one provider request, and continues when a probe is served`(
+    fun `Kimi's 5-hour limit without a stated reset ends once without an automatic probe`(
         @TempDir tmp: Path,
     ) = runTest {
         withScriptedHeads(tmp) {
@@ -314,10 +314,13 @@ internal class HoldsThroughHeadsTest : HoldRouteFixtures() {
 
             val answer = kimi.client.send(launched())
 
-            assertEquals("the window ended", answer.text, answer.describe())
-            // A named window with no time stated holds at once and is probed at 1 minute.
-            assertEquals(listOf(Duration.ZERO, 1.minutes), provider.requests.map { it.at })
-            assertTrue("5-hour" in lines(answer).single(), lines(answer).toString())
+            assertTrue(Family.P in answer.families(), answer.describe())
+            assertTrue("5-hour" in lineOf(answer), answer.describe())
+            assertTrue("did not say when it resets" in lineOf(answer), answer.describe())
+            assertTrue(answer.notices.isEmpty(), answer.describe())
+            assertFalse(answer.completed, answer.describe())
+            assertEquals(listOf(Duration.ZERO), provider.requests.map { it.at })
+            assertEquals(Duration.ZERO, time.passed())
         }
     }
 

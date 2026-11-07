@@ -156,7 +156,7 @@ private object Rows {
 
     /** The leaves a wait or a login can change; the request's own verdicts go to [verdict]. */
     private fun provider(turn: RetryTurn, cause: FailureCause.Provider): RetryStep = when (cause) {
-        is FailureCause.Provider.Limited -> RetryLimits.limited(turn, cause.lift, named = cause.window != null)
+        is FailureCause.Provider.Limited -> RetryLimits.limited(turn, cause)
         is FailureCause.Provider.Overloaded -> RetryLimits.overloaded(turn, cause)
         is FailureCause.Provider.NeedsPayment -> RetryLimits.payment(turn, cause.lift)
         is FailureCause.Provider.ServerError -> Streams.server(turn)

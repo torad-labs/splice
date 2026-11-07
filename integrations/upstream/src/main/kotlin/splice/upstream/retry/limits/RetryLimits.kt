@@ -30,12 +30,12 @@ internal object RetryLimits {
         return if (n < BURST_WAITS) turn.wait(waitMs) else turn.switchOr(RetryStep.Hold(null, probes))
     }
 
-    fun limited(turn: RetryTurn, lift: Lift, named: Boolean): RetryStep {
+    fun limited(turn: RetryTurn, cause: FailureCause.Provider.Limited): RetryStep {
+        if (!cause.mayWaitForReset) return turn.end
+        val lift = cause.lift
         val stated = turn.pastFloor(lift)
         return when {
             stated != null -> stated(turn, stated)
-            // A named window with no time stated is long: Kimi's 5-hour 429 recovered on none of 62 retried turns.
-            lift is Lift.Unstated && named -> turn.switchOr(RetryStep.Hold(null, Probes.UNSTATED))
             else -> bursts(turn, turn.insideFloor(lift) ?: 0L, Probes.UNSTATED)
         }
     }

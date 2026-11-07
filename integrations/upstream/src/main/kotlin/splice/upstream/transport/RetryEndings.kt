@@ -43,7 +43,14 @@ internal class RetryEndings {
             ?: (last.cause as? FailureCause.Provider.NeedsPayment)?.lift
             ?: Lift.Unstated
         val met = last.planLimit?.metBy(ctx.limits.model)
-        val left = LimitLeft(lift, last.evidence.retryAfterMs, met, last.native, ctx.pooled)
+        val left = LimitLeft(
+            lift,
+            last.evidence.retryAfterMs,
+            met,
+            last.native,
+            ctx.pooled,
+            last.cause as? FailureCause.Provider.Limited,
+        )
         val held = state.cooldown.limitLeft(left, ctx.onRetry)
         val limit = last.planLimit.takeIf { last.native != null || held != null }
         return UpstreamFailed(last.cause, last.evidence, state.ledger.attempts, planLimit = limit, native = last.native)

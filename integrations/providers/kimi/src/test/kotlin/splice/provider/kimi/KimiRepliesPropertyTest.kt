@@ -31,6 +31,11 @@ private const val FIVE_HOUR_SAID =
         "To continue now, purchase extra usage or upgrade your plan: " +
         "https://www.kimi.com/membership/subscription?tab=quota"
 
+private val BILLING_CYCLE_WORDS = listOf(
+    "You've reached your monthly usage limit for this billing cycle",
+    "Usage limit reached for this billing cycle",
+)
+
 /** The two plan-tier answers KimiOAuth knows, each as Kimi words it. */
 private val PLAN_TIER = listOf(
     "Your current subscription does not have access to this model",
@@ -140,7 +145,42 @@ class KimiRepliesPropertyTest {
     }
 
     @Test
-    fun `every reply that lacks Kimi's two shapes is left to the Anthropic standard`() {
+    fun `billing-cycle limit is typed in HTTP and error events`() {
+        val random = Random(335)
+        repeat(RUNS) {
+            val at = answeredAt(random)
+            val retryAfter = if (random.nextBoolean()) random.nextLong(1, 900) else null
+            val said = BILLING_CYCLE_WORDS.random(random)
+            val http = reply(429, "rate_limit_error", said, at, retryAfterS = retryAfter)
+            val expectedHttpLift = retryAfter?.let {
+                Lift.At(at.plusSeconds(it), firm = true, LiftSource.RETRY_AFTER)
+            } ?: Lift.Unstated
+
+            assertEquals(
+                FailureCause.Provider.Limited(
+                    expectedHttpLift,
+                    LimitWindow.BILLING_CYCLE,
+                    ProviderWordsFilter.of(said),
+                ),
+                KimiReplies.http(http),
+                http.toString(),
+            )
+
+            val payload = body("rate_limit_error", said)
+            val event = FailedEvent("error", payload, LoginOwner.entries.random(random))
+            assertEquals(
+                FailureCause.Provider.Limited(
+                    Lift.Unstated,
+                    LimitWindow.BILLING_CYCLE,
+                    ProviderWordsFilter.of(said),
+                ),
+                KimiReplies.event(event),
+            )
+        }
+    }
+
+    @Test
+    fun `every reply that lacks Kimi's shapes is left to the Anthropic standard`() {
         val random = Random(334)
         repeat(RUNS) {
             val said = PLAIN.random(random)

@@ -23,6 +23,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.topology.SHARE_NODE_TOKEN
 import splice.head.scripted.ClientAnswer
 import splice.head.scripted.ClientRequest
+import splice.head.scripted.Family
 import splice.head.scripted.HeadSays
 import splice.head.scripted.HeadShape
 import splice.head.scripted.ScriptedReply
@@ -33,6 +34,7 @@ import java.nio.file.Path
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import kotlin.time.Duration
 
 /** The prefix every line a person reads opens with. */
 private const val PREFIX = "[splice] "
@@ -244,7 +246,7 @@ class LinesThroughHeadsTest {
     }
 
     @Test
-    fun `a limit with no stated time ends at the session's wall with a line that gives no time`(@TempDir tmp: Path) =
+    fun `a limit with no stated time ends immediately with its words and no promise of a retry`(@TempDir tmp: Path) =
         runTest {
             withScriptedHeads(tmp) {
                 provider.script(limited(null))
@@ -252,10 +254,13 @@ class LinesThroughHeadsTest {
 
                 val answer = head.client.send()
 
-                // Slice 5: the limit holds after its bursts, probed, until the session's wall; the line gives no
-                // time, and Claude Code's re-send holds again.
-                assertLine(answer, "without saying when it resets")
-                assertLine(answer, RESENDS)
+                assertLine(answer, "did not say when it resets")
+                assertLine(answer, "Rate limit reached for this plan.")
+                assertTrue(Family.P in answer.families(), answer.describe())
+                assertFalse(RESENDS in lineOf(answer), answer.describe())
+                assertTrue(answer.notices.isEmpty(), answer.describe())
+                assertEquals(Duration.ZERO, time.passed(), "no retry or hold consumed time")
+                assertEquals(1, provider.requests.size)
             }
         }
 

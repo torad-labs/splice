@@ -85,6 +85,7 @@ internal class Spoken(private val time: LocalTimeText) {
         LimitWindow.FIVE_HOUR -> "its 5-hour limit"
         LimitWindow.WEEKLY -> "its weekly limit"
         LimitWindow.MODEL_WEEKLY -> "its weekly limit for this model"
+        LimitWindow.BILLING_CYCLE -> "its billing-cycle usage limit"
         LimitWindow.OTHER, null -> null
     }
 

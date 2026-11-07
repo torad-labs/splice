@@ -33,7 +33,7 @@ internal object HandOverHeaders {
     private fun windowMember(window: LimitWindow?): String? = when (window) {
         LimitWindow.FIVE_HOUR -> FIVE_HOUR_RESET
         LimitWindow.WEEKLY, LimitWindow.MODEL_WEEKLY -> SEVEN_DAY_RESET
-        LimitWindow.OTHER, null -> null
+        LimitWindow.BILLING_CYCLE, LimitWindow.OTHER, null -> null
     }
 
     private fun secondsUntil(atMs: Long, nowMs: Long): Long = ceilSeconds((atMs - nowMs).coerceAtLeast(0L))

@@ -162,8 +162,11 @@ internal fun isUsableRetainedHistorySeries(series: JsonArray?): Boolean =
     }
 
 private fun hasValidRetainedPointShape(point: JsonObject, from: Long, until: Long): Boolean =
-    from < until && point["scope"] is JsonObject && point["metrics"] is JsonObject &&
-        point["coverage"] is JsonObject
+    from < until && hasNonemptyRetainedObject(point, "scope") &&
+        hasNonemptyRetainedObject(point, "metrics") && hasNonemptyRetainedObject(point, "coverage")
+
+private fun hasNonemptyRetainedObject(point: JsonObject, field: String): Boolean =
+    (point[field] as? JsonObject)?.isNotEmpty() == true
 
 /** Actual owners with a fixed shared-pool reservation representing other app work; not owner heap attribution. */
 internal class BenchmarkRetainedOwners(
@@ -333,7 +336,7 @@ internal class BenchmarkRetainedOwners(
         )
         checkNotNull(source).page(request).use { page ->
             cursorCount++
-            val read = cursorRead(page.observations.size, page.next != null, page.metadata)
+            val read = cursorRead(page.observations.size, page.nextCursor != null, page.metadata)
             recordCursorDiagnostics(read)
             val outcome = classifyBenchmarkRetainedCursor(read)
             if (outcome == BenchmarkRetainedCursorOutcome.EXPECTED_RETENTION_INCOMPLETE) {

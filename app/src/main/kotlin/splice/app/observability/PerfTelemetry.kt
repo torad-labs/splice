@@ -2,11 +2,7 @@ package splice.app.observability
 
 import splice.app.sources.PerfSourceFiles
 import splice.core.config.ConfigService
-import splice.core.perf.observation.NoPerfObserver
-import splice.core.perf.observation.PerfRecorder
-import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
-import splice.core.util.MonoClock
 import splice.core.util.PerfWorkPhase
 import splice.core.util.WallClock
 import splice.observability.export.PerfExports
@@ -39,8 +35,7 @@ internal class PerfTelemetry(
         null
     }
     private val observer = collection.fanout(exports)
-    val recorder =
-        PerfRecorder(identity, if (enabled) observer else NoPerfObserver, ElapsedClock(MonoClock::nowMs), clock)
+    val recorder = PerfTelemetryRecorder(identity, enabled, observer, clock).recorder
     val owners = PerfRuntimeOwners()
     val runtime = PerfRuntimeSampling(identity, recorder, owners, enabled)
     val configuration = PerfConfigHistory(paths.perfConfigurationFile)

@@ -174,10 +174,10 @@ dated = "2026-11-06"
 names = ["PerfSamplingWork", "PerfPhaseClose"]
 reason = """PerfSamplingWork executes one admitted periodic telemetry sample while producers remain live: configuration persistence, runtime/gate observations, coverage, alert evaluation and an aggregate checkpoint. PerfPhaseClose performs final checkpoints and closes dependent owners only after those producers and alert delivery have stopped. Both receive the exclusive performance-work phase, whose caller releases it after the callback unless persistence has taken ownership; exchanging the roles would either close live sources during sampling or leave shutdown resources alive after one extra sample."""
 
-# ── 24 names, () -> Boolean ───────────────────────────────────────────────────────────────────────
+# ── 30 names, () -> Boolean ───────────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->Boolean"
-dated = "2026-11-06"
+dated = "2026-11-07"
 names = [
     "ClientFrameEmitted",
     "ClientGone",
@@ -193,6 +193,7 @@ names = [
     "DaemonSuccessor",
     "DaemonSupervised",
     "EdgesStored",
+    "ExportPhaseWork",
     "Readiness",
     "KeyPresenceProbe",
     "KeepingRecordings",
@@ -264,7 +265,7 @@ not taken as a running front. It answers whether the hub serves, not what the op
 would point a session at a dead hub whenever sharing is on, and McpShareChoice read here would plan per-session copies \
 while the hub serves. Readiness asks whether a just-started hosted child reached the point where it can receive work; it is neither the hub's availability nor a client or daemon state probe, and wiring either in would direct a request to an unready child or make a ready child disappear. StdinTerminal (2026-10-27) asks specifically whether file descriptor 0 is a terminal before a harness-hook command reads its JSON payload. ConsolePresence asks whether the process has a console, which may be absent merely because stdout is piped. Substituting it could make an operator command wait for terminal input or skip a real hook payload; neither transport-terminal detection nor client/daemon liveness answers this stdin question.
 
-FileIoWrite runs on AsyncFileIo's file lane and returns true only after the persistence operation succeeds; FileIoSink uses that result to settle a write ticket, separately from queue acceptance. ObjectivePublication commits bounded local alert lifecycle state while PerfObjectiveStore holds its settings revision check and publication lock; it must not query, send, or re-enter configuration. RequestEvidenceAdmission runs validation, immutable-copy reservation and enqueue inside RequestEvidenceFiles' producer/checkpoint boundary; true means accepted for writing, not durably written. Swapping these callbacks would conflate admission with persistence or move lifecycle publication outside the checked settings generation."""
+FileIoWrite runs on AsyncFileIo's file lane and returns true only after the persistence operation succeeds; FileIoSink uses that result to settle a write ticket, separately from queue acceptance. ObjectivePublication commits bounded local alert lifecycle state while PerfObjectiveStore holds its settings revision check and publication lock; it must not query, send, or re-enter configuration. RequestEvidenceAdmission runs validation, immutable-copy reservation and enqueue inside RequestEvidenceFiles' producer/checkpoint boundary; true means accepted for writing, not durably written. ExportPhaseWork reports whether one admitted exporter phase completed successfully; it does not mean a client is connected, an observation was accepted, or bytes were durably persisted. Swapping these callbacks would conflate admission with persistence or move lifecycle publication outside the checked settings generation."""
 
 # ── 13 names, () -> Long (TWO MORE ARE DUPLICATES AND ARE NOT LISTED) ─────────────────────────────
 [[groups]]
@@ -816,12 +817,12 @@ names = [
 ]
 reason = """CodeModeStateWrite durably appends an immutable changed-cell snapshot, or atomically replaces a retention checkpoint, in one conversation's owner-only 0600 journal. It runs after the registry releases its head-wide monitor, and completion is required before its callback is exposed to the client. ProbeWrite writes a disposable byte to a diagnostics probe path to test whether a volume can accept data; failure is a diagnostic result, never a code-mode durability verdict. Substituting either compiles but could turn an unsaved callback into a falsely durable one or turn a diagnostic probe into persisted state."""
 
-# ── 2 names, (Long) -> Boolean ────────────────────────────────────────────────────────────────────
+# ── 3 names, (Long) -> Boolean ────────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "(Long)->Boolean"
-dated = "2026-10-03"
-names = ["CurrentUpstreamAttempt", "PidAlive"]
-reason = """CurrentUpstreamAttempt takes a turn's upstream ATTEMPT number and answers whether that attempt is still the live one, so a read or hold interval reported by a retired attempt's late callback is dropped instead of overwriting the current attempt's perf maxima. PidAlive takes an operating-system PROCESS id and answers whether that process still runs, for the session registry's liveness. An attempt counter and a pid are both Long: a swap would ask the kernel about attempt 2, or keep a dead attempt's intervals because some process with that number happens to exist, and both compile in silence."""
+dated = "2026-11-07"
+names = ["CurrentUpstreamAttempt", "PerfExportStop", "PidAlive"]
+reason = """CurrentUpstreamAttempt takes a turn's upstream ATTEMPT number and answers whether that attempt is still the live one, so a read or hold interval reported by a retired attempt's late callback is dropped instead of overwriting the current attempt's perf maxima. PidAlive takes an operating-system PROCESS id and answers whether that process still runs, for the session registry's liveness. PerfExportStop takes a bounded timeout in milliseconds and reports whether the exporter completed its final flush and close within that bound; it is neither a process liveness probe nor a current-turn-attempt check. An attempt counter, process id and duration are all Long: a swap would ask the kernel about attempt 2, mistake a timeout for a pid, or treat a live process as a completed exporter close, and all compile in silence."""
 
 [[groups]]
 signature = "(Boolean)->Unit"

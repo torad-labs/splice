@@ -59,5 +59,6 @@ internal fun interface PerfPhaseClose {
     fun close(phase: PerfWorkPhase.Lease)
 }
 
+// why: Bound final exporter close to twenty seconds after producer stop before releasing dependent owners.
 private const val EXPORT_CLOSE_MS = 20_000L
 private const val SHUTDOWN_TOTAL_MS = PRODUCER_STOP_MS + EXPORT_CLOSE_MS

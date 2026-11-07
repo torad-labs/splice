@@ -24,6 +24,7 @@ import splice.core.failure.ClientWire
 import splice.core.failure.Decline
 import splice.core.failure.FailureCause
 import splice.core.failure.Lift
+import splice.core.failure.LiftSource
 import splice.core.failure.LoginOwner
 import splice.core.failure.Moment
 import splice.core.failure.Position
@@ -44,11 +45,10 @@ class TurnKnownEndTest {
     private val apiError = FailureCause.Provider.Unrecognized(clientError = false)
 
     @Test
-    fun `a pre-content rate limit or api error is wired as overloaded`() {
-        // Claude Code 2.1.257 retries an IN-BAND error only when the body carries overloaded_error
-        // (a 429/529 is retried by STATUS), so these two would otherwise end the session where a
-        // retry heals it. Before content, nothing the client has read is at stake.
-        assertEquals(ErrorType.OVERLOADED, beforeContent(rateLimit))
+    fun `an unstated pre-content rate limit is terminal while an api error is overloaded`() {
+        // Claude Code 2.1.257 retries an IN-BAND error only when the body carries overloaded_error (a 429/529 is
+        // retried by STATUS). An API error remains retryable; an unstated limit has no known reset to retry for.
+        assertEquals(ErrorType.INVALID_REQUEST, beforeContent(rateLimit))
         assertEquals(ErrorType.OVERLOADED, beforeContent(apiError))
     }
 
@@ -93,7 +93,7 @@ class TurnKnownEndTest {
     }
 
     @Test
-    fun `a rate limit is retryable in band even when the classifier called it non-transient`() {
+    fun `a stated rate limit is retryable in band even when the classifier called it non-transient`() {
         // THE MEASURED TRAP, and the reason this cell exists at all: the shared classifier, until
         // failure-handling slice 3 read each head's replies with its own reader, marked a 429
         // (and V4-73's 403 spend-limit) transient = FALSE, because `transient` gates RE-ANCHORING —
@@ -104,8 +104,12 @@ class TurnKnownEndTest {
         // as "!transient" and would have silently reverted V4-71 on every rate-limited turn;
         // RetryAlwaysArmedTest's sweep is what catches that, and this cell says why. The leaf
         // carries that permanence itself now, so the cell asks with it and checks it is there.
-        assertTrue(rateLimit.permanent)
-        assertEquals(ErrorType.OVERLOADED, beforeContent(rateLimit))
+        val statedRateLimit = FailureCause.Provider.Limited(
+            Lift.At(Instant.parse("2026-10-27T12:00:00Z"), firm = true, source = LiftSource.RETRY_AFTER),
+            window = null,
+        )
+        assertTrue(statedRateLimit.permanent)
+        assertEquals(ErrorType.OVERLOADED, beforeContent(statedRateLimit))
     }
 
     @Test

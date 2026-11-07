@@ -3,7 +3,7 @@
 // to the turn (RetryPolicy.giveUp returns it for each turn that meets the 429; since Oct 26 no turn is held behind
 // another's, so every turn meets its own). Before this the window was dropped into the body text and the turn ended
 // error:upstream-failed, "wait a moment and retry", for a plan spent until a day six days out (Marlin, f7f1e9308;
-// daemon.log:39520). A burst 429 that names no reset carries nothing, so it keeps every path it had.
+// daemon.log:39520). A 429 that names no reset has no basis for an automatic retry.
 package splice.upstream.transport
 
 import io.ktor.client.HttpClient
@@ -25,7 +25,6 @@ import splice.upstream.Waiter
 import splice.upstream.failure.FailedReply
 import splice.upstream.failure.ProviderDeviation
 import splice.upstream.failure.Replies
-import splice.upstream.retry.BURST_WAITS
 import java.util.concurrent.atomic.AtomicInteger
 import splice.upstream.testing.OpenAiTestReplies as OpenAiReplies
 
@@ -120,7 +119,7 @@ class UpstreamFailurePlanLimitTest {
     }
 
     @Test
-    fun `a burst 429 that names no reset carries no window`() = runTest {
+    fun `an unstated 429 ends without a retry and carries no window`() = runTest {
         val calls = AtomicInteger()
         val engine = MockEngine {
             calls.incrementAndGet()
@@ -129,7 +128,7 @@ class UpstreamFailurePlanLimitTest {
 
         val failure = assertEnds<UpstreamFailed> { client(engine).posted(ctx(bodyReader), "{}") { "unreachable" } }
 
-        assertEquals(1 + BURST_WAITS, calls.get(), "the burst schedule is untouched")
+        assertEquals(1, calls.get(), "an unstated limit does not start the burst schedule")
         assertEquals(429, failure.evidence.status)
         assertNull(failure.planLimit)
     }

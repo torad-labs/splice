@@ -59,7 +59,12 @@ class TerminalLimitCooldownTest {
         assertEquals(0L, cooldown.remainingMs())
 
         cooldown.refused(cause)
-        cooldown.refused(FailureCause.Provider.Limited(Lift.At(Instant.EPOCH, true, LiftSource.RETRY_AFTER)))
+        cooldown.refused(
+            FailureCause.Provider.Limited(
+                Lift.At(Instant.EPOCH, true, LiftSource.RETRY_AFTER),
+                window = null,
+            ),
+        )
         assertNull(cooldown.terminalLimit, "a newer finite temporary limit retains its ordinary per-turn behavior")
     }
 

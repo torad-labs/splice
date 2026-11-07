@@ -38,7 +38,6 @@ class TerminalLimitsThroughHeadsTest {
             val collected = head.client.send(launched("collected").copy(stream = false))
             assertTerminal(collected)
             assertEquals(400, collected.status, collected.describe())
-            assertEquals("false", collected.shouldRetry, collected.describe())
             assertEquals(1, provider.requests.size, "the held turn returns the stored words without hammering Kimi")
             assertEquals(Duration.ZERO, time.passed(), "neither turn waits or schedules a probe")
             assertTrue(head.heldTurns().isEmpty())

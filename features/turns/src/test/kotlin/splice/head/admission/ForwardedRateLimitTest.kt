@@ -193,46 +193,36 @@ class ForwardedRateLimitTest {
         }
     }
 
-    // A short-wall buffered request hands the unstated limit to its client as family L. A streamed request with
-    // enough wall for the burst commits its retry notice and ends in band. Neither blocks a different credential.
+    // Neither buffered nor streamed callers get a retry schedule from an unstated limit. The refusal does not hold
+    // another credential, which remains usable immediately.
     @Test
-    fun `headerless 429 exhausts its burst and ends honestly without holding another login`() = runBlocking {
+    fun `a headerless 429 ends promptly without holding another login`() = runBlocking {
         for (stream in listOf(false, true)) {
             val rig = LimitRig(directory.resolve(stream.toString()), limits = false)
             rig.head.start()
             try {
-                val sentAtSeconds = System.currentTimeMillis() / 1_000
-                val wallMs = if (stream) 60_000L else 20_000L
-                val (status, body, headers) = rig.turn("synthetic-refused", stream, wallMs = wallMs)
-                val receivedAtSeconds = System.currentTimeMillis() / 1_000
+                val (status, body, headers) = rig.turn("synthetic-refused", stream, wallMs = 20_000L)
                 if (stream) {
                     assertEquals(HttpStatusCode.OK, status)
                     val events = body.lineSequence().filter { it.startsWith("data: ") }
                         .map { Json.parseToJsonElement(it.removePrefix("data: ")).jsonObject }.toList()
                     val error = events.single { it["type"]?.jsonPrimitive?.content == "error" }
                         .getValue("error").jsonObject
-                    assertEquals("overloaded_error", error.getValue("type").jsonPrimitive.content)
-                    assertTrue("without saying when it resets" in error.getValue("message").jsonPrimitive.content)
-                    assertTrue("tries again in 15 seconds" in body, "the retry notice committed the stream")
+                    assertEquals("invalid_request_error", error.getValue("type").jsonPrimitive.content)
+                    assertTrue("did not say when it resets" in error.getValue("message").jsonPrimitive.content)
+                    assertFalse("tries again" in body, "an unstated limit does not open a retry schedule")
                     assertTrue(events.none { it["type"]?.jsonPrimitive?.content == "message_stop" })
-                    assertEquals(null, headers["retry-after"])
-                    assertEquals(null, headers["anthropic-ratelimit-unified-status"])
-                    assertEquals(BURST_SENDS, rig.refused.size, "the stream exhausts its burst before the handoff")
                 } else {
-                    assertEquals(HttpStatusCode.TooManyRequests, status)
+                    assertEquals(HttpStatusCode.BadRequest, status)
                     val error = Json.parseToJsonElement(body).jsonObject.getValue("error").jsonObject
-                    assertEquals("rate_limit_error", error.getValue("type").jsonPrimitive.content)
+                    assertEquals("invalid_request_error", error.getValue("type").jsonPrimitive.content)
                     val line = error.getValue("message").jsonPrimitive.content
-                    assertTrue(line.startsWith("[splice] ") && "without saying when it resets" in line, line)
-                    assertFalse(headers["x-should-retry"] == "false", "the client can retry family L")
-                    assertEquals("30", headers["retry-after"])
-                    assertEquals("rejected", headers["anthropic-ratelimit-unified-status"])
-                    val reset = checkNotNull(headers["anthropic-ratelimit-unified-reset"]).toLong()
-                    assertTrue(reset in (sentAtSeconds + 30)..(receivedAtSeconds + 31), "a thirty-second recheck")
-                    assertEquals(null, headers["anthropic-ratelimit-unified-5h-reset"])
-                    assertEquals(null, headers["anthropic-ratelimit-unified-7d-reset"])
-                    assertEquals(1, rig.refused.size, "the short client wall cannot fit the burst's first wait")
+                    assertTrue(line.startsWith("[splice] ") && "did not say when it resets" in line, line)
                 }
+                assertEquals(1, rig.refused.size, "the terminal response does not retry the provider")
+                assertEquals(0L, rig.upstream.rateLimitedForMs, "an unstated refusal does not hold a credential")
+                assertEquals(null, headers["retry-after"])
+                assertEquals(null, headers["anthropic-ratelimit-unified-status"])
                 assertEquals(HttpStatusCode.OK, rig.turn("synthetic-healthy", stream).first)
             } finally {
                 rig.close()
@@ -473,4 +463,3 @@ private val SUCCESS_WIRE = listOf(
 }
 
 /** A burst 429 is sent once and again after each of the 2, 4, 8 and 15 s waits (final-design.md section 8). */
-private const val BURST_SENDS = 5

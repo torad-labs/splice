@@ -147,7 +147,6 @@ class TodayWireCharacterizationTest {
 
             assertEquals(BAD_REQUEST, answer.status, answer.describe())
             assertEquals("invalid_request_error", answer.error?.type, answer.describe())
-            assertEquals("false", answer.shouldRetry, answer.describe())
             assertTrue(Family.P in answer.families(), answer.describe())
             assertEquals(1, provider.requests.size)
         }

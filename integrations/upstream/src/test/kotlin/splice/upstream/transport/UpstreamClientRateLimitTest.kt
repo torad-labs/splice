@@ -21,7 +21,6 @@ import splice.core.util.ElapsedClock
 import splice.upstream.StreamStart
 import splice.upstream.Waiter
 import splice.upstream.failure.Replies
-import splice.upstream.retry.BURST_WAITS
 import splice.upstream.retry.RateLimitCooldown
 import java.util.concurrent.atomic.AtomicInteger
 import splice.upstream.testing.OpenAiTestReplies as OpenAiReplies
@@ -173,7 +172,7 @@ class UpstreamClientRateLimitTest {
         val client = UpstreamClient(
             totalTimeoutMs = 30_000L,
             client = HttpClient(engine),
-            // A bare 429 is waited out on the burst schedule (section 8); the waits are taken at once here.
+            // The bare 429 has no reset to wait for; it terminates after one request.
             pacing = RetryPacing(waiter = Waiter { }),
             clock = ElapsedClock { 0L },
         )
@@ -200,7 +199,7 @@ class UpstreamClientRateLimitTest {
         release.complete(Unit)
         assertEquals("ok", older.await())
         assertEquals(
-            listOf(200) + List(1 + BURST_WAITS) { 429 },
+            listOf(200, 429),
             answers.map { it.first },
             "every send of the refused post is an answer, and completion is not one",
         )
@@ -243,27 +242,29 @@ class UpstreamClientRateLimitTest {
             },
             replies = Replies(OpenAiReplies),
         ).also { context -> context.upstreamAccepted = StreamStart { accepted += key } }
-        assertEnds<UpstreamFailed> { client.posted(context("synthetic-refused"), "{}") { "unreachable" } }
+        val first = assertEnds<UpstreamFailed> {
+            client.posted(context("synthetic-refused"), "{}") { "unreachable" }
+        }
         assertEquals("ok", client.posted(context("synthetic-healthy"), "{}") { "ok" })
         assertEquals("ok", client.posted(context("synthetic-new"), "{}") { "ok" })
         val again = assertEnds<UpstreamFailed> {
             client.posted(context("synthetic-refused"), "{}") { "unreachable" }
         }
-        assertEquals(429, again.evidence.status)
+        assertEquals(first.cause, again.cause, "the bounded cooldown reuses the terminal cause")
+        assertEquals(0, again.layers, "the cached cause has no new provider response layer")
+        assertEquals(null, again.evidence.status)
+        assertEquals(null, again.evidence.body)
         assertEquals(
-            "synthetic refusal",
-            again.evidence.body,
-            "the refused credential's next turn hears the provider itself",
+            listOf("synthetic-refused", "synthetic-healthy", "synthetic-new"),
+            sent,
+            "the refusal is sent once; healthy credentials still reach the provider",
         )
-        // Each refused post is sent on the burst schedule (section 8) before it ends.
-        val refused = List(1 + BURST_WAITS) { "synthetic-refused" }
-        assertEquals(refused + listOf("synthetic-healthy", "synthetic-new") + refused, sent)
         assertEquals(
             listOf("synthetic-healthy", "synthetic-new"),
             accepted,
             "refusals never permit early stream progress",
         )
-        assertEquals(sent.size, snapshots, "each attempt resolves headers once, and sends that snapshot")
+        assertEquals(sent.size, snapshots, "each request resolves headers once, and sends that snapshot")
     }
 
     @Test

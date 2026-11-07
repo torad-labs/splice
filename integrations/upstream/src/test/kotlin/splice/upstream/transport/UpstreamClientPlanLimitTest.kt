@@ -3,7 +3,7 @@
 // reset and the window, so the line a person reads is written from the reset and never from the
 // upstream's words, which the evidence and the log keep whole (failure-handling slice 2). The next turn
 // still asks the provider itself (Marcos, Oct 26). The same bytes from a provider that reads no plan
-// family, or with no reset named, keep section 8's burst schedule and the upstream's own words exactly.
+// family, or with no reset named, ends at once without a plan hold and keeps the upstream's own words exactly.
 //
 // Failure-handling slice 3: the head's reader reads the unified headers where the reply arrives (AnthropicReplies,
 // whose own test pins the reading; this module cannot depend on the dialect), so a reader that reads them as it does
@@ -38,7 +38,6 @@ import splice.upstream.Waiter
 import splice.upstream.failure.FailedReply
 import splice.upstream.failure.ProviderDeviation
 import splice.upstream.failure.Replies
-import splice.upstream.retry.BURST_WAITS
 import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
@@ -136,7 +135,7 @@ class UpstreamClientPlanLimitTest {
     }
 
     @Test
-    fun `the same 429 on a provider that reads no plan family keeps the burst schedule and its words`() =
+    fun `the same 429 on a provider that reads no plan family ends once with its words`() =
         runTest {
             val calls = AtomicInteger()
             val engine = MockEngine {
@@ -149,11 +148,7 @@ class UpstreamClientPlanLimitTest {
                 client.posted(ctx(fakeAuth, mutableListOf(), Replies(OpenAiReplies)), "{}") { "unreachable" }
             }
 
-            assertEquals(
-                1 + BURST_WAITS,
-                calls.get(),
-                "section 8: a burst is waited out at 2, 4, 8 and 15 s, then ends",
-            )
+            assertEquals(1, calls.get(), "an unstated limit does not start the burst schedule")
             assertEquals(PLAN_BODY, failure.evidence.body, "the upstream's words pass through unchanged")
             assertEquals(0L, client.planHoldForMs)
             assertNull(client.planHold)
@@ -180,7 +175,7 @@ class UpstreamClientPlanLimitTest {
                 client.posted(ctx(forwarded, mutableListOf()), "{}") { "unreachable" }
             }
 
-            assertEquals(1 + BURST_WAITS, calls.get(), "no named reset, no plan hold: the burst schedule")
+            assertEquals(1, calls.get(), "a window without a reset is terminal rather than retried")
             assertEquals(PLAN_BODY, failure.evidence.body)
             assertEquals(0L, client.planHoldForMs)
         }

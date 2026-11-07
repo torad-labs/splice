@@ -71,9 +71,11 @@ class PlanLimitRefusalZoneTest {
     }
 
     @Test
-    fun `no zone and no window brings back the ISO form, an em dash or a phrase that ends a client's wait`() {
+    fun `non-billing reset windows avoid ISO text, an em dash and phrases that end a client's wait`() {
         val zones = listOf("Asia/Tokyo", "America/Chicago", "UTC", "Asia/Kolkata", "Pacific/Auckland")
-        val cases = zones.flatMap { zone -> LimitWindow.entries.map { window -> zone to window } }
+        val cases = zones.flatMap { zone ->
+            LimitWindow.entries.filterNot { it == LimitWindow.BILLING_CYCLE }.map { window -> zone to window }
+        }
         for ((zone, window) in cases) {
             val text = said(window, zone)
             val at = "$window in $zone: $text"

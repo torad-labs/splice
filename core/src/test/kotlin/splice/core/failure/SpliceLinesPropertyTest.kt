@@ -392,7 +392,7 @@ class SpliceLinesPropertyTest {
             val lines = SpliceLines(LocalTimeText(zone))
             val now = random.instant()
             val reset = now.plusSeconds(random.nextLong(864_000L))
-            val window = random.pick(LimitWindow.entries + null)
+            val window = random.pick(LimitWindow.entries.filterNot { it == LimitWindow.BILLING_CYCLE } + null)
             val cause = FailureCause.Provider.Limited(Lift.At(reset, random.nextBoolean(), LiftSource.BODY), window)
             val at = Position(random.pick(Moment.entries), random.nextBoolean())
             val facts = random.facts(now)

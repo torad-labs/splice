@@ -42,9 +42,6 @@ private const val TOO_MANY_REQUESTS = 429
 private const val PAYMENT_REQUIRED = 402
 private const val FORBIDDEN = 403
 
-/** A 429 with no reset stated: one send, then one after each of the burst schedule's four waits (2, 4, 8 and 15 s). */
-private const val ATTEMPTS = 5
-
 /** DeepSeek's 402 of Oct 24, 11:08:11 PM CT, in the shape the journal holds, with its request id. */
 private const val DEEPSEEK_402 =
     """{"error":{"message":"Insufficient Balance (request_id: 49d5cc56-b2b7-42ed-8485-ac06076e79d4)",""" +
@@ -105,11 +102,11 @@ class HttpFailureCauseTest {
         assertInstanceOf(FailureCause.Provider.Limited::class.java, failure.cause)
 
     @Test
-    fun `a 429 that states no reset says so, and keeps every attempt its schedule gives it`() = runTest {
+    fun `a 429 that states no reset says so and ends after one attempt`() = runTest {
         val ended = end(TOO_MANY_REQUESTS, """{"error":{"message":"Rate limit reached for this plan."}}""")
 
         assertEquals(Lift.Unstated, limited(ended.failure).lift)
-        assertEquals(ATTEMPTS, ended.calls)
+        assertEquals(1, ended.calls)
     }
 
     @Test

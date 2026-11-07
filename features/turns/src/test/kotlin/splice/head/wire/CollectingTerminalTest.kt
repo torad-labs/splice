@@ -157,18 +157,18 @@ class CollectingTerminalTest {
 
     // A buffered answer has no committed 200 and no in-band event: the HTTP status IS the information. Slice 4
     // chooses it by family rather than by the cause's own type, from what the client reaction record shows 2.1.310
-    // does with each status (final-design.md section 11): a limit reaching the client keeps the 429 it sends again,
+    // does with each status (final-design.md section 11): an unstated limit is terminal and uses 400,
     // and a failure whose own type was api_error now answers 529 if the provider's and 400 if the request's. 502,
     // which the record does not cover, is gone.
     @Test
-    fun `a buffered rate limit keeps its real 429`() = runTest {
+    fun `a buffered unstated rate limit is a terminal invalid request`() = runTest {
         val t = terminal()
         val cause = FailureCause.Provider.Limited(Lift.Unstated, window = null)
         t.emitError(cause)
-        assertEquals(429, t.httpStatus())
+        assertEquals(400, t.httpStatus())
         assertEquals(line(cause).text, wordsOf(t))
         assertEquals(
-            ErrorType.RATE_LIMIT.wireName,
+            ErrorType.INVALID_REQUEST.wireName,
             t.responseBody()["error"]!!.jsonObject["type"]?.jsonPrimitive?.content,
         )
     }

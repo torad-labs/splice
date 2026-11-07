@@ -517,7 +517,7 @@ internal class HoldBoundsThroughHeadsTest : HoldRouteFixtures() {
     }
 
     @Test
-    fun `an unstated hold ends before its session wall with overloaded_error and its retry holds again`(
+    fun `an unstated Kimi limit ends promptly without an automatic probe`(
         @TempDir tmp: Path,
     ) = runTest {
         withScriptedHeads(tmp) {
@@ -525,15 +525,16 @@ internal class HoldBoundsThroughHeadsTest : HoldRouteFixtures() {
             val kimi = anthropic(replies = HeadReplies.kimi)
             val turn = ClientRequest(session = "sess-unstated-wall", headers = mapOf(WALL_HEADER to "960000"))
 
-            val first = kimi.client.send(turn)
-            val sentFirst = provider.requests.size
-            val again = kimi.client.send(turn)
+            val answer = kimi.client.send(turn)
 
-            assertEquals("overloaded_error", first.error?.type, first.describe())
-            assertTrue(first.arrivals.last() <= 930.seconds, "ends 30 s before the wall: ${first.arrivals.last()}")
-            assertTrue(lines(again).any { "without saying when it resets" in it }, "holds again: ${again.describe()}")
-            assertEquals("overloaded_error", again.error?.type, "not P: ${again.describe()}")
-            assertTrue(provider.requests.size > sentFirst + 1, "the re-send probed again")
+            assertEquals(400, answer.status, answer.describe())
+            assertTrue(Family.P in answer.families(), answer.describe())
+            assertTrue("5-hour" in lineOf(answer), answer.describe())
+            assertTrue("did not say when it resets" in lineOf(answer), answer.describe())
+            assertTrue(answer.notices.isEmpty(), answer.describe())
+            assertFalse(answer.completed, answer.describe())
+            assertEquals(listOf(Duration.ZERO), provider.requests.map { it.at })
+            assertEquals(Duration.ZERO, time.passed())
         }
     }
 
@@ -561,7 +562,7 @@ internal class HoldBoundsThroughHeadsTest : HoldRouteFixtures() {
         @TempDir tmp: Path,
     ) = runTest {
         withScriptedHeads(tmp, VirtualTime()) {
-            provider.script(kimiFiveHour(), reply { anthropicAnswer("not reached") })
+            provider.script(kimiFiveHour(60.seconds), reply { anthropicAnswer("not reached") })
             val kimi = anthropic(replies = HeadReplies.kimi)
 
             val stream = kimi.client.open(launched(compaction()))
@@ -679,8 +680,9 @@ internal abstract class HoldReplyFixtures {
         anthropicErrorBody("rate_limit_error", "This request would exceed your account's rate limit.")
     }
 
-    protected fun kimiFiveHour(): ScriptedReply = reply {
+    protected fun kimiFiveHour(retryAfter: Duration? = null): ScriptedReply = reply {
         status(TOO_MANY_REQUESTS)
+        retryAfter?.let { header("Retry-After", it.inWholeSeconds.toString()) }
         anthropicErrorBody("rate_limit_error", KIMI_FIVE_HOUR)
     }
 

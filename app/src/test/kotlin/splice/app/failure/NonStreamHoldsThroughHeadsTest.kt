@@ -130,6 +130,7 @@ class NonStreamHoldsThroughHeadsTest {
         withScriptedHeads(tmp, VirtualTime()) {
             val spent = reply {
                 status(429)
+                header("Retry-After", "60")
                 anthropicErrorBody(
                     "rate_limit_error",
                     "You've reached your 5-hour usage limit. " +

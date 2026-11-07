@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test
 import splice.codemode.nativehost.trace.NativePerfContext
 import splice.codemode.nativehost.trace.NativeTracing
 import splice.codemode.nativehost.trace.NativeTracingProvider
+import splice.core.perf.OutcomeTag
 import splice.core.perf.observation.PerfEventKind
 import splice.core.perf.observation.PerfIdentity
 import splice.core.perf.observation.PerfObservation
@@ -57,7 +58,7 @@ class NativeTraceOwnershipTest {
                     assertEquals(30L, terminal.stamp.monotonicMs)
                     assertEquals(30L, terminal.stamp.wallMs)
                     assertEquals(20.0, terminal.values["tool_duration_ms"])
-                    assertEquals("cancelled", terminal.outcome)
+                    assertEquals(OutcomeTag.CANCELLED.wire, terminal.outcome)
                     assertEquals(request.links.requestId, terminal.links.requestId)
                     execute.close()
                     assertEquals(2, exporter.spans.size)
@@ -142,7 +143,7 @@ class NativeTraceOwnershipTest {
             assertNull(tracing.invocations.get("late"))
             assertEquals(1, exporter.spans.size)
             val terminal = events.single { it.kind == PerfEventKind.TOOL_FINISHED }
-            assertEquals("cancelled", terminal.outcome)
+            assertEquals(OutcomeTag.CANCELLED.wire, terminal.outcome)
             assertEquals(exporter.spans.single().spanId, terminal.links.spanId)
             val afterShutdown = provider.tracer.spanBuilder("after-shutdown").startSpan()
             assertFalse(afterShutdown.isRecording)

@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.perf.OutcomeTag
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
 
@@ -92,7 +93,7 @@ class PerfToolBehaviorTest {
         assertEquals(30L, terminal.stamp.monotonicMs)
         assertEquals(30L, terminal.stamp.wallMs)
         assertEquals(20.0, terminal.values["tool_duration_ms"])
-        assertEquals("cancelled", terminal.outcome)
+        assertEquals(OutcomeTag.CANCELLED.wire, terminal.outcome)
     }
 
     @Test

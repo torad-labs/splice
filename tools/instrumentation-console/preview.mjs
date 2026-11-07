@@ -4,6 +4,40 @@ import { resolve, extname } from 'node:path';
 import { response, settings } from './fixtures.mjs';
 const root = resolve('app/src/main/resources/console');
 let profile = null;
+async function retryCapacity(refusals, current, resend, parentSignal, inheritedSignal, phase) {
+  const pending = refusals.filter((item) => item?.answer?.status === 429 && item.answer.body?.reason === 'control_query_capacity');
+  if (!pending.length) return [];
+  let windowOpen = true;
+  const timer = phase ? null : setTimeout(() => { windowOpen = false; }, 15000);
+  phase?.start();
+  const canStart = () => current() && !parentSignal?.aborted && !inheritedSignal?.aborted
+    && (phase ? phase.open() : windowOpen);
+  const get = async (path) => {
+    if (!canStart()) return { ok: false, status: 0, body: null };
+    try { const response = await fetch(path); return { ok: response.ok, status: response.status, body: await response.json() }; }
+    catch { return { ok: false, status: 0, body: null }; }
+  };
+  const blob = async (path) => {
+    if (!canStart()) return { ok: false, status: 0, body: null };
+    try {
+      const response = await fetch(path);
+      return { ok: response.ok, status: response.status, body: response.ok ? await response.blob() : await response.json() };
+    } catch { return { ok: false, status: 0, body: null }; }
+  };
+  const retryApi = { get, getReady: get, blob };
+  const completed = [];
+  try {
+    for (const item of pending) {
+      if (!canStart()) break;
+      let answer;
+      try { answer = await resend(item, retryApi, canStart); } catch { break; }
+      if (!current() || parentSignal?.aborted || inheritedSignal?.aborted) break;
+      if (!Number.isInteger(answer?.status) || answer.status <= 0) break;
+      completed.push({ item, answer });
+    }
+    return completed;
+  } finally { if (timer) clearTimeout(timer); }
+}
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1'), state = url.searchParams.get('state') || 'partial';
   if (url.pathname.startsWith('/api/')) {
@@ -19,7 +53,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/' || url.pathname === '/preview.html') {
     res.writeHead(200, { 'content-type': 'text/html' });
     res.end(`<!doctype html><html data-theme="${url.searchParams.get('theme') || 'night'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Splice performance fixture</title><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/console.css"><link rel="stylesheet" href="/perf-heads.css"></head><body><div class="app"><main class="page"><header class="head"><h1>Usage</h1></header><div id="fixture"></div></main></div><script src="/perf-heads.js"></script><script>
-const API={ get:async p=>{try {const r=await fetch(p);return {ok:r.ok,status:r.status,body:await r.json()}}catch{return {ok:false,status:0,body:null}}},post:async(p,b)=>API.write('POST',p,b),put:async(p,b)=>API.write('PUT',p,b),write:async(m,p,b)=>{const r=await fetch(p,{method:m,body:JSON.stringify(b)});return {ok:r.ok,status:r.status,body:await r.json()}},scoped(signal){return {...this,get:async p=>{try{const r=await fetch(p,{signal});return {ok:r.ok,status:r.status,body:await r.json()}}catch{return {ok:false,status:0,body:null}}}}},blob:async p=>({ok:true,status:200,body:await(await fetch(p)).blob()})};
+const API={ get:async p=>{try {const r=await fetch(p);return {ok:r.ok,status:r.status,body:await r.json()}}catch{return {ok:false,status:0,body:null}}},post:async(p,b)=>API.write('POST',p,b),put:async(p,b)=>API.write('PUT',p,b),write:async(m,p,b)=>{const r=await fetch(p,{method:m,body:JSON.stringify(b)});return {ok:r.ok,status:r.status,body:await r.json()}},scoped(signal){return {...this,get:async p=>{try{const r=await fetch(p,{signal});return {ok:r.ok,status:r.status,body:await r.json()}}catch{return {ok:false,status:0,body:null}}},retryCapacity:(items,current,resend,parentSignal,phase)=>retryCapacity(items,current,resend,parentSignal,signal,phase)}},retryCapacity:(items,current,resend,parentSignal,phase)=>retryCapacity(items,current,resend,parentSignal,null,phase),blob:async p=>({ok:true,status:200,body:await(await fetch(p)).blob()})};
 let query=PERF_CONSOLE.fromAddress({window:'5h',filters:{project:'splice',local:'0'},objective_id:'interactive'});
 const view=PERF_CONSOLE.create({document,API,setTimeout,clearTimeout,setInterval},{id:'fixture',query:()=>query,apply:q=>{query=q}});document.querySelector('#fixture').innerHTML=view.html();window.fixture={view,API};
 </script></body></html>`); return;

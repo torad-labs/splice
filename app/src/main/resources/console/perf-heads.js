@@ -215,9 +215,9 @@ const PERF_CONSOLE = (() => {
       })]);
       if (!active()) return;
       // Only the shared helper's exact capacity-refusal predicate retries, after this whole batch settles.
-      const retried = await api.retryCapacity(capacityRefusals, active, (refused, retryApi) => refused.projection
-        ? queryRead(refused.path, active, retryApi)
-        : perfRequest(refused.key, "get", refused.path, active, undefined, retryApi));
+      const retried = await api.retryCapacity(capacityRefusals, active, (refused, retryApi, canStart) => refused.projection
+        ? queryRead(refused.path, () => active() && canStart(), retryApi)
+        : perfRequest(refused.key, "get", refused.path, () => active() && canStart(), undefined, retryApi));
       for (const { item, answer } of retried) {
         if (active()) st.replies[item.key] = answer;
       }
@@ -242,7 +242,7 @@ const PERF_CONSOLE = (() => {
         ]);
         const replies = [schema, caps, profiles, settings];
         const retried = await API.retryCapacity(Object.entries(paths).map(([key, path], index) => ({ key, path, answer: replies[index] })), attached,
-          (item, retryApi) => perfRequest(item.key, "get", item.path, attached, undefined, retryApi));
+          (item, retryApi, canStart) => perfRequest(item.key, "get", item.path, () => attached() && canStart(), undefined, retryApi));
         for (const { item, answer } of retried) {
           if (item.key === "schema") schema = answer;
           if (item.key === "caps") caps = answer;
@@ -505,7 +505,7 @@ const PERF_CONSOLE = (() => {
       st.profilePromise = (async () => {
         let r = await perfRequest("profile-status", "get", path, attached);
         const retried = await API.retryCapacity([{ path, answer: r }], attached,
-          (item, retryApi) => perfRequest("profile-status", "get", item.path, attached, undefined, retryApi));
+          (item, retryApi, canStart) => perfRequest("profile-status", "get", item.path, () => attached() && canStart(), undefined, retryApi));
         if (retried.length) r = retried[0].answer;
         if (r && attached()) { if (r.ok) st.profiles = r.body; else st.message = `Profile status: ${status(r)} · ${words(explain(r))}`; }
       })()
@@ -623,7 +623,7 @@ const PERF_CONSOLE = (() => {
             const id = st.profiles.profile_id, path = `/api/perf/profiles/${encodeURIComponent(id)}/artifact`, options = { refusalReasons: ARTIFACT_REFUSALS };
             let r = await perfRequest("action", "blob", path, attached, options);
             const retried = await API.retryCapacity([{ path, answer: r }], attached,
-              (item, retryApi) => perfRequest("action", "blob", item.path, attached, options, retryApi));
+              (item, retryApi, canStart) => perfRequest("action", "blob", item.path, () => attached() && canStart(), options, retryApi));
             if (retried.length) r = retried[0].answer;
             if (!r.ok) throw new Error(`Artifact: ${status(r)}${explain(r) ? ` · ${words(explain(r))}` : ""}`);
             download(r.body, `splice-profile-${id}.jfr`); st.message = "Profile artifact downloaded";
@@ -639,7 +639,7 @@ const PERF_CONSOLE = (() => {
             const path = `/api/perf/turns?${p}`;
             let r = await queryRead(path, active);
             const retried = await API.retryCapacity([{ path, answer: r }], active,
-              (item, retryApi) => queryRead(item.path, active, retryApi), abort.signal);
+              (item, retryApi, canStart) => queryRead(item.path, () => active() && canStart(), retryApi), abort.signal);
             if (retried.length) r = retried[0].answer;
             if (active()) st.replies.rows = r;
           }

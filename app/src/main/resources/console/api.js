@@ -100,11 +100,12 @@ const API = (() => {
     return call("GET", path);
   }
   // Every answer comes back as { ok, status, body }; a refused or unreachable call is an answer too, never a throw.
-  async function call(method, path, body, extra, signal, keepalive) {
+  async function call(method, path, body, extra, signal, keepalive, maySend = () => true) {
     const counted = !path.startsWith("/api/console/pilot");
     if (counted) pending++;
     try {
       await signedIn;
+      if (!maySend()) return { ok: false, status: 0, body: null };
       const init = { method, signal, keepalive, headers: { Authorization: `Bearer ${localStorage.getItem(STORE) || ""}`, ...extra } };
       if (body !== undefined) { init.headers["Content-Type"] = "application/json"; init.body = JSON.stringify(body); }
       const res = await fetch(path, init);
@@ -122,29 +123,30 @@ const API = (() => {
       if (counted) pending--;
     }
   }
-  // Capacity refusals are retried only after their caller's whole batch settles. One pass is
-  // serial and finite; callers supply their existing generation/coalescing queue for each retry.
+  // Capacity refusals are retried only after their caller's whole batch settles. The 15-second
+  // window gates new sends; a sent request keeps its queue slot until the normal HTTP response drains.
   async function retryCapacity(refusals, current, resend, parentSignal, inheritedSignal, phase) {
     const pending = refusals.filter((item) => item?.answer?.status === 429 && item.answer.body?.reason === "control_query_capacity");
     if (!pending.length) return [];
-    const deadline = phase ? null : new AbortController();
+    let windowOpen = true;
+    const timer = phase ? null : setTimeout(() => { windowOpen = false; }, 15000);
     phase?.start();
-    const deadlineSignal = phase ? phase.signal : deadline.signal;
-    const retrySignal = AbortSignal.any([deadlineSignal, ...[inheritedSignal, parentSignal].filter(Boolean)]);
-    const retryClient = client(retrySignal);
-    const timer = deadline ? setTimeout(() => deadline.abort(), 15000) : null;
+    const canStart = () => current() && !inheritedSignal?.aborted && !parentSignal?.aborted
+      && (phase ? phase.open() : windowOpen);
+    const retryClient = client(undefined, canStart);
     const completed = [];
     try {
       for (const item of pending) {
-        if (!current() || deadlineSignal.aborted || inheritedSignal?.aborted || parentSignal?.aborted) break;
+        if (!canStart()) break;
         let answer;
-        try { answer = await resend(item, retryClient); } catch { break; }
-        if (!current() || deadlineSignal.aborted || inheritedSignal?.aborted || parentSignal?.aborted) break;
+        try { answer = await resend(item, retryClient, canStart); } catch { break; }
+        if (!current() || inheritedSignal?.aborted || parentSignal?.aborted) break;
+        if (!Number.isInteger(answer?.status) || answer.status <= 0) break;
         completed.push({ item, answer });
       }
       return completed;
     } finally {
-      if (deadline) { clearTimeout(timer); deadline.abort(); }
+      if (timer) clearTimeout(timer);
     }
   }
   // Artifact callers can opt into fixed machine refusal codes. Never return the error document:
@@ -165,14 +167,15 @@ const API = (() => {
     } catch { return null; }
     finally { reader.releaseLock(); }
   }
-  const client = (signal) => ({
+  const client = (signal, maySend = () => true) => ({
     pending: () => pending,
-    get: (p) => call("GET", p, undefined, undefined, signal),
+      get: (p) => call("GET", p, undefined, undefined, signal, undefined, maySend),
     // Managed profile artifacts use the same bearer guard; never put credentials into a download URL.
     async blob(path, options) {
       pending++;
       try {
         await signedIn;
+        if (!maySend()) return { ok: false, status: 0, body: null };
         const res = await fetch(path, { signal, headers: { Authorization: `Bearer ${localStorage.getItem(STORE) || ""}` } });
         if (res.status === 401 && !signal?.aborted) lock();
         return { ok: res.ok, status: res.status, body: res.ok ? await res.blob() : await blobRefusal(res, options) };
@@ -180,14 +183,14 @@ const API = (() => {
       finally { pending--; }
     },
     // a read that answers at once with what is ready, marking what splice is still reading, rather than waiting on it
-    getReady: (p) => call("GET", p, undefined, { "x-splice-read-pending": "1" }, signal),
-    post: (p, b) => call("POST", p, b ?? {}, undefined, signal),
-    put: (p, b, extra) => call("PUT", p, b, extra, signal),
-    patch: (p, b) => call("PATCH", p, b, undefined, signal),
-    del: (p) => call("DELETE", p, undefined, undefined, signal),
+    getReady: (p) => call("GET", p, undefined, { "x-splice-read-pending": "1" }, signal, undefined, maySend),
+    post: (p, b) => call("POST", p, b ?? {}, undefined, signal, undefined, maySend),
+    put: (p, b, extra) => call("PUT", p, b, extra, signal, undefined, maySend),
+    patch: (p, b) => call("PATCH", p, b, undefined, signal, undefined, maySend),
+    del: (p) => call("DELETE", p, undefined, undefined, signal, undefined, maySend),
     // a last word as the tab hides or closes: the browser still delivers it after the page is gone (pilot.js)
     parting: (p) => call("POST", p, {}, undefined, undefined, true),
-    scoped: (nextSignal) => client(signal ? AbortSignal.any([signal, nextSignal]) : nextSignal),
+    scoped: (nextSignal) => client(signal ? AbortSignal.any([signal, nextSignal]) : nextSignal, maySend),
     retryCapacity: (refusals, current, resend, parentSignal, phase) => retryCapacity(refusals, current, resend, parentSignal, signal, phase),
     recent,
   });

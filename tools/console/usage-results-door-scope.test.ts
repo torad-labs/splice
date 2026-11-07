@@ -18,7 +18,7 @@ const group = (key: string, over: Row): Row => ({
 });
 const proj = (p: string) => ({ id: `/work/${p}`, name: p, label: p, source: "folder", folder: "/work" });
 const rows = Array.from({ length: 6 }, (_, i) => ({ turn: `o${i}`, ts: now - 30_000 * (i + 1), first_byte: 100, total: 500, outcome: "ok", model: "m", account: "primary", session: "s1", project: proj("website") }));
-let queryWorkerBusy = false, refuseSummary = false;
+let queryWorkerBusy = false, refuseSummary = false, refuseTurnsOnce = false, queryBusyResponses = 0;
 let limitPerfHttp = false, admittedPerfHttp = 0, refuseSettings = false;
 let artifactFailure: string | null = null;
 let profileState = "idle", savedObjectives: Row[] = [];
@@ -43,7 +43,12 @@ function holdQuery(path: string, cursor = false) {
 // tests judge the selected cohort and rendered views, not request counts or implementation details.
 async function workerResponse(url: URL) {
   const busy = () => Response.json({ schema_version: 1, contract_version: 1, status: "busy", error: { code: "query_busy", reason: "query_in_progress" } }, { status: 409 });
-  if (queryWorkerBusy || (refuseSummary && url.pathname === "/api/perf/summary")) return busy();
+  if (url.pathname === "/api/perf/turns" && refuseTurnsOnce && !url.searchParams.has("cursor")) {
+    refuseTurnsOnce = false;
+    return httpCapacity();
+  }
+  if (queryWorkerBusy) { queryBusyResponses++; return busy(); }
+  if (refuseSummary && url.pathname === "/api/perf/summary") return busy();
   queryWorkerBusy = true;
   try {
     if (heldQuery?.path === url.pathname && heldQuery.cursor === url.searchParams.has("cursor")) {
@@ -367,6 +372,29 @@ test("Usage: a single query worker returns every view for the newest cohort and 
     await expect(panel).toContainText("query in progress");
   } finally {
     first.release(); pageTurn?.release(); heldQuery = null; refuseSummary = false;
+    await context.close();
+  }
+}, 90_000);
+
+test("Usage: an accepted capacity retry keeps query ownership until its held response drains", async () => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1400 } });
+  const p = await context.newPage(), retry = holdQuery("/api/perf/turns");
+  refuseTurnsOnce = true; queryBusyResponses = 0;
+  try {
+    await p.goto(`http://127.0.0.1:${server.port}/usage.html?contract=1&model=one-query-worker&from=${now - 60000}&until=${now}`);
+    await retry.ready;
+    const panel = p.locator("#band-perf"), content = panel.locator(".pc-content");
+    await panel.locator('[name="project"]').fill("/work/website");
+    await panel.getByRole("button", { name: "Apply cohort", exact: true }).click();
+    // The new cohort waits behind the accepted retry's worker ownership, even though the old view is stale.
+    expect(queryBusyResponses).toBe(0);
+    retry.release();
+    await expect(content).toHaveAttribute("aria-busy", "false");
+    await expect(panel.locator('[name="project"]')).toHaveValue("/work/website");
+    await expect(panel.locator(".pc-command-failure")).toHaveText("5% failed");
+    expect(queryBusyResponses).toBe(0);
+  } finally {
+    retry.release(); heldQuery = null; refuseTurnsOnce = false;
     await context.close();
   }
 }, 90_000);

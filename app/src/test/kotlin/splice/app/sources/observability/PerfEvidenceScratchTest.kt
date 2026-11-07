@@ -1,5 +1,7 @@
 package splice.app.sources.observability
 
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -9,8 +11,11 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.sources.observability.cursor.PerfCursorPruning
+import splice.core.util.AsyncFileIo
 import splice.core.util.JsonScalars
 import splice.core.util.PerfWorkBudget
+import splice.head.perf.RequestEvidenceFormat
+import splice.head.perf.RequestEvidenceRetention
 import splice.usage.perf.history.PerfEvidenceCursorRequest
 import splice.usage.perf.history.PerfObservationConsumer
 import java.nio.file.Files
@@ -31,12 +36,25 @@ class PerfEvidenceScratchTest {
     fun `event cursor pairs also stop at capacity without blocking their existing continuation`() {
         StreamingEvidenceFixture(root).use { fixture ->
             fixture.seed(2)
+            // Event exports require an explicitly loss-accounted retained population, separate from coverage proof.
+            // Match the existing event-export fixture after seed has drained the real writer.
+            Files.writeString(
+                root.resolve("evidence").resolve(RequestEvidenceFormat.RETENTION_FILE),
+                Json.encodeToString(RequestEvidenceRetention(lossAccountingComplete = true)),
+            )
             val source = fixture.evidence()
             val request = PerfEvidenceCursorRequest(fixture.evidenceQuery(), pageSize = 5)
             var token: String? = null
-            repeat(64) {
+            repeat(64) { index ->
                 source.page(request).use { page ->
-                    assertEquals("complete", JsonScalars.str(page.metadata, "status"))
+                    assertEquals("complete", JsonScalars.str(page.metadata, "status")) {
+                        "stage=event_cursor_first_page ordinal=${index + 1} " +
+                            "read_errors=${page.metadata["read_errors"]} " +
+                            "malformed_rows=${page.metadata["malformed_rows"]} " +
+                            "known_matching_events=${page.metadata["known_matching_events"]} " +
+                            "rows=${page.observations.size} io=${AsyncFileIo.workSnapshot} " +
+                            "work_budget=${PerfWorkBudget.snapshot()}"
+                    }
                     assertEquals(5, page.observations.size)
                     token = requireNotNull(page.nextCursor)
                 }

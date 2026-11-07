@@ -25,6 +25,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.accounts.claude.ClaudeAccountIdentity
 import splice.accounts.claude.ClaudeLoginPlaceId
+import splice.accounts.order.HeadAccountOrderSource
 import splice.accounts.pool.HeadAccountPinSource
 import splice.app.control.ControlAuth
 import splice.app.control.ControlRuntime
@@ -349,6 +350,9 @@ class ClaudeCarryingPoolUsageTest {
         val port = upstream.engine.resolvedConnectors().single().port
         val rig = fixture.rig(upstreamUrl = "http://127.0.0.1:$port", performance = telemetry)
         try {
+            val pool = requireNotNull(rig.head.authSurface.accountPool)
+            assertTrue((pool as HeadAccountOrderSource).setOrder(listOf(NATIVE_SELECTOR, "added")))
+            assertEquals(NATIVE_SELECTOR, pool.view(null).nextTargetLabel)
             val from = System.currentTimeMillis()
             HttpClient(Java).use { client ->
                 sendEvidenceTurn(client, rig, sent)

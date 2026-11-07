@@ -12,8 +12,16 @@ export interface ProfileReceipt {
   runtime_binding: { first: RuntimeIdentity | null; last: RuntimeIdentity | null; samples: number; source_commit: string; jar_sha256: string; process_start_ticks: string; config_sha256: string; config_scope: 'profile_and_runtime_revisions_reported_separately' };
   jfr: { status: string; chunks: number | null; duration_seconds: number | null; execution_samples: number | null; reason: string | null };
 }
+export type RuntimeOwnerMismatch = 'boot_id' | 'build' | 'version' | 'schema_version';
+export function runtimeOwnerMismatch(profile: RuntimeIdentity, runtime: RuntimeIdentity): RuntimeOwnerMismatch | null {
+  if (profile.bootId === 'unknown' || runtime.bootId === 'unknown' || profile.bootId !== runtime.bootId) return 'boot_id';
+  if (profile.build === 'unknown' || runtime.build === 'unknown' || profile.build !== runtime.build) return 'build';
+  if (profile.version !== runtime.version) return 'version';
+  if (profile.schemaVersion !== runtime.schemaVersion) return 'schema_version';
+  return null;
+}
 export function sameRuntimeOwner(profile: RuntimeIdentity, runtime: RuntimeIdentity) {
-  return ![profile.bootId, profile.build, runtime.bootId, runtime.build].includes('unknown') && profile.bootId === runtime.bootId && profile.build === runtime.build && profile.version === runtime.version && profile.schemaVersion === runtime.schemaVersion;
+  return runtimeOwnerMismatch(profile, runtime) === null;
 }
 async function jfrSummary(path: string) {
   const child = Bun.spawn(['jfr', 'summary', path], { stdout: 'pipe', stderr: 'pipe', env: { PATH: process.env.PATH ?? '/usr/bin:/bin' } });
@@ -64,7 +72,9 @@ export async function startProfile(m: Manifest, desk: OwnedDesk, repetition: num
     runtime_binding: { first: null, last: null, samples: 0, source_commit: desk.identity.source_commit, jar_sha256: desk.identity.artifact_sha256, process_start_ticks: desk.identity.start_ticks, config_sha256: desk.identity.raw_config_sha256, config_scope: 'profile_and_runtime_revisions_reported_separately' },
     jfr: { status: 'unavailable', chunks: null, duration_seconds: null, execution_samples: null, reason: 'not_downloaded' } };
   return { receipt, bindRuntime: (runtime: RuntimeIdentity | null) => {
-    if (!runtime || !sameRuntimeOwner(identity, runtime) || receipt.runtime_binding.first && !sameRuntimeOwner(receipt.runtime_binding.first, runtime)) throw new Error('profile_runtime_identity_mismatch');
+    if (!runtime) throw new Error('runtime_status_unavailable');
+    const mismatch = runtimeOwnerMismatch(identity, runtime) ?? (receipt.runtime_binding.first ? runtimeOwnerMismatch(receipt.runtime_binding.first, runtime) : null);
+    if (mismatch) throw new Error(`profile_runtime_identity_mismatch_${mismatch}`);
     receipt.runtime_binding.first ??= runtime; receipt.runtime_binding.last = runtime; receipt.runtime_binding.samples++;
   }, stop: async (fromMs: number, untilMs: number) => {
     receipt.steady_from_ms = fromMs; receipt.steady_until_ms = untilMs;

@@ -4,6 +4,7 @@ import { summarize, type Extras } from './summary';
 import type { Sample } from './observe';
 import { verifyRunBinding } from './identity';
 import { readRetainedEvidence } from './retained';
+import { compareWireFingerprints } from './wire-fingerprint';
 export async function readRun(directory: string) {
   const manifest: Manifest = await Bun.file(join(directory, 'manifest.json')).json(); validate(manifest);
   const receipt = await Bun.file(join(directory, 'receipt.json')).json();
@@ -46,8 +47,9 @@ export async function analyze(baseline: string, candidate: string, retainedDirec
   if (JSON.stringify(comparable(b.manifest)) !== JSON.stringify(comparable(c.manifest))) reasons.push('incompatible_cohorts');
   if (b.summary.status !== 'complete' || c.summary.status !== 'complete') reasons.push('incomplete_runs');
   if (b.summary.generator.saturated || c.summary.generator.saturated) reasons.push('generator_saturation');
-  const digestSet = (rows: Sample[]) => [...new Set(rows.filter(r => r.phase === 'steady' && r.outcome === 'completed').map(r => `${r.wire_sha256}:${r.content_sha256}:${r.tokens}`))].sort();
-  if (JSON.stringify(digestSet(b.rows)) !== JSON.stringify(digestSet(c.rows))) reasons.push('wire_or_content_changed');
+  const wireComparison = compareWireFingerprints(b.manifest, b.rows, c.manifest, c.rows);
+  if (wireComparison === 'invalid') reasons.push('wire_fingerprint_evidence_invalid');
+  else if (wireComparison === 'changed') reasons.push('wire_or_content_changed');
   if ((b.summary.goodput.interval_95.cv ?? Infinity) > b.manifest.budgets.maximum_baseline_cv) reasons.push('high_baseline_variance');
   if (reasons.length) return { schema_version: 1, status: 'invalid', reasons, baseline_run: b.manifest.run_id, candidate_run: c.manifest.run_id, checks: null, capacity_claim: null, note: 'Invalid roles, artifact/process/configuration binding or measurement cohorts cannot produce budget checks.' };
   const goodB = b.summary.goodput.interval_95, goodC = c.summary.goodput.interval_95;

@@ -13,7 +13,7 @@ import { startTelemetry, telemetrySummary, type TelemetryPoint } from "./telemet
 import { queryHistory } from './history';
 import { historyStudy } from './history-result';
 import type { DeskIdentity } from './identity';
-const harnessAtLoad = Promise.all(['run.ts', 'manifest.ts', 'fixture.ts', 'request-body.ts', 'observe.ts', 'desk.ts', 'summary.ts', 'analyze.ts', 'adapters.ts', 'identity.ts', 'control.ts', 'profile.ts', 'otlp.ts', 'telemetry.ts', 'history.ts', 'history-result.ts', 'costs.ts', 'retained.ts', 'retained-model.ts'].map(f => Bun.file(join(import.meta.dir, f)).text())).then(files => hash(files.join('\n')));
+const harnessAtLoad = Promise.all(['run.ts', 'manifest.ts', 'fixture.ts', 'request-body.ts', 'observe.ts', 'desk.ts', 'summary.ts', 'analyze.ts', 'adapters.ts', 'identity.ts', 'control.ts', 'profile.ts', 'otlp.ts', 'telemetry.ts', 'history.ts', 'history-result.ts', 'costs.ts', 'retained.ts', 'retained-model.ts', 'wire-fingerprint.ts'].map(f => Bun.file(join(import.meta.dir, f)).text())).then(files => hash(files.join('\n')));
 export async function writeVerified(path: string, value: string) {
   const temporary = `${path}.${randomUUID()}.tmp`; const file = await open(temporary, 'wx', 0o600);
   try { await file.writeFile(value); await file.sync(); } finally { await file.close(); }
@@ -104,14 +104,22 @@ export async function run(input: Manifest, directory: string, dry = false) {
       const telemetry = m.role === 'candidate' ? await startTelemetry(m, desk, repetition) : null;
       activeTelemetry = telemetry;
       if (desk.history && m.retained_history) { extras.history ??= []; extras.history.push(...await queryHistory(desk, desk.history, m.retained_history, repetition)); }
-      if (telemetry) { extras.schemas ??= []; extras.schemas.push(await telemetry.schema()); const first = await telemetry.sample(); profile?.bindRuntime(first.status === 'ok' ? first.identity : null); telemetry.start(); }
+      if (telemetry) {
+        extras.schemas ??= []; extras.schemas.push(await telemetry.schema());
+        const first = await telemetry.sample();
+        try { profile?.bindRuntime(first.status === 'ok' ? first.identity : null); }
+        catch (error) { telemetryPoints.push(...telemetry.points); throw error; }
+        telemetry.start();
+      }
       await phase(repetition, 'warmup', m.warmup_ms);
       await telemetry?.pause(); telemetry?.setPhase('steady');
       const telemetryBefore = telemetry?.points.length ?? 0; await telemetry?.sample(); telemetry?.start();
       const before = await resource(desk.pid, desk.state);
       const timing = await phase(repetition, 'steady', m.duration_ms);
       const after = await resource(desk.pid, desk.state);
-      await telemetry?.pause(); const telemetryAfter = telemetry?.points.length ?? 0; const last = await telemetry?.sample(); if (profile) profile.bindRuntime(last?.status === 'ok' ? last.identity : null);
+      await telemetry?.pause(); const telemetryAfter = telemetry?.points.length ?? 0; const last = await telemetry?.sample();
+      if (profile) try { profile.bindRuntime(last?.status === 'ok' ? last.identity : null); }
+      catch (error) { if (telemetry) telemetryPoints.push(...telemetry.points); throw error; }
       if (telemetry) { const offset = telemetryPoints.length; telemetryPoints.push(...telemetry.points); telemetryBoundaries.push({ repetition, before: offset + telemetryBefore, after: offset + telemetryAfter, from_ms: timing.from_epoch_ms, until_ms: timing.until_epoch_ms }); }
       activeTelemetry = null;
       if (telemetry) { extras.query_summaries ??= []; extras.query_summaries.push(await telemetry.summary(timing.from_epoch_ms, timing.until_epoch_ms)); }

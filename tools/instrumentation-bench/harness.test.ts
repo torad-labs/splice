@@ -2,11 +2,12 @@ import { expect, test } from 'bun:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { defaults, validate } from './manifest';
-import { frames, requestBytes, startUpstream } from './fixture';
+import { frames, nonstream, requestBytes, startUpstream } from './fixture';
 import { requestBodyMatcher } from './request-body';
 import { initial, WireObserver } from './observe';
 import { run } from './run';
 import { readRun, analyze } from './analyze';
+import { compareWireFingerprints } from './wire-fingerprint';
 import { startDesk } from './desk';
 
 test('explicit Java selection requires an absolute executable and full digest', () => {
@@ -35,6 +36,123 @@ test('honest terminal validation rejects dropped content despite complete termin
     const sample = initial(0, 0, 'steady', 0); observer.finish(sample);
     expect(sample.terminal_correct).toBe(!drop);
   }
+});
+
+test('proxy Anthropic wire fingerprints normalize only the generated message ID', () => {
+  const inspect = (role: 'baseline' | 'candidate', id: string, change?: (events: any[]) => void) => {
+    const m = defaults(); m.role = role; m.target = { kind: 'proxy' }; m.transport = 'sse';
+    const events: any[] = structuredClone(frames(m)); events[0].message.id = id; change?.(events);
+    const observer = new WireObserver(m, () => 1);
+    for (const event of events) observer.chunk(new TextEncoder().encode('event: ' + event.type + '\r\ndata: ' + JSON.stringify(event) + '\r\n\r\n'));
+    const sample = initial(0, 0, 'steady', 0); observer.finish(sample);
+    return { manifest: m, sample };
+  };
+  const baseline = inspect('baseline', 'msg_1794079955675_1');
+  const candidate = inspect('candidate', 'msg_1794080363569_1');
+  expect(baseline.sample.terminal_correct).toBe(true);
+  expect(candidate.sample.terminal_correct).toBe(true);
+  expect(baseline.sample.wire_sha256).not.toBe(candidate.sample.wire_sha256);
+  expect(baseline.sample.wire_fingerprint_scheme).toBe('anthropic-sse-message-id-v1');
+  expect(baseline.sample.wire_fingerprint_valid).toBe(true);
+  expect(baseline.sample.wire_fingerprint_sha256).toBe(candidate.sample.wire_fingerprint_sha256);
+  expect(compareWireFingerprints(baseline.manifest, [baseline.sample], candidate.manifest, [candidate.sample])).toBe('equal');
+
+  const changedPayload = inspect('candidate', 'msg_1794080363569_2', events => { events[0].message.model = 'different-model'; });
+  expect(changedPayload.sample.wire_fingerprint_sha256).not.toBe(baseline.sample.wire_fingerprint_sha256);
+  expect(compareWireFingerprints(baseline.manifest, [baseline.sample], changedPayload.manifest, [changedPayload.sample])).toBe('changed');
+  const changedOrder = inspect('candidate', 'msg_1794080363569_3', events => { [events[1], events[2]] = [events[2], events[1]]; });
+  expect(changedOrder.sample.wire_fingerprint_sha256).not.toBe(baseline.sample.wire_fingerprint_sha256);
+  expect(compareWireFingerprints(baseline.manifest, [baseline.sample], changedOrder.manifest, [changedOrder.sample])).toBe('changed');
+});
+
+test('fingerprint evidence rejects invalid or reused IDs and old samples; direct fixture bytes stay exact', () => {
+  const inspect = (target: 'proxy' | 'direct', id: string) => {
+    const m = defaults(); m.role = 'candidate'; m.target = { kind: target }; m.transport = 'sse';
+    const events: any[] = structuredClone(frames(m)); events[0].message.id = id;
+    const observer = new WireObserver(m, () => 1);
+    for (const event of events) observer.chunk(new TextEncoder().encode(['event: ' + event.type, 'data: ' + JSON.stringify(event), '', ''].join(String.fromCharCode(10))));
+    const sample = initial(0, 0, 'steady', 0); observer.finish(sample); return { manifest: m, sample };
+  };
+  const malformed = inspect('proxy', 'msg_fixture');
+  expect(malformed.sample.wire_fingerprint_valid).toBe(false);
+  expect(malformed.sample.wire_fingerprint_sha256).toBeNull();
+  const bomManifest = defaults(); bomManifest.role = 'candidate'; bomManifest.target = { kind: 'proxy' }; bomManifest.transport = 'sse';
+  const bomEvents: any[] = structuredClone(frames(bomManifest)); bomEvents[0].message.id = 'msg_1794080363569_5';
+  const bomObserver = new WireObserver(bomManifest, () => 1);
+  for (const [index, event] of bomEvents.entries()) {
+    const prefix = index === 0 ? String.fromCharCode(0xfeff) : '';
+    bomObserver.chunk(new TextEncoder().encode(prefix + 'event: ' + event.type + '\ndata: ' + JSON.stringify(event) + '\n\n'));
+  }
+  const bomSample = initial(0, 0, 'steady', 0); bomObserver.finish(bomSample);
+  expect(bomSample.wire_fingerprint_valid).toBe(false);
+  const invalidUtf8Observer = new WireObserver(bomManifest, () => 1);
+  expect(() => invalidUtf8Observer.chunk(new Uint8Array([0xff]))).toThrow();
+
+  const duplicateManifest = defaults(); duplicateManifest.role = 'candidate'; duplicateManifest.target = { kind: 'proxy' }; duplicateManifest.transport = 'sse';
+  const duplicateEvents: any[] = structuredClone(frames(duplicateManifest)); const duplicateId = 'msg_1794080363569_6';
+  duplicateEvents[0].message.id = duplicateId;
+  const escapedIdKey = String.fromCharCode(92) + 'u0069d';
+  const firstJson = JSON.stringify(duplicateEvents[0]).replace('"id":"' + duplicateId + '","type"',
+    '"id":"' + duplicateId + '","' + escapedIdKey + '":"' + duplicateId + '","type"');
+  const duplicateObserver = new WireObserver(duplicateManifest, () => 1);
+  duplicateObserver.chunk(new TextEncoder().encode('event: message_start\ndata: ' + firstJson + '\n\n'));
+  for (const event of duplicateEvents.slice(1)) duplicateObserver.chunk(new TextEncoder().encode('event: ' + event.type + '\ndata: ' + JSON.stringify(event) + '\n\n'));
+  const duplicateSample = initial(0, 0, 'steady', 0); duplicateObserver.finish(duplicateSample);
+  expect(duplicateSample.wire_fingerprint_valid).toBe(false);
+  expect(compareWireFingerprints(malformed.manifest, [malformed.sample], malformed.manifest, [malformed.sample])).toBe('invalid');
+
+  const direct = inspect('direct', 'msg_fixture');
+  expect(direct.sample.wire_fingerprint_scheme).toBe('raw-wire-v1');
+  expect(direct.sample.wire_fingerprint_sha256).toBe(direct.sample.wire_sha256);
+  expect(direct.sample.wire_fingerprint_valid).toBe(true);
+  const oldReceiptSample = { ...direct.sample, wire_fingerprint_sha256: undefined, wire_fingerprint_scheme: undefined,
+    wire_fingerprint_valid: undefined, wire_message_id: undefined } as any;
+  expect(compareWireFingerprints(direct.manifest, [oldReceiptSample], direct.manifest, [direct.sample])).toBe('invalid');
+
+  const first = inspect('proxy', 'msg_1794080363569_4');
+  const duplicate = { ...first.sample, sequence: 1 };
+  expect(compareWireFingerprints(first.manifest, [first.sample, duplicate], first.manifest, [first.sample])).toBe('invalid');
+});
+
+test('proxy Anthropic nonstream fingerprint normalizes only the top-level generated message ID', () => {
+  const inspect = (role: 'baseline' | 'candidate' | 'direct', id: string, rawOverride?: string, change?: (body: any) => void) => {
+    const m = defaults(); m.role = role === 'direct' ? 'direct' : role; m.target = { kind: role === 'direct' ? 'direct' : 'proxy' };
+    m.transport = 'http'; m.streaming = false;
+    const body: any = structuredClone(nonstream(m)); body.id = id; change?.(body);
+    const raw = rawOverride ?? JSON.stringify(body);
+    const observer = new WireObserver(m, () => 1); observer.chunk(new TextEncoder().encode(raw));
+    const sample = initial(0, 0, 'steady', 0); observer.finish(sample);
+    return { manifest: m, sample, raw };
+  };
+  const baseline = inspect('baseline', 'msg_1794079955675_1');
+  const candidate = inspect('candidate', 'msg_1794080363569_1');
+  expect(baseline.sample.terminal_correct).toBe(true);
+  expect(candidate.sample.terminal_correct).toBe(true);
+  expect(baseline.sample.wire_sha256).not.toBe(candidate.sample.wire_sha256);
+  expect(baseline.sample.wire_fingerprint_scheme).toBe('anthropic-json-message-id-v1');
+  expect(baseline.sample.wire_fingerprint_valid).toBe(true);
+  expect(baseline.sample.wire_fingerprint_sha256).toBe(candidate.sample.wire_fingerprint_sha256);
+  expect(compareWireFingerprints(baseline.manifest, [baseline.sample], candidate.manifest, [candidate.sample])).toBe('equal');
+
+  const changedPayload = inspect('candidate', 'msg_1794080363569_2', undefined, body => { body.model = 'different-model'; });
+  expect(changedPayload.sample.wire_fingerprint_sha256).not.toBe(baseline.sample.wire_fingerprint_sha256);
+  expect(compareWireFingerprints(baseline.manifest, [baseline.sample], changedPayload.manifest, [changedPayload.sample])).toBe('changed');
+
+  const malformed = inspect('candidate', 'msg_fixture');
+  expect(malformed.sample.wire_fingerprint_valid).toBe(false);
+  expect(malformed.sample.wire_fingerprint_sha256).toBeNull();
+  const duplicate = inspect('candidate', 'msg_1794080363569_3', baseline.raw.replace('"id":"msg_1794079955675_1",', '"id":"msg_1794080363569_3","\\u0069d":"msg_1794080363569_3",'));
+  expect(duplicate.sample.wire_fingerprint_valid).toBe(false);
+  expect(compareWireFingerprints(duplicate.manifest, [duplicate.sample], candidate.manifest, [candidate.sample])).toBe('invalid');
+
+  const first = inspect('candidate', 'msg_1794080363569_4');
+  const reusedId = { ...first.sample, sequence: 1 };
+  expect(compareWireFingerprints(first.manifest, [first.sample, reusedId], candidate.manifest, [candidate.sample])).toBe('invalid');
+
+  const direct = inspect('direct', 'msg_fixture');
+  expect(direct.sample.wire_fingerprint_scheme).toBe('raw-wire-v1');
+  expect(direct.sample.wire_fingerprint_sha256).toBe(direct.sample.wire_sha256);
+  expect(direct.sample.wire_fingerprint_valid).toBe(true);
 });
 
 test('wire error and missing terminal never become clean completion', () => {

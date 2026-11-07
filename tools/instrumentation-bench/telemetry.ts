@@ -4,7 +4,9 @@ import { control, counter, runtimeIdentity, type OwnedDesk, type RuntimeIdentity
 import { hash, type Manifest } from './manifest';
 import { sleep } from './fixture';
 
-export interface Sink { sink: string; observed: number; enqueued: number; written: number; failed: number; dropped: number; pending: number; oldestPendingMs: number | null; lastSuccessEpochMs: number | null }
+export interface SinkRejection { reason: string; atEpochMs: number; requestedBytes: number | null; targetBytes: number | null; leasedBytes: number | null }
+export interface SinkRejections { snapshotMemory: number; serializationSize: number; historyMemory: number; phaseUnavailable: number; writerUnavailable: number; asyncEnqueue: number; unclassified: number; last: SinkRejection | null }
+export interface Sink { sink: string; observed: number; enqueued: number; written: number; failed: number; dropped: number; pending: number; oldestPendingMs: number | null; lastSuccessEpochMs: number | null; rejections?: SinkRejections }
 export interface TelemetryPoint {
   repetition: number; phase: 'warmup' | 'steady' | 'drain'; sampled_from_ms: number; sampled_until_ms: number;
   identity: RuntimeIdentity | null; artifact_sha256: string; process_id: number | null; config_sha256: string;
@@ -13,9 +15,40 @@ export interface TelemetryPoint {
   disk: Record<string, number | null>; runtime: unknown; exports: unknown; read_bytes: number; elapsed_ms: number;
 }
 const owners = ['aggregate', 'evidence', 'cursor', 'profile'] as const;
+const rejectionReasons = ['snapshot_memory', 'serialization_size', 'history_memory', 'phase_unavailable', 'writer_unavailable', 'async_enqueue', 'unclassified'] as const;
+const MAX_POINT_ISSUES = 64;
 const codes = (value: unknown) => Array.isArray(value) ? value.filter(v => typeof v === 'string' && /^[a-z0-9_]{1,100}$/.test(v)).slice(0, 64) : [];
+const addIssue = (point: TelemetryPoint, value: unknown) => {
+  if (typeof value === 'string' && /^[a-z0-9_]{1,100}$/.test(value) && point.issues.length < MAX_POINT_ISSUES && !point.issues.includes(value)) point.issues.push(value);
+};
+const errorCode = (error: unknown, fallback: string) => error instanceof Error && /^[a-z0-9_]{1,100}$/.test(error.message) ? error.message : fallback;
 const capabilities = (value: unknown) => Array.isArray(value) ? value.slice(0, 256).map(v => ({ id: typeof v?.id === 'string' && /^runtime_[a-z0-9_]{1,100}$/.test(v.id) ? v.id : null, supported: typeof v?.supported === 'boolean' ? v.supported : null, reason: v?.supported === false ? 'source_reports_unavailable' : null })) : null;
-export function sinks(value: unknown): Sink[] {
+function rejectionDetails(value: unknown): SinkRejections | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const v = value as Record<string, unknown>;
+  const count = (key: string) => v[key] === undefined ? 0 : counter(v[key]);
+  const counts = {
+    snapshotMemory: count('snapshotMemory'), serializationSize: count('serializationSize'), historyMemory: count('historyMemory'),
+    phaseUnavailable: count('phaseUnavailable'), writerUnavailable: count('writerUnavailable'), asyncEnqueue: count('asyncEnqueue'), unclassified: count('unclassified'),
+  };
+  if (Object.values(counts).some(n => n === null)) return null;
+  let last: SinkRejection | null = null;
+  if (v.last !== undefined && v.last !== null) {
+    if (!v.last || typeof v.last !== 'object' || Array.isArray(v.last)) return null;
+    const item = v.last as Record<string, unknown>;
+    if (typeof item.reason !== 'string' || !rejectionReasons.includes(item.reason as typeof rejectionReasons[number])) return null;
+    const atEpochMs = counter(item.atEpochMs);
+    if (atEpochMs === null) return null;
+    const bytes = (key: string) => item[key] === undefined || item[key] === null ? null : counter(item[key]);
+    const requestedBytes = bytes('requestedBytes'), targetBytes = bytes('targetBytes'), leasedBytes = bytes('leasedBytes');
+    if ((item.requestedBytes !== undefined && item.requestedBytes !== null && requestedBytes === null) ||
+        (item.targetBytes !== undefined && item.targetBytes !== null && targetBytes === null) ||
+        (item.leasedBytes !== undefined && item.leasedBytes !== null && leasedBytes === null)) return null;
+    last = { reason: item.reason, atEpochMs, requestedBytes, targetBytes, leasedBytes };
+  }
+  return { ...counts, last } as SinkRejections;
+}
+export function sinks(value: unknown, diagnostic: (issue: string) => void = () => {}): Sink[] {
   if (!Array.isArray(value) || value.length === 0 || value.length > 32) throw new Error('sink_status_missing');
   const names = new Set<string>();
   return value.map(v => {
@@ -24,6 +57,11 @@ export function sinks(value: unknown): Sink[] {
     const result: Record<string, unknown> = { sink: v.sink };
     for (const key of ['observed', 'enqueued', 'written', 'failed', 'dropped', 'pending']) { const n = counter(v[key]); if (n === null) throw new Error('sink_counter_missing'); result[key] = n; }
     for (const key of ['oldestPendingMs', 'lastSuccessEpochMs']) { if (v[key] !== null && counter(v[key]) === null) throw new Error('sink_age_missing'); result[key] = v[key]; }
+    if (v.rejections !== undefined && v.rejections !== null) {
+      const rejections = rejectionDetails(v.rejections);
+      if (rejections) result.rejections = rejections;
+      else diagnostic('sink_rejections_invalid');
+    }
     return result as unknown as Sink;
   });
 }
@@ -77,26 +115,36 @@ export async function startTelemetry(m: Manifest, desk: OwnedDesk, repetition: n
       const v = result.value; const identity = runtimeIdentity(v.identity, v.schema_version);
       if (identity.build !== desk.identity?.process_build) throw new Error('instrumentation_build_mismatch');
       point.identity = identity; point.as_of_ms = counter(v.as_of_ms);
-      if (v.schema_version !== 1 || v.process_id !== desk.pid || v.collection_mode !== m.collection.mode || v.status !== 'ok') throw new Error('instrumentation_status_partial');
+      if (v.schema_version !== 1 || v.process_id !== desk.pid || v.collection_mode !== m.collection.mode) throw new Error('instrumentation_status_partial');
+      if (v.status !== 'ok' && v.status !== 'partial') throw new Error('instrumentation_status_partial');
+      if (v.status === 'partial') {
+        if (expected && JSON.stringify(expected) !== JSON.stringify(point.identity)) throw new Error('instrumentation_identity_changed');
+        if (point.as_of_ms === null || point.as_of_ms < point.sampled_from_ms - 15000 || point.as_of_ms > Date.now() + 1000) throw new Error('instrumentation_status_stale');
+        addIssue(point, 'instrumentation_status_partial');
+        try { point.sinks = sinks(v.sinks, issue => addIssue(point, issue)); }
+        catch (error) { addIssue(point, errorCode(error, 'sink_status_unavailable')); }
+        for (const issue of codes(v.issues).slice(0, MAX_POINT_ISSUES - point.issues.length)) addIssue(point, issue);
+        throw new Error('instrumentation_status_partial');
+      }
       if (expected && JSON.stringify(expected) !== JSON.stringify(point.identity)) throw new Error('instrumentation_identity_changed');
       expected ??= point.identity;
       if (point.as_of_ms === null || point.as_of_ms < point.sampled_from_ms - 15000 || point.as_of_ms > Date.now() + 1000) throw new Error('instrumentation_status_stale');
-      point.sinks = sinks(v.sinks);
+      point.sinks = sinks(v.sinks, issue => addIssue(point, issue));
       point.memory = { observation_reserved_bytes: counter(v.memory?.observation?.reserved_bytes), observation_limit_bytes: counter(v.memory?.observation?.total_limit_bytes), work_leased_bytes: counter(v.memory?.work?.leased_bytes), work_limit_bytes: counter(v.memory?.work?.limit_bytes), owner_accounted_bytes: Object.fromEntries(owners.map(n => [n, counter(v.memory?.owners?.[n]?.accounted_bytes)])) };
       if (Object.entries(point.memory).some(([key, value]) => key !== 'owner_accounted_bytes' && value === null)) throw new Error('memory_pool_counters_missing');
       point.status = 'ok';
-    } catch (error) { point.issues.push(error instanceof Error && /^[a-z0-9_]+$/.test(error.message) ? error.message : 'instrumentation_status_unavailable'); }
+    } catch (error) { addIssue(point, errorCode(error, 'instrumentation_status_unavailable')); }
     try {
       const result = await control(desk, '/api/perf/runtime'); point.read_bytes += result.bytes;
       if (!point.identity || JSON.stringify(runtimeIdentity(result.value.identity, result.value.schema_version)) !== JSON.stringify(point.identity) || counter(result.value.as_of_ms) === null || Date.now() - result.value.as_of_ms > 15000) throw new Error('runtime_status_stale_or_mismatched');
       point.runtime = { as_of_ms: result.value.as_of_ms, age_ms: result.value.age_ms, capabilities: capabilities(result.value.capabilities), issues: codes(result.value.issues), measurements: numericProjection(result.value.measurements), owner_readings: numericProjection(result.value.owner_readings), owner_coverage: 'registered_owners_only_partial' };
-    } catch { point.issues.push('runtime_status_unavailable'); }
-    if (m.collection.exports) try { const result = await control(desk, '/api/perf/export/status'); point.read_bytes += result.bytes; point.exports = numericProjection(result.value); } catch { point.issues.push('export_status_unavailable'); }
+    } catch { addIssue(point, 'runtime_status_unavailable'); }
+    if (m.collection.exports) try { const result = await control(desk, '/api/perf/export/status'); point.read_bytes += result.bytes; point.exports = numericProjection(result.value); } catch { addIssue(point, 'export_status_unavailable'); }
     try {
       await desk.assertIdentity(); const root = await realpath(desk.state); if (!root.startsWith('/tmp/splice-instrumentation-')) throw new Error('managed_disk_root');
       for (const [owner, path] of Object.entries({ aggregate: 'perf-aggregates', evidence: 'perf-evidence', cursor: 'perf-evidence-cursors', profile: 'perf-profiles', configuration: 'perf-configuration.json', legacy_trace: 'bench-perf.jsonl', legacy_archive: 'perf-archive' })) point.disk[owner] = await diskSize(join(root, path), root);
       await desk.assertIdentity();
-    } catch { point.issues.push('managed_disk_unavailable'); }
+    } catch { addIssue(point, 'managed_disk_unavailable'); }
     point.sampled_until_ms = Date.now(); point.elapsed_ms = performance.now() - start; points.push(point); return point;
   };
   const start = () => { active = true; task = (async () => { while (active) { await sleep(1000); if (active) await sample(); } })(); };

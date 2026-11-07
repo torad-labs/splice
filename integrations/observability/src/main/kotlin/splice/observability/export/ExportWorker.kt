@@ -3,15 +3,11 @@ package splice.observability.export
 import splice.core.perf.export.PerfExportConfig
 import splice.core.util.Cancellables
 import java.util.concurrent.CancellationException
-import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
-import java.util.concurrent.Future
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.atomic.AtomicReference
 
 /** Owns the exporter lane's two periodic tasks, explicit flushes and final drain/shutdown. */
 internal class ExportWorker(
@@ -23,9 +19,7 @@ internal class ExportWorker(
     private val eventEnabled = config.enabled && config.signals.any { it == "traces" || it == "logs" }
     private val flushing = AtomicBoolean()
     private val workerFailures = AtomicLong()
-    private val finalOutcome = AtomicReference<FinalOutcome?>(null)
-    private val finalSampling = AtomicReference(FinalSampling.PENDING)
-    private val workerFinalized = AtomicBoolean()
+    private val finalizer = ExportFinalizer(engine, workerFailures)
     private val worker = if (config.enabled || config.prometheus) {
         Executors.newSingleThreadScheduledExecutor { task ->
             Executors.defaultThreadFactory().newThread(task).apply { name = "splice-telemetry-export"; isDaemon = true }
@@ -51,7 +45,7 @@ internal class ExportWorker(
     }
 
     val failures: Long get() = workerFailures.get()
-    val finalized: Boolean get() = workerFinalized.get()
+    val finalized: Boolean get() = finalizer.finalized
 
     fun flush(): Boolean {
         val executor = worker ?: return !closed.get()
@@ -90,110 +84,25 @@ internal class ExportWorker(
     internal fun closeAndFlush(timeoutMs: Long): Boolean {
         require(timeoutMs >= 0L)
         val boundedMs = minOf(timeoutMs, CLOSE_MS)
-        if (!closed.compareAndSet(false, true)) return finalOutcome.get() == FinalOutcome.SUCCEEDED
+        if (!closed.compareAndSet(false, true)) return finalizer.succeeded
         schedule?.cancel(false)
         events?.cancel(false)
         queue.stop()
         val executor = worker
         if (executor == null) {
-            engine.close()
-            workerFinalized.set(true)
-            finalOutcome.set(FinalOutcome.SUCCEEDED)
-            return true
+            return finalizer.closeWithoutWorker()
         }
         return closeWorker(executor, boundedMs)
     }
 
-    private fun closeWorker(executor: ScheduledExecutorService, timeoutMs: Long): Boolean {
-        val sampling = submitFinalSample(executor, timeoutMs)
-        val cleanup = submitEngineCleanup(executor, sampling)
-        return awaitFinalCleanup(executor, timeoutMs, sampling, cleanup)
-    }
-
-    private fun submitFinalSample(executor: ScheduledExecutorService, timeoutMs: Long): Future<Boolean> =
-        executor.submit<Boolean> {
-            if (!finalSampling.compareAndSet(FinalSampling.PENDING, FinalSampling.RUNNING)) {
-                false
-            } else {
-                try {
-                    work(ExportWork.FINAL_TICK, timeoutMs)
-                } finally {
-                    finalSampling.set(FinalSampling.FINISHED)
-                }
-            }
-        }
-
-    private fun submitEngineCleanup(
-        executor: ScheduledExecutorService,
-        sampling: Future<Boolean>,
-    ): Future<Boolean> = executor.submit<Boolean> {
-        engine.close()
-        workerFinalized.set(true)
-        sampling.get()
-    }
-
-    private fun awaitFinalCleanup(
-        executor: ScheduledExecutorService,
-        timeoutMs: Long,
-        sampling: Future<Boolean>,
-        cleanup: Future<Boolean>,
-    ): Boolean {
-        var preserveCleanup = false
-        val result = try {
-            awaitCleanup(cleanup, timeoutMs) ?: run {
-                preserveCleanup = true
-                expireFinalSample(sampling)
-                markFinalFailure()
-                false
-            }
-        } catch (failure: ExecutionException) {
-            markFinalFailure()
-            rethrowFatalOrCancellation(failure.cause)
-            false
-        } catch (failure: InterruptedException) {
-            preserveCleanup = true
-            expireFinalSample(sampling)
-            markFinalFailure()
-            Thread.currentThread().interrupt()
-            false
-        } finally {
-            if (preserveCleanup) executor.shutdown() else executor.shutdownNow()
-        }
-        finalOutcome.compareAndSet(null, if (result) FinalOutcome.SUCCEEDED else FinalOutcome.FAILED)
-        return result
-    }
-
-    private fun awaitCleanup(cleanup: Future<Boolean>, timeoutMs: Long): Boolean? = try {
-        cleanup.get(timeoutMs, TimeUnit.MILLISECONDS)
-    } catch (_: TimeoutException) {
-        null
-    }
-
-    private fun expireFinalSample(sampling: Future<Boolean>) {
-        if (!finalSampling.compareAndSet(FinalSampling.PENDING, FinalSampling.EXPIRED) &&
-            finalSampling.get() == FinalSampling.RUNNING
-        ) {
-            sampling.cancel(true)
-        }
-    }
-
-    private fun markFinalFailure() {
-        workerFailures.incrementAndGet()
-        finalOutcome.compareAndSet(null, FinalOutcome.FAILED)
-    }
-
-    private fun rethrowFatalOrCancellation(failure: Throwable?) {
-        when (failure) {
-            is CancellationException, is Error -> throw failure
-            is ExecutionException -> rethrowFatalOrCancellation(failure.cause)
-        }
-    }
+    private fun closeWorker(executor: ScheduledExecutorService, timeoutMs: Long): Boolean =
+        finalizer.close(
+            executor,
+            timeoutMs,
+            FinalExportSample { sampleTimeout -> work(ExportWork.FINAL_TICK, sampleTimeout) },
+        )
 
     override fun close() { closeAndFlush() }
-
-    private enum class FinalSampling { PENDING, RUNNING, EXPIRED, FINISHED }
-
-    private enum class FinalOutcome { SUCCEEDED, FAILED }
 }
 
 private enum class ExportWork { SAMPLE, DRAIN, TICK, FINAL_TICK }

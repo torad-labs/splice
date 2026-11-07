@@ -119,7 +119,8 @@ test('expected retention-limited pages remain visible without becoming operation
   const inconsistent = fixture();
   const local = inconsistent.points.find(p => p.mode === 'local')!;
   local.fixture.expected_retention_incomplete = 2;
-  expect(compareRetained(inconsistent).reasons).toContain('retained_counter_missing_or_invalid');
+  expect(compareRetained(inconsistent).reasons).toContain('retained_read_diagnostics_invalid');
+  expect(compareRetained(inconsistent).reasons).toContain('retained_expected_coverage_counter_mismatch');
 });
 test('source work cost brackets expose cache hits and shared leases without fabricating reset deltas', () => {
   const owner = { activeQueries: 0, queries: 2, cacheMisses: 1, rowsScanned: 30, bytesScanned: 400, queryMs: 10, busy: 0, warmProjections: 1, coldProjections: 1, historyBytes: 5000, retainedBytes: 6000 };

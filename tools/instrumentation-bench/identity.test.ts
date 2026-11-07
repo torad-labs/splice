@@ -28,7 +28,9 @@ async function receiptFixture(root: string, role: 'baseline' | 'candidate') {
   const samples = Array.from({ length: 5 }, (_, repetition) => ({ ...initial(repetition, repetition, 'steady', repetition * 40000),
     started_at_ms: repetition * 40000, first_content_at_ms: repetition * 40000 + 10, terminal_at_ms: repetition * 40000 + 20,
     accepted: true, outcome: 'completed', terminal_correct: true, bytes: 100, events: 5, tokens: 4,
-    wire_sha256: hash('same wire'), content_sha256: hash('same content'), generator_delay_ms: 0 }));
+    wire_sha256: hash(`wire ${repetition}`), wire_fingerprint_scheme: 'anthropic-sse-message-id-v1',
+    wire_fingerprint_sha256: hash('same canonical wire'), wire_fingerprint_valid: true,
+    wire_message_id: `msg_0000000000000_${repetition + 1}`, content_sha256: hash('same content'), generator_delay_ms: 0 }));
   const extras: Extras = { repetitions: samples.map(row => ({ repetition: row.repetition, observed_duration_ms: 30000, drain_ms: 0,
     cpu_ms: 10, rss_start_bytes: 1, rss_end_bytes: 1, disk_start_bytes: 1, disk_end_bytes: 1 })),
     fixture: null, polling: { count: 0, failed: 0, bytes: 0, elapsed_ms: 0 }, partial_reason: null };

@@ -587,8 +587,9 @@ internal class HoldBoundsThroughHeadsTest : HoldRouteFixtures() {
 
             val stream = head.client.open(launched())
             runClock(1.seconds, atMost = 2.minutes) { provider.requests.size >= 4 }
-            // Drain the real client reader before advancing the virtual wait whose start this test measures.
-            eventually { stream.soFar().noticeArrival("15 seconds") != null }
+            // The text arrives now, but noticeArrival needs the signature emitted when this block closes.
+            // Observe the text before advancing its wait; verify the completed signed notice below.
+            eventually { stream.soFar().events.any { "15 seconds" in it.data } }
             runClock(1.seconds, atMost = 2.minutes) { stream.finished }
             val answer = stream.finish()
 

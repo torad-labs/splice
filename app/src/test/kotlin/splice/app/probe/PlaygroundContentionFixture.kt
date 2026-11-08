@@ -19,6 +19,13 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
 import splice.app.control.ControlAuth
 import splice.app.control.HeadSources
 import splice.app.control.ManagedHead
@@ -47,6 +54,23 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 internal const val CONTENTION_HEAD = "synthetic-playground"
+
+/** Retains the parsed summary for the existing equality check and exposes only bounded safe failure context. */
+internal class PlaygroundControlRead(
+    val httpStatus: Int,
+    val body: JsonObject,
+    private val status: String?,
+    private val reason: String?,
+    private val errorCode: String?,
+    private val coverageIssueCodes: List<String>,
+) {
+    val hasHeads: Boolean get() = "heads" in body
+
+    fun diagnostic(): String =
+        "http=$httpStatus status=$status reason=$reason error_code=$errorCode coverage_issues=$coverageIssueCodes"
+
+    override fun toString(): String = diagnostic()
+}
 
 // Phase separation needs real cold/warm reads, not the independently covered full-history scale.
 private const val PROFILE_HISTORY_REQUESTS = 256
@@ -123,10 +147,40 @@ internal class PlaygroundContentionFixture(
         readReleased = CountDownLatch(1)
     }
 
-    suspend fun controlRead(): String =
-        client.get("http://127.0.0.1:${control.listeningPort}/api/perf/summary?window=7d") {
+    suspend fun controlRead(): PlaygroundControlRead {
+        val response = client.get("http://127.0.0.1:${control.listeningPort}/api/perf/summary?window=7d") {
             header("Authorization", "Bearer ${mgmt.get()}")
-        }.bodyAsText()
+        }
+        val body = Json.parseToJsonElement(response.bodyAsText()).jsonObject
+        val error = body["error"] as? JsonObject
+        val coverage = body["coverage"] as? JsonObject
+        val issueCodes = ((coverage?.get("issues") as? JsonArray).orEmpty())
+            .mapNotNull(::issueCode)
+            .distinct()
+            .take(MAX_COVERAGE_ISSUE_CODES)
+        return PlaygroundControlRead(
+            httpStatus = response.status.value,
+            body = body,
+            status = safeText(body["status"]),
+            reason = safeText(body["reason"]) ?: safeText(error?.get("reason")),
+            errorCode = safeText(error?.get("code")),
+            coverageIssueCodes = issueCodes,
+        )
+    }
+
+    private fun issueCode(element: JsonElement): String? = when (element) {
+        is JsonPrimitive -> safeText(element)
+        is JsonObject -> safeText(element["code"])
+        else -> null
+    }
+
+    private fun safeText(element: JsonElement?): String? =
+        (element as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull?.take(MAX_DIAGNOSTIC_TEXT)
+
+    private companion object {
+        const val MAX_COVERAGE_ISSUE_CODES = 8
+        const val MAX_DIAGNOSTIC_TEXT = 64
+    }
 
     suspend fun playground(): String {
         samples.started = System.nanoTime()

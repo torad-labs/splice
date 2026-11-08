@@ -47,6 +47,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.seconds
 import splice.codemode.LegacyCodeModeRuntime as JvmCodeModeRuntime
 import splice.codemode.LegacyHostLaunch as HostLaunch
@@ -221,9 +222,36 @@ internal class OrderedContinuityUpstream {
     }
 }
 
+/** Keeps only bounded, fixed-vocabulary log context; provider payloads and request text never enter failures. */
+internal class OrderedContinuityLogCapture {
+    private val total = AtomicInteger()
+    private val markers = ConcurrentLinkedQueue<String>()
+
+    @Synchronized
+    fun record(message: String) {
+        total.incrementAndGet()
+        val safeMarkers = SAFE_MARKERS.filter { marker -> message.contains(marker, ignoreCase = true) }
+        val exceptionName = EXCEPTION_NAME.find(message)?.value?.takeIf { it.length <= MAX_EXCEPTION_NAME }
+        (safeMarkers + listOfNotNull(exceptionName)).forEach { marker ->
+            if (markers.size < MAX_MARKERS && marker !in markers) markers.add(marker)
+        }
+    }
+
+    fun summary(): String = "head_logs=${total.get().coerceAtMost(MAX_LOG_LINES)} safe_markers=${markers.sorted()}"
+
+    private companion object {
+        const val MAX_LOG_LINES = 999
+        const val MAX_MARKERS = 12
+        const val MAX_EXCEPTION_NAME = 96
+        val SAFE_MARKERS = listOf("timeout", "failed", "failure", "refused", "closed", "worker", "runtime")
+        val EXCEPTION_NAME = Regex("\\b(?:[A-Za-z_$][\\w$]*\\.)*[A-Za-z_$][\\w$]*(?:Exception|Error)\\b")
+    }
+}
+
 /** Only the peer and tool result are synthetic; request building, caching, execution and disk restore are real. */
 internal class OrderedContinuityGateway(private val tmp: Path, private val upstream: OrderedContinuityUpstream) {
     val clientContent = mutableListOf<JsonArray>()
+    val logs = OrderedContinuityLogCapture()
     private val client = HttpClient(CIO) { engine { requestTimeout = 60_000L } }
     private var generation = 0
     private var runtime = runtime()
@@ -286,7 +314,7 @@ internal class OrderedContinuityGateway(private val tmp: Path, private val upstr
             reasoning = ReasoningSettings(ReasoningDisplay.OFF, true, "high", "detailed"),
             codeMode = CodexCodeModeWiring(bridge, listOf(OrderedContinuityItems.MODEL)),
         )
-        return HeadServer(provider, 0, headDeps(tmp.resolve("head-$generation")))
+        return HeadServer(provider, 0, headDeps(tmp.resolve("head-$generation"), log = logs::record))
     }
 
     private fun transcript(callback: JsonArray, echo: Boolean): List<JsonObject> {
@@ -334,7 +362,12 @@ internal class OrderedContinuityGateway(private val tmp: Path, private val upstr
             setBody(request.toString())
         }
         val body = response.bodyAsText()
-        assertEquals(200, response.status.value, body)
+        assertEquals(
+            200,
+            response.status.value,
+            "generation=$generation completed_responses=${clientContent.size} ${logs.summary()} " +
+                "http_status=${response.status.value}",
+        )
         return Json.parseToJsonElement(body).jsonObject.getValue("content").jsonArray.also(clientContent::add)
     }
 }

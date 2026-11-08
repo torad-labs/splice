@@ -172,7 +172,7 @@ class UpstreamClientRateLimitTest {
         val client = UpstreamClient(
             totalTimeoutMs = 30_000L,
             client = HttpClient(engine),
-            // The bare 429 has no reset to wait for; it terminates after one request.
+            // This context conservatively marks content emitted, so its bare 429 cannot resend the request.
             pacing = RetryPacing(waiter = Waiter { }),
             clock = ElapsedClock { 0L },
         )

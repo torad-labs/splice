@@ -190,13 +190,13 @@ internal class CodexIpcRpc(
     ): String? {
         if (closed.get() || !socket.isOpen()) return CLOSED_REASON
         val envelope = buildJsonObject {
-            put(FIELD_TYPE, TYPE_BROADCAST)
-            put(FIELD_SOURCE_CLIENT_ID, clientId)
-            put(FIELD_METHOD, method)
-            put(FIELD_PARAMS, params)
-            put(FIELD_VERSION, version)
+            put(IPC_FIELD_TYPE, TYPE_BROADCAST)
+            put(IPC_FIELD_SOURCE_CLIENT_ID, clientId)
+            put(IPC_FIELD_METHOD, method)
+            put(IPC_FIELD_PARAMS, params)
+            put(IPC_FIELD_VERSION, version)
             targetClientIds?.let { targets ->
-                put(FIELD_TARGET_CLIENT_IDS, JsonArray(targets.map { JsonPrimitive(it) }))
+                put(IPC_FIELD_TARGET_CLIENT_IDS, JsonArray(targets.map { JsonPrimitive(it) }))
             }
         }
         return try {

@@ -29,10 +29,11 @@ private const val OWNER_CHECK_MS = 10_000L
 
 // why: these are the installed desktop IPC protocol versions, not app-server JSON-RPC versions.
 private const val COORDINATION_VERSION = 1
+
+// why: the installed desktop publishes lifecycle snapshots and patches using stream schema version 11.
 private const val STREAM_VERSION = 11
 private const val STREAM_CHANGED = "thread-stream-state-changed"
 private const val FOLLOWING_CHANGED = "thread-stream-following-changed"
-private const val THREAD_ID = "threadId"
 
 /** Reaches a desktop-owned thread through its existing owner, never through another app-server's resume path. */
 internal class CodexDesktopThread(
@@ -98,7 +99,7 @@ internal class CodexDesktopThread(
     // the journal already guarantees that such a message is never sent again.
     override suspend fun holds(clientId: String): Boolean? = null
 
-    override fun mine(params: JsonObject?): Boolean = JsonScalars.str(params, THREAD_ID) == thread
+    override fun mine(params: JsonObject?): Boolean = JsonScalars.str(params, CODEX_THREAD_ID_FIELD) == thread
 
     override fun close() {
         rpc.close()
@@ -110,7 +111,7 @@ internal class CodexDesktopThread(
             "client-status-changed" -> {
                 val disconnected = JsonScalars.str(params, "status") == "disconnected"
                 if (JsonScalars.str(params, "clientId") == owner && disconnected) {
-                    events.send(CodexEvent("thread/closed", buildJsonObject { put(THREAD_ID, thread) }))
+                    events.send(CodexEvent("thread/closed", buildJsonObject { put(CODEX_THREAD_ID_FIELD, thread) }))
                     firstStatus.complete(null)
                     close()
                 }
@@ -133,7 +134,7 @@ internal class CodexDesktopThread(
                 CodexEvent(
                     "thread/status/changed",
                     buildJsonObject {
-                        put(THREAD_ID, thread)
+                        put(CODEX_THREAD_ID_FIELD, thread)
                         put("status", buildJsonObject { put("type", status) })
                     },
                 ),
@@ -168,7 +169,7 @@ internal class CodexDesktopThread(
             val gone = answer is CodexIpcAnswer.Error && answer.reason == "no-client-found"
             val changed = answer is CodexIpcAnswer.Result && actual != expected
             if (gone || changed) {
-                events.send(CodexEvent("thread/closed", buildJsonObject { put(THREAD_ID, thread) }))
+                events.send(CodexEvent("thread/closed", buildJsonObject { put(CODEX_THREAD_ID_FIELD, thread) }))
                 close()
                 return
             }

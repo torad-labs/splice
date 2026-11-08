@@ -39,7 +39,6 @@ private const val TURN_TIMEOUT_MS = 60_000L
 /** The thread status of a thread its app-server has not loaded, or has unloaded. */
 internal const val NOT_LOADED = "notLoaded"
 private const val USER_MESSAGE = "userMessage"
-private const val THREAD_ID = "threadId"
 private const val TYPE = "type"
 
 /** Where a Codex home's app-server listens. */
@@ -156,7 +155,7 @@ internal class CodexAppThread(private val rpc: CodexRpc, private val thread: Str
 
     override suspend fun startTurn(clientId: String, text: String): TurnStart {
         val params = buildJsonObject {
-            put(THREAD_ID, thread)
+            put(CODEX_THREAD_ID_FIELD, thread)
             put("clientUserMessageId", clientId)
             putJsonArray("input") {
                 add(
@@ -197,10 +196,10 @@ internal class CodexAppThread(private val rpc: CodexRpc, private val thread: Str
     }
 
     /** Whether [params] is about this thread. */
-    override fun mine(params: JsonObject?): Boolean = JsonScalars.str(params, THREAD_ID) == thread
+    override fun mine(params: JsonObject?): Boolean = JsonScalars.str(params, CODEX_THREAD_ID_FIELD) == thread
 
     private fun threadParams(includeTurns: Boolean): JsonObject = buildJsonObject {
-        put(THREAD_ID, thread)
+        put(CODEX_THREAD_ID_FIELD, thread)
         put("includeTurns", includeTurns)
     }
 

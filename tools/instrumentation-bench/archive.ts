@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { constants, createWriteStream, lstatSync } from 'node:fs';
-import { chmod, copyFile, lstat, mkdir, open, readdir, realpath, rename, rm, stat, utimes } from 'node:fs/promises';
+import { chmod, copyFile, lstat, mkdir, open, readdir, realpath, rename, rm, stat, statfs, utimes } from 'node:fs/promises';
 import { createGunzip, createGzip, constants as zlibConstants } from 'node:zlib';
 import { Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -122,6 +122,14 @@ async function syncFile(path: string) {
   const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
   try { await handle.sync(); } finally { await handle.close(); }
 }
+async function requireArchiveWorkspace(directory: string, files: Array<{ path: string; bytes: number; sha256: string }>, artifact: Artifact & { bytes: number }) {
+  const payloads = files.filter(row => !(row.path.includes('/worker-artifacts/') && row.path.endsWith('.jar')
+    && row.sha256 === artifact.sha256 && row.bytes === artifact.bytes));
+  // Plan for incompressible input plus generous gzip/metadata overhead, not an assumed compression ratio.
+  const required = payloads.reduce((bytes, row) => bytes + Math.ceil(row.bytes * 1.01) + 64 * 1024, 1024 ** 3);
+  const disk = await statfs(directory, { bigint: true });
+  demand(Number(disk.bavail * disk.bsize) >= required, 'archive_workspace_unavailable');
+}
 async function syncDirectory(path: string) {
   const handle = await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
   try { await handle.sync(); } finally { await handle.close(); }
@@ -240,6 +248,7 @@ export async function archiveRun(directory: string, options: ArchiveOptions): Pr
   const finalArchive = join(runDirectory, ARCHIVE_NAME), finalReceipt = join(runDirectory, RECEIPT_NAME);
   demand(!(await lstat(finalArchive).then(() => true).catch(() => false)) && !(await lstat(finalReceipt).then(() => true).catch(() => false)), 'archive_already_exists');
   const scanned = await scanDesk(runDirectory), tempArchive = join(runDirectory, `.desk-archive-${randomUUID()}`);
+  await requireArchiveWorkspace(runDirectory, scanned.files, artifact);
   await mkdir(tempArchive, { mode: 0o700 }); await mkdir(join(tempArchive, 'files'), { mode: 0o700 });
   const entries: FileEntry[] = []; let payloadIndex = 0, sourceBytes = 0, compressedPayloadBytes = 0, deduplicated = 0, deduplicatedBytes = 0;
   try {

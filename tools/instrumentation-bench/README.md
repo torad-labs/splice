@@ -122,6 +122,41 @@ and restores file contents from compressed payloads and the retained artifact.
 Archives remain private task evidence, subject to the same sharing restrictions
 as the original desk.
 
+## Serial runner
+
+The checked-in coordinator executes prepared steady manifests in the given order:
+
+```sh
+bun tools/instrumentation-bench/serial.ts \
+  --manifest /tmp/splice-instrumentation-study/manifests/direct.json \
+  --manifest /tmp/splice-instrumentation-study/manifests/baseline.json \
+  --manifest /tmp/splice-instrumentation-study/manifests/candidate.json \
+  --output /tmp/splice-instrumentation-study/batch-01
+```
+
+The output directory must be new. The coordinator freezes the manifests and
+harness hashes, runs one full role at a time, waits for its process group to
+exit, and verifies its desk archive before starting the next role. It does not
+shorten workload settings or change tracing. Proxy launches retain the 64 GiB
+free-space floor; direct controls require 1 GiB. Each child has a workload-derived
+deadline, a log-growth check, and a 1 GiB emergency disk reserve. These checks can
+stop a run; they never turn a partial run into a pass.
+
+Every numbered job directory retains its input, capacity, process ownership,
+execution, and measurement receipts. Archived proxy jobs also retain `storage.json`.
+The `completed.json` status means only workload completion with analysis pending.
+Analyze the baseline and candidate numbered run directories with `run.ts analyze`
+afterward, retaining their matched direct control. Archives, profiles and
+measurement files accumulate. Archive preflight reserves space for incompressible
+payloads, compression metadata and a 1 GiB emergency reserve before writing.
+
+A partial workload, timeout, changed harness, failed cleanup or archive error
+stops the sequence with exit 2 and preserves its evidence. There is no automatic
+resume or automatic acceptance of partial history queries. Inspect the stopped
+job before preparing a new batch for the remaining manifests. Preserve the
+schedule's alternating baseline-first/candidate-first order between matched
+points. Separate retained-state and native/MCP fixtures keep their own protocols.
+
 ## Workload definitions
 
 Use the complete `fixtures/steady.json` manifest as the starting point. The

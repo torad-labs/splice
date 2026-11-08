@@ -151,7 +151,9 @@ class McpHostLifecycleTest : McpHostFixture() {
     @Test
     fun `a streamless active operation survives idle sweep and refuses capacity eviction`(@TempDir dir: Path) =
         runBlocking {
-            boot(maxServers = 1)
+            // The fake clock also feeds the in-flight request deadline. Keep that request's deadline
+            // beyond the synthetic idle jump; the explicit await below remains the test's short bound.
+            boot(maxServers = 1, requestTimeout = 61.minutes)
             val a = init()
             val ready = dir.resolve("operation-started")
             val operation = async(Dispatchers.IO) { call(a, 8, "hold", ready.toString()) }
@@ -160,8 +162,14 @@ class McpHostLifecycleTest : McpHostFixture() {
             host.sweep()
             assertTrue(hosted("fake"), "active streamless call was swept")
             assertEquals(503, host.post("fake2", null, MCP_HOST_INIT).status, "active call must not be evicted")
-            host.post("fake", a, FakeMcpServer.RELEASE)
-            assertTrue(text(operation.await()).contains("echo="))
+            withTimeout(MCP_HOST_STREAM_WAIT_MS) {
+                assertEquals(
+                    202,
+                    host.post("fake", a, FakeMcpServer.RELEASE).status,
+                    "the held child must accept release",
+                )
+                assertTrue(text(operation.await()).contains("echo="))
+            }
         }
 
     @Test

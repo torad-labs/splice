@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import splice.core.perf.OutcomeTag
 import splice.core.perf.observation.PerfEventKind
 import splice.core.perf.observation.PerfIdentity
 import splice.core.perf.observation.PerfObservation
@@ -45,7 +46,7 @@ class NativePerformanceTest {
         }
         published.await()
         val finished = events.filter { it.kind == PerfEventKind.TOOL_FINISHED }
-        assertEquals(listOf("bad"), finished.map { it.outcome })
+        assertEquals(listOf(OutcomeTag.UNEXPECTED.wire), finished.map { it.outcome })
         assertPublishedSpans(finished, exporter)
     }
 
@@ -73,11 +74,20 @@ class NativePerformanceTest {
         }
         published.await()
         val finished = events.filter { it.kind == PerfEventKind.TOOL_FINISHED }
-        assertEquals(listOf("bad", "good"), finished.mapNotNull { it.outcome }.sorted())
+        assertEquals(
+            listOf(OutcomeTag.UNEXPECTED.wire, OutcomeTag.OK.wire),
+            finished.mapNotNull { it.outcome }.sorted(),
+        )
         val outcomes = finished.associate { event ->
             exporter.spans.single { it.spanId == event.links.spanId }.name to event.outcome
         }
-        assertEquals(mapOf("code_mode.grpc.execute" to "good", "code_mode.grpc.callback" to "bad"), outcomes)
+        assertEquals(
+            mapOf(
+                "code_mode.grpc.execute" to OutcomeTag.OK.wire,
+                "code_mode.grpc.callback" to OutcomeTag.UNEXPECTED.wire,
+            ),
+            outcomes,
+        )
     }
 
     @Test

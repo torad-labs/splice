@@ -11,7 +11,9 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -58,6 +60,7 @@ import splice.usage.alerts.AlertStore
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.time.Duration.Companion.seconds
 
 class ClaudeCarryingPoolUsageTest {
     @TempDir
@@ -453,19 +456,21 @@ class ClaudeCarryingPoolUsageTest {
         rig: ClaudeNativePoolFixture.Rig,
         url: String,
         ready: (JsonElement) -> Boolean,
-    ): PerfReply {
+    ): PerfReply = withTimeout(20.seconds) {
         var response: PerfReply? = null
-        repeat(20) {
+        repeat(20) { attempt ->
             val current = client.get(url) { bearerAuth(rig.key.get()) }
             val captured = PerfReply(current.status, current.bodyAsText())
             response = captured
             if (current.status == HttpStatusCode.OK) {
                 val body = Json.parseToJsonElement(captured.text)
                 assertTrue(body is JsonObject && "error" !in body, captured.text)
-                if (ready(body)) return captured
+                if (ready(body)) return@withTimeout captured
             }
+            // File writes settle before the five-second coverage publisher makes them queryable.
+            if (attempt < 19) delay(1.seconds)
         }
-        return requireNotNull(response)
+        requireNotNull(response)
     }
 
     private data class PerfReply(val status: HttpStatusCode, val text: String)

@@ -662,10 +662,10 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "FileChannel.open(" to 1,
         "writeAtomic0600(" to 1,
     ),
-    "features/turns/src/main/kotlin/splice/head/perf/RequestEvidenceFiles.kt" to mapOf(
-        "JsonlSink.appendLine(" to 1,
-        "writeAtomic0600(" to 1,
-    ),
+    "features/turns/src/main/kotlin/splice/head/perf/RequestEvidenceFiles.kt" to
+        mapOf("JsonlSink.appendLine(" to 1),
+    "features/turns/src/main/kotlin/splice/head/perf/RequestEvidenceRetentionWriter.kt" to
+        mapOf("writeAtomic0600(" to 1),
     "features/turns/src/main/kotlin/splice/head/perf/RequestEvidencePrefixes.kt" to
         mapOf("FileChannel.open(" to 1),
     "features/usage/src/main/kotlin/splice/usage/perf/objectives/AlertJournal.kt" to

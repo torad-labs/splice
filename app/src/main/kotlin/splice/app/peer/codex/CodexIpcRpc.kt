@@ -49,17 +49,17 @@ private const val INVALID_MESSAGE_REASON = "the desktop Codex IPC message was in
 // why: retain a small burst of lifecycle broadcasts without letting an unattended reader grow without bound.
 private const val IPC_EVENT_BUFFER = 32
 
-private const val FIELD_TYPE = "type"
-private const val FIELD_REQUEST_ID = "requestId"
-private const val FIELD_SOURCE_CLIENT_ID = "sourceClientId"
-private const val FIELD_VERSION = "version"
-private const val FIELD_METHOD = "method"
-private const val FIELD_PARAMS = "params"
-private const val FIELD_TARGET_CLIENT_ID = "targetClientId"
-private const val FIELD_TARGET_CLIENT_IDS = "targetClientIds"
-private const val FIELD_TIMEOUT_MS = "timeoutMs"
-private const val FIELD_RESULT_TYPE = "resultType"
-private const val FIELD_ERROR = "error"
+private const val IPC_FIELD_TYPE = "type"
+private const val IPC_FIELD_REQUEST_ID = "requestId"
+private const val IPC_FIELD_SOURCE_CLIENT_ID = "sourceClientId"
+private const val IPC_FIELD_VERSION = "version"
+private const val IPC_FIELD_METHOD = "method"
+private const val IPC_FIELD_PARAMS = "params"
+private const val IPC_FIELD_TARGET_CLIENT_ID = "targetClientId"
+private const val IPC_FIELD_TARGET_CLIENT_IDS = "targetClientIds"
+private const val IPC_FIELD_TIMEOUT_MS = "timeoutMs"
+private const val IPC_FIELD_RESULT_TYPE = "resultType"
+private const val IPC_FIELD_ERROR = "error"
 
 private const val TYPE_REQUEST = "request"
 private const val TYPE_BROADCAST = "broadcast"
@@ -107,7 +107,7 @@ internal class CodexIpcRpc(
             finish(CLOSED_REASON)
             throw cancelled
         } catch (failure: IOException) {
-            "the desktop Codex IPC connection failed: ${failure.message}"
+            "the desktop Codex IPC connection failed: ${SafeFailureText.render(failure)}"
         }
         finish(reason)
         return reason
@@ -226,7 +226,7 @@ internal class CodexIpcRpc(
 
     private suspend fun dispatch(text: String) {
         val message = parse(text) ?: throw IOException(INVALID_MESSAGE_REASON)
-        when (JsonScalars.str(message, FIELD_TYPE)) {
+        when (JsonScalars.str(message, IPC_FIELD_TYPE)) {
             TYPE_RESPONSE -> response(message)
             CLIENT_DISCOVERY_REQUEST -> answerDiscovery(message)
             TYPE_REQUEST -> refuse(message)
@@ -236,32 +236,32 @@ internal class CodexIpcRpc(
     }
 
     private fun response(message: JsonObject) {
-        val requestId = JsonScalars.str(message, FIELD_REQUEST_ID) ?: return
+        val requestId = JsonScalars.str(message, IPC_FIELD_REQUEST_ID) ?: return
         val waiting = pending[requestId] ?: return
         CodexIpcEnvelopes.responseAnswer(message, waiting.method)?.let(waiting.answer::complete)
     }
 
     private suspend fun answerDiscovery(message: JsonObject) {
-        val requestId = JsonScalars.str(message, FIELD_REQUEST_ID) ?: return
+        val requestId = JsonScalars.str(message, IPC_FIELD_REQUEST_ID) ?: return
         send(
             buildJsonObject {
-                put(FIELD_TYPE, TYPE_DISCOVERY_RESPONSE)
-                put(FIELD_REQUEST_ID, requestId)
+                put(IPC_FIELD_TYPE, TYPE_DISCOVERY_RESPONSE)
+                put(IPC_FIELD_REQUEST_ID, requestId)
                 put("response", buildJsonObject { put("canHandle", false) })
             },
         )
     }
 
     private suspend fun refuse(message: JsonObject) {
-        val requestId = JsonScalars.str(message, FIELD_REQUEST_ID) ?: return
-        val method = JsonScalars.str(message, FIELD_METHOD)
+        val requestId = JsonScalars.str(message, IPC_FIELD_REQUEST_ID) ?: return
+        val method = JsonScalars.str(message, IPC_FIELD_METHOD)
         send(
             buildJsonObject {
-                put(FIELD_TYPE, TYPE_RESPONSE)
-                put(FIELD_REQUEST_ID, requestId)
-                if (method != null) put(FIELD_METHOD, method)
-                put(FIELD_RESULT_TYPE, FIELD_ERROR)
-                put(FIELD_ERROR, IPC_NO_HANDLER)
+                put(IPC_FIELD_TYPE, TYPE_RESPONSE)
+                put(IPC_FIELD_REQUEST_ID, requestId)
+                if (method != null) put(IPC_FIELD_METHOD, method)
+                put(IPC_FIELD_RESULT_TYPE, IPC_FIELD_ERROR)
+                put(IPC_FIELD_ERROR, IPC_NO_HANDLER)
             },
         )
     }
@@ -288,7 +288,7 @@ internal class CodexIpcRpc(
     }
 
     private fun targetedHere(message: JsonObject): Boolean {
-        val targets = message[FIELD_TARGET_CLIENT_IDS] as? JsonArray ?: return true
+        val targets = message[IPC_FIELD_TARGET_CLIENT_IDS] as? JsonArray ?: return true
         return targets.any { JsonScalars.str(it) == clientId }
     }
 
@@ -327,22 +327,22 @@ private data class RequestDetails(
 
 private object CodexIpcEnvelopes {
     fun request(waiting: Pending, details: RequestDetails): JsonObject = buildJsonObject {
-        put(FIELD_TYPE, TYPE_REQUEST)
-        put(FIELD_REQUEST_ID, waiting.requestId)
-        put(FIELD_SOURCE_CLIENT_ID, details.sourceClientId)
-        put(FIELD_VERSION, details.version)
-        put(FIELD_METHOD, waiting.method)
-        put(FIELD_PARAMS, details.params)
-        details.targetClientId?.let { put(FIELD_TARGET_CLIENT_ID, it) }
-        put(FIELD_TIMEOUT_MS, details.timeoutMs)
+        put(IPC_FIELD_TYPE, TYPE_REQUEST)
+        put(IPC_FIELD_REQUEST_ID, waiting.requestId)
+        put(IPC_FIELD_SOURCE_CLIENT_ID, details.sourceClientId)
+        put(IPC_FIELD_VERSION, details.version)
+        put(IPC_FIELD_METHOD, waiting.method)
+        put(IPC_FIELD_PARAMS, details.params)
+        details.targetClientId?.let { put(IPC_FIELD_TARGET_CLIENT_ID, it) }
+        put(IPC_FIELD_TIMEOUT_MS, details.timeoutMs)
     }
 
     fun responseAnswer(message: JsonObject, expectedMethod: String): CodexIpcAnswer? {
-        val responseMethod = JsonScalars.str(message, FIELD_METHOD)
-        return when (JsonScalars.str(message, FIELD_RESULT_TYPE)) {
+        val responseMethod = JsonScalars.str(message, IPC_FIELD_METHOD)
+        return when (JsonScalars.str(message, IPC_FIELD_RESULT_TYPE)) {
             RESULT_SUCCESS -> if (responseMethod == expectedMethod) CodexIpcAnswer.Result(message) else null
-            FIELD_ERROR -> if (responseMethod == null || responseMethod == expectedMethod) {
-                CodexIpcAnswer.Error(JsonScalars.str(message, FIELD_ERROR) ?: REQUEST_REFUSED_REASON)
+            IPC_FIELD_ERROR -> if (responseMethod == null || responseMethod == expectedMethod) {
+                CodexIpcAnswer.Error(JsonScalars.str(message, IPC_FIELD_ERROR) ?: REQUEST_REFUSED_REASON)
             } else {
                 null
             }

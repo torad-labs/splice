@@ -296,6 +296,8 @@ internal class HoldsThroughHeadsTest : HoldRouteFixtures() {
             time.advanceBy(7.minutes)
             assertTrue("\"held\":true" in console.live("chat").body, "the console lists the turn as held")
             assertEquals(HttpStatusCode.OK, console.tryNow("chat", null).status, "one login held")
+            // The wake is synchronous; observe its dispatched request before moving virtual time.
+            eventually { provider.requests.size == 2 }
             runClock(500.milliseconds, atMost = 20.minutes) { stream.finished }
 
             assertEquals("tried now", stream.finish().text, stream.finish().describe())

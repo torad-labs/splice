@@ -121,6 +121,13 @@ The settled horizon, requested interval and observation as-of are distinct.
 Consumers can deliberately select a completed window; the service does not
 silently shorten a supplied interval or change its rate denominator.
 
+Request-evidence writes can finish before their coverage checkpoint is published.
+The sampler normally publishes every five seconds; delayed work can extend that
+cadence. A drained sink therefore does not prove query visibility. Inspect
+`as_of_ms` and `evidence_pending_checkpoint`: a zero known count before the relevant
+checkpoint is not evidence that no requests occurred. Repeat the query after the
+checkpoint advances, keeping the requested interval unchanged.
+
 New retained telemetry has a 256 MiB disk envelope: 176 MiB for aggregate history,
 16 MiB for frozen cursor metadata and 64 MiB for request evidence. Aggregate
 history keeps minute resolution for 24 hours and hourly history for older data

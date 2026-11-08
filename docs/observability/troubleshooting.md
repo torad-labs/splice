@@ -46,6 +46,13 @@ successful write time. A failed write does not count as written. An accepted
 export or alert operation does not count as delivered until its transport reports
 the actual outcome.
 
+If known arrivals or completions are zero immediately after request-evidence
+writes drain, check the response's `as_of_ms` and `evidence_pending_checkpoint`.
+Queries read published evidence prefixes, which can lag completed writes. The
+normal publication cadence is five seconds, with longer gaps when checkpoint
+work is delayed. Retry the same query after its watermark advances before
+interpreting zero as no traffic; inspect coverage issues if the gap persists.
+
 `/api/perf/instrumentation/status` reports the observation and work pools' actual
 reservation accounting alongside sink counters. Those values describe accounted
 owners and leases, not measured heap or RSS. Unsupported per-owner breakdowns

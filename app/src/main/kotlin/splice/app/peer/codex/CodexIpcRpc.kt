@@ -21,6 +21,7 @@ import splice.core.util.SafeFailureText
 import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 // why: the desktop IPC discovery handshake must explicitly decline tool ownership.
@@ -32,8 +33,12 @@ private const val IPC_NO_HANDLER = "no-handler-for-request"
 // why: the desktop handshake requires initialize to originate from this reserved client identity.
 private const val INITIAL_CLIENT_ID = "initializing-client"
 
-// why: a request timeout after the frame is written leaves desktop-side handling uncertain.
+// why: the timeout covers writing and waiting for a reply; after any write attempt, expiry leaves delivery uncertain.
 private const val REQUEST_TIMEOUT_REASON = "the desktop Codex IPC request timed out"
+
+// why: a control broadcast is small, and it must not pin thread attachment behind a stalled local socket writer.
+private const val BROADCAST_WRITE_TIMEOUT_MS = 5_000L
+private const val BROADCAST_TIMEOUT_REASON = "the desktop Codex IPC broadcast write timed out"
 
 // why: pending requests are settled when the connection is closed or the reader reaches EOF.
 private const val CLOSED_REASON = "the desktop Codex IPC connection closed"
@@ -118,10 +123,12 @@ internal class CodexIpcRpc(
     ): CodexIpcAnswer {
         val requestId = UUID.randomUUID().toString()
         val waiting = Pending(requestId, method, CompletableDeferred())
+        val deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+        val deadline = RequestDeadline(timeoutMs, deadlineNanos)
         pending[waiting.requestId] = waiting
         try {
-            sendRequest(waiting, params, version, timeoutMs, targetClientId)?.let { return it }
-            val response = withTimeoutOrNull(timeoutMs) { waiting.answer.await() }
+            sendRequest(waiting, params, version, targetClientId, deadline)?.let { return it }
+            val response = withTimeoutOrNull(remainingTimeoutMs(deadline.deadlineNanos)) { waiting.answer.await() }
                 ?: return CodexIpcAnswer.Lost(REQUEST_TIMEOUT_REASON, sent = true)
             if (response is CodexIpcAnswer.Result && method == "initialize") {
                 JsonScalars.str(response.value["result"] as? JsonObject, "clientId")?.let { clientId = it }
@@ -137,17 +144,29 @@ internal class CodexIpcRpc(
         waiting: Pending,
         params: JsonObject,
         version: Int,
-        timeoutMs: Long,
         targetClientId: String?,
+        deadline: RequestDeadline,
     ): CodexIpcAnswer.Lost? {
         if (closed.get() || !socket.isOpen()) return CodexIpcAnswer.Lost(CLOSED_REASON, sent = false)
+        val writeTimeoutMs = remainingTimeoutMs(deadline.deadlineNanos)
+        if (writeTimeoutMs == 0L) return CodexIpcAnswer.Lost(REQUEST_TIMEOUT_REASON, sent = false)
         val envelope = CodexIpcEnvelopes.request(
             waiting,
-            RequestDetails(clientId, params, version, timeoutMs, targetClientId),
+            RequestDetails(clientId, params, version, deadline.timeoutMs, targetClientId),
         )
+        var attemptedWrite = false
         return try {
-            runInterruptible(io) { socket.send(JsonWire.string(envelope)) }
-            null
+            val written = withTimeoutOrNull(writeTimeoutMs) {
+                attemptedWrite = true
+                runInterruptible(io) { socket.send(JsonWire.string(envelope)) }
+                true
+            }
+            if (written == null) {
+                finish(REQUEST_TIMEOUT_REASON)
+                CodexIpcAnswer.Lost(REQUEST_TIMEOUT_REASON, sent = attemptedWrite)
+            } else {
+                null
+            }
         } catch (cancelled: CancellationException) {
             finish(CLOSED_REASON)
             throw cancelled
@@ -181,7 +200,14 @@ internal class CodexIpcRpc(
             }
         }
         return try {
-            runInterruptible(io) { socket.send(JsonWire.string(envelope)) }
+            val written = withTimeoutOrNull(BROADCAST_WRITE_TIMEOUT_MS) {
+                runInterruptible(io) { socket.send(JsonWire.string(envelope)) }
+                true
+            }
+            if (written == null) {
+                finish(BROADCAST_TIMEOUT_REASON)
+                return BROADCAST_TIMEOUT_REASON
+            }
             null
         } catch (cancelled: CancellationException) {
             finish(CLOSED_REASON)
@@ -266,6 +292,9 @@ internal class CodexIpcRpc(
         return targets.any { JsonScalars.str(it) == clientId }
     }
 
+    private fun remainingTimeoutMs(deadlineNanos: Long): Long =
+        TimeUnit.NANOSECONDS.toMillis((deadlineNanos - System.nanoTime()).coerceAtLeast(0L))
+
     private fun finish(reason: String) {
         if (!closed.compareAndSet(false, true)) return
         try {
@@ -285,6 +314,8 @@ private data class Pending(
     val method: String,
     val answer: CompletableDeferred<CodexIpcAnswer>,
 )
+
+private data class RequestDeadline(val timeoutMs: Long, val deadlineNanos: Long)
 
 private data class RequestDetails(
     val sourceClientId: String,

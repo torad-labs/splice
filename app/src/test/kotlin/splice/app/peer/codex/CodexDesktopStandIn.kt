@@ -140,7 +140,6 @@ internal class CodexDesktopStandIn(
     private fun onClientBroadcast(message: JsonObject, channel: SocketChannel) {
         when (message.string("method")) {
             "thread-stream-following-changed" -> sendSnapshot(message, channel)
-            "test-thread-status-active" -> sendActivePatch(channel)
         }
     }
 
@@ -170,16 +169,7 @@ internal class CodexDesktopStandIn(
     }
 
     fun publishActiveStatus() {
-        connection?.let { channel ->
-            write(
-                channel,
-                buildJsonObject {
-                    put("type", "broadcast")
-                    put("sourceClientId", OWNER_ID)
-                    put("method", "test-thread-status-active")
-                },
-            )
-        }
+        connection?.let(::sendActivePatch)
     }
 
     private fun sendActivePatch(channel: SocketChannel) {

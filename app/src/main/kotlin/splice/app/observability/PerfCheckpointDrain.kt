@@ -32,8 +32,14 @@ internal class PerfCheckpointDrain(
 
     private fun drainAttempt(attempt: Int, deadline: Long): Boolean {
         if (accumulator.pendingCheckpointPages == 0 && attempt > 0) return false
+        val owned = if (attempt == 0) phase else PerfWorkPhase.tryCheckpoint() ?: return false
+        return owned.use { checkpointAndAwait(it, deadline) }
+    }
+
+    private fun checkpointAndAwait(owned: PerfWorkPhase.Lease, deadline: Long): Boolean {
         val enqueuedBefore = aggregate.status().enqueued
-        checkpointPass.checkpoint(phase)
+        // Each accepted write consumes its phase handle; a later page acquires a fresh exclusive phase.
+        checkpointPass.checkpoint(owned)
         val enqueuedAfter = aggregate.status().enqueued
         val pendingAfter = accumulator.pendingCheckpointPages
         return if (enqueuedAfter > enqueuedBefore) {

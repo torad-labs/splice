@@ -30,7 +30,7 @@ import splice.upstream.testing.OpenAiTestReplies
 
 class UpstreamAttemptOutcomeTest {
     @ParameterizedTest
-    @CsvSource("failure,upstream_failed", "client_abandoned,client_abort", "success,ok")
+    @CsvSource("failure,error:upstream-failed", "client_abandoned,client_abort", "success,ok")
     fun `HTTP 200 attempt metrics reflect the translated result`(ending: String, expected: String) = runTest {
         val events = mutableListOf<PerfObservation>()
         val clock = ElapsedClock { 0L }

@@ -60,5 +60,8 @@ internal class PerfCheckpointDrain(
     }
 }
 
+// Bound the final persistence drain to five seconds so slow storage cannot indefinitely delay shutdown.
 private const val FINAL_CHECKPOINT_TIMEOUT_MS = 5_000L
+
+// Bound synchronous refusal retries as well as elapsed time; any remaining pages are reported unflushed.
 private const val MAX_FINAL_CHECKPOINT_PAGES = 120

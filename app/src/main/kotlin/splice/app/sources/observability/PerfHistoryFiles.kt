@@ -44,7 +44,8 @@ internal class PerfHistoryFiles(private val directory: Path) {
             if (result.size >= MAX_FILES) throw IOException("aggregate inventory limit")
             result += entry
         }
-        return result.sortedBy { it.fromMs }
+        result.sortWith { first, second -> first.fromMs.compareTo(second.fromMs) }
+        return result
     }
 
     private fun entry(path: Path): PerfHistoryEntry? {

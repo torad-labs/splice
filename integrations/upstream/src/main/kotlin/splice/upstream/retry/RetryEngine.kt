@@ -281,7 +281,7 @@ private object Holds {
         return when {
             step.afterMs <= turn.facts.wallLeftMs -> step
             turn.facts.holdWallLeftMs > turn.facts.wallLeftMs -> turn.end
-            limited == null -> turn.end
+            limited == null || limited.lift is Lift.Unstated -> turn.end
             else -> turn.outlasted(Outlast.WALL, (limited.lift as? Lift.At)?.at)
         }
     }

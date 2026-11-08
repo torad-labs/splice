@@ -170,9 +170,9 @@ PerfCloseAction is one phase in PerfCleanup's ordered telemetry shutdown, includ
 
 [[groups]]
 signature = "(PerfWorkPhase.Lease)->Unit"
-dated = "2026-11-06"
-names = ["PerfSamplingWork", "PerfPhaseClose"]
-reason = """PerfSamplingWork executes one admitted periodic telemetry sample while producers remain live: configuration persistence, runtime/gate observations, coverage, alert evaluation and an aggregate checkpoint. PerfPhaseClose performs final checkpoints and closes dependent owners only after those producers and alert delivery have stopped. Both receive the exclusive performance-work phase, whose caller releases it after the callback unless persistence has taken ownership; exchanging the roles would either close live sources during sampling or leave shutdown resources alive after one extra sample."""
+dated = "2026-11-08"
+names = ["PerfSamplingWork", "PerfPhaseClose", "PerfCheckpointPass"]
+reason = """PerfSamplingWork executes one admitted periodic telemetry sample while producers remain live: configuration persistence, runtime/gate observations, coverage, alert evaluation and an aggregate checkpoint. PerfPhaseClose performs final checkpoints and closes dependent owners only after those producers and alert delivery have stopped. PerfCheckpointPass submits one admitted page during the bounded final drain; it neither samples live producers nor closes the owner graph. Each receives an exclusive performance-work phase, whose caller releases it unless persistence takes ownership. Exchanging these roles could close sources while draining a page, or leave shutdown resources alive after one extra sample."""
 
 # ── 30 names, () -> Boolean ───────────────────────────────────────────────────────────────────────
 [[groups]]
@@ -826,9 +826,9 @@ reason = """CurrentUpstreamAttempt takes a turn's upstream ATTEMPT number and an
 
 [[groups]]
 signature = "(Boolean)->Unit"
-dated = "2026-10-10"
-names = ["ReanchorSpentHook", "WsRoundAnswer"]
-reason = """ReanchorSpentHook stamps one spent re-anchor on the turn's perf row, with a flag saying whether the re-anchor restarted the request from scratch; it is called once per continuation the loop spends and writes only a count. WsRoundAnswer reports whether the upstream accepted one websocket round, so the transport's consumers can learn the outcome without seeing a credential. Wiring an acceptance report where the re-anchor count belongs would charge a healthy round as a restart, and the inverse would hide a rejected round from the transport."""
+dated = "2026-11-08"
+names = ["ReanchorSpentHook", "WsRoundAnswer", "PerfCheckpointSettlement"]
+reason = """ReanchorSpentHook stamps one spent re-anchor on the turn's perf row, with a flag saying whether the re-anchor restarted the request from scratch; it is called once per continuation the loop spends and writes only a count. WsRoundAnswer reports whether the upstream accepted one websocket round without exposing a credential. PerfCheckpointSettlement reports whether an asynchronously persisted aggregate page became durable, so its dirty generation is acknowledged only on success. Exchanging these roles could charge a healthy round as a restart, hide a rejected round, or acknowledge history that never reached disk."""
 
 [[groups]]
 signature = "(SessionRecord)->String?"

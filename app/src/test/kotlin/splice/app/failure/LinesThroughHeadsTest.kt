@@ -34,7 +34,7 @@ import java.nio.file.Path
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
-import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 
 /** The prefix every line a person reads opens with. */
 private const val PREFIX = "[splice] "
@@ -246,7 +246,9 @@ class LinesThroughHeadsTest {
     }
 
     @Test
-    fun `a limit with no stated time ends immediately with its words and no promise of a retry`(@TempDir tmp: Path) =
+    fun `an unnamed throttle ends retryably after a bounded pause without claiming quota exhaustion`(
+        @TempDir tmp: Path,
+    ) =
         runTest {
             withScriptedHeads(tmp) {
                 provider.script(limited(null))
@@ -254,13 +256,10 @@ class LinesThroughHeadsTest {
 
                 val answer = head.client.send()
 
-                assertLine(answer, "did not say when it resets")
-                assertLine(answer, "Rate limit reached for this plan.")
-                assertTrue(Family.P in answer.families(), answer.describe())
-                assertFalse(RESENDS in lineOf(answer), answer.describe())
-                assertTrue(answer.notices.isEmpty(), answer.describe())
-                assertEquals(Duration.ZERO, time.passed(), "no retry or hold consumed time")
-                assertEquals(1, provider.requests.size)
+                assertLine(answer, "still limiting requests")
+                assertTrue(Family.R in answer.families(), answer.describe())
+                assertFalse("usage limit" in lineOf(answer), answer.describe())
+                assertTrue(time.passed() in 60.seconds..120.seconds, "bounded recovery for a shared throttle")
             }
         }
 

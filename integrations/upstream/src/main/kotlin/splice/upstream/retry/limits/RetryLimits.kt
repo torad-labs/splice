@@ -3,6 +3,7 @@ package splice.upstream.retry.limits
 
 import splice.core.failure.FailureCause
 import splice.core.failure.Lift
+import splice.core.failure.Moment
 import splice.core.failure.Outlast
 import splice.upstream.retry.BURST_FIRST_WAIT_MS
 import splice.upstream.retry.BURST_WAITS
@@ -18,6 +19,9 @@ import splice.upstream.retry.Probes
 import splice.upstream.retry.RetryStep
 import splice.upstream.retry.RetryTurn
 import splice.upstream.retry.Spend
+import splice.upstream.retry.THROTTLE_FIRST_WAIT_MS
+import splice.upstream.retry.THROTTLE_WAITS
+import splice.upstream.retry.THROTTLE_WAIT_CAP_MS
 
 /** A limit, an overload and a spent account: waited, moved or held by what the provider stated. */
 internal object RetryLimits {
@@ -32,12 +36,20 @@ internal object RetryLimits {
     fun limited(turn: RetryTurn, cause: FailureCause.Provider.Limited): RetryStep {
         if (cause.isExhausted) return turn.switchOr(turn.end)
         val lift = cause.lift
+        if (lift is Lift.Unstated && turn.at.moment == Moment.MID_CONTENT) return turn.end
         val stated = turn.pastFloor(lift)
         return when {
-            lift is Lift.Unstated -> turn.switchOr(bursts(turn, 0L, turn.end))
+            lift is Lift.Unstated -> turn.switchOr(throttle(turn))
             stated != null -> stated(turn, stated)
             else -> bursts(turn, turn.insideFloor(lift) ?: 0L, RetryStep.Hold(null, Probes.UNSTATED))
         }
+    }
+
+    /** A shared short throttle gets a finite recovery interval even after every eligible login has been tried. */
+    private fun throttle(turn: RetryTurn): RetryStep {
+        val n = turn.ledger.count(Spend.THROTTLE)
+        val waitMs = minOf(THROTTLE_FIRST_WAIT_MS shl n, THROTTLE_WAIT_CAP_MS)
+        return if (n < THROTTLE_WAITS) turn.wait(waitMs) else turn.end
     }
 
     fun overloaded(turn: RetryTurn, cause: FailureCause.Provider.Overloaded): RetryStep {

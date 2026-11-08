@@ -77,7 +77,7 @@ class PooledLimitRecoveryTest {
             },
         ).use { http ->
             val client = UpstreamClient(
-                totalTimeoutMs = 60_000L,
+                totalTimeoutMs = 180_000L,
                 client = http,
                 clock = ElapsedClock { now },
                 pacing = RetryPacing(waiter = Waiter { now += it }),
@@ -101,7 +101,7 @@ class PooledLimitRecoveryTest {
         HttpClient(MockEngine { respond("Rate limit exceeded", HttpStatusCode.TooManyRequests) }).use { http ->
             val client = UpstreamClient(
                 client = http,
-                totalTimeoutMs = 60_000L,
+                totalTimeoutMs = 180_000L,
                 clock = ElapsedClock { now },
                 pacing = RetryPacing(waiter = Waiter { now += it }),
             )
@@ -115,7 +115,10 @@ class PooledLimitRecoveryTest {
             val ending = assertInstanceOf(UpstreamPost.Ended::class.java, result)
             val failure = assertInstanceOf(UpstreamFailed::class.java, ending.ending)
             assertInstanceOf(FailureCause.Provider.Limited::class.java, failure.cause)
-            assertTrue(now in 1L..30_000L, "an unstated throttle cannot hold a turn until the client stalls")
+            assertTrue(
+                now in 60_000L..120_000L,
+                "a shared throttle gets bounded recovery time, never an indefinite hold",
+            )
             assertNull(failure.planLimit)
         }
     }

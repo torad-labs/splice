@@ -46,7 +46,7 @@ Source: `Knob.kt` 219-245; `RetryPolicy.kt` 125-146, 233, 248-274; `integrations
 
 | error | plan |
 |---|---|
-| bare 429 without a reset or quota window | move to an available pooled login before content; otherwise retry after 2, 4, 8 and 15 s within the turn deadline, then end retryably |
+| bare 429 without a reset or quota window | move to an available pooled login before content; otherwise retry after 2, 4, 8, 16, 30, 30 and 30 s within the turn deadline, then end retryably; the two-minute budget is shared across logins |
 | named exhausted window without a reset, or billing-cycle limit | move to an available pooled login before content; otherwise end promptly with the provider's words, without an indefinite hold |
 | 429 with a stated reset | use the bounded reset/warm-login wait policy, moving to another eligible login where appropriate |
 | 429 that names a spent plan window and reset (5-hour or 7-day) | the account retains that window's reset; the turn follows the bounded wait or pooled handoff policy |

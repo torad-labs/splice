@@ -108,9 +108,11 @@ internal object PlanModel {
         when {
             cause.window == LimitWindow.BILLING_CYCLE || (lift is Lift.Unstated && cause.window != null) ->
                 switchOr(met, end(met))
+            lift is Lift.Unstated && met.at.moment == Moment.MID_CONTENT -> end(met)
             lift is Lift.Unstated -> {
-                val n = ledger.count(Spend.BURST)
-                val retry = if (n < 4) again(How.SAME, listOf(2_000L, 4_000L, 8_000L, 15_000L)[n]) else end(met)
+                val n = ledger.count(Spend.THROTTLE)
+                val waits = listOf(2_000L, 4_000L, 8_000L, 16_000L, 30_000L, 30_000L, 30_000L)
+                val retry = if (n < waits.size) again(How.SAME, waits[n]) else end(met)
                 switchOr(met, retry)
             }
             lift is Lift.At && (ms ?: 0L) > FLOOR -> stated(met, lift, ms ?: 0L)
@@ -395,6 +397,7 @@ private fun spendOf(taken: Taken, overloads: Int = 0): Spend? {
 private fun sameSpend(cause: FailureCause, afterMs: Long, overloads: Int): Spend? {
     val limit = (cause as? FailureCause.Provider.Limited)?.lift ?: (cause as? FailureCause.Provider.NeedsPayment)?.lift
     return when {
+        cause is FailureCause.Provider.Limited && limit is Lift.Unstated -> Spend.THROTTLE
         limit != null -> if (pastFloor(limit)) null else Spend.BURST
         cause is FailureCause.Provider.Overloaded -> overloadSpend(cause, afterMs, overloads)
         else -> SAME_SPENDS[cause::class]
@@ -495,6 +498,7 @@ class RetryEngineModelTest {
             Spend.AMEND to MAX_AMENDS,
             Spend.CONTINUE_REASONING to MAX_EMPTY_RETRIES,
             Spend.BURST to BURST_WAITS,
+            Spend.THROTTLE to THROTTLE_WAITS,
             Spend.OVERLOAD to OVERLOAD_WAITS,
             Spend.SERVER_RESEND to SERVER_RESENDS,
             Spend.FRESH_REISSUE to MAX_FRESH_REISSUES,

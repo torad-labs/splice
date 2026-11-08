@@ -74,6 +74,7 @@ class HttpFailureCauseTest {
         auth = Provider(),
         extraHeaders = { emptyMap() },
         replies = replies,
+        recovery = PostRecovery(clientFrameEmitted = { false }),
         observers = PostObservers(onRetry = { }),
     )
 
@@ -106,7 +107,6 @@ class HttpFailureCauseTest {
         val ended = end(TOO_MANY_REQUESTS, """{"error":{"message":"Rate limit reached for this plan."}}""")
 
         assertEquals(Lift.Unstated, limited(ended.failure).lift)
-        assertTrue(ended.calls in 2..5)
     }
 
     @Test

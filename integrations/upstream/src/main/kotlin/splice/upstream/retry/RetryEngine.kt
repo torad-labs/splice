@@ -86,8 +86,8 @@ public object RetryEngine {
 
     private fun providerSpend(step: RetryStep.Again, cause: FailureCause.Provider, ledger: RetryLedger): Spend =
         when (cause) {
-            is FailureCause.Provider.Limited, is FailureCause.Provider.NeedsPayment ->
-                if (step.afterMs > HOLD_FLOOR_MS) Spend.WARM else Spend.BURST
+            is FailureCause.Provider.Limited -> limitedSpend(step, cause.lift)
+            is FailureCause.Provider.NeedsPayment -> limitSpend(step)
             is FailureCause.Provider.Overloaded ->
                 if (ledger.count(Spend.OVERLOAD) < OVERLOAD_WAITS) Spend.OVERLOAD else Spend.LOADING
             is FailureCause.Provider.ServerError -> Spend.SERVER_RESEND
@@ -98,6 +98,12 @@ public object RetryEngine {
             is FailureCause.Provider.ToolTear, is FailureCause.Provider.ReasoningCut,
             -> Spend.NONE
         }
+
+    private fun limitedSpend(step: RetryStep.Again, lift: Lift): Spend =
+        if (lift is Lift.Unstated) Spend.THROTTLE else limitSpend(step)
+
+    private fun limitSpend(step: RetryStep.Again): Spend =
+        if (step.afterMs > HOLD_FLOOR_MS) Spend.WARM else Spend.BURST
 }
 
 /** One question to the engine, and the moves every row of the table is made of. */

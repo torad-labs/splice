@@ -305,7 +305,7 @@ class UpstreamClientRateLimitTest {
             clock = ElapsedClock { 0L },
         )
         val failure = assertEnds<UpstreamFailed> { postOnce(client) }
-        assertEquals(listOf(2_000L, 4_000L, 8_000L, 15_000L), capture.waits)
+        assertEquals(listOf(2_000L, 4_000L, 8_000L, 16_000L, 30_000L, 30_000L, 30_000L), capture.waits)
         assertEquals(429, failure.evidence.status)
         assertEquals("slow down", failure.evidence.body)
         assertTrue(client.rateLimitedForMs > 0L, "exhaustion arms the horizon")

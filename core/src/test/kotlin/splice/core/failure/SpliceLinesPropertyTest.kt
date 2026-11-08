@@ -278,7 +278,7 @@ private fun Random.recovery(): Recovery = when (nextInt(4)) {
 /** The leaves the client may send again on today's wire: family R (section 11), with the limit and payment endings
  *  slices 2 to 4 still answer that way (the interim lines). HoldOutlasted's line is the held cause's (slice 5). */
 private fun resendable(cause: FailureCause): Boolean? = when (cause) {
-    is FailureCause.Provider.Limited -> cause.lift !is Lift.Unstated && cause.window != LimitWindow.BILLING_CYCLE
+    is FailureCause.Provider.Limited -> resendableLimit(cause)
     is FailureCause.Provider ->
         cause::class in RESENDABLE_PROVIDER ||
             (cause is FailureCause.Provider.Unrecognized && !cause.clientError)
@@ -286,6 +286,9 @@ private fun resendable(cause: FailureCause): Boolean? = when (cause) {
     is FailureCause.Splice.HoldOutlasted -> null
     is FailureCause.Splice -> resendableSplice(cause)
 }
+
+private fun resendableLimit(cause: FailureCause.Provider.Limited): Boolean =
+    cause.window != LimitWindow.BILLING_CYCLE && (cause.lift !is Lift.Unstated || cause.window == null)
 
 private val RESENDABLE_PROVIDER: Set<KClass<out FailureCause>> = setOf(
     FailureCause.Provider.Limited::class,

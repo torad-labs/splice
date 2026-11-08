@@ -44,9 +44,8 @@ class PooledLimitsThroughHeadsTest {
         withScriptedHeads(tmp) {
             provider.script(
                 reply {
-                    status(
-                        429,
-                    ); anthropicErrorBody("rate_limit_error", "Monthly usage limit reached for this billing cycle")
+                    status(429)
+                    anthropicErrorBody("rate_limit_error", "Monthly usage limit reached for this billing cycle")
                 },
                 reply { anthropicAnswer("quota on the other login") },
             )
@@ -82,7 +81,28 @@ class PooledLimitsThroughHeadsTest {
     }
 
     @Test
-    fun `a persistent bare throttle ends retryably within thirty seconds`(@TempDir tmp: Path) = runTest {
+    fun `when every login is temporarily throttled the same turn survives a shared minute-long pause`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            val throttled = List(8) {
+                reply { status(429); anthropicErrorBody("rate_limit_error", "temporary rate limit") }
+            }
+            provider.script(*(throttled + reply { anthropicAnswer("shared throttle lifted") }).toTypedArray())
+            val head = pooledAnthropic(listOf("primary", "backup"))
+
+            val answer = head.client.send(request("survive the shared pause"))
+
+            assertEquals("shared throttle lifted", answer.text, answer.describe())
+            assertTrue(answer.completed, answer.describe())
+            assertEquals(null, answer.error, answer.describe())
+            assertTrue(time.passed() in 60.seconds..120.seconds, "quota remains usable after the shared short throttle")
+            assertTrue(head.heldTurns().isEmpty())
+        }
+    }
+
+    @Test
+    fun `a persistent bare throttle ends retryably within two minutes`(@TempDir tmp: Path) = runTest {
         withScriptedHeads(tmp) {
             provider.script(reply { status(429); anthropicErrorBody("rate_limit_error", "temporary rate limit") })
             val head = pooledAnthropic(listOf("only"))
@@ -91,7 +111,10 @@ class PooledLimitsThroughHeadsTest {
 
             assertTrue(Family.R in answer.families(), answer.describe())
             assertFalse(answer.completed, answer.describe())
-            assertTrue(time.passed() in 1.seconds..30.seconds, "a bare throttle must not become a twenty-minute hold")
+            assertTrue(
+                time.passed() in 60.seconds..120.seconds,
+                "a bare throttle gets bounded time for shared recovery",
+            )
             assertFalse(answer.error?.message.orEmpty().contains("usage limit"), answer.describe())
             assertTrue(head.heldTurns().isEmpty())
         }

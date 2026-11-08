@@ -14,11 +14,17 @@ public const val MAX_HOLD_MS: Long = 604_800_000L
  *  waits"). */
 public const val VISIBLE_WAIT_MS: Long = 10_000L
 
-/** A burst limit with no time stated, or one stated at 15 s or less: waited 2, 4, 8 and 15 s, then held. Four waits
+/** A burst limit stated at 15 s or less: waited 2, 4, 8 and 15 s, then held. Four waits
  *  cover the 30 s window a provider's burst counter keeps. */
 internal const val BURST_WAITS: Int = 4
 internal const val BURST_FIRST_WAIT_MS: Long = 2_000L // why: the first of the 2, 4, 8 and 15 s burst waits
 internal const val BURST_WAIT_CAP_MS: Long = 15_000L // why: a stated lift at 15 s or less is still waited
+
+/** An unnamed throttle may affect every login. Seven waits total two minutes without inventing a reset or
+ *  opening an indefinite hold. This budget belongs to the turn, so changing logins never replenishes it. */
+internal const val THROTTLE_WAITS: Int = 7
+internal const val THROTTLE_FIRST_WAIT_MS: Long = 2_000L // why: recover quickly from a momentary refusal
+internal const val THROTTLE_WAIT_CAP_MS: Long = 30_000L // why: 2, 4, 8, 16, 30, 30, 30 s totals 120 s
 
 /** An overload with no time stated: waited 2, 4, 8, 15 and 30 s, about a minute, then the turn ends R. */
 internal const val OVERLOAD_WAITS: Int = 5

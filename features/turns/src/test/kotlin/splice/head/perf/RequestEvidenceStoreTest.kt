@@ -97,7 +97,9 @@ class RequestEvidenceStoreTest {
     private fun awaitEvidenceWrites(directory: Path, store: RequestEvidenceStore, stage: String = "complete") {
         // Each append persists retention metadata before its directory-scoped write completes.
         val started = MonoClock.nowMs()
-        assertTrue(AsyncFileIo.awaitDirectory(directory)) {
+        // The file lane is process-wide and shared by other tests; leave headroom for unrelated
+        // accepted writes queued ahead of this fixture while still bounding the wait.
+        assertTrue(AsyncFileIo.awaitDirectory(directory, timeoutMs = EVIDENCE_WRITE_SETTLE_TIMEOUT_MS)) {
             "Evidence writes did not settle: stage=$stage elapsed_ms=${MonoClock.nowMs() - started} " +
                 "interrupted=${Thread.currentThread().isInterrupted} sink=${store.sink.status()}, " +
                 "lane=${AsyncFileIo.workSnapshot}"
@@ -107,5 +109,9 @@ class RequestEvidenceStoreTest {
     private fun observations(directory: Path): List<PerfObservation> = Files.list(directory).use { paths ->
         paths.filter { RequestEvidenceFormat.isSegment(it.fileName.toString()) }.toList()
             .flatMap { file -> Files.readAllLines(file).map { Json.decodeFromString<PerfObservation>(it) } }
+    }
+
+    private companion object {
+        const val EVIDENCE_WRITE_SETTLE_TIMEOUT_MS: Long = 30_000L
     }
 }

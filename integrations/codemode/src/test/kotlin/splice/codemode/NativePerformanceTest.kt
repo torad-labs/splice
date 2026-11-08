@@ -45,7 +45,7 @@ class NativePerformanceTest {
         }
         published.await()
         val finished = events.filter { it.kind == PerfEventKind.TOOL_FINISHED }
-        assertEquals(listOf("bad"), finished.map { it.scope.outcome })
+        assertEquals(listOf("bad"), finished.map { it.outcome })
         assertPublishedSpans(finished, exporter)
     }
 
@@ -73,9 +73,9 @@ class NativePerformanceTest {
         }
         published.await()
         val finished = events.filter { it.kind == PerfEventKind.TOOL_FINISHED }
-        assertEquals(listOf("bad", "good"), finished.mapNotNull { it.scope.outcome }.sorted())
+        assertEquals(listOf("bad", "good"), finished.mapNotNull { it.outcome }.sorted())
         val outcomes = finished.associate { event ->
-            exporter.spans.single { it.spanId == event.links.spanId }.name to event.scope.outcome
+            exporter.spans.single { it.spanId == event.links.spanId }.name to event.outcome
         }
         assertEquals(mapOf("code_mode.grpc.execute" to "good", "code_mode.grpc.callback" to "bad"), outcomes)
     }

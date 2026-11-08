@@ -38,7 +38,7 @@ internal class CodexPeerRun(private val binding: CodexBinding, private val parts
             is CodexOpen.Open -> serve(opened.thread)
         }
 
-    private suspend fun serve(thread: CodexAppThread): String = coroutineScope {
+    private suspend fun serve(thread: CodexLiveThread): String = coroutineScope {
         val reading = async { thread.read() }
         val ended = when (val greeting = thread.greet()) {
             is CodexGreeting.Refused -> greeting.reason
@@ -61,7 +61,7 @@ internal class CodexPeerRun(private val binding: CodexBinding, private val parts
     }
 
     /** Follows the thread's notifications until it closes or unloads; why it stopped. */
-    private suspend fun watch(thread: CodexAppThread): String {
+    private suspend fun watch(thread: CodexLiveThread): String {
         for (event in thread.notifications) {
             val mine = thread.mine(event.params)
             val status = JsonScalars.str(event.params?.get("status") as? JsonObject, "type")

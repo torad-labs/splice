@@ -240,12 +240,14 @@ line on stderr. A daemon that is down, or that answers 404 or any other refusal,
 that command's usual code. Exit 2 is the usage code at a terminal; Codex and Claude Code both treat it as "block this
 turn", so a hook never exits 2.
 
-An attach that finds the peer as asked changes nothing and answers once its helper runs. Attach is refused when no
-Codex app-server listens on the home's `app-server-control/app-server-control.sock` (or the daemon its
-`app-server-daemon/daemon.pid` names), because no message could reach the thread then. It is refused too when that
-app-server has not loaded the thread: attach reads the thread there before it registers anything. A thread run with
-`codex --no-daemon`, or by a Codex that runs its own app-server and listens on no socket, as the ChatGPT desktop app did
-on 2026-10-30, is not on the home's app-server, so it cannot be a peer.
+An attach that finds the peer as asked changes nothing and answers once its helper runs. For a ChatGPT desktop chat,
+Splice first discovers its existing owner through the home's private `ipc/ipc.sock`. The desktop owner forwards the
+input to its own app-server and preserves the chat's current model, effort, permissions and workspace. Attachment
+does not start or resume the chat in a second app-server.
+
+If the desktop does not own the thread, Splice checks `app-server-control/app-server-control.sock` (or the daemon its
+`app-server-daemon/daemon.pid` names). Attach is refused when neither endpoint owns a loaded thread. A standalone
+`codex --no-daemon` session without a reachable control interface still cannot receive automatic delivery.
 
 Attach looks up its own ancestry for the nearest process running `codex`. When it finds one, the peer's registry
 record carries a `lifecycleBinding` (version 1) naming that process as the thread's native owner and the peer's
@@ -265,13 +267,21 @@ splice peer inbox
 Each hand-over is journaled as a `codex` record: `issuing` before the request goes out, then `started` with the turn
 Codex named, `refused` with Codex's reason, or `unconfirmed` when the request went out and no answer came. Nothing is
 handed over twice. A helper that stops between `issuing` and its outcome leaves the next helper to read the thread's
-history: `started` when the history holds the message, `unconfirmed` otherwise, never a second send. A message Codex
+history: `started` when the history holds the message, `unconfirmed` otherwise, never a second send. Desktop IPC does
+not expose a complete read-only message history; a desktop hand-over interrupted by a helper restart therefore stays
+`unconfirmed`. A message Codex
 refused gets a `dropped` receipt, so its sender learns the thread never saw it. The record's status is `busy` while
 the thread runs a turn and `idle` otherwise.
 
 When the thread closes or unloads, or its app-server closes the connection, the helper journals `ended` and stops,
 and the daemon revokes the peer; its journal stays. A thread that loads again attaches again from its next hook. The
 helper answers no request the app-server makes of it, such as an approval, and grants the thread no tool.
+
+Desktop lifecycle tracking consumes the versioned state stream but retains only thread status, not its transcript.
+Large desktop snapshots are parsed as a stream and their conversation content is skipped. An unsupported stream
+version, missing initial status, or a frame exceeding the desktop's 256 MiB protocol limit stops the connection
+rather than claiming that delivery is available. Outgoing input remains bounded at 8 MiB. A desktop error after forwarding is recorded as
+`unconfirmed`, because the desktop may have accepted the input before its reply was lost.
 
 A codex peer does not count against the 16 peers a user registers by hand; at most 64 Codex threads are peers at
 once. `splice peer codex detach` revokes one at once, and `--purge` deletes its journal too.

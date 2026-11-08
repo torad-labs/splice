@@ -38,6 +38,19 @@ response drains under the route's normal request deadline; the send window does
 not bound that in-flight drain. A stale response is discarded. Deadline,
 memory-budget and other failures remain visible for diagnosis.
 
+Recorded rows load when you open **Requests & traces**. Automatic updates keep
+the selected row page and its snapshot interval; **Refresh** captures a new
+snapshot. Changing the cohort also starts a new snapshot when that view is open.
+Row links and pagination retain the interval printed below the rows, even while
+the summary's rolling window advances.
+
+For partial row results, inspect `coverage.issues` and each head's `read_errors`.
+`cursor_inventory_limit` means the bounded inventory cannot admit another
+snapshot; `cursor_disk_limit` means its disk allowance is exhausted. Existing
+snapshots expire after 30 minutes. `cursor_snapshot_expired` identifies a missing
+or expired snapshot used by a continuation. None of these results establishes
+that the selected interval had zero requests.
+
 ## Sink accounting
 
 Queue acceptance and durable completion are separate. File sinks expose observed,

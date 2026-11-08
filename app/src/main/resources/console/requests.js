@@ -1661,6 +1661,13 @@ function rqbFit(root) {
         el.classList.toggle("r", mid < 22);
         el.style.setProperty("--d", `${(1.1 + Math.max(0, at) * 1.5).toFixed(2)}rem`);
       }
+      if (at >= 0) {
+        const label = wrap.querySelector(`.rqb-lb[data-seg="${sg.dataset.seg}"]`);
+        const box = label.getBoundingClientRect(), edge = document.documentElement.clientWidth - 8;
+        if (box.right > edge || box.left < 8) {
+          for (const el of wrap.querySelectorAll(`:scope > [data-seg="${sg.dataset.seg}"]`)) el.classList.toggle("r", box.left < 8);
+        }
+      }
     }
     wrap.style.setProperty("--lead", out.length ? `${(1.1 + (out.length - 1) * 1.5 + 0.8).toFixed(2)}rem` : "0rem");
   }

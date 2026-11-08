@@ -370,6 +370,7 @@ test("Usage: a single query worker returns every view for the newest cohort and 
     await expect(panel.getByRole("table", { name: "History · last 120 returned scope intervals", exact: true })).toContainText("7");
     await expect(panel.locator('[name="historyMetric"]')).toHaveValue("current_gauge");
     await panel.locator('[data-pc-tab="timeline"]').click();
+    await expect(content).toHaveAttribute("aria-busy", "false");
     await panel.getByText("Interpretation and next measurements", { exact: true }).click();
     await expect(panel.getByRole("table", { name: "Diagnosis evidence", exact: true })).toContainText("current diagnosis");
     const records = panel.getByRole("table", { name: "Recorded request rows · returned source order", exact: true });
@@ -408,8 +409,10 @@ test("Usage: an accepted capacity retry keeps query ownership until its held res
   refuseTurnsOnce = true; queryBusyResponses = 0;
   try {
     await p.goto(`http://127.0.0.1:${server.port}/usage.html?contract=1&model=one-query-worker&from=${now - 60000}&until=${now}`);
-    await retry.ready;
     const panel = p.locator("#band-perf"), content = panel.locator(".pc-content");
+    await expect(content).toHaveAttribute("aria-busy", "false");
+    await panel.locator('[data-pc-tab="timeline"]').click();
+    await retry.ready;
     await panel.locator('[name="project"]').fill("/work/website");
     await panel.getByRole("button", { name: "Apply cohort", exact: true }).click();
     // The new cohort waits behind the accepted retry's worker ownership, even though the old view is stale.
@@ -417,10 +420,46 @@ test("Usage: an accepted capacity retry keeps query ownership until its held res
     retry.release();
     await expect(content).toHaveAttribute("aria-busy", "false");
     await expect(panel.locator('[name="project"]')).toHaveValue("/work/website");
+    await panel.locator('[data-pc-tab="overview"]').click();
     await expect(panel.locator(".pc-command-failure")).toHaveText("5% failed");
     expect(queryBusyResponses).toBe(0);
   } finally {
     retry.release(); heldQuery = null; refuseTurnsOnce = false;
     await context.close();
   }
+}, 90_000);
+
+test("Usage: automatic updates preserve the selected row page and its interval until Refresh", async () => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1400 } });
+  const p = await context.newPage();
+  try {
+    await p.clock.install({ time: new Date(now) });
+    await p.goto(`http://127.0.0.1:${server.port}/usage.html?contract=1&model=one-query-worker&project=/work/website&win=1h`);
+    const panel = p.locator("#band-perf"), content = panel.locator(".pc-content");
+    await expect(content).toHaveAttribute("aria-busy", "false");
+    await panel.locator('[data-pc-tab="timeline"]').click();
+    const records = panel.getByRole("table", { name: "Recorded request rows · returned source order", exact: true });
+    const link = records.getByRole("link", { name: "Open request 1", exact: true });
+    await expect(link).toHaveAttribute("href", /current-first-page$/);
+    const first = new URL((await link.getAttribute("href"))!, "http://fixture");
+    await panel.getByRole("button", { name: "Next records", exact: true }).click();
+    await expect(link).toHaveAttribute("href", /current-second-page$/);
+    const pinned = await link.getAttribute("href");
+    await p.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); });
+    const refreshed = p.waitForResponse((r) => {
+      const u = new URL(r.url());
+      return u.pathname === "/api/perf/summary" && u.searchParams.get("contract") === "1"
+        && Number(u.searchParams.get("until")) > Number(first.searchParams.get("until"));
+    });
+    await p.clock.fastForward(16000);
+    await refreshed;
+    await expect(content).toHaveAttribute("aria-busy", "false");
+    await expect(link).toHaveAttribute("href", pinned!);
+    await expect(panel).toContainText("Row snapshot:");
+    await panel.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(link).toHaveAttribute("href", /current-first-page$/);
+    const fresh = new URL((await link.getAttribute("href"))!, "http://fixture");
+    expect(Number(fresh.searchParams.get("until"))).toBeGreaterThan(Number(first.searchParams.get("until")));
+    expect(fresh.searchParams.get("project")).toBe("/work/website");
+  } finally { await context.close(); }
 }, 90_000);

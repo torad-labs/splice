@@ -4,6 +4,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.perf.OutcomeTag
@@ -125,7 +126,7 @@ internal class PerfQueryRows(private val sources: PerfQuerySources) {
         }.minOrNull() ?: query.untilMs
         data.truncated = !complete
         data.counts = buildJsonObject { put("record_unit", "legacy_row"); put("population_complete", complete) }
-        if (!complete) data.issue(if ("busy" in statuses) "cursor_busy" else "cursor_incomplete_or_expired", "rows")
+        if (!complete) data.issue(incompleteIssue(heads, statuses), "rows")
         return envelope(
             query,
             data,
@@ -152,9 +153,50 @@ internal class PerfQueryRows(private val sources: PerfQuerySources) {
             },
         )
     }
+
+    private fun incompleteIssue(heads: Map<String, HeadCursor>, statuses: List<String?>): String =
+        heads.values.asSequence()
+            .mapNotNull { state ->
+                (state.metadata["read_errors"] as? JsonArray)
+                    ?.firstNotNullOfOrNull { value ->
+                        (value as? JsonPrimitive)
+                            ?.takeIf { it.isString }
+                            ?.content
+                            ?.takeIf { it in CURSOR_READ_ISSUES }
+                    }
+            }
+            .firstOrNull()
+            ?: if ("busy" in statuses) "cursor_busy" else "cursor_incomplete"
 }
 
 internal data class HeadCursor(val start: String?, val next: String?, val metadata: JsonObject = JsonObject(emptyMap()))
 
 // Freeze at most sixty-four head cursors so a multi-head traversal has bounded metadata and response state.
 private const val MAX_QUERY_HEADS = 64
+
+// Read errors are persisted metadata; expose only the closed cursor refusal vocabulary.
+private val CURSOR_READ_ISSUES = setOf(
+    "cursor_busy",
+    "cursor_dedup_limit",
+    "cursor_dedup_read_error",
+    "cursor_directory_permissions",
+    "cursor_disk_limit",
+    "cursor_filter_changed",
+    "cursor_index_changed",
+    "cursor_index_invalid",
+    "cursor_index_limit",
+    "cursor_index_shortened",
+    "cursor_inventory_limit",
+    "cursor_manifest_limit",
+    "cursor_offset_invalid",
+    "cursor_record_changed",
+    "cursor_record_malformed",
+    "cursor_record_missing",
+    "cursor_segment_changed",
+    "cursor_segment_expired",
+    "cursor_segment_limit",
+    "cursor_segment_not_regular",
+    "cursor_segment_shortened",
+    "cursor_snapshot_expired",
+    "cursor_work_limit",
+)

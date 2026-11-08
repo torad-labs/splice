@@ -163,7 +163,8 @@ const PERF_CONSOLE = (() => {
     const panelRead = (key, method, path, current, body, transport = API, opts = {}) =>
       transport.perfRequest(`perf:${options.id}:${key}`, method.toUpperCase(), path, body, current, { ...opts, replace: key !== "action" });
     const st = { key: null, query: null, replies: {}, tab: "overview", busy: false, rowsBusy: false, abort: null, timer: null, generation: 0, message: "", baselines: loadBaselines(), selected: 0, draft: null, draftRevision: 0, profiles: null, settings: null, openRequest: null, cursor: null, advanced: false, commands: new Set() };
-    const clearMeasurements = () => { st.replies = Object.fromEntries(["schema", "caps", "preferences"].filter((k) => st.replies[k]).map((k) => [k, st.replies[k]])); };
+    const clearRows = () => { delete st.replies.rows; st.rowsQuery = null; };
+    const clearMeasurements = () => { st.replies = Object.fromEntries(["schema", "caps", "preferences"].filter((k) => st.replies[k]).map((k) => [k, st.replies[k]])); st.rowsQuery = null; };
     const current = () => options.query();
     const accountChoices = () => [...new Set(String((st.query || queryNow()).filters?.account || "").split("\u001f").filter(Boolean))];
     const host = () => document.querySelector(`[data-performance="${options.id}"]`);
@@ -179,9 +180,10 @@ const PERF_CONSOLE = (() => {
     }
     // The fingerprint excludes a moving "now"; one interval is frozen for all views in a read cycle.
     const fingerprint = () => JSON.stringify(current());
-    async function read(force = false) {
+    async function read(force = false, refreshRows = false) {
       const key = fingerprint();
       if (st.busy && key === st.key && !force) return;
+      if (st.rowsBusy && key === st.key && !force) { st.timer = setTimeout(() => read(), 15000); return; }
       st.abort?.abort(); clearTimeout(st.timer);
       const abort = st.abort = new AbortController(), api = API.scoped(abort.signal), gen = ++st.generation;
       const active = () => gen === st.generation && !abort.signal.aborted && host()?.isConnected;
@@ -190,6 +192,7 @@ const PERF_CONSOLE = (() => {
       const changed = key !== st.key; st.key = key; st.query = queryNow(); st.busy = true; st.rowsBusy = false;
       if (!st.standingStarted) { st.standingStarted = true; standing(); }
       if (changed) { clearMeasurements(); st.cursor = null; st.openRequest = null; }
+      else if (refreshRows) clearRows();
       if (accountChoices().length > 1) {
         clearMeasurements(); st.busy = false; st.advanced = true;
         st.replies.summary = { ok: true, status: 200, body: { contract_version: 1, status: "unsupported", query: st.query, error: { reason: "cohort_unavailable_choose_one_recorded_account" } } };
@@ -197,7 +200,12 @@ const PERF_CONSOLE = (() => {
       }
       repaint();
       const p = params(st.query).toString();
-      const projections = { summary: `/api/perf/summary?${p}`, series: `/api/perf/series?${p}`, diagnose: `/api/perf/diagnose?${p}`, rows: `/api/perf/turns?${p}&page_size=100` };
+      const projections = { summary: `/api/perf/summary?${p}`, series: `/api/perf/series?${p}`, diagnose: `/api/perf/diagnose?${p}` };
+      // A row cursor owns a fixed interval until the user refreshes or changes the cohort.
+      if (st.tab === "timeline" && !st.replies.rows) {
+        st.rowsQuery = st.query;
+        projections.rows = `/api/perf/turns?${p}&page_size=100`;
+      }
       const paths = { runtime: "/api/perf/runtime", alerts: `/api/perf/alerts?from=${st.query.from_ms}&until=${st.query.until_ms}`, alertStatus: "/api/perf/alerts/status", preferences: "/api/alerts" };
       const capacityRefusals = [];
       const queried = (async () => {
@@ -412,13 +420,15 @@ const PERF_CONSOLE = (() => {
         + waterfall + (events.length ? detail("Event details and correlation IDs", table(["Event", "Elapsed · ms", "Attempt", "Tool", "Measurements", "Trace reference"], rows, "Request, attempt and tool timeline")) : empty("No request timeline evidence", status(st.replies.diagnose)))
         + detail("Resource evidence", facts(d?.resources) + ((d?.resources?.conditions || []).length ? table(["Measured resource", "Value", "Reported capacity", "Fraction", "Interpretation"], d.resources.conditions.map((x) => [safe(metricName(x.metric)), num(x.value), num(x.capacity), num(x.fraction), safe(words(x.inference))]), "Resource occupancy · sample time only") : empty("Resource occupancy not measured"))) + requestRows();
     }
-    function turnLink(record, label) {
-      return record?.head && record?.turn_id ? `<a href="${safe(address(st.query, { head: record.head }, `${record.head}:${record.turn_id}`))}">${safe(label)}</a>` : "Turn link unavailable";
+    function turnLink(record, label, query = st.query) {
+      return record?.head && record?.turn_id ? `<a href="${safe(address(query, { head: record.head }, `${record.head}:${record.turn_id}`))}">${safe(label)}</a>` : "Turn link unavailable";
     }
     function requestRows() {
       const r = st.replies.rows, v = r?.body;
-      return ((v?.rows || []).length ? table(["Request", "Time", "Command", "Model", "Outcome"], v.rows.map((x, i) => [turnLink(x, `Open request ${i + 1}`), safe(date(x.ts)), safe(commandName(x.head)), safe(x.model ?? "Unknown"), badge(words(x.outcome), x.outcome === "failed" ? "bad" : "neutral")]), "Recorded request rows · returned source order") : empty(r?.ok ? "No recorded rows returned" : "Request rows unavailable", status(r)))
+      return ((v?.rows || []).length ? table(["Request", "Time", "Command", "Model", "Outcome"], v.rows.map((x, i) => [turnLink(x, `Open request ${i + 1}`, st.rowsQuery), safe(date(x.ts)), safe(commandName(x.head)), safe(x.model ?? "Unknown"), badge(words(x.outcome), x.outcome === "failed" ? "bad" : "neutral")]), "Recorded request rows · returned source order") : empty(r?.ok ? "No recorded rows returned" : st.busy ? "Loading recorded rows…" : "Request rows unavailable", status(r)))
         + note(`${status(r)} · ${known(v?.total_matching) ? num(v.total_matching) : "Unknown count of"} matching recorded rows`)
+        + (explain(r) ? note(words(explain(r))) : "")
+        + (st.rowsQuery ? note(`Row snapshot: ${date(st.rowsQuery.from_ms)} – ${date(st.rowsQuery.until_ms)}. Refresh to capture newer rows.`) : "")
         + (v?.next_cursor ? `<button class="act small" data-pc="next"${st.busy || st.rowsBusy ? " disabled" : ""}>Next records</button>` : "");
     }
     function baselines() {
@@ -636,11 +646,11 @@ const PERF_CONSOLE = (() => {
     });
     document.addEventListener("click", async (e) => {
       if (!host()?.contains(e.target)) return;
-      const tab = e.target.closest("[data-pc-tab]"); if (tab) { st.tab = tab.dataset.pcTab; repaint(); return; }
+      const tab = e.target.closest("[data-pc-tab]"); if (tab) { st.tab = tab.dataset.pcTab; if (st.tab === "timeline" && !st.replies.rows) read(true); else repaint(); return; }
       const button = e.target.closest("[data-pc]"); if (!button) return;
       const action = button.dataset.pc; let actionStarted = false;
       try {
-        if (action === "refresh") { read(true); return; }
+        if (action === "refresh") { read(true, true); return; }
         if (action === "completed-window") { const q = completedWindow(); if (!q || st.busy) return; options.apply(q); st.message = "Selected the completed window. Coverage is reported below."; st.key = null; read(true); return; }
         if (action === "filters") {
           // Disclosure must preserve the query being edited, not redraw it from the last applied cohort.
@@ -679,7 +689,7 @@ const PERF_CONSOLE = (() => {
         }
         if (action === "next") {
           if (st.busy || st.rowsBusy || !st.replies.rows?.body?.next_cursor) return;
-          const gen = st.generation, abort = st.abort, p = params(st.query);
+          const gen = st.generation, abort = st.abort, p = params(st.rowsQuery);
           const active = () => gen === st.generation && !abort.signal.aborted && host()?.isConnected;
           p.set("cursor", st.replies.rows.body.next_cursor); p.set("page_size", "100");
           st.rowsBusy = true; repaint();

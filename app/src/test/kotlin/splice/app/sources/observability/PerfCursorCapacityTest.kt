@@ -1,5 +1,6 @@
 package splice.app.sources.observability
 
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -18,6 +19,9 @@ import splice.core.util.WallClock
 import splice.usage.perf.history.PerfCursorQuery
 import splice.usage.perf.history.PerfCursorRequest
 import splice.usage.perf.history.PerfRowPredicate
+import splice.usage.perf.query.PerfQuery
+import splice.usage.perf.query.PerfQueryService
+import splice.usage.perf.query.PerfQuerySources
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
@@ -142,6 +146,64 @@ class PerfCursorCapacityTest {
         }
         assertContinuation(file, request, "$retainedId:100")
     }
+
+    @Test
+    fun `row query preserves fresh admission refusal and an actually expired continuation cause`() {
+        val query = PerfQuery(1_000, 12_000, source = "legacy")
+        val saturatedFile = rows(root)
+        val saturatedSource = PerfRowsFileSource(saturatedFile)
+        fill(saturatedSource, request(), 64)
+        val saturatedService = queryService(saturatedSource)
+        try {
+            val saturatedReply = saturatedService.rows(query, pageSize = 1)
+            try {
+                assertEquals("cursor_inventory_limit", firstIssue(saturatedReply))
+            } finally {
+                PerfWorkBudget.release(saturatedReply)
+            }
+        } finally {
+            saturatedService.close()
+        }
+
+        val expiredFile = root.resolve("expired.jsonl").also { file -> Files.copy(saturatedFile, file) }
+        val expiredSource = PerfRowsFileSource(expiredFile)
+        val service = queryService(expiredSource)
+        try {
+            val first = service.rows(query, pageSize = 1)
+            val cursor: String
+            val sourceSnapshot: String
+            try {
+                cursor = requireNotNull(JsonScalars.str(first, "next_cursor"))
+                sourceSnapshot = requireNotNull(JsonScalars.str(first.getValue("snapshot_id").jsonObject, "test"))
+            } finally {
+                PerfWorkBudget.release(first)
+            }
+            val cursorDirectory = expiredFile.resolveSibling("${expiredFile.fileName}-cursors")
+            Files.delete(cursorDirectory.resolve("$sourceSnapshot.json"))
+
+            val expired = service.rows(query, cursor, pageSize = 1)
+            try {
+                assertEquals("cursor_snapshot_expired", firstIssue(expired))
+            } finally {
+                PerfWorkBudget.release(expired)
+            }
+        } finally {
+            service.close()
+        }
+    }
+
+    private fun queryService(source: PerfRowsFileSource): PerfQueryService =
+        PerfQueryService(
+            object : PerfQuerySources {
+                override fun heads(): Set<String> = setOf("test")
+                override fun rows(head: String) = source.takeIf { head == "test" }
+            },
+        )
+
+    private fun firstIssue(reply: kotlinx.serialization.json.JsonObject): String? =
+        reply["coverage"]?.jsonObject?.get("issues")?.jsonArray?.firstOrNull()?.jsonObject?.let {
+            JsonScalars.str(it, "code")
+        }
 
     private fun rows(root: Path): Path = root.resolve("test.jsonl").also { path ->
         Files.writeString(

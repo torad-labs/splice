@@ -162,7 +162,7 @@ const PERF_CONSOLE = (() => {
     const { document, API, setTimeout, clearTimeout, setInterval } = scope;
     const panelRead = (key, method, path, current, body, transport = API, opts = {}) =>
       transport.perfRequest(`perf:${options.id}:${key}`, method.toUpperCase(), path, body, current, { ...opts, replace: key !== "action" });
-    const st = { key: null, query: null, replies: {}, tab: "overview", busy: false, rowsBusy: false, abort: null, timer: null, generation: 0, message: "", baselines: loadBaselines(), selected: 0, draft: null, draftRevision: 0, profiles: null, settings: null, openRequest: null, cursor: null, advanced: false, commands: new Set() };
+    const st = { key: null, query: null, replies: {}, tab: "overview", busy: false, rowsBusy: false, abort: null, timer: null, generation: 0, message: "", baselines: loadBaselines(), selected: 0, draft: null, draftRevision: 0, builders: new Map(), profiles: null, settings: null, openRequest: null, cursor: null, advanced: false, commands: new Set() };
     const clearRows = () => { delete st.replies.rows; st.rowsQuery = null; };
     const clearMeasurements = () => { st.replies = Object.fromEntries(["schema", "caps", "preferences"].filter((k) => st.replies[k]).map((k) => [k, st.replies[k]])); st.rowsQuery = null; };
     const current = () => options.query();
@@ -170,7 +170,34 @@ const PERF_CONSOLE = (() => {
     const host = () => document.querySelector(`[data-performance="${options.id}"]`);
     const attached = () => host()?.isConnected;
     const actionPending = () => st.actionBusy || st.standingBusy || st.profileBusy;
-    const repaint = () => { const h = host(); if (h) h.innerHTML = inner(); options.changed?.(); };
+    function rememberBuilders(h) {
+      for (const form of h?.querySelectorAll(".pc-builder") || []) st.builders.set(form.dataset.pcForm, {
+        open: form.closest("details").open,
+        fields: [...form.elements].filter((el) => el.name).map((el) => ({ name: el.name, value: el.value, checked: el.checked })),
+      });
+    }
+    function repaint() {
+      const h = host();
+      if (h) {
+        const focus = document.activeElement, focusedForm = h.contains(focus) ? focus?.closest?.(".pc-builder") : null;
+        rememberBuilders(h);
+        h.innerHTML = inner();
+        for (const form of h.querySelectorAll(".pc-builder")) {
+          if (focusedForm?.dataset.pcForm === form.dataset.pcForm && focus.name) {
+            const el = form.elements.namedItem(focus.name); el?.focus({ preventScroll: true });
+            if (focus.selectionStart != null) el?.setSelectionRange(focus.selectionStart, focus.selectionEnd);
+          }
+        }
+      }
+      options.changed?.();
+    }
+    function resetBuilders() {
+      st.builders.clear();
+      for (const form of host()?.querySelectorAll(".pc-builder") || []) form.remove();
+    }
+    const builderValue = (kind, name, fallback) => st.builders.get(kind)?.fields.find((field) => field.name === name)?.value ?? fallback;
+    const builderField = (kind, name, label, value = "", type = "text", attrs = "") => field(name, label, builderValue(kind, name, value), type, attrs);
+    const builderSelect = (kind, name, label, choices, value) => select(name, label, choices, builderValue(kind, name, value));
     function queryNow() {
       const input = current(), filters = { ...input.filters };
       const query = { from_ms: input.from_ms, until_ms: input.until_ms, source: input.source || "auto", filters, objective_id: input.objective_id || null };
@@ -486,8 +513,8 @@ const PERF_CONSOLE = (() => {
     function objectives() {
       const settings = st.settings;
       if (!settings) return note(`${status(st.settingsReply)} · Objective settings unavailable.`);
-      const builders = `<div class="pc-grid"><details class="pc-detail"><summary>Add objective</summary><form data-pc-form="add-objective" class="pc-builder">${field("id", "Objective ID", "", "text", "required maxlength=128")}${field("cohort", "Cohort · JSON", "{}")}${["first_content_ms", "completion_ms", "queue_ms", "progress_gap_ms"].map((k) => field(k, words(k), "", "number", 'min="0"')).join("")}<button class="act small" type="submit">Add to draft</button></form></details>`
-        + `<details class="pc-detail"><summary>Add alert rule</summary><form data-pc-form="add-rule" class="pc-builder">${field("id", "Rule ID", "", "text", "required maxlength=128")}${select("objective_id", "Objective", [["", "None"], ...(settings.objectives || []).map((o) => [o.id, o.id])], "")}${field("cohort", "Cohort · JSON", "{}")}${field("metric", "Metric selector", "", "text", 'required placeholder="histograms.queue_wait_ms.p95"')}${select("comparison", "Trigger when", [["above", "Above threshold"], ["below", "Below threshold"]], "above")}${field("threshold", "Threshold", "", "number", 'required step="any"')}${field("window_ms", "Window · ms", 300000, "number", 'required min="1"')}${field("min_count", "Minimum samples", 1, "number", 'required min="1"')}${field("min_coverage", "Minimum coverage · 0–1", 1, "number", 'required min="0" max="1" step="0.01"')}${field("hold_ms", "Trigger hold · ms", 0, "number", 'required min="0"')}${field("cooldown_ms", "Delivery cooldown · ms", 60000, "number", 'required min="0"')}${field("recovery_threshold", "Recovery threshold", "", "number", 'required step="any"')}${field("recovery_hold_ms", "Recovery hold · ms", 0, "number", 'required min="0"')}<label class="pc-checkbox"><input type="checkbox" name="delivery_enabled">Allow configured delivery for this rule</label><button class="act small" type="submit">Add to draft</button></form></details></div>`;
+      const builders = `<div class="pc-grid"><details class="pc-detail"${st.builders.get("add-objective")?.open ? " open" : ""}><summary>Add objective</summary><form data-pc-form="add-objective" class="pc-builder">${builderField("add-objective", "id", "Objective ID", "", "text", "required maxlength=128")}${builderField("add-objective", "cohort", "Cohort · JSON", "{}")}${["first_content_ms", "completion_ms", "queue_ms", "progress_gap_ms"].map((k) => builderField("add-objective", k, words(k), "", "number", 'min="0"')).join("")}<button class="act small" type="submit">Add to draft</button></form></details>`
+        + `<details class="pc-detail"${st.builders.get("add-rule")?.open ? " open" : ""}><summary>Add alert rule</summary><form data-pc-form="add-rule" class="pc-builder">${builderField("add-rule", "id", "Rule ID", "", "text", "required maxlength=128")}${builderSelect("add-rule", "objective_id", "Objective", [["", "None"], ...(settings.objectives || []).map((o) => [o.id, o.id])], "")}${builderField("add-rule", "cohort", "Cohort · JSON", "{}")}${builderField("add-rule", "metric", "Metric selector", "", "text", 'required placeholder="histograms.queue_wait_ms.p95"')}${builderSelect("add-rule", "comparison", "Trigger when", [["above", "Above threshold"], ["below", "Below threshold"]], "above")}${builderField("add-rule", "threshold", "Threshold", "", "number", 'required step="any"')}${builderField("add-rule", "window_ms", "Window · ms", 300000, "number", 'required min="1"')}${builderField("add-rule", "min_count", "Minimum samples", 1, "number", 'required min="1"')}${builderField("add-rule", "min_coverage", "Minimum coverage · 0–1", 1, "number", 'required min="0" max="1" step="0.01"')}${builderField("add-rule", "hold_ms", "Trigger hold · ms", 0, "number", 'required min="0"')}${builderField("add-rule", "cooldown_ms", "Delivery cooldown · ms", 60000, "number", 'required min="0"')}${builderField("add-rule", "recovery_threshold", "Recovery threshold", "", "number", 'required step="any"')}${builderField("add-rule", "recovery_hold_ms", "Recovery hold · ms", 0, "number", 'required min="0"')}<label class="pc-checkbox"><input type="checkbox" name="delivery_enabled"${st.builders.get("add-rule")?.fields.find((field) => field.name === "delivery_enabled")?.checked ? " checked" : ""}>Allow configured delivery for this rule</label><button class="act small" type="submit">Add to draft</button></form></details></div>`;
       const draft = st.draft ?? JSON.stringify({ schema_version: 1, objectives: settings.objectives || [], rules: settings.rules || [] }, null, 2);
       const rows = Math.max(8, draft.split("\n").length + 1);
       return `<div class="pc-comparisons" style="--pc-columns:${Math.max(1, Math.min(3, settings.objectives?.length || 0))}">${(settings.objectives || []).map((o) => section(o.id, bars(["first_content_ms", "completion_ms", "queue_ms", "progress_gap_ms"].filter((k) => known(o[k])).map((k) => [metricName(k), o[k]]), "Configured upper bounds", " ms") + detail("Cohort and revision", facts(o.cohort) + facts({ revision: o.revision })))).join("") || empty("No configured objectives", "Add an objective to measure request goodput.")}</div>`
@@ -540,6 +567,7 @@ const PERF_CONSOLE = (() => {
         + `<div class="pc-content" aria-busy="${st.busy}">${tabs[st.tab][1]()}</div>`;
     }
     function html() {
+      rememberBuilders(host());
       if (fingerprint() !== st.key) { clearMeasurements(); st.query = queryNow(); setTimeout(() => read(), 0); }
       return `<section class="perf-console" data-performance="${options.id}">${inner()}</section>`;
     }
@@ -586,7 +614,8 @@ const PERF_CONSOLE = (() => {
             for (const k of ["threshold", "window_ms", "min_count", "min_coverage", "hold_ms", "cooldown_ms"]) item[k] = Number(values.get(k));
             if (values.get("objective_id")) item.objective_id = values.get("objective_id");
           }
-          list.push(item); st.draft = JSON.stringify(draft, null, 2); st.draftRevision++; st.message = "Added to draft. Save objectives and rules to publish."; repaint(); return;
+          list.push(item); st.draft = JSON.stringify(draft, null, 2); st.draftRevision++; st.message = "Added to draft. Save objectives and rules to publish.";
+          st.builders.delete(form.dataset.pcForm); form.remove(); repaint(); return;
         }
         if (form.dataset.pcForm === "query") {
           const input = { window: values.get("window"), filters: {}, source: values.get("source"), objective_id: values.get("objective") || null };
@@ -672,7 +701,7 @@ const PERF_CONSOLE = (() => {
           if (action === "profile-refresh") { await refreshProfile(); return; }
           st.actionBusy = actionStarted = true; st.message = "Performance action pending…"; repaint();
           if (action === "objectives-reload") {
-            const draftRevision = st.draftRevision; st.draft = null; await standing();
+            const draftRevision = st.draftRevision; st.draft = null; resetBuilders(); await standing();
             st.message = st.settingsReply?.ok ? "Objective settings reloaded" : `Objective settings: ${status(st.settingsReply)} · ${words(explain(st.settingsReply))}`;
             if (st.draftRevision !== draftRevision) st.message += ". Newer draft edits are unsaved.";
           }

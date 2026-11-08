@@ -281,6 +281,13 @@ test("Usage: bounded Perf admission preserves startup views and pending profile 
     await panel.locator('[name="settings"]').fill(JSON.stringify({ schema_version: 1, objectives: [{ id: "edited-during-reload", cohort: {}, completion_ms: 3000 }], rules: [] }));
     await panel.getByText("Add objective", { exact: true }).click();
     await builder.locator('[name="id"]').fill("builder-during-reload");
+    // Updating measurements must not close the open builder or erase its unsubmitted fields.
+    await panel.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(builder).toBeVisible();
+    await expect(builder.locator('[name="id"]')).toHaveValue("builder-during-reload");
+    await p.locator("#win [data-act=win][data-v='5h']").click();
+    await expect(builder).toBeVisible();
+    await expect(builder.locator('[name="id"]')).toHaveValue("builder-during-reload");
     await builder.getByRole("button", { name: "Add to draft", exact: true }).click();
     reload.release();
     await expect(panel.locator(".pc-message")).toHaveText("Objective settings reloaded. Newer draft edits are unsaved.");

@@ -27,6 +27,7 @@ import splice.core.util.ElapsedClock
 import splice.core.util.JsonScalars
 import splice.core.util.MonoClock
 import splice.core.util.PerfWorkBudget
+import splice.core.util.PerfWorkPhase
 import splice.core.util.WallClock
 import splice.head.perf.RequestEvidenceFiles
 import splice.usage.perf.PerfRowsSource
@@ -37,6 +38,7 @@ import splice.usage.perf.query.PerfQueryService
 import splice.usage.perf.query.PerfQuerySources
 import java.nio.file.Files
 import java.nio.file.attribute.FileTime
+import java.util.concurrent.atomic.AtomicBoolean
 
 internal enum class BenchmarkRetainedCursorOutcome {
     COMPLETE,
@@ -237,9 +239,8 @@ internal class BenchmarkRetainedOwners(
     fun advance(hours: Int) {
         check(producedHours + hours <= MAX_HOURS)
         repeat(hours) {
-            val from = now
             repeat(60) { minute() }
-            checkpoint(from)
+            checkpoint()
             producedHours++
         }
         if (enabled) exerciseReads()
@@ -256,25 +257,54 @@ internal class BenchmarkRetainedOwners(
         if (enabled) check(AsyncFileIo.awaitDirectory(paths.perfEvidenceDir))
     }
 
-    private fun checkpoint(from: Long) {
+    private fun checkpoint() {
         if (!enabled) return
-        val snapshot = checkNotNull(accumulator).snapshot()
-        val completed = snapshot.copy(
-            fromMs = from,
-            points = snapshot.points.filter { it.fromMs >= from && it.fromMs < now },
-            coverage = snapshot.coverage.copy(
-                requestedFromMs = from,
-                observedMs = minOf(RETAINED_HOUR_MS, snapshot.coverage.observedMs),
-            ),
-        )
-        check(checkNotNull(aggregate).append(completed))
+        val source = checkNotNull(accumulator)
+        // Producers are paused: every successful page settles one captured generation.
+        val pageLimit = source.pendingCheckpointPages + 1
+        repeat(pageLimit) {
+            if (source.pendingCheckpointPages > 0) checkpointPage()
+        }
+        check(source.pendingCheckpointPages == 0) { "retained_checkpoint_backlog" }
+        check(checkNotNull(evidence).checkpointCoverage())
+        check(AsyncFileIo.awaitDirectory(paths.perfEvidenceDir))
+        alignSyntheticFileClock()
+    }
+
+    private fun checkpointPage() {
+        val durable = AtomicBoolean(false)
+        val enqueued = checkNotNull(PerfWorkPhase.tryCheckpoint()).use { phase ->
+            // Match production's two-MiB detached-page admission before transferring it to the writer.
+            checkNotNull(PerfWorkBudget.acquire(2L * 1024 * 1024)).use { lease ->
+                enqueueCheckpointPage(phase, lease, durable)
+            }
+        }
+        if (!enqueued) return
         val waitStarted = MonoClock.nowMs()
         check(AsyncFileIo.awaitFile(paths.perfAggregatesDir.resolve("checkpoint.json"))) {
             checkpointFailure(MonoClock.nowMs() - waitStarted)
         }
-        check(checkNotNull(evidence).checkpointCoverage())
-        check(AsyncFileIo.awaitDirectory(paths.perfEvidenceDir))
-        alignSyntheticFileClock()
+        check(durable.get()) { "retained_checkpoint_page_not_durable" }
+    }
+
+    private fun enqueueCheckpointPage(
+        phase: PerfWorkPhase.Lease,
+        lease: PerfWorkBudget.Lease,
+        durable: AtomicBoolean,
+    ): Boolean {
+        val source = checkNotNull(accumulator)
+        val page = source.checkpointPage() ?: return false
+        var accepted = false
+        try {
+            accepted = checkNotNull(aggregate).appendOwned(page, lease, phase) { written ->
+                source.settleCheckpointPage(page, written)
+                durable.set(written)
+            }
+            check(accepted) { "retained_checkpoint_page_refused" }
+            return true
+        } finally {
+            if (!accepted) source.settleCheckpointPage(page, durable = false)
+        }
     }
 
     private fun checkpointFailure(waitElapsed: Long): String {

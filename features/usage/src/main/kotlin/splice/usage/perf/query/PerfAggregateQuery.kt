@@ -40,13 +40,20 @@ internal class PerfAggregateQuery(private val sources: PerfQuerySources) {
         val outside = (coverage.requestedUntilMs - coverage.requestedFromMs - overlap).coerceAtLeast(0L)
         // Without gap positions, only the observed time that cannot lie outside the query is provable.
         val known = (coverage.observedMs - outside).coerceIn(0L, overlap)
-        return coverage.copy(requestedFromMs = query.fromMs, requestedUntilMs = query.untilMs, observedMs = known)
+        return coverage.copy(
+            requestedFromMs = query.fromMs,
+            requestedUntilMs = query.untilMs,
+            observedMs = known,
+            issues = coverage.issues.filter { it.overlaps(query.fromMs, query.untilMs) },
+        )
     }
 
     private fun history(query: PerfQuery, filter: PerfQueryFilter, data: QueryData, history: PerfHistory) {
         val read = history.read(query.fromMs, query.untilMs)
         try {
-            data.coverage = read.coverage
+            data.coverage = read.coverage.copy(
+                issues = read.coverage.issues.filter { it.overlaps(query.fromMs, query.untilMs) },
+            )
             data.resolution = read.resolutionMs
             read.snapshots.forEach { accept(it, query, filter, data) }
             data.complete = read.coverage.observedMs >= query.untilMs - query.fromMs && data.coverage.issues.isEmpty()
@@ -57,7 +64,8 @@ internal class PerfAggregateQuery(private val sources: PerfQuerySources) {
 
     private fun accept(snapshot: PerfAggregateSnapshot, query: PerfQuery, filter: PerfQueryFilter, data: QueryData) {
         data.identities.add(snapshot.identity)
-        snapshot.coverage.issues.forEach { data.issue(it.code, it.source) }
+        snapshot.coverage.issues.filter { it.overlaps(query.fromMs, query.untilMs) }
+            .forEach { data.issue(it.code, it.source) }
         data.asOf = maxOf(data.asOf, snapshot.untilMs)
         snapshot.points.forEach { point ->
             if (!filter.scope(point.scope)) return@forEach

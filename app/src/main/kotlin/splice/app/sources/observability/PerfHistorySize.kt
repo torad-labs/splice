@@ -67,8 +67,8 @@ private const val HISTORY_POINT_OVERHEAD = 1_024L
 // Charge thirty-two bytes per histogram entry to cover boxed values and collection ownership.
 private const val BUCKET_BYTES = 32L
 
-// Charge 256 bytes per issue object before its code, source and detail strings.
-private const val HISTORY_ISSUE_OVERHEAD = 256L
+// Charge 320 bytes per issue object before strings, including references and boxed optional time bounds.
+private const val HISTORY_ISSUE_OVERHEAD = 320L
 
 // Charge 256 bytes per sink-status object in addition to its retained name.
 private const val SINK_BYTES = 256L

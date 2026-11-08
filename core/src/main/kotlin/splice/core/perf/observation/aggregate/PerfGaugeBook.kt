@@ -30,6 +30,18 @@ internal class PerfGaugeBook(private val cells: PerfCells, private val memory: P
         readings.forEach { (key, reading) -> target.integrate(key, reading.at, until, reading.value) }
     }
 
+    fun previewMinute(target: PerfCells, minute: Long, until: Long) {
+        val end = minOf(until, minute + PerfObservationLimits.AGGREGATE_MINUTE_MS)
+        readings.forEach { (key, reading) ->
+            val from = maxOf(minute, reading.at)
+            if (end > from) target.integrate(key, from, end, reading.value)
+        }
+    }
+
+    fun hasReadings(): Boolean = readings.isNotEmpty()
+
+    fun oldestReadingAt(): Long? = readings.values.minOfOrNull(Reading::at)
+
     fun clear() {
         memory.release(readings.size * PerfMemoryBudget.GAUGE_BYTES)
         readings = LinkedHashMap()

@@ -28,6 +28,7 @@ public class PerfAggregateStore(directory: Path, private val identity: PerfIdent
     private var closed = false
     private var durableUntil = 0L
     private var writable = false
+    private var unflushedPages = 0
     private var previousIdentity: PerfIdentity? = null
 
     init {
@@ -75,11 +76,9 @@ public class PerfAggregateStore(directory: Path, private val identity: PerfIdent
     }
 
     @Synchronized
-    override fun append(snapshot: PerfAggregateSnapshot): Boolean = append(snapshot, null)
-
-    private fun append(snapshot: PerfAggregateSnapshot, snapshotLease: PerfWorkBudget.Lease?): Boolean {
+    override fun append(snapshot: PerfAggregateSnapshot): Boolean {
         val phase = PerfWorkPhase.tryCheckpoint() ?: return rejectCheckpoint("phase_unavailable")
-        return phase.use { append(snapshot, snapshotLease, it) }
+        return phase.use { append(snapshot, null, it) }
     }
 
     /** The producer already awaits the phase before allocating its detached snapshot. */
@@ -88,12 +87,15 @@ public class PerfAggregateStore(directory: Path, private val identity: PerfIdent
         snapshot: PerfAggregateSnapshot,
         lease: PerfWorkBudget.Lease,
         phase: PerfWorkPhase.Lease,
-    ): Boolean = append(snapshot, lease, phase)
+        onSettled: PerfCheckpointSettlement = PerfCheckpointSettlement {},
+    ): Boolean = append(snapshot, lease, phase, onSettled, minutePage = true)
 
     private fun append(
         snapshot: PerfAggregateSnapshot,
         snapshotLease: PerfWorkBudget.Lease?,
         phase: PerfWorkPhase.Lease,
+        onSettled: PerfCheckpointSettlement = PerfCheckpointSettlement {},
+        minutePage: Boolean = false,
     ): Boolean {
         val charge = StoreAppendCharge(snapshot, openWriter())
         val earlyRejection = charge.rejection
@@ -129,7 +131,11 @@ public class PerfAggregateStore(directory: Path, private val identity: PerfIdent
             val transferred = writing
             val frozen = if (snapshotLease == null) PerfHistoryFormat.frozen(snapshot) else snapshot
             accepted = AsyncFileIo.submitFor(files.checkpoint, sink) {
-                transferred.use { lease.use { persist(frozen) } }
+                transferred.use {
+                    lease.use {
+                        persist(frozen, minutePage).also(onSettled::settle)
+                    }
+                }
             }
             accepted
         } finally {
@@ -159,17 +165,24 @@ public class PerfAggregateStore(directory: Path, private val identity: PerfIdent
 
     override fun status(): PerfSinkStatus = sink.status()
 
+    @Synchronized
+    internal fun reportUnflushedPages(count: Int) {
+        if (count <= 0) return
+        unflushedPages = count
+        issue(PerfIssue("checkpoint_pages_unflushed", HISTORY_SINK, count.toLong()))
+    }
+
     override fun close() {
         synchronized(this) { closed = true }
         if (!writable) return
         try {
             val settled = AsyncFileIo.awaitFile(files.checkpoint)
             val status = sink.status()
-            if (settled && status.failed + status.dropped == 0L) {
-                files.lock().use {
-                    files.checkpoint(PerfHistoryCheckpoint(identity, durableUntil, true, evidence()))
-                    writer.clean()
-                }
+            if (status.pending > 0L) return
+            val clean = settled && status.failed + status.dropped == 0L && unflushedPages == 0
+            files.lock().use {
+                files.checkpoint(PerfHistoryCheckpoint(identity, durableUntil, clean, evidence()))
+                if (clean) writer.clean()
             }
         } catch (_: IOException) {
             issue(PerfIssue("close_checkpoint_failed", HISTORY_SINK))
@@ -178,14 +191,16 @@ public class PerfAggregateStore(directory: Path, private val identity: PerfIdent
         }
     }
 
-    private fun persist(snapshot: PerfAggregateSnapshot): Boolean = try {
+    private fun persist(snapshot: PerfAggregateSnapshot, minutePage: Boolean): Boolean = try {
         files.lock().use {
             retention.maintain(clock()).forEach(::issue)
             val cutoff = PerfHistoryFormat.hour(clock() - PERF_DAY_MS)
             snapshot.points.groupBy { PerfHistoryFormat.minute(it.fromMs) }.forEach { (minute, points) ->
                 writeRetained(snapshot, minute, points, cutoff)
             }
-            if (snapshot.untilMs < durableUntil) issue(PerfIssue("clock_or_checkpoint_reordered", HISTORY_SINK))
+            if (!minutePage && snapshot.untilMs < durableUntil) {
+                issue(PerfIssue("clock_or_checkpoint_reordered", HISTORY_SINK))
+            }
             durableUntil = maxOf(durableUntil, snapshot.untilMs)
             retention.maintain(clock()).forEach(::issue)
             files.checkpoint(PerfHistoryCheckpoint(identity, durableUntil, issues = evidence()))

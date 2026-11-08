@@ -8,7 +8,18 @@ public data class PerfIssue(
     val source: String,
     val count: Long = 1,
     val detail: String? = null,
-)
+    /** Optional inclusive start of the event-time interval affected by this issue. */
+    val fromMs: Long? = null,
+    /** Optional exclusive end of the event-time interval affected by this issue. */
+    val untilMs: Long? = null,
+) {
+    /** Keeps legacy unbounded issues conservative while excluding bounded issues outside a query window. */
+    public fun overlaps(windowFromMs: Long, windowUntilMs: Long): Boolean = when {
+        fromMs == null || untilMs == null -> true
+        untilMs <= fromMs -> true
+        else -> fromMs < windowUntilMs && windowFromMs < untilMs
+    }
+}
 
 @Serializable
 public data class PerfSinkStatus(

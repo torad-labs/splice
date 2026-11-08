@@ -26,6 +26,21 @@ public class PerfAccumulator(identity: PerfIdentity) : PerfObserver, PerfAggrega
     private val gauges = PerfGaugeBook(cells, memory)
     private val scopes = PerfScopeBudget(memory)
     private val lifecycle = PerfLifecycle(cells, gauges, scopes, memory)
+    private val gaugePreview = PerfGaugePreview()
+    private val checkpointCoverage = object : PerfCheckpointCoverage {
+        override fun measure(view: PerfCells, from: Long, until: Long): PerfCoverage {
+            val observedFrom = maxOf(from, timeline.first)
+            val observedUntil = minOf(until, timeline.last + 1)
+            return PerfCoverage(
+                from,
+                until,
+                minOf(timeline.observed, (observedUntil - observedFrom).coerceAtLeast(0L)),
+                issues(view),
+                listOf(status()),
+            )
+        }
+    }
+    private val checkpointPages = PerfCheckpointPages(identity, cells, gauges, timeline, checkpointCoverage)
     private val seen = PerfRecentIds(memory)
     private val usageSeen = PerfRecentIds(memory)
     private var observed = 0L
@@ -57,10 +72,23 @@ public class PerfAccumulator(identity: PerfIdentity) : PerfObserver, PerfAggrega
         }
     }
 
+    /** Detaches one fair, bounded dirty-minute page for durable checkpointing. */
+    public fun checkpointPage(): PerfAggregateSnapshot? = synchronized(lock) {
+        if (closed) return null
+        if (accepted > 0L) gaugePreview.advance(cells, gauges, accepted, timeline.last)
+        checkpointPages.capture(accepted > 0L)
+    }
+
+    /** A dirty minute is cleared only after its exact page generation is durably written. */
+    public fun settleCheckpointPage(page: PerfAggregateSnapshot, durable: Boolean): Unit = synchronized(lock) {
+        checkpointPages.settle(page, durable)
+    }
+
     override fun close(): Unit = synchronized(lock) {
         if (!closed) {
             closed = true
             cells.clear()
+            checkpointPages.clear()
             gauges.clear()
             scopes.clear()
             lifecycle.clear()
@@ -110,6 +138,7 @@ public class PerfAccumulator(identity: PerfIdentity) : PerfObserver, PerfAggrega
             timeline.advance(safe.stamp)
         }
         cells.expire(timeline.last)
+        gaugePreview.advance(cells, gauges, accepted, timeline.last)
         if (!lifecycle.record(safe, at, terminalReservation)) return false
         accepted++
         val recordUsage = acceptUsage(safe)
@@ -145,7 +174,9 @@ public class PerfAccumulator(identity: PerfIdentity) : PerfObserver, PerfAggrega
         if (event.kind == PerfEventKind.REQUEST_ADMITTED && metric == "queue_wait_ms") return true
         val scope = scopes.bound(metric, valueScope(event))
         return if (PerfMetricRegistry.definition(metric)?.type == PerfMetricType.GAUGE) {
-            gauges.set(metric, scope, value, at)
+            val recorded = gauges.set(metric, scope, value, at)
+            if (at < timeline.last) gaugePreview.markLate(cells, at, timeline.last)
+            recorded
         } else {
             cells.add(metric, scope, at, value)
         }
@@ -175,12 +206,22 @@ public class PerfAccumulator(identity: PerfIdentity) : PerfObserver, PerfAggrega
             "clock_discontinuity" to timeline.clockChanges,
             "late_observation" to timeline.lateObservations,
             "late_observation_expired" to view.expiredInputs,
+            "checkpoint_page_expired" to view.expiredDirtyPages,
+            "checkpoint_page_empty" to view.emptyPages,
             "memory_budget_exhausted" to memory.rejected,
             "observation_dropped" to recordingDrops,
         )
         val issues = counts.filterValues { it > 0 }.map { (code, count) -> PerfIssue(code, ACCUMULATOR, count) }
         val retention = view.expiredBefore?.let {
-            listOf(PerfIssue("retention_expired", ACCUMULATOR, detail = "Intervals before $it expired"))
+            listOf(
+                PerfIssue(
+                    "retention_expired",
+                    ACCUMULATOR,
+                    detail = "Intervals before $it expired",
+                    fromMs = Long.MIN_VALUE,
+                    untilMs = it,
+                ),
+            )
         } ?: emptyList()
         return issues + retention + if (accepted == 0L) {
             listOf(
@@ -197,6 +238,10 @@ public class PerfAccumulator(identity: PerfIdentity) : PerfObserver, PerfAggrega
             0, null, if (accepted > 0) timeline.last else null,
         )
     }
+
+    /** Number of retained dirty pages still awaiting a durable checkpoint. */
+    public val pendingCheckpointPages: Int
+        get() = synchronized(lock) { cells.dirtyPages.count() }
 }
 
 private const val ACCUMULATOR = "accumulator"

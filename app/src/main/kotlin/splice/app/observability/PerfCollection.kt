@@ -84,9 +84,29 @@ internal class PerfCollection(
             )
             return
         }
-        // Accumulator snapshots detach points, histograms and coverage lists; the writer can take this sole copy.
-        lease.use { aggregate.appendOwned(accumulator.snapshot(), it, phase) }
+        // One minute page bounds each detached handoff while retaining the accumulator's full query snapshot.
+        lease.use {
+            val page = accumulator.checkpointPage() ?: return@use
+            var accepted = false
+            try {
+                accepted = aggregate.appendOwned(page, it, phase) { durable ->
+                    accumulator.settleCheckpointPage(page, durable)
+                }
+            } finally {
+                // A synchronous refusal or exception has no asynchronous completion callback.
+                if (!accepted) accumulator.settleCheckpointPage(page, durable = false)
+            }
+        }
     }
+
+    /** Drains the bounded dirty-minute backlog during shutdown under one shared deadline. */
+    fun checkpointFinal(phase: PerfWorkPhase.Lease) = PerfCheckpointDrain(
+        accumulator = accumulator,
+        aggregate = aggregate,
+        checkpointPath = paths.perfAggregatesDir.resolve(AGGREGATE_CHECKPOINT_FILE),
+        phase = phase,
+        checkpointPass = PerfCheckpointPass(::checkpoint),
+    ).drain()
 
     fun checkpointCoverage() { evidenceFiles.checkpointCoverage() }
 
@@ -129,6 +149,7 @@ internal class PerfCollection(
 
 // Reserve 2 MiB for snapshot construction; refusal records loss instead of borrowing unbounded memory.
 private const val TELEMETRY_SNAPSHOT_BYTES = 2L * 1_024 * 1_024
+private const val AGGREGATE_CHECKPOINT_FILE = "checkpoint.json"
 
 // Report at most sixty head sink statuses and mark truncation to bound the status projection.
 private const val MAX_DIAGNOSTIC_HEADS = 60

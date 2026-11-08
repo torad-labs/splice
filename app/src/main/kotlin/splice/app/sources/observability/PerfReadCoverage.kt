@@ -7,7 +7,7 @@ import splice.core.perf.observation.PerfSinkStatus
 
 /** Coverage is folded separately from display buckets, so coarsening never fills time gaps. */
 internal class PerfReadCoverage(private val from: Long, private val until: Long, evidence: List<PerfIssue>) {
-    private val issues = LinkedHashMap<Triple<String, String, String?>, PerfIssue>()
+    private val issues = LinkedHashMap<PerfReadIssueKey, PerfIssue>()
     private var issueBytes = 0L
     private var end = from
     private var covered = 0L
@@ -25,7 +25,7 @@ internal class PerfReadCoverage(private val from: Long, private val until: Long,
     }
 
     fun error(code: String) {
-        val key = Triple(code, HISTORY_SINK, null)
+        val key = PerfReadIssueKey(code, HISTORY_SINK, null, null, null)
         val count = (issues[key]?.count ?: 0L) + 1
         observe(PerfIssue(code, HISTORY_SINK, count))
     }
@@ -39,7 +39,8 @@ internal class PerfReadCoverage(private val from: Long, private val until: Long,
     }
 
     private fun observe(value: PerfIssue) {
-        val key = Triple(value.code, value.source, value.detail)
+        if (!value.overlaps(from, until)) return
+        val key = PerfReadIssueKey(value.code, value.source, value.detail, value.fromMs, value.untilMs)
         val existing = issues[key]
         if (existing != null) {
             issues[key] = existing.copy(count = maxOf(existing.count, value.count))
@@ -50,10 +51,19 @@ internal class PerfReadCoverage(private val from: Long, private val until: Long,
             issues[key] = value
             issueBytes += PerfHistorySize.issue(value)
         } else {
-            issues[Triple("coverage_issue_limit", HISTORY_SINK, null)] = PerfIssue("coverage_issue_limit", HISTORY_SINK)
+            issues[PerfReadIssueKey("coverage_issue_limit", HISTORY_SINK, null, null, null)] =
+                PerfIssue("coverage_issue_limit", HISTORY_SINK)
         }
     }
 }
+
+private data class PerfReadIssueKey(
+    val code: String,
+    val source: String,
+    val detail: String?,
+    val fromMs: Long?,
+    val untilMs: Long?,
+)
 
 // Keep at most sixty-four distinct coverage issues while duplicate codes accumulate counts.
 private const val MAX_READ_COVERAGE_ISSUES = 64

@@ -110,7 +110,7 @@ internal class PerfTelemetry(
     private fun finalCheckpoints(phase: PerfWorkPhase.Lease) = cleanup.finish(
         { cleanup.run("configuration_drain") { tracking.drain() } },
         { cleanup.run("configuration_checkpoint") { configuration.persist(clock()) } },
-        { cleanup.run("aggregate_checkpoint") { if (enabled) collection.checkpoint(phase) } },
+        { cleanup.run("aggregate_checkpoint") { if (enabled) collection.checkpointFinal(phase) } },
     )
 
     private fun closeReaders() = cleanup.finish({ cleanup.run("profiles") { inspection.stopProfiles() } })

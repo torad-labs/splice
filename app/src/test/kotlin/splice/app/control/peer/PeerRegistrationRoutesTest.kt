@@ -184,6 +184,9 @@ class PeerRegistrationRoutesTest {
             assertEquals("research", JsonScalars.str(JsonScalars.objectOrNull(Json, attached.second), "name"))
             assertEquals(original, store.get("research"))
             assertEquals(peerKey, Files.readString(store.keyFile("research")))
+        }
+        Files.delete(socket)
+        CodexStandInAppServer(socket, THREAD).use {
             val again = attach(client, key.get(), body(home.toString(), dir.toString(), null))
             assertEquals(HttpStatusCode.OK, again.first, again.second)
             assertEquals(1, store.list().size)

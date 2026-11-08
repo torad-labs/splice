@@ -15,10 +15,14 @@ import org.junit.jupiter.api.Test
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.Lift
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
+import splice.core.wire.NativeReply
+import splice.upstream.RetryNotice
+import splice.upstream.retry.LimitLeft
 import splice.upstream.retry.RateLimitCooldown
 import java.util.concurrent.atomic.AtomicReference
 
@@ -227,9 +231,45 @@ class AccountPoolPinTest {
         assertSame(primary, pool.chosen("own").account, "a pin never wedges a session onto an exhausted login")
     }
 
+    @Test
+    fun `the first bare provider limit releases use now and lets a free login answer`() {
+        val fixture = Fixture()
+        val limited = fixture.account("primary", primary = true)
+        val healthy = fixture.account("healthy")
+        val pool = fixture.pool(limited, healthy)
+        pool.pin("primary")
+
+        limited.cooldown.observeLimit()
+        limited.cooldown.limitLeft(
+            LimitLeft(Lift.Unstated, null, null, NativeReply("temporary rate limit", emptyMap()), true),
+            RetryNotice {},
+        )
+
+        assertNull(pool.pinned(), "Use now lets go on the first provider limit reading")
+        assertSame(healthy, pool.chosen("new-session").account)
+    }
+
+    @Test
+    fun `a pin pressed after a limit stays until another identical limit is read`() {
+        val fixture = Fixture()
+        val account = fixture.account("primary", primary = true)
+        val pool = fixture.pool(account, fixture.account("healthy"))
+        val refusal = LimitLeft(Lift.Unstated, null, null, null, true)
+        account.cooldown.observeLimit()
+        account.cooldown.limitLeft(refusal, RetryNotice {})
+        pool.pin("primary")
+        fixture.elapsed = 30_000L
+        assertEquals("primary", pool.pinned(), "cooldown expiry is not a new provider reading")
+
+        account.cooldown.observeLimit()
+        account.cooldown.limitLeft(refusal, RetryNotice {})
+
+        assertNull(pool.pinned(), "the same reply read again is new evidence")
+    }
+
     private class Fixture {
         val now = AtomicReference(1_000_000L)
-        private var elapsed = 0L
+        var elapsed = 0L
 
         fun pool(vararg accounts: PoolAccount): AccountPool = AccountPool(accounts.toList(), WallClock(now::get))
 

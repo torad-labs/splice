@@ -45,10 +45,10 @@ class TurnKnownEndTest {
     private val apiError = FailureCause.Provider.Unrecognized(clientError = false)
 
     @Test
-    fun `an unstated pre-content rate limit is terminal while an api error is overloaded`() {
+    fun `an unnamed pre-content rate limit and an api error stay retryable`() {
         // Claude Code 2.1.257 retries an IN-BAND error only when the body carries overloaded_error (a 429/529 is
-        // retried by STATUS). An API error remains retryable; an unstated limit has no known reset to retry for.
-        assertEquals(ErrorType.INVALID_REQUEST, beforeContent(rateLimit))
+        // retried by STATUS). Neither an API error nor a bare throttle establishes a permanent verdict.
+        assertEquals(ErrorType.OVERLOADED, beforeContent(rateLimit))
         assertEquals(ErrorType.OVERLOADED, beforeContent(apiError))
     }
 

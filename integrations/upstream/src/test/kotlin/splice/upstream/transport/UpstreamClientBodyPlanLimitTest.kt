@@ -119,7 +119,7 @@ class UpstreamClientBodyPlanLimitTest {
     }
 
     @Test
-    fun `an unstated 429 with no named window ends after one attempt and keeps its words`() = runTest {
+    fun `an unstated 429 with no named window ends after bounded retries and keeps its words`() = runTest {
         val calls = AtomicInteger()
         val burst = """{"error":{"type":"rate_limit_exceeded","message":"slow down"}}"""
         val engine = MockEngine {
@@ -132,7 +132,7 @@ class UpstreamClientBodyPlanLimitTest {
             client.posted(ctx(bodyReader, mutableListOf()), "{}") { "unreachable" }
         }
 
-        assertEquals(1, calls.get(), "an unstated limit does not start the burst schedule")
+        assertTrue(calls.get() in 2..5, "an unstated throttle has a bounded retry budget")
         assertEquals(burst, failure.evidence.body)
         assertEquals(0L, client.planHoldForMs)
         assertNull(client.planHold)

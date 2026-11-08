@@ -104,9 +104,9 @@ internal class PinBook {
 
     private fun pinnedLabels(): Set<String> = sessions.values.toSet() + listOfNotNull(head)
 
-    /** The limits [account] reads at [at] that a pin lets go on. A short rate limit is none: a turn waits it out on the
-     *  same login. */
+    /** Every new provider limit reading releases a pin, including a short throttle with no stated reset. */
     private fun limits(account: PoolAccount, at: Long): Set<String> = buildSet {
+        account.cooldown.limitReading?.let { add("rate-limit-read:$it") }
         account.cooldown.planHold.live()?.let { add(WHOLE_LOGIN_SPENT) }
         account.cooldown.planHold.models().forEach { add("week of ${it.model}") }
         if (account.quotaHeld) add(PROVIDER_HELD)

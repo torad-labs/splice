@@ -440,7 +440,7 @@ class SpliceLinesPropertyTest {
             // A block's line says its step in splice's words, so it quotes nobody either.
             val blocked = (case.cause as? FailureCause.Provider.Forbidden)?.block != null
             val limited = case.cause as? FailureCause.Provider.Limited
-            val quotes = (case.cause::class in QUOTED && !blocked) || limited?.mayWaitForReset == false
+            val quotes = (case.cause::class in QUOTED && !blocked) || limited?.isExhausted == true
             if (!quotes) assertFalse(spoken in line.text, "quoted by a ${case.cause}: ${line.text}")
             val subscription = (case.cause as? FailureCause.Provider.NeedsPayment)?.subscription == true
             if (quotes && !subscription) assertTrue(spoken in line.text, "${case.cause} quotes its words: ${line.text}")

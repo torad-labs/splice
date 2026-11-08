@@ -193,31 +193,25 @@ class ForwardedRateLimitTest {
         }
     }
 
-    // Neither buffered nor streamed callers get a retry schedule from an unstated limit. The refusal does not hold
-    // another credential, which remains usable immediately.
+    // A bare throttle stays retryable in both wire modes and never holds another caller's credential.
     @Test
-    fun `a headerless 429 ends promptly without holding another login`() = runBlocking {
+    fun `a headerless throttle stays retryable without holding another login`() = runBlocking {
         for (stream in listOf(false, true)) {
             val rig = LimitRig(directory.resolve(stream.toString()), limits = false)
             rig.head.start()
             try {
                 val (status, body, headers) = rig.turn("synthetic-refused", stream, wallMs = 20_000L)
                 if (stream) {
-                    // The unstated limit ends before any SSE frame commits the response. PendingSse
-                    // therefore returns the same pre-stream JSON refusal as the buffered request.
-                    assertEquals(HttpStatusCode.BadRequest, status)
-                    val error = Json.parseToJsonElement(body).jsonObject.getValue("error").jsonObject
-                    assertEquals("invalid_request_error", error.getValue("type").jsonPrimitive.content)
-                    val line = error.getValue("message").jsonPrimitive.content
-                    assertTrue(line.startsWith("[splice] ") && "did not say when it resets" in line, line)
+                    assertEquals(HttpStatusCode.OK, status)
+                    assertTrue("overloaded_error" in body, body)
+                    assertFalse("invalid_request_error" in body, body)
                 } else {
-                    assertEquals(HttpStatusCode.BadRequest, status)
+                    assertEquals(HttpStatusCode.TooManyRequests, status)
                     val error = Json.parseToJsonElement(body).jsonObject.getValue("error").jsonObject
-                    assertEquals("invalid_request_error", error.getValue("type").jsonPrimitive.content)
+                    assertEquals("rate_limit_error", error.getValue("type").jsonPrimitive.content)
                     val line = error.getValue("message").jsonPrimitive.content
-                    assertTrue(line.startsWith("[splice] ") && "did not say when it resets" in line, line)
+                    assertTrue(line.startsWith("[splice] ") && "still limiting requests" in line, line)
                 }
-                assertEquals(1, rig.refused.size, "the terminal response does not retry the provider")
                 assertEquals(
                     20_000L,
                     rig.upstream.rateLimitedForMs,

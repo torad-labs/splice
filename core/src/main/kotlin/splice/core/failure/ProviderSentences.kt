@@ -54,7 +54,7 @@ internal class ProviderSentences(private val spoken: Spoken) {
     private fun limited(cause: FailureCause.Provider.Limited, head: String, ongoing: Boolean): Said {
         val window = spoken.window(cause.window)
         val reached = if (window == null) "$head is at its usage limit" else "$head reached $window"
-        if (!cause.mayWaitForReset) {
+        if (cause.isExhausted) {
             val what = if (cause.lift is Lift.Unstated) "$reached and did not say when it resets" else reached
             return Said(what, cause.said)
         }
@@ -65,7 +65,7 @@ internal class ProviderSentences(private val spoken: Spoken) {
                 val what = if (window == null) "$reached until $reset" else "$reached, which resets $reset"
                 Said(what, next = Next.Resend(SEND_AFTER))
             }
-            Lift.Unstated -> Said("$reached and did not say when it resets", next = Next.Resend(SEND_LATER))
+            Lift.Unstated -> Said("$head is still limiting requests", next = Next.Resend(SEND_LATER))
         }
     }
 

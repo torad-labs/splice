@@ -10,7 +10,7 @@
 // provider naming a plan window spent (the whole login's, or one model's week), the provider holding the account, or
 // a usage reading at 100%. The console shows no pin, a restart does not bring it back, and turns go where the pool's
 // own policy sends them. A limit the login already read at the press keeps the pin (Use now on a login refused Fable
-// alone still serves Opus, Nov 3), and so does a short rate limit, which a turn waits out on the same login. Driven
+// alone still serves Opus, Nov 3). A newly read short rate limit releases it too. Driven
 // through the switch route the console posts to, over the real pool, the projection the daemon builds and the pin file
 // a restart reads.
 package splice.app.head
@@ -152,6 +152,19 @@ class UseNowPinLetsGoTest {
 
     /** The pin a restart reads back. */
     private fun savedPins(): SavedPins = AccountPinStore(state.resolve(ACCOUNT_PINS_FILE)).pins(HEAD)
+
+    @Test
+    fun `a short provider throttle clears the console pin and cannot return after restart`() {
+        val daemon = Daemon()
+        daemon.useNow("three")
+        assertEquals("three", daemon.shownPin())
+
+        daemon.accounts.getValue("three").cooldown.observeLimit()
+
+        assertNull(daemon.shownPin())
+        assertNull(savedPins().head)
+        assertNull(Daemon().shownPin())
+    }
 
     /** The command's saved order puts eight first, so the pool's own policy is known: eight serves unless a pin or a
      *  hold says otherwise. */

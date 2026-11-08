@@ -291,7 +291,7 @@ class UpstreamClientRateLimitTest {
     }
 
     @Test
-    fun `a non-pooled bare 429 with no stated reset ends at once and arms`() = runTest {
+    fun `a non-pooled bare 429 with no stated reset ends after bounded retries and arms`() = runTest {
         val calls = AtomicInteger()
         val capture = Capture()
         val engine = MockEngine {
@@ -305,8 +305,7 @@ class UpstreamClientRateLimitTest {
             clock = ElapsedClock { 0L },
         )
         val failure = assertEnds<UpstreamFailed> { postOnce(client) }
-        assertEquals(1, calls.get(), "an unknown reset is terminal")
-        assertEquals(emptyList<Long>(), capture.waits, "an unknown reset is not burst-retried")
+        assertEquals(listOf(2_000L, 4_000L, 8_000L, 15_000L), capture.waits)
         assertEquals(429, failure.evidence.status)
         assertEquals("slow down", failure.evidence.body)
         assertTrue(client.rateLimitedForMs > 0L, "exhaustion arms the horizon")
@@ -428,38 +427,25 @@ class UpstreamClientRateLimitTest {
         assertEquals(6, calls.get(), "a past date clamps to 0 — no cooldown, no 20s fallback")
     }
 
-    // A terminal limit is retained only for the existing bounded cooldown: it does not add a status/body layer or
-    // extend the horizon, and the provider is asked again after expiry.
-
     @Test
-    fun `an unknown 429 reuses its cause for the bounded cooldown then re-probes after expiry`() = runTest {
+    fun `a bare throttle never caches a terminal verdict for the next turn`() = runTest {
         var now = 0L
-        val calls = AtomicInteger()
+        var available = false
         val engine = MockEngine {
-            calls.incrementAndGet()
-            respond("""{"detail":"Rate limit exceeded"}""", HttpStatusCode.TooManyRequests, headersOf())
+            if (available) {
+                respond("answer", HttpStatusCode.OK)
+            } else {
+                respond("""{"detail":"Rate limit exceeded"}""", HttpStatusCode.TooManyRequests, headersOf())
+            }
         }
         val client = clientOver(engine, clock = { now })
         val first = assertEnds<UpstreamFailed> { postOnce(client) }
-        assertEquals(1, calls.get())
+        assertEquals(429, first.evidence.status)
         assertEquals(20_000L, client.rateLimitedForMs, "no Retry-After: the 20s default")
-        val cached = assertEnds<UpstreamFailed> { postOnce(client) }
-        assertEquals(1, calls.get(), "the active bounded cooldown serves the cached terminal cause")
-        assertEquals(first.cause, cached.cause)
-        assertEquals(0, cached.layers)
-        assertEquals(null, cached.evidence.status)
-        assertEquals(null, cached.evidence.body)
-        assertEquals(null, cached.evidence.retryAfterMs)
-        assertEquals(first.cause.said?.text, cached.evidence.said)
-        assertEquals(20_000L, client.rateLimitedForMs, "a cached result does not extend the cooldown")
-
-        now += 20_000
+        available = true
+        now += 1L
+        assertEquals("ok", postOnce(client), "recovered quota is usable before the steering cooldown expires")
         assertEquals(0L, client.rateLimitedForMs)
-        val reprobe = assertEnds<UpstreamFailed> { postOnce(client) }
-        assertEquals(2, calls.get(), "expiry permits exactly a fresh upstream probe")
-        assertEquals(429, reprobe.evidence.status)
-        assertEquals("""{"detail":"Rate limit exceeded"}""", reprobe.evidence.body)
-        assertEquals(20_000L, client.rateLimitedForMs, "the fresh refusal starts a new bounded horizon")
     }
 
     @Test

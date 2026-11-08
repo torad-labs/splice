@@ -46,7 +46,9 @@ Source: `Knob.kt` 219-245; `RetryPolicy.kt` 125-146, 233, 248-274; `integrations
 
 | error | plan |
 |---|---|
-| 429 with `Retry-After` | wait that long, at most 15 s, then retry while attempts remain. 15 s when the header is absent |
+| bare 429 without a reset or quota window | move to an available pooled login before content; otherwise retry after 2, 4, 8 and 15 s within the turn deadline, then end retryably |
+| named exhausted window without a reset, or billing-cycle limit | move to an available pooled login before content; otherwise end promptly with the provider's words, without an indefinite hold |
+| 429 with a stated reset | use the bounded reset/warm-login wait policy, moving to another eligible login where appropriate |
 | 429 that names a spent plan window (5-hour or 7-day) | no retry. The account is held until the reset it named. A pooled head moves the turn to a free login before any answer reaches Claude Code |
 | bare 429 after retries run out | the account is held 20 s without inventing a reset. The shared hold never exceeds 120 s |
 | grok spending-limit 403, any 402 | treated as a 429 by every layer |

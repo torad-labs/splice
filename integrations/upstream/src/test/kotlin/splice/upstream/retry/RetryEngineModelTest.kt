@@ -100,13 +100,19 @@ internal object PlanModel {
     private fun fresh(met: Met, ledger: RetryLedger): RetryStep =
         if (ledger.count(Spend.FRESH_REISSUE) < 2) again(How.SAME) else end(met)
 
-    /** Unstated limits and billing-cycle limits are provider verdicts; only finite waits outside that class retry. */
+    /** Named exhaustion can move to a free login. A bare throttle moves first, or spends a bounded burst. */
     private val limited = Row { met, ledger ->
         val cause = met.cause as FailureCause.Provider.Limited
         val ms = waitMs(cause.lift)
         val lift = cause.lift
         when {
-            lift is Lift.Unstated || cause.window == LimitWindow.BILLING_CYCLE -> end(met)
+            cause.window == LimitWindow.BILLING_CYCLE || (lift is Lift.Unstated && cause.window != null) ->
+                switchOr(met, end(met))
+            lift is Lift.Unstated -> {
+                val n = ledger.count(Spend.BURST)
+                val retry = if (n < 4) again(How.SAME, listOf(2_000L, 4_000L, 8_000L, 15_000L)[n]) else end(met)
+                switchOr(met, retry)
+            }
             lift is Lift.At && (ms ?: 0L) > FLOOR -> stated(met, lift, ms ?: 0L)
             else -> bursts(met, ledger, ms?.coerceAtLeast(0L) ?: 0L, Probes.UNSTATED)
         }
@@ -439,7 +445,7 @@ class RetryEngineModelTest {
     }
 
     @Test
-    fun `unstated and billing-cycle limits end without a resend while finite stated limits keep their plan`() {
+    fun `exhausted windows switch before content but end when no sibling can answer`() {
         val at = Position(Moment.BEFORE_COMMIT, streamBegan = false)
         val facts = TurnFacts(
             pooled = true,
@@ -460,11 +466,21 @@ class RetryEngineModelTest {
             LimitWindow.FIVE_HOUR,
         )
 
-        assertEquals(RetryStep.End(unstated), RetryEngine.next(unstated, at, RetryLedger(), facts, NOW))
+        assertEquals(RetryStep.SwitchLogin, RetryEngine.next(unstated, at, RetryLedger(), facts, NOW))
         assertEquals(
-            RetryStep.End(billingCycleFinite),
+            RetryStep.SwitchLogin,
             RetryEngine.next(billingCycleFinite, at, RetryLedger(), facts, NOW),
         )
+        for (cause in listOf(unstated, billingCycleFinite)) {
+            assertEquals(
+                RetryStep.End(cause),
+                RetryEngine.next(cause, at, RetryLedger(), facts.copy(freeLogin = false), NOW),
+            )
+            assertEquals(
+                RetryStep.End(cause),
+                RetryEngine.next(cause, Position(Moment.MID_CONTENT, streamBegan = true), RetryLedger(), facts, NOW),
+            )
+        }
         assertEquals(
             RetryStep.Again(300_000L, How.SAME),
             RetryEngine.next(shortFinite, at, RetryLedger(), facts, NOW),

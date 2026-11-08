@@ -22,21 +22,21 @@ import splice.upstream.retry.Spend
 /** A limit, an overload and a spent account: waited, moved or held by what the provider stated. */
 internal object RetryLimits {
     /** A burst: waited 2, 4, 8 and 15 s, and never less than [soonMs], a time stated inside the floor, which is
-     *  waited out rather than held. Then the turn moves to a free login, or holds with nothing stated to go on and
-     *  [probes] to find the lift. */
-    private fun bursts(turn: RetryTurn, soonMs: Long, probes: Probes): RetryStep {
+     *  waited out rather than held. When these waits are spent, the caller supplies the bounded ending or hold. */
+    private fun bursts(turn: RetryTurn, soonMs: Long, after: RetryStep): RetryStep {
         val n = turn.ledger.count(Spend.BURST)
         val waitMs = maxOf(soonMs, minOf(BURST_FIRST_WAIT_MS shl n, BURST_WAIT_CAP_MS))
-        return if (n < BURST_WAITS) turn.wait(waitMs) else turn.switchOr(RetryStep.Hold(null, probes))
+        return if (n < BURST_WAITS) turn.wait(waitMs) else turn.switchOr(after)
     }
 
     fun limited(turn: RetryTurn, cause: FailureCause.Provider.Limited): RetryStep {
-        if (!cause.mayWaitForReset) return turn.end
+        if (cause.isExhausted) return turn.switchOr(turn.end)
         val lift = cause.lift
         val stated = turn.pastFloor(lift)
         return when {
+            lift is Lift.Unstated -> turn.switchOr(bursts(turn, 0L, turn.end))
             stated != null -> stated(turn, stated)
-            else -> bursts(turn, turn.insideFloor(lift) ?: 0L, Probes.UNSTATED)
+            else -> bursts(turn, turn.insideFloor(lift) ?: 0L, RetryStep.Hold(null, Probes.UNSTATED))
         }
     }
 
@@ -60,7 +60,7 @@ internal object RetryLimits {
         val soon = turn.insideFloor(lift)
         return when {
             stated != null -> stated(turn, stated)
-            soon != null -> bursts(turn, soon, Probes.CREDIT)
+            soon != null -> bursts(turn, soon, RetryStep.Hold(null, Probes.CREDIT))
             else -> turn.switchOr(RetryStep.Hold(null, Probes.CREDIT))
         }
     }

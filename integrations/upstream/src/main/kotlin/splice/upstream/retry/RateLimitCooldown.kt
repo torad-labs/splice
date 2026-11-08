@@ -3,7 +3,7 @@
 // The shared 429 horizon (HD-25). Each pooled account owns one; legacy heads use the UpstreamClient's
 // instance. A turn that gives up on a 429 marks its login limited here, and the mark only steers
 // account selection and names the limit on status. Finite temporary limits still ask the provider on each
-// turn (Marcos, Oct 26). A limit with no stated reset, or a billing-cycle limit, instead refuses promptly with
+// turn (Marcos, Oct 26). A named exhausted window with no reset, or a billing-cycle limit, refuses promptly with
 // its stored cause during this same bounded horizon (Nov 7); expiry permits an explicit new turn to re-probe.
 // Before Oct 26 this horizon
 // made every later turn on the login sleep or fail fast with a 429 the provider never sent, and on
@@ -45,6 +45,7 @@ import splice.core.util.WallClock
 import splice.core.wire.NativeReply
 import splice.upstream.RetryNotice
 import splice.upstream.StreamStart
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -74,6 +75,16 @@ public class RateLimitCooldown public constructor(
     private val holds = ProviderHolds(store)
     private var terminalCause: FailureCause.Provider.Limited? = null
     private var terminalUntilMs = 0L
+
+    /** Identity of the last provider limit reading, independent of cooldown expiry and wall-clock changes. */
+    @Volatile
+    internal var limitReading: UUID? = null
+        private set
+
+    /** Called once for a classified provider refusal, before choosing whether to wait or move to another login. */
+    public fun observeLimit() {
+        limitReading = UUID.randomUUID()
+    }
 
     /** A terminal refusal from this credential, only while its existing cooldown is active. Never persisted. */
     internal val terminalLimit: FailureCause.Provider.Limited?
@@ -249,7 +260,7 @@ public class RateLimitCooldown public constructor(
             onRetry("429 Retry-After ${pushback}ms exceeds the same-account wait ceiling; account unavailable")
         }
         arm(pushback)
-        terminalCause = left.cause?.takeUnless { it.mayWaitForReset }
+        terminalCause = left.cause?.takeIf { it.isExhausted }
         // Later unrelated arms cannot resurrect this refusal once its own bounded horizon has expired.
         terminalUntilMs = rateLimitedUntilMs.get()
         planned

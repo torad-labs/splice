@@ -121,12 +121,14 @@ private object Section11 {
         -> Fam.P
         is FailureCause.Provider.Unrecognized -> permanent(cause.clientError)
         is FailureCause.Provider.ReasoningCut -> null
-        is FailureCause.Provider.Limited ->
-            permanent(cause.lift is Lift.Unstated || cause.window == LimitWindow.BILLING_CYCLE)
+        is FailureCause.Provider.Limited -> limited(cause)
         is FailureCause.Provider.NeedsPayment, is FailureCause.Provider.Overloaded,
         is FailureCause.Provider.ServerError, is FailureCause.Provider.Empty, is FailureCause.Provider.ToolTear,
         -> Fam.R
     }
+
+    private fun limited(cause: FailureCause.Provider.Limited): Fam =
+        permanent((cause.lift is Lift.Unstated && cause.window != null) || cause.window == LimitWindow.BILLING_CYCLE)
 
     private fun splice(cause: FailureCause.Splice): Fam? = when (cause) {
         is FailureCause.Splice.NoLogin -> Fam.LOGIN

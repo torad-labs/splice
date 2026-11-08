@@ -196,11 +196,7 @@ public class UpstreamClient(
                     // The vendor's body route moves with the place credentials just chose (VendorRoute.body).
                     attempt(ctx, state.routedBody(ctx, body, request::body), state, block, auth)
                 } else {
-                    val evidence = FailureEvidence(
-                        "the credential's bounded cooldown retains a terminal limit",
-                        said = cause.said?.text,
-                    )
-                    LoopStep.Done(UpstreamPost.Ended(UpstreamFailed(cause, evidence, state.ledger.attempts)))
+                    steps.retainedLimit(cause, ctx, state)
                 }
             }
             LoginAnswer.Missing -> LoopStep.Done(UpstreamPost.Ended(UpstreamAuthMissing()))

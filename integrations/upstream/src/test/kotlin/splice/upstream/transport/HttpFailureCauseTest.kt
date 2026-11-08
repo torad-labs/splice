@@ -102,11 +102,11 @@ class HttpFailureCauseTest {
         assertInstanceOf(FailureCause.Provider.Limited::class.java, failure.cause)
 
     @Test
-    fun `a 429 that states no reset says so and ends after one attempt`() = runTest {
+    fun `a 429 that states no reset says so after bounded retries`() = runTest {
         val ended = end(TOO_MANY_REQUESTS, """{"error":{"message":"Rate limit reached for this plan."}}""")
 
         assertEquals(Lift.Unstated, limited(ended.failure).lift)
-        assertEquals(1, ended.calls)
+        assertTrue(ended.calls in 2..5)
     }
 
     @Test

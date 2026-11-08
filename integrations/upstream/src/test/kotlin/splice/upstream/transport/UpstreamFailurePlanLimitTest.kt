@@ -3,7 +3,7 @@
 // to the turn (RetryPolicy.giveUp returns it for each turn that meets the 429; since Oct 26 no turn is held behind
 // another's, so every turn meets its own). Before this the window was dropped into the body text and the turn ended
 // error:upstream-failed, "wait a moment and retry", for a plan spent until a day six days out (Marlin, f7f1e9308;
-// daemon.log:39520). A 429 that names no reset has no basis for an automatic retry.
+// daemon.log:39520). A bare 429 gets bounded retries without inventing a plan window.
 package splice.upstream.transport
 
 import io.ktor.client.HttpClient
@@ -14,6 +14,7 @@ import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
@@ -119,7 +120,7 @@ class UpstreamFailurePlanLimitTest {
     }
 
     @Test
-    fun `an unstated 429 ends without a retry and carries no window`() = runTest {
+    fun `an unstated 429 ends after bounded retries and carries no invented window`() = runTest {
         val calls = AtomicInteger()
         val engine = MockEngine {
             calls.incrementAndGet()
@@ -128,7 +129,7 @@ class UpstreamFailurePlanLimitTest {
 
         val failure = assertEnds<UpstreamFailed> { client(engine).posted(ctx(bodyReader), "{}") { "unreachable" } }
 
-        assertEquals(1, calls.get(), "an unstated limit does not start the burst schedule")
+        assertTrue(calls.get() in 2..5, "an unstated throttle has a bounded retry budget")
         assertEquals(429, failure.evidence.status)
         assertNull(failure.planLimit)
     }

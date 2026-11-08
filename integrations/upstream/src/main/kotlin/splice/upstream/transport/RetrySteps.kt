@@ -7,6 +7,7 @@ package splice.upstream.transport
 
 import splice.core.auth.RefreshOutcome
 import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
 import splice.core.failure.LoginOwner
 import splice.core.failure.Moment
 import splice.core.failure.Outlast
@@ -38,6 +39,18 @@ internal class RetrySteps(
 ) {
     private val endings = RetryEndings()
 
+    /** A stored exhausted-window refusal still permits a safe pool handoff. Reading it never renews its horizon. */
+    fun retainedLimit(cause: FailureCause.Provider.Limited, ctx: PostContext, state: RetryState): LoopStep<Nothing> {
+        val evidence =
+            FailureEvidence("the credential's bounded cooldown retains a terminal limit", said = cause.said?.text)
+        val failure = UpstreamFailed(cause, evidence, state.ledger.attempts)
+        val moment = if (ctx.recovery.clientFrameEmitted()) Moment.MID_CONTENT else Moment.BEFORE_COMMIT
+        val step = next(cause, Position(moment, streamBegan = false), ctx, state)
+        return LoopStep.Done(
+            if (step == RetryStep.SwitchLogin) UpstreamPost.Refused(failure) else UpstreamPost.Ended(failure),
+        )
+    }
+
     /** An answer that failed, as the head's reader read it. The dialect's own repair of a request it built comes
      *  first, once per turn (the engine's amend budget): stale reasoning left out, a tool surface the provider refused
      *  dropped. Otherwise the engine says what follows, from where the turn stood: before the client saw a frame, or
@@ -48,6 +61,7 @@ internal class RetrySteps(
         bodyJson: String,
         state: RetryState,
     ): LoopStep<Nothing> {
+        if (failed.limited) state.cooldown.observeLimit()
         state.lastErr = failed
         state.lastThrown = null
         state.lastTear = null

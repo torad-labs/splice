@@ -48,8 +48,10 @@ public sealed class FailureCause {
             override val permanent: Boolean get() = true
             override val resumeAt: Instant? get() = (lift as? Lift.At)?.at
 
-            /** An unstated reset or a billing-cycle limit ends the turn instead of promising a short recovery. */
-            public val mayWaitForReset: Boolean get() = lift is Lift.At && window != LimitWindow.BILLING_CYCLE
+            /** A named spent window without a reset, or a billing cycle, cannot recover by a short retry.
+             *  A bare 429 does not establish quota exhaustion. Another pooled login may still answer either kind. */
+            public val isExhausted: Boolean
+                get() = window == LimitWindow.BILLING_CYCLE || (lift is Lift.Unstated && window != null)
         }
 
         /** The provider is over capacity: a 502, or a code that spells an overload. */

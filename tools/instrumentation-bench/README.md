@@ -83,6 +83,45 @@ status codes/classes, timings and identities, never request bodies, response
 content, headers, tool inputs, or raw error text. Do not copy unrelated daemon
 logs into receipts.
 
+## Storage between trials
+
+Benchmark storage is separate from Splice's operational requirements. The old
+task coordinator required 128 GiB free whenever a plan selected more than one
+scenario. That was a fixed preflight policy, not a measured minimum or a formula
+derived from the workload. Do not report it as a product requirement.
+
+Run roles serially and archive each completed role's `desk-*` directories after
+the runner and its entire process group have exited. Keep all warm repetitions
+on their original desk until that role finishes. Compression, verification and
+cleanup belong outside the measured intervals, with the same treatment for both
+baseline and candidate. Production trace settings, offered load, repetitions and
+measured disk totals stay unchanged.
+
+Keep `manifest.json`, `receipt.json`, `samples.jsonl`, `observations.json`,
+`summary.json`, profiles and the frozen artifacts directly available. The
+analyzer uses these files; it does not need expanded desk directories. Archive
+the remaining desk data losslessly and verify it before removing the originals.
+Worker JAR copies may instead reference the retained frozen artifact only after
+their actual bytes match its SHA-256. Recovery must restore those exact bytes.
+Retain failed trials for diagnosis and stop before starting another trial when
+archival or process cleanup fails.
+
+This makes expanded storage depend on one active role run instead of every
+completed run. Archives and measurement files still accumulate. Record their
+actual sizes and keep the existing 64 GiB check before each proxy launch; do not
+assume a compression ratio or claim that a fixed amount of free space is enough
+for the entire matrix. Retained-state growth studies keep their state throughout
+the study and are not subject to between-repetition cleanup.
+
+`archiveRun()` and `verifyArchive()` in `archive.ts` implement this storage seam;
+the coordinator supplies the exited runner's process group and the pinned
+artifact. The archive receipt reports original desk bytes, compressed payload
+bytes and bytes deduplicated against the frozen JAR separately. Compression does
+not rewrite the run's disk measurements. `restoreArchive()` verifies the archive
+and restores file contents from compressed payloads and the retained artifact.
+Archives remain private task evidence, subject to the same sharing restrictions
+as the original desk.
+
 ## Workload definitions
 
 Use the complete `fixtures/steady.json` manifest as the starting point. The

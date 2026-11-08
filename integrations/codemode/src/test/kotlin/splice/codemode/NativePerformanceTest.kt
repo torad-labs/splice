@@ -7,8 +7,12 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import splice.core.perf.observation.PerfEventKind
 import splice.core.perf.observation.PerfIdentity
 import splice.core.perf.observation.PerfObservation
@@ -24,6 +28,58 @@ import splice.upstream.codemode.CodeModeStep
 import java.util.concurrent.CopyOnWriteArrayList
 
 class NativePerformanceTest {
+    @ParameterizedTest
+    @ValueSource(strings = ["throw new Error('observed failure');", "const = ;"])
+    fun `script failures are measured as failed tools after a successful RPC`(source: String) = nativeProcessTest {
+        val events = CopyOnWriteArrayList<PerfObservation>()
+        val published = CompletableDeferred<Unit>()
+        val exporter = NativePerformanceExporter()
+        val request = recorder(events, published, 1)
+            .request(PerfScope(head = "codex"), MonoClock.nowMs(), System.currentTimeMillis())
+        NativeCodeModeRuntime(traceExporter = exporter).use { runtime ->
+            val cell = withContext(CodeModePerfContext(request)) {
+                runtime.startSession("failed-script", source, emptySet())
+            }
+            assertNotNull((cell.advance() as CodeModeStep.Completed).error)
+            request.finish("good")
+        }
+        published.await()
+        val finished = events.filter { it.kind == PerfEventKind.TOOL_FINISHED }
+        assertEquals(listOf("bad"), finished.map { it.scope.outcome })
+        assertPublishedSpans(finished, exporter)
+    }
+
+    @Test
+    fun `a caught callback failure stays failed while its script succeeds`() = nativeProcessTest {
+        val events = CopyOnWriteArrayList<PerfObservation>()
+        val published = CompletableDeferred<Unit>()
+        val exporter = NativePerformanceExporter()
+        val request = recorder(events, published, 2)
+            .request(PerfScope(head = "codex"), MonoClock.nowMs(), System.currentTimeMillis())
+        NativeCodeModeRuntime(traceExporter = exporter).use { runtime ->
+            val cell = withContext(CodeModePerfContext(request)) {
+                runtime.startSession(
+                    "caught-callback",
+                    "try { await tools.Read({}); } catch (_) { text('recovered'); }",
+                    setOf("Read"),
+                )
+            }
+            val call = (cell.advance() as CodeModeStep.Calls).calls.single()
+            val completed = cell.advance(listOf(CodeModeResult(call.id, "denied", isError = true)))
+                as CodeModeStep.Completed
+            assertNull(completed.error)
+            assertEquals("recovered", completed.output)
+            request.finish("good")
+        }
+        published.await()
+        val finished = events.filter { it.kind == PerfEventKind.TOOL_FINISHED }
+        assertEquals(listOf("bad", "good"), finished.mapNotNull { it.scope.outcome }.sorted())
+        val outcomes = finished.associate { event ->
+            exporter.spans.single { it.spanId == event.links.spanId }.name to event.scope.outcome
+        }
+        assertEquals(mapOf("code_mode.grpc.execute" to "good", "code_mode.grpc.callback" to "bad"), outcomes)
+    }
+
     @Test
     fun `native callbacks keep request links after client close and borrow the exporter`() = nativeProcessTest {
         val events = CopyOnWriteArrayList<PerfObservation>()
@@ -79,12 +135,26 @@ class NativePerformanceTest {
     private fun observer(
         events: CopyOnWriteArrayList<PerfObservation>,
         published: CompletableDeferred<Unit>,
+        expected: Int = 3,
     ): PerfObserver = PerfObserver { event ->
         events.add(event).also {
             val finished = event.kind == PerfEventKind.TOOL_FINISHED
-            if (finished && events.count { it.kind == PerfEventKind.TOOL_FINISHED } >= 3) published.complete(Unit)
+            if (finished && events.count { it.kind == PerfEventKind.TOOL_FINISHED } >= expected) {
+                published.complete(Unit)
+            }
         }
     }
+
+    private fun recorder(
+        events: CopyOnWriteArrayList<PerfObservation>,
+        published: CompletableDeferred<Unit>,
+        expected: Int,
+    ) = PerfRecorder(
+        PerfIdentity("boot", "build", "version", "config"),
+        observer(events, published, expected),
+        ElapsedClock(MonoClock::nowMs),
+        WallClock(System::currentTimeMillis),
+    )
 
     private fun assertPublishedSpans(finished: List<PerfObservation>, exporter: NativePerformanceExporter) {
         assertTrue(finished.all { event -> exporter.spans.any { it.spanId == event.links.spanId } }) {

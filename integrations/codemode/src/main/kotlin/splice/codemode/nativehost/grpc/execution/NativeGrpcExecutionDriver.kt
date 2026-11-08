@@ -110,7 +110,7 @@ internal class NativeGrpcExecutionDriver(
             sink.settle(run.session, run.cell, NativeGrpcFields.optional(outcome, "terminated") != null)
         }
         if (run.finish()) {
-            run.span.outcome(if (NativeGrpcFields.optional(outcome, "terminated") != null) "cancelled" else "good")
+            run.span.outcome(NativeGrpcResponses.performanceOutcome(outcome))
             sink.emit(NativeGrpcFrames.response(run.operation, value, initial = true))
         }
     }

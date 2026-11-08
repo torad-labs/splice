@@ -28,6 +28,9 @@ const PERF_CONSOLE = (() => {
   const num = (v) => typeof v === "number" && Number.isFinite(v) ? v.toLocaleString("en-US", v !== 0 && Math.abs(v) < .01 ? { maximumSignificantDigits: 3 } : { maximumFractionDigits: 3 }) : "—";
   const percent = (v) => typeof v === "number" && Number.isFinite(v) ? `${num(v * 100)}%` : "—";
   const words = (v) => String(v ?? "Unknown").replace(/_/g, " ");
+  const reasonText = (v) => v === "cursor_work_limit"
+    ? "The request timeline reached its work limit. Narrow the time range or filters, then refresh."
+    : words(v);
   const date = (v) => Number.isFinite(v) ? new Date(v).toLocaleString("en-US", { timeZone: "America/Chicago" }) : "Unknown time";
   const entries = (v) => v && typeof v === "object" && !Array.isArray(v) ? Object.entries(v) : [];
   const scalar = (v) => typeof v === "number" ? num(v) : typeof v === "boolean" ? String(v) : v == null ? "—" : safe(words(v));
@@ -358,11 +361,16 @@ const PERF_CONSOLE = (() => {
         return `<section class="pc-results" aria-label="Results by command">${heading}<div class="card pc-commands ghosted" aria-busy="true">${labels}${Array.from({ length: 6 }, () => `<div class="pc-command-grid">${columns.map(() => `<span>${ghost}</span>`).join("")}</div>`).join("")}</div></section>`;
       }
       const heads = entries(s?.legacy).sort((a, b) => (b[1].failure_share ?? -1) - (a[1].failure_share ?? -1) || (b[1].count ?? -1) - (a[1].count ?? -1));
-      const rows = heads.map(([head, h]) => {
-        const covered = h.metrics_complete === false ? "Partial metrics" : h.read_status === "readable" ? "Recorded rows" : "Unread / unknown";
+      const renderHead = ([head, h]) => {
+        const covered = h.count === 0 ? "No recorded rows" : h.metrics_complete === false ? "Partial metrics" : h.read_status === "readable" ? "Recorded rows" : "Unread / unknown";
         const cells = [commandName(head), h.count === 0 ? "No recorded rows" : num(h.count), percent(h.failure_share), num(h.total_ms?.p50), num(h.total_ms?.p95), covered];
         return `<details class="pc-command" data-pc-command="${safe(head)}"${st.commands.has(head) ? " open" : ""}><summary class="pc-command-grid">${cells.map((value, i) => `<span><small>${columns[i]}</small>${safe(value)}</span>`).join("")}</summary><div class="pc-command-detail">${commandDetail(head, h)}</div></details>`;
-      }).join("");
+      };
+      const active = heads.filter(([, h]) => h.count !== 0);
+      const inactive = heads.filter(([, h]) => h.count === 0);
+      const rows = active.map(renderHead).join("") + (inactive.length
+        ? `<details class="pc-inactive-commands"${st.inactiveOpen ? " open" : ""}><summary>${num(inactive.length)} commands with no recorded rows</summary><div>${inactive.map(renderHead).join("")}</div></details>`
+        : "");
       return `<section class="pc-results" aria-label="Results by command">${heading}<div class="card pc-commands">${labels}${rows || note(`${status(reply)} · No command results returned.`)}</div></section>`;
     }
     function commandDetail(head, h) {
@@ -377,7 +385,7 @@ const PERF_CONSOLE = (() => {
       const stages = ranges(stageItems) + detail("Stage sample counts", table(["Stage", "Samples", "Typical · ms", "Slowest 5% · ms", "Maximum · ms"], stageItems.map(([label, v]) => [label, num(v?.count), num(v?.p50), num(v?.p95), num(v?.max)]), `${commandName(head)} stages`));
       const models = table(["Model", "Requests", "Failed", "Typical · ms", "Slowest 5% · ms"], entries(h.models).map(([model, v]) => [model === "?" ? "Ended before a model was picked" : link(model, { model }), num(v.count), percent(v.failure_share), num(v.total_ms?.p50), num(v.total_ms?.p95)]), `${commandName(head)} models`);
       return `<div class="pc-actions"><strong class="pc-command-failure">${safe(failure)}</strong>${link("Open requests")}${h.failure_share > 0 ? link("Open failures", { outcome: "failed" }) : ""}${link("Open compactions", { compact: "1" })}</div>`
-        + sampled + detail("Recorded row coverage", note(`Recorded request rows: ${num(h.count)} · local steps: ${num(h.local_steps)}. ${h.metrics_complete === false ? "Metric work limit reached; counts are returned separately from unavailable metrics." : "Metrics describe the returned recorded-row population; coverage gaps can leave records uncounted."}`))
+        + sampled + detail("Recorded row coverage", note(`Recorded request rows: ${num(h.count)} · local steps: ${num(h.local_steps)}. ${h.metrics_complete === false ? "Metric details are unavailable because this query reached its processing limit. Narrow the time range or filters to inspect metrics; counts remain available." : "Metrics describe the returned recorded-row population; coverage gaps can leave records uncounted."}`))
         + `<div class="pc-grid">${section("Outcomes", outcomes)}${section("Cache and load", facts({ cache_hit_ratio: percent(h.cache_hit_ratio), cold_after_account_switch: h.cache_cold, retries: h.retries, refreshes: h.refreshes, peak_inflight: h.peak_inflight }))}${section("Stages", stages)}</div>`
         + detail("Stage and load meanings", note("Stages describe their own measured samples and can overlap; they do not add up to the whole request. Peak inflight is a reported sample, not a process total.")) + models;
     }
@@ -454,7 +462,8 @@ const PERF_CONSOLE = (() => {
       const r = st.replies.rows, v = r?.body;
       return ((v?.rows || []).length ? table(["Request", "Time", "Command", "Model", "Outcome"], v.rows.map((x, i) => [turnLink(x, `Open request ${i + 1}`, st.rowsQuery), safe(date(x.ts)), safe(commandName(x.head)), safe(x.model ?? "Unknown"), badge(words(x.outcome), x.outcome === "failed" ? "bad" : "neutral")]), "Recorded request rows · returned source order") : empty(r?.ok ? "No recorded rows returned" : st.busy ? "Loading recorded rows…" : "Request rows unavailable", status(r)))
         + note(`${status(r)} · ${known(v?.total_matching) ? num(v.total_matching) : "Unknown count of"} matching recorded rows`)
-        + (explain(r) ? note(words(explain(r))) : "")
+        + (explain(r) ? note(reasonText(explain(r))) : "")
+        + (explain(r) === "cursor_work_limit" ? detail("Technical reason", `<code>${safe(explain(r))}</code>`) : "")
         + (st.rowsQuery ? note(`Row snapshot: ${date(st.rowsQuery.from_ms)} – ${date(st.rowsQuery.until_ms)}. Refresh to capture newer rows.`) : "")
         + (v?.next_cursor ? `<button class="act small" data-pc="next"${st.busy || st.rowsBusy ? " disabled" : ""}>Next records</button>` : "");
     }
@@ -656,6 +665,7 @@ const PERF_CONSOLE = (() => {
       const el = e.target;
       if (!host()?.contains(el)) return;
       if (el.matches?.("[data-pc-editor]")) { st.editorOpen = el.open; return; }
+      if (el.matches?.(".pc-inactive-commands")) { st.inactiveOpen = el.open; return; }
       if (!el.matches?.("[data-pc-command]")) return;
       if (el.open) st.commands.add(el.dataset.pcCommand); else st.commands.delete(el.dataset.pcCommand);
     }, true);

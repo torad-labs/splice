@@ -1757,6 +1757,12 @@ document.addEventListener("click", (e) => {
     case "win": if (v === ui.win) break; winChange(v); break;
     case "door": {
       if (v === "perf") PERF_HEADS.showResults();
+      const breakdown = document.getElementById("band-by");
+      const lower = document.getElementById("lower");
+      if (breakdown && lower) {
+        breakdown.dataset.cols = v === "perf" ? "all" : "1";
+        DRAW.lay(lower);
+      }
       const target = v === "perf" ? document.querySelector("#band-perf .pc-results") : document.getElementById(`band-${v}`);
       target?.scrollIntoView({ block: "start", behavior: "smooth" }); break;
     }

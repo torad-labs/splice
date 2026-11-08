@@ -137,6 +137,19 @@ coarsen further to fit bounded work; their reported
 resolution and boundary coverage remain explicit. Legacy raw-row retention is a
 separate existing policy.
 
+Aggregate checkpoints write one bounded dirty-minute page at a time and visit
+pending minutes fairly. A failed page stays dirty for retry; it is acknowledged
+only after durable completion and only if its generation has not changed. As
+other observations advance the timeline, gauge readings are integrated through
+intervening quiet minutes. Each page uses the existing 2 MiB snapshot admission,
+4 MiB pending-write cap, 8 MiB history-work reserve within the shared 16 MiB
+budget, and 512 KiB file cap. Under the fixed cell cap, the oldest completed
+durable minute may be evicted; this is surfaced as `retention_expired`, not
+complete coverage. Shutdown drains pages under one shared five-second deadline
+and at most 120 attempts. Any dirty pages still outstanding are recorded as
+`checkpoint_pages_unflushed` with their count, and the checkpoint remains
+unclean.
+
 Evidence segments are bounded and retained globally across heads. Retention uses
 write time because usage may arrive after its attributed event time. A prior
 loss or expired segment is not repaired by a later healthy write. Aggregate

@@ -2,8 +2,8 @@
 // not re-sent by the turn that met it, records that reset for status, and ends on a cause naming the
 // reset and the window, so the line a person reads is written from the reset and never from the
 // upstream's words, which the evidence and the log keep whole (failure-handling slice 2). The next turn
-// still asks the provider itself (Marcos, Oct 26). The same bytes from a provider that reads no plan
-// family, or with no reset named, ends at once without a plan hold and keeps the upstream's own words exactly.
+// still asks the provider itself (Marcos, Oct 26). A reader that recognizes no plan window uses the bounded
+// throttle budget. A named exhausted window without a reset ends promptly and keeps the upstream's words.
 //
 // Failure-handling slice 3: the head's reader reads the unified headers where the reply arrives (AnthropicReplies,
 // whose own test pins the reading; this module cannot depend on the dialect), so a reader that reads them as it does
@@ -53,9 +53,13 @@ class UpstreamClientPlanLimitTest {
     private val unified = Replies(
         OpenAiReplies,
         object : ProviderDeviation {
-            override fun http(reply: FailedReply): FailureCause.Provider? = planLimit(reply)?.let {
-                val lift = Lift.At(Instant.ofEpochSecond(it.resetEpochSeconds), firm = true, LiftSource.RESET_HEADER)
-                FailureCause.Provider.Limited(lift, LimitWindow.FIVE_HOUR.takeIf { _ -> it.claim == "five_hour" })
+            override fun http(reply: FailedReply): FailureCause.Provider? {
+                if (reply.status != TOO_MANY_REQUESTS) return null
+                val claim = PlanLimits.rejectedClaim { name -> reply.header(name) } ?: return null
+                val lift = planLimit(reply)?.let {
+                    Lift.At(Instant.ofEpochSecond(it.resetEpochSeconds), firm = true, LiftSource.RESET_HEADER)
+                } ?: Lift.Unstated
+                return FailureCause.Provider.Limited(lift, LimitWindow.FIVE_HOUR.takeIf { claim == "five_hour" })
             }
 
             override fun planLimit(reply: FailedReply): PlanLimit? = reply.takeIf { it.status == TOO_MANY_REQUESTS }

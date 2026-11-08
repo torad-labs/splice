@@ -246,14 +246,14 @@ class UpstreamClientRateLimitTest {
         val again = assertEnds<UpstreamFailed> {
             client.posted(context("synthetic-refused"), "{}") { "unreachable" }
         }
-        assertEquals(first.cause, again.cause, "the bounded cooldown reuses the terminal cause")
-        assertEquals(0, again.layers, "the cached cause has no new provider response layer")
-        assertEquals(null, again.evidence.status)
-        assertEquals(null, again.evidence.body)
+        assertEquals(first.cause, again.cause, "both refusals identify the same temporary throttle")
+        assertEquals(1, again.layers, "a later turn asks this credential's provider again")
+        assertEquals(429, again.evidence.status)
+        assertEquals("synthetic refusal", again.evidence.body)
         assertEquals(
-            listOf("synthetic-refused", "synthetic-healthy", "synthetic-new"),
+            listOf("synthetic-refused", "synthetic-healthy", "synthetic-new", "synthetic-refused"),
             sent,
-            "the refusal is sent once; healthy credentials still reach the provider",
+            "every turn sends its own credential, including a later turn after an unnamed throttle",
         )
         assertEquals(
             listOf("synthetic-healthy", "synthetic-new"),

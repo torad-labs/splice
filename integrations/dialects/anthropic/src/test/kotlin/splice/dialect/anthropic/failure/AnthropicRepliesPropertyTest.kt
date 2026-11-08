@@ -72,7 +72,7 @@ private sealed class Said(val text: String) {
     class Model(text: String, val name: String) : Said(text)
 }
 
-private data class Plan(val claim: String, val rejected: Boolean, val resetEpochSecond: Long)
+private data class Plan(val claim: String, val rejected: Boolean, val resetEpochSecond: Long?)
 
 /** How one reply arrived, apart from what it said: whose login it answered, when it came, whether its body is the
  *  API's own JSON or a gateway's page, and whether its headers came upper-cased. */
@@ -104,7 +104,7 @@ private data class Case(
             plan?.let {
                 put(name("anthropic-ratelimit-unified-status"), if (it.rejected) "rejected" else "allowed")
                 put(name("anthropic-ratelimit-unified-representative-claim"), it.claim)
-                put(name("anthropic-ratelimit-unified-reset"), it.resetEpochSecond.toString())
+                it.resetEpochSecond?.let { reset -> put(name("anthropic-ratelimit-unified-reset"), reset.toString()) }
             }
         }
         return FailedReply(status, headers, body, owner, NEVER_SENT, answeredAt)
@@ -142,9 +142,10 @@ private fun said(random: Random): Said = when (random.nextInt(4)) {
 
 private fun plan(random: Random, at: Instant): Plan? {
     if (random.nextInt(3) == 0) return null
-    val claim = listOf("five_hour", "seven_day", "seven_day_opus", "overage").random(random)
+    val claim = listOf("five_hour", "seven_day", "seven_day_opus", "overage", "unknown").random(random)
     val within = if (claim == "five_hour") 5 * 3_600L else 7 * 86_400L
-    return Plan(claim, random.nextBoolean(), at.epochSecond + random.nextLong(60, within))
+    val reset = (at.epochSecond + random.nextLong(60, within)).takeIf { random.nextBoolean() }
+    return Plan(claim, random.nextBoolean(), reset)
 }
 
 private fun case(random: Random, statuses: List<Int>, types: List<String>): Case {
@@ -220,13 +221,13 @@ private fun window(c: Case): LimitWindow? = c.plan?.takeIf { it.rejected }?.let 
     when (it.claim) {
         "five_hour" -> LimitWindow.FIVE_HOUR
         "seven_day" -> LimitWindow.WEEKLY
-        "overage" -> null
-        else -> LimitWindow.MODEL_WEEKLY
+        "seven_day_opus" -> LimitWindow.MODEL_WEEKLY
+        else -> null
     }
 }
 
 private fun planReset(c: Case): Lift? = c.plan?.takeIf { window(c) != null }
-    ?.let { Lift.At(Instant.ofEpochSecond(it.resetEpochSecond), true, LiftSource.RESET_HEADER) }
+    ?.resetEpochSecond?.let { Lift.At(Instant.ofEpochSecond(it), true, LiftSource.RESET_HEADER) }
 
 class AnthropicRepliesPropertyTest {
     @Test

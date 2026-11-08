@@ -113,9 +113,10 @@ public object AnthropicReplies : ReplyReader {
     /** A 429: when Retry-After says, else when the spent plan window resets, and which window it is. */
     private fun limited(reply: FailedReply?, said: ProviderWords?): FailureCause.Provider {
         val plan = reply?.let(::planLimit)
+        val claim = reply?.let { PlanLimits.rejectedClaim { name -> it.header(name) } }
         val reset = plan?.let { Lift.At(Instant.ofEpochSecond(it.resetEpochSeconds), true, LiftSource.RESET_HEADER) }
         val lift = reply?.let(ReplyFacts::retryAfterLift) ?: reset ?: Lift.Unstated
-        return FailureCause.Provider.Limited(lift, plan?.let { window(it.claim) }, said)
+        return FailureCause.Provider.Limited(lift, claim?.let(::window), said)
     }
 
     private fun window(claim: String): LimitWindow = when {

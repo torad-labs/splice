@@ -141,10 +141,12 @@ public data class PlanLimit(
  *  Public since failure-handling slice 3: the Anthropic Messages reader (AnthropicReplies) reads a 429's plan window
  *  here for every head of that API type, where the login providers used to answer it one by one. */
 public object PlanLimits {
+    /** A rejected named window, even when the provider omits its reset; spend buckets name no window. */
+    public fun rejectedClaim(header: QuotaHeaderRead): String? = header("$UNIFIED-representative-claim")
+        ?.takeIf { header("$UNIFIED-status") == QuotaStatus.REJECTED.wire && windowSeconds(it) != null }
+
     public fun of(header: QuotaHeaderRead, nowEpochSeconds: Long): PlanLimit? {
-        val claim = header("$UNIFIED-representative-claim")
-            ?.takeIf { header("$UNIFIED-status") == QuotaStatus.REJECTED.wire }
-            ?: return null
+        val claim = rejectedClaim(header) ?: return null
         val window = windowSeconds(claim) ?: return null
         val reset = header("$UNIFIED-reset")?.toDoubleOrNull()?.let(EpochSeconds::of)?.takeIf { it > nowEpochSeconds }
         return reset?.let { PlanLimit(claim, minOf(it, nowEpochSeconds + window)) }

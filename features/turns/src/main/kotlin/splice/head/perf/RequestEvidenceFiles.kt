@@ -1,6 +1,5 @@
 package splice.head.perf
 
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import splice.core.perf.HISTORY_DEFAULT_DAYS
 import splice.core.perf.HistoryWindow
@@ -37,7 +36,10 @@ public class RequestEvidenceFiles(
     public val coverageSink: FileIoSink = FileIoSink("request_evidence_coverage", clock)
     private val current = LinkedHashMap<String, Path>()
     private var retention: RequestEvidenceRetention? = null
-    private var publishedRetention: RequestEvidenceRetention? = null
+    private val retentionWriter = RequestEvidenceRetentionWriter(
+        this.directory.resolve(RequestEvidenceFormat.RETENTION_FILE),
+        EVIDENCE_MANIFEST_BYTES,
+    )
 
     init {
         require(maxBytes >= MIN_EVIDENCE_BYTES)
@@ -194,16 +196,7 @@ public class RequestEvidenceFiles(
             }
 
     private fun saveRetention() {
-        val snapshot = checkNotNull(retention)
-        val file = directory.resolve(RequestEvidenceFormat.RETENTION_FILE)
-        // Appending evidence does not change retention. Publish changed expiry before deleting its segments,
-        // and recreate a missing manifest, without forcing identical metadata to disk for every event.
-        if (snapshot == publishedRetention && Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) return
-        SecureFile.writeAtomic0600(
-            file,
-            Json.encodeToString(snapshot),
-        )
-        publishedRetention = snapshot
+        retentionWriter.write(checkNotNull(retention))
     }
 }
 

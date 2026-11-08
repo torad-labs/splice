@@ -43,7 +43,8 @@ or failed request outcomes in these seven calibration points.
 
 [calibration.json](calibration.json) contains exact per-point identities,
 environment, counts, intervals, tails, generator limits and SHA256 receipts.
-Full samples/manifests/observations remain under each named `/tmp` run directory.
+Full samples/manifests/observations retain their original run-directory paths
+inside the private archive described below.
 All manifests were explicitly annotated `experiment_stage=calibration` after the
 orchestrator classified the short sweep; the amendment records the original
 manifest digest and leaves every measured sample byte unchanged. The analyzer
@@ -66,3 +67,22 @@ The subsequent B00 retry adds Linux process/socket ownership and artifact/config
 binding verification. These earlier calibration manifests lack that evidence and
 are explicitly ineligible for the strict baseline/candidate analyzer; they are
 not retroactively upgraded. No repeated load sweep was run for this correction.
+
+## Evidence cleanup — 2026-11-08
+
+Historical run evidence was moved into
+`/tmp/splice-instrumentation-run/archive/historical-reports-2026-11-08T08-11-04-774Z.tar.gz`
+(589,942,185 bytes; SHA-256
+`3050d1463d73ba81c19f53162b952c49f745695e6a2187b9d025df0dca35e36a`).
+The original paths in `calibration.json` identify entries inside that archive;
+the expanded directories were removed after verification. Rebuildable generated
+JARs and classes were excluded, while the frozen baseline artifact and its
+identity receipt remain directly available at the path above.
+
+The task directory fell from 17,397,047,296 to 1,332,809,728 allocated bytes.
+The cleanup receipt and retained-input verification live beside the archive.
+This cleanup changes storage, not the historical measurements or their
+calibration-only status. New steady comparisons use the
+[serial runner](../../../tools/instrumentation-bench/README.md#serial-runner)
+to archive completed desk state between roles rather than accumulating expanded
+state across an entire batch.

@@ -254,10 +254,12 @@ record carries a `lifecycleBinding` (version 1) naming that process as the threa
 helper as the process that receives for it, which is how Fence tells which conversation a Codex hook belongs to. The
 binding is written only while that process is still the one named.
 
-The helper hands each message it receives to the thread with the app-server's `turn/start`, one at a time and in
-order, in Claude Code's own envelope (`<cross-session-message from="…" from-name="…">`), with the message's id as
-the input's client id. The thread answers with `splice peer send`, which inside the conversation acts as its codex
-peer without `--as`:
+The helper submits messages in order, in Claude Code's own envelope
+(`<cross-session-message from="…" from-name="…">`), with the message's id as the input's client id. A shared
+app-server receives `turn/start`; a desktop chat receives input through its owner's normal turn admission. Handling
+of an already active chat follows that installed desktop's admission behavior. Splice does not force an interruption
+or override the chat's settings. The thread answers with `splice peer send`, which inside the conversation acts as
+its codex peer without `--as`:
 
 ```
 splice peer send gary "the gate is green"
@@ -265,7 +267,7 @@ splice peer inbox
 ```
 
 Each hand-over is journaled as a `codex` record: `issuing` before the request goes out, then `started` with the turn
-Codex named, `refused` with Codex's reason, or `unconfirmed` when the request went out and no answer came. Nothing is
+Codex named, `refused` with Codex's reason, or `unconfirmed` when acceptance could not be established. Nothing is
 handed over twice. A helper that stops between `issuing` and its outcome leaves the next helper to read the thread's
 history: `started` when the history holds the message, `unconfirmed` otherwise, never a second send. Desktop IPC does
 not expose a complete read-only message history; a desktop hand-over interrupted by a helper restart therefore stays
@@ -280,8 +282,9 @@ helper answers no request the app-server makes of it, such as an approval, and g
 Desktop lifecycle tracking consumes the versioned state stream but retains only thread status, not its transcript.
 Large desktop snapshots are parsed as a stream and their conversation content is skipped. An unsupported stream
 version, missing initial status, or a frame exceeding the desktop's 256 MiB protocol limit stops the connection
-rather than claiming that delivery is available. Outgoing input remains bounded at 8 MiB. A desktop error after forwarding is recorded as
-`unconfirmed`, because the desktop may have accepted the input before its reply was lost.
+rather than claiming that delivery is available. Outgoing input remains bounded at 8 MiB. IPC writes and reply waits
+have deadlines. A partial write or desktop error after forwarding is recorded as `unconfirmed`, because the desktop
+may have accepted the input before its reply was lost.
 
 A codex peer does not count against the 16 peers a user registers by hand; at most 64 Codex threads are peers at
 once. `splice peer codex detach` revokes one at once, and `--purge` deletes its journal too.

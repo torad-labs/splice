@@ -269,7 +269,9 @@ class ReasoningCacheRestartTest(@param:TempDir private val state: Path) {
 
     @Test
     fun `same-opening subagents recover only their own reasoning after a head restart`() = runTest {
-        val daemon = heads.start()
+        val daemonLogs = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val restartLogs = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val daemon = heads.start(logs = daemonLogs)
         assertTrue(drive(daemon, "session", toolRound("call_1", "cipher-main")) is TurnOutcome.Success)
         assertTrue(
             drive(daemon, "session", toolRound("call_1", "cipher-a"), body = opening.copy(agentId = "agent-a"))
@@ -280,10 +282,17 @@ class ReasoningCacheRestartTest(@param:TempDir private val state: Path) {
                 is TurnOutcome.Success,
         )
 
-        val restarted = heads.restart()
+        val restarted = heads.restart(logs = restartLogs)
+        fun cacheDiagnostic(): String =
+            (daemonLogs.toList() + restartLogs.toList()).takeLast(20).joinToString("\n").takeLast(3000)
+
         assertEquals("cipher-main", reasoningBefore(restarted, "session", "call_1"))
         assertEquals("cipher-a", reasoningBefore(restarted, "session", "call_1", "agent-a"))
-        assertEquals("cipher-b", reasoningBefore(restarted, "session", "call_1", "agent-b"))
+        assertEquals(
+            "cipher-b",
+            reasoningBefore(restarted, "session", "call_1", "agent-b"),
+            "agent-b restart cache diagnostics: ${cacheDiagnostic()}",
+        )
         assertEquals(null, reasoningBefore(restarted, "session", "call_1", "agent-new"))
         assertEquals(null, reasoningBefore(restarted, "other-session", "call_1", "agent-a"))
     }
@@ -402,7 +411,9 @@ class AgentReasoningPositionRestartTest(@param:TempDir private val state: Path) 
 
     @Test
     fun `same-opening agents restore isolated phases and positioned reasoning after restart`() = runTest {
-        val daemon = heads.start(replay = true)
+        val daemonLogs = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val restartLogs = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val daemon = heads.start(logs = daemonLogs, replay = true)
         val text = "Shared answer."
         val scopes = listOf(
             Triple(null, "main", "commentary"),
@@ -433,7 +444,10 @@ class AgentReasoningPositionRestartTest(@param:TempDir private val state: Path) 
             )
         }
 
-        val restarted = heads.restart(replay = true)
+        val restarted = heads.restart(logs = restartLogs, replay = true)
+        fun cacheDiagnostic(): String =
+            (daemonLogs.toList() + restartLogs.toList()).takeLast(20).joinToString("\n").takeLast(3000)
+
         fun restored(agentId: String?): Pair<String?, List<String?>> {
             val input = restarted.buildTurn(
                 proseFollowup(text).copy(agentId = agentId),
@@ -448,7 +462,7 @@ class AgentReasoningPositionRestartTest(@param:TempDir private val state: Path) 
             assertEquals(
                 phase to listOf("user", "assistant", "rs_$id", "user"),
                 restored(agentId),
-                "restored scope $agentId",
+                "restored scope $agentId; cache diagnostics: ${cacheDiagnostic()}",
             )
         }
         assertEquals("final_answer" to listOf("user", "assistant", "user"), restored("fresh-agent"))

@@ -14,6 +14,7 @@ import io.ktor.http.contentType
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -411,8 +412,8 @@ class ClaudeCarryingPoolUsageTest {
         assertEquals(HttpStatusCode.OK, response.status, text)
         return Json.parseToJsonElement(text).jsonObject.getValue("accounts").jsonArray
             .single {
-                it.jsonObject.getValue("account_labels").jsonObject.getValue(NATIVE_HEAD)
-                    .jsonPrimitive.content == label
+                val labels = it.jsonObject["account_labels"] as? JsonObject
+                labels?.get(NATIVE_HEAD)?.jsonPrimitive?.contentOrNull == label
             }
             .jsonObject.getValue("ref").jsonPrimitive.content
     }
@@ -460,6 +461,7 @@ class ClaudeCarryingPoolUsageTest {
             response = captured
             if (current.status == HttpStatusCode.OK) {
                 val body = Json.parseToJsonElement(captured.text)
+                assertTrue(body is JsonObject && "error" !in body, captured.text)
                 if (ready(body)) return captured
             }
         }

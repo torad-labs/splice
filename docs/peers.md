@@ -194,6 +194,20 @@ splice peer codex attach 019a2f6c-4b1e-7c3d-9e8f-0a1b2c3d4e5f --codex-home ~/.co
 splice peer codex detach
 ```
 
+To give an existing named peer automatic delivery into a Codex conversation, attach it with
+`--peer-name <name>`. For example:
+
+```
+splice peer codex attach 019a2f6c-4b1e-7c3d-9e8f-0a1b2c3d4e5f --peer-name research --codex-home ~/.codex --cwd ~/work
+```
+
+The name must already be registered. Its session ID, key, send scope and inbox stay in place.
+The first Codex connection skips mail already acknowledged through the CLI inbox and delivers pending
+mail. Existing Codex delivery records and interrupted handovers keep their own recovery cursor.
+Later hook attachments find the same peer by thread ID, and `codex detach <thread>` revokes that
+peer by its actual name. A peer already bound to another thread, or a thread already bound to a
+different peer, is refused. Revoke the old binding explicitly before assigning a different one.
+
 Codex does not set `$CODEX_THREAD_ID` or `$CODEX_SESSION_ID` in a hook's environment (codex-cli 0.159). It writes one
 JSON object to the command's stdin. The thread id is `session_id` and the working directory, when the object carries
 it, is `cwd`. Those are the fields on `SessionStart`, `UserPromptSubmit` and `SessionEnd`

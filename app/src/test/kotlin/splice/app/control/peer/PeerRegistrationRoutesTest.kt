@@ -7,6 +7,7 @@
 package splice.app.control.peer
 
 import io.ktor.client.HttpClient
+import io.ktor.client.request.delete
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -19,6 +20,7 @@ import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
@@ -44,6 +46,7 @@ import splice.sessions.peer.DeliveryStatus
 import splice.sessions.peer.PeerOutbox
 import splice.sessions.peer.PeerSender
 import splice.sessions.peer.SendOutcome
+import splice.sessions.peer.store.PeerRequest
 import splice.sessions.peer.store.PeerStore
 import splice.sessions.registry.RouteOfPid
 import splice.sessions.registry.SessionRecord
@@ -156,6 +159,44 @@ class PeerRegistrationRoutesTest {
         assertEquals(session(first.second), session(again.second))
         val keyFile = JsonScalars.str(JsonScalars.objectOrNull(Json, again.second), "keyFile")
         assertEquals(store.keyFile("grokbot").toString(), keyFile)
+    }
+
+    @Test
+    fun `an existing named peer keeps its identity through Codex attach and thread detach`(
+        @TempDir dir: Path,
+    ) = testApplication {
+        val store = PeerStore(dir.resolve("settings"))
+        store.register(PeerRequest("research", dir.toString(), listOf("reviewer")), emptySet())
+        val original = requireNotNull(store.get("research"))
+        val peerKey = Files.readString(store.keyFile("research"))
+        val key = MgmtKey(StatePaths(baseOverride = dir.resolve("control")))
+        val mount = PeersMount(parts(dir, store), guard(key, store))
+        application { routing { mount.register(this) } }
+        val home = dir.resolve("codex-home")
+        val socket = home.resolve("app-server-control/app-server-control.sock")
+        CodexStandInAppServer(socket, THREAD).use {
+            val request = JsonObject(
+                Json.decodeFromString<JsonObject>(body(home.toString(), dir.toString(), null)) +
+                    ("peerName" to JsonPrimitive("research")),
+            )
+            val attached = attach(client, key.get(), request.toString())
+            assertEquals(HttpStatusCode.Created, attached.first, attached.second)
+            assertEquals("research", JsonScalars.str(JsonScalars.objectOrNull(Json, attached.second), "name"))
+            assertEquals(original, store.get("research"))
+            assertEquals(peerKey, Files.readString(store.keyFile("research")))
+            val again = attach(client, key.get(), body(home.toString(), dir.toString(), null))
+            assertEquals(HttpStatusCode.OK, again.first, again.second)
+            assertEquals(1, store.list().size)
+        }
+        val denied = client.delete("/api/peers/codex/$THREAD")
+        assertEquals(HttpStatusCode.Unauthorized, denied.status)
+        assertNotNull(store.get("research"))
+        val detached = client.delete("/api/peers/codex/$THREAD") {
+            header(HttpHeaders.Authorization, "Bearer ${key.get()}")
+        }
+        assertEquals(HttpStatusCode.OK, detached.status, detached.bodyAsText())
+        assertNull(store.get("research"))
+        assertTrue(store.codexThreads.isEmpty())
     }
 
     private fun parts(dir: Path, store: PeerStore): PeerParts {

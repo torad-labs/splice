@@ -65,7 +65,7 @@ class PeerCodexHookTest {
         }
         assertEquals(absolute(CWD), field(posts[0].body, "cwd"))
         assertEquals(absolute(OTHER), field(posts[1].body, "cwd"))
-        assertEquals("/api/peers/codex-$THREAD", deleted.path)
+        assertEquals("/api/peers/codex/$THREAD", deleted.path)
         assertEquals("purge=false", deleted.query)
     }
 
@@ -190,12 +190,13 @@ class PeerCodexHookTest {
             )
             "{}".encodeToByteArray()
         }) { env ->
-            val args = verb(ATTACH, OTHER_THREAD, "--cwd", FLAG_CWD)
+            val args = verb(ATTACH, OTHER_THREAD, "--cwd", FLAG_CWD, "--peer-name", "research")
             assertQuiet(run(args, hook(USER_PROMPT), env))
         }
         val body = hits.single().body
         assertEquals(OTHER_THREAD, field(body, "thread"))
         assertEquals(absolute(FLAG_CWD), field(body, "cwd"))
+        assertEquals("research", field(body, "peerName"))
     }
 }
 

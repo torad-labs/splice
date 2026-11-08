@@ -41,29 +41,55 @@ internal sealed class CodexPlan {
 internal class CodexPeers {
     private val names = CodexNames()
 
-    fun name(request: CodexRequest): String = names.peer(request.binding.thread)
+    fun name(request: CodexRequest, bindings: Map<String, CodexBinding> = emptyMap()): String =
+        request.peerName ?: bindings.entries.firstOrNull { it.value.thread == request.binding.thread }?.key
+            ?: names.peer(request.binding.thread)
 
     fun isPeer(name: String): Boolean = names.isPeer(name)
 
     /** The peer.json an attach of [request] leaves, given the [current] one and the [registered] names. [newKey] is
      *  the sha256 of a key minted for a new peer. */
-    fun plan(request: CodexRequest, current: PeerFile?, registered: Set<String>, newKey: PeerFileKey): CodexPlan {
+    fun plan(
+        request: CodexRequest,
+        current: PeerFile?,
+        bindings: Map<String, CodexBinding>,
+        newKey: PeerFileKey,
+    ): CodexPlan {
         val refused = malformed(request)
-        return when {
-            refused != null -> CodexPlan.Refused(PeerRefusal.INVALID, refused)
-            current != null -> update(current, request)
-            registered.count(names::isPeer) >= MAX_CODEX_PEERS ->
-                CodexPlan.Refused(PeerRefusal.TAKEN, "at most $MAX_CODEX_PEERS Codex threads may be peers at once")
-            else -> CodexPlan.Create(created(request, newKey))
-        }
+        if (refused != null) return CodexPlan.Refused(PeerRefusal.INVALID, refused)
+        conflict(request, current, bindings)?.let { return CodexPlan.Refused(PeerRefusal.TAKEN, it) }
+        return if (current != null) update(current, request) else CodexPlan.Create(created(request, newKey))
     }
+
+    private fun conflict(request: CodexRequest, current: PeerFile?, bindings: Map<String, CodexBinding>): String? =
+        when {
+            request.peerName != null && current == null -> "peerName must name an existing registered peer"
+            bindings.any { (name, binding) -> name != current?.name && binding.thread == request.binding.thread } ->
+                "that Codex thread is already attached to another peer"
+            current?.codex == null && bindings.size >= MAX_CODEX_PEERS ->
+                "at most $MAX_CODEX_PEERS Codex threads may be peers at once"
+            else -> null
+        }
 
     fun binding(file: PeerFile): CodexBinding? = file.codex?.let { codex ->
         CodexBinding(codex.thread, codex.home, codex.owner?.let { NativeProcess(it.pid, it.procStart, it.pidDomain) })
     }
 
     private fun update(current: PeerFile, request: CodexRequest): CodexPlan {
-        val next = current.copy(cwd = request.cwd, codex = codexOf(request, current.codex?.owner))
+        val owner = request.binding.owner?.let { PeerFileOwner(it.pid, it.procStart, it.pidDomain) }
+        if (current.codex != null && current.codex.thread != request.binding.thread) {
+            return CodexPlan.Refused(PeerRefusal.TAKEN, "that peer is attached to a different Codex thread")
+        }
+        if (current.owner != null && owner != null) {
+            if (current.owner != owner) {
+                return CodexPlan.Refused(PeerRefusal.TAKEN, "that peer belongs to a different native process")
+            }
+        }
+        val next = current.copy(
+            cwd = request.cwd,
+            codex = codexOf(request, current.codex?.owner ?: current.owner),
+            owner = null,
+        )
         return if (next == current) CodexPlan.Same(current) else CodexPlan.Update(next)
     }
 

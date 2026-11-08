@@ -15,7 +15,7 @@ internal const val PEER_USAGE =
         "send --as <name> [--id ID] [--pid P [--proc-start S]] <to> <text|-> | " +
         "inbox --as <name> [--after N] [--limit N] [--ack] [--json] [--follow] | " +
         "status --as <name> <msgId> [--json] | " +
-        "codex attach [<thread>] [--cwd DIR] [--codex-home DIR] [--json] [--hook] | " +
+        "codex attach [<thread>] [--cwd DIR] [--codex-home DIR] [--peer-name NAME] [--json] [--hook] | " +
         "codex detach [<thread>] [--purge] [--hook]"
 
 /** One verb's words: the positionals in order, the flags that take a value, and the switches that stand alone. */

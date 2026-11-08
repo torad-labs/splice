@@ -34,7 +34,7 @@ internal class PeerCodexCommand(
     private val hooks: HarnessHook,
 ) {
     private val names = CodexNames()
-    private val attachArgs = PeerArgsParser(setOf("--cwd", "--codex-home"), setOf("--json", HOOK_FLAG))
+    private val attachArgs = PeerArgsParser(setOf("--cwd", "--codex-home", "--peer-name"), setOf("--json", HOOK_FLAG))
     private val detachArgs = PeerArgsParser(emptySet(), setOf("--purge", HOOK_FLAG))
 
     fun run(args: List<String>): Int? = when (args.firstOrNull()) {
@@ -62,6 +62,7 @@ internal class PeerCodexCommand(
         val owner = CodexOwners().find()
         return buildJsonObject {
             put("thread", thread)
+            values["--peer-name"]?.let { put("peerName", it) }
             put("home", absolute(home))
             put("cwd", absolute(cwd))
             if (owner != null) {
@@ -115,13 +116,12 @@ internal class PeerCodexCommand(
 
     private fun delete(thread: String, parsed: PeerArgs, look: HookLook): Int {
         val key = call.managementKey() ?: return look.keep(PeerExit.REFUSED)
-        val name = names.peer(thread)
         val purge = "--purge" in parsed.switches
-        val path = "/api/peers/${URLEncoder.encode(name, Charsets.UTF_8)}?purge=$purge"
+        val path = "/api/peers/codex/${URLEncoder.encode(thread, Charsets.UTF_8)}?purge=$purge"
         return when (val answer = call.call("DELETE", path, key)) {
             is PeerAnswer.Exit -> look.keep(answer.code)
             is PeerAnswer.Ok -> {
-                if (!look.active) out.line("detached $name")
+                if (!look.active) out.line("detached ${JsonScalars.str(answer.body, "revoked") ?: thread}")
                 look.keep(PeerExit.DONE)
             }
         }

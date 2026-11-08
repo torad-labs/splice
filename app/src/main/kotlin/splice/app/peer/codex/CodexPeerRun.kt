@@ -14,6 +14,8 @@ import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.sessions.peer.codex.CodexBinding
 import splice.sessions.peer.codex.CodexDelivery
+import splice.sessions.peer.codex.CodexLedger
+import splice.sessions.peer.codex.CodexNames
 import splice.sessions.peer.codex.CodexReturns
 import splice.sessions.peer.helper.RunningHelper
 import splice.sessions.peer.journal.PeerJournal
@@ -43,6 +45,9 @@ internal class CodexPeerRun(private val binding: CodexBinding, private val parts
         val ended = when (val greeting = thread.greet()) {
             is CodexGreeting.Refused -> greeting.reason
             is CodexGreeting.Loaded -> {
+                if (parts.helper.config.name != CodexNames().peer(binding.thread)) {
+                    CodexLedger(parts.journal).inheritAcknowledgedInbox()
+                }
                 parts.helper.busy(greeting.status == ACTIVE)
                 val handing = async { CodexDelivery(parts.journal, thread, parts.returns, parts.log).run() }
                 val watching = async { watch(thread) }

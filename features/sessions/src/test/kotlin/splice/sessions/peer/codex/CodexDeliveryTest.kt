@@ -122,6 +122,8 @@ class CodexDeliveryTest {
         receive(journal, senders, "m-1", "hello")
         // The last helper journaled the request and died before its answer came.
         journalIssuingOnly(journal)
+        journal.ackThrough(Long.MAX_VALUE)
+        CodexLedger(journal).inheritAcknowledgedInbox()
         val thread = Codex(TurnStart.Started("turn-2"), history = true)
         deliver(journal, thread, senders) { codexRecords(journal).size == 2 }
         assertTrue(thread.handed.isEmpty(), "the message was sent to the thread a second time")
@@ -138,6 +140,22 @@ class CodexDeliveryTest {
         assertEquals("refused", JsonScalars.str(refused, "outcome"))
         assertEquals("thread is archived", JsonScalars.str(refused, "detail"))
         assertTrue(Triple(GARY, "m-1", DeliveryStatus.DROPPED) in senders.receipts)
+    }
+
+    @Test
+    fun `converting an inbox skips acknowledged history and preserves later pending mail`(@TempDir dir: Path) {
+        val journal = PeerJournal(dir, log)
+        val senders = Senders()
+        receive(journal, senders, "old", "already read")
+        journal.ackThrough(Long.MAX_VALUE)
+        receive(journal, senders, "pending", "still waiting")
+        CodexLedger(journal).inheritAcknowledgedInbox()
+        // A later CLI acknowledgment and another startup cannot advance the established Codex cursor.
+        journal.ackThrough(Long.MAX_VALUE)
+        CodexLedger(journal).inheritAcknowledgedInbox()
+        val thread = Codex(TurnStart.Started("new-turn"))
+        deliver(journal, thread, senders) { codexRecords(journal).size == 2 }
+        assertEquals(listOf("pending"), thread.handed.map { it.first })
     }
 
     /** What a helper that died mid-request leaves: the `issuing` record and no outcome. */

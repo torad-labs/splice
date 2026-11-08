@@ -24,6 +24,11 @@ internal class JournalCursors(dir: Path, private val files: PeerJournalFiles) {
         files.writeNumber(codexFile, to)
     }
 
+    /** A new Codex consumer inherits acknowledged mail once; later acknowledgments cannot skip its pending work. */
+    fun inheritReadForCodex() {
+        if (Files.notExists(codexFile)) advanceCodex(read())
+    }
+
     /** The last seq the reader acknowledged, or 0. */
     fun read(): Long = numberIn(readFile) ?: 0L
 

@@ -171,7 +171,7 @@ internal class PlaygroundContentionFixture(
     private fun issueCode(element: JsonElement): String? = when (element) {
         is JsonPrimitive -> safeText(element)
         is JsonObject -> safeText(element["code"])
-        else -> null
+        is JsonArray -> null
     }
 
     private fun safeText(element: JsonElement?): String? =

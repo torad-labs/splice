@@ -175,7 +175,7 @@ internal class CodexDesktopStandIn(
                 channel,
                 buildJsonObject {
                     put("type", "broadcast")
-                    put("sourceClientId", "test-driver")
+                    put("sourceClientId", OWNER_ID)
                     put("method", "test-thread-status-active")
                 },
             )

@@ -29,8 +29,10 @@ import kotlinx.coroutines.CancellationException
 import splice.core.failure.FailureEvidence
 import splice.core.perf.OutcomeTag
 import splice.core.perf.UpstreamAttemptTiming
+import splice.core.turn.TurnOutcome
 import splice.core.util.WallClock
 import splice.upstream.RoundBody
+import splice.upstream.StreamRead
 import splice.upstream.StreamStart
 import splice.upstream.UpstreamHandler
 import splice.upstream.failure.ErrorMessage
@@ -120,12 +122,15 @@ internal class UpstreamRequest(
         }
     }
 
-    private fun observedEnding(result: RetryOutcome<*>): String =
-        if (result is RetryOutcome.Done && result.read is splice.upstream.StreamRead.Read) {
-            OutcomeTag.OK.wire
-        } else {
-            OutcomeTag.UPSTREAM_FAILED.wire
+    private fun observedEnding(result: RetryOutcome<*>): String {
+        val read = (result as? RetryOutcome.Done<*>)?.read as? StreamRead.Read<*>
+            ?: return OutcomeTag.UPSTREAM_FAILED.wire
+        return when (read.value) {
+            is TurnOutcome.Failure -> OutcomeTag.UPSTREAM_FAILED.wire
+            is TurnOutcome.ClientAbandoned -> OutcomeTag.CLIENT_ABORT.wire
+            else -> OutcomeTag.OK.wire
         }
+    }
 
     private suspend fun <T> executeResponse(
         resp: HttpResponse,

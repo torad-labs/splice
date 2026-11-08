@@ -50,6 +50,11 @@ public class PerfRequestRecorder internal constructor(
         }
     }
 
+    /** Retain the request-level maximum without emitting another event or histogram sample. */
+    public fun recordUpstreamGap(ms: Long): Unit = synchronized(lock) {
+        if (!finished) measurements.observe(PerfEventKind.GAP, mapOf("upstream_gap_ms" to ms.toDouble()))
+    }
+
     public fun finish(outcome: String, values: Map<String, Double> = emptyMap()): Boolean = synchronized(lock) {
         if (finished) return false
         finished = true

@@ -56,6 +56,7 @@ import splice.head.scripted.withScriptedHeads
 import splice.head.turn.LiveTurnsByHead
 import splice.head.turn.LiveTurnsRoutes
 import splice.head.turn.LiveTurnsSource
+import splice.head.turn.TurnState
 import java.nio.file.Path
 import java.time.Instant
 import java.time.ZoneId
@@ -201,7 +202,10 @@ internal class HoldsThroughHeadsTest : HoldRouteFixtures() {
 
             val held = head.client.open(launched())
             eventually { held.soFar().notices.isNotEmpty() }
+            eventually { head.liveTurns.list().singleOrNull()?.state is TurnState.Held }
             val other = head.client.send(launched())
+            // Observe the served-wake stagger before the clock can move past its scheduling point.
+            eventually { 1.seconds in time.parkedDues() }
             runClock(500.milliseconds, atMost = 1.minutes) { held.finished }
 
             assertEquals("the other turn", other.text, other.describe())

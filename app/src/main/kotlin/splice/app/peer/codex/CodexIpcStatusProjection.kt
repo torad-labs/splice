@@ -8,8 +8,14 @@ private const val STATUS_TYPE = "type"
 private const val STATUS_CHANGE = "change"
 private const val STATUS_PATCHES = "patches"
 private const val THREAD_RUNTIME_STATUS = "threadRuntimeStatus"
+
+// why: status labels are short protocol metadata, not arbitrary conversation text.
 private const val STATUS_MAX_TEXT = 256
+
+// why: common status paths contain one or two segments, so avoid repeated growth for those paths.
 private const val PATCH_PATH_INITIAL_CAPACITY = 2
+
+// why: bound path parsing and prevent oversized paths from being projected as runtime status.
 private const val PATCH_PATH_MAX_SEGMENTS = 8
 
 /** Projects router fields and only the runtime-status portion of desktop stream updates. */

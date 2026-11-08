@@ -9,6 +9,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 // why: the desktop IPC protocol uses a four-byte little-endian length followed by one UTF-8 JSON message.
 private const val IPC_LENGTH_BYTES = 4
+
+// why: the wire length is unsigned even though ByteBuffer exposes it as a signed Int.
 private const val IPC_UNSIGNED_LENGTH_MASK = 0xFFFF_FFFFL
 
 // why: outbound requests are small; large conversation snapshots are projected while inbound frames are streamed.

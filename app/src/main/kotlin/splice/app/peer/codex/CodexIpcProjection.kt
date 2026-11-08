@@ -15,11 +15,22 @@ import java.nio.channels.SocketChannel
 // why: desktop stream snapshots can be large, but only the small routing/status projection is retained.
 internal const val CODEX_IPC_MAX_INBOUND_FRAME_BYTES = 268_435_456L
 
+// why: successful RPC results are small; larger frames are stream broadcasts and never retain generic result data.
 internal const val IPC_MAX_RESPONSE_RESULT_BYTES = 1_048_576
+
+// why: bound the compact routing/status JSON retained from a much larger desktop frame.
 private const val IPC_MAX_PROJECTED_BYTES = 2_097_152
+
+// why: materialized metadata strings and field names stay small while unneeded large values are skipped by the parser.
 private const val IPC_MAX_RETAINED_STRING_CHARS = 1_024
+
+// why: cap recursive result copying and match the parser's structural nesting limit.
 internal const val IPC_MAX_NESTING = 64
+
+// why: InputStream uses -1 to distinguish a clean frame boundary from a byte value.
 private const val IPC_END_OF_STREAM = -1
+
+// why: convert signed JVM bytes to their unsigned value when reading one frame byte.
 private const val IPC_UNSIGNED_BYTE_MASK = 0xFF
 private val IPC_ROUTING_FIELDS =
     setOf("requestId", "method", "sourceClientId", "resultType", "error", "handledByClientId")

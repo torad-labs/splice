@@ -7,9 +7,12 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.JsonObject
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.core.perf.UpstreamAttempts
 import splice.core.perf.UpstreamGapEnd
 import splice.core.perf.observation.PerfAttemptRecorder
 import splice.core.perf.observation.PerfEventKind
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /** Each collection owns its stopwatch. Synchronous delivery is charged separately, never as silence. */
 internal class UpstreamEventTiming(private val perf: TurnPerf, private val postedAtMs: Long?) {
@@ -73,6 +76,29 @@ internal class UpstreamEventTiming(private val perf: TurnPerf, private val poste
         perf.intervals.record(PerfKeys.UP_GAP_MAX_MS, previousMs, nowMs, kind)
         perf.maxCount(PerfKeys.UP_GAPS_2S, 0)
         if (gapMs >= LONG_UPSTREAM_GAP_MS) perf.add(PerfKeys.UP_GAPS_2S, 1)
+    }
+}
+
+/** One logical-reader tail, closed by the transport before its handle or by the reader's finally. */
+internal class UpstreamEventTail(
+    private val perf: TurnPerf,
+    private val observations: PerfAttemptRecorder?,
+    postedAtMs: Long?,
+) : UpstreamAttempts.TailObservation {
+    private val previous = AtomicReference(postedAtMs)
+    private val recorded = AtomicBoolean(false)
+
+    /** Synchronous event delivery has finished; that blocked time is not upstream silence. */
+    fun delivered(atMs: Long) {
+        previous.set(atMs)
+    }
+
+    override fun record() {
+        if (!recorded.compareAndSet(false, true)) return
+        val from = previous.get() ?: return
+        val gap = (perf.elapsedMs() - from).coerceAtLeast(0)
+        observations?.observe(PerfEventKind.GAP, mapOf("upstream_gap_ms" to gap.toDouble()))
+        perf.observations?.recordUpstreamGap(gap)
     }
 }
 

@@ -107,7 +107,12 @@ internal class CodexIpcRpc(
             finish(CLOSED_REASON)
             throw cancelled
         } catch (failure: IOException) {
-            "the desktop Codex IPC connection failed: ${SafeFailureText.render(failure)}"
+            // Closing an owned thread can interrupt its socket reader before the peer's EOF arrives.
+            if (closed.get()) {
+                CLOSED_REASON
+            } else {
+                "the desktop Codex IPC connection failed: ${SafeFailureText.render(failure)}"
+            }
         }
         finish(reason)
         return reason

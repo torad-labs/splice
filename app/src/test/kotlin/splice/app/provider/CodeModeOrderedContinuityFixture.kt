@@ -260,11 +260,12 @@ internal class OrderedContinuityGateway(private val tmp: Path, private val upstr
 
     suspend fun start() = head.start()
 
-    suspend fun first(): JsonArray = post(listOf(opening))
+    suspend fun first(): JsonArray = post("first", listOf(opening))
 
-    suspend fun finish(callback: JsonArray): JsonArray = post(transcript(callback, echo = true))
+    suspend fun finish(callback: JsonArray): JsonArray = post("finish", transcript(callback, echo = true))
 
     suspend fun next(callback: JsonArray, answer: JsonArray): JsonArray = post(
+        "next",
         transcript(callback, echo = false) + message("assistant", answer) + message("user", JsonPrimitive("next")),
     )
 
@@ -337,7 +338,7 @@ internal class OrderedContinuityGateway(private val tmp: Path, private val upstr
         put("content", content)
     }
 
-    private suspend fun post(messages: List<JsonObject>): JsonArray {
+    private suspend fun post(phase: String, messages: List<JsonObject>): JsonArray {
         val request = buildJsonObject {
             put("model", "claude-codex--${OrderedContinuityItems.MODEL}")
             put("stream", false)
@@ -365,8 +366,9 @@ internal class OrderedContinuityGateway(private val tmp: Path, private val upstr
         assertEquals(
             200,
             response.status.value,
-            "generation=$generation completed_responses=${clientContent.size} ${logs.summary()} " +
-                "http_status=${response.status.value}",
+            "phase=$phase generation=$generation completed_responses=${clientContent.size} " +
+                "upstream_inputs=${upstream.inputs.size} terminal_released=${upstream.terminalReleased} " +
+                "${logs.summary()} http_status=${response.status.value}",
         )
         return Json.parseToJsonElement(body).jsonObject.getValue("content").jsonArray.also(clientContent::add)
     }

@@ -78,6 +78,21 @@ class PerfPagedCheckpointTest {
             repeat(3) { fixture.assertMinute(it + 1) }
         }
     }
+
+    @Test
+    fun `durable cache eviction preserves history without claiming lost gauge input`(@TempDir root: Path) {
+        PagedHistoryFixture(root).use { fixture ->
+            fixture.gauge()
+            repeat(20) {
+                fixture.seedMinute(it + 1)
+                repeat(3) { fixture.checkpoint() }
+            }
+            fixture.assertMinute(1)
+            fixture.assertMinute(20)
+            val issues = fixture.collection.snapshot().coverage.issues
+            assertTrue(issues.none { it.code == "late_observation_expired" }, issues.toString())
+        }
+    }
 }
 
 private class PagedHistoryFixture(root: Path) : AutoCloseable {
@@ -95,17 +110,19 @@ private class PagedHistoryFixture(root: Path) : AutoCloseable {
     init { collection.start() }
 
     fun seed(minutes: Int) {
-        repeat(minutes) { minute ->
-            repeat(64) { model ->
-                now = (minute + 1) * 60_000L + model
-                assertTrue(
-                    recorder.emit(
-                        PerfScope(head = "test", model = "model-${"a".repeat(80)}-$model", transport = "http"),
-                        PerfEventKind.RUNTIME,
-                        mapOf("runtime_heap_used_bytes" to 100.0, "runtime_threads" to 2.0),
-                    ),
-                )
-            }
+        repeat(minutes) { seedMinute(it + 1) }
+    }
+
+    fun seedMinute(minute: Int) {
+        repeat(64) { model ->
+            now = minute * 60_000L + model
+            assertTrue(
+                recorder.emit(
+                    PerfScope(head = "test", model = "model-${"a".repeat(80)}-$model", transport = "http"),
+                    PerfEventKind.RUNTIME,
+                    mapOf("runtime_heap_used_bytes" to 100.0, "runtime_threads" to 2.0),
+                ),
+            )
         }
     }
 
@@ -150,7 +167,11 @@ private class PagedHistoryFixture(root: Path) : AutoCloseable {
                 64,
                 points.filter { it.metric == "runtime_heap_used_bytes" }.map { it.scope.model }.distinct().size,
             )
-            assertEquals(64, points.filter { it.metric == "runtime_threads" }.map { it.scope.model }.distinct().size)
+            assertEquals(
+                64,
+                points.filter { it.metric == "runtime_threads" && it.scope.model != null }
+                    .map { it.scope.model }.distinct().size,
+            )
         } finally {
             PerfWorkBudget.release(result)
         }

@@ -42,6 +42,10 @@ internal class PerfCells(private val memory: PerfMemoryAccount?) {
         while (start < until) {
             val end = minOf(until, minute(start) + PerfObservationLimits.AGGREGATE_MINUTE_MS)
             val minute = minute(start)
+            if (minute in evictedMinutes) {
+                start = end
+                continue
+            }
             val target = cell(series.metric, series.scope, start)
             if (target == null) {
                 markDirty(minute)

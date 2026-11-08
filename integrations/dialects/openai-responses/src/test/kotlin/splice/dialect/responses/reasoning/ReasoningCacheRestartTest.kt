@@ -47,6 +47,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
 import java.nio.file.attribute.PosixFilePermissions
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.writeText
 import kotlin.time.Duration.Companion.seconds
@@ -64,6 +65,7 @@ private class RestartProbe(
     logs: MutableList<String> = mutableListOf(),
     cacheOn: Boolean = true,
     replay: Boolean = false,
+    private val stopTimeouts: AtomicInteger = AtomicInteger(),
 ) : ResponsesProvider(
     tuning = ProviderTuning(
         name = ProviderName(key = "claudex", label = "claudex"),
@@ -88,9 +90,27 @@ private class RestartProbe(
             reasoningCache = cacheOn,
         ),
     ),
-    log = { logs.add(it) },
+    log = {
+        if (it.startsWith("[reasoning-cache] stop:")) stopTimeouts.incrementAndGet()
+        logs.add(it)
+    },
 ) {
     override fun extraHeaders(creds: Credentials): Map<String, String> = emptyMap()
+
+    /** These tests restore committed state, not a disk that exceeded the daemon's shutdown allowance.
+     *  A timed-out stop leaves its writer running. Await its acknowledgement before opening the next head,
+     *  as the write-order property does; keep the production stop's two-second deadline unchanged. */
+    fun stopPersisted() {
+        val deadline = System.nanoTime() + 60.seconds.inWholeNanoseconds
+        while (true) {
+            val before = stopTimeouts.get()
+            onHeadStop()
+            if (stopTimeouts.get() == before) return
+            check(!Thread.currentThread().isInterrupted && System.nanoTime() < deadline) {
+                "Reasoning cache did not finish its queued writes before the restart fixture deadline"
+            }
+        }
+    }
 }
 
 /** The heads one test starts over its state dir, run the way the daemon runs them: a restart stops every head
@@ -117,7 +137,7 @@ private class RestartHeads(private val state: Path) {
         yield(restart(replay = true))
     }
 
-    fun stopAll() = started.forEach(RestartProbe::onHeadStop)
+    fun stopAll() = started.forEach(RestartProbe::stopPersisted)
 }
 
 private object QuietSink : WireSink {

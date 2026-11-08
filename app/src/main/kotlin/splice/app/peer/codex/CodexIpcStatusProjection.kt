@@ -209,7 +209,10 @@ internal object CodexIpcPatchProjection {
     private fun readPatchValue(parser: JsonParser, token: JsonToken): PatchValue = when (token) {
         JsonToken.VALUE_STRING -> CodexIpcProjection.scalarText(parser)?.let(PatchValue::Text) ?: PatchValue.Other
         JsonToken.START_OBJECT -> readStatusValue(parser)
-        else -> {
+        JsonToken.NOT_AVAILABLE, JsonToken.END_OBJECT, JsonToken.START_ARRAY, JsonToken.END_ARRAY,
+        JsonToken.FIELD_NAME, JsonToken.VALUE_NUMBER_INT, JsonToken.VALUE_NUMBER_FLOAT,
+        JsonToken.VALUE_TRUE, JsonToken.VALUE_FALSE, JsonToken.VALUE_NULL, JsonToken.VALUE_EMBEDDED_OBJECT,
+        -> {
             CodexIpcProjection.skipValue(parser, token)
             PatchValue.Other
         }

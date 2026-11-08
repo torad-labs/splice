@@ -23,7 +23,9 @@ internal object CodexIpcResponseProjection {
             JsonToken.VALUE_STRING, JsonToken.VALUE_NUMBER_INT, JsonToken.VALUE_NUMBER_FLOAT,
             JsonToken.VALUE_TRUE, JsonToken.VALUE_FALSE, JsonToken.VALUE_NULL,
             -> copyScalar(parser, generator, token)
-            else -> CodexIpcProjection.invalid("desktop IPC result contained an invalid JSON value")
+            JsonToken.NOT_AVAILABLE, JsonToken.END_OBJECT, JsonToken.END_ARRAY, JsonToken.FIELD_NAME,
+            JsonToken.VALUE_EMBEDDED_OBJECT,
+            -> CodexIpcProjection.invalid("desktop IPC result contained an invalid JSON value")
         }
     }
 
@@ -63,7 +65,9 @@ internal object CodexIpcResponseProjection {
             JsonToken.VALUE_TRUE -> generator.writeBoolean(true)
             JsonToken.VALUE_FALSE -> generator.writeBoolean(false)
             JsonToken.VALUE_NULL -> generator.writeNull()
-            else -> CodexIpcProjection.invalid("desktop IPC result contained an invalid scalar")
+            JsonToken.NOT_AVAILABLE, JsonToken.START_OBJECT, JsonToken.END_OBJECT,
+            JsonToken.START_ARRAY, JsonToken.END_ARRAY, JsonToken.FIELD_NAME, JsonToken.VALUE_EMBEDDED_OBJECT,
+            -> CodexIpcProjection.invalid("desktop IPC result contained an invalid scalar")
         }
     }
 }

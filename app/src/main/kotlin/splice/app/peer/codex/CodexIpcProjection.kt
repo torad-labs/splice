@@ -127,7 +127,9 @@ internal object CodexIpcProjection {
                 token == JsonToken.VALUE_TRUE,
             )
             JsonToken.VALUE_NULL -> generator.writeNullField(name)
-            else -> skipValue(parser, token)
+            JsonToken.NOT_AVAILABLE, JsonToken.START_OBJECT, JsonToken.END_OBJECT,
+            JsonToken.START_ARRAY, JsonToken.END_ARRAY, JsonToken.FIELD_NAME, JsonToken.VALUE_EMBEDDED_OBJECT,
+            -> skipValue(parser, token)
         }
     }
 

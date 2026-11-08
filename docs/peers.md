@@ -282,7 +282,8 @@ helper answers no request the app-server makes of it, such as an approval, and g
 Desktop lifecycle tracking consumes the versioned state stream but retains only thread status, not its transcript.
 Large desktop snapshots are parsed as a stream and their conversation content is skipped. An unsupported stream
 version, missing initial status, or a frame exceeding the desktop's 256 MiB protocol limit stops the connection
-rather than claiming that delivery is available. Outgoing input remains bounded at 8 MiB. IPC writes and reply waits
+rather than claiming that delivery is available. Retained routing and status strings are limited to 1,024 characters;
+response frames are capped at 1 MiB. Outgoing input remains bounded at 8 MiB. IPC writes and reply waits
 have deadlines. A partial write or desktop error after forwarding is recorded as `unconfirmed`, because the desktop
 may have accepted the input before its reply was lost.
 

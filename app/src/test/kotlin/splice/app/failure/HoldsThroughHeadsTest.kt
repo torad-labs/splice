@@ -131,7 +131,18 @@ internal class HoldsThroughHeadsTest : HoldRouteFixtures() {
             val stream = head.client.open(launched())
             eventually { stream.soFar().notices.isNotEmpty() }
             assertEquals(1, provider.requests.size, "the limit, and nothing more before the reset")
-            runClock(2.seconds, atMost = 15.minutes) { stream.finished }
+            runClock(
+                2.seconds,
+                atMost = 15.minutes,
+                afterStep = {
+                    val arrived = stream.soFar().arrivals.lastOrNull() ?: Duration.ZERO
+                    if (!stream.finished && time.passed() - arrived >= 32.seconds) {
+                        // The socket reader stamps arrivals with this clock; consume a due ping before moving it.
+                        // The first 2 s tick notices the hold frame before counting its 30 s silence interval.
+                        eventually { stream.finished || stream.soFar().arrivals.lastOrNull() != arrived }
+                    }
+                },
+            ) { stream.finished }
             val answer = stream.finish()
 
             assertEquals("the answer after the reset", answer.text, answer.describe())
@@ -742,7 +753,12 @@ internal abstract class HoldRouteFixtures : HoldReplyFixtures() {
     /** Moves the virtual clock to the next time something waits for, at most [step] at a time, once the head has
      *  settled after the last move, until [done] or [atMost]. A send a wake starts reaches the provider at the time
      *  it was due, not a step later: the clock does not move again until each wait the move woke has answered. */
-    protected suspend fun ScriptedHeads.runClock(step: Duration, atMost: Duration, done: () -> Boolean) =
+    protected suspend fun ScriptedHeads.runClock(
+        step: Duration,
+        atMost: Duration,
+        afterStep: suspend () -> Unit = {},
+        done: () -> Boolean,
+    ) =
         withContext(Dispatchers.Default) {
             while (!done() && time.passed() < atMost) {
                 settle()
@@ -761,6 +777,7 @@ internal abstract class HoldRouteFixtures : HoldReplyFixtures() {
                         "answers_before=$seen answers_now=${answers()} done=${done()} " +
                         "parked=${time.parkedNow()} next_due=${time.nextDue()} wait_guard_ms=$ANSWER_MS"
                 }
+                afterStep()
             }
         }
 

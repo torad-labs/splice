@@ -432,8 +432,8 @@ class ClaudeCarryingPoolUsageTest {
         }
         assertEquals(HttpStatusCode.OK, response.status, response.text)
         val counts = Json.parseToJsonElement(response.text).jsonObject.getValue("counts").jsonObject
-        assertEquals(arrivals, counts.getValue("known_arrivals").jsonPrimitive.content)
-        assertEquals(completions, counts.getValue("known_completions").jsonPrimitive.content)
+        assertEquals(arrivals, counts.getValue("known_arrivals").jsonPrimitive.content, response.text)
+        assertEquals(completions, counts.getValue("known_completions").jsonPrimitive.content, response.text)
     }
 
     private suspend fun assertFinishedObservation(client: HttpClient, url: String, rig: ClaudeNativePoolFixture.Rig) {

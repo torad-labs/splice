@@ -171,6 +171,7 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
             HeadServerFactory(config, key, {}).also {
                 it.sentCredentials = plane.sentCredentials
                 it.credentialAccountNames = plane.credentialAccountNames
+                it.performance = plane.performance
             },
             plane.playgroundProviders,
         ),

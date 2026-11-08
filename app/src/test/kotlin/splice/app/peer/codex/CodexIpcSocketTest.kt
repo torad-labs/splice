@@ -46,7 +46,7 @@ class CodexIpcSocketTest {
                 val payload = ByteArray(length).also(input::readFully)
                 peerResult.complete(payload.toString(Charsets.UTF_8))
 
-                val reply = "desktop reply ✓".toByteArray(Charsets.UTF_8)
+                val reply = """{"type":"broadcast","method":"desktop reply ✓"}""".toByteArray(Charsets.UTF_8)
                 val replyHeader = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(reply.size)
                 replyHeader.flip()
                 val output = Channels.newOutputStream(channel)
@@ -60,10 +60,10 @@ class CodexIpcSocketTest {
         channel.connect(UnixDomainSocketAddress.of(path))
         CodexIpcSocket(channel).use { socket ->
             socket.send("hello desktop ✓")
-            assertEquals("hello desktop ✓", peerResult.get(WAIT_S, TimeUnit.SECONDS))
-            assertEquals("desktop reply ✓", socket.receive())
+            assertEquals("hello desktop ✓", peerResult.get(SOCKET_REPLY_WAIT_S, TimeUnit.SECONDS))
+            assertEquals("""{"type":"broadcast","method":"desktop reply ✓"}""", socket.receive())
         }
-        peer.join(TimeUnit.SECONDS.toMillis(WAIT_S))
+        peer.join(TimeUnit.SECONDS.toMillis(SOCKET_REPLY_WAIT_S))
         listener.close()
     }
 
@@ -139,7 +139,7 @@ class CodexIpcSocketTest {
         assertTrue(projected.first?.contains("\"type\":\"active\"") == true)
         assertFalse(projected.first?.contains("private-content") == true)
         assertTrue(projected.second?.contains("client-status-changed") == true)
-        peer.join(TimeUnit.SECONDS.toMillis(WAIT_S))
+        peer.join(TimeUnit.SECONDS.toMillis(SOCKET_REPLY_WAIT_S))
         listener.close()
     }
 
@@ -172,7 +172,7 @@ class CodexIpcSocketTest {
         assertTrue(payload.size > CODEX_IPC_MAX_MESSAGE_BYTES)
         assertTrue(projected?.contains("\"value\":\"idle\"") == true)
         assertFalse(projected?.contains("patch-private-content") == true)
-        peer.join(TimeUnit.SECONDS.toMillis(WAIT_S))
+        peer.join(TimeUnit.SECONDS.toMillis(SOCKET_REPLY_WAIT_S))
         listener.close()
     }
 
@@ -194,6 +194,6 @@ class CodexIpcSocketTest {
     }
 }
 
-private const val WAIT_S = 5L
+private const val SOCKET_REPLY_WAIT_S = 5L
 
 private const val THREAD = "019a2f6c-4b1e-7c3d-9e8f-0a1b2c3d4e5f"

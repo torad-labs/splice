@@ -400,6 +400,8 @@ the integrated build and authorizes execution of the compiled entries.
 writer/source, query cache and cursor paths. Virtual clocks advance one request
 per minute through36days of fill, then five equal24hour steps. Each checkpoint
 waits for the real writer lanes and exercises24hour series reads and a cursor.
+At each hourly pause, aggregate checkpoints drain the production dirty-minute
+pages and acknowledge their captured generations only after durable settlement.
 Only synthetic segment mtimes are aligned with the injected producer clock because
 production evidence retention uses mtime; payloads and coverage ledgers are never
 rewritten. Both modes hold a5.5MiB shared-pool lease to represent other ordinary

@@ -112,7 +112,7 @@ class CodexIpcSocketTest {
         val payload = buildString {
             append("""{"type":"broadcast","sourceClientId":"owner","method":"""")
             append("""thread-stream-state-changed","version":11,"params":{"hostId":"local","conversationId":"""")
-            append("""$THREAD","change":{"type":"snapshot","revision":1,"conversationState":{"""")
+            append("""$THREAD","change":{"type":"snapshot","revision":1,"conversationState":{""")
             append(""""threadRuntimeStatus":{"type":"active"},"messages":""")
             append(JsonPrimitive(privateText))
             append("}}}}")
@@ -153,7 +153,7 @@ class CodexIpcSocketTest {
             append("""{"type":"broadcast","sourceClientId":"owner","method":"""")
             append("""thread-stream-state-changed","version":11,"params":{"hostId":"local","conversationId":"""")
             append("""$THREAD","change":{"type":"patches","baseRevision":1,"revision":2,"patches":[""")
-            append("""{"op":"replace","path":["turns",0,"text"],"value":"""")
+            append("""{"op":"replace","path":["turns",0,"text"],"value":""")
             append(JsonPrimitive(privateText))
             append("""},{"value":"idle","path":["threadRuntimeStatus","type"],"op":"replace"}]}}}""")
         }.toByteArray(Charsets.UTF_8)

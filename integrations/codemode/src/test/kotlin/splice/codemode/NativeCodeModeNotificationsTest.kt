@@ -36,7 +36,8 @@ class NativeCodeModeNotificationsTest {
                 val yielded = when (first) {
                     is CodeModeStep.Yielded -> first
                     is CodeModeStep.Calls -> cell.observe(NOTIFICATION_WAIT_MS) as CodeModeStep.Yielded
-                    else -> error("Expected a yielded observation or its pending permission call, got $first")
+                    is CodeModeStep.Completed, is CodeModeStep.Notified, is CodeModeStep.WaitingForResults ->
+                        error("Expected a yielded observation or its pending permission call, got $first")
                 }
                 assertEquals("prefix", yielded.output)
                 val notice = withTimeout(NOTIFICATION_WAIT_MS) { notices.receive() }

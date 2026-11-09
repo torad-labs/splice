@@ -14,6 +14,7 @@ package splice.dialect.responses.websocket
 
 import splice.core.perf.WsAttemptTiming
 import splice.core.util.ElapsedClock
+import splice.core.util.JsonWire
 import splice.core.util.MonoClock
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -58,8 +59,9 @@ internal class WsPulse(
     private val roundEvents = RoundEvents()
 
     /** A text frame arrived (any event, terminal or not). */
-    internal fun frame() {
+    internal fun frame(data: CharSequence? = null) {
         timing.get()?.firstFragment()
+        data?.let { timing.get()?.bytes(JsonWire.byteSize(it.toString())) }
         lastFrameAt.set(clock())
     }
 
@@ -88,6 +90,7 @@ internal class WsPulse(
 
     /** V4-242: the round in flight received an event of [type]. */
     internal fun event(type: String) {
+        timing.get()?.event()
         roundEvents.add(type)
     }
 

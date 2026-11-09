@@ -1,5 +1,6 @@
 package splice.codemode.nativehost.grpc.state
 
+import io.opentelemetry.context.Context
 import kotlinx.coroutines.CompletableDeferred
 import splice.codemode.nativehost.grpc.NativeGrpcSession
 
@@ -9,6 +10,7 @@ internal data class NativeGrpcExecutionRecord(
     val executionId: String,
     val toolCallId: String,
     val enabledTools: Map<Pair<String, String>, Int>,
+    val traceContext: Context = Context.current(),
 ) {
     var cell: String? = null
     var started: Boolean = false

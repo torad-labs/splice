@@ -13,6 +13,7 @@ import splice.upstream.transport.UpstreamTransport
 import splice.upstream.transport.WriteBoundMs
 
 internal class UpstreamFactory {
+    internal var performance: splice.app.observability.PerfTelemetry? = null
     internal fun upstreamFor(
         ctx: ProviderBuild,
         cfg: SpliceConfig,
@@ -34,7 +35,9 @@ internal class UpstreamFactory {
             log,
             requestWriteTimeoutMs = cfg.firstByteTimeoutMs,
             requestWriteBound = WriteBoundMs { ctx.faultPlan.liveWatchdog().firstByteTimeout.inWholeMilliseconds },
-        ),
+        ).also { client ->
+            splice.upstream.observability.UpstreamHttpRuntime.source(client)?.let { performance?.owners?.add(it) }
+        },
         // Every wait is RetryEngine's (failure-handling slice 4): the retry curve and its knobs retired in 0.4.0.
         pacing = RetryPacing(),
         holdStore = providerHold,

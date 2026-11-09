@@ -8,6 +8,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import splice.core.turn.CacheWrite
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
+import splice.core.turn.UsageMeasure
+import splice.core.turn.UsageOrigin
 import splice.core.util.JsonScalars
 
 /** The passthrough dialect's usage accounting: the four Anthropic token buckets, the CX-18 alias
@@ -20,6 +22,7 @@ internal class PassthroughUsage {
     private var cacheCreationHourly = 0L
     private var outputTokens = 0L
     private val reported = mutableSetOf<UsageField>()
+    private val measured = mutableSetOf<UsageMeasure>()
 
     /** Anthropic usage is disjoint; re-add the cache buckets so HeadServer's cached-subtraction
      *  reproduces the correct disjoint numbers. cachedTokens carries the prompt-cache-read hit.
@@ -36,6 +39,7 @@ internal class PassthroughUsage {
         cachedTokens = cacheRead,
         cacheWrite = CacheWrite(cacheCreation, cacheCreationHourly),
         reported = reported.toSet(),
+        origin = UsageOrigin(measured = inclusiveMeasured()),
     )
 
     /** The backend's disjoint counts, before the outcome's inclusive input normalization. The 1-hour
@@ -52,20 +56,35 @@ internal class PassthroughUsage {
         JsonScalars.firstLong(u, "input_tokens")?.let {
             inputTokens = it
             reported += setOf(UsageField.INPUT, UsageField.CACHED, UsageField.CACHE_WRITE)
+            measured += UsageMeasure.INPUT
         }
         JsonScalars.firstLong(u, "cache_read_input_tokens")?.let {
             cacheRead = it
             reported += UsageField.CACHED
+            measured += UsageMeasure.CACHE_READ
         }
         cacheCreationTokens(u)?.let {
             cacheCreation = it
             cacheCreationHourly = hourlyCacheCreationTokens(u).coerceAtMost(it)
             reported += UsageField.CACHE_WRITE
+            measured += UsageMeasure.CACHE_WRITE
+            measured -= UsageMeasure.CACHE_WRITE_1H
+            val hourly = JsonScalars.firstLong(u["cache_creation"] as? JsonObject, HOURLY_WRITE_KEY)
+            if (hourly?.let { value -> value in 0L..it } == true) measured += UsageMeasure.CACHE_WRITE_1H
         }
         JsonScalars.firstLong(u, "output_tokens")?.let {
             outputTokens = it
             reported += UsageField.OUTPUT
+            measured += UsageMeasure.OUTPUT
         }
+    }
+
+    private fun inclusiveMeasured(): Set<UsageMeasure> = if (
+        measured.containsAll(setOf(UsageMeasure.CACHE_READ, UsageMeasure.CACHE_WRITE))
+    ) {
+        measured.toSet()
+    } else {
+        measured - UsageMeasure.INPUT
     }
 
     /** CX-18: the flat total, else the sum of Anthropic's newer per-TTL `cache_creation` buckets.

@@ -48,7 +48,7 @@ internal class UpstreamWireTiming : Interceptor {
             override fun read(sink: Buffer, byteCount: Long): Long {
                 marks.readStarted()
                 val count = super.read(sink, byteCount)
-                if (count > 0) marks.firstByte()
+                if (count > 0) marks.firstByte(count)
                 return count
             }
         }.buffer()

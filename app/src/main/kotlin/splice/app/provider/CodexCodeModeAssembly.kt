@@ -54,6 +54,7 @@ internal class CodexCodeModeAssembly(
         (sessionAlive as? CodeModeSessionLiveness)?.idle ?: CodeModeSessionIdle { false },
 ) {
     internal val controls: HeadCodeModeControls = HeadCodeModeControls()
+    internal var performance: splice.app.observability.PerfTelemetry? = null
     internal val catalogs: CodeModeMcpCatalogs = CodeModeMcpCatalogs()
 
     fun wiring(ctx: ProviderBuild): CodexCodeModeWiring = CodexCodeModeWiring(
@@ -111,7 +112,7 @@ internal class CodexCodeModeAssembly(
                         memoryBudgetMb = ctx.providerCfg.quirks.codeModeMemoryMb ?: DEFAULT_POOL_MEMORY_MB,
                     ),
                     cellHeapMb = ctx.providerCfg.quirks.codeModeHeapMb ?: DEFAULT_HEAP_MB,
-                ),
+                ).also { it.performance = performance },
                 state = CodeModeStateLocation(
                     dir = statePaths.headsDir.resolve(ctx.key).resolve(CODE_MODE_DIR),
                     legacyFile = statePaths.stateDir.resolve("${ctx.key}$CODE_MODE_STATE_SUFFIX"),

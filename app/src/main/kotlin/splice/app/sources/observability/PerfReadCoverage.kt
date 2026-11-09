@@ -1,0 +1,72 @@
+package splice.app.sources.observability
+
+import splice.core.perf.observation.PerfAggregateSnapshot
+import splice.core.perf.observation.PerfCoverage
+import splice.core.perf.observation.PerfIssue
+import splice.core.perf.observation.PerfSinkStatus
+
+/** Coverage is folded separately from display buckets, so coarsening never fills time gaps. */
+internal class PerfReadCoverage(private val from: Long, private val until: Long, evidence: List<PerfIssue>) {
+    private val issues = LinkedHashMap<PerfReadIssueKey, PerfIssue>()
+    private var issueBytes = 0L
+    private var end = from
+    private var covered = 0L
+    private var edge = false
+
+    init { evidence.forEach(::observe) }
+
+    fun add(snapshot: PerfAggregateSnapshot) {
+        val start = maxOf(from, end, snapshot.fromMs)
+        val stop = minOf(until, snapshot.untilMs, snapshot.fromMs + snapshot.coverage.observedMs)
+        if (stop > start) covered += stop - start
+        end = maxOf(end, stop)
+        edge = edge || snapshot.fromMs < from || snapshot.untilMs > until
+        snapshot.coverage.issues.forEach(::observe)
+    }
+
+    fun error(code: String) {
+        val key = PerfReadIssueKey(code, HISTORY_SINK, null, null, null)
+        val count = (issues[key]?.count ?: 0L) + 1
+        observe(PerfIssue(code, HISTORY_SINK, count))
+    }
+
+    fun result(sink: PerfSinkStatus): PerfCoverage {
+        if (covered < until - from) {
+            observe(PerfIssue("coverage_gap", HISTORY_SINK, detail = "unobserved_ms=${until - from - covered}"))
+        }
+        if (edge) error("partial_boundary_bucket")
+        return PerfCoverage(from, until, covered, issues.values.toList(), listOf(sink))
+    }
+
+    private fun observe(value: PerfIssue) {
+        if (!value.overlaps(from, until)) return
+        val key = PerfReadIssueKey(value.code, value.source, value.detail, value.fromMs, value.untilMs)
+        val existing = issues[key]
+        if (existing != null) {
+            issues[key] = existing.copy(count = maxOf(existing.count, value.count))
+        } else if (issues.size < MAX_READ_COVERAGE_ISSUES && issueBytes + PerfHistorySize.issue(
+                value,
+            ) <= READ_COVERAGE_ISSUE_BUDGET
+        ) {
+            issues[key] = value
+            issueBytes += PerfHistorySize.issue(value)
+        } else {
+            issues[PerfReadIssueKey("coverage_issue_limit", HISTORY_SINK, null, null, null)] =
+                PerfIssue("coverage_issue_limit", HISTORY_SINK)
+        }
+    }
+}
+
+private data class PerfReadIssueKey(
+    val code: String,
+    val source: String,
+    val detail: String?,
+    val fromMs: Long?,
+    val untilMs: Long?,
+)
+
+// Keep at most sixty-four distinct coverage issues while duplicate codes accumulate counts.
+private const val MAX_READ_COVERAGE_ISSUES = 64
+
+// Limit retained issue details to 128 KiB independently of the issue-count bound.
+private const val READ_COVERAGE_ISSUE_BUDGET = 128L * 1_024

@@ -99,12 +99,59 @@ const API = (() => {
     if (kept && Date.now() - kept.at < ms) return kept.answer;
     return call("GET", path);
   }
+  // All console performance calls share the daemon's two-running/two-waiting admission budget.
+  // Keep sent calls in their slots until the response body drains: aborting fetch is not proof the
+  // server released its admission. A stale generation may stop queued work and ignore sent results.
+  const PERF_ACTIVE = 4, PERF_WAITING = 32, perfWaiting = new Map();
+  let perfRunning = 0;
+  const localPerfBusy = () => ({ ok: false, status: 429, body: { status: "busy", reason: "console_query_capacity" } });
+  function drainPerf() {
+    while (perfRunning < PERF_ACTIVE && perfWaiting.size) {
+      const [key, next] = perfWaiting.entries().next().value;
+      perfWaiting.delete(key);
+      if (!next.current()) { next.resolve(null); continue; }
+      perfRunning++;
+      Promise.resolve().then(() => /^BLOB$/i.test(next.method)
+        ? client(undefined, next.current).blob(next.path, next.body)
+        : call(next.method, next.path, next.body,
+          next.ready ? { "x-splice-read-pending": "1" } : undefined,
+          undefined, undefined, next.current)).then(next.resolve, next.reject)
+        .finally(() => { perfRunning--; drainPerf(); });
+    }
+  }
+  function perfRequest(key, method, path, body, current = () => true, options = {}) {
+    if (typeof key !== "string" || !key.startsWith("perf:") && !key.startsWith("requests:")) {
+      return Promise.reject(new Error("performance request key is invalid"));
+    }
+    return new Promise((resolve, reject) => {
+      const pendingRead = perfWaiting.get(key);
+      if (pendingRead && options.replace === false) {
+        reject(new Error("Another performance action is pending. Wait for it to finish."));
+        return;
+      }
+      pendingRead?.resolve(null);
+      if (!pendingRead && perfRunning >= PERF_ACTIVE && perfWaiting.size >= PERF_WAITING) {
+        resolve(localPerfBusy());
+        return;
+      }
+      perfWaiting.set(key, { method, path, body, current, ready: options.ready === true, resolve, reject });
+      drainPerf();
+    });
+  }
+  function cancelPerf(prefix) {
+    for (const [key, pendingRead] of perfWaiting) {
+      if (!key.startsWith(prefix) || !/^GET$/i.test(pendingRead.method) || pendingRead.current()) continue;
+      perfWaiting.delete(key);
+      pendingRead.resolve(null);
+    }
+  }
   // Every answer comes back as { ok, status, body }; a refused or unreachable call is an answer too, never a throw.
-  async function call(method, path, body, extra, signal, keepalive) {
+  async function call(method, path, body, extra, signal, keepalive, maySend = () => true) {
     const counted = !path.startsWith("/api/console/pilot");
     if (counted) pending++;
     try {
       await signedIn;
+      if (!maySend()) return { ok: false, status: 0, body: null };
       const init = { method, signal, keepalive, headers: { Authorization: `Bearer ${localStorage.getItem(STORE) || ""}`, ...extra } };
       if (body !== undefined) { init.headers["Content-Type"] = "application/json"; init.body = JSON.stringify(body); }
       const res = await fetch(path, init);
@@ -122,18 +169,78 @@ const API = (() => {
       if (counted) pending--;
     }
   }
-  const client = (signal) => ({
+  // Capacity refusals are retried only after their caller's whole batch settles. The 15-second
+  // window gates new sends; a sent request keeps its queue slot until the normal HTTP response drains.
+  async function retryCapacity(refusals, current, resend, parentSignal, inheritedSignal, phase) {
+    const pending = refusals.filter((item) => item?.answer?.status === 429 && item.answer.body?.reason === "control_query_capacity");
+    if (!pending.length) return [];
+    let windowOpen = true;
+    const timer = phase ? null : setTimeout(() => { windowOpen = false; }, 15000);
+    phase?.start();
+    const canStart = () => current() && !inheritedSignal?.aborted && !parentSignal?.aborted
+      && (phase ? phase.open() : windowOpen);
+    const retryClient = client(undefined, canStart);
+    const completed = [];
+    try {
+      for (const item of pending) {
+        if (!canStart()) break;
+        let answer;
+        try { answer = await resend(item, retryClient, canStart); } catch { break; }
+        if (!current() || inheritedSignal?.aborted || parentSignal?.aborted) break;
+        if (!Number.isInteger(answer?.status) || answer.status <= 0) break;
+        completed.push({ item, answer });
+      }
+      return completed;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+  // Artifact callers can opt into fixed machine refusal codes. Never return the error document:
+  // it can contain paths or credentials, and even an error stream must have a small read bound.
+  async function blobRefusal(res, options) {
+    const allowed = options?.refusalReasons;
+    if (!Array.isArray(allowed) || !allowed.length || res.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase() !== "application/json" || !res.body) return null;
+    const reader = res.body.getReader(), bytes = new Uint8Array(4096); let size = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value.byteLength > bytes.length - size) { await reader.cancel(); return null; }
+        bytes.set(value, size); size += value.byteLength;
+      }
+      const reason = JSON.parse(new TextDecoder().decode(bytes.subarray(0, size)))?.reason;
+      return typeof reason === "string" && /^[a-z][a-z0-9_]{0,63}$/.test(reason) && allowed.slice(0, 16).includes(reason) ? { reason } : null;
+    } catch { return null; }
+    finally { reader.releaseLock(); }
+  }
+  const client = (signal, maySend = () => true) => ({
     pending: () => pending,
-    get: (p) => call("GET", p, undefined, undefined, signal),
+      get: (p) => call("GET", p, undefined, undefined, signal, undefined, maySend),
+    // Managed profile artifacts use the same bearer guard; never put credentials into a download URL.
+    async blob(path, options) {
+      pending++;
+      try {
+        await signedIn;
+        if (!maySend()) return { ok: false, status: 0, body: null };
+        const res = await fetch(path, { signal, headers: { Authorization: `Bearer ${localStorage.getItem(STORE) || ""}` } });
+        if (res.status === 401 && !signal?.aborted) lock();
+        return { ok: res.ok, status: res.status, body: res.ok ? await res.blob() : await blobRefusal(res, options) };
+      } catch { return { ok: false, status: 0, body: null }; }
+      finally { pending--; }
+    },
     // a read that answers at once with what is ready, marking what splice is still reading, rather than waiting on it
-    getReady: (p) => call("GET", p, undefined, { "x-splice-read-pending": "1" }, signal),
-    post: (p, b) => call("POST", p, b ?? {}, undefined, signal),
-    put: (p, b, extra) => call("PUT", p, b, extra, signal),
-    patch: (p, b) => call("PATCH", p, b, undefined, signal),
-    del: (p) => call("DELETE", p, undefined, undefined, signal),
+    getReady: (p) => call("GET", p, undefined, { "x-splice-read-pending": "1" }, signal, undefined, maySend),
+    perfRequest: (key, method, path, body, current = () => true, options = {}) =>
+      perfRequest(key, method, path, body, () => !signal?.aborted && maySend() && current(), options),
+    cancelPerf,
+    post: (p, b) => call("POST", p, b ?? {}, undefined, signal, undefined, maySend),
+    put: (p, b, extra) => call("PUT", p, b, extra, signal, undefined, maySend),
+    patch: (p, b) => call("PATCH", p, b, undefined, signal, undefined, maySend),
+    del: (p) => call("DELETE", p, undefined, undefined, signal, undefined, maySend),
     // a last word as the tab hides or closes: the browser still delivers it after the page is gone (pilot.js)
     parting: (p) => call("POST", p, {}, undefined, undefined, true),
-    scoped: (nextSignal) => client(signal ? AbortSignal.any([signal, nextSignal]) : nextSignal),
+    scoped: (nextSignal) => client(signal ? AbortSignal.any([signal, nextSignal]) : nextSignal, maySend),
+    retryCapacity: (refusals, current, resend, parentSignal, phase) => retryCapacity(refusals, current, resend, parentSignal, signal, phase),
     recent,
   });
   return client();

@@ -19,6 +19,7 @@ package splice.head.scripted
 
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -134,7 +135,7 @@ class TodayWireCharacterizationTest {
     }
 
     @Test
-    fun `a non-stream failure keeps its real status`(@TempDir tmp: Path) = runTest {
+    fun `a non-stream unnamed throttle stays retryable when the turn cannot wait longer`(@TempDir tmp: Path) = runTest {
         withScriptedHeads(tmp) {
             provider.script(
                 reply {
@@ -147,8 +148,10 @@ class TodayWireCharacterizationTest {
 
             assertEquals(TOO_MANY_REQUESTS, answer.status, answer.describe())
             assertEquals("rate_limit_error", answer.error?.type, answer.describe())
+            // A non-stream 429 permits a resend unless the retry header vetoes it.
             assertNull(answer.shouldRetry, answer.describe())
-            assertEquals(setOf(Family.L), answer.families(), answer.describe())
+            assertFalse(answer.error?.message.orEmpty().contains("usage limit"), answer.describe())
+            assertTrue(provider.requests.size in 2..8, "retry inside the shared short-throttle budget")
         }
     }
 }

@@ -19,6 +19,8 @@ import splice.control.mcp.RPC_SERVER_ERROR
 import splice.control.mcp.RPC_TIMED_OUT
 import splice.control.mcp.RpcKind
 import splice.control.mcp.SessionMinting
+import splice.control.mcp.observation.McpPerfObservations
+import splice.control.mcp.observation.McpPerfRecorders
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.core.wire.HttpStatus
@@ -37,8 +39,10 @@ internal class McpPostHandler(
     private val servers: HostedServers,
     private val sessions: McpSessions,
     private val minting: SessionMinting,
-    private val log: LogSink,
+    private val runtime: Runtime,
 ) {
+    internal data class Runtime(val log: LogSink, val observations: McpPerfRecorders? = null)
+
     suspend fun post(
         name: String,
         sessionId: String?,
@@ -52,8 +56,16 @@ internal class McpPostHandler(
         if (message.kind == RpcKind.INVALID) {
             return bad(HttpStatus.BAD_REQUEST, message.id, RPC_INVALID, "invalid JSON-RPC")
         }
-        val admission = admission(name, sessionId, message)
-        return route(name, McpClient(sessionId, protocolVersion, head), msg, message, admission)
+        val invocation = if (message.kind == RpcKind.REQUEST && codec.method(msg) == "tools/call") {
+            McpPerfObservations.start(runtime.observations, sessions.get(name, sessionId)?.head ?: head, sessionId)
+        } else {
+            null
+        }
+        return McpPerfObservations.admitted(
+            invocation,
+            admission = { admission(name, sessionId, message) },
+            route = { admission -> route(name, McpClient(sessionId, protocolVersion, head), msg, message, admission) },
+        )
     }
 
     private suspend fun admission(name: String, sessionId: String?, message: McpHostMessage): McpAdmission? =
@@ -153,7 +165,7 @@ internal class McpPostHandler(
         val delivered = when (val sent = server.notify(session.id, msg)) {
             is McpResult.Served -> sent.value
             is McpResult.Refused -> {
-                log("[mcp-host] ${LogSafe.str(name)}: notify failed (${LogSafe.str(sent.reason)})\n")
+                runtime.log("[mcp-host] ${LogSafe.str(name)}: notify failed (${LogSafe.str(sent.reason)})\n")
                 false
             }
         }

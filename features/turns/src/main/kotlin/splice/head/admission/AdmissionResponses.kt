@@ -9,12 +9,14 @@ package splice.head.admission
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.content.OutgoingContent
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.netty.NettyApplicationCall
 import io.ktor.server.response.header
-import io.ktor.server.response.respondText
+import io.ktor.server.response.respond
 import io.ktor.server.routing.RoutingCall
 import io.ktor.server.routing.RoutingPipelineCall
+import io.ktor.utils.io.ByteWriteChannel
 import splice.core.budget.BudgetBlock
 import splice.core.failure.ClientWire
 import splice.core.failure.Decline
@@ -25,14 +27,28 @@ import splice.core.failure.Position
 import splice.core.failure.SpliceLine
 import splice.core.failure.StoppedBy
 import splice.core.failure.WireAnswer
+import splice.core.perf.OutcomeTag
 import splice.core.wire.ErrorEnvelope
 import splice.core.wire.HttpStatus
+import splice.head.turn.delivery.CollectedReply
 import splice.http.ingress.IngressErrorBody
 
 /** Shared pre-turn HTTP bodies: what was declined, said in [voice]'s line (failure-handling slice 2), in the envelope
  *  every refusal before a turn takes. The real response status owns retry semantics, not the SSE rule. */
 public class AdmissionErrorBody(private val voice: HeadVoice) : IngressErrorBody {
     override fun render(type: String, why: Decline): String = envelope(type, FailureCause.Splice.Declined(why), null)
+
+    override fun content(call: ApplicationCall, type: String, why: Decline, status: HttpStatusCode): OutgoingContent {
+        val observation = RequestObservation.of(call) ?: return super<IngressErrorBody>.content(call, type, why, status)
+        val reply = CollectedReply(render(type, why), status, observations = observation, outcome = "refused")
+        // Keep ingress's original application/json header. CollectedReply owns UTF-8 bytes and successful flush.
+        return object : OutgoingContent.WriteChannelContent() {
+            override val contentType = ContentType.Application.Json
+            override val contentLength = reply.contentLength
+            override val status = reply.status
+            override suspend fun writeTo(channel: ByteWriteChannel) = reply.writeTo(channel)
+        }
+    }
 
     /** [cause] told as the client is told it ([answer], or ClientWire's answer at admission when null). */
     internal fun envelope(type: String, cause: FailureCause, answer: WireAnswer?): String {
@@ -55,14 +71,17 @@ internal class AdmissionResponses(private val voice: HeadVoice) {
     /** The one shape every refusal before a turn takes: [cause] decides the status, the error type and
      *  x-should-retry (ClientWire at ADMISSION), and the head's voice says the line the client reads. Every admission
      *  path answers IDENTICALLY per cause because client retry logic keys on the shape (three hand-built
-     *  copies of the 529 drifted; review 2026-07-22 round 3). */
-    suspend fun respondRefusal(call: ApplicationCall, cause: FailureCause) {
+     *  copies of the 529 drifted; review 2026-07-22 round 3). [outcome] names only a known observation cause. */
+    suspend fun respondRefusal(call: ApplicationCall, cause: FailureCause, outcome: OutcomeTag? = null) {
         val answer = ClientWire.answer(cause, AT_ADMISSION)
         answer.shouldRetry?.let { call.response.header(SHOULD_RETRY_HEADER, it.toString()) }
-        call.respondText(
-            bodies.envelope(answer.type.wireName, cause, answer),
-            ContentType.Application.Json,
-            statusLine(checkNotNull(answer.status) { "an admission answer is an HTTP status" }),
+        call.respond(
+            CollectedReply(
+                bodies.envelope(answer.type.wireName, cause, answer),
+                statusLine(checkNotNull(answer.status) { "an admission answer is an HTTP status" }),
+                observations = RequestObservation.of(call),
+                outcome = outcome?.wire ?: "refused",
+            ),
         )
     }
 
@@ -79,7 +98,7 @@ internal class AdmissionResponses(private val voice: HeadVoice) {
 
     /** The gate and its queue are full: [limit] turns already run on this head. */
     suspend fun respondAtCapacity(call: ApplicationCall, limit: Int) {
-        respondRefusal(call, FailureCause.Splice.AtCapacity(limit))
+        respondRefusal(call, FailureCause.Splice.AtCapacity(limit), OutcomeTag.AT_CAPACITY)
     }
 
     /** The refusal of a request that reaches a head that is stopping: its connection is closed with no HTTP answer.
@@ -92,10 +111,11 @@ internal class AdmissionResponses(private val voice: HeadVoice) {
         val connection = nettyCall(call)?.context?.channel()
         if (connection != null) {
             connection.close()
+            RequestObservation.of(call)?.finish(OutcomeTag.RESTARTED.wire)
             return
         }
         call.response.header(HttpHeaders.Connection, "close")
-        respondRefusal(call, FailureCause.Splice.Stopped(StoppedBy.HEAD_STOPPING))
+        respondRefusal(call, FailureCause.Splice.Stopped(StoppedBy.HEAD_STOPPING), OutcomeTag.RESTARTED)
     }
 
     private fun nettyCall(call: ApplicationCall): NettyApplicationCall? {

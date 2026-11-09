@@ -157,11 +157,11 @@ class CollectingTerminalTest {
 
     // A buffered answer has no committed 200 and no in-band event: the HTTP status IS the information. Slice 4
     // chooses it by family rather than by the cause's own type, from what the client reaction record shows 2.1.310
-    // does with each status (final-design.md section 11): a limit reaching the client keeps the 429 it sends again,
+    // does with each status (final-design.md section 11): an unnamed throttle stays retryable and uses 429,
     // and a failure whose own type was api_error now answers 529 if the provider's and 400 if the request's. 502,
     // which the record does not cover, is gone.
     @Test
-    fun `a buffered rate limit keeps its real 429`() = runTest {
+    fun `a buffered unnamed rate limit stays retryable`() = runTest {
         val t = terminal()
         val cause = FailureCause.Provider.Limited(Lift.Unstated, window = null)
         t.emitError(cause)

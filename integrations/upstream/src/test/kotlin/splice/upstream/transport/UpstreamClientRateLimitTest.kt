@@ -21,7 +21,6 @@ import splice.core.util.ElapsedClock
 import splice.upstream.StreamStart
 import splice.upstream.Waiter
 import splice.upstream.failure.Replies
-import splice.upstream.retry.BURST_WAITS
 import splice.upstream.retry.RateLimitCooldown
 import java.util.concurrent.atomic.AtomicInteger
 import splice.upstream.testing.OpenAiTestReplies as OpenAiReplies
@@ -173,7 +172,7 @@ class UpstreamClientRateLimitTest {
         val client = UpstreamClient(
             totalTimeoutMs = 30_000L,
             client = HttpClient(engine),
-            // A bare 429 is waited out on the burst schedule (section 8); the waits are taken at once here.
+            // This context conservatively marks content emitted, so its bare 429 cannot resend the request.
             pacing = RetryPacing(waiter = Waiter { }),
             clock = ElapsedClock { 0L },
         )
@@ -200,7 +199,7 @@ class UpstreamClientRateLimitTest {
         release.complete(Unit)
         assertEquals("ok", older.await())
         assertEquals(
-            listOf(200) + List(1 + BURST_WAITS) { 429 },
+            listOf(200, 429),
             answers.map { it.first },
             "every send of the refused post is an answer, and completion is not one",
         )
@@ -213,7 +212,6 @@ class UpstreamClientRateLimitTest {
     fun `custom carriers isolate the exact header snapshot sent on the wire`() = runTest {
         val sent = mutableListOf<String>()
         val accepted = mutableListOf<String>()
-        var snapshots = 0
         val engine = MockEngine { request ->
             val key = requireNotNull(request.headers["X-Synthetic-Key"])
             sent += key
@@ -237,33 +235,31 @@ class UpstreamClientRateLimitTest {
                 // Delegation would forward the login lookup to fakeAuth, which answers with its own key.
                 override suspend fun answer(): LoginAnswer = LoginAnswer.Granted(credentials())
             },
-            extraHeaders = {
-                snapshots++
-                emptyMap()
-            },
+            extraHeaders = { emptyMap() },
             replies = Replies(OpenAiReplies),
         ).also { context -> context.upstreamAccepted = StreamStart { accepted += key } }
-        assertEnds<UpstreamFailed> { client.posted(context("synthetic-refused"), "{}") { "unreachable" } }
+        val first = assertEnds<UpstreamFailed> {
+            client.posted(context("synthetic-refused"), "{}") { "unreachable" }
+        }
         assertEquals("ok", client.posted(context("synthetic-healthy"), "{}") { "ok" })
         assertEquals("ok", client.posted(context("synthetic-new"), "{}") { "ok" })
         val again = assertEnds<UpstreamFailed> {
             client.posted(context("synthetic-refused"), "{}") { "unreachable" }
         }
+        assertEquals(first.cause, again.cause, "both refusals identify the same temporary throttle")
+        assertEquals(1, again.layers, "a later turn asks this credential's provider again")
         assertEquals(429, again.evidence.status)
+        assertEquals("synthetic refusal", again.evidence.body)
         assertEquals(
-            "synthetic refusal",
-            again.evidence.body,
-            "the refused credential's next turn hears the provider itself",
+            listOf("synthetic-refused", "synthetic-healthy", "synthetic-new", "synthetic-refused"),
+            sent,
+            "every turn sends its own credential, including a later turn after an unnamed throttle",
         )
-        // Each refused post is sent on the burst schedule (section 8) before it ends.
-        val refused = List(1 + BURST_WAITS) { "synthetic-refused" }
-        assertEquals(refused + listOf("synthetic-healthy", "synthetic-new") + refused, sent)
         assertEquals(
             listOf("synthetic-healthy", "synthetic-new"),
             accepted,
             "refusals never permit early stream progress",
         )
-        assertEquals(sent.size, snapshots, "each attempt resolves headers once, and sends that snapshot")
     }
 
     @Test
@@ -295,7 +291,7 @@ class UpstreamClientRateLimitTest {
     }
 
     @Test
-    fun `a non-pooled bare 429 is waited out on the burst schedule, then ends and arms`() = runTest {
+    fun `a non-pooled bare 429 with no stated reset ends after bounded retries and arms`() = runTest {
         val calls = AtomicInteger()
         val capture = Capture()
         val engine = MockEngine {
@@ -308,9 +304,10 @@ class UpstreamClientRateLimitTest {
             pacing = RetryPacing(waiter = Waiter { ms -> capture.waits.add(ms) }),
             clock = ElapsedClock { 0L },
         )
-        assertEnds<UpstreamFailed> { postOnce(client) }
-        assertEquals(5, calls.get(), "one send, then one after each burst wait")
-        assertEquals(listOf(2_000L, 4_000L, 8_000L, 15_000L), capture.waits, "the burst schedule: 2, 4, 8 and 15 s")
+        val failure = assertEnds<UpstreamFailed> { postOnce(client) }
+        assertEquals(listOf(2_000L, 4_000L, 8_000L, 16_000L, 30_000L, 30_000L, 30_000L), capture.waits)
+        assertEquals(429, failure.evidence.status)
+        assertEquals("slow down", failure.evidence.body)
         assertTrue(client.rateLimitedForMs > 0L, "exhaustion arms the horizon")
     }
 
@@ -430,32 +427,24 @@ class UpstreamClientRateLimitTest {
         assertEquals(6, calls.get(), "a past date clamps to 0 — no cooldown, no 20s fallback")
     }
 
-    // A 429 marks its login limited, which names the limit on status and steers new sessions to a free
-    // login. It never stops the next post: each turn asks the provider itself and waits only on its own
-    // failure (Marcos, Oct 26), which retires the shared fail-fast of the 2026-07-19 storm.
-
     @Test
-    fun `a 429 marks its login limited for 20s and the next post still asks the provider`() = runTest {
+    fun `a bare throttle never caches a terminal verdict for the next turn`() = runTest {
         var now = 0L
-        val calls = AtomicInteger()
+        var available = false
         val engine = MockEngine {
-            calls.incrementAndGet()
-            respond("""{"detail":"Rate limit exceeded"}""", HttpStatusCode.TooManyRequests, headersOf())
+            if (available) {
+                respond("answer", HttpStatusCode.OK)
+            } else {
+                respond("""{"detail":"Rate limit exceeded"}""", HttpStatusCode.TooManyRequests, headersOf())
+            }
         }
         val client = clientOver(engine, clock = { now })
-        // The burst schedule's 2 s and 4 s fit the 5 s harness budget and its 8 s does not: three sends, then ARMED.
-        assertEnds<UpstreamFailed> { postOnce(client) }
-        assertEquals(3, calls.get())
+        val first = assertEnds<UpstreamFailed> { postOnce(client) }
+        assertEquals(429, first.evidence.status)
         assertEquals(20_000L, client.rateLimitedForMs, "no Retry-After: the 20s default")
-        val next = assertEnds<UpstreamFailed> { postOnce(client) }
-        assertEquals(6, calls.get(), "the next post reaches the provider, held by nothing another post armed")
-        assertEquals(429, next.evidence.status)
-        assertEquals(
-            """{"detail":"Rate limit exceeded"}""",
-            next.evidence.body,
-            "the provider's own answer, not splice's",
-        )
-        now += 21_000
+        available = true
+        now += 1L
+        assertEquals("ok", postOnce(client), "recovered quota is usable before the steering cooldown expires")
         assertEquals(0L, client.rateLimitedForMs)
     }
 

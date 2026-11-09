@@ -28,6 +28,7 @@ include(
     ":integrations-http",
     ":integrations-topology",
     ":integrations-codemode",
+    ":integrations-observability",
     ":integrations-oauth",
     ":integrations-terminal",
     ":integrations-tmux",
@@ -67,6 +68,7 @@ project(":integrations-mcp-hub").projectDir = file("integrations/mcp-hub")
 project(":integrations-http").projectDir = file("integrations/http")
 project(":integrations-topology").projectDir = file("integrations/topology")
 project(":integrations-codemode").projectDir = file("integrations/codemode")
+project(":integrations-observability").projectDir = file("integrations/observability")
 project(":integrations-oauth").projectDir = file("integrations/oauth")
 project(":integrations-terminal").projectDir = file("integrations/terminal")
 // The console's session terminal on tmux (TMUX.md): one module, so the day seatd carries every act it is one deletion.

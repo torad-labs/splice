@@ -1,0 +1,517 @@
+{
+  "schema_version": 1,
+  "measured": false,
+  "authorization": "root freeze required; this schedule does not authorize execution",
+  "execution": "serial points, serial JVMs; alternate baseline/candidate order across matched point repetitions or paired complete runs; no competing heavy builds",
+  "minimum_repetitions": 5,
+  "default_warmup_ms": 20000,
+  "default_steady_ms": 60000,
+  "stability": "lower bounds only: extend matched durations/repetitions if JIT, variance or confidence intervals remain unstable; never loosen fixed budgets",
+  "open_sweep": "500 rps is the initial bounded endpoint, not a guaranteed saturation point. If unsaturated, prepare an explicitly larger bounded generator envelope or additional points; do not claim capacity.",
+  "direct_controls": "For each matched point create direct Anthropic control; for upstream Responses select direct Responses protocol and same upstream transport/timing. End-to-end p95 differences are not isolated proxy self-time.",
+  "scenario_count": 34,
+  "points": [
+    {
+      "id": "closed-1",
+      "cohort": "matched",
+      "evidence": "closed-loop capacity and default collection overhead",
+      "patch": {
+        "load": {
+          "kind": "concurrency",
+          "value": 1
+        }
+      }
+    },
+    {
+      "id": "closed-10",
+      "cohort": "matched",
+      "evidence": "closed-loop capacity and default collection overhead",
+      "patch": {
+        "load": {
+          "kind": "concurrency",
+          "value": 10
+        }
+      }
+    },
+    {
+      "id": "closed-50",
+      "cohort": "matched",
+      "evidence": "closed-loop capacity and default collection overhead",
+      "patch": {
+        "load": {
+          "kind": "concurrency",
+          "value": 50
+        }
+      }
+    },
+    {
+      "id": "closed-70",
+      "cohort": "matched",
+      "evidence": "closed-loop capacity and default collection overhead",
+      "patch": {
+        "load": {
+          "kind": "concurrency",
+          "value": 70
+        }
+      }
+    },
+    {
+      "id": "closed-100",
+      "cohort": "matched",
+      "evidence": "closed-loop capacity and default collection overhead",
+      "patch": {
+        "load": {
+          "kind": "concurrency",
+          "value": 100
+        }
+      }
+    },
+    {
+      "id": "arrival-100",
+      "cohort": "matched",
+      "evidence": "fixed offered deadlines, generator loss and saturation boundary",
+      "patch": {
+        "warmup_ms": 10000,
+        "duration_ms": 30000,
+        "load": {
+          "kind": "arrival_rate",
+          "value": 100
+        }
+      }
+    },
+    {
+      "id": "arrival-250",
+      "cohort": "matched",
+      "evidence": "fixed offered deadlines, generator loss and saturation boundary",
+      "patch": {
+        "warmup_ms": 10000,
+        "duration_ms": 30000,
+        "load": {
+          "kind": "arrival_rate",
+          "value": 250
+        }
+      }
+    },
+    {
+      "id": "arrival-400",
+      "cohort": "matched",
+      "evidence": "fixed offered deadlines, generator loss and saturation boundary",
+      "patch": {
+        "warmup_ms": 10000,
+        "duration_ms": 30000,
+        "load": {
+          "kind": "arrival_rate",
+          "value": 400
+        }
+      }
+    },
+    {
+      "id": "arrival-500",
+      "cohort": "matched",
+      "evidence": "fixed offered deadlines, generator loss and saturation boundary",
+      "patch": {
+        "warmup_ms": 10000,
+        "duration_ms": 30000,
+        "load": {
+          "kind": "arrival_rate",
+          "value": 500
+        }
+      }
+    },
+    {
+      "id": "long-c10",
+      "cohort": "matched",
+      "evidence": "long completion/chunk interval",
+      "patch": {
+        "scenario": "long",
+        "output_tokens_target": 100,
+        "fixture": {
+          "first_wait_ms": 100,
+          "chunk_wait_ms": 10,
+          "chunks": 100,
+          "slow_read_ms": 0,
+          "cancel_after_ms": 15,
+          "history_messages": 2
+        },
+        "load": {
+          "kind": "concurrency",
+          "value": 10
+        }
+      }
+    },
+    {
+      "id": "nonstream-c10",
+      "cohort": "matched",
+      "evidence": "nonstream terminal and usage parity",
+      "patch": {
+        "transport": "http",
+        "streaming": false,
+        "load": {
+          "kind": "concurrency",
+          "value": 10
+        }
+      }
+    },
+    {
+      "id": "cold-c10",
+      "cohort": "matched",
+      "evidence": "fresh JVM and script cache usage per repetition",
+      "patch": {
+        "cache_state": "cold",
+        "load": {
+          "kind": "concurrency",
+          "value": 10
+        }
+      }
+    },
+    {
+      "id": "large-request-history",
+      "cohort": "matched",
+      "evidence": "large client request history, distinct from retained telemetry history",
+      "patch": {
+        "scenario": "large-history",
+        "input_bytes": 262144,
+        "fixture": {
+          "first_wait_ms": 10,
+          "chunk_wait_ms": 5,
+          "chunks": 4,
+          "slow_read_ms": 0,
+          "cancel_after_ms": 15,
+          "history_messages": 1000
+        },
+        "load": {
+          "kind": "concurrency",
+          "value": 10
+        }
+      }
+    },
+    {
+      "id": "slow-client",
+      "cohort": "matched",
+      "evidence": "bounded delayed downstream reads",
+      "patch": {
+        "scenario": "slow-client",
+        "fixture": {
+          "first_wait_ms": 10,
+          "chunk_wait_ms": 5,
+          "chunks": 4,
+          "slow_read_ms": 50,
+          "cancel_after_ms": 15,
+          "history_messages": 2
+        },
+        "load": {
+          "kind": "concurrency",
+          "value": 10
+        }
+      }
+    },
+    {
+      "id": "bursty",
+      "cohort": "matched",
+      "evidence": "scripted failure/retry/upstream gaps; preserve attempts and actual terminals",
+      "patch": {
+        "scenario": "bursty",
+        "load": {
+          "kind": "concurrency",
+          "value": 10
+        }
+      }
+    },
+    {
+      "id": "retry",
+      "cohort": "matched",
+      "evidence": "scripted failure/retry/upstream gaps; preserve attempts and actual terminals",
+      "patch": {
+        "scenario": "retry",
+        "load": {
+          "kind": "concurrency",
+          "value": 10
+        }
+      }
+    },
+    {
+      "id": "refusal",
+      "cohort": "matched",
+      "evidence": "scripted failure/retry/upstream gaps; preserve attempts and actual terminals",
+      "patch": {
+        "scenario": "refusal",
+        "load": {
+          "kind": "concurrency",
+          "value": 10
+        }
+      }
+    },
+    {
+      "id": "cancel",
+      "cohort": "matched",
+      "evidence": "pre-content client cancellation",
+      "patch": {
+        "scenario": "cancel",
+        "fixture": {
+          "first_wait_ms": 100,
+          "chunk_wait_ms": 5,
+          "chunks": 4,
+          "slow_read_ms": 0,
+          "cancel_after_ms": 15,
+          "history_messages": 2
+        },
+        "load": {
+          "kind": "concurrency",
+          "value": 10
+        }
+      }
+    },
+    {
+      "id": "responses-sse",
+      "cohort": "matched",
+      "evidence": "real Responses provider conversion; assert actual requested upstream transport",
+      "patch": {
+        "upstream": {
+          "protocol": "responses",
+          "transport": "sse"
+        },
+        "load": {
+          "kind": "concurrency",
+          "value": 10
+        }
+      }
+    },
+    {
+      "id": "responses-websocket",
+      "cohort": "matched",
+      "evidence": "real Responses provider conversion; assert actual requested upstream transport",
+      "patch": {
+        "upstream": {
+          "protocol": "responses",
+          "transport": "websocket"
+        },
+        "load": {
+          "kind": "concurrency",
+          "value": 10
+        }
+      }
+    },
+    {
+      "id": "responses-reconnect",
+      "cohort": "matched",
+      "evidence": "production WebSocket 1011 before output; record retry/fallback and honest terminal",
+      "patch": {
+        "scenario": "reconnect",
+        "upstream": {
+          "protocol": "responses",
+          "transport": "websocket"
+        },
+        "load": {
+          "kind": "concurrency",
+          "value": 10
+        }
+      }
+    },
+    {
+      "id": "minimal-c10",
+      "cohort": "candidate-mode-study",
+      "evidence": "new collection disabled; legacy collection retained",
+      "patch": {
+        "collection": {
+          "mode": "minimal",
+          "exports": false,
+          "profiles": false,
+          "polling": null
+        },
+        "load": {
+          "kind": "concurrency",
+          "value": 10
+        }
+      }
+    },
+    {
+      "id": "poll-1000",
+      "cohort": "candidate-mode-study",
+      "evidence": "authenticated production summary normal/stress polling cost",
+      "patch": {
+        "collection": {
+          "mode": "local",
+          "exports": false,
+          "profiles": false,
+          "polling": {
+            "interval_ms": 1000,
+            "path": "/api/perf/summary?contract=1"
+          }
+        },
+        "load": {
+          "kind": "concurrency",
+          "value": 10
+        }
+      }
+    },
+    {
+      "id": "poll-10",
+      "cohort": "candidate-mode-study",
+      "evidence": "authenticated production summary normal/stress polling cost",
+      "patch": {
+        "collection": {
+          "mode": "local",
+          "exports": false,
+          "profiles": false,
+          "polling": {
+            "interval_ms": 10,
+            "path": "/api/perf/summary?contract=1"
+          }
+        },
+        "load": {
+          "kind": "concurrency",
+          "value": 10
+        }
+      }
+    },
+    {
+      "id": "exports-healthy",
+      "cohort": "candidate-mode-study",
+      "evidence": "parsed metrics/traces/logs, real exporter counters, bounded failure/pressure",
+      "patch": {
+        "collection": {
+          "mode": "local",
+          "exports": true,
+          "profiles": false,
+          "polling": null
+        },
+        "collector_fault": {
+          "mode": "healthy",
+          "delay_ms": 0,
+          "max_active": 8
+        },
+        "load": {
+          "kind": "concurrency",
+          "value": 70
+        }
+      }
+    },
+    {
+      "id": "exports-slow",
+      "cohort": "candidate-mode-study",
+      "evidence": "parsed metrics/traces/logs, real exporter counters, bounded failure/pressure",
+      "patch": {
+        "collection": {
+          "mode": "local",
+          "exports": true,
+          "profiles": false,
+          "polling": null
+        },
+        "collector_fault": {
+          "mode": "slow",
+          "delay_ms": 3000,
+          "max_active": 1
+        },
+        "load": {
+          "kind": "concurrency",
+          "value": 70
+        }
+      }
+    },
+    {
+      "id": "exports-unavailable",
+      "cohort": "candidate-mode-study",
+      "evidence": "parsed metrics/traces/logs, real exporter counters, bounded failure/pressure",
+      "patch": {
+        "collection": {
+          "mode": "local",
+          "exports": true,
+          "profiles": false,
+          "polling": null
+        },
+        "collector_fault": {
+          "mode": "unavailable",
+          "delay_ms": 0,
+          "max_active": 8
+        },
+        "load": {
+          "kind": "concurrency",
+          "value": 70
+        }
+      }
+    },
+    {
+      "id": "profile-c10",
+      "cohort": "candidate-mode-study",
+      "evidence": "actual JFR artifact covering steady interval; separate profile overhead",
+      "patch": {
+        "collection": {
+          "mode": "local",
+          "exports": false,
+          "profiles": true,
+          "polling": null
+        },
+        "load": {
+          "kind": "concurrency",
+          "value": 10
+        }
+      }
+    },
+    {
+      "id": "retained-history-24h",
+      "cohort": "candidate-history-study",
+      "evidence": "one source/window per fresh JVM; first/repeat query, independent fixture population, coverage and source work cost",
+      "patch": {
+        "cache_state": "cold"
+      },
+      "history_query": {
+        "window_ms": 86400000,
+        "source": "history"
+      },
+      "prerequisite": "compiled BenchmarkFixtureSeed receipt bound to frozen source; set retained_history query_source/query_window_ms from history_query"
+    },
+    {
+      "id": "retained-history-7d",
+      "cohort": "candidate-history-study",
+      "evidence": "one source/window per fresh JVM; first/repeat query, independent fixture population, coverage and source work cost",
+      "patch": {
+        "cache_state": "cold"
+      },
+      "history_query": {
+        "window_ms": 604800000,
+        "source": "history"
+      },
+      "prerequisite": "compiled BenchmarkFixtureSeed receipt bound to frozen source; set retained_history query_source/query_window_ms from history_query"
+    },
+    {
+      "id": "retained-evidence-24h",
+      "cohort": "candidate-history-study",
+      "evidence": "one source/window per fresh JVM; first/repeat query, independent fixture population, coverage and source work cost",
+      "patch": {
+        "cache_state": "cold"
+      },
+      "history_query": {
+        "window_ms": 86400000,
+        "source": "evidence"
+      },
+      "prerequisite": "compiled BenchmarkFixtureSeed receipt bound to frozen source; set retained_history query_source/query_window_ms from history_query"
+    },
+    {
+      "id": "retained-evidence-7d",
+      "cohort": "candidate-history-study",
+      "evidence": "one source/window per fresh JVM; first/repeat query, independent fixture population, coverage and source work cost",
+      "patch": {
+        "cache_state": "cold"
+      },
+      "history_query": {
+        "window_ms": 604800000,
+        "source": "evidence"
+      },
+      "prerequisite": "compiled BenchmarkFixtureSeed receipt bound to frozen source; set retained_history query_source/query_window_ms from history_query"
+    },
+    {
+      "id": "retained-state",
+      "cohort": "candidate-retention-study",
+      "evidence": "five fresh minimal/local pairs; five post-fill equal-work producer-paused live-heap/pool/disk points; fixed zero-growth decision",
+      "patch": {},
+      "prerequisite": "compiled BenchmarkRetainedFixture classes plus frozen candidate jar; authorized retained.ts driver, separate from inference timing"
+    },
+    {
+      "id": "native-mcp",
+      "cohort": "production-execution-study",
+      "evidence": "real native worker and stdio MCP child, returned values, PID/executable/class hashes and observations",
+      "patch": {},
+      "prerequisite": "compiled BenchmarkExecutionFixture entry; isolated user.home/java.io.tmpdir; execute separately, not through run.ts"
+    }
+  ]
+}

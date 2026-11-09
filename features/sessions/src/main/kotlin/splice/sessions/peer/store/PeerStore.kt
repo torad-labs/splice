@@ -141,13 +141,13 @@ public class PeerStore(
      * and peer.json for a new one, peer.json alone for a changed one, and nothing when nothing changed.
      */
     public suspend fun attachCodex(request: CodexRequest): CodexAttach = mutation.withLock {
-        val name = codexPeers.name(request)
+        val name = codexPeers.name(request, codexes)
+        if (!wellFormed(name)) return@withLock CodexAttach.Refused(PeerRefusal.INVALID, "invalid peer name")
         val key = keys.mint()
         val now = clock.millis()
-        attachedAt[name] = now
         val fresh = PeerFileKey(FIRST_KEY_ID, keys.hash(key), rotatedAt = now)
         val keyFile = folder.keyFile(name)
-        when (val plan = codexPeers.plan(request, folder.read(name), peers.keys, fresh)) {
+        val outcome = when (val plan = codexPeers.plan(request, folder.read(name), codexes, fresh)) {
             is CodexPlan.Refused -> CodexAttach.Refused(plan.why, plan.reason)
             is CodexPlan.Same -> CodexAttach.Attached(peers[name] ?: publish(plan.file), keyFile, fresh = false)
             is CodexPlan.Update -> {
@@ -159,6 +159,8 @@ public class PeerStore(
                 CodexAttach.Attached(publish(plan.file), keyFile, fresh = true)
             }
         }
+        if (outcome is CodexAttach.Attached) attachedAt[name] = now
+        outcome
     }
 
     /**
@@ -183,7 +185,7 @@ public class PeerStore(
      */
     public suspend fun register(request: PeerRequest, liveNames: Set<String>): PeerRegistration =
         mutation.withLock {
-            val handNamed = peers.keys.filterNot(codexPeers::isPeer).toSet()
+            val handNamed = peers.keys.filterNot { codexPeers.isPeer(it) || it in codexes }.toSet()
             rules.malformed(request)?.let { return@withLock it }
             val existing = folder.read(request.name)?.takeIf { request.name in handNamed }
             if (existing != null) {

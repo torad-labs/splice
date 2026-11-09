@@ -100,13 +100,22 @@ internal object PlanModel {
     private fun fresh(met: Met, ledger: RetryLedger): RetryStep =
         if (ledger.count(Spend.FRESH_REISSUE) < 2) again(How.SAME) else end(met)
 
+    /** Named exhaustion can move to a free login. A bare throttle moves first, or spends a bounded burst. */
     private val limited = Row { met, ledger ->
         val cause = met.cause as FailureCause.Provider.Limited
         val ms = waitMs(cause.lift)
         val lift = cause.lift
         when {
+            cause.window == LimitWindow.BILLING_CYCLE || (lift is Lift.Unstated && cause.window != null) ->
+                switchOr(met, end(met))
+            lift is Lift.Unstated && met.at.moment == Moment.MID_CONTENT -> end(met)
+            lift is Lift.Unstated -> {
+                val n = ledger.count(Spend.THROTTLE)
+                val waits = listOf(2_000L, 4_000L, 8_000L, 16_000L, 30_000L, 30_000L, 30_000L)
+                val retry = if (n < waits.size) again(How.SAME, waits[n]) else end(met)
+                switchOr(met, retry)
+            }
             lift is Lift.At && (ms ?: 0L) > FLOOR -> stated(met, lift, ms ?: 0L)
-            lift is Lift.Unstated && cause.window != null -> switchOr(met, RetryStep.Hold(null, Probes.UNSTATED))
             else -> bursts(met, ledger, ms?.coerceAtLeast(0L) ?: 0L, Probes.UNSTATED)
         }
     }
@@ -388,6 +397,7 @@ private fun spendOf(taken: Taken, overloads: Int = 0): Spend? {
 private fun sameSpend(cause: FailureCause, afterMs: Long, overloads: Int): Spend? {
     val limit = (cause as? FailureCause.Provider.Limited)?.lift ?: (cause as? FailureCause.Provider.NeedsPayment)?.lift
     return when {
+        cause is FailureCause.Provider.Limited && limit is Lift.Unstated -> Spend.THROTTLE
         limit != null -> if (pastFloor(limit)) null else Spend.BURST
         cause is FailureCause.Provider.Overloaded -> overloadSpend(cause, afterMs, overloads)
         else -> SAME_SPENDS[cause::class]
@@ -438,6 +448,49 @@ class RetryEngineModelTest {
     }
 
     @Test
+    fun `exhausted windows switch before content but end when no sibling can answer`() {
+        val at = Position(Moment.BEFORE_COMMIT, streamBegan = false)
+        val facts = TurnFacts(
+            pooled = true,
+            freeLogin = true,
+            warmWaitLeftMs = 600_000L,
+            continuesReasoning = false,
+            canContinue = false,
+            deadlines = TurnFacts.Deadlines(Long.MAX_VALUE),
+            earliestLift = null,
+        )
+        val unstated = FailureCause.Provider.Limited(Lift.Unstated, LimitWindow.FIVE_HOUR)
+        val billingCycleFinite = FailureCause.Provider.Limited(
+            Lift.At(NOW.plusSeconds(300), firm = true, LiftSource.RETRY_AFTER),
+            LimitWindow.BILLING_CYCLE,
+        )
+        val shortFinite = FailureCause.Provider.Limited(
+            Lift.At(NOW.plusSeconds(300), firm = true, LiftSource.RETRY_AFTER),
+            LimitWindow.FIVE_HOUR,
+        )
+
+        assertEquals(RetryStep.SwitchLogin, RetryEngine.next(unstated, at, RetryLedger(), facts, NOW))
+        assertEquals(
+            RetryStep.SwitchLogin,
+            RetryEngine.next(billingCycleFinite, at, RetryLedger(), facts, NOW),
+        )
+        for (cause in listOf(unstated, billingCycleFinite)) {
+            assertEquals(
+                RetryStep.End(cause),
+                RetryEngine.next(cause, at, RetryLedger(), facts.copy(freeLogin = false), NOW),
+            )
+            assertEquals(
+                RetryStep.End(cause),
+                RetryEngine.next(cause, Position(Moment.MID_CONTENT, streamBegan = true), RetryLedger(), facts, NOW),
+            )
+        }
+        assertEquals(
+            RetryStep.Again(300_000L, How.SAME),
+            RetryEngine.next(shortFinite, at, RetryLedger(), facts, NOW),
+        )
+    }
+
+    @Test
     fun `every family stays within its budget`() {
         val budgets = mapOf(
             Spend.STREAM_RECOVERY to MAX_STREAM_RECOVERIES,
@@ -445,6 +498,7 @@ class RetryEngineModelTest {
             Spend.AMEND to MAX_AMENDS,
             Spend.CONTINUE_REASONING to MAX_EMPTY_RETRIES,
             Spend.BURST to BURST_WAITS,
+            Spend.THROTTLE to THROTTLE_WAITS,
             Spend.OVERLOAD to OVERLOAD_WAITS,
             Spend.SERVER_RESEND to SERVER_RESENDS,
             Spend.FRESH_REISSUE to MAX_FRESH_REISSUES,

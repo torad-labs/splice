@@ -36,7 +36,9 @@ import splice.core.perf.UpstreamMilestones
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
+import splice.core.util.FileIoSink
 import splice.core.util.FileIoTask
+import splice.core.util.FileIoWrite
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.core.util.JsonlSink
@@ -101,7 +103,8 @@ public class PerfStats(
 
     private val skippedLogged = java.util.concurrent.atomic.AtomicBoolean(false)
     private val appendDrops = PerfAppendDrops(log)
-    private val lane = PerfLineAppend(file, maxBytes, archive, appendDrops)
+    public val sink: FileIoSink = FileIoSink("raw_rows", clock)
+    private val lane = PerfLineAppend(file, maxBytes, archive, appendDrops, sink)
 
     /** Rows dropped by [tailRows] since this instance was built, for a caller that renders cost and
      *  must say when that number is short. Monotonic: a healthy read does not reset it, because the
@@ -308,24 +311,29 @@ public class PerfStats(
         private val maxBytes: Long,
         private val archive: RotationArchive,
         private val appendDrops: PerfAppendDrops,
+        private val sink: FileIoSink,
     ) {
         /** [whole] runs after the line is on disk, or at once when the lane refused the row. */
         fun append(row: String, whole: FileIoTask) {
-            val accepted = AsyncFileIo.submitFor(file) {
-                Cancellables.runCatchingCancellable {
-                    Files.createDirectories(file.parent)
-                    JsonlSink.appendLine(
-                        file,
-                        row,
-                        maxBytes = maxBytes,
-                        archive = archive,
-                        force = JsonlSink.PAGE_CACHE_FORCE,
-                    )
-                    // The next successful row ends a prior explicit deletion, on the same file lane.
-                    Files.deleteIfExists(file.parent.resolve(TURN_STATS_DELETED_MARKER))
-                    Unit
-                }.onFailure { appendDrops.writeFailed() }.also { whole() }.getOrThrow()
-            }
+            val accepted = AsyncFileIo.submitFor(
+                file,
+                sink,
+                FileIoWrite {
+                    Cancellables.runCatchingCancellable {
+                        Files.createDirectories(file.parent)
+                        JsonlSink.appendLine(
+                            file,
+                            row,
+                            maxBytes = maxBytes,
+                            archive = archive,
+                            force = JsonlSink.PAGE_CACHE_FORCE,
+                        )
+                        // The next successful row ends a prior explicit deletion, on the same file lane.
+                        Files.deleteIfExists(file.parent.resolve(TURN_STATS_DELETED_MARKER))
+                        Unit
+                    }.onFailure { appendDrops.writeFailed() }.also { whole() }.isSuccess
+                },
+            )
             appendDrops.accepted(accepted)
             if (!accepted) whole()
         }

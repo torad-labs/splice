@@ -9,9 +9,10 @@ import splice.core.memory.HeapReservations
 import splice.core.util.JsonlSink
 import splice.core.util.LogSink
 import splice.core.util.SecureFile
+import splice.provider.codex.CodeModeStorageException
+import splice.provider.codex.CodeModeStorageProblem
 import splice.provider.codex.state.CodeModeStateJournal
 import splice.provider.codex.state.CodeModeStateText
-import java.io.IOException
 import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.Path
@@ -25,7 +26,8 @@ internal class CodeModeHistoryJournal(
     private val log: LogSink,
 ) {
     fun read(file: Path, key: String): CodeModeHistoryReplay {
-        if (Files.size(file) > maxBytes) throw IOException("authoritative history journal exceeds its byte bound")
+        val bytes = Files.size(file)
+        if (bytes > maxBytes) throw CodeModeStorageException.Limit(bytes, maxBytes)
         val complete = CodeModeStateJournal.endsWithNewline(file)
         val replay = CodeModeHistoryReplay(key, heap)
         HeapLines(file, heap).use { lines -> readLines(lines, complete, replay) }
@@ -46,7 +48,7 @@ internal class CodeModeHistoryJournal(
     private fun checkTail(file: Path, complete: Boolean, replay: CodeModeHistoryReplay) {
         val fragment = !complete && Files.size(file) > 0
         if (fragment && replay.committedBytes == 0L) {
-            throw IOException("authoritative history has no complete initial revision")
+            throw CodeModeStorageException.Invalid(CodeModeStorageProblem.NO_INITIAL_REVISION)
         }
         if (fragment) log("[code-mode] authoritative history ignored an uncommitted final fragment")
     }
@@ -57,7 +59,7 @@ internal class CodeModeHistoryJournal(
         return stage.use {
             val text = json.encodeToString(CodeModeHistoryDelta.serializer(), delta)
             val next = committedBytes + CodeModeStateText(text).bytes + 1L
-            if (next > maxBytes) throw IOException("authoritative history journal exceeds its byte bound")
+            if (next > maxBytes) throw CodeModeStorageException.Limit(next, maxBytes)
             secure(file)
             FileChannel.open(file, StandardOpenOption.WRITE).use { channel ->
                 if (channel.size() != committedBytes) channel.truncate(committedBytes)
@@ -85,7 +87,7 @@ internal class CodeModeHistoryJournal(
 
     private fun secure(file: Path) {
         val open = SecureFile.ownerOnlyDirectory(file.parent)
-        if (open != null) throw IOException("authoritative history directory is not owner-only")
+        if (open != null) throw CodeModeStorageException.Access()
         if (Files.notExists(file)) SecureFile.writeAtomic0600(file, "")
     }
 }

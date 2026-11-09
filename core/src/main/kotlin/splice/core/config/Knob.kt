@@ -611,6 +611,43 @@ public enum class Knob(
         listOf("SPLICE_HISTORY_RETENTION_DAYS"),
         typedDefault = KnobDefault.None,
     ),
+    PERF_COLLECTION_ENABLED(
+        "perfCollectionEnabled",
+        listOf(),
+        KnobDefault.Flag(true),
+        restartRequired = true,
+    ),
+    TELEMETRY_PROMETHEUS_ENABLED(
+        "telemetryPrometheusEnabled",
+        listOf(),
+        KnobDefault.Flag(false),
+        restartRequired = true,
+    ),
+    TELEMETRY_OTLP_ENDPOINT(
+        "telemetryOtlpEndpoint",
+        listOf(),
+        KnobDefault.Text(""),
+        restartRequired = true,
+    ),
+    TELEMETRY_OTLP_PROTOCOL(
+        "telemetryOtlpProtocol",
+        listOf(),
+        KnobDefault.Text("http/protobuf"),
+        restartRequired = true,
+    ),
+    TELEMETRY_OTLP_HEADERS(
+        "telemetryOtlpHeaders",
+        listOf(),
+        KnobDefault.Text("{}"),
+        restartRequired = true,
+    ),
+    TELEMETRY_OTLP_SIGNALS(
+        "telemetryOtlpSignals",
+        listOf(),
+        KnobDefault.Text(""),
+        restartRequired = true,
+    ),
+
     ;
 
     /** The input kind follows the typed default, including a number with no default value. */

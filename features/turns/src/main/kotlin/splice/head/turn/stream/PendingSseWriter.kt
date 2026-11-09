@@ -12,6 +12,7 @@ import splice.head.wire.FrameRecording
 import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.StatusGate
 import splice.head.wire.TurnTrace
+import splice.head.wire.observation.DeliveryObservation
 import java.io.IOException
 import java.io.Writer
 import java.util.concurrent.atomic.AtomicBoolean
@@ -48,6 +49,7 @@ internal class PendingSseWriter(
                     out.flush()
                     if (pendingBytes) {
                         perf.firstClientByte()
+                        DeliveryObservation.firstByte(perf.observations)
                         pendingBytes = false
                     }
                 }

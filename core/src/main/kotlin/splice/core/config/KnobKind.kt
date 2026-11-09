@@ -30,6 +30,12 @@ internal val headOnlyKnobKeys: Set<String> = Knob.entries.filter { it.headOnly }
  *  keeps (Marlin, Oct 10), so both are refused per command too. Every other restart-only knob outside this list was
  *  traced to a per-head reader on Oct 12 and stays settable per command. */
 public val daemonWideKnobs: Set<Knob> = setOf(
+    Knob.PERF_COLLECTION_ENABLED,
+    Knob.TELEMETRY_PROMETHEUS_ENABLED,
+    Knob.TELEMETRY_OTLP_ENDPOINT,
+    Knob.TELEMETRY_OTLP_PROTOCOL,
+    Knob.TELEMETRY_OTLP_HEADERS,
+    Knob.TELEMETRY_OTLP_SIGNALS,
     Knob.UPSTREAM_TIMEOUT_MS,
     Knob.FIRST_BYTE_TIMEOUT_MS,
     Knob.STREAM_IDLE_MS,

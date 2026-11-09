@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
 import kotlinx.serialization.json.JsonObject
 import splice.core.perf.PerfKeys
+import splice.core.perf.observation.PerfEventKind
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.LogSink
 import splice.head.turn.TurnDrive
@@ -68,6 +69,7 @@ internal class TearAwareEvents(
             UpstreamProgress.observe(event, drive.watchdog)
             capture.sawEvent = true
             drive.perf.add(PerfKeys.EVENTS_IN, 1)
+            drive.perf.upstream.observations?.observe(PerfEventKind.PROTOCOL_PROGRESS, mapOf("upstream_events" to 1.0))
         }.catch { e ->
             // Per-round (not per-turn) pre-frame test: a continuation round's early tear is as
             // safely reissuable as a first round's — its own body re-POSTs (code-review 2026-07-24).

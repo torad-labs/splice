@@ -184,14 +184,20 @@ public class UpstreamClient(
             ctx.onRetry("upstream turn wait budget exhausted before $next")
             return if (state.failedYet) steps.gaveUp(ctx, state) else LoopStep.TurnWaitExhausted
         }
-        // No hold another turn armed stops this attempt: each turn asks the provider itself (Marcos, Oct 26). The login
+        // Finite temporary holds still ask the provider on each turn. A terminal limit keeps its own words during the
+        // credential's bounded cooldown, without another send or a wait (Nov 7). The login
         // lookup answers once per attempt: none is the head's NoLogin, and a provider's refusal to grant one ends the
         // call with the refusal's own cause, as its reply would have (LoginAnswer, failure-handling slice 3).
         return when (val answer = ctx.requireAuth()) {
             is LoginAnswer.Granted -> {
                 val auth = state.credentials(ctx, answer.credentials, credentialCooldowns, cooldown)
-                // What the vendor routes by in the body moves with the place credentials just chose (VendorRoute.body).
-                attempt(ctx, state.routedBody(ctx, body, request::body), state, block, auth)
+                val cause = state.cooldown.terminalLimit
+                if (cause == null) {
+                    // The vendor's body route moves with the place credentials just chose (VendorRoute.body).
+                    attempt(ctx, state.routedBody(ctx, body, request::body), state, block, auth)
+                } else {
+                    steps.retainedLimit(cause, ctx, state)
+                }
             }
             LoginAnswer.Missing -> LoopStep.Done(UpstreamPost.Ended(UpstreamAuthMissing()))
             is LoginAnswer.Refused -> {

@@ -1,11 +1,14 @@
 package splice.dialect.responses.websocket
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
+import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.core.perf.WsAttemptTiming
 import splice.core.turn.TurnMeta
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
@@ -29,6 +32,19 @@ internal class ResponsesWsPrefiller(
     }
 
     suspend fun run(context: PrefillContext): Boolean {
+        val timing = context.perf?.let { WsAttemptTiming(it, recordLegacy = false) }
+        var ending = OutcomeTag.UPSTREAM_FAILED.wire
+        try {
+            return runObserved(context, timing).also { if (it) ending = OutcomeTag.OK.wire }
+        } catch (cancelled: CancellationException) {
+            ending = OutcomeTag.CANCELLED.wire
+            throw cancelled
+        } finally {
+            timing?.finish(ending)
+        }
+    }
+
+    private suspend fun runObserved(context: PrefillContext, timing: WsAttemptTiming?): Boolean {
         var pending: ResponsesWsIdentity.PendingCommit? = null
         val attemptEpoch = session.epochOf(context.chain)
         val clientMetadata = metadata.forTurn(
@@ -38,7 +54,7 @@ internal class ResponsesWsPrefiller(
         )
         var accepted = false
         try {
-            val round = prefillRound(context, clientMetadata)
+            val round = prefillRound(context, clientMetadata, timing)
             pending = round.commit
             val result = when {
                 round.flow == null -> PrefillResult(false, null, "transport_unavailable")
@@ -77,7 +93,11 @@ internal class ResponsesWsPrefiller(
         return false
     }
 
-    private suspend fun prefillRound(context: PrefillContext, clientMetadata: JsonObject?): PrefillRound {
+    private suspend fun prefillRound(
+        context: PrefillContext,
+        clientMetadata: JsonObject?,
+        timing: WsAttemptTiming?,
+    ): PrefillRound {
         var commit: ResponsesWsIdentity.PendingCommit? = null
         val flow = transport.round(
             key = context.key,
@@ -85,6 +105,7 @@ internal class ResponsesWsPrefiller(
             isTerminal = { event -> JsonScalars.str(event["type"]) in ResponsesRoundEnd.ALL },
             session = context.meta.scope.sessionId,
         ) { connection ->
+            connection.pulse.bindTiming(timing)
             val built = session.frameAndEpoch(
                 context.chain,
                 context.prefillRequest,

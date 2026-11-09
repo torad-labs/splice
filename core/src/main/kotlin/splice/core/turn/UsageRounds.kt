@@ -27,11 +27,13 @@ public val noRequestUsage: Usage = Usage(
 internal object UsageRounds {
     fun followedBy(prior: Usage, latest: Usage): Usage {
         if (latest.origin.history.request == UsageRequest.NONE) {
-            val total = prior + latest
+            val total = addedRound(prior, latest)
             val posted = prior.origin.history.request == UsageRequest.POSTED
             return if (posted) total.copy(reported = prior.reported) else total
         }
-        if (prior.origin.history.request == UsageRequest.NONE) return (prior + latest).copy(reported = latest.reported)
+        if (prior.origin.history.request == UsageRequest.NONE) {
+            return addedRound(prior, latest).copy(reported = latest.reported)
+        }
         val observations = latest.reported + prior.reported.intersect(setOf(UsageField.OUTPUT))
         return Usage(
             inputTokens = latest.inputTokens,
@@ -48,9 +50,15 @@ internal object UsageRounds {
                     absorbed = prior.absorbed + prior.finalRound + latest.absorbed,
                     cutRounds = prior.cutRounds + latest.cutRounds + missingBills(prior, latest, observations),
                 ),
+                measured = UsageMeasurements.combined(prior, latest),
             ),
             reported = observations,
         )
+    }
+
+    private fun addedRound(prior: Usage, latest: Usage): Usage {
+        val total = prior + latest
+        return total.copy(origin = total.origin.copy(measured = UsageMeasurements.combined(prior, latest)))
     }
 
     private fun missingBills(prior: Usage, latest: Usage, observations: Set<UsageField>): Long {

@@ -33,6 +33,7 @@ modules = [
     ":integrations-http",
     ":integrations-mcp-hub",
     ":integrations-oauth",
+    ":integrations-observability",
     ":integrations-providers-anthropic",
     ":integrations-providers-codex",
     ":integrations-providers-grok",

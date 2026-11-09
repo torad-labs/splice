@@ -42,6 +42,7 @@ public class AccountsRoute(
 ) {
     private val extras = AccountRowExtras(heads)
     private val management = AccountRowManagement()
+    public val nameSnapshots: AccountNameSnapshots = AccountNameSnapshots()
 
     /** [nowSeconds] decides which windows are current (V4-407), by the rule /api/usage applies (V4-396). */
     public suspend fun accountsJson(
@@ -63,6 +64,7 @@ public class AccountsRoute(
         val nativeRows = ClaudeLoginRows(naming, readFailures).list(native, providers, carrying, heads, nowSeconds)
         // every row is named before any is settled: whether a ref shows depends on the whole roster
         val rows = naming.settle(poolRows + nativeRows)
+        nameSnapshots.publish(rows)
         return buildJsonObject {
             putJsonArray("accounts") { rows.forEach { add(it) } }
             extras.pools(this)

@@ -47,6 +47,11 @@ public sealed class FailureCause {
             override val persisted: PersistedCause get() = PersistedCause.VENDOR_RATE_LIMITED
             override val permanent: Boolean get() = true
             override val resumeAt: Instant? get() = (lift as? Lift.At)?.at
+
+            /** A named spent window without a reset, or a billing cycle, cannot recover by a short retry.
+             *  A bare 429 does not establish quota exhaustion. Another pooled login may still answer either kind. */
+            public val isExhausted: Boolean
+                get() = window == LimitWindow.BILLING_CYCLE || (lift is Lift.Unstated && window != null)
         }
 
         /** The provider is over capacity: a 502, or a code that spells an overload. */
@@ -242,7 +247,7 @@ public sealed class FailureCause {
         }
 
         /** splice's own protocol state cannot go on: the code-mode machine, or a call the dialect cannot express. */
-        public data class Protocol(val fault: ProtocolFault) : Splice() {
+        public data class Protocol(val fault: ProtocolFault, val storage: CodeModeStorageFault? = null) : Splice() {
             override val persisted: PersistedCause
                 get() = if (fault == ProtocolFault.DIALECT_UNSUPPORTED) {
                     PersistedCause.DIALECT_UNSUPPORTED

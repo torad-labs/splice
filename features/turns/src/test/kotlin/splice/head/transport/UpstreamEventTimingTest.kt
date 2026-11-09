@@ -4,10 +4,14 @@ package splice.head.transport
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertInstanceOf
@@ -15,13 +19,21 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
 import org.junit.jupiter.params.provider.ValueSource
+import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.perf.UpstreamAttemptTiming
 import splice.core.perf.UpstreamGapEnd
+import splice.core.perf.WsAttemptTiming
+import splice.core.perf.observation.PerfIdentity
+import splice.core.perf.observation.PerfRecorder
+import splice.core.perf.observation.PerfScope
+import splice.core.perf.observation.aggregate.PerfAccumulator
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
+import java.io.IOException
 import java.net.SocketException
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -30,6 +42,97 @@ class UpstreamEventTimingTest {
         """{"type":"content_block_delta","delta":{"type":"text_delta","text":"synthetic"}}""",
     ).jsonObject
     private val ping = Json.parseToJsonElement("""{"type":"ping"}""").jsonObject
+
+    @ParameterizedTest
+    @CsvSource("true,completed", "false,completed", "true,error", "false,error", "true,cancelled", "false,cancelled")
+    fun `websocket closes the final logical wait before its inner flow closes the attempt`(
+        hasEvent: Boolean,
+        ending: String,
+    ) = runTest {
+        val clock = ElapsedClock { testScheduler.currentTime }
+        val identity = PerfIdentity("ws-tail", "test", "test", "test")
+        val aggregate = PerfAccumulator(identity)
+        val recorder = PerfRecorder(identity, aggregate, clock, WallClock { 60_000L + clock() })
+        val request = recorder.request(PerfScope(head = "test"), 0L, 60_000L)
+        val perf = TurnPerf(observations = request, clock = clock)
+        val attempt = WsAttemptTiming(perf)
+        request.finish(OutcomeTag.CLIENT_ABORT.wire)
+        val delivered = mutableListOf<JsonObject>()
+        val failure = mapOf(
+            "error" to IOException("synthetic WS tail failure"),
+            "cancelled" to CancellationException("synthetic WS tail cancellation"),
+        )[ending]
+        val inner = flow {
+            if (hasEvent) {
+                delay(10)
+                emit(text)
+            }
+            delay(20)
+            failure?.let { throw it }
+        }.onCompletion { attempt.finish(wsOutcome(it)) }
+        assertSame(failure, readWs(UpstreamEventTiming(perf, 0).observe(inner), delivered))
+        assertEquals(if (hasEvent) listOf(text) else emptyList(), delivered)
+        val points = aggregate.snapshot().points
+        val gaps = points.filter { it.metric == "upstream_gap_ms" }
+        assertEquals(if (hasEvent) 30.0 else 20.0, gaps.sumOf { it.sum })
+        assertEquals(if (hasEvent) 2L else 1L, gaps.sumOf { it.count })
+        assertEquals(if (hasEvent) 5.0 else 0.0, points.filter { it.metric == "local_read_block_ms" }.sumOf { it.sum })
+        assertEquals(
+            if (hasEvent) 35.0 else 20.0,
+            points.filter { it.metric == "attempt_duration_ms" }.sumOf { it.sum },
+        )
+    }
+
+    private suspend fun TestScope.readWs(
+        events: Flow<JsonObject>,
+        delivered: MutableList<JsonObject>,
+    ): Throwable? = try {
+        events.collect {
+            delivered += it
+            testScheduler.advanceTimeBy(5)
+        }
+        null
+    } catch (cancelled: CancellationException) {
+        cancelled
+    } catch (failure: IOException) {
+        failure
+    }
+
+    private fun wsOutcome(cause: Throwable?): String = when (cause) {
+        null -> OutcomeTag.OK.wire
+        is CancellationException -> OutcomeTag.CANCELLED.wire
+        else -> OutcomeTag.UPSTREAM_FAILED.wire
+    }
+
+    @Test
+    fun `detached upstream gaps and reader work survive client completion`() = runTest {
+        val clock = ElapsedClock { testScheduler.currentTime }
+        val identity = PerfIdentity("detached", "test", "test", "test")
+        val aggregate = PerfAccumulator(identity)
+        val recorder = PerfRecorder(identity, aggregate, clock, WallClock { 60_000L + clock() })
+        val request = recorder.request(PerfScope(head = "test"), 0L, 60_000L)
+        val perf = TurnPerf(observations = request, clock = clock)
+        val attempt = UpstreamAttemptTiming(perf)
+        request.finish(OutcomeTag.CLIENT_ABORT.wire)
+        val delivered = mutableListOf<kotlinx.serialization.json.JsonObject>()
+        UpstreamEventTiming(perf, 0).observe(
+            flow {
+                delay(10)
+                emit(text)
+                delay(20)
+            },
+        ).collect {
+            delivered += it
+            delay(5)
+        }
+        attempt.finish(OutcomeTag.OK.wire)
+        assertEquals(listOf(text), delivered)
+        val points = aggregate.snapshot().points
+        assertEquals(30.0, points.filter { it.metric == "upstream_gap_ms" }.sumOf { it.sum })
+        assertEquals(5.0, points.filter { it.metric == "local_read_block_ms" }.sumOf { it.sum })
+        assertEquals(35.0, points.filter { it.metric == "attempt_duration_ms" }.sumOf { it.sum })
+        assertEquals(1.0, points.filter { it.metric == "requests_finished" }.sumOf { it.sum })
+    }
 
     @ParameterizedTest
     @ValueSource(strings = ["completed", "torn", "cancelled"])

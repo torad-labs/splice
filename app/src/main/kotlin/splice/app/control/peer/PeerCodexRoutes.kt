@@ -23,7 +23,8 @@ import splice.sessions.peer.store.PeerRefusal
 import splice.upstream.codemode.ProcessDispatchers
 
 private const val ATTACH_SHAPE =
-    "body must be {\"thread\", \"home\", \"cwd\"}, with an optional \"owner\": {\"pid\", \"procStart\", \"pidDomain\"}"
+    "body must be {\"thread\", \"home\", \"cwd\"}, with optional \"peerName\" and " +
+        "\"owner\": {\"pid\", \"procStart\", \"pidDomain\"}"
 
 internal class PeerCodexRoutes(private val parts: PeerParts) {
     private val jsonBody = JsonBody()
@@ -81,8 +82,10 @@ internal class PeerCodexRoutes(private val parts: PeerParts) {
         val ownerWhole = owner == null || process != null
         val thread = PeerReplies.string(body, "thread")?.let(names::thread)
         val home = PeerReplies.string(body, "home")
+        val peerName = PeerReplies.string(body, "peerName")
+        if (body?.containsKey("peerName") == true && peerName == null) return null
         val binding = thread?.let { id -> home?.let { CodexBinding(id, it, process) } }?.takeIf { ownerWhole }
-        return binding?.let { whole -> PeerReplies.string(body, "cwd")?.let { CodexRequest(whole, it) } }
+        return binding?.let { whole -> PeerReplies.string(body, "cwd")?.let { CodexRequest(whole, it, peerName) } }
     }
 
     private fun process(owner: JsonObject): NativeProcess? {

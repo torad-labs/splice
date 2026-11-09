@@ -5,6 +5,8 @@ package splice.dialect.chat
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
+import splice.core.turn.UsageMeasure
+import splice.core.turn.UsageOrigin
 import splice.core.util.JsonScalars
 
 /** The chat dialect's usage accounting: the three token buckets and the CX-18 alias chain that
@@ -16,8 +18,15 @@ internal class ChatUsage {
     internal var cachedTokens = 0L
 
     private val reported = mutableSetOf<UsageField>()
+    private val measured = mutableSetOf<UsageMeasure>()
 
-    internal fun toUsage(): Usage = Usage(inputTokens, outputTokens, cachedTokens, reported = reported.toSet())
+    internal fun toUsage(): Usage = Usage(
+        inputTokens,
+        outputTokens,
+        cachedTokens,
+        reported = reported.toSet(),
+        origin = UsageOrigin(measured = measured.toSet()),
+    )
 
     internal fun usage(evt: JsonObject) {
         val u = evt["usage"] as? JsonObject ?: return
@@ -28,10 +37,12 @@ internal class ChatUsage {
         JsonScalars.firstLong(u, "prompt_tokens", "input_tokens")?.let {
             inputTokens = it
             reported += setOf(UsageField.INPUT, UsageField.CACHED, UsageField.CACHE_WRITE)
+            measured += UsageMeasure.INPUT
         }
         JsonScalars.firstLong(u, "completion_tokens", "output_tokens")?.let {
             outputTokens = it
             reported += UsageField.OUTPUT
+            measured += UsageMeasure.OUTPUT
         }
         // Prompt-cache read tokens — surfaced so the HUD/cache-log see a real hit rate. Details
         // field first (OpenAI standard: prompt_tokens_details.cached_tokens), then flat `cached_tokens`,
@@ -44,6 +55,9 @@ internal class ChatUsage {
         val flatCached = JsonScalars.firstLong(u, "cached_tokens", "prompt_cache_hit_tokens")
         val cached = nestedCached?.takeIf { it > 0 } ?: flatCached ?: 0L
         if (cached > 0) cachedTokens = cached
-        if (nestedCached != null || flatCached != null) reported += UsageField.CACHED
+        if (nestedCached != null || flatCached != null) {
+            reported += UsageField.CACHED
+            measured += UsageMeasure.CACHE_READ
+        }
     }
 }

@@ -23,6 +23,7 @@ import kotlinx.serialization.json.longOrNull
 import splice.core.memory.HeapWeights
 import splice.core.perf.HistoryWindowWords
 import splice.core.util.EnvReader
+import splice.core.wire.NETWORK_PORT_MAX
 import java.util.Collections
 
 private const val MIN_UPSTREAM_TIMEOUT_MS = 30_000L
@@ -39,7 +40,6 @@ private const val MAX_WS_MAX_AGE_MS = 3_540_000L
 
 // why: a poll faster than the five-minute cadence would hammer the provider's usage endpoint
 private const val MIN_QUOTA_POLL_INTERVAL_MS = 30_000L
-private const val MAX_PORT = 65_535L
 private const val MAX_INT = Int.MAX_VALUE.toLong()
 
 /** The words a BOOL knob reads, any case, around whitespace. Anything else is no value: every layer
@@ -99,11 +99,11 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
         // (unbindable). Ports need pre-commit's `positiveLong ?: default` contract instead —
         // reject non-positive values outright, then clamp only the ceiling.
         out[Knob.PORT.key] =
-            (positiveLong(out, Knob.PORT) ?: Knob.PORT.count()).coerceAtMost(MAX_PORT)
+            (positiveLong(out, Knob.PORT) ?: Knob.PORT.count()).coerceAtMost(NETWORK_PORT_MAX.toLong())
         out[Knob.GROK_PORT.key] =
-            (positiveLong(out, Knob.GROK_PORT) ?: Knob.GROK_PORT.count()).coerceAtMost(MAX_PORT)
+            (positiveLong(out, Knob.GROK_PORT) ?: Knob.GROK_PORT.count()).coerceAtMost(NETWORK_PORT_MAX.toLong())
         out[Knob.CONTROL_PORT.key] =
-            (positiveLong(out, Knob.CONTROL_PORT) ?: Knob.CONTROL_PORT.count()).coerceAtMost(MAX_PORT)
+            (positiveLong(out, Knob.CONTROL_PORT) ?: Knob.CONTROL_PORT.count()).coerceAtMost(NETWORK_PORT_MAX.toLong())
         out[Knob.MAX_INFLIGHT.key] = clampLong(out, Knob.MAX_INFLIGHT, floor = 0L, ceiling = MAX_INT)
         out[Knob.MAX_QUEUED.key] = clampLong(out, Knob.MAX_QUEUED, floor = 0L, ceiling = MAX_INT)
         out[Knob.UPSTREAM_TIMEOUT_MS.key] = clampLong(out, Knob.UPSTREAM_TIMEOUT_MS, floor = MIN_UPSTREAM_TIMEOUT_MS)
@@ -176,6 +176,7 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
 
     /** [raw] is the spelling a source gave: its text, or null when the source had no value. Each arm reads only the text. */
     fun coerce(knob: Knob, raw: String?): Any? = when {
+        knob in TelemetryKnobValue.knobs -> TelemetryKnobValue.coerce(knob, raw)
         knob == Knob.MIRROR_REASONING -> false
         // The history window governs DELETION, so a word that is neither a day count nor `forever`
         // must be refused by name rather than kept as text no reader understands: a typo that read

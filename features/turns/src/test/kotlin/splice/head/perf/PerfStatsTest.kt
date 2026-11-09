@@ -40,7 +40,7 @@ class PerfStatsTest {
         val file = tmp.resolve("perf.jsonl")
         val stats = PerfStats(file, clock = { 123L })
         stats.record(PerfRowMeta("synthetic", "error:admission-full", compact = false), TurnPerf { 0L }.snapshot())
-        assertTrue(AsyncFileIo.drain())
+        awaitPerfWrites(file, stats)
         val row = Json.parseToJsonElement(Files.readAllLines(file).single()).jsonObject
         assertEquals(JsonNull, row["arrival_to_upstream_write_ms"])
         assertEquals(JsonNull, row["upstream_write_to_first_byte_ms"])
@@ -67,8 +67,9 @@ class PerfStatsTest {
         now = 140L
         ws.firstFragment()
         val file = tmp.resolve("perf.jsonl")
-        PerfStats(file, clock = { 123L }).record(PerfRowMeta("synthetic", "ok", compact = false), perf.snapshot())
-        assertTrue(AsyncFileIo.drain())
+        val stats = PerfStats(file, clock = { 123L })
+        stats.record(PerfRowMeta("synthetic", "ok", compact = false), perf.snapshot())
+        awaitPerfWrites(file, stats)
         val row = Json.parseToJsonElement(Files.readAllLines(file).single()).jsonObject
         assertEquals(JsonNull, row[PerfKeys.ARRIVAL_TO_UPSTREAM_WRITE_MS])
         assertEquals(JsonNull, row[PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS])
@@ -94,8 +95,9 @@ class PerfStatsTest {
         now = 180
         timing.firstByte()
         val file = tmp.resolve("perf.jsonl")
-        PerfStats(file, clock = { 123L }).record(PerfRowMeta("synthetic", "ok", compact = false), perf.snapshot())
-        assertTrue(AsyncFileIo.drain())
+        val stats = PerfStats(file, clock = { 123L })
+        stats.record(PerfRowMeta("synthetic", "ok", compact = false), perf.snapshot())
+        awaitPerfWrites(file, stats)
         val row = Json.parseToJsonElement(Files.readAllLines(file).single()).jsonObject
         assertEquals(80L, row[PerfKeys.ARRIVAL_TO_UPSTREAM_HEADERS_START_MS]?.jsonPrimitive?.longOrNull)
         assertEquals(15L, row[PerfKeys.UPSTREAM_HEADERS_START_TO_KTOR_HEADERS_MS]?.jsonPrimitive?.longOrNull)
@@ -121,8 +123,9 @@ class PerfStatsTest {
         last.firstByte()
         first.written()
         val file = tmp.resolve("perf.jsonl")
-        PerfStats(file, clock = { 123L }).record(PerfRowMeta("synthetic", "ok", compact = false), perf.snapshot())
-        assertTrue(AsyncFileIo.drain())
+        val stats = PerfStats(file, clock = { 123L })
+        stats.record(PerfRowMeta("synthetic", "ok", compact = false), perf.snapshot())
+        awaitPerfWrites(file, stats)
         val row = Json.parseToJsonElement(Files.readAllLines(file).single()).jsonObject
         assertEquals(660L, row[PerfKeys.ARRIVAL_TO_UPSTREAM_WRITE_MS]?.jsonPrimitive?.longOrNull)
         assertEquals(30L, row[PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS]?.jsonPrimitive?.longOrNull)
@@ -224,7 +227,7 @@ class PerfStatsTest {
         }
         stats.record(PerfRowMeta("synthetic", "ok", compact = false), perf.snapshot())
         stats.record(PerfRowMeta("synthetic", "ok", compact = false), TurnPerf { 0L }.snapshot())
-        assertTrue(AsyncFileIo.drain())
+        awaitPerfWrites(file, stats)
         val numeric = stats.tailNumeric(10)
         assertEquals(2_500L, numeric[0][PerfKeys.UP_GAP_MAX_MS])
         assertEquals(1L, numeric[0][PerfKeys.UP_GAPS_2S])
@@ -240,7 +243,8 @@ class PerfStatsTest {
 
     @Test
     fun `interval starts persist beside the winning maxima and stay absent when unobserved`(@TempDir tmp: Path) {
-        val stats = PerfStats(tmp.resolve("perf.jsonl"), clock = { 2_000_000 })
+        val file = tmp.resolve("perf.jsonl")
+        val stats = PerfStats(file, clock = { 2_000_000 })
         val perf = TurnPerf(clock = ElapsedClock { 5_000 }, wallClock = WallClock { 1_000_000 })
         for ((key, startKey) in listOf(
             PerfKeys.UP_GAP_MAX_MS to PerfKeys.UP_GAP_MAX_START_EPOCH_MS,
@@ -252,7 +256,7 @@ class PerfStatsTest {
             perf.intervals.record(key, 10, 30)
             stats.record(PerfRowMeta("synthetic", "ok", compact = false), perf.snapshot())
             stats.record(PerfRowMeta("synthetic", "ok", compact = false), TurnPerf { 0L }.snapshot())
-            assertTrue(AsyncFileIo.drain())
+            awaitPerfWrites(file, stats)
             val rows = stats.tailNumeric(2)
             assertEquals(20L, rows[0][key])
             assertEquals(1_000_010L, rows[0][startKey])
@@ -263,12 +267,13 @@ class PerfStatsTest {
 
     @Test
     fun `record then tailNumeric roundtrips numeric fields`(@TempDir tmp: Path) {
-        val stats = PerfStats(tmp.resolve("perf.jsonl"), clock = { 123L })
+        val file = tmp.resolve("perf.jsonl")
+        val stats = PerfStats(file, clock = { 123L })
         val perf = TurnPerf { 0L }
         perf.setCount(PerfKeys.OUT_TOKENS, 850)
         perf.add(PerfKeys.FRAMES_OUT, 12)
         stats.record(PerfRowMeta(model = "gpt-5.6-sol", outcome = "ok", compact = false), perf.snapshot())
-        assertTrue(AsyncFileIo.drain())
+        awaitPerfWrites(file, stats)
 
         val rows = stats.tailNumeric(10)
         assertEquals(1, rows.size)
@@ -286,7 +291,7 @@ class PerfStatsTest {
         val tagged = PerfRowMeta("m", "client_abort", compact = false, session = "a6b15bd7")
         stats.record(tagged, TurnPerf { 0L }.snapshot())
         stats.record(PerfRowMeta("m", "ok", compact = false), TurnPerf { 0L }.snapshot())
-        assertTrue(AsyncFileIo.drain())
+        awaitPerfWrites(file, stats)
         val rows = stats.tailNumeric(10)
         assertEquals(2, rows.size)
         val lines = Files.readAllLines(file)
@@ -303,7 +308,7 @@ class PerfStatsTest {
         val meta = PerfRowMeta("m", "ok", compact = false, account = PerfAccount("backup", cacheCold = true))
 
         stats.record(meta, TurnPerf { 0L }.snapshot())
-        assertTrue(AsyncFileIo.drain())
+        awaitPerfWrites(file, stats)
 
         val row = Files.readString(file)
         assertTrue(row.contains("\"account\":\"backup\""), row)
@@ -319,7 +324,7 @@ class PerfStatsTest {
             perf.setCount(PerfKeys.OUT_TOKENS, i.toLong())
             stats.record(PerfRowMeta("m", "ok", compact = false), perf.snapshot())
         }
-        assertTrue(AsyncFileIo.drain()) // settle the writer explicitly before injecting a corrupt row
+        awaitPerfWrites(file, stats) // settle the writer explicitly before injecting a corrupt row
         Files.writeString(file, Files.readString(file) + "not-json\n")
         val rows = stats.tailNumeric(2)
         assertEquals(2, rows.size)
@@ -461,7 +466,8 @@ class PerfStatsTest {
         )
         var ts = 0L
         val totals = SessionTotals(dir.resolve("totals.json"), price, { 0L })
-        val stats = PerfStats(dir.resolve("perf.jsonl"), clock = { ++ts }, totals = totals)
+        val file = dir.resolve("perf.jsonl")
+        val stats = PerfStats(file, clock = { ++ts }, totals = totals)
         fun turn(): PerfSnapshot = TurnPerf { 0L }.apply {
             setCount(PerfKeys.IN_TOKENS, 100_000)
             setCount(PerfKeys.OUT_TOKENS, 1_000)
@@ -473,7 +479,7 @@ class PerfStatsTest {
 
         repeat(400) { stats.record(PerfRowMeta(opus, "ok", compact = false, session = "a6b15bd7"), turn()) }
         stats.record(PerfRowMeta(opus, "ok", compact = false), turn())
-        assertTrue(AsyncFileIo.drain())
+        awaitPerfWrites(file, stats)
 
         val session = "a6b15bd7-1c2d-4e5f-8a9b-0c1d2e3f4a5b"
         assertTrue(stats.sessionTail(session).turns.size < 400, "the tail holds only part of the session")
@@ -481,5 +487,11 @@ class PerfStatsTest {
         assertEquals(400L, total.turns, "every row of the session, and not the one with no session")
         assertEquals(400 * price.usd(opus, turn().counters)!!, total.usd, 1e-9)
         assertEquals(null, price.usd(opus, mapOf(PerfKeys.IN_TOKENS to 100_000L, PerfKeys.OUT_TOKENS to 1_000L)))
+    }
+
+    private fun awaitPerfWrites(file: Path, stats: PerfStats) {
+        assertTrue(AsyncFileIo.awaitFile(file)) {
+            "Perf writes did not settle: sink=${stats.sink.status()}, lane=${AsyncFileIo.workSnapshot}"
+        }
     }
 }

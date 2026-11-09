@@ -12,8 +12,21 @@ import splice.core.model.ModelRates
 import splice.core.model.TurnBill
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
+import splice.core.turn.UsageMeasure
 
 class ChatUsageTest {
+
+    @Test
+    fun `actual cache presence survives incremental output but default billing cache zero remains unknown`() {
+        val usage = ChatUsage()
+        usage.usage(ev("""{"usage":{"prompt_tokens":10,"cached_tokens":null}}"""))
+        assertEquals(setOf(UsageMeasure.INPUT), usage.toUsage().measured)
+        usage.usage(ev("""{"usage":{"cached_tokens":0}}"""))
+        usage.usage(ev("""{"usage":{"completion_tokens":0}}"""))
+        assertEquals(setOf(UsageMeasure.INPUT, UsageMeasure.OUTPUT, UsageMeasure.CACHE_READ), usage.toUsage().measured)
+        assertEquals(0L, TurnBill.counters(usage.toUsage())[PerfKeys.CACHE_WRITE_TOKENS])
+        assertTrue(UsageMeasure.CACHE_WRITE !in usage.toUsage().measured)
+    }
 
     @Test
     fun `chat usage without a provider report has no observed billing counters`() {

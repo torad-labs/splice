@@ -2,6 +2,7 @@
 package splice.app.sources
 
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
@@ -10,7 +11,12 @@ import java.nio.channels.FileChannel
 private const val PERF_LINE_BUFFER_BYTES = 65_536
 
 /** A byte-positioned UTF-8 line reader, including CR, LF, CRLF and the unterminated last line. */
-internal class PerfLineReader(private val channel: FileChannel, start: Long, private val limit: Long) {
+internal class PerfLineReader(
+    private val channel: FileChannel,
+    start: Long,
+    private val limit: Long,
+    private val maxLineBytes: Int = Int.MAX_VALUE,
+) {
     private val buffer = ByteBuffer.allocate(PERF_LINE_BUFFER_BYTES)
     private val input = buffer.array()
     private val bytes = ByteArrayOutputStream()
@@ -36,6 +42,11 @@ internal class PerfLineReader(private val channel: FileChannel, start: Long, pri
             val start = offset
             while (offset < available && !lineBreak(input[offset])) {
                 offset++
+            }
+            if (bytes.size().toLong() + offset - start > maxLineBytes) {
+                throw IOException(
+                    "perf line exceeds read budget",
+                )
             }
             bytes.write(input, start, offset - start)
             position += offset - start

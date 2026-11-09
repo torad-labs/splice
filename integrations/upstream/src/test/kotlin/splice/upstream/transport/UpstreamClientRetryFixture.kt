@@ -54,6 +54,7 @@ internal suspend fun postOnce(client: UpstreamClient): String = client.posted(
         auth = fakeAuth,
         extraHeaders = { emptyMap() },
         replies = Replies(OpenAiReplies),
+        recovery = PostRecovery(clientFrameEmitted = { false }),
     ),
     "{}",
 ) { "ok" }

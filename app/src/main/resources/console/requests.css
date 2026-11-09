@@ -316,6 +316,19 @@ button.byr:hover .bn { color: var(--text); }
 .rq .meta > .acc { display: inline-flex; align-items: center; gap: var(--u); overflow: visible; }
 .rq .meta > .acc > .acct { min-width: 0; }
 
+/* At phone and narrow tablet widths the desktop row's fixed time, duration and account tracks can be wider than the
+   card itself. Keep every value, but give identity and metrics their own readable lines before the card can overflow. */
+@container rqt (max-width: 44rem) {
+  .rq, .rqg, .rqhead {
+    grid-template-columns: 1.5rem 1.5rem minmax(0, 1fr) 1.7rem;
+    grid-template-areas: "ch lp t ac" "who who who who" "meta meta meta meta" "tk tk tk tk" "du du du du" "co co co co";
+    column-gap: .5rem;
+    row-gap: .45rem;
+  }
+  .rq .meta, .rqg .meta, .rqhead .meta { flex-wrap: wrap; gap: .4rem .65rem; }
+  .rq .du, .rqg .du, .rq .co, .rqg .co { grid-template-columns: minmax(0, 1fr) max-content; }
+}
+
 /* ---------- a request: one row of the table ---------- */
 /* a row, not a card: .card's ink, cast and padding are a list object's. Hairlines between rows, a wash under the
    pointer over the hover time, and the open one keeps the wash, which its request below it shares. EVERY ROW IS ONE LINE

@@ -32,13 +32,23 @@ class NativeCodeModeNotificationsTest {
                     emptyMap(),
                     options(notices),
                 )
-                assertEquals("prefix", (cell.advance() as CodeModeStep.Yielded).output)
+                val first = cell.advance()
+                val yielded = when (first) {
+                    is CodeModeStep.Yielded -> first
+                    is CodeModeStep.Calls -> cell.observe(NOTIFICATION_WAIT_MS) as CodeModeStep.Yielded
+                    is CodeModeStep.Completed, is CodeModeStep.Notified, is CodeModeStep.WaitingForResults ->
+                        error("Expected a yielded observation or its pending permission call, got $first")
+                }
+                assertEquals("prefix", yielded.output)
                 val notice = withTimeout(NOTIFICATION_WAIT_MS) { notices.receive() }
                 assertEquals(
                     NativeCodeModeNotification("exact-owner", cell.cellId, "notify-exec", "after-yield"),
                     notice,
                 )
-                val permission = (cell.observe(NOTIFICATION_WAIT_MS) as CodeModeStep.Calls).calls.single()
+                val permission = (
+                    first as? CodeModeStep.Calls
+                        ?: (cell.observe(NOTIFICATION_WAIT_MS) as CodeModeStep.Calls)
+                    ).calls.single()
                 assertEquals("Read", permission.name)
                 assertEquals("{\"key\":\"permission\"}", permission.arguments.toString())
                 val done = cell.advance(listOf(CodeModeResult(permission.id, "approved"))) as CodeModeStep.Completed

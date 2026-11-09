@@ -114,6 +114,11 @@ internal class TurnFinish(
         // A turn that began upstream and then emitted a code-mode tool call remains a turn.
         if (drive.perfCounter(PerfKeys.ATTEMPTS) == 0L && drive.perfCounter(PerfKeys.UPSTREAM_REQ_BYTES) == 0L) {
             drive.perf.setCount(PerfKeys.LOCAL_STEP, 1)
+            markLocalObservation(drive)
         }
+    }
+
+    private fun markLocalObservation(drive: TurnDrive) {
+        drive.perf.observations?.let { request -> request.update(request.scope.copy(local = true, work = "local")) }
     }
 }

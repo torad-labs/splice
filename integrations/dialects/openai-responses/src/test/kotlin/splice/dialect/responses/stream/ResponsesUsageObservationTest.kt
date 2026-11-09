@@ -8,9 +8,27 @@ import org.junit.jupiter.api.Test
 import splice.core.model.ModelRates
 import splice.core.model.TurnBill
 import splice.core.perf.PerfKeys
+import splice.core.turn.UsageMeasure
 
 class ResponsesUsageObservationTest {
     private val harvest = ResponsesHarvest()
+
+    @Test
+    fun `missing and null cache fields stay unmeasured despite billing zeros while explicit zero is measured`() {
+        listOf("{}", "{\"cached_tokens\":null}").forEach { details ->
+            val response = Json.parseToJsonElement("""{"usage":{"input_tokens":10,"input_tokens_details":$details}}""")
+            val usage = harvest.usageFrom(response.jsonObject)
+            assertEquals(0L, TurnBill.counters(usage)[PerfKeys.CACHED_TOKENS])
+            assertEquals(setOf(UsageMeasure.INPUT), usage.measured)
+        }
+        val explicit = harvest.usageFrom(
+            Json.parseToJsonElement(
+                """{"usage":{"input_tokens":10,"output_tokens":0,"input_tokens_details":{"cached_tokens":0}}}""",
+            ).jsonObject,
+        )
+        assertEquals(setOf(UsageMeasure.INPUT, UsageMeasure.OUTPUT, UsageMeasure.CACHE_READ), explicit.measured)
+        assertTrue(UsageMeasure.CACHE_WRITE !in explicit.measured)
+    }
 
     @Test
     fun `a missing response usage object produces no observed billing counters`() {

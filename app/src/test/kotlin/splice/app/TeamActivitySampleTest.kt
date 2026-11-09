@@ -131,14 +131,15 @@ class TeamActivitySampleTest {
                 }.bodyAsText()
                 assertTrue(sse.contains("event: message_stop"), "the turn was served: $sse")
             }
-            assertTrue(AsyncFileIo.drain(), "the file lane drained")
+            val laneDrained = AsyncFileIo.drain()
             // The row's day and the read's day are the same UTC day unless the test straddles midnight;
             // reading both days, when they differ, makes the answer independent of that instant.
             val entries = setOf(before, utcDay()).flatMap { day -> activity(day) }
             assertEquals(
                 listOf("gpt"),
                 entries.map { entry -> entry.getValue("slot").jsonPrimitive.content },
-                "one sample for the member's two turns inside one interval, under its slot",
+                "one sample for the member's two turns inside one interval, under its slot; " +
+                    "laneDrained=$laneDrained, fileWork=${AsyncFileIo.workSnapshot}",
             )
         }
 

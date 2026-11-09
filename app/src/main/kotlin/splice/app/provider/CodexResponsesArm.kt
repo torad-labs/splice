@@ -30,6 +30,8 @@ internal class CodexResponsesArm(
     private val codeMode: CodexCodeModeAssembly = CodexCodeModeAssembly(statePaths, probeScope, log),
 ) {
     internal val codeModeControls get() = codeMode.controls
+    internal var performance: splice.app.observability.PerfTelemetry? = null
+        set(value) { field = value; codeMode.performance = value }
     internal val codeModeCatalogs get() = codeMode.catalogs
 
     private val quirksOverlay = QuirksOverlay()

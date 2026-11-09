@@ -30,6 +30,8 @@
 :integrations-daemon-client -> :core :integrations-topology
 # code mode's GraalJS worker pool: the child-JVM runtime behind the upstream-owned CodeModeRuntime port.
 :integrations-codemode -> :core :integrations-upstream
+# Runtime sampling, profiles and export adapters consume framework-free core ports only.
+:integrations-observability -> :core
 # the OAuth sign-in flows, account files and each vendor's refresh hop: the HTTP half of provider
 # auth, beside the HTTP-client-agnostic providers whose token shapes it speaks.
 :integrations-oauth -> :core :integrations-upstream :integrations-providers-codex :integrations-providers-grok :integrations-providers-kimi :integrations-providers-muse :integrations-topology

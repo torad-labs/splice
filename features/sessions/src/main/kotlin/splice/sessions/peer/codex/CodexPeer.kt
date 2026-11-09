@@ -16,7 +16,7 @@ public data class NativeProcess(val pid: Long, val procStart: String, val pidDom
 public data class CodexBinding(val thread: String, val home: String, val owner: NativeProcess?)
 
 /** What an attach asks for: the thread with its home and owner, and the working directory the peer's record shows. */
-public data class CodexRequest(val binding: CodexBinding, val cwd: String)
+public data class CodexRequest(val binding: CodexBinding, val cwd: String, val peerName: String? = null)
 
 /** How handing one message to the thread ended. */
 public sealed class TurnStart {

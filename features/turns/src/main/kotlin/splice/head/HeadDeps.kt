@@ -12,6 +12,8 @@ import splice.core.config.Knob
 import splice.core.config.ProgressLineOn
 import splice.core.config.RequestByteCap
 import splice.core.model.ClientWindows
+import splice.core.perf.observation.PerfRecorder
+import splice.core.perf.observation.PerfRecorders
 import splice.core.prompt.HeadSystemPrompt
 import splice.core.prompt.SystemPromptLayers
 import splice.core.session.ActivityAction
@@ -176,7 +178,9 @@ public data class HeadDeps(
         val shadow: ShadowClassifier,
         val clientWindows: ClientWindows,
         val captures: HeadCaptures,
-    )
+    ) {
+        public val observations: PerfRecorder get() = captures.observations
+    }
 
     /** What the head keeps about compactions. */
     public data class HeadCompaction(
@@ -196,6 +200,7 @@ public data class HeadDeps(
         /** V4-174: the head's opt-in full request/response trace. NULL IS OFF, the same law as
          *  [wireTap]: no default. */
         val trace: TraceStore?,
+        val observations: PerfRecorder = PerfRecorders.disabled(),
     )
 
     /** Which account a turn spends, and the trackers that decide eligibility. */

@@ -84,6 +84,16 @@
     "features/usage/src/main/kotlin/splice/usage/economics/HeadEconomicsSource.kt EconomicsRow": {
       "params": 14,
       "subsystems": 0
+    },
+    "features/usage/src/main/kotlin/splice/usage/perf/objectives/AlertLifecycle.kt AlertState": {
+      "params": 15,
+      "subsystems": 0,
+      "reason": "2026-11-06: @Serializable persisted alert lifecycle record; keep its flat field layout compatible with existing state JSON."
+    },
+    "features/usage/src/main/kotlin/splice/usage/perf/objectives/PerfObjectiveSettings.kt AlertRule": {
+      "params": 13,
+      "subsystems": 0,
+      "reason": "2026-11-06: @Serializable saved settings/API rule record; keep its field layout compatible with existing JSON."
     }
   }
 }

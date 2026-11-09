@@ -25,10 +25,14 @@ import io.ktor.client.statement.HttpStatement
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.CancellationException
 import splice.core.failure.FailureEvidence
+import splice.core.perf.OutcomeTag
 import splice.core.perf.UpstreamAttemptTiming
+import splice.core.turn.TurnOutcome
 import splice.core.util.WallClock
 import splice.upstream.RoundBody
+import splice.upstream.StreamRead
 import splice.upstream.StreamStart
 import splice.upstream.UpstreamHandler
 import splice.upstream.failure.ErrorMessage
@@ -91,6 +95,7 @@ internal class UpstreamRequest(
         val token = marks?.let { bridge?.register(it) }
         val bodies = client.attributes.getOrNull(upstreamBodyBridgeKey)
         val bodyToken = bodies?.register(wire.bodyBytes)
+        var ending = OutcomeTag.UPSTREAM_FAILED.wire
         try {
             val statement = prepare(ctx.url, wire, token, bodyToken)
             val handler = UpstreamHandler<T> { response ->
@@ -101,13 +106,29 @@ internal class UpstreamRequest(
                 acceptance()
                 onStreamStart()
             }
-            return statement.execute { response ->
+            val result = statement.execute { response ->
                 timing?.headersDelivered()
                 executeResponse(response, ctx, accepted, handler, wire)
             }
+            ending = observedEnding(result)
+            return result
+        } catch (cancelled: CancellationException) {
+            ending = OutcomeTag.CANCELLED.wire
+            throw cancelled
         } finally {
+            timing?.finish(ending)
             token?.let { bridge?.release(it) }
             bodyToken?.let { bodies.release(it) }
+        }
+    }
+
+    private fun observedEnding(result: RetryOutcome<*>): String {
+        val read = (result as? RetryOutcome.Done<*>)?.read as? StreamRead.Read<*>
+            ?: return OutcomeTag.UPSTREAM_FAILED.wire
+        return when (read.value) {
+            is TurnOutcome.Failure -> OutcomeTag.UPSTREAM_FAILED.wire
+            is TurnOutcome.ClientAbandoned -> OutcomeTag.CLIENT_ABORT.wire
+            else -> OutcomeTag.OK.wire
         }
     }
 

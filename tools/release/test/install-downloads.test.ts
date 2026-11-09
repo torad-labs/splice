@@ -59,23 +59,29 @@ esac
   return dir;
 }
 
+// These inputs are immutable: each install gets the same synthetic release bytes and fake executables.
+// Version selection remains an environment input, and each run still has its own sandbox and logs.
+const ASSETS = release();
+const FAKE_TOOLS = fakes();
+const NETWORK = fakeNetwork();
+cleanup.push(NETWORK.dir);
+
 /** One install with the fake network; the URLs curl was asked for, in order. */
 function install(env: Record<string, string>): { urls: string[]; output: string; ok: boolean } {
-  const assets = release();
-  const network = fakeNetwork();
-  cleanup.push(network.dir);
   const box = makeSandbox("install-downloads-");
   cleanup.push(box.dir);
-  const result = runInstall(assets, box, {
+  const curlLog = join(box.dir, "curl.log");
+  const ghLog = join(box.dir, "gh.log");
+  const result = runInstall(ASSETS, box, {
     ...sandboxEnv(box),
-    SPLICE_FAKE_RELEASE_ASSETS: assets,
-    SPLICE_FAKE_CURL_LOG: network.curlLog,
-    SPLICE_FAKE_GH_LOG: network.ghLog,
+    SPLICE_FAKE_RELEASE_ASSETS: ASSETS,
+    SPLICE_FAKE_CURL_LOG: curlLog,
+    SPLICE_FAKE_GH_LOG: ghLog,
     SPLICE_RELEASE_BASE_URL: "",
-    PATH: `${network.dir}:${fakes()}:${box.bin}:${Bun.env.PATH ?? ""}`,
+    PATH: `${NETWORK.dir}:${FAKE_TOOLS}:${box.bin}:${Bun.env.PATH ?? ""}`,
     ...env,
   });
-  const urls = existsSync(network.curlLog) ? readFileSync(network.curlLog, "utf8").split("\n").filter(Boolean) : [];
+  const urls = existsSync(curlLog) ? readFileSync(curlLog, "utf8").split("\n").filter(Boolean) : [];
   return { urls, output: result.output, ok: result.ok };
 }
 
@@ -86,12 +92,18 @@ describe("install.sh downloads from splice.torad.ai", () => {
     expect(run.urls).toEqual([`${HOST}/latest/splice.jar`, `${HOST}/latest/sha256sums.txt`, `${HOST}/latest/splice-launch`]);
   });
 
-  test("a pinned SPLICE_VERSION takes every file from that version's folder", () => {
-    for (const pinned of ["v9.9.9", "v9.8.7-beta.6"]) {
-      const run = install({ SPLICE_VERSION: pinned });
-      expect(run.ok, run.output).toBe(true);
-      expect(run.urls).toEqual([`${HOST}/${pinned}/splice.jar`, `${HOST}/${pinned}/sha256sums.txt`, `${HOST}/${pinned}/splice-launch`]);
-    }
+  test("a pinned stable SPLICE_VERSION takes every file from that version's folder", () => {
+    const pinned = "v9.9.9";
+    const run = install({ SPLICE_VERSION: pinned });
+    expect(run.ok, run.output).toBe(true);
+    expect(run.urls).toEqual([`${HOST}/${pinned}/splice.jar`, `${HOST}/${pinned}/sha256sums.txt`, `${HOST}/${pinned}/splice-launch`]);
+  });
+
+  test("a pinned prerelease SPLICE_VERSION takes every file from that version's folder", () => {
+    const pinned = "v9.8.7-beta.6";
+    const run = install({ SPLICE_VERSION: pinned });
+    expect(run.ok, run.output).toBe(true);
+    expect(run.urls).toEqual([`${HOST}/${pinned}/splice.jar`, `${HOST}/${pinned}/sha256sums.txt`, `${HOST}/${pinned}/splice-launch`]);
   });
 
   test("a prebuilt jar with no launcher beside it fetches its own release's launcher", () => {
@@ -103,10 +115,13 @@ describe("install.sh downloads from splice.torad.ai", () => {
     expect(run.urls).toEqual([`${HOST}/v9.9.9/sha256sums.txt`, `${HOST}/v9.9.9/splice-launch`]);
   });
 
-  test("no install asks github.com for anything", () => {
-    for (const env of [{}, { SPLICE_VERSION: "v9.9.9" }] as Record<string, string>[]) {
-      const run = install(env);
-      expect(run.urls.filter((url) => url.includes("github.com"))).toEqual([]);
-    }
+  test("a default install asks github.com for nothing", () => {
+    const run = install({});
+    expect(run.urls.filter((url) => url.includes("github.com"))).toEqual([]);
+  });
+
+  test("a pinned install asks github.com for nothing", () => {
+    const run = install({ SPLICE_VERSION: "v9.9.9" });
+    expect(run.urls.filter((url) => url.includes("github.com"))).toEqual([]);
   });
 });

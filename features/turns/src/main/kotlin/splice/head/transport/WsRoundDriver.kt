@@ -18,6 +18,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
@@ -194,6 +195,8 @@ internal class WsRoundDriver(
             reported = true
             return result
         } finally {
+            // Also covers failures between acquisition and the first collection of its cold flow.
+            drive.perf.upstream.observations?.finish(if (reported) "?" else OutcomeTag.CANCELLED.wire)
             if (!reported) runner.roundEnded(drive.meta, ok = false)
             if (traced) closeTrace(drive, inputs, ending, reported)
             poller?.cancel()

@@ -1,0 +1,201 @@
+package splice.app.sources.observability
+
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import splice.core.perf.observation.PerfAggregatePoint
+import splice.core.perf.observation.PerfAggregateSnapshot
+import splice.core.perf.observation.PerfCoverage
+import splice.core.perf.observation.PerfIdentity
+import splice.core.perf.observation.PerfIssue
+import splice.core.perf.observation.PerfScope
+import splice.core.util.AsyncFileIo
+import splice.core.util.PerfWorkBudget
+import splice.core.util.PerfWorkPhase
+import splice.core.util.WallClock
+import java.nio.file.Files
+import java.nio.file.Path
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+
+class PerfHistorySafetyTest {
+    private val identity = PerfIdentity("boot", "build", "1", "config")
+    private val clock = WallClock { 120_000L }
+    private val snapshot = PerfAggregateSnapshot(
+        identity,
+        60_000L,
+        120_000L,
+        listOf(
+            PerfAggregatePoint(
+                "arrival_to_terminal_ms",
+                PerfScope(head = "test"),
+                60_000L,
+                120_000L,
+                1,
+                10.0,
+                10.0,
+                10.0,
+            ),
+        ),
+        PerfCoverage(60_000L, 120_000L, 60_000L),
+    )
+
+    @Test
+    fun `pending work after a clean close remains uncertain to an offline reader`(@TempDir dir: Path) {
+        cleanHistory(dir)
+        val checkpoint = Files.readString(dir.resolve("checkpoint.json"))
+        PerfAggregateStore(dir, identity, clock).use { assertFalse(uncertain(it)) }
+        assertEquals(checkpoint, Files.readString(dir.resolve("checkpoint.json")))
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val writer = PerfAggregateStore(dir, identity, clock)
+        assertTrue(writer.openWriter())
+        assertTrue(AsyncFileIo.submit { entered.countDown(); release.await(10, TimeUnit.SECONDS) })
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            PerfAggregateStore(dir, identity, clock).use { assertTrue(uncertain(it)) }
+            assertTrue(writer.append(snapshot))
+            assertEquals(1L, writer.status().pending)
+            PerfAggregateStore(dir, identity, clock).close()
+            assertEquals(checkpoint, Files.readString(dir.resolve("checkpoint.json")))
+        } finally {
+            release.countDown()
+            writer.close()
+        }
+        PerfAggregateStore(dir, identity, clock).use { assertFalse(uncertain(it)) }
+    }
+
+    @Test
+    fun `failed work cannot restore a previously clean checkpoint`(@TempDir dir: Path) {
+        cleanHistory(dir)
+        Files.delete(dir.resolve("minute-60000.json"))
+        Files.createDirectory(dir.resolve("minute-60000.json"))
+        PerfAggregateStore(dir, identity, clock).use { writer ->
+            assertTrue(writer.openWriter())
+            assertTrue(writer.append(snapshot))
+            assertFalse(AsyncFileIo.awaitFile(dir.resolve("checkpoint.json")))
+            assertEquals(1L, writer.status().failed)
+            checkNotNull(PerfWorkPhase.tryCheckpoint()).close()
+        }
+        PerfAggregateStore(dir, identity, clock).use { assertTrue(uncertain(it)) }
+    }
+
+    @Test
+    fun `owned checkpoints persist beside ordinary owners and refused work releases its reservation`(
+        @TempDir dir: Path,
+    ) {
+        PerfAggregateStore(dir, identity, clock).use { writer ->
+            checkNotNull(PerfWorkBudget.acquire(8L * 1_024 * 1_024)).use {
+                assertFalse(appendOwned(writer))
+            }
+            assertEquals(1L, writer.status().dropped)
+            val entered = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            assertTrue(AsyncFileIo.submit { entered.countDown(); release.await(10, TimeUnit.SECONDS) })
+            try {
+                assertTrue(entered.await(5, TimeUnit.SECONDS))
+                checkNotNull(PerfWorkBudget.acquire(7L * 1_024 * 1_024)).use {
+                    assertTrue(appendOwned(writer))
+                    assertEquals(1L, writer.status().pending)
+                    assertBusy(writer)
+                    release.countDown()
+                    assertTrue(AsyncFileIo.awaitFile(dir.resolve("checkpoint.json")))
+                    // A completed write must release its transferred lease before the next checkpoint.
+                    assertTrue(appendOwned(writer))
+                    assertTrue(AsyncFileIo.awaitFile(dir.resolve("checkpoint.json")))
+                }
+            } finally {
+                release.countDown()
+            }
+            assertEquals(2L, writer.status().written)
+            assertEquals(0L, writer.status().failed)
+            val read = writer.read(snapshot.fromMs, snapshot.untilMs)
+            try {
+                assertEquals(1L, read.snapshots.flatMap { it.points }.sumOf { it.count })
+                assertTrue(read.coverage.issues.any { it.code == "checkpoint_dropped" })
+            } finally {
+                PerfWorkBudget.release(read)
+            }
+        }
+    }
+
+    @Test
+    fun `history transfer refusal reports its exact marginal request and locked accounting`(@TempDir dir: Path) {
+        PerfAggregateStore(dir, identity, clock).use { writer ->
+            val phase = checkNotNull(PerfWorkPhase.tryCheckpoint())
+            val snapshotLease = checkNotNull(PerfWorkBudget.acquire(2L * 1_024 * 1_024))
+            val pressureBytes = PerfWorkBudget.LIMIT_BYTES - PerfWorkBudget.retainedBytes()
+            val pressureLease = checkNotNull(PerfWorkBudget.acquire(pressureBytes))
+            try {
+                assertFalse(writer.appendOwned(snapshot, snapshotLease, phase))
+                val status = writer.status()
+                val last = requireNotNull(requireNotNull(status.rejections).last)
+                val target = PerfHistoryFormat.estimate(snapshot) + 8L * 1_024 * 1_024
+                assertEquals(1L, status.dropped)
+                assertEquals(1L, status.rejections?.historyMemory)
+                assertEquals(target - 2L * 1_024 * 1_024, last.requestedBytes)
+                assertEquals(target, last.targetBytes)
+                assertEquals(PerfWorkBudget.LIMIT_BYTES, last.leasedBytes)
+
+                PerfWorkBudget.acquireWithOutcome(Long.MAX_VALUE)
+                assertEquals(last, writer.status().rejections?.last)
+            } finally {
+                pressureLease.close()
+                snapshotLease.close()
+                phase.close()
+            }
+        }
+    }
+
+    @Test
+    fun `variable checkpoint metadata is refused before enqueue`(@TempDir dir: Path) {
+        val huge = "x".repeat(3 * 1_024 * 1_024)
+        PerfAggregateStore(dir, identity, clock).use { writer ->
+            val empty = snapshot.copy(points = emptyList())
+            val sink = writer.status()
+            val values = listOf(
+                empty.copy(identity = identity.copy(build = huge)),
+                empty.copy(coverage = snapshot.coverage.copy(issues = listOf(PerfIssue(huge, "source")))),
+                empty.copy(coverage = snapshot.coverage.copy(issues = listOf(PerfIssue("code", huge)))),
+                empty.copy(coverage = snapshot.coverage.copy(sinks = listOf(sink.copy(sink = huge)))),
+                empty.copy(coverage = snapshot.coverage.copy(sinks = List(20_000) { sink })),
+            )
+            values.forEach { assertFalse(writer.append(it)) }
+            assertEquals(0L, writer.status().enqueued)
+            assertEquals(values.size.toLong(), writer.status().dropped)
+        }
+        PerfAggregateStore(dir, identity, clock).use { assertTrue(uncertain(it)) }
+    }
+
+    private fun cleanHistory(dir: Path) {
+        PerfAggregateStore(dir, identity, clock).use {
+            assertTrue(it.append(snapshot))
+            assertTrue(AsyncFileIo.awaitFile(dir.resolve("checkpoint.json")))
+        }
+    }
+
+    private fun appendOwned(writer: PerfAggregateStore): Boolean =
+        checkNotNull(PerfWorkPhase.tryCheckpoint()).use { phase ->
+            checkNotNull(PerfWorkBudget.acquire(2L * 1_024 * 1_024)).use { writer.appendOwned(snapshot, it, phase) }
+        }
+
+    private fun assertBusy(writer: PerfAggregateStore) {
+        val read = writer.read(snapshot.fromMs, snapshot.untilMs)
+        try {
+            assertTrue(read.coverage.issues.any { it.code == "memory_busy" })
+        } finally {
+            PerfWorkBudget.release(read)
+        }
+    }
+
+    private fun uncertain(store: PerfAggregateStore): Boolean {
+        val read = store.read(60_000L, 120_000L)
+        return try {
+            read.coverage.issues.any { it.code == "checkpoint_uncertain" }
+        } finally {
+            PerfWorkBudget.release(read)
+        }
+    }
+}

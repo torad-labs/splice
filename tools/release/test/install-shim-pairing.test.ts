@@ -32,6 +32,16 @@ const TOOLS = [
   "ln", "readlink", "install", "chmod", "mkdir", "dirname", "cat", "head", "tr", "timeout", "printf",
 ];
 
+// Real host tools are immutable symlink targets. Keep each install's fake java/node/claude in its
+// private PATH prefix, while avoiding a fresh farm of the same system tools per scenario.
+const TOOL_FARM = mkdtempSync(join(tmpdir(), "install-shim-pairing-tools-"));
+workspaces.push(TOOL_FARM);
+for (const tool of TOOLS) {
+  const real = Bun.which(tool);
+  if (!real) throw new Error(`the installer test needs ${tool} on PATH`);
+  symlinkSync(real, join(TOOL_FARM, tool));
+}
+
 const launcher = (marker: string, release = "9.9.9") =>
   `#!/usr/bin/env node\nconst SPLICE_SHIM_VERSION = "${marker}";\nconst SPLICE_GATEWAY_VERSION = "${release}";\n`;
 const NEW = launcher("shim-new");
@@ -59,11 +69,6 @@ async function installPrebuilt(setup: Setup) {
   workspaces.push(dir);
   const bin = join(dir, "path");
   mkdirSync(bin);
-  for (const tool of TOOLS) {
-    const real = Bun.which(tool);
-    if (!real) throw new Error(`the installer test needs ${tool} on PATH`);
-    symlinkSync(real, join(bin, tool));
-  }
   exe(join(bin, "java"), `#!/usr/bin/env bash
 case "$*" in
   -version) echo 'openjdk version "21.0.4" 2024-07-16' >&2 ;;
@@ -100,7 +105,7 @@ esac
     stdout: "pipe",
     stderr: "pipe",
     env: {
-      PATH: bin,
+      PATH: `${bin}:${TOOL_FARM}`,
       HOME: dir,
       SPLICE_SHARE_DIR: share,
       SPLICE_BIN_DIR: join(dir, "bin"),

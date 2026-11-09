@@ -6,6 +6,7 @@
 // in the file.
 package splice.head.admission
 
+import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import splice.core.auth.CredentialKey
 import splice.core.failure.EndingHeard
@@ -43,14 +44,25 @@ internal class HeadAdmission(
 
     fun arrivalTime(): Long = telemetry.arrivalTime()
 
+    /** The listener observes arrivals before ingress can refuse their bodies without entering this handler. */
+    fun observeRequests(application: Application) {
+        RequestObservation.install(application, deps, preparation.provider.key)
+    }
+
     suspend fun handleMessages(call: ApplicationCall, arrivalAt: Long = arrivalTime()) {
+        RequestObservation.run(call, deps, preparation.provider.key, arrivalAt) {
+            handleObserved(call, arrivalAt)
+        }
+    }
+
+    private suspend fun handleObserved(call: ApplicationCall, arrivalAt: Long) {
         if (!admission.acceptingOrRespond(call)) return
         // Fix 3 (Oct 27): before the turn takes a slot or is read, the head's model list follows the credential the
         // turn is sent with, so a turn sent the moment after a sign-in is prepared from that sign-in's list.
         val modelsAt = deps.seams.clock()
         deps.traffic.models.await()
         val modelsWaitMs = deps.seams.clock() - modelsAt
-        val perf = telemetry.begin(arrivalAt)
+        val perf = telemetry.begin(arrivalAt, RequestObservation.of(call))
         perf.setCount(splice.core.perf.PerfKeys.MODEL_ROSTER_WAIT_MS, modelsWaitMs)
         val t0 = deps.seams.clock()
         val slot = admission.acquireSlotOrRespond(call) ?: return
@@ -95,20 +107,21 @@ internal class HeadAdmission(
             is Preparation.Local -> driver.answerLocally(call, prepared, admitted.perf)
             is Preparation.Replay -> {
                 // settle returned this retry's candidate before it follows the independently held drive.
-                driver.localResponses.replay(call, prepared)
+                driver.localResponses.replay(call, prepared, admitted.perf)
             }
             is Preparation.Collected -> {
                 // The collect sibling: this retry waits out its held answer instead of prefilling again.
-                driver.localResponses.replayCollected(call, prepared)
+                driver.localResponses.replayCollected(call, prepared, admitted.perf)
             }
             // A non-stream fallback of a streamed compaction: it follows that recording into one body.
-            is Preparation.CollectedRecording -> driver.localResponses.collectRecording(call, prepared)
+            is Preparation.CollectedRecording -> driver.localResponses.collectRecording(call, prepared, admitted.perf)
             is Preparation.Ready -> serveReady(call, prepared, admitted)
         }
     }
 
     private suspend fun serveReady(call: ApplicationCall, prepared: Preparation.Ready, admitted: AdmittedTurn) {
         val meta = prepared.built.meta
+        RequestObservation.ready(admitted.perf, prepared)
         // Before describe: a compaction held for a restart is not yet one the restart's read waits for.
         if (meta.compact && !admission.compactionAdmittedOrRespond(call, TurnEnd(admitted::release))) return
         admitted.slot.describe(
@@ -133,6 +146,7 @@ internal class HeadAdmission(
         // request the head received and answered — a trace that skipped it would show a client
         // retrying for no visible reason. Null for every head whose trace is off.
         val trace = prepared.takeInbound()?.let { deps.stores.captures.trace?.begin(prepared.built.meta, it) }
+        RequestObservation.turn(admitted.perf, trace?.turnId)
         admitAccountAndDrive(call, prepared, admitted, trace)
     }
 

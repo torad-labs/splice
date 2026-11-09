@@ -13,6 +13,7 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import splice.client.mcp.DirectoryProbe
 import splice.client.mcp.McpSharing
+import splice.control.mcp.observation.McpPerfRecorders
 import splice.core.util.LogSink
 import java.nio.file.Files
 import java.nio.file.Path
@@ -94,22 +95,25 @@ abstract class McpHostFixture {
     protected var idleBudget: Duration = 30.minutes
     protected var handshakeBudget: Duration = 1.minutes
     protected var serverCeiling: Int = 32
+    protected var observations: McpPerfRecorders? = null
 
     protected fun boot(
         maxServers: Int = 32,
         requestTimeout: Duration = 20.seconds,
         idleTimeout: Duration = 30.minutes,
         initializeTimeout: Duration = 1.minutes,
+        shutdownDirectory: Path? = null,
     ): McpHost {
         requestBudget = requestTimeout
         idleBudget = idleTimeout
         handshakeBudget = initializeTimeout
         serverCeiling = maxServers
+        val shutdownEnv = shutdownDirectory?.let { mapOf("FAKE_TERM_DIRECTORY" to it.toString()) }.orEmpty()
         val global = buildJsonObject {
             put("fake", FakeMcpServer.entry())
             put("alias", FakeMcpServer.entry())
-            put("fake2", FakeMcpServer.entry(mapOf("FAKE2" to "1")))
-            put("fake3", FakeMcpServer.entry(mapOf("FAKE2" to "2")))
+            put("fake2", FakeMcpServer.entry(mapOf("FAKE2" to "1") + shutdownEnv))
+            put("fake3", FakeMcpServer.entry(mapOf("FAKE2" to "2") + shutdownEnv))
             put("remote", json.parseToJsonElement("""{"type":"http","url":"https://x/mcp"}"""))
         }
         val sharing = McpSharing(true, emptySet(), "http://127.0.0.1:1/mcp/", { "k" }, DirectoryProbe { false })
@@ -121,7 +125,7 @@ abstract class McpHostFixture {
                 maxServers = { serverCeiling },
                 requestTimeout = { requestBudget },
                 initializeTimeout = { handshakeBudget },
-                runtime = McpHostConfig.Runtime(clock = clock),
+                runtime = McpHostConfig.Runtime(clock = clock, observations = observations),
             ),
             log = LogSink { line ->
                 synchronized(log) { log.append(line) }

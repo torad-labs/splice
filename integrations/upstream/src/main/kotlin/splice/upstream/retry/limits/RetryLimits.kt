@@ -3,6 +3,7 @@ package splice.upstream.retry.limits
 
 import splice.core.failure.FailureCause
 import splice.core.failure.Lift
+import splice.core.failure.Moment
 import splice.core.failure.Outlast
 import splice.upstream.retry.BURST_FIRST_WAIT_MS
 import splice.upstream.retry.BURST_WAITS
@@ -18,26 +19,37 @@ import splice.upstream.retry.Probes
 import splice.upstream.retry.RetryStep
 import splice.upstream.retry.RetryTurn
 import splice.upstream.retry.Spend
+import splice.upstream.retry.THROTTLE_FIRST_WAIT_MS
+import splice.upstream.retry.THROTTLE_WAITS
+import splice.upstream.retry.THROTTLE_WAIT_CAP_MS
 
 /** A limit, an overload and a spent account: waited, moved or held by what the provider stated. */
 internal object RetryLimits {
     /** A burst: waited 2, 4, 8 and 15 s, and never less than [soonMs], a time stated inside the floor, which is
-     *  waited out rather than held. Then the turn moves to a free login, or holds with nothing stated to go on and
-     *  [probes] to find the lift. */
-    private fun bursts(turn: RetryTurn, soonMs: Long, probes: Probes): RetryStep {
+     *  waited out rather than held. When these waits are spent, the caller supplies the bounded ending or hold. */
+    private fun bursts(turn: RetryTurn, soonMs: Long, after: RetryStep): RetryStep {
         val n = turn.ledger.count(Spend.BURST)
         val waitMs = maxOf(soonMs, minOf(BURST_FIRST_WAIT_MS shl n, BURST_WAIT_CAP_MS))
-        return if (n < BURST_WAITS) turn.wait(waitMs) else turn.switchOr(RetryStep.Hold(null, probes))
+        return if (n < BURST_WAITS) turn.wait(waitMs) else turn.switchOr(after)
     }
 
-    fun limited(turn: RetryTurn, lift: Lift, named: Boolean): RetryStep {
+    fun limited(turn: RetryTurn, cause: FailureCause.Provider.Limited): RetryStep {
+        if (cause.isExhausted) return turn.switchOr(turn.end)
+        val lift = cause.lift
+        if (lift is Lift.Unstated && turn.at.moment == Moment.MID_CONTENT) return turn.end
         val stated = turn.pastFloor(lift)
         return when {
+            lift is Lift.Unstated -> turn.switchOr(throttle(turn))
             stated != null -> stated(turn, stated)
-            // A named window with no time stated is long: Kimi's 5-hour 429 recovered on none of 62 retried turns.
-            lift is Lift.Unstated && named -> turn.switchOr(RetryStep.Hold(null, Probes.UNSTATED))
-            else -> bursts(turn, turn.insideFloor(lift) ?: 0L, Probes.UNSTATED)
+            else -> bursts(turn, turn.insideFloor(lift) ?: 0L, RetryStep.Hold(null, Probes.UNSTATED))
         }
+    }
+
+    /** A shared short throttle gets a finite recovery interval even after every eligible login has been tried. */
+    private fun throttle(turn: RetryTurn): RetryStep {
+        val n = turn.ledger.count(Spend.THROTTLE)
+        val waitMs = minOf(THROTTLE_FIRST_WAIT_MS shl n, THROTTLE_WAIT_CAP_MS)
+        return if (n < THROTTLE_WAITS) turn.wait(waitMs) else turn.end
     }
 
     fun overloaded(turn: RetryTurn, cause: FailureCause.Provider.Overloaded): RetryStep {
@@ -60,7 +72,7 @@ internal object RetryLimits {
         val soon = turn.insideFloor(lift)
         return when {
             stated != null -> stated(turn, stated)
-            soon != null -> bursts(turn, soon, Probes.CREDIT)
+            soon != null -> bursts(turn, soon, RetryStep.Hold(null, Probes.CREDIT))
             else -> turn.switchOr(RetryStep.Hold(null, Probes.CREDIT))
         }
     }

@@ -117,6 +117,7 @@ internal class HostedServerRequests(
             val slot = hostId?.let(pending::remove)
             slot?.let {
                 runtime.reservations.remove(HostedClientCalls.RequestId(it.sessionId, it.clientId), it)
+                it.observations?.response(msg)
                 it.answer.complete(runtime.codec.withId(msg, it.clientId))
             }
         }

@@ -19,7 +19,7 @@ import splice.upstream.failure.ProviderDeviation
 import splice.upstream.failure.ReplyFacts
 
 /**
- * Kimi's two documented deviations from the Messages standard.
+ * Kimi's plan and usage-limit deviations from the Messages standard.
  *
  * A plan-tier answer (the subscription does not include the model, or caps it at 256k) is Kimi's verdict on the
  * account's plan, whatever status spells it. Kimi sends it as a 401, which the standard reads as a dead login and
@@ -29,13 +29,19 @@ import splice.upstream.failure.ReplyFacts
  * Kimi's 5-hour limit names its window. The 429 of Oct 23, 3:41:54 PM CT read "You've reached your 5-hour usage limit.
  * Your quota will reset when the current 5-hour window ends" with no Retry-After (audit-maps.md:1075), and none of 62
  * retried turns recovered (audit-maps.md:1078). It reads as Limited with the FIVE_HOUR window, at the lift the reply
- * states, which is none.
+ * states, which is none. Its monthly billing-cycle exhaustion likewise names its window, without inventing a reset.
  */
 public object KimiReplies : ProviderDeviation {
     private val oauth = KimiOAuth()
 
     override fun http(reply: FailedReply): FailureCause.Provider? = when {
         oauth.isPlanTierRejection(reply.body) -> FailureCause.Provider.Forbidden(ErrorMessage.said(reply.body))
+        reply.status == HttpStatus.TOO_MANY_REQUESTS && BILLING_CYCLE.containsMatchIn(reply.body) ->
+            FailureCause.Provider.Limited(
+                ReplyFacts.retryAfterLift(reply) ?: Lift.Unstated,
+                LimitWindow.BILLING_CYCLE,
+                ErrorMessage.said(reply.body),
+            )
         reply.status == HttpStatus.TOO_MANY_REQUESTS && FIVE_HOUR.containsMatchIn(reply.body) ->
             fiveHour(ReplyFacts.retryAfterLift(reply) ?: Lift.Unstated, ErrorMessage.said(reply.body))
         else -> null
@@ -47,6 +53,8 @@ public object KimiReplies : ProviderDeviation {
         val sent = event.payload.toString()
         return when {
             oauth.isPlanTierRejection(sent) -> FailureCause.Provider.Forbidden(said)
+            errorType(event.payload) == RATE_LIMIT_ERROR && BILLING_CYCLE.containsMatchIn(sent) ->
+                FailureCause.Provider.Limited(Lift.Unstated, LimitWindow.BILLING_CYCLE, said)
             errorType(event.payload) == RATE_LIMIT_ERROR && FIVE_HOUR.containsMatchIn(sent) ->
                 fiveHour(Lift.Unstated, said)
             else -> null
@@ -63,3 +71,6 @@ private const val RATE_LIMIT_ERROR = "rate_limit_error"
 
 /** How Kimi names its 5-hour window in a limit's message. */
 private val FIVE_HOUR = Regex("""5-hour usage limit""", RegexOption.IGNORE_CASE)
+
+/** Kimi's billing-cycle exhaustion is not a transient burst, even if a generic Retry-After is attached. */
+private val BILLING_CYCLE = Regex("""monthly usage limit|billing cycle""", RegexOption.IGNORE_CASE)

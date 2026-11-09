@@ -50,6 +50,9 @@ import java.nio.file.Path
  *  A DEFAULT INSTANCE IS NOT AVAILABLE for any of these: the one time one was, a fresh event bus here meant the
  *  route streamed a daemon that looked quiet forever while every head reported to a different bus. */
 public class ConsolePorts {
+    /** The daemon's one performance owner; absent wiring returns a named unavailable response. */
+    internal var performance: splice.app.observability.PerfTelemetry? = null
+
     /** Live turn observation and explicit turn actions share the provider's running ownership. */
     internal val turns: ConsoleTurnPorts = ConsoleTurnPorts()
 

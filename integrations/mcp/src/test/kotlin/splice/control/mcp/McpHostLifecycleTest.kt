@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.util.SecureFile
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
@@ -150,7 +151,9 @@ class McpHostLifecycleTest : McpHostFixture() {
     @Test
     fun `a streamless active operation survives idle sweep and refuses capacity eviction`(@TempDir dir: Path) =
         runBlocking {
-            boot(maxServers = 1)
+            // The fake clock also feeds the in-flight request deadline. Keep that request's deadline
+            // beyond the synthetic idle jump; the explicit await below remains the test's short bound.
+            boot(maxServers = 1, requestTimeout = 61.minutes)
             val a = init()
             val ready = dir.resolve("operation-started")
             val operation = async(Dispatchers.IO) { call(a, 8, "hold", ready.toString()) }
@@ -159,8 +162,14 @@ class McpHostLifecycleTest : McpHostFixture() {
             host.sweep()
             assertTrue(hosted("fake"), "active streamless call was swept")
             assertEquals(503, host.post("fake2", null, MCP_HOST_INIT).status, "active call must not be evicted")
-            host.post("fake", a, FakeMcpServer.RELEASE)
-            assertTrue(text(operation.await()).contains("echo="))
+            withTimeout(MCP_HOST_STREAM_WAIT_MS) {
+                assertEquals(
+                    202,
+                    host.post("fake", a, FakeMcpServer.RELEASE).status,
+                    "the held child must accept release",
+                )
+                assertTrue(text(operation.await()).contains("echo="))
+            }
         }
 
     @Test
@@ -201,18 +210,40 @@ class McpHostLifecycleTest : McpHostFixture() {
     }
 
     @Test
-    fun `shutdown signals stubborn children together within one grace period`() = runBlocking {
-        boot()
+    fun `shutdown signals stubborn children together within one grace period`(@TempDir directory: Path) = runBlocking {
+        val receipts = directory.resolve("term-receipts").toAbsolutePath()
+        assertEquals(null, SecureFile.ownerOnlyDirectory(receipts))
+        boot(shutdownDirectory = receipts)
         val pids = listOf("fake2", "fake3").map { name ->
             text(call(init(name), 1, "echo", "x", name = name)).substringBefore(" ").removePrefix("pid=").toLong()
         }
-        val start = System.nanoTime()
-        host.stop()
-        val elapsed = (System.nanoTime() - start) / 1_000_000L
-        assertTrue(elapsed < 3_000L, "shutdown spent ${elapsed}ms on sequential child grace periods")
-        // Each child's exit is awaited on its own completion future, not polled.
-        pids.forEach { pid ->
-            ProcessHandle.of(pid).ifPresent { it.onExit().get(MCP_HOST_STREAM_WAIT_MS, TimeUnit.MILLISECONDS) }
+        val children = pids.map { ProcessHandle.of(it).orElseThrow() }
+        val identities = children.map { listOf(it.pid().toString(), it.info().startInstant().orElseThrow().toString()) }
+        try {
+            host.stop()
+            children.indices.forEach { index ->
+                val slot = index + 1
+                assertEquals(identities[index], FakeMcpTermReceipts.read(receipts.resolve("$slot.term")))
+                val overlap = FakeMcpTermReceipts.read(receipts.resolve("$slot.overlap"))
+                assertEquals(3, overlap.size)
+                assertEquals(
+                    identities[1 - index],
+                    overlap.take(2),
+                    "child $slot did not observe its live peer after TERM",
+                )
+                val elapsed = overlap[2].toLong()
+                assertTrue(
+                    elapsed in 0 until FakeMcpTermReceipts.TERM_OVERLAP_WAIT_MS,
+                    "child $slot TERM overlap took ${elapsed}ms",
+                )
+            }
+        } finally {
+            // This proves receipt overlap and actual cleanup, not a three-second total stop budget:
+            // production owns distinct shared TERM and forced-reap phases. Await exits without polling.
+            children.forEach { child ->
+                child.onExit().get(MCP_HOST_STREAM_WAIT_MS, TimeUnit.MILLISECONDS)
+                assertFalse(child.isAlive, "owned child ${child.pid()} survived shutdown")
+            }
         }
     }
 

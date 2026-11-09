@@ -10,6 +10,32 @@ import splice.usage.perf.HeadPerfRows
 import splice.usage.perf.PerfCommand
 
 internal object PerfWiring {
+    fun run(args: List<String>, env: splice.core.util.EnvReader): Boolean {
+        var source: splice.app.observability.PerfOfflineSources? = null
+        return try {
+            command().perf(
+                args,
+                env,
+                splice.usage.perf.query.HeadPerfQuery { reader ->
+                    val keys = splice.topology.TopologyLoader.parse(
+                        java.nio.file.Files.readString(splice.topology.TopologyLoader.configPath(reader)),
+                    ).heads.keys
+                    val offline = splice.app.observability.PerfOfflineSources(
+                        TopologyStatePaths(reader).current(),
+                        keys,
+                    )
+                    source = offline
+                    splice.usage.perf.query.PerfQueryService(offline)
+                },
+                splice.usage.perf.query.PerfProfilesCommand(
+                    splice.app.observability.PerfRemoteProfiles(env, TerminalOutput(System.err::println)),
+                ),
+            )
+        } finally {
+            source?.close()
+        }
+    }
+
     fun command(): PerfCommand = PerfCommand(
         output = TerminalOutput(::println),
         errors = TerminalOutput(System.err::println),

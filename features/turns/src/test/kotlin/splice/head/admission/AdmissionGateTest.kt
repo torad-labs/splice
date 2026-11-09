@@ -47,14 +47,23 @@ import splice.core.memory.HeapBudget
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicTurnBody
+import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.core.perf.observation.PerfEventKind
+import splice.core.perf.observation.PerfIdentity
+import splice.core.perf.observation.PerfObservation
+import splice.core.perf.observation.PerfObserver
+import splice.core.perf.observation.PerfRecorder
+import splice.core.perf.observation.PerfScope
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnReasoning
 import splice.core.turn.TurnRoute
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
+import splice.core.util.ElapsedClock
+import splice.core.util.WallClock
 import splice.dialect.responses.ReasoningSettings
 import splice.head.AnthropicBodyParse
 import splice.head.ClientAuth
@@ -91,6 +100,7 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.seconds
@@ -214,6 +224,59 @@ class SourceContinuationAdmissionTest {
                 result.cancelAndJoin()
                 previous.release()
                 source.release()
+            }
+        }
+    }
+}
+
+class AdmissionRefusalObservationTest {
+    @Test
+    fun `refusal observations name capacity and restart only when admission knows the cause`(
+        @TempDir tmp: Path,
+    ) = testApplication {
+        val recorded = CopyOnWriteArrayList<PerfObservation>()
+        val recorder = PerfRecorder(
+            PerfIdentity("admission", "test", "test", "test"),
+            PerfObserver { recorded.add(it) },
+            ElapsedClock { 0L },
+            WallClock { 60_000L },
+        )
+        val gate = InflightGate(maxInflight = { 1 }, maxQueued = { 1 })
+        val original = headDeps(tmp)
+        val deps = original.copy(traffic = original.traffic.copy(gate = gate))
+        val responses = scriptedResponses()
+        val admission = AdmissionGate(testProvider, deps, AdmissionWindow().apply { open() }, responses)
+        val stopping = AdmissionGate(testProvider, deps, AdmissionWindow().apply { close() }, responses)
+        application {
+            routing {
+                post("/probe/{kind}") {
+                    RequestObservation.attach(call, recorder.request(PerfScope(head = "scripted"), 0L, 60_000L))
+                    when (call.parameters["kind"]) {
+                        "generic" -> responses.respondReadTimeout(call)
+                        "capacity" -> admission.acquireSlotOrRespond(call)?.release()
+                        "stopping" -> stopping.acceptingOrRespond(call)
+                        else -> error("unknown refusal case")
+                    }
+                }
+            }
+        }
+        val held = (gate.acquire() as InflightGate.Admission.Acquired).slot
+        coroutineScope {
+            val queued = async(start = CoroutineStart.UNDISPATCHED) { gate.acquire() }
+            try {
+                for ((kind, status) in listOf("generic" to 408, "capacity" to 529, "stopping" to 529)) {
+                    val response = client.post("/probe/$kind")
+                    response.bodyAsText()
+                    assertEquals(status, response.status.value)
+                    if (kind == "stopping") assertEquals("close", response.headers[HttpHeaders.Connection])
+                }
+                assertEquals(
+                    listOf("?", OutcomeTag.AT_CAPACITY.wire, OutcomeTag.RESTARTED.wire),
+                    recorded.filter { it.kind == PerfEventKind.REQUEST_FINISHED }.map { it.outcome },
+                )
+            } finally {
+                queued.cancelAndJoin()
+                held.release()
             }
         }
     }

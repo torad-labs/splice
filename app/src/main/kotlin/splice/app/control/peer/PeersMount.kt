@@ -63,6 +63,7 @@ internal class PeersMount(parts: PeerParts, private val guard: ControlGuard) {
     fun register(route: Route) {
         route.post("/api/peers") { guard.guarded(call) { registration.register(call) } }
         route.post("/api/peers/codex") { guard.guarded(call) { codex.attach(call) } }
+        route.delete("/api/peers/codex/{thread}") { guard.guarded(call) { manage.detachCodex(call) } }
         route.get("/api/peers") { guard.guarded(call) { manage.list(call) } }
         route.delete("/api/peers/{name}") { guard.guarded(call) { manage.revoke(call) } }
         route.post("/api/peers/{name}/rotate") { guard.guarded(call) { manage.rotate(call) } }
@@ -115,6 +116,18 @@ internal class PeerManagementRoutes(
         val name = call.parameters[PEER_NAME_PARAM].orEmpty()
         val purge = call.request.queryParameters["purge"] == "true"
         revoked(name, purge).send(call)
+    }
+
+    /** Resolves the thread's registered name, including an existing peer attached under its original name. */
+    suspend fun detachCodex(call: ApplicationCall) {
+        val thread = call.parameters["thread"]
+        val name = store.codexThreads.entries.singleOrNull { it.value.thread == thread }?.key
+        val answer = if (name == null) {
+            PeerReplies.refuse(HttpStatusCode.NotFound, NO_PEER)
+        } else {
+            revoked(name, call.request.queryParameters["purge"] == "true")
+        }
+        answer.send(call)
     }
 
     /** POST /api/peers/{name}/rotate: a new peer.key; the old key fails at once. */

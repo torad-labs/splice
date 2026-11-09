@@ -200,13 +200,14 @@ const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone; // the daemon fol
 /** What a project's figure counts, on its tile or in the picker and its menu: the requests in the window under the
  *  filters he set, as the daemon counts them for that project (one n=1 read per project and command), No project included:
  *  the daemon lists the requests no project holds itself (project=none), so no figure here is a subtraction. */
-async function readTileCounts() {
+async function readTileCounts(gen = readGen) {
   const groups = pickGroups();
   if (groups.length < 2) return;
   const heads = askedHeads();
   const named = new Set([...groups.map((g) => g.key), ...state.rows.map(rowKey)]);
   const keys = [null, ...new Set([...named, NO_PROJECT_KEY])];
-  const reads = await Promise.all(keys.flatMap((k) => heads.map((h) => API.get(turnsPath(h, true, ui.win, 1, k)))));
+  const reads = await Promise.all(keys.flatMap((k, i) => heads.map((h) => perfRead(`tiles:${i}:${h.key}`, turnsPath(h, true, ui.win, 1, k, true), gen))));
+  if (gen !== readGen) return;
   const counts = new Map();
   // A project's count is a number, null while a head is still reading it (the tile shows stripes, which move), or false
   // when a head's read answered with a failure (the tile shows a dash, which stands still): one failed head means the
@@ -214,8 +215,8 @@ async function readTileCounts() {
   keys.forEach((k, i) => {
     let n = 0;
     heads.forEach((h, j) => {
-      const r = reads[i * heads.length + j], a = (r.body?.heads || []).find((x) => x.key === h.key);
-      if (n === false || !r.ok || !a || a.error) n = false;
+      const r = reads[i * heads.length + j], a = (r?.body?.heads || []).find((x) => x.key === h.key);
+      if (n === false || !r?.ok || !a || a.error) n = false;
       else if (n === null || a.read_pending) n = null;
       else n += a.count ?? 0;
     });
@@ -225,9 +226,10 @@ async function readTileCounts() {
 }
 /** How many Compare models sends the window holds under the filters set, one n=1 read per command: the group is drawn only
  *  where this is above zero, so a daemon with none shows no Compare tile. */
-async function readCompareCount() {
+async function readCompareCount(gen = readGen) {
   const heads = askedHeads();
-  const reads = await Promise.all(heads.map((h) => API.get(turnsPath(h, true, ui.win, 1, COMPARE_KEY))));
+  const reads = await Promise.all(heads.map((h) => perfRead(`compare:${h.key}`, turnsPath(h, true, ui.win, 1, COMPARE_KEY), gen)));
+  if (gen !== readGen) return;
   state.compareN = reads.reduce((n, r, j) => {
     const a = (r.body?.heads || []).find((x) => x.key === heads[j].key);
     return n + (r.ok && a && !a.error ? a.count ?? 0 : 0);
@@ -240,6 +242,7 @@ const PAGE = 50;
 const PENDING_RETRY_MS = 2000;
 /** A newer read supersedes an older one still answering, so a slow first read never overwrites a filter he changed. */
 let readGen = 0;
+const perfRead = (key, path, gen, ready = false) => API.perfRequest(`requests:${key}`, "GET", path, undefined, () => gen === readGen, { ready });
 /** Draws the next rows when Show more scrolls into view; render re-aims it at the button it drew. */
 // Scrolling draws pages only up to AUTO_ROWS rows; past it only the pressed Show more draws further rows, so a long
 // list is never walked to its end by scrolling alone.
@@ -268,6 +271,55 @@ let ui = { project: PICK.get(), pmenu: false, open: null, q: "", win: "24h", cmd
   outcome: "all", tag: null, why: null, compact: false, menu: null, n: PAGE, tab: "sent", nodes: new Set(), bursts: new Set(), kindsOpen: false, byAll: false, sidAll: false,
   order: "new", modelAll: false }; // Newest or Highest price (fin): what the read asks for; the list shows what the daemon says it applied
 const root = document.getElementById("requests");
+// The performance panel and request list consume the same exact cohort. Legacy row enrichment stays on its
+// original endpoint; the performance records and aggregates use contract=1 with the identical selectors.
+let perfOverride = new URLSearchParams(location.search).get("perf") === "1" ? PERF_CONSOLE.fromAddress({ filters: { local: "0" }, window: "24h" }) : null;
+let perfResolved = !perfOverride?.objective_id;
+const PERF_MONITOR = PERF_CONSOLE.create(scope, {
+  id: "requests",
+  resolved: (query) => {
+    if (!query?.objective_id || !query.filters) return;
+    const before = Object.entries(perfOverride?.filters || {}).sort(), after = Object.entries(query.filters).sort();
+    const changed = JSON.stringify(before) !== JSON.stringify(after), wasResolved = perfResolved;
+    perfResolved = true;
+    if (!changed && wasResolved) return;
+    perfOverride = { ...query };
+    // Named objectives may carry a server-owned cohort. The enriched row list must use that resolved cohort too.
+    again();
+  },
+  query: () => {
+    if (perfOverride) return perfOverride;
+    const filters = { local: "0" };
+    const head = state.heads.find((h) => h.command === ui.cmd);
+    if (head) filters.head = head.key;
+    if (ui.model) filters.model = ui.model;
+    if (ui.sid) filters.session = ui.sid;
+    if (ui.project) filters.project = ui.project === NO_PROJECT_KEY ? "none" : ui.project;
+    if (ui.account) filters.account = ui.account.split("|").slice(1).join("|");
+    if (ui.compact) filters.compact = "1";
+    if (ui.tag) filters.outcome = ui.tag;
+    else if (ui.outcome !== "all") filters.outcome = { fail: "failed", clean: "ok,empty_message", stopped: "stopped" }[ui.outcome];
+    if (ui.why) Object.assign(filters, WHY_ASKS[ui.why] || {});
+    return { filters, window: ui.win, from_ms: ui.from ?? since(), until_ms: ui.to ?? +NOW };
+  },
+  apply: (query) => {
+    const f = query.filters;
+    perfOverride = query;
+    perfResolved = !query.objective_id;
+    ui.cmd = f.head ? state.heads.find((h) => h.key === f.head)?.command || f.head : null;
+    ui.model = f.model || null; ui.sid = f.session || null;
+    ui.account = f.account && f.head ? `${f.head}|${f.account}` : null;
+    ui.project = f.project === "none" ? NO_PROJECT_KEY : f.project || null; PICK.set(ui.project);
+    ui.compact = f.compact === "1" || f.compact === "true";
+    ui.outcome = "all"; ui.tag = null; ui.why = null;
+    const until = query.until_ms ?? Date.now();
+    const spans = { "1m": 60000, "5m": 300000, "15m": 900000, "1h": 3600000, "5h": 18000000, "24h": 86400000, "7d": 604800000, "30d": 2592000000 };
+    ui.from = query.from_ms ?? until - (spans[query.window] || 86400000); ui.to = until;
+    perfOverride = { ...query, from_ms: ui.from, until_ms: ui.to };
+    if (WINDOWS[query.window]) ui.win = query.window;
+    again();
+  },
+});
 // How far back every read asks: the window, or the stretch a door from another page named, which may reach further
 // back than the window does. One figure, so the rows, the menus and the search all cover the same ground.
 const since = (win = ui.win) => Math.min(ui.from ?? Infinity, +NOW - WINDOWS[win][1]);
@@ -367,12 +419,13 @@ const inPick = (r) => !ui.project || rowKey(r) === ui.project;
 
 // ---------- reading splice ----------
 /** The commands, their providers, the models' labels, the sessions requests belong to, and a key's first day. */
-async function readStanding() {
+async function readStanding(gen = readGen) {
   const sessionsRead = API.get("/api/sessions");
   const [heads, models, keys, topology, retired, accounts] = await Promise.all([
     API.get("/api/heads"), API.get("/api/models"), API.get("/api/keys"), API.get("/api/topology"),
     API.get("/api/heads/retired"), API.get("/api/accounts"),
   ]);
+  if (gen !== readGen) return;
   // A COMMAND WITH ONE LOGIN names it as Accounts does: a login the row names only by its slot in the config ("primary")
   // reads the name its Accounts card carries ("Account" until he names it), so one login has one name on both pages
   state.soleAccount = {};
@@ -394,6 +447,7 @@ async function readStanding() {
   const running = state.heads.filter((h) => !h.retired); // a removed command runs nothing and keeps no capture setting
   // A cold session listing only delays its names and project lamps, never the request list itself.
   Promise.all([sessionsRead, Promise.all(running.map((h) => API.get(`/api/heads/${encodeURIComponent(h.key)}/turns/live`)))]).then(([sessions, lives]) => {
+    if (gen !== readGen) return;
     state.sessionsPending = false;
     state.sessionsError = sessions.ok ? null : LIST_NOT_READ;
     if (!sessions.ok) console.warn(`session names: ${refusalOf(sessions, "no answer")}`);
@@ -410,7 +464,7 @@ async function readStanding() {
     ui.project = reconcilePick(ui.project, state.groups);
     // the tiles' counts are read per project, so they wait on the projects: a window read that answered first found
     // no project to count and left every tile's figure hollow for good, so they are asked here once the projects land
-    if (before !== ui.project) reload({ reading: true }); else { render(); readTileCounts().then(render); }
+    if (before !== ui.project) reload({ reading: true }); else { render(); readTileCounts(gen).then(() => { if (gen === readGen) render(); }); }
   });
   // Each key splice has seen under a variable, by the account label a request row carries: the one in use now and
   // every one it replaced (/api/keys serves both, KeyReaders.kt). A fingerprint this daemon has never seen leaves
@@ -432,6 +486,7 @@ async function readStanding() {
   const [caps, cfg] = await Promise.all([
     Promise.all(running.map((h) => API.get(`/api/heads/${encodeURIComponent(h.key)}/capture`))), API.get("/api/config"),
   ]);
+  if (gen !== readGen) return;
   running.forEach((h, i) => {
     const body = caps[i].ok ? caps[i].body : null;
     if (body) state.capture[h.key] = { on: body.enabled === true, days: body.retention_days ?? null };
@@ -459,7 +514,7 @@ const refusalOf = (res, subject) => {
  *  itself. [why] and [compact] stand in for his own when a control counts what pressing it would list. */
 // WHY_ASKS (what a door's "what happened" asks the daemon for) lives in kit.js, where Settings counts the same requests.
 const OUTCOME_WHYS = new Set(["gaveup", "overloaded", "cutoff", "restarted"]);
-function addFilters(p, head, { outcome = true, why = ui.why, compact = ui.compact, project = ui.project } = {}) {
+function addFilters(p, head, { outcome = true, why = ui.why, compact = ui.compact, project = ui.project, projectTile = false } = {}) {
   // an exact tag is narrower than the switch's family and agrees with it, except when the switch says Stopped or
   // Answered and the door names a failure: then they disagree and the switch holds, which lists nothing, honestly
   const apart = ui.outcome === "stopped" || ui.outcome === "clean";
@@ -492,16 +547,29 @@ function addFilters(p, head, { outcome = true, why = ui.why, compact = ui.compac
   }
   // a named stretch begins at the daemon too, or a cap on the newest rows would cut the stretch's start off
   if (ui.from) p.set("from", String(+ui.from + 1));
+  // Explicit performance filters are exact, including false switches and a full session ID.
+  const advanced = perfOverride;
+  if (advanced) {
+    const keys = ["model", "session", "project", "account", "transport", "outcome", "local", "compact", "streaming"];
+    if (projectTile) keys.splice(keys.indexOf("project"), 1);
+    for (const key of keys) {
+      p.delete(key);
+      if (advanced.filters[key] != null) p.set(key, String(advanced.filters[key]));
+    }
+    if (advanced.from_ms != null) p.set("from", String(advanced.from_ms));
+    else if (ui.from != null) p.set("from", String(ui.from));
+    if (advanced.until_ms != null) p.set("until", String(advanced.until_ms));
+  }
   return p;
 }
 /** One head's window: the rows the filters asked for, or the window's own menus from an unfiltered read. */
-function turnsPath(head, filtered, win = ui.win, held = MAX_HELD, project = ui.project) {
+function turnsPath(head, filtered, win = ui.win, held = MAX_HELD, project = ui.project, projectTile = false) {
   // local=0 on both reads, so the menus count the same requests the list does
   const p = new URLSearchParams({ head: head.key, since: String(since(win)), time_zone: ZONE, n: filtered ? String(held) : "1", local: "0" });
   if (filtered) {
     // a list read is rows or a count, never totals: the band's one fold carries them (readBand)
     p.set("usage", "0");
-    addFilters(p, head, { project });
+    addFilters(p, head, { project, projectTile });
     if (ui.order === "price") p.set("order", "price"); // the daemon keeps each command's highest priced, not its newest
   } else p.set("usage", "names"); // the menus list names only: the daemon skips the priced fold (TurnNames.kt); an older one ignores it
   return `/api/perf/turns?${p}`;
@@ -509,6 +577,8 @@ function turnsPath(head, filtered, win = ui.win, held = MAX_HELD, project = ui.p
 
 /** Which heads this read asks at all: a command filter, or an account picked on one head, narrows it to that head. */
 function askedHeads() {
+  const exact = perfOverride?.filters.head;
+  if (exact) return state.heads.filter((h) => h.key === exact);
   const picked = ui.account && ui.account !== "none" ? ui.account.split("|")[0] : null;
   return state.heads.filter((h) => (!ui.cmd || h.command === ui.cmd) && (!picked || h.key === picked));
 }
@@ -524,9 +594,12 @@ function unreadable(errors, head, word, why) {
   console.warn(`${head.command}: ${why}`);
   errors.push({ cmd: head.command, word });
 }
-async function readRows(held = MAX_HELD) {
+async function readRows(held = MAX_HELD, gen = readGen) {
+  if (gen !== readGen) return;
+  if (perfOverride?.objective_id && !perfResolved) { state.rows = []; state.headErrors = []; return; }
   const heads = askedHeads();
-  const reads = await Promise.all(heads.map((h) => API.getReady(turnsPath(h, true, ui.win, held))));
+  const reads = await Promise.all(heads.map((h) => perfRead(`rows:${h.key}`, turnsPath(h, true, ui.win, held), gen, true)));
+  if (gen !== readGen) return;
   const rows = [], errors = [], pending = [];
   let matched = 0, capped = false, priced = ui.order === "price", reach = -Infinity;
   heads.forEach((head, i) => {
@@ -572,7 +645,7 @@ function facetsOf(heads, answers) {
  *  command's rows. Split where the address would pass what the daemon reads (Netty's 4,096 bytes), each further part
  *  under a bare count. A daemon that answers no asks says so by their absence: [asks] comes back null. */
 const URL_MAX = 3600;
-async function askAll(head, main, asks) {
+async function askAll(head, main, asks, gen, label) {
   const base = `head=${encodeURIComponent(head.key)}&since=${since()}&time_zone=${encodeURIComponent(ZONE)}`, bare = "n=1&local=0&usage=0";
   const parts = [[]];
   let len = 16 + base.length + main.length;
@@ -582,7 +655,7 @@ async function askAll(head, main, asks) {
     parts.at(-1).push(a);
     len += add;
   }
-  const reads = await Promise.all(parts.map((list, i) => API.getReady(`/api/perf/turns?${base}&${i ? bare : main}${list.map((a) => `&ask=${encodeURIComponent(a)}`).join("")}`)));
+  const reads = await Promise.all(parts.map((list, i) => perfRead(`${label}:${head.key}:${i}`, `/api/perf/turns?${base}&${i ? bare : main}${list.map((a) => `&ask=${encodeURIComponent(a)}`).join("")}`, gen, true)));
   const answerOf = (res) => (res.ok ? (res.body?.heads || []).find((x) => x.key === head.key) ?? null : null);
   const first = answerOf(reads[0]);
   if (!first || first.error || first.read_pending || !Array.isArray(first.asks)) return { main: first, asks: null };
@@ -632,11 +705,11 @@ async function readBand(gen) {
     ask(head, count, { why: "startedover" }),
     ask(head, count, { compact: true }),
     ...(sel ? [ask(head, { n: "1" }, { outcome: true })] : []),
-  ])));
+  ], gen, "band")));
   if (gen !== readGen) return;
   // a daemon that answers no asks: the menus the old way, and the band counts the listed rows
   if (reads.some((x) => x.main && !x.main.error && !x.main.read_pending && !x.asks)) {
-    const menus = await Promise.all(heads.map((h) => API.getReady(turnsPath(h, false))));
+    const menus = await Promise.all(heads.map((h) => perfRead(`band-menus:${h.key}`, turnsPath(h, false), gen, true)));
     if (gen !== readGen) return;
     state.facets = facetsOf(heads, menus.map((res, i) => (res.body?.heads || []).find((x) => x.key === heads[i].key)));
     state.band = { scope, old: true };
@@ -675,7 +748,7 @@ async function readBand(gen) {
   // a capped command: each kind its newest failures showed, counted at the daemon, and the rest of its exact total
   await Promise.all(capped.map(async ({ head, kinds, total }) => {
     const res = await askAll(head, "n=1&local=0&usage=0", kinds.map((k) => ask(head, k.why
-      ? { ...WHY_ASKS[k.why], test: ROW_TEST[k.why], ...count } : { outcome: [...k.tags].join(","), ...count })));
+      ? { ...WHY_ASKS[k.why], test: ROW_TEST[k.why], ...count } : { outcome: [...k.tags].join(","), ...count })), gen, "band-expanded");
     let seen = 0;
     kinds.forEach((k, j) => { const n = res.asks?.[j]?.count; if (n == null) return; seen += n; addKind(b.kinds, k, n); });
     b.other += Math.max(0, total - seen);
@@ -874,11 +947,13 @@ function mapHit(head, hit) {
 }
 
 /** The search over what was sent and what came back, one head at a time, each saying how far back it read. */
-async function readSearch() {
+async function readSearch(gen = readGen) {
+  if (gen !== readGen) return;
   if (ui.q.length < SEARCH_MIN) { state.search = null; return; }
   const heads = askedHeads(); // a removed command's trace answers through its retired record (builder3, 0680d2ae9)
   const q = encodeURIComponent(ui.q);
   const reads = await Promise.all(heads.map((h) => API.get(`/api/heads/${encodeURIComponent(h.key)}/trace/search?q=${q}&since=${since()}&limit=100`)));
+  if (gen !== readGen) return;
   const hits = [], errors = [];
   let backTo = null, stopped = null;
   heads.forEach((head, i) => {
@@ -909,7 +984,7 @@ function searched() {
   const out = [], seen = new Set();
   for (const hit of state.search.hits) {
     const known = byTurn.get(hit.id);
-    if (known) { known.said = hit.said; out.push(known); } else if (hitPasses(hit)) out.push(hit);
+    if (known) { known.said = hit.said; out.push(known); } else if (!perfOverride && hitPasses(hit)) out.push(hit);
     seen.add(hit.id);
   }
   // an agent is searched for by its name too: every request of a session whose name holds the words (Marlin's walk:
@@ -926,7 +1001,7 @@ function searched() {
 // ---------- what the daemon cannot filter: a project, a stretch of time and what happened ----------
 // These narrow the rows the read already cut. The read asks for the window's newest 2,000, so a narrow one of these
 // says how many of the window it had to look at, rather than reading as the whole window's answer.
-const narrow = (rows) => rows.filter((r) => inPick(r) && (!ui.repo || r.repo === ui.repo || r.repoRoot === ui.repo)
+const narrow = (rows) => perfOverride ? rows : rows.filter((r) => inPick(r) && (!ui.repo || r.repo === ui.repo || r.repoRoot === ui.repo)
   && (!ui.from || (+r.ts > ui.from && +r.ts <= (ui.to ?? +NOW)))
   && (!ui.tag || ui.tag.split(",").includes(r.outcome)) && (!ui.why || ROW_TEST[ui.why] || WHY[ui.why].has(r)));
 const filtered = () => narrow(searched());
@@ -936,12 +1011,14 @@ const filtered = () => narrow(searched());
 // window with the same filters, narrowed as the list is, then counted for each wider window, nearest first. A head whose
 // read held its cap may not reach back to a window's start, and that window's figure is then a floor, drawn with a plus.
 // A search or a named stretch of time is not widened: the search reads its own records, and a stretch is its own window.
-async function readWider() {
+async function readWider(gen = readGen) {
+  if (gen !== readGen) return;
   state.wider = null;
   const keys = Object.keys(WINDOWS), later = keys.slice(keys.indexOf(ui.win) + 1);
   if (!later.length || ui.q || ui.from || state.headErrors.length || filtered().length) return;
   const heads = askedHeads(), widest = later[later.length - 1];
-  const reads = await Promise.all(heads.map((h) => API.get(turnsPath(h, true, widest))));
+  const reads = await Promise.all(heads.map((h) => perfRead(`wider:${h.key}`, turnsPath(h, true, widest), gen)));
+  if (gen !== readGen) return;
   const rows = [];
   let reach = -Infinity; // the latest point a capped head's read stopped at: older than this, its rows weren't carried
   for (const [i, head] of heads.entries()) {
@@ -1584,6 +1661,13 @@ function rqbFit(root) {
         el.classList.toggle("r", mid < 22);
         el.style.setProperty("--d", `${(1.1 + Math.max(0, at) * 1.5).toFixed(2)}rem`);
       }
+      if (at >= 0) {
+        const label = wrap.querySelector(`.rqb-lb[data-seg="${sg.dataset.seg}"]`);
+        const box = label.getBoundingClientRect(), edge = document.documentElement.clientWidth - 8;
+        if (box.right > edge || box.left < 8) {
+          for (const el of wrap.querySelectorAll(`:scope > [data-seg="${sg.dataset.seg}"]`)) el.classList.toggle("r", box.left < 8);
+        }
+      }
     }
     wrap.style.setProperty("--lead", out.length ? `${(1.1 + (out.length - 1) * 1.5 + 0.8).toFixed(2)}rem` : "0rem");
   }
@@ -2037,6 +2121,10 @@ let bandW = 0;
 new ResizeObserver(() => { if (bandEl.clientWidth !== bandW) { bandW = bandEl.clientWidth; rqbFit(bandEl); } }).observe(bandEl);
 let bandShown = "", paneWas = null;
 function render() {
+  const perfHost = document.getElementById("requests-performance");
+  if (perfHost) perfHost.innerHTML = PERF_MONITOR.html();
+  root.hidden = Boolean(perfOverride?.objective_id && !perfResolved);
+  bandEl.hidden = root.hidden;
   // A request stays open through a filter that excludes it (paneHtml reads past the filter on purpose, and it stands
   // at the table's head), but a reload whose window no longer carries its row at all closes it.
   const pane = paneHtml();
@@ -2099,26 +2187,28 @@ function open(id) {
 
 /** Every read this page makes, then one draw. The window and the filters the daemon owns are read again each time. */
 async function reload({ standing = false, reading = false } = {}) {
+  const gen = ++readGen;
+  API.cancelPerf("requests:");
   tick(); // the kit's clock, read again so a reset reads against the time the page is drawn at
   state.loading = standing;
   if (standing) render();
   // a pick he made reads the list again: the list reads as reading the moment he picks, with its menu closed, and no
   // No match is said for a read still in flight (Marlin, desk c, Oct 12: "10 Sat" sat 2 s on today's list, menu open)
   if (reading) { state.reading = true; render(); }
-  if (standing) await readStanding();
-  const gen = ++readGen;
+  if (standing) await readStanding(gen);
+  if (gen !== readGen) return;
   // the newest requests first, drawn as soon as they answer; the rest of the window follows behind them
-  await Promise.all([readRows(FIRST_HELD), readSearch()]);
+  await Promise.all([readRows(FIRST_HELD, gen), readSearch(gen)]);
   if (gen !== readGen) return;
   if (state.reading || state.loading) { state.reading = state.loading = false; render(); const top = ui.open && find(ui.open); if (top) readTrace(top); } // the rows are in: draw them, the band and the menus follow
-  await Promise.all([readWider(), readCompareCount().then(readTileCounts), readBand(gen)]);
+  await Promise.all([readWider(gen), readCompareCount(gen).then(() => readTileCounts(gen)), readBand(gen)]);
   if (gen !== readGen) return;
   state.loading = false;
   render();
   const r = ui.open && find(ui.open);
   if (r) readTrace(r);
   if (state.capped) {
-    await readRows();
+    await readRows(MAX_HELD, gen);
     if (gen !== readGen) return;
     render();
   }
@@ -2162,6 +2252,21 @@ document.addEventListener("click", async (e) => {
     open(el.dataset.open); return;
   }
   const v = el.dataset.v, m = el.dataset.m;
+  if (perfOverride) {
+    const f = perfOverride.filters, act = el.dataset.act;
+    if (perfOverride.objective_id && ["pickproj", "set", "unset", "outcome", "toggle"].includes(act)) perfResolved = false;
+    const key = { cmd: "head", sid: "session" }[m] || m;
+    if (act === "pickproj") { if (el.dataset.p) f.project = el.dataset.p === NO_PROJECT_KEY ? "none" : el.dataset.p; else delete f.project; }
+    if (act === "set" || act === "unset") {
+      if (m === "win") { perfOverride.window = v; delete perfOverride.from_ms; delete perfOverride.until_ms; ui.from = ui.to = null; }
+      else if (act === "unset" || !v) delete f[key];
+      else f[key] = m === "cmd" ? state.heads.find((h) => h.command === v)?.key || v : m === "account" ? v.split("|").slice(1).join("|") : v;
+    }
+    if (act === "outcome") { delete f.outcome; const value = { fail: "failed", clean: "ok,empty_message", stopped: "stopped" }[v]; if (value) f.outcome = value; }
+    if (act === "toggle" && m === "compact") { if (ui.compact) delete f.compact; else f.compact = "1"; }
+    if (act === "clearall") { perfOverride = null; }
+    if (["why", "widen", "goto", "upto"].includes(act)) perfOverride = null;
+  }
   switch (el.dataset.act) {
     case "theme": toggleTheme(); break;
     case "menu": ui.menu = ui.menu === m ? null : m; render(); break;

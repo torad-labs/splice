@@ -12,6 +12,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import splice.core.turn.ToolSearchCall
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
+import splice.core.turn.UsageMeasure
+import splice.core.turn.UsageOrigin
 import splice.core.util.JsonScalars
 import splice.dialect.responses.reasoning.ReadableReasoning
 import splice.dialect.responses.tools.ResponsesToolSearchParse
@@ -203,7 +205,14 @@ internal class ResponsesHarvest {
             cachedTokens = cached,
             reasoningTokens = reasoning,
             reported = reportedFields(input, output, nestedCached ?: flatCached),
+            origin = UsageOrigin(measured = measuredFields(input, output, nestedCached ?: flatCached)),
         )
+    }
+
+    private fun measuredFields(input: Long?, output: Long?, cached: Long?): Set<UsageMeasure> = buildSet {
+        if (input != null) add(UsageMeasure.INPUT)
+        if (output != null) add(UsageMeasure.OUTPUT)
+        if (cached != null) add(UsageMeasure.CACHE_READ)
     }
 }
 

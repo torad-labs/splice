@@ -3,7 +3,7 @@ package splice.core.failure
 
 public enum class RefusedBy { MODEL, POLICY, FILTER }
 
-public enum class LimitWindow { FIVE_HOUR, WEEKLY, MODEL_WEEKLY, OTHER }
+public enum class LimitWindow { FIVE_HOUR, WEEKLY, MODEL_WEEKLY, BILLING_CYCLE, OTHER }
 
 public enum class ServerFault { INTERNAL, BAD_GATEWAY, GATEWAY_TIMEOUT, FOREIGN_KEY }
 

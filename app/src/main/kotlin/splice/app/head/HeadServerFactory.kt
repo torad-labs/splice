@@ -30,7 +30,9 @@ import splice.head.compaction.SessionProjectLookup
 import splice.head.turn.LiveTurns
 import splice.head.wire.WireTap
 import splice.upstream.Provider
+import splice.upstream.retry.GateObservation
 import splice.upstream.retry.InflightGate
+import splice.upstream.retry.ObservedInflightGate
 import splice.usage.budgets.BudgetPlans
 import java.nio.file.Path
 
@@ -51,6 +53,11 @@ internal class HeadServerFactory(
     private val shippedPrompts = ShippedStandingPrompts()
 
     private val upstreamFactory = UpstreamFactory()
+    internal var performance: splice.app.observability.PerfTelemetry? = null
+        set(value) {
+            field = value
+            upstreamFactory.performance = value
+        }
     private val voices = HeadVoiceFacts()
 
     /** Assigned before any head is assembled; the callback reads the login owner at request time. */
@@ -154,10 +161,7 @@ internal class HeadServerFactory(
         // admitted 100 concurrent streams into a single account, 429'd, and armed the shared
         // cooldown — measured 67% turn failure at inflight=100 vs 0.3% at <=14 (perf jsonl,
         // 2026-07-24). Per-head lets a slow upstream sit low while a fast one stays high.
-        gate = InflightGate(
-            maxInflight = { config.getConfig(ctx.key).maxInflight },
-            maxQueued = { config.getConfig(ctx.key).maxQueued },
-        ),
+        gate = gateFor(ctx.key),
         liveTurns = liveTurnsFor(ctx.key),
         // Fix 3 (Oct 27): a turn waits for this head's list to follow the credential it is sent with (ModelRosters).
         models = HeadDeps.CurrentModels { ctx.roster.discovered.awaitCurrent(ctx.key) },
@@ -187,12 +191,27 @@ internal class HeadServerFactory(
             // console's registry, which GET /api/heads/{head}/wire reads.
             wireTap = cfg.wireTap.takeIf { it > 0 }?.let { WireTap(it) }.also { console?.wires?.put(key, it) },
             trace = stores.trace,
-        ),
+        ).let { captures -> performance?.let { captures.copy(observations = it.recorder) } ?: captures },
     )
 
     /** V4-319: this head's live turns, registered in the console's registry as the head is built, the
      *  way its wire tap is, so the console's live-turn routes read and stop this head's own turns. */
     private fun liveTurnsFor(key: String): LiveTurns = LiveTurns().also { console?.liveTurns?.put(key, it) }
+
+    private fun gateFor(key: String): InflightGate {
+        val telemetry = performance
+        val gate = if (telemetry == null) {
+            InflightGate({ config.getConfig(key).maxInflight }, { config.getConfig(key).maxQueued })
+        } else {
+            ObservedInflightGate.create(
+                { config.getConfig(key).maxInflight },
+                { config.getConfig(key).maxQueued },
+                GateObservation(telemetry.recorder, key),
+            )
+        }
+        telemetry?.gate(key, gate)
+        return gate
+    }
 
     /** The head's shared and per-head seams. Its own function since V4-134 added the console reporter,
      *  which took [headServerFor] past detekt's method-length ceiling. */

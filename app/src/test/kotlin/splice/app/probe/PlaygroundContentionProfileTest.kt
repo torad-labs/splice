@@ -31,7 +31,7 @@ class PlaygroundContentionProfileTest {
                 fixture.start()
                 repeat(2) { fixture.playground() }
                 val idle = List(5) { scenario(fixture, "idle-loaded", 0) }.sorted()[2]
-                val expected = Json.parseToJsonElement(fixture.controlRead()).jsonObject
+                val expected = fixture.controlRead().body
                 // Medians on every side, as idle is: one sample on a loaded pre-push host fails on a single pause.
                 val cold = List(3) {
                     fixture.coldReads()
@@ -69,9 +69,12 @@ class PlaygroundContentionProfileTest {
                 "playground_readers_profile case=$label readers=$count group_ns=${System.nanoTime() - readsStarted}",
             )
         }
-        assertTrue(reads.all { "heads" in Json.parseToJsonElement(it).jsonObject }, "every control read must succeed")
+        assertTrue(
+            reads.all(PlaygroundControlRead::hasHeads),
+            "every control read must succeed: ${reads.joinToString { it.diagnostic() }}",
+        )
         expectedSummary?.let { expected ->
-            reads.forEach { assertEquals(expected, Json.parseToJsonElement(it).jsonObject) }
+            reads.forEach { assertEquals(expected, it.body, it.diagnostic()) }
         }
         fixture.samples.routed - fixture.samples.started
     }

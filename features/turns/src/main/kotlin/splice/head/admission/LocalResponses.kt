@@ -5,18 +5,15 @@
 // so Claude Code cannot tell them from a model's answer — which is the point.
 package splice.head.admission
 
-import io.ktor.http.ContentType
-import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.header
 import io.ktor.server.response.respond
-import io.ktor.server.response.respondText
 import splice.core.failure.FailureCause
 import splice.core.failure.HeadVoice
 import splice.core.failure.RequestFacts
+import splice.core.perf.TurnPerf
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
-import splice.core.util.JsonWire
 import splice.head.HeadDeps
 import splice.head.compaction.CompactionReplay
 import splice.head.compaction.RecordedAnswer
@@ -24,10 +21,11 @@ import splice.head.turn.Preparation
 import splice.head.turn.SESSION_TAG_CHARS
 import splice.head.wire.CollectingTerminal
 import splice.head.wire.FrameWrite
-import splice.head.wire.OK_STATUS
 import splice.head.wire.SseEmitterFactory
 import splice.head.wire.TurnTerminal
 import splice.head.wire.TurnWiring
+import splice.head.wire.observation.LocalFrameDelivery
+import splice.head.wire.observation.LocalResponseDelivery
 import splice.http.SseResponse
 import splice.upstream.Provider
 
@@ -44,7 +42,8 @@ internal class LocalResponses(
     private val compactionVoice = voice.turn(RequestFacts(compaction = true, firstExchange = false))
 
     /** One text block, an end_turn terminal, zero usage: the side query is not a context read. */
-    suspend fun answer(call: ApplicationCall, local: Preparation.Local) {
+    suspend fun answer(call: ApplicationCall, local: Preparation.Local, perf: TurnPerf) {
+        RequestObservation.local(perf, local.model, local.sessionId, local.stream)
         val usage = wiring.usagePayloadBuilderFor(
             provider.catalog,
             local.model,
@@ -54,10 +53,7 @@ internal class LocalResponses(
         if (local.stream) {
             val stream = SseResponse { out ->
                 val emitter = emitters.create(
-                    write = { frame ->
-                        out.write(frame)
-                        out.flush()
-                    },
+                    write = LocalFrameDelivery(out, perf.observations, deps.seams.clock),
                     model = local.model,
                     usagePayload = usage,
                     voice = voice.anyTurn,
@@ -68,11 +64,7 @@ internal class LocalResponses(
         } else {
             val terminal = CollectingTerminal(local.model, usage, voice = voice.anyTurn)
             emitText(terminal, local.text)
-            call.respondText(
-                terminal.responseBody().let(JsonWire::string),
-                ContentType.Application.Json,
-                HttpStatusCode.fromValue(terminal.httpStatus()),
-            )
+            call.respond(LocalResponseDelivery.terminal(terminal, perf))
         }
     }
 
@@ -82,22 +74,18 @@ internal class LocalResponses(
      *  was cancelled: its own client long gone, the seal abandons and writes nothing) is ended
      *  here with the honest error frame the seal gives an attached client, so this client retries
      *  as well — and finds the entry gone (CompactionReplay.finish), so that attempt runs upstream. */
-    suspend fun replay(call: ApplicationCall, replayed: Preparation.Replay) {
+    suspend fun replay(call: ApplicationCall, replayed: Preparation.Replay, perf: TurnPerf) {
+        RequestObservation.local(perf, replayed.model, replayed.sessionId, true)
         quotaHeaders(call, replayed.sessionId)
         var frames = 0
         var whole = false
         val stream = SseResponse { out ->
+            val write = LocalFrameDelivery(out, perf.observations, deps.seams.clock)
             whole = replayed.recording.follow { frame ->
-                out.write(frame)
-                out.flush()
+                write(frame)
                 frames += 1
             }
-            if (!whole) {
-                sealFollower(replayed) { frame ->
-                    out.write(frame)
-                    out.flush()
-                }
-            }
+            if (!whole) sealFollower(replayed, write)
         }
         call.respond(stream)
         replay.consumed(replayed.key, replayed.recording)
@@ -116,7 +104,8 @@ internal class LocalResponses(
      *  on its recording's frames, then serve the ONE body this shape reads. A delivered body consumes
      *  the hold; a drive that ended without its terminal answers the honest overload error the follower
      *  is sealed with, and the next attempt runs upstream ([CompactionReplay] already dropped it). */
-    suspend fun replayCollected(call: ApplicationCall, collected: Preparation.Collected) {
+    suspend fun replayCollected(call: ApplicationCall, collected: Preparation.Collected, perf: TurnPerf) {
+        RequestObservation.local(perf, collected.model, collected.sessionId, false)
         quotaHeaders(call, collected.sessionId)
         val who = collected.sessionId?.let { "session ${it.take(SESSION_TAG_CHARS)}" } ?: "no session"
         val body = collected.hold.await()
@@ -128,11 +117,7 @@ internal class LocalResponses(
             )
             return
         }
-        call.respondText(
-            JsonWire.string(body),
-            ContentType.Application.Json,
-            HttpStatusCode.fromValue(OK_STATUS),
-        )
+        call.respond(LocalResponseDelivery.body(body, perf))
         deps.log(
             "[${provider.key}] collect compaction answer served from its hold ($who; the retry cost no " +
                 "upstream turn)\n",
@@ -144,7 +129,8 @@ internal class LocalResponses(
      *  recording to its end exactly as a streamed retry does, then answer the ONE body this shape reads,
      *  collected from the frames. A delivered body spends the recording as a streamed replay does; a drive that
      *  ended without its terminal answers the honest error, and the next attempt runs upstream. */
-    suspend fun collectRecording(call: ApplicationCall, recorded: Preparation.CollectedRecording) {
+    suspend fun collectRecording(call: ApplicationCall, recorded: Preparation.CollectedRecording, perf: TurnPerf) {
+        RequestObservation.local(perf, recorded.model, recorded.sessionId, false)
         quotaHeaders(call, recorded.sessionId)
         val who = recorded.sessionId?.let { "session ${it.take(SESSION_TAG_CHARS)}" } ?: "no session"
         val answer = RecordedAnswer()
@@ -158,7 +144,7 @@ internal class LocalResponses(
             )
             return
         }
-        call.respondText(JsonWire.string(body), ContentType.Application.Json, HttpStatusCode.fromValue(OK_STATUS))
+        call.respond(LocalResponseDelivery.body(body, perf))
         replay.consumed(recorded.key, recorded.recording)
         deps.log(
             "[${provider.key}] collect compaction answer collected from its streamed recording ($who, " +
@@ -175,11 +161,7 @@ internal class LocalResponses(
             voice = compactionVoice,
         )
         terminal.emitError(FailureCause.Splice.CompactionUnfinished)
-        call.respondText(
-            terminal.responseBody().let(JsonWire::string),
-            ContentType.Application.Json,
-            HttpStatusCode.fromValue(terminal.httpStatus()),
-        )
+        call.respond(LocalResponseDelivery.terminal(terminal, observations = RequestObservation.of(call)))
     }
 
     // The one failure ending the wire knows (SseEmitter.emitError, L3): an overloaded error, which

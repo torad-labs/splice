@@ -33,7 +33,7 @@ public fun interface ProviderAnswerObserver {
 
 /** What a failed send of a post may do next: whether the client has already been shown a frame, which forbids a
  *  reissue, how the request body is amended before a retry, and where the vendor routes the retry. The defaults
- *  reissue freely, amend nothing and route nothing. */
+ *  assume content was already shown, so account handoff needs an explicit observation; they amend and route nothing. */
 public data class PostRecovery(
     val clientFrameEmitted: ClientFrameEmitted = ClientFrameEmitted { true },
     val amendBodyOnFailure: BodyAmendment = BodyAmendment { _, _, _ -> null },

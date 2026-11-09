@@ -23,6 +23,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.topology.SHARE_NODE_TOKEN
 import splice.head.scripted.ClientAnswer
 import splice.head.scripted.ClientRequest
+import splice.head.scripted.Family
 import splice.head.scripted.HeadSays
 import splice.head.scripted.HeadShape
 import splice.head.scripted.ScriptedReply
@@ -33,6 +34,7 @@ import java.nio.file.Path
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import kotlin.time.Duration.Companion.seconds
 
 /** The prefix every line a person reads opens with. */
 private const val PREFIX = "[splice] "
@@ -244,7 +246,9 @@ class LinesThroughHeadsTest {
     }
 
     @Test
-    fun `a limit with no stated time ends at the session's wall with a line that gives no time`(@TempDir tmp: Path) =
+    fun `an unnamed throttle ends retryably after a bounded pause without claiming quota exhaustion`(
+        @TempDir tmp: Path,
+    ) =
         runTest {
             withScriptedHeads(tmp) {
                 provider.script(limited(null))
@@ -252,10 +256,10 @@ class LinesThroughHeadsTest {
 
                 val answer = head.client.send()
 
-                // Slice 5: the limit holds after its bursts, probed, until the session's wall; the line gives no
-                // time, and Claude Code's re-send holds again.
-                assertLine(answer, "without saying when it resets")
-                assertLine(answer, RESENDS)
+                assertLine(answer, "still limiting requests")
+                assertTrue(Family.R in answer.families(), answer.describe())
+                assertFalse("usage limit" in lineOf(answer), answer.describe())
+                assertTrue(time.passed() in 60.seconds..120.seconds, "bounded recovery for a shared throttle")
             }
         }
 

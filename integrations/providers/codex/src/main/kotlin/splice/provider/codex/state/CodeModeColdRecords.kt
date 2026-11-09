@@ -5,6 +5,9 @@ import splice.provider.codex.CodeModePersistedState
 import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRecordSnapshot
+import splice.provider.codex.CodeModeStorageException
+import splice.provider.codex.CodeModeStorageOperation
+import splice.provider.codex.CodeModeStorageProblem
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantLock
@@ -50,9 +53,13 @@ internal class CodeModeColdRecords(
         return try {
             files.restore(key)
         } catch (failure: IOException) {
-            throw CodeModePersistenceException(failure, diskFull = false)
+            throw CodeModePersistenceException(failure, diskFull = false, CodeModeStorageOperation.RESTORE)
         } catch (failure: IllegalArgumentException) {
-            throw CodeModePersistenceException(IOException("Invalid cold code-mode journal", failure), diskFull = false)
+            throw CodeModePersistenceException(
+                CodeModeStorageException.Invalid(CodeModeStorageProblem.COLD_STATE, failure),
+                diskFull = false,
+                CodeModeStorageOperation.RESTORE,
+            )
         } finally {
             monitor?.lock()
         }

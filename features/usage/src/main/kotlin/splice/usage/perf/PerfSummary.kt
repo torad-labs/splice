@@ -22,7 +22,9 @@ import splice.core.util.WallClock
 import kotlin.math.ceil
 
 private const val P50 = 0.50
-private const val P95 = 0.95
+
+// Legacy exact rows and aggregate histograms both report the ninety-fifth percentile under the p95 field.
+internal const val PERF_P95_QUANTILE = 0.95
 private const val MS_PER_MINUTE = 60_000L
 private const val MS_PER_HOUR = 3_600_000L
 private const val HOURS_PER_DAY = 24L
@@ -105,13 +107,13 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
     private fun span(ms: Long): String =
         if (ms >= MS_PER_HOUR) "${ms / MS_PER_HOUR}h" else "${ms / MS_PER_MINUTE}m"
 
-    private fun metrics(rows: List<PerfRow>): JsonObject = buildJsonObject {
+    internal fun metrics(rows: List<PerfRow>): JsonObject = buildJsonObject {
         latencies(rows).forEach { (k, v) -> put(k, v) }
         val byOutcome = rows.groupingBy { it.outcome }.eachCount().toSortedMap()
         putJsonObject("outcomes") { byOutcome.forEach { (tag, n) -> put(tag, n) } }
         // Stopped and unattributed rows stay in outcomes and the denominator, never the failure count.
         val failures = byOutcome.filterKeys(OutcomeTags::isFailed)
-        put("failure_share", failures.values.sum().toDouble() / rows.size)
+        put("failure_share", if (rows.isEmpty()) null else failures.values.sum().toDouble() / rows.size)
         // Per failing tag, with the same classification as the Failed request filter.
         putJsonObject("failure_shares") { failures.forEach { (tag, n) -> put(tag, n.toDouble() / rows.size) } }
         counters(rows).forEach { (k, v) -> put(k, v) }
@@ -205,7 +207,7 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
         return buildJsonObject {
             put("count", sorted.size)
             put("p50", percentile(sorted, P50))
-            put("p95", percentile(sorted, P95))
+            put("p95", percentile(sorted, PERF_P95_QUANTILE))
             put("max", sorted.last())
         }
     }

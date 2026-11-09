@@ -36,7 +36,7 @@ internal class NativeGrpcExecutionsRun(
         )
         span.handoff {
             val request = NativeGrpcRequests.execute(session.id, execution, input)
-            executions.begin(session, operation, execution, request)
+            executions.begin(session, operation, execution, request, span.context)
             val run = NativeGrpcExecutionRun(session, operation, execution, request, owner, span)
             check(active.putIfAbsent(operation, run) == null) { "Duplicate CodeMode execute operation" }
             owner?.markDispatched()
@@ -46,7 +46,10 @@ internal class NativeGrpcExecutionsRun(
                 } finally {
                     retire(run)
                 }
-            }.invokeOnCompletion { span.close() }
+            }.invokeOnCompletion { error ->
+                if (error is kotlinx.coroutines.CancellationException) span.outcome("cancelled")
+                span.close()
+            }
         }
     }
 

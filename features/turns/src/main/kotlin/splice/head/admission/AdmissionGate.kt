@@ -74,7 +74,7 @@ internal class AdmissionGate(
         // V4-114: the gate ANSWERS with a value now, so this refusal is a compiler-checked `when`
         // branch rather than a `catch` on a name — the 529 on the wire is unchanged, and the
         // window-closed refusal ten lines below has always been spelled as a returned null.
-        val slot = when (val admission = gate.acquire(session)) {
+        val slot = when (val admission = RequestObservation.acquire(call, gate, session, deps.seams.clock)) {
             is InflightGate.Admission.Acquired -> admission.slot
             InflightGate.Admission.AtCapacity -> {
                 val full = gate.snapshot()

@@ -215,6 +215,9 @@ public object AsyncFileIo {
         accepted
     }
 
+    /** Named ownership preserves global lane metrics while exposing actual per-sink write outcomes. */
+    public fun submitFor(file: Path, sink: FileIoSink, task: FileIoWrite): Boolean = sink.submit(file, task)
+
     /** Wait only for writes submitted before this read for [file], not all other heads' writes.
      * False means an enqueue was dropped or the bounded wait expired; no missing row is claimed. */
     public fun awaitFile(file: Path, timeoutMs: Long = DEFAULT_DRAIN_TIMEOUT_MS): Boolean {

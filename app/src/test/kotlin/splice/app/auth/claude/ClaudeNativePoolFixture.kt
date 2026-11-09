@@ -30,6 +30,7 @@ import splice.app.head.LaunchSpecFactory
 import splice.app.head.ManagedHeadFactory
 import splice.app.head.QuotaPollSeams
 import splice.app.head.StartQuotaPoller
+import splice.app.observability.PerfTelemetry
 import splice.app.provider.ProviderBuild
 import splice.app.provider.UpstreamFaultPlan
 import splice.core.auth.CredentialKey
@@ -170,6 +171,7 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
             HeadServerFactory(config, key, {}).also {
                 it.sentCredentials = plane.sentCredentials
                 it.credentialAccountNames = plane.credentialAccountNames
+                it.performance = plane.performance
             },
             plane.playgroundProviders,
         ),
@@ -195,12 +197,17 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
 
     )
 
-    suspend fun rig(probes: QuotaProbes? = null, upstreamUrl: String = "https://synthetic.example"): Rig {
+    suspend fun rig(
+        probes: QuotaProbes? = null,
+        upstreamUrl: String = "https://synthetic.example",
+        performance: PerfTelemetry? = null,
+    ): Rig {
         val file = topologyFile(upstreamUrl)
         val topology = TopologyLoader.parse(Files.readString(file))
         val config = configuration(probes)
         val key = MgmtKey(paths)
         val plane = plane(file, config, key)
+        plane.performance = performance
         val model = ModelEntry("synthetic-model", contextWindow = 4_000)
         val factory = factory(plane, topology, config, key, probes)
         probes?.let { factory.quotaProbes = it }

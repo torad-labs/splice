@@ -12,6 +12,7 @@
 package splice.control.mcp
 
 import kotlinx.coroutines.CoroutineDispatcher
+import splice.control.mcp.observation.McpPerfRecorders
 import splice.core.config.Knob
 import splice.core.mcp.McpToolResultStore
 import kotlin.time.Duration
@@ -76,6 +77,7 @@ public data class McpHostConfig(
         /** The existing systemd slice name, checked at every hosted spawn. */
         val slice: String = APP_MCP_SLICE,
         val capture: Capture? = null,
+        val observations: McpPerfRecorders? = null,
     )
 
     public data class Capture(val store: McpToolResultStore, val io: CoroutineDispatcher)

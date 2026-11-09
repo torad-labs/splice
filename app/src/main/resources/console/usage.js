@@ -68,7 +68,7 @@ const root = document.getElementById("usage");
 const S = { heads: [], providerOf: {}, labels: {}, declared: new Map(), sessionRows: [], liveHead: {}, sessions: {}, sessionsPending: true, keys: [], accounts: [], registry: [], groups: [], stood: false, error: null };
 // one window's reads: the totals the daemon folded, and the newest rows. [all] is the window with the project pick alone
 // (the plan and key cards), [scoped] the same under the filters opened below the cards.
-const D = { loading: true, stale: false, pending: false, every: null, all: null, scoped: null, rows: [], held: new Set(), errors: [], gen: 0 };
+const D = { loading: true, stale: false, pending: false, every: null, all: null, scoped: null, rows: [], held: new Set(), errors: [], gen: 0, retryAbort: null, retryPhase: null };
 
 const providerOfHead = (key) => S.providerOf[key];
 const cmdOf = (key) => S.heads.find((h) => h.key === key)?.command ?? key;
@@ -196,8 +196,48 @@ function foldWindow(reads, heads) {
   });
   return w;
 }
+async function retryCapacityBatch(asks, answers, gen, abort, read, tried, phase) {
+  const byPath = new Map();
+  asks.forEach((ask, index) => {
+    const path = turnsUrl(ask.h, ask.held, ask.f, ask.label, ask.model), item = byPath.get(path) ?? { path, answer: answers[index], indices: [] };
+    item.indices.push(index); byPath.set(path, item);
+  });
+  const candidates = [...byPath.values()].filter((item) => !tried.has(item.path));
+  const retried = await API.retryCapacity(candidates, () => gen === D.gen && !abort.signal.aborted, (item, client) => {
+    tried.add(item.path);
+    return client.getReady(item.path);
+  }, abort.signal, phase);
+  for (const { item, answer } of retried) {
+    read.set(item.path, Promise.resolve(answer));
+    for (const index of item.indices) answers[index] = answer;
+  }
+  return answers;
+}
 async function readWindow() {
   const gen = ++D.gen;
+  D.retryPhase?.finish();
+  D.retryAbort?.abort();
+  const retryAbort = D.retryAbort = new AbortController(), retriedPaths = new Set();
+  let retryTimer = null, retryWindowOpen = false, retryStarted = false, retryFinished = false;
+  const retryPhase = D.retryPhase = {
+    open: () => retryWindowOpen,
+    start() {
+      if (!retryStarted && !retryFinished) {
+        retryStarted = true;
+        retryWindowOpen = true;
+        retryTimer = setTimeout(() => { retryTimer = null; retryWindowOpen = false; }, 15000);
+      }
+    },
+    finish() {
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = null;
+      retryWindowOpen = false;
+      retryFinished = true;
+      if (D.retryPhase === this) D.retryPhase = null;
+    },
+  };
+  retryAbort.signal.addEventListener("abort", () => retryPhase.finish(), { once: true });
+  try {
   const wide = { wide: true }; // every project, for the tiles' figures
   const open = {}, read = new Map();
   const scopes = [...(hasFilter() ? [ui.f, open] : [open]), ...(ui.project ? [wide] : [])];
@@ -206,8 +246,10 @@ async function readWindow() {
   let ids = null;
   if (ui.f.model) {
     const early = headsFor(open).map((h) => ({ f: open, h, held: 1, label: null }));
-    const seen = foldWindow(await Promise.all(early.map(get)), early.map((a) => a.h)).models;
+    const earlyReads = await Promise.all(early.map(get));
+    await retryCapacityBatch(early, earlyReads, gen, retryAbort, read, retriedPaths, retryPhase);
     if (gen !== D.gen) return;
+    const seen = foldWindow(earlyReads, early.map((a) => a.h)).models;
     ids = modelIdsOf(ui.f.model, seen.keys());
   }
   D.modelIds = ids;
@@ -216,6 +258,7 @@ async function readWindow() {
   const rowAsks = headsFor(ui.f).flatMap((h) => labelsOf(ui.f).flatMap((label) => modelsOf(ui.f).map((model) => ({ f: ui.f, h, held: MAX_HELD, label, model }))));
   // Count first. The multi-megabyte trails fill in after the totals and chart are already usable.
   const totals = await Promise.all(asks.map(get));
+  await retryCapacityBatch(asks, totals, gen, retryAbort, read, retriedPaths, retryPhase);
   if (gen !== D.gen) return;
   const split = (scope) => { const idx = asks.map((a, i) => (a.f === scope ? i : -1)).filter((i) => i >= 0); return foldWindow(idx.map((i) => totals[i]), idx.map((i) => asks[i].h)); };
   D.scoped = split(scopes[0]);
@@ -231,6 +274,7 @@ async function readWindow() {
   const shift = bandTop() - topWas;
   if (Number.isFinite(shift) && Math.abs(shift) > 0.5) for (const [place, at] of TWF) if (place.includes("|by-")) TWF.set(place, { x: at.x, y: at.y + shift });
   const rows = await Promise.all(rowAsks.map(get));
+  await retryCapacityBatch(rowAsks, rows, gen, retryAbort, read, retriedPaths, retryPhase);
   if (gen !== D.gen) return;
   rowAsks.forEach((a, i) => {
     const answer = (rows[i].body?.heads || []).find((x) => x.key === a.h.key);
@@ -249,6 +293,11 @@ async function readWindow() {
   D.pending = pending; D.reading = reading; D.loading = false;
   render();
   if (pending) setTimeout(() => { if (gen === D.gen) readWindow(); }, 2000);
+  } finally {
+    retryPhase.finish();
+    retryAbort.abort();
+    if (D.retryAbort === retryAbort) D.retryAbort = null;
+  }
 }
 function mapRow(head, r) {
   const sid = r.session_id || r.session || null;
@@ -1303,7 +1352,7 @@ function flagOf(head) {
   }
   if (at != null && ok.length - at >= 5) {
     const run = ok.slice(at);
-    return { kind: "slow", from: run[0].ts - run[0].total, to: null, now: q(run.map((r) => r.total), .5), typ };
+    return { kind: "slow", from: run[0].ts - run[0].total, to: run.at(-1).ts, now: q(run.map((r) => r.total), .5), typ };
   }
   const GAP = 5 * 60e3, bad = (r) => failed(r) && r.outcome !== "error:plan-limit";
   let best = null, cur = null;
@@ -1342,7 +1391,9 @@ function readNote() {
     + (errs.length ? `<span class="rdset bad">${errs.map(chip).join("")}<span class="why">${NOT_READ}</span></span>` : "")
     + `</span>`;
 }
-const PERF_HEADS = createPerfHeads(scope, { render: () => { renderBand("perf"); renderDoors(); }, chip, providerOfHead, cmdOf, flagOf, flagHtml, hasFilter, ui, S, n0, secs, OPEN, OUTCOME_WORD, tagWord, isFailed, NOT_READ });
+const PERF_HEADS = createPerfHeads(scope, { changed: renderDoors,
+  selectAccount: (head, account) => { ui.f.account = `${head}|${account}`; ui.by = nextBy("account"); ui.shown = CUT; again(); },
+  chip, providerOfHead, cmdOf, flagOf, flagHtml, hasFilter, ui, S, n0, secs, OPEN, OUTCOME_WORD, tagWord, isFailed, NOT_READ });
 
 const BANDS = {
   money: { el: () => document.getElementById("band-money"), html: moneyHtml },
@@ -1525,13 +1576,12 @@ function renderDoors() {
       : `<b class="upl-df" data-tn="door-tok">${noTokens(tot) || !tot.requests ? DRAW.dash : tok(tokensOf(tot))}</b><span class="upl-dq">tokens</span>`;
   }
   out.push(door("by", "Where it went", by));
-  // Results reads every request over its own window, beside two doors on the page's window and pick, so its door says
-  // what its figure covers wherever the two differ, in the band's words: its window, and all requests under a pick.
+  // A named command's returned failure share, never an invented overall aggregate. The panel uses this same cohort.
   const lead = PERF_HEADS.lead();
-  const span = lead && lead.win !== ui.win ? ` in ${lead.word}` : "";
-  const all = ui.project != null || hasFilter() ? ", all requests" : "";
-  out.push(door("perf", "Results by command", !lead ? wait : lead.none ? `<span class="upl-dq">No requests${span}</span>`
-    : `<b class="upl-df lv-${lead.level}" data-tn="door-failed">${lead.figure}</b><span class="upl-dq">failed${span}${all}</span>`));
+  const span = lead ? ` · ${lead.window}${lead.scoped ? " · selected cohort" : ""}` : "";
+  out.push(door("perf", "Results by command", !lead ? wait : lead.figure != null
+    ? `<b class="upl-df" data-tn="door-failed">${esc(lead.figure)}</b><span class="upl-dq">${esc(lead.name)} failed${esc(span)}</span>`
+    : `<span class="upl-dq">${lead.none ? "No requests" : "Failure rate unavailable"}${esc(span)}</span>`));
   let tk = wait;
   if (read) {
     const all = [...w.byHead.values()], tin = all.reduce((a, x) => a + x.in, 0), tc = all.reduce((a, x) => a + x.cached, 0);
@@ -1561,7 +1611,7 @@ function render(grow = false) {
     root.innerHTML = `<section class="band money" id="band-money"></section><div class="scopeline" id="scope"></div><section class="band chart" id="band-chart"></section>`
       // the first two tables stand side by side where the page is wide, and Tokens by command takes the whole row under
       // them, so a Results row that opens or a list that grows never moves Tokens to another column
-      + `<div class="lower mason" id="lower"><section class="band by" id="band-by"></section><div class="band perf" id="band-perf"></div>`
+      + `<div class="band perf" id="band-perf"></div><div class="lower mason" id="lower"><section class="band by" id="band-by"></section>`
       + `<section class="band tokens" id="band-tok" data-cols="all" data-flip="usage-tok"></section></div>`;
   }
   renderScope();
@@ -1705,7 +1755,17 @@ document.addEventListener("click", (e) => {
     case "projmenu": ui.pmenu = !ui.pmenu; renderPick(); break;
     case "pickproj": ui.project = el.dataset.p || null; ui.pmenu = false; PICK.set(ui.project); ui.by = nextBy("project") === "project" ? "account" : ui.by; ui.shown = CUT; again(); break;
     case "win": if (v === ui.win) break; winChange(v); break;
-    case "door": document.getElementById(`band-${v}`)?.scrollIntoView({ block: "start", behavior: "smooth" }); break;
+    case "door": {
+      if (v === "perf") PERF_HEADS.showResults();
+      const breakdown = document.getElementById("band-by");
+      const lower = document.getElementById("lower");
+      if (breakdown && lower) {
+        breakdown.dataset.cols = v === "perf" ? "all" : "1";
+        DRAW.lay(lower);
+      }
+      const target = v === "perf" ? document.querySelector("#band-perf .pc-results") : document.getElementById(`band-${v}`);
+      target?.scrollIntoView({ block: "start", behavior: "smooth" }); break;
+    }
     case "measure": if (v === ui.measure) break; ui.measure = v; renderBand("chart"); break;
     case "by": if (v === ui.by) break; ui.by = v; ui.shown = CUT; ui.find = ""; renderBand("by", true); break;
     case "rank": if (v === ui.rank) break; ui.rank = v; ui.shown = CUT; renderBand("by", true); break;

@@ -26,6 +26,8 @@ package splice.app.sources
 
 import kotlinx.serialization.json.Json
 import splice.app.sources.dense.PerfLineSpot
+import splice.app.sources.observability.PerfSourceCosts
+import splice.app.sources.observability.cursor.PerfCommittedCursors
 import splice.core.perf.PerfArchiveName
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
@@ -37,6 +39,9 @@ import splice.usage.perf.PerfRowsProjection
 import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.PerfRowsWindow
 import splice.usage.perf.ProjectedPerfRowsSource
+import splice.usage.perf.history.PerfCursorPage
+import splice.usage.perf.history.PerfCursorRequest
+import splice.usage.perf.history.PerfCursorSource
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 
@@ -62,8 +67,12 @@ public class PerfRowsFileSource internal constructor(
         dense = true,
     ),
     private val sessionAccounts: PerfSessionAccountIndex = PerfSessionAccountIndex(),
-) : PerfRowsSource, ProjectedPerfRowsSource {
+) : PerfRowsSource, ProjectedPerfRowsSource, PerfCursorSource {
     private val json = Json { ignoreUnknownKeys = true }
+    public val costs: PerfSourceCosts = PerfSourceCosts()
+    private val cursors = PerfCommittedCursors(file, archiveDir, costs)
+
+    override fun page(request: PerfCursorRequest): PerfCursorPage = cursors.page(request)
 
     /** JSON decodes performed by this source, including rejected rows and baseline candidates. */
     internal var parsedLines: Long = 0L
@@ -93,6 +102,7 @@ public class PerfRowsFileSource internal constructor(
     @Synchronized
     override fun <T> projected(sinceMs: Long, read: PerfProjectionRead<T>): T {
         val retained = compact
+        val decodedBefore = parsedLines
         return try {
             projectedRead(sinceMs, retained, read)
         } catch (_: PerfProjectionChanged) {
@@ -106,6 +116,8 @@ public class PerfRowsFileSource internal constructor(
                     override fun complete(rows: List<PerfRow>): List<PerfRow> = rows
                 })
             }
+        } finally {
+            costs.projection(parsedLines == decodedBefore)
         }
     }
 

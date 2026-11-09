@@ -33,11 +33,13 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
+import splice.head.wire.observation.ClientDeliveryObservation
 import splice.upstream.Ticker
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -133,6 +135,7 @@ internal class ClientChannel(
     /** V4-456: holds a burst's deltas for [launchPacer]'s loop; inert until that loop runs. */
     private val pacer = DeltaPacer()
     private val bursts = ArrivalBursts()
+    private val delivery = ClientDeliveryObservation()
     private var lastWriteMs: Long? = null
     private var pacingJob: Job? = null
 
@@ -174,8 +177,8 @@ internal class ClientChannel(
         // Frames still held go first, so the wire order stays the order they were written in: everything a
         // burst held when this frame starts a tool call or ends the message, or what a release loop that
         // stopped (a cancelled turn, a ticker that ended) left behind.
-        pacer.takeAll(clock()).forEach { socketWrite(it.frame, it.perf, clock) }
-        if (socketWrite(frame, perf, clock)) {
+        pacer.takeAll(clock()).forEach { socketWrite(it.frame, it.perf, clock, it.modelOutput) }
+        if (socketWrite(frame, perf, clock, modelOutput)) {
             perf.maxCount(PerfKeys.OUT_HOLD_MAX_MS, 0)
             if (modelOutput) ModelAccounting.count(frame, perf)
         }
@@ -183,7 +186,7 @@ internal class ClientChannel(
 
     /** One frame onto the socket, counted as transport: true when it got there, false when the channel
      *  is (or just became) detached. An ordinary turn's lost client throws, after clientGone is set. */
-    private fun socketWrite(frame: String, perf: TurnPerf, clock: ElapsedClock): Boolean {
+    private fun socketWrite(frame: String, perf: TurnPerf, clock: ElapsedClock, modelOutput: Boolean): Boolean {
         if (detached.get()) return false
         val t = clock()
         // A dead client fails the write in three shapes, and none escapes as an unclassified fault:
@@ -201,6 +204,7 @@ internal class ClientChannel(
         }
         if (failure != null) {
             clientGone.set(true)
+            perf.observations?.finish(OutcomeTag.CLIENT_ABORT.wire)
             if (!detachIfRecording()) throw failure
             return false
         }
@@ -212,6 +216,7 @@ internal class ClientChannel(
         perf.add(PerfKeys.FRAMES_OUT, 1)
         perf.add(PerfKeys.BYTES_OUT, Utf8Length.of(frame)) // bytes on the wire, not UTF-16 chars
         perf.markOnce(PerfKeys.FIRST_FRAME)
+        delivery.frame(perf.observations, frame, wroteAtMs - t, modelOutput)
         return true
     }
 
@@ -265,7 +270,7 @@ internal class ClientChannel(
      *  every tick, a provider burst does not. */
     private suspend fun releaseDue(clock: ElapsedClock, lateMs: Long): Boolean = writeMutex.withLock {
         pacer.due(clock()).forEach {
-            socketWrite(it.frame, it.perf, clock)
+            socketWrite(it.frame, it.perf, clock, it.modelOutput)
             it.perf.maxCount(PerfKeys.OUT_TICK_LATE_MAX_MS, lateMs)
         }
         pacer.stillHeld()
@@ -281,7 +286,11 @@ internal class ClientChannel(
         if (writeMutex.withLock { pacer.stillHeld() }) pacing.join() else pacing.cancel()
         Cancellables.discard(
             Cancellables.runCatchingCleanup {
-                writeMutex.withLock { pacer.takeAll(clock()).forEach { socketWrite(it.frame, it.perf, clock) } }
+                writeMutex.withLock {
+                    pacer.takeAll(
+                        clock(),
+                    ).forEach { socketWrite(it.frame, it.perf, clock, it.modelOutput) }
+                }
             },
             "a paced tail on a client that left: clientGone is already set and the turn has ended",
         )
@@ -374,7 +383,11 @@ internal class ClientChannel(
                         // reads it as client traffic and the cadence drifts to 16 ticks.
                         seenFrames = socketFrames.get()
                     } else {
-                        writeMutex.withLock { coalesced.write(SSE_KEEPALIVE_COMMENT) }
+                        writeMutex.withLock {
+                            val started = delivery.elapsedMs()
+                            coalesced.write(SSE_KEEPALIVE_COMMENT)
+                            delivery.keepalive(SSE_KEEPALIVE_COMMENT, started)
+                        }
                     }
                 }.exceptionOrNull()
                 if (pingFailure != null) {
@@ -389,6 +402,7 @@ internal class ClientChannel(
      *  class or its unsafe text. */
     private fun clientLost(turnJob: Job, lost: LostClient, cause: String) {
         clientGone.set(true)
+        delivery.abandoned()
         if (detachIfRecording()) {
             lost.log("[${lost.headKey}] client gone (${who(lost.session)}$cause); $DETACHED_NOTE\n")
         } else {

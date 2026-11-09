@@ -50,14 +50,23 @@ public class InflightGate(
     /** A matching session may prepare one continuation on its already-held source permit. */
     public fun resumeSource(session: String?): Slot? = session?.let { sources[it]?.resume() }
 
-    // V4-213, all guarded by [lock]. Insertion order is admission order, so [snapshot] lists the
-    // oldest slot first (the console reads the first live row as a head's current turn).
-    private val live = LinkedHashSet<Slot>()
-    private var acquired = 0L
-    private var released = 0L
-    private var waited = 0L
-    private var waitMsTotal = 0L
-    private var refused = 0L
+    // Traffic is read and changed only under [lock], alongside the permit transition it observes.
+    private val traffic = InflightTraffic()
+
+    // Transition calls hold lock: gate -> recorder -> accumulator. The observer must only accumulate/enqueue
+    // bounded memory, with no serialization, filesystem/network I/O or callback into this gate.
+    internal val observations = GateObservationState(
+        GateReadingSource {
+            GateReading(
+                inflight,
+                queue.size,
+                maxInflight(),
+                queue.peekFirst()?.let { clock() - it.queuedAt } ?: 0L,
+                traffic.refused,
+                traffic.queuedCancelled,
+            )
+        },
+    )
 
     public data class Snapshot(
         val inflight: Int,
@@ -77,16 +86,15 @@ public class InflightGate(
             inflight = inflight,
             queued = queue.size,
             limit = maxInflight(),
-            traffic = GateCounts(
-                acquired = acquired,
-                released = released,
-                waited = waited,
-                avgWaitMs = if (waited == 0L) 0L else (waitMsTotal + waited / 2) / waited,
-                refused = refused,
-            ),
-            live = live.map { it.readingState.reading(now) },
+            traffic = traffic.counts(),
+            live = traffic.readings(now),
             waiting = queue.map { GateWait(it.session, now - it.queuedAt) },
         )
+    }
+
+    /** Explicit periodic/config-change sample. Ordinary status reads never mutate observation state. */
+    public fun sampleObservations() {
+        synchronized(lock) { observations.record() }
     }
 
     /** What [acquire] answers. The refusal is a VALUE, not a throw: a `RuntimeException` subclass
@@ -120,9 +128,10 @@ public class InflightGate(
             val held = resumeSource(session)
             val canSelfAdmit = held == null && capacity.admits(inflight) && queue.isEmpty()
             if (canSelfAdmit) inflight += 1
+            observations.record()
             Triple(drained, held, canSelfAdmit)
         }
-        resumeAll(toResume)
+        GateResumptions.resume(toResume, this)
         if (borrowed != null) return Admission.Acquired(borrowed)
         val turn = if (admitted) Turn.Immediate else awaitTurn(session)
         return turn.answer(this)
@@ -133,26 +142,10 @@ public class InflightGate(
     internal fun deliver(waitedMs: Long?): Slot {
         val slot = Slot(this, clock, heldMs = waitedMs)
         synchronized(lock) {
-            acquired += 1
-            if (waitedMs != null) {
-                waited += 1
-                waitMsTotal += waitedMs
-            }
-            live.add(slot)
+            traffic.delivered(slot, waitedMs)
+            observations.record()
         }
         return slot
-    }
-
-    /** The one hand-off. The admitted permit transfers ONLY if the waiter actually uses the
-     *  resumption: a waiter cancelled between admission and delivery would otherwise leak its
-     *  inflight slot permanently, shrinking the head's capacity by one per race until it admits
-     *  nothing. DR-147 routes acquire's drain through the SAME helper release() uses, so the two
-     *  drain sites cannot drift on that compensation. */
-    private fun resumeAll(waiters: List<Waiter>) {
-        for (w in waiters) {
-            val cont = w.continuation ?: continue
-            cont.resume(true) { _, _, _ -> returnUndelivered(w.borrowed) }
-        }
     }
 
     /** Whether, and how, this waiter came to hold a permit ([Turn]). */
@@ -176,9 +169,10 @@ public class InflightGate(
                     waiter.queuedAt = clock()
                     queue.addLast(waiter)
                 } else {
-                    refused += 1
+                    traffic.refuse()
                     rejected = true
                 }
+                observations.record()
             }
             // Resume from THIS thread only when the recheck above admitted synchronously.
             // `waiter.resumed` is the wrong guard here: a releaser can drain the just-queued
@@ -186,7 +180,7 @@ public class InflightGate(
             // flag then double-resumes the continuation ("Already resumed" ISE — caught by the
             // cancel-racing-admission hammer test on CI). Only the local flag is race-free.
             if (admittedNow) {
-                // Same undelivered-handler as resumeAll(): a waiter cancelled between inflight++ and
+                // Same undelivered-handler as GateResumptions: a waiter cancelled between inflight++ and
                 // delivery must return the permit or the head permanently loses one capacity slot.
                 cont.resume(true) { _, _, _ -> returnUndelivered(waiter.borrowed) }
                 return@suspendCancellableCoroutine
@@ -201,7 +195,10 @@ public class InflightGate(
                 // inflight increment is compensated by the tryResume path in release() — the
                 // admission and the hand-off race is decided there, never here (both sides run
                 // under [lock]/tryResume atomicity, so exactly one compensator fires).
-                synchronized(lock) { if (!waiter.resumed) queue.remove(waiter) }
+                synchronized(lock) {
+                    if (!waiter.resumed && queue.remove(waiter)) traffic.cancelQueued()
+                    observations.record()
+                }
             }
         }
         return waiter.turn(admitted, admittedNow, clock())
@@ -211,11 +208,14 @@ public class InflightGate(
      *  it back ([yieldPermit]). */
     internal fun release(slot: Slot, yielded: Boolean = false) {
         if (yielded) {
-            synchronized(lock) { if (live.remove(slot)) released += 1 }
+            synchronized(lock) {
+                traffic.release(slot)
+                observations.record()
+            }
             return
         }
         returnPermit {
-            if (live.remove(slot)) released += 1
+            traffic.release(slot)
         }
     }
 
@@ -232,35 +232,39 @@ public class InflightGate(
             val drained = drainAdmissibleLocked()
             val now = capacity.admits(inflight) && queue.isEmpty()
             if (now) inflight += 1
+            observations.record()
             drained to now
         }
-        resumeAll(toResume)
+        GateResumptions.resume(toResume, this)
         if (admitted) return
         when (awaitTurn(null)) {
-            Turn.Refused -> synchronized(lock) { inflight += 1 }
+            Turn.Refused -> synchronized(lock) {
+                inflight += 1
+                observations.record()
+            }
             Turn.Immediate, is Turn.Queued, is Turn.Borrowed -> Unit
         }
     }
 
     /** A permit whose waiter was cancelled between admission and delivery goes back. It was never a
      *  slot, so nothing is counted and nothing leaves the live list. */
-    private fun returnUndelivered(borrowed: Slot?) {
+    internal fun returnUndelivered(borrowed: Slot?) {
         if (borrowed != null) borrowed.release() else returnPermit {}
     }
 
     /** Returning a client handle may free a source loan without freeing the reader's counted permit. */
     private fun sourceAvailable() {
-        val toResume = synchronized(lock) { drainAdmissibleLocked() }
-        resumeAll(toResume)
+        val toResume = synchronized(lock) { drainAdmissibleLocked().also { observations.record() } }
+        GateResumptions.resume(toResume, this)
     }
 
     private inline fun returnPermit(locked: () -> Unit) {
         val toResume = synchronized(lock) {
             locked()
             inflight -= 1
-            drainAdmissibleLocked()
+            drainAdmissibleLocked().also { observations.record() }
         }
-        resumeAll(toResume)
+        GateResumptions.resume(toResume, this)
     }
 
     // ported drain loop: skip-resumed + capacity guard

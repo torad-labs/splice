@@ -25,6 +25,11 @@ internal data class CodexMessage(val seq: Long, val id: String)
 
 /** One codex peer's records in its [journal]. */
 public class CodexLedger(private val journal: PeerJournal) {
+    /** Converts an existing inbox without replaying acknowledged mail or hiding an interrupted hand-over. */
+    public fun inheritAcknowledgedInbox() {
+        if (journal.scanner.lastCodex(handOver = true) == null) journal.cursors.inheritReadForCodex()
+    }
+
     /** The thread can no longer be reached: the helper is about to stop, and the peer is to be revoked. */
     public fun ended(reason: String) {
         journal.appendCodex(JournalRecords.CodexEntry(null, null, CodexOutcome.THREAD_ENDED, null, reason))

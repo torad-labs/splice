@@ -23,7 +23,6 @@ import splice.core.GATEWAY_VERSION
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
 import splice.sessions.peer.codex.CodexBinding
-import splice.sessions.peer.codex.CodexThread
 import splice.sessions.peer.codex.TurnStart
 import java.io.IOException
 import java.net.StandardProtocolFamily
@@ -40,7 +39,6 @@ private const val TURN_TIMEOUT_MS = 60_000L
 /** The thread status of a thread its app-server has not loaded, or has unloaded. */
 internal const val NOT_LOADED = "notLoaded"
 private const val USER_MESSAGE = "userMessage"
-private const val THREAD_ID = "threadId"
 private const val TYPE = "type"
 
 /** Where a Codex home's app-server listens. */
@@ -65,17 +63,19 @@ internal class CodexEndpoints {
 /** How opening the thread went. */
 internal sealed class CodexOpen {
     /** A WebSocket to the app-server is open; [CodexAppThread.greet] says whether it has the thread. */
-    data class Open(val thread: CodexAppThread) : CodexOpen()
+    data class Open(val thread: CodexLiveThread) : CodexOpen()
 
     data class Gone(val reason: String) : CodexOpen()
 }
 
-/** Opens threads on their app-servers. */
+/** Reaches an existing desktop owner first, then the home's shared app-server. Never loads or resumes a thread. */
 internal class CodexAppServers(private val io: CoroutineDispatcher) {
     private val endpoints = CodexEndpoints()
 
     /** Connects to [binding]'s app-server and reads its thread. The caller runs [CodexAppThread.read] alongside. */
-    suspend fun open(binding: CodexBinding): CodexOpen {
+    suspend fun open(binding: CodexBinding): CodexOpen = CodexDesktopServers(io).open(binding) ?: openShared(binding)
+
+    private suspend fun openShared(binding: CodexBinding): CodexOpen {
         val path = endpoints.find(Path.of(binding.home))
             ?: return CodexOpen.Gone("no Codex app-server listens for ${binding.home}")
         val socket = try {
@@ -90,11 +90,9 @@ internal class CodexAppServers(private val io: CoroutineDispatcher) {
         }
     }
 
-    /** Null when [binding]'s app-server has loaded its thread, else why no message could reach the thread. It opens a
-     *  dialog, reads the thread and closes the dialog, and starts or resumes nothing. An attach asks this before it
-     *  registers the peer: a thread the home's shared app-server has not loaded runs in a Codex splice cannot reach
-     *  (Oct 30, 2026: the ChatGPT desktop app's own app-server, listening on no socket), and its helper would read
-     *  the same answer, end at once and be revoked, after the attach had answered 201. */
+    /** Null when the existing owner is reachable, else why no message could reach the thread. The attach checks the
+     *  same connector as the helper before registering anything, so a shared daemon's unloaded copy cannot stand in
+     *  for a live desktop chat. This dialog starts or resumes nothing. */
     suspend fun unreachable(binding: CodexBinding): String? = when (val opened = open(binding)) {
         is CodexOpen.Gone -> opened.reason
         is CodexOpen.Open -> coroutineScope {
@@ -123,14 +121,14 @@ internal class CodexAppServers(private val io: CoroutineDispatcher) {
 }
 
 /** The thread on its app-server, as the delivery and the helper's watch use it. */
-internal class CodexAppThread(private val rpc: CodexRpc, private val thread: String) : CodexThread {
-    val notifications: ReceiveChannel<CodexEvent> get() = rpc.notifications
+internal class CodexAppThread(private val rpc: CodexRpc, private val thread: String) : CodexLiveThread {
+    override val notifications: ReceiveChannel<CodexEvent> get() = rpc.notifications
 
     /** Reads every message until the connection ends; why it ended. Runs alongside everything else. */
-    suspend fun read(): String = rpc.read()
+    override suspend fun read(): String = rpc.read()
 
     /** Initializes the dialog and reads the thread: its status type, or why it cannot be a peer. */
-    suspend fun greet(): CodexGreeting {
+    override suspend fun greet(): CodexGreeting {
         val init = rpc.request(
             "initialize",
             buildJsonObject {
@@ -157,7 +155,7 @@ internal class CodexAppThread(private val rpc: CodexRpc, private val thread: Str
 
     override suspend fun startTurn(clientId: String, text: String): TurnStart {
         val params = buildJsonObject {
-            put(THREAD_ID, thread)
+            put(CODEX_THREAD_ID_FIELD, thread)
             put("clientUserMessageId", clientId)
             putJsonArray("input") {
                 add(
@@ -193,15 +191,15 @@ internal class CodexAppThread(private val rpc: CodexRpc, private val thread: Str
         }
     }
 
-    fun close() {
+    override fun close() {
         rpc.close()
     }
 
     /** Whether [params] is about this thread. */
-    fun mine(params: JsonObject?): Boolean = JsonScalars.str(params, THREAD_ID) == thread
+    override fun mine(params: JsonObject?): Boolean = JsonScalars.str(params, CODEX_THREAD_ID_FIELD) == thread
 
     private fun threadParams(includeTurns: Boolean): JsonObject = buildJsonObject {
-        put(THREAD_ID, thread)
+        put(CODEX_THREAD_ID_FIELD, thread)
         put("includeTurns", includeTurns)
     }
 

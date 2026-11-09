@@ -1,0 +1,124 @@
+package splice.usage.perf.query
+
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import splice.core.util.JsonScalars
+import splice.core.util.PerfWorkBudget
+import splice.core.util.WallClock
+import splice.usage.perf.query.PerfQueryJson.queryError
+import java.io.IOException
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
+
+/** A cache owns encoded bytes; every returned JSON tree owns a distinct lease. */
+internal class PerfQueryWork(private val clock: WallClock, private val sources: PerfQuerySources) : AutoCloseable {
+    private val lock = ReentrantLock()
+    private var cached: CachedQuery? = null
+    private var closed = false
+
+    fun execute(query: PerfQuery, operation: String?, read: PerfQueryResult): JsonObject {
+        val parsed = PerfQueryParser.parse(
+            query.filters + listOfNotNull(query.objectiveId?.let { "objective" to it }).toMap() + mapOf(
+                "from" to query.fromMs.toString(),
+                "until" to query.untilMs.toString(),
+                "source" to query.source,
+            ),
+            clock(),
+        )
+        if (parsed.error != null) return parsed.error
+        if (!lock.tryLock()) return queryError("query_busy", "query_in_progress", "busy")
+        return try {
+            if (closed) queryError("query_closed", "query_service_closed") else admitted(query, operation, read)
+        } catch (_: IOException) {
+            queryError("source_unreadable", "local_source_read_failed")
+        } finally {
+            lock.unlock()
+        }
+    }
+
+    override fun close() {
+        lock.withLock {
+            closed = true
+            clearCache()
+        }
+    }
+
+    private fun admitted(query: PerfQuery, operation: String?, read: PerfQueryResult): JsonObject {
+        val lease = PerfWorkBudget.acquire(QUERY_BYTES, PerfWorkBudget.Kind.QUERY_REPLY)
+            ?: return queryError("memory_busy", "shared_work_budget", "busy")
+        var retained = false
+        return try {
+            val result = result(query, operation, read)
+            val bytes = result.toString().length.toLong() * QUERY_JSON_CHARGE + RESULT_OVERHEAD
+            if (bytes > QUERY_BYTES) return queryError("result_limit", "query_result_exceeds_budget", "partial")
+            lease.retain(result, bytes)
+            retained = true
+            result
+        } finally {
+            if (!retained) lease.close()
+        }
+    }
+
+    private fun result(request: PerfQuery, operation: String?, read: PerfQueryResult): JsonObject {
+        // Selection is current before a hit, and still inside query admission and the work lease.
+        val query = PerfObjectiveQuery.resolve(request, sources)
+            ?: return queryError(
+                "objective_selection_unavailable",
+                "objective_missing_mismatched_or_cohort_unavailable",
+            )
+        val now = clock()
+        val warm = cached?.takeIf { matches(it, query, operation, now) }
+        val restored = warm?.let { JsonScalars.objectOrNull(Json, it.payload) }
+        if (restored != null) return restored
+        // A stale cache is optional state; release it before the cold source phase.
+        clearCache()
+        val result = read(query)
+        if (operation != null) cache(query, operation, now, result)
+        return result
+    }
+
+    private fun matches(entry: CachedQuery, query: PerfQuery, operation: String?, now: Long): Boolean =
+        listOf(
+            operation != null,
+            entry.operation == operation,
+            entry.query == query,
+            now - entry.atMs in 0..QUERY_CACHE_MS,
+        )
+            .all { it }
+
+    private fun cache(query: PerfQuery, operation: String, now: Long, result: JsonObject) {
+        clearCache()
+        val encoded = result.toString()
+        val bytes = encoded.length.toLong() * CHAR_CHARGE + RESULT_OVERHEAD
+        val lease = PerfWorkBudget.acquire(bytes, PerfWorkBudget.Kind.QUERY_CACHE) ?: return
+        val entry = CachedQuery(query, operation, now, encoded)
+        lease.retain(entry, bytes)
+        cached = entry
+    }
+
+    private fun clearCache() {
+        cached?.let(PerfWorkBudget::release)
+        cached = null
+    }
+}
+
+internal fun interface PerfQueryResult {
+    operator fun invoke(query: PerfQuery): JsonObject
+}
+
+private data class CachedQuery(val query: PerfQuery, val operation: String, val atMs: Long, val payload: String)
+
+// Reserve 4 MiB per query result and refuse projections that exceed the admitted work budget.
+private const val QUERY_BYTES = 4L * 1_024 * 1_024
+
+// Charge eight bytes per rendered character for the decoded response tree and its retained strings.
+private const val QUERY_JSON_CHARGE = 8L
+
+// Charge two bytes per character in the encoded cache even when the JVM uses compact strings.
+private const val CHAR_CHARGE = 2L
+
+// Add 4 KiB for response collections and ownership beyond the text-dependent result charge.
+private const val RESULT_OVERHEAD = 4_096L
+
+// Reuse an identical query result for at most one second so repeated polling avoids immediate recomputation.
+private const val QUERY_CACHE_MS = 1_000L

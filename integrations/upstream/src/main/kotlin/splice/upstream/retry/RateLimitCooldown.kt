@@ -2,8 +2,10 @@
 //
 // The shared 429 horizon (HD-25). Each pooled account owns one; legacy heads use the UpstreamClient's
 // instance. A turn that gives up on a 429 marks its login limited here, and the mark only steers
-// account selection and names the limit on status. It never holds or refuses another turn: each turn
-// asks the provider itself and waits only on its own failure (Marcos, Oct 26). Until then this horizon
+// account selection and names the limit on status. Finite temporary limits still ask the provider on each
+// turn (Marcos, Oct 26). A named exhausted window with no reset, or a billing-cycle limit, refuses promptly with
+// its stored cause during this same bounded horizon (Nov 7); expiry permits an explicit new turn to re-probe.
+// Before Oct 26 this horizon
 // made every later turn on the login sleep or fail fast with a 429 the provider never sent, and on
 // claude-splice the ten slowest turns of Oct 25, 6 to 11 PM CT, waited 45 s to 2.3 min on it and then
 // failed anyway.
@@ -34,6 +36,7 @@
 // is in :features-turns, and :upstream depends only on :core — that edge would invert.
 package splice.upstream.retry
 
+import splice.core.failure.FailureCause
 import splice.core.failure.Lift
 import splice.core.failure.LiftSource
 import splice.core.usage.PlanLimit
@@ -42,6 +45,7 @@ import splice.core.util.WallClock
 import splice.core.wire.NativeReply
 import splice.upstream.RetryNotice
 import splice.upstream.StreamStart
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -63,14 +67,28 @@ public class RateLimitCooldown public constructor(
      *  restart; null keeps it in memory only, as before. The armed horizon is never stored. */
     store: ProviderHoldStore? = null,
 ) {
-    // Armed by any attempt that observes a 429; while armed, every post() fails fast with a
-    // synthesized 429 and ZERO upstream calls. Benign write race: concurrent arms only differ by
-    // ms; latest-max wins.
+    // Latest-max arming; the provider's distant reset never extends this bounded selection horizon.
     private val rateLimitedUntilMs = AtomicLong(0L)
     private val unavailableUntilMs = AtomicLong(0L)
     private val providerUnavailableUntilMs = AtomicLong(0L)
 
     private val holds = ProviderHolds(store)
+    private var terminalCause: FailureCause.Provider.Limited? = null
+    private var terminalUntilMs = 0L
+
+    /** Identity of the last provider limit reading, independent of cooldown expiry and wall-clock changes. */
+    @Volatile
+    internal var limitReading: UUID? = null
+        private set
+
+    /** Called once for a classified provider refusal, before choosing whether to wait or move to another login. */
+    public fun observeLimit() {
+        limitReading = UUID.randomUUID()
+    }
+
+    /** A terminal refusal from this credential, only while its existing cooldown is active. Never persisted. */
+    internal val terminalLimit: FailureCause.Provider.Limited?
+        get() = synchronized(holds) { terminalCause.takeIf { clock() < terminalUntilMs && remainingMs() > 0L } }
 
     /** A native refusal belongs to this cooldown's credential, never to another caller on the head. */
     public var rateLimitReply: NativeReply?
@@ -111,8 +129,11 @@ public class RateLimitCooldown public constructor(
     /** Restart clears the translated horizon, retaining the provider's reporting facts.
      *  A retained native refusal keeps its credential's bounded horizon, including one restored from
      *  an unexpired reset. Startup cannot erase that refusal, and reads never extend the re-probe ceiling. */
-    public fun clear() {
-        if (rateLimitReply == null) rateLimitedUntilMs.set(0L)
+    public fun clear(): Unit = synchronized(holds) {
+        if (rateLimitReply == null) {
+            rateLimitedUntilMs.set(0L)
+            terminalCause = null
+        }
     }
 
     /** Account-pool restart escape hatch; separate so NF-01's legacy [clear] wall stays exact. Clears
@@ -134,6 +155,7 @@ public class RateLimitCooldown public constructor(
                 holds.providerReset(null)
                 planHold.clear(model)
                 rateLimitReply = null
+                terminalCause = null
             }
         }
     }
@@ -225,7 +247,7 @@ public class RateLimitCooldown public constructor(
 
     /** A limit of the whole login: the provider's reset, its reply, the plan window it named and the horizon, as
      *  [limitLeft] describes. */
-    private fun loginLeft(left: LimitLeft, onRetry: RetryNotice): Long? {
+    private fun loginLeft(left: LimitLeft, onRetry: RetryNotice): Long? = synchronized(holds) {
         captureProviderReset(left.lift)
         rateLimitReply = left.native
         val planned = left.planLimit?.let { planHold.hold(it, onRetry) }
@@ -238,7 +260,10 @@ public class RateLimitCooldown public constructor(
             onRetry("429 Retry-After ${pushback}ms exceeds the same-account wait ceiling; account unavailable")
         }
         arm(pushback)
-        return planned
+        terminalCause = left.cause?.takeIf { it.isExhausted }
+        // Later unrelated arms cannot resurrect this refusal once its own bounded horizon has expired.
+        terminalUntilMs = rateLimitedUntilMs.get()
+        planned
     }
 }
 
@@ -250,6 +275,7 @@ internal data class LimitLeft(
     val planLimit: PlanLimit?,
     val native: NativeReply?,
     val pooled: Boolean,
+    val cause: FailureCause.Provider.Limited? = null,
 )
 
 // How long a 429 that carries no Retry-After (the ChatGPT backend's bare

@@ -172,9 +172,13 @@ public class TopologyRoutes(private val source: TopologyWriterSource, private va
 internal class TopologySecrets {
     val findings: MutableList<TopologyFinding> = mutableListOf()
 
-    fun masked(tree: JsonObject): JsonObject = headers(tree) { _, _, _ -> JsonPrimitive(MASK) }
+    fun masked(tree: JsonObject): JsonObject = OperatorTelemetrySecrets.masked(
+        headers(tree) { _, _, _ -> JsonPrimitive(MASK) },
+    )
 
-    fun unmasked(tree: JsonObject, stored: JsonObject): JsonObject = headers(tree) { provider, name, value ->
+    fun unmasked(tree: JsonObject, stored: JsonObject): JsonObject = headers(
+        OperatorTelemetrySecrets.unmasked(tree, stored, findings),
+    ) { provider, name, value ->
         val kept = (value as? JsonPrimitive)?.takeIf { it.isString && it.content == MASK }?.let {
             stored[PROVIDERS]?.jsonObject?.get(provider)?.jsonObject?.get(EXTRA_HEADERS)?.jsonObject?.get(name)
         }

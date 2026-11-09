@@ -56,6 +56,7 @@ import splice.head.scripted.withScriptedHeads
 import splice.head.turn.LiveTurnsByHead
 import splice.head.turn.LiveTurnsRoutes
 import splice.head.turn.LiveTurnsSource
+import splice.head.turn.TurnState
 import java.nio.file.Path
 import java.time.Instant
 import java.time.ZoneId
@@ -130,7 +131,18 @@ internal class HoldsThroughHeadsTest : HoldRouteFixtures() {
             val stream = head.client.open(launched())
             eventually { stream.soFar().notices.isNotEmpty() }
             assertEquals(1, provider.requests.size, "the limit, and nothing more before the reset")
-            runClock(2.seconds, atMost = 15.minutes) { stream.finished }
+            runClock(
+                2.seconds,
+                atMost = 15.minutes,
+                afterStep = {
+                    val arrived = stream.soFar().arrivals.lastOrNull() ?: Duration.ZERO
+                    if (!stream.finished && time.passed() - arrived >= 32.seconds) {
+                        // The socket reader stamps arrivals with this clock; consume a due ping before moving it.
+                        // The first 2 s tick notices the hold frame before counting its 30 s silence interval.
+                        eventually { stream.finished || stream.soFar().arrivals.lastOrNull() != arrived }
+                    }
+                },
+            ) { stream.finished }
             val answer = stream.finish()
 
             assertEquals("the answer after the reset", answer.text, answer.describe())
@@ -143,7 +155,12 @@ internal class HoldsThroughHeadsTest : HoldRouteFixtures() {
             assertTrue((answer.noticeArrival("5-hour") ?: Duration.INFINITE) <= 1.seconds, "the line comes at once")
             val held = answer.arrivals.filter { it <= provider.requests[1].at }
             val longest = held.zipWithNext { a, b -> b - a }.maxOrNull() ?: Duration.ZERO
-            assertTrue(longest <= 32.seconds, "a ping at least every 30 s while held, the longest gap $longest")
+            assertTrue(longest <= 32.seconds) {
+                val gap = held.zipWithNext().maxByOrNull { (from, until) -> until - from }
+                "a ping at least every 30 s while held, the longest gap $longest " +
+                    "from=${gap?.first} until=${gap?.second} arrivals=${held.size} " +
+                    "resumed_at=${provider.requests[1].at} virtual_now=${time.passed()}"
+            }
         }
     }
 
@@ -196,7 +213,10 @@ internal class HoldsThroughHeadsTest : HoldRouteFixtures() {
 
             val held = head.client.open(launched())
             eventually { held.soFar().notices.isNotEmpty() }
+            eventually { head.liveTurns.list().singleOrNull()?.state is TurnState.Held }
             val other = head.client.send(launched())
+            // Observe the served-wake stagger before the clock can move past its scheduling point.
+            eventually { 1.seconds in time.parkedDues() }
             runClock(500.milliseconds, atMost = 1.minutes) { held.finished }
 
             assertEquals("the other turn", other.text, other.describe())
@@ -291,6 +311,8 @@ internal class HoldsThroughHeadsTest : HoldRouteFixtures() {
             time.advanceBy(7.minutes)
             assertTrue("\"held\":true" in console.live("chat").body, "the console lists the turn as held")
             assertEquals(HttpStatusCode.OK, console.tryNow("chat", null).status, "one login held")
+            // The wake is synchronous; observe its dispatched request before moving virtual time.
+            eventually { provider.requests.size == 2 }
             runClock(500.milliseconds, atMost = 20.minutes) { stream.finished }
 
             assertEquals("tried now", stream.finish().text, stream.finish().describe())
@@ -300,7 +322,7 @@ internal class HoldsThroughHeadsTest : HoldRouteFixtures() {
     }
 
     @Test
-    fun `Kimi's 5-hour 429 of Oct 23 holds at once after one provider request, and continues when a probe is served`(
+    fun `Kimi's 5-hour limit without a stated reset ends once without an automatic probe`(
         @TempDir tmp: Path,
     ) = runTest {
         withScriptedHeads(tmp) {
@@ -309,10 +331,13 @@ internal class HoldsThroughHeadsTest : HoldRouteFixtures() {
 
             val answer = kimi.client.send(launched())
 
-            assertEquals("the window ended", answer.text, answer.describe())
-            // A named window with no time stated holds at once and is probed at 1 minute.
-            assertEquals(listOf(Duration.ZERO, 1.minutes), provider.requests.map { it.at })
-            assertTrue("5-hour" in lines(answer).single(), lines(answer).toString())
+            assertTrue(Family.P in answer.families(), answer.describe())
+            assertTrue("5-hour" in lineOf(answer), answer.describe())
+            assertTrue("did not say when it resets" in lineOf(answer), answer.describe())
+            assertTrue(answer.notices.isEmpty(), answer.describe())
+            assertFalse(answer.completed, answer.describe())
+            assertEquals(listOf(Duration.ZERO), provider.requests.map { it.at })
+            assertEquals(Duration.ZERO, time.passed())
         }
     }
 
@@ -509,7 +534,7 @@ internal class HoldBoundsThroughHeadsTest : HoldRouteFixtures() {
     }
 
     @Test
-    fun `an unstated hold ends before its session wall with overloaded_error and its retry holds again`(
+    fun `an unstated Kimi limit ends promptly without an automatic probe`(
         @TempDir tmp: Path,
     ) = runTest {
         withScriptedHeads(tmp) {
@@ -517,15 +542,16 @@ internal class HoldBoundsThroughHeadsTest : HoldRouteFixtures() {
             val kimi = anthropic(replies = HeadReplies.kimi)
             val turn = ClientRequest(session = "sess-unstated-wall", headers = mapOf(WALL_HEADER to "960000"))
 
-            val first = kimi.client.send(turn)
-            val sentFirst = provider.requests.size
-            val again = kimi.client.send(turn)
+            val answer = kimi.client.send(turn)
 
-            assertEquals("overloaded_error", first.error?.type, first.describe())
-            assertTrue(first.arrivals.last() <= 930.seconds, "ends 30 s before the wall: ${first.arrivals.last()}")
-            assertTrue(lines(again).any { "without saying when it resets" in it }, "holds again: ${again.describe()}")
-            assertEquals("overloaded_error", again.error?.type, "not P: ${again.describe()}")
-            assertTrue(provider.requests.size > sentFirst + 1, "the re-send probed again")
+            assertEquals(400, answer.status, answer.describe())
+            assertTrue(Family.P in answer.families(), answer.describe())
+            assertTrue("5-hour" in lineOf(answer), answer.describe())
+            assertTrue("did not say when it resets" in lineOf(answer), answer.describe())
+            assertTrue(answer.notices.isEmpty(), answer.describe())
+            assertFalse(answer.completed, answer.describe())
+            assertEquals(listOf(Duration.ZERO), provider.requests.map { it.at })
+            assertEquals(Duration.ZERO, time.passed())
         }
     }
 
@@ -553,7 +579,7 @@ internal class HoldBoundsThroughHeadsTest : HoldRouteFixtures() {
         @TempDir tmp: Path,
     ) = runTest {
         withScriptedHeads(tmp, VirtualTime()) {
-            provider.script(kimiFiveHour(), reply { anthropicAnswer("not reached") })
+            provider.script(kimiFiveHour(60.seconds), reply { anthropicAnswer("not reached") })
             val kimi = anthropic(replies = HeadReplies.kimi)
 
             val stream = kimi.client.open(launched(compaction()))
@@ -577,6 +603,10 @@ internal class HoldBoundsThroughHeadsTest : HoldRouteFixtures() {
             val head = chat()
 
             val stream = head.client.open(launched())
+            runClock(1.seconds, atMost = 2.minutes) { provider.requests.size >= 4 }
+            // The text arrives now, but noticeArrival needs the signature emitted when this block closes.
+            // Observe the text before advancing its wait; verify the completed signed notice below.
+            eventually { stream.soFar().events.any { "15 seconds" in it.data } }
             runClock(1.seconds, atMost = 2.minutes) { stream.finished }
             val answer = stream.finish()
 
@@ -593,15 +623,28 @@ internal class HoldBoundsThroughHeadsTest : HoldRouteFixtures() {
     fun `a provider sending only keepalive comments holds the turn until the session's wall, which it ends 30 s before`(
         @TempDir tmp: Path,
     ) = runTest {
-        // On a clock the test steps, so the head reads each keepalive as it comes, 20 s apart, as a slow provider's.
+        // The provider keepalives and the session wall share a manually stepped clock.
         withScriptedHeads(tmp, VirtualTime()) {
             provider.script(reply { repeat(KEEPALIVES) { keepalive(); delay(20.seconds) } })
             val head = chat(HeadShape(progressCap = 5.minutes))
             val turn = ClientRequest(headers = mapOf(WALL_HEADER to "960000"))
 
             val stream = head.client.open(turn)
+            // open() starts I/O on real dispatchers. Keep virtual time at zero until the head consumes the first
+            // keepalive, so the request-relative session wall cannot start after runClock has already advanced.
+            eventually { stream.finished || head.liveTurns.list().any { it.silence.seenOutput } }
             runClock(5.seconds, atMost = 16.minutes) { stream.finished }
-            assertTrue(stream.finished, "the live provider is held until the session wall")
+            assertTrue(stream.finished) {
+                val observed = stream.soFar()
+                val live = head.liveTurns.list().singleOrNull()
+                "the live provider is held until the session wall; " +
+                    "clock=${time.passed()} nextDue=${time.nextDue()} parked=${time.parkedNow()} " +
+                    "requests=${provider.requests.size} firstRequestAt=${provider.requests.firstOrNull()?.at} " +
+                    "phase=${live?.state?.javaClass?.simpleName} silence=${live?.silence} " +
+                    "watchdogHeld=${head.log.any { "holding the turn until its session's wall" in it }} " +
+                    "status=${observed.status} events=${observed.events.size} cut=${observed.cut} " +
+                    "readFailed=${observed.failure != null}"
+            }
             val answer = stream.finish()
 
             assertTrue(
@@ -658,8 +701,9 @@ internal abstract class HoldReplyFixtures {
         anthropicErrorBody("rate_limit_error", "This request would exceed your account's rate limit.")
     }
 
-    protected fun kimiFiveHour(): ScriptedReply = reply {
+    protected fun kimiFiveHour(retryAfter: Duration? = null): ScriptedReply = reply {
         status(TOO_MANY_REQUESTS)
+        retryAfter?.let { header("Retry-After", it.inWholeSeconds.toString()) }
         anthropicErrorBody("rate_limit_error", KIMI_FIVE_HOUR)
     }
 
@@ -709,7 +753,12 @@ internal abstract class HoldRouteFixtures : HoldReplyFixtures() {
     /** Moves the virtual clock to the next time something waits for, at most [step] at a time, once the head has
      *  settled after the last move, until [done] or [atMost]. A send a wake starts reaches the provider at the time
      *  it was due, not a step later: the clock does not move again until each wait the move woke has answered. */
-    protected suspend fun ScriptedHeads.runClock(step: Duration, atMost: Duration, done: () -> Boolean) =
+    protected suspend fun ScriptedHeads.runClock(
+        step: Duration,
+        atMost: Duration,
+        afterStep: suspend () -> Unit = {},
+        done: () -> Boolean,
+    ) =
         withContext(Dispatchers.Default) {
             while (!done() && time.passed() < atMost) {
                 settle()
@@ -718,9 +767,17 @@ internal abstract class HoldRouteFixtures : HoldReplyFixtures() {
                 val woken = time.parkedDues().count { it <= next }
                 val seen = answers()
                 time.advanceBy((next - now).coerceAtLeast(Duration.ZERO))
-                withTimeoutOrNull(ANSWER_MS) {
+                val answered = withTimeoutOrNull(ANSWER_MS) {
                     while (!done() && answers() < seen + woken) delay(POLL_MS)
+                    true
                 }
+                // An unanswered wake must fail here; moving time again would hide the unsettled fixture.
+                assertTrue(answered == true) {
+                    "stage=virtual_clock_wake_unanswered from=$now until=$next woken=$woken " +
+                        "answers_before=$seen answers_now=${answers()} done=${done()} " +
+                        "parked=${time.parkedNow()} next_due=${time.nextDue()} wait_guard_ms=$ANSWER_MS"
+                }
+                afterStep()
             }
         }
 

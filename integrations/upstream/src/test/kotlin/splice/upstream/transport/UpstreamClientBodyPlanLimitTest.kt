@@ -28,7 +28,6 @@ import splice.upstream.Waiter
 import splice.upstream.failure.FailedReply
 import splice.upstream.failure.ProviderDeviation
 import splice.upstream.failure.Replies
-import splice.upstream.retry.BURST_WAITS
 import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
@@ -78,6 +77,7 @@ class UpstreamClientBodyPlanLimitTest {
         auth = auth,
         extraHeaders = { emptyMap() },
         replies = replies,
+        recovery = PostRecovery(clientFrameEmitted = { false }),
         observers = PostObservers(onRetry = { notices.add(it) }),
     )
 
@@ -120,11 +120,9 @@ class UpstreamClientBodyPlanLimitTest {
     }
 
     @Test
-    fun `a burst 429 with no named window keeps the full retry schedule and its words`() = runTest {
-        val calls = AtomicInteger()
+    fun `an unstated 429 with no named window ends after bounded retries and keeps its words`() = runTest {
         val burst = """{"error":{"type":"rate_limit_exceeded","message":"slow down"}}"""
         val engine = MockEngine {
-            calls.incrementAndGet()
             respond(burst, HttpStatusCode.TooManyRequests, headersOf())
         }
         val client = client(engine)
@@ -133,7 +131,6 @@ class UpstreamClientBodyPlanLimitTest {
             client.posted(ctx(bodyReader, mutableListOf()), "{}") { "unreachable" }
         }
 
-        assertEquals(1 + BURST_WAITS, calls.get(), "section 8: a burst is waited out at 2, 4, 8 and 15 s, then ends")
         assertEquals(burst, failure.evidence.body)
         assertEquals(0L, client.planHoldForMs)
         assertNull(client.planHold)

@@ -1,9 +1,15 @@
 // NEW: V4-456 — transport milestones for one attempt, measured on the turn's monotonic clock.
 package splice.core.perf
 
+import splice.core.perf.observation.PerfEventKind
+
 /** A successful SSE request flush and first positive body read, never producer or event-queue time.
  *  Bind one instance to one attempt. Missing milestones remain absent in the snapshot. */
 public class UpstreamAttemptTiming(private val perf: TurnPerf) {
+    private val observations = perf.observations?.let {
+        it.update(it.scope.copy(transport = "http"))
+        it.attempt("http")
+    }
     private val lock = Any()
     private var writtenAt: Long? = null
     private var firstByteAt: Long? = null
@@ -11,12 +17,20 @@ public class UpstreamAttemptTiming(private val perf: TurnPerf) {
     private var headersDeliveredAt: Long? = null
     private var readCallAt: Long? = null
     private var readReturnedAt: Long? = null
-    private val attempt = perf.upstream.begin()
+    private val attempt = perf.upstream.begin(observations)
+
+    public fun finish(outcome: String) {
+        perf.upstream.beforeFinish(attempt)
+        observations?.finish(outcome)
+    }
 
     /** Called only after the SSE request's final body bytes have flushed successfully. */
     public fun written() {
         val at = perf.arrivalElapsedMs()
         synchronized(lock) {
+            if (writtenAt == null) {
+                observations?.observe(PerfEventKind.PROTOCOL_PROGRESS, mapOf("http_request_write_ms" to at.toDouble()))
+            }
             writtenAt = at
             publish()
         }
@@ -37,6 +51,12 @@ public class UpstreamAttemptTiming(private val perf: TurnPerf) {
     public fun headersDelivered() {
         val at = perf.arrivalElapsedMs()
         synchronized(lock) {
+            if (headersDeliveredAt == null) {
+                observations?.observe(
+                    PerfEventKind.PROTOCOL_PROGRESS,
+                    mapOf("http_response_headers_ms" to at.toDouble()),
+                )
+            }
             headersDeliveredAt = at
             publish()
         }
@@ -62,9 +82,15 @@ public class UpstreamAttemptTiming(private val perf: TurnPerf) {
     }
 
     /** Every positive read completion, before event decoding. The first also closes the write/read pair. */
-    public fun firstByte() {
+    public fun firstByte(bytes: Long = 0L) {
         val at = perf.arrivalElapsedMs()
         synchronized(lock) {
+            if (bytes > 0L) {
+                observations?.observe(
+                    PerfEventKind.PROTOCOL_PROGRESS,
+                    mapOf("upstream_bytes" to bytes.toDouble()),
+                )
+            }
             val returnedAt = perf.elapsedMs()
             readCallAt?.let { perf.intervals.record(PerfKeys.UP_READ_WAIT_MAX_MS, it, returnedAt, attempt = attempt) }
             readReturnedAt?.let {
@@ -73,6 +99,10 @@ public class UpstreamAttemptTiming(private val perf: TurnPerf) {
             readReturnedAt = returnedAt
             readCallAt = null
             if (firstByteAt == null) {
+                observations?.observe(
+                    PerfEventKind.PROTOCOL_PROGRESS,
+                    mapOf("http_first_body_byte_ms" to at.toDouble()),
+                )
                 firstByteAt = at
                 publish()
             }

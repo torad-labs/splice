@@ -54,6 +54,7 @@ internal class UsageMount(
     private val usageLookup = UsageHeadAdapter.consoleLookup(resolver, ports, config.statePaths)
     private val usagePayloads = UsagePayloads(usageHeads)
     private val perfPayloads = PerfPayloads(usageHeads)
+    private val performance = splice.app.control.perf.PerfMount(ports, guard)
 
     private val statusline = StatuslineMount(usageLookup, config, clientVersions, guard)
 
@@ -77,7 +78,7 @@ internal class UsageMount(
                 ConsoleWiring.sessionsByPid(config.statePaths),
             ),
         ),
-    )
+    ).also { it.performance = performance }
 
     // Settings > Your data's one window, with its own wiring: see HistoryWiring.
     private val history = HistoryWiring(ports, config, guard, fileIo, heads)
@@ -93,6 +94,7 @@ internal class UsageMount(
     fun nameAccounts(names: RecordedAccounts) = usageReads.nameAccounts(names)
 
     fun register(route: Route) {
+        performance.register(route)
         usageReads.register(route)
         route.get("/api/usage") { guard.guarded(call) { ControlReplies.respond(call, usagePayloads.usageJson()) } }
         route.post("/api/usage/probe") {
@@ -107,7 +109,13 @@ internal class UsageMount(
             }
         }
         route.get("/api/perf/summary") {
-            guard.guarded(call) { withContext(fileIo) { perfPayloads.summary(call) } }
+            guard.guarded(call) {
+                performance.work.source(call) {
+                    withContext(fileIo) {
+                        if (!performance.selected(call, "summary")) perfPayloads.summary(call)
+                    }
+                }
+            }
         }
         history.register(route)
         route.get("/api/budgets") { guard.guarded(call) { budgetRoutes.read(ports.budgetSpending).send(call) } }

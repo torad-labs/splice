@@ -1,11 +1,15 @@
 package splice.provider.codex
 
 import kotlinx.serialization.json.Json
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
+import splice.core.failure.CodeModeStorageFault
+import splice.core.failure.FailureCause
+import splice.core.failure.ProtocolFault
 import splice.core.util.LogSink
 import splice.provider.codex.state.save.StateDiskSpace
 import java.nio.file.Files
@@ -50,9 +54,16 @@ class CodeModeSaveFailureTextTest {
 
         val failure = assertThrows<CodeModePersistenceException> { store.save(oneRecord, emptyList()) }
 
-        val text = failure.outcome().evidence.message
+        val outcome = failure.outcome()
+        val cause = outcome.cause as FailureCause.Splice.Protocol
+        assertEquals(ProtocolFault.CODE_MODE_START, cause.fault)
+        assertEquals(CodeModeStorageFault.IO, cause.storage)
+        val text = outcome.evidence.message
         assertFalse(text.contains("full"), text)
-        assertTrue(text.contains("not-a-dir"), text)
+        assertTrue(text.contains("storage I/O failed"), text)
+        assertTrue(text.contains("check state storage access and health"), text)
+        assertFalse(text.contains("not-a-dir"), text)
+        assertFalse(text.contains(dir.toString()), text)
         assertTrue(text.contains("source was not rerun"), text)
     }
 

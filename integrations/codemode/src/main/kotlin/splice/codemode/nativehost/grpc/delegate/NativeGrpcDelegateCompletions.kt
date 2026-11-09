@@ -37,6 +37,7 @@ internal class NativeGrpcDelegateCompletions(
     }
 
     fun completeAsync(id: String, delegate: NativeGrpcDelegate, result: JsonObject) {
+        delegate.span?.replyReceived()
         val job = scope.launch(
             delegate.span?.coroutineContext ?: kotlin.coroutines.EmptyCoroutineContext,
             start = CoroutineStart.LAZY,
@@ -54,7 +55,7 @@ internal class NativeGrpcDelegateCompletions(
         if (delegate.isCancelled()) return
         // Codex notifications settle locally; AcknowledgeNotification is a host API for other clients.
         if (delegate.notification) {
-            answered(id, delegate)
+            answered(id, delegate, result)
             return
         }
         try {
@@ -62,17 +63,20 @@ internal class NativeGrpcDelegateCompletions(
             NativeGrpcDeadlines.startup("tool invocation completion") {
                 channel.unary(NativeGrpcRequest("CompleteToolCall", message, delegate.session.route, null))
             }
-            answered(id, delegate)
+            answered(id, delegate, result)
         } catch (error: StatusRuntimeException) {
+            delegate.span?.outcome("bad")
             // Only cancellation makes a missing invocation benign; an uncancelled failure closes its session.
             if (!delegate.isCancelled()) sink.failed(delegate.session, error)
         } catch (error: NativeGrpcProtocolException) {
+            delegate.span?.outcome("bad")
             if (!delegate.isCancelled()) sink.failed(delegate.session, error)
         }
     }
 
-    private fun answered(id: String, delegate: NativeGrpcDelegate) {
+    private fun answered(id: String, delegate: NativeGrpcDelegate, result: JsonObject) {
         if (pending.remove(id, delegate)) {
+            delegate.span?.outcome(if (JsonScalars.str(result, "status") == "error") "bad" else "good")
             sink.settled(delegate.session, delegate.cell, delegate.id)
             releaseTrace(id, delegate)
         }

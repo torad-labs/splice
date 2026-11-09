@@ -35,10 +35,12 @@ import splice.core.model.ModelRates
 import splice.core.model.ModelTierSuffix
 import splice.core.model.PublishedRates
 import splice.core.model.WindowRule
+import splice.core.topology.telemetry.TelemetryConfig
 
 @Serializable
 public data class Topology(
     val daemon: DaemonConfig = DaemonConfig(),
+    val telemetry: TelemetryConfig = TelemetryConfig(),
     val claude: ClaudeSharingDefaults = ClaudeSharingDefaults(),
     val compaction: CompactionConfig = CompactionConfig(),
     val defaults: Map<String, String> = emptyMap(),

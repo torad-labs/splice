@@ -38,6 +38,9 @@ public data class Usage(
     /** Only these observed buckets may become retained billing counters. Explicit zeros remain observations. */
     val reported: Set<UsageField> = ALL_USAGE_FIELDS,
 ) {
+    /** Actual measured components, separate from billing's default-zero policy. Old producers remain unknown. */
+    public val measured: Set<UsageMeasure> get() = origin.measured
+
     /** Every token this request wrote to the cache, at any TTL: the bucket the perf row's
      *  cache_write_tokens carries, and a disjoint part of [inputTokens]. */
     public val cacheWriteTokens: Long get() = cacheWrite.tokens
@@ -84,6 +87,7 @@ public data class Usage(
             recordedOutputTokens = origin.recordedOutputTokens + other.origin.recordedOutputTokens,
             clientContext = other.origin.clientContext ?: origin.clientContext,
             history = origin.history + other.origin.history,
+            measured = UsageMeasurements.added(this, other),
         ),
         reported = reported + other.reported,
     )
@@ -127,4 +131,6 @@ public data class UsageOrigin(
     val clientContext: Usage? = null,
     /** Requests billed before the final one, missing bills, and whether this value owns a final request. */
     val history: UsageHistory = UsageHistory(request = if (localStep) UsageRequest.NONE else UsageRequest.POSTED),
+    /** Actual measurement presence; billing defaults and unmodified producers do not provide proof. */
+    val measured: Set<UsageMeasure> = emptySet(),
 )

@@ -49,7 +49,7 @@ internal class InboxListener(
     }
 
     override fun onText(webSocket: WebSocket, data: CharSequence, last: Boolean): CompletionStage<*>? {
-        pulse.frame()
+        pulse.frame(data)
         if (!poisoned) acceptText(data, last)
         if (!poisoned) requestNext(webSocket)
         return null

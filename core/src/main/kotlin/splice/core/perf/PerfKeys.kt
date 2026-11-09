@@ -225,6 +225,13 @@ public object PerfKeys {
     public const val IN_TOKENS: String = "in_tokens"
     public const val CACHED_TOKENS: String = "cached_tokens"
 
+    /** Actual measurement presence, independent of the billing policy's synthesized zero buckets. */
+    public const val USAGE_OBSERVED_INPUT: String = "usage_observed_input"
+    public const val USAGE_OBSERVED_OUTPUT: String = "usage_observed_output"
+    public const val USAGE_OBSERVED_CACHE_READ: String = "usage_observed_cache_read"
+    public const val USAGE_OBSERVED_CACHE_WRITE: String = "usage_observed_cache_write"
+    public const val USAGE_OBSERVED_CACHE_WRITE_1H: String = "usage_observed_cache_write_1h"
+
     /** V4-85: prompt-cache WRITE tokens (cache_creation_input_tokens). A DISJOINT part of
      *  [IN_TOKENS], exactly as [CACHED_TOKENS] is — the row's `in_tokens` contains both — so the
      *  cache-MISS bucket is `in_tokens - cached_tokens - cache_write_tokens`. This key exists

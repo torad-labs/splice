@@ -2,6 +2,7 @@
 package splice.codemode.nativehost.grpc
 
 import com.google.protobuf.DynamicMessage
+import io.opentelemetry.context.Context
 import splice.codemode.nativehost.grpc.state.NativeGrpcAbandoned
 import splice.codemode.nativehost.grpc.state.NativeGrpcCallbackIds
 import splice.codemode.nativehost.grpc.state.NativeGrpcCallbackState
@@ -26,7 +27,13 @@ internal class NativeGrpcExecutions(
     private val callbacks = HashMap<String, NativeGrpcCallbackState>()
 
     @Synchronized
-    fun begin(session: NativeGrpcSession, operationId: Long, executionId: String, request: DynamicMessage) {
+    fun begin(
+        session: NativeGrpcSession,
+        operationId: Long,
+        executionId: String,
+        request: DynamicMessage,
+        context: Context = Context.current(),
+    ) {
         val key = session.localId to executionId
         check(executionId.isNotEmpty() && key !in executions) { "code-mode execution ID was empty or reused" }
         val tools = NativeGrpcFields.messages(request, "enabled_tools").associate { definition ->
@@ -39,6 +46,7 @@ internal class NativeGrpcExecutions(
             executionId,
             NativeGrpcFields.identifier(request, "tool_call_id"),
             tools,
+            context,
         )
         operations[operationId] = key
         if (session.localId !in callbacks) callbacks[session.localId] = NativeGrpcCallbackState()
@@ -112,7 +120,7 @@ internal class NativeGrpcExecutions(
             delegates.reject(execution.session, message, error)
         } else {
             state.invocations[id] = NativeGrpcPendingCallback(execution.session.localId to execution.executionId, cell)
-            delegates.tool(execution.session, message)
+            delegates.tool(execution.session, message, execution.traceContext)
         }
     }
 

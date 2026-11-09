@@ -45,6 +45,7 @@ internal class LocalAnswerRows(
         perf.mark(PerfKeys.TOTAL)
         perf.setCount(PerfKeys.LOCAL_STEP, 1)
         perf.setCount(PerfKeys.ACTIVITY_QUERY, 1)
+        UsageObservation.record(perf, perf.snapshot())
         perfStats.record(
             PerfRowMeta(
                 wireModel,

@@ -12,6 +12,14 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 internal object NativeGrpcResponses {
+    /** A successful RPC can still carry a failed script; cancellation keeps its own outcome. */
+    fun performanceOutcome(message: DynamicMessage): String {
+        if (NativeGrpcFields.optional(message, "terminated") != null) return "cancelled"
+        val completed = NativeGrpcFields.optional(message, "completed")
+        val error = completed?.let { NativeGrpcWire.value(it, "error_text") as? String }
+        return if (error != null) "bad" else "good"
+    }
+
     fun outcome(message: DynamicMessage, buffered: ULong = 0u): JsonObject {
         val kind = when {
             NativeGrpcFields.optional(message, "yielded") != null -> "Yielded"

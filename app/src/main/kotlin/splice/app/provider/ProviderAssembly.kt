@@ -40,6 +40,8 @@ internal class ProviderAssembly(
     private val grokResponsesArm = GrokResponsesArm(probeScope, log, grokRefresh, statePaths)
     private val apiKeyResponsesArm = ApiKeyResponsesArm(statePaths)
     private val codexResponsesArm = CodexResponsesArm(statePaths, probeScope, log, refreshCall)
+    internal var performance: splice.app.observability.PerfTelemetry? = null
+        set(value) { field = value; codexResponsesArm.performance = value }
     internal val codeModeControls get() = codexResponsesArm.codeModeControls
     internal val codeModeCatalogs get() = codexResponsesArm.codeModeCatalogs
     private val responsesArm = ResponsesArm(grokResponsesArm, apiKeyResponsesArm, codexResponsesArm)

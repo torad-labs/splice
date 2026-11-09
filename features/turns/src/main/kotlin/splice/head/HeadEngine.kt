@@ -111,6 +111,7 @@ internal class HeadEngine(
             Netty,
             serverConfig {
                 module {
+                    admission.observeRequests(this)
                     ingress.install(this)
                     install(SSE)
                     // v0.4.0: a DNS-rebinding page is refused before routing (ClientAuth.admitsHost).

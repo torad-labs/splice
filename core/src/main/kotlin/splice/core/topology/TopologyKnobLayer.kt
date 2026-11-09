@@ -27,6 +27,8 @@ public class TopologyKnobLayer(private val topology: Topology) {
     public fun configOverrides(): Map<String, String> {
         val daemon = topology.daemon
         val out = LinkedHashMap(topology.defaults)
+        out.remove("perf_collection_enabled")?.let { out["perfCollectionEnabled"] = it }
+        out.putAll(topology.telemetry.operator.knobs())
         daemon.controlPort?.let { out["controlPort"] = it.toString() }
         daemon.showReasoning?.let { out["showReasoning"] = it }
         daemon.summary?.let { out["summary"] = it }

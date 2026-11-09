@@ -15,6 +15,7 @@ import okhttp3.MediaType
 import okhttp3.RequestBody
 import okio.BufferedSink
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -25,11 +26,18 @@ import splice.core.memory.HeapBudget
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicTurnBody
+import splice.core.perf.observation.PerfEventKind
+import splice.core.perf.observation.PerfIdentity
+import splice.core.perf.observation.PerfObservation
+import splice.core.perf.observation.PerfObserver
+import splice.core.perf.observation.PerfRecorder
+import splice.core.perf.observation.aggregate.PerfAccumulator
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
 import splice.core.util.MonoClock
+import splice.core.util.WallClock
 import splice.dialect.responses.ReasoningSettings
 import splice.head.admission.RequestMaterializationGate
 import splice.upstream.BuiltTurn
@@ -44,6 +52,7 @@ import splice.upstream.transport.UpstreamTransport
 import java.net.Socket
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
@@ -75,6 +84,38 @@ class RequestStartTimingTest {
                 assertEquals(2_000L, duration(row, "pre_admission_ms"), row.toString())
                 assertEquals(0L, duration(row, "total"), "legacy stages keep their existing origin")
                 assertEquals(2_000L, duration(row, CLIENT_BYTE_KEY), row.toString())
+                val observed = rig.observations.snapshot().points
+                assertEquals(1.0, observed.filter { it.metric == "requests_arrived" }.sumOf { it.sum })
+                assertEquals(1.0, observed.filter { it.metric == "requests_finished" }.sumOf { it.sum })
+                assertEquals(2_000.0, observed.filter { it.metric == CLIENT_BYTE_KEY }.sumOf { it.sum })
+                assertEquals(2_000.0, observed.filter { it.metric == "arrival_to_first_text_ms" }.sumOf { it.sum })
+                assertNull(rig.recorded.single { it.kind == PerfEventKind.REQUEST_ARRIVED }.scope.local)
+                assertEquals(false, rig.recorded.single { it.kind == PerfEventKind.REQUEST_FINISHED }.scope.local)
+                val usage = rig.recorded.single { it.kind == PerfEventKind.USAGE_RECORDED }
+                assertTrue((usage.values["input_tokens"] ?: 0.0) > 0.0, usage.toString())
+                assertEquals(false, usage.scope.local)
+            }
+        }
+
+    @Test
+    fun `actual local answers refine unknown arrivals and report no provider usage`(@TempDir root: Path) =
+        runBlocking<Unit> {
+            TimingRig(root).use { rig ->
+                rig.start()
+                val reply = timingPost(
+                    rig.port,
+                    "local",
+                    stream = false,
+                    content = "Describe your most recent action in 3-5 words using present tense (-ing).",
+                )
+                assertTrue(reply.contains("Reading the request"), reply)
+                timingRow(root, "local")
+                assertNull(rig.recorded.single { it.kind == PerfEventKind.REQUEST_ARRIVED }.scope.local)
+                assertEquals(true, rig.recorded.single { it.kind == PerfEventKind.REQUEST_FINISHED }.scope.local)
+                val usage = rig.recorded.single { it.kind == PerfEventKind.USAGE_RECORDED }
+                assertEquals(mapOf("missing_usage" to 0.0), usage.values)
+                assertEquals(true, usage.scope.local)
+                assertTrue(rig.recorded.none { it.kind == PerfEventKind.ATTEMPT_STARTED })
             }
         }
 
@@ -147,6 +188,27 @@ class RequestStartTimingTest {
                         assertTrue(refused.startsWith("HTTP/1.1 529"), refused)
                         assertTrue(refused.contains("overloaded_error"), refused)
                         assertEquals(1, rig.gate.snapshot().inflight)
+                        // The client can read the refusal before the finalizer updates the accumulator.
+                        awaitTiming("the refused request reached terminal accounting") {
+                            rig.observations.snapshot().points.any {
+                                it.metric == "requests_finished" && it.sum > 0.0
+                            }
+                        }
+                        val observed = rig.observations.snapshot().points
+                        assertEquals(2.0, observed.filter { it.metric == "requests_arrived" }.sumOf { it.sum })
+                        assertEquals(1.0, observed.filter { it.metric == "requests_finished" }.sumOf { it.sum })
+                        assertTrue(
+                            rig.recorded.filter { it.kind == PerfEventKind.REQUEST_ARRIVED }
+                                .all { it.scope.local == null },
+                        )
+                        val terminal = rig.recorded.single { it.kind == PerfEventKind.REQUEST_FINISHED }
+                        assertNull(terminal.scope.local, terminal.toString())
+                        assertTrue(
+                            rig.recorded.none {
+                                it.kind == PerfEventKind.USAGE_RECORDED &&
+                                    it.links.requestId == terminal.links.requestId
+                            },
+                        )
                     } finally {
                         hold.close()
                     }
@@ -207,6 +269,19 @@ private class TimingRig(
     val provider = TimingProvider(timingProvider(upstream.baseUrl), prepDelay)
     val gate = InflightGate(maxInflight = { maxInflight }, maxQueued = { 4 })
     val heap = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, heapBytes))
+    private val elapsed = clock ?: write?.clock ?: ElapsedClock(MonoClock::nowMs)
+    private val identity = PerfIdentity("timing", "test", "test", "test")
+    val observations = PerfAccumulator(identity)
+    val recorded = CopyOnWriteArrayList<PerfObservation>()
+    private val recorder = PerfRecorder(
+        identity,
+        PerfObserver {
+            recorded += it
+            observations.record(it)
+        },
+        elapsed,
+        WallClock(System::currentTimeMillis),
+    )
     private val head = HeadServer(
         provider,
         0,
@@ -217,9 +292,14 @@ private class TimingRig(
             log = {},
             seams = HeadDeps.HeadSeams(
                 requestMaterializationGate = heap,
-                clock = clock ?: write?.clock ?: ElapsedClock(MonoClock::nowMs),
+                clock = elapsed,
             ),
-        ).let { deps -> deps.copy(traffic = deps.traffic.copy(models = models)) },
+        ).let { deps ->
+            deps.copy(
+                traffic = deps.traffic.copy(models = models),
+                stores = deps.stores.copy(captures = deps.stores.captures.copy(observations = recorder)),
+            )
+        },
     )
     val port: Int get() = head.port
 
@@ -315,12 +395,12 @@ private suspend fun awaitTiming(what: String, condition: () -> Boolean) {
     }
 }
 
-private fun timingBody(label: String, stream: Boolean = true): String =
+private fun timingBody(label: String, stream: Boolean = true, content: String = "synthetic timing"): String =
     """{"model":"synthetic-synthetic","stream":$stream,"max_tokens":64,"system":"$label",""" +
-        """"messages":[{"role":"user","content":"synthetic timing"}]}"""
+        """"messages":[{"role":"user","content":"$content"}]}"""
 
-private fun timingPost(port: Int, label: String, stream: Boolean = true): String {
-    val body = timingBody(label, stream)
+private fun timingPost(port: Int, label: String, stream: Boolean = true, content: String = "synthetic timing"): String {
+    val body = timingBody(label, stream, content)
     return Socket("127.0.0.1", port).use { socket ->
         socket.soTimeout = TIMING_TIMEOUT_MS.toInt()
         val request = "POST /v1/messages HTTP/1.1\r\nHost: 127.0.0.1:$port\r\n" +

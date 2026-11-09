@@ -19,6 +19,7 @@ import splice.core.wire.ControlFields.HEADS
 import splice.core.wire.ControlFields.KEY
 import splice.core.wire.ControlFields.LABEL
 import splice.usage.UsageHeads
+import splice.usage.perf.query.PerfQueryHttp
 
 public class PerfPayloads(
     private val heads: UsageHeads,
@@ -31,6 +32,9 @@ public class PerfPayloads(
      *  window is 24h; an unknown one is refused with 400, never answered with a different window
      *  (the CLI refuses the same input). */
     public suspend fun summary(call: ApplicationCall) {
+        if (PerfQueryHttp.selected(call, null, "summary", clock())) {
+            return
+        }
         val label = call.request.queryParameters["window"]
         val window = if (label == null) PerfWindow.H24 else summary.window(label)
         if (window == null) {

@@ -194,6 +194,20 @@ splice peer codex attach 019a2f6c-4b1e-7c3d-9e8f-0a1b2c3d4e5f --codex-home ~/.co
 splice peer codex detach
 ```
 
+To give an existing named peer automatic delivery into a Codex conversation, attach it with
+`--peer-name <name>`. For example:
+
+```
+splice peer codex attach 019a2f6c-4b1e-7c3d-9e8f-0a1b2c3d4e5f --peer-name research --codex-home ~/.codex --cwd ~/work
+```
+
+The name must already be registered. Its session ID, key, send scope and inbox stay in place.
+The first Codex connection skips mail already acknowledged through the CLI inbox and delivers pending
+mail. Existing Codex delivery records and interrupted handovers keep their own recovery cursor.
+Later hook attachments find the same peer by thread ID, and `codex detach <thread>` revokes that
+peer by its actual name. A peer already bound to another thread, or a thread already bound to a
+different peer, is refused. Revoke the old binding explicitly before assigning a different one.
+
 Codex does not set `$CODEX_THREAD_ID` or `$CODEX_SESSION_ID` in a hook's environment (codex-cli 0.159). It writes one
 JSON object to the command's stdin. The thread id is `session_id` and the working directory, when the object carries
 it, is `cwd`. Those are the fields on `SessionStart`, `UserPromptSubmit` and `SessionEnd`
@@ -240,22 +254,26 @@ line on stderr. A daemon that is down, or that answers 404 or any other refusal,
 that command's usual code. Exit 2 is the usage code at a terminal; Codex and Claude Code both treat it as "block this
 turn", so a hook never exits 2.
 
-An attach that finds the peer as asked changes nothing and answers once its helper runs. Attach is refused when no
-Codex app-server listens on the home's `app-server-control/app-server-control.sock` (or the daemon its
-`app-server-daemon/daemon.pid` names), because no message could reach the thread then. It is refused too when that
-app-server has not loaded the thread: attach reads the thread there before it registers anything. A thread run with
-`codex --no-daemon`, or by a Codex that runs its own app-server and listens on no socket, as the ChatGPT desktop app did
-on 2026-10-30, is not on the home's app-server, so it cannot be a peer.
+An attach that finds the peer as asked changes nothing and answers once its helper runs. For a ChatGPT desktop chat,
+Splice first discovers its existing owner through the home's private `ipc/ipc.sock`. The desktop owner forwards the
+input to its own app-server and preserves the chat's current model, effort, permissions and workspace. Attachment
+does not start or resume the chat in a second app-server.
+
+If the desktop does not own the thread, Splice checks `app-server-control/app-server-control.sock` (or the daemon its
+`app-server-daemon/daemon.pid` names). Attach is refused when neither endpoint owns a loaded thread. A standalone
+`codex --no-daemon` session without a reachable control interface still cannot receive automatic delivery.
 
 Attach looks up its own ancestry for the nearest process running `codex`. When it finds one, the peer's registry
 record carries a `lifecycleBinding` (version 1) naming that process as the thread's native owner and the peer's
 helper as the process that receives for it, which is how Fence tells which conversation a Codex hook belongs to. The
 binding is written only while that process is still the one named.
 
-The helper hands each message it receives to the thread with the app-server's `turn/start`, one at a time and in
-order, in Claude Code's own envelope (`<cross-session-message from="…" from-name="…">`), with the message's id as
-the input's client id. The thread answers with `splice peer send`, which inside the conversation acts as its codex
-peer without `--as`:
+The helper submits messages in order, in Claude Code's own envelope
+(`<cross-session-message from="…" from-name="…">`), with the message's id as the input's client id. A shared
+app-server receives `turn/start`; a desktop chat receives input through its owner's normal turn admission. Handling
+of an already active chat follows that installed desktop's admission behavior. Splice does not force an interruption
+or override the chat's settings. The thread answers with `splice peer send`, which inside the conversation acts as
+its codex peer without `--as`:
 
 ```
 splice peer send gary "the gate is green"
@@ -263,15 +281,25 @@ splice peer inbox
 ```
 
 Each hand-over is journaled as a `codex` record: `issuing` before the request goes out, then `started` with the turn
-Codex named, `refused` with Codex's reason, or `unconfirmed` when the request went out and no answer came. Nothing is
+Codex named, `refused` with Codex's reason, or `unconfirmed` when acceptance could not be established. Nothing is
 handed over twice. A helper that stops between `issuing` and its outcome leaves the next helper to read the thread's
-history: `started` when the history holds the message, `unconfirmed` otherwise, never a second send. A message Codex
+history: `started` when the history holds the message, `unconfirmed` otherwise, never a second send. Desktop IPC does
+not expose a complete read-only message history; a desktop hand-over interrupted by a helper restart therefore stays
+`unconfirmed`. A message Codex
 refused gets a `dropped` receipt, so its sender learns the thread never saw it. The record's status is `busy` while
 the thread runs a turn and `idle` otherwise.
 
 When the thread closes or unloads, or its app-server closes the connection, the helper journals `ended` and stops,
 and the daemon revokes the peer; its journal stays. A thread that loads again attaches again from its next hook. The
 helper answers no request the app-server makes of it, such as an approval, and grants the thread no tool.
+
+Desktop lifecycle tracking consumes the versioned state stream but retains only thread status, not its transcript.
+Large desktop snapshots are parsed as a stream and their conversation content is skipped. An unsupported stream
+version, missing initial status, or a frame exceeding the desktop's 256 MiB protocol limit stops the connection
+rather than claiming that delivery is available. Retained routing and status strings are limited to 1,024 characters;
+response frames are capped at 1 MiB. Outgoing input remains bounded at 8 MiB. IPC writes and reply waits
+have deadlines. A partial write or desktop error after forwarding is recorded as `unconfirmed`, because the desktop
+may have accepted the input before its reply was lost.
 
 A codex peer does not count against the 16 peers a user registers by hand; at most 64 Codex threads are peers at
 once. `splice peer codex detach` revokes one at once, and `--purge` deletes its journal too.

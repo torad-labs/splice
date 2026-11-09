@@ -9,6 +9,7 @@ import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { layout } from "../gate/src/lib/repo.ts";
+import { performanceSummary, performanceRows } from "./usage-performance-fixture.ts";
 
 const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const now = Date.now();
@@ -30,6 +31,7 @@ const askedAccounts: (string | null)[] = []; // the account each plan read named
 let slowWeek = false; // while set, the 5-hour read stays pending
 const NOPROJ = group("primary", { requests: 3, input_tokens: 9_000, output_tokens: 1_000, plan_requests: 3, plan_value_usd: 0.01 }); // its requests with no project
 const askedProjects: (string | null)[] = []; // the project each read named
+const performanceReads: URL[] = [];
 const WEEK_DAY = new Date().toLocaleDateString("en-CA");
 
 const server = Bun.serve({
@@ -44,12 +46,18 @@ const server = Bun.serve({
     if (path === "/api/sessions") return Response.json({ sessions: [] });
     if (path === "/api/topology") return Response.json({ topology: { providers: {} } });
     if (path.endsWith("/turns/live")) return Response.json({ turns: [] });
+    if (url.searchParams.get("contract") === "1") performanceReads.push(url);
+    if (path === "/api/perf/summary") {
+      const count = url.searchParams.get("project") === "none" ? 3 : url.searchParams.get("account") === "plan-selector" ? 7 : 1_234_574;
+      return Response.json(performanceSummary(url, { plan: { count, local_steps: 0, read_status: "readable", metrics_complete: true, failure_share: 0, outcomes: { ok: count }, models: {} } }));
+    }
     if (path === "/api/perf/turns") {
       const head = url.searchParams.get("head"), held = Number(url.searchParams.get("n"));
       if (url.searchParams.get("since") && slowWeek && head === "plan" && held === 1 && url.searchParams.getAll("ask").length) await Bun.sleep(4000);
       if (head === "plan") askedAccounts.push(url.searchParams.get("account"));
       const asked = url.searchParams.get("account"), both = head === "plan" && twoLabels && !asked && !named;
       askedProjects.push(url.searchParams.get("project"));
+      if (url.searchParams.get("contract") === "1") return Response.json(performanceRows(url));
       const g = url.searchParams.get("project") === "none" ? NOPROJ : head === "plan" ? (named ? NAMED : asked === "plan-selector" ? SECOND : PLAN) : KEY;
       const totals = group("totals", both ? { ...g, requests: (PLAN.requests as number) + (SECOND.requests as number) } : g);
       const usage = { totals, accounts: both ? [PLAN, SECOND] : [g], models: [], sessions: [], days: [group(WEEK_DAY, g)] };
@@ -160,6 +168,38 @@ test("Usage: a login the daemon names is read by its label alone and asked for b
   }
 }, 60_000);
 
+test("Usage: a ref-less merged account pauses Performance until one exact ID narrows both views", async () => {
+  twoLabels = true;
+  const p = await open();
+  try {
+    const rows = p.locator(".brow", { hasText: "Primary" });
+    await expect(rows.first().locator(".num").nth(1)).toContainText("1,234,574", { timeout: 20_000 });
+    await expect(p.locator('#band-perf [data-pc-command="plan"]')).toBeVisible();
+    performanceReads.length = 0; askedAccounts.length = 0;
+    await rows.first().click();
+    await expect(p.locator("#band-perf")).toContainText("Cohort unavailable: this account uses multiple recorded IDs");
+    await expect.poll(() => [...new Set(askedAccounts)].filter(Boolean).sort().join(",")).toBe("plan-selector,primary");
+    expect(performanceReads).toHaveLength(0);
+    await expect(p.locator('#band-perf [name="account"] option')).toHaveText(["Choose one ID", "primary", "plan-selector"]);
+    await expect(p.locator("#band-perf .pc-heading a")).toHaveCount(0);
+    // The button cannot silently clear the unavailable union into an unfiltered query.
+    await p.getByRole("button", { name: "Apply cohort", exact: true }).click();
+    await expect(p.locator("#band-perf .pc-message")).toContainText("Choose one recorded account ID");
+    expect(performanceReads).toHaveLength(0);
+    askedAccounts.length = 0;
+    await p.locator('#band-perf [name="account"]').selectOption("plan-selector");
+    await p.getByRole("button", { name: "Apply cohort", exact: true }).click();
+    await expect(p.locator('#band-perf [data-pc-command="plan"] > summary > span').nth(1)).toHaveText(/^Requests\s*7$/);
+    await expect.poll(() => [...new Set(askedAccounts)].filter(Boolean).join(",")).toBe("plan-selector");
+    expect(performanceReads.length).toBeGreaterThan(0);
+    expect(performanceReads.every((u) => u.searchParams.get("head") === "plan" && u.searchParams.get("account") === "plan-selector")).toBe(true);
+    await expect(p.locator("#band-perf")).not.toContainText("Cohort unavailable:");
+  } finally {
+    twoLabels = false;
+    await p.context().close();
+  }
+}, 60_000);
+
 test("Usage: a window change keeps the plans and the headings drawn and stripes only where the window's figures go", async () => {
   const p = await open();
   try {
@@ -199,7 +239,7 @@ test("Usage: a breakdown row opens its requests on Requests with the account car
 }, 60_000);
 
 test("Usage: the No project pick reads only the requests with no project, as project=none", async () => {
-  askedProjects.length = 0;
+  askedProjects.length = 0; performanceReads.length = 0;
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const p = await context.newPage();
   try {
@@ -207,6 +247,9 @@ test("Usage: the No project pick reads only the requests with no project, as pro
     await expect(p.locator(".brow .num.open").first()).toHaveText("3", { timeout: 20_000 });
     expect(askedProjects).toContain("none");
     expect(askedProjects).not.toContain("-");
+    await expect(p.locator('#band-perf [data-pc-command="plan"] > summary > span').nth(1)).toHaveText(/^Requests\s*3$/);
+    expect(performanceReads.length).toBeGreaterThan(0);
+    expect(performanceReads.every((u) => u.searchParams.get("project") === "none")).toBe(true);
   } finally {
     await context.close();
   }

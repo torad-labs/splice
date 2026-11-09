@@ -19,7 +19,9 @@ internal class NativeGrpcDelegate(
 
     @Synchronized
     fun cancel() {
-        cancelled.set(true)
+        if (!cancelled.compareAndSet(false, true)) return
+        span?.outcome("cancelled")
+        span?.phase(mapOf("tool_cancelled" to 1.0))
         job?.cancel()
         if (job == null) span?.close()
     }

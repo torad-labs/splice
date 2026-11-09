@@ -29,7 +29,12 @@ internal class ExportTraces : AutoCloseable {
     private fun start(event: ExportEvent) {
         val key = key(event) ?: return
         if (key !in active) {
-            val lease = if (active.size < MAX_ACTIVE) PerfWorkBudget.acquire(SPAN_BYTES) else null
+            if (active.size >= MAX_ACTIVE) {
+                val oldest = active.entries.iterator().next()
+                active.remove(oldest.key)?.lease?.close()
+                dropped++
+            }
+            val lease = PerfWorkBudget.acquire(SPAN_BYTES)
             if (lease == null) dropped++ else active[key] = ExportStarted(event, lease)
         }
     }

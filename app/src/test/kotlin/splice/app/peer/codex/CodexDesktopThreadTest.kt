@@ -17,6 +17,7 @@ import splice.sessions.peer.codex.CodexBinding
 import splice.sessions.peer.codex.TurnStart
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermission.GROUP_READ
 import java.nio.file.attribute.PosixFilePermission.OWNER_EXECUTE
 import java.nio.file.attribute.PosixFilePermission.OWNER_READ
 import java.nio.file.attribute.PosixFilePermission.OWNER_WRITE
@@ -186,6 +187,23 @@ class CodexDesktopThreadTest {
             unownedFixture.close()
         }
         assertTrue(fallback is CodexOpen.Gone)
+    }
+
+    @Test
+    fun `desktop socket with group access is rejected before connecting`(@TempDir directory: Path) = runBlocking {
+        val home = directory.resolve("codex-home-insecure")
+        val conversationId = "conversation-insecure-desktop"
+        val socketPath = home.resolve("ipc/ipc.sock")
+        val fixture = CodexDesktopStandIn(socketPath, conversationId)
+        Files.setPosixFilePermissions(socketPath.parent, setOf(OWNER_READ, OWNER_WRITE, OWNER_EXECUTE))
+        Files.setPosixFilePermissions(socketPath, setOf(OWNER_READ, OWNER_WRITE, GROUP_READ))
+
+        val opened = try {
+            CodexAppServers(Dispatchers.IO).open(CodexBinding(conversationId, home.toString(), null))
+        } finally {
+            fixture.close()
+        }
+        assertTrue(opened is CodexOpen.Gone)
     }
 }
 

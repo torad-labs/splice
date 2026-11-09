@@ -12,6 +12,7 @@ import splice.core.perf.observation.PerfObservation
 import splice.core.perf.observation.PerfObserver
 import splice.core.perf.observation.PerfRecorder
 import splice.core.util.ElapsedClock
+import splice.core.util.PerfWorkBudget
 import splice.core.util.WallClock
 import splice.observability.OBSERVABILITY_NANOS_PER_MILLISECOND
 
@@ -93,6 +94,24 @@ class ExportRequestTraceTest {
             assertTrue(output.observations.all { it.kind.name.startsWith("TOOL_") })
             assertTrue(output.observations.all { it.links.requestId == null && it.links.attemptId == null })
         }
+    }
+
+    @Test
+    fun `full correlation table evicts oldest start and continues exporting new traces`() {
+        val before = PerfWorkBudget.retainedBytes()
+        ExportTraces().use { traces ->
+            fun event(kind: PerfEventKind, id: Int): ExportEvent = ExportEvents.of(
+                ExportFixtures.event(kind, at = id.toLong()),
+            ).copy(trace = ExportEvents.of(ExportFixtures.event(kind)).trace.copy(requestId = "request-$id"))
+
+            repeat(513) { id -> traces.accept(event(PerfEventKind.REQUEST_ARRIVED, id)) }
+
+            assertNull(traces.accept(event(PerfEventKind.REQUEST_FINISHED, 0)))
+            val latest = traces.accept(event(PerfEventKind.REQUEST_FINISHED, 512))
+            assertTrue(latest?.spanContext?.isValid == true)
+            assertEquals(2L, traces.dropped)
+        }
+        assertEquals(before, PerfWorkBudget.retainedBytes())
     }
 }
 

@@ -11,6 +11,7 @@ import java.io.IOException
 import java.net.StandardProtocolFamily
 import java.net.UnixDomainSocketAddress
 import java.nio.channels.SocketChannel
+import java.nio.file.FileSystems
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
@@ -59,16 +60,21 @@ internal class CodexDesktopServers(private val io: CoroutineDispatcher) {
         }
     }
 
-    private fun secure(path: Path): Boolean = try {
-        val uid = Files.getAttribute(Path.of("/proc/self"), "unix:uid")
-        NativeCodexSocketPath().present(path) && listOf(path, path.parent).all { file ->
-            val attributes = Files.readAttributes(file, "unix:uid,mode", LinkOption.NOFOLLOW_LINKS)
-            val mode = attributes["mode"] as? Int
-            attributes["uid"] == uid && mode != null && mode and OTHER_ACCESS_BITS == 0
+    private fun secure(path: Path): Boolean {
+        return try {
+            val userName = System.getProperty("user.name") ?: return false
+            val owner = FileSystems.getDefault().userPrincipalLookupService.lookupPrincipalByName(userName)
+            NativeCodexSocketPath().present(path) && listOf(path, path.parent).all { file ->
+                val mode = Files.getAttribute(file, "unix:mode", LinkOption.NOFOLLOW_LINKS) as? Int
+                Files.getOwner(file, LinkOption.NOFOLLOW_LINKS) == owner && mode != null &&
+                    mode and OTHER_ACCESS_BITS == 0
+            }
+        } catch (_: IOException) {
+            false
+        } catch (_: SecurityException) {
+            false
+        } catch (_: UnsupportedOperationException) {
+            false
         }
-    } catch (_: IOException) {
-        false
-    } catch (_: UnsupportedOperationException) {
-        false
     }
 }

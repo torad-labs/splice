@@ -17,8 +17,9 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(data)); return;
   }
   if (url.pathname === '/' || url.pathname === '/preview.html') {
+    const theme = url.searchParams.get('theme') === 'day' ? 'day' : 'night';
     res.writeHead(200, { 'content-type': 'text/html' });
-    res.end(`<!doctype html><html data-theme="${url.searchParams.get('theme') || 'night'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Splice performance fixture</title><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/console.css"><link rel="stylesheet" href="/perf-heads.css"></head><body><div class="app"><main class="page"><header class="head"><h1>Usage</h1></header><div id="fixture"></div></main></div><script src="/api.js"></script><script src="/perf-heads.js"></script><script>
+    res.end(`<!doctype html><html data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Splice performance fixture</title><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/console.css"><link rel="stylesheet" href="/perf-heads.css"></head><body><div class="app"><main class="page"><header class="head"><h1>Usage</h1></header><div id="fixture"></div></main></div><script src="/api.js"></script><script src="/perf-heads.js"></script><script>
 let query=PERF_CONSOLE.fromAddress({window:'5h',filters:{project:'splice',local:'0'},objective_id:'interactive'});
 const view=PERF_CONSOLE.create({document,API,setTimeout,clearTimeout,setInterval},{id:'fixture',query:()=>query,apply:q=>{query=q}});document.querySelector('#fixture').innerHTML=view.html();window.fixture={view,API};
 </script></body></html>`); return;

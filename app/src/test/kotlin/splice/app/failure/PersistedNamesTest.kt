@@ -422,6 +422,22 @@ class PersistedNamesTest {
     }
 
     @Test
+    fun `an answer cut at its cap with nothing in it writes empty_model and no cause`(@TempDir tmp: Path) = runTest {
+        withScriptedHeads(tmp) {
+            // finish_reason length closes no message (ChatTerminalState.onFinish reads it as incomplete), so the empty
+            // round is the model's empty output: EmptyAnswerRetry posts it once more, then StreamPromote ends it as
+            // empty_model with no cause.
+            provider.script(reply { event(ROLE_ONLY_CHUNK); chatEnd("length") })
+            val head = chat()
+            head.client.send()
+
+            val ended = HeadRecords(head).ended()
+            assertEquals(OutcomeTag.EMPTY_MODEL.wire, ended.outcome)
+            assertNull(ended.cause)
+        }
+    }
+
+    @Test
     fun `a custom tool call the dialect cannot carry writes DIALECT_UNSUPPORTED`(@TempDir tmp: Path) = runTest {
         withScriptedHeads(tmp) {
             // RoundStrategy: a custom_tool_call item on a round with no interceptor for it.

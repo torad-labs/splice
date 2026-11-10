@@ -222,7 +222,9 @@ internal class TurnPreparation(
                 FailureCause.Splice.Stopped(StoppedBy.CONSOLE),
                 asked.copy(detail = "re-send of a stopped turn refused (no upstream turn)"),
             )
-        else -> provider.requestRefusal(parsed)?.let { Preparation.Rejected(it.cause, asked) }
+        else -> provider.requestRefusal(parsed)?.let { refused ->
+            Preparation.Rejected(refused.cause, refused.detail?.let { asked.copy(detail = it) } ?: asked)
+        }
     }
 
     /** V4-265: a working session's own turn is its activity sample, at the side query's pace; see

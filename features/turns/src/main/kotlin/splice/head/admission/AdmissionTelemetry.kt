@@ -15,6 +15,7 @@ import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
 import io.ktor.util.AttributeKey
 import kotlinx.coroutines.CancellationException
+import splice.core.perf.LivenessProbe
 import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.perf.TimedWork
@@ -83,8 +84,12 @@ internal object RequestObservation {
     }
 
     suspend fun run(call: ApplicationCall, deps: HeadDeps, head: String, arrivalAt: Long, work: TimedWork<Unit>) {
-        // Routing reuses the listener's handle. Direct handler callers still own one from this point.
-        if (of(call) != null) {
+        // Routing reuses the listener's handle. Direct handler callers still own one from this point. The daemon's own
+        // liveness probe is no request (2026-11-09 audit): it posted every 30 s to every head and finished as "?",
+        // two thirds of perf-evidence's finished rows, so a refused or unnamed real request read like one. Its header
+        // alone refuses dispatch (ClientAuth), so leaving it out hides no work, and V4-454 already keeps it off the
+        // head's perf file.
+        if (of(call) != null || call.request.headers.getAll(LivenessProbe.PROBE_HEADER_NAME) != null) {
             work()
             return
         }

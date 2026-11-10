@@ -52,6 +52,7 @@ internal class ControlHealthReport(
             putQuotaResets(this, nowEpochMillis)
             putQuotaFull(this)
             putHeldTurns(this)
+            putRefusing(this)
             // JW-04: the booted config identity — an edited splice.toml used to be silently inert
             // (topology loads once by design; nothing anywhere compared disk to boot). Stale is
             // recomputed per request and fails OPEN on an unreadable file. V4-162: the digest is the
@@ -99,6 +100,17 @@ internal class ControlHealthReport(
                     }
                 }
             }
+        }
+    }
+
+    /** 2026-11-09 audit: each head refusing every request, as `refusingHeads: {head: {reason, refusedInRow,
+     *  sinceEpochMillis}}`; absent while every head admits, so a healthy daemon's shape is unchanged. It does not move
+     *  `ok`: the head answers, and one client's requests alone can make the run. */
+    private fun putRefusing(into: JsonObjectBuilder) {
+        val refusing = signals.refusing()
+        if (refusing.isEmpty()) return
+        into.putJsonObject("refusingHeads") {
+            refusing.forEach { (key, reading) -> put(key, signals.refusingJson(reading)) }
         }
     }
 

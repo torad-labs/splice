@@ -27,10 +27,9 @@ internal data class ResponsesWireRequestControls(
     val safetyIdentifier: String? = null,
 )
 
-// Claude Code's top-level `diagnostics` (sent since 2.1.321) is client telemetry, not a control over the answer: it is
-// admitted and, like `metadata`, never reaches the Responses body ([ResponsesRequestControls.wire] names every field
-// that does). Refusing it refused every claudex turn (2026-11-09).
-private val sourceOnlyControls = mapOf(
+// A top-level field is carried, refused here, dropped and said once, or refused as unknown: the rule is
+// ResponsesSourceFields'. These are the controls Responses has no equivalent for.
+internal val sourceOnlyControls = mapOf(
     SOURCE_REQUEST_CONTAINER to RequestFeature.CONTAINER,
     SOURCE_REQUEST_INFERENCE_GEO to RequestFeature.INFERENCE_GEO,
     SOURCE_REQUEST_USER_PROFILE_ID to RequestFeature.USER_PROFILE_ID,
@@ -45,6 +44,12 @@ internal class ResponsesRequestControls(private val quirks: ResponsesQuirks) {
 
     fun refusal(raw: JsonObject): RequestRefusal? = refusedFeature(raw)?.let { feature ->
         RequestRefusal(FailureCause.Splice.Declined(Decline.Untranslatable(feature)))
+    } ?: ResponsesSourceFields.unknown(raw)?.let { field ->
+        RequestRefusal(
+            FailureCause.Splice.Declined(Decline.Untranslatable(RequestFeature.UNKNOWN_FIELD)),
+            "the request carries `${ResponsesSourceFields.nameOf(field)}`, " +
+                "a top-level field no Responses rule classifies",
+        )
     }
 
     fun wire(raw: JsonObject): ResponsesWireRequestControls = ResponsesWireRequestControls(

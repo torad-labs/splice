@@ -49,11 +49,13 @@ public object DaemonProbe {
         public val held: Map<String, List<HeldTurnReading>> get() = turns.held
     }
 
-    /** Per-head current turn health: stalled paths, quota readings, and retained holds. */
+    /** Per-head current turn health: stalled paths, quota readings, retained holds, and (2026-11-09 audit) each head
+     *  refusing every request, keyed to the reason it last refused one (`refusingHeads`). */
     public data class HealthTurns(
         public val stalled: List<String> = emptyList(),
         public val quota: HealthQuota = HealthQuota(),
         public val held: Map<String, List<HeldTurnReading>> = emptyMap(),
+        public val refusing: Map<String, String> = emptyMap(),
     )
 
     /** What /health says about the Claude Code sessions the daemon serves: [versionWarning], the aggregate version

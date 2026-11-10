@@ -26,8 +26,8 @@ class RequestFeatureWordingTest {
             "cannot carry the speed setting this request asks for, so the turn was not sent",
         RequestFeature.CONTAINER to
             "cannot carry the container this request asks for, so the turn was not sent",
-        RequestFeature.DIAGNOSTICS to
-            "cannot carry the diagnostics this request asks for, so the turn was not sent",
+        RequestFeature.UNKNOWN_FIELD to
+            "cannot carry a request field it does not recognize, so the turn was not sent",
         RequestFeature.INFERENCE_GEO to
             "cannot carry the inference region this request asks for, so the turn was not sent",
         RequestFeature.USER_PROFILE_ID to

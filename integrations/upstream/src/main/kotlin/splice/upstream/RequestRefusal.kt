@@ -5,5 +5,6 @@ package splice.upstream
 
 import splice.core.failure.FailureCause
 
-/** A caller constraint this provider cannot honour, as why it was refused ([cause]). */
-public data class RequestRefusal(val cause: FailureCause.Splice.Declined)
+/** A caller constraint this provider cannot honour, as why it was refused ([cause]). [detail] is what the refusing
+ *  site saw beyond the cause, for daemon.log alone (an unrecognized field's name, which the client's line lacks). */
+public data class RequestRefusal(val cause: FailureCause.Splice.Declined, val detail: String? = null)

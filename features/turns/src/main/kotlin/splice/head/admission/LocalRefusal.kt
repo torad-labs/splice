@@ -42,6 +42,8 @@ internal class PreDriveRefusals(
     private val responses: AdmissionResponses,
     private val driver: TurnDriver,
     private val loginCommand: String,
+    /** The head's run of refusals before any upstream turn (2026-11-09 audit): each prepared refusal counts. */
+    private val streak: RefusalStreak,
 ) {
     /** A request refused while it was prepared ([Preparation.Rejected]): a model the head does not serve, a body that
      *  did not parse, a control the dialect cannot carry, a stopped turn's re-send, or a defect in preparing it. It is
@@ -61,6 +63,8 @@ internal class PreDriveRefusals(
         RequestObservation.turn(admitted.perf, trace?.turnId)
         val sentence = responses.lineOf(cause).sentence
         trace?.failureSentence(sentence)
+        // A stopped turn's re-send is the operator's own stop answered, not the head refusing its clients.
+        if (cause !is FailureCause.Splice.Stopped) streak.refused(sentence, request.detail)
         val defect = cause is FailureCause.Splice.Internal
         val tag = if (defect) OutcomeTag.UNEXPECTED.wire else OutcomeTags.failure(cause)
         val refusal = LocalRefusal(tag, said(call, request, sentence), trace)

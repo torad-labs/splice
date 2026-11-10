@@ -22,6 +22,7 @@ import splice.head.HeadDeps
 import splice.head.hold.ClientWallHeader
 import splice.head.hold.ResendLedger
 import splice.head.turn.Preparation
+import splice.head.turn.RefusedRequest
 import splice.head.turn.SESSION_TAG_CHARS
 import splice.head.turn.TurnAccountQuota
 import splice.head.turn.TurnDriver
@@ -42,13 +43,26 @@ internal class HeadAdmission(
     private val driver: TurnDriver,
 ) {
     private val keyAccounts = KeyAccount(preparation.provider.auth, deps.quotaBundle)
-    private val refusals = PreDriveRefusals(deps, admission, responses, driver, preparation.provider.loginCommand)
+
+    /** 2026-11-09 audit: the requests this head refuses in a row before any upstream turn, read degraded on /health. */
+    private val streak = RefusalStreak(preparation.provider.key, deps.log, deps.traffic.upstream.retryWall)
+    private val refusals = PreDriveRefusals(
+        deps,
+        admission,
+        responses,
+        driver,
+        preparation.provider.loginCommand,
+        streak,
+    )
 
     // Failure-handling slice 4: the requests whose turn ended with an answer Claude Code sends again, so the identical
     // request after one is told as its re-send (RequestFacts.repeated) and ends for good if it fails the same way.
     private val resends = ResendLedger(deps.seams.clock)
 
     fun arrivalTime(): Long = telemetry.arrivalTime()
+
+    /** The head's degraded reading while it refuses every request, null while it admits turns. */
+    fun refusing(): splice.core.head.RefusingReading? = streak.reading()
 
     /** The listener observes arrivals before ingress can refuse their bodies without entering this handler. */
     fun observeRequests(application: Application) {
@@ -62,7 +76,7 @@ internal class HeadAdmission(
             // empty 500 with no line anywhere. Preparation and the drive have their own boundaries; this one catches
             // what escapes between them. Cancellation and an Error still propagate.
             Cancellables.runCatchingBestEffort { handleObserved(call, arrivalAt) }
-                .onFailure { failure -> answerFailure(call, failure) }
+                .onFailure { failure -> answerFailure(call, failure, arrivalAt) }
         }
     }
 
@@ -70,17 +84,26 @@ internal class HeadAdmission(
      *  (never its message, which may quote the transcript), its request row ends unexpected, and a client that has
      *  had no answer yet gets the head's retryable internal error. A body already on the wire cannot take a status,
      *  and a client that left mid-body is not a defect. A full heap is not a defect either: HeapIngress answers it
-     *  with the retryable overload, as it always has. */
-    private suspend fun answerFailure(call: ApplicationCall, failure: Throwable) {
+     *  with the retryable overload, as it always has.
+     *
+     *  It writes a row in the head's perf file too, as unexpected, like a defect preparation catches (2026-11-09 audit:
+     *  until then only perf-evidence held it), and the turn line that row's write logs is the defect's one line. The
+     *  row names no model: the request may not have been read. It counts toward the head's refusal run. */
+    private suspend fun answerFailure(call: ApplicationCall, failure: Throwable, arrivalAt: Long) {
         if (failure is HeapCapacityException) throw failure
         val committed = call.response.isCommitted
         if (committed && failure is IOException) return
         val kind = failure::class.simpleName ?: "unnamed failure"
-        val site = SafeFailureText.site(failure)
-        deps.log("[${preparation.provider.key}] request failed: $kind: ${SafeFailureText.render(failure)}$site\n")
+        val detail = "request failed: $kind: ${SafeFailureText.render(failure)}${SafeFailureText.site(failure)}"
         RequestObservation.of(call)?.finish(OutcomeTag.UNEXPECTED.wire)
+        val cause = FailureCause.Splice.Internal(escaped = true)
+        streak.refused(responses.lineOf(cause).sentence, detail)
+        val refused = RefusedRequest()
+        deps.seams.events.turnStarted(refused.sessionId)
+        val refusal = LocalRefusal(OutcomeTag.UNEXPECTED.wire, detail, trace = null)
+        driver.recordLocalRefusal(refused.meta(), telemetry.begin(arrivalAt), arrivalAt, refusal)
         if (committed) return
-        responses.respondRefusal(call, FailureCause.Splice.Internal(escaped = true), OutcomeTag.UNEXPECTED)
+        responses.respondRefusal(call, cause, OutcomeTag.UNEXPECTED)
     }
 
     private suspend fun handleObserved(call: ApplicationCall, arrivalAt: Long) {
@@ -149,6 +172,8 @@ internal class HeadAdmission(
 
     private suspend fun serveReady(call: ApplicationCall, prepared: Preparation.Ready, admitted: AdmittedTurn) {
         val meta = prepared.built.meta
+        // A turn the dialect and the head admitted ends any run of refusals (2026-11-09 audit).
+        streak.admitted()
         RequestObservation.ready(admitted.perf, prepared)
         // Before describe: a compaction held for a restart is not yet one the restart's read waits for.
         if (meta.compact && !admission.compactionAdmittedOrRespond(call, TurnEnd(admitted::release))) return

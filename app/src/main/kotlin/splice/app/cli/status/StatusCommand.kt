@@ -68,7 +68,8 @@ internal class StatusCommand(
         // process and a stopped daemon says nothing about it.
         val notAnswering = localRuntimes.notAnswering(topology)
         val held = health?.takeIf { up }?.held.orEmpty()
-        val readings = StatusReadings(failedHeads, quota.refusedUntil, notAnswering, quota.full, held)
+        val refusing = health?.takeIf { up }?.turns?.refusing.orEmpty()
+        val readings = StatusReadings(failedHeads, quota.refusedUntil, notAnswering, quota.full, held, refusing)
         val rows = table.lines(topology, envReader, readings)
         for (line in rows) println(line)
         if (up) extras.printAccounts(port, envReader)

@@ -127,6 +127,7 @@ internal class StatusTable(
      *  outranks a quota it has none of. */
     private fun refusal(word: HeadWord): String? {
         word.runtimeEndpoint?.let { return "runtime not answering on $it" }
+        word.refusing?.let { return "refusing every turn: $it" }
         val resetAt = word.quotaResetAtEpochSeconds?.takeIf { TimeUnit.SECONDS.toMillis(it) > clock() }
         return resetAt?.let { "out of quota until ${times.at(it)}" }
     }
@@ -247,6 +248,8 @@ internal class StatusReadings(
     private val runtimeNotAnswering: Map<String, String> = emptyMap(),
     private val quotaFull: Map<String, QuotaFull> = emptyMap(),
     private val held: Map<String, List<HeldTurnReading>> = emptyMap(),
+    /** 2026-11-09 audit: each head refusing every request, and why it refused the last. */
+    private val refusing: Map<String, String> = emptyMap(),
 ) {
     /** The heads the daemon names failed that [known] does not hold, in key order. */
     fun failedOutside(known: Set<String>): Map<String, String> = failedHeads.filterKeys { it !in known }.toSortedMap()
@@ -258,6 +261,7 @@ internal class StatusReadings(
             runtimeNotAnswering[key],
             quotaFull[key],
             held[key].orEmpty(),
+            refusing[key],
         )
 }
 
@@ -268,6 +272,8 @@ internal data class HeadWord(
     val quotaFull: QuotaFull? = null,
     /** Failure-handling slice 5: the turns the head holds until their cause lifts, oldest first. */
     val held: List<HeldTurnReading> = emptyList(),
+    /** 2026-11-09 audit: why a head refusing every request refused the last one, null while it admits turns. */
+    val refusing: String? = null,
 )
 
 /** The labelled columns, in order. A row's cells line up with these by index. */
